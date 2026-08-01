@@ -116,6 +116,7 @@ export default function DevelopmentConsoleClient() {
   const loadReadiness = useCallback(async () => {
     setReadinessBusy(true);
     setReadinessError(null);
+    setReadiness(null);
     try {
       const res = await fetch('/api/dashboard/development/readiness', {
         cache: 'no-store',
@@ -185,7 +186,7 @@ export default function DevelopmentConsoleClient() {
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
-    if (submitting || readiness?.canLaunch === false) return;
+    if (submitting || readinessBusy || readinessError || readiness?.canLaunch !== true) return;
     setSubmitting(true);
     setError(null);
     if (!idempotencyKeyRef.current) {
@@ -446,12 +447,15 @@ export default function DevelopmentConsoleClient() {
           </details>
           <button
             type="submit"
-            disabled={submitting || !repositoryId || readiness?.canLaunch === false}
+            disabled={submitting || !repositoryId || readinessBusy || Boolean(readinessError)
+              || readiness?.canLaunch !== true}
             className="rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-medium text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
           >
             {submitting
               ? 'Запуск…'
-              : readiness?.canLaunch === false
+              : readinessBusy
+                ? 'Проверка готовности…'
+                : readiness?.canLaunch !== true
                 ? 'Запуск пока недоступен'
                 : 'Запустить задачу'}
           </button>

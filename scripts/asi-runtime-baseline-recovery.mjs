@@ -159,7 +159,8 @@ export async function inspectRuntimeCheckoutReadiness({
 }) {
   if (!Array.isArray(checkouts) || checkouts.length !== 2
     || repository !== 'ASI-integration/asi-landing'
-    || branch !== 'main' || !SHA.test(String(baselineSha ?? ''))) {
+    || branch !== 'main'
+    || (baselineSha !== undefined && !SHA.test(String(baselineSha)))) {
     throw new RuntimeBaselineRecoveryError('runtime_baseline_request_invalid');
   }
 
@@ -168,24 +169,30 @@ export async function inspectRuntimeCheckoutReadiness({
     inspected.push(await inspectCheckout(checkout, repository, validateRemote));
   }
 
+  let observedBaselineSha = baselineSha;
   for (const checkout of inspected) {
     const remoteHead = await git(checkout, [
       'ls-remote', '--exit-code', 'origin', `refs/heads/${branch}`,
     ], { code: 'runtime_baseline_remote_unavailable', timeout: 10_000 });
     const remoteSha = remoteHead.split(/\s+/, 1)[0]?.toLowerCase() ?? '';
-    if (remoteSha !== baselineSha) {
+    if (!SHA.test(remoteSha)) {
+      throw new RuntimeBaselineRecoveryError('runtime_baseline_remote_unavailable', checkout.id);
+    }
+    observedBaselineSha ??= remoteSha;
+    if (remoteSha !== observedBaselineSha) {
       throw new RuntimeBaselineRecoveryError('runtime_baseline_remote_mismatch', checkout.id);
     }
   }
 
   const driftedCheckoutIds = inspected
-    .filter((checkout) => checkout.beforeSha !== baselineSha)
+    .filter((checkout) => checkout.beforeSha !== observedBaselineSha)
     .map((checkout) => checkout.id);
   return {
     state: driftedCheckoutIds.length ? 'degraded' : 'ready',
     reasonCode: driftedCheckoutIds.length
       ? 'runtime_checkout_recoverable_drift'
       : 'runtime_checkouts_ready',
+    baselineSha: observedBaselineSha,
     driftedCheckoutIds,
   };
 }

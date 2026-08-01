@@ -42,6 +42,8 @@ The Runtime runner additionally requires these server-only values:
 - distinct `ASI_RUNTIME_BRIDGE_CHAT_TOKEN`, `ASI_RUNTIME_BRIDGE_OWNER_TOKEN`, and `ASI_RUNTIME_BRIDGE_RUNNER_TOKEN` values of at least 32 characters;
 - `ASI_RUNTIME_BRIDGE_EXECUTOR_JSON`, a JSON command array for the existing executor.
 
+`ASI_RUNTIME_BRIDGE_RUNNER_ID` is optional. The runner hashes it (or the host name when omitted) into a stable opaque identity; the original value is never published. When the command starts with an interpreter such as `node`, the command must include a readable script entrypoint. Readiness validates both the interpreter and that file without executing the configured executor.
+
 Primary application auth/CRM/accounts continue to use `SUPABASE_URL` (or `NEXT_PUBLIC_SUPABASE_URL`) and `SUPABASE_SERVICE_ROLE_KEY`. Do not point those at the Bridge project and do not put Bridge credentials behind `NEXT_PUBLIC_*`.
 
 Do not set owner emails or bridge tokens/keys via `NEXT_PUBLIC_*`.
@@ -63,10 +65,12 @@ Before submission, the page calls the owner-only readiness endpoint. The respons
 
 - overall `ready`, `blocked`, or `degraded` state;
 - `canLaunch`;
-- a check time;
+- a check time and safe runner evidence (`identity`, `checkedAt`, `expiresAt`);
 - safe states, Russian messages, stable reason codes, and `blockingLaunch` for Bridge, Runtime checkouts, current `main`, executor, and GitHub.
 
-The bounded check reads no secret value into its response or logs. Bridge storage is probed with a read-only limited query. Runtime checkout validation uses read-only Git commands and `ls-remote`; it never fetches, checks out, resets, or cleans. Recoverable baseline drift is `degraded` and remains launchable. A missing, non-Git, dirty, or wrong-origin checkout is a hard blocker. Missing or unauthenticated GitHub integration is visible as a blocker but does not disable task submission because execution itself can still start.
+The bounded check reads no secret value into its response or logs. Bridge storage is probed with a read-only limited query. The actual Runtime runner process performs checkout, baseline-recovery and executor-entrypoint probes on its own host and publishes only a bounded safe record through the authenticated runner operation on the existing Bridge endpoint. The control plane accepts one stable runner identity while evidence is fresh. Missing or expired evidence fails closed.
+
+Runner checkout validation uses read-only Git commands and `ls-remote`; it never fetches, checks out, resets, or cleans. Recoverable baseline drift is `degraded` and remains launchable. A missing, non-Git, dirty or wrong-origin checkout is a hard blocker. Missing or unauthenticated GitHub integration is visible as a blocker but does not disable task submission because execution itself can still start. The form stays disabled while readiness is loading or failed, and `POST /api/dashboard/development/tasks` repeats the hard-blocker check so a direct request cannot bypass it.
 
 **Проверить готовность** repeats the same non-mutating check. Retry is semantically idempotent; only the check time may change.
 
@@ -134,7 +138,7 @@ It requires these runtime inputs without printing their values:
 - optional `ASI_OWNER_CONSOLE_ACCEPTANCE_TIMEOUT_MS` (1–30 minutes);
 - `GITHUB_TOKEN` when the draft PR cannot be read anonymously.
 
-The command first requires full `ready` state, then submits one fixed natural-language prompt through the Dashboard. That task creates one unique documentation proof file, advances through the durable Bridge, runs the existing executor contour, and must return a commit plus a real open draft PR into `main`. The command verifies the PR with a non-destructive GitHub `GET` and returns `OWNER_CONSOLE_RUNTIME_FULL_AUTONOMOUS_E2E_READY` only when the exact head SHA matches. It never calls merge or deploy endpoints.
+The command first requires full `ready` state, then submits one fixed natural-language prompt through the Dashboard. That task must add exactly one file at `docs/operations/runtime-acceptance/<runId>.md` with contract `asi.owner-console.runtime-acceptance-proof.v1`, the exact run ID and marker `OWNER_CONSOLE_RUNTIME_ACCEPTANCE_PROOF`. It advances through the durable Bridge, runs the existing executor contour, and must return a commit plus a real open draft PR into `main`. The command queries the PR changed-files API, rejects extra/renamed/modified/deleted/wrong-path files, and reads the proof content at the exact returned head SHA. It returns `OWNER_CONSOLE_RUNTIME_FULL_AUTONOMOUS_E2E_READY` only after all checks pass and never calls merge or deploy endpoints.
 
 This acceptance has one allowed yellow side effect: the explicitly requested draft PR. Run it only after production configuration is complete and reviewed. The implementation task that introduced the command does not run it.
 

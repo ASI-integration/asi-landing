@@ -22,6 +22,7 @@ const repository = vi.hoisted(() => ({
   getRuntimeBridgeResult: vi.fn(),
   listRuntimeBridgeOwnerGates: vi.fn(),
   submitRuntimeBridgeOwnerDecision: vi.fn(),
+  runRuntimeBridgeRunnerOperation: vi.fn(),
 }));
 
 vi.mock('../bridge-repository', () => ({
@@ -173,6 +174,39 @@ describe('runtime bridge authentication and schemas', () => {
     })).toBeNull();
   });
 
+  it('accepts only safe bounded runner-host readiness evidence', () => {
+    const readiness = {
+      operation: 'runner_publish_readiness',
+      input: {
+        schemaVersion: 'asi.runtime.runner-readiness.v1',
+        runnerId: 'runner-1234567890abcdef12345678',
+        checkedAt: new Date().toISOString(),
+        expiresAt: new Date(Date.now() + 45_000).toISOString(),
+        baselineSha: 'a'.repeat(40),
+        capabilities: {
+          checkouts: { state: 'degraded', reasonCode: 'runtime_checkout_recoverable_drift' },
+          baselineRecovery: { state: 'ready', reasonCode: 'runtime_baseline_recovery_ready' },
+          executor: { state: 'ready', reasonCode: 'runtime_executor_ready' },
+        },
+      },
+    };
+    expect(parseRuntimeBridgeRunnerInput(readiness)?.operation).toBe('runner_publish_readiness');
+    expect(parseRuntimeBridgeRunnerInput({
+      ...readiness,
+      input: { ...readiness.input, executorPath: '/opt/runtime/executor.mjs' },
+    })).toBeNull();
+    expect(parseRuntimeBridgeRunnerInput({
+      ...readiness,
+      input: {
+        ...readiness.input,
+        capabilities: {
+          ...readiness.input.capabilities,
+          executor: { state: 'blocked', reasonCode: '/opt/runtime/executor.mjs' },
+        },
+      },
+    })).toBeNull();
+  });
+
   it('rejects expired owner gates before persistence', () => {
     expect(parseRuntimeBridgeRunnerInput({
       operation: 'runner_submit_owner_gate',
@@ -242,6 +276,66 @@ describe('runtime bridge Chat route', () => {
   });
 });
 
+describe('runtime bridge runner readiness control plane', () => {
+  it('expires evidence and rejects a different identity while a heartbeat is fresh', async () => {
+    const readinessStore = await import('../bridge-runner-readiness');
+    readinessStore.__resetRuntimeRunnerReadinessForTests();
+    const now = Date.parse('2026-08-01T00:00:00.000Z');
+    const record = {
+      schemaVersion: 'asi.runtime.runner-readiness.v1' as const,
+      runnerId: 'runner-1234567890abcdef12345678',
+      checkedAt: new Date(now).toISOString(),
+      expiresAt: new Date(now + 45_000).toISOString(),
+      baselineSha: 'a'.repeat(40),
+      capabilities: {
+        checkouts: { state: 'ready' as const, reasonCode: 'runtime_checkouts_ready' },
+        baselineRecovery: { state: 'ready' as const, reasonCode: 'runtime_baseline_recovery_ready' },
+        executor: { state: 'ready' as const, reasonCode: 'runtime_executor_ready' },
+      },
+    };
+    readinessStore.publishRuntimeRunnerReadiness('chatgpt-owner', record, now);
+    expect(readinessStore.getRuntimeRunnerReadiness('chatgpt-owner', now + 1_000).status).toBe('fresh');
+    expect(() => readinessStore.publishRuntimeRunnerReadiness('chatgpt-owner', {
+      ...record,
+      runnerId: 'runner-fedcba0987654321fedcba09',
+      checkedAt: new Date(now + 1_000).toISOString(),
+      expiresAt: new Date(now + 46_000).toISOString(),
+    }, now + 1_000)).toThrow('runner_identity_conflict');
+    expect(readinessStore.getRuntimeRunnerReadiness('chatgpt-owner', now + 46_000).status).toBe('stale');
+  });
+
+  it('publishes runner-host evidence only through the authenticated runner route', async () => {
+    const body = {
+      operation: 'runner_publish_readiness',
+      input: {
+        schemaVersion: 'asi.runtime.runner-readiness.v1',
+        runnerId: 'runner-1234567890abcdef12345678',
+        checkedAt: new Date().toISOString(),
+        expiresAt: new Date(Date.now() + 45_000).toISOString(),
+        baselineSha: 'a'.repeat(40),
+        capabilities: {
+          checkouts: { state: 'ready', reasonCode: 'runtime_checkouts_ready' },
+          baselineRecovery: { state: 'ready', reasonCode: 'runtime_baseline_recovery_ready' },
+          executor: { state: 'ready', reasonCode: 'runtime_executor_ready' },
+        },
+      },
+    };
+    repository.runRuntimeBridgeRunnerOperation.mockResolvedValue(body.input);
+    const { POST } = await import('@/app/api/internal/asi-runtime/bridge/runner/route');
+
+    expect((await POST(request(body, ''))).status).toBe(401);
+    expect(repository.runRuntimeBridgeRunnerOperation).not.toHaveBeenCalled();
+
+    const response = await POST(request(
+      body,
+      `Bearer ${process.env.ASI_RUNTIME_BRIDGE_RUNNER_TOKEN}`,
+    ));
+    expect(response.status).toBe(200);
+    expect(repository.runRuntimeBridgeRunnerOperation).toHaveBeenCalledWith('chatgpt-owner', body);
+    expect(JSON.stringify(await response.json())).not.toMatch(/\/opt\/|argv|stdout|stderr|TOKEN/i);
+  });
+});
+
 describe('runtime bridge durable contracts', () => {
   it('migration enforces RLS, service-role-only access, one running task and fencing', () => {
     const sql = readFileSync('supabase/migrations/20260724120000_asi_chat_runtime_bridge_v1.sql', 'utf8');
@@ -271,7 +365,10 @@ describe('runtime bridge durable contracts', () => {
       ASI_RUNTIME_BRIDGE_CHAT_TOKEN: 'chat-token-with-at-least-thirty-two-characters',
       ASI_RUNTIME_BRIDGE_OWNER_TOKEN: 'owner-token-with-at-least-thirty-two-characters',
       ASI_RUNTIME_BRIDGE_RUNNER_TOKEN: 'runner-token-with-at-least-thirty-two-characters',
-      ASI_RUNTIME_BRIDGE_EXECUTOR_JSON: JSON.stringify([process.execPath, '--version']),
+      ASI_RUNTIME_BRIDGE_EXECUTOR_JSON: JSON.stringify([
+        process.execPath,
+        path.resolve('scripts/asi-runtime-bridge-executor-guard.mjs'),
+      ]),
     };
     await expect(inspectRuntimeRunnerPrerequisites(configured)).resolves.toEqual({
       ready: true,
@@ -281,6 +378,16 @@ describe('runtime bridge durable contracts', () => {
       ...configured,
       ASI_RUNTIME_BRIDGE_EXECUTOR_JSON: JSON.stringify(['missing-asi-executor-command']),
     })).resolves.toEqual({ ready: false, reasonCode: 'runtime_executor_unavailable' });
+    await expect(inspectRuntimeRunnerPrerequisites({
+      ...configured,
+      ASI_RUNTIME_BRIDGE_EXECUTOR_JSON: JSON.stringify([
+        process.execPath,
+        path.resolve('scripts/missing-runtime-executor.mjs'),
+      ]),
+    })).resolves.toEqual({
+      ready: false,
+      reasonCode: 'runtime_executor_entrypoint_unavailable',
+    });
     await expect(inspectRuntimeRunnerPrerequisites({
       ...configured,
       ASI_RUNTIME_BRIDGE_OWNER_TOKEN: configured.ASI_RUNTIME_BRIDGE_CHAT_TOKEN,
@@ -381,6 +488,7 @@ describe('runtime bridge durable contracts', () => {
     writeFileSync(path.join(primaryCheckout, 'marker.txt'), 'runner baseline\n', 'utf8');
     execFileSync('git', ['-C', primaryCheckout, 'add', 'marker.txt'], { windowsHide: true });
     execFileSync('git', ['-C', primaryCheckout, 'commit', '-m', 'runner baseline'], { windowsHide: true });
+    execFileSync('git', ['-C', primaryCheckout, 'branch', '-M', 'main'], { windowsHide: true });
     const runnerBaselineSha = execFileSync('git', ['-C', primaryCheckout, 'rev-parse', 'HEAD'], {
       encoding: 'utf8', windowsHide: true,
     }).trim();
@@ -389,6 +497,10 @@ describe('runtime bridge durable contracts', () => {
       const remoteArgs = checkout === primaryCheckout ? ['remote', 'add'] : ['remote', 'set-url'];
       execFileSync('git', [
         '-C', checkout, ...remoteArgs, 'origin', 'https://github.com/ASI-integration/asi-landing.git',
+      ], { windowsHide: true });
+      execFileSync('git', [
+        '-C', checkout, 'config', `url.${primaryCheckout}.insteadOf`,
+        'https://github.com/ASI-integration/asi-landing.git',
       ], { windowsHide: true });
     }
     const taskId = randomUUID();
@@ -438,10 +550,12 @@ describe('runtime bridge durable contracts', () => {
       "process.stdin.on('data',(chunk)=>body+=chunk);",
       "process.stdin.on('end',()=>{",
       "JSON.parse(body);",
-      "fetch(`${process.argv[1]}?pid=${process.pid}&ppid=${process.ppid}`)",
+      "fetch(`${process.argv[2]}?pid=${process.pid}&ppid=${process.ppid}`)",
       ".finally(()=>setInterval(()=>{},1000));",
       '});',
     ].join('');
+    const executorPath = path.join(checkoutRoot, 'runner-executor.mjs');
+    writeFileSync(executorPath, executorSource, 'utf8');
     const runner = spawn(process.execPath, ['scripts/asi-runtime-bridge-runner.mjs'], {
       windowsHide: true,
       stdio: 'ignore',
@@ -449,7 +563,11 @@ describe('runtime bridge durable contracts', () => {
         ...process.env,
         ASI_RUNTIME_BRIDGE_URL: `http://127.0.0.1:${address.port}`,
         ASI_RUNTIME_BRIDGE_RUNNER_TOKEN: 'runner-token-with-at-least-thirty-two-characters',
-        ASI_RUNTIME_BRIDGE_EXECUTOR_JSON: JSON.stringify([process.execPath, '-e', executorSource, `http://127.0.0.1:${address.port}/executor-start`]),
+        ASI_RUNTIME_BRIDGE_EXECUTOR_JSON: JSON.stringify([
+          process.execPath,
+          executorPath,
+          `http://127.0.0.1:${address.port}/executor-start`,
+        ]),
         ASI_RUNTIME_BRIDGE_CHECKOUTS_JSON: JSON.stringify([
           { id: 'runtime-primary', path: primaryCheckout },
           { id: 'runtime-secondary', path: secondaryCheckout },

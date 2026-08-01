@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { RuntimeRunnerReadinessRecord } from '@/lib/asi-runtime/bridge-types';
 
 vi.mock('server-only', () => ({}));
 
@@ -48,6 +49,25 @@ function ownerSession() {
   return { userId: 'user-1', email: 'owner@example.com' };
 }
 
+const launchableReadiness = {
+  schemaVersion: 'asi.owner-console.readiness.v1',
+  overallState: 'ready',
+  canLaunch: true,
+  checkedAt: '2026-08-01T00:00:00.000Z',
+  runnerEvidence: {
+    identity: 'runner-1234567890abcdef12345678',
+    checkedAt: '2026-08-01T00:00:00.000Z',
+    expiresAt: '2026-08-01T00:01:00.000Z',
+  },
+  components: {
+    bridge: { state: 'ready', reasonCode: 'bridge_ready', message: 'Bridge готов.', blockingLaunch: false },
+    checkouts: { state: 'ready', reasonCode: 'runtime_checkouts_ready', message: 'Каталоги готовы.', blockingLaunch: false },
+    baseline: { state: 'ready', reasonCode: 'baseline_ready', message: 'main готов.', blockingLaunch: false },
+    executor: { state: 'ready', reasonCode: 'runtime_executor_ready', message: 'Исполнитель готов.', blockingLaunch: false },
+    github: { state: 'ready', reasonCode: 'github_provider_ready', message: 'GitHub готов.', blockingLaunch: false },
+  },
+} as const;
+
 beforeEach(() => {
   vi.unstubAllEnvs();
   vi.stubEnv('NODE_ENV', 'production');
@@ -62,6 +82,7 @@ beforeEach(() => {
   submitDevelopmentOwnerDecision.mockReset();
   submitDevelopmentMergeRequest.mockReset();
   getDevelopmentReadiness.mockReset();
+  getDevelopmentReadiness.mockResolvedValue(launchableReadiness);
 });
 
 afterEach(() => {
@@ -103,20 +124,6 @@ describe('development console API access', () => {
 });
 
 describe('development console readiness API', () => {
-  const readySnapshot = {
-    schemaVersion: 'asi.owner-console.readiness.v1',
-    overallState: 'ready',
-    canLaunch: true,
-    checkedAt: '2026-08-01T00:00:00.000Z',
-    components: {
-      bridge: { state: 'ready', reasonCode: 'bridge_ready', message: 'Bridge готов.', blockingLaunch: false },
-      checkouts: { state: 'ready', reasonCode: 'runtime_checkouts_ready', message: 'Каталоги готовы.', blockingLaunch: false },
-      baseline: { state: 'ready', reasonCode: 'baseline_ready', message: 'main готов.', blockingLaunch: false },
-      executor: { state: 'ready', reasonCode: 'runtime_executor_ready', message: 'Исполнитель готов.', blockingLaunch: false },
-      github: { state: 'ready', reasonCode: 'github_provider_ready', message: 'GitHub готов.', blockingLaunch: false },
-    },
-  };
-
   it('requires an owner session before running the bounded readiness check', async () => {
     getSession.mockResolvedValue({ userId: 'user-2', email: 'user@example.com' });
     const { GET } = await import('@/app/api/dashboard/development/readiness/route');
@@ -127,29 +134,47 @@ describe('development console readiness API', () => {
 
   it('returns only the safe machine-readable readiness contract', async () => {
     getSession.mockResolvedValue(ownerSession());
-    getDevelopmentReadiness.mockResolvedValue(readySnapshot);
+    getDevelopmentReadiness.mockResolvedValue(launchableReadiness);
     const { GET } = await import('@/app/api/dashboard/development/readiness/route');
     const res = await GET();
     const json = await res.json();
     expect(res.status).toBe(200);
     expect(res.headers.get('cache-control')).toBe('no-store');
-    expect(json).toEqual({ ok: true, readiness: readySnapshot });
+    expect(json).toEqual({ ok: true, readiness: launchableReadiness });
     expect(JSON.stringify(json)).not.toMatch(/C:\\|\/srv\/|TOKEN|SERVICE_ROLE|stdout|stderr/i);
   });
 });
 
 describe('development readiness component behavior', () => {
-  const checkoutJson = JSON.stringify([
-    { id: 'runtime-primary', path: '/runtime/primary' },
-    { id: 'runtime-secondary', path: '/runtime/secondary' },
-  ]);
   const readyEnv = {
     ASI_RUNTIME_BRIDGE_CLIENT_ID: 'owner-console',
     ASI_RUNTIME_BRIDGE_SUPABASE_URL: 'https://bridge-isolated.example.com',
     ASI_RUNTIME_BRIDGE_SUPABASE_SERVICE_ROLE_KEY: 'not-returned-by-readiness',
-    ASI_RUNTIME_BRIDGE_CHECKOUTS_JSON: checkoutJson,
   };
   const codedError = (code: string) => Object.assign(new Error(code), { code });
+  const runnerStatus = (
+    status: 'fresh' | 'stale' = 'fresh',
+    capabilities: Record<string, unknown> = {},
+  ) => {
+    const record: RuntimeRunnerReadinessRecord = {
+      schemaVersion: 'asi.runtime.runner-readiness.v1',
+      runnerId: 'runner-1234567890abcdef12345678',
+      checkedAt: '2026-08-01T00:00:00.000Z',
+      expiresAt: status === 'fresh'
+        ? '2026-08-01T00:01:00.000Z'
+        : '2026-07-31T23:59:00.000Z',
+      baselineSha: 'a'.repeat(40),
+      capabilities: {
+        checkouts: { state: 'ready', reasonCode: 'runtime_checkouts_ready' },
+        baselineRecovery: { state: 'ready', reasonCode: 'runtime_baseline_recovery_ready' },
+        executor: { state: 'ready', reasonCode: 'runtime_executor_ready' },
+        ...capabilities,
+      },
+    };
+    return status === 'fresh'
+      ? { status: 'fresh' as const, record }
+      : { status: 'stale' as const, record };
+  };
 
   async function actualReadiness(overrides: Record<string, unknown> = {}) {
     const actual = await vi.importActual<typeof import('@/lib/development/readiness')>(
@@ -160,12 +185,7 @@ describe('development readiness component behavior', () => {
       now: () => new Date('2026-08-01T00:00:00.000Z'),
       probeBridgeStorage: async () => {},
       resolveBaselineSha: async () => 'a'.repeat(40),
-      parseCheckouts: () => [
-        { id: 'runtime-primary', path: '/runtime/primary' },
-        { id: 'runtime-secondary', path: '/runtime/secondary' },
-      ],
-      inspectCheckouts: async () => ({ state: 'ready', reasonCode: 'runtime_checkouts_ready' }),
-      inspectExecutor: async () => ({ ready: true, reasonCode: 'runtime_executor_ready' }),
+      loadRunnerReadiness: async () => runnerStatus(),
       probeGitHub: async () => {},
       ...overrides,
     });
@@ -175,12 +195,11 @@ describe('development readiness component behavior', () => {
     ['missing Bridge configuration', { env: { ...readyEnv, ASI_RUNTIME_BRIDGE_CLIENT_ID: '' } }, 'bridge', 'bridge_config_missing', false],
     ['invalid Bridge configuration', { env: { ...readyEnv, ASI_RUNTIME_BRIDGE_SUPABASE_URL: 'http://remote.example.com' } }, 'bridge', 'bridge_config_invalid', false],
     ['unreachable isolated Bridge storage', { probeBridgeStorage: async () => { throw codedError('offline'); } }, 'bridge', 'bridge_storage_unreachable', false],
-    ['malformed checkout JSON', { parseCheckouts: () => { throw codedError('runtime_checkout_config_invalid'); } }, 'checkouts', 'runtime_checkout_config_invalid', false],
-    ['missing checkout', { inspectCheckouts: async () => { throw codedError('runtime_checkout_missing'); } }, 'checkouts', 'runtime_checkout_missing', false],
-    ['dirty checkout', { inspectCheckouts: async () => { throw codedError('runtime_checkout_dirty'); } }, 'checkouts', 'runtime_checkout_dirty', false],
-    ['wrong origin', { inspectCheckouts: async () => { throw codedError('runtime_checkout_remote_mismatch'); } }, 'checkouts', 'runtime_checkout_remote_mismatch', false],
-    ['recoverable baseline drift', { inspectCheckouts: async () => ({ state: 'degraded', reasonCode: 'runtime_checkout_recoverable_drift' }) }, 'checkouts', 'runtime_checkout_recoverable_drift', true],
-    ['executor unavailable', { inspectExecutor: async () => ({ ready: false, reasonCode: 'runtime_executor_unavailable' }) }, 'executor', 'runtime_executor_unavailable', false],
+    ['missing runner heartbeat', { loadRunnerReadiness: async () => ({ status: 'missing', record: null }) }, 'checkouts', 'runtime_runner_readiness_missing', false],
+    ['stale runner heartbeat', { loadRunnerReadiness: async () => runnerStatus('stale') }, 'executor', 'runtime_runner_readiness_stale', false],
+    ['dirty checkout', { loadRunnerReadiness: async () => runnerStatus('fresh', { checkouts: { state: 'blocked', reasonCode: 'runtime_checkout_dirty' }, baselineRecovery: { state: 'blocked', reasonCode: 'runtime_baseline_recovery_unavailable' } }) }, 'checkouts', 'runtime_checkout_dirty', false],
+    ['recoverable baseline drift', { loadRunnerReadiness: async () => runnerStatus('fresh', { checkouts: { state: 'degraded', reasonCode: 'runtime_checkout_recoverable_drift' } }) }, 'checkouts', 'runtime_checkout_recoverable_drift', true],
+    ['executor unavailable', { loadRunnerReadiness: async () => runnerStatus('fresh', { executor: { state: 'blocked', reasonCode: 'runtime_executor_unavailable' } }) }, 'executor', 'runtime_executor_unavailable', false],
     ['GitHub provider missing', { probeGitHub: async () => { throw codedError('github_provider_missing'); } }, 'github', 'github_provider_missing', true],
     ['GitHub provider unauthenticated', { probeGitHub: async () => { throw codedError('github_provider_unauthenticated'); } }, 'github', 'github_provider_unauthenticated', true],
   ] as const)('reports %s with a stable safe reason', async (_name, overrides, componentId, code, canLaunch) => {
@@ -201,6 +220,48 @@ describe('development readiness component behavior', () => {
 });
 
 describe('development console task submit API', () => {
+  it('rejects a direct POST when a hard readiness blocker exists', async () => {
+    getSession.mockResolvedValue(ownerSession());
+    getDevelopmentReadiness.mockResolvedValue({
+      ...launchableReadiness,
+      overallState: 'blocked',
+      canLaunch: false,
+    });
+    const { POST } = await import('@/app/api/dashboard/development/tasks/route');
+    const res = await POST(new Request('http://localhost/api/dashboard/development/tasks', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        repositoryId: 'asi-landing',
+        prompt: 'Запусти задачу в обход панели.',
+        idempotencyKey: 'direct-readiness-bypass',
+      }),
+    }));
+
+    expect(res.status).toBe(503);
+    await expect(res.json()).resolves.toMatchObject({ ok: false, code: 'readiness_blocked' });
+    expect(submitDevelopmentTask).not.toHaveBeenCalled();
+  });
+
+  it('rejects a direct POST when readiness cannot be loaded', async () => {
+    getSession.mockResolvedValue(ownerSession());
+    getDevelopmentReadiness.mockRejectedValue(new Error('offline'));
+    const { POST } = await import('@/app/api/dashboard/development/tasks/route');
+    const res = await POST(new Request('http://localhost/api/dashboard/development/tasks', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        repositoryId: 'asi-landing',
+        prompt: 'Запусти задачу без результата проверки.',
+        idempotencyKey: 'direct-readiness-error-bypass',
+      }),
+    }));
+
+    expect(res.status).toBe(503);
+    await expect(res.json()).resolves.toMatchObject({ ok: false, code: 'readiness_unavailable' });
+    expect(submitDevelopmentTask).not.toHaveBeenCalled();
+  });
+
   it('submits one required natural-language prompt without advanced fields', async () => {
     getSession.mockResolvedValue(ownerSession());
     submitDevelopmentTask.mockResolvedValue({
@@ -526,6 +587,15 @@ describe('owner console autonomous acceptance command', () => {
     const runId = '22222222-2222-4222-8222-222222222222';
     const headSha = 'a'.repeat(40);
     const draftPrUrl = 'https://github.com/ASI-integration/asi-landing/pull/130';
+    const proofPath = `docs/operations/runtime-acceptance/${runId}.md`;
+    const proofContent = [
+      '# Runtime acceptance proof',
+      '',
+      'Contract: asi.owner-console.runtime-acceptance-proof.v1',
+      `Run ID: ${runId}`,
+      'Marker: OWNER_CONSOLE_RUNTIME_ACCEPTANCE_PROOF',
+      '',
+    ].join('\n');
     const calls: Array<{ url: string; init?: RequestInit }> = [];
     let taskPolls = 0;
     const fetchImpl = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
@@ -571,6 +641,16 @@ describe('owner console autonomous acceptance command', () => {
           base: { ref: 'main', repo: { full_name: 'ASI-integration/asi-landing' } },
         }), { status: 200 });
       }
+      if (url.endsWith('/pulls/130/files?per_page=2')) {
+        return new Response(JSON.stringify([{ status: 'added', filename: proofPath }]), { status: 200 });
+      }
+      if (url.includes(`/contents/${proofPath}?ref=${headSha}`)) {
+        return new Response(JSON.stringify({
+          type: 'file',
+          encoding: 'base64',
+          content: Buffer.from(proofContent).toString('base64'),
+        }), { status: 200 });
+      }
       return new Response('{}', { status: 404 });
     });
     const acceptance = await import('../../../../../../scripts/owner-console-runtime-acceptance.mjs');
@@ -599,7 +679,94 @@ describe('owner console autonomous acceptance command', () => {
     const submittedBody = JSON.parse(String(submitCall?.init?.body));
     expect(Object.keys(submittedBody).sort()).toEqual(['idempotencyKey', 'prompt', 'repositoryId']);
     expect(submittedBody.prompt).toContain(`docs/operations/runtime-acceptance/${runId}.md`);
+    expect(submittedBody.prompt).toContain('asi.owner-console.runtime-acceptance-proof.v1');
     expect(calls.some((call) => /\/merge|deploy/i.test(new URL(call.url).pathname))).toBe(false);
     expect(JSON.stringify(result)).not.toMatch(/session-value|github-value/);
+  });
+
+  it.each([
+    ['an extra file', 'extra', 'draft_pr_scope_failed'],
+    ['the wrong path', 'wrong-path', 'draft_pr_scope_failed'],
+    ['the wrong proof content', 'wrong-content', 'draft_pr_content_failed'],
+    ['a changed PR head', 'wrong-head', 'draft_pr_contract_failed'],
+  ] as const)('rejects %s at the exact PR head', async (_name, variant, expectedCode) => {
+    const taskId = '11111111-1111-4111-8111-111111111111';
+    const runId = '22222222-2222-4222-8222-222222222222';
+    const headSha = 'a'.repeat(40);
+    const proofPath = `docs/operations/runtime-acceptance/${runId}.md`;
+    const proofContent = [
+      '# Runtime acceptance proof',
+      '',
+      'Contract: asi.owner-console.runtime-acceptance-proof.v1',
+      `Run ID: ${runId}`,
+      'Marker: OWNER_CONSOLE_RUNTIME_ACCEPTANCE_PROOF',
+      '',
+    ].join('\n');
+    const fetchImpl = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith('/api/dashboard/development/readiness')) {
+        return new Response(JSON.stringify({
+          ok: true,
+          readiness: {
+            schemaVersion: 'asi.owner-console.readiness.v1',
+            overallState: 'ready',
+            canLaunch: true,
+          },
+        }), { status: 200 });
+      }
+      if (url.endsWith('/api/dashboard/development/tasks') && init?.method === 'POST') {
+        return new Response(JSON.stringify({
+          ok: true,
+          taskId,
+          task: { taskId, status: 'completed', attemptCount: 1 },
+          result: {
+            status: 'completed',
+            artifacts: [
+              { type: 'commit', value: headSha },
+              { type: 'pull_request', value: 'https://github.com/ASI-integration/asi-landing/pull/130' },
+            ],
+          },
+        }), { status: 200 });
+      }
+      if (url.endsWith('/pulls/130')) {
+        return new Response(JSON.stringify({
+          draft: true,
+          state: 'open',
+          merged: false,
+          head: { sha: variant === 'wrong-head' ? 'b'.repeat(40) : headSha },
+          base: { ref: 'main', repo: { full_name: 'ASI-integration/asi-landing' } },
+        }), { status: 200 });
+      }
+      if (url.endsWith('/pulls/130/files?per_page=2')) {
+        const files = variant === 'extra'
+          ? [{ status: 'added', filename: proofPath }, { status: 'added', filename: 'docs/extra.md' }]
+          : [{
+              status: 'added',
+              filename: variant === 'wrong-path' ? 'docs/operations/runtime-acceptance/wrong.md' : proofPath,
+            }];
+        return new Response(JSON.stringify(files), { status: 200 });
+      }
+      if (url.includes(`/contents/${proofPath}?ref=${headSha}`)) {
+        return new Response(JSON.stringify({
+          type: 'file',
+          encoding: 'base64',
+          content: Buffer.from(variant === 'wrong-content' ? 'wrong\n' : proofContent).toString('base64'),
+        }), { status: 200 });
+      }
+      return new Response('{}', { status: 404 });
+    });
+    const acceptance = await import('../../../../../../scripts/owner-console-runtime-acceptance.mjs');
+
+    await expect(acceptance.runOwnerConsoleRuntimeAcceptance({
+      env: {
+        ASI_OWNER_CONSOLE_ACCEPTANCE_CONFIRM: acceptance.OWNER_CONSOLE_RUNTIME_ACCEPTANCE_CONFIRM,
+        ASI_OWNER_CONSOLE_ACCEPTANCE_BASE_URL: 'https://console.asi.example',
+        ASI_OWNER_CONSOLE_ACCEPTANCE_SESSION_COOKIE: 'session-value-never-logged',
+      },
+      fetchImpl,
+      sleep: async () => {},
+      createId: () => runId,
+    })).rejects.toMatchObject({ code: expectedCode });
+    expect(fetchImpl.mock.calls.some(([url]) => /\/merge|deploy/i.test(new URL(String(url)).pathname))).toBe(false);
   });
 });

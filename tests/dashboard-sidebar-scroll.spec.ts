@@ -131,9 +131,13 @@ test.describe('Dashboard independent sidebar scroll', () => {
   });
 });
 
-test('development readiness panel blocks only hard failures and safely retries', async ({ page }) => {
+test('development readiness panel fails closed while loading or errored and preserves non-blocking states', async ({ page }) => {
   let readinessCalls = 0;
-  let releaseReady = false;
+  let readinessMode: 'loading' | 'launchable' | 'hard-blocked' = 'loading';
+  let releaseInitialReadiness!: () => void;
+  const initialReadinessGate = new Promise<void>((resolve) => {
+    releaseInitialReadiness = resolve;
+  });
   const component = (
     state: 'ready' | 'blocked' | 'degraded',
     reasonCode: string,
@@ -176,7 +180,41 @@ test('development readiness panel blocks only hard failures and safely retries',
   });
   await page.route('**/api/dashboard/development/readiness', async (route) => {
     readinessCalls += 1;
-    const blocked = !releaseReady;
+    if (readinessMode === 'loading') {
+      await initialReadinessGate;
+      await route.fulfill({
+        status: 503,
+        contentType: 'application/json',
+        body: JSON.stringify({ ok: false, message: 'Не удалось проверить готовность.' }),
+      });
+      return;
+    }
+    const hardBlocked = readinessMode === 'hard-blocked';
+    const components = hardBlocked
+      ? {
+          ...readyComponents,
+          checkouts: component(
+            'blocked',
+            'runtime_checkout_dirty',
+            'В одном из рабочих каталогов Runtime есть несохранённые изменения.',
+            true,
+          ),
+        }
+      : {
+          ...readyComponents,
+          checkouts: component(
+            'degraded',
+            'runtime_checkout_recoverable_drift',
+            'Рабочие каталоги будут обновлены перед запуском.',
+            false,
+          ),
+          github: component(
+            'blocked',
+            'github_provider_missing',
+            'Подключение к GitHub не настроено.',
+            false,
+          ),
+        };
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -184,20 +222,15 @@ test('development readiness panel blocks only hard failures and safely retries',
         ok: true,
         readiness: {
           schemaVersion: 'asi.owner-console.readiness.v1',
-          overallState: blocked ? 'blocked' : 'ready',
-          canLaunch: !blocked,
+          overallState: 'blocked',
+          canLaunch: !hardBlocked,
           checkedAt: '2026-08-01T00:00:00.000Z',
-          components: blocked
-            ? {
-                ...readyComponents,
-                checkouts: component(
-                  'blocked',
-                  'runtime_checkout_dirty',
-                  'В одном из рабочих каталогов Runtime есть несохранённые изменения.',
-                  true,
-                ),
-              }
-            : readyComponents,
+          runnerEvidence: {
+            identity: 'runner-1234567890abcdef12345678',
+            checkedAt: '2026-08-01T00:00:00.000Z',
+            expiresAt: '2026-08-01T00:01:00.000Z',
+          },
+          components,
         },
       }),
     });
@@ -205,16 +238,25 @@ test('development readiness panel blocks only hard failures and safely retries',
 
   await page.goto('/dashboard/development', { waitUntil: 'domcontentloaded' });
   await expect(page.getByRole('heading', { name: 'Готовность к запуску' })).toBeVisible();
-  await expect(page.getByText('runtime_checkout_dirty')).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Запуск пока недоступен' })).toBeDisabled();
   await expect(page.getByLabel('Что нужно сделать?')).toBeVisible();
   await expect(page.getByText('Расширенные настройки')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Проверка готовности…' })).toBeDisabled();
 
-  releaseReady = true;
+  releaseInitialReadiness();
+  await expect(page.getByText('Не удалось проверить готовность.')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Запуск пока недоступен' })).toBeDisabled();
+
+  readinessMode = 'launchable';
   await page.getByRole('button', { name: 'Проверить готовность' }).click();
-  await expect(page.getByText('Система готова к запуску задачи.')).toBeVisible();
+  await expect(page.getByText('runtime_checkout_recoverable_drift')).toBeVisible();
+  await expect(page.getByText('github_provider_missing')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Запустить задачу' })).toBeEnabled();
+
+  readinessMode = 'hard-blocked';
+  await page.getByRole('button', { name: 'Проверить готовность' }).click();
+  await expect(page.getByText('runtime_checkout_dirty')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Запуск пока недоступен' })).toBeDisabled();
   await expect(page.locator('body')).not.toContainText('ASI_RUNTIME_BRIDGE_CHECKOUTS_JSON');
   await expect(page.locator('body')).not.toContainText('/runtime/primary');
-  expect(readinessCalls).toBeGreaterThanOrEqual(2);
+  expect(readinessCalls).toBeGreaterThanOrEqual(3);
 });

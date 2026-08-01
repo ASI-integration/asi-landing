@@ -1,28 +1,21 @@
 #!/usr/bin/env node
 import { spawn } from 'node:child_process';
-import { randomUUID } from 'node:crypto';
+import { createHash } from 'node:crypto';
+import os from 'node:os';
 import { fileURLToPath } from 'node:url';
 import {
   executeWithRuntimeBaselineRecovery,
-  parseRuntimeCheckoutConfig,
 } from './asi-runtime-baseline-recovery.mjs';
 import {
-  parseRuntimeExecutorConfig,
+  inspectRuntimeRunnerHostReadiness,
   validateRuntimeBridgeUrl,
 } from './asi-runtime-runner-config.mjs';
 
 const baseUrl = validateRuntimeBridgeUrl(process.env.ASI_RUNTIME_BRIDGE_URL);
 const token = process.env.ASI_RUNTIME_BRIDGE_RUNNER_TOKEN;
-const executor = parseRuntimeExecutorConfig(process.env.ASI_RUNTIME_BRIDGE_EXECUTOR_JSON);
-let runtimeCheckouts = null;
-try {
-  runtimeCheckouts = parseRuntimeCheckoutConfig(process.env.ASI_RUNTIME_BRIDGE_CHECKOUTS_JSON);
-} catch {
-  runtimeCheckouts = null;
-}
 const executorGuard = fileURLToPath(new URL('./asi-runtime-bridge-executor-guard.mjs', import.meta.url));
-const runnerPrefix = process.env.ASI_RUNTIME_BRIDGE_RUNNER_ID || 'runner';
-const runnerId = `${runnerPrefix.slice(0, 120)}-${randomUUID()}`;
+const runnerIdentitySource = process.env.ASI_RUNTIME_BRIDGE_RUNNER_ID?.trim() || os.hostname();
+const runnerId = `runner-${createHash('sha256').update(runnerIdentitySource).digest('hex').slice(0, 24)}`;
 const leaseSeconds = boundedInt(process.env.ASI_RUNTIME_BRIDGE_LEASE_SECONDS, 120, 30, 900);
 const pollMs = boundedInt(process.env.ASI_RUNTIME_BRIDGE_POLL_MS, 2_000, 250, 60_000);
 const executionTimeoutMs = boundedInt(process.env.ASI_RUNTIME_BRIDGE_EXECUTION_TIMEOUT_MS, 30 * 60_000, 30_000, 6 * 60 * 60_000);
@@ -30,8 +23,9 @@ const maxOutputBytes = 512 * 1024;
 let stopping = false;
 let abortActiveClaim = null;
 let wakePoll = null;
+let readinessPublishing = false;
 
-if (!baseUrl || !token || token.length < 32 || !executor || !runtimeCheckouts) {
+if (!baseUrl || !token || token.length < 32) {
   process.stderr.write('Runtime bridge runner is not configured.\n');
   process.exit(1);
 }
@@ -58,7 +52,7 @@ async function bridge(operation, input, timeoutMs = 30_000) {
   return body.data;
 }
 
-function execute(task, signal) {
+function execute(task, signal, executor) {
   return new Promise((resolve, reject) => {
     const executorEnv = Object.fromEntries(
       ['PATH', 'Path', 'SystemRoot', 'ComSpec', 'PATHEXT', 'TEMP', 'TMP']
@@ -259,7 +253,7 @@ function execute(task, signal) {
   });
 }
 
-async function runClaim(task) {
+async function runClaim(task, hostReadiness) {
   const controller = new AbortController();
   let leaseLost = false;
   let timedOut = false;
@@ -309,8 +303,12 @@ async function runClaim(task) {
   try {
     const outcome = await executeWithRuntimeBaselineRecovery({
       task,
-      checkouts: runtimeCheckouts,
-      executeTask: (currentTask) => execute(currentTask, controller.signal),
+      checkouts: hostReadiness.runtimeCheckouts,
+      executeTask: (currentTask) => execute(
+        currentTask,
+        controller.signal,
+        hostReadiness.executorConfig,
+      ),
       audit: auditBaselineEvent,
     });
     if (leaseLost) return;
@@ -352,11 +350,40 @@ function stopRunner() {
 process.on('SIGINT', stopRunner);
 process.on('SIGTERM', stopRunner);
 
+async function publishRunnerReadiness() {
+  if (readinessPublishing) return null;
+  readinessPublishing = true;
+  try {
+    const hostReadiness = await inspectRuntimeRunnerHostReadiness();
+    const checkedAt = new Date();
+    await bridge('runner_publish_readiness', {
+      schemaVersion: 'asi.runtime.runner-readiness.v1',
+      runnerId,
+      checkedAt: checkedAt.toISOString(),
+      expiresAt: new Date(checkedAt.getTime() + 45_000).toISOString(),
+      baselineSha: hostReadiness.baselineSha,
+      capabilities: hostReadiness.capabilities,
+    }, 10_000);
+    return hostReadiness;
+  } finally {
+    readinessPublishing = false;
+  }
+}
+
+const readinessTimer = setInterval(() => {
+  void publishRunnerReadiness().catch(() => {
+    // The owner endpoint fails closed when this record becomes stale.
+  });
+}, 15_000);
+readinessTimer.unref();
+
 while (!stopping) {
   try {
+    const hostReadiness = await publishRunnerReadiness();
+    if (!hostReadiness?.canExecute) throw new Error('runner_not_ready');
     const claimTimeoutMs = Math.max(2_000, Math.min(10_000, Math.floor(leaseSeconds * 150)));
     const task = await bridge('runner_claim_task', { runnerId, leaseSeconds }, claimTimeoutMs);
-    if (task && !stopping) await runClaim(task);
+    if (task && !stopping) await runClaim(task, hostReadiness);
   } catch {
     // Deliberately omit response bodies and credentials from logs.
     process.stderr.write('Runtime bridge runner poll failed.\n');
@@ -373,3 +400,5 @@ while (!stopping) {
     });
   }
 }
+
+clearInterval(readinessTimer);

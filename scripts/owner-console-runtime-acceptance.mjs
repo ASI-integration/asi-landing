@@ -4,6 +4,8 @@ import { pathToFileURL } from 'node:url';
 
 export const OWNER_CONSOLE_RUNTIME_ACCEPTANCE_CONFIRM = 'CREATE_ONE_DRAFT_PR_ONLY';
 export const OWNER_CONSOLE_RUNTIME_ACCEPTANCE_MARKER = 'OWNER_CONSOLE_RUNTIME_FULL_AUTONOMOUS_E2E_READY';
+export const OWNER_CONSOLE_RUNTIME_PROOF_CONTRACT = 'asi.owner-console.runtime-acceptance-proof.v1';
+export const OWNER_CONSOLE_RUNTIME_PROOF_MARKER = 'OWNER_CONSOLE_RUNTIME_ACCEPTANCE_PROOF';
 
 const REPOSITORY = 'ASI-integration/asi-landing';
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -75,14 +77,15 @@ function pullRequestNumber(value) {
 async function verifyDraftPullRequest(fetchImpl, prUrl, headSha, token) {
   const number = pullRequestNumber(prUrl);
   if (!number) throw new AcceptanceError('draft_pr_artifact_invalid');
+  const headers = {
+    accept: 'application/vnd.github+json',
+    'user-agent': 'asi-owner-console-runtime-acceptance',
+    'x-github-api-version': '2022-11-28',
+    ...(token ? { authorization: `Bearer ${token}` } : {}),
+  };
   const response = await fetchImpl(`https://api.github.com/repos/${REPOSITORY}/pulls/${number}`, {
     method: 'GET',
-    headers: {
-      accept: 'application/vnd.github+json',
-      'user-agent': 'asi-owner-console-runtime-acceptance',
-      'x-github-api-version': '2022-11-28',
-      ...(token ? { authorization: `Bearer ${token}` } : {}),
-    },
+    headers,
     cache: 'no-store',
     signal: AbortSignal.timeout(15_000),
   });
@@ -93,6 +96,51 @@ async function verifyDraftPullRequest(fetchImpl, prUrl, headSha, token) {
   if (payload?.draft !== true || payload?.state !== 'open' || payload?.merged === true
     || baseRepo !== REPOSITORY || baseRef !== 'main' || currentHeadSha !== headSha) {
     throw new AcceptanceError('draft_pr_contract_failed');
+  }
+  return { number, headers };
+}
+
+function expectedProofContent(runId) {
+  return [
+    '# Runtime acceptance proof',
+    '',
+    `Contract: ${OWNER_CONSOLE_RUNTIME_PROOF_CONTRACT}`,
+    `Run ID: ${runId}`,
+    `Marker: ${OWNER_CONSOLE_RUNTIME_PROOF_MARKER}`,
+    '',
+  ].join('\n');
+}
+
+async function verifyExactProofFile(fetchImpl, pr, headSha, runId, relativeProofPath) {
+  const filesResponse = await fetchImpl(
+    `https://api.github.com/repos/${REPOSITORY}/pulls/${pr.number}/files?per_page=2`,
+    { method: 'GET', headers: pr.headers, cache: 'no-store', signal: AbortSignal.timeout(15_000) },
+  );
+  const files = await responseJson(filesResponse, 'draft_pr_files_probe_failed');
+  if (!Array.isArray(files) || files.length !== 1
+    || files[0]?.status !== 'added'
+    || files[0]?.filename !== relativeProofPath
+    || files[0]?.previous_filename !== undefined) {
+    throw new AcceptanceError('draft_pr_scope_failed');
+  }
+
+  const encodedPath = relativeProofPath.split('/').map(encodeURIComponent).join('/');
+  const contentResponse = await fetchImpl(
+    `https://api.github.com/repos/${REPOSITORY}/contents/${encodedPath}?ref=${headSha}`,
+    { method: 'GET', headers: pr.headers, cache: 'no-store', signal: AbortSignal.timeout(15_000) },
+  );
+  const file = await responseJson(contentResponse, 'draft_pr_content_probe_failed');
+  if (file?.type !== 'file' || file?.encoding !== 'base64' || typeof file?.content !== 'string') {
+    throw new AcceptanceError('draft_pr_content_failed');
+  }
+  let content;
+  try {
+    content = Buffer.from(file.content.replace(/\s/g, ''), 'base64').toString('utf8');
+  } catch {
+    throw new AcceptanceError('draft_pr_content_failed');
+  }
+  if (content !== expectedProofContent(runId)) {
+    throw new AcceptanceError('draft_pr_content_failed');
   }
 }
 
@@ -124,9 +172,10 @@ export async function runOwnerConsoleRuntimeAcceptance({
   const runId = createId();
   if (!UUID.test(runId)) throw new AcceptanceError('acceptance_run_id_invalid');
   const relativeProofPath = `docs/operations/runtime-acceptance/${runId}.md`;
+  const proofContent = expectedProofContent(runId);
   const prompt = [
     `Выполни безопасную проверку автономного контура ${runId}.`,
-    `Создай только файл ${relativeProofPath} с идентификатором проверки и кратким описанием результата.`,
+    `Создай только файл ${relativeProofPath} с точно таким содержимым: ${JSON.stringify(proofContent)}.`,
     'Запусти проверки только для этого документа, создай отдельную ветку, commit и draft PR в main.',
     'Не объединяй PR, не выполняй deploy и не меняй настройки, данные, secrets или внешние сервисы.',
   ].join(' ');
@@ -171,7 +220,13 @@ export async function runOwnerConsoleRuntimeAcceptance({
   if (!pullRequestNumber(prUrl) || !SHA.test(headSha)) {
     throw new AcceptanceError('draft_pr_artifact_invalid');
   }
-  await verifyDraftPullRequest(fetchImpl, prUrl, headSha, String(env.GITHUB_TOKEN ?? '').trim());
+  const pullRequest = await verifyDraftPullRequest(
+    fetchImpl,
+    prUrl,
+    headSha,
+    String(env.GITHUB_TOKEN ?? '').trim(),
+  );
+  await verifyExactProofFile(fetchImpl, pullRequest, headSha, runId, relativeProofPath);
 
   return {
     ok: true,

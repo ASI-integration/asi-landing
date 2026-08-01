@@ -16,6 +16,36 @@ export const RUNTIME_BRIDGE_MAX_INSTRUCTION_TOTAL_CHARS = 24 * 1024;
 const SHA = /^[0-9a-f]{40}$/;
 const ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const RUNNER_CHECKOUT_REASON_CODES = new Set([
+  'runtime_checkouts_ready',
+  'runtime_checkout_recoverable_drift',
+  'runtime_checkout_config_missing',
+  'runtime_checkout_config_invalid',
+  'runtime_checkout_missing',
+  'runtime_checkout_not_git',
+  'runtime_checkout_dirty',
+  'runtime_checkout_remote_missing',
+  'runtime_checkout_remote_mismatch',
+  'runtime_baseline_remote_unavailable',
+  'runtime_baseline_remote_mismatch',
+  'runtime_checkout_probe_failed',
+]);
+const RUNNER_BASELINE_RECOVERY_REASON_CODES = new Set([
+  'runtime_baseline_recovery_ready',
+  'runtime_baseline_recovery_unavailable',
+]);
+const RUNNER_EXECUTOR_REASON_CODES = new Set([
+  'runtime_executor_ready',
+  'runtime_runner_url_missing',
+  'runtime_runner_url_invalid',
+  'runtime_runner_credentials_invalid',
+  'runtime_executor_missing',
+  'runtime_executor_invalid',
+  'runtime_executor_unavailable',
+  'runtime_executor_entrypoint_missing',
+  'runtime_executor_entrypoint_unavailable',
+  'runtime_executor_probe_failed',
+]);
 
 function object(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
@@ -167,6 +197,31 @@ export function parseRuntimeBridgeRunnerInput(value: unknown): RuntimeBridgeRunn
   const input = value.input;
   const runner = text(input.runnerId, 200, ID);
   if (!runner) return null;
+  if (value.operation === 'runner_publish_readiness') {
+    if (!exact(input, ['schemaVersion', 'runnerId', 'checkedAt', 'expiresAt', 'baselineSha', 'capabilities'])
+      || input.schemaVersion !== 'asi.runtime.runner-readiness.v1'
+      || !text(input.checkedAt, 64) || !text(input.expiresAt, 64)
+      || Number.isNaN(Date.parse(input.checkedAt)) || Number.isNaN(Date.parse(input.expiresAt))
+      || (input.baselineSha !== null && !text(input.baselineSha, 40, SHA))
+      || !object(input.capabilities)
+      || !exact(input.capabilities, ['checkouts', 'baselineRecovery', 'executor'])) return null;
+    const { checkouts, baselineRecovery, executor } = input.capabilities;
+    if (!object(checkouts) || !exact(checkouts, ['state', 'reasonCode'])
+      || !['ready', 'blocked', 'degraded'].includes(String(checkouts.state))
+      || !text(checkouts.reasonCode, 120, ID)
+      || !RUNNER_CHECKOUT_REASON_CODES.has(checkouts.reasonCode)) return null;
+    if (!object(baselineRecovery) || !exact(baselineRecovery, ['state', 'reasonCode'])
+      || !['ready', 'blocked'].includes(String(baselineRecovery.state))
+      || !text(baselineRecovery.reasonCode, 120, ID)
+      || !RUNNER_BASELINE_RECOVERY_REASON_CODES.has(baselineRecovery.reasonCode)) return null;
+    if (!object(executor) || !exact(executor, ['state', 'reasonCode'])
+      || !['ready', 'blocked'].includes(String(executor.state))
+      || !text(executor.reasonCode, 120, ID)
+      || !RUNNER_EXECUTOR_REASON_CODES.has(executor.reasonCode)) return null;
+    if ((checkouts.state !== 'blocked' || baselineRecovery.state === 'ready')
+      && typeof input.baselineSha !== 'string') return null;
+    return value as RuntimeBridgeRunnerInput;
+  }
   if (value.operation === 'runner_claim_task') {
     return exact(input, ['runnerId', 'leaseSeconds']) && Number.isInteger(input.leaseSeconds) && Number(input.leaseSeconds) >= 30 && Number(input.leaseSeconds) <= 900
       ? value as RuntimeBridgeRunnerInput : null;

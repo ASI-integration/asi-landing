@@ -1,12 +1,11 @@
 import 'server-only';
 import { parseRuntimeBridgeClientId } from '@/lib/asi-runtime/bridge-auth';
-import { probeRuntimeBridgeStorage } from '@/lib/asi-runtime/bridge-repository';
-import { readRuntimeBridgeSupabaseConfig } from '@/lib/asi-runtime/bridge-supabase';
 import {
-  inspectRuntimeCheckoutReadiness,
-  parseRuntimeCheckoutConfig,
-} from '../../../scripts/asi-runtime-baseline-recovery.mjs';
-import { inspectRuntimeRunnerPrerequisites } from '../../../scripts/asi-runtime-runner-config.mjs';
+  getPublishedRuntimeRunnerReadiness,
+  probeRuntimeBridgeStorage,
+} from '@/lib/asi-runtime/bridge-repository';
+import { readRuntimeBridgeSupabaseConfig } from '@/lib/asi-runtime/bridge-supabase';
+import type { RuntimeRunnerReadinessStatus } from '@/lib/asi-runtime/bridge-runner-readiness';
 import { resolveAllowlistedBaselineSha } from './baseline-sha';
 import { probeGitHubMergeProvider } from './github-control-center';
 import { DEVELOPMENT_REPOSITORY_ALLOWLIST } from './repositories';
@@ -16,7 +15,6 @@ import type {
   DevelopmentReadinessState,
 } from './readiness-types';
 
-type Checkout = { id: string; path: string };
 type RuntimeEnvironment = Readonly<Record<string, string | undefined>>;
 
 type ReadinessDependencies = {
@@ -24,14 +22,7 @@ type ReadinessDependencies = {
   now?: () => Date;
   probeBridgeStorage?: () => Promise<void>;
   resolveBaselineSha?: () => Promise<string>;
-  parseCheckouts?: (raw: string | undefined) => Checkout[];
-  inspectCheckouts?: (input: {
-    checkouts: Checkout[];
-    repository: 'ASI-integration/asi-landing';
-    branch: 'main';
-    baselineSha: string;
-  }) => Promise<{ state: 'ready' | 'degraded'; reasonCode: string }>;
-  inspectExecutor?: (env: RuntimeEnvironment) => Promise<{ ready: boolean; reasonCode: string }>;
+  loadRunnerReadiness?: (clientId: string, now: number) => Promise<RuntimeRunnerReadinessStatus>;
   probeGitHub?: () => Promise<void>;
 };
 
@@ -53,6 +44,10 @@ const MESSAGES: Record<string, string> = {
   runtime_baseline_remote_mismatch: 'Версия main не совпала с удалённым репозиторием.',
   runtime_checkout_probe_failed: 'Не удалось безопасно проверить рабочие каталоги Runtime.',
   runtime_checkout_baseline_unavailable: 'Рабочие каталоги нельзя проверить без актуальной версии main.',
+  runtime_runner_readiness_missing: 'Runtime Runner ещё не подтвердил готовность.',
+  runtime_runner_readiness_stale: 'Подтверждение готовности Runtime Runner устарело.',
+  runtime_baseline_recovery_ready: 'Восстановление рабочей версии Runtime готово.',
+  runtime_baseline_recovery_unavailable: 'Runtime Runner не подтвердил безопасное восстановление рабочей версии.',
   baseline_ready: 'Текущая версия main определена.',
   baseline_unavailable: 'Не удалось получить текущую версию main.',
   runtime_executor_ready: 'Исполнитель задач готов.',
@@ -62,6 +57,8 @@ const MESSAGES: Record<string, string> = {
   runtime_executor_missing: 'Исполнитель задач не настроен.',
   runtime_executor_invalid: 'Настройки исполнителя задач некорректны.',
   runtime_executor_unavailable: 'Исполнитель задач недоступен на сервере.',
+  runtime_executor_entrypoint_missing: 'Не указан файл запуска исполнителя задач.',
+  runtime_executor_entrypoint_unavailable: 'Файл запуска исполнителя задач недоступен.',
   runtime_executor_probe_failed: 'Не удалось проверить исполнитель задач.',
   github_provider_ready: 'GitHub подключён и доступен для разрешённого репозитория.',
   github_provider_missing: 'Подключение к GitHub не настроено.',
@@ -80,6 +77,13 @@ const CHECKOUT_REASON_CODES = new Set([
   'runtime_checkouts_ready',
   'runtime_baseline_remote_unavailable',
   'runtime_baseline_remote_mismatch',
+  'runtime_checkout_config_missing',
+  'runtime_checkout_config_invalid',
+  'runtime_checkout_probe_failed',
+  'runtime_checkout_baseline_unavailable',
+  'runtime_runner_readiness_missing',
+  'runtime_runner_readiness_stale',
+  'runtime_baseline_recovery_unavailable',
 ]);
 
 const EXECUTOR_REASON_CODES = new Set([
@@ -90,6 +94,11 @@ const EXECUTOR_REASON_CODES = new Set([
   'runtime_executor_missing',
   'runtime_executor_invalid',
   'runtime_executor_unavailable',
+  'runtime_executor_entrypoint_missing',
+  'runtime_executor_entrypoint_unavailable',
+  'runtime_executor_probe_failed',
+  'runtime_runner_readiness_missing',
+  'runtime_runner_readiness_stale',
 ]);
 
 const GITHUB_REASON_CODES = new Set([
@@ -156,60 +165,85 @@ async function baselineReadiness(
   }
 }
 
-async function checkoutReadiness(input: {
-  env: RuntimeEnvironment;
-  baselineSha: string | null;
-  parse: NonNullable<ReadinessDependencies['parseCheckouts']>;
-  inspect: NonNullable<ReadinessDependencies['inspectCheckouts']>;
-}): Promise<DevelopmentReadinessComponent> {
-  const raw = input.env.ASI_RUNTIME_BRIDGE_CHECKOUTS_JSON;
-  if (!String(raw ?? '').trim()) {
-    return component('blocked', 'runtime_checkout_config_missing', true);
+function runnerComponents(
+  runner: RuntimeRunnerReadinessStatus,
+  baselineSha: string | null,
+): {
+  checkouts: DevelopmentReadinessComponent;
+  executor: DevelopmentReadinessComponent;
+  evidence: DevelopmentReadinessSnapshot['runnerEvidence'];
+} {
+  if (runner.status === 'missing') {
+    return {
+      checkouts: component('blocked', 'runtime_runner_readiness_missing', true),
+      executor: component('blocked', 'runtime_runner_readiness_missing', true),
+      evidence: null,
+    };
   }
-  let checkouts: Checkout[];
-  try {
-    checkouts = input.parse(raw);
-  } catch {
-    return component('blocked', 'runtime_checkout_config_invalid', true);
+  const evidence = {
+    identity: runner.record.runnerId,
+    checkedAt: runner.record.checkedAt,
+    expiresAt: runner.record.expiresAt,
+  };
+  if (runner.status === 'stale') {
+    return {
+      checkouts: component('blocked', 'runtime_runner_readiness_stale', true),
+      executor: component('blocked', 'runtime_runner_readiness_stale', true),
+      evidence,
+    };
   }
-  if (!input.baselineSha) {
-    return component('blocked', 'runtime_checkout_baseline_unavailable', true);
-  }
-  try {
-    const result = await input.inspect({
-      checkouts,
-      repository: 'ASI-integration/asi-landing',
-      branch: 'main',
-      baselineSha: input.baselineSha,
-    });
-    const reasonCode = CHECKOUT_REASON_CODES.has(result.reasonCode)
-      ? result.reasonCode
-      : result.state === 'degraded'
-        ? 'runtime_checkout_recoverable_drift'
-        : 'runtime_checkouts_ready';
-    return component(result.state, reasonCode, false);
-  } catch (error) {
-    return component(
-      'blocked',
-      safeCode(error, CHECKOUT_REASON_CODES, 'runtime_checkout_probe_failed'),
-      true,
-    );
-  }
-}
 
-async function executorReadiness(
-  env: RuntimeEnvironment,
-  inspect: NonNullable<ReadinessDependencies['inspectExecutor']>,
-): Promise<DevelopmentReadinessComponent> {
-  try {
-    const result = await inspect(env);
-    const reasonCode = EXECUTOR_REASON_CODES.has(result.reasonCode)
-      ? result.reasonCode
-      : 'runtime_executor_probe_failed';
-    return component(result.ready ? 'ready' : 'blocked', reasonCode, !result.ready);
-  } catch {
-    return component('blocked', 'runtime_executor_probe_failed', true);
+  const reportedExecutor = runner.record.capabilities.executor;
+  const executorReason = EXECUTOR_REASON_CODES.has(reportedExecutor.reasonCode)
+    ? reportedExecutor.reasonCode
+    : 'runtime_executor_probe_failed';
+  const executor = component(
+    reportedExecutor.state === 'ready' ? 'ready' : 'blocked',
+    executorReason,
+    reportedExecutor.state !== 'ready',
+  );
+  const reportedCheckouts = runner.record.capabilities.checkouts;
+  const checkoutReason = CHECKOUT_REASON_CODES.has(reportedCheckouts.reasonCode)
+    ? reportedCheckouts.reasonCode
+    : 'runtime_checkout_probe_failed';
+  if (reportedCheckouts.state === 'blocked') {
+    return {
+      checkouts: component('blocked', checkoutReason, true),
+      executor,
+      evidence,
+    };
   }
+
+  if (!baselineSha) {
+    return {
+      checkouts: component('blocked', 'runtime_checkout_baseline_unavailable', true),
+      executor,
+      evidence,
+    };
+  }
+  if (runner.record.baselineSha !== baselineSha) {
+    return {
+      checkouts: component('blocked', 'runtime_baseline_remote_mismatch', true),
+      executor,
+      evidence,
+    };
+  }
+  if (runner.record.capabilities.baselineRecovery.state !== 'ready') {
+    return {
+      checkouts: component('blocked', 'runtime_baseline_recovery_unavailable', true),
+      executor,
+      evidence,
+    };
+  }
+  return {
+    checkouts: component(
+      reportedCheckouts.state,
+      checkoutReason,
+      false,
+    ),
+    executor,
+    evidence,
+  };
 }
 
 async function githubReadiness(probe: () => Promise<void>): Promise<DevelopmentReadinessComponent> {
@@ -230,25 +264,26 @@ export async function getDevelopmentReadiness(
 ): Promise<DevelopmentReadinessSnapshot> {
   const env = dependencies.env ?? process.env;
   const repository = DEVELOPMENT_REPOSITORY_ALLOWLIST[0];
-  const [bridge, baseline, executor, github] = await Promise.all([
+  const checkedAt = (dependencies.now ?? (() => new Date()))();
+  const clientId = parseRuntimeBridgeClientId(env.ASI_RUNTIME_BRIDGE_CLIENT_ID);
+  const loadRunner = dependencies.loadRunnerReadiness
+    ?? (async (id: string, now: number) => getPublishedRuntimeRunnerReadiness(id, now));
+  const [bridge, baseline, github, runner] = await Promise.all([
     bridgeReadiness(env, dependencies.probeBridgeStorage ?? (() => probeRuntimeBridgeStorage())),
     baselineReadiness(dependencies.resolveBaselineSha ?? (() => resolveAllowlistedBaselineSha(repository))),
-    executorReadiness(env, dependencies.inspectExecutor ?? inspectRuntimeRunnerPrerequisites),
     githubReadiness(dependencies.probeGitHub ?? (() => probeGitHubMergeProvider())),
+    clientId
+      ? loadRunner(clientId, checkedAt.getTime()).catch(() => ({ status: 'missing' as const, record: null }))
+      : Promise.resolve({ status: 'missing' as const, record: null }),
   ]);
-  const checkouts = await checkoutReadiness({
-    env,
-    baselineSha: baseline.sha,
-    parse: dependencies.parseCheckouts ?? parseRuntimeCheckoutConfig,
-    inspect: dependencies.inspectCheckouts ?? (async (input) => {
-      const result = await inspectRuntimeCheckoutReadiness(input);
-      return {
-        state: result.state === 'degraded' ? 'degraded' as const : 'ready' as const,
-        reasonCode: String(result.reasonCode),
-      };
-    }),
-  });
-  const components = { bridge, checkouts, baseline: baseline.component, executor, github };
+  const runnerResult = runnerComponents(runner, baseline.sha);
+  const components = {
+    bridge,
+    checkouts: runnerResult.checkouts,
+    baseline: baseline.component,
+    executor: runnerResult.executor,
+    github,
+  };
   const states = Object.values(components).map((item) => item.state);
   const overallState: DevelopmentReadinessState = states.includes('blocked')
     ? 'blocked'
@@ -260,7 +295,8 @@ export async function getDevelopmentReadiness(
     schemaVersion: 'asi.owner-console.readiness.v1',
     overallState,
     canLaunch: !Object.values(components).some((item) => item.blockingLaunch),
-    checkedAt: (dependencies.now ?? (() => new Date()))().toISOString(),
+    checkedAt: checkedAt.toISOString(),
+    runnerEvidence: runnerResult.evidence,
     components,
   };
 }

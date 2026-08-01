@@ -21,5 +21,10 @@ export type DevelopmentReadinessSnapshot = {
   overallState: DevelopmentReadinessState;
   canLaunch: boolean;
   checkedAt: string;
+  runnerEvidence: {
+    identity: string;
+    checkedAt: string;
+    expiresAt: string;
+  } | null;
   components: Record<DevelopmentReadinessComponentId, DevelopmentReadinessComponent>;
 };

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { requireDevelopmentOwnerSession } from '@/lib/development/api-auth';
 import { listDevelopmentRepositories } from '@/lib/development/repositories';
+import { getDevelopmentReadiness } from '@/lib/development/readiness';
 import {
   DevelopmentConsoleError,
   submitDevelopmentTask,
@@ -39,6 +40,23 @@ export async function POST(request: Request) {
   }
 
   const payload = body as Record<string, unknown>;
+
+  try {
+    const readiness = await getDevelopmentReadiness();
+    if (!readiness.canLaunch) {
+      return json({
+        ok: false,
+        code: 'readiness_blocked',
+        message: 'Запуск остановлен до устранения обязательных блокеров.',
+      }, 503);
+    }
+  } catch {
+    return json({
+      ok: false,
+      code: 'readiness_unavailable',
+      message: 'Не удалось подтвердить готовность к запуску.',
+    }, 503);
+  }
 
   try {
     const result = await submitDevelopmentTask({
