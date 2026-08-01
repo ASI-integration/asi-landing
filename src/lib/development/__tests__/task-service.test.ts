@@ -20,6 +20,9 @@ const listRuntimeBridgeOwnerGates = vi.fn();
 const getRuntimeBridgeOwnerGate = vi.fn();
 const submitRuntimeBridgeOwnerDecision = vi.fn();
 const resolveAllowlistedBaselineSha = vi.fn();
+const loadControlCenterPullRequest = vi.fn();
+const loadOwnerDecisionBusRecords = vi.fn();
+const mergeControlCenterPullRequest = vi.fn();
 
 vi.mock('@/lib/asi-runtime/bridge-auth', () => ({
   getRuntimeBridgeClientId,
@@ -52,6 +55,24 @@ vi.mock('@/lib/development/baseline-sha', async () => {
     resolveAllowlistedBaselineSha,
   };
 });
+
+class GitHubControlCenterError extends Error {
+  constructor(
+    public readonly code: string,
+    public readonly status: number,
+  ) {
+    super(code);
+  }
+}
+
+vi.mock('@/lib/development/github-control-center', () => ({
+  GitHubControlCenterError,
+  controlCenterMergeDependencies: {
+    loadPullRequest: loadControlCenterPullRequest,
+    loadOwnerDecisionRecords: loadOwnerDecisionBusRecords,
+    mergePullRequest: mergeControlCenterPullRequest,
+  },
+}));
 
 function conversationIdFor(ownerUserId: string): string {
   const digest = createHash('sha256').update(ownerUserId, 'utf8').digest('hex').slice(0, 24);
@@ -255,6 +276,9 @@ beforeEach(() => {
   getRuntimeBridgeOwnerGate.mockReset();
   submitRuntimeBridgeOwnerDecision.mockReset();
   resolveAllowlistedBaselineSha.mockReset();
+  loadControlCenterPullRequest.mockReset();
+  loadOwnerDecisionBusRecords.mockReset();
+  mergeControlCenterPullRequest.mockReset();
 });
 
 afterEach(() => {
@@ -920,5 +944,210 @@ describe('submitDevelopmentOwnerDecision', () => {
     });
     expect(allowed.deduplicated).toBe(false);
     expect(JSON.stringify(allowed)).not.toMatch(/ASI_DEVELOPMENT_OWNER_EMAILS|owner@|SERVICE_ROLE|TOKEN/i);
+  });
+});
+
+describe('Control Center exact-SHA owner merge gate', () => {
+  const currentSha = 'a'.repeat(40);
+  const olderSha = 'b'.repeat(40);
+  const pullRequest = {
+    repository: 'ASI-integration/asi-landing',
+    pullRequestNumber: 123,
+    pullRequestUrl: 'https://github.com/ASI-integration/asi-landing/pull/123',
+    headSha: currentSha,
+    merged: false,
+    mergeCommitSha: null,
+  };
+
+  function ownerGate(input: {
+    taskId?: string;
+    status: 'missing' | 'approved' | 'rejected' | 'expired' | 'consumed';
+    sha?: string;
+    target?: string;
+  }) {
+    const approved = input.status === 'approved';
+    return {
+      sourceId: `record-${input.taskId ?? 'gate-1'}`,
+      body: `\`\`\`json\n${JSON.stringify({
+        schemaVersion: 'asi.agent-os.owner-gate.v1',
+        taskId: input.taskId ?? 'merge-pr-123-cycle-1',
+        status: input.status,
+        action: 'merge',
+        target: input.target ?? 'ASI-integration/asi-landing#123',
+        identity: { ref: 'codex/issue-123', sha: input.sha ?? currentSha },
+        allowedSideEffect: 'Merge only the exact reviewed PR head into main.',
+        postActionVerification: ['GitHub reports the PR merged at the reviewed head SHA.'],
+        authorization: approved ? {
+          source: 'explicit_owner_message',
+          owner: 'Nikolay',
+          scope: 'Approve merge for the exact reviewed PR head.',
+          taskCycle: 'merge-pr-123-cycle-1',
+        } : null,
+        typedConfirmation: { present: false, countsAsOwnerApproval: false },
+      })}\n\`\`\``,
+    };
+  }
+
+  function consumedApproval(taskId = 'stable-approval') {
+    return {
+      sourceId: 'consumed-result',
+      body: `\`\`\`json\n${JSON.stringify({
+        taskId,
+        status: 'consumed',
+        action: 'merge',
+        target: 'ASI-integration/asi-landing#123',
+        approvedHeadSha: currentSha,
+        mergeCommitSha: 'd'.repeat(40),
+      })}\n\`\`\``,
+    };
+  }
+
+  it('blocks missing and pending approvals before the merge provider can run', async () => {
+    const { evaluateControlCenterMergeGate, requestControlCenterMerge } = await import('../owner-merge-gate');
+    const missing = evaluateControlCenterMergeGate({ pullRequest, expectedSha: currentSha, records: [] });
+    expect(missing).toMatchObject({
+      gateState: 'pending',
+      mergeState: 'blocked',
+      blocker: { code: 'owner_gate_pending' },
+    });
+
+    const pending = evaluateControlCenterMergeGate({
+      pullRequest,
+      expectedSha: currentSha,
+      records: [ownerGate({ status: 'missing' })],
+    });
+    expect(pending.gateState).toBe('pending');
+
+    const mergePullRequest = vi.fn();
+    const direct = await requestControlCenterMerge(
+      { pullRequestUrl: pullRequest.pullRequestUrl, expectedSha: currentSha },
+      {
+        loadPullRequest: async () => pullRequest,
+        loadOwnerDecisionRecords: async () => [],
+        mergePullRequest,
+      },
+    );
+    expect(direct.merged).toBe(false);
+    expect(mergePullRequest).not.toHaveBeenCalled();
+  });
+
+  it('blocks failed approvals and approvals for an older SHA', async () => {
+    const { evaluateControlCenterMergeGate } = await import('../owner-merge-gate');
+    const failed = evaluateControlCenterMergeGate({
+      pullRequest,
+      expectedSha: currentSha,
+      records: [ownerGate({ status: 'rejected' })],
+    });
+    expect(failed).toMatchObject({ gateState: 'failed', mergeState: 'blocked' });
+
+    const stale = evaluateControlCenterMergeGate({
+      pullRequest,
+      expectedSha: currentSha,
+      records: [ownerGate({ status: 'approved', sha: olderSha })],
+    });
+    expect(stale).toMatchObject({
+      gateState: 'stale_sha',
+      mergeState: 'blocked',
+      approvedSha: olderSha,
+      currentSha,
+    });
+  });
+
+  it('invalidates approval after a head change and unlocks only the exact current SHA', async () => {
+    const { evaluateControlCenterMergeGate, requestControlCenterMerge } = await import('../owner-merge-gate');
+    const changed = evaluateControlCenterMergeGate({
+      pullRequest,
+      expectedSha: olderSha,
+      records: [ownerGate({ status: 'approved', sha: olderSha })],
+    });
+    expect(changed).toMatchObject({
+      gateState: 'head_changed',
+      mergeState: 'blocked',
+      blocker: { code: 'pull_request_head_changed', expectedSha: olderSha, currentSha },
+    });
+
+    const mergePullRequest = vi.fn(async () => ({
+      merged: true as const,
+      deduplicated: false,
+      mergeCommitSha: 'c'.repeat(40),
+    }));
+    const allowed = await requestControlCenterMerge(
+      { pullRequestUrl: pullRequest.pullRequestUrl, expectedSha: currentSha },
+      {
+        loadPullRequest: async () => pullRequest,
+        loadOwnerDecisionRecords: async () => [ownerGate({ status: 'approved' })],
+        mergePullRequest,
+      },
+    );
+    expect(allowed).toMatchObject({
+      merged: true,
+      gate: { gateState: 'passed', mergeState: 'merge_allowed', approvedSha: currentSha },
+    });
+    expect(mergePullRequest).toHaveBeenCalledWith(pullRequest, currentSha);
+  });
+
+  it('deduplicates duplicate approvals and repeated merge requests', async () => {
+    const { evaluateControlCenterMergeGate, requestControlCenterMerge } = await import('../owner-merge-gate');
+    const approval = ownerGate({ status: 'approved', taskId: 'stable-approval' });
+    const duplicate = { ...approval, sourceId: 'duplicate-comment' };
+    const evaluated = evaluateControlCenterMergeGate({
+      pullRequest,
+      expectedSha: currentSha,
+      records: [approval, duplicate],
+    });
+    expect(evaluated).toMatchObject({ gateState: 'passed', approvalTaskId: 'stable-approval' });
+
+    let merged = false;
+    const dependencies = {
+      loadPullRequest: async () => ({
+        ...pullRequest,
+        merged,
+        mergeCommitSha: merged ? 'd'.repeat(40) : null,
+      }),
+      loadOwnerDecisionRecords: async () => merged
+        ? [approval, duplicate, consumedApproval()]
+        : [approval, duplicate],
+      mergePullRequest: vi.fn(async () => {
+        const deduplicated = merged;
+        merged = true;
+        return { merged: true as const, deduplicated, mergeCommitSha: 'd'.repeat(40) };
+      }),
+    };
+    const first = await requestControlCenterMerge(
+      { pullRequestUrl: pullRequest.pullRequestUrl, expectedSha: currentSha },
+      dependencies,
+    );
+    const second = await requestControlCenterMerge(
+      { pullRequestUrl: pullRequest.pullRequestUrl, expectedSha: currentSha },
+      dependencies,
+    );
+    expect(first.deduplicated).toBe(false);
+    expect(second.deduplicated).toBe(true);
+    expect(dependencies.mergePullRequest).toHaveBeenCalledTimes(1);
+    expect(second.gate.mergeRequestId).toBe(first.gate.mergeRequestId);
+  });
+
+  it('returns auditable SHAs and ignores approvals for other PRs or repositories', async () => {
+    const { evaluateControlCenterMergeGate } = await import('../owner-merge-gate');
+    const unrelated = evaluateControlCenterMergeGate({
+      pullRequest,
+      expectedSha: currentSha,
+      records: [
+        ownerGate({ status: 'approved', target: 'ASI-integration/asi-landing#999' }),
+        ownerGate({ status: 'approved', target: 'another/repository#123', taskId: 'other-repo' }),
+      ],
+    });
+    expect(unrelated).toMatchObject({
+      gateState: 'pending',
+      mergeState: 'blocked',
+      blocker: {
+        code: 'owner_gate_pending',
+        repository: 'ASI-integration/asi-landing',
+        pullRequestNumber: 123,
+        expectedSha: currentSha,
+        currentSha,
+        approvedSha: null,
+      },
+    });
   });
 });

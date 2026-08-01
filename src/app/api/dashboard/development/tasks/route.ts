@@ -59,6 +59,7 @@ export async function POST(request: Request) {
       task: result.snapshot.task,
       result: result.snapshot.result,
       pendingGates: result.snapshot.pendingGates,
+      mergeGate: result.snapshot.mergeGate,
     });
   } catch (error) {
     if (error instanceof DevelopmentConsoleError) {
