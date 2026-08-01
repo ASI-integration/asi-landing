@@ -6,12 +6,15 @@
 
 - UI: `/dashboard/development`
 - APIs:
+  - `GET /api/dashboard/development/readiness`
   - `GET/POST /api/dashboard/development/tasks`
   - `GET /api/dashboard/development/tasks/[taskId]`
   - `POST /api/dashboard/development/tasks/[taskId]/decisions`
   - `POST /api/dashboard/development/tasks/[taskId]/merge`
 
 ## Required deployment configuration
+
+### Control-plane/web host
 
 Set this server-only env name (comma-separated emails):
 
@@ -23,7 +26,26 @@ Also required for bridge operations (isolated Runtime Bridge Supabase project �
 - `ASI_RUNTIME_BRIDGE_SUPABASE_URL`
 - `ASI_RUNTIME_BRIDGE_SUPABASE_SERVICE_ROLE_KEY`
 
-Runner baseline recovery also requires `ASI_RUNTIME_BRIDGE_CHECKOUTS_JSON`: a JSON array with exactly two Runtime checkout identities and absolute paths:
+All three Bridge storage variables must be present and well-formed. Missing Bridge storage configuration returns a safe Russian `503` (`Runtime Bridge не настроен.`) without URLs, keys, or stack traces.
+
+The control-plane/web host validates each Bridge role only at its own authenticated route:
+
+- `ASI_RUNTIME_BRIDGE_CHAT_TOKEN` for Chat task operations;
+- `ASI_RUNTIME_BRIDGE_OWNER_TOKEN` for owner-decision operations;
+- `ASI_RUNTIME_BRIDGE_RUNNER_TOKEN` for runner operations.
+
+These control-plane values must each be at least 32 characters and must be distinct. They stay server-only and are never returned to the browser.
+
+Server-side PR merge also requires `GITHUB_TOKEN` with the narrow repository permission needed to merge pull requests. The value stays server-only and is never returned to the browser. Without it, the merge endpoint fails closed with a structured `merge_provider_not_configured` blocker.
+
+### Runtime runner host
+
+The Runtime runner host requires only:
+
+- `ASI_RUNTIME_BRIDGE_URL`;
+- `ASI_RUNTIME_BRIDGE_RUNNER_TOKEN`, at least 32 characters;
+- `ASI_RUNTIME_BRIDGE_EXECUTOR_JSON`, a JSON command array for the existing executor;
+- `ASI_RUNTIME_BRIDGE_CHECKOUTS_JSON`, a JSON array with exactly two Runtime checkout identities and absolute paths:
 
 ```json
 [{"id":"runtime-primary","path":"/srv/asi-runtime/primary"},{"id":"runtime-secondary","path":"/srv/asi-runtime/secondary"}]
@@ -31,9 +53,9 @@ Runner baseline recovery also requires `ASI_RUNTIME_BRIDGE_CHECKOUTS_JSON`: a JS
 
 Paths stay runner-only and are never returned to the browser. Each checkout must be clean and have `origin` bound to the allowlisted repository.
 
-All three Bridge variables must be present and well-formed. Missing Bridge storage configuration returns a safe Russian `503` (`Runtime Bridge не настроен.`) without URLs, keys, or stack traces.
+`ASI_RUNTIME_BRIDGE_RUNNER_ID` is optional. The runner hashes it (or the host name when omitted) into a stable opaque identity; the original value is never published. When the command starts with an interpreter such as `node`, the command must include a readable script entrypoint. Readiness validates both the interpreter and that file without executing the configured executor.
 
-Server-side PR merge also requires `GITHUB_TOKEN` with the narrow repository permission needed to merge pull requests. The value stays server-only and is never returned to the browser. Without it, the merge endpoint fails closed with a structured `merge_provider_not_configured` blocker.
+Do not place `ASI_RUNTIME_BRIDGE_CHAT_TOKEN` or `ASI_RUNTIME_BRIDGE_OWNER_TOKEN` on the runner host. Runner readiness does not read, compare, or require them; only `ASI_RUNTIME_BRIDGE_RUNNER_TOKEN` authenticates runner heartbeats, claims, lease renewals, and results.
 
 Primary application auth/CRM/accounts continue to use `SUPABASE_URL` (or `NEXT_PUBLIC_SUPABASE_URL`) and `SUPABASE_SERVICE_ROLE_KEY`. Do not point those at the Bridge project and do not put Bridge credentials behind `NEXT_PUBLIC_*`.
 
@@ -51,6 +73,19 @@ Do not set owner emails or bridge tokens/keys via `NEXT_PUBLIC_*`.
 5. In production, empty `ASI_DEVELOPMENT_OWNER_EMAILS` means deny-by-default for everyone.
 
 ## Create a task
+
+Before submission, the page calls the owner-only readiness endpoint. The response contract is `asi.owner-console.readiness.v1` and contains only:
+
+- overall `ready`, `blocked`, or `degraded` state;
+- `canLaunch`;
+- a check time and safe runner evidence (`identity`, `checkedAt`, `expiresAt`);
+- safe states, Russian messages, stable reason codes, and `blockingLaunch` for Bridge, Runtime checkouts, current `main`, executor, and GitHub.
+
+The bounded check reads no secret value into its response or logs. Bridge storage is probed with a read-only limited query. The actual Runtime runner process performs checkout, baseline-recovery and executor-entrypoint probes on its own host and publishes only a bounded safe record through the authenticated runner operation on the existing Bridge endpoint. The control plane accepts one stable runner identity while evidence is fresh. Missing or expired evidence fails closed.
+
+Runner checkout validation uses read-only Git commands and `ls-remote`; it never fetches, checks out, resets, or cleans. Recoverable baseline drift is `degraded` and remains launchable. A missing, non-Git, dirty or wrong-origin checkout is a hard blocker. Missing or unauthenticated GitHub integration is visible as a blocker but does not disable task submission because execution itself can still start. The form stays disabled while readiness is loading or failed, and `POST /api/dashboard/development/tasks` repeats the hard-blocker check so a direct request cannot bypass it.
+
+**Проверить готовность** repeats the same non-mutating check. Retry is semantically idempotent; only the check time may change.
 
 1. Open `/dashboard/development`.
 2. Choose allowlisted repository (`ASI-integration/asi-landing` in v1).
@@ -99,6 +134,26 @@ Successful server authorization and merge return the canonical marker `CONTROL_C
    - rejected → terminal safe result.
 
 No force-release, lease mutation, durable-task deletion, or fencing bypass is exposed.
+
+## Full autonomous acceptance
+
+The explicitly gated command is:
+
+```bash
+npm run acceptance:owner-console-runtime
+```
+
+It requires these runtime inputs without printing their values:
+
+- `ASI_OWNER_CONSOLE_ACCEPTANCE_BASE_URL` — the deployed Console origin;
+- `ASI_OWNER_CONSOLE_ACCEPTANCE_SESSION_COOKIE` — an active owner session cookie;
+- `ASI_OWNER_CONSOLE_ACCEPTANCE_CONFIRM=CREATE_ONE_DRAFT_PR_ONLY`;
+- optional `ASI_OWNER_CONSOLE_ACCEPTANCE_TIMEOUT_MS` (1–30 minutes);
+- `GITHUB_TOKEN` when the draft PR cannot be read anonymously.
+
+The command first requires full `ready` state, then submits one fixed natural-language prompt through the Dashboard. That task must add exactly one file at `docs/operations/runtime-acceptance/<runId>.md` with contract `asi.owner-console.runtime-acceptance-proof.v1`, the exact run ID and marker `OWNER_CONSOLE_RUNTIME_ACCEPTANCE_PROOF`. It advances through the durable Bridge, runs the existing executor contour, and must return a commit plus a real open draft PR into `main`. The command queries the PR changed-files API, rejects extra/renamed/modified/deleted/wrong-path files, and reads the proof content at the exact returned head SHA. It returns `OWNER_CONSOLE_RUNTIME_FULL_AUTONOMOUS_E2E_READY` only after all checks pass and never calls merge or deploy endpoints.
+
+This acceptance has one allowed yellow side effect: the explicitly requested draft PR. Run it only after production configuration is complete and reviewed. The implementation task that introduced the command does not run it.
 
 ## Secrets that must never reach the browser
 

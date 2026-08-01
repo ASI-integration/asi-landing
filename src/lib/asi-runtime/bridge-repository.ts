@@ -1,6 +1,12 @@
 import 'server-only';
 import { runtimeBridgeRequestHash } from './bridge-hash';
 import {
+  getRuntimeRunnerReadiness,
+  publishRuntimeRunnerReadiness,
+  RuntimeRunnerReadinessError,
+  type RuntimeRunnerReadinessStatus,
+} from './bridge-runner-readiness';
+import {
   isRuntimeBridgeSupabaseConfigured,
   runtimeBridgeSupabase,
 } from './bridge-supabase';
@@ -68,6 +74,20 @@ export type RuntimeBridgeTaskRecord = RuntimeBridgeTaskView & {
   requestHash: string;
   request: RuntimeBridgeTaskRequest;
 };
+
+/** Bounded, non-mutating storage probe used by the owner readiness check. */
+export async function probeRuntimeBridgeStorage(timeoutMs = 5_000): Promise<void> {
+  try {
+    const { error } = await bridgeDb()
+      .from('asi_runtime_bridge_tasks')
+      .select('id', { head: true })
+      .limit(1)
+      .abortSignal(AbortSignal.timeout(timeoutMs));
+    if (error) throw error;
+  } catch {
+    throw new RuntimeBridgeError('runtime_bridge_storage_unreachable', 503);
+  }
+}
 
 function taskRecord(row: Row): RuntimeBridgeTaskRecord {
   return {
@@ -195,6 +215,16 @@ export async function submitRuntimeBridgeOwnerDecision(
 }
 
 export async function runRuntimeBridgeRunnerOperation(clientId: string, request: RuntimeBridgeRunnerInput): Promise<unknown> {
+  if (request.operation === 'runner_publish_readiness') {
+    try {
+      return publishRuntimeRunnerReadiness(clientId, request.input);
+    } catch (error) {
+      if (error instanceof RuntimeRunnerReadinessError) {
+        throw new RuntimeBridgeError(error.code, 409);
+      }
+      throw error;
+    }
+  }
   let rpc: string;
   let args: Record<string, unknown>;
   switch (request.operation) {
@@ -244,4 +274,11 @@ export async function runRuntimeBridgeRunnerOperation(clientId: string, request:
   const { data, error } = await bridgeDb().rpc(rpc, args);
   if (error) rpcError(error);
   return data;
+}
+
+export function getPublishedRuntimeRunnerReadiness(
+  clientId: string,
+  now = Date.now(),
+): RuntimeRunnerReadinessStatus {
+  return getRuntimeRunnerReadiness(clientId, now);
 }

@@ -17,23 +17,29 @@ export class RuntimeBridgeSupabaseConfigError extends Error {
 
 function normalizeSupabaseUrl(url: string): string {
   const parsed = new URL(url);
+  const loopback = ['localhost', '127.0.0.1', '[::1]'].includes(parsed.hostname);
+  if (parsed.protocol !== 'https:' && !(loopback && parsed.protocol === 'http:')) {
+    throw new Error('invalid_bridge_url');
+  }
+  if (parsed.username || parsed.password || parsed.search || parsed.hash) {
+    throw new Error('invalid_bridge_url');
+  }
   if (parsed.pathname.replace(/\/+$/, '') === '/rest/v1') {
     parsed.pathname = '/';
   }
-  parsed.search = '';
-  parsed.hash = '';
   return parsed.toString().replace(/\/$/, '');
 }
 
-export function readRuntimeBridgeSupabaseConfig():
+export function readRuntimeBridgeSupabaseConfig(
+  env: Readonly<Record<string, string | undefined>> = process.env,
+):
   | { ok: true; url: string; key: string }
   | { ok: false } {
-  const urlRaw = process.env[BRIDGE_URL_ENV]?.trim() ?? '';
-  const key = process.env[BRIDGE_KEY_ENV]?.trim() ?? '';
+  const urlRaw = env[BRIDGE_URL_ENV]?.trim() ?? '';
+  const key = env[BRIDGE_KEY_ENV]?.trim() ?? '';
   if (!urlRaw || !key) return { ok: false };
   try {
     const url = normalizeSupabaseUrl(urlRaw);
-    if (!/^https?:\/\//i.test(url)) return { ok: false };
     return { ok: true, url, key };
   } catch {
     return { ok: false };

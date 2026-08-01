@@ -36,6 +36,7 @@ export async function resolveAllowlistedBaselineSha(
         'X-GitHub-Api-Version': '2022-11-28',
       },
       cache: 'no-store',
+      signal: AbortSignal.timeout(5_000),
     });
   } catch {
     throw new BaselineShaError('baseline_sha_unavailable');

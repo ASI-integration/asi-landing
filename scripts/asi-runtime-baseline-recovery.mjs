@@ -1,4 +1,5 @@
 import { execFile } from 'node:child_process';
+import { stat } from 'node:fs/promises';
 import path from 'node:path';
 import { promisify } from 'node:util';
 
@@ -97,18 +98,37 @@ async function git(checkout, args, options = {}) {
 }
 
 async function inspectCheckout(checkout, repository, validateRemote) {
+  let checkoutStat;
+  try {
+    checkoutStat = await stat(checkout.path);
+  } catch {
+    throw new RuntimeBaselineRecoveryError('runtime_checkout_missing', checkout.id);
+  }
+  if (!checkoutStat.isDirectory()) {
+    throw new RuntimeBaselineRecoveryError('runtime_checkout_missing', checkout.id);
+  }
+  const insideWorkTree = await git(checkout, ['rev-parse', '--is-inside-work-tree'], {
+    code: 'runtime_checkout_not_git',
+    timeout: 5_000,
+  });
+  if (insideWorkTree !== 'true') {
+    throw new RuntimeBaselineRecoveryError('runtime_checkout_not_git', checkout.id);
+  }
   const status = await git(checkout, ['status', '--porcelain=v1', '--untracked-files=all'], {
     code: 'runtime_checkout_status_failed',
+    timeout: 5_000,
   });
   if (status) throw new RuntimeBaselineRecoveryError('runtime_checkout_dirty', checkout.id);
   const remote = await git(checkout, ['config', '--get', 'remote.origin.url'], {
     code: 'runtime_checkout_remote_missing',
+    timeout: 5_000,
   });
   if (!validateRemote(remote, repository)) {
     throw new RuntimeBaselineRecoveryError('runtime_checkout_remote_mismatch', checkout.id);
   }
   const beforeSha = await git(checkout, ['rev-parse', 'HEAD'], {
     code: 'runtime_checkout_head_invalid',
+    timeout: 5_000,
   });
   if (!SHA.test(beforeSha)) {
     throw new RuntimeBaselineRecoveryError('runtime_checkout_head_invalid', checkout.id);
@@ -124,6 +144,57 @@ async function inspectCheckout(checkout, repository, validateRemote) {
     }
   }
   return { ...checkout, beforeSha, beforeRef };
+}
+
+/**
+ * Read-only readiness probe for the two Runtime checkouts. It never fetches,
+ * checks out, resets, or writes refs. Remote branch resolution uses ls-remote.
+ */
+export async function inspectRuntimeCheckoutReadiness({
+  checkouts,
+  repository,
+  branch = 'main',
+  baselineSha,
+  validateRemote = isExpectedRuntimeRemote,
+}) {
+  if (!Array.isArray(checkouts) || checkouts.length !== 2
+    || repository !== 'ASI-integration/asi-landing'
+    || branch !== 'main'
+    || (baselineSha !== undefined && !SHA.test(String(baselineSha)))) {
+    throw new RuntimeBaselineRecoveryError('runtime_baseline_request_invalid');
+  }
+
+  const inspected = [];
+  for (const checkout of checkouts) {
+    inspected.push(await inspectCheckout(checkout, repository, validateRemote));
+  }
+
+  let observedBaselineSha = baselineSha;
+  for (const checkout of inspected) {
+    const remoteHead = await git(checkout, [
+      'ls-remote', '--exit-code', 'origin', `refs/heads/${branch}`,
+    ], { code: 'runtime_baseline_remote_unavailable', timeout: 10_000 });
+    const remoteSha = remoteHead.split(/\s+/, 1)[0]?.toLowerCase() ?? '';
+    if (!SHA.test(remoteSha)) {
+      throw new RuntimeBaselineRecoveryError('runtime_baseline_remote_unavailable', checkout.id);
+    }
+    observedBaselineSha ??= remoteSha;
+    if (remoteSha !== observedBaselineSha) {
+      throw new RuntimeBaselineRecoveryError('runtime_baseline_remote_mismatch', checkout.id);
+    }
+  }
+
+  const driftedCheckoutIds = inspected
+    .filter((checkout) => checkout.beforeSha !== observedBaselineSha)
+    .map((checkout) => checkout.id);
+  return {
+    state: driftedCheckoutIds.length ? 'degraded' : 'ready',
+    reasonCode: driftedCheckoutIds.length
+      ? 'runtime_checkout_recoverable_drift'
+      : 'runtime_checkouts_ready',
+    baselineSha: observedBaselineSha,
+    driftedCheckoutIds,
+  };
 }
 
 async function restoreCheckout(checkout) {
