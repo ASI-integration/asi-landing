@@ -3,8 +3,6 @@
 import { type FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { readResponseJson } from '@/lib/safeResponseJson';
-import { safeAllowlistedPullRequestUrl } from '@/lib/development/pr-url';
-import { DEVELOPMENT_STATUS_LABELS, developmentStageText } from '@/lib/development/status-labels';
 import { useDevelopmentTaskPolling } from '@/lib/development/use-task-polling';
 import {
   DEVELOPMENT_REPOSITORY_STORAGE_KEY,
@@ -14,7 +12,6 @@ import type {
   RuntimeBridgeOwnerGateView,
   RuntimeBridgeSafeResult,
   RuntimeBridgeTaskStatus,
-  RuntimeBridgeTaskView,
 } from '@/lib/asi-runtime/bridge-types';
 import type { ControlCenterMergeGateView } from '@/lib/development/owner-merge-gate';
 import type {
@@ -26,10 +23,21 @@ import {
   OverallReadinessBadge,
   ReadinessRefreshIndicator,
 } from '@/lib/development/readiness-status-ui';
+import { DevelopmentTaskCard } from '@/lib/development/task-status-ui';
 
 type RepositoryOption = { id: string; label: string; fullName: string };
 
-type TaskPayload = RuntimeBridgeTaskView & { repository: string };
+type TaskPayload = {
+  taskId: string;
+  chatgptTaskId: string;
+  conversationId: string;
+  status: RuntimeBridgeTaskStatus;
+  attemptCount: number;
+  createdAt: string;
+  updatedAt: string;
+  repository: string;
+  title: string;
+};
 
 type SnapshotResponse = {
   ok: boolean;
@@ -95,7 +103,13 @@ export default function DevelopmentConsoleClient() {
   const activeTaskId = task?.taskId ?? taskIdFromUrl;
 
   const applySnapshot = useCallback((payload: SnapshotResponse) => {
-    if (payload.task) setTask(payload.task);
+    if (payload.task) {
+      const title = typeof payload.task.title === 'string' ? payload.task.title.trim() : '';
+      setTask({
+        ...payload.task,
+        title: title || 'Задача разработки',
+      });
+    }
     setResult(payload.result ?? null);
     setPendingGates(Array.isArray(payload.pendingGates) ? payload.pendingGates : []);
     setMergeGate(payload.mergeGate ?? payload.gate ?? null);
@@ -468,43 +482,21 @@ export default function DevelopmentConsoleClient() {
       ) : null}
 
       {task ? (
-        <section className="space-y-4 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-          <h2 className="text-lg font-semibold text-slate-900">Статус задачи</h2>
-          <dl className="grid gap-3 text-sm sm:grid-cols-2">
-            <div>
-              <dt className="text-slate-500">taskId</dt>
-              <dd className="mt-0.5 break-all font-mono text-slate-900">{task.taskId}</dd>
-            </div>
-            <div>
-              <dt className="text-slate-500">Репозиторий</dt>
-              <dd className="mt-0.5 text-slate-900">{task.repository}</dd>
-            </div>
-            <div>
-              <dt className="text-slate-500">Статус</dt>
-              <dd className="mt-0.5 font-medium text-slate-900">
-                {DEVELOPMENT_STATUS_LABELS[task.status] ?? task.status}
-              </dd>
-            </div>
-            <div>
-              <dt className="text-slate-500">Попытки</dt>
-              <dd className="mt-0.5 text-slate-900">{task.attemptCount}</dd>
-            </div>
-            <div>
-              <dt className="text-slate-500">Создано</dt>
-              <dd className="mt-0.5 text-slate-900">{formatDate(task.createdAt)}</dd>
-            </div>
-            <div>
-              <dt className="text-slate-500">Обновлено</dt>
-              <dd className="mt-0.5 text-slate-900">{formatDate(task.updatedAt)}</dd>
-            </div>
-          </dl>
-          <p className="rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-700">
-            {developmentStageText(task.status)}
-          </p>
-        </section>
+        <DevelopmentTaskCard
+          task={{
+            title: task.title,
+            status: task.status,
+            updatedAt: task.updatedAt,
+            taskId: task.taskId,
+            repository: task.repository,
+            attemptCount: task.attemptCount,
+            createdAt: task.createdAt,
+            chatgptTaskId: task.chatgptTaskId,
+            conversationId: task.conversationId,
+            result,
+          }}
+        />
       ) : null}
-
-      {result ? <SafeResultPanel result={result} /> : null}
 
       {mergeGate ? (
         <MergeGatePanel
@@ -761,113 +753,6 @@ function MergeGatePanel({
   );
 }
 
-function SafeResultPanel({ result }: { result: RuntimeBridgeSafeResult }) {
-  return (
-    <section className="space-y-4 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-      <h2 className="text-lg font-semibold text-slate-900">Безопасный итог</h2>
-
-      <ResultBlock title="Итог">
-        <p className="text-sm text-slate-800 whitespace-pre-wrap">{result.summary}</p>
-        <p className="mt-2 text-xs uppercase tracking-wide text-slate-500">{result.status}</p>
-      </ResultBlock>
-
-      <ResultBlock title="Изменённые файлы">
-        {result.changedFiles.length === 0 ? (
-          <p className="text-sm text-slate-500">Нет</p>
-        ) : (
-          <ul className="list-disc space-y-1 pl-5 text-sm text-slate-800">
-            {result.changedFiles.map((file) => (
-              <li key={file} className="break-all font-mono text-xs sm:text-sm">
-                {file}
-              </li>
-            ))}
-          </ul>
-        )}
-      </ResultBlock>
-
-      <ResultBlock title="Проверки">
-        {result.checks.length === 0 ? (
-          <p className="text-sm text-slate-500">Нет</p>
-        ) : (
-          <ul className="space-y-2 text-sm">
-            {result.checks.map((check, index) => (
-              <li key={`${check.name}-${index}`} className="rounded-md bg-slate-50 px-3 py-2">
-                <span className="font-medium text-slate-900">{check.name}</span>
-                <span className="ml-2 text-slate-600">{check.status}</span>
-                {check.detail ? <p className="mt-1 text-slate-600">{check.detail}</p> : null}
-              </li>
-            ))}
-          </ul>
-        )}
-      </ResultBlock>
-
-      <ResultBlock title="Артефакты">
-        {result.artifacts.length === 0 ? (
-          <p className="text-sm text-slate-500">Нет</p>
-        ) : (
-          <ul className="space-y-3">
-            {result.artifacts.map((artifact, index) => (
-              <li key={`${artifact.type}-${index}`}>
-                <ArtifactItem artifact={artifact} />
-              </li>
-            ))}
-          </ul>
-        )}
-      </ResultBlock>
-
-      <ResultBlock title="Блокеры">
-        {result.blockers.length === 0 ? (
-          <p className="text-sm text-slate-500">Нет</p>
-        ) : (
-          <ul className="list-disc space-y-1 pl-5 text-sm text-slate-800">
-            {result.blockers.map((blocker) => (
-              <li key={blocker}>{blocker}</li>
-            ))}
-          </ul>
-        )}
-      </ResultBlock>
-    </section>
-  );
-}
-
-function ArtifactItem({
-  artifact,
-}: {
-  artifact: RuntimeBridgeSafeResult['artifacts'][number];
-}) {
-  if (artifact.type === 'pull_request') {
-    const safeUrl = safeAllowlistedPullRequestUrl(artifact.value);
-    if (!safeUrl) {
-      return <p className="text-sm text-slate-500">PR URL недоступен для безопасного открытия.</p>;
-    }
-    return (
-      <a
-        href={safeUrl}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="inline-flex rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-medium text-white hover:bg-slate-800"
-      >
-        Открыть PR
-      </a>
-    );
-  }
-
-  if (artifact.type === 'commit') {
-    return (
-      <p className="text-sm text-slate-800">
-        Commit:{' '}
-        <span className="font-mono text-xs sm:text-sm break-all">{artifact.value}</span>
-      </p>
-    );
-  }
-
-  return (
-    <p className="text-sm text-slate-800">
-      Report: <span className="font-mono text-xs sm:text-sm break-all">{artifact.value}</span>
-    </p>
-  );
-}
-
 function OwnerGatePanel({
   gate,
   busy,
@@ -932,15 +817,6 @@ function GateField({ label, value }: { label: string; value: string }) {
     <div>
       <dt className="text-slate-500">{label}</dt>
       <dd className="mt-0.5 break-words text-slate-900">{value}</dd>
-    </div>
-  );
-}
-
-function ResultBlock({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <div>
-      <h3 className="text-sm font-semibold text-slate-900">{title}</h3>
-      <div className="mt-2">{children}</div>
     </div>
   );
 }

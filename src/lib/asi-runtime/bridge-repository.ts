@@ -132,18 +132,36 @@ export async function findRuntimeBridgeTaskByIdempotencyKey(
   return taskRecord(data as Row);
 }
 
-export async function getRuntimeBridgeTask(clientId: string, taskId: string): Promise<RuntimeBridgeTaskView> {
+export async function getRuntimeBridgeTaskRecord(
+  clientId: string,
+  taskId: string,
+): Promise<RuntimeBridgeTaskRecord> {
   const expired = await bridgeDb().rpc('expire_asi_runtime_bridge_owner_gates', { p_client_id: clientId });
   if (expired.error) rpcError(expired.error);
   const { data, error } = await bridgeDb()
     .from('asi_runtime_bridge_tasks')
-    .select('id,chatgpt_task_id,conversation_id,status,attempt_count,created_at,updated_at')
+    .select(
+      'id,chatgpt_task_id,conversation_id,status,attempt_count,created_at,updated_at,idempotency_key,request_hash,request',
+    )
     .eq('client_id', clientId)
     .eq('id', taskId)
     .maybeSingle();
   if (error) rpcError(error);
   if (!data) throw new RuntimeBridgeError('task_not_found', 404);
-  return taskView(data as Row);
+  return taskRecord(data as Row);
+}
+
+export async function getRuntimeBridgeTask(clientId: string, taskId: string): Promise<RuntimeBridgeTaskView> {
+  const record = await getRuntimeBridgeTaskRecord(clientId, taskId);
+  return {
+    taskId: record.taskId,
+    chatgptTaskId: record.chatgptTaskId,
+    conversationId: record.conversationId,
+    status: record.status,
+    attemptCount: record.attemptCount,
+    createdAt: record.createdAt,
+    updatedAt: record.updatedAt,
+  };
 }
 
 export async function getRuntimeBridgeOwnerGate(

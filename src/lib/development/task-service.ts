@@ -5,6 +5,7 @@ import {
   getRuntimeBridgeOwnerGate,
   getRuntimeBridgeResult,
   getRuntimeBridgeTask,
+  getRuntimeBridgeTaskRecord,
   listRuntimeBridgeOwnerGates,
   RuntimeBridgeError,
   submitRuntimeBridgeOwnerDecision,
@@ -177,12 +178,22 @@ export function deriveDevelopmentTaskPackage(input: {
   };
 }
 
+export type DevelopmentConsoleTaskView = RuntimeBridgeTaskView & {
+  repository: string;
+  title: string;
+};
+
 export type DevelopmentTaskSnapshot = {
-  task: RuntimeBridgeTaskView & { repository: string };
+  task: DevelopmentConsoleTaskView;
   result: RuntimeBridgeSafeResult | null;
   pendingGates: RuntimeBridgeOwnerGateView[];
   mergeGate: ControlCenterMergeGateView | null;
 };
+
+function developmentTaskTitle(request: RuntimeBridgeTaskRequest | null | undefined): string {
+  const title = typeof request?.title === 'string' ? request.title.trim() : '';
+  return title || 'Задача разработки';
+}
 
 export class DevelopmentConsoleError extends Error {
   constructor(
@@ -327,28 +338,35 @@ export async function buildDevelopmentTaskSnapshot(
   }
 
   try {
-    const task = await getRuntimeBridgeTask(clientId, taskId);
-    assertOwnerTaskScope(task, ownerUserId);
+    const record = await getRuntimeBridgeTaskRecord(clientId, taskId);
+    assertOwnerTaskScope(record, ownerUserId);
 
     let result: RuntimeBridgeSafeResult | null = null;
     let pendingGates: RuntimeBridgeOwnerGateView[] = [];
     let mergeGate: ControlCenterMergeGateView | null = null;
 
-    if (task.status === 'completed' || task.status === 'failed') {
+    if (record.status === 'completed' || record.status === 'failed') {
       const payload = await getRuntimeBridgeResult(clientId, taskId);
       result = payload.result;
       mergeGate = await resolveDevelopmentMergeGate(result);
     }
 
-    if (task.status === 'awaiting_owner') {
+    if (record.status === 'awaiting_owner') {
       const gates = await listRuntimeBridgeOwnerGates(clientId);
-      pendingGates = gates.filter((gate) => gate.taskId === task.taskId && gate.status === 'pending');
+      pendingGates = gates.filter((gate) => gate.taskId === record.taskId && gate.status === 'pending');
     }
 
     return {
       task: {
-        ...task,
+        taskId: record.taskId,
+        chatgptTaskId: record.chatgptTaskId,
+        conversationId: record.conversationId,
+        status: record.status,
+        attemptCount: record.attemptCount,
+        createdAt: record.createdAt,
+        updatedAt: record.updatedAt,
         repository: 'ASI-integration/asi-landing',
+        title: developmentTaskTitle(record.request),
       },
       result,
       pendingGates,
