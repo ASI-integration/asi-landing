@@ -15,6 +15,7 @@ const getRuntimeBridgeClientId = vi.fn(() => 'chatgpt-owner');
 const submitRuntimeBridgeTask = vi.fn();
 const findRuntimeBridgeTaskByIdempotencyKey = vi.fn();
 const getRuntimeBridgeTask = vi.fn();
+const getRuntimeBridgeTaskRecord = vi.fn();
 const getRuntimeBridgeResult = vi.fn();
 const listRuntimeBridgeOwnerGates = vi.fn();
 const getRuntimeBridgeOwnerGate = vi.fn();
@@ -42,6 +43,7 @@ vi.mock('@/lib/asi-runtime/bridge-repository', () => ({
   submitRuntimeBridgeTask,
   findRuntimeBridgeTaskByIdempotencyKey,
   getRuntimeBridgeTask,
+  getRuntimeBridgeTaskRecord,
   getRuntimeBridgeResult,
   listRuntimeBridgeOwnerGates,
   getRuntimeBridgeOwnerGate,
@@ -164,6 +166,12 @@ function createCompatibleBridge() {
     return task;
   });
 
+  getRuntimeBridgeTaskRecord.mockImplementation(async (_clientId: string, taskId: string) => {
+    const task = tasks.get(taskId);
+    if (!task) throw new RuntimeBridgeError('task_not_found', 404);
+    return task;
+  });
+
   getRuntimeBridgeResult.mockImplementation(async (_clientId: string, taskId: string) => {
     const task = tasks.get(taskId);
     if (!task) throw new RuntimeBridgeError('task_not_found', 404);
@@ -271,6 +279,7 @@ beforeEach(() => {
   submitRuntimeBridgeTask.mockReset();
   findRuntimeBridgeTaskByIdempotencyKey.mockReset();
   getRuntimeBridgeTask.mockReset();
+  getRuntimeBridgeTaskRecord.mockReset();
   getRuntimeBridgeResult.mockReset();
   listRuntimeBridgeOwnerGates.mockReset();
   getRuntimeBridgeOwnerGate.mockReset();
@@ -729,6 +738,7 @@ describe('buildDevelopmentTaskSnapshot owner scope', () => {
     });
     const own = await buildDevelopmentTaskSnapshot(taskId, ownerA);
     expect(own.task.taskId).toBe(taskId);
+    expect(own.task.title).toBe('Owned by A');
     expect(JSON.stringify(own)).not.toMatch(/ASI_DEVELOPMENT_OWNER_EMAILS|SERVICE_ROLE|TOKEN/i);
   });
 });
