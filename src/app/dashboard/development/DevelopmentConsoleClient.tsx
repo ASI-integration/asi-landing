@@ -21,6 +21,11 @@ import type {
   DevelopmentReadinessComponentId,
   DevelopmentReadinessSnapshot,
 } from '@/lib/development/readiness-types';
+import {
+  ItemReadinessBadge,
+  OverallReadinessBadge,
+  ReadinessRefreshIndicator,
+} from '@/lib/development/readiness-status-ui';
 
 type RepositoryOption = { id: string; label: string; fullName: string };
 
@@ -116,7 +121,7 @@ export default function DevelopmentConsoleClient() {
   const loadReadiness = useCallback(async () => {
     setReadinessBusy(true);
     setReadinessError(null);
-    setReadiness(null);
+    // Keep the last successful snapshot visible while a refresh is in flight.
     try {
       const res = await fetch('/api/dashboard/development/readiness', {
         cache: 'no-store',
@@ -455,7 +460,7 @@ export default function DevelopmentConsoleClient() {
               ? 'Запуск…'
               : readinessBusy
                 ? 'Проверка готовности…'
-                : readiness?.canLaunch !== true
+                : readinessError || readiness?.canLaunch !== true
                 ? 'Запуск пока недоступен'
                 : 'Запустить задачу'}
           </button>
@@ -631,12 +636,6 @@ const READINESS_COMPONENT_LABELS: Record<DevelopmentReadinessComponentId, string
   github: 'GitHub',
 };
 
-const READINESS_STATE_LABELS = {
-  ready: 'Готово',
-  degraded: 'Требует внимания',
-  blocked: 'Есть блокер',
-} as const;
-
 function ReadinessPanel({
   readiness,
   busy,
@@ -655,6 +654,7 @@ function ReadinessPanel({
       : readiness
         ? 'Запуск возможен, но отдельные возможности требуют внимания.'
         : 'Выполняется безопасная проверка готовности.';
+  const showRefreshIndicator = busy && readiness !== null;
 
   return (
     <section
@@ -663,9 +663,13 @@ function ReadinessPanel({
     >
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h2 id="development-readiness-title" className="text-lg font-semibold text-slate-900">
-            Готовность к запуску
-          </h2>
+          <div className="flex flex-wrap items-center gap-3">
+            <h2 id="development-readiness-title" className="text-lg font-semibold text-slate-900">
+              Готовность к запуску
+            </h2>
+            {readiness ? <OverallReadinessBadge state={readiness.overallState} /> : null}
+            {showRefreshIndicator ? <ReadinessRefreshIndicator /> : null}
+          </div>
           <p className="mt-1 text-sm text-slate-600" aria-live="polite">
             {error ?? overallMessage}
           </p>
@@ -688,15 +692,7 @@ function ReadinessPanel({
                 <h3 className="text-sm font-medium text-slate-900">
                   {READINESS_COMPONENT_LABELS[id as DevelopmentReadinessComponentId]}
                 </h3>
-                <span className={`text-xs font-semibold ${
-                  item.state === 'ready'
-                    ? 'text-emerald-700'
-                    : item.state === 'degraded'
-                      ? 'text-amber-700'
-                      : 'text-red-700'
-                }`}>
-                  {READINESS_STATE_LABELS[item.state]}
-                </span>
+                <ItemReadinessBadge state={item.state} />
               </div>
               <p className="mt-2 text-sm text-slate-700">{item.message}</p>
               <p className="mt-1 break-all font-mono text-[11px] text-slate-500">{item.reasonCode}</p>

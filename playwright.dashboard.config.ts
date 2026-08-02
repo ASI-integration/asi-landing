@@ -37,7 +37,7 @@ export default defineConfig({
     },
     {
       name: 'development-readiness',
-      grep: /development readiness panel/,
+      grep: /development readiness/,
       use: { ...devices['Desktop Chrome'], ...browserUse },
     },
   ],
