@@ -250,9 +250,9 @@ test('development readiness panel fails closed while loading or errored and pres
   await page.getByRole('button', { name: 'Проверить готовность' }).click();
   await expect(page.getByText('runtime_checkout_recoverable_drift')).toBeVisible();
   await expect(page.getByText('github_provider_missing')).toBeVisible();
-  await expect(page.getByRole('img', { name: 'Статус компонента: Требует внимания' })).toBeVisible();
-  await expect(page.getByRole('img', { name: 'Статус компонента: Есть блокер' })).toBeVisible();
-  await expect(page.getByRole('img', { name: 'Общий статус системы: Есть блокер' })).toBeVisible();
+  await expect(page.getByRole('status', { name: 'Статус компонента: Требует внимания' })).toBeVisible();
+  await expect(page.getByRole('status', { name: 'Статус компонента: Есть блокер' })).toBeVisible();
+  await expect(page.getByRole('status', { name: 'Общий статус системы: Есть блокер' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Запустить задачу' })).toBeEnabled();
 
   readinessMode = 'hard-blocked';
@@ -353,19 +353,130 @@ test('development readiness status icons follow live ready, degraded and blocked
 
   await page.goto('/dashboard/development', { waitUntil: 'domcontentloaded' });
   await expect(page.getByText('Система готова', { exact: true })).toBeVisible();
-  await expect(page.getByRole('img', { name: 'Общий статус системы: Система готова' })).toBeVisible();
-  await expect(page.getByRole('img', { name: 'Статус компонента: Готово' }).first()).toBeVisible();
+  await expect(page.getByRole('status', { name: 'Общий статус системы: Система готова' })).toBeVisible();
+  await expect(page.getByRole('status', { name: 'Статус компонента: Готово' }).first()).toBeVisible();
 
   readinessMode = 'degraded';
   await page.getByRole('button', { name: 'Проверить готовность' }).click();
   await expect(page.getByText('github_provider_degraded')).toBeVisible();
   await expect(page.getByText('Система готова', { exact: true })).toHaveCount(0);
-  await expect(page.getByRole('img', { name: 'Общий статус системы: Требует внимания' })).toBeVisible();
-  await expect(page.getByRole('img', { name: 'Статус компонента: Требует внимания' })).toBeVisible();
+  await expect(page.getByRole('status', { name: 'Общий статус системы: Требует внимания' })).toBeVisible();
+  await expect(page.getByRole('status', { name: 'Статус компонента: Требует внимания' })).toBeVisible();
 
   readinessMode = 'blocked';
   await page.getByRole('button', { name: 'Проверить готовность' }).click();
   await expect(page.getByText('runtime_checkout_dirty')).toBeVisible();
-  await expect(page.getByRole('img', { name: 'Общий статус системы: Есть блокер' })).toBeVisible();
-  await expect(page.getByRole('img', { name: 'Статус компонента: Есть блокер' })).toBeVisible();
+  await expect(page.getByRole('status', { name: 'Общий статус системы: Есть блокер' })).toBeVisible();
+  await expect(page.getByRole('status', { name: 'Статус компонента: Есть блокер' })).toBeVisible();
+});
+
+test('development readiness keeps the previous snapshot visible during a delayed refresh and fails closed on refresh error', async ({ page }) => {
+  let readinessCalls = 0;
+  let readinessMode: 'ready' | 'pending-refresh' | 'refresh-error' = 'ready';
+  let releaseRefresh!: () => void;
+  let refreshGate = Promise.resolve();
+  const component = (
+    state: 'ready' | 'blocked' | 'degraded',
+    reasonCode: string,
+    message: string,
+    blockingLaunch: boolean,
+  ) => ({ state, reasonCode, message, blockingLaunch });
+  const readyComponents = {
+    bridge: component('ready', 'bridge_ready', 'Связь с Runtime Bridge готова.', false),
+    checkouts: component('ready', 'runtime_checkouts_ready', 'Оба рабочих каталога Runtime готовы.', false),
+    baseline: component('ready', 'baseline_ready', 'Текущая версия main определена.', false),
+    executor: component('ready', 'runtime_executor_ready', 'Исполнитель задач готов.', false),
+    github: component('ready', 'github_provider_ready', 'GitHub подключён и доступен.', false),
+  };
+
+  await page.route('**/api/auth/session', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        user: { id: 'browser-test-owner', email: 'owner@asi.invalid' },
+        subscription: { status: 'active' },
+        account: null,
+        isCrmOperator: false,
+        isDevelopmentOwner: true,
+      }),
+    });
+  });
+  await page.route('**/api/dashboard/**', async (route) => {
+    await route.fulfill({ status: 200, contentType: 'application/json', body: '{}' });
+  });
+  await page.route('**/api/dashboard/development/tasks', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        ok: true,
+        repositories: [{ id: 'asi-landing', label: 'ASI-integration/asi-landing', fullName: 'ASI-integration/asi-landing' }],
+      }),
+    });
+  });
+  await page.route('**/api/dashboard/development/readiness', async (route) => {
+    readinessCalls += 1;
+    if (readinessMode === 'pending-refresh') {
+      await refreshGate;
+      await route.fulfill({
+        status: 503,
+        contentType: 'application/json',
+        body: JSON.stringify({ ok: false, message: 'Не удалось проверить готовность.' }),
+      });
+      return;
+    }
+    if (readinessMode === 'refresh-error') {
+      await route.fulfill({
+        status: 503,
+        contentType: 'application/json',
+        body: JSON.stringify({ ok: false, message: 'Не удалось проверить готовность.' }),
+      });
+      return;
+    }
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        ok: true,
+        readiness: {
+          schemaVersion: 'asi.owner-console.readiness.v1',
+          overallState: 'ready',
+          canLaunch: true,
+          checkedAt: '2026-08-01T00:00:00.000Z',
+          runnerEvidence: {
+            identity: 'runner-1234567890abcdef12345678',
+            checkedAt: '2026-08-01T00:00:00.000Z',
+            expiresAt: '2026-08-01T00:01:00.000Z',
+          },
+          components: readyComponents,
+        },
+      }),
+    });
+  });
+
+  await page.goto('/dashboard/development', { waitUntil: 'domcontentloaded' });
+  await expect(page.getByRole('status', { name: 'Общий статус системы: Система готова' })).toBeVisible();
+  await expect(page.getByText('bridge_ready')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Запустить задачу' })).toBeEnabled();
+
+  refreshGate = new Promise<void>((resolve) => {
+    releaseRefresh = resolve;
+  });
+  readinessMode = 'pending-refresh';
+  await page.getByRole('button', { name: 'Проверить готовность' }).click();
+
+  await expect(page.getByLabel('Идёт повторная проверка готовности')).toBeVisible();
+  await expect(page.getByText('Обновление…')).toBeVisible();
+  await expect(page.getByRole('status', { name: 'Общий статус системы: Система готова' })).toBeVisible();
+  await expect(page.getByText('bridge_ready')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Проверка готовности…' })).toBeDisabled();
+
+  readinessMode = 'refresh-error';
+  releaseRefresh();
+  await expect(page.getByText('Не удалось проверить готовность.')).toBeVisible();
+  await expect(page.getByRole('status', { name: 'Общий статус системы: Система готова' })).toBeVisible();
+  await expect(page.getByText('bridge_ready')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Запуск пока недоступен' })).toBeDisabled();
+  expect(readinessCalls).toBeGreaterThanOrEqual(2);
 });

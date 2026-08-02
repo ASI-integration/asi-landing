@@ -460,7 +460,7 @@ export default function DevelopmentConsoleClient() {
               ? 'Запуск…'
               : readinessBusy
                 ? 'Проверка готовности…'
-                : readiness?.canLaunch !== true
+                : readinessError || readiness?.canLaunch !== true
                 ? 'Запуск пока недоступен'
                 : 'Запустить задачу'}
           </button>
