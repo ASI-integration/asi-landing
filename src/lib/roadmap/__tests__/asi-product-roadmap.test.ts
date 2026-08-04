@@ -91,9 +91,12 @@ describe('ASI product roadmap data integrity', () => {
     expect(byId['ch-live-core']?.status).toBe('in_progress');
     expect(byId['ch-live-core']?.priority).toBe(1);
     expect(byId['ch-live-core']?.criticalForPilot).toBe(true);
+    expect(byId['ch-live-core']?.currentState).toMatch(/production activation is still pending/i);
     expect(byId['ch-initial-incremental-sync']?.status).toBe('in_progress');
     expect(byId['ch-initial-incremental-sync']?.priority).toBe(1);
     expect(byId['ch-initial-incremental-sync']?.criticalForPilot).toBe(true);
+    expect(byId['ch-initial-incremental-sync']?.currentState).toMatch(/initial sync/i);
+    expect(byId['ch-initial-incremental-sync']?.currentState).toMatch(/incremental/i);
     expect(byId['ch-first-real-adapter']?.status).toBe('blocked');
     expect(byId['ch-first-real-adapter']?.priority).toBe(1);
     expect(byId['ch-outbound-publish']?.status).toBe('later');
@@ -163,7 +166,7 @@ describe('roadmap summary and filters', () => {
     ).toBe('later');
   });
 
-  it('returns nearest focus including Channel Manager Live Core and sync', () => {
+  it('returns nearest focus including Channel Manager sync follow-ups', () => {
     const focus = nearestFocusStages(ASI_PRODUCT_ROADMAP, 5);
     expect(focus.length).toBeGreaterThanOrEqual(3);
     expect(focus.length).toBeLessThanOrEqual(5);
@@ -176,7 +179,7 @@ describe('roadmap summary and filters', () => {
     }
   });
 
-  it('orders critical pilot path by priority and surfaces Live Core sync work', () => {
+  it('orders critical pilot path by priority and surfaces unfinished sync work', () => {
     const path = criticalPilotPathStages(ASI_PRODUCT_ROADMAP, 5);
     expect(path.length).toBeGreaterThan(0);
     expect(path.length).toBeLessThanOrEqual(5);

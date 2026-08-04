@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { supabase } from '@/lib/supabase';
 import { auditChannelImportAvailability } from './availability-overbooking-protection';
 import {
@@ -28,7 +28,7 @@ export const CHANNEL_MANAGER_ONBOARDING_STATUS_LABELS: Record<ChannelManagerOnbo
   connected_placeholder: 'Подготовка завершена — API ещё не активен',
   blocked: 'Подключение заблокировано',
 };
-export const CHANNEL_IMPORT_TYPES = ['full', 'objects', 'bookings', 'calendar', 'pricing', 'availability', 'manual_snapshot'] as const;
+export const CHANNEL_IMPORT_TYPES = ['full', 'objects', 'bookings', 'calendar', 'pricing', 'availability', 'manual_snapshot', 'initial_sync'] as const;
 export type ChannelImportType = (typeof CHANNEL_IMPORT_TYPES)[number];
 
 export type ChannelManagerConnection = {
@@ -461,7 +461,7 @@ export async function importChannelCalendar(connectionId: string, calendarRows: 
   return rows.length;
 }
 
-function validateSnapshot(snapshot: ManualChannelSnapshot): Required<ManualChannelSnapshot> {
+export function validateManualChannelSnapshot(snapshot: ManualChannelSnapshot): Required<ManualChannelSnapshot> {
   assertNoSecrets(snapshot);
   const size = Buffer.byteLength(JSON.stringify(snapshot), 'utf8');
   if (size > MAX_SNAPSHOT_BYTES) throw new Error('Снимок слишком большой. Максимальный размер — 1 МБ.');
@@ -471,6 +471,11 @@ function validateSnapshot(snapshot: ManualChannelSnapshot): Required<ManualChann
   };
   if (Object.values(normalized).some((rows) => rows.length > MAX_SNAPSHOT_ROWS)) throw new Error('В одном разделе снимка должно быть не более 500 строк.');
   return normalized;
+}
+
+/** @deprecated Prefer validateManualChannelSnapshot — kept for local call-site clarity. */
+function validateSnapshot(snapshot: ManualChannelSnapshot): Required<ManualChannelSnapshot> {
+  return validateManualChannelSnapshot(snapshot);
 }
 
 export async function registerManualChannelSnapshot(connectionId: string, snapshot: ManualChannelSnapshot, metadata?: Record<string, unknown>): Promise<{ run: ChannelImportRun; summary: Record<string, number>; conflicts: ChannelImportConflict[] }> {
@@ -501,6 +506,20 @@ export async function registerManualChannelSnapshot(connectionId: string, snapsh
       objects, bookings, calendarDays: calendar, prices, warnings: conflicts,
       safeSummary: `Импортировано: объектов ${objects}, броней ${bookings}, строк календаря ${calendar}, цен ${prices}.`,
     });
+    const { lastManualSnapshot: _omitFullSnapshot, ...safeConnectionMetadata } = connection.metadata;
+    await supabase.from('booking_channel_manager_connections').update({
+      metadata: {
+        ...safeConnectionMetadata,
+        liveCore: connection.metadata?.liveCore === true,
+        lastManualSnapshotReceipt: {
+          snapshotHash: createHash('sha256').update(JSON.stringify(normalized)).digest('hex'),
+          sourceImportRunId: completed.id,
+          rowCounts: { objects, bookings, calendar, pricing: prices },
+          receivedAt: new Date().toISOString(),
+        },
+      },
+      updated_at: new Date().toISOString(),
+    }).eq('id', connection.id);
     await queueChannelManagerCommunication(connection, conflicts.length ? 'channel_import_needs_review_notice' : 'channel_import_completed_notice',
       conflicts.length ? `Импорт менеджера каналов завершён. Нужна проверка: ${conflicts.length} несоответствий.` : 'Импорт менеджера каналов завершён без найденных несоответствий.');
     return { run: completed, summary: { objects, bookings, calendar, prices }, conflicts };

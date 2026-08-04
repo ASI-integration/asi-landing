@@ -11,6 +11,7 @@ import {
   type ChannelManagerProviderOnboardingAction,
   type ManualChannelSnapshot,
 } from '@/lib/booking-ops/channel-manager-access-import';
+import { getChannelLiveCoreStatus } from '@/lib/booking-ops/channel-manager-live-core';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -31,6 +32,8 @@ function safeConnection(connection: ChannelManagerConnection) {
     statusLabel: CHANNEL_MANAGER_ONBOARDING_STATUS_LABELS[status] ?? connection.status,
     realApiSyncEnabled: false,
     manualSnapshotAvailable: true,
+    liveCoreEnabled: true,
+    incrementalSyncEnabled: false,
   };
 }
 
@@ -40,10 +43,22 @@ export async function GET(req: Request): Promise<NextResponse> {
   try {
     const propertySetupId = new URL(req.url).searchParams.get('propertySetupId') ?? undefined;
     const connections = await listChannelManagerConnections(propertySetupId);
+    const liveCoreByConnection: Record<string, Awaited<ReturnType<typeof getChannelLiveCoreStatus>>> = {};
+    for (const connection of connections.slice(0, 20)) {
+      liveCoreByConnection[connection.id] = await getChannelLiveCoreStatus(connection.id);
+    }
     return NextResponse.json({
       ok: true,
       connections: connections.map(safeConnection),
-      capabilities: { realApiSyncEnabled: false, manualSnapshotAvailable: true, providerReady: true },
+      liveCoreByConnection,
+      capabilities: {
+        realApiSyncEnabled: false,
+        manualSnapshotAvailable: true,
+        providerReady: true,
+        liveCoreEnabled: Object.values(liveCoreByConnection).some((item) => item.schemaReady),
+        initialSyncEnabled: Object.values(liveCoreByConnection).some((item) => item.initialSyncEnabled),
+        incrementalSyncEnabled: false,
+      },
       warning: 'Не вставляйте пароль или API-токен сюда. Передайте доступ через согласованный безопасный канал.',
     });
   } catch (error) {

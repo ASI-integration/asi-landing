@@ -15,6 +15,10 @@ class Query {
   neq(column: string, value: unknown) { this.filtered = this.filtered.filter((row) => row[column] !== value); return this; }
   gte(column: string, value: unknown) { this.filtered = this.filtered.filter((row) => String(row[column] ?? '') >= String(value)); return this; }
   lte(column: string, value: unknown) { this.filtered = this.filtered.filter((row) => String(row[column] ?? '') <= String(value)); return this; }
+  lt(column: string, value: unknown) { this.filtered = this.filtered.filter((row) => String(row[column] ?? '') < String(value)); return this; }
+  gt(column: string, value: unknown) { this.filtered = this.filtered.filter((row) => String(row[column] ?? '') > String(value)); return this; }
+  in(column: string, values: unknown[]) { this.filtered = this.filtered.filter((row) => values.includes(row[column])); return this; }
+  or() { return this; }
   order() { return this; }
   limit(value: number) { this.filtered = this.filtered.slice(0, value); return this; }
   select(_columns = '*', options?: { count?: string; head?: boolean }) { if (options) this.options = { ...this.options, count: Boolean(options.count), head: options.head }; return this; }

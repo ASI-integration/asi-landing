@@ -231,14 +231,17 @@ export const ASI_PRODUCT_ROADMAP: RoadmapDepartment[] = [
         title: 'Channel Manager Live Core',
         status: 'in_progress',
         currentState:
-          'Provider-independent contract/foundation exists, but the live sync engine is not implemented.',
-        nextStep: 'Implement provider-independent read-only Live Core.',
+          'Code for provider-independent Live Core and one-shot initial sync is complete (manual reference adapter, atomic run guard). Production activation is still pending: migration apply + one successful manual/production initial-sync acceptance.',
+        nextStep:
+          'Apply Live Core migration, run one acceptance initial sync, then keep the engine stable while adding incremental sync v2.',
         priority: 1,
         criticalForPilot: true,
-        dashboardHref: '/dashboard/channel-connections',
+        dashboardHref: '/dashboard/booking-ops',
         evidence: [
-          { kind: 'code', path: 'src/lib/ops-v17/types.ts', note: 'ChannelManagerLiveAdapter' },
-          { kind: 'docs', path: 'docs/OPS_V17_ZERO_TOUCH_PILOT_ONBOARDING.md' },
+          { kind: 'code', path: 'src/lib/booking-ops/channel-manager-live-core.ts', note: 'Live Core contract + initial sync engine' },
+          { kind: 'code', path: 'src/lib/booking-ops/channel-manager-access-import.ts', note: 'manual snapshot reuse' },
+          { kind: 'ui', path: 'src/components/booking-ops/ChannelManagerImportPanel.tsx', note: 'live-core status block' },
+          { kind: 'code', path: 'supabase/migrations/20260804120000_channel_manager_live_core_initial_sync_v1.sql', note: 'initial_sync type + atomic running index' },
         ],
       }),
       stage({
@@ -246,14 +249,15 @@ export const ASI_PRODUCT_ROADMAP: RoadmapDepartment[] = [
         title: 'Initial и incremental sync',
         status: 'in_progress',
         currentState:
-          'Manual snapshot import exists, but live checkpointed initial/incremental sync is absent.',
+          'One-shot initial sync exists (manual reference adapter, run counters, cursor placeholder). Incremental polling and webhook delivery remain unfinished.',
         nextStep:
-          'Implement initial sync, cursor/checkpoint, incremental polling/webhook ingestion and recovery.',
+          'Add durable incremental cursors, polling/webhook ingestion, and recovery without duplicating Booking Intake.',
         priority: 1,
         criticalForPilot: true,
-        dashboardHref: '/dashboard/channel-connections',
+        dashboardHref: '/dashboard/booking-ops',
         evidence: [
-          { kind: 'code', path: 'src/lib/booking-ops/channel-manager-access-import.ts', note: 'manual snapshot only' },
+          { kind: 'code', path: 'src/lib/booking-ops/channel-manager-live-core.ts', note: 'initial sync only; incremental disabled' },
+          { kind: 'code', path: 'src/lib/booking-ops/channel-manager-access-import.ts', note: 'manual snapshot path reused' },
           { kind: 'docs', path: 'docs/channel-manager-access-import-v1.md' },
         ],
       }),
