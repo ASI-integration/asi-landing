@@ -161,12 +161,76 @@ export const MANUAL_LIVE_CAPABILITIES: ChannelLiveCapabilities = {
 const SECRET_VALUE_RE = /(?:bearer\s+[a-z0-9._~+/=-]{8,}|(?:password|пароль|token|api[_-]?key|secret)\s*[:=]\s*\S+)/iu;
 const UNIQUE_VIOLATION = '23505';
 const CHECK_VIOLATION = '23514';
+const SCHEMA_STATE_TTL_MS = 30_000;
+const SCHEMA_STATE_FAILURE_TTL_MS = 5_000;
+const LIVE_CORE_MIGRATION_BLOCKER = 'Миграция Channel Manager Live Core ещё не применена. Initial sync недоступен.';
 
-/** Test/runtime override for schema readiness probe. null = probe live. */
-let schemaReadyOverride: boolean | null = null;
+export type ChannelLiveCoreSchemaState = {
+  schemaVersion: number;
+  initialSyncTypeReady: boolean;
+  atomicRunningGuardReady: boolean;
+  ready: boolean;
+  blocker: string | null;
+};
 
+/** Test override for schema readiness. null = probe live via RPC. */
+let schemaStateOverride: ChannelLiveCoreSchemaState | null = null;
+let schemaStateCache: { at: number; state: ChannelLiveCoreSchemaState } | null = null;
+
+export function clearChannelLiveCoreSchemaStateCache(): void {
+  schemaStateCache = null;
+}
+
+export function setChannelLiveCoreSchemaStateOverride(state: ChannelLiveCoreSchemaState | null): void {
+  schemaStateOverride = state;
+  schemaStateCache = null;
+}
+
+/** @deprecated Prefer setChannelLiveCoreSchemaStateOverride for partial readiness cases. */
 export function setChannelLiveCoreSchemaReadyOverride(value: boolean | null): void {
-  schemaReadyOverride = value;
+  if (value === null) {
+    schemaStateOverride = null;
+  } else if (value) {
+    schemaStateOverride = {
+      schemaVersion: 1,
+      initialSyncTypeReady: true,
+      atomicRunningGuardReady: true,
+      ready: true,
+      blocker: null,
+    };
+  } else {
+    schemaStateOverride = {
+      schemaVersion: 0,
+      initialSyncTypeReady: false,
+      atomicRunningGuardReady: false,
+      ready: false,
+      blocker: LIVE_CORE_MIGRATION_BLOCKER,
+    };
+  }
+  schemaStateCache = null;
+}
+
+function schemaStateFromRpcPayload(data: unknown): ChannelLiveCoreSchemaState {
+  const row = data && typeof data === 'object' ? data as Record<string, unknown> : {};
+  const initialSyncTypeReady = row.initialSyncTypeReady === true;
+  const atomicRunningGuardReady = row.atomicRunningGuardReady === true;
+  const ready = initialSyncTypeReady && atomicRunningGuardReady && row.ready !== false;
+  let blocker: string | null = null;
+  if (!ready) {
+    if (!initialSyncTypeReady && !atomicRunningGuardReady) blocker = LIVE_CORE_MIGRATION_BLOCKER;
+    else if (!initialSyncTypeReady) {
+      blocker = 'Миграция Live Core неполная: отсутствует разрешение import_type=initial_sync.';
+    } else {
+      blocker = 'Миграция Live Core неполная: отсутствует atomic running-run guard index.';
+    }
+  }
+  return {
+    schemaVersion: Number(row.schemaVersion ?? 1) || 0,
+    initialSyncTypeReady,
+    atomicRunningGuardReady,
+    ready: ready && initialSyncTypeReady && atomicRunningGuardReady,
+    blocker,
+  };
 }
 
 function text(value: unknown): string {
@@ -622,51 +686,42 @@ function snapshotReceipt(snapshot: ManualChannelSnapshot, runId: string): Record
 }
 
 /**
- * Probe whether Live Core migration (initial_sync type + running guard index) is present.
+ * Read-only schema readiness probe via service-role RPC.
+ * Must never insert/delete booking_channel_import_runs rows.
  */
-export async function probeChannelLiveCoreSchema(connectionId: string): Promise<{ ready: boolean; blocker: string | null }> {
-  if (schemaReadyOverride !== null) {
-    return schemaReadyOverride
-      ? { ready: true, blocker: null }
-      : { ready: false, blocker: 'Миграция Channel Manager Live Core ещё не применена. Initial sync недоступен.' };
+export async function probeChannelLiveCoreSchema(_connectionId?: string): Promise<ChannelLiveCoreSchemaState> {
+  if (schemaStateOverride) return schemaStateOverride;
+
+  const now = Date.now();
+  if (schemaStateCache) {
+    const ttl = schemaStateCache.state.ready ? SCHEMA_STATE_TTL_MS : SCHEMA_STATE_FAILURE_TTL_MS;
+    if (now - schemaStateCache.at < ttl) return schemaStateCache.state;
   }
 
-  const connection = await getConnection(connectionId);
-  const probeId = randomUUID();
-  const now = new Date().toISOString();
-  const { error } = await supabase.from('booking_channel_import_runs').insert({
-    id: probeId,
-    connection_id: connection.id,
-    provider: connection.provider,
-    status: 'dry_run',
-    import_type: 'initial_sync',
-    started_at: now,
-    finished_at: now,
-    warnings: [],
-    errors: [],
-    metadata: { liveCoreProbe: true },
-    safe_summary: 'Live Core schema probe',
-    created_at: now,
-    updated_at: now,
-  });
-
-  if (error) {
-    if (isInitialSyncTypeRejected(error)) {
-      return {
-        ready: false,
-        blocker: 'Миграция Channel Manager Live Core ещё не применена. Initial sync недоступен.',
-      };
-    }
-    // Unique index absence is harder to probe with dry_run; type rejection is the hard fail.
-    // Other errors still block claiming readiness.
-    return {
+  const { data, error } = await supabase.rpc('channel_manager_live_core_schema_state');
+  if (error || data == null) {
+    const failed: ChannelLiveCoreSchemaState = {
+      schemaVersion: 0,
+      initialSyncTypeReady: false,
+      atomicRunningGuardReady: false,
       ready: false,
-      blocker: redactLiveCoreErrorMessage(error.message || 'Не удалось проверить готовность схемы Live Core.'),
+      blocker: LIVE_CORE_MIGRATION_BLOCKER,
     };
+    schemaStateCache = { at: now, state: failed };
+    return failed;
   }
 
-  await supabase.from('booking_channel_import_runs').delete().eq('id', probeId);
-  return { ready: true, blocker: null };
+  const state = schemaStateFromRpcPayload(data);
+  // ready requires both components even if RPC omits/mis-sets ready.
+  if (!state.initialSyncTypeReady || !state.atomicRunningGuardReady) {
+    state.ready = false;
+    if (!state.blocker) state.blocker = LIVE_CORE_MIGRATION_BLOCKER;
+  } else {
+    state.ready = true;
+    state.blocker = null;
+  }
+  schemaStateCache = { at: now, state };
+  return state;
 }
 
 /** Mark stale running initial_sync rows failed, preserving evidence. */
@@ -1303,8 +1358,14 @@ export async function getChannelLiveCoreStatus(connectionId: string): Promise<Ch
   let blocker: string | null = null;
   if (!schema.ready) blocker = schema.blocker;
   else if (connection.status === 'blocked') blocker = connection.failureReason ?? 'Подключение заблокировано.';
-  else if (latest?.status === 'failed') blocker = safeError?.message ?? blockerWarning?.message ?? connection.failureReason ?? 'Последняя синхронизация завершилась ошибкой.';
-  else if (blockerWarning) blocker = blockerWarning.message;
+  else if (latest?.status === 'failed') {
+    blocker = redactLiveCoreErrorMessage(
+      blockerWarning?.message
+        ?? safeError?.message
+        ?? connection.failureReason
+        ?? 'Последняя синхронизация завершилась ошибкой.',
+    );
+  } else if (blockerWarning) blocker = redactLiveCoreErrorMessage(blockerWarning.message);
   else if (counters?.failed) blocker = `Есть ошибки обработки броней: ${counters.failed}.`;
   else if (latestWarnings.length > 0) warning = 'Есть предупреждения сверки после initial sync.';
 

@@ -9,12 +9,16 @@ const {
   updateBookingOpsRecord,
   cancelReservation,
   getUnifiedAvailability,
+  supabaseRpc,
+  supabaseFrom,
 } = vi.hoisted(() => ({
   processInboundBookingRequest: vi.fn(),
   canAutoSendCommunicationIntent: vi.fn(),
   updateBookingOpsRecord: vi.fn(),
   cancelReservation: vi.fn(),
   getUnifiedAvailability: vi.fn(),
+  supabaseRpc: vi.fn(),
+  supabaseFrom: vi.fn(),
 }));
 const tables: Record<string, Row[]> = {};
 
@@ -94,31 +98,8 @@ function insertWithGuard(table: string, input: Row | Row[]) {
 
 vi.mock('@/lib/supabase', () => ({
   supabase: {
-    from: vi.fn((table: string) => ({
-      select: vi.fn((_columns = '*', options?: { count?: string; head?: boolean }) => new Query(table, { count: Boolean(options?.count), head: options?.head })),
-      insert: vi.fn((input: Row | Row[]) => insertWithGuard(table, input)),
-      upsert: vi.fn((input: Row | Row[], options?: { onConflict?: string; ignoreDuplicates?: boolean }) => {
-        const incoming = Array.isArray(input) ? input : [input];
-        const affected: Row[] = [];
-        for (const candidate of incoming) {
-          const keys = options?.onConflict?.split(',') ?? ['id'];
-          const existing = rows(table).find((row) => keys.every((key) => row[key] === candidate[key]));
-          if (existing) {
-            if (!options?.ignoreDuplicates) Object.assign(existing, candidate);
-            affected.push(existing);
-          } else {
-            const stored = { ...candidate };
-            rows(table).push(stored);
-            affected.push(stored);
-          }
-        }
-        const query = new Query(table);
-        (query as any).filtered = affected;
-        return query;
-      }),
-      update: vi.fn((patch: Row) => new Query(table, { patch })),
-      delete: vi.fn(() => new Query(table, { deleteMode: true })),
-    })),
+    from: (...args: unknown[]) => supabaseFrom(...args),
+    rpc: (...args: unknown[]) => supabaseRpc(...args),
   },
 }));
 vi.mock('../communication-auto-send-policy', () => ({
@@ -136,6 +117,7 @@ import { initializeChannelManagerConnection, registerManualChannelSnapshot } fro
 import {
   STALE_INITIAL_SYNC_TIMEOUT_MS,
   acquireChannelLiveSyncGuard,
+  clearChannelLiveCoreSchemaStateCache,
   createChannelLiveCoreAdapter,
   getChannelLiveCoreStatus,
   probeChannelLiveCoreSchema,
@@ -143,6 +125,7 @@ import {
   resolveChannelLiveSyncFinalStatus,
   runChannelManagerInitialSync,
   setChannelLiveCoreSchemaReadyOverride,
+  setChannelLiveCoreSchemaStateOverride,
 } from '../channel-manager-live-core';
 import { ASI_PRODUCT_ROADMAP } from '@/lib/roadmap/asi-product-roadmap';
 import { allRoadmapStages } from '@/lib/roadmap/summary';
@@ -195,6 +178,46 @@ beforeEach(() => {
   updateBookingOpsRecord.mockReset();
   cancelReservation.mockReset();
   getUnifiedAvailability.mockReset();
+  supabaseRpc.mockReset();
+  supabaseFrom.mockReset();
+  clearChannelLiveCoreSchemaStateCache();
+  setChannelLiveCoreSchemaStateOverride(null);
+
+  supabaseFrom.mockImplementation((table: string) => ({
+    select: vi.fn((_columns = '*', options?: { count?: string; head?: boolean }) => new Query(table, { count: Boolean(options?.count), head: options?.head })),
+    insert: vi.fn((input: Row | Row[]) => insertWithGuard(table, input)),
+    upsert: vi.fn((input: Row | Row[], options?: { onConflict?: string; ignoreDuplicates?: boolean }) => {
+      const incoming = Array.isArray(input) ? input : [input];
+      const affected: Row[] = [];
+      for (const candidate of incoming) {
+        const keys = options?.onConflict?.split(',') ?? ['id'];
+        const existing = rows(table).find((row) => keys.every((key) => row[key] === candidate[key]));
+        if (existing) {
+          if (!options?.ignoreDuplicates) Object.assign(existing, candidate);
+          affected.push(existing);
+        } else {
+          const stored = { ...candidate };
+          rows(table).push(stored);
+          affected.push(stored);
+        }
+      }
+      const query = new Query(table);
+      (query as any).filtered = affected;
+      return query;
+    }),
+    update: vi.fn((patch: Row) => new Query(table, { patch })),
+    delete: vi.fn(() => new Query(table, { deleteMode: true })),
+  }));
+  supabaseRpc.mockResolvedValue({
+    data: {
+      schemaVersion: 1,
+      initialSyncTypeReady: true,
+      atomicRunningGuardReady: true,
+      ready: true,
+    },
+    error: null,
+  });
+
   canAutoSendCommunicationIntent.mockResolvedValue({ eligible: false, reason: 'global_off' });
   processInboundBookingRequest.mockResolvedValue({ bookingId: BOOKING_OPS_ID, intakeStatus: 'processed' });
   updateBookingOpsRecord.mockResolvedValue({ ok: true });
@@ -410,6 +433,118 @@ describe('Channel Manager Live Core repairs', () => {
     const guard = await acquireChannelLiveSyncGuard(connection.id);
     expect(guard.ok).toBe(false);
     if (!guard.ok) expect(guard.code).toBe('migration_missing');
+  });
+
+  it('probes schema readiness without insert/delete side effects', async () => {
+    setChannelLiveCoreSchemaStateOverride(null);
+    clearChannelLiveCoreSchemaStateCache();
+    supabaseFrom.mockClear();
+    supabaseRpc.mockReset();
+    supabaseRpc.mockResolvedValueOnce({
+      data: { schemaVersion: 1, initialSyncTypeReady: true, atomicRunningGuardReady: true, ready: true },
+      error: null,
+    });
+    const before = rows('booking_channel_import_runs').length;
+    const probe = await probeChannelLiveCoreSchema();
+    expect(probe.ready).toBe(true);
+    expect(supabaseRpc).toHaveBeenCalledWith('channel_manager_live_core_schema_state');
+    expect(supabaseFrom).not.toHaveBeenCalled();
+    expect(rows('booking_channel_import_runs')).toHaveLength(before);
+  });
+
+  it('is not ready when only the initial_sync constraint is present', async () => {
+    setChannelLiveCoreSchemaStateOverride(null);
+    clearChannelLiveCoreSchemaStateCache();
+    supabaseRpc.mockResolvedValueOnce({
+      data: { schemaVersion: 1, initialSyncTypeReady: true, atomicRunningGuardReady: false, ready: false },
+      error: null,
+    });
+    const probe = await probeChannelLiveCoreSchema();
+    expect(probe.ready).toBe(false);
+    expect(probe.initialSyncTypeReady).toBe(true);
+    expect(probe.atomicRunningGuardReady).toBe(false);
+    expect(probe.blocker).toMatch(/guard index/i);
+    const connection = await initializeChannelManagerConnection(PROPERTY_ID, 'manual');
+    const status = await getChannelLiveCoreStatus(connection.id);
+    expect(status.initialSyncEnabled).toBe(false);
+    expect(status.liveCoreEnabled).toBe(false);
+  });
+
+  it('is not ready when only the unique running-run index is present', async () => {
+    setChannelLiveCoreSchemaStateOverride(null);
+    clearChannelLiveCoreSchemaStateCache();
+    supabaseRpc.mockResolvedValueOnce({
+      data: { schemaVersion: 1, initialSyncTypeReady: false, atomicRunningGuardReady: true, ready: false },
+      error: null,
+    });
+    const probe = await probeChannelLiveCoreSchema();
+    expect(probe.ready).toBe(false);
+    expect(probe.initialSyncTypeReady).toBe(false);
+    expect(probe.atomicRunningGuardReady).toBe(true);
+    expect(probe.blocker).toMatch(/initial_sync/i);
+    const connection = await initializeChannelManagerConnection(PROPERTY_ID, 'manual');
+    expect((await getChannelLiveCoreStatus(connection.id)).initialSyncEnabled).toBe(false);
+  });
+
+  it('is ready only when both schema components are present', async () => {
+    setChannelLiveCoreSchemaStateOverride(null);
+    clearChannelLiveCoreSchemaStateCache();
+    supabaseRpc.mockResolvedValueOnce({
+      data: { schemaVersion: 1, initialSyncTypeReady: true, atomicRunningGuardReady: true, ready: true },
+      error: null,
+    });
+    const probe = await probeChannelLiveCoreSchema();
+    expect(probe).toMatchObject({
+      ready: true,
+      initialSyncTypeReady: true,
+      atomicRunningGuardReady: true,
+      blocker: null,
+    });
+  });
+
+  it('fails closed when the schema RPC is missing or failing', async () => {
+    setChannelLiveCoreSchemaStateOverride(null);
+    clearChannelLiveCoreSchemaStateCache();
+    supabaseRpc.mockResolvedValueOnce({
+      data: null,
+      error: { code: '42883', message: 'function channel_manager_live_core_schema_state() does not exist' },
+    });
+    const probe = await probeChannelLiveCoreSchema();
+    expect(probe.ready).toBe(false);
+    expect(probe.blocker).toMatch(/миграц/i);
+    const connection = await initializeChannelManagerConnection(PROPERTY_ID, 'manual');
+    const status = await getChannelLiveCoreStatus(connection.id);
+    expect(status.initialSyncEnabled).toBe(false);
+    expect(status.blocker).toMatch(/миграц/i);
+  });
+
+  it('shows the concrete blocker warning before the generic safeError', async () => {
+    const connection = await initializeChannelManagerConnection(PROPERTY_ID, 'manual');
+    const now = new Date().toISOString();
+    rows('booking_channel_import_runs').push({
+      id: '60000000-0000-4000-8000-000000000006',
+      connection_id: connection.id,
+      provider: 'manual',
+      status: 'failed',
+      import_type: 'initial_sync',
+      started_at: now,
+      finished_at: now,
+      created_at: now,
+      updated_at: now,
+      warnings: [{ type: 'availability_conflict', severity: 'blocker', message: 'Подтверждённый конфликт доступности — даты не изменены.' }],
+      errors: [],
+      metadata: {
+        liveCoreStage: 'failed',
+        safeError: { stage: 'process_bookings', code: 'sync_failed', message: 'Initial sync завершён с blocker/ошибками обработки.', retryable: true },
+      },
+      imported_objects_count: 0,
+      imported_bookings_count: 0,
+      imported_calendar_days_count: 0,
+      imported_prices_count: 0,
+    });
+    const status = await getChannelLiveCoreStatus(connection.id);
+    expect(status.blocker).toBe('Подтверждённый конфликт доступности — даты не изменены.');
+    expect(status.blocker).not.toMatch(/Initial sync завершён с blocker/i);
   });
 
   it('keeps roadmap honest: Live Core in progress until activation', () => {
