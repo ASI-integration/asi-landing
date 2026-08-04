@@ -47,4 +47,17 @@ describe('dashboard sidebar scroll layout', () => {
     expect(layoutSrc).toContain("{ href: '/dashboard', key: 'overview', label: 'Обзор' }");
     expect(layoutSrc).toContain("{ href: '/dashboard/settings', key: 'settings', label: 'Настройки' }");
   });
+
+  it('exposes owner-only План ASI nav item immediately before Разработка ASI', () => {
+    expect(layoutSrc).toContain("{ href: '/dashboard/roadmap', key: 'roadmap', label: 'План ASI' }");
+    expect(layoutSrc).toContain(
+      "{ href: '/dashboard/development', key: 'development', label: 'Разработка ASI' }",
+    );
+    expect(layoutSrc).toContain("item.key === 'development' || item.key === 'roadmap'");
+
+    const roadmapIdx = layoutSrc.indexOf("key: 'roadmap'");
+    const developmentIdx = layoutSrc.indexOf("key: 'development'");
+    expect(roadmapIdx).toBeGreaterThan(-1);
+    expect(developmentIdx).toBeGreaterThan(roadmapIdx);
+  });
 });
