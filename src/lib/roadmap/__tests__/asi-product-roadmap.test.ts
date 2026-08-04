@@ -88,12 +88,15 @@ describe('ASI product roadmap data integrity', () => {
   it('keeps Channel Manager critical path aligned with product focus', () => {
     const byId = Object.fromEntries(allRoadmapStages().map((s) => [s.id, s]));
     expect(byId['ch-manual-json-import']?.status).toBe('done');
-    expect(byId['ch-live-core']?.status).toBe('in_progress');
+    expect(byId['ch-live-core']?.status).toBe('done');
     expect(byId['ch-live-core']?.priority).toBe(1);
     expect(byId['ch-live-core']?.criticalForPilot).toBe(true);
+    expect(byId['ch-live-core']?.currentState).toMatch(/Live Core/i);
     expect(byId['ch-initial-incremental-sync']?.status).toBe('in_progress');
     expect(byId['ch-initial-incremental-sync']?.priority).toBe(1);
     expect(byId['ch-initial-incremental-sync']?.criticalForPilot).toBe(true);
+    expect(byId['ch-initial-incremental-sync']?.currentState).toMatch(/initial sync/i);
+    expect(byId['ch-initial-incremental-sync']?.currentState).toMatch(/incremental/i);
     expect(byId['ch-first-real-adapter']?.status).toBe('blocked');
     expect(byId['ch-first-real-adapter']?.priority).toBe(1);
     expect(byId['ch-outbound-publish']?.status).toBe('later');
@@ -163,27 +166,27 @@ describe('roadmap summary and filters', () => {
     ).toBe('later');
   });
 
-  it('returns nearest focus including Channel Manager Live Core and sync', () => {
+  it('returns nearest focus including Channel Manager sync follow-ups', () => {
     const focus = nearestFocusStages(ASI_PRODUCT_ROADMAP, 5);
     expect(focus.length).toBeGreaterThanOrEqual(3);
     expect(focus.length).toBeLessThanOrEqual(5);
     expect(focus.every((s) => s.status === 'blocked' || s.status === 'in_progress')).toBe(true);
     const focusIds = focus.map((s) => s.id);
-    expect(focusIds).toContain('ch-live-core');
+    expect(focusIds).not.toContain('ch-live-core');
     expect(focusIds).toContain('ch-initial-incremental-sync');
     for (let i = 1; i < focus.length; i += 1) {
       expect(focus[i]!.priority).toBeGreaterThanOrEqual(focus[i - 1]!.priority);
     }
   });
 
-  it('orders critical pilot path by priority and surfaces Live Core sync work', () => {
+  it('orders critical pilot path by priority and surfaces unfinished sync work', () => {
     const path = criticalPilotPathStages(ASI_PRODUCT_ROADMAP, 5);
     expect(path.length).toBeGreaterThan(0);
     expect(path.length).toBeLessThanOrEqual(5);
     expect(path.every((s) => s.criticalForPilot === true)).toBe(true);
     expect(path.every((s) => s.status === 'blocked' || s.status === 'in_progress')).toBe(true);
     const pathIds = path.map((s) => s.id);
-    expect(pathIds).toContain('ch-live-core');
+    expect(pathIds).not.toContain('ch-live-core');
     expect(pathIds).toContain('ch-initial-incremental-sync');
     expect(pathIds).not.toContain('ch-outbound-publish');
     for (let i = 1; i < path.length; i += 1) {

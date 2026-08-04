@@ -9,13 +9,27 @@ import {
   type ChannelImportType,
   type ManualChannelSnapshot,
 } from '@/lib/booking-ops/channel-manager-access-import';
+import {
+  getChannelLiveCoreStatus,
+  runChannelManagerInitialSync,
+} from '@/lib/booking-ops/channel-manager-live-core';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 export async function GET(req: Request): Promise<NextResponse> {
   const auth = await requireCrmOperatorSession(); if ('error' in auth) return auth.error;
-  try { return NextResponse.json({ ok: true, runs: await listChannelImportRuns(new URL(req.url).searchParams.get('connectionId') ?? undefined) }); }
+  try {
+    const connectionId = new URL(req.url).searchParams.get('connectionId') ?? undefined;
+    const payload: Record<string, unknown> = {
+      ok: true,
+      runs: await listChannelImportRuns(connectionId),
+    };
+    if (connectionId) {
+      payload.liveCore = await getChannelLiveCoreStatus(connectionId);
+    }
+    return NextResponse.json(payload);
+  }
   catch (error) { return NextResponse.json({ ok: false, message: error instanceof Error ? error.message : 'Не удалось загрузить запуски.' }, { status: 400 }); }
 }
 
@@ -26,6 +40,18 @@ export async function POST(req: Request): Promise<NextResponse> {
     if (action === 'upload_manual_snapshot') {
       const result = await registerManualChannelSnapshot(String(body.connectionId ?? ''), body.snapshot as ManualChannelSnapshot, body.metadata as Record<string, unknown> | undefined);
       return NextResponse.json({ ok: true, ...result });
+    }
+    if (action === 'run_initial_sync') {
+      const result = await runChannelManagerInitialSync({
+        connectionId: String(body.connectionId ?? ''),
+        snapshot: body.snapshot as ManualChannelSnapshot | undefined,
+        metadata: body.metadata as Record<string, unknown> | undefined,
+      });
+      return NextResponse.json({
+        ok: result.status !== 'failed',
+        ...result,
+        message: result.safeError?.message,
+      }, { status: result.status === 'failed' ? 400 : 200 });
     }
     if (action === 'run_dry_import') {
       const run = await startChannelImportRun(String(body.connectionId ?? ''), (body.importType ?? 'manual_snapshot') as ChannelImportType, { dryRun: true, metadata: body.metadata as Record<string, unknown> | undefined });

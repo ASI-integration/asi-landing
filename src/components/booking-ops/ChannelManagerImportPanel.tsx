@@ -7,10 +7,32 @@ type Connection = {
   id: string; propertySetupId: string | null; provider: string; status: string; accessStatus: string;
   safeAccessConfigured: boolean; lastImportAt: string | null; lastSuccessAt: string | null; failureReason: string | null;
   statusLabel?: string; realApiSyncEnabled?: boolean; manualSnapshotAvailable?: boolean;
+  liveCoreEnabled?: boolean; incrementalSyncEnabled?: boolean;
 };
 type ImportedObject = { id: string; connection_id: string; match_status: string };
 type ImportedBooking = { id: string; connection_id: string; match_status: string };
 type CalendarRow = { id: string; connection_id: string; availability_status: string; price_amount: number | null };
+type LiveCoreCounters = { imported: number; updated: number; cancelled: number; skipped: number; failed: number };
+type LiveCoreStatus = {
+  provider: string;
+  connectionId: string;
+  connectionState: string;
+  lastSuccessfulSyncAt: string | null;
+  latestRun: {
+    id: string;
+    status: string;
+    importType: string;
+    stage: string | null;
+    counters: LiveCoreCounters | null;
+    safeError: { stage: string; message: string } | null;
+  } | null;
+  counters: LiveCoreCounters | null;
+  warning: string | null;
+  blocker: string | null;
+  liveCoreEnabled: boolean;
+  incrementalSyncEnabled: boolean;
+  realProviderApiEnabled: boolean;
+};
 
 const PROVIDERS = ['manual', 'bnovo', 'realtycalendar', 'travelline', 'other'] as const;
 const PROVIDER_LABELS: Record<string, string> = { manual: 'Ручной снимок', bnovo: 'Bnovo', realtycalendar: 'RealtyCalendar', travelline: 'TravelLine', other: 'Другой' };
@@ -21,10 +43,12 @@ const STATUS_LABELS: Record<string, string> = {
   not_requested: 'Не запрошен', requested: 'Запрошен', access_received: 'Доступ получен', credential_ref_pending: 'Нужна безопасная ссылка',
   connected: 'Подключено', import_ready: 'Импорт готов', import_failed: 'Ошибка импорта', disconnected: 'Отключено', blocked: 'Заблокировано',
   unknown: 'Неизвестно', received: 'Получен', invalid: 'Недействителен', expired: 'Истёк',
+  completed: 'Завершён', completed_with_warnings: 'Завершён с предупреждениями', failed: 'Ошибка', running: 'Выполняется',
 };
 
 export function ChannelManagerImportPanel() {
   const [connections, setConnections] = useState<Connection[]>([]);
+  const [liveCoreByConnection, setLiveCoreByConnection] = useState<Record<string, LiveCoreStatus>>({});
   const [objects, setObjects] = useState<ImportedObject[]>([]);
   const [bookings, setBookings] = useState<ImportedBooking[]>([]);
   const [calendar, setCalendar] = useState<CalendarRow[]>([]);
@@ -43,13 +67,14 @@ export function ChannelManagerImportPanel() {
       fetch('/api/dashboard/channel-manager/calendar', { credentials: 'include' }),
     ]);
     const [connectionPayload, objectPayload, bookingPayload, calendarPayload] = await Promise.all([
-      readResponseJson<{ ok: boolean; connections?: Connection[] }>(connectionsRes, { ok: false }),
+      readResponseJson<{ ok: boolean; connections?: Connection[]; liveCoreByConnection?: Record<string, LiveCoreStatus> }>(connectionsRes, { ok: false }),
       readResponseJson<{ ok: boolean; objects?: ImportedObject[] }>(objectsRes, { ok: false }),
       readResponseJson<{ ok: boolean; bookings?: ImportedBooking[] }>(bookingsRes, { ok: false }),
       readResponseJson<{ ok: boolean; calendar?: CalendarRow[] }>(calendarRes, { ok: false }),
     ]);
     if (connectionPayload.ok) {
       setConnections(connectionPayload.connections ?? []);
+      setLiveCoreByConnection(connectionPayload.liveCoreByConnection ?? {});
       setSelectedId((current) => current || connectionPayload.connections?.[0]?.id || '');
     }
     if (objectPayload.ok) setObjects(objectPayload.objects ?? []);
@@ -60,6 +85,7 @@ export function ChannelManagerImportPanel() {
   useEffect(() => { void load(); }, [load]);
 
   const selected = connections.find((item) => item.id === selectedId) ?? connections[0] ?? null;
+  const liveCore = selected ? liveCoreByConnection[selected.id] ?? null : null;
   const stats = useMemo(() => {
     const objectRows = objects.filter((item) => item.connection_id === selected?.id);
     const bookingRows = bookings.filter((item) => item.connection_id === selected?.id);
@@ -90,8 +116,26 @@ export function ChannelManagerImportPanel() {
     await action('/api/dashboard/channel-manager/provider-onboarding/action', { action: 'upload_manual_snapshot', connectionId: selected?.id, snapshot });
   }
 
+  async function runInitialSync() {
+    let snapshot: unknown | undefined;
+    try {
+      const parsed = JSON.parse(snapshotText) as { objects?: unknown[]; bookings?: unknown[]; calendar?: unknown[]; pricing?: unknown[] };
+      const hasRows = [parsed.objects, parsed.bookings, parsed.calendar, parsed.pricing].some((rows) => Array.isArray(rows) && rows.length > 0);
+      snapshot = hasRows ? parsed : undefined;
+    } catch {
+      setMessage('Проверьте JSON: файл не читается.');
+      return;
+    }
+    await action('/api/dashboard/channel-manager/import-runs', {
+      action: 'run_initial_sync',
+      connectionId: selected?.id,
+      ...(snapshot ? { snapshot } : {}),
+    });
+  }
+
   const onboardingAction = (body: Record<string, unknown>) => action('/api/dashboard/channel-manager/provider-onboarding/action', body);
   const targetPropertySetupId = selected?.propertySetupId || propertySetupId;
+  const liveCounters = liveCore?.counters ?? liveCore?.latestRun?.counters;
 
   return (
     <section className="rounded-xl border border-slate-200 bg-white p-4 text-sm">
@@ -142,6 +186,31 @@ export function ChannelManagerImportPanel() {
             <Stat label="Последний импорт" value={selected.lastImportAt ? new Date(selected.lastImportAt).toLocaleString('ru-RU') : 'Не запускался'} />
             <Stat label="Следующее действие" value={selected.status === 'blocked' ? 'Снять блокировку после проверки' : stats.conflicts ? 'Проверить расхождения' : selected.lastSuccessAt ? 'Готово к следующему этапу' : 'Загрузить ручной снимок'} />
           </div>
+
+          <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50/70 p-3" data-testid="channel-live-core-status">
+            <div className="flex flex-wrap items-start justify-between gap-2">
+              <div>
+                <h3 className="font-medium text-slate-900">Live Core — начальная синхронизация</h3>
+                <p className="mt-1 text-xs text-slate-600">Одноразовый read-only sync через reference adapter. Incremental polling и реальные API провайдеров ещё не подключены.</p>
+              </div>
+              <button
+                disabled={busy || selected.status === 'blocked'}
+                onClick={() => void runInitialSync()}
+                className="rounded-lg bg-slate-900 px-3 py-1.5 text-xs text-white hover:bg-slate-800 disabled:opacity-50"
+              >Запустить initial sync</button>
+            </div>
+            <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+              <Stat label="Провайдер" value={PROVIDER_LABELS[liveCore?.provider ?? selected.provider] ?? selected.provider} />
+              <Stat label="Состояние подключения" value={STATUS_LABELS[liveCore?.connectionState ?? selected.status] ?? liveCore?.connectionState ?? selected.status} />
+              <Stat label="Последний успешный sync" value={liveCore?.lastSuccessfulSyncAt ? new Date(liveCore.lastSuccessfulSyncAt).toLocaleString('ru-RU') : selected.lastSuccessAt ? new Date(selected.lastSuccessAt).toLocaleString('ru-RU') : 'Ещё не было'} />
+              <Stat label="Последний запуск" value={liveCore?.latestRun ? `${STATUS_LABELS[liveCore.latestRun.status] ?? liveCore.latestRun.status}${liveCore.latestRun.stage ? ` · ${liveCore.latestRun.stage}` : ''}` : 'Нет запусков'} />
+              <Stat label="Импортировано / обновлено" value={`${liveCounters?.imported ?? 0} / ${liveCounters?.updated ?? 0}`} />
+              <Stat label="Отменено / ошибки" value={`${liveCounters?.cancelled ?? 0} / ${liveCounters?.failed ?? 0}`} />
+              <Stat label="Предупреждение" value={liveCore?.warning ?? 'Нет'} />
+              <Stat label="Блокер" value={liveCore?.blocker ?? 'Нет'} />
+            </div>
+          </div>
+
           <div className="mt-3 flex flex-wrap gap-2">
             <button disabled={busy} onClick={() => void onboardingAction({ action: 'request_access', connectionId: selected.id })} className="rounded-lg border border-slate-300 px-3 py-1.5 hover:bg-slate-50 disabled:opacity-50">Запросить доступ</button>
             <button disabled={busy} onClick={() => { const safeAccessRef = window.prompt('Укажите только безопасную ссылку, например vault:cm/object-1. Не вставляйте пароль или API-токен.'); if (safeAccessRef) void onboardingAction({ action: 'mark_access_received', connectionId: selected.id, safeAccessRef }); }} className="rounded-lg border border-slate-300 px-3 py-1.5 hover:bg-slate-50 disabled:opacity-50">Отметить доступ полученным</button>
@@ -166,6 +235,7 @@ export function ChannelManagerImportPanel() {
               <textarea value={snapshotText} onChange={(event) => setSnapshotText(event.target.value)} rows={8} className="w-full rounded-lg border border-slate-300 px-3 py-2 font-mono text-xs" aria-label="Ручной снимок JSON" />
               <div className="flex flex-wrap gap-2">
                 <button disabled={busy} onClick={() => void uploadSnapshot()} className="rounded-lg bg-blue-600 px-3 py-2 text-white disabled:opacity-50">Загрузить snapshot</button>
+                <button disabled={busy} onClick={() => void runInitialSync()} className="rounded-lg bg-slate-900 px-3 py-2 text-white disabled:opacity-50">Запустить initial sync</button>
                 <button disabled={busy} onClick={() => void onboardingAction({ action: 'request_account_creation', connectionId: selected.id })} className="rounded-lg border border-slate-300 px-3 py-2 disabled:opacity-50">Нужен аккаунт провайдера</button>
                 <button disabled={busy} onClick={() => void onboardingAction({ action: 'mark_account_created', connectionId: selected.id })} className="rounded-lg border border-slate-300 px-3 py-2 disabled:opacity-50">Аккаунт создан</button>
                 <button disabled={busy} onClick={() => void onboardingAction({ action: 'mark_operator_review', connectionId: selected.id })} className="rounded-lg border border-slate-300 px-3 py-2 disabled:opacity-50">Передать на проверку</button>
