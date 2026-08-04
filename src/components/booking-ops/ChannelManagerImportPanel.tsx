@@ -30,8 +30,10 @@ type LiveCoreStatus = {
   warning: string | null;
   blocker: string | null;
   liveCoreEnabled: boolean;
+  initialSyncEnabled?: boolean;
   incrementalSyncEnabled: boolean;
   realProviderApiEnabled: boolean;
+  schemaReady?: boolean;
 };
 
 const PROVIDERS = ['manual', 'bnovo', 'realtycalendar', 'travelline', 'other'] as const;
@@ -136,6 +138,7 @@ export function ChannelManagerImportPanel() {
   const onboardingAction = (body: Record<string, unknown>) => action('/api/dashboard/channel-manager/provider-onboarding/action', body);
   const targetPropertySetupId = selected?.propertySetupId || propertySetupId;
   const liveCounters = liveCore?.counters ?? liveCore?.latestRun?.counters;
+  const initialSyncEnabled = liveCore?.initialSyncEnabled !== false && liveCore?.schemaReady !== false && selected?.status !== 'blocked';
 
   return (
     <section className="rounded-xl border border-slate-200 bg-white p-4 text-sm">
@@ -194,7 +197,7 @@ export function ChannelManagerImportPanel() {
                 <p className="mt-1 text-xs text-slate-600">Одноразовый read-only sync через reference adapter. Incremental polling и реальные API провайдеров ещё не подключены.</p>
               </div>
               <button
-                disabled={busy || selected.status === 'blocked'}
+                disabled={busy || !initialSyncEnabled}
                 onClick={() => void runInitialSync()}
                 className="rounded-lg bg-slate-900 px-3 py-1.5 text-xs text-white hover:bg-slate-800 disabled:opacity-50"
               >Запустить initial sync</button>
@@ -235,7 +238,7 @@ export function ChannelManagerImportPanel() {
               <textarea value={snapshotText} onChange={(event) => setSnapshotText(event.target.value)} rows={8} className="w-full rounded-lg border border-slate-300 px-3 py-2 font-mono text-xs" aria-label="Ручной снимок JSON" />
               <div className="flex flex-wrap gap-2">
                 <button disabled={busy} onClick={() => void uploadSnapshot()} className="rounded-lg bg-blue-600 px-3 py-2 text-white disabled:opacity-50">Загрузить snapshot</button>
-                <button disabled={busy} onClick={() => void runInitialSync()} className="rounded-lg bg-slate-900 px-3 py-2 text-white disabled:opacity-50">Запустить initial sync</button>
+                <button disabled={busy || !initialSyncEnabled} onClick={() => void runInitialSync()} className="rounded-lg bg-slate-900 px-3 py-2 text-white disabled:opacity-50">Запустить initial sync</button>
                 <button disabled={busy} onClick={() => void onboardingAction({ action: 'request_account_creation', connectionId: selected.id })} className="rounded-lg border border-slate-300 px-3 py-2 disabled:opacity-50">Нужен аккаунт провайдера</button>
                 <button disabled={busy} onClick={() => void onboardingAction({ action: 'mark_account_created', connectionId: selected.id })} className="rounded-lg border border-slate-300 px-3 py-2 disabled:opacity-50">Аккаунт создан</button>
                 <button disabled={busy} onClick={() => void onboardingAction({ action: 'mark_operator_review', connectionId: selected.id })} className="rounded-lg border border-slate-300 px-3 py-2 disabled:opacity-50">Передать на проверку</button>

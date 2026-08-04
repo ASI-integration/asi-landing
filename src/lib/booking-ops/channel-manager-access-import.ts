@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { supabase } from '@/lib/supabase';
 import { auditChannelImportAvailability } from './availability-overbooking-protection';
 import {
@@ -506,8 +506,18 @@ export async function registerManualChannelSnapshot(connectionId: string, snapsh
       objects, bookings, calendarDays: calendar, prices, warnings: conflicts,
       safeSummary: `Импортировано: объектов ${objects}, броней ${bookings}, строк календаря ${calendar}, цен ${prices}.`,
     });
+    const { lastManualSnapshot: _omitFullSnapshot, ...safeConnectionMetadata } = connection.metadata;
     await supabase.from('booking_channel_manager_connections').update({
-      metadata: { ...connection.metadata, lastManualSnapshot: normalized, liveCore: connection.metadata?.liveCore === true },
+      metadata: {
+        ...safeConnectionMetadata,
+        liveCore: connection.metadata?.liveCore === true,
+        lastManualSnapshotReceipt: {
+          snapshotHash: createHash('sha256').update(JSON.stringify(normalized)).digest('hex'),
+          sourceImportRunId: completed.id,
+          rowCounts: { objects, bookings, calendar, pricing: prices },
+          receivedAt: new Date().toISOString(),
+        },
+      },
       updated_at: new Date().toISOString(),
     }).eq('id', connection.id);
     await queueChannelManagerCommunication(connection, conflicts.length ? 'channel_import_needs_review_notice' : 'channel_import_completed_notice',

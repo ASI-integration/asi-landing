@@ -45,6 +45,7 @@ export async function POST(req: Request): Promise<NextResponse> {
       const result = await runChannelManagerInitialSync({
         connectionId: String(body.connectionId ?? ''),
         snapshot: body.snapshot as ManualChannelSnapshot | undefined,
+        reuseImportedRows: body.reuseImportedRows === true,
         metadata: body.metadata as Record<string, unknown> | undefined,
       });
       return NextResponse.json({

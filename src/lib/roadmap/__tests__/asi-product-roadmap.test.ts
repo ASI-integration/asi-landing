@@ -88,10 +88,10 @@ describe('ASI product roadmap data integrity', () => {
   it('keeps Channel Manager critical path aligned with product focus', () => {
     const byId = Object.fromEntries(allRoadmapStages().map((s) => [s.id, s]));
     expect(byId['ch-manual-json-import']?.status).toBe('done');
-    expect(byId['ch-live-core']?.status).toBe('done');
+    expect(byId['ch-live-core']?.status).toBe('in_progress');
     expect(byId['ch-live-core']?.priority).toBe(1);
     expect(byId['ch-live-core']?.criticalForPilot).toBe(true);
-    expect(byId['ch-live-core']?.currentState).toMatch(/Live Core/i);
+    expect(byId['ch-live-core']?.currentState).toMatch(/production activation is still pending/i);
     expect(byId['ch-initial-incremental-sync']?.status).toBe('in_progress');
     expect(byId['ch-initial-incremental-sync']?.priority).toBe(1);
     expect(byId['ch-initial-incremental-sync']?.criticalForPilot).toBe(true);
@@ -172,7 +172,7 @@ describe('roadmap summary and filters', () => {
     expect(focus.length).toBeLessThanOrEqual(5);
     expect(focus.every((s) => s.status === 'blocked' || s.status === 'in_progress')).toBe(true);
     const focusIds = focus.map((s) => s.id);
-    expect(focusIds).not.toContain('ch-live-core');
+    expect(focusIds).toContain('ch-live-core');
     expect(focusIds).toContain('ch-initial-incremental-sync');
     for (let i = 1; i < focus.length; i += 1) {
       expect(focus[i]!.priority).toBeGreaterThanOrEqual(focus[i - 1]!.priority);
@@ -186,7 +186,7 @@ describe('roadmap summary and filters', () => {
     expect(path.every((s) => s.criticalForPilot === true)).toBe(true);
     expect(path.every((s) => s.status === 'blocked' || s.status === 'in_progress')).toBe(true);
     const pathIds = path.map((s) => s.id);
-    expect(pathIds).not.toContain('ch-live-core');
+    expect(pathIds).toContain('ch-live-core');
     expect(pathIds).toContain('ch-initial-incremental-sync');
     expect(pathIds).not.toContain('ch-outbound-publish');
     for (let i = 1; i < path.length; i += 1) {

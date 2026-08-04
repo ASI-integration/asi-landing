@@ -229,10 +229,11 @@ export const ASI_PRODUCT_ROADMAP: RoadmapDepartment[] = [
       stage({
         id: 'ch-live-core',
         title: 'Channel Manager Live Core',
-        status: 'done',
+        status: 'in_progress',
         currentState:
-          'Provider-independent Live Core contract and one-shot initial sync engine exist; manual JSON is the reference adapter. Real provider APIs are not wired.',
-        nextStep: 'Keep Live Core stable while adding the first real provider adapter and incremental sync v2.',
+          'Code for provider-independent Live Core and one-shot initial sync is complete (manual reference adapter, atomic run guard). Production activation is still pending: migration apply + one successful manual/production initial-sync acceptance.',
+        nextStep:
+          'Apply Live Core migration, run one acceptance initial sync, then keep the engine stable while adding incremental sync v2.',
         priority: 1,
         criticalForPilot: true,
         dashboardHref: '/dashboard/booking-ops',
@@ -240,7 +241,7 @@ export const ASI_PRODUCT_ROADMAP: RoadmapDepartment[] = [
           { kind: 'code', path: 'src/lib/booking-ops/channel-manager-live-core.ts', note: 'Live Core contract + initial sync engine' },
           { kind: 'code', path: 'src/lib/booking-ops/channel-manager-access-import.ts', note: 'manual snapshot reuse' },
           { kind: 'ui', path: 'src/components/booking-ops/ChannelManagerImportPanel.tsx', note: 'live-core status block' },
-          { kind: 'code', path: 'src/lib/ops-v17/types.ts', note: 'legacy ChannelManagerLiveAdapter interface' },
+          { kind: 'code', path: 'supabase/migrations/20260804120000_channel_manager_live_core_initial_sync_v1.sql', note: 'initial_sync type + atomic running index' },
         ],
       }),
       stage({

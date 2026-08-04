@@ -3,8 +3,9 @@
  * and one-shot initial sync engine. Reuses Access Import + Booking Intake.
  * No real provider APIs, polling, webhooks, or outbound OTA writes.
  */
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { supabase } from '@/lib/supabase';
+import { cancelReservation, getUnifiedAvailability } from '@/lib/reservations/ledger';
 import { updateBookingOpsRecord } from './repository';
 import {
   CHANNEL_PROVIDER_ADAPTERS,
@@ -16,6 +17,9 @@ import {
   importChannelCalendar,
   importChannelObjects,
   listChannelImportRuns,
+  listChannelCalendarSnapshots,
+  listImportedChannelBookings,
+  listImportedChannelObjects,
   reconcileImportedBookings,
   reconcileImportedObjects,
   type ChannelImportConflict,
@@ -46,6 +50,9 @@ export const CHANNEL_LIVE_SYNC_STAGES = [
   'failed',
 ] as const;
 export type ChannelLiveSyncStage = (typeof CHANNEL_LIVE_SYNC_STAGES)[number];
+
+/** Bounded timeout after which a stuck running initial_sync is recoverable. */
+export const STALE_INITIAL_SYNC_TIMEOUT_MS = 30 * 60 * 1000;
 
 export type ChannelLiveCapabilities = {
   listExternalProperties: boolean;
@@ -152,6 +159,15 @@ export const MANUAL_LIVE_CAPABILITIES: ChannelLiveCapabilities = {
 };
 
 const SECRET_VALUE_RE = /(?:bearer\s+[a-z0-9._~+/=-]{8,}|(?:password|пароль|token|api[_-]?key|secret)\s*[:=]\s*\S+)/iu;
+const UNIQUE_VIOLATION = '23505';
+const CHECK_VIOLATION = '23514';
+
+/** Test/runtime override for schema readiness probe. null = probe live. */
+let schemaReadyOverride: boolean | null = null;
+
+export function setChannelLiveCoreSchemaReadyOverride(value: boolean | null): void {
+  schemaReadyOverride = value;
+}
 
 function text(value: unknown): string {
   return String(value ?? '').trim();
@@ -215,6 +231,28 @@ export function classifyBookingChange(
   return 'updated';
 }
 
+export function resolveChannelLiveSyncFinalStatus(
+  counters: ChannelLiveSyncCounters,
+  warnings: ChannelImportConflict[],
+): 'completed' | 'completed_with_warnings' | 'failed' {
+  const hasBlocker = warnings.some((item) => item.severity === 'blocker') || counters.failed > 0;
+  if (hasBlocker) return 'failed';
+  if (warnings.length > 0) return 'completed_with_warnings';
+  return 'completed';
+}
+
+function isUniqueViolation(error: { code?: string; message?: string } | null | undefined): boolean {
+  if (!error) return false;
+  return error.code === UNIQUE_VIOLATION || /duplicate key|unique constraint/i.test(text(error.message));
+}
+
+function isInitialSyncTypeRejected(error: { code?: string; message?: string } | null | undefined): boolean {
+  if (!error) return false;
+  const message = text(error.message);
+  return error.code === CHECK_VIOLATION
+    || (/import_type|initial_sync|check constraint/i.test(message) && /violat|fail|reject/i.test(message));
+}
+
 function propertyToRow(property: ChannelLiveExternalProperty): Record<string, unknown> {
   return {
     external_object_id: property.externalObjectId,
@@ -252,8 +290,17 @@ function calendarToRow(day: ChannelLiveCalendarDay): Record<string, unknown> {
   };
 }
 
+function cursorPlaceholder(): ChannelLiveProviderCursor[] {
+  return [
+    { stream: 'objects', checkpoint: null, note: 'Initial sync only; incremental cursor reserved for v2.' },
+    { stream: 'bookings', checkpoint: null, note: 'Initial sync only; incremental cursor reserved for v2.' },
+    { stream: 'calendar', checkpoint: null, note: 'Initial sync only; incremental cursor reserved for v2.' },
+    { stream: 'incremental', checkpoint: null, note: 'Polling/webhooks not implemented.' },
+  ];
+}
+
 // ---------------------------------------------------------------------------
-// 2. Manual JSON reference adapter (wraps existing snapshot validation)
+// 2. Manual JSON reference adapter + reuse of already-imported rows
 // ---------------------------------------------------------------------------
 
 export class ManualChannelLiveCoreAdapter implements ChannelManagerLiveCoreAdapter {
@@ -266,11 +313,7 @@ export class ManualChannelLiveCoreAdapter implements ChannelManagerLiveCoreAdapt
   }
 
   getIdentity(): ChannelLiveAdapterIdentity {
-    return {
-      provider: 'manual',
-      label: 'Ручной снимок JSON',
-      supportsRealApi: false,
-    };
+    return { provider: 'manual', label: 'Ручной снимок JSON', supportsRealApi: false };
   }
 
   normalizeBookingStatus(raw: unknown): NormalizedExternalBookingStatus {
@@ -282,12 +325,7 @@ export class ManualChannelLiveCoreAdapter implements ChannelManagerLiveCoreAdapt
   }
 
   getProviderCursorPlaceholder(): ChannelLiveProviderCursor[] {
-    return [
-      { stream: 'objects', checkpoint: null, note: 'Initial sync only; incremental cursor reserved for v2.' },
-      { stream: 'bookings', checkpoint: null, note: 'Initial sync only; incremental cursor reserved for v2.' },
-      { stream: 'calendar', checkpoint: null, note: 'Initial sync only; incremental cursor reserved for v2.' },
-      { stream: 'incremental', checkpoint: null, note: 'Polling/webhooks not implemented.' },
-    ];
+    return cursorPlaceholder();
   }
 
   async listExternalProperties(): Promise<ChannelLiveExternalProperty[]> {
@@ -353,27 +391,109 @@ export class ManualChannelLiveCoreAdapter implements ChannelManagerLiveCoreAdapt
   }
 }
 
-export function createChannelLiveCoreAdapter(
-  provider: ChannelManagerProvider,
-  options?: { snapshot?: ManualChannelSnapshot },
-): ChannelManagerLiveCoreAdapter {
-  if (provider === 'manual' || options?.snapshot) {
-    if (!options?.snapshot) throw new Error('Для ручного Live Core нужен JSON-снимок.');
-    return new ManualChannelLiveCoreAdapter(options.snapshot);
+/** Explicit safe path: reuse already-imported normalized rows (no full snapshot in metadata). */
+export class ImportedRowsChannelLiveCoreAdapter implements ChannelManagerLiveCoreAdapter {
+  readonly provider: ChannelManagerProvider;
+  readonly capabilities = MANUAL_LIVE_CAPABILITIES;
+  private readonly connectionId: string;
+
+  constructor(connectionId: string, provider: ChannelManagerProvider) {
+    this.connectionId = connectionId;
+    this.provider = provider;
   }
-  const adapter = CHANNEL_PROVIDER_ADAPTERS[provider];
-  if (!adapter.supports_real_api) {
-    throw toChannelLiveProviderUnavailableError(provider);
+
+  getIdentity(): ChannelLiveAdapterIdentity {
+    return { provider: this.provider, label: 'Уже импортированные строки', supportsRealApi: false };
   }
-  throw toChannelLiveProviderUnavailableError(provider);
+
+  normalizeBookingStatus(raw: unknown): NormalizedExternalBookingStatus {
+    return normalizeExternalBookingStatus(raw);
+  }
+
+  classifyBookingChange(previousStatus: string | null | undefined, next: NormalizedExternalBookingStatus): ChannelLiveBookingChangeKind {
+    return classifyBookingChange(previousStatus, next);
+  }
+
+  getProviderCursorPlaceholder(): ChannelLiveProviderCursor[] {
+    return cursorPlaceholder();
+  }
+
+  async listExternalProperties(): Promise<ChannelLiveExternalProperty[]> {
+    const rows = await listImportedChannelObjects(this.connectionId);
+    return rows.map((item) => ({
+      externalObjectId: text(item.external_object_id),
+      externalListingId: nullableText(item.external_listing_id),
+      title: nullableText(item.title),
+      city: nullableText(item.city),
+      safeAddressSummary: nullableText(item.safe_address_summary),
+      capacity: numberOrNull(item.capacity),
+      status: text(item.status) || 'unknown',
+      propertySetupId: nullableText(item.matched_property_setup_id),
+    })).filter((item) => item.externalObjectId);
+  }
+
+  async fetchInitialBookingSnapshot(): Promise<ChannelLiveExternalBooking[]> {
+    const rows = await listImportedChannelBookings(this.connectionId);
+    return rows.map((item) => {
+      const status = this.normalizeBookingStatus(item.status);
+      return {
+        externalBookingId: text(item.external_booking_id),
+        externalObjectId: nullableText(item.external_object_id),
+        guestSafeName: nullableText(item.guest_safe_name),
+        guestContactRef: nullableText(item.guest_contact_ref),
+        checkInDate: normalizeDate(item.checkin_date),
+        checkOutDate: normalizeDate(item.checkout_date),
+        guestCount: numberOrNull(item.guest_count),
+        status,
+        changeKind: this.classifyBookingChange(null, status),
+      };
+    }).filter((item) => item.externalBookingId);
+  }
+
+  async fetchCalendarSnapshot(): Promise<ChannelLiveCalendarDay[]> {
+    const rows = await listChannelCalendarSnapshots(this.connectionId);
+    return rows.map((item) => ({
+      externalObjectId: text(item.external_object_id),
+      date: normalizeDate(item.date) ?? '',
+      availabilityStatus: text(item.availability_status) || 'unknown',
+      minStay: numberOrNull(item.min_stay),
+      priceAmount: numberOrNull(item.price_amount),
+      currency: nullableText(item.currency),
+    })).filter((item) => item.externalObjectId && item.date);
+  }
+
+  async fetchPricingSnapshot(): Promise<ChannelLiveCalendarDay[]> {
+    return this.fetchCalendarSnapshot();
+  }
+
+  async loadInitialSnapshot(): Promise<ChannelLiveInitialSnapshot> {
+    const [properties, bookings, calendar] = await Promise.all([
+      this.listExternalProperties(),
+      this.fetchInitialBookingSnapshot(),
+      this.fetchCalendarSnapshot(),
+    ]);
+    if (!properties.length && !bookings.length && !calendar.length) {
+      throw new Error('Нет ранее импортированных строк. Передайте JSON-снимок или сначала выполните manual snapshot import.');
+    }
+    return { properties, bookings, calendar, pricing: [], cursors: this.getProviderCursorPlaceholder() };
+  }
 }
 
-function toChannelLiveProviderUnavailableError(provider: ChannelManagerProvider): Error {
-  return new Error(`Реальный API ${provider} в этой версии не подключён. Используйте ручной снимок JSON как reference adapter.`);
+export function createChannelLiveCoreAdapter(
+  provider: ChannelManagerProvider,
+  options?: { snapshot?: ManualChannelSnapshot; reuseImportedRows?: boolean; connectionId?: string },
+): ChannelManagerLiveCoreAdapter {
+  if (options?.snapshot) return new ManualChannelLiveCoreAdapter(options.snapshot);
+  if (options?.reuseImportedRows) {
+    if (!options.connectionId) throw new Error('Для повторного использования импортированных строк нужен ID подключения.');
+    return new ImportedRowsChannelLiveCoreAdapter(options.connectionId, provider);
+  }
+  if (provider === 'manual') throw new Error('Для ручного Live Core нужен JSON-снимок или явное reuseImportedRows.');
+  throw new Error(`Реальный API ${provider} в этой версии не подключён. Используйте ручной снимок JSON как reference adapter.`);
 }
 
 // ---------------------------------------------------------------------------
-// Sync counters / status / execution guard
+// Sync counters / status / atomic execution guard
 // ---------------------------------------------------------------------------
 
 export type ChannelLiveSyncCounters = {
@@ -418,8 +538,10 @@ export type ChannelLiveCoreStatus = {
   warning: string | null;
   blocker: string | null;
   liveCoreEnabled: boolean;
+  initialSyncEnabled: boolean;
   incrementalSyncEnabled: boolean;
   realProviderApiEnabled: boolean;
+  schemaReady: boolean;
   cursorPlaceholder: ChannelLiveProviderCursor[];
 };
 
@@ -479,52 +601,189 @@ function mapRun(row: Record<string, unknown>): ChannelImportRun {
   };
 }
 
+function stripFullSnapshot(metadata: Record<string, unknown>): Record<string, unknown> {
+  const { lastManualSnapshot: _omit, ...rest } = metadata;
+  return rest;
+}
+
+function snapshotReceipt(snapshot: ManualChannelSnapshot, runId: string): Record<string, unknown> {
+  const normalized = validateManualChannelSnapshot(snapshot);
+  return {
+    snapshotHash: createHash('sha256').update(JSON.stringify(normalized)).digest('hex'),
+    sourceImportRunId: runId,
+    rowCounts: {
+      objects: normalized.objects.length,
+      bookings: normalized.bookings.length,
+      calendar: normalized.calendar.length,
+      pricing: normalized.pricing.length,
+    },
+    receivedAt: new Date().toISOString(),
+  };
+}
+
 /**
- * Per-connection execution guard: refuses a second concurrent initial_sync run.
- * Uses an existing running run row when present; otherwise stamps connection metadata.
+ * Probe whether Live Core migration (initial_sync type + running guard index) is present.
  */
-export async function acquireChannelLiveSyncGuard(connectionId: string): Promise<{ ok: true; lockId: string } | { ok: false; reason: string }> {
+export async function probeChannelLiveCoreSchema(connectionId: string): Promise<{ ready: boolean; blocker: string | null }> {
+  if (schemaReadyOverride !== null) {
+    return schemaReadyOverride
+      ? { ready: true, blocker: null }
+      : { ready: false, blocker: 'Миграция Channel Manager Live Core ещё не применена. Initial sync недоступен.' };
+  }
+
   const connection = await getConnection(connectionId);
-  const { data: running } = await supabase
-    .from('booking_channel_import_runs')
-    .select('id,status,import_type,metadata')
-    .eq('connection_id', connection.id)
-    .eq('status', 'running')
-    .eq('import_type', 'initial_sync')
-    .limit(1)
-    .maybeSingle();
-  if (running?.id) {
-    return { ok: false, reason: 'Синхронизация уже выполняется для этого подключения.' };
-  }
-  const existingLock = connection.metadata?.liveSyncLock;
-  if (existingLock && typeof existingLock === 'object') {
-    const lock = existingLock as Record<string, unknown>;
-    if (text(lock.status) === 'held') {
-      return { ok: false, reason: 'Синхронизация уже выполняется для этого подключения.' };
-    }
-  }
-  const lockId = randomUUID();
+  const probeId = randomUUID();
   const now = new Date().toISOString();
-  const { error } = await supabase.from('booking_channel_manager_connections').update({
+  const { error } = await supabase.from('booking_channel_import_runs').insert({
+    id: probeId,
+    connection_id: connection.id,
+    provider: connection.provider,
+    status: 'dry_run',
+    import_type: 'initial_sync',
+    started_at: now,
+    finished_at: now,
+    warnings: [],
+    errors: [],
+    metadata: { liveCoreProbe: true },
+    safe_summary: 'Live Core schema probe',
+    created_at: now,
+    updated_at: now,
+  });
+
+  if (error) {
+    if (isInitialSyncTypeRejected(error)) {
+      return {
+        ready: false,
+        blocker: 'Миграция Channel Manager Live Core ещё не применена. Initial sync недоступен.',
+      };
+    }
+    // Unique index absence is harder to probe with dry_run; type rejection is the hard fail.
+    // Other errors still block claiming readiness.
+    return {
+      ready: false,
+      blocker: redactLiveCoreErrorMessage(error.message || 'Не удалось проверить готовность схемы Live Core.'),
+    };
+  }
+
+  await supabase.from('booking_channel_import_runs').delete().eq('id', probeId);
+  return { ready: true, blocker: null };
+}
+
+/** Mark stale running initial_sync rows failed, preserving evidence. */
+export async function recoverStaleInitialSyncRuns(
+  connectionId: string,
+  nowMs: number = Date.now(),
+): Promise<string[]> {
+  const connection = await getConnection(connectionId);
+  const { data: running, error } = await supabase
+    .from('booking_channel_import_runs')
+    .select('*')
+    .eq('connection_id', connection.id)
+    .eq('import_type', 'initial_sync')
+    .eq('status', 'running');
+  if (error) throw new Error(error.message);
+
+  const recovered: string[] = [];
+  for (const row of (running ?? []) as Record<string, unknown>[]) {
+    const startedAt = Date.parse(text(row.started_at || row.created_at));
+    if (!Number.isFinite(startedAt) || nowMs - startedAt < STALE_INITIAL_SYNC_TIMEOUT_MS) continue;
+    const finishedAt = new Date(nowMs).toISOString();
+    const metadata = {
+      ...((row.metadata as Record<string, unknown>) ?? {}),
+      liveCore: true,
+      liveCoreStage: 'failed',
+      staleRecovered: true,
+      staleRecoveredAt: finishedAt,
+      failedStage: text((row.metadata as Record<string, unknown>)?.liveCoreStage) || 'acquire_guard',
+      safeError: {
+        stage: text((row.metadata as Record<string, unknown>)?.liveCoreStage) || 'acquire_guard',
+        code: 'stale_running_run',
+        message: 'Зависший initial sync помечен как failed по timeout; evidence сохранены.',
+        retryable: true,
+      },
+    };
+    const { error: updateError } = await supabase.from('booking_channel_import_runs').update({
+      status: 'failed',
+      finished_at: finishedAt,
+      errors: [metadata.safeError],
+      safe_summary: 'Initial sync прерван по stale timeout. Ранее сохранённые данные не удалены.',
+      metadata,
+      updated_at: finishedAt,
+    }).eq('id', row.id).eq('status', 'running');
+    if (updateError) throw new Error(updateError.message);
+    recovered.push(text(row.id));
+  }
+  return recovered;
+}
+
+/**
+ * Atomic per-connection execution guard: insert running initial_sync row.
+ * Unique partial index enforces exclusivity; 23505 => execution_guard.
+ */
+export async function acquireChannelLiveSyncGuard(connectionId: string): Promise<
+  { ok: true; run: ChannelImportRun } | { ok: false; reason: string; code: 'execution_guard' | 'migration_missing' }
+> {
+  const connection = await getConnection(connectionId);
+  const schema = await probeChannelLiveCoreSchema(connection.id);
+  if (!schema.ready) {
+    return { ok: false, reason: schema.blocker ?? 'Миграция Live Core не применена.', code: 'migration_missing' };
+  }
+
+  await recoverStaleInitialSyncRuns(connection.id);
+
+  const runId = randomUUID();
+  const now = new Date().toISOString();
+  const { data, error } = await supabase.from('booking_channel_import_runs').insert({
+    id: runId,
+    connection_id: connection.id,
+    provider: connection.provider,
+    status: 'running',
+    import_type: 'initial_sync',
+    started_at: now,
+    warnings: [],
+    errors: [],
     metadata: {
-      ...connection.metadata,
-      liveSyncLock: { id: lockId, status: 'held', acquiredAt: now },
+      liveCore: true,
+      liveCoreStage: 'acquire_guard',
+      liveCoreCounters: emptyCounters(),
+      cursorPlaceholder: [],
+    },
+    created_at: now,
+    updated_at: now,
+  }).select('*').single();
+
+  if (error) {
+    if (isUniqueViolation(error)) {
+      return { ok: false, reason: 'Синхронизация уже выполняется для этого подключения.', code: 'execution_guard' };
+    }
+    if (isInitialSyncTypeRejected(error)) {
+      return { ok: false, reason: 'Миграция Channel Manager Live Core ещё не применена. Initial sync недоступен.', code: 'migration_missing' };
+    }
+    throw new Error(error.message);
+  }
+
+  // Diagnostic lease only — not the primary lock.
+  await supabase.from('booking_channel_manager_connections').update({
+    last_import_at: now,
+    metadata: {
+      ...stripFullSnapshot(connection.metadata),
+      liveSyncLease: { runId, status: 'held', acquiredAt: now },
     },
     updated_at: now,
   }).eq('id', connection.id);
-  if (error) throw new Error(error.message);
-  return { ok: true, lockId };
+
+  return { ok: true, run: mapRun(data as Record<string, unknown>) };
 }
 
-export async function releaseChannelLiveSyncGuard(connectionId: string, lockId: string): Promise<void> {
+export async function releaseChannelLiveSyncLease(connectionId: string, runId: string): Promise<void> {
   const connection = await getConnection(connectionId);
-  const existing = connection.metadata?.liveSyncLock as Record<string, unknown> | undefined;
-  if (existing && text(existing.id) !== lockId) return;
+  const lease = connection.metadata?.liveSyncLease as Record<string, unknown> | undefined;
+  if (lease && text(lease.runId) !== runId) return;
   const now = new Date().toISOString();
   await supabase.from('booking_channel_manager_connections').update({
     metadata: {
-      ...connection.metadata,
-      liveSyncLock: { id: lockId, status: 'released', releasedAt: now },
+      ...stripFullSnapshot(connection.metadata),
+      liveSyncLease: { runId, status: 'released', releasedAt: now },
     },
     updated_at: now,
   }).eq('id', connection.id);
@@ -578,53 +837,95 @@ async function updateRunProgress(
 async function applyExternalCancellation(matchedBookingId: string): Promise<'cancelled' | 'skipped'> {
   const { data: booking, error } = await supabase
     .from('booking_ops_records')
-    .select('id,normalized_status,ops_status')
+    .select('id,account_id,normalized_status,ops_status')
     .eq('id', matchedBookingId)
     .maybeSingle();
   if (error) throw new Error(error.message);
   if (!booking) return 'skipped';
   const status = text(booking.normalized_status || booking.ops_status).toLowerCase();
   if (status === 'cancelled' || status === 'canceled') return 'skipped';
-  const result = await updateBookingOpsRecord(matchedBookingId, {
-    isBlocked: true,
-    blockerReason: 'Отменено внешним менеджером каналов (Live Core initial sync).',
-  }, { actorType: 'admin' });
-  if (!result.ok) throw new Error(result.error ?? 'Не удалось отметить отмену брони.');
-  const now = new Date().toISOString();
-  const { error: statusError } = await supabase.from('booking_ops_records').update({
-    normalized_status: 'cancelled',
-    cancelled_at: now,
-    cancellation_reason: 'channel_manager_live_core_external_cancel',
-    updated_at: now,
-  }).eq('id', matchedBookingId);
-  if (statusError) throw new Error(statusError.message);
-  return 'cancelled';
+  const accountId = nullableText(booking.account_id);
+  if (!accountId) {
+    throw Object.assign(
+      new Error('Нельзя отменить бронь: не указан account_id. Нужна проверка оператором.'),
+      { code: 'missing_account_id' },
+    );
+  }
+  const result = await cancelReservation({
+    accountId,
+    reservationId: matchedBookingId,
+    actorId: 'channel-manager-live-core',
+    reason: 'channel_manager_live_core_external_cancel',
+  });
+  return result.changed ? 'cancelled' : 'skipped';
 }
 
-async function applyExternalBookingUpdate(imported: Record<string, unknown>): Promise<'updated' | 'skipped'> {
+type UpdateOutcome = 'updated' | 'skipped' | 'failed';
+
+async function applyExternalBookingUpdate(
+  imported: Record<string, unknown>,
+  warnings: ChannelImportConflict[],
+): Promise<UpdateOutcome> {
   const matchedBookingId = text(imported.matched_booking_id);
   if (!matchedBookingId) return 'skipped';
   const checkIn = nullableText(imported.checkin_date);
   const checkOut = nullableText(imported.checkout_date);
   const guestName = nullableText(imported.guest_safe_name);
-  const { data: current } = await supabase
+  const { data: current, error } = await supabase
     .from('booking_ops_records')
-    .select('id,guest_name,check_in_at,check_out_at,normalized_status')
+    .select('id,account_id,property_id,unit_id,guest_name,check_in_at,check_out_at,normalized_status')
     .eq('id', matchedBookingId)
     .maybeSingle();
+  if (error) throw new Error(error.message);
   if (!current) return 'skipped';
   if (text(current.normalized_status).toLowerCase() === 'cancelled') return 'skipped';
+
   const currentCheckIn = current.check_in_at ? String(current.check_in_at).slice(0, 10) : null;
   const currentCheckOut = current.check_out_at ? String(current.check_out_at).slice(0, 10) : null;
-  const changed =
-    (checkIn && checkIn !== currentCheckIn)
-    || (checkOut && checkOut !== currentCheckOut)
-    || (guestName && guestName !== text(current.guest_name));
-  if (!changed) return 'skipped';
+  const datesChanged = Boolean((checkIn && checkIn !== currentCheckIn) || (checkOut && checkOut !== currentCheckOut));
+  const guestChanged = Boolean(guestName && guestName !== text(current.guest_name));
+  if (!datesChanged && !guestChanged) return 'skipped';
+
+  if (datesChanged) {
+    const accountId = nullableText(current.account_id);
+    const propertyId = nullableText(current.property_id);
+    if (!accountId || !propertyId || !checkIn || !checkOut) {
+      warnings.push({
+        type: 'availability_update_blocked',
+        severity: 'blocker',
+        entityId: text(imported.id),
+        message: 'Нельзя изменить даты: недостаточно account_id/property_id/дат. Нужна проверка оператором.',
+      });
+      return 'failed';
+    }
+    const availability = await getUnifiedAvailability({
+      accountId,
+      propertyId,
+      unitId: nullableText(current.unit_id),
+      checkIn,
+      checkOut,
+      excludeReservationId: matchedBookingId,
+    });
+    if (!availability.available) {
+      warnings.push({
+        type: 'availability_conflict',
+        severity: 'blocker',
+        entityId: text(imported.id),
+        message: 'Подтверждённый конфликт доступности — даты не изменены.',
+      });
+      return 'failed';
+    }
+    const result = await updateBookingOpsRecord(matchedBookingId, {
+      guestName: guestChanged ? guestName ?? undefined : undefined,
+      checkInAt: checkIn,
+      checkOutAt: checkOut,
+    }, { actorType: 'admin' });
+    if (!result.ok) throw new Error(result.error ?? 'Не удалось обновить бронь.');
+    return 'updated';
+  }
+
   const result = await updateBookingOpsRecord(matchedBookingId, {
     guestName: guestName ?? undefined,
-    checkInAt: checkIn ?? undefined,
-    checkOutAt: checkOut ?? undefined,
   }, { actorType: 'admin' });
   if (!result.ok) throw new Error(result.error ?? 'Не удалось обновить бронь.');
   return 'updated';
@@ -694,21 +995,20 @@ async function processImportedBookingsForLiveSync(
       }
 
       if (imported.matched_booking_id && ['matched', 'imported_to_booking_ops'].includes(matchStatus)) {
-        const outcome = await applyExternalBookingUpdate(imported);
+        const outcome = await applyExternalBookingUpdate(imported, warnings);
         if (outcome === 'updated') counters.updated += 1;
-        else counters.skipped += 1;
+        else if (outcome === 'failed') {
+          counters.failed += 1;
+          counters.skipped += 1;
+        } else counters.skipped += 1;
         continue;
       }
 
       if (matchStatus === 'unmatched' || !imported.matched_booking_id) {
         const created = await createBookingFromImportedChannelBooking(text(imported.id));
-        if (created.duplicate) {
-          counters.skipped += 1;
-        } else if (created.created) {
-          counters.imported += 1;
-        } else {
-          counters.skipped += 1;
-        }
+        if (created.duplicate) counters.skipped += 1;
+        else if (created.created) counters.imported += 1;
+        else counters.skipped += 1;
         continue;
       }
 
@@ -716,13 +1016,69 @@ async function processImportedBookingsForLiveSync(
     } catch (error) {
       counters.failed += 1;
       warnings.push({
-        type: 'booking_sync_failed',
+        type: (error as { code?: string })?.code === 'missing_account_id' ? 'cancel_missing_account' : 'booking_sync_failed',
         severity: 'blocker',
         entityId: text(imported.id),
         message: redactLiveCoreErrorMessage(error instanceof Error ? error.message : error),
       });
     }
   }
+}
+
+async function finalizeFailedConnection(input: {
+  connection: ChannelManagerConnection;
+  runId: string;
+  stage: ChannelLiveSyncStage;
+  counters: ChannelLiveSyncCounters;
+  warnings: ChannelImportConflict[];
+  safeError: ChannelLiveSafeError;
+  cursors: ChannelLiveProviderCursor[];
+  snapshotReceipt?: Record<string, unknown> | null;
+}): Promise<ChannelManagerConnection> {
+  const finishedAt = new Date().toISOString();
+  await updateRunProgress(input.runId, {
+    stage: 'failed',
+    status: 'failed',
+    finishedAt,
+    counters: input.counters,
+    warnings: input.warnings,
+    errors: [input.safeError],
+    safeSummary: `Live Core initial sync остановлен на этапе ${input.stage}.`,
+    metadata: {
+      cursorPlaceholder: input.cursors,
+      liveCoreCounters: input.counters,
+      failedStage: input.stage,
+      safeError: input.safeError,
+    },
+  }).catch(() => undefined);
+
+  const patch: Record<string, unknown> = {
+    status: 'import_failed',
+    last_failure_at: finishedAt,
+    failure_reason: input.safeError.message.slice(0, 500),
+    metadata: {
+      ...stripFullSnapshot(input.connection.metadata),
+      liveCore: true,
+      lastFailedStage: input.stage,
+      lastSafeError: input.safeError,
+      lastLiveCoreCounters: input.counters,
+      cursorPlaceholder: input.cursors,
+      liveSyncLease: { runId: input.runId, status: 'released', releasedAt: finishedAt },
+      ...(input.snapshotReceipt ? { lastManualSnapshotReceipt: input.snapshotReceipt } : {}),
+    },
+    updated_at: finishedAt,
+  };
+  // Do not touch last_success_at or clear prior failure semantics incorrectly.
+  const { data } = await supabase.from('booking_channel_manager_connections').update(patch).eq('id', input.connection.id).select('*').single();
+  if (!data) return input.connection;
+  return {
+    ...input.connection,
+    status: text(data.status),
+    lastFailureAt: nullableText(data.last_failure_at),
+    failureReason: nullableText(data.failure_reason),
+    metadata: (data.metadata as Record<string, unknown>) ?? input.connection.metadata,
+    updatedAt: text(data.updated_at),
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -732,6 +1088,7 @@ async function processImportedBookingsForLiveSync(
 export async function runChannelManagerInitialSync(input: {
   connectionId: string;
   snapshot?: ManualChannelSnapshot;
+  reuseImportedRows?: boolean;
   metadata?: Record<string, unknown>;
 }): Promise<ChannelLiveSyncResult> {
   if (input.metadata && findSecretPath(input.metadata)) {
@@ -740,71 +1097,56 @@ export async function runChannelManagerInitialSync(input: {
 
   let stage: ChannelLiveSyncStage = 'acquire_guard';
   let runId: string | null = null;
-  let lockId: string | null = null;
   const counters = emptyCounters();
   let warnings: ChannelImportConflict[] = [];
   let cursors: ChannelLiveProviderCursor[] = [];
   let connection = await getConnection(input.connectionId);
+  let receipt: Record<string, unknown> | null = null;
+  let bookingsImported = 0;
 
   try {
     const guard = await acquireChannelLiveSyncGuard(connection.id);
     if (!guard.ok) {
-      throw Object.assign(new Error(guard.reason), { code: 'execution_guard' });
+      throw Object.assign(new Error(guard.reason), { code: guard.code });
     }
-    lockId = guard.lockId;
-
-    stage = 'queued';
-    const now = new Date().toISOString();
-    const { data: runRow, error: runError } = await supabase.from('booking_channel_import_runs').insert({
-      id: randomUUID(),
-      connection_id: connection.id,
-      provider: connection.provider,
-      status: 'running',
-      import_type: 'initial_sync',
-      started_at: now,
-      warnings: [],
-      errors: [],
-      metadata: {
-        ...(input.metadata ?? {}),
-        liveCore: true,
-        liveCoreStage: stage,
-        liveCoreCounters: counters,
-        liveSyncLockId: lockId,
-        cursorPlaceholder: [],
-      },
-      created_at: now,
-      updated_at: now,
-    }).select('*').single();
-    if (runError || !runRow) throw new Error(runError?.message ?? 'Не удалось создать запуск синхронизации.');
-    runId = text(runRow.id);
-    await supabase.from('booking_channel_manager_connections').update({ last_import_at: now, updated_at: now }).eq('id', connection.id);
+    runId = guard.run.id;
 
     stage = 'load_provider_data';
     await updateRunProgress(runId, { stage, counters });
-    const adapter = createChannelLiveCoreAdapter(
-      connection.provider === 'manual' ? 'manual' : connection.provider,
-      { snapshot: input.snapshot ?? (connection.metadata?.lastManualSnapshot as ManualChannelSnapshot | undefined) },
-    );
+    const adapter = createChannelLiveCoreAdapter(connection.provider, {
+      snapshot: input.snapshot,
+      reuseImportedRows: input.reuseImportedRows === true,
+      connectionId: connection.id,
+    });
+    if (input.snapshot) receipt = snapshotReceipt(input.snapshot, runId);
     const snapshot = await adapter.loadInitialSnapshot();
     cursors = snapshot.cursors;
 
-    stage = 'import_objects';
-    await updateRunProgress(runId, { stage, counters, metadata: { cursorPlaceholder: cursors } });
-    counters.objects = await importChannelObjects(connection.id, snapshot.properties.map(propertyToRow), { importRunId: runId });
+    const skipRowImport = input.reuseImportedRows === true && !input.snapshot;
 
-    stage = 'import_bookings';
-    await updateRunProgress(runId, { stage, counters, objects: counters.objects });
-    const bookingRows = snapshot.bookings.map(bookingToRow);
-    const bookingsImported = await importChannelBookings(connection.id, bookingRows, { importRunId: runId });
+    if (!skipRowImport) {
+      stage = 'import_objects';
+      await updateRunProgress(runId, { stage, counters, metadata: { cursorPlaceholder: cursors } });
+      counters.objects = await importChannelObjects(connection.id, snapshot.properties.map(propertyToRow), { importRunId: runId });
 
-    stage = 'import_calendar';
-    await updateRunProgress(runId, { stage, counters, bookings: bookingsImported });
-    counters.calendarDays = await importChannelCalendar(connection.id, snapshot.calendar.map(calendarToRow), { importRunId: runId });
-    counters.prices = await importChannelCalendar(connection.id, snapshot.pricing.map(calendarToRow), { importRunId: runId, pricing: true });
+      stage = 'import_bookings';
+      await updateRunProgress(runId, { stage, counters, objects: counters.objects });
+      bookingsImported = await importChannelBookings(connection.id, snapshot.bookings.map(bookingToRow), { importRunId: runId });
+
+      stage = 'import_calendar';
+      await updateRunProgress(runId, { stage, counters, bookings: bookingsImported });
+      counters.calendarDays = await importChannelCalendar(connection.id, snapshot.calendar.map(calendarToRow), { importRunId: runId });
+      counters.prices = await importChannelCalendar(connection.id, snapshot.pricing.map(calendarToRow), { importRunId: runId, pricing: true });
+    } else {
+      counters.objects = snapshot.properties.length;
+      bookingsImported = snapshot.bookings.length;
+      counters.calendarDays = snapshot.calendar.length;
+    }
 
     stage = 'reconcile_properties';
     await updateRunProgress(runId, {
       stage, counters, bookings: bookingsImported, calendarDays: counters.calendarDays, prices: counters.prices,
+      metadata: { cursorPlaceholder: cursors },
     });
     await reconcileImportedObjects(connection.id);
 
@@ -828,11 +1170,20 @@ export async function runChannelManagerInitialSync(input: {
 
     stage = 'persist_counters';
     const finishedAt = new Date().toISOString();
-    const status = warnings.some((item) => item.severity === 'blocker') || counters.failed > 0
-      ? 'completed_with_warnings'
-      : warnings.length
-        ? 'completed_with_warnings'
-        : 'completed';
+    const status = resolveChannelLiveSyncFinalStatus(counters, warnings);
+
+    if (status === 'failed') {
+      const safeError = toChannelLiveSafeError('process_bookings', 'Initial sync завершён с blocker/ошибками обработки.', 'sync_failed');
+      connection = await finalizeFailedConnection({
+        connection, runId, stage: 'process_bookings', counters, warnings, safeError, cursors, snapshotReceipt: receipt,
+      });
+      const runs = await listChannelImportRuns(connection.id);
+      const run = runs.find((item) => item.id === runId)!;
+      return {
+        run, connection, stage: 'failed', status: 'failed', counters, warnings, safeError, cursors, retryable: true,
+      };
+    }
+
     const run = await updateRunProgress(runId, {
       stage: 'completed',
       status,
@@ -847,7 +1198,6 @@ export async function runChannelManagerInitialSync(input: {
       metadata: {
         cursorPlaceholder: cursors,
         liveCoreCounters: counters,
-        lastSuccessfulInitialSyncAt: finishedAt,
       },
     });
 
@@ -856,13 +1206,13 @@ export async function runChannelManagerInitialSync(input: {
       last_success_at: finishedAt,
       failure_reason: null,
       metadata: {
-        ...connection.metadata,
+        ...stripFullSnapshot(connection.metadata),
         liveCore: true,
         lastSuccessfulInitialSyncAt: finishedAt,
         cursorPlaceholder: cursors,
         lastLiveCoreCounters: counters,
-        lastManualSnapshot: input.snapshot ?? connection.metadata?.lastManualSnapshot ?? null,
-        liveSyncLock: { id: lockId, status: 'released', releasedAt: finishedAt },
+        liveSyncLease: { runId, status: 'released', releasedAt: finishedAt },
+        ...(receipt ? { lastManualSnapshotReceipt: receipt } : {}),
       },
       updated_at: finishedAt,
     }).eq('id', connection.id).select('*').single();
@@ -878,52 +1228,19 @@ export async function runChannelManagerInitialSync(input: {
     }
 
     return {
-      run,
-      connection,
-      stage: 'completed',
-      status,
-      counters,
-      warnings,
-      safeError: null,
-      cursors,
-      retryable: true,
+      run, connection, stage: 'completed', status, counters, warnings, safeError: null, cursors, retryable: true,
     };
   } catch (error) {
-    const safeError = toChannelLiveSafeError(stage, error, (error as { code?: string })?.code === 'execution_guard' ? 'execution_guard' : 'sync_failed');
+    const code = (error as { code?: string })?.code;
+    const safeError = toChannelLiveSafeError(
+      stage,
+      error,
+      code === 'execution_guard' || code === 'migration_missing' ? code : 'sync_failed',
+    );
     if (runId) {
-      const finishedAt = new Date().toISOString();
-      await updateRunProgress(runId, {
-        stage: 'failed',
-        status: 'failed',
-        finishedAt,
-        counters,
-        warnings,
-        errors: [safeError],
-        safeSummary: `Live Core initial sync остановлен на этапе ${stage}.`,
-        metadata: {
-          cursorPlaceholder: cursors,
-          liveCoreCounters: counters,
-          failedStage: stage,
-          safeError,
-        },
-      }).catch(() => undefined);
-      await supabase.from('booking_channel_manager_connections').update({
-        status: 'import_failed',
-        last_failure_at: finishedAt,
-        failure_reason: safeError.message.slice(0, 500),
-        metadata: {
-          ...connection.metadata,
-          liveCore: true,
-          lastFailedStage: stage,
-          lastSafeError: safeError,
-          cursorPlaceholder: cursors,
-          lastManualSnapshot: input.snapshot ?? connection.metadata?.lastManualSnapshot ?? null,
-          liveSyncLock: lockId ? { id: lockId, status: 'released', releasedAt: finishedAt } : connection.metadata?.liveSyncLock,
-        },
-        updated_at: finishedAt,
-      }).eq('id', connection.id);
-    } else if (lockId) {
-      await releaseChannelLiveSyncGuard(connection.id, lockId).catch(() => undefined);
+      connection = await finalizeFailedConnection({
+        connection, runId, stage, counters, warnings, safeError, cursors, snapshotReceipt: receipt,
+      });
     }
 
     const runs = runId ? await listChannelImportRuns(connection.id) : [];
@@ -963,6 +1280,7 @@ export async function runChannelManagerInitialSync(input: {
 
 export async function getChannelLiveCoreStatus(connectionId: string): Promise<ChannelLiveCoreStatus> {
   const connection = await getConnection(connectionId);
+  const schema = await probeChannelLiveCoreSchema(connection.id);
   const runs = [...await listChannelImportRuns(connection.id)].sort((left, right) => {
     const leftTs = Date.parse(left.updatedAt || left.finishedAt || left.createdAt || left.startedAt || '') || 0;
     const rightTs = Date.parse(right.updatedAt || right.finishedAt || right.createdAt || right.startedAt || '') || 0;
@@ -978,12 +1296,17 @@ export async function getChannelLiveCoreStatus(connectionId: string): Promise<Ch
     ? latest?.metadata?.cursorPlaceholder
     : connection.metadata?.cursorPlaceholder) as ChannelLiveProviderCursor[] | undefined;
 
+  const latestWarnings = Array.isArray(latest?.warnings) ? latest!.warnings as ChannelImportConflict[] : [];
+  const blockerWarning = latestWarnings.find((item) => item && typeof item === 'object' && (item as ChannelImportConflict).severity === 'blocker') as ChannelImportConflict | undefined;
+
   let warning: string | null = null;
   let blocker: string | null = null;
-  if (connection.status === 'blocked') blocker = connection.failureReason ?? 'Подключение заблокировано.';
-  else if (latest?.status === 'failed') blocker = safeError?.message ?? connection.failureReason ?? 'Последняя синхронизация завершилась ошибкой.';
-  else if (counters?.failed) warning = `Есть ошибки обработки броней: ${counters.failed}.`;
-  else if ((latest?.warnings?.length ?? 0) > 0) warning = 'Есть предупреждения сверки после initial sync.';
+  if (!schema.ready) blocker = schema.blocker;
+  else if (connection.status === 'blocked') blocker = connection.failureReason ?? 'Подключение заблокировано.';
+  else if (latest?.status === 'failed') blocker = safeError?.message ?? blockerWarning?.message ?? connection.failureReason ?? 'Последняя синхронизация завершилась ошибкой.';
+  else if (blockerWarning) blocker = blockerWarning.message;
+  else if (counters?.failed) blocker = `Есть ошибки обработки броней: ${counters.failed}.`;
+  else if (latestWarnings.length > 0) warning = 'Есть предупреждения сверки после initial sync.';
 
   return {
     provider: connection.provider,
@@ -1003,14 +1326,11 @@ export async function getChannelLiveCoreStatus(connectionId: string): Promise<Ch
     counters,
     warning,
     blocker,
-    liveCoreEnabled: true,
+    liveCoreEnabled: schema.ready,
+    initialSyncEnabled: schema.ready,
     incrementalSyncEnabled: false,
     realProviderApiEnabled: CHANNEL_PROVIDER_ADAPTERS[connection.provider]?.supports_real_api === true,
-    cursorPlaceholder: cursors ?? [
-      { stream: 'objects', checkpoint: null },
-      { stream: 'bookings', checkpoint: null },
-      { stream: 'calendar', checkpoint: null },
-      { stream: 'incremental', checkpoint: null },
-    ],
+    schemaReady: schema.ready,
+    cursorPlaceholder: cursors ?? cursorPlaceholder(),
   };
 }
