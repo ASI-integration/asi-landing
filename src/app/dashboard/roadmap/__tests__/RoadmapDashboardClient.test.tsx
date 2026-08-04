@@ -17,9 +17,16 @@ describe('RoadmapDashboardClient UI', () => {
     expect(html).toContain('data-roadmap-dashboard="true"');
     expect(html).toContain('План ASI');
     expect(html).toContain('Ближайший фокус');
+    expect(html).toContain('Критический путь к пилоту');
     expect(html).toContain('data-roadmap-summary="true"');
+    expect(html).toContain('data-roadmap-critical-path="true"');
     expect(html).toContain('data-roadmap-progress-strip="true"');
+    expect(html).toContain('data-roadmap-progress-note="true"');
+    expect(html).toContain(
+      'По количеству этапов, без учёта их сложности и критичности.',
+    );
     expect(html).toContain('data-roadmap-filters="true"');
+    expect(html).not.toContain('готовности ASI');
 
     for (const status of STATUSES) {
       expect(html).toContain(`data-roadmap-status="${status}"`);
@@ -28,6 +35,14 @@ describe('RoadmapDashboardClient UI', () => {
       expect(html).toContain(ROADMAP_STATUS_LABELS[status]);
     }
     expect(html).toContain('data-roadmap-filter="all"');
+  });
+
+  it('renders Live Core and sync in nearest focus and critical path blocks', () => {
+    const html = renderToStaticMarkup(React.createElement(RoadmapDashboardClient));
+    expect(html).toContain('data-roadmap-focus-item="ch-live-core"');
+    expect(html).toContain('data-roadmap-focus-item="ch-initial-incremental-sync"');
+    expect(html).toContain('data-roadmap-critical-item="ch-live-core"');
+    expect(html).toContain('data-roadmap-critical-item="ch-initial-incremental-sync"');
   });
 
   it('renders departments and allows department expansion markup', () => {

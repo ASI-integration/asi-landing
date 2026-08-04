@@ -6,6 +6,7 @@ import { ASI_PRODUCT_ROADMAP } from '@/lib/roadmap/asi-product-roadmap';
 import {
   buildRoadmapSummary,
   countStagesByStatus,
+  criticalPilotPathStages,
   departmentOverallStatus,
   filterDepartments,
   nearestFocusStages,
@@ -76,7 +77,7 @@ function ProgressStrip({
     <div
       className="flex h-2.5 w-full overflow-hidden rounded-full bg-slate-100"
       role="img"
-      aria-label={`Общее состояние: готово ${counts.done}, в работе ${counts.in_progress}, блокеры ${counts.blocked}, позже ${counts.later}`}
+      aria-label={`Распределение по статусам: готово ${counts.done}, в работе ${counts.in_progress}, блокеры ${counts.blocked}, позже ${counts.later}`}
       data-roadmap-progress-strip="true"
     >
       {order.map((status) => {
@@ -247,6 +248,7 @@ export default function RoadmapDashboardClient() {
   const [filter, setFilter] = useState<RoadmapFilter>('all');
   const summary = useMemo(() => buildRoadmapSummary(), []);
   const focus = useMemo(() => nearestFocusStages(ASI_PRODUCT_ROADMAP, 5), []);
+  const criticalPath = useMemo(() => criticalPilotPathStages(ASI_PRODUCT_ROADMAP, 5), []);
   const departments = useMemo(
     () => filterDepartments(ASI_PRODUCT_ROADMAP, filter),
     [filter],
@@ -289,10 +291,16 @@ export default function RoadmapDashboardClient() {
         </div>
         <div className="mt-4 space-y-2">
           <div className="flex items-center justify-between text-xs text-slate-500">
-            <span>Общее состояние</span>
+            <span>Распределение по статусам</span>
             <span>{summary.total} этапов</span>
           </div>
           <ProgressStrip counts={summary.counts} total={summary.total} />
+          <p
+            className="text-xs text-slate-500 leading-relaxed"
+            data-roadmap-progress-note="true"
+          >
+            По количеству этапов, без учёта их сложности и критичности.
+          </p>
           <div
             className="flex flex-wrap gap-2 pt-1"
             data-roadmap-status-legend="true"
@@ -303,6 +311,45 @@ export default function RoadmapDashboardClient() {
             ))}
           </div>
         </div>
+      </section>
+
+      <section
+        className="rounded-xl border border-amber-200 bg-amber-50/40 p-4 shadow-sm sm:p-5"
+        data-roadmap-critical-path="true"
+      >
+        <h2 className="text-base font-semibold text-slate-900">Критический путь к пилоту</h2>
+        <p className="mt-1 text-sm text-slate-600">
+          Ближайшие незакрытые этапы на пути к пилоту — не все незавершённые задачи.
+        </p>
+        <ol className="mt-3 space-y-2">
+          {criticalPath.map((stage, index) => (
+            <li
+              key={stage.id}
+              className="flex flex-col gap-1 rounded-lg border border-amber-100 bg-white px-3 py-2 sm:flex-row sm:items-center sm:justify-between"
+              data-roadmap-critical-item={stage.id}
+            >
+              <div className="flex min-w-0 items-start gap-2">
+                <span className="mt-0.5 text-xs font-semibold text-slate-400">{index + 1}.</span>
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <StatusDot status={stage.status} />
+                    <span className="text-sm font-medium text-slate-900">{stage.title}</span>
+                    <StatusBadge status={stage.status} />
+                  </div>
+                  <p className="mt-0.5 text-xs text-slate-600 leading-relaxed">{stage.nextStep}</p>
+                </div>
+              </div>
+              {stage.dashboardHref ? (
+                <Link
+                  href={stage.dashboardHref}
+                  className="shrink-0 text-xs font-medium text-slate-700 underline-offset-2 hover:underline"
+                >
+                  Dashboard
+                </Link>
+              ) : null}
+            </li>
+          ))}
+        </ol>
       </section>
 
       <section

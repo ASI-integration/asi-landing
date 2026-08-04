@@ -73,6 +73,7 @@ export const ASI_PRODUCT_ROADMAP: RoadmapDepartment[] = [
         currentState: 'Admin-активация и pilot-chain есть; zero-touch ещё не закрыт.',
         nextStep: 'Закрыть ручные пробелы активации для 3–5 пилотных клиентов.',
         priority: 2,
+        criticalForPilot: true,
         dashboardHref: '/dashboard/onboarding',
         evidence: [
           { kind: 'code', path: 'src/lib/ops-v17/service.ts', note: 'admin activation' },
@@ -146,6 +147,7 @@ export const ASI_PRODUCT_ROADMAP: RoadmapDepartment[] = [
         currentState: 'Pricing intelligence / prep есть; живая тарифная сетка не подтверждена.',
         nextStep: 'Фиксировать цену пилота вручную в заметке или менеджере каналов.',
         priority: 2,
+        criticalForPilot: true,
         dashboardHref: '/dashboard/properties',
         evidence: [
           { kind: 'code', path: 'src/lib/booking-ops/pricing-intelligence-autopilot.ts' },
@@ -227,11 +229,13 @@ export const ASI_PRODUCT_ROADMAP: RoadmapDepartment[] = [
       stage({
         id: 'ch-live-core',
         title: 'Channel Manager Live Core',
-        status: 'later',
-        currentState: 'Есть контракт ChannelManagerLiveAdapter, реализации live нет.',
-        nextStep: 'После пилота реализовать live core поверх ручного контура.',
-        priority: 5,
-        blocker: 'Live adapter — только интерфейс, не готовность.',
+        status: 'in_progress',
+        currentState:
+          'Provider-independent contract/foundation exists, but the live sync engine is not implemented.',
+        nextStep: 'Implement provider-independent read-only Live Core.',
+        priority: 1,
+        criticalForPilot: true,
+        dashboardHref: '/dashboard/channel-connections',
         evidence: [
           { kind: 'code', path: 'src/lib/ops-v17/types.ts', note: 'ChannelManagerLiveAdapter' },
           { kind: 'docs', path: 'docs/OPS_V17_ZERO_TOUCH_PILOT_ONBOARDING.md' },
@@ -240,14 +244,17 @@ export const ASI_PRODUCT_ROADMAP: RoadmapDepartment[] = [
       stage({
         id: 'ch-initial-incremental-sync',
         title: 'Initial и incremental sync',
-        status: 'later',
-        currentState: 'Живой initial/incremental sync с провайдерами отсутствует.',
-        nextStep: 'Планировать после первого real provider adapter.',
-        priority: 5,
-        blocker: 'Нет real API adapters Bnovo / RealtyCalendar / TravelLine.',
+        status: 'in_progress',
+        currentState:
+          'Manual snapshot import exists, but live checkpointed initial/incremental sync is absent.',
+        nextStep:
+          'Implement initial sync, cursor/checkpoint, incremental polling/webhook ingestion and recovery.',
+        priority: 1,
+        criticalForPilot: true,
+        dashboardHref: '/dashboard/channel-connections',
         evidence: [
-          { kind: 'code', path: 'src/lib/booking-ops/channel-manager-access-import.ts', note: 'supports_real_api: false' },
-          { kind: 'docs', path: 'docs/market-signals-ingestion-v1.md' },
+          { kind: 'code', path: 'src/lib/booking-ops/channel-manager-access-import.ts', note: 'manual snapshot only' },
+          { kind: 'docs', path: 'docs/channel-manager-access-import-v1.md' },
         ],
       }),
       stage({
@@ -270,6 +277,7 @@ export const ASI_PRODUCT_ROADMAP: RoadmapDepartment[] = [
         currentState: 'Bnovo, RealtyCalendar и TravelLine помечены unavailable / no real API.',
         nextStep: 'Выбрать первого провайдера и закрыть credentials + API contract.',
         priority: 1,
+        criticalForPilot: true,
         blocker: 'Реальные API Bnovo, RealtyCalendar и TravelLine отсутствуют.',
         dashboardHref: '/dashboard/channel-connections',
         evidence: [
@@ -292,11 +300,10 @@ export const ASI_PRODUCT_ROADMAP: RoadmapDepartment[] = [
       stage({
         id: 'ch-outbound-publish',
         title: 'Outbound-публикация цен и доступности',
-        status: 'blocked',
+        status: 'later',
         currentState: 'Только preparation package; realOtaPublishingEnabled всегда false.',
-        nextStep: 'Не считать prepared публикацией; публиковать вручную вне ASI.',
-        priority: 1,
-        blocker: 'Outbound OTA publication отсутствует.',
+        nextStep: 'После read-only Live Core и первого adapter — outbound publish.',
+        priority: 5,
         evidence: [
           { kind: 'code', path: 'src/lib/booking-ops/channel-publishing-preparation.ts', note: 'realOtaPublishingEnabled: false' },
           { kind: 'docs', path: 'docs/channel-publishing-preparation-v1.md' },
@@ -466,6 +473,7 @@ export const ASI_PRODUCT_ROADMAP: RoadmapDepartment[] = [
         currentState: 'Код готов; env-gates по умолчанию выключены — live activation не подтверждена.',
         nextStep: 'Включать только с evidence live-прогона и allowlist.',
         priority: 2,
+        criticalForPilot: true,
         blocker: 'Без подтверждённого production evidence нельзя считать LLM activated.',
         evidence: [
           { kind: 'code', path: 'src/lib/communication/llm-safe-domain-layer.ts', note: 'LLM_SAFE_DOMAIN_ENABLED default off' },
@@ -490,6 +498,7 @@ export const ASI_PRODUCT_ROADMAP: RoadmapDepartment[] = [
         currentState: 'Policy safe_to_auto_send есть; часто draft + ручное подтверждение.',
         nextStep: 'Не считать intent фактической доставкой.',
         priority: 2,
+        criticalForPilot: true,
         evidence: [
           { kind: 'code', path: 'src/lib/communication/approval.ts' },
           { kind: 'docs', path: 'docs/pilot-core-loop-readiness-v1.md', note: 'draft ≠ delivery' },
@@ -502,6 +511,7 @@ export const ASI_PRODUCT_ROADMAP: RoadmapDepartment[] = [
         currentState: 'Mark-sent / approval path есть; автоматическое подтверждение каналов неполное.',
         nextStep: 'Оператор подтверждает отправку, если auto-send не применим.',
         priority: 2,
+        criticalForPilot: true,
         dashboardHref: '/dashboard/communication',
         evidence: [
           { kind: 'code', path: 'src/lib/communication/approval.ts' },
@@ -866,7 +876,8 @@ export const ASI_PRODUCT_ROADMAP: RoadmapDepartment[] = [
         status: 'in_progress',
         currentState: 'Pilot loop runnable с обязательными ручными шагами OTA/legal/pay.',
         nextStep: 'Пройти demo E2E по pilot-core-loop регламенту.',
-        priority: 1,
+        priority: 2,
+        criticalForPilot: true,
         evidence: [
           { kind: 'docs', path: 'docs/pilot-core-loop-readiness-v1.md', note: 'ready_with_manual_steps' },
         ],
@@ -904,7 +915,8 @@ export const ASI_PRODUCT_ROADMAP: RoadmapDepartment[] = [
         status: 'in_progress',
         currentState: 'Connection model и placeholder connected; live connect не подтверждён.',
         nextStep: 'Закрыть один объект в ручном connected режиме.',
-        priority: 1,
+        priority: 2,
+        criticalForPilot: true,
         dashboardHref: '/dashboard/channel-connections',
         evidence: [
           { kind: 'docs', path: 'docs/pilot-core-loop-readiness-v1.md', note: 'connected объясняет ручной режим' },
@@ -916,7 +928,8 @@ export const ASI_PRODUCT_ROADMAP: RoadmapDepartment[] = [
         status: 'in_progress',
         currentState: 'Регламент и готовность к пилоту есть; закрытый cohort ещё не завершён.',
         nextStep: 'Провести 3–5 клиентов по полному циклу с ручными шагами.',
-        priority: 1,
+        priority: 2,
+        criticalForPilot: true,
         evidence: [
           { kind: 'docs', path: 'docs/pilot-core-loop-readiness-v1.md' },
         ],

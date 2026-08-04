@@ -18,6 +18,8 @@ export type RoadmapStage = {
   evidence: RoadmapEvidence[];
   dashboardHref?: string;
   blocker?: string;
+  /** Near-term pilot-critical path; not every unfinished stage. */
+  criticalForPilot?: boolean;
   lastReviewedAt: string;
 };
 

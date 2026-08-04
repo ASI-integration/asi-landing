@@ -16,6 +16,7 @@ export {
   assertValidStatuses,
   buildRoadmapSummary,
   countStagesByStatus,
+  criticalPilotPathStages,
   departmentOverallStatus,
   filterDepartments,
   filterStagesByStatus,

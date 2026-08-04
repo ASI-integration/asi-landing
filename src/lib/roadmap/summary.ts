@@ -68,6 +68,18 @@ export function departmentOverallStatus(stages: RoadmapStage[]): RoadmapStatus {
   return 'done';
 }
 
+function compareFocusStages(a: RoadmapStage, b: RoadmapStage): number {
+  if (a.priority !== b.priority) return a.priority - b.priority;
+  const aCritical = a.criticalForPilot === true ? 0 : 1;
+  const bCritical = b.criticalForPilot === true ? 0 : 1;
+  if (aCritical !== bCritical) return aCritical - bCritical;
+  if (a.status !== b.status) {
+    if (a.status === 'blocked') return -1;
+    if (b.status === 'blocked') return 1;
+  }
+  return a.title.localeCompare(b.title, 'ru');
+}
+
 export function nearestFocusStages(
   departments: RoadmapDepartment[] = ASI_PRODUCT_ROADMAP,
   limit = 5,
@@ -75,16 +87,21 @@ export function nearestFocusStages(
   const actionable = allRoadmapStages(departments).filter(
     (stage) => stage.status === 'blocked' || stage.status === 'in_progress',
   );
-  return [...actionable]
-    .sort((a, b) => {
-      if (a.priority !== b.priority) return a.priority - b.priority;
-      if (a.status !== b.status) {
-        if (a.status === 'blocked') return -1;
-        if (b.status === 'blocked') return 1;
-      }
-      return a.title.localeCompare(b.title, 'ru');
-    })
-    .slice(0, limit);
+  return [...actionable].sort(compareFocusStages).slice(0, limit);
+}
+
+/** Unfinished stages on the near-term pilot critical path only. */
+export function criticalPilotPathStages(
+  departments: RoadmapDepartment[] = ASI_PRODUCT_ROADMAP,
+  limit = 5,
+): RoadmapStage[] {
+  const critical = allRoadmapStages(departments).filter(
+    (stage) =>
+      stage.criticalForPilot === true &&
+      stage.status !== 'done' &&
+      stage.status !== 'later',
+  );
+  return [...critical].sort(compareFocusStages).slice(0, limit);
 }
 
 export function assertUniqueStageIds(departments: RoadmapDepartment[]): string[] {

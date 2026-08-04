@@ -21,6 +21,8 @@
 
 **Нельзя** ставить `done` только из-за типов, таблиц, placeholder, draft intent или одной документации без реализации.
 
+Опционально: `criticalForPilot: true` — этап на ближнем пути к пилоту. Полоса «распределение по статусам» считает **только количество** этапов и не является процентом готовности ASI.
+
 ## Доступ
 
 Пункт «План ASI» в левом меню виден только `isDevelopmentOwner` — тот же allowlist, что и «Разработка ASI». Страница обёрнута в `DevelopmentOwnerGuard`.
@@ -29,7 +31,7 @@
 
 Каждый PR, который меняет готовность функции, должен:
 
-1. обновить соответствующий stage в `asi-product-roadmap.ts` (status, currentState, nextStep, evidence, blocker), **или**
+1. обновить соответствующий stage в `asi-product-roadmap.ts` (status, currentState, nextStep, evidence, blocker, criticalForPilot), **или**
 2. явно объяснить в описании PR, почему статус не изменился.
 
 CI-блокировка для всех PR в v1 **не** добавляется — дисциплина ручная + focused tests на целостность данных.

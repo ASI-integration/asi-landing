@@ -9,6 +9,7 @@ import {
   assertValidStatuses,
   buildRoadmapSummary,
   countStagesByStatus,
+  criticalPilotPathStages,
   departmentOverallStatus,
   filterDepartments,
   filterStagesByStatus,
@@ -22,6 +23,19 @@ import {
 import type { RoadmapStatus } from '../types';
 
 const STATUSES: RoadmapStatus[] = ['done', 'in_progress', 'blocked', 'later'];
+
+const REQUIRED_CRITICAL_IDS = [
+  'crm-pilot-owner-activation',
+  'prop-pricing-grid',
+  'ch-live-core',
+  'ch-initial-incremental-sync',
+  'ch-first-real-adapter',
+  'comm-production-llm',
+  'comm-safe-auto-send',
+  'pilot-manual-e2e',
+  'pilot-first-connected-object',
+  'pilot-closed-3-5',
+] as const;
 
 describe('ASI product roadmap data integrity', () => {
   it('keeps unique stage IDs', () => {
@@ -71,11 +85,18 @@ describe('ASI product roadmap data integrity', () => {
     }
   });
 
-  it('records honest blocked facts for OTA / payments / MVD gaps', () => {
+  it('keeps Channel Manager critical path aligned with product focus', () => {
     const byId = Object.fromEntries(allRoadmapStages().map((s) => [s.id, s]));
     expect(byId['ch-manual-json-import']?.status).toBe('done');
+    expect(byId['ch-live-core']?.status).toBe('in_progress');
+    expect(byId['ch-live-core']?.priority).toBe(1);
+    expect(byId['ch-live-core']?.criticalForPilot).toBe(true);
+    expect(byId['ch-initial-incremental-sync']?.status).toBe('in_progress');
+    expect(byId['ch-initial-incremental-sync']?.priority).toBe(1);
+    expect(byId['ch-initial-incremental-sync']?.criticalForPilot).toBe(true);
     expect(byId['ch-first-real-adapter']?.status).toBe('blocked');
-    expect(byId['ch-outbound-publish']?.status).toBe('blocked');
+    expect(byId['ch-first-real-adapter']?.priority).toBe(1);
+    expect(byId['ch-outbound-publish']?.status).toBe('later');
     expect(byId['bk-booking-intake']?.status).toBe('done');
     expect(byId['bk-lifecycle']?.status).toBe('done');
     expect(byId['legal-e-sign']?.status).toBe('blocked');
@@ -84,6 +105,19 @@ describe('ASI product roadmap data integrity', () => {
     expect(byId['comm-production-llm']?.status).not.toBe('done');
     expect(byId['rt-single-executor']?.status).toBe('done');
     expect(byId['rt-worker-pool']?.status).toBe('later');
+  });
+
+  it('marks the near-term pilot critical path without making every unfinished stage critical', () => {
+    const byId = Object.fromEntries(allRoadmapStages().map((s) => [s.id, s]));
+    for (const id of REQUIRED_CRITICAL_IDS) {
+      expect(byId[id]?.criticalForPilot, id).toBe(true);
+    }
+    const criticalCount = allRoadmapStages().filter((s) => s.criticalForPilot).length;
+    const unfinished = allRoadmapStages().filter((s) => s.status !== 'done').length;
+    expect(criticalCount).toBeGreaterThanOrEqual(REQUIRED_CRITICAL_IDS.length);
+    expect(criticalCount).toBeLessThan(unfinished);
+    expect(byId['ch-outbound-publish']?.criticalForPilot).not.toBe(true);
+    expect(byId['rt-worker-pool']?.criticalForPilot).not.toBe(true);
   });
 });
 
@@ -129,13 +163,31 @@ describe('roadmap summary and filters', () => {
     ).toBe('later');
   });
 
-  it('returns 3–5 nearest focus stages from blockers and in-progress', () => {
+  it('returns nearest focus including Channel Manager Live Core and sync', () => {
     const focus = nearestFocusStages(ASI_PRODUCT_ROADMAP, 5);
     expect(focus.length).toBeGreaterThanOrEqual(3);
     expect(focus.length).toBeLessThanOrEqual(5);
     expect(focus.every((s) => s.status === 'blocked' || s.status === 'in_progress')).toBe(true);
+    const focusIds = focus.map((s) => s.id);
+    expect(focusIds).toContain('ch-live-core');
+    expect(focusIds).toContain('ch-initial-incremental-sync');
     for (let i = 1; i < focus.length; i += 1) {
       expect(focus[i]!.priority).toBeGreaterThanOrEqual(focus[i - 1]!.priority);
+    }
+  });
+
+  it('orders critical pilot path by priority and surfaces Live Core sync work', () => {
+    const path = criticalPilotPathStages(ASI_PRODUCT_ROADMAP, 5);
+    expect(path.length).toBeGreaterThan(0);
+    expect(path.length).toBeLessThanOrEqual(5);
+    expect(path.every((s) => s.criticalForPilot === true)).toBe(true);
+    expect(path.every((s) => s.status === 'blocked' || s.status === 'in_progress')).toBe(true);
+    const pathIds = path.map((s) => s.id);
+    expect(pathIds).toContain('ch-live-core');
+    expect(pathIds).toContain('ch-initial-incremental-sync');
+    expect(pathIds).not.toContain('ch-outbound-publish');
+    for (let i = 1; i < path.length; i += 1) {
+      expect(path[i]!.priority).toBeGreaterThanOrEqual(path[i - 1]!.priority);
     }
   });
 });
