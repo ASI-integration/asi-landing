@@ -51,11 +51,30 @@ type AcceptanceEvidence = {
   secondRunStatus: string | null;
   importedFirstRun: number | null;
   importedSecondRun: number | null;
+  updatedFirstRun?: number | null;
+  updatedSecondRun?: number | null;
   duplicateCount: number | null;
+  recoveryRequired?: boolean | null;
+  recoverySafeToCleanup?: boolean | null;
+  recoveryBlockerCode?: string | null;
+  recoveryBlockerSummary?: string | null;
+  recoveryExpectedDeletionTotal?: number | null;
+  calendarRowCount?: number | null;
+  selfConflictCount?: number | null;
   passed: boolean;
   blocker: string | null;
   failedStep: string | null;
   steps: Array<{ key: string; label: string; status: AcceptanceStepStatus; detail: string | null }>;
+};
+
+type RecoveryPreview = {
+  recoveryRequired: boolean;
+  safeToCleanup: boolean;
+  blockerCode: string;
+  blockerSummary: string | null;
+  mainRecord: { id: string; classification?: string | null } | null;
+  countsByTable: Record<string, number>;
+  expectedDeletionTotal: number;
 };
 
 const PROVIDERS = ['manual', 'bnovo', 'realtycalendar', 'travelline', 'other'] as const;
@@ -98,6 +117,10 @@ export function ChannelManagerImportPanel() {
     'Тестовый контур Live Core ещё не подготовлен. Нажмите «Подготовить и запустить тест».',
   );
   const [acceptanceError, setAcceptanceError] = useState('');
+  const [recoveryPreview, setRecoveryPreview] = useState<RecoveryPreview | null>(null);
+  const [recoveryConfirmPhrase, setRecoveryConfirmPhrase] = useState('');
+  const [recoveryCleanupMessage, setRecoveryCleanupMessage] = useState('');
+  const [recoveryBusy, setRecoveryBusy] = useState(false);
 
   const load = useCallback(async () => {
     const [connectionsRes, objectsRes, bookingsRes, calendarRes] = await Promise.all([
@@ -132,6 +155,7 @@ export function ChannelManagerImportPanel() {
       schemaReady?: boolean;
       unavailableReason?: string;
       message?: string;
+      recovery?: RecoveryPreview;
     }>(response, { ok: false });
     if (!response.ok || !payload.ok) {
       setAcceptanceSchemaReady(false);
@@ -145,6 +169,7 @@ export function ChannelManagerImportPanel() {
           ? 'Тестовый контур Live Core ещё не подготовлен. Нажмите «Подготовить и запустить тест».'
           : 'Миграция Channel Manager Live Core ещё не применена.'),
     );
+    if (payload.recovery) setRecoveryPreview(payload.recovery);
   }, [isDevelopmentOwner]);
 
   useEffect(() => { void loadAcceptanceStatus(); }, [loadAcceptanceStatus]);
@@ -200,6 +225,13 @@ export function ChannelManagerImportPanel() {
 
   async function runAcceptanceHarness() {
     if (!isDevelopmentOwner) return;
+    const harnessOwnedLeftover = recoveryPreview?.recoveryRequired === true
+      && recoveryPreview.safeToCleanup === true
+      && recoveryPreview.mainRecord?.classification === 'harness_owned';
+    if (recoveryPreview?.recoveryRequired && !harnessOwnedLeftover) {
+      setAcceptanceError('Сначала удалите синтетические тестовые артефакты или дождитесь чистого контура.');
+      return;
+    }
     setAcceptanceBusy(true);
     setAcceptanceError('');
     setAcceptanceEvidence(null);
@@ -251,10 +283,90 @@ export function ChannelManagerImportPanel() {
     }
   }
 
+  async function previewRecoveryArtifacts() {
+    if (!isDevelopmentOwner) return;
+    setRecoveryBusy(true);
+    setRecoveryCleanupMessage('');
+    setAcceptanceError('');
+    try {
+      const response = await fetch('/api/dashboard/channel-manager/live-core-acceptance', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ action: 'preview_recovery' }),
+      });
+      const payload = await readResponseJson<{
+        ok: boolean;
+        recovery?: RecoveryPreview;
+        message?: string;
+      }>(response, { ok: false });
+      if (!response.ok || !payload.ok || !payload.recovery) {
+        throw new Error(payload.message || 'Не удалось просмотреть очистку.');
+      }
+      setRecoveryPreview(payload.recovery);
+      setRecoveryCleanupMessage(payload.message || 'Просмотр очистки выполнен.');
+    } catch (error) {
+      setAcceptanceError(error instanceof Error ? error.message : 'Не удалось просмотреть очистку.');
+    } finally {
+      setRecoveryBusy(false);
+    }
+  }
+
+  async function cleanupRecoveryArtifacts() {
+    if (!isDevelopmentOwner) return;
+    if (!recoveryConfirmPhrase.trim()) {
+      setAcceptanceError('Введите фразу подтверждения для удаления синтетических артефактов.');
+      return;
+    }
+    setRecoveryBusy(true);
+    setRecoveryCleanupMessage('');
+    setAcceptanceError('');
+    try {
+      const response = await fetch('/api/dashboard/channel-manager/live-core-acceptance', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          action: 'cleanup_recovery',
+          dryRun: false,
+          confirm: true,
+          confirmPhrase: recoveryConfirmPhrase.trim(),
+          expectedBookingOpsRecordId: recoveryPreview?.mainRecord?.id ?? null,
+        }),
+      });
+      const payload = await readResponseJson<{
+        ok: boolean;
+        recovery?: RecoveryPreview;
+        message?: string;
+      }>(response, { ok: false });
+      if (!response.ok || !payload.ok) {
+        throw new Error(payload.message || 'Не удалось удалить синтетические тестовые артефакты.');
+      }
+      if (payload.recovery) setRecoveryPreview(payload.recovery);
+      setRecoveryCleanupMessage(payload.message || 'Синтетические тестовые артефакты удалены.');
+      setRecoveryConfirmPhrase('');
+      await Promise.all([load(), loadAcceptanceStatus()]);
+    } catch (error) {
+      setAcceptanceError(error instanceof Error ? error.message : 'Не удалось удалить синтетические тестовые артефакты.');
+    } finally {
+      setRecoveryBusy(false);
+    }
+  }
+
   const onboardingAction = (body: Record<string, unknown>) => action('/api/dashboard/channel-manager/provider-onboarding/action', body);
   const targetPropertySetupId = selected?.propertySetupId || propertySetupId;
   const liveCounters = liveCore?.counters ?? liveCore?.latestRun?.counters;
   const initialSyncEnabled = liveCore?.initialSyncEnabled !== false && liveCore?.schemaReady !== false && selected?.status !== 'blocked';
+  const recoveryRequired = recoveryPreview?.recoveryRequired === true
+    || acceptanceEvidence?.recoveryRequired === true;
+  const harnessOwnedLeftover = recoveryPreview?.recoveryRequired === true
+    && recoveryPreview.safeToCleanup === true
+    && recoveryPreview.mainRecord?.classification === 'harness_owned';
+  const currentAcceptanceStage = acceptanceEvidence?.steps.find((step) => step.status === 'running')?.label
+    ?? acceptanceEvidence?.steps.find((step) => step.status === 'failed')?.label
+    ?? (acceptanceEvidence?.passed ? 'завершено' : 'не запускался');
+  // Run is allowed on a clean contour, or when only harness-owned leftovers remain (self-heal inside harness).
+  const acceptanceRunEnabled = !acceptanceBusy && !recoveryBusy && (!recoveryRequired || harnessOwnedLeftover);
 
   return (
     <section className="rounded-xl border border-slate-200 bg-white p-4 text-sm">
@@ -295,106 +407,223 @@ export function ChannelManagerImportPanel() {
 
       {isDevelopmentOwner ? (
         <div
-          className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50/50 p-3"
+          className="mt-4 space-y-4 rounded-xl border border-emerald-200 bg-emerald-50/50 p-3"
           data-testid="channel-live-core-acceptance"
         >
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div>
-              <h3 className="font-medium text-slate-900">Проверка Live Core</h3>
-              <p className="mt-1 text-xs leading-5 text-slate-600">
-                Безопасный синтетический тест initial sync для владельца. Не требует ручного ввода ID профиля объекта и не вызывает реальный API менеджера каналов.
-              </p>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <button
-                disabled={acceptanceBusy}
-                onClick={() => void runAcceptanceHarness()}
-                className="rounded-lg bg-emerald-700 px-3 py-1.5 text-xs text-white hover:bg-emerald-800 disabled:opacity-50"
-                data-testid="channel-live-core-acceptance-run"
-              >
-                Подготовить и запустить тест
-              </button>
-              <button
-                disabled={acceptanceBusy}
-                onClick={() => void cleanupAcceptanceHarness()}
-                className="rounded-lg border border-red-200 px-3 py-1.5 text-xs text-red-700 hover:bg-red-50 disabled:opacity-50"
-                data-testid="channel-live-core-acceptance-cleanup"
-              >
-                Удалить тестовый контур
-              </button>
-            </div>
+          <div>
+            <h3 className="font-medium text-slate-900">1. Обычный Initial Sync</h3>
+            <p className="mt-1 text-xs leading-5 text-slate-600">
+              Обычная начальная синхронизация по выбранному подключению остаётся ниже в блоке «Live Core — начальная синхронизация».
+              Этот раздел только для владельца и не заменяет рабочий импорт.
+            </p>
           </div>
 
-          {!acceptanceEvidence || !acceptanceEvidence.passed ? (
-            <div className="mt-3 space-y-1 text-xs text-slate-700">
+          <div className="border-t border-emerald-100 pt-3" data-testid="channel-live-core-acceptance-production">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h3 className="font-medium text-slate-900">2. Производственный acceptance</h3>
+                <p className="mt-1 text-xs leading-5 text-slate-600">
+                  Безопасный синтетический тест синхронизации для владельца. Не требует ручного ввода ID профиля объекта и не вызывает реальный API менеджера каналов.
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  disabled={!acceptanceRunEnabled}
+                  onClick={() => void runAcceptanceHarness()}
+                  className="rounded-lg bg-emerald-700 px-3 py-1.5 text-xs text-white hover:bg-emerald-800 disabled:opacity-50"
+                  data-testid="channel-live-core-acceptance-run"
+                >
+                  Запустить acceptance
+                </button>
+                <button
+                  disabled={acceptanceBusy || recoveryBusy}
+                  onClick={() => void cleanupAcceptanceHarness()}
+                  className="rounded-lg border border-red-200 px-3 py-1.5 text-xs text-red-700 hover:bg-red-50 disabled:opacity-50"
+                  data-testid="channel-live-core-acceptance-cleanup"
+                >
+                  Удалить тестовый контур
+                </button>
+              </div>
+            </div>
+
+            <div className="mt-3 grid gap-1 text-xs text-slate-700 sm:grid-cols-2">
               <p>
-                <span className="font-medium">Почему сейчас недоступен обычный Live Core: </span>
-                {acceptanceEvidence?.blocker || acceptanceUnavailableReason}
+                <span className="font-medium">acceptanceExecutionId: </span>
+                <span className="font-mono">{acceptanceEvidence?.acceptanceExecutionId ?? '—'}</span>
+              </p>
+              <p>
+                <span className="font-medium">Текущий этап: </span>
+                {currentAcceptanceStage}
+              </p>
+              <p>
+                <span className="font-medium">Нужна очистка: </span>
+                {recoveryRequired ? 'да' : 'нет'}
               </p>
               <p>
                 <span className="font-medium">Готовность схемы: </span>
                 {acceptanceEvidence?.schemaReady === true || acceptanceSchemaReady === true ? 'готова' : 'не готова'}
               </p>
+              <p>
+                <span className="font-medium">Результат: </span>
+                {acceptanceEvidence
+                  ? (acceptanceEvidence.passed ? 'PASS' : 'FAIL')
+                  : '—'}
+              </p>
+              <p>
+                <span className="font-medium">Импорт / дубли: </span>
+                {acceptanceEvidence
+                  ? `${acceptanceEvidence.importedFirstRun ?? '—'} / ${acceptanceEvidence.importedSecondRun ?? '—'} · дублей ${acceptanceEvidence.duplicateCount ?? '—'}`
+                  : '—'}
+              </p>
             </div>
-          ) : null}
 
-          {acceptanceError ? <p className="mt-3 text-xs text-red-700">{acceptanceError}</p> : null}
+            {!acceptanceEvidence || !acceptanceEvidence.passed ? (
+              <p className="mt-2 text-xs text-slate-700">
+                <span className="font-medium">Почему сейчас недоступен обычный Live Core: </span>
+                {acceptanceEvidence?.blocker || acceptanceUnavailableReason}
+              </p>
+            ) : null}
 
-          {acceptanceEvidence ? (
-            <div className="mt-3 space-y-3" data-testid="channel-live-core-acceptance-result">
-              <ol className="space-y-1">
-                {acceptanceEvidence.steps.map((step) => (
-                  <li
-                    key={step.key}
-                    className="flex flex-wrap items-center gap-2 rounded-lg bg-white px-3 py-2 text-xs text-slate-700"
-                    data-acceptance-step={step.key}
-                    data-acceptance-status={step.status}
-                  >
-                    <span className="font-medium text-slate-900">{step.label}</span>
-                    <span className={
-                      step.status === 'passed' ? 'text-emerald-700'
-                        : step.status === 'failed' ? 'text-red-700'
-                          : step.status === 'running' ? 'text-amber-700'
-                            : 'text-slate-500'
-                    }
+            {acceptanceError ? <p className="mt-3 text-xs text-red-700">{acceptanceError}</p> : null}
+
+            {acceptanceEvidence ? (
+              <div className="mt-3 space-y-3" data-testid="channel-live-core-acceptance-result">
+                <ol className="space-y-1">
+                  {acceptanceEvidence.steps.map((step) => (
+                    <li
+                      key={step.key}
+                      className="flex flex-wrap items-center gap-2 rounded-lg bg-white px-3 py-2 text-xs text-slate-700"
+                      data-acceptance-step={step.key}
+                      data-acceptance-status={step.status}
                     >
-                      {ACCEPTANCE_STEP_STATUS_RU[step.status]}
-                    </span>
-                    {step.detail ? <span className="text-slate-500">{step.detail}</span> : null}
-                  </li>
-                ))}
-              </ol>
+                      <span className="font-medium text-slate-900">{step.label}</span>
+                      <span className={
+                        step.status === 'passed' ? 'text-emerald-700'
+                          : step.status === 'failed' ? 'text-red-700'
+                            : step.status === 'running' ? 'text-amber-700'
+                              : 'text-slate-500'
+                      }
+                      >
+                        {ACCEPTANCE_STEP_STATUS_RU[step.status]}
+                      </span>
+                      {step.detail ? <span className="text-slate-500">{step.detail}</span> : null}
+                    </li>
+                  ))}
+                </ol>
 
-              {acceptanceEvidence.passed ? (
-                <p className="text-sm font-medium text-emerald-700" data-testid="channel-live-core-acceptance-passed">
-                  Acceptance пройден
-                </p>
-              ) : (
-                <p className="text-sm font-medium text-red-700" data-testid="channel-live-core-acceptance-failed">
-                  Ошибка на шаге: {acceptanceEvidence.steps.find((step) => step.key === acceptanceEvidence.failedStep)?.label
-                    ?? acceptanceEvidence.failedStep
-                    ?? 'неизвестно'}
-                  {acceptanceEvidence.blocker ? ` — ${acceptanceEvidence.blocker}` : ''}
-                </p>
-              )}
+                {acceptanceEvidence.passed ? (
+                  <p className="text-sm font-medium text-emerald-700" data-testid="channel-live-core-acceptance-passed">
+                    Acceptance пройден (PASS)
+                  </p>
+                ) : (
+                  <p className="text-sm font-medium text-red-700" data-testid="channel-live-core-acceptance-failed">
+                    FAIL на шаге: {acceptanceEvidence.steps.find((step) => step.key === acceptanceEvidence.failedStep)?.label
+                      ?? acceptanceEvidence.failedStep
+                      ?? 'неизвестно'}
+                    {acceptanceEvidence.blocker ? ` — ${acceptanceEvidence.blocker}` : ''}
+                  </p>
+                )}
 
-              <details className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-600">
-                <summary className="cursor-pointer font-medium text-slate-700">Технические детали</summary>
-                <dl className="mt-2 grid gap-1 sm:grid-cols-2">
-                  <div><dt className="text-slate-500">acceptanceExecutionId</dt><dd className="font-mono">{acceptanceEvidence.acceptanceExecutionId ?? '—'}</dd></div>
-                  <div><dt className="text-slate-500">ownerSetupId</dt><dd className="font-mono">{acceptanceEvidence.ownerSetupId ?? '—'}</dd></div>
-                  <div><dt className="text-slate-500">propertySetupId</dt><dd className="font-mono">{acceptanceEvidence.propertySetupId ?? '—'}</dd></div>
-                  <div><dt className="text-slate-500">connectionId</dt><dd className="font-mono">{acceptanceEvidence.connectionId ?? '—'}</dd></div>
-                  <div><dt className="text-slate-500">firstRunId</dt><dd className="font-mono">{acceptanceEvidence.firstRunId ?? '—'}</dd></div>
-                  <div><dt className="text-slate-500">secondRunId</dt><dd className="font-mono">{acceptanceEvidence.secondRunId ?? '—'}</dd></div>
-                  <div><dt className="text-slate-500">bookingOpsRecordId</dt><dd className="font-mono">{acceptanceEvidence.bookingOpsRecordId ?? '—'}</dd></div>
-                  <div><dt className="text-slate-500">importedFirstRun</dt><dd>{acceptanceEvidence.importedFirstRun ?? '—'}</dd></div>
-                  <div><dt className="text-slate-500">importedSecondRun</dt><dd>{acceptanceEvidence.importedSecondRun ?? '—'}</dd></div>
-                  <div><dt className="text-slate-500">duplicateCount</dt><dd>{acceptanceEvidence.duplicateCount ?? '—'}</dd></div>
-                </dl>
-              </details>
+                <details className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-600">
+                  <summary className="cursor-pointer font-medium text-slate-700">Технические детали</summary>
+                  <dl className="mt-2 grid gap-1 sm:grid-cols-2">
+                    <div><dt className="text-slate-500">acceptanceExecutionId</dt><dd className="font-mono">{acceptanceEvidence.acceptanceExecutionId ?? '—'}</dd></div>
+                    <div><dt className="text-slate-500">ownerSetupId</dt><dd className="font-mono">{acceptanceEvidence.ownerSetupId ?? '—'}</dd></div>
+                    <div><dt className="text-slate-500">propertySetupId</dt><dd className="font-mono">{acceptanceEvidence.propertySetupId ?? '—'}</dd></div>
+                    <div><dt className="text-slate-500">connectionId</dt><dd className="font-mono">{acceptanceEvidence.connectionId ?? '—'}</dd></div>
+                    <div><dt className="text-slate-500">firstRunId</dt><dd className="font-mono">{acceptanceEvidence.firstRunId ?? '—'}</dd></div>
+                    <div><dt className="text-slate-500">secondRunId</dt><dd className="font-mono">{acceptanceEvidence.secondRunId ?? '—'}</dd></div>
+                    <div><dt className="text-slate-500">bookingOpsRecordId</dt><dd className="font-mono">{acceptanceEvidence.bookingOpsRecordId ?? '—'}</dd></div>
+                    <div><dt className="text-slate-500">importedFirstRun</dt><dd>{acceptanceEvidence.importedFirstRun ?? '—'}</dd></div>
+                    <div><dt className="text-slate-500">importedSecondRun</dt><dd>{acceptanceEvidence.importedSecondRun ?? '—'}</dd></div>
+                    <div><dt className="text-slate-500">updatedFirstRun</dt><dd>{acceptanceEvidence.updatedFirstRun ?? '—'}</dd></div>
+                    <div><dt className="text-slate-500">updatedSecondRun</dt><dd>{acceptanceEvidence.updatedSecondRun ?? '—'}</dd></div>
+                    <div><dt className="text-slate-500">duplicateCount</dt><dd>{acceptanceEvidence.duplicateCount ?? '—'}</dd></div>
+                    <div><dt className="text-slate-500">calendarRowCount</dt><dd>{acceptanceEvidence.calendarRowCount ?? '—'}</dd></div>
+                    <div><dt className="text-slate-500">selfConflictCount</dt><dd>{acceptanceEvidence.selfConflictCount ?? '—'}</dd></div>
+                  </dl>
+                </details>
+              </div>
+            ) : null}
+          </div>
+
+          <div className="border-t border-emerald-100 pt-3" data-testid="channel-live-core-recovery">
+            <h3 className="font-medium text-slate-900">3. Восстановление синтетических тестовых артефактов</h3>
+            <p className="mt-1 text-xs leading-5 text-slate-600">
+              Удаляет только проверенные синтетические артефакты прошлого acceptance-прогона. Обычные данные пилота и сохранённый тестовый контур не затрагиваются.
+            </p>
+
+            <div
+              className="mt-3 space-y-2 rounded-lg bg-white px-3 py-2 text-xs text-slate-700"
+              data-testid="channel-live-core-recovery-preview"
+            >
+              <p>
+                <span className="font-medium">Нужна очистка: </span>
+                {recoveryPreview ? (recoveryPreview.recoveryRequired ? 'да' : 'нет') : 'ещё не проверено'}
+              </p>
+              <p>
+                <span className="font-medium">Безопасно удалить: </span>
+                {recoveryPreview ? (recoveryPreview.safeToCleanup ? 'да' : 'нет') : '—'}
+              </p>
+              <p>
+                <span className="font-medium">Основная запись: </span>
+                <span className="font-mono">{recoveryPreview?.mainRecord?.id ?? '—'}</span>
+              </p>
+              <p>
+                <span className="font-medium">Ожидается удалений: </span>
+                {recoveryPreview?.expectedDeletionTotal ?? '—'}
+              </p>
+              {recoveryPreview?.blockerSummary ? (
+                <p className="text-amber-800">
+                  <span className="font-medium">Блокер: </span>
+                  {recoveryPreview.blockerSummary}
+                </p>
+              ) : null}
+              {recoveryPreview && Object.keys(recoveryPreview.countsByTable).length > 0 ? (
+                <p>
+                  <span className="font-medium">По таблицам: </span>
+                  {Object.entries(recoveryPreview.countsByTable)
+                    .map(([table, count]) => `${table}: ${count}`)
+                    .join(', ')}
+                </p>
+              ) : null}
             </div>
-          ) : null}
+
+            <div className="mt-3 flex flex-wrap items-end gap-2">
+              <button
+                disabled={acceptanceBusy || recoveryBusy}
+                onClick={() => void previewRecoveryArtifacts()}
+                className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs text-slate-800 hover:bg-slate-50 disabled:opacity-50"
+                data-testid="channel-live-core-recovery-preview-btn"
+              >
+                Просмотреть очистку
+              </button>
+              <label className="flex min-w-[16rem] flex-1 flex-col gap-1 text-xs text-slate-600">
+                Фраза подтверждения
+                <input
+                  value={recoveryConfirmPhrase}
+                  onChange={(event) => setRecoveryConfirmPhrase(event.target.value)}
+                  className="rounded-lg border border-slate-300 px-2 py-1.5 font-mono text-xs"
+                  placeholder="CLEAN_SYNTHETIC_LIVE_CORE_ACCEPTANCE_V1"
+                  data-testid="channel-live-core-recovery-confirm-phrase"
+                  autoComplete="off"
+                />
+              </label>
+              <button
+                disabled={acceptanceBusy || recoveryBusy || !recoveryConfirmPhrase.trim()}
+                onClick={() => void cleanupRecoveryArtifacts()}
+                className="rounded-lg border border-red-300 px-3 py-1.5 text-xs text-red-700 hover:bg-red-50 disabled:opacity-50"
+                data-testid="channel-live-core-recovery-cleanup"
+              >
+                Удалить синтетические тестовые артефакты
+              </button>
+            </div>
+            {recoveryCleanupMessage ? (
+              <p className="mt-2 text-xs text-emerald-800" data-testid="channel-live-core-recovery-cleanup-result">
+                {recoveryCleanupMessage}
+              </p>
+            ) : null}
+          </div>
         </div>
       ) : null}
 

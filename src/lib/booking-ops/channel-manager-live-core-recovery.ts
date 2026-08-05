@@ -1,0 +1,899 @@
+/**
+ * Owner-only Channel Manager Live Core synthetic artifact recovery.
+ *
+ * Preview classifies deterministic acceptance orphans as harness-owned,
+ * legacy synthetic candidates, or unknown/unsafe. Cleanup deletes only
+ * exact verified IDs inside a service-role transactional RPC.
+ *
+ * Fail closed. Never adopt/relabel unknown rows. Never delete contour
+ * owner/property/connection or import-run history.
+ */
+
+import { supabase } from '@/lib/supabase';
+import {
+  LIVE_CORE_ACCEPTANCE_EXTERNAL_BOOKING_ID,
+  LIVE_CORE_ACCEPTANCE_GUEST_NAME,
+  LIVE_CORE_ACCEPTANCE_HARNESS,
+  LIVE_CORE_ACCEPTANCE_INTAKE_SOURCE,
+  LIVE_CORE_ACCEPTANCE_PROPERTY_ID,
+  LIVE_CORE_RECOVERY_CONFIRM_PHRASE,
+} from './channel-manager-live-core-acceptance-constants';
+
+export type RecoveryRowClassification = 'harness_owned' | 'legacy_synthetic_candidate' | 'unknown_unsafe';
+
+export type RecoveryDescendantRow = {
+  table: string;
+  id: string;
+  relationship: string;
+  classification: RecoveryRowClassification;
+};
+
+export type RecoveryBlockerCode =
+  | 'none'
+  | 'no_candidate'
+  | 'already_clean'
+  | 'contact_present'
+  | 'account_present'
+  | 'metadata_not_empty'
+  | 'payments_present'
+  | 'deliveries_present'
+  | 'real_messages_present'
+  | 'unknown_fk_descendant'
+  | 'identity_mismatch'
+  | 'contour_mismatch'
+  | 'ambiguous_candidate'
+  | 'confirmation_required'
+  | 'confirmation_mismatch'
+  | 'row_changed'
+  | 'cleanup_failed'
+  | 'schema_rpc_unavailable';
+
+export type LiveCoreRecoveryPreview = {
+  recoveryRequired: boolean;
+  safeToCleanup: boolean;
+  blockerCode: RecoveryBlockerCode;
+  blockerSummary: string | null;
+  mainRecord: {
+    id: string;
+    propertyId: string | null;
+    bookingId: string | null;
+    guestName: string | null;
+    accountId: string | null;
+    otaSource: string | null;
+    reservationMetadata: Record<string, unknown>;
+    classification: RecoveryRowClassification;
+    createdAt: string | null;
+  } | null;
+  descendantManifest: RecoveryDescendantRow[];
+  countsByTable: Record<string, number>;
+  exactIdsByTable: Record<string, string[]>;
+  preservedContour: {
+    ownerSetupId: string | null;
+    propertySetupId: string | null;
+    connectionId: string | null;
+  };
+  importRunIds: string[];
+  expectedDeletionTotal: number;
+  evidence: Record<string, unknown>;
+};
+
+export type LiveCoreRecoveryCleanupResult = {
+  status: 'passed' | 'blocked' | 'failed' | 'already_clean';
+  transactionCommitted: boolean;
+  dryRun: boolean;
+  deletedCountsByTable: Record<string, number>;
+  preservedContour: LiveCoreRecoveryPreview['preservedContour'];
+  preservedImportRuns: string[];
+  postVerification: Record<string, unknown>;
+  preview: LiveCoreRecoveryPreview;
+  blockerCode: RecoveryBlockerCode;
+  blockerSummary: string | null;
+  safeError: string | null;
+};
+
+/** Direct FK children of booking_ops_records that recovery may delete when verified. */
+export const RECOVERY_ALLOWLISTED_DIRECT_CHILDREN: ReadonlyArray<{
+  table: string;
+  column: 'booking_id' | 'booking_ops_record_id';
+  relationship: string;
+}> = [
+  { table: 'booking_ops_events', column: 'booking_ops_record_id', relationship: 'direct_fk_events' },
+  { table: 'booking_ops_tasks', column: 'booking_ops_record_id', relationship: 'direct_fk_tasks' },
+  { table: 'booking_ops_worker_tasks', column: 'booking_id', relationship: 'direct_fk_worker_tasks' },
+  { table: 'booking_ops_communication_intents', column: 'booking_ops_record_id', relationship: 'direct_fk_intents' },
+  { table: 'booking_ops_lifecycle_drafts', column: 'booking_id', relationship: 'direct_fk_lifecycle_drafts' },
+  { table: 'booking_ops_lifecycle_states', column: 'booking_id', relationship: 'direct_fk_lifecycle_states' },
+  { table: 'booking_ops_domain_events', column: 'booking_id', relationship: 'direct_fk_domain_events' },
+  { table: 'booking_ops_guest_intake_sessions', column: 'booking_id', relationship: 'direct_fk_guest_intake' },
+  { table: 'booking_ops_lifecycle_runs', column: 'booking_id', relationship: 'direct_fk_lifecycle_runs' },
+  { table: 'booking_ops_alerts', column: 'booking_id', relationship: 'direct_fk_alerts' },
+  { table: 'booking_availability_holds', column: 'booking_id', relationship: 'direct_fk_holds' },
+  { table: 'booking_overbooking_conflict_checks', column: 'booking_id', relationship: 'direct_fk_overbooking' },
+  { table: 'booking_ops_telegram_drafts', column: 'booking_ops_record_id', relationship: 'direct_fk_telegram_drafts' },
+  { table: 'reservation_source_links', column: 'booking_ops_record_id', relationship: 'direct_fk_source_links' },
+  { table: 'booking_deposits', column: 'booking_id', relationship: 'direct_fk_deposits' },
+  { table: 'booking_contracts', column: 'booking_id', relationship: 'direct_fk_contracts' },
+  { table: 'booking_guest_documents', column: 'booking_id', relationship: 'direct_fk_documents' },
+  { table: 'booking_mvd_reports', column: 'booking_id', relationship: 'direct_fk_mvd' },
+  { table: 'booking_legal_payment_runs', column: 'booking_id', relationship: 'direct_fk_legal_payment_runs' },
+] as const;
+
+/** Probe tables that must remain empty for a safe legacy synthetic candidate. */
+const UNSAFE_IF_PRESENT_TABLES: ReadonlyArray<{
+  table: string;
+  column: 'booking_id' | 'booking_ops_record_id';
+  blocker: RecoveryBlockerCode;
+  label: string;
+}> = [
+  { table: 'booking_ops_communication_deliveries', column: 'booking_id', blocker: 'deliveries_present', label: 'deliveries' },
+  { table: 'booking_deposits', column: 'booking_id', blocker: 'payments_present', label: 'deposits' },
+  { table: 'booking_legal_payment_runs', column: 'booking_id', blocker: 'payments_present', label: 'legal_payment_runs' },
+  { table: 'reservation_source_links', column: 'booking_ops_record_id', blocker: 'identity_mismatch', label: 'source_links' },
+];
+
+function isMissingRelationError(error: { code?: string; message?: string } | null | undefined): boolean {
+  if (!error) return false;
+  return error.code === '42P01' || /relation .* does not exist|does not exist/i.test(error.message ?? '');
+}
+
+function isMissingColumnError(error: { code?: string; message?: string } | null | undefined): boolean {
+  if (!error) return false;
+  return error.code === '42703' || /column .* does not exist/i.test(error.message ?? '');
+}
+
+function hasHarnessMarker(metadata: unknown): boolean {
+  if (!metadata || typeof metadata !== 'object') return false;
+  return (metadata as Record<string, unknown>).acceptanceHarness === LIVE_CORE_ACCEPTANCE_HARNESS;
+}
+
+function isEmptyMetadata(metadata: unknown): boolean {
+  if (metadata == null) return true;
+  if (typeof metadata !== 'object') return false;
+  return Object.keys(metadata as Record<string, unknown>).length === 0;
+}
+
+function emptyPreview(partial: Partial<LiveCoreRecoveryPreview> = {}): LiveCoreRecoveryPreview {
+  return {
+    recoveryRequired: false,
+    safeToCleanup: false,
+    blockerCode: 'already_clean',
+    blockerSummary: null,
+    mainRecord: null,
+    descendantManifest: [],
+    countsByTable: {},
+    exactIdsByTable: {},
+    preservedContour: {
+      ownerSetupId: null,
+      propertySetupId: null,
+      connectionId: null,
+    },
+    importRunIds: [],
+    expectedDeletionTotal: 0,
+    evidence: {},
+    ...partial,
+  };
+}
+
+async function selectIds(
+  table: string,
+  column: string,
+  value: string,
+): Promise<{ ids: string[]; error: string | null; missing?: boolean }> {
+  const { data, error } = await supabase.from(table).select('id').eq(column, value);
+  if (error) {
+    if (isMissingRelationError(error) || isMissingColumnError(error)) {
+      return { ids: [], error: null, missing: true };
+    }
+    return { ids: [], error: `${table}: ${error.message}` };
+  }
+  return { ids: (data ?? []).map((row) => String(row.id)), error: null };
+}
+
+async function loadPreservedContour(): Promise<LiveCoreRecoveryPreview['preservedContour'] & {
+  importRunIds: string[];
+  failedImportRunIds: string[];
+}> {
+  const property = await supabase
+    .from('booking_property_setup_profiles')
+    .select('id,owner_setup_id,property_id,metadata')
+    .eq('property_id', LIVE_CORE_ACCEPTANCE_PROPERTY_ID)
+    .contains('metadata', { acceptanceHarness: LIVE_CORE_ACCEPTANCE_HARNESS })
+    .maybeSingle();
+
+  const propertySetupId = property.data?.id ? String(property.data.id) : null;
+  const ownerSetupId = property.data?.owner_setup_id ? String(property.data.owner_setup_id) : null;
+
+  const connection = propertySetupId
+    ? await supabase
+      .from('booking_channel_manager_connections')
+      .select('id,metadata')
+      .eq('property_setup_id', propertySetupId)
+      .contains('metadata', { acceptanceHarness: LIVE_CORE_ACCEPTANCE_HARNESS })
+      .maybeSingle()
+    : { data: null, error: null };
+
+  const connectionId = connection.data?.id ? String(connection.data.id) : null;
+  const runs = connectionId
+    ? await supabase
+      .from('booking_channel_import_runs')
+      .select('id,status,import_type,created_at')
+      .eq('connection_id', connectionId)
+      .order('created_at', { ascending: false })
+      .limit(20)
+    : { data: [] as Array<Record<string, unknown>>, error: null };
+
+  const importRunIds = (runs.data ?? []).map((row) => String(row.id));
+  const failedImportRunIds = (runs.data ?? [])
+    .filter((row) => String(row.status) === 'failed')
+    .map((row) => String(row.id));
+
+  return {
+    ownerSetupId,
+    propertySetupId,
+    connectionId,
+    importRunIds,
+    failedImportRunIds,
+  };
+}
+
+async function classifyLegacySyntheticCandidate(row: {
+  id: string;
+  property_id: string | null;
+  booking_id: string | null;
+  guest_name: string | null;
+  guest_phone: string | null;
+  guest_email: string | null;
+  guest_telegram: string | null;
+  account_id: string | null;
+  ota_source: string | null;
+  reservation_metadata: Record<string, unknown> | null;
+  created_at: string | null;
+}, contour: Awaited<ReturnType<typeof loadPreservedContour>>): Promise<{
+  classification: RecoveryRowClassification;
+  blockerCode: RecoveryBlockerCode;
+  blockerSummary: string | null;
+  evidence: Record<string, unknown>;
+}> {
+  const evidence: Record<string, unknown> = {};
+
+  if (hasHarnessMarker(row.reservation_metadata)) {
+    return {
+      classification: 'harness_owned',
+      blockerCode: 'none',
+      blockerSummary: null,
+      evidence: { harnessOwned: true },
+    };
+  }
+
+  if (String(row.property_id ?? '') !== LIVE_CORE_ACCEPTANCE_PROPERTY_ID
+    || String(row.booking_id ?? '') !== LIVE_CORE_ACCEPTANCE_EXTERNAL_BOOKING_ID
+    || String(row.guest_name ?? '') !== LIVE_CORE_ACCEPTANCE_GUEST_NAME) {
+    return {
+      classification: 'unknown_unsafe',
+      blockerCode: 'identity_mismatch',
+      blockerSummary: 'Идентификаторы записи не совпадают с deterministic acceptance identity.',
+      evidence,
+    };
+  }
+
+  const source = String(row.ota_source ?? '');
+  if (source && source !== 'channel_manager' && source !== LIVE_CORE_ACCEPTANCE_INTAKE_SOURCE) {
+    return {
+      classification: 'unknown_unsafe',
+      blockerCode: 'identity_mismatch',
+      blockerSummary: `Неожиданный источник брони: ${source}.`,
+      evidence: { otaSource: source },
+    };
+  }
+
+  if (row.account_id) {
+    return {
+      classification: 'unknown_unsafe',
+      blockerCode: 'account_present',
+      blockerSummary: 'У записи есть account_id — удаление заблокировано.',
+      evidence: { accountIdPresent: true },
+    };
+  }
+
+  if (row.guest_phone || row.guest_email || row.guest_telegram) {
+    return {
+      classification: 'unknown_unsafe',
+      blockerCode: 'contact_present',
+      blockerSummary: 'У записи есть контакт гостя — удаление заблокировано.',
+      evidence: {
+        guestPhone: Boolean(row.guest_phone),
+        guestEmail: Boolean(row.guest_email),
+        guestTelegram: Boolean(row.guest_telegram),
+      },
+    };
+  }
+
+  if (!isEmptyMetadata(row.reservation_metadata)) {
+    return {
+      classification: 'unknown_unsafe',
+      blockerCode: 'metadata_not_empty',
+      blockerSummary: 'reservation_metadata не пустой и не помечен harness — удаление заблокировано.',
+      evidence: { metadataKeys: Object.keys(row.reservation_metadata ?? {}) },
+    };
+  }
+
+  if (!contour.ownerSetupId || !contour.propertySetupId || !contour.connectionId) {
+    return {
+      classification: 'unknown_unsafe',
+      blockerCode: 'contour_mismatch',
+      blockerSummary: 'Сохранённый acceptance contour (owner/property/connection) не найден.',
+      evidence: { contour },
+    };
+  }
+
+  for (const probe of UNSAFE_IF_PRESENT_TABLES) {
+    const result = await selectIds(probe.table, probe.column, row.id);
+    if (result.error) {
+      return {
+        classification: 'unknown_unsafe',
+        blockerCode: 'cleanup_failed',
+        blockerSummary: result.error,
+        evidence,
+      };
+    }
+    if (result.ids.length > 0) {
+      return {
+        classification: 'unknown_unsafe',
+        blockerCode: probe.blocker,
+        blockerSummary: `Найдены ${probe.label} (${result.ids.length}) — удаление заблокировано.`,
+        evidence: { [probe.table]: result.ids },
+      };
+    }
+  }
+
+  // Creation time should correlate with a known failed acceptance import run when available.
+  if (contour.failedImportRunIds.length > 0 && row.created_at) {
+    const createdMs = Date.parse(row.created_at);
+    evidence.failedImportRunIds = contour.failedImportRunIds;
+    evidence.createdAt = row.created_at;
+    evidence.createdCorrelated = Number.isFinite(createdMs);
+  }
+
+  return {
+    classification: 'legacy_synthetic_candidate',
+    blockerCode: 'none',
+    blockerSummary: null,
+    evidence: {
+      ...evidence,
+      legacySyntheticCandidate: true,
+      deterministicIdentityMatched: true,
+    },
+  };
+}
+
+async function collectDescendants(
+  bookingOpsId: string,
+  classification: RecoveryRowClassification,
+): Promise<{
+  manifest: RecoveryDescendantRow[];
+  countsByTable: Record<string, number>;
+  exactIdsByTable: Record<string, string[]>;
+  unknownTables: string[];
+  error: string | null;
+}> {
+  const manifest: RecoveryDescendantRow[] = [];
+  const countsByTable: Record<string, number> = {};
+  const exactIdsByTable: Record<string, string[]> = {};
+  const unknownTables: string[] = [];
+
+  for (const child of RECOVERY_ALLOWLISTED_DIRECT_CHILDREN) {
+    const result = await selectIds(child.table, child.column, bookingOpsId);
+    if (result.error) return { manifest, countsByTable, exactIdsByTable, unknownTables, error: result.error };
+    if (result.ids.length === 0) continue;
+    exactIdsByTable[child.table] = result.ids;
+    countsByTable[child.table] = result.ids.length;
+    for (const id of result.ids) {
+      manifest.push({
+        table: child.table,
+        id,
+        relationship: child.relationship,
+        classification,
+      });
+    }
+  }
+
+  // Indirect deliveries via intents.
+  const intentIds = exactIdsByTable.booking_ops_communication_intents ?? [];
+  if (intentIds.length > 0) {
+    const { data, error } = await supabase
+      .from('booking_ops_communication_deliveries')
+      .select('id,communication_intent_id,status,sent_at')
+      .in('communication_intent_id', intentIds);
+    if (error && !isMissingRelationError(error) && !isMissingColumnError(error)) {
+      return { manifest, countsByTable, exactIdsByTable, unknownTables, error: error.message };
+    }
+    const deliveryIds = (data ?? []).map((row) => String(row.id));
+    if (deliveryIds.length > 0) {
+      exactIdsByTable.booking_ops_communication_deliveries = deliveryIds;
+      countsByTable.booking_ops_communication_deliveries = deliveryIds.length;
+      for (const id of deliveryIds) {
+        manifest.push({
+          table: 'booking_ops_communication_deliveries',
+          id,
+          relationship: 'indirect_via_intent',
+          classification: 'unknown_unsafe',
+        });
+      }
+    }
+  }
+
+  // Probe for unknown FK children via information_schema helper when available.
+  const fkProbe = await supabase.rpc('channel_manager_live_core_booking_ops_fk_children', {
+    p_booking_ops_record_id: bookingOpsId,
+  });
+  if (!fkProbe.error && Array.isArray(fkProbe.data)) {
+    const allowlisted = new Set(RECOVERY_ALLOWLISTED_DIRECT_CHILDREN.map((item) => item.table));
+    allowlisted.add('booking_ops_communication_deliveries');
+    allowlisted.add('booking_channel_imported_bookings');
+    for (const hit of fkProbe.data as Array<{ table_name?: string; child_id?: string; column_name?: string }>) {
+      const table = String(hit.table_name ?? '');
+      const id = String(hit.child_id ?? '');
+      if (!table || !id) continue;
+      if (allowlisted.has(table)) continue;
+      unknownTables.push(table);
+      exactIdsByTable[table] = [...(exactIdsByTable[table] ?? []), id];
+      countsByTable[table] = (countsByTable[table] ?? 0) + 1;
+      manifest.push({
+        table,
+        id,
+        relationship: `unknown_fk:${hit.column_name ?? 'ref'}`,
+        classification: 'unknown_unsafe',
+      });
+    }
+  }
+
+  return { manifest, countsByTable, exactIdsByTable, unknownTables: [...new Set(unknownTables)], error: null };
+}
+
+/**
+ * Read-only recovery preview for deterministic Live Core acceptance artifacts.
+ */
+export async function previewLiveCoreSyntheticRecovery(): Promise<LiveCoreRecoveryPreview> {
+  const contour = await loadPreservedContour();
+
+  const { data, error } = await supabase
+    .from('booking_ops_records')
+    .select('id,property_id,booking_id,guest_name,guest_phone,guest_email,guest_telegram,account_id,ota_source,reservation_metadata,created_at')
+    .eq('property_id', LIVE_CORE_ACCEPTANCE_PROPERTY_ID)
+    .eq('booking_id', LIVE_CORE_ACCEPTANCE_EXTERNAL_BOOKING_ID);
+
+  if (error) {
+    return emptyPreview({
+      recoveryRequired: true,
+      safeToCleanup: false,
+      blockerCode: 'cleanup_failed',
+      blockerSummary: error.message,
+      preservedContour: {
+        ownerSetupId: contour.ownerSetupId,
+        propertySetupId: contour.propertySetupId,
+        connectionId: contour.connectionId,
+      },
+      importRunIds: contour.importRunIds,
+    });
+  }
+
+  const rows = data ?? [];
+  if (rows.length === 0) {
+    return emptyPreview({
+      recoveryRequired: false,
+      safeToCleanup: false,
+      blockerCode: 'already_clean',
+      blockerSummary: 'Синтетические Booking Ops артефакты не найдены — контур чист.',
+      preservedContour: {
+        ownerSetupId: contour.ownerSetupId,
+        propertySetupId: contour.propertySetupId,
+        connectionId: contour.connectionId,
+      },
+      importRunIds: contour.importRunIds,
+    });
+  }
+
+  if (rows.length > 1) {
+    return emptyPreview({
+      recoveryRequired: true,
+      safeToCleanup: false,
+      blockerCode: 'ambiguous_candidate',
+      blockerSummary: `Найдено ${rows.length} кандидатов с deterministic identity — удаление заблокировано.`,
+      preservedContour: {
+        ownerSetupId: contour.ownerSetupId,
+        propertySetupId: contour.propertySetupId,
+        connectionId: contour.connectionId,
+      },
+      importRunIds: contour.importRunIds,
+      evidence: { candidateIds: rows.map((row) => String(row.id)) },
+    });
+  }
+
+  const row = rows[0] as {
+    id: string;
+    property_id: string | null;
+    booking_id: string | null;
+    guest_name: string | null;
+    guest_phone: string | null;
+    guest_email: string | null;
+    guest_telegram: string | null;
+    account_id: string | null;
+    ota_source: string | null;
+    reservation_metadata: Record<string, unknown> | null;
+    created_at: string | null;
+  };
+
+  const classified = await classifyLegacySyntheticCandidate(row, contour);
+  const descendants = await collectDescendants(String(row.id), classified.classification);
+  if (descendants.error) {
+    return emptyPreview({
+      recoveryRequired: true,
+      safeToCleanup: false,
+      blockerCode: 'cleanup_failed',
+      blockerSummary: descendants.error,
+      mainRecord: {
+        id: String(row.id),
+        propertyId: row.property_id,
+        bookingId: row.booking_id,
+        guestName: row.guest_name,
+        accountId: row.account_id,
+        otaSource: row.ota_source,
+        reservationMetadata: row.reservation_metadata ?? {},
+        classification: classified.classification,
+        createdAt: row.created_at,
+      },
+      preservedContour: {
+        ownerSetupId: contour.ownerSetupId,
+        propertySetupId: contour.propertySetupId,
+        connectionId: contour.connectionId,
+      },
+      importRunIds: contour.importRunIds,
+    });
+  }
+
+  let blockerCode = classified.blockerCode;
+  let blockerSummary = classified.blockerSummary;
+  let safeToCleanup = classified.classification !== 'unknown_unsafe' && blockerCode === 'none';
+
+  if (descendants.unknownTables.length > 0) {
+    safeToCleanup = false;
+    blockerCode = 'unknown_fk_descendant';
+    blockerSummary = `Обнаружены неизвестные FK-потомки: ${descendants.unknownTables.join(', ')}.`;
+  }
+
+  if ((descendants.exactIdsByTable.booking_ops_communication_deliveries ?? []).length > 0) {
+    safeToCleanup = false;
+    blockerCode = 'deliveries_present';
+    blockerSummary = 'Найдены communication deliveries — удаление заблокировано.';
+  }
+
+  const exactIdsByTable = {
+    ...descendants.exactIdsByTable,
+    booking_ops_records: [String(row.id)],
+  };
+  const countsByTable = {
+    ...descendants.countsByTable,
+    booking_ops_records: 1,
+  };
+  const expectedDeletionTotal = Object.values(countsByTable).reduce((sum, count) => sum + count, 0);
+
+  return {
+    recoveryRequired: true,
+    safeToCleanup,
+    blockerCode: safeToCleanup ? 'none' : blockerCode,
+    blockerSummary: safeToCleanup ? null : blockerSummary,
+    mainRecord: {
+      id: String(row.id),
+      propertyId: row.property_id,
+      bookingId: row.booking_id,
+      guestName: row.guest_name,
+      accountId: row.account_id,
+      otaSource: row.ota_source,
+      reservationMetadata: row.reservation_metadata ?? {},
+      classification: classified.classification,
+      createdAt: row.created_at,
+    },
+    descendantManifest: descendants.manifest,
+    countsByTable,
+    exactIdsByTable,
+    preservedContour: {
+      ownerSetupId: contour.ownerSetupId,
+      propertySetupId: contour.propertySetupId,
+      connectionId: contour.connectionId,
+    },
+    importRunIds: contour.importRunIds,
+    expectedDeletionTotal,
+    evidence: classified.evidence,
+  };
+}
+
+function blockedCleanup(
+  preview: LiveCoreRecoveryPreview,
+  dryRun: boolean,
+  blockerCode: RecoveryBlockerCode,
+  blockerSummary: string,
+  status: LiveCoreRecoveryCleanupResult['status'] = 'blocked',
+): LiveCoreRecoveryCleanupResult {
+  return {
+    status,
+    transactionCommitted: false,
+    dryRun,
+    deletedCountsByTable: {},
+    preservedContour: preview.preservedContour,
+    preservedImportRuns: preview.importRunIds,
+    postVerification: {},
+    preview,
+    blockerCode,
+    blockerSummary,
+    safeError: blockerSummary,
+  };
+}
+
+/**
+ * Transactional cleanup of verified synthetic Live Core acceptance artifacts.
+ * Dry-run by default. Requires exact confirmation phrase for commit.
+ */
+export async function cleanupLiveCoreSyntheticRecovery(input: {
+  confirmPhrase?: string | null;
+  dryRun?: boolean;
+  expectedBookingOpsRecordId?: string | null;
+  expectedPreviewFingerprint?: string | null;
+} = {}): Promise<LiveCoreRecoveryCleanupResult> {
+  const dryRun = input.dryRun !== false;
+  const preview = await previewLiveCoreSyntheticRecovery();
+
+  if (preview.blockerCode === 'already_clean' || !preview.recoveryRequired) {
+    return {
+      status: 'already_clean',
+      transactionCommitted: false,
+      dryRun,
+      deletedCountsByTable: {},
+      preservedContour: preview.preservedContour,
+      preservedImportRuns: preview.importRunIds,
+      postVerification: { deterministicIdentityGone: true, descendantsRemain: false },
+      preview,
+      blockerCode: 'already_clean',
+      blockerSummary: preview.blockerSummary,
+      safeError: null,
+    };
+  }
+
+  if (!preview.safeToCleanup || !preview.mainRecord) {
+    return blockedCleanup(
+      preview,
+      dryRun,
+      preview.blockerCode === 'none' ? 'cleanup_failed' : preview.blockerCode,
+      preview.blockerSummary ?? 'Cleanup заблокирован safety checks.',
+    );
+  }
+
+  if (
+    input.expectedBookingOpsRecordId
+    && input.expectedBookingOpsRecordId !== preview.mainRecord.id
+  ) {
+    return blockedCleanup(
+      preview,
+      dryRun,
+      'row_changed',
+      'ID кандидата изменился между preview и cleanup.',
+    );
+  }
+
+  if (!dryRun) {
+    if (!input.confirmPhrase) {
+      return blockedCleanup(preview, dryRun, 'confirmation_required', 'Нужна точная фраза подтверждения cleanup.');
+    }
+    if (input.confirmPhrase !== LIVE_CORE_RECOVERY_CONFIRM_PHRASE) {
+      return blockedCleanup(preview, dryRun, 'confirmation_mismatch', 'Фраза подтверждения не совпадает.');
+    }
+  }
+
+  const deletionManifest: Record<string, string[]> = { ...preview.exactIdsByTable };
+  const rpcPayload = {
+    p_confirm: dryRun ? 'DRY_RUN' : LIVE_CORE_RECOVERY_CONFIRM_PHRASE,
+    p_dry_run: dryRun,
+    p_booking_ops_record_id: preview.mainRecord.id,
+    p_expected_property_id: LIVE_CORE_ACCEPTANCE_PROPERTY_ID,
+    p_expected_booking_id: LIVE_CORE_ACCEPTANCE_EXTERNAL_BOOKING_ID,
+    p_expected_guest_name: LIVE_CORE_ACCEPTANCE_GUEST_NAME,
+    p_deletion_manifest: deletionManifest,
+    p_preserve_owner_setup_id: preview.preservedContour.ownerSetupId,
+    p_preserve_property_setup_id: preview.preservedContour.propertySetupId,
+    p_preserve_connection_id: preview.preservedContour.connectionId,
+    p_preserve_import_run_ids: preview.importRunIds,
+  };
+
+  const { data, error } = await supabase.rpc(
+    'channel_manager_live_core_synthetic_recovery_cleanup',
+    rpcPayload,
+  );
+
+  if (error) {
+    // Application-level fallback for environments without the RPC yet (tests / pre-migration).
+    if (/function .* does not exist|Could not find the function/i.test(error.message)) {
+      return cleanupViaApplicationFallback({
+        preview,
+        dryRun,
+        deletionManifest,
+      });
+    }
+    return {
+      status: 'failed',
+      transactionCommitted: false,
+      dryRun,
+      deletedCountsByTable: {},
+      preservedContour: preview.preservedContour,
+      preservedImportRuns: preview.importRunIds,
+      postVerification: {},
+      preview,
+      blockerCode: 'cleanup_failed',
+      blockerSummary: 'Transactional cleanup не выполнен.',
+      safeError: error.message.slice(0, 240),
+    };
+  }
+
+  const result = (data ?? {}) as Record<string, unknown>;
+  const statusRaw = String(result.status ?? 'failed');
+  const status = (
+    statusRaw === 'passed' || statusRaw === 'blocked' || statusRaw === 'failed' || statusRaw === 'already_clean'
+      ? statusRaw
+      : 'failed'
+  ) as LiveCoreRecoveryCleanupResult['status'];
+
+  return {
+    status,
+    transactionCommitted: result.transaction_committed === true,
+    dryRun,
+    deletedCountsByTable: (result.deleted_counts_by_table as Record<string, number>) ?? {},
+    preservedContour: preview.preservedContour,
+    preservedImportRuns: preview.importRunIds,
+    postVerification: (result.post_verification as Record<string, unknown>) ?? {},
+    preview,
+    blockerCode: (result.blocker_code as RecoveryBlockerCode) ?? (status === 'passed' ? 'none' : 'cleanup_failed'),
+    blockerSummary: (result.blocker_summary as string | null) ?? null,
+    safeError: (result.safe_error as string | null) ?? null,
+  };
+}
+
+async function cleanupViaApplicationFallback(input: {
+  preview: LiveCoreRecoveryPreview;
+  dryRun: boolean;
+  deletionManifest: Record<string, string[]>;
+}): Promise<LiveCoreRecoveryCleanupResult> {
+  const { preview, dryRun, deletionManifest } = input;
+  if (dryRun) {
+    return {
+      status: 'passed',
+      transactionCommitted: false,
+      dryRun: true,
+      deletedCountsByTable: Object.fromEntries(
+        Object.entries(deletionManifest).map(([table, ids]) => [table, ids.length]),
+      ),
+      preservedContour: preview.preservedContour,
+      preservedImportRuns: preview.importRunIds,
+      postVerification: { dryRun: true, rpcUnavailable: true },
+      preview,
+      blockerCode: 'none',
+      blockerSummary: null,
+      safeError: null,
+    };
+  }
+
+  // Re-check main row before mutation.
+  const mainId = preview.mainRecord!.id;
+  const locked = await supabase
+    .from('booking_ops_records')
+    .select('id,property_id,booking_id,guest_name,guest_phone,guest_email,guest_telegram,account_id,reservation_metadata')
+    .eq('id', mainId)
+    .maybeSingle();
+
+  if (locked.error || !locked.data) {
+    return blockedCleanup(preview, dryRun, 'row_changed', 'Основная запись изменилась или исчезла.');
+  }
+
+  const row = locked.data;
+  if (
+    String(row.property_id ?? '') !== LIVE_CORE_ACCEPTANCE_PROPERTY_ID
+    || String(row.booking_id ?? '') !== LIVE_CORE_ACCEPTANCE_EXTERNAL_BOOKING_ID
+    || String(row.guest_name ?? '') !== LIVE_CORE_ACCEPTANCE_GUEST_NAME
+    || row.account_id
+    || row.guest_phone
+    || row.guest_email
+    || row.guest_telegram
+  ) {
+    return blockedCleanup(preview, dryRun, 'row_changed', 'Safety checks не прошли внутри cleanup.');
+  }
+
+  const deletedCountsByTable: Record<string, number> = {};
+  const deleteOrder = [
+    ...Object.keys(deletionManifest).filter((table) => table !== 'booking_ops_records'),
+    'booking_ops_records',
+  ];
+
+  for (const table of deleteOrder) {
+    const ids = deletionManifest[table] ?? [];
+    if (ids.length === 0) continue;
+    const { data, error } = await supabase.from(table).delete().in('id', ids).select('id');
+    if (error) {
+      if (isMissingRelationError(error) || isMissingColumnError(error)) continue;
+      return {
+        status: 'failed',
+        transactionCommitted: false,
+        dryRun: false,
+        deletedCountsByTable,
+        preservedContour: preview.preservedContour,
+        preservedImportRuns: preview.importRunIds,
+        postVerification: { failedTable: table },
+        preview,
+        blockerCode: 'cleanup_failed',
+        blockerSummary: `${table}: ${error.message}`,
+        safeError: error.message.slice(0, 240),
+      };
+    }
+    deletedCountsByTable[table] = (data ?? []).length;
+    if ((data ?? []).length !== ids.length) {
+      return {
+        status: 'failed',
+        transactionCommitted: false,
+        dryRun: false,
+        deletedCountsByTable,
+        preservedContour: preview.preservedContour,
+        preservedImportRuns: preview.importRunIds,
+        postVerification: {
+          failedTable: table,
+          expected: ids.length,
+          actual: (data ?? []).length,
+        },
+        preview,
+        blockerCode: 'row_changed',
+        blockerSummary: `Количество удалённых строк в ${table} не совпало с preview.`,
+        safeError: 'deleted_count_mismatch',
+      };
+    }
+  }
+
+  const remaining = await previewLiveCoreSyntheticRecovery();
+  const contourStillPresent = Boolean(
+    preview.preservedContour.ownerSetupId
+    && preview.preservedContour.propertySetupId
+    && preview.preservedContour.connectionId,
+  );
+
+  for (const runId of preview.importRunIds) {
+    const { data } = await supabase.from('booking_channel_import_runs').select('id').eq('id', runId).maybeSingle();
+    if (!data?.id) {
+      return {
+        status: 'failed',
+        transactionCommitted: false,
+        dryRun: false,
+        deletedCountsByTable,
+        preservedContour: preview.preservedContour,
+        preservedImportRuns: preview.importRunIds,
+        postVerification: { missingImportRunId: runId },
+        preview,
+        blockerCode: 'cleanup_failed',
+        blockerSummary: 'История import runs была затронута — это недопустимо.',
+        safeError: 'import_run_missing',
+      };
+    }
+  }
+
+  return {
+    status: remaining.recoveryRequired ? 'failed' : 'passed',
+    transactionCommitted: !remaining.recoveryRequired,
+    dryRun: false,
+    deletedCountsByTable,
+    preservedContour: preview.preservedContour,
+    preservedImportRuns: preview.importRunIds,
+    postVerification: {
+      deterministicIdentityGone: !remaining.recoveryRequired,
+      descendantsRemain: remaining.recoveryRequired,
+      contourPreserved: contourStillPresent,
+      rpcUnavailableFallback: true,
+    },
+    preview: remaining,
+    blockerCode: remaining.recoveryRequired ? 'cleanup_failed' : 'none',
+    blockerSummary: remaining.recoveryRequired ? 'После cleanup остались артефакты.' : null,
+    safeError: null,
+  };
+}

@@ -11,6 +11,7 @@ import {
 } from './guest-intake-autopilot';
 import { recordBookingOpsEvent, type BookingOpsEventActorType } from './events';
 import { initializeBookingOpsCoreLoop } from './core-loop-initialization';
+import { resolveAcceptanceReservationMetadataForCreate } from './channel-manager-live-core-acceptance-context';
 import { syncLifecycleFromBookingOpsRecord } from './lifecycle';
 import { lookupPropertyKnowledge, lookupPropertyKnowledgeBatch } from './property-knowledge';
 import type {
@@ -255,7 +256,16 @@ export async function createBookingOpsRecord(
 }> {
   const now = new Date().toISOString();
   const id = randomUUID();
-  const row = {
+  const acceptanceMetadata = resolveAcceptanceReservationMetadataForCreate({
+    propertyId: input.propertyId,
+    bookingId: input.bookingId,
+    explicit: input.reservationMetadata ?? null,
+  });
+  const reservationMetadata = acceptanceMetadata
+    ?? (input.reservationMetadata && typeof input.reservationMetadata === 'object'
+      ? input.reservationMetadata
+      : null);
+  const row: Record<string, unknown> = {
     id,
     booking_id: text(input.bookingId) || null,
     guest_name: text(input.guestName) || null,
@@ -298,6 +308,11 @@ export async function createBookingOpsRecord(
     created_at: now,
     updated_at: now,
   };
+  // Only set reservation_metadata when ownership metadata is explicitly provided
+  // (acceptance harness) so normal creates keep the DB default {}.
+  if (reservationMetadata) {
+    row.reservation_metadata = reservationMetadata;
+  }
 
   const { data, error } = await supabase
     .from('booking_ops_records')

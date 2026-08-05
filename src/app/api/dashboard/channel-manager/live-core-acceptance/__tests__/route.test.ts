@@ -4,11 +4,15 @@ const {
   requireDevelopmentOwnerSession,
   runChannelManagerLiveCoreAcceptance,
   cleanupLiveCoreAcceptanceHarness,
+  cleanupLiveCoreSyntheticRecovery,
+  previewLiveCoreSyntheticRecovery,
   probeChannelLiveCoreSchema,
 } = vi.hoisted(() => ({
   requireDevelopmentOwnerSession: vi.fn(),
   runChannelManagerLiveCoreAcceptance: vi.fn(),
   cleanupLiveCoreAcceptanceHarness: vi.fn(),
+  cleanupLiveCoreSyntheticRecovery: vi.fn(),
+  previewLiveCoreSyntheticRecovery: vi.fn(),
   probeChannelLiveCoreSchema: vi.fn(),
 }));
 
@@ -16,6 +20,9 @@ vi.mock('@/lib/development/api-auth', () => ({ requireDevelopmentOwnerSession })
 vi.mock('@/lib/booking-ops/channel-manager-live-core-acceptance', () => ({
   runChannelManagerLiveCoreAcceptance,
   cleanupLiveCoreAcceptanceHarness,
+  cleanupLiveCoreSyntheticRecovery,
+  previewLiveCoreSyntheticRecovery,
+  LIVE_CORE_RECOVERY_CONFIRM_PHRASE: 'CLEAN_SYNTHETIC_LIVE_CORE_ACCEPTANCE_V1',
   describeLiveCoreAcceptanceUnavailable: () => 'schema blocker',
 }));
 vi.mock('@/lib/booking-ops/channel-manager-live-core', () => ({
@@ -37,6 +44,46 @@ describe('live-core-acceptance route', () => {
     vi.clearAllMocks();
     requireDevelopmentOwnerSession.mockResolvedValue({ session: { email: 'owner@asi-global.ru', userId: 'u1' } });
     probeChannelLiveCoreSchema.mockResolvedValue({ ready: true, blocker: null });
+    previewLiveCoreSyntheticRecovery.mockResolvedValue({
+      recoveryRequired: false,
+      safeToCleanup: false,
+      blockerCode: 'already_clean',
+      blockerSummary: null,
+      mainRecord: null,
+      descendantManifest: [],
+      countsByTable: {},
+      exactIdsByTable: {},
+      preservedContour: { ownerSetupId: null, propertySetupId: null, connectionId: null },
+      importRunIds: [],
+      expectedDeletionTotal: 0,
+      evidence: {},
+    });
+    cleanupLiveCoreSyntheticRecovery.mockResolvedValue({
+      status: 'already_clean',
+      transactionCommitted: false,
+      dryRun: true,
+      deletedCountsByTable: {},
+      preservedContour: { ownerSetupId: null, propertySetupId: null, connectionId: null },
+      preservedImportRuns: [],
+      postVerification: {},
+      preview: {
+        recoveryRequired: false,
+        safeToCleanup: false,
+        blockerCode: 'already_clean',
+        blockerSummary: null,
+        mainRecord: null,
+        descendantManifest: [],
+        countsByTable: {},
+        exactIdsByTable: {},
+        preservedContour: { ownerSetupId: null, propertySetupId: null, connectionId: null },
+        importRunIds: [],
+        expectedDeletionTotal: 0,
+        evidence: {},
+      },
+      blockerCode: 'already_clean',
+      blockerSummary: null,
+      safeError: null,
+    });
     runChannelManagerLiveCoreAcceptance.mockResolvedValue({
       passed: true,
       schemaReady: true,
@@ -119,6 +166,64 @@ describe('live-core-acceptance route', () => {
     expect(payload.ok).toBe(true);
     expect(payload.cleanup.cleanupPassed).toBe(true);
     expect(cleanupLiveCoreAcceptanceHarness).toHaveBeenCalledOnce();
+  });
+
+  it('returns recovery preview for development owner', async () => {
+    const response = await POST(request({ action: 'preview_recovery' }));
+    const payload = await response.json();
+    expect(response.status).toBe(200);
+    expect(payload.ok).toBe(true);
+    expect(payload.recovery.blockerCode).toBe('already_clean');
+    expect(previewLiveCoreSyntheticRecovery).toHaveBeenCalledOnce();
+  });
+
+  it('requires confirmation phrase for synthetic recovery commit', async () => {
+    const response = await POST(request({ action: 'cleanup_recovery', dryRun: false }));
+    const payload = await response.json();
+    expect(response.status).toBe(400);
+    expect(payload.ok).toBe(false);
+    expect(cleanupLiveCoreSyntheticRecovery).not.toHaveBeenCalled();
+  });
+
+  it('commits synthetic recovery with exact confirmation phrase', async () => {
+    cleanupLiveCoreSyntheticRecovery.mockResolvedValue({
+      status: 'passed',
+      transactionCommitted: true,
+      dryRun: false,
+      deletedCountsByTable: { booking_ops_records: 1 },
+      preservedContour: { ownerSetupId: 'o1', propertySetupId: 'p1', connectionId: 'c1' },
+      preservedImportRuns: ['r1'],
+      postVerification: { deterministicIdentityGone: true },
+      preview: {
+        recoveryRequired: false,
+        safeToCleanup: false,
+        blockerCode: 'already_clean',
+        blockerSummary: null,
+        mainRecord: null,
+        descendantManifest: [],
+        countsByTable: {},
+        exactIdsByTable: {},
+        preservedContour: { ownerSetupId: 'o1', propertySetupId: 'p1', connectionId: 'c1' },
+        importRunIds: ['r1'],
+        expectedDeletionTotal: 0,
+        evidence: {},
+      },
+      blockerCode: 'none',
+      blockerSummary: null,
+      safeError: null,
+    });
+    const response = await POST(request({
+      action: 'cleanup_recovery',
+      dryRun: false,
+      confirmPhrase: 'CLEAN_SYNTHETIC_LIVE_CORE_ACCEPTANCE_V1',
+    }));
+    const payload = await response.json();
+    expect(response.status).toBe(200);
+    expect(payload.ok).toBe(true);
+    expect(cleanupLiveCoreSyntheticRecovery).toHaveBeenCalledWith(expect.objectContaining({
+      dryRun: false,
+      confirmPhrase: 'CLEAN_SYNTHETIC_LIVE_CORE_ACCEPTANCE_V1',
+    }));
   });
 
   it('returns failure when cleanup verification does not pass', async () => {

@@ -32,21 +32,52 @@ import {
   type PropertySetupProfile,
 } from './owner-object-setup-autopilot';
 
-export const LIVE_CORE_ACCEPTANCE_HARNESS = 'channel_manager_live_core_v1' as const;
-export const LIVE_CORE_ACCEPTANCE_LEAD_ID = 'acceptance:channel_manager_live_core_v1';
-export const LIVE_CORE_ACCEPTANCE_PROPERTY_ID = 'asi-live-core-acceptance-v1';
-export const LIVE_CORE_ACCEPTANCE_EXTERNAL_OBJECT_ID = 'asi-lc-accept-obj-v1';
-export const LIVE_CORE_ACCEPTANCE_EXTERNAL_BOOKING_ID = 'asi-lc-accept-book-v1';
-export const LIVE_CORE_ACCEPTANCE_SAFE_ACCESS_REF = 'operator:acceptance-harness-v1';
-export const LIVE_CORE_ACCEPTANCE_GUEST_NAME = 'Тестовый Гость ASI';
-export const LIVE_CORE_ACCEPTANCE_OBJECT_TITLE = 'ASI Live Core Acceptance Object';
-export const LIVE_CORE_ACCEPTANCE_OBJECT_CITY = 'Тверь';
-export const LIVE_CORE_ACCEPTANCE_INTAKE_SOURCE = 'channel_manager_placeholder' as const;
-export const LIVE_CORE_ACCEPTANCE_INTAKE_IDEMPOTENCY_KEY =
-  `ext:${LIVE_CORE_ACCEPTANCE_INTAKE_SOURCE}:${LIVE_CORE_ACCEPTANCE_EXTERNAL_BOOKING_ID}`;
+export {
+  HARNESS_IDENTITY_COLLISION,
+  HARNESS_SCOPE_COLLISION,
+  LIVE_CORE_ACCEPTANCE_EXTERNAL_BOOKING_ID,
+  LIVE_CORE_ACCEPTANCE_EXTERNAL_OBJECT_ID,
+  LIVE_CORE_ACCEPTANCE_GUEST_NAME,
+  LIVE_CORE_ACCEPTANCE_HARNESS,
+  LIVE_CORE_ACCEPTANCE_INTAKE_IDEMPOTENCY_KEY,
+  LIVE_CORE_ACCEPTANCE_INTAKE_SOURCE,
+  LIVE_CORE_ACCEPTANCE_LEAD_ID,
+  LIVE_CORE_ACCEPTANCE_OBJECT_CITY,
+  LIVE_CORE_ACCEPTANCE_OBJECT_TITLE,
+  LIVE_CORE_ACCEPTANCE_PROPERTY_ID,
+  LIVE_CORE_ACCEPTANCE_SAFE_ACCESS_REF,
+  LIVE_CORE_PRESERVED_CONTOUR,
+  LIVE_CORE_RECOVERY_CONFIRM_PHRASE,
+} from './channel-manager-live-core-acceptance-constants';
 
-export const HARNESS_IDENTITY_COLLISION = 'harness_identity_collision';
-export const HARNESS_SCOPE_COLLISION = 'harness_scope_collision';
+export {
+  previewLiveCoreSyntheticRecovery,
+  cleanupLiveCoreSyntheticRecovery,
+} from './channel-manager-live-core-recovery';
+export type {
+  LiveCoreRecoveryPreview,
+  LiveCoreRecoveryCleanupResult,
+} from './channel-manager-live-core-recovery';
+
+import {
+  HARNESS_IDENTITY_COLLISION,
+  HARNESS_SCOPE_COLLISION,
+  LIVE_CORE_ACCEPTANCE_EXTERNAL_BOOKING_ID,
+  LIVE_CORE_ACCEPTANCE_EXTERNAL_OBJECT_ID,
+  LIVE_CORE_ACCEPTANCE_GUEST_NAME,
+  LIVE_CORE_ACCEPTANCE_HARNESS,
+  LIVE_CORE_ACCEPTANCE_INTAKE_IDEMPOTENCY_KEY,
+  LIVE_CORE_ACCEPTANCE_INTAKE_SOURCE,
+  LIVE_CORE_ACCEPTANCE_LEAD_ID,
+  LIVE_CORE_ACCEPTANCE_OBJECT_CITY,
+  LIVE_CORE_ACCEPTANCE_OBJECT_TITLE,
+  LIVE_CORE_ACCEPTANCE_PROPERTY_ID,
+  LIVE_CORE_ACCEPTANCE_SAFE_ACCESS_REF,
+} from './channel-manager-live-core-acceptance-constants';
+import {
+  cleanupLiveCoreSyntheticRecovery,
+  previewLiveCoreSyntheticRecovery,
+} from './channel-manager-live-core-recovery';
 
 /**
  * Direct ON DELETE CASCADE children of harness parent tables.
@@ -85,13 +116,18 @@ export const LIVE_CORE_ACCEPTANCE_CASCADE_MANIFEST = {
 
 export type LiveCoreAcceptanceStepKey =
   | 'schema'
-  | 'setup'
+  | 'owner_setup'
+  | 'property_setup'
   | 'connection'
-  | 'execution_reset'
+  | 'previous_execution_inspection'
+  | 'recovery_preview'
+  | 'recovery_cleanup'
   | 'first_sync'
   | 'booking_check'
+  | 'calendar_check'
+  | 'overbooking_check'
   | 'second_sync'
-  | 'duplicate_check';
+  | 'idempotency_check';
 
 export type LiveCoreAcceptanceStepStatus = 'waiting' | 'running' | 'passed' | 'failed';
 
@@ -115,7 +151,16 @@ export type LiveCoreAcceptanceEvidence = {
   secondRunStatus: string | null;
   importedFirstRun: number | null;
   importedSecondRun: number | null;
+  updatedFirstRun: number | null;
+  updatedSecondRun: number | null;
   duplicateCount: number | null;
+  recoveryRequired: boolean | null;
+  recoverySafeToCleanup: boolean | null;
+  recoveryBlockerCode: string | null;
+  recoveryBlockerSummary: string | null;
+  recoveryExpectedDeletionTotal: number | null;
+  calendarRowCount: number | null;
+  selfConflictCount: number | null;
   passed: boolean;
   blocker: string | null;
   failedStep: LiveCoreAcceptanceStepKey | null;
@@ -168,25 +213,35 @@ export class LiveCoreAcceptanceHarnessError extends Error {
 }
 
 const STEP_LABELS: Record<LiveCoreAcceptanceStepKey, string> = {
-  schema: 'Схема Live Core',
-  setup: 'Тестовый объект',
-  connection: 'Подключение МК',
-  execution_reset: 'Сброс предыдущего прогона',
-  first_sync: 'Первый initial sync',
+  schema: 'Схема',
+  owner_setup: 'Тестовый владелец',
+  property_setup: 'Тестовый объект',
+  connection: 'Подключение менеджера каналов',
+  previous_execution_inspection: 'Проверка прошлого прогона',
+  recovery_preview: 'Просмотр очистки',
+  recovery_cleanup: 'Очистка тестовых артефактов',
+  first_sync: 'Первая синхронизация',
   booking_check: 'Проверка брони',
-  second_sync: 'Повторный sync',
-  duplicate_check: 'Проверка дублей',
+  calendar_check: 'Проверка календаря',
+  overbooking_check: 'Проверка конфликтов дат',
+  second_sync: 'Повторная синхронизация',
+  idempotency_check: 'Проверка повторного импорта',
 };
 
 const STEP_ORDER: LiveCoreAcceptanceStepKey[] = [
   'schema',
-  'setup',
+  'owner_setup',
+  'property_setup',
   'connection',
-  'execution_reset',
+  'previous_execution_inspection',
+  'recovery_preview',
+  'recovery_cleanup',
   'first_sync',
   'booking_check',
+  'calendar_check',
+  'overbooking_check',
   'second_sync',
-  'duplicate_check',
+  'idempotency_check',
 ];
 
 const BOOKING_OPS_CASCADE_CHILD_TABLES = [
@@ -266,7 +321,16 @@ function emptyEvidence(partial: Partial<LiveCoreAcceptanceEvidence> = {}): LiveC
     secondRunStatus: null,
     importedFirstRun: null,
     importedSecondRun: null,
+    updatedFirstRun: null,
+    updatedSecondRun: null,
     duplicateCount: null,
+    recoveryRequired: null,
+    recoverySafeToCleanup: null,
+    recoveryBlockerCode: null,
+    recoveryBlockerSummary: null,
+    recoveryExpectedDeletionTotal: null,
+    calendarRowCount: null,
+    selfConflictCount: null,
     passed: false,
     blocker: null,
     failedStep: null,
@@ -673,7 +737,7 @@ async function stampHarnessOwnedCommunicationIntents(connection: ChannelManagerC
 async function markBookingOpsAsHarness(
   bookingOpsRecordId: string,
   acceptanceExecutionId: string,
-): Promise<void> {
+): Promise<'verified' | 'marked'> {
   const { data, error } = await supabase
     .from('booking_ops_records')
     .select('id,reservation_metadata,property_id,booking_id')
@@ -689,10 +753,8 @@ async function markBookingOpsAsHarness(
     );
   }
   if (hasHarnessMarker(data.reservation_metadata)) {
-    throw new LiveCoreAcceptanceHarnessError(
-      HARNESS_IDENTITY_COLLISION,
-      `${HARNESS_IDENTITY_COLLISION}: Booking Ops ${bookingOpsRecordId} уже помечен — нельзя принять как новый first-run artifact.`,
-    );
+    // Create-time ownership already stamped — verify only, do not reject.
+    return 'verified';
   }
   const current = (data.reservation_metadata as Record<string, unknown>) ?? {};
   const { error: updateError } = await supabase.from('booking_ops_records').update({
@@ -706,6 +768,16 @@ async function markBookingOpsAsHarness(
     updated_at: new Date().toISOString(),
   }).eq('id', bookingOpsRecordId);
   if (updateError) throw new Error(updateError.message);
+  return 'marked';
+}
+
+async function countCalendarSnapshots(connectionId: string): Promise<number> {
+  const { data, error } = await supabase
+    .from('booking_channel_calendar_snapshots')
+    .select('id')
+    .eq('connection_id', connectionId);
+  if (error) throw new Error(error.message);
+  return (data ?? []).length;
 }
 
 async function countExternalBookings(connectionId: string, externalBookingId: string): Promise<number> {
@@ -1307,11 +1379,19 @@ async function deleteMarkedOwnerCommunicationIntents(ownerIds: string[]): Promis
   return { deleted: (data ?? []).length, error: null };
 }
 
+export type RunLiveCoreAcceptanceOptions = {
+  injectFailureAfterBookingOpsCreate?: boolean;
+  recoveryConfirmPhrase?: string | null;
+  skipRecoveryCleanup?: boolean;
+};
+
 /**
  * Full acceptance sequence. Never sets passed unless every assertion is verified.
- * Safely repeatable: resets prior execution artifacts before each run.
+ * Safely repeatable: recovers synthetic orphans, then resets prior execution artifacts.
  */
-export async function runChannelManagerLiveCoreAcceptance(): Promise<LiveCoreAcceptanceEvidence> {
+export async function runChannelManagerLiveCoreAcceptance(
+  options: RunLiveCoreAcceptanceOptions = {},
+): Promise<LiveCoreAcceptanceEvidence> {
   const acceptanceExecutionId = randomUUID();
   const evidence = emptyEvidence({ acceptanceExecutionId });
   const steps = evidence.steps;
@@ -1327,29 +1407,57 @@ export async function runChannelManagerLiveCoreAcceptance(): Promise<LiveCoreAcc
       schema.blocker ?? 'Миграция Channel Manager Live Core ещё не применена. Initial sync недоступен.',
     );
   }
-  setStep(steps, 'schema', 'passed', 'Схема Live Core готова.');
+  setStep(steps, 'schema', 'passed', 'Схема готова.');
 
-  setStep(steps, 'setup', 'running');
+  setStep(steps, 'owner_setup', 'running');
   let ownerSetup: OwnerSetupProfile;
   let propertySetup: PropertySetupProfile;
+  let setupCreatedOwner = false;
+  let setupCreatedProperty = false;
   try {
     const setup = await ensureLiveCoreAcceptanceSetup();
     ownerSetup = setup.ownerSetup;
     propertySetup = setup.propertySetup;
+    setupCreatedOwner = setup.createdOwner;
+    setupCreatedProperty = setup.createdProperty;
     evidence.ownerSetupId = ownerSetup.id;
     evidence.propertySetupId = propertySetup.id;
-    if (!hasHarnessMarker(ownerSetup.metadata) || !hasHarnessMarker(propertySetup.metadata)) {
-      return failEvidence(evidence, 'setup', `${HARNESS_IDENTITY_COLLISION}: тестовый контур без точного acceptanceHarness.`);
+    if (!hasHarnessMarker(ownerSetup.metadata)) {
+      return failEvidence(
+        evidence,
+        'owner_setup',
+        `${HARNESS_IDENTITY_COLLISION}: тестовый владелец без точного acceptanceHarness.`,
+      );
     }
     setStep(
       steps,
-      'setup',
+      'owner_setup',
       'passed',
-      setup.createdOwner || setup.createdProperty ? 'Тестовый контур создан.' : 'Тестовый контур переиспользован.',
+      setupCreatedOwner ? 'Тестовый владелец создан.' : 'Тестовый владелец переиспользован.',
+    );
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Не удалось подготовить тестового владельца.';
+    return failEvidence(evidence, 'owner_setup', message);
+  }
+
+  setStep(steps, 'property_setup', 'running');
+  try {
+    if (!hasHarnessMarker(propertySetup.metadata)) {
+      return failEvidence(
+        evidence,
+        'property_setup',
+        `${HARNESS_IDENTITY_COLLISION}: тестовый объект без точного acceptanceHarness.`,
+      );
+    }
+    setStep(
+      steps,
+      'property_setup',
+      'passed',
+      setupCreatedProperty ? 'Тестовый объект создан.' : 'Тестовый объект переиспользован.',
     );
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Не удалось подготовить тестовый объект.';
-    return failEvidence(evidence, 'setup', message);
+    return failEvidence(evidence, 'property_setup', message);
   }
 
   setStep(steps, 'connection', 'running');
@@ -1359,37 +1467,146 @@ export async function runChannelManagerLiveCoreAcceptance(): Promise<LiveCoreAcc
     connection = ensured.connection;
     evidence.connectionId = connection.id;
     if (!hasHarnessMarker(connection.metadata)) {
-      return failEvidence(evidence, 'connection', `${HARNESS_IDENTITY_COLLISION}: подключение МК не помечено acceptanceHarness.`);
+      return failEvidence(evidence, 'connection', `${HARNESS_IDENTITY_COLLISION}: подключение не помечено acceptanceHarness.`);
     }
     setStep(steps, 'connection', 'passed', ensured.created ? 'Подключение создано.' : 'Подключение переиспользовано.');
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Не удалось создать подключение МК.';
+    const message = error instanceof Error ? error.message : 'Не удалось создать подключение менеджера каналов.';
     return failEvidence(evidence, 'connection', message);
   }
 
-  setStep(steps, 'execution_reset', 'running');
+  setStep(steps, 'previous_execution_inspection', 'running');
+  let recoveryPreview;
+  try {
+    recoveryPreview = await previewLiveCoreSyntheticRecovery();
+    evidence.recoveryRequired = recoveryPreview.recoveryRequired;
+    evidence.recoverySafeToCleanup = recoveryPreview.safeToCleanup;
+    evidence.recoveryBlockerCode = recoveryPreview.blockerCode;
+    evidence.recoveryBlockerSummary = recoveryPreview.blockerSummary;
+    evidence.recoveryExpectedDeletionTotal = recoveryPreview.expectedDeletionTotal;
+    setStep(
+      steps,
+      'previous_execution_inspection',
+      'passed',
+      recoveryPreview.recoveryRequired
+        ? `Найдены синтетические артефакты прошлого прогона (удалений: ${recoveryPreview.expectedDeletionTotal}).`
+        : 'Прошлый прогон чист — восстановление не требуется.',
+    );
+  } catch (error) {
+    return failEvidence(
+      evidence,
+      'previous_execution_inspection',
+      error instanceof Error ? error.message : 'Не удалось проверить прошлый прогон.',
+    );
+  }
+
+  setStep(steps, 'recovery_preview', 'running');
+  if (recoveryPreview.recoveryRequired) {
+    const mainId = recoveryPreview.mainRecord?.id ?? '—';
+    setStep(
+      steps,
+      'recovery_preview',
+      'passed',
+      `Кандидат на очистку: ${mainId}; безопасно=${recoveryPreview.safeToCleanup ? 'да' : 'нет'}`
+        + (recoveryPreview.blockerSummary ? `; ${recoveryPreview.blockerSummary}` : ''),
+    );
+  } else {
+    setStep(steps, 'recovery_preview', 'passed', 'Контур уже чист.');
+  }
+
+  setStep(steps, 'recovery_cleanup', 'running');
+  if (!recoveryPreview.recoveryRequired) {
+    setStep(steps, 'recovery_cleanup', 'passed', 'Очистка не требуется.');
+  } else if (options.skipRecoveryCleanup === true) {
+    setStep(steps, 'recovery_cleanup', 'passed', 'Очистка пропущена по запросу harness (skipRecoveryCleanup).');
+  } else if (!recoveryPreview.safeToCleanup) {
+    return failEvidence(
+      evidence,
+      'recovery_cleanup',
+      recoveryPreview.blockerSummary
+        ?? `Очистка заблокирована (${recoveryPreview.blockerCode}).`,
+    );
+  } else {
+    const classification = recoveryPreview.mainRecord?.classification ?? null;
+    // harness_owned leftovers are cleared by the preserved execution_reset path below.
+    // legacy/unknown candidates stay fail-closed until the owner confirms recovery cleanup.
+    if (classification === 'harness_owned' && !options.recoveryConfirmPhrase) {
+      setStep(
+        steps,
+        'recovery_cleanup',
+        'passed',
+        'Помеченные harness-артефакты прошлого прогона будут сброшены перед новым прогоном.',
+      );
+    } else if (!options.recoveryConfirmPhrase) {
+      return failEvidence(
+        evidence,
+        'recovery_cleanup',
+        'Нужно подтверждение владельца для очистки синтетических тестовых артефактов. '
+          + 'Передайте recoveryConfirmPhrase или выполните cleanup_recovery отдельно.',
+      );
+    } else {
+      try {
+        const cleanup = await cleanupLiveCoreSyntheticRecovery({
+          confirmPhrase: options.recoveryConfirmPhrase,
+          dryRun: false,
+          expectedBookingOpsRecordId: recoveryPreview.mainRecord?.id ?? null,
+        });
+        if (cleanup.status !== 'passed' && cleanup.status !== 'already_clean') {
+          return failEvidence(
+            evidence,
+            'recovery_cleanup',
+            cleanup.blockerSummary ?? cleanup.safeError ?? 'Очистка синтетических артефактов не выполнена.',
+          );
+        }
+        evidence.recoveryRequired = false;
+        evidence.recoverySafeToCleanup = false;
+        evidence.recoveryBlockerCode = 'already_clean';
+        evidence.recoveryBlockerSummary = null;
+        evidence.recoveryExpectedDeletionTotal = 0;
+        setStep(
+          steps,
+          'recovery_cleanup',
+          'passed',
+          cleanup.status === 'already_clean'
+            ? 'Артефакты уже были чисты.'
+            : 'Синтетические тестовые артефакты удалены.',
+        );
+      } catch (error) {
+        return failEvidence(
+          evidence,
+          'recovery_cleanup',
+          error instanceof Error ? error.message : 'Очистка синтетических артефактов не выполнена.',
+        );
+      }
+    }
+  }
+
+  // Keep execution reset after recovery (not a separate tracked step).
   try {
     const reset = await resetLiveCoreAcceptanceExecutionArtifacts({
       connectionId: connection.id,
       propertySetupId: propertySetup.id,
     });
     if (!reset.ok) {
-      return failEvidence(evidence, 'execution_reset', `${reset.stage}: ${reset.blocker}`);
+      return failEvidence(
+        evidence,
+        'recovery_cleanup',
+        `Сброс артефактов после восстановления не прошёл (${reset.stage}): ${reset.blocker}`,
+      );
     }
     try {
       await assertDeterministicBookingOpsClearForNewExecution();
     } catch (error) {
       return failEvidence(
         evidence,
-        'execution_reset',
+        'recovery_cleanup',
         error instanceof Error ? error.message : HARNESS_IDENTITY_COLLISION,
       );
     }
-    setStep(steps, 'execution_reset', 'passed', 'Предыдущие synthetic artifacts сброшены.');
   } catch (error) {
     return failEvidence(
       evidence,
-      'execution_reset',
+      'recovery_cleanup',
       error instanceof Error ? error.message : 'Не удалось сбросить предыдущий прогон.',
     );
   }
@@ -1408,20 +1625,40 @@ export async function runChannelManagerLiveCoreAcceptance(): Promise<LiveCoreAcc
       connectionId: connection.id,
       snapshot,
       metadata: harnessMetadata({ acceptanceRun: 'first', acceptanceExecutionId }),
+      injectFailureAfterBookingOpsCreate: options.injectFailureAfterBookingOpsCreate === true,
     });
     evidence.firstRunId = first.run.id;
     evidence.firstRunStatus = first.status;
     evidence.importedFirstRun = first.counters.imported;
+    evidence.updatedFirstRun = first.counters.updated;
+    evidence.selfConflictCount = first.warnings.filter((item) => item.type === 'availability_conflict').length;
+    if (options.injectFailureAfterBookingOpsCreate === true) {
+      return failEvidence(
+        evidence,
+        'first_sync',
+        first.safeError?.message
+          ?? 'Инъекция сбоя после создания Booking Ops — прогон остановлен для проверки восстановления.',
+      );
+    }
     if (first.status !== 'completed' && first.status !== 'completed_with_warnings') {
       return failEvidence(
         evidence,
         'first_sync',
-        first.safeError?.message ?? `Первый sync завершился со статусом ${first.status}.`,
+        first.safeError?.message ?? `Первая синхронизация завершилась со статусом ${first.status}.`,
       );
     }
-    setStep(steps, 'first_sync', 'passed', `Статус ${first.status}, imported=${first.counters.imported}.`);
+    setStep(
+      steps,
+      'first_sync',
+      'passed',
+      `Статус ${first.status}, imported=${first.counters.imported}, updated=${first.counters.updated}.`,
+    );
   } catch (error) {
-    return failEvidence(evidence, 'first_sync', error instanceof Error ? error.message : 'Первый initial sync не выполнен.');
+    return failEvidence(
+      evidence,
+      'first_sync',
+      error instanceof Error ? error.message : 'Первая синхронизация не выполнена.',
+    );
   }
 
   setStep(steps, 'booking_check', 'running');
@@ -1442,10 +1679,52 @@ export async function runChannelManagerLiveCoreAcceptance(): Promise<LiveCoreAcc
       return failEvidence(evidence, 'booking_check', 'Booking Ops запись для импортированной брони не найдена.');
     }
     evidence.bookingOpsRecordId = bookingOpsId;
-    await markBookingOpsAsHarness(bookingOpsId, acceptanceExecutionId);
-    setStep(steps, 'booking_check', 'passed', 'Импортирована ровно одна бронь и создана запись Booking Ops.');
+    const markResult = await markBookingOpsAsHarness(bookingOpsId, acceptanceExecutionId);
+    setStep(
+      steps,
+      'booking_check',
+      'passed',
+      markResult === 'verified'
+        ? 'Импортирована ровно одна бронь; метка harness уже была на создании.'
+        : 'Импортирована ровно одна бронь и создана запись Booking Ops.',
+    );
   } catch (error) {
     return failEvidence(evidence, 'booking_check', error instanceof Error ? error.message : 'Проверка брони не выполнена.');
+  }
+
+  setStep(steps, 'calendar_check', 'running');
+  try {
+    const calendarRowCount = await countCalendarSnapshots(connection.id);
+    evidence.calendarRowCount = calendarRowCount;
+    if (calendarRowCount < 1) {
+      return failEvidence(evidence, 'calendar_check', `Ожидалась хотя бы 1 строка календаря, найдено ${calendarRowCount}.`);
+    }
+    setStep(steps, 'calendar_check', 'passed', `Строк календаря: ${calendarRowCount}.`);
+  } catch (error) {
+    return failEvidence(
+      evidence,
+      'calendar_check',
+      error instanceof Error ? error.message : 'Проверка календаря не выполнена.',
+    );
+  }
+
+  setStep(steps, 'overbooking_check', 'running');
+  try {
+    const selfConflictCount = evidence.selfConflictCount ?? 0;
+    if (selfConflictCount !== 0) {
+      return failEvidence(
+        evidence,
+        'overbooking_check',
+        `Обнаружены конфликты дат внутри тестового контура: ${selfConflictCount}.`,
+      );
+    }
+    setStep(steps, 'overbooking_check', 'passed', 'Конфликтов дат нет.');
+  } catch (error) {
+    return failEvidence(
+      evidence,
+      'overbooking_check',
+      error instanceof Error ? error.message : 'Проверка конфликтов дат не выполнена.',
+    );
   }
 
   setStep(steps, 'second_sync', 'running');
@@ -1459,64 +1738,78 @@ export async function runChannelManagerLiveCoreAcceptance(): Promise<LiveCoreAcc
     evidence.secondRunId = second.run.id;
     evidence.secondRunStatus = second.status;
     evidence.importedSecondRun = second.counters.imported;
+    evidence.updatedSecondRun = second.counters.updated;
     if (second.status !== 'completed' && second.status !== 'completed_with_warnings') {
       return failEvidence(
         evidence,
         'second_sync',
-        second.safeError?.message ?? `Повторный sync завершился со статусом ${second.status}.`,
+        second.safeError?.message ?? `Повторная синхронизация завершилась со статусом ${second.status}.`,
       );
     }
     if (evidence.secondRunId === evidence.firstRunId) {
-      return failEvidence(evidence, 'second_sync', 'Повторный sync не создал отдельный run id.');
+      return failEvidence(evidence, 'second_sync', 'Повторная синхронизация не создала отдельный run id.');
     }
-    setStep(steps, 'second_sync', 'passed', `Статус ${second.status}, imported=${second.counters.imported}.`);
+    setStep(
+      steps,
+      'second_sync',
+      'passed',
+      `Статус ${second.status}, imported=${second.counters.imported}, updated=${second.counters.updated}.`,
+    );
   } catch (error) {
-    return failEvidence(evidence, 'second_sync', error instanceof Error ? error.message : 'Повторный sync не выполнен.');
+    return failEvidence(
+      evidence,
+      'second_sync',
+      error instanceof Error ? error.message : 'Повторная синхронизация не выполнена.',
+    );
   }
 
-  setStep(steps, 'duplicate_check', 'running');
+  setStep(steps, 'idempotency_check', 'running');
   try {
     if (evidence.importedSecondRun !== 0) {
       return failEvidence(
         evidence,
-        'duplicate_check',
-        `Повторный sync должен импортировать 0 броней, получено ${evidence.importedSecondRun}.`,
+        'idempotency_check',
+        `Повторная синхронизация должна импортировать 0 броней, получено ${evidence.importedSecondRun}.`,
       );
     }
     const importedCount = await countExternalBookings(connection.id, LIVE_CORE_ACCEPTANCE_EXTERNAL_BOOKING_ID);
     if (importedCount !== 1) {
-      return failEvidence(evidence, 'duplicate_check', `После повтора ожидалась 1 строка импорта, найдено ${importedCount}.`);
+      return failEvidence(evidence, 'idempotency_check', `После повтора ожидалась 1 строка импорта, найдено ${importedCount}.`);
     }
     const opsCount = await countBookingOpsForHarnessProperty();
     evidence.duplicateCount = Math.max(0, opsCount - 1);
     if (opsCount !== 1) {
-      return failEvidence(evidence, 'duplicate_check', `Ожидалась 1 Booking Ops запись, найдено ${opsCount}.`);
+      return failEvidence(evidence, 'idempotency_check', `Ожидалась 1 Booking Ops запись, найдено ${opsCount}.`);
     }
 
     const status = await getChannelLiveCoreStatus(connection.id);
     if (!status.lastSuccessfulSyncAt) {
-      return failEvidence(evidence, 'duplicate_check', 'lastSuccessfulSyncAt не зафиксирован после успешного sync.');
+      return failEvidence(evidence, 'idempotency_check', 'lastSuccessfulSyncAt не зафиксирован после успешной синхронизации.');
     }
     const runs = await listChannelImportRuns(connection.id);
     const firstRun = runs.find((run) => run.id === evidence.firstRunId);
     const secondRun = runs.find((run) => run.id === evidence.secondRunId);
     if (!firstRun || !secondRun) {
-      return failEvidence(evidence, 'duplicate_check', 'Не удалось проверить evidence обоих import runs.');
+      return failEvidence(evidence, 'idempotency_check', 'Не удалось проверить evidence обоих import runs.');
     }
     if (!['completed', 'completed_with_warnings'].includes(firstRun.status)
       || !['completed', 'completed_with_warnings'].includes(secondRun.status)) {
-      return failEvidence(evidence, 'duplicate_check', 'Статусы import runs не подтверждены.');
+      return failEvidence(evidence, 'idempotency_check', 'Статусы import runs не подтверждены.');
     }
 
-    setStep(steps, 'duplicate_check', 'passed', 'Дублей нет; счётчики и last successful sync подтверждены.');
+    setStep(steps, 'idempotency_check', 'passed', 'Повторный импорт без дублей; счётчики подтверждены.');
   } catch (error) {
-    return failEvidence(evidence, 'duplicate_check', error instanceof Error ? error.message : 'Проверка дублей не выполнена.');
+    return failEvidence(
+      evidence,
+      'idempotency_check',
+      error instanceof Error ? error.message : 'Проверка повторного импорта не выполнена.',
+    );
   }
 
   const allPassed = evidence.steps.every((step) => step.status === 'passed');
   if (!allPassed) {
     const failed = evidence.steps.find((step) => step.status === 'failed');
-    return failEvidence(evidence, failed?.key ?? 'duplicate_check', failed?.detail ?? 'Не все шаги подтверждены.');
+    return failEvidence(evidence, failed?.key ?? 'idempotency_check', failed?.detail ?? 'Не все шаги подтверждены.');
   }
 
   return {

@@ -327,26 +327,52 @@ beforeEach(() => {
     }),
   }));
 
-  supabaseRpc.mockResolvedValue({
-    data: {
-      schemaVersion: 1,
-      initialSyncTypeReady: true,
-      atomicRunningGuardReady: true,
-      ready: true,
-    },
-    error: null,
+  supabaseRpc.mockImplementation(async (fn: string) => {
+    if (fn === 'channel_manager_live_core_schema_state') {
+      return {
+        data: {
+          schemaVersion: 1,
+          initialSyncTypeReady: true,
+          atomicRunningGuardReady: true,
+          ready: true,
+        },
+        error: null,
+      };
+    }
+    if (fn === 'channel_manager_live_core_booking_ops_fk_children') {
+      return { data: [], error: null };
+    }
+    if (fn === 'channel_manager_live_core_synthetic_recovery_cleanup') {
+      return {
+        data: null,
+        error: { message: 'function channel_manager_live_core_synthetic_recovery_cleanup does not exist' },
+      };
+    }
+    return { data: null, error: null };
   });
 
   canAutoSendCommunicationIntent.mockResolvedValue({ eligible: false, reason: 'global_off' });
-  processInboundBookingRequest.mockImplementation(async () => {
+  processInboundBookingRequest.mockImplementation(async (input?: Row) => {
+    const { getLiveCoreAcceptanceCreateContext } = await import('../channel-manager-live-core-acceptance-context');
+    const ctx = getLiveCoreAcceptanceCreateContext();
+    const fromInput = input?.metadata && typeof input.metadata === 'object' && input.metadata.acceptanceHarness
+      ? input.metadata
+      : null;
+    const reservationMetadata = fromInput ?? ctx?.reservationMetadata ?? {};
     const bookingOpsId = randomUUID();
     rows('booking_ops_records').push({
       id: bookingOpsId,
-      account_id: 'account-acceptance',
+      account_id: null,
       property_id: LIVE_CORE_ACCEPTANCE_PROPERTY_ID,
       booking_id: LIVE_CORE_ACCEPTANCE_EXTERNAL_BOOKING_ID,
-      guest_name: 'Тестовый Гость ASI',
-      reservation_metadata: {},
+      guest_name: input?.guestName ?? 'Тестовый Гость ASI',
+      guest_phone: null,
+      guest_email: null,
+      guest_telegram: null,
+      ota_source: 'channel_manager',
+      check_in_at: input?.checkInAt ?? null,
+      check_out_at: input?.checkOutAt ?? null,
+      reservation_metadata: reservationMetadata,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     });
@@ -375,11 +401,14 @@ describe('Channel Manager Live Core Acceptance Harness v1', () => {
   it('keeps acceptance block visible in Channel Manager panel markup without requiring selected connection', () => {
     const panel = readFileSync(resolve(process.cwd(), 'src/components/booking-ops/ChannelManagerImportPanel.tsx'), 'utf8');
     expect(panel).toContain('data-testid="channel-live-core-acceptance"');
-    expect(panel).toContain('Проверка Live Core');
-    expect(panel).toContain('Подготовить и запустить тест');
+    expect(panel).toContain('Производственный acceptance');
+    expect(panel).toContain('Запустить acceptance');
     expect(panel).toContain('Удалить тестовый контур');
+    expect(panel).toContain('Восстановление синтетических');
+    expect(panel).toContain('Просмотреть очистку');
     expect(panel).toContain('isDevelopmentOwner');
     expect(panel).toContain('acceptanceExecutionId');
+    expect(panel).toContain('data-testid="channel-live-core-recovery"');
     const acceptanceIdx = panel.indexOf('channel-live-core-acceptance');
     const selectedIdx = panel.indexOf('{selected ? (');
     expect(acceptanceIdx).toBeGreaterThan(-1);
@@ -610,7 +639,7 @@ describe('Channel Manager Live Core Acceptance Harness v1', () => {
 
     const evidence = await runChannelManagerLiveCoreAcceptance();
     expect(evidence.passed).toBe(false);
-    expect(evidence.failedStep).toBe('setup');
+    expect(evidence.failedStep).toBe('owner_setup');
     expect(evidence.blocker).toContain(HARNESS_IDENTITY_COLLISION);
     expect(rows('booking_owner_setup_profiles')).toHaveLength(1);
     expect(rows('booking_owner_setup_profiles')[0].id).toBe(UNMARKED_OWNER_ID);
@@ -772,7 +801,7 @@ describe('Channel Manager Live Core Acceptance Harness v1', () => {
     expect(rows('booking_property_setup_profiles').some((row) => row.id === evidence.propertySetupId)).toBe(true);
   });
 
-  it('fails with harness_identity_collision when pre-existing unmarked deterministic Booking Ops exists', async () => {
+  it('fails closed on unsafe unmarked deterministic Booking Ops and never adopts it', async () => {
     rows('booking_ops_records').push({
       id: randomUUID(),
       account_id: 'ordinary-account',
@@ -786,8 +815,9 @@ describe('Channel Manager Live Core Acceptance Harness v1', () => {
 
     const evidence = await runChannelManagerLiveCoreAcceptance();
     expect(evidence.passed).toBe(false);
-    expect(evidence.failedStep).toBe('execution_reset');
-    expect(evidence.blocker).toContain(HARNESS_IDENTITY_COLLISION);
+    expect(evidence.failedStep).toBe('recovery_cleanup');
+    expect(evidence.recoveryRequired).toBe(true);
+    expect(evidence.recoverySafeToCleanup).toBe(false);
     expect(rows('booking_ops_records').filter((row) => (
       row.property_id === LIVE_CORE_ACCEPTANCE_PROPERTY_ID
       && row.booking_id === LIVE_CORE_ACCEPTANCE_EXTERNAL_BOOKING_ID
@@ -1002,6 +1032,51 @@ describe('Channel Manager Live Core Acceptance Harness v1', () => {
     expect(rows('booking_channel_manager_connections').some((row) => row.id === ORDINARY_CONNECTION_ID)).toBe(true);
     expect(rows('booking_ops_records').some((row) => row.id === ORDINARY_BOOKING_OPS_ID)).toBe(true);
     expect(rows('booking_owner_setup_profiles').some((row) => row.lead_id === LIVE_CORE_ACCEPTANCE_LEAD_ID)).toBe(false);
+  });
+
+  it('failure after Booking Ops creation leaves identifiable harness-owned artifacts recoverable without SQL', async () => {
+    const {
+      previewLiveCoreSyntheticRecovery,
+      cleanupLiveCoreSyntheticRecovery,
+      LIVE_CORE_RECOVERY_CONFIRM_PHRASE,
+    } = await import('../channel-manager-live-core-acceptance');
+
+    const failed = await runChannelManagerLiveCoreAcceptance({
+      injectFailureAfterBookingOpsCreate: true,
+    });
+    expect(failed.passed).toBe(false);
+    expect(failed.failedStep).toBe('first_sync');
+
+    const ops = rows('booking_ops_records').filter((row) => (
+      row.property_id === LIVE_CORE_ACCEPTANCE_PROPERTY_ID
+      && row.booking_id === LIVE_CORE_ACCEPTANCE_EXTERNAL_BOOKING_ID
+    ));
+    expect(ops).toHaveLength(1);
+    expect(ops[0].reservation_metadata?.acceptanceHarness).toBe(LIVE_CORE_ACCEPTANCE_HARNESS);
+    expect(ops[0].reservation_metadata?.acceptanceExecutionId).toBeTruthy();
+
+    const preview = await previewLiveCoreSyntheticRecovery();
+    expect(preview.recoveryRequired).toBe(true);
+    expect(preview.mainRecord?.classification).toBe('harness_owned');
+
+    const cleanup = await cleanupLiveCoreSyntheticRecovery({
+      dryRun: false,
+      confirmPhrase: LIVE_CORE_RECOVERY_CONFIRM_PHRASE,
+      expectedBookingOpsRecordId: ops[0].id,
+    });
+    expect(['passed', 'already_clean']).toContain(cleanup.status);
+
+    // After recovery cleanup of harness-owned row, acceptance can complete.
+    // If cleanup already removed the row, contour remains for a fresh run.
+    if (cleanup.status === 'passed') {
+      expect(rows('booking_ops_records').filter((row) => row.id === ops[0].id)).toHaveLength(0);
+    }
+
+    const recovered = await runChannelManagerLiveCoreAcceptance();
+    expect(recovered.passed).toBe(true);
+    expect(recovered.importedFirstRun).toBe(1);
+    expect(recovered.importedSecondRun).toBe(0);
+    expect(recovered.duplicateCount).toBe(0);
   });
 
   it('UI passed marker appears only when evidence.passed is true', () => {

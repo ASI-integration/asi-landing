@@ -558,8 +558,9 @@ describe('Channel Manager Live Core repairs', () => {
     const panel = readFileSync(resolve(process.cwd(), 'src/components/booking-ops/ChannelManagerImportPanel.tsx'), 'utf8');
     expect(panel).toContain('channel-live-core-status');
     expect(panel).toContain('channel-live-core-acceptance');
-    expect(panel).toContain('Проверка Live Core');
-    expect(panel).toContain('Подготовить и запустить тест');
+    expect(panel).toContain('Производственный acceptance');
+    expect(panel).toContain('Запустить acceptance');
+    expect(panel).toContain('channel-live-core-recovery');
   });
 
   it('still imports a new booking and retries without duplicates', async () => {
