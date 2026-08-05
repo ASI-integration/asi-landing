@@ -4,8 +4,9 @@
  * Requires disposable Postgres only:
  *   ASI_DISPOSABLE_POSTGRES_URL=postgres://...
  *
+ * CI job sets ASI_REQUIRE_DISPOSABLE_PG=1 so this suite must not skip.
  * Never points at production or asi-staging unless separately authorized.
- * When the URL is absent, this file documents BLOCKED rather than claiming
+ * When the URL is absent locally, this file documents BLOCKED rather than claiming
  * the RPC is runtime-verified.
  */
 
@@ -26,6 +27,7 @@ import {
 } from '../channel-manager-live-core-acceptance-constants';
 
 const PG_URL = process.env.ASI_DISPOSABLE_POSTGRES_URL?.trim() || '';
+const requireDisposablePg = process.env.ASI_REQUIRE_DISPOSABLE_PG === '1';
 const hasDisposablePg = Boolean(PG_URL)
   && !/asi-staging|prod|production/i.test(PG_URL);
 
@@ -54,10 +56,37 @@ async function connectPg(): Promise<PgClient> {
   return client;
 }
 
+async function countManifestRows(
+  client: PgClient,
+  manifest: Record<string, string[]>,
+): Promise<number> {
+  let total = 0;
+  for (const [table, ids] of Object.entries(manifest)) {
+    if (ids.length === 0) continue;
+    const pk = table === 'booking_ops_autopilot_states' ? 'booking_id' : 'id';
+    const result = await client.query(
+      `SELECT count(*)::int AS n FROM public.${table} WHERE ${pk} = ANY($1::uuid[])`,
+      [ids],
+    );
+    total += Number(result.rows[0]?.n ?? 0);
+  }
+  return total;
+}
+
 describe('Live Core recovery PostgreSQL integration availability', () => {
-  it('reports BLOCKED when disposable PostgreSQL is unavailable', () => {
-    if (hasDisposablePg) {
-      expect(PG_URL).toMatch(/^postgres(ql)?:\/\//i);
+  it('fails closed in CI when disposable PostgreSQL is required but unavailable', () => {
+    if (!requireDisposablePg) {
+      expect(requireDisposablePg).toBe(false);
+      return;
+    }
+    expect(hasDisposablePg, 'RPC integration must not skip in CI (ASI_REQUIRE_DISPOSABLE_PG=1)').toBe(true);
+    expect(PG_URL).toMatch(/^postgres(ql)?:\/\//i);
+    expect(/asi-staging|prod|production/i.test(PG_URL)).toBe(false);
+  });
+
+  it('reports BLOCKED when disposable PostgreSQL is unavailable locally', () => {
+    if (requireDisposablePg || hasDisposablePg) {
+      expect(hasDisposablePg || requireDisposablePg).toBe(true);
       return;
     }
     expect({
@@ -78,6 +107,7 @@ describe('Live Core recovery PostgreSQL integration availability', () => {
 
 describe.skipIf(!hasDisposablePg)('Live Core recovery PostgreSQL RPC integration', () => {
   it('applies migration, seeds 67-row fixture, dry-runs, commits cleanup, and rolls back mid-delete failure', async () => {
+    expect(hasDisposablePg).toBe(true);
     expect(LEGACY_ORPHAN_67_ROW_TOTAL).toBe(67);
     const client = await connectPg();
     const ownerId = randomUUID();
@@ -92,6 +122,15 @@ describe.skipIf(!hasDisposablePg)('Live Core recovery PostgreSQL RPC integration
       await client.query('BEGIN');
       await client.query(readFileSync(FIXTURE_DDL_PATH, 'utf8'));
       await client.query(readFileSync(MIGRATION_PATH, 'utf8'));
+
+      const migrationFns = await client.query(`
+        SELECT
+          to_regprocedure('public.channel_manager_live_core_booking_ops_fk_children(uuid)') IS NOT NULL AS fk_fn,
+          to_regprocedure('public.channel_manager_live_core_synthetic_recovery_cleanup(text,boolean,uuid,text,text,text,jsonb,uuid,uuid,uuid,uuid[])') IS NOT NULL AS cleanup_fn
+      `);
+      expect(migrationFns.rows[0]?.fk_fn).toBe(true);
+      expect(migrationFns.rows[0]?.cleanup_fn).toBe(true);
+      const migrationApplied = true;
 
       await client.query(
         `INSERT INTO public.booking_owner_setup_profiles (id, lead_id, metadata)
@@ -215,6 +254,7 @@ describe.skipIf(!hasDisposablePg)('Live Core recovery PostgreSQL RPC integration
       );
       const fkPayload = fk.rows[0]?.payload as Record<string, unknown>;
       expect(fkPayload.ok).toBe(true);
+      const fkDiscoveryPassed = fkPayload.ok === true;
 
       const dry = await client.query(
         `SELECT public.channel_manager_live_core_synthetic_recovery_cleanup(
@@ -233,8 +273,10 @@ describe.skipIf(!hasDisposablePg)('Live Core recovery PostgreSQL RPC integration
           [importRunId],
         ],
       );
-      expect((dry.rows[0]?.payload as Record<string, unknown>).status).toBe('passed');
-      expect((dry.rows[0]?.payload as Record<string, unknown>).transaction_committed).toBe(false);
+      const dryPayload = dry.rows[0]?.payload as Record<string, unknown>;
+      expect(dryPayload.status).toBe('passed');
+      expect(dryPayload.transaction_committed).toBe(false);
+      const dryRunPassed = dryPayload.status === 'passed';
 
       // Inject failure after earlier DELETE statements (lifecycle_runs is late in delete order).
       await client.query(`
@@ -273,21 +315,8 @@ describe.skipIf(!hasDisposablePg)('Live Core recovery PostgreSQL RPC integration
       expect(failedPayload.transaction_committed).toBe(false);
       expect(String(failedPayload.safe_error ?? '')).toMatch(/injected_failure_after_partial_deletes/);
 
-      const stillThere = await client.query(
-        `SELECT count(*)::int AS n FROM public.booking_ops_records WHERE id = $1`,
-        [orphanId],
-      );
-      expect(stillThere.rows[0]?.n).toBe(1);
-      const eventsRemain = await client.query(
-        `SELECT count(*)::int AS n FROM public.booking_ops_events WHERE booking_ops_record_id = $1`,
-        [orphanId],
-      );
-      expect(eventsRemain.rows[0]?.n).toBe(37);
-      const decisionsRemain = await client.query(
-        `SELECT count(*)::int AS n FROM public.booking_ops_lifecycle_decisions WHERE booking_id = $1`,
-        [orphanId],
-      );
-      expect(decisionsRemain.rows[0]?.n).toBe(2);
+      const rowsRemainingAfterInjectedFailure = await countManifestRows(client, manifest);
+      expect(rowsRemainingAfterInjectedFailure).toBe(67);
 
       await client.query(`DROP TRIGGER IF EXISTS asi_recovery_injected_fail_trg ON public.booking_ops_lifecycle_runs`);
 
@@ -312,7 +341,8 @@ describe.skipIf(!hasDisposablePg)('Live Core recovery PostgreSQL RPC integration
       expect(committedPayload.status).toBe('passed');
       expect(committedPayload.transaction_committed).toBe(true);
       const deleted = committedPayload.deleted_counts_by_table as Record<string, number>;
-      expect(Object.values(deleted).reduce((sum, n) => sum + Number(n), 0)).toBe(67);
+      const committedDeletedTotal = Object.values(deleted).reduce((sum, n) => sum + Number(n), 0);
+      expect(committedDeletedTotal).toBe(67);
 
       const gone = await client.query(
         `SELECT count(*)::int AS n FROM public.booking_ops_records
@@ -331,6 +361,53 @@ describe.skipIf(!hasDisposablePg)('Live Core recovery PostgreSQL RPC integration
       expect(contour.rows[0]).toMatchObject({ owners: 1, properties: 1, connections: 1, runs: 1 });
 
       await client.query('ROLLBACK');
+
+      const isolation = await client.query(`
+        SELECT
+          to_regclass('public.booking_ops_records') AS records_table,
+          to_regprocedure('public.channel_manager_live_core_synthetic_recovery_cleanup(text,boolean,uuid,text,text,text,jsonb,uuid,uuid,uuid,uuid[])') AS cleanup_fn
+      `);
+      expect(isolation.rows[0]?.records_table).toBeNull();
+      expect(isolation.rows[0]?.cleanup_fn).toBeNull();
+
+      const proof = {
+        hasDisposablePg: true as const,
+        runtimeVerified: true as const,
+        migrationApplied,
+        fkDiscoveryPassed,
+        dryRunPassed,
+        injectedMidDeleteFailureStatus: failedPayload.status,
+        rowsRemainingAfterInjectedFailure,
+        committedDeletedTotal,
+        contourPreserved: {
+          owners: Number(contour.rows[0]?.owners),
+          properties: Number(contour.rows[0]?.properties),
+          connections: Number(contour.rows[0]?.connections),
+          runs: Number(contour.rows[0]?.runs),
+        },
+        finalTransactionRolledBack: true as const,
+        productionTouched: false as const,
+        stagingTouched: false as const,
+      };
+
+      // Explicit CI-grepable proof line — must not be skipped when this test runs.
+      // eslint-disable-next-line no-console
+      console.log(`ASI_PG_INTEGRATION_PROOF ${JSON.stringify(proof)}`);
+
+      expect(proof).toEqual({
+        hasDisposablePg: true,
+        runtimeVerified: true,
+        migrationApplied: true,
+        fkDiscoveryPassed: true,
+        dryRunPassed: true,
+        injectedMidDeleteFailureStatus: 'failed',
+        rowsRemainingAfterInjectedFailure: 67,
+        committedDeletedTotal: 67,
+        contourPreserved: { owners: 1, properties: 1, connections: 1, runs: 1 },
+        finalTransactionRolledBack: true,
+        productionTouched: false,
+        stagingTouched: false,
+      });
     } finally {
       await client.end().catch(() => undefined);
     }
