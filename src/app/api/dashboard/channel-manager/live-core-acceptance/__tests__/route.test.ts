@@ -45,8 +45,28 @@ describe('live-core-acceptance route', () => {
     });
     cleanupLiveCoreAcceptanceHarness.mockResolvedValue({
       ok: true,
-      deleted: { bookingOpsRecords: 1, connections: 1, propertySetups: 1, ownerSetups: 1, communicationIntents: 0 },
-      preservedOrdinaryData: true,
+      cleanupPassed: true,
+      scopeVerified: true,
+      remainingHarnessRows: 0,
+      remainingActiveHolds: 0,
+      remainingIntakeEvents: 0,
+      deleted: {
+        bookingOpsRecords: 1,
+        connections: 1,
+        propertySetups: 1,
+        ownerSetups: 1,
+        communicationIntents: 0,
+        intakeEvents: 1,
+        availabilityHolds: 0,
+        overbookingChecks: 0,
+        telegramDrafts: 0,
+        reservationImportRows: 0,
+        reservationReconciliationItems: 0,
+        reservationLedgerAudit: 0,
+        importedBookings: 1,
+      },
+      failedStage: null,
+      blocker: null,
     });
   });
 
@@ -91,6 +111,41 @@ describe('live-core-acceptance route', () => {
     const payload = await response.json();
     expect(response.status).toBe(200);
     expect(payload.ok).toBe(true);
+    expect(payload.cleanup.cleanupPassed).toBe(true);
     expect(cleanupLiveCoreAcceptanceHarness).toHaveBeenCalledOnce();
+  });
+
+  it('returns failure when cleanup verification does not pass', async () => {
+    cleanupLiveCoreAcceptanceHarness.mockResolvedValue({
+      ok: false,
+      cleanupPassed: false,
+      scopeVerified: false,
+      remainingHarnessRows: 2,
+      remainingActiveHolds: 1,
+      remainingIntakeEvents: 0,
+      deleted: {
+        bookingOpsRecords: 0,
+        connections: 0,
+        propertySetups: 0,
+        ownerSetups: 0,
+        communicationIntents: 0,
+        intakeEvents: 0,
+        availabilityHolds: 0,
+        overbookingChecks: 0,
+        telegramDrafts: 0,
+        reservationImportRows: 0,
+        reservationReconciliationItems: 0,
+        reservationLedgerAudit: 0,
+        importedBookings: 0,
+      },
+      failedStage: 'telegram_drafts',
+      blocker: 'booking_ops_telegram_drafts: violates foreign key constraint',
+    });
+    const response = await POST(request({ action: 'cleanup', confirm: true }));
+    const payload = await response.json();
+    expect(response.status).toBe(500);
+    expect(payload.ok).toBe(false);
+    expect(payload.cleanup.cleanupPassed).toBe(false);
+    expect(payload.cleanup.failedStage).toBe('telegram_drafts');
   });
 });

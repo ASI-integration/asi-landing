@@ -52,7 +52,14 @@ export async function POST(req: Request): Promise<NextResponse> {
         }, { status: 400, headers: { 'cache-control': 'no-store' } });
       }
       const result = await cleanupLiveCoreAcceptanceHarness();
-      return NextResponse.json({ ok: true, cleanup: result }, { headers: { 'cache-control': 'no-store' } });
+      return NextResponse.json({
+        ok: result.cleanupPassed === true,
+        cleanup: result,
+        message: result.cleanupPassed ? 'Тестовый контур удалён.' : (result.blocker ?? 'Cleanup не подтверждён.'),
+      }, {
+        status: result.cleanupPassed ? 200 : 500,
+        headers: { 'cache-control': 'no-store' },
+      });
     }
 
     if (action !== 'run') {

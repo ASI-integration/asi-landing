@@ -39,6 +39,7 @@ type LiveCoreStatus = {
 
 type AcceptanceStepStatus = 'waiting' | 'running' | 'passed' | 'failed';
 type AcceptanceEvidence = {
+  acceptanceExecutionId?: string | null;
   schemaReady: boolean;
   ownerSetupId: string | null;
   propertySetupId: string | null;
@@ -380,6 +381,7 @@ export function ChannelManagerImportPanel() {
               <details className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-600">
                 <summary className="cursor-pointer font-medium text-slate-700">Технические детали</summary>
                 <dl className="mt-2 grid gap-1 sm:grid-cols-2">
+                  <div><dt className="text-slate-500">acceptanceExecutionId</dt><dd className="font-mono">{acceptanceEvidence.acceptanceExecutionId ?? '—'}</dd></div>
                   <div><dt className="text-slate-500">ownerSetupId</dt><dd className="font-mono">{acceptanceEvidence.ownerSetupId ?? '—'}</dd></div>
                   <div><dt className="text-slate-500">propertySetupId</dt><dd className="font-mono">{acceptanceEvidence.propertySetupId ?? '—'}</dd></div>
                   <div><dt className="text-slate-500">connectionId</dt><dd className="font-mono">{acceptanceEvidence.connectionId ?? '—'}</dd></div>
