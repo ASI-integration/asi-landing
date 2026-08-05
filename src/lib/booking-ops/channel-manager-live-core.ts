@@ -30,6 +30,13 @@ import {
   validateManualChannelSnapshot,
 } from './channel-manager-access-import';
 import { auditChannelImportAvailability } from './availability-overbooking-protection';
+import {
+  LIVE_CORE_ACCEPTANCE_HARNESS,
+} from './channel-manager-live-core-acceptance-constants';
+import {
+  buildLiveCoreAcceptanceReservationMetadata,
+  runWithLiveCoreAcceptanceCreateContext,
+} from './channel-manager-live-core-acceptance-context';
 
 // ---------------------------------------------------------------------------
 // 1. Provider-independent adapter contract (no credentials / raw secrets)
@@ -990,6 +997,10 @@ async function processImportedBookingsForLiveSync(
   connectionId: string,
   counters: ChannelLiveSyncCounters,
   warnings: ChannelImportConflict[],
+  options?: {
+    reservationMetadata?: Record<string, unknown> | null;
+    injectFailureAfterBookingOpsCreate?: boolean;
+  },
 ): Promise<void> {
   const { data: bookings, error } = await supabase
     .from('booking_channel_imported_bookings')
@@ -1060,10 +1071,19 @@ async function processImportedBookingsForLiveSync(
       }
 
       if (matchStatus === 'unmatched' || !imported.matched_booking_id) {
-        const created = await createBookingFromImportedChannelBooking(text(imported.id));
+        const created = await createBookingFromImportedChannelBooking(text(imported.id), {
+          reservationMetadata: options?.reservationMetadata ?? null,
+        });
         if (created.duplicate) counters.skipped += 1;
-        else if (created.created) counters.imported += 1;
-        else counters.skipped += 1;
+        else if (created.created) {
+          counters.imported += 1;
+          if (options?.injectFailureAfterBookingOpsCreate === true) {
+            throw Object.assign(
+              new Error('acceptance_inject_failure_after_booking_ops_create'),
+              { code: 'acceptance_inject_failure_after_booking_ops_create' },
+            );
+          }
+        } else counters.skipped += 1;
         continue;
       }
 
@@ -1076,6 +1096,9 @@ async function processImportedBookingsForLiveSync(
         entityId: text(imported.id),
         message: redactLiveCoreErrorMessage(error instanceof Error ? error.message : error),
       });
+      if ((error as { code?: string })?.code === 'acceptance_inject_failure_after_booking_ops_create') {
+        throw error;
+      }
     }
   }
 }
@@ -1145,6 +1168,8 @@ export async function runChannelManagerInitialSync(input: {
   snapshot?: ManualChannelSnapshot;
   reuseImportedRows?: boolean;
   metadata?: Record<string, unknown>;
+  /** Test/harness-only: fail immediately after Booking Ops create. */
+  injectFailureAfterBookingOpsCreate?: boolean;
 }): Promise<ChannelLiveSyncResult> {
   if (input.metadata && findSecretPath(input.metadata)) {
     throw new Error('Пароли, токены и другие секреты нельзя передавать или сохранять в импорте.');
@@ -1221,7 +1246,35 @@ export async function runChannelManagerInitialSync(input: {
 
     stage = 'process_bookings';
     await updateRunProgress(runId, { stage, counters, warnings });
-    await processImportedBookingsForLiveSync(connection.id, counters, warnings);
+    const harnessMeta = input.metadata;
+    const isAcceptanceHarness = harnessMeta?.acceptanceHarness === LIVE_CORE_ACCEPTANCE_HARNESS
+      && typeof harnessMeta.acceptanceExecutionId === 'string'
+      && harnessMeta.acceptanceExecutionId.length > 0;
+    const reservationMetadata = isAcceptanceHarness
+      ? buildLiveCoreAcceptanceReservationMetadata({
+        acceptanceExecutionId: String(harnessMeta.acceptanceExecutionId),
+        importRunId: runId,
+      })
+      : null;
+    const processBookings = async () => processImportedBookingsForLiveSync(
+      connection.id,
+      counters,
+      warnings,
+      {
+        reservationMetadata,
+        injectFailureAfterBookingOpsCreate: input.injectFailureAfterBookingOpsCreate === true,
+      },
+    );
+    if (isAcceptanceHarness && reservationMetadata) {
+      await runWithLiveCoreAcceptanceCreateContext({
+        acceptanceHarness: LIVE_CORE_ACCEPTANCE_HARNESS,
+        acceptanceExecutionId: String(harnessMeta.acceptanceExecutionId),
+        importRunId: runId,
+        reservationMetadata,
+      }, processBookings);
+    } else {
+      await processBookings();
+    }
 
     stage = 'persist_counters';
     const finishedAt = new Date().toISOString();

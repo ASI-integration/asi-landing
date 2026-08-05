@@ -719,6 +719,8 @@ export type CreateBookingOpsInput = {
   checkinReadinessStatus?: BookingOpsCheckinReadinessStatus;
   unitReadinessStatus?: BookingOpsUnitReadinessStatus;
   notes?: string | null;
+  /** Optional ownership metadata written only when explicitly provided. */
+  reservationMetadata?: Record<string, unknown> | null;
 } & Partial<BookingOpsIntakeFields>;
 
 export type UpdateBookingOpsInput = Partial<

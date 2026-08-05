@@ -17,6 +17,7 @@ import {
   syncBookingOpsTasksForRecordId,
   updateBookingOpsRecord,
 } from './repository';
+import { resolveAcceptanceReservationMetadataForCreate } from './channel-manager-live-core-acceptance-context';
 import type {
   BookingOpsCommunicationChannel,
   BookingOpsCommunicationPurpose,
@@ -383,6 +384,17 @@ function toCreateInput(
 ): CreateBookingOpsInput {
   const guestName = input.guestName
     ?? (hasGuestContact(input) ? 'Гость (входящая заявка)' : 'Гость (без контакта)');
+  const reservationMetadata = resolveAcceptanceReservationMetadataForCreate({
+    propertyId: input.propertyId,
+    bookingId: input.bookingReference ?? input.externalSourceId,
+    explicit: (
+      input.metadata
+      && typeof input.metadata === 'object'
+      && input.metadata.acceptanceHarness
+        ? input.metadata as Record<string, unknown>
+        : null
+    ),
+  });
   return {
     bookingId: input.bookingReference,
     guestName,
@@ -399,6 +411,7 @@ function toCreateInput(
       ? `Входящая заявка (${source}): ${input.rawMessageText.slice(0, 240)}`
       : `Входящая заявка (${source})`,
     ...(input.hasMaintenanceIssue ? { blockerReason: 'Сообщено о проблеме при заявке' } : {}),
+    ...(reservationMetadata ? { reservationMetadata } : {}),
   };
 }
 

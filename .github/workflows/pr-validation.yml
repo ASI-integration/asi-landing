@@ -167,3 +167,115 @@ jobs:
 
       - name: Whitespace check (git diff --check)
         run: git diff --check
+
+  channel-manager-recovery-postgres:
+    name: channel-manager-recovery-postgres
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: asi_recovery_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d asi_recovery_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      ASI_DISPOSABLE_POSTGRES_URL: postgresql://postgres:postgres@localhost:5432/asi_recovery_test
+      ASI_REQUIRE_DISPOSABLE_PG: "1"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install deps
+        run: npm ci
+
+      - name: Verify pg package is installed
+        run: node -e "require('pg'); console.log('pg_ok')"
+
+      - name: Wait for disposable PostgreSQL
+        run: |
+          set -euo pipefail
+          node - <<'NODE'
+          const { Client } = require('pg');
+          const url = process.env.ASI_DISPOSABLE_POSTGRES_URL;
+          (async () => {
+            let lastErr;
+            for (let i = 0; i < 30; i += 1) {
+              const client = new Client({ connectionString: url });
+              try {
+                await client.connect();
+                const r = await client.query('select current_database() as db, current_user as usr');
+                console.log('postgres_ready', r.rows[0]);
+                await client.end();
+                process.exit(0);
+              } catch (err) {
+                lastErr = err;
+                try { await client.end(); } catch (_) {}
+                await new Promise((r) => setTimeout(r, 2000));
+              }
+            }
+            console.error('PostgreSQL was unreachable', lastErr);
+            process.exit(1);
+          })();
+          NODE
+
+      - name: Run Live Core recovery PostgreSQL RPC integration
+        id: pg_integration
+        run: |
+          set -euo pipefail
+          npx vitest run \
+            src/lib/booking-ops/__tests__/channel-manager-live-core-recovery.pg.integration.test.ts \
+            --reporter=verbose 2>&1 | tee pg-integration.out
+          if grep -E '↓|skipped|SKIPPED' pg-integration.out | grep -Fq 'Live Core recovery PostgreSQL RPC integration'; then
+            echo "Integration suite was skipped — failing job"
+            exit 1
+          fi
+          if ! grep -Fq 'ASI_PG_INTEGRATION_PROOF' pg-integration.out; then
+            echo "Missing ASI_PG_INTEGRATION_PROOF output — failing job"
+            exit 1
+          fi
+          node - <<'NODE'
+          const fs = require('fs');
+          const out = fs.readFileSync('pg-integration.out', 'utf8');
+          const line = out.split(/\r?\n/).find((l) => l.includes('ASI_PG_INTEGRATION_PROOF'));
+          if (!line) {
+            console.error('proof_line_missing');
+            process.exit(1);
+          }
+          const json = line.slice(line.indexOf('ASI_PG_INTEGRATION_PROOF') + 'ASI_PG_INTEGRATION_PROOF'.length).trim();
+          const proof = JSON.parse(json);
+          const expected = {
+            hasDisposablePg: true,
+            runtimeVerified: true,
+            migrationApplied: true,
+            fkDiscoveryPassed: true,
+            dryRunPassed: true,
+            injectedMidDeleteFailureStatus: 'failed',
+            rowsRemainingAfterInjectedFailure: 67,
+            committedDeletedTotal: 67,
+            contourPreserved: { owners: 1, properties: 1, connections: 1, runs: 1 },
+            finalTransactionRolledBack: true,
+            productionTouched: false,
+            stagingTouched: false,
+          };
+          if (JSON.stringify(proof) !== JSON.stringify(expected)) {
+            console.error('proof_mismatch', proof);
+            process.exit(1);
+          }
+          console.log('proof_ok', JSON.stringify(proof));
+          NODE

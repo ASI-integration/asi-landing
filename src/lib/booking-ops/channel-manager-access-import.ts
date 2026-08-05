@@ -636,7 +636,13 @@ export async function getChannelManagerBlockers(propertySetupIdOrConnectionId: s
   return blockers;
 }
 
-export async function createBookingFromImportedChannelBooking(importedBookingId: string, options?: { force?: boolean }): Promise<Record<string, unknown>> {
+export async function createBookingFromImportedChannelBooking(
+  importedBookingId: string,
+  options?: {
+    force?: boolean;
+    reservationMetadata?: Record<string, unknown> | null;
+  },
+): Promise<Record<string, unknown>> {
   const id = assertUuid(importedBookingId, 'ID импортированной брони');
   const { data: imported, error } = await supabase.from('booking_channel_imported_bookings').select('*').eq('id', id).maybeSingle();
   if (error || !imported) throw new Error('Импортированная бронь не найдена.');
@@ -648,7 +654,12 @@ export async function createBookingFromImportedChannelBooking(importedBookingId:
     guestName: imported.guest_safe_name, checkInAt: imported.checkin_date, checkOutAt: imported.checkout_date,
     guestCount: imported.guest_count, propertyId: object?.matched_property_id ?? null, propertyLabel: object?.title ?? null,
     bookingReference: imported.external_booking_id, externalSourceId: imported.external_booking_id,
-    metadata: { channelImport: true, importedBookingId: imported.id, provider: imported.provider },
+    metadata: {
+      channelImport: true,
+      importedBookingId: imported.id,
+      provider: imported.provider,
+      ...(options?.reservationMetadata ?? {}),
+    },
   }, 'channel_manager_placeholder');
   if (!result.bookingId) throw new Error('Booking Ops не создал бронь: нужна проверка данных.');
   await supabase.from('booking_channel_imported_bookings').update({ matched_booking_id: result.bookingId, match_status: 'imported_to_booking_ops', matched_property_setup_id: object?.matched_property_setup_id ?? null, updated_at: new Date().toISOString() }).eq('id', id);
