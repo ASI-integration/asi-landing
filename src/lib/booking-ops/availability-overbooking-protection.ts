@@ -36,6 +36,8 @@ export type AvailabilityScope = {
   bookingId?: string | null;
   propertySetupId?: string | null;
   propertyId?: string | null;
+  /** When auditing a channel import row, exclude that imported booking from self-conflicts. */
+  excludeChannelImportedBookingId?: string | null;
 };
 
 export type AvailabilityDateRange = { dateFrom?: string | null; dateTo?: string | null };
@@ -44,6 +46,19 @@ type CheckOptions = {
   checkType?: AvailabilityCheckType;
   persist?: boolean;
   dryRun?: boolean;
+};
+
+type ChannelImportedBookingRow = {
+  id: string;
+  matched_booking_id?: string | null;
+  checkin_date?: string | null;
+  checkout_date?: string | null;
+};
+
+type ChannelCalendarSnapshotRow = {
+  id: string;
+  date?: string | null;
+  availability_status?: string | null;
 };
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
@@ -94,10 +109,91 @@ function validateScope(scope: AvailabilityScope): AvailabilityScope {
   const bookingId = text(scope.bookingId) || null;
   const propertySetupId = text(scope.propertySetupId) || null;
   const propertyId = text(scope.propertyId) || null;
+  const excludeChannelImportedBookingId = text(scope.excludeChannelImportedBookingId) || null;
   if (bookingId && !UUID_RE.test(bookingId)) throw new Error('Некорректный ID брони.');
   if (propertySetupId && !UUID_RE.test(propertySetupId)) throw new Error('Некорректный ID профиля объекта.');
   if (propertyId && !PROPERTY_RE.test(propertyId)) throw new Error('Некорректный ID объекта.');
-  return { bookingId, propertySetupId, propertyId };
+  if (excludeChannelImportedBookingId && !UUID_RE.test(excludeChannelImportedBookingId)) {
+    throw new Error('Некорректный ID импортированной брони.');
+  }
+  return { bookingId, propertySetupId, propertyId, excludeChannelImportedBookingId };
+}
+
+function addUtcDays(date: string, days: number): string {
+  const parsed = new Date(`${date}T00:00:00.000Z`);
+  parsed.setUTCDate(parsed.getUTCDate() + days);
+  return parsed.toISOString().slice(0, 10);
+}
+
+/** True when a calendar night falls inside a half-open imported booking stay. */
+export function isChannelCalendarDateCoveredByImportedBooking(
+  date: string,
+  bookings: Array<Pick<ChannelImportedBookingRow, 'checkin_date' | 'checkout_date'>>,
+): boolean {
+  const night = normalizeAvailabilityDate(date);
+  if (!night) return false;
+  return bookings.some((booking) => {
+    const from = normalizeAvailabilityDate(booking.checkin_date);
+    const to = normalizeAvailabilityDate(booking.checkout_date);
+    return Boolean(from && to && night >= from && night < to);
+  });
+}
+
+/**
+ * Collapse contiguous calendar nights into one conflict per interval.
+ * Conflict id is the first snapshot row id in the run.
+ */
+export function collapseChannelCalendarConflicts(
+  rows: Array<Pick<ChannelCalendarSnapshotRow, 'id' | 'date'>>,
+): AvailabilityConflict[] {
+  const normalized = rows
+    .map((row) => ({ id: String(row.id), date: normalizeAvailabilityDate(row.date) }))
+    .filter((row): row is { id: string; date: string } => Boolean(row.date))
+    .sort((a, b) => a.date.localeCompare(b.date));
+  if (!normalized.length) return [];
+
+  const conflicts: AvailabilityConflict[] = [];
+  let runStart = normalized[0]!;
+  let prevDate = normalized[0]!.date;
+  const flush = () => {
+    conflicts.push({ type: 'channel_calendar', id: runStart.id, severity: 'confirmed' });
+  };
+  for (let index = 1; index < normalized.length; index += 1) {
+    const row = normalized[index]!;
+    if (row.date !== addUtcDays(prevDate, 1)) {
+      flush();
+      runStart = row;
+    }
+    prevDate = row.date;
+  }
+  flush();
+  return conflicts;
+}
+
+function collectChannelCalendarConflicts(
+  calendar: ChannelCalendarSnapshotRow[] | null | undefined,
+  imported: ChannelImportedBookingRow[] | null | undefined,
+): AvailabilityConflict[] {
+  const unmatchedBooked: Array<{ id: string; date: string }> = [];
+  const blockedDays: Array<{ id: string; date: string }> = [];
+  for (const row of calendar ?? []) {
+    const date = normalizeAvailabilityDate(row.date);
+    if (!date) continue;
+    const status = text(row.availability_status);
+    if (status === 'blocked') {
+      blockedDays.push({ id: String(row.id), date });
+      continue;
+    }
+    if (status !== 'booked') continue;
+    // Booked nights already explained by an overlapping imported booking (including the
+    // booking under audit) must not become separate channel_calendar self-conflicts.
+    if (isChannelCalendarDateCoveredByImportedBooking(date, imported ?? [])) continue;
+    unmatchedBooked.push({ id: String(row.id), date });
+  }
+  return [
+    ...collapseChannelCalendarConflicts(unmatchedBooked),
+    ...collapseChannelCalendarConflicts(blockedDays),
+  ];
 }
 
 function validateRange(range: AvailabilityDateRange): { dateFrom: string; dateTo: string } {
@@ -136,7 +232,14 @@ async function resolveScopeAndRange(
       .select('id').eq('property_id', propertyId).order('updated_at', { ascending: false }).limit(1).maybeSingle();
     propertySetupId = text(data?.id) || null;
   }
-  return { bookingId: scope.bookingId ?? null, propertySetupId: propertySetupId ?? null, propertyId: propertyId ?? null, dateFrom, dateTo };
+  return {
+    bookingId: scope.bookingId ?? null,
+    propertySetupId: propertySetupId ?? null,
+    propertyId: propertyId ?? null,
+    excludeChannelImportedBookingId: scope.excludeChannelImportedBookingId ?? null,
+    dateFrom,
+    dateTo,
+  };
 }
 
 function scopeOr(propertySetupId: string | null, propertyId: string | null): string {
@@ -171,6 +274,18 @@ async function updateBookingRisk(result: AvailabilityCheckResult): Promise<void>
   }).eq('id', result.bookingId);
 }
 
+function toAvailabilityResultBase(
+  resolved: Awaited<ReturnType<typeof resolveScopeAndRange>>,
+): Pick<AvailabilityCheckResult, 'propertySetupId' | 'propertyId' | 'bookingId' | 'dateFrom' | 'dateTo'> {
+  return {
+    propertySetupId: resolved.propertySetupId,
+    propertyId: resolved.propertyId,
+    bookingId: resolved.bookingId,
+    dateFrom: resolved.dateFrom,
+    dateTo: resolved.dateTo,
+  };
+}
+
 export async function checkAvailabilityConflict(
   input: AvailabilityScope & AvailabilityDateRange,
   options: CheckOptions = {},
@@ -187,11 +302,12 @@ export async function checkAvailabilityConflict(
       safeSummary: error instanceof Error ? error.message : 'Не удалось проверить доступность.',
     };
   }
+  const scopeBase = toAvailabilityResultBase(resolved);
   const missing = [!resolved.propertyId && !resolved.propertySetupId ? 'Не указан объект.' : '',
     !resolved.dateFrom || !resolved.dateTo ? 'Не указаны даты проживания.' : ''].filter(Boolean);
   if (missing.length) {
     const result: AvailabilityCheckResult = {
-      id: null, status: 'missing_data', ...resolved, conflicts: [], warnings: [], blockers: missing,
+      id: null, status: 'missing_data', ...scopeBase, conflicts: [], warnings: [], blockers: missing,
       safeSummary: 'Недостаточно данных для проверки доступности.',
     };
     if (options.persist !== false) result.id = await persistCheck(result, options.checkType ?? 'manual_review');
@@ -200,7 +316,7 @@ export async function checkAvailabilityConflict(
   }
   if (resolved.dateFrom! >= resolved.dateTo!) {
     const result: AvailabilityCheckResult = {
-      id: null, status: 'failed', ...resolved, conflicts: [], warnings: [],
+      id: null, status: 'failed', ...scopeBase, conflicts: [], warnings: [],
       blockers: ['Дата заезда должна быть раньше даты выезда.'], safeSummary: 'Некорректный диапазон дат.',
     };
     if (options.persist !== false) result.id = await persistCheck(result, options.checkType ?? 'manual_review');
@@ -208,7 +324,7 @@ export async function checkAvailabilityConflict(
     return result;
   }
   if (options.dryRun) {
-    return { id: null, status: 'dry_run', ...resolved, conflicts: [], warnings: [], blockers: [], safeSummary: 'Проверка запланирована.' };
+    return { id: null, status: 'dry_run', ...scopeBase, conflicts: [], warnings: [], blockers: [], safeSummary: 'Проверка запланирована.' };
   }
 
   const conflicts: AvailabilityConflict[] = [];
@@ -249,25 +365,34 @@ export async function checkAvailabilityConflict(
     if (objectsError) errors.push('Снимок менеджера каналов временно недоступен.');
     for (const object of objects ?? []) {
       const [{ data: imported, error: importedError }, { data: calendar, error: calendarError }] = await Promise.all([
-        supabase.from('booking_channel_imported_bookings').select('id,matched_booking_id')
+        supabase.from('booking_channel_imported_bookings').select('id,matched_booking_id,checkin_date,checkout_date')
           .eq('connection_id', object.connection_id).eq('external_object_id', object.external_object_id)
           .neq('status', 'cancelled').lt('checkin_date', resolved.dateTo!).gt('checkout_date', resolved.dateFrom!),
-        supabase.from('booking_channel_calendar_snapshots').select('id').eq('connection_id', object.connection_id)
+        supabase.from('booking_channel_calendar_snapshots').select('id,date,availability_status').eq('connection_id', object.connection_id)
           .eq('external_object_id', object.external_object_id).in('availability_status', ['booked', 'blocked'])
           .gte('date', resolved.dateFrom!).lt('date', resolved.dateTo!),
       ]);
       if (importedError || calendarError) errors.push('Часть импортированного календаря не проверена.');
-      for (const row of imported ?? []) {
+      for (const row of (imported ?? []) as ChannelImportedBookingRow[]) {
         if (resolved.bookingId && row.matched_booking_id === resolved.bookingId) continue;
+        if (
+          resolved.excludeChannelImportedBookingId
+          && String(row.id) === resolved.excludeChannelImportedBookingId
+        ) continue;
         conflicts.push({ type: 'channel_booking', id: String(row.id), severity: 'confirmed' });
       }
-      for (const row of calendar ?? []) conflicts.push({ type: 'channel_calendar', id: String(row.id), severity: 'confirmed' });
+      conflicts.push(
+        ...collectChannelCalendarConflicts(
+          calendar as ChannelCalendarSnapshotRow[] | null,
+          imported as ChannelImportedBookingRow[] | null,
+        ),
+      );
     }
   }
 
   const status = errors.length > 0 ? 'failed' : classifyAvailabilityConflicts(conflicts);
   const result: AvailabilityCheckResult = {
-    id: null, status, ...resolved, conflicts, warnings: errors,
+    id: null, status, ...scopeBase, conflicts, warnings: errors,
     blockers: status === 'no_conflict' ? [] : [status === 'failed'
       ? 'Не удалось подтвердить доступность.' : 'Найдено пересечение дат. Нужна проверка оператора.'],
     safeSummary: status === 'no_conflict' ? 'Пересечений не найдено.'
@@ -472,8 +597,12 @@ export async function auditChannelImportAvailability(connectionId: string) {
       propertyId = text(object?.matched_property_id) || null;
     }
     results.push(await checkAvailabilityConflict({
-      bookingId: text(row.matched_booking_id) || null, propertySetupId, propertyId,
-      dateFrom: row.checkin_date, dateTo: row.checkout_date,
+      bookingId: text(row.matched_booking_id) || null,
+      excludeChannelImportedBookingId: text(row.id) || null,
+      propertySetupId,
+      propertyId,
+      dateFrom: row.checkin_date,
+      dateTo: row.checkout_date,
     }, { checkType: 'channel_import' }));
   }
   return results;
