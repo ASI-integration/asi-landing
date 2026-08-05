@@ -1,0 +1,16 @@
+{
+  "checkedAt": "2026-08-05T21:23:45Z",
+  "repository": "ASI-integration/asi-landing",
+  "originMainSha": "6b9f022e423e1032f66286b9348160c4dd59f45c",
+  "requiredCommitContainedByOriginMain": true,
+  "migrationBlobSha1": "f56db2124b2e91782fcf05be7fb37b51998808b3",
+  "migrationSha256": "6fbc176b21006d258d4f0253d538c46b66862f0e7752137dda62bc8a88d811ba",
+  "production": {
+    "healthOk": true,
+    "environment": "production",
+    "sha": "f5c7b91d7a6af87a07043673403aa44c56cf348a",
+    "deployedAt": "2026-08-05T14:42:31Z",
+    "releasePath": "/var/www/asi/releases/f5c7b91d7a6af87a07043673403aa44c56cf348a"
+  },
+  "productionMutationPerformed": false
+}

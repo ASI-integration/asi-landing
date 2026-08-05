@@ -1,0 +1,24 @@
+{
+  "schemaVersion": "asi.agent-os.owner-gate.v1",
+  "taskId": "initial-sync-recovery-v1-production-rollout",
+  "status": "missing",
+  "action": "production_migration",
+  "target": "production Supabase database reached only through the production VPS environment",
+  "identity": {
+    "ref": "refs/heads/main",
+    "sha": "6b9f022e423e1032f66286b9348160c4dd59f45c",
+    "migration": "supabase/migrations/20260805120000_channel_manager_live_core_synthetic_recovery_v1.sql"
+  },
+  "allowedSideEffect": "Execute only the checksum-pinned additive SQL migration that creates or replaces three service-role-only recovery functions; do not mutate application rows or run recovery cleanup.",
+  "postActionVerification": [
+    "The dedicated production workflow reports MIGRATION_STATUS=applied_and_verified.",
+    "All three exact recovery function signatures exist as SECURITY DEFINER with search_path=public.",
+    "Only service_role has execution through the intended role grants; anon and authenticated do not.",
+    "The production application remains healthy at pre-deploy SHA f5c7b91d7a6af87a07043673403aa44c56cf348a."
+  ],
+  "authorization": null,
+  "typedConfirmation": {
+    "present": true,
+    "countsAsOwnerApproval": false
+  }
+}

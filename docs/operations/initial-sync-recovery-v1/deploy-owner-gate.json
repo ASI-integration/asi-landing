@@ -1,0 +1,23 @@
+{
+  "schemaVersion": "asi.agent-os.owner-gate.v1",
+  "taskId": "initial-sync-recovery-v1-production-rollout",
+  "status": "missing",
+  "action": "production_deploy",
+  "target": "production VPS artifact release for asi-global.ru",
+  "identity": {
+    "ref": "refs/heads/main",
+    "sha": "6b9f022e423e1032f66286b9348160c4dd59f45c"
+  },
+  "allowedSideEffect": "Build and deploy only artifact SHA 6b9f022e423e1032f66286b9348160c4dd59f45c through the existing production artifact workflow, including its automatic rollback on failed post-switch verification.",
+  "postActionVerification": [
+    "The production artifact workflow resolves and deploys SHA 6b9f022e423e1032f66286b9348160c4dd59f45c.",
+    "The production health endpoint returns success.",
+    "The production version endpoint reports environment=production and sha=6b9f022e423e1032f66286b9348160c4dd59f45c.",
+    "The resolved production release path ends with 6b9f022e423e1032f66286b9348160c4dd59f45c."
+  ],
+  "authorization": null,
+  "typedConfirmation": {
+    "present": true,
+    "countsAsOwnerApproval": false
+  }
+}

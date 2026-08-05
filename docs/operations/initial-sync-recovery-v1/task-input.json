@@ -1,0 +1,37 @@
+{
+  "task": {
+    "id": "initial-sync-recovery-v1-production-rollout-preparation",
+    "title": "Prepare authorized production rollout for Initial Sync Recovery v1",
+    "objective": "Prepare an exact, owner-gated production migration, deploy, rollback, and read-only preview procedure without executing any production action.",
+    "acceptanceCriteria": [
+      "One dedicated production workflow can apply only migration 20260805120000_channel_manager_live_core_synthetic_recovery_v1.sql from commit 6b9f022e423e1032f66286b9348160c4dd59f45c.",
+      "The existing production artifact workflow is invoked only with commit 6b9f022e423e1032f66286b9348160c4dd59f45c.",
+      "Migration and deploy require separate atomic owner approvals in that order.",
+      "The final phase permits only the owner-authenticated read-only recovery preview.",
+      "No production action is executed while preparing the artifacts."
+    ],
+    "inScope": [
+      ".github/workflows/apply-channel-manager-live-core-synthetic-recovery-migration.yml",
+      "docs/operations/initial-sync-recovery-v1/",
+      "src/lib/asi-runtime/__tests__/initial-sync-recovery-rollout-artifacts.test.ts"
+    ],
+    "outOfScope": [
+      "Production workflow dispatch",
+      "Production migration or data mutation",
+      "Production deploy or rollback",
+      "Recovery cleanup",
+      "Initial Sync acceptance",
+      "Ordinary manual Initial Sync",
+      "Staging actions",
+      "Secret values"
+    ]
+  },
+  "classification": "red",
+  "redActions": [
+    "production_migration",
+    "production_deploy"
+  ],
+  "focusedTests": [
+    "src/lib/asi-runtime/__tests__/initial-sync-recovery-rollout-artifacts.test.ts"
+  ]
+}
