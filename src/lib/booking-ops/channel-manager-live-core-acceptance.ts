@@ -46,6 +46,42 @@ export const LIVE_CORE_ACCEPTANCE_INTAKE_IDEMPOTENCY_KEY =
   `ext:${LIVE_CORE_ACCEPTANCE_INTAKE_SOURCE}:${LIVE_CORE_ACCEPTANCE_EXTERNAL_BOOKING_ID}`;
 
 export const HARNESS_IDENTITY_COLLISION = 'harness_identity_collision';
+export const HARNESS_SCOPE_COLLISION = 'harness_scope_collision';
+
+/**
+ * Direct ON DELETE CASCADE children of harness parent tables.
+ * Source of truth: supabase/migrations FK definitions.
+ * Keep in sync — covered by focused migration manifest test.
+ */
+export type CascadeChildScopeMode = 'metadata' | 'never';
+
+export type CascadeChildSpec = {
+  table: string;
+  parentColumn: 'owner_setup_id' | 'property_setup_id';
+  /** metadata = row is in-scope only with acceptanceHarness marker; never = any row is foreign */
+  scope: CascadeChildScopeMode;
+};
+
+export const OWNER_SETUP_CASCADE_CHILDREN: readonly CascadeChildSpec[] = [
+  { table: 'booking_property_setup_profiles', parentColumn: 'owner_setup_id', scope: 'metadata' },
+  { table: 'booking_owner_setup_communication_intents', parentColumn: 'owner_setup_id', scope: 'metadata' },
+] as const;
+
+export const PROPERTY_SETUP_CASCADE_CHILDREN: readonly CascadeChildSpec[] = [
+  { table: 'booking_property_assets', parentColumn: 'property_setup_id', scope: 'metadata' },
+  { table: 'booking_channel_manager_connections', parentColumn: 'property_setup_id', scope: 'metadata' },
+  { table: 'booking_channel_publication_packages', parentColumn: 'property_setup_id', scope: 'metadata' },
+  { table: 'booking_market_signal_sources', parentColumn: 'property_setup_id', scope: 'metadata' },
+  { table: 'booking_market_signal_ingestion_runs', parentColumn: 'property_setup_id', scope: 'metadata' },
+  { table: 'booking_pricing_profiles', parentColumn: 'property_setup_id', scope: 'metadata' },
+  { table: 'booking_property_audience_profiles', parentColumn: 'property_setup_id', scope: 'never' },
+  { table: 'booking_pricing_market_signals', parentColumn: 'property_setup_id', scope: 'metadata' },
+] as const;
+
+export const LIVE_CORE_ACCEPTANCE_CASCADE_MANIFEST = {
+  ownerSetup: OWNER_SETUP_CASCADE_CHILDREN,
+  propertySetup: PROPERTY_SETUP_CASCADE_CHILDREN,
+} as const;
 
 export type LiveCoreAcceptanceStepKey =
   | 'schema'
@@ -107,6 +143,12 @@ export type LiveCoreAcceptanceCleanupResult = {
   ok: boolean;
   cleanupPassed: boolean;
   scopeVerified: boolean;
+  cascadeScopeVerified: boolean;
+  foreignChildCount: number;
+  foreignChildTables: string[];
+  ordinaryIdsVerifiedBefore: string[];
+  ordinaryIdsVerifiedAfter: string[];
+  ordinaryDataPreserved: boolean;
   remainingHarnessRows: number;
   remainingActiveHolds: number;
   remainingIntakeEvents: number;
@@ -588,7 +630,44 @@ export async function ensureLiveCoreAcceptanceConnection(
     }
   }
 
+  await stampHarnessOwnedCommunicationIntents(connection);
+
   return { connection, created };
+}
+
+/**
+ * Mark only intents produced for the harness connection (metadata.connectionId match).
+ * Never stamps unrelated intents under the same owner.
+ */
+async function stampHarnessOwnedCommunicationIntents(connection: ChannelManagerConnection): Promise<void> {
+  if (!connection.ownerSetupId) return;
+  const { data, error } = await supabase
+    .from('booking_owner_setup_communication_intents')
+    .select('id,metadata,owner_setup_id')
+    .eq('owner_setup_id', connection.ownerSetupId);
+  if (error) {
+    if (isMissingRelationError(error)) return;
+    throw new Error(error.message);
+  }
+
+  for (const row of data ?? []) {
+    const meta = (row.metadata as Record<string, unknown>) ?? {};
+    if (String(meta.connectionId ?? '') !== connection.id) continue;
+    if (hasHarnessMarker(meta)) continue;
+    const { error: updateError } = await supabase
+      .from('booking_owner_setup_communication_intents')
+      .update({
+        metadata: harnessMetadata({
+          ...meta,
+          synthetic: true,
+          kind: 'owner_communication_intent',
+          connectionId: connection.id,
+        }),
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', String(row.id));
+    if (updateError) throw new Error(updateError.message);
+  }
 }
 
 async function markBookingOpsAsHarness(
@@ -597,11 +676,24 @@ async function markBookingOpsAsHarness(
 ): Promise<void> {
   const { data, error } = await supabase
     .from('booking_ops_records')
-    .select('id,reservation_metadata')
+    .select('id,reservation_metadata,property_id,booking_id')
     .eq('id', bookingOpsRecordId)
     .maybeSingle();
   if (error) throw new Error(error.message);
-  if (!data) return;
+  if (!data) throw new Error('Booking Ops запись не найдена для пометки harness.');
+  if (String(data.property_id ?? '') !== LIVE_CORE_ACCEPTANCE_PROPERTY_ID
+    || String(data.booking_id ?? '') !== LIVE_CORE_ACCEPTANCE_EXTERNAL_BOOKING_ID) {
+    throw new LiveCoreAcceptanceHarnessError(
+      HARNESS_IDENTITY_COLLISION,
+      `${HARNESS_IDENTITY_COLLISION}: Booking Ops ${bookingOpsRecordId} не совпадает с deterministic harness identifiers.`,
+    );
+  }
+  if (hasHarnessMarker(data.reservation_metadata)) {
+    throw new LiveCoreAcceptanceHarnessError(
+      HARNESS_IDENTITY_COLLISION,
+      `${HARNESS_IDENTITY_COLLISION}: Booking Ops ${bookingOpsRecordId} уже помечен — нельзя принять как новый first-run artifact.`,
+    );
+  }
   const current = (data.reservation_metadata as Record<string, unknown>) ?? {};
   const { error: updateError } = await supabase.from('booking_ops_records').update({
     reservation_metadata: harnessMetadata({
@@ -894,7 +986,8 @@ export async function resetLiveCoreAcceptanceExecutionArtifacts(input: {
 }): Promise<{ ok: true } | { ok: false; stage: string; blocker: string }> {
   const bookingOpsIds = await listMarkedHarnessBookingOpsIds();
 
-  // Also collect booking ops referenced by harness imported bookings on this connection.
+  // Also collect booking ops referenced by harness imported bookings on this connection —
+  // but only when those ops are already harness-marked. Never delete unmarked matches.
   const imported = await supabase
     .from('booking_channel_imported_bookings')
     .select('id,matched_booking_id,external_booking_id')
@@ -904,8 +997,22 @@ export async function resetLiveCoreAcceptanceExecutionArtifacts(input: {
     return { ok: false, stage: 'imported_bookings_lookup', blocker: imported.error.message };
   }
   const ids = new Set(bookingOpsIds);
-  for (const row of imported.data ?? []) {
-    if (row.matched_booking_id) ids.add(String(row.matched_booking_id));
+  const matchedIds = [...new Set(
+    (imported.data ?? [])
+      .map((row) => (row.matched_booking_id ? String(row.matched_booking_id) : null))
+      .filter((value): value is string => Boolean(value)),
+  )];
+  if (matchedIds.length > 0) {
+    const { data: matchedOps, error: matchedError } = await supabase
+      .from('booking_ops_records')
+      .select('id,reservation_metadata')
+      .in('id', matchedIds);
+    if (matchedError) {
+      return { ok: false, stage: 'matched_booking_ops_lookup', blocker: matchedError.message };
+    }
+    for (const row of matchedOps ?? []) {
+      if (hasHarnessMarker(row.reservation_metadata)) ids.add(String(row.id));
+    }
   }
   const opsIds = [...ids];
 
@@ -1030,6 +1137,176 @@ async function countRemainingActiveHolds(): Promise<number> {
   return (data ?? []).length;
 }
 
+async function findUnmarkedDeterministicBookingOps(): Promise<Array<{ id: string }>> {
+  const { data, error } = await supabase
+    .from('booking_ops_records')
+    .select('id,reservation_metadata,property_id,booking_id')
+    .eq('property_id', LIVE_CORE_ACCEPTANCE_PROPERTY_ID)
+    .eq('booking_id', LIVE_CORE_ACCEPTANCE_EXTERNAL_BOOKING_ID);
+  if (error) throw new Error(error.message);
+  return (data ?? [])
+    .filter((row) => !hasHarnessMarker(row.reservation_metadata))
+    .map((row) => ({ id: String(row.id) }));
+}
+
+async function assertDeterministicBookingOpsClearForNewExecution(): Promise<void> {
+  const unmarked = await findUnmarkedDeterministicBookingOps();
+  if (unmarked.length > 0) {
+    throw new LiveCoreAcceptanceHarnessError(
+      HARNESS_IDENTITY_COLLISION,
+      `${HARNESS_IDENTITY_COLLISION}: Booking Ops ${unmarked.map((row) => row.id).join(',')} `
+        + `уже занимает property_id=${LIVE_CORE_ACCEPTANCE_PROPERTY_ID} `
+        + `booking_id=${LIVE_CORE_ACCEPTANCE_EXTERNAL_BOOKING_ID} без acceptanceHarness.`,
+    );
+  }
+}
+
+type CascadePreflightHit = {
+  table: string;
+  id: string;
+  parentId: string;
+  inScope: boolean;
+};
+
+type CascadeScopePreflightResult = {
+  cascadeScopeVerified: boolean;
+  foreignChildCount: number;
+  foreignChildTables: string[];
+  ordinaryIds: string[];
+  foreignHits: CascadePreflightHit[];
+  blocker: string | null;
+};
+
+function rowInHarnessScope(row: Record<string, unknown>, scope: CascadeChildScopeMode): boolean {
+  if (scope === 'never') return false;
+  return hasHarnessMarker(row.metadata);
+}
+
+async function collectCascadeChildren(
+  specs: readonly CascadeChildSpec[],
+  parentIds: string[],
+): Promise<{ hits: CascadePreflightHit[]; error: string | null }> {
+  const hits: CascadePreflightHit[] = [];
+  if (parentIds.length === 0) return { hits, error: null };
+
+  for (const spec of specs) {
+    const { data, error } = await supabase
+      .from(spec.table)
+      .select('*')
+      .in(spec.parentColumn, parentIds);
+    if (error) {
+      if (isMissingRelationError(error)) continue;
+      return { hits, error: `${spec.table}: ${error.message}` };
+    }
+    for (const row of data ?? []) {
+      const record = row as Record<string, unknown>;
+      hits.push({
+        table: spec.table,
+        id: String(record.id),
+        parentId: String(record[spec.parentColumn] ?? ''),
+        inScope: rowInHarnessScope(record, spec.scope),
+      });
+    }
+  }
+  return { hits, error: null };
+}
+
+/**
+ * Read-only cascade-scope preflight. Must run before any destructive cleanup mutation.
+ */
+export async function runLiveCoreAcceptanceCascadeScopePreflight(input: {
+  ownerIds: string[];
+  propertyIds: string[];
+}): Promise<CascadeScopePreflightResult> {
+  const ownerChildren = await collectCascadeChildren(OWNER_SETUP_CASCADE_CHILDREN, input.ownerIds);
+  if (ownerChildren.error) {
+    return {
+      cascadeScopeVerified: false,
+      foreignChildCount: 0,
+      foreignChildTables: [],
+      ordinaryIds: [],
+      foreignHits: [],
+      blocker: ownerChildren.error,
+    };
+  }
+
+  const propertyChildren = await collectCascadeChildren(PROPERTY_SETUP_CASCADE_CHILDREN, input.propertyIds);
+  if (propertyChildren.error) {
+    return {
+      cascadeScopeVerified: false,
+      foreignChildCount: 0,
+      foreignChildTables: [],
+      ordinaryIds: [],
+      foreignHits: [],
+      blocker: propertyChildren.error,
+    };
+  }
+
+  const foreignHits = [...ownerChildren.hits, ...propertyChildren.hits].filter((hit) => !hit.inScope);
+  const foreignChildTables = [...new Set(foreignHits.map((hit) => hit.table))];
+  const ordinaryIds = foreignHits.map((hit) => `${hit.table}:${hit.id}`);
+
+  if (foreignHits.length > 0) {
+    const first = foreignHits[0];
+    return {
+      cascadeScopeVerified: false,
+      foreignChildCount: foreignHits.length,
+      foreignChildTables,
+      ordinaryIds,
+      foreignHits,
+      blocker: `${HARNESS_SCOPE_COLLISION}: таблица ${first.table} содержит зависимую запись вне harness scope `
+        + `(id=${first.id}, parent=${first.parentId}). Owner/property cleanup заблокирован.`,
+    };
+  }
+
+  return {
+    cascadeScopeVerified: true,
+    foreignChildCount: 0,
+    foreignChildTables: [],
+    ordinaryIds: [],
+    foreignHits: [],
+    blocker: null,
+  };
+}
+
+async function verifyOrdinaryIdsStillExist(ordinaryIds: string[]): Promise<{
+  after: string[];
+  preserved: boolean;
+}> {
+  const after: string[] = [];
+  for (const token of ordinaryIds) {
+    const separator = token.indexOf(':');
+    if (separator <= 0) continue;
+    const table = token.slice(0, separator);
+    const id = token.slice(separator + 1);
+    const { data, error } = await supabase.from(table).select('id').eq('id', id).maybeSingle();
+    if (error) {
+      if (isMissingRelationError(error)) continue;
+      return { after, preserved: false };
+    }
+    if (data?.id) after.push(token);
+  }
+  const preserved = ordinaryIds.every((token) => after.includes(token));
+  return { after, preserved };
+}
+
+async function deleteMarkedOwnerCommunicationIntents(ownerIds: string[]): Promise<MutationResult> {
+  if (ownerIds.length === 0) return { deleted: 0, error: null };
+  const { data, error } = await supabase
+    .from('booking_owner_setup_communication_intents')
+    .delete()
+    .in('owner_setup_id', ownerIds)
+    .contains('metadata', { acceptanceHarness: LIVE_CORE_ACCEPTANCE_HARNESS })
+    .select('id');
+  if (error) {
+    if (isMissingRelationError(error) || isMissingColumnError(error)) {
+      return { deleted: 0, error: null, optionalMissing: true };
+    }
+    return { deleted: 0, error: `booking_owner_setup_communication_intents: ${error.message}` };
+  }
+  return { deleted: (data ?? []).length, error: null };
+}
+
 /**
  * Full acceptance sequence. Never sets passed unless every assertion is verified.
  * Safely repeatable: resets prior execution artifacts before each run.
@@ -1098,6 +1375,15 @@ export async function runChannelManagerLiveCoreAcceptance(): Promise<LiveCoreAcc
     });
     if (!reset.ok) {
       return failEvidence(evidence, 'execution_reset', `${reset.stage}: ${reset.blocker}`);
+    }
+    try {
+      await assertDeterministicBookingOpsClearForNewExecution();
+    } catch (error) {
+      return failEvidence(
+        evidence,
+        'execution_reset',
+        error instanceof Error ? error.message : HARNESS_IDENTITY_COLLISION,
+      );
     }
     setStep(steps, 'execution_reset', 'passed', 'Предыдущие synthetic artifacts сброшены.');
   } catch (error) {
@@ -1251,6 +1537,12 @@ function cleanupFailure(
     ok: false,
     cleanupPassed: false,
     scopeVerified: false,
+    cascadeScopeVerified: extras.cascadeScopeVerified ?? false,
+    foreignChildCount: extras.foreignChildCount ?? 0,
+    foreignChildTables: extras.foreignChildTables ?? [],
+    ordinaryIdsVerifiedBefore: extras.ordinaryIdsVerifiedBefore ?? [],
+    ordinaryIdsVerifiedAfter: extras.ordinaryIdsVerifiedAfter ?? [],
+    ordinaryDataPreserved: extras.ordinaryDataPreserved ?? false,
     remainingHarnessRows: extras.remainingHarnessRows ?? -1,
     remainingActiveHolds: extras.remainingActiveHolds ?? -1,
     remainingIntakeEvents: extras.remainingIntakeEvents ?? -1,
@@ -1263,7 +1555,7 @@ function cleanupFailure(
 /**
  * Delete only records carrying acceptanceHarness = channel_manager_live_core_v1
  * plus deterministic harness booking identifiers.
- * Never deletes unmarked children merely because a parent is marked.
+ * Never deletes unmarked CASCADE children; fail closed when parent DELETE would cascade to them.
  */
 export async function cleanupLiveCoreAcceptanceHarness(): Promise<LiveCoreAcceptanceCleanupResult> {
   const deleted = emptyDeletedCounters();
@@ -1289,9 +1581,32 @@ export async function cleanupLiveCoreAcceptanceHarness(): Promise<LiveCoreAccept
       return cleanupFailure(deleted, 'property_lookup', properties.error.message);
     }
 
-    // Exact marker only — never include unmarked children of marked owners.
+    // Exact marker only — unmarked properties under marked owners are foreign CASCADE children.
     const propertyRows = (properties.data ?? []).filter((row) => hasHarnessMarker(row.metadata));
     const propertyIds = propertyRows.map((row) => String(row.id));
+
+    // Read-only cascade preflight BEFORE any destructive mutation.
+    const preflight = await runLiveCoreAcceptanceCascadeScopePreflight({ ownerIds, propertyIds });
+    const ordinaryIdsVerifiedBefore = preflight.ordinaryIds;
+    if (!preflight.cascadeScopeVerified) {
+      const preserved = await verifyOrdinaryIdsStillExist(ordinaryIdsVerifiedBefore);
+      return cleanupFailure(
+        deleted,
+        'harness_scope_preflight',
+        preflight.blocker ?? `${HARNESS_SCOPE_COLLISION}: cascade scope not verified.`,
+        {
+          cascadeScopeVerified: false,
+          foreignChildCount: preflight.foreignChildCount,
+          foreignChildTables: preflight.foreignChildTables,
+          ordinaryIdsVerifiedBefore,
+          ordinaryIdsVerifiedAfter: preserved.after,
+          ordinaryDataPreserved: preserved.preserved,
+          remainingHarnessRows: -1,
+          remainingActiveHolds: -1,
+          remainingIntakeEvents: -1,
+        },
+      );
+    }
 
     const connections = propertyIds.length
       ? await supabase
@@ -1300,83 +1615,101 @@ export async function cleanupLiveCoreAcceptanceHarness(): Promise<LiveCoreAccept
         .in('property_setup_id', propertyIds)
       : { data: [] as Array<Record<string, unknown>>, error: null };
     if (connections.error) {
-      return cleanupFailure(deleted, 'connection_lookup', connections.error.message);
+      return cleanupFailure(deleted, 'connection_lookup', connections.error.message, {
+        cascadeScopeVerified: true,
+        ordinaryIdsVerifiedBefore,
+      });
     }
 
-    // Exact marker only — never include unmarked connections under marked properties.
     const connectionRows = (connections.data ?? []).filter((row) => hasHarnessMarker(row.metadata));
     const connectionIds = connectionRows.map((row) => String(row.id));
 
-    const bookingOpsIds = new Set<string>(await listMarkedHarnessBookingOpsIds());
-    if (connectionIds.length) {
-      const imported = await supabase
-        .from('booking_channel_imported_bookings')
-        .select('matched_booking_id,external_booking_id')
-        .in('connection_id', connectionIds)
-        .eq('external_booking_id', LIVE_CORE_ACCEPTANCE_EXTERNAL_BOOKING_ID);
-      if (imported.error) {
-        return cleanupFailure(deleted, 'imported_bookings_lookup', imported.error.message);
-      }
-      for (const row of imported.data ?? []) {
-        if (row.matched_booking_id) bookingOpsIds.add(String(row.matched_booking_id));
-      }
-    }
-    // Only keep ops that are marked OR were matched from harness imported booking on marked connection.
-    // Re-filter marked to avoid deleting unmarked ops that somehow share property_id.
-    const verifiedOpsIds: string[] = [];
-    if (bookingOpsIds.size > 0) {
-      const { data: opsRows, error: opsError } = await supabase
-        .from('booking_ops_records')
-        .select('id,reservation_metadata,property_id,booking_id')
-        .in('id', [...bookingOpsIds]);
-      if (opsError) return cleanupFailure(deleted, 'booking_ops_lookup', opsError.message);
-      for (const row of opsRows ?? []) {
-        const marked = hasHarnessMarker(row.reservation_metadata);
-        const deterministic = String(row.property_id ?? '') === LIVE_CORE_ACCEPTANCE_PROPERTY_ID
-          && String(row.booking_id ?? '') === LIVE_CORE_ACCEPTANCE_EXTERNAL_BOOKING_ID;
-        if (marked || deterministic) verifiedOpsIds.push(String(row.id));
-      }
-    }
+    // Only marked Booking Ops — never adopt unmarked deterministic collisions.
+    const verifiedOpsIds = await listMarkedHarnessBookingOpsIds();
 
     const intake = await deleteHarnessIntakeEvents();
-    if (intake.error) return cleanupFailure(deleted, 'intake_events', intake.error);
+    if (intake.error) {
+      return cleanupFailure(deleted, 'intake_events', intake.error, {
+        cascadeScopeVerified: true,
+        ordinaryIdsVerifiedBefore,
+      });
+    }
     deleted.intakeEvents = intake.deleted;
 
     const holds = await releaseOrDeleteAvailabilityHolds(verifiedOpsIds);
-    if (holds.error) return cleanupFailure(deleted, 'availability_holds', holds.error);
+    if (holds.error) {
+      return cleanupFailure(deleted, 'availability_holds', holds.error, {
+        cascadeScopeVerified: true,
+        ordinaryIdsVerifiedBefore,
+      });
+    }
     deleted.availabilityHolds = holds.deleted;
 
     const checks = await deleteOverbookingChecks(verifiedOpsIds);
-    if (checks.error) return cleanupFailure(deleted, 'overbooking_checks', checks.error);
+    if (checks.error) {
+      return cleanupFailure(deleted, 'overbooking_checks', checks.error, {
+        cascadeScopeVerified: true,
+        ordinaryIdsVerifiedBefore,
+      });
+    }
     deleted.overbookingChecks = checks.deleted;
 
     const drafts = await deleteTelegramDrafts(verifiedOpsIds);
-    if (drafts.error) return cleanupFailure(deleted, 'telegram_drafts', drafts.error);
+    if (drafts.error) {
+      return cleanupFailure(deleted, 'telegram_drafts', drafts.error, {
+        cascadeScopeVerified: true,
+        ordinaryIdsVerifiedBefore,
+      });
+    }
     deleted.telegramDrafts = drafts.deleted;
 
     const reservation = await deleteReservationArtifacts(verifiedOpsIds);
     if (reservation.importRows.error) {
-      return cleanupFailure(deleted, 'reservation_import_rows', reservation.importRows.error);
+      return cleanupFailure(deleted, 'reservation_import_rows', reservation.importRows.error, {
+        cascadeScopeVerified: true,
+        ordinaryIdsVerifiedBefore,
+      });
     }
     if (reservation.reconciliation.error) {
-      return cleanupFailure(deleted, 'reservation_reconciliation_items', reservation.reconciliation.error);
+      return cleanupFailure(deleted, 'reservation_reconciliation_items', reservation.reconciliation.error, {
+        cascadeScopeVerified: true,
+        ordinaryIdsVerifiedBefore,
+      });
     }
     if (reservation.ledger.error) {
-      return cleanupFailure(deleted, 'reservation_ledger_audit', reservation.ledger.error);
+      return cleanupFailure(deleted, 'reservation_ledger_audit', reservation.ledger.error, {
+        cascadeScopeVerified: true,
+        ordinaryIdsVerifiedBefore,
+      });
     }
     deleted.reservationImportRows = reservation.importRows.deleted;
     deleted.reservationReconciliationItems = reservation.reconciliation.deleted;
     deleted.reservationLedgerAudit = reservation.ledger.deleted;
 
     const descendants = await deleteBookingOpsDescendants(verifiedOpsIds);
-    if (descendants.error) return cleanupFailure(deleted, 'booking_ops_descendants', descendants.error);
+    if (descendants.error) {
+      return cleanupFailure(deleted, 'booking_ops_descendants', descendants.error, {
+        cascadeScopeVerified: true,
+        ordinaryIdsVerifiedBefore,
+      });
+    }
 
     const opsDelete = await deleteMarkedBookingOpsRecords(verifiedOpsIds);
-    if (opsDelete.error) return cleanupFailure(deleted, 'booking_ops_records', opsDelete.error);
+    if (opsDelete.error) {
+      return cleanupFailure(deleted, 'booking_ops_records', opsDelete.error, {
+        cascadeScopeVerified: true,
+        ordinaryIdsVerifiedBefore,
+      });
+    }
     deleted.bookingOpsRecords = opsDelete.deleted;
 
     const importedDelete = await deleteHarnessImportedBookings(connectionIds);
-    if (importedDelete.error) return cleanupFailure(deleted, 'imported_bookings', importedDelete.error);
+    if (importedDelete.error) {
+      return cleanupFailure(deleted, 'imported_bookings', importedDelete.error, {
+        cascadeScopeVerified: true,
+        ordinaryIdsVerifiedBefore,
+      });
+    }
     deleted.importedBookings = importedDelete.deleted;
 
     if (connectionIds.length) {
@@ -1385,55 +1718,81 @@ export async function cleanupLiveCoreAcceptanceHarness(): Promise<LiveCoreAccept
         .delete()
         .in('id', connectionIds)
         .select('id');
-      if (error) return cleanupFailure(deleted, 'connections', error.message);
+      if (error) {
+        return cleanupFailure(deleted, 'connections', error.message, {
+          cascadeScopeVerified: true,
+          ordinaryIdsVerifiedBefore,
+        });
+      }
       deleted.connections = (data ?? []).length;
     }
 
+    // Property/owner deletes are allowed only after cascadeScopeVerified=true.
     if (propertyIds.length) {
       const { data, error } = await supabase
         .from('booking_property_setup_profiles')
         .delete()
         .in('id', propertyIds)
         .select('id');
-      if (error) return cleanupFailure(deleted, 'property_setups', error.message);
+      if (error) {
+        return cleanupFailure(deleted, 'property_setups', error.message, {
+          cascadeScopeVerified: true,
+          ordinaryIdsVerifiedBefore,
+        });
+      }
       deleted.propertySetups = (data ?? []).length;
     }
 
     if (ownerIds.length) {
-      const intents = await supabase
-        .from('booking_owner_setup_communication_intents')
-        .delete()
-        .in('owner_setup_id', ownerIds)
-        .select('id');
+      const intents = await deleteMarkedOwnerCommunicationIntents(ownerIds);
       if (intents.error) {
-        if (!isMissingRelationError(intents.error) && !isMissingColumnError(intents.error)) {
-          return cleanupFailure(deleted, 'owner_communication_intents', intents.error.message);
-        }
-      } else {
-        deleted.communicationIntents = (intents.data ?? []).length;
+        return cleanupFailure(deleted, 'owner_communication_intents', intents.error, {
+          cascadeScopeVerified: true,
+          ordinaryIdsVerifiedBefore,
+        });
       }
+      deleted.communicationIntents = intents.deleted;
 
       const { data: deletedOwners, error: ownerDeleteError } = await supabase
         .from('booking_owner_setup_profiles')
         .delete()
         .in('id', ownerIds)
         .select('id');
-      if (ownerDeleteError) return cleanupFailure(deleted, 'owner_setups', ownerDeleteError.message);
+      if (ownerDeleteError) {
+        return cleanupFailure(deleted, 'owner_setups', ownerDeleteError.message, {
+          cascadeScopeVerified: true,
+          ordinaryIdsVerifiedBefore,
+        });
+      }
       deleted.ownerSetups = (deletedOwners ?? []).length;
     }
 
+    const ordinaryAfter = await verifyOrdinaryIdsStillExist(ordinaryIdsVerifiedBefore);
     const remainingHarnessRows = await countRemainingHarnessRows();
     const remainingActiveHolds = await countRemainingActiveHolds();
     const remainingIntakeEvents = await countHarnessIntakeEvents();
     const scopeVerified = remainingHarnessRows === 0
       && remainingActiveHolds === 0
       && remainingIntakeEvents === 0;
-    const cleanupPassed = scopeVerified;
+    const cascadeScopeVerified = true;
+    const ordinaryDataPreserved = ordinaryAfter.preserved;
+    const cleanupPassed = cascadeScopeVerified
+      && ordinaryDataPreserved
+      && scopeVerified
+      && remainingHarnessRows === 0
+      && remainingActiveHolds === 0
+      && remainingIntakeEvents === 0;
 
     return {
       ok: cleanupPassed,
       cleanupPassed,
       scopeVerified,
+      cascadeScopeVerified,
+      foreignChildCount: 0,
+      foreignChildTables: [],
+      ordinaryIdsVerifiedBefore,
+      ordinaryIdsVerifiedAfter: ordinaryAfter.after,
+      ordinaryDataPreserved,
       remainingHarnessRows,
       remainingActiveHolds,
       remainingIntakeEvents,
@@ -1441,7 +1800,8 @@ export async function cleanupLiveCoreAcceptanceHarness(): Promise<LiveCoreAccept
       failedStage: cleanupPassed ? null : 'post_delete_verification',
       blocker: cleanupPassed
         ? null
-        : `После cleanup остались harness rows=${remainingHarnessRows}, active holds=${remainingActiveHolds}, intake events=${remainingIntakeEvents}.`,
+        : `После cleanup: harness rows=${remainingHarnessRows}, active holds=${remainingActiveHolds}, `
+          + `intake events=${remainingIntakeEvents}, ordinaryDataPreserved=${ordinaryDataPreserved}.`,
     };
   } catch (error) {
     return cleanupFailure(

@@ -26,6 +26,35 @@ const {
 const tables: Record<string, Row[]> = {};
 function rows(table: string): Row[] { return tables[table] ?? (tables[table] = []); }
 
+/** Production-accurate direct ON DELETE CASCADE edges used by the in-memory fake. */
+const CASCADE_CHILDREN: Record<string, Array<{ table: string; column: string }>> = {
+  booking_owner_setup_profiles: OWNER_SETUP_CASCADE_CHILDREN.map((spec) => ({
+    table: spec.table,
+    column: spec.parentColumn,
+  })),
+  booking_property_setup_profiles: PROPERTY_SETUP_CASCADE_CHILDREN.map((spec) => ({
+    table: spec.table,
+    column: spec.parentColumn,
+  })),
+  booking_channel_manager_connections: [
+    { table: 'booking_channel_import_runs', column: 'connection_id' },
+    { table: 'booking_channel_imported_bookings', column: 'connection_id' },
+    { table: 'booking_channel_imported_objects', column: 'connection_id' },
+  ],
+};
+
+function applyCascadeDelete(table: string, removedIds: string[]) {
+  if (removedIds.length === 0) return;
+  const children = CASCADE_CHILDREN[table] ?? [];
+  for (const child of children) {
+    const doomed = rows(child.table).filter((row) => removedIds.includes(String(row[child.column])));
+    if (doomed.length === 0) continue;
+    const doomedIds = doomed.map((row) => String(row.id));
+    tables[child.table] = rows(child.table).filter((row) => !doomedIds.includes(String(row.id)));
+    applyCascadeDelete(child.table, doomedIds);
+  }
+}
+
 class Query {
   private filtered: Row[];
   private deleteMode = false;
@@ -105,9 +134,11 @@ class Query {
       return { data: null, error: this.forcedError, count: null };
     }
     if (this.deleteMode) {
-      const remaining = rows(this.table).filter((row) => !this.filtered.some((item) => item.id === row.id));
       const removed = this.filtered;
+      const removedIds = removed.map((row) => String(row.id));
+      const remaining = rows(this.table).filter((row) => !removedIds.includes(String(row.id)));
       tables[this.table] = remaining;
+      applyCascadeDelete(this.table, removedIds);
       return { data: removed, error: null, count: removed.length };
     }
     if (this.options.patch) for (const row of this.filtered) Object.assign(row, this.options.patch);
@@ -174,12 +205,16 @@ vi.mock('../availability-overbooking-protection', () => ({
 
 import {
   HARNESS_IDENTITY_COLLISION,
+  HARNESS_SCOPE_COLLISION,
+  LIVE_CORE_ACCEPTANCE_CASCADE_MANIFEST,
   LIVE_CORE_ACCEPTANCE_EXTERNAL_BOOKING_ID,
   LIVE_CORE_ACCEPTANCE_HARNESS,
   LIVE_CORE_ACCEPTANCE_INTAKE_IDEMPOTENCY_KEY,
   LIVE_CORE_ACCEPTANCE_INTAKE_SOURCE,
   LIVE_CORE_ACCEPTANCE_LEAD_ID,
   LIVE_CORE_ACCEPTANCE_PROPERTY_ID,
+  OWNER_SETUP_CASCADE_CHILDREN,
+  PROPERTY_SETUP_CASCADE_CHILDREN,
   assertLiveCoreAcceptanceSnapshotSafe,
   buildLiveCoreAcceptanceSnapshot,
   cleanupLiveCoreAcceptanceHarness,
@@ -583,7 +618,7 @@ describe('Channel Manager Live Core Acceptance Harness v1', () => {
     expect(rows('booking_property_setup_profiles')).toHaveLength(0);
   });
 
-  it('never deletes unmarked property under marked owner', async () => {
+  it('fails closed when unmarked property exists under marked owner (CASCADE would delete it)', async () => {
     const setup = await ensureLiveCoreAcceptanceSetup();
     rows('booking_property_setup_profiles').push({
       id: UNMARKED_PROPERTY_ID,
@@ -599,12 +634,45 @@ describe('Channel Manager Live Core Acceptance Harness v1', () => {
     const evidence = await runChannelManagerLiveCoreAcceptance();
     expect(evidence.passed).toBe(true);
     const cleanup = await cleanupLiveCoreAcceptanceHarness();
-    expect(cleanup.cleanupPassed).toBe(true);
+    expect(cleanup.cleanupPassed).toBe(false);
+    expect(cleanup.failedStage).toBe('harness_scope_preflight');
+    expect(cleanup.blocker).toContain(HARNESS_SCOPE_COLLISION);
+    expect(cleanup.blocker).toContain('booking_property_setup_profiles');
+    expect(cleanup.foreignChildTables).toContain('booking_property_setup_profiles');
+    expect(cleanup.ordinaryDataPreserved).toBe(true);
     expect(rows('booking_property_setup_profiles').some((row) => row.id === UNMARKED_PROPERTY_ID)).toBe(true);
-    expect(rows('booking_property_setup_profiles').some((row) => row.id === setup.propertySetup.id)).toBe(false);
+    expect(rows('booking_owner_setup_profiles').some((row) => row.id === setup.ownerSetup.id)).toBe(true);
+    expect(rows('booking_property_setup_profiles').some((row) => row.id === setup.propertySetup.id)).toBe(true);
   });
 
-  it('never deletes unmarked connection under marked property', async () => {
+  it('fails closed when unmarked communication intent exists under marked owner', async () => {
+    const evidence = await runChannelManagerLiveCoreAcceptance();
+    expect(evidence.passed).toBe(true);
+    const intentId = randomUUID();
+    rows('booking_owner_setup_communication_intents').push({
+      id: intentId,
+      owner_setup_id: evidence.ownerSetupId,
+      property_setup_id: evidence.propertySetupId,
+      message_type: 'request_object_data',
+      channel: 'manual',
+      status: 'draft_ready',
+      message_text: 'ordinary intent',
+      message_template_key: 'ordinary',
+      metadata: { pilot: true },
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    });
+
+    const cleanup = await cleanupLiveCoreAcceptanceHarness();
+    expect(cleanup.cleanupPassed).toBe(false);
+    expect(cleanup.failedStage).toBe('harness_scope_preflight');
+    expect(cleanup.blocker).toContain(HARNESS_SCOPE_COLLISION);
+    expect(cleanup.blocker).toContain('booking_owner_setup_communication_intents');
+    expect(rows('booking_owner_setup_communication_intents').some((row) => row.id === intentId)).toBe(true);
+    expect(rows('booking_owner_setup_profiles').some((row) => row.id === evidence.ownerSetupId)).toBe(true);
+  });
+
+  it('fails closed when unmarked CM connection exists under marked property', async () => {
     const evidence = await runChannelManagerLiveCoreAcceptance();
     expect(evidence.passed).toBe(true);
     rows('booking_channel_manager_connections').push({
@@ -620,9 +688,111 @@ describe('Channel Manager Live Core Acceptance Harness v1', () => {
     });
 
     const cleanup = await cleanupLiveCoreAcceptanceHarness();
-    expect(cleanup.cleanupPassed).toBe(true);
+    expect(cleanup.cleanupPassed).toBe(false);
+    expect(cleanup.failedStage).toBe('harness_scope_preflight');
+    expect(cleanup.blocker).toContain(HARNESS_SCOPE_COLLISION);
+    expect(cleanup.blocker).toContain('booking_channel_manager_connections');
     expect(rows('booking_channel_manager_connections').some((row) => row.id === UNMARKED_CONNECTION_ID)).toBe(true);
-    expect(rows('booking_channel_manager_connections').some((row) => row.id === evidence.connectionId)).toBe(false);
+    expect(rows('booking_property_setup_profiles').some((row) => row.id === evidence.propertySetupId)).toBe(true);
+  });
+
+  it('fails closed when unmarked property asset exists under marked property', async () => {
+    const evidence = await runChannelManagerLiveCoreAcceptance();
+    expect(evidence.passed).toBe(true);
+    const assetId = randomUUID();
+    rows('booking_property_assets').push({
+      id: assetId,
+      property_setup_id: evidence.propertySetupId,
+      asset_type: 'photo',
+      status: 'uploaded',
+      metadata: {},
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    });
+
+    const cleanup = await cleanupLiveCoreAcceptanceHarness();
+    expect(cleanup.cleanupPassed).toBe(false);
+    expect(cleanup.failedStage).toBe('harness_scope_preflight');
+    expect(cleanup.blocker).toContain('booking_property_assets');
+    expect(rows('booking_property_assets').some((row) => row.id === assetId)).toBe(true);
+    expect(rows('booking_property_setup_profiles').some((row) => row.id === evidence.propertySetupId)).toBe(true);
+  });
+
+  it('fails closed when unmarked pricing/market/publication rows exist under marked property', async () => {
+    const evidence = await runChannelManagerLiveCoreAcceptance();
+    expect(evidence.passed).toBe(true);
+    const packageId = randomUUID();
+    const pricingId = randomUUID();
+    const sourceId = randomUUID();
+    const audienceId = randomUUID();
+    rows('booking_channel_publication_packages').push({
+      id: packageId,
+      property_setup_id: evidence.propertySetupId,
+      provider: 'manual',
+      status: 'draft',
+      metadata: {},
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    });
+    rows('booking_pricing_profiles').push({
+      id: pricingId,
+      property_setup_id: evidence.propertySetupId,
+      status: 'draft',
+      metadata: {},
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    });
+    rows('booking_market_signal_sources').push({
+      id: sourceId,
+      property_setup_id: evidence.propertySetupId,
+      source_type: 'manual',
+      provider: 'manual',
+      status: 'draft',
+      metadata: {},
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    });
+    rows('booking_property_audience_profiles').push({
+      id: audienceId,
+      property_setup_id: evidence.propertySetupId,
+      primary_audience: 'unknown',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    });
+
+    const cleanup = await cleanupLiveCoreAcceptanceHarness();
+    expect(cleanup.cleanupPassed).toBe(false);
+    expect(cleanup.failedStage).toBe('harness_scope_preflight');
+    expect(cleanup.foreignChildCount).toBeGreaterThanOrEqual(4);
+    expect(cleanup.ordinaryDataPreserved).toBe(true);
+    expect(rows('booking_channel_publication_packages').some((row) => row.id === packageId)).toBe(true);
+    expect(rows('booking_pricing_profiles').some((row) => row.id === pricingId)).toBe(true);
+    expect(rows('booking_market_signal_sources').some((row) => row.id === sourceId)).toBe(true);
+    expect(rows('booking_property_audience_profiles').some((row) => row.id === audienceId)).toBe(true);
+    expect(rows('booking_property_setup_profiles').some((row) => row.id === evidence.propertySetupId)).toBe(true);
+  });
+
+  it('fails with harness_identity_collision when pre-existing unmarked deterministic Booking Ops exists', async () => {
+    rows('booking_ops_records').push({
+      id: randomUUID(),
+      account_id: 'ordinary-account',
+      property_id: LIVE_CORE_ACCEPTANCE_PROPERTY_ID,
+      booking_id: LIVE_CORE_ACCEPTANCE_EXTERNAL_BOOKING_ID,
+      guest_name: 'Ordinary Guest',
+      reservation_metadata: { pilot: true },
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    });
+
+    const evidence = await runChannelManagerLiveCoreAcceptance();
+    expect(evidence.passed).toBe(false);
+    expect(evidence.failedStep).toBe('execution_reset');
+    expect(evidence.blocker).toContain(HARNESS_IDENTITY_COLLISION);
+    expect(rows('booking_ops_records').filter((row) => (
+      row.property_id === LIVE_CORE_ACCEPTANCE_PROPERTY_ID
+      && row.booking_id === LIVE_CORE_ACCEPTANCE_EXTERNAL_BOOKING_ID
+      && row.reservation_metadata?.acceptanceHarness !== LIVE_CORE_ACCEPTANCE_HARNESS
+    )).length).toBe(1);
   });
 
   it('cleanup partial failure does not claim ordinary data was preserved via hardcoded flag', async () => {
@@ -651,11 +821,12 @@ describe('Channel Manager Live Core Acceptance Harness v1', () => {
     expect(cleanup.ok).toBe(false);
     expect(cleanup.failedStage).toBe('telegram_drafts');
     expect(cleanup.scopeVerified).toBe(false);
+    expect(cleanup.ordinaryDataPreserved).toBe(false);
     expect((cleanup as { preservedOrdinaryData?: boolean }).preservedOrdinaryData).toBeUndefined();
     expect(rows('booking_owner_setup_profiles').some((row) => row.id === ORDINARY_OWNER_ID)).toBe(true);
   });
 
-  it('leaves no exact harness rows after successful cleanup', async () => {
+  it('leaves no exact harness rows after successful cleanup on clean contour', async () => {
     seedOrdinaryPilotData();
     const evidence = await runChannelManagerLiveCoreAcceptance();
     expect(evidence.passed).toBe(true);
@@ -697,6 +868,8 @@ describe('Channel Manager Live Core Acceptance Harness v1', () => {
 
     const cleanup = await cleanupLiveCoreAcceptanceHarness();
     expect(cleanup.cleanupPassed).toBe(true);
+    expect(cleanup.cascadeScopeVerified).toBe(true);
+    expect(cleanup.ordinaryDataPreserved).toBe(true);
     expect(cleanup.scopeVerified).toBe(true);
     expect(cleanup.remainingHarnessRows).toBe(0);
     expect(cleanup.remainingActiveHolds).toBe(0);
@@ -711,6 +884,84 @@ describe('Channel Manager Live Core Acceptance Harness v1', () => {
       && row.property_id === LIVE_CORE_ACCEPTANCE_PROPERTY_ID
     ))).toHaveLength(0);
     expect(rows('booking_owner_setup_profiles').some((row) => row.id === ORDINARY_OWNER_ID)).toBe(true);
+  });
+
+  it('simulated FK cascade would remove unmarked children if parent were deleted, but cleanup refuses', async () => {
+    const setup = await ensureLiveCoreAcceptanceSetup();
+    rows('booking_property_setup_profiles').push({
+      id: UNMARKED_PROPERTY_ID,
+      owner_setup_id: setup.ownerSetup.id,
+      property_id: 'cascade-victim',
+      title: 'Cascade victim',
+      metadata: {},
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    });
+
+    // Prove the fake cascade works: deleting owner would wipe unmarked property.
+    const ownerId = setup.ownerSetup.id;
+    const before = rows('booking_property_setup_profiles').some((row) => row.id === UNMARKED_PROPERTY_ID);
+    expect(before).toBe(true);
+    await supabaseFrom('booking_owner_setup_profiles').delete().eq('id', ownerId).select('id');
+    expect(rows('booking_property_setup_profiles').some((row) => row.id === UNMARKED_PROPERTY_ID)).toBe(false);
+
+    // Restore owner+properties for harness fail-closed check is N/A — instead assert cleanup path.
+    // Re-seed and assert cleanup never triggers that cascade.
+    for (const key of Object.keys(tables)) tables[key] = [];
+    const setup2 = await ensureLiveCoreAcceptanceSetup();
+    rows('booking_property_setup_profiles').push({
+      id: UNMARKED_PROPERTY_ID,
+      owner_setup_id: setup2.ownerSetup.id,
+      property_id: 'cascade-victim-2',
+      title: 'Cascade victim 2',
+      metadata: {},
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    });
+    const cleanup = await cleanupLiveCoreAcceptanceHarness();
+    expect(cleanup.cleanupPassed).toBe(false);
+    expect(cleanup.failedStage).toBe('harness_scope_preflight');
+    expect(rows('booking_property_setup_profiles').some((row) => row.id === UNMARKED_PROPERTY_ID)).toBe(true);
+    expect(rows('booking_owner_setup_profiles').some((row) => row.id === setup2.ownerSetup.id)).toBe(true);
+  });
+
+  it('cascade preflight manifest covers every direct CASCADE child from migrations', () => {
+    const migrationDir = resolve(process.cwd(), 'supabase/migrations');
+    const files = [
+      '20260701110000_owner_object_setup_autopilot_v1.sql',
+      '20260701111403_channel_manager_access_import_v1.sql',
+      '20260701170000_channel_publishing_preparation_v1.sql',
+      '20260701180000_pricing_intelligence_tariff_grid_v1.sql',
+      '20260702120000_market_signals_ingestion_v1.sql',
+    ];
+    const sql = files.map((file) => readFileSync(resolve(migrationDir, file), 'utf8')).join('\n');
+
+    function cascadeTables(parent: string): string[] {
+      const found = new Set<string>();
+      const createRe = /create table if not exists public\.([a-z0-9_]+)\s*\(([\s\S]*?)\)\s*;/gi;
+      let match = createRe.exec(sql);
+      while (match) {
+        const table = match[1];
+        const body = match[2];
+        const fk = new RegExp(
+          String.raw`references\s+public\.${parent}\s*\(\s*id\s*\)\s+on delete cascade`,
+          'i',
+        );
+        if (fk.test(body)) found.add(table);
+        match = createRe.exec(sql);
+      }
+      return [...found].sort();
+    }
+
+    const ownerExpected = cascadeTables('booking_owner_setup_profiles');
+    const propertyExpected = cascadeTables('booking_property_setup_profiles');
+    const ownerManifest = OWNER_SETUP_CASCADE_CHILDREN.map((item) => item.table).sort();
+    const propertyManifest = PROPERTY_SETUP_CASCADE_CHILDREN.map((item) => item.table).sort();
+
+    expect(ownerManifest).toEqual(ownerExpected);
+    expect(propertyManifest).toEqual(propertyExpected);
+    expect(LIVE_CORE_ACCEPTANCE_CASCADE_MANIFEST.ownerSetup).toBe(OWNER_SETUP_CASCADE_CHILDREN);
+    expect(LIVE_CORE_ACCEPTANCE_CASCADE_MANIFEST.propertySetup).toBe(PROPERTY_SETUP_CASCADE_CHILDREN);
   });
 
   it('returns exact failed step evidence when first sync processing fails', async () => {
@@ -741,6 +992,8 @@ describe('Channel Manager Live Core Acceptance Harness v1', () => {
     const cleanup = await cleanupLiveCoreAcceptanceHarness();
     expect(cleanup.ok).toBe(true);
     expect(cleanup.cleanupPassed).toBe(true);
+    expect(cleanup.cascadeScopeVerified).toBe(true);
+    expect(cleanup.ordinaryDataPreserved).toBe(true);
     expect(cleanup.scopeVerified).toBe(true);
     expect(cleanup.remainingHarnessRows).toBe(0);
     expect(cleanup.deleted.ownerSetups).toBeGreaterThanOrEqual(1);

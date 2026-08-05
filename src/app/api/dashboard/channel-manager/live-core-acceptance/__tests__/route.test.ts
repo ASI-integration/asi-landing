@@ -47,6 +47,12 @@ describe('live-core-acceptance route', () => {
       ok: true,
       cleanupPassed: true,
       scopeVerified: true,
+      cascadeScopeVerified: true,
+      foreignChildCount: 0,
+      foreignChildTables: [],
+      ordinaryIdsVerifiedBefore: [],
+      ordinaryIdsVerifiedAfter: [],
+      ordinaryDataPreserved: true,
       remainingHarnessRows: 0,
       remainingActiveHolds: 0,
       remainingIntakeEvents: 0,
@@ -120,8 +126,14 @@ describe('live-core-acceptance route', () => {
       ok: false,
       cleanupPassed: false,
       scopeVerified: false,
+      cascadeScopeVerified: false,
+      foreignChildCount: 1,
+      foreignChildTables: ['booking_property_setup_profiles'],
+      ordinaryIdsVerifiedBefore: ['booking_property_setup_profiles:x'],
+      ordinaryIdsVerifiedAfter: ['booking_property_setup_profiles:x'],
+      ordinaryDataPreserved: true,
       remainingHarnessRows: 2,
-      remainingActiveHolds: 1,
+      remainingActiveHolds: 0,
       remainingIntakeEvents: 0,
       deleted: {
         bookingOpsRecords: 0,
@@ -138,14 +150,14 @@ describe('live-core-acceptance route', () => {
         reservationLedgerAudit: 0,
         importedBookings: 0,
       },
-      failedStage: 'telegram_drafts',
-      blocker: 'booking_ops_telegram_drafts: violates foreign key constraint',
+      failedStage: 'harness_scope_preflight',
+      blocker: 'harness_scope_collision: таблица booking_property_setup_profiles',
     });
     const response = await POST(request({ action: 'cleanup', confirm: true }));
     const payload = await response.json();
     expect(response.status).toBe(500);
     expect(payload.ok).toBe(false);
     expect(payload.cleanup.cleanupPassed).toBe(false);
-    expect(payload.cleanup.failedStage).toBe('telegram_drafts');
+    expect(payload.cleanup.failedStage).toBe('harness_scope_preflight');
   });
 });
