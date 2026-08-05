@@ -231,16 +231,17 @@ export const ASI_PRODUCT_ROADMAP: RoadmapDepartment[] = [
         title: 'Channel Manager Live Core',
         status: 'in_progress',
         currentState:
-          'Code for provider-independent Live Core and one-shot initial sync is complete (manual reference adapter, atomic run guard). Production activation is still pending: migration apply + one successful manual/production initial-sync acceptance.',
+          'Code for provider-independent Live Core and one-shot initial sync is complete (manual reference adapter, atomic run guard). Owner-only Dashboard acceptance harness is available for a synthetic Live Core initial-sync check. Channel Manager Live Core remains in progress until the harness is run successfully in production.',
         nextStep:
-          'Apply Live Core migration, run one acceptance initial sync, then keep the engine stable while adding incremental sync v2.',
+          'Apply Live Core migration if needed, run the Dashboard acceptance harness successfully in production, then keep the engine stable while adding incremental sync v2.',
         priority: 1,
         criticalForPilot: true,
         dashboardHref: '/dashboard/booking-ops',
         evidence: [
           { kind: 'code', path: 'src/lib/booking-ops/channel-manager-live-core.ts', note: 'Live Core contract + initial sync engine' },
+          { kind: 'code', path: 'src/lib/booking-ops/channel-manager-live-core-acceptance.ts', note: 'owner-only Live Core acceptance harness' },
           { kind: 'code', path: 'src/lib/booking-ops/channel-manager-access-import.ts', note: 'manual snapshot reuse' },
-          { kind: 'ui', path: 'src/components/booking-ops/ChannelManagerImportPanel.tsx', note: 'live-core status block' },
+          { kind: 'ui', path: 'src/components/booking-ops/ChannelManagerImportPanel.tsx', note: 'live-core status + acceptance block' },
           { kind: 'code', path: 'supabase/migrations/20260804120000_channel_manager_live_core_initial_sync_v1.sql', note: 'initial_sync type + atomic running index' },
         ],
       }),
@@ -249,7 +250,7 @@ export const ASI_PRODUCT_ROADMAP: RoadmapDepartment[] = [
         title: 'Initial и incremental sync',
         status: 'in_progress',
         currentState:
-          'One-shot initial sync exists (manual reference adapter, run counters, cursor placeholder). Incremental polling and webhook delivery remain unfinished.',
+          'One-shot initial sync exists (manual reference adapter, run counters, cursor placeholder). Incremental sync remains unfinished: polling and webhook delivery are not implemented.',
         nextStep:
           'Add durable incremental cursors, polling/webhook ingestion, and recovery without duplicating Booking Intake.',
         priority: 1,
