@@ -91,12 +91,13 @@ describe('ASI product roadmap data integrity', () => {
     expect(byId['ch-live-core']?.status).toBe('in_progress');
     expect(byId['ch-live-core']?.priority).toBe(1);
     expect(byId['ch-live-core']?.criticalForPilot).toBe(true);
-    expect(byId['ch-live-core']?.currentState).toMatch(/production activation is still pending/i);
+    expect(byId['ch-live-core']?.currentState).toMatch(/acceptance harness is available/i);
+    expect(byId['ch-live-core']?.currentState).toMatch(/remains in progress until the harness is run successfully in production/i);
     expect(byId['ch-initial-incremental-sync']?.status).toBe('in_progress');
     expect(byId['ch-initial-incremental-sync']?.priority).toBe(1);
     expect(byId['ch-initial-incremental-sync']?.criticalForPilot).toBe(true);
     expect(byId['ch-initial-incremental-sync']?.currentState).toMatch(/initial sync/i);
-    expect(byId['ch-initial-incremental-sync']?.currentState).toMatch(/incremental/i);
+    expect(byId['ch-initial-incremental-sync']?.currentState).toMatch(/incremental sync remains unfinished/i);
     expect(byId['ch-first-real-adapter']?.status).toBe('blocked');
     expect(byId['ch-first-real-adapter']?.priority).toBe(1);
     expect(byId['ch-outbound-publish']?.status).toBe('later');

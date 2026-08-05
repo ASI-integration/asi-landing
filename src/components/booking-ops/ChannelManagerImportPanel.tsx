@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { readResponseJson } from '@/lib/safeResponseJson';
+import { useSession } from '@/contexts/SessionContext';
 
 type Connection = {
   id: string; propertySetupId: string | null; provider: string; status: string; accessStatus: string;
@@ -36,6 +37,27 @@ type LiveCoreStatus = {
   schemaReady?: boolean;
 };
 
+type AcceptanceStepStatus = 'waiting' | 'running' | 'passed' | 'failed';
+type AcceptanceEvidence = {
+  acceptanceExecutionId?: string | null;
+  schemaReady: boolean;
+  ownerSetupId: string | null;
+  propertySetupId: string | null;
+  connectionId: string | null;
+  firstRunId: string | null;
+  secondRunId: string | null;
+  bookingOpsRecordId: string | null;
+  firstRunStatus: string | null;
+  secondRunStatus: string | null;
+  importedFirstRun: number | null;
+  importedSecondRun: number | null;
+  duplicateCount: number | null;
+  passed: boolean;
+  blocker: string | null;
+  failedStep: string | null;
+  steps: Array<{ key: string; label: string; status: AcceptanceStepStatus; detail: string | null }>;
+};
+
 const PROVIDERS = ['manual', 'bnovo', 'realtycalendar', 'travelline', 'other'] as const;
 const PROVIDER_LABELS: Record<string, string> = { manual: 'Ручной снимок', bnovo: 'Bnovo', realtycalendar: 'RealtyCalendar', travelline: 'TravelLine', other: 'Другой' };
 const STATUS_LABELS: Record<string, string> = {
@@ -48,7 +70,16 @@ const STATUS_LABELS: Record<string, string> = {
   completed: 'Завершён', completed_with_warnings: 'Завершён с предупреждениями', failed: 'Ошибка', running: 'Выполняется',
 };
 
+const ACCEPTANCE_STEP_STATUS_RU: Record<AcceptanceStepStatus, string> = {
+  waiting: 'ожидание',
+  running: 'выполняется',
+  passed: 'пройден',
+  failed: 'ошибка',
+};
+
 export function ChannelManagerImportPanel() {
+  const { session } = useSession();
+  const isDevelopmentOwner = session?.isDevelopmentOwner === true;
   const [connections, setConnections] = useState<Connection[]>([]);
   const [liveCoreByConnection, setLiveCoreByConnection] = useState<Record<string, LiveCoreStatus>>({});
   const [objects, setObjects] = useState<ImportedObject[]>([]);
@@ -60,6 +91,13 @@ export function ChannelManagerImportPanel() {
   const [snapshotText, setSnapshotText] = useState('{\n  "objects": [],\n  "bookings": [],\n  "calendar": [],\n  "pricing": []\n}');
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
+  const [acceptanceBusy, setAcceptanceBusy] = useState(false);
+  const [acceptanceEvidence, setAcceptanceEvidence] = useState<AcceptanceEvidence | null>(null);
+  const [acceptanceSchemaReady, setAcceptanceSchemaReady] = useState<boolean | null>(null);
+  const [acceptanceUnavailableReason, setAcceptanceUnavailableReason] = useState(
+    'Тестовый контур Live Core ещё не подготовлен. Нажмите «Подготовить и запустить тест».',
+  );
+  const [acceptanceError, setAcceptanceError] = useState('');
 
   const load = useCallback(async () => {
     const [connectionsRes, objectsRes, bookingsRes, calendarRes] = await Promise.all([
@@ -85,6 +123,31 @@ export function ChannelManagerImportPanel() {
   }, []);
 
   useEffect(() => { void load(); }, [load]);
+
+  const loadAcceptanceStatus = useCallback(async () => {
+    if (!isDevelopmentOwner) return;
+    const response = await fetch('/api/dashboard/channel-manager/live-core-acceptance', { credentials: 'include' });
+    const payload = await readResponseJson<{
+      ok: boolean;
+      schemaReady?: boolean;
+      unavailableReason?: string;
+      message?: string;
+    }>(response, { ok: false });
+    if (!response.ok || !payload.ok) {
+      setAcceptanceSchemaReady(false);
+      setAcceptanceUnavailableReason(payload.message || 'Не удалось проверить готовность Live Core.');
+      return;
+    }
+    setAcceptanceSchemaReady(payload.schemaReady === true);
+    setAcceptanceUnavailableReason(
+      payload.unavailableReason
+        || (payload.schemaReady
+          ? 'Тестовый контур Live Core ещё не подготовлен. Нажмите «Подготовить и запустить тест».'
+          : 'Миграция Channel Manager Live Core ещё не применена.'),
+    );
+  }, [isDevelopmentOwner]);
+
+  useEffect(() => { void loadAcceptanceStatus(); }, [loadAcceptanceStatus]);
 
   const selected = connections.find((item) => item.id === selectedId) ?? connections[0] ?? null;
   const liveCore = selected ? liveCoreByConnection[selected.id] ?? null : null;
@@ -135,6 +198,59 @@ export function ChannelManagerImportPanel() {
     });
   }
 
+  async function runAcceptanceHarness() {
+    if (!isDevelopmentOwner) return;
+    setAcceptanceBusy(true);
+    setAcceptanceError('');
+    setAcceptanceEvidence(null);
+    try {
+      const response = await fetch('/api/dashboard/channel-manager/live-core-acceptance', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ action: 'run' }),
+      });
+      const payload = await readResponseJson<{ ok: boolean; evidence?: AcceptanceEvidence; message?: string }>(response, { ok: false });
+      if (!response.ok || !payload.ok || !payload.evidence) {
+        throw new Error(payload.message || 'Не удалось выполнить проверку Live Core.');
+      }
+      setAcceptanceEvidence(payload.evidence);
+      await Promise.all([load(), loadAcceptanceStatus()]);
+    } catch (error) {
+      setAcceptanceError(error instanceof Error ? error.message : 'Не удалось выполнить проверку Live Core.');
+    } finally {
+      setAcceptanceBusy(false);
+    }
+  }
+
+  async function cleanupAcceptanceHarness() {
+    if (!isDevelopmentOwner) return;
+    if (!window.confirm('Удалить только тестовый контур Live Core Acceptance? Обычные данные пилота не будут затронуты.')) {
+      return;
+    }
+    setAcceptanceBusy(true);
+    setAcceptanceError('');
+    try {
+      const response = await fetch('/api/dashboard/channel-manager/live-core-acceptance', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ action: 'cleanup', confirm: true }),
+      });
+      const payload = await readResponseJson<{ ok: boolean; message?: string }>(response, { ok: false });
+      if (!response.ok || !payload.ok) {
+        throw new Error(payload.message || 'Не удалось удалить тестовый контур.');
+      }
+      setAcceptanceEvidence(null);
+      setMessage('Тестовый контур Live Core удалён.');
+      await Promise.all([load(), loadAcceptanceStatus()]);
+    } catch (error) {
+      setAcceptanceError(error instanceof Error ? error.message : 'Не удалось удалить тестовый контур.');
+    } finally {
+      setAcceptanceBusy(false);
+    }
+  }
+
   const onboardingAction = (body: Record<string, unknown>) => action('/api/dashboard/channel-manager/provider-onboarding/action', body);
   const targetPropertySetupId = selected?.propertySetupId || propertySetupId;
   const liveCounters = liveCore?.counters ?? liveCore?.latestRun?.counters;
@@ -176,6 +292,111 @@ export function ChannelManagerImportPanel() {
         })}
       </div>
       {!targetPropertySetupId ? <p className="mt-2 text-xs text-amber-700">Чтобы выбрать провайдера, укажите ID профиля объекта в дополнительных действиях.</p> : null}
+
+      {isDevelopmentOwner ? (
+        <div
+          className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50/50 p-3"
+          data-testid="channel-live-core-acceptance"
+        >
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h3 className="font-medium text-slate-900">Проверка Live Core</h3>
+              <p className="mt-1 text-xs leading-5 text-slate-600">
+                Безопасный синтетический тест initial sync для владельца. Не требует ручного ввода ID профиля объекта и не вызывает реальный API менеджера каналов.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <button
+                disabled={acceptanceBusy}
+                onClick={() => void runAcceptanceHarness()}
+                className="rounded-lg bg-emerald-700 px-3 py-1.5 text-xs text-white hover:bg-emerald-800 disabled:opacity-50"
+                data-testid="channel-live-core-acceptance-run"
+              >
+                Подготовить и запустить тест
+              </button>
+              <button
+                disabled={acceptanceBusy}
+                onClick={() => void cleanupAcceptanceHarness()}
+                className="rounded-lg border border-red-200 px-3 py-1.5 text-xs text-red-700 hover:bg-red-50 disabled:opacity-50"
+                data-testid="channel-live-core-acceptance-cleanup"
+              >
+                Удалить тестовый контур
+              </button>
+            </div>
+          </div>
+
+          {!acceptanceEvidence || !acceptanceEvidence.passed ? (
+            <div className="mt-3 space-y-1 text-xs text-slate-700">
+              <p>
+                <span className="font-medium">Почему сейчас недоступен обычный Live Core: </span>
+                {acceptanceEvidence?.blocker || acceptanceUnavailableReason}
+              </p>
+              <p>
+                <span className="font-medium">Готовность схемы: </span>
+                {acceptanceEvidence?.schemaReady === true || acceptanceSchemaReady === true ? 'готова' : 'не готова'}
+              </p>
+            </div>
+          ) : null}
+
+          {acceptanceError ? <p className="mt-3 text-xs text-red-700">{acceptanceError}</p> : null}
+
+          {acceptanceEvidence ? (
+            <div className="mt-3 space-y-3" data-testid="channel-live-core-acceptance-result">
+              <ol className="space-y-1">
+                {acceptanceEvidence.steps.map((step) => (
+                  <li
+                    key={step.key}
+                    className="flex flex-wrap items-center gap-2 rounded-lg bg-white px-3 py-2 text-xs text-slate-700"
+                    data-acceptance-step={step.key}
+                    data-acceptance-status={step.status}
+                  >
+                    <span className="font-medium text-slate-900">{step.label}</span>
+                    <span className={
+                      step.status === 'passed' ? 'text-emerald-700'
+                        : step.status === 'failed' ? 'text-red-700'
+                          : step.status === 'running' ? 'text-amber-700'
+                            : 'text-slate-500'
+                    }
+                    >
+                      {ACCEPTANCE_STEP_STATUS_RU[step.status]}
+                    </span>
+                    {step.detail ? <span className="text-slate-500">{step.detail}</span> : null}
+                  </li>
+                ))}
+              </ol>
+
+              {acceptanceEvidence.passed ? (
+                <p className="text-sm font-medium text-emerald-700" data-testid="channel-live-core-acceptance-passed">
+                  Acceptance пройден
+                </p>
+              ) : (
+                <p className="text-sm font-medium text-red-700" data-testid="channel-live-core-acceptance-failed">
+                  Ошибка на шаге: {acceptanceEvidence.steps.find((step) => step.key === acceptanceEvidence.failedStep)?.label
+                    ?? acceptanceEvidence.failedStep
+                    ?? 'неизвестно'}
+                  {acceptanceEvidence.blocker ? ` — ${acceptanceEvidence.blocker}` : ''}
+                </p>
+              )}
+
+              <details className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-600">
+                <summary className="cursor-pointer font-medium text-slate-700">Технические детали</summary>
+                <dl className="mt-2 grid gap-1 sm:grid-cols-2">
+                  <div><dt className="text-slate-500">acceptanceExecutionId</dt><dd className="font-mono">{acceptanceEvidence.acceptanceExecutionId ?? '—'}</dd></div>
+                  <div><dt className="text-slate-500">ownerSetupId</dt><dd className="font-mono">{acceptanceEvidence.ownerSetupId ?? '—'}</dd></div>
+                  <div><dt className="text-slate-500">propertySetupId</dt><dd className="font-mono">{acceptanceEvidence.propertySetupId ?? '—'}</dd></div>
+                  <div><dt className="text-slate-500">connectionId</dt><dd className="font-mono">{acceptanceEvidence.connectionId ?? '—'}</dd></div>
+                  <div><dt className="text-slate-500">firstRunId</dt><dd className="font-mono">{acceptanceEvidence.firstRunId ?? '—'}</dd></div>
+                  <div><dt className="text-slate-500">secondRunId</dt><dd className="font-mono">{acceptanceEvidence.secondRunId ?? '—'}</dd></div>
+                  <div><dt className="text-slate-500">bookingOpsRecordId</dt><dd className="font-mono">{acceptanceEvidence.bookingOpsRecordId ?? '—'}</dd></div>
+                  <div><dt className="text-slate-500">importedFirstRun</dt><dd>{acceptanceEvidence.importedFirstRun ?? '—'}</dd></div>
+                  <div><dt className="text-slate-500">importedSecondRun</dt><dd>{acceptanceEvidence.importedSecondRun ?? '—'}</dd></div>
+                  <div><dt className="text-slate-500">duplicateCount</dt><dd>{acceptanceEvidence.duplicateCount ?? '—'}</dd></div>
+                </dl>
+              </details>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
 
       {selected ? (
         <>

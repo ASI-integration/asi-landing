@@ -550,11 +550,16 @@ describe('Channel Manager Live Core repairs', () => {
   it('keeps roadmap honest: Live Core in progress until activation', () => {
     const byId = Object.fromEntries(allRoadmapStages(ASI_PRODUCT_ROADMAP).map((stage) => [stage.id, stage]));
     expect(byId['ch-live-core']?.status).toBe('in_progress');
-    expect(byId['ch-live-core']?.currentState).toMatch(/production activation is still pending/i);
+    expect(byId['ch-live-core']?.currentState).toMatch(/acceptance harness is available/i);
+    expect(byId['ch-live-core']?.currentState).toMatch(/remains in progress until the harness is run successfully in production/i);
     expect(byId['ch-initial-incremental-sync']?.status).toBe('in_progress');
+    expect(byId['ch-initial-incremental-sync']?.currentState).toMatch(/incremental sync remains unfinished/i);
     expect(byId['ch-first-real-adapter']?.status).toBe('blocked');
     const panel = readFileSync(resolve(process.cwd(), 'src/components/booking-ops/ChannelManagerImportPanel.tsx'), 'utf8');
     expect(panel).toContain('channel-live-core-status');
+    expect(panel).toContain('channel-live-core-acceptance');
+    expect(panel).toContain('Проверка Live Core');
+    expect(panel).toContain('Подготовить и запустить тест');
   });
 
   it('still imports a new booking and retries without duplicates', async () => {
