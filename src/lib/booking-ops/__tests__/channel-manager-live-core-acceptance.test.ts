@@ -327,7 +327,7 @@ beforeEach(() => {
     }),
   }));
 
-  supabaseRpc.mockImplementation(async (fn: string) => {
+  supabaseRpc.mockImplementation(async (fn: string, payload?: Record<string, unknown>) => {
     if (fn === 'channel_manager_live_core_schema_state') {
       return {
         data: {
@@ -340,12 +340,61 @@ beforeEach(() => {
       };
     }
     if (fn === 'channel_manager_live_core_booking_ops_fk_children') {
-      return { data: [], error: null };
+      return {
+        data: { ok: true, blocker_code: 'none', blocker_summary: null, edges: [] },
+        error: null,
+      };
     }
     if (fn === 'channel_manager_live_core_synthetic_recovery_cleanup') {
+      const dryRun = payload?.p_dry_run === true;
+      const bookingOpsId = String(payload?.p_booking_ops_record_id ?? '');
+      const manifest = (payload?.p_deletion_manifest ?? {}) as Record<string, string[]>;
+      if (dryRun) {
+        return {
+          data: {
+            status: 'passed',
+            transaction_committed: false,
+            dry_run: true,
+            blocker_code: 'none',
+            deleted_counts_by_table: Object.fromEntries(
+              Object.entries(manifest).map(([table, ids]) => [table, ids.length]),
+            ),
+            post_verification: { dryRun: true },
+          },
+          error: null,
+        };
+      }
+      // Simulate transactional RPC: remove exact manifest IDs from in-memory fixtures.
+      for (const [table, ids] of Object.entries(manifest)) {
+        if (!ids?.length) continue;
+        if (table === 'booking_ops_autopilot_states') {
+          tables[table] = rows(table).filter((row) => !ids.includes(String(row.booking_id)));
+          continue;
+        }
+        tables[table] = rows(table).filter((row) => !ids.includes(String(row.id)));
+      }
+      if (bookingOpsId) {
+        tables.booking_ops_records = rows('booking_ops_records').filter((row) => row.id !== bookingOpsId);
+      }
       return {
-        data: null,
-        error: { message: 'function channel_manager_live_core_synthetic_recovery_cleanup does not exist' },
+        data: {
+          status: 'passed',
+          transaction_committed: true,
+          blocker_code: 'none',
+          blocker_summary: null,
+          safe_error: null,
+          deleted_counts_by_table: Object.fromEntries(
+            Object.entries(manifest).map(([table, ids]) => [table, ids.length]),
+          ),
+          post_verification: {
+            deterministicIdentityGone: true,
+            descendantsRemain: false,
+            descendantCount: 0,
+            contourPreserved: true,
+            importRunsPreserved: true,
+          },
+        },
+        error: null,
       };
     }
     return { data: null, error: null };

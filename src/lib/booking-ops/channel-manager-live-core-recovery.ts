@@ -94,41 +94,44 @@ export type LiveCoreRecoveryCleanupResult = {
 /** Direct FK children of booking_ops_records that recovery may delete when verified. */
 export const RECOVERY_ALLOWLISTED_DIRECT_CHILDREN: ReadonlyArray<{
   table: string;
-  column: 'booking_id' | 'booking_ops_record_id';
+  column: 'booking_id' | 'booking_ops_record_id' | 'matched_booking_id';
+  pkColumn: 'id' | 'booking_id';
   relationship: string;
 }> = [
-  { table: 'booking_ops_events', column: 'booking_ops_record_id', relationship: 'direct_fk_events' },
-  { table: 'booking_ops_tasks', column: 'booking_ops_record_id', relationship: 'direct_fk_tasks' },
-  { table: 'booking_ops_worker_tasks', column: 'booking_id', relationship: 'direct_fk_worker_tasks' },
-  { table: 'booking_ops_communication_intents', column: 'booking_ops_record_id', relationship: 'direct_fk_intents' },
-  { table: 'booking_ops_lifecycle_drafts', column: 'booking_id', relationship: 'direct_fk_lifecycle_drafts' },
-  { table: 'booking_ops_lifecycle_states', column: 'booking_id', relationship: 'direct_fk_lifecycle_states' },
-  { table: 'booking_ops_domain_events', column: 'booking_id', relationship: 'direct_fk_domain_events' },
-  { table: 'booking_ops_guest_intake_sessions', column: 'booking_id', relationship: 'direct_fk_guest_intake' },
-  { table: 'booking_ops_lifecycle_runs', column: 'booking_id', relationship: 'direct_fk_lifecycle_runs' },
-  { table: 'booking_ops_alerts', column: 'booking_id', relationship: 'direct_fk_alerts' },
-  { table: 'booking_availability_holds', column: 'booking_id', relationship: 'direct_fk_holds' },
-  { table: 'booking_overbooking_conflict_checks', column: 'booking_id', relationship: 'direct_fk_overbooking' },
-  { table: 'booking_ops_telegram_drafts', column: 'booking_ops_record_id', relationship: 'direct_fk_telegram_drafts' },
-  { table: 'reservation_source_links', column: 'booking_ops_record_id', relationship: 'direct_fk_source_links' },
-  { table: 'booking_deposits', column: 'booking_id', relationship: 'direct_fk_deposits' },
-  { table: 'booking_contracts', column: 'booking_id', relationship: 'direct_fk_contracts' },
-  { table: 'booking_guest_documents', column: 'booking_id', relationship: 'direct_fk_documents' },
-  { table: 'booking_mvd_reports', column: 'booking_id', relationship: 'direct_fk_mvd' },
-  { table: 'booking_legal_payment_runs', column: 'booking_id', relationship: 'direct_fk_legal_payment_runs' },
+  { table: 'booking_ops_events', column: 'booking_ops_record_id', pkColumn: 'id', relationship: 'direct_fk_events' },
+  { table: 'booking_ops_tasks', column: 'booking_ops_record_id', pkColumn: 'id', relationship: 'direct_fk_tasks' },
+  { table: 'booking_ops_worker_tasks', column: 'booking_id', pkColumn: 'id', relationship: 'direct_fk_worker_tasks' },
+  { table: 'booking_ops_communication_intents', column: 'booking_ops_record_id', pkColumn: 'id', relationship: 'direct_fk_intents' },
+  { table: 'booking_ops_lifecycle_drafts', column: 'booking_id', pkColumn: 'id', relationship: 'direct_fk_lifecycle_drafts' },
+  { table: 'booking_ops_lifecycle_states', column: 'booking_id', pkColumn: 'id', relationship: 'direct_fk_lifecycle_states' },
+  { table: 'booking_ops_domain_events', column: 'booking_id', pkColumn: 'id', relationship: 'direct_fk_domain_events' },
+  { table: 'booking_ops_guest_intake_sessions', column: 'booking_ops_record_id', pkColumn: 'id', relationship: 'direct_fk_guest_intake' },
+  { table: 'booking_ops_lifecycle_runs', column: 'booking_id', pkColumn: 'id', relationship: 'direct_fk_lifecycle_runs' },
+  { table: 'booking_ops_alerts', column: 'booking_id', pkColumn: 'id', relationship: 'direct_fk_alerts' },
+  { table: 'booking_availability_holds', column: 'booking_id', pkColumn: 'id', relationship: 'direct_fk_holds' },
+  { table: 'booking_overbooking_conflict_checks', column: 'booking_id', pkColumn: 'id', relationship: 'direct_fk_overbooking' },
+  { table: 'booking_ops_telegram_drafts', column: 'booking_ops_record_id', pkColumn: 'id', relationship: 'direct_fk_telegram_drafts' },
+  { table: 'booking_ops_autopilot_states', column: 'booking_id', pkColumn: 'booking_id', relationship: 'direct_fk_autopilot_states' },
 ] as const;
 
 /** Probe tables that must remain empty for a safe legacy synthetic candidate. */
 const UNSAFE_IF_PRESENT_TABLES: ReadonlyArray<{
   table: string;
-  column: 'booking_id' | 'booking_ops_record_id';
+  column: 'booking_id' | 'booking_ops_record_id' | 'matched_booking_id';
   blocker: RecoveryBlockerCode;
   label: string;
 }> = [
   { table: 'booking_ops_communication_deliveries', column: 'booking_id', blocker: 'deliveries_present', label: 'deliveries' },
   { table: 'booking_deposits', column: 'booking_id', blocker: 'payments_present', label: 'deposits' },
-  { table: 'booking_legal_payment_runs', column: 'booking_id', blocker: 'payments_present', label: 'legal_payment_runs' },
+  { table: 'booking_contracts', column: 'booking_id', blocker: 'payments_present', label: 'contracts' },
   { table: 'reservation_source_links', column: 'booking_ops_record_id', blocker: 'identity_mismatch', label: 'source_links' },
+  // SET NULL on parent delete is still a mutation — presence blocks cleanup.
+  {
+    table: 'booking_channel_imported_bookings',
+    column: 'matched_booking_id',
+    blocker: 'unknown_fk_descendant',
+    label: 'imported bookings (SET NULL)',
+  },
 ];
 
 function isMissingRelationError(error: { code?: string; message?: string } | null | undefined): boolean {
@@ -174,19 +177,24 @@ function emptyPreview(partial: Partial<LiveCoreRecoveryPreview> = {}): LiveCoreR
   };
 }
 
-async function selectIds(
+async function selectKeys(
   table: string,
-  column: string,
-  value: string,
-): Promise<{ ids: string[]; error: string | null; missing?: boolean }> {
-  const { data, error } = await supabase.from(table).select('id').eq(column, value);
+  fkColumn: string,
+  fkValue: string,
+  pkColumn: string,
+): Promise<{ keys: string[]; error: string | null; missing?: boolean }> {
+  const { data, error } = await supabase.from(table).select(pkColumn).eq(fkColumn, fkValue);
   if (error) {
+    // Fail closed: missing relation/column is a blocker for preview safety, not silent success.
     if (isMissingRelationError(error) || isMissingColumnError(error)) {
-      return { ids: [], error: null, missing: true };
+      return { keys: [], error: `${table}.${fkColumn}/${pkColumn}: ${error.message}` };
     }
-    return { ids: [], error: `${table}: ${error.message}` };
+    return { keys: [], error: `${table}: ${error.message}` };
   }
-  return { ids: (data ?? []).map((row) => String(row.id)), error: null };
+  return {
+    keys: (data ?? []).map((row) => String((row as unknown as Record<string, unknown>)[pkColumn])),
+    error: null,
+  };
 }
 
 async function loadPreservedContour(): Promise<LiveCoreRecoveryPreview['preservedContour'] & {
@@ -327,7 +335,7 @@ async function classifyLegacySyntheticCandidate(row: {
   }
 
   for (const probe of UNSAFE_IF_PRESENT_TABLES) {
-    const result = await selectIds(probe.table, probe.column, row.id);
+    const result = await selectKeys(probe.table, probe.column, row.id, 'id');
     if (result.error) {
       return {
         classification: 'unknown_unsafe',
@@ -336,12 +344,12 @@ async function classifyLegacySyntheticCandidate(row: {
         evidence,
       };
     }
-    if (result.ids.length > 0) {
+    if (result.keys.length > 0) {
       return {
         classification: 'unknown_unsafe',
         blockerCode: probe.blocker,
-        blockerSummary: `Найдены ${probe.label} (${result.ids.length}) — удаление заблокировано.`,
-        evidence: { [probe.table]: result.ids },
+        blockerSummary: `Найдены ${probe.label} (${result.keys.length}) — удаление заблокировано.`,
+        evidence: { [probe.table]: result.keys },
       };
     }
   }
@@ -382,12 +390,12 @@ async function collectDescendants(
   const unknownTables: string[] = [];
 
   for (const child of RECOVERY_ALLOWLISTED_DIRECT_CHILDREN) {
-    const result = await selectIds(child.table, child.column, bookingOpsId);
+    const result = await selectKeys(child.table, child.column, bookingOpsId, child.pkColumn);
     if (result.error) return { manifest, countsByTable, exactIdsByTable, unknownTables, error: result.error };
-    if (result.ids.length === 0) continue;
-    exactIdsByTable[child.table] = result.ids;
-    countsByTable[child.table] = result.ids.length;
-    for (const id of result.ids) {
+    if (result.keys.length === 0) continue;
+    exactIdsByTable[child.table] = result.keys;
+    countsByTable[child.table] = result.keys.length;
+    for (const id of result.keys) {
       manifest.push({
         table: child.table,
         id,
@@ -397,7 +405,7 @@ async function collectDescendants(
     }
   }
 
-  // Indirect deliveries via intents.
+  // Indirect deliveries via intents — any presence is unsafe for synthetic cleanup.
   const intentIds = exactIdsByTable.booking_ops_communication_intents ?? [];
   if (intentIds.length > 0) {
     const { data, error } = await supabase
@@ -406,6 +414,9 @@ async function collectDescendants(
       .in('communication_intent_id', intentIds);
     if (error && !isMissingRelationError(error) && !isMissingColumnError(error)) {
       return { manifest, countsByTable, exactIdsByTable, unknownTables, error: error.message };
+    }
+    if (error && (isMissingRelationError(error) || isMissingColumnError(error))) {
+      return { manifest, countsByTable, exactIdsByTable, unknownTables, error: `booking_ops_communication_deliveries: ${error.message}` };
     }
     const deliveryIds = (data ?? []).map((row) => String(row.id));
     if (deliveryIds.length > 0) {
@@ -422,28 +433,51 @@ async function collectDescendants(
     }
   }
 
-  // Probe for unknown FK children via information_schema helper when available.
+  // Live FK probe via RPC — must succeed and report no unknown/non-allowlisted children with rows.
   const fkProbe = await supabase.rpc('channel_manager_live_core_booking_ops_fk_children', {
     p_booking_ops_record_id: bookingOpsId,
   });
-  if (!fkProbe.error && Array.isArray(fkProbe.data)) {
-    const allowlisted = new Set(RECOVERY_ALLOWLISTED_DIRECT_CHILDREN.map((item) => item.table));
-    allowlisted.add('booking_ops_communication_deliveries');
-    allowlisted.add('booking_channel_imported_bookings');
-    for (const hit of fkProbe.data as Array<{ table_name?: string; child_id?: string; column_name?: string }>) {
-      const table = String(hit.table_name ?? '');
-      const id = String(hit.child_id ?? '');
-      if (!table || !id) continue;
-      if (allowlisted.has(table)) continue;
+  if (fkProbe.error) {
+    if (/function .* does not exist|Could not find the function/i.test(fkProbe.error.message)) {
+      // Preview can still classify without live RPC; committed cleanup will hard-block.
+      return { manifest, countsByTable, exactIdsByTable, unknownTables, error: null };
+    }
+    return { manifest, countsByTable, exactIdsByTable, unknownTables, error: fkProbe.error.message };
+  }
+
+  const payload = fkProbe.data as Record<string, unknown> | null;
+  if (payload && typeof payload === 'object' && payload.ok === false) {
+    return {
+      manifest,
+      countsByTable,
+      exactIdsByTable,
+      unknownTables,
+      error: String(payload.blocker_summary ?? 'FK discovery failed'),
+    };
+  }
+
+  const edges = Array.isArray((payload as { edges?: unknown })?.edges)
+    ? (payload as { edges: Array<Record<string, unknown>> }).edges
+    : [];
+  const allowlisted = new Set(RECOVERY_ALLOWLISTED_DIRECT_CHILDREN.map((item) => item.table));
+  for (const edge of edges) {
+    const table = String(edge.table_name ?? '');
+    const rowCount = Number(edge.row_count ?? 0);
+    const deletable = edge.deletable === true;
+    if (!table || rowCount <= 0) continue;
+    if (!deletable || !allowlisted.has(table)) {
       unknownTables.push(table);
-      exactIdsByTable[table] = [...(exactIdsByTable[table] ?? []), id];
-      countsByTable[table] = (countsByTable[table] ?? 0) + 1;
-      manifest.push({
-        table,
-        id,
-        relationship: `unknown_fk:${hit.column_name ?? 'ref'}`,
-        classification: 'unknown_unsafe',
-      });
+      const childKeys = Array.isArray(edge.child_keys) ? edge.child_keys.map(String) : [];
+      exactIdsByTable[table] = [...(exactIdsByTable[table] ?? []), ...childKeys];
+      countsByTable[table] = (countsByTable[table] ?? 0) + rowCount;
+      for (const id of childKeys) {
+        manifest.push({
+          table,
+          id,
+          relationship: `unknown_fk:${String(edge.column_name ?? 'ref')}`,
+          classification: 'unknown_unsafe',
+        });
+      }
     }
   }
 
@@ -709,13 +743,31 @@ export async function cleanupLiveCoreSyntheticRecovery(input: {
   );
 
   if (error) {
-    // Application-level fallback for environments without the RPC yet (tests / pre-migration).
+    // Missing migration/RPC must never downgrade into partial REST deletes.
     if (/function .* does not exist|Could not find the function/i.test(error.message)) {
-      return cleanupViaApplicationFallback({
+      if (dryRun) {
+        return {
+          status: 'passed',
+          transactionCommitted: false,
+          dryRun: true,
+          deletedCountsByTable: Object.fromEntries(
+            Object.entries(deletionManifest).map(([table, ids]) => [table, ids.length]),
+          ),
+          preservedContour: preview.preservedContour,
+          preservedImportRuns: preview.importRunIds,
+          postVerification: { dryRun: true, schemaRpcUnavailable: true },
+          preview,
+          blockerCode: 'none',
+          blockerSummary: null,
+          safeError: null,
+        };
+      }
+      return blockedCleanup(
         preview,
         dryRun,
-        deletionManifest,
-      });
+        'schema_rpc_unavailable',
+        'Transactional recovery RPC недоступен — committed cleanup заблокирован. Partial REST cleanup запрещён.',
+      );
     }
     return {
       status: 'failed',
@@ -752,148 +804,5 @@ export async function cleanupLiveCoreSyntheticRecovery(input: {
     blockerCode: (result.blocker_code as RecoveryBlockerCode) ?? (status === 'passed' ? 'none' : 'cleanup_failed'),
     blockerSummary: (result.blocker_summary as string | null) ?? null,
     safeError: (result.safe_error as string | null) ?? null,
-  };
-}
-
-async function cleanupViaApplicationFallback(input: {
-  preview: LiveCoreRecoveryPreview;
-  dryRun: boolean;
-  deletionManifest: Record<string, string[]>;
-}): Promise<LiveCoreRecoveryCleanupResult> {
-  const { preview, dryRun, deletionManifest } = input;
-  if (dryRun) {
-    return {
-      status: 'passed',
-      transactionCommitted: false,
-      dryRun: true,
-      deletedCountsByTable: Object.fromEntries(
-        Object.entries(deletionManifest).map(([table, ids]) => [table, ids.length]),
-      ),
-      preservedContour: preview.preservedContour,
-      preservedImportRuns: preview.importRunIds,
-      postVerification: { dryRun: true, rpcUnavailable: true },
-      preview,
-      blockerCode: 'none',
-      blockerSummary: null,
-      safeError: null,
-    };
-  }
-
-  // Re-check main row before mutation.
-  const mainId = preview.mainRecord!.id;
-  const locked = await supabase
-    .from('booking_ops_records')
-    .select('id,property_id,booking_id,guest_name,guest_phone,guest_email,guest_telegram,account_id,reservation_metadata')
-    .eq('id', mainId)
-    .maybeSingle();
-
-  if (locked.error || !locked.data) {
-    return blockedCleanup(preview, dryRun, 'row_changed', 'Основная запись изменилась или исчезла.');
-  }
-
-  const row = locked.data;
-  if (
-    String(row.property_id ?? '') !== LIVE_CORE_ACCEPTANCE_PROPERTY_ID
-    || String(row.booking_id ?? '') !== LIVE_CORE_ACCEPTANCE_EXTERNAL_BOOKING_ID
-    || String(row.guest_name ?? '') !== LIVE_CORE_ACCEPTANCE_GUEST_NAME
-    || row.account_id
-    || row.guest_phone
-    || row.guest_email
-    || row.guest_telegram
-  ) {
-    return blockedCleanup(preview, dryRun, 'row_changed', 'Safety checks не прошли внутри cleanup.');
-  }
-
-  const deletedCountsByTable: Record<string, number> = {};
-  const deleteOrder = [
-    ...Object.keys(deletionManifest).filter((table) => table !== 'booking_ops_records'),
-    'booking_ops_records',
-  ];
-
-  for (const table of deleteOrder) {
-    const ids = deletionManifest[table] ?? [];
-    if (ids.length === 0) continue;
-    const { data, error } = await supabase.from(table).delete().in('id', ids).select('id');
-    if (error) {
-      if (isMissingRelationError(error) || isMissingColumnError(error)) continue;
-      return {
-        status: 'failed',
-        transactionCommitted: false,
-        dryRun: false,
-        deletedCountsByTable,
-        preservedContour: preview.preservedContour,
-        preservedImportRuns: preview.importRunIds,
-        postVerification: { failedTable: table },
-        preview,
-        blockerCode: 'cleanup_failed',
-        blockerSummary: `${table}: ${error.message}`,
-        safeError: error.message.slice(0, 240),
-      };
-    }
-    deletedCountsByTable[table] = (data ?? []).length;
-    if ((data ?? []).length !== ids.length) {
-      return {
-        status: 'failed',
-        transactionCommitted: false,
-        dryRun: false,
-        deletedCountsByTable,
-        preservedContour: preview.preservedContour,
-        preservedImportRuns: preview.importRunIds,
-        postVerification: {
-          failedTable: table,
-          expected: ids.length,
-          actual: (data ?? []).length,
-        },
-        preview,
-        blockerCode: 'row_changed',
-        blockerSummary: `Количество удалённых строк в ${table} не совпало с preview.`,
-        safeError: 'deleted_count_mismatch',
-      };
-    }
-  }
-
-  const remaining = await previewLiveCoreSyntheticRecovery();
-  const contourStillPresent = Boolean(
-    preview.preservedContour.ownerSetupId
-    && preview.preservedContour.propertySetupId
-    && preview.preservedContour.connectionId,
-  );
-
-  for (const runId of preview.importRunIds) {
-    const { data } = await supabase.from('booking_channel_import_runs').select('id').eq('id', runId).maybeSingle();
-    if (!data?.id) {
-      return {
-        status: 'failed',
-        transactionCommitted: false,
-        dryRun: false,
-        deletedCountsByTable,
-        preservedContour: preview.preservedContour,
-        preservedImportRuns: preview.importRunIds,
-        postVerification: { missingImportRunId: runId },
-        preview,
-        blockerCode: 'cleanup_failed',
-        blockerSummary: 'История import runs была затронута — это недопустимо.',
-        safeError: 'import_run_missing',
-      };
-    }
-  }
-
-  return {
-    status: remaining.recoveryRequired ? 'failed' : 'passed',
-    transactionCommitted: !remaining.recoveryRequired,
-    dryRun: false,
-    deletedCountsByTable,
-    preservedContour: preview.preservedContour,
-    preservedImportRuns: preview.importRunIds,
-    postVerification: {
-      deterministicIdentityGone: !remaining.recoveryRequired,
-      descendantsRemain: remaining.recoveryRequired,
-      contourPreserved: contourStillPresent,
-      rpcUnavailableFallback: true,
-    },
-    preview: remaining,
-    blockerCode: remaining.recoveryRequired ? 'cleanup_failed' : 'none',
-    blockerSummary: remaining.recoveryRequired ? 'После cleanup остались артефакты.' : null,
-    safeError: null,
   };
 }

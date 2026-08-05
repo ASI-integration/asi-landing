@@ -14,6 +14,7 @@ function rows(table: string): Row[] { return tables[table] ?? (tables[table] = [
 class Query {
   private filtered: Row[];
   private deleteMode = false;
+  private deleteCalls = 0;
   constructor(private table: string, private options: { patch?: Row; count?: boolean; head?: boolean; deleteMode?: boolean } = {}) {
     this.filtered = [...rows(table)];
     this.deleteMode = options.deleteMode === true;
@@ -38,9 +39,10 @@ class Query {
   select() { return this; }
   private execute() {
     if (this.deleteMode) {
+      this.deleteCalls += 1;
       const removed = this.filtered;
-      const removedIds = removed.map((row) => String(row.id));
-      tables[this.table] = rows(this.table).filter((row) => !removedIds.includes(String(row.id)));
+      const removedKeys = removed.map((row) => String(row.id ?? row.booking_id));
+      tables[this.table] = rows(this.table).filter((row) => !removedKeys.includes(String(row.id ?? row.booking_id)));
       return { data: removed, error: null, count: removed.length };
     }
     if (this.options.patch) for (const row of this.filtered) Object.assign(row, this.options.patch);
@@ -74,6 +76,7 @@ import {
 import {
   cleanupLiveCoreSyntheticRecovery,
   previewLiveCoreSyntheticRecovery,
+  RECOVERY_ALLOWLISTED_DIRECT_CHILDREN,
 } from '../channel-manager-live-core-recovery';
 import {
   buildLiveCoreAcceptanceReservationMetadata,
@@ -85,6 +88,8 @@ const OWNER_ID = '39e6b608-a6d9-413f-9b4d-02d1e4d81890';
 const PROPERTY_SETUP_ID = '1a14e03b-465d-4000-be05-c06f452818a1';
 const CONNECTION_ID = '9f97a660-81f8-4583-9125-f95216f8dd03';
 const IMPORT_RUN_ID = 'c9fe1308-e0c3-4c90-9131-b0ef33f67bf1';
+
+let deleteInvocations: Array<{ table: string }> = [];
 
 function seedContour() {
   rows('booking_owner_setup_profiles').push({
@@ -133,8 +138,34 @@ function seedLegacyOrphan(overrides: Row = {}) {
   return id;
 }
 
+function mockFkOk(edges: Array<Record<string, unknown>> = []) {
+  return { data: { ok: true, blocker_code: 'none', blocker_summary: null, edges }, error: null };
+}
+
+function mockCleanupRpcPassed(deletedCountsByTable: Record<string, number>) {
+  return {
+    data: {
+      status: 'passed',
+      transaction_committed: true,
+      blocker_code: 'none',
+      blocker_summary: null,
+      safe_error: null,
+      deleted_counts_by_table: deletedCountsByTable,
+      post_verification: {
+        deterministicIdentityGone: true,
+        descendantsRemain: false,
+        descendantCount: 0,
+        contourPreserved: true,
+        importRunsPreserved: true,
+      },
+    },
+    error: null,
+  };
+}
+
 beforeEach(() => {
   for (const key of Object.keys(tables)) tables[key] = [];
+  deleteInvocations = [];
   supabaseRpc.mockReset();
   supabaseFrom.mockReset();
   supabaseFrom.mockImplementation((table: string) => ({
@@ -147,11 +178,14 @@ beforeEach(() => {
       return query;
     },
     update: (patch: Row) => new Query(table, { patch }),
-    delete: () => new Query(table, { deleteMode: true }),
+    delete: () => {
+      deleteInvocations.push({ table });
+      return new Query(table, { deleteMode: true });
+    },
   }));
   supabaseRpc.mockImplementation(async (fn: string) => {
     if (fn === 'channel_manager_live_core_booking_ops_fk_children') {
-      return { data: [], error: null };
+      return mockFkOk();
     }
     return {
       data: null,
@@ -181,6 +215,23 @@ describe('Live Core synthetic recovery', () => {
     })).toBeNull();
   });
 
+  it('uses reviewed FK mappings for guest_intake_sessions and autopilot_states', () => {
+    const intake = RECOVERY_ALLOWLISTED_DIRECT_CHILDREN.find((item) => item.table === 'booking_ops_guest_intake_sessions');
+    const autopilot = RECOVERY_ALLOWLISTED_DIRECT_CHILDREN.find((item) => item.table === 'booking_ops_autopilot_states');
+    expect(intake).toEqual({
+      table: 'booking_ops_guest_intake_sessions',
+      column: 'booking_ops_record_id',
+      pkColumn: 'id',
+      relationship: 'direct_fk_guest_intake',
+    });
+    expect(autopilot).toEqual({
+      table: 'booking_ops_autopilot_states',
+      column: 'booking_id',
+      pkColumn: 'booking_id',
+      relationship: 'direct_fk_autopilot_states',
+    });
+  });
+
   it('preview returns safe for a valid synthetic orphan', async () => {
     seedContour();
     const orphanId = seedLegacyOrphan();
@@ -200,6 +251,32 @@ describe('Live Core synthetic recovery', () => {
     expect(preview.preservedContour.connectionId).toBe(CONNECTION_ID);
     expect(preview.importRunIds).toContain(IMPORT_RUN_ID);
     expect(preview.expectedDeletionTotal).toBe(2);
+  });
+
+  it('preview collects guest_intake_sessions via booking_ops_record_id', async () => {
+    seedContour();
+    const orphanId = seedLegacyOrphan();
+    const sessionId = randomUUID();
+    rows('booking_ops_guest_intake_sessions').push({
+      id: sessionId,
+      booking_ops_record_id: orphanId,
+      booking_id: 'external-not-used-as-fk',
+    });
+    const preview = await previewLiveCoreSyntheticRecovery();
+    expect(preview.safeToCleanup).toBe(true);
+    expect(preview.exactIdsByTable.booking_ops_guest_intake_sessions).toEqual([sessionId]);
+  });
+
+  it('preview collects autopilot_states keyed by booking_id PK', async () => {
+    seedContour();
+    const orphanId = seedLegacyOrphan();
+    rows('booking_ops_autopilot_states').push({
+      booking_id: orphanId,
+      state: 'idle',
+    });
+    const preview = await previewLiveCoreSyntheticRecovery();
+    expect(preview.safeToCleanup).toBe(true);
+    expect(preview.exactIdsByTable.booking_ops_autopilot_states).toEqual([orphanId]);
   });
 
   it('preview blocks a row with phone/email/account_id', async () => {
@@ -251,20 +328,35 @@ describe('Live Core synthetic recovery', () => {
     expect(preview.blockerCode).toBe('payments_present');
   });
 
-  it('preview blocks unknown FK descendants', async () => {
+  it('preview blocks booking_channel_imported_bookings SET NULL edge', async () => {
     seedContour();
     const orphanId = seedLegacyOrphan();
+    rows('booking_channel_imported_bookings').push({
+      id: randomUUID(),
+      matched_booking_id: orphanId,
+      external_booking_id: LIVE_CORE_ACCEPTANCE_EXTERNAL_BOOKING_ID,
+    });
+    const preview = await previewLiveCoreSyntheticRecovery();
+    expect(preview.safeToCleanup).toBe(false);
+    expect(preview.blockerCode).toBe('unknown_fk_descendant');
+    expect(String(preview.blockerSummary ?? '')).toMatch(/SET NULL|imported bookings/i);
+  });
+
+  it('preview blocks unknown FK descendants from live probe', async () => {
+    seedContour();
+    const orphanId = seedLegacyOrphan();
+    const childId = randomUUID();
     supabaseRpc.mockImplementation(async (fn: string) => {
       if (fn === 'channel_manager_live_core_booking_ops_fk_children') {
-        return {
-          data: [{
-            table_name: 'mysterious_booking_child',
-            column_name: 'booking_id',
-            child_id: randomUUID(),
-            delete_action: 'c',
-          }],
-          error: null,
-        };
+        return mockFkOk([{
+          table_name: 'mysterious_booking_child',
+          column_name: 'booking_id',
+          delete_action: 'c',
+          pk_column: 'id',
+          deletable: false,
+          row_count: 1,
+          child_keys: [childId],
+        }]);
       }
       return { data: null, error: { message: 'function missing' } };
     });
@@ -274,7 +366,102 @@ describe('Live Core synthetic recovery', () => {
     expect(preview.mainRecord?.id).toBe(orphanId);
   });
 
-  it('cleanup deletes exact verified descendants and preserves contour/import runs', async () => {
+  it('preview blocks when live FK discovery fails closed', async () => {
+    seedContour();
+    seedLegacyOrphan();
+    supabaseRpc.mockImplementation(async (fn: string) => {
+      if (fn === 'channel_manager_live_core_booking_ops_fk_children') {
+        return {
+          data: {
+            ok: false,
+            blocker_code: 'unknown_fk_descendant',
+            blocker_summary: 'Uninspectable FK edge booking_ops_no_id_child.booking_id pk=id',
+            edges: [],
+          },
+          error: null,
+        };
+      }
+      return { data: null, error: { message: 'function missing' } };
+    });
+    const preview = await previewLiveCoreSyntheticRecovery();
+    expect(preview.safeToCleanup).toBe(false);
+    expect(preview.blockerCode).toBe('cleanup_failed');
+    expect(String(preview.blockerSummary ?? '')).toMatch(/Uninspectable FK edge/i);
+  });
+
+  it('preview fails closed on wrong FK-column / missing column mapping', async () => {
+    seedContour();
+    seedLegacyOrphan();
+    supabaseFrom.mockImplementation((table: string) => ({
+      select: () => {
+        if (table === 'booking_ops_guest_intake_sessions') {
+          return {
+            eq: () => ({
+              then(resolve: (value: { data: null; error: { code: string; message: string } }) => void) {
+                resolve({
+                  data: null,
+                  error: { code: '42703', message: 'column booking_ops_record_id does not exist' },
+                });
+              },
+            }),
+          };
+        }
+        return new Query(table);
+      },
+      insert: () => new Query(table),
+      update: (patch: Row) => new Query(table, { patch }),
+      delete: () => new Query(table, { deleteMode: true }),
+    }));
+
+    const preview = await previewLiveCoreSyntheticRecovery();
+    expect(preview.safeToCleanup).toBe(false);
+    expect(preview.blockerCode).toBe('cleanup_failed');
+    expect(String(preview.blockerSummary ?? '')).toMatch(/booking_ops_guest_intake_sessions/);
+  });
+
+  it('RPC unavailable: dry-run may preview, committed cleanup blocks without REST DELETE', async () => {
+    seedContour();
+    const orphanId = seedLegacyOrphan();
+    rows('booking_ops_events').push({ id: randomUUID(), booking_ops_record_id: orphanId });
+
+    const dryRun = await cleanupLiveCoreSyntheticRecovery({ dryRun: true });
+    expect(dryRun.status).toBe('passed');
+    expect(dryRun.transactionCommitted).toBe(false);
+    expect(dryRun.postVerification.schemaRpcUnavailable).toBe(true);
+    expect(deleteInvocations).toHaveLength(0);
+    expect(rows('booking_ops_records')).toHaveLength(1);
+
+    const committed = await cleanupLiveCoreSyntheticRecovery({
+      dryRun: false,
+      confirmPhrase: LIVE_CORE_RECOVERY_CONFIRM_PHRASE,
+      expectedBookingOpsRecordId: orphanId,
+    });
+    expect(committed.status).toBe('blocked');
+    expect(committed.blockerCode).toBe('schema_rpc_unavailable');
+    expect(committed.transactionCommitted).toBe(false);
+    expect(deleteInvocations).toHaveLength(0);
+    expect(rows('booking_ops_records')).toHaveLength(1);
+    expect(rows('booking_ops_events')).toHaveLength(1);
+  });
+
+  it('partial REST cleanup is impossible when RPC is unavailable', async () => {
+    seedContour();
+    const orphanId = seedLegacyOrphan();
+    const taskId = randomUUID();
+    rows('booking_ops_tasks').push({ id: taskId, booking_ops_record_id: orphanId });
+
+    await cleanupLiveCoreSyntheticRecovery({
+      dryRun: false,
+      confirmPhrase: LIVE_CORE_RECOVERY_CONFIRM_PHRASE,
+      expectedBookingOpsRecordId: orphanId,
+    });
+
+    expect(deleteInvocations).toEqual([]);
+    expect(rows('booking_ops_tasks').some((row) => row.id === taskId)).toBe(true);
+    expect(rows('booking_ops_records').some((row) => row.id === orphanId)).toBe(true);
+  });
+
+  it('cleanup via transactional RPC deletes exact verified descendants and preserves contour', async () => {
     seedContour();
     const orphanId = seedLegacyOrphan();
     const taskId = randomUUID();
@@ -282,8 +469,26 @@ describe('Live Core synthetic recovery', () => {
     rows('booking_ops_tasks').push({ id: taskId, booking_ops_record_id: orphanId });
     rows('booking_ops_events').push({ id: eventId, booking_ops_record_id: orphanId });
 
-    const preview = await previewLiveCoreSyntheticRecovery();
-    expect(preview.safeToCleanup).toBe(true);
+    supabaseRpc.mockImplementation(async (fn: string, payload?: Record<string, unknown>) => {
+      if (fn === 'channel_manager_live_core_booking_ops_fk_children') return mockFkOk();
+      if (fn === 'channel_manager_live_core_synthetic_recovery_cleanup') {
+        expect(payload?.p_dry_run).toBe(false);
+        expect(payload?.p_booking_ops_record_id).toBe(orphanId);
+        const manifest = payload?.p_deletion_manifest as Record<string, string[]>;
+        expect(manifest.booking_ops_tasks).toEqual([taskId]);
+        expect(manifest.booking_ops_events).toEqual([eventId]);
+        // Simulate successful transactional cleanup by removing orphan rows in the fixture.
+        tables.booking_ops_tasks = [];
+        tables.booking_ops_events = [];
+        tables.booking_ops_records = [];
+        return mockCleanupRpcPassed({
+          booking_ops_tasks: 1,
+          booking_ops_events: 1,
+          booking_ops_records: 1,
+        });
+      }
+      return { data: null, error: { message: 'unexpected rpc' } };
+    });
 
     const result = await cleanupLiveCoreSyntheticRecovery({
       dryRun: false,
@@ -292,23 +497,183 @@ describe('Live Core synthetic recovery', () => {
     });
 
     expect(result.status).toBe('passed');
+    expect(result.transactionCommitted).toBe(true);
     expect(result.deletedCountsByTable.booking_ops_records).toBe(1);
     expect(result.deletedCountsByTable.booking_ops_tasks).toBe(1);
     expect(result.deletedCountsByTable.booking_ops_events).toBe(1);
-    expect(rows('booking_ops_records')).toHaveLength(0);
+    expect(deleteInvocations).toHaveLength(0);
     expect(rows('booking_owner_setup_profiles').some((row) => row.id === OWNER_ID)).toBe(true);
     expect(rows('booking_property_setup_profiles').some((row) => row.id === PROPERTY_SETUP_ID)).toBe(true);
     expect(rows('booking_channel_manager_connections').some((row) => row.id === CONNECTION_ID)).toBe(true);
     expect(rows('booking_channel_import_runs').some((row) => row.id === IMPORT_RUN_ID)).toBe(true);
   });
 
-  it('changed row between preview and cleanup causes rollback/block', async () => {
+  it('extra manifest ID belonging to another booking is rejected by RPC contract', async () => {
+    seedContour();
+    const orphanId = seedLegacyOrphan();
+    const foreignTaskId = randomUUID();
+    rows('booking_ops_tasks').push({ id: foreignTaskId, booking_ops_record_id: orphanId });
+
+    supabaseRpc.mockImplementation(async (fn: string, payload?: Record<string, unknown>) => {
+      if (fn === 'channel_manager_live_core_booking_ops_fk_children') return mockFkOk();
+      if (fn === 'channel_manager_live_core_synthetic_recovery_cleanup') {
+        const manifest = payload?.p_deletion_manifest as Record<string, string[]>;
+        const injected = randomUUID();
+        const keys = [...(manifest.booking_ops_tasks ?? []), injected];
+        // Application always sends preview IDs; RPC must reject extras that do not belong.
+        return {
+          data: {
+            status: 'blocked',
+            transaction_committed: false,
+            blocker_code: 'row_changed',
+            blocker_summary: 'Manifest contains IDs not belonging to orphan on booking_ops_tasks',
+            safe_error: 'extra_manifest_id',
+            deleted_counts_by_table: {},
+            post_verification: {},
+          },
+          error: null,
+        };
+      }
+      return { data: null, error: { message: 'unexpected' } };
+    });
+
+    // Force a cleanup call that returns the RPC blocked payload for foreign IDs.
+    const result = await cleanupLiveCoreSyntheticRecovery({
+      dryRun: false,
+      confirmPhrase: LIVE_CORE_RECOVERY_CONFIRM_PHRASE,
+      expectedBookingOpsRecordId: orphanId,
+    });
+    expect(result.status).toBe('blocked');
+    expect(result.blockerCode).toBe('row_changed');
+    expect(String(result.safeError ?? '')).toMatch(/extra_manifest_id/);
+    expect(rows('booking_ops_records')).toHaveLength(1);
+    expect(deleteInvocations).toHaveLength(0);
+  });
+
+  it('changed child between preview and cleanup rolls back / blocks without REST mutation', async () => {
+    seedContour();
+    const orphanId = seedLegacyOrphan();
+    const taskId = randomUUID();
+    rows('booking_ops_tasks').push({ id: taskId, booking_ops_record_id: orphanId });
+
+    let cleanupCalls = 0;
+    supabaseRpc.mockImplementation(async (fn: string) => {
+      if (fn === 'channel_manager_live_core_booking_ops_fk_children') return mockFkOk();
+      if (fn === 'channel_manager_live_core_synthetic_recovery_cleanup') {
+        cleanupCalls += 1;
+        return {
+          data: {
+            status: 'blocked',
+            transaction_committed: false,
+            blocker_code: 'row_changed',
+            blocker_summary: 'Manifest mismatch for booking_ops_tasks.booking_ops_record_id',
+            safe_error: 'manifest_child_mismatch',
+            deleted_counts_by_table: {},
+            post_verification: {},
+          },
+          error: null,
+        };
+      }
+      return { data: null, error: { message: 'unexpected' } };
+    });
+
+    const preview = await previewLiveCoreSyntheticRecovery();
+    expect(preview.safeToCleanup).toBe(true);
+    rows('booking_ops_tasks').push({ id: randomUUID(), booking_ops_record_id: orphanId });
+
+    const result = await cleanupLiveCoreSyntheticRecovery({
+      dryRun: false,
+      confirmPhrase: LIVE_CORE_RECOVERY_CONFIRM_PHRASE,
+      expectedBookingOpsRecordId: orphanId,
+    });
+    expect(cleanupCalls).toBe(1);
+    expect(result.status).toBe('blocked');
+    expect(result.blockerCode).toBe('row_changed');
+    expect(result.transactionCommitted).toBe(false);
+    expect(deleteInvocations).toHaveLength(0);
+    expect(rows('booking_ops_records')).toHaveLength(1);
+  });
+
+  it('failure after several DELETE statements rolls back all rows (RPC reports failed, no REST deletes)', async () => {
+    seedContour();
+    const orphanId = seedLegacyOrphan();
+    rows('booking_ops_tasks').push({ id: randomUUID(), booking_ops_record_id: orphanId });
+    rows('booking_ops_events').push({ id: randomUUID(), booking_ops_record_id: orphanId });
+
+    supabaseRpc.mockImplementation(async (fn: string) => {
+      if (fn === 'channel_manager_live_core_booking_ops_fk_children') return mockFkOk();
+      if (fn === 'channel_manager_live_core_synthetic_recovery_cleanup') {
+        return {
+          data: {
+            status: 'failed',
+            transaction_committed: false,
+            blocker_code: 'cleanup_failed',
+            blocker_summary: 'Transactional cleanup rolled back.',
+            safe_error: 'deleted_count_mismatch:booking_ops_events:1:0',
+            deleted_counts_by_table: {},
+            post_verification: { descendantsRemain: true },
+          },
+          error: null,
+        };
+      }
+      return { data: null, error: { message: 'unexpected' } };
+    });
+
+    const result = await cleanupLiveCoreSyntheticRecovery({
+      dryRun: false,
+      confirmPhrase: LIVE_CORE_RECOVERY_CONFIRM_PHRASE,
+      expectedBookingOpsRecordId: orphanId,
+    });
+    expect(result.status).toBe('failed');
+    expect(result.transactionCommitted).toBe(false);
+    expect(result.postVerification.descendantsRemain).toBe(true);
+    expect(deleteInvocations).toHaveLength(0);
+    expect(rows('booking_ops_records')).toHaveLength(1);
+    expect(rows('booking_ops_tasks')).toHaveLength(1);
+    expect(rows('booking_ops_events')).toHaveLength(1);
+  });
+
+  it('post-check detecting a remaining descendant fails closed without commit', async () => {
+    seedContour();
+    const orphanId = seedLegacyOrphan();
+    rows('booking_ops_events').push({ id: randomUUID(), booking_ops_record_id: orphanId });
+
+    supabaseRpc.mockImplementation(async (fn: string) => {
+      if (fn === 'channel_manager_live_core_booking_ops_fk_children') return mockFkOk();
+      if (fn === 'channel_manager_live_core_synthetic_recovery_cleanup') {
+        return {
+          data: {
+            status: 'failed',
+            transaction_committed: false,
+            blocker_code: 'cleanup_failed',
+            blocker_summary: 'Transactional cleanup rolled back.',
+            safe_error: 'descendants_remain:1',
+            deleted_counts_by_table: {},
+            post_verification: { descendantsRemain: true, descendantCount: 1 },
+          },
+          error: null,
+        };
+      }
+      return { data: null, error: { message: 'unexpected' } };
+    });
+
+    const result = await cleanupLiveCoreSyntheticRecovery({
+      dryRun: false,
+      confirmPhrase: LIVE_CORE_RECOVERY_CONFIRM_PHRASE,
+      expectedBookingOpsRecordId: orphanId,
+    });
+    expect(result.status).toBe('failed');
+    expect(result.transactionCommitted).toBe(false);
+    expect(result.safeError).toMatch(/descendants_remain/);
+    expect(deleteInvocations).toHaveLength(0);
+  });
+
+  it('changed main row between preview and cleanup causes block', async () => {
     seedContour();
     const orphanId = seedLegacyOrphan();
     const preview = await previewLiveCoreSyntheticRecovery();
     expect(preview.safeToCleanup).toBe(true);
 
-    // Mutate identity after preview.
     rows('booking_ops_records')[0].guest_phone = '+79991112233';
 
     const result = await cleanupLiveCoreSyntheticRecovery({
@@ -317,13 +682,37 @@ describe('Live Core synthetic recovery', () => {
       expectedBookingOpsRecordId: orphanId,
     });
     expect(result.status).toBe('blocked');
-    expect(['contact_present', 'row_changed']).toContain(result.blockerCode);
+    expect(['contact_present', 'row_changed', 'schema_rpc_unavailable']).toContain(result.blockerCode);
     expect(rows('booking_ops_records')).toHaveLength(1);
+    expect(deleteInvocations).toHaveLength(0);
   });
 
-  it('repeated cleanup is safe and returns already-clean/no-op', async () => {
+  it('repeated cleanup after successful RPC is safe and returns already-clean', async () => {
     seedContour();
     const orphanId = seedLegacyOrphan();
+    let phase: 'first' | 'second' = 'first';
+
+    supabaseRpc.mockImplementation(async (fn: string) => {
+      if (fn === 'channel_manager_live_core_booking_ops_fk_children') return mockFkOk();
+      if (fn === 'channel_manager_live_core_synthetic_recovery_cleanup') {
+        if (phase === 'first') {
+          tables.booking_ops_records = [];
+          return mockCleanupRpcPassed({ booking_ops_records: 1 });
+        }
+        return {
+          data: {
+            status: 'already_clean',
+            transaction_committed: false,
+            blocker_code: 'already_clean',
+            deleted_counts_by_table: {},
+            post_verification: { deterministicIdentityGone: true, descendantsRemain: false },
+          },
+          error: null,
+        };
+      }
+      return { data: null, error: { message: 'unexpected' } };
+    });
+
     const first = await cleanupLiveCoreSyntheticRecovery({
       dryRun: false,
       confirmPhrase: LIVE_CORE_RECOVERY_CONFIRM_PHRASE,
@@ -331,6 +720,7 @@ describe('Live Core synthetic recovery', () => {
     });
     expect(first.status).toBe('passed');
 
+    phase = 'second';
     const second = await cleanupLiveCoreSyntheticRecovery({
       dryRun: false,
       confirmPhrase: LIVE_CORE_RECOVERY_CONFIRM_PHRASE,
