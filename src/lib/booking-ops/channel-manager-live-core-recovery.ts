@@ -17,6 +17,8 @@ import {
   LIVE_CORE_ACCEPTANCE_INTAKE_SOURCE,
   LIVE_CORE_ACCEPTANCE_PROPERTY_ID,
   LIVE_CORE_RECOVERY_CONFIRM_PHRASE,
+  LEGACY_FAILED_RUN_CORRELATION_AFTER_MS,
+  LEGACY_FAILED_RUN_CORRELATION_BEFORE_MS,
 } from './channel-manager-live-core-acceptance-constants';
 
 export type RecoveryRowClassification = 'harness_owned' | 'legacy_synthetic_candidate' | 'unknown_unsafe';
@@ -104,6 +106,8 @@ export const RECOVERY_ALLOWLISTED_DIRECT_CHILDREN: ReadonlyArray<{
   { table: 'booking_ops_communication_intents', column: 'booking_ops_record_id', pkColumn: 'id', relationship: 'direct_fk_intents' },
   { table: 'booking_ops_lifecycle_drafts', column: 'booking_id', pkColumn: 'id', relationship: 'direct_fk_lifecycle_drafts' },
   { table: 'booking_ops_lifecycle_states', column: 'booking_id', pkColumn: 'id', relationship: 'direct_fk_lifecycle_states' },
+  { table: 'booking_ops_lifecycle_decisions', column: 'booking_id', pkColumn: 'id', relationship: 'direct_fk_lifecycle_decisions' },
+  { table: 'booking_ops_lifecycle_events', column: 'booking_id', pkColumn: 'id', relationship: 'direct_fk_lifecycle_events' },
   { table: 'booking_ops_domain_events', column: 'booking_id', pkColumn: 'id', relationship: 'direct_fk_domain_events' },
   { table: 'booking_ops_guest_intake_sessions', column: 'booking_ops_record_id', pkColumn: 'id', relationship: 'direct_fk_guest_intake' },
   { table: 'booking_ops_lifecycle_runs', column: 'booking_id', pkColumn: 'id', relationship: 'direct_fk_lifecycle_runs' },
@@ -113,6 +117,23 @@ export const RECOVERY_ALLOWLISTED_DIRECT_CHILDREN: ReadonlyArray<{
   { table: 'booking_ops_telegram_drafts', column: 'booking_ops_record_id', pkColumn: 'id', relationship: 'direct_fk_telegram_drafts' },
   { table: 'booking_ops_autopilot_states', column: 'booking_id', pkColumn: 'booking_id', relationship: 'direct_fk_autopilot_states' },
 ] as const;
+
+/** Full prior forensic orphan shape used by regression fixtures (synthetic IDs only). */
+export const LEGACY_ORPHAN_67_ROW_SHAPE: Readonly<Record<string, number>> = {
+  booking_ops_records: 1,
+  booking_ops_events: 37,
+  booking_ops_tasks: 10,
+  booking_ops_communication_intents: 6,
+  booking_ops_guest_intake_sessions: 1,
+  booking_ops_lifecycle_states: 1,
+  booking_ops_domain_events: 2,
+  booking_ops_lifecycle_decisions: 2,
+  booking_ops_lifecycle_events: 5,
+  booking_ops_lifecycle_runs: 1,
+  booking_ops_autopilot_states: 1,
+} as const;
+
+export const LEGACY_ORPHAN_67_ROW_TOTAL = Object.values(LEGACY_ORPHAN_67_ROW_SHAPE).reduce((sum, n) => sum + n, 0);
 
 /** Probe tables that must remain empty for a safe legacy synthetic candidate. */
 const UNSAFE_IF_PRESENT_TABLES: ReadonlyArray<{
@@ -199,7 +220,12 @@ async function selectKeys(
 
 async function loadPreservedContour(): Promise<LiveCoreRecoveryPreview['preservedContour'] & {
   importRunIds: string[];
-  failedImportRunIds: string[];
+  failedImportRuns: Array<{
+    id: string;
+    createdAt: string | null;
+    startedAt: string | null;
+    finishedAt: string | null;
+  }>;
 }> {
   const property = await supabase
     .from('booking_property_setup_profiles')
@@ -224,23 +250,121 @@ async function loadPreservedContour(): Promise<LiveCoreRecoveryPreview['preserve
   const runs = connectionId
     ? await supabase
       .from('booking_channel_import_runs')
-      .select('id,status,import_type,created_at')
+      .select('id,status,import_type,created_at,started_at,finished_at')
       .eq('connection_id', connectionId)
       .order('created_at', { ascending: false })
       .limit(20)
     : { data: [] as Array<Record<string, unknown>>, error: null };
 
   const importRunIds = (runs.data ?? []).map((row) => String(row.id));
-  const failedImportRunIds = (runs.data ?? [])
+  const failedImportRuns = (runs.data ?? [])
     .filter((row) => String(row.status) === 'failed')
-    .map((row) => String(row.id));
+    .map((row) => ({
+      id: String(row.id),
+      createdAt: row.created_at ? String(row.created_at) : null,
+      startedAt: row.started_at ? String(row.started_at) : null,
+      finishedAt: row.finished_at ? String(row.finished_at) : null,
+    }));
 
   return {
     ownerSetupId,
     propertySetupId,
     connectionId,
     importRunIds,
-    failedImportRunIds,
+    failedImportRuns,
+  };
+}
+
+function correlateOrphanToFailedImportRun(
+  orphanCreatedAt: string | null,
+  failedImportRuns: Array<{
+    id: string;
+    createdAt: string | null;
+    startedAt: string | null;
+    finishedAt: string | null;
+  }>,
+): {
+  matched: boolean;
+  importRunId: string | null;
+  deltaMs: number | null;
+  window: Record<string, unknown> | null;
+  evidence: Record<string, unknown>;
+} {
+  const orphanMs = orphanCreatedAt ? Date.parse(orphanCreatedAt) : Number.NaN;
+  if (!Number.isFinite(orphanMs)) {
+    return {
+      matched: false,
+      importRunId: null,
+      deltaMs: null,
+      window: null,
+      evidence: { orphanCreatedAt, reason: 'orphan_created_at_unparseable' },
+    };
+  }
+
+  let best: {
+    importRunId: string;
+    deltaMs: number;
+    window: Record<string, unknown>;
+  } | null = null;
+
+  for (const run of failedImportRuns) {
+    const createdMs = run.createdAt ? Date.parse(run.createdAt) : Number.NaN;
+    const startedMs = run.startedAt ? Date.parse(run.startedAt) : Number.NaN;
+    const finishedMs = run.finishedAt ? Date.parse(run.finishedAt) : Number.NaN;
+    const anchors = [createdMs, startedMs].filter((value) => Number.isFinite(value));
+    if (anchors.length === 0) continue;
+
+    const lowerAnchor = Math.min(...anchors);
+    const upperAnchor = Math.max(
+      ...[finishedMs, startedMs, createdMs].filter((value) => Number.isFinite(value)),
+    );
+    const windowStart = lowerAnchor - LEGACY_FAILED_RUN_CORRELATION_BEFORE_MS;
+    const windowEnd = upperAnchor + LEGACY_FAILED_RUN_CORRELATION_AFTER_MS;
+    if (orphanMs < windowStart || orphanMs > windowEnd) continue;
+
+    const deltaMs = orphanMs - (Number.isFinite(startedMs) ? startedMs : createdMs);
+    if (!best || Math.abs(deltaMs) < Math.abs(best.deltaMs)) {
+      best = {
+        importRunId: run.id,
+        deltaMs,
+        window: {
+          start: new Date(windowStart).toISOString(),
+          end: new Date(windowEnd).toISOString(),
+          beforeMs: LEGACY_FAILED_RUN_CORRELATION_BEFORE_MS,
+          afterMs: LEGACY_FAILED_RUN_CORRELATION_AFTER_MS,
+          runCreatedAt: run.createdAt,
+          runStartedAt: run.startedAt,
+          runCompletedAt: run.finishedAt,
+        },
+      };
+    }
+  }
+
+  if (!best) {
+    return {
+      matched: false,
+      importRunId: null,
+      deltaMs: null,
+      window: null,
+      evidence: {
+        orphanCreatedAt,
+        failedImportRunIds: failedImportRuns.map((run) => run.id),
+        reason: 'no_matching_failed_run_window',
+      },
+    };
+  }
+
+  return {
+    matched: true,
+    importRunId: best.importRunId,
+    deltaMs: best.deltaMs,
+    window: best.window,
+    evidence: {
+      orphanCreatedAt,
+      matchedImportRunId: best.importRunId,
+      timeDeltaMs: best.deltaMs,
+      correlationWindow: best.window,
+    },
   };
 }
 
@@ -354,12 +478,19 @@ async function classifyLegacySyntheticCandidate(row: {
     }
   }
 
-  // Creation time should correlate with a known failed acceptance import run when available.
-  if (contour.failedImportRunIds.length > 0 && row.created_at) {
-    const createdMs = Date.parse(row.created_at);
-    evidence.failedImportRunIds = contour.failedImportRunIds;
-    evidence.createdAt = row.created_at;
-    evidence.createdCorrelated = Number.isFinite(createdMs);
+  // Creation time must correlate with one specific failed acceptance import run.
+  const correlation = correlateOrphanToFailedImportRun(row.created_at, contour.failedImportRuns);
+  if (!correlation.matched) {
+    return {
+      classification: 'unknown_unsafe',
+      blockerCode: 'identity_mismatch',
+      blockerSummary: 'Время создания орфана не коррелирует с failed acceptance import run.',
+      evidence: {
+        ...evidence,
+        ...correlation.evidence,
+        legacyTimeCorrelationFailed: true,
+      },
+    };
   }
 
   return {
@@ -368,8 +499,11 @@ async function classifyLegacySyntheticCandidate(row: {
     blockerSummary: null,
     evidence: {
       ...evidence,
+      ...correlation.evidence,
       legacySyntheticCandidate: true,
       deterministicIdentityMatched: true,
+      matchedImportRunId: correlation.importRunId,
+      timeDeltaMs: correlation.deltaMs,
     },
   };
 }

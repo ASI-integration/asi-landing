@@ -21,6 +21,14 @@ export const HARNESS_SCOPE_COLLISION = 'harness_scope_collision';
 
 export const LIVE_CORE_RECOVERY_CONFIRM_PHRASE = 'CLEAN_SYNTHETIC_LIVE_CORE_ACCEPTANCE_V1';
 
+/**
+ * Unmarked legacy orphans must fall inside this window around one failed import run:
+ * [min(started_at, created_at) - BEFORE, max(finished_at, started_at, created_at) + AFTER].
+ * Forensic prior orphan was ~8s after the matched failed run created_at.
+ */
+export const LEGACY_FAILED_RUN_CORRELATION_BEFORE_MS = 2 * 60 * 1000;
+export const LEGACY_FAILED_RUN_CORRELATION_AFTER_MS = 30 * 60 * 1000;
+
 export const LIVE_CORE_PRESERVED_CONTOUR = {
   ownerSetupId: '39e6b608-a6d9-413f-9b4d-02d1e4d81890',
   propertySetupId: '1a14e03b-465d-4000-be05-c06f452818a1',

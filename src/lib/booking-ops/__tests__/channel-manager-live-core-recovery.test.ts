@@ -72,11 +72,14 @@ import {
   LIVE_CORE_ACCEPTANCE_HARNESS,
   LIVE_CORE_ACCEPTANCE_PROPERTY_ID,
   LIVE_CORE_RECOVERY_CONFIRM_PHRASE,
+  LEGACY_FAILED_RUN_CORRELATION_AFTER_MS,
 } from '../channel-manager-live-core-acceptance-constants';
 import {
   cleanupLiveCoreSyntheticRecovery,
   previewLiveCoreSyntheticRecovery,
   RECOVERY_ALLOWLISTED_DIRECT_CHILDREN,
+  LEGACY_ORPHAN_67_ROW_SHAPE,
+  LEGACY_ORPHAN_67_ROW_TOTAL,
 } from '../channel-manager-live-core-recovery';
 import {
   buildLiveCoreAcceptanceReservationMetadata,
@@ -91,7 +94,7 @@ const IMPORT_RUN_ID = 'c9fe1308-e0c3-4c90-9131-b0ef33f67bf1';
 
 let deleteInvocations: Array<{ table: string }> = [];
 
-function seedContour() {
+function seedContour(overrides: { importRun?: Row } = {}) {
   rows('booking_owner_setup_profiles').push({
     id: OWNER_ID,
     lead_id: 'acceptance:channel_manager_live_core_v1',
@@ -110,12 +113,16 @@ function seedContour() {
     provider: 'manual',
     metadata: { acceptanceHarness: LIVE_CORE_ACCEPTANCE_HARNESS },
   });
+  const runCreatedAt = '2026-08-05T12:44:57.498Z';
   rows('booking_channel_import_runs').push({
     id: IMPORT_RUN_ID,
     connection_id: CONNECTION_ID,
     status: 'failed',
     import_type: 'initial_sync',
-    created_at: new Date().toISOString(),
+    created_at: runCreatedAt,
+    started_at: runCreatedAt,
+    finished_at: '2026-08-05T12:46:20.000Z',
+    ...overrides.importRun,
   });
 }
 
@@ -132,10 +139,54 @@ function seedLegacyOrphan(overrides: Row = {}) {
     guest_telegram: null,
     ota_source: 'channel_manager',
     reservation_metadata: {},
-    created_at: new Date().toISOString(),
+    created_at: '2026-08-05T12:45:05.967Z',
     ...overrides,
   });
   return id;
+}
+
+/** Synthetic 67-row fixture matching the prior forensic orphan shape (no production IDs). */
+function seedLegacyOrphan67Shape(): { orphanId: string; counts: Record<string, number> } {
+  const orphanId = seedLegacyOrphan();
+  const domainEventIds = [randomUUID(), randomUUID()];
+  const lifecycleRunId = randomUUID();
+
+  for (let i = 0; i < LEGACY_ORPHAN_67_ROW_SHAPE.booking_ops_events; i += 1) {
+    rows('booking_ops_events').push({ id: randomUUID(), booking_ops_record_id: orphanId });
+  }
+  for (let i = 0; i < LEGACY_ORPHAN_67_ROW_SHAPE.booking_ops_tasks; i += 1) {
+    rows('booking_ops_tasks').push({ id: randomUUID(), booking_ops_record_id: orphanId });
+  }
+  for (let i = 0; i < LEGACY_ORPHAN_67_ROW_SHAPE.booking_ops_communication_intents; i += 1) {
+    rows('booking_ops_communication_intents').push({ id: randomUUID(), booking_ops_record_id: orphanId });
+  }
+  rows('booking_ops_guest_intake_sessions').push({ id: randomUUID(), booking_ops_record_id: orphanId });
+  rows('booking_ops_lifecycle_states').push({ id: randomUUID(), booking_id: orphanId });
+  for (const domainId of domainEventIds) {
+    rows('booking_ops_domain_events').push({ id: domainId, booking_id: orphanId, event_type: 'test' });
+  }
+  for (const domainId of domainEventIds) {
+    rows('booking_ops_lifecycle_decisions').push({
+      id: randomUUID(),
+      booking_id: orphanId,
+      event_id: domainId,
+      previous_stage: 'booking_received',
+      next_stage: 'booking_received',
+      decision: 'synthetic',
+    });
+  }
+  for (let i = 0; i < LEGACY_ORPHAN_67_ROW_SHAPE.booking_ops_lifecycle_events; i += 1) {
+    rows('booking_ops_lifecycle_events').push({
+      id: randomUUID(),
+      booking_id: orphanId,
+      run_id: lifecycleRunId,
+      event_type: `synthetic_${i}`,
+    });
+  }
+  rows('booking_ops_lifecycle_runs').push({ id: lifecycleRunId, booking_id: orphanId, status: 'completed' });
+  rows('booking_ops_autopilot_states').push({ booking_id: orphanId, last_event_id: domainEventIds[0], state: {} });
+
+  return { orphanId, counts: { ...LEGACY_ORPHAN_67_ROW_SHAPE } };
 }
 
 function mockFkOk(edges: Array<Record<string, unknown>> = []) {
@@ -251,6 +302,106 @@ describe('Live Core synthetic recovery', () => {
     expect(preview.preservedContour.connectionId).toBe(CONNECTION_ID);
     expect(preview.importRunIds).toContain(IMPORT_RUN_ID);
     expect(preview.expectedDeletionTotal).toBe(2);
+    expect(preview.evidence.matchedImportRunId).toBe(IMPORT_RUN_ID);
+    expect(typeof preview.evidence.timeDeltaMs).toBe('number');
+  });
+
+  it('preview returns safe for the full 67-row legacy orphan shape including lifecycle decisions/events', async () => {
+    expect(LEGACY_ORPHAN_67_ROW_TOTAL).toBe(67);
+    seedContour();
+    const { orphanId, counts } = seedLegacyOrphan67Shape();
+
+    const preview = await previewLiveCoreSyntheticRecovery();
+    expect(preview.safeToCleanup).toBe(true);
+    expect(preview.mainRecord?.id).toBe(orphanId);
+    expect(preview.mainRecord?.classification).toBe('legacy_synthetic_candidate');
+    expect(preview.countsByTable.booking_ops_lifecycle_decisions).toBe(2);
+    expect(preview.countsByTable.booking_ops_lifecycle_events).toBe(5);
+    expect(preview.countsByTable.booking_ops_lifecycle_runs).toBe(1);
+    expect(preview.countsByTable.booking_ops_autopilot_states).toBe(1);
+    expect(preview.expectedDeletionTotal).toBe(67);
+    for (const [table, count] of Object.entries(counts)) {
+      expect(preview.countsByTable[table]).toBe(count);
+    }
+    expect(preview.importRunIds).toContain(IMPORT_RUN_ID);
+  });
+
+  it('cleanup RPC contract for 67-row fixture deletes exact descendants and preserves contour/import runs', async () => {
+    seedContour();
+    const { orphanId } = seedLegacyOrphan67Shape();
+
+    supabaseRpc.mockImplementation(async (fn: string, payload?: Record<string, unknown>) => {
+      if (fn === 'channel_manager_live_core_booking_ops_fk_children') return mockFkOk();
+      if (fn === 'channel_manager_live_core_synthetic_recovery_cleanup') {
+        const manifest = payload?.p_deletion_manifest as Record<string, string[]>;
+        expect(manifest.booking_ops_lifecycle_decisions).toHaveLength(2);
+        expect(manifest.booking_ops_lifecycle_events).toHaveLength(5);
+        expect(manifest.booking_ops_records).toEqual([orphanId]);
+        const deleted: Record<string, number> = {};
+        for (const [table, ids] of Object.entries(manifest)) {
+          deleted[table] = ids.length;
+          tables[table] = [];
+        }
+        expect(Object.values(deleted).reduce((sum, n) => sum + n, 0)).toBe(67);
+        return mockCleanupRpcPassed(deleted);
+      }
+      return { data: null, error: { message: 'unexpected rpc' } };
+    });
+
+    const result = await cleanupLiveCoreSyntheticRecovery({
+      dryRun: false,
+      confirmPhrase: LIVE_CORE_RECOVERY_CONFIRM_PHRASE,
+      expectedBookingOpsRecordId: orphanId,
+    });
+    expect(result.status).toBe('passed');
+    expect(result.transactionCommitted).toBe(true);
+    expect(Object.values(result.deletedCountsByTable).reduce((sum, n) => sum + n, 0)).toBe(67);
+    expect(rows('booking_owner_setup_profiles')).toHaveLength(1);
+    expect(rows('booking_property_setup_profiles')).toHaveLength(1);
+    expect(rows('booking_channel_manager_connections')).toHaveLength(1);
+    expect(rows('booking_channel_import_runs')).toHaveLength(1);
+    expect(deleteInvocations).toHaveLength(0);
+  });
+
+  it('legacy candidate without matching failed-run time window is unknown_unsafe', async () => {
+    seedContour({
+      importRun: {
+        created_at: '2026-01-01T00:00:00.000Z',
+        started_at: '2026-01-01T00:00:00.000Z',
+        finished_at: '2026-01-01T00:10:00.000Z',
+      },
+    });
+    seedLegacyOrphan({ created_at: '2026-08-05T12:45:05.967Z' });
+    const preview = await previewLiveCoreSyntheticRecovery();
+    expect(preview.safeToCleanup).toBe(false);
+    expect(preview.mainRecord?.classification).toBe('unknown_unsafe');
+    expect(preview.evidence.legacyTimeCorrelationFailed).toBe(true);
+  });
+
+  it('harness-owned rows skip legacy failed-run time correlation', async () => {
+    seedContour({
+      importRun: {
+        status: 'completed',
+        created_at: '2026-01-01T00:00:00.000Z',
+        started_at: '2026-01-01T00:00:00.000Z',
+        finished_at: '2026-01-01T00:10:00.000Z',
+      },
+    });
+    seedLegacyOrphan({
+      reservation_metadata: { acceptanceHarness: LIVE_CORE_ACCEPTANCE_HARNESS },
+      created_at: '2026-08-05T12:45:05.967Z',
+    });
+    const preview = await previewLiveCoreSyntheticRecovery();
+    expect(preview.safeToCleanup).toBe(true);
+    expect(preview.mainRecord?.classification).toBe('harness_owned');
+    expect(preview.evidence.harnessOwned).toBe(true);
+    expect(preview.evidence.legacyTimeCorrelationFailed).toBeUndefined();
+  });
+
+  it('allowlist includes lifecycle decisions and events as deletable descendants', () => {
+    expect(RECOVERY_ALLOWLISTED_DIRECT_CHILDREN.some((item) => item.table === 'booking_ops_lifecycle_decisions')).toBe(true);
+    expect(RECOVERY_ALLOWLISTED_DIRECT_CHILDREN.some((item) => item.table === 'booking_ops_lifecycle_events')).toBe(true);
+    expect(LEGACY_FAILED_RUN_CORRELATION_AFTER_MS).toBe(30 * 60 * 1000);
   });
 
   it('preview collects guest_intake_sessions via booking_ops_record_id', async () => {

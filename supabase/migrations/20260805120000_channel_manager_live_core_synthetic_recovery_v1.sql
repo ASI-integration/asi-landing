@@ -40,16 +40,17 @@ AS $$
     jsonb_build_object('table_name','booking_physical_coordination_drafts','column_name','booking_id','delete_action','c','pk_column','id','deletable',false),
     jsonb_build_object('table_name','booking_guest_legal_readiness','column_name','booking_id','delete_action','c','pk_column','id','deletable',false),
     jsonb_build_object('table_name','booking_legal_execution_events','column_name','booking_id','delete_action','c','pk_column','id','deletable',false),
+    -- Delete-order note: decisions/autopilot before domain_events; lifecycle_events before lifecycle_runs.
+    jsonb_build_object('table_name','booking_ops_lifecycle_decisions','column_name','booking_id','delete_action','c','pk_column','id','deletable',true),
+    jsonb_build_object('table_name','booking_ops_lifecycle_events','column_name','booking_id','delete_action','c','pk_column','id','deletable',true),
     jsonb_build_object('table_name','booking_ops_lifecycle_runs','column_name','booking_id','delete_action','c','pk_column','id','deletable',true),
     jsonb_build_object('table_name','booking_ops_lifecycle_states','column_name','booking_id','delete_action','c','pk_column','id','deletable',true),
-    jsonb_build_object('table_name','booking_ops_lifecycle_events','column_name','booking_id','delete_action','c','pk_column','id','deletable',false),
     jsonb_build_object('table_name','booking_ops_sla_items','column_name','booking_id','delete_action','c','pk_column','id','deletable',false),
     jsonb_build_object('table_name','booking_ops_lifecycle_drafts','column_name','booking_id','delete_action','c','pk_column','id','deletable',true),
     jsonb_build_object('table_name','booking_ops_guest_intake_events','column_name','booking_id','delete_action','c','pk_column','id','deletable',false),
     jsonb_build_object('table_name','booking_ops_checkin_release_drafts','column_name','booking_id','delete_action','c','pk_column','id','deletable',false),
-    jsonb_build_object('table_name','booking_ops_domain_events','column_name','booking_id','delete_action','c','pk_column','id','deletable',true),
-    jsonb_build_object('table_name','booking_ops_lifecycle_decisions','column_name','booking_id','delete_action','c','pk_column','id','deletable',false),
     jsonb_build_object('table_name','booking_ops_autopilot_states','column_name','booking_id','delete_action','c','pk_column','booking_id','deletable',true),
+    jsonb_build_object('table_name','booking_ops_domain_events','column_name','booking_id','delete_action','c','pk_column','id','deletable',true),
     jsonb_build_object('table_name','booking_ops_worker_tasks','column_name','booking_id','delete_action','c','pk_column','id','deletable',true),
     jsonb_build_object('table_name','booking_ops_worker_link_audit','column_name','booking_id','delete_action','c','pk_column','id','deletable',false),
     jsonb_build_object('table_name','booking_ops_alerts','column_name','booking_id','delete_action','c','pk_column','id','deletable',true),
@@ -278,11 +279,12 @@ DECLARE
   v_keys text[];
   v_key text;
   v_manifest_keys text[];
+  v_manifest_uuids uuid[];
+  v_locked_uuids uuid[];
   v_deleted int;
   v_expected int;
   v_deleted_counts jsonb := '{}'::jsonb;
   v_sql text;
-  v_lock_sql text;
   v_count bigint;
   v_intent_ids uuid[];
   v_delivery_ids uuid[];
@@ -294,8 +296,10 @@ DECLARE
   v_run_id uuid;
   v_remaining_descendants bigint := 0;
   v_allowlist text[];
+  v_delete_order text[];
   v_source_count bigint;
   v_payment_count bigint;
+  v_edge_by_table jsonb := '{}'::jsonb;
 BEGIN
   PERFORM set_config('lock_timeout', '3s', true);
   PERFORM set_config('statement_timeout', '15s', true);
@@ -450,6 +454,7 @@ BEGIN
   END IF;
 
   -- Validate every live edge with children against manifest and allowlist.
+  -- Lock exact primary keys via SELECT ... FOR UPDATE (never aggregate FOR UPDATE).
   FOR v_edge IN SELECT * FROM jsonb_array_elements(coalesce(v_fk->'edges', '[]'::jsonb))
   LOOP
     v_table := v_edge->>'table_name';
@@ -461,6 +466,9 @@ BEGIN
     IF v_expected = 0 THEN
       CONTINUE;
     END IF;
+
+    -- Keep the live edge used for locking/deletes (tables may have multiple FK columns).
+    v_edge_by_table := v_edge_by_table || jsonb_build_object(v_table, v_edge);
 
     IF NOT v_deletable THEN
       RETURN jsonb_build_object(
@@ -501,12 +509,27 @@ BEGIN
       );
     END IF;
 
-    -- Prove every manifest key currently belongs to this orphan via FK column.
+    BEGIN
+      SELECT ARRAY(
+        SELECT unnest(coalesce(v_manifest_keys, ARRAY[]::text[]))::uuid
+      ) INTO v_manifest_uuids;
+    EXCEPTION
+      WHEN invalid_text_representation THEN
+        RETURN jsonb_build_object(
+          'status', 'blocked',
+          'transaction_committed', false,
+          'blocker_code', 'row_changed',
+          'blocker_summary', format('Manifest contains non-UUID keys for %s', v_table),
+          'safe_error', 'manifest_non_uuid'
+        );
+    END;
+
+    -- Prove every manifest UUID currently belongs to this orphan via FK column.
     v_sql := format(
-      'SELECT count(*) FROM public.%I WHERE %I = ANY ($1::text[]) AND %I IS DISTINCT FROM $2',
+      'SELECT count(*) FROM public.%I WHERE %I = ANY ($1::uuid[]) AND %I IS DISTINCT FROM $2',
       v_table, v_pk, v_column
     );
-    EXECUTE v_sql INTO v_count USING v_manifest_keys, p_booking_ops_record_id;
+    EXECUTE v_sql INTO v_count USING v_manifest_uuids, p_booking_ops_record_id;
     IF v_count > 0 THEN
       RETURN jsonb_build_object(
         'status', 'blocked',
@@ -517,13 +540,22 @@ BEGIN
       );
     END IF;
 
-    -- Lock exact verified children.
-    v_lock_sql := format(
-      'SELECT count(*) FROM public.%I WHERE %I = ANY ($1::text[]) AND %I = $2 FOR UPDATE',
-      v_table, v_pk, v_column
+    -- Lock exact verified children by primary key (row-level FOR UPDATE).
+    v_sql := format(
+      $q$
+      SELECT coalesce(array_agg(locked.%I ORDER BY locked.%I::text), ARRAY[]::uuid[])
+      FROM (
+        SELECT %I
+        FROM public.%I
+        WHERE %I = ANY ($1::uuid[])
+          AND %I = $2
+        FOR UPDATE
+      ) locked
+      $q$,
+      v_pk, v_pk, v_pk, v_table, v_pk, v_column
     );
-    EXECUTE v_lock_sql INTO v_count USING v_manifest_keys, p_booking_ops_record_id;
-    IF v_count <> coalesce(array_length(v_manifest_keys, 1), 0) THEN
+    EXECUTE v_sql INTO v_locked_uuids USING v_manifest_uuids, p_booking_ops_record_id;
+    IF coalesce(array_length(v_locked_uuids, 1), 0) <> coalesce(array_length(v_manifest_uuids, 1), 0) THEN
       RETURN jsonb_build_object(
         'status', 'blocked',
         'transaction_committed', false,
@@ -586,32 +618,92 @@ BEGIN
     );
   END IF;
 
-  -- Scoped deletes: exact key AND FK relationship to orphan.
-  FOR v_edge IN SELECT * FROM jsonb_array_elements(coalesce(v_fk->'edges', '[]'::jsonb))
-  LOOP
-    v_table := v_edge->>'table_name';
-    v_column := v_edge->>'column_name';
-    v_pk := v_edge->>'pk_column';
-    IF coalesce((v_edge->>'row_count')::int, 0) = 0 THEN
-      CONTINUE;
-    END IF;
-    IF coalesce((v_edge->>'deletable')::boolean, false) IS NOT TRUE THEN
-      RAISE EXCEPTION 'non_deletable_edge_during_delete:%', v_table;
-    END IF;
+  -- Scoped deletes in FK-safe order: exact UUID PK AND FK relationship to orphan.
+  -- decisions/autopilot before domain_events; lifecycle_events before lifecycle_runs.
+  v_delete_order := ARRAY[
+    'booking_ops_lifecycle_decisions',
+    'booking_ops_lifecycle_events',
+    'booking_ops_events',
+    'booking_ops_tasks',
+    'booking_ops_telegram_drafts',
+    'booking_ops_communication_intents',
+    'booking_ops_guest_intake_sessions',
+    'booking_availability_holds',
+    'booking_overbooking_conflict_checks',
+    'booking_ops_lifecycle_drafts',
+    'booking_ops_alerts',
+    'booking_ops_worker_tasks',
+    'booking_ops_autopilot_states',
+    'booking_ops_domain_events',
+    'booking_ops_lifecycle_runs',
+    'booking_ops_lifecycle_states'
+  ];
 
+  FOREACH v_table IN ARRAY v_delete_order
+  LOOP
     SELECT ARRAY(
       SELECT jsonb_array_elements_text(coalesce(p_deletion_manifest -> v_table, '[]'::jsonb))
     ) INTO v_manifest_keys;
     v_expected := coalesce(array_length(v_manifest_keys, 1), 0);
     IF v_expected = 0 THEN
-      RAISE EXCEPTION 'missing_manifest_for_edge:%', v_table;
+      CONTINUE;
     END IF;
 
+    v_edge := v_edge_by_table -> v_table;
+    IF v_edge IS NULL OR jsonb_typeof(v_edge) = 'null' THEN
+      RAISE EXCEPTION 'missing_live_edge_for_manifest_table:%', v_table;
+    END IF;
+    IF coalesce((v_edge->>'deletable')::boolean, false) IS NOT TRUE THEN
+      RAISE EXCEPTION 'non_deletable_edge_during_delete:%', v_table;
+    END IF;
+
+    v_column := v_edge->>'column_name';
+    v_pk := v_edge->>'pk_column';
+    SELECT ARRAY(
+      SELECT unnest(v_manifest_keys)::uuid
+    ) INTO v_manifest_uuids;
+
     v_sql := format(
-      'DELETE FROM public.%I WHERE %I = ANY ($1::text[]) AND %I = $2',
+      'DELETE FROM public.%I WHERE %I = ANY ($1::uuid[]) AND %I = $2',
       v_table, v_pk, v_column
     );
-    EXECUTE v_sql USING v_manifest_keys, p_booking_ops_record_id;
+    EXECUTE v_sql USING v_manifest_uuids, p_booking_ops_record_id;
+    GET DIAGNOSTICS v_deleted = ROW_COUNT;
+    IF v_deleted <> v_expected THEN
+      RAISE EXCEPTION 'deleted_count_mismatch:%:%:%', v_table, v_expected, v_deleted;
+    END IF;
+    v_deleted_counts := v_deleted_counts || jsonb_build_object(v_table, coalesce((v_deleted_counts->>v_table)::int, 0) + v_deleted);
+  END LOOP;
+
+  -- Any remaining allowlisted manifest tables not covered by delete_order must still be deleted.
+  FOR v_table IN
+    SELECT key FROM jsonb_each(coalesce(p_deletion_manifest, '{}'::jsonb))
+    WHERE key <> 'booking_ops_records'
+      AND key <> 'booking_ops_communication_deliveries'
+      AND NOT (key = ANY (v_delete_order))
+  LOOP
+    SELECT ARRAY(
+      SELECT jsonb_array_elements_text(coalesce(p_deletion_manifest -> v_table, '[]'::jsonb))
+    ) INTO v_manifest_keys;
+    IF coalesce(array_length(v_manifest_keys, 1), 0) = 0 THEN
+      CONTINUE;
+    END IF;
+    v_edge := v_edge_by_table -> v_table;
+    IF v_edge IS NULL OR jsonb_typeof(v_edge) = 'null' THEN
+      RAISE EXCEPTION 'missing_live_edge_for_manifest_table:%', v_table;
+    END IF;
+    IF coalesce((v_edge->>'deletable')::boolean, false) IS NOT TRUE THEN
+      RAISE EXCEPTION 'non_deletable_edge_during_delete:%', v_table;
+    END IF;
+    v_column := v_edge->>'column_name';
+    v_pk := v_edge->>'pk_column';
+    v_expected := array_length(v_manifest_keys, 1);
+    SELECT ARRAY(SELECT unnest(v_manifest_keys)::uuid) INTO v_manifest_uuids;
+    v_sql := format(
+      'DELETE FROM public.%I WHERE %I = ANY ($1::uuid[]) AND %I = $2',
+      v_table, v_pk, v_column
+    );
+    EXECUTE v_sql USING v_manifest_uuids, p_booking_ops_record_id;
     GET DIAGNOSTICS v_deleted = ROW_COUNT;
     IF v_deleted <> v_expected THEN
       RAISE EXCEPTION 'deleted_count_mismatch:%:%:%', v_table, v_expected, v_deleted;
@@ -668,8 +760,9 @@ BEGIN
       SELECT jsonb_array_elements_text(coalesce(p_deletion_manifest -> v_table, '[]'::jsonb))
     ) INTO v_manifest_keys;
     IF coalesce(array_length(v_manifest_keys, 1), 0) > 0 THEN
-      v_sql := format('SELECT count(*) FROM public.%I WHERE %I = ANY ($1::text[])', v_table, v_pk);
-      EXECUTE v_sql INTO v_count USING v_manifest_keys;
+      SELECT ARRAY(SELECT unnest(v_manifest_keys)::uuid) INTO v_manifest_uuids;
+      v_sql := format('SELECT count(*) FROM public.%I WHERE %I = ANY ($1::uuid[])', v_table, v_pk);
+      EXECUTE v_sql INTO v_count USING v_manifest_uuids;
       IF v_count > 0 THEN
         RAISE EXCEPTION 'manifest_ids_remain:%', v_table;
       END IF;
