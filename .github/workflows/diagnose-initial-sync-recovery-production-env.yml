@@ -1,0 +1,269 @@
+name: Diagnose Initial Sync Recovery Production Env
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm_read_only_diagnostic:
+        description: Type DIAGNOSE_INITIAL_SYNC_RECOVERY_PRODUCTION_ENV_READ_ONLY to run
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: diagnose-initial-sync-recovery-production-env
+  cancel-in-progress: false
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 15
+    steps:
+      - name: Validate owner gate phrase
+        shell: bash
+        run: |
+          set -euo pipefail
+          REQUIRED="DIAGNOSE_INITIAL_SYNC_RECOVERY_PRODUCTION_ENV_READ_ONLY"
+          PROVIDED="${{ github.event.inputs.confirm_read_only_diagnostic }}"
+          if [[ "$PROVIDED" != "$REQUIRED" ]]; then
+            echo "::error::Confirmation phrase mismatch. Refusing to run diagnostics."
+            exit 1
+          fi
+
+      - name: Start SSH agent with production key
+        uses: webfactory/ssh-agent@dc588b651fe13675774614f8e6a936a468676387 # v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.VPS_SSH_KEY }}
+          log-public-key: false
+
+      - name: Read-only runtime and environment diagnostics over one SSH session
+        shell: bash
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_PORT: ${{ secrets.VPS_PORT }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${VPS_HOST:-}" ]]; then
+            echo "::error::Missing VPS_HOST"
+            exit 1
+          fi
+
+          if [[ -z "${SSH_AUTH_SOCK:-}" || ! -S "$SSH_AUTH_SOCK" ]]; then
+            echo "::error::SSH agent socket is unavailable"
+            exit 1
+          fi
+          if ! ssh-add -l >/dev/null 2>&1; then
+            echo "::error::No SSH identity is loaded"
+            exit 1
+          fi
+
+          REMOTE_USER="project_ayfaar"
+          REMOTE_PORT="${VPS_PORT:-22}"
+
+          SSH_OPTS=(
+            -p "$REMOTE_PORT"
+            -o "IdentityAgent=${SSH_AUTH_SOCK}"
+            -o IdentitiesOnly=no
+            -o BatchMode=yes
+            -o StrictHostKeyChecking=accept-new
+            -o ConnectTimeout=20
+          )
+
+          ssh "${SSH_OPTS[@]}" "${REMOTE_USER}@${VPS_HOST}" "bash -s" <<'REMOTE'
+          set -euo pipefail
+
+          APPROVED_KEYS=(
+            "SUPABASE_DB_URL"
+            "DATABASE_URL"
+            "PRODUCTION_DATABASE_URL"
+            "NEXT_PUBLIC_SUPABASE_URL"
+            "SUPABASE_URL"
+            "SUPABASE_SERVICE_ROLE_KEY"
+            "NEXT_PUBLIC_SUPABASE_ANON_KEY"
+          )
+          EXPECTED_SQL_PATH="/home/project_ayfaar/asi-migration-tmp/20260805120000-recovery-v1/20260805120000_channel_manager_live_core_synthetic_recovery_v1.sql"
+          EXPECTED_SQL_SHA256="b87133906dea94b148b4778cd15006be9acec1e4cd995512ca975b12d8c69868"
+          ENV_FILES=(
+            "/var/www/asi/shared/.env.production.live"
+            "/var/www/asi/current/.env.production.local"
+            "/var/www/asi/current/.env.production.live"
+          )
+
+          safe_json_field() {
+            local body="$1"
+            local key="$2"
+            printf '%s\n' "$body" | sed -nE "s/.*\"${key}\"[[:space:]]*:[[:space:]]*\"?([^\",}]*)\"?.*/\1/p" | awk 'NR==1{print; exit}'
+          }
+
+          print_endpoint_summary() {
+            local label="$1"
+            local url="$2"
+            local response status body
+            response="$(curl -sS -w $'\n%{http_code}' "$url" || true)"
+            status="${response##*$'\n'}"
+            body="${response%$'\n'*}"
+            local environment sha release_path
+            environment="$(safe_json_field "$body" "environment")"
+            sha="$(safe_json_field "$body" "sha")"
+            release_path="$(safe_json_field "$body" "releasePath")"
+            printf '[runtime] endpoint=%s status=%s environment=%s sha=%s releasePath=%s\n' \
+              "$label" "${status:-000}" "${environment:-unknown}" "${sha:-unknown}" "${release_path:-unknown}"
+            local health status_field uptime_seconds timestamp
+            health="$(safe_json_field "$body" "health")"
+            status_field="$(safe_json_field "$body" "status")"
+            uptime_seconds="$(safe_json_field "$body" "uptimeSeconds")"
+            timestamp="$(safe_json_field "$body" "timestamp")"
+            printf '[runtime-safe-health] endpoint=%s health=%s statusField=%s uptimeSeconds=%s timestamp=%s\n' \
+              "$label" "${health:-unknown}" "${status_field:-unknown}" "${uptime_seconds:-unknown}" "${timestamp:-unknown}"
+          }
+
+          key_status_in_file() {
+            local key="$1"
+            local file="$2"
+            if grep -Eq "^[[:space:]]*${key}=" "$file"; then
+              local value
+              value="$(grep -E "^[[:space:]]*${key}=" "$file" | tail -n 1 | cut -d'=' -f2-)"
+              value="${value%\"}"
+              value="${value#\"}"
+              if [[ -n "${value//[[:space:]]/}" ]]; then
+                printf 'present=yes nonempty=yes'
+              else
+                printf 'present=yes nonempty=no'
+              fi
+            else
+              printf 'present=no nonempty=no'
+            fi
+          }
+
+          echo "[section] local runtime"
+          print_endpoint_summary "version" "http://127.0.0.1:3000/api/version"
+          print_endpoint_summary "health" "http://127.0.0.1:3000/api/health"
+
+          echo "[section] env files approved keys status"
+          for file in "${ENV_FILES[@]}"; do
+            if [[ -L "$file" ]]; then
+              kind="symlink"
+              target="$(readlink "$file" || true)"
+            elif [[ -f "$file" ]]; then
+              kind="regular"
+              target="-"
+            elif [[ -e "$file" ]]; then
+              kind="other"
+              target="-"
+            else
+              kind="missing"
+              target="-"
+            fi
+            if [[ "$kind" == "missing" ]]; then
+              printf '[env-file] path=%s exists=no kind=%s symlinkTarget=%s ownerGroup=- mode=-\n' "$file" "$kind" "$target"
+              continue
+            fi
+            owner_group="$(stat -c '%U:%G' "$file" 2>/dev/null || echo 'unknown:unknown')"
+            mode="$(stat -c '%a' "$file" 2>/dev/null || echo 'unknown')"
+            printf '[env-file] path=%s exists=yes kind=%s symlinkTarget=%s ownerGroup=%s mode=%s\n' \
+              "$file" "$kind" "$target" "$owner_group" "$mode"
+            if [[ "$kind" == "regular" || "$kind" == "symlink" ]]; then
+              for key in "${APPROVED_KEYS[@]}"; do
+                status="$(key_status_in_file "$key" "$file")"
+                printf '[env-key] path=%s key=%s %s\n' "$file" "$key" "$status"
+              done
+            fi
+          done
+
+          echo "[section] pm2 process identity"
+          PM2_CANDIDATES="$(
+            pm2 jlist | node -e '
+              let data = "";
+              process.stdin.on("data", (chunk) => { data += chunk; });
+              process.stdin.on("end", () => {
+                let list = [];
+                try { list = JSON.parse(data); } catch { process.exit(2); }
+                const candidates = list.filter((p) => {
+                  const name = String(p.name || "");
+                  const cwd = String(p.pm2_env?.pm_cwd || "");
+                  const execPath = String(p.pm2_env?.pm_exec_path || "");
+                  return /(^asi|\/asi\/|asi-landing|landing-asi)/i.test(name) ||
+                    /\/var\/www\/asi/i.test(cwd) ||
+                    /\/var\/www\/asi/i.test(execPath);
+                });
+                const process0 = list.find((p) => Number(p.pm_id) === 0);
+                const process0IsAsi = process0 ? candidates.some((p) => Number(p.pm_id) === Number(process0.pm_id)) : false;
+                console.log(`count=${candidates.length}`);
+                console.log(`process0_is_asi=${process0IsAsi ? "yes" : "no"}`);
+                for (const p of candidates) {
+                  const status = String(p.pm2_env?.status || "unknown");
+                  const cwd = String(p.pm2_env?.pm_cwd || "");
+                  const execPath = String(p.pm2_env?.pm_exec_path || "");
+                  console.log(`candidate\t${p.pm_id}\t${p.name || ""}\t${status}\t${cwd}\t${execPath}`);
+                }
+              });
+            '
+          )"
+          printf '%s\n' "$PM2_CANDIDATES" | while IFS= read -r line; do
+            case "$line" in
+              count=*)
+                printf '[pm2] candidate_count=%s\n' "${line#count=}"
+                ;;
+              process0_is_asi=*)
+                printf '[pm2] process0_is_asi=%s\n' "${line#process0_is_asi=}"
+                ;;
+              candidate*)
+                IFS=$'\t' read -r _ pm_id name status cwd exec_path <<<"$line"
+                printf '[pm2-candidate] pm_id=%s name=%s status=%s cwd=%s execPath=%s\n' \
+                  "$pm_id" "$name" "$status" "${cwd:-unknown}" "${exec_path:-unknown}"
+                ;;
+            esac
+          done
+
+          candidate_count="$(printf '%s\n' "$PM2_CANDIDATES" | sed -nE 's/^count=([0-9]+)$/\1/p' | head -n 1)"
+          if [[ "$candidate_count" == "1" ]]; then
+            asi_pm_id="$(printf '%s\n' "$PM2_CANDIDATES" | awk -F'\t' '/^candidate\t/{print $2}' | awk 'NR==1{print; exit}')"
+            echo "[section] pm2 env approved keys status"
+            PM2_ENV_OUTPUT="$(pm2 env "$asi_pm_id" || true)"
+            printf '%s\n' "$PM2_ENV_OUTPUT" | while IFS= read -r line; do
+              for key in "${APPROVED_KEYS[@]}"; do
+                case "$line" in
+                  "$key":*)
+                    raw_value="${line#"$key": }"
+                    trimmed="$(printf '%s' "$raw_value" | tr -d '[:space:]')"
+                    if [[ -n "$trimmed" ]]; then
+                      printf '[pm2-key] pm_id=%s key=%s present=yes nonempty=yes\n' "$asi_pm_id" "$key"
+                    else
+                      printf '[pm2-key] pm_id=%s key=%s present=yes nonempty=no\n' "$asi_pm_id" "$key"
+                    fi
+                    ;;
+                esac
+              done
+            done
+            for key in "${APPROVED_KEYS[@]}"; do
+              if ! printf '%s\n' "$PM2_ENV_OUTPUT" | grep -Eq "^${key}:"; then
+                printf '[pm2-key] pm_id=%s key=%s present=no nonempty=no\n' "$asi_pm_id" "$key"
+              fi
+            done
+          else
+            echo "[pm2] approved key inspection skipped because ASI candidate count is not exactly 1"
+          fi
+
+          echo "[section] sql artifact metadata"
+          if [[ -e "$EXPECTED_SQL_PATH" ]]; then
+            is_regular="no"
+            if [[ -f "$EXPECTED_SQL_PATH" ]]; then
+              is_regular="yes"
+            fi
+            owner_group="$(stat -c '%U:%G' "$EXPECTED_SQL_PATH" 2>/dev/null || echo 'unknown:unknown')"
+            mode="$(stat -c '%a' "$EXPECTED_SQL_PATH" 2>/dev/null || echo 'unknown')"
+            size="$(stat -c '%s' "$EXPECTED_SQL_PATH" 2>/dev/null || echo 'unknown')"
+            mtime="$(stat -c '%y' "$EXPECTED_SQL_PATH" 2>/dev/null || echo 'unknown')"
+            sha256="$(sha256sum "$EXPECTED_SQL_PATH" 2>/dev/null | awk '{print $1}')"
+            checksum_match="no"
+            if [[ "$sha256" == "$EXPECTED_SQL_SHA256" ]]; then
+              checksum_match="yes"
+            fi
+            printf '[sql-artifact] path=%s exists=yes regular=%s ownerGroup=%s mode=%s size=%s mtime=%s sha256=%s expectedChecksumMatch=%s\n' \
+              "$EXPECTED_SQL_PATH" "$is_regular" "$owner_group" "$mode" "$size" "$mtime" "${sha256:-unknown}" "$checksum_match"
+          else
+            printf '[sql-artifact] path=%s exists=no regular=no ownerGroup=- mode=- size=- mtime=- sha256=- expectedChecksumMatch=no\n' "$EXPECTED_SQL_PATH"
+          fi
+          REMOTE
