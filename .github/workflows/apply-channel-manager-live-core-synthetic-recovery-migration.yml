@@ -1,0 +1,289 @@
+name: Apply Channel Manager Live Core Synthetic Recovery v1 Migration
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm_production_migration:
+        description: Type APPLY_20260805120000_RECOVERY_V1_TO_PRODUCTION to run this exact production DDL
+        required: true
+        type: string
+
+concurrency:
+  group: production-migration-channel-manager-live-core-synthetic-recovery-v1
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  AUTHORIZED_REPOSITORY: ASI-integration/asi-landing
+  AUTHORIZED_SHA: 6b9f022e423e1032f66286b9348160c4dd59f45c
+  AUTHORIZED_PRE_MIGRATION_SHA: f5c7b91d7a6af87a07043673403aa44c56cf348a
+  AUTHORIZED_MIGRATION: supabase/migrations/20260805120000_channel_manager_live_core_synthetic_recovery_v1.sql
+  AUTHORIZED_MIGRATION_SHA256: 6fbc176b21006d258d4f0253d538c46b66862f0e7752137dda62bc8a88d811ba
+
+jobs:
+  exact_artifact_preflight:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require exact production migration confirmation
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${{ inputs.confirm_production_migration }}" != "APPLY_20260805120000_RECOVERY_V1_TO_PRODUCTION" ]]; then
+            echo "Set confirm_production_migration to APPLY_20260805120000_RECOVERY_V1_TO_PRODUCTION."
+            exit 1
+          fi
+          if [[ "$GITHUB_REPOSITORY" != "$AUTHORIZED_REPOSITORY" ]]; then
+            echo "Unexpected repository: $GITHUB_REPOSITORY"
+            exit 1
+          fi
+
+      - name: Checkout the authorized source commit
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          ref: 6b9f022e423e1032f66286b9348160c4dd59f45c
+
+      - name: Verify exact commit and migration bytes
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$AUTHORIZED_SHA"
+          test "$(git hash-object "$AUTHORIZED_MIGRATION")" = "f56db2124b2e91782fcf05be7fb37b51998808b3"
+          printf '%s  %s\n' "$AUTHORIZED_MIGRATION_SHA256" "$AUTHORIZED_MIGRATION" | sha256sum --check --strict
+          test -z "$(git status --porcelain)"
+
+      - name: Verify current public production release
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION_JSON="$(curl --fail --silent --show-error --max-time 20 https://asi-global.ru/api/version)"
+          VERSION_JSON="$VERSION_JSON" node <<'NODE'
+          const value = JSON.parse(process.env.VERSION_JSON || '{}');
+          const expected = process.env.AUTHORIZED_PRE_MIGRATION_SHA;
+          if (value.environment !== 'production' || value.sha !== expected) {
+            throw new Error(`Production release mismatch: expected ${expected}, received ${String(value.sha || 'unknown')}`);
+          }
+          console.log(`production_release_verified=${value.sha}`);
+          NODE
+
+  apply_exact_migration:
+    runs-on: ubuntu-latest
+    needs: [exact_artifact_preflight]
+    environment: production
+    steps:
+      - name: Checkout the authorized source commit
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          ref: 6b9f022e423e1032f66286b9348160c4dd59f45c
+
+      - name: Reverify exact commit and migration bytes
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = "$AUTHORIZED_REPOSITORY"
+          test "$(git rev-parse HEAD)" = "$AUTHORIZED_SHA"
+          printf '%s  %s\n' "$AUTHORIZED_MIGRATION_SHA256" "$AUTHORIZED_MIGRATION" | sha256sum --check --strict
+
+      - name: Apply only the authorized migration on the production VPS database
+        shell: bash
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_PORT: ${{ secrets.VPS_PORT }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${VPS_HOST:-}" || -z "${VPS_SSH_KEY:-}" ]]; then
+            echo "::error::Missing VPS_HOST or VPS_SSH_KEY"
+            exit 1
+          fi
+
+          REMOTE_USER="project_ayfaar"
+          REMOTE_PORT="${VPS_PORT:-22}"
+          REMOTE_TMP="/home/project_ayfaar/asi-migration-tmp/20260805120000-recovery-v1"
+          REMOTE_SQL="${REMOTE_TMP}/20260805120000_channel_manager_live_core_synthetic_recovery_v1.sql"
+
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          SSH_KEY=~/.ssh/id_ed25519
+          printf '%s\n' "$VPS_SSH_KEY" > "$SSH_KEY"
+          chmod 600 "$SSH_KEY"
+          touch ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+          ssh-keyscan -p "$REMOTE_PORT" -H "$VPS_HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
+
+          SSH_OPTS=(-i "$SSH_KEY" -p "$REMOTE_PORT" -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -o LogLevel=ERROR -o ConnectTimeout=20)
+          SCP_OPTS=(-i "$SSH_KEY" -P "$REMOTE_PORT" -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -o LogLevel=ERROR -o ConnectTimeout=20)
+
+          ssh "${SSH_OPTS[@]}" "${REMOTE_USER}@${VPS_HOST}" "mkdir -p '${REMOTE_TMP}' && chmod 700 '${REMOTE_TMP}'"
+          scp "${SCP_OPTS[@]}" "$AUTHORIZED_MIGRATION" "${REMOTE_USER}@${VPS_HOST}:${REMOTE_SQL}"
+
+          ssh "${SSH_OPTS[@]}" "${REMOTE_USER}@${VPS_HOST}" \
+            "AUTHORIZED_PRE_MIGRATION_SHA='${AUTHORIZED_PRE_MIGRATION_SHA}' AUTHORIZED_MIGRATION_SHA256='${AUTHORIZED_MIGRATION_SHA256}' REMOTE_SQL='${REMOTE_SQL}' bash -s" <<'REMOTE'
+          set -euo pipefail
+
+          printf '%s  %s\n' "$AUTHORIZED_MIGRATION_SHA256" "$REMOTE_SQL" | sha256sum --check --strict
+
+          VERSION_JSON="$(curl --fail --silent --show-error --max-time 20 http://127.0.0.1:3000/api/version)"
+          VERSION_JSON="$VERSION_JSON" python3 - <<'PY'
+          import json
+          import os
+
+          value = json.loads(os.environ.get("VERSION_JSON", "{}"))
+          expected = os.environ["AUTHORIZED_PRE_MIGRATION_SHA"]
+          expected_path = f"/var/www/asi/releases/{expected}"
+          if value.get("environment") != "production" or value.get("sha") != expected:
+              raise SystemExit("production_runtime_identity_mismatch")
+          if value.get("releasePath") != expected_path:
+              raise SystemExit("production_release_path_mismatch")
+          print(f"production_runtime_verified={expected}")
+          PY
+
+          ENV_FILE=/var/www/asi/shared/.env.production.live
+          if [[ ! -f "$ENV_FILE" ]]; then
+            echo "Production environment file is missing."
+            exit 2
+          fi
+          set -a
+          # shellcheck disable=SC1090
+          source "$ENV_FILE"
+          set +a
+
+          PM2_ENV="$(sudo -u project_ayfaar pm2 env 0 2>/dev/null || true)"
+          while IFS= read -r line; do
+            for prefix in SUPABASE_DB_URL: DATABASE_URL: PRODUCTION_DATABASE_URL:; do
+              if [[ "$line" == "$prefix"* ]]; then
+                key="${prefix%:}"
+                val="${line#"$prefix"}"
+                val="${val#"${val%%[![:space:]]*}"}"
+                export "$key=$val"
+              fi
+            done
+          done <<< "$PM2_ENV"
+
+          DB_URL="${SUPABASE_DB_URL:-${DATABASE_URL:-${PRODUCTION_DATABASE_URL:-}}}"
+          if [[ -z "$DB_URL" || -z "${NEXT_PUBLIC_SUPABASE_URL:-}" ]]; then
+            echo "Production database identity is incomplete."
+            exit 2
+          fi
+          DB_URL="$DB_URL" NEXT_PUBLIC_SUPABASE_URL="$NEXT_PUBLIC_SUPABASE_URL" python3 - <<'PY'
+          import os
+          from urllib.parse import unquote, urlparse
+
+          public_host = (urlparse(os.environ["NEXT_PUBLIC_SUPABASE_URL"]).hostname or "").lower()
+          public_ref = public_host.split(".", 1)[0]
+          database = urlparse(os.environ["DB_URL"])
+          database_host = (database.hostname or "").lower()
+          database_user = unquote(database.username or "").lower()
+          if not public_ref or ".supabase.co" not in public_host:
+              raise SystemExit("production_supabase_public_identity_invalid")
+          if public_ref not in database_host and public_ref not in database_user:
+              raise SystemExit("production_supabase_database_identity_mismatch")
+          print("production_supabase_identity_verified=yes")
+          PY
+
+          VERIFY_SQL="WITH expected(signature) AS (
+            VALUES
+              ('public.channel_manager_live_core_recovery_expected_fk_edges()'),
+              ('public.channel_manager_live_core_booking_ops_fk_children(uuid)'),
+              ('public.channel_manager_live_core_synthetic_recovery_cleanup(text,boolean,uuid,text,text,text,jsonb,uuid,uuid,uuid,uuid[])')
+          ), resolved AS (
+            SELECT to_regprocedure(signature) AS oid FROM expected
+          )
+          SELECT CASE
+            WHEN count(*) = 3
+             AND bool_and(oid IS NOT NULL)
+             AND bool_and((SELECT prosecdef FROM pg_proc WHERE pg_proc.oid = resolved.oid))
+             AND bool_and(coalesce((SELECT proconfig @> ARRAY['search_path=public'] FROM pg_proc WHERE pg_proc.oid = resolved.oid), false))
+             AND bool_and(has_function_privilege('service_role', oid, 'EXECUTE'))
+             AND bool_and(NOT has_function_privilege('anon', oid, 'EXECUTE'))
+             AND bool_and(NOT has_function_privilege('authenticated', oid, 'EXECUTE'))
+            THEN 'verified' ELSE 'failed' END
+          FROM resolved;"
+
+          VERIFY_BLOCK="DO \$verify\$
+          DECLARE
+            v_signature text;
+            v_oid regprocedure;
+          BEGIN
+            FOREACH v_signature IN ARRAY ARRAY[
+              'public.channel_manager_live_core_recovery_expected_fk_edges()',
+              'public.channel_manager_live_core_booking_ops_fk_children(uuid)',
+              'public.channel_manager_live_core_synthetic_recovery_cleanup(text,boolean,uuid,text,text,text,jsonb,uuid,uuid,uuid,uuid[])'
+            ] LOOP
+              v_oid := to_regprocedure(v_signature);
+              IF v_oid IS NULL THEN
+                RAISE EXCEPTION 'missing recovery function: %', v_signature;
+              END IF;
+              IF NOT EXISTS (
+                SELECT 1 FROM pg_proc
+                WHERE oid = v_oid
+                  AND prosecdef
+                  AND coalesce(proconfig @> ARRAY['search_path=public'], false)
+              ) THEN
+                RAISE EXCEPTION 'unsafe recovery function configuration: %', v_signature;
+              END IF;
+              IF NOT has_function_privilege('service_role', v_oid, 'EXECUTE')
+                 OR has_function_privilege('anon', v_oid, 'EXECUTE')
+                 OR has_function_privilege('authenticated', v_oid, 'EXECUTE') THEN
+                RAISE EXCEPTION 'unsafe recovery function grants: %', v_signature;
+              END IF;
+            END LOOP;
+          END
+          \$verify\$;"
+
+          if command -v psql >/dev/null 2>&1; then
+            psql -X "$DB_URL" --set ON_ERROR_STOP=1 --single-transaction \
+              --file "$REMOTE_SQL" \
+              --command "NOTIFY pgrst, 'reload schema';" \
+              --command "$VERIFY_BLOCK"
+            VERIFY_RESULT=verified
+          else
+            VENV="${REMOTE_SQL}.venv"
+            python3 -m venv "$VENV"
+            "$VENV/bin/pip" install --quiet 'psycopg2-binary==2.9.10'
+            DB_URL="$DB_URL" REMOTE_SQL="$REMOTE_SQL" VERIFY_SQL="$VERIFY_SQL" "$VENV/bin/python" - <<'PY'
+          import os
+          from pathlib import Path
+          import psycopg2
+
+          connection = psycopg2.connect(os.environ["DB_URL"])
+          try:
+              with connection.cursor() as cursor:
+                  cursor.execute(Path(os.environ["REMOTE_SQL"]).read_text(encoding="utf-8"))
+                  cursor.execute("NOTIFY pgrst, 'reload schema';")
+                  cursor.execute(os.environ["VERIFY_SQL"])
+                  result = cursor.fetchone()
+                  if not result or result[0] != "verified":
+                      raise RuntimeError("migration_verification_failed")
+              connection.commit()
+          except Exception:
+              connection.rollback()
+              raise
+          finally:
+              connection.close()
+          print("migration_verification=verified")
+          PY
+            VERIFY_RESULT=verified
+          fi
+
+          if [[ "$VERIFY_RESULT" != "verified" ]]; then
+            echo "Migration verification failed."
+            exit 3
+          fi
+
+          VERSION_JSON="$(curl --fail --silent --show-error --max-time 20 http://127.0.0.1:3000/api/version)"
+          VERSION_JSON="$VERSION_JSON" python3 - <<'PY'
+          import json
+          import os
+
+          value = json.loads(os.environ.get("VERSION_JSON", "{}"))
+          expected = os.environ["AUTHORIZED_PRE_MIGRATION_SHA"]
+          if value.get("environment") != "production" or value.get("sha") != expected:
+              raise SystemExit("production_runtime_changed_during_migration")
+          print("post_migration_runtime_unchanged=yes")
+          PY
+          echo "MIGRATION_STATUS=applied_and_verified"
+          REMOTE
