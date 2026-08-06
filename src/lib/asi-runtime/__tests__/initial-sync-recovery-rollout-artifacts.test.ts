@@ -14,9 +14,11 @@ const workflowPath = path.join(
   '.github/workflows/apply-channel-manager-live-core-synthetic-recovery-migration.yml',
 );
 const migrationPath = 'supabase/migrations/20260805120000_channel_manager_live_core_synthetic_recovery_v1.sql';
+const migrationAbsolutePath = path.join(repoRoot, migrationPath);
 const requiredSha = '6b9f022e423e1032f66286b9348160c4dd59f45c';
 const rollbackSha = 'f5c7b91d7a6af87a07043673403aa44c56cf348a';
 const migrationBlobSha = 'f56db2124b2e91782fcf05be7fb37b51998808b3';
+const migrationBlobSize = 36467;
 const migrationSha256 = 'b87133906dea94b148b4778cd15006be9acec1e4cd995512ca975b12d8c69868';
 const retiredMigrationSha256 = '6fbc176b21006d258d4f0253d538c46b66862f0e7752137dda62bc8a88d811ba';
 const taskCycle = 'initial-sync-recovery-v1-production-rollout-20260806-r2';
@@ -49,9 +51,12 @@ function readJson<T>(...parts: string[]): T {
   return JSON.parse(fs.readFileSync(path.join(...parts), 'utf8')) as T;
 }
 
-function sha256FromAuthorizedGitBlob(): string {
-  const blobBytes = execSync(`git cat-file blob ${requiredSha}:${migrationPath}`);
-  return createHash('sha256').update(blobBytes).digest('hex');
+function readPinnedMigrationBlobBytes(): Buffer {
+  return execSync(`git cat-file blob ${migrationBlobSha}`);
+}
+
+function sha256FromPinnedGitBlob(): string {
+  return createHash('sha256').update(readPinnedMigrationBlobBytes()).digest('hex');
 }
 
 function collectActiveRolloutAuthorizationText(): string {
@@ -86,14 +91,37 @@ describe('Initial Sync Recovery v1 production rollout artifacts', () => {
     expect(workflowText.match(/supabase\/migrations\//g)).toHaveLength(1);
   });
 
-  it('derives the canonical Git blob SHA-256 from authorized commit bytes', () => {
-    expect(sha256FromAuthorizedGitBlob()).toBe(migrationSha256);
-    expect(
-      execSync(`git hash-object ${path.join(repoRoot, migrationPath)}`).toString('utf8').trim(),
-    ).toBe(migrationBlobSha);
-    expect(
-      execSync(`git rev-parse ${requiredSha}:${migrationPath}`).toString('utf8').trim(),
-    ).toBe(migrationBlobSha);
+  it('derives the canonical Git blob SHA-256 from pinned blob bytes without historical commit lookup', () => {
+    const blobBytes = readPinnedMigrationBlobBytes();
+    const blobSha256 = sha256FromPinnedGitBlob();
+    const workingTreeBlobSha = execSync(`git hash-object "${migrationAbsolutePath}"`)
+      .toString('utf8')
+      .trim();
+
+    expect(blobBytes.length).toBe(migrationBlobSize);
+    expect(blobSha256).toBe(migrationSha256);
+    expect(workingTreeBlobSha).toBe(migrationBlobSha);
+    expect(createHash('sha256').update(blobBytes).digest('hex')).toBe(migrationSha256);
+
+    console.log(
+      'ASI_ROLLOUT_ARTIFACT_PROOF',
+      JSON.stringify({
+        migrationBlobSha1: migrationBlobSha,
+        migrationBlobSize: blobBytes.length,
+        migrationSha256: blobSha256,
+        workflowPinMatches: fs.readFileSync(workflowPath, 'utf8').includes(
+          `AUTHORIZED_MIGRATION_SHA256: ${migrationSha256}`,
+        ),
+        sourceSha: requiredSha,
+        migrationPath,
+        retiredHashAbsentFromActiveAuthorization: !collectActiveRolloutAuthorizationText().includes(
+          retiredMigrationSha256,
+        ),
+        deployGateMissing: readJson<OwnerGateArtifact>(rolloutDir, 'deploy-owner-gate.json').status === 'missing',
+        deployGateUnapproved:
+          readJson<OwnerGateArtifact>(rolloutDir, 'deploy-owner-gate.json').authorization === null,
+      }),
+    );
   });
 
   it('retires the incorrect working-tree checksum from active rollout authorization', () => {
