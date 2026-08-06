@@ -86,6 +86,18 @@ jobs:
           console.log('rollout_artifact_proof_ok', JSON.stringify(proof));
           NODE
 
+      - name: Initial Sync Recovery production env diagnostic workflow regression
+        id: env_diag_workflow_regression
+        run: |
+          set -euo pipefail
+          npx vitest run \
+            src/lib/asi-runtime/__tests__/diagnose-initial-sync-recovery-production-env-workflow.test.ts \
+            --reporter=verbose 2>&1 | tee env-diag-workflow-regression.out
+          if grep -E '↓|skipped|SKIPPED' env-diag-workflow-regression.out | grep -Fq 'diagnose initial sync recovery production env workflow'; then
+            echo "Env diagnostic workflow regression suite was skipped — failing job"
+            exit 1
+          fi
+
       - name: Tests (Booking Ops focused regression coverage)
         run: |
           npx vitest run \
