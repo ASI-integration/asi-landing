@@ -158,25 +158,129 @@ jobs:
           # shellcheck disable=SC1090
           source "$ENV_FILE"
           set +a
+          ENV_FILE_NEXT_PUBLIC_SUPABASE_URL="${NEXT_PUBLIC_SUPABASE_URL:-}"
+          ENV_FILE_SUPABASE_DB_URL="${SUPABASE_DB_URL:-}"
+          ENV_FILE_DATABASE_URL="${DATABASE_URL:-}"
+          ENV_FILE_PRODUCTION_DATABASE_URL="${PRODUCTION_DATABASE_URL:-}"
 
-          PM2_ENV="$(sudo -u project_ayfaar pm2 env 0 2>/dev/null || true)"
+          ASI_APP_SELECTION="$(
+            sudo -u project_ayfaar pm2 jlist | python3 -c '
+import json
+import sys
+
+processes = json.load(sys.stdin)
+matches = []
+for process in processes:
+    env = process.get("pm2_env") or {}
+    name = str(process.get("name") or "")
+    status = str(env.get("status") or "")
+    cwd = str(env.get("pm_cwd") or "")
+    exec_path = str(env.get("pm_exec_path") or "")
+    if (
+        name == "asi-landing"
+        and status == "online"
+        and cwd == "/var/www/asi/current"
+        and exec_path.endswith("/node_modules/next/dist/bin/next")
+    ):
+        matches.append(
+            {
+                "pm_id": process.get("pm_id"),
+                "name": name,
+                "status": status,
+                "cwd": cwd,
+                "exec_path": exec_path,
+            }
+        )
+
+print("match_count=" + str(len(matches)))
+if len(matches) == 1:
+    selected = matches[0]
+    print("pm_id=" + str(selected.get("pm_id")))
+    print("name=" + str(selected.get("name")))
+    print("status=" + str(selected.get("status")))
+    print("cwd=" + str(selected.get("cwd")))
+    print("exec_path=" + str(selected.get("exec_path")))
+'
+          )"
+
+          ASI_APP_MATCH_COUNT="$(printf '%s\n' "$ASI_APP_SELECTION" | sed -nE 's/^match_count=([0-9]+)$/\1/p' | head -n 1)"
+          ASI_APP_PM_ID="$(printf '%s\n' "$ASI_APP_SELECTION" | sed -nE 's/^pm_id=(.+)$/\1/p' | head -n 1)"
+          ASI_APP_NAME="$(printf '%s\n' "$ASI_APP_SELECTION" | sed -nE 's/^name=(.+)$/\1/p' | head -n 1)"
+          ASI_APP_STATUS="$(printf '%s\n' "$ASI_APP_SELECTION" | sed -nE 's/^status=(.+)$/\1/p' | head -n 1)"
+          ASI_APP_CWD="$(printf '%s\n' "$ASI_APP_SELECTION" | sed -nE 's/^cwd=(.+)$/\1/p' | head -n 1)"
+          ASI_APP_EXEC="$(printf '%s\n' "$ASI_APP_SELECTION" | sed -nE 's/^exec_path=(.+)$/\1/p' | head -n 1)"
+
+          printf '[asi-app] exact_match_count=%s\n' "${ASI_APP_MATCH_COUNT:-0}"
+          if [[ "$ASI_APP_MATCH_COUNT" != "1" ]]; then
+            echo "ASI application identity error: expected exactly one online asi-landing process at /var/www/asi/current ending with /node_modules/next/dist/bin/next."
+            exit 2
+          fi
+          printf '[asi-app] selected_pm_id=%s name=%s status=%s cwd=%s execPath=%s\n' \
+            "$ASI_APP_PM_ID" "$ASI_APP_NAME" "$ASI_APP_STATUS" "$ASI_APP_CWD" "$ASI_APP_EXEC"
+
+          PM2_ENV="$(sudo -u project_ayfaar pm2 env "$ASI_APP_PM_ID" 2>/dev/null || true)"
+          PM2_SUPABASE_DB_URL=""
+          PM2_DATABASE_URL=""
+          PM2_PRODUCTION_DATABASE_URL=""
+          PM2_NEXT_PUBLIC_SUPABASE_URL=""
+          PM2_SUPABASE_URL=""
           while IFS= read -r line; do
-            for prefix in SUPABASE_DB_URL: DATABASE_URL: PRODUCTION_DATABASE_URL:; do
-              if [[ "$line" == "$prefix"* ]]; then
-                key="${prefix%:}"
-                val="${line#"$prefix"}"
+            case "$line" in
+              SUPABASE_DB_URL:*)
+                val="${line#SUPABASE_DB_URL:}"
                 val="${val#"${val%%[![:space:]]*}"}"
-                export "$key=$val"
-              fi
-            done
+                PM2_SUPABASE_DB_URL="$val"
+                ;;
+              DATABASE_URL:*)
+                val="${line#DATABASE_URL:}"
+                val="${val#"${val%%[![:space:]]*}"}"
+                PM2_DATABASE_URL="$val"
+                ;;
+              PRODUCTION_DATABASE_URL:*)
+                val="${line#PRODUCTION_DATABASE_URL:}"
+                val="${val#"${val%%[![:space:]]*}"}"
+                PM2_PRODUCTION_DATABASE_URL="$val"
+                ;;
+              NEXT_PUBLIC_SUPABASE_URL:*)
+                val="${line#NEXT_PUBLIC_SUPABASE_URL:}"
+                val="${val#"${val%%[![:space:]]*}"}"
+                PM2_NEXT_PUBLIC_SUPABASE_URL="$val"
+                ;;
+              SUPABASE_URL:*)
+                val="${line#SUPABASE_URL:}"
+                val="${val#"${val%%[![:space:]]*}"}"
+                PM2_SUPABASE_URL="$val"
+                ;;
+            esac
           done <<< "$PM2_ENV"
 
-          DB_URL="${SUPABASE_DB_URL:-${DATABASE_URL:-${PRODUCTION_DATABASE_URL:-}}}"
-          if [[ -z "$DB_URL" || -z "${NEXT_PUBLIC_SUPABASE_URL:-}" ]]; then
+          if [[ -n "${PM2_SUPABASE_DB_URL}" ]]; then
+            DB_URL="$PM2_SUPABASE_DB_URL"
+          elif [[ -n "${PM2_DATABASE_URL}" ]]; then
+            DB_URL="$PM2_DATABASE_URL"
+          elif [[ -n "${PM2_PRODUCTION_DATABASE_URL}" ]]; then
+            DB_URL="$PM2_PRODUCTION_DATABASE_URL"
+          elif [[ -n "${ENV_FILE_SUPABASE_DB_URL}" ]]; then
+            DB_URL="$ENV_FILE_SUPABASE_DB_URL"
+          elif [[ -n "${ENV_FILE_DATABASE_URL}" ]]; then
+            DB_URL="$ENV_FILE_DATABASE_URL"
+          else
+            DB_URL="${ENV_FILE_PRODUCTION_DATABASE_URL}"
+          fi
+
+          if [[ -n "${ENV_FILE_NEXT_PUBLIC_SUPABASE_URL}" ]]; then
+            PUBLIC_SUPABASE_URL="$ENV_FILE_NEXT_PUBLIC_SUPABASE_URL"
+          elif [[ -n "${PM2_NEXT_PUBLIC_SUPABASE_URL}" ]]; then
+            PUBLIC_SUPABASE_URL="$PM2_NEXT_PUBLIC_SUPABASE_URL"
+          else
+            PUBLIC_SUPABASE_URL="${PM2_SUPABASE_URL}"
+          fi
+
+          if [[ -z "$DB_URL" || -z "$PUBLIC_SUPABASE_URL" ]]; then
             echo "Production database identity is incomplete."
             exit 2
           fi
-          DB_URL="$DB_URL" NEXT_PUBLIC_SUPABASE_URL="$NEXT_PUBLIC_SUPABASE_URL" python3 - <<'PY'
+          DB_URL="$DB_URL" NEXT_PUBLIC_SUPABASE_URL="$PUBLIC_SUPABASE_URL" python3 - <<'PY'
           import os
           from urllib.parse import unquote, urlparse
 

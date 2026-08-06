@@ -96,11 +96,30 @@ describe('diagnose initial sync recovery production env workflow', () => {
 
     expect(workflow).not.toMatch(/\bset\s+-x\b/);
     expect(workflow).not.toMatch(/\bprintenv\b/);
-    expect(workflow).not.toMatch(/\becho\s+.*\$\{?(SUPABASE_DB_URL|DATABASE_URL|PRODUCTION_DATABASE_URL|NEXT_PUBLIC_SUPABASE_URL|SUPABASE_URL|SUPABASE_SERVICE_ROLE_KEY|NEXT_PUBLIC_SUPABASE_ANON_KEY)\}?/);
+    expect(workflow).not.toMatch(/\becho\s+.*\$\{?(SUPABASE_DB_URL|DATABASE_URL|PRODUCTION_DATABASE_URL|NEXT_PUBLIC_SUPABASE_URL|SUPABASE_URL|SUPABASE_SERVICE_ROLE_KEY|NEXT_PUBLIC_SUPABASE_ANON_KEY|PM2_ENV_OUTPUT|PM2_CANDIDATES)\}?/);
     expect(workflow).not.toMatch(/\bcat\s+.*\.env/);
-    expect(workflow).toContain('PM2_ENV_OUTPUT="$(pm2 env "$asi_pm_id" || true)"');
+    expect(workflow).toContain('PM2_ENV_OUTPUT="$(pm2 env "$ASI_APP_PM_ID" || true)"');
+    expect(workflow).not.toContain('pm2 env 0');
     expect(workflow).toContain('present=yes nonempty=yes');
     expect(workflow).toContain('present=no nonempty=no');
+  });
+
+  it('lists related ASI candidates while selecting only the exact asi-landing application', () => {
+    expect(workflow).toContain('related_count=');
+    expect(workflow).toContain('exact_app_match_count=');
+    expect(workflow).toContain('process0_is_exact_asi_app=');
+    expect(workflow).toContain('name === "asi-landing"');
+    expect(workflow).toContain('status === "online"');
+    expect(workflow).toContain('cwd === "/var/www/asi/current"');
+    expect(workflow).toContain('execPath.endsWith("/node_modules/next/dist/bin/next")');
+    expect(workflow).toContain('approved key inspection skipped because exact asi-landing application match count is not exactly 1');
+    expect(workflow).toContain('exact_app_match_count" == "1"');
+    expect(workflow).not.toContain('candidate_count" == "1"');
+    expect(workflow).toContain('selected_pm_id=');
+    expect(workflow).toContain('pm2 env "$ASI_APP_PM_ID"');
+    expect(workflow).not.toMatch(/JSON\.stringify\(\s*list\s*\)/);
+    expect(workflow).not.toContain('console.log(data)');
+    expect(workflow).not.toContain('console.log(list)');
   });
 
   it('pins immutable SSH action SHA and forbids mutable tags for VPS_SSH_KEY', () => {

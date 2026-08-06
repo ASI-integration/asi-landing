@@ -199,4 +199,47 @@ describe('Initial Sync Recovery v1 production rollout artifacts', () => {
     expect(runbook).toContain(taskCycle);
     expect(runbook).toContain('31082052360');
   });
+
+  it('selects the exact asi-landing PM2 application before any database connection', () => {
+    const workflowText = fs.readFileSync(workflowPath, 'utf8');
+
+    expect(workflowText).not.toContain('pm2 env 0');
+    expect(workflowText.match(/\bpm2 jlist\b/g)).toHaveLength(1);
+    expect(workflowText).toContain('name == "asi-landing"');
+    expect(workflowText).toContain('status == "online"');
+    expect(workflowText).toContain('cwd == "/var/www/asi/current"');
+    expect(workflowText).toContain('exec_path.endswith("/node_modules/next/dist/bin/next")');
+    expect(workflowText).not.toMatch(/name\s*==\s*"asi-ops-alert-scheduler"/);
+    expect(workflowText).not.toMatch(/\(\^asi\|\\\/asi\\\/\|asi-landing\|landing-asi\)/);
+    expect(workflowText).toMatch(/ASI application identity error/);
+    expect(workflowText).toContain('expected exactly one online asi-landing process');
+    expect(workflowText).toContain('pm2 env "$ASI_APP_PM_ID"');
+    expect(workflowText).toContain('if [[ "$ASI_APP_MATCH_COUNT" != "1" ]]; then');
+    expect(workflowText.indexOf('if [[ "$ASI_APP_MATCH_COUNT" != "1" ]]; then')).toBeLessThan(
+      workflowText.indexOf('pm2 env "$ASI_APP_PM_ID"'),
+    );
+    expect(workflowText.indexOf('pm2 env "$ASI_APP_PM_ID"')).toBeLessThan(
+      workflowText.indexOf('psycopg2.connect'),
+    );
+
+    const appIdentityIndex = workflowText.indexOf('name == "asi-landing"');
+    const identityVerifiedIndex = workflowText.indexOf('production_supabase_identity_verified=yes');
+    const psqlIndex = workflowText.search(/\bpsql\b/);
+    const psycopgIndex = workflowText.indexOf('psycopg2.connect');
+    expect(appIdentityIndex).toBeGreaterThan(-1);
+    expect(identityVerifiedIndex).toBeGreaterThan(appIdentityIndex);
+    expect(psqlIndex).toBeGreaterThan(identityVerifiedIndex);
+    expect(psycopgIndex).toBeGreaterThan(identityVerifiedIndex);
+
+    expect(workflowText).toContain('SUPABASE_DB_URL:');
+    expect(workflowText).toContain('DATABASE_URL:');
+    expect(workflowText).toContain('PRODUCTION_DATABASE_URL:');
+    expect(workflowText).toContain('NEXT_PUBLIC_SUPABASE_URL:');
+    expect(workflowText).toContain('SUPABASE_URL:');
+    expect(workflowText).not.toMatch(/\becho\s+.*\$\{?(PM2_ENV|DB_URL|SUPABASE_DB_URL|DATABASE_URL|PRODUCTION_DATABASE_URL|NEXT_PUBLIC_SUPABASE_URL|SUPABASE_URL|PM2_SUPABASE_DB_URL|PM2_DATABASE_URL|PM2_PRODUCTION_DATABASE_URL|PM2_NEXT_PUBLIC_SUPABASE_URL|PM2_SUPABASE_URL)\}?/);
+    expect(workflowText).not.toMatch(/\bprintenv\b/);
+    expect(workflowText).not.toMatch(/\bset\s+-x\b/);
+    expect(workflowText).not.toContain('echo "$ASI_APP_SELECTION"');
+    expect(workflowText).not.toContain('echo "$PM2_ENV"');
+  });
 });

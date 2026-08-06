@@ -188,26 +188,65 @@ jobs:
                     /\/var\/www\/asi/i.test(cwd) ||
                     /\/var\/www\/asi/i.test(execPath);
                 });
+                const exactMatches = list.filter((p) => {
+                  const name = String(p.name || "");
+                  const status = String(p.pm2_env?.status || "");
+                  const cwd = String(p.pm2_env?.pm_cwd || "");
+                  const execPath = String(p.pm2_env?.pm_exec_path || "");
+                  return name === "asi-landing"
+                    && status === "online"
+                    && cwd === "/var/www/asi/current"
+                    && execPath.endsWith("/node_modules/next/dist/bin/next");
+                });
                 const process0 = list.find((p) => Number(p.pm_id) === 0);
-                const process0IsAsi = process0 ? candidates.some((p) => Number(p.pm_id) === Number(process0.pm_id)) : false;
-                console.log(`count=${candidates.length}`);
-                console.log(`process0_is_asi=${process0IsAsi ? "yes" : "no"}`);
+                const process0IsExactApp = process0
+                  ? exactMatches.some((p) => Number(p.pm_id) === Number(process0.pm_id))
+                  : false;
+                console.log(`related_count=${candidates.length}`);
+                console.log(`exact_app_match_count=${exactMatches.length}`);
+                console.log(`process0_is_exact_asi_app=${process0IsExactApp ? "yes" : "no"}`);
                 for (const p of candidates) {
                   const status = String(p.pm2_env?.status || "unknown");
                   const cwd = String(p.pm2_env?.pm_cwd || "");
                   const execPath = String(p.pm2_env?.pm_exec_path || "");
                   console.log(`candidate\t${p.pm_id}\t${p.name || ""}\t${status}\t${cwd}\t${execPath}`);
                 }
+                if (exactMatches.length === 1) {
+                  const selected = exactMatches[0];
+                  console.log(`selected_pm_id=${selected.pm_id}`);
+                  console.log(`selected_name=${selected.name || ""}`);
+                  console.log(`selected_status=${String(selected.pm2_env?.status || "")}`);
+                  console.log(`selected_cwd=${String(selected.pm2_env?.pm_cwd || "")}`);
+                  console.log(`selected_exec=${String(selected.pm2_env?.pm_exec_path || "")}`);
+                }
               });
             '
           )"
           printf '%s\n' "$PM2_CANDIDATES" | while IFS= read -r line; do
             case "$line" in
-              count=*)
-                printf '[pm2] candidate_count=%s\n' "${line#count=}"
+              related_count=*)
+                printf '[pm2] related_candidate_count=%s\n' "${line#related_count=}"
                 ;;
-              process0_is_asi=*)
-                printf '[pm2] process0_is_asi=%s\n' "${line#process0_is_asi=}"
+              exact_app_match_count=*)
+                printf '[pm2] exact_asi_landing_match_count=%s\n' "${line#exact_app_match_count=}"
+                ;;
+              process0_is_exact_asi_app=*)
+                printf '[pm2] process0_is_exact_asi_app=%s\n' "${line#process0_is_exact_asi_app=}"
+                ;;
+              selected_pm_id=*)
+                printf '[pm2] selected_app_pm_id=%s\n' "${line#selected_pm_id=}"
+                ;;
+              selected_name=*)
+                printf '[pm2] selected_app_name=%s\n' "${line#selected_name=}"
+                ;;
+              selected_status=*)
+                printf '[pm2] selected_app_status=%s\n' "${line#selected_status=}"
+                ;;
+              selected_cwd=*)
+                printf '[pm2] selected_app_cwd=%s\n' "${line#selected_cwd=}"
+                ;;
+              selected_exec=*)
+                printf '[pm2] selected_app_execPath=%s\n' "${line#selected_exec=}"
                 ;;
               candidate*)
                 IFS=$'\t' read -r _ pm_id name status cwd exec_path <<<"$line"
@@ -217,21 +256,22 @@ jobs:
             esac
           done
 
-          candidate_count="$(printf '%s\n' "$PM2_CANDIDATES" | sed -nE 's/^count=([0-9]+)$/\1/p' | head -n 1)"
-          if [[ "$candidate_count" == "1" ]]; then
-            asi_pm_id="$(printf '%s\n' "$PM2_CANDIDATES" | awk -F'\t' '/^candidate\t/{print $2}' | awk 'NR==1{print; exit}')"
+          exact_app_match_count="$(printf '%s\n' "$PM2_CANDIDATES" | sed -nE 's/^exact_app_match_count=([0-9]+)$/\1/p' | head -n 1)"
+          if [[ "$exact_app_match_count" == "1" ]]; then
+            ASI_APP_PM_ID="$(printf '%s\n' "$PM2_CANDIDATES" | sed -nE 's/^selected_pm_id=(.+)$/\1/p' | head -n 1)"
             echo "[section] pm2 env approved keys status"
-            PM2_ENV_OUTPUT="$(pm2 env "$asi_pm_id" || true)"
+            PM2_ENV_OUTPUT="$(pm2 env "$ASI_APP_PM_ID" || true)"
             printf '%s\n' "$PM2_ENV_OUTPUT" | while IFS= read -r line; do
               for key in "${APPROVED_KEYS[@]}"; do
                 case "$line" in
                   "$key":*)
-                    raw_value="${line#"$key": }"
+                    raw_value="${line#"$key":}"
+                    raw_value="${raw_value# }"
                     trimmed="$(printf '%s' "$raw_value" | tr -d '[:space:]')"
                     if [[ -n "$trimmed" ]]; then
-                      printf '[pm2-key] pm_id=%s key=%s present=yes nonempty=yes\n' "$asi_pm_id" "$key"
+                      printf '[pm2-key] pm_id=%s key=%s present=yes nonempty=yes\n' "$ASI_APP_PM_ID" "$key"
                     else
-                      printf '[pm2-key] pm_id=%s key=%s present=yes nonempty=no\n' "$asi_pm_id" "$key"
+                      printf '[pm2-key] pm_id=%s key=%s present=yes nonempty=no\n' "$ASI_APP_PM_ID" "$key"
                     fi
                     ;;
                 esac
@@ -239,11 +279,11 @@ jobs:
             done
             for key in "${APPROVED_KEYS[@]}"; do
               if ! printf '%s\n' "$PM2_ENV_OUTPUT" | grep -Eq "^${key}:"; then
-                printf '[pm2-key] pm_id=%s key=%s present=no nonempty=no\n' "$asi_pm_id" "$key"
+                printf '[pm2-key] pm_id=%s key=%s present=no nonempty=no\n' "$ASI_APP_PM_ID" "$key"
               fi
             done
           else
-            echo "[pm2] approved key inspection skipped because ASI candidate count is not exactly 1"
+            echo "[pm2] approved key inspection skipped because exact asi-landing application match count is not exactly 1"
           fi
 
           echo "[section] sql artifact metadata"
