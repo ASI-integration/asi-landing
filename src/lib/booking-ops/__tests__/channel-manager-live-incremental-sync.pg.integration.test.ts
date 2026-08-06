@@ -187,19 +187,24 @@ describe.skipIf(!hasDisposablePg)('Live Incremental Sync PostgreSQL schema integ
         [incrementalRunId, connectionId],
       );
 
+      // Expected failures must use SAVEPOINT — a rejected statement otherwise aborts the txn.
+      await client.query('SAVEPOINT expect_invalid_type');
       await expect(client.query(
         `INSERT INTO public.booking_channel_import_runs
            (id, connection_id, provider, status, import_type, started_at)
          VALUES ($1, $2, 'manual', 'running', 'not_a_real_type', now())`,
         [randomUUID(), connectionId],
       )).rejects.toThrow(/check constraint|booking_channel_import_runs_type_check/i);
+      await client.query('ROLLBACK TO SAVEPOINT expect_invalid_type');
 
+      await client.query('SAVEPOINT expect_live_guard');
       await expect(client.query(
         `INSERT INTO public.booking_channel_import_runs
            (id, connection_id, provider, status, import_type, started_at)
          VALUES ($1, $2, 'manual', 'running', 'initial_sync', now())`,
         [initialRunId, connectionId],
       )).rejects.toThrow(/unique|booking_channel_import_runs_one_running_live_sync/i);
+      await client.query('ROLLBACK TO SAVEPOINT expect_live_guard');
 
       await client.query(
         `INSERT INTO public.booking_channel_import_runs
