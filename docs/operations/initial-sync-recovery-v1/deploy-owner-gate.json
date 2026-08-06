@@ -1,6 +1,6 @@
 {
   "schemaVersion": "asi.agent-os.owner-gate.v1",
-  "taskId": "initial-sync-recovery-v1-production-rollout",
+  "taskId": "initial-sync-recovery-v1-production-rollout-r2",
   "status": "missing",
   "action": "production_deploy",
   "target": "production VPS artifact release for asi-global.ru",

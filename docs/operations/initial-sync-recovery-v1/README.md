@@ -10,11 +10,17 @@ Status: **preflight only — no production action is authorized or executed by t
 | Deploy commit | `6b9f022e423e1032f66286b9348160c4dd59f45c` |
 | Migration | `supabase/migrations/20260805120000_channel_manager_live_core_synthetic_recovery_v1.sql` |
 | Migration Git blob | `f56db2124b2e91782fcf05be7fb37b51998808b3` |
-| Migration SHA-256 | `6fbc176b21006d258d4f0253d538c46b66862f0e7752137dda62bc8a88d811ba` |
+| Migration SHA-256 | `b87133906dea94b148b4778cd15006be9acec1e4cd995512ca975b12d8c69868` |
 | Observed production SHA / rollback target | `f5c7b91d7a6af87a07043673403aa44c56cf348a` |
-| Runtime task cycle | `initial-sync-recovery-v1-production-rollout-20260806` |
+| Runtime task cycle | `initial-sync-recovery-v1-production-rollout-20260806-r2` |
 
 The production identity was read from the public health/version endpoints at `2026-08-05T21:23:45Z`; see [`read-only-evidence.json`](read-only-evidence.json). Recheck it immediately before an approved dispatch. Any mismatch is a stop condition, not permission to update a SHA in place.
+
+Migration SHA-256 is derived from the exact Git blob bytes at the authorized commit (`git cat-file blob "${AUTHORIZED_SHA}:${AUTHORIZED_MIGRATION}" | sha256sum`), not from a developer working-tree representation. The checked-out file must still match Git blob `f56db2124b2e91782fcf05be7fb37b51998808b3` via `git hash-object`.
+
+## Failed first attempt (do not reuse)
+
+Workflow run [`31082052360`](https://github.com/ASI-integration/asi-landing/actions/runs/31082052360) under task cycle `initial-sync-recovery-v1-production-rollout-20260806` consumed the first migration owner approval but failed in `exact_artifact_preflight` before production access. The migration was not applied. Retry requires a new owner approval under task cycle `initial-sync-recovery-v1-production-rollout-20260806-r2` and idempotency key `initial-sync-recovery-v1-6b9f022e-production-rollout-r2`.
 
 ## Installation prerequisite
 
@@ -40,7 +46,7 @@ The tracked gate files are pending approval specifications. They intentionally h
 
 Owner gate: [`migration-owner-gate.json`](migration-owner-gate.json).
 
-Established mechanism: a dedicated manual production migration workflow, following the repository's existing exact-file migration workflows. It checks out the authorized commit directly, verifies the exact migration bytes twice, confirms the current production application identity, obtains the database URL only inside the production VPS environment without logging it, verifies the Supabase project identity is self-consistent, runs the SQL transactionally, and verifies all three function signatures and grants.
+Established mechanism: a dedicated manual production migration workflow, following the repository's existing exact-file migration workflows. It checks out the authorized commit directly, verifies the exact Git blob and blob SHA-256 twice, confirms the current production application identity, obtains the database URL only inside the production VPS environment without logging it, verifies the Supabase project identity is self-consistent, runs the SQL transactionally, and verifies all three function signatures and grants.
 
 Prepared dispatch command — do not run without the matching approved and unconsumed migration gate:
 
@@ -57,7 +63,7 @@ Stop after Phase 1 unless all of these are true:
 
 - repository and checked-out SHA match the fixed identities;
 - public and VPS-local version checks report `environment=production` and the pre-migration SHA;
-- migration SHA-256 matches;
+- migration Git blob and SHA-256 from canonical blob bytes match;
 - the production environment and database identities match;
 - the workflow concludes with `MIGRATION_STATUS=applied_and_verified`;
 - the production application is still healthy at the pre-deploy SHA.
