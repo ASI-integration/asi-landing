@@ -113,6 +113,30 @@ describe('diagnose initial sync recovery production env workflow', () => {
     const actionUses = (workflow.match(/^\s+uses:\s+.+$/gm) ?? []).map((line) => line.trim());
     expect(actionUses).toEqual([pinnedUses]);
     expect(workflow.match(/secrets\.VPS_SSH_KEY/g)?.length).toBe(1);
+    expect(workflow).toContain('log-public-key: false');
+  });
+
+  it('loads agent-only SSH auth with IdentityAgent and fail-closed local checks', () => {
+    expect(workflow).toContain('if [[ -z "${SSH_AUTH_SOCK:-}" || ! -S "$SSH_AUTH_SOCK" ]]; then');
+    expect(workflow).toContain('echo "::error::SSH agent socket is unavailable"');
+    expect(workflow).toContain('if ! ssh-add -l >/dev/null 2>&1; then');
+    expect(workflow).toContain('echo "::error::No SSH identity is loaded"');
+
+    expect(workflow).not.toContain('-o IdentitiesOnly=yes');
+    expect(workflow).toContain('-o "IdentityAgent=${SSH_AUTH_SOCK}"');
+    expect(workflow).toContain('-o IdentitiesOnly=no');
+    expect(workflow).toContain('-o BatchMode=yes');
+    expect(workflow).toContain('-o StrictHostKeyChecking=accept-new');
+    expect(workflow).toContain('-o ConnectTimeout=20');
+
+    const sshCalls = workflow.match(/^\s*ssh\s+/gm) ?? [];
+    expect(sshCalls).toHaveLength(1);
+    expect(workflow).not.toMatch(/\bIdentityFile\b/);
+    expect(workflow).not.toMatch(/\becho\s+.*SSH_AUTH_SOCK/);
+    expect(workflow).not.toMatch(/\bssh-add\s+-L\b/);
+    expect(workflow).not.toMatch(/\bssh-add\s+-l\b(?![^\n]*\/dev\/null)/);
+    expect(workflow).not.toMatch(/\bcat\s+.*id_rsa/);
+    expect(workflow).not.toMatch(/\bBEGIN\s+(OPENSSH|RSA)\s+PRIVATE\s+KEY\b/);
   });
 
   it('pins exact SQL path and expected checksum', () => {
