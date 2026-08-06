@@ -1,18 +1,19 @@
 {
   "operation": "runtime_submit_task",
   "input": {
-    "chatgptTaskId": "initial-sync-recovery-v1-production-rollout",
-    "conversationId": "owner-production-rollout-20260806",
-    "idempotencyKey": "initial-sync-recovery-v1-6b9f022e-production-rollout",
+    "chatgptTaskId": "initial-sync-recovery-v1-production-rollout-r2",
+    "conversationId": "owner-production-rollout-20260806-r2",
+    "idempotencyKey": "initial-sync-recovery-v1-6b9f022e-production-rollout-r2",
     "task": {
-      "title": "Owner-gated Initial Sync Recovery v1 production rollout",
+      "title": "Owner-gated Initial Sync Recovery v1 production rollout (retry r2)",
       "objective": "Apply one exact recovery migration, deploy one exact commit, and then return only the owner-authenticated read-only recovery preview.",
       "instructions": [
         "Fail closed unless the repository is ASI-integration/asi-landing and the required commit is contained by origin/main.",
-        "Use task cycle initial-sync-recovery-v1-production-rollout-20260806 and never reuse a consumed or mismatched owner decision.",
+        "Use task cycle initial-sync-recovery-v1-production-rollout-20260806-r2 and never reuse a consumed or mismatched owner decision.",
+        "Do not reuse task cycle initial-sync-recovery-v1-production-rollout-20260806 or idempotency key initial-sync-recovery-v1-6b9f022e-production-rollout; the first attempt failed before production access and consumed its migration approval.",
         "Before Phase 1, emit a production_migration owner gate matching docs/operations/initial-sync-recovery-v1/migration-owner-gate.json and stop.",
         "After explicit approval of only that gate, dispatch only apply-channel-manager-live-core-synthetic-recovery-migration.yml from the default branch with confirm_production_migration set to APPLY_20260805120000_RECOVERY_V1_TO_PRODUCTION.",
-        "Accept Phase 1 only if the workflow checks out commit 6b9f022e423e1032f66286b9348160c4dd59f45c, verifies migration SHA-256 6fbc176b21006d258d4f0253d538c46b66862f0e7752137dda62bc8a88d811ba, applies only supabase/migrations/20260805120000_channel_manager_live_core_synthetic_recovery_v1.sql, and reports applied_and_verified.",
+        "Accept Phase 1 only if the workflow checks out commit 6b9f022e423e1032f66286b9348160c4dd59f45c, verifies migration Git blob f56db2124b2e91782fcf05be7fb37b51998808b3, verifies migration SHA-256 b87133906dea94b148b4778cd15006be9acec1e4cd995512ca975b12d8c69868 from git cat-file blob bytes, applies only supabase/migrations/20260805120000_channel_manager_live_core_synthetic_recovery_v1.sql, and reports applied_and_verified.",
         "Stop after Phase 1 on any repository, target, commit, migration, checksum, database identity, workflow, or verification mismatch.",
         "After successful Phase 1, emit a separate production_deploy owner gate matching docs/operations/initial-sync-recovery-v1/deploy-owner-gate.json and stop.",
         "After explicit approval of only the deploy gate, dispatch only deploy.yml from the default branch with confirm_production_deploy set to DEPLOY_PRODUCTION and sha set to 6b9f022e423e1032f66286b9348160c4dd59f45c.",
@@ -24,7 +25,7 @@
       ],
       "acceptanceCriteria": [
         "The migration gate is approved and consumed only for the exact production migration identity.",
-        "The migration workflow succeeds with exact commit, path, checksum, production identity, and function privilege verification.",
+        "The migration workflow succeeds with exact commit, path, Git blob, checksum, production identity, and function privilege verification.",
         "The deploy gate is approved and consumed only after the migration succeeds.",
         "The existing deploy workflow reports the exact authorized SHA healthy in production.",
         "Exactly one owner-authenticated GET recovery preview is summarized and no mutation endpoint is called."

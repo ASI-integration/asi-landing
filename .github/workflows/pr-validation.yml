@@ -43,6 +43,49 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
+      - name: Initial Sync Recovery rollout artifact regression
+        id: rollout_artifact_regression
+        run: |
+          set -euo pipefail
+          npx vitest run \
+            src/lib/asi-runtime/__tests__/initial-sync-recovery-rollout-artifacts.test.ts \
+            --reporter=verbose 2>&1 | tee rollout-artifact-regression.out
+          if grep -E '↓|skipped|SKIPPED' rollout-artifact-regression.out | grep -Fq 'Initial Sync Recovery v1 production rollout artifacts'; then
+            echo "Rollout artifact regression suite was skipped — failing job"
+            exit 1
+          fi
+          if ! grep -Fq 'ASI_ROLLOUT_ARTIFACT_PROOF' rollout-artifact-regression.out; then
+            echo "Missing ASI_ROLLOUT_ARTIFACT_PROOF output — failing job"
+            exit 1
+          fi
+          node - <<'NODE'
+          const fs = require('fs');
+          const out = fs.readFileSync('rollout-artifact-regression.out', 'utf8');
+          const line = out.split(/\r?\n/).find((entry) => entry.includes('ASI_ROLLOUT_ARTIFACT_PROOF'));
+          if (!line) {
+            console.error('proof_line_missing');
+            process.exit(1);
+          }
+          const json = line.slice(line.indexOf('ASI_ROLLOUT_ARTIFACT_PROOF') + 'ASI_ROLLOUT_ARTIFACT_PROOF'.length).trim();
+          const proof = JSON.parse(json);
+          const expected = {
+            migrationBlobSha1: 'f56db2124b2e91782fcf05be7fb37b51998808b3',
+            migrationBlobSize: 36467,
+            migrationSha256: 'b87133906dea94b148b4778cd15006be9acec1e4cd995512ca975b12d8c69868',
+            workflowPinMatches: true,
+            sourceSha: '6b9f022e423e1032f66286b9348160c4dd59f45c',
+            migrationPath: 'supabase/migrations/20260805120000_channel_manager_live_core_synthetic_recovery_v1.sql',
+            retiredHashAbsentFromActiveAuthorization: true,
+            deployGateMissing: true,
+            deployGateUnapproved: true,
+          };
+          if (JSON.stringify(proof) !== JSON.stringify(expected)) {
+            console.error('proof_mismatch', proof);
+            process.exit(1);
+          }
+          console.log('rollout_artifact_proof_ok', JSON.stringify(proof));
+          NODE
+
       - name: Tests (Booking Ops focused regression coverage)
         run: |
           npx vitest run \

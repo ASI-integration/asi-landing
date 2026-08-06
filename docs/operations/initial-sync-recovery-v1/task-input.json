@@ -1,14 +1,14 @@
 {
   "task": {
-    "id": "initial-sync-recovery-v1-production-rollout-preparation",
-    "title": "Prepare authorized production rollout for Initial Sync Recovery v1",
-    "objective": "Prepare an exact, owner-gated production migration, deploy, rollback, and read-only preview procedure without executing any production action.",
+    "id": "initial-sync-recovery-v1-production-rollout-checksum-repair-r2",
+    "title": "Repair Initial Sync Recovery migration checksum authorization v2",
+    "objective": "Repair the pinned migration SHA-256 and workflow verification to use canonical Git blob bytes, record the failed first attempt, and mint a new retry task cycle without authorizing deployment.",
     "acceptanceCriteria": [
-      "One dedicated production workflow can apply only migration 20260805120000_channel_manager_live_core_synthetic_recovery_v1.sql from commit 6b9f022e423e1032f66286b9348160c4dd59f45c.",
-      "The existing production artifact workflow is invoked only with commit 6b9f022e423e1032f66286b9348160c4dd59f45c.",
-      "Migration and deploy require separate atomic owner approvals in that order.",
-      "The final phase permits only the owner-authenticated read-only recovery preview.",
-      "No production action is executed while preparing the artifacts."
+      "The dedicated production workflow verifies migration SHA-256 from git cat-file blob bytes and still verifies the Git blob via git hash-object.",
+      "Rollout artifacts pin b87133906dea94b148b4778cd15006be9acec1e4cd995512ca975b12d8c69868 and retire 6fbc176b21006d258d4f0253d538c46b66862f0e7752137dda62bc8a88d811ba from active authorization.",
+      "Task cycle initial-sync-recovery-v1-production-rollout-20260806-r2 and idempotency key initial-sync-recovery-v1-6b9f022e-production-rollout-r2 replace the consumed first attempt identity.",
+      "Failed workflow run 31082052360 is recorded as pre-production failure with owner approval consumed.",
+      "Deploy gate remains missing and unapproved; no workflow dispatch occurs during repair."
     ],
     "inScope": [
       ".github/workflows/apply-channel-manager-live-core-synthetic-recovery-migration.yml",
@@ -23,15 +23,14 @@
       "Initial Sync acceptance",
       "Ordinary manual Initial Sync",
       "Staging actions",
-      "Secret values"
+      "Secret values",
+      "SQL migration content changes"
     ]
   },
-  "classification": "red",
-  "redActions": [
-    "production_migration",
-    "production_deploy"
-  ],
+  "classification": "yellow",
+  "redActions": [],
   "focusedTests": [
-    "src/lib/asi-runtime/__tests__/initial-sync-recovery-rollout-artifacts.test.ts"
+    "src/lib/asi-runtime/__tests__/initial-sync-recovery-rollout-artifacts.test.ts",
+    "scripts/agent-os/__tests__/contracts.test.mjs"
   ]
 }

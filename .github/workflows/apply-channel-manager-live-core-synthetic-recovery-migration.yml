@@ -20,7 +20,8 @@ env:
   AUTHORIZED_SHA: 6b9f022e423e1032f66286b9348160c4dd59f45c
   AUTHORIZED_PRE_MIGRATION_SHA: f5c7b91d7a6af87a07043673403aa44c56cf348a
   AUTHORIZED_MIGRATION: supabase/migrations/20260805120000_channel_manager_live_core_synthetic_recovery_v1.sql
-  AUTHORIZED_MIGRATION_SHA256: 6fbc176b21006d258d4f0253d538c46b66862f0e7752137dda62bc8a88d811ba
+  AUTHORIZED_MIGRATION_SHA256: b87133906dea94b148b4778cd15006be9acec1e4cd995512ca975b12d8c69868
+  AUTHORIZED_MIGRATION_BLOB: f56db2124b2e91782fcf05be7fb37b51998808b3
 
 jobs:
   exact_artifact_preflight:
@@ -50,8 +51,11 @@ jobs:
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$AUTHORIZED_SHA"
-          test "$(git hash-object "$AUTHORIZED_MIGRATION")" = "f56db2124b2e91782fcf05be7fb37b51998808b3"
-          printf '%s  %s\n' "$AUTHORIZED_MIGRATION_SHA256" "$AUTHORIZED_MIGRATION" | sha256sum --check --strict
+          test "$(git hash-object "$AUTHORIZED_MIGRATION")" = "$AUTHORIZED_MIGRATION_BLOB"
+          ACTUAL_SHA256="$(
+            git cat-file blob "${AUTHORIZED_SHA}:${AUTHORIZED_MIGRATION}" | sha256sum | awk '{print $1}'
+          )"
+          test "$ACTUAL_SHA256" = "$AUTHORIZED_MIGRATION_SHA256"
           test -z "$(git status --porcelain)"
 
       - name: Verify current public production release
@@ -85,7 +89,11 @@ jobs:
           set -euo pipefail
           test "$GITHUB_REPOSITORY" = "$AUTHORIZED_REPOSITORY"
           test "$(git rev-parse HEAD)" = "$AUTHORIZED_SHA"
-          printf '%s  %s\n' "$AUTHORIZED_MIGRATION_SHA256" "$AUTHORIZED_MIGRATION" | sha256sum --check --strict
+          test "$(git hash-object "$AUTHORIZED_MIGRATION")" = "$AUTHORIZED_MIGRATION_BLOB"
+          ACTUAL_SHA256="$(
+            git cat-file blob "${AUTHORIZED_SHA}:${AUTHORIZED_MIGRATION}" | sha256sum | awk '{print $1}'
+          )"
+          test "$ACTUAL_SHA256" = "$AUTHORIZED_MIGRATION_SHA256"
 
       - name: Apply only the authorized migration on the production VPS database
         shell: bash
