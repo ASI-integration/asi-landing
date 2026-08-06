@@ -13,13 +13,33 @@ type Connection = {
 type ImportedObject = { id: string; connection_id: string; match_status: string };
 type ImportedBooking = { id: string; connection_id: string; match_status: string };
 type CalendarRow = { id: string; connection_id: string; availability_status: string; price_amount: number | null };
-type LiveCoreCounters = { imported: number; updated: number; cancelled: number; skipped: number; failed: number };
+type LiveCoreCounters = {
+  imported: number;
+  updated: number;
+  cancelled: number;
+  skipped: number;
+  failed: number;
+  created?: number;
+  restored?: number;
+  calendarDays?: number;
+  prices?: number;
+};
 type LiveCoreStatus = {
   provider: string;
   connectionId: string;
   connectionState: string;
   lastSuccessfulSyncAt: string | null;
+  lastSuccessfulInitialSyncAt?: string | null;
+  lastSuccessfulIncrementalSyncAt?: string | null;
   latestRun: {
+    id: string;
+    status: string;
+    importType: string;
+    stage: string | null;
+    counters: LiveCoreCounters | null;
+    safeError: { stage: string; message: string } | null;
+  } | null;
+  latestIncrementalRun?: {
     id: string;
     status: string;
     importType: string;
@@ -30,11 +50,16 @@ type LiveCoreStatus = {
   counters: LiveCoreCounters | null;
   warning: string | null;
   blocker: string | null;
+  retryable?: boolean;
   liveCoreEnabled: boolean;
   initialSyncEnabled?: boolean;
   incrementalSyncEnabled: boolean;
   realProviderApiEnabled: boolean;
   schemaReady?: boolean;
+  cursorPresent?: boolean;
+  cursorUpdatedAt?: string | null;
+  cursorSourceRunId?: string | null;
+  cursorCheckpointHash?: string | null;
 };
 
 type AcceptanceStepStatus = 'waiting' | 'running' | 'passed' | 'failed';
@@ -108,6 +133,9 @@ export function ChannelManagerImportPanel() {
   const [provider, setProvider] = useState<(typeof PROVIDERS)[number]>('manual');
   const [selectedId, setSelectedId] = useState('');
   const [snapshotText, setSnapshotText] = useState('{\n  "objects": [],\n  "bookings": [],\n  "calendar": [],\n  "pricing": []\n}');
+  const [incrementalDeltaText, setIncrementalDeltaText] = useState(
+    '{\n  "bookings": [],\n  "calendar": [],\n  "pricing": [],\n  "currentCursor": null,\n  "nextCursor": { "stream": "incremental", "checkpoint": "cursor-1" },\n  "hasMore": false\n}',
+  );
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
   const [acceptanceBusy, setAcceptanceBusy] = useState(false);
@@ -220,6 +248,21 @@ export function ChannelManagerImportPanel() {
       action: 'run_initial_sync',
       connectionId: selected?.id,
       ...(snapshot ? { snapshot } : {}),
+    });
+  }
+
+  async function runIncrementalSync() {
+    let delta: unknown;
+    try {
+      delta = JSON.parse(incrementalDeltaText);
+    } catch {
+      setMessage('Проверьте JSON delta: файл не читается.');
+      return;
+    }
+    await action('/api/dashboard/channel-manager/import-runs', {
+      action: 'run_incremental_sync',
+      connectionId: selected?.id,
+      delta,
     });
   }
 
@@ -357,6 +400,13 @@ export function ChannelManagerImportPanel() {
   const targetPropertySetupId = selected?.propertySetupId || propertySetupId;
   const liveCounters = liveCore?.counters ?? liveCore?.latestRun?.counters;
   const initialSyncEnabled = liveCore?.initialSyncEnabled !== false && liveCore?.schemaReady !== false && selected?.status !== 'blocked';
+  const incrementalSyncEnabled = liveCore?.incrementalSyncEnabled === true && selected?.status !== 'blocked';
+  const incrementalBlocker = incrementalSyncEnabled
+    ? null
+    : (liveCore?.blocker
+      ?? (!liveCore?.lastSuccessfulInitialSyncAt
+        ? 'Сначала выполните успешный Initial Sync.'
+        : 'Incremental sync пока недоступен.'));
   const recoveryRequired = recoveryPreview?.recoveryRequired === true
     || acceptanceEvidence?.recoveryRequired === true;
   const harnessOwnedLeftover = recoveryPreview?.recoveryRequired === true
@@ -644,7 +694,7 @@ export function ChannelManagerImportPanel() {
             <div className="flex flex-wrap items-start justify-between gap-2">
               <div>
                 <h3 className="font-medium text-slate-900">Live Core — начальная синхронизация</h3>
-                <p className="mt-1 text-xs text-slate-600">Одноразовый read-only sync через reference adapter. Incremental polling и реальные API провайдеров ещё не подключены.</p>
+                <p className="mt-1 text-xs text-slate-600">Одноразовый read-only sync через reference adapter. Реальные API провайдеров и исходящая запись в OTA ещё не подключены.</p>
               </div>
               <button
                 disabled={busy || !initialSyncEnabled}
@@ -661,6 +711,38 @@ export function ChannelManagerImportPanel() {
               <Stat label="Отменено / ошибки" value={`${liveCounters?.cancelled ?? 0} / ${liveCounters?.failed ?? 0}`} />
               <Stat label="Предупреждение" value={liveCore?.warning ?? 'Нет'} />
               <Stat label="Блокер" value={liveCore?.blocker ?? 'Нет'} />
+            </div>
+          </div>
+
+          <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50/70 p-3" data-testid="channel-live-incremental-sync">
+            <div className="flex flex-wrap items-start justify-between gap-2">
+              <div>
+                <h3 className="font-medium text-slate-900">Live Core — incremental sync</h3>
+                <p className="mt-1 text-xs text-slate-600">Ручной нормализованный delta после успешного Initial Sync. Polling и webhooks не подключены.</p>
+              </div>
+              <button
+                disabled={busy || !incrementalSyncEnabled}
+                onClick={() => void runIncrementalSync()}
+                className="rounded-lg bg-slate-900 px-3 py-1.5 text-xs text-white hover:bg-slate-800 disabled:opacity-50"
+                title={incrementalBlocker ?? undefined}
+              >Incremental sync</button>
+            </div>
+            {!incrementalSyncEnabled ? (
+              <p className="mt-2 text-xs text-amber-700">{incrementalBlocker}</p>
+            ) : null}
+            <textarea
+              value={incrementalDeltaText}
+              onChange={(event) => setIncrementalDeltaText(event.target.value)}
+              rows={6}
+              className="mt-3 w-full rounded-lg border border-slate-300 px-3 py-2 font-mono text-xs"
+              aria-label="Incremental delta JSON"
+              disabled={busy}
+            />
+            <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+              <Stat label="Последний incremental" value={liveCore?.lastSuccessfulIncrementalSyncAt ? new Date(liveCore.lastSuccessfulIncrementalSyncAt).toLocaleString('ru-RU') : 'Ещё не было'} />
+              <Stat label="Курсор" value={liveCore?.cursorPresent ? `есть · ${liveCore.cursorCheckpointHash ?? 'hash'}` : 'нет'} />
+              <Stat label="Создано / восстановлено" value={`${liveCore?.latestIncrementalRun?.counters?.created ?? liveCounters?.created ?? 0} / ${liveCore?.latestIncrementalRun?.counters?.restored ?? liveCounters?.restored ?? 0}`} />
+              <Stat label="Календарь / цены" value={`${liveCore?.latestIncrementalRun?.counters?.calendarDays ?? 0} / ${liveCore?.latestIncrementalRun?.counters?.prices ?? 0}`} />
             </div>
           </div>
 

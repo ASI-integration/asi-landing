@@ -3,6 +3,7 @@ import { requireCrmOperatorSession, requireOpsAdminSession } from '@/lib/crm/api
 import {
   completeChannelImportRun,
   failChannelImportRun,
+  findSecretPath,
   listChannelImportRuns,
   registerManualChannelSnapshot,
   startChannelImportRun,
@@ -12,6 +13,8 @@ import {
 import {
   getChannelLiveCoreStatus,
   runChannelManagerInitialSync,
+  runChannelManagerIncrementalSync,
+  type ManualChannelIncrementalDelta,
 } from '@/lib/booking-ops/channel-manager-live-core';
 
 export const runtime = 'nodejs';
@@ -36,7 +39,14 @@ export async function GET(req: Request): Promise<NextResponse> {
 export async function POST(req: Request): Promise<NextResponse> {
   const auth = await requireOpsAdminSession(); if ('error' in auth) return auth.error;
   try {
-    const body = await req.json() as Record<string, unknown>; const action = String(body.action ?? '');
+    const body = await req.json() as Record<string, unknown>;
+    if (findSecretPath(body)) {
+      return NextResponse.json({
+        ok: false,
+        message: 'Не вставляйте пароль или API-токен сюда. Передайте доступ через согласованный безопасный канал.',
+      }, { status: 400 });
+    }
+    const action = String(body.action ?? '');
     if (action === 'upload_manual_snapshot') {
       const result = await registerManualChannelSnapshot(String(body.connectionId ?? ''), body.snapshot as ManualChannelSnapshot, body.metadata as Record<string, unknown> | undefined);
       return NextResponse.json({ ok: true, ...result });
@@ -51,6 +61,37 @@ export async function POST(req: Request): Promise<NextResponse> {
       return NextResponse.json({
         ok: result.status !== 'failed',
         ...result,
+        message: result.safeError?.message,
+      }, { status: result.status === 'failed' ? 400 : 200 });
+    }
+    if (action === 'run_incremental_sync') {
+      if (!body.delta || typeof body.delta !== 'object') {
+        return NextResponse.json({
+          ok: false,
+          message: 'Для incremental sync нужен явный нормализованный delta JSON.',
+        }, { status: 400 });
+      }
+      const result = await runChannelManagerIncrementalSync({
+        connectionId: String(body.connectionId ?? ''),
+        delta: body.delta as ManualChannelIncrementalDelta,
+        metadata: body.metadata as Record<string, unknown> | undefined,
+        ownerSetupId: typeof body.ownerSetupId === 'string' ? body.ownerSetupId : undefined,
+        ownerId: typeof body.ownerId === 'string' ? body.ownerId : undefined,
+        accountId: typeof body.accountId === 'string' ? body.accountId : undefined,
+      });
+      return NextResponse.json({
+        ok: result.status !== 'failed',
+        run: result.run,
+        stage: result.stage,
+        status: result.status,
+        counters: result.counters,
+        warnings: result.warnings,
+        safeError: result.safeError,
+        retryable: result.retryable,
+        cursorCommitted: result.cursorCommitted === true,
+        cursorPresent: Boolean(result.committedCursor?.checkpoint),
+        cursorUpdatedAt: result.committedCursor?.updatedAt ?? null,
+        cursorSourceRunId: result.committedCursor?.sourceRunId ?? null,
         message: result.safeError?.message,
       }, { status: result.status === 'failed' ? 400 : 200 });
     }

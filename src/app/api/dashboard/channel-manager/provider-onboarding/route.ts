@@ -33,7 +33,7 @@ function safeConnection(connection: ChannelManagerConnection) {
     realApiSyncEnabled: false,
     manualSnapshotAvailable: true,
     liveCoreEnabled: true,
-    incrementalSyncEnabled: false,
+    incrementalSyncEnabled: true,
   };
 }
 
@@ -57,7 +57,7 @@ export async function GET(req: Request): Promise<NextResponse> {
         providerReady: true,
         liveCoreEnabled: Object.values(liveCoreByConnection).some((item) => item.schemaReady),
         initialSyncEnabled: Object.values(liveCoreByConnection).some((item) => item.initialSyncEnabled),
-        incrementalSyncEnabled: false,
+        incrementalSyncEnabled: Object.values(liveCoreByConnection).some((item) => item.incrementalSyncEnabled),
       },
       warning: 'Не вставляйте пароль или API-токен сюда. Передайте доступ через согласованный безопасный канал.',
     });

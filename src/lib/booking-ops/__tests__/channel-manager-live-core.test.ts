@@ -9,6 +9,7 @@ const {
   updateBookingOpsRecord,
   cancelReservation,
   getUnifiedAvailability,
+  restoreReservation,
   supabaseRpc,
   supabaseFrom,
 } = vi.hoisted(() => ({
@@ -17,6 +18,7 @@ const {
   updateBookingOpsRecord: vi.fn(),
   cancelReservation: vi.fn(),
   getUnifiedAvailability: vi.fn(),
+  restoreReservation: vi.fn(),
   supabaseRpc: vi.fn(),
   supabaseFrom: vi.fn(),
 }));
@@ -68,10 +70,11 @@ class Query {
 function insertWithGuard(table: string, input: Row | Row[]) {
   const incoming = (Array.isArray(input) ? input : [input]).map((row) => ({ ...row }));
   for (const candidate of incoming) {
-    if (table === 'booking_channel_import_runs' && candidate.import_type === 'initial_sync' && candidate.status === 'running') {
+    const liveType = candidate.import_type === 'initial_sync' || candidate.import_type === 'incremental_sync';
+    if (table === 'booking_channel_import_runs' && liveType && candidate.status === 'running') {
       const exists = rows(table).some((row) => (
         row.connection_id === candidate.connection_id
-        && row.import_type === 'initial_sync'
+        && (row.import_type === 'initial_sync' || row.import_type === 'incremental_sync')
         && row.status === 'running'
       ));
       if (exists) {
@@ -79,7 +82,7 @@ function insertWithGuard(table: string, input: Row | Row[]) {
           select: () => ({
             single: async () => ({
               data: null,
-              error: { code: '23505', message: 'duplicate key value violates unique constraint "booking_channel_import_runs_one_running_initial_sync"' },
+              error: { code: '23505', message: 'duplicate key value violates unique constraint "booking_channel_import_runs_one_running_live_sync"' },
             }),
             maybeSingle: async () => ({
               data: null,
@@ -108,7 +111,7 @@ vi.mock('../communication-auto-send-policy', () => ({
 }));
 vi.mock('../real-booking-intake-autopilot', () => ({ processInboundBookingRequest }));
 vi.mock('../repository', () => ({ updateBookingOpsRecord }));
-vi.mock('@/lib/reservations/ledger', () => ({ cancelReservation, getUnifiedAvailability }));
+vi.mock('@/lib/reservations/ledger', () => ({ cancelReservation, getUnifiedAvailability, restoreReservation }));
 vi.mock('../availability-overbooking-protection', () => ({
   auditChannelImportAvailability: vi.fn(async () => []),
 }));
@@ -178,6 +181,7 @@ beforeEach(() => {
   updateBookingOpsRecord.mockReset();
   cancelReservation.mockReset();
   getUnifiedAvailability.mockReset();
+  restoreReservation.mockReset();
   supabaseRpc.mockReset();
   supabaseFrom.mockReset();
   clearChannelLiveCoreSchemaStateCache();
@@ -210,9 +214,12 @@ beforeEach(() => {
   }));
   supabaseRpc.mockResolvedValue({
     data: {
-      schemaVersion: 1,
+      schemaVersion: 2,
       initialSyncTypeReady: true,
+      incrementalSyncTypeReady: true,
       atomicRunningGuardReady: true,
+      atomicLiveSyncGuardReady: true,
+      cursorStorageReady: true,
       ready: true,
     },
     error: null,
@@ -236,6 +243,19 @@ beforeEach(() => {
       booking_ops_record_id: input.reservationId,
     });
     return { changed: true };
+  });
+  restoreReservation.mockImplementation(async (input: { reservationId: string; accountId: string }) => {
+    const booking = rows('booking_ops_records').find((row) => row.id === input.reservationId && row.account_id === input.accountId);
+    if (!booking) throw new Error('not_found');
+    if (booking.normalized_status !== 'cancelled') return { changed: false, blocked: false, conflicts: [] };
+    booking.normalized_status = 'confirmed';
+    booking.cancelled_at = null;
+    rows('reservation_ledger_audit').push({
+      action: 'reservation_restored',
+      account_id: input.accountId,
+      booking_ops_record_id: input.reservationId,
+    });
+    return { changed: true, blocked: false, conflicts: [] };
   });
   getUnifiedAvailability.mockResolvedValue({ available: true, conflicts: [] });
   setChannelLiveCoreSchemaReadyOverride(true);
@@ -304,15 +324,15 @@ describe('Channel Manager Live Core repairs', () => {
 
   it('marks overall status failed when booking processing has counters.failed > 0', async () => {
     expect(resolveChannelLiveSyncFinalStatus(
-      { imported: 0, updated: 0, cancelled: 0, skipped: 1, failed: 1, objects: 1, calendarDays: 0, prices: 0 },
+      { imported: 0, updated: 0, cancelled: 0, skipped: 1, failed: 1, objects: 1, calendarDays: 0, prices: 0, created: 0, restored: 0 },
       [{ type: 'booking_sync_failed', severity: 'blocker', message: 'x' }],
     )).toBe('failed');
     expect(resolveChannelLiveSyncFinalStatus(
-      { imported: 1, updated: 0, cancelled: 0, skipped: 0, failed: 0, objects: 1, calendarDays: 0, prices: 0 },
+      { imported: 1, updated: 0, cancelled: 0, skipped: 0, failed: 0, objects: 1, calendarDays: 0, prices: 0, created: 1, restored: 0 },
       [{ type: 'object_not_confirmed', severity: 'warning', message: 'x' }],
     )).toBe('completed_with_warnings');
     expect(resolveChannelLiveSyncFinalStatus(
-      { imported: 1, updated: 0, cancelled: 0, skipped: 0, failed: 0, objects: 1, calendarDays: 0, prices: 0 },
+      { imported: 1, updated: 0, cancelled: 0, skipped: 0, failed: 0, objects: 1, calendarDays: 0, prices: 0, created: 1, restored: 0 },
       [],
     )).toBe('completed');
   });
@@ -553,10 +573,12 @@ describe('Channel Manager Live Core repairs', () => {
     expect(byId['ch-live-core']?.currentState).toMatch(/acceptance harness is available/i);
     expect(byId['ch-live-core']?.currentState).toMatch(/remains in progress until the harness is run successfully in production/i);
     expect(byId['ch-initial-incremental-sync']?.status).toBe('in_progress');
-    expect(byId['ch-initial-incremental-sync']?.currentState).toMatch(/incremental sync remains unfinished/i);
+    expect(byId['ch-initial-incremental-sync']?.currentState).toMatch(/Live Incremental Sync v1 is implemented/i);
+    expect(byId['ch-initial-incremental-sync']?.currentState).toMatch(/Polling, webhooks/i);
     expect(byId['ch-first-real-adapter']?.status).toBe('blocked');
     const panel = readFileSync(resolve(process.cwd(), 'src/components/booking-ops/ChannelManagerImportPanel.tsx'), 'utf8');
     expect(panel).toContain('channel-live-core-status');
+    expect(panel).toContain('channel-live-incremental-sync');
     expect(panel).toContain('channel-live-core-acceptance');
     expect(panel).toContain('Производственный acceptance');
     expect(panel).toContain('Запустить acceptance');

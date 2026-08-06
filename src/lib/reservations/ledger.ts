@@ -71,6 +71,69 @@ export async function cancelReservation(input: { accountId: string; reservationI
   return { changed: true };
 }
 
+/** Restore a previously cancelled reservation identity after availability checks. Idempotent when already active. */
+export async function restoreReservation(input: {
+  accountId: string;
+  reservationId: string;
+  actorId: string;
+  propertyId: string;
+  unitId?: string | null;
+  checkIn: string;
+  checkOut: string;
+  reason?: string;
+}) {
+  const current = await supabase
+    .from('booking_ops_records')
+    .select('id,normalized_status,property_id,unit_id,check_in_at,check_out_at')
+    .eq('id', input.reservationId)
+    .eq('account_id', input.accountId)
+    .maybeSingle();
+  if (current.error) throw new Error(current.error.message);
+  if (!current.data) throw new Error('not_found');
+  const status = String(current.data.normalized_status ?? '').toLowerCase();
+  if (status !== 'cancelled' && status !== 'canceled') {
+    return { changed: false, blocked: false as const, conflicts: [] as SafeAvailabilityConflict[] };
+  }
+  const range = validateStayRange(input.checkIn, input.checkOut);
+  const availability = await getUnifiedAvailability({
+    accountId: input.accountId,
+    propertyId: input.propertyId,
+    unitId: input.unitId ?? null,
+    checkIn: range.from,
+    checkOut: range.to,
+    excludeReservationId: input.reservationId,
+  });
+  if (!availability.available) {
+    return { changed: false, blocked: true as const, conflicts: availability.conflicts };
+  }
+  const now = new Date().toISOString();
+  const saved = await supabase.from('booking_ops_records').update({
+    normalized_status: 'confirmed',
+    cancelled_at: null,
+    cancellation_reason: null,
+    availability_status: 'confirmed',
+    check_in_at: range.from,
+    check_out_at: range.to,
+    updated_at: now,
+  }).eq('id', input.reservationId).eq('account_id', input.accountId);
+  if (saved.error) throw new Error(saved.error.message);
+  await updateBookingOpsRecord(input.reservationId, {
+    isBlocked: false,
+    blockerReason: null,
+    checkInAt: range.from,
+    checkOutAt: range.to,
+  }, { actorType: 'admin' });
+  await auditReservationMutation({
+    accountId: input.accountId,
+    actorId: input.actorId,
+    reservationId: input.reservationId,
+    action: 'reservation_restored',
+    before: { status: current.data.normalized_status },
+    after: { status: 'confirmed', reason: input.reason ?? null, messagesSent: false },
+  });
+  return { changed: true, blocked: false as const, conflicts: [] as SafeAvailabilityConflict[] };
+}
+
 export async function createAvailabilityBlock(input: { accountId: string; actorId: string; propertyId: string; unitId?: string | null; checkIn: string; checkOut: string; type: 'owner'|'maintenance'; note?: string; severity?: string; issueTaskReference?: string; expectedReopeningAt?: string; reinspectionRequired?: boolean }) {
   const range = validateStayRange(input.checkIn, input.checkOut); const availability = await getUnifiedAvailability({ accountId: input.accountId, propertyId: input.propertyId, unitId: input.unitId, checkIn: range.from, checkOut: range.to });
   const result = await supabase.from('booking_availability_blocks').insert({ id: randomUUID(), account_id: input.accountId, property_id: input.propertyId, unit_id: input.unitId ?? null, date_from: range.from, date_to: range.to, source: input.type === 'maintenance' ? 'maintenance' : 'owner_stay', block_type: input.type, status: 'active', reason: input.note ?? null, severity: input.severity ?? null, issue_task_reference: input.issueTaskReference ?? null, expected_reopening_at: input.expectedReopeningAt ?? null, reinspection_required: input.reinspectionRequired === true, metadata: { createdByActor: input.actorId } }).select('id').single(); if (result.error) throw new Error(result.error.message);
