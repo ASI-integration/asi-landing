@@ -12,8 +12,10 @@ import {
 } from '@/lib/booking-ops/channel-manager-access-import';
 import {
   getChannelLiveCoreStatus,
+  hashCursorCheckpoint,
   runChannelManagerInitialSync,
   runChannelManagerIncrementalSync,
+  toSafeIncrementalRunSummary,
   type ManualChannelIncrementalDelta,
 } from '@/lib/booking-ops/channel-manager-live-core';
 
@@ -71,17 +73,15 @@ export async function POST(req: Request): Promise<NextResponse> {
           message: 'Для incremental sync нужен явный нормализованный delta JSON.',
         }, { status: 400 });
       }
+      // ownerSetupId / ownerId / accountId are intentionally ignored — scope is server-derived.
       const result = await runChannelManagerIncrementalSync({
         connectionId: String(body.connectionId ?? ''),
         delta: body.delta as ManualChannelIncrementalDelta,
         metadata: body.metadata as Record<string, unknown> | undefined,
-        ownerSetupId: typeof body.ownerSetupId === 'string' ? body.ownerSetupId : undefined,
-        ownerId: typeof body.ownerId === 'string' ? body.ownerId : undefined,
-        accountId: typeof body.accountId === 'string' ? body.accountId : undefined,
       });
       return NextResponse.json({
         ok: result.status !== 'failed',
-        run: result.run,
+        run: toSafeIncrementalRunSummary(result.run),
         stage: result.stage,
         status: result.status,
         counters: result.counters,
@@ -92,6 +92,10 @@ export async function POST(req: Request): Promise<NextResponse> {
         cursorPresent: Boolean(result.committedCursor?.checkpoint),
         cursorUpdatedAt: result.committedCursor?.updatedAt ?? null,
         cursorSourceRunId: result.committedCursor?.sourceRunId ?? null,
+        cursorCheckpointHash: result.committedCursor?.checkpoint
+          ? hashCursorCheckpoint(result.committedCursor.checkpoint)
+          : null,
+        replayed: result.replayed === true,
         message: result.safeError?.message,
       }, { status: result.status === 'failed' ? 400 : 200 });
     }

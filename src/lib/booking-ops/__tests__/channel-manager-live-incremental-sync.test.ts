@@ -11,6 +11,7 @@ const {
   restoreReservation,
   supabaseRpc,
   supabaseFrom,
+  forceCommitFailure,
 } = vi.hoisted(() => ({
   processInboundBookingRequest: vi.fn(),
   canAutoSendCommunicationIntent: vi.fn(),
@@ -20,6 +21,7 @@ const {
   restoreReservation: vi.fn(),
   supabaseRpc: vi.fn(),
   supabaseFrom: vi.fn(),
+  forceCommitFailure: { value: false },
 }));
 const tables: Record<string, Row[]> = {};
 
@@ -98,6 +100,133 @@ function insertWithGuard(table: string, input: Row | Row[]) {
   return query;
 }
 
+const SCHEMA_READY_PAYLOAD = {
+  schemaVersion: 2,
+  initialSyncTypeReady: true,
+  incrementalSyncTypeReady: true,
+  atomicRunningGuardReady: true,
+  atomicLiveSyncGuardReady: true,
+  cursorStorageReady: true,
+  ready: true,
+};
+
+function hashCheckpoint(checkpoint: string): string {
+  return createHash('sha256').update(checkpoint).digest('hex').slice(0, 16);
+}
+
+function normalizeExpectedText(value: unknown): string {
+  if (value == null) return '';
+  const trimmed = String(value).trim();
+  return trimmed.length === 0 ? '' : trimmed;
+}
+
+function commitIncrementalSyncInMemory(args: Record<string, unknown> = {}) {
+  if (forceCommitFailure.value) {
+    return { data: { success: false, code: 'cursor_commit_failed', message: 'forced commit failure' }, error: null };
+  }
+
+  const connectionId = String(args.p_connection_id ?? '');
+  const runId = String(args.p_run_id ?? '');
+  const connection = rows('booking_channel_manager_connections').find((row) => row.id === connectionId);
+  const run = rows('booking_channel_import_runs').find((row) => row.id === runId);
+
+  if (!connection) {
+    return { data: { success: false, code: 'connection_not_found', message: 'connection not found' }, error: null };
+  }
+  if (!run) {
+    return { data: { success: false, code: 'run_not_found', message: 'import run not found' }, error: null };
+  }
+  if (run.connection_id !== connectionId) {
+    return { data: { success: false, code: 'run_connection_mismatch', message: 'run does not belong to connection' }, error: null };
+  }
+  if (run.import_type !== 'incremental_sync') {
+    return { data: { success: false, code: 'invalid_import_type', message: 'run import_type must be incremental_sync' }, error: null };
+  }
+  if (run.status !== 'running') {
+    return { data: { success: false, code: 'invalid_run_status', message: 'run status must be running' }, error: null };
+  }
+
+  const cursor = connection.metadata?.incrementalCursor;
+  const prevCheckpoint = cursor && typeof cursor === 'object'
+    ? normalizeExpectedText(cursor.checkpoint)
+    : '';
+  const prevBatchHash = cursor && typeof cursor === 'object'
+    ? normalizeExpectedText(cursor.batchHash ?? cursor.batch_hash)
+    : '';
+  const expectedCheckpoint = normalizeExpectedText(args.p_expected_previous_checkpoint);
+  const expectedBatchHash = normalizeExpectedText(args.p_expected_previous_batch_hash);
+
+  if (prevCheckpoint !== expectedCheckpoint || prevBatchHash !== expectedBatchHash) {
+    return {
+      data: { success: false, code: 'stale_expected_cursor', message: 'expected previous checkpoint does not match committed cursor' },
+      error: null,
+    };
+  }
+
+  const newCheckpoint = String(args.p_new_checkpoint ?? '');
+  const newBatchHash = String(args.p_new_batch_hash ?? '');
+  const finishedAt = String(args.p_finished_at ?? new Date().toISOString());
+  const status = String(args.p_status ?? 'completed');
+  const counters = (args.p_counters && typeof args.p_counters === 'object') ? args.p_counters : {};
+  const safeRunMetadata = (args.p_safe_run_metadata && typeof args.p_safe_run_metadata === 'object')
+    ? args.p_safe_run_metadata as Row
+    : {};
+
+  connection.metadata = {
+    ...(connection.metadata ?? {}),
+    liveCore: true,
+    lastSuccessfulIncrementalSyncAt: finishedAt,
+    incrementalCursor: {
+      stream: 'incremental',
+      checkpoint: newCheckpoint,
+      batchHash: newBatchHash,
+      updatedAt: finishedAt,
+      sourceRunId: runId,
+    },
+    lastLiveCoreCounters: counters,
+    liveSyncLease: {
+      runId,
+      status: 'released',
+      releasedAt: finishedAt,
+      importType: 'incremental_sync',
+    },
+  };
+  connection.lastSuccessfulIncrementalSyncAt = finishedAt;
+  connection.last_success_at = finishedAt;
+  connection.failure_reason = null;
+  connection.failureReason = null;
+  if (connection.status !== 'blocked') connection.status = 'import_ready';
+  connection.updated_at = finishedAt;
+
+  run.status = status;
+  run.finished_at = finishedAt;
+  run.imported_bookings_count = args.p_bookings ?? run.imported_bookings_count ?? 0;
+  run.imported_calendar_days_count = args.p_calendar_days ?? run.imported_calendar_days_count ?? 0;
+  run.imported_prices_count = args.p_prices ?? run.imported_prices_count ?? 0;
+  run.warnings = args.p_warnings ?? run.warnings ?? [];
+  run.safe_summary = args.p_safe_summary ?? run.safe_summary ?? null;
+  run.metadata = {
+    ...(run.metadata ?? {}),
+    ...safeRunMetadata,
+    liveCore: true,
+    liveCoreStage: 'completed',
+    liveCoreCounters: counters,
+  };
+  run.updated_at = finishedAt;
+
+  return {
+    data: {
+      success: true,
+      checkpointHash: hashCheckpoint(newCheckpoint),
+      batchHashPrefix: newBatchHash.slice(0, 16),
+      sourceRunId: runId,
+      updatedAt: finishedAt,
+      status,
+    },
+    error: null,
+  };
+}
+
 vi.mock('@/lib/supabase', () => ({
   supabase: {
     from: (...args: unknown[]) => supabaseFrom(...args),
@@ -124,6 +253,7 @@ import {
   createChannelLiveCoreAdapter,
   getChannelLiveCoreStatus,
   probeChannelLiveCoreSchema,
+  resolveIncrementalConnectionScope,
   runChannelManagerIncrementalSync,
   runChannelManagerInitialSync,
   setChannelLiveCoreSchemaReadyOverride,
@@ -181,14 +311,14 @@ function baseDelta(overrides: Partial<ManualChannelIncrementalDelta> & {
     }] : []),
     calendar: rest.calendar ?? [],
     pricing: rest.pricing ?? [],
-    currentCursor: rest.currentCursor ?? null,
+    currentCursor: rest.currentCursor === undefined ? null : rest.currentCursor,
     nextCursor: rest.nextCursor ?? { stream: 'incremental', checkpoint: 'cursor-1' },
     hasMore: rest.hasMore ?? false,
   };
 }
 
 function checkpointHash(checkpoint: string): string {
-  return createHash('sha256').update(checkpoint).digest('hex').slice(0, 16);
+  return hashCheckpoint(checkpoint);
 }
 
 function seedBookingOps(id = BOOKING_OPS_ID, patch: Row = {}) {
@@ -221,8 +351,13 @@ async function seedInitialSync(metadata?: Record<string, unknown>) {
   return connection;
 }
 
+function committedCheckpoint(): string | null {
+  return rows('booking_channel_manager_connections')[0]?.metadata?.incrementalCursor?.checkpoint ?? null;
+}
+
 beforeEach(() => {
   for (const key of Object.keys(tables)) tables[key] = [];
+  forceCommitFailure.value = false;
   rows('booking_owner_setup_profiles').push({ id: OWNER_ID });
   rows('booking_property_setup_profiles').push({
     id: PROPERTY_ID,
@@ -282,17 +417,15 @@ beforeEach(() => {
     update: vi.fn((patch: Row) => new Query(table, { patch })),
     delete: vi.fn(() => new Query(table, { deleteMode: true })),
   }));
-  supabaseRpc.mockResolvedValue({
-    data: {
-      schemaVersion: 2,
-      initialSyncTypeReady: true,
-      incrementalSyncTypeReady: true,
-      atomicRunningGuardReady: true,
-      atomicLiveSyncGuardReady: true,
-      cursorStorageReady: true,
-      ready: true,
-    },
-    error: null,
+
+  supabaseRpc.mockImplementation(async (fnName: string, args?: Record<string, unknown>) => {
+    if (fnName === 'channel_manager_live_core_schema_state') {
+      return { data: { ...SCHEMA_READY_PAYLOAD }, error: null };
+    }
+    if (fnName === 'channel_manager_commit_incremental_sync_v1') {
+      return commitIncrementalSyncInMemory(args ?? {});
+    }
+    return { data: null, error: { message: `unexpected rpc ${fnName}` } };
   });
 
   canAutoSendCommunicationIntent.mockResolvedValue({ eligible: false, reason: 'global_off' });
@@ -337,15 +470,7 @@ describe('Channel Manager Live Incremental Sync v1', () => {
       setChannelLiveCoreSchemaStateOverride(null);
       clearChannelLiveCoreSchemaStateCache();
       supabaseRpc.mockResolvedValueOnce({
-        data: {
-          schemaVersion: 2,
-          initialSyncTypeReady: true,
-          incrementalSyncTypeReady: true,
-          atomicRunningGuardReady: true,
-          atomicLiveSyncGuardReady: true,
-          cursorStorageReady: true,
-          ready: true,
-        },
+        data: { ...SCHEMA_READY_PAYLOAD },
         error: null,
       });
       const ready = await probeChannelLiveCoreSchema();
@@ -362,12 +487,8 @@ describe('Channel Manager Live Incremental Sync v1', () => {
       clearChannelLiveCoreSchemaStateCache();
       supabaseRpc.mockResolvedValueOnce({
         data: {
-          schemaVersion: 2,
-          initialSyncTypeReady: true,
+          ...SCHEMA_READY_PAYLOAD,
           incrementalSyncTypeReady: false,
-          atomicRunningGuardReady: true,
-          atomicLiveSyncGuardReady: true,
-          cursorStorageReady: true,
           ready: false,
         },
         error: null,
@@ -380,9 +501,7 @@ describe('Channel Manager Live Incremental Sync v1', () => {
       clearChannelLiveCoreSchemaStateCache();
       supabaseRpc.mockResolvedValueOnce({
         data: {
-          schemaVersion: 2,
-          initialSyncTypeReady: true,
-          incrementalSyncTypeReady: true,
+          ...SCHEMA_READY_PAYLOAD,
           atomicLiveSyncGuardReady: false,
           atomicRunningGuardReady: false,
           cursorStorageReady: false,
@@ -410,7 +529,6 @@ describe('Channel Manager Live Incremental Sync v1', () => {
         acquireChannelLiveSyncGuard(connection.id, { importType: 'incremental_sync' }),
         acquireChannelLiveSyncGuard(connection.id, { importType: 'incremental_sync' }),
       ]);
-      // one already running from above → both concurrent attempts fail; release then retest clean concurrency
       expect([first, second].every((item) => !item.ok)).toBe(true);
 
       rows('booking_channel_import_runs').forEach((row) => {
@@ -464,23 +582,33 @@ describe('Channel Manager Live Incremental Sync v1', () => {
       expect(result.cursorCommitted).toBe(false);
     });
 
-    it('rejects account/owner scope mismatch', async () => {
+    it('rejects when property owner mismatches connection owner (spoofed scope ignored)', async () => {
       const connection = await seedInitialSync();
-      const wrongAccount = await runChannelManagerIncrementalSync({
+      const property = rows('booking_property_setup_profiles').find((row) => row.id === PROPERTY_ID)!;
+      property.owner_setup_id = '10000000-0000-4000-8000-000000000099';
+
+      await expect(resolveIncrementalConnectionScope(connection)).rejects.toMatchObject({
+        code: 'account_scope_mismatch',
+      });
+
+      const result = await runChannelManagerIncrementalSync({
         connectionId: connection.id,
-        accountId: 'other-account',
         delta: baseDelta({ booking: { change_kind: 'unchanged' } }),
       });
-      expect(wrongAccount.status).toBe('failed');
-      expect(wrongAccount.safeError?.code).toBe('account_scope_mismatch');
+      expect(result.status).toBe('failed');
+      expect(result.safeError?.code).toBe('account_scope_mismatch');
+      expect(result.cursorCommitted).toBe(false);
+    });
 
-      const wrongOwner = await runChannelManagerIncrementalSync({
+    it('validates property belongs to connection owner when scope is consistent', async () => {
+      const connection = await seedInitialSync();
+      const scope = await resolveIncrementalConnectionScope(connection);
+      expect(scope).toMatchObject({
         connectionId: connection.id,
-        ownerSetupId: '10000000-0000-4000-8000-000000000099',
-        delta: baseDelta({ booking: { change_kind: 'unchanged', status: 'confirmed' } }),
+        ownerSetupId: OWNER_ID,
+        propertySetupId: PROPERTY_ID,
+        accountId: ACCOUNT_ID,
       });
-      expect(wrongOwner.status).toBe('failed');
-      expect(wrongOwner.safeError?.code).toBe('account_scope_mismatch');
     });
   });
 
@@ -501,13 +629,16 @@ describe('Channel Manager Live Incremental Sync v1', () => {
             status: 'confirmed',
             change_kind: 'created',
           }],
+          currentCursor: null,
           nextCursor: { stream: 'incremental', checkpoint: 'cursor-create' },
         }),
       });
       expect(created.status).not.toBe('failed');
       expect(created.counters.created).toBe(1);
       expect(created.counters.imported).toBe(1);
+      expect(created.cursorCommitted).toBe(true);
       expect(processInboundBookingRequest).toHaveBeenCalled();
+      expect(committedCheckpoint()).toBe('cursor-create');
 
       updateBookingOpsRecord.mockClear();
       const updated = await runChannelManagerIncrementalSync({
@@ -592,29 +723,169 @@ describe('Channel Manager Live Incremental Sync v1', () => {
       expect(blocked.counters.failed).toBeGreaterThanOrEqual(1);
       expect(blocked.warnings.some((item) => item.type === 'availability_conflict' && item.severity === 'blocker')).toBe(true);
       expect(blocked.cursorCommitted).toBe(false);
+      expect(committedCheckpoint()).toBe('cursor-unchanged');
     });
   });
 
-  describe('calendar, pricing, cursor, and idempotency', () => {
-    it('applies calendar/pricing, advances cursor on success, retains after failure, and replays idempotently', async () => {
+  describe('cursor protocol, true replay, and commit failure', () => {
+    it('true replay of the same A→B batch does not re-apply side effects', async () => {
       const connection = await seedInitialSync();
+
+      const seedCursor = await runChannelManagerIncrementalSync({
+        connectionId: connection.id,
+        delta: baseDelta({
+          booking: { change_kind: 'unchanged' },
+          currentCursor: null,
+          nextCursor: { stream: 'incremental', checkpoint: 'cursor-A' },
+        }),
+      });
+      expect(seedCursor.status).not.toBe('failed');
+      expect(seedCursor.cursorCommitted).toBe(true);
+      expect(committedCheckpoint()).toBe('cursor-A');
+
+      cancelReservation.mockClear();
+      processInboundBookingRequest.mockClear();
+      const cancelPayload = baseDelta({
+        booking: { change_kind: 'cancelled', status: 'cancelled' },
+        currentCursor: { stream: 'incremental', checkpoint: 'cursor-A' },
+        nextCursor: { stream: 'incremental', checkpoint: 'cursor-B' },
+      });
+      const first = await runChannelManagerIncrementalSync({
+        connectionId: connection.id,
+        delta: cancelPayload,
+      });
+      expect(first.status).not.toBe('failed');
+      expect(first.replayed).toBe(false);
+      expect(first.counters.cancelled).toBe(1);
+      expect(cancelReservation).toHaveBeenCalledTimes(1);
+      expect(committedCheckpoint()).toBe('cursor-B');
+
+      cancelReservation.mockClear();
+      processInboundBookingRequest.mockClear();
+      updateBookingOpsRecord.mockClear();
+      const replay = await runChannelManagerIncrementalSync({
+        connectionId: connection.id,
+        delta: cancelPayload,
+      });
+      expect(replay.status).not.toBe('failed');
+      expect(replay.replayed).toBe(true);
+      expect(replay.cursorCommitted).toBe(true);
+      expect(replay.counters.cancelled).toBe(0);
+      expect(cancelReservation).not.toHaveBeenCalled();
+      expect(processInboundBookingRequest).not.toHaveBeenCalled();
+      expect(updateBookingOpsRecord).not.toHaveBeenCalled();
+      expect(committedCheckpoint()).toBe('cursor-B');
+    });
+
+    it('fails with cursor_protocol_violation when currentCursor is missing after first commit', async () => {
+      const connection = await seedInitialSync();
+      const first = await runChannelManagerIncrementalSync({
+        connectionId: connection.id,
+        delta: baseDelta({
+          booking: { change_kind: 'unchanged' },
+          currentCursor: null,
+          nextCursor: { stream: 'incremental', checkpoint: 'cursor-A' },
+        }),
+      });
+      expect(first.cursorCommitted).toBe(true);
+
+      const missing = await runChannelManagerIncrementalSync({
+        connectionId: connection.id,
+        delta: baseDelta({
+          booking: { change_kind: 'unchanged' },
+          currentCursor: null,
+          nextCursor: { stream: 'incremental', checkpoint: 'cursor-B' },
+        }),
+      });
+      expect(missing.status).toBe('failed');
+      expect(missing.safeError?.code).toBe('cursor_protocol_violation');
+      expect(missing.cursorCommitted).toBe(false);
+      expect(committedCheckpoint()).toBe('cursor-A');
+    });
+
+    it('fails with cursor_replay_mismatch when next equals committed but payload differs', async () => {
+      const connection = await seedInitialSync();
+      const first = await runChannelManagerIncrementalSync({
+        connectionId: connection.id,
+        delta: baseDelta({
+          booking: { change_kind: 'unchanged' },
+          currentCursor: null,
+          nextCursor: { stream: 'incremental', checkpoint: 'cursor-A' },
+        }),
+      });
+      expect(first.cursorCommitted).toBe(true);
+
+      const mismatch = await runChannelManagerIncrementalSync({
+        connectionId: connection.id,
+        delta: baseDelta({
+          booking: { change_kind: 'cancelled', status: 'cancelled' },
+          currentCursor: { stream: 'incremental', checkpoint: 'cursor-other' },
+          nextCursor: { stream: 'incremental', checkpoint: 'cursor-A' },
+        }),
+      });
+      expect(mismatch.status).toBe('failed');
+      expect(mismatch.safeError?.code).toBe('cursor_replay_mismatch');
+      expect(mismatch.cursorCommitted).toBe(false);
+      expect(committedCheckpoint()).toBe('cursor-A');
+    });
+
+    it('retains old cursor when atomic commit RPC fails', async () => {
+      const connection = await seedInitialSync();
+      const first = await runChannelManagerIncrementalSync({
+        connectionId: connection.id,
+        delta: baseDelta({
+          booking: { change_kind: 'unchanged' },
+          currentCursor: null,
+          nextCursor: { stream: 'incremental', checkpoint: 'cursor-A' },
+        }),
+      });
+      expect(first.cursorCommitted).toBe(true);
+      expect(committedCheckpoint()).toBe('cursor-A');
+
+      forceCommitFailure.value = true;
+      const failed = await runChannelManagerIncrementalSync({
+        connectionId: connection.id,
+        delta: baseDelta({
+          booking: { change_kind: 'unchanged' },
+          currentCursor: { stream: 'incremental', checkpoint: 'cursor-A' },
+          nextCursor: { stream: 'incremental', checkpoint: 'cursor-B' },
+        }),
+      });
+      expect(failed.status).toBe('failed');
+      expect(failed.cursorCommitted).toBe(false);
+      expect(failed.safeError?.code).toMatch(/cursor_commit_failed|stale_expected_cursor/);
+      expect(committedCheckpoint()).toBe('cursor-A');
+    });
+  });
+
+  describe('calendar-only and retention', () => {
+    it('applies calendar/pricing without booking mutations and advances cursor', async () => {
+      const connection = await seedInitialSync();
+      processInboundBookingRequest.mockClear();
+      updateBookingOpsRecord.mockClear();
+      cancelReservation.mockClear();
 
       const withCal = await runChannelManagerIncrementalSync({
         connectionId: connection.id,
         delta: baseDelta({
-          booking: { change_kind: 'unchanged' },
+          bookings: [],
           calendar: [{ external_object_id: 'ext-1', date: '2026-07-20', availability_status: 'available' }],
           pricing: [{ external_object_id: 'ext-1', date: '2026-07-20', price_amount: 7777, currency: 'RUB' }],
+          currentCursor: null,
           nextCursor: { stream: 'incremental', checkpoint: 'cursor-cal' },
         }),
       });
       expect(withCal.status).not.toBe('failed');
+      expect(withCal.counters.created).toBe(0);
+      expect(withCal.counters.updated).toBe(0);
+      expect(withCal.counters.cancelled).toBe(0);
+      expect(withCal.counters.imported).toBe(0);
       expect(withCal.counters.calendarDays).toBe(1);
       expect(withCal.counters.prices).toBe(1);
       expect(withCal.cursorCommitted).toBe(true);
-      expect(withCal.committedCursor?.checkpoint).toBe('cursor-cal');
-      const connAfter = rows('booking_channel_manager_connections')[0];
-      expect(connAfter.metadata.incrementalCursor.checkpoint).toBe('cursor-cal');
+      expect(processInboundBookingRequest).not.toHaveBeenCalled();
+      expect(updateBookingOpsRecord).not.toHaveBeenCalled();
+      expect(cancelReservation).not.toHaveBeenCalled();
       expect(rows('booking_channel_calendar_snapshots').some((row) => (
         row.date === '2026-07-20' && row.availability_status === 'available'
       ))).toBe(true);
@@ -622,7 +893,6 @@ describe('Channel Manager Live Incremental Sync v1', () => {
         row.date === '2026-07-20' && Number(row.price_amount) === 7777
       ))).toBe(true);
 
-      const priorCheckpoint = connAfter.metadata.incrementalCursor.checkpoint;
       processInboundBookingRequest.mockRejectedValueOnce(new Error('intake boom token=secret-value-xyz'));
       const failed = await runChannelManagerIncrementalSync({
         connectionId: connection.id,
@@ -636,43 +906,13 @@ describe('Channel Manager Live Incremental Sync v1', () => {
             status: 'confirmed',
             change_kind: 'created',
           }],
-          currentCursor: { stream: 'incremental', checkpoint: priorCheckpoint },
+          currentCursor: { stream: 'incremental', checkpoint: 'cursor-cal' },
           nextCursor: { stream: 'incremental', checkpoint: 'cursor-should-not-commit' },
         }),
       });
       expect(failed.status).toBe('failed');
       expect(failed.cursorCommitted).toBe(false);
-      expect(rows('booking_channel_manager_connections')[0].metadata.incrementalCursor.checkpoint).toBe(priorCheckpoint);
-
-      cancelReservation.mockClear();
-      processInboundBookingRequest.mockClear();
-      const cancelOnce = await runChannelManagerIncrementalSync({
-        connectionId: connection.id,
-        delta: baseDelta({
-          booking: { change_kind: 'cancelled', status: 'cancelled' },
-          currentCursor: { stream: 'incremental', checkpoint: priorCheckpoint },
-          nextCursor: { stream: 'incremental', checkpoint: 'cursor-cancel-1' },
-        }),
-      });
-      expect(cancelOnce.status).not.toBe('failed');
-      expect(cancelOnce.counters.cancelled).toBe(1);
-      expect(cancelReservation).toHaveBeenCalledTimes(1);
-
-      cancelReservation.mockClear();
-      processInboundBookingRequest.mockClear();
-      const replay = await runChannelManagerIncrementalSync({
-        connectionId: connection.id,
-        delta: baseDelta({
-          booking: { change_kind: 'cancelled', status: 'cancelled' },
-          currentCursor: { stream: 'incremental', checkpoint: 'cursor-cancel-1' },
-          nextCursor: { stream: 'incremental', checkpoint: 'cursor-cancel-2' },
-        }),
-      });
-      expect(replay.status).not.toBe('failed');
-      expect(replay.counters.cancelled).toBe(0);
-      expect(processInboundBookingRequest).not.toHaveBeenCalled();
-      expect(rows('booking_channel_imported_bookings').filter((row) => row.external_booking_id === 'book-1')).toHaveLength(1);
-      expect(rows('reservation_ledger_audit').filter((row) => row.action === 'reservation_cancelled')).toHaveLength(1);
+      expect(committedCheckpoint()).toBe('cursor-cal');
     });
   });
 
@@ -708,6 +948,7 @@ describe('Channel Manager Live Incremental Sync v1', () => {
             status: 'confirmed',
             change_kind: 'created',
           }],
+          currentCursor: null,
           nextCursor: { stream: 'incremental', checkpoint: 'cursor-secret' },
         }),
       });
@@ -724,7 +965,58 @@ describe('Channel Manager Live Incremental Sync v1', () => {
       expect(serialized).not.toMatch(/abcdefghijklmnop|api_key=leak/i);
     });
 
-    it('exposes no outbound OTA write capabilities and status cursor fields without raw checkpoint', async () => {
+    it('collapses identical duplicate bookings and rejects conflicting changeKind', () => {
+      const collapsed = validateManualChannelIncrementalDelta(baseDelta({
+        bookings: [
+          {
+            external_booking_id: 'book-1',
+            external_object_id: 'ext-1',
+            guest_safe_name: 'Анна',
+            checkin_date: '2026-07-10',
+            checkout_date: '2026-07-12',
+            status: 'confirmed',
+            change_kind: 'updated',
+          },
+          {
+            external_booking_id: 'book-1',
+            external_object_id: 'ext-1',
+            guest_safe_name: 'Анна',
+            checkin_date: '2026-07-10',
+            checkout_date: '2026-07-12',
+            status: 'confirmed',
+            change_kind: 'updated',
+          },
+        ],
+        nextCursor: { stream: 'incremental', checkpoint: 'cursor-dedupe' },
+      }));
+      expect(collapsed.bookings).toHaveLength(1);
+
+      expect(() => validateManualChannelIncrementalDelta(baseDelta({
+        bookings: [
+          {
+            external_booking_id: 'book-1',
+            external_object_id: 'ext-1',
+            guest_safe_name: 'Анна',
+            checkin_date: '2026-07-10',
+            checkout_date: '2026-07-12',
+            status: 'confirmed',
+            change_kind: 'updated',
+          },
+          {
+            external_booking_id: 'book-1',
+            external_object_id: 'ext-1',
+            guest_safe_name: 'Анна',
+            checkin_date: '2026-07-10',
+            checkout_date: '2026-07-12',
+            status: 'confirmed',
+            change_kind: 'cancelled',
+          },
+        ],
+        nextCursor: { stream: 'incremental', checkpoint: 'cursor-conflict' },
+      }))).toThrow(/Конфликт дубликатов/);
+    });
+
+    it('exposes no outbound OTA write capabilities and omits raw checkpoints from status/run metadata', async () => {
       expect(MANUAL_INCREMENTAL_LIVE_CAPABILITIES).toMatchObject({
         writePrices: false,
         writeAvailability: false,
@@ -739,11 +1031,13 @@ describe('Channel Manager Live Incremental Sync v1', () => {
       expect(adapter.capabilities.writeAvailability).toBe(false);
 
       const connection = await seedInitialSync();
+      const rawCheckpoint = 'cursor-status-raw-value';
       const ran = await runChannelManagerIncrementalSync({
         connectionId: connection.id,
         delta: baseDelta({
           booking: { change_kind: 'unchanged' },
-          nextCursor: { stream: 'incremental', checkpoint: 'cursor-status-raw-value' },
+          currentCursor: null,
+          nextCursor: { stream: 'incremental', checkpoint: rawCheckpoint },
         }),
       });
       expect(ran.status).not.toBe('failed');
@@ -751,8 +1045,8 @@ describe('Channel Manager Live Incremental Sync v1', () => {
       const status = await getChannelLiveCoreStatus(connection.id);
       expect(status.incrementalSyncEnabled).toBe(true);
       expect(status.cursorPresent).toBe(true);
-      expect(status.cursorCheckpointHash).toBe(checkpointHash('cursor-status-raw-value'));
-      expect(status.cursorCheckpointHash).not.toBe('cursor-status-raw-value');
+      expect(status.cursorCheckpointHash).toBe(checkpointHash(rawCheckpoint));
+      expect(status.cursorCheckpointHash).not.toBe(rawCheckpoint);
       expect(status).not.toHaveProperty('incrementalCursor');
       expect(status.latestIncrementalRun).toMatchObject({
         id: ran.run.id,
@@ -760,6 +1054,17 @@ describe('Channel Manager Live Incremental Sync v1', () => {
         status: expect.stringMatching(/completed/),
       });
       expect(status.realProviderApiEnabled).toBe(false);
+
+      const runMeta = rows('booking_channel_import_runs').find((row) => row.id === ran.run.id)?.metadata;
+      const serialized = JSON.stringify({
+        status,
+        runMetadata: runMeta,
+        warnings: ran.warnings,
+        safeError: ran.safeError,
+        liveCoreStatus: status,
+      });
+      expect(serialized).not.toContain(rawCheckpoint);
+      expect(JSON.stringify(runMeta ?? {})).not.toContain(rawCheckpoint);
     });
   });
 });

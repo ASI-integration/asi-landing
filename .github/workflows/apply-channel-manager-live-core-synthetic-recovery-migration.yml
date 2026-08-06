@@ -165,42 +165,42 @@ jobs:
 
           ASI_APP_SELECTION="$(
             sudo -u project_ayfaar pm2 jlist | python3 -c '
-import json
-import sys
+          import json
+          import sys
 
-processes = json.load(sys.stdin)
-matches = []
-for process in processes:
-    env = process.get("pm2_env") or {}
-    name = str(process.get("name") or "")
-    status = str(env.get("status") or "")
-    cwd = str(env.get("pm_cwd") or "")
-    exec_path = str(env.get("pm_exec_path") or "")
-    if (
-        name == "asi-landing"
-        and status == "online"
-        and cwd == "/var/www/asi/current"
-        and exec_path.endswith("/node_modules/next/dist/bin/next")
-    ):
-        matches.append(
-            {
-                "pm_id": process.get("pm_id"),
-                "name": name,
-                "status": status,
-                "cwd": cwd,
-                "exec_path": exec_path,
-            }
-        )
+          processes = json.load(sys.stdin)
+          matches = []
+          for process in processes:
+              env = process.get("pm2_env") or {}
+              name = str(process.get("name") or "")
+              status = str(env.get("status") or "")
+              cwd = str(env.get("pm_cwd") or "")
+              exec_path = str(env.get("pm_exec_path") or "")
+              if (
+                  name == "asi-landing"
+                  and status == "online"
+                  and cwd == "/var/www/asi/current"
+                  and exec_path.endswith("/node_modules/next/dist/bin/next")
+              ):
+                  matches.append(
+                      {
+                          "pm_id": process.get("pm_id"),
+                          "name": name,
+                          "status": status,
+                          "cwd": cwd,
+                          "exec_path": exec_path,
+                      }
+                  )
 
-print("match_count=" + str(len(matches)))
-if len(matches) == 1:
-    selected = matches[0]
-    print("pm_id=" + str(selected.get("pm_id")))
-    print("name=" + str(selected.get("name")))
-    print("status=" + str(selected.get("status")))
-    print("cwd=" + str(selected.get("cwd")))
-    print("exec_path=" + str(selected.get("exec_path")))
-'
+          print("match_count=" + str(len(matches)))
+          if len(matches) == 1:
+              selected = matches[0]
+              print("pm_id=" + str(selected.get("pm_id")))
+              print("name=" + str(selected.get("name")))
+              print("status=" + str(selected.get("status")))
+              print("cwd=" + str(selected.get("cwd")))
+              print("exec_path=" + str(selected.get("exec_path")))
+          '
           )"
 
           ASI_APP_MATCH_COUNT="$(printf '%s\n' "$ASI_APP_SELECTION" | sed -nE 's/^match_count=([0-9]+)$/\1/p' | head -n 1)"
@@ -357,27 +357,27 @@ if len(matches) == 1:
             python3 -m venv "$VENV"
             "$VENV/bin/pip" install --quiet 'psycopg2-binary==2.9.10'
             DB_URL="$DB_URL" REMOTE_SQL="$REMOTE_SQL" VERIFY_SQL="$VERIFY_SQL" "$VENV/bin/python" - <<'PY'
-          import os
-          from pathlib import Path
-          import psycopg2
+            import os
+            from pathlib import Path
+            import psycopg2
 
-          connection = psycopg2.connect(os.environ["DB_URL"])
-          try:
-              with connection.cursor() as cursor:
-                  cursor.execute(Path(os.environ["REMOTE_SQL"]).read_text(encoding="utf-8"))
-                  cursor.execute("NOTIFY pgrst, 'reload schema';")
-                  cursor.execute(os.environ["VERIFY_SQL"])
-                  result = cursor.fetchone()
-                  if not result or result[0] != "verified":
-                      raise RuntimeError("migration_verification_failed")
-              connection.commit()
-          except Exception:
-              connection.rollback()
-              raise
-          finally:
-              connection.close()
-          print("migration_verification=verified")
-          PY
+            connection = psycopg2.connect(os.environ["DB_URL"])
+            try:
+                with connection.cursor() as cursor:
+                    cursor.execute(Path(os.environ["REMOTE_SQL"]).read_text(encoding="utf-8"))
+                    cursor.execute("NOTIFY pgrst, 'reload schema';")
+                    cursor.execute(os.environ["VERIFY_SQL"])
+                    result = cursor.fetchone()
+                    if not result or result[0] != "verified":
+                        raise RuntimeError("migration_verification_failed")
+                connection.commit()
+            except Exception:
+                connection.rollback()
+                raise
+            finally:
+                connection.close()
+            print("migration_verification=verified")
+            PY
             VERIFY_RESULT=verified
           fi
 

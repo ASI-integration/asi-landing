@@ -171,9 +171,14 @@ export type ManualChannelIncrementalDelta = {
 export type ChannelLiveCommittedCursor = {
   stream: 'incremental';
   checkpoint: string;
+  batchHash: string; // full sha256 hex
   updatedAt: string;
   sourceRunId: string;
 };
+
+export type IncrementalCursorProtocolResult =
+  | { kind: 'replay' }
+  | { kind: 'advance' };
 
 /** Provider-independent Live Core adapter. Must never carry credentials or secrets. */
 export interface ChannelManagerLiveCoreAdapter {
@@ -471,6 +476,184 @@ function cursorPlaceholder(): ChannelLiveProviderCursor[] {
   ];
 }
 
+function stableJsonValue(value: unknown): string {
+  if (value === null || typeof value !== 'object') return JSON.stringify(value);
+  if (Array.isArray(value)) return `[${value.map((item) => stableJsonValue(item)).join(',')}]`;
+  const row = value as Record<string, unknown>;
+  const keys = Object.keys(row).sort();
+  return `{${keys.map((key) => `${JSON.stringify(key)}:${stableJsonValue(row[key])}`).join(',')}}`;
+}
+
+export function hashCursorCheckpoint(checkpoint: string): string {
+  return createHash('sha256').update(checkpoint).digest('hex').slice(0, 16);
+}
+
+export function computeIncrementalBatchHash(batch: ChannelLiveIncrementalBatch): string {
+  const bookings = [...batch.bookings]
+    .map((item) => ({
+      changeKind: item.changeKind,
+      checkInDate: item.checkInDate ?? null,
+      checkOutDate: item.checkOutDate ?? null,
+      externalBookingId: item.externalBookingId,
+      externalObjectId: item.externalObjectId ?? null,
+      guestContactRef: item.guestContactRef ?? null,
+      guestCount: item.guestCount ?? null,
+      guestSafeName: item.guestSafeName ?? null,
+      status: item.status,
+    }))
+    .sort((left, right) => left.externalBookingId.localeCompare(right.externalBookingId));
+  const calendar = [...batch.calendar]
+    .map((item) => ({
+      availabilityStatus: item.availabilityStatus ?? null,
+      currency: item.currency ?? null,
+      date: item.date,
+      externalObjectId: item.externalObjectId,
+      minStay: item.minStay ?? null,
+      priceAmount: item.priceAmount ?? null,
+    }))
+    .sort((left, right) => (
+      `${left.externalObjectId}\0${left.date}`.localeCompare(`${right.externalObjectId}\0${right.date}`)
+    ));
+  const pricing = [...batch.pricing]
+    .map((item) => ({
+      availabilityStatus: item.availabilityStatus ?? null,
+      currency: item.currency ?? null,
+      date: item.date,
+      externalObjectId: item.externalObjectId,
+      minStay: item.minStay ?? null,
+      priceAmount: item.priceAmount ?? null,
+    }))
+    .sort((left, right) => (
+      `${left.externalObjectId}\0${left.date}`.localeCompare(`${right.externalObjectId}\0${right.date}`)
+    ));
+  const payload = {
+    bookings,
+    calendar,
+    currentCursor: batch.currentCursor
+      ? { checkpoint: batch.currentCursor.checkpoint, stream: batch.currentCursor.stream }
+      : null,
+    hasMore: batch.hasMore === true,
+    nextCursor: {
+      checkpoint: batch.nextCursor.checkpoint,
+      stream: batch.nextCursor.stream,
+    },
+    pricing,
+  };
+  return createHash('sha256').update(stableJsonValue(payload)).digest('hex');
+}
+
+export function assertFailClosedIncrementalCursorProtocol(
+  committed: ChannelLiveCommittedCursor | null,
+  batch: ChannelLiveIncrementalBatch,
+): IncrementalCursorProtocolResult {
+  const nextCheckpoint = text(batch.nextCursor?.checkpoint);
+  if (!nextCheckpoint) {
+    throw Object.assign(new Error('nextCursor обязателен и должен содержать checkpoint.'), {
+      code: 'cursor_protocol_violation',
+    });
+  }
+
+  if (!committed) {
+    if (batch.currentCursor != null) {
+      throw Object.assign(
+        new Error('currentCursor должен быть null при первом incremental batch.'),
+        { code: 'cursor_protocol_violation' },
+      );
+    }
+    return { kind: 'advance' };
+  }
+
+  if (nextCheckpoint === committed.checkpoint) {
+    const batchHash = computeIncrementalBatchHash(batch);
+    const committedHash = text(committed.batchHash);
+    if (committedHash && batchHash === committedHash) {
+      return { kind: 'replay' };
+    }
+    throw Object.assign(
+      new Error('Повторный nextCursor с другим содержимым batch (cursor_replay_mismatch).'),
+      { code: 'cursor_replay_mismatch' },
+    );
+  }
+
+  const currentCheckpoint = text(batch.currentCursor?.checkpoint);
+  if (!batch.currentCursor || !currentCheckpoint) {
+    throw Object.assign(
+      new Error('После первого commit нужен currentCursor, совпадающий с committed checkpoint.'),
+      { code: 'cursor_protocol_violation' },
+    );
+  }
+  if (currentCheckpoint !== committed.checkpoint) {
+    throw Object.assign(
+      new Error('currentCursor не совпадает с последним committed cursor.'),
+      { code: 'cursor_protocol_violation' },
+    );
+  }
+  if (currentCheckpoint === nextCheckpoint) {
+    throw Object.assign(
+      new Error('currentCursor и nextCursor не должны совпадать для нового batch.'),
+      { code: 'cursor_protocol_violation' },
+    );
+  }
+  return { kind: 'advance' };
+}
+
+export function buildSafeIncrementalCursorMetadata(input: {
+  cursorPresent: boolean;
+  cursorCheckpointHash?: string | null;
+  currentCursorHash?: string | null;
+  nextCursorHash?: string | null;
+  hasMore?: boolean;
+  sourceRunId?: string | null;
+  updatedAt?: string | null;
+  replayed?: boolean;
+  batchHashPrefix?: string | null;
+}): Record<string, unknown> {
+  return {
+    cursorPresent: input.cursorPresent === true,
+    cursorCheckpointHash: input.cursorCheckpointHash ?? null,
+    currentCursorHash: input.currentCursorHash ?? null,
+    nextCursorHash: input.nextCursorHash ?? null,
+    hasMore: input.hasMore === true,
+    sourceRunId: input.sourceRunId ?? null,
+    updatedAt: input.updatedAt ?? null,
+    replayed: input.replayed === true,
+    ...(input.batchHashPrefix ? { batchHashPrefix: input.batchHashPrefix } : {}),
+  };
+}
+
+export function toSafeIncrementalRunSummary(run: ChannelImportRun): SafeIncrementalRunSummary {
+  return {
+    id: run.id,
+    status: run.status,
+    importType: run.importType,
+    stage: text(run.metadata?.liveCoreStage) || null,
+    startedAt: run.startedAt,
+    finishedAt: run.finishedAt,
+    counters: readCounters(run.metadata),
+    safeError: (run.metadata?.safeError as ChannelLiveSafeError | undefined) ?? null,
+  };
+}
+
+function dedupeIncrementalRowsByKey<T>(
+  items: T[],
+  keyOf: (item: T) => string,
+  label: string,
+): T[] {
+  const byKey = new Map<string, T>();
+  for (const item of items) {
+    const key = keyOf(item);
+    const existing = byKey.get(key);
+    if (!existing) {
+      byKey.set(key, item);
+      continue;
+    }
+    if (stableJsonValue(existing) !== stableJsonValue(item)) {
+      throw new Error(`Конфликт дубликатов в ${label}: ${key}`);
+    }
+  }
+  return [...byKey.values()];
+}
+
 export function validateChannelLiveProviderCursor(
   value: unknown,
   options?: { requiredCheckpoint?: boolean },
@@ -531,8 +714,8 @@ export function validateManualChannelIncrementalDelta(
   }
   const currentCursor = validateChannelLiveProviderCursor(delta.currentCursor ?? null);
 
-  return {
-    bookings: bookingsRaw.map((item) => {
+  const bookings = dedupeIncrementalRowsByKey(
+    bookingsRaw.map((item) => {
       const status = normalizeExternalBookingStatus(item.status);
       const explicitKind = text(item.changeKind ?? item.change_kind).toLowerCase();
       const changeKind = (
@@ -552,7 +735,11 @@ export function validateManualChannelIncrementalDelta(
         changeKind,
       };
     }).filter((item) => item.externalBookingId),
-    calendar: calendarRaw.map((item) => ({
+    (item) => item.externalBookingId,
+    'bookings',
+  );
+  const calendar = dedupeIncrementalRowsByKey(
+    calendarRaw.map((item) => ({
       externalObjectId: text(item.external_object_id ?? item.externalObjectId ?? item.object_id),
       date: normalizeDate(item.date) ?? '',
       availabilityStatus: text(item.availability_status ?? item.availability) || 'unknown',
@@ -560,7 +747,11 @@ export function validateManualChannelIncrementalDelta(
       priceAmount: numberOrNull(item.price_amount ?? item.price),
       currency: nullableText(item.currency),
     })).filter((item) => item.externalObjectId && item.date),
-    pricing: pricingRaw.map((item) => ({
+    (item) => `${item.externalObjectId}\0${item.date}`,
+    'calendar',
+  );
+  const pricing = dedupeIncrementalRowsByKey(
+    pricingRaw.map((item) => ({
       externalObjectId: text(item.external_object_id ?? item.externalObjectId ?? item.object_id),
       date: normalizeDate(item.date) ?? '',
       availabilityStatus: text(item.availability_status ?? item.availability) || 'unknown',
@@ -568,6 +759,14 @@ export function validateManualChannelIncrementalDelta(
       priceAmount: numberOrNull(item.price_amount ?? item.price),
       currency: nullableText(item.currency),
     })).filter((item) => item.externalObjectId && item.date),
+    (item) => `${item.externalObjectId}\0${item.date}`,
+    'pricing',
+  );
+
+  return {
+    bookings,
+    calendar,
+    pricing,
     currentCursor,
     nextCursor,
     hasMore: delta.hasMore === true,
@@ -691,7 +890,7 @@ export class ManualChannelLiveIncrementalAdapter implements ChannelManagerLiveCo
   getProviderCursorPlaceholder(): ChannelLiveProviderCursor[] {
     return [{
       stream: 'incremental',
-      checkpoint: this.batch.nextCursor.checkpoint,
+      checkpoint: null,
       note: 'Manual incremental reference cursor (not a real provider API).',
     }];
   }
@@ -729,6 +928,8 @@ export class ManualChannelLiveIncrementalAdapter implements ChannelManagerLiveCo
       || this.batch.pricing.length > limit) {
       throw new Error(`Incremental batch превышает limit=${limit}.`);
     }
+    // Soft defensive check only — fail-closed protocol is enforced in the runner
+    // before side effects (including true replay detection).
     const committed = input.cursor?.checkpoint ?? null;
     const expected = this.batch.currentCursor?.checkpoint ?? null;
     if (committed && expected && committed !== expected) {
@@ -880,6 +1081,18 @@ export type ChannelLiveSyncResult = {
   retryable: boolean;
   cursorCommitted?: boolean;
   committedCursor?: ChannelLiveCommittedCursor | null;
+  replayed?: boolean;
+};
+
+export type SafeIncrementalRunSummary = {
+  id: string;
+  status: string;
+  importType: string;
+  stage: string | null;
+  startedAt: string | null;
+  finishedAt: string | null;
+  counters: ChannelLiveSyncCounters | null;
+  safeError: ChannelLiveSafeError | null;
 };
 
 export type ChannelLiveCoreStatus = {
@@ -1417,7 +1630,11 @@ async function processImportedBookingsForLiveSync(
     .from('booking_channel_imported_bookings')
     .select('*')
     .eq('connection_id', connectionId);
-  if (options?.externalBookingIds && options.externalBookingIds.length > 0) {
+  // Explicit array (including empty) scopes processing; undefined/null = full Initial Sync set.
+  if (Array.isArray(options?.externalBookingIds)) {
+    if (options.externalBookingIds.length === 0) {
+      return;
+    }
     query = query.in('external_booking_id', options.externalBookingIds);
   }
   const { data: bookings, error } = await query;
@@ -1855,9 +2072,8 @@ export async function getChannelLiveCoreStatus(connectionId: string): Promise<Ch
     ?? (connection.metadata?.lastSafeError as ChannelLiveSafeError | undefined)
     ?? null;
   const stage = text(latest?.metadata?.liveCoreStage) || null;
-  const cursors = (Array.isArray(latest?.metadata?.cursorPlaceholder)
-    ? latest?.metadata?.cursorPlaceholder
-    : connection.metadata?.cursorPlaceholder) as ChannelLiveProviderCursor[] | undefined;
+  // Never surface raw checkpoints from run/connection metadata in public status.
+  const cursors = cursorPlaceholder();
 
   const committed = readCommittedIncrementalCursor(connection.metadata);
   const lastSuccessfulInitialSyncAt = nullableText(connection.metadata?.lastSuccessfulInitialSyncAt)
@@ -1929,9 +2145,9 @@ export async function getChannelLiveCoreStatus(connectionId: string): Promise<Ch
     cursorUpdatedAt: committed?.updatedAt ?? null,
     cursorSourceRunId: committed?.sourceRunId ?? null,
     cursorCheckpointHash: committed?.checkpoint
-      ? createHash('sha256').update(committed.checkpoint).digest('hex').slice(0, 16)
+      ? hashCursorCheckpoint(committed.checkpoint)
       : null,
-    cursorPlaceholder: cursors ?? cursorPlaceholder(),
+    cursorPlaceholder: cursors,
   };
 }
 
@@ -1946,25 +2162,56 @@ function readCommittedIncrementalCursor(
   return {
     stream: 'incremental',
     checkpoint,
+    batchHash: text(row.batchHash) || text(row.batch_hash) || '',
     updatedAt: text(row.updatedAt) || text(row.updated_at) || '',
     sourceRunId: text(row.sourceRunId) || text(row.source_run_id) || '',
   };
 }
 
-function assertConnectionScope(
+export async function resolveIncrementalConnectionScope(
   connection: ChannelManagerConnection,
-  scope?: { ownerSetupId?: string | null; ownerId?: string | null; accountId?: string | null },
-): void {
-  if (!scope) return;
-  if (scope.ownerSetupId && connection.ownerSetupId && scope.ownerSetupId !== connection.ownerSetupId) {
-    throw Object.assign(new Error('Подключение принадлежит другому владельцу.'), { code: 'account_scope_mismatch' });
+): Promise<{
+  connectionId: string;
+  ownerSetupId: string;
+  propertySetupId: string;
+  accountId: string | null;
+}> {
+  const propertySetupId = text(connection.propertySetupId);
+  const ownerSetupId = text(connection.ownerSetupId);
+  if (!propertySetupId) {
+    throw Object.assign(new Error('У подключения не указан профиль объекта.'), {
+      code: 'connection_scope_invalid',
+    });
   }
-  if (scope.ownerId && connection.ownerId && scope.ownerId !== connection.ownerId) {
-    throw Object.assign(new Error('Подключение принадлежит другому владельцу.'), { code: 'account_scope_mismatch' });
+  if (!ownerSetupId) {
+    throw Object.assign(new Error('У подключения не указан владелец.'), {
+      code: 'connection_scope_invalid',
+    });
   }
-  if (scope.accountId && connection.metadata?.accountId && text(connection.metadata.accountId) !== text(scope.accountId)) {
-    throw Object.assign(new Error('Подключение принадлежит другому аккаунту.'), { code: 'account_scope_mismatch' });
+
+  const { data: property, error } = await supabase
+    .from('booking_property_setup_profiles')
+    .select('id,owner_setup_id')
+    .eq('id', propertySetupId)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!property) {
+    throw Object.assign(new Error('Профиль объекта не найден.'), {
+      code: 'connection_scope_invalid',
+    });
   }
+  if (text(property.owner_setup_id) !== ownerSetupId) {
+    throw Object.assign(new Error('Объект не принадлежит владельцу подключения.'), {
+      code: 'account_scope_mismatch',
+    });
+  }
+
+  return {
+    connectionId: connection.id,
+    ownerSetupId,
+    propertySetupId,
+    accountId: nullableText(connection.metadata?.accountId),
+  };
 }
 
 async function requireSuccessfulInitialSync(connectionId: string): Promise<string> {
@@ -1990,9 +2237,6 @@ export async function runChannelManagerIncrementalSync(input: {
   connectionId: string;
   delta: ManualChannelIncrementalDelta;
   metadata?: Record<string, unknown>;
-  ownerSetupId?: string | null;
-  ownerId?: string | null;
-  accountId?: string | null;
   limit?: number;
 }): Promise<ChannelLiveSyncResult> {
   if (input.metadata && findSecretPath(input.metadata)) {
@@ -2002,21 +2246,19 @@ export async function runChannelManagerIncrementalSync(input: {
     throw new Error('Пароли, токены и другие секреты нельзя передавать или сохранять в импорте.');
   }
 
+  const validatedBatch = validateManualChannelIncrementalDelta(input.delta);
+
   let stage: ChannelLiveSyncStage = 'queued';
   let runId: string | null = null;
   const counters = emptyCounters();
   let warnings: ChannelImportConflict[] = [];
-  let cursors: ChannelLiveProviderCursor[] = [];
+  let cursors: ChannelLiveProviderCursor[] = cursorPlaceholder();
   let connection = await getConnection(input.connectionId);
   let previousCursor = readCommittedIncrementalCursor(connection.metadata);
   let cursorCommitted = false;
 
   try {
-    assertConnectionScope(connection, {
-      ownerSetupId: input.ownerSetupId,
-      ownerId: input.ownerId,
-      accountId: input.accountId,
-    });
+    await resolveIncrementalConnectionScope(connection);
 
     if (connection.status === 'blocked') {
       throw Object.assign(new Error(connection.failureReason ?? 'Подключение заблокировано.'), { code: 'connection_blocked' });
@@ -2029,6 +2271,68 @@ export async function runChannelManagerIncrementalSync(input: {
 
     await requireSuccessfulInitialSync(connection.id);
 
+    stage = 'load_cursor';
+    previousCursor = readCommittedIncrementalCursor(connection.metadata);
+    const protocol = assertFailClosedIncrementalCursorProtocol(previousCursor, validatedBatch);
+
+    if (protocol.kind === 'replay') {
+      const runs = await listChannelImportRuns(connection.id);
+      const lastSuccess = runs.find((run) => (
+        run.importType === 'incremental_sync'
+        && ['completed', 'completed_with_warnings'].includes(run.status)
+      ));
+      const run = lastSuccess ?? {
+        id: previousCursor?.sourceRunId || '00000000-0000-4000-8000-000000000000',
+        connectionId: connection.id,
+        provider: connection.provider,
+        status: 'completed' as const,
+        importType: 'incremental_sync' as const,
+        startedAt: null,
+        finishedAt: previousCursor?.updatedAt ?? null,
+        importedObjectsCount: 0,
+        importedBookingsCount: 0,
+        importedCalendarDaysCount: 0,
+        importedPricesCount: 0,
+        warnings: [],
+        errors: [],
+        safeSummary: 'Incremental sync replay (no side effects).',
+        metadata: {
+          liveCore: true,
+          liveCoreStage: 'completed',
+          liveCoreCounters: emptyCounters(),
+          ...buildSafeIncrementalCursorMetadata({
+            cursorPresent: true,
+            cursorCheckpointHash: previousCursor?.checkpoint
+              ? hashCursorCheckpoint(previousCursor.checkpoint)
+              : null,
+            sourceRunId: previousCursor?.sourceRunId ?? null,
+            updatedAt: previousCursor?.updatedAt ?? null,
+            replayed: true,
+            batchHashPrefix: previousCursor?.batchHash
+              ? previousCursor.batchHash.slice(0, 16)
+              : null,
+          }),
+        },
+        createdAt: previousCursor?.updatedAt ?? new Date().toISOString(),
+        updatedAt: previousCursor?.updatedAt ?? new Date().toISOString(),
+      };
+
+      return {
+        run,
+        connection,
+        stage: 'completed',
+        status: 'completed',
+        counters: emptyCounters(),
+        warnings: [],
+        safeError: null,
+        cursors: cursorPlaceholder(),
+        retryable: true,
+        cursorCommitted: true,
+        committedCursor: previousCursor,
+        replayed: true,
+      };
+    }
+
     stage = 'acquire_guard';
     const guard = await acquireChannelLiveSyncGuard(connection.id, { importType: 'incremental_sync' });
     if (!guard.ok) {
@@ -2037,16 +2341,31 @@ export async function runChannelManagerIncrementalSync(input: {
     runId = guard.run.id;
     connection = await getConnection(connection.id);
     previousCursor = readCommittedIncrementalCursor(connection.metadata);
+    // Re-assert after guard in case another commit landed; still fail-closed.
+    assertFailClosedIncrementalCursorProtocol(previousCursor, validatedBatch);
 
-    stage = 'load_cursor';
+    const nextCheckpoint = validatedBatch.nextCursor.checkpoint!;
+    const currentCheckpoint = validatedBatch.currentCursor?.checkpoint ?? null;
+    const batchHash = computeIncrementalBatchHash(validatedBatch);
+
     await updateRunProgress(runId, {
-      stage,
+      stage: 'load_cursor',
       counters,
-      metadata: {
-        previousCursorPresent: Boolean(previousCursor?.checkpoint),
-        previousCursorUpdatedAt: previousCursor?.updatedAt ?? null,
-        previousCursorSourceRunId: previousCursor?.sourceRunId ?? null,
-      },
+      metadata: buildSafeIncrementalCursorMetadata({
+        cursorPresent: Boolean(previousCursor?.checkpoint),
+        cursorCheckpointHash: previousCursor?.checkpoint
+          ? hashCursorCheckpoint(previousCursor.checkpoint)
+          : null,
+        currentCursorHash: currentCheckpoint ? hashCursorCheckpoint(currentCheckpoint) : null,
+        nextCursorHash: hashCursorCheckpoint(nextCheckpoint),
+        hasMore: validatedBatch.hasMore,
+        sourceRunId: previousCursor?.sourceRunId ?? null,
+        updatedAt: previousCursor?.updatedAt ?? null,
+        replayed: false,
+        batchHashPrefix: previousCursor?.batchHash
+          ? previousCursor.batchHash.slice(0, 16)
+          : null,
+      }),
     });
 
     stage = 'load_incremental_batch';
@@ -2062,10 +2381,25 @@ export async function runChannelManagerIncrementalSync(input: {
       cursor: cursorForLoad,
       limit: input.limit,
     });
-    cursors = [batch.nextCursor];
+    cursors = cursorPlaceholder();
 
     stage = 'import_bookings';
-    await updateRunProgress(runId, { stage, counters, metadata: { cursorPlaceholder: cursors } });
+    await updateRunProgress(runId, {
+      stage,
+      counters,
+      metadata: buildSafeIncrementalCursorMetadata({
+        cursorPresent: Boolean(previousCursor?.checkpoint),
+        cursorCheckpointHash: previousCursor?.checkpoint
+          ? hashCursorCheckpoint(previousCursor.checkpoint)
+          : null,
+        currentCursorHash: currentCheckpoint ? hashCursorCheckpoint(currentCheckpoint) : null,
+        nextCursorHash: hashCursorCheckpoint(nextCheckpoint),
+        hasMore: batch.hasMore,
+        sourceRunId: runId,
+        replayed: false,
+        batchHashPrefix: batchHash.slice(0, 16),
+      }),
+    });
     const bookingsImported = batch.bookings.length > 0
       ? await importChannelBookings(connection.id, batch.bookings.map(bookingToRow), { importRunId: runId })
       : 0;
@@ -2121,74 +2455,85 @@ export async function runChannelManagerIncrementalSync(input: {
       const run = runs.find((item) => item.id === runId)!;
       return {
         run, connection, stage: 'failed', status: 'failed', counters, warnings, safeError, cursors,
-        retryable: true, cursorCommitted: false, committedCursor: previousCursor,
+        retryable: true, cursorCommitted: false, committedCursor: previousCursor, replayed: false,
       };
     }
 
     stage = 'commit_cursor';
-    await updateRunProgress(runId, { stage, counters, warnings });
     const finishedAt = new Date().toISOString();
-    const committed: ChannelLiveCommittedCursor = {
-      stream: 'incremental',
-      checkpoint: batch.nextCursor.checkpoint!,
-      updatedAt: finishedAt,
-      sourceRunId: runId,
+    const safeRunMetadata = {
+      liveCore: true,
+      liveCoreCounters: counters,
+      ...buildSafeIncrementalCursorMetadata({
+        cursorPresent: true,
+        cursorCheckpointHash: hashCursorCheckpoint(nextCheckpoint),
+        currentCursorHash: currentCheckpoint ? hashCursorCheckpoint(currentCheckpoint) : null,
+        nextCursorHash: hashCursorCheckpoint(nextCheckpoint),
+        hasMore: batch.hasMore,
+        sourceRunId: runId,
+        updatedAt: finishedAt,
+        replayed: false,
+        batchHashPrefix: batchHash.slice(0, 16),
+      }),
     };
-    if (findSecretPath(committed)) {
-      throw new Error('Пароли, токены и другие секреты нельзя сохранять в курсоре.');
-    }
-
-    const run = await updateRunProgress(runId, {
-      stage: 'completed',
-      status,
-      finishedAt,
+    await updateRunProgress(runId, {
+      stage,
       counters,
       warnings,
-      bookings: bookingsImported,
-      calendarDays: counters.calendarDays,
-      prices: counters.prices,
-      safeSummary: `Live Core incremental sync: создано ${counters.created}, обновлено ${counters.updated}, отменено ${counters.cancelled}, восстановлено ${counters.restored}, пропущено ${counters.skipped}, ошибок ${counters.failed}.`,
-      metadata: {
-        cursorPlaceholder: cursors,
-        liveCoreCounters: counters,
-        committedCursor: {
-          stream: committed.stream,
-          updatedAt: committed.updatedAt,
-          sourceRunId: committed.sourceRunId,
-          checkpointHash: createHash('sha256').update(committed.checkpoint).digest('hex').slice(0, 16),
-        },
-      },
+      metadata: safeRunMetadata,
     });
 
-    const { data: connectionRow } = await supabase.from('booking_channel_manager_connections').update({
-      status: connection.status === 'blocked' ? connection.status : 'import_ready',
-      last_success_at: finishedAt,
-      failure_reason: null,
-      metadata: {
-        ...stripFullSnapshot(connection.metadata),
-        liveCore: true,
-        lastSuccessfulIncrementalSyncAt: finishedAt,
-        incrementalCursor: committed,
-        lastLiveCoreCounters: counters,
-        liveSyncLease: { runId, status: 'released', releasedAt: finishedAt, importType: 'incremental_sync' },
+    const { data: commitData, error: commitError } = await supabase.rpc(
+      'channel_manager_commit_incremental_sync_v1',
+      {
+        p_connection_id: connection.id,
+        p_run_id: runId,
+        p_expected_previous_checkpoint: previousCursor?.checkpoint ?? null,
+        p_expected_previous_batch_hash: previousCursor?.batchHash || null,
+        p_new_checkpoint: nextCheckpoint,
+        p_new_batch_hash: batchHash,
+        p_finished_at: finishedAt,
+        p_status: status,
+        p_counters: counters,
+        p_safe_run_metadata: safeRunMetadata,
+        p_warnings: warnings,
+        p_safe_summary: `Live Core incremental sync: создано ${counters.created}, обновлено ${counters.updated}, отменено ${counters.cancelled}, восстановлено ${counters.restored}, пропущено ${counters.skipped}, ошибок ${counters.failed}.`,
+        p_bookings: bookingsImported,
+        p_calendar_days: counters.calendarDays,
+        p_prices: counters.prices,
       },
-      updated_at: finishedAt,
-    }).eq('id', connection.id).select('*').single();
-    cursorCommitted = true;
-    if (connectionRow) {
-      connection = {
-        ...connection,
-        status: text(connectionRow.status),
-        lastSuccessAt: nullableText(connectionRow.last_success_at),
-        failureReason: null,
-        metadata: (connectionRow.metadata as Record<string, unknown>) ?? connection.metadata,
-        updatedAt: text(connectionRow.updated_at),
-      };
+    );
+
+    const commitPayload = commitData && typeof commitData === 'object'
+      ? commitData as { success?: boolean; code?: string; message?: string }
+      : null;
+    if (commitError || !commitPayload || commitPayload.success !== true) {
+      const code = text(commitPayload?.code) || 'cursor_commit_failed';
+      const message = text(commitPayload?.message)
+        || text(commitError?.message)
+        || 'Не удалось атомарно зафиксировать incremental cursor.';
+      throw Object.assign(new Error(message), { code });
     }
 
+    cursorCommitted = true;
+    connection = await getConnection(connection.id);
+    const committed = readCommittedIncrementalCursor(connection.metadata);
+    const runs = await listChannelImportRuns(connection.id);
+    const run = runs.find((item) => item.id === runId)!;
+
     return {
-      run, connection, stage: 'completed', status, counters, warnings, safeError: null, cursors,
-      retryable: true, cursorCommitted: true, committedCursor: committed,
+      run,
+      connection,
+      stage: 'completed',
+      status,
+      counters,
+      warnings,
+      safeError: null,
+      cursors,
+      retryable: true,
+      cursorCommitted: true,
+      committedCursor: committed,
+      replayed: false,
     };
   } catch (error) {
     const code = (error as { code?: string })?.code;
@@ -2199,6 +2544,13 @@ export async function runChannelManagerIncrementalSync(input: {
         || code === 'migration_missing'
         || code === 'initial_sync_required'
         || code === 'account_scope_mismatch'
+        || code === 'connection_scope_invalid'
+        || code === 'connection_blocked'
+        || code === 'cursor_protocol_violation'
+        || code === 'cursor_replay_mismatch'
+        || code === 'cursor_commit_failed'
+        || code === 'stale_expected_cursor'
+        || code === 'incremental_capability_missing'
         ? code
         : 'sync_failed',
     );
@@ -2224,7 +2576,20 @@ export async function runChannelManagerIncrementalSync(input: {
       warnings,
       errors: [safeError],
       safeSummary: safeError.message,
-      metadata: { liveCoreStage: stage, liveCoreCounters: counters, safeError },
+      metadata: {
+        liveCoreStage: stage,
+        liveCoreCounters: counters,
+        safeError,
+        ...buildSafeIncrementalCursorMetadata({
+          cursorPresent: Boolean(previousCursor?.checkpoint),
+          cursorCheckpointHash: previousCursor?.checkpoint
+            ? hashCursorCheckpoint(previousCursor.checkpoint)
+            : null,
+          sourceRunId: previousCursor?.sourceRunId ?? null,
+          updatedAt: previousCursor?.updatedAt ?? null,
+          replayed: false,
+        }),
+      },
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
@@ -2241,6 +2606,7 @@ export async function runChannelManagerIncrementalSync(input: {
       retryable: true,
       cursorCommitted: false,
       committedCursor: previousCursor,
+      replayed: false,
     };
   }
 }
@@ -2265,12 +2631,22 @@ async function finalizeFailedIncrementalConnection(input: {
     errors: [input.safeError],
     safeSummary: `Live Core incremental sync остановлен на этапе ${input.stage}.`,
     metadata: {
-      cursorPlaceholder: input.cursors,
       liveCoreCounters: input.counters,
       failedStage: input.stage,
       safeError: input.safeError,
       cursorRetained: true,
-      previousCursorPresent: Boolean(input.previousCursor?.checkpoint),
+      ...buildSafeIncrementalCursorMetadata({
+        cursorPresent: Boolean(input.previousCursor?.checkpoint),
+        cursorCheckpointHash: input.previousCursor?.checkpoint
+          ? hashCursorCheckpoint(input.previousCursor.checkpoint)
+          : null,
+        sourceRunId: input.previousCursor?.sourceRunId ?? null,
+        updatedAt: input.previousCursor?.updatedAt ?? null,
+        replayed: false,
+        batchHashPrefix: input.previousCursor?.batchHash
+          ? input.previousCursor.batchHash.slice(0, 16)
+          : null,
+      }),
     },
   }).catch(() => undefined);
 

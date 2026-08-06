@@ -1,7 +1,10 @@
 -- Channel Manager Live Incremental Sync v1:
 -- incremental_sync import type + atomic live-sync guard (initial + incremental)
--- + schema readiness v2. Cursor storage uses connection.metadata jsonb
--- (canonical mutable metadata). Idempotent. No outbound OTA writes.
+-- + schema readiness v2 + atomic cursor commit RPC. Cursor storage uses
+-- connection.metadata jsonb (canonical mutable metadata). Idempotent.
+-- No outbound OTA writes.
+
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
 ALTER TABLE public.booking_channel_import_runs
   DROP CONSTRAINT IF EXISTS booking_channel_import_runs_type_check;
@@ -132,3 +135,173 @@ $$;
 
 REVOKE ALL ON FUNCTION public.channel_manager_live_core_schema_state() FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.channel_manager_live_core_schema_state() TO service_role;
+
+-- Atomic cursor + run completion commit. service_role only.
+CREATE OR REPLACE FUNCTION public.channel_manager_commit_incremental_sync_v1(
+  p_connection_id uuid,
+  p_run_id uuid,
+  p_expected_previous_checkpoint text,
+  p_expected_previous_batch_hash text,
+  p_new_checkpoint text,
+  p_new_batch_hash text,
+  p_finished_at timestamptz,
+  p_status text,
+  p_counters jsonb,
+  p_safe_run_metadata jsonb,
+  p_warnings jsonb DEFAULT '[]'::jsonb,
+  p_safe_summary text DEFAULT NULL,
+  p_bookings integer DEFAULT 0,
+  p_calendar_days integer DEFAULT 0,
+  p_prices integer DEFAULT 0
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_connection public.booking_channel_manager_connections%ROWTYPE;
+  v_run public.booking_channel_import_runs%ROWTYPE;
+  v_meta jsonb;
+  v_cursor jsonb;
+  v_prev_checkpoint text;
+  v_prev_batch_hash text;
+  v_new_cursor jsonb;
+  v_checkpoint_hash text;
+  v_batch_hash_prefix text;
+BEGIN
+  IF p_connection_id IS NULL OR p_run_id IS NULL THEN
+    RETURN jsonb_build_object('success', false, 'code', 'invalid_arguments', 'message', 'connection_id and run_id are required');
+  END IF;
+
+  IF p_new_checkpoint IS NULL OR length(btrim(p_new_checkpoint)) = 0 THEN
+    RETURN jsonb_build_object('success', false, 'code', 'invalid_arguments', 'message', 'new checkpoint is required');
+  END IF;
+
+  IF p_new_batch_hash IS NULL OR length(btrim(p_new_batch_hash)) = 0 THEN
+    RETURN jsonb_build_object('success', false, 'code', 'invalid_arguments', 'message', 'new batch hash is required');
+  END IF;
+
+  IF p_status IS NULL OR p_status NOT IN ('completed', 'completed_with_warnings') THEN
+    RETURN jsonb_build_object('success', false, 'code', 'invalid_arguments', 'message', 'status must be completed or completed_with_warnings');
+  END IF;
+
+  SELECT * INTO v_connection
+  FROM public.booking_channel_manager_connections
+  WHERE id = p_connection_id
+  FOR UPDATE;
+
+  IF NOT FOUND THEN
+    RETURN jsonb_build_object('success', false, 'code', 'connection_not_found', 'message', 'connection not found');
+  END IF;
+
+  SELECT * INTO v_run
+  FROM public.booking_channel_import_runs
+  WHERE id = p_run_id
+  FOR UPDATE;
+
+  IF NOT FOUND THEN
+    RETURN jsonb_build_object('success', false, 'code', 'run_not_found', 'message', 'import run not found');
+  END IF;
+
+  IF v_run.connection_id IS DISTINCT FROM p_connection_id THEN
+    RETURN jsonb_build_object('success', false, 'code', 'run_connection_mismatch', 'message', 'run does not belong to connection');
+  END IF;
+
+  IF v_run.import_type IS DISTINCT FROM 'incremental_sync' THEN
+    RETURN jsonb_build_object('success', false, 'code', 'invalid_import_type', 'message', 'run import_type must be incremental_sync');
+  END IF;
+
+  IF v_run.status IS DISTINCT FROM 'running' THEN
+    RETURN jsonb_build_object('success', false, 'code', 'invalid_run_status', 'message', 'run status must be running');
+  END IF;
+
+  v_meta := COALESCE(v_connection.metadata, '{}'::jsonb);
+  v_cursor := v_meta->'incrementalCursor';
+  IF v_cursor IS NULL OR jsonb_typeof(v_cursor) <> 'object' THEN
+    v_prev_checkpoint := NULL;
+    v_prev_batch_hash := NULL;
+  ELSE
+    v_prev_checkpoint := NULLIF(btrim(COALESCE(v_cursor->>'checkpoint', '')), '');
+    v_prev_batch_hash := NULLIF(btrim(COALESCE(v_cursor->>'batchHash', v_cursor->>'batch_hash', '')), '');
+  END IF;
+
+  IF COALESCE(v_prev_checkpoint, '') IS DISTINCT FROM COALESCE(NULLIF(btrim(COALESCE(p_expected_previous_checkpoint, '')), ''), '') THEN
+    RETURN jsonb_build_object('success', false, 'code', 'stale_expected_cursor', 'message', 'expected previous checkpoint does not match committed cursor');
+  END IF;
+
+  IF COALESCE(v_prev_batch_hash, '') IS DISTINCT FROM COALESCE(NULLIF(btrim(COALESCE(p_expected_previous_batch_hash, '')), ''), '') THEN
+    RETURN jsonb_build_object('success', false, 'code', 'stale_expected_cursor', 'message', 'expected previous batch hash does not match committed cursor');
+  END IF;
+
+  v_checkpoint_hash := substr(encode(digest(p_new_checkpoint, 'sha256'), 'hex'), 1, 16);
+  v_batch_hash_prefix := substr(p_new_batch_hash, 1, 16);
+
+  v_new_cursor := jsonb_build_object(
+    'stream', 'incremental',
+    'checkpoint', p_new_checkpoint,
+    'batchHash', p_new_batch_hash,
+    'updatedAt', p_finished_at,
+    'sourceRunId', p_run_id::text
+  );
+
+  v_meta := v_meta
+    || jsonb_build_object(
+      'liveCore', true,
+      'lastSuccessfulIncrementalSyncAt', p_finished_at,
+      'incrementalCursor', v_new_cursor,
+      'lastLiveCoreCounters', COALESCE(p_counters, '{}'::jsonb),
+      'liveSyncLease', jsonb_build_object(
+        'runId', p_run_id::text,
+        'status', 'released',
+        'releasedAt', p_finished_at,
+        'importType', 'incremental_sync'
+      )
+    );
+
+  UPDATE public.booking_channel_manager_connections
+  SET
+    status = CASE WHEN status = 'blocked' THEN status ELSE 'import_ready' END,
+    last_success_at = p_finished_at,
+    failure_reason = NULL,
+    metadata = v_meta,
+    updated_at = p_finished_at
+  WHERE id = p_connection_id;
+
+  UPDATE public.booking_channel_import_runs
+  SET
+    status = p_status,
+    finished_at = p_finished_at,
+    imported_bookings_count = COALESCE(p_bookings, imported_bookings_count),
+    imported_calendar_days_count = COALESCE(p_calendar_days, imported_calendar_days_count),
+    imported_prices_count = COALESCE(p_prices, imported_prices_count),
+    warnings = COALESCE(p_warnings, warnings),
+    safe_summary = COALESCE(p_safe_summary, safe_summary),
+    metadata = COALESCE(metadata, '{}'::jsonb)
+      || COALESCE(p_safe_run_metadata, '{}'::jsonb)
+      || jsonb_build_object(
+        'liveCore', true,
+        'liveCoreStage', 'completed',
+        'liveCoreCounters', COALESCE(p_counters, '{}'::jsonb)
+      ),
+    updated_at = p_finished_at
+  WHERE id = p_run_id;
+
+  RETURN jsonb_build_object(
+    'success', true,
+    'checkpointHash', v_checkpoint_hash,
+    'batchHashPrefix', v_batch_hash_prefix,
+    'sourceRunId', p_run_id::text,
+    'updatedAt', p_finished_at,
+    'status', p_status
+  );
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.channel_manager_commit_incremental_sync_v1(
+  uuid, uuid, text, text, text, text, timestamptz, text, jsonb, jsonb, jsonb, text, integer, integer, integer
+) FROM PUBLIC, anon, authenticated;
+
+GRANT EXECUTE ON FUNCTION public.channel_manager_commit_incremental_sync_v1(
+  uuid, uuid, text, text, text, text, timestamptz, text, jsonb, jsonb, jsonb, text, integer, integer, integer
+) TO service_role;

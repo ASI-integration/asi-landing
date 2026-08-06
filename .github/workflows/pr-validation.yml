@@ -128,6 +128,56 @@ jobs:
       - name: Syntax check ci-artifact-smoke.sh
         run: bash -n scripts/ci-artifact-smoke.sh
 
+      - name: Channel Manager Incremental Sync unit regression
+        run: |
+          set -euo pipefail
+          npx vitest run \
+            src/lib/booking-ops/__tests__/channel-manager-live-incremental-sync.test.ts \
+            src/app/api/dashboard/channel-manager/import-runs/__tests__/incremental-sync-route.test.ts \
+            --reporter=verbose 2>&1 | tee incremental-sync-unit.out
+          if grep -E '↓|skipped|SKIPPED' incremental-sync-unit.out | grep -Eiq 'incremental'; then
+            echo "Incremental Sync unit suite was skipped — failing job"
+            exit 1
+          fi
+
+      - name: Channel Manager Live Core regression
+        run: |
+          set -euo pipefail
+          npx vitest run \
+            src/lib/booking-ops/__tests__/channel-manager-live-core.test.ts \
+            --reporter=verbose 2>&1 | tee live-core-unit.out
+          if grep -E '↓|skipped|SKIPPED' live-core-unit.out | grep -Eiq 'Live Core|channel-manager-live-core'; then
+            echo "Live Core suite was skipped — failing job"
+            exit 1
+          fi
+
+      - name: Channel Manager recovery workflow YAML syntax validation
+        run: |
+          python3 - <<'PY'
+          import subprocess, sys
+          try:
+            import yaml
+          except ImportError:
+            subprocess.check_call([sys.executable, '-m', 'pip', 'install', '--quiet', 'PyYAML'])
+            import yaml
+          from pathlib import Path
+          path = Path('.github/workflows/apply-channel-manager-live-core-synthetic-recovery-migration.yml')
+          doc = yaml.safe_load(path.read_text(encoding='utf-8'))
+          assert doc is not None
+          on = doc.get(True) or doc.get('on')  # YAML may parse 'on' as True
+          assert on is not None
+          assert 'workflow_dispatch' in on
+          assert 'push' not in on
+          assert 'pull_request' not in on
+          # production environment remains owner-gated — check jobs use environment: production
+          jobs = doc['jobs']
+          assert any(
+            (job.get('environment') == 'production' or (isinstance(job.get('environment'), dict) and job['environment'].get('name') == 'production'))
+            for job in jobs.values()
+          )
+          print('recovery_workflow_yaml_ok')
+          PY
+
       - name: Build
         run: npm run build
 
@@ -333,4 +383,53 @@ jobs:
             process.exit(1);
           }
           console.log('proof_ok', JSON.stringify(proof));
+          NODE
+
+      - name: Channel Manager Incremental Sync PostgreSQL integration
+        id: incremental_pg_integration
+        run: |
+          set -euo pipefail
+          npx vitest run \
+            src/lib/booking-ops/__tests__/channel-manager-live-incremental-sync.pg.integration.test.ts \
+            --reporter=verbose 2>&1 | tee incremental-pg-integration.out
+          if grep -E '↓|skipped|SKIPPED' incremental-pg-integration.out | grep -Fq 'Live Incremental Sync PostgreSQL'; then
+            echo "Incremental PG suite was skipped — failing job"
+            exit 1
+          fi
+          if ! grep -Fq 'ASI_INCREMENTAL_PG_INTEGRATION_PROOF' incremental-pg-integration.out; then
+            echo "Missing ASI_INCREMENTAL_PG_INTEGRATION_PROOF — failing job"
+            exit 1
+          fi
+          node - <<'NODE'
+          const fs = require('fs');
+          const out = fs.readFileSync('incremental-pg-integration.out', 'utf8');
+          const line = out.split(/\r?\n/).find((l) => l.includes('ASI_INCREMENTAL_PG_INTEGRATION_PROOF'));
+          if (!line) {
+            console.error('proof_line_missing');
+            process.exit(1);
+          }
+          const json = line.slice(line.indexOf('ASI_INCREMENTAL_PG_INTEGRATION_PROOF') + 'ASI_INCREMENTAL_PG_INTEGRATION_PROOF'.length).trim();
+          const proof = JSON.parse(json);
+          const expected = {
+            hasDisposablePg: true,
+            runtimeVerified: true,
+            schemaVersion: 2,
+            incrementalSyncTypeReady: true,
+            atomicLiveSyncGuardReady: true,
+            cursorStorageReady: true,
+            atomicCommitRpcReady: true,
+            commitAndRunCompletedTogether: true,
+            staleExpectedCursorRejected: true,
+            previousCursorUnchangedOnReject: true,
+            forcedFailureRolledBack: true,
+            serviceRoleGrantOnly: true,
+            finalTransactionRolledBack: true,
+            productionTouched: false,
+            stagingTouched: false,
+          };
+          if (JSON.stringify(proof) !== JSON.stringify(expected)) {
+            console.error('proof_mismatch', proof);
+            process.exit(1);
+          }
+          console.log('incremental_pg_proof_ok', JSON.stringify(proof));
           NODE
