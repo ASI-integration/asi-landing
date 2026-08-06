@@ -707,37 +707,70 @@ export async function createBookingFromImportedChannelBooking(
   const id = assertUuid(importedBookingId, 'ID импортированной брони');
   const { data: imported, error } = await supabase.from('booking_channel_imported_bookings').select('*').eq('id', id).maybeSingle();
   if (error || !imported) throw new Error('Импортированная бронь не найдена.');
-  if (imported.matched_booking_id && !options?.force) return { created: false, duplicate: true, bookingId: imported.matched_booking_id };
+
+  const connection = await getConnection(text(imported.connection_id));
   const { data: object } = imported.external_object_id
     ? await supabase.from('booking_channel_imported_objects').select('*').eq('connection_id', imported.connection_id).eq('external_object_id', imported.external_object_id).maybeSingle()
     : { data: null };
   const canonicalPropertyId = nullableText(options?.propertyId) || nullableText(object?.matched_property_id);
-  const canonicalAccountId = nullableText(options?.accountId);
+  const canonicalAccountId = nullableText(options?.accountId) || nullableText(connection.metadata?.accountId);
+  if (!canonicalAccountId || !canonicalPropertyId) {
+    throw Object.assign(
+      new Error('Для создания брони из Channel Manager нужны canonical accountId и propertyId.'),
+      { code: 'connection_scope_invalid' },
+    );
+  }
+
+  const externalBookingId = text(imported.external_booking_id);
+  if (!externalBookingId) {
+    throw Object.assign(new Error('У импортированной брони нет external booking ID.'), {
+      code: 'channel_manager_intake_identity_missing',
+    });
+  }
+
+  if (imported.matched_booking_id && !options?.force) {
+    const { data: existingMatch } = await supabase
+      .from('booking_ops_records')
+      .select('id,account_id,property_id,booking_id')
+      .eq('id', text(imported.matched_booking_id))
+      .eq('account_id', canonicalAccountId)
+      .eq('property_id', canonicalPropertyId)
+      .maybeSingle();
+    if (!existingMatch) {
+      throw Object.assign(
+        new Error('matched_booking_id указывает на бронь вне canonical контура.'),
+        { code: 'account_scope_mismatch' },
+      );
+    }
+    return { created: false, duplicate: true, bookingId: text(existingMatch.id) };
+  }
+
   const result = await processInboundBookingRequest({
     guestName: imported.guest_safe_name, checkInAt: imported.checkin_date, checkOutAt: imported.checkout_date,
     guestCount: imported.guest_count, propertyId: canonicalPropertyId, propertyLabel: object?.title ?? null,
-    bookingReference: imported.external_booking_id, externalSourceId: imported.external_booking_id,
+    // Raw external ID remains provider identity; scoped idempotency is separate.
+    bookingReference: externalBookingId, externalSourceId: externalBookingId,
     metadata: {
       channelImport: true,
       importedBookingId: imported.id,
       provider: imported.provider,
-      ...(canonicalAccountId ? { accountId: canonicalAccountId } : {}),
+      accountId: canonicalAccountId,
       ...(options?.reservationMetadata ?? {}),
     },
-  }, 'channel_manager_placeholder');
-  if (!result.bookingId) throw new Error('Booking Ops не создал бронь: нужна проверка данных.');
-
-  // Persist canonical contour and verify before treating create as successful.
-  const now = new Date().toISOString();
-  const contourPatch: Record<string, unknown> = { updated_at: now };
-  if (canonicalPropertyId) contourPatch.property_id = canonicalPropertyId;
-  if (canonicalAccountId) contourPatch.account_id = canonicalAccountId;
-  if (Object.keys(contourPatch).length > 1) {
-    const { error: contourError } = await supabase
-      .from('booking_ops_records')
-      .update(contourPatch)
-      .eq('id', result.bookingId);
-    if (contourError) throw new Error(contourError.message);
+  }, 'channel_manager_placeholder', {
+    force: options?.force === true,
+    channelManagerScope: {
+      connectionId: connection.id,
+      provider: text(imported.provider) || connection.provider,
+      accountId: canonicalAccountId,
+      propertyId: canonicalPropertyId,
+    },
+  });
+  if (!result.bookingId) {
+    if (result.intakeStatus === 'failed') {
+      throw new Error(result.safeSummary || 'Booking Ops не создал бронь: нужна проверка данных.');
+    }
+    throw new Error('Booking Ops не создал бронь: нужна проверка данных.');
   }
 
   const { data: verified, error: verifyError } = await supabase
@@ -747,17 +780,32 @@ export async function createBookingFromImportedChannelBooking(
     .maybeSingle();
   if (verifyError) throw new Error(verifyError.message);
   if (!verified) throw new Error('Созданная бронь не найдена после intake.');
-  if (canonicalPropertyId && text(verified.property_id) !== canonicalPropertyId) {
-    throw Object.assign(new Error('Созданная бронь не принадлежит canonical property контуру.'), {
+
+  // Never patch account_id/property_id onto a booking that already belongs to a different non-null contour.
+  const verifiedAccountId = nullableText(verified.account_id);
+  const verifiedPropertyId = nullableText(verified.property_id);
+  if (verifiedAccountId && verifiedAccountId !== canonicalAccountId) {
+    throw Object.assign(new Error('Созданная бронь принадлежит другому account контуру.'), {
       code: 'account_scope_mismatch',
     });
   }
-  if (canonicalAccountId && text(verified.account_id) !== canonicalAccountId) {
-    throw Object.assign(new Error('Созданная бронь не принадлежит canonical account контуру.'), {
+  if (verifiedPropertyId && verifiedPropertyId !== canonicalPropertyId) {
+    throw Object.assign(new Error('Созданная бронь принадлежит другому property контуру.'), {
+      code: 'account_scope_mismatch',
+    });
+  }
+  if (verifiedAccountId !== canonicalAccountId || verifiedPropertyId !== canonicalPropertyId) {
+    throw Object.assign(new Error('Созданная бронь не получила canonical account/property контур.'), {
+      code: 'account_scope_mismatch',
+    });
+  }
+  if (nullableText(verified.booking_id) !== externalBookingId) {
+    throw Object.assign(new Error('Созданная бронь не сохранила external booking ID.'), {
       code: 'account_scope_mismatch',
     });
   }
 
+  const now = new Date().toISOString();
   await supabase.from('booking_channel_imported_bookings').update({
     matched_booking_id: result.bookingId,
     match_status: 'imported_to_booking_ops',

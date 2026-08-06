@@ -1430,14 +1430,63 @@ export async function acquireChannelLiveSyncGuard(
   }
 
   // Diagnostic lease only — not the primary lock. Narrow write preserves concurrent cursor commits.
-  await writeLiveSyncLease(connection.id, {
-    runId,
-    status: 'held',
-    acquiredAt: now,
-    importType,
-  }, { lastImportAt: now, updatedAt: now });
+  // Lease write failure must not leave an unexplained orphan: the unique running row remains the
+  // authoritative guard, and we record leaseWriteFailed on that same run when possible.
+  let leaseWriteFailed = false;
+  try {
+    await writeLiveSyncLease(connection.id, {
+      runId,
+      status: 'held',
+      acquiredAt: now,
+      importType,
+    }, { lastImportAt: now, updatedAt: now });
+  } catch {
+    leaseWriteFailed = true;
+    const failedAt = new Date().toISOString();
+    try {
+      const runRow = data as Record<string, unknown>;
+      const metadata = {
+        ...((runRow.metadata as Record<string, unknown>) ?? {}),
+        liveCore: true,
+        liveCoreStage: 'acquire_guard',
+        leaseWriteFailed: true,
+      };
+      await supabase.from('booking_channel_import_runs').update({
+        warnings: [
+          ...(Array.isArray(runRow.warnings) ? runRow.warnings : []),
+          {
+            type: 'lease_write_failed',
+            severity: 'warning',
+            message: 'Diagnostic liveSyncLease не записан; уникальный running-run остаётся первичным lock.',
+          },
+        ],
+        metadata,
+        updated_at: failedAt,
+      }).eq('id', runId).eq('status', 'running');
+    } catch {
+      // Best-effort annotation only; running row is still the intentional primary lock.
+    }
+  }
 
-  return { ok: true, run: mapRun(data as Record<string, unknown>) };
+  const run = mapRun(data as Record<string, unknown>);
+  if (leaseWriteFailed) {
+    return {
+      ok: true,
+      run: {
+        ...run,
+        warnings: [
+          ...run.warnings,
+          {
+            type: 'lease_write_failed',
+            severity: 'warning',
+            message: 'Diagnostic liveSyncLease не записан; уникальный running-run остаётся первичным lock.',
+          },
+        ],
+        metadata: { ...run.metadata, leaseWriteFailed: true },
+      },
+    };
+  }
+  return { ok: true, run };
 }
 
 async function writeLiveSyncLease(
@@ -1877,17 +1926,22 @@ async function processImportedBookingsForLiveSync(
       counters.skipped += 1;
     } catch (error) {
       counters.failed += 1;
+      const code = (error as { code?: string })?.code;
       warnings.push({
-        type: (error as { code?: string })?.code === 'missing_account_id'
+        type: code === 'missing_account_id'
           ? 'cancel_missing_account'
-          : (error as { code?: string })?.code === 'account_scope_mismatch'
+          : code === 'account_scope_mismatch' || code === 'connection_scope_invalid'
             ? 'account_scope_mismatch'
             : 'booking_sync_failed',
         severity: 'blocker',
         entityId: text(imported.id),
         message: redactLiveCoreErrorMessage(error instanceof Error ? error.message : error),
       });
-      if ((error as { code?: string })?.code === 'acceptance_inject_failure_after_booking_ops_create') {
+      if (
+        code === 'acceptance_inject_failure_after_booking_ops_create'
+        || code === 'account_scope_mismatch'
+        || code === 'connection_scope_invalid'
+      ) {
         throw error;
       }
     }
@@ -2047,15 +2101,24 @@ export async function runChannelManagerInitialSync(input: {
         importRunId: runId,
       })
       : null;
-    const processBookings = async () => processImportedBookingsForLiveSync(
-      connection.id,
-      counters,
-      warnings,
-      {
-        reservationMetadata,
-        injectFailureAfterBookingOpsCreate: input.injectFailureAfterBookingOpsCreate === true,
-      },
-    );
+    const processBookings = async () => {
+      let scope: IncrementalConnectionScope | null = null;
+      try {
+        scope = await resolveIncrementalConnectionScope(connection);
+      } catch {
+        scope = null;
+      }
+      return processImportedBookingsForLiveSync(
+        connection.id,
+        counters,
+        warnings,
+        {
+          reservationMetadata,
+          injectFailureAfterBookingOpsCreate: input.injectFailureAfterBookingOpsCreate === true,
+          scope: scope ?? undefined,
+        },
+      );
+    };
     if (isAcceptanceHarness && reservationMetadata) {
       await runWithLiveCoreAcceptanceCreateContext({
         acceptanceHarness: LIVE_CORE_ACCEPTANCE_HARNESS,

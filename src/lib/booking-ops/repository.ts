@@ -38,6 +38,7 @@ import {
 type BookingOpsRow = {
   id: string;
   booking_id: string | null;
+  account_id: string | null;
   guest_name: string | null;
   guest_phone: string | null;
   guest_email: string | null;
@@ -153,6 +154,7 @@ function mapRow(row: BookingOpsRow): BookingOpsRecord {
   return {
     id: row.id,
     bookingId: text(row.booking_id) || null,
+    accountId: text(row.account_id) || null,
     guestName: text(row.guest_name) || null,
     guestPhone: text(row.guest_phone) || null,
     guestEmail: text(row.guest_email) || null,
@@ -275,6 +277,8 @@ export async function createBookingOpsRecord(
     property_id: text(input.propertyId) || null,
     property_label: text(input.propertyLabel) || null,
     ota_source: text(input.otaSource) || null,
+    // Server-only contour: written on INSERT before automation side effects.
+    ...(text(input.accountId) ? { account_id: text(input.accountId) } : {}),
     check_in_at: toIsoDate(input.checkInAt),
     check_out_at: toIsoDate(input.checkOutAt),
     ops_status: normalizeBookingOpsStatus(input.opsStatus ?? 'created'),

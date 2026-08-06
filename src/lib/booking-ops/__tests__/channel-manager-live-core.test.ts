@@ -228,13 +228,20 @@ beforeEach(() => {
   });
 
   canAutoSendCommunicationIntent.mockResolvedValue({ eligible: false, reason: 'global_off' });
-  processInboundBookingRequest.mockImplementation(async (input: Record<string, unknown>) => {
+  processInboundBookingRequest.mockImplementation(async (
+    input: Record<string, unknown>,
+    _source?: string,
+    options?: { channelManagerScope?: { accountId: string; propertyId: string } },
+  ) => {
+    const scopeAccountId = options?.channelManagerScope?.accountId ?? ACCOUNT_ID;
+    const scopePropertyId = options?.channelManagerScope?.propertyId
+      ?? String(input.propertyId ?? 'prop-a');
     const existing = rows('booking_ops_records').find((row) => row.id === BOOKING_OPS_ID);
     if (!existing) {
       rows('booking_ops_records').push({
         id: BOOKING_OPS_ID,
-        account_id: null,
-        property_id: input.propertyId ?? null,
+        account_id: scopeAccountId,
+        property_id: scopePropertyId,
         booking_id: input.bookingReference ?? input.externalSourceId ?? null,
         guest_name: input.guestName,
         guest_count: input.guestCount ?? 2,
@@ -247,6 +254,9 @@ beforeEach(() => {
         normalized_status: 'confirmed',
         unit_id: null,
       });
+    } else {
+      if (existing.account_id == null) existing.account_id = scopeAccountId;
+      if (existing.property_id == null) existing.property_id = scopePropertyId;
     }
     return { bookingId: BOOKING_OPS_ID, intakeStatus: 'processed' };
   });
@@ -361,7 +371,7 @@ describe('Channel Manager Live Core repairs', () => {
   });
 
   it('prevents date mutation when availability has a confirmed conflict', async () => {
-    const connection = await initializeChannelManagerConnection(PROPERTY_ID, 'manual');
+    const connection = await initializeChannelManagerConnection(PROPERTY_ID, 'manual', { accountId: ACCOUNT_ID });
     await runChannelManagerInitialSync({ connectionId: connection.id, snapshot: baseSnapshot() });
     const booking = rows('booking_ops_records').find((row) => row.id === BOOKING_OPS_ID);
     expect(booking).toBeTruthy();
@@ -391,7 +401,7 @@ describe('Channel Manager Live Core repairs', () => {
   });
 
   it('uses canonical cancellation that releases holds and writes audit', async () => {
-    const connection = await initializeChannelManagerConnection(PROPERTY_ID, 'manual');
+    const connection = await initializeChannelManagerConnection(PROPERTY_ID, 'manual', { accountId: ACCOUNT_ID });
     await runChannelManagerInitialSync({ connectionId: connection.id, snapshot: baseSnapshot() });
     const booking = rows('booking_ops_records').find((row) => row.id === BOOKING_OPS_ID);
     expect(booking).toBeTruthy();
@@ -423,7 +433,7 @@ describe('Channel Manager Live Core repairs', () => {
   });
 
   it('fails closed when account_id is missing for cancellation', async () => {
-    const connection = await initializeChannelManagerConnection(PROPERTY_ID, 'manual');
+    const connection = await initializeChannelManagerConnection(PROPERTY_ID, 'manual', { accountId: ACCOUNT_ID });
     await runChannelManagerInitialSync({ connectionId: connection.id, snapshot: baseSnapshot() });
     const booking = rows('booking_ops_records').find((row) => row.id === BOOKING_OPS_ID);
     expect(booking).toBeTruthy();
@@ -435,6 +445,10 @@ describe('Channel Manager Live Core repairs', () => {
       check_out_at: '2026-07-12T00:00:00.000Z',
       normalized_status: 'confirmed',
     });
+    // Drop connection account so cancel path exercises missing booking.account_id (not scoped miss).
+    const connRow = rows('booking_channel_manager_connections').find((row) => row.id === connection.id)!;
+    const { accountId: _removed, ...restMeta } = (connRow.metadata ?? {}) as Row;
+    connRow.metadata = restMeta;
     const result = await runChannelManagerInitialSync({
       connectionId: connection.id,
       snapshot: baseSnapshot({ booking: { status: 'cancelled' } }),
@@ -612,7 +626,7 @@ describe('Channel Manager Live Core repairs', () => {
   });
 
   it('still imports a new booking and retries without duplicates', async () => {
-    const connection = await initializeChannelManagerConnection(PROPERTY_ID, 'manual');
+    const connection = await initializeChannelManagerConnection(PROPERTY_ID, 'manual', { accountId: ACCOUNT_ID });
     const first = await runChannelManagerInitialSync({ connectionId: connection.id, snapshot: baseSnapshot() });
     expect(first.status).not.toBe('failed');
     expect(first.counters.imported).toBe(1);

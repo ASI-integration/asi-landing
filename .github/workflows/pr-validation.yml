@@ -140,6 +140,17 @@ jobs:
             exit 1
           fi
 
+      - name: Channel Manager create-path isolation (real shared intake)
+        run: |
+          set -euo pipefail
+          npx vitest run \
+            src/lib/booking-ops/__tests__/channel-manager-create-path-isolation.test.ts \
+            --reporter=verbose 2>&1 | tee create-path-isolation.out
+          if grep -E '↓|skipped|SKIPPED' create-path-isolation.out | grep -Eiq 'create-path isolation|shared intake|Channel Manager create-path'; then
+            echo "Create-path isolation suite was skipped — failing job"
+            exit 1
+          fi
+
       - name: Channel Manager Live Core regression
         run: |
           set -euo pipefail

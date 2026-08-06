@@ -559,11 +559,22 @@ beforeEach(() => {
   });
 
   canAutoSendCommunicationIntent.mockResolvedValue({ eligible: false, reason: 'global_off' });
-  processInboundBookingRequest.mockImplementation(async (input: Row) => {
+  processInboundBookingRequest.mockImplementation(async (
+    input: Row,
+    _source?: string,
+    options?: { channelManagerScope?: { accountId: string; propertyId: string } },
+  ) => {
     const bookingRef = String(input.bookingReference ?? input.externalSourceId ?? '');
+    const metaAccountId = typeof input.metadata === 'object' && input.metadata && 'accountId' in input.metadata
+      ? String((input.metadata as Row).accountId ?? '')
+      : '';
+    const scopeAccountId = options?.channelManagerScope?.accountId || metaAccountId || ACCOUNT_ID;
+    const scopePropertyId = options?.channelManagerScope?.propertyId
+      || String(input.propertyId ?? 'prop-a');
     const scopedExisting = rows('booking_ops_records').find((row) => (
       row.booking_id === bookingRef
-      && (row.account_id === ACCOUNT_ID || row.account_id == null)
+      && (row.account_id === scopeAccountId || row.account_id == null)
+      && (row.property_id === scopePropertyId || row.property_id == null)
     ));
     let id = scopedExisting?.id as string | undefined;
     if (!id) {
@@ -572,11 +583,13 @@ beforeEach(() => {
       else id = BOOKING_OPS_ID_NEW;
     }
     const existing = rows('booking_ops_records').find((row) => row.id === id);
+    let created = false;
     if (!existing) {
+      created = true;
       rows('booking_ops_records').push({
         id,
-        account_id: null,
-        property_id: input.propertyId ?? null,
+        account_id: scopeAccountId,
+        property_id: scopePropertyId,
         booking_id: bookingRef || null,
         guest_name: input.guestName,
         guest_count: input.guestCount ?? 2,
@@ -589,8 +602,12 @@ beforeEach(() => {
         normalized_status: 'confirmed',
         unit_id: null,
       });
+    } else {
+      // Atomic contour is expected from real intake; keep mock aligned for create verify.
+      if (existing.account_id == null) existing.account_id = scopeAccountId;
+      if (existing.property_id == null) existing.property_id = scopePropertyId;
     }
-    return { bookingId: id, intakeStatus: 'processed' };
+    return { bookingId: id, intakeStatus: created ? 'processed' : 'processed' };
   });
   updateBookingOpsRecord.mockResolvedValue({ ok: true });
   cancelReservation.mockImplementation(async (input: { reservationId: string; accountId: string }) => {
@@ -760,6 +777,91 @@ describe('Channel Manager Live Incremental Sync v1', () => {
         importType: 'incremental_sync',
       });
       expect(after.metadata.liveSyncLease.runId).toBeTruthy();
+    });
+
+    it('lease RPC + fallback update failure does not leave an unexplained orphan running run', async () => {
+      const connection = await initializeChannelManagerConnection(PROPERTY_ID, 'manual', { accountId: ACCOUNT_ID });
+      const cursor = {
+        stream: 'incremental',
+        checkpoint: 'cursor-lease-fail',
+        batchHash: 'cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',
+        updatedAt: '2026-08-01T11:00:00.000Z',
+        sourceRunId: '00000000-0000-4000-8000-cccccccccccc',
+      };
+      const connRow = rows('booking_channel_manager_connections').find((row) => row.id === connection.id)!;
+      connRow.metadata = {
+        ...(connRow.metadata ?? {}),
+        incrementalCursor: { ...cursor },
+        lastSuccessfulIncrementalSyncAt: cursor.updatedAt,
+      };
+
+      supabaseRpc.mockImplementation(async (fnName: string, args?: Record<string, unknown>) => {
+        if (fnName === 'channel_manager_live_core_schema_state') {
+          return { data: { ...SCHEMA_READY_PAYLOAD }, error: null };
+        }
+        if (fnName === 'channel_manager_set_live_sync_lease_v1') {
+          return { data: { success: false, code: 'lease_rpc_failed' }, error: { message: 'lease rpc boom' } };
+        }
+        if (fnName === 'channel_manager_complete_incremental_replay_v1') {
+          return completeIncrementalReplayInMemory(args ?? {});
+        }
+        if (fnName === 'channel_manager_commit_incremental_sync_v1') {
+          return commitIncrementalSyncInMemory(args ?? {});
+        }
+        return { data: null, error: { message: `unexpected rpc ${fnName}` } };
+      });
+
+      supabaseFrom.mockImplementation((table: string) => ({
+        select: vi.fn((_columns = '*', options?: { count?: string; head?: boolean }) =>
+          new Query(table, { count: Boolean(options?.count), head: options?.head })),
+        insert: vi.fn((input: Row | Row[]) => insertWithGuard(table, input)),
+        upsert: vi.fn((input: Row | Row[], options?: { onConflict?: string; ignoreDuplicates?: boolean }) => {
+          const incoming = Array.isArray(input) ? input : [input];
+          const affected: Row[] = [];
+          for (const candidate of incoming) {
+            const keys = options?.onConflict?.split(',') ?? ['id'];
+            const existing = rows(table).find((row) => keys.every((key) => row[key] === candidate[key]));
+            if (existing) {
+              if (!options?.ignoreDuplicates) Object.assign(existing, candidate);
+              affected.push(existing);
+            } else {
+              const stored = { ...candidate };
+              rows(table).push(stored);
+              affected.push(stored);
+            }
+          }
+          const query = new Query(table);
+          (query as any).filtered = affected;
+          return query;
+        }),
+        update: vi.fn((patch: Row) => {
+          if (table === 'booking_channel_manager_connections') {
+            return {
+              eq: () => Promise.resolve({ data: null, error: { message: 'lease fallback update boom' } }),
+            };
+          }
+          return new Query(table, { patch });
+        }),
+        delete: vi.fn(() => new Query(table, { deleteMode: true })),
+      }));
+
+      const acquired = await acquireChannelLiveSyncGuard(connection.id, { importType: 'incremental_sync' });
+      expect(acquired.ok).toBe(true);
+      if (!acquired.ok) throw new Error('expected acquire success');
+
+      const running = rows('booking_channel_import_runs').filter((row) => (
+        row.connection_id === connection.id && row.status === 'running'
+      ));
+      expect(running).toHaveLength(1);
+      expect(running[0].id).toBe(acquired.run.id);
+      expect(
+        acquired.run.metadata.leaseWriteFailed === true
+        || running[0].metadata?.leaseWriteFailed === true
+        || (acquired.run.warnings as Array<{ type?: string }>).some((item) => item?.type === 'lease_write_failed'),
+      ).toBe(true);
+
+      const afterConn = rows('booking_channel_manager_connections').find((row) => row.id === connection.id)!;
+      expect(afterConn.metadata.incrementalCursor).toMatchObject(cursor);
     });
 
     it('blocks initial↔incremental on same connection; different connections stay independent', async () => {

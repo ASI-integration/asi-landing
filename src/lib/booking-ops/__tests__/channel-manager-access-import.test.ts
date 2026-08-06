@@ -77,7 +77,25 @@ beforeEach(() => {
     channel_access_status: 'not_requested', created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
   });
   canAutoSendCommunicationIntent.mockResolvedValue({ eligible: false, reason: 'global_off' });
-  processInboundBookingRequest.mockResolvedValue({ bookingId: '30000000-0000-4000-8000-000000000003', intakeStatus: 'processed' });
+  processInboundBookingRequest.mockImplementation(async (
+    input: Row,
+    _source?: string,
+    options?: { channelManagerScope?: { accountId: string; propertyId: string } },
+  ) => {
+    const bookingId = '30000000-0000-4000-8000-000000000003';
+    const accountId = options?.channelManagerScope?.accountId ?? 'acct-access-import';
+    const propertyId = options?.channelManagerScope?.propertyId ?? String(input.propertyId ?? 'prop-a');
+    const existing = rows('booking_ops_records').find((row) => row.id === bookingId);
+    if (!existing) {
+      rows('booking_ops_records').push({
+        id: bookingId,
+        account_id: accountId,
+        property_id: propertyId,
+        booking_id: input.bookingReference ?? input.externalSourceId ?? 'book-2',
+      });
+    }
+    return { bookingId, intakeStatus: 'processed' };
+  });
 });
 
 describe('Channel Manager Access & Import v1', () => {
@@ -135,13 +153,33 @@ describe('Channel Manager Access & Import v1', () => {
   });
 
   it('sends an imported booking through the existing intake and remains idempotent', async () => {
-    const connection = await initializeChannelManagerConnection(PROPERTY_ID, 'manual');
+    const connection = await initializeChannelManagerConnection(PROPERTY_ID, 'manual', { accountId: 'acct-access-import' });
     await registerManualChannelSnapshot(connection.id, { bookings: [{ external_booking_id: 'book-2' }] });
     const imported = rows('booking_channel_imported_bookings')[0];
-    const first = await createBookingFromImportedChannelBooking(imported.id);
-    const second = await createBookingFromImportedChannelBooking(imported.id);
+    const first = await createBookingFromImportedChannelBooking(imported.id, {
+      accountId: 'acct-access-import',
+      propertyId: 'prop-a',
+    });
+    const second = await createBookingFromImportedChannelBooking(imported.id, {
+      accountId: 'acct-access-import',
+      propertyId: 'prop-a',
+    });
     expect(first.created).toBe(true); expect(second.duplicate).toBe(true);
     expect(processInboundBookingRequest).toHaveBeenCalledOnce();
+    expect(processInboundBookingRequest).toHaveBeenCalledWith(
+      expect.objectContaining({
+        bookingReference: 'book-2',
+        externalSourceId: 'book-2',
+      }),
+      'channel_manager_placeholder',
+      expect.objectContaining({
+        channelManagerScope: expect.objectContaining({
+          connectionId: connection.id,
+          accountId: 'acct-access-import',
+          propertyId: 'prop-a',
+        }),
+      }),
+    );
   });
 
   it('fails safely for placeholder providers without real API support', async () => {
