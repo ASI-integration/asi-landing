@@ -418,6 +418,7 @@ jobs:
             atomicLiveSyncGuardReady: true,
             cursorStorageReady: true,
             atomicCommitRpcReady: true,
+            replayFinalizeRpcReady: true,
             commitAndRunCompletedTogether: true,
             staleExpectedCursorRejected: true,
             previousCursorUnchangedOnReject: true,

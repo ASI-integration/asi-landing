@@ -232,8 +232,20 @@ export type ChannelLiveCoreSchemaState = {
   atomicRunningGuardReady: boolean;
   atomicLiveSyncGuardReady: boolean;
   cursorStorageReady: boolean;
+  atomicCommitRpcReady: boolean;
+  replayFinalizeRpcReady: boolean;
   ready: boolean;
   blocker: string | null;
+};
+
+export type IncrementalConnectionScope = {
+  connectionId: string;
+  ownerSetupId: string;
+  propertySetupId: string;
+  /** Canonical property id from booking_property_setup_profiles.property_id */
+  propertyId: string | null;
+  /** Canonical account id from connection metadata.accountId */
+  accountId: string | null;
 };
 
 /** Test override for schema readiness. null = probe live via RPC. */
@@ -259,6 +271,8 @@ export function setChannelLiveCoreSchemaStateOverride(
       atomicRunningGuardReady: atomicLiveSyncGuardReady,
       atomicLiveSyncGuardReady,
       cursorStorageReady: state.cursorStorageReady === true,
+      atomicCommitRpcReady: state.atomicCommitRpcReady === true,
+      replayFinalizeRpcReady: state.replayFinalizeRpcReady === true,
       ready: state.ready === true,
       blocker: state.blocker ?? null,
     };
@@ -278,6 +292,8 @@ export function setChannelLiveCoreSchemaReadyOverride(value: boolean | null): vo
       atomicRunningGuardReady: true,
       atomicLiveSyncGuardReady: true,
       cursorStorageReady: true,
+      atomicCommitRpcReady: true,
+      replayFinalizeRpcReady: true,
       ready: true,
       blocker: null,
     };
@@ -289,6 +305,8 @@ export function setChannelLiveCoreSchemaReadyOverride(value: boolean | null): vo
       atomicRunningGuardReady: false,
       atomicLiveSyncGuardReady: false,
       cursorStorageReady: false,
+      atomicCommitRpcReady: false,
+      replayFinalizeRpcReady: false,
       ready: false,
       blocker: LIVE_CORE_MIGRATION_BLOCKER,
     };
@@ -305,11 +323,15 @@ function schemaStateFromRpcPayload(data: unknown): ChannelLiveCoreSchemaState {
     || row.atomicRunningGuardReady === true;
   const atomicRunningGuardReady = atomicLiveSyncGuardReady;
   const cursorStorageReady = row.cursorStorageReady === true;
+  const atomicCommitRpcReady = row.atomicCommitRpcReady === true;
+  const replayFinalizeRpcReady = row.replayFinalizeRpcReady === true;
   const v2Complete = schemaVersion >= 2
     && initialSyncTypeReady
     && incrementalSyncTypeReady
     && atomicLiveSyncGuardReady
-    && cursorStorageReady;
+    && cursorStorageReady
+    && atomicCommitRpcReady
+    && replayFinalizeRpcReady;
   const v1Complete = schemaVersion < 2
     && initialSyncTypeReady
     && atomicRunningGuardReady;
@@ -319,7 +341,13 @@ function schemaStateFromRpcPayload(data: unknown): ChannelLiveCoreSchemaState {
   let blocker: string | null = null;
   if (!ready) {
     if (schemaVersion >= 2) {
-      if (!incrementalSyncTypeReady || !cursorStorageReady || !atomicLiveSyncGuardReady) {
+      if (
+        !incrementalSyncTypeReady
+        || !cursorStorageReady
+        || !atomicLiveSyncGuardReady
+        || !atomicCommitRpcReady
+        || !replayFinalizeRpcReady
+      ) {
         blocker = LIVE_CORE_INCREMENTAL_MIGRATION_BLOCKER;
       } else if (!initialSyncTypeReady) {
         blocker = LIVE_CORE_MIGRATION_BLOCKER;
@@ -341,6 +369,8 @@ function schemaStateFromRpcPayload(data: unknown): ChannelLiveCoreSchemaState {
     atomicRunningGuardReady,
     atomicLiveSyncGuardReady,
     cursorStorageReady,
+    atomicCommitRpcReady,
+    replayFinalizeRpcReady,
     ready,
     blocker,
   };
@@ -1244,6 +1274,8 @@ export async function probeChannelLiveCoreSchema(_connectionId?: string): Promis
       atomicRunningGuardReady: false,
       atomicLiveSyncGuardReady: false,
       cursorStorageReady: false,
+      atomicCommitRpcReady: false,
+      replayFinalizeRpcReady: false,
       ready: false,
       blocker: LIVE_CORE_MIGRATION_BLOCKER,
     };
@@ -1256,7 +1288,9 @@ export async function probeChannelLiveCoreSchema(_connectionId?: string): Promis
     const complete = state.initialSyncTypeReady
       && state.incrementalSyncTypeReady
       && state.atomicLiveSyncGuardReady
-      && state.cursorStorageReady;
+      && state.cursorStorageReady
+      && state.atomicCommitRpcReady
+      && state.replayFinalizeRpcReady;
     state.ready = complete;
     if (!complete && !state.blocker) {
       state.blocker = LIVE_CORE_INCREMENTAL_MIGRATION_BLOCKER;
@@ -1342,7 +1376,14 @@ export async function acquireChannelLiveSyncGuard(
   const connection = await getConnection(connectionId);
   const schema = await probeChannelLiveCoreSchema(connection.id);
   if (importType === 'incremental_sync') {
-    if (schema.schemaVersion < 2 || !schema.incrementalSyncTypeReady || !schema.atomicLiveSyncGuardReady || !schema.cursorStorageReady) {
+    if (
+      schema.schemaVersion < 2
+      || !schema.incrementalSyncTypeReady
+      || !schema.atomicLiveSyncGuardReady
+      || !schema.cursorStorageReady
+      || !schema.atomicCommitRpcReady
+      || !schema.replayFinalizeRpcReady
+    ) {
       return { ok: false, reason: schema.blocker ?? LIVE_CORE_INCREMENTAL_MIGRATION_BLOCKER, code: 'migration_missing' };
     }
   } else if (!schema.ready && !(schema.initialSyncTypeReady && schema.atomicRunningGuardReady)) {
@@ -1388,17 +1429,47 @@ export async function acquireChannelLiveSyncGuard(
     throw new Error(error.message);
   }
 
-  // Diagnostic lease only — not the primary lock.
-  await supabase.from('booking_channel_manager_connections').update({
-    last_import_at: now,
-    metadata: {
-      ...stripFullSnapshot(connection.metadata),
-      liveSyncLease: { runId, status: 'held', acquiredAt: now, importType },
-    },
-    updated_at: now,
-  }).eq('id', connection.id);
+  // Diagnostic lease only — not the primary lock. Narrow write preserves concurrent cursor commits.
+  await writeLiveSyncLease(connection.id, {
+    runId,
+    status: 'held',
+    acquiredAt: now,
+    importType,
+  }, { lastImportAt: now, updatedAt: now });
 
   return { ok: true, run: mapRun(data as Record<string, unknown>) };
+}
+
+async function writeLiveSyncLease(
+  connectionId: string,
+  lease: Record<string, unknown>,
+  options?: { lastImportAt?: string; updatedAt?: string },
+): Promise<void> {
+  const updatedAt = options?.updatedAt ?? new Date().toISOString();
+  const { data, error } = await supabase.rpc('channel_manager_set_live_sync_lease_v1', {
+    p_connection_id: connectionId,
+    p_lease: lease,
+    p_updated_at: updatedAt,
+    p_last_import_at: options?.lastImportAt ?? null,
+  });
+  const payload = data && typeof data === 'object' ? data as { success?: boolean } : null;
+  if (!error && payload?.success === true) return;
+
+  // Fallback: reload fresh metadata and merge only the lease key (never reuse a pre-insert snapshot).
+  const fresh = await getConnection(connectionId);
+  const patch: Record<string, unknown> = {
+    metadata: {
+      ...stripFullSnapshot(fresh.metadata),
+      liveSyncLease: lease,
+    },
+    updated_at: updatedAt,
+  };
+  if (options?.lastImportAt) patch.last_import_at = options.lastImportAt;
+  const { error: updateError } = await supabase
+    .from('booking_channel_manager_connections')
+    .update(patch)
+    .eq('id', connectionId);
+  if (updateError) throw new Error(updateError.message);
 }
 
 export async function releaseChannelLiveSyncLease(connectionId: string, runId: string): Promise<void> {
@@ -1406,13 +1477,7 @@ export async function releaseChannelLiveSyncLease(connectionId: string, runId: s
   const lease = connection.metadata?.liveSyncLease as Record<string, unknown> | undefined;
   if (lease && text(lease.runId) !== runId) return;
   const now = new Date().toISOString();
-  await supabase.from('booking_channel_manager_connections').update({
-    metadata: {
-      ...stripFullSnapshot(connection.metadata),
-      liveSyncLease: { runId, status: 'released', releasedAt: now },
-    },
-    updated_at: now,
-  }).eq('id', connection.id);
+  await writeLiveSyncLease(connectionId, { runId, status: 'released', releasedAt: now }, { updatedAt: now });
 }
 
 async function updateRunProgress(
@@ -1460,17 +1525,31 @@ async function updateRunProgress(
   return mapRun(data as Record<string, unknown>);
 }
 
-async function applyExternalCancellation(matchedBookingId: string): Promise<'cancelled' | 'skipped'> {
-  const { data: booking, error } = await supabase
+async function applyExternalCancellation(
+  matchedBookingId: string,
+  scope?: { propertyId: string; accountId: string } | null,
+): Promise<'cancelled' | 'skipped'> {
+  let query = supabase
     .from('booking_ops_records')
-    .select('id,account_id,normalized_status,ops_status')
-    .eq('id', matchedBookingId)
-    .maybeSingle();
+    .select('id,account_id,property_id,normalized_status,ops_status')
+    .eq('id', matchedBookingId);
+  if (scope?.propertyId && scope?.accountId) {
+    query = query.eq('property_id', scope.propertyId).eq('account_id', scope.accountId);
+  }
+  const { data: booking, error } = await query.maybeSingle();
   if (error) throw new Error(error.message);
-  if (!booking) return 'skipped';
+  if (!booking) {
+    if (scope?.propertyId && scope?.accountId) {
+      throw Object.assign(
+        new Error('Сопоставление брони вне контура подключения. Отмена заблокирована.'),
+        { code: 'account_scope_mismatch' },
+      );
+    }
+    return 'skipped';
+  }
   const status = text(booking.normalized_status || booking.ops_status).toLowerCase();
   if (status === 'cancelled' || status === 'canceled') return 'skipped';
-  const accountId = nullableText(booking.account_id);
+  const accountId = scope?.accountId || nullableText(booking.account_id);
   if (!accountId) {
     throw Object.assign(
       new Error('Нельзя отменить бронь: не указан account_id. Нужна проверка оператором.'),
@@ -1492,23 +1571,38 @@ type RestoreOutcome = 'restored' | 'skipped' | 'failed';
 async function applyExternalRestoration(
   imported: Record<string, unknown>,
   warnings: ChannelImportConflict[],
+  scope?: { propertyId: string; accountId: string } | null,
 ): Promise<RestoreOutcome> {
   const matchedBookingId = text(imported.matched_booking_id);
   if (!matchedBookingId) return 'skipped';
-  const { data: current, error } = await supabase
+  let query = supabase
     .from('booking_ops_records')
     .select('id,account_id,property_id,unit_id,guest_name,check_in_at,check_out_at,normalized_status')
-    .eq('id', matchedBookingId)
-    .maybeSingle();
+    .eq('id', matchedBookingId);
+  if (scope?.propertyId && scope?.accountId) {
+    query = query.eq('property_id', scope.propertyId).eq('account_id', scope.accountId);
+  }
+  const { data: current, error } = await query.maybeSingle();
   if (error) throw new Error(error.message);
-  if (!current) return 'skipped';
+  if (!current) {
+    if (scope?.propertyId && scope?.accountId) {
+      warnings.push({
+        type: 'account_scope_mismatch',
+        severity: 'blocker',
+        entityId: text(imported.id),
+        message: 'Сопоставление брони вне контура подключения. Восстановление заблокировано.',
+      });
+      return 'failed';
+    }
+    return 'skipped';
+  }
   const status = text(current.normalized_status).toLowerCase();
   if (status !== 'cancelled' && status !== 'canceled') return 'skipped';
 
   const checkIn = nullableText(imported.checkin_date) || (current.check_in_at ? String(current.check_in_at).slice(0, 10) : null);
   const checkOut = nullableText(imported.checkout_date) || (current.check_out_at ? String(current.check_out_at).slice(0, 10) : null);
-  const accountId = nullableText(current.account_id);
-  const propertyId = nullableText(current.property_id);
+  const accountId = scope?.accountId || nullableText(current.account_id);
+  const propertyId = scope?.propertyId || nullableText(current.property_id);
   if (!accountId || !propertyId || !checkIn || !checkOut) {
     warnings.push({
       type: 'restore_blocked',
@@ -1544,6 +1638,7 @@ async function applyExternalRestoration(
 async function applyExternalBookingUpdate(
   imported: Record<string, unknown>,
   warnings: ChannelImportConflict[],
+  scope?: { propertyId: string; accountId: string } | null,
 ): Promise<UpdateOutcome> {
   const matchedBookingId = text(imported.matched_booking_id);
   if (!matchedBookingId) return 'skipped';
@@ -1551,13 +1646,27 @@ async function applyExternalBookingUpdate(
   const checkOut = nullableText(imported.checkout_date);
   const guestName = nullableText(imported.guest_safe_name);
   const guestCount = numberOrNull(imported.guest_count);
-  const { data: current, error } = await supabase
+  let query = supabase
     .from('booking_ops_records')
     .select('id,account_id,property_id,unit_id,guest_name,guest_count,check_in_at,check_out_at,normalized_status')
-    .eq('id', matchedBookingId)
-    .maybeSingle();
+    .eq('id', matchedBookingId);
+  if (scope?.propertyId && scope?.accountId) {
+    query = query.eq('property_id', scope.propertyId).eq('account_id', scope.accountId);
+  }
+  const { data: current, error } = await query.maybeSingle();
   if (error) throw new Error(error.message);
-  if (!current) return 'skipped';
+  if (!current) {
+    if (scope?.propertyId && scope?.accountId) {
+      warnings.push({
+        type: 'account_scope_mismatch',
+        severity: 'blocker',
+        entityId: text(imported.id),
+        message: 'Сопоставление брони вне контура подключения. Обновление заблокировано.',
+      });
+      return 'failed';
+    }
+    return 'skipped';
+  }
   if (text(current.normalized_status).toLowerCase() === 'cancelled') return 'skipped';
 
   const currentCheckIn = current.check_in_at ? String(current.check_in_at).slice(0, 10) : null;
@@ -1568,8 +1677,8 @@ async function applyExternalBookingUpdate(
   if (!datesChanged && !guestChanged && !guestCountChanged) return 'skipped';
 
   if (datesChanged) {
-    const accountId = nullableText(current.account_id);
-    const propertyId = nullableText(current.property_id);
+    const accountId = scope?.accountId || nullableText(current.account_id);
+    const propertyId = scope?.propertyId || nullableText(current.property_id);
     if (!accountId || !propertyId || !checkIn || !checkOut) {
       warnings.push({
         type: 'availability_update_blocked',
@@ -1624,8 +1733,13 @@ async function processImportedBookingsForLiveSync(
     /** When set, only process these external booking ids (incremental delta). */
     externalBookingIds?: string[] | null;
     changeKindByExternalId?: Record<string, ChannelLiveBookingChangeKind> | null;
+    /** Canonical property/account contour for Incremental Sync mutations. */
+    scope?: IncrementalConnectionScope | null;
   },
 ): Promise<void> {
+  const mutationScope = options?.scope?.propertyId && options?.scope?.accountId
+    ? { propertyId: options.scope.propertyId, accountId: options.scope.accountId }
+    : null;
   let query = supabase
     .from('booking_channel_imported_bookings')
     .select('*')
@@ -1693,7 +1807,7 @@ async function processImportedBookingsForLiveSync(
     try {
       if (changeKind === 'cancelled' || externalStatus === 'cancelled') {
         if (imported.matched_booking_id) {
-          const outcome = await applyExternalCancellation(text(imported.matched_booking_id));
+          const outcome = await applyExternalCancellation(text(imported.matched_booking_id), mutationScope);
           if (outcome === 'cancelled') counters.cancelled += 1;
           else counters.skipped += 1;
         } else {
@@ -1704,7 +1818,7 @@ async function processImportedBookingsForLiveSync(
 
       if (changeKind === 'restored' || externalStatus === 'restored') {
         if (imported.matched_booking_id) {
-          const outcome = await applyExternalRestoration(imported, warnings);
+          const outcome = await applyExternalRestoration(imported, warnings, mutationScope);
           if (outcome === 'restored') {
             counters.restored += 1;
             counters.updated += 1;
@@ -1715,6 +1829,8 @@ async function processImportedBookingsForLiveSync(
         } else if (matchStatus === 'unmatched' || !imported.matched_booking_id) {
           const created = await createBookingFromImportedChannelBooking(text(imported.id), {
             reservationMetadata: options?.reservationMetadata ?? null,
+            propertyId: mutationScope?.propertyId ?? null,
+            accountId: mutationScope?.accountId ?? null,
           });
           if (created.duplicate) counters.skipped += 1;
           else if (created.created) {
@@ -1729,7 +1845,7 @@ async function processImportedBookingsForLiveSync(
       }
 
       if (imported.matched_booking_id && ['matched', 'imported_to_booking_ops'].includes(matchStatus)) {
-        const outcome = await applyExternalBookingUpdate(imported, warnings);
+        const outcome = await applyExternalBookingUpdate(imported, warnings, mutationScope);
         if (outcome === 'updated') counters.updated += 1;
         else if (outcome === 'failed') {
           counters.failed += 1;
@@ -1741,6 +1857,8 @@ async function processImportedBookingsForLiveSync(
       if (matchStatus === 'unmatched' || !imported.matched_booking_id) {
         const created = await createBookingFromImportedChannelBooking(text(imported.id), {
           reservationMetadata: options?.reservationMetadata ?? null,
+          propertyId: mutationScope?.propertyId ?? null,
+          accountId: mutationScope?.accountId ?? null,
         });
         if (created.duplicate) counters.skipped += 1;
         else if (created.created) {
@@ -1760,7 +1878,11 @@ async function processImportedBookingsForLiveSync(
     } catch (error) {
       counters.failed += 1;
       warnings.push({
-        type: (error as { code?: string })?.code === 'missing_account_id' ? 'cancel_missing_account' : 'booking_sync_failed',
+        type: (error as { code?: string })?.code === 'missing_account_id'
+          ? 'cancel_missing_account'
+          : (error as { code?: string })?.code === 'account_scope_mismatch'
+            ? 'account_scope_mismatch'
+            : 'booking_sync_failed',
         severity: 'blocker',
         entityId: text(imported.id),
         message: redactLiveCoreErrorMessage(error instanceof Error ? error.message : error),
@@ -2090,6 +2212,8 @@ export async function getChannelLiveCoreStatus(connectionId: string): Promise<Ch
     && schema.incrementalSyncTypeReady
     && schema.atomicLiveSyncGuardReady
     && schema.cursorStorageReady
+    && schema.atomicCommitRpcReady
+    && schema.replayFinalizeRpcReady
     && Boolean(lastSuccessfulInitialSyncAt)
     && connection.status !== 'blocked';
 
@@ -2170,12 +2294,7 @@ function readCommittedIncrementalCursor(
 
 export async function resolveIncrementalConnectionScope(
   connection: ChannelManagerConnection,
-): Promise<{
-  connectionId: string;
-  ownerSetupId: string;
-  propertySetupId: string;
-  accountId: string | null;
-}> {
+): Promise<IncrementalConnectionScope> {
   const propertySetupId = text(connection.propertySetupId);
   const ownerSetupId = text(connection.ownerSetupId);
   if (!propertySetupId) {
@@ -2191,7 +2310,7 @@ export async function resolveIncrementalConnectionScope(
 
   const { data: property, error } = await supabase
     .from('booking_property_setup_profiles')
-    .select('id,owner_setup_id')
+    .select('id,owner_setup_id,property_id')
     .eq('id', propertySetupId)
     .maybeSingle();
   if (error) throw new Error(error.message);
@@ -2210,6 +2329,7 @@ export async function resolveIncrementalConnectionScope(
     connectionId: connection.id,
     ownerSetupId,
     propertySetupId,
+    propertyId: nullableText(property.property_id),
     accountId: nullableText(connection.metadata?.accountId),
   };
 }
@@ -2258,15 +2378,29 @@ export async function runChannelManagerIncrementalSync(input: {
   let cursorCommitted = false;
 
   try {
-    await resolveIncrementalConnectionScope(connection);
+    const scope = await resolveIncrementalConnectionScope(connection);
 
     if (connection.status === 'blocked') {
       throw Object.assign(new Error(connection.failureReason ?? 'Подключение заблокировано.'), { code: 'connection_blocked' });
     }
 
     const schema = await probeChannelLiveCoreSchema(connection.id);
-    if (schema.schemaVersion < 2 || !schema.incrementalSyncTypeReady || !schema.atomicLiveSyncGuardReady || !schema.cursorStorageReady) {
+    if (
+      schema.schemaVersion < 2
+      || !schema.incrementalSyncTypeReady
+      || !schema.atomicLiveSyncGuardReady
+      || !schema.cursorStorageReady
+      || !schema.atomicCommitRpcReady
+      || !schema.replayFinalizeRpcReady
+    ) {
       throw Object.assign(new Error(schema.blocker ?? LIVE_CORE_INCREMENTAL_MIGRATION_BLOCKER), { code: 'migration_missing' });
+    }
+
+    if (validatedBatch.bookings.length > 0 && (!scope.propertyId || !scope.accountId)) {
+      throw Object.assign(
+        new Error('Для booking mutations нужны canonical propertyId и accountId подключения.'),
+        { code: 'connection_scope_invalid' },
+      );
     }
 
     await requireSuccessfulInitialSync(connection.id);
@@ -2341,8 +2475,69 @@ export async function runChannelManagerIncrementalSync(input: {
     runId = guard.run.id;
     connection = await getConnection(connection.id);
     previousCursor = readCommittedIncrementalCursor(connection.metadata);
-    // Re-assert after guard in case another commit landed; still fail-closed.
-    assertFailClosedIncrementalCursorProtocol(previousCursor, validatedBatch);
+    // Re-assert after guard in case another commit landed between pre-guard check and lease hold.
+    const postGuardProtocol =
+      assertFailClosedIncrementalCursorProtocol(previousCursor, validatedBatch);
+
+    if (postGuardProtocol.kind === 'replay') {
+      const finishedAt = new Date().toISOString();
+      const safeRunMetadata = {
+        liveCore: true,
+        liveCoreCounters: emptyCounters(),
+        ...buildSafeIncrementalCursorMetadata({
+          cursorPresent: Boolean(previousCursor?.checkpoint),
+          cursorCheckpointHash: previousCursor?.checkpoint
+            ? hashCursorCheckpoint(previousCursor.checkpoint)
+            : null,
+          sourceRunId: previousCursor?.sourceRunId ?? null,
+          updatedAt: previousCursor?.updatedAt ?? null,
+          replayed: true,
+          batchHashPrefix: previousCursor?.batchHash
+            ? previousCursor.batchHash.slice(0, 16)
+            : null,
+        }),
+      };
+      const { data: replayData, error: replayError } = await supabase.rpc(
+        'channel_manager_complete_incremental_replay_v1',
+        {
+          p_connection_id: connection.id,
+          p_run_id: runId,
+          p_expected_checkpoint: previousCursor?.checkpoint ?? null,
+          p_expected_batch_hash: previousCursor?.batchHash || null,
+          p_finished_at: finishedAt,
+          p_safe_run_metadata: safeRunMetadata,
+        },
+      );
+      const replayPayload = replayData && typeof replayData === 'object'
+        ? replayData as { success?: boolean; code?: string; message?: string }
+        : null;
+      if (replayError || !replayPayload || replayPayload.success !== true) {
+        const code = text(replayPayload?.code) || 'cursor_commit_failed';
+        const message = text(replayPayload?.message)
+          || text(replayError?.message)
+          || 'Не удалось атомарно завершить incremental replay.';
+        throw Object.assign(new Error(message), { code });
+      }
+
+      connection = await getConnection(connection.id);
+      const preserved = readCommittedIncrementalCursor(connection.metadata);
+      const runs = await listChannelImportRuns(connection.id);
+      const run = runs.find((item) => item.id === runId)!;
+      return {
+        run,
+        connection,
+        stage: 'completed',
+        status: 'completed',
+        counters: emptyCounters(),
+        warnings: [],
+        safeError: null,
+        cursors: cursorPlaceholder(),
+        retryable: true,
+        cursorCommitted: true,
+        committedCursor: preserved,
+        replayed: true,
+      };
+    }
 
     const nextCheckpoint = validatedBatch.nextCursor.checkpoint!;
     const currentCheckpoint = validatedBatch.currentCursor?.checkpoint ?? null;
@@ -2417,7 +2612,29 @@ export async function runChannelManagerIncrementalSync(input: {
     await updateRunProgress(runId, {
       stage, counters, bookings: bookingsImported, calendarDays: counters.calendarDays, prices: counters.prices,
     });
-    await reconcileImportedBookings(connection.id);
+    const reconcileResult = await reconcileImportedBookings(connection.id, {
+      connectionId: connection.id,
+      externalBookingIds: batch.bookings.map((item) => item.externalBookingId),
+      propertyId: scope.propertyId,
+      accountId: scope.accountId,
+    });
+    if (reconcileResult.blockers.length > 0) {
+      warnings = [...warnings, ...reconcileResult.blockers];
+      const safeError = toChannelLiveSafeError(
+        'reconcile_bookings',
+        'Incremental sync остановлен: сопоставление вне контура подключения.',
+        'account_scope_mismatch',
+      );
+      connection = await finalizeFailedIncrementalConnection({
+        connection, runId, stage: 'reconcile_bookings', counters, warnings, safeError, cursors, previousCursor,
+      });
+      const runs = await listChannelImportRuns(connection.id);
+      const run = runs.find((item) => item.id === runId)!;
+      return {
+        run, connection, stage: 'failed', status: 'failed', counters, warnings, safeError, cursors,
+        retryable: true, cursorCommitted: false, committedCursor: previousCursor, replayed: false,
+      };
+    }
 
     stage = 'process_booking_changes';
     await updateRunProgress(runId, { stage, counters });
@@ -2428,6 +2645,7 @@ export async function runChannelManagerIncrementalSync(input: {
     await processImportedBookingsForLiveSync(connection.id, counters, warnings, {
       externalBookingIds: batch.bookings.map((item) => item.externalBookingId),
       changeKindByExternalId,
+      scope,
     });
 
     stage = 'audit_availability';

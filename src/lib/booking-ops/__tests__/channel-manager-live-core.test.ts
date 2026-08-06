@@ -220,13 +220,36 @@ beforeEach(() => {
       atomicRunningGuardReady: true,
       atomicLiveSyncGuardReady: true,
       cursorStorageReady: true,
+      atomicCommitRpcReady: true,
+      replayFinalizeRpcReady: true,
       ready: true,
     },
     error: null,
   });
 
   canAutoSendCommunicationIntent.mockResolvedValue({ eligible: false, reason: 'global_off' });
-  processInboundBookingRequest.mockResolvedValue({ bookingId: BOOKING_OPS_ID, intakeStatus: 'processed' });
+  processInboundBookingRequest.mockImplementation(async (input: Record<string, unknown>) => {
+    const existing = rows('booking_ops_records').find((row) => row.id === BOOKING_OPS_ID);
+    if (!existing) {
+      rows('booking_ops_records').push({
+        id: BOOKING_OPS_ID,
+        account_id: null,
+        property_id: input.propertyId ?? null,
+        booking_id: input.bookingReference ?? input.externalSourceId ?? null,
+        guest_name: input.guestName,
+        guest_count: input.guestCount ?? 2,
+        check_in_at: input.checkInAt
+          ? `${String(input.checkInAt).slice(0, 10)}T00:00:00.000Z`
+          : null,
+        check_out_at: input.checkOutAt
+          ? `${String(input.checkOutAt).slice(0, 10)}T00:00:00.000Z`
+          : null,
+        normalized_status: 'confirmed',
+        unit_id: null,
+      });
+    }
+    return { bookingId: BOOKING_OPS_ID, intakeStatus: 'processed' };
+  });
   updateBookingOpsRecord.mockResolvedValue({ ok: true });
   cancelReservation.mockImplementation(async (input: { reservationId: string; accountId: string }) => {
     const booking = rows('booking_ops_records').find((row) => row.id === input.reservationId && row.account_id === input.accountId);
@@ -340,8 +363,9 @@ describe('Channel Manager Live Core repairs', () => {
   it('prevents date mutation when availability has a confirmed conflict', async () => {
     const connection = await initializeChannelManagerConnection(PROPERTY_ID, 'manual');
     await runChannelManagerInitialSync({ connectionId: connection.id, snapshot: baseSnapshot() });
-    rows('booking_ops_records').push({
-      id: BOOKING_OPS_ID,
+    const booking = rows('booking_ops_records').find((row) => row.id === BOOKING_OPS_ID);
+    expect(booking).toBeTruthy();
+    Object.assign(booking!, {
       account_id: ACCOUNT_ID,
       property_id: 'prop-a',
       unit_id: null,
@@ -363,14 +387,15 @@ describe('Channel Manager Live Core repairs', () => {
     expect(result.counters.failed).toBeGreaterThanOrEqual(1);
     expect(result.warnings.some((item) => item.type === 'availability_conflict' && item.severity === 'blocker')).toBe(true);
     expect(updateBookingOpsRecord).not.toHaveBeenCalled();
-    expect(rows('booking_ops_records')[0].check_in_at).toBe('2026-07-10T00:00:00.000Z');
+    expect(rows('booking_ops_records').find((row) => row.id === BOOKING_OPS_ID)?.check_in_at).toBe('2026-07-10T00:00:00.000Z');
   });
 
   it('uses canonical cancellation that releases holds and writes audit', async () => {
     const connection = await initializeChannelManagerConnection(PROPERTY_ID, 'manual');
     await runChannelManagerInitialSync({ connectionId: connection.id, snapshot: baseSnapshot() });
-    rows('booking_ops_records').push({
-      id: BOOKING_OPS_ID,
+    const booking = rows('booking_ops_records').find((row) => row.id === BOOKING_OPS_ID);
+    expect(booking).toBeTruthy();
+    Object.assign(booking!, {
       account_id: ACCOUNT_ID,
       property_id: 'prop-a',
       guest_name: 'Анна',
@@ -400,8 +425,9 @@ describe('Channel Manager Live Core repairs', () => {
   it('fails closed when account_id is missing for cancellation', async () => {
     const connection = await initializeChannelManagerConnection(PROPERTY_ID, 'manual');
     await runChannelManagerInitialSync({ connectionId: connection.id, snapshot: baseSnapshot() });
-    rows('booking_ops_records').push({
-      id: BOOKING_OPS_ID,
+    const booking = rows('booking_ops_records').find((row) => row.id === BOOKING_OPS_ID);
+    expect(booking).toBeTruthy();
+    Object.assign(booking!, {
       account_id: null,
       property_id: 'prop-a',
       guest_name: 'Анна',
@@ -416,7 +442,7 @@ describe('Channel Manager Live Core repairs', () => {
     expect(result.status).toBe('failed');
     expect(result.warnings.some((item) => item.type === 'cancel_missing_account' && item.severity === 'blocker')).toBe(true);
     expect(cancelReservation).not.toHaveBeenCalled();
-    expect(rows('booking_ops_records')[0].normalized_status).toBe('confirmed');
+    expect(rows('booking_ops_records').find((row) => row.id === BOOKING_OPS_ID)?.normalized_status).toBe('confirmed');
   });
 
   it('does not store the full manual snapshot in connection metadata', async () => {
