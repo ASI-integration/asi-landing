@@ -254,8 +254,43 @@ export function hashExternalIdentity(externalBookingId: string): string {
   return sha256Hex(text(externalBookingId)).slice(0, 32);
 }
 
-function dayKey(externalObjectId: string, date: string): string {
+/** In-memory lookup only — never persist this raw key in recon records. */
+function dayLookupKey(externalObjectId: string, date: string): string {
   return `${externalObjectId}\0${date}`;
+}
+
+function calendarEntityIdentity(externalObjectId: string, date: string): string {
+  return `calendar:${hashExternalIdentity(externalObjectId)}:${date}`;
+}
+
+function pricingEntityIdentity(externalObjectId: string, date: string): string {
+  return `pricing:${hashExternalIdentity(externalObjectId)}:${date}`;
+}
+
+function parseHashedDayEntityIdentity(
+  kind: 'calendar' | 'pricing',
+  entityIdentity: string,
+): { objectHash: string; date: string } | null {
+  const match = entityIdentity.match(
+    kind === 'calendar'
+      ? /^calendar:([a-f0-9]{32}):(\d{4}-\d{2}-\d{2})$/
+      : /^pricing:([a-f0-9]{32}):(\d{4}-\d{2}-\d{2})$/,
+  );
+  if (!match) return null;
+  return { objectHash: match[1], date: match[2] };
+}
+
+function findSnapshotDayByObjectHash<T extends { externalObjectId: string; date: string }>(
+  days: T[],
+  objectHash: string,
+  date: string,
+): T | null {
+  for (const day of days) {
+    if (day.date === date && hashExternalIdentity(day.externalObjectId) === objectHash) {
+      return day;
+    }
+  }
+  return null;
 }
 
 function bookingToImportRow(booking: ChannelLiveExternalBooking): Record<string, unknown> {
@@ -509,7 +544,7 @@ export function validateChannelReconciliationSnapshot(raw: unknown): ChannelReco
       priceAmount: numberOrNull(item.price_amount ?? item.price),
       currency: nullableText(item.currency),
     })).filter((item) => item.externalObjectId && item.date),
-    (item) => dayKey(item.externalObjectId, item.date),
+    (item) => dayLookupKey(item.externalObjectId, item.date),
     'calendar',
   );
 
@@ -522,7 +557,7 @@ export function validateChannelReconciliationSnapshot(raw: unknown): ChannelReco
       priceAmount: numberOrNull(item.price_amount ?? item.price),
       currency: nullableText(item.currency),
     })).filter((item) => item.externalObjectId && item.date),
-    (item) => dayKey(item.externalObjectId, item.date),
+    (item) => dayLookupKey(item.externalObjectId, item.date),
     'pricing',
   );
 
@@ -560,7 +595,7 @@ export function computeReconciliationSnapshotHash(snapshot: ChannelReconciliatio
       minStay: item.minStay ?? null,
       priceAmount: item.priceAmount ?? null,
     }))
-    .sort((a, b) => dayKey(a.externalObjectId, a.date).localeCompare(dayKey(b.externalObjectId, b.date)));
+    .sort((a, b) => dayLookupKey(a.externalObjectId, a.date).localeCompare(dayLookupKey(b.externalObjectId, b.date)));
   const pricing = [...snapshot.pricing]
     .map((item) => ({
       availabilityStatus: item.availabilityStatus ?? null,
@@ -570,7 +605,7 @@ export function computeReconciliationSnapshotHash(snapshot: ChannelReconciliatio
       minStay: item.minStay ?? null,
       priceAmount: item.priceAmount ?? null,
     }))
-    .sort((a, b) => dayKey(a.externalObjectId, a.date).localeCompare(dayKey(b.externalObjectId, b.date)));
+    .sort((a, b) => dayLookupKey(a.externalObjectId, a.date).localeCompare(dayLookupKey(b.externalObjectId, b.date)));
   return sha256Hex(stableJsonValue({
     asOf: snapshot.asOf,
     bookings,
@@ -1034,27 +1069,30 @@ export function analyzeChannelReconciliationDrift(input: {
   const calendarInternal = new Map<string, Record<string, unknown>>();
   const pricingInternal = new Map<string, Record<string, unknown>>();
   for (const row of input.calendarRows) {
-    const key = dayKey(text(row.external_object_id), text(row.date));
+    const key = dayLookupKey(text(row.external_object_id), text(row.date));
     if (!key.includes('\0') || key.startsWith('\0') || key.endsWith('\0')) continue;
     if (isCalendarPricingRow(row)) pricingInternal.set(key, row);
     else calendarInternal.set(key, row);
   }
 
   for (const day of input.snapshot.calendar) {
-    const key = dayKey(day.externalObjectId, day.date);
-    const internal = calendarInternal.get(key);
+    const lookupKey = dayLookupKey(day.externalObjectId, day.date);
+    const objectHash = hashExternalIdentity(day.externalObjectId);
+    const entityIdentity = calendarEntityIdentity(day.externalObjectId, day.date);
+    const internal = calendarInternal.get(lookupKey);
     if (!internal) {
       push({
         category: 'calendar_day_missing_internal',
         severity: 'warning',
         repairability: 'safe_auto',
-        entityIdentity: `calendar:${key}`,
+        entityIdentity,
         safeIntendedState: `upsert:${day.availabilityStatus ?? 'unknown'}`,
         safeMessage: 'День календаря отсутствует внутри ASI. Можно добавить.',
+        externalIdentityHash: objectHash,
         propertyId: input.scope.propertyId,
         safeBefore: {},
         safeAfter: {
-          externalObjectIdHash: hashExternalIdentity(day.externalObjectId),
+          externalObjectIdHash: objectHash,
           date: day.date,
           availabilityStatus: day.availabilityStatus ?? null,
         },
@@ -1068,33 +1106,38 @@ export function analyzeChannelReconciliationDrift(input: {
         category: 'calendar_availability_drift',
         severity: 'warning',
         repairability: 'safe_auto',
-        entityIdentity: `calendar:${key}`,
+        entityIdentity,
         safeIntendedState: `availability:${nextAvail}`,
         safeMessage: 'Доступность дня календаря отличается от внешнего снимка.',
+        externalIdentityHash: objectHash,
         propertyId: input.scope.propertyId,
-        safeBefore: { date: day.date, availabilityStatus: curAvail },
-        safeAfter: { date: day.date, availabilityStatus: nextAvail },
+        safeBefore: { date: day.date, availabilityStatus: curAvail, externalObjectIdHash: objectHash },
+        safeAfter: { date: day.date, availabilityStatus: nextAvail, externalObjectIdHash: objectHash },
       });
     }
   }
 
   for (const day of input.snapshot.pricing) {
-    const key = dayKey(day.externalObjectId, day.date);
-    const internal = pricingInternal.get(key) ?? calendarInternal.get(key);
-    if (!internal || (pricingInternal.size > 0 && !pricingInternal.has(key) && numberOrNull(internal.price_amount) == null)) {
+    const lookupKey = dayLookupKey(day.externalObjectId, day.date);
+    const objectHash = hashExternalIdentity(day.externalObjectId);
+    const entityIdentity = pricingEntityIdentity(day.externalObjectId, day.date);
+    const internal = pricingInternal.get(lookupKey) ?? calendarInternal.get(lookupKey);
+    if (!internal || (pricingInternal.size > 0 && !pricingInternal.has(lookupKey) && numberOrNull(internal.price_amount) == null)) {
       push({
         category: 'pricing_missing_internal',
         severity: 'warning',
         repairability: 'safe_auto',
-        entityIdentity: `pricing:${key}`,
+        entityIdentity,
         safeIntendedState: `upsert:${day.priceAmount ?? ''}:${day.currency ?? ''}`,
         safeMessage: 'Цена за день отсутствует внутри ASI. Можно добавить.',
+        externalIdentityHash: objectHash,
         propertyId: input.scope.propertyId,
         safeBefore: {},
         safeAfter: {
           date: day.date,
           priceAmount: day.priceAmount ?? null,
           currency: day.currency ?? null,
+          externalObjectIdHash: objectHash,
         },
       });
       continue;
@@ -1109,46 +1152,65 @@ export function analyzeChannelReconciliationDrift(input: {
         category: 'pricing_value_drift',
         severity: 'warning',
         repairability: 'safe_auto',
-        entityIdentity: `pricing:${key}`,
+        entityIdentity,
         safeIntendedState: `price:${day.priceAmount ?? ''}:${day.currency ?? ''}`,
         safeMessage: 'Цена за день отличается от внешнего снимка.',
+        externalIdentityHash: objectHash,
         propertyId: input.scope.propertyId,
-        safeBefore: { date: day.date, priceAmount: curPrice, currency: curCurrency },
-        safeAfter: { date: day.date, priceAmount: day.priceAmount ?? null, currency: day.currency ?? null },
+        safeBefore: {
+          date: day.date,
+          priceAmount: curPrice,
+          currency: curCurrency,
+          externalObjectIdHash: objectHash,
+        },
+        safeAfter: {
+          date: day.date,
+          priceAmount: day.priceAmount ?? null,
+          currency: day.currency ?? null,
+          externalObjectIdHash: objectHash,
+        },
       });
     }
   }
 
   if (input.snapshot.snapshotKind === 'complete') {
-    const snapCal = new Set(input.snapshot.calendar.map((d) => dayKey(d.externalObjectId, d.date)));
-    const snapPrice = new Set(input.snapshot.pricing.map((d) => dayKey(d.externalObjectId, d.date)));
-    for (const [key] of calendarInternal) {
+    const snapCal = new Set(input.snapshot.calendar.map((d) => dayLookupKey(d.externalObjectId, d.date)));
+    const snapPrice = new Set(input.snapshot.pricing.map((d) => dayLookupKey(d.externalObjectId, d.date)));
+    for (const [key, row] of calendarInternal) {
       if (snapCal.has(key)) continue;
+      const objectId = text(row.external_object_id);
+      const date = text(row.date);
+      const objectHash = hashExternalIdentity(objectId);
       push({
         category: 'calendar_orphan_internal_day',
         severity: 'info',
         repairability: 'unsupported',
-        entityIdentity: `calendar:${key}`,
+        entityIdentity: calendarEntityIdentity(objectId, date),
         safeIntendedState: 'no_delete',
         safeMessage: 'День календаря есть в ASI, но отсутствует в полном снимке. Удаление запрещено.',
+        externalIdentityHash: objectHash,
         propertyId: input.scope.propertyId,
         status: 'detected',
-        safeBefore: { present: true },
+        safeBefore: { present: true, date, externalObjectIdHash: objectHash },
         safeAfter: {},
       });
     }
-    for (const [key] of pricingInternal) {
+    for (const [key, row] of pricingInternal) {
       if (snapPrice.has(key)) continue;
+      const objectId = text(row.external_object_id);
+      const date = text(row.date);
+      const objectHash = hashExternalIdentity(objectId);
       push({
         category: 'pricing_orphan_internal_day',
         severity: 'info',
         repairability: 'unsupported',
-        entityIdentity: `pricing:${key}`,
+        entityIdentity: pricingEntityIdentity(objectId, date),
         safeIntendedState: 'no_delete',
         safeMessage: 'Цена есть в ASI, но отсутствует в полном снимке. Удаление запрещено.',
+        externalIdentityHash: objectHash,
         propertyId: input.scope.propertyId,
         status: 'detected',
-        safeBefore: { present: true },
+        safeBefore: { present: true, date, externalObjectIdHash: objectHash },
         safeAfter: {},
       });
     }
@@ -1213,12 +1275,13 @@ export function analyzeChannelReconciliationDrift(input: {
       push({
         category: 'lease_run_mismatch',
         severity: 'warning',
-        repairability: 'safe_auto',
+        repairability: 'operator_review',
         entityIdentity: `lease:${leaseRunId}`,
-        safeIntendedState: `release_lease:${leaseRunId}`,
-        safeMessage: 'Блокировка sync указывает на несуществующий running-запуск. Можно снять.',
+        safeIntendedState: `review_lease:${leaseRunId}`,
+        safeMessage: 'Блокировка sync указывает на несуществующий running-запуск. Нужна проверка оператором — автоснятие запрещено.',
+        status: 'detected',
         safeBefore: { leaseRunId, leaseStatus: text(lease.status) },
-        safeAfter: { leaseStatus: 'released' },
+        safeAfter: {},
       });
     }
   }
@@ -1405,7 +1468,7 @@ async function loadReconciliationItems(runId: string): Promise<ChannelReconcilia
   return ((data ?? []) as Record<string, unknown>[]).map(mapItemRow);
 }
 
-async function findPreviewByReportHash(
+async function findPreviewRunByReportHash(
   connectionId: string,
   reportHash: string,
 ): Promise<ChannelReconciliationRunRow | null> {
@@ -1418,6 +1481,324 @@ async function findPreviewByReportHash(
     .maybeSingle();
   if (error) throw new Error(error.message);
   return data ? mapRunRow(data as Record<string, unknown>) : null;
+}
+
+function expectedItemKeys(items: Array<{ deterministicActionKey: string }>): string[] {
+  return [...items.map((item) => item.deterministicActionKey)].sort();
+}
+
+function previewItemsMatchExpected(
+  run: ChannelReconciliationRunRow,
+  items: ChannelReconciliationItemRow[],
+  expectedKeys: string[],
+): boolean {
+  if (run.status !== 'preview_ready') return false;
+  const expectedTotal = Number(run.counts?.total ?? Number.NaN);
+  if (!Number.isFinite(expectedTotal) || items.length !== expectedTotal) return false;
+  if (expectedKeys.length > 0 && items.length !== expectedKeys.length) return false;
+  const actualKeys = expectedItemKeys(items);
+  if (actualKeys.length !== expectedKeys.length) return false;
+  for (let i = 0; i < expectedKeys.length; i += 1) {
+    if (actualKeys[i] !== expectedKeys[i]) return false;
+  }
+  return true;
+}
+
+async function findVerifiedPreviewReadyByReportHash(input: {
+  connectionId: string;
+  reportHash: string;
+  expectedKeys: string[];
+}): Promise<{ run: ChannelReconciliationRunRow; items: ChannelReconciliationItemRow[] } | null> {
+  const run = await findPreviewRunByReportHash(input.connectionId, input.reportHash);
+  if (!run || run.status !== 'preview_ready') return null;
+  const items = await loadReconciliationItems(run.id);
+  if (!previewItemsMatchExpected(run, items, input.expectedKeys)) return null;
+  return { run, items };
+}
+
+async function markPreviewRunFailed(
+  runId: string,
+  message: string,
+  statuses: ChannelReconciliationRunStatus[] = ['analyzing', 'failed'],
+): Promise<void> {
+  const now = new Date().toISOString();
+  const { error } = await supabase.from('booking_channel_reconciliation_runs').update({
+    status: 'failed',
+    finished_at: now,
+    updated_at: now,
+    safe_error: {
+      stage: 'preview_persist',
+      code: 'preview_persist_incomplete',
+      message: redactLiveCoreErrorMessage(message),
+    },
+    metadata: {
+      previewPersistFailed: true,
+      previewPersistFailedAt: now,
+    },
+  }).eq('id', runId).in('status', statuses);
+  if (error) throw new Error(error.message);
+}
+
+async function deleteReconciliationItemsForRun(runId: string): Promise<void> {
+  const { error } = await supabase
+    .from('booking_channel_reconciliation_items')
+    .delete()
+    .eq('reconciliation_run_id', runId);
+  if (error) throw new Error(error.message);
+}
+
+async function insertPreviewItemRows(input: {
+  runId: string;
+  connectionId: string;
+  items: ChannelReconciliationDriftItem[];
+  startedAt: string;
+}): Promise<void> {
+  if (input.items.length === 0) return;
+  const rows = input.items.map((item) => ({
+    id: randomUUID(),
+    reconciliation_run_id: input.runId,
+    connection_id: input.connectionId,
+    category: item.category,
+    severity: item.severity,
+    repairability: item.repairability,
+    status: item.status,
+    external_identity_hash: item.externalIdentityHash,
+    imported_booking_id: item.importedBookingId,
+    booking_ops_record_id: item.bookingOpsRecordId,
+    property_id: item.propertyId,
+    safe_before: { ...item.safeBefore, entityIdentity: item.entityIdentity },
+    safe_after: {
+      ...item.safeAfter,
+      entityIdentity: item.entityIdentity,
+      safeIntendedState: item.safeIntendedState,
+    },
+    deterministic_action_key: item.deterministicActionKey,
+    safe_message: item.safeMessage,
+    created_at: input.startedAt,
+    updated_at: input.startedAt,
+  }));
+  const { error: insertItemsError } = await supabase
+    .from('booking_channel_reconciliation_items')
+    .insert(rows);
+  if (insertItemsError) throw new Error(insertItemsError.message);
+}
+
+async function verifyAndPromotePreviewReady(input: {
+  runId: string;
+  expectedKeys: string[];
+  counts: Record<string, unknown>;
+  safeSummary: string;
+  metadata: Record<string, unknown>;
+}): Promise<ChannelReconciliationRunRow> {
+  const persistedItems = await loadReconciliationItems(input.runId);
+  const actualKeys = expectedItemKeys(persistedItems);
+  if (
+    persistedItems.length !== input.expectedKeys.length
+    || actualKeys.length !== input.expectedKeys.length
+    || actualKeys.some((key, index) => key !== input.expectedKeys[index])
+  ) {
+    throw new Error('Количество или ключи элементов сверки не совпали после сохранения.');
+  }
+
+  const finishedAt = new Date().toISOString();
+  const { data, error } = await supabase
+    .from('booking_channel_reconciliation_runs')
+    .update({
+      status: 'preview_ready',
+      finished_at: finishedAt,
+      updated_at: finishedAt,
+      counts: input.counts,
+      safe_summary: input.safeSummary,
+      safe_error: {},
+      metadata: {
+        ...input.metadata,
+        previewVerified: true,
+        previewItemCount: input.expectedKeys.length,
+        previewVerifiedAt: finishedAt,
+      },
+    })
+    .eq('id', input.runId)
+    .in('status', ['analyzing', 'failed'])
+    .select('*')
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!data) {
+    const raced = await loadReconciliationRun(input.runId);
+    if (raced?.status === 'preview_ready') {
+      const items = await loadReconciliationItems(input.runId);
+      if (previewItemsMatchExpected(raced, items, input.expectedKeys)) return raced;
+    }
+    throw new Error('Не удалось подтвердить готовность preview-отчёта.');
+  }
+  return mapRunRow(data as Record<string, unknown>);
+}
+
+async function persistPreviewReportStaged(input: {
+  connectionId: string;
+  provider: string;
+  snapshotKind: 'complete' | 'bounded';
+  snapshotHash: string;
+  reportHash: string;
+  cursorHashAtPreview: string | null;
+  items: ChannelReconciliationDriftItem[];
+  counts: Record<string, unknown>;
+  safeSummary: string;
+  metadata: Record<string, unknown>;
+  startedAt: string;
+  runId?: string;
+}): Promise<{ run: ChannelReconciliationRunRow; items: ChannelReconciliationItemRow[] }> {
+  const expectedKeys = expectedItemKeys(input.items);
+  const runId = input.runId ?? randomUUID();
+
+  if (!input.runId) {
+    const { error: insertRunError } = await supabase.from('booking_channel_reconciliation_runs').insert({
+      id: runId,
+      connection_id: input.connectionId,
+      provider: input.provider,
+      mode: 'preview',
+      status: 'analyzing',
+      snapshot_kind: input.snapshotKind,
+      snapshot_hash: input.snapshotHash,
+      report_hash: input.reportHash,
+      committed_cursor_hash_at_preview: input.cursorHashAtPreview,
+      started_at: input.startedAt,
+      finished_at: null,
+      safe_summary: input.safeSummary,
+      safe_error: {},
+      counts: input.counts,
+      metadata: {
+        ...input.metadata,
+        previewPersistStage: 'analyzing',
+      },
+      created_at: input.startedAt,
+      updated_at: input.startedAt,
+    });
+    if (insertRunError) {
+      if (insertRunError.code === '23505') {
+        throw Object.assign(new Error(insertRunError.message), { code: '23505' });
+      }
+      throw new Error(insertRunError.message);
+    }
+  } else {
+    const now = new Date().toISOString();
+    const { data: claimed, error: claimError } = await supabase
+      .from('booking_channel_reconciliation_runs')
+      .update({
+        status: 'analyzing',
+        started_at: input.startedAt,
+        finished_at: null,
+        safe_summary: input.safeSummary,
+        safe_error: {},
+        counts: input.counts,
+        metadata: {
+          ...input.metadata,
+          previewPersistStage: 'analyzing',
+          previewRebuildAt: now,
+        },
+        updated_at: now,
+      })
+      .eq('id', runId)
+      .eq('connection_id', input.connectionId)
+      .eq('report_hash', input.reportHash)
+      .eq('mode', 'preview')
+      .in('status', ['analyzing', 'failed'])
+      .select('id')
+      .maybeSingle();
+    if (claimError) throw new Error(claimError.message);
+    if (!claimed) {
+      const existing = await findVerifiedPreviewReadyByReportHash({
+        connectionId: input.connectionId,
+        reportHash: input.reportHash,
+        expectedKeys,
+      });
+      if (existing) return existing;
+      throw new Error('Не удалось пересобрать незавершённый preview-отчёт.');
+    }
+    await deleteReconciliationItemsForRun(runId);
+  }
+
+  try {
+    await insertPreviewItemRows({
+      runId,
+      connectionId: input.connectionId,
+      items: input.items,
+      startedAt: input.startedAt,
+    });
+    const run = await verifyAndPromotePreviewReady({
+      runId,
+      expectedKeys,
+      counts: input.counts,
+      safeSummary: input.safeSummary,
+      metadata: input.metadata,
+    });
+    const persistedItems = await loadReconciliationItems(runId);
+    if (!previewItemsMatchExpected(run, persistedItems, expectedKeys)) {
+      throw new Error('Проверка preview_ready после сохранения не пройдена.');
+    }
+    return { run, items: persistedItems };
+  } catch (error) {
+    try {
+      await markPreviewRunFailed(
+        runId,
+        error instanceof Error ? error.message : 'preview_persist_failed',
+      );
+    } catch {
+      // Prefer surfacing the original persist failure.
+    }
+    throw error;
+  }
+}
+
+async function awaitOrRebuildPreviewByReportHash(input: {
+  connectionId: string;
+  provider: string;
+  snapshotKind: 'complete' | 'bounded';
+  snapshotHash: string;
+  reportHash: string;
+  cursorHashAtPreview: string | null;
+  items: ChannelReconciliationDriftItem[];
+  counts: Record<string, unknown>;
+  safeSummary: string;
+  metadata: Record<string, unknown>;
+  startedAt: string;
+}): Promise<{ run: ChannelReconciliationRunRow; items: ChannelReconciliationItemRow[] }> {
+  const expectedKeys = expectedItemKeys(input.items);
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    const verified = await findVerifiedPreviewReadyByReportHash({
+      connectionId: input.connectionId,
+      reportHash: input.reportHash,
+      expectedKeys,
+    });
+    if (verified) return verified;
+
+    const existing = await findPreviewRunByReportHash(input.connectionId, input.reportHash);
+    if (!existing) {
+      return persistPreviewReportStaged({ ...input });
+    }
+    if (existing.status === 'failed') {
+      // Incomplete/failed reports must be rebuilt — never returned as ready.
+      return persistPreviewReportStaged({ ...input, runId: existing.id });
+    }
+    if (existing.status === 'analyzing') {
+      // Concurrent writer may still be persisting items — wait before taking over.
+      if (attempt < 5) {
+        await new Promise((resolve) => setTimeout(resolve, 15 + attempt * 10));
+        continue;
+      }
+      return persistPreviewReportStaged({ ...input, runId: existing.id });
+    }
+    if (existing.status === 'preview_ready') {
+      const items = await loadReconciliationItems(existing.id);
+      if (previewItemsMatchExpected(existing, items, expectedKeys)) {
+        return { run: existing, items };
+      }
+      // Half-persisted legacy/corrupt preview_ready: fail closed and rebuild.
+      await markPreviewRunFailed(existing.id, 'incomplete_preview_ready_rebuilt', ['preview_ready', 'analyzing', 'failed']);
+      return persistPreviewReportStaged({ ...input, runId: existing.id });
+    }
+    await new Promise((resolve) => setTimeout(resolve, 15 + attempt * 10));
+  }
+  throw new Error('Параллельный preview не сошёлся к одному полному отчёту.');
 }
 
 async function loadScopedBookingOps(
@@ -1513,16 +1894,18 @@ export async function runChannelManagerReconciliationPreview(input: {
     })),
   });
 
-  const existing = await findPreviewByReportHash(connection.id, reportHash);
+  const existing = await findVerifiedPreviewReadyByReportHash({
+    connectionId: connection.id,
+    reportHash,
+    expectedKeys: expectedItemKeys(rekeyDriftItems(connection.id, reportHash, draftItems)),
+  });
   if (existing) {
-    const items = await loadReconciliationItems(existing.id);
-    return toSafeReconciliationReport(existing, items, { cursorChangedSincePreview: false });
+    return toSafeReconciliationReport(existing.run, existing.items, { cursorChangedSincePreview: false });
   }
 
   const items = rekeyDriftItems(connection.id, reportHash, draftItems);
   const counts = summarizeCounts(items);
   const startedAt = new Date(nowMs).toISOString();
-  const runId = randomUUID();
   const safeSummary = `Сверка (preview): всего ${counts.total}, безопасных исправлений ${counts.repairable}, блокировок ${counts.blockers}. Курсор не изменён.`;
 
   const metadata = {
@@ -1543,71 +1926,30 @@ export async function runChannelManagerReconciliationPreview(input: {
     throw new Error('Пароли, токены и другие секреты нельзя сохранять в сверке.');
   }
 
-  const { error: insertRunError } = await supabase.from('booking_channel_reconciliation_runs').insert({
-    id: runId,
-    connection_id: connection.id,
+  const persistInput = {
+    connectionId: connection.id,
     provider: connection.provider,
-    mode: 'preview',
-    status: 'preview_ready',
-    snapshot_kind: snapshot.snapshotKind,
-    snapshot_hash: snapshotHash,
-    report_hash: reportHash,
-    committed_cursor_hash_at_preview: cursorHashAtPreview,
-    started_at: startedAt,
-    finished_at: startedAt,
-    safe_summary: safeSummary,
-    safe_error: {},
+    snapshotKind: snapshot.snapshotKind,
+    snapshotHash,
+    reportHash,
+    cursorHashAtPreview,
+    items,
     counts,
+    safeSummary,
     metadata,
-    created_at: startedAt,
-    updated_at: startedAt,
-  });
-  if (insertRunError) {
-    // Race: another preview with same report_hash
-    if (insertRunError.code === '23505') {
-      const raced = await findPreviewByReportHash(connection.id, reportHash);
-      if (raced) {
-        const racedItems = await loadReconciliationItems(raced.id);
-        return toSafeReconciliationReport(raced, racedItems, { cursorChangedSincePreview: false });
-      }
+    startedAt,
+  };
+
+  try {
+    const persisted = await persistPreviewReportStaged(persistInput);
+    return toSafeReconciliationReport(persisted.run, persisted.items, { cursorChangedSincePreview: false });
+  } catch (error) {
+    if ((error as { code?: string })?.code === '23505') {
+      const converged = await awaitOrRebuildPreviewByReportHash(persistInput);
+      return toSafeReconciliationReport(converged.run, converged.items, { cursorChangedSincePreview: false });
     }
-    throw new Error(insertRunError.message);
+    throw error;
   }
-
-  if (items.length > 0) {
-    const rows = items.map((item) => ({
-      id: randomUUID(),
-      reconciliation_run_id: runId,
-      connection_id: connection.id,
-      category: item.category,
-      severity: item.severity,
-      repairability: item.repairability,
-      status: item.status,
-      external_identity_hash: item.externalIdentityHash,
-      imported_booking_id: item.importedBookingId,
-      booking_ops_record_id: item.bookingOpsRecordId,
-      property_id: item.propertyId,
-      safe_before: { ...item.safeBefore, entityIdentity: item.entityIdentity },
-      safe_after: {
-        ...item.safeAfter,
-        entityIdentity: item.entityIdentity,
-        safeIntendedState: item.safeIntendedState,
-      },
-      deterministic_action_key: item.deterministicActionKey,
-      safe_message: item.safeMessage,
-      created_at: startedAt,
-      updated_at: startedAt,
-    }));
-    const { error: insertItemsError } = await supabase
-      .from('booking_channel_reconciliation_items')
-      .insert(rows);
-    if (insertItemsError) throw new Error(insertItemsError.message);
-  }
-
-  const run = await loadReconciliationRun(runId);
-  if (!run) throw new Error('Не удалось сохранить запуск сверки.');
-  const persistedItems = await loadReconciliationItems(runId);
-  return toSafeReconciliationReport(run, persistedItems, { cursorChangedSincePreview: false });
 }
 
 // ---------------------------------------------------------------------------
@@ -2048,8 +2390,20 @@ async function applyOneSafeItem(input: {
           guestCount: guestCountChanged ? guestCount ?? undefined : undefined,
           checkInAt: datesChanged ? checkIn ?? undefined : undefined,
           checkOutAt: datesChanged ? checkOut ?? undefined : undefined,
-        }, { actorType: 'admin' });
+        }, {
+          actorType: 'admin',
+          expectedScope: {
+            accountId: scope.accountId,
+            propertyId: scope.propertyId,
+          },
+        });
         if (!result.ok) {
+          if (result.error === 'scope_mismatch') {
+            await markItemStatus(item.id, 'blocked', {
+              safeMessage: 'Бронь сменила контур до обновления. Обновление заблокировано.',
+            });
+            return 'blocked';
+          }
           await markItemStatus(item.id, 'failed', {
             safeMessage: redactLiveCoreErrorMessage(result.error ?? 'Не удалось обновить бронь.'),
           });
@@ -2177,9 +2531,16 @@ async function applyOneSafeItem(input: {
 
       case 'calendar_day_missing_internal':
       case 'calendar_availability_drift': {
-        const entity = item.entityIdentity.replace(/^calendar:/, '');
-        const [externalObjectId, date] = entity.split('\0');
-        const day = snapshot.calendar.find((d) => d.externalObjectId === externalObjectId && d.date === date);
+        const parsed = parseHashedDayEntityIdentity('calendar', item.entityIdentity);
+        const objectHash = parsed?.objectHash
+          || text(item.externalIdentityHash)
+          || text(item.safeAfter.externalObjectIdHash);
+        const date = parsed?.date || text(item.safeAfter.date);
+        if (!objectHash || !date) {
+          await markItemStatus(item.id, 'failed', { safeMessage: 'Некорректный идентификатор дня календаря.' });
+          return 'failed';
+        }
+        const day = findSnapshotDayByObjectHash(snapshot.calendar, objectHash, date);
         if (!day) {
           await markItemStatus(item.id, 'failed', { safeMessage: 'День календаря не найден в снимке.' });
           return 'failed';
@@ -2191,9 +2552,16 @@ async function applyOneSafeItem(input: {
 
       case 'pricing_missing_internal':
       case 'pricing_value_drift': {
-        const entity = item.entityIdentity.replace(/^pricing:/, '');
-        const [externalObjectId, date] = entity.split('\0');
-        const day = snapshot.pricing.find((d) => d.externalObjectId === externalObjectId && d.date === date);
+        const parsed = parseHashedDayEntityIdentity('pricing', item.entityIdentity);
+        const objectHash = parsed?.objectHash
+          || text(item.externalIdentityHash)
+          || text(item.safeAfter.externalObjectIdHash);
+        const date = parsed?.date || text(item.safeAfter.date);
+        if (!objectHash || !date) {
+          await markItemStatus(item.id, 'failed', { safeMessage: 'Некорректный идентификатор цены.' });
+          return 'failed';
+        }
+        const day = findSnapshotDayByObjectHash(snapshot.pricing, objectHash, date);
         if (!day) {
           await markItemStatus(item.id, 'failed', { safeMessage: 'Цена не найдена в снимке.' });
           return 'failed';
@@ -2258,10 +2626,11 @@ async function applyOneSafeItem(input: {
       }
 
       case 'lease_run_mismatch': {
-        const leaseRunId = text(item.safeBefore.leaseRunId) || item.entityIdentity.replace(/^lease:/, '');
-        await releaseChannelLiveSyncLease(connection.id, leaseRunId);
-        await markItemStatus(item.id, 'applied');
-        return 'applied';
+        // Standalone lease mismatch is operator_review only — never auto-release.
+        await markItemStatus(item.id, 'skipped', {
+          safeMessage: 'Несовпадение lease требует проверки оператором. Автоснятие запрещено.',
+        });
+        return 'skipped';
       }
 
       case 'booking_missing_external':

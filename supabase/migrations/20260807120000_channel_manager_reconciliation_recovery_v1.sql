@@ -307,7 +307,10 @@ BEGIN
       || COALESCE(p_safe_run_metadata, '{}'::jsonb)
       || jsonb_build_object(
         'liveCore', true,
-        'liveCoreStage', 'completed',
+        'liveCoreStage', CASE
+          WHEN p_status = 'failed' THEN 'failed'
+          ELSE 'completed'
+        END,
         'reconciliationRecovery', true,
         'reconciliationRunId', p_reconciliation_run_id::text,
         'reportHashPrefix', substr(p_expected_report_hash, 1, 16)
@@ -386,6 +389,11 @@ DECLARE
   v_lease jsonb;
   v_lease_run_id text;
   v_lease_released boolean := false;
+  v_import_terminal_success boolean := false;
+  v_recon_terminal_success boolean := false;
+  v_both_failed boolean := false;
+  v_import_running boolean := false;
+  v_recon_applying boolean := false;
 BEGIN
   IF p_connection_id IS NULL
      OR p_import_run_id IS NULL
@@ -476,6 +484,116 @@ BEGIN
     );
   END IF;
 
+  v_import_terminal_success := v_import_run.status IN ('completed', 'completed_with_warnings');
+  v_recon_terminal_success := v_recon.status IN ('completed', 'completed_with_blockers');
+  v_both_failed := (v_import_run.status = 'failed' AND v_recon.status = 'failed');
+  v_import_running := (v_import_run.status = 'running');
+  v_recon_applying := (v_recon.status = 'applying');
+
+  -- Already successfully finalized: never downgrade to failed on ambiguous client/network retry.
+  IF v_import_terminal_success AND v_recon_terminal_success THEN
+    v_meta := COALESCE(v_connection.metadata, '{}'::jsonb);
+    v_lease := v_meta->'liveSyncLease';
+    v_lease_run_id := NULLIF(btrim(COALESCE(v_lease->>'runId', '')), '');
+    IF v_lease_run_id IS NOT NULL AND v_lease_run_id = p_import_run_id::text THEN
+      -- Lease may still be held after a lost finalize response; release matching lease only.
+      v_meta := jsonb_set(
+        v_meta,
+        '{liveSyncLease}',
+        jsonb_build_object(
+          'runId', p_import_run_id::text,
+          'status', 'released',
+          'releasedAt', COALESCE(p_finished_at, now()),
+          'importType', 'reconciliation_recovery',
+          'alreadyFinalized', true
+        ),
+        true
+      );
+      v_lease_released := true;
+      UPDATE public.booking_channel_manager_connections
+      SET
+        metadata = v_meta,
+        updated_at = COALESCE(p_finished_at, now())
+      WHERE id = p_connection_id;
+    END IF;
+
+    RETURN jsonb_build_object(
+      'success', true,
+      'status', v_recon.status,
+      'alreadyFinalized', true,
+      'reconciliationRunId', p_reconciliation_run_id::text,
+      'importRunId', p_import_run_id::text,
+      'cursorUnchanged', true,
+      'leaseReleased', v_lease_released,
+      'finishedAt', COALESCE(v_import_run.finished_at, v_recon.finished_at, p_finished_at, now())
+    );
+  END IF;
+
+  -- Already failed + failed: idempotent success without rewriting terminal rows.
+  IF v_both_failed THEN
+    v_meta := COALESCE(v_connection.metadata, '{}'::jsonb);
+    v_lease := v_meta->'liveSyncLease';
+    v_lease_run_id := NULLIF(btrim(COALESCE(v_lease->>'runId', '')), '');
+    IF v_lease_run_id IS NOT NULL AND v_lease_run_id = p_import_run_id::text THEN
+      v_meta := jsonb_set(
+        v_meta,
+        '{liveSyncLease}',
+        jsonb_build_object(
+          'runId', p_import_run_id::text,
+          'status', 'released',
+          'releasedAt', COALESCE(p_finished_at, now()),
+          'importType', 'reconciliation_recovery',
+          'failCompensation', true,
+          'alreadyFailed', true
+        ),
+        true
+      );
+      v_lease_released := true;
+      UPDATE public.booking_channel_manager_connections
+      SET
+        metadata = v_meta,
+        updated_at = COALESCE(p_finished_at, now())
+      WHERE id = p_connection_id;
+    END IF;
+
+    RETURN jsonb_build_object(
+      'success', true,
+      'status', 'failed',
+      'alreadyFailed', true,
+      'reconciliationRunId', p_reconciliation_run_id::text,
+      'importRunId', p_import_run_id::text,
+      'cursorUnchanged', true,
+      'leaseReleased', v_lease_released,
+      'finishedAt', COALESCE(v_import_run.finished_at, v_recon.finished_at, p_finished_at, now())
+    );
+  END IF;
+
+  -- Inconsistent terminal mix: fail closed, do not rewrite.
+  IF v_import_terminal_success OR v_recon_terminal_success
+     OR v_import_run.status = 'failed'
+     OR v_recon.status = 'failed' THEN
+    RETURN jsonb_build_object(
+      'success', false,
+      'code', 'inconsistent_terminal_state',
+      'message', 'import and reconciliation terminal states are inconsistent; refusing compensation rewrite',
+      'importStatus', v_import_run.status,
+      'reconciliationStatus', v_recon.status,
+      'cursorUnchanged', true
+    );
+  END IF;
+
+  -- Only running import + applying recon may be marked failed by compensation.
+  IF NOT (v_import_running AND v_recon_applying) THEN
+    RETURN jsonb_build_object(
+      'success', false,
+      'code', 'invalid_compensation_state',
+      'message', 'compensation requires running reconciliation_recovery import and applying reconciliation run',
+      'importStatus', v_import_run.status,
+      'reconciliationStatus', v_recon.status,
+      'cursorUnchanged', true
+    );
+  END IF;
+
   -- Mark reconciliation run failed (compensation path).
   UPDATE public.booking_channel_reconciliation_runs
   SET
@@ -490,9 +608,10 @@ BEGIN
         'failCompensatedAt', COALESCE(p_finished_at, now())
       ),
     updated_at = COALESCE(p_finished_at, now())
-  WHERE id = p_reconciliation_run_id;
+  WHERE id = p_reconciliation_run_id
+    AND status = 'applying';
 
-  -- Mark import run failed when still running (or reinforce failed). Never touch incrementalCursor.
+  -- Mark import run failed when still running. Never touch incrementalCursor.
   UPDATE public.booking_channel_import_runs
   SET
     status = 'failed',
@@ -510,7 +629,8 @@ BEGIN
         'reportHashPrefix', substr(p_expected_report_hash, 1, 16)
       ),
     updated_at = COALESCE(p_finished_at, now())
-  WHERE id = p_import_run_id;
+  WHERE id = p_import_run_id
+    AND status = 'running';
 
   -- Release only the matching liveSyncLease; preserve incrementalCursor unchanged.
   v_meta := COALESCE(v_connection.metadata, '{}'::jsonb);

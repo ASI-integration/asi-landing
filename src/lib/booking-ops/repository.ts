@@ -363,10 +363,26 @@ export async function syncBookingOpsTasksForRecordId(
 export async function updateBookingOpsRecord(
   id: string,
   input: UpdateBookingOpsInput,
-  options?: { actorType?: BookingOpsEventActorType },
+  options?: {
+    actorType?: BookingOpsEventActorType;
+    /** Server-only contour guard: SELECT/UPDATE require id + account_id + property_id. */
+    expectedScope?: {
+      accountId: string;
+      propertyId: string;
+    };
+  },
 ): Promise<{ ok: boolean; record?: BookingOpsRecord; error?: string }> {
   const recordId = text(id);
   if (!recordId) return { ok: false, error: 'id_required' };
+  const expectedScope = options?.expectedScope
+    ? {
+      accountId: text(options.expectedScope.accountId),
+      propertyId: text(options.expectedScope.propertyId),
+    }
+    : null;
+  if (expectedScope && (!expectedScope.accountId || !expectedScope.propertyId)) {
+    return { ok: false, error: 'expected_scope_invalid' };
+  }
 
   const patch: Record<string, unknown> = { updated_at: new Date().toISOString() };
 
@@ -439,23 +455,36 @@ export async function updateBookingOpsRecord(
   }
   if (input.mvdNotes !== undefined) patch.mvd_notes = text(input.mvdNotes) || null;
 
-  const { data: previousData, error: previousError } = await supabase
+  let previousQuery = supabase
     .from('booking_ops_records')
     .select('*')
-    .eq('id', recordId)
-    .maybeSingle();
+    .eq('id', recordId);
+  if (expectedScope) {
+    previousQuery = previousQuery
+      .eq('account_id', expectedScope.accountId)
+      .eq('property_id', expectedScope.propertyId);
+  }
+  const { data: previousData, error: previousError } = await previousQuery.maybeSingle();
   if (previousError) return { ok: false, error: previousError.message };
-  if (!previousData) return { ok: false, error: 'not_found' };
+  if (!previousData) {
+    return { ok: false, error: expectedScope ? 'scope_mismatch' : 'not_found' };
+  }
 
-  const { data, error } = await supabase
+  let updateQuery = supabase
     .from('booking_ops_records')
     .update(patch)
-    .eq('id', recordId)
-    .select('*')
-    .maybeSingle();
+    .eq('id', recordId);
+  if (expectedScope) {
+    updateQuery = updateQuery
+      .eq('account_id', expectedScope.accountId)
+      .eq('property_id', expectedScope.propertyId);
+  }
+  const { data, error } = await updateQuery.select('*').maybeSingle();
 
   if (error) return { ok: false, error: error.message };
-  if (!data) return { ok: false, error: 'not_found' };
+  if (!data) {
+    return { ok: false, error: expectedScope ? 'scope_mismatch' : 'not_found' };
+  }
   const previous = previousData as BookingOpsRow;
   const changedKeys = Object.keys(patch).filter((key) => (
     key !== 'updated_at'

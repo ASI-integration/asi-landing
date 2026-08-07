@@ -426,6 +426,109 @@ describe.skipIf(!hasDisposablePg)('Channel Manager Reconciliation PostgreSQL sch
       expect(compensAfter.rows[0]?.import_status).toBe('failed');
       expect(compensAfter.rows[0]?.recon_status).toBe('failed');
 
+      // Idempotent compensation after already-failed finalize.
+      const compensIdempotent = await client.query(
+        `SELECT public.channel_manager_fail_reconciliation_recovery_v1(
+           $1::uuid, $2::uuid, $3::uuid, $4, $5::timestamptz,
+           'compensated fail-closed retry', $6::jsonb, $7::jsonb
+         ) AS payload`,
+        [
+          connectionId,
+          compensImportRunId,
+          compensReconRunId,
+          compensReportHash,
+          new Date().toISOString(),
+          JSON.stringify({ code: 'retry', message: 'should stay failed without rewrite' }),
+          JSON.stringify({ failCompensation: true }),
+        ],
+      );
+      const compensIdempotentPayload = compensIdempotent.rows[0]?.payload as Record<string, unknown>;
+      expect(compensIdempotentPayload.success).toBe(true);
+      expect(compensIdempotentPayload.alreadyFailed).toBe(true);
+      expect(compensIdempotentPayload.cursorUnchanged).toBe(true);
+
+      // Compensation after already-successful finalize must not downgrade terminal rows.
+      const afterSuccessCompens = await client.query(
+        `SELECT public.channel_manager_fail_reconciliation_recovery_v1(
+           $1::uuid, $2::uuid, $3::uuid, $4, $5::timestamptz,
+           'must not downgrade', $6::jsonb, $7::jsonb
+         ) AS payload`,
+        [
+          connectionId,
+          reconImportRunId,
+          reconRunId,
+          reportHash,
+          new Date().toISOString(),
+          JSON.stringify({ code: 'ambiguous_finalize', message: 'client lost success response' }),
+          JSON.stringify({ failCompensation: true }),
+        ],
+      );
+      const afterSuccessPayload = afterSuccessCompens.rows[0]?.payload as Record<string, unknown>;
+      expect(afterSuccessPayload.success).toBe(true);
+      expect(afterSuccessPayload.alreadyFinalized).toBe(true);
+      const afterSuccessRows = await client.query(
+        `SELECT
+           r.status AS import_status,
+           r.metadata->>'liveCoreStage' AS live_core_stage,
+           rr.status AS recon_status
+         FROM public.booking_channel_import_runs r
+         JOIN public.booking_channel_reconciliation_runs rr ON rr.id = $2
+         WHERE r.id = $1`,
+        [reconImportRunId, reconRunId],
+      );
+      expect(afterSuccessRows.rows[0]?.import_status).toBe('completed');
+      expect(afterSuccessRows.rows[0]?.live_core_stage).toBe('completed');
+      expect(afterSuccessRows.rows[0]?.recon_status).toBe('completed');
+
+      // Finalize with p_status=failed must set liveCoreStage=failed.
+      const failFinalizeImportId = randomUUID();
+      const failFinalizeReconId = randomUUID();
+      const failFinalizeHash = '9999999999999999999999999999999999999999999999999999999999999999';
+      await client.query(
+        `INSERT INTO public.booking_channel_import_runs
+           (id, connection_id, provider, status, import_type, started_at)
+         VALUES ($1, $2, 'manual', 'running', 'reconciliation_recovery', now())`,
+        [failFinalizeImportId, connectionId],
+      );
+      await client.query(
+        `INSERT INTO public.booking_channel_reconciliation_runs
+           (id, connection_id, provider, mode, status, snapshot_kind, snapshot_hash, report_hash, started_at)
+         VALUES ($1, $2, 'manual', 'apply', 'applying', 'complete',
+           '8888888888888888888888888888888888888888888888888888888888888888',
+           $3, now())`,
+        [failFinalizeReconId, connectionId, failFinalizeHash],
+      );
+      const failFinalize = await client.query(
+        `SELECT public.channel_manager_finalize_reconciliation_recovery_v1(
+           $1::uuid, $2::uuid, $3::uuid, $4, $5::timestamptz, 'failed',
+           $6::jsonb, $7::jsonb, 'finalize failed stage', $8::jsonb
+         ) AS payload`,
+        [
+          connectionId,
+          failFinalizeImportId,
+          failFinalizeReconId,
+          failFinalizeHash,
+          new Date().toISOString(),
+          JSON.stringify({ failed: 1 }),
+          JSON.stringify({ reconciliationRecovery: true }),
+          JSON.stringify({ code: 'apply_failed', message: 'forced failed finalize' }),
+        ],
+      );
+      expect((failFinalize.rows[0]?.payload as Record<string, unknown>).success).toBe(true);
+      const failFinalizeRows = await client.query(
+        `SELECT
+           r.status AS import_status,
+           r.metadata->>'liveCoreStage' AS live_core_stage,
+           rr.status AS recon_status
+         FROM public.booking_channel_import_runs r
+         JOIN public.booking_channel_reconciliation_runs rr ON rr.id = $2
+         WHERE r.id = $1`,
+        [failFinalizeImportId, failFinalizeReconId],
+      );
+      expect(failFinalizeRows.rows[0]?.import_status).toBe('failed');
+      expect(failFinalizeRows.rows[0]?.live_core_stage).toBe('failed');
+      expect(failFinalizeRows.rows[0]?.recon_status).toBe('failed');
+
       const grants = await client.query(`
         SELECT
           has_function_privilege(
