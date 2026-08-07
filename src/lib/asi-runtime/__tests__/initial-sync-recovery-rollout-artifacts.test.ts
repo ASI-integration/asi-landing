@@ -200,46 +200,59 @@ describe('Initial Sync Recovery v1 production rollout artifacts', () => {
     expect(runbook).toContain('31082052360');
   });
 
-  it('selects the exact asi-landing PM2 application before any database connection', () => {
+  it('uses GitHub production SUPABASE_DB_URL on the runner and never falls back to PM2/.env DB credentials', () => {
     const workflowText = fs.readFileSync(workflowPath, 'utf8');
 
-    expect(workflowText).not.toContain('pm2 env 0');
-    expect(workflowText.match(/\bpm2 jlist\b/g)).toHaveLength(1);
-    expect(workflowText).toContain('name == "asi-landing"');
-    expect(workflowText).toContain('status == "online"');
-    expect(workflowText).toContain('cwd == "/var/www/asi/current"');
-    expect(workflowText).toContain('exec_path.endswith("/node_modules/next/dist/bin/next")');
-    expect(workflowText).not.toMatch(/name\s*==\s*"asi-ops-alert-scheduler"/);
-    expect(workflowText).not.toMatch(/\(\^asi\|\\\/asi\\\/\|asi-landing\|landing-asi\)/);
-    expect(workflowText).toMatch(/ASI application identity error/);
-    expect(workflowText).toContain('expected exactly one online asi-landing process');
-    expect(workflowText).toContain('pm2 env "$ASI_APP_PM_ID"');
-    expect(workflowText).toContain('if [[ "$ASI_APP_MATCH_COUNT" != "1" ]]; then');
-    expect(workflowText.indexOf('if [[ "$ASI_APP_MATCH_COUNT" != "1" ]]; then')).toBeLessThan(
-      workflowText.indexOf('pm2 env "$ASI_APP_PM_ID"'),
-    );
-    expect(workflowText.indexOf('pm2 env "$ASI_APP_PM_ID"')).toBeLessThan(
-      workflowText.indexOf('psycopg2.connect'),
-    );
+    expect(workflowText).toContain('EXPECTED_SUPABASE_PROJECT_REF: jwinifeienvzejofmbua');
+    expect(workflowText).toContain('SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}');
+    expect(workflowText).toContain('environment: production');
+    expect(workflowText).toContain('APPLY_20260805120000_RECOVERY_V1_TO_PRODUCTION');
+    expect(workflowText).toContain(`AUTHORIZED_MIGRATION_SHA256: ${migrationSha256}`);
 
-    const appIdentityIndex = workflowText.indexOf('name == "asi-landing"');
-    const identityVerifiedIndex = workflowText.indexOf('production_supabase_identity_verified=yes');
-    const psqlIndex = workflowText.search(/\bpsql\b/);
-    const psycopgIndex = workflowText.indexOf('psycopg2.connect');
-    expect(appIdentityIndex).toBeGreaterThan(-1);
-    expect(identityVerifiedIndex).toBeGreaterThan(appIdentityIndex);
-    expect(psqlIndex).toBeGreaterThan(identityVerifiedIndex);
-    expect(psycopgIndex).toBeGreaterThan(identityVerifiedIndex);
+    expect(workflowText).toContain('SUPABASE_DB_URL secret is missing.');
+    expect(workflowText).toContain('SUPABASE_DB_URL project identity mismatch.');
+    expect(workflowText).toContain('production_supabase_db_identity_verified=yes');
+    expect(workflowText).toContain('pre_sql_identity_reverified=yes');
+    expect(workflowText).toContain('hostname_has_expected_ref=');
+    expect(workflowText).toContain('username_has_expected_ref=');
+    expect(workflowText).toContain("expected in hostname");
+    expect(workflowText).toContain("expected in username");
 
-    expect(workflowText).toContain('SUPABASE_DB_URL:');
-    expect(workflowText).toContain('DATABASE_URL:');
-    expect(workflowText).toContain('PRODUCTION_DATABASE_URL:');
-    expect(workflowText).toContain('NEXT_PUBLIC_SUPABASE_URL:');
-    expect(workflowText).toContain('SUPABASE_URL:');
-    expect(workflowText).not.toMatch(/\becho\s+.*\$\{?(PM2_ENV|DB_URL|SUPABASE_DB_URL|DATABASE_URL|PRODUCTION_DATABASE_URL|NEXT_PUBLIC_SUPABASE_URL|SUPABASE_URL|PM2_SUPABASE_DB_URL|PM2_DATABASE_URL|PM2_PRODUCTION_DATABASE_URL|PM2_NEXT_PUBLIC_SUPABASE_URL|PM2_SUPABASE_URL)\}?/);
+    const missingSecretIndex = workflowText.indexOf('SUPABASE_DB_URL secret is missing.');
+    const identityVerifiedIndex = workflowText.indexOf('production_supabase_db_identity_verified=yes');
+    const installPsqlIndex = workflowText.indexOf('postgresql-client');
+    const psqlIndex = workflowText.indexOf('psql -X "$SUPABASE_DB_URL"');
+    const migrationStatusIndex = workflowText.indexOf('MIGRATION_STATUS=applied_and_verified');
+
+    expect(missingSecretIndex).toBeGreaterThan(-1);
+    expect(identityVerifiedIndex).toBeGreaterThan(missingSecretIndex);
+    expect(installPsqlIndex).toBeGreaterThan(identityVerifiedIndex);
+    expect(psqlIndex).toBeGreaterThan(installPsqlIndex);
+    expect(migrationStatusIndex).toBeGreaterThan(psqlIndex);
+
+    expect(workflowText).toContain('--single-transaction');
+    expect(workflowText).toContain('channel_manager_live_core_recovery_expected_fk_edges()');
+    expect(workflowText).toContain("NOTIFY pgrst, 'reload schema'");
+
+    // No VPS / PM2 / shared env-file DB credential transport after this change.
+    expect(workflowText).not.toMatch(/\bpm2\b/i);
+    expect(workflowText).not.toMatch(/\.env\.production\.live/);
+    expect(workflowText).not.toContain('VPS_HOST');
+    expect(workflowText).not.toContain('VPS_SSH_KEY');
+    expect(workflowText).not.toContain('PM2_SUPABASE_DB_URL');
+    expect(workflowText).not.toContain('ENV_FILE_SUPABASE_DB_URL');
+    expect(workflowText).not.toContain('ENV_FILE_DATABASE_URL');
+    expect(workflowText).not.toContain('ENV_FILE_PRODUCTION_DATABASE_URL');
+    expect(workflowText).not.toContain('psycopg2.connect');
+    expect(workflowText).not.toMatch(/secrets\.DATABASE_URL|secrets\.PRODUCTION_DATABASE_URL/);
+
+    expect(workflowText).not.toMatch(/\becho\s+"\$\{?SUPABASE_DB_URL\}?"/);
+    expect(workflowText).not.toMatch(/\becho\s+\$\{?SUPABASE_DB_URL\}?\b/);
     expect(workflowText).not.toMatch(/\bprintenv\b/);
     expect(workflowText).not.toMatch(/\bset\s+-x\b/);
-    expect(workflowText).not.toContain('echo "$ASI_APP_SELECTION"');
-    expect(workflowText).not.toContain('echo "$PM2_ENV"');
+    expect(workflowText).toContain('echo "::add-mask::${SUPABASE_DB_URL}"');
+    expect(workflowText.match(/echo "::add-mask::\$\{SUPABASE_DB_URL\}"/g)?.length).toBeGreaterThanOrEqual(2);
+    expect(workflowText).not.toMatch(/supabase\s+db\s+push/i);
+    expect(workflowText).not.toMatch(/run_initial_sync|cleanup_recovery|live-core-acceptance|deploy-staging/i);
   });
 });

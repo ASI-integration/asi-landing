@@ -22,6 +22,7 @@ env:
   AUTHORIZED_MIGRATION: supabase/migrations/20260805120000_channel_manager_live_core_synthetic_recovery_v1.sql
   AUTHORIZED_MIGRATION_SHA256: b87133906dea94b148b4778cd15006be9acec1e4cd995512ca975b12d8c69868
   AUTHORIZED_MIGRATION_BLOB: f56db2124b2e91782fcf05be7fb37b51998808b3
+  EXPECTED_SUPABASE_PROJECT_REF: jwinifeienvzejofmbua
 
 jobs:
   exact_artifact_preflight:
@@ -95,225 +96,111 @@ jobs:
           )"
           test "$ACTUAL_SHA256" = "$AUTHORIZED_MIGRATION_SHA256"
 
-      - name: Apply only the authorized migration on the production VPS database
+      - name: Require GitHub production SUPABASE_DB_URL and verify project identity
         shell: bash
         env:
-          VPS_HOST: ${{ secrets.VPS_HOST }}
-          VPS_PORT: ${{ secrets.VPS_PORT }}
-          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          EXPECTED_SUPABASE_PROJECT_REF: ${{ env.EXPECTED_SUPABASE_PROJECT_REF }}
         run: |
           set -euo pipefail
-          if [[ -z "${VPS_HOST:-}" || -z "${VPS_SSH_KEY:-}" ]]; then
-            echo "::error::Missing VPS_HOST or VPS_SSH_KEY"
+          if [[ -z "${SUPABASE_DB_URL:-}" ]]; then
+            echo "::error::SUPABASE_DB_URL secret is missing."
             exit 1
           fi
+          echo "::add-mask::${SUPABASE_DB_URL}"
 
-          REMOTE_USER="project_ayfaar"
-          REMOTE_PORT="${VPS_PORT:-22}"
-          REMOTE_TMP="/home/project_ayfaar/asi-migration-tmp/20260805120000-recovery-v1"
-          REMOTE_SQL="${REMOTE_TMP}/20260805120000_channel_manager_live_core_synthetic_recovery_v1.sql"
-
-          mkdir -p ~/.ssh
-          chmod 700 ~/.ssh
-          SSH_KEY=~/.ssh/id_ed25519
-          printf '%s\n' "$VPS_SSH_KEY" > "$SSH_KEY"
-          chmod 600 "$SSH_KEY"
-          touch ~/.ssh/known_hosts
-          chmod 600 ~/.ssh/known_hosts
-          ssh-keyscan -p "$REMOTE_PORT" -H "$VPS_HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
-
-          SSH_OPTS=(-i "$SSH_KEY" -p "$REMOTE_PORT" -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -o LogLevel=ERROR -o ConnectTimeout=20)
-          SCP_OPTS=(-i "$SSH_KEY" -P "$REMOTE_PORT" -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -o LogLevel=ERROR -o ConnectTimeout=20)
-
-          ssh "${SSH_OPTS[@]}" "${REMOTE_USER}@${VPS_HOST}" "mkdir -p '${REMOTE_TMP}' && chmod 700 '${REMOTE_TMP}'"
-          scp "${SCP_OPTS[@]}" "$AUTHORIZED_MIGRATION" "${REMOTE_USER}@${VPS_HOST}:${REMOTE_SQL}"
-
-          ssh "${SSH_OPTS[@]}" "${REMOTE_USER}@${VPS_HOST}" \
-            "AUTHORIZED_PRE_MIGRATION_SHA='${AUTHORIZED_PRE_MIGRATION_SHA}' AUTHORIZED_MIGRATION_SHA256='${AUTHORIZED_MIGRATION_SHA256}' REMOTE_SQL='${REMOTE_SQL}' bash -s" <<'REMOTE'
-          set -euo pipefail
-
-          printf '%s  %s\n' "$AUTHORIZED_MIGRATION_SHA256" "$REMOTE_SQL" | sha256sum --check --strict
-
-          VERSION_JSON="$(curl --fail --silent --show-error --max-time 20 http://127.0.0.1:3000/api/version)"
-          VERSION_JSON="$VERSION_JSON" python3 - <<'PY'
-          import json
-          import os
-
-          value = json.loads(os.environ.get("VERSION_JSON", "{}"))
-          expected = os.environ["AUTHORIZED_PRE_MIGRATION_SHA"]
-          expected_path = f"/var/www/asi/releases/{expected}"
-          if value.get("environment") != "production" or value.get("sha") != expected:
-              raise SystemExit("production_runtime_identity_mismatch")
-          if value.get("releasePath") != expected_path:
-              raise SystemExit("production_release_path_mismatch")
-          print(f"production_runtime_verified={expected}")
-          PY
-
-          ENV_FILE=/var/www/asi/shared/.env.production.live
-          if [[ ! -f "$ENV_FILE" ]]; then
-            echo "Production environment file is missing."
-            exit 2
-          fi
-          set -a
-          # shellcheck disable=SC1090
-          source "$ENV_FILE"
-          set +a
-          ENV_FILE_NEXT_PUBLIC_SUPABASE_URL="${NEXT_PUBLIC_SUPABASE_URL:-}"
-          ENV_FILE_SUPABASE_DB_URL="${SUPABASE_DB_URL:-}"
-          ENV_FILE_DATABASE_URL="${DATABASE_URL:-}"
-          ENV_FILE_PRODUCTION_DATABASE_URL="${PRODUCTION_DATABASE_URL:-}"
-
-          ASI_APP_SELECTION="$(
-            sudo -u project_ayfaar pm2 jlist | python3 -c '
-          import json
-          import sys
-
-          processes = json.load(sys.stdin)
-          matches = []
-          for process in processes:
-              env = process.get("pm2_env") or {}
-              name = str(process.get("name") or "")
-              status = str(env.get("status") or "")
-              cwd = str(env.get("pm_cwd") or "")
-              exec_path = str(env.get("pm_exec_path") or "")
-              if (
-                  name == "asi-landing"
-                  and status == "online"
-                  and cwd == "/var/www/asi/current"
-                  and exec_path.endswith("/node_modules/next/dist/bin/next")
-              ):
-                  matches.append(
-                      {
-                          "pm_id": process.get("pm_id"),
-                          "name": name,
-                          "status": status,
-                          "cwd": cwd,
-                          "exec_path": exec_path,
-                      }
-                  )
-
-          print("match_count=" + str(len(matches)))
-          if len(matches) == 1:
-              selected = matches[0]
-              print("pm_id=" + str(selected.get("pm_id")))
-              print("name=" + str(selected.get("name")))
-              print("status=" + str(selected.get("status")))
-              print("cwd=" + str(selected.get("cwd")))
-              print("exec_path=" + str(selected.get("exec_path")))
-          '
-          )"
-
-          ASI_APP_MATCH_COUNT="$(printf '%s\n' "$ASI_APP_SELECTION" | sed -nE 's/^match_count=([0-9]+)$/\1/p' | head -n 1)"
-          ASI_APP_PM_ID="$(printf '%s\n' "$ASI_APP_SELECTION" | sed -nE 's/^pm_id=(.+)$/\1/p' | head -n 1)"
-          ASI_APP_NAME="$(printf '%s\n' "$ASI_APP_SELECTION" | sed -nE 's/^name=(.+)$/\1/p' | head -n 1)"
-          ASI_APP_STATUS="$(printf '%s\n' "$ASI_APP_SELECTION" | sed -nE 's/^status=(.+)$/\1/p' | head -n 1)"
-          ASI_APP_CWD="$(printf '%s\n' "$ASI_APP_SELECTION" | sed -nE 's/^cwd=(.+)$/\1/p' | head -n 1)"
-          ASI_APP_EXEC="$(printf '%s\n' "$ASI_APP_SELECTION" | sed -nE 's/^exec_path=(.+)$/\1/p' | head -n 1)"
-
-          printf '[asi-app] exact_match_count=%s\n' "${ASI_APP_MATCH_COUNT:-0}"
-          if [[ "$ASI_APP_MATCH_COUNT" != "1" ]]; then
-            echo "ASI application identity error: expected exactly one online asi-landing process at /var/www/asi/current ending with /node_modules/next/dist/bin/next."
-            exit 2
-          fi
-          printf '[asi-app] selected_pm_id=%s name=%s status=%s cwd=%s execPath=%s\n' \
-            "$ASI_APP_PM_ID" "$ASI_APP_NAME" "$ASI_APP_STATUS" "$ASI_APP_CWD" "$ASI_APP_EXEC"
-
-          PM2_ENV="$(sudo -u project_ayfaar pm2 env "$ASI_APP_PM_ID" 2>/dev/null || true)"
-          PM2_SUPABASE_DB_URL=""
-          PM2_DATABASE_URL=""
-          PM2_PRODUCTION_DATABASE_URL=""
-          PM2_NEXT_PUBLIC_SUPABASE_URL=""
-          PM2_SUPABASE_URL=""
-          while IFS= read -r line; do
-            case "$line" in
-              SUPABASE_DB_URL:*)
-                val="${line#SUPABASE_DB_URL:}"
-                val="${val#"${val%%[![:space:]]*}"}"
-                PM2_SUPABASE_DB_URL="$val"
-                ;;
-              DATABASE_URL:*)
-                val="${line#DATABASE_URL:}"
-                val="${val#"${val%%[![:space:]]*}"}"
-                PM2_DATABASE_URL="$val"
-                ;;
-              PRODUCTION_DATABASE_URL:*)
-                val="${line#PRODUCTION_DATABASE_URL:}"
-                val="${val#"${val%%[![:space:]]*}"}"
-                PM2_PRODUCTION_DATABASE_URL="$val"
-                ;;
-              NEXT_PUBLIC_SUPABASE_URL:*)
-                val="${line#NEXT_PUBLIC_SUPABASE_URL:}"
-                val="${val#"${val%%[![:space:]]*}"}"
-                PM2_NEXT_PUBLIC_SUPABASE_URL="$val"
-                ;;
-              SUPABASE_URL:*)
-                val="${line#SUPABASE_URL:}"
-                val="${val#"${val%%[![:space:]]*}"}"
-                PM2_SUPABASE_URL="$val"
-                ;;
-            esac
-          done <<< "$PM2_ENV"
-
-          if [[ -n "${PM2_SUPABASE_DB_URL}" ]]; then
-            DB_URL="$PM2_SUPABASE_DB_URL"
-          elif [[ -n "${PM2_DATABASE_URL}" ]]; then
-            DB_URL="$PM2_DATABASE_URL"
-          elif [[ -n "${PM2_PRODUCTION_DATABASE_URL}" ]]; then
-            DB_URL="$PM2_PRODUCTION_DATABASE_URL"
-          elif [[ -n "${ENV_FILE_SUPABASE_DB_URL}" ]]; then
-            DB_URL="$ENV_FILE_SUPABASE_DB_URL"
-          elif [[ -n "${ENV_FILE_DATABASE_URL}" ]]; then
-            DB_URL="$ENV_FILE_DATABASE_URL"
-          else
-            DB_URL="${ENV_FILE_PRODUCTION_DATABASE_URL}"
-          fi
-
-          if [[ -n "${ENV_FILE_NEXT_PUBLIC_SUPABASE_URL}" ]]; then
-            PUBLIC_SUPABASE_URL="$ENV_FILE_NEXT_PUBLIC_SUPABASE_URL"
-          elif [[ -n "${PM2_NEXT_PUBLIC_SUPABASE_URL}" ]]; then
-            PUBLIC_SUPABASE_URL="$PM2_NEXT_PUBLIC_SUPABASE_URL"
-          else
-            PUBLIC_SUPABASE_URL="${PM2_SUPABASE_URL}"
-          fi
-
-          if [[ -z "$DB_URL" || -z "$PUBLIC_SUPABASE_URL" ]]; then
-            echo "Production database identity is incomplete."
-            exit 2
-          fi
-          DB_URL="$DB_URL" NEXT_PUBLIC_SUPABASE_URL="$PUBLIC_SUPABASE_URL" python3 - <<'PY'
+          # Identity only: never print URL, password, or userinfo.
+          SUPABASE_DB_URL="$SUPABASE_DB_URL" EXPECTED_SUPABASE_PROJECT_REF="$EXPECTED_SUPABASE_PROJECT_REF" python3 - <<'PY'
           import os
           from urllib.parse import unquote, urlparse
 
-          public_host = (urlparse(os.environ["NEXT_PUBLIC_SUPABASE_URL"]).hostname or "").lower()
-          public_ref = public_host.split(".", 1)[0]
-          database = urlparse(os.environ["DB_URL"])
-          database_host = (database.hostname or "").lower()
-          database_user = unquote(database.username or "").lower()
-          if not public_ref or ".supabase.co" not in public_host:
-              raise SystemExit("production_supabase_public_identity_invalid")
-          if public_ref not in database_host and public_ref not in database_user:
-              raise SystemExit("production_supabase_database_identity_mismatch")
-          print("production_supabase_identity_verified=yes")
+          raw = os.environ.get("SUPABASE_DB_URL", "")
+          expected = (os.environ.get("EXPECTED_SUPABASE_PROJECT_REF") or "").strip().lower()
+
+          if not raw or not raw.strip():
+              raise SystemExit("SUPABASE_DB_URL secret is missing.")
+
+          normalized = raw.strip()
+          if len(normalized) >= 2 and normalized[0] in ("'", '"', "`") and normalized[-1] == normalized[0]:
+              normalized = normalized[1:-1].strip()
+          if not normalized or ("\r" in normalized) or ("\n" in normalized):
+              raise SystemExit("SUPABASE_DB_URL is invalid.")
+
+          parsed = urlparse(normalized)
+          scheme_ok = parsed.scheme in ("postgres", "postgresql")
+          hostname = (parsed.hostname or "").lower()
+          username = unquote(parsed.username or "").lower()
+          host_has_ref = bool(expected) and expected in hostname
+          user_has_ref = bool(expected) and expected in username
+
+          print(f"secret_present=true")
+          print(f"scheme_is_postgres={str(scheme_ok).lower()}")
+          print(f"hostname_has_expected_ref={str(host_has_ref).lower()}")
+          print(f"username_has_expected_ref={str(user_has_ref).lower()}")
+          print(f"expected_project_ref={expected}")
+
+          if not scheme_ok:
+              raise SystemExit("SUPABASE_DB_URL must be a postgres/postgresql URL.")
+          if not host_has_ref and not user_has_ref:
+              raise SystemExit("SUPABASE_DB_URL project identity mismatch.")
+          print("production_supabase_db_identity_verified=yes")
           PY
 
-          VERIFY_SQL="WITH expected(signature) AS (
-            VALUES
-              ('public.channel_manager_live_core_recovery_expected_fk_edges()'),
-              ('public.channel_manager_live_core_booking_ops_fk_children(uuid)'),
-              ('public.channel_manager_live_core_synthetic_recovery_cleanup(text,boolean,uuid,text,text,text,jsonb,uuid,uuid,uuid,uuid[])')
-          ), resolved AS (
-            SELECT to_regprocedure(signature) AS oid FROM expected
-          )
-          SELECT CASE
-            WHEN count(*) = 3
-             AND bool_and(oid IS NOT NULL)
-             AND bool_and((SELECT prosecdef FROM pg_proc WHERE pg_proc.oid = resolved.oid))
-             AND bool_and(coalesce((SELECT proconfig @> ARRAY['search_path=public'] FROM pg_proc WHERE pg_proc.oid = resolved.oid), false))
-             AND bool_and(has_function_privilege('service_role', oid, 'EXECUTE'))
-             AND bool_and(NOT has_function_privilege('anon', oid, 'EXECUTE'))
-             AND bool_and(NOT has_function_privilege('authenticated', oid, 'EXECUTE'))
-            THEN 'verified' ELSE 'failed' END
-          FROM resolved;"
+      - name: Reverify public production runtime identity before SQL
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION_JSON="$(curl --fail --silent --show-error --max-time 20 https://asi-global.ru/api/version)"
+          VERSION_JSON="$VERSION_JSON" node <<'NODE'
+          const value = JSON.parse(process.env.VERSION_JSON || '{}');
+          const expected = process.env.AUTHORIZED_PRE_MIGRATION_SHA;
+          if (value.environment !== 'production' || value.sha !== expected) {
+            throw new Error(`Production release mismatch before SQL: expected ${expected}, received ${String(value.sha || 'unknown')}`);
+          }
+          console.log(`pre_sql_production_runtime_verified=${value.sha}`);
+          NODE
+
+      - name: Install PostgreSQL client
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq postgresql-client
+
+      - name: Apply only the authorized migration via GitHub production SUPABASE_DB_URL
+        shell: bash
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          EXPECTED_SUPABASE_PROJECT_REF: ${{ env.EXPECTED_SUPABASE_PROJECT_REF }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${SUPABASE_DB_URL:-}" ]]; then
+            echo "::error::SUPABASE_DB_URL secret is missing."
+            exit 1
+          fi
+          echo "::add-mask::${SUPABASE_DB_URL}"
+
+          # Fail closed again immediately before SQL (no VPS process-env or shared-env DB credential fallback).
+          SUPABASE_DB_URL="$SUPABASE_DB_URL" EXPECTED_SUPABASE_PROJECT_REF="$EXPECTED_SUPABASE_PROJECT_REF" python3 - <<'PY'
+          import os
+          from urllib.parse import unquote, urlparse
+
+          raw = os.environ.get("SUPABASE_DB_URL", "")
+          expected = (os.environ.get("EXPECTED_SUPABASE_PROJECT_REF") or "").strip().lower()
+          if not raw or not raw.strip():
+              raise SystemExit("SUPABASE_DB_URL secret is missing.")
+          normalized = raw.strip()
+          if len(normalized) >= 2 and normalized[0] in ("'", '"', "`") and normalized[-1] == normalized[0]:
+              normalized = normalized[1:-1].strip()
+          parsed = urlparse(normalized)
+          hostname = (parsed.hostname or "").lower()
+          username = unquote(parsed.username or "").lower()
+          if parsed.scheme not in ("postgres", "postgresql"):
+              raise SystemExit("SUPABASE_DB_URL must be a postgres/postgresql URL.")
+          if expected not in hostname and expected not in username:
+              raise SystemExit("SUPABASE_DB_URL project identity mismatch.")
+          print("pre_sql_identity_reverified=yes")
+          PY
 
           VERIFY_BLOCK="DO \$verify\$
           DECLARE
@@ -346,56 +233,23 @@ jobs:
           END
           \$verify\$;"
 
-          if command -v psql >/dev/null 2>&1; then
-            psql -X "$DB_URL" --set ON_ERROR_STOP=1 --single-transaction \
-              --file "$REMOTE_SQL" \
-              --command "NOTIFY pgrst, 'reload schema';" \
-              --command "$VERIFY_BLOCK"
-            VERIFY_RESULT=verified
-          else
-            VENV="${REMOTE_SQL}.venv"
-            python3 -m venv "$VENV"
-            "$VENV/bin/pip" install --quiet 'psycopg2-binary==2.9.10'
-            DB_URL="$DB_URL" REMOTE_SQL="$REMOTE_SQL" VERIFY_SQL="$VERIFY_SQL" "$VENV/bin/python" - <<'PY'
-            import os
-            from pathlib import Path
-            import psycopg2
+          psql -X "$SUPABASE_DB_URL" --set ON_ERROR_STOP=1 --single-transaction \
+            --file "$AUTHORIZED_MIGRATION" \
+            --command "NOTIFY pgrst, 'reload schema';" \
+            --command "$VERIFY_BLOCK"
 
-            connection = psycopg2.connect(os.environ["DB_URL"])
-            try:
-                with connection.cursor() as cursor:
-                    cursor.execute(Path(os.environ["REMOTE_SQL"]).read_text(encoding="utf-8"))
-                    cursor.execute("NOTIFY pgrst, 'reload schema';")
-                    cursor.execute(os.environ["VERIFY_SQL"])
-                    result = cursor.fetchone()
-                    if not result or result[0] != "verified":
-                        raise RuntimeError("migration_verification_failed")
-                connection.commit()
-            except Exception:
-                connection.rollback()
-                raise
-            finally:
-                connection.close()
-            print("migration_verification=verified")
-            PY
-            VERIFY_RESULT=verified
-          fi
-
-          if [[ "$VERIFY_RESULT" != "verified" ]]; then
-            echo "Migration verification failed."
-            exit 3
-          fi
-
-          VERSION_JSON="$(curl --fail --silent --show-error --max-time 20 http://127.0.0.1:3000/api/version)"
-          VERSION_JSON="$VERSION_JSON" python3 - <<'PY'
-          import json
-          import os
-
-          value = json.loads(os.environ.get("VERSION_JSON", "{}"))
-          expected = os.environ["AUTHORIZED_PRE_MIGRATION_SHA"]
-          if value.get("environment") != "production" or value.get("sha") != expected:
-              raise SystemExit("production_runtime_changed_during_migration")
-          print("post_migration_runtime_unchanged=yes")
-          PY
           echo "MIGRATION_STATUS=applied_and_verified"
-          REMOTE
+
+      - name: Confirm production runtime unchanged after migration
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION_JSON="$(curl --fail --silent --show-error --max-time 20 https://asi-global.ru/api/version)"
+          VERSION_JSON="$VERSION_JSON" node <<'NODE'
+          const value = JSON.parse(process.env.VERSION_JSON || '{}');
+          const expected = process.env.AUTHORIZED_PRE_MIGRATION_SHA;
+          if (value.environment !== 'production' || value.sha !== expected) {
+            throw new Error(`Production runtime changed during migration: expected ${expected}, received ${String(value.sha || 'unknown')}`);
+          }
+          console.log('post_migration_runtime_unchanged=yes');
+          NODE
