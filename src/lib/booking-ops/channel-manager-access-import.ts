@@ -28,7 +28,7 @@ export const CHANNEL_MANAGER_ONBOARDING_STATUS_LABELS: Record<ChannelManagerOnbo
   connected_placeholder: 'Подготовка завершена — API ещё не активен',
   blocked: 'Подключение заблокировано',
 };
-export const CHANNEL_IMPORT_TYPES = ['full', 'objects', 'bookings', 'calendar', 'pricing', 'availability', 'manual_snapshot', 'initial_sync', 'incremental_sync'] as const;
+export const CHANNEL_IMPORT_TYPES = ['full', 'objects', 'bookings', 'calendar', 'pricing', 'availability', 'manual_snapshot', 'initial_sync', 'incremental_sync', 'reconciliation_recovery'] as const;
 export type ChannelImportType = (typeof CHANNEL_IMPORT_TYPES)[number];
 
 export type ChannelManagerConnection = {

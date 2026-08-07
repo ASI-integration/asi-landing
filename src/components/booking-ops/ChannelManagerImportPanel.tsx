@@ -54,6 +54,7 @@ type LiveCoreStatus = {
   liveCoreEnabled: boolean;
   initialSyncEnabled?: boolean;
   incrementalSyncEnabled: boolean;
+  reconciliationReady?: boolean;
   realProviderApiEnabled: boolean;
   schemaReady?: boolean;
   cursorPresent?: boolean;
@@ -136,6 +137,27 @@ export function ChannelManagerImportPanel() {
   const [incrementalDeltaText, setIncrementalDeltaText] = useState(
     '{\n  "bookings": [],\n  "calendar": [],\n  "pricing": [],\n  "currentCursor": null,\n  "nextCursor": { "stream": "incremental", "checkpoint": "cursor-1" },\n  "hasMore": false\n}',
   );
+  const [reconciliationSnapshotText, setReconciliationSnapshotText] = useState(
+    '{\n  "snapshotKind": "bounded",\n  "asOf": "2026-08-07T12:00:00.000Z",\n  "bookings": [],\n  "calendar": [],\n  "pricing": []\n}',
+  );
+  const [reconciliationConfirm, setReconciliationConfirm] = useState('');
+  const [reconciliationReport, setReconciliationReport] = useState<{
+    runId?: string;
+    status?: string;
+    snapshotKind?: string;
+    reportHash?: string;
+    reportHashPrefix?: string;
+    repairableCount?: number;
+    appliedCount?: number;
+    skippedCount?: number;
+    blockedCount?: number;
+    failedCount?: number;
+    safeSummary?: string | null;
+    nextAction?: string | null;
+    categorySummaries?: Record<string, number>;
+    blockerSummaries?: Array<{ category: string; status: string; message: string | null }>;
+    counts?: Record<string, unknown>;
+  } | null>(null);
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
   const [acceptanceBusy, setAcceptanceBusy] = useState(false);
@@ -264,6 +286,76 @@ export function ChannelManagerImportPanel() {
       connectionId: selected?.id,
       delta,
     });
+  }
+
+  async function runReconciliationPreview() {
+    if (!selected?.id) return;
+    let snapshot: unknown;
+    try {
+      snapshot = JSON.parse(reconciliationSnapshotText);
+    } catch {
+      setMessage('Проверьте JSON сверки: файл не читается.');
+      return;
+    }
+    setBusy(true);
+    setMessage('');
+    try {
+      const res = await fetch('/api/dashboard/channel-manager/reconciliation', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'preview', connectionId: selected.id, snapshot }),
+      });
+      const payload = await readResponseJson<{ ok: boolean; message?: string; report?: typeof reconciliationReport }>(res, { ok: false });
+      if (!payload.ok) {
+        setMessage(payload.message ?? 'Не удалось выполнить preview сверки.');
+        return;
+      }
+      setReconciliationReport(payload.report ?? null);
+      setMessage(payload.report?.safeSummary ?? payload.message ?? 'Preview сверки готов.');
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Не удалось выполнить preview сверки.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function runReconciliationApply() {
+    if (!selected?.id || !reconciliationReport?.runId || !reconciliationReport.reportHash) return;
+    let snapshot: unknown;
+    try {
+      snapshot = JSON.parse(reconciliationSnapshotText);
+    } catch {
+      setMessage('Проверьте JSON сверки: файл не читается.');
+      return;
+    }
+    setBusy(true);
+    setMessage('');
+    try {
+      const res = await fetch('/api/dashboard/channel-manager/reconciliation', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'apply_safe_repairs',
+          connectionId: selected.id,
+          reconciliationRunId: reconciliationReport.runId,
+          reportHash: reconciliationReport.reportHash,
+          confirmationPhrase: reconciliationConfirm,
+          snapshot,
+        }),
+      });
+      const payload = await readResponseJson<{ ok: boolean; message?: string; report?: typeof reconciliationReport }>(res, { ok: false });
+      if (!payload.ok) {
+        setMessage(payload.message ?? 'Не удалось применить безопасные исправления.');
+        return;
+      }
+      setReconciliationReport(payload.report ?? null);
+      setReconciliationConfirm('');
+      setMessage(payload.report?.safeSummary ?? payload.message ?? 'Безопасные исправления применены.');
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Не удалось применить безопасные исправления.');
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function runAcceptanceHarness() {
@@ -401,12 +493,16 @@ export function ChannelManagerImportPanel() {
   const liveCounters = liveCore?.counters ?? liveCore?.latestRun?.counters;
   const initialSyncEnabled = liveCore?.initialSyncEnabled !== false && liveCore?.schemaReady !== false && selected?.status !== 'blocked';
   const incrementalSyncEnabled = liveCore?.incrementalSyncEnabled === true && selected?.status !== 'blocked';
+  const reconciliationReady = liveCore?.reconciliationReady === true && selected?.status !== 'blocked';
   const incrementalBlocker = incrementalSyncEnabled
     ? null
     : (liveCore?.blocker
       ?? (!liveCore?.lastSuccessfulInitialSyncAt
         ? 'Сначала выполните успешный Initial Sync.'
         : 'Incremental sync пока недоступен.'));
+  const reconciliationBlocker = reconciliationReady
+    ? null
+    : (liveCore?.blocker ?? 'Сверка доступна после миграции Reconciliation & Recovery и успешного Initial Sync.');
   const recoveryRequired = recoveryPreview?.recoveryRequired === true
     || acceptanceEvidence?.recoveryRequired === true;
   const harnessOwnedLeftover = recoveryPreview?.recoveryRequired === true
@@ -744,6 +840,88 @@ export function ChannelManagerImportPanel() {
               <Stat label="Создано / восстановлено" value={`${liveCore?.latestIncrementalRun?.counters?.created ?? liveCounters?.created ?? 0} / ${liveCore?.latestIncrementalRun?.counters?.restored ?? liveCounters?.restored ?? 0}`} />
               <Stat label="Календарь / цены" value={`${liveCore?.latestIncrementalRun?.counters?.calendarDays ?? 0} / ${liveCore?.latestIncrementalRun?.counters?.prices ?? 0}`} />
             </div>
+          </div>
+
+          <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50/70 p-3" data-testid="channel-live-reconciliation">
+            <div className="flex flex-wrap items-start justify-between gap-2">
+              <div>
+                <h3 className="font-medium text-slate-900">Сверка и восстановление</h3>
+                <p className="mt-1 text-xs text-slate-600">
+                  Ручной нормализованный снимок. Реальный API провайдера не подключён. Запись в OTA не выполняется.
+                  Брони, которых нет во внешнем снимке, автоматически не отменяются. Курсор incremental не меняется.
+                </p>
+              </div>
+              <button
+                disabled={busy || !reconciliationReady}
+                onClick={() => void runReconciliationPreview()}
+                className="rounded-lg bg-slate-900 px-3 py-1.5 text-xs text-white hover:bg-slate-800 disabled:opacity-50"
+                title={reconciliationBlocker ?? undefined}
+                data-testid="channel-live-reconciliation-preview"
+              >Preview reconciliation</button>
+            </div>
+            {!reconciliationReady ? (
+              <p className="mt-2 text-xs text-amber-700">{reconciliationBlocker}</p>
+            ) : null}
+            <textarea
+              value={reconciliationSnapshotText}
+              onChange={(event) => setReconciliationSnapshotText(event.target.value)}
+              rows={6}
+              className="mt-3 w-full rounded-lg border border-slate-300 px-3 py-2 font-mono text-xs"
+              aria-label="Reconciliation snapshot JSON"
+              disabled={busy}
+              data-testid="channel-live-reconciliation-snapshot"
+            />
+            {reconciliationReport ? (
+              <div className="mt-3 space-y-2" data-testid="channel-live-reconciliation-report">
+                <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+                  <Stat label="Статус" value={reconciliationReport.status ?? '—'} />
+                  <Stat label="Вид снимка" value={reconciliationReport.snapshotKind ?? '—'} />
+                  <Stat label="Report hash" value={reconciliationReport.reportHashPrefix ?? '—'} />
+                  <Stat label="Безопасных исправлений" value={String(reconciliationReport.repairableCount ?? 0)} />
+                </div>
+                <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+                  <Stat label="Применено" value={String(reconciliationReport.appliedCount ?? 0)} />
+                  <Stat label="Пропущено" value={String(reconciliationReport.skippedCount ?? 0)} />
+                  <Stat label="Блокировано" value={String(reconciliationReport.blockedCount ?? 0)} />
+                  <Stat label="Ошибки" value={String(reconciliationReport.failedCount ?? 0)} />
+                </div>
+                {reconciliationReport.categorySummaries && Object.keys(reconciliationReport.categorySummaries).length > 0 ? (
+                  <p className="text-xs text-slate-600">
+                    Категории: {Object.entries(reconciliationReport.categorySummaries).map(([key, value]) => `${key} ${value}`).join(' · ')}
+                  </p>
+                ) : null}
+                {reconciliationReport.blockerSummaries && reconciliationReport.blockerSummaries.length > 0 ? (
+                  <ul className="list-disc space-y-1 pl-5 text-xs text-amber-800">
+                    {reconciliationReport.blockerSummaries.slice(0, 8).map((item, index) => (
+                      <li key={`${item.category}-${index}`}>{item.category}: {item.message ?? item.status}</li>
+                    ))}
+                  </ul>
+                ) : null}
+                {reconciliationReport.status === 'preview_ready' ? (
+                  <div className="flex flex-wrap items-end gap-2 border-t border-slate-200 pt-3">
+                    <label className="flex min-w-[240px] flex-1 flex-col gap-1 text-xs text-slate-700">
+                      Подтверждение APPLY_CHANNEL_MANAGER_RECONCILIATION_SAFE_REPAIRS
+                      <input
+                        value={reconciliationConfirm}
+                        onChange={(event) => setReconciliationConfirm(event.target.value)}
+                        className="rounded-lg border border-slate-300 px-3 py-1.5 font-mono text-xs"
+                        data-testid="channel-live-reconciliation-confirm"
+                        disabled={busy}
+                      />
+                    </label>
+                    <button
+                      disabled={busy || reconciliationConfirm !== 'APPLY_CHANNEL_MANAGER_RECONCILIATION_SAFE_REPAIRS'}
+                      onClick={() => void runReconciliationApply()}
+                      className="rounded-lg bg-emerald-700 px-3 py-1.5 text-xs text-white hover:bg-emerald-600 disabled:opacity-50"
+                      data-testid="channel-live-reconciliation-apply"
+                    >Apply safe repairs</button>
+                  </div>
+                ) : null}
+                {reconciliationReport.nextAction ? (
+                  <p className="text-xs text-slate-600">{reconciliationReport.nextAction}</p>
+                ) : null}
+              </div>
+            ) : null}
           </div>
 
           <div className="mt-3 flex flex-wrap gap-2">

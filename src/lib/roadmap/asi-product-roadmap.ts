@@ -231,9 +231,9 @@ export const ASI_PRODUCT_ROADMAP: RoadmapDepartment[] = [
         title: 'Channel Manager Live Core',
         status: 'in_progress',
         currentState:
-          'Code for provider-independent Live Core and one-shot initial sync is complete (manual reference adapter, atomic run guard). Owner-only Dashboard acceptance harness is available for a synthetic Live Core initial-sync check. Channel Manager Live Core remains in progress until the harness is run successfully in production.',
+          'Code for provider-independent Live Core and one-shot initial sync is complete (manual reference adapter, atomic run guard). Owner-only Dashboard acceptance harness is available for a synthetic Live Core initial-sync check. Channel Manager Live Core remains in progress until the harness is run successfully in production. Not production-accepted.',
         nextStep:
-          'Apply Live Core migration if needed, run the Dashboard acceptance harness successfully in production, then keep the engine stable while adding incremental sync v2.',
+          'Apply Live Core migration if needed, run the Dashboard acceptance harness successfully in production, then keep the engine stable while adding incremental sync and reconciliation.',
         priority: 1,
         criticalForPilot: true,
         dashboardHref: '/dashboard/booking-ops',
@@ -250,7 +250,7 @@ export const ASI_PRODUCT_ROADMAP: RoadmapDepartment[] = [
         title: 'Initial и incremental sync',
         status: 'in_progress',
         currentState:
-          'Initial Sync remains a completed Live Core capability. Live Incremental Sync v1 is implemented (manual normalized delta adapter, durable cursor in connection metadata, atomic cross-type live-sync guard). Polling, webhooks, real provider adapters and outbound OTA writes remain disabled.',
+          'Initial Sync remains implemented but not production-accepted. Live Incremental Sync v1 is implemented (manual normalized delta adapter, durable cursor in connection metadata, atomic cross-type live-sync guard) but not production-accepted. Polling, webhooks, real provider adapters and outbound OTA writes remain disabled.',
         nextStep:
           'Keep Incremental Sync v1 stable; add polling/webhook ingestion and the first real provider adapter without enabling outbound writes.',
         priority: 1,
@@ -261,6 +261,24 @@ export const ASI_PRODUCT_ROADMAP: RoadmapDepartment[] = [
           { kind: 'code', path: 'supabase/migrations/20260806170000_channel_manager_live_incremental_sync_v1.sql', note: 'incremental_sync type + live-sync guard + schema v2' },
           { kind: 'ui', path: 'src/components/booking-ops/ChannelManagerImportPanel.tsx', note: 'manual incremental delta control' },
           { kind: 'code', path: 'src/lib/booking-ops/channel-manager-access-import.ts', note: 'manual snapshot path reused' },
+        ],
+      }),
+      stage({
+        id: 'ch-reconciliation-recovery',
+        title: 'Reconciliation & Recovery',
+        status: 'in_progress',
+        currentState:
+          'Reconciliation & Recovery v1 is implemented in code (manual normalized snapshot, durable preview/apply report, safe-auto repairs, live-sync guard). Real provider pull, polling/webhooks and outbound OTA writes remain unavailable. Overall Channel Manager is not complete.',
+        nextStep:
+          'Keep safe-repair journal stable; add provider-backed snapshots only after a real read adapter exists. Do not mark Channel Manager complete.',
+        priority: 2,
+        criticalForPilot: true,
+        dashboardHref: '/dashboard/booking-ops',
+        evidence: [
+          { kind: 'code', path: 'src/lib/booking-ops/channel-manager-reconciliation.ts', note: 'preview + safe recovery engines' },
+          { kind: 'code', path: 'supabase/migrations/20260807120000_channel_manager_reconciliation_recovery_v1.sql', note: 'reconciliation tables + finalize RPC + schema v3' },
+          { kind: 'api', path: 'src/app/api/dashboard/channel-manager/reconciliation/route.ts' },
+          { kind: 'ui', path: 'src/components/booking-ops/ChannelManagerImportPanel.tsx', note: 'reconciliation preview/apply block' },
         ],
       }),
       stage({
@@ -295,12 +313,13 @@ export const ASI_PRODUCT_ROADMAP: RoadmapDepartment[] = [
         id: 'ch-calendar-reconcile',
         title: 'Сверка календаря',
         status: 'in_progress',
-        currentState: 'Snapshot reconcile и run_reconciliation доступны; live pull нет.',
-        nextStep: 'Сверять календарь после каждого ручного импорта.',
+        currentState: 'Snapshot reconcile и Reconciliation & Recovery v1 доступны; live provider pull нет.',
+        nextStep: 'Сверять календарь после каждого ручного импорта и reconciliation preview.',
         priority: 2,
         dashboardHref: '/dashboard/channel-connections',
         evidence: [
           { kind: 'api', path: 'src/app/api/dashboard/channel-manager/reconcile/route.ts' },
+          { kind: 'code', path: 'src/lib/booking-ops/channel-manager-reconciliation.ts' },
         ],
       }),
       stage({
