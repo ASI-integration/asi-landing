@@ -5,7 +5,7 @@
  */
 import { createHash, randomUUID } from 'node:crypto';
 import { supabase } from '@/lib/supabase';
-import { cancelReservation, getUnifiedAvailability } from '@/lib/reservations/ledger';
+import { cancelReservation, getUnifiedAvailability, restoreReservation } from '@/lib/reservations/ledger';
 import { updateBookingOpsRecord } from './repository';
 import {
   CHANNEL_PROVIDER_ADAPTERS,
@@ -46,20 +46,30 @@ export const CHANNEL_LIVE_SYNC_STAGES = [
   'queued',
   'acquire_guard',
   'load_provider_data',
+  'load_cursor',
+  'load_incremental_batch',
   'import_objects',
   'import_bookings',
   'import_calendar',
   'reconcile_properties',
   'reconcile_bookings',
   'process_bookings',
+  'process_booking_changes',
+  'audit_availability',
+  'commit_cursor',
   'persist_counters',
   'completed',
   'failed',
 ] as const;
 export type ChannelLiveSyncStage = (typeof CHANNEL_LIVE_SYNC_STAGES)[number];
 
-/** Bounded timeout after which a stuck running initial_sync is recoverable. */
+/** Bounded timeout after which a stuck running live sync is recoverable. */
 export const STALE_INITIAL_SYNC_TIMEOUT_MS = 30 * 60 * 1000;
+export const STALE_LIVE_SYNC_TIMEOUT_MS = STALE_INITIAL_SYNC_TIMEOUT_MS;
+
+export const MAX_INCREMENTAL_BATCH_BYTES = 500_000;
+export const MAX_INCREMENTAL_BATCH_ROWS = 200;
+export const MAX_CURSOR_CHECKPOINT_CHARS = 512;
 
 export type ChannelLiveCapabilities = {
   listExternalProperties: boolean;
@@ -140,6 +150,36 @@ export type ChannelLiveInitialSnapshot = {
   cursors: ChannelLiveProviderCursor[];
 };
 
+export type ChannelLiveIncrementalBatch = {
+  bookings: ChannelLiveExternalBooking[];
+  calendar: ChannelLiveCalendarDay[];
+  pricing: ChannelLiveCalendarDay[];
+  currentCursor: ChannelLiveProviderCursor | null;
+  nextCursor: ChannelLiveProviderCursor;
+  hasMore: boolean;
+};
+
+export type ManualChannelIncrementalDelta = {
+  bookings?: Array<Record<string, unknown>>;
+  calendar?: Array<Record<string, unknown>>;
+  pricing?: Array<Record<string, unknown>>;
+  currentCursor?: ChannelLiveProviderCursor | null;
+  nextCursor: ChannelLiveProviderCursor;
+  hasMore?: boolean;
+};
+
+export type ChannelLiveCommittedCursor = {
+  stream: 'incremental';
+  checkpoint: string;
+  batchHash: string; // full sha256 hex
+  updatedAt: string;
+  sourceRunId: string;
+};
+
+export type IncrementalCursorProtocolResult =
+  | { kind: 'replay' }
+  | { kind: 'advance' };
+
 /** Provider-independent Live Core adapter. Must never carry credentials or secrets. */
 export interface ChannelManagerLiveCoreAdapter {
   readonly provider: ChannelManagerProvider;
@@ -153,6 +193,11 @@ export interface ChannelManagerLiveCoreAdapter {
   classifyBookingChange(previousStatus: string | null | undefined, next: NormalizedExternalBookingStatus): ChannelLiveBookingChangeKind;
   getProviderCursorPlaceholder(): ChannelLiveProviderCursor[];
   loadInitialSnapshot(): Promise<ChannelLiveInitialSnapshot>;
+  /** Optional: present only when incremental capability is enabled for the adapter. */
+  loadIncrementalBatch?(input: {
+    cursor: ChannelLiveProviderCursor | null;
+    limit?: number;
+  }): Promise<ChannelLiveIncrementalBatch>;
 }
 
 export const MANUAL_LIVE_CAPABILITIES: ChannelLiveCapabilities = {
@@ -165,6 +210,14 @@ export const MANUAL_LIVE_CAPABILITIES: ChannelLiveCapabilities = {
   writeAvailability: false,
 };
 
+export const MANUAL_INCREMENTAL_LIVE_CAPABILITIES: ChannelLiveCapabilities = {
+  ...MANUAL_LIVE_CAPABILITIES,
+  incrementalCursor: true,
+};
+
+const LIVE_CORE_INCREMENTAL_MIGRATION_BLOCKER =
+  'Миграция Channel Manager Live Incremental Sync ещё не применена. Incremental sync недоступен.';
+
 const SECRET_VALUE_RE = /(?:bearer\s+[a-z0-9._~+/=-]{8,}|(?:password|пароль|token|api[_-]?key|secret)\s*[:=]\s*\S+)/iu;
 const UNIQUE_VIOLATION = '23505';
 const CHECK_VIOLATION = '23514';
@@ -175,9 +228,24 @@ const LIVE_CORE_MIGRATION_BLOCKER = 'Миграция Channel Manager Live Core 
 export type ChannelLiveCoreSchemaState = {
   schemaVersion: number;
   initialSyncTypeReady: boolean;
+  incrementalSyncTypeReady: boolean;
   atomicRunningGuardReady: boolean;
+  atomicLiveSyncGuardReady: boolean;
+  cursorStorageReady: boolean;
+  atomicCommitRpcReady: boolean;
+  replayFinalizeRpcReady: boolean;
   ready: boolean;
   blocker: string | null;
+};
+
+export type IncrementalConnectionScope = {
+  connectionId: string;
+  ownerSetupId: string;
+  propertySetupId: string;
+  /** Canonical property id from booking_property_setup_profiles.property_id */
+  propertyId: string | null;
+  /** Canonical account id from connection metadata.accountId */
+  accountId: string | null;
 };
 
 /** Test override for schema readiness. null = probe live via RPC. */
@@ -188,8 +256,27 @@ export function clearChannelLiveCoreSchemaStateCache(): void {
   schemaStateCache = null;
 }
 
-export function setChannelLiveCoreSchemaStateOverride(state: ChannelLiveCoreSchemaState | null): void {
-  schemaStateOverride = state;
+export function setChannelLiveCoreSchemaStateOverride(
+  state: (Partial<ChannelLiveCoreSchemaState> & Pick<ChannelLiveCoreSchemaState, 'ready'>) | null,
+): void {
+  if (state == null) {
+    schemaStateOverride = null;
+  } else {
+    const atomicLiveSyncGuardReady = state.atomicLiveSyncGuardReady === true
+      || state.atomicRunningGuardReady === true;
+    schemaStateOverride = {
+      schemaVersion: Number(state.schemaVersion ?? 0) || 0,
+      initialSyncTypeReady: state.initialSyncTypeReady === true,
+      incrementalSyncTypeReady: state.incrementalSyncTypeReady === true,
+      atomicRunningGuardReady: atomicLiveSyncGuardReady,
+      atomicLiveSyncGuardReady,
+      cursorStorageReady: state.cursorStorageReady === true,
+      atomicCommitRpcReady: state.atomicCommitRpcReady === true,
+      replayFinalizeRpcReady: state.replayFinalizeRpcReady === true,
+      ready: state.ready === true,
+      blocker: state.blocker ?? null,
+    };
+  }
   schemaStateCache = null;
 }
 
@@ -199,9 +286,14 @@ export function setChannelLiveCoreSchemaReadyOverride(value: boolean | null): vo
     schemaStateOverride = null;
   } else if (value) {
     schemaStateOverride = {
-      schemaVersion: 1,
+      schemaVersion: 2,
       initialSyncTypeReady: true,
+      incrementalSyncTypeReady: true,
       atomicRunningGuardReady: true,
+      atomicLiveSyncGuardReady: true,
+      cursorStorageReady: true,
+      atomicCommitRpcReady: true,
+      replayFinalizeRpcReady: true,
       ready: true,
       blocker: null,
     };
@@ -209,7 +301,12 @@ export function setChannelLiveCoreSchemaReadyOverride(value: boolean | null): vo
     schemaStateOverride = {
       schemaVersion: 0,
       initialSyncTypeReady: false,
+      incrementalSyncTypeReady: false,
       atomicRunningGuardReady: false,
+      atomicLiveSyncGuardReady: false,
+      cursorStorageReady: false,
+      atomicCommitRpcReady: false,
+      replayFinalizeRpcReady: false,
       ready: false,
       blocker: LIVE_CORE_MIGRATION_BLOCKER,
     };
@@ -219,23 +316,62 @@ export function setChannelLiveCoreSchemaReadyOverride(value: boolean | null): vo
 
 function schemaStateFromRpcPayload(data: unknown): ChannelLiveCoreSchemaState {
   const row = data && typeof data === 'object' ? data as Record<string, unknown> : {};
+  const schemaVersion = Number(row.schemaVersion ?? 1) || 0;
   const initialSyncTypeReady = row.initialSyncTypeReady === true;
-  const atomicRunningGuardReady = row.atomicRunningGuardReady === true;
-  const ready = initialSyncTypeReady && atomicRunningGuardReady && row.ready !== false;
+  const incrementalSyncTypeReady = row.incrementalSyncTypeReady === true;
+  const atomicLiveSyncGuardReady = row.atomicLiveSyncGuardReady === true
+    || row.atomicRunningGuardReady === true;
+  const atomicRunningGuardReady = atomicLiveSyncGuardReady;
+  const cursorStorageReady = row.cursorStorageReady === true;
+  const atomicCommitRpcReady = row.atomicCommitRpcReady === true;
+  const replayFinalizeRpcReady = row.replayFinalizeRpcReady === true;
+  const v2Complete = schemaVersion >= 2
+    && initialSyncTypeReady
+    && incrementalSyncTypeReady
+    && atomicLiveSyncGuardReady
+    && cursorStorageReady
+    && atomicCommitRpcReady
+    && replayFinalizeRpcReady;
+  const v1Complete = schemaVersion < 2
+    && initialSyncTypeReady
+    && atomicRunningGuardReady;
+  const ready = row.ready === false
+    ? false
+    : (schemaVersion >= 2 ? v2Complete : v1Complete);
   let blocker: string | null = null;
   if (!ready) {
-    if (!initialSyncTypeReady && !atomicRunningGuardReady) blocker = LIVE_CORE_MIGRATION_BLOCKER;
-    else if (!initialSyncTypeReady) {
+    if (schemaVersion >= 2) {
+      if (
+        !incrementalSyncTypeReady
+        || !cursorStorageReady
+        || !atomicLiveSyncGuardReady
+        || !atomicCommitRpcReady
+        || !replayFinalizeRpcReady
+      ) {
+        blocker = LIVE_CORE_INCREMENTAL_MIGRATION_BLOCKER;
+      } else if (!initialSyncTypeReady) {
+        blocker = LIVE_CORE_MIGRATION_BLOCKER;
+      } else {
+        blocker = LIVE_CORE_INCREMENTAL_MIGRATION_BLOCKER;
+      }
+    } else if (!initialSyncTypeReady && !atomicRunningGuardReady) {
+      blocker = LIVE_CORE_MIGRATION_BLOCKER;
+    } else if (!initialSyncTypeReady) {
       blocker = 'Миграция Live Core неполная: отсутствует разрешение import_type=initial_sync.';
     } else {
       blocker = 'Миграция Live Core неполная: отсутствует atomic running-run guard index.';
     }
   }
   return {
-    schemaVersion: Number(row.schemaVersion ?? 1) || 0,
+    schemaVersion,
     initialSyncTypeReady,
+    incrementalSyncTypeReady,
     atomicRunningGuardReady,
-    ready: ready && initialSyncTypeReady && atomicRunningGuardReady,
+    atomicLiveSyncGuardReady,
+    cursorStorageReady,
+    atomicCommitRpcReady,
+    replayFinalizeRpcReady,
+    ready,
     blocker,
   };
 }
@@ -321,7 +457,7 @@ function isInitialSyncTypeRejected(error: { code?: string; message?: string } | 
   if (!error) return false;
   const message = text(error.message);
   return error.code === CHECK_VIOLATION
-    || (/import_type|initial_sync|check constraint/i.test(message) && /violat|fail|reject/i.test(message));
+    || (/import_type|initial_sync|incremental_sync|check constraint/i.test(message) && /violat|fail|reject/i.test(message));
 }
 
 function propertyToRow(property: ChannelLiveExternalProperty): Record<string, unknown> {
@@ -363,11 +499,308 @@ function calendarToRow(day: ChannelLiveCalendarDay): Record<string, unknown> {
 
 function cursorPlaceholder(): ChannelLiveProviderCursor[] {
   return [
-    { stream: 'objects', checkpoint: null, note: 'Initial sync only; incremental cursor reserved for v2.' },
-    { stream: 'bookings', checkpoint: null, note: 'Initial sync only; incremental cursor reserved for v2.' },
-    { stream: 'calendar', checkpoint: null, note: 'Initial sync only; incremental cursor reserved for v2.' },
-    { stream: 'incremental', checkpoint: null, note: 'Polling/webhooks not implemented.' },
+    { stream: 'objects', checkpoint: null, note: 'Initial sync only; durable incremental cursor lives in connection.metadata.incrementalCursor.' },
+    { stream: 'bookings', checkpoint: null, note: 'Initial sync only; durable incremental cursor lives in connection.metadata.incrementalCursor.' },
+    { stream: 'calendar', checkpoint: null, note: 'Initial sync only; durable incremental cursor lives in connection.metadata.incrementalCursor.' },
+    { stream: 'incremental', checkpoint: null, note: 'Polling/webhooks not implemented; manual incremental delta uses committed cursor.' },
   ];
+}
+
+function stableJsonValue(value: unknown): string {
+  if (value === null || typeof value !== 'object') return JSON.stringify(value);
+  if (Array.isArray(value)) return `[${value.map((item) => stableJsonValue(item)).join(',')}]`;
+  const row = value as Record<string, unknown>;
+  const keys = Object.keys(row).sort();
+  return `{${keys.map((key) => `${JSON.stringify(key)}:${stableJsonValue(row[key])}`).join(',')}}`;
+}
+
+export function hashCursorCheckpoint(checkpoint: string): string {
+  return createHash('sha256').update(checkpoint).digest('hex').slice(0, 16);
+}
+
+export function computeIncrementalBatchHash(batch: ChannelLiveIncrementalBatch): string {
+  const bookings = [...batch.bookings]
+    .map((item) => ({
+      changeKind: item.changeKind,
+      checkInDate: item.checkInDate ?? null,
+      checkOutDate: item.checkOutDate ?? null,
+      externalBookingId: item.externalBookingId,
+      externalObjectId: item.externalObjectId ?? null,
+      guestContactRef: item.guestContactRef ?? null,
+      guestCount: item.guestCount ?? null,
+      guestSafeName: item.guestSafeName ?? null,
+      status: item.status,
+    }))
+    .sort((left, right) => left.externalBookingId.localeCompare(right.externalBookingId));
+  const calendar = [...batch.calendar]
+    .map((item) => ({
+      availabilityStatus: item.availabilityStatus ?? null,
+      currency: item.currency ?? null,
+      date: item.date,
+      externalObjectId: item.externalObjectId,
+      minStay: item.minStay ?? null,
+      priceAmount: item.priceAmount ?? null,
+    }))
+    .sort((left, right) => (
+      `${left.externalObjectId}\0${left.date}`.localeCompare(`${right.externalObjectId}\0${right.date}`)
+    ));
+  const pricing = [...batch.pricing]
+    .map((item) => ({
+      availabilityStatus: item.availabilityStatus ?? null,
+      currency: item.currency ?? null,
+      date: item.date,
+      externalObjectId: item.externalObjectId,
+      minStay: item.minStay ?? null,
+      priceAmount: item.priceAmount ?? null,
+    }))
+    .sort((left, right) => (
+      `${left.externalObjectId}\0${left.date}`.localeCompare(`${right.externalObjectId}\0${right.date}`)
+    ));
+  const payload = {
+    bookings,
+    calendar,
+    currentCursor: batch.currentCursor
+      ? { checkpoint: batch.currentCursor.checkpoint, stream: batch.currentCursor.stream }
+      : null,
+    hasMore: batch.hasMore === true,
+    nextCursor: {
+      checkpoint: batch.nextCursor.checkpoint,
+      stream: batch.nextCursor.stream,
+    },
+    pricing,
+  };
+  return createHash('sha256').update(stableJsonValue(payload)).digest('hex');
+}
+
+export function assertFailClosedIncrementalCursorProtocol(
+  committed: ChannelLiveCommittedCursor | null,
+  batch: ChannelLiveIncrementalBatch,
+): IncrementalCursorProtocolResult {
+  const nextCheckpoint = text(batch.nextCursor?.checkpoint);
+  if (!nextCheckpoint) {
+    throw Object.assign(new Error('nextCursor обязателен и должен содержать checkpoint.'), {
+      code: 'cursor_protocol_violation',
+    });
+  }
+
+  if (!committed) {
+    if (batch.currentCursor != null) {
+      throw Object.assign(
+        new Error('currentCursor должен быть null при первом incremental batch.'),
+        { code: 'cursor_protocol_violation' },
+      );
+    }
+    return { kind: 'advance' };
+  }
+
+  if (nextCheckpoint === committed.checkpoint) {
+    const batchHash = computeIncrementalBatchHash(batch);
+    const committedHash = text(committed.batchHash);
+    if (committedHash && batchHash === committedHash) {
+      return { kind: 'replay' };
+    }
+    throw Object.assign(
+      new Error('Повторный nextCursor с другим содержимым batch (cursor_replay_mismatch).'),
+      { code: 'cursor_replay_mismatch' },
+    );
+  }
+
+  const currentCheckpoint = text(batch.currentCursor?.checkpoint);
+  if (!batch.currentCursor || !currentCheckpoint) {
+    throw Object.assign(
+      new Error('После первого commit нужен currentCursor, совпадающий с committed checkpoint.'),
+      { code: 'cursor_protocol_violation' },
+    );
+  }
+  if (currentCheckpoint !== committed.checkpoint) {
+    throw Object.assign(
+      new Error('currentCursor не совпадает с последним committed cursor.'),
+      { code: 'cursor_protocol_violation' },
+    );
+  }
+  if (currentCheckpoint === nextCheckpoint) {
+    throw Object.assign(
+      new Error('currentCursor и nextCursor не должны совпадать для нового batch.'),
+      { code: 'cursor_protocol_violation' },
+    );
+  }
+  return { kind: 'advance' };
+}
+
+export function buildSafeIncrementalCursorMetadata(input: {
+  cursorPresent: boolean;
+  cursorCheckpointHash?: string | null;
+  currentCursorHash?: string | null;
+  nextCursorHash?: string | null;
+  hasMore?: boolean;
+  sourceRunId?: string | null;
+  updatedAt?: string | null;
+  replayed?: boolean;
+  batchHashPrefix?: string | null;
+}): Record<string, unknown> {
+  return {
+    cursorPresent: input.cursorPresent === true,
+    cursorCheckpointHash: input.cursorCheckpointHash ?? null,
+    currentCursorHash: input.currentCursorHash ?? null,
+    nextCursorHash: input.nextCursorHash ?? null,
+    hasMore: input.hasMore === true,
+    sourceRunId: input.sourceRunId ?? null,
+    updatedAt: input.updatedAt ?? null,
+    replayed: input.replayed === true,
+    ...(input.batchHashPrefix ? { batchHashPrefix: input.batchHashPrefix } : {}),
+  };
+}
+
+export function toSafeIncrementalRunSummary(run: ChannelImportRun): SafeIncrementalRunSummary {
+  return {
+    id: run.id,
+    status: run.status,
+    importType: run.importType,
+    stage: text(run.metadata?.liveCoreStage) || null,
+    startedAt: run.startedAt,
+    finishedAt: run.finishedAt,
+    counters: readCounters(run.metadata),
+    safeError: (run.metadata?.safeError as ChannelLiveSafeError | undefined) ?? null,
+  };
+}
+
+function dedupeIncrementalRowsByKey<T>(
+  items: T[],
+  keyOf: (item: T) => string,
+  label: string,
+): T[] {
+  const byKey = new Map<string, T>();
+  for (const item of items) {
+    const key = keyOf(item);
+    const existing = byKey.get(key);
+    if (!existing) {
+      byKey.set(key, item);
+      continue;
+    }
+    if (stableJsonValue(existing) !== stableJsonValue(item)) {
+      throw new Error(`Конфликт дубликатов в ${label}: ${key}`);
+    }
+  }
+  return [...byKey.values()];
+}
+
+export function validateChannelLiveProviderCursor(
+  value: unknown,
+  options?: { requiredCheckpoint?: boolean },
+): ChannelLiveProviderCursor | null {
+  if (value == null) return null;
+  if (typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('Курсор указан в неверном формате.');
+  }
+  const row = value as Record<string, unknown>;
+  const stream = text(row.stream) || 'incremental';
+  if (stream !== 'incremental' && stream !== 'objects' && stream !== 'bookings' && stream !== 'calendar') {
+    throw new Error('Недопустимый поток курсора.');
+  }
+  const checkpointRaw = row.checkpoint == null ? null : text(row.checkpoint);
+  if (checkpointRaw && checkpointRaw.length > MAX_CURSOR_CHECKPOINT_CHARS) {
+    throw new Error(`Checkpoint курсора слишком длинный (макс. ${MAX_CURSOR_CHECKPOINT_CHARS}).`);
+  }
+  if (options?.requiredCheckpoint && !checkpointRaw) {
+    throw new Error('Для nextCursor нужен непустой checkpoint.');
+  }
+  if (findSecretPath(row)) {
+    throw new Error('Пароли, токены и другие секреты нельзя передавать в курсоре.');
+  }
+  return {
+    stream: stream as ChannelLiveProviderCursor['stream'],
+    checkpoint: checkpointRaw,
+    note: nullableText(row.note) ?? undefined,
+  };
+}
+
+export function validateManualChannelIncrementalDelta(
+  delta: ManualChannelIncrementalDelta,
+): ChannelLiveIncrementalBatch {
+  if (!delta || typeof delta !== 'object') {
+    throw new Error('Нужен нормализованный incremental delta JSON.');
+  }
+  if (findSecretPath(delta)) {
+    throw new Error('Пароли, токены и другие секреты нельзя передавать или сохранять в импорте.');
+  }
+  const size = Buffer.byteLength(JSON.stringify(delta), 'utf8');
+  if (size > MAX_INCREMENTAL_BATCH_BYTES) {
+    throw new Error(`Incremental batch слишком большой. Максимальный размер — ${MAX_INCREMENTAL_BATCH_BYTES} байт.`);
+  }
+  const bookingsRaw = Array.isArray(delta.bookings) ? delta.bookings : [];
+  const calendarRaw = Array.isArray(delta.calendar) ? delta.calendar : [];
+  const pricingRaw = Array.isArray(delta.pricing) ? delta.pricing : [];
+  if (
+    bookingsRaw.length > MAX_INCREMENTAL_BATCH_ROWS
+    || calendarRaw.length > MAX_INCREMENTAL_BATCH_ROWS
+    || pricingRaw.length > MAX_INCREMENTAL_BATCH_ROWS
+  ) {
+    throw new Error(`В одном разделе incremental batch должно быть не более ${MAX_INCREMENTAL_BATCH_ROWS} строк.`);
+  }
+
+  const nextCursor = validateChannelLiveProviderCursor(delta.nextCursor, { requiredCheckpoint: true });
+  if (!nextCursor || nextCursor.stream !== 'incremental' || !nextCursor.checkpoint) {
+    throw new Error('nextCursor обязателен и должен содержать stream=incremental и checkpoint.');
+  }
+  const currentCursor = validateChannelLiveProviderCursor(delta.currentCursor ?? null);
+
+  const bookings = dedupeIncrementalRowsByKey(
+    bookingsRaw.map((item) => {
+      const status = normalizeExternalBookingStatus(item.status);
+      const explicitKind = text(item.changeKind ?? item.change_kind).toLowerCase();
+      const changeKind = (
+        ['created', 'updated', 'cancelled', 'restored', 'unchanged'] as const
+      ).includes(explicitKind as ChannelLiveBookingChangeKind)
+        ? explicitKind as ChannelLiveBookingChangeKind
+        : classifyBookingChange(nullableText(item.previous_status ?? item.previousStatus), status);
+      return {
+        externalBookingId: text(item.external_booking_id ?? item.externalBookingId ?? item.id),
+        externalObjectId: nullableText(item.external_object_id ?? item.externalObjectId),
+        guestSafeName: nullableText(item.guest_safe_name ?? item.guestName),
+        guestContactRef: nullableText(item.guest_contact_ref ?? item.guestContactRef),
+        checkInDate: normalizeDate(item.checkin_date ?? item.checkIn),
+        checkOutDate: normalizeDate(item.checkout_date ?? item.checkOut),
+        guestCount: numberOrNull(item.guest_count ?? item.guestCount),
+        status,
+        changeKind,
+      };
+    }).filter((item) => item.externalBookingId),
+    (item) => item.externalBookingId,
+    'bookings',
+  );
+  const calendar = dedupeIncrementalRowsByKey(
+    calendarRaw.map((item) => ({
+      externalObjectId: text(item.external_object_id ?? item.externalObjectId ?? item.object_id),
+      date: normalizeDate(item.date) ?? '',
+      availabilityStatus: text(item.availability_status ?? item.availability) || 'unknown',
+      minStay: numberOrNull(item.min_stay ?? item.minStay),
+      priceAmount: numberOrNull(item.price_amount ?? item.price),
+      currency: nullableText(item.currency),
+    })).filter((item) => item.externalObjectId && item.date),
+    (item) => `${item.externalObjectId}\0${item.date}`,
+    'calendar',
+  );
+  const pricing = dedupeIncrementalRowsByKey(
+    pricingRaw.map((item) => ({
+      externalObjectId: text(item.external_object_id ?? item.externalObjectId ?? item.object_id),
+      date: normalizeDate(item.date) ?? '',
+      availabilityStatus: text(item.availability_status ?? item.availability) || 'unknown',
+      minStay: numberOrNull(item.min_stay ?? item.minStay),
+      priceAmount: numberOrNull(item.price_amount ?? item.price),
+      currency: nullableText(item.currency),
+    })).filter((item) => item.externalObjectId && item.date),
+    (item) => `${item.externalObjectId}\0${item.date}`,
+    'pricing',
+  );
+
+  return {
+    bookings,
+    calendar,
+    pricing,
+    currentCursor,
+    nextCursor,
+    hasMore: delta.hasMore === true,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -462,6 +895,85 @@ export class ManualChannelLiveCoreAdapter implements ChannelManagerLiveCoreAdapt
   }
 }
 
+/** Manual normalized incremental delta adapter — enabled only when an explicit delta is supplied. */
+export class ManualChannelLiveIncrementalAdapter implements ChannelManagerLiveCoreAdapter {
+  readonly provider: ChannelManagerProvider = 'manual';
+  readonly capabilities = MANUAL_INCREMENTAL_LIVE_CAPABILITIES;
+  private readonly batch: ChannelLiveIncrementalBatch;
+
+  constructor(delta: ManualChannelIncrementalDelta) {
+    this.batch = validateManualChannelIncrementalDelta(delta);
+  }
+
+  getIdentity(): ChannelLiveAdapterIdentity {
+    return { provider: 'manual', label: 'Ручной incremental delta JSON', supportsRealApi: false };
+  }
+
+  normalizeBookingStatus(raw: unknown): NormalizedExternalBookingStatus {
+    return normalizeExternalBookingStatus(raw);
+  }
+
+  classifyBookingChange(previousStatus: string | null | undefined, next: NormalizedExternalBookingStatus): ChannelLiveBookingChangeKind {
+    return classifyBookingChange(previousStatus, next);
+  }
+
+  getProviderCursorPlaceholder(): ChannelLiveProviderCursor[] {
+    return [{
+      stream: 'incremental',
+      checkpoint: null,
+      note: 'Manual incremental reference cursor (not a real provider API).',
+    }];
+  }
+
+  async listExternalProperties(): Promise<ChannelLiveExternalProperty[]> {
+    return [];
+  }
+
+  async fetchInitialBookingSnapshot(): Promise<ChannelLiveExternalBooking[]> {
+    return this.batch.bookings;
+  }
+
+  async fetchCalendarSnapshot(): Promise<ChannelLiveCalendarDay[]> {
+    return this.batch.calendar;
+  }
+
+  async fetchPricingSnapshot(): Promise<ChannelLiveCalendarDay[]> {
+    return this.batch.pricing;
+  }
+
+  async loadInitialSnapshot(): Promise<ChannelLiveInitialSnapshot> {
+    throw new Error('Manual incremental adapter не выполняет Initial Sync. Передайте delta в runChannelManagerIncrementalSync.');
+  }
+
+  async loadIncrementalBatch(input: {
+    cursor: ChannelLiveProviderCursor | null;
+    limit?: number;
+  }): Promise<ChannelLiveIncrementalBatch> {
+    const limit = Math.min(
+      Math.max(1, Number(input.limit ?? MAX_INCREMENTAL_BATCH_ROWS) || MAX_INCREMENTAL_BATCH_ROWS),
+      MAX_INCREMENTAL_BATCH_ROWS,
+    );
+    if (this.batch.bookings.length > limit
+      || this.batch.calendar.length > limit
+      || this.batch.pricing.length > limit) {
+      throw new Error(`Incremental batch превышает limit=${limit}.`);
+    }
+    // Soft defensive check only — fail-closed protocol is enforced in the runner
+    // before side effects (including true replay detection).
+    const committed = input.cursor?.checkpoint ?? null;
+    const expected = this.batch.currentCursor?.checkpoint ?? null;
+    if (committed && expected && committed !== expected) {
+      throw new Error('currentCursor delta не совпадает с последним committed cursor.');
+    }
+    return {
+      ...this.batch,
+      bookings: this.batch.bookings.slice(0, limit),
+      calendar: this.batch.calendar.slice(0, limit),
+      pricing: this.batch.pricing.slice(0, limit),
+    };
+  }
+}
+
 /** Explicit safe path: reuse already-imported normalized rows (no full snapshot in metadata). */
 export class ImportedRowsChannelLiveCoreAdapter implements ChannelManagerLiveCoreAdapter {
   readonly provider: ChannelManagerProvider;
@@ -552,8 +1064,14 @@ export class ImportedRowsChannelLiveCoreAdapter implements ChannelManagerLiveCor
 
 export function createChannelLiveCoreAdapter(
   provider: ChannelManagerProvider,
-  options?: { snapshot?: ManualChannelSnapshot; reuseImportedRows?: boolean; connectionId?: string },
+  options?: {
+    snapshot?: ManualChannelSnapshot;
+    incrementalDelta?: ManualChannelIncrementalDelta;
+    reuseImportedRows?: boolean;
+    connectionId?: string;
+  },
 ): ChannelManagerLiveCoreAdapter {
+  if (options?.incrementalDelta) return new ManualChannelLiveIncrementalAdapter(options.incrementalDelta);
   if (options?.snapshot) return new ManualChannelLiveCoreAdapter(options.snapshot);
   if (options?.reuseImportedRows) {
     if (!options.connectionId) throw new Error('Для повторного использования импортированных строк нужен ID подключения.');
@@ -576,6 +1094,9 @@ export type ChannelLiveSyncCounters = {
   objects: number;
   calendarDays: number;
   prices: number;
+  /** Incremental-friendly aliases (imported == created for create path). */
+  created: number;
+  restored: number;
 };
 
 export type ChannelLiveSyncResult = {
@@ -588,6 +1109,20 @@ export type ChannelLiveSyncResult = {
   safeError: ChannelLiveSafeError | null;
   cursors: ChannelLiveProviderCursor[];
   retryable: boolean;
+  cursorCommitted?: boolean;
+  committedCursor?: ChannelLiveCommittedCursor | null;
+  replayed?: boolean;
+};
+
+export type SafeIncrementalRunSummary = {
+  id: string;
+  status: string;
+  importType: string;
+  stage: string | null;
+  startedAt: string | null;
+  finishedAt: string | null;
+  counters: ChannelLiveSyncCounters | null;
+  safeError: ChannelLiveSafeError | null;
 };
 
 export type ChannelLiveCoreStatus = {
@@ -595,7 +1130,19 @@ export type ChannelLiveCoreStatus = {
   connectionId: string;
   connectionState: string;
   lastSuccessfulSyncAt: string | null;
+  lastSuccessfulInitialSyncAt: string | null;
+  lastSuccessfulIncrementalSyncAt: string | null;
   latestRun: {
+    id: string;
+    status: string;
+    importType: string;
+    startedAt: string | null;
+    finishedAt: string | null;
+    stage: string | null;
+    counters: ChannelLiveSyncCounters | null;
+    safeError: ChannelLiveSafeError | null;
+  } | null;
+  latestIncrementalRun: {
     id: string;
     status: string;
     importType: string;
@@ -608,31 +1155,44 @@ export type ChannelLiveCoreStatus = {
   counters: ChannelLiveSyncCounters | null;
   warning: string | null;
   blocker: string | null;
+  retryable: boolean;
   liveCoreEnabled: boolean;
   initialSyncEnabled: boolean;
   incrementalSyncEnabled: boolean;
   realProviderApiEnabled: boolean;
   schemaReady: boolean;
+  schemaVersion: number;
+  cursorPresent: boolean;
+  cursorUpdatedAt: string | null;
+  cursorSourceRunId: string | null;
+  cursorCheckpointHash: string | null;
   cursorPlaceholder: ChannelLiveProviderCursor[];
 };
 
 function emptyCounters(): ChannelLiveSyncCounters {
-  return { imported: 0, updated: 0, cancelled: 0, skipped: 0, failed: 0, objects: 0, calendarDays: 0, prices: 0 };
+  return {
+    imported: 0, updated: 0, cancelled: 0, skipped: 0, failed: 0,
+    objects: 0, calendarDays: 0, prices: 0, created: 0, restored: 0,
+  };
 }
 
 function readCounters(metadata: Record<string, unknown> | undefined): ChannelLiveSyncCounters | null {
   const raw = metadata?.liveCoreCounters;
   if (!raw || typeof raw !== 'object') return null;
   const row = raw as Record<string, unknown>;
+  const imported = Number(row.imported ?? row.created ?? 0);
+  const skipped = Number(row.skipped ?? 0);
   return {
-    imported: Number(row.imported ?? 0),
+    imported,
     updated: Number(row.updated ?? 0),
     cancelled: Number(row.cancelled ?? 0),
-    skipped: Number(row.skipped ?? 0),
+    skipped,
     failed: Number(row.failed ?? 0),
     objects: Number(row.objects ?? 0),
     calendarDays: Number(row.calendarDays ?? 0),
     prices: Number(row.prices ?? 0),
+    created: Number(row.created ?? imported),
+    restored: Number(row.restored ?? 0),
   };
 }
 
@@ -710,7 +1270,12 @@ export async function probeChannelLiveCoreSchema(_connectionId?: string): Promis
     const failed: ChannelLiveCoreSchemaState = {
       schemaVersion: 0,
       initialSyncTypeReady: false,
+      incrementalSyncTypeReady: false,
       atomicRunningGuardReady: false,
+      atomicLiveSyncGuardReady: false,
+      cursorStorageReady: false,
+      atomicCommitRpcReady: false,
+      replayFinalizeRpcReady: false,
       ready: false,
       blocker: LIVE_CORE_MIGRATION_BLOCKER,
     };
@@ -719,8 +1284,19 @@ export async function probeChannelLiveCoreSchema(_connectionId?: string): Promis
   }
 
   const state = schemaStateFromRpcPayload(data);
-  // ready requires both components even if RPC omits/mis-sets ready.
-  if (!state.initialSyncTypeReady || !state.atomicRunningGuardReady) {
+  if (state.schemaVersion >= 2) {
+    const complete = state.initialSyncTypeReady
+      && state.incrementalSyncTypeReady
+      && state.atomicLiveSyncGuardReady
+      && state.cursorStorageReady
+      && state.atomicCommitRpcReady
+      && state.replayFinalizeRpcReady;
+    state.ready = complete;
+    if (!complete && !state.blocker) {
+      state.blocker = LIVE_CORE_INCREMENTAL_MIGRATION_BLOCKER;
+    }
+    if (complete) state.blocker = null;
+  } else if (!state.initialSyncTypeReady || !state.atomicRunningGuardReady) {
     state.ready = false;
     if (!state.blocker) state.blocker = LIVE_CORE_MIGRATION_BLOCKER;
   } else {
@@ -731,8 +1307,15 @@ export async function probeChannelLiveCoreSchema(_connectionId?: string): Promis
   return state;
 }
 
-/** Mark stale running initial_sync rows failed, preserving evidence. */
+/** Mark stale running live sync rows failed, preserving evidence. */
 export async function recoverStaleInitialSyncRuns(
+  connectionId: string,
+  nowMs: number = Date.now(),
+): Promise<string[]> {
+  return recoverStaleLiveSyncRuns(connectionId, nowMs);
+}
+
+export async function recoverStaleLiveSyncRuns(
   connectionId: string,
   nowMs: number = Date.now(),
 ): Promise<string[]> {
@@ -741,15 +1324,16 @@ export async function recoverStaleInitialSyncRuns(
     .from('booking_channel_import_runs')
     .select('*')
     .eq('connection_id', connection.id)
-    .eq('import_type', 'initial_sync')
+    .in('import_type', ['initial_sync', 'incremental_sync'])
     .eq('status', 'running');
   if (error) throw new Error(error.message);
 
   const recovered: string[] = [];
   for (const row of (running ?? []) as Record<string, unknown>[]) {
     const startedAt = Date.parse(text(row.started_at || row.created_at));
-    if (!Number.isFinite(startedAt) || nowMs - startedAt < STALE_INITIAL_SYNC_TIMEOUT_MS) continue;
+    if (!Number.isFinite(startedAt) || nowMs - startedAt < STALE_LIVE_SYNC_TIMEOUT_MS) continue;
     const finishedAt = new Date(nowMs).toISOString();
+    const importType = text(row.import_type) || 'initial_sync';
     const metadata = {
       ...((row.metadata as Record<string, unknown>) ?? {}),
       liveCore: true,
@@ -760,7 +1344,7 @@ export async function recoverStaleInitialSyncRuns(
       safeError: {
         stage: text((row.metadata as Record<string, unknown>)?.liveCoreStage) || 'acquire_guard',
         code: 'stale_running_run',
-        message: 'Зависший initial sync помечен как failed по timeout; evidence сохранены.',
+        message: `Зависший ${importType} помечен как failed по timeout; evidence сохранены.`,
         retryable: true,
       },
     };
@@ -768,7 +1352,7 @@ export async function recoverStaleInitialSyncRuns(
       status: 'failed',
       finished_at: finishedAt,
       errors: [metadata.safeError],
-      safe_summary: 'Initial sync прерван по stale timeout. Ранее сохранённые данные не удалены.',
+      safe_summary: `${importType} прерван по stale timeout. Ранее сохранённые данные не удалены.`,
       metadata,
       updated_at: finishedAt,
     }).eq('id', row.id).eq('status', 'running');
@@ -779,19 +1363,34 @@ export async function recoverStaleInitialSyncRuns(
 }
 
 /**
- * Atomic per-connection execution guard: insert running initial_sync row.
- * Unique partial index enforces exclusivity; 23505 => execution_guard.
+ * Atomic per-connection live-sync guard: insert running initial_sync or incremental_sync.
+ * Unique partial index enforces exclusivity across both types; 23505 => execution_guard.
  */
-export async function acquireChannelLiveSyncGuard(connectionId: string): Promise<
+export async function acquireChannelLiveSyncGuard(
+  connectionId: string,
+  options?: { importType?: 'initial_sync' | 'incremental_sync' },
+): Promise<
   { ok: true; run: ChannelImportRun } | { ok: false; reason: string; code: 'execution_guard' | 'migration_missing' }
 > {
+  const importType = options?.importType ?? 'initial_sync';
   const connection = await getConnection(connectionId);
   const schema = await probeChannelLiveCoreSchema(connection.id);
-  if (!schema.ready) {
+  if (importType === 'incremental_sync') {
+    if (
+      schema.schemaVersion < 2
+      || !schema.incrementalSyncTypeReady
+      || !schema.atomicLiveSyncGuardReady
+      || !schema.cursorStorageReady
+      || !schema.atomicCommitRpcReady
+      || !schema.replayFinalizeRpcReady
+    ) {
+      return { ok: false, reason: schema.blocker ?? LIVE_CORE_INCREMENTAL_MIGRATION_BLOCKER, code: 'migration_missing' };
+    }
+  } else if (!schema.ready && !(schema.initialSyncTypeReady && schema.atomicRunningGuardReady)) {
     return { ok: false, reason: schema.blocker ?? 'Миграция Live Core не применена.', code: 'migration_missing' };
   }
 
-  await recoverStaleInitialSyncRuns(connection.id);
+  await recoverStaleLiveSyncRuns(connection.id);
 
   const runId = randomUUID();
   const now = new Date().toISOString();
@@ -800,7 +1399,7 @@ export async function acquireChannelLiveSyncGuard(connectionId: string): Promise
     connection_id: connection.id,
     provider: connection.provider,
     status: 'running',
-    import_type: 'initial_sync',
+    import_type: importType,
     started_at: now,
     warnings: [],
     errors: [],
@@ -819,22 +1418,107 @@ export async function acquireChannelLiveSyncGuard(connectionId: string): Promise
       return { ok: false, reason: 'Синхронизация уже выполняется для этого подключения.', code: 'execution_guard' };
     }
     if (isInitialSyncTypeRejected(error)) {
-      return { ok: false, reason: 'Миграция Channel Manager Live Core ещё не применена. Initial sync недоступен.', code: 'migration_missing' };
+      return {
+        ok: false,
+        reason: importType === 'incremental_sync'
+          ? LIVE_CORE_INCREMENTAL_MIGRATION_BLOCKER
+          : 'Миграция Channel Manager Live Core ещё не применена. Initial sync недоступен.',
+        code: 'migration_missing',
+      };
     }
     throw new Error(error.message);
   }
 
-  // Diagnostic lease only — not the primary lock.
-  await supabase.from('booking_channel_manager_connections').update({
-    last_import_at: now,
-    metadata: {
-      ...stripFullSnapshot(connection.metadata),
-      liveSyncLease: { runId, status: 'held', acquiredAt: now },
-    },
-    updated_at: now,
-  }).eq('id', connection.id);
+  // Diagnostic lease only — not the primary lock. Narrow write preserves concurrent cursor commits.
+  // Lease write failure must not leave an unexplained orphan: the unique running row remains the
+  // authoritative guard, and we record leaseWriteFailed on that same run when possible.
+  let leaseWriteFailed = false;
+  try {
+    await writeLiveSyncLease(connection.id, {
+      runId,
+      status: 'held',
+      acquiredAt: now,
+      importType,
+    }, { lastImportAt: now, updatedAt: now });
+  } catch {
+    leaseWriteFailed = true;
+    const failedAt = new Date().toISOString();
+    try {
+      const runRow = data as Record<string, unknown>;
+      const metadata = {
+        ...((runRow.metadata as Record<string, unknown>) ?? {}),
+        liveCore: true,
+        liveCoreStage: 'acquire_guard',
+        leaseWriteFailed: true,
+      };
+      await supabase.from('booking_channel_import_runs').update({
+        warnings: [
+          ...(Array.isArray(runRow.warnings) ? runRow.warnings : []),
+          {
+            type: 'lease_write_failed',
+            severity: 'warning',
+            message: 'Diagnostic liveSyncLease не записан; уникальный running-run остаётся первичным lock.',
+          },
+        ],
+        metadata,
+        updated_at: failedAt,
+      }).eq('id', runId).eq('status', 'running');
+    } catch {
+      // Best-effort annotation only; running row is still the intentional primary lock.
+    }
+  }
 
-  return { ok: true, run: mapRun(data as Record<string, unknown>) };
+  const run = mapRun(data as Record<string, unknown>);
+  if (leaseWriteFailed) {
+    return {
+      ok: true,
+      run: {
+        ...run,
+        warnings: [
+          ...run.warnings,
+          {
+            type: 'lease_write_failed',
+            severity: 'warning',
+            message: 'Diagnostic liveSyncLease не записан; уникальный running-run остаётся первичным lock.',
+          },
+        ],
+        metadata: { ...run.metadata, leaseWriteFailed: true },
+      },
+    };
+  }
+  return { ok: true, run };
+}
+
+async function writeLiveSyncLease(
+  connectionId: string,
+  lease: Record<string, unknown>,
+  options?: { lastImportAt?: string; updatedAt?: string },
+): Promise<void> {
+  const updatedAt = options?.updatedAt ?? new Date().toISOString();
+  const { data, error } = await supabase.rpc('channel_manager_set_live_sync_lease_v1', {
+    p_connection_id: connectionId,
+    p_lease: lease,
+    p_updated_at: updatedAt,
+    p_last_import_at: options?.lastImportAt ?? null,
+  });
+  const payload = data && typeof data === 'object' ? data as { success?: boolean } : null;
+  if (!error && payload?.success === true) return;
+
+  // Fallback: reload fresh metadata and merge only the lease key (never reuse a pre-insert snapshot).
+  const fresh = await getConnection(connectionId);
+  const patch: Record<string, unknown> = {
+    metadata: {
+      ...stripFullSnapshot(fresh.metadata),
+      liveSyncLease: lease,
+    },
+    updated_at: updatedAt,
+  };
+  if (options?.lastImportAt) patch.last_import_at = options.lastImportAt;
+  const { error: updateError } = await supabase
+    .from('booking_channel_manager_connections')
+    .update(patch)
+    .eq('id', connectionId);
+  if (updateError) throw new Error(updateError.message);
 }
 
 export async function releaseChannelLiveSyncLease(connectionId: string, runId: string): Promise<void> {
@@ -842,13 +1526,7 @@ export async function releaseChannelLiveSyncLease(connectionId: string, runId: s
   const lease = connection.metadata?.liveSyncLease as Record<string, unknown> | undefined;
   if (lease && text(lease.runId) !== runId) return;
   const now = new Date().toISOString();
-  await supabase.from('booking_channel_manager_connections').update({
-    metadata: {
-      ...stripFullSnapshot(connection.metadata),
-      liveSyncLease: { runId, status: 'released', releasedAt: now },
-    },
-    updated_at: now,
-  }).eq('id', connection.id);
+  await writeLiveSyncLease(connectionId, { runId, status: 'released', releasedAt: now }, { updatedAt: now });
 }
 
 async function updateRunProgress(
@@ -896,17 +1574,31 @@ async function updateRunProgress(
   return mapRun(data as Record<string, unknown>);
 }
 
-async function applyExternalCancellation(matchedBookingId: string): Promise<'cancelled' | 'skipped'> {
-  const { data: booking, error } = await supabase
+async function applyExternalCancellation(
+  matchedBookingId: string,
+  scope?: { propertyId: string; accountId: string } | null,
+): Promise<'cancelled' | 'skipped'> {
+  let query = supabase
     .from('booking_ops_records')
-    .select('id,account_id,normalized_status,ops_status')
-    .eq('id', matchedBookingId)
-    .maybeSingle();
+    .select('id,account_id,property_id,normalized_status,ops_status')
+    .eq('id', matchedBookingId);
+  if (scope?.propertyId && scope?.accountId) {
+    query = query.eq('property_id', scope.propertyId).eq('account_id', scope.accountId);
+  }
+  const { data: booking, error } = await query.maybeSingle();
   if (error) throw new Error(error.message);
-  if (!booking) return 'skipped';
+  if (!booking) {
+    if (scope?.propertyId && scope?.accountId) {
+      throw Object.assign(
+        new Error('Сопоставление брони вне контура подключения. Отмена заблокирована.'),
+        { code: 'account_scope_mismatch' },
+      );
+    }
+    return 'skipped';
+  }
   const status = text(booking.normalized_status || booking.ops_status).toLowerCase();
   if (status === 'cancelled' || status === 'canceled') return 'skipped';
-  const accountId = nullableText(booking.account_id);
+  const accountId = scope?.accountId || nullableText(booking.account_id);
   if (!accountId) {
     throw Object.assign(
       new Error('Нельзя отменить бронь: не указан account_id. Нужна проверка оператором.'),
@@ -923,34 +1615,119 @@ async function applyExternalCancellation(matchedBookingId: string): Promise<'can
 }
 
 type UpdateOutcome = 'updated' | 'skipped' | 'failed';
+type RestoreOutcome = 'restored' | 'skipped' | 'failed';
+
+async function applyExternalRestoration(
+  imported: Record<string, unknown>,
+  warnings: ChannelImportConflict[],
+  scope?: { propertyId: string; accountId: string } | null,
+): Promise<RestoreOutcome> {
+  const matchedBookingId = text(imported.matched_booking_id);
+  if (!matchedBookingId) return 'skipped';
+  let query = supabase
+    .from('booking_ops_records')
+    .select('id,account_id,property_id,unit_id,guest_name,check_in_at,check_out_at,normalized_status')
+    .eq('id', matchedBookingId);
+  if (scope?.propertyId && scope?.accountId) {
+    query = query.eq('property_id', scope.propertyId).eq('account_id', scope.accountId);
+  }
+  const { data: current, error } = await query.maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!current) {
+    if (scope?.propertyId && scope?.accountId) {
+      warnings.push({
+        type: 'account_scope_mismatch',
+        severity: 'blocker',
+        entityId: text(imported.id),
+        message: 'Сопоставление брони вне контура подключения. Восстановление заблокировано.',
+      });
+      return 'failed';
+    }
+    return 'skipped';
+  }
+  const status = text(current.normalized_status).toLowerCase();
+  if (status !== 'cancelled' && status !== 'canceled') return 'skipped';
+
+  const checkIn = nullableText(imported.checkin_date) || (current.check_in_at ? String(current.check_in_at).slice(0, 10) : null);
+  const checkOut = nullableText(imported.checkout_date) || (current.check_out_at ? String(current.check_out_at).slice(0, 10) : null);
+  const accountId = scope?.accountId || nullableText(current.account_id);
+  const propertyId = scope?.propertyId || nullableText(current.property_id);
+  if (!accountId || !propertyId || !checkIn || !checkOut) {
+    warnings.push({
+      type: 'restore_blocked',
+      severity: 'blocker',
+      entityId: text(imported.id),
+      message: 'Нельзя восстановить бронь: недостаточно account_id/property_id/дат. Нужна проверка оператором.',
+    });
+    return 'failed';
+  }
+
+  const result = await restoreReservation({
+    accountId,
+    reservationId: matchedBookingId,
+    actorId: 'channel-manager-live-core',
+    propertyId,
+    unitId: nullableText(current.unit_id),
+    checkIn,
+    checkOut,
+    reason: 'channel_manager_live_core_external_restore',
+  });
+  if (result.blocked) {
+    warnings.push({
+      type: 'availability_conflict',
+      severity: 'blocker',
+      entityId: text(imported.id),
+      message: 'Восстановление заблокировано: подтверждённый конфликт доступности (overbooking).',
+    });
+    return 'failed';
+  }
+  return result.changed ? 'restored' : 'skipped';
+}
 
 async function applyExternalBookingUpdate(
   imported: Record<string, unknown>,
   warnings: ChannelImportConflict[],
+  scope?: { propertyId: string; accountId: string } | null,
 ): Promise<UpdateOutcome> {
   const matchedBookingId = text(imported.matched_booking_id);
   if (!matchedBookingId) return 'skipped';
   const checkIn = nullableText(imported.checkin_date);
   const checkOut = nullableText(imported.checkout_date);
   const guestName = nullableText(imported.guest_safe_name);
-  const { data: current, error } = await supabase
+  const guestCount = numberOrNull(imported.guest_count);
+  let query = supabase
     .from('booking_ops_records')
-    .select('id,account_id,property_id,unit_id,guest_name,check_in_at,check_out_at,normalized_status')
-    .eq('id', matchedBookingId)
-    .maybeSingle();
+    .select('id,account_id,property_id,unit_id,guest_name,guest_count,check_in_at,check_out_at,normalized_status')
+    .eq('id', matchedBookingId);
+  if (scope?.propertyId && scope?.accountId) {
+    query = query.eq('property_id', scope.propertyId).eq('account_id', scope.accountId);
+  }
+  const { data: current, error } = await query.maybeSingle();
   if (error) throw new Error(error.message);
-  if (!current) return 'skipped';
+  if (!current) {
+    if (scope?.propertyId && scope?.accountId) {
+      warnings.push({
+        type: 'account_scope_mismatch',
+        severity: 'blocker',
+        entityId: text(imported.id),
+        message: 'Сопоставление брони вне контура подключения. Обновление заблокировано.',
+      });
+      return 'failed';
+    }
+    return 'skipped';
+  }
   if (text(current.normalized_status).toLowerCase() === 'cancelled') return 'skipped';
 
   const currentCheckIn = current.check_in_at ? String(current.check_in_at).slice(0, 10) : null;
   const currentCheckOut = current.check_out_at ? String(current.check_out_at).slice(0, 10) : null;
   const datesChanged = Boolean((checkIn && checkIn !== currentCheckIn) || (checkOut && checkOut !== currentCheckOut));
   const guestChanged = Boolean(guestName && guestName !== text(current.guest_name));
-  if (!datesChanged && !guestChanged) return 'skipped';
+  const guestCountChanged = guestCount != null && guestCount !== numberOrNull(current.guest_count);
+  if (!datesChanged && !guestChanged && !guestCountChanged) return 'skipped';
 
   if (datesChanged) {
-    const accountId = nullableText(current.account_id);
-    const propertyId = nullableText(current.property_id);
+    const accountId = scope?.accountId || nullableText(current.account_id);
+    const propertyId = scope?.propertyId || nullableText(current.property_id);
     if (!accountId || !propertyId || !checkIn || !checkOut) {
       warnings.push({
         type: 'availability_update_blocked',
@@ -979,6 +1756,7 @@ async function applyExternalBookingUpdate(
     }
     const result = await updateBookingOpsRecord(matchedBookingId, {
       guestName: guestChanged ? guestName ?? undefined : undefined,
+      guestCount: guestCountChanged ? guestCount ?? undefined : undefined,
       checkInAt: checkIn,
       checkOutAt: checkOut,
     }, { actorType: 'admin' });
@@ -987,7 +1765,8 @@ async function applyExternalBookingUpdate(
   }
 
   const result = await updateBookingOpsRecord(matchedBookingId, {
-    guestName: guestName ?? undefined,
+    guestName: guestChanged ? guestName ?? undefined : undefined,
+    guestCount: guestCountChanged ? guestCount ?? undefined : undefined,
   }, { actorType: 'admin' });
   if (!result.ok) throw new Error(result.error ?? 'Не удалось обновить бронь.');
   return 'updated';
@@ -1000,17 +1779,41 @@ async function processImportedBookingsForLiveSync(
   options?: {
     reservationMetadata?: Record<string, unknown> | null;
     injectFailureAfterBookingOpsCreate?: boolean;
+    /** When set, only process these external booking ids (incremental delta). */
+    externalBookingIds?: string[] | null;
+    changeKindByExternalId?: Record<string, ChannelLiveBookingChangeKind> | null;
+    /** Canonical property/account contour for Incremental Sync mutations. */
+    scope?: IncrementalConnectionScope | null;
   },
 ): Promise<void> {
-  const { data: bookings, error } = await supabase
+  const mutationScope = options?.scope?.propertyId && options?.scope?.accountId
+    ? { propertyId: options.scope.propertyId, accountId: options.scope.accountId }
+    : null;
+  let query = supabase
     .from('booking_channel_imported_bookings')
     .select('*')
     .eq('connection_id', connectionId);
+  // Explicit array (including empty) scopes processing; undefined/null = full Initial Sync set.
+  if (Array.isArray(options?.externalBookingIds)) {
+    if (options.externalBookingIds.length === 0) {
+      return;
+    }
+    query = query.in('external_booking_id', options.externalBookingIds);
+  }
+  const { data: bookings, error } = await query;
   if (error) throw new Error(error.message);
 
   for (const imported of (bookings ?? []) as Record<string, unknown>[]) {
     const matchStatus = text(imported.match_status);
     const externalStatus = normalizeExternalBookingStatus(imported.status);
+    const externalId = text(imported.external_booking_id);
+    const changeKind = options?.changeKindByExternalId?.[externalId]
+      ?? classifyBookingChange(null, externalStatus);
+
+    if (changeKind === 'unchanged') {
+      counters.skipped += 1;
+      continue;
+    }
 
     if (matchStatus === 'possible_duplicate') {
       counters.skipped += 1;
@@ -1037,7 +1840,9 @@ async function processImportedBookingsForLiveSync(
         .maybeSingle()
       : { data: null };
 
-    if (object && ['unmatched', 'possible_match'].includes(text(object.match_status)) && externalStatus !== 'cancelled') {
+    if (object && ['unmatched', 'possible_match'].includes(text(object.match_status))
+      && externalStatus !== 'cancelled'
+      && changeKind !== 'cancelled') {
       counters.skipped += 1;
       warnings.push({
         type: 'object_not_confirmed',
@@ -1049,9 +1854,9 @@ async function processImportedBookingsForLiveSync(
     }
 
     try {
-      if (externalStatus === 'cancelled') {
+      if (changeKind === 'cancelled' || externalStatus === 'cancelled') {
         if (imported.matched_booking_id) {
-          const outcome = await applyExternalCancellation(text(imported.matched_booking_id));
+          const outcome = await applyExternalCancellation(text(imported.matched_booking_id), mutationScope);
           if (outcome === 'cancelled') counters.cancelled += 1;
           else counters.skipped += 1;
         } else {
@@ -1060,8 +1865,36 @@ async function processImportedBookingsForLiveSync(
         continue;
       }
 
+      if (changeKind === 'restored' || externalStatus === 'restored') {
+        if (imported.matched_booking_id) {
+          const outcome = await applyExternalRestoration(imported, warnings, mutationScope);
+          if (outcome === 'restored') {
+            counters.restored += 1;
+            counters.updated += 1;
+          } else if (outcome === 'failed') {
+            counters.failed += 1;
+            counters.skipped += 1;
+          } else counters.skipped += 1;
+        } else if (matchStatus === 'unmatched' || !imported.matched_booking_id) {
+          const created = await createBookingFromImportedChannelBooking(text(imported.id), {
+            reservationMetadata: options?.reservationMetadata ?? null,
+            propertyId: mutationScope?.propertyId ?? null,
+            accountId: mutationScope?.accountId ?? null,
+          });
+          if (created.duplicate) counters.skipped += 1;
+          else if (created.created) {
+            counters.imported += 1;
+            counters.created += 1;
+            counters.restored += 1;
+          } else counters.skipped += 1;
+        } else {
+          counters.skipped += 1;
+        }
+        continue;
+      }
+
       if (imported.matched_booking_id && ['matched', 'imported_to_booking_ops'].includes(matchStatus)) {
-        const outcome = await applyExternalBookingUpdate(imported, warnings);
+        const outcome = await applyExternalBookingUpdate(imported, warnings, mutationScope);
         if (outcome === 'updated') counters.updated += 1;
         else if (outcome === 'failed') {
           counters.failed += 1;
@@ -1073,10 +1906,13 @@ async function processImportedBookingsForLiveSync(
       if (matchStatus === 'unmatched' || !imported.matched_booking_id) {
         const created = await createBookingFromImportedChannelBooking(text(imported.id), {
           reservationMetadata: options?.reservationMetadata ?? null,
+          propertyId: mutationScope?.propertyId ?? null,
+          accountId: mutationScope?.accountId ?? null,
         });
         if (created.duplicate) counters.skipped += 1;
         else if (created.created) {
           counters.imported += 1;
+          counters.created += 1;
           if (options?.injectFailureAfterBookingOpsCreate === true) {
             throw Object.assign(
               new Error('acceptance_inject_failure_after_booking_ops_create'),
@@ -1090,13 +1926,22 @@ async function processImportedBookingsForLiveSync(
       counters.skipped += 1;
     } catch (error) {
       counters.failed += 1;
+      const code = (error as { code?: string })?.code;
       warnings.push({
-        type: (error as { code?: string })?.code === 'missing_account_id' ? 'cancel_missing_account' : 'booking_sync_failed',
+        type: code === 'missing_account_id'
+          ? 'cancel_missing_account'
+          : code === 'account_scope_mismatch' || code === 'connection_scope_invalid'
+            ? 'account_scope_mismatch'
+            : 'booking_sync_failed',
         severity: 'blocker',
         entityId: text(imported.id),
         message: redactLiveCoreErrorMessage(error instanceof Error ? error.message : error),
       });
-      if ((error as { code?: string })?.code === 'acceptance_inject_failure_after_booking_ops_create') {
+      if (
+        code === 'acceptance_inject_failure_after_booking_ops_create'
+        || code === 'account_scope_mismatch'
+        || code === 'connection_scope_invalid'
+      ) {
         throw error;
       }
     }
@@ -1256,15 +2101,24 @@ export async function runChannelManagerInitialSync(input: {
         importRunId: runId,
       })
       : null;
-    const processBookings = async () => processImportedBookingsForLiveSync(
-      connection.id,
-      counters,
-      warnings,
-      {
-        reservationMetadata,
-        injectFailureAfterBookingOpsCreate: input.injectFailureAfterBookingOpsCreate === true,
-      },
-    );
+    const processBookings = async () => {
+      let scope: IncrementalConnectionScope | null = null;
+      try {
+        scope = await resolveIncrementalConnectionScope(connection);
+      } catch {
+        scope = null;
+      }
+      return processImportedBookingsForLiveSync(
+        connection.id,
+        counters,
+        warnings,
+        {
+          reservationMetadata,
+          injectFailureAfterBookingOpsCreate: input.injectFailureAfterBookingOpsCreate === true,
+          scope: scope ?? undefined,
+        },
+      );
+    };
     if (isAcceptanceHarness && reservationMetadata) {
       await runWithLiveCoreAcceptanceCreateContext({
         acceptanceHarness: LIVE_CORE_ACCEPTANCE_HARNESS,
@@ -1394,22 +2248,41 @@ export async function getChannelLiveCoreStatus(connectionId: string): Promise<Ch
     const rightTs = Date.parse(right.updatedAt || right.finishedAt || right.createdAt || right.startedAt || '') || 0;
     return rightTs - leftTs;
   });
-  const latest = runs.find((run) => run.importType === 'initial_sync') ?? runs[0] ?? null;
+  const latest = runs.find((run) => run.importType === 'initial_sync' || run.importType === 'incremental_sync')
+    ?? runs[0]
+    ?? null;
+  const latestIncremental = runs.find((run) => run.importType === 'incremental_sync') ?? null;
   const counters = readCounters(latest?.metadata) ?? readCounters(connection.metadata) ?? null;
   const safeError = (latest?.metadata?.safeError as ChannelLiveSafeError | undefined)
     ?? (connection.metadata?.lastSafeError as ChannelLiveSafeError | undefined)
     ?? null;
   const stage = text(latest?.metadata?.liveCoreStage) || null;
-  const cursors = (Array.isArray(latest?.metadata?.cursorPlaceholder)
-    ? latest?.metadata?.cursorPlaceholder
-    : connection.metadata?.cursorPlaceholder) as ChannelLiveProviderCursor[] | undefined;
+  // Never surface raw checkpoints from run/connection metadata in public status.
+  const cursors = cursorPlaceholder();
+
+  const committed = readCommittedIncrementalCursor(connection.metadata);
+  const lastSuccessfulInitialSyncAt = nullableText(connection.metadata?.lastSuccessfulInitialSyncAt)
+    ?? (latest?.importType === 'initial_sync' && ['completed', 'completed_with_warnings'].includes(latest.status)
+      ? latest.finishedAt
+      : null);
+  const lastSuccessfulIncrementalSyncAt = nullableText(connection.metadata?.lastSuccessfulIncrementalSyncAt);
 
   const latestWarnings = Array.isArray(latest?.warnings) ? latest!.warnings as ChannelImportConflict[] : [];
   const blockerWarning = latestWarnings.find((item) => item && typeof item === 'object' && (item as ChannelImportConflict).severity === 'blocker') as ChannelImportConflict | undefined;
 
+  const initialSyncReady = schema.initialSyncTypeReady && schema.atomicRunningGuardReady;
+  const incrementalReady = schema.schemaVersion >= 2
+    && schema.incrementalSyncTypeReady
+    && schema.atomicLiveSyncGuardReady
+    && schema.cursorStorageReady
+    && schema.atomicCommitRpcReady
+    && schema.replayFinalizeRpcReady
+    && Boolean(lastSuccessfulInitialSyncAt)
+    && connection.status !== 'blocked';
+
   let warning: string | null = null;
   let blocker: string | null = null;
-  if (!schema.ready) blocker = schema.blocker;
+  if (!schema.ready && !initialSyncReady) blocker = schema.blocker;
   else if (connection.status === 'blocked') blocker = connection.failureReason ?? 'Подключение заблокировано.';
   else if (latest?.status === 'failed') {
     blocker = redactLiveCoreErrorMessage(
@@ -1420,31 +2293,668 @@ export async function getChannelLiveCoreStatus(connectionId: string): Promise<Ch
     );
   } else if (blockerWarning) blocker = redactLiveCoreErrorMessage(blockerWarning.message);
   else if (counters?.failed) blocker = `Есть ошибки обработки броней: ${counters.failed}.`;
-  else if (latestWarnings.length > 0) warning = 'Есть предупреждения сверки после initial sync.';
+  else if (latestWarnings.length > 0) warning = 'Есть предупреждения сверки после sync.';
+  else if (!lastSuccessfulInitialSyncAt) {
+    warning = 'Incremental sync доступен только после успешного Initial Sync.';
+  }
+
+  const mapLatest = (run: ChannelImportRun | null) => (run ? {
+    id: run.id,
+    status: run.status,
+    importType: run.importType,
+    startedAt: run.startedAt,
+    finishedAt: run.finishedAt,
+    stage: text(run.metadata?.liveCoreStage) || null,
+    counters: readCounters(run.metadata),
+    safeError: (run.metadata?.safeError as ChannelLiveSafeError | undefined) ?? null,
+  } : null);
 
   return {
     provider: connection.provider,
     connectionId: connection.id,
     connectionState: connection.status,
     lastSuccessfulSyncAt: connection.lastSuccessAt,
-    latestRun: latest ? {
-      id: latest.id,
-      status: latest.status,
-      importType: latest.importType,
-      startedAt: latest.startedAt,
-      finishedAt: latest.finishedAt,
-      stage,
-      counters,
-      safeError,
-    } : null,
+    lastSuccessfulInitialSyncAt,
+    lastSuccessfulIncrementalSyncAt,
+    latestRun: mapLatest(latest),
+    latestIncrementalRun: mapLatest(latestIncremental),
     counters,
     warning,
     blocker,
-    liveCoreEnabled: schema.ready,
-    initialSyncEnabled: schema.ready,
-    incrementalSyncEnabled: false,
+    retryable: Boolean(safeError?.retryable ?? (latest?.status === 'failed')),
+    liveCoreEnabled: initialSyncReady,
+    initialSyncEnabled: initialSyncReady && connection.status !== 'blocked',
+    incrementalSyncEnabled: incrementalReady,
     realProviderApiEnabled: CHANNEL_PROVIDER_ADAPTERS[connection.provider]?.supports_real_api === true,
-    schemaReady: schema.ready,
-    cursorPlaceholder: cursors ?? cursorPlaceholder(),
+    schemaReady: schema.ready || initialSyncReady,
+    schemaVersion: schema.schemaVersion,
+    cursorPresent: Boolean(committed?.checkpoint),
+    cursorUpdatedAt: committed?.updatedAt ?? null,
+    cursorSourceRunId: committed?.sourceRunId ?? null,
+    cursorCheckpointHash: committed?.checkpoint
+      ? hashCursorCheckpoint(committed.checkpoint)
+      : null,
+    cursorPlaceholder: cursors,
+  };
+}
+
+function readCommittedIncrementalCursor(
+  metadata: Record<string, unknown> | undefined,
+): ChannelLiveCommittedCursor | null {
+  const raw = metadata?.incrementalCursor;
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const row = raw as Record<string, unknown>;
+  const checkpoint = text(row.checkpoint);
+  if (!checkpoint) return null;
+  return {
+    stream: 'incremental',
+    checkpoint,
+    batchHash: text(row.batchHash) || text(row.batch_hash) || '',
+    updatedAt: text(row.updatedAt) || text(row.updated_at) || '',
+    sourceRunId: text(row.sourceRunId) || text(row.source_run_id) || '',
+  };
+}
+
+export async function resolveIncrementalConnectionScope(
+  connection: ChannelManagerConnection,
+): Promise<IncrementalConnectionScope> {
+  const propertySetupId = text(connection.propertySetupId);
+  const ownerSetupId = text(connection.ownerSetupId);
+  if (!propertySetupId) {
+    throw Object.assign(new Error('У подключения не указан профиль объекта.'), {
+      code: 'connection_scope_invalid',
+    });
+  }
+  if (!ownerSetupId) {
+    throw Object.assign(new Error('У подключения не указан владелец.'), {
+      code: 'connection_scope_invalid',
+    });
+  }
+
+  const { data: property, error } = await supabase
+    .from('booking_property_setup_profiles')
+    .select('id,owner_setup_id,property_id')
+    .eq('id', propertySetupId)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!property) {
+    throw Object.assign(new Error('Профиль объекта не найден.'), {
+      code: 'connection_scope_invalid',
+    });
+  }
+  if (text(property.owner_setup_id) !== ownerSetupId) {
+    throw Object.assign(new Error('Объект не принадлежит владельцу подключения.'), {
+      code: 'account_scope_mismatch',
+    });
+  }
+
+  return {
+    connectionId: connection.id,
+    ownerSetupId,
+    propertySetupId,
+    propertyId: nullableText(property.property_id),
+    accountId: nullableText(connection.metadata?.accountId),
+  };
+}
+
+async function requireSuccessfulInitialSync(connectionId: string): Promise<string> {
+  const runs = await listChannelImportRuns(connectionId);
+  const success = runs.find((run) => (
+    run.importType === 'initial_sync'
+    && ['completed', 'completed_with_warnings'].includes(run.status)
+  ));
+  if (!success) {
+    throw Object.assign(
+      new Error('Incremental sync доступен только после успешного Initial Sync.'),
+      { code: 'initial_sync_required' },
+    );
+  }
+  return success.id;
+}
+
+// ---------------------------------------------------------------------------
+// 4. Live Incremental Sync v1 — one bounded delta batch, no polling/webhooks
+// ---------------------------------------------------------------------------
+
+export async function runChannelManagerIncrementalSync(input: {
+  connectionId: string;
+  delta: ManualChannelIncrementalDelta;
+  metadata?: Record<string, unknown>;
+  limit?: number;
+}): Promise<ChannelLiveSyncResult> {
+  if (input.metadata && findSecretPath(input.metadata)) {
+    throw new Error('Пароли, токены и другие секреты нельзя передавать или сохранять в импорте.');
+  }
+  if (findSecretPath(input.delta)) {
+    throw new Error('Пароли, токены и другие секреты нельзя передавать или сохранять в импорте.');
+  }
+
+  const validatedBatch = validateManualChannelIncrementalDelta(input.delta);
+
+  let stage: ChannelLiveSyncStage = 'queued';
+  let runId: string | null = null;
+  const counters = emptyCounters();
+  let warnings: ChannelImportConflict[] = [];
+  let cursors: ChannelLiveProviderCursor[] = cursorPlaceholder();
+  let connection = await getConnection(input.connectionId);
+  let previousCursor = readCommittedIncrementalCursor(connection.metadata);
+  let cursorCommitted = false;
+
+  try {
+    const scope = await resolveIncrementalConnectionScope(connection);
+
+    if (connection.status === 'blocked') {
+      throw Object.assign(new Error(connection.failureReason ?? 'Подключение заблокировано.'), { code: 'connection_blocked' });
+    }
+
+    const schema = await probeChannelLiveCoreSchema(connection.id);
+    if (
+      schema.schemaVersion < 2
+      || !schema.incrementalSyncTypeReady
+      || !schema.atomicLiveSyncGuardReady
+      || !schema.cursorStorageReady
+      || !schema.atomicCommitRpcReady
+      || !schema.replayFinalizeRpcReady
+    ) {
+      throw Object.assign(new Error(schema.blocker ?? LIVE_CORE_INCREMENTAL_MIGRATION_BLOCKER), { code: 'migration_missing' });
+    }
+
+    if (validatedBatch.bookings.length > 0 && (!scope.propertyId || !scope.accountId)) {
+      throw Object.assign(
+        new Error('Для booking mutations нужны canonical propertyId и accountId подключения.'),
+        { code: 'connection_scope_invalid' },
+      );
+    }
+
+    await requireSuccessfulInitialSync(connection.id);
+
+    stage = 'load_cursor';
+    previousCursor = readCommittedIncrementalCursor(connection.metadata);
+    const protocol = assertFailClosedIncrementalCursorProtocol(previousCursor, validatedBatch);
+
+    if (protocol.kind === 'replay') {
+      const runs = await listChannelImportRuns(connection.id);
+      const lastSuccess = runs.find((run) => (
+        run.importType === 'incremental_sync'
+        && ['completed', 'completed_with_warnings'].includes(run.status)
+      ));
+      const run = lastSuccess ?? {
+        id: previousCursor?.sourceRunId || '00000000-0000-4000-8000-000000000000',
+        connectionId: connection.id,
+        provider: connection.provider,
+        status: 'completed' as const,
+        importType: 'incremental_sync' as const,
+        startedAt: null,
+        finishedAt: previousCursor?.updatedAt ?? null,
+        importedObjectsCount: 0,
+        importedBookingsCount: 0,
+        importedCalendarDaysCount: 0,
+        importedPricesCount: 0,
+        warnings: [],
+        errors: [],
+        safeSummary: 'Incremental sync replay (no side effects).',
+        metadata: {
+          liveCore: true,
+          liveCoreStage: 'completed',
+          liveCoreCounters: emptyCounters(),
+          ...buildSafeIncrementalCursorMetadata({
+            cursorPresent: true,
+            cursorCheckpointHash: previousCursor?.checkpoint
+              ? hashCursorCheckpoint(previousCursor.checkpoint)
+              : null,
+            sourceRunId: previousCursor?.sourceRunId ?? null,
+            updatedAt: previousCursor?.updatedAt ?? null,
+            replayed: true,
+            batchHashPrefix: previousCursor?.batchHash
+              ? previousCursor.batchHash.slice(0, 16)
+              : null,
+          }),
+        },
+        createdAt: previousCursor?.updatedAt ?? new Date().toISOString(),
+        updatedAt: previousCursor?.updatedAt ?? new Date().toISOString(),
+      };
+
+      return {
+        run,
+        connection,
+        stage: 'completed',
+        status: 'completed',
+        counters: emptyCounters(),
+        warnings: [],
+        safeError: null,
+        cursors: cursorPlaceholder(),
+        retryable: true,
+        cursorCommitted: true,
+        committedCursor: previousCursor,
+        replayed: true,
+      };
+    }
+
+    stage = 'acquire_guard';
+    const guard = await acquireChannelLiveSyncGuard(connection.id, { importType: 'incremental_sync' });
+    if (!guard.ok) {
+      throw Object.assign(new Error(guard.reason), { code: guard.code });
+    }
+    runId = guard.run.id;
+    connection = await getConnection(connection.id);
+    previousCursor = readCommittedIncrementalCursor(connection.metadata);
+    // Re-assert after guard in case another commit landed between pre-guard check and lease hold.
+    const postGuardProtocol =
+      assertFailClosedIncrementalCursorProtocol(previousCursor, validatedBatch);
+
+    if (postGuardProtocol.kind === 'replay') {
+      const finishedAt = new Date().toISOString();
+      const safeRunMetadata = {
+        liveCore: true,
+        liveCoreCounters: emptyCounters(),
+        ...buildSafeIncrementalCursorMetadata({
+          cursorPresent: Boolean(previousCursor?.checkpoint),
+          cursorCheckpointHash: previousCursor?.checkpoint
+            ? hashCursorCheckpoint(previousCursor.checkpoint)
+            : null,
+          sourceRunId: previousCursor?.sourceRunId ?? null,
+          updatedAt: previousCursor?.updatedAt ?? null,
+          replayed: true,
+          batchHashPrefix: previousCursor?.batchHash
+            ? previousCursor.batchHash.slice(0, 16)
+            : null,
+        }),
+      };
+      const { data: replayData, error: replayError } = await supabase.rpc(
+        'channel_manager_complete_incremental_replay_v1',
+        {
+          p_connection_id: connection.id,
+          p_run_id: runId,
+          p_expected_checkpoint: previousCursor?.checkpoint ?? null,
+          p_expected_batch_hash: previousCursor?.batchHash || null,
+          p_finished_at: finishedAt,
+          p_safe_run_metadata: safeRunMetadata,
+        },
+      );
+      const replayPayload = replayData && typeof replayData === 'object'
+        ? replayData as { success?: boolean; code?: string; message?: string }
+        : null;
+      if (replayError || !replayPayload || replayPayload.success !== true) {
+        const code = text(replayPayload?.code) || 'cursor_commit_failed';
+        const message = text(replayPayload?.message)
+          || text(replayError?.message)
+          || 'Не удалось атомарно завершить incremental replay.';
+        throw Object.assign(new Error(message), { code });
+      }
+
+      connection = await getConnection(connection.id);
+      const preserved = readCommittedIncrementalCursor(connection.metadata);
+      const runs = await listChannelImportRuns(connection.id);
+      const run = runs.find((item) => item.id === runId)!;
+      return {
+        run,
+        connection,
+        stage: 'completed',
+        status: 'completed',
+        counters: emptyCounters(),
+        warnings: [],
+        safeError: null,
+        cursors: cursorPlaceholder(),
+        retryable: true,
+        cursorCommitted: true,
+        committedCursor: preserved,
+        replayed: true,
+      };
+    }
+
+    const nextCheckpoint = validatedBatch.nextCursor.checkpoint!;
+    const currentCheckpoint = validatedBatch.currentCursor?.checkpoint ?? null;
+    const batchHash = computeIncrementalBatchHash(validatedBatch);
+
+    await updateRunProgress(runId, {
+      stage: 'load_cursor',
+      counters,
+      metadata: buildSafeIncrementalCursorMetadata({
+        cursorPresent: Boolean(previousCursor?.checkpoint),
+        cursorCheckpointHash: previousCursor?.checkpoint
+          ? hashCursorCheckpoint(previousCursor.checkpoint)
+          : null,
+        currentCursorHash: currentCheckpoint ? hashCursorCheckpoint(currentCheckpoint) : null,
+        nextCursorHash: hashCursorCheckpoint(nextCheckpoint),
+        hasMore: validatedBatch.hasMore,
+        sourceRunId: previousCursor?.sourceRunId ?? null,
+        updatedAt: previousCursor?.updatedAt ?? null,
+        replayed: false,
+        batchHashPrefix: previousCursor?.batchHash
+          ? previousCursor.batchHash.slice(0, 16)
+          : null,
+      }),
+    });
+
+    stage = 'load_incremental_batch';
+    await updateRunProgress(runId, { stage, counters });
+    const adapter = createChannelLiveCoreAdapter(connection.provider, { incrementalDelta: input.delta });
+    if (!adapter.capabilities.incrementalCursor || typeof adapter.loadIncrementalBatch !== 'function') {
+      throw Object.assign(new Error('Выбранный adapter не поддерживает incremental sync.'), { code: 'incremental_capability_missing' });
+    }
+    const cursorForLoad: ChannelLiveProviderCursor | null = previousCursor
+      ? { stream: 'incremental', checkpoint: previousCursor.checkpoint }
+      : null;
+    const batch = await adapter.loadIncrementalBatch({
+      cursor: cursorForLoad,
+      limit: input.limit,
+    });
+    cursors = cursorPlaceholder();
+
+    stage = 'import_bookings';
+    await updateRunProgress(runId, {
+      stage,
+      counters,
+      metadata: buildSafeIncrementalCursorMetadata({
+        cursorPresent: Boolean(previousCursor?.checkpoint),
+        cursorCheckpointHash: previousCursor?.checkpoint
+          ? hashCursorCheckpoint(previousCursor.checkpoint)
+          : null,
+        currentCursorHash: currentCheckpoint ? hashCursorCheckpoint(currentCheckpoint) : null,
+        nextCursorHash: hashCursorCheckpoint(nextCheckpoint),
+        hasMore: batch.hasMore,
+        sourceRunId: runId,
+        replayed: false,
+        batchHashPrefix: batchHash.slice(0, 16),
+      }),
+    });
+    const bookingsImported = batch.bookings.length > 0
+      ? await importChannelBookings(connection.id, batch.bookings.map(bookingToRow), { importRunId: runId })
+      : 0;
+
+    stage = 'import_calendar';
+    await updateRunProgress(runId, { stage, counters, bookings: bookingsImported });
+    counters.calendarDays = batch.calendar.length > 0
+      ? await importChannelCalendar(connection.id, batch.calendar.map(calendarToRow), { importRunId: runId })
+      : 0;
+    counters.prices = batch.pricing.length > 0
+      ? await importChannelCalendar(connection.id, batch.pricing.map(calendarToRow), { importRunId: runId, pricing: true })
+      : 0;
+
+    stage = 'reconcile_bookings';
+    await updateRunProgress(runId, {
+      stage, counters, bookings: bookingsImported, calendarDays: counters.calendarDays, prices: counters.prices,
+    });
+    const reconcileResult = await reconcileImportedBookings(connection.id, {
+      connectionId: connection.id,
+      externalBookingIds: batch.bookings.map((item) => item.externalBookingId),
+      propertyId: scope.propertyId,
+      accountId: scope.accountId,
+    });
+    if (reconcileResult.blockers.length > 0) {
+      warnings = [...warnings, ...reconcileResult.blockers];
+      const safeError = toChannelLiveSafeError(
+        'reconcile_bookings',
+        'Incremental sync остановлен: сопоставление вне контура подключения.',
+        'account_scope_mismatch',
+      );
+      connection = await finalizeFailedIncrementalConnection({
+        connection, runId, stage: 'reconcile_bookings', counters, warnings, safeError, cursors, previousCursor,
+      });
+      const runs = await listChannelImportRuns(connection.id);
+      const run = runs.find((item) => item.id === runId)!;
+      return {
+        run, connection, stage: 'failed', status: 'failed', counters, warnings, safeError, cursors,
+        retryable: true, cursorCommitted: false, committedCursor: previousCursor, replayed: false,
+      };
+    }
+
+    stage = 'process_booking_changes';
+    await updateRunProgress(runId, { stage, counters });
+    const changeKindByExternalId: Record<string, ChannelLiveBookingChangeKind> = {};
+    for (const booking of batch.bookings) {
+      changeKindByExternalId[booking.externalBookingId] = booking.changeKind;
+    }
+    await processImportedBookingsForLiveSync(connection.id, counters, warnings, {
+      externalBookingIds: batch.bookings.map((item) => item.externalBookingId),
+      changeKindByExternalId,
+      scope,
+    });
+
+    stage = 'audit_availability';
+    await updateRunProgress(runId, { stage, counters, warnings });
+    const availabilityChecks = await auditChannelImportAvailability(connection.id);
+    const conflictWarnings = await getChannelImportConflicts(connection.id);
+    warnings = [...warnings, ...conflictWarnings];
+    for (const check of availabilityChecks) {
+      if (check.status === 'no_conflict') continue;
+      warnings.push({
+        type: 'availability_conflict',
+        severity: check.status === 'confirmed_conflict' ? 'blocker' : 'warning',
+        message: check.safeSummary,
+      });
+    }
+
+    stage = 'persist_counters';
+    const status = resolveChannelLiveSyncFinalStatus(counters, warnings);
+    if (status === 'failed') {
+      const safeError = toChannelLiveSafeError('process_booking_changes', 'Incremental sync завершён с blocker/ошибками обработки.', 'sync_failed');
+      connection = await finalizeFailedIncrementalConnection({
+        connection, runId, stage: 'process_booking_changes', counters, warnings, safeError, cursors, previousCursor,
+      });
+      const runs = await listChannelImportRuns(connection.id);
+      const run = runs.find((item) => item.id === runId)!;
+      return {
+        run, connection, stage: 'failed', status: 'failed', counters, warnings, safeError, cursors,
+        retryable: true, cursorCommitted: false, committedCursor: previousCursor, replayed: false,
+      };
+    }
+
+    stage = 'commit_cursor';
+    const finishedAt = new Date().toISOString();
+    const safeRunMetadata = {
+      liveCore: true,
+      liveCoreCounters: counters,
+      ...buildSafeIncrementalCursorMetadata({
+        cursorPresent: true,
+        cursorCheckpointHash: hashCursorCheckpoint(nextCheckpoint),
+        currentCursorHash: currentCheckpoint ? hashCursorCheckpoint(currentCheckpoint) : null,
+        nextCursorHash: hashCursorCheckpoint(nextCheckpoint),
+        hasMore: batch.hasMore,
+        sourceRunId: runId,
+        updatedAt: finishedAt,
+        replayed: false,
+        batchHashPrefix: batchHash.slice(0, 16),
+      }),
+    };
+    await updateRunProgress(runId, {
+      stage,
+      counters,
+      warnings,
+      metadata: safeRunMetadata,
+    });
+
+    const { data: commitData, error: commitError } = await supabase.rpc(
+      'channel_manager_commit_incremental_sync_v1',
+      {
+        p_connection_id: connection.id,
+        p_run_id: runId,
+        p_expected_previous_checkpoint: previousCursor?.checkpoint ?? null,
+        p_expected_previous_batch_hash: previousCursor?.batchHash || null,
+        p_new_checkpoint: nextCheckpoint,
+        p_new_batch_hash: batchHash,
+        p_finished_at: finishedAt,
+        p_status: status,
+        p_counters: counters,
+        p_safe_run_metadata: safeRunMetadata,
+        p_warnings: warnings,
+        p_safe_summary: `Live Core incremental sync: создано ${counters.created}, обновлено ${counters.updated}, отменено ${counters.cancelled}, восстановлено ${counters.restored}, пропущено ${counters.skipped}, ошибок ${counters.failed}.`,
+        p_bookings: bookingsImported,
+        p_calendar_days: counters.calendarDays,
+        p_prices: counters.prices,
+      },
+    );
+
+    const commitPayload = commitData && typeof commitData === 'object'
+      ? commitData as { success?: boolean; code?: string; message?: string }
+      : null;
+    if (commitError || !commitPayload || commitPayload.success !== true) {
+      const code = text(commitPayload?.code) || 'cursor_commit_failed';
+      const message = text(commitPayload?.message)
+        || text(commitError?.message)
+        || 'Не удалось атомарно зафиксировать incremental cursor.';
+      throw Object.assign(new Error(message), { code });
+    }
+
+    cursorCommitted = true;
+    connection = await getConnection(connection.id);
+    const committed = readCommittedIncrementalCursor(connection.metadata);
+    const runs = await listChannelImportRuns(connection.id);
+    const run = runs.find((item) => item.id === runId)!;
+
+    return {
+      run,
+      connection,
+      stage: 'completed',
+      status,
+      counters,
+      warnings,
+      safeError: null,
+      cursors,
+      retryable: true,
+      cursorCommitted: true,
+      committedCursor: committed,
+      replayed: false,
+    };
+  } catch (error) {
+    const code = (error as { code?: string })?.code;
+    const safeError = toChannelLiveSafeError(
+      stage,
+      error,
+      code === 'execution_guard'
+        || code === 'migration_missing'
+        || code === 'initial_sync_required'
+        || code === 'account_scope_mismatch'
+        || code === 'connection_scope_invalid'
+        || code === 'connection_blocked'
+        || code === 'cursor_protocol_violation'
+        || code === 'cursor_replay_mismatch'
+        || code === 'cursor_commit_failed'
+        || code === 'stale_expected_cursor'
+        || code === 'incremental_capability_missing'
+        ? code
+        : 'sync_failed',
+    );
+    if (runId) {
+      connection = await finalizeFailedIncrementalConnection({
+        connection, runId, stage, counters, warnings, safeError, cursors, previousCursor,
+      });
+    }
+
+    const runs = runId ? await listChannelImportRuns(connection.id) : [];
+    const run = runs.find((item) => item.id === runId) ?? {
+      id: runId ?? '00000000-0000-4000-8000-000000000000',
+      connectionId: connection.id,
+      provider: connection.provider,
+      status: 'failed',
+      importType: 'incremental_sync' as const,
+      startedAt: null,
+      finishedAt: new Date().toISOString(),
+      importedObjectsCount: counters.objects,
+      importedBookingsCount: counters.imported,
+      importedCalendarDaysCount: counters.calendarDays,
+      importedPricesCount: counters.prices,
+      warnings,
+      errors: [safeError],
+      safeSummary: safeError.message,
+      metadata: {
+        liveCoreStage: stage,
+        liveCoreCounters: counters,
+        safeError,
+        ...buildSafeIncrementalCursorMetadata({
+          cursorPresent: Boolean(previousCursor?.checkpoint),
+          cursorCheckpointHash: previousCursor?.checkpoint
+            ? hashCursorCheckpoint(previousCursor.checkpoint)
+            : null,
+          sourceRunId: previousCursor?.sourceRunId ?? null,
+          updatedAt: previousCursor?.updatedAt ?? null,
+          replayed: false,
+        }),
+      },
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    return {
+      run,
+      connection: await getConnection(connection.id).catch(() => connection),
+      stage: 'failed',
+      status: 'failed',
+      counters,
+      warnings,
+      safeError,
+      cursors,
+      retryable: true,
+      cursorCommitted: false,
+      committedCursor: previousCursor,
+      replayed: false,
+    };
+  }
+}
+
+async function finalizeFailedIncrementalConnection(input: {
+  connection: ChannelManagerConnection;
+  runId: string;
+  stage: ChannelLiveSyncStage;
+  counters: ChannelLiveSyncCounters;
+  warnings: ChannelImportConflict[];
+  safeError: ChannelLiveSafeError;
+  cursors: ChannelLiveProviderCursor[];
+  previousCursor: ChannelLiveCommittedCursor | null;
+}): Promise<ChannelManagerConnection> {
+  const finishedAt = new Date().toISOString();
+  await updateRunProgress(input.runId, {
+    stage: 'failed',
+    status: 'failed',
+    finishedAt,
+    counters: input.counters,
+    warnings: input.warnings,
+    errors: [input.safeError],
+    safeSummary: `Live Core incremental sync остановлен на этапе ${input.stage}.`,
+    metadata: {
+      liveCoreCounters: input.counters,
+      failedStage: input.stage,
+      safeError: input.safeError,
+      cursorRetained: true,
+      ...buildSafeIncrementalCursorMetadata({
+        cursorPresent: Boolean(input.previousCursor?.checkpoint),
+        cursorCheckpointHash: input.previousCursor?.checkpoint
+          ? hashCursorCheckpoint(input.previousCursor.checkpoint)
+          : null,
+        sourceRunId: input.previousCursor?.sourceRunId ?? null,
+        updatedAt: input.previousCursor?.updatedAt ?? null,
+        replayed: false,
+        batchHashPrefix: input.previousCursor?.batchHash
+          ? input.previousCursor.batchHash.slice(0, 16)
+          : null,
+      }),
+    },
+  }).catch(() => undefined);
+
+  // Preserve previous committed cursor — never advance on failure.
+  const patch: Record<string, unknown> = {
+    status: 'import_failed',
+    last_failure_at: finishedAt,
+    failure_reason: input.safeError.message.slice(0, 500),
+    metadata: {
+      ...stripFullSnapshot(input.connection.metadata),
+      liveCore: true,
+      lastFailedStage: input.stage,
+      lastSafeError: input.safeError,
+      lastLiveCoreCounters: input.counters,
+      ...(input.previousCursor ? { incrementalCursor: input.previousCursor } : {}),
+      liveSyncLease: { runId: input.runId, status: 'released', releasedAt: finishedAt, importType: 'incremental_sync' },
+    },
+    updated_at: finishedAt,
+  };
+  const { data } = await supabase.from('booking_channel_manager_connections').update(patch).eq('id', input.connection.id).select('*').single();
+  if (!data) return input.connection;
+  return {
+    ...input.connection,
+    status: text(data.status),
+    lastFailureAt: nullableText(data.last_failure_at),
+    failureReason: nullableText(data.failure_reason),
+    metadata: (data.metadata as Record<string, unknown>) ?? input.connection.metadata,
+    updatedAt: text(data.updated_at),
   };
 }

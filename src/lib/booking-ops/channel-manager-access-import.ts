@@ -28,7 +28,7 @@ export const CHANNEL_MANAGER_ONBOARDING_STATUS_LABELS: Record<ChannelManagerOnbo
   connected_placeholder: 'Подготовка завершена — API ещё не активен',
   blocked: 'Подключение заблокировано',
 };
-export const CHANNEL_IMPORT_TYPES = ['full', 'objects', 'bookings', 'calendar', 'pricing', 'availability', 'manual_snapshot', 'initial_sync'] as const;
+export const CHANNEL_IMPORT_TYPES = ['full', 'objects', 'bookings', 'calendar', 'pricing', 'availability', 'manual_snapshot', 'initial_sync', 'incremental_sync'] as const;
 export type ChannelImportType = (typeof CHANNEL_IMPORT_TYPES)[number];
 
 export type ChannelManagerConnection = {
@@ -555,21 +555,80 @@ export async function reconcileImportedObjects(connectionId: string): Promise<{ 
   return { matched, possible, unmatched };
 }
 
-export async function reconcileImportedBookings(connectionId: string): Promise<{ matched: number; possibleDuplicates: number; unmatched: number }> {
+export async function reconcileImportedBookings(
+  connectionId: string,
+  options?: {
+    connectionId?: string;
+    externalBookingIds?: string[] | null;
+    propertyId?: string | null;
+    accountId?: string | null;
+  },
+): Promise<{ matched: number; possibleDuplicates: number; unmatched: number; blockers: ChannelImportConflict[] }> {
   const connection = await getConnection(connectionId);
-  const { data: bookings, error } = await supabase.from('booking_channel_imported_bookings').select('*').eq('connection_id', connection.id).neq('match_status', 'ignored');
+  let query = supabase
+    .from('booking_channel_imported_bookings')
+    .select('*')
+    .eq('connection_id', connection.id)
+    .neq('match_status', 'ignored');
+  if (Array.isArray(options?.externalBookingIds)) {
+    if (options.externalBookingIds.length === 0) {
+      return { matched: 0, possibleDuplicates: 0, unmatched: 0, blockers: [] };
+    }
+    query = query.in('external_booking_id', options.externalBookingIds);
+  }
+  const { data: bookings, error } = await query;
   if (error) throw new Error(error.message);
+  const propertyId = nullableText(options?.propertyId);
+  const accountId = nullableText(options?.accountId);
+  const scoped = Boolean(propertyId && accountId);
   let matched = 0; let possibleDuplicates = 0; let unmatched = 0;
+  const blockers: ChannelImportConflict[] = [];
   for (const booking of (bookings ?? []) as Record<string, unknown>[]) {
-    if (booking.matched_booking_id) { matched += 1; continue; }
-    const { data: byReference } = await supabase.from('booking_ops_records').select('id').eq('booking_id', text(booking.external_booking_id)).limit(1).maybeSingle();
+    if (booking.matched_booking_id) {
+      if (scoped) {
+        const { data: existingMatch } = await supabase
+          .from('booking_ops_records')
+          .select('id,account_id,property_id')
+          .eq('id', text(booking.matched_booking_id))
+          .eq('property_id', propertyId!)
+          .eq('account_id', accountId!)
+          .maybeSingle();
+        if (!existingMatch) {
+          await supabase.from('booking_channel_imported_bookings').update({
+            match_status: 'unmatched',
+            matched_booking_id: null,
+            updated_at: new Date().toISOString(),
+          }).eq('id', booking.id);
+          unmatched += 1;
+          blockers.push({
+            type: 'account_scope_mismatch',
+            severity: 'blocker',
+            entityId: text(booking.id),
+            message: 'matched_booking_id указывает на бронь вне контура подключения.',
+          });
+          continue;
+        }
+      }
+      matched += 1;
+      continue;
+    }
+    let byReferenceQuery = supabase
+      .from('booking_ops_records')
+      .select('id')
+      .eq('booking_id', text(booking.external_booking_id));
+    if (scoped) {
+      byReferenceQuery = byReferenceQuery.eq('property_id', propertyId!).eq('account_id', accountId!);
+    }
+    const { data: byReference } = await byReferenceQuery.limit(1).maybeSingle();
     let status = byReference ? 'matched' : 'unmatched'; let bookingId = byReference?.id ?? null;
     if (!byReference && booking.checkin_date && booking.checkout_date) {
       const { data: importedObject } = booking.external_object_id
         ? await supabase.from('booking_channel_imported_objects').select('matched_property_id').eq('connection_id', connection.id).eq('external_object_id', booking.external_object_id).maybeSingle()
         : { data: null };
       let overlapQuery = supabase.from('booking_ops_records').select('id').gte('check_in_at', `${booking.checkin_date}T00:00:00.000Z`).lte('check_in_at', `${booking.checkin_date}T23:59:59.999Z`).gte('check_out_at', `${booking.checkout_date}T00:00:00.000Z`).lte('check_out_at', `${booking.checkout_date}T23:59:59.999Z`);
-      if (importedObject?.matched_property_id) overlapQuery = overlapQuery.eq('property_id', importedObject.matched_property_id);
+      const overlapPropertyId = propertyId || nullableText(importedObject?.matched_property_id);
+      if (overlapPropertyId) overlapQuery = overlapQuery.eq('property_id', overlapPropertyId);
+      if (accountId) overlapQuery = overlapQuery.eq('account_id', accountId);
       if (booking.guest_safe_name) overlapQuery = overlapQuery.eq('guest_name', booking.guest_safe_name);
       const { data: overlap } = await overlapQuery.limit(2);
       if ((overlap ?? []).length) { status = 'possible_duplicate'; bookingId = overlap?.[0]?.id ?? null; }
@@ -577,7 +636,7 @@ export async function reconcileImportedBookings(connectionId: string): Promise<{
     if (status === 'matched') matched += 1; else if (status === 'possible_duplicate') possibleDuplicates += 1; else unmatched += 1;
     await supabase.from('booking_channel_imported_bookings').update({ match_status: status, matched_booking_id: bookingId, updated_at: new Date().toISOString() }).eq('id', booking.id);
   }
-  return { matched, possibleDuplicates, unmatched };
+  return { matched, possibleDuplicates, unmatched, blockers };
 }
 
 export type ChannelImportConflict = { type: string; severity: 'warning' | 'blocker'; entityId?: string; message: string };
@@ -641,28 +700,118 @@ export async function createBookingFromImportedChannelBooking(
   options?: {
     force?: boolean;
     reservationMetadata?: Record<string, unknown> | null;
+    propertyId?: string | null;
+    accountId?: string | null;
   },
 ): Promise<Record<string, unknown>> {
   const id = assertUuid(importedBookingId, 'ID импортированной брони');
   const { data: imported, error } = await supabase.from('booking_channel_imported_bookings').select('*').eq('id', id).maybeSingle();
   if (error || !imported) throw new Error('Импортированная бронь не найдена.');
-  if (imported.matched_booking_id && !options?.force) return { created: false, duplicate: true, bookingId: imported.matched_booking_id };
+
+  const connection = await getConnection(text(imported.connection_id));
   const { data: object } = imported.external_object_id
     ? await supabase.from('booking_channel_imported_objects').select('*').eq('connection_id', imported.connection_id).eq('external_object_id', imported.external_object_id).maybeSingle()
     : { data: null };
+  const canonicalPropertyId = nullableText(options?.propertyId) || nullableText(object?.matched_property_id);
+  const canonicalAccountId = nullableText(options?.accountId) || nullableText(connection.metadata?.accountId);
+  if (!canonicalAccountId || !canonicalPropertyId) {
+    throw Object.assign(
+      new Error('Для создания брони из Channel Manager нужны canonical accountId и propertyId.'),
+      { code: 'connection_scope_invalid' },
+    );
+  }
+
+  const externalBookingId = text(imported.external_booking_id);
+  if (!externalBookingId) {
+    throw Object.assign(new Error('У импортированной брони нет external booking ID.'), {
+      code: 'channel_manager_intake_identity_missing',
+    });
+  }
+
+  if (imported.matched_booking_id && !options?.force) {
+    const { data: existingMatch } = await supabase
+      .from('booking_ops_records')
+      .select('id,account_id,property_id,booking_id')
+      .eq('id', text(imported.matched_booking_id))
+      .eq('account_id', canonicalAccountId)
+      .eq('property_id', canonicalPropertyId)
+      .maybeSingle();
+    if (!existingMatch) {
+      throw Object.assign(
+        new Error('matched_booking_id указывает на бронь вне canonical контура.'),
+        { code: 'account_scope_mismatch' },
+      );
+    }
+    return { created: false, duplicate: true, bookingId: text(existingMatch.id) };
+  }
+
   const result = await processInboundBookingRequest({
     guestName: imported.guest_safe_name, checkInAt: imported.checkin_date, checkOutAt: imported.checkout_date,
-    guestCount: imported.guest_count, propertyId: object?.matched_property_id ?? null, propertyLabel: object?.title ?? null,
-    bookingReference: imported.external_booking_id, externalSourceId: imported.external_booking_id,
+    guestCount: imported.guest_count, propertyId: canonicalPropertyId, propertyLabel: object?.title ?? null,
+    // Raw external ID remains provider identity; scoped idempotency is separate.
+    bookingReference: externalBookingId, externalSourceId: externalBookingId,
     metadata: {
       channelImport: true,
       importedBookingId: imported.id,
       provider: imported.provider,
+      accountId: canonicalAccountId,
       ...(options?.reservationMetadata ?? {}),
     },
-  }, 'channel_manager_placeholder');
-  if (!result.bookingId) throw new Error('Booking Ops не создал бронь: нужна проверка данных.');
-  await supabase.from('booking_channel_imported_bookings').update({ matched_booking_id: result.bookingId, match_status: 'imported_to_booking_ops', matched_property_setup_id: object?.matched_property_setup_id ?? null, updated_at: new Date().toISOString() }).eq('id', id);
+  }, 'channel_manager_placeholder', {
+    force: options?.force === true,
+    channelManagerScope: {
+      connectionId: connection.id,
+      provider: text(imported.provider) || connection.provider,
+      accountId: canonicalAccountId,
+      propertyId: canonicalPropertyId,
+    },
+  });
+  if (!result.bookingId) {
+    if (result.intakeStatus === 'failed') {
+      throw new Error(result.safeSummary || 'Booking Ops не создал бронь: нужна проверка данных.');
+    }
+    throw new Error('Booking Ops не создал бронь: нужна проверка данных.');
+  }
+
+  const { data: verified, error: verifyError } = await supabase
+    .from('booking_ops_records')
+    .select('id,account_id,property_id,booking_id')
+    .eq('id', result.bookingId)
+    .maybeSingle();
+  if (verifyError) throw new Error(verifyError.message);
+  if (!verified) throw new Error('Созданная бронь не найдена после intake.');
+
+  // Never patch account_id/property_id onto a booking that already belongs to a different non-null contour.
+  const verifiedAccountId = nullableText(verified.account_id);
+  const verifiedPropertyId = nullableText(verified.property_id);
+  if (verifiedAccountId && verifiedAccountId !== canonicalAccountId) {
+    throw Object.assign(new Error('Созданная бронь принадлежит другому account контуру.'), {
+      code: 'account_scope_mismatch',
+    });
+  }
+  if (verifiedPropertyId && verifiedPropertyId !== canonicalPropertyId) {
+    throw Object.assign(new Error('Созданная бронь принадлежит другому property контуру.'), {
+      code: 'account_scope_mismatch',
+    });
+  }
+  if (verifiedAccountId !== canonicalAccountId || verifiedPropertyId !== canonicalPropertyId) {
+    throw Object.assign(new Error('Созданная бронь не получила canonical account/property контур.'), {
+      code: 'account_scope_mismatch',
+    });
+  }
+  if (nullableText(verified.booking_id) !== externalBookingId) {
+    throw Object.assign(new Error('Созданная бронь не сохранила external booking ID.'), {
+      code: 'account_scope_mismatch',
+    });
+  }
+
+  const now = new Date().toISOString();
+  await supabase.from('booking_channel_imported_bookings').update({
+    matched_booking_id: result.bookingId,
+    match_status: 'imported_to_booking_ops',
+    matched_property_setup_id: object?.matched_property_setup_id ?? null,
+    updated_at: now,
+  }).eq('id', id);
   return { created: result.intakeStatus !== 'duplicate', duplicate: result.intakeStatus === 'duplicate', bookingId: result.bookingId, intake: result };
 }
 

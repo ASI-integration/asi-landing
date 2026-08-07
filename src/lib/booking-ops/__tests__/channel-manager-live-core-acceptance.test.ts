@@ -401,7 +401,11 @@ beforeEach(() => {
   });
 
   canAutoSendCommunicationIntent.mockResolvedValue({ eligible: false, reason: 'global_off' });
-  processInboundBookingRequest.mockImplementation(async (input?: Row) => {
+  processInboundBookingRequest.mockImplementation(async (
+    input?: Row,
+    _source?: string,
+    options?: { channelManagerScope?: { accountId: string; propertyId: string } },
+  ) => {
     const { getLiveCoreAcceptanceCreateContext } = await import('../channel-manager-live-core-acceptance-context');
     const ctx = getLiveCoreAcceptanceCreateContext();
     const fromInput = input?.metadata && typeof input.metadata === 'object' && input.metadata.acceptanceHarness
@@ -411,8 +415,8 @@ beforeEach(() => {
     const bookingOpsId = randomUUID();
     rows('booking_ops_records').push({
       id: bookingOpsId,
-      account_id: null,
-      property_id: LIVE_CORE_ACCEPTANCE_PROPERTY_ID,
+      account_id: options?.channelManagerScope?.accountId ?? null,
+      property_id: options?.channelManagerScope?.propertyId ?? LIVE_CORE_ACCEPTANCE_PROPERTY_ID,
       booking_id: LIVE_CORE_ACCEPTANCE_EXTERNAL_BOOKING_ID,
       guest_name: input?.guestName ?? 'Тестовый Гость ASI',
       guest_phone: null,

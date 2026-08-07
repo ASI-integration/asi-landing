@@ -250,16 +250,17 @@ export const ASI_PRODUCT_ROADMAP: RoadmapDepartment[] = [
         title: 'Initial и incremental sync',
         status: 'in_progress',
         currentState:
-          'One-shot initial sync exists (manual reference adapter, run counters, cursor placeholder). Incremental sync remains unfinished: polling and webhook delivery are not implemented.',
+          'Initial Sync remains a completed Live Core capability. Live Incremental Sync v1 is implemented (manual normalized delta adapter, durable cursor in connection metadata, atomic cross-type live-sync guard). Polling, webhooks, real provider adapters and outbound OTA writes remain disabled.',
         nextStep:
-          'Add durable incremental cursors, polling/webhook ingestion, and recovery without duplicating Booking Intake.',
+          'Keep Incremental Sync v1 stable; add polling/webhook ingestion and the first real provider adapter without enabling outbound writes.',
         priority: 1,
         criticalForPilot: true,
         dashboardHref: '/dashboard/booking-ops',
         evidence: [
-          { kind: 'code', path: 'src/lib/booking-ops/channel-manager-live-core.ts', note: 'initial sync only; incremental disabled' },
+          { kind: 'code', path: 'src/lib/booking-ops/channel-manager-live-core.ts', note: 'initial + incremental sync engines' },
+          { kind: 'code', path: 'supabase/migrations/20260806170000_channel_manager_live_incremental_sync_v1.sql', note: 'incremental_sync type + live-sync guard + schema v2' },
+          { kind: 'ui', path: 'src/components/booking-ops/ChannelManagerImportPanel.tsx', note: 'manual incremental delta control' },
           { kind: 'code', path: 'src/lib/booking-ops/channel-manager-access-import.ts', note: 'manual snapshot path reused' },
-          { kind: 'docs', path: 'docs/channel-manager-access-import-v1.md' },
         ],
       }),
       stage({

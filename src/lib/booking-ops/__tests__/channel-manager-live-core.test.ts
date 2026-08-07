@@ -9,6 +9,7 @@ const {
   updateBookingOpsRecord,
   cancelReservation,
   getUnifiedAvailability,
+  restoreReservation,
   supabaseRpc,
   supabaseFrom,
 } = vi.hoisted(() => ({
@@ -17,6 +18,7 @@ const {
   updateBookingOpsRecord: vi.fn(),
   cancelReservation: vi.fn(),
   getUnifiedAvailability: vi.fn(),
+  restoreReservation: vi.fn(),
   supabaseRpc: vi.fn(),
   supabaseFrom: vi.fn(),
 }));
@@ -68,10 +70,11 @@ class Query {
 function insertWithGuard(table: string, input: Row | Row[]) {
   const incoming = (Array.isArray(input) ? input : [input]).map((row) => ({ ...row }));
   for (const candidate of incoming) {
-    if (table === 'booking_channel_import_runs' && candidate.import_type === 'initial_sync' && candidate.status === 'running') {
+    const liveType = candidate.import_type === 'initial_sync' || candidate.import_type === 'incremental_sync';
+    if (table === 'booking_channel_import_runs' && liveType && candidate.status === 'running') {
       const exists = rows(table).some((row) => (
         row.connection_id === candidate.connection_id
-        && row.import_type === 'initial_sync'
+        && (row.import_type === 'initial_sync' || row.import_type === 'incremental_sync')
         && row.status === 'running'
       ));
       if (exists) {
@@ -79,7 +82,7 @@ function insertWithGuard(table: string, input: Row | Row[]) {
           select: () => ({
             single: async () => ({
               data: null,
-              error: { code: '23505', message: 'duplicate key value violates unique constraint "booking_channel_import_runs_one_running_initial_sync"' },
+              error: { code: '23505', message: 'duplicate key value violates unique constraint "booking_channel_import_runs_one_running_live_sync"' },
             }),
             maybeSingle: async () => ({
               data: null,
@@ -108,7 +111,7 @@ vi.mock('../communication-auto-send-policy', () => ({
 }));
 vi.mock('../real-booking-intake-autopilot', () => ({ processInboundBookingRequest }));
 vi.mock('../repository', () => ({ updateBookingOpsRecord }));
-vi.mock('@/lib/reservations/ledger', () => ({ cancelReservation, getUnifiedAvailability }));
+vi.mock('@/lib/reservations/ledger', () => ({ cancelReservation, getUnifiedAvailability, restoreReservation }));
 vi.mock('../availability-overbooking-protection', () => ({
   auditChannelImportAvailability: vi.fn(async () => []),
 }));
@@ -178,6 +181,7 @@ beforeEach(() => {
   updateBookingOpsRecord.mockReset();
   cancelReservation.mockReset();
   getUnifiedAvailability.mockReset();
+  restoreReservation.mockReset();
   supabaseRpc.mockReset();
   supabaseFrom.mockReset();
   clearChannelLiveCoreSchemaStateCache();
@@ -210,16 +214,52 @@ beforeEach(() => {
   }));
   supabaseRpc.mockResolvedValue({
     data: {
-      schemaVersion: 1,
+      schemaVersion: 2,
       initialSyncTypeReady: true,
+      incrementalSyncTypeReady: true,
       atomicRunningGuardReady: true,
+      atomicLiveSyncGuardReady: true,
+      cursorStorageReady: true,
+      atomicCommitRpcReady: true,
+      replayFinalizeRpcReady: true,
       ready: true,
     },
     error: null,
   });
 
   canAutoSendCommunicationIntent.mockResolvedValue({ eligible: false, reason: 'global_off' });
-  processInboundBookingRequest.mockResolvedValue({ bookingId: BOOKING_OPS_ID, intakeStatus: 'processed' });
+  processInboundBookingRequest.mockImplementation(async (
+    input: Record<string, unknown>,
+    _source?: string,
+    options?: { channelManagerScope?: { accountId: string; propertyId: string } },
+  ) => {
+    const scopeAccountId = options?.channelManagerScope?.accountId ?? ACCOUNT_ID;
+    const scopePropertyId = options?.channelManagerScope?.propertyId
+      ?? String(input.propertyId ?? 'prop-a');
+    const existing = rows('booking_ops_records').find((row) => row.id === BOOKING_OPS_ID);
+    if (!existing) {
+      rows('booking_ops_records').push({
+        id: BOOKING_OPS_ID,
+        account_id: scopeAccountId,
+        property_id: scopePropertyId,
+        booking_id: input.bookingReference ?? input.externalSourceId ?? null,
+        guest_name: input.guestName,
+        guest_count: input.guestCount ?? 2,
+        check_in_at: input.checkInAt
+          ? `${String(input.checkInAt).slice(0, 10)}T00:00:00.000Z`
+          : null,
+        check_out_at: input.checkOutAt
+          ? `${String(input.checkOutAt).slice(0, 10)}T00:00:00.000Z`
+          : null,
+        normalized_status: 'confirmed',
+        unit_id: null,
+      });
+    } else {
+      if (existing.account_id == null) existing.account_id = scopeAccountId;
+      if (existing.property_id == null) existing.property_id = scopePropertyId;
+    }
+    return { bookingId: BOOKING_OPS_ID, intakeStatus: 'processed' };
+  });
   updateBookingOpsRecord.mockResolvedValue({ ok: true });
   cancelReservation.mockImplementation(async (input: { reservationId: string; accountId: string }) => {
     const booking = rows('booking_ops_records').find((row) => row.id === input.reservationId && row.account_id === input.accountId);
@@ -236,6 +276,19 @@ beforeEach(() => {
       booking_ops_record_id: input.reservationId,
     });
     return { changed: true };
+  });
+  restoreReservation.mockImplementation(async (input: { reservationId: string; accountId: string }) => {
+    const booking = rows('booking_ops_records').find((row) => row.id === input.reservationId && row.account_id === input.accountId);
+    if (!booking) throw new Error('not_found');
+    if (booking.normalized_status !== 'cancelled') return { changed: false, blocked: false, conflicts: [] };
+    booking.normalized_status = 'confirmed';
+    booking.cancelled_at = null;
+    rows('reservation_ledger_audit').push({
+      action: 'reservation_restored',
+      account_id: input.accountId,
+      booking_ops_record_id: input.reservationId,
+    });
+    return { changed: true, blocked: false, conflicts: [] };
   });
   getUnifiedAvailability.mockResolvedValue({ available: true, conflicts: [] });
   setChannelLiveCoreSchemaReadyOverride(true);
@@ -304,24 +357,25 @@ describe('Channel Manager Live Core repairs', () => {
 
   it('marks overall status failed when booking processing has counters.failed > 0', async () => {
     expect(resolveChannelLiveSyncFinalStatus(
-      { imported: 0, updated: 0, cancelled: 0, skipped: 1, failed: 1, objects: 1, calendarDays: 0, prices: 0 },
+      { imported: 0, updated: 0, cancelled: 0, skipped: 1, failed: 1, objects: 1, calendarDays: 0, prices: 0, created: 0, restored: 0 },
       [{ type: 'booking_sync_failed', severity: 'blocker', message: 'x' }],
     )).toBe('failed');
     expect(resolveChannelLiveSyncFinalStatus(
-      { imported: 1, updated: 0, cancelled: 0, skipped: 0, failed: 0, objects: 1, calendarDays: 0, prices: 0 },
+      { imported: 1, updated: 0, cancelled: 0, skipped: 0, failed: 0, objects: 1, calendarDays: 0, prices: 0, created: 1, restored: 0 },
       [{ type: 'object_not_confirmed', severity: 'warning', message: 'x' }],
     )).toBe('completed_with_warnings');
     expect(resolveChannelLiveSyncFinalStatus(
-      { imported: 1, updated: 0, cancelled: 0, skipped: 0, failed: 0, objects: 1, calendarDays: 0, prices: 0 },
+      { imported: 1, updated: 0, cancelled: 0, skipped: 0, failed: 0, objects: 1, calendarDays: 0, prices: 0, created: 1, restored: 0 },
       [],
     )).toBe('completed');
   });
 
   it('prevents date mutation when availability has a confirmed conflict', async () => {
-    const connection = await initializeChannelManagerConnection(PROPERTY_ID, 'manual');
+    const connection = await initializeChannelManagerConnection(PROPERTY_ID, 'manual', { accountId: ACCOUNT_ID });
     await runChannelManagerInitialSync({ connectionId: connection.id, snapshot: baseSnapshot() });
-    rows('booking_ops_records').push({
-      id: BOOKING_OPS_ID,
+    const booking = rows('booking_ops_records').find((row) => row.id === BOOKING_OPS_ID);
+    expect(booking).toBeTruthy();
+    Object.assign(booking!, {
       account_id: ACCOUNT_ID,
       property_id: 'prop-a',
       unit_id: null,
@@ -343,14 +397,15 @@ describe('Channel Manager Live Core repairs', () => {
     expect(result.counters.failed).toBeGreaterThanOrEqual(1);
     expect(result.warnings.some((item) => item.type === 'availability_conflict' && item.severity === 'blocker')).toBe(true);
     expect(updateBookingOpsRecord).not.toHaveBeenCalled();
-    expect(rows('booking_ops_records')[0].check_in_at).toBe('2026-07-10T00:00:00.000Z');
+    expect(rows('booking_ops_records').find((row) => row.id === BOOKING_OPS_ID)?.check_in_at).toBe('2026-07-10T00:00:00.000Z');
   });
 
   it('uses canonical cancellation that releases holds and writes audit', async () => {
-    const connection = await initializeChannelManagerConnection(PROPERTY_ID, 'manual');
+    const connection = await initializeChannelManagerConnection(PROPERTY_ID, 'manual', { accountId: ACCOUNT_ID });
     await runChannelManagerInitialSync({ connectionId: connection.id, snapshot: baseSnapshot() });
-    rows('booking_ops_records').push({
-      id: BOOKING_OPS_ID,
+    const booking = rows('booking_ops_records').find((row) => row.id === BOOKING_OPS_ID);
+    expect(booking).toBeTruthy();
+    Object.assign(booking!, {
       account_id: ACCOUNT_ID,
       property_id: 'prop-a',
       guest_name: 'Анна',
@@ -378,10 +433,11 @@ describe('Channel Manager Live Core repairs', () => {
   });
 
   it('fails closed when account_id is missing for cancellation', async () => {
-    const connection = await initializeChannelManagerConnection(PROPERTY_ID, 'manual');
+    const connection = await initializeChannelManagerConnection(PROPERTY_ID, 'manual', { accountId: ACCOUNT_ID });
     await runChannelManagerInitialSync({ connectionId: connection.id, snapshot: baseSnapshot() });
-    rows('booking_ops_records').push({
-      id: BOOKING_OPS_ID,
+    const booking = rows('booking_ops_records').find((row) => row.id === BOOKING_OPS_ID);
+    expect(booking).toBeTruthy();
+    Object.assign(booking!, {
       account_id: null,
       property_id: 'prop-a',
       guest_name: 'Анна',
@@ -389,6 +445,10 @@ describe('Channel Manager Live Core repairs', () => {
       check_out_at: '2026-07-12T00:00:00.000Z',
       normalized_status: 'confirmed',
     });
+    // Drop connection account so cancel path exercises missing booking.account_id (not scoped miss).
+    const connRow = rows('booking_channel_manager_connections').find((row) => row.id === connection.id)!;
+    const { accountId: _removed, ...restMeta } = (connRow.metadata ?? {}) as Row;
+    connRow.metadata = restMeta;
     const result = await runChannelManagerInitialSync({
       connectionId: connection.id,
       snapshot: baseSnapshot({ booking: { status: 'cancelled' } }),
@@ -396,7 +456,7 @@ describe('Channel Manager Live Core repairs', () => {
     expect(result.status).toBe('failed');
     expect(result.warnings.some((item) => item.type === 'cancel_missing_account' && item.severity === 'blocker')).toBe(true);
     expect(cancelReservation).not.toHaveBeenCalled();
-    expect(rows('booking_ops_records')[0].normalized_status).toBe('confirmed');
+    expect(rows('booking_ops_records').find((row) => row.id === BOOKING_OPS_ID)?.normalized_status).toBe('confirmed');
   });
 
   it('does not store the full manual snapshot in connection metadata', async () => {
@@ -553,10 +613,12 @@ describe('Channel Manager Live Core repairs', () => {
     expect(byId['ch-live-core']?.currentState).toMatch(/acceptance harness is available/i);
     expect(byId['ch-live-core']?.currentState).toMatch(/remains in progress until the harness is run successfully in production/i);
     expect(byId['ch-initial-incremental-sync']?.status).toBe('in_progress');
-    expect(byId['ch-initial-incremental-sync']?.currentState).toMatch(/incremental sync remains unfinished/i);
+    expect(byId['ch-initial-incremental-sync']?.currentState).toMatch(/Live Incremental Sync v1 is implemented/i);
+    expect(byId['ch-initial-incremental-sync']?.currentState).toMatch(/Polling, webhooks/i);
     expect(byId['ch-first-real-adapter']?.status).toBe('blocked');
     const panel = readFileSync(resolve(process.cwd(), 'src/components/booking-ops/ChannelManagerImportPanel.tsx'), 'utf8');
     expect(panel).toContain('channel-live-core-status');
+    expect(panel).toContain('channel-live-incremental-sync');
     expect(panel).toContain('channel-live-core-acceptance');
     expect(panel).toContain('Производственный acceptance');
     expect(panel).toContain('Запустить acceptance');
@@ -564,7 +626,7 @@ describe('Channel Manager Live Core repairs', () => {
   });
 
   it('still imports a new booking and retries without duplicates', async () => {
-    const connection = await initializeChannelManagerConnection(PROPERTY_ID, 'manual');
+    const connection = await initializeChannelManagerConnection(PROPERTY_ID, 'manual', { accountId: ACCOUNT_ID });
     const first = await runChannelManagerInitialSync({ connectionId: connection.id, snapshot: baseSnapshot() });
     expect(first.status).not.toBe('failed');
     expect(first.counters.imported).toBe(1);

@@ -144,6 +144,19 @@ export type ProcessInboundBookingOptions = {
   attachGuestTelegram?: string;
   duplicateOfBookingId?: string;
   intakeEventId?: string;
+  /**
+   * Server-only Channel Manager contour for scoped intake identity/matching.
+   * Never accept this from public request bodies.
+   */
+  channelManagerScope?: ChannelManagerIntakeScope;
+};
+
+/** Stable Channel Manager intake namespace: connection + provider + external booking ID. */
+export type ChannelManagerIntakeScope = {
+  connectionId: string;
+  provider: string;
+  accountId: string;
+  propertyId: string;
 };
 
 type IntakeEventRow = {
@@ -239,6 +252,62 @@ export function computeInboundIdempotencyKey(
     return `text:${source}:${hashText(input.rawMessageText.trim().toLowerCase())}`;
   }
   return `fallback:${source}:${randomUUID()}`;
+}
+
+/**
+ * Scoped Channel Manager idempotency identity.
+ * Raw external booking ID remains provider identity, but must not be used alone
+ * as a global shared intake key.
+ */
+export function computeChannelManagerIdempotencyKey(
+  connectionId: string,
+  provider: string,
+  externalBookingId: string,
+): string {
+  return `channel-manager:${connectionId}:${provider}:${externalBookingId}`;
+}
+
+function resolveInboundIdempotencyKey(
+  input: NormalizedInboundBookingRequest,
+  source: InboundBookingSource,
+  scope?: ChannelManagerIntakeScope | null,
+): string {
+  if (scope) {
+    const externalId = input.externalSourceId || input.bookingReference;
+    if (!externalId) {
+      throw Object.assign(new Error('Channel Manager intake требует external booking ID.'), {
+        code: 'channel_manager_intake_identity_missing',
+      });
+    }
+    return computeChannelManagerIdempotencyKey(scope.connectionId, scope.provider, externalId);
+  }
+  return computeInboundIdempotencyKey(input, source);
+}
+
+function assertChannelManagerScope(
+  scope: ChannelManagerIntakeScope | undefined,
+): ChannelManagerIntakeScope | null {
+  if (!scope) return null;
+  const connectionId = text(scope.connectionId);
+  const provider = text(scope.provider);
+  const accountId = text(scope.accountId);
+  const propertyId = text(scope.propertyId);
+  if (!connectionId || !provider || !accountId || !propertyId) {
+    throw Object.assign(
+      new Error('Channel Manager intake требует connectionId, provider, accountId и propertyId.'),
+      { code: 'connection_scope_invalid' },
+    );
+  }
+  return { connectionId, provider, accountId, propertyId };
+}
+
+function bookingBelongsToContour(
+  record: Pick<BookingOpsRecord, 'accountId' | 'propertyId'> | null | undefined,
+  scope: ChannelManagerIntakeScope,
+): boolean {
+  if (!record) return false;
+  return text(record.accountId) === scope.accountId
+    && text(record.propertyId) === scope.propertyId;
 }
 
 export function normalizeInboundBookingRequest(
@@ -338,18 +407,36 @@ export async function findOrCreateGuestFromInbound(
 
 async function findMatchingBookingRecord(
   input: NormalizedInboundBookingRequest,
+  scope?: ChannelManagerIntakeScope | null,
 ): Promise<BookingOpsRecord | null> {
   if (input.bookingReference) {
-    const byId = await getBookingOpsRecord(input.bookingReference);
-    if (byId) return byId;
-    const { data } = await supabase
-      .from('booking_ops_records')
-      .select('id')
-      .eq('booking_id', input.bookingReference)
-      .order('updated_at', { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    if (data) return getBookingOpsRecord(text((data as { id: string }).id));
+    if (scope) {
+      // Contour-required match: never return a foreign booking by raw external ID or UUID.
+      const { data } = await supabase
+        .from('booking_ops_records')
+        .select('id')
+        .eq('booking_id', input.bookingReference)
+        .eq('account_id', scope.accountId)
+        .eq('property_id', scope.propertyId)
+        .order('updated_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (data) {
+        const record = await getBookingOpsRecord(text((data as { id: string }).id));
+        if (record && bookingBelongsToContour(record, scope)) return record;
+      }
+    } else {
+      const byId = await getBookingOpsRecord(input.bookingReference);
+      if (byId) return byId;
+      const { data } = await supabase
+        .from('booking_ops_records')
+        .select('id')
+        .eq('booking_id', input.bookingReference)
+        .order('updated_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (data) return getBookingOpsRecord(text((data as { id: string }).id));
+    }
   }
 
   const filters: string[] = [];
@@ -358,21 +445,29 @@ async function findMatchingBookingRecord(
   if (input.guestTelegram) filters.push(`guest_telegram.eq.${input.guestTelegram}`);
   if (filters.length === 0) return null;
 
-  const { data: candidates } = await supabase
+  let query = supabase
     .from('booking_ops_records')
     .select('*')
-    .or(filters.join(','))
+    .or(filters.join(','));
+  if (scope) {
+    query = query.eq('account_id', scope.accountId).eq('property_id', scope.propertyId);
+  }
+  const { data: candidates } = await query
     .order('updated_at', { ascending: false })
     .limit(20);
 
   for (const row of (candidates ?? []) as Array<Record<string, unknown>>) {
     const sameDates = (!input.checkInAt && !input.checkOutAt)
       || (row.check_in_at === input.checkInAt && row.check_out_at === input.checkOutAt);
-    const sameProperty = (!input.propertyId && !input.propertyLabel)
-      || row.property_id === input.propertyId
-      || row.property_label === input.propertyLabel;
+    const sameProperty = scope
+      ? text(row.property_id) === scope.propertyId
+      : ((!input.propertyId && !input.propertyLabel)
+        || row.property_id === input.propertyId
+        || row.property_label === input.propertyLabel);
     if (sameDates && sameProperty) {
-      return getBookingOpsRecord(text(row.id));
+      const record = await getBookingOpsRecord(text(row.id));
+      if (scope && !bookingBelongsToContour(record, scope)) continue;
+      return record;
     }
   }
   return null;
@@ -381,6 +476,7 @@ async function findMatchingBookingRecord(
 function toCreateInput(
   input: NormalizedInboundBookingRequest,
   source: InboundBookingSource,
+  scope?: ChannelManagerIntakeScope | null,
 ): CreateBookingOpsInput {
   const guestName = input.guestName
     ?? (hasGuestContact(input) ? 'Гость (входящая заявка)' : 'Гость (без контакта)');
@@ -397,11 +493,12 @@ function toCreateInput(
   });
   return {
     bookingId: input.bookingReference,
+    ...(scope?.accountId ? { accountId: scope.accountId } : {}),
     guestName,
     guestPhone: input.guestPhone,
     guestEmail: input.guestEmail,
     guestTelegram: input.guestTelegram,
-    propertyId: input.propertyId,
+    propertyId: scope?.propertyId ?? input.propertyId,
     propertyLabel: input.propertyLabel,
     otaSource: source === 'channel_manager_placeholder' ? 'channel_manager' : source,
     checkInAt: input.checkInAt,
@@ -418,9 +515,16 @@ function toCreateInput(
 export async function findOrCreateBookingFromInbound(
   input: NormalizedInboundBookingRequest,
   source: InboundBookingSource,
+  scope?: ChannelManagerIntakeScope | null,
 ): Promise<{ record: BookingOpsRecord; created: boolean; guestDataBecameComplete: boolean }> {
-  const existing = await findMatchingBookingRecord(input);
+  const existing = await findMatchingBookingRecord(input, scope);
   if (existing) {
+    if (scope && !bookingBelongsToContour(existing, scope)) {
+      throw Object.assign(
+        new Error('Найдена бронь вне canonical account/property контура.'),
+        { code: 'account_scope_mismatch' },
+      );
+    }
     const wasGuestDataComplete = hasCompleteGuestData(existing);
     const patch: Record<string, unknown> = {};
     if (!existing.guestPhone && input.guestPhone) patch.guestPhone = input.guestPhone;
@@ -430,6 +534,7 @@ export async function findOrCreateBookingFromInbound(
     if (!existing.checkOutAt && input.checkOutAt) patch.checkOutAt = input.checkOutAt;
     if (!existing.propertyId && input.propertyId) patch.propertyId = input.propertyId;
     if (!existing.propertyLabel && input.propertyLabel) patch.propertyLabel = input.propertyLabel;
+    // Never patch account_id/property_id onto a booking that already belongs to a different contour.
     if (Object.keys(patch).length > 0) {
       const updated = await updateBookingOpsRecord(existing.id, patch, { actorType: 'system' });
       if (updated.ok && updated.record) return {
@@ -441,9 +546,15 @@ export async function findOrCreateBookingFromInbound(
     return { record: existing, created: false, guestDataBecameComplete: false };
   }
 
-  const result = await createBookingOpsRecord(toCreateInput(input, source), { actorType: 'system' });
+  const result = await createBookingOpsRecord(toCreateInput(input, source, scope), { actorType: 'system' });
   if (!result.ok || !result.record) {
     throw new Error(result.error ?? 'booking_create_failed');
+  }
+  if (scope && !bookingBelongsToContour(result.record, scope)) {
+    throw Object.assign(
+      new Error('Созданная бронь не получила canonical account/property контур.'),
+      { code: 'account_scope_mismatch' },
+    );
   }
   return { record: result.record, created: true, guestDataBecameComplete: false };
 }
@@ -842,8 +953,13 @@ export async function processInboundBookingRequest(
   source: InboundBookingSource,
   options?: ProcessInboundBookingOptions,
 ): Promise<InboundBookingIntakeResult> {
+  const scope = assertChannelManagerScope(options?.channelManagerScope);
   const normalized = normalizeInboundBookingRequest(rawInput, source);
-  const idempotencyKey = computeInboundIdempotencyKey(normalized, source);
+  if (scope) {
+    // Contour is authoritative for CM creates; keep raw external ID as provider identity.
+    normalized.propertyId = scope.propertyId;
+  }
+  const idempotencyKey = resolveInboundIdempotencyKey(normalized, source, scope);
   const missingFields = computeMissingInboundFields(normalized);
   const safePayload = {
     guestName: normalized.guestName,
@@ -856,6 +972,11 @@ export async function processInboundBookingRequest(
     propertyId: normalized.propertyId,
     propertyLabel: normalized.propertyLabel,
     source,
+    ...(scope ? {
+      channelManagerConnectionId: scope.connectionId,
+      channelManagerProvider: scope.provider,
+      accountId: scope.accountId,
+    } : {}),
   };
 
   const existingEvent = await getIntakeEventByKey(idempotencyKey);
@@ -864,6 +985,15 @@ export async function processInboundBookingRequest(
     && !options?.force
     && (!options?.action || options.action === 'process')
   ) {
+    if (scope) {
+      const existingBooking = await getBookingOpsRecord(existingEvent.bookingId);
+      if (!bookingBelongsToContour(existingBooking, scope)) {
+        throw Object.assign(
+          new Error('Существующее intake-событие указывает на бронь вне canonical контура.'),
+          { code: 'account_scope_mismatch' },
+        );
+      }
+    }
     return {
       intakeId: existingEvent.id,
       bookingId: existingEvent.bookingId,
@@ -938,12 +1068,12 @@ export async function processInboundBookingRequest(
       if (!updated.ok || !updated.record) throw new Error('attach_guest_failed');
       record = updated.record;
     } else {
-      const bookingResult = await findOrCreateBookingFromInbound(normalized, source);
+      const bookingResult = await findOrCreateBookingFromInbound(normalized, source, scope);
       record = bookingResult.record;
       created = bookingResult.created;
       guestDataBecameComplete = bookingResult.guestDataBecameComplete;
 
-      if (normalized.ownerId || normalized.propertyId) {
+      if (!scope && (normalized.ownerId || normalized.propertyId)) {
         const attached = await attachBookingToOwnerProperty(record.id, {
           ownerId: normalized.ownerId,
           propertyId: normalized.propertyId,
@@ -951,6 +1081,13 @@ export async function processInboundBookingRequest(
         });
         if (attached) record = attached;
       }
+    }
+
+    if (scope && !bookingBelongsToContour(record, scope)) {
+      throw Object.assign(
+        new Error('Intake вернул бронь вне canonical account/property контура.'),
+        { code: 'account_scope_mismatch' },
+      );
     }
 
     let initializedModules: string[] = [];
@@ -1048,6 +1185,10 @@ export async function processInboundBookingRequest(
       safeSummary,
     };
   } catch (error) {
+    const code = (error as { code?: string })?.code;
+    if (code === 'account_scope_mismatch' || code === 'connection_scope_invalid') {
+      throw error;
+    }
     const message = error instanceof Error ? error.message : 'intake_failed';
     const event = await upsertIntakeEvent({
       id: existingEvent?.id,

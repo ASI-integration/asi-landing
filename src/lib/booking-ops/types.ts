@@ -668,6 +668,8 @@ export const DEFAULT_BOOKING_OPS_INTAKE: Required<{
 export type BookingOpsRecord = {
   id: string;
   bookingId: string | null;
+  /** Server-only ownership contour. Not exposed via public intake bodies. */
+  accountId?: string | null;
   guestName: string | null;
   guestPhone: string | null;
   guestEmail: string | null;
@@ -702,6 +704,11 @@ export type BookingOpsRecord = {
 
 export type CreateBookingOpsInput = {
   bookingId?: string | null;
+  /**
+   * Server-only canonical account contour written on INSERT.
+   * Must not be accepted from public request bodies.
+   */
+  accountId?: string | null;
   guestName?: string | null;
   guestPhone?: string | null;
   guestEmail?: string | null;
