@@ -352,6 +352,80 @@ describe.skipIf(!hasDisposablePg)('Channel Manager Reconciliation PostgreSQL sch
       expect(payload.reconciliationFinalizeRpcReady).toBe(true);
       expect(payload.reconciliationReady).toBe(true);
 
+      // Compensation RPC: exact run fail-closed, cursor unchanged, matching lease only.
+      const compensImportRunId = randomUUID();
+      const compensReconRunId = randomUUID();
+      const compensReportHash = 'ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff';
+      await client.query(
+        `INSERT INTO public.booking_channel_import_runs
+           (id, connection_id, provider, status, import_type, started_at)
+         VALUES ($1, $2, 'manual', 'running', 'reconciliation_recovery', now())`,
+        [compensImportRunId, connectionId],
+      );
+      await client.query(
+        `INSERT INTO public.booking_channel_reconciliation_runs
+           (id, connection_id, provider, mode, status, snapshot_kind, snapshot_hash, report_hash, started_at)
+         VALUES ($1, $2, 'manual', 'apply', 'applying', 'complete',
+           'eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee',
+           $3, now())`,
+        [compensReconRunId, connectionId, compensReportHash],
+      );
+      await client.query(
+        `UPDATE public.booking_channel_manager_connections
+         SET metadata = jsonb_set(
+           COALESCE(metadata, '{}'::jsonb),
+           '{liveSyncLease}',
+           $2::jsonb,
+           true
+         )
+         WHERE id = $1`,
+        [connectionId, JSON.stringify({
+          runId: compensImportRunId,
+          status: 'held',
+          importType: 'reconciliation_recovery',
+        })],
+      );
+      const foreignLeaseRunId = randomUUID();
+      const compens = await client.query(
+        `SELECT public.channel_manager_fail_reconciliation_recovery_v1(
+           $1::uuid, $2::uuid, $3::uuid, $4, $5::timestamptz,
+           'compensated fail-closed', $6::jsonb, $7::jsonb
+         ) AS payload`,
+        [
+          connectionId,
+          compensImportRunId,
+          compensReconRunId,
+          compensReportHash,
+          new Date().toISOString(),
+          JSON.stringify({ code: 'injected', message: 'compensation coverage' }),
+          JSON.stringify({ failCompensation: true }),
+        ],
+      );
+      const compensPayload = compens.rows[0]?.payload as Record<string, unknown>;
+      expect(compensPayload.success).toBe(true);
+      expect(compensPayload.cursorUnchanged).toBe(true);
+      expect(compensPayload.leaseReleased).toBe(true);
+      void foreignLeaseRunId;
+
+      const compensAfter = await client.query(
+        `SELECT
+           c.metadata->'incrementalCursor'->>'checkpoint' AS checkpoint,
+           c.metadata->'liveSyncLease'->>'status' AS lease_status,
+           c.metadata->'liveSyncLease'->>'runId' AS lease_run_id,
+           r.status AS import_status,
+           rr.status AS recon_status
+         FROM public.booking_channel_manager_connections c
+         JOIN public.booking_channel_import_runs r ON r.id = $2
+         JOIN public.booking_channel_reconciliation_runs rr ON rr.id = $3
+         WHERE c.id = $1`,
+        [connectionId, compensImportRunId, compensReconRunId],
+      );
+      expect(compensAfter.rows[0]?.checkpoint).toBe('pg-cursor-before-recon');
+      expect(compensAfter.rows[0]?.lease_status).toBe('released');
+      expect(compensAfter.rows[0]?.lease_run_id).toBe(compensImportRunId);
+      expect(compensAfter.rows[0]?.import_status).toBe('failed');
+      expect(compensAfter.rows[0]?.recon_status).toBe('failed');
+
       const grants = await client.query(`
         SELECT
           has_function_privilege(
@@ -369,6 +443,21 @@ describe.skipIf(!hasDisposablePg)('Channel Manager Reconciliation PostgreSQL sch
             'public.channel_manager_finalize_reconciliation_recovery_v1(uuid,uuid,uuid,text,timestamptz,text,jsonb,jsonb,text,jsonb)',
             'EXECUTE'
           ) AS finalize_auth_ok,
+          has_function_privilege(
+            'service_role',
+            'public.channel_manager_fail_reconciliation_recovery_v1(uuid,uuid,uuid,text,timestamptz,text,jsonb,jsonb)',
+            'EXECUTE'
+          ) AS fail_service_ok,
+          has_function_privilege(
+            'anon',
+            'public.channel_manager_fail_reconciliation_recovery_v1(uuid,uuid,uuid,text,timestamptz,text,jsonb,jsonb)',
+            'EXECUTE'
+          ) AS fail_anon_ok,
+          has_function_privilege(
+            'authenticated',
+            'public.channel_manager_fail_reconciliation_recovery_v1(uuid,uuid,uuid,text,timestamptz,text,jsonb,jsonb)',
+            'EXECUTE'
+          ) AS fail_auth_ok,
           has_table_privilege('service_role', 'public.booking_channel_reconciliation_runs', 'SELECT') AS runs_service_ok,
           has_table_privilege('anon', 'public.booking_channel_reconciliation_runs', 'SELECT') AS runs_anon_ok,
           has_table_privilege('authenticated', 'public.booking_channel_reconciliation_runs', 'SELECT') AS runs_auth_ok,
@@ -379,6 +468,9 @@ describe.skipIf(!hasDisposablePg)('Channel Manager Reconciliation PostgreSQL sch
       expect(grants.rows[0]?.finalize_service_ok).toBe(true);
       expect(grants.rows[0]?.finalize_anon_ok).toBe(false);
       expect(grants.rows[0]?.finalize_auth_ok).toBe(false);
+      expect(grants.rows[0]?.fail_service_ok).toBe(true);
+      expect(grants.rows[0]?.fail_anon_ok).toBe(false);
+      expect(grants.rows[0]?.fail_auth_ok).toBe(false);
       expect(grants.rows[0]?.runs_service_ok).toBe(true);
       expect(grants.rows[0]?.runs_anon_ok).toBe(false);
       expect(grants.rows[0]?.runs_auth_ok).toBe(false);
@@ -401,10 +493,14 @@ describe.skipIf(!hasDisposablePg)('Channel Manager Reconciliation PostgreSQL sch
           to_regclass('public.booking_channel_reconciliation_runs') AS recon_runs,
           to_regprocedure(
             'public.channel_manager_finalize_reconciliation_recovery_v1(uuid,uuid,uuid,text,timestamptz,text,jsonb,jsonb,text,jsonb)'
-          ) AS finalize_fn
+          ) AS finalize_fn,
+          to_regprocedure(
+            'public.channel_manager_fail_reconciliation_recovery_v1(uuid,uuid,uuid,text,timestamptz,text,jsonb,jsonb)'
+          ) AS fail_fn
       `);
       expect(isolation.rows[0]?.recon_runs).toBeNull();
       expect(isolation.rows[0]?.finalize_fn).toBeNull();
+      expect(isolation.rows[0]?.fail_fn).toBeNull();
     } finally {
       await client.end().catch(() => undefined);
     }

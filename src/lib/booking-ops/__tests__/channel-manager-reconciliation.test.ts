@@ -26,6 +26,12 @@ const {
 const tables: Record<string, Row[]> = {};
 function rows(table: string): Row[] { return tables[table] ?? (tables[table] = []); }
 
+/** Injected during reconciliation_recovery guard insert to simulate post-preview Incremental Sync race. */
+let raceAfterGuardAcquire: null | (() => void) = null;
+/** When > 0, finalize RPC fails and decrements (forces compensation after N failures). */
+let finalizeRpcFailRemaining = 0;
+let finalizeRpcFailCount = 0;
+
 class Query {
   private filtered: Row[];
   private deleteMode = false;
@@ -154,6 +160,17 @@ function insertWithGuard(table: string, input: Row | Row[]) {
     }
   }
   rows(table).push(...incoming);
+  if (table === 'booking_channel_import_runs') {
+    for (const candidate of incoming) {
+      if (
+        candidate.import_type === 'reconciliation_recovery'
+        && candidate.status === 'running'
+        && raceAfterGuardAcquire
+      ) {
+        raceAfterGuardAcquire();
+      }
+    }
+  }
   const query = new Query(table);
   (query as any).filtered = incoming;
   return query;
@@ -196,6 +213,11 @@ function setLiveSyncLeaseInMemory(args: Record<string, unknown> = {}) {
 }
 
 function finalizeReconciliationInMemory(args: Record<string, unknown> = {}) {
+  if (finalizeRpcFailRemaining > 0) {
+    finalizeRpcFailRemaining -= 1;
+    finalizeRpcFailCount += 1;
+    return { data: null, error: { message: 'injected finalize rpc failure' } };
+  }
   const connectionId = String(args.p_connection_id ?? '');
   const importRunId = String(args.p_import_run_id ?? '');
   const reconRunId = String(args.p_reconciliation_run_id ?? '');
@@ -207,6 +229,12 @@ function finalizeReconciliationInMemory(args: Record<string, unknown> = {}) {
   }
   if (recon.report_hash !== String(args.p_expected_report_hash ?? '')) {
     return { data: { success: false, code: 'report_hash_mismatch', message: 'hash mismatch' }, error: null };
+  }
+  if (importRun.import_type !== 'reconciliation_recovery') {
+    return { data: { success: false, code: 'invalid_import_type', message: 'wrong type' }, error: null };
+  }
+  if (importRun.status !== 'running') {
+    return { data: { success: false, code: 'invalid_run_status', message: 'not running' }, error: null };
   }
   const finishedAt = String(args.p_finished_at ?? new Date().toISOString());
   const status = String(args.p_status ?? 'completed');
@@ -258,6 +286,91 @@ function finalizeReconciliationInMemory(args: Record<string, unknown> = {}) {
     data: {
       success: true,
       status,
+      reconciliationRunId: reconRunId,
+      importRunId,
+      cursorUnchanged: true,
+      leaseReleased,
+      finishedAt,
+    },
+    error: null,
+  };
+}
+
+function failReconciliationCompensationInMemory(args: Record<string, unknown> = {}) {
+  const connectionId = String(args.p_connection_id ?? '');
+  const importRunId = String(args.p_import_run_id ?? '');
+  const reconRunId = String(args.p_reconciliation_run_id ?? '');
+  const connection = rows('booking_channel_manager_connections').find((row) => row.id === connectionId);
+  const importRun = rows('booking_channel_import_runs').find((row) => row.id === importRunId);
+  const recon = rows('booking_channel_reconciliation_runs').find((row) => row.id === reconRunId);
+  if (!connection || !importRun || !recon) {
+    return { data: { success: false, code: 'not_found', message: 'missing row' }, error: null };
+  }
+  if (recon.report_hash !== String(args.p_expected_report_hash ?? '')) {
+    return { data: { success: false, code: 'report_hash_mismatch', message: 'hash mismatch' }, error: null };
+  }
+  if (importRun.import_type !== 'reconciliation_recovery') {
+    return { data: { success: false, code: 'invalid_import_type', message: 'wrong type' }, error: null };
+  }
+  const finishedAt = String(args.p_finished_at ?? new Date().toISOString());
+  const prevCursor = connection.metadata?.incrementalCursor
+    ? { ...connection.metadata.incrementalCursor }
+    : null;
+  const otherLease = connection.metadata?.liveSyncLease as Row | undefined;
+  const otherLeaseSnapshot = otherLease ? { ...otherLease } : null;
+
+  recon.status = 'failed';
+  recon.finished_at = finishedAt;
+  recon.safe_summary = args.p_safe_summary ?? recon.safe_summary;
+  recon.safe_error = args.p_safe_error ?? recon.safe_error;
+  recon.metadata = {
+    ...(recon.metadata ?? {}),
+    ...(args.p_safe_run_metadata as Row ?? {}),
+    failCompensation: true,
+  };
+  recon.updated_at = finishedAt;
+
+  importRun.status = 'failed';
+  importRun.finished_at = finishedAt;
+  importRun.safe_summary = args.p_safe_summary ?? importRun.safe_summary;
+  importRun.updated_at = finishedAt;
+  importRun.metadata = {
+    ...(importRun.metadata ?? {}),
+    failCompensation: true,
+  };
+
+  const lease = connection.metadata?.liveSyncLease as Row | undefined;
+  const leaseRunId = lease ? String(lease.runId ?? '') : '';
+  let leaseReleased = false;
+  if (leaseRunId && leaseRunId === importRunId) {
+    connection.metadata = {
+      ...(connection.metadata ?? {}),
+      liveSyncLease: {
+        runId: importRunId,
+        status: 'released',
+        releasedAt: finishedAt,
+        importType: 'reconciliation_recovery',
+        failCompensation: true,
+      },
+    };
+    leaseReleased = true;
+  } else if (otherLeaseSnapshot) {
+    connection.metadata = {
+      ...(connection.metadata ?? {}),
+      liveSyncLease: otherLeaseSnapshot,
+    };
+  }
+  if (prevCursor) {
+    connection.metadata = {
+      ...(connection.metadata ?? {}),
+      incrementalCursor: prevCursor,
+    };
+  }
+  connection.updated_at = finishedAt;
+  return {
+    data: {
+      success: true,
+      status: 'failed',
       reconciliationRunId: reconRunId,
       importRunId,
       cursorUnchanged: true,
@@ -529,6 +642,9 @@ beforeEach(() => {
   restoreReservation.mockReset();
   supabaseRpc.mockReset();
   supabaseFrom.mockReset();
+  raceAfterGuardAcquire = null;
+  finalizeRpcFailRemaining = 0;
+  finalizeRpcFailCount = 0;
   clearChannelLiveCoreSchemaStateCache();
   setChannelLiveCoreSchemaStateOverride(null);
 
@@ -567,6 +683,9 @@ beforeEach(() => {
     }
     if (fnName === 'channel_manager_finalize_reconciliation_recovery_v1') {
       return finalizeReconciliationInMemory(args ?? {});
+    }
+    if (fnName === 'channel_manager_fail_reconciliation_recovery_v1') {
+      return failReconciliationCompensationInMemory(args ?? {});
     }
     if (fnName === 'channel_manager_commit_incremental_sync_v1') {
       // Minimal stub for incremental sync in guard tests
@@ -1431,6 +1550,449 @@ describe('Channel Manager Reconciliation & Recovery v1', () => {
       expect(running).toHaveLength(0);
       const conn = rows('booking_channel_manager_connections').find((row) => row.id === connection.id)!;
       expect(conn.metadata?.liveSyncLease?.status).toBe('released');
+    });
+
+    it('post-guard cursor race rejects with zero business mutations', async () => {
+      const connection = await seedInitialSync();
+      const snapshot = reconSnapshotFromState({ booking: { status: 'cancelled' } });
+      const preview = await runChannelManagerReconciliationPreview({
+        connectionId: connection.id,
+        snapshot,
+      });
+      expect(preview.status).toBe('preview_ready');
+      const beforeCursor = committedCheckpoint(connection.id);
+      cancelReservation.mockClear();
+      updateBookingOpsRecord.mockClear();
+      processInboundBookingRequest.mockClear();
+      restoreReservation.mockClear();
+      const ledgerBefore = rows('reservation_ledger_audit').length;
+      const tasksBefore = rows('booking_ops_tasks')?.length ?? 0;
+      const communicationsBefore = rows('booking_ops_communications')?.length ?? 0;
+      const calendarBefore = rows('booking_channel_calendar_snapshots').length;
+      const pricingBefore = rows('booking_channel_calendar_snapshots').filter((r) => (
+        r.raw_snapshot?.snapshot_kind === 'pricing'
+      )).length;
+
+      raceAfterGuardAcquire = () => {
+        const conn = rows('booking_channel_manager_connections').find((row) => row.id === connection.id)!;
+        conn.metadata = {
+          ...(conn.metadata ?? {}),
+          incrementalCursor: {
+            ...(conn.metadata.incrementalCursor ?? {}),
+            checkpoint: 'cursor-B-after-preview',
+            updatedAt: new Date().toISOString(),
+          },
+        };
+        const finishedAt = new Date(Date.parse(preview.startedAt!) + 120_000).toISOString();
+        rows('booking_channel_import_runs').push({
+          id: '91000000-0000-4000-8000-000000000001',
+          connection_id: connection.id,
+          provider: 'manual',
+          status: 'completed',
+          import_type: 'incremental_sync',
+          started_at: finishedAt,
+          finished_at: finishedAt,
+          created_at: finishedAt,
+          updated_at: finishedAt,
+          imported_objects_count: 0,
+          imported_bookings_count: 0,
+          imported_calendar_days_count: 0,
+          imported_prices_count: 0,
+          warnings: [],
+          errors: [],
+          metadata: {},
+        });
+      };
+
+      await expect(runChannelManagerReconciliationRecovery({
+        connectionId: connection.id,
+        reconciliationRunId: preview.runId,
+        reportHash: preview.reportHash,
+        confirmationPhrase: APPLY_CHANNEL_MANAGER_RECONCILIATION_SAFE_REPAIRS,
+        snapshot,
+      })).rejects.toMatchObject({ code: 'report_stale_after_guard' });
+
+      expect(cancelReservation).not.toHaveBeenCalled();
+      expect(updateBookingOpsRecord).not.toHaveBeenCalled();
+      expect(processInboundBookingRequest).not.toHaveBeenCalled();
+      expect(restoreReservation).not.toHaveBeenCalled();
+      expect(rows('reservation_ledger_audit').length).toBe(ledgerBefore);
+      expect(rows('booking_ops_tasks')?.length ?? 0).toBe(tasksBefore);
+      expect(rows('booking_ops_communications')?.length ?? 0).toBe(communicationsBefore);
+      expect(rows('booking_channel_calendar_snapshots').length).toBe(calendarBefore);
+      expect(rows('booking_channel_calendar_snapshots').filter((r) => (
+        r.raw_snapshot?.snapshot_kind === 'pricing'
+      )).length).toBe(pricingBefore);
+      expect(committedCheckpoint(connection.id)).toBe('cursor-B-after-preview');
+      expect(beforeCursor).toBe('cursor-seed');
+      const recon = rows('booking_channel_reconciliation_runs').find((row) => row.id === preview.runId)!;
+      expect(recon.status).toBe('preview_ready');
+      const runningRecon = rows('booking_channel_import_runs').filter((row) => (
+        row.connection_id === connection.id
+        && row.import_type === 'reconciliation_recovery'
+        && row.status === 'running'
+      ));
+      expect(runningRecon).toHaveLength(0);
+      const failedReconImports = rows('booking_channel_import_runs').filter((row) => (
+        row.connection_id === connection.id
+        && row.import_type === 'reconciliation_recovery'
+        && row.status === 'failed'
+      ));
+      expect(failedReconImports.length).toBeGreaterThan(0);
+    });
+
+    it('post-guard newer-success race rejects even when cursor hash unchanged', async () => {
+      const connection = await seedInitialSync();
+      const snapshot = reconSnapshotFromState({ booking: { status: 'cancelled' } });
+      const preview = await runChannelManagerReconciliationPreview({
+        connectionId: connection.id,
+        snapshot,
+      });
+      cancelReservation.mockClear();
+      updateBookingOpsRecord.mockClear();
+
+      raceAfterGuardAcquire = () => {
+        // Same cursor hash, but a newer successful incremental sync finished after preview.
+        const finishedAt = new Date(Date.parse(preview.startedAt!) + 90_000).toISOString();
+        rows('booking_channel_import_runs').push({
+          id: '91000000-0000-4000-8000-000000000002',
+          connection_id: connection.id,
+          provider: 'manual',
+          status: 'completed',
+          import_type: 'incremental_sync',
+          started_at: finishedAt,
+          finished_at: finishedAt,
+          created_at: finishedAt,
+          updated_at: finishedAt,
+          imported_objects_count: 0,
+          imported_bookings_count: 0,
+          imported_calendar_days_count: 0,
+          imported_prices_count: 0,
+          warnings: [],
+          errors: [],
+          metadata: {},
+        });
+      };
+
+      await expect(runChannelManagerReconciliationRecovery({
+        connectionId: connection.id,
+        reconciliationRunId: preview.runId,
+        reportHash: preview.reportHash,
+        confirmationPhrase: APPLY_CHANNEL_MANAGER_RECONCILIATION_SAFE_REPAIRS,
+        snapshot,
+      })).rejects.toMatchObject({ code: 'report_stale_after_guard' });
+
+      expect(cancelReservation).not.toHaveBeenCalled();
+      expect(updateBookingOpsRecord).not.toHaveBeenCalled();
+      expect(committedCheckpoint(connection.id)).toBe('cursor-seed');
+      const recon = rows('booking_channel_reconciliation_runs').find((row) => row.id === preview.runId)!;
+      expect(recon.status).toBe('preview_ready');
+      expect(rows('booking_channel_import_runs').filter((row) => (
+        row.import_type === 'reconciliation_recovery' && row.status === 'running'
+      ))).toHaveLength(0);
+    });
+
+    async function seedUnmatchedMatchRepair(connectionId: string) {
+      for (const imp of rows('booking_channel_imported_bookings').filter((row) => row.connection_id === connectionId)) {
+        if (imp.external_booking_id === 'book-1') {
+          imp.matched_booking_id = null;
+          imp.match_status = 'unmatched';
+        }
+      }
+      seedBookingOps(BOOKING_OPS_ID, {
+        booking_id: 'book-1',
+        account_id: ACCOUNT_ID,
+        property_id: 'prop-a',
+        normalized_status: 'confirmed',
+      });
+    }
+
+    it('match repair blocks when target moves cross-account after preview', async () => {
+      const connection = await seedInitialSync();
+      await seedUnmatchedMatchRepair(connection.id);
+      const snapshot = reconSnapshotFromState();
+      const preview = await runChannelManagerReconciliationPreview({
+        connectionId: connection.id,
+        snapshot,
+      });
+      expect(preview.items.some((i) => (
+        i.category === 'booking_field_drift' && i.safeAfter?.matchStatus === 'matched'
+      ))).toBe(true);
+      seedBookingOps(BOOKING_OPS_ID, { account_id: 'other-account', property_id: 'prop-a' });
+      const report = await runChannelManagerReconciliationRecovery({
+        connectionId: connection.id,
+        reconciliationRunId: preview.runId,
+        reportHash: preview.reportHash,
+        confirmationPhrase: APPLY_CHANNEL_MANAGER_RECONCILIATION_SAFE_REPAIRS,
+        snapshot,
+      });
+      expect(report.items.some((i) => (
+        i.status === 'blocked' && String(i.safeMessage ?? '').includes('аккаунт')
+      ))).toBe(true);
+      const imported = rows('booking_channel_imported_bookings').find((row) => row.external_booking_id === 'book-1');
+      expect(imported?.matched_booking_id).toBeNull();
+    });
+
+    it('match repair blocks when target moves cross-property after preview', async () => {
+      const connection = await seedInitialSync();
+      await seedUnmatchedMatchRepair(connection.id);
+      const snapshot = reconSnapshotFromState();
+      const preview = await runChannelManagerReconciliationPreview({
+        connectionId: connection.id,
+        snapshot,
+      });
+      seedBookingOps(BOOKING_OPS_ID, { account_id: ACCOUNT_ID, property_id: 'prop-b' });
+      const report = await runChannelManagerReconciliationRecovery({
+        connectionId: connection.id,
+        reconciliationRunId: preview.runId,
+        reportHash: preview.reportHash,
+        confirmationPhrase: APPLY_CHANNEL_MANAGER_RECONCILIATION_SAFE_REPAIRS,
+        snapshot,
+      });
+      expect(report.items.some((i) => i.status === 'blocked')).toBe(true);
+      const imported = rows('booking_channel_imported_bookings').find((row) => row.external_booking_id === 'book-1');
+      expect(imported?.matched_booking_id).toBeNull();
+      expect(committedCheckpoint(connection.id)).toBe('cursor-seed');
+    });
+
+    it('match repair blocks when canonical duplicate appears after preview', async () => {
+      const connection = await seedInitialSync();
+      await seedUnmatchedMatchRepair(connection.id);
+      const snapshot = reconSnapshotFromState();
+      const preview = await runChannelManagerReconciliationPreview({
+        connectionId: connection.id,
+        snapshot,
+      });
+      seedBookingOps(BOOKING_OPS_ID_B, {
+        booking_id: 'book-1',
+        account_id: ACCOUNT_ID,
+        property_id: 'prop-a',
+        normalized_status: 'confirmed',
+      });
+      const report = await runChannelManagerReconciliationRecovery({
+        connectionId: connection.id,
+        reconciliationRunId: preview.runId,
+        reportHash: preview.reportHash,
+        confirmationPhrase: APPLY_CHANNEL_MANAGER_RECONCILIATION_SAFE_REPAIRS,
+        snapshot,
+      });
+      expect(report.items.some((i) => i.status === 'blocked' && String(i.safeMessage ?? '').includes('дубликат'))).toBe(true);
+      const imported = rows('booking_channel_imported_bookings').find((row) => row.external_booking_id === 'book-1');
+      expect(imported?.matched_booking_id).toBeNull();
+    });
+
+    it('match repair blocks when target disappears after preview', async () => {
+      const connection = await seedInitialSync();
+      await seedUnmatchedMatchRepair(connection.id);
+      const snapshot = reconSnapshotFromState();
+      const preview = await runChannelManagerReconciliationPreview({
+        connectionId: connection.id,
+        snapshot,
+      });
+      tables.booking_ops_records = rows('booking_ops_records').filter((row) => row.id !== BOOKING_OPS_ID);
+      const report = await runChannelManagerReconciliationRecovery({
+        connectionId: connection.id,
+        reconciliationRunId: preview.runId,
+        reportHash: preview.reportHash,
+        confirmationPhrase: APPLY_CHANNEL_MANAGER_RECONCILIATION_SAFE_REPAIRS,
+        snapshot,
+      });
+      expect(report.items.some((i) => i.status === 'blocked' && String(i.safeMessage ?? '').includes('исчезла'))).toBe(true);
+      const imported = rows('booking_channel_imported_bookings').find((row) => row.external_booking_id === 'book-1');
+      expect(imported?.matched_booking_id).toBeNull();
+    });
+
+    it('genuine status drift cancel persists via ledger and verifies state', async () => {
+      const connection = await seedInitialSync();
+      seedBookingOps(BOOKING_OPS_ID, { normalized_status: 'confirmed' });
+      const snapshot = reconSnapshotFromState({ booking: { status: 'cancelled' } });
+      const preview = await runChannelManagerReconciliationPreview({
+        connectionId: connection.id,
+        snapshot,
+      });
+      const cancelItem = rows('booking_channel_reconciliation_items').find((row) => (
+        row.reconciliation_run_id === preview.runId && row.category === 'booking_cancel_missed'
+      ));
+      expect(cancelItem).toBeTruthy();
+      // Force status_drift path while keeping cancel intended state.
+      cancelItem!.category = 'booking_status_drift';
+      cancelItem!.safe_after = {
+        ...(cancelItem!.safe_after ?? {}),
+        status: 'cancelled',
+        safeIntendedState: 'status:cancelled',
+        entityIdentity: cancelItem!.safe_after?.entityIdentity ?? `booking:${hashExternalIdentity('book-1')}`,
+      };
+      cancelReservation.mockClear();
+      const report = await runChannelManagerReconciliationRecovery({
+        connectionId: connection.id,
+        reconciliationRunId: preview.runId,
+        reportHash: preview.reportHash,
+        confirmationPhrase: APPLY_CHANNEL_MANAGER_RECONCILIATION_SAFE_REPAIRS,
+        snapshot,
+      });
+      expect(cancelReservation).toHaveBeenCalledWith(expect.objectContaining({
+        accountId: ACCOUNT_ID,
+        reservationId: BOOKING_OPS_ID,
+      }));
+      expect(report.items.some((i) => i.category === 'booking_status_drift' && i.status === 'applied')).toBe(true);
+      expect(rows('booking_ops_records').find((row) => row.id === BOOKING_OPS_ID)?.normalized_status).toBe('cancelled');
+      expect(rows('reservation_ledger_audit').some((r) => r.action === 'reservation_cancelled')).toBe(true);
+    });
+
+    it('unsupported status drift is not falsely marked applied', async () => {
+      const connection = await seedInitialSync();
+      seedBookingOps(BOOKING_OPS_ID, { normalized_status: 'confirmed' });
+      const snapshot = reconSnapshotFromState();
+      const preview = await runChannelManagerReconciliationPreview({
+        connectionId: connection.id,
+        snapshot,
+      });
+      const unchanged = rows('booking_channel_reconciliation_items').find((row) => (
+        row.reconciliation_run_id === preview.runId && row.category === 'booking_unchanged'
+      ));
+      expect(unchanged).toBeTruthy();
+      unchanged!.category = 'booking_status_drift';
+      unchanged!.repairability = 'safe_auto';
+      unchanged!.status = 'planned';
+      unchanged!.booking_ops_record_id = BOOKING_OPS_ID;
+      unchanged!.safe_before = { ...(unchanged!.safe_before ?? {}), status: 'confirmed' };
+      unchanged!.safe_after = {
+        ...(unchanged!.safe_after ?? {}),
+        status: 'modified',
+        safeIntendedState: 'status:modified',
+        entityIdentity: unchanged!.safe_after?.entityIdentity ?? `booking:${hashExternalIdentity('book-1')}`,
+      };
+      cancelReservation.mockClear();
+      restoreReservation.mockClear();
+      updateBookingOpsRecord.mockClear();
+      const report = await runChannelManagerReconciliationRecovery({
+        connectionId: connection.id,
+        reconciliationRunId: preview.runId,
+        reportHash: preview.reportHash,
+        confirmationPhrase: APPLY_CHANNEL_MANAGER_RECONCILIATION_SAFE_REPAIRS,
+        snapshot,
+      });
+      expect(report.items.some((i) => i.category === 'booking_status_drift' && i.status === 'blocked')).toBe(true);
+      expect(report.items.some((i) => i.category === 'booking_status_drift' && i.status === 'applied')).toBe(false);
+      expect(cancelReservation).not.toHaveBeenCalled();
+      expect(restoreReservation).not.toHaveBeenCalled();
+      expect(rows('booking_ops_records').find((row) => row.id === BOOKING_OPS_ID)?.normalized_status).toBe('confirmed');
+    });
+
+    it('status drift never mutates cross-account or cross-property bookings', async () => {
+      const connection = await seedInitialSync();
+      seedBookingOps(BOOKING_OPS_ID, {
+        normalized_status: 'confirmed',
+        account_id: 'foreign-account',
+        property_id: 'prop-a',
+      });
+      const snapshot = reconSnapshotFromState({ booking: { status: 'cancelled' } });
+      const preview = await runChannelManagerReconciliationPreview({
+        connectionId: connection.id,
+        snapshot,
+      });
+      // Manually plan a status drift targeting the foreign-account row id still stored in item.
+      const item = rows('booking_channel_reconciliation_items').find((row) => row.reconciliation_run_id === preview.runId);
+      if (item) {
+        item.category = 'booking_status_drift';
+        item.repairability = 'safe_auto';
+        item.status = 'planned';
+        item.booking_ops_record_id = BOOKING_OPS_ID;
+        item.safe_after = {
+          ...(item.safe_after ?? {}),
+          status: 'cancelled',
+          safeIntendedState: 'status:cancelled',
+        };
+      }
+      cancelReservation.mockClear();
+      const report = await runChannelManagerReconciliationRecovery({
+        connectionId: connection.id,
+        reconciliationRunId: preview.runId,
+        reportHash: preview.reportHash,
+        confirmationPhrase: APPLY_CHANNEL_MANAGER_RECONCILIATION_SAFE_REPAIRS,
+        snapshot,
+      });
+      expect(cancelReservation).not.toHaveBeenCalled();
+      expect(rows('booking_ops_records').find((row) => row.id === BOOKING_OPS_ID)?.normalized_status).toBe('confirmed');
+      expect(report.items.some((i) => i.category === 'booking_status_drift' && i.status === 'blocked')).toBe(true);
+    });
+
+    it('finalization RPC failure uses compensation without orphan running guard', async () => {
+      const connection = await seedInitialSync();
+      const beforeCursor = committedCheckpoint(connection.id);
+      const snapshot = reconSnapshotFromState({ booking: { status: 'cancelled' } });
+      const preview = await runChannelManagerReconciliationPreview({
+        connectionId: connection.id,
+        snapshot,
+      });
+      // Fail success finalize + failure finalize so compensation RPC must run.
+      finalizeRpcFailRemaining = 2;
+      await expect(runChannelManagerReconciliationRecovery({
+        connectionId: connection.id,
+        reconciliationRunId: preview.runId,
+        reportHash: preview.reportHash,
+        confirmationPhrase: APPLY_CHANNEL_MANAGER_RECONCILIATION_SAFE_REPAIRS,
+        snapshot,
+      })).rejects.toThrow(/injected finalize rpc failure/);
+
+      expect(finalizeRpcFailCount).toBe(2);
+      expect(committedCheckpoint(connection.id)).toBe(beforeCursor);
+      expect(rows('booking_channel_import_runs').filter((row) => (
+        row.connection_id === connection.id
+        && row.import_type === 'reconciliation_recovery'
+        && row.status === 'running'
+      ))).toHaveLength(0);
+      const recon = rows('booking_channel_reconciliation_runs').find((row) => row.id === preview.runId)!;
+      expect(recon.status).toBe('failed');
+      expect(recon.metadata?.failCompensation).toBe(true);
+    });
+
+    it('finalization failure compensation leaves cursor unchanged and surfaces failure', async () => {
+      const connection = await seedInitialSync();
+      const snapshot = reconSnapshotFromState({ booking: { status: 'cancelled' } });
+      const preview = await runChannelManagerReconciliationPreview({
+        connectionId: connection.id,
+        snapshot,
+      });
+      const beforeCursor = committedCheckpoint(connection.id);
+      const otherRunId = '94000000-0000-4000-8000-000000000044';
+      rows('booking_channel_import_runs').push({
+        id: otherRunId,
+        connection_id: connection.id,
+        provider: 'manual',
+        status: 'completed',
+        import_type: 'incremental_sync',
+        started_at: '2026-08-01T00:00:00.000Z',
+        finished_at: '2026-08-01T00:01:00.000Z',
+        created_at: '2026-08-01T00:00:00.000Z',
+        updated_at: '2026-08-01T00:01:00.000Z',
+        imported_objects_count: 0,
+        imported_bookings_count: 0,
+        imported_calendar_days_count: 0,
+        imported_prices_count: 0,
+        warnings: [],
+        errors: [],
+        metadata: { keep: true },
+      });
+
+      finalizeRpcFailRemaining = 2;
+      await expect(runChannelManagerReconciliationRecovery({
+        connectionId: connection.id,
+        reconciliationRunId: preview.runId,
+        reportHash: preview.reportHash,
+        confirmationPhrase: APPLY_CHANNEL_MANAGER_RECONCILIATION_SAFE_REPAIRS,
+        snapshot,
+      })).rejects.toThrow(/injected finalize rpc failure/);
+
+      expect(committedCheckpoint(connection.id)).toBe(beforeCursor);
+      expect(rows('booking_channel_import_runs').find((row) => row.id === otherRunId)?.status).toBe('completed');
+      expect(rows('booking_channel_import_runs').find((row) => row.id === otherRunId)?.metadata?.keep).toBe(true);
+      expect(rows('booking_channel_import_runs').filter((row) => (
+        row.import_type === 'reconciliation_recovery' && row.status === 'running'
+      ))).toHaveLength(0);
+      expect(finalizeRpcFailCount).toBe(2);
+      const recon = rows('booking_channel_reconciliation_runs').find((row) => row.id === preview.runId)!;
+      expect(recon.status).toBe('failed');
     });
   });
 

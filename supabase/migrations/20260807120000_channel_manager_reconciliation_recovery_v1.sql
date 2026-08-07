@@ -361,6 +361,205 @@ GRANT EXECUTE ON FUNCTION public.channel_manager_finalize_reconciliation_recover
 ) TO service_role;
 
 -- ---------------------------------------------------------------------------
+-- 5b. Fail-closed compensation RPC — exact run only; never touches incrementalCursor
+-- ---------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.channel_manager_fail_reconciliation_recovery_v1(
+  p_connection_id uuid,
+  p_import_run_id uuid,
+  p_reconciliation_run_id uuid,
+  p_expected_report_hash text,
+  p_finished_at timestamptz,
+  p_safe_summary text DEFAULT NULL,
+  p_safe_error jsonb DEFAULT '{}'::jsonb,
+  p_safe_run_metadata jsonb DEFAULT '{}'::jsonb
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_connection public.booking_channel_manager_connections%ROWTYPE;
+  v_import_run public.booking_channel_import_runs%ROWTYPE;
+  v_recon public.booking_channel_reconciliation_runs%ROWTYPE;
+  v_meta jsonb;
+  v_lease jsonb;
+  v_lease_run_id text;
+  v_lease_released boolean := false;
+BEGIN
+  IF p_connection_id IS NULL
+     OR p_import_run_id IS NULL
+     OR p_reconciliation_run_id IS NULL THEN
+    RETURN jsonb_build_object(
+      'success', false,
+      'code', 'invalid_arguments',
+      'message', 'connection_id, import_run_id and reconciliation_run_id are required'
+    );
+  END IF;
+
+  IF p_expected_report_hash IS NULL OR length(btrim(p_expected_report_hash)) < 16 THEN
+    RETURN jsonb_build_object(
+      'success', false,
+      'code', 'invalid_arguments',
+      'message', 'expected report hash is required'
+    );
+  END IF;
+
+  SELECT * INTO v_connection
+  FROM public.booking_channel_manager_connections
+  WHERE id = p_connection_id
+  FOR UPDATE;
+
+  IF NOT FOUND THEN
+    RETURN jsonb_build_object(
+      'success', false,
+      'code', 'connection_not_found',
+      'message', 'connection not found'
+    );
+  END IF;
+
+  SELECT * INTO v_import_run
+  FROM public.booking_channel_import_runs
+  WHERE id = p_import_run_id
+  FOR UPDATE;
+
+  IF NOT FOUND THEN
+    RETURN jsonb_build_object(
+      'success', false,
+      'code', 'run_not_found',
+      'message', 'import run not found'
+    );
+  END IF;
+
+  IF v_import_run.connection_id IS DISTINCT FROM p_connection_id THEN
+    RETURN jsonb_build_object(
+      'success', false,
+      'code', 'run_connection_mismatch',
+      'message', 'import run does not belong to connection'
+    );
+  END IF;
+
+  IF v_import_run.import_type IS DISTINCT FROM 'reconciliation_recovery' THEN
+    RETURN jsonb_build_object(
+      'success', false,
+      'code', 'invalid_import_type',
+      'message', 'import_type must be reconciliation_recovery'
+    );
+  END IF;
+
+  SELECT * INTO v_recon
+  FROM public.booking_channel_reconciliation_runs
+  WHERE id = p_reconciliation_run_id
+  FOR UPDATE;
+
+  IF NOT FOUND THEN
+    RETURN jsonb_build_object(
+      'success', false,
+      'code', 'reconciliation_run_not_found',
+      'message', 'reconciliation run not found'
+    );
+  END IF;
+
+  IF v_recon.connection_id IS DISTINCT FROM p_connection_id THEN
+    RETURN jsonb_build_object(
+      'success', false,
+      'code', 'run_connection_mismatch',
+      'message', 'reconciliation run does not belong to connection'
+    );
+  END IF;
+
+  IF v_recon.report_hash IS DISTINCT FROM btrim(p_expected_report_hash) THEN
+    RETURN jsonb_build_object(
+      'success', false,
+      'code', 'report_hash_mismatch',
+      'message', 'expected report hash does not match reconciliation run'
+    );
+  END IF;
+
+  -- Mark reconciliation run failed (compensation path).
+  UPDATE public.booking_channel_reconciliation_runs
+  SET
+    status = 'failed',
+    finished_at = COALESCE(p_finished_at, now()),
+    safe_summary = COALESCE(p_safe_summary, safe_summary, 'Reconciliation recovery failed closed.'),
+    safe_error = COALESCE(p_safe_error, safe_error),
+    metadata = COALESCE(metadata, '{}'::jsonb)
+      || COALESCE(p_safe_run_metadata, '{}'::jsonb)
+      || jsonb_build_object(
+        'failCompensation', true,
+        'failCompensatedAt', COALESCE(p_finished_at, now())
+      ),
+    updated_at = COALESCE(p_finished_at, now())
+  WHERE id = p_reconciliation_run_id;
+
+  -- Mark import run failed when still running (or reinforce failed). Never touch incrementalCursor.
+  UPDATE public.booking_channel_import_runs
+  SET
+    status = 'failed',
+    finished_at = COALESCE(finished_at, p_finished_at, now()),
+    safe_summary = COALESCE(p_safe_summary, safe_summary, 'Reconciliation recovery failed closed.'),
+    errors = COALESCE(errors, '[]'::jsonb) || jsonb_build_array(COALESCE(p_safe_error, '{}'::jsonb)),
+    metadata = COALESCE(metadata, '{}'::jsonb)
+      || COALESCE(p_safe_run_metadata, '{}'::jsonb)
+      || jsonb_build_object(
+        'liveCore', true,
+        'liveCoreStage', 'failed',
+        'reconciliationRecovery', true,
+        'failCompensation', true,
+        'reconciliationRunId', p_reconciliation_run_id::text,
+        'reportHashPrefix', substr(p_expected_report_hash, 1, 16)
+      ),
+    updated_at = COALESCE(p_finished_at, now())
+  WHERE id = p_import_run_id;
+
+  -- Release only the matching liveSyncLease; preserve incrementalCursor unchanged.
+  v_meta := COALESCE(v_connection.metadata, '{}'::jsonb);
+  v_lease := v_meta->'liveSyncLease';
+  v_lease_run_id := NULLIF(btrim(COALESCE(v_lease->>'runId', '')), '');
+
+  IF v_lease_run_id IS NOT NULL AND v_lease_run_id = p_import_run_id::text THEN
+    v_meta := jsonb_set(
+      v_meta,
+      '{liveSyncLease}',
+      jsonb_build_object(
+        'runId', p_import_run_id::text,
+        'status', 'released',
+        'releasedAt', COALESCE(p_finished_at, now()),
+        'importType', 'reconciliation_recovery',
+        'failCompensation', true
+      ),
+      true
+    );
+    v_lease_released := true;
+  END IF;
+
+  UPDATE public.booking_channel_manager_connections
+  SET
+    metadata = v_meta,
+    updated_at = COALESCE(p_finished_at, now())
+  WHERE id = p_connection_id;
+
+  RETURN jsonb_build_object(
+    'success', true,
+    'status', 'failed',
+    'reconciliationRunId', p_reconciliation_run_id::text,
+    'importRunId', p_import_run_id::text,
+    'cursorUnchanged', true,
+    'leaseReleased', v_lease_released,
+    'finishedAt', COALESCE(p_finished_at, now())
+  );
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.channel_manager_fail_reconciliation_recovery_v1(
+  uuid, uuid, uuid, text, timestamptz, text, jsonb, jsonb
+) FROM PUBLIC, anon, authenticated;
+
+GRANT EXECUTE ON FUNCTION public.channel_manager_fail_reconciliation_recovery_v1(
+  uuid, uuid, uuid, text, timestamptz, text, jsonb, jsonb
+) TO service_role;
+
+-- ---------------------------------------------------------------------------
 -- 6. Schema readiness v3 — Incremental ready stays independent of reconciliation
 -- ---------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.channel_manager_live_core_schema_state()
@@ -490,6 +689,9 @@ BEGIN
   );
   v_reconciliation_finalize_ready := public.channel_manager_live_core_rpc_ready(
     'public.channel_manager_finalize_reconciliation_recovery_v1(uuid,uuid,uuid,text,timestamptz,text,jsonb,jsonb,text,jsonb)'
+  )
+  AND public.channel_manager_live_core_rpc_ready(
+    'public.channel_manager_fail_reconciliation_recovery_v1(uuid,uuid,uuid,text,timestamptz,text,jsonb,jsonb)'
   );
 
   v_reconciliation_tables_ready :=

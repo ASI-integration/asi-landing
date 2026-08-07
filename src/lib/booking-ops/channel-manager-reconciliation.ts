@@ -397,6 +397,33 @@ function isCancelledStatus(status: string): boolean {
   return status === 'cancelled' || status === 'canceled';
 }
 
+/** Explicit safe status-drift mappings only — no invented status system. */
+function resolveStatusDriftRepair(
+  intended: NormalizedExternalBookingStatus | string,
+  currentInternalStatus: string,
+): 'cancel' | 'restore' | 'unsupported' {
+  const intendedStatus = normalizeExternalBookingStatus(intended);
+  if (intendedStatus === 'cancelled' && !isCancelledStatus(currentInternalStatus)) {
+    return 'cancel';
+  }
+  if (
+    (intendedStatus === 'restored' || intendedStatus === 'confirmed' || intendedStatus === 'new')
+    && isCancelledStatus(currentInternalStatus)
+  ) {
+    return 'restore';
+  }
+  return 'unsupported';
+}
+
+function intendedStatusFromItem(item: ChannelReconciliationItemRow): string {
+  const fromAfter = nullableText(item.safeAfter.status);
+  if (fromAfter) return fromAfter;
+  const intended = text(item.safeAfter.safeIntendedState) || '';
+  if (intended.startsWith('status:')) return intended.slice('status:'.length);
+  // Recovered from persisted safe_after.safeIntendedState when entity helpers rehydrate.
+  return '';
+}
+
 // ---------------------------------------------------------------------------
 // Snapshot validation + hashes
 // ---------------------------------------------------------------------------
@@ -873,13 +900,17 @@ export function analyzeChannelReconciliationDrift(input: {
     const guestCountDrift = booking.guestCount != null && booking.guestCount !== curGuestCount;
 
     if (meaningfulStatusDrift && statusDrift) {
+      const intended = extStatus;
+      const statusRepair = resolveStatusDriftRepair(intended, curStatus);
       push({
         category: 'booking_status_drift',
-        severity: 'warning',
-        repairability: 'safe_auto',
+        severity: statusRepair === 'unsupported' ? 'blocker' : 'warning',
+        repairability: statusRepair === 'unsupported' ? 'operator_review' : 'safe_auto',
         entityIdentity: `booking:${extHash}`,
         safeIntendedState: `status:${extStatus}`,
-        safeMessage: 'Статус брони во внешнем снимке отличается от внутреннего.',
+        safeMessage: statusRepair === 'unsupported'
+          ? 'Статус брони отличается, но безопасного автоисправления нет. Нужна проверка оператором.'
+          : 'Статус брони во внешнем снимке отличается от внутреннего.',
         externalIdentityHash: extHash,
         importedBookingId: imported ? text(imported.id) : null,
         bookingOpsRecordId: text(internal.id),
@@ -1625,6 +1656,251 @@ function externalIdFromHash(
   return null;
 }
 
+async function countCanonicalMatchesForExternal(input: {
+  accountId: string;
+  propertyId: string;
+  externalBookingId: string;
+}): Promise<number> {
+  const { count, error } = await supabase
+    .from('booking_ops_records')
+    .select('id', { count: 'exact', head: true })
+    .eq('account_id', input.accountId)
+    .eq('property_id', input.propertyId)
+    .eq('booking_id', input.externalBookingId);
+  if (error) throw new Error(error.message);
+  return count ?? 0;
+}
+
+async function revalidateMatchRepairTarget(input: {
+  connection: ChannelManagerConnection;
+  scope: { accountId: string; propertyId: string };
+  snapshot: ChannelReconciliationSnapshot;
+  item: ChannelReconciliationItemRow;
+}): Promise<
+  | { ok: true; importedBookingId: string; bookingOpsRecordId: string; externalBookingId: string }
+  | { ok: false; reason: string }
+> {
+  const importedBookingId = text(input.item.importedBookingId);
+  const plannedOpsId = text(input.item.bookingOpsRecordId);
+  if (!importedBookingId || !plannedOpsId) {
+    return { ok: false, reason: 'Нет imported/booking_ops id для сопоставления.' };
+  }
+
+  const { data: imported, error: importedError } = await supabase
+    .from('booking_channel_imported_bookings')
+    .select('id,connection_id,external_booking_id,matched_booking_id,match_status')
+    .eq('id', importedBookingId)
+    .maybeSingle();
+  if (importedError) throw new Error(importedError.message);
+  if (!imported || text(imported.connection_id) !== input.connection.id) {
+    return { ok: false, reason: 'Импортированная бронь вне контура подключения.' };
+  }
+
+  const externalBookingId = text(imported.external_booking_id)
+    || externalIdFromHash(input.snapshot, input.item.externalIdentityHash);
+  if (!externalBookingId) {
+    return { ok: false, reason: 'Не удалось подтвердить внешний идентификатор брони.' };
+  }
+  if (
+    input.item.externalIdentityHash
+    && hashExternalIdentity(externalBookingId) !== input.item.externalIdentityHash
+  ) {
+    return { ok: false, reason: 'Внешний идентификатор брони больше не совпадает с отчётом сверки.' };
+  }
+
+  const { data: ops, error: opsError } = await supabase
+    .from('booking_ops_records')
+    .select('id,account_id,property_id,booking_id')
+    .eq('id', plannedOpsId)
+    .maybeSingle();
+  if (opsError) throw new Error(opsError.message);
+  if (!ops) {
+    return { ok: false, reason: 'Целевая бронь исчезла. Сопоставление заблокировано.' };
+  }
+  if (text(ops.account_id) !== input.scope.accountId) {
+    return { ok: false, reason: 'Целевая бронь перешла в другой аккаунт. Сопоставление заблокировано.' };
+  }
+  if (text(ops.property_id) !== input.scope.propertyId) {
+    return { ok: false, reason: 'Целевая бронь перешла на другой объект. Сопоставление заблокировано.' };
+  }
+  if (text(ops.booking_id) !== externalBookingId) {
+    return { ok: false, reason: 'Внешний ID целевой брони больше не совпадает. Сопоставление заблокировано.' };
+  }
+
+  const matchCount = await countCanonicalMatchesForExternal({
+    accountId: input.scope.accountId,
+    propertyId: input.scope.propertyId,
+    externalBookingId,
+  });
+  if (matchCount !== 1) {
+    return {
+      ok: false,
+      reason: matchCount > 1
+        ? 'Появился дубликат канонической брони. Сопоставление заблокировано.'
+        : 'Каноническое совпадение исчезло. Сопоставление заблокировано.',
+    };
+  }
+
+  return {
+    ok: true,
+    importedBookingId,
+    bookingOpsRecordId: plannedOpsId,
+    externalBookingId,
+  };
+}
+
+async function verifyScopedBookingStatus(input: {
+  bookingOpsId: string;
+  accountId: string;
+  propertyId: string;
+  expectCancelled?: boolean;
+  expectActiveConfirmed?: boolean;
+}): Promise<boolean> {
+  const { data, error } = await supabase
+    .from('booking_ops_records')
+    .select('id,account_id,property_id,normalized_status,ops_status')
+    .eq('id', input.bookingOpsId)
+    .eq('account_id', input.accountId)
+    .eq('property_id', input.propertyId)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!data) return false;
+  const status = internalStatus(data);
+  if (input.expectCancelled) return isCancelledStatus(status);
+  if (input.expectActiveConfirmed) {
+    return !isCancelledStatus(status) && (
+      normalizeExternalBookingStatus(status) === 'confirmed'
+      || normalizeExternalBookingStatus(status) === 'new'
+      || status === 'confirmed'
+    );
+  }
+  return true;
+}
+
+async function applyStatusDriftItem(input: {
+  connection: ChannelManagerConnection;
+  scope: { accountId: string; propertyId: string };
+  snapshot: ChannelReconciliationSnapshot;
+  item: ChannelReconciliationItemRow;
+}): Promise<'applied' | 'skipped' | 'blocked' | 'failed'> {
+  const bookingOpsId = text(input.item.bookingOpsRecordId);
+  if (!bookingOpsId) {
+    await markItemStatus(input.item.id, 'failed', { safeMessage: 'Нет booking_ops_record_id для статуса.' });
+    return 'failed';
+  }
+
+  const { data: current, error } = await supabase
+    .from('booking_ops_records')
+    .select('id,account_id,property_id,unit_id,check_in_at,check_out_at,normalized_status,ops_status')
+    .eq('id', bookingOpsId)
+    .eq('account_id', input.scope.accountId)
+    .eq('property_id', input.scope.propertyId)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!current) {
+    await markItemStatus(input.item.id, 'blocked', {
+      safeMessage: 'Бронь вне контура подключения. Статус не изменён.',
+    });
+    return 'blocked';
+  }
+
+  const intendedRaw = intendedStatusFromItem(input.item);
+  const repair = resolveStatusDriftRepair(intendedRaw || 'unknown', internalStatus(current));
+  if (repair === 'unsupported') {
+    await markItemStatus(input.item.id, 'blocked', {
+      safeMessage: 'Неподдерживаемый переход статуса. Автоисправление недоступно.',
+    });
+    return 'blocked';
+  }
+
+  if (repair === 'cancel') {
+    if (isCancelledStatus(internalStatus(current))) {
+      await markItemStatus(input.item.id, 'skipped', { safeMessage: 'Бронь уже отменена.' });
+      return 'skipped';
+    }
+    const result = await cancelReservation({
+      accountId: input.scope.accountId,
+      reservationId: bookingOpsId,
+      actorId: 'channel-manager-reconciliation',
+      reason: 'channel_manager_reconciliation_status_drift_cancel',
+    });
+    const verified = await verifyScopedBookingStatus({
+      bookingOpsId,
+      accountId: input.scope.accountId,
+      propertyId: input.scope.propertyId,
+      expectCancelled: true,
+    });
+    if (!result.changed || !verified) {
+      await markItemStatus(input.item.id, 'failed', {
+        safeMessage: 'Отмена не подтверждена после применения. Статус не помечен applied.',
+      });
+      return 'failed';
+    }
+    await markItemStatus(input.item.id, 'applied');
+    return 'applied';
+  }
+
+  // restore
+  if (!isCancelledStatus(internalStatus(current))) {
+    const verified = await verifyScopedBookingStatus({
+      bookingOpsId,
+      accountId: input.scope.accountId,
+      propertyId: input.scope.propertyId,
+      expectActiveConfirmed: true,
+    });
+    await markItemStatus(input.item.id, verified ? 'skipped' : 'failed', {
+      safeMessage: verified ? 'Бронь уже активна.' : 'Активный статус не подтверждён.',
+    });
+    return verified ? 'skipped' : 'failed';
+  }
+
+  const externalId = externalIdFromHash(input.snapshot, input.item.externalIdentityHash);
+  const snapBooking = input.snapshot.bookings.find((b) => b.externalBookingId === externalId);
+  const checkIn = snapBooking?.checkInDate
+    || nullableText(input.item.safeAfter.checkInDate)
+    || (current.check_in_at ? String(current.check_in_at).slice(0, 10) : null);
+  const checkOut = snapBooking?.checkOutDate
+    || nullableText(input.item.safeAfter.checkOutDate)
+    || (current.check_out_at ? String(current.check_out_at).slice(0, 10) : null);
+  if (!checkIn || !checkOut) {
+    await markItemStatus(input.item.id, 'blocked', {
+      safeMessage: 'Недостаточно дат для восстановления статуса.',
+    });
+    return 'blocked';
+  }
+
+  const result = await restoreReservation({
+    accountId: input.scope.accountId,
+    reservationId: bookingOpsId,
+    actorId: 'channel-manager-reconciliation',
+    propertyId: input.scope.propertyId,
+    unitId: nullableText(current.unit_id),
+    checkIn,
+    checkOut,
+    reason: 'channel_manager_reconciliation_status_drift_restore',
+  });
+  if (result.blocked) {
+    await markItemStatus(input.item.id, 'blocked', {
+      safeMessage: 'Восстановление статуса заблокировано: конфликт доступности.',
+    });
+    return 'blocked';
+  }
+  const verified = await verifyScopedBookingStatus({
+    bookingOpsId,
+    accountId: input.scope.accountId,
+    propertyId: input.scope.propertyId,
+    expectActiveConfirmed: true,
+  });
+  if (!result.changed || !verified) {
+    await markItemStatus(input.item.id, 'failed', {
+      safeMessage: 'Восстановление не подтверждено после применения. Статус не помечен applied.',
+    });
+    return 'failed';
+  }
+  await markItemStatus(input.item.id, 'applied');
+  return 'applied';
+}
+
 async function applyOneSafeItem(input: {
   connection: ChannelManagerConnection;
   importRunId: string;
@@ -1675,15 +1951,27 @@ async function applyOneSafeItem(input: {
         return 'applied';
       }
 
-      case 'booking_field_drift':
-      case 'booking_status_drift': {
-        // Match repair path
+      case 'booking_status_drift':
+        return applyStatusDriftItem({ connection, scope, snapshot, item });
+
+      case 'booking_field_drift': {
+        // Match repair path — revalidate contour at apply time.
         if (item.entityIdentity.startsWith('match:') && item.importedBookingId && item.bookingOpsRecordId) {
+          const revalidated = await revalidateMatchRepairTarget({
+            connection,
+            scope,
+            snapshot,
+            item,
+          });
+          if (!revalidated.ok) {
+            await markItemStatus(item.id, 'blocked', { safeMessage: revalidated.reason });
+            return 'blocked';
+          }
           const { error } = await supabase.from('booking_channel_imported_bookings').update({
-            matched_booking_id: item.bookingOpsRecordId,
+            matched_booking_id: revalidated.bookingOpsRecordId,
             match_status: 'matched',
             updated_at: new Date().toISOString(),
-          }).eq('id', item.importedBookingId).eq('connection_id', connection.id);
+          }).eq('id', revalidated.importedBookingId).eq('connection_id', connection.id);
           if (error) throw new Error(error.message);
           await markItemStatus(item.id, 'applied');
           return 'applied';
@@ -1747,13 +2035,13 @@ async function applyOneSafeItem(input: {
           }
         }
 
-        if (!datesChanged && !guestCountChanged && item.category !== 'booking_status_drift') {
+        if (!datesChanged && !guestCountChanged) {
           await markItemStatus(item.id, 'skipped', { safeMessage: 'Поля уже совпадают.' });
           return 'skipped';
         }
 
-        if (externalId) {
-          await importChannelBookings(connection.id, [bookingToImportRow(snapBooking!)], { importRunId });
+        if (externalId && snapBooking) {
+          await importChannelBookings(connection.id, [bookingToImportRow(snapBooking)], { importRunId });
         }
 
         const result = await updateBookingOpsRecord(bookingOpsId, {
@@ -1799,8 +2087,22 @@ async function applyOneSafeItem(input: {
           actorId: 'channel-manager-reconciliation',
           reason: 'channel_manager_reconciliation_cancel_missed',
         });
-        await markItemStatus(item.id, result.changed ? 'applied' : 'skipped');
-        return result.changed ? 'applied' : 'skipped';
+        const verified = await verifyScopedBookingStatus({
+          bookingOpsId,
+          accountId: scope.accountId,
+          propertyId: scope.propertyId,
+          expectCancelled: true,
+        });
+        if (!result.changed || !verified) {
+          await markItemStatus(item.id, result.changed && !verified ? 'failed' : 'skipped', {
+            safeMessage: verified
+              ? 'Бронь уже отменена.'
+              : 'Отмена не подтверждена после применения.',
+          });
+          return result.changed && !verified ? 'failed' : 'skipped';
+        }
+        await markItemStatus(item.id, 'applied');
+        return 'applied';
       }
 
       case 'booking_restore_missed': {
@@ -1855,8 +2157,22 @@ async function applyOneSafeItem(input: {
           });
           return 'blocked';
         }
-        await markItemStatus(item.id, result.changed ? 'applied' : 'skipped');
-        return result.changed ? 'applied' : 'skipped';
+        const verified = await verifyScopedBookingStatus({
+          bookingOpsId,
+          accountId: scope.accountId,
+          propertyId: scope.propertyId,
+          expectActiveConfirmed: true,
+        });
+        if (!result.changed || !verified) {
+          await markItemStatus(item.id, result.changed && !verified ? 'failed' : 'skipped', {
+            safeMessage: verified
+              ? 'Бронь уже активна.'
+              : 'Восстановление не подтверждено после применения.',
+          });
+          return result.changed && !verified ? 'failed' : 'skipped';
+        }
+        await markItemStatus(item.id, 'applied');
+        return 'applied';
       }
 
       case 'calendar_day_missing_internal':
@@ -2000,9 +2316,83 @@ async function finalizeReconciliationRecovery(input: {
   }
 }
 
+async function compensateFailReconciliationRecovery(input: {
+  connectionId: string;
+  importRunId: string;
+  reconciliationRunId: string;
+  reportHash: string;
+  safeSummary: string;
+  safeError?: Record<string, unknown>;
+}): Promise<{ ok: true; leaseReleased: boolean } | { ok: false; message: string }> {
+  const finishedAt = new Date().toISOString();
+  const { data, error } = await supabase.rpc('channel_manager_fail_reconciliation_recovery_v1', {
+    p_connection_id: input.connectionId,
+    p_import_run_id: input.importRunId,
+    p_reconciliation_run_id: input.reconciliationRunId,
+    p_expected_report_hash: input.reportHash,
+    p_finished_at: finishedAt,
+    p_safe_summary: input.safeSummary,
+    p_safe_error: input.safeError ?? {},
+    p_safe_run_metadata: {
+      reconciliationRecovery: true,
+      failCompensation: true,
+      cursorUnchanged: true,
+      reportHashPrefix: input.reportHash.slice(0, 16),
+    },
+  });
+  if (error) {
+    return { ok: false, message: error.message };
+  }
+  const payload = data && typeof data === 'object'
+    ? data as { success?: boolean; message?: string; leaseReleased?: boolean }
+    : null;
+  if (!payload?.success) {
+    return { ok: false, message: payload?.message || 'Compensation RPC failed.' };
+  }
+  return { ok: true, leaseReleased: payload.leaseReleased === true };
+}
+
+/** Fail only the newly acquired reconciliation import run; keep preview available. */
+async function abortReconciliationImportRunKeepPreview(input: {
+  connectionId: string;
+  importRunId: string;
+  code: string;
+  message: string;
+}): Promise<void> {
+  const finishedAt = new Date().toISOString();
+  const safeError = toChannelLiveSafeError('reconciliation_recovery', input.message, input.code);
+  const { data: runRow, error: loadError } = await supabase
+    .from('booking_channel_import_runs')
+    .select('id,status,metadata,import_type,connection_id')
+    .eq('id', input.importRunId)
+    .eq('connection_id', input.connectionId)
+    .maybeSingle();
+  if (loadError) throw new Error(loadError.message);
+  if (runRow && text(runRow.import_type) === 'reconciliation_recovery' && text(runRow.status) === 'running') {
+    const { error } = await supabase.from('booking_channel_import_runs').update({
+      status: 'failed',
+      finished_at: finishedAt,
+      errors: [safeError],
+      safe_summary: 'Применение сверки остановлено: отчёт устарел после захвата guard. Курсор не изменён.',
+      metadata: {
+        ...((runRow.metadata as Record<string, unknown>) ?? {}),
+        liveCore: true,
+        liveCoreStage: 'failed',
+        reconciliationRecovery: true,
+        reportStaleAfterGuard: true,
+        safeError,
+      },
+      updated_at: finishedAt,
+    }).eq('id', input.importRunId).eq('status', 'running');
+    if (error) throw new Error(error.message);
+  }
+  await releaseChannelLiveSyncLease(input.connectionId, input.importRunId);
+}
+
 async function assertReportStillFresh(input: {
   connection: ChannelManagerConnection;
   run: ChannelReconciliationRunRow;
+  recentRuns?: ChannelImportRun[];
 }): Promise<void> {
   const committed = readCommittedIncrementalCursor(input.connection.metadata);
   const currentHash = committed?.checkpoint ? hashCursorCheckpoint(committed.checkpoint) : null;
@@ -2015,7 +2405,7 @@ async function assertReportStillFresh(input: {
 
   const startedAtMs = Date.parse(input.run.startedAt || input.run.createdAt || '');
   if (!Number.isFinite(startedAtMs)) return;
-  const runs = await listChannelImportRuns(input.connection.id);
+  const runs = input.recentRuns ?? await listChannelImportRuns(input.connection.id);
   const newerSuccess = runs.find((run) => (
     ['initial_sync', 'incremental_sync'].includes(run.importType)
     && ['completed', 'completed_with_warnings'].includes(run.status)
@@ -2026,6 +2416,38 @@ async function assertReportStillFresh(input: {
       new Error('Отчёт сверки устарел: после preview прошла успешная синхронизация.'),
       { code: 'report_stale_sync' },
     );
+  }
+}
+
+/**
+ * Post-guard freshness: reload connection + recent runs, then re-check cursor hash
+ * and newer successful initial/incremental sync against the preview baseline.
+ */
+async function assertReportStillFreshAfterGuard(input: {
+  connectionId: string;
+  run: ChannelReconciliationRunRow;
+}): Promise<void> {
+  const freshConnection = await requireConnection(input.connectionId);
+  const recentRuns = await listChannelImportRuns(input.connectionId);
+  try {
+    await assertReportStillFresh({
+      connection: freshConnection,
+      run: input.run,
+      recentRuns,
+    });
+  } catch (error) {
+    const code = (error as { code?: string })?.code;
+    if (code === 'report_stale_cursor' || code === 'report_stale_sync') {
+      throw Object.assign(
+        new Error(
+          code === 'report_stale_cursor'
+            ? 'Отчёт сверки устарел после захвата guard: курсор изменился.'
+            : 'Отчёт сверки устарел после захвата guard: прошла успешная синхронизация.',
+        ),
+        { code: 'report_stale_after_guard', causeCode: code },
+      );
+    }
+    throw error;
   }
 }
 
@@ -2099,6 +2521,7 @@ export async function runChannelManagerReconciliationRecovery(input: {
   let skipped = 0;
   let blocked = 0;
   let failed = 0;
+  let leaseSafeToReleaseSeparately = false;
 
   try {
     const guard = await acquireChannelLiveSyncGuard(connection.id, {
@@ -2108,6 +2531,23 @@ export async function runChannelManagerReconciliationRecovery(input: {
       throw Object.assign(new Error(guard.reason), { code: guard.code });
     }
     importRunId = guard.run.id;
+
+    // Post-guard freshness: Incremental Sync may have committed between pre-check and acquire.
+    try {
+      await assertReportStillFreshAfterGuard({ connectionId: connection.id, run });
+    } catch (staleError) {
+      const code = (staleError as { code?: string })?.code;
+      if (code === 'report_stale_after_guard' && importRunId) {
+        await abortReconciliationImportRunKeepPreview({
+          connectionId: connection.id,
+          importRunId,
+          code,
+          message: staleError instanceof Error ? staleError.message : 'report_stale_after_guard',
+        });
+        importRunId = null; // already failed+released; do not compensate/finalize recon run
+      }
+      throw staleError;
+    }
 
     const now = new Date().toISOString();
     const { error: modeError } = await supabase.from('booking_channel_reconciliation_runs').update({
@@ -2175,14 +2615,17 @@ export async function runChannelManagerReconciliationRecovery(input: {
         ? toChannelLiveSafeError('reconciliation_recovery', 'Часть безопасных исправлений завершилась ошибкой.', 'partial_failure')
         : {},
     });
+    leaseSafeToReleaseSeparately = true;
   } catch (error) {
     if (importRunId) {
+      const safeError = toChannelLiveSafeError(
+        'reconciliation_recovery',
+        error instanceof Error ? error.message : error,
+        (error as { code?: string })?.code || 'recovery_failed',
+      );
+      let finalized = false;
+      let finalizeErrorMessage: string | null = null;
       try {
-        const safeError = toChannelLiveSafeError(
-          'reconciliation_recovery',
-          error instanceof Error ? error.message : error,
-          (error as { code?: string })?.code || 'recovery_failed',
-        );
         await finalizeReconciliationRecovery({
           connectionId: connection.id,
           importRunId,
@@ -2192,14 +2635,50 @@ export async function runChannelManagerReconciliationRecovery(input: {
           counts: { applied, skipped, blocked, failed: failed + 1 },
           safeSummary: 'Применение сверки остановлено с ошибкой. Курсор не изменён.',
           safeError,
-        }).catch(() => undefined);
-      } catch {
-        // ignore secondary finalize errors
+        });
+        finalized = true;
+        leaseSafeToReleaseSeparately = true;
+      } catch (finalizeError) {
+        finalizeErrorMessage = finalizeError instanceof Error
+          ? finalizeError.message
+          : String(finalizeError);
+        const compensation = await compensateFailReconciliationRecovery({
+          connectionId: connection.id,
+          importRunId,
+          reconciliationRunId: run.id,
+          reportHash: run.reportHash,
+          safeSummary: 'Применение сверки остановлено; выполнен fail-closed compensation. Курсор не изменён.',
+          safeError: {
+            ...safeError,
+            finalizeError: finalizeErrorMessage,
+            compensationAttempted: true,
+          },
+        });
+        if (!compensation.ok) {
+          throw Object.assign(
+            new Error(
+              `Reconciliation recovery fail-closed: finalization and compensation both failed. `
+              + `finalize=${finalizeErrorMessage}; compensation=${compensation.message}. `
+              + `Guard may still be held — lease was not advertised as released.`,
+            ),
+            {
+              code: 'finalization_compensation_failed',
+              cause: error,
+              finalizeError: finalizeErrorMessage,
+              compensationError: compensation.message,
+            },
+          );
+        }
+        leaseSafeToReleaseSeparately = compensation.leaseReleased;
+        finalized = true;
       }
+      void finalized;
     }
     throw error;
   } finally {
-    if (importRunId) {
+    // Only release lease separately when finalize/compensation already made the import run terminal.
+    // Never release lease while leaving a running reconciliation import run (orphan guard).
+    if (importRunId && leaseSafeToReleaseSeparately) {
       await releaseChannelLiveSyncLease(connection.id, importRunId).catch(() => undefined);
     }
   }
