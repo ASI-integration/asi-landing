@@ -217,6 +217,8 @@ export const MANUAL_INCREMENTAL_LIVE_CAPABILITIES: ChannelLiveCapabilities = {
 
 const LIVE_CORE_INCREMENTAL_MIGRATION_BLOCKER =
   'Миграция Channel Manager Live Incremental Sync ещё не применена. Incremental sync недоступен.';
+const LIVE_CORE_RECONCILIATION_MIGRATION_BLOCKER =
+  'Миграция Channel Manager Reconciliation & Recovery ещё не применена. Сверка недоступна.';
 
 const SECRET_VALUE_RE = /(?:bearer\s+[a-z0-9._~+/=-]{8,}|(?:password|пароль|token|api[_-]?key|secret)\s*[:=]\s*\S+)/iu;
 const UNIQUE_VIOLATION = '23505';
@@ -234,9 +236,17 @@ export type ChannelLiveCoreSchemaState = {
   cursorStorageReady: boolean;
   atomicCommitRpcReady: boolean;
   replayFinalizeRpcReady: boolean;
+  /** Initial+Incremental ready. Must NOT require reconciliation migration. */
   ready: boolean;
+  reconciliationTypeReady: boolean;
+  reconciliationTablesReady: boolean;
+  reconciliationGuardReady: boolean;
+  reconciliationFinalizeRpcReady: boolean;
+  reconciliationReady: boolean;
   blocker: string | null;
 };
+
+export type ChannelLiveSyncImportType = 'initial_sync' | 'incremental_sync' | 'reconciliation_recovery';
 
 export type IncrementalConnectionScope = {
   connectionId: string;
@@ -256,6 +266,23 @@ export function clearChannelLiveCoreSchemaStateCache(): void {
   schemaStateCache = null;
 }
 
+function emptyReconciliationFlags(): Pick<
+  ChannelLiveCoreSchemaState,
+  | 'reconciliationTypeReady'
+  | 'reconciliationTablesReady'
+  | 'reconciliationGuardReady'
+  | 'reconciliationFinalizeRpcReady'
+  | 'reconciliationReady'
+> {
+  return {
+    reconciliationTypeReady: false,
+    reconciliationTablesReady: false,
+    reconciliationGuardReady: false,
+    reconciliationFinalizeRpcReady: false,
+    reconciliationReady: false,
+  };
+}
+
 export function setChannelLiveCoreSchemaStateOverride(
   state: (Partial<ChannelLiveCoreSchemaState> & Pick<ChannelLiveCoreSchemaState, 'ready'>) | null,
 ): void {
@@ -264,6 +291,18 @@ export function setChannelLiveCoreSchemaStateOverride(
   } else {
     const atomicLiveSyncGuardReady = state.atomicLiveSyncGuardReady === true
       || state.atomicRunningGuardReady === true;
+    const reconciliationTypeReady = state.reconciliationTypeReady === true;
+    const reconciliationTablesReady = state.reconciliationTablesReady === true;
+    const reconciliationGuardReady = state.reconciliationGuardReady === true;
+    const reconciliationFinalizeRpcReady = state.reconciliationFinalizeRpcReady === true;
+    const reconciliationReady = state.reconciliationReady === true
+      || (
+        reconciliationTypeReady
+        && reconciliationTablesReady
+        && reconciliationGuardReady
+        && reconciliationFinalizeRpcReady
+        && state.ready === true
+      );
     schemaStateOverride = {
       schemaVersion: Number(state.schemaVersion ?? 0) || 0,
       initialSyncTypeReady: state.initialSyncTypeReady === true,
@@ -274,6 +313,11 @@ export function setChannelLiveCoreSchemaStateOverride(
       atomicCommitRpcReady: state.atomicCommitRpcReady === true,
       replayFinalizeRpcReady: state.replayFinalizeRpcReady === true,
       ready: state.ready === true,
+      reconciliationTypeReady,
+      reconciliationTablesReady,
+      reconciliationGuardReady,
+      reconciliationFinalizeRpcReady,
+      reconciliationReady,
       blocker: state.blocker ?? null,
     };
   }
@@ -286,7 +330,7 @@ export function setChannelLiveCoreSchemaReadyOverride(value: boolean | null): vo
     schemaStateOverride = null;
   } else if (value) {
     schemaStateOverride = {
-      schemaVersion: 2,
+      schemaVersion: 3,
       initialSyncTypeReady: true,
       incrementalSyncTypeReady: true,
       atomicRunningGuardReady: true,
@@ -295,6 +339,11 @@ export function setChannelLiveCoreSchemaReadyOverride(value: boolean | null): vo
       atomicCommitRpcReady: true,
       replayFinalizeRpcReady: true,
       ready: true,
+      reconciliationTypeReady: true,
+      reconciliationTablesReady: true,
+      reconciliationGuardReady: true,
+      reconciliationFinalizeRpcReady: true,
+      reconciliationReady: true,
       blocker: null,
     };
   } else {
@@ -308,6 +357,7 @@ export function setChannelLiveCoreSchemaReadyOverride(value: boolean | null): vo
       atomicCommitRpcReady: false,
       replayFinalizeRpcReady: false,
       ready: false,
+      ...emptyReconciliationFlags(),
       blocker: LIVE_CORE_MIGRATION_BLOCKER,
     };
   }
@@ -325,19 +375,32 @@ function schemaStateFromRpcPayload(data: unknown): ChannelLiveCoreSchemaState {
   const cursorStorageReady = row.cursorStorageReady === true;
   const atomicCommitRpcReady = row.atomicCommitRpcReady === true;
   const replayFinalizeRpcReady = row.replayFinalizeRpcReady === true;
-  const v2Complete = schemaVersion >= 2
-    && initialSyncTypeReady
+  const reconciliationTypeReady = row.reconciliationTypeReady === true;
+  const reconciliationTablesReady = row.reconciliationTablesReady === true;
+  const reconciliationGuardReady = row.reconciliationGuardReady === true;
+  const reconciliationFinalizeRpcReady = row.reconciliationFinalizeRpcReady === true;
+  const incrementalComplete = initialSyncTypeReady
     && incrementalSyncTypeReady
     && atomicLiveSyncGuardReady
     && cursorStorageReady
     && atomicCommitRpcReady
     && replayFinalizeRpcReady;
+  const v2Complete = schemaVersion >= 2 && incrementalComplete;
   const v1Complete = schemaVersion < 2
     && initialSyncTypeReady
     && atomicRunningGuardReady;
+  // ready = Initial+Incremental only; reconciliation is a separate gate.
   const ready = row.ready === false
     ? false
     : (schemaVersion >= 2 ? v2Complete : v1Complete);
+  const reconciliationReady = row.reconciliationReady === true
+    || (
+      ready
+      && reconciliationTypeReady
+      && reconciliationTablesReady
+      && reconciliationGuardReady
+      && reconciliationFinalizeRpcReady
+    );
   let blocker: string | null = null;
   if (!ready) {
     if (schemaVersion >= 2) {
@@ -372,6 +435,11 @@ function schemaStateFromRpcPayload(data: unknown): ChannelLiveCoreSchemaState {
     atomicCommitRpcReady,
     replayFinalizeRpcReady,
     ready,
+    reconciliationTypeReady,
+    reconciliationTablesReady,
+    reconciliationGuardReady,
+    reconciliationFinalizeRpcReady,
+    reconciliationReady,
     blocker,
   };
 }
@@ -457,7 +525,7 @@ function isInitialSyncTypeRejected(error: { code?: string; message?: string } | 
   if (!error) return false;
   const message = text(error.message);
   return error.code === CHECK_VIOLATION
-    || (/import_type|initial_sync|incremental_sync|check constraint/i.test(message) && /violat|fail|reject/i.test(message));
+    || (/import_type|initial_sync|incremental_sync|reconciliation_recovery|check constraint/i.test(message) && /violat|fail|reject/i.test(message));
 }
 
 function propertyToRow(property: ChannelLiveExternalProperty): Record<string, unknown> {
@@ -1159,6 +1227,7 @@ export type ChannelLiveCoreStatus = {
   liveCoreEnabled: boolean;
   initialSyncEnabled: boolean;
   incrementalSyncEnabled: boolean;
+  reconciliationReady: boolean;
   realProviderApiEnabled: boolean;
   schemaReady: boolean;
   schemaVersion: number;
@@ -1277,6 +1346,7 @@ export async function probeChannelLiveCoreSchema(_connectionId?: string): Promis
       atomicCommitRpcReady: false,
       replayFinalizeRpcReady: false,
       ready: false,
+      ...emptyReconciliationFlags(),
       blocker: LIVE_CORE_MIGRATION_BLOCKER,
     };
     schemaStateCache = { at: now, state: failed };
@@ -1296,6 +1366,11 @@ export async function probeChannelLiveCoreSchema(_connectionId?: string): Promis
       state.blocker = LIVE_CORE_INCREMENTAL_MIGRATION_BLOCKER;
     }
     if (complete) state.blocker = null;
+    state.reconciliationReady = complete
+      && state.reconciliationTypeReady
+      && state.reconciliationTablesReady
+      && state.reconciliationGuardReady
+      && state.reconciliationFinalizeRpcReady;
   } else if (!state.initialSyncTypeReady || !state.atomicRunningGuardReady) {
     state.ready = false;
     if (!state.blocker) state.blocker = LIVE_CORE_MIGRATION_BLOCKER;
@@ -1324,16 +1399,18 @@ export async function recoverStaleLiveSyncRuns(
     .from('booking_channel_import_runs')
     .select('*')
     .eq('connection_id', connection.id)
-    .in('import_type', ['initial_sync', 'incremental_sync'])
+    .in('import_type', ['initial_sync', 'incremental_sync', 'reconciliation_recovery'])
     .eq('status', 'running');
   if (error) throw new Error(error.message);
 
   const recovered: string[] = [];
   for (const row of (running ?? []) as Record<string, unknown>[]) {
     const startedAt = Date.parse(text(row.started_at || row.created_at));
+    // Fresh runs (under threshold) must never be recovered.
     if (!Number.isFinite(startedAt) || nowMs - startedAt < STALE_LIVE_SYNC_TIMEOUT_MS) continue;
     const finishedAt = new Date(nowMs).toISOString();
     const importType = text(row.import_type) || 'initial_sync';
+    const runId = text(row.id);
     const metadata = {
       ...((row.metadata as Record<string, unknown>) ?? {}),
       liveCore: true,
@@ -1355,27 +1432,56 @@ export async function recoverStaleLiveSyncRuns(
       safe_summary: `${importType} прерван по stale timeout. Ранее сохранённые данные не удалены.`,
       metadata,
       updated_at: finishedAt,
-    }).eq('id', row.id).eq('status', 'running');
+    }).eq('id', runId).eq('status', 'running');
     if (updateError) throw new Error(updateError.message);
-    recovered.push(text(row.id));
+
+    // Release lease only when lease.runId equals the stale run being recovered.
+    const lease = connection.metadata?.liveSyncLease as Record<string, unknown> | undefined;
+    if (lease && text(lease.runId) === runId) {
+      try {
+        await writeLiveSyncLease(connection.id, {
+          runId,
+          status: 'released',
+          releasedAt: finishedAt,
+          importType,
+          staleRecovered: true,
+        }, { updatedAt: finishedAt });
+      } catch {
+        // Best-effort lease release; running-row mark failed is authoritative.
+      }
+    }
+
+    recovered.push(runId);
   }
   return recovered;
 }
 
 /**
- * Atomic per-connection live-sync guard: insert running initial_sync or incremental_sync.
- * Unique partial index enforces exclusivity across both types; 23505 => execution_guard.
+ * Atomic per-connection live-sync guard: insert running initial_sync,
+ * incremental_sync, or reconciliation_recovery.
+ * Unique partial index enforces exclusivity across all three types; 23505 => execution_guard.
  */
 export async function acquireChannelLiveSyncGuard(
   connectionId: string,
-  options?: { importType?: 'initial_sync' | 'incremental_sync' },
+  options?: { importType?: ChannelLiveSyncImportType },
 ): Promise<
   { ok: true; run: ChannelImportRun } | { ok: false; reason: string; code: 'execution_guard' | 'migration_missing' }
 > {
   const importType = options?.importType ?? 'initial_sync';
   const connection = await getConnection(connectionId);
   const schema = await probeChannelLiveCoreSchema(connection.id);
-  if (importType === 'incremental_sync') {
+  if (importType === 'reconciliation_recovery') {
+    if (!schema.reconciliationReady) {
+      return {
+        ok: false,
+        reason: schema.blocker
+          && !schema.ready
+          ? schema.blocker
+          : LIVE_CORE_RECONCILIATION_MIGRATION_BLOCKER,
+        code: 'migration_missing',
+      };
+    }
+  } else if (importType === 'incremental_sync') {
     if (
       schema.schemaVersion < 2
       || !schema.incrementalSyncTypeReady
@@ -1408,6 +1514,7 @@ export async function acquireChannelLiveSyncGuard(
       liveCoreStage: 'acquire_guard',
       liveCoreCounters: emptyCounters(),
       cursorPlaceholder: [],
+      ...(importType === 'reconciliation_recovery' ? { reconciliationRecovery: true } : {}),
     },
     created_at: now,
     updated_at: now,
@@ -1420,9 +1527,11 @@ export async function acquireChannelLiveSyncGuard(
     if (isInitialSyncTypeRejected(error)) {
       return {
         ok: false,
-        reason: importType === 'incremental_sync'
-          ? LIVE_CORE_INCREMENTAL_MIGRATION_BLOCKER
-          : 'Миграция Channel Manager Live Core ещё не применена. Initial sync недоступен.',
+        reason: importType === 'reconciliation_recovery'
+          ? LIVE_CORE_RECONCILIATION_MIGRATION_BLOCKER
+          : importType === 'incremental_sync'
+            ? LIVE_CORE_INCREMENTAL_MIGRATION_BLOCKER
+            : 'Миграция Channel Manager Live Core ещё не применена. Initial sync недоступен.',
         code: 'migration_missing',
       };
     }
@@ -2325,6 +2434,7 @@ export async function getChannelLiveCoreStatus(connectionId: string): Promise<Ch
     liveCoreEnabled: initialSyncReady,
     initialSyncEnabled: initialSyncReady && connection.status !== 'blocked',
     incrementalSyncEnabled: incrementalReady,
+    reconciliationReady: schema.reconciliationReady === true && connection.status !== 'blocked',
     realProviderApiEnabled: CHANNEL_PROVIDER_ADAPTERS[connection.provider]?.supports_real_api === true,
     schemaReady: schema.ready || initialSyncReady,
     schemaVersion: schema.schemaVersion,
@@ -2338,7 +2448,7 @@ export async function getChannelLiveCoreStatus(connectionId: string): Promise<Ch
   };
 }
 
-function readCommittedIncrementalCursor(
+export function readCommittedIncrementalCursor(
   metadata: Record<string, unknown> | undefined,
 ): ChannelLiveCommittedCursor | null {
   const raw = metadata?.incrementalCursor;
@@ -2353,6 +2463,14 @@ function readCommittedIncrementalCursor(
     updatedAt: text(row.updatedAt) || text(row.updated_at) || '',
     sourceRunId: text(row.sourceRunId) || text(row.source_run_id) || '',
   };
+}
+
+export function hashCommittedIncrementalCursor(
+  metadata: Record<string, unknown> | undefined,
+): string | null {
+  const cursor = readCommittedIncrementalCursor(metadata);
+  if (!cursor?.checkpoint) return null;
+  return hashCursorCheckpoint(cursor.checkpoint);
 }
 
 export async function resolveIncrementalConnectionScope(

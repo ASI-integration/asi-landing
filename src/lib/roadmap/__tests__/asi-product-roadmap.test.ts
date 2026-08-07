@@ -98,7 +98,11 @@ describe('ASI product roadmap data integrity', () => {
     expect(byId['ch-initial-incremental-sync']?.criticalForPilot).toBe(true);
     expect(byId['ch-initial-incremental-sync']?.currentState).toMatch(/initial sync/i);
     expect(byId['ch-initial-incremental-sync']?.currentState).toMatch(/Live Incremental Sync v1 is implemented/i);
+    expect(byId['ch-initial-incremental-sync']?.currentState).toMatch(/not production-accepted/i);
     expect(byId['ch-initial-incremental-sync']?.currentState).toMatch(/Polling, webhooks/i);
+    expect(byId['ch-reconciliation-recovery']?.status).toBe('in_progress');
+    expect(byId['ch-reconciliation-recovery']?.currentState).toMatch(/Reconciliation & Recovery v1 is implemented/i);
+    expect(byId['ch-reconciliation-recovery']?.currentState).toMatch(/not complete/i);
     expect(byId['ch-first-real-adapter']?.status).toBe('blocked');
     expect(byId['ch-first-real-adapter']?.priority).toBe(1);
     expect(byId['ch-outbound-publish']?.status).toBe('later');

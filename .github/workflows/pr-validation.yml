@@ -162,6 +162,19 @@ jobs:
             exit 1
           fi
 
+      - name: Channel Manager Reconciliation & Recovery regression
+        run: |
+          set -euo pipefail
+          npx vitest run \
+            src/lib/booking-ops/__tests__/channel-manager-reconciliation.test.ts \
+            src/app/api/dashboard/channel-manager/reconciliation/__tests__/route.test.ts \
+            src/lib/booking-ops/__tests__/repository.expected-scope.test.ts \
+            --reporter=verbose 2>&1 | tee reconciliation-unit.out
+          if grep -E '↓|skipped|SKIPPED' reconciliation-unit.out | grep -Eiq 'Reconciliation|expectedScope|expected-scope|repository\.expected-scope|channel-manager reconciliation route'; then
+            echo "Reconciliation suites were skipped — failing job"
+            exit 1
+          fi
+
       - name: Channel Manager recovery workflow YAML syntax validation
         run: |
           python3 - <<'PY'
@@ -445,3 +458,15 @@ jobs:
           }
           console.log('incremental_pg_proof_ok', JSON.stringify(proof));
           NODE
+
+      - name: Channel Manager Reconciliation & Recovery PostgreSQL integration
+        id: reconciliation_pg_integration
+        run: |
+          set -euo pipefail
+          npx vitest run \
+            src/lib/booking-ops/__tests__/channel-manager-reconciliation.pg.integration.test.ts \
+            --reporter=verbose 2>&1 | tee reconciliation-pg-integration.out
+          if grep -E '↓|skipped|SKIPPED' reconciliation-pg-integration.out | grep -Eiq 'Reconciliation|Channel Manager Reconciliation PostgreSQL'; then
+            echo "Reconciliation PG suite was skipped — failing job"
+            exit 1
+          fi
