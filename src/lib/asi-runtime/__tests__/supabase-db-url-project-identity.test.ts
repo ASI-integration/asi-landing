@@ -3,9 +3,13 @@ import {
   EXPECTED_PRODUCTION_SUPABASE_PROJECT_REF,
   assertSupabaseDbUrlProjectIdentity,
   evaluateSupabaseDbUrlProjectIdentity,
+  expectedDirectDbHostname,
+  expectedPoolerUsername,
 } from '../supabase-db-url-project-identity';
 
 const PROJECT_REF = EXPECTED_PRODUCTION_SUPABASE_PROJECT_REF;
+const DIRECT_HOST = expectedDirectDbHostname(PROJECT_REF);
+const POOLER_USER = expectedPoolerUsername(PROJECT_REF);
 
 describe('supabase DB URL project identity', () => {
   it('fails closed when the secret is missing', () => {
@@ -45,9 +49,9 @@ describe('supabase DB URL project identity', () => {
     ).toThrow(/project identity mismatch/);
   });
 
-  it('accepts session-pooler username postgres.<project-ref>', () => {
+  it('accepts session-pooler username postgres.<project-ref> on *.pooler.supabase.com', () => {
     const result = evaluateSupabaseDbUrlProjectIdentity({
-      rawUrl: `postgresql://postgres.${PROJECT_REF}:does-not-matter@aws-0-eu-central-1.pooler.supabase.com:5432/postgres`,
+      rawUrl: `postgresql://${POOLER_USER}:does-not-matter@aws-0-eu-central-1.pooler.supabase.com:5432/postgres`,
       expectedProjectRef: PROJECT_REF,
     });
     expect(result).toMatchObject({
@@ -60,9 +64,9 @@ describe('supabase DB URL project identity', () => {
     });
   });
 
-  it('accepts direct host db.<project-ref>.supabase.co', () => {
+  it('accepts direct host db.<project-ref>.supabase.co exactly', () => {
     const result = evaluateSupabaseDbUrlProjectIdentity({
-      rawUrl: `postgresql://postgres:does-not-matter@db.${PROJECT_REF}.supabase.co:5432/postgres`,
+      rawUrl: `postgresql://postgres:does-not-matter@${DIRECT_HOST}:5432/postgres`,
       expectedProjectRef: PROJECT_REF,
     });
     expect(result).toMatchObject({
@@ -78,7 +82,7 @@ describe('supabase DB URL project identity', () => {
   it('never returns password or raw userinfo in the evaluation result', () => {
     const password = 'super-secret-password-value';
     const result = evaluateSupabaseDbUrlProjectIdentity({
-      rawUrl: `postgresql://postgres.${PROJECT_REF}:${password}@aws-0-eu-central-1.pooler.supabase.com:5432/postgres`,
+      rawUrl: `postgresql://${POOLER_USER}:${password}@aws-0-eu-central-1.pooler.supabase.com:5432/postgres`,
       expectedProjectRef: PROJECT_REF,
     });
     const serialized = JSON.stringify(result);
@@ -96,5 +100,60 @@ describe('supabase DB URL project identity', () => {
     });
     expect(result.accepted).toBe(false);
     expect(result.failureCode).toBe('invalid_scheme');
+  });
+
+  it('rejects expected username on a non-pooler / non-direct host (evil domain)', () => {
+    const result = evaluateSupabaseDbUrlProjectIdentity({
+      rawUrl: `postgresql://${POOLER_USER}:secret@evil.example.com:5432/postgres`,
+      expectedProjectRef: PROJECT_REF,
+    });
+    expect(result).toMatchObject({
+      accepted: false,
+      failureCode: 'project_ref_mismatch',
+      usernameHasExpectedRef: true,
+      hostnameHasExpectedRef: false,
+    });
+  });
+
+  it('rejects direct-host suffix / parent-domain attacks', () => {
+    const result = evaluateSupabaseDbUrlProjectIdentity({
+      rawUrl: `postgresql://postgres:secret@${DIRECT_HOST}.evil.example.com:5432/postgres`,
+      expectedProjectRef: PROJECT_REF,
+    });
+    expect(result).toMatchObject({
+      accepted: false,
+      failureCode: 'project_ref_mismatch',
+      hostnameHasExpectedRef: false,
+    });
+  });
+
+  it('rejects padded pooler usernames that only contain the expected ref as a substring', () => {
+    const result = evaluateSupabaseDbUrlProjectIdentity({
+      rawUrl: `postgresql://foo-${POOLER_USER}-bar:secret@aws-0-eu-central-1.pooler.supabase.com:5432/postgres`,
+      expectedProjectRef: PROJECT_REF,
+    });
+    expect(result).toMatchObject({
+      accepted: false,
+      failureCode: 'project_ref_mismatch',
+      usernameHasExpectedRef: false,
+    });
+  });
+
+  it('rejects pooler host with wrong project ref username', () => {
+    const result = evaluateSupabaseDbUrlProjectIdentity({
+      rawUrl: 'postgresql://postgres.otherref:secret@aws-0-eu-central-1.pooler.supabase.com:5432/postgres',
+      expectedProjectRef: PROJECT_REF,
+    });
+    expect(result.accepted).toBe(false);
+    expect(result.failureCode).toBe('project_ref_mismatch');
+  });
+
+  it('rejects mere hostname substring of the project ref without exact direct host', () => {
+    const result = evaluateSupabaseDbUrlProjectIdentity({
+      rawUrl: `postgresql://postgres:secret@db.${PROJECT_REF}.supabase.co.evil.example.com:5432/postgres`,
+      expectedProjectRef: PROJECT_REF,
+    });
+    expect(result.accepted).toBe(false);
+    expect(result.failureCode).toBe('project_ref_mismatch');
   });
 });

@@ -5,6 +5,9 @@
 
 export const EXPECTED_PRODUCTION_SUPABASE_PROJECT_REF = 'jwinifeienvzejofmbua';
 
+/** Session-pooler hosts must end with this suffix (exact suffix, not a substring elsewhere). */
+export const SUPABASE_SESSION_POOLER_HOST_SUFFIX = '.pooler.supabase.com';
+
 export type SupabaseDbUrlProjectIdentityInput = {
   rawUrl: string | null | undefined;
   expectedProjectRef: string;
@@ -45,11 +48,24 @@ function decodeUserinfoPart(value: string | null): string {
   }
 }
 
+export function expectedDirectDbHostname(projectRef: string): string {
+  return `db.${projectRef.trim().toLowerCase()}.supabase.co`;
+}
+
+export function expectedPoolerUsername(projectRef: string): string {
+  return `postgres.${projectRef.trim().toLowerCase()}`;
+}
+
 /**
  * Evaluate whether a Postgres URL belongs to the expected Supabase project.
- * Accepts direct hosts like db.<ref>.supabase.co and session-pooler usernames
- * like postgres.<ref>. Never inspects or returns password material beyond
- * boolean presence of a secret string.
+ *
+ * ACCEPT ONLY:
+ * 1) Direct DB hostname exactly: db.<ref>.supabase.co
+ * 2) Session pooler: hostname ends with .pooler.supabase.com AND decoded
+ *    username equals exactly postgres.<ref>
+ *
+ * Rejects mere substring matches (evil parent domains, padded usernames, etc.).
+ * Never inspects or returns password material beyond boolean presence of a secret string.
  */
 export function evaluateSupabaseDbUrlProjectIdentity(
   input: SupabaseDbUrlProjectIdentityInput,
@@ -121,8 +137,12 @@ export function evaluateSupabaseDbUrlProjectIdentity(
   const schemeIsPostgres = parsed.protocol === 'postgres:' || parsed.protocol === 'postgresql:';
   const hostname = (parsed.hostname || '').toLowerCase();
   const username = decodeUserinfoPart(parsed.username).toLowerCase();
-  const hostnameHasExpectedRef = Boolean(expected && hostname.includes(expected.toLowerCase()));
-  const usernameHasExpectedRef = Boolean(expected && username.includes(expected.toLowerCase()));
+  const directHost = expectedDirectDbHostname(expected);
+  const poolerUser = expectedPoolerUsername(expected);
+  const hostnameHasExpectedRef = hostname === directHost;
+  const usernameHasExpectedRef = username === poolerUser;
+  const poolerHostOk = hostname.endsWith(SUPABASE_SESSION_POOLER_HOST_SUFFIX);
+  const identityOk = hostnameHasExpectedRef || (poolerHostOk && usernameHasExpectedRef);
 
   if (!schemeIsPostgres) {
     return {
@@ -135,12 +155,12 @@ export function evaluateSupabaseDbUrlProjectIdentity(
     };
   }
 
-  if (!hostnameHasExpectedRef && !usernameHasExpectedRef) {
+  if (!identityOk) {
     return {
       secretPresent: true,
       schemeIsPostgres: true,
-      hostnameHasExpectedRef: false,
-      usernameHasExpectedRef: false,
+      hostnameHasExpectedRef,
+      usernameHasExpectedRef,
       accepted: false,
       failureCode: 'project_ref_mismatch',
     };

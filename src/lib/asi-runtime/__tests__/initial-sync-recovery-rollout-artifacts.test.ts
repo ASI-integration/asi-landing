@@ -215,8 +215,15 @@ describe('Initial Sync Recovery v1 production rollout artifacts', () => {
     expect(workflowText).toContain('pre_sql_identity_reverified=yes');
     expect(workflowText).toContain('hostname_has_expected_ref=');
     expect(workflowText).toContain('username_has_expected_ref=');
-    expect(workflowText).toContain("expected in hostname");
-    expect(workflowText).toContain("expected in username");
+    expect(workflowText).toContain('db.{expected}.supabase.co');
+    expect(workflowText).toContain('postgres.{expected}');
+    expect(workflowText).toContain('hostname.endswith(".pooler.supabase.com")');
+    expect(workflowText).toContain('hostname == direct_host');
+    expect(workflowText).toContain('username == pooler_user');
+    expect(workflowText).not.toContain('expected in hostname');
+    expect(workflowText).not.toContain('expected in username');
+    expect(workflowText).not.toContain('expected not in hostname');
+    expect(workflowText).not.toContain('expected not in username');
 
     const missingSecretIndex = workflowText.indexOf('SUPABASE_DB_URL secret is missing.');
     const identityVerifiedIndex = workflowText.indexOf('production_supabase_db_identity_verified=yes');

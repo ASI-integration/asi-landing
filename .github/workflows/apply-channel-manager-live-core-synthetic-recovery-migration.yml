@@ -110,6 +110,8 @@ jobs:
           echo "::add-mask::${SUPABASE_DB_URL}"
 
           # Identity only: never print URL, password, or userinfo.
+          # Accept ONLY exact direct host db.<ref>.supabase.co OR
+          # hostname ending with .pooler.supabase.com AND username exactly postgres.<ref>.
           SUPABASE_DB_URL="$SUPABASE_DB_URL" EXPECTED_SUPABASE_PROJECT_REF="$EXPECTED_SUPABASE_PROJECT_REF" python3 - <<'PY'
           import os
           from urllib.parse import unquote, urlparse
@@ -130,8 +132,12 @@ jobs:
           scheme_ok = parsed.scheme in ("postgres", "postgresql")
           hostname = (parsed.hostname or "").lower()
           username = unquote(parsed.username or "").lower()
-          host_has_ref = bool(expected) and expected in hostname
-          user_has_ref = bool(expected) and expected in username
+          direct_host = f"db.{expected}.supabase.co"
+          pooler_user = f"postgres.{expected}"
+          host_has_ref = bool(expected) and hostname == direct_host
+          user_has_ref = bool(expected) and username == pooler_user
+          pooler_host_ok = hostname.endswith(".pooler.supabase.com")
+          identity_ok = host_has_ref or (pooler_host_ok and user_has_ref)
 
           print(f"secret_present=true")
           print(f"scheme_is_postgres={str(scheme_ok).lower()}")
@@ -141,7 +147,7 @@ jobs:
 
           if not scheme_ok:
               raise SystemExit("SUPABASE_DB_URL must be a postgres/postgresql URL.")
-          if not host_has_ref and not user_has_ref:
+          if not identity_ok:
               raise SystemExit("SUPABASE_DB_URL project identity mismatch.")
           print("production_supabase_db_identity_verified=yes")
           PY
@@ -181,6 +187,7 @@ jobs:
           echo "::add-mask::${SUPABASE_DB_URL}"
 
           # Fail closed again immediately before SQL (no VPS process-env or shared-env DB credential fallback).
+          # Same strict identity rules: exact direct host OR pooler suffix + exact postgres.<ref> username.
           SUPABASE_DB_URL="$SUPABASE_DB_URL" EXPECTED_SUPABASE_PROJECT_REF="$EXPECTED_SUPABASE_PROJECT_REF" python3 - <<'PY'
           import os
           from urllib.parse import unquote, urlparse
@@ -192,12 +199,18 @@ jobs:
           normalized = raw.strip()
           if len(normalized) >= 2 and normalized[0] in ("'", '"', "`") and normalized[-1] == normalized[0]:
               normalized = normalized[1:-1].strip()
+          if not normalized or ("\r" in normalized) or ("\n" in normalized):
+              raise SystemExit("SUPABASE_DB_URL is invalid.")
           parsed = urlparse(normalized)
           hostname = (parsed.hostname or "").lower()
           username = unquote(parsed.username or "").lower()
+          direct_host = f"db.{expected}.supabase.co"
+          pooler_user = f"postgres.{expected}"
           if parsed.scheme not in ("postgres", "postgresql"):
               raise SystemExit("SUPABASE_DB_URL must be a postgres/postgresql URL.")
-          if expected not in hostname and expected not in username:
+          if hostname != direct_host and not (
+              hostname.endswith(".pooler.supabase.com") and username == pooler_user
+          ):
               raise SystemExit("SUPABASE_DB_URL project identity mismatch.")
           print("pre_sql_identity_reverified=yes")
           PY
