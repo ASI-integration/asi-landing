@@ -1,0 +1,110 @@
+name: Test Production Supabase DB Connection
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm_connection_test:
+        description: Type TEST_PRODUCTION_SUPABASE_DB_CONNECTION_READ_ONLY to run
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: test-production-supabase-db-connection
+  cancel-in-progress: false
+
+jobs:
+  connection_test:
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 10
+    steps:
+      - name: Require read-only connection-test confirmation
+        shell: bash
+        run: |
+          set -euo pipefail
+          REQUIRED="TEST_PRODUCTION_SUPABASE_DB_CONNECTION_READ_ONLY"
+          PROVIDED="${{ inputs.confirm_connection_test }}"
+          if [[ "$PROVIDED" != "$REQUIRED" ]]; then
+            echo "::error::Confirmation phrase mismatch. Refusing to run."
+            exit 1
+          fi
+
+      - name: Validate Supabase Postgres URL shape without exposing credentials
+        shell: bash
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${SUPABASE_DB_URL:-}" ]]; then
+            echo "::error::SUPABASE_DB_URL secret is missing."
+            exit 1
+          fi
+          echo "::add-mask::${SUPABASE_DB_URL}"
+
+          SUPABASE_DB_URL="$SUPABASE_DB_URL" python3 - <<'PY'
+          import os
+          from urllib.parse import unquote, urlparse
+
+          raw = (os.environ.get("SUPABASE_DB_URL") or "").strip()
+          if len(raw) >= 2 and raw[0] in ("'", '"', "`") and raw[-1] == raw[0]:
+              raw = raw[1:-1].strip()
+          if not raw or "\r" in raw or "\n" in raw:
+              raise SystemExit("SUPABASE_DB_URL is invalid.")
+
+          parsed = urlparse(raw)
+          scheme_ok = parsed.scheme in ("postgres", "postgresql")
+          hostname = (parsed.hostname or "").lower()
+          username = unquote(parsed.username or "").lower()
+          host_ok = hostname.endswith(".pooler.supabase.com") or (
+              hostname.startswith("db.") and hostname.endswith(".supabase.co")
+          )
+          user_ok = username == "postgres" or username.startswith("postgres.")
+
+          print(f"secret_present=true")
+          print(f"scheme_is_postgres={str(scheme_ok).lower()}")
+          print(f"host_is_supabase_postgres={str(host_ok).lower()}")
+          print(f"username_is_postgres_shape={str(user_ok).lower()}")
+          print(f"port={parsed.port or 5432}")
+
+          if not scheme_ok:
+              raise SystemExit("SUPABASE_DB_URL must use postgres/postgresql scheme.")
+          if not host_ok:
+              raise SystemExit("SUPABASE_DB_URL is not a recognized Supabase Postgres endpoint.")
+          if not user_ok:
+              raise SystemExit("SUPABASE_DB_URL username is not a recognized Supabase Postgres username shape.")
+          PY
+
+      - name: Install PostgreSQL client
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq postgresql-client
+
+      - name: Connection-only read-only probe
+        shell: bash
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          PGCONNECT_TIMEOUT: "10"
+          PGOPTIONS: "-c default_transaction_read_only=on -c statement_timeout=10000"
+        run: |
+          set -euo pipefail
+          if [[ -z "${SUPABASE_DB_URL:-}" ]]; then
+            echo "::error::SUPABASE_DB_URL secret is missing."
+            exit 1
+          fi
+          echo "::add-mask::${SUPABASE_DB_URL}"
+
+          # This workflow intentionally has no checkout, no migration artifact,
+          # no DDL/DML, no cleanup, and no deploy step. The only SQL is SELECT 1.
+          psql -X "$SUPABASE_DB_URL" \
+            --set ON_ERROR_STOP=1 \
+            --no-psqlrc \
+            --quiet \
+            --command "SELECT 1;" >/dev/null
+
+          echo "CONNECTION_STATUS=ok"
+          echo "READ_ONLY_PROBE=select_1_passed"
