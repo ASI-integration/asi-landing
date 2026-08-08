@@ -14,6 +14,7 @@ import {
   type PropertyVoicePolicySettings,
 } from './voice-response-settings';
 import { isTtsConfigured } from './voice-tts';
+import { resolveTelegramTextMeta } from './telegram-text-meta-handler';
 import type { InboundMessageEnvelope } from './types';
 
 export type VoiceOutboundContext = {
@@ -59,6 +60,20 @@ function inferMessageRisk(params: VoiceOutboundContext): VoiceMessageRisk {
   return 'normal';
 }
 
+function inferVoiceResponseMode(params: VoiceOutboundContext, transport: VoiceInboundTransport): string | undefined {
+  if (params.responseMode) return params.responseMode;
+  if (transport !== 'telegram_voice') return undefined;
+
+  const telegramLangCode = String(
+    (params.envelope.metadata as Record<string, unknown> | undefined)?.telegram_user_language_code ?? '',
+  ).trim() || undefined;
+  const meta = resolveTelegramTextMeta({
+    baseText: String(params.envelope.messageText ?? ''),
+    telegramLangCode,
+  });
+  return meta ? 'telegram_meta_voice_reply' : undefined;
+}
+
 export function resolveVoiceResponseDecision(params: VoiceOutboundContext): VoiceResponseDecision {
   const session = loadAutonomousSession(params.chatId);
   const userSettings = loadChatVoiceUserSettings(session?.collected_data);
@@ -67,16 +82,18 @@ export function resolveVoiceResponseDecision(params: VoiceOutboundContext): Voic
     ...params.propertyVoicePolicy,
     timezone: propertyTz.timezone,
   });
+  const transport = inboundTransport(params.envelope);
+  const responseMode = inferVoiceResponseMode(params, transport);
 
   return evaluateVoiceResponsePolicy({
     role: params.role,
     detectedIntent: params.detectedIntent,
     domainZone: params.domainZone,
-    responseMode: params.responseMode,
+    responseMode,
     propertyId: params.propertyId,
     propertyTimezone: propertyTz,
-    inboundTransport: inboundTransport(params.envelope),
-    messageRisk: inferMessageRisk(params),
+    inboundTransport: transport,
+    messageRisk: inferMessageRisk({ ...params, responseMode }),
     userVoiceSettings: userSettings,
     propertyVoiceSettings,
     budget: getVoiceBudgetSnapshot(params.chatId),

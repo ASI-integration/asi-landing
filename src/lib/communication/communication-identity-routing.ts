@@ -1,6 +1,7 @@
 import { supabase } from '@/lib/supabase';
 import { loadAutonomousSession } from './conversation-session-store';
 import { classifyGuestCommunicationIntent, isGuestConciergeIntent } from './guest-intent-router';
+import { resolveTelegramTextMeta } from './telegram-text-meta-handler';
 import {
   extractFactsDeterministic,
   isIdentitySelectionText,
@@ -359,6 +360,28 @@ export async function resolveCommunicationIdentityRoute(params: {
   const messageText = text(envelope.messageText);
   const metaIdentity = metadataIdentity(envelope);
   const boundIdentity = identityFromBinding(identity);
+  const telegramMeta =
+    envelope.channel === 'telegram'
+      ? resolveTelegramTextMeta({
+          baseText: messageText,
+          telegramLangCode: text(envelope.metadata?.telegram_user_language_code) || undefined,
+        })
+      : null;
+
+  if (telegramMeta) {
+    return {
+      senderIdentity: metaIdentity ?? boundIdentity ?? params.rememberedIdentity ?? 'unknown',
+      route: 'guest_concierge',
+      shouldRunGuestConcierge: true,
+      reason: 'telegram_meta_identity_free',
+      audit: {
+        metaKind: telegramMeta.kind,
+        identityStatus: identity.status,
+        identityReason: identity.reason,
+      },
+    };
+  }
+
   const crmByUsername = await findCrmContactByTelegramUsername(telegramUsername(envelope));
   const crmRole = norm(crmByUsername?.role);
   const guestSelfDeclared = isGuestSelfDeclaration(messageText);
@@ -513,7 +536,7 @@ export async function resolveCommunicationIdentityRoute(params: {
       crmContactId,
       reason: crmContactId ? 'lead_intent_from_guest_crm_linked' : 'lead_intent_from_guest_no_safe_crm_key',
       audit: {
-        crmContactId: crmContactId ?? null,
+        crmContactId: crmByUsername?.id ?? null,
         telegramUsername: telegramUsername(envelope) || null,
         detectedIntent: currentIntentRoute.detectedIntent,
         previousIdentity: senderIdentity,
@@ -588,7 +611,7 @@ export async function resolveCommunicationIdentityRoute(params: {
       selectedIdentity: 'lead',
       crmContactId,
       reason: crmContactId ? 'lead_intent_crm_linked' : 'lead_intent_no_safe_crm_key',
-      audit: { crmContactId: crmContactId ?? null, telegramUsername: telegramUsername(envelope) || null },
+      audit: { crmContactId: crmByUsername?.id ?? null, telegramUsername: telegramUsername(envelope) || null },
     };
   }
 

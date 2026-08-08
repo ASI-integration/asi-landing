@@ -73,6 +73,7 @@ const CORE_STAY_RESPONSE_MODES = new Set([
 ]);
 
 const INTERNAL_RESPONSE_MODES = new Set(['operator_escalation']);
+const META_VOICE_RESPONSE_MODES = new Set(['telegram_meta_voice_reply']);
 
 const MONEY_INTENT = 'money_sensitive';
 
@@ -109,6 +110,10 @@ function estimateVoiceSeconds(text: string): number {
 
 function isOperatorEscalation(input: VoiceResponsePolicyInput): boolean {
   return INTERNAL_RESPONSE_MODES.has(String(input.responseMode ?? '').trim());
+}
+
+function isMetaVoiceReply(input: VoiceResponsePolicyInput): boolean {
+  return META_VOICE_RESPONSE_MODES.has(String(input.responseMode ?? '').trim());
 }
 
 function needsUrgentSafeHandoff(input: VoiceResponsePolicyInput): boolean {
@@ -176,6 +181,19 @@ export function evaluateVoiceResponsePolicy(input: VoiceResponsePolicyInput): Vo
 
   if (input.messageRisk === 'sensitive_internal' || isOperatorEscalation(input)) {
     return { shouldSendVoice: false, reason: 'sensitive_internal', timezoneSource };
+  }
+
+  if (input.inboundTransport === 'telegram_voice' && isMetaVoiceReply(input)) {
+    const voiceText = prepareVoiceTextForTts(input.replyText, settings.maxVoiceTextChars);
+    if (voiceText.length >= 8 && voiceText.length <= settings.maxVoiceTextChars) {
+      return {
+        shouldSendVoice: true,
+        reason: 'inbound_voice_allowed',
+        voiceText,
+        maxDurationSeconds,
+        timezoneSource,
+      };
+    }
   }
 
   if (isStaffRole(input.role)) {
