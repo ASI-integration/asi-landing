@@ -1,0 +1,309 @@
+name: Clean Exact Legacy Live Core Orphan 88 v1
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm_exact_cleanup:
+        description: 'Type CLEAN_EXACT_LEGACY_LIVE_CORE_ORPHAN_88_V1'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  exact_cleanup:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Require exact cleanup confirmation
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${{ inputs.confirm_exact_cleanup }}" != "CLEAN_EXACT_LEGACY_LIVE_CORE_ORPHAN_88_V1" ]; then
+            echo "Exact production cleanup is manual only. Use the exact confirmation phrase."
+            exit 1
+          fi
+
+      - name: Verify current production release
+        shell: bash
+        run: |
+          set -euo pipefail
+          body="$(curl -fsS https://www.asi-global.ru/api/version)"
+          echo "$body"
+          node -e '
+            const body = JSON.parse(process.argv[1]);
+            const expected = "6b9f022e423e1032f66286b9348160c4dd59f45c";
+            if (body.environment !== "production" || body.sha !== expected) {
+              console.error("Unexpected production runtime identity", body);
+              process.exit(1);
+            }
+          ' "$body"
+
+      - name: Validate production Supabase DB URL identity
+        shell: bash
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          set -euo pipefail
+          test -n "${SUPABASE_DB_URL:-}"
+          case "$SUPABASE_DB_URL" in
+            postgresql://postgres.jwinifeienvzejofmbua:*@aws-1-eu-west-1.pooler.supabase.com:5432/postgres) ;;
+            *) echo "SUPABASE_DB_URL does not match the reviewed production Session Pooler identity"; exit 1 ;;
+          esac
+
+      - name: Install PostgreSQL client
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-client
+
+      - name: Exact transactional cleanup
+        shell: bash
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          PGOPTIONS: -c lock_timeout=3000 -c statement_timeout=30000
+        run: |
+          set -euo pipefail
+          psql "$SUPABASE_DB_URL" -X -v ON_ERROR_STOP=1 <<'SQL'
+          BEGIN;
+
+          DO $cleanup$
+          DECLARE
+            p_target constant uuid := '6f20ee1d-be7b-4b8b-bf09-9fe994180a66'::uuid;
+            p_owner constant uuid := '39e6b608-a6d9-413f-9b4d-02d1e4d81890'::uuid;
+            p_property_setup constant uuid := '1a14e03b-465d-4000-be05-c06f452818a1'::uuid;
+            p_connection constant uuid := '9f97a660-81f8-4583-9125-f95216f8dd03'::uuid;
+            p_run_1 constant uuid := '2fac3a42-3a1a-4e01-b236-a12346d55dec'::uuid;
+            p_run_2 constant uuid := 'c9fe1308-e0c3-4c90-9131-b0ef33f67bf1'::uuid;
+            v_row public.booking_ops_records%ROWTYPE;
+            v_fk jsonb;
+            v_fk_post jsonb;
+            v_edge jsonb;
+            v_actual jsonb := '{}'::jsonb;
+            v_expected constant jsonb := '{
+              "booking_ops_events":37,
+              "booking_ops_tasks":10,
+              "booking_ops_communication_intents":6,
+              "booking_ops_lifecycle_states":1,
+              "booking_ops_lifecycle_decisions":2,
+              "booking_ops_lifecycle_events":5,
+              "booking_ops_domain_events":2,
+              "booking_ops_guest_intake_sessions":1,
+              "booking_ops_lifecycle_runs":1,
+              "booking_ops_autopilot_states":1,
+              "booking_instay_checkout":1,
+              "booking_guest_documents":1,
+              "booking_checkin_execution":1,
+              "booking_contracts":1,
+              "booking_deposits":1,
+              "booking_mvd_reports":1,
+              "booking_guest_legal_readiness":1,
+              "booking_legal_execution_events":3,
+              "booking_cleaning_tasks":1,
+              "booking_linen_tasks":1,
+              "booking_supplies_tasks":1,
+              "booking_physical_readiness":1,
+              "booking_ops_guest_intake_events":1,
+              "booking_ops_sla_items":6
+            }'::jsonb;
+            v_count bigint;
+            v_deleted int;
+          BEGIN
+            SELECT * INTO v_row
+            FROM public.booking_ops_records
+            WHERE id = p_target
+            FOR UPDATE;
+
+            IF NOT FOUND THEN
+              RAISE EXCEPTION 'exact_target_missing';
+            END IF;
+
+            IF v_row.property_id IS DISTINCT FROM 'asi-live-core-acceptance-v1'
+               OR v_row.booking_id IS DISTINCT FROM 'asi-lc-accept-book-v1'
+               OR v_row.guest_name IS DISTINCT FROM 'Тестовый Гость ASI'
+               OR v_row.ota_source IS DISTINCT FROM 'channel_manager'
+               OR v_row.account_id IS NOT NULL
+               OR coalesce(v_row.guest_phone, '') <> ''
+               OR coalesce(v_row.guest_email, '') <> ''
+               OR coalesce(v_row.guest_telegram, '') <> ''
+               OR coalesce(v_row.reservation_metadata, '{}'::jsonb) <> '{}'::jsonb
+               OR v_row.created_at IS DISTINCT FROM '2026-08-05T12:45:05.967+00:00'::timestamptz THEN
+              RAISE EXCEPTION 'exact_target_identity_or_safety_mismatch';
+            END IF;
+
+            IF NOT EXISTS (SELECT 1 FROM public.booking_owner_setup_profiles WHERE id = p_owner) THEN
+              RAISE EXCEPTION 'preserved_owner_missing_before_cleanup';
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM public.booking_property_setup_profiles WHERE id = p_property_setup) THEN
+              RAISE EXCEPTION 'preserved_property_setup_missing_before_cleanup';
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM public.booking_channel_manager_connections WHERE id = p_connection) THEN
+              RAISE EXCEPTION 'preserved_connection_missing_before_cleanup';
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM public.booking_channel_import_runs WHERE id = p_run_1) OR
+               NOT EXISTS (SELECT 1 FROM public.booking_channel_import_runs WHERE id = p_run_2) THEN
+              RAISE EXCEPTION 'preserved_import_run_missing_before_cleanup';
+            END IF;
+
+            v_fk := public.channel_manager_live_core_booking_ops_fk_children(p_target);
+            IF coalesce(v_fk->>'ok', 'false') <> 'true' THEN
+              RAISE EXCEPTION 'live_fk_probe_failed:%', coalesce(v_fk->>'blocker_summary', 'unknown');
+            END IF;
+
+            FOR v_edge IN SELECT * FROM jsonb_array_elements(coalesce(v_fk->'edges', '[]'::jsonb))
+            LOOP
+              v_count := coalesce((v_edge->>'row_count')::bigint, 0);
+              IF v_count <= 0 THEN
+                CONTINUE;
+              END IF;
+              IF coalesce(v_edge->>'delete_action', '') <> 'c' THEN
+                RAISE EXCEPTION 'non_cascade_live_child:%:%:%', v_edge->>'table_name', v_edge->>'column_name', v_edge->>'delete_action';
+              END IF;
+              v_actual := v_actual || jsonb_build_object(v_edge->>'table_name', v_count);
+            END LOOP;
+
+            IF v_actual <> v_expected THEN
+              RAISE EXCEPTION 'live_child_shape_changed expected=% actual=%', v_expected, v_actual;
+            END IF;
+
+            SELECT count(*) INTO v_count
+            FROM public.booking_ops_communication_deliveries d
+            JOIN public.booking_ops_communication_intents i ON i.id = d.communication_intent_id
+            WHERE i.booking_ops_record_id = p_target;
+            IF v_count <> 0 THEN RAISE EXCEPTION 'communication_deliveries_present:%', v_count; END IF;
+
+            SELECT count(*) INTO v_count FROM public.reservation_source_links WHERE booking_ops_record_id = p_target;
+            IF v_count <> 0 THEN RAISE EXCEPTION 'reservation_source_links_present:%', v_count; END IF;
+
+            SELECT count(*) INTO v_count FROM public.booking_channel_imported_bookings WHERE matched_booking_id = p_target;
+            IF v_count <> 0 THEN RAISE EXCEPTION 'matched_imported_bookings_present:%', v_count; END IF;
+
+            IF (SELECT count(*) FROM public.booking_guest_documents WHERE booking_id = p_target) <> 1 OR EXISTS (
+              SELECT 1 FROM public.booking_guest_documents
+              WHERE booking_id = p_target
+                AND (status IS DISTINCT FROM 'not_requested'
+                     OR document_type IS DISTINCT FROM 'guest_identity'
+                     OR storage_ref IS NOT NULL
+                     OR masked_document_number IS NOT NULL
+                     OR coalesce(metadata, '{}'::jsonb) <> '{"initialized":true}'::jsonb
+                     OR updated_at IS DISTINCT FROM created_at)
+            ) THEN RAISE EXCEPTION 'guest_documents_not_pristine'; END IF;
+
+            IF (SELECT count(*) FROM public.booking_contracts WHERE booking_id = p_target) <> 1 OR EXISTS (
+              SELECT 1 FROM public.booking_contracts
+              WHERE booking_id = p_target
+                AND (status IS DISTINCT FROM 'not_started'
+                     OR provider IS DISTINCT FROM 'manual'
+                     OR coalesce(metadata, '{}'::jsonb) <> '{"initialized":true}'::jsonb
+                     OR updated_at IS DISTINCT FROM created_at)
+            ) THEN RAISE EXCEPTION 'contract_not_pristine'; END IF;
+
+            IF (SELECT count(*) FROM public.booking_deposits WHERE booking_id = p_target) <> 1 OR EXISTS (
+              SELECT 1 FROM public.booking_deposits
+              WHERE booking_id = p_target
+                AND (status IS DISTINCT FROM 'not_requested'
+                     OR provider IS DISTINCT FROM 'manual'
+                     OR amount IS DISTINCT FROM 0
+                     OR currency IS DISTINCT FROM 'RUB'
+                     OR coalesce(metadata, '{}'::jsonb) <> '{"initialized":true}'::jsonb
+                     OR updated_at IS DISTINCT FROM created_at)
+            ) THEN RAISE EXCEPTION 'deposit_not_pristine'; END IF;
+
+            IF (SELECT count(*) FROM public.booking_mvd_reports WHERE booking_id = p_target) <> 1 OR EXISTS (
+              SELECT 1 FROM public.booking_mvd_reports
+              WHERE booking_id = p_target
+                AND (status IS DISTINCT FROM 'not_started'
+                     OR provider IS DISTINCT FROM 'manual'
+                     OR coalesce(metadata, '{}'::jsonb) <> '{"initialized":true}'::jsonb
+                     OR updated_at IS DISTINCT FROM created_at)
+            ) THEN RAISE EXCEPTION 'mvd_not_pristine'; END IF;
+
+            IF (SELECT count(*) FROM public.booking_checkin_execution WHERE booking_id = p_target AND status = 'not_ready') <> 1 THEN
+              RAISE EXCEPTION 'checkin_not_pristine';
+            END IF;
+            IF (SELECT count(*) FROM public.booking_instay_checkout WHERE booking_id = p_target AND status = 'not_checked_in') <> 1 THEN
+              RAISE EXCEPTION 'instay_not_pristine';
+            END IF;
+            IF (SELECT count(*) FROM public.booking_cleaning_tasks WHERE booking_id = p_target AND status = 'pending') <> 1 THEN
+              RAISE EXCEPTION 'cleaning_task_not_pristine';
+            END IF;
+            IF (SELECT count(*) FROM public.booking_linen_tasks WHERE booking_id = p_target AND status = 'pending') <> 1 THEN
+              RAISE EXCEPTION 'linen_task_not_pristine';
+            END IF;
+            IF (SELECT count(*) FROM public.booking_supplies_tasks WHERE booking_id = p_target AND status = 'pending') <> 1 THEN
+              RAISE EXCEPTION 'supplies_task_not_pristine';
+            END IF;
+            IF (SELECT count(*) FROM public.booking_physical_readiness WHERE booking_id = p_target AND status = 'blocked') <> 1 THEN
+              RAISE EXCEPTION 'physical_readiness_not_expected';
+            END IF;
+            IF (SELECT count(*) FROM public.booking_guest_legal_readiness WHERE booking_id = p_target AND status = 'blocked') <> 1 THEN
+              RAISE EXCEPTION 'legal_readiness_not_expected';
+            END IF;
+            IF (SELECT count(*) FROM public.booking_legal_execution_events WHERE booking_id = p_target AND event_type = 'readiness_recomputed' AND status = 'blocked') <> 3 THEN
+              RAISE EXCEPTION 'legal_execution_events_not_expected';
+            END IF;
+            IF (SELECT count(*) FROM public.booking_ops_guest_intake_events WHERE booking_id = p_target AND event_type = 'guest_message_draft_created') <> 1 THEN
+              RAISE EXCEPTION 'guest_intake_event_not_expected';
+            END IF;
+            IF (SELECT count(*) FROM public.booking_ops_sla_items WHERE booking_id = p_target) <> 6 OR
+               (SELECT count(*) FROM public.booking_ops_sla_items WHERE booking_id = p_target AND status = 'satisfied') <> 1 OR
+               (SELECT count(*) FROM public.booking_ops_sla_items WHERE booking_id = p_target AND status = 'pending') <> 5 THEN
+              RAISE EXCEPTION 'sla_shape_not_expected';
+            END IF;
+
+            DELETE FROM public.booking_ops_records
+            WHERE id = p_target
+              AND property_id = 'asi-live-core-acceptance-v1'
+              AND booking_id = 'asi-lc-accept-book-v1'
+              AND guest_name = 'Тестовый Гость ASI';
+            GET DIAGNOSTICS v_deleted = ROW_COUNT;
+            IF v_deleted <> 1 THEN RAISE EXCEPTION 'parent_delete_count_mismatch:%', v_deleted; END IF;
+
+            IF EXISTS (SELECT 1 FROM public.booking_ops_records WHERE id = p_target) THEN
+              RAISE EXCEPTION 'parent_remains_after_delete';
+            END IF;
+
+            v_fk_post := public.channel_manager_live_core_booking_ops_fk_children(p_target);
+            IF coalesce(v_fk_post->>'ok', 'false') <> 'true' THEN
+              RAISE EXCEPTION 'post_delete_fk_probe_failed:%', coalesce(v_fk_post->>'blocker_summary', 'unknown');
+            END IF;
+            SELECT coalesce(sum((e->>'row_count')::bigint), 0) INTO v_count
+            FROM jsonb_array_elements(coalesce(v_fk_post->'edges', '[]'::jsonb)) e;
+            IF v_count <> 0 THEN RAISE EXCEPTION 'fk_descendants_remain:%', v_count; END IF;
+
+            IF NOT EXISTS (SELECT 1 FROM public.booking_owner_setup_profiles WHERE id = p_owner) THEN
+              RAISE EXCEPTION 'preserved_owner_missing_after_cleanup';
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM public.booking_property_setup_profiles WHERE id = p_property_setup) THEN
+              RAISE EXCEPTION 'preserved_property_setup_missing_after_cleanup';
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM public.booking_channel_manager_connections WHERE id = p_connection) THEN
+              RAISE EXCEPTION 'preserved_connection_missing_after_cleanup';
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM public.booking_channel_import_runs WHERE id = p_run_1) OR
+               NOT EXISTS (SELECT 1 FROM public.booking_channel_import_runs WHERE id = p_run_2) THEN
+              RAISE EXCEPTION 'preserved_import_run_missing_after_cleanup';
+            END IF;
+
+            RAISE NOTICE 'PASS: exact legacy Live Core orphan removed atomically (1 parent + 87 reviewed cascade children); contour/import runs preserved';
+          END
+          $cleanup$;
+
+          COMMIT;
+          SQL
+
+      - name: Verify runtime and public health unchanged
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fsS https://www.asi-global.ru/api/health
+          echo
+          body="$(curl -fsS https://www.asi-global.ru/api/version)"
+          echo "$body"
+          node -e '
+            const body = JSON.parse(process.argv[1]);
+            const expected = "6b9f022e423e1032f66286b9348160c4dd59f45c";
+            if (body.environment !== "production" || body.sha !== expected) process.exit(1);
+          ' "$body"
