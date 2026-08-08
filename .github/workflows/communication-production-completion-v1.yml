@@ -131,6 +131,12 @@ jobs:
             fi
           }
 
+          restart_with_current_env() {
+            load_env
+            pm2 restart "$PM2_APP" --update-env
+            pm2 save
+          }
+
           echo "=== production version before ==="
           curl -fsS http://127.0.0.1:3000/api/version
           echo
@@ -149,7 +155,10 @@ jobs:
               echo "=== pre-activation prerequisites ==="
               node "$REMOTE_TMP/communication-production-readiness-v1.mjs" --require-prereqs --probe-network
 
-              cp "$ENV_FILE" "${ENV_FILE}.bak.communication-v1.$(date -u +%Y%m%dT%H%M%SZ)"
+              BACKUP_FILE="${ENV_FILE}.bak.communication-v1.$(date -u +%Y%m%dT%H%M%SZ)"
+              cp "$ENV_FILE" "$BACKUP_FILE"
+              echo "Created timestamped communication env backup."
+
               ENV_FILE="$ENV_FILE" python3 - <<'PY'
           import os, re
           from pathlib import Path
@@ -177,15 +186,24 @@ jobs:
           path.write_text(text, encoding='utf-8')
           PY
 
-              # Reload the just-written shared env before propagating it into PM2.
-              load_env
-              pm2 restart "$PM2_APP" --update-env
-              pm2 save
-              sleep 4
-              echo "=== health after activation ==="
-              curl -fsS http://127.0.0.1:3000/api/health
-              echo
-              node "$REMOTE_TMP/communication-production-readiness-v1.mjs" --require-active --probe-network
+              echo "=== activate and verify ==="
+              if ! (
+                restart_with_current_env
+                sleep 4
+                curl -fsS http://127.0.0.1:3000/api/health
+                echo
+                node "$REMOTE_TMP/communication-production-readiness-v1.mjs" --require-active --probe-network
+              ); then
+                echo "::error::Communication activation verification failed; restoring previous production env."
+                cp "$BACKUP_FILE" "$ENV_FILE"
+                restart_with_current_env
+                sleep 3
+                curl -fsS http://127.0.0.1:3000/api/health || true
+                echo
+                echo "Previous production env restored."
+                exit 1
+              fi
+              echo "Communication activation verified; rollback backup preserved at a timestamped path."
               ;;
 
             acceptance)
