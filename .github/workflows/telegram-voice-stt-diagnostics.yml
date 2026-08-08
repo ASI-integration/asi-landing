@@ -160,9 +160,12 @@ jobs:
           echo "=== recent voice logs sanitized ==="
           LOG_CAPTURE="$(mktemp)"
           pm2 logs "${PM2_APP}" --lines "${LINES}" --nostream 2>&1 \
-            | grep -E '\[tg:voice\]|\[voice:stt\]|\[tg:webhook\]' \
-            | redact \
-            | tee "${LOG_CAPTURE}" || true
+            | redact > "${LOG_CAPTURE}" || true
+
+          awk '
+            /\[tg:voice\]|\[voice:stt\]|\[tg:webhook\]/ { remaining=14 }
+            remaining > 0 { print; remaining-- }
+          ' "${LOG_CAPTURE}" | tail -800 || true
 
           FILE_ID="${INPUT_FILE_ID:-}"
           if [[ -z "${FILE_ID}" ]]; then
@@ -175,11 +178,11 @@ jobs:
 
           echo "=== dry-run file_id source ==="
           if [[ -z "${FILE_ID}" ]]; then
-            echo "No Telegram voice file_id found in the scanned logs; rerun with file_id input after a fresh voice message."
-            exit 0
+            echo "::error::No Telegram voice file_id found in the scanned logs. Send a fresh voice message or pass file_id explicitly."
+            exit 1
           fi
           echo "file_id=${FILE_ID}"
 
           echo "=== stt dry run ==="
-          node "${REMOTE_SCRIPT}" --file-id "${FILE_ID}" || true
+          node "${REMOTE_SCRIPT}" --file-id "${FILE_ID}"
           REMOTE
