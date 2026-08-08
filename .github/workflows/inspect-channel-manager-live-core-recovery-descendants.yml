@@ -1,0 +1,153 @@
+name: Inspect Channel Manager Live Core Recovery Descendants
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm_read_only_inspection:
+        description: 'Type INSPECT_LIVE_CORE_RECOVERY_DESCENDANTS_READ_ONLY'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  inspect_read_only:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Require explicit read-only confirmation
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${{ inputs.confirm_read_only_inspection }}" != "INSPECT_LIVE_CORE_RECOVERY_DESCENDANTS_READ_ONLY" ]; then
+            echo "Read-only inspection is manual only. Use the exact confirmation phrase."
+            exit 1
+          fi
+
+      - name: Validate production Supabase URL shape
+        shell: bash
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          set -euo pipefail
+          test -n "${SUPABASE_DB_URL:-}"
+          case "$SUPABASE_DB_URL" in
+            postgresql://postgres.jwinifeienvzejofmbua:*@aws-1-eu-west-1.pooler.supabase.com:5432/postgres) ;;
+            *) echo "SUPABASE_DB_URL does not match the reviewed production Session Pooler identity"; exit 1 ;;
+          esac
+
+      - name: Verify current production release
+        shell: bash
+        run: |
+          set -euo pipefail
+          body="$(curl -fsS https://www.asi-global.ru/api/version)"
+          echo "$body"
+          node -e '
+            const body = JSON.parse(process.argv[1]);
+            const expected = "6b9f022e423e1032f66286b9348160c4dd59f45c";
+            if (body.environment !== "production" || body.sha !== expected) {
+              console.error("Unexpected production runtime identity", body);
+              process.exit(1);
+            }
+          ' "$body"
+
+      - name: Install PostgreSQL client
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-client
+
+      - name: Inspect exact synthetic descendants read-only
+        shell: bash
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          PGOPTIONS: -c default_transaction_read_only=on -c statement_timeout=15000
+        run: |
+          set -euo pipefail
+          psql "$SUPABASE_DB_URL" -X -v ON_ERROR_STOP=1 <<'SQL'
+          BEGIN TRANSACTION READ ONLY;
+
+          SELECT id::text AS target_id
+          FROM public.booking_ops_records
+          WHERE property_id = 'asi-live-core-acceptance-v1'
+            AND booking_id = 'asi-lc-accept-book-v1'
+            AND guest_name = 'Тестовый Гость ASI'
+          \gset
+
+          \echo 'FORENSIC_TARGET_ID=' :target_id
+
+          WITH rows AS (
+            SELECT 'booking_instay_checkout'::text AS table_name, to_jsonb(t) AS j FROM public.booking_instay_checkout t WHERE t.booking_id = :'target_id'::uuid
+            UNION ALL SELECT 'booking_guest_documents', to_jsonb(t) FROM public.booking_guest_documents t WHERE t.booking_id = :'target_id'::uuid
+            UNION ALL SELECT 'booking_checkin_execution', to_jsonb(t) FROM public.booking_checkin_execution t WHERE t.booking_id = :'target_id'::uuid
+            UNION ALL SELECT 'booking_contracts', to_jsonb(t) FROM public.booking_contracts t WHERE t.booking_id = :'target_id'::uuid
+            UNION ALL SELECT 'booking_deposits', to_jsonb(t) FROM public.booking_deposits t WHERE t.booking_id = :'target_id'::uuid
+            UNION ALL SELECT 'booking_mvd_reports', to_jsonb(t) FROM public.booking_mvd_reports t WHERE t.booking_id = :'target_id'::uuid
+            UNION ALL SELECT 'booking_guest_legal_readiness', to_jsonb(t) FROM public.booking_guest_legal_readiness t WHERE t.booking_id = :'target_id'::uuid
+            UNION ALL SELECT 'booking_legal_execution_events', to_jsonb(t) FROM public.booking_legal_execution_events t WHERE t.booking_id = :'target_id'::uuid
+            UNION ALL SELECT 'booking_cleaning_tasks', to_jsonb(t) FROM public.booking_cleaning_tasks t WHERE t.booking_id = :'target_id'::uuid
+            UNION ALL SELECT 'booking_linen_tasks', to_jsonb(t) FROM public.booking_linen_tasks t WHERE t.booking_id = :'target_id'::uuid
+            UNION ALL SELECT 'booking_supplies_tasks', to_jsonb(t) FROM public.booking_supplies_tasks t WHERE t.booking_id = :'target_id'::uuid
+            UNION ALL SELECT 'booking_physical_readiness', to_jsonb(t) FROM public.booking_physical_readiness t WHERE t.booking_id = :'target_id'::uuid
+            UNION ALL SELECT 'booking_ops_guest_intake_events', to_jsonb(t) FROM public.booking_ops_guest_intake_events t WHERE t.booking_id = :'target_id'::uuid
+            UNION ALL SELECT 'booking_ops_sla_items', to_jsonb(t) FROM public.booking_ops_sla_items t WHERE t.booking_id = :'target_id'::uuid
+          ), forensic AS (
+            SELECT
+              table_name,
+              j->>'id' AS id,
+              (
+                SELECT coalesce(jsonb_object_agg(e.key, e.value ORDER BY e.key), '{}'::jsonb)
+                FROM jsonb_each(j) e
+                WHERE e.key = ANY (ARRAY[
+                  'status','source','state','type','kind','event_type','gate_key','reason',
+                  'created_at','updated_at','completed_at','resolved_at','scheduled_at','sent_at','signed_at'
+                ])
+                  AND e.value <> 'null'::jsonb
+              ) AS safe_fields,
+              (
+                SELECT coalesce(jsonb_agg(e.key ORDER BY e.key), '[]'::jsonb)
+                FROM jsonb_each(j) e
+                WHERE e.value <> 'null'::jsonb
+                  AND NOT (jsonb_typeof(e.value) = 'string' AND trim(both '"' from e.value::text) = '')
+              ) AS non_null_columns,
+              (
+                SELECT coalesce(jsonb_agg(e.key ORDER BY e.key), '[]'::jsonb)
+                FROM jsonb_each(j) e
+                WHERE e.value <> 'null'::jsonb
+                  AND e.key ~* '(external|provider|transaction|payment|amount|currency|paid|sent|deliver|sign|document|file|url|guest|phone|email|telegram|passport)'
+              ) AS external_signal_columns,
+              CASE
+                WHEN jsonb_typeof(j->'metadata') = 'object' THEN (
+                  SELECT coalesce(jsonb_agg(k ORDER BY k), '[]'::jsonb)
+                  FROM jsonb_object_keys(j->'metadata') k
+                )
+                ELSE '[]'::jsonb
+              END AS metadata_keys
+            FROM rows
+          )
+          SELECT jsonb_pretty(jsonb_agg(to_jsonb(forensic) ORDER BY table_name, id)) AS forensic_rows
+          FROM forensic;
+
+          WITH counts AS (
+            SELECT 'booking_instay_checkout'::text table_name, count(*)::int row_count FROM public.booking_instay_checkout WHERE booking_id = :'target_id'::uuid
+            UNION ALL SELECT 'booking_guest_documents', count(*)::int FROM public.booking_guest_documents WHERE booking_id = :'target_id'::uuid
+            UNION ALL SELECT 'booking_checkin_execution', count(*)::int FROM public.booking_checkin_execution WHERE booking_id = :'target_id'::uuid
+            UNION ALL SELECT 'booking_contracts', count(*)::int FROM public.booking_contracts WHERE booking_id = :'target_id'::uuid
+            UNION ALL SELECT 'booking_deposits', count(*)::int FROM public.booking_deposits WHERE booking_id = :'target_id'::uuid
+            UNION ALL SELECT 'booking_mvd_reports', count(*)::int FROM public.booking_mvd_reports WHERE booking_id = :'target_id'::uuid
+            UNION ALL SELECT 'booking_guest_legal_readiness', count(*)::int FROM public.booking_guest_legal_readiness WHERE booking_id = :'target_id'::uuid
+            UNION ALL SELECT 'booking_legal_execution_events', count(*)::int FROM public.booking_legal_execution_events WHERE booking_id = :'target_id'::uuid
+            UNION ALL SELECT 'booking_cleaning_tasks', count(*)::int FROM public.booking_cleaning_tasks WHERE booking_id = :'target_id'::uuid
+            UNION ALL SELECT 'booking_linen_tasks', count(*)::int FROM public.booking_linen_tasks WHERE booking_id = :'target_id'::uuid
+            UNION ALL SELECT 'booking_supplies_tasks', count(*)::int FROM public.booking_supplies_tasks WHERE booking_id = :'target_id'::uuid
+            UNION ALL SELECT 'booking_physical_readiness', count(*)::int FROM public.booking_physical_readiness WHERE booking_id = :'target_id'::uuid
+            UNION ALL SELECT 'booking_ops_guest_intake_events', count(*)::int FROM public.booking_ops_guest_intake_events WHERE booking_id = :'target_id'::uuid
+            UNION ALL SELECT 'booking_ops_sla_items', count(*)::int FROM public.booking_ops_sla_items WHERE booking_id = :'target_id'::uuid
+          )
+          SELECT jsonb_pretty(jsonb_object_agg(table_name, row_count ORDER BY table_name)) AS forensic_counts
+          FROM counts;
+
+          ROLLBACK;
+          SQL
