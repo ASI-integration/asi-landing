@@ -1,0 +1,156 @@
+name: Apply Channel Manager Recovery FK Expectation Fix v1
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm_production_migration:
+        description: Type APPLY_20260808041000_RECOVERY_FK_EXPECTATION_FIX_V1_TO_PRODUCTION to run
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-migration-channel-manager-recovery-fk-expectation-fix-v1
+  cancel-in-progress: false
+
+env:
+  AUTHORIZED_REPOSITORY: ASI-integration/asi-landing
+  AUTHORIZED_MIGRATION: supabase/migrations/20260808041000_channel_manager_live_core_recovery_fk_expectation_fix_v1.sql
+  AUTHORIZED_MIGRATION_BLOB: 2212387f8bd605632ddd46ad7feed28240be9838
+  EXPECTED_SUPABASE_PROJECT_REF: jwinifeienvzejofmbua
+  EXPECTED_PRODUCTION_SHA: 6b9f022e423e1032f66286b9348160c4dd59f45c
+
+jobs:
+  apply_exact_fix:
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 15
+    steps:
+      - name: Require exact production confirmation
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${{ inputs.confirm_production_migration }}" != "APPLY_20260808041000_RECOVERY_FK_EXPECTATION_FIX_V1_TO_PRODUCTION" ]]; then
+            echo "::error::Confirmation phrase mismatch."
+            exit 1
+          fi
+          test "$GITHUB_REPOSITORY" = "$AUTHORIZED_REPOSITORY"
+
+      - name: Checkout main and verify exact migration blob
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          ref: main
+
+      - name: Verify exact migration bytes
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f "$AUTHORIZED_MIGRATION"
+          test "$(git hash-object "$AUTHORIZED_MIGRATION")" = "$AUTHORIZED_MIGRATION_BLOB"
+          echo "migration_blob_verified=yes"
+
+      - name: Verify current production release before SQL
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION_JSON="$(curl --fail --silent --show-error --max-time 20 https://asi-global.ru/api/version)"
+          VERSION_JSON="$VERSION_JSON" node <<'NODE'
+          const value = JSON.parse(process.env.VERSION_JSON || '{}');
+          const expected = process.env.EXPECTED_PRODUCTION_SHA;
+          if (value.environment !== 'production' || value.sha !== expected) {
+            throw new Error(`Production release mismatch: expected ${expected}, received ${String(value.sha || 'unknown')}`);
+          }
+          console.log(`production_release_verified=${value.sha}`);
+          NODE
+
+      - name: Validate production Supabase DB URL identity
+        shell: bash
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${SUPABASE_DB_URL:-}" ]]; then
+            echo "::error::SUPABASE_DB_URL secret is missing."
+            exit 1
+          fi
+          echo "::add-mask::${SUPABASE_DB_URL}"
+          SUPABASE_DB_URL="$SUPABASE_DB_URL" EXPECTED_SUPABASE_PROJECT_REF="$EXPECTED_SUPABASE_PROJECT_REF" python3 - <<'PY'
+          import os
+          from urllib.parse import unquote, urlparse
+          raw = (os.environ.get('SUPABASE_DB_URL') or '').strip()
+          expected = (os.environ.get('EXPECTED_SUPABASE_PROJECT_REF') or '').strip().lower()
+          if len(raw) >= 2 and raw[0] in ("'", '"', '`') and raw[-1] == raw[0]:
+              raw = raw[1:-1].strip()
+          if not raw or '\r' in raw or '\n' in raw:
+              raise SystemExit('SUPABASE_DB_URL is invalid.')
+          parsed = urlparse(raw)
+          hostname = (parsed.hostname or '').lower()
+          username = unquote(parsed.username or '').lower()
+          direct_host = f'db.{expected}.supabase.co'
+          pooler_user = f'postgres.{expected}'
+          if parsed.scheme not in ('postgres', 'postgresql'):
+              raise SystemExit('SUPABASE_DB_URL must use postgres/postgresql.')
+          if hostname != direct_host and not (hostname.endswith('.pooler.supabase.com') and username == pooler_user):
+              raise SystemExit('SUPABASE_DB_URL project identity mismatch.')
+          print('production_supabase_db_identity_verified=yes')
+          PY
+
+      - name: Install PostgreSQL client
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq postgresql-client
+
+      - name: Apply exact append-only fix and verify full live FK graph
+        shell: bash
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          PGCONNECT_TIMEOUT: "10"
+        run: |
+          set -euo pipefail
+          echo "::add-mask::${SUPABASE_DB_URL}"
+
+          VERIFY_SQL="DO \$verify\$
+          DECLARE
+            v_result jsonb;
+          BEGIN
+            v_result := public.channel_manager_live_core_booking_ops_fk_children('00000000-0000-0000-0000-000000000000'::uuid);
+            IF coalesce((v_result->>'ok')::boolean, false) IS NOT TRUE THEN
+              RAISE EXCEPTION 'Recovery FK graph verification failed: %', coalesce(v_result->>'blocker_summary', 'unknown blocker');
+            END IF;
+            IF EXISTS (
+              SELECT 1
+              FROM jsonb_array_elements(public.channel_manager_live_core_recovery_expected_fk_edges()) e
+              WHERE e->>'table_name' IN ('booking_lifecycle_gates', 'booking_lifecycle_exceptions')
+            ) THEN
+              RAISE EXCEPTION 'Lifecycle business-id tables remain in reviewed FK expectations';
+            END IF;
+          END
+          \$verify\$;"
+
+          psql -X "$SUPABASE_DB_URL" --set ON_ERROR_STOP=1 --single-transaction \
+            --file "$AUTHORIZED_MIGRATION" \
+            --command "$VERIFY_SQL"
+
+          echo "MIGRATION_STATUS=applied_and_full_fk_graph_verified"
+
+      - name: Confirm production runtime unchanged after SQL
+        shell: bash
+        run: |
+          set -euo pipefail
+          HEALTH_JSON="$(curl --fail --silent --show-error --max-time 20 https://asi-global.ru/api/health)"
+          VERSION_JSON="$(curl --fail --silent --show-error --max-time 20 https://asi-global.ru/api/version)"
+          HEALTH_JSON="$HEALTH_JSON" VERSION_JSON="$VERSION_JSON" node <<'NODE'
+          const health = JSON.parse(process.env.HEALTH_JSON || '{}');
+          const version = JSON.parse(process.env.VERSION_JSON || '{}');
+          const expected = process.env.EXPECTED_PRODUCTION_SHA;
+          if (health.ok !== true) throw new Error('Production health check failed after migration.');
+          if (version.environment !== 'production' || version.sha !== expected) {
+            throw new Error(`Production runtime changed: expected ${expected}, received ${String(version.sha || 'unknown')}`);
+          }
+          console.log('post_migration_runtime_unchanged=yes');
+          NODE
