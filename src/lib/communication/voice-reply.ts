@@ -67,22 +67,27 @@ export async function sendTelegramVoice(chatId: number | string, oggBytes: Buffe
     form.append('voice', blob, 'reply.ogg');
 
     const res = await fetch(url, { method: 'POST', body: form });
+    const data = (await res.json().catch(() => ({ ok: false }))) as {
+      ok: boolean;
+      error_code?: number;
+    };
     if (!res.ok) {
-      const body = await res.text();
-      console.error('[tg:voice] telegram.sendVoice.fail_http', { status: res.status, body: body.slice(0, 200) });
+      console.error('[tg:voice] telegram.sendVoice.fail_http', {
+        status: res.status,
+        error_code: data.error_code ?? null,
+      });
       return false;
     }
 
-    const data = (await res.json()) as { ok: boolean; description?: string };
     if (!data.ok) {
-      console.error('[tg:voice] telegram.sendVoice.fail_api', { description: data.description ?? null });
+      console.error('[tg:voice] telegram.sendVoice.fail_api', { error_code: data.error_code ?? null });
       return false;
     }
 
     if (debugEnabled()) console.log('[tg:voice] telegram.sendVoice.ok', { chat_id: String(chatId) });
     return true;
   } catch (err) {
-    console.error('[tg:voice] telegram.sendVoice.fail_network', (err as Error).message);
+    console.error('[tg:voice] telegram.sendVoice.fail_network', { error_type: (err as Error).name || 'network' });
     return false;
   }
 }
@@ -118,6 +123,7 @@ export async function sendVoiceReply(chatId: number, ctx: VoiceReplyContext): Pr
         chat_id: chatId,
         reason: decision.reason,
         error_type: tts.errorType ?? 'unknown',
+        attempts: tts.attempts ?? [],
       });
       return false;
     }
@@ -148,11 +154,12 @@ export async function sendVoiceReply(chatId: number, ctx: VoiceReplyContext): Pr
       reason: decision.reason,
       chars: voiceText.length,
       provider: tts.provider,
+      fallback_used: tts.fallbackUsed ?? false,
       ffmpeg_used: prepared.ffmpegUsed,
     });
     return true;
   } catch (err) {
-    console.error('[tg:voice] voice_reply.fail_unexpected', err);
+    console.error('[tg:voice] voice_reply.fail_unexpected', { error_type: (err as Error).name || 'unexpected' });
     return false;
   }
 }

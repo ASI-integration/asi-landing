@@ -102,9 +102,14 @@ Required for Telegram voice replies, helper-level only until wired:
 
 ```bash
 VOICE_REPLY_ENABLED=1
+VOICE_TTS_PROVIDER=elevenlabs          # preferred provider; openai is also supported
+VOICE_TTS_FALLBACK_PROVIDER=openai     # optional; only used when already configured
 ELEVENLABS_API_KEY=...
 ELEVENLABS_VOICE_ID=...              # optional
 ELEVENLABS_MODEL_ID=...              # optional
+OPENAI_API_KEY=...                   # existing OpenAI TTS fallback
+OPENAI_TTS_MODEL=gpt-4o-mini-tts     # optional fallback-specific override
+OPENAI_TTS_VOICE=coral               # optional fallback-specific override
 ELEVENLABS_TIMEOUT_MS=20000          # optional
 VOICE_REPLY_MAX_CHARS=300            # optional
 TELEGRAM_BOT_TOKEN=...
@@ -220,11 +225,11 @@ Voice replies are disabled by default (`VOICE_REPLY_ENABLED` unset). The helper 
 
 3. TTS success sends voice
    - Use a short, non-payment, non-escalation reply under `VOICE_REPLY_MAX_CHARS`.
-   - Expect: `elevenlabs.ok`, `telegram.sendVoice.ok`, then no duplicate voice send on retry.
+   - Expect: `tts.ok`, `telegram.sendVoice.ok`, then no duplicate voice send on retry. If the preferred provider fails and a secondary provider is configured, expect `fallback_used=true` and a sanitized provider attempt list.
 
 4. TTS failure falls back to text
-   - Remove `ELEVENLABS_API_KEY` or force a timeout.
-   - Expect: `voice_reply.fail_tts` and normal text reply remains available.
+   - Make all configured TTS providers unavailable or force timeouts.
+   - Expect: `voice_reply.fail_tts` with sanitized reasons and the normal text reply remains available.
 
 ## E. Handoff Scenarios
 

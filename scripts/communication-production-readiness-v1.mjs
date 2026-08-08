@@ -60,18 +60,25 @@ function resolveTts() {
   const provider = present('VOICE_TTS_BASE_URL')
     ? 'relay'
     : safeProvider(process.env.VOICE_TTS_PROVIDER, 'openai');
-  const hasKey = provider === 'relay'
-    ? present('VOICE_TTS_RELAY_TOKEN') || present('VOICE_TTS_API_KEY') || present('OPENAI_API_KEY')
-    : provider === 'elevenlabs'
-      ? present('ELEVENLABS_API_KEY')
-      : present('OPENAI_API_KEY') || present('VOICE_TTS_API_KEY');
+  const configured = {
+    relay: present('VOICE_TTS_BASE_URL') && (present('VOICE_TTS_RELAY_TOKEN') || present('VOICE_TTS_API_KEY') || present('OPENAI_API_KEY')),
+    openai: present('OPENAI_API_KEY') || present('VOICE_TTS_API_KEY'),
+    elevenlabs: present('ELEVENLABS_API_KEY'),
+  };
+  const hasKey = Boolean(configured[provider]);
+  const fallbackProviders = provider === 'elevenlabs'
+    ? configured.openai ? ['openai'] : []
+    : provider === 'openai'
+      ? configured.elevenlabs ? ['elevenlabs'] : []
+      : [configured.openai ? 'openai' : null, configured.elevenlabs ? 'elevenlabs' : null].filter(Boolean);
   return {
     provider,
     hasKey,
+    fallbackProviders,
     modelPresent: present('VOICE_TTS_MODEL'),
     voicePresent: present('VOICE_TTS_VOICE') || present('ELEVENLABS_VOICE_ID'),
     responseFormat: String(process.env.VOICE_TTS_RESPONSE_FORMAT ?? 'opus').trim() || 'opus',
-    configured: hasKey,
+    configured: hasKey || fallbackProviders.length > 0,
   };
 }
 
