@@ -34,4 +34,5 @@ jobs:
           npx vitest run \
             src/lib/communication/__tests__/telegram-text-meta-handler.test.ts \
             src/lib/communication/__tests__/conversation-session-store.pending-identity.test.ts \
+            src/lib/communication/__tests__/telegram-voice-capability-e2e.test.ts \
             --reporter=verbose
