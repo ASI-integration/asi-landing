@@ -2,7 +2,10 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { createClient } from '@supabase/supabase-js';
+import { createRequire } from 'node:module';
+
+const requireFromApp = createRequire(path.join(process.cwd(), 'package.json'));
+const { createClient } = requireFromApp('@supabase/supabase-js');
 
 const DEFAULT_BASE_URL = 'https://asi-global.ru';
 const PROPERTY_ID = process.env.TELEGRAM_AUTOPILOT_PROPERTY_ID?.trim() || 'prop_A';
