@@ -184,7 +184,9 @@ export function savePendingIdentityMessage(params: {
   const messageText = String(params.messageText ?? '').trim();
   if (!messageText) return;
   const prev = store.get(params.chatId) ?? baseSession(params.chatId, params.channel);
-  if (prev.pending_identity_message) return;
+  // Before identity is chosen, the most recent substantive message is the one
+  // the user expects us to replay. Replacing stale pending text also prevents an
+  // old test probe from overriding a newer voice transcript.
   store.set(params.chatId, {
     ...prev,
     channel: params.channel,

@@ -43,6 +43,20 @@ describe('resolveTelegramTextMeta', () => {
     );
   });
 
+  it('routes Russian voice-style capability checks before guest autopilot gating', () => {
+    for (const text of [
+      'Ты слышишь меня? Ответь, пожалуйста, по-русски.',
+      'А ты понимаешь мое сообщение?',
+      'Ответьте мне, пожалуйста, на русском.',
+    ]) {
+      const meta = resolveTelegramTextMeta({ baseText: text, telegramLangCode: 'en' });
+      expect(meta?.kind).toBe('language_check');
+      expect(meta?.category).toBe('language-check');
+      expect(meta?.classification.lang).toBe('ru');
+      expect(meta?.reply).toMatch(/понимаю русский/i);
+    }
+  });
+
   it('routes neutral bot/meta smalltalk without operational context', () => {
     const smartBot = resolveTelegramTextMeta({ baseText: 'А ты умный бот?', telegramLangCode: 'ru' });
     expect(smartBot?.kind).toBe('identity');

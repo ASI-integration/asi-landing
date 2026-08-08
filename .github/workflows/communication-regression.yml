@@ -1,0 +1,37 @@
+name: Communication Regression
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'src/lib/communication/**'
+      - '.github/workflows/communication-regression.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  communication-regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install deps
+        run: npm ci
+
+      - name: Voice capability and pending identity regression
+        run: |
+          npx vitest run \
+            src/lib/communication/__tests__/telegram-text-meta-handler.test.ts \
+            src/lib/communication/__tests__/conversation-session-store.pending-identity.test.ts \
+            --reporter=verbose

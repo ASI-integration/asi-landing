@@ -130,6 +130,15 @@ function isTelegramTestPingMeta(normalized: string): boolean {
   return false;
 }
 
+function isLanguageCapabilityMeta(normalized: string): boolean {
+  return (
+    /^(а\s+)?(ты|вы)\s+(меня\s+)?(слышишь|слышите|понимаешь|понимаете)(\s+меня)?(?:\s|$)/i.test(normalized) ||
+    /^(а\s+)?(ты|вы)\s+(можешь|можете)\s+(меня\s+)?(слышать|понять|понимать)(?:\s|$)/i.test(normalized) ||
+    /(?:^|\s)(ответь|ответьте)(?:\s+мне)?(?:\s+пожалуйста)?\s+(по[-\s]?русски|на\s+русском)(?:\s|$)/i.test(normalized) ||
+    /(?:^|\s)(понимаешь|понимаете)\s+(русский|по[-\s]?русски|меня)(?:\s|$)/i.test(normalized)
+  );
+}
+
 type MetaSurfaceLang = 'en' | 'ru' | 'es';
 
 /**
@@ -329,6 +338,19 @@ export function resolveTelegramTextMeta(params: {
       handler: 'telegram_text_meta_deterministic',
       kind: 'es_locale_meta',
       reply: buildTelegramMetaReply('es_locale_meta', raw, params.telegramLangCode, patched),
+      category: MessageCategory.LanguageCheck,
+      classification: patchClassificationLang(patched, surface),
+    };
+  }
+
+  if (isLanguageCapabilityMeta(spanishKey) && !hasSubstantiveOperationalContent(raw)) {
+    const classification = classify(raw);
+    const patched: ClassifyResult = { ...classification, category: MessageCategory.LanguageCheck };
+    const surface = inferMetaSurfaceLang(raw, params.telegramLangCode);
+    return {
+      handler: 'telegram_text_meta_deterministic',
+      kind: 'language_check',
+      reply: buildTelegramMetaReply('language_check', raw, params.telegramLangCode, patched),
       category: MessageCategory.LanguageCheck,
       classification: patchClassificationLang(patched, surface),
     };
