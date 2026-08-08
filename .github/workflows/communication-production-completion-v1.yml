@@ -12,10 +12,14 @@ on:
           - readiness
           - activate
           - acceptance
-      confirm:
-        description: Exact confirmation phrase for the selected mode
+      safety_acknowledgement:
+        description: Technical safety acknowledgement (owner approval remains separate)
         required: true
-        type: string
+        default: not_authorized
+        type: choice
+        options:
+          - not_authorized
+          - authorized_for_selected_mode
       telegram_test_chat_id:
         description: Dedicated Telegram test chat id for live acceptance (never owner chat unless explicitly intended)
         required: false
@@ -33,21 +37,19 @@ jobs:
     runs-on: ubuntu-latest
     environment: production
     steps:
-      - name: Require exact confirmation
+      - name: Require production safety acknowledgement
         shell: bash
         env:
           MODE: ${{ inputs.mode }}
-          CONFIRM: ${{ inputs.confirm }}
+          SAFETY_ACKNOWLEDGEMENT: ${{ inputs.safety_acknowledgement }}
         run: |
           set -euo pipefail
           case "$MODE" in
-            readiness) EXPECTED='CHECK_COMMUNICATION_PRODUCTION_COMPLETION_V1' ;;
-            activate) EXPECTED='ACTIVATE_COMMUNICATION_PRODUCTION_COMPLETION_V1' ;;
-            acceptance) EXPECTED='ACCEPT_COMMUNICATION_PRODUCTION_COMPLETION_V1' ;;
+            readiness|activate|acceptance) ;;
             *) echo "::error::Unsupported mode: $MODE"; exit 1 ;;
           esac
-          if [[ "$CONFIRM" != "$EXPECTED" ]]; then
-            echo "::error::Wrong confirmation phrase for mode=$MODE"
+          if [[ "$SAFETY_ACKNOWLEDGEMENT" != "authorized_for_selected_mode" ]]; then
+            echo "::error::Select authorized_for_selected_mode after obtaining owner approval for mode=$MODE"
             exit 1
           fi
 
@@ -137,6 +139,22 @@ jobs:
             pm2 save
           }
 
+          run_acceptance_stage() {
+            local stage="$1"
+            shift
+            echo "::group::communication_acceptance stage=${stage}"
+            if "$@"; then
+              echo "communication_acceptance stage=${stage} result=PASS"
+              echo "::endgroup::"
+              return 0
+            else
+              local status=$?
+              echo "::endgroup::"
+              echo "::error::Communication production acceptance failed at stage=${stage} exit=${status}"
+              return "$status"
+            fi
+          }
+
           echo "=== production version before ==="
           curl -fsS http://127.0.0.1:3000/api/version
           echo
@@ -207,22 +225,21 @@ jobs:
               ;;
 
             acceptance)
-              echo "=== active-state gate ==="
-              node "$REMOTE_TMP/communication-production-readiness-v1.mjs" --require-active --probe-network
+              run_acceptance_stage active_state \
+                node "$REMOTE_TMP/communication-production-readiness-v1.mjs" --require-active --probe-network
 
               if [[ -z "${TELEGRAM_TEST_CHAT_ID:-}" ]]; then
-                echo "::error::Live acceptance requires a dedicated TELEGRAM_TEST_CHAT_ID or telegram_test_chat_id input"
+                echo "::error::Communication production acceptance failed at stage=test_chat_configuration: dedicated TELEGRAM_TEST_CHAT_ID or telegram_test_chat_id input is required"
                 exit 1
               fi
 
-              echo "=== text/autopilot production acceptance ==="
               cd "$APP_DIR"
-              ACCEPTANCE_BASE_URL="https://asi-global.ru" node "$REMOTE_TMP/telegram-autopilot-live-acceptance.mjs"
+              run_acceptance_stage text_autopilot \
+                env ACCEPTANCE_BASE_URL="https://asi-global.ru" node "$REMOTE_TMP/telegram-autopilot-live-acceptance.mjs"
 
-              echo "=== outbound TTS + Telegram sendVoice acceptance ==="
-              node "$REMOTE_TMP/communication-voice-live-probe-v1.mjs"
+              run_acceptance_stage outbound_tts_and_send_voice \
+                node "$REMOTE_TMP/communication-voice-live-probe-v1.mjs"
 
-              echo "=== inbound STT acceptance ==="
               FILE_ID="${INPUT_STT_FILE_ID:-}"
               if [[ -z "$FILE_ID" ]]; then
                 CAPTURE="$(mktemp)"
@@ -236,10 +253,11 @@ jobs:
                 rm -f "$CAPTURE"
               fi
               if [[ -z "$FILE_ID" ]]; then
-                echo "::error::No recent Telegram voice file_id found. Send one fresh voice note to the test bot, then rerun acceptance."
+                echo "::error::Communication production acceptance failed at stage=inbound_stt_input: no recent Telegram voice file_id found. Send one fresh voice note to the test bot, then rerun acceptance."
                 exit 1
               fi
-              node "$REMOTE_TMP/telegram-voice-stt-dry-run.mjs" --file-id "$FILE_ID"
+              run_acceptance_stage inbound_stt \
+                node "$REMOTE_TMP/telegram-voice-stt-dry-run.mjs" --file-id "$FILE_ID"
               ;;
           esac
 

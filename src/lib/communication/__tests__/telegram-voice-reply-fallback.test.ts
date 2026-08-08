@@ -18,6 +18,8 @@ import { TelegramAdapter } from '../channels/telegram';
 
 describe('Telegram voice reply text fallback', () => {
   beforeEach(() => {
+    vi.restoreAllMocks();
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined);
     mockReplyToTelegram.mockReset();
     mockReplyToTelegram.mockResolvedValue(true);
     mockSendVoiceReply.mockReset();
@@ -45,6 +47,11 @@ describe('Telegram voice reply text fallback', () => {
       'Здравствуйте! Wi-Fi: сеть ASI, пароль отправлен в бронировании.',
       { handler: 'test:voice', update_id: 1001 },
     );
+    expect(console.warn).toHaveBeenCalledWith('[tg:voice] voice_reply.text_fallback', {
+      chat_id: 42,
+      update_id: 1001,
+      reason: 'inbound_voice_allowed',
+    });
   });
 
   it('sends text and voice when voice succeeds (text is mandatory)', async () => {

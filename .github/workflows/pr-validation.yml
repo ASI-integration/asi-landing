@@ -43,6 +43,13 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
+      - name: Telegram voice provider and text fallback regression
+        run: |
+          npx vitest run \
+            src/lib/communication/__tests__/voice-tts.test.ts \
+            src/lib/communication/__tests__/telegram-voice-reply-fallback.test.ts \
+            --reporter=verbose
+
       - name: Initial Sync Recovery rollout artifact regression
         id: rollout_artifact_regression
         run: |

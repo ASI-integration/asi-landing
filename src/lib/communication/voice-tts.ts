@@ -1,10 +1,31 @@
 /** TTS wrapper: OpenAI-compatible relay/base URL, OpenAI, or ElevenLabs. */
 
+export type TtsProvider = 'relay' | 'openai' | 'elevenlabs';
+
+export type TtsProviderAttempt = {
+  provider: TtsProvider;
+  ok: boolean;
+  errorType?: string;
+  httpStatus?: number;
+  providerCode?: string;
+  credentialReplacementRequired?: boolean;
+  credentialEnv?: 'ELEVENLABS_API_KEY' | 'OPENAI_API_KEY' | 'VOICE_TTS_API_KEY' | 'VOICE_TTS_RELAY_TOKEN';
+};
+
 export type TtsGenerationResult = {
   audio: ArrayBuffer | null;
   provider: string;
   format: string;
   errorType?: string;
+  fallbackUsed?: boolean;
+  attempts?: TtsProviderAttempt[];
+};
+
+type ProviderResult = {
+  audio: ArrayBuffer | null;
+  provider: TtsProvider;
+  format: string;
+  attempt: TtsProviderAttempt;
 };
 
 const DEFAULT_TIMEOUT_MS = 20_000;
@@ -18,43 +39,93 @@ function timeoutMs(): number {
   return Number.isFinite(raw) && raw > 0 ? raw : DEFAULT_TIMEOUT_MS;
 }
 
-export function isTtsConfigured(): boolean {
-  if (process.env.VOICE_TTS_BASE_URL?.trim()) {
+function preferredProvider(): TtsProvider {
+  if (process.env.VOICE_TTS_BASE_URL?.trim()) return 'relay';
+  return String(process.env.VOICE_TTS_PROVIDER ?? 'openai').trim().toLowerCase() === 'elevenlabs'
+    ? 'elevenlabs'
+    : 'openai';
+}
+
+function providerConfigured(provider: TtsProvider): boolean {
+  if (provider === 'relay') {
     return Boolean(
-      process.env.VOICE_TTS_RELAY_TOKEN?.trim() ||
-        process.env.VOICE_TTS_API_KEY?.trim() ||
-        process.env.OPENAI_API_KEY?.trim(),
+      process.env.VOICE_TTS_BASE_URL?.trim() &&
+        (process.env.VOICE_TTS_RELAY_TOKEN?.trim() ||
+          process.env.VOICE_TTS_API_KEY?.trim() ||
+          process.env.OPENAI_API_KEY?.trim()),
     );
   }
-  const provider = String(process.env.VOICE_TTS_PROVIDER ?? 'openai').trim().toLowerCase();
-  if (provider === 'elevenlabs') {
-    return Boolean(process.env.ELEVENLABS_API_KEY?.trim());
-  }
+  if (provider === 'elevenlabs') return Boolean(process.env.ELEVENLABS_API_KEY?.trim());
   return Boolean(process.env.OPENAI_API_KEY?.trim() || process.env.VOICE_TTS_API_KEY?.trim());
 }
 
-function resolveProvider(): 'relay' | 'openai' | 'elevenlabs' {
-  if (process.env.VOICE_TTS_BASE_URL?.trim()) return 'relay';
-  const raw = String(process.env.VOICE_TTS_PROVIDER ?? 'openai').trim().toLowerCase();
-  return raw === 'elevenlabs' ? 'elevenlabs' : 'openai';
+function configuredProviderOrder(): TtsProvider[] {
+  const preferred = preferredProvider();
+  const explicitFallback = String(process.env.VOICE_TTS_FALLBACK_PROVIDER ?? '').trim().toLowerCase();
+  const candidates: TtsProvider[] = [preferred];
+
+  if (
+    (explicitFallback === 'relay' || explicitFallback === 'openai' || explicitFallback === 'elevenlabs') &&
+    explicitFallback !== preferred
+  ) {
+    candidates.push(explicitFallback);
+  }
+
+  const defaults: TtsProvider[] = preferred === 'elevenlabs'
+    ? ['openai']
+    : preferred === 'openai'
+      ? ['elevenlabs']
+      : ['openai', 'elevenlabs'];
+  candidates.push(...defaults);
+
+  return [...new Set(candidates)].filter((provider, index) => index === 0 || providerConfigured(provider));
 }
 
-function resolveModel(): string {
-  return (
-    process.env.VOICE_TTS_MODEL?.trim() ||
-    (resolveProvider() === 'elevenlabs' ? 'eleven_multilingual_v2' : 'gpt-4o-mini-tts')
-  );
+export function isTtsConfigured(): boolean {
+  return configuredProviderOrder().some(providerConfigured);
 }
 
-function resolveVoice(): string {
-  return (
-    process.env.VOICE_TTS_VOICE?.trim() ||
-    process.env.ELEVENLABS_VOICE_ID?.trim() ||
-    (resolveProvider() === 'elevenlabs' ? '21m00Tcm4TlvDq8ikWAM' : 'coral')
-  );
+function resolveModel(provider: TtsProvider): string {
+  if (provider === 'elevenlabs') {
+    return (
+      process.env.ELEVENLABS_MODEL_ID?.trim() ||
+      (preferredProvider() === 'elevenlabs' ? process.env.VOICE_TTS_MODEL?.trim() : '') ||
+      'eleven_multilingual_v2'
+    );
+  }
+  if (provider === 'openai') {
+    return (
+      process.env.OPENAI_TTS_MODEL?.trim() ||
+      (preferredProvider() === 'openai' ? process.env.VOICE_TTS_MODEL?.trim() : '') ||
+      'gpt-4o-mini-tts'
+    );
+  }
+  return process.env.VOICE_TTS_MODEL?.trim() || 'gpt-4o-mini-tts';
 }
 
-function resolveResponseFormat(): string {
+function resolveVoice(provider: TtsProvider): string {
+  if (provider === 'elevenlabs') {
+    return (
+      process.env.ELEVENLABS_VOICE_ID?.trim() ||
+      (preferredProvider() === 'elevenlabs' ? process.env.VOICE_TTS_VOICE?.trim() : '') ||
+      '21m00Tcm4TlvDq8ikWAM'
+    );
+  }
+  if (provider === 'openai') {
+    return (
+      process.env.OPENAI_TTS_VOICE?.trim() ||
+      (preferredProvider() === 'openai' ? process.env.VOICE_TTS_VOICE?.trim() : '') ||
+      'coral'
+    );
+  }
+  return process.env.VOICE_TTS_VOICE?.trim() || 'coral';
+}
+
+function resolveResponseFormat(provider: TtsProvider): string {
+  if (provider === 'elevenlabs') return 'mp3';
+  if (provider === 'openai') {
+    return process.env.OPENAI_TTS_RESPONSE_FORMAT?.trim() || process.env.VOICE_TTS_RESPONSE_FORMAT?.trim() || 'opus';
+  }
   return process.env.VOICE_TTS_RESPONSE_FORMAT?.trim() || 'opus';
 }
 
@@ -68,14 +139,68 @@ async function fetchWithTimeout(url: string, init: RequestInit): Promise<Respons
   }
 }
 
-async function generateViaRelay(text: string): Promise<TtsGenerationResult> {
+function safeProviderCode(value: unknown): string | undefined {
+  const code = String(value ?? '').trim().toLowerCase();
+  return /^[a-z0-9_.-]{1,80}$/.test(code) ? code : undefined;
+}
+
+async function failedAttempt(
+  response: Response,
+  provider: TtsProvider,
+  credentialEnv: TtsProviderAttempt['credentialEnv'],
+): Promise<TtsProviderAttempt> {
+  let providerCode: string | undefined;
+  try {
+    const body = (await response.json()) as {
+      detail?: { status?: unknown; code?: unknown } | string;
+      error?: { code?: unknown; type?: unknown };
+      code?: unknown;
+      type?: unknown;
+    };
+    providerCode = safeProviderCode(
+      typeof body.detail === 'object' && body.detail
+        ? body.detail.status ?? body.detail.code
+        : body.error?.code ?? body.error?.type ?? body.code ?? body.type,
+    );
+  } catch {
+    // Provider returned a non-JSON error. Status-based classification remains safe.
+  }
+
+  const credentialReplacementRequired = response.status === 401;
+  const errorType = credentialReplacementRequired
+    ? 'invalid_credential'
+    : response.status === 403
+      ? 'authorization_failed'
+      : response.status === 402
+        ? 'quota_exceeded'
+        : response.status === 429
+          ? 'rate_limited'
+          : 'provider_http_error';
+
+  return {
+    provider,
+    ok: false,
+    errorType,
+    httpStatus: response.status,
+    providerCode,
+    credentialReplacementRequired,
+    ...(credentialReplacementRequired ? { credentialEnv } : {}),
+  };
+}
+
+async function generateViaRelay(text: string): Promise<ProviderResult> {
   const baseUrl = process.env.VOICE_TTS_BASE_URL!.trim().replace(/\/+$/, '');
   const token =
     process.env.VOICE_TTS_RELAY_TOKEN?.trim() ||
     process.env.VOICE_TTS_API_KEY?.trim() ||
     process.env.OPENAI_API_KEY?.trim() ||
     '';
-  const format = resolveResponseFormat();
+  const credentialEnv = process.env.VOICE_TTS_RELAY_TOKEN?.trim()
+    ? 'VOICE_TTS_RELAY_TOKEN'
+    : process.env.VOICE_TTS_API_KEY?.trim()
+      ? 'VOICE_TTS_API_KEY'
+      : 'OPENAI_API_KEY';
+  const format = resolveResponseFormat('relay');
 
   const res = await fetchWithTimeout(`${baseUrl}/audio/speech`, {
     method: 'POST',
@@ -85,8 +210,8 @@ async function generateViaRelay(text: string): Promise<TtsGenerationResult> {
       Accept: 'audio/*',
     },
     body: JSON.stringify({
-      model: resolveModel(),
-      voice: resolveVoice(),
+      model: resolveModel('relay'),
+      voice: resolveVoice('relay'),
       input: text,
       response_format: format,
       speed: Number(process.env.VOICE_TTS_SPEED ?? '1') || 1,
@@ -95,24 +220,31 @@ async function generateViaRelay(text: string): Promise<TtsGenerationResult> {
   });
 
   if (!res.ok) {
-    const body = await res.text();
-    console.error('[tg:voice] tts.relay.fail_http', { status: res.status, body: body.slice(0, 200) });
-    return { audio: null, provider: 'relay', format, errorType: 'relay_http_fail' };
+    return { audio: null, provider: 'relay', format, attempt: await failedAttempt(res, 'relay', credentialEnv) };
   }
 
-  const audio = await res.arrayBuffer();
-  return { audio, provider: 'relay', format };
+  return {
+    audio: await res.arrayBuffer(),
+    provider: 'relay',
+    format,
+    attempt: { provider: 'relay', ok: true },
+  };
 }
 
-async function generateViaOpenAi(text: string): Promise<TtsGenerationResult> {
+async function generateViaOpenAi(text: string): Promise<ProviderResult> {
   const apiKey = process.env.VOICE_TTS_API_KEY?.trim() || process.env.OPENAI_API_KEY?.trim();
+  const credentialEnv = process.env.VOICE_TTS_API_KEY?.trim() ? 'VOICE_TTS_API_KEY' : 'OPENAI_API_KEY';
+  const format = resolveResponseFormat('openai');
   if (!apiKey) {
-    return { audio: null, provider: 'openai', format: resolveResponseFormat(), errorType: 'missing_api_key' };
+    return {
+      audio: null,
+      provider: 'openai',
+      format,
+      attempt: { provider: 'openai', ok: false, errorType: 'missing_api_key' },
+    };
   }
 
   const baseUrl = (process.env.OPENAI_BASE_URL ?? 'https://api.openai.com/v1').replace(/\/+$/, '');
-  const format = resolveResponseFormat();
-
   const res = await fetchWithTimeout(`${baseUrl}/audio/speech`, {
     method: 'POST',
     headers: {
@@ -121,8 +253,8 @@ async function generateViaOpenAi(text: string): Promise<TtsGenerationResult> {
       Accept: 'audio/*',
     },
     body: JSON.stringify({
-      model: resolveModel(),
-      voice: resolveVoice(),
+      model: resolveModel('openai'),
+      voice: resolveVoice('openai'),
       input: text,
       response_format: format,
       speed: Number(process.env.VOICE_TTS_SPEED ?? '1') || 1,
@@ -131,25 +263,30 @@ async function generateViaOpenAi(text: string): Promise<TtsGenerationResult> {
   });
 
   if (!res.ok) {
-    const body = await res.text();
-    console.error('[tg:voice] tts.openai.fail_http', { status: res.status, body: body.slice(0, 200) });
-    return { audio: null, provider: 'openai', format, errorType: 'openai_http_fail' };
+    return { audio: null, provider: 'openai', format, attempt: await failedAttempt(res, 'openai', credentialEnv) };
   }
 
-  const audio = await res.arrayBuffer();
-  return { audio, provider: 'openai', format };
+  return {
+    audio: await res.arrayBuffer(),
+    provider: 'openai',
+    format,
+    attempt: { provider: 'openai', ok: true },
+  };
 }
 
-async function generateViaElevenLabs(text: string): Promise<TtsGenerationResult> {
+async function generateViaElevenLabs(text: string): Promise<ProviderResult> {
   const apiKey = process.env.ELEVENLABS_API_KEY?.trim();
   if (!apiKey) {
-    return { audio: null, provider: 'elevenlabs', format: 'mp3', errorType: 'missing_api_key' };
+    return {
+      audio: null,
+      provider: 'elevenlabs',
+      format: 'mp3',
+      attempt: { provider: 'elevenlabs', ok: false, errorType: 'missing_api_key' },
+    };
   }
 
-  const voiceId = resolveVoice();
-  const model = resolveModel();
+  const voiceId = resolveVoice('elevenlabs');
   const url = `https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(voiceId)}`;
-
   const res = await fetchWithTimeout(url, {
     method: 'POST',
     headers: {
@@ -159,44 +296,82 @@ async function generateViaElevenLabs(text: string): Promise<TtsGenerationResult>
     },
     body: JSON.stringify({
       text,
-      model_id: model,
+      model_id: resolveModel('elevenlabs'),
       voice_settings: { stability: 0.5, similarity_boost: 0.75 },
     }),
   });
 
   if (!res.ok) {
-    const body = await res.text();
-    console.error('[tg:voice] tts.elevenlabs.fail_http', { status: res.status, body: body.slice(0, 200) });
-    return { audio: null, provider: 'elevenlabs', format: 'mp3', errorType: 'elevenlabs_http_fail' };
+    return {
+      audio: null,
+      provider: 'elevenlabs',
+      format: 'mp3',
+      attempt: await failedAttempt(res, 'elevenlabs', 'ELEVENLABS_API_KEY'),
+    };
   }
 
-  const audio = await res.arrayBuffer();
-  return { audio, provider: 'elevenlabs', format: 'mp3' };
+  return {
+    audio: await res.arrayBuffer(),
+    provider: 'elevenlabs',
+    format: 'mp3',
+    attempt: { provider: 'elevenlabs', ok: true },
+  };
+}
+
+async function generateViaProvider(provider: TtsProvider, text: string): Promise<ProviderResult> {
+  if (provider === 'relay') return generateViaRelay(text);
+  if (provider === 'elevenlabs') return generateViaElevenLabs(text);
+  return generateViaOpenAi(text);
 }
 
 export async function generateSpeech(text: string): Promise<TtsGenerationResult> {
   if (!text.trim()) {
-    return { audio: null, provider: 'none', format: 'opus', errorType: 'empty_text' };
+    return { audio: null, provider: 'none', format: 'opus', errorType: 'empty_text', attempts: [] };
   }
 
-  const provider = resolveProvider();
+  const providers = configuredProviderOrder();
+  const attempts: TtsProviderAttempt[] = [];
   if (debugEnabled()) {
-    console.log('[tg:voice] tts.start', { provider, chars: text.length, model: resolveModel(), voice: resolveVoice() });
+    console.log('[tg:voice] tts.start', { providers, chars: text.length });
   }
 
-  try {
-    let result: TtsGenerationResult;
-    if (provider === 'relay') result = await generateViaRelay(text);
-    else if (provider === 'elevenlabs') result = await generateViaElevenLabs(text);
-    else result = await generateViaOpenAi(text);
-
-    if (result.audio && debugEnabled()) {
-      console.log('[tg:voice] tts.ok', { provider: result.provider, bytes: result.audio.byteLength, format: result.format });
+  for (const [index, provider] of providers.entries()) {
+    try {
+      const result = await generateViaProvider(provider, text);
+      attempts.push(result.attempt);
+      if (result.audio) {
+        if (debugEnabled()) {
+          console.log('[tg:voice] tts.ok', {
+            provider,
+            bytes: result.audio.byteLength,
+            format: result.format,
+            fallback_used: index > 0,
+          });
+        }
+        return {
+          audio: result.audio,
+          provider,
+          format: result.format,
+          fallbackUsed: index > 0,
+          attempts,
+        };
+      }
+      console.warn('[tg:voice] tts.provider_fail', result.attempt);
+    } catch (err) {
+      const errorType = (err as Error).name === 'AbortError' ? 'timeout' : 'network';
+      const attempt: TtsProviderAttempt = { provider, ok: false, errorType };
+      attempts.push(attempt);
+      console.warn('[tg:voice] tts.provider_fail', attempt);
     }
-    return result;
-  } catch (err) {
-    const errorType = (err as Error).name === 'AbortError' ? 'timeout' : 'network';
-    console.error('[tg:voice] tts.fail', { provider, errorType, message: (err as Error).message });
-    return { audio: null, provider, format: resolveResponseFormat(), errorType };
   }
+
+  const lastAttempt = attempts.at(-1);
+  return {
+    audio: null,
+    provider: lastAttempt?.provider ?? providers[0] ?? 'none',
+    format: lastAttempt?.provider ? resolveResponseFormat(lastAttempt.provider) : 'opus',
+    errorType: attempts.length === 1 ? lastAttempt?.errorType : 'all_providers_failed',
+    fallbackUsed: false,
+    attempts,
+  };
 }
