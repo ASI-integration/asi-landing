@@ -130,6 +130,15 @@ function isTelegramTestPingMeta(normalized: string): boolean {
   return false;
 }
 
+function isLanguageCapabilityMeta(normalized: string): boolean {
+  return (
+    /^(а\s+)?(ты|вы)\s+(меня\s+)?(слышишь|слышите|понимаешь|понимаете)(\s+меня)?(?:\s|$)/i.test(normalized) ||
+    /^(а\s+)?(ты|вы)\s+(можешь|можете)\s+(меня\s+)?(слышать|понять|понимать)(?:\s|$)/i.test(normalized) ||
+    /(?:^|\s)(ответь|ответьте)(?:\s+мне)?(?:\s+пожалуйста)?\s+(по[-\s]?русски|на\s+русском)(?:\s|$)/i.test(normalized) ||
+    /(?:^|\s)(понимаешь|понимаете)\s+(русский|по[-\s]?русски|меня)(?:\s|$)/i.test(normalized)
+  );
+}
+
 type MetaSurfaceLang = 'en' | 'ru' | 'es';
 
 /**
@@ -170,12 +179,12 @@ export function inferMetaSurfaceLang(text: string, telegramLangCode?: string): M
 /** Product copy for language / capability meta (Telegram-only). */
 function unifiedLanguageCapabilityReply(surface: MetaSurfaceLang): string {
   if (surface === 'ru') {
-    return 'Да, понимаю русский и английский. Пришлите, пожалуйста, запрос текстом.';
+    return 'Да, слышу и понимаю вас. Могу отвечать по-русски и по-английски.';
   }
   if (surface === 'es') {
     return 'Да, понимаю русский и английский. Пришлите, пожалуйста, запрос текстом.';
   }
-  return 'Да, понимаю русский и английский. Пришлите, пожалуйста, запрос текстом.';
+  return 'Yes, I can understand you and reply in English or Russian.';
 }
 
 function telegramMetaStartReply(surface: MetaSurfaceLang): string {
@@ -195,7 +204,7 @@ function telegramMetaGreetingReply(surface: MetaSurfaceLang): string {
   if (surface === 'es') {
     return 'Здравствуйте! Пришлите запрос гостя, проблему или детали заезда.';
   }
-  return 'Здравствуйте! Пришлите запрос гостя, проблему или детали заезда.';
+  return 'ASI online. Send a guest request, issue, or check-in details.';
 }
 
 function telegramMetaSmalltalkReply(rawText: string, surface: MetaSurfaceLang): string {
@@ -217,9 +226,9 @@ function telegramMetaSmalltalkReply(rawText: string, surface: MetaSurfaceLang): 
     return 'Да, я бот ASI. Помогаю быстро разобрать сообщения гостей, вопросы по заезду и проблемы с объектом.';
   }
   if (isAck) {
-    return 'Пожалуйста! Если появится запрос гостя или вопрос по объекту, пришлите сюда.';
+    return 'You’re welcome. Send another guest or property question whenever you need.';
   }
-  return 'Да, я бот ASI. Помогаю быстро разобрать сообщения гостей, вопросы по заезду и проблемы с объектом.';
+  return 'Yes, I’m the ASI assistant. I help with guest messages, check-in questions, and property issues.';
 }
 
 function telegramMetaIdentityReply(surface: MetaSurfaceLang): string {
@@ -229,12 +238,12 @@ function telegramMetaIdentityReply(surface: MetaSurfaceLang): string {
   if (surface === 'es') {
     return 'Да, я официальный ассистент ASI. Помогаю с заселением, доступом, бронью, уборкой и поломками. Напишите, что случилось, я разберу запрос или передам оператору, если нужен человек.';
   }
-  return 'Да, я официальный ассистент ASI. Помогаю с заселением, доступом, бронью, уборкой и поломками. Напишите, что случилось, я разберу запрос или передам оператору, если нужен человек.';
+  return 'I’m the official ASI assistant. I help with check-in, access, bookings, cleaning, and property issues.';
 }
 
 function telegramMetaTestPingReply(surface: MetaSurfaceLang): string {
   if (surface === 'ru') return 'Бот на связи.';
-  return 'Бот на связи.';
+  return 'Bot is online.';
 }
 
 function hasSubstantiveOperationalContent(rawText: string): boolean {
@@ -329,6 +338,19 @@ export function resolveTelegramTextMeta(params: {
       handler: 'telegram_text_meta_deterministic',
       kind: 'es_locale_meta',
       reply: buildTelegramMetaReply('es_locale_meta', raw, params.telegramLangCode, patched),
+      category: MessageCategory.LanguageCheck,
+      classification: patchClassificationLang(patched, surface),
+    };
+  }
+
+  if (isLanguageCapabilityMeta(spanishKey) && !hasSubstantiveOperationalContent(raw)) {
+    const classification = classify(raw);
+    const patched: ClassifyResult = { ...classification, category: MessageCategory.LanguageCheck };
+    const surface = inferMetaSurfaceLang(raw, params.telegramLangCode);
+    return {
+      handler: 'telegram_text_meta_deterministic',
+      kind: 'language_check',
+      reply: buildTelegramMetaReply('language_check', raw, params.telegramLangCode, patched),
       category: MessageCategory.LanguageCheck,
       classification: patchClassificationLang(patched, surface),
     };
