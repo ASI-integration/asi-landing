@@ -177,13 +177,14 @@ jobs:
           path.write_text(text, encoding='utf-8')
           PY
 
+              # Reload the just-written shared env before propagating it into PM2.
+              load_env
               pm2 restart "$PM2_APP" --update-env
               pm2 save
               sleep 4
               echo "=== health after activation ==="
               curl -fsS http://127.0.0.1:3000/api/health
               echo
-              load_env
               node "$REMOTE_TMP/communication-production-readiness-v1.mjs" --require-active --probe-network
               ;;
 
