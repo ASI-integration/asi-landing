@@ -1,13 +1,13 @@
 import { NextResponse } from 'next/server';
 import { requireDevelopmentOwnerSession } from '@/lib/development/api-auth';
 import {
-  cleanupLiveCoreAcceptanceHarness,
   cleanupLiveCoreSyntheticRecovery,
   describeLiveCoreAcceptanceUnavailable,
   previewLiveCoreSyntheticRecovery,
   runChannelManagerLiveCoreAcceptance,
   LIVE_CORE_RECOVERY_CONFIRM_PHRASE,
 } from '@/lib/booking-ops/channel-manager-live-core-acceptance';
+import { cleanupLiveCoreAcceptanceHarnessV2 } from '@/lib/booking-ops/channel-manager-live-core-acceptance-cleanup-v2';
 import { probeChannelLiveCoreSchema } from '@/lib/booking-ops/channel-manager-live-core';
 
 export const runtime = 'nodejs';
@@ -117,7 +117,7 @@ export async function POST(req: Request): Promise<NextResponse> {
           message: 'Для удаления тестового контура нужно явное подтверждение.',
         }, { status: 400, headers: { 'cache-control': 'no-store' } });
       }
-      const result = await cleanupLiveCoreAcceptanceHarness();
+      const result = await cleanupLiveCoreAcceptanceHarnessV2();
       return NextResponse.json({
         ok: result.cleanupPassed === true,
         cleanup: result,
