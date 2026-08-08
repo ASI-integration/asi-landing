@@ -106,6 +106,31 @@ describe('voice TTS wrapper', () => {
     expect(JSON.stringify(result)).not.toContain('invalid-test-eleven-key');
   });
 
+  it('classifies ElevenLabs payment_issue as billing restriction without requesting another key', async () => {
+    process.env.VOICE_TTS_PROVIDER = 'elevenlabs';
+    process.env.ELEVENLABS_API_KEY = 'current-eleven-key';
+    process.env.OPENAI_API_KEY = 'test-openai-key';
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse({ detail: { status: 'payment_issue' } }, 401))
+      .mockResolvedValueOnce(new Response(Uint8Array.from([4, 5, 6]), { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await generateSpeech('Проверка резервного синтеза при ограничении оплаты.');
+
+    expect(result.provider).toBe('openai');
+    expect(result.fallbackUsed).toBe(true);
+    expect(result.attempts?.[0]).toEqual({
+      provider: 'elevenlabs',
+      ok: false,
+      errorType: 'billing_account_restricted',
+      httpStatus: 401,
+      providerCode: 'payment_issue',
+      credentialReplacementRequired: false,
+      billingRestorationRequired: true,
+    });
+  });
+
   it('returns sanitized attempts when every configured provider fails', async () => {
     process.env.VOICE_TTS_PROVIDER = 'elevenlabs';
     process.env.ELEVENLABS_API_KEY = 'invalid-test-eleven-key';
@@ -129,14 +154,14 @@ describe('voice TTS wrapper', () => {
     const env = {
       NODE_ENV: 'test' as const,
       VOICE_TTS_PROVIDER: 'elevenlabs',
-      ELEVENLABS_API_KEY: 'invalid-test-eleven-key',
+      ELEVENLABS_API_KEY: 'current-eleven-key',
       OPENAI_API_KEY: 'test-openai-key',
       TELEGRAM_BOT_TOKEN: 'test-telegram-token',
       TELEGRAM_TEST_CHAT_ID: '42',
     };
     const fetchMock = vi
       .fn()
-      .mockResolvedValueOnce(jsonResponse({ detail: { status: 'invalid_api_key' } }, 401))
+      .mockResolvedValueOnce(jsonResponse({ detail: { status: 'payment_issue' } }, 401))
       .mockResolvedValueOnce(new Response(Uint8Array.from([7, 8, 9]), { status: 200 }))
       .mockResolvedValueOnce(jsonResponse({ ok: true, result: { message_id: 99, voice: { duration: 1, file_size: 3 } } }, 200));
 
@@ -152,7 +177,7 @@ describe('voice TTS wrapper', () => {
       provider: 'openai',
       fallbackUsed: true,
       operatorActions: [
-        { provider: 'elevenlabs', action: 'replace_production_credential', secretEnv: 'ELEVENLABS_API_KEY' },
+        { provider: 'elevenlabs', action: 'restore_provider_billing', providerCode: 'payment_issue' },
       ],
       stages: [
         { stage: 'tts_generation', pass: true, provider: 'openai', fallbackUsed: true },
@@ -186,6 +211,7 @@ describe('voice TTS wrapper', () => {
 
   it('production workflow uses a constrained safety choice and names every required acceptance stage', () => {
     const workflow = readFileSync('.github/workflows/communication-production-completion-v1.yml', 'utf8');
+    const inboundInput = readFileSync('scripts/telegram-voice-acceptance-input.mjs', 'utf8');
 
     expect(workflow).toContain('type: choice');
     expect(workflow).toContain('authorized_for_selected_mode');
@@ -194,6 +220,8 @@ describe('voice TTS wrapper', () => {
     for (const stage of ['active_state', 'text_autopilot', 'outbound_tts_and_send_voice', 'inbound_stt']) {
       expect(workflow).toContain(`run_acceptance_stage ${stage}`);
     }
-    expect(workflow).toContain('stage=inbound_stt_input');
+    expect(inboundInput).toContain('stage=inbound_stt_input');
+    expect(workflow).toContain('telegram-voice-acceptance-input.mjs');
+    expect(workflow).not.toContain('pm2 logs "$PM2_APP" --lines 1500');
   });
 });

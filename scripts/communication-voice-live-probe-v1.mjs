@@ -1,5 +1,3 @@
-#!/usr/bin/env node
-
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -78,6 +76,10 @@ function safeProviderCode(value) {
   return /^[a-z0-9_.-]{1,80}$/.test(code) ? code : null;
 }
 
+function isBillingProviderCode(providerCode) {
+  return providerCode === 'payment_issue';
+}
+
 function timeoutMs(env = process.env) {
   const raw = Number(env.VOICE_TTS_TIMEOUT_MS ?? env.ELEVENLABS_TIMEOUT_MS ?? '');
   return Number.isFinite(raw) && raw > 0 ? raw : 20_000;
@@ -103,8 +105,11 @@ async function failedAttempt(response, provider, credentialEnv) {
   const detail = body && typeof body.detail === 'object' ? body.detail : {};
   const error = body && typeof body.error === 'object' ? body.error : {};
   const providerCode = safeProviderCode(detail.status ?? detail.code ?? error.code ?? error.type ?? body.code ?? body.type);
-  const credentialReplacementRequired = response.status === 401;
-  const errorType = credentialReplacementRequired
+  const billingRestorationRequired = isBillingProviderCode(providerCode);
+  const credentialReplacementRequired = response.status === 401 && !billingRestorationRequired;
+  const errorType = billingRestorationRequired
+    ? 'billing_account_restricted'
+    : credentialReplacementRequired
     ? 'invalid_credential'
     : response.status === 403
       ? 'authorization_failed'
@@ -120,6 +125,7 @@ async function failedAttempt(response, provider, credentialEnv) {
     httpStatus: response.status,
     ...(providerCode ? { providerCode } : {}),
     credentialReplacementRequired,
+    ...(billingRestorationRequired ? { billingRestorationRequired: true } : {}),
     ...(credentialReplacementRequired ? { credentialEnv } : {}),
   };
 }
@@ -255,13 +261,23 @@ async function sendVoice(chatId, oggBytes, env, fetchImpl) {
 }
 
 function operatorActions(attempts) {
-  return attempts
-    .filter((attempt) => attempt.credentialReplacementRequired && attempt.credentialEnv)
-    .map((attempt) => ({
-      provider: attempt.provider,
-      action: 'replace_production_credential',
-      secretEnv: attempt.credentialEnv,
-    }));
+  return attempts.flatMap((attempt) => {
+    if (attempt.billingRestorationRequired) {
+      return [{
+        provider: attempt.provider,
+        action: 'restore_provider_billing',
+        ...(attempt.providerCode ? { providerCode: attempt.providerCode } : {}),
+      }];
+    }
+    if (attempt.credentialReplacementRequired && attempt.credentialEnv) {
+      return [{
+        provider: attempt.provider,
+        action: 'replace_production_credential',
+        secretEnv: attempt.credentialEnv,
+      }];
+    }
+    return [];
+  });
 }
 
 export async function runVoiceAcceptance({
@@ -329,7 +345,11 @@ export async function runVoiceAcceptance({
 async function main() {
   const result = await runVoiceAcceptance();
   for (const action of result.operatorActions ?? []) {
-    console.log(`::warning::${action.provider} credential failed authentication; replace production secret ${action.secretEnv}`);
+    if (action.action === 'restore_provider_billing') {
+      console.log(`::warning::${action.provider} reported a billing/account restriction; keep the fallback active and retest after billing is restored`);
+    } else {
+      console.log(`::warning::${action.provider} credential failed authentication; replace production secret ${action.secretEnv}`);
+    }
   }
   console.log(JSON.stringify(result, null, 2));
   if (!result.pass) process.exitCode = 1;

@@ -107,7 +107,7 @@ interface TelegramFileInfo {
 async function resolveFilePath(fileId: string, token: string): Promise<TelegramFileResolveResult> {
   const url = `https://api.telegram.org/bot${token}/getFile?file_id=${encodeURIComponent(fileId)}`;
   if (debugEnabled()) {
-    console.log('[tg:voice] getFile.start', { file_id: fileId });
+    console.log('[tg:voice] getFile.start');
   }
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), getTelegramFetchTimeoutMs());
@@ -115,7 +115,7 @@ async function resolveFilePath(fileId: string, token: string): Promise<TelegramF
     const res = await fetch(url, { method: 'GET', signal: controller.signal });
     if (!res.ok) {
       const message = sanitizeSttLogMessage(await res.text().catch(() => ''));
-      console.error('[tg:voice] getFile.fail_http', { file_id: fileId, status: res.status, message });
+      console.error('[tg:voice] getFile.fail_http', { status: res.status, message });
       return { ok: false, reason: 'get_file_http', status: res.status, message };
     }
     const data = (await res.json()) as {
@@ -125,7 +125,7 @@ async function resolveFilePath(fileId: string, token: string): Promise<TelegramF
     };
     if (!data.ok || !data.result?.file_path) {
       const message = sanitizeSttLogMessage(data.description ?? 'Telegram getFile returned no file_path');
-      console.error('[tg:voice] getFile.fail_api', { file_id: fileId, ok: data.ok, message });
+      console.error('[tg:voice] getFile.fail_api', { ok: data.ok, message });
       return { ok: false, reason: 'get_file_api', message };
     }
     const maxBytes = getTelegramVoiceMaxBytes();
@@ -146,11 +146,11 @@ async function resolveFilePath(fileId: string, token: string): Promise<TelegramF
   } catch (err) {
     const name = (err as Error).name;
     if (name === 'AbortError') {
-      console.error('[tg:voice] getFile.fail_timeout', { file_id: fileId, timeout_ms: getTelegramFetchTimeoutMs() });
+      console.error('[tg:voice] getFile.fail_timeout', { timeout_ms: getTelegramFetchTimeoutMs() });
       return { ok: false, reason: 'get_file_timeout', message: `timeout_ms=${getTelegramFetchTimeoutMs()}` };
     } else {
       const message = sanitizeSttLogMessage((err as Error).message);
-      console.error('[tg:voice] getFile.fail_network', { file_id: fileId, message });
+      console.error('[tg:voice] getFile.fail_network', { message });
       return { ok: false, reason: 'get_file_network', message };
     }
   } finally {
@@ -278,7 +278,6 @@ export async function transcribeVoiceMessageDetailed(
 
     console.info('[tg:voice] download.ready_for_stt', {
       update_id: ctx?.updateId ?? null,
-      file_id: fileId,
       mime_type: resolvedMimeType,
       extension: ext,
       bytes: audio.bytes,

@@ -25,7 +25,7 @@ on:
         required: false
         type: string
       stt_file_id:
-        description: Optional fresh Telegram voice file_id for STT acceptance; if empty, latest voice file_id is taken from sanitized PM2 logs
+        description: Optional Telegram voice file_id override for diagnostics; normal acceptance discovers a fresh configured test-chat voice automatically
         required: false
         type: string
 
@@ -110,6 +110,7 @@ jobs:
             scripts/telegram-autopilot-live-acceptance.mjs \
             scripts/telegram-autopilot-reservation.mjs \
             scripts/telegram-test-chat-id.mjs \
+            scripts/telegram-voice-acceptance-input.mjs \
             scripts/telegram-voice-stt-dry-run.mjs \
             "${REMOTE_USER}@${VPS_HOST}:${REMOTE_TMP}/"
 
@@ -245,20 +246,12 @@ jobs:
               run_acceptance_stage outbound_tts_and_send_voice \
                 node "$REMOTE_TMP/communication-voice-live-probe-v1.mjs"
 
-              FILE_ID="${INPUT_STT_FILE_ID:-}"
-              if [[ -z "$FILE_ID" ]]; then
-                CAPTURE="$(mktemp)"
-                pm2 logs "$PM2_APP" --lines 1500 --nostream 2>&1 \
-                  | grep -E '\[tg:voice\]|telegram_file_id' \
-                  | tail -500 > "$CAPTURE" || true
-                FILE_ID="$(grep -oE "file_id: '[^']+'" "$CAPTURE" | tail -1 | sed -E "s/file_id: '([^']+)'/\1/" || true)"
-                if [[ -z "$FILE_ID" ]]; then
-                  FILE_ID="$(grep -oE '"telegram_file_id":"[^"]+"' "$CAPTURE" | tail -1 | sed -E 's/"telegram_file_id":"([^"]+)"/\1/' || true)"
-                fi
-                rm -f "$CAPTURE"
-              fi
-              if [[ -z "$FILE_ID" ]]; then
-                echo "::error::Communication production acceptance failed at stage=inbound_stt_input: no recent Telegram voice file_id found. Send one fresh voice note to the test bot, then rerun acceptance."
+              if ! FILE_ID="$(
+                node "$REMOTE_TMP/telegram-voice-acceptance-input.mjs" \
+                  --explicit-file-id "${INPUT_STT_FILE_ID:-}" \
+                  --test-chat-id "$TELEGRAM_TEST_CHAT_ID" \
+                  --max-age-seconds 1200
+              )"; then
                 exit 1
               fi
               run_acceptance_stage inbound_stt \
