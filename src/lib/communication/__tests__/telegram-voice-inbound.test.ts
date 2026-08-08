@@ -1,4 +1,7 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { _resetForTesting } from '../idempotency';
 import { tgAudioUpdate, tgTextUpdate, tgVoiceUpdate } from '../dev/telegram-fixtures';
 import { MessageCategory, MessageDirection, MessageType } from '../types';
@@ -122,6 +125,23 @@ import {
 } from '../conversation-session-engine';
 import { __resetAutonomousSessionStoreForTests, loadAutonomousSession } from '../conversation-session-store';
 import { __resetEscalationReviewStoreForTests } from '../operator-review';
+import {
+  recordTelegramVoiceAcceptanceEvidence,
+  TELEGRAM_VOICE_ACCEPTANCE_STATE_FILE,
+} from '../telegram-voice-acceptance-state';
+import {
+  inboundSttInputError,
+  resolveInboundSttFileId,
+} from '../../../../scripts/telegram-voice-acceptance-input.mjs';
+import { sanitizeVoiceSttDiagnostic } from '../../../../scripts/telegram-voice-stt-dry-run.mjs';
+
+const temporaryDirectories: string[] = [];
+
+function temporaryStateDir(): string {
+  const directory = mkdtempSync(join(tmpdir(), 'asi-telegram-voice-evidence-'));
+  temporaryDirectories.push(directory);
+  return directory;
+}
 
 function telegramSessions() {
   return __listConversationSessionsForTests().filter(s => s.channel === 'telegram');
@@ -149,6 +169,204 @@ describe('telegram voice inbound session continuity', () => {
     mocks.matchReservation.mockClear();
     mocks.matchReservation.mockResolvedValue({ status: 'unmatched', confidence: 0 });
     mocks.createOpsTask.mockClear();
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.restoreAllMocks();
+    for (const directory of temporaryDirectories.splice(0)) {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
+  it('discovers fresh voice evidence only for the configured Telegram test chat', () => {
+    const stateDir = temporaryStateDir();
+    const now = new Date('2026-08-09T10:00:00.000Z');
+    const written = recordTelegramVoiceAcceptanceEvidence(
+      {
+        chatId: 501,
+        updateId: 7001,
+        messageId: 8001,
+        messageDateUnixSeconds: now.getTime() / 1000,
+        kind: 'voice',
+        fileId: 'fresh-test-chat-file-id',
+      },
+      { env: { TELEGRAM_TEST_CHAT_ID: '501', COMM_STATE_DIR: stateDir }, now },
+    );
+
+    expect(written.status).toBe('written');
+    expect(
+      resolveInboundSttFileId({
+        testChatId: '501',
+        stateFile: join(stateDir, TELEGRAM_VOICE_ACCEPTANCE_STATE_FILE),
+        nowMs: now.getTime(),
+      }),
+    ).toEqual({ ok: true, source: 'test_chat_state', fileId: 'fresh-test-chat-file-id' });
+  });
+
+  it('ignores a voice from another Telegram chat without replacing test-chat evidence', () => {
+    const stateDir = temporaryStateDir();
+    const now = new Date('2026-08-09T10:00:00.000Z');
+    const env = { TELEGRAM_TEST_CHAT_ID: '501', COMM_STATE_DIR: stateDir };
+    recordTelegramVoiceAcceptanceEvidence(
+      {
+        chatId: 501,
+        updateId: 7001,
+        messageId: 8001,
+        messageDateUnixSeconds: now.getTime() / 1000,
+        kind: 'voice',
+        fileId: 'matching-file-id',
+      },
+      { env, now },
+    );
+
+    expect(
+      recordTelegramVoiceAcceptanceEvidence(
+        {
+          chatId: 999,
+          updateId: 7002,
+          messageId: 8002,
+          messageDateUnixSeconds: now.getTime() / 1000,
+          kind: 'voice',
+          fileId: 'other-user-file-id',
+        },
+        { env, now },
+      ),
+    ).toEqual({ status: 'ignored', reason: 'chat_mismatch' });
+    expect(
+      resolveInboundSttFileId({
+        testChatId: '501',
+        stateFile: join(stateDir, TELEGRAM_VOICE_ACCEPTANCE_STATE_FILE),
+        nowMs: now.getTime(),
+      }),
+    ).toMatchObject({ ok: true, fileId: 'matching-file-id' });
+  });
+
+  it('rejects stale Telegram voice evidence', () => {
+    const stateDir = temporaryStateDir();
+    const now = new Date('2026-08-09T10:30:00.000Z');
+    recordTelegramVoiceAcceptanceEvidence(
+      {
+        chatId: 501,
+        updateId: 7001,
+        messageId: 8001,
+        messageDateUnixSeconds: new Date('2026-08-09T10:00:00.000Z').getTime() / 1000,
+        kind: 'voice',
+        fileId: 'stale-file-id',
+      },
+      { env: { TELEGRAM_TEST_CHAT_ID: '501', COMM_STATE_DIR: stateDir }, now },
+    );
+
+    expect(
+      resolveInboundSttFileId({
+        testChatId: '501',
+        stateFile: join(stateDir, TELEGRAM_VOICE_ACCEPTANCE_STATE_FILE),
+        maxAgeMs: 20 * 60 * 1000,
+        nowMs: now.getTime(),
+      }),
+    ).toEqual({ ok: false, reason: 'stale_voice_evidence' });
+  });
+
+  it('does not let an older test-chat delivery replace newer voice evidence', () => {
+    const stateDir = temporaryStateDir();
+    const now = new Date('2026-08-09T10:00:00.000Z');
+    const env = { TELEGRAM_TEST_CHAT_ID: '501', COMM_STATE_DIR: stateDir };
+    recordTelegramVoiceAcceptanceEvidence(
+      {
+        chatId: 501,
+        updateId: 7002,
+        messageId: 8002,
+        messageDateUnixSeconds: now.getTime() / 1000,
+        kind: 'voice',
+        fileId: 'newer-file-id',
+      },
+      { env, now },
+    );
+
+    expect(
+      recordTelegramVoiceAcceptanceEvidence(
+        {
+          chatId: 501,
+          updateId: 7001,
+          messageId: 8001,
+          messageDateUnixSeconds: now.getTime() / 1000 - 60,
+          kind: 'voice',
+          fileId: 'older-file-id',
+        },
+        { env, now },
+      ),
+    ).toEqual({ status: 'ignored', reason: 'older_than_recorded' });
+    expect(
+      resolveInboundSttFileId({
+        testChatId: '501',
+        stateFile: join(stateDir, TELEGRAM_VOICE_ACCEPTANCE_STATE_FILE),
+        nowMs: now.getTime(),
+      }),
+    ).toMatchObject({ ok: true, fileId: 'newer-file-id' });
+  });
+
+  it('fails closed when no Telegram voice evidence exists', () => {
+    const result = resolveInboundSttFileId({
+      testChatId: '501',
+      stateFile: join(temporaryStateDir(), TELEGRAM_VOICE_ACCEPTANCE_STATE_FILE),
+    });
+
+    expect(result).toEqual({ ok: false, reason: 'no_voice_evidence' });
+    expect(inboundSttInputError(result.reason)).toContain(
+      'Send a new voice note in that dedicated test chat to @ASI_core_bot, wait for the bot to process it, then rerun acceptance with stt_file_id empty.',
+    );
+  });
+
+  it('preserves the explicit STT file id diagnostic override', () => {
+    expect(
+      resolveInboundSttFileId({
+        explicitFileId: 'operator-diagnostic-file-id',
+        testChatId: '',
+        stateFile: 'not-read-for-an-explicit-override',
+      }),
+    ).toEqual({ ok: true, source: 'explicit', fileId: 'operator-diagnostic-file-id' });
+  });
+
+  it('does not leak Telegram voice file ids through inbound logs', async () => {
+    const stateDir = temporaryStateDir();
+    vi.stubEnv('TELEGRAM_TEST_CHAT_ID', '511');
+    vi.stubEnv('COMM_STATE_DIR', stateDir);
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    const infoSpy = vi.spyOn(console, 'info').mockImplementation(() => undefined);
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    mocks.transcribe.mockResolvedValue(null);
+
+    await processTelegramVoiceUpdate(
+      tgVoiceUpdate({
+        chat_id: 511,
+        user_id: 9011,
+        update_id: 7611,
+        message_id: 8611,
+        file_id: 'telegram-sensitive-file-id',
+      }),
+    );
+
+    const logs = JSON.stringify([
+      ...logSpy.mock.calls,
+      ...infoSpy.mock.calls,
+      ...warnSpy.mock.calls,
+      ...errorSpy.mock.calls,
+    ]);
+    expect(logs).not.toContain('telegram-sensitive-file-id');
+    expect(logs).not.toContain('telegram_file_id');
+    expect(logs).not.toContain('TELEGRAM_BOT_TOKEN=');
+
+    const botToken = '123456789:telegram-test-secret';
+    const fileId = 'telegram-sensitive-file-id';
+    const sanitized = sanitizeVoiceSttDiagnostic(
+      `download failed at https://api.telegram.org/file/bot${botToken}/voice.oga token=${botToken} file_id=${fileId}`,
+      700,
+      [botToken, fileId],
+    );
+    expect(sanitized).not.toContain(botToken);
+    expect(sanitized).not.toContain(fileId);
+    expect(sanitized).toContain('[redacted]');
   });
 
   it('text then voice from the same Telegram chat uses the same conversation session', async () => {

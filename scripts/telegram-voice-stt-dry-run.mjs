@@ -1,8 +1,8 @@
-#!/usr/bin/env node
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
 
 const DEFAULT_TIMEOUT_MS = 30_000;
 
@@ -17,11 +17,16 @@ function hasFlag(name) {
   return process.argv.includes(`--${name}`);
 }
 
-function sanitize(value, maxLength = 700) {
-  const raw = typeof value === 'string' ? value : JSON.stringify(value ?? '');
+export function sanitizeVoiceSttDiagnostic(value, maxLength = 700, sensitiveValues = []) {
+  let raw = typeof value === 'string' ? value : JSON.stringify(value ?? '');
+  for (const sensitiveValue of sensitiveValues) {
+    const secret = String(sensitiveValue ?? '');
+    if (secret) raw = raw.split(secret).join('[redacted]');
+  }
   return raw
     .replace(/Bearer\s+[A-Za-z0-9._~+/=-]+/gi, 'Bearer [redacted]')
     .replace(/sk-[A-Za-z0-9_-]{8,}/g, 'sk-[redacted]')
+    .replace(/bot\d+:[A-Za-z0-9_-]+/g, 'bot[redacted]')
     .replace(/(api[_-]?key|token|secret|authorization)(["']?\s*[:=]\s*["']?)[^"',\s}]+/gi, '$1$2[redacted]')
     .slice(0, maxLength);
 }
@@ -35,7 +40,7 @@ function safeBaseUrl(baseUrl) {
     u.hash = '';
     return u.toString().replace(/\/$/, '');
   } catch {
-    return sanitize(baseUrl, 200);
+    return sanitizeVoiceSttDiagnostic(baseUrl, 200);
   }
 }
 
@@ -97,7 +102,7 @@ function probeAudio(filePath) {
       );
       ffprobeSummary = JSON.parse(ffprobeSummary);
     } catch (err) {
-      ffprobeSummary = { error: sanitize(err instanceof Error ? err.message : String(err), 300) };
+      ffprobeSummary = { error: sanitizeVoiceSttDiagnostic(err instanceof Error ? err.message : String(err), 300) };
     }
   }
   return {
@@ -145,7 +150,6 @@ async function main() {
         has_telegram_bot_token: true,
         has_voice_stt_base_url: true,
         has_voice_stt_relay_token: true,
-        file_id: fileId,
       }),
     );
 
@@ -156,17 +160,19 @@ async function main() {
     );
     const getFileText = await getFile.text();
     if (!getFile.ok) {
-      throw new Error(`telegram_download_failed:getFile:${getFile.status}:${sanitize(getFileText)}`);
+      throw new Error(`telegram_download_failed:getFile:${getFile.status}:${sanitizeVoiceSttDiagnostic(getFileText, 700, [fileId, token])}`);
     }
     const getFileJson = JSON.parse(getFileText);
     const filePath = getFileJson?.result?.file_path;
-    if (!getFileJson?.ok || !filePath) throw new Error(`telegram_download_failed:getFile_api:${sanitize(getFileText)}`);
+    if (!getFileJson?.ok || !filePath) {
+      throw new Error(`telegram_download_failed:getFile_api:${sanitizeVoiceSttDiagnostic(getFileText, 700, [fileId, token])}`);
+    }
 
     const download = await fetchWithTimeout(`https://api.telegram.org/file/bot${token}/${filePath}`, { method: 'GET' }, timeout);
     const audioBuffer = await download.arrayBuffer();
     if (!download.ok) {
       const body = new TextDecoder().decode(audioBuffer);
-      throw new Error(`telegram_download_failed:download:${download.status}:${sanitize(body)}`);
+      throw new Error(`telegram_download_failed:download:${download.status}:${sanitizeVoiceSttDiagnostic(body, 700, [fileId, token])}`);
     }
 
     writeFileSync(audioPath, Buffer.from(audioBuffer));
@@ -203,7 +209,7 @@ async function main() {
           model,
           status: stt.status,
           failure_code: classify(stt.status, body),
-          sanitized_error: sanitize(body),
+          sanitized_error: sanitizeVoiceSttDiagnostic(body),
         }),
       );
       process.exitCode = 2;
@@ -235,12 +241,14 @@ async function main() {
   }
 }
 
-main().catch(err => {
-  console.error(
-    JSON.stringify({
-      event: 'voice_stt_dry_run.error',
-      sanitized_error: sanitize(err instanceof Error ? err.message : String(err)),
-    }),
-  );
-  process.exit(1);
-});
+if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
+  main().catch(err => {
+    console.error(
+      JSON.stringify({
+        event: 'voice_stt_dry_run.error',
+        sanitized_error: sanitizeVoiceSttDiagnostic(err instanceof Error ? err.message : String(err)),
+      }),
+    );
+    process.exit(1);
+  });
+}

@@ -92,7 +92,6 @@ export async function POST(req: Request): Promise<Response> {
       has_message: Boolean(message),
       has_voice: Boolean(voice),
       has_audio: Boolean(audio),
-      voice_file_id: voice?.file_id ?? null,
       voice_mime_type: voice?.mime_type ?? null,
       voice_duration: voice?.duration ?? null,
     });

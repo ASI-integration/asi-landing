@@ -9,6 +9,7 @@ export type TtsProviderAttempt = {
   httpStatus?: number;
   providerCode?: string;
   credentialReplacementRequired?: boolean;
+  billingRestorationRequired?: boolean;
   credentialEnv?: 'ELEVENLABS_API_KEY' | 'OPENAI_API_KEY' | 'VOICE_TTS_API_KEY' | 'VOICE_TTS_RELAY_TOKEN';
 };
 
@@ -144,6 +145,10 @@ function safeProviderCode(value: unknown): string | undefined {
   return /^[a-z0-9_.-]{1,80}$/.test(code) ? code : undefined;
 }
 
+function isBillingProviderCode(providerCode: string | undefined): boolean {
+  return providerCode === 'payment_issue';
+}
+
 async function failedAttempt(
   response: Response,
   provider: TtsProvider,
@@ -166,8 +171,11 @@ async function failedAttempt(
     // Provider returned a non-JSON error. Status-based classification remains safe.
   }
 
-  const credentialReplacementRequired = response.status === 401;
-  const errorType = credentialReplacementRequired
+  const billingRestorationRequired = isBillingProviderCode(providerCode);
+  const credentialReplacementRequired = response.status === 401 && !billingRestorationRequired;
+  const errorType = billingRestorationRequired
+    ? 'billing_account_restricted'
+    : credentialReplacementRequired
     ? 'invalid_credential'
     : response.status === 403
       ? 'authorization_failed'
@@ -184,6 +192,7 @@ async function failedAttempt(
     httpStatus: response.status,
     providerCode,
     credentialReplacementRequired,
+    ...(billingRestorationRequired ? { billingRestorationRequired: true } : {}),
     ...(credentialReplacementRequired ? { credentialEnv } : {}),
   };
 }

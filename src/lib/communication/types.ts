@@ -350,6 +350,8 @@ export interface TelegramAudio {
 
 export interface TelegramMessage {
   message_id: number;
+  /** Original Telegram message timestamp (Unix seconds). */
+  date?: number;
   edit_date?: number;
   chat: { id: number };
   from?: {

@@ -6,6 +6,7 @@ import { sha256Base64Url } from './reliability';
 import { transcribeVoiceMessageDetailed } from './voice-transcription';
 import { ProcessOutcome } from './types';
 import { replyToTelegram } from '../telegram';
+import { recordTelegramVoiceAcceptanceEvidence } from './telegram-voice-acceptance-state';
 
 function debugEnabled(): boolean {
   return process.env.COMM_PIPELINE_DEBUG === '1' || process.env.TELEGRAM_DEBUG === '1';
@@ -101,6 +102,15 @@ export async function processTelegramVoiceUpdate(update: TelegramUpdate): Promis
   const telegramUserId = message.from?.id;
   const duration = typeof media?.duration === 'number' ? media.duration : undefined;
 
+  recordTelegramVoiceAcceptanceEvidence({
+    chatId,
+    updateId,
+    messageId,
+    messageDateUnixSeconds: message.date,
+    kind,
+    fileId,
+  });
+
   const inboundKey = `tg_voice:${updateId}:${messageId}:${fileId}`;
   if (checkAndMarkKey({ scope: 'inbound', key: inboundKey, meta: { update_id: updateId, chat_id: chatId, message_id: messageId } })) {
     console.info('[tg:voice] duplicate.inbound', { update_id: updateId, chat_id: chatId, message_id: messageId });
@@ -113,7 +123,6 @@ export async function processTelegramVoiceUpdate(update: TelegramUpdate): Promis
     chat_id: chatId,
     message_id: messageId,
     kind,
-    file_id: fileId,
     duration: media?.duration ?? null,
     file_size: media?.file_size ?? null,
   });
@@ -143,14 +152,12 @@ export async function processTelegramVoiceUpdate(update: TelegramUpdate): Promis
       telegram_chat_id: chatId,
       telegram_user_id: telegramUserId ?? null,
       telegram_message_id: messageId,
-      telegram_file_id: fileId,
     });
     console.warn('[tg:voice] stt.failed', {
       update_id: updateId,
       chat_id: chatId,
       message_id: messageId,
       kind,
-      file_id: fileId,
       duration: duration ?? null,
       mime_type: media?.mime_type ?? sttFailure?.mimeType ?? null,
       extension: sttFailure?.extension ?? null,
@@ -226,7 +233,6 @@ export async function processTelegramVoiceUpdate(update: TelegramUpdate): Promis
         telegram_chat_id: chatId,
         telegram_user_id: telegramUserId ?? null,
         telegram_message_id: messageId,
-        telegram_file_id: fileId,
       }),
     });
 

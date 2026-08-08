@@ -3,6 +3,7 @@ import type { TelegramUpdate } from '../types';
 type BaseArgs = {
   update_id?: number;
   message_id?: number;
+  date?: number;
   chat_id: number;
   user_id?: number;
   language_code?: string;
@@ -15,6 +16,7 @@ function baseUpdate(args: BaseArgs): TelegramUpdate {
     update_id,
     message: {
       message_id,
+      date: args.date ?? Math.floor(Date.now() / 1000),
       chat: { id: args.chat_id },
       from:
         args.language_code || args.user_id
