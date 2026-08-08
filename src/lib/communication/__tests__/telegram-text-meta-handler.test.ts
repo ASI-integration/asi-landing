@@ -31,15 +31,17 @@ describe('resolveTelegramTextMeta', () => {
 
     const enCap = resolveTelegramTextMeta({ baseText: 'can u understand me?', telegramLangCode: 'ru' });
     expect(enCap?.reply).toBe(
-      'Да, понимаю русский и английский. Пришлите, пожалуйста, запрос текстом.',
+      'Да, слышу и понимаю вас. Понимаю русский и английский. Можете говорить или писать.',
     );
 
     const ruCap = resolveTelegramTextMeta({ baseText: 'ты понимаешь русский?', telegramLangCode: 'en' });
-    expect(ruCap?.reply).toBe('Да, понимаю русский и английский. Пришлите, пожалуйста, запрос текстом.');
+    expect(ruCap?.reply).toBe(
+      'Да, слышу и понимаю вас. Понимаю русский и английский. Можете говорить или писать.',
+    );
 
     const esCap = resolveTelegramTextMeta({ baseText: 'te habla espanol?', telegramLangCode: 'en' });
     expect(esCap?.reply).toBe(
-      'Да, понимаю русский и английский. Пришлите, пожалуйста, запрос текстом.',
+      'Да, слышу и понимаю вас. Понимаю русский и английский. Можете говорить или писать.',
     );
   });
 
@@ -53,7 +55,7 @@ describe('resolveTelegramTextMeta', () => {
       expect(meta?.kind).toBe('language_check');
       expect(meta?.category).toBe('language-check');
       expect(meta?.classification.lang).toBe('ru');
-      expect(meta?.reply).toMatch(/понимаю русский/i);
+      expect(meta?.reply).toMatch(/слышу и понимаю/i);
     }
   });
 
