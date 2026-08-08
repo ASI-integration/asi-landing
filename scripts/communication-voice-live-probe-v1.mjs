@@ -5,6 +5,11 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
+import {
+  normalizeTelegramTestChatId,
+  resolveTelegramTestChatId,
+  TestChatConfigurationError,
+} from './telegram-test-chat-id.mjs';
 
 function optional(name, env = process.env) {
   const value = String(env[name] ?? '').trim();
@@ -265,9 +270,14 @@ export async function runVoiceAcceptance({
   convertAudio = toOgg,
 } = {}) {
   const stages = [];
-  const chatId = optional('COMM_VOICE_PROBE_CHAT_ID', env) || optional('TELEGRAM_TEST_CHAT_ID', env) || optional('TELEGRAM_AUTOPILOT_TEST_CHAT_ID', env);
-  if (!chatId) {
-    return { pass: false, failedStage: 'configuration', stages, errorType: 'missing_test_chat_id' };
+  let chatId;
+  try {
+    chatId = optional('COMM_VOICE_PROBE_CHAT_ID', env)
+      ? normalizeTelegramTestChatId(env.COMM_VOICE_PROBE_CHAT_ID)
+      : resolveTelegramTestChatId(env);
+  } catch (error) {
+    if (!(error instanceof TestChatConfigurationError)) throw error;
+    return { pass: false, failedStage: 'configuration', stages, errorType: error.code };
   }
 
   let generated;
