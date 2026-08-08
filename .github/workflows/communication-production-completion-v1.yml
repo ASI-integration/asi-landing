@@ -1,0 +1,251 @@
+name: Communication Production Completion v1
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: Readiness only, activate production flags, or run live acceptance
+        required: true
+        default: readiness
+        type: choice
+        options:
+          - readiness
+          - activate
+          - acceptance
+      confirm:
+        description: Exact confirmation phrase for the selected mode
+        required: true
+        type: string
+      telegram_test_chat_id:
+        description: Dedicated Telegram test chat id for live acceptance (never owner chat unless explicitly intended)
+        required: false
+        type: string
+      stt_file_id:
+        description: Optional fresh Telegram voice file_id for STT acceptance; if empty, latest voice file_id is taken from sanitized PM2 logs
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  production_completion:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Require exact confirmation
+        shell: bash
+        env:
+          MODE: ${{ inputs.mode }}
+          CONFIRM: ${{ inputs.confirm }}
+        run: |
+          set -euo pipefail
+          case "$MODE" in
+            readiness) EXPECTED='CHECK_COMMUNICATION_PRODUCTION_COMPLETION_V1' ;;
+            activate) EXPECTED='ACTIVATE_COMMUNICATION_PRODUCTION_COMPLETION_V1' ;;
+            acceptance) EXPECTED='ACCEPT_COMMUNICATION_PRODUCTION_COMPLETION_V1' ;;
+            *) echo "::error::Unsupported mode: $MODE"; exit 1 ;;
+          esac
+          if [[ "$CONFIRM" != "$EXPECTED" ]]; then
+            echo "::error::Wrong confirmation phrase for mode=$MODE"
+            exit 1
+          fi
+
+      - name: Checkout exact scripts
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Run controlled production completion step
+        shell: bash
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_PORT: ${{ secrets.VPS_PORT }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          MODE: ${{ inputs.mode }}
+          INPUT_TEST_CHAT_ID: ${{ inputs.telegram_test_chat_id }}
+          INPUT_STT_FILE_ID: ${{ inputs.stt_file_id }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${VPS_HOST:-}" || -z "${VPS_SSH_KEY:-}" ]]; then
+            echo "::error::Missing production SSH secrets"
+            exit 1
+          fi
+
+          REMOTE_USER="project_ayfaar"
+          REMOTE_PORT="${VPS_PORT:-22}"
+          REMOTE_TMP="/home/project_ayfaar/asi-communication-completion-v1"
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          SSH_KEY=~/.ssh/id_ed25519
+          printf '%s\n' "$VPS_SSH_KEY" > "$SSH_KEY"
+          chmod 600 "$SSH_KEY"
+
+          SSH_OPTS=(
+            -i "$SSH_KEY"
+            -p "$REMOTE_PORT"
+            -o IdentitiesOnly=yes
+            -o StrictHostKeyChecking=accept-new
+            -o LogLevel=ERROR
+            -o ConnectTimeout=20
+          )
+          SCP_OPTS=(
+            -i "$SSH_KEY"
+            -P "$REMOTE_PORT"
+            -o IdentitiesOnly=yes
+            -o StrictHostKeyChecking=accept-new
+            -o LogLevel=ERROR
+            -o ConnectTimeout=20
+          )
+
+          ssh "${SSH_OPTS[@]}" "${REMOTE_USER}@${VPS_HOST}" "mkdir -p '${REMOTE_TMP}'"
+          scp "${SCP_OPTS[@]}" \
+            scripts/communication-production-readiness-v1.mjs \
+            scripts/communication-voice-live-probe-v1.mjs \
+            scripts/telegram-autopilot-live-acceptance.mjs \
+            scripts/telegram-voice-stt-dry-run.mjs \
+            "${REMOTE_USER}@${VPS_HOST}:${REMOTE_TMP}/"
+
+          ssh "${SSH_OPTS[@]}" "${REMOTE_USER}@${VPS_HOST}" \
+            "MODE='${MODE}' INPUT_TEST_CHAT_ID='${INPUT_TEST_CHAT_ID}' INPUT_STT_FILE_ID='${INPUT_STT_FILE_ID}' REMOTE_TMP='${REMOTE_TMP}' bash -s" <<'REMOTE'
+          set -euo pipefail
+          APP_DIR="/var/www/asi/current"
+          ENV_FILE="/var/www/asi/shared/.env.production.live"
+          PM2_APP="asi-landing"
+          trap 'rm -rf "${REMOTE_TMP}"' EXIT
+
+          if [[ ! -f "$ENV_FILE" ]]; then
+            echo "::error::Missing $ENV_FILE"
+            exit 1
+          fi
+
+          load_env() {
+            set -a
+            # shellcheck disable=SC1090
+            source "$ENV_FILE"
+            set +a
+            if [[ -n "${INPUT_TEST_CHAT_ID:-}" ]]; then
+              export TELEGRAM_TEST_CHAT_ID="$INPUT_TEST_CHAT_ID"
+              export TELEGRAM_AUTOPILOT_TEST_CHAT_ID="$INPUT_TEST_CHAT_ID"
+              export COMM_VOICE_PROBE_CHAT_ID="$INPUT_TEST_CHAT_ID"
+            fi
+          }
+
+          restart_with_current_env() {
+            load_env
+            pm2 restart "$PM2_APP" --update-env
+            pm2 save
+          }
+
+          echo "=== production version before ==="
+          curl -fsS http://127.0.0.1:3000/api/version
+          echo
+          curl -fsS http://127.0.0.1:3000/api/health
+          echo
+
+          load_env
+
+          case "$MODE" in
+            readiness)
+              echo "=== communication readiness ==="
+              node "$REMOTE_TMP/communication-production-readiness-v1.mjs" --probe-network
+              ;;
+
+            activate)
+              echo "=== pre-activation prerequisites ==="
+              node "$REMOTE_TMP/communication-production-readiness-v1.mjs" --require-prereqs --probe-network
+
+              BACKUP_FILE="${ENV_FILE}.bak.communication-v1.$(date -u +%Y%m%dT%H%M%SZ)"
+              cp "$ENV_FILE" "$BACKUP_FILE"
+              echo "Created timestamped communication env backup."
+
+              ENV_FILE="$ENV_FILE" python3 - <<'PY'
+          import os, re
+          from pathlib import Path
+
+          path = Path(os.environ['ENV_FILE'])
+          text = path.read_text(encoding='utf-8')
+          values = {
+              'LLM_SAFE_DOMAIN_ENABLED': '1',
+              'VOICE_REPLY_ENABLED': '1',
+              'VOICE_TRANSCRIPTION_DISABLED': '0',
+              'DRY_RUN_TELEGRAM_OUTBOUND': '0',
+              'TELEGRAM_DRY_RUN': '0',
+              'COMMUNICATION_KILL_SWITCH': '0',
+              'COMMUNICATION_AUTOPILOT_FORCE_DISABLED': '0',
+          }
+          for key, value in values.items():
+              pattern = re.compile(rf'(?m)^\s*{re.escape(key)}\s*=.*$')
+              replacement = f'{key}={value}'
+              if pattern.search(text):
+                  text = pattern.sub(replacement, text)
+              else:
+                  if text and not text.endswith('\n'):
+                      text += '\n'
+                  text += replacement + '\n'
+          path.write_text(text, encoding='utf-8')
+          PY
+
+              echo "=== activate and verify ==="
+              if ! (
+                restart_with_current_env
+                sleep 4
+                curl -fsS http://127.0.0.1:3000/api/health
+                echo
+                node "$REMOTE_TMP/communication-production-readiness-v1.mjs" --require-active --probe-network
+              ); then
+                echo "::error::Communication activation verification failed; restoring previous production env."
+                cp "$BACKUP_FILE" "$ENV_FILE"
+                restart_with_current_env
+                sleep 3
+                curl -fsS http://127.0.0.1:3000/api/health || true
+                echo
+                echo "Previous production env restored."
+                exit 1
+              fi
+              echo "Communication activation verified; rollback backup preserved at a timestamped path."
+              ;;
+
+            acceptance)
+              echo "=== active-state gate ==="
+              node "$REMOTE_TMP/communication-production-readiness-v1.mjs" --require-active --probe-network
+
+              if [[ -z "${TELEGRAM_TEST_CHAT_ID:-}" ]]; then
+                echo "::error::Live acceptance requires a dedicated TELEGRAM_TEST_CHAT_ID or telegram_test_chat_id input"
+                exit 1
+              fi
+
+              echo "=== text/autopilot production acceptance ==="
+              cd "$APP_DIR"
+              ACCEPTANCE_BASE_URL="https://asi-global.ru" node "$REMOTE_TMP/telegram-autopilot-live-acceptance.mjs"
+
+              echo "=== outbound TTS + Telegram sendVoice acceptance ==="
+              node "$REMOTE_TMP/communication-voice-live-probe-v1.mjs"
+
+              echo "=== inbound STT acceptance ==="
+              FILE_ID="${INPUT_STT_FILE_ID:-}"
+              if [[ -z "$FILE_ID" ]]; then
+                CAPTURE="$(mktemp)"
+                pm2 logs "$PM2_APP" --lines 1500 --nostream 2>&1 \
+                  | grep -E '\[tg:voice\]|telegram_file_id' \
+                  | tail -500 > "$CAPTURE" || true
+                FILE_ID="$(grep -oE "file_id: '[^']+'" "$CAPTURE" | tail -1 | sed -E "s/file_id: '([^']+)'/\1/" || true)"
+                if [[ -z "$FILE_ID" ]]; then
+                  FILE_ID="$(grep -oE '"telegram_file_id":"[^"]+"' "$CAPTURE" | tail -1 | sed -E 's/"telegram_file_id":"([^"]+)"/\1/' || true)"
+                fi
+                rm -f "$CAPTURE"
+              fi
+              if [[ -z "$FILE_ID" ]]; then
+                echo "::error::No recent Telegram voice file_id found. Send one fresh voice note to the test bot, then rerun acceptance."
+                exit 1
+              fi
+              node "$REMOTE_TMP/telegram-voice-stt-dry-run.mjs" --file-id "$FILE_ID"
+              ;;
+          esac
+
+          echo "=== production version after ==="
+          curl -fsS http://127.0.0.1:3000/api/version
+          echo
+          curl -fsS http://127.0.0.1:3000/api/health
+          echo
+          REMOTE
