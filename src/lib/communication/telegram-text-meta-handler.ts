@@ -177,14 +177,8 @@ export function inferMetaSurfaceLang(text: string, telegramLangCode?: string): M
 }
 
 /** Product copy for language / capability meta (Telegram-only). */
-function unifiedLanguageCapabilityReply(surface: MetaSurfaceLang): string {
-  if (surface === 'ru') {
-    return 'Да, понимаю русский и английский. Пришлите, пожалуйста, запрос текстом.';
-  }
-  if (surface === 'es') {
-    return 'Да, понимаю русский и английский. Пришлите, пожалуйста, запрос текстом.';
-  }
-  return 'Да, понимаю русский и английский. Пришлите, пожалуйста, запрос текстом.';
+function unifiedLanguageCapabilityReply(_surface: MetaSurfaceLang): string {
+  return 'Да, слышу и понимаю вас. Понимаю русский и английский. Можете говорить или писать.';
 }
 
 function telegramMetaStartReply(surface: MetaSurfaceLang): string {
