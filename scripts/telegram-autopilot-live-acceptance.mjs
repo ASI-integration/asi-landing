@@ -3,6 +3,13 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { createRequire } from 'node:module';
+import { pathToFileURL } from 'node:url';
+import {
+  normalizeTelegramTestChatId,
+  resolveTelegramTestChatId,
+  TestChatConfigurationError,
+} from './telegram-test-chat-id.mjs';
+import { findLinkedReservation } from './telegram-autopilot-reservation.mjs';
 
 const requireFromApp = createRequire(path.join(process.cwd(), 'package.json'));
 const { createClient } = requireFromApp('@supabase/supabase-js');
@@ -89,42 +96,14 @@ async function getProperty(sb) {
   return data;
 }
 
-async function findLinkedReservation(sb) {
-  const preferredChat = optionalEnv('TELEGRAM_AUTOPILOT_TEST_CHAT_ID') ?? optionalEnv('TELEGRAM_TEST_CHAT_ID');
-  let query = sb.from('tg_guest_reservations').select('*').eq('property_id', PROPERTY_ID);
-  if (preferredChat) query = query.eq('chat_id', Number(preferredChat));
-  const { data, error } = await query.order('updated_at', { ascending: false }).limit(10);
-  if (error) throw new Error(`reservation lookup failed: ${error.message}`);
-  const direct = (data ?? []).find((row) => row.chat_id);
-  if (direct) return direct;
-
-  const { data: allRows, error: allError } = await sb
-    .from('tg_guest_reservations')
-    .select('*')
-    .eq('property_id', PROPERTY_ID)
-    .order('updated_at', { ascending: false })
-    .limit(20);
-  if (allError) throw new Error(`reservation lookup failed: ${allError.message}`);
-  for (const row of allRows ?? []) {
-    if (!row.guest_id) continue;
-    const { data: identity, error: identityError } = await sb
-      .from('tg_guest_identities')
-      .select('*')
-      .eq('guest_id', row.guest_id)
-      .maybeSingle();
-    if (identityError) throw new Error(`identity lookup failed: ${identityError.message}`);
-    if (identity?.telegram_chat_id) return { ...row, chat_id: identity.telegram_chat_id, identity, needsChatLink: true };
-  }
-  return null;
-}
-
-async function ensureLinkedReservation(sb) {
-  const existing = await findLinkedReservation(sb);
+async function ensureLinkedReservation(sb, testChatId) {
+  const existing = await findLinkedReservation(sb, testChatId, PROPERTY_ID);
   if (existing) {
     if (existing.needsChatLink && existing.id && existing.chat_id) {
+      const linkedChatId = normalizeTelegramTestChatId(existing.chat_id);
       const { data, error } = await sb
         .from('tg_guest_reservations')
-        .update({ chat_id: Number(existing.chat_id), updated_at: new Date().toISOString() })
+        .update({ chat_id: linkedChatId, updated_at: new Date().toISOString() })
         .eq('id', existing.id)
         .select('*')
         .single();
@@ -134,7 +113,7 @@ async function ensureLinkedReservation(sb) {
     return { row: existing, created: false, updated: false };
   }
 
-  const chatId = optionalEnv('TELEGRAM_AUTOPILOT_TEST_CHAT_ID') ?? optionalEnv('TELEGRAM_TEST_CHAT_ID');
+  const chatId = normalizeTelegramTestChatId(testChatId, { required: false });
   if (!chatId) {
     throw new Error('No prop_A reservation link found. Set TELEGRAM_AUTOPILOT_TEST_CHAT_ID to create one.');
   }
@@ -143,7 +122,7 @@ async function ensureLinkedReservation(sb) {
   const now = new Date().toISOString();
   const identity = {
     guest_id: guestId,
-    telegram_chat_id: Number(chatId),
+    telegram_chat_id: chatId,
     display_name: 'ASI Autopilot Acceptance Guest',
     trust_status: 'normal',
     last_seen_at: now,
@@ -156,7 +135,7 @@ async function ensureLinkedReservation(sb) {
     id: 'ASI-AUTOPILOT-PROP-A-LIVE',
     reservation_ref: 'ASI-AUTOPILOT-PROP-A-LIVE',
     guest_id: guestId,
-    chat_id: Number(chatId),
+    chat_id: chatId,
     property_id: PROPERTY_ID,
     guest_name: 'ASI Autopilot Acceptance Guest',
     check_in: '2026-07-12',
@@ -214,13 +193,13 @@ async function getRecentEvents(sb, sinceIso, messageText) {
 }
 
 async function main() {
+  const testChatId = resolveTelegramTestChatId(process.env, { required: false });
   const sb = supabaseClient();
   const baseUrl = optionalEnv('ACCEPTANCE_BASE_URL') ?? optionalEnv('PRODUCTION_URL') ?? DEFAULT_BASE_URL;
   const secret = requiredEnv('INTERNAL_TEST_SECRET');
   const property = await getProperty(sb);
-  const link = await ensureLinkedReservation(sb);
-  const chatId = Number(link.row.chat_id);
-  if (!Number.isFinite(chatId)) throw new Error('Resolved prop_A link has no numeric chat_id');
+  const link = await ensureLinkedReservation(sb, testChatId);
+  const chatId = normalizeTelegramTestChatId(link.row.chat_id);
 
   const startedAt = new Date().toISOString();
   const rows = [];
@@ -282,7 +261,13 @@ async function main() {
   if (failed.length > 0) process.exitCode = 1;
 }
 
-main().catch((error) => {
-  console.error(error instanceof Error ? error.stack || error.message : error);
-  process.exitCode = 1;
-});
+if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
+  main().catch((error) => {
+    if (error instanceof TestChatConfigurationError) {
+      console.error(`Communication production acceptance failed at stage=${error.stage}: ${error.message}`);
+    } else {
+      console.error(error instanceof Error ? error.stack || error.message : error);
+    }
+    process.exitCode = 1;
+  });
+}

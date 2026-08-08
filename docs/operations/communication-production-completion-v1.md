@@ -67,6 +67,15 @@ Safety acknowledgement: `authorized_for_selected_mode`.
 
 Use a **dedicated Telegram test chat**. Do not point synthetic acceptance at the protected owner chat.
 
+Enter the workflow fields exactly as follows:
+
+- `mode`: `acceptance`;
+- `safety_acknowledgement`: `authorized_for_selected_mode` after separate owner approval;
+- `telegram_test_chat_id`: `931919812` for the current dedicated test chat (digits only; negative group ids such as `-1001234567890` are also valid);
+- `stt_file_id`: a fresh Telegram voice `file_id`, or leave it empty to use the latest sanitized PM2-log value.
+
+The workflow validates and canonicalizes the chat id before SSH, database, or provider work. It also safely recovers the exact accidental form `telegram_test_chat_id: 931919812`; any other extra text, empty acceptance value, conflicting environment values, or out-of-range integer fails immediately at `stage=test_chat_configuration` without echoing the submitted value.
+
 Acceptance requires:
 
 1. active production readiness;
