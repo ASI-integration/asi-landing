@@ -85,13 +85,14 @@ Raw conversations, transcripts, voice files, access secrets, documents, and paym
 
 ## Migration and deployment order
 
-Migration `20260809160000_guest_lifecycle_communications_v1.sql` is required before application deployment because the runtime fails closed without the durable ledger.
+The already-applied migration `20260809160000_guest_lifecycle_communications_v1.sql` remains unchanged and owns only the durable lifecycle ledger and its original policy.
+The additive migration `20260809220000_guest_lifecycle_synthetic_acceptance_cleanup.sql` adds the service-role-only cleanup function for the DB-backed synthetic acceptance. It accepts an exact manifest, validates every synthetic ownership marker, and refuses cleanup if a row could belong to another run. This new migration must be applied before deploying the PR #169 application artifact.
 
 Exact post-merge order:
 
 1. Take the standard production logical backup using the separately approved runbook.
-2. Apply all outstanding migrations in numeric order, ending with `20260809160000_guest_lifecycle_communications_v1.sql`; this is a separate owner-approved production mutation.
-3. Verify the table, unique constraints, indexes, forced RLS, and service-role-only grants without reading guest data.
+2. Apply all outstanding migrations in numeric order, ending with `20260809220000_guest_lifecycle_synthetic_acceptance_cleanup.sql`; this is a separate owner-approved production mutation.
+3. Verify the existing table, unique constraints, indexes, forced RLS, and service-role-only table grants, plus the cleanup RPC's service-role-only execute grant, without reading guest data.
 4. Build the exact merged SHA and deploy the application artifact through the VPS/Timeweb production runbook; this is a separate owner-approved production deploy.
 5. Verify `/api/health` and `/api/version` report the expected SHA.
 6. Keep lifecycle actual-send scopes disabled.
@@ -111,16 +112,41 @@ npx.cmd tsx scripts/guest-lifecycle-synthetic-acceptance.ts
 
 Expected marker: `GUEST_LIFECYCLE_SYNTHETIC_ACCEPTANCE_OK`.
 
-Exact production-safe acceptance plan (requires separate production read/write approval because it creates synthetic rows):
+Database-backed isolated acceptance:
+
+```powershell
+$env:GUEST_LIFECYCLE_ACCEPTANCE_ENABLED='true'
+$env:GUEST_LIFECYCLE_ACCEPTANCE_CONFIRM='RUN ISOLATED GUEST LIFECYCLE SYNTHETIC ACCEPTANCE'
+$env:GUEST_LIFECYCLE_ACCEPTANCE_NO_EXTERNAL_ACTIONS='true'
+$env:GUEST_LIFECYCLE_ACCEPTANCE_TARGET_ID='<verified-target-id>'
+$env:GUEST_LIFECYCLE_ACCEPTANCE_EXPECTED_TARGET_ID='<same-verified-target-id>'
+npx.cmd tsx scripts/guest-lifecycle-db-acceptance.ts
+```
+
+The runner performs one bounded sequence:
+
+1. Proves the cleanup RPC exists in dry-run mode before creating any fixture.
+2. Generates a unique manifest and verifies that its exact IDs are vacant.
+3. Creates only its synthetic property, guest/contact/memory profile, reservation, Booking Ops record, legal/physical-readiness fixtures, booking-scoped policies, and a `dry_run_only` send scope.
+4. Runs the complete nine-event lifecycle with `dryRun: true` and sender functions that throw if reached.
+5. Requires exactly nine `dry_run` delivery rows and verifies the Communication dashboard projection reaches `stay.completed` / `completed`.
+6. Replays in the same process and requires all nine events to be duplicates with no row-count growth.
+7. Starts a fresh Node process, replays the same manifest, and again requires all nine events to be duplicates with no row-count growth.
+8. Calls the manifest-bound cleanup RPC in `finally`, including after a failed assertion.
+9. The RPC deletes only rows matching the exact synthetic IDs and markers, then counts every touched table and requires `zeroResidue: true` with `residueCount: 0`.
+
+Expected markers:
+
+- `GUEST_LIFECYCLE_DB_SYNTHETIC_ACCEPTANCE_OK`
+- `GUEST_LIFECYCLE_SYNTHETIC_ZERO_RESIDUE_OK`
+
+The technical environment gates do not constitute production approval. Running this against production still requires separate approval for the temporary inserts and exact-manifest cleanup deletes.
+
+Exact production-safe acceptance plan:
 
 1. Prove the target SHA and database identity using the production runbook without printing secret values.
-2. Use a reserved synthetic reservation/property/guest binding that cannot overlap a real guest.
-3. Keep all actual-send scopes disabled and invoke the due runner with `dryRun: true`.
-4. Emit the sequence `reservation.created -> reservation.confirmed -> arrival.due_24h -> checkin.ready -> guest.checked_in -> stay.checkin_followup -> checkout.due_24h -> guest.checked_out -> stay.completed` with stable `synthetic_acceptance` source IDs.
-5. Replay every event and verify one lifecycle row and at most one dry-run delivery per deterministic key.
-6. Restart the application, replay the same source IDs, and verify no new delivery rows.
-7. Verify the dashboard shows reservation/guest, current stage, last event, last communication, pending schedule, delivery status, and operator requirement.
-8. Verify only `completed_stay` was written to guest memory and no transcript/access/document/payment fields exist.
-9. Delete only the reserved synthetic rows using an exact manifest, then verify zero synthetic residue. Cleanup is a production mutation and needs the same explicit approval.
+2. Obtain separate approval for the temporary synthetic inserts and exact-manifest cleanup deletes.
+3. Run the DB-backed command above with matching verified target IDs; do not alter its generated manifest.
+4. Preserve the machine-readable report proving dry-run-only delivery, same-process replay, fresh-process replay, dashboard projection, manifest cleanup, and zero residue.
 
 No real guest reservation, channel-manager call, outbound provider call, refund, payment, secret change, DNS change, or deployment is part of the local acceptance.
