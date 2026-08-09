@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   executeGuestLifecycleEvent,
@@ -11,6 +13,12 @@ import {
   syntheticGuestLifecycleEvent,
   syntheticLifecycleContext,
 } from '../guest-lifecycle-synthetic';
+import {
+  assertGuestLifecycleSyntheticManifest,
+  createGuestLifecycleSyntheticManifest,
+  guestLifecycleSyntheticEvents,
+  sameGuestLifecycleSyntheticCounts,
+} from '../guest-lifecycle-synthetic-db';
 
 describe('Guest Lifecycle Communications v1', () => {
   it('runs the RU lifecycle happy path without external actions', async () => {
@@ -205,5 +213,57 @@ describe('Guest Lifecycle Communications v1', () => {
     const replay = await executeGuestLifecycleEvent(event, harness.port);
     expect(replay.duplicate).toBe(true);
     expect(harness.state.textDeliveries).toHaveLength(1);
+  });
+
+  it('builds an exact isolated reservation, guest, property and event manifest', () => {
+    const manifest = createGuestLifecycleSyntheticManifest({
+      token: '11111111-1111-4111-8111-111111111111',
+      bookingOpsRecordId: '22222222-2222-4222-8222-222222222222',
+      autoSendScopeId: '33333333-3333-4333-8333-333333333333',
+      autoSendPolicyIds: [
+        '44444444-4444-4444-8444-444444444444',
+        '55555555-5555-4555-8555-555555555555',
+        '66666666-6666-4666-8666-666666666666',
+      ],
+    });
+    expect(manifest).toMatchObject({
+      runId: 'glc-synthetic-11111111-1111-4111-8111-111111111111',
+      reservationId: '22222222-2222-4222-8222-222222222222',
+      bookingOpsRecordId: '22222222-2222-4222-8222-222222222222',
+      propertyId: 'glc-synthetic-property-11111111-1111-4111-8111-111111111111',
+      guestId: 'glc-synthetic-guest-11111111-1111-4111-8111-111111111111',
+      source: 'synthetic_acceptance',
+    });
+    const events = guestLifecycleSyntheticEvents(manifest, new Date('2030-01-01T12:00:00.000Z'));
+    expect(events).toHaveLength(9);
+    expect(new Set(events.map((event) => event.sourceEventId)).size).toBe(9);
+    expect(events.every((event) => event.reservationId === manifest.reservationId)).toBe(true);
+  });
+
+  it('refuses a synthetic manifest whose ownership identity was altered', () => {
+    const manifest = createGuestLifecycleSyntheticManifest();
+    expect(() => assertGuestLifecycleSyntheticManifest({
+      ...manifest,
+      propertyId: 'real-property',
+    })).toThrow('synthetic_property_id_mismatch');
+  });
+
+  it('detects row growth during same-process or restarted replay', () => {
+    const baseline = { lifecycleEvents: 9, intents: 9, deliveries: 9, attempts: 18, memoryEvents: 1 };
+    expect(sameGuestLifecycleSyntheticCounts(baseline, { ...baseline })).toBe(true);
+    expect(sameGuestLifecycleSyntheticCounts(baseline, { ...baseline, deliveries: 10 })).toBe(false);
+  });
+
+  it('keeps cleanup manifest-bound and requires zero residue', () => {
+    const migration = readFileSync(join(
+      process.cwd(),
+      'supabase/migrations/20260809160000_guest_lifecycle_communications_v1.sql',
+    ), 'utf8');
+    expect(migration).toContain('synthetic_manifest_identity_mismatch');
+    expect(migration).toContain('synthetic_booking_ownership_mismatch');
+    expect(migration).toContain('synthetic_contact_ownership_mismatch');
+    expect(migration).toContain('synthetic_memory_ownership_mismatch');
+    expect(migration).toContain("source_event_id LIKE p_run_id || ':%'");
+    expect(migration).toContain("'zeroResidue', v_residue_count = 0");
   });
 });

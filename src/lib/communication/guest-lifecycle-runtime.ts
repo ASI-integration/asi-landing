@@ -311,6 +311,21 @@ async function deliverDefault(
   });
   const deliveryStatus = executed.delivery?.status ?? null;
   if (executed.ok && (deliveryStatus === 'sent' || deliveryStatus === 'dry_run')) {
+    if (deliveryStatus === 'dry_run') {
+      const completed = await db.from('booking_ops_communication_intents').update({
+        status: 'completed',
+        updated_at: new Date().toISOString(),
+      }).eq('id', intent.id);
+      if (completed?.error) {
+        return {
+          status: 'failed',
+          communicationIntentId: intent.id,
+          deliveryId: enqueued.delivery.id,
+          deliveryStatus,
+          reason: 'lifecycle_dry_run_intent_finalize_failed',
+        };
+      }
+    }
     return {
       status: deliveryStatus,
       communicationIntentId: intent.id,
