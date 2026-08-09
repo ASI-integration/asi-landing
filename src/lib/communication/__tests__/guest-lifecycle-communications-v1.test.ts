@@ -255,15 +255,22 @@ describe('Guest Lifecycle Communications v1', () => {
   });
 
   it('keeps cleanup manifest-bound and requires zero residue', () => {
-    const migration = readFileSync(join(
+    const appliedMigration = readFileSync(join(
       process.cwd(),
       'supabase/migrations/20260809160000_guest_lifecycle_communications_v1.sql',
     ), 'utf8');
-    expect(migration).toContain('synthetic_manifest_identity_mismatch');
-    expect(migration).toContain('synthetic_booking_ownership_mismatch');
-    expect(migration).toContain('synthetic_contact_ownership_mismatch');
-    expect(migration).toContain('synthetic_memory_ownership_mismatch');
-    expect(migration).toContain("source_event_id LIKE p_run_id || ':%'");
-    expect(migration).toContain("'zeroResidue', v_residue_count = 0");
+    const cleanupMigration = readFileSync(join(
+      process.cwd(),
+      'supabase/migrations/20260809220000_guest_lifecycle_synthetic_acceptance_cleanup.sql',
+    ), 'utf8');
+    expect(appliedMigration).not.toContain('cleanup_guest_lifecycle_synthetic_acceptance');
+    expect(cleanupMigration).not.toContain('CREATE TABLE IF NOT EXISTS public.guest_lifecycle_events');
+    expect(cleanupMigration).not.toContain('CREATE POLICY "service_role_full_access"');
+    expect(cleanupMigration).toContain('synthetic_manifest_identity_mismatch');
+    expect(cleanupMigration).toContain('synthetic_booking_ownership_mismatch');
+    expect(cleanupMigration).toContain('synthetic_contact_ownership_mismatch');
+    expect(cleanupMigration).toContain('synthetic_memory_ownership_mismatch');
+    expect(cleanupMigration).toContain("source_event_id LIKE p_run_id || ':%'");
+    expect(cleanupMigration).toContain("'zeroResidue', v_residue_count = 0");
   });
 });

@@ -85,14 +85,14 @@ Raw conversations, transcripts, voice files, access secrets, documents, and paym
 
 ## Migration and deployment order
 
-Migration `20260809160000_guest_lifecycle_communications_v1.sql` is required before application deployment because the runtime fails closed without the durable ledger.
-The same migration adds a service-role-only cleanup function for the DB-backed synthetic acceptance. The function accepts an exact manifest, validates every synthetic ownership marker, and refuses cleanup if a row could belong to another run.
+The already-applied migration `20260809160000_guest_lifecycle_communications_v1.sql` remains unchanged and owns only the durable lifecycle ledger and its original policy.
+The additive migration `20260809220000_guest_lifecycle_synthetic_acceptance_cleanup.sql` adds the service-role-only cleanup function for the DB-backed synthetic acceptance. It accepts an exact manifest, validates every synthetic ownership marker, and refuses cleanup if a row could belong to another run. This new migration must be applied before deploying the PR #169 application artifact.
 
 Exact post-merge order:
 
 1. Take the standard production logical backup using the separately approved runbook.
-2. Apply all outstanding migrations in numeric order, ending with `20260809160000_guest_lifecycle_communications_v1.sql`; this is a separate owner-approved production mutation.
-3. Verify the table, unique constraints, indexes, forced RLS, and service-role-only grants without reading guest data.
+2. Apply all outstanding migrations in numeric order, ending with `20260809220000_guest_lifecycle_synthetic_acceptance_cleanup.sql`; this is a separate owner-approved production mutation.
+3. Verify the existing table, unique constraints, indexes, forced RLS, and service-role-only table grants, plus the cleanup RPC's service-role-only execute grant, without reading guest data.
 4. Build the exact merged SHA and deploy the application artifact through the VPS/Timeweb production runbook; this is a separate owner-approved production deploy.
 5. Verify `/api/health` and `/api/version` report the expected SHA.
 6. Keep lifecycle actual-send scopes disabled.
