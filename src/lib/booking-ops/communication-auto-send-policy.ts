@@ -92,6 +92,7 @@ export const SUPPORTED_ACTUAL_AUTO_SEND_MESSAGE_TYPES = [
   'request_arrival_time',
   'neutral_booking_acknowledgement',
   'neutral_status_update',
+  'send_checkin_instructions',
   'cleaner_task_assignment',
   'cleaner_task_reminder',
   'linen_task_assignment',
@@ -112,6 +113,7 @@ const ACTUAL_AUTO_SEND_ALLOWED_ROLES: Record<string, string[]> = {
   request_arrival_time: ['guest'],
   neutral_booking_acknowledgement: ['guest'],
   neutral_status_update: ['guest'],
+  send_checkin_instructions: ['guest'],
   cleaner_task_assignment: ['cleaner'],
   cleaner_task_reminder: ['cleaner'],
   linen_task_assignment: ['laundry'],
@@ -314,7 +316,11 @@ export function classifyMessageForAutoSend(intent: IntentLike): CommunicationAut
   if (Number.isFinite(confidence) && confidence < 0.7) {
     return decision('blocked', 'classification.low_confidence', 'Недостаточная уверенность классификации.', 'Автоотправка заблокирована из-за низкой уверенности.');
   }
-  if (REVIEW_REQUIRED_TYPES.has(messageType)) {
+  const verifiedLifecycleCheckin = messageType === 'send_checkin_instructions'
+    && metadata.lifecycle_event_type === 'checkin.ready'
+    && metadata.identity_verified === true
+    && metadata.access_allowed === true;
+  if (REVIEW_REQUIRED_TYPES.has(messageType) && !verifiedLifecycleCheckin) {
     return decision('review_required', 'message_type.sensitive_flow', 'Сообщение относится к чувствительному сценарию.', 'Нужна проверка оператора перед отправкой.');
   }
   return null;
