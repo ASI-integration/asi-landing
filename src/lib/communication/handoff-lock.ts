@@ -38,6 +38,7 @@ import {
   getEscalationReview,
   getReviewsBySessionId,
   acknowledgeEscalationReview,
+  sendOperatorReply,
   type EscalationReview,
   type EscalationReviewStatus,
 } from './operator-review';
@@ -45,6 +46,16 @@ import { transitionSessionStatus, SessionStatus } from './session-status';
 import { auditLog } from './audit';
 import { AuditEventType } from './types';
 import type { CommunicationChannel, Message, Role } from './types';
+import { updateCommAgentSessionMemory } from './comm-agent-session-memory';
+import { logCommAgentHandoffLifecycleMetric } from './comm-agent-metrics';
+import {
+  autopilotSessionFromCollectedData,
+  patchAutopilotSessionCollectedData,
+} from './communication-autopilot-session';
+import {
+  loadAutonomousSession,
+  patchAutonomousSessionCollectedData,
+} from './conversation-session-store';
 
 // ─── State ───────────────────────────────────────────────────────────────────
 
@@ -170,6 +181,12 @@ export function requestOperatorHandoff(
     update_id: input.updateId,
     detail: input.detail ?? input.escalationReason,
   });
+  logCommAgentHandoffLifecycleMetric({
+    channel: input.channel,
+    session_key: input.sessionId,
+    event: alreadyLocked ? 'duplicate_suppressed' : 'created',
+    reason: input.escalationReason,
+  });
 
   return {
     reviewId: review.reviewId,
@@ -211,6 +228,7 @@ export interface ReleaseSessionToAiInput {
   reason: string;
   chatId?: number;
   updateId?: number;
+  approvedAnswer?: string;
 }
 
 /**
@@ -227,9 +245,10 @@ export function releaseSessionToAi(
     sessionId: input.sessionId,
     operatorId: input.operatorId,
     reason: input.reason,
+    approvedAnswer: input.approvedAnswer,
   });
 
-  if (typeof input.chatId === 'number' && Number.isFinite(input.chatId)) {
+  if (!closedReviewId && typeof input.chatId === 'number' && Number.isFinite(input.chatId)) {
     transitionSessionStatus(input.chatId, SessionStatus.Active)
       .catch(() => { /* best-effort */ });
   }
@@ -244,6 +263,93 @@ export function releaseSessionToAi(
   });
 
   return { state: HandoffLockState.Resolved, closedReviewId };
+}
+
+export async function resolveOperatorHandoffWithReply(input: {
+  reviewId: string;
+  operatorId: string;
+  replyText: string;
+}): Promise<{
+  ok: boolean;
+  review: EscalationReview | null;
+  duplicatePrevented: boolean;
+  state?: HandoffLockState;
+  error?: string;
+}> {
+  const sent = await sendOperatorReply({ ...input, resumeAutomation: false });
+  if (!sent.ok || !sent.review) {
+    return {
+      ok: false,
+      review: sent.review,
+      duplicatePrevented: Boolean(sent.duplicatePrevented),
+      error: sent.error ?? 'send_failed',
+    };
+  }
+
+  const review = sent.review;
+  if (sent.duplicatePrevented && review.status === 'closed') {
+    logCommAgentHandoffLifecycleMetric({
+      channel: review.channel,
+      session_key: review.sessionId,
+      event: 'reply_duplicate_suppressed',
+      reason: review.escalationReason,
+    });
+    return {
+      ok: true,
+      review,
+      duplicatePrevented: true,
+      state: HandoffLockState.Resolved,
+    };
+  }
+  updateCommAgentSessionMemory(review.channel, review.targetId, {
+    last_safe_reply: input.replyText.slice(0, 500),
+    pending_operator_reason: null,
+    pending_operator_status: 'resolved',
+    unresolved_action: null,
+    recent_summary: `operator_resolved:${review.escalationReason}`,
+  });
+  const chatId = Number(review.targetId);
+  if (Number.isSafeInteger(chatId)) {
+    const collected = loadAutonomousSession(chatId)?.collected_data ?? {};
+    const autopilotMemory = autopilotSessionFromCollectedData(collected);
+    if (Object.keys(autopilotMemory).length > 0) {
+      patchAutonomousSessionCollectedData({
+        chatId,
+        channel: review.channel,
+        set: patchAutopilotSessionCollectedData({
+          memory: {
+            ...autopilotMemory,
+            requested_missing_field: null,
+            unresolved_action: null,
+            pending_operator_reason: null,
+            pending_operator_status: 'resolved',
+            last_reply: input.replyText.slice(0, 240),
+            recent_summary: `operator_resolved:${review.escalationReason}`,
+          },
+        }),
+      });
+    }
+  }
+  const released = releaseSessionToAi({
+    sessionId: review.sessionId,
+    operatorId: input.operatorId,
+    reason: 'operator_reply_resolved',
+    approvedAnswer: input.replyText,
+    chatId: Number.isFinite(chatId) ? chatId : undefined,
+  });
+  const closed = getEscalationReview(review.reviewId) ?? review;
+  logCommAgentHandoffLifecycleMetric({
+    channel: review.channel,
+    session_key: review.sessionId,
+    event: sent.duplicatePrevented ? 'reply_duplicate_suppressed' : 'resolved',
+    reason: review.escalationReason,
+  });
+  return {
+    ok: true,
+    review: closed,
+    duplicatePrevented: Boolean(sent.duplicatePrevented),
+    state: released.state,
+  };
 }
 
 // ─── Audit ───────────────────────────────────────────────────────────────────

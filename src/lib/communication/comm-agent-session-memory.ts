@@ -4,6 +4,10 @@ import {
   extractBookingIdFromTelegramText,
   extractPhoneFromTelegramText,
 } from './telegram-guest-memory';
+import {
+  loadAutonomousSession,
+  patchAutonomousSessionCollectedData,
+} from './conversation-session-store';
 
 export type CommAgentRequestedIdentifier =
   | 'booking_reference'
@@ -11,6 +15,7 @@ export type CommAgentRequestedIdentifier =
   | 'address'
   | 'property_hint'
   | 'guest_name'
+  | 'requested_time'
   | null;
 
 export type CommAgentSessionMemoryV1 = {
@@ -20,12 +25,65 @@ export type CommAgentSessionMemoryV1 = {
   last_known_property_id: string | null;
   last_safe_reply: string | null;
   pending_operator_reason: string | null;
+  pending_operator_status: 'open' | 'resolved' | null;
+  language: 'ru' | 'en';
+  unresolved_action: string | null;
+  recent_summary: string | null;
   last_message_at: string;
+  expires_at: string;
 };
 
 type MemoryStore = Map<string, CommAgentSessionMemoryV1>;
 
 const sessionStore: MemoryStore = new Map();
+const DURABLE_MEMORY_KEY = 'comm_agent_session_memory_v1';
+export const COMM_AGENT_SESSION_TTL_MS = 24 * 60 * 60 * 1000;
+
+function numericChatId(sessionId: string | number): number | null {
+  const parsed = Number(sessionId);
+  return Number.isSafeInteger(parsed) ? parsed : null;
+}
+
+function isFresh(memory: CommAgentSessionMemoryV1): boolean {
+  const expiresAt = Date.parse(String(memory.expires_at ?? ''));
+  return Number.isFinite(expiresAt) && expiresAt > Date.now();
+}
+
+function loadDurableMemory(
+  channel: CommunicationChannel,
+  sessionId: string | number,
+): CommAgentSessionMemoryV1 | null {
+  const chatId = numericChatId(sessionId);
+  if (chatId == null) return null;
+  const raw = loadAutonomousSession(chatId)?.collected_data?.[DURABLE_MEMORY_KEY];
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as CommAgentSessionMemoryV1 & { session_key?: string };
+    if (parsed.session_key !== commAgentSessionKey(channel, sessionId) || !isFresh(parsed)) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function persistDurableMemory(
+  channel: CommunicationChannel,
+  sessionId: string | number,
+  memory: CommAgentSessionMemoryV1,
+): void {
+  const chatId = numericChatId(sessionId);
+  if (chatId == null) return;
+  patchAutonomousSessionCollectedData({
+    chatId,
+    channel,
+    set: {
+      [DURABLE_MEMORY_KEY]: JSON.stringify({
+        ...memory,
+        session_key: commAgentSessionKey(channel, sessionId),
+      }),
+    },
+  });
+}
 
 export function commAgentSessionKey(channel: CommunicationChannel, sessionId: string | number): string {
   return `${channel}:${String(sessionId)}`;
@@ -35,7 +93,12 @@ export function getCommAgentSessionMemory(
   channel: CommunicationChannel,
   sessionId: string | number,
 ): CommAgentSessionMemoryV1 | null {
-  return sessionStore.get(commAgentSessionKey(channel, sessionId)) ?? null;
+  const key = commAgentSessionKey(channel, sessionId);
+  const cached = sessionStore.get(key);
+  if (cached && isFresh(cached)) return cached;
+  const durable = loadDurableMemory(channel, sessionId);
+  if (durable) sessionStore.set(key, durable);
+  return durable;
 }
 
 export function updateCommAgentSessionMemory(
@@ -44,7 +107,8 @@ export function updateCommAgentSessionMemory(
   patch: Partial<CommAgentSessionMemoryV1>,
 ): CommAgentSessionMemoryV1 {
   const key = commAgentSessionKey(channel, sessionId);
-  const prev = sessionStore.get(key);
+  const prev = sessionStore.get(key) ?? loadDurableMemory(channel, sessionId);
+  const now = new Date();
   const next: CommAgentSessionMemoryV1 = {
     last_intent: patch.last_intent !== undefined ? patch.last_intent : (prev?.last_intent ?? null),
     last_requested_identifier:
@@ -60,14 +124,31 @@ export function updateCommAgentSessionMemory(
       patch.pending_operator_reason !== undefined
         ? patch.pending_operator_reason
         : (prev?.pending_operator_reason ?? null),
-    last_message_at: new Date().toISOString(),
+    pending_operator_status:
+      patch.pending_operator_status !== undefined
+        ? patch.pending_operator_status
+        : (prev?.pending_operator_status ?? null),
+    language: patch.language ?? prev?.language ?? 'ru',
+    unresolved_action:
+      patch.unresolved_action !== undefined ? patch.unresolved_action : (prev?.unresolved_action ?? null),
+    recent_summary:
+      patch.recent_summary !== undefined
+        ? String(patch.recent_summary ?? '').trim().slice(0, 500) || null
+        : (prev?.recent_summary ?? null),
+    last_message_at: now.toISOString(),
+    expires_at: new Date(now.getTime() + COMM_AGENT_SESSION_TTL_MS).toISOString(),
   };
   sessionStore.set(key, next);
+  persistDurableMemory(channel, sessionId, next);
   return next;
 }
 
 export function clearCommAgentSessionMemory(channel: CommunicationChannel, sessionId: string | number): void {
   sessionStore.delete(commAgentSessionKey(channel, sessionId));
+  const chatId = numericChatId(sessionId);
+  if (chatId != null) {
+    patchAutonomousSessionCollectedData({ chatId, channel, clear: [DURABLE_MEMORY_KEY] });
+  }
 }
 
 /** Test-only: reset in-memory store. */
@@ -94,6 +175,7 @@ function isLikelyFollowUpFragment(text: string): boolean {
   if (extractBookingIdFromTelegramText(normalized)) return true;
   if (extractPhoneFromTelegramText(normalized)) return true;
   if (looksLikeAddressFragment(normalized)) return true;
+  if (/^(?:до\s+|к\s+|until\s+|at\s+)?(?:[01]?\d|2[0-3])(?::[0-5]\d)?$/i.test(normalized)) return true;
   if (/^(да|нет|ок|ok|спасибо|понял|понятно)$/i.test(normalized)) return false;
   return wordCount <= 6 && !/[?!]{2,}/.test(normalized);
 }
@@ -104,8 +186,9 @@ function intentExpectsIdentifier(intent: string | null | undefined): CommAgentRe
     case 'wifi':
     case 'parking':
     case 'checkout':
-    case 'early_checkin_late_checkout':
       return 'booking_reference';
+    case 'early_checkin_late_checkout':
+      return 'requested_time';
     case 'check_in_access':
     case 'checkin_code_request':
     case 'booking_lookup_missing_details':
@@ -158,11 +241,13 @@ export function applyCommAgentSessionContinuation(input: {
   const bookingRef = extractBookingIdFromTelegramText(text);
   const phone = extractPhoneFromTelegramText(text);
   const address = looksLikeAddressFragment(text);
+  const requestedTime = /^(?:до\s+|к\s+|until\s+|at\s+)?(?:[01]?\d|2[0-3])(?::[0-5]\d)?$/i.test(text);
 
   const matchesPending =
     (pendingId === 'booking_reference' && Boolean(bookingRef)) ||
     (pendingId === 'phone' && Boolean(phone)) ||
     (pendingId === 'address' && address) ||
+    (pendingId === 'requested_time' && requestedTime) ||
     (pendingId === 'property_hint' && (address || Boolean(bookingRef)));
 
   if (!matchesPending && !(bookingRef || phone)) {
@@ -175,7 +260,21 @@ export function applyCommAgentSessionContinuation(input: {
   }
 
   const intentLabel = String(memory.last_intent);
-  const prefix =
+  const prefix = memory.language === 'en'
+    ? intentLabel === 'wifi'
+      ? 'wi-fi password'
+      : intentLabel === 'parking'
+        ? 'parking information'
+        : intentLabel === 'address_instruction'
+          ? 'directions'
+          : intentLabel === 'checkout' || intentLabel === 'early_checkin_late_checkout'
+            ? 'late checkout time'
+            : intentLabel === 'check_in_access' || intentLabel === 'checkin_code_request'
+              ? 'check-in and access'
+              : intentLabel === 'booking_payment_support'
+                ? 'booking and payment question'
+                : 'previous request continuation'
+    :
     intentLabel === 'wifi'
       ? 'пароль от wi-fi'
       : intentLabel === 'parking'
@@ -194,7 +293,15 @@ export function applyCommAgentSessionContinuation(input: {
     memory_used: true,
     continued_intent: intentLabel,
     enriched_message_text: `${prefix}: ${text}`,
-    detected_identifier: bookingRef ? 'booking_reference' : phone ? 'phone' : address ? 'address' : pendingId,
+    detected_identifier: bookingRef
+      ? 'booking_reference'
+      : phone
+        ? 'phone'
+        : address
+          ? 'address'
+          : requestedTime
+            ? 'requested_time'
+            : pendingId,
   };
 }
 
@@ -207,6 +314,9 @@ export function deriveSessionMemoryPatchFromDecision(input: {
   bookingId?: string | null;
   propertyId?: string | null;
   escalationReason?: string | null;
+  language?: 'ru' | 'en';
+  unresolvedAction?: string | null;
+  recentSummary?: string | null;
 }): Partial<CommAgentSessionMemoryV1> {
   const needsContext = input.action === 'needs_context' || input.action === 'ask_clarification';
   const requested =
@@ -217,9 +327,13 @@ export function deriveSessionMemoryPatchFromDecision(input: {
   return {
     last_intent: input.intent,
     last_requested_identifier: requested,
-    last_known_booking_id: input.bookingId ?? null,
-    last_known_property_id: input.propertyId ?? null,
+    last_known_booking_id: input.bookingId ?? undefined,
+    last_known_property_id: input.propertyId ?? undefined,
     last_safe_reply: input.replyText?.slice(0, 500) ?? null,
     pending_operator_reason: input.needsOperator ? (input.escalationReason ?? input.intent) : null,
+    pending_operator_status: input.needsOperator ? 'open' : null,
+    language: input.language,
+    unresolved_action: needsContext || input.needsOperator ? (input.unresolvedAction ?? input.intent) : null,
+    recent_summary: input.recentSummary,
   };
 }

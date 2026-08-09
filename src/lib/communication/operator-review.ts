@@ -46,6 +46,12 @@ export type EscalationReview = {
   suggestedReply?: string;
   detail?: string;
   status: EscalationReviewStatus;
+  resolution?: {
+    operatorId: string;
+    reason: string;
+    approvedAnswer?: string;
+    resolvedAt: string;
+  };
   createdAt: string;
   updatedAt: string;
 };
@@ -172,6 +178,7 @@ export function forceCloseActiveReviewForSession(params: {
   sessionId: string;
   operatorId: string;
   reason: string;
+  approvedAnswer?: string;
 }): { closedReviewId: string | null } {
   loadOnce();
   const reviewId = cache.activeReviewIdBySessionId[params.sessionId] ?? null;
@@ -184,7 +191,19 @@ export function forceCloseActiveReviewForSession(params: {
       persist();
       return { closedReviewId: null };
     }
-    const updated: EscalationReview = { ...cur, status: 'closed', updatedAt: nowIso() };
+    const resolvedAt = nowIso();
+    const approvedAnswer = String(params.approvedAnswer ?? '').trim().slice(0, 800);
+    const updated: EscalationReview = {
+      ...cur,
+      status: 'closed',
+      resolution: {
+        operatorId: params.operatorId,
+        reason: params.reason.slice(0, 200),
+        ...(approvedAnswer ? { approvedAnswer } : {}),
+        resolvedAt,
+      },
+      updatedAt: resolvedAt,
+    };
     cache.reviewsById[reviewId] = updated;
     if (cache.activeReviewIdBySessionId[updated.sessionId] === reviewId) {
       delete cache.activeReviewIdBySessionId[updated.sessionId];
@@ -342,6 +361,13 @@ export function approveEscalationReview(reviewId: string, operatorId: string): E
 
 export function closeEscalationReview(reviewId: string, operatorId: string): EscalationReview {
   const updated = updateStatus(reviewId, 'closed');
+  updated.resolution = {
+    operatorId,
+    reason: 'operator_closed_review',
+    resolvedAt: nowIso(),
+  };
+  cache.reviewsById[reviewId] = updated;
+  persist();
   appendAuditLine({ type: 'review_closed', reviewId, operatorId, ts: nowIso() });
   // Best-effort: let automation resume.
   if (updated.actorId) {
@@ -362,6 +388,7 @@ export async function sendOperatorReply(input: {
   reviewId: string;
   operatorId: string;
   replyText: string;
+  resumeAutomation?: boolean;
 }): Promise<{ ok: boolean; review: EscalationReview | null; duplicatePrevented?: boolean; error?: string }> {
   loadOnce();
   const review = cache.reviewsById[input.reviewId];
@@ -436,7 +463,7 @@ export async function sendOperatorReply(input: {
   });
 
   // Best-effort: allow automation to resume after a human reply.
-  if (updated.actorId) {
+  if (input.resumeAutomation !== false && updated.actorId) {
     recoverConversationSessionToActive({
       channel: updated.channel,
       actorId: updated.actorId,
@@ -444,7 +471,7 @@ export async function sendOperatorReply(input: {
     });
   }
   const chatId = Number(updated.targetId);
-  if (Number.isFinite(chatId)) {
+  if (input.resumeAutomation !== false && Number.isFinite(chatId)) {
     transitionSessionStatus(chatId, SessionStatus.Active).catch(() => {});
   }
 

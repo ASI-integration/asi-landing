@@ -7,8 +7,11 @@ import {
 } from './communication-autopilot-session';
 import {
   buildAutopilotSessionPatch,
+  detectOperationalLanguage,
+  isExplicitOperationalLanguageSwitch,
   runCommunicationAutopilotV1,
 } from './communication-autopilot-v1';
+import { logCommAgentMetrics } from './comm-agent-metrics';
 import { loadAutonomousSession, patchAutonomousSessionCollectedData } from './conversation-session-store';
 import { getGroundedKnowledge } from './knowledge';
 import { classifyKnowledgeTopic, requiresAutopilotOperatorEscalation } from './knowledge-resolver';
@@ -32,6 +35,9 @@ type AutopilotV1OrchestratorInput = {
     };
   };
   transportEventMeta: Record<string, unknown>;
+  sessionId: string;
+  guestIdentity: string | null;
+  conversationSummary: string | null;
   persistEscalationReview: (params: {
     reason: string;
     escalationSummary: string;
@@ -52,17 +58,30 @@ type AutopilotV1OrchestratorInput = {
   ) => Promise<T>;
 };
 
-export function shouldPreferCommunicationAutopilotV1(messageText: string): boolean {
+export function shouldPreferCommunicationAutopilotV1(
+  messageText: string,
+  session?: ReturnType<typeof autopilotSessionFromCollectedData>,
+): boolean {
   const text = String(messageText ?? '').trim();
   if (!text) return false;
   if (requiresAutopilotOperatorEscalation(text)) return true;
-  return classifyKnowledgeTopic(text) !== 'unknown';
+  if (isExplicitOperationalLanguageSwitch(text)) return true;
+  if (classifyKnowledgeTopic(text) !== 'unknown') return true;
+  if (session?.requested_missing_field === 'booking_reference') {
+    return /^(?=.{4,40}$)(?=.*\d)[A-ZА-Я0-9][A-ZА-Я0-9._/-]*$/i.test(text);
+  }
+  if (session?.requested_missing_field === 'requested_time') {
+    return /^(?:до\s+|к\s+|until\s+|at\s+)?(?:[01]?\d|2[0-3])(?::[0-5]\d)?$/i.test(text);
+  }
+  return false;
 }
 
 export async function tryCommunicationAutopilotV1OrchestratorTurn(
   input: AutopilotV1OrchestratorInput,
 ): Promise<ProcessResult | null> {
-  if (!shouldPreferCommunicationAutopilotV1(input.text)) return null;
+  const sessionCollectedData = loadAutonomousSession(input.chatId)?.collected_data ?? {};
+  const sessionMemory = autopilotSessionFromCollectedData(sessionCollectedData);
+  if (!shouldPreferCommunicationAutopilotV1(input.text, sessionMemory)) return null;
 
   const bookingObjectCtx = await input.withAwaitCheckpoint(
     'memory/booking_object.resolve.await',
@@ -82,8 +101,6 @@ export async function tryCommunicationAutopilotV1OrchestratorTurn(
     input.commContext.reservation.propertyId ??
     input.identity.propertyId ??
     null;
-  const sessionCollectedData = loadAutonomousSession(input.chatId)?.collected_data ?? {};
-  const sessionMemory = autopilotSessionFromCollectedData(sessionCollectedData);
   const passport = propertyId ? await getGroundedKnowledge(propertyId) : null;
   const autopilotResult = runCommunicationAutopilotV1({
     messageText: input.text,
@@ -92,6 +109,7 @@ export async function tryCommunicationAutopilotV1OrchestratorTurn(
     bookingVerified: bookingObjectCtx.access_verified,
     passport,
     session: sessionMemory,
+    language: detectOperationalLanguage(input.text, sessionMemory),
   });
   const sessionPatch = buildAutopilotSessionPatch({
     result: autopilotResult,
@@ -99,6 +117,8 @@ export async function tryCommunicationAutopilotV1OrchestratorTurn(
     propertyId,
     propertyName: autopilotProperty?.object_name ?? null,
     previous: sessionMemory,
+    transport: String(input.transportEventMeta.transport ?? input.envelope.channel),
+    bookingReference: bookingObjectCtx.booking?.booking_id ?? null,
   });
   patchAutonomousSessionCollectedData({
     chatId: input.chatId,
@@ -123,16 +143,60 @@ export async function tryCommunicationAutopilotV1OrchestratorTurn(
     role: input.senderRoute.senderIdentity,
     ...input.transportEventMeta,
   });
+  const transport = String(input.transportEventMeta.transport ?? input.envelope.channel).slice(0, 40);
+  const urgency = autopilotResult.intent === 'critical_safety' || autopilotResult.intent === 'urgent_access_problem'
+    ? 'critical'
+    : autopilotResult.intent === 'legal' || autopilotResult.intent === 'conflict'
+      ? 'high'
+      : 'normal';
+  logCommAgentMetrics({
+    channel: input.envelope.channel,
+    session_key: input.sessionId,
+    intent: autopilotResult.intent,
+    confidence: 0.9,
+    action: autopilotResult.action === 'operator_handoff'
+      ? 'escalate'
+      : autopilotResult.action === 'auto_reply'
+        ? 'auto_reply'
+        : 'ask_clarification',
+    source: autopilotResult.memoryUsed ? 'session_continuation' : 'deterministic_mvp',
+    memory_used: autopilotResult.memoryUsed,
+    booking_resolved: bookingObjectCtx.booking_resolved,
+    operator_needed: autopilotResult.needsOperator,
+    auto_reply_allowed: autopilotResult.action === 'auto_reply' && !autopilotResult.needsOperator,
+    operational_outcome: autopilotResult.needsOperator
+      ? 'safety_blocked'
+      : autopilotResult.resolved
+        ? 'auto_resolved'
+        : 'clarification',
+    language: autopilotResult.language,
+    transport,
+    handoff_reason: autopilotResult.escalationReason,
+    handoff_urgency: autopilotResult.needsOperator ? urgency : undefined,
+    safety_blocked_action: Boolean(autopilotResult.safetyBlockedAction),
+  });
 
   if (autopilotResult.needsOperator) {
     input.persistEscalationReview({
       reason: autopilotResult.escalationReason ?? 'operator_required',
       escalationSummary: `communication_autopilot_v1:${autopilotResult.intent}`,
       confidence: 0.9,
-      suggestedReply: autopilotResult.replyText,
       source: {
         route: 'communication_autopilot_v1',
+        session_id: input.sessionId,
+        guest_identity: input.guestIdentity,
+        channel: input.envelope.channel,
+        transport,
+        booking_id: bookingObjectCtx.booking?.booking_id ?? null,
+        property_id: propertyId,
+        latest_guest_request: input.text.slice(0, 800),
+        conversation_summary: String(input.conversationSummary ?? input.text).replace(/\s+/g, ' ').slice(0, 800),
         intent: autopilotResult.intent,
+        reason: autopilotResult.escalationReason ?? 'operator_required',
+        urgency,
+        guest_acknowledgement: autopilotResult.replyText,
+        what_asi_told_guest: autopilotResult.replyText,
+        next_action: 'operator_review_and_reply',
         needs_operator: true,
       },
       detail: buildOperatorEscalationDetail({
