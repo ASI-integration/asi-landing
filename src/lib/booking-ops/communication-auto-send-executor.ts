@@ -2,6 +2,10 @@ import { createHash, randomUUID } from 'node:crypto';
 import { supabase } from '@/lib/supabase';
 import { EmailAdapter } from '@/lib/communication/channels/email';
 import { TelegramAdapter } from '@/lib/communication/channels/telegram';
+import {
+  sendGuestLifecycleVoiceCopy,
+  type GuestLifecycleVoiceInput,
+} from '@/lib/communication/guest-lifecycle-voice';
 import { getBookingOpsRecord } from './repository';
 import {
   SUPPORTED_ACTUAL_AUTO_SEND_MESSAGE_TYPES,
@@ -94,6 +98,8 @@ export type ExecuteAutoSendOptions = {
   scopeResolver?: typeof resolveAutoSendScope;
   /** Test-only seam. Production callers never pass a sender. */
   sender?: AutoSendSender;
+  /** Test-only seam for the optional lifecycle voice copy sent after text. */
+  voiceSender?: (input: GuestLifecycleVoiceInput) => Promise<boolean>;
 };
 
 type IntentRow = {
@@ -189,6 +195,10 @@ function safeText(value: unknown): string | null {
 }
 
 function deliveryKey(intent: BookingOpsCommunicationIntent): string {
+  const lifecycleKey = safeText(intent.metadata.lifecycle_idempotency_key);
+  if (lifecycleKey) {
+    return createHash('sha256').update(`guest-lifecycle:${lifecycleKey}`).digest('hex');
+  }
   return createHash('sha256')
     .update([intent.id, intent.channel, intent.purpose, intent.updatedAt, intent.messageText].join('|'))
     .digest('hex');
@@ -200,6 +210,8 @@ function safeMetadata(input: Record<string, unknown> = {}): Record<string, unkno
     operator_action: safeText(input.operator_action),
     dry_run: input.dry_run === true,
     retry_requested: input.retry_requested === true,
+    voice_attempted: input.voice_attempted === true,
+    voice_sent: input.voice_sent === true,
   };
 }
 
@@ -538,7 +550,14 @@ export async function executeAutoSendDelivery(
       channel,
       recipientRef: executionContext.recipientRef,
       messageText: intent.messageText,
-      metadata: { source: 'booking_ops_controlled_auto_send', intent_id: intent.id },
+      metadata: {
+        source: 'booking_ops_controlled_auto_send',
+        intent_id: intent.id,
+        lifecycle_event_type: intent.metadata.lifecycle_event_type,
+        communication_mode: intent.metadata.communication_mode,
+        language: intent.metadata.language,
+        urgent: intent.metadata.urgent === true,
+      },
     });
     if (!result.ok) {
       await recordAutoSendAttempt(intent.id, 'failed', {
@@ -549,6 +568,19 @@ export async function executeAutoSendDelivery(
       const failed = await recordDeliveryFailure(delivery.id, result.reason ?? 'provider_rejected');
       return { ok: false as const, error: result.reason ?? 'provider_rejected', delivery: failed, decision };
     }
+    const voiceAttempted = Boolean(
+      intent.metadata.lifecycle_event_type
+      && intent.metadata.communication_mode === 'voice'
+      && channel === 'telegram',
+    );
+    const voiceSent = voiceAttempted
+      ? await (options.voiceSender ?? sendGuestLifecycleVoiceCopy)({
+          channel,
+          targetId: executionContext.recipientRef,
+          text: intent.messageText,
+          communicationMode: intent.metadata.communication_mode,
+        }).catch(() => false)
+      : false;
     await recordAutoSendAttempt(intent.id, 'sent', {
       booking_id: delivery.bookingId,
       guest_ref: intent.actorType === 'guest' ? executionContext.recipientRef : null,
@@ -557,13 +589,13 @@ export async function executeAutoSendDelivery(
     const sent = await recordDeliverySuccess(
       delivery.id,
       'providerMessageId' in result ? result.providerMessageId : undefined,
-      { source: channel },
+      { source: channel, voice_attempted: voiceAttempted, voice_sent: voiceSent },
     );
     await supabase.from('booking_ops_communication_intents').update({
       status: 'completed',
       updated_at: new Date().toISOString(),
     }).eq('id', intent.id);
-    return { ok: true as const, delivery: sent, decision, scope: safeScopeView(scope) };
+    return { ok: true as const, delivery: sent, decision, scope: safeScopeView(scope), voiceAttempted, voiceSent };
   } catch {
     await recordAutoSendAttempt(intent.id, 'failed', {
       booking_id: delivery.bookingId,

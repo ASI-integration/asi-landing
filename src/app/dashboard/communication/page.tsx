@@ -91,6 +91,18 @@ type GuestMemoryView = {
   }>;
 };
 
+type GuestLifecycleVisibility = {
+  reservationId: string;
+  guest: string;
+  currentStage: string;
+  mostRecentEvent: string;
+  mostRecentEventAt: string;
+  mostRecentCommunication: string | null;
+  pendingScheduledCommunication: { eventType: string; scheduledFor: string } | null;
+  deliveryStatus: string;
+  operatorActionRequired: boolean;
+};
+
 type FilterStatus = 'all' | ReviewStatus;
 type FilterUrgency = 'all' | 'urgent' | 'normal';
 
@@ -170,6 +182,36 @@ function memoryEventLabel(type: string): string {
     late_checkout_history: 'История позднего выезда',
   };
   return labels[type] ?? 'Важное событие';
+}
+
+function lifecycleStageLabel(stage: string): string {
+  const labels: Record<string, string> = {
+    reservation: 'Бронирование',
+    arrival: 'Подготовка к заезду',
+    checkin: 'Заезд',
+    stay: 'Проживание',
+    checkout: 'Выезд',
+    completed: 'Завершено',
+    cancelled: 'Отменено',
+    incident: 'Обращение',
+  };
+  return labels[stage] ?? stage;
+}
+
+function lifecycleDeliveryLabel(status: string): string {
+  const labels: Record<string, string> = {
+    received: 'Получено',
+    scheduled: 'Запланировано',
+    processing: 'Обрабатывается',
+    sent: 'Отправлено',
+    dry_run: 'Без отправки',
+    completed: 'Завершено',
+    skipped: 'Пропущено',
+    blocked: 'Заблокировано',
+    operator_required: 'Нужен оператор',
+    failed: 'Ошибка',
+  };
+  return labels[status] ?? status;
 }
 
 function isReturningGuestProfile(profile: GuestMemoryView['profile']): boolean {
@@ -365,6 +407,9 @@ export default function CommunicationPage() {
   const [guestMemoryLoading, setGuestMemoryLoading] = useState(false);
   const [guestMemoryError, setGuestMemoryError] = useState<string | null>(null);
   const [guestMemoryBusy, setGuestMemoryBusy] = useState(false);
+  const [lifecycleItems, setLifecycleItems] = useState<GuestLifecycleVisibility[]>([]);
+  const [lifecycleLoading, setLifecycleLoading] = useState(true);
+  const [lifecycleError, setLifecycleError] = useState<string | null>(null);
 
   async function loadReviews(): Promise<void> {
     setLoading(true);
@@ -380,6 +425,22 @@ export default function CommunicationPage() {
       setError(err instanceof Error ? err.message : 'Не удалось загрузить диалоги');
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function loadLifecycleItems(): Promise<void> {
+    setLifecycleLoading(true);
+    setLifecycleError(null);
+    try {
+      const res = await fetch('/api/operator/lifecycle-communications?limit=200', { cache: 'no-store' });
+      const data = await res.json() as { ok?: boolean; items?: GuestLifecycleVisibility[]; error?: string };
+      if (!res.ok || data.ok === false) throw new Error(data.error ?? 'Не удалось загрузить этапы проживания');
+      setLifecycleItems(Array.isArray(data.items) ? data.items : []);
+    } catch (err) {
+      setLifecycleItems([]);
+      setLifecycleError(err instanceof Error ? err.message : 'Не удалось загрузить этапы проживания');
+    } finally {
+      setLifecycleLoading(false);
     }
   }
 
@@ -421,6 +482,7 @@ export default function CommunicationPage() {
 
   useEffect(() => {
     void loadReviews();
+    void loadLifecycleItems();
   }, []);
 
   useEffect(() => {
@@ -690,6 +752,71 @@ export default function CommunicationPage() {
               </ol>
             </article>
           ))}
+        </div>
+      </section>
+
+      <section className="rounded-xl border border-slate-200 bg-white p-4">
+        <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h2 className="text-lg font-semibold text-slate-900">Этапы проживания и сообщения</h2>
+            <p className="mt-1 text-sm text-slate-600">Последнее событие, отправка и сообщения, которые ещё ожидают своего времени.</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => void loadLifecycleItems()}
+            className="mt-2 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 sm:mt-0"
+          >
+            Обновить
+          </button>
+        </div>
+        {lifecycleError ? (
+          <div className="mt-3 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{lifecycleError}</div>
+        ) : null}
+        <div className="mt-4 overflow-x-auto">
+          <table className="min-w-full divide-y divide-slate-200 text-left text-sm">
+            <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+              <tr>
+                <th className="px-3 py-2 font-semibold">Бронь и гость</th>
+                <th className="px-3 py-2 font-semibold">Текущий этап</th>
+                <th className="px-3 py-2 font-semibold">Последнее событие</th>
+                <th className="px-3 py-2 font-semibold">Последнее сообщение</th>
+                <th className="px-3 py-2 font-semibold">Следующее сообщение</th>
+                <th className="px-3 py-2 font-semibold">Статус</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100 text-slate-700">
+              {lifecycleLoading ? (
+                <tr><td className="px-3 py-5 text-slate-500" colSpan={6}>Загружаем этапы...</td></tr>
+              ) : lifecycleItems.length === 0 ? (
+                <tr><td className="px-3 py-5 text-slate-500" colSpan={6}>Событий проживания пока нет.</td></tr>
+              ) : lifecycleItems.map((item) => (
+                <tr key={item.reservationId} className={item.operatorActionRequired ? 'bg-amber-50/60' : undefined}>
+                  <td className="px-3 py-3">
+                    <div className="font-medium text-slate-900">{item.reservationId}</div>
+                    <div className="mt-0.5 text-xs text-slate-500">{item.guest}</div>
+                  </td>
+                  <td className="px-3 py-3">{lifecycleStageLabel(item.currentStage)}</td>
+                  <td className="px-3 py-3">
+                    <div className="font-medium text-slate-800">{item.mostRecentEvent}</div>
+                    <div className="mt-0.5 text-xs text-slate-500">{shortTs(item.mostRecentEventAt)}</div>
+                  </td>
+                  <td className="max-w-xs px-3 py-3 text-slate-600">{item.mostRecentCommunication ?? 'Сообщения не было'}</td>
+                  <td className="px-3 py-3 text-slate-600">
+                    {item.pendingScheduledCommunication
+                      ? `${item.pendingScheduledCommunication.eventType} — ${shortTs(item.pendingScheduledCommunication.scheduledFor)}`
+                      : 'Нет запланированных'}
+                  </td>
+                  <td className="px-3 py-3">
+                    <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
+                      item.operatorActionRequired ? 'bg-amber-100 text-amber-800' : 'bg-slate-100 text-slate-700'
+                    }`}>
+                      {item.operatorActionRequired ? 'Нужен оператор' : lifecycleDeliveryLabel(item.deliveryStatus)}
+                    </span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       </section>
 
