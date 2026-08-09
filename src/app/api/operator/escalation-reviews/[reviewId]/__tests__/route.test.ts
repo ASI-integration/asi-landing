@@ -9,6 +9,13 @@ import {
   requestOperatorHandoff,
 } from '@/lib/communication/handoff-lock';
 import { __resetEscalationReviewStoreForTests } from '@/lib/communication/operator-review';
+import {
+  getCommAgentSessionMemory,
+  resetCommAgentSessionMemoryForTests,
+  updateCommAgentSessionMemory,
+} from '@/lib/communication/comm-agent-session-memory';
+
+const mocks = vi.hoisted(() => ({ sendMessage: vi.fn(async () => true) }));
 
 vi.mock('@/lib/auth', () => ({
   getSession: vi.fn(async () => ({ userId: 'op_route_1', email: 'op@example.com' })),
@@ -31,7 +38,7 @@ vi.mock('@/lib/communication/channels', () => ({
     normalizeInbound: async () => {
       throw new Error('not used');
     },
-    sendMessage: async () => true,
+    sendMessage: mocks.sendMessage,
     formatResponse: (raw: string) => raw,
   }),
 }));
@@ -40,6 +47,8 @@ describe('PATCH /api/operator/escalation-reviews/[reviewId] acknowledge → lock
   beforeEach(() => {
     _resetForTesting();
     __resetEscalationReviewStoreForTests();
+    resetCommAgentSessionMemoryForTests();
+    mocks.sendMessage.mockClear();
   });
 
   it('acknowledge locks the session for the operator and blocks AI replies', async () => {
@@ -104,5 +113,56 @@ describe('PATCH /api/operator/escalation-reviews/[reviewId] acknowledge → lock
     expect(secondBody.review.reviewId).toBe(firstBody.review.reviewId);
     expect(getHandoffLockState('sess_route_ack_idem')).toBe(HandoffLockState.OperatorActive);
     expect(canAiReply('sess_route_ack_idem')).toBe(false);
+  });
+
+  it('send_reply records the approved answer, closes the handoff and resumes AI idempotently', async () => {
+    updateCommAgentSessionMemory('telegram', '4244', {
+      last_intent: 'maintenance_issue',
+      pending_operator_reason: 'maintenance_issue',
+      pending_operator_status: 'open',
+      unresolved_action: 'maintenance_issue',
+      language: 'ru',
+    });
+    const { reviewId } = requestOperatorHandoff({
+      sessionId: 'sess_route_resolve',
+      channel: 'telegram',
+      targetId: '4244',
+      escalationReason: 'maintenance_issue',
+      chatId: 4244,
+    });
+
+    const { PATCH } = await import('../route');
+    const request = () => new NextRequest(`http://localhost/api/operator/escalation-reviews/${reviewId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ action: 'send_reply', replyText: 'Мастер придёт после 18:00.' }),
+      headers: { 'content-type': 'application/json' },
+    });
+    const first = await PATCH(request(), { params: { reviewId } });
+    const firstBody = await first.json();
+    const second = await PATCH(request(), { params: { reviewId } });
+    const secondBody = await second.json();
+
+    expect(firstBody).toMatchObject({
+      ok: true,
+      releaseState: 'resolved',
+      duplicatePrevented: false,
+      review: {
+        status: 'closed',
+        resolution: {
+          operatorId: 'op_route_1',
+          reason: 'operator_reply_resolved',
+          approvedAnswer: 'Мастер придёт после 18:00.',
+        },
+      },
+    });
+    expect(secondBody).toMatchObject({ ok: true, duplicatePrevented: true });
+    expect(mocks.sendMessage).toHaveBeenCalledTimes(1);
+    expect(canAiReply('sess_route_resolve')).toBe(true);
+    expect(getCommAgentSessionMemory('telegram', '4244')).toMatchObject({
+      pending_operator_reason: null,
+      pending_operator_status: 'resolved',
+      unresolved_action: null,
+      last_safe_reply: 'Мастер придёт после 18:00.',
+    });
   });
 });

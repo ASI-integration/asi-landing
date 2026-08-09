@@ -164,6 +164,7 @@ import {
 } from './communication-autopilot-settings';
 import {
   buildAutopilotSessionPatch,
+  detectOperationalLanguage,
   runCommunicationAutopilotV1,
 } from './communication-autopilot-v1';
 import { tryCommunicationAutopilotV1OrchestratorTurn } from './communication-autopilot-v1-orchestrator';
@@ -2317,6 +2318,7 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
             bookingVerified: telegramBookingObjectCtx.access_verified,
             passport,
             session: sessionMemory,
+            language: detectOperationalLanguage(text, sessionMemory),
           });
           const sessionPatch = buildAutopilotSessionPatch({
             result: autopilotResult,
@@ -2324,6 +2326,8 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
             propertyId,
             propertyName: autopilotProperty?.object_name ?? null,
             previous: sessionMemory,
+            transport: String(transportEventMeta.transport ?? envelope.channel),
+            bookingReference: telegramBookingObjectCtx.booking?.booking_id ?? null,
           });
           patchAutonomousSessionCollectedData({
             chatId,
@@ -2371,9 +2375,11 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
             canSendAutonomousGuestReply(autopilotProperty) &&
             autopilotResult.action === 'auto_reply' &&
             !autopilotResult.needsOperator;
-          const outboundReplyText = allowAutonomousReply
+          const outboundReplyText = allowAutonomousReply || autopilotResult.action !== 'auto_reply'
             ? autopilotResult.replyText
-            : 'Передал вопрос оператору. Скоро вернусь с ответом.';
+            : autopilotResult.language === 'en'
+              ? 'I have passed the question to an operator for review.'
+              : 'Передала вопрос оператору на проверку.';
           if (!allowAutonomousReply && autopilotResult.action === 'auto_reply' && !autopilotResult.needsOperator) {
             persistEscalationReview({
               reason: 'manual_control_mode',
@@ -2665,6 +2671,15 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
         envelope.channel === 'email' ? stableEmailChatId(envelope) : chatId,
       );
       const commSessionMemory = getCommAgentSessionMemory(envelope.channel, commSessionId);
+      const operationalLanguage = detectOperationalLanguage(
+        text,
+        commSessionMemory
+          ? {
+              language: commSessionMemory.language,
+              requested_missing_field: commSessionMemory.last_requested_identifier,
+            }
+          : null,
+      );
       const sessionContinuation = applyCommAgentSessionContinuation({
         channel: envelope.channel,
         sessionId: commSessionId,
@@ -2707,6 +2722,15 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
         booking_resolved: bookingResolved,
         operator_needed: operatorNeeded,
         auto_reply_allowed: autopilotDecision.action === 'auto_reply' && Boolean(autopilotDecision.replyText),
+        operational_outcome: operatorNeeded
+          ? 'safety_blocked'
+          : autopilotDecision.action === 'auto_reply'
+            ? 'auto_resolved'
+            : 'clarification',
+        language: operationalLanguage,
+        transport: String(transportEventMeta.transport ?? envelope.channel),
+        handoff_reason: operatorNeeded ? (autopilotDecision.escalationReason ?? autopilotDecision.metadata.intent) : undefined,
+        safety_blocked_action: operatorNeeded,
         ...(autopilotDecision.metadata.wifiEscalation
           ? {
               object_resolved: autopilotDecision.metadata.wifiEscalation.object_resolved,
@@ -2727,7 +2751,6 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
               final_intent: autopilotDecision.metadata.semanticRouter.finalIntent ?? autopilotDecision.metadata.intent,
               semantic_override_applied: autopilotDecision.metadata.semanticRouter.semanticOverrideApplied,
               override_reason: autopilotDecision.metadata.semanticRouter.overrideReason,
-              reply_text: autopilotDecision.replyText,
             }
           : {}),
       });
@@ -2741,14 +2764,21 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
           bookingId: autopilotContext.booking?.id ?? null,
           propertyId: autopilotContext.object?.id ?? null,
           escalationReason: autopilotDecision.escalationReason ?? null,
+          language: operationalLanguage,
+          unresolvedAction: autopilotDecision.metadata.intent,
+          recentSummary: `${autopilotDecision.metadata.intent}:${autopilotDecision.action}`,
         }),
       });
       const handoffDecision = buildOperatorHandoffDecision({
         channel: envelope.channel,
+        transport: String(transportEventMeta.transport ?? envelope.channel),
         guestMessage: text,
         autopilot: autopilotDecision,
         bookingId: autopilotContext.booking?.id ?? null,
         propertyId: autopilotContext.object?.id ?? null,
+        sessionId: convSession.sessionId,
+        guestIdentity: convSession.actorId,
+        conversationSummary: convSession.memory.summary ?? text ?? null,
       });
       if (handoffDecision) {
         logCommAgentHandoffPreview({
@@ -2756,7 +2786,6 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
           session_key: commSessionId,
           reason: handoffDecision.reason,
           urgency: handoffDecision.urgency,
-          guest_message_preview: text,
         });
         if (envelope.channel === 'email' || !handoffDecision.safe_to_auto_send) {
           persistEscalationReview({
@@ -2766,9 +2795,16 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
             source: {
               route: 'comm_agent_handoff_v1',
               channel: envelope.channel,
+              transport: handoffDecision.guest_transport,
               urgency: handoffDecision.urgency,
               booking_id: handoffDecision.resolved_booking_id,
               property_id: handoffDecision.resolved_property_id,
+              session_id: handoffDecision.session_id,
+              guest_identity: handoffDecision.guest_identity,
+              detected_intent: handoffDecision.detected_intent,
+              conversation_summary: handoffDecision.conversation_summary,
+              guest_acknowledgement: handoffDecision.guest_acknowledgement,
+              next_action: handoffDecision.next_action,
             },
             suggestedReply: handoffDecision.suggested_reply ?? undefined,
             detail: JSON.stringify({
@@ -3165,6 +3201,9 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
         adapter,
         commContext,
         transportEventMeta,
+        sessionId: convSession.sessionId,
+        guestIdentity: convSession.actorId ?? null,
+        conversationSummary: convSession.memory.summary ?? text ?? null,
         persistEscalationReview,
         resolveOutboundTargetId: (envelope, guestId) =>
           resolveOutboundTargetId(envelope, guestId ?? undefined) ?? null,

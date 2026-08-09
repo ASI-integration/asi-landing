@@ -29,9 +29,10 @@ jobs:
       - name: Install deps
         run: npm ci
 
-      - name: Voice capability and pending identity regression
+      - name: Guest communication, voice capability and pending identity regression
         run: |
           npx vitest run \
+            src/lib/communication/__tests__/guest-communication-operational-v1.test.ts \
             src/lib/communication/__tests__/telegram-text-meta-handler.test.ts \
             src/lib/communication/__tests__/conversation-session-store.pending-identity.test.ts \
             src/lib/communication/__tests__/telegram-voice-capability-e2e.test.ts \

@@ -392,7 +392,7 @@ export default function CommunicationPage() {
 
       if (actionToSend === 'send_reply') {
         setReplyState('saved');
-        setActionMessage('Ответ отправлен гостю.');
+        setActionMessage('Ответ отправлен гостю. Диалог возвращён ASI.');
       } else if (actionToSend === 'approve') {
         setActionMessage('Черновик ASI принят.');
       } else if (actionToSend === 'acknowledge') {
@@ -890,7 +890,7 @@ export default function CommunicationPage() {
                     disabled={!selected || busyAction !== null || !replyDraft.trim()}
                     className={`${primaryActionClass} border border-slate-900 bg-slate-900 text-white shadow-sm hover:bg-slate-800 disabled:shadow-none`}
                   >
-                    Отправить ответ
+                    Отправить и вернуть ASI
                   </button>
                   <button
                     type="button"

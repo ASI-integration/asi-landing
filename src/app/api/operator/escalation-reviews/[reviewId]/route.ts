@@ -5,9 +5,12 @@ import {
   closeEscalationReview,
   getEscalationReview,
   getReviewsBySessionId,
-  sendOperatorReply,
 } from '@/lib/communication/operator-review';
-import { lockSessionForOperator, releaseSessionToAi } from '@/lib/communication/handoff-lock';
+import {
+  lockSessionForOperator,
+  releaseSessionToAi,
+  resolveOperatorHandoffWithReply,
+} from '@/lib/communication/handoff-lock';
 
 export const dynamic = 'force-dynamic';
 
@@ -69,11 +72,16 @@ export async function PATCH(req: NextRequest, ctx: { params: { reviewId: string 
     }
     if (action === 'send_reply') {
       const replyText = String(body.replyText ?? '');
-      const result = await sendOperatorReply({ reviewId, operatorId, replyText });
+      const result = await resolveOperatorHandoffWithReply({ reviewId, operatorId, replyText });
       if (!result.ok) {
         return NextResponse.json({ ok: false, error: result.error ?? 'send_failed' }, { status: 400 });
       }
-      return NextResponse.json({ ok: true, review: result.review, duplicatePrevented: result.duplicatePrevented ?? false });
+      return NextResponse.json({
+        ok: true,
+        review: result.review,
+        releaseState: result.state,
+        duplicatePrevented: result.duplicatePrevented,
+      });
     }
     if (action === 'return_to_ai') {
       const review = getEscalationReview(reviewId);

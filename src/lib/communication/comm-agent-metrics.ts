@@ -28,6 +28,12 @@ export type CommAgentMetricsPayload = {
   object_resolved?: boolean;
   escalation_needed?: boolean;
   booking_request_reason?: WifiBookingRequestReason;
+  operational_outcome?: 'auto_resolved' | 'clarification' | 'operator_handoff' | 'safety_blocked';
+  language?: 'ru' | 'en' | string;
+  transport?: string;
+  handoff_reason?: string;
+  handoff_urgency?: string;
+  safety_blocked_action?: boolean;
 };
 
 const SECRET_PATTERNS = [
@@ -77,8 +83,32 @@ export function logCommAgentMetrics(payload: CommAgentMetricsPayload): void {
     ...(payload.booking_request_reason !== undefined
       ? { booking_request_reason: payload.booking_request_reason }
       : {}),
+    ...(payload.operational_outcome ? { 'comm.agent.operational_outcome': payload.operational_outcome } : {}),
+    ...(payload.language ? { 'comm.agent.language': payload.language } : {}),
+    ...(payload.transport ? { 'comm.agent.transport': payload.transport } : {}),
+    ...(payload.handoff_reason ? { 'comm.agent.handoff_reason': payload.handoff_reason } : {}),
+    ...(payload.handoff_urgency ? { 'comm.agent.handoff_urgency': payload.handoff_urgency } : {}),
+    ...(payload.safety_blocked_action !== undefined
+      ? { 'comm.agent.safety_blocked_action': payload.safety_blocked_action }
+      : {}),
   };
   console.log(JSON.stringify(record));
+}
+
+export function logCommAgentHandoffLifecycleMetric(params: {
+  channel: CommunicationChannel;
+  session_key: string;
+  event: 'created' | 'duplicate_suppressed' | 'resolved' | 'reply_duplicate_suppressed';
+  reason: string;
+}): void {
+  console.log(JSON.stringify({
+    'comm.agent.handoff_event': params.event,
+    channel: params.channel,
+    session_key: params.session_key,
+    reason: String(params.reason ?? '').slice(0, 120),
+    duplicate_suppressed:
+      params.event === 'duplicate_suppressed' || params.event === 'reply_duplicate_suppressed',
+  }));
 }
 
 export function logCommAgentHandoffPreview(params: {
