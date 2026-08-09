@@ -8,6 +8,7 @@ import {
   type OwnerOnboardingField,
 } from './owner-onboarding-smart-parser';
 import type { InboundMessageEnvelope, IdentityResolution } from './types';
+import { isTelegramTestGuestIdentity } from './telegram-test-guest-identity';
 
 export type SenderIdentity =
   | 'guest'
@@ -142,13 +143,7 @@ function norm(value: unknown): string {
 }
 
 function hasTelegramTestMode(envelope: InboundMessageEnvelope): boolean {
-  const metadata = envelope.metadata ?? {};
-  return (
-    text(envelope.messageText).startsWith('/guest_test') ||
-    metadata.guestTestMode === true ||
-    metadata.guest_test_mode === true ||
-    norm(metadata.senderIdentity) === 'test_guest'
-  );
+  return isTelegramTestGuestIdentity(envelope);
 }
 
 function isLeadIntent(messageText: string): boolean {

@@ -3,6 +3,7 @@ import { createOrMergeIdentity, resolveGuestIdentity } from './identity';
 import { matchReservation } from './reservation';
 import { auditIdentityDecision } from './audit';
 import { loadAutonomousSession } from './conversation-session-store';
+import { isTelegramTestGuestIdentity } from './telegram-test-guest-identity';
 
 /**
  * Bind an inbound envelope to business entities (reservation/property/lead)
@@ -10,14 +11,11 @@ import { loadAutonomousSession } from './conversation-session-store';
  */
 export async function bindIdentity(envelope: InboundMessageEnvelope): Promise<IdentityResolution> {
   const resolutionPath: string[] = [];
-  const shouldCreateGuestIdentity =
-    envelope.metadata?.guestTestMode === true ||
-    envelope.metadata?.guest_test_mode === true ||
-    String(envelope.messageText ?? '').trim().startsWith('/guest_test');
+  const shouldCreateGuestIdentity = isTelegramTestGuestIdentity(envelope);
   // Resolve first. New Telegram senders must not become guests/leads just
   // because they wrote to the bot; creation is reserved for an explicit guest
   // test route or another later verified guest binding.
-  const guest = shouldCreateGuestIdentity
+  let guest = shouldCreateGuestIdentity
     ? await createOrMergeIdentity(envelope).catch(() => null)
     : await resolveGuestIdentity(envelope).catch(() => null);
   if (guest) resolutionPath.push(shouldCreateGuestIdentity ? 'contact:createOrMergeIdentity' : 'contact:resolveGuestIdentity');
@@ -51,6 +49,10 @@ export async function bindIdentity(envelope: InboundMessageEnvelope): Promise<Id
 
   const reservation = await matchReservation(params).catch(() => ({ status: 'unmatched', confidence: 0 } as any));
   resolutionPath.push(`reservation:match:${reservation?.status ?? 'error'}`);
+  if (!guest && reservation?.status === 'matched') {
+    guest = await createOrMergeIdentity(envelope, reservation.guestId).catch(() => null);
+    if (guest) resolutionPath.push('contact:createOrMergeIdentity:verified_reservation');
+  }
 
   // Simple role heuristics
   let role: IdentityResolution['role'] = 'unknown';
@@ -133,12 +135,12 @@ export async function bindIdentity(envelope: InboundMessageEnvelope): Promise<Id
     reason = 'reservation:ambiguous';
     resolutionPath.push('entity:reservation_ambiguous');
   } else if (guest) {
-    role = 'unknown';
+    role = 'guest';
     entityType = 'unknown';
-    confidence = 0.4;
-    status = 'unresolved';
-    reason = 'contact_known_no_reservation';
-    resolutionPath.push('role:unknown_known_contact');
+    confidence = 0.8;
+    status = 'resolved';
+    reason = 'contact_known_guest';
+    resolutionPath.push('role:guest_known_contact');
   } else {
     role = 'unknown';
     entityType = 'unknown';

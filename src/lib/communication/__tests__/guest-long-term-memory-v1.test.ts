@@ -8,8 +8,10 @@ import {
   containsForbiddenGuestMemoryContent,
   deleteGuestMemoryItem,
   extractExplicitGuestPreferences,
+  isExplicitGuestPreferenceOnlyMessage,
   loadGuestLongTermMemory,
   observeGuestCommunication,
+  observeResolvedGuestInbound,
   recordGuestOperationalEvent,
   recordGuestSeen,
   resolveLanguageWithGuestMemory,
@@ -177,20 +179,45 @@ describe('Guest Long-Term Memory v1', () => {
     expect(resolveLanguageWithGuestMemory({ messageText: 'Ответьте по-русски', detectedLanguage: 'ru', memory: context })).toBe('ru');
   });
 
-  it('4. retains only clearly explicit stable preferences', async () => {
+  it('4. records Russian language, text mode, and quiet-room preference from an explicit statement', async () => {
     const db = new FakeMemoryDb();
-    await observeGuestCommunication({
+    const result = await observeResolvedGuestInbound({
       guestId: 'guest-explicit',
-      messageText: 'Я всегда предпочитаю тихий номер и обычно нужна парковка.',
+      senderIdentity: 'guest',
+      messageText: 'Я предпочитаю общаться по-русски и текстом. Люблю тихие квартиры.',
       language: 'ru',
       transport: 'telegram_text',
       db,
     });
-    expect((await loadGuestLongTermMemory('guest-explicit', db)).preferences.map((item) => item.key).sort()).toEqual(['parking', 'quiet_room']);
+    const memory = await loadGuestLongTermMemory('guest-explicit', db);
+    expect(result).toMatchObject({ observed: true, preferenceOnly: true, sensitiveRejected: false });
+    expect(memory.profile).toMatchObject({ preferredLanguage: 'ru', preferredCommunicationMode: 'text' });
+    expect(memory.preferences.map((item) => item.key)).toEqual(['quiet_room']);
+  });
+
+  it('4b. records the English equivalent at the same identity-level seam', async () => {
+    const db = new FakeMemoryDb();
+    await observeResolvedGuestInbound({
+      guestId: 'guest-explicit-en',
+      senderIdentity: 'test_guest',
+      messageText: 'I prefer to communicate in English and text. I love quiet apartments.',
+      language: 'en',
+      transport: 'telegram_text',
+      db,
+    });
+    const memory = await loadGuestLongTermMemory('guest-explicit-en', db);
+    expect(memory.profile).toMatchObject({ preferredLanguage: 'en', preferredCommunicationMode: 'text' });
+    expect(memory.preferences.map((item) => item.key)).toEqual(['quiet_room']);
   });
 
   it('5. does not promote speculative statements', async () => {
     expect(extractExplicitGuestPreferences('Наверное, мне может понравиться тихий номер.')).toEqual([]);
+  });
+
+  it('5b. treats only pure preference statements as no-handoff turns', () => {
+    expect(isExplicitGuestPreferenceOnlyMessage('Я предпочитаю текстом. Люблю тихие квартиры.')).toBe(true);
+    expect(isExplicitGuestPreferenceOnlyMessage('Не работает Wi-Fi. Я предпочитаю тихие квартиры.')).toBe(false);
+    expect(isExplicitGuestPreferenceOnlyMessage('Can you help? I prefer quiet apartments.')).toBe(false);
   });
 
   it('6. stores an operator-confirmed outcome as a structured event', async () => {
@@ -276,6 +303,17 @@ describe('Guest Long-Term Memory v1', () => {
     await expect(upsertGuestPreference({
       guestId: 'guest-sensitive', key: 'parking', value: 'door code: 1234', source: 'explicit_guest', db,
     })).rejects.toThrow('forbidden_sensitive_memory_content');
+    const observation = await observeResolvedGuestInbound({
+      guestId: 'guest-sensitive',
+      senderIdentity: 'guest',
+      messageText: 'I prefer quiet apartments. door code: 1234',
+      language: 'en',
+      transport: 'telegram_text',
+      db,
+    });
+    expect(observation).toMatchObject({ observed: false, sensitiveRejected: true });
+    expect(db.rows('guest_memory_profiles')).toHaveLength(0);
+    expect(db.rows('guest_memory_preferences')).toHaveLength(0);
     const migration = fs.readFileSync(path.join(process.cwd(), 'supabase/migrations/20260809120000_guest_long_term_memory_v1.sql'), 'utf8');
     expect(migration).not.toMatch(/(?:transcript|raw_voice|recording_url|passport_contents|card_number)\s+(?:TEXT|JSONB|BYTEA)/i);
   });
@@ -296,5 +334,26 @@ describe('Guest Long-Term Memory v1', () => {
     const source = fs.readFileSync(path.join(process.cwd(), 'src/lib/communication/guest-long-term-memory.ts'), 'utf8');
     expect(source).toContain("from '@/lib/supabase'");
     expect(source).not.toMatch(/fetch\(|axios|openai|provider/i);
+  });
+
+  it('15. rejects anonymous senders and keeps observation owned by one common inbound seam', async () => {
+    const db = new FakeMemoryDb();
+    const anonymous = await observeResolvedGuestInbound({
+      guestId: null,
+      senderIdentity: 'unknown',
+      messageText: 'I prefer English text and quiet apartments.',
+      language: 'en',
+      transport: 'telegram_text',
+      db,
+    });
+    expect(anonymous.observed).toBe(false);
+    expect(db.rows('guest_memory_profiles')).toHaveLength(0);
+    expect(db.rows('guest_memory_preferences')).toHaveLength(0);
+
+    const orchestrator = fs.readFileSync(path.join(process.cwd(), 'src/lib/communication/orchestrator.ts'), 'utf8');
+    const autopilotRoute = fs.readFileSync(path.join(process.cwd(), 'src/lib/communication/communication-autopilot-v1-orchestrator.ts'), 'utf8');
+    expect(orchestrator.match(/observeResolvedGuestInbound\s*\(/g)).toHaveLength(1);
+    expect(orchestrator).not.toContain('observeGuestCommunication({');
+    expect(autopilotRoute).not.toContain('observeGuestCommunication');
   });
 });

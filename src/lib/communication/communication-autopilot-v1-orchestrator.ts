@@ -17,10 +17,7 @@ import { getGroundedKnowledge } from './knowledge';
 import { classifyKnowledgeTopic, requiresAutopilotOperatorEscalation } from './knowledge-resolver';
 import { resolveTelegramGuestBookingObjectContext } from './telegram-booking-object-memory';
 import { buildOperatorEscalationDetail } from './guest-communication-brain';
-import {
-  loadRelevantGuestMemory,
-  observeGuestCommunication,
-} from './guest-long-term-memory';
+import { loadRelevantGuestMemory } from './guest-long-term-memory';
 import type { CommunicationIdentityRoutingDecision } from './communication-identity-routing';
 import { SessionStatus, transitionSessionStatus } from './session-status';
 import { MessageCategory, ProcessOutcome, type IdentityResolution, type InboundMessageEnvelope, type ProcessResult } from './types';
@@ -120,19 +117,6 @@ export async function tryCommunicationAutopilotV1OrchestratorTurn(
     guestMemory,
     language: detectOperationalLanguage(input.text, sessionMemory),
   });
-  if (input.identity.guestId) {
-    await observeGuestCommunication({
-      guestId: input.identity.guestId,
-      messageText: input.text,
-      language: autopilotResult.language,
-      transport: String(input.transportEventMeta.transport ?? input.envelope.channel),
-      sourceRef: input.sessionId,
-    }).catch((error) => {
-      console.warn('[communication-autopilot-v1] guest memory write skipped', {
-        error: error instanceof Error ? error.message : String(error),
-      });
-    });
-  }
   const sessionPatch = buildAutopilotSessionPatch({
     result: autopilotResult,
     messageText: input.text,

@@ -62,6 +62,8 @@ export async function createOrMergeIdentity(
   if (existingId) {
     const cached = identityCache.get(existingId);
     if (cached) return mergeAndPersist(cached, envelope);
+    const durableById = await resolveFromDBByGuestId(existingId);
+    if (durableById) return mergeAndPersist(durableById, envelope);
   }
 
   // Try to find existing identity
@@ -79,11 +81,17 @@ export async function createOrMergeIdentity(
   };
 
   const merged = mergeLocalFields(identity, envelope);
-  setInCache(merged);
 
-  // Persist to Supabase (best-effort)
+  // Persist first, then read by the channel identifier. The read-after-write
+  // also converges concurrent creates onto the row protected by the unique
+  // telegram_id constraint instead of leaving a process-local phantom guestId.
   await persistContact(merged, envelope);
+  const durable = await resolveFromDB(envelope);
+  if (durable) return durable;
 
+  // DB outages remain best-effort for the current process. Guest memory has a
+  // tg_contacts FK, so no durable memory can be created from this fallback.
+  setInCache(merged);
   return merged;
 }
 
@@ -158,6 +166,20 @@ async function resolveFromDB(
   return null;
 }
 
+async function resolveFromDBByGuestId(guestId: string): Promise<UnifiedGuestIdentity | null> {
+  if (process.env.TELEGRAM_DRY_RUN === '1') return null;
+  try {
+    const { data } = await supabase
+      .from('tg_contacts')
+      .select('*')
+      .eq('id', guestId)
+      .maybeSingle();
+    return data ? cacheAndReturn(data) : null;
+  } catch {
+    return null;
+  }
+}
+
 // ─── Persistence ──────────────────────────────────────────────────────────────
 
 async function persistContact(
@@ -180,7 +202,10 @@ async function persistContact(
     } else {
       record.telegram_id = envelope.chatId ?? null;
     }
-    await supabase.from('tg_contacts').upsert(record, { onConflict: 'id', ignoreDuplicates: false });
+    const { error } = await supabase.from('tg_contacts').upsert(record, { onConflict: 'id', ignoreDuplicates: false });
+    if (error) {
+      console.warn('[Identity] Failed to persist contact:', error.message ?? error);
+    }
   } catch (err) {
     console.warn('[Identity] Failed to persist contact:', err);
   }
