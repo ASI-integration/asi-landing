@@ -170,6 +170,10 @@ import {
 import { tryCommunicationAutopilotV1OrchestratorTurn } from './communication-autopilot-v1-orchestrator';
 import { recordCommunicationAutopilotTurn } from './communication-autopilot-crm';
 import {
+  loadRelevantGuestMemory,
+  observeGuestCommunication,
+} from './guest-long-term-memory';
+import {
   autopilotSessionFromCollectedData,
   patchAutopilotSessionCollectedData,
 } from './communication-autopilot-session';
@@ -2311,6 +2315,10 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
           );
           const sessionMemory = autopilotSessionFromCollectedData(sessionCollectedData);
           const passport = propertyId ? await getGroundedKnowledge(propertyId) : null;
+          const guestMemory = await loadRelevantGuestMemory({
+            guestId: identity.guestId,
+            requestText: text,
+          });
           const autopilotResult = runCommunicationAutopilotV1({
             messageText: text,
             property: autopilotProperty,
@@ -2318,8 +2326,22 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
             bookingVerified: telegramBookingObjectCtx.access_verified,
             passport,
             session: sessionMemory,
+            guestMemory,
             language: detectOperationalLanguage(text, sessionMemory),
           });
+          if (identity.guestId) {
+            await observeGuestCommunication({
+              guestId: identity.guestId,
+              messageText: text,
+              language: autopilotResult.language,
+              transport: String(transportEventMeta.transport ?? envelope.channel),
+              sourceRef: convSession.sessionId,
+            }).catch((error) => {
+              console.warn('[orchestrator] guest memory write skipped', {
+                error: error instanceof Error ? error.message : String(error),
+              });
+            });
+          }
           const sessionPatch = buildAutopilotSessionPatch({
             result: autopilotResult,
             messageText: text,

@@ -67,6 +67,30 @@ type ListResponse = {
   reviews: EscalationReview[];
 };
 
+type GuestMemoryView = {
+  profile: {
+    preferredLanguage: 'ru' | 'en' | null;
+    preferredCommunicationMode: 'text' | 'voice' | null;
+    stayCount: number;
+    firstSeenAt: string;
+    lastSeenAt: string;
+    lastStayAt: string | null;
+  } | null;
+  preferences: Array<{
+    id: string;
+    key: string;
+    value: string;
+    updatedAt: string;
+  }>;
+  events: Array<{
+    id: string;
+    type: string;
+    summary: string;
+    occurredAt: string;
+    historyOnly: boolean;
+  }>;
+};
+
 type FilterStatus = 'all' | ReviewStatus;
 type FilterUrgency = 'all' | 'urgent' | 'normal';
 
@@ -120,6 +144,43 @@ function isRequiresOperator(review: EscalationReview): boolean {
 function shortTs(iso: string): string {
   const d = new Date(iso);
   return Number.isNaN(d.getTime()) ? iso : d.toLocaleString('ru-RU', { hour12: false });
+}
+
+function preferenceLabel(key: string): string {
+  const labels: Record<string, string> = {
+    quiet_room: 'Тихое размещение',
+    parking: 'Парковка',
+    late_checkout: 'Поздний выезд',
+    accessibility: 'Доступность',
+    crib: 'Детская кроватка',
+    pet: 'Размещение с животным',
+  };
+  return labels[key] ?? 'Предпочтение';
+}
+
+function memoryEventLabel(type: string): string {
+  const labels: Record<string, string> = {
+    completed_stay: 'Завершённое проживание',
+    booking_verified: 'Подтверждённая бронь',
+    maintenance_resolution: 'Решение по ремонту',
+    operator_confirmed_resolution: 'Решение оператора',
+    refund_outcome: 'Итог по возврату',
+    access_incident: 'Ситуация с доступом',
+    house_rule_violation: 'Нарушение правил',
+    late_checkout_history: 'История позднего выезда',
+  };
+  return labels[type] ?? 'Важное событие';
+}
+
+function isReturningGuestProfile(profile: GuestMemoryView['profile']): boolean {
+  if (!profile) return false;
+  const firstSeen = Date.parse(profile.firstSeenAt);
+  const lastSeen = Date.parse(profile.lastSeenAt);
+  return profile.stayCount > 0 || (
+    Number.isFinite(firstSeen) &&
+    Number.isFinite(lastSeen) &&
+    lastSeen - firstSeen >= 24 * 60 * 60 * 1_000
+  );
 }
 
 function channelLabel(channel: Channel): string {
@@ -300,6 +361,10 @@ export default function CommunicationPage() {
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const [replyState, setReplyState] = useState<ReplyState>('idle');
   const [actionMessage, setActionMessage] = useState<string | null>(null);
+  const [guestMemory, setGuestMemory] = useState<GuestMemoryView | null>(null);
+  const [guestMemoryLoading, setGuestMemoryLoading] = useState(false);
+  const [guestMemoryError, setGuestMemoryError] = useState<string | null>(null);
+  const [guestMemoryBusy, setGuestMemoryBusy] = useState(false);
 
   async function loadReviews(): Promise<void> {
     setLoading(true);
@@ -318,9 +383,54 @@ export default function CommunicationPage() {
     }
   }
 
+  async function loadGuestMemory(reviewId: string): Promise<void> {
+    setGuestMemoryLoading(true);
+    setGuestMemoryError(null);
+    try {
+      const res = await fetch(`/api/operator/escalation-reviews/${reviewId}/guest-memory`, { cache: 'no-store' });
+      const data = await res.json() as { ok?: boolean; memory?: GuestMemoryView | null; unavailable?: boolean; error?: string };
+      if (!res.ok || data.ok === false) throw new Error(data.error ?? 'Не удалось загрузить память гостя');
+      setGuestMemory(data.unavailable ? null : data.memory ?? null);
+    } catch (err) {
+      setGuestMemory(null);
+      setGuestMemoryError(err instanceof Error ? err.message : 'Не удалось загрузить память гостя');
+    } finally {
+      setGuestMemoryLoading(false);
+    }
+  }
+
+  async function updateGuestMemory(body: Record<string, unknown>): Promise<void> {
+    if (!selectedId) return;
+    setGuestMemoryBusy(true);
+    setGuestMemoryError(null);
+    try {
+      const res = await fetch(`/api/operator/escalation-reviews/${selectedId}/guest-memory`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json() as { ok?: boolean; memory?: GuestMemoryView; error?: string };
+      if (!res.ok || !data.ok) throw new Error(data.error ?? 'Не удалось обновить память гостя');
+      setGuestMemory(data.memory ?? null);
+    } catch (err) {
+      setGuestMemoryError(err instanceof Error ? err.message : 'Не удалось обновить память гостя');
+    } finally {
+      setGuestMemoryBusy(false);
+    }
+  }
+
   useEffect(() => {
     void loadReviews();
   }, []);
+
+  useEffect(() => {
+    if (!selectedId) {
+      setGuestMemory(null);
+      setGuestMemoryError(null);
+      return;
+    }
+    void loadGuestMemory(selectedId);
+  }, [selectedId]);
 
   const filtered = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -810,6 +920,148 @@ export default function CommunicationPage() {
                     <span className="text-slate-500">Обновлено:</span> {shortTs(selected.updatedAt)}
                   </div>
                 </div>
+              </div>
+
+              <div className="rounded-xl border border-slate-200 bg-white p-4">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <h3 className="text-sm font-semibold text-slate-900">Память о госте</h3>
+                    <p className="mt-1 text-xs text-slate-500">
+                      Только подтверждённые предпочтения и важные события. Текущая бронь и данные объекта всегда важнее этой истории.
+                    </p>
+                  </div>
+                  {guestMemory?.profile ? (
+                    <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700">
+                      {isReturningGuestProfile(guestMemory.profile)
+                        ? 'Гость вернулся'
+                        : 'Первое обращение'}
+                    </span>
+                  ) : null}
+                </div>
+
+                {guestMemoryLoading ? (
+                  <div className="mt-3 text-sm text-slate-500">Загружаем память гостя...</div>
+                ) : guestMemoryError ? (
+                  <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                    {guestMemoryError}
+                  </div>
+                ) : !guestMemory ? (
+                  <div className="mt-3 text-sm text-slate-500">Для этого диалога память гостя пока недоступна.</div>
+                ) : (
+                  <div className="mt-3 space-y-4">
+                    <div className="grid gap-2 text-sm text-slate-700 sm:grid-cols-2 lg:grid-cols-4">
+                      <div><span className="text-slate-500">Проживаний:</span> {guestMemory.profile?.stayCount ?? 0}</div>
+                      <div><span className="text-slate-500">Последнее:</span> {guestMemory.profile?.lastStayAt ? shortTs(guestMemory.profile.lastStayAt) : 'нет данных'}</div>
+                      <div><span className="text-slate-500">Язык:</span> {guestMemory.profile?.preferredLanguage === 'en' ? 'английский' : guestMemory.profile?.preferredLanguage === 'ru' ? 'русский' : 'не указан'}</div>
+                      <div><span className="text-slate-500">Формат:</span> {guestMemory.profile?.preferredCommunicationMode === 'voice' ? 'голос' : guestMemory.profile?.preferredCommunicationMode === 'text' ? 'текст' : 'не указан'}</div>
+                    </div>
+
+                    <div>
+                      <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Предпочтения</div>
+                      {guestMemory.preferences.length === 0 ? (
+                        <div className="mt-2 text-sm text-slate-500">Нет сохранённых предпочтений.</div>
+                      ) : (
+                        <div className="mt-2 space-y-2">
+                          {guestMemory.preferences.map((preference) => (
+                            <div key={preference.id} className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-slate-200 px-3 py-2">
+                              <div className="text-sm text-slate-700">
+                                <span className="font-medium text-slate-900">{preferenceLabel(preference.key)}:</span> {preference.value}
+                              </div>
+                              <div className="flex gap-2">
+                                <button
+                                  type="button"
+                                  disabled={guestMemoryBusy}
+                                  className="text-xs font-semibold text-indigo-700 disabled:text-slate-400"
+                                  onClick={() => {
+                                    const value = window.prompt('Уточните предпочтение гостя', preference.value)?.trim();
+                                    if (value && value !== preference.value) {
+                                      void updateGuestMemory({ action: 'correct_preference', key: preference.key, value });
+                                    }
+                                  }}
+                                >
+                                  Исправить
+                                </button>
+                                <button
+                                  type="button"
+                                  disabled={guestMemoryBusy}
+                                  className="text-xs font-semibold text-red-700 disabled:text-slate-400"
+                                  onClick={() => void updateGuestMemory({ action: 'delete_preference', itemId: preference.id })}
+                                >
+                                  Удалить
+                                </button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    <div>
+                      <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Недавние важные события</div>
+                      {guestMemory.events.length === 0 ? (
+                        <div className="mt-2 text-sm text-slate-500">Важных событий пока нет.</div>
+                      ) : (
+                        <div className="mt-2 space-y-2">
+                          {guestMemory.events.slice(0, 8).map((event) => (
+                            <div key={event.id} className="rounded-md border border-slate-200 px-3 py-2">
+                              <div className="flex flex-wrap items-start justify-between gap-2">
+                                <div>
+                                  <div className="text-sm font-medium text-slate-900">{memoryEventLabel(event.type)}</div>
+                                  <div className="mt-1 text-sm text-slate-700">{event.summary}</div>
+                                  <div className="mt-1 text-xs text-slate-500">
+                                    {shortTs(event.occurredAt)}{event.historyOnly ? ' · это история, не новое согласование' : ''}
+                                  </div>
+                                </div>
+                                <div className="flex gap-2">
+                                  <button
+                                    type="button"
+                                    disabled={guestMemoryBusy}
+                                    className="text-xs font-semibold text-indigo-700 disabled:text-slate-400"
+                                    onClick={() => {
+                                      const summary = window.prompt('Уточните итог события', event.summary)?.trim();
+                                      if (summary && summary !== event.summary) {
+                                        void updateGuestMemory({
+                                          action: 'correct_event',
+                                          itemId: event.id,
+                                          type: event.type,
+                                          summary,
+                                          occurredAt: event.occurredAt,
+                                        });
+                                      }
+                                    }}
+                                  >
+                                    Исправить
+                                  </button>
+                                  <button
+                                    type="button"
+                                    disabled={guestMemoryBusy}
+                                    className="text-xs font-semibold text-red-700 disabled:text-slate-400"
+                                    onClick={() => void updateGuestMemory({ action: 'delete_event', itemId: event.id })}
+                                  >
+                                    Удалить
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    <button
+                      type="button"
+                      disabled={guestMemoryBusy}
+                      className="rounded-md border border-red-200 px-3 py-2 text-xs font-semibold text-red-700 hover:bg-red-50 disabled:text-slate-400"
+                      onClick={() => {
+                        if (window.confirm('Удалить всю долгосрочную память об этом госте?')) {
+                          void updateGuestMemory({ action: 'forget_all' });
+                        }
+                      }}
+                    >
+                      Забыть данные гостя
+                    </button>
+                  </div>
+                )}
               </div>
 
               <div className="rounded-xl border border-slate-200 bg-white p-4">
