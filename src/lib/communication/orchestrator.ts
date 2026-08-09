@@ -170,8 +170,9 @@ import {
 import { tryCommunicationAutopilotV1OrchestratorTurn } from './communication-autopilot-v1-orchestrator';
 import { recordCommunicationAutopilotTurn } from './communication-autopilot-crm';
 import {
+  isExplicitGuestPreferenceOnlyMessage,
   loadRelevantGuestMemory,
-  observeGuestCommunication,
+  observeResolvedGuestInbound,
 } from './guest-long-term-memory';
 import {
   autopilotSessionFromCollectedData,
@@ -1395,6 +1396,48 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
   });
   convSession = updateSessionFactsAndSummary({ key: sessionKey, session: convSession, text });
 
+  const guestMemoryObservation = await observeResolvedGuestInbound({
+    guestId: identity.guestId,
+    senderIdentity: senderRoute.senderIdentity,
+    messageText: text,
+    language: detectOperationalLanguage(text),
+    transport: String(
+      (envelope.metadata as Record<string, unknown> | undefined)?.transport ??
+      ((envelope.metadata as Record<string, unknown> | undefined)?.voice
+        ? 'telegram_voice'
+        : envelope.channel === 'telegram'
+          ? 'telegram_text'
+          : envelope.channel),
+    ),
+    sourceRef: convSession.sessionId,
+  }).catch((error) => {
+    console.warn('[orchestrator] guest memory observation skipped', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return {
+      observed: false,
+      preferenceOnly: Boolean(identity.guestId) &&
+        (senderRoute.senderIdentity === 'guest' || senderRoute.senderIdentity === 'test_guest') &&
+        isExplicitGuestPreferenceOnlyMessage(text),
+      sensitiveRejected: false,
+    };
+  });
+
+  if (guestMemoryObservation.preferenceOnly) {
+    auditDecision({
+      type: 'ignore',
+      chat_id: chatId,
+      update_id,
+      detail: 'guest_preference_only_observed_no_handoff',
+    });
+    return {
+      outcome: ProcessOutcome.Ignored,
+      update_id,
+      chat_id: chatId,
+      category: MessageCategory.GuestMessage,
+    };
+  }
+
   const acceptanceEscalation = await handleTelegramOpsAcceptanceEscalation({
     envelope,
     identity,
@@ -2329,19 +2372,6 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
             guestMemory,
             language: detectOperationalLanguage(text, sessionMemory),
           });
-          if (identity.guestId) {
-            await observeGuestCommunication({
-              guestId: identity.guestId,
-              messageText: text,
-              language: autopilotResult.language,
-              transport: String(transportEventMeta.transport ?? envelope.channel),
-              sourceRef: convSession.sessionId,
-            }).catch((error) => {
-              console.warn('[orchestrator] guest memory write skipped', {
-                error: error instanceof Error ? error.message : String(error),
-              });
-            });
-          }
           const sessionPatch = buildAutopilotSessionPatch({
             result: autopilotResult,
             messageText: text,

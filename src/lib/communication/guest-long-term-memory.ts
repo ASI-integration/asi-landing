@@ -78,6 +78,12 @@ export type RelevantGuestMemoryContext = {
   events: GuestMemoryEvent[];
 };
 
+export type GuestMemoryInboundObservation = {
+  observed: boolean;
+  preferenceOnly: boolean;
+  sensitiveRejected: boolean;
+};
+
 type SupabaseLike = { from: (table: string) => any };
 
 const PREFERENCE_KEYS = new Set<GuestPreferenceKey>([
@@ -381,7 +387,7 @@ const RELEVANCE: Record<GuestPreferenceKey | GuestMemoryEventType, RegExp> = {
   late_checkout: /поздн.*выезд|выезд.*поздн|late\s+check.?out/iu,
   accessibility: /доступн|коляск|пандус|лифт|accessib|wheelchair/iu,
   crib: /кроватк|младен|реб[её]н|crib|baby/iu,
-  pet: /животн|собак|кошк|pet|dog|cat/iu,
+  pet: /животн|собак|кошк|\bpets?\b|\bdogs?\b|\bcats?\b/iu,
   completed_stay: /прожив|брон|stay|booking/iu,
   booking_verified: /брон|booking|reservation/iu,
   maintenance_resolution: /ремонт|не\s+работ|полом|maintenance|broken/iu,
@@ -463,8 +469,39 @@ export function extractExplicitGuestPreferences(messageText: string): Array<{
   if (/поздн.*выезд|late\s+check.?out/iu.test(text)) found.push({ key: 'late_checkout', value: 'Часто запрашивает поздний выезд' });
   if (/пандус|коляск|доступн|wheelchair|accessib/iu.test(text)) found.push({ key: 'accessibility', value: 'Нужны условия доступности' });
   if (/кроватк|crib/iu.test(text)) found.push({ key: 'crib', value: 'Обычно нужна детская кроватка' });
-  if (/животн|собак|кошк|pet|dog|cat/iu.test(text)) found.push({ key: 'pet', value: 'Путешествует с животным' });
+  if (/животн|собак|кошк|\bpets?\b|\bdogs?\b|\bcats?\b/iu.test(text)) found.push({ key: 'pet', value: 'Путешествует с животным' });
   return found.slice(0, 3);
+}
+
+function extractExplicitProfilePreferences(messageText: string): {
+  language: GuestMemoryLanguage | null;
+  mode: GuestCommunicationMode | null;
+} {
+  const text = boundedText(messageText, 1_000);
+  const explicit = /(?:предпочитаю|прошу|хочу|люблю|i\s+(?:would\s+)?prefer|please)/iu.test(text);
+  if (!explicit) return { language: null, mode: null };
+  const language = /(?:по-русски|на\s+русск|in\s+russian|russian\s+(?:language|please))/iu.test(text)
+    ? 'ru'
+    : /(?:по-английски|на\s+английск|in\s+english|english\s+(?:language|please))/iu.test(text)
+      ? 'en'
+      : null;
+  const mode = /(?:текстом|текстов(?:ые|ыми)\s+сообщени|(?:by|via|and)\s+text|text\s+messages?)/iu.test(text)
+    ? 'text'
+    : /(?:голосом|голосов(?:ые|ыми)\s+сообщени|by\s+voice|voice\s+messages?)/iu.test(text)
+      ? 'voice'
+      : null;
+  return { language, mode };
+}
+
+export function isExplicitGuestPreferenceOnlyMessage(messageText: string): boolean {
+  const text = boundedText(messageText, 1_000);
+  const profile = extractExplicitProfilePreferences(text);
+  const preferences = extractExplicitGuestPreferences(text);
+  if (!profile.language && !profile.mode && preferences.length === 0) return false;
+  return !(
+    /\?/u.test(text) ||
+    /(?:не\s+работ|сломал|проблем|сроч|помог|подскаж|где\b|когда\b|как\b|почему\b|можно\s+ли|can\s+you|could\s+you|where\b|when\b|how\b|why\b|doesn['’]?t\s+work|not\s+working|broken|urgent|help\b)/iu.test(text)
+  );
 }
 
 export async function observeGuestCommunication(input: {
@@ -475,12 +512,16 @@ export async function observeGuestCommunication(input: {
   sourceRef?: string | null;
   db?: SupabaseLike;
 }): Promise<void> {
-  const mode: GuestCommunicationMode = /voice|phone|audio/i.test(input.transport) ? 'voice' : 'text';
+  if (containsForbiddenGuestMemoryContent(input.messageText)) {
+    throw new Error('forbidden_sensitive_memory_content');
+  }
+  const explicitProfile = extractExplicitProfilePreferences(input.messageText);
+  const mode: GuestCommunicationMode = explicitProfile.mode ?? (/voice|phone|audio/i.test(input.transport) ? 'voice' : 'text');
   const db = input.db ?? (supabase as unknown as SupabaseLike);
   const preferences = extractExplicitGuestPreferences(input.messageText);
   await recordGuestSeen({
     guestId: input.guestId,
-    preferredLanguage: clearlyUsesLanguage(input.messageText) ?? input.language,
+    preferredLanguage: explicitProfile.language ?? clearlyUsesLanguage(input.messageText) ?? input.language,
     preferredCommunicationMode: mode,
     source: 'deterministic_system',
     db,
@@ -493,6 +534,35 @@ export async function observeGuestCommunication(input: {
     confidence: 1,
     db,
   })));
+}
+
+export async function observeResolvedGuestInbound(input: {
+  guestId: string | null | undefined;
+  senderIdentity: string | null | undefined;
+  messageText: string;
+  language: GuestMemoryLanguage;
+  transport: string;
+  sourceRef?: string | null;
+  db?: SupabaseLike;
+}): Promise<GuestMemoryInboundObservation> {
+  const eligible = Boolean(input.guestId) && (input.senderIdentity === 'guest' || input.senderIdentity === 'test_guest');
+  if (!eligible) return { observed: false, preferenceOnly: false, sensitiveRejected: false };
+  if (containsForbiddenGuestMemoryContent(input.messageText)) {
+    return { observed: false, preferenceOnly: false, sensitiveRejected: true };
+  }
+  await observeGuestCommunication({
+    guestId: input.guestId!,
+    messageText: input.messageText,
+    language: input.language,
+    transport: input.transport,
+    sourceRef: input.sourceRef,
+    db: input.db,
+  });
+  return {
+    observed: true,
+    preferenceOnly: isExplicitGuestPreferenceOnlyMessage(input.messageText),
+    sensitiveRejected: false,
+  };
 }
 
 export async function loadRelevantGuestMemory(input: {
