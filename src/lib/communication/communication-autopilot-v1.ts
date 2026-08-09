@@ -9,6 +9,10 @@ import {
 } from './knowledge-resolver';
 import type { CommunicationAutopilotSessionMemory } from './communication-autopilot-session';
 import { COMMUNICATION_AUTOPILOT_SESSION_TTL_MS } from './communication-autopilot-session';
+import {
+  resolveLanguageWithGuestMemory,
+  type RelevantGuestMemoryContext,
+} from './guest-long-term-memory';
 
 export type CommunicationAutopilotV1Action = 'auto_reply' | 'clarification' | 'operator_handoff';
 
@@ -114,10 +118,16 @@ export function runCommunicationAutopilotV1(input: {
   passport?: GroundedKnowledge | null;
   faq?: Record<string, string> | null;
   session?: CommunicationAutopilotSessionMemory | null;
+  guestMemory?: RelevantGuestMemoryContext | null;
   language?: 'ru' | 'en';
 }): CommunicationAutopilotV1Result {
   const messageText = String(input.messageText ?? '').trim();
-  const language = input.language ?? detectOperationalLanguage(messageText, input.session);
+  const detectedLanguage = input.language ?? detectOperationalLanguage(messageText, input.session);
+  const language = resolveLanguageWithGuestMemory({
+    messageText,
+    detectedLanguage,
+    memory: input.guestMemory,
+  });
   if (isExplicitOperationalLanguageSwitch(messageText)) {
     return {
       action: 'auto_reply',
@@ -132,6 +142,12 @@ export function runCommunicationAutopilotV1(input: {
     };
   }
   const continuation = continuationText({ messageText, session: input.session, language });
+  const relevantLongTermMemoryUsed = Boolean(
+    input.guestMemory?.preferences.length ||
+    input.guestMemory?.events.length ||
+    (input.guestMemory?.preferredLanguage && input.guestMemory.preferredLanguage === language),
+  );
+  const memoryUsed = continuation.memoryUsed || relevantLongTermMemoryUsed;
   const effectiveMessageText = continuation.text;
   const escalation = requiresAutopilotOperatorEscalation(effectiveMessageText);
   if (escalation) {
@@ -145,7 +161,7 @@ export function runCommunicationAutopilotV1(input: {
       missingFields: [],
       escalationReason: escalation,
       language,
-      memoryUsed: continuation.memoryUsed,
+      memoryUsed,
       unresolvedAction: escalation,
       safetyBlockedAction: true,
     };
@@ -163,7 +179,7 @@ export function runCommunicationAutopilotV1(input: {
       missingFields: [],
       escalationReason: 'unclear_situation',
       language,
-      memoryUsed: continuation.memoryUsed,
+      memoryUsed,
       unresolvedAction: 'unclear_situation',
       safetyBlockedAction: true,
     };
@@ -179,7 +195,7 @@ export function runCommunicationAutopilotV1(input: {
       resolved: false,
       missingFields: ['booking.reference'],
       language,
-      memoryUsed: continuation.memoryUsed,
+      memoryUsed,
       requestedMissingField: 'booking_reference',
       unresolvedAction: 'wifi',
     };
@@ -198,7 +214,7 @@ export function runCommunicationAutopilotV1(input: {
       resolved: false,
       missingFields: ['requested_time'],
       language,
-      memoryUsed: false,
+      memoryUsed: relevantLongTermMemoryUsed,
       requestedMissingField: 'requested_time',
       unresolvedAction,
     };
@@ -215,6 +231,8 @@ export function runCommunicationAutopilotV1(input: {
       missingFields: [],
       escalationReason: `${intent}_approval_required`,
       language,
+      // A prior late-checkout event remains history only; approval is always
+      // re-requested for the current stay through this operator handoff.
       memoryUsed: true,
       unresolvedAction: intent,
       safetyBlockedAction: true,
@@ -242,7 +260,7 @@ export function runCommunicationAutopilotV1(input: {
       missingFields: [],
       knowledgeSource: resolvedKnowledge.source,
       language,
-      memoryUsed: continuation.memoryUsed,
+      memoryUsed,
     };
   }
 
@@ -256,7 +274,7 @@ export function runCommunicationAutopilotV1(input: {
     missingFields: resolvedKnowledge.missingFields,
     knowledgeSource: resolvedKnowledge.source,
     language,
-    memoryUsed: continuation.memoryUsed,
+    memoryUsed,
     requestedMissingField: 'property_knowledge',
     unresolvedAction: topic,
   };

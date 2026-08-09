@@ -56,6 +56,10 @@ import {
   loadAutonomousSession,
   patchAutonomousSessionCollectedData,
 } from './conversation-session-store';
+import {
+  recordGuestOperationalEvent,
+  type GuestMemoryEventType,
+} from './guest-long-term-memory';
 
 // ─── State ───────────────────────────────────────────────────────────────────
 
@@ -338,6 +342,32 @@ export async function resolveOperatorHandoffWithReply(input: {
     chatId: Number.isFinite(chatId) ? chatId : undefined,
   });
   const closed = getEscalationReview(review.reviewId) ?? review;
+  const guestId = String(review.source?.guest_id ?? '').trim();
+  if (guestId && !sent.duplicatePrevented) {
+    const reason = String(review.escalationReason ?? '').toLowerCase();
+    const eventType: GuestMemoryEventType = reason.includes('maintenance')
+      ? 'maintenance_resolution'
+      : reason.includes('refund') || reason.includes('compensation')
+        ? 'refund_outcome'
+        : reason.includes('access') || reason.includes('lockout')
+          ? 'access_incident'
+          : reason.includes('late_checkout')
+            ? 'late_checkout_history'
+            : 'operator_confirmed_resolution';
+    await recordGuestOperationalEvent({
+      guestId,
+      type: eventType,
+      summary: `Оператор подтвердил решение по событию: ${review.escalationReason}`,
+      source: 'operator_confirmed',
+      sourceRef: review.reviewId,
+      occurredAt: closed.updatedAt,
+    }).catch((error) => {
+      console.warn('[handoff-lock] guest memory event skipped', {
+        reviewId: review.reviewId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    });
+  }
   logCommAgentHandoffLifecycleMetric({
     channel: review.channel,
     session_key: review.sessionId,
