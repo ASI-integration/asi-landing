@@ -23,10 +23,11 @@ BEGIN
   v_patched := v_definition;
 
   -- Ownership lookup. Use a whitespace-tolerant replacement because
-  -- pg_get_functiondef normalizes indentation.
+  -- pg_get_functiondef normalizes indentation. [.] avoids backslash escaping
+  -- ambiguity under standard_conforming_strings.
   v_patched := regexp_replace(
     v_patched,
-    'FROM public\.tg_guest_reservations[[:space:]]+WHERE id = p_reservation_id;',
+    'FROM public[.]tg_guest_reservations[[:space:]]+WHERE id = p_reservation_id;',
     E'FROM public.tg_guest_reservations\n   WHERE id = p_booking_ops_record_id;',
     'g'
   );
@@ -34,7 +35,7 @@ BEGIN
   -- Exact owned-row deletion.
   v_patched := regexp_replace(
     v_patched,
-    'DELETE FROM public\.tg_guest_reservations[[:space:]]+WHERE id = p_reservation_id AND pilot_acceptance_marker = p_run_id;',
+    'DELETE FROM public[.]tg_guest_reservations[[:space:]]+WHERE id = p_reservation_id AND pilot_acceptance_marker = p_run_id;',
     E'DELETE FROM public.tg_guest_reservations\n   WHERE id = p_booking_ops_record_id AND pilot_acceptance_marker = p_run_id;',
     'g'
   );
@@ -43,8 +44,8 @@ BEGIN
     RAISE EXCEPTION 'guest_lifecycle_cleanup_remaining_uuid_patch_not_applied';
   END IF;
 
-  IF v_patched ~ 'FROM public\.tg_guest_reservations[[:space:]]+WHERE id = p_reservation_id;'
-     OR v_patched ~ 'DELETE FROM public\.tg_guest_reservations[[:space:]]+WHERE id = p_reservation_id AND pilot_acceptance_marker = p_run_id;' THEN
+  IF v_patched ~ 'FROM public[.]tg_guest_reservations[[:space:]]+WHERE id = p_reservation_id;'
+     OR v_patched ~ 'DELETE FROM public[.]tg_guest_reservations[[:space:]]+WHERE id = p_reservation_id AND pilot_acceptance_marker = p_run_id;' THEN
     RAISE EXCEPTION 'guest_lifecycle_cleanup_remaining_uuid_patch_incomplete';
   END IF;
 
