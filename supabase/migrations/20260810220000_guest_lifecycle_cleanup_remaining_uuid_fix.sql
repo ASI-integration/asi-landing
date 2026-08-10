@@ -4,11 +4,9 @@
 -- RPC accepts p_reservation_id as TEXT. The synthetic manifest guarantees
 -- p_reservation_id = p_booking_ops_record_id::text.
 --
--- Patch every remaining predicate expression `id = p_reservation_id` in the
--- installed cleanup definition. In the canonical cleanup function these are
--- the two tg_guest_reservations primary-key predicates (ownership lookup and
--- exact delete). Match only the predicate expression so pg_get_functiondef
--- whitespace/indentation normalization cannot prevent the repair.
+-- Patch only standalone `id = p_reservation_id` predicates. The leading
+-- boundary explicitly excludes identifier characters so suffixes such as
+-- booking_id and reservation_id cannot be rewritten accidentally.
 
 DO $repair$
 DECLARE
@@ -25,8 +23,8 @@ BEGIN
 
   v_patched := regexp_replace(
     v_definition,
-    'id[[:space:]]*=[[:space:]]*p_reservation_id',
-    'id = p_booking_ops_record_id',
+    '(^|[^[:alnum:]_])id[[:space:]]*=[[:space:]]*p_reservation_id',
+    E'\\1id = p_booking_ops_record_id',
     'g'
   );
 
@@ -34,7 +32,7 @@ BEGIN
     RAISE EXCEPTION 'guest_lifecycle_cleanup_remaining_uuid_patch_not_applied';
   END IF;
 
-  IF v_patched ~ 'id[[:space:]]*=[[:space:]]*p_reservation_id' THEN
+  IF v_patched ~ '(^|[^[:alnum:]_])id[[:space:]]*=[[:space:]]*p_reservation_id' THEN
     RAISE EXCEPTION 'guest_lifecycle_cleanup_remaining_uuid_patch_incomplete';
   END IF;
 
