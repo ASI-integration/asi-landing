@@ -404,14 +404,15 @@ async function createExactSyntheticFixture(client: PgClient): Promise<void> {
        communication_intent_id, delivery_id, payload)
     VALUES (
       $1::uuid, $2 || ':reservation.created', 'reservation.created', $3,
-      $3::uuid, $4, $5, now(), 'synthetic_acceptance',
-      $2 || ':reservation.created', 'reservation', 'dry_run', $6::uuid, $7::uuid,
+      $4::uuid, $5, $6, now(), 'synthetic_acceptance',
+      $2 || ':reservation.created', 'reservation', 'dry_run', $7::uuid, $8::uuid,
       '{}'::jsonb
     )
     `,
     [
       '77777777-7777-4777-8777-777777777777',
       manifest.runId,
+      manifest.reservationId,
       manifest.bookingOpsRecordId,
       manifest.propertyId,
       manifest.guestId,
