@@ -1,0 +1,384 @@
+name: Guest Lifecycle Production Acceptance v1
+
+on:
+  workflow_dispatch:
+    inputs:
+      expected_production_sha:
+        description: Exact 40-character SHA currently returned by production /api/version
+        required: true
+        type: string
+      verified_target_id:
+        description: Owner-verified production target identity
+        required: true
+        type: string
+      expected_target_id:
+        description: Re-enter the exact owner-verified production target identity
+        required: true
+        type: string
+      safety_acknowledgement:
+        description: Type RUN ISOLATED GUEST LIFECYCLE SYNTHETIC ACCEPTANCE (owner approval remains separate)
+        required: true
+        type: string
+
+concurrency:
+  group: guest-lifecycle-production-acceptance-v1
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  validate_request:
+    name: Validate owner-gated request
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fail closed on identity and acknowledgement
+        shell: bash
+        env:
+          EXPECTED_PRODUCTION_SHA: ${{ inputs.expected_production_sha }}
+          VERIFIED_TARGET_ID: ${{ inputs.verified_target_id }}
+          EXPECTED_TARGET_ID: ${{ inputs.expected_target_id }}
+          SAFETY_ACKNOWLEDGEMENT: ${{ inputs.safety_acknowledgement }}
+        run: |
+          set -euo pipefail
+          REQUIRED_ACK='RUN ISOLATED GUEST LIFECYCLE SYNTHETIC ACCEPTANCE'
+          if [[ ! "$EXPECTED_PRODUCTION_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo '::error::expected_production_sha must be an exact lowercase 40-character commit SHA.'
+            exit 1
+          fi
+          if [[ -z "${VERIFIED_TARGET_ID//[[:space:]]/}" || -z "${EXPECTED_TARGET_ID//[[:space:]]/}" || "$VERIFIED_TARGET_ID" != "$EXPECTED_TARGET_ID" ]]; then
+            echo '::error::Production target IDs must be non-empty and exactly equal.'
+            exit 1
+          fi
+          if [[ "$SAFETY_ACKNOWLEDGEMENT" != "$REQUIRED_ACK" ]]; then
+            echo '::error::Exact lifecycle synthetic acceptance acknowledgement is required.'
+            exit 1
+          fi
+
+  build_runner:
+    name: Bundle exact deployed source
+    runs-on: ubuntu-latest
+    needs: [validate_request]
+    timeout-minutes: 15
+    steps:
+      - name: Checkout exact expected production revision
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ inputs.expected_production_sha }}
+
+      - name: Verify checkout SHA belongs to main
+        shell: bash
+        env:
+          EXPECTED_PRODUCTION_SHA: ${{ inputs.expected_production_sha }}
+        run: |
+          set -euo pipefail
+          CHECKED_OUT_SHA="$(git rev-parse HEAD)"
+          if [[ "$CHECKED_OUT_SHA" != "$EXPECTED_PRODUCTION_SHA" ]]; then
+            echo '::error::Checked-out source does not match expected_production_sha.'
+            exit 1
+          fi
+          git fetch --no-tags origin main:refs/remotes/origin/main
+          if ! git merge-base --is-ancestor "$CHECKED_OUT_SHA" origin/main; then
+            echo '::error::Expected production SHA is not an ancestor of origin/main.'
+            exit 1
+          fi
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install locked CI dependencies
+        run: npm ci
+
+      - name: Build temporary plain-Node acceptance artifact
+        id: bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          BUILD_DIR="$RUNNER_TEMP/guest-lifecycle-production-acceptance-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          TRANSFORMED_ENTRY="scripts/.guest-lifecycle-production-entry.ts"
+          mkdir -p "$BUILD_DIR"
+          chmod 700 "$BUILD_DIR"
+          cleanup_build_entry() {
+            rm -f -- "$TRANSFORMED_ENTRY"
+          }
+          trap cleanup_build_entry EXIT
+
+          node - scripts/guest-lifecycle-db-acceptance.ts "$TRANSFORMED_ENTRY" <<'NODE'
+          const fs = require('node:fs');
+          const [sourcePath, outputPath] = process.argv.slice(2);
+          const source = fs.readFileSync(sourcePath, 'utf8').replace(/\r\n/gu, '\n');
+          const commandDeclaration = "  const command = process.platform === 'win32' ? 'npx.cmd' : 'npx';\n";
+          const spawnPrefix = "  const child = spawnSync(command, [\n    'tsx', process.argv[1]!, '--phase', 'restart-replay', '--manifest', encoded,\n";
+          const plainNodeSpawn = "  const child = spawnSync(process.execPath, [\n    process.argv[1]!, '--phase', 'restart-replay', '--manifest', encoded,\n";
+          const declarationMatches = source.split(commandDeclaration).length - 1;
+          const spawnMatches = source.split(spawnPrefix).length - 1;
+          if (declarationMatches !== 1 || spawnMatches !== 1) {
+            throw new Error(`acceptance_restart_seam_mismatch:declaration=${declarationMatches}:spawn=${spawnMatches}`);
+          }
+          const transformed = source.replace(commandDeclaration, '').replace(spawnPrefix, plainNodeSpawn);
+          if (/npx(?:\.cmd)?|['\"]tsx['\"]/.test(transformed)) {
+            throw new Error('acceptance_restart_transform_left_development_runtime_reference');
+          }
+          fs.writeFileSync(outputPath, transformed, { encoding: 'utf8', mode: 0o600 });
+          NODE
+
+          npm exec --yes --package=esbuild@0.25.9 -- esbuild \
+            "$TRANSFORMED_ENTRY" \
+            --bundle \
+            --platform=node \
+            --target=node20 \
+            --format=cjs \
+            --outfile="$BUILD_DIR/guest-lifecycle-production-acceptance.cjs" \
+            --log-level=warning
+
+          chmod 600 "$BUILD_DIR/guest-lifecycle-production-acceptance.cjs"
+          (
+            cd "$BUILD_DIR"
+            sha256sum guest-lifecycle-production-acceptance.cjs \
+              > guest-lifecycle-production-acceptance.cjs.sha256
+          )
+          echo "artifact_dir=$BUILD_DIR" >> "$GITHUB_OUTPUT"
+
+      - name: Acceptance artifact smoke
+        shell: bash
+        env:
+          ARTIFACT_DIR: ${{ steps.bundle.outputs.artifact_dir }}
+        run: |
+          set -euo pipefail
+          ARTIFACT="$ARTIFACT_DIR/guest-lifecycle-production-acceptance.cjs"
+          node --check "$ARTIFACT"
+          if grep -Fq "npx.cmd" "$ARTIFACT" || grep -Fq "'tsx'" "$ARTIFACT" || grep -Fq '"tsx"' "$ARTIFACT"; then
+            echo '::error::Acceptance artifact still references a development TypeScript runtime.'
+            exit 1
+          fi
+          set +e
+          SMOKE_OUTPUT="$(env \
+            -u GUEST_LIFECYCLE_ACCEPTANCE_ENABLED \
+            -u GUEST_LIFECYCLE_ACCEPTANCE_CONFIRM \
+            -u GUEST_LIFECYCLE_ACCEPTANCE_NO_EXTERNAL_ACTIONS \
+            -u GUEST_LIFECYCLE_ACCEPTANCE_TARGET_ID \
+            -u GUEST_LIFECYCLE_ACCEPTANCE_EXPECTED_TARGET_ID \
+            node "$ARTIFACT" 2>&1)"
+          SMOKE_STATUS=$?
+          set -e
+          if [[ "$SMOKE_STATUS" -eq 0 ]] || ! grep -Fq 'acceptance_not_enabled' <<<"$SMOKE_OUTPUT"; then
+            echo '::error::Acceptance artifact did not fail closed with execution gates absent.'
+            exit 1
+          fi
+          echo 'guest_lifecycle_acceptance_artifact_smoke=PASS'
+
+      - name: Upload temporary acceptance artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: guest-lifecycle-production-acceptance-${{ inputs.expected_production_sha }}
+          path: |
+            ${{ steps.bundle.outputs.artifact_dir }}/guest-lifecycle-production-acceptance.cjs
+            ${{ steps.bundle.outputs.artifact_dir }}/guest-lifecycle-production-acceptance.cjs.sha256
+          if-no-files-found: error
+          retention-days: 1
+
+  production_acceptance:
+    name: Run isolated production acceptance
+    runs-on: ubuntu-latest
+    needs: [validate_request, build_runner]
+    environment: production
+    timeout-minutes: 20
+    steps:
+      - name: Download exact-source acceptance artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: guest-lifecycle-production-acceptance-${{ inputs.expected_production_sha }}
+          path: acceptance-artifact
+
+      - name: Verify acceptance artifact checksum
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd acceptance-artifact
+          sha256sum -c guest-lifecycle-production-acceptance.cjs.sha256
+
+      - name: Verify production revision and run isolated acceptance
+        shell: bash
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_PORT: ${{ secrets.VPS_PORT }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          EXPECTED_PRODUCTION_SHA: ${{ inputs.expected_production_sha }}
+          VERIFIED_TARGET_ID: ${{ inputs.verified_target_id }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${VPS_HOST:-}" || -z "${VPS_SSH_KEY:-}" ]]; then
+            echo '::error::Missing existing production SSH credentials.'
+            exit 1
+          fi
+
+          REMOTE_USER='project_ayfaar'
+          REMOTE_PORT="${VPS_PORT:-22}"
+          REMOTE_TMP=''
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          SSH_KEY=~/.ssh/id_ed25519
+          printf '%s\n' "$VPS_SSH_KEY" > "$SSH_KEY"
+          chmod 600 "$SSH_KEY"
+          SSH_OPTS=(
+            -i "$SSH_KEY"
+            -p "$REMOTE_PORT"
+            -o IdentitiesOnly=yes
+            -o StrictHostKeyChecking=accept-new
+            -o LogLevel=ERROR
+            -o ServerAliveInterval=15
+            -o ServerAliveCountMax=4
+            -o ConnectTimeout=20
+          )
+          SCP_OPTS=(
+            -i "$SSH_KEY"
+            -P "$REMOTE_PORT"
+            -o IdentitiesOnly=yes
+            -o StrictHostKeyChecking=accept-new
+            -o LogLevel=ERROR
+            -o ServerAliveInterval=15
+            -o ServerAliveCountMax=4
+            -o ConnectTimeout=20
+          )
+
+          cleanup_remote() {
+            local cleanup_status=$?
+            set +e
+            if [[ -n "$REMOTE_TMP" ]]; then
+              ssh "${SSH_OPTS[@]}" "${REMOTE_USER}@${VPS_HOST}" \
+                "rm -rf -- '$REMOTE_TMP'" >/dev/null 2>&1
+            fi
+            rm -f -- "$SSH_KEY"
+            exit "$cleanup_status"
+          }
+          trap cleanup_remote EXIT
+
+          REMOTE_TMP="$(ssh "${SSH_OPTS[@]}" "${REMOTE_USER}@${VPS_HOST}" \
+            'umask 077; mktemp -d /home/project_ayfaar/guest-lifecycle-production-acceptance.XXXXXX')"
+          case "$REMOTE_TMP" in
+            /home/project_ayfaar/guest-lifecycle-production-acceptance.*) ;;
+            *) echo '::error::Remote temporary directory failed identity validation.'; exit 1 ;;
+          esac
+
+          scp "${SCP_OPTS[@]}" \
+            acceptance-artifact/guest-lifecycle-production-acceptance.cjs \
+            "${REMOTE_USER}@${VPS_HOST}:${REMOTE_TMP}/guest-lifecycle-production-acceptance.cjs"
+
+          TARGET_ID_B64="$(printf '%s' "$VERIFIED_TARGET_ID" | base64 -w0)"
+          ssh "${SSH_OPTS[@]}" "${REMOTE_USER}@${VPS_HOST}" \
+            "REMOTE_TMP='$REMOTE_TMP' TARGET_ID_B64='$TARGET_ID_B64' EXPECTED_SHA='$EXPECTED_PRODUCTION_SHA' bash -s" <<'REMOTE'
+          set -euo pipefail
+          umask 077
+          readonly ACCEPTANCE_TMP="$REMOTE_TMP"
+          readonly APP_DIR='/var/www/asi/current'
+          readonly ENV_FILE='/var/www/asi/shared/.env.production.live'
+          readonly RUNNER="$ACCEPTANCE_TMP/guest-lifecycle-production-acceptance.cjs"
+          readonly OUTPUT_FILE="$ACCEPTANCE_TMP/acceptance-output.log"
+          trap 'rm -rf -- "$ACCEPTANCE_TMP"' EXIT
+
+          [[ -d "$APP_DIR" && -r "$ENV_FILE" && -f "$RUNNER" ]] || {
+            echo 'production_acceptance_prerequisite_missing' >&2
+            exit 1
+          }
+
+          HEALTH_JSON="$(curl --fail --silent --show-error --max-time 15 http://127.0.0.1:3000/api/health)"
+          VERSION_JSON="$(curl --fail --silent --show-error --max-time 15 http://127.0.0.1:3000/api/version)"
+          node -e '
+            let value = "";
+            process.stdin.setEncoding("utf8");
+            process.stdin.on("data", (chunk) => { value += chunk; });
+            process.stdin.on("end", () => {
+              const health = JSON.parse(value);
+              if (health?.ok !== true) throw new Error("production_health_not_ok");
+            });
+          ' <<<"$HEALTH_JSON"
+          DEPLOYED_SHA="$(node -e '
+            let value = "";
+            process.stdin.setEncoding("utf8");
+            process.stdin.on("data", (chunk) => { value += chunk; });
+            process.stdin.on("end", () => {
+              const version = JSON.parse(value);
+              process.stdout.write(String(version?.sha ?? ""));
+            });
+          ' <<<"$VERSION_JSON")"
+          if [[ "$DEPLOYED_SHA" != "$EXPECTED_SHA" ]]; then
+            echo 'production_deployed_sha_mismatch' >&2
+            exit 1
+          fi
+          echo 'production_health=PASS deployed_sha=VERIFIED'
+
+          readonly VERIFIED_ACCEPTANCE_TARGET_ID="$(printf '%s' "$TARGET_ID_B64" | base64 -d)"
+          [[ -n "$VERIFIED_ACCEPTANCE_TARGET_ID" ]] || { echo 'acceptance_target_identity_empty' >&2; exit 1; }
+
+          set +x
+          set -a
+          # shellcheck disable=SC1090
+          source "$ENV_FILE"
+          set +a
+          export GUEST_LIFECYCLE_ACCEPTANCE_ENABLED=true
+          export GUEST_LIFECYCLE_ACCEPTANCE_CONFIRM='RUN ISOLATED GUEST LIFECYCLE SYNTHETIC ACCEPTANCE'
+          export GUEST_LIFECYCLE_ACCEPTANCE_NO_EXTERNAL_ACTIONS=true
+          export GUEST_LIFECYCLE_ACCEPTANCE_TARGET_ID="$VERIFIED_ACCEPTANCE_TARGET_ID"
+          export GUEST_LIFECYCLE_ACCEPTANCE_EXPECTED_TARGET_ID="$VERIFIED_ACCEPTANCE_TARGET_ID"
+
+          cd "$APP_DIR"
+          if ! node "$RUNNER" >"$OUTPUT_FILE" 2>&1; then
+            echo 'guest_lifecycle_production_acceptance_failed' >&2
+            tail -n 80 "$OUTPUT_FILE" >&2
+            exit 1
+          fi
+
+          node - "$OUTPUT_FILE" <<'NODE'
+          const fs = require('node:fs');
+          const outputPath = process.argv[2];
+          const output = fs.readFileSync(outputPath, 'utf8');
+          const successMarker = '\nGUEST_LIFECYCLE_DB_SYNTHETIC_ACCEPTANCE_OK\n';
+          const markerIndex = output.indexOf(successMarker);
+          if (markerIndex < 0 || !output.includes('GUEST_LIFECYCLE_SYNTHETIC_ZERO_RESIDUE_OK')) {
+            throw new Error('guest_lifecycle_acceptance_success_markers_missing');
+          }
+          const report = JSON.parse(output.slice(0, markerIndex).trim());
+          const initial = report.initialPass;
+          const same = report.sameProcessReplay;
+          const fresh = report.restartReplay;
+          const cleanup = report.cleanup;
+          const dashboardProjectionPassed = Boolean(
+            initial?.projection?.currentStage === 'completed'
+            && initial?.projection?.mostRecentEvent === 'stay.completed'
+            && initial?.projection?.deliveryStatus === 'dry_run'
+          );
+          const result = {
+            deployedShaVerified: true,
+            lifecycleEventsCreated: Number(initial?.counts?.lifecycleEvents ?? -1),
+            dryRunDeliveries: Number(initial?.counts?.deliveries ?? -1),
+            sameProcessReplayDuplicates: Number(same?.duplicateCount ?? -1),
+            freshProcessReplayDuplicates: Number(fresh?.duplicateCount ?? -1),
+            dashboardProjectionPassed,
+            externalActionsAttempted: 0,
+            cleanupRan: Boolean(cleanup),
+            zeroResidue: cleanup?.zeroResidue === true,
+            residueCount: Number(cleanup?.residueCount ?? -1),
+          };
+          const success = report.ok === true
+            && initial?.noExternalActions === true
+            && initial?.allDeliveriesDryRun === true
+            && same?.noExternalActions === true
+            && fresh?.noExternalActions === true
+            && result.lifecycleEventsCreated === 9
+            && result.dryRunDeliveries === 9
+            && result.sameProcessReplayDuplicates === 9
+            && result.freshProcessReplayDuplicates === 9
+            && result.dashboardProjectionPassed === true
+            && result.externalActionsAttempted === 0
+            && result.cleanupRan === true
+            && result.zeroResidue === true
+            && result.residueCount === 0;
+          if (!success) throw new Error(`guest_lifecycle_production_acceptance_result_invalid:${JSON.stringify(result)}`);
+          process.stdout.write(`GUEST_LIFECYCLE_PRODUCTION_ACCEPTANCE_RESULT=${JSON.stringify(result)}\n`);
+          process.stdout.write('GUEST_LIFECYCLE_PRODUCTION_ACCEPTANCE_OK\n');
+          NODE
+          REMOTE
