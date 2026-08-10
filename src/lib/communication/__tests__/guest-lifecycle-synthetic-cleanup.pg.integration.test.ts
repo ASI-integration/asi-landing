@@ -211,7 +211,7 @@ async function createExactSyntheticFixture(client: PgClient): Promise<void> {
       $1::uuid, $1, $2, 'Synthetic Guest', $3, 'manual',
       jsonb_build_object(
         'acceptanceHarness', 'guest_lifecycle_communications_v1',
-        'acceptanceRunId', $4,
+        'acceptanceRunId', $4::text,
         'synthetic', true,
         'noExternalActions', true
       )
@@ -227,7 +227,7 @@ async function createExactSyntheticFixture(client: PgClient): Promise<void> {
       $1::uuid, $2, 'ready_for_checkin',
       jsonb_build_object(
         'acceptanceHarness', 'guest_lifecycle_communications_v1',
-        'acceptanceRunId', $3
+        'acceptanceRunId', $3::text
       )
     )
     `,
