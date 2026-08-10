@@ -480,3 +480,53 @@ jobs:
             echo "Reconciliation PG suite was skipped — failing job"
             exit 1
           fi
+
+      - name: Guest Lifecycle synthetic cleanup PostgreSQL integration
+        id: guest_lifecycle_cleanup_pg_integration
+        run: |
+          set -euo pipefail
+          npx vitest run \
+            src/lib/communication/__tests__/guest-lifecycle-synthetic-cleanup.pg.integration.test.ts \
+            --reporter=verbose 2>&1 | tee guest-lifecycle-cleanup-pg.out
+          if grep -E '↓|skipped|SKIPPED' guest-lifecycle-cleanup-pg.out | grep -Fq 'Guest Lifecycle synthetic cleanup PostgreSQL integration'; then
+            echo "Guest Lifecycle cleanup PostgreSQL suite was skipped — failing job"
+            exit 1
+          fi
+          if ! grep -Fq 'GUEST_LIFECYCLE_CLEANUP_PG_PROOF' guest-lifecycle-cleanup-pg.out; then
+            echo "Missing GUEST_LIFECYCLE_CLEANUP_PG_PROOF — failing job"
+            exit 1
+          fi
+          node - <<'NODE'
+          const fs = require('fs');
+          const out = fs.readFileSync('guest-lifecycle-cleanup-pg.out', 'utf8');
+          const line = out.split(/\r?\n/).find((entry) => entry.includes('GUEST_LIFECYCLE_CLEANUP_PG_PROOF'));
+          if (!line) {
+            console.error('guest_lifecycle_cleanup_proof_line_missing');
+            process.exit(1);
+          }
+          const proof = JSON.parse(line.slice(
+            line.indexOf('GUEST_LIFECYCLE_CLEANUP_PG_PROOF') + 'GUEST_LIFECYCLE_CLEANUP_PG_PROOF'.length,
+          ).trim());
+          const expected = {
+            allMigrationsApplied: 95,
+            emptyPreviewPassed: true,
+            exactFixtureLifecycleResiduePassed: true,
+            residueCount: 0,
+            zeroResidue: true,
+            noExternalActions: true,
+            finalTransactionRolledBack: true,
+            productionTouched: false,
+            stagingTouched: false,
+          };
+          for (const [key, value] of Object.entries(expected)) {
+            if (proof[key] !== value) {
+              console.error('guest_lifecycle_cleanup_proof_mismatch', key, proof[key], value);
+              process.exit(1);
+            }
+          }
+          if (!Number.isInteger(proof.schemaContractColumns) || proof.schemaContractColumns < 50) {
+            console.error('guest_lifecycle_cleanup_schema_contract_incomplete', proof.schemaContractColumns);
+            process.exit(1);
+          }
+          console.log('guest_lifecycle_cleanup_proof_ok', JSON.stringify(proof));
+          NODE
