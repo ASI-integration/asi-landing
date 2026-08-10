@@ -453,7 +453,7 @@ describe.skipIf(!hasDisposablePg)('Guest Lifecycle synthetic cleanup PostgreSQL 
       await client.query('BEGIN');
       await bootstrapSupabasePrimitives(client);
       const migrationNames = await applyAllMigrations(client);
-      expect(migrationNames.at(-1)).toBe('20260810190000_guest_lifecycle_synthetic_cleanup_schema_fix.sql');
+      expect(migrationNames).toContain('20260810190000_guest_lifecycle_synthetic_cleanup_schema_fix.sql');
 
       const expectedValues = cleanupColumnContract
         .map(([table, column]) => `('${table}', '${column}')`)

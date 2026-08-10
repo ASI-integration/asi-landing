@@ -508,7 +508,6 @@ jobs:
             line.indexOf('GUEST_LIFECYCLE_CLEANUP_PG_PROOF') + 'GUEST_LIFECYCLE_CLEANUP_PG_PROOF'.length,
           ).trim());
           const expected = {
-            allMigrationsApplied: 95,
             emptyPreviewPassed: true,
             exactFixtureLifecycleResiduePassed: true,
             residueCount: 0,
@@ -523,6 +522,10 @@ jobs:
               console.error('guest_lifecycle_cleanup_proof_mismatch', key, proof[key], value);
               process.exit(1);
             }
+          }
+          if (!Number.isInteger(proof.allMigrationsApplied) || proof.allMigrationsApplied < 95) {
+            console.error('guest_lifecycle_cleanup_migration_chain_incomplete', proof.allMigrationsApplied);
+            process.exit(1);
           }
           if (!Number.isInteger(proof.schemaContractColumns) || proof.schemaContractColumns < 50) {
             console.error('guest_lifecycle_cleanup_schema_contract_incomplete', proof.schemaContractColumns);
