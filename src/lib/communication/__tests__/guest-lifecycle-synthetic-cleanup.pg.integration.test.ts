@@ -170,156 +170,272 @@ async function callCleanup(client: PgClient, dryRun: boolean) {
 }
 
 async function createExactSyntheticFixture(client: PgClient): Promise<void> {
-  await client.query(`
+  await client.query(
+    `
     INSERT INTO public.tg_property_knowledge
       (property_id, location, pilot_acceptance_marker)
-    VALUES ($1, 'Synthetic acceptance property', $2);
-
+    VALUES ($1, 'Synthetic acceptance property', $2)
+    `,
+    [manifest.propertyId, manifest.runId],
+  );
+  await client.query(
+    `
     INSERT INTO public.tg_contacts (id, email, first_name, last_name)
-    VALUES ($3, $4, 'Synthetic', 'Guest');
-
+    VALUES ($1, $2, 'Synthetic', 'Guest')
+    `,
+    [manifest.guestId, manifest.guestEmail],
+  );
+  await client.query(
+    `
     INSERT INTO public.tg_guest_identities
       (guest_id, email, display_name, trust_status, last_seen_at)
-    VALUES ($3, $4, 'Synthetic Guest', 'normal', now());
-
+    VALUES ($1, $2, 'Synthetic Guest', 'normal', now())
+    `,
+    [manifest.guestId, manifest.guestEmail],
+  );
+  await client.query(
+    `
     INSERT INTO public.guest_memory_profiles
       (guest_id, preferred_language, preferred_language_source,
        preferred_communication_mode, preferred_communication_mode_source)
-    VALUES ($3, 'ru', 'deterministic_system', 'text', 'deterministic_system');
-
+    VALUES ($1, 'ru', 'deterministic_system', 'text', 'deterministic_system')
+    `,
+    [manifest.guestId],
+  );
+  await client.query(
+    `
     INSERT INTO public.booking_ops_records
       (id, booking_id, property_id, guest_name, guest_email, ota_source,
        reservation_metadata)
     VALUES (
-      $5::uuid, $5, $1, 'Synthetic Guest', $4, 'manual',
+      $1::uuid, $1, $2, 'Synthetic Guest', $3, 'manual',
       jsonb_build_object(
         'acceptanceHarness', 'guest_lifecycle_communications_v1',
-        'acceptanceRunId', $2,
+        'acceptanceRunId', $4,
         'synthetic', true,
         'noExternalActions', true
       )
-    );
-
+    )
+    `,
+    [manifest.bookingOpsRecordId, manifest.propertyId, manifest.guestEmail, manifest.runId],
+  );
+  await client.query(
+    `
     INSERT INTO public.booking_guest_legal_readiness
       (booking_id, property_id, status, metadata)
     VALUES (
-      $5::uuid, $1, 'ready_for_checkin',
+      $1::uuid, $2, 'ready_for_checkin',
       jsonb_build_object(
         'acceptanceHarness', 'guest_lifecycle_communications_v1',
-        'acceptanceRunId', $2
+        'acceptanceRunId', $3
       )
-    );
+    )
+    `,
+    [manifest.bookingOpsRecordId, manifest.propertyId, manifest.runId],
+  );
+  await client.query(
+    `
     INSERT INTO public.booking_cleaning_tasks (booking_id, property_id, status)
-    VALUES ($5::uuid, $1, 'verified');
+    VALUES ($1::uuid, $2, 'verified')
+    `,
+    [manifest.bookingOpsRecordId, manifest.propertyId],
+  );
+  await client.query(
+    `
     INSERT INTO public.booking_linen_tasks (booking_id, property_id, status)
-    VALUES ($5::uuid, $1, 'verified');
+    VALUES ($1::uuid, $2, 'verified')
+    `,
+    [manifest.bookingOpsRecordId, manifest.propertyId],
+  );
+  await client.query(
+    `
     INSERT INTO public.booking_supplies_tasks (booking_id, property_id, status)
-    VALUES ($5::uuid, $1, 'verified');
+    VALUES ($1::uuid, $2, 'verified')
+    `,
+    [manifest.bookingOpsRecordId, manifest.propertyId],
+  );
+  await client.query(
+    `
     INSERT INTO public.booking_physical_readiness
       (booking_id, property_id, status, final_ready)
-    VALUES ($5::uuid, $1, 'approved', true);
-
+    VALUES ($1::uuid, $2, 'approved', true)
+    `,
+    [manifest.bookingOpsRecordId, manifest.propertyId],
+  );
+  await client.query(
+    `
     INSERT INTO public.booking_ops_tasks
       (id, booking_ops_record_id, booking_id, task_type, title)
-    VALUES ($6::uuid, $5::uuid, $5, 'complete_booking_data', 'Synthetic task');
+    VALUES ($1::uuid, $2::uuid, $2, 'complete_booking_data', 'Synthetic task')
+    `,
+    ['77777777-7777-4777-8777-777777777770', manifest.bookingOpsRecordId],
+  );
+  await client.query(
+    `
     INSERT INTO public.booking_ops_events
       (id, booking_ops_record_id, event_type, title)
-    VALUES ($7::uuid, $5::uuid, 'booking_created', 'Synthetic event');
+    VALUES ($1::uuid, $2::uuid, 'booking_created', 'Synthetic event')
+    `,
+    ['77777777-7777-4777-8777-777777777771', manifest.bookingOpsRecordId],
+  );
+  await client.query(
+    `
     INSERT INTO public.booking_ops_domain_events
       (id, booking_id, event_type, actor_type, source, correlation_id)
-    VALUES ($8::uuid, $5::uuid, 'synthetic_acceptance', 'system', 'synthetic_acceptance', $9::uuid);
+    VALUES ($1::uuid, $2::uuid, 'synthetic_acceptance', 'system', 'synthetic_acceptance', $3::uuid)
+    `,
+    [
+      '77777777-7777-4777-8777-777777777772',
+      manifest.bookingOpsRecordId,
+      '77777777-7777-4777-8777-777777777773',
+    ],
+  );
+  await client.query(
+    `
     INSERT INTO public.booking_lifecycle_gates
       (booking_id, gate_key, status, source)
-    VALUES ($5, 'booking_received', 'completed', 'system');
+    VALUES ($1, 'booking_received', 'completed', 'system')
+    `,
+    [manifest.bookingOpsRecordId],
+  );
+  await client.query(
+    `
     INSERT INTO public.booking_lifecycle_exceptions
       (booking_id, gate_key, status, reason, source)
-    VALUES ($5, 'booking_received', 'open', 'Synthetic exception', 'system');
-
+    VALUES ($1, 'booking_received', 'open', 'Synthetic exception', 'system')
+    `,
+    [manifest.bookingOpsRecordId],
+  );
+  await client.query(
+    `
     INSERT INTO public.tg_guest_reservations
       (id, booking_id, reservation_ref, property_id, guest_id, guest_name,
        guest_contact, status, pilot_acceptance_marker)
-    VALUES ($5, $5, $5, $1, $3, 'Synthetic Guest', $4, 'confirmed', $2);
-
+    VALUES ($1, $1, $1, $2, $3, 'Synthetic Guest', $4, 'confirmed', $5)
+    `,
+    [
+      manifest.reservationId,
+      manifest.propertyId,
+      manifest.guestId,
+      manifest.guestEmail,
+      manifest.runId,
+    ],
+  );
+  await client.query(
+    `
     INSERT INTO public.booking_ops_communication_auto_send_scopes
       (id, scope_type, scope_ref, actual_send_enabled, enabled_by, enabled_at,
        reason, max_batch_size, allowed_channels, allowed_message_types,
        dry_run_only, emergency_stop)
     VALUES (
-      $10::uuid, 'booking', $5, true, 'guest_lifecycle_communications_v1', now(),
-      'guest_lifecycle_communications_v1:' || $2, 20, '["email"]'::jsonb,
+      $1::uuid, 'booking', $2, true, 'guest_lifecycle_communications_v1', now(),
+      'guest_lifecycle_communications_v1:' || $3, 20, '["email"]'::jsonb,
       '["neutral_booking_acknowledgement","neutral_status_update","send_checkin_instructions"]'::jsonb,
       true, false
-    );
-
+    )
+    `,
+    [manifest.scopeId, manifest.bookingOpsRecordId, manifest.runId],
+  );
+  await client.query(
+    `
     INSERT INTO public.booking_ops_communication_policies
       (id, scope, scope_ref, message_type, channel, auto_send_enabled,
        actual_send_enabled, requires_review, quiet_hours_enabled,
        max_auto_sends_per_booking_per_day, max_auto_sends_per_guest_per_day,
        allowed_recipient_roles, blocked_keywords, required_metadata)
     VALUES
-      ($11::uuid, 'booking', $5, 'neutral_booking_acknowledgement', 'any', true, true, false, false, 20, 20, '["guest"]', '[]', '[]'),
-      ($12::uuid, 'booking', $5, 'neutral_status_update', 'any', true, true, false, false, 20, 20, '["guest"]', '[]', '[]'),
-      ($13::uuid, 'booking', $5, 'send_checkin_instructions', 'any', true, true, false, false, 20, 20, '["guest"]', '[]', '["lifecycle_event_type","identity_verified","access_allowed"]');
-
+      ($1::uuid, 'booking', $4, 'neutral_booking_acknowledgement', 'any', true, true, false, false, 20, 20, '["guest"]', '[]', '[]'),
+      ($2::uuid, 'booking', $4, 'neutral_status_update', 'any', true, true, false, false, 20, 20, '["guest"]', '[]', '[]'),
+      ($3::uuid, 'booking', $4, 'send_checkin_instructions', 'any', true, true, false, false, 20, 20, '["guest"]', '[]', '["lifecycle_event_type","identity_verified","access_allowed"]')
+    `,
+    [...manifest.policyIds, manifest.bookingOpsRecordId],
+  );
+  await client.query(
+    `
     INSERT INTO public.booking_ops_communication_intents
       (id, booking_ops_record_id, booking_id, actor_type, purpose, channel,
        status, message_text, message_template_key, metadata)
     VALUES (
-      $14::uuid, $5::uuid, $5, 'guest', 'send_checkin_instructions', 'email',
+      $1::uuid, $2::uuid, $2, 'guest', 'send_checkin_instructions', 'email',
       'completed', 'Synthetic lifecycle message', 'synthetic_lifecycle',
       jsonb_build_object(
         'lifecycle_source', 'synthetic_acceptance',
-        'lifecycle_source_event_id', $2 || ':reservation.created'
+        'lifecycle_source_event_id', $3 || ':reservation.created'
       )
-    );
+    )
+    `,
+    ['77777777-7777-4777-8777-777777777774', manifest.bookingOpsRecordId, manifest.runId],
+  );
+  await client.query(
+    `
     INSERT INTO public.booking_ops_communication_deliveries
-      (id, communication_intent_id, booking_id, recipient_role, recipient_ref,
+      (id, communication_intent_id, recipient_role, recipient_ref,
        channel, message_type, policy_decision_id, status, idempotency_key)
     VALUES (
-      $15::uuid, $14::uuid, $5, 'guest', $4, 'email',
-      'send_checkin_instructions', $13::uuid, 'dry_run', $2 || ':delivery'
-    );
+      $1::uuid, $2::uuid, 'guest', $3, 'email',
+      'send_checkin_instructions', $4::uuid, 'dry_run', $5 || ':delivery'
+    )
+    `,
+    [
+      '77777777-7777-4777-8777-777777777775',
+      '77777777-7777-4777-8777-777777777774',
+      manifest.guestEmail,
+      manifest.policyIds[2],
+      manifest.runId,
+    ],
+  );
+  await client.query(
+    `
     INSERT INTO public.booking_ops_communication_auto_send_attempts
-      (id, communication_intent_id, result, booking_id, guest_ref, metadata)
-    VALUES ($16::uuid, $14::uuid, 'dry_run', $5, $4, '{"dry_run":true}'::jsonb);
-
+      (id, communication_intent_id, result, guest_ref, metadata)
+    VALUES ($1::uuid, $2::uuid, 'dry_run', $3, '{"dry_run":true}'::jsonb)
+    `,
+    [
+      '77777777-7777-4777-8777-777777777776',
+      '77777777-7777-4777-8777-777777777774',
+      manifest.guestEmail,
+    ],
+  );
+  await client.query(
+    `
     INSERT INTO public.guest_lifecycle_events
       (id, idempotency_key, event_type, reservation_id, booking_ops_record_id,
        property_id, guest_id, occurred_at, source, source_event_id, stage, status,
        communication_intent_id, delivery_id, payload)
     VALUES (
-      $17::uuid, $2 || ':reservation.created', 'reservation.created', $5,
-      $5::uuid, $1, $3, now(), 'synthetic_acceptance',
-      $2 || ':reservation.created', 'reservation', 'dry_run', $14::uuid, $15::uuid,
+      $1::uuid, $2 || ':reservation.created', 'reservation.created', $3,
+      $3::uuid, $4, $5, now(), 'synthetic_acceptance',
+      $2 || ':reservation.created', 'reservation', 'dry_run', $6::uuid, $7::uuid,
       '{}'::jsonb
-    );
+    )
+    `,
+    [
+      '77777777-7777-4777-8777-777777777777',
+      manifest.runId,
+      manifest.bookingOpsRecordId,
+      manifest.propertyId,
+      manifest.guestId,
+      '77777777-7777-4777-8777-777777777774',
+      '77777777-7777-4777-8777-777777777775',
+    ],
+  );
+  await client.query(
+    `
     INSERT INTO public.guest_memory_events
       (id, guest_id, event_type, summary, booking_reference, source_kind,
        source_ref, occurred_at)
     VALUES (
-      $18::uuid, $3, 'completed_stay', 'Synthetic completed stay.', $5,
-      'deterministic_system', $2 || ':stay.completed', now()
-    );
-  `, [
-    manifest.propertyId,
-    manifest.runId,
-    manifest.guestId,
-    manifest.guestEmail,
-    manifest.bookingOpsRecordId,
-    '77777777-7777-4777-8777-777777777770',
-    '77777777-7777-4777-8777-777777777771',
-    '77777777-7777-4777-8777-777777777772',
-    '77777777-7777-4777-8777-777777777773',
-    manifest.scopeId,
-    manifest.policyIds[0],
-    manifest.policyIds[1],
-    manifest.policyIds[2],
-    '77777777-7777-4777-8777-777777777774',
-    '77777777-7777-4777-8777-777777777775',
-    '77777777-7777-4777-8777-777777777776',
-    '77777777-7777-4777-8777-777777777777',
-    '77777777-7777-4777-8777-777777777778',
-  ]);
+      $1::uuid, $2, 'completed_stay', 'Synthetic completed stay.', $3,
+      'deterministic_system', $4 || ':stay.completed', now()
+    )
+    `,
+    [
+      '77777777-7777-4777-8777-777777777778',
+      manifest.guestId,
+      manifest.bookingOpsRecordId,
+      manifest.runId,
+    ],
+  );
 }
 
 describe('Guest Lifecycle synthetic cleanup PostgreSQL availability', () => {
