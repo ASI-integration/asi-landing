@@ -52,13 +52,21 @@ function isLaunchableReadiness(readiness) {
     || !isRecord(readiness.components)) return false;
 
   if (!READINESS_COMPONENTS.every((id) => Object.hasOwn(readiness.components, id))) return false;
-  return Object.values(readiness.components).every((component) => (
+  const componentsAreValid = Object.values(readiness.components).every((component) => (
     isRecord(component)
     && READINESS_STATES.has(component.state)
     && typeof component.reasonCode === 'string'
     && typeof component.message === 'string'
     && component.blockingLaunch === false
   ));
+  if (!componentsAreValid) return false;
+
+  const requiredStates = READINESS_COMPONENTS.map((id) => readiness.components[id].state);
+  if (readiness.overallState === 'ready') {
+    return requiredStates.every((state) => state === 'ready');
+  }
+  return requiredStates.some((state) => state === 'degraded')
+    && requiredStates.every((state) => state !== 'blocked');
 }
 
 async function responseJson(response, code) {

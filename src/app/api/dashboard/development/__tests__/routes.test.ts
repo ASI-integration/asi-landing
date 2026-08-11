@@ -729,6 +729,35 @@ describe('owner console autonomous acceptance command', () => {
         },
       },
     }],
+    ['a blocked non-blocking component in degraded state', {
+      ...launchableReadiness,
+      overallState: 'degraded',
+      components: {
+        ...launchableReadiness.components,
+        checkouts: {
+          state: 'blocked',
+          reasonCode: 'runtime_checkout_dirty',
+          message: 'Каталог требует проверки.',
+          blockingLaunch: false,
+        },
+      },
+    }],
+    ['a degraded component in ready state', {
+      ...launchableReadiness,
+      components: {
+        ...launchableReadiness.components,
+        checkouts: {
+          state: 'degraded',
+          reasonCode: 'runtime_checkout_recoverable_drift',
+          message: 'Каталог будет обновлён перед запуском.',
+          blockingLaunch: false,
+        },
+      },
+    }],
+    ['all ready components in degraded state', {
+      ...launchableReadiness,
+      overallState: 'degraded',
+    }],
     ['a missing required component', {
       ...launchableReadiness,
       overallState: 'degraded',
