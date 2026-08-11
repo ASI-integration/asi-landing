@@ -619,9 +619,17 @@ describe('owner console autonomous acceptance command', () => {
         return new Response(JSON.stringify({
           ok: true,
           readiness: {
-            schemaVersion: 'asi.owner-console.readiness.v1',
-            overallState: 'ready',
-            canLaunch: true,
+            ...launchableReadiness,
+            overallState: 'degraded',
+            components: {
+              ...launchableReadiness.components,
+              checkouts: {
+                state: 'degraded',
+                reasonCode: 'runtime_checkout_recoverable_drift',
+                message: 'Каталог будет обновлён перед запуском.',
+                blockingLaunch: false,
+              },
+            },
           },
         }), { status: 200 });
       }
@@ -699,6 +707,88 @@ describe('owner console autonomous acceptance command', () => {
   });
 
   it.each([
+    ['a blocked overall state', {
+      ...launchableReadiness,
+      overallState: 'blocked',
+    }],
+    ['canLaunch false', {
+      ...launchableReadiness,
+      overallState: 'degraded',
+      canLaunch: false,
+    }],
+    ['a blocking component in degraded state', {
+      ...launchableReadiness,
+      overallState: 'degraded',
+      components: {
+        ...launchableReadiness.components,
+        checkouts: {
+          state: 'degraded',
+          reasonCode: 'runtime_checkout_dirty',
+          message: 'Каталог требует проверки.',
+          blockingLaunch: true,
+        },
+      },
+    }],
+    ['a blocked non-blocking component in degraded state', {
+      ...launchableReadiness,
+      overallState: 'degraded',
+      components: {
+        ...launchableReadiness.components,
+        checkouts: {
+          state: 'blocked',
+          reasonCode: 'runtime_checkout_dirty',
+          message: 'Каталог требует проверки.',
+          blockingLaunch: false,
+        },
+      },
+    }],
+    ['a degraded component in ready state', {
+      ...launchableReadiness,
+      components: {
+        ...launchableReadiness.components,
+        checkouts: {
+          state: 'degraded',
+          reasonCode: 'runtime_checkout_recoverable_drift',
+          message: 'Каталог будет обновлён перед запуском.',
+          blockingLaunch: false,
+        },
+      },
+    }],
+    ['all ready components in degraded state', {
+      ...launchableReadiness,
+      overallState: 'degraded',
+    }],
+    ['a missing required component', {
+      ...launchableReadiness,
+      overallState: 'degraded',
+      components: {
+        bridge: launchableReadiness.components.bridge,
+        checkouts: launchableReadiness.components.checkouts,
+        baseline: launchableReadiness.components.baseline,
+        executor: launchableReadiness.components.executor,
+      },
+    }],
+  ] as const)('rejects readiness with %s before task submission', async (_name, readiness) => {
+    const fetchImpl = vi.fn(async (input: string | URL | Request) => {
+      const url = String(input);
+      if (url.endsWith('/api/dashboard/development/readiness')) {
+        return new Response(JSON.stringify({ ok: true, readiness }), { status: 200 });
+      }
+      return new Response('{}', { status: 500 });
+    });
+    const acceptance = await import('../../../../../../scripts/owner-console-runtime-acceptance.mjs');
+    await expect(acceptance.runOwnerConsoleRuntimeAcceptance({
+      env: {
+        ASI_OWNER_CONSOLE_ACCEPTANCE_CONFIRM: acceptance.OWNER_CONSOLE_RUNTIME_ACCEPTANCE_CONFIRM,
+        ASI_OWNER_CONSOLE_ACCEPTANCE_BASE_URL: 'https://console.asi.example',
+        ASI_OWNER_CONSOLE_ACCEPTANCE_SESSION_COOKIE: 'session-value-never-logged',
+      },
+      fetchImpl,
+    })).rejects.toMatchObject({ code: 'readiness_not_ready' });
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
     ['an extra file', 'extra', 'draft_pr_scope_failed'],
     ['the wrong path', 'wrong-path', 'draft_pr_scope_failed'],
     ['the wrong proof content', 'wrong-content', 'draft_pr_content_failed'],
@@ -721,11 +811,7 @@ describe('owner console autonomous acceptance command', () => {
       if (url.endsWith('/api/dashboard/development/readiness')) {
         return new Response(JSON.stringify({
           ok: true,
-          readiness: {
-            schemaVersion: 'asi.owner-console.readiness.v1',
-            overallState: 'ready',
-            canLaunch: true,
-          },
+          readiness: launchableReadiness,
         }), { status: 200 });
       }
       if (url.endsWith('/api/dashboard/development/tasks') && init?.method === 'POST') {
@@ -770,7 +856,6 @@ describe('owner console autonomous acceptance command', () => {
       return new Response('{}', { status: 404 });
     });
     const acceptance = await import('../../../../../../scripts/owner-console-runtime-acceptance.mjs');
-
     await expect(acceptance.runOwnerConsoleRuntimeAcceptance({
       env: {
         ASI_OWNER_CONSOLE_ACCEPTANCE_CONFIRM: acceptance.OWNER_CONSOLE_RUNTIME_ACCEPTANCE_CONFIRM,
