@@ -8,6 +8,8 @@ export const OWNER_CONSOLE_RUNTIME_PROOF_CONTRACT = 'asi.owner-console.runtime-a
 export const OWNER_CONSOLE_RUNTIME_PROOF_MARKER = 'OWNER_CONSOLE_RUNTIME_ACCEPTANCE_PROOF';
 
 const REPOSITORY = 'ASI-integration/asi-landing';
+const READINESS_COMPONENTS = ['bridge', 'checkouts', 'baseline', 'executor', 'github'];
+const READINESS_STATES = new Set(['ready', 'degraded', 'blocked']);
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const SHA = /^[0-9a-f]{40}$/;
 const PR_PATH = /^\/ASI-integration\/asi-landing\/pull\/([1-9][0-9]*)\/?$/;
@@ -36,6 +38,27 @@ function boundedTimeout(raw) {
   return Number.isInteger(value) && value >= 60_000 && value <= 30 * 60_000
     ? value
     : 20 * 60_000;
+}
+
+function isRecord(value) {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function isLaunchableReadiness(readiness) {
+  if (!isRecord(readiness)
+    || readiness.schemaVersion !== 'asi.owner-console.readiness.v1'
+    || !['ready', 'degraded'].includes(readiness.overallState)
+    || readiness.canLaunch !== true
+    || !isRecord(readiness.components)) return false;
+
+  if (!READINESS_COMPONENTS.every((id) => Object.hasOwn(readiness.components, id))) return false;
+  return Object.values(readiness.components).every((component) => (
+    isRecord(component)
+    && READINESS_STATES.has(component.state)
+    && typeof component.reasonCode === 'string'
+    && typeof component.message === 'string'
+    && component.blockingLaunch === false
+  ));
 }
 
 async function responseJson(response, code) {
@@ -164,8 +187,7 @@ export async function runOwnerConsoleRuntimeAcceptance({
     '/api/dashboard/development/readiness',
   );
   const readiness = readinessResponse?.readiness;
-  if (readinessResponse?.ok !== true || readiness?.schemaVersion !== 'asi.owner-console.readiness.v1'
-    || readiness?.overallState !== 'ready' || readiness?.canLaunch !== true) {
+  if (readinessResponse?.ok !== true || !isLaunchableReadiness(readiness)) {
     throw new AcceptanceError('readiness_not_ready');
   }
 
