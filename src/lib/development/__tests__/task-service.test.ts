@@ -295,6 +295,25 @@ afterEach(() => {
 });
 
 describe('submitDevelopmentTask', () => {
+  it('exposes both allowlisted repositories with landing as the safe default', async () => {
+    const repositories = await import('../repositories');
+    const options = repositories.listDevelopmentRepositories();
+
+    expect(options).toEqual([
+      {
+        id: 'asi-landing',
+        label: 'ASI-integration/asi-landing',
+        fullName: 'ASI-integration/asi-landing',
+      },
+      {
+        id: 'asi-os-runtime',
+        label: 'ASI-integration/asi-os-runtime',
+        fullName: 'ASI-integration/asi-os-runtime',
+      },
+    ]);
+    expect(repositories.resolveRememberedDevelopmentRepositoryId(options, null)).toBe('asi-landing');
+  });
+
   it('requires one non-empty natural-language prompt', async () => {
     const { submitDevelopmentTask } = await import('../task-service');
     await expect(submitDevelopmentTask({
@@ -495,6 +514,64 @@ describe('submitDevelopmentTask', () => {
     expect(result.deduplicated).toBe(false);
     expect(result.snapshot.task.taskId).toBe([...bridge.tasks.keys()][0]);
     expect(JSON.stringify(result)).not.toMatch(/ASI_RUNTIME_BRIDGE|SERVICE_ROLE|TOKEN/i);
+  });
+
+  it('preserves the runtime repository selection in the Runtime Bridge request', async () => {
+    createCompatibleBridge();
+    const sha = 'f'.repeat(40);
+    resolveAllowlistedBaselineSha.mockResolvedValue(sha);
+
+    const { submitDevelopmentTask } = await import('../task-service');
+    const result = await submitDevelopmentTask({
+      ownerUserId: 'user-1',
+      repositoryId: 'asi-os-runtime',
+      prompt: 'Update the runtime repository.',
+      idempotencyKey: 'dev-console-idem-runtime',
+    });
+
+    expect(resolveAllowlistedBaselineSha).toHaveBeenCalledWith(expect.objectContaining({
+      id: 'asi-os-runtime',
+      fullName: 'ASI-integration/asi-os-runtime',
+      githubRepo: 'asi-os-runtime',
+    }));
+    expect(submitRuntimeBridgeTask).toHaveBeenCalledWith(
+      'chatgpt-owner',
+      expect.objectContaining({
+        task: expect.objectContaining({
+          repository: 'ASI-integration/asi-os-runtime',
+          baselineSha: sha,
+        }),
+      }),
+    );
+    expect(result.snapshot.task.repository).toBe('ASI-integration/asi-os-runtime');
+  });
+
+  it('keeps Runtime Bridge parsing restricted to the two explicit repositories', async () => {
+    const { parseRuntimeBridgeChatInput } = await import('@/lib/asi-runtime/bridge-schema');
+    const request = {
+      operation: 'runtime_submit_task',
+      input: {
+        chatgptTaskId: 'dev-console-task-runtime',
+        conversationId: 'dev-console-owner-runtime',
+        idempotencyKey: 'dev-console-idem-runtime-schema',
+        task: {
+          title: 'Runtime task',
+          objective: 'Update Runtime safely.',
+          instructions: ['Run focused tests.'],
+          repository: 'ASI-integration/asi-os-runtime',
+          baselineSha: 'a'.repeat(40),
+        },
+      },
+    };
+
+    expect(parseRuntimeBridgeChatInput(request)).not.toBeNull();
+    expect(parseRuntimeBridgeChatInput({
+      ...request,
+      input: {
+        ...request.input,
+        task: { ...request.input.task, repository: 'ASI-integration/third-repository' },
+      },
+    })).toBeNull();
   });
 
   it('maps malformed/unavailable baseline SHA to a safe error', async () => {

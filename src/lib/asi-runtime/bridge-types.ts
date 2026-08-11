@@ -14,13 +14,20 @@ export type RuntimeBridgeTaskStatus =
   | 'completed'
   | 'failed';
 
+export const RUNTIME_BRIDGE_REPOSITORIES = [
+  'ASI-integration/asi-landing',
+  'ASI-integration/asi-os-runtime',
+] as const;
+
+export type RuntimeBridgeRepository = typeof RUNTIME_BRIDGE_REPOSITORIES[number];
+
 export type RuntimeBridgeTaskRequest = {
   title: string;
   objective: string;
   instructions: string[];
   acceptanceCriteria?: string[];
   safetyConstraints?: string[];
-  repository: 'ASI-integration/asi-landing';
+  repository: RuntimeBridgeRepository;
   baselineSha: string;
 };
 

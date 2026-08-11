@@ -1,15 +1,22 @@
+import type { RuntimeBridgeRepository } from '@/lib/asi-runtime/bridge-types';
+
+type DevelopmentRepositoryName<Repository extends RuntimeBridgeRepository = RuntimeBridgeRepository> =
+  Repository extends `ASI-integration/${infer Name}` ? Name : never;
+
 export type DevelopmentRepositoryDefinition = {
-  /** Stable selector id for the UI and API. */
-  id: string;
-  /** Exact GitHub full name accepted by Runtime Bridge. */
-  fullName: 'ASI-integration/asi-landing';
-  /** Human label shown in the console. */
-  label: string;
-  /** Branch used for baseline SHA resolution (server-only). */
-  defaultBranch: 'main';
-  githubOwner: 'ASI-integration';
-  githubRepo: 'asi-landing';
-};
+  [Repository in DevelopmentRepositoryName]: {
+    /** Stable selector id for the UI and API. */
+    id: Repository;
+    /** Exact GitHub full name accepted by Runtime Bridge. */
+    fullName: `ASI-integration/${Repository}`;
+    /** Human label shown in the console. */
+    label: `ASI-integration/${Repository}`;
+    /** Branch used for baseline SHA resolution (server-only). */
+    defaultBranch: 'main';
+    githubOwner: 'ASI-integration';
+    githubRepo: Repository;
+  };
+}[DevelopmentRepositoryName];
 
 /**
  * Server-defined repository allowlist for the Owner Development Console.
@@ -23,6 +30,14 @@ export const DEVELOPMENT_REPOSITORY_ALLOWLIST = [
     defaultBranch: 'main',
     githubOwner: 'ASI-integration',
     githubRepo: 'asi-landing',
+  },
+  {
+    id: 'asi-os-runtime',
+    fullName: 'ASI-integration/asi-os-runtime',
+    label: 'ASI-integration/asi-os-runtime',
+    defaultBranch: 'main',
+    githubOwner: 'ASI-integration',
+    githubRepo: 'asi-os-runtime',
   },
 ] as const satisfies readonly DevelopmentRepositoryDefinition[];
 
