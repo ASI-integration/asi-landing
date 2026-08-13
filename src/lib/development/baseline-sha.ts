@@ -25,7 +25,6 @@ export async function resolveAllowlistedBaselineSha(
   const repo = repository.githubRepo;
   const branch = repository.defaultBranch;
   const url = `https://api.github.com/repos/${owner}/${repo}/commits/${encodeURIComponent(branch)}`;
-  const token = String(process.env.GITHUB_TOKEN ?? '').trim();
 
   let response: Response;
   try {
@@ -35,7 +34,6 @@ export async function resolveAllowlistedBaselineSha(
         Accept: 'application/vnd.github+json',
         'User-Agent': 'asi-owner-development-console',
         'X-GitHub-Api-Version': '2022-11-28',
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
       cache: 'no-store',
       signal: AbortSignal.timeout(5_000),
