@@ -6,10 +6,6 @@ import type {
   RuntimeBridgeSafeResult,
   RuntimeBridgeTaskRequest,
 } from './bridge-types';
-import {
-  RUNTIME_BRIDGE_REPOSITORIES,
-  type RuntimeBridgeRepository,
-} from './bridge-types';
 
 export const RUNTIME_BRIDGE_MAX_BODY_BYTES = 64 * 1024;
 export const RUNTIME_BRIDGE_MAX_INSTRUCTIONS = 100;
@@ -20,7 +16,6 @@ export const RUNTIME_BRIDGE_MAX_INSTRUCTION_TOTAL_CHARS = 24 * 1024;
 const SHA = /^[0-9a-f]{40}$/;
 const ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-const RUNTIME_BRIDGE_REPOSITORY_SET = new Set<string>(RUNTIME_BRIDGE_REPOSITORIES);
 const RUNNER_CHECKOUT_REASON_CODES = new Set([
   'runtime_checkouts_ready',
   'runtime_checkout_recoverable_drift',
@@ -88,10 +83,6 @@ function instructionList(value: unknown): value is string[] {
   return true;
 }
 
-function runtimeBridgeRepository(value: unknown): value is RuntimeBridgeRepository {
-  return typeof value === 'string' && RUNTIME_BRIDGE_REPOSITORY_SET.has(value);
-}
-
 function repoPath(value: unknown): value is string {
   return text(value, 500)
     && !value.startsWith('/')
@@ -107,17 +98,13 @@ function safeArtifact(value: unknown): boolean {
   if (value.type !== 'pull_request') return false;
   try {
     const url = new URL(value.value);
-    const path = url.pathname.split('/').filter(Boolean);
     return url.protocol === 'https:'
       && url.hostname === 'github.com'
       && url.username === ''
       && url.password === ''
       && url.search === ''
       && url.hash === ''
-      && path.length === 4
-      && runtimeBridgeRepository(`${path[0]}/${path[1]}`)
-      && path[2] === 'pull'
-      && /^[1-9][0-9]*$/.test(path[3]);
+      && /^\/ASI-integration\/asi-landing\/pull\/[1-9][0-9]*\/?$/.test(url.pathname);
   } catch {
     return false;
   }
@@ -137,7 +124,7 @@ function parseTask(value: unknown): RuntimeBridgeTaskRequest | null {
     .flatMap((item) => item as string[])
     .reduce((total, item) => total + item.length, 0);
   if (packageChars > 4 * 1024) return null;
-  if (!runtimeBridgeRepository(value.repository) || !text(value.baselineSha, 40, SHA)) return null;
+  if (value.repository !== 'ASI-integration/asi-landing' || !text(value.baselineSha, 40, SHA)) return null;
   return value as RuntimeBridgeTaskRequest;
 }
 
