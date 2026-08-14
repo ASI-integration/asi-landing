@@ -213,8 +213,17 @@ describe('Real Booking Intake Autopilot v1', () => {
     expect(missing).toContain('property');
   });
 
-  it('valid web request creates booking through processInboundBookingRequest', async () => {
+  it('normal public web request creates a new unscoped inquiry', async () => {
     const { processInboundBookingRequest: process } = await import('../real-booking-intake-autopilot');
+    const publicRecord = {
+      ...bookingRecord,
+      bookingId: null,
+      accountId: null,
+      propertyId: null,
+      propertyLabel: 'Студия у метро',
+    };
+    createBookingOpsRecord.mockResolvedValueOnce({ ok: true, record: publicRecord });
+    getBookingOpsRecord.mockResolvedValue(publicRecord);
     const result = await process({
       guestName: 'Иван Петров',
       guestPhone: '+79991112233',
@@ -222,28 +231,40 @@ describe('Real Booking Intake Autopilot v1', () => {
       checkInAt: '2026-08-10',
       checkOutAt: '2026-08-12',
       guestCount: 2,
-      propertyId: 'OBJ-1',
-      propertyLabel: 'Студия',
-      externalSourceId: 'web-req-1',
+      propertyLabel: 'Студия у метро',
+      rawMessageText: 'Подскажите, свободны ли даты?',
     }, 'web');
 
-    expect(createBookingOpsRecord).toHaveBeenCalled();
+    expect(createBookingOpsRecord).toHaveBeenCalledWith(
+      expect.objectContaining({
+        bookingId: null,
+        propertyId: null,
+        propertyLabel: 'Студия у метро',
+        otaSource: 'web',
+      }),
+      expect.any(Object),
+    );
+    expect(createBookingOpsRecord).toHaveBeenCalledWith(
+      expect.not.objectContaining({ accountId: expect.anything(), reservationMetadata: expect.anything() }),
+      expect.any(Object),
+    );
     expect(result.bookingId).toBe('booking-ops-intake-1');
-    expect(result.intakeStatus).toBe('processed');
+    expect(result.intakeStatus).toBe('needs_review');
+    expect(result.missingRequiredFields).toContain('property');
     expect(initializeCheckinExecutionBaseline).toHaveBeenCalledWith('booking-ops-intake-1');
     expect(initializeInStayCheckoutBaseline).toHaveBeenCalledWith('booking-ops-intake-1');
     expect(recordAndProcessBookingEvent).toHaveBeenCalledTimes(1);
     expect(recordAndProcessBookingEvent).toHaveBeenCalledWith(expect.objectContaining({
       id: expect.stringContaining('booking.received'),
       bookingId: 'booking-ops-intake-1',
-      objectId: 'OBJ-1',
+      objectId: null,
       type: 'booking.received',
       actorType: 'system',
       source: 'real_booking_intake',
     }));
   });
 
-  it('duplicate inbound request does not create duplicate booking', async () => {
+  it('duplicate internal request does not create duplicate booking', async () => {
     const { processInboundBookingRequest: process } = await import('../real-booking-intake-autopilot');
     const payload = {
       guestName: 'Иван Петров',
@@ -253,8 +274,8 @@ describe('Real Booking Intake Autopilot v1', () => {
       checkInAt: '2026-08-10',
       checkOutAt: '2026-08-12',
     };
-    await process(payload, 'web');
-    const second = await process(payload, 'web');
+    await process(payload, 'admin');
+    const second = await process(payload, 'admin');
     expect(second.intakeStatus).toBe('duplicate');
     expect(createBookingOpsRecord).toHaveBeenCalledTimes(1);
     expect(recordAndProcessBookingEvent).toHaveBeenCalledTimes(1);
@@ -266,7 +287,7 @@ describe('Real Booking Intake Autopilot v1', () => {
     updateBookingOpsRecord.mockResolvedValueOnce({ ok: true, record: { ...incomplete, guestPhone: '+79990000001' } });
     tables.booking_ops_records.push({ id: incomplete.id, guest_name: incomplete.guestName, property_id: 'OBJ-1' });
     const { processInboundBookingRequest: process } = await import('../real-booking-intake-autopilot');
-    await process({ guestName: 'Guest', guestPhone: '+79990000001', propertyId: 'OBJ-1', externalSourceId: 'sync-complete-1' }, 'web');
+    await process({ guestName: 'Guest', guestPhone: '+79990000001', propertyId: 'OBJ-1', externalSourceId: 'sync-complete-1' }, 'admin');
     expect(recordAndProcessBookingEvent).toHaveBeenCalledWith(expect.objectContaining({ type: 'guest.data_submitted', source: 'real_booking_intake' }));
     expect(recordAndProcessBookingEvent).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'booking.received' }));
   });
@@ -328,6 +349,142 @@ describe('Real Booking Intake Autopilot v1', () => {
       guestPhone: '+79990000001',
       rawMessageText: 'Интересует бронь',
     })).toBeNull();
+  });
+
+  it('rejects every non-descriptive public field at the trust boundary', async () => {
+    const { processInboundBookingRequest: process } = await import('../real-booking-intake-autopilot');
+    const forbiddenFields: Array<[string, unknown]> = [
+      ['accountId', 'account-foreign'],
+      ['ownerId', 'owner-foreign'],
+      ['propertyId', 'property-foreign'],
+      ['propertyReference', 'property-foreign'],
+      ['bookingId', 'booking-foreign'],
+      ['bookingReference', 'booking-foreign'],
+      ['externalSourceId', 'external-foreign'],
+      ['sourceMessageId', 'message-foreign'],
+      ['telegramUserId', '12345'],
+      ['telegramChatId', '67890'],
+      ['metadata', { acceptanceHarness: 'channel_manager_live_core_v1' }],
+      ['hasMaintenanceIssue', true],
+      ['action', 'attach_property'],
+      ['intakeEventId', 'intake-foreign'],
+      ['duplicateOfBookingId', 'booking-foreign'],
+      ['attachPropertyId', 'property-foreign'],
+    ];
+
+    for (const [field, value] of forbiddenFields) {
+      const body = {
+        guestName: 'Атакующий',
+        rawMessageText: 'Заявка',
+        [field]: value,
+      };
+      expect(validatePublicWebIntakePayload(body)).toBe(
+        'Публичная заявка содержит недопустимые служебные поля.',
+      );
+      await expect(process(body as never, 'web')).rejects.toMatchObject({
+        code: 'public_web_authoritative_field_forbidden',
+      });
+    }
+
+    expect(createBookingOpsRecord).not.toHaveBeenCalled();
+    expect(updateBookingOpsRecord).not.toHaveBeenCalled();
+    expect(initializeCheckinExecutionBaseline).not.toHaveBeenCalled();
+    expect(initializeInStayCheckoutBaseline).not.toHaveBeenCalled();
+    expect(syncBookingOpsTasksForRecordId).not.toHaveBeenCalled();
+    expect(recordAndProcessBookingEvent).not.toHaveBeenCalled();
+    expect(tables.booking_inbound_intake_events).toHaveLength(0);
+    expect(tables.booking_ops_communication_intents).toHaveLength(0);
+  });
+
+  it('does not match a foreign booking on a public guest-contact collision', async () => {
+    const foreignRecord = {
+      ...bookingRecord,
+      id: 'foreign-booking',
+      accountId: 'foreign-account',
+      propertyId: 'foreign-property',
+    };
+    tables.booking_ops_records.push({
+      id: foreignRecord.id,
+      account_id: foreignRecord.accountId,
+      property_id: foreignRecord.propertyId,
+      guest_phone: '+79991112233',
+      guest_email: 'same@example.test',
+      check_in_at: '2026-08-10T00:00:00.000Z',
+      check_out_at: '2026-08-12T00:00:00.000Z',
+    });
+    const publicRecord = {
+      ...bookingRecord,
+      id: 'new-public-inquiry',
+      bookingId: null,
+      accountId: null,
+      propertyId: null,
+      propertyLabel: 'Описание объекта',
+    };
+    createBookingOpsRecord.mockResolvedValueOnce({ ok: true, record: publicRecord });
+    getBookingOpsRecord.mockResolvedValue(publicRecord);
+
+    const { processInboundBookingRequest: process } = await import('../real-booking-intake-autopilot');
+    const result = await process({
+      guestName: 'Новый гость',
+      guestPhone: '+79991112233',
+      guestEmail: 'same@example.test',
+      checkInAt: '2026-08-10',
+      checkOutAt: '2026-08-12',
+      propertyLabel: 'Описание объекта',
+    }, 'web');
+
+    expect(result.bookingId).toBe('new-public-inquiry');
+    expect(createBookingOpsRecord).toHaveBeenCalledOnce();
+    expect(updateBookingOpsRecord).not.toHaveBeenCalled();
+    expect(tables.booking_ops_records.find((row) => row.id === 'foreign-booking')).toMatchObject({
+      account_id: 'foreign-account',
+      property_id: 'foreign-property',
+    });
+  });
+
+  it('rejects a foreign booking reference without probing or mutating that booking', async () => {
+    tables.booking_ops_records.push({
+      id: 'foreign-booking',
+      booking_id: 'foreign-reference',
+      account_id: 'foreign-account',
+      property_id: 'foreign-property',
+      guest_phone: '+79990000077',
+    });
+    const { processInboundBookingRequest: process } = await import('../real-booking-intake-autopilot');
+
+    await expect(process({
+      guestName: 'Атакующий',
+      rawMessageText: 'Заявка',
+      bookingReference: 'foreign-reference',
+    }, 'web')).rejects.toMatchObject({ code: 'public_web_authoritative_field_forbidden' });
+
+    expect(getBookingOpsRecord).not.toHaveBeenCalled();
+    expect(createBookingOpsRecord).not.toHaveBeenCalled();
+    expect(updateBookingOpsRecord).not.toHaveBeenCalled();
+    expect(tables.booking_ops_records).toEqual([
+      expect.objectContaining({
+        id: 'foreign-booking',
+        account_id: 'foreign-account',
+        property_id: 'foreign-property',
+      }),
+    ]);
+  });
+
+  it('preserves authoritative fields for authenticated internal processing', async () => {
+    const { processInboundBookingRequest: process } = await import('../real-booking-intake-autopilot');
+    getBookingOpsRecord.mockResolvedValueOnce(null);
+    await process({
+      guestName: 'Операторская заявка',
+      guestPhone: '+79990000003',
+      propertyId: 'OBJ-1',
+      bookingReference: 'operator-ref-1',
+      externalSourceId: 'operator-source-1',
+    }, 'web', { inputTrust: 'authenticated_internal' });
+
+    expect(createBookingOpsRecord).toHaveBeenCalledWith(
+      expect.objectContaining({ bookingId: 'operator-ref-1', propertyId: 'OBJ-1', otaSource: 'web' }),
+      expect.any(Object),
+    );
   });
 
   it('admin-created request uses admin source', async () => {

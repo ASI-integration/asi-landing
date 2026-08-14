@@ -557,19 +557,22 @@ describe('Channel Manager create-path isolation (real shared intake)', () => {
     );
   });
 
-  it('public non-CM intake still uses unscoped ext: keys', async () => {
+  it('public non-CM intake uses an isolated key and cannot attach a property', async () => {
     const result = await processInboundBookingRequest({
       guestName: 'Иван',
       guestPhone: '+79991112233',
       checkInAt: '2026-08-10',
       checkOutAt: '2026-08-12',
       guestCount: 2,
-      propertyId: PROPERTY_A,
-      externalSourceId: 'web-1',
+      propertyLabel: 'Описание объекта',
     }, 'web');
 
-    expect(result.intakeStatus).toBe('processed');
-    expect(rows('booking_inbound_intake_events')[0]?.idempotency_key).toBe('ext:web:web-1');
+    expect(result.intakeStatus).toBe('needs_review');
+    expect(rows('booking_inbound_intake_events')[0]?.idempotency_key).toMatch(/^public-web:/);
+    expect(createBookingOpsRecord).toHaveBeenCalledWith(
+      expect.objectContaining({ bookingId: null, propertyId: null, propertyLabel: 'Описание объекта' }),
+      expect.anything(),
+    );
     expect(createBookingOpsRecord).toHaveBeenCalledWith(
       expect.not.objectContaining({ accountId: expect.anything() }),
       expect.anything(),
