@@ -24,6 +24,7 @@ export async function POST(req: Request): Promise<NextResponse> {
   }
 
   const result = await processInboundBookingRequest(body, source, {
+    inputTrust: 'authenticated_internal',
     force: body.force === true,
     action: typeof body.action === 'string'
       ? body.action as 'process' | 'mark_duplicate' | 'attach_property' | 'attach_guest' | 'request_missing_data' | 'create_fallback'

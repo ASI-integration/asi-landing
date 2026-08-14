@@ -149,6 +149,12 @@ export type ProcessInboundBookingOptions = {
    * Never accept this from public request bodies.
    */
   channelManagerScope?: ChannelManagerIntakeScope;
+  /**
+   * Server-only trust marker for authenticated operator routes that preserve the
+   * original inbound source while processing authoritative intake fields.
+   * Never accept this value from a request body.
+   */
+  inputTrust?: 'authenticated_internal';
 };
 
 /** Stable Channel Manager intake namespace: connection + provider + external booking ID. */
@@ -158,6 +164,20 @@ export type ChannelManagerIntakeScope = {
   accountId: string;
   propertyId: string;
 };
+
+const PUBLIC_WEB_ALLOWED_FIELDS = new Set([
+  'guestName',
+  'guestPhone',
+  'guestEmail',
+  'guestTelegram',
+  'checkInAt',
+  'checkOutAt',
+  'guestCount',
+  'propertyLabel',
+  'rawMessageText',
+]);
+
+const PUBLIC_WEB_FORBIDDEN_MESSAGE = 'Публичная заявка содержит недопустимые служебные поля.';
 
 type IntakeEventRow = {
   id: string;
@@ -271,6 +291,7 @@ function resolveInboundIdempotencyKey(
   input: NormalizedInboundBookingRequest,
   source: InboundBookingSource,
   scope?: ChannelManagerIntakeScope | null,
+  unscopedPublicWeb = false,
 ): string {
   if (scope) {
     const externalId = input.externalSourceId || input.bookingReference;
@@ -281,6 +302,9 @@ function resolveInboundIdempotencyKey(
     }
     return computeChannelManagerIdempotencyKey(scope.connectionId, scope.provider, externalId);
   }
+  // Public guest identity is not an authoritative dedupe namespace. A fresh key
+  // prevents contact/date collisions from revealing or reusing another intake.
+  if (unscopedPublicWeb) return `public-web:${randomUUID()}`;
   return computeInboundIdempotencyKey(input, source);
 }
 
@@ -341,6 +365,40 @@ export function normalizeInboundBookingRequest(
   };
 }
 
+function publicWebValidationError(body: Record<string, unknown>): string | null {
+  return Object.keys(body).some((field) => !PUBLIC_WEB_ALLOWED_FIELDS.has(field))
+    ? PUBLIC_WEB_FORBIDDEN_MESSAGE
+    : null;
+}
+
+function normalizeUnscopedPublicWebRequest(
+  input: InboundBookingRequest,
+): NormalizedInboundBookingRequest {
+  const normalized = normalizeInboundBookingRequest({
+    guestName: input.guestName,
+    guestPhone: input.guestPhone,
+    guestEmail: input.guestEmail,
+    guestTelegram: input.guestTelegram,
+    checkInAt: input.checkInAt,
+    checkOutAt: input.checkOutAt,
+    guestCount: input.guestCount,
+    propertyLabel: input.propertyLabel,
+    rawMessageText: input.rawMessageText,
+  }, 'web');
+  return {
+    ...normalized,
+    propertyId: null,
+    ownerId: null,
+    bookingReference: null,
+    externalSourceId: null,
+    sourceMessageId: null,
+    telegramUserId: null,
+    telegramChatId: null,
+    hasMaintenanceIssue: false,
+    metadata: {},
+  };
+}
+
 function hasGuestContact(input: NormalizedInboundBookingRequest): boolean {
   return Boolean(
     input.guestPhone
@@ -383,9 +441,13 @@ function guestContactRef(input: NormalizedInboundBookingRequest): string | null 
 
 export async function findOrCreateGuestFromInbound(
   input: NormalizedInboundBookingRequest,
+  options?: { allowExistingBookingMatch?: boolean },
 ): Promise<{ guestId: string | null; matchedRecordId: string | null }> {
   const contactRef = guestContactRef(input);
   if (!contactRef) return { guestId: null, matchedRecordId: null };
+  if (options?.allowExistingBookingMatch === false) {
+    return { guestId: contactRef, matchedRecordId: null };
+  }
 
   const { data } = await supabase
     .from('booking_ops_records')
@@ -408,7 +470,9 @@ export async function findOrCreateGuestFromInbound(
 async function findMatchingBookingRecord(
   input: NormalizedInboundBookingRequest,
   scope?: ChannelManagerIntakeScope | null,
+  allowUnscopedMatching = true,
 ): Promise<BookingOpsRecord | null> {
+  if (!scope && !allowUnscopedMatching) return null;
   if (input.bookingReference) {
     if (scope) {
       // Contour-required match: never return a foreign booking by raw external ID or UUID.
@@ -516,8 +580,9 @@ export async function findOrCreateBookingFromInbound(
   input: NormalizedInboundBookingRequest,
   source: InboundBookingSource,
   scope?: ChannelManagerIntakeScope | null,
+  allowUnscopedMatching = true,
 ): Promise<{ record: BookingOpsRecord; created: boolean; guestDataBecameComplete: boolean }> {
-  const existing = await findMatchingBookingRecord(input, scope);
+  const existing = await findMatchingBookingRecord(input, scope, allowUnscopedMatching);
   if (existing) {
     if (scope && !bookingBelongsToContour(existing, scope)) {
       throw Object.assign(
@@ -921,7 +986,9 @@ export async function listInboundIntakeEvents(options?: {
 }
 
 export function validatePublicWebIntakePayload(body: Record<string, unknown>): string | null {
-  const normalized = normalizeInboundBookingRequest(body, 'web');
+  const trustBoundaryError = publicWebValidationError(body);
+  if (trustBoundaryError) return trustBoundaryError;
+  const normalized = normalizeUnscopedPublicWebRequest(body);
   if (!normalized.guestName && !hasGuestContact(normalized)) {
     return 'Укажите имя гостя или контакт для связи.';
   }
@@ -953,14 +1020,30 @@ export async function processInboundBookingRequest(
   source: InboundBookingSource,
   options?: ProcessInboundBookingOptions,
 ): Promise<InboundBookingIntakeResult> {
+  const unscopedPublicWeb = source === 'web' && options?.inputTrust !== 'authenticated_internal';
+  if (unscopedPublicWeb) {
+    const trustBoundaryError = publicWebValidationError(rawInput as Record<string, unknown>);
+    if (trustBoundaryError) {
+      throw Object.assign(new Error(trustBoundaryError), {
+        code: 'public_web_authoritative_field_forbidden',
+      });
+    }
+  }
   const scope = assertChannelManagerScope(options?.channelManagerScope);
-  const normalized = normalizeInboundBookingRequest(rawInput, source);
+  const normalized = unscopedPublicWeb
+    ? normalizeUnscopedPublicWebRequest(rawInput)
+    : normalizeInboundBookingRequest(rawInput, source);
   if (scope) {
     // Contour is authoritative for CM creates; keep raw external ID as provider identity.
     normalized.propertyId = scope.propertyId;
   }
-  const idempotencyKey = resolveInboundIdempotencyKey(normalized, source, scope);
+  const idempotencyKey = resolveInboundIdempotencyKey(normalized, source, scope, unscopedPublicWeb);
   const missingFields = computeMissingInboundFields(normalized);
+  if (unscopedPublicWeb && !missingFields.includes('property')) {
+    // A descriptive label helps the operator understand the inquiry, but it is
+    // never proof that an internal property has been selected.
+    missingFields.push('property');
+  }
   const safePayload = {
     guestName: normalized.guestName,
     hasPhone: Boolean(normalized.guestPhone),
@@ -1041,7 +1124,9 @@ export async function processInboundBookingRequest(
   }
 
   try {
-    const { guestId } = await findOrCreateGuestFromInbound(normalized);
+    const { guestId } = await findOrCreateGuestFromInbound(normalized, {
+      allowExistingBookingMatch: !unscopedPublicWeb,
+    });
     let record: BookingOpsRecord;
     let created = false;
     let guestDataBecameComplete = false;
@@ -1068,7 +1153,12 @@ export async function processInboundBookingRequest(
       if (!updated.ok || !updated.record) throw new Error('attach_guest_failed');
       record = updated.record;
     } else {
-      const bookingResult = await findOrCreateBookingFromInbound(normalized, source, scope);
+      const bookingResult = await findOrCreateBookingFromInbound(
+        normalized,
+        source,
+        scope,
+        !unscopedPublicWeb,
+      );
       record = bookingResult.record;
       created = bookingResult.created;
       guestDataBecameComplete = bookingResult.guestDataBecameComplete;
