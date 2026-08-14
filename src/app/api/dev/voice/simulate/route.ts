@@ -1,35 +1,18 @@
 import { NextResponse } from 'next/server';
+import { requireAdminSecret } from '@/lib/admin-auth';
 import { handleVoiceTranscript } from '@/lib/communication/voice/orchestrator';
 import type { VoiceChannel, VoiceInput } from '@/lib/communication/voice/types';
 import { VOICE_CHANNEL_CAPABILITIES } from '@/lib/communication/voice/capabilities';
 
 export const runtime = 'nodejs';
 
-function requireDevAccess(req: Request): { ok: true } | { ok: false; response: Response } {
-  const adminSecret = process.env.ADMIN_SECRET;
-  const secret = req.headers.get('x-admin-secret');
-
-  // If an admin secret exists, require it always.
-  if (adminSecret && secret !== adminSecret) {
-    return { ok: false, response: NextResponse.json({ error: 'Unauthorized' }, { status: 401 }) };
-  }
-
-  // Otherwise, only allow in non-production.
-  const nodeEnv = process.env.NODE_ENV ?? 'development';
-  if (nodeEnv === 'production') {
-    return { ok: false, response: NextResponse.json({ error: 'Disabled in production' }, { status: 403 }) };
-  }
-
-  return { ok: true };
-}
-
 function isVoiceChannel(v: unknown): v is VoiceChannel {
   return v === 'whatsapp_voice' || v === 'telegram_voice' || v === 'phone';
 }
 
 export async function POST(req: Request): Promise<Response> {
-  const access = requireDevAccess(req);
-  if (!access.ok) return access.response;
+  const authFailure = requireAdminSecret(req);
+  if (authFailure) return authFailure;
 
   let body: any;
   try {

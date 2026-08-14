@@ -33,6 +33,7 @@
  */
 
 import { NextResponse } from 'next/server';
+import { requireAdminSecret } from '@/lib/admin-auth';
 import { supabase }     from '@/lib/supabase';
 import { appendTimelineEvent } from '@/lib/communication/timeline';
 import { syncBookingOpsFromReservation } from '@/lib/booking-ops/reservation-sync';
@@ -44,11 +45,8 @@ const ACTIVE_STAY_STATUSES = new Set(['in_stay', 'confirmed', 'active']);
 
 export async function POST(req: Request) {
   // ── Auth ──────────────────────────────────────────────────────────────────
-  const adminSecret = process.env.ADMIN_SECRET;
-  const secret = req.headers.get('x-admin-secret');
-  if (adminSecret && secret !== adminSecret) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
+  const authFailure = requireAdminSecret(req);
+  if (authFailure) return authFailure;
 
   // ── Parse body ────────────────────────────────────────────────────────────
   let body: Record<string, unknown>;

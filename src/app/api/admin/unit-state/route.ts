@@ -12,16 +12,14 @@
  */
 
 import { NextResponse } from 'next/server';
+import { requireAdminSecret } from '@/lib/admin-auth';
 import { getUnitState } from '@/lib/ops/unit-state';
 import { evaluateCheckinReadiness } from '@/lib/ops/checkin-gate';
 
 export async function GET(req: Request) {
   // ── Auth ──────────────────────────────────────────────────────────────────
-  const adminSecret = process.env.ADMIN_SECRET;
-  const secret = req.headers.get('x-admin-secret');
-  if (adminSecret && secret !== adminSecret) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
+  const authFailure = requireAdminSecret(req);
+  if (authFailure) return authFailure;
 
   const { searchParams } = new URL(req.url);
   const property_id = searchParams.get('property_id');

@@ -25,6 +25,7 @@
  */
 
 import { NextResponse } from 'next/server';
+import { requireAdminSecret } from '@/lib/admin-auth';
 import {
   blockUnit,
   unblockUnit,
@@ -38,11 +39,8 @@ const VALID_ACTIONS = new Set(['block', 'unblock', 'mark_dirty', 'mark_ready_ove
 
 export async function POST(req: Request) {
   // ── Auth ──────────────────────────────────────────────────────────────────
-  const adminSecret = process.env.ADMIN_SECRET;
-  const secret = req.headers.get('x-admin-secret');
-  if (adminSecret && secret !== adminSecret) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
+  const authFailure = requireAdminSecret(req);
+  if (authFailure) return authFailure;
 
   // ── Parse body ────────────────────────────────────────────────────────────
   let body: Record<string, unknown>;
