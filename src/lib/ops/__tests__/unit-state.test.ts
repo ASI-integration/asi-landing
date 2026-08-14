@@ -17,28 +17,41 @@ type MockRow = Record<string, unknown>;
 
 let mockUnitState: MockRow | null = null;
 let mockUpsertError: string | null = null;
+let mockPropertyKnowledgeError: string | null = null;
 let mockPropertyKnowledge: MockRow | null = {
   active: true,
-  check_in_instructions: 'Enter via keypad',
+  checkin_instructions: 'Enter via keypad',
   wifi_name: 'GuestWifi',
 };
 let mockOpenTurnoverTask: MockRow | null = null;
+let queriedTables: string[] = [];
+let selectedColumns: Record<string, string[]> = {};
 
 vi.mock('@/lib/supabase', () => ({
   supabase: {
     from: (table: string) => {
+      queriedTables.push(table);
+
       // Build a fluent query builder stub. The key insight is that
       // multiple .eq() calls chain on the same table, so we track them all.
       const eqFilters: Record<string, unknown> = {};
 
       const stub = {
-        select: (_cols?: string) => stub,
+        select: (_cols?: string) => {
+          if (_cols) selectedColumns[table] = [...(selectedColumns[table] ?? []), _cols];
+          return stub;
+        },
         eq:     (_col: string, _val: unknown) => { eqFilters[_col] = _val; return stub; },
         in:     (_col: string, _vals: unknown[]) => stub,
         limit:  (_n: number) => stub,
         maybeSingle: async () => {
           if (table === 'unit_state')         return { data: mockUnitState,          error: null };
-          if (table === 'property_knowledge') return { data: mockPropertyKnowledge,  error: null };
+          if (table === 'tg_property_knowledge') {
+            return {
+              data: mockPropertyKnowledge,
+              error: mockPropertyKnowledgeError ? { message: mockPropertyKnowledgeError } : null,
+            };
+          }
           if (table === 'ops_tasks')          return { data: mockOpenTurnoverTask,   error: null };
           return { data: null, error: null };
         },
@@ -49,7 +62,10 @@ vi.mock('@/lib/supabase', () => ({
       };
 
       return {
-        select: (_cols?: string) => stub,
+        select: (_cols?: string) => {
+          if (_cols) selectedColumns[table] = [...(selectedColumns[table] ?? []), _cols];
+          return stub;
+        },
         upsert: (_row: MockRow) => ({
           select: (_cols?: string) => ({
             single: async () => {
@@ -81,10 +97,13 @@ import {
 beforeEach(() => {
   mockUnitState         = null;
   mockUpsertError       = null;
+  mockPropertyKnowledgeError = null;
   mockOpenTurnoverTask  = null;
+  queriedTables         = [];
+  selectedColumns       = {};
   mockPropertyKnowledge = {
     active: true,
-    check_in_instructions: 'Enter via keypad',
+    checkin_instructions: 'Enter via keypad',
     wifi_name: 'GuestWifi',
   };
 });
@@ -162,6 +181,11 @@ describe('checkReadinessGates', () => {
     const result = await checkReadinessGates('prop_A', { dirty: false, blocked_reason: null });
     expect(result.ready).toBe(true);
     expect(result.blocked_reason).toBeNull();
+    expect(queriedTables).toContain('tg_property_knowledge');
+    expect(queriedTables).not.toContain('property_knowledge');
+    expect(selectedColumns.tg_property_knowledge).toContain(
+      'active, checkin_instructions, wifi_name',
+    );
   });
 
   it('fails when dirty = true', async () => {
@@ -171,7 +195,7 @@ describe('checkReadinessGates', () => {
   });
 
   it('fails when property is inactive', async () => {
-    mockPropertyKnowledge = { active: false, check_in_instructions: 'x', wifi_name: 'y' };
+    mockPropertyKnowledge = { active: false, checkin_instructions: 'x', wifi_name: 'y' };
     const result = await checkReadinessGates('prop_A', { dirty: false, blocked_reason: null });
     expect(result.ready).toBe(false);
     expect(result.blocked_reason).toBe('property_inactive');
@@ -182,6 +206,15 @@ describe('checkReadinessGates', () => {
     const result = await checkReadinessGates('prop_A', { dirty: false, blocked_reason: null });
     expect(result.ready).toBe(false);
     expect(result.blocked_reason).toBe('property_knowledge_missing');
+  });
+
+  it('fails safely and stops when property knowledge lookup errors', async () => {
+    mockPropertyKnowledgeError = 'database detail must not escape';
+    const result = await checkReadinessGates('prop_A', { dirty: false, blocked_reason: null });
+    expect(result.ready).toBe(false);
+    expect(result.blocked_reason).toBe('property_knowledge_lookup_failed');
+    expect(result.blocked_reason).not.toContain(mockPropertyKnowledgeError);
+    expect(queriedTables).not.toContain('ops_tasks');
   });
 
   it('fails when there is an open turnover task', async () => {
@@ -197,15 +230,15 @@ describe('checkReadinessGates', () => {
     expect(result.blocked_reason).toBe('maintenance');
   });
 
-  it('fails when check_in_instructions is missing', async () => {
-    mockPropertyKnowledge = { active: true, check_in_instructions: null, wifi_name: 'y' };
+  it('fails when checkin_instructions is missing', async () => {
+    mockPropertyKnowledge = { active: true, checkin_instructions: null, wifi_name: 'y' };
     const result = await checkReadinessGates('prop_A', { dirty: false, blocked_reason: null });
     expect(result.ready).toBe(false);
     expect(result.blocked_reason).toBe('check_in_instructions_missing');
   });
 
   it('fails when wifi_name is missing', async () => {
-    mockPropertyKnowledge = { active: true, check_in_instructions: 'x', wifi_name: null };
+    mockPropertyKnowledge = { active: true, checkin_instructions: 'x', wifi_name: null };
     const result = await checkReadinessGates('prop_A', { dirty: false, blocked_reason: null });
     expect(result.ready).toBe(false);
     expect(result.blocked_reason).toBe('wifi_name_missing');
@@ -225,7 +258,7 @@ describe('markUnitReadyAfterTurnover', () => {
   });
 
   it('transitions to blocked when property is inactive', async () => {
-    mockPropertyKnowledge = { active: false, check_in_instructions: 'x', wifi_name: 'y' };
+    mockPropertyKnowledge = { active: false, checkin_instructions: 'x', wifi_name: 'y' };
     const result = await markUnitReadyAfterTurnover('prop_A', 'res_1');
     expect(result.ok).toBe(true);
     expect(result.gate_blocked).toBe(true);

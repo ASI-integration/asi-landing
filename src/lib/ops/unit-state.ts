@@ -80,26 +80,29 @@ export async function getUnitState(
  * Check all required gates before allowing a unit to become `ready`.
  *
  * Required gates:
- *   1. property must be active (active = true in property_knowledge)
+ *   1. property must be active (active = true in tg_property_knowledge)
  *   2. dirty must be false
  *   3. no unresolved turnover task
  *   4. no blocked_reason
  *
  * Optional gates (checked if cheap — only if fields exist):
- *   5. check_in_instructions present in property_knowledge
- *   6. wifi_name present in property_knowledge
+ *   5. checkin_instructions present in tg_property_knowledge
+ *   6. wifi_name present in tg_property_knowledge
  */
 export async function checkReadinessGates(
   property_id: string,
   current: Partial<Pick<UnitState, 'dirty' | 'blocked_reason'>>,
 ): Promise<ReadinessGateResult> {
   // Gate 1: property must be active
-  const { data: pk } = await supabase
-    .from('property_knowledge')
-    .select('active, check_in_instructions, wifi_name')
+  const { data: pk, error: propertyKnowledgeError } = await supabase
+    .from('tg_property_knowledge')
+    .select('active, checkin_instructions, wifi_name')
     .eq('property_id', property_id)
     .maybeSingle();
 
+  if (propertyKnowledgeError) {
+    return { ready: false, blocked_reason: 'property_knowledge_lookup_failed' };
+  }
   if (!pk) {
     return { ready: false, blocked_reason: 'property_knowledge_missing' };
   }
@@ -131,8 +134,8 @@ export async function checkReadinessGates(
     return { ready: false, blocked_reason: 'open_turnover_task' };
   }
 
-  // Optional gate 5: check_in_instructions
-  if (!pk.check_in_instructions) {
+  // Optional gate 5: checkin_instructions
+  if (!pk.checkin_instructions) {
     return { ready: false, blocked_reason: 'check_in_instructions_missing' };
   }
 
