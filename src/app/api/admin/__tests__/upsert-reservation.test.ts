@@ -14,10 +14,12 @@ type MaybeRow = Record<string, unknown> | null;
 let mockExistingRow: MaybeRow = null;
 let mockUpsertError: string | null = null;
 let mockReturnedId = 'uuid-reservation-1';
+let mockFromCalls = 0;
 
 vi.mock('@/lib/supabase', () => ({
   supabase: {
     from: (table: string) => {
+      mockFromCalls += 1;
       if (table === 'tg_guest_reservations') {
         return {
           select: (cols?: string) => ({
@@ -81,9 +83,11 @@ const VALID_BODY = {
 
 describe('POST /api/admin/upsert-reservation', () => {
   beforeEach(() => {
+    process.env.ADMIN_SECRET = ADMIN_SECRET;
     mockExistingRow  = null;
     mockUpsertError  = null;
     mockReturnedId   = 'uuid-reservation-1';
+    mockFromCalls    = 0;
   });
 
   // ── Auth ───────────────────────────────────────────────────────────────────
@@ -93,9 +97,42 @@ describe('POST /api/admin/upsert-reservation', () => {
     expect(res.status).toBe(401);
   });
 
+  it('returns 401 when x-admin-secret is empty', async () => {
+    const res = await POST(makeReq(VALID_BODY, ''));
+    expect(res.status).toBe(401);
+  });
+
   it('returns 401 when x-admin-secret is wrong', async () => {
     const res = await POST(makeReq(VALID_BODY, 'bad'));
     expect(res.status).toBe(401);
+  });
+
+  it('fails closed before validation or database access when ADMIN_SECRET is missing', async () => {
+    delete process.env.ADMIN_SECRET;
+
+    const res = await POST(makeReq({}, null));
+    expect(res.status).toBe(503);
+    expect(mockFromCalls).toBe(0);
+  });
+
+  it.each(['', '   '])('fails closed when ADMIN_SECRET is %j', async (configuredSecret) => {
+    process.env.ADMIN_SECRET = configuredSecret;
+
+    const res = await POST(makeReq(VALID_BODY, configuredSecret));
+    expect(res.status).toBe(503);
+    expect(mockFromCalls).toBe(0);
+  });
+
+  it('authenticates before parsing an invalid request body', async () => {
+    const req = new Request('http://localhost/api/admin/upsert-reservation', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: 'not json',
+    });
+
+    const res = await POST(req);
+    expect(res.status).toBe(401);
+    expect(mockFromCalls).toBe(0);
   });
 
   // ── Validation ─────────────────────────────────────────────────────────────

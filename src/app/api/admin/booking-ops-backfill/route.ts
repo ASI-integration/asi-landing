@@ -12,14 +12,12 @@
  */
 
 import { NextResponse } from 'next/server';
+import { requireAdminSecret } from '@/lib/admin-auth';
 import { backfillBookingOpsFromReservations } from '@/lib/booking-ops/reservation-sync';
 
 export async function POST(req: Request) {
-  const adminSecret = process.env.ADMIN_SECRET;
-  const secret = req.headers.get('x-admin-secret');
-  if (adminSecret && secret !== adminSecret) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
+  const authFailure = requireAdminSecret(req);
+  if (authFailure) return authFailure;
 
   let body: Record<string, unknown> = {};
   try {
