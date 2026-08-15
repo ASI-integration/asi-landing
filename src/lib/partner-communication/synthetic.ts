@@ -7,6 +7,15 @@ import {
   type PartnerCommunicationContext,
   type PartnerGuestMessageEventV1,
 } from './contract';
+import { hashPartnerBearerTokenForProvisioning } from './auth';
+
+export const SYNTHETIC_PARTNER_CREDENTIAL = Object.freeze({
+  credentialId: 'demo-credential-1',
+  token: 'synthetic-test-token-ONLY',
+  tokenHash: hashPartnerBearerTokenForProvisioning('synthetic-test-token-ONLY'),
+  canonicalAccountId: '10000000-0000-4000-8000-000000000001',
+  partnerAccountBindingId: '30000000-0000-4000-8000-000000000003',
+});
 
 /** Synthetic fixture only. This is not an Apart Sharing API or integration. */
 export const SYNTHETIC_APART_SHARING_PARTNER_EVENT_V1: PartnerGuestMessageEventV1 = {

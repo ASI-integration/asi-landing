@@ -43,6 +43,14 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
+      - name: Partner authenticated inbox focused regression
+        run: |
+          npx vitest run \
+            src/lib/partner-communication/__tests__/partner-authenticated-inbox.test.ts \
+            src/lib/partner-communication/__tests__/partner-communication-contract-v1.test.ts \
+            src/lib/partner-communication/__tests__/partner-communication-state-repository.test.ts \
+            --reporter=verbose
+
       - name: Guest communication and Telegram voice regression
         run: |
           npx vitest run \
@@ -533,3 +541,19 @@ jobs:
           }
           console.log('guest_lifecycle_cleanup_proof_ok', JSON.stringify(proof));
           NODE
+
+      - name: Partner Authenticated Inbox PostgreSQL integration
+        id: partner_inbox_pg_integration
+        run: |
+          set -euo pipefail
+          npx vitest run \
+            src/lib/partner-communication/__tests__/partner-authenticated-inbox.pg.integration.test.ts \
+            --reporter=verbose 2>&1 | tee partner-inbox-pg.out
+          if grep -E '↓|skipped|SKIPPED' partner-inbox-pg.out | grep -Fq 'Partner Authenticated Inbox PostgreSQL integration'; then
+            echo "Partner inbox PostgreSQL suite was skipped — failing job"
+            exit 1
+          fi
+          if ! grep -Fq 'PARTNER_INBOX_PG_PROOF' partner-inbox-pg.out; then
+            echo "Missing PARTNER_INBOX_PG_PROOF — failing job"
+            exit 1
+          fi

@@ -3,6 +3,7 @@ import 'server-only';
 import { randomUUID } from 'node:crypto';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { supabase } from '@/lib/supabase';
+import { isAuthenticatedPartnerPrincipal, type AuthenticatedPartnerPrincipal } from './auth';
 import type { PartnerCommunicationContext } from './contract';
 
 const MAX_EXTERNAL_ID_LENGTH = 200;
@@ -367,6 +368,27 @@ export function partnerSessionIdentityFromContext(
   ) fail('binding_conflict');
   return Object.freeze({
     accountId: bounded(tenant.accountId, MAX_EXTERNAL_ID_LENGTH),
+    partnerId: bounded(context.identity.partnerId, MAX_EXTERNAL_ID_LENGTH),
+    externalPartnerAccountId: bounded(context.identity.accountId, MAX_EXTERNAL_ID_LENGTH),
+    canonicalConversationKey: bounded(context.keys.partnerConversationKey, MAX_CANONICAL_KEY_LENGTH),
+    externalPropertyId: bounded(context.identity.propertyId, MAX_EXTERNAL_ID_LENGTH),
+    externalBookingId: bounded(context.identity.bookingId, MAX_EXTERNAL_ID_LENGTH),
+    externalGuestId: nullableBounded(context.identity.guestId, MAX_EXTERNAL_ID_LENGTH),
+    externalConversationId: bounded(context.identity.conversationId, MAX_EXTERNAL_ID_LENGTH),
+  });
+}
+
+export function partnerSessionIdentityFromAuthenticatedPrincipal(
+  principal: AuthenticatedPartnerPrincipal,
+  context: PartnerCommunicationContext,
+): PartnerSessionIdentity {
+  if (
+    !isAuthenticatedPartnerPrincipal(principal)
+    || principal.partnerId !== context.identity.partnerId
+    || principal.externalPartnerAccountId !== context.identity.accountId
+  ) fail('binding_conflict');
+  return Object.freeze({
+    accountId: bounded(principal.accountId, MAX_EXTERNAL_ID_LENGTH),
     partnerId: bounded(context.identity.partnerId, MAX_EXTERNAL_ID_LENGTH),
     externalPartnerAccountId: bounded(context.identity.accountId, MAX_EXTERNAL_ID_LENGTH),
     canonicalConversationKey: bounded(context.keys.partnerConversationKey, MAX_CANONICAL_KEY_LENGTH),
