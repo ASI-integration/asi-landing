@@ -124,6 +124,7 @@ export type PartnerCommunicationDecisionEnvelopeV1 = {
     confidence: number | null;
     policy: PartnerCommunicationPolicyDecision;
     reasonCodes: string[];
+    followupRecommendation?: string | null;
   };
   operationalActions: PartnerOperationalActionV1[];
   handoff: PartnerHandoffV1 | null;
@@ -132,6 +133,12 @@ export type PartnerCommunicationDecisionEnvelopeV1 = {
     issue: 'none' | 'open' | 'blocked' | 'resolved';
     operatorRequired: boolean;
   };
+  recovery?: {
+    recoveryRef: string;
+    status: 'open' | 'in_progress' | 'awaiting_guest_confirmation' | 'recovered' | 'unrecovered' | 'closed';
+    outcome: 'satisfied' | 'not_satisfied' | null;
+    operatorRequired: boolean;
+  } | null;
 };
 
 export class PartnerCommunicationContractError extends Error {

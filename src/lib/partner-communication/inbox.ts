@@ -28,6 +28,11 @@ import {
   getStrictPartnerPropertyKnowledge,
   type StrictPartnerPropertyKnowledgeResult,
 } from './strict-property-knowledge';
+import {
+  partnerRecoveryRepository,
+  summarizeRecovery,
+  type PartnerRecoveryCase,
+} from './recovery';
 
 export type PartnerInboxStatus = 'received' | 'processing' | 'processed' | 'failed';
 
@@ -83,6 +88,15 @@ export interface PartnerInboxStateRepository {
   createOrReusePartnerAction: typeof partnerCommunicationStateRepository.createOrReusePartnerAction;
 }
 
+export interface PartnerInboxRecoveryRepository {
+  findBySource(input: { accountId: string; sourceDecisionId: string; actionRef?: string | null }): Promise<PartnerRecoveryCase | null>;
+  openMaintenanceCase(input: {
+    accountId: string; sessionId: string; sourceInboxId: string; sourceDecisionId: string;
+    actionId: string; actionRef: string; handoffId: string | null; issueSummary: string;
+    severity: 'normal' | 'high' | 'urgent'; openedAt: string;
+  }): Promise<PartnerRecoveryCase>;
+}
+
 export interface PartnerInboxDecisionRepository {
   findPartnerDecision: typeof partnerDecisionRepository.findPartnerDecision;
   createOrReusePartnerDecision: typeof partnerDecisionRepository.createOrReusePartnerDecision;
@@ -134,6 +148,7 @@ function envelope(
   row: PartnerInboxRow,
   duplicate: boolean,
   durable: DurablePartnerCommunicationDecision,
+  recovery: PartnerRecoveryCase | null = null,
 ): PartnerCommunicationDecisionEnvelopeV1 {
   return {
     schemaVersion: PARTNER_COMMUNICATION_RESPONSE_SCHEMA_VERSION,
@@ -145,6 +160,7 @@ function envelope(
     operationalActions: durable.operationalActions.map((action) => ({ ...action })),
     handoff: durable.handoff ? { ...durable.handoff } : null,
     resultingState: { ...durable.resultingState },
+    recovery: recovery ? summarizeRecovery(recovery) : null,
   };
 }
 
@@ -211,6 +227,7 @@ export function createPartnerInboxProcessor(
   stateRepository: PartnerInboxStateRepository,
   decisionRepository: PartnerInboxDecisionRepository,
   dependencies: PartnerInboxProcessorDependencies,
+  recoveryRepository?: PartnerInboxRecoveryRepository,
 ) {
   return async function process(
     principal: AuthenticatedPartnerPrincipal,
@@ -249,7 +266,14 @@ export function createPartnerInboxProcessor(
           processedAt: new Date().toISOString(),
         });
       }
-      return envelope(context, row, true, stored);
+      const recovery = recoveryRepository
+        ? await recoveryRepository.findBySource({
+          accountId: principal.accountId,
+          sourceDecisionId: stored.id,
+          actionRef: stored.operationalActions[0]?.actionId ?? null,
+        })
+        : null;
+      return envelope(context, row, true, stored, recovery);
     }
 
     const attempt = await database.startProcessing({ accountId: principal.accountId, inboxId: row.id });
@@ -260,7 +284,16 @@ export function createPartnerInboxProcessor(
           accountId: principal.accountId,
           inboxId: concurrent.id,
         });
-        if (concurrentDecision) return envelope(context, concurrent, true, concurrentDecision);
+        if (concurrentDecision) {
+          const recovery = recoveryRepository
+            ? await recoveryRepository.findBySource({
+              accountId: principal.accountId,
+              sourceDecisionId: concurrentDecision.id,
+              actionRef: concurrentDecision.operationalActions[0]?.actionId ?? null,
+            })
+            : null;
+          return envelope(context, concurrent, true, concurrentDecision, recovery);
+        }
       }
       throw new PartnerInboxError('partner_event_processing_failed');
     }
@@ -290,6 +323,7 @@ export function createPartnerInboxProcessor(
       const brain = dependencies.decide({ principal, context, canonical, session, knowledge });
 
       let handoff: PartnerHandoffV1 | null = null;
+      let handoffId: string | null = null;
       if (brain.handoffRecommendation) {
         const persisted = await stateRepository.createOrReusePartnerHandoff({
           accountId: principal.accountId,
@@ -302,9 +336,12 @@ export function createPartnerInboxProcessor(
           priority: persisted.priority,
           reasonCode: persisted.reasonCode,
         };
+        handoffId = persisted.id;
       }
 
       const operationalActions: PartnerOperationalActionV1[] = [];
+      let internalActionId: string | null = null;
+      let publicActionRef: string | null = null;
       if (brain.actionRecommendation) {
         const persisted = await stateRepository.createOrReusePartnerAction({
           accountId: principal.accountId,
@@ -316,12 +353,14 @@ export function createPartnerInboxProcessor(
           reasonCode: brain.actionRecommendation.reasonCode,
         });
         operationalActions.push({
-          actionId: persisted.id,
+          actionId: persisted.publicActionRef,
           type: persisted.actionType,
           priority: persisted.priority,
           status: persisted.status === 'cancelled' ? 'blocked' : persisted.status,
           reason: persisted.reasonCode,
         });
+        internalActionId = persisted.id;
+        publicActionRef = persisted.publicActionRef;
       }
 
       const durable = await decisionRepository.createOrReusePartnerDecision({
@@ -339,12 +378,27 @@ export function createPartnerInboxProcessor(
         handoff,
         resultingState: stateFor(brain),
       });
+      const recovery = recoveryRepository && brain.actionRecommendation?.actionType === 'maintenance_issue'
+        && internalActionId && publicActionRef
+        ? await recoveryRepository.openMaintenanceCase({
+          accountId: principal.accountId,
+          sessionId: session.id,
+          sourceInboxId: row.id,
+          sourceDecisionId: durable.id,
+          actionId: internalActionId,
+          actionRef: publicActionRef,
+          handoffId,
+          issueSummary: context.message.text,
+          severity: brain.actionRecommendation?.priority ?? 'normal',
+          openedAt: context.occurredAt,
+        })
+        : null;
       await database.markProcessed({
         accountId: principal.accountId,
         inboxId: row.id,
         processedAt: new Date().toISOString(),
       });
-      return envelope(context, row, duplicate, durable);
+      return envelope(context, row, duplicate, durable, recovery);
     } catch {
       await database.markFailed({
         accountId: principal.accountId,
@@ -414,4 +468,5 @@ export const processPartnerInboxEvent = createPartnerInboxProcessor(
     loadStrictKnowledge: getStrictPartnerPropertyKnowledge,
     decide: decidePartnerCommunication,
   },
+  partnerRecoveryRepository,
 );
