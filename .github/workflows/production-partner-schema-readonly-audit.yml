@@ -1,0 +1,273 @@
+name: Production Partner Schema Read-Only Audit
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm_readonly_audit:
+        description: Type RUN_PRODUCTION_PARTNER_SCHEMA_READONLY_AUDIT (technical confirmation; environment approval is still required)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-partner-schema-readonly-audit
+  cancel-in-progress: false
+
+jobs:
+  audit_partner_schema:
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 10
+    steps:
+      - name: Require explicit read-only confirmation
+        shell: bash
+        env:
+          CONFIRM_READONLY_AUDIT: ${{ inputs.confirm_readonly_audit }}
+        run: |
+          set -euo pipefail
+          required="RUN_PRODUCTION_PARTNER_SCHEMA_READONLY_AUDIT"
+          if [[ "$CONFIRM_READONLY_AUDIT" != "$required" ]]; then
+            echo "::error::Read-only audit confirmation phrase mismatch."
+            exit 1
+          fi
+
+      - name: Ensure PostgreSQL client is available
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! command -v psql >/dev/null 2>&1; then
+            sudo apt-get update -qq
+            sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq postgresql-client
+          fi
+          psql --version
+
+      - name: Inspect production partner schema metadata read-only
+        shell: bash
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          PGCONNECT_TIMEOUT: "10"
+          PGOPTIONS: >-
+            -c default_transaction_read_only=on
+            -c statement_timeout=30000
+            -c lock_timeout=3000
+        run: |
+          set -euo pipefail
+
+          production_db_url="${SUPABASE_DB_URL:-${DATABASE_URL:-}}"
+          if [[ -z "$production_db_url" ]]; then
+            echo "::error::PRODUCTION_DB_URL_NOT_AVAILABLE"
+            exit 1
+          fi
+
+          artifact="partner-schema-audit.txt"
+          psql -X "$production_db_url" \
+            --no-psqlrc \
+            --set ON_ERROR_STOP=1 \
+            --output "$artifact" <<'SQL'
+          \pset pager off
+          \pset footer off
+          \pset border 2
+          \pset null '(null)'
+
+          BEGIN TRANSACTION READ ONLY;
+
+          SHOW transaction_read_only
+          \gset
+          \if :transaction_read_only
+          \else
+            \echo 'READ_ONLY_GUARD_FAILED'
+            \quit 3
+          \endif
+
+          \qecho '=== READ_ONLY_GUARD ==='
+          SHOW transaction_read_only;
+          SHOW default_transaction_read_only;
+          SHOW statement_timeout;
+          SHOW lock_timeout;
+
+          \qecho '=== PARTNER_MIGRATION_HISTORY ==='
+          SELECT version
+          FROM supabase_migrations.schema_migrations
+          WHERE version IN (
+            '20260815102111',
+            '20260815130000',
+            '20260815160000',
+            '20260815190000',
+            '20260815210000',
+            '20260815230000'
+          )
+          ORDER BY version;
+
+          \qecho '=== REQUIRED_RELATION_PRESENCE ==='
+          SELECT required.name AS relation_name,
+                 to_regclass('public.' || required.name) IS NOT NULL AS exists
+          FROM (
+            VALUES
+              ('partner_account_bindings'),
+              ('partner_communication_sessions'),
+              ('partner_communication_turns'),
+              ('partner_communication_handoffs'),
+              ('partner_communication_actions'),
+              ('partner_api_credentials'),
+              ('partner_communication_inbox'),
+              ('partner_property_bindings'),
+              ('partner_booking_bindings'),
+              ('partner_communication_decisions'),
+              ('partner_service_recovery_cases'),
+              ('partner_service_recovery_events'),
+              ('partner_guest_reviews'),
+              ('partner_review_events'),
+              ('partner_reputation_signals'),
+              ('partner_revenue_events'),
+              ('partner_revenue_observations'),
+              ('partner_shadow_pricing_recommendations'),
+              ('partner_pricing_recommendation_feedback'),
+              ('accounts'),
+              ('properties'),
+              ('booking_ops_records'),
+              ('tg_property_knowledge'),
+              ('booking_pricing_profiles')
+          ) AS required(name)
+          ORDER BY required.name;
+
+          \qecho '=== PARTNER_AND_PREREQUISITE_COLUMNS ==='
+          SELECT table_name,
+                 ordinal_position,
+                 column_name,
+                 data_type,
+                 udt_name,
+                 is_nullable,
+                 column_default
+          FROM information_schema.columns
+          WHERE table_schema = 'public'
+            AND (
+              table_name LIKE 'partner\_%' ESCAPE '\'
+              OR table_name IN (
+                'accounts',
+                'properties',
+                'booking_ops_records',
+                'tg_property_knowledge',
+                'booking_pricing_profiles'
+              )
+            )
+          ORDER BY table_name, ordinal_position;
+
+          \qecho '=== STRICT_PROPERTY_KNOWLEDGE_FIELDS ==='
+          SELECT required.column_name,
+                 columns.column_name IS NOT NULL AS exists,
+                 columns.data_type,
+                 columns.is_nullable,
+                 columns.column_default
+          FROM (
+            VALUES
+              ('property_id'),
+              ('active'),
+              ('wifi_name'),
+              ('wifi_password'),
+              ('wifi_notes'),
+              ('checkin_instructions'),
+              ('access_notes'),
+              ('door_code_notes'),
+              ('check_in_time'),
+              ('checkout_notes'),
+              ('check_out_time'),
+              ('parking_rules'),
+              ('parking_paid_or_free'),
+              ('parking_location_notes'),
+              ('house_rules'),
+              ('quiet_hours'),
+              ('created_at')
+          ) AS required(column_name)
+          LEFT JOIN information_schema.columns AS columns
+            ON columns.table_schema = 'public'
+           AND columns.table_name = 'tg_property_knowledge'
+           AND columns.column_name = required.column_name
+          ORDER BY required.column_name;
+
+          \qecho '=== PARTNER_AND_PREREQUISITE_CONSTRAINTS ==='
+          SELECT relation.relname AS table_name,
+                 constraint_record.conname AS constraint_name,
+                 constraint_record.contype AS constraint_type,
+                 pg_get_constraintdef(constraint_record.oid) AS definition
+          FROM pg_constraint AS constraint_record
+          JOIN pg_class AS relation ON relation.oid = constraint_record.conrelid
+          JOIN pg_namespace AS namespace ON namespace.oid = relation.relnamespace
+          WHERE namespace.nspname = 'public'
+            AND (
+              relation.relname LIKE 'partner\_%' ESCAPE '\'
+              OR relation.relname IN (
+                'accounts',
+                'properties',
+                'booking_ops_records',
+                'tg_property_knowledge',
+                'booking_pricing_profiles'
+              )
+            )
+          ORDER BY relation.relname, constraint_record.conname;
+
+          \qecho '=== PARTNER_INDEXES ==='
+          SELECT tablename, indexname, indexdef
+          FROM pg_indexes
+          WHERE schemaname = 'public'
+            AND tablename LIKE 'partner\_%' ESCAPE '\'
+          ORDER BY tablename, indexname;
+
+          \qecho '=== PARTNER_RLS ==='
+          SELECT relation.relname AS table_name,
+                 relation.relrowsecurity AS rls_enabled,
+                 relation.relforcerowsecurity AS force_rls
+          FROM pg_class AS relation
+          JOIN pg_namespace AS namespace ON namespace.oid = relation.relnamespace
+          WHERE namespace.nspname = 'public'
+            AND relation.relkind = 'r'
+            AND relation.relname LIKE 'partner\_%' ESCAPE '\'
+          ORDER BY relation.relname;
+
+          \qecho '=== PARTNER_PRIVILEGES ==='
+          SELECT grantee, table_name, privilege_type
+          FROM information_schema.role_table_grants
+          WHERE table_schema = 'public'
+            AND table_name LIKE 'partner\_%' ESCAPE '\'
+          ORDER BY table_name, grantee, privilege_type;
+
+          \qecho '=== PARTNER_FUNCTIONS ==='
+          SELECT procedure_record.proname AS function_name,
+                 pg_get_function_identity_arguments(procedure_record.oid) AS arguments,
+                 pg_get_functiondef(procedure_record.oid) AS definition
+          FROM pg_proc AS procedure_record
+          JOIN pg_namespace AS namespace ON namespace.oid = procedure_record.pronamespace
+          WHERE namespace.nspname = 'public'
+            AND procedure_record.proname LIKE '%partner%'
+          ORDER BY procedure_record.proname, arguments;
+
+          \qecho '=== PARTNER_TRIGGERS ==='
+          SELECT event_object_table AS table_name,
+                 trigger_name,
+                 event_manipulation,
+                 action_timing,
+                 action_statement
+          FROM information_schema.triggers
+          WHERE trigger_schema = 'public'
+            AND (
+              event_object_table LIKE 'partner\_%' ESCAPE '\'
+              OR trigger_name LIKE '%partner%'
+            )
+          ORDER BY event_object_table, trigger_name, event_manipulation;
+
+          ROLLBACK;
+          SQL
+
+          echo "READ_ONLY_GUARD=verified"
+          echo "AUDIT_SCOPE=partner_and_prerequisite_schema_metadata"
+          echo "AUDIT_ARTIFACT=$artifact"
+
+      - name: Upload sanitized partner schema audit
+        uses: actions/upload-artifact@v4
+        with:
+          name: production-partner-schema-audit
+          path: partner-schema-audit.txt
+          if-no-files-found: error
+          retention-days: 14
