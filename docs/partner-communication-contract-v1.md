@@ -5,15 +5,17 @@
 This document freezes a partner-neutral, server-only contract for one event:
 `guest.message.received` under schema `partner.communication.v1`.
 
-There is no Apart Sharing integration, public partner webhook, authentication,
-signature verification, delivery, persistent partner mapping, queue, or
-external provider call in this version. Apart Sharing-like names in the
-synthetic fixture are examples only.
+There is no real Apart Sharing integration, public partner webhook, outbound
+delivery, queue, or external provider call in this version. The authenticated
+server-to-server boundary uses hashed bearer credentials and server-side
+tenant/property/booking mappings. Apart Sharing-like names in the synthetic
+fixture are examples only.
 
-Partner-provided identity becomes authoritative only after a future
-authenticated server-to-server boundary. Contract validation does not
-authenticate a partner. Public guest input is never authoritative tenant scope
-and must never be passed to `validateTrustedPartnerCommunicationEvent`.
+Partner-provided identity becomes usable only after the authenticated
+server-to-server boundary matches it to the credential principal. Contract
+validation alone does not authenticate a partner. Public guest input is never
+authoritative tenant scope and must never be passed to
+`validateTrustedPartnerCommunicationEvent`.
 
 ## Partner to ASI
 
@@ -112,13 +114,14 @@ The response schema is `partner.communication.response.v1`.
     "eventId": "partner-event-1"
   },
   "decision": {
-    "type": "no_action",
-    "text": null,
-    "confidence": null,
-    "policy": "review_required",
-    "reasonCodes": ["contract_only"]
+    "type": "reply",
+    "text": "Сеть Wi-Fi: ASI-Demo. Пароль: demo-wifi-2026.",
+    "confidence": 0.99,
+    "policy": "auto_allowed",
+    "reasonCodes": ["grounded_wifi"]
   },
   "operationalActions": [],
+  "handoff": null,
   "resultingState": {
     "conversation": "active",
     "issue": "none",
@@ -127,16 +130,18 @@ The response schema is `partner.communication.response.v1`.
 }
 ```
 
-The decision and action fields are contracts for later communication and
-operations layers. Contract v1 does not claim those layers have processed the
-message.
+The decision is a durable recommendation. `auto_allowed` never means automatic
+delivery: no guest message is sent. Escalations can include a durable pending
+handoff and a recommended operational action, but neither invokes an external
+system.
 
 ## Synthetic simulator
 
 `src/lib/partner-communication/synthetic.ts` contains an explicitly synthetic
-Apart Sharing-style fixture. It validates the input, produces canonical keys,
-and returns a review-required `no_action` envelope. It does not call an LLM,
-provider, delivery adapter, database, or external service.
+Apart Sharing-style input fixture. Focused processor tests bind it to synthetic
+Apartment 101 knowledge (`ASI-Demo` / `demo-wifi-2026`) and prove a grounded
+reply plus identical replay. It does not call an LLM, provider, delivery adapter,
+or external service.
 
 ## Out of scope
 
