@@ -370,6 +370,12 @@ describe('Real Booking Intake Autopilot v1', () => {
       ['intakeEventId', 'intake-foreign'],
       ['duplicateOfBookingId', 'booking-foreign'],
       ['attachPropertyId', 'property-foreign'],
+      ['schemaVersion', 'partner.communication.v1'],
+      ['eventId', 'partner-event-foreign'],
+      ['eventType', 'guest.message.received'],
+      ['partner', { partnerId: 'partner-foreign', accountId: 'account-foreign' }],
+      ['conversation', { conversationId: 'conversation-foreign', messageId: 'message-foreign' }],
+      ['partnerCommunicationContext', { accountId: 'account-foreign' }],
     ];
 
     for (const [field, value] of forbiddenFields) {
