@@ -5,6 +5,10 @@ import { supabase } from '@/lib/supabase';
 import { isAuthenticatedPartnerPrincipal, type AuthenticatedPartnerPrincipal } from './auth';
 import type { PartnerCommunicationContext } from './contract';
 
+export type PartnerCanonicalEventContext = Readonly<{
+  identity: Pick<PartnerCommunicationContext['identity'], 'partnerId' | 'accountId' | 'propertyId' | 'bookingId'>;
+}>;
+
 const RESOLVED_CANONICAL_CONTEXT = Symbol('resolved-partner-canonical-context');
 
 type PropertyBindingRow = {
@@ -82,7 +86,7 @@ export function isPartnerCanonicalResolution(value: unknown): value is PartnerCa
 export function createPartnerCanonicalContextResolver(database: PartnerCanonicalContextDatabase) {
   return async function resolve(
     principal: AuthenticatedPartnerPrincipal,
-    context: PartnerCommunicationContext,
+    context: PartnerCanonicalEventContext,
   ): Promise<PartnerCanonicalResolution> {
     if (
       !isAuthenticatedPartnerPrincipal(principal)

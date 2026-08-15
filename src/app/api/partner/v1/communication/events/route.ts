@@ -9,6 +9,11 @@ import {
   validateTrustedPartnerCommunicationEvent,
 } from '@/lib/partner-communication/contract';
 import { PartnerInboxError, processPartnerInboxEvent } from '@/lib/partner-communication/inbox';
+import {
+  PartnerRecoveryError,
+  processPartnerRecoveryEvent,
+  validateTrustedPartnerRecoveryEvent,
+} from '@/lib/partner-communication/recovery';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -18,6 +23,7 @@ const MAX_REQUEST_BYTES = 16_384;
 type Dependencies = {
   authenticate(headers: Headers): Promise<AuthenticatedPartnerPrincipal>;
   process: typeof processPartnerInboxEvent;
+  processRecovery?: typeof processPartnerRecoveryEvent;
 };
 
 function declaredPayloadTooLarge(req: Request): boolean {
@@ -57,6 +63,7 @@ export async function handlePartnerCommunicationEvent(
   dependencies: Dependencies = {
     authenticate: authenticatePartnerRequest,
     process: processPartnerInboxEvent,
+    processRecovery: processPartnerRecoveryEvent,
   },
 ): Promise<NextResponse> {
   if (declaredPayloadTooLarge(req)) {
@@ -84,20 +91,35 @@ export async function handlePartnerCommunicationEvent(
   }
 
   try {
-    const context = validateTrustedPartnerCommunicationEvent(input);
+    const eventType = input && typeof input === 'object' && !Array.isArray(input)
+      ? (input as { eventType?: unknown }).eventType
+      : null;
+    const context = eventType === 'operation.updated' || eventType === 'guest.resolution.confirmed'
+      ? validateTrustedPartnerRecoveryEvent(input)
+      : validateTrustedPartnerCommunicationEvent(input);
     if (
       context.identity.partnerId !== principal.partnerId
       || context.identity.accountId !== principal.externalPartnerAccountId
     ) {
       return NextResponse.json({ ok: false, error: 'partner_identity_mismatch' }, { status: 403 });
     }
-    const response = await dependencies.process(principal, context);
+    const response = context.eventType === 'guest.message.received'
+      ? await dependencies.process(principal, context)
+      : await (dependencies.processRecovery ?? processPartnerRecoveryEvent)(principal, context);
     return NextResponse.json(response, { status: response.duplicate ? 200 : 202 });
   } catch (error) {
     if (isPartnerCommunicationContractError(error)) {
       return NextResponse.json({ ok: false, error: error.code }, { status: 400 });
     }
-    if (error instanceof PartnerInboxError && error.code === 'partner_event_conflict') {
+    if (error instanceof Error && error.message === 'partner_contract_invalid') {
+      return NextResponse.json({ ok: false, error: 'partner_contract_invalid' }, { status: 400 });
+    }
+    if ((error instanceof PartnerInboxError || error instanceof PartnerRecoveryError)
+      && error.code === 'partner_event_conflict') {
+      return NextResponse.json({ ok: false, error: error.code }, { status: 409 });
+    }
+    if (error instanceof PartnerRecoveryError
+      && (error.code === 'partner_recovery_scope_invalid' || error.code === 'partner_recovery_transition_invalid')) {
       return NextResponse.json({ ok: false, error: error.code }, { status: 409 });
     }
     return NextResponse.json({ ok: false, error: 'partner_event_processing_failed' }, { status: 500 });

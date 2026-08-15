@@ -18,6 +18,7 @@ import {
   type PartnerInboxDatabase,
   type PartnerInboxRow,
   type PartnerInboxStateRepository,
+  type PartnerInboxRecoveryRepository,
 } from '../inbox';
 import {
   createPartnerCanonicalContextResolver,
@@ -154,7 +155,7 @@ class MemoryStateRepository implements PartnerInboxStateRepository {
     let row = this.actions.find((candidate) => candidate.accountId === input.accountId
       && candidate.sessionId === input.sessionId && candidate.idempotencyKey === input.idempotencyKey);
     if (!row) {
-      row = { id: crypto.randomUUID(), ...input };
+      row = { id: crypto.randomUUID(), publicActionRef: `pact_${'a'.repeat(32)}`, ...input };
       this.actions.push(row);
     }
     return row as any;
@@ -210,6 +211,27 @@ class MemoryDecisionDatabase implements PartnerDecisionDatabase {
     }
     this.rows.push(structuredClone(row));
     return { row: this.rows.at(-1) as any, conflict: false };
+  }
+}
+
+class MemoryRecoveryRepository implements PartnerInboxRecoveryRepository {
+  cases: Row[] = [];
+
+  async findBySource(input: Row) {
+    return this.cases.find((row) => row.accountId === input.accountId && row.sourceDecisionId === input.sourceDecisionId) as any ?? null;
+  }
+
+  async openMaintenanceCase(input: Row) {
+    const existing = await this.findBySource(input);
+    if (existing) return existing;
+    const now = new Date().toISOString();
+    const row = {
+      id: crypto.randomUUID(), recoveryRef: `prec_${'r'.repeat(32)}`, category: 'maintenance', status: 'open',
+      outcome: null, followupText: null, workStartedAt: null, operationResolvedAt: null, followupPreparedAt: null,
+      guestConfirmedAt: null, closedAt: null, createdAt: now, updatedAt: now, ...input,
+    };
+    this.cases.push(row);
+    return row as any;
   }
 }
 
@@ -272,6 +294,7 @@ function processor() {
   const canonical = new MemoryCanonicalDatabase();
   const knowledge = new MemoryKnowledgeDatabase();
   const decisions = new MemoryDecisionDatabase();
+  const recovery = new MemoryRecoveryRepository();
   const canonicalPropertyId = SYNTHETIC_APART_SHARING_PROPERTY_V1.canonicalPropertyId;
   const canonicalBookingId = SYNTHETIC_APART_SHARING_PROPERTY_V1.canonicalBookingId;
   canonical.propertyBindings.push({
@@ -329,9 +352,10 @@ function processor() {
     state,
     createPartnerDecisionRepository(decisions),
     dependencies,
+    recovery,
   );
   return {
-    inbox, state, canonical, knowledge, decisions, process,
+    inbox, state, canonical, knowledge, decisions, recovery, process,
     failNextBrain: () => { failNextBrain = true; },
     brainCalls: () => brainCalls,
   };
@@ -521,7 +545,7 @@ describe('Partner authenticated inbox v1', () => {
     expect(conflict.status).toBe(409);
     expect(await conflict.json()).toEqual({ ok: false, error: 'partner_event_conflict' });
 
-    const { process } = processor();
+    const { process, recovery } = processor();
     const accepted = await handlePartnerCommunicationEvent(request(SYNTHETIC_APART_SHARING_PARTNER_EVENT_V1), {
       authenticate: async () => authenticated, process,
     });
@@ -542,6 +566,8 @@ describe('Partner authenticated inbox v1', () => {
     });
     expect(body.accountId).toBeUndefined();
     expect(body.sessionId).toBeUndefined();
+    expect(body.recovery).toBeNull();
+    expect(recovery.cases).toHaveLength(0);
   });
 
   it('keeps credential material out of persistence and responses', async () => {
@@ -661,6 +687,10 @@ describe('Partner authenticated inbox v1', () => {
     expect(fixture.state.handoffs).toHaveLength(1);
     expect(fixture.decisions.rows).toHaveLength(1);
     expect(fixture.state.turns).toHaveLength(1);
+    expect(fixture.recovery.cases).toHaveLength(1);
+    expect(first.recovery).toMatchObject({ status: 'open', outcome: null, operatorRequired: true });
+    expect(first.operationalActions[0].actionId).toMatch(/^pact_/);
+    expect(first.operationalActions[0].actionId).not.toBe(fixture.state.actions[0].id);
     expect(fixture.brainCalls()).toBe(1);
   });
 

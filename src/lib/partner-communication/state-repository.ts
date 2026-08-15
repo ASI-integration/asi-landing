@@ -1,6 +1,6 @@
 import 'server-only';
 
-import { randomUUID } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { supabase } from '@/lib/supabase';
 import { isAuthenticatedPartnerPrincipal, type AuthenticatedPartnerPrincipal } from './auth';
@@ -95,6 +95,7 @@ export type PartnerAction = Readonly<{
   status: PartnerActionStatus;
   reasonCode: string;
   externalActionReference: string | null;
+  publicActionRef: string;
   createdAt: string;
   updatedAt: string;
   resolvedAt: string | null;
@@ -182,6 +183,7 @@ type ActionRow = {
   status: PartnerActionStatus;
   reason_code: string;
   external_action_reference: string | null;
+  public_action_ref: string;
   created_at: string;
   updated_at: string;
   resolved_at: string | null;
@@ -317,6 +319,7 @@ function mapAction(row: ActionRow): PartnerAction {
     status: row.status,
     reasonCode: row.reason_code,
     externalActionReference: row.external_action_reference,
+    publicActionRef: row.public_action_ref,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     resolvedAt: row.resolved_at,
@@ -604,6 +607,7 @@ export function createPartnerCommunicationStateRepository(database: PartnerCommu
           input.externalActionReference,
           MAX_EXTERNAL_ACTION_REFERENCE_LENGTH,
         ),
+        public_action_ref: `pact_${randomBytes(24).toString('base64url')}`,
         created_at: timestamp,
         updated_at: timestamp,
         resolved_at: input.status === 'resolved' ? timestamp : null,

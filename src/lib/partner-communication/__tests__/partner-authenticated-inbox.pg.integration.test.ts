@@ -20,6 +20,9 @@ const inboxMigration = resolve(
 const brainMigration = resolve(
   process.cwd(), 'supabase/migrations/20260815160000_partner_communication_brain_v1.sql',
 );
+const recoveryMigration = resolve(
+  process.cwd(), 'supabase/migrations/20260815190000_partner_service_recovery_loop_v1.sql',
+);
 
 type PgClient = {
   connect(): Promise<void>;
@@ -98,6 +101,7 @@ describe.skipIf(!hasDisposablePg)('Partner Authenticated Inbox PostgreSQL integr
       await client.query(readFileSync(durableMigration, 'utf8'));
       await client.query(readFileSync(inboxMigration, 'utf8'));
       await client.query(readFileSync(brainMigration, 'utf8'));
+      await client.query(readFileSync(recoveryMigration, 'utf8'));
       await client.query('INSERT INTO public.accounts (id) VALUES ($1), ($2)', [accountA, accountB]);
       await client.query(`
         INSERT INTO public.partner_account_bindings
@@ -235,13 +239,14 @@ describe.skipIf(!hasDisposablePg)('Partner Authenticated Inbox PostgreSQL integr
           '{"conversation":"active","issue":"none","operatorRequired":false}'::jsonb
         ) RETURNING id
       `, [accountA, eventA.rows[0].id, sessionAId]);
-      await decisionInsert();
+      const decision = await decisionInsert();
       await expectUniqueViolation(client, decisionInsert);
 
-      await client.query(`
+      const action = await client.query(`
         INSERT INTO public.partner_communication_actions (
           account_id, session_id, idempotency_key, action_type, reason_code
         ) VALUES ($1, $2, 'same-action', 'maintenance_issue', 'maintenance_issue')
+        RETURNING id, public_action_ref
       `, [accountA, sessionAId]);
       await expectUniqueViolation(client, () => client.query(`
         INSERT INTO public.partner_communication_actions (
@@ -249,10 +254,11 @@ describe.skipIf(!hasDisposablePg)('Partner Authenticated Inbox PostgreSQL integr
         ) VALUES ($1, $2, 'same-action', 'maintenance_issue', 'maintenance_issue')
       `, [accountA, sessionAId]));
 
-      await client.query(`
+      const handoff = await client.query(`
         INSERT INTO public.partner_communication_handoffs
           (account_id, session_id, reason_code)
         VALUES ($1, $2, 'first')
+        RETURNING id
       `, [accountA, sessionAId]);
       await expectUniqueViolation(client, () => client.query(`
         INSERT INTO public.partner_communication_handoffs
@@ -260,15 +266,77 @@ describe.skipIf(!hasDisposablePg)('Partner Authenticated Inbox PostgreSQL integr
         VALUES ($1, $2, 'second')
       `, [accountA, sessionAId]));
 
+      const recovery = await client.query(`
+        INSERT INTO public.partner_service_recovery_cases (
+          account_id, session_id, source_inbox_id, source_decision_id, action_id, handoff_id,
+          category, severity, status, issue_summary, opened_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, 'maintenance', 'high', 'open', 'Не работает отопление.', now())
+        RETURNING id, public_recovery_ref
+      `, [accountA, sessionAId, eventA.rows[0].id, decision.rows[0].id, action.rows[0].id, handoff.rows[0].id]);
+      expect(action.rows[0].public_action_ref).toMatch(/^pact_[a-f0-9]{48}$/);
+      expect(recovery.rows[0].public_recovery_ref).toMatch(/^prec_[a-f0-9]{48}$/);
+      expect(action.rows[0].public_action_ref).not.toContain(String(action.rows[0].id));
+      expect(recovery.rows[0].public_recovery_ref).not.toContain(String(recovery.rows[0].id));
+      await expectUniqueViolation(client, () => client.query(`
+        INSERT INTO public.partner_service_recovery_cases (
+          account_id, session_id, source_inbox_id, source_decision_id, action_id,
+          category, severity, status, opened_at
+        ) VALUES ($1, $2, $3, $4, $5, 'maintenance', 'high', 'open', now())
+      `, [accountA, sessionAId, eventA.rows[0].id, decision.rows[0].id, action.rows[0].id]));
+
+      await client.query(`
+        UPDATE public.partner_service_recovery_cases
+        SET status = 'in_progress', work_started_at = now()
+        WHERE account_id = $1 AND id = $2
+      `, [accountA, recovery.rows[0].id]);
+      await client.query(`
+        UPDATE public.partner_service_recovery_cases
+        SET status = 'awaiting_guest_confirmation', operation_resolved_at = now(),
+            followup_text = 'Удалось решить проблему с отоплением. Подскажите, пожалуйста, сейчас всё в порядке?',
+            followup_prepared_at = now()
+        WHERE account_id = $1 AND id = $2
+      `, [accountA, recovery.rows[0].id]);
+      await client.query('SAVEPOINT terminal_outcome');
+      await client.query(`
+        UPDATE public.partner_service_recovery_cases
+        SET status = 'recovered', outcome = 'satisfied', guest_confirmed_at = now(), closed_at = now()
+        WHERE account_id = $1 AND id = $2
+      `, [accountA, recovery.rows[0].id]);
+      expect((await client.query('SELECT status, outcome FROM public.partner_service_recovery_cases WHERE id = $1', [recovery.rows[0].id])).rows[0])
+        .toEqual({ status: 'recovered', outcome: 'satisfied' });
+      await client.query('ROLLBACK TO SAVEPOINT terminal_outcome');
+      await client.query('RELEASE SAVEPOINT terminal_outcome');
+      await client.query(`
+        UPDATE public.partner_service_recovery_cases
+        SET status = 'unrecovered', outcome = 'not_satisfied', guest_confirmed_at = now(), closed_at = NULL
+        WHERE account_id = $1 AND id = $2
+      `, [accountA, recovery.rows[0].id]);
+      expect((await client.query('SELECT status, outcome FROM public.partner_service_recovery_cases WHERE id = $1', [recovery.rows[0].id])).rows[0])
+        .toEqual({ status: 'unrecovered', outcome: 'not_satisfied' });
+
+      const insertRecoveryEvent = (fingerprint: string) => client.query(`
+        INSERT INTO public.partner_service_recovery_events (
+          account_id, partner_id, external_partner_account_id, external_event_id, event_type,
+          event_fingerprint, external_property_id, external_booking_id, external_conversation_id,
+          public_recovery_ref, satisfied
+        ) VALUES ($1, 'partner-demo', 'external-a', 'confirmation-1', 'guest.resolution.confirmed',
+          $2, 'same-property', 'same-booking', 'same-conversation', $3, false)
+      `, [accountA, fingerprint, recovery.rows[0].public_recovery_ref]);
+      await insertRecoveryEvent('d'.repeat(64));
+      await expectUniqueViolation(client, () => insertRecoveryEvent('d'.repeat(64)));
+      await expectUniqueViolation(client, () => insertRecoveryEvent('e'.repeat(64)));
+
       const privileges = await client.query(`
         SELECT
           has_table_privilege('service_role', 'public.partner_api_credentials', 'SELECT') AS service_select,
           has_table_privilege('anon', 'public.partner_api_credentials', 'SELECT') AS anon_select,
           has_table_privilege('authenticated', 'public.partner_communication_inbox', 'INSERT') AS authenticated_insert,
-          has_table_privilege('anon', 'public.partner_communication_decisions', 'SELECT') AS anon_decision_select
+          has_table_privilege('anon', 'public.partner_communication_decisions', 'SELECT') AS anon_decision_select,
+          has_table_privilege('anon', 'public.partner_service_recovery_cases', 'SELECT') AS anon_recovery_select
       `);
       expect(privileges.rows[0]).toEqual({
         service_select: true, anon_select: false, authenticated_insert: false, anon_decision_select: false,
+        anon_recovery_select: false,
       });
 
       // eslint-disable-next-line no-console
@@ -284,6 +352,13 @@ describe.skipIf(!hasDisposablePg)('Partner Authenticated Inbox PostgreSQL integr
         propertyAndBookingMappingScope: true,
         groundedKnowledgeTenantIsolation: true,
         decisionUniqueness: true,
+        recoveryMigrationApplied: true,
+        recoverySourceUniqueness: true,
+        opaqueActionAndRecoveryRefs: true,
+        operationTransitionPersistence: true,
+        followupUniqueness: true,
+        recoveredAndUnrecoveredSemantics: true,
+        recoveryEventConflictConstraint: true,
         transactionRolledBack: true,
         productionTouched: false,
         stagingTouched: false,

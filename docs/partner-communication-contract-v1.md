@@ -3,7 +3,9 @@
 ## Status and boundary
 
 This document freezes a partner-neutral, server-only contract for one event:
-`guest.message.received` under schema `partner.communication.v1`.
+`guest.message.received` under schema `partner.communication.v1`. The same authenticated endpoint also accepts the strict recovery-event variants documented in [Partner Service Recovery Loop v1](PARTNER_SERVICE_RECOVERY_V1.md); message-only fields remain specific to `guest.message.received`.
+
+Partner-facing `operationalActions[].actionId` is an opaque stable `pact_...` reference. It is not the internal `partner_communication_actions.id` UUID and must be used for authenticated `operation.updated` events. Recovery responses expose an independent opaque `prec_...` `recoveryRef`.
 
 There is no real Apart Sharing integration, public partner webhook, outbound
 delivery, queue, or external provider call in this version. The authenticated
