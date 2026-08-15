@@ -607,3 +607,32 @@ jobs:
           }
           console.log('partner_reputation_proof_ok', JSON.stringify(proof));
           NODE
+
+      - name: Partner Revenue PostgreSQL integration
+        id: partner_revenue_pg_integration
+        run: |
+          set -euo pipefail
+          npx vitest run \
+            src/lib/partner-revenue/__tests__/partner-revenue.pg.integration.test.ts \
+            --reporter=verbose 2>&1 | tee partner-revenue-pg.out
+          if grep -E '↓|skipped|SKIPPED' partner-revenue-pg.out | grep -Fq 'Partner Revenue PostgreSQL integration'; then
+            echo "Partner revenue PostgreSQL suite was skipped — failing job"
+            exit 1
+          fi
+          if ! grep -Fq 'PARTNER_REVENUE_PG_PROOF' partner-revenue-pg.out; then
+            echo "Missing PARTNER_REVENUE_PG_PROOF — failing job"
+            exit 1
+          fi
+          node - <<'NODE'
+          const fs = require('fs');
+          const out = fs.readFileSync('partner-revenue-pg.out', 'utf8');
+          const line = out.split(/\r?\n/).find((entry) => entry.includes('PARTNER_REVENUE_PG_PROOF'));
+          if (!line) process.exit(1);
+          const proof = JSON.parse(line.slice(line.indexOf('PARTNER_REVENUE_PG_PROOF') + 'PARTNER_REVENUE_PG_PROOF'.length).trim());
+          const expected = { migrationChainApplied: 5, observationUniqueness: true, eventReplayUniqueness: true, tenantIsolation: true, recommendationUniqueness: true, feedbackUniqueness: true, bindingScope: true, rlsForcedServiceRoleOnly: true, finalTransactionRolledBack: true, productionTouched: false, stagingTouched: false };
+          if (JSON.stringify(proof) !== JSON.stringify(expected)) {
+            console.error('partner_revenue_proof_mismatch', proof);
+            process.exit(1);
+          }
+          console.log('partner_revenue_proof_ok', JSON.stringify(proof));
+          NODE

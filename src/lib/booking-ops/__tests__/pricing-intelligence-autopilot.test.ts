@@ -322,6 +322,24 @@ describe('Pricing Intelligence & Tariff Grid v1', () => {
     expect(reasons.some((r) => r.factor === 'guardrails')).toBe(true);
   });
 
+  it('produces the synthetic Apartment 101 Saturday shadow demo through the real engine', async () => {
+    const profile = await initializePricingProfile(SETUP_ID);
+    await updatePricingGuardrails(profile.id, { base_price: 6000, min_price: 4500, max_price: 6500 });
+    await ingestMarketSignals(SETUP_ID, {
+      radius_km: 3,
+      date: '2026-08-22',
+      available_supply: { available_count: 5, total_count: 50, availability_ratio: 0.1 },
+      events: [{ name: 'SYNTHETIC DEMO EVENT ONLY', distance_km: 2, expected_impact: 'high' }],
+    }, { synthetic_demo_only: true });
+    const result = await recommendPriceForDate(profile.id, '2026-08-22');
+    expect(result.recommendedPrice).toBe(6500);
+    expect(result.reasons).toEqual(expect.arrayContaining([
+      expect.objectContaining({ factor: 'day_of_week', direction: 'up' }),
+      expect.objectContaining({ factor: 'events', direction: 'up' }),
+      expect.objectContaining({ factor: 'guardrails' }),
+    ]));
+  });
+
   it('generates tariff grid for 30/60/90 days', async () => {
     const profile = await initializePricingProfile(SETUP_ID);
     for (const days of [30, 60, 90]) {
