@@ -118,7 +118,7 @@ describe.skipIf(!hasDisposablePg)('Partner Review & Reputation PostgreSQL integr
           'negative','high','["other"]'::jsonb,'high','no_recovery_case','Проверяем ситуацию.','review_required','["negative_review"]'::jsonb)
       `, [accountA, bindingA, bookingBindingA, propertyA, bookingA, 'd'.repeat(64)]));
 
-      const insertEvent = () => client.query(`INSERT INTO public.partner_review_events (account_id,partner_account_binding_id,external_event_id,event_fingerprint) VALUES ($1,$2,'same-event',$3) RETURNING id,audit_ref`, [accountA, bindingA, 'e'.repeat(64)]);
+      const insertEvent = () => client.query(`INSERT INTO public.partner_review_events (account_id,partner_account_binding_id,external_event_id,event_fingerprint,audit_ref) VALUES ($1,$2,'same-event',$3,'pra_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa') RETURNING id,audit_ref`, [accountA, bindingA, 'e'.repeat(64)]);
       const reviewEvent = await insertEvent();
       expect(reviewEvent.rows[0].audit_ref).toMatch(/^pra_[a-f0-9]{48}$/);
       await expectPgError(client, 'duplicate_event', '23505', insertEvent);
