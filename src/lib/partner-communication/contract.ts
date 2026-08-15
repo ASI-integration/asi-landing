@@ -15,7 +15,7 @@ export const PARTNER_COMMUNICATION_ERROR_CODES = [
 
 export type PartnerCommunicationErrorCode = (typeof PARTNER_COMMUNICATION_ERROR_CODES)[number];
 export type PartnerBookingStatus = 'confirmed' | 'checked_in' | 'checked_out' | 'cancelled';
-export type PartnerCommunicationDecisionType = 'reply' | 'recommendation' | 'clarify' | 'escalate' | 'no_action';
+export type PartnerCommunicationDecisionType = 'reply' | 'clarify' | 'escalate' | 'no_action';
 export type PartnerCommunicationPolicyDecision = 'auto_allowed' | 'review_required' | 'blocked';
 
 export type PartnerGuestMessageEventV1 = {
@@ -106,6 +106,12 @@ export type PartnerOperationalActionV1 = {
   reason: string;
 };
 
+export type PartnerHandoffV1 = {
+  status: 'pending';
+  priority: 'low' | 'normal' | 'high' | 'urgent';
+  reasonCode: string;
+};
+
 export type PartnerCommunicationDecisionEnvelopeV1 = {
   schemaVersion: typeof PARTNER_COMMUNICATION_RESPONSE_SCHEMA_VERSION;
   accepted: boolean;
@@ -120,6 +126,7 @@ export type PartnerCommunicationDecisionEnvelopeV1 = {
     reasonCodes: string[];
   };
   operationalActions: PartnerOperationalActionV1[];
+  handoff: PartnerHandoffV1 | null;
   resultingState: {
     conversation: 'active' | 'awaiting_input' | 'escalated' | 'resolved';
     issue: 'none' | 'open' | 'blocked' | 'resolved';

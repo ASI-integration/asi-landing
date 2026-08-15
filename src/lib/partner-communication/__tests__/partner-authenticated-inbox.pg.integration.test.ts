@@ -17,6 +17,9 @@ const durableMigration = resolve(
 const inboxMigration = resolve(
   process.cwd(), 'supabase/migrations/20260815130000_partner_authenticated_inbox_v1.sql',
 );
+const brainMigration = resolve(
+  process.cwd(), 'supabase/migrations/20260815160000_partner_communication_brain_v1.sql',
+);
 
 type PgClient = {
   connect(): Promise<void>;
@@ -75,9 +78,26 @@ describe.skipIf(!hasDisposablePg)('Partner Authenticated Inbox PostgreSQL integr
         END
         $roles$;
         CREATE TABLE public.accounts (id UUID PRIMARY KEY);
+        CREATE TABLE public.properties (
+          id UUID PRIMARY KEY,
+          account_id UUID NOT NULL REFERENCES public.accounts(id),
+          status TEXT NOT NULL
+        );
+        CREATE TABLE public.booking_ops_records (
+          id UUID PRIMARY KEY,
+          account_id TEXT,
+          property_id TEXT
+        );
+        CREATE TABLE public.tg_property_knowledge (
+          property_id TEXT PRIMARY KEY,
+          active BOOLEAN NOT NULL DEFAULT true,
+          wifi_name TEXT,
+          wifi_password TEXT
+        );
       `);
       await client.query(readFileSync(durableMigration, 'utf8'));
       await client.query(readFileSync(inboxMigration, 'utf8'));
+      await client.query(readFileSync(brainMigration, 'utf8'));
       await client.query('INSERT INTO public.accounts (id) VALUES ($1), ($2)', [accountA, accountB]);
       await client.query(`
         INSERT INTO public.partner_account_bindings
@@ -156,6 +176,79 @@ describe.skipIf(!hasDisposablePg)('Partner Authenticated Inbox PostgreSQL integr
         ) VALUES ($1, $2, 'message-key-a', 'same-message', 'inbound', 'duplicate')
       `, [accountA, sessionAId]));
 
+      const propertyA = '50000000-0000-4000-8000-000000000005';
+      const propertyB = '50000000-0000-4000-8000-000000000006';
+      const bookingA = '60000000-0000-4000-8000-000000000006';
+      const bookingB = '60000000-0000-4000-8000-000000000007';
+      await client.query(`
+        INSERT INTO public.properties (id, account_id, status)
+        VALUES ($1, $2, 'active'), ($3, $4, 'active')
+      `, [propertyA, accountA, propertyB, accountB]);
+      await client.query(`
+        INSERT INTO public.booking_ops_records (id, account_id, property_id)
+        VALUES ($1, $2::text, $3::text), ($4, $5::text, $6::text)
+      `, [bookingA, accountA, propertyA, bookingB, accountB, propertyB]);
+      await client.query(`
+        INSERT INTO public.tg_property_knowledge (property_id, wifi_name, wifi_password)
+        VALUES ($1::text, 'Tenant-A', 'tenant-a-password'), ($2::text, 'Tenant-B', 'tenant-b-password')
+      `, [propertyA, propertyB]);
+      await client.query(`
+        INSERT INTO public.partner_property_bindings
+          (account_id, partner_account_binding_id, external_property_id, property_id)
+        VALUES ($1, $2, 'same-property', $3), ($4, $5, 'same-property', $6)
+      `, [accountA, bindingA, propertyA, accountB, bindingB, propertyB]);
+      await client.query(`
+        INSERT INTO public.partner_booking_bindings
+          (account_id, partner_account_binding_id, external_booking_id, booking_ops_record_id, property_id)
+        VALUES ($1, $2, 'same-booking', $3, $4), ($5, $6, 'same-booking', $7, $8)
+      `, [accountA, bindingA, bookingA, propertyA, accountB, bindingB, bookingB, propertyB]);
+
+      await client.query('SAVEPOINT expected_scope_violation');
+      try {
+        await expect(client.query(`
+          INSERT INTO public.partner_booking_bindings
+            (account_id, partner_account_binding_id, external_booking_id, booking_ops_record_id, property_id)
+          VALUES ($1, $2, 'cross-tenant-booking', $3, $4)
+        `, [accountA, bindingA, bookingB, propertyA])).rejects.toMatchObject({ code: '23514' });
+      } finally {
+        await client.query('ROLLBACK TO SAVEPOINT expected_scope_violation');
+        await client.query('RELEASE SAVEPOINT expected_scope_violation');
+      }
+
+      const mappedKnowledge = await client.query(`
+        SELECT k.wifi_name, k.wifi_password
+        FROM public.partner_property_bindings binding
+        JOIN public.tg_property_knowledge k ON k.property_id = binding.property_id::text AND k.active = true
+        WHERE binding.account_id = $1 AND binding.partner_account_binding_id = $2
+          AND binding.external_property_id = 'same-property' AND binding.status = 'active'
+      `, [accountA, bindingA]);
+      expect(mappedKnowledge.rows).toEqual([{ wifi_name: 'Tenant-A', wifi_password: 'tenant-a-password' }]);
+
+      const decisionInsert = () => client.query(`
+        INSERT INTO public.partner_communication_decisions (
+          account_id, inbox_id, session_id, decision_type, policy, response_text,
+          confidence, reason_codes, evidence, resulting_state
+        ) VALUES (
+          $1, $2, $3, 'reply', 'auto_allowed', 'synthetic grounded reply', 0.99,
+          '["grounded_wifi"]'::jsonb,
+          '{"knowledgeSource":"tg_property_knowledge","propertyBindingResolved":true,"bookingBindingResolved":true,"matchedIntent":"wifi"}'::jsonb,
+          '{"conversation":"active","issue":"none","operatorRequired":false}'::jsonb
+        ) RETURNING id
+      `, [accountA, eventA.rows[0].id, sessionAId]);
+      await decisionInsert();
+      await expectUniqueViolation(client, decisionInsert);
+
+      await client.query(`
+        INSERT INTO public.partner_communication_actions (
+          account_id, session_id, idempotency_key, action_type, reason_code
+        ) VALUES ($1, $2, 'same-action', 'maintenance_issue', 'maintenance_issue')
+      `, [accountA, sessionAId]);
+      await expectUniqueViolation(client, () => client.query(`
+        INSERT INTO public.partner_communication_actions (
+          account_id, session_id, idempotency_key, action_type, reason_code
+        ) VALUES ($1, $2, 'same-action', 'maintenance_issue', 'maintenance_issue')
+      `, [accountA, sessionAId]));
+
       await client.query(`
         INSERT INTO public.partner_communication_handoffs
           (account_id, session_id, reason_code)
@@ -171,10 +264,11 @@ describe.skipIf(!hasDisposablePg)('Partner Authenticated Inbox PostgreSQL integr
         SELECT
           has_table_privilege('service_role', 'public.partner_api_credentials', 'SELECT') AS service_select,
           has_table_privilege('anon', 'public.partner_api_credentials', 'SELECT') AS anon_select,
-          has_table_privilege('authenticated', 'public.partner_communication_inbox', 'INSERT') AS authenticated_insert
+          has_table_privilege('authenticated', 'public.partner_communication_inbox', 'INSERT') AS authenticated_insert,
+          has_table_privilege('anon', 'public.partner_communication_decisions', 'SELECT') AS anon_decision_select
       `);
       expect(privileges.rows[0]).toEqual({
-        service_select: true, anon_select: false, authenticated_insert: false,
+        service_select: true, anon_select: false, authenticated_insert: false, anon_decision_select: false,
       });
 
       // eslint-disable-next-line no-console
@@ -186,6 +280,10 @@ describe.skipIf(!hasDisposablePg)('Partner Authenticated Inbox PostgreSQL integr
         tenantIsolation: true,
         eventConflictConstraint: true,
         activeHandoffConstraint: true,
+        actionIdempotency: true,
+        propertyAndBookingMappingScope: true,
+        groundedKnowledgeTenantIsolation: true,
+        decisionUniqueness: true,
         transactionRolledBack: true,
         productionTouched: false,
         stagingTouched: false,

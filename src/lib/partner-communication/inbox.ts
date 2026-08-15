@@ -8,13 +8,28 @@ import {
   PARTNER_COMMUNICATION_RESPONSE_SCHEMA_VERSION,
   type PartnerCommunicationContext,
   type PartnerCommunicationDecisionEnvelopeV1,
+  type PartnerHandoffV1,
+  type PartnerOperationalActionV1,
 } from './contract';
+import { decidePartnerCommunication, type PartnerBrainResult } from './brain';
+import {
+  resolvePartnerCanonicalContext,
+  type PartnerCanonicalResolution,
+} from './canonical-context';
+import {
+  partnerDecisionRepository,
+  type DurablePartnerCommunicationDecision,
+} from './decision-repository';
 import {
   partnerCommunicationStateRepository,
   partnerSessionIdentityFromAuthenticatedPrincipal,
 } from './state-repository';
+import {
+  getStrictPartnerPropertyKnowledge,
+  type StrictPartnerPropertyKnowledgeResult,
+} from './strict-property-knowledge';
 
-export type PartnerInboxStatus = 'received' | 'processed' | 'failed';
+export type PartnerInboxStatus = 'received' | 'processing' | 'processed' | 'failed';
 
 export type PartnerInboxRow = {
   id: string;
@@ -64,7 +79,26 @@ export interface PartnerInboxDatabase {
 export interface PartnerInboxStateRepository {
   getOrCreatePartnerSession: typeof partnerCommunicationStateRepository.getOrCreatePartnerSession;
   appendPartnerTurn: typeof partnerCommunicationStateRepository.appendPartnerTurn;
+  createOrReusePartnerHandoff: typeof partnerCommunicationStateRepository.createOrReusePartnerHandoff;
+  createOrReusePartnerAction: typeof partnerCommunicationStateRepository.createOrReusePartnerAction;
 }
+
+export interface PartnerInboxDecisionRepository {
+  findPartnerDecision: typeof partnerDecisionRepository.findPartnerDecision;
+  createOrReusePartnerDecision: typeof partnerDecisionRepository.createOrReusePartnerDecision;
+}
+
+export type PartnerInboxProcessorDependencies = {
+  resolveCanonicalContext(
+    principal: AuthenticatedPartnerPrincipal,
+    context: PartnerCommunicationContext,
+  ): Promise<PartnerCanonicalResolution>;
+  loadStrictKnowledge(input: {
+    accountId: string;
+    propertyId: string;
+  }): Promise<StrictPartnerPropertyKnowledgeResult>;
+  decide: typeof decidePartnerCommunication;
+};
 
 export type PartnerInboxErrorCode = 'partner_event_conflict' | 'partner_event_processing_failed';
 
@@ -95,10 +129,11 @@ function auditRef(): string {
   return `pai_${randomBytes(24).toString('base64url')}`;
 }
 
-function acknowledgement(
+function envelope(
   context: PartnerCommunicationContext,
   row: PartnerInboxRow,
   duplicate: boolean,
+  durable: DurablePartnerCommunicationDecision,
 ): PartnerCommunicationDecisionEnvelopeV1 {
   return {
     schemaVersion: PARTNER_COMMUNICATION_RESPONSE_SCHEMA_VERSION,
@@ -106,20 +141,32 @@ function acknowledgement(
     duplicate,
     auditRef: row.audit_ref,
     identity: context.identity,
-    decision: {
-      type: 'no_action',
-      text: null,
-      confidence: null,
-      policy: 'review_required',
-      reasonCodes: ['partner_inbox_only'],
-    },
-    operationalActions: [],
-    resultingState: {
-      conversation: 'active',
-      issue: 'none',
-      operatorRequired: false,
-    },
+    decision: { ...durable.decision, reasonCodes: [...durable.decision.reasonCodes] },
+    operationalActions: durable.operationalActions.map((action) => ({ ...action })),
+    handoff: durable.handoff ? { ...durable.handoff } : null,
+    resultingState: { ...durable.resultingState },
   };
+}
+
+function stateFor(brain: PartnerBrainResult) {
+  const escalated = brain.decision.type === 'escalate' || Boolean(brain.handoffRecommendation);
+  return {
+    conversation: escalated ? 'escalated' as const : brain.decision.type === 'clarify' ? 'awaiting_input' as const : 'active' as const,
+    issue: brain.actionRecommendation ? 'open' as const : 'none' as const,
+    operatorRequired: escalated,
+  };
+}
+
+async function waitForConcurrentDecision(
+  decisionRepository: PartnerInboxDecisionRepository,
+  input: { accountId: string; inboxId: string },
+): Promise<DurablePartnerCommunicationDecision | null> {
+  for (let attempt = 0; attempt < 40; attempt += 1) {
+    const decision = await decisionRepository.findPartnerDecision(input);
+    if (decision) return decision;
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  return null;
 }
 
 function newInboxRow(
@@ -162,6 +209,8 @@ function newInboxRow(
 export function createPartnerInboxProcessor(
   database: PartnerInboxDatabase,
   stateRepository: PartnerInboxStateRepository,
+  decisionRepository: PartnerInboxDecisionRepository,
+  dependencies: PartnerInboxProcessorDependencies,
 ) {
   return async function process(
     principal: AuthenticatedPartnerPrincipal,
@@ -191,13 +240,27 @@ export function createPartnerInboxProcessor(
     }
     if (!row) throw new PartnerInboxError('partner_event_processing_failed');
     if (row.event_fingerprint !== fingerprint) throw new PartnerInboxError('partner_event_conflict');
-    if (row.status === 'processed') return acknowledgement(context, row, true);
+    const stored = await decisionRepository.findPartnerDecision({ accountId: principal.accountId, inboxId: row.id });
+    if (stored) {
+      if (row.status !== 'processed') {
+        await database.markProcessed({
+          accountId: principal.accountId,
+          inboxId: row.id,
+          processedAt: new Date().toISOString(),
+        });
+      }
+      return envelope(context, row, true, stored);
+    }
 
     const attempt = await database.startProcessing({ accountId: principal.accountId, inboxId: row.id });
     if (!attempt) {
       const concurrent = await database.findEvent(eventIdentity);
-      if (concurrent?.status === 'processed' && concurrent.event_fingerprint === fingerprint) {
-        return acknowledgement(context, concurrent, true);
+      if (concurrent?.event_fingerprint === fingerprint) {
+        const concurrentDecision = await waitForConcurrentDecision(decisionRepository, {
+          accountId: principal.accountId,
+          inboxId: concurrent.id,
+        });
+        if (concurrentDecision) return envelope(context, concurrent, true, concurrentDecision);
       }
       throw new PartnerInboxError('partner_event_processing_failed');
     }
@@ -217,12 +280,71 @@ export function createPartnerInboxProcessor(
         text: context.message.text,
         metadata: { channel: 'partner_messaging', inboxAuditRef: row.audit_ref },
       });
+      const canonical = await dependencies.resolveCanonicalContext(principal, context);
+      const knowledge: StrictPartnerPropertyKnowledgeResult = canonical.status === 'resolved'
+        ? await dependencies.loadStrictKnowledge({
+          accountId: principal.accountId,
+          propertyId: canonical.propertyId,
+        })
+        : Object.freeze({ status: 'not_loaded', source: 'none', knowledge: null });
+      const brain = dependencies.decide({ principal, context, canonical, session, knowledge });
+
+      let handoff: PartnerHandoffV1 | null = null;
+      if (brain.handoffRecommendation) {
+        const persisted = await stateRepository.createOrReusePartnerHandoff({
+          accountId: principal.accountId,
+          sessionId: session.id,
+          reasonCode: brain.handoffRecommendation.reasonCode,
+          priority: brain.handoffRecommendation.priority,
+        });
+        handoff = {
+          status: 'pending',
+          priority: persisted.priority,
+          reasonCode: persisted.reasonCode,
+        };
+      }
+
+      const operationalActions: PartnerOperationalActionV1[] = [];
+      if (brain.actionRecommendation) {
+        const persisted = await stateRepository.createOrReusePartnerAction({
+          accountId: principal.accountId,
+          sessionId: session.id,
+          idempotencyKey: `${context.keys.partnerEventIdempotencyKey}|maintenance_issue`,
+          actionType: brain.actionRecommendation.actionType,
+          priority: brain.actionRecommendation.priority,
+          status: 'recommended',
+          reasonCode: brain.actionRecommendation.reasonCode,
+        });
+        operationalActions.push({
+          actionId: persisted.id,
+          type: persisted.actionType,
+          priority: persisted.priority,
+          status: persisted.status === 'cancelled' ? 'blocked' : persisted.status,
+          reason: persisted.reasonCode,
+        });
+      }
+
+      const durable = await decisionRepository.createOrReusePartnerDecision({
+        accountId: principal.accountId,
+        inboxId: row.id,
+        sessionId: session.id,
+        decision: brain.decision,
+        evidence: {
+          knowledgeSource: knowledge.source,
+          propertyBindingResolved: canonical.status === 'resolved',
+          bookingBindingResolved: canonical.status === 'resolved',
+          matchedIntent: brain.matchedIntent,
+        },
+        operationalActions,
+        handoff,
+        resultingState: stateFor(brain),
+      });
       await database.markProcessed({
         accountId: principal.accountId,
         inboxId: row.id,
         processedAt: new Date().toISOString(),
       });
-      return acknowledgement(context, row, duplicate);
+      return envelope(context, row, duplicate, durable);
     } catch {
       await database.markFailed({
         accountId: principal.accountId,
@@ -286,4 +408,10 @@ export function createSupabasePartnerInboxDatabase(client: SupabaseClient): Part
 export const processPartnerInboxEvent = createPartnerInboxProcessor(
   createSupabasePartnerInboxDatabase(supabase),
   partnerCommunicationStateRepository,
+  partnerDecisionRepository,
+  {
+    resolveCanonicalContext: resolvePartnerCanonicalContext,
+    loadStrictKnowledge: getStrictPartnerPropertyKnowledge,
+    decide: decidePartnerCommunication,
+  },
 );
