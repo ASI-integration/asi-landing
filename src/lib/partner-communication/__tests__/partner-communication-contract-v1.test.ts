@@ -17,6 +17,7 @@ import {
   SYNTHETIC_APART_SHARING_PARTNER_EVENT_V1,
   runSyntheticPartnerCommunicationContractV1,
 } from '../synthetic';
+import { validatePublicWebIntakePayload } from '@/lib/booking-ops/real-booking-intake-autopilot';
 
 function event(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return structuredClone({ ...SYNTHETIC_APART_SHARING_PARTNER_EVENT_V1, ...overrides });
@@ -135,6 +136,20 @@ describe('Partner Communication Contract v1', () => {
     expect(contractSource.startsWith("import 'server-only';")).toBe(true);
     expect(publicRouteSource).not.toContain('partner-communication');
     expect(publicRouteSource).not.toContain('PartnerCommunicationContext');
+  });
+
+  it('keeps public web intake fail-closed against partner and internal tenant authority', () => {
+    const publicFields = { guestName: 'Гость', rawMessageText: 'Нужна помощь' };
+    for (const forbidden of [
+      { partner: { partnerId: 'partner-1', accountId: 'external-account-A' } },
+      { partnerCommunicationContext: { accountId: 'external-account-A' } },
+      { account_id: '10000000-0000-4000-8000-000000000001' },
+      { accountId: '10000000-0000-4000-8000-000000000001' },
+    ]) {
+      expect(validatePublicWebIntakePayload({ ...publicFields, ...forbidden })).toBe(
+        'Публичная заявка содержит недопустимые служебные поля.',
+      );
+    }
   });
 
   it('runs the explicitly synthetic fixture without invoking communication delivery', () => {
