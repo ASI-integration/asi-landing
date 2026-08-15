@@ -58,6 +58,14 @@ jobs:
             src/lib/partner-communication/__tests__/partner-service-recovery.test.ts \
             --reporter=verbose
 
+      - name: Apart Sharing demo, revenue, and pricing focused regression
+        run: |
+          npx vitest run \
+            src/lib/partner-demo/__tests__/apart-sharing-killer-demo.test.ts \
+            src/lib/partner-revenue/__tests__/partner-revenue.test.ts \
+            src/lib/booking-ops/__tests__/pricing-intelligence-autopilot.test.ts \
+            --reporter=verbose
+
       - name: Guest communication and Telegram voice regression
         run: |
           npx vitest run \

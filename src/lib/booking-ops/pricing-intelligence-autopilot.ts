@@ -538,8 +538,8 @@ function dayOfWeekFactor(date: string): { factor: number; reason: AdjustmentReas
   return { factor: 1, reason: { factor: 'day_of_week', direction: 'neutral', percent: 0, explanation: 'Будний день' } };
 }
 
-function leadTimeFactor(date: string): { factor: number; reason: AdjustmentReason } {
-  const today = new Date(); today.setHours(0, 0, 0, 0);
+function leadTimeFactor(date: string, now = new Date()): { factor: number; reason: AdjustmentReason } {
+  const today = new Date(now); today.setHours(0, 0, 0, 0);
   const target = new Date(date);
   const days = Math.round((target.getTime() - today.getTime()) / 86_400_000);
   if (days <= 3) return { factor: 1.08, reason: { factor: 'lead_time', direction: 'up', percent: 8, explanation: 'Близкая дата (≤3 дней)' } };
@@ -605,24 +605,30 @@ function weatherFactor(signals: MarketSignal[], weatherWeight: number): { factor
   return { factor: 1, reason: { factor: 'weather', direction: 'neutral', percent: 0, explanation: 'Погода нейтральна' } };
 }
 
-export async function recommendPriceForDate(
-  pricingProfileId: string,
-  date: string,
-  options?: { radiusKm?: number; audienceProfile?: AudienceProfile | null },
-): Promise<{ recommendedPrice: number; reasons: AdjustmentReason[]; scores: Pick<TariffGridDay, 'demandScore' | 'supplyScore' | 'eventScore' | 'weatherScore' | 'audienceScore'>; signalsUsed: string[]; missingSignals: string[] }> {
-  const profile = await getPricingProfile(pricingProfileId);
+export type PricingCalculationInput = Readonly<{
+  profile: Pick<PricingProfile, 'basePrice' | 'minPrice' | 'maxPrice' | 'pricingStrategy'>;
+  date: string;
+  signals: readonly MarketSignal[];
+  audienceProfile: AudienceProfile | null;
+  now?: Date;
+}>;
+
+export type PricingCalculationResult = Readonly<{
+  recommendedPrice: number;
+  reasons: AdjustmentReason[];
+  signalsUsed: string[];
+  missingSignals: string[];
+}>;
+
+/** Pure pricing calculation shared by the persisted engine and deterministic server-only demos. */
+export function calculatePriceRecommendation(input: PricingCalculationInput): PricingCalculationResult {
+  const { profile, date, audienceProfile } = input;
   if (!profile.basePrice) throw new Error('Укажите базовую цену.');
-
-  const setupId = profile.propertySetupId;
-  if (!setupId) throw new Error('Профиль не привязан к объекту.');
-
-  const audience = options?.audienceProfile ?? await getAudienceProfile(setupId);
-  const weights = getAudiencePricingWeights(audience);
-  const signals = (await getSignalsForPricingDate(setupId, date, options?.radiusKm)) as MarketSignal[];
-  const primaryAudience = audience?.primaryAudience ?? 'unknown';
+  const signals = [...input.signals];
+  const weights = getAudiencePricingWeights(audienceProfile);
+  const primaryAudience = audienceProfile?.primaryAudience ?? 'unknown';
   const competitorRadiusWeights = getAudienceRadiusWeights(primaryAudience, 'competitor_prices');
   const supplyRadiusWeights = getAudienceRadiusWeights(primaryAudience, 'available_supply');
-
   const reasons: AdjustmentReason[] = [];
   let price = profile.basePrice;
 
@@ -634,7 +640,7 @@ export async function recommendPriceForDate(
   price *= season.factor * (season.factor !== 1 ? weights.seasonalityWeight : 1);
   reasons.push(season.reason);
 
-  const lead = leadTimeFactor(date);
+  const lead = leadTimeFactor(date, input.now);
   price *= lead.factor * (lead.factor !== 1 ? weights.leadTimeWeight : 1);
   reasons.push(lead.reason);
 
@@ -656,29 +662,58 @@ export async function recommendPriceForDate(
 
   const strategyMult = STRATEGY_MULTIPLIERS[profile.pricingStrategy] ?? 1;
   if (strategyMult !== 1) {
-    const pct = Math.round((strategyMult - 1) * 100);
+    const percent = Math.round((strategyMult - 1) * 100);
     price *= strategyMult;
-    reasons.push({ factor: 'strategy', direction: pct > 0 ? 'up' : 'down', percent: Math.abs(pct), explanation: `Стратегия: ${profile.pricingStrategy}` });
+    reasons.push({
+      factor: 'strategy',
+      direction: percent > 0 ? 'up' : 'down',
+      percent: Math.abs(percent),
+      explanation: `Стратегия: ${profile.pricingStrategy}`,
+    });
   }
 
-  const minP = profile.minPrice ?? profile.basePrice * 0.5;
-  const maxP = profile.maxPrice ?? profile.basePrice * 2;
+  const minPrice = profile.minPrice ?? profile.basePrice * 0.5;
+  const maxPrice = profile.maxPrice ?? profile.basePrice * 2;
   const raw = Math.round(price / 50) * 50;
-  const clamped = Math.max(minP, Math.min(maxP, raw));
-  if (clamped !== raw) {
-    reasons.push({ factor: 'guardrails', direction: clamped < raw ? 'down' : 'up', percent: Math.round(Math.abs(clamped - raw) / profile.basePrice * 100), explanation: `Ограничено: ${minP}–${maxP} ₽` });
+  const recommendedPrice = Math.max(minPrice, Math.min(maxPrice, raw));
+  if (recommendedPrice !== raw) {
+    reasons.push({
+      factor: 'guardrails',
+      direction: recommendedPrice < raw ? 'down' : 'up',
+      percent: Math.round(Math.abs(recommendedPrice - raw) / profile.basePrice * 100),
+      explanation: `Ограничено: ${minPrice}–${maxPrice} ₽`,
+    });
   }
+
+  const signalsUsed = [...new Set(signals.map((signal) => signal.signalType))];
+  const requiredSignals = ['competitor_prices', 'available_supply', 'event_pressure', 'weather_pressure'];
+  const missingSignals = requiredSignals.filter((signal) => !signalsUsed.includes(signal as SignalType));
+  return { recommendedPrice, reasons, signalsUsed, missingSignals };
+}
+
+export async function recommendPriceForDate(
+  pricingProfileId: string,
+  date: string,
+  options?: { radiusKm?: number; audienceProfile?: AudienceProfile | null },
+): Promise<{ recommendedPrice: number; reasons: AdjustmentReason[]; scores: Pick<TariffGridDay, 'demandScore' | 'supplyScore' | 'eventScore' | 'weatherScore' | 'audienceScore'>; signalsUsed: string[]; missingSignals: string[] }> {
+  const profile = await getPricingProfile(pricingProfileId);
+  if (!profile.basePrice) throw new Error('Укажите базовую цену.');
+
+  const setupId = profile.propertySetupId;
+  if (!setupId) throw new Error('Профиль не привязан к объекту.');
+
+  const audience = options?.audienceProfile ?? await getAudienceProfile(setupId);
+  const signals = (await getSignalsForPricingDate(setupId, date, options?.radiusKm)) as MarketSignal[];
+  const primaryAudience = audience?.primaryAudience ?? 'unknown';
+  const calculation = calculatePriceRecommendation({ profile, date, signals, audienceProfile: audience });
 
   const [pressure, audienceScore] = await Promise.all([
     computeMarketPressureScore(setupId, date, { audience: primaryAudience }),
     computeAudienceScore(setupId, date, audience),
   ]);
-  const signalsUsed = [...new Set(signals.map((signal) => signal.signalType))];
-  const requiredSignals = ['competitor_prices', 'available_supply', 'event_pressure', 'weather_pressure'];
-  const missingSignals = requiredSignals.filter((signal) => !signalsUsed.includes(signal as SignalType));
   return {
-    recommendedPrice: clamped,
-    reasons,
+    recommendedPrice: calculation.recommendedPrice,
+    reasons: calculation.reasons,
     scores: {
       demandScore: pressure.score,
       supplyScore: pressure.components.available_supply ?? 50,
@@ -686,8 +721,8 @@ export async function recommendPriceForDate(
       weatherScore: pressure.components.weather_pressure ?? 50,
       audienceScore,
     },
-    signalsUsed,
-    missingSignals,
+    signalsUsed: calculation.signalsUsed,
+    missingSignals: calculation.missingSignals,
   };
 }
 
