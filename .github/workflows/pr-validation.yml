@@ -51,6 +51,13 @@ jobs:
             src/lib/partner-communication/__tests__/partner-communication-state-repository.test.ts \
             --reporter=verbose
 
+      - name: Partner reputation and service recovery focused regression
+        run: |
+          npx vitest run \
+            src/lib/partner-reputation/__tests__/partner-reputation.test.ts \
+            src/lib/partner-communication/__tests__/partner-service-recovery.test.ts \
+            --reporter=verbose
+
       - name: Guest communication and Telegram voice regression
         run: |
           npx vitest run \
@@ -557,3 +564,46 @@ jobs:
             echo "Missing PARTNER_INBOX_PG_PROOF — failing job"
             exit 1
           fi
+
+      - name: Partner Review & Reputation PostgreSQL integration
+        id: partner_reputation_pg_integration
+        run: |
+          set -euo pipefail
+          npx vitest run \
+            src/lib/partner-reputation/__tests__/partner-reputation.pg.integration.test.ts \
+            --reporter=verbose 2>&1 | tee partner-reputation-pg.out
+          if grep -E '↓|skipped|SKIPPED' partner-reputation-pg.out | grep -Fq 'Partner Review & Reputation PostgreSQL integration'; then
+            echo "Partner reputation PostgreSQL suite was skipped — failing job"
+            exit 1
+          fi
+          if ! grep -Fq 'PARTNER_REPUTATION_PG_PROOF' partner-reputation-pg.out; then
+            echo "Missing PARTNER_REPUTATION_PG_PROOF — failing job"
+            exit 1
+          fi
+          node - <<'NODE'
+          const fs = require('fs');
+          const out = fs.readFileSync('partner-reputation-pg.out', 'utf8');
+          const line = out.split(/\r?\n/).find((entry) => entry.includes('PARTNER_REPUTATION_PG_PROOF'));
+          if (!line) process.exit(1);
+          const proof = JSON.parse(line.slice(line.indexOf('PARTNER_REPUTATION_PG_PROOF') + 'PARTNER_REPUTATION_PG_PROOF'.length).trim());
+          const expected = {
+            migrationChainApplied: 5,
+            ratingScaleTenNormalized: true,
+            reviewUniqueness: true,
+            crossTenantExternalReviewIsolation: true,
+            canonicalScopeGuard: true,
+            eventUniqueness: true,
+            signalUniqueness: true,
+            signalBookingScope: true,
+            recoveryCorrelationTenantScoped: true,
+            rlsForcedServiceRoleOnly: true,
+            finalTransactionRolledBack: true,
+            productionTouched: false,
+            stagingTouched: false,
+          };
+          if (JSON.stringify(proof) !== JSON.stringify(expected)) {
+            console.error('partner_reputation_proof_mismatch', proof);
+            process.exit(1);
+          }
+          console.log('partner_reputation_proof_ok', JSON.stringify(proof));
+          NODE
