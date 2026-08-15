@@ -1,0 +1,36 @@
+{
+  "task": {
+    "id": "apart-sharing-killer-demo-pilot-package-v1",
+    "title": "Apart Sharing killer demo and pilot package v1",
+    "objective": "Consolidate the existing communication, service recovery, reputation, revenue intelligence, and shadow pricing seams into one deterministic synthetic partner demo and evidence-disciplined pilot package.",
+    "acceptanceCriteria": [
+      "One deterministic synthetic story reuses all three existing partner product pillars for Apartment 101.",
+      "The complete demo proves grounded communication, operational recovery, review correlation, advisory shadow pricing, and all no-side-effect guarantees.",
+      "Partner-facing presenter, pilot, economics, executive, data, discovery, and claims materials remain explicit about synthetic and not-yet-proven evidence.",
+      "No migration, production or staging action, external provider call, outbound message, public review publication, or OTA price write occurs.",
+      "Focused regressions, touched-file lint, typecheck, production build, diff checks, PR validation, commit, push, and draft PR complete successfully."
+    ],
+    "inScope": [
+      "src/lib/partner-demo/ deterministic server-only orchestration and its focused full-story test",
+      "A lightweight deterministic demo command if repository conventions support it",
+      "Partner demo, pilot, economics, executive, data-contract, discovery, operating-model, and claims documentation",
+      "Package script changes strictly required for the demo command",
+      "Draft PR publication from a fresh task branch"
+    ],
+    "outOfScope": [
+      "New product engines or duplicated domain logic",
+      "Database schema changes or migrations",
+      "Production or staging changes",
+      "Real Apart Sharing integration or credentials",
+      "External calls, outbound guest messages, public review publication, OTA price writes, or automated financial decisions",
+      "Unsupported commercial, staffing, reputation, or revenue claims",
+      "Public UX changes unless an existing low-risk internal demo surface is proven appropriate"
+    ]
+  },
+  "classification": "yellow",
+  "redActions": [],
+  "focusedTests": [
+    "src/lib/partner-demo/__tests__/apart-sharing-killer-demo.test.ts",
+    "src/lib/booking-ops/__tests__/pricing-intelligence-autopilot.test.ts"
+  ]
+}
