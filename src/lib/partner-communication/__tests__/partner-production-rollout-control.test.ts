@@ -24,6 +24,10 @@ const historyRegistration = readFileSync(
   resolve(root, 'scripts/partner-production-rollout-register-history.sql'),
   'utf8',
 );
+const databasePrecheck = readFileSync(
+  resolve(root, 'scripts/partner-production-rollout-db-precheck.sql'),
+  'utf8',
+);
 const verification = readFileSync(
   resolve(root, 'scripts/partner-production-rollout-verify.sql'),
   'utf8',
@@ -116,6 +120,16 @@ describe('partner production rollout control', () => {
     );
     expect(historyPosition).toBeGreaterThan(previous);
     expect(verificationPosition).toBeGreaterThan(historyPosition);
+  });
+
+  it('owns an explicit read-only precheck transaction and commits only after readiness', () => {
+    expect(databasePrecheck).toMatch(/^BEGIN TRANSACTION READ ONLY;\s+DO \$precheck\$/u);
+    expect(databasePrecheck).toContain("current_setting('transaction_read_only') <> 'on'");
+    expect(databasePrecheck).toContain('PARTNER_ROLLOUT_DB_PRECHECK=read_only_guard_failed');
+    expect(databasePrecheck).toMatch(
+      /SELECT 'PARTNER_ROLLOUT_DB_PRECHECK=ready' AS result;\s+COMMIT;\s*$/u,
+    );
+    expect(databasePrecheck.match(/\bCOMMIT;/gu)).toHaveLength(1);
   });
 
   it('registers and verifies exactly seven Supabase history rows without reconciliation escape hatches', () => {

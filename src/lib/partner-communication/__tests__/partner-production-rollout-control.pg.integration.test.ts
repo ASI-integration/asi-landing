@@ -29,6 +29,10 @@ const precheckSql = readFileSync(
   resolve(root, 'scripts/partner-production-rollout-db-precheck.sql'),
   'utf8',
 );
+const precheckMutationProbeSql = precheckSql.replace(
+  /\nCOMMIT;\s*$/u,
+  '\nINSERT INTO public.accounts (id) VALUES (gen_random_uuid());\n\nCOMMIT;\n',
+);
 const registerHistorySql = readFileSync(
   resolve(root, 'scripts/partner-production-rollout-register-history.sql'),
   'utf8',
@@ -148,9 +152,38 @@ describe.skipIf(!hasDisposablePg)('Partner rollout PostgreSQL integration', () =
         CREATE TABLE public.booking_pricing_profiles (id UUID PRIMARY KEY);
       `);
 
-      await target.query('BEGIN TRANSACTION READ ONLY');
       await target.query(precheckSql);
+
+      expect(precheckMutationProbeSql).not.toBe(precheckSql);
+      await expect(target.query(precheckMutationProbeSql)).rejects.toMatchObject({ code: '25006' });
       await target.query('ROLLBACK');
+      const mutationProbeState = await target.query(
+        'SELECT count(*)::int AS account_rows FROM public.accounts',
+      );
+      expect(mutationProbeState.rows[0]).toEqual({ account_rows: 0 });
+
+      await target.query('CREATE TABLE public.partner_precheck_blocked (id INTEGER PRIMARY KEY)');
+      await expect(target.query(precheckSql)).rejects.toMatchObject({
+        code: 'P0001',
+        message: 'PARTNER_ROLLOUT_DB_PRECHECK=blocked_schema_or_history_state',
+      });
+      await target.query('ROLLBACK');
+      await target.query('DROP TABLE public.partner_precheck_blocked');
+
+      await target.query(
+        `INSERT INTO supabase_migrations.schema_migrations (version, name, statements)
+         VALUES ($1, 'blocked_history_probe', ARRAY[]::TEXT[])`,
+        [versions[0]],
+      );
+      await expect(target.query(precheckSql)).rejects.toMatchObject({
+        code: 'P0001',
+        message: 'PARTNER_ROLLOUT_DB_PRECHECK=blocked_schema_or_history_state',
+      });
+      await target.query('ROLLBACK');
+      await target.query(
+        'DELETE FROM supabase_migrations.schema_migrations WHERE version = $1',
+        [versions[0]],
+      );
 
       await target.query('BEGIN');
       await applyControlledTransaction(target);
@@ -181,9 +214,11 @@ describe.skipIf(!hasDisposablePg)('Partner rollout PostgreSQL integration', () =
       await target.query('COMMIT');
 
       const migrationFilesExecuted = 0;
-      await target.query('BEGIN TRANSACTION READ ONLY');
       try {
-        await expect(target.query(precheckSql)).rejects.toMatchObject({ code: 'P0001' });
+        await expect(target.query(precheckSql)).rejects.toMatchObject({
+          code: 'P0001',
+          message: 'PARTNER_ROLLOUT_DB_PRECHECK=blocked_schema_or_history_state',
+        });
       } finally {
         await target.query('ROLLBACK');
       }
@@ -216,6 +251,9 @@ describe.skipIf(!hasDisposablePg)('Partner rollout PostgreSQL integration', () =
     // eslint-disable-next-line no-console
     console.log(`PARTNER_ROLLOUT_PG_PROOF ${JSON.stringify({
       precheckPassed: true,
+      explicitReadOnlyMutationRejected: true,
+      blockedSchemaStateRejected: true,
+      blockedHistoryStateRejected: true,
       migrationFilesApplied: migrationSql.length,
       schemaVerificationPassed: true,
       migrationHistoryRows: versions.length,
