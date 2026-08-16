@@ -573,6 +573,22 @@ jobs:
             exit 1
           fi
 
+      - name: Partner Property Knowledge schema completion PostgreSQL integration
+        id: partner_property_knowledge_schema_pg_integration
+        run: |
+          set -euo pipefail
+          npx vitest run \
+            src/lib/partner-communication/__tests__/partner-property-knowledge-schema-completion.pg.integration.test.ts \
+            --reporter=verbose 2>&1 | tee partner-property-knowledge-schema-pg.out
+          if grep -E '↓|skipped|SKIPPED' partner-property-knowledge-schema-pg.out | grep -Fq 'Partner property knowledge schema completion PostgreSQL integration'; then
+            echo "Partner property knowledge schema completion PostgreSQL suite was skipped — failing job"
+            exit 1
+          fi
+          if ! grep -Fq 'PARTNER_KNOWLEDGE_SCHEMA_PG_PROOF' partner-property-knowledge-schema-pg.out; then
+            echo "Missing PARTNER_KNOWLEDGE_SCHEMA_PG_PROOF — failing job"
+            exit 1
+          fi
+
       - name: Partner Review & Reputation PostgreSQL integration
         id: partner_reputation_pg_integration
         run: |
