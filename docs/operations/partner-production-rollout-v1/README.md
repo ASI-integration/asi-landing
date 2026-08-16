@@ -4,7 +4,7 @@ This runbook prepares the seven approved partner migrations for a controlled pro
 
 ## Fixed scope
 
-The source of truth is [`manifest.json`](manifest.json). The manifest pins exact filenames, canonical order, and SHA-256 checksums. The validator also refuses to proceed if the repository contains any additional `partner_` migration.
+The source of truth is [`manifest.json`](manifest.json). The manifest pins exact migration filenames, canonical order, SHA-256 checksums, and the checksum of the migration-history registration SQL. The validator also refuses to proceed if the repository contains any additional `partner_` migration or if the history registration differs from the same seven versions and names.
 
 The SQL dependency evidence is:
 
@@ -28,7 +28,7 @@ Canonical `main` at `27c733a67333fa4133a5bdff281ff5cd05b2414c` contains exactly 
    - `rollout_sha=<exact full SHA>`;
    - empty `owner_confirmation`.
 3. Download and retain the preflight artifact. It must report seven checksum-verified migrations, `mutationAllowed=false`, and no extra partner migration.
-4. Review the latest **Production Partner Schema Read-Only Audit** artifact under its separate production read-only gate. Stop if prerequisite relations are missing, a partner migration/table is already present, or the target identity is uncertain.
+4. The apply job's database precheck is the authoritative first-rollout guard. It runs read-only immediately before mutation and requires the prerequisite relations, zero partner relations, and all seven history versions absent. Do not use a successful post-rollout audit artifact as permission to rerun.
 
 The preflight operation checks out the exact SHA and performs no database connection, secret access, or mutation.
 
@@ -51,15 +51,24 @@ The owner manually dispatches the same workflow from `main` with:
 - the identical `rollout_sha`;
 - `owner_confirmation=APPLY_PARTNER_MIGRATIONS_<exact full SHA>`.
 
-The workflow fails unless the actor and triggering actor equal the configured owner. After the protected approval job, it revalidates the SHA, allowlist, order, checksums, and production database identity. A read-only guard requires all prerequisites, no partner relations, and none of the seven migration-history versions. It then invokes one `psql --single-transaction` command containing exactly the seven files in manifest order. `ON_ERROR_STOP=1` aborts on the first error and PostgreSQL rolls back the entire transaction.
+The workflow fails unless the actor and triggering actor equal the configured owner. After the protected approval job, it revalidates the SHA, allowlist, order, checksums, and production database identity. A read-only guard requires all prerequisites, no partner relations, and none of the seven migration-history versions. It then invokes one `psql --single-transaction` command containing exactly the seven files in manifest order, the checksum-pinned history registration, and final schema/history verification. `ON_ERROR_STOP=1` aborts on the first error and PostgreSQL rolls back the entire transaction.
 
 Stop immediately on any precheck, identity, approval, checksum, SQL, or verification failure. Do not repair, skip, reorder, or rerun without a new read-only diagnosis and owner decision.
 
-### 4. Schema verification
+### 4. Schema and migration-history verification
 
-The same transaction verifies all 19 required partner relations, the five strict property-knowledge columns, forced RLS, and absence of `anon`/`authenticated` read access before commit. After success, manually run the separate read-only schema audit again and retain its artifact. Do not continue if the audit differs from the expected schema.
+The same transaction verifies all 19 required partner relations, the five strict property-knowledge columns, forced RLS, absence of `anon`/`authenticated` read access, and all seven expected `(version, name)` rows in `supabase_migrations.schema_migrations` before commit. After success, manually run the separate read-only audit again and retain its artifact. The audit now fails unless schema and migration history both match; do not continue if it fails or reports any difference.
 
-The controlled executor intentionally does not run `supabase db push` and does not repair migration history, so unrelated pending migrations cannot be swept into the rollout. Any migration-history reconciliation is a separate production mutation requiring its own plan and approval.
+The repository has no pinned Supabase CLI package and no `supabase/config.toml`, so `supabase migration repair --status applied` would introduce an unpinned tool and a second database connection. Supabase documents that repair as a history-only operation and that pending migrations are identified by version. A separate repair could leave schema committed without history if the second step failed.
+
+Instead, the controlled transaction writes the CLI-compatible columns `version`, `name`, and `statements` directly. It uses seven plain `INSERT` rows with the exact allowlist, canonical migration names, and empty statement arrays; there is no upsert, wildcard, broad push, delete, or repair command. The registration SQL first validates the canonical history-table column and primary-key contract and refuses any pre-existing allowlisted version. The final verifier requires all seven rows. Therefore:
+
+- a migration error occurs before history registration and rolls the whole transaction back;
+- a history collision or incompatible history table aborts and rolls schema changes back;
+- a schema, RLS, access, strict-field, or history verification error aborts and rolls both back;
+- PostgreSQL exposes neither schema nor history to other sessions until the single commit succeeds.
+
+The only operational ambiguity is a client connection loss while PostgreSQL is returning the final commit result. Never rerun on that ambiguity: run the read-only audit. It will show either the complete schema plus all seven history rows, or the untouched pre-rollout state; the transaction cannot commit only one side.
 
 ### 5. `ADMIN_SECRET` configuration
 
@@ -82,7 +91,7 @@ Run only the owner-approved, fail-closed partner acceptance scope. Start with re
 
 Only these later actions mutate production:
 
-1. the `apply_migrations` job's single atomic `psql` invocation applies the seven SQL files and commits only if schema verification succeeds;
+1. the `apply_migrations` job's single atomic `psql` invocation applies the seven SQL files, registers exactly seven Supabase migration-history rows, and commits only if schema and history verification succeeds;
 2. the authorized `ADMIN_SECRET` update changes the production runtime environment file;
 3. the separately approved exact-SHA deploy workflow changes the active application release;
 4. any separately approved acceptance step that creates, updates, or deletes production data.

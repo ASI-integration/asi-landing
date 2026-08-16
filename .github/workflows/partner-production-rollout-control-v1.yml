@@ -180,7 +180,7 @@ jobs:
             --set ON_ERROR_STOP=1 \
             --file scripts/partner-production-rollout-db-precheck.sql
 
-      - name: Apply exactly seven migrations atomically and verify schema
+      - name: Apply seven migrations, register history, and verify atomically
         shell: bash
         env:
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
@@ -201,5 +201,6 @@ jobs:
             --file supabase/migrations/20260815190000_partner_service_recovery_loop_v1.sql \
             --file supabase/migrations/20260815210000_partner_review_reputation_engine_v1.sql \
             --file supabase/migrations/20260815230000_partner_revenue_shadow_pricing_v1.sql \
+            --file scripts/partner-production-rollout-register-history.sql \
             --file scripts/partner-production-rollout-verify.sql
-          echo "PARTNER_PRODUCTION_ROLLOUT=seven_migrations_applied_and_verified"
+          echo "PARTNER_PRODUCTION_ROLLOUT=schema_and_migration_history_applied_and_verified"

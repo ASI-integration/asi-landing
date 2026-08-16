@@ -3,6 +3,7 @@ import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import {
+  EXPECTED_HISTORY_REGISTRATION,
   EXPECTED_PARTNER_MIGRATIONS,
   validatePartnerProductionRollout,
 } from '../../../../scripts/partner-production-rollout-control.mjs';
@@ -16,8 +17,21 @@ const manifest = JSON.parse(readFileSync(
   resolve(root, 'docs/operations/partner-production-rollout-v1/manifest.json'),
   'utf8',
 )) as {
+  historyRegistration: { filename: string; sha256: string };
   migrations: Array<{ sequence: number; filename: string; sha256: string }>;
 };
+const historyRegistration = readFileSync(
+  resolve(root, 'scripts/partner-production-rollout-register-history.sql'),
+  'utf8',
+);
+const verification = readFileSync(
+  resolve(root, 'scripts/partner-production-rollout-verify.sql'),
+  'utf8',
+);
+const auditWorkflow = readFileSync(
+  resolve(root, '.github/workflows/production-partner-schema-readonly-audit.yml'),
+  'utf8',
+);
 
 describe('partner production rollout control', () => {
   it('allows exactly the seven checksum-pinned migrations in canonical order', () => {
@@ -37,12 +51,20 @@ describe('partner production rollout control', () => {
     expect(manifest.migrations.map(({ filename }) => filename)).toEqual(expected);
     expect(manifest.migrations.map(({ sequence }) => sequence)).toEqual([1, 2, 3, 4, 5, 6, 7]);
     expect(manifest.migrations.every(({ sha256 }) => /^[0-9a-f]{64}$/u.test(sha256))).toBe(true);
+    expect(manifest.historyRegistration).toEqual({
+      filename: EXPECTED_HISTORY_REGISTRATION,
+      sha256: expect.stringMatching(/^[0-9a-f]{64}$/u),
+    });
     expect(repositoryPartnerMigrations.sort()).toEqual([...expected].sort());
 
     const report = validatePartnerProductionRollout();
     expect(report).toMatchObject({
       migrationCount: 7,
       repositoryPartnerMigrationCount: 7,
+      historyRegistration: {
+        filename: EXPECTED_HISTORY_REGISTRATION,
+        registeredVersions: expected.map((filename) => filename.slice(0, 14)),
+      },
       mutationAllowed: false,
       productionTouched: false,
       stagingTouched: false,
@@ -68,7 +90,10 @@ describe('partner production rollout control', () => {
     expect(workflow).toContain('--require-main-ancestor');
     expect(workflow).toContain('--set ON_ERROR_STOP=1');
     expect(workflow).toContain('--single-transaction');
+    expect(workflow).toContain('--file scripts/partner-production-rollout-register-history.sql');
     expect(workflow).toContain('--file scripts/partner-production-rollout-verify.sql');
+    expect(workflow).not.toContain('supabase db push');
+    expect(workflow).not.toContain('supabase migration repair');
 
     const applySection = workflow.slice(workflow.indexOf('  apply_migrations:'));
     const appliedMigrationFiles = [...applySection.matchAll(
@@ -82,6 +107,32 @@ describe('partner production rollout control', () => {
       expect(position, filename).toBeGreaterThan(previous);
       previous = position;
     }
+
+    const historyPosition = applySection.indexOf(
+      '--file scripts/partner-production-rollout-register-history.sql',
+    );
+    const verificationPosition = applySection.indexOf(
+      '--file scripts/partner-production-rollout-verify.sql',
+    );
+    expect(historyPosition).toBeGreaterThan(previous);
+    expect(verificationPosition).toBeGreaterThan(historyPosition);
+  });
+
+  it('registers and verifies exactly seven Supabase history rows without reconciliation escape hatches', () => {
+    const expectedVersions = manifest.migrations.map(({ filename }) => filename.slice(0, 14));
+    const insertedVersions = [...historyRegistration.matchAll(
+      /\('(\d{14})',\s*'[^']+',\s*ARRAY\[\]::TEXT\[\]\)/gu,
+    )].map((match) => match[1]);
+
+    expect(insertedVersions).toEqual(expectedVersions);
+    expect(historyRegistration).toContain(
+      'INSERT INTO supabase_migrations.schema_migrations (version, name, statements)',
+    );
+    expect(historyRegistration).not.toMatch(/\bON\s+CONFLICT\b/iu);
+    expect(historyRegistration).not.toMatch(/\b(?:UPDATE|DELETE|TRUNCATE)\b/iu);
+    expect(verification).toContain('Supabase migration history does not contain all seven expected');
+    expect(auditWorkflow).toContain('\\i scripts/partner-production-rollout-verify.sql');
+    expect(auditWorkflow).toContain('AUDIT_SCOPE=partner_schema_and_supabase_migration_history');
   });
 
   it('keeps database credentials inside the owner-approved mutation job', () => {

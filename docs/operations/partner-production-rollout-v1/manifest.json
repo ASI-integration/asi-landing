@@ -1,6 +1,10 @@
 {
   "schemaVersion": "asi.partner-production-rollout.v1",
   "canonicalBaseSha": "27c733a67333fa4133a5bdff281ff5cd05b2414c",
+  "historyRegistration": {
+    "filename": "partner-production-rollout-register-history.sql",
+    "sha256": "9d105eacfe8d2307a88df7e968480385b7e3adff37cebccc5bc5e205634a955c"
+  },
   "migrations": [
     {
       "sequence": 1,

@@ -25,6 +25,9 @@ export const EXPECTED_PARTNER_MIGRATIONS = Object.freeze([
   '20260815230000_partner_revenue_shadow_pricing_v1.sql',
 ]);
 
+export const EXPECTED_HISTORY_REGISTRATION =
+  'partner-production-rollout-register-history.sql';
+
 const REQUIRED_SQL_EVIDENCE = Object.freeze({
   [EXPECTED_PARTNER_MIGRATIONS[0]]: [
     'ALTER TABLE public.tg_property_knowledge',
@@ -153,6 +156,42 @@ export function validatePartnerProductionRollout({
     };
   });
 
+  const historyRegistration = manifest.historyRegistration ?? {};
+  invariant(
+    historyRegistration.filename === EXPECTED_HISTORY_REGISTRATION,
+    'Unexpected migration-history registration filename.',
+  );
+  invariant(
+    /^[0-9a-f]{64}$/u.test(historyRegistration.sha256 ?? ''),
+    'Migration-history registration checksum must be pinned.',
+  );
+  const historyRegistrationPath = path.join(
+    repoRoot,
+    'scripts',
+    historyRegistration.filename,
+  );
+  const historyRegistrationSha256 = sha256(historyRegistrationPath);
+  invariant(
+    historyRegistrationSha256 === historyRegistration.sha256,
+    'Migration-history registration checksum mismatch.',
+  );
+  const historySql = readFileSync(historyRegistrationPath, 'utf8');
+  const registeredRows = [...historySql.matchAll(
+    /\('(\d{14})',\s*'([^']+)',\s*ARRAY\[\]::TEXT\[\]\)/gu,
+  )].map((match) => ({ version: match[1], name: match[2] }));
+  const expectedRows = migrations.map(({ version, filename }) => ({
+    version,
+    name: filename.replace(/^\d+_|\.sql$/gu, ''),
+  }));
+  invariant(
+    JSON.stringify(registeredRows) === JSON.stringify(expectedRows),
+    'Migration-history registration must contain exactly the seven allowlisted versions and names.',
+  );
+  invariant(
+    !/\b(?:ON\s+CONFLICT|UPDATE|DELETE|TRUNCATE)\b/iu.test(historySql),
+    'Migration-history registration must use fail-closed plain inserts only.',
+  );
+
   const headSha = git(['rev-parse', 'HEAD']);
   if (expectedSha !== undefined) {
     invariant(/^[0-9a-f]{40}$/u.test(expectedSha), 'Expected rollout SHA must be 40 lowercase hex characters.');
@@ -172,6 +211,11 @@ export function validatePartnerProductionRollout({
     rolloutSha: headSha,
     migrationCount: verified.length,
     migrations: verified,
+    historyRegistration: {
+      filename: historyRegistration.filename,
+      sha256: historyRegistrationSha256,
+      registeredVersions: registeredRows.map(({ version }) => version),
+    },
     repositoryPartnerMigrationCount: repositoryPartnerMigrations.length,
     mutationAllowed: false,
     productionTouched: false,

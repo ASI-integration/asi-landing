@@ -21,6 +21,11 @@ jobs:
     environment: production
     timeout-minutes: 10
     steps:
+      - name: Checkout audit assertions
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
       - name: Require explicit read-only confirmation
         shell: bash
         env:
@@ -258,11 +263,14 @@ jobs:
             )
           ORDER BY event_object_table, trigger_name, event_manipulation;
 
+          \qecho '=== REQUIRED_SCHEMA_AND_MIGRATION_HISTORY_ASSERTION ==='
+          \i scripts/partner-production-rollout-verify.sql
+
           ROLLBACK;
           SQL
 
           echo "READ_ONLY_GUARD=verified"
-          echo "AUDIT_SCOPE=partner_and_prerequisite_schema_metadata"
+          echo "AUDIT_SCOPE=partner_schema_and_supabase_migration_history"
           echo "AUDIT_ARTIFACT=$artifact"
 
       - name: Upload sanitized partner schema audit

@@ -66,7 +66,23 @@ BEGIN
   ) THEN
     RAISE EXCEPTION 'A required partner relation is readable by anon or authenticated.';
   END IF;
+
+  IF (
+    SELECT count(*)
+    FROM supabase_migrations.schema_migrations
+    WHERE (version, name) IN (
+      ('20260816144742', 'partner_property_knowledge_schema_completion_v1'),
+      ('20260815102111', 'partner_communication_durable_state_v1'),
+      ('20260815130000', 'partner_authenticated_inbox_v1'),
+      ('20260815160000', 'partner_communication_brain_v1'),
+      ('20260815190000', 'partner_service_recovery_loop_v1'),
+      ('20260815210000', 'partner_review_reputation_engine_v1'),
+      ('20260815230000', 'partner_revenue_shadow_pricing_v1')
+    )
+  ) <> 7 THEN
+    RAISE EXCEPTION 'Supabase migration history does not contain all seven expected partner versions and names.';
+  END IF;
 END
 $verify$;
 
-SELECT 'PARTNER_ROLLOUT_SCHEMA_VERIFICATION=passed' AS result;
+SELECT 'PARTNER_ROLLOUT_SCHEMA_AND_HISTORY_VERIFICATION=passed' AS result;
