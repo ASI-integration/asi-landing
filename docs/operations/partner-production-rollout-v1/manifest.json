@@ -1,0 +1,59 @@
+{
+  "schemaVersion": "asi.partner-production-rollout.v1",
+  "canonicalBaseSha": "27c733a67333fa4133a5bdff281ff5cd05b2414c",
+  "historyRegistration": {
+    "filename": "partner-production-rollout-register-history.sql",
+    "sha256": "9d105eacfe8d2307a88df7e968480385b7e3adff37cebccc5bc5e205634a955c"
+  },
+  "migrations": [
+    {
+      "sequence": 1,
+      "version": "20260816144742",
+      "filename": "20260816144742_partner_property_knowledge_schema_completion_v1.sql",
+      "sha256": "3d80ce698bd354f7cf3c5b5f089d745505fe61be7ac3ed72a83a18f17a4e32ca",
+      "dependsOn": ["public.tg_property_knowledge"]
+    },
+    {
+      "sequence": 2,
+      "version": "20260815102111",
+      "filename": "20260815102111_partner_communication_durable_state_v1.sql",
+      "sha256": "bb2a4f80716482ae51c01452b25155050b431dcf7d5ac8539bfa494b0879f292",
+      "dependsOn": ["public.accounts"]
+    },
+    {
+      "sequence": 3,
+      "version": "20260815130000",
+      "filename": "20260815130000_partner_authenticated_inbox_v1.sql",
+      "sha256": "12c706ff2335b2e53ef94775ad7c6b0b469354b5afdd017ea0b035283b03336b",
+      "dependsOn": ["20260815102111"]
+    },
+    {
+      "sequence": 4,
+      "version": "20260815160000",
+      "filename": "20260815160000_partner_communication_brain_v1.sql",
+      "sha256": "08ef7deb6269a9069a681d09aa167c805d6e920abacc394cb1bacbca5f15bf8d",
+      "dependsOn": ["20260815102111", "20260815130000"]
+    },
+    {
+      "sequence": 5,
+      "version": "20260815190000",
+      "filename": "20260815190000_partner_service_recovery_loop_v1.sql",
+      "sha256": "2a57ca97a5b3deddbfdf2f213abc47d0b09e59e84dae372fada0c3e104b10a21",
+      "dependsOn": ["20260815160000"]
+    },
+    {
+      "sequence": 6,
+      "version": "20260815210000",
+      "filename": "20260815210000_partner_review_reputation_engine_v1.sql",
+      "sha256": "3c4fe634ea31391cc42642c795b9227a7db61a8a2f5ba4cec4781190ae7a8690",
+      "dependsOn": ["20260815160000", "20260815190000"]
+    },
+    {
+      "sequence": 7,
+      "version": "20260815230000",
+      "filename": "20260815230000_partner_revenue_shadow_pricing_v1.sql",
+      "sha256": "03716059b790b3f31389b3898a91ab319fb0be56af08d94f8e3d29e70937c4b7",
+      "dependsOn": ["20260815160000", "20260815210000"]
+    }
+  ]
+}

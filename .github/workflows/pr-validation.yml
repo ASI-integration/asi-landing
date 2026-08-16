@@ -589,6 +589,49 @@ jobs:
             exit 1
           fi
 
+      - name: Partner Production Rollout Control PostgreSQL integration
+        id: partner_production_rollout_pg_integration
+        run: |
+          set -euo pipefail
+          npx vitest run \
+            src/lib/partner-communication/__tests__/partner-production-rollout-control.pg.integration.test.ts \
+            --reporter=verbose 2>&1 | tee partner-production-rollout-pg.out
+          if grep -E '↓|skipped|SKIPPED' partner-production-rollout-pg.out | grep -Fq 'Partner rollout PostgreSQL integration'; then
+            echo "Partner rollout PostgreSQL suite was skipped — failing job"
+            exit 1
+          fi
+          if ! grep -Fq 'PARTNER_ROLLOUT_PG_PROOF' partner-production-rollout-pg.out; then
+            echo "Missing PARTNER_ROLLOUT_PG_PROOF — failing job"
+            exit 1
+          fi
+          node - <<'NODE'
+          const fs = require('fs');
+          const out = fs.readFileSync('partner-production-rollout-pg.out', 'utf8');
+          const line = out.split(/\r?\n/).find((entry) => entry.includes('PARTNER_ROLLOUT_PG_PROOF'));
+          if (!line) process.exit(1);
+          const proof = JSON.parse(line.slice(
+            line.indexOf('PARTNER_ROLLOUT_PG_PROOF') + 'PARTNER_ROLLOUT_PG_PROOF'.length,
+          ).trim());
+          const expected = {
+            precheckPassed: true,
+            migrationFilesApplied: 7,
+            schemaVerificationPassed: true,
+            migrationHistoryRows: 7,
+            forcedHistoryDivergenceRolledBack: true,
+            alreadyAppliedPrecheckBlocked: true,
+            migrationFilesExecutedAfterBlockedPrecheck: 0,
+            rollbackCleanupPassed: true,
+            disposableDatabaseDropped: true,
+            productionTouched: false,
+            stagingTouched: false,
+          };
+          if (JSON.stringify(proof) !== JSON.stringify(expected)) {
+            console.error('partner_rollout_proof_mismatch', proof);
+            process.exit(1);
+          }
+          console.log('partner_rollout_proof_ok', JSON.stringify(proof));
+          NODE
+
       - name: Partner Review & Reputation PostgreSQL integration
         id: partner_reputation_pg_integration
         run: |
