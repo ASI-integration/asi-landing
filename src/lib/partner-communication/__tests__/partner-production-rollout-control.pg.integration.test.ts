@@ -251,9 +251,6 @@ describe.skipIf(!hasDisposablePg)('Partner rollout PostgreSQL integration', () =
     // eslint-disable-next-line no-console
     console.log(`PARTNER_ROLLOUT_PG_PROOF ${JSON.stringify({
       precheckPassed: true,
-      explicitReadOnlyMutationRejected: true,
-      blockedSchemaStateRejected: true,
-      blockedHistoryStateRejected: true,
       migrationFilesApplied: migrationSql.length,
       schemaVerificationPassed: true,
       migrationHistoryRows: versions.length,
