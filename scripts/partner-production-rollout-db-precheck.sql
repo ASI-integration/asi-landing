@@ -1,3 +1,5 @@
+BEGIN TRANSACTION READ ONLY;
+
 DO $precheck$
 BEGIN
   IF current_setting('transaction_read_only') <> 'on' THEN
@@ -39,3 +41,5 @@ END
 $precheck$;
 
 SELECT 'PARTNER_ROLLOUT_DB_PRECHECK=ready' AS result;
+
+COMMIT;
