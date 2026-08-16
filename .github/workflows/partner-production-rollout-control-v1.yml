@@ -1,0 +1,205 @@
+name: Partner Production Rollout Control v1
+
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: Run non-mutating preflight or owner-approved apply
+        required: true
+        default: preflight
+        type: choice
+        options:
+          - preflight
+          - apply
+      rollout_sha:
+        description: Full 40-character main commit SHA to validate or apply
+        required: true
+        type: string
+      owner_confirmation:
+        description: Apply only — owner types APPLY_PARTNER_MIGRATIONS_<rollout_sha>
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: partner-production-rollout-v1
+  cancel-in-progress: false
+
+jobs:
+  preflight:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require workflow source main and exact SHA input
+        shell: bash
+        env:
+          ROLLOUT_SHA: ${{ inputs.rollout_sha }}
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REPOSITORY" == "ASI-integration/asi-landing" ]]
+          [[ "$GITHUB_REF" == "refs/heads/main" ]]
+          [[ "$ROLLOUT_SHA" =~ ^[0-9a-f]{40}$ ]]
+
+      - name: Checkout exact rollout SHA
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: ${{ inputs.rollout_sha }}
+
+      - name: Validate allowlist, order, checksums, dependencies, and SHA
+        shell: bash
+        env:
+          ROLLOUT_SHA: ${{ inputs.rollout_sha }}
+        run: |
+          set -euo pipefail
+          node scripts/partner-production-rollout-control.mjs preflight \
+            --expected-sha "$ROLLOUT_SHA" \
+            --require-main-ancestor \
+            --report partner-production-rollout-preflight.json
+
+      - name: Upload non-mutating preflight report
+        uses: actions/upload-artifact@v4
+        with:
+          name: partner-production-rollout-preflight-${{ inputs.rollout_sha }}
+          path: partner-production-rollout-preflight.json
+          if-no-files-found: error
+          retention-days: 14
+
+  owner_approval:
+    if: ${{ inputs.operation == 'apply' }}
+    needs: [preflight]
+    runs-on: ubuntu-latest
+    environment: production-migration-approval
+    timeout-minutes: 5
+    steps:
+      - name: Require the configured owner and SHA-bound confirmation
+        shell: bash
+        env:
+          EXPECTED_OWNER_LOGIN: ${{ vars.PRODUCTION_MIGRATION_OWNER_LOGIN }}
+          OWNER_CONFIRMATION: ${{ inputs.owner_confirmation }}
+          ROLLOUT_SHA: ${{ inputs.rollout_sha }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$EXPECTED_OWNER_LOGIN" ]]; then
+            echo "::error::PRODUCTION_MIGRATION_OWNER_LOGIN is not configured."
+            exit 1
+          fi
+          [[ "$GITHUB_ACTOR" == "$EXPECTED_OWNER_LOGIN" ]]
+          [[ "$GITHUB_TRIGGERING_ACTOR" == "$EXPECTED_OWNER_LOGIN" ]]
+          required="APPLY_PARTNER_MIGRATIONS_${ROLLOUT_SHA}"
+          if [[ "$OWNER_CONFIRMATION" != "$required" ]]; then
+            echo "::error::Owner confirmation does not match the rollout SHA."
+            exit 1
+          fi
+          echo "OWNER_APPROVAL=verified_for_exact_sha"
+
+  apply_migrations:
+    if: ${{ inputs.operation == 'apply' }}
+    needs: [preflight, owner_approval]
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 20
+    env:
+      EXPECTED_SUPABASE_PROJECT_REF: jwinifeienvzejofmbua
+      PGCONNECT_TIMEOUT: "10"
+    steps:
+      - name: Checkout exact approved rollout SHA
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: ${{ inputs.rollout_sha }}
+
+      - name: Revalidate exact immutable rollout inputs
+        shell: bash
+        env:
+          ROLLOUT_SHA: ${{ inputs.rollout_sha }}
+        run: |
+          set -euo pipefail
+          node scripts/partner-production-rollout-control.mjs preflight \
+            --expected-sha "$ROLLOUT_SHA" \
+            --require-main-ancestor
+
+      - name: Validate database credential target without logging it
+        shell: bash
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${SUPABASE_DB_URL:-}" ]]; then
+            echo "::error::SUPABASE_DB_URL is not configured."
+            exit 1
+          fi
+          echo "::add-mask::${SUPABASE_DB_URL}"
+          python3 - <<'PY'
+          import os
+          from urllib.parse import unquote, urlparse
+
+          raw = (os.environ.get('SUPABASE_DB_URL') or '').strip()
+          expected = (os.environ.get('EXPECTED_SUPABASE_PROJECT_REF') or '').strip().lower()
+          if not raw or '\r' in raw or '\n' in raw:
+              raise SystemExit('SUPABASE_DB_URL is invalid.')
+          parsed = urlparse(raw)
+          hostname = (parsed.hostname or '').lower()
+          username = unquote(parsed.username or '').lower()
+          direct_host = f'db.{expected}.supabase.co'
+          pooler_user = f'postgres.{expected}'
+          if parsed.scheme not in ('postgres', 'postgresql'):
+              raise SystemExit('SUPABASE_DB_URL must use postgres/postgresql.')
+          if hostname != direct_host and not (hostname.endswith('.pooler.supabase.com') and username == pooler_user):
+              raise SystemExit('SUPABASE_DB_URL project identity mismatch.')
+          print('PRODUCTION_DATABASE_IDENTITY=verified')
+          PY
+
+      - name: Ensure PostgreSQL client is available
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! command -v psql >/dev/null 2>&1; then
+            sudo apt-get update -qq
+            sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq postgresql-client
+          fi
+          psql --version
+
+      - name: Verify production prerequisites and empty partner state read-only
+        shell: bash
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          PGOPTIONS: >-
+            -c default_transaction_read_only=on
+            -c statement_timeout=30000
+            -c lock_timeout=3000
+        run: |
+          set -euo pipefail
+          echo "::add-mask::${SUPABASE_DB_URL}"
+          psql -X "$SUPABASE_DB_URL" \
+            --no-psqlrc \
+            --set ON_ERROR_STOP=1 \
+            --file scripts/partner-production-rollout-db-precheck.sql
+
+      - name: Apply exactly seven migrations atomically and verify schema
+        shell: bash
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          PGOPTIONS: >-
+            -c statement_timeout=600000
+            -c lock_timeout=5000
+        run: |
+          set -euo pipefail
+          echo "::add-mask::${SUPABASE_DB_URL}"
+          psql -X "$SUPABASE_DB_URL" \
+            --no-psqlrc \
+            --set ON_ERROR_STOP=1 \
+            --single-transaction \
+            --file supabase/migrations/20260816144742_partner_property_knowledge_schema_completion_v1.sql \
+            --file supabase/migrations/20260815102111_partner_communication_durable_state_v1.sql \
+            --file supabase/migrations/20260815130000_partner_authenticated_inbox_v1.sql \
+            --file supabase/migrations/20260815160000_partner_communication_brain_v1.sql \
+            --file supabase/migrations/20260815190000_partner_service_recovery_loop_v1.sql \
+            --file supabase/migrations/20260815210000_partner_review_reputation_engine_v1.sql \
+            --file supabase/migrations/20260815230000_partner_revenue_shadow_pricing_v1.sql \
+            --file scripts/partner-production-rollout-verify.sql
+          echo "PARTNER_PRODUCTION_ROLLOUT=seven_migrations_applied_and_verified"

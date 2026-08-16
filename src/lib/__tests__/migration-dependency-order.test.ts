@@ -49,6 +49,21 @@ describe('migration dependency order', () => {
     expect(positions).toEqual([...positions].sort((left, right) => left - right));
   });
 
+  it('preserves the approved partner rollout dependency order', () => {
+    const dependencyChain = [
+      '20260816144742_partner_property_knowledge_schema_completion_v1.sql',
+      '20260815102111_partner_communication_durable_state_v1.sql',
+      '20260815130000_partner_authenticated_inbox_v1.sql',
+      '20260815160000_partner_communication_brain_v1.sql',
+      '20260815190000_partner_service_recovery_loop_v1.sql',
+      '20260815210000_partner_review_reputation_engine_v1.sql',
+      '20260815230000_partner_revenue_shadow_pricing_v1.sql',
+    ];
+
+    expect(dependencyChain.every((file) => migrationFiles.includes(file))).toBe(true);
+    expect(new Set(dependencyChain).size).toBe(7);
+  });
+
   it('creates every migration-defined foreign key target before it is referenced', () => {
     const migrations = migrationFiles.map((file, fileIndex) => ({
       file,

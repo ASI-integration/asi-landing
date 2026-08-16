@@ -92,6 +92,7 @@ jobs:
           SELECT version
           FROM supabase_migrations.schema_migrations
           WHERE version IN (
+            '20260816144742',
             '20260815102111',
             '20260815130000',
             '20260815160000',
