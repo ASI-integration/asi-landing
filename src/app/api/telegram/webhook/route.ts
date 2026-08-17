@@ -34,8 +34,12 @@ export async function POST(req: Request): Promise<Response> {
     getHeader(req, 'x-telegram-bot-api-secret-token') ??
     getHeader(req, 'X-Telegram-Bot-Api-Secret-Token');
 
-  // Telegram treats 4xx as final, so keep this strict only when configured.
-  if (secretExpected && secretGot !== secretExpected) {
+  if (!secretExpected?.trim()) {
+    console.error('[tg:webhook] 503 webhook secret is not configured');
+    return NextResponse.json({ ok: false, error: 'service_unavailable' }, { status: 503 });
+  }
+
+  if (secretGot !== secretExpected) {
     console.warn('[tg:webhook] 403 secret mismatch', {
       hasSecretHeader: Boolean(secretGot),
     });
