@@ -141,6 +141,22 @@ export function runCommunicationAutopilotV1(input: {
       memoryUsed: Boolean(input.session?.language),
     };
   }
+  if (input.passport?.loadStatus === 'lookup_failed') {
+    return {
+      action: 'operator_handoff',
+      replyText: handoffReply(language),
+      topic: classifyKnowledgeTopic(messageText),
+      intent: 'property_knowledge_lookup_failed',
+      needsOperator: true,
+      resolved: false,
+      missingFields: [],
+      escalationReason: 'property_knowledge_lookup_failed',
+      language,
+      memoryUsed: false,
+      unresolvedAction: 'property_knowledge_lookup_failed',
+      safetyBlockedAction: true,
+    };
+  }
   const continuation = continuationText({ messageText, session: input.session, language });
   const relevantLongTermMemoryUsed = Boolean(
     input.guestMemory?.preferences.length ||

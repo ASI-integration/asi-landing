@@ -2129,6 +2129,49 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
       });
     };
 
+    if (commContext.knowledge.loadStatus === 'lookup_failed') {
+      escalation = createEscalationEvent({
+        reason: EscalationReason.ProcessingError,
+        chat_id: chatId,
+        update_id,
+        classification,
+        summary: 'property_knowledge_lookup_failed',
+      });
+      persistEscalationReview({
+        reason: 'property_knowledge_lookup_failed',
+        escalationSummary: 'property_knowledge_lookup_failed',
+        confidence: 1,
+        detail: 'Property knowledge could not be loaded; operator review required.',
+        source: {
+          route: 'property_knowledge_safe_fallback',
+          property_id: commContext.reservation.propertyId ?? null,
+          needs_operator: true,
+        },
+      });
+      auditEscalation({
+        chat_id: chatId,
+        update_id,
+        detail: 'property_knowledge_lookup_failed',
+      });
+      await withAwaitCheckpoint(
+        'session.transition.operator_review_required_property_knowledge',
+        () => transitionSessionStatus(chatId, SessionStatus.OperatorReviewRequired),
+        { chat_id: chatId },
+        15_000,
+      );
+      const safeFallback = classification.lang === 'ru'
+        ? 'Передал запрос оператору — вернёмся с ответом.'
+        : 'I’ve forwarded this to our team to review and will get back to you shortly.';
+      replyText = adapter.formatResponse(safeFallback, commContext as unknown as Record<string, unknown>);
+      llmSucceeded = true;
+      usedPath = 'deterministic';
+      convSession = transitionConversationSessionState(
+        convSession,
+        'escalated',
+        'property_knowledge_lookup_failed',
+      );
+    }
+
     const voiceMeta = (envelope.metadata as any)?.voice as Record<string, unknown> | undefined;
     const voiceSourceBase = voiceMeta
       ? {

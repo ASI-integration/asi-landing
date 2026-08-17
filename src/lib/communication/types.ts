@@ -688,6 +688,10 @@ export type ResponsePlan = {
 
 export interface GroundedKnowledge {
   universalPolicy: string;
+  /** Exact property scope used for this lookup; absent when no property was requested. */
+  propertyId?: string;
+  /** Distinguishes an absent row from an unavailable database/query path. */
+  loadStatus?: 'found' | 'not_found' | 'not_requested' | 'lookup_failed';
   propertyPolicy?: string;
   houseRules?: string;
   checkInInstructions?: string;
