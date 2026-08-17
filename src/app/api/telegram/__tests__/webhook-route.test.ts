@@ -6,6 +6,15 @@ vi.mock('@/lib/communication/orchestrator', () => ({
   processUpdate: (...args: unknown[]) => mockProcessUpdate(...args),
 }));
 
+const mockClaimTelegramInboundReceipt = vi.fn();
+const mockCompleteTelegramInboundReceipt = vi.fn();
+const mockFailTelegramInboundReceipt = vi.fn();
+vi.mock('@/lib/communication/telegram-inbound-receipts', () => ({
+  claimTelegramInboundReceipt: (...args: unknown[]) => mockClaimTelegramInboundReceipt(...args),
+  completeTelegramInboundReceipt: (...args: unknown[]) => mockCompleteTelegramInboundReceipt(...args),
+  failTelegramInboundReceipt: (...args: unknown[]) => mockFailTelegramInboundReceipt(...args),
+}));
+
 const mockProcessTelegramVoiceUpdate = vi.fn();
 vi.mock('@/lib/communication/telegram-voice-inbound', () => ({
   processTelegramVoiceUpdate: (...args: unknown[]) => mockProcessTelegramVoiceUpdate(...args),
@@ -41,7 +50,20 @@ describe('Telegram webhook route', () => {
     mockProcessTelegramVoiceUpdate.mockReset();
     mockReplyToTelegram.mockReset();
     mockSendTelegramChatAction.mockReset();
+    mockClaimTelegramInboundReceipt.mockReset();
+    mockCompleteTelegramInboundReceipt.mockReset();
+    mockFailTelegramInboundReceipt.mockReset();
     mockSendTelegramChatAction.mockResolvedValue(true);
+    mockClaimTelegramInboundReceipt.mockImplementation(async (update) => ({
+      action: 'process',
+      receiptId: `receipt-${update.update_id}`,
+      claimToken: `claim-${update.update_id}`,
+      retryCount: 0,
+      scope: { accountId: null, propertyId: null },
+      update,
+    }));
+    mockCompleteTelegramInboundReceipt.mockResolvedValue(undefined);
+    mockFailTelegramInboundReceipt.mockResolvedValue(undefined);
     process.env.TELEGRAM_WEBHOOK_SECRET = WEBHOOK_SECRET;
     vi.useRealTimers();
   });
@@ -95,7 +117,8 @@ describe('Telegram webhook route', () => {
     const res = await POST(telegramRequest(update));
 
     expect(res.status).toBe(200);
-    expect(mockProcessUpdate).toHaveBeenCalledWith(update);
+    expect(mockProcessUpdate).toHaveBeenCalledWith(update, { durableReceiptOwned: true });
+    expect(mockCompleteTelegramInboundReceipt).toHaveBeenCalledWith(expect.objectContaining({ outcome: 'replied' }));
   });
 
   it('detects Telegram voice messages and uses the voice inbound path', async () => {
@@ -112,7 +135,7 @@ describe('Telegram webhook route', () => {
 
     expect(res.status).toBe(200);
     expect(body).toMatchObject({ ok: true, path: 'voice_transcript_processed' });
-    expect(mockProcessTelegramVoiceUpdate).toHaveBeenCalledWith(update);
+    expect(mockProcessTelegramVoiceUpdate).toHaveBeenCalledWith(update, { durableReceiptOwned: true });
     expect(mockProcessUpdate).toHaveBeenCalledTimes(0);
     expect(mockSendTelegramChatAction).toHaveBeenCalledWith(
       111,
@@ -135,7 +158,7 @@ describe('Telegram webhook route', () => {
 
     expect(res.status).toBe(200);
     expect(body).toMatchObject({ ok: true, path: 'voice_transcript_processed' });
-    expect(mockProcessTelegramVoiceUpdate).toHaveBeenCalledWith(update);
+    expect(mockProcessTelegramVoiceUpdate).toHaveBeenCalledWith(update, { durableReceiptOwned: true });
     expect(mockProcessUpdate).toHaveBeenCalledTimes(0);
   });
 
@@ -148,7 +171,7 @@ describe('Telegram webhook route', () => {
 
     expect(res.status).toBe(200);
     expect(body).toMatchObject({ ok: true });
-    expect(mockProcessUpdate).toHaveBeenCalledWith(update);
+    expect(mockProcessUpdate).toHaveBeenCalledWith(update, { durableReceiptOwned: true });
     expect(mockProcessTelegramVoiceUpdate).toHaveBeenCalledTimes(0);
     expect(mockSendTelegramChatAction).toHaveBeenCalledWith(
       333,
@@ -178,8 +201,113 @@ describe('Telegram webhook route', () => {
 
     expect(res.status).toBe(200);
     expect(body).toMatchObject({ ok: true });
-    expect(mockProcessUpdate).toHaveBeenCalledWith(update);
+    expect(mockProcessUpdate).toHaveBeenCalledWith(update, { durableReceiptOwned: true });
     expect(mockProcessTelegramVoiceUpdate).toHaveBeenCalledTimes(0);
+  });
+
+  it('processes a duplicate delivery only once after the durable receipt is complete', async () => {
+    const update = tgTextUpdate({ chat_id: 778, update_id: 9011, message_id: 56, text: 'Wi-Fi?' });
+    const ownedClaim = {
+      action: 'process',
+      receiptId: 'receipt-9011',
+      claimToken: 'claim-9011',
+      retryCount: 0,
+      scope: { accountId: 'account-a', propertyId: 'property-a' },
+      update,
+    };
+    mockClaimTelegramInboundReceipt
+      .mockResolvedValueOnce(ownedClaim)
+      .mockResolvedValueOnce({ ...ownedClaim, action: 'duplicate' });
+    mockProcessUpdate.mockResolvedValue({ outcome: 'replied', update_id: 9011, chat_id: 778 });
+
+    const first = await POST(telegramRequest(update));
+    const duplicate = await POST(telegramRequest(update));
+
+    expect(first.status).toBe(200);
+    expect(duplicate.status).toBe(200);
+    await expect(duplicate.json()).resolves.toMatchObject({ ok: true, duplicate: true });
+    expect(mockProcessUpdate).toHaveBeenCalledTimes(1);
+    expect(mockCompleteTelegramInboundReceipt).toHaveBeenCalledTimes(1);
+    expect(mockFailTelegramInboundReceipt).not.toHaveBeenCalled();
+  });
+
+  it('keeps a thrown downstream failure retryable and operator-visible', async () => {
+    const update = tgTextUpdate({ chat_id: 779, update_id: 9012, message_id: 57, text: 'Не могу войти' });
+    mockProcessUpdate.mockRejectedValue(new Error('downstream unavailable'));
+
+    const res = await POST(telegramRequest(update));
+
+    expect(res.status).toBe(503);
+    expect(mockFailTelegramInboundReceipt).toHaveBeenCalledWith(expect.objectContaining({
+      failureCode: 'processing_threw',
+      claim: expect.objectContaining({ receiptId: 'receipt-9012' }),
+    }));
+    expect(mockCompleteTelegramInboundReceipt).not.toHaveBeenCalled();
+  });
+
+  it('does not treat an explicit ProcessOutcome.Error as successful processing', async () => {
+    const update = tgTextUpdate({ chat_id: 780, update_id: 9013, message_id: 58, text: 'Нужна помощь' });
+    mockProcessUpdate.mockResolvedValue({ outcome: 'error', update_id: 9013, chat_id: 780 });
+
+    const res = await POST(telegramRequest(update));
+
+    expect(res.status).toBe(503);
+    expect(mockFailTelegramInboundReceipt).toHaveBeenCalledWith(expect.objectContaining({
+      failureCode: 'process_outcome_error',
+    }));
+    expect(mockCompleteTelegramInboundReceipt).not.toHaveBeenCalled();
+  });
+
+  it('does not process or acknowledge when durable receipt persistence fails', async () => {
+    const update = tgTextUpdate({ chat_id: 781, update_id: 9014, message_id: 59, text: 'Hello' });
+    mockClaimTelegramInboundReceipt.mockRejectedValue(new Error('database unavailable'));
+
+    const res = await POST(telegramRequest(update));
+
+    expect(res.status).toBe(503);
+    expect(mockProcessUpdate).not.toHaveBeenCalled();
+    expect(mockProcessTelegramVoiceUpdate).not.toHaveBeenCalled();
+    expect(mockSendTelegramChatAction).not.toHaveBeenCalled();
+  });
+
+  it('retries the same failed durable receipt and completes it without a second receipt', async () => {
+    const update = tgTextUpdate({ chat_id: 782, update_id: 9015, message_id: 60, text: 'Где ключи?' });
+    mockClaimTelegramInboundReceipt
+      .mockResolvedValueOnce({
+        action: 'process', receiptId: 'receipt-9015', claimToken: 'claim-first', retryCount: 0,
+        scope: { accountId: 'account-a', propertyId: 'property-a' }, update,
+      })
+      .mockResolvedValueOnce({
+        action: 'process', receiptId: 'receipt-9015', claimToken: 'claim-retry', retryCount: 1,
+        scope: { accountId: 'account-a', propertyId: 'property-a' }, update,
+      });
+    mockProcessUpdate
+      .mockResolvedValueOnce({ outcome: 'error', update_id: 9015, chat_id: 782 })
+      .mockResolvedValueOnce({ outcome: 'replied', update_id: 9015, chat_id: 782 });
+
+    const failed = await POST(telegramRequest(update));
+    const retried = await POST(telegramRequest(update));
+
+    expect(failed.status).toBe(503);
+    expect(retried.status).toBe(200);
+    expect(mockFailTelegramInboundReceipt).toHaveBeenCalledTimes(1);
+    expect(mockCompleteTelegramInboundReceipt).toHaveBeenCalledWith(expect.objectContaining({
+      claim: expect.objectContaining({ receiptId: 'receipt-9015', retryCount: 1 }),
+      outcome: 'replied',
+    }));
+  });
+
+  it('fails closed when the durable receipt rejects a mismatched tenant/event scope', async () => {
+    const update = tgTextUpdate({ chat_id: 783, update_id: 9016, message_id: 61, text: 'Replay' });
+    mockClaimTelegramInboundReceipt.mockRejectedValue(
+      new Error('telegram_inbound_receipt_claim_failed:telegram_inbound_receipt_identity_mismatch'),
+    );
+
+    const res = await POST(telegramRequest(update));
+
+    expect(res.status).toBe(503);
+    expect(mockProcessUpdate).not.toHaveBeenCalled();
+    expect(mockCompleteTelegramInboundReceipt).not.toHaveBeenCalled();
   });
 
   it('does not send an extra slow acknowledgement while waiting for final processing', async () => {

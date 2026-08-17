@@ -4968,7 +4968,10 @@ function telegramIdentityCallbackToRoute(data: unknown): {
   }
 }
 
-async function processTelegramCallbackQuery(update: TelegramUpdate): Promise<ProcessResult | null> {
+async function processTelegramCallbackQuery(
+  update: TelegramUpdate,
+  options?: { durableReceiptOwned?: boolean },
+): Promise<ProcessResult | null> {
   const callback = update.callback_query;
   if (!callback) return null;
 
@@ -4997,7 +5000,7 @@ async function processTelegramCallbackQuery(update: TelegramUpdate): Promise<Pro
   }
 
   const inboundKey = ['telegram', 'callback_query', callback.id].join(':');
-  if (checkAndMarkKey({
+  if (!options?.durableReceiptOwned && checkAndMarkKey({
     scope: 'inbound',
     key: inboundKey,
     meta: {
@@ -5071,8 +5074,11 @@ async function shouldRouteTelegramIdentityBeforePromptGuard(params: {
   );
 }
 
-export async function processUpdate(update: TelegramUpdate): Promise<ProcessResult> {
-  const callbackResult = await processTelegramCallbackQuery(update);
+export async function processUpdate(
+  update: TelegramUpdate,
+  options?: { durableReceiptOwned?: boolean },
+): Promise<ProcessResult> {
+  const callbackResult = await processTelegramCallbackQuery(update, options);
   if (callbackResult) return callbackResult;
 
   const event = getTelegramUpdateEvent(update);
@@ -5081,7 +5087,7 @@ export async function processUpdate(update: TelegramUpdate): Promise<ProcessResu
   const eventOccurrenceId = telegramEventOccurrenceId(update, message, event.type);
   const inboundKey = telegramInboundIdempotencyKey(update, message, event.type);
 
-  if (checkAndMarkKey({
+  if (!options?.durableReceiptOwned && checkAndMarkKey({
     scope: 'inbound',
     key: inboundKey,
     meta: {
