@@ -1,5 +1,5 @@
 import { supabase } from '@/lib/supabase';
-import { GroundedKnowledge } from './types';
+import type { GroundedKnowledge } from './types';
 
 const UNIVERSAL_POLICY =
   `General Policy: Be helpful, concise, and professional. ` +
@@ -7,31 +7,53 @@ const UNIVERSAL_POLICY =
   `If information is missing, state 'That information is unavailable right now'. ` +
   `Never fabricate house rules, fees, times, access details, or payment conditions.`;
 
-/**
- * Legacy/mock fallback knowledge store. Kept intentionally so local/dev runs can
- * still function when Supabase tables are missing or unavailable.
- */
-const PROPERTY_DB: Record<string, Partial<GroundedKnowledge>> = {
-  prop_A: {
-    propertyPolicy: 'Strict quiet hours from 10 PM to 8 AM.',
-    houseRules: 'No smoking, no pets. Parties are strictly forbidden.',
-    checkInInstructions: 'Smart lock code is 1234*. Check-in is at 3:00 PM.',
-    checkOutInstructions: 'Leave keys on table. Checkout at 11:00 AM.',
-    wifiInstructions: 'Network: GuestWifi, Pass: secret123',
-    emergencyContacts: 'Call maintenance at 555-0199 for plumbing/heating issues.',
-    upsells: 'Late checkout available for $50. Extra towels $10.',
-  },
+type PropertyKnowledgeRow = {
+  property_id: string;
+  property_policy: string | null;
+  house_rules: string | null;
+  checkin_instructions: string | null;
+  checkout_notes: string | null;
+  wifi_instructions: string | null;
+  wifi_name: string | null;
+  wifi_password: string | null;
+  parking_instructions: string | null;
+  payment_rules: string | null;
+  upsells: string | null;
+  emergency_contacts: string | null;
+  active: boolean;
 };
+
+const UNAVAILABLE = 'Information unavailable.';
+
+function unavailableKnowledge(
+  loadStatus: GroundedKnowledge['loadStatus'],
+  propertyId?: string,
+): GroundedKnowledge {
+  return {
+    universalPolicy: UNIVERSAL_POLICY,
+    ...(propertyId ? { propertyId } : {}),
+    loadStatus,
+    propertyPolicy: UNAVAILABLE,
+    houseRules: UNAVAILABLE,
+    checkInInstructions: UNAVAILABLE,
+    checkOutInstructions: UNAVAILABLE,
+    wifiInstructions: UNAVAILABLE,
+    parkingInstructions: UNAVAILABLE,
+    paymentRules: UNAVAILABLE,
+    upsells: UNAVAILABLE,
+    emergencyContacts: UNAVAILABLE,
+  };
+}
 
 /**
  * Retrieves documented knowledge for the given property.
  * Applies the universal policy and explicitly states if specific info is unavailable.
  */
-export async function getGroundedKnowledge(propertyId?: string, listingId?: string): Promise<GroundedKnowledge> {
-  const base: GroundedKnowledge = {
-    universalPolicy: UNIVERSAL_POLICY,
-  };
-
+export async function getGroundedKnowledge(
+  propertyId?: string,
+  listingId?: string,
+  client: typeof supabase = supabase,
+): Promise<GroundedKnowledge> {
   const debug = process.env.RU_TELEGRAM_DEBUG === '1';
   const startedAt = Date.now();
 
@@ -44,33 +66,22 @@ export async function getGroundedKnowledge(propertyId?: string, listingId?: stri
         latency_ms: Date.now() - startedAt,
       });
     }
-    return {
-      ...base,
-      propertyPolicy: 'Information unavailable.',
-      houseRules: 'Information unavailable.',
-      checkInInstructions: 'Information unavailable.',
-      checkOutInstructions: 'Information unavailable.',
-      wifiInstructions: 'Information unavailable.',
-      parkingInstructions: 'Information unavailable.',
-      paymentRules: 'Information unavailable.',
-      upsells: 'Information unavailable.',
-      emergencyContacts: 'Information unavailable.',
-    };
+    return unavailableKnowledge('not_requested');
   }
 
-  // Prefer Supabase-backed knowledge when available.
   // NOTE: listingId currently isn't persisted in tg_property_knowledge; we keep
   // the param for forward-compatibility.
   try {
     if (propertyId) {
-      const { data, error } = await supabase
+      const { data, error } = await client
         .from('tg_property_knowledge')
         .select(
           [
+            'property_id',
             'property_policy',
             'house_rules',
-            'check_in_instructions',
-            'check_out_instructions',
+            'checkin_instructions',
+            'checkout_notes',
             'wifi_instructions',
             'wifi_name',
             'wifi_password',
@@ -84,24 +95,44 @@ export async function getGroundedKnowledge(propertyId?: string, listingId?: stri
         .eq('property_id', propertyId)
         .maybeSingle();
 
-      if (!error && data) {
+      if (error) {
+        console.error('[ru:tg] knowledge.load failed', {
+          property_id: propertyId,
+          listing_id: listingId ?? null,
+          error: error.message,
+        });
+        return unavailableKnowledge('lookup_failed', propertyId);
+      }
+
+      if (data) {
+        const row = data as unknown as PropertyKnowledgeRow;
+        if (row.property_id !== propertyId) {
+          console.error('[ru:tg] knowledge.load scope mismatch', {
+            requested_property_id: propertyId,
+            returned_property_id: row.property_id,
+          });
+          return unavailableKnowledge('lookup_failed', propertyId);
+        }
+
         const wifiInstructions =
-          (data as any).wifi_instructions ??
-          (((data as any).wifi_name || (data as any).wifi_password)
-            ? `Network: ${(data as any).wifi_name ?? ''}, Password: ${(data as any).wifi_password ?? ''}`
+          row.wifi_instructions ??
+          ((row.wifi_name || row.wifi_password)
+            ? `Network: ${row.wifi_name ?? ''}, Password: ${row.wifi_password ?? ''}`
             : null);
 
         const out: GroundedKnowledge = {
-          ...base,
-          propertyPolicy: (data as any).property_policy ?? 'Information unavailable.',
-          houseRules: (data as any).house_rules ?? 'Information unavailable.',
-          checkInInstructions: (data as any).check_in_instructions ?? 'Information unavailable.',
-          checkOutInstructions: (data as any).check_out_instructions ?? 'Information unavailable.',
-          wifiInstructions: wifiInstructions ?? 'Information unavailable.',
-          parkingInstructions: (data as any).parking_instructions ?? 'Information unavailable.',
-          paymentRules: (data as any).payment_rules ?? 'Information unavailable.',
-          upsells: (data as any).upsells ?? 'Information unavailable.',
-          emergencyContacts: (data as any).emergency_contacts ?? 'Information unavailable.',
+          universalPolicy: UNIVERSAL_POLICY,
+          propertyId: row.property_id,
+          loadStatus: 'found',
+          propertyPolicy: row.property_policy ?? UNAVAILABLE,
+          houseRules: row.house_rules ?? UNAVAILABLE,
+          checkInInstructions: row.checkin_instructions ?? UNAVAILABLE,
+          checkOutInstructions: row.checkout_notes ?? UNAVAILABLE,
+          wifiInstructions: wifiInstructions ?? UNAVAILABLE,
+          parkingInstructions: row.parking_instructions ?? UNAVAILABLE,
+          paymentRules: row.payment_rules ?? UNAVAILABLE,
+          upsells: row.upsells ?? UNAVAILABLE,
+          emergencyContacts: row.emergency_contacts ?? UNAVAILABLE,
         };
 
         if (debug) {
@@ -116,7 +147,7 @@ export async function getGroundedKnowledge(propertyId?: string, listingId?: stri
         return out;
       }
 
-      if (debug && !error) {
+      if (debug) {
         console.log('[ru:tg] knowledge.load supabase', {
           source: 'supabase_no_row',
           property_id: propertyId,
@@ -124,34 +155,16 @@ export async function getGroundedKnowledge(propertyId?: string, listingId?: stri
           latency_ms: Date.now() - startedAt,
         });
       }
+      return unavailableKnowledge('not_found', propertyId);
     }
-  } catch {
-    // Fall back below.
-  }
-
-  // Last resort: legacy in-repo mock store (local/dev friendliness).
-  const prop = propertyId && PROPERTY_DB[propertyId] ? PROPERTY_DB[propertyId] : {};
-  const out: GroundedKnowledge = {
-    ...base,
-    propertyPolicy: prop.propertyPolicy ?? 'Information unavailable.',
-    houseRules: prop.houseRules ?? 'Information unavailable.',
-    checkInInstructions: prop.checkInInstructions ?? 'Information unavailable.',
-    checkOutInstructions: prop.checkOutInstructions ?? 'Information unavailable.',
-    wifiInstructions: prop.wifiInstructions ?? 'Information unavailable.',
-    parkingInstructions: prop.parkingInstructions ?? 'Information unavailable.',
-    paymentRules: prop.paymentRules ?? 'Information unavailable.',
-    upsells: prop.upsells ?? 'Information unavailable.',
-    emergencyContacts: prop.emergencyContacts ?? 'Information unavailable.',
-  };
-
-  if (debug) {
-    console.log('[ru:tg] knowledge.load fallback', {
-      source: propertyId && PROPERTY_DB[propertyId] ? 'mock' : 'fallback_empty',
+  } catch (error) {
+    console.error('[ru:tg] knowledge.load failed', {
       property_id: propertyId ?? null,
       listing_id: listingId ?? null,
-      latency_ms: Date.now() - startedAt,
+      error: error instanceof Error ? error.message : String(error),
     });
+    return unavailableKnowledge('lookup_failed', propertyId);
   }
 
-  return out;
+  return unavailableKnowledge('not_requested');
 }

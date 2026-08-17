@@ -4,6 +4,10 @@ import { ProcessOutcome, TelegramUpdate, IntentCategory, EscalationReason } from
 
 // ─── Mocks ────────────────────────────────────────────────────────────────────
 
+const knowledgeLoader = vi.hoisted(() => ({
+  failed: false,
+}));
+
 // Mock Supabase persistence so tests don't need a real DB
 vi.mock('@/lib/supabase', () => ({
   supabase: {
@@ -13,6 +17,28 @@ vi.mock('@/lib/supabase', () => ({
       select: () => ({ eq: () => ({ single: async () => ({ data: null, error: { message: 'not found' } }) }) }),
     }),
   },
+}));
+
+vi.mock('../knowledge', () => ({
+  getGroundedKnowledge: vi.fn(async (propertyId?: string) => knowledgeLoader.failed
+    ? {
+        universalPolicy: 'Never fabricate.',
+        propertyId,
+        loadStatus: 'lookup_failed',
+        checkInInstructions: 'Information unavailable.',
+        checkOutInstructions: 'Information unavailable.',
+        wifiInstructions: 'Information unavailable.',
+      }
+    : {
+        universalPolicy: 'Never fabricate.',
+        propertyId,
+        loadStatus: propertyId ? 'found' : 'not_requested',
+        propertyPolicy: 'Strict quiet hours from 10 PM to 8 AM.',
+        houseRules: 'No smoking, no pets. Parties are strictly forbidden.',
+        checkInInstructions: 'Smart lock code is 1234*. Check-in is at 3:00 PM.',
+        checkOutInstructions: 'Leave keys on table. Checkout at 11:00 AM.',
+        wifiInstructions: 'Network: GuestWifi, Pass: secret123',
+      }),
 }));
 
 // Mock channel adapter sendMessage (delivery path)
@@ -111,6 +137,7 @@ describe('processUpdate', () => {
     mockDetectIntent.mockClear();
     mockDetectIntent.mockResolvedValue({ intent: IntentCategory.GeneralQuestion, confidence: 0.9 });
     mockCreatePaymentRequest.mockClear();
+    knowledgeLoader.failed = false;
   });
 
   it('replies to a valid message and returns Replied outcome', async () => {
@@ -165,6 +192,27 @@ describe('processUpdate', () => {
     expect(mockSendMessage).toHaveBeenCalled();
     expect(mockSendMessage.mock.calls.at(-1)?.[0]).toBe('93119812');
     expect(mockSendMessage.mock.calls.at(-1)?.[0]).not.toBe('567508');
+  });
+
+  it('routes a property-knowledge query failure to a visible operator escalation without mock data', async () => {
+    knowledgeLoader.failed = true;
+
+    const result = await processMessage({
+      channel: 'telegram',
+      externalUserId: '567508',
+      chatId: '93119812',
+      messageText: 'what time is check-in?',
+      receivedAt: new Date(),
+      update_id: nextUpdateId++,
+    });
+
+    expect(result.outcome).toBe(ProcessOutcome.Replied);
+    expect(result.escalation?.reason).toBe(EscalationReason.ProcessingError);
+    expect(result.reply).toMatch(/forwarded.*team|operator/i);
+    expect(result.reply).not.toMatch(/1234|GuestWifi|secret123/i);
+    expect(listEscalationReviews({ status: 'pending' })).toEqual([
+      expect.objectContaining({ escalationReason: 'property_knowledge_lookup_failed' }),
+    ]);
   });
 
   it('injects session context into LLM prompt', async () => {
