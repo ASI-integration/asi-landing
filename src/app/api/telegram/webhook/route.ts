@@ -2,7 +2,13 @@ import { NextResponse } from 'next/server';
 
 import { processUpdate } from '@/lib/communication/orchestrator';
 import { processTelegramVoiceUpdate } from '@/lib/communication/telegram-voice-inbound';
+import {
+  claimTelegramInboundReceipt,
+  completeTelegramInboundReceipt,
+  failTelegramInboundReceipt,
+} from '@/lib/communication/telegram-inbound-receipts';
 import type { TelegramUpdate } from '@/lib/communication/types';
+import { ProcessOutcome } from '@/lib/communication/types';
 import { sendTelegramChatAction } from '@/lib/telegram';
 
 export const runtime = 'nodejs';
@@ -85,6 +91,25 @@ export async function POST(req: Request): Promise<Response> {
     chat_id: chatId,
     stage_ms: Date.now() - webhookStartedAt,
   });
+
+  let claim: Awaited<ReturnType<typeof claimTelegramInboundReceipt>>;
+  try {
+    claim = await claimTelegramInboundReceipt(update);
+  } catch (error) {
+    console.error('[tg:webhook] durable receipt failed', error instanceof Error ? error.message : String(error));
+    return NextResponse.json({ ok: false, error: 'receipt_unavailable' }, { status: 503 });
+  }
+
+  if (claim.action === 'duplicate') {
+    return NextResponse.json({ ok: true, duplicate: true }, { status: 200 });
+  }
+  if (claim.action === 'busy') {
+    return NextResponse.json({ ok: false, error: 'processing_in_progress' }, { status: 503 });
+  }
+
+  // From this point onward the database receipt owns the event. The stored payload
+  // and stored tenant scope are canonical for retries; request-supplied scope is never used.
+  update = claim.update;
   if (process.env.COMM_PIPELINE_DEBUG === '1' || process.env.TELEGRAM_DEBUG === '1') {
     const voice = (message as any)?.voice ?? null;
     const audio = (message as any)?.audio ?? null;
@@ -112,7 +137,12 @@ export async function POST(req: Request): Promise<Response> {
         has_voice: hasVoice,
         has_audio: hasAudio,
       });
-      const voiceResult = await processTelegramVoiceUpdate(update);
+      const voiceResult = await processTelegramVoiceUpdate(update, { durableReceiptOwned: true });
+      if (voiceResult.outcome === 'voice_fallback_sent' && voiceResult.reason === 'processing_failed') {
+        await failTelegramInboundReceipt({ claim, failureCode: 'process_outcome_error' });
+        return NextResponse.json({ ok: false, error: 'processing_failed' }, { status: 503 });
+      }
+      await completeTelegramInboundReceipt({ claim, outcome: voiceResult.outcome });
       return NextResponse.json({ ok: true, path: voiceResult.outcome }, { status: 200 });
     }
 
@@ -120,7 +150,12 @@ export async function POST(req: Request): Promise<Response> {
     if (hasText && typeof chatId === 'number') {
       sendTypingIndicator(chatId, update?.update_id, 'text');
     }
-    const result = await processUpdate(update);
+    const result = await processUpdate(update, { durableReceiptOwned: true });
+    if (result.outcome === ProcessOutcome.Error) {
+      await failTelegramInboundReceipt({ claim, failureCode: 'process_outcome_error' });
+      return NextResponse.json({ ok: false, error: 'processing_failed' }, { status: 503 });
+    }
+    await completeTelegramInboundReceipt({ claim, outcome: result.outcome });
     if (process.env.COMM_PIPELINE_DEBUG === '1' || process.env.TELEGRAM_DEBUG === '1') {
       console.log('[tg:webhook] processed', {
         outcome: result.outcome,
@@ -131,7 +166,15 @@ export async function POST(req: Request): Promise<Response> {
     }
   } catch (e) {
     console.error('[tg:webhook] processUpdate threw', e);
-    // Still 200: Telegram webhooks should not retry due to internal errors.
+    try {
+      await failTelegramInboundReceipt({ claim, failureCode: 'processing_threw' });
+    } catch (failureError) {
+      console.error(
+        '[tg:webhook] failed to transition durable receipt',
+        failureError instanceof Error ? failureError.message : String(failureError),
+      );
+    }
+    return NextResponse.json({ ok: false, error: 'processing_failed' }, { status: 503 });
   }
 
   return NextResponse.json({ ok: true }, { status: 200 });

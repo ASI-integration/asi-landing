@@ -82,7 +82,10 @@ async function sendVoiceFallback(params: {
   };
 }
 
-export async function processTelegramVoiceUpdate(update: TelegramUpdate): Promise<TelegramVoiceInboundResult> {
+export async function processTelegramVoiceUpdate(
+  update: TelegramUpdate,
+  options?: { durableReceiptOwned?: boolean },
+): Promise<TelegramVoiceInboundResult> {
   const message = update.message ?? update.edited_message;
   if (!message) return { outcome: 'ignored', reason: 'no_message' };
 
@@ -112,7 +115,7 @@ export async function processTelegramVoiceUpdate(update: TelegramUpdate): Promis
   });
 
   const inboundKey = `tg_voice:${updateId}:${messageId}:${fileId}`;
-  if (checkAndMarkKey({ scope: 'inbound', key: inboundKey, meta: { update_id: updateId, chat_id: chatId, message_id: messageId } })) {
+  if (!options?.durableReceiptOwned && checkAndMarkKey({ scope: 'inbound', key: inboundKey, meta: { update_id: updateId, chat_id: chatId, message_id: messageId } })) {
     console.info('[tg:voice] duplicate.inbound', { update_id: updateId, chat_id: chatId, message_id: messageId });
     auditDuplicate({ chat_id: chatId, update_id: updateId });
     return { outcome: 'duplicate', key: inboundKey };
