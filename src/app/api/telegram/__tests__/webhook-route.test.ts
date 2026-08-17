@@ -20,10 +20,17 @@ vi.mock('@/lib/telegram', () => ({
 
 import { POST } from '../webhook/route';
 
-function telegramRequest(body: unknown): Request {
+const WEBHOOK_SECRET = 'test-webhook-secret';
+
+function telegramRequest(body: unknown, secretToken: string | null = WEBHOOK_SECRET): Request {
+  const headers = new Headers({ 'content-type': 'application/json' });
+  if (secretToken !== null) {
+    headers.set('x-telegram-bot-api-secret-token', secretToken);
+  }
+
   return new Request('https://example.test/api/telegram/webhook', {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers,
     body: JSON.stringify(body),
   });
 }
@@ -35,8 +42,60 @@ describe('Telegram webhook route', () => {
     mockReplyToTelegram.mockReset();
     mockSendTelegramChatAction.mockReset();
     mockSendTelegramChatAction.mockResolvedValue(true);
-    delete process.env.TELEGRAM_WEBHOOK_SECRET;
+    process.env.TELEGRAM_WEBHOOK_SECRET = WEBHOOK_SECRET;
     vi.useRealTimers();
+  });
+
+  it('returns 503 without processing when the configured secret is missing', async () => {
+    delete process.env.TELEGRAM_WEBHOOK_SECRET;
+
+    const res = await POST(telegramRequest(tgTextUpdate({ chat_id: 100, text: 'blocked' })));
+
+    expect(res.status).toBe(503);
+    expect(mockProcessUpdate).not.toHaveBeenCalled();
+    expect(mockProcessTelegramVoiceUpdate).not.toHaveBeenCalled();
+    expect(mockSendTelegramChatAction).not.toHaveBeenCalled();
+  });
+
+  it('returns 503 without processing when the configured secret is blank', async () => {
+    process.env.TELEGRAM_WEBHOOK_SECRET = '   ';
+
+    const res = await POST(telegramRequest(tgTextUpdate({ chat_id: 100, text: 'blocked' })));
+
+    expect(res.status).toBe(503);
+    expect(mockProcessUpdate).not.toHaveBeenCalled();
+    expect(mockProcessTelegramVoiceUpdate).not.toHaveBeenCalled();
+    expect(mockSendTelegramChatAction).not.toHaveBeenCalled();
+  });
+
+  it('returns 403 without processing when request authentication is missing', async () => {
+    const res = await POST(telegramRequest(tgTextUpdate({ chat_id: 100, text: 'blocked' }), null));
+
+    expect(res.status).toBe(403);
+    expect(mockProcessUpdate).not.toHaveBeenCalled();
+    expect(mockProcessTelegramVoiceUpdate).not.toHaveBeenCalled();
+    expect(mockSendTelegramChatAction).not.toHaveBeenCalled();
+  });
+
+  it('returns 403 without processing when request authentication is incorrect', async () => {
+    const res = await POST(
+      telegramRequest(tgTextUpdate({ chat_id: 100, text: 'blocked' }), 'wrong-secret'),
+    );
+
+    expect(res.status).toBe(403);
+    expect(mockProcessUpdate).not.toHaveBeenCalled();
+    expect(mockProcessTelegramVoiceUpdate).not.toHaveBeenCalled();
+    expect(mockSendTelegramChatAction).not.toHaveBeenCalled();
+  });
+
+  it('accepts and processes a request with correct authentication', async () => {
+    const update = tgTextUpdate({ chat_id: 101, update_id: 9000, message_id: 41, text: 'Hello' });
+    mockProcessUpdate.mockResolvedValue({ outcome: 'replied', update_id: 9000, chat_id: 101 });
+
+    const res = await POST(telegramRequest(update));
+
+    expect(res.status).toBe(200);
+    expect(mockProcessUpdate).toHaveBeenCalledWith(update);
   });
 
   it('detects Telegram voice messages and uses the voice inbound path', async () => {

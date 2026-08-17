@@ -14,7 +14,12 @@ export async function POST(req: Request): Promise<Response> {
     getHeader(req, 'x-telegram-bot-api-secret-token') ??
     getHeader(req, 'X-Telegram-Bot-Api-Secret-Token');
 
-  if (secretExpected && secretGot !== secretExpected) {
+  if (!secretExpected?.trim()) {
+    console.error('[tg:support-webhook] 503 webhook secret is not configured');
+    return NextResponse.json({ ok: false, error: 'service_unavailable' }, { status: 503 });
+  }
+
+  if (secretGot !== secretExpected) {
     console.warn('[tg:support-webhook] 403 secret mismatch', {
       hasSecretHeader: Boolean(secretGot),
     });
