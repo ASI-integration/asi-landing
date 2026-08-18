@@ -18,7 +18,10 @@ import { estimateVoiceSeconds } from './voice-response-policy';
 import { recordVoiceBudgetUsage } from './voice-budget-store';
 import { generateSpeech } from './voice-tts';
 import { prepareTelegramVoiceAudio } from './voice-audio';
-import { normalizeSpeechTextForTts } from './voice-speech-normalization';
+import {
+  normalizeSpeechTextForNativeAudio,
+  normalizeSpeechTextForTts,
+} from './voice-speech-normalization';
 import { generateGeminiNativeSpeech, isGeminiNativeAudioEnabled } from './gemini-native-audio';
 
 function debugEnabled(): boolean {
@@ -99,7 +102,7 @@ export async function sendTelegramVoice(chatId: number | string, oggBytes: Buffe
 
 async function generateVoiceAudio(voiceText: string): Promise<VoiceGenerationResult> {
   if (isGeminiNativeAudioEnabled()) {
-    const native = await generateGeminiNativeSpeech(voiceText);
+    const native = await generateGeminiNativeSpeech(normalizeSpeechTextForNativeAudio(voiceText));
     if (native.audio) {
       return {
         ...native,
