@@ -33,6 +33,11 @@ function providerConfigured(provider, env = process.env) {
 }
 
 export function configuredProviderOrder(env = process.env) {
+  const requiredProvider = optional('COMM_VOICE_PROBE_REQUIRED_PROVIDER', env);
+  if (requiredProvider) {
+    if (requiredProvider !== 'elevenlabs') return [];
+    return providerConfigured('elevenlabs', env) ? ['elevenlabs'] : [];
+  }
   const preferred = preferredProvider(env);
   const explicitFallback = String(env.VOICE_TTS_FALLBACK_PROVIDER ?? '').trim().toLowerCase();
   const candidates = [preferred];
@@ -191,6 +196,11 @@ async function generateWithProvider(provider, text, env, fetchImpl) {
 export async function generateTts({ env = process.env, fetchImpl = fetch } = {}) {
   const text = String(env.COMM_VOICE_PROBE_TEXT ?? 'Проверка голосового канала ASI. Связь работает.').trim();
   if (!text) throw Object.assign(new Error('COMM_VOICE_PROBE_TEXT is empty'), { stage: 'tts_generation' });
+  if (optional('COMM_VOICE_PROBE_REQUIRED_PROVIDER', env) === 'elevenlabs' && preferredProvider(env) !== 'elevenlabs') {
+    throw Object.assign(new Error('ElevenLabs is not the current preferred production TTS provider'), {
+      stage: 'tts_generation',
+    });
+  }
   const attempts = [];
   const providers = configuredProviderOrder(env);
 
