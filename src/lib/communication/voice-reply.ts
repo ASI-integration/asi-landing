@@ -24,6 +24,7 @@ import { estimateVoiceSeconds } from './voice-response-policy';
 import { recordVoiceBudgetUsage } from './voice-budget-store';
 import { generateSpeech } from './voice-tts';
 import { prepareTelegramVoiceAudio } from './voice-audio';
+import { normalizeSpeechTextForTts } from './voice-speech-normalization';
 
 function debugEnabled(): boolean {
   return process.env.COMM_PIPELINE_DEBUG === '1' || process.env.TELEGRAM_DEBUG === '1';
@@ -115,9 +116,10 @@ export async function sendVoiceReply(chatId: number, ctx: VoiceReplyContext): Pr
     console.warn('[tg:voice] voice_reply.skip_empty_voice_text', { chat_id: chatId, reason: decision.reason });
     return false;
   }
+  const ttsText = normalizeSpeechTextForTts(voiceText);
 
   try {
-    const tts = await generateSpeech(voiceText);
+    const tts = await generateSpeech(ttsText);
     if (!tts.audio) {
       console.warn('[tg:voice] voice_reply.fail_tts', {
         chat_id: chatId,
