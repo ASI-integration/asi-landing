@@ -274,10 +274,10 @@ jobs:
                   COMM_VOICE_PROBE_TEXT="$sentence" \
                   node "$REMOTE_TMP/communication-voice-live-probe-v1.mjs"
               }
-              probe_variant "ASI" "Welcome to ASI. Your virtual assistant is ready."
-              probe_variant "A S I" "Welcome to A S I. Your virtual assistant is ready."
-              probe_variant "A. S. I." "Welcome to A. S. I. Your virtual assistant is ready."
-              probe_variant "ay ess eye" "Welcome to ay ess eye. Your virtual assistant is ready."
+              probe_variant "ASI" "Добро пожаловать в ASI. Ваш виртуальный помощник готов помочь."
+              probe_variant "A S I" "Добро пожаловать в A S I. Ваш виртуальный помощник готов помочь."
+              probe_variant "A. S. I." "Добро пожаловать в A. S. I. Ваш виртуальный помощник готов помочь."
+              probe_variant "ay ess eye" "Добро пожаловать в ay ess eye. Ваш виртуальный помощник готов помочь."
               ;;
           esac
 
