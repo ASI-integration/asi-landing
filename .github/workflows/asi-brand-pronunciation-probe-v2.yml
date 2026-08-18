@@ -65,7 +65,10 @@ jobs:
           SCP_OPTS=(-i "$SSH_KEY" -P "$REMOTE_PORT" -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -o LogLevel=ERROR -o ConnectTimeout=20)
 
           ssh "${SSH_OPTS[@]}" "${REMOTE_USER}@${VPS_HOST}" "rm -rf '${REMOTE_TMP}' && mkdir -p '${REMOTE_TMP}'"
-          scp "${SCP_OPTS[@]}" scripts/communication-voice-live-probe-v1.mjs "${REMOTE_USER}@${VPS_HOST}:${REMOTE_TMP}/"
+          scp "${SCP_OPTS[@]}" \
+            scripts/communication-voice-live-probe-v1.mjs \
+            scripts/telegram-test-chat-id.mjs \
+            "${REMOTE_USER}@${VPS_HOST}:${REMOTE_TMP}/"
 
           ssh "${SSH_OPTS[@]}" "${REMOTE_USER}@${VPS_HOST}" \
             "CHAT_ID='${CHAT_ID}' REMOTE_TMP='${REMOTE_TMP}' bash -s" <<'REMOTE'
