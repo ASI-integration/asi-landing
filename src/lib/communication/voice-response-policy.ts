@@ -12,6 +12,7 @@ export type VoiceResponseDecisionReason =
   | 'urgent_intent'
   | 'night_core_stay_issue'
   | 'inbound_voice_allowed'
+  | 'copyable_data_text_only'
   | 'disabled_by_user'
   | 'out_of_domain'
   | 'sensitive_internal'
@@ -76,6 +77,24 @@ const INTERNAL_RESPONSE_MODES = new Set(['operator_escalation']);
 const META_VOICE_RESPONSE_MODES = new Set(['telegram_meta_voice_reply']);
 
 const MONEY_INTENT = 'money_sensitive';
+
+const COPYABLE_LABEL_PATTERN = /(?:\b(?:password|passcode|pin|ssid)\b|\b(?:door|access)\s+code\b|\b(?:booking|reservation)\s+(?:reference|number)\b|\b(?:address|phone(?:\s+number)?)\s*:|парол(?:ь|я|ем|и)?|пин(?:-?код)?|код\s+(?:доступа|двери|домофона|замка)|номер\s+бронирования|(?:адрес|телефон)\s*:)/iu;
+const WIFI_COPYABLE_PATTERN = /(?:\bwi[-\s]?fi\b|вай[-\s]?фай).{0,80}(?:\bssid\b|сеть\s*:|network\s*:|парол|password)/iu;
+const URL_OR_EMAIL_PATTERN = /(?:https?:\/\/|www\.)\S+|[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}/i;
+const PHONE_LIKE_PATTERN = /\+?\d(?:[\s().-]*\d){7,}/;
+const CREDENTIAL_TOKEN_PATTERN = /\b(?=[A-Za-z0-9_-]{6,}\b)(?=[A-Za-z0-9_-]*[A-Za-z])(?=[A-Za-z0-9_-]*\d)[A-Za-z0-9_-]+\b/;
+
+export function containsCopyableGuestData(replyText: string): boolean {
+  const text = String(replyText ?? '').trim();
+  if (!text) return false;
+  return (
+    COPYABLE_LABEL_PATTERN.test(text) ||
+    WIFI_COPYABLE_PATTERN.test(text) ||
+    URL_OR_EMAIL_PATTERN.test(text) ||
+    PHONE_LIKE_PATTERN.test(text) ||
+    CREDENTIAL_TOKEN_PATTERN.test(text)
+  );
+}
 
 function isUrgentIntent(input: VoiceResponsePolicyInput): boolean {
   if (input.isUrgent) return true;
@@ -181,6 +200,10 @@ export function evaluateVoiceResponsePolicy(input: VoiceResponsePolicyInput): Vo
 
   if (input.messageRisk === 'sensitive_internal' || isOperatorEscalation(input)) {
     return { shouldSendVoice: false, reason: 'sensitive_internal', timezoneSource };
+  }
+
+  if (containsCopyableGuestData(input.replyText)) {
+    return { shouldSendVoice: false, reason: 'copyable_data_text_only', timezoneSource };
   }
 
   if (input.inboundTransport === 'telegram_voice' && isMetaVoiceReply(input)) {
