@@ -16,9 +16,9 @@ describe('Gemini Native Audio final cadence preparation', () => {
     expect(ensureSpokenTerminalPunctuation('Продолжение следует…')).toBe('Продолжение следует…');
   });
 
-  it('places the final period before a closing quote', () => {
+  it('places the final period before a closing quote in the speech-only copy', () => {
     expect(ensureSpokenTerminalPunctuation('Правило называется «тихий час»')).toBe(
-      'Правило называется «тихий час».',
+      'Правило называется «тихий час.»',
     );
   });
 
