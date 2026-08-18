@@ -1,7 +1,8 @@
 const ASI_BRAND_TOKEN = /(^|[\s([{"'«“])ASI(?=$|[\s)\]},!?;:'"»”]|[.](?:\s|$))/gi;
 const RUSSIAN_TEXT = /[А-Яа-яЁё]/;
 const RUSSIAN_EXACT_HOUR_RANGE = /\b([01]?\d|2[0-3]):00\s*[-–—]\s*([01]?\d|2[0-3]):00\b/g;
-const RUSSIAN_EXACT_HOUR_WITH_PREPOSITION = /\b(после|до|около|с|к|в)\s+([01]?\d|2[0-3]):00\b/gi;
+const RUSSIAN_EXACT_HOUR_WITH_PREPOSITION =
+  /(^|[\s([{"'«“])(после|до|около|с|к|в)\s+([01]?\d|2[0-3]):00\b/gi;
 const RUSSIAN_EXACT_HOUR = /(^|[^\d:])([01]?\d|2[0-3]):00(?![\d:])/g;
 const RUSSIAN_DOTTED_DATE = /\b(0?[1-9]|[12]\d|3[01])[.](0?[1-9]|1[0-2])[.]((?:19|20)\d{2})\b/g;
 
@@ -106,10 +107,11 @@ type RussianHourForm = 'plain' | 'genitive' | 'dative';
 
 function russianHourPhrase(hourText: string, form: RussianHourForm): string {
   const hour = Number(hourText);
-  if (!Number.isInteger(hour) || hour < 0 || hour > 23) return `${hourText}:00`;
-  if (form === 'genitive') return RUSSIAN_HOUR_GENITIVE[hour];
-  if (form === 'dative') return RUSSIAN_HOUR_DATIVE[hour];
-  return RUSSIAN_HOUR_PLAIN[hour];
+  const fallback = `${hourText}:00`;
+  if (!Number.isInteger(hour) || hour < 0 || hour > 23) return fallback;
+  if (form === 'genitive') return RUSSIAN_HOUR_GENITIVE[hour] ?? fallback;
+  if (form === 'dative') return RUSSIAN_HOUR_DATIVE[hour] ?? fallback;
+  return RUSSIAN_HOUR_PLAIN[hour] ?? fallback;
 }
 
 /**
@@ -135,11 +137,11 @@ export function normalizeSpeechTextForNativeAudio(text: string): string {
 
   value = value.replace(
     RUSSIAN_EXACT_HOUR_WITH_PREPOSITION,
-    (_match, preposition: string, hour: string) => {
+    (_match, prefix: string, preposition: string, hour: string) => {
       const normalizedPreposition = preposition.toLocaleLowerCase('ru-RU');
       const form: RussianHourForm =
         normalizedPreposition === 'в' ? 'plain' : normalizedPreposition === 'к' ? 'dative' : 'genitive';
-      return `${preposition} ${russianHourPhrase(hour, form)}`;
+      return `${prefix}${preposition} ${russianHourPhrase(hour, form)}`;
     },
   );
 
