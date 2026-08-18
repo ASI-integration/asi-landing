@@ -58,7 +58,7 @@ describe('Gemini Native Audio production routing', () => {
     delete process.env.TELEGRAM_BOT_TOKEN;
   });
 
-  it('uses Gemini Native Audio first with the original conversational text', async () => {
+  it('uses Gemini Native Audio first with speech-normalized conversational text', async () => {
     const nativeAudio = Uint8Array.from([1, 2, 3, 4]).buffer;
     mockIsGeminiNativeAudioEnabled.mockReturnValue(true);
     mockGenerateGeminiNativeSpeech.mockResolvedValue({
@@ -76,9 +76,12 @@ describe('Gemini Native Audio production routing', () => {
     const sent = await sendVoiceReply(42, { chatId: 42, decision: decision(text) as never });
 
     expect(sent).toBe(true);
-    expect(mockGenerateGeminiNativeSpeech).toHaveBeenCalledWith(text);
+    expect(mockGenerateGeminiNativeSpeech).toHaveBeenCalledWith(
+      'В ASI соблюдайте тишину после десяти вечера.',
+    );
     expect(mockGenerateSpeech).not.toHaveBeenCalled();
     expect(mockPrepareTelegramVoiceAudio).toHaveBeenCalledWith(nativeAudio, 'wav');
+    expect(text).toBe('В ASI соблюдайте тишину после 22:00.');
   });
 
   it('falls back to the existing TTS path and keeps ASI pronunciation normalization', async () => {
