@@ -1,0 +1,148 @@
+name: Gemini Native Audio Probe v1
+
+on:
+  workflow_dispatch:
+    inputs:
+      safety_acknowledgement:
+        description: Type authorized_for_selected_mode to authorize exactly four Vertex Gemini Native Audio generations and four Telegram deliveries
+        required: true
+        type: string
+      telegram_test_chat_id:
+        description: Dedicated Telegram test chat ID
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gemini-native-audio-probe
+  cancel-in-progress: false
+
+jobs:
+  native_audio_probe:
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 12
+    steps:
+      - name: Guard owner authorization and approved ref
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${{ github.ref }}" != "refs/heads/main" ]; then
+            echo "This real-provider probe may run only from main."
+            exit 1
+          fi
+          if [ "${{ inputs.safety_acknowledgement }}" != "authorized_for_selected_mode" ]; then
+            echo "Missing exact owner acknowledgement."
+            exit 1
+          fi
+          if [ "${{ inputs.telegram_test_chat_id }}" != "931919812" ]; then
+            echo "Refusing any Telegram chat except the dedicated test chat."
+            exit 1
+          fi
+          echo "Authorization guard passed: exactly four Native Audio calls and four test-chat deliveries."
+
+      - name: Checkout exact workflow ref
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Static probe check
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile scripts/gemini-native-audio-probe.py
+          grep -Fq 'ALLOWED_CHAT_ID = "931919812"' scripts/gemini-native-audio-probe.py
+          grep -Fq 'gemini-live-2.5-flash-native-audio' scripts/gemini-native-audio-probe.py
+          echo "Probe source check passed."
+
+      - name: Run four Gemini Native Audio samples on GCE probe host
+        shell: bash
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_PORT: ${{ secrets.VPS_PORT }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          TEST_CHAT_ID: ${{ inputs.telegram_test_chat_id }}
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          if [ -z "${VPS_HOST:-}" ] || [ -z "${VPS_SSH_KEY:-}" ]; then
+            echo "Missing VPS_HOST or VPS_SSH_KEY production secret."
+            exit 1
+          fi
+
+          REMOTE_USER="project_ayfaar"
+          REMOTE_PORT="${VPS_PORT:-22}"
+          REMOTE_SCRIPT="/home/${REMOTE_USER}/gemini-native-audio-probe-${RUN_ID}.py"
+          SSH_KEY="$RUNNER_TEMP/gemini-native-audio-ssh-key"
+
+          printf '%s\n' "$VPS_SSH_KEY" > "$SSH_KEY"
+          chmod 600 "$SSH_KEY"
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          touch ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+          ssh-keyscan -p "$REMOTE_PORT" -H "$VPS_HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
+
+          SSH_OPTS=(
+            -i "$SSH_KEY"
+            -p "$REMOTE_PORT"
+            -o IdentitiesOnly=yes
+            -o StrictHostKeyChecking=accept-new
+            -o LogLevel=ERROR
+            -o ServerAliveInterval=15
+            -o ServerAliveCountMax=4
+            -o ConnectTimeout=20
+          )
+          SCP_OPTS=(
+            -i "$SSH_KEY"
+            -P "$REMOTE_PORT"
+            -o IdentitiesOnly=yes
+            -o StrictHostKeyChecking=accept-new
+            -o LogLevel=ERROR
+            -o ServerAliveInterval=15
+            -o ServerAliveCountMax=4
+            -o ConnectTimeout=20
+          )
+
+          ssh "${SSH_OPTS[@]}" "${REMOTE_USER}@${VPS_HOST}" 'whoami; hostname; command -v python3; command -v ffmpeg; command -v curl; python3 -m pip --version'
+          scp "${SCP_OPTS[@]}" scripts/gemini-native-audio-probe.py "${REMOTE_USER}@${VPS_HOST}:${REMOTE_SCRIPT}"
+
+          ssh "${SSH_OPTS[@]}" "${REMOTE_USER}@${VPS_HOST}" \
+            "TEST_CHAT_ID='${TEST_CHAT_ID}' RUN_ID='${RUN_ID}' REMOTE_SCRIPT='${REMOTE_SCRIPT}' bash -s" <<'REMOTE'
+          set -Eeuo pipefail
+          TMP_BASE="/tmp/asi-gemini-native-audio-${RUN_ID}"
+          SITE_DIR="${TMP_BASE}/site"
+          cleanup() {
+            rm -rf "$TMP_BASE" "$REMOTE_SCRIPT" 2>/dev/null || true
+          }
+          trap cleanup EXIT
+          mkdir -p "$SITE_DIR"
+
+          ENV_FILE="/var/www/asi/shared/.env.production.live"
+          if [ ! -f "$ENV_FILE" ]; then
+            echo "Production env file missing: $ENV_FILE"
+            exit 1
+          fi
+
+          PROJECT_ID="$(curl -fsS --max-time 3 -H 'Metadata-Flavor: Google' http://metadata.google.internal/computeMetadata/v1/project/project-id)"
+          SERVICE_ACCOUNT="$(curl -fsS --max-time 3 -H 'Metadata-Flavor: Google' http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/email)"
+          echo "GCE_PROJECT=${PROJECT_ID}"
+          echo "GCE_SERVICE_ACCOUNT=${SERVICE_ACCOUNT}"
+          echo "GEMINI_LOCATION=global"
+          echo "GEMINI_MODEL=gemini-live-2.5-flash-native-audio"
+
+          python3 -m pip install --quiet --disable-pip-version-check --target "$SITE_DIR" 'google-genai>=1.0,<2'
+
+          set -a
+          source "$ENV_FILE"
+          set +a
+          export GEMINI_PROBE_CHAT_ID="$TEST_CHAT_ID"
+          export GOOGLE_CLOUD_PROJECT="$PROJECT_ID"
+          export GOOGLE_CLOUD_LOCATION="global"
+          export GEMINI_NATIVE_AUDIO_MODEL="gemini-live-2.5-flash-native-audio"
+          export PYTHONPATH="$SITE_DIR"
+
+          python3 "$REMOTE_SCRIPT"
+          REMOTE
