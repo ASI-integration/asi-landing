@@ -1,0 +1,192 @@
+name: ASI Voice Selection Probe v1
+
+on:
+  workflow_dispatch:
+    inputs:
+      safety_acknowledgement:
+        description: Owner approval for exactly four ElevenLabs voice samples to the dedicated test chat
+        required: true
+        default: not_authorized
+        type: choice
+        options:
+          - not_authorized
+          - authorized_for_selected_mode
+      telegram_test_chat_id:
+        description: Dedicated Telegram test chat ID
+        required: true
+        default: "931919812"
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  voice_selection_probe:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Guard owner-approved scope
+        shell: bash
+        env:
+          ACK: ${{ inputs.safety_acknowledgement }}
+          CHAT_ID: ${{ inputs.telegram_test_chat_id }}
+        run: |
+          set -euo pipefail
+          [[ "$ACK" == "authorized_for_selected_mode" ]] || { echo "::error::Owner authorization missing"; exit 1; }
+          [[ "$CHAT_ID" == "931919812" ]] || { echo "::error::This probe is authorized only for dedicated test chat 931919812"; exit 1; }
+
+      - name: Checkout exact probe scripts
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Generate exactly four ElevenLabs voice samples
+        shell: bash
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_PORT: ${{ secrets.VPS_PORT }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          CHAT_ID: ${{ inputs.telegram_test_chat_id }}
+        run: |
+          set -euo pipefail
+          [[ -n "${VPS_HOST:-}" && -n "${VPS_SSH_KEY:-}" ]] || { echo "::error::Missing production SSH secrets"; exit 1; }
+
+          REMOTE_USER="project_ayfaar"
+          REMOTE_PORT="${VPS_PORT:-22}"
+          REMOTE_TMP="/home/project_ayfaar/asi-voice-selection-probe-v1"
+
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          SSH_KEY=~/.ssh/id_ed25519
+          printf '%s\n' "$VPS_SSH_KEY" > "$SSH_KEY"
+          chmod 600 "$SSH_KEY"
+
+          SSH_OPTS=(-i "$SSH_KEY" -p "$REMOTE_PORT" -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -o LogLevel=ERROR -o ConnectTimeout=20)
+          SCP_OPTS=(-i "$SSH_KEY" -P "$REMOTE_PORT" -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -o LogLevel=ERROR -o ConnectTimeout=20)
+
+          ssh "${SSH_OPTS[@]}" "${REMOTE_USER}@${VPS_HOST}" "rm -rf '${REMOTE_TMP}' && mkdir -p '${REMOTE_TMP}'"
+          scp "${SCP_OPTS[@]}" \
+            scripts/communication-voice-live-probe-v1.mjs \
+            scripts/telegram-test-chat-id.mjs \
+            "${REMOTE_USER}@${VPS_HOST}:${REMOTE_TMP}/"
+
+          ssh "${SSH_OPTS[@]}" "${REMOTE_USER}@${VPS_HOST}" \
+            "CHAT_ID='${CHAT_ID}' REMOTE_TMP='${REMOTE_TMP}' bash -s" <<'REMOTE'
+          set -euo pipefail
+          ENV_FILE="/var/www/asi/shared/.env.production.live"
+          VOICES_JSON="${REMOTE_TMP}/voices.json"
+          SELECTED_TSV="${REMOTE_TMP}/selected-voices.tsv"
+          trap 'rm -rf "${REMOTE_TMP}"' EXIT
+
+          [[ -f "$ENV_FILE" ]] || { echo "::error::Missing production env"; exit 1; }
+          set -a
+          # shellcheck disable=SC1090
+          source "$ENV_FILE"
+          set +a
+
+          [[ -n "${ELEVENLABS_API_KEY:-}" ]] || { echo "::error::ELEVENLABS_API_KEY is missing"; exit 1; }
+
+          CURRENT_VOICE_ID="${ELEVENLABS_VOICE_ID:-${VOICE_TTS_VOICE:-21m00Tcm4TlvDq8ikWAM}}"
+          MODEL_ID="${ELEVENLABS_MODEL_ID:-${VOICE_TTS_MODEL:-eleven_multilingual_v2}}"
+
+          echo "=== production health before ==="
+          curl -fsS http://127.0.0.1:3000/api/version
+          echo
+          curl -fsS http://127.0.0.1:3000/api/health
+          echo
+
+          # Query voices available to this ElevenLabs account. The key is never printed.
+          curl -fsS -G "https://api.elevenlabs.io/v2/voices" \
+            -H "xi-api-key: ${ELEVENLABS_API_KEY}" \
+            --data-urlencode "page_size=100" \
+            --data-urlencode "sort=name" \
+            --data-urlencode "sort_direction=asc" \
+            -o "$VOICES_JSON"
+
+          CURRENT_VOICE_ID="$CURRENT_VOICE_ID" VOICES_JSON="$VOICES_JSON" SELECTED_TSV="$SELECTED_TSV" python3 - <<'PY'
+          import json, os, sys
+          from pathlib import Path
+
+          current_id = os.environ['CURRENT_VOICE_ID'].strip()
+          data = json.loads(Path(os.environ['VOICES_JSON']).read_text(encoding='utf-8'))
+          voices = [v for v in data.get('voices', []) if isinstance(v, dict) and v.get('voice_id')]
+
+          by_id = {str(v['voice_id']): v for v in voices}
+          current = by_id.get(current_id, {
+              'voice_id': current_id,
+              'name': 'Current production voice',
+              'labels': {},
+              'category': 'current',
+          })
+
+          def gender(v):
+              labels = v.get('labels') or {}
+              sharing = v.get('sharing') or {}
+              sharing_labels = sharing.get('labels') or {}
+              return str(labels.get('gender') or sharing_labels.get('gender') or '').strip().lower()
+
+          def rank(v):
+              category = str(v.get('category') or '').lower()
+              category_rank = {
+                  'professional': 0,
+                  'premade': 1,
+                  'generated': 2,
+                  'cloned': 3,
+              }.get(category, 4)
+              return (category_rank, str(v.get('name') or '').lower())
+
+          female = sorted([v for v in voices if gender(v) == 'female' and str(v['voice_id']) != current_id], key=rank)
+          others = sorted([v for v in voices if str(v['voice_id']) != current_id and v not in female], key=rank)
+
+          selected = [current]
+          seen = {current_id}
+          for v in female + others:
+              vid = str(v['voice_id'])
+              if vid in seen:
+                  continue
+              selected.append(v)
+              seen.add(vid)
+              if len(selected) == 4:
+                  break
+
+          if len(selected) != 4:
+              print(f'Need four available ElevenLabs voices, found {len(selected)}', file=sys.stderr)
+              sys.exit(1)
+
+          out = []
+          for i, v in enumerate(selected, 1):
+              name = str(v.get('name') or f'Voice {i}').replace('\t', ' ').replace('\n', ' ')
+              vid = str(v['voice_id'])
+              category = str(v.get('category') or 'unknown').replace('\t', ' ').replace('\n', ' ')
+              out.append(f'{i}\t{name}\t{vid}\t{category}')
+              print(f'voice_selection_probe.voice_{i} name={name!r} voice_id={vid} category={category!r}')
+
+          Path(os.environ['SELECTED_TSV']).write_text('\n'.join(out) + '\n', encoding='utf-8')
+          PY
+
+          SAMPLE_TEXT="Добро пожаловать в Aye Ess EYE. Ваш виртуальный помощник готов помочь."
+          echo "voice_selection_probe.model=${MODEL_ID}"
+          echo "voice_selection_probe.text=${SAMPLE_TEXT}"
+
+          count=0
+          while IFS=$'\t' read -r index voice_name voice_id category; do
+            [[ -n "$voice_id" ]] || continue
+            count=$((count + 1))
+            echo "voice_selection_probe.generate index=${index} name=${voice_name} voice_id=${voice_id} category=${category}"
+            env \
+              COMM_VOICE_PROBE_REQUIRED_PROVIDER=elevenlabs \
+              COMM_VOICE_PROBE_CHAT_ID="$CHAT_ID" \
+              COMM_VOICE_PROBE_TEXT="$SAMPLE_TEXT" \
+              ELEVENLABS_VOICE_ID="$voice_id" \
+              ELEVENLABS_MODEL_ID="$MODEL_ID" \
+              node "$REMOTE_TMP/communication-voice-live-probe-v1.mjs"
+          done < "$SELECTED_TSV"
+
+          [[ "$count" -eq 4 ]] || { echo "::error::Expected exactly four voice generations, got ${count}"; exit 1; }
+
+          echo "=== production health after ==="
+          curl -fsS http://127.0.0.1:3000/api/version
+          echo
+          curl -fsS http://127.0.0.1:3000/api/health
+          echo
+          REMOTE
