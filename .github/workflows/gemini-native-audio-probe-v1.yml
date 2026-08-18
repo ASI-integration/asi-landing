@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       safety_acknowledgement:
-        description: Type authorized_for_selected_mode to authorize exactly four Vertex Gemini Native Audio generations and four Telegram deliveries
+        description: Type authorized_for_selected_mode to authorize exactly four Gemini Native Audio generations and four Telegram deliveries
         required: true
         type: string
       telegram_test_chat_id:
@@ -54,7 +54,8 @@ jobs:
           set -euo pipefail
           python3 -m py_compile scripts/gemini-native-audio-probe.py
           grep -Fq 'ALLOWED_CHAT_ID = "931919812"' scripts/gemini-native-audio-probe.py
-          grep -Fq 'gemini-live-2.5-flash-native-audio' scripts/gemini-native-audio-probe.py
+          grep -Fq 'gemini-2.5-flash-native-audio-preview-12-2025' scripts/gemini-native-audio-probe.py
+          grep -Fq 'api_key=api_key' scripts/gemini-native-audio-probe.py
           echo "Probe source check passed."
 
       - name: Run four Gemini Native Audio samples on GCE probe host
@@ -126,22 +127,18 @@ jobs:
             exit 1
           fi
 
-          PROJECT_ID="$(curl -fsS --max-time 3 -H 'Metadata-Flavor: Google' http://metadata.google.internal/computeMetadata/v1/project/project-id)"
-          SERVICE_ACCOUNT="$(curl -fsS --max-time 3 -H 'Metadata-Flavor: Google' http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/email)"
-          echo "GCE_PROJECT=${PROJECT_ID}"
-          echo "GCE_SERVICE_ACCOUNT=${SERVICE_ACCOUNT}"
-          echo "GEMINI_LOCATION=global"
-          echo "GEMINI_MODEL=gemini-live-2.5-flash-native-audio"
-
           python3 -m pip install --quiet --disable-pip-version-check --target "$SITE_DIR" 'google-genai>=1.0,<2'
 
           set -a
           source "$ENV_FILE"
           set +a
+          if [ -z "${GEMINI_API_KEY:-}" ]; then
+            echo "GEMINI_API_KEY missing from production env."
+            exit 1
+          fi
+          echo "GEMINI_API_KEY=PRESENT_NONEMPTY"
           export GEMINI_PROBE_CHAT_ID="$TEST_CHAT_ID"
-          export GOOGLE_CLOUD_PROJECT="$PROJECT_ID"
-          export GOOGLE_CLOUD_LOCATION="global"
-          export GEMINI_NATIVE_AUDIO_MODEL="gemini-live-2.5-flash-native-audio"
+          export GEMINI_NATIVE_AUDIO_MODEL="gemini-2.5-flash-native-audio-preview-12-2025"
           export PYTHONPATH="$SITE_DIR"
 
           python3 "$REMOTE_SCRIPT"
