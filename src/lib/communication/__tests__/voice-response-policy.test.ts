@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { getLocalTimeParts, isWithinNightWindow, resolvePropertyTimezone } from '../property-timezone';
-import { evaluateVoiceResponsePolicy, prepareVoiceTextForTts } from '../voice-response-policy';
+import {
+  containsCopyableGuestData,
+  evaluateVoiceResponsePolicy,
+  prepareVoiceTextForTts,
+} from '../voice-response-policy';
 import { DEFAULT_PROPERTY_VOICE_POLICY, VOICE_SAFE_URGENT_HANDOFF_RU } from '../voice-response-settings';
 
 const baseInput = {
@@ -14,7 +18,7 @@ const baseInput = {
     dailyCapReached: false,
     monthlyCapReached: false,
   },
-  replyText: 'Здравствуйте! Wi-Fi: сеть ASI, пароль отправлен в бронировании.',
+  replyText: 'Здравствуйте! Я помогу с вашим вопросом по проживанию.',
   ttsConfigured: true,
   propertyTimezone: resolvePropertyTimezone('Europe/Moscow'),
 };
@@ -101,12 +105,53 @@ describe('evaluateVoiceResponsePolicy', () => {
     expect(decision.reason).toBe('not_needed');
   });
 
-  it('allows inbound voice for core topic under cap', () => {
+  it('allows inbound voice for conversational core topic under cap', () => {
     const decision = evaluateVoiceResponsePolicy({
       ...baseInput,
       inboundTransport: 'telegram_voice',
       detectedIntent: 'guest_property_question',
       domainZone: 'core',
+      now: new Date('2026-06-20T10:00:00.000Z'),
+    });
+    expect(decision.shouldSendVoice).toBe(true);
+    expect(decision.reason).toBe('inbound_voice_allowed');
+  });
+
+  it('keeps Wi-Fi credentials text-only even when guest asked by voice', () => {
+    const decision = evaluateVoiceResponsePolicy({
+      ...baseInput,
+      inboundTransport: 'telegram_voice',
+      detectedIntent: 'guest_property_question',
+      domainZone: 'core',
+      replyText: 'Wi-Fi: Сеть: ASI-Test-WiFi. Пароль: test12345.',
+      now: new Date('2026-06-20T10:00:00.000Z'),
+    });
+    expect(decision.shouldSendVoice).toBe(false);
+    expect(decision.reason).toBe('copyable_data_text_only');
+  });
+
+  it('keeps copyable property data text-only at night too', () => {
+    const decision = evaluateVoiceResponsePolicy({
+      ...baseInput,
+      inboundTransport: 'telegram_text',
+      detectedIntent: 'guest_checkin',
+      domainZone: 'core',
+      responseMode: 'answer_from_property',
+      replyText: 'Код доступа: 4821. Адрес: Невский проспект, 10.',
+      now: new Date('2026-06-20T20:30:00.000Z'),
+      propertyTimezone: resolvePropertyTimezone('Europe/Moscow'),
+    });
+    expect(decision.shouldSendVoice).toBe(false);
+    expect(decision.reason).toBe('copyable_data_text_only');
+  });
+
+  it('still allows useful conversational details such as an ordinary time', () => {
+    const decision = evaluateVoiceResponsePolicy({
+      ...baseInput,
+      inboundTransport: 'telegram_voice',
+      detectedIntent: 'guest_property_question',
+      domainZone: 'core',
+      replyText: 'Уборка будет в 14:00. Я сообщу, когда всё будет готово.',
       now: new Date('2026-06-20T10:00:00.000Z'),
     });
     expect(decision.shouldSendVoice).toBe(true);
@@ -198,6 +243,31 @@ describe('evaluateVoiceResponsePolicy', () => {
       propertyTimezone: resolvePropertyTimezone(null),
     });
     expect(decision.timezoneSource).toBe('fallback');
+  });
+});
+
+describe('containsCopyableGuestData', () => {
+  it.each([
+    'Wi-Fi: сеть ASI-Test-WiFi. Пароль: test12345.',
+    'PIN: 4821',
+    'Код доступа: 4821',
+    'Номер бронирования: AB12CD34',
+    'Адрес: Невский проспект, 10',
+    'Телефон: +7 999 123-45-67',
+    'Откройте https://example.com/checkin',
+    'Напишите host@example.com',
+    'Ваш ключ: abc12345',
+  ])('detects copyable data: %s', (text) => {
+    expect(containsCopyableGuestData(text)).toBe(true);
+  });
+
+  it.each([
+    'Wi-Fi работает нормально.',
+    'Уборка будет в 14:00.',
+    'Мастер уже вызван и скоро придёт.',
+    'Я передала вопрос менеджеру.',
+  ])('does not over-block conversational speech: %s', (text) => {
+    expect(containsCopyableGuestData(text)).toBe(false);
   });
 });
 
