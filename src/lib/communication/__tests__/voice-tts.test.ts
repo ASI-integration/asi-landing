@@ -1,6 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { runVoiceAcceptance } from '../../../../scripts/communication-voice-live-probe-v1.mjs';
+import {
+  configuredProviderOrder as configuredProbeProviderOrder,
+  runVoiceAcceptance,
+} from '../../../../scripts/communication-voice-live-probe-v1.mjs';
 import { generateSpeech, isTtsConfigured } from '../voice-tts';
 
 const ENV_KEYS = [
@@ -48,6 +51,16 @@ describe('voice TTS wrapper', () => {
     const result = await generateSpeech('Тестовый ответ.');
     expect(result.audio).toBeNull();
     expect(result.attempts).toEqual([{ provider: 'openai', ok: false, errorType: 'missing_api_key' }]);
+  });
+
+  it('locks the pronunciation probe to configured ElevenLabs without fallback providers', () => {
+    expect(configuredProbeProviderOrder({
+      NODE_ENV: 'test',
+      COMM_VOICE_PROBE_REQUIRED_PROVIDER: 'elevenlabs',
+      VOICE_TTS_PROVIDER: 'elevenlabs',
+      ELEVENLABS_API_KEY: 'test-eleven-key',
+      OPENAI_API_KEY: 'test-openai-key',
+    })).toEqual(['elevenlabs']);
   });
 
   it('detects relay TTS when base URL and token are set', () => {

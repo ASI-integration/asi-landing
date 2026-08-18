@@ -12,6 +12,7 @@ on:
           - readiness
           - activate
           - acceptance
+          - pronunciation_probe
       safety_acknowledgement:
         description: Technical safety acknowledgement (owner approval remains separate)
         required: true
@@ -45,7 +46,7 @@ jobs:
         run: |
           set -euo pipefail
           case "$MODE" in
-            readiness|activate|acceptance) ;;
+            readiness|activate|acceptance|pronunciation_probe) ;;
             *) echo "::error::Unsupported mode: $MODE"; exit 1 ;;
           esac
           if [[ "$SAFETY_ACKNOWLEDGEMENT" != "authorized_for_selected_mode" ]]; then
@@ -69,7 +70,7 @@ jobs:
           INPUT_STT_FILE_ID: ${{ inputs.stt_file_id }}
         run: |
           set -euo pipefail
-          if [[ "$MODE" == "acceptance" || -n "${INPUT_TEST_CHAT_ID:-}" ]]; then
+          if [[ "$MODE" == "acceptance" || "$MODE" == "pronunciation_probe" || -n "${INPUT_TEST_CHAT_ID:-}" ]]; then
             INPUT_TEST_CHAT_ID="$(node scripts/telegram-test-chat-id.mjs "$INPUT_TEST_CHAT_ID")"
           fi
           if [[ -z "${VPS_HOST:-}" || -z "${VPS_SSH_KEY:-}" ]]; then
@@ -256,6 +257,27 @@ jobs:
               fi
               run_acceptance_stage inbound_stt \
                 node "$REMOTE_TMP/telegram-voice-stt-dry-run.mjs" --file-id "$FILE_ID"
+              ;;
+            pronunciation_probe)
+              if [[ -z "${TELEGRAM_TEST_CHAT_ID:-}" ]]; then
+                echo "::error::Pronunciation probe requires a dedicated TELEGRAM_TEST_CHAT_ID"
+                exit 1
+              fi
+              cd "$APP_DIR"
+              probe_variant() {
+                local label="$1"
+                local sentence="$2"
+                echo "pronunciation_probe.variant=$label"
+                env \
+                  COMM_VOICE_PROBE_REQUIRED_PROVIDER=elevenlabs \
+                  COMM_VOICE_PROBE_CHAT_ID="$TELEGRAM_TEST_CHAT_ID" \
+                  COMM_VOICE_PROBE_TEXT="$sentence" \
+                  node "$REMOTE_TMP/communication-voice-live-probe-v1.mjs"
+              }
+              probe_variant "ASI" "Welcome to ASI. Your virtual assistant is ready."
+              probe_variant "A S I" "Welcome to A S I. Your virtual assistant is ready."
+              probe_variant "A. S. I." "Welcome to A. S. I. Your virtual assistant is ready."
+              probe_variant "ay ess eye" "Welcome to ay ess eye. Your virtual assistant is ready."
               ;;
           esac
 
