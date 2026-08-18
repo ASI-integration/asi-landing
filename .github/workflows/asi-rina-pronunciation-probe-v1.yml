@@ -1,0 +1,122 @@
+name: ASI Rina Pronunciation Probe v1
+
+on:
+  workflow_dispatch:
+    inputs:
+      safety_acknowledgement:
+        description: Owner approval for exactly four Rina/ElevenLabs samples to the dedicated test chat
+        required: true
+        default: not_authorized
+        type: choice
+        options:
+          - not_authorized
+          - authorized_for_selected_mode
+      telegram_test_chat_id:
+        description: Dedicated Telegram test chat ID
+        required: true
+        default: "931919812"
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  rina_pronunciation_probe:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Guard owner-approved scope
+        shell: bash
+        env:
+          ACK: ${{ inputs.safety_acknowledgement }}
+          CHAT_ID: ${{ inputs.telegram_test_chat_id }}
+        run: |
+          set -euo pipefail
+          [[ "$ACK" == "authorized_for_selected_mode" ]] || { echo "::error::Owner authorization missing"; exit 1; }
+          [[ "$CHAT_ID" == "931919812" ]] || { echo "::error::This probe is authorized only for dedicated test chat 931919812"; exit 1; }
+
+      - name: Checkout exact probe scripts
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Generate exactly four Rina pronunciation samples
+        shell: bash
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_PORT: ${{ secrets.VPS_PORT }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          CHAT_ID: ${{ inputs.telegram_test_chat_id }}
+        run: |
+          set -euo pipefail
+          [[ -n "${VPS_HOST:-}" && -n "${VPS_SSH_KEY:-}" ]] || { echo "::error::Missing production SSH secrets"; exit 1; }
+
+          REMOTE_USER="project_ayfaar"
+          REMOTE_PORT="${VPS_PORT:-22}"
+          REMOTE_TMP="/home/project_ayfaar/asi-rina-pronunciation-probe-v1"
+
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          SSH_KEY=~/.ssh/id_ed25519
+          printf '%s\n' "$VPS_SSH_KEY" > "$SSH_KEY"
+          chmod 600 "$SSH_KEY"
+
+          SSH_OPTS=(-i "$SSH_KEY" -p "$REMOTE_PORT" -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -o LogLevel=ERROR -o ConnectTimeout=20)
+          SCP_OPTS=(-i "$SSH_KEY" -P "$REMOTE_PORT" -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -o LogLevel=ERROR -o ConnectTimeout=20)
+
+          ssh "${SSH_OPTS[@]}" "${REMOTE_USER}@${VPS_HOST}" "rm -rf '${REMOTE_TMP}' && mkdir -p '${REMOTE_TMP}'"
+          scp "${SCP_OPTS[@]}" \
+            scripts/communication-voice-live-probe-v1.mjs \
+            scripts/telegram-test-chat-id.mjs \
+            "${REMOTE_USER}@${VPS_HOST}:${REMOTE_TMP}/"
+
+          ssh "${SSH_OPTS[@]}" "${REMOTE_USER}@${VPS_HOST}" \
+            "CHAT_ID='${CHAT_ID}' REMOTE_TMP='${REMOTE_TMP}' bash -s" <<'REMOTE'
+          set -euo pipefail
+          ENV_FILE="/var/www/asi/shared/.env.production.live"
+          trap 'rm -rf "${REMOTE_TMP}"' EXIT
+
+          [[ -f "$ENV_FILE" ]] || { echo "::error::Missing production env"; exit 1; }
+          set -a
+          # shellcheck disable=SC1090
+          source "$ENV_FILE"
+          set +a
+
+          [[ -n "${ELEVENLABS_API_KEY:-}" ]] || { echo "::error::ELEVENLABS_API_KEY is missing"; exit 1; }
+
+          # Owner-selected voice from ASI Voice Selection Probe v1.
+          RINA_VOICE_ID="ycbyWsnf4hqZgdpKHqiU"
+          MODEL_ID="${ELEVENLABS_MODEL_ID:-${VOICE_TTS_MODEL:-eleven_multilingual_v2}}"
+
+          echo "=== production health before ==="
+          curl -fsS http://127.0.0.1:3000/api/version
+          echo
+          curl -fsS http://127.0.0.1:3000/api/health
+          echo
+
+          probe_variant() {
+            local index="$1"
+            local spoken="$2"
+            local sample_text="Добро пожаловать в ${spoken}. Ваш виртуальный помощник готов помочь."
+            echo "rina_pronunciation_probe.variant_${index}=${spoken}"
+            env \
+              COMM_VOICE_PROBE_REQUIRED_PROVIDER=elevenlabs \
+              COMM_VOICE_PROBE_CHAT_ID="$CHAT_ID" \
+              COMM_VOICE_PROBE_TEXT="$sample_text" \
+              ELEVENLABS_VOICE_ID="$RINA_VOICE_ID" \
+              ELEVENLABS_MODEL_ID="$MODEL_ID" \
+              node "$REMOTE_TMP/communication-voice-live-probe-v1.mjs"
+          }
+
+          # NOTE: English letter A is "Ay" (/eɪ/). "Aye" is /aɪ/ and is deliberately not used.
+          probe_variant 1 "Ay Ess Eye"
+          probe_variant 2 "Ay Ess EYE"
+          probe_variant 3 "AyEssEye"
+          probe_variant 4 "Ay-Ess-EYE"
+
+          echo "=== production health after ==="
+          curl -fsS http://127.0.0.1:3000/api/version
+          echo
+          curl -fsS http://127.0.0.1:3000/api/health
+          echo
+          REMOTE
