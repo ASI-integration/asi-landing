@@ -7,15 +7,13 @@ import pathlib
 import shutil
 import subprocess
 import tempfile
-import urllib.request
 import wave
 
 from google import genai
 from google.genai import types
 
 ALLOWED_CHAT_ID = "931919812"
-MODEL = os.getenv("GEMINI_NATIVE_AUDIO_MODEL", "gemini-live-2.5-flash-native-audio").strip()
-LOCATION = os.getenv("GOOGLE_CLOUD_LOCATION", "global").strip() or "global"
+MODEL = os.getenv("GEMINI_NATIVE_AUDIO_MODEL", "gemini-2.5-flash-native-audio-preview-12-2025").strip()
 VOICES = ["Aoede", "Achird", "Schedar", "Kore"]
 
 PROMPT = """RESPOND IN RUSSIAN. YOU MUST RESPOND UNMISTAKABLY IN RUSSIAN.
@@ -31,18 +29,6 @@ def required(name: str) -> str:
     if not value:
         raise RuntimeError(f"missing required env {name}")
     return value
-
-
-def metadata_project_id() -> str:
-    explicit = os.getenv("GOOGLE_CLOUD_PROJECT", "").strip()
-    if explicit:
-        return explicit
-    req = urllib.request.Request(
-        "http://metadata.google.internal/computeMetadata/v1/project/project-id",
-        headers={"Metadata-Flavor": "Google"},
-    )
-    with urllib.request.urlopen(req, timeout=3) as response:
-        return response.read().decode("utf-8").strip()
 
 
 def write_wav(pcm: bytes, path: pathlib.Path) -> None:
@@ -102,7 +88,8 @@ async def generate_native_audio(client: genai.Client, voice_name: str) -> bytes:
     chunks: list[bytes] = []
     async with client.aio.live.connect(model=MODEL, config=config) as session:
         await session.send_client_content(
-            turns=types.Content(role="user", parts=[types.Part(text=PROMPT)])
+            turns=types.Content(role="user", parts=[types.Part(text=PROMPT)]),
+            turn_complete=True,
         )
         async for message in session.receive():
             content = message.server_content
@@ -128,21 +115,17 @@ async def main() -> None:
     if chat_id != ALLOWED_CHAT_ID:
         raise RuntimeError(f"refusing non-dedicated Telegram chat id: {chat_id}")
     token = required("TELEGRAM_BOT_TOKEN")
-    project_id = metadata_project_id()
-    if not project_id:
-        raise RuntimeError("could not resolve Google Cloud project id")
+    api_key = required("GEMINI_API_KEY")
 
-    print(f"PROBE_PROJECT={project_id}")
-    print(f"PROBE_LOCATION={LOCATION}")
+    print(f"PROBE_PROVIDER=gemini_developer_live_api")
     print(f"PROBE_MODEL={MODEL}")
     print(f"PROBE_CHAT_ID={chat_id}")
+    print("GEMINI_API_KEY=PRESENT_NONEMPTY")
     print("PROBE_CALLS_PLANNED=4")
 
     client = genai.Client(
-        vertexai=True,
-        project=project_id,
-        location=LOCATION,
-        http_options=types.HttpOptions(api_version="v1beta1"),
+        api_key=api_key,
+        http_options=types.HttpOptions(api_version="v1alpha"),
     )
 
     results = []
@@ -167,9 +150,8 @@ async def main() -> None:
 
     print("PROBE_RESULT=" + json.dumps({
         "pass": True,
-        "provider": "vertex_gemini_live_native_audio",
+        "provider": "gemini_developer_live_native_audio",
         "model": MODEL,
-        "location": LOCATION,
         "calls": 4,
         "deliveries": 4,
         "results": results,
