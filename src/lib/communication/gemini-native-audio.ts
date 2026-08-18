@@ -10,12 +10,15 @@ const DEFAULT_VOICE = 'Aoede';
 const DEFAULT_TIMEOUT_MS = 30_000;
 const LIVE_ENDPOINT =
   'wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent';
+const SPOKEN_TERMINAL_PUNCTUATION = /[.!?…](?:["'»”)\]]*)$/u;
+const SPOKEN_TRAILING_CLOSERS = /["'»”)\]]+$/u;
 
 const DEFAULT_SYSTEM_INSTRUCTION = [
   'You are the spoken voice of ASI, a guest concierge.',
   'Speak only the supplied guest-facing message. Do not add facts, greetings, explanations, or meta commentary.',
   'Use the same language as the supplied message and sound like a natural human speaker rather than reading technical text.',
   'Preserve all factual meaning exactly, but verbalize times, dates, numbers, abbreviations, and punctuation naturally for speech.',
+  'Treat every supplied message as a complete utterance. For declarative sentences, finish the final phrase with a clear natural falling cadence. Do not use rising or continuation intonation unless the final sentence is actually a question.',
   'Pronounce the brand ASI as the compact English letter names “эй-эс-ай”, without artificial pauses between the letters.',
 ].join(' ');
 
@@ -39,6 +42,20 @@ function voiceName(): string {
 
 function systemInstruction(): string {
   return process.env.GEMINI_NATIVE_AUDIO_INSTRUCTIONS?.trim() || DEFAULT_SYSTEM_INSTRUCTION;
+}
+
+/**
+ * Make a speech-only copy look like a complete utterance to the native-audio
+ * model. Visible Telegram text is never changed by this helper.
+ */
+export function ensureSpokenTerminalPunctuation(text: string): string {
+  const value = String(text ?? '').trim();
+  if (!value || SPOKEN_TERMINAL_PUNCTUATION.test(value)) return value;
+
+  const closers = value.match(SPOKEN_TRAILING_CLOSERS)?.[0] ?? '';
+  const stemWithPunctuation = closers ? value.slice(0, -closers.length) : value;
+  const stem = stemWithPunctuation.replace(/[,:;]+$/u, '').trimEnd();
+  return `${stem}.${closers}`;
 }
 
 export function isGeminiNativeAudioEnabled(): boolean {
@@ -87,7 +104,7 @@ function messageText(data: unknown): Promise<string> {
  * failure never blocks the already-sent text reply.
  */
 export async function generateGeminiNativeSpeech(text: string): Promise<GeminiNativeAudioResult> {
-  const input = String(text ?? '').trim();
+  const input = ensureSpokenTerminalPunctuation(text);
   if (!input) {
     return { audio: null, provider: 'gemini-native-audio', format: 'wav', errorType: 'empty_text' };
   }
