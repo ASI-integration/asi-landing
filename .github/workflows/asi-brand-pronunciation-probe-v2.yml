@@ -1,0 +1,109 @@
+name: ASI Brand Pronunciation Probe v2
+
+on:
+  workflow_dispatch:
+    inputs:
+      safety_acknowledgement:
+        description: Owner approval for exactly four ElevenLabs samples to the dedicated test chat
+        required: true
+        default: not_authorized
+        type: choice
+        options:
+          - not_authorized
+          - authorized_for_selected_mode
+      telegram_test_chat_id:
+        description: Dedicated Telegram test chat ID
+        required: true
+        default: "931919812"
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  pronunciation_probe:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Guard owner-approved scope
+        shell: bash
+        env:
+          ACK: ${{ inputs.safety_acknowledgement }}
+          CHAT_ID: ${{ inputs.telegram_test_chat_id }}
+        run: |
+          set -euo pipefail
+          [[ "$ACK" == "authorized_for_selected_mode" ]] || { echo "::error::Owner authorization missing"; exit 1; }
+          [[ "$CHAT_ID" == "931919812" ]] || { echo "::error::This probe is authorized only for dedicated test chat 931919812"; exit 1; }
+
+      - name: Checkout exact probe script
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Run exactly four ElevenLabs pronunciation samples
+        shell: bash
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_PORT: ${{ secrets.VPS_PORT }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          CHAT_ID: ${{ inputs.telegram_test_chat_id }}
+        run: |
+          set -euo pipefail
+          [[ -n "${VPS_HOST:-}" && -n "${VPS_SSH_KEY:-}" ]] || { echo "::error::Missing production SSH secrets"; exit 1; }
+
+          REMOTE_USER="project_ayfaar"
+          REMOTE_PORT="${VPS_PORT:-22}"
+          REMOTE_TMP="/home/project_ayfaar/asi-pronunciation-probe-v2"
+
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          SSH_KEY=~/.ssh/id_ed25519
+          printf '%s\n' "$VPS_SSH_KEY" > "$SSH_KEY"
+          chmod 600 "$SSH_KEY"
+
+          SSH_OPTS=(-i "$SSH_KEY" -p "$REMOTE_PORT" -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -o LogLevel=ERROR -o ConnectTimeout=20)
+          SCP_OPTS=(-i "$SSH_KEY" -P "$REMOTE_PORT" -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -o LogLevel=ERROR -o ConnectTimeout=20)
+
+          ssh "${SSH_OPTS[@]}" "${REMOTE_USER}@${VPS_HOST}" "rm -rf '${REMOTE_TMP}' && mkdir -p '${REMOTE_TMP}'"
+          scp "${SCP_OPTS[@]}" scripts/communication-voice-live-probe-v1.mjs "${REMOTE_USER}@${VPS_HOST}:${REMOTE_TMP}/"
+
+          ssh "${SSH_OPTS[@]}" "${REMOTE_USER}@${VPS_HOST}" \
+            "CHAT_ID='${CHAT_ID}' REMOTE_TMP='${REMOTE_TMP}' bash -s" <<'REMOTE'
+          set -euo pipefail
+          ENV_FILE="/var/www/asi/shared/.env.production.live"
+          trap 'rm -rf "${REMOTE_TMP}"' EXIT
+
+          [[ -f "$ENV_FILE" ]] || { echo "::error::Missing production env"; exit 1; }
+          set -a
+          # shellcheck disable=SC1090
+          source "$ENV_FILE"
+          set +a
+
+          echo "=== production health before ==="
+          curl -fsS http://127.0.0.1:3000/api/version
+          echo
+          curl -fsS http://127.0.0.1:3000/api/health
+          echo
+
+          probe_variant() {
+            local label="$1"
+            local spoken="$2"
+            echo "pronunciation_probe_v2.variant=${label}"
+            env \
+              COMM_VOICE_PROBE_REQUIRED_PROVIDER=elevenlabs \
+              COMM_VOICE_PROBE_CHAT_ID="$CHAT_ID" \
+              COMM_VOICE_PROBE_TEXT="Добро пожаловать в ${spoken}. Ваш виртуальный помощник готов помочь." \
+              node "$REMOTE_TMP/communication-voice-live-probe-v1.mjs"
+          }
+
+          probe_variant "Aye Ess Eye" "Aye Ess Eye"
+          probe_variant "Aye. Ess. EYE." "Aye. Ess. EYE."
+          probe_variant "Aye, Ess, EYE" "Aye, Ess, EYE"
+          probe_variant "Aye-Ess-EYE" "Aye-Ess-EYE"
+
+          echo "=== production health after ==="
+          curl -fsS http://127.0.0.1:3000/api/version
+          echo
+          curl -fsS http://127.0.0.1:3000/api/health
+          echo
+          REMOTE
