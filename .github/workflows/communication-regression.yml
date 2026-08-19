@@ -43,5 +43,6 @@ jobs:
             src/lib/communication/__tests__/max-voice-inbound.test.ts \
             src/app/api/max/webhook/__tests__/route.test.ts \
             src/app/api/max/webhook/__tests__/voice-route.test.ts \
+            src/lib/communication/__tests__/email-draft-only-regression.test.ts \
             src/lib/communication/__tests__/resend-email-inbound.test.ts \
             --reporter=verbose
