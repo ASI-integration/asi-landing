@@ -16,6 +16,10 @@ import {
 const rawKey = Buffer.from('resend-webhook-test-key-32-bytes!!').toString('base64');
 const secret = `whsec_${rawKey}`;
 
+function testEnv(values: Record<string, string>): NodeJS.ProcessEnv {
+  return { NODE_ENV: 'test', ...values } as NodeJS.ProcessEnv;
+}
+
 function eventBody(type = 'email.received') {
   return JSON.stringify({
     type,
@@ -97,11 +101,11 @@ describe('Resend inbound email bridge', () => {
       headers: signedHeaders(rawBody),
       nowMs: 1787164200 * 1000,
       fetchFn: fetchFn as typeof fetch,
-      env: {
+      env: testEnv({
         RESEND_WEBHOOK_SECRET: secret,
         RESEND_API_KEY: 're_test_key',
         RESEND_API_BASE_URL: 'https://api.resend.com',
-      } as NodeJS.ProcessEnv,
+      }),
     });
 
     expect(result).toEqual(
@@ -148,10 +152,10 @@ describe('Resend inbound email bridge', () => {
         },
         nowMs: 1787164200 * 1000,
         fetchFn: fetchFn as typeof fetch,
-        env: {
+        env: testEnv({
           RESEND_WEBHOOK_SECRET: secret,
           RESEND_API_KEY: 're_test_key',
-        } as NodeJS.ProcessEnv,
+        }),
       }),
     ).rejects.toMatchObject({ code: 'invalid_webhook', httpStatus: 401 });
 
@@ -167,10 +171,10 @@ describe('Resend inbound email bridge', () => {
         rawBody,
         headers: signedHeaders(rawBody, '1787160000'),
         nowMs: 1787164200 * 1000,
-        env: {
+        env: testEnv({
           RESEND_WEBHOOK_SECRET: secret,
           RESEND_WEBHOOK_TOLERANCE_SECONDS: '300',
-        } as NodeJS.ProcessEnv,
+        }),
       }),
     ).toThrowError(ResendInboundError);
 
@@ -179,10 +183,10 @@ describe('Resend inbound email bridge', () => {
         rawBody,
         headers: signedHeaders(rawBody, '1787160000'),
         nowMs: 1787164200 * 1000,
-        env: {
+        env: testEnv({
           RESEND_WEBHOOK_SECRET: secret,
           RESEND_WEBHOOK_TOLERANCE_SECONDS: '300',
-        } as NodeJS.ProcessEnv,
+        }),
       });
     } catch (error) {
       expect(error).toMatchObject({ code: 'stale_webhook', httpStatus: 401 });
@@ -198,10 +202,10 @@ describe('Resend inbound email bridge', () => {
       headers: signedHeaders(rawBody),
       nowMs: 1787164200 * 1000,
       fetchFn: fetchFn as typeof fetch,
-      env: {
+      env: testEnv({
         RESEND_WEBHOOK_SECRET: secret,
         RESEND_API_KEY: 're_test_key',
-      } as NodeJS.ProcessEnv,
+      }),
     });
 
     expect(result).toEqual({ ok: true, ignored: true, reason: 'unsupported_event' });
@@ -217,7 +221,7 @@ describe('Resend inbound email bridge', () => {
         rawBody,
         headers: signedHeaders(rawBody),
         nowMs: 1787164200 * 1000,
-        env: { RESEND_WEBHOOK_SECRET: secret } as NodeJS.ProcessEnv,
+        env: testEnv({ RESEND_WEBHOOK_SECRET: secret }),
       }),
     ).rejects.toMatchObject({ code: 'provider_not_configured', httpStatus: 503 });
   });
