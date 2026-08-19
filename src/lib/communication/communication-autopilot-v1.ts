@@ -33,21 +33,50 @@ export type CommunicationAutopilotV1Result = {
   safetyBlockedAction?: boolean;
 };
 
+const GUEST_QUESTION_CLARIFICATION_WINDOW_MS = 10 * 60 * 1000;
+
 function handoffReply(language: 'ru' | 'en'): string {
   return language === 'en'
     ? 'I have passed this to an operator for review. Their answer will appear here after they check the situation.'
     : 'Передала вопрос оператору на проверку. Ответ появится здесь после того, как оператор разберётся в ситуации.';
 }
 
-function clarificationReply(language: 'ru' | 'en', field: 'booking_reference' | 'requested_time' | 'property_knowledge'): string {
+function unclearHandoffReply(language: 'ru' | 'en'): string {
+  return language === 'en'
+    ? 'I still cannot understand the question reliably. I am passing it to an operator so I do not give you the wrong answer.'
+    : 'Похоже, я всё ещё не могу надёжно понять вопрос. Передаю оператору, чтобы не дать вам неверный ответ.';
+}
+
+function clarificationReply(
+  language: 'ru' | 'en',
+  field: 'booking_reference' | 'requested_time' | 'property_knowledge' | 'guest_question_repeat',
+): string {
   if (language === 'en') {
     if (field === 'booking_reference') return 'Please send your booking reference so I can safely check this information.';
     if (field === 'requested_time') return 'What exact time do you need?';
+    if (field === 'guest_question_repeat') return 'I am not sure I understood you correctly. Please repeat the question once more, a little more clearly or briefly.';
     return 'I do not have verified information for this property yet. I am asking the operator to clarify it.';
   }
   if (field === 'booking_reference') return 'Пришлите номер бронирования, чтобы я могла безопасно проверить информацию.';
   if (field === 'requested_time') return 'До какого точного времени вам нужно?';
+  if (field === 'guest_question_repeat') return 'Не уверена, что правильно вас поняла. Повторите, пожалуйста, вопрос ещё раз — можно чуть короче или чётче.';
   return AUTOPILOT_MISSING_KNOWLEDGE_REPLY_RU;
+}
+
+function hasRecentGuestQuestionClarification(
+  session: CommunicationAutopilotSessionMemory | null | undefined,
+  nowMs = Date.now(),
+): boolean {
+  if (
+    session?.requested_missing_field !== 'guest_question_repeat' ||
+    session.unresolved_action !== 'unclear_situation'
+  ) {
+    return false;
+  }
+  const updatedAtMs = Date.parse(String(session.updated_at ?? ''));
+  if (!Number.isFinite(updatedAtMs)) return false;
+  const ageMs = nowMs - updatedAtMs;
+  return ageMs >= 0 && ageMs <= GUEST_QUESTION_CLARIFICATION_WINDOW_MS;
 }
 
 export function detectOperationalLanguage(
@@ -185,19 +214,35 @@ export function runCommunicationAutopilotV1(input: {
 
   const topic = classifyKnowledgeTopic(effectiveMessageText);
   if (topic === 'unknown') {
+    const clarificationAlreadyAsked = hasRecentGuestQuestionClarification(input.session);
+    if (clarificationAlreadyAsked) {
+      return {
+        action: 'operator_handoff',
+        replyText: unclearHandoffReply(language),
+        topic,
+        intent: 'unclear_situation_after_clarification',
+        needsOperator: true,
+        resolved: false,
+        missingFields: [],
+        escalationReason: 'unclear_situation_after_clarification',
+        language,
+        memoryUsed: true,
+        unresolvedAction: 'unclear_situation_after_clarification',
+        safetyBlockedAction: true,
+      };
+    }
     return {
-      action: 'operator_handoff',
-      replyText: handoffReply(language),
+      action: 'clarification',
+      replyText: clarificationReply(language, 'guest_question_repeat'),
       topic,
       intent: 'unclear_situation',
-      needsOperator: true,
+      needsOperator: false,
       resolved: false,
       missingFields: [],
-      escalationReason: 'unclear_situation',
       language,
       memoryUsed,
+      requestedMissingField: 'guest_question_repeat',
       unresolvedAction: 'unclear_situation',
-      safetyBlockedAction: true,
     };
   }
 
@@ -247,8 +292,6 @@ export function runCommunicationAutopilotV1(input: {
       missingFields: [],
       escalationReason: `${intent}_approval_required`,
       language,
-      // A prior late-checkout event remains history only; approval is always
-      // re-requested for the current stay through this operator handoff.
       memoryUsed: true,
       unresolvedAction: intent,
       safetyBlockedAction: true,
