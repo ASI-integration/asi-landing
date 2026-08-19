@@ -292,7 +292,8 @@ export function resolveKnowledgeAnswer(input: {
     }
     case 'checkout_time': {
       const lateRequest = /поздн|позже|подольше/i.test(input.messageText);
-      const reply = composeGuestCheckoutReplyRu(property);
+      const rawReply = composeGuestCheckoutReplyRu(property);
+      const reply = rawReply?.replace(/\bдо\s+до\b/iu, 'до') ?? null;
       if (reply) {
         const enriched = lateRequest
           ? `${reply} Поздний выезд возможен только по согласованию — напишите, если нужно передать запрос.`
