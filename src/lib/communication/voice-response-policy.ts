@@ -12,6 +12,7 @@ export type VoiceResponseDecisionReason =
   | 'urgent_intent'
   | 'night_core_stay_issue'
   | 'inbound_voice_allowed'
+  | 'preferred_voice'
   | 'copyable_data_text_only'
   | 'disabled_by_user'
   | 'out_of_domain'
@@ -195,8 +196,16 @@ export function evaluateVoiceResponsePolicy(input: VoiceResponsePolicyInput): Vo
     return { shouldSendVoice: false, reason: 'out_of_domain', timezoneSource };
   }
 
-  const urgentDecision = buildUrgentVoiceDecision(input, settings, maxDurationSeconds, timezoneSource);
-  if (urgentDecision) return urgentDecision;
+  // Explicit saved choice wins. Without one, mirror the transport the guest used:
+  // text in -> text out, voice in -> voice out (subject to the safety gates below).
+  const modalityAllowsVoice =
+    input.userVoiceSettings.preferredResponseModality === 'voice' ||
+    (!input.userVoiceSettings.preferredResponseModality && input.inboundTransport === 'telegram_voice');
+
+  if (modalityAllowsVoice) {
+    const urgentDecision = buildUrgentVoiceDecision(input, settings, maxDurationSeconds, timezoneSource);
+    if (urgentDecision) return urgentDecision;
+  }
 
   if (input.messageRisk === 'sensitive_internal' || isOperatorEscalation(input)) {
     return { shouldSendVoice: false, reason: 'sensitive_internal', timezoneSource };
@@ -204,6 +213,27 @@ export function evaluateVoiceResponsePolicy(input: VoiceResponsePolicyInput): Vo
 
   if (containsCopyableGuestData(input.replyText)) {
     return { shouldSendVoice: false, reason: 'copyable_data_text_only', timezoneSource };
+  }
+
+  if (!modalityAllowsVoice) {
+    return { shouldSendVoice: false, reason: 'not_needed', timezoneSource };
+  }
+
+  if (
+    input.userVoiceSettings.preferredResponseModality === 'voice' &&
+    !isStaffRole(input.role) &&
+    (isCoreStayTopic(input) || isAdjacentTopic(input) || isMetaVoiceReply(input))
+  ) {
+    const voiceText = prepareVoiceTextForTts(input.replyText, settings.maxVoiceTextChars);
+    if (voiceText.length >= 8 && voiceText.length <= settings.maxVoiceTextChars) {
+      return {
+        shouldSendVoice: true,
+        reason: 'preferred_voice',
+        voiceText,
+        maxDurationSeconds,
+        timezoneSource,
+      };
+    }
   }
 
   if (input.inboundTransport === 'telegram_voice' && isMetaVoiceReply(input)) {
