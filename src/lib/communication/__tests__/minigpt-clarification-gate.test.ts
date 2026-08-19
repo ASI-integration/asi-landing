@@ -7,7 +7,7 @@ import {
 } from '../guest-communication-brain';
 import type { LlmSafeDomainProvider } from '../llm-safe-domain-layer';
 
-function lowConfidenceProvider(spy?: ReturnType<typeof vi.fn>): LlmSafeDomainProvider {
+function lowConfidenceProvider(spy?: () => void): LlmSafeDomainProvider {
   return {
     name: 'openai',
     modelName: 'gpt-mini-test',
