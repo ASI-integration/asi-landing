@@ -27,15 +27,31 @@ function hasFfmpeg() {
 
 function resolveLlm() {
   const enabled = truthy(process.env.LLM_SAFE_DOMAIN_ENABLED) || truthy(process.env.GUEST_CONCIERGE_LLM_ENABLED);
-  const provider = safeProvider(process.env.LLM_SAFE_DOMAIN_PROVIDER ?? process.env.LLM_ROUTER_PROVIDER, 'openai');
-  const hasKey = provider === 'deepseek'
-    ? present('DEEPSEEK_API_KEY')
-    : present('OPENAI_API_KEY') || present('LLM_API_KEY');
+  const explicitProvider = String(process.env.LLM_SAFE_DOMAIN_PROVIDER ?? '').trim().toLowerCase();
+  const routerProvider = String(process.env.LLM_ROUTER_PROVIDER ?? '').trim().toLowerCase();
+  const hasOpenAiKey = present('OPENAI_API_KEY') || present('LLM_API_KEY');
+  const hasDeepSeekKey = present('DEEPSEEK_API_KEY');
+  const provider =
+    explicitProvider === 'openai' || explicitProvider === 'deepseek'
+      ? explicitProvider
+      : routerProvider === 'openai' || routerProvider === 'deepseek'
+        ? routerProvider
+        : hasOpenAiKey
+          ? 'openai'
+          : hasDeepSeekKey
+            ? 'deepseek'
+            : 'disabled';
+  const hasKey = provider === 'deepseek' ? hasDeepSeekKey : provider === 'openai' ? hasOpenAiKey : false;
   return {
     enabled,
     provider,
     hasKey,
-    modelPresent: present('LLM_SAFE_DOMAIN_MODEL') || present('GUEST_CONCIERGE_LLM_MODEL') || present('OPENAI_MODEL') || present('DEEPSEEK_MODEL'),
+    modelPresent:
+      present('LLM_SAFE_DOMAIN_MODEL') ||
+      present('GUEST_CONCIERGE_LLM_MODEL') ||
+      present('OPENAI_MODEL') ||
+      present('LLM_MODEL') ||
+      present('DEEPSEEK_MODEL'),
     configured: enabled && hasKey,
   };
 }
