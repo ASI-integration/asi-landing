@@ -73,7 +73,7 @@ export function classifyKnowledgeTopic(messageText: string): KnowledgeTopic {
   ) {
     return 'checkout_time';
   }
-  if (/правил|тишин|шум|курить|курени|вечерин|приглас.*гост|сторонн.*гост|house rules|smoking|party|quiet hours|extra guest|occupancy/i.test(lower)) return 'house_rules';
+  if (/правил|тишин|шум|громк|музык|курить|курени|вечерин|приглас.*гост|сторонн.*гост|house rules|smoking|party|quiet hours|loud|music|extra guest|occupancy/i.test(lower)) return 'house_rules';
   if (/животн|собак|кошк|питомц|\bpets?\b|\bdogs?\b|\bcats?\b/i.test(lower)) return 'pets';
   if (/залог|депозит/i.test(lower)) return 'deposit';
   if (/документ|справк|чек|квитанц|отчетн/i.test(lower)) return 'reporting_documents';
@@ -350,14 +350,14 @@ export function resolveKnowledgeAnswer(input: {
 export function requiresAutopilotOperatorEscalation(messageText: string): string | null {
   const lower = messageText.toLowerCase();
   if (/пожар|дым|газ|угроз.*жизн|emergency|fire|smoke|gas leak|medical emergency/i.test(lower)) return 'critical_safety';
-  if (/не могу (?:войти|попасть)|застрял.*снаруж|код.*не работ|потерял.*ключ|lockout|locked out|cannot (?:enter|get in)|access code.*not work|lost key/i.test(lower)) return 'urgent_access_problem';
+  if (/не могу (?:войти|попасть)|застрял.*снаруж|код.*не работ|потерял.*ключ|(?:замок|дверь).{0,40}(?:слом(?:ан|ана|ано|аны|ался|алась|алось|ались)|не\s+работ|не\s+откры)|lockout|locked out|cannot (?:enter|get in)|access code.*not work|lost key|(?:lock|door).{0,40}(?:broken|not working|will not open|won't open)/i.test(lower)) return 'urgent_access_problem';
   if (/возврат|верн(?:уть|ите) деньги|компенсац|refund|money back|compensation|chargeback|payment dispute/i.test(lower)) return 'refund_request';
   if (/отмен.*брон|cancel.*(?:booking|reservation)/i.test(lower)) return 'cancellation';
   if (/измен.*(?:дат|брон)|перенест.*брон|change.*(?:booking|reservation|dates?)|move my booking|extend (?:my )?stay|продл.*прожив/i.test(lower)) return 'booking_change';
   if (/нет горячей воды|нет отоплен|нет электрич|света нет|интернет не работ|no hot water|no heating|no electricity|power outage|internet (?:is )?(?:down|not working)/i.test(lower)) return 'maintenance_issue';
-  if (/не работ|сломал|протека|поломк|maintenance|broken|leaking|does not work|doesn't work/i.test(lower)) return 'maintenance_issue';
+  if (/не работ|сломал|сломан|протека|поломк|maintenance|broken|leaking|does not work|doesn't work/i.test(lower)) return 'maintenance_issue';
   if (/уборк|грязн|нет бель|нет полотен|cleaning|dirty|missing linen|missing towels|supplies/i.test(lower)) return 'cleaning_issue';
-  if (/жалоб.*шум|сосед.*шум|noise complaint|too (?:loud|noisy)/i.test(lower)) return 'noise_complaint';
+  if (/(?:сосед|сверху|рядом).{0,48}(?:шум|громк|музык|вечерин)|(?:шум|громк|музык|вечерин).{0,48}(?:сосед|сверху|рядом)|жалоб.*шум|noise complaint|too (?:loud|noisy)/i.test(lower)) return 'noise_complaint';
   if (/жалоб|ужасн|плохой сервис|отвратительн|кошмар|недовол.*(?:сервис|обслуж|номер|прожив)/i.test(lower)) return 'complaint';
   if (/конфликт|спор|претензи|оскорб|агресс/i.test(lower)) return 'conflict';
   if (/негативн.*отзыв|плохой отзыв/i.test(lower)) return 'review_threat';
