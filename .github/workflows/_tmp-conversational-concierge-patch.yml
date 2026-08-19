@@ -1,0 +1,76 @@
+name: Temporary Conversational Concierge Patch
+
+on:
+  push:
+    branches:
+      - chatgpt/conversational-concierge-v1
+
+permissions:
+  contents: write
+
+jobs:
+  patch-orchestrator:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: chatgpt/conversational-concierge-v1
+          fetch-depth: 0
+
+      - name: Apply exact source patch
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('src/lib/communication/orchestrator.ts')
+          source = path.read_text()
+
+          old_import = "import { tryCommunicationAutopilotV1OrchestratorTurn } from './communication-autopilot-v1-orchestrator';"
+          new_import = """import {
+            shouldPreferCommunicationAutopilotV1,
+            tryCommunicationAutopilotV1OrchestratorTurn,
+          } from './communication-autopilot-v1-orchestrator';"""
+          if source.count(old_import) != 1:
+              raise SystemExit(f'expected exactly one V1 orchestrator import, found {source.count(old_import)}')
+          source = source.replace(old_import, new_import, 1)
+
+          old_gate = """        const autopilotProperty = telegramBookingObjectCtx.property;
+                  if (canClassifyInboundCommunication(autopilotProperty)) {
+                    const telegramUserId = String("""
+          new_gate = """        const autopilotProperty = telegramBookingObjectCtx.property;
+                  const sessionMemory = autopilotSessionFromCollectedData(sessionCollectedData);
+                  const useDeterministicAutopilotV1 =
+                    !canSendAutonomousGuestReply(autopilotProperty) ||
+                    shouldPreferCommunicationAutopilotV1(text, sessionMemory);
+                  if (canClassifyInboundCommunication(autopilotProperty) && useDeterministicAutopilotV1) {
+                    const telegramUserId = String("""
+          if source.count(old_gate) != 1:
+              raise SystemExit(f'expected exactly one inline V1 gate, found {source.count(old_gate)}')
+          source = source.replace(old_gate, new_gate, 1)
+
+          duplicate_session = "          const sessionMemory = autopilotSessionFromCollectedData(sessionCollectedData);\n          const passport = propertyId ? await getGroundedKnowledge(propertyId) : null;"
+          replacement_session = "          const passport = propertyId ? await getGroundedKnowledge(propertyId) : null;"
+          if source.count(duplicate_session) != 1:
+              raise SystemExit(f'expected exactly one moved session-memory declaration, found {source.count(duplicate_session)}')
+          source = source.replace(duplicate_session, replacement_session, 1)
+
+          path.write_text(source)
+          PY
+
+      - name: Verify only intended orchestrator markers changed
+        shell: bash
+        run: |
+          grep -n "shouldPreferCommunicationAutopilotV1" src/lib/communication/orchestrator.ts
+          grep -n "useDeterministicAutopilotV1" src/lib/communication/orchestrator.ts
+
+      - name: Remove temporary workflow and commit patch
+        shell: bash
+        run: |
+          rm .github/workflows/_tmp-conversational-concierge-patch.yml
+          git config user.name "ASI-integration"
+          git config user.email "actions@users.noreply.github.com"
+          git add src/lib/communication/orchestrator.ts .github/workflows/_tmp-conversational-concierge-patch.yml
+          git diff --cached --check
+          git commit -m "feat(communication): route harmless chat to concierge"
+          git push origin HEAD:chatgpt/conversational-concierge-v1
