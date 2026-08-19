@@ -7,6 +7,7 @@ on:
     paths:
       - 'src/lib/communication/**'
       - 'src/app/api/max/webhook/**'
+      - 'src/app/api/email/**'
       - '.github/workflows/communication-regression.yml'
   workflow_dispatch:
 
@@ -30,7 +31,7 @@ jobs:
       - name: Install deps
         run: npm ci
 
-      - name: Guest communication, Telegram voice, MAX voice and pending identity regression
+      - name: Guest communication, Telegram voice, MAX voice, Email and pending identity regression
         run: |
           npx vitest run \
             src/lib/communication/__tests__/guest-communication-operational-v1.test.ts \
@@ -42,4 +43,5 @@ jobs:
             src/lib/communication/__tests__/max-voice-inbound.test.ts \
             src/app/api/max/webhook/__tests__/route.test.ts \
             src/app/api/max/webhook/__tests__/voice-route.test.ts \
+            src/lib/communication/__tests__/resend-email-inbound.test.ts \
             --reporter=verbose
