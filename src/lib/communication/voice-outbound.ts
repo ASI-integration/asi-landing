@@ -10,6 +10,7 @@ import {
 import {
   loadChatVoiceUserSettings,
   resolvePropertyVoicePolicy,
+  RESPONSE_MODALITY_CHOICE_RU,
   VOICE_FIRST_NOTICE_RU,
   type PropertyVoicePolicySettings,
 } from './voice-response-settings';
@@ -103,16 +104,44 @@ export function resolveVoiceResponseDecision(params: VoiceOutboundContext): Voic
   });
 }
 
+function shouldOfferResponseModalityChoice(params: {
+  context: VoiceOutboundContext;
+  transport: VoiceInboundTransport;
+  decision: VoiceResponseDecision;
+  preferredResponseModality?: 'text' | 'voice' | null;
+  promptAlreadySent?: boolean;
+}): boolean {
+  if (params.transport !== 'telegram_text') return false;
+  if (params.preferredResponseModality) return false;
+  if (params.promptAlreadySent) return false;
+  if (params.context.isUrgent || params.context.isEscalation) return false;
+  if (inferMessageRisk(params.context) !== 'normal') return false;
+  if (params.context.responseMode === 'operator_escalation') return false;
+  if (params.context.responseMode === 'ask_clarifying_question') return false;
+  if (params.decision.shouldSendVoice) return false;
+  return true;
+}
+
 export function buildVoiceOutboundMetadata(params: VoiceOutboundContext): Record<string, unknown> {
   const decision = resolveVoiceResponseDecision(params);
   const session = loadAutonomousSession(params.chatId);
   const userSettings = loadChatVoiceUserSettings(session?.collected_data);
-  const appendFirstNotice = decision.shouldSendVoice && !userSettings.voiceNoticeSent;
+  const transport = inboundTransport(params.envelope);
+  const offerModalityChoice = shouldOfferResponseModalityChoice({
+    context: params,
+    transport,
+    decision,
+    preferredResponseModality: userSettings.preferredResponseModality,
+    promptAlreadySent: userSettings.modalityPreferencePromptSent,
+  });
 
   return {
     voice_response_decision: decision,
-    voice_append_first_notice: appendFirstNotice,
-    voice_first_notice_text: appendFirstNotice ? VOICE_FIRST_NOTICE_RU : undefined,
+    // Legacy notice is superseded by the one-time modality choice prompt.
+    voice_append_first_notice: false,
+    voice_first_notice_text: undefined,
+    response_modality_prompt: offerModalityChoice,
+    response_modality_prompt_text: offerModalityChoice ? RESPONSE_MODALITY_CHOICE_RU : undefined,
     voice_policy_property_timezone: params.propertyTimezone ?? null,
     voice_policy_timezone_source: decision.timezoneSource ?? null,
   };
@@ -123,6 +152,13 @@ export function appendVoiceFirstNoticeIfNeeded(text: string, metadata?: Record<s
   const notice = String(metadata.voice_first_notice_text ?? VOICE_FIRST_NOTICE_RU).trim();
   if (!notice || text.includes(notice)) return text;
   return `${text}\n\n${notice}`;
+}
+
+export function appendResponseModalityPromptIfNeeded(text: string, metadata?: Record<string, unknown>): string {
+  if (!metadata?.response_modality_prompt) return text;
+  const prompt = String(metadata.response_modality_prompt_text ?? RESPONSE_MODALITY_CHOICE_RU).trim();
+  if (!prompt || text.includes(prompt)) return text;
+  return `${text}\n\n${prompt}`;
 }
 
 export function inferDomainZoneForVoice(params: {
