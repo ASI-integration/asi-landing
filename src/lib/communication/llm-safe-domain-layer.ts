@@ -196,9 +196,6 @@ export async function runLlmSafeDomainLayer(input: {
   if (guard) return guard;
 
   const local = classifyLlmSafeDomainZoneLocally(input.messageText);
-  // Explicitly out-of-domain topics stay on the deterministic redirect. A message
-  // that is merely unknown/fragmentary is allowed through to MiniGPT so it can
-  // try semantic recovery instead of being mislabeled as unrelated.
   if (local.domainZone === 'out_of_domain' && local.reason === 'local_out_of_domain_topic') {
     return {
       applied: true,
