@@ -2541,6 +2541,11 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
           property: telegramBookingObjectCtx.property,
           propertyId,
           conversationMemory: commMemory,
+          conversationContext: convSession.memory.lastMessages
+            .slice(0, -1)
+            .slice(-6)
+            .map((message) => `${message.direction === 'inbound' ? 'guest' : 'assistant'}: ${String(message.content ?? '').slice(0, 240)}`)
+            .join('\n'),
           telegramChatId: chatId,
         });
         const answer = commDecision.guestTestResult;
