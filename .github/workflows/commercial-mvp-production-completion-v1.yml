@@ -31,6 +31,10 @@ jobs:
           SAFETY_ACKNOWLEDGEMENT: ${{ inputs.safety_acknowledgement }}
         run: |
           set -euo pipefail
+          if [[ "$GITHUB_REF" != 'refs/heads/main' ]]; then
+            echo '::error::Commercial MVP production acceptance must be dispatched from main.'
+            exit 1
+          fi
           if [[ ! "$EXPECTED_PRODUCTION_SHA" =~ ^[0-9a-f]{40}$ ]]; then
             echo '::error::expected_production_sha must be an exact lowercase 40-character SHA.'
             exit 1
@@ -71,6 +75,14 @@ jobs:
             exit 1
           fi
           printf 'SOURCE_SHA=%s\nSOURCE_MAIN_ANCESTRY=PASS\n' "$actual" > commercial-mvp-production-readonly-report.txt
+
+      - name: Checkout acceptance tooling revision
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+          ref: ${{ github.sha }}
+          path: acceptance-tooling
 
       - name: Verify public production identity and health
         shell: bash
@@ -159,7 +171,7 @@ jobs:
           psql -X "$production_db_url" \
             --no-psqlrc \
             --set ON_ERROR_STOP=1 \
-            --file scripts/commercial-mvp-production-readonly.sql \
+            --file acceptance-tooling/scripts/commercial-mvp-production-readonly.sql \
             > "$db_report"
           cat "$db_report" >> commercial-mvp-production-readonly-report.txt
 
