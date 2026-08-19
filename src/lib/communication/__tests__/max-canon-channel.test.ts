@@ -260,7 +260,7 @@ describe('MAX canonical communication channel', () => {
     expect(sent).toBe(true);
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const firstFetchCall = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
-    expect(firstFetchCall[0]).toBe('https://platform-api.max.ru/messages');
+    expect(firstFetchCall[0]).toBe('https://platform-api2.max.ru/messages?chat_id=max-chat-1');
     expect(firstFetchCall[1]).toEqual(
       expect.objectContaining({
         method: 'POST',
@@ -268,7 +268,7 @@ describe('MAX canonical communication channel', () => {
           Authorization: 'max-token-1',
           'Content-Type': 'application/json',
         }),
-        body: JSON.stringify({ text: 'hello', chat_id: 'max-chat-1' }),
+        body: JSON.stringify({ text: 'hello' }),
       }),
     );
   });
