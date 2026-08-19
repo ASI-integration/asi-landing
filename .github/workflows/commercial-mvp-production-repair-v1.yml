@@ -34,7 +34,7 @@ jobs:
     environment: production
     timeout-minutes: 10
     env:
-      EXPECTED_SUPABASE_PROJECT_REF: meeravcldnmocjtlqoeu
+      EXPECTED_SUPABASE_PROJECT_REF: jwinifeienvzejofmbua
       PGCONNECT_TIMEOUT: '10'
     steps:
       - name: Require main workflow source and exact SHA
@@ -157,7 +157,7 @@ jobs:
     environment: production
     timeout-minutes: 10
     env:
-      EXPECTED_SUPABASE_PROJECT_REF: meeravcldnmocjtlqoeu
+      EXPECTED_SUPABASE_PROJECT_REF: jwinifeienvzejofmbua
       PGCONNECT_TIMEOUT: '10'
     steps:
       - name: Checkout exact approved repair SHA

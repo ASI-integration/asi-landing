@@ -23,6 +23,10 @@ const register = readFileSync(
   resolve(root, 'scripts/commercial-mvp-production-repair-register-and-verify.sql'),
   'utf8',
 );
+const productionIdentity = readFileSync(
+  resolve(root, 'src/lib/asi-runtime/supabase-db-url-project-identity.ts'),
+  'utf8',
+);
 
 describe('Commercial MVP production remediation v1', () => {
   it('completes only the six missing communication property columns additively', () => {
@@ -67,6 +71,13 @@ describe('Commercial MVP production remediation v1', () => {
     expect((register.match(/INSERT INTO supabase_migrations\.schema_migrations/g) ?? []).length).toBe(2);
     expect(register).not.toMatch(/ON\s+CONFLICT/iu);
     expect(register).not.toMatch(/\b(?:DELETE|UPDATE|TRUNCATE)\b/u);
+  });
+
+  it('pins the repair workflow to the canonical production Supabase project ref', () => {
+    const match = productionIdentity.match(/EXPECTED_PRODUCTION_SUPABASE_PROJECT_REF = '([^']+)'/u);
+    expect(match?.[1]).toBeTruthy();
+    expect(workflow).toContain(`EXPECTED_SUPABASE_PROJECT_REF: ${match?.[1]}`);
+    expect((workflow.match(/EXPECTED_SUPABASE_PROJECT_REF:/g) ?? []).length).toBe(2);
   });
 
   it('requires explicit owner approval before the single production mutation', () => {
