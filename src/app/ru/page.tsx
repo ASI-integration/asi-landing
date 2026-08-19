@@ -39,7 +39,7 @@ export default function HomeRu() {
         }} telegramVariant="icon" showTopRow={false} />
 
         {/* ── Три рычага роста ── */}
-        <section className="py-14 sm:py-18 px-4 sm:px-6 bg-[var(--t-surface-2)] border-t border-[var(--t-border)]">
+        <section className="py-14 sm:py-20 px-4 sm:px-6 bg-[var(--t-surface-2)] border-t border-[var(--t-border)]">
           <div className="max-w-5xl mx-auto">
             <h2 className="text-2xl sm:text-3xl font-bold text-[var(--t-text)] mb-2">
               Рост — это не только новые объекты
