@@ -561,6 +561,7 @@ function buildOutboundTransportMetadata(params: {
       user_id: metadata?.user_id ?? params.envelope.externalUserId ?? null,
       max_chat_id: metadata?.chat_id ?? params.envelope.chatId ?? null,
       max_user_id: metadata?.user_id ?? params.envelope.externalUserId ?? null,
+      ...(params.voiceExtras ?? {}),
     };
   }
 
@@ -4680,7 +4681,7 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
                 },
                 fn: async () => {
                   const voiceExtras =
-                    envelope.channel === 'telegram'
+                    envelope.channel === 'telegram' || envelope.channel === 'max'
                       ? await buildTelegramVoiceExtras({
                           envelope,
                           replyText,

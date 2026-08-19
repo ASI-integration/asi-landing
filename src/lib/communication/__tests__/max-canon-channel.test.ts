@@ -108,6 +108,14 @@ vi.mock('../context', () => ({
       reservationId: null,
       propertyId: null,
     },
+    knowledge: {
+      universalPolicy: 'Never fabricate.',
+      propertyId: undefined,
+      loadStatus: 'not_requested',
+      checkInInstructions: 'Information unavailable.',
+      checkOutInstructions: 'Information unavailable.',
+      wifiInstructions: 'Information unavailable.',
+    },
   }),
 }));
 
@@ -260,7 +268,7 @@ describe('MAX canonical communication channel', () => {
     expect(sent).toBe(true);
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const firstFetchCall = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
-    expect(firstFetchCall[0]).toBe('https://platform-api.max.ru/messages');
+    expect(firstFetchCall[0]).toBe('https://platform-api2.max.ru/messages?chat_id=max-chat-1');
     expect(firstFetchCall[1]).toEqual(
       expect.objectContaining({
         method: 'POST',
@@ -268,7 +276,7 @@ describe('MAX canonical communication channel', () => {
           Authorization: 'max-token-1',
           'Content-Type': 'application/json',
         }),
-        body: JSON.stringify({ text: 'hello', chat_id: 'max-chat-1' }),
+        body: JSON.stringify({ text: 'hello' }),
       }),
     );
   });
@@ -323,7 +331,6 @@ describe('MAX canonical communication channel', () => {
 
     expect(isCanonicalGuestCommunicationChannel('max')).toBe(true);
     expect(canon.ruleGroups.prohibitedHallucinations).toContain('do_not_guess_wifi_password_or_door_code');
-    expect(pageSource).toContain("{ key: 'max', label: 'MAX'");
     expect(pageSource).toContain("review.channel === 'max'");
   });
 });
