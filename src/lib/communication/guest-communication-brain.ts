@@ -74,10 +74,20 @@ export type CommunicationMemorySnapshot = {
   awaiting_guest_booking_identifier?: boolean;
   last_intent?: GuestCommunicationIntent | null;
   last_operator_followup_id?: string | null;
+  awaiting_guest_clarification?: boolean;
+  guest_clarification_requested_at?: string | null;
 };
 
 export const MINIGPT_OPERATOR_HANDOFF_REPLY =
   'Поняла вопрос. Здесь нужна проверка оператора, чтобы не дать вам неверную информацию. Я передам обращение и вернусь с ответом здесь.';
+
+export const MINIGPT_CLARIFICATION_REPLY =
+  'Не уверена, что правильно вас поняла. Повторите, пожалуйста, вопрос ещё раз — можно чуть короче или чётче.';
+
+const MINIGPT_UNCLEAR_AFTER_CLARIFICATION_REPLY =
+  'Похоже, я всё ещё не могу надёжно понять вопрос. Передаю оператору, чтобы не дать вам неверный ответ.';
+
+const MINIGPT_CLARIFICATION_WINDOW_MS = 10 * 60 * 1000;
 
 export function buildOperatorEscalationDetail(params: {
   role: unknown;
@@ -113,6 +123,7 @@ function mapSuggestedRoute(
 }
 
 function mapResponseModeFromGuestTest(result: GuestTestAnswerResult): CommunicationResponseMode {
+  if (result.decisionLayer === 'clarification_request') return 'ask_clarifying_question';
   if (result.needsOperator) return 'operator_escalation';
   if (result.decisionLayer === 'property_data_answer') return 'answer_from_property';
   if (result.decisionLayer === 'global_rule_answer') return 'answer_from_global_rule';
@@ -178,6 +189,60 @@ function buildSensitiveEscalationDecision(input: {
   };
 }
 
+function buildClarificationDecision(input: {
+  intent: GuestCommunicationIntent;
+  confidence: number;
+  roleConflict: boolean;
+  reason?: string;
+}): CommunicationDecision {
+  const guestTestResult: GuestTestAnswerResult = {
+    outcome: 'clarification_requested',
+    reply: MINIGPT_CLARIFICATION_REPLY,
+    intent: 'clarification',
+    decisionLayer: 'clarification_request',
+    missingFields: [],
+    needsOperator: false,
+  };
+  return {
+    detectedIntent: input.intent,
+    confidence: Math.min(input.confidence, 0.69),
+    roleConflict: input.roleConflict,
+    suggestedRoute: 'guest',
+    responseMode: 'ask_clarifying_question',
+    canAnswerAutomatically: true,
+    shouldEscalate: false,
+    reason: input.reason ?? 'guest_intent_needs_clarification',
+    safeGuestReply: MINIGPT_CLARIFICATION_REPLY,
+    guestTestResult,
+    outcome: 'clarification_requested',
+    missingFields: [],
+    decisionSource: 'deterministic',
+  };
+}
+
+function hasRecentClarification(memory: CommunicationMemorySnapshot | undefined, nowMs = Date.now()): boolean {
+  if (!memory?.awaiting_guest_clarification) return false;
+  const requestedAtMs = Date.parse(String(memory.guest_clarification_requested_at ?? ''));
+  if (!Number.isFinite(requestedAtMs)) return false;
+  const ageMs = nowMs - requestedAtMs;
+  return ageMs >= 0 && ageMs <= MINIGPT_CLARIFICATION_WINDOW_MS;
+}
+
+function buildUnclearAfterClarificationDecision(base: CommunicationDecision): CommunicationDecision {
+  return {
+    ...base,
+    responseMode: 'operator_escalation',
+    canAnswerAutomatically: false,
+    shouldEscalate: true,
+    reason: 'guest_intent_still_unclear_after_clarification',
+    safeGuestReply: MINIGPT_UNCLEAR_AFTER_CLARIFICATION_REPLY,
+    operatorReason: 'После одного уточнения смысл вопроса всё ещё не определён достаточно надёжно.',
+    guestTestResult: undefined,
+    outcome: 'operator_followup_required',
+    decisionSource: 'deterministic',
+  };
+}
+
 export function decideGuestCommunication(input: {
   messageText: string;
   currentIdentity?: SenderIdentity | null;
@@ -235,6 +300,14 @@ export function decideGuestCommunication(input: {
         decisionSource: 'prompt_injection_guard',
       };
     }
+    if (router.detectedIntent === 'unclear_role') {
+      return buildClarificationDecision({
+        intent: router.detectedIntent,
+        confidence: router.confidence,
+        roleConflict: router.roleConflict,
+        reason: 'guest_intent_unclear_first_pass',
+      });
+    }
     return {
       detectedIntent: router.detectedIntent,
       confidence: router.confidence,
@@ -245,7 +318,7 @@ export function decideGuestCommunication(input: {
         false,
         input.currentIdentity,
       ),
-      responseMode: router.detectedIntent === 'unclear_role' ? 'ask_clarifying_question' : 'operator_escalation',
+      responseMode: 'operator_escalation',
       canAnswerAutomatically: false,
       shouldEscalate: false,
       reason: router.reason,
@@ -279,7 +352,7 @@ export function decideGuestCommunication(input: {
     router.detectedIntent,
   );
 
-  if (guestTestResult.needsOperator || guestTestResult.intent === 'unknown') {
+  if (guestTestResult.intent === 'unknown') {
     const injection = detectTelegramPromptInjection(messageText);
     if (injection.detected) {
       return {
@@ -298,6 +371,15 @@ export function decideGuestCommunication(input: {
         decisionSource: 'prompt_injection_guard',
       };
     }
+    return buildClarificationDecision({
+      intent: detectedIntent,
+      confidence: router.confidence,
+      roleConflict: router.roleConflict,
+      reason: 'guest_intent_unknown_first_pass',
+    });
+  }
+
+  if (guestTestResult.needsOperator) {
     return {
       detectedIntent,
       confidence: router.confidence,
@@ -306,7 +388,7 @@ export function decideGuestCommunication(input: {
       responseMode: 'operator_escalation',
       canAnswerAutomatically: false,
       shouldEscalate: true,
-      reason: guestTestResult.intent === 'unknown' ? 'guest_intent_unknown' : router.reason,
+      reason: router.reason,
       safeGuestReply: MINIGPT_OPERATOR_HANDOFF_REPLY,
       operatorReason: escalationReasonForIntent(detectedIntent),
       guestTestResult,
@@ -366,9 +448,13 @@ export async function decideGuestCommunicationWithLlmSafeDomainLayer(input: {
     provider: input.llmSafeDomainProvider,
   });
 
-  if (!guard.applied) return base;
+  if (guard.applied) return mapLlmSafeDomainResultToCommunicationDecision(base, guard);
 
-  return mapLlmSafeDomainResultToCommunicationDecision(base, guard);
+  if (base.responseMode === 'ask_clarifying_question' && hasRecentClarification(input.conversationMemory)) {
+    return buildUnclearAfterClarificationDecision(base);
+  }
+
+  return base;
 }
 
 function mapLlmSafeDomainResultToCommunicationDecision(
@@ -385,6 +471,7 @@ function mapLlmSafeDomainResultToCommunicationDecision(
     reason: result.decision.reason,
     safeGuestReply: result.decision.suggestedReply,
     operatorReason: undefined,
+    guestTestResult: undefined,
     outcome: 'answered_by_concierge_autopilot',
     missingFields: [],
     decisionSource: result.source === 'llm_safe_domain_layer_v1' ? 'llm_fallback' : 'deterministic',
@@ -420,6 +507,16 @@ export function patchCommunicationMemoryFromDecision(input: {
   if (input.decision.detectedIntent === 'guest_booking_lookup') {
     next.awaiting_guest_booking_identifier = '1';
   }
+  if (
+    input.decision.responseMode === 'ask_clarifying_question' &&
+    input.decision.outcome === 'clarification_requested'
+  ) {
+    next.awaiting_guest_clarification = '1';
+    next.guest_clarification_requested_at = new Date().toISOString();
+  } else {
+    next.awaiting_guest_clarification = '0';
+    next.guest_clarification_requested_at = '';
+  }
   return next;
 }
 
@@ -437,5 +534,7 @@ export function loadCommunicationMemoryFromSession(session: {
     awaiting_guest_booking_identifier: collected.awaiting_guest_booking_identifier === '1',
     last_intent: (collected.communication_last_intent as GuestCommunicationIntent | undefined) ?? null,
     last_operator_followup_id: collected.last_operator_followup_id ?? null,
+    awaiting_guest_clarification: collected.awaiting_guest_clarification === '1',
+    guest_clarification_requested_at: collected.guest_clarification_requested_at || null,
   };
 }
