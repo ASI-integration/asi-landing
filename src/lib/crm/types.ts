@@ -155,6 +155,7 @@ export type GuestTestQuestionOutcome =
   | 'answered_from_property_data'
   | 'answered_from_global_rule'
   | 'answered_by_concierge_autopilot'
+  | 'clarification_requested'
   | 'missing_data'
   | 'operator_followup_required';
 
