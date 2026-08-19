@@ -5,13 +5,13 @@ import {
   requiresAutopilotOperatorEscalation,
 } from '../knowledge-resolver';
 
-describe('live rehearsal regressions: house rules and access urgency', () => {
+describe('live rehearsal regressions: house rules, checkout STT and access urgency', () => {
   const property = {
     object_id: 'prop_A',
     object_name: 'Тестовый объект Communication Autopilot',
     address: 'Санкт-Петербург',
     check_in_text: 'после 14:00; бесконтактное заселение, инструкция отправляется после подтверждения бронирования',
-    checkout_time: '12:00',
+    checkout_time: 'до 12:00',
     house_rules_text: 'Не курить, без вечеринок, соблюдать тишину после 22:00.',
   } as any;
 
@@ -51,6 +51,47 @@ describe('live rehearsal regressions: house rules and access urgency', () => {
     expect(result.missingFields).toContain('object.house_rules_text');
     expect(result.replyText).not.toMatch(/14:00/);
     expect(result.replyText).not.toMatch(/бесконтактное заселение/i);
+  });
+
+  it('recovers the live short-voice STT join in "А васолько вас выезд?"', () => {
+    const messageText = 'А васолько вас выезд?';
+
+    expect(classifyKnowledgeTopic(messageText)).toBe('checkout_time');
+
+    const result = runCommunicationAutopilotV1({
+      messageText,
+      property,
+      propertyId: 'prop_A',
+      bookingVerified: true,
+    });
+
+    expect(result.action).toBe('auto_reply');
+    expect(result.topic).toBe('checkout_time');
+    expect(result.replyText).toMatch(/12:00/);
+    expect(result.replyText).not.toMatch(/до\s+до/i);
+  });
+
+  it('treats Russian "чекаут" as checkout, not reporting documents', () => {
+    const messageText = 'Во сколько у вас чекаут?';
+
+    expect(classifyKnowledgeTopic(messageText)).toBe('checkout_time');
+
+    const result = runCommunicationAutopilotV1({
+      messageText,
+      property,
+      propertyId: 'prop_A',
+      bookingVerified: true,
+    });
+
+    expect(result.action).toBe('auto_reply');
+    expect(result.topic).toBe('checkout_time');
+    expect(result.missingFields).not.toContain('object.reporting_documents');
+    expect(result.replyText).toMatch(/12:00/);
+    expect(result.replyText).not.toMatch(/до\s+до/i);
+  });
+
+  it('keeps receipt/check questions routed to reporting documents', () => {
+    expect(classifyKnowledgeTopic('Можно получить чек для отчётности?')).toBe('reporting_documents');
   });
 
   it('treats a broken apartment lock as an urgent access problem', () => {
