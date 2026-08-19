@@ -36,15 +36,34 @@ export class TelegramAdapter implements ChannelAdapter {
       if (isVoiceReplyGloballyEnabled() && decision?.shouldSendVoice) {
         const voiceSent = await sendVoiceReply(chatId, { chatId, decision });
         if (voiceSent) {
-          // Voice is the primary response in voice mode. Do not duplicate the same
-          // payload as text; text remains the delivery fallback only.
-          return true;
+          const companionText = String(decision.companionText ?? '').trim();
+          if (!companionText) {
+            // Voice is primary in voice mode. Do not duplicate the same payload as text.
+            return true;
+          }
+          const baseHandler =
+            typeof metadata?.reply_handler === 'string' && metadata.reply_handler.length > 0
+              ? metadata.reply_handler
+              : 'telegram_adapter:unspecified_handler';
+          const updateIdRaw = metadata?.update_id;
+          const update_id = typeof updateIdRaw === 'number' && Number.isFinite(updateIdRaw) ? updateIdRaw : undefined;
+          const companionSent = await replyToTelegram(chatId, companionText, {
+            handler: `${baseHandler}:voice_companion`,
+            update_id,
+          });
+          if (companionSent) return true;
+          console.warn('[tg:voice] voice_reply.companion_text_fallback', {
+            chat_id: chatId,
+            update_id: update_id ?? null,
+          });
+          // If compact companion delivery fails, fall through to the full text fallback so exact data is not lost.
+        } else {
+          console.warn('[tg:voice] voice_reply.text_fallback', {
+            chat_id: chatId,
+            update_id: typeof metadata?.update_id === 'number' ? metadata.update_id : null,
+            reason: decision.reason,
+          });
         }
-        console.warn('[tg:voice] voice_reply.text_fallback', {
-          chat_id: chatId,
-          update_id: typeof metadata?.update_id === 'number' ? metadata.update_id : null,
-          reason: decision.reason,
-        });
       }
 
       const handler =

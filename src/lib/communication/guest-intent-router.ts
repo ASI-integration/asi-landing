@@ -130,8 +130,12 @@ function isGuestCheckin(text: string): boolean {
 function isGuestPropertyQuestion(text: string): boolean {
   return has(
     text,
+    // Strong operational cues remain deterministic and grounded.
     /адрес|как\s+добраться|где\s+наход|как\s+найти|wi-?fi|вай-?фай|интернет|парол.*сет|парков/,
-    /описан|квартир|объект|что\s+за\s+жиль/,
+    // Bare mentions such as «хочу отдохнуть в квартире» are conversation, not a request
+    // for the property passport. Require an actual property-information question.
+    /(?:расскаж|опиш|описан|что\s+за|что\s+есть|какие?.*удобств|есть\s+ли).{0,80}(?:квартир|объект|жиль|апартамент)/,
+    /(?:квартир|объект|жиль|апартамент).{0,80}(?:что\s+есть|какие?.*удобств|есть\s+ли|как\s+выгляд|описан)/,
   );
 }
 

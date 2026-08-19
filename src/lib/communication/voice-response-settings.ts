@@ -17,7 +17,7 @@ export const DEFAULT_PROPERTY_VOICE_POLICY: PropertyVoicePolicySettings = {
   voiceRepliesEnabled: true,
   voiceForUrgent: true,
   voiceForNightCoreIssues: true,
-  voiceForAllInboundVoice: false,
+  voiceForAllInboundVoice: true,
   nightStart: '22:00',
   nightEnd: '08:00',
   timezone: 'Europe/Moscow',
