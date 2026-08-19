@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import {
   containsCopyableGuestData,
@@ -57,5 +58,16 @@ describe('voice language and copyable-data guard regressions', () => {
 
     expect(decision.shouldSendVoice).toBe(true);
     expect(decision.reason).toBe('inbound_voice_allowed');
+  });
+
+  it('wires voice-response metadata into the communication autopilot v1 direct outbound path', () => {
+    const source = readFileSync(
+      new URL('../communication-autopilot-v1-orchestrator.ts', import.meta.url),
+      'utf8',
+    );
+
+    expect(source).toMatch(/buildVoiceOutboundMetadata/);
+    expect(source).toMatch(/\.\.\.voiceMetadata/);
+    expect(source).toMatch(/ask_clarifying_question/);
   });
 });
