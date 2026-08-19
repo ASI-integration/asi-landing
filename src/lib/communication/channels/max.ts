@@ -9,7 +9,6 @@ import { createHash } from 'node:crypto';
 import { ChannelAdapter } from './base';
 import { CommunicationChannel, InboundMessageEnvelope } from '../types';
 import type { VoiceResponseDecision } from '../voice-response-policy';
-import { estimateVoiceSeconds } from '../voice-response-policy';
 import { recordVoiceBudgetUsage } from '../voice-budget-store';
 import { generateSpeech } from '../voice-tts';
 import {
@@ -408,7 +407,7 @@ async function sendMaxVoiceReply(
     if (Number.isFinite(budgetChatId)) {
       recordVoiceBudgetUsage({
         chatId: budgetChatId,
-        estimatedSeconds: estimateVoiceSeconds(voiceText),
+        estimatedSeconds: estimateMaxVoiceSeconds(voiceText),
       });
     }
     console.info('[max:voice] voice_reply.ok', {
@@ -423,6 +422,10 @@ async function sendMaxVoiceReply(
     });
     return false;
   }
+}
+
+function estimateMaxVoiceSeconds(text: string): number {
+  return Math.min(45, Math.max(3, Math.ceil(text.length / 14)));
 }
 
 function safeMaxApiErrorCode(raw: string): string | null {
