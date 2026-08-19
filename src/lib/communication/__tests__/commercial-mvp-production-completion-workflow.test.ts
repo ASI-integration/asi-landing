@@ -13,14 +13,24 @@ const databaseAudit = readFileSync(
 );
 
 describe('Commercial MVP production completion read-only acceptance', () => {
-  it('is manual-only, exact-SHA-gated, and production-environment-gated', () => {
+  it('is manual-only, exact-SHA-gated, main-dispatch-only, and production-environment-gated', () => {
     expect(workflow).toMatch(/\bon:\s*\n\s+workflow_dispatch:/u);
     expect(workflow).not.toMatch(/^\s+(?:push|pull_request|schedule):/mu);
     expect(workflow).toContain('expected_production_sha:');
     expect(workflow).toContain('RUN_COMMERCIAL_MVP_PRODUCTION_READONLY_ACCEPTANCE');
+    expect(workflow).toContain("$GITHUB_REF\" != 'refs/heads/main'");
     expect(workflow).toContain('environment: production');
     expect(workflow).toContain('ref: ${{ inputs.expected_production_sha }}');
     expect(workflow).toContain('git merge-base --is-ancestor');
+  });
+
+  it('keeps acceptance tooling available while inspecting an older deployed SHA', () => {
+    expect(workflow).toContain('- name: Checkout acceptance tooling revision');
+    expect(workflow).toContain('ref: ${{ github.sha }}');
+    expect(workflow).toContain('path: acceptance-tooling');
+    expect(workflow).toContain(
+      '--file acceptance-tooling/scripts/commercial-mvp-production-readonly.sql',
+    );
   });
 
   it('probes webhook authentication only through rejected requests', () => {
