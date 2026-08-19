@@ -1,0 +1,50 @@
+name: Temporary MAX canon regression fixture repair
+
+on:
+  push:
+    branches:
+      - chatgpt/max-channel-v1
+    paths:
+      - .github/workflows/_tmp-max-canon-test-fix.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: chatgpt/max-channel-v1
+          fetch-depth: 0
+      - name: Repair stale fixture and UI assertion
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('src/lib/communication/__tests__/max-canon-channel.test.ts')
+          text = path.read_text()
+
+          old_context = """    reservation: {\n      status: 'unmatched',\n      confidence: 0,\n      reservationId: null,\n      propertyId: null,\n    },\n  }),\n}));\n"""
+          new_context = """    reservation: {\n      status: 'unmatched',\n      confidence: 0,\n      reservationId: null,\n      propertyId: null,\n    },\n    knowledge: {\n      universalPolicy: 'Never fabricate.',\n      propertyId: undefined,\n      loadStatus: 'not_requested',\n      checkInInstructions: 'Information unavailable.',\n      checkOutInstructions: 'Information unavailable.',\n      wifiInstructions: 'Information unavailable.',\n    },\n  }),\n}));\n"""
+          if text.count(old_context) != 1:
+              raise SystemExit(f'expected one stale context fixture, found {text.count(old_context)}')
+          text = text.replace(old_context, new_context, 1)
+
+          old_ui = "    expect(pageSource).toContain(\"{ key: 'max', label: 'MAX'\");\n"
+          if text.count(old_ui) != 1:
+              raise SystemExit(f'expected one stale MAX quick-filter assertion, found {text.count(old_ui)}')
+          text = text.replace(old_ui, '', 1)
+
+          path.write_text(text)
+          PY
+      - name: Remove temporary workflow and push
+        run: |
+          git config user.name "ASI - Autonomous Systems Integration"
+          git config user.email "project.ayfaar@gmail.com"
+          git add src/lib/communication/__tests__/max-canon-channel.test.ts
+          git rm .github/workflows/_tmp-max-canon-test-fix.yml
+          git diff --cached --check
+          git commit -m "test(communication): repair MAX canon fixture"
+          git push origin HEAD:chatgpt/max-channel-v1
