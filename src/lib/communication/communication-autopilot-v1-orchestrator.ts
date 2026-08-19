@@ -19,6 +19,7 @@ import { resolveTelegramGuestBookingObjectContext } from './telegram-booking-obj
 import { buildOperatorEscalationDetail } from './guest-communication-brain';
 import { loadRelevantGuestMemory } from './guest-long-term-memory';
 import type { CommunicationIdentityRoutingDecision } from './communication-identity-routing';
+import { buildVoiceOutboundMetadata } from './voice-outbound';
 import { SessionStatus, transitionSessionStatus } from './session-status';
 import { MessageCategory, ProcessOutcome, type IdentityResolution, type InboundMessageEnvelope, type ProcessResult } from './types';
 
@@ -75,6 +76,25 @@ export function shouldPreferCommunicationAutopilotV1(
     return /^(?:до\s+|к\s+|until\s+|at\s+)?(?:[01]?\d|2[0-3])(?::[0-5]\d)?$/i.test(text);
   }
   return false;
+}
+
+function voiceResponseModeForAutopilot(action: 'auto_reply' | 'clarification' | 'operator_handoff'): string {
+  if (action === 'operator_handoff') return 'operator_escalation';
+  if (action === 'clarification') return 'ask_clarifying_question';
+  return 'answer_from_property';
+}
+
+function voiceIntentForAutopilot(topic: string): string {
+  if (topic === 'house_rules' || topic === 'pets') return 'guest_rules_question';
+  if (
+    topic === 'checkin_time' ||
+    topic === 'checkout_time' ||
+    topic === 'checkin_instructions' ||
+    topic === 'keys'
+  ) {
+    return 'guest_checkin';
+  }
+  return 'guest_property_question';
 }
 
 export async function tryCommunicationAutopilotV1OrchestratorTurn(
@@ -225,7 +245,20 @@ export async function tryCommunicationAutopilotV1OrchestratorTurn(
   if (!targetId) {
     return { outcome: ProcessOutcome.Error, update_id: input.update_id, chat_id: input.chatId };
   }
+  const voiceMetadata = buildVoiceOutboundMetadata({
+    envelope: input.envelope,
+    replyText: autopilotResult.replyText,
+    chatId: input.chatId,
+    detectedIntent: voiceIntentForAutopilot(autopilotResult.topic),
+    domainZone: 'core',
+    responseMode: voiceResponseModeForAutopilot(autopilotResult.action),
+    role: input.senderRoute.senderIdentity,
+    propertyId,
+    isUrgent: urgency === 'critical',
+    isEscalation: autopilotResult.needsOperator,
+  });
   const sent = await input.adapter.sendMessage(String(targetId), autopilotResult.replyText, {
+    ...voiceMetadata,
     reply_handler: `orchestrator:communication_autopilot_v1:${autopilotResult.action}`,
     update_id: input.update_id,
     sender_identity: input.senderRoute.senderIdentity,
