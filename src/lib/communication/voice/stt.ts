@@ -1,5 +1,8 @@
 const STT_TIMEOUT_MS_DEFAULT = 30_000;
 
+export const OPENROUTER_TRANSCRIPTION_PROMPT =
+  'Transcribe this audio verbatim in the original spoken language. Do not translate or paraphrase. Preserve Russian speech as Russian Cyrillic text. Return only the transcript text.';
+
 export type SttProviderId = 'voice_stt_relay' | 'openai' | 'llm_primary' | 'llm_fallback' | 'disabled';
 type ConfiguredProviderId = Exclude<SttProviderId, 'disabled' | 'voice_stt_relay'>;
 type ActiveProviderId = Exclude<SttProviderId, 'disabled'>;
@@ -285,7 +288,7 @@ async function transcribeViaOpenRouterChat(params: {
           {
             role: 'user',
             content: [
-              { type: 'text', text: 'Transcribe this audio. Return only the transcript text.' },
+              { type: 'text', text: OPENROUTER_TRANSCRIPTION_PROMPT },
               { type: 'input_audio', input_audio: { data: base64Audio, format } },
             ],
           },
@@ -517,7 +520,6 @@ export async function transcribeWithConfiguredStt(params: {
 
   const primary = getPrimaryProvider();
   const fallback = getFallbackProvider();
-
   console.info('[voice:stt] selection', { update_id: params.ctx?.updateId ?? null, primary, fallback });
 
   if (primary === 'disabled') {
@@ -594,4 +596,3 @@ export async function transcribeWithConfiguredStt(params: {
 
   return { ok: false, provider: primary, usedFallback: false, fail: { kind: 'unexpected', code: 'stt_provider_error' } };
 }
-

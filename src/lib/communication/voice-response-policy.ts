@@ -79,7 +79,8 @@ const META_VOICE_RESPONSE_MODES = new Set(['telegram_meta_voice_reply']);
 
 const MONEY_INTENT = 'money_sensitive';
 
-const COPYABLE_LABEL_PATTERN = /(?:\b(?:password|passcode|pin|ssid)\b|\b(?:door|access)\s+code\b|\b(?:booking|reservation)\s+(?:reference|number)\b|\b(?:address|phone(?:\s+number)?)\s*:|парол(?:ь|я|ем|и)?|пин(?:-?код)?|код\s+(?:доступа|двери|домофона|замка)|номер\s+бронирования|(?:адрес|телефон)\s*:)/iu;
+const COPYABLE_LABEL_PATTERN = /(?:\b(?:password|passcode|pin|ssid)\b|\b(?:door|access)\s+code\b|\b(?:address|phone(?:\s+number)?)\s*:|парол(?:ь|я|ем|и)?|пин(?:-?код)?|код\s+(?:доступа|двери|домофона|замка)|(?:адрес|телефон)\s*:)/iu;
+const BOOKING_COPYABLE_VALUE_PATTERN = /(?:\b(?:booking|reservation)\s+(?:reference|number)\s*(?::|#|=|\bis\b)\s*[A-Z0-9][A-Z0-9._/-]{3,}\b|номер\s+бронирования\s*(?::|№|#|=)\s*[A-ZА-Я0-9][A-ZА-Я0-9._/-]{3,}\b)/iu;
 const WIFI_COPYABLE_PATTERN = /(?:\bwi[-\s]?fi\b|вай[-\s]?фай).{0,80}(?:\bssid\b|сеть\s*:|network\s*:|парол|password)/iu;
 const URL_OR_EMAIL_PATTERN = /(?:https?:\/\/|www\.)\S+|[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}/i;
 const PHONE_LIKE_PATTERN = /\+?\d(?:[\s().-]*\d){7,}/;
@@ -90,6 +91,7 @@ export function containsCopyableGuestData(replyText: string): boolean {
   if (!text) return false;
   return (
     COPYABLE_LABEL_PATTERN.test(text) ||
+    BOOKING_COPYABLE_VALUE_PATTERN.test(text) ||
     WIFI_COPYABLE_PATTERN.test(text) ||
     URL_OR_EMAIL_PATTERN.test(text) ||
     PHONE_LIKE_PATTERN.test(text) ||
