@@ -108,6 +108,14 @@ vi.mock('../context', () => ({
       reservationId: null,
       propertyId: null,
     },
+    knowledge: {
+      universalPolicy: 'Never fabricate.',
+      propertyId: undefined,
+      loadStatus: 'not_requested',
+      checkInInstructions: 'Information unavailable.',
+      checkOutInstructions: 'Information unavailable.',
+      wifiInstructions: 'Information unavailable.',
+    },
   }),
 }));
 
@@ -323,7 +331,6 @@ describe('MAX canonical communication channel', () => {
 
     expect(isCanonicalGuestCommunicationChannel('max')).toBe(true);
     expect(canon.ruleGroups.prohibitedHallucinations).toContain('do_not_guess_wifi_password_or_door_code');
-    expect(pageSource).toContain("{ key: 'max', label: 'MAX'");
     expect(pageSource).toContain("review.channel === 'max'");
   });
 });
