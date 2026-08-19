@@ -15,6 +15,7 @@ vi.mock('../voice-reply', async () => {
 });
 
 import { TelegramAdapter } from '../channels/telegram';
+import { RESPONSE_MODALITY_CHOICE_RU } from '../voice-response-settings';
 
 describe('Telegram voice reply text fallback', () => {
   beforeEach(() => {
@@ -54,7 +55,7 @@ describe('Telegram voice reply text fallback', () => {
     });
   });
 
-  it('sends text and voice when voice succeeds (text is mandatory)', async () => {
+  it('sends voice only when voice succeeds', async () => {
     mockSendVoiceReply.mockResolvedValue(true);
     const adapter = new TelegramAdapter();
 
@@ -70,11 +71,7 @@ describe('Telegram voice reply text fallback', () => {
 
     expect(sent).toBe(true);
     expect(mockSendVoiceReply).toHaveBeenCalledOnce();
-    expect(mockReplyToTelegram).toHaveBeenCalledWith(
-      42,
-      'Здравствуйте! Инструкцию отправил.',
-      { handler: 'test:voice', update_id: 1002 },
-    );
+    expect(mockReplyToTelegram).not.toHaveBeenCalled();
   });
 
   it('skips voice attempt when policy decision is absent', async () => {
@@ -106,5 +103,23 @@ describe('Telegram voice reply text fallback', () => {
     expect(sent).toBe(true);
     expect(mockSendVoiceReply).not.toHaveBeenCalled();
     expect(mockReplyToTelegram).toHaveBeenCalledOnce();
+  });
+
+  it('appends the one-time modality choice only to text delivery', async () => {
+    const adapter = new TelegramAdapter();
+    const sent = await adapter.sendMessage('42', 'Ответ по объекту.', {
+      update_id: 1005,
+      reply_handler: 'test:modality_prompt',
+      response_modality_prompt: true,
+      response_modality_prompt_text: RESPONSE_MODALITY_CHOICE_RU,
+    });
+
+    expect(sent).toBe(true);
+    expect(mockSendVoiceReply).not.toHaveBeenCalled();
+    expect(mockReplyToTelegram).toHaveBeenCalledWith(
+      42,
+      `Ответ по объекту.\n\n${RESPONSE_MODALITY_CHOICE_RU}`,
+      { handler: 'test:modality_prompt', update_id: 1005 },
+    );
   });
 });
