@@ -74,6 +74,31 @@ describe('Telegram voice reply text fallback', () => {
     expect(mockReplyToTelegram).not.toHaveBeenCalled();
   });
 
+  it('sends only compact companion text after a successful hybrid voice reply', async () => {
+    mockSendVoiceReply.mockResolvedValue(true);
+    const adapter = new TelegramAdapter();
+
+    const sent = await adapter.sendMessage('42', 'Да, конечно. Адрес: Санкт-Петербург, Лиговский проспект, 108.', {
+      update_id: 10025,
+      reply_handler: 'test:hybrid_voice',
+      voice_response_decision: {
+        shouldSendVoice: true,
+        reason: 'inbound_voice_with_companion_text',
+        voiceText: 'Да, конечно. Точный адрес отправила отдельным сообщением.',
+        companionText: 'Адрес: Санкт-Петербург, Лиговский проспект, 108.',
+      },
+    });
+
+    expect(sent).toBe(true);
+    expect(mockSendVoiceReply).toHaveBeenCalledOnce();
+    expect(mockReplyToTelegram).toHaveBeenCalledOnce();
+    expect(mockReplyToTelegram).toHaveBeenCalledWith(
+      42,
+      'Адрес: Санкт-Петербург, Лиговский проспект, 108.',
+      { handler: 'test:hybrid_voice:voice_companion', update_id: 10025 },
+    );
+  });
+
   it('skips voice attempt when policy decision is absent', async () => {
     const adapter = new TelegramAdapter();
     const sent = await adapter.sendMessage('42', 'Только текст.', {
