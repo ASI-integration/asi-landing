@@ -1,0 +1,51 @@
+name: Temporary MAX orchestrator patch
+
+on:
+  push:
+    branches:
+      - chatgpt/max-channel-v1
+    paths:
+      - .github/workflows/_tmp-max-orchestrator-patch.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: chatgpt/max-channel-v1
+          fetch-depth: 0
+      - name: Apply exact source patch
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('src/lib/communication/orchestrator.ts')
+          text = path.read_text()
+
+          old1 = """      max_user_id: metadata?.user_id ?? params.envelope.externalUserId ?? null,\n    };\n  }\n"""
+          new1 = """      max_user_id: metadata?.user_id ?? params.envelope.externalUserId ?? null,\n      ...(params.voiceExtras ?? {}),\n    };\n  }\n"""
+          if text.count(old1) != 1:
+              raise SystemExit(f'expected one MAX metadata block, found {text.count(old1)}')
+          text = text.replace(old1, new1, 1)
+
+          old2 = """                  const voiceExtras =\n                    envelope.channel === 'telegram'\n                      ? await buildTelegramVoiceExtras({\n"""
+          new2 = """                  const voiceExtras =\n                    envelope.channel === 'telegram' || envelope.channel === 'max'\n                      ? await buildTelegramVoiceExtras({\n"""
+          if text.count(old2) != 1:
+              raise SystemExit(f'expected one final voiceExtras gate, found {text.count(old2)}')
+          text = text.replace(old2, new2, 1)
+
+          path.write_text(text)
+          PY
+      - name: Remove temporary workflow and push
+        run: |
+          git config user.name "ASI - Autonomous Systems Integration"
+          git config user.email "project.ayfaar@gmail.com"
+          git add src/lib/communication/orchestrator.ts
+          git rm .github/workflows/_tmp-max-orchestrator-patch.yml
+          git diff --cached --check
+          git commit -m "feat(communication): wire voice metadata for MAX"
+          git push origin HEAD:chatgpt/max-channel-v1
