@@ -21,6 +21,7 @@ export type GuestTestQuestionKind =
   | 'concierge_transport'
   | 'concierge_sights'
   | 'concierge_neutral'
+  | 'clarification'
   | 'operator'
   | 'unknown';
 
@@ -28,6 +29,7 @@ export type GuestTestQuestionDecisionLayer =
   | 'property_data_answer'
   | 'global_rule_answer'
   | 'concierge_autopilot_answer'
+  | 'clarification_request'
   | 'operator_escalation_required';
 
 export type GuestTestAnswerResult = {
