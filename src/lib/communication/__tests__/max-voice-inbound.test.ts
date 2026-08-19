@@ -1,3 +1,4 @@
+// Focused transport boundary: MAX media is normalized into the shared communication brain without provider-side effects.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mockProcessMessage = vi.fn();
