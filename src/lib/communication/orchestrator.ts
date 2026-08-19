@@ -167,7 +167,10 @@ import {
   detectOperationalLanguage,
   runCommunicationAutopilotV1,
 } from './communication-autopilot-v1';
-import { tryCommunicationAutopilotV1OrchestratorTurn } from './communication-autopilot-v1-orchestrator';
+import {
+  shouldPreferCommunicationAutopilotV1,
+  tryCommunicationAutopilotV1OrchestratorTurn,
+} from './communication-autopilot-v1-orchestrator';
 import { recordCommunicationAutopilotTurn } from './communication-autopilot-crm';
 import {
   isExplicitGuestPreferenceOnlyMessage,
@@ -2392,14 +2395,17 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
         }
 
         const autopilotProperty = telegramBookingObjectCtx.property;
-        if (canClassifyInboundCommunication(autopilotProperty)) {
+        const sessionMemory = autopilotSessionFromCollectedData(sessionCollectedData);
+        const useDeterministicAutopilotV1 =
+          !canSendAutonomousGuestReply(autopilotProperty) ||
+          shouldPreferCommunicationAutopilotV1(text, sessionMemory);
+        if (canClassifyInboundCommunication(autopilotProperty) && useDeterministicAutopilotV1) {
           const telegramUserId = String(
             envelope.metadata?.telegram_user_id ??
               envelope.metadata?.telegramUserId ??
               envelope.externalUserId ??
               chatId,
           );
-          const sessionMemory = autopilotSessionFromCollectedData(sessionCollectedData);
           const passport = propertyId ? await getGroundedKnowledge(propertyId) : null;
           const guestMemory = await loadRelevantGuestMemory({
             guestId: identity.guestId,
@@ -2535,6 +2541,11 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
           property: telegramBookingObjectCtx.property,
           propertyId,
           conversationMemory: commMemory,
+          conversationContext: convSession.memory.lastMessages
+            .slice(0, -1)
+            .slice(-6)
+            .map((message) => `${message.direction === 'inbound' ? 'guest' : 'assistant'}: ${String(message.content ?? '').slice(0, 240)}`)
+            .join('\n'),
           telegramChatId: chatId,
         });
         const answer = commDecision.guestTestResult;

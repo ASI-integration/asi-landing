@@ -428,6 +428,7 @@ export async function decideGuestCommunicationWithLlmSafeDomainLayer(input: {
   conversationMemory?: CommunicationMemorySnapshot;
   llmSafeDomainProvider?: LlmSafeDomainProvider;
   telegramChatId?: number | string | null;
+  conversationContext?: string | null;
 }): Promise<CommunicationDecision> {
   const base = decideGuestCommunication(input);
   if (
@@ -445,6 +446,7 @@ export async function decideGuestCommunicationWithLlmSafeDomainLayer(input: {
     propertyId: input.propertyId,
     propertyAddress: input.property?.address ?? null,
     telegramChatId: input.telegramChatId,
+    conversationContext: input.conversationContext,
     provider: input.llmSafeDomainProvider,
   });
 
