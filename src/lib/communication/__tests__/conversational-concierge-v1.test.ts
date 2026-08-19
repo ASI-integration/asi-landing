@@ -112,6 +112,40 @@ describe('Conversational Concierge v1 dialogue pack', () => {
     ).toEqual({ domainZone: 'adjacent', reason: 'local_adjacent_conversation' });
   });
 
+  it('passes a short sanitized dialogue context into MiniGPT for continuity', async () => {
+    let seenContext: string | null | undefined;
+    const provider: LlmSafeDomainProvider = {
+      name: 'openai',
+      modelName: 'gpt-mini-test',
+      async classifySafeDomain(input) {
+        seenContext = input.conversationContext;
+        return {
+          intent: 'guest_social_conversation',
+          domainZone: 'adjacent',
+          safeToAnswer: true,
+          suggestedReply: 'Да, после тяжёлого перелёта лучше сначала немного отдохнуть.',
+          escalationRequired: false,
+          reason: 'conversation_continuity',
+          confidence: 0.93,
+        };
+      },
+    };
+
+    const decision = await decideGuestCommunicationWithLlmSafeDomainLayer({
+      messageText: 'Да, перелёт был тяжёлый. Наверное, сначала немного отдохну.',
+      currentIdentity: 'guest',
+      conversationMemory: {},
+      conversationContext:
+        'guest: Я вообще сегодня в Питере первый раз, ужасно устал после самолёта.\nassistant: После дороги это понятно. Немного отдохните.',
+      llmSafeDomainProvider: provider,
+    });
+
+    expect(seenContext).toMatch(/Питере первый раз/);
+    expect(seenContext).toMatch(/После дороги/);
+    expect(decision.responseMode).toBe('answer_from_concierge');
+    expect(decision.safeGuestReply).toMatch(/отдохнуть/);
+  });
+
   it('uses a soft boundary for a substantive out-of-domain model decision instead of asking to repeat', async () => {
     const provider: LlmSafeDomainProvider = {
       name: 'openai',
