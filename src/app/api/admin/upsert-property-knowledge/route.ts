@@ -6,7 +6,7 @@
  *
  * Body (JSON):
  *   {
- *     property_id:              string   // REQUIRED — stable identifier e.g. "prop_A"
+ *     property_id:              string   // REQUIRED — stable identifier
  *     property_name?:           string   // display name shown to guests
  *     location?:                string   // city or location label
  *     check_in_time?:           string   // e.g. "15:00"
@@ -17,7 +17,7 @@
  *     check_out_instructions?:  string
  *     house_rules?:             string
  *     property_policy?:         string
- *     emergency_contacts?:      string   // support_contact_text
+ *     emergency_contacts?:      string
  *     parking_instructions?:    string
  *     payment_rules?:           string
  *     upsells?:                 string
@@ -27,8 +27,10 @@
  * Behaviour:
  *   - Creates row if property_id is new.
  *   - Updates existing row if property_id already exists.
- *   - When wifi_name + wifi_password are both supplied, wifi_instructions is
- *     auto-composed so getGroundedKnowledge() continues working unchanged.
+ *   - Maps the public/admin request names onto the canonical tg_property_knowledge
+ *     columns used by the production communication loader.
+ *   - When wifi_name + wifi_password are supplied, wifi_instructions is
+ *     auto-composed so getGroundedKnowledge() can answer directly.
  *   - Idempotent: safe to call multiple times with the same payload.
  *
  * Returns:
@@ -40,15 +42,13 @@
 
 import { NextResponse } from 'next/server';
 import { requireAdminSecret } from '@/lib/admin-auth';
-import { supabase }     from '@/lib/supabase';
+import { supabase } from '@/lib/supabase';
 import { appendTimelineEvent } from '@/lib/communication/timeline';
 
 export async function POST(req: Request) {
-  // ── Auth ──────────────────────────────────────────────────────────────────
   const authFailure = requireAdminSecret(req);
   if (authFailure) return authFailure;
 
-  // ── Parse body ────────────────────────────────────────────────────────────
   let body: Record<string, unknown>;
   try {
     body = await req.json();
@@ -75,12 +75,10 @@ export async function POST(req: Request) {
     active,
   } = body;
 
-  // ── Validate ──────────────────────────────────────────────────────────────
   if (!property_id || typeof property_id !== 'string' || !property_id.trim()) {
     return NextResponse.json({ error: 'property_id is required' }, { status: 400 });
   }
 
-  // ── Check if row exists (for created flag) ────────────────────────────────
   const { data: existing } = await supabase
     .from('tg_property_knowledge')
     .select('property_id, wifi_name, wifi_password')
@@ -88,36 +86,31 @@ export async function POST(req: Request) {
     .maybeSingle();
 
   const created = !existing;
-
-  // ── Build upsert payload — only include explicitly provided fields ─────────
   const row: Record<string, unknown> = { property_id, updated_at: new Date().toISOString() };
 
-  if (property_name          !== undefined) row.object_name             = property_name;
-  if (location               !== undefined) row.location                = location;
-  if (check_in_time          !== undefined) row.check_in_time           = check_in_time;
-  if (check_out_time         !== undefined) row.check_out_time          = check_out_time;
-  if (wifi_name              !== undefined) row.wifi_name               = wifi_name;
-  if (wifi_password          !== undefined) row.wifi_password           = wifi_password;
-  if (check_in_instructions  !== undefined) row.check_in_instructions   = check_in_instructions;
-  if (check_out_instructions !== undefined) row.check_out_instructions  = check_out_instructions;
-  if (house_rules            !== undefined) row.house_rules             = house_rules;
-  if (property_policy        !== undefined) row.property_policy         = property_policy;
-  if (emergency_contacts     !== undefined) row.emergency_contacts      = emergency_contacts;
-  if (parking_instructions   !== undefined) row.parking_instructions    = parking_instructions;
-  if (payment_rules          !== undefined) row.payment_rules           = payment_rules;
-  if (upsells                !== undefined) row.upsells                 = upsells;
-  if (active                 !== undefined) row.active                  = active;
+  if (property_name !== undefined) row.object_name = property_name;
+  if (location !== undefined) row.location = location;
+  if (check_in_time !== undefined) row.check_in_time = check_in_time;
+  if (check_out_time !== undefined) row.check_out_time = check_out_time;
+  if (wifi_name !== undefined) row.wifi_name = wifi_name;
+  if (wifi_password !== undefined) row.wifi_password = wifi_password;
+  if (check_in_instructions !== undefined) row.checkin_instructions = check_in_instructions;
+  if (check_out_instructions !== undefined) row.checkout_notes = check_out_instructions;
+  if (house_rules !== undefined) row.house_rules = house_rules;
+  if (property_policy !== undefined) row.property_policy = property_policy;
+  if (emergency_contacts !== undefined) row.emergency_contacts = emergency_contacts;
+  if (parking_instructions !== undefined) row.parking_instructions = parking_instructions;
+  if (payment_rules !== undefined) row.payment_rules = payment_rules;
+  if (upsells !== undefined) row.upsells = upsells;
+  if (active !== undefined) row.active = active;
 
-  // Auto-compose wifi_instructions so getGroundedKnowledge() keeps working.
-  // Merge incoming values with whatever is already stored.
   const existingRow = existing as Record<string, unknown> | null;
-  const mergedWifiName     = (wifi_name     !== undefined ? wifi_name     : existingRow?.wifi_name)     as string | undefined;
+  const mergedWifiName = (wifi_name !== undefined ? wifi_name : existingRow?.wifi_name) as string | undefined;
   const mergedWifiPassword = (wifi_password !== undefined ? wifi_password : existingRow?.wifi_password) as string | undefined;
   if (mergedWifiName || mergedWifiPassword) {
     row.wifi_instructions = `Network: ${mergedWifiName ?? ''}, Password: ${mergedWifiPassword ?? ''}`;
   }
 
-  // ── Upsert ────────────────────────────────────────────────────────────────
   const { error } = await supabase
     .from('tg_property_knowledge')
     .upsert(row, { onConflict: 'property_id', ignoreDuplicates: false });
@@ -126,7 +119,6 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
   }
 
-  // ── Timeline audit (best-effort) ──────────────────────────────────────────
   await appendTimelineEvent(
     `property:${property_id}`,
     { type: 'property_knowledge_upserted', property_id: property_id as string, created, ts: new Date() },
