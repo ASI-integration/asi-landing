@@ -89,7 +89,7 @@ describe('Telegram response modality preference', () => {
   it('offers the modality choice once on a safe first text reply', () => {
     const envelope = {
       channel: 'telegram' as const,
-      chatId: 42,
+      chatId: '42',
       externalUserId: '42',
       messageText: 'Во сколько выезд?',
       receivedAt: new Date(),
@@ -127,7 +127,7 @@ describe('Telegram response modality preference', () => {
   it('never appends the preference question to urgent or operator handoff replies', () => {
     const envelope = {
       channel: 'telegram' as const,
-      chatId: 43,
+      chatId: '43',
       externalUserId: '43',
       messageText: 'Замок сломан, не могу войти.',
       receivedAt: new Date(),
