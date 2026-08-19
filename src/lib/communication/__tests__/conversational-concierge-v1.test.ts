@@ -8,6 +8,8 @@ import {
   type LlmSafeDomainProvider,
 } from '../llm-safe-domain-layer';
 import { shouldPreferCommunicationAutopilotV1 } from '../communication-autopilot-v1-orchestrator';
+import { classifyGuestCommunicationIntent } from '../guest-intent-router';
+import { classifyGuestTestQuestion } from '../guest-test-answers';
 
 function conversationalProvider(spy?: (messageText: string) => void): LlmSafeDomainProvider {
   return {
@@ -110,6 +112,18 @@ describe('Conversational Concierge v1 dialogue pack', () => {
         'Я вообще сегодня в Питере первый раз, ужасно устал после самолёта.',
       ),
     ).toEqual({ domainZone: 'adjacent', reason: 'local_adjacent_conversation' });
+  });
+
+  it('does not escalate harmless live travel fatigue just because it contains “ужасно”', () => {
+    expect(shouldPreferCommunicationAutopilotV1('Только что прилетел в Питер, ужасно устал с дороги.')).toBe(false);
+  });
+
+  it('routes a restaurant-near-object question to local concierge instead of object description', () => {
+    const text = 'А можете порекомендовать какой-нибудь хороший ресторан недалеко от объекта?';
+    expect(classifyGuestCommunicationIntent({ messageText: text, currentIdentity: 'guest' }).detectedIntent).toBe(
+      'guest_local_recommendation',
+    );
+    expect(classifyGuestTestQuestion(text)).toBe('concierge_food');
   });
 
   it('passes a short sanitized dialogue context into MiniGPT for continuity', async () => {

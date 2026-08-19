@@ -174,14 +174,14 @@ function classifyGuestIntent(text: string): { intent: GuestCommunicationIntent; 
   if (isGuestCheckin(text)) {
     return { intent: 'guest_checkin', confidence: 0.88, reason: 'guest_checkin_detected' };
   }
+  if (isGuestLocalRecommendation(text)) {
+    return { intent: 'guest_local_recommendation', confidence: 0.89, reason: 'guest_local_recommendation_detected' };
+  }
   if (isGuestPropertyQuestion(text)) {
     return { intent: 'guest_property_question', confidence: 0.87, reason: 'guest_property_question_detected' };
   }
   if (isGuestRulesQuestion(text)) {
     return { intent: 'guest_rules_question', confidence: 0.86, reason: 'guest_rules_question_detected' };
-  }
-  if (isGuestLocalRecommendation(text)) {
-    return { intent: 'guest_local_recommendation', confidence: 0.86, reason: 'guest_local_recommendation_detected' };
   }
   return { intent: 'unclear_role', confidence: 0.45, reason: 'intent_unclear' };
 }

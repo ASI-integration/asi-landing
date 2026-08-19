@@ -60,12 +60,28 @@ type AutopilotV1OrchestratorInput = {
   ) => Promise<T>;
 };
 
+function isClearlyHarmlessTravelSmallTalk(messageText: string): boolean {
+  const text = String(messageText ?? '')
+    .toLowerCase()
+    .replace(/ё/g, 'е')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!text) return false;
+  const travelOrFatigue =
+    /устал|вымот|отдохн|поспать|хочу спать|самолет|перелет|поезд|с дороги|добрал|прилетел|приехал|приехали/.test(text);
+  if (!travelOrFatigue) return false;
+  const operationalOrSensitive =
+    /замок|двер|не могу (?:войти|попасть)|слом|не работ|пожар|дым|газ|протеч|затоп|опасн|угроз|жалоб|недовол|плохой сервис|грязн|возврат|деньг|оплат|скидк|отмен.*брон|измен.*брон|конфликт|претензи|полици|юрист|закон/.test(text);
+  return !operationalOrSensitive;
+}
+
 export function shouldPreferCommunicationAutopilotV1(
   messageText: string,
   session?: ReturnType<typeof autopilotSessionFromCollectedData>,
 ): boolean {
   const text = String(messageText ?? '').trim();
   if (!text) return false;
+  if (isClearlyHarmlessTravelSmallTalk(text)) return false;
   if (requiresAutopilotOperatorEscalation(text)) return true;
   if (isExplicitOperationalLanguageSwitch(text)) return true;
   if (classifyKnowledgeTopic(text) !== 'unknown') return true;
