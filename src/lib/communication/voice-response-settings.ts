@@ -29,6 +29,9 @@ export const DEFAULT_PROPERTY_VOICE_POLICY: PropertyVoicePolicySettings = {
 export const VOICE_FIRST_NOTICE_RU =
   'Голосовые ответы включаются для срочных вопросов и ночных ситуаций по проживанию. Если удобнее только текстом, напишите /voice_off.';
 
+export const RESPONSE_MODALITY_CHOICE_RU =
+  'Если хотите, могу отвечать голосом. Как вам удобнее — голосом или текстом? Для голоса напишите /voice_on, для текста — /voice_off.';
+
 export const VOICE_SAFE_MONEY_HANDOFF_RU =
   'Поняла вопрос. Здесь нужна проверка оператора, чтобы не дать неверную информацию. Я передам обращение и вернусь с ответом здесь.';
 
@@ -68,15 +71,27 @@ export function resolvePropertyVoicePolicy(
   };
 }
 
+export type ChatResponseModality = 'text' | 'voice';
+
 export type ChatVoiceUserSettings = {
   voiceRepliesEnabled: boolean;
   voiceNoticeSent: boolean;
+  preferredResponseModality?: ChatResponseModality | null;
+  modalityPreferencePromptSent?: boolean;
 };
 
 export function loadChatVoiceUserSettings(collectedData?: Record<string, string | undefined>): ChatVoiceUserSettings {
   const raw = String(collectedData?.voice_replies_enabled ?? '').trim().toLowerCase();
+  const preferredResponseModality: ChatResponseModality | null =
+    raw === 'false' || raw === '0' || raw === 'off'
+      ? 'text'
+      : raw === 'true' || raw === '1' || raw === 'on'
+        ? 'voice'
+        : null;
   return {
-    voiceRepliesEnabled: raw !== 'false' && raw !== '0' && raw !== 'off',
+    voiceRepliesEnabled: preferredResponseModality !== 'text',
     voiceNoticeSent: collectedData?.voice_notice_sent === 'true',
+    preferredResponseModality,
+    modalityPreferencePromptSent: collectedData?.response_modality_prompt_sent === 'true',
   };
 }
