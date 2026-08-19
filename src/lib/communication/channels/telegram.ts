@@ -2,7 +2,10 @@ import { ChannelAdapter } from './base';
 import { CommunicationChannel } from '../types';
 import { replyToTelegram } from '../../telegram';
 import { patchAutonomousSessionCollectedData } from '../conversation-session-store';
-import { appendVoiceFirstNoticeIfNeeded } from '../voice-outbound';
+import {
+  appendResponseModalityPromptIfNeeded,
+  appendVoiceFirstNoticeIfNeeded,
+} from '../voice-outbound';
 import { isVoiceReplyGloballyEnabled, sendVoiceReply } from '../voice-reply';
 import type { VoiceResponseDecision } from '../voice-response-policy';
 
@@ -27,24 +30,21 @@ export class TelegramAdapter implements ChannelAdapter {
     try {
       let textFallback = voiceFallbackText(content);
       textFallback = appendVoiceFirstNoticeIfNeeded(textFallback, metadata);
+      textFallback = appendResponseModalityPromptIfNeeded(textFallback, metadata);
 
       const decision = readVoiceDecision(metadata);
       if (isVoiceReplyGloballyEnabled() && decision?.shouldSendVoice) {
         const voiceSent = await sendVoiceReply(chatId, { chatId, decision });
-        if (voiceSent && metadata?.voice_append_first_notice) {
-          patchAutonomousSessionCollectedData({
-            chatId,
-            channel: 'telegram',
-            set: { voice_notice_sent: 'true' },
-          });
+        if (voiceSent) {
+          // Voice is the primary response in voice mode. Do not duplicate the same
+          // payload as text; text remains the delivery fallback only.
+          return true;
         }
-        if (!voiceSent) {
-          console.warn('[tg:voice] voice_reply.text_fallback', {
-            chat_id: chatId,
-            update_id: typeof metadata?.update_id === 'number' ? metadata.update_id : null,
-            reason: decision.reason,
-          });
-        }
+        console.warn('[tg:voice] voice_reply.text_fallback', {
+          chat_id: chatId,
+          update_id: typeof metadata?.update_id === 'number' ? metadata.update_id : null,
+          reason: decision.reason,
+        });
       }
 
       const handler =
@@ -58,7 +58,19 @@ export class TelegramAdapter implements ChannelAdapter {
           ? (metadata.reply_markup as Record<string, unknown>)
           : undefined;
 
-      return await replyToTelegram(chatId, textFallback, { handler, update_id, reply_markup: replyMarkup });
+      const textSent = await replyToTelegram(chatId, textFallback, {
+        handler,
+        update_id,
+        reply_markup: replyMarkup,
+      });
+      if (textSent && metadata?.response_modality_prompt) {
+        patchAutonomousSessionCollectedData({
+          chatId,
+          channel: 'telegram',
+          set: { response_modality_prompt_sent: 'true' },
+        });
+      }
+      return textSent;
     } catch (e) {
       console.error('[TelegramAdapter] Failed to send message', e);
       return false;
