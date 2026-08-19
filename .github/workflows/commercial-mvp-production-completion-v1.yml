@@ -1,0 +1,374 @@
+name: Commercial MVP Production Completion v1
+
+on:
+  workflow_dispatch:
+    inputs:
+      expected_production_sha:
+        description: Exact 40-character SHA currently deployed to production
+        required: true
+        type: string
+      safety_acknowledgement:
+        description: Type RUN_COMMERCIAL_MVP_PRODUCTION_READONLY_ACCEPTANCE
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: commercial-mvp-production-completion-v1
+  cancel-in-progress: false
+
+jobs:
+  validate_request:
+    name: Validate read-only acceptance request
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require exact SHA and acknowledgement
+        shell: bash
+        env:
+          EXPECTED_PRODUCTION_SHA: ${{ inputs.expected_production_sha }}
+          SAFETY_ACKNOWLEDGEMENT: ${{ inputs.safety_acknowledgement }}
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_REF" != 'refs/heads/main' ]]; then
+            echo '::error::Commercial MVP production acceptance must be dispatched from main.'
+            exit 1
+          fi
+          if [[ ! "$EXPECTED_PRODUCTION_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo '::error::expected_production_sha must be an exact lowercase 40-character SHA.'
+            exit 1
+          fi
+          if [[ "$SAFETY_ACKNOWLEDGEMENT" != 'RUN_COMMERCIAL_MVP_PRODUCTION_READONLY_ACCEPTANCE' ]]; then
+            echo '::error::Exact read-only acceptance acknowledgement is required.'
+            exit 1
+          fi
+
+  readonly_acceptance:
+    name: Run production read-only acceptance
+    runs-on: ubuntu-latest
+    needs: [validate_request]
+    environment: production
+    timeout-minutes: 15
+    steps:
+      - name: Checkout exact deployed source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: ${{ inputs.expected_production_sha }}
+
+      - name: Verify source identity
+        shell: bash
+        env:
+          EXPECTED_PRODUCTION_SHA: ${{ inputs.expected_production_sha }}
+        run: |
+          set -euo pipefail
+          actual="$(git rev-parse HEAD)"
+          if [[ "$actual" != "$EXPECTED_PRODUCTION_SHA" ]]; then
+            echo '::error::Checked-out source does not match expected production SHA.'
+            exit 1
+          fi
+          git fetch --no-tags origin main:refs/remotes/origin/main
+          if ! git merge-base --is-ancestor "$actual" origin/main; then
+            echo '::error::Expected production SHA is not an ancestor of main.'
+            exit 1
+          fi
+          printf 'SOURCE_SHA=%s\nSOURCE_MAIN_ANCESTRY=PASS\n' "$actual" > commercial-mvp-production-readonly-report.txt
+
+      - name: Checkout acceptance tooling revision
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+          ref: ${{ github.sha }}
+          path: acceptance-tooling
+
+      - name: Verify public production identity and health
+        shell: bash
+        env:
+          EXPECTED_PRODUCTION_SHA: ${{ inputs.expected_production_sha }}
+          PUBLIC_BASE_URL: https://asi-global.ru
+        run: |
+          set -euo pipefail
+          health="$(curl --fail --silent --show-error --max-time 15 "$PUBLIC_BASE_URL/api/health")"
+          version="$(curl --fail --silent --show-error --max-time 15 "$PUBLIC_BASE_URL/api/version")"
+          HEALTH_JSON="$health" VERSION_JSON="$version" EXPECTED_SHA="$EXPECTED_PRODUCTION_SHA" node <<'NODE'
+          const health = JSON.parse(process.env.HEALTH_JSON || '{}');
+          const version = JSON.parse(process.env.VERSION_JSON || '{}');
+          if (health?.ok !== true) throw new Error('commercial_mvp_public_health_not_ok');
+          if (String(version?.sha ?? '') !== process.env.EXPECTED_SHA) {
+            throw new Error('commercial_mvp_public_sha_mismatch');
+          }
+          NODE
+          printf 'PUBLIC_HEALTH=PASS\nPUBLIC_VERSION_SHA=PASS\n' >> commercial-mvp-production-readonly-report.txt
+
+      - name: Verify Telegram webhooks fail closed without authentication
+        shell: bash
+        env:
+          PUBLIC_BASE_URL: https://asi-global.ru
+        run: |
+          set -euo pipefail
+          probe() {
+            local path="$1"
+            local mode="$2"
+            local status
+            if [[ "$mode" == 'missing' ]]; then
+              status="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' \
+                --max-time 15 --request POST \
+                --header 'content-type: application/json' \
+                --data '{}' \
+                "$PUBLIC_BASE_URL$path")"
+            else
+              status="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' \
+                --max-time 15 --request POST \
+                --header 'content-type: application/json' \
+                --header 'x-telegram-bot-api-secret-token: commercial-mvp-invalid-secret' \
+                --data '{}' \
+                "$PUBLIC_BASE_URL$path")"
+            fi
+            if [[ "$status" != '403' ]]; then
+              echo "::error::$path mode=$mode expected 403, got $status"
+              exit 1
+            fi
+          }
+          probe '/api/telegram/webhook' missing
+          probe '/api/telegram/webhook' wrong
+          probe '/api/telegram/support-webhook' missing
+          probe '/api/telegram/support-webhook' wrong
+          printf 'CORE_WEBHOOK_MISSING_AUTH=403_PASS\nCORE_WEBHOOK_WRONG_AUTH=403_PASS\nSUPPORT_WEBHOOK_MISSING_AUTH=403_PASS\nSUPPORT_WEBHOOK_WRONG_AUTH=403_PASS\n' \
+            >> commercial-mvp-production-readonly-report.txt
+
+      - name: Ensure PostgreSQL client is available
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! command -v psql >/dev/null 2>&1; then
+            sudo apt-get update -qq
+            sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq postgresql-client
+          fi
+          psql --version
+
+      - name: Verify Commercial MVP production database contracts read-only
+        shell: bash
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          PGCONNECT_TIMEOUT: '10'
+          PGOPTIONS: >-
+            -c default_transaction_read_only=on
+            -c statement_timeout=30000
+            -c lock_timeout=3000
+        run: |
+          set -euo pipefail
+          production_db_url="${SUPABASE_DB_URL:-${DATABASE_URL:-}}"
+          if [[ -z "$production_db_url" ]]; then
+            echo '::error::Production database URL is not available.'
+            exit 1
+          fi
+          echo "::add-mask::$production_db_url"
+          db_report="commercial-mvp-db-readonly.txt"
+          psql -X "$production_db_url" \
+            --no-psqlrc \
+            --set ON_ERROR_STOP=1 \
+            --file acceptance-tooling/scripts/commercial-mvp-production-readonly.sql \
+            > "$db_report"
+          cat "$db_report" >> commercial-mvp-production-readonly-report.txt
+
+      - name: Verify VPS runtime and deployed source contracts without mutation
+        shell: bash
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_PORT: ${{ secrets.VPS_PORT }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          EXPECTED_PRODUCTION_SHA: ${{ inputs.expected_production_sha }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${VPS_HOST:-}" || -z "${VPS_SSH_KEY:-}" ]]; then
+            echo '::error::Missing production SSH credentials.'
+            exit 1
+          fi
+
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          SSH_KEY=~/.ssh/id_ed25519
+          printf '%s\n' "$VPS_SSH_KEY" > "$SSH_KEY"
+          chmod 600 "$SSH_KEY"
+          REMOTE_USER='project_ayfaar'
+          REMOTE_PORT="${VPS_PORT:-22}"
+          SSH_OPTS=(
+            -i "$SSH_KEY"
+            -p "$REMOTE_PORT"
+            -o IdentitiesOnly=yes
+            -o StrictHostKeyChecking=accept-new
+            -o LogLevel=ERROR
+            -o ServerAliveInterval=15
+            -o ServerAliveCountMax=4
+            -o ConnectTimeout=20
+          )
+
+          remote_report="$(ssh "${SSH_OPTS[@]}" "${REMOTE_USER}@${VPS_HOST}" \
+            "EXPECTED_SHA='$EXPECTED_PRODUCTION_SHA' bash -s" <<'REMOTE'
+          set -euo pipefail
+          APP_DIR='/var/www/asi/current'
+          ENV_FILE='/var/www/asi/shared/.env.production.live'
+
+          [[ -d "$APP_DIR" && -r "$ENV_FILE" ]] || {
+            echo 'commercial_mvp_runtime_prerequisite_missing' >&2
+            exit 1
+          }
+
+          health="$(curl --fail --silent --show-error --max-time 15 http://127.0.0.1:3000/api/health)"
+          version="$(curl --fail --silent --show-error --max-time 15 http://127.0.0.1:3000/api/version)"
+          HEALTH_JSON="$health" VERSION_JSON="$version" EXPECTED_SHA="$EXPECTED_SHA" node <<'NODE'
+          const health = JSON.parse(process.env.HEALTH_JSON || '{}');
+          const version = JSON.parse(process.env.VERSION_JSON || '{}');
+          if (health?.ok !== true) throw new Error('commercial_mvp_local_health_not_ok');
+          if (String(version?.sha ?? '') !== process.env.EXPECTED_SHA) {
+            throw new Error('commercial_mvp_local_sha_mismatch');
+          }
+          NODE
+
+          python3 - "$ENV_FILE" <<'PY'
+          import os
+          import sys
+          from pathlib import Path
+
+          env_path = Path(sys.argv[1])
+          values = {}
+          for raw in env_path.read_text(encoding='utf-8').splitlines():
+              line = raw.strip()
+              if not line or line.startswith('#') or '=' not in line:
+                  continue
+              key, value = line.split('=', 1)
+              value = value.strip()
+              if len(value) >= 2 and value[0] == value[-1] and value[0] in {'"', "'"}:
+                  value = value[1:-1]
+              values[key.strip()] = value
+
+          def present(name):
+              return bool(values.get(name, '').strip())
+
+          def truthy(name):
+              return values.get(name, '').strip().lower() in {'1', 'true', 'yes', 'on'}
+
+          required_present = [
+              'TELEGRAM_BOT_TOKEN',
+              'TELEGRAM_WEBHOOK_SECRET',
+              'TELEGRAM_SUPPORT_WEBHOOK_SECRET',
+              'GEMINI_API_KEY',
+          ]
+          missing = [name for name in required_present if not present(name)]
+          if missing:
+              raise SystemExit('commercial_mvp_required_runtime_value_missing:' + ','.join(missing))
+
+          llm_provider = (values.get('LLM_SAFE_DOMAIN_PROVIDER') or values.get('LLM_ROUTER_PROVIDER') or 'openai').strip().lower()
+          if llm_provider == 'deepseek':
+              llm_key_ok = present('DEEPSEEK_API_KEY')
+          else:
+              llm_key_ok = present('OPENAI_API_KEY') or present('LLM_API_KEY')
+          if not llm_key_ok:
+              raise SystemExit('commercial_mvp_llm_key_missing')
+
+          if not truthy('LLM_SAFE_DOMAIN_ENABLED') and not truthy('GUEST_CONCIERGE_LLM_ENABLED'):
+              raise SystemExit('commercial_mvp_llm_disabled')
+          if not truthy('VOICE_REPLY_ENABLED'):
+              raise SystemExit('commercial_mvp_voice_reply_disabled')
+          if not truthy('GEMINI_NATIVE_AUDIO_ENABLED'):
+              raise SystemExit('commercial_mvp_gemini_native_audio_disabled')
+          if truthy('VOICE_TRANSCRIPTION_DISABLED'):
+              raise SystemExit('commercial_mvp_voice_transcription_disabled')
+          if truthy('COMMUNICATION_KILL_SWITCH') or truthy('COMMUNICATION_AUTOPILOT_FORCE_DISABLED'):
+              raise SystemExit('commercial_mvp_communication_disabled')
+          if truthy('DRY_RUN_TELEGRAM_OUTBOUND') or truthy('TELEGRAM_DRY_RUN'):
+              raise SystemExit('commercial_mvp_telegram_outbound_still_dry_run')
+
+          fallback_tts_ok = present('ELEVENLABS_API_KEY') or present('OPENAI_API_KEY') or present('VOICE_TTS_API_KEY')
+          if not fallback_tts_ok:
+              raise SystemExit('commercial_mvp_voice_fallback_provider_missing')
+
+          state_value = next((values.get(key, '').strip() for key in (
+              'COMM_STATE_DIR',
+              'CONVERSATION_SESSION_DIR',
+              'SESSION_STORE_DIR',
+              'STATE_DIR',
+          ) if values.get(key, '').strip()), '')
+          if not state_value:
+              raise SystemExit('commercial_mvp_persistent_comm_state_dir_not_configured')
+          state_path = Path(state_value)
+          if not state_path.is_absolute():
+              raise SystemExit('commercial_mvp_comm_state_dir_not_absolute')
+          resolved = state_path.resolve(strict=False)
+          resolved_text = str(resolved)
+          if resolved_text == '/var/www/asi/current' or resolved_text.startswith('/var/www/asi/current/') \
+             or resolved_text == '/var/www/asi/releases' or resolved_text.startswith('/var/www/asi/releases/'):
+              raise SystemExit('commercial_mvp_comm_state_dir_inside_release')
+          if not resolved.is_dir():
+              raise SystemExit('commercial_mvp_comm_state_dir_missing')
+          if not os.access(resolved, os.W_OK):
+              raise SystemExit('commercial_mvp_comm_state_dir_not_writable')
+
+          print('COMMUNICATION_RUNTIME_FLAGS=PASS')
+          print('GEMINI_NATIVE_AUDIO_RUNTIME=PASS')
+          print('VOICE_FALLBACK_RUNTIME=PASS')
+          print('PERSISTENT_COMM_STATE_DIR=PASS')
+          PY
+
+          command -v ffmpeg >/dev/null 2>&1 || {
+            echo 'commercial_mvp_ffmpeg_missing' >&2
+            exit 1
+          }
+
+          KNOWLEDGE="$APP_DIR/src/lib/communication/knowledge.ts"
+          WEBHOOK="$APP_DIR/src/app/api/telegram/webhook/route.ts"
+          NATIVE_AUDIO="$APP_DIR/src/lib/communication/gemini-native-audio.ts"
+          [[ -f "$KNOWLEDGE" && -f "$WEBHOOK" && -f "$NATIVE_AUDIO" ]] || {
+            echo 'commercial_mvp_deployed_source_missing' >&2
+            exit 1
+          }
+          grep -Fq ".from('tg_property_knowledge')" "$KNOWLEDGE"
+          grep -Fq "'checkin_instructions'" "$KNOWLEDGE"
+          grep -Fq "'checkout_notes'" "$KNOWLEDGE"
+          if grep -Fq 'prop_A' "$KNOWLEDGE"; then
+            echo 'commercial_mvp_sample_property_fallback_present' >&2
+            exit 1
+          fi
+          grep -Fq 'claimTelegramInboundReceipt' "$WEBHOOK"
+          grep -Fq 'completeTelegramInboundReceipt' "$WEBHOOK"
+          grep -Fq 'failTelegramInboundReceipt' "$WEBHOOK"
+          grep -Fq "const DEFAULT_VOICE = 'Aoede'" "$NATIVE_AUDIO"
+          grep -Fq 'finish the final phrase with a clear natural falling cadence' "$NATIVE_AUDIO"
+
+          echo 'VPS_HEALTH=PASS'
+          echo 'VPS_VERSION_SHA=PASS'
+          echo 'FFMPEG_RUNTIME=PASS'
+          echo 'PROPERTY_KNOWLEDGE_DEPLOYED_SOURCE=PASS'
+          echo 'DURABLE_INBOUND_DEPLOYED_SOURCE=PASS'
+          echo 'GEMINI_NATIVE_AUDIO_DEPLOYED_SOURCE=PASS'
+          REMOTE
+          )"
+          printf '%s\n' "$remote_report"
+          printf '%s\n' "$remote_report" >> commercial-mvp-production-readonly-report.txt
+
+      - name: Final Commercial MVP read-only verdict
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo 'COMMERCIAL_MVP_PRODUCTION_READONLY_VERDICT=GO' | tee -a commercial-mvp-production-readonly-report.txt
+          {
+            echo '## Commercial MVP Production Completion v1'
+            echo ''
+            echo '**Read-only verdict: GO**'
+            echo ''
+            echo 'Validated exact production SHA, public/VPS health, fail-closed webhook authentication, durable Telegram receipt schema/history/runtime evidence, canonical property knowledge, active communication flags, persistent operator state, and Gemini Native Audio deployment contract.'
+            echo ''
+            echo 'No production data was inserted, updated, deleted, or reconciled. No real Telegram message or TTS/STT/LLM provider call was initiated by this acceptance.'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload sanitized acceptance report
+        uses: actions/upload-artifact@v4
+        with:
+          name: commercial-mvp-production-readonly-acceptance
+          path: commercial-mvp-production-readonly-report.txt
+          if-no-files-found: error
+          retention-days: 14
