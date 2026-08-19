@@ -12,6 +12,7 @@ export type VoiceResponseDecisionReason =
   | 'urgent_intent'
   | 'night_core_stay_issue'
   | 'inbound_voice_allowed'
+  | 'preferred_voice'
   | 'copyable_data_text_only'
   | 'disabled_by_user'
   | 'out_of_domain'
@@ -204,6 +205,23 @@ export function evaluateVoiceResponsePolicy(input: VoiceResponsePolicyInput): Vo
 
   if (containsCopyableGuestData(input.replyText)) {
     return { shouldSendVoice: false, reason: 'copyable_data_text_only', timezoneSource };
+  }
+
+  if (
+    input.userVoiceSettings.preferredResponseModality === 'voice' &&
+    !isStaffRole(input.role) &&
+    (isCoreStayTopic(input) || isAdjacentTopic(input) || isMetaVoiceReply(input))
+  ) {
+    const voiceText = prepareVoiceTextForTts(input.replyText, settings.maxVoiceTextChars);
+    if (voiceText.length >= 8 && voiceText.length <= settings.maxVoiceTextChars) {
+      return {
+        shouldSendVoice: true,
+        reason: 'preferred_voice',
+        voiceText,
+        maxDurationSeconds,
+        timezoneSource,
+      };
+    }
   }
 
   if (input.inboundTransport === 'telegram_voice' && isMetaVoiceReply(input)) {
