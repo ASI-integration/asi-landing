@@ -10,6 +10,7 @@ import { randomUUID } from 'node:crypto';
 import { EmailAdapter, type EmailInboundPayload, getPrimaryEmailAddress } from './channels/email';
 import { processMessage } from './orchestrator';
 import { bindIdentity } from './identity-binding';
+import { resolveCommunicationIdentityRoute } from './communication-identity-routing';
 import {
   appendSessionMessage,
   getOrCreateConversationSession,
@@ -27,6 +28,8 @@ import {
   EscalationReason,
   MessageDirection,
   MessageType,
+  ProcessOutcome,
+  type IdentityResolution,
   type InboundMessageEnvelope,
   type Message,
   type ProcessResult,
@@ -82,23 +85,31 @@ export async function processEmailInbound(params: {
     text: envelope.messageText ?? subject ?? '',
   });
 
-  const orchestrator = await processMessage(envelope);
+  const orchestratorResult = await processMessage(envelope);
 
-  if (orchestrator.outcome === 'duplicate') {
+  if (orchestratorResult.outcome === ProcessOutcome.Duplicate) {
     return {
       ok: true,
       skipped: 'duplicate',
       from,
       subject,
-      orchestrator,
+      orchestrator: orchestratorResult,
       outboundMode: getEmailOutboundMode(),
     };
   }
+
+  const identity = await bindIdentity(envelope).catch(() => null);
+  const orchestrator = await recoverDraftOnlyIdentityClarification({
+    envelope,
+    orchestrator: orchestratorResult,
+    identity,
+  });
 
   const review = await createEmailOperatorDraft({
     envelope,
     payload: params.payload,
     orchestrator,
+    identity,
   });
 
   if (isEmailDraftOnly() && orchestrator.reply?.trim()) {
@@ -129,28 +140,66 @@ export async function processEmailInboundMessage(params: {
   return processEmailInbound(params);
 }
 
+async function recoverDraftOnlyIdentityClarification(params: {
+  envelope: InboundMessageEnvelope;
+  orchestrator: ProcessResult;
+  identity: IdentityResolution | null;
+}): Promise<ProcessResult> {
+  if (!isEmailDraftOnly() || params.orchestrator.outcome !== ProcessOutcome.Error || !params.identity) {
+    return params.orchestrator;
+  }
+
+  const targetId = String(params.envelope.email ?? params.envelope.externalUserId ?? '').trim();
+  if (!targetId) return params.orchestrator;
+
+  const route = await resolveCommunicationIdentityRoute({
+    envelope: params.envelope,
+    identity: params.identity,
+    rememberedIdentity: null,
+  }).catch(() => null);
+
+  if (route?.route !== 'unknown_clarify' || route.shouldRunGuestConcierge || !route.replyText?.trim()) {
+    return params.orchestrator;
+  }
+
+  auditDecision({
+    type: 'reply',
+    chat_id: stableEmailChatId(params.envelope),
+    update_id: params.envelope.update_id,
+    detail: 'email_draft_only_identity_clarification_recovered route=unknown_clarify',
+  });
+
+  return {
+    ...params.orchestrator,
+    outcome: ProcessOutcome.Replied,
+    reply: route.replyText,
+  };
+}
+
 async function createEmailOperatorDraft(params: {
   envelope: InboundMessageEnvelope;
   payload: EmailInboundPayload;
   orchestrator: ProcessResult;
+  identity: IdentityResolution | null;
 }) {
-  const identity = await bindIdentity(params.envelope).catch(() => null);
   const { session, key } = getOrCreateConversationSession({
     envelope: params.envelope,
-    identity: identity ?? undefined,
+    identity: params.identity ?? undefined,
   });
 
-  const sessionForReview = appendSessionMessage({
-    key,
-    session,
-    direction: 'inbound',
-    content: params.envelope.messageText ?? String(params.payload.subject ?? ''),
-    meta: {
-      ...params.envelope.metadata,
-      subject: params.payload.subject ?? null,
-      from: getPrimaryEmailAddress(params.payload.from),
-    },
-  });
+  const sessionForReview = sessionAlreadyContainsInboundEmail(session.memory.lastMessages, params.envelope)
+    ? session
+    : appendSessionMessage({
+        key,
+        session,
+        direction: 'inbound',
+        content: params.envelope.messageText ?? String(params.payload.subject ?? ''),
+        meta: {
+          ...params.envelope.metadata,
+          subject: params.payload.subject ?? null,
+          from: getPrimaryEmailAddress(params.payload.from),
+        },
+      });
 
   const activeReviewId = getActiveEscalationReviewIdForSession(sessionForReview.sessionId);
   const existingReview = activeReviewId ? getEscalationReview(activeReviewId) : null;
@@ -169,17 +218,60 @@ async function createEmailOperatorDraft(params: {
     channel: 'email',
     targetId,
     actorId: sessionForReview.actorId,
-    role: identity?.role ?? sessionForReview.role,
-    reservationId: sessionForReview.reservationId ?? identity?.reservationId,
-    propertyId: sessionForReview.propertyId ?? identity?.propertyId,
-    leadId: sessionForReview.leadId ?? identity?.leadId,
+    role: params.identity?.role ?? sessionForReview.role,
+    reservationId: sessionForReview.reservationId ?? params.identity?.reservationId,
+    propertyId: sessionForReview.propertyId ?? params.identity?.propertyId,
+    leadId: sessionForReview.leadId ?? params.identity?.leadId,
     escalationReason,
-    confidence: identity?.confidence ?? sessionForReview.confidence,
+    confidence: params.identity?.confidence ?? sessionForReview.confidence,
     latestMessages: latestMessagesForEmailReview(sessionForReview.memory.lastMessages, params),
     suggestedReply: params.orchestrator.reply,
     source: emailReviewSource(params),
     detail: `email_mvp draft_only=${isEmailDraftOnly()} outcome=${params.orchestrator.outcome}`,
   });
+}
+
+function sessionAlreadyContainsInboundEmail(
+  messages: Message[] | undefined,
+  envelope: InboundMessageEnvelope,
+): boolean {
+  const inboundId = stableEmailInboundIdFromEnvelope(envelope);
+  if (!inboundId || !Array.isArray(messages)) return false;
+
+  return messages.some(
+    (message) =>
+      message.direction === MessageDirection.Inbound &&
+      stableEmailInboundIdFromMessage(message) === inboundId,
+  );
+}
+
+function stableEmailInboundIdFromEnvelope(envelope: InboundMessageEnvelope): string {
+  const metadata = envelope.metadata as Record<string, unknown> | undefined;
+  return firstStableEmailId(
+    metadata?.providerMessageId,
+    metadata?.externalMessageId,
+    metadata?.message_id,
+    metadata?.messageId,
+  );
+}
+
+function stableEmailInboundIdFromMessage(message: Message): string {
+  const metadata = message.meta as Record<string, unknown> | undefined;
+  return firstStableEmailId(
+    message.providerMessageId,
+    metadata?.providerMessageId,
+    metadata?.externalMessageId,
+    metadata?.message_id,
+    metadata?.messageId,
+  );
+}
+
+function firstStableEmailId(...values: unknown[]): string {
+  for (const value of values) {
+    const normalized = String(value ?? '').trim().replace(/^<|>$/g, '');
+    if (normalized) return normalized;
+  }
+  return '';
 }
 
 function latestMessagesForEmailReview(
