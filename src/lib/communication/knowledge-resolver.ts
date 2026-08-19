@@ -351,7 +351,7 @@ export function requiresAutopilotOperatorEscalation(messageText: string): string
   const lower = messageText.toLowerCase();
   if (/пожар|дым|газ|угроз.*жизн|emergency|fire|smoke|gas leak|medical emergency/i.test(lower)) return 'critical_safety';
   if (/не могу (?:войти|попасть)|застрял.*снаруж|код.*не работ|потерял.*ключ|(?:замок|дверь).{0,40}(?:слом(?:ан|ана|ано|аны|ался|алась|алось|ались)|не\s+работ|не\s+откры)|lockout|locked out|cannot (?:enter|get in)|access code.*not work|lost key|(?:lock|door).{0,40}(?:broken|not working|will not open|won't open)/i.test(lower)) return 'urgent_access_problem';
-  if (/возврат|верн(?:уть|ите) деньги|компенсац|refund|money back|compensation|chargeback|payment dispute/i.test(lower)) return 'refund_request';
+  if (/возврат|верн(?:уть|ите) деньги|компенсац|refund|money back|compensation|chargeback|payment dispute|disput(?:e|ing|ed).{0,32}payment|payment.{0,32}disput(?:e|ing|ed)/i.test(lower)) return 'refund_request';
   if (/отмен.*брон|cancel.*(?:booking|reservation)/i.test(lower)) return 'cancellation';
   if (/измен.*(?:дат|брон)|перенест.*брон|change.*(?:booking|reservation|dates?)|move my booking|extend (?:my )?stay|продл.*прожив/i.test(lower)) return 'booking_change';
   if (/нет горячей воды|нет отоплен|нет электрич|света нет|интернет не работ|no hot water|no heating|no electricity|power outage|internet (?:is )?(?:down|not working)/i.test(lower)) return 'maintenance_issue';
