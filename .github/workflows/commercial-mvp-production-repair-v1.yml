@@ -1,0 +1,237 @@
+name: Commercial MVP Production Repair v1
+
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: Run read-only preflight or owner-approved repair
+        required: true
+        default: preflight
+        type: choice
+        options:
+          - preflight
+          - apply
+      repair_sha:
+        description: Exact 40-character main SHA containing this repair
+        required: true
+        type: string
+      owner_confirmation:
+        description: Apply only — type APPLY_COMMERCIAL_MVP_REPAIR_<repair_sha>
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: commercial-mvp-production-repair-v1
+  cancel-in-progress: false
+
+jobs:
+  preflight:
+    name: Read-only production repair preflight
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 10
+    env:
+      EXPECTED_SUPABASE_PROJECT_REF: meeravcldnmocjtlqoeu
+      PGCONNECT_TIMEOUT: '10'
+    steps:
+      - name: Require main workflow source and exact SHA
+        shell: bash
+        env:
+          REPAIR_SHA: ${{ inputs.repair_sha }}
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REPOSITORY" == 'ASI-integration/asi-landing' ]]
+          [[ "$GITHUB_REF" == 'refs/heads/main' ]]
+          [[ "$REPAIR_SHA" =~ ^[0-9a-f]{40}$ ]]
+
+      - name: Checkout exact repair SHA
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: ${{ inputs.repair_sha }}
+
+      - name: Verify immutable source identity
+        shell: bash
+        env:
+          REPAIR_SHA: ${{ inputs.repair_sha }}
+        run: |
+          set -euo pipefail
+          actual="$(git rev-parse HEAD)"
+          [[ "$actual" == "$REPAIR_SHA" ]]
+          git fetch --no-tags origin main:refs/remotes/origin/main
+          git merge-base --is-ancestor "$actual" origin/main
+          test -f supabase/migrations/20260819110000_commercial_mvp_property_knowledge_contract_v1.sql
+          test -f scripts/commercial-mvp-production-repair-precheck.sql
+          test -f scripts/commercial-mvp-production-repair-register-and-verify.sql
+
+      - name: Ensure PostgreSQL client is available
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! command -v psql >/dev/null 2>&1; then
+            sudo apt-get update -qq
+            sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq postgresql-client
+          fi
+          psql --version
+
+      - name: Validate production database identity without logging credentials
+        shell: bash
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${SUPABASE_DB_URL:-}" ]]; then
+            echo '::error::SUPABASE_DB_URL is not configured.'
+            exit 1
+          fi
+          echo "::add-mask::${SUPABASE_DB_URL}"
+          python3 - <<'PY'
+          import os
+          from urllib.parse import unquote, urlparse
+
+          raw = (os.environ.get('SUPABASE_DB_URL') or '').strip()
+          expected = (os.environ.get('EXPECTED_SUPABASE_PROJECT_REF') or '').strip().lower()
+          parsed = urlparse(raw)
+          hostname = (parsed.hostname or '').lower()
+          username = unquote(parsed.username or '').lower()
+          direct_host = f'db.{expected}.supabase.co'
+          pooler_user = f'postgres.{expected}'
+          if parsed.scheme not in ('postgres', 'postgresql'):
+              raise SystemExit('SUPABASE_DB_URL must use postgres/postgresql.')
+          if hostname != direct_host and not (hostname.endswith('.pooler.supabase.com') and username == pooler_user):
+              raise SystemExit('SUPABASE_DB_URL project identity mismatch.')
+          print('PRODUCTION_DATABASE_IDENTITY=verified')
+          PY
+
+      - name: Verify repair prerequisites read-only
+        shell: bash
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          PGOPTIONS: >-
+            -c default_transaction_read_only=on
+            -c statement_timeout=30000
+            -c lock_timeout=3000
+        run: |
+          set -euo pipefail
+          echo "::add-mask::${SUPABASE_DB_URL}"
+          psql -X "$SUPABASE_DB_URL" \
+            --no-psqlrc \
+            --set ON_ERROR_STOP=1 \
+            --file scripts/commercial-mvp-production-repair-precheck.sql
+
+  owner_approval:
+    name: Owner approval for production repair
+    if: ${{ inputs.operation == 'apply' }}
+    needs: [preflight]
+    runs-on: ubuntu-latest
+    environment: production-migration-approval
+    timeout-minutes: 5
+    steps:
+      - name: Require configured owner and SHA-bound confirmation
+        shell: bash
+        env:
+          EXPECTED_OWNER_LOGIN: ${{ vars.PRODUCTION_MIGRATION_OWNER_LOGIN }}
+          OWNER_CONFIRMATION: ${{ inputs.owner_confirmation }}
+          REPAIR_SHA: ${{ inputs.repair_sha }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$EXPECTED_OWNER_LOGIN" ]]; then
+            echo '::error::PRODUCTION_MIGRATION_OWNER_LOGIN is not configured.'
+            exit 1
+          fi
+          [[ "$GITHUB_ACTOR" == "$EXPECTED_OWNER_LOGIN" ]]
+          [[ "$GITHUB_TRIGGERING_ACTOR" == "$EXPECTED_OWNER_LOGIN" ]]
+          required="APPLY_COMMERCIAL_MVP_REPAIR_${REPAIR_SHA}"
+          [[ "$OWNER_CONFIRMATION" == "$required" ]]
+          echo 'OWNER_APPROVAL=verified_for_exact_sha'
+
+  apply_repair:
+    name: Apply schema and history repair atomically
+    if: ${{ inputs.operation == 'apply' }}
+    needs: [preflight, owner_approval]
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 10
+    env:
+      EXPECTED_SUPABASE_PROJECT_REF: meeravcldnmocjtlqoeu
+      PGCONNECT_TIMEOUT: '10'
+    steps:
+      - name: Checkout exact approved repair SHA
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: ${{ inputs.repair_sha }}
+
+      - name: Revalidate exact SHA and database target
+        shell: bash
+        env:
+          REPAIR_SHA: ${{ inputs.repair_sha }}
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          set -euo pipefail
+          [[ "$(git rev-parse HEAD)" == "$REPAIR_SHA" ]]
+          echo "::add-mask::${SUPABASE_DB_URL}"
+          python3 - <<'PY'
+          import os
+          from urllib.parse import unquote, urlparse
+
+          raw = (os.environ.get('SUPABASE_DB_URL') or '').strip()
+          expected = (os.environ.get('EXPECTED_SUPABASE_PROJECT_REF') or '').strip().lower()
+          parsed = urlparse(raw)
+          hostname = (parsed.hostname or '').lower()
+          username = unquote(parsed.username or '').lower()
+          if parsed.scheme not in ('postgres', 'postgresql'):
+              raise SystemExit('invalid database scheme')
+          if hostname != f'db.{expected}.supabase.co' and not (
+              hostname.endswith('.pooler.supabase.com') and username == f'postgres.{expected}'
+          ):
+              raise SystemExit('production database identity mismatch')
+          PY
+
+      - name: Ensure PostgreSQL client is available
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! command -v psql >/dev/null 2>&1; then
+            sudo apt-get update -qq
+            sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq postgresql-client
+          fi
+
+      - name: Re-run read-only prerequisite guard immediately before mutation
+        shell: bash
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          PGOPTIONS: >-
+            -c default_transaction_read_only=on
+            -c statement_timeout=30000
+            -c lock_timeout=3000
+        run: |
+          set -euo pipefail
+          echo "::add-mask::${SUPABASE_DB_URL}"
+          psql -X "$SUPABASE_DB_URL" \
+            --no-psqlrc \
+            --set ON_ERROR_STOP=1 \
+            --file scripts/commercial-mvp-production-repair-precheck.sql
+
+      - name: Apply property contract and register both migration versions atomically
+        shell: bash
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          PGOPTIONS: >-
+            -c statement_timeout=120000
+            -c lock_timeout=5000
+        run: |
+          set -euo pipefail
+          echo "::add-mask::${SUPABASE_DB_URL}"
+          psql -X "$SUPABASE_DB_URL" \
+            --no-psqlrc \
+            --set ON_ERROR_STOP=1 \
+            --single-transaction \
+            --file supabase/migrations/20260819110000_commercial_mvp_property_knowledge_contract_v1.sql \
+            --file scripts/commercial-mvp-production-repair-register-and-verify.sql
+          echo 'COMMERCIAL_MVP_PRODUCTION_REPAIR=APPLIED_AND_VERIFIED'
