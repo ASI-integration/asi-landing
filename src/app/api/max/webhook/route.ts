@@ -8,11 +8,13 @@
 
 import { NextResponse } from 'next/server';
 import { processMessage } from '@/lib/communication/orchestrator';
+import { processMaxVoiceUpdate } from '@/lib/communication/max-voice-inbound';
 import {
   MaxAdapter,
   type MaxWebhookPayload,
+  maxWebhookAudioAttachment,
   maxWebhookEventType,
-  maxWebhookText,
+  maxWebhookHasProcessableMessage,
   verifyMaxWebhookSecret,
 } from '@/lib/communication/channels/max';
 
@@ -38,11 +40,19 @@ export async function POST(req: Request): Promise<Response> {
     return NextResponse.json({ ok: true, ignored: true, reason: 'unsupported_event' }, { status: 200 });
   }
 
-  if (!maxWebhookText(payload)) {
+  if (!maxWebhookHasProcessableMessage(payload)) {
     return NextResponse.json({ ok: true, ignored: true, reason: 'empty_message' }, { status: 200 });
   }
 
   try {
+    if (maxWebhookAudioAttachment(payload)) {
+      const result = await processMaxVoiceUpdate(payload);
+      if (process.env.COMM_PIPELINE_DEBUG === '1') {
+        console.log('[max:webhook] voice_processed', { outcome: result.outcome });
+      }
+      return NextResponse.json({ ok: true }, { status: 200 });
+    }
+
     const envelope = await adapter.normalizeInbound(payload);
     const result = await processMessage(envelope);
     if (process.env.COMM_PIPELINE_DEBUG === '1') {
@@ -52,7 +62,9 @@ export async function POST(req: Request): Promise<Response> {
       });
     }
   } catch (error) {
-    console.error('[max:webhook] processMessage threw', error);
+    console.error('[max:webhook] processMessage threw', {
+      error_type: (error as Error).name || 'unexpected',
+    });
   }
 
   return NextResponse.json({ ok: true }, { status: 200 });
