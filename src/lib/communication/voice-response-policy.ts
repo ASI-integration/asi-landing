@@ -12,6 +12,7 @@ export type VoiceResponseDecisionReason =
   | 'urgent_intent'
   | 'night_core_stay_issue'
   | 'inbound_voice_allowed'
+  | 'inbound_voice_with_companion_text'
   | 'preferred_voice'
   | 'copyable_data_text_only'
   | 'disabled_by_user'
@@ -25,6 +26,8 @@ export type VoiceResponseDecision = {
   shouldSendVoice: boolean;
   reason: VoiceResponseDecisionReason;
   voiceText?: string;
+  /** Exact copyable data sent as a short text after the voice bubble. */
+  companionText?: string;
   maxDurationSeconds?: number;
   timezoneSource?: 'property' | 'fallback';
 };
@@ -97,6 +100,46 @@ export function containsCopyableGuestData(replyText: string): boolean {
     PHONE_LIKE_PATTERN.test(text) ||
     CREDENTIAL_TOKEN_PATTERN.test(text)
   );
+}
+
+export function splitCopyableGuestData(replyText: string): {
+  voiceText: string;
+  companionText: string | null;
+} {
+  const source = String(replyText ?? '').trim();
+  if (!source) return { voiceText: '', companionText: null };
+
+  const captured: string[] = [];
+  let voiceText = source;
+  const patterns: RegExp[] = [
+    /(?:адрес|address)\s*:\s*[^.!?\n]+[.!]?/giu,
+    /(?:ssid|сеть)\s*:\s*[^.!?\n]+[.!]?/giu,
+    /(?:парол(?:ь|я)?(?:\s+wi[-\s]?fi)?|password|passcode|pin|пин(?:-?код)?)\s*:\s*[^,;.!?\n]+[.!]?/giu,
+    /(?:номер\s+бронирования|booking\s+(?:reference|number)|reservation\s+(?:reference|number))\s*(?::|№|#|=|\bis\b)\s*[A-ZА-Я0-9][A-ZА-Я0-9._/-]{3,}/giu,
+    /(?:https?:\/\/|www\.)\S+/giu,
+    /[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}/g,
+    /(?:телефон|phone)\s*:\s*\+?\d(?:[\s().-]*\d){7,}/giu,
+  ];
+
+  for (const pattern of patterns) {
+    voiceText = voiceText.replace(pattern, (match) => {
+      const clean = match.trim();
+      if (clean) captured.push(clean);
+      return ' ';
+    });
+  }
+
+  const companionText = [...new Set(captured)].join('\n').trim() || null;
+  voiceText = voiceText
+    .replace(/\s+([,.!?;:])/g, '$1')
+    .replace(/\s{2,}/g, ' ')
+    .replace(/^[,;:\s]+|[,;:\s]+$/g, '')
+    .trim();
+
+  if (companionText && voiceText.length < 8) {
+    voiceText = 'Я отправила точные данные отдельным сообщением, чтобы их было удобно скопировать.';
+  }
+  return { voiceText, companionText };
 }
 
 function isUrgentIntent(input: VoiceResponsePolicyInput): boolean {
@@ -214,6 +257,26 @@ export function evaluateVoiceResponsePolicy(input: VoiceResponsePolicyInput): Vo
   }
 
   if (containsCopyableGuestData(input.replyText)) {
+    const hybridAllowed =
+      modalityAllowsVoice &&
+      !isStaffRole(input.role) &&
+      (isCoreStayTopic(input) || isAdjacentTopic(input) || isMetaVoiceReply(input));
+    if (hybridAllowed) {
+      const split = splitCopyableGuestData(input.replyText);
+      if (split.companionText) {
+        const voiceText = prepareVoiceTextForTts(split.voiceText, settings.maxVoiceTextChars);
+        if (voiceText.length >= 8 && voiceText.length <= settings.maxVoiceTextChars) {
+          return {
+            shouldSendVoice: true,
+            reason: 'inbound_voice_with_companion_text',
+            voiceText,
+            companionText: split.companionText,
+            maxDurationSeconds,
+            timezoneSource,
+          };
+        }
+      }
+    }
     return { shouldSendVoice: false, reason: 'copyable_data_text_only', timezoneSource };
   }
 
