@@ -76,13 +76,13 @@ export function classifyGuestTestQuestion(messageText: string): GuestTestQuestio
   if (/правил|тишин|животн|шум/i.test(lower)) return 'house_rules';
   if (/заезд|выезд|check.?in|check.?out|время.*заезд/i.test(lower)) return 'checkin';
   if (/парков/i.test(lower)) return 'parking';
-  if (/описан|квартир|объект|что за жиль/i.test(lower)) return 'description';
   if (/ресторан|кафе|кофейн|поесть|завтрак|обед|ужин|грузинск|итальянск|еда|перекус/i.test(lower)) return 'concierge_food';
   if (/продукт|магазин|супермаркет|вода|молок|хлеб|купить/i.test(lower)) return 'concierge_grocery';
   if (/аптек|лекарств|таблет|пластыр|градусник/i.test(lower)) return 'concierge_pharmacy';
   if (/транспорт|метро|такси|автобус|трамва|как доехать|маршрут|остановк/i.test(lower)) return 'concierge_transport';
   if (/посмотреть|достопримеч|погулять|рядом интересн|музе|парк|куда сходить/i.test(lower)) return 'concierge_sights';
   if (/рядом|поблизости|недалеко|около объекта|в районе/i.test(lower)) return 'concierge_neutral';
+  if (/описан|квартир|объект|что за жиль/i.test(lower)) return 'description';
 
   return 'unknown';
 }
