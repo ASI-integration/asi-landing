@@ -44,7 +44,11 @@ function textOrNull(value: unknown): string | null {
 }
 
 export function classifyKnowledgeTopic(messageText: string): KnowledgeTopic {
-  const lower = messageText.toLowerCase();
+  const lower = messageText
+    .toLowerCase()
+    .replace(/ё/g, 'е')
+    // Common short-voice STT joins: «во сколько» may arrive as «восколько»/«васколько».
+    .replace(/\b(?:восколько|васколько)\b/g, 'во сколько');
 
   if (/возврат|вернуть деньги|компенсац|скидк|жалоб|конфликт|отмен.*брон|юрист|закон|угроз|ужасн|плохой сервис/i.test(lower)) {
     return 'unknown';
@@ -67,7 +71,7 @@ export function classifyKnowledgeTopic(messageText: string): KnowledgeTopic {
     return 'checkin_time';
   }
   if (
-    /во сколько.*(?:выезд|выех)|(?:когда|до скольк).*(?:выезд|выех)|время.*(?:выезд|выех)|поздн.*(?:выезд|выех)|(?:можно|можно ли).*выех|выех.*позже|check-?out time|what time.*check-?out|late check-?out/i.test(
+    /во сколько.*(?:выезд|выех)|(?:когда|до скольк).*(?:выезд|выех)|время.*(?:выезд|выех)|поздн.*(?:выезд|выех)|(?:можно|можно ли).*выех|выех.*позже|чек[\s-]?аут|check-?out time|what time.*check-?out|late check-?out/i.test(
       lower,
     )
   ) {
@@ -76,7 +80,7 @@ export function classifyKnowledgeTopic(messageText: string): KnowledgeTopic {
   if (/правил|тишин|шум|громк|музык|курить|курени|вечерин|приглас.*гост|сторонн.*гост|house rules|smoking|party|quiet hours|loud|music|extra guest|occupancy/i.test(lower)) return 'house_rules';
   if (/животн|собак|кошк|питомц|\bpets?\b|\bdogs?\b|\bcats?\b/i.test(lower)) return 'pets';
   if (/залог|депозит/i.test(lower)) return 'deposit';
-  if (/документ|справк|чек|квитанц|отчетн/i.test(lower)) return 'reporting_documents';
+  if (/документ|справк|чек(?![\s-]?аут)|квитанц|отчетн/i.test(lower)) return 'reporting_documents';
 
   return 'unknown';
 }
