@@ -365,6 +365,22 @@ export async function lookup_booking_by_email(params: {
   if (!email) return null;
 
   const db = params.db ?? (supabase as unknown as SupabaseLike);
+
+  // Production reservations carry the guest email directly. Prefer that
+  // canonical booking row before falling back to the legacy identity bridge.
+  // This keeps email booking/object resolution aligned with identity binding,
+  // which may resolve the same sender through tg_contacts rather than
+  // tg_guest_identities.
+  const directReservations = await maybeRows(
+    db
+      .from('tg_guest_reservations')
+      .select('*')
+      .eq('email', email)
+      .order('check_in', { ascending: false })
+      .limit(3),
+  );
+  if (directReservations.length >= 1) return mapBookingRow(directReservations[0], null);
+
   const identities = await maybeRows(
     db.from('tg_guest_identities').select('*').eq('email', email).limit(3),
   );
