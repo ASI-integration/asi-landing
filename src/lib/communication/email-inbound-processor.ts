@@ -36,6 +36,12 @@ import {
 } from './types';
 import { stableEmailChatId } from './email-stable-chat-id';
 import { getEmailOutboundMode, isEmailDraftOnly } from './email-outbound-safe-mode';
+import {
+  bookingObjectContextToAutopilotFields,
+  resolveEmailGuestBookingObjectContext,
+} from './telegram-booking-object-memory';
+import { decideCommunicationAutopilotResponse } from './autopilot';
+import { canClassifyInboundCommunication } from './communication-autopilot-settings';
 
 export type EmailInboundProcessingResult = {
   ok: boolean;
@@ -99,9 +105,15 @@ export async function processEmailInbound(params: {
   }
 
   const identity = await bindIdentity(envelope).catch(() => null);
-  const orchestrator = await recoverDraftOnlyIdentityClarification({
+  const groundedOrchestrator = await recoverDraftOnlyGroundedGuestReply({
     envelope,
     orchestrator: orchestratorResult,
+    identity,
+    adapter,
+  });
+  const orchestrator = await recoverDraftOnlyIdentityClarification({
+    envelope,
+    orchestrator: groundedOrchestrator,
     identity,
   });
 
@@ -138,6 +150,95 @@ export async function processEmailInboundMessage(params: {
   adapter?: EmailAdapter;
 }): Promise<EmailInboundProcessingResult> {
   return processEmailInbound(params);
+}
+
+function isResolvedGuestIdentity(identity: IdentityResolution | null): boolean {
+  if (!identity) return false;
+  const role = String(identity.role ?? '').trim().toLowerCase();
+  return role === 'guest' || role === 'test_guest';
+}
+
+function isBookingContextClarificationReply(reply: string | undefined): boolean {
+  const text = String(reply ?? '').trim();
+  if (!text) return false;
+  const asksForMore = /(уточнит|пришлит|напишит|send|which|what|provide)/i.test(text);
+  const mentionsBookingOrProperty =
+    /(объект|номер\s+(?:брони|бронирования)|property|booking\s+(?:number|reference)|reservation\s+(?:number|id))/i.test(text);
+  return asksForMore && mentionsBookingOrProperty;
+}
+
+async function recoverDraftOnlyGroundedGuestReply(params: {
+  envelope: InboundMessageEnvelope;
+  orchestrator: ProcessResult;
+  identity: IdentityResolution | null;
+  adapter: EmailAdapter;
+}): Promise<ProcessResult> {
+  if (!isEmailDraftOnly() || !isResolvedGuestIdentity(params.identity)) {
+    return params.orchestrator;
+  }
+
+  const currentReply = String(params.orchestrator.reply ?? '').trim();
+  const needsRecovery =
+    params.orchestrator.outcome === ProcessOutcome.Error ||
+    !currentReply ||
+    isBookingContextClarificationReply(currentReply);
+  if (!needsRecovery) return params.orchestrator;
+
+  const guestEmail = String(params.envelope.email ?? params.envelope.externalUserId ?? '').trim();
+  const messageText = String(params.envelope.messageText ?? params.envelope.subject ?? '').trim();
+  if (!guestEmail || !messageText) return params.orchestrator;
+
+  // The deterministic email autopilot currently returns RU guest-facing copy.
+  // Do not replace a valid EN draft until the email language layer supports the
+  // same grounded response contract.
+  if (!/[а-яё]/i.test(messageText)) return params.orchestrator;
+
+  const bookingObjectContext = await resolveEmailGuestBookingObjectContext({
+    guest_email: guestEmail,
+    text: messageText,
+  }).catch(() => null);
+  if (
+    !bookingObjectContext?.booking_resolved ||
+    !bookingObjectContext.property_resolved ||
+    !canClassifyInboundCommunication(bookingObjectContext.property)
+  ) {
+    return params.orchestrator;
+  }
+
+  const autopilotFields = bookingObjectContextToAutopilotFields(bookingObjectContext);
+  const decision = decideCommunicationAutopilotResponse({
+    channel: 'email',
+    messageText,
+    context: {
+      ...autopilotFields,
+      session: {
+        ...(autopilotFields.session ?? {}),
+        language: 'ru',
+      },
+    },
+  });
+
+  if (
+    decision.action !== 'auto_reply' ||
+    !decision.replyText?.trim() ||
+    decision.metadata.missingContext.length > 0
+  ) {
+    return params.orchestrator;
+  }
+
+  const reply = params.adapter.formatResponse(decision.replyText, {});
+  auditDecision({
+    type: 'reply',
+    chat_id: stableEmailChatId(params.envelope),
+    update_id: params.envelope.update_id,
+    detail: `email_draft_only_grounded_reply_recovered intent=${decision.metadata.intent}`,
+  });
+
+  return {
+    ...params.orchestrator,
+    outcome: ProcessOutcome.Replied,
+    reply,
+  };
 }
 
 async function recoverDraftOnlyIdentityClarification(params: {
