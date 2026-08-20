@@ -70,7 +70,7 @@ export async function matchReservation(params: MatchParams): Promise<Reservation
     if (bookingReference) {
       const byRef = await supabase
         .from('tg_guest_reservations')
-        .select('id, reservation_ref, property_id, listing_id, guest_id, guest_name, phone, check_in, check_out')
+        .select('id, reservation_ref, property_id, guest_id, guest_name, phone, check_in, check_out')
         .eq('reservation_ref', bookingReference)
         .maybeSingle();
 
@@ -81,7 +81,6 @@ export async function matchReservation(params: MatchParams): Promise<Reservation
           confidence: 1.0,
           reservationId: (byRef.data as any).id,
           propertyId: (byRef.data as any).property_id ?? undefined,
-          listingId: (byRef.data as any).listing_id ?? undefined,
           guestId: (byRef.data as any).guest_id ?? undefined,
           guestName: (byRef.data as any).guest_name ?? undefined,
         } satisfies ReservationMatchResult;
@@ -102,7 +101,7 @@ export async function matchReservation(params: MatchParams): Promise<Reservation
       // Some callers might pass the internal id instead of reservation_ref.
       const byId = await supabase
         .from('tg_guest_reservations')
-        .select('id, property_id, listing_id, guest_id, guest_name, phone, check_in, check_out')
+        .select('id, property_id, guest_id, guest_name, phone, check_in, check_out')
         .eq('id', bookingReference)
         .maybeSingle();
 
@@ -113,7 +112,6 @@ export async function matchReservation(params: MatchParams): Promise<Reservation
           confidence: 1.0,
           reservationId: (byId.data as any).id,
           propertyId: (byId.data as any).property_id ?? undefined,
-          listingId: (byId.data as any).listing_id ?? undefined,
           guestId: (byId.data as any).guest_id ?? undefined,
           guestName: (byId.data as any).guest_name ?? undefined,
         } satisfies ReservationMatchResult;
@@ -136,7 +134,7 @@ export async function matchReservation(params: MatchParams): Promise<Reservation
     if (typeof chatId === 'number' && Number.isFinite(chatId)) {
       const { data, error } = await supabase
         .from('tg_guest_reservations')
-        .select('id, property_id, listing_id, guest_id, guest_name, check_in, check_out')
+        .select('id, property_id, guest_id, guest_name, check_in, check_out')
         .eq('chat_id', chatId)
         .order('updated_at', { ascending: false })
         .limit(3);
@@ -148,7 +146,6 @@ export async function matchReservation(params: MatchParams): Promise<Reservation
           confidence: 0.95,
           reservationId: (data[0] as any).id,
           propertyId: (data[0] as any).property_id ?? undefined,
-          listingId: (data[0] as any).listing_id ?? undefined,
           guestId: (data[0] as any).guest_id ?? undefined,
           guestName: (data[0] as any).guest_name ?? undefined,
         } satisfies ReservationMatchResult;
@@ -194,7 +191,7 @@ export async function matchReservation(params: MatchParams): Promise<Reservation
     if (phone || guestName) {
       let query = supabase
         .from('tg_guest_reservations')
-        .select('id, property_id, listing_id, guest_id, guest_name, check_in, check_out')
+        .select('id, property_id, guest_id, guest_name, check_in, check_out')
         .limit(5);
 
       if (phone) query = query.eq('phone', phone) as typeof query;
@@ -208,7 +205,6 @@ export async function matchReservation(params: MatchParams): Promise<Reservation
           confidence: 0.8,
           reservationId: (data[0] as any).id,
           propertyId: (data[0] as any).property_id ?? undefined,
-          listingId: (data[0] as any).listing_id ?? undefined,
           guestId: (data[0] as any).guest_id ?? undefined,
           guestName: (data[0] as any).guest_name ?? undefined,
         } satisfies ReservationMatchResult;
@@ -270,7 +266,7 @@ export async function matchReservation(params: MatchParams): Promise<Reservation
       if (propIds.length > 0) {
         let q = supabase
           .from('tg_guest_reservations')
-          .select('id, property_id, listing_id, guest_id, guest_name, check_in, check_out')
+          .select('id, property_id, guest_id, guest_name, check_in, check_out')
           .in('property_id', propIds)
           .limit(5);
 
@@ -295,7 +291,6 @@ export async function matchReservation(params: MatchParams): Promise<Reservation
             confidence: 0.75,
             reservationId: (data[0] as any).id,
             propertyId: (data[0] as any).property_id ?? undefined,
-            listingId: (data[0] as any).listing_id ?? undefined,
             guestId: (data[0] as any).guest_id ?? undefined,
             guestName: (data[0] as any).guest_name ?? undefined,
           } satisfies ReservationMatchResult;
