@@ -30,6 +30,17 @@ const mocks = vi.hoisted(() => ({
     account_id: string;
     property_id: string | null;
   }>,
+  legacyReservations: [] as Array<{
+    id: string;
+    booking_id: string | null;
+    reservation_ref: string | null;
+    property_id: string;
+  }>,
+  legacyPropertyBindings: [] as Array<{
+    legacy_property_id: string;
+    account_id: string;
+    canonical_property_id: string;
+  }>,
   sendMessage: vi.fn(async () => true),
 }));
 
@@ -61,6 +72,12 @@ vi.mock('@/lib/supabase', () => ({
             error: null,
           }),
         }),
+        in: async (_column: string, values: string[]) => ({
+          data: values.flatMap((value) => mocks.propertyAccounts[value]
+            ? [{ id: value, account_id: mocks.propertyAccounts[value] }]
+            : []),
+          error: null,
+        }),
       }),
     }) : table === 'booking_ops_records' ? ({
       select: () => ({
@@ -72,6 +89,32 @@ vi.mock('@/lib/supabase', () => ({
         }),
         in: async (column: 'id' | 'booking_id' | 'asi_reference', values: string[]) => ({
           data: mocks.bookingBindings.filter((row) => values.includes(String(row[column] ?? ''))),
+          error: null,
+        }),
+      }),
+    }) : table === 'tg_guest_reservations' ? ({
+      select: () => ({
+        eq: (column: 'id' | 'booking_id' | 'reservation_ref', value: string) => ({
+          limit: async () => ({
+            data: mocks.legacyReservations.filter((row) => row[column] === value),
+            error: null,
+          }),
+        }),
+        in: async (column: 'id' | 'booking_id' | 'reservation_ref', values: string[]) => ({
+          data: mocks.legacyReservations.filter((row) => values.includes(String(row[column] ?? ''))),
+          error: null,
+        }),
+      }),
+    }) : table === 'legacy_tg_property_bindings' ? ({
+      select: () => ({
+        eq: (_column: 'legacy_property_id', value: string) => ({
+          limit: async () => ({
+            data: mocks.legacyPropertyBindings.filter((row) => row.legacy_property_id === value),
+            error: null,
+          }),
+        }),
+        in: async (_column: 'legacy_property_id', values: string[]) => ({
+          data: mocks.legacyPropertyBindings.filter((row) => values.includes(row.legacy_property_id)),
           error: null,
         }),
       }),
@@ -104,12 +147,14 @@ describe('PATCH /api/operator/escalation-reviews/[reviewId] acknowledge → lock
     mocks.memberships = ['account-a'];
     mocks.propertyAccounts = {};
     mocks.bookingBindings = [];
+    mocks.legacyReservations = [];
+    mocks.legacyPropertyBindings = [];
     mocks.sendMessage.mockClear();
   });
 
   it('returns 401 before reading a review when there is no authenticated session', async () => {
     mocks.authStatus = 'unauthenticated';
-    const { GET } = await import('../route');
+    const { GET, PATCH } = await import('../route');
     const res = await GET(
       new NextRequest('http://localhost/api/operator/escalation-reviews/missing'),
       { params: { reviewId: 'missing' } },
@@ -184,19 +229,26 @@ describe('PATCH /api/operator/escalation-reviews/[reviewId] acknowledge → lock
     expect(mocks.sendMessage).not.toHaveBeenCalled();
   });
 
-  it('keeps a production-shaped email review with a text property accessible through its canonical reservation binding', async () => {
-    mocks.bookingBindings = [{
-      id: '22222222-2222-4222-8222-222222222222',
-      booking_id: 'reservation-1',
-      asi_reference: null,
-      account_id: 'account-a',
+  it('resolves the production-shaped email review through persisted legacy tenant binding without booking ops', async () => {
+    const reservationId = '7e57b9e2-5a39-4c8b-8b0f-2a6c6d5e0201';
+    const canonicalPropertyId = '22222222-2222-4222-8222-222222222222';
+    mocks.propertyAccounts[canonicalPropertyId] = 'account-a';
+    mocks.legacyReservations = [{
+      id: reservationId,
+      booking_id: null,
+      reservation_ref: null,
       property_id: 'test-prop-tg-live',
+    }];
+    mocks.legacyPropertyBindings = [{
+      legacy_property_id: 'test-prop-tg-live',
+      account_id: 'account-a',
+      canonical_property_id: canonicalPropertyId,
     }];
     const review = createOrUpdateEscalationReview({
       sessionId: 'sess_grounded_email',
       channel: 'email',
       targetId: 'known.guest@example.test',
-      reservationId: 'reservation-1',
+      reservationId,
       propertyId: 'test-prop-tg-live',
       escalationReason: 'EMAIL_DRAFT_OPERATOR_REVIEW',
       suggestedReply: 'Выезд до 12:00. Ключи оставьте по инструкции из заселения.',
@@ -230,11 +282,19 @@ describe('PATCH /api/operator/escalation-reviews/[reviewId] acknowledge → lock
     expect(getEscalationReview(review.reviewId)).toMatchObject({
       status: 'acknowledged',
       propertyId: 'test-prop-tg-live',
-      reservationId: 'reservation-1',
+      reservationId,
       suggestedReply: expect.stringContaining('12:00'),
     });
 
     const beforeDenied = getEscalationReview(review.reviewId);
+    mocks.authStatus = 'forbidden';
+    const deniedNonOperator = await GET(
+      new NextRequest(`http://localhost/api/operator/escalation-reviews/${review.reviewId}`),
+      { params: { reviewId: review.reviewId } },
+    );
+    expect(deniedNonOperator.status).toBe(403);
+
+    mocks.authStatus = 'allowed';
     mocks.memberships = ['account-b'];
     const deniedGet = await GET(
       new NextRequest(`http://localhost/api/operator/escalation-reviews/${review.reviewId}`),
@@ -255,32 +315,82 @@ describe('PATCH /api/operator/escalation-reviews/[reviewId] acknowledge → lock
     expect(getEscalationReview(review.reviewId)).toEqual(beforeDenied);
   });
 
-  it('fails closed when a text property reservation binding is missing, ambiguous, or conflicting', async () => {
+  it('keeps an existing booking-ops-backed text property review accessible', async () => {
+    mocks.bookingBindings = [{
+      id: '22222222-2222-4222-8222-222222222222',
+      booking_id: 'reservation-1',
+      asi_reference: null,
+      account_id: 'account-a',
+      property_id: 'test-prop-tg-live',
+    }];
+    const review = createOrUpdateEscalationReview({
+      sessionId: 'sess_booking_ops_text',
+      channel: 'email',
+      targetId: 'known.guest@example.test',
+      reservationId: 'reservation-1',
+      propertyId: 'test-prop-tg-live',
+      escalationReason: 'EMAIL_DRAFT_OPERATOR_REVIEW',
+    });
     const { GET } = await import('../route');
+
+    const response = await GET(
+      new NextRequest(`http://localhost/api/operator/escalation-reviews/${review.reviewId}`),
+      { params: { reviewId: review.reviewId } },
+    );
+
+    expect(response.status).toBe(200);
+  });
+
+  it('fails closed when the legacy tenant binding is missing or conflicts with canonical/booking evidence', async () => {
+    const { GET, PATCH } = await import('../route');
+    const reservationId = '7e57b9e2-5a39-4c8b-8b0f-2a6c6d5e0201';
+    const canonicalPropertyId = '22222222-2222-4222-8222-222222222222';
     const cases = [
-      { sessionId: 'missing', bindings: [] },
       {
-        sessionId: 'ambiguous',
-        bindings: [
-          { id: 'record-a', booking_id: 'reservation-1', asi_reference: null, account_id: 'account-a', property_id: 'test-prop-tg-live' },
-          { id: 'record-b', booking_id: 'reservation-1', asi_reference: null, account_id: 'account-a', property_id: 'test-prop-tg-live' },
-        ],
+        sessionId: 'missing',
+        propertyAccount: 'account-a',
+        legacyBindings: [],
+        bookingBindings: [],
       },
       {
-        sessionId: 'conflicting',
-        bindings: [
-          { id: 'record-c', booking_id: 'reservation-1', asi_reference: null, account_id: 'account-a', property_id: 'different-property' },
+        sessionId: 'canonical-conflict',
+        propertyAccount: 'account-b',
+        legacyBindings: [{
+          legacy_property_id: 'test-prop-tg-live',
+          account_id: 'account-a',
+          canonical_property_id: canonicalPropertyId,
+        }],
+        bookingBindings: [],
+      },
+      {
+        sessionId: 'booking-conflict',
+        propertyAccount: 'account-a',
+        legacyBindings: [{
+          legacy_property_id: 'test-prop-tg-live',
+          account_id: 'account-a',
+          canonical_property_id: canonicalPropertyId,
+        }],
+        bookingBindings: [
+          { id: 'record-c', booking_id: reservationId, asi_reference: null, account_id: 'account-b', property_id: 'test-prop-tg-live' },
         ],
       },
     ];
 
     for (const testCase of cases) {
-      mocks.bookingBindings = testCase.bindings;
+      mocks.propertyAccounts = { [canonicalPropertyId]: testCase.propertyAccount };
+      mocks.legacyReservations = [{
+        id: reservationId,
+        booking_id: null,
+        reservation_ref: null,
+        property_id: 'test-prop-tg-live',
+      }];
+      mocks.legacyPropertyBindings = testCase.legacyBindings;
+      mocks.bookingBindings = testCase.bookingBindings;
       const review = createOrUpdateEscalationReview({
         sessionId: `sess_text_${testCase.sessionId}`,
         channel: 'email',
         targetId: 'known.guest@example.test',
-        reservationId: 'reservation-1',
+        reservationId,
         propertyId: 'test-prop-tg-live',
         escalationReason: 'EMAIL_DRAFT_OPERATOR_REVIEW',
       });
@@ -288,7 +398,19 @@ describe('PATCH /api/operator/escalation-reviews/[reviewId] acknowledge → lock
         new NextRequest(`http://localhost/api/operator/escalation-reviews/${review.reviewId}`),
         { params: { reviewId: review.reviewId } },
       );
+      const beforeDenied = getEscalationReview(review.reviewId);
+      const deniedSend = await PATCH(new NextRequest(
+        `http://localhost/api/operator/escalation-reviews/${review.reviewId}`,
+        {
+          method: 'PATCH',
+          body: JSON.stringify({ action: 'send_reply', replyText: 'must not send' }),
+          headers: { 'content-type': 'application/json' },
+        },
+      ), { params: { reviewId: review.reviewId } });
       expect(response.status).toBe(403);
+      expect(deniedSend.status).toBe(403);
+      expect(getEscalationReview(review.reviewId)).toEqual(beforeDenied);
+      expect(mocks.sendMessage).not.toHaveBeenCalled();
     }
   });
 
