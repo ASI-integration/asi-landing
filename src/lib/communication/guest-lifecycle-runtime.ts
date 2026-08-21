@@ -467,22 +467,54 @@ export async function runDueGuestLifecycleEvents(options: GuestLifecycleRuntimeO
 }
 
 export async function listGuestLifecycleVisibility(
-  options: { limit?: number; db?: SupabaseLike } = {},
+  options: { limit?: number; db?: SupabaseLike; accountIds?: string[] } = {},
 ): Promise<{ ok: true; items: GuestLifecycleVisibility[] } | { ok: false; error: string; items: [] }> {
   const db = options.db ?? (supabase as unknown as SupabaseLike);
+  const allowedAccountIds = options.accountIds === undefined
+    ? null
+    : new Set(options.accountIds.map((value) => String(value).trim()).filter(Boolean));
+  if (allowedAccountIds?.size === 0) return { ok: true, items: [] };
   const response = await db.from('guest_lifecycle_events')
     .select('*')
     .order('occurred_at', { ascending: false })
     .limit(Math.min(Math.max(options.limit ?? 500, 1), 1000));
   if (response?.error) return { ok: false, error: response.error.message, items: [] };
-  const rows = (response.data ?? []) as LifecycleRow[];
+  let rows = (response.data ?? []) as LifecycleRow[];
   const recordIds = [...new Set(rows.map((row) => row.booking_ops_record_id).filter(Boolean))] as string[];
   const names = new Map<string, string>();
+  const recordAccounts = new Map<string, string>();
   if (recordIds.length > 0) {
-    const records = await db.from('booking_ops_records').select('id,guest_name').in('id', recordIds);
-    for (const record of (records?.data ?? []) as Array<{ id: string; guest_name: string | null }>) {
+    const records = await db.from('booking_ops_records').select('id,guest_name,account_id').in('id', recordIds);
+    if (allowedAccountIds && records?.error) return { ok: false, error: records.error.message, items: [] };
+    for (const record of (records?.data ?? []) as Array<{ id: string; guest_name: string | null; account_id?: string | null }>) {
       names.set(record.id, text(record.guest_name, 160));
+      if (typeof record.account_id === 'string' && record.account_id.trim()) {
+        recordAccounts.set(record.id, record.account_id.trim());
+      }
     }
+  }
+  if (allowedAccountIds) {
+    const propertyIds = [...new Set(rows.map((row) => row.property_id).filter(Boolean))];
+    const propertyAccounts = new Map<string, string>();
+    if (propertyIds.length > 0) {
+      const properties = await db.from('properties').select('id,account_id').in('id', propertyIds);
+      if (properties?.error) return { ok: false, error: properties.error.message, items: [] };
+      for (const property of (properties?.data ?? []) as Array<{ id: string; account_id?: string | null }>) {
+        if (typeof property.account_id === 'string' && property.account_id.trim()) {
+          propertyAccounts.set(property.id, property.account_id.trim());
+        }
+      }
+    }
+    rows = rows.filter((row) => {
+      const candidates = new Set<string>();
+      const recordAccount = row.booking_ops_record_id
+        ? recordAccounts.get(row.booking_ops_record_id)
+        : null;
+      const propertyAccount = propertyAccounts.get(row.property_id);
+      if (recordAccount) candidates.add(recordAccount);
+      if (propertyAccount) candidates.add(propertyAccount);
+      return candidates.size === 1 && allowedAccountIds.has([...candidates][0]!);
+    });
   }
   const grouped = new Map<string, LifecycleRow[]>();
   for (const row of rows) grouped.set(row.reservation_id, [...(grouped.get(row.reservation_id) ?? []), row]);

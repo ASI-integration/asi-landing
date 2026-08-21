@@ -8,22 +8,53 @@ import {
   HandoffLockState,
   requestOperatorHandoff,
 } from '@/lib/communication/handoff-lock';
-import { __resetEscalationReviewStoreForTests } from '@/lib/communication/operator-review';
+import {
+  __resetEscalationReviewStoreForTests,
+  getEscalationReview,
+} from '@/lib/communication/operator-review';
 import {
   getCommAgentSessionMemory,
   resetCommAgentSessionMemoryForTests,
   updateCommAgentSessionMemory,
 } from '@/lib/communication/comm-agent-session-memory';
 
-const mocks = vi.hoisted(() => ({ sendMessage: vi.fn(async () => true) }));
+const mocks = vi.hoisted(() => ({
+  authStatus: 'allowed' as 'allowed' | 'unauthenticated' | 'forbidden',
+  memberships: ['account-a'],
+  propertyAccounts: {} as Record<string, string>,
+  sendMessage: vi.fn(async () => true),
+}));
 
-vi.mock('@/lib/auth', () => ({
-  getSession: vi.fn(async () => ({ userId: 'op_route_1', email: 'op@example.com' })),
+vi.mock('@/lib/crm/api-auth', () => ({
+  requireCrmOperatorSession: vi.fn(async () => {
+    if (mocks.authStatus === 'unauthenticated') {
+      return { error: Response.json({ error: 'Unauthorized' }, { status: 401 }) };
+    }
+    if (mocks.authStatus === 'forbidden') {
+      return { error: Response.json({ error: 'Forbidden' }, { status: 403 }) };
+    }
+    return { session: { userId: 'op_route_1', email: 'op@example.com' } };
+  }),
 }));
 
 vi.mock('@/lib/supabase', () => ({
   supabase: {
-    from: () => ({
+    from: (table: string) => table === 'account_members' ? ({
+      select: () => ({
+        eq: async () => ({ data: mocks.memberships.map((account_id) => ({ account_id })), error: null }),
+      }),
+    }) : table === 'properties' ? ({
+      select: () => ({
+        eq: (_column: string, value: string) => ({
+          limit: async () => ({
+            data: mocks.propertyAccounts[value]
+              ? [{ account_id: mocks.propertyAccounts[value] }]
+              : [],
+            error: null,
+          }),
+        }),
+      }),
+    }) : ({
       upsert: async () => ({ error: null }),
       select: () => ({
         eq: () => ({ single: async () => ({ data: null, error: { message: 'not found' } }) }),
@@ -48,11 +79,129 @@ describe('PATCH /api/operator/escalation-reviews/[reviewId] acknowledge → lock
     _resetForTesting();
     __resetEscalationReviewStoreForTests();
     resetCommAgentSessionMemoryForTests();
+    mocks.authStatus = 'allowed';
+    mocks.memberships = ['account-a'];
+    mocks.propertyAccounts = {};
     mocks.sendMessage.mockClear();
+  });
+
+  it('returns 401 before reading a review when there is no authenticated session', async () => {
+    mocks.authStatus = 'unauthenticated';
+    const { GET } = await import('../route');
+    const res = await GET(
+      new NextRequest('http://localhost/api/operator/escalation-reviews/missing'),
+      { params: { reviewId: 'missing' } },
+    );
+
+    expect(res.status).toBe(401);
+  });
+
+  it('returns 403 for every action to an authenticated non-operator without mutation or send', async () => {
+    const { reviewId } = requestOperatorHandoff({
+      accountId: 'account-a',
+      sessionId: 'sess_route_forbidden',
+      channel: 'telegram',
+      targetId: '4241',
+      escalationReason: 'REQUIRES_OPERATOR',
+      chatId: 4241,
+    });
+    mocks.authStatus = 'forbidden';
+    const { PATCH } = await import('../route');
+
+    for (const action of ['acknowledge', 'approve', 'close', 'send_reply', 'return_to_ai']) {
+      const res = await PATCH(new NextRequest(`http://localhost/api/operator/escalation-reviews/${reviewId}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ action, replyText: 'must not send' }),
+        headers: { 'content-type': 'application/json' },
+      }), { params: { reviewId } });
+      expect(res.status).toBe(403);
+    }
+
+    expect(getEscalationReview(reviewId)?.status).toBe('pending');
+    expect(mocks.sendMessage).not.toHaveBeenCalled();
+  });
+
+  it('allows an operator in the same account and denies another account', async () => {
+    const propertyId = '11111111-1111-4111-8111-111111111111';
+    mocks.propertyAccounts[propertyId] = 'account-a';
+    const { reviewId } = requestOperatorHandoff({
+      sessionId: 'sess_route_account_scope',
+      channel: 'telegram',
+      targetId: '4240',
+      propertyId,
+      escalationReason: 'REQUIRES_OPERATOR',
+    });
+    const { GET, PATCH } = await import('../route');
+
+    const allowed = await GET(
+      new NextRequest(`http://localhost/api/operator/escalation-reviews/${reviewId}`),
+      { params: { reviewId } },
+    );
+    expect(allowed.status).toBe(200);
+
+    mocks.memberships = ['account-b'];
+    const deniedGet = await GET(
+      new NextRequest(`http://localhost/api/operator/escalation-reviews/${reviewId}`),
+      { params: { reviewId } },
+    );
+    const deniedPatch = await PATCH(new NextRequest(`http://localhost/api/operator/escalation-reviews/${reviewId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ action: 'send_reply', replyText: 'must not send' }),
+      headers: { 'content-type': 'application/json' },
+    }), { params: { reviewId } });
+
+    expect(deniedGet.status).toBe(403);
+    expect(deniedPatch.status).toBe(403);
+    expect(getEscalationReview(reviewId)?.status).toBe('pending');
+    expect(mocks.sendMessage).not.toHaveBeenCalled();
+  });
+
+  it('fails closed when review tenant scope is missing', async () => {
+    const { reviewId } = requestOperatorHandoff({
+      sessionId: 'sess_route_missing_scope',
+      channel: 'telegram',
+      targetId: '4239',
+      escalationReason: 'REQUIRES_OPERATOR',
+    });
+    const { GET, PATCH } = await import('../route');
+    const get = await GET(
+      new NextRequest(`http://localhost/api/operator/escalation-reviews/${reviewId}`),
+      { params: { reviewId } },
+    );
+    const patch = await PATCH(new NextRequest(`http://localhost/api/operator/escalation-reviews/${reviewId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ action: 'send_reply', replyText: 'must not send' }),
+      headers: { 'content-type': 'application/json' },
+    }), { params: { reviewId } });
+
+    expect(get.status).toBe(403);
+    expect(patch.status).toBe(403);
+    expect(getEscalationReview(reviewId)?.status).toBe('pending');
+    expect(mocks.sendMessage).not.toHaveBeenCalled();
+  });
+
+  it('returns only reviews from the operator account in the collection', async () => {
+    const own = requestOperatorHandoff({
+      accountId: 'account-a', sessionId: 'sess_list_a', channel: 'telegram', targetId: '4301', escalationReason: 'test',
+    });
+    requestOperatorHandoff({
+      accountId: 'account-b', sessionId: 'sess_list_b', channel: 'telegram', targetId: '4302', escalationReason: 'test',
+    });
+    requestOperatorHandoff({
+      sessionId: 'sess_list_unresolved', channel: 'telegram', targetId: '4303', escalationReason: 'test',
+    });
+    const { GET } = await import('../../route');
+
+    const res = await GET(new NextRequest('http://localhost/api/operator/escalation-reviews'));
+    const body = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(body.reviews.map((review: { reviewId: string }) => review.reviewId)).toEqual([own.reviewId]);
   });
 
   it('acknowledge locks the session for the operator and blocks AI replies', async () => {
     const { reviewId } = requestOperatorHandoff({
+      accountId: 'account-a',
       sessionId: 'sess_route_ack',
       channel: 'telegram',
       targetId: '4242',
@@ -86,6 +235,7 @@ describe('PATCH /api/operator/escalation-reviews/[reviewId] acknowledge → lock
 
   it('repeated acknowledge stays operator_active (idempotent lock)', async () => {
     const { reviewId } = requestOperatorHandoff({
+      accountId: 'account-a',
       sessionId: 'sess_route_ack_idem',
       channel: 'telegram',
       targetId: '4243',
@@ -124,6 +274,7 @@ describe('PATCH /api/operator/escalation-reviews/[reviewId] acknowledge → lock
       language: 'ru',
     });
     const { reviewId } = requestOperatorHandoff({
+      accountId: 'account-a',
       sessionId: 'sess_route_resolve',
       channel: 'telegram',
       targetId: '4244',
