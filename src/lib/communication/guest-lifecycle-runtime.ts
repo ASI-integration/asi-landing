@@ -195,6 +195,7 @@ async function resolveDefaultContext(
     ok: true,
     context: {
       bookingOpsRecordId: record.id,
+      accountId: record.accountId,
       reservationId: event.reservationId,
       propertyId: event.propertyId,
       guestId: event.guestId,
@@ -404,6 +405,7 @@ export function createGuestLifecycleRuntimePort(options: GuestLifecycleRuntimeOp
     async requestOperator(input) {
       const chatId = Number(input.context.targetId);
       const handoff = requestOperatorHandoff({
+        accountId: input.context.accountId ?? undefined,
         sessionId: `lifecycle:${input.event.reservationId}:${input.event.eventType}`,
         channel: input.context.channel,
         targetId: input.context.targetId,

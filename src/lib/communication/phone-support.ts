@@ -31,6 +31,7 @@ import {
   type ProcessResult,
 } from './types';
 import { normalizeGuestMessageForCanon } from './communication-normalizer';
+import { resolveEscalationReviewAccountId } from './operator-access';
 
 const adapter = new PhoneAdapter();
 
@@ -156,15 +157,19 @@ async function createPhoneOperatorReview(params: {
   const suggestedReply =
     existingReview?.suggestedReply ??
     (params.orchestrator?.reply ? params.orchestrator.reply : undefined);
+  const reservationId = sessionForReview.reservationId ?? identity?.reservationId;
+  const propertyId = sessionForReview.propertyId ?? identity?.propertyId;
+  const accountId = await resolveEscalationReviewAccountId({ reservationId, propertyId });
 
   return createOrUpdateEscalationReview({
+    accountId: accountId ?? undefined,
     sessionId: sessionForReview.sessionId,
     channel: 'phone',
     targetId,
     actorId: sessionForReview.actorId,
     role: identity?.role ?? sessionForReview.role,
-    reservationId: sessionForReview.reservationId ?? identity?.reservationId,
-    propertyId: sessionForReview.propertyId ?? identity?.propertyId,
+    reservationId,
+    propertyId,
     leadId: sessionForReview.leadId ?? identity?.leadId,
     escalationReason,
     confidence: phoneUrgent ? 1 : (identity?.confidence ?? sessionForReview.confidence),
