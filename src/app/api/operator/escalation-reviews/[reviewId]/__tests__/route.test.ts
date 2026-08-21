@@ -194,6 +194,38 @@ describe('PATCH /api/operator/escalation-reviews/[reviewId] acknowledge → lock
     expect(mocks.sendMessage).not.toHaveBeenCalled();
   });
 
+  it('returns 403 for a CRM operator when the canonical membership layer is empty', async () => {
+    const review = createOrUpdateEscalationReview({
+      sessionId: 'sess_empty_canonical_layer',
+      channel: 'email',
+      targetId: 'known.guest@example.test',
+      reservationId: 'legacy-reservation-empty-canonical',
+      propertyId: 'test-prop-tg-live',
+      escalationReason: 'EMAIL_DRAFT_OPERATOR_REVIEW',
+    });
+    mocks.memberships = [];
+    const beforeDenied = getEscalationReview(review.reviewId);
+    const { GET, PATCH } = await import('../route');
+
+    const deniedGet = await GET(
+      new NextRequest(`http://localhost/api/operator/escalation-reviews/${review.reviewId}`),
+      { params: { reviewId: review.reviewId } },
+    );
+    const deniedSend = await PATCH(new NextRequest(
+      `http://localhost/api/operator/escalation-reviews/${review.reviewId}`,
+      {
+        method: 'PATCH',
+        body: JSON.stringify({ action: 'send_reply', replyText: 'must not send' }),
+        headers: { 'content-type': 'application/json' },
+      },
+    ), { params: { reviewId: review.reviewId } });
+
+    expect(deniedGet.status).toBe(403);
+    expect(deniedSend.status).toBe(403);
+    expect(getEscalationReview(review.reviewId)).toEqual(beforeDenied);
+    expect(mocks.sendMessage).not.toHaveBeenCalled();
+  });
+
   it('allows an operator in the same account and denies another account', async () => {
     const propertyId = '11111111-1111-4111-8111-111111111111';
     mocks.propertyAccounts[propertyId] = 'account-a';
