@@ -73,6 +73,19 @@ type ReservationBinding = {
   propertyId: string | null;
 };
 
+type LegacyReservationBinding = {
+  id: string;
+  propertyId: string;
+};
+
+type LegacyPropertyBinding = {
+  legacyPropertyId: string;
+  accountId: string;
+  canonicalPropertyId: string;
+};
+
+type UniqueLookup<T> = { ok: true; value: T | null } | { ok: false };
+
 async function lookupReservationBindings(
   column: 'booking_id' | 'asi_reference' | 'id',
   value: string,
@@ -102,19 +115,79 @@ async function lookupReservationBindings(
   }
 }
 
-async function resolveReservationBinding(reservationId: string): Promise<ReservationBinding | null> {
+async function resolveReservationBinding(reservationId: string): Promise<UniqueLookup<ReservationBinding>> {
   const bindings = new Map<string, ReservationBinding>();
   for (const column of ['booking_id', 'asi_reference'] as const) {
     const result = await lookupReservationBindings(column, reservationId);
-    if (!result.ok) return null;
+    if (!result.ok) return { ok: false };
     result.bindings.forEach((binding) => bindings.set(binding.id, binding));
   }
   if (isUuid(reservationId)) {
     const result = await lookupReservationBindings('id', reservationId);
-    if (!result.ok) return null;
+    if (!result.ok) return { ok: false };
     result.bindings.forEach((binding) => bindings.set(binding.id, binding));
   }
-  return bindings.size === 1 ? [...bindings.values()][0]! : null;
+  if (bindings.size > 1) return { ok: false };
+  return { ok: true, value: bindings.size === 1 ? [...bindings.values()][0]! : null };
+}
+
+async function lookupLegacyReservationBindings(
+  column: 'id' | 'booking_id' | 'reservation_ref',
+  value: string,
+): Promise<{ ok: true; bindings: LegacyReservationBinding[] } | { ok: false }> {
+  try {
+    const result = await supabase
+      .from('tg_guest_reservations')
+      .select('id,property_id')
+      .eq(column, value)
+      .limit(2);
+    if (result.error) return { ok: false };
+    const rows = result.data ?? [];
+    const bindings = rows.flatMap((row) => {
+      const id = normalized((row as { id?: unknown }).id);
+      const propertyId = normalized((row as { property_id?: unknown }).property_id);
+      return id && propertyId ? [{ id, propertyId }] : [];
+    });
+    return bindings.length === rows.length ? { ok: true, bindings } : { ok: false };
+  } catch {
+    return { ok: false };
+  }
+}
+
+async function resolveLegacyReservationBinding(
+  reservationId: string,
+): Promise<UniqueLookup<LegacyReservationBinding>> {
+  const bindings = new Map<string, LegacyReservationBinding>();
+  for (const column of ['id', 'booking_id', 'reservation_ref'] as const) {
+    const result = await lookupLegacyReservationBindings(column, reservationId);
+    if (!result.ok) return { ok: false };
+    result.bindings.forEach((binding) => bindings.set(binding.id, binding));
+  }
+  if (bindings.size !== 1) return bindings.size === 0 ? { ok: true, value: null } : { ok: false };
+  return { ok: true, value: [...bindings.values()][0]! };
+}
+
+async function lookupLegacyPropertyBinding(propertyId: string): Promise<UniqueLookup<LegacyPropertyBinding>> {
+  try {
+    const result = await supabase
+      .from('legacy_tg_property_bindings')
+      .select('legacy_property_id,account_id,canonical_property_id')
+      .eq('legacy_property_id', propertyId)
+      .limit(2);
+    if (result.error) return { ok: false };
+    const rows = result.data ?? [];
+    if (rows.length !== 1) return rows.length === 0 ? { ok: true, value: null } : { ok: false };
+    const row = rows[0] as Record<string, unknown>;
+    const legacyPropertyId = normalized(row.legacy_property_id);
+    const accountId = normalized(row.account_id);
+    const canonicalPropertyId = normalized(row.canonical_property_id);
+    if (!legacyPropertyId || !accountId || !canonicalPropertyId || !isUuid(canonicalPropertyId)) {
+      return { ok: false };
+    }
+    return { ok: true, value: { legacyPropertyId, accountId, canonicalPropertyId } };
+  } catch {
+    return { ok: false };
+  }
 }
 
 async function batchLookupAccounts(
@@ -179,32 +252,122 @@ async function batchLookupReservationBindings(
   }
 }
 
+async function batchLookupLegacyReservationBindings(
+  column: 'id' | 'booking_id' | 'reservation_ref',
+  values: string[],
+): Promise<Map<string, Map<string, LegacyReservationBinding>> | null> {
+  const result = new Map<string, Map<string, LegacyReservationBinding>>();
+  if (values.length === 0) return result;
+  try {
+    const query = supabase.from('tg_guest_reservations') as unknown as {
+      select: (columns: string) => {
+        in: (filterColumn: string, filterValues: string[]) => Promise<{
+          data: Array<Record<string, unknown>> | null;
+          error: { message: string } | null;
+        }>;
+      };
+    };
+    const response = await query.select(`${column},id,property_id`).in(column, values);
+    if (response.error) return null;
+    for (const row of response.data ?? []) {
+      const key = normalized(row[column]);
+      const id = normalized(row.id);
+      const propertyId = normalized(row.property_id);
+      if (!key || !id || !propertyId) return null;
+      const byId = result.get(key) ?? new Map<string, LegacyReservationBinding>();
+      byId.set(id, { id, propertyId });
+      result.set(key, byId);
+    }
+    return result;
+  } catch {
+    return null;
+  }
+}
+
+async function batchLookupLegacyPropertyBindings(
+  propertyIds: string[],
+): Promise<Map<string, LegacyPropertyBinding[]> | null> {
+  const result = new Map<string, LegacyPropertyBinding[]>();
+  if (propertyIds.length === 0) return result;
+  try {
+    const query = supabase.from('legacy_tg_property_bindings') as unknown as {
+      select: (columns: string) => {
+        in: (filterColumn: string, filterValues: string[]) => Promise<{
+          data: Array<Record<string, unknown>> | null;
+          error: { message: string } | null;
+        }>;
+      };
+    };
+    const response = await query
+      .select('legacy_property_id,account_id,canonical_property_id')
+      .in('legacy_property_id', propertyIds);
+    if (response.error) return null;
+    for (const row of response.data ?? []) {
+      const legacyPropertyId = normalized(row.legacy_property_id);
+      const accountId = normalized(row.account_id);
+      const canonicalPropertyId = normalized(row.canonical_property_id);
+      if (!legacyPropertyId || !accountId || !canonicalPropertyId || !isUuid(canonicalPropertyId)) return null;
+      result.set(legacyPropertyId, [
+        ...(result.get(legacyPropertyId) ?? []),
+        { legacyPropertyId, accountId, canonicalPropertyId },
+      ]);
+    }
+    return result;
+  } catch {
+    return null;
+  }
+}
+
 function tenantFromEvidence(params: {
   storedAccountId: string | null;
   propertyId: string | null;
   propertyAccountIds: ReadonlySet<string> | null;
   reservationBinding: ReservationBinding | null;
+  legacyReservationBinding: LegacyReservationBinding | null;
+  legacyPropertyBinding: LegacyPropertyBinding | null;
+  legacyCanonicalPropertyAccountIds: ReadonlySet<string> | null;
   reservationPresent: boolean;
 }): string | null {
   const candidates = new Set<string>();
   if (params.storedAccountId) candidates.add(params.storedAccountId);
 
-  if (params.propertyId && isUuid(params.propertyId)) {
+  const canonicalProperty = params.propertyId ? isUuid(params.propertyId) : false;
+  if (params.propertyId && canonicalProperty) {
     if (params.propertyAccountIds?.size !== 1) return null;
     params.propertyAccountIds.forEach((accountId) => candidates.add(accountId));
   }
 
   if (params.reservationPresent) {
-    if (!params.reservationBinding) return null;
-    const binding = params.reservationBinding;
-    if (params.propertyId) {
-      if (!isUuid(params.propertyId) && binding.propertyId !== params.propertyId) return null;
-      if (binding.propertyId && binding.propertyId !== params.propertyId) return null;
+    if (params.propertyId && !canonicalProperty) {
+      const legacyReservation = params.legacyReservationBinding;
+      const legacyProperty = params.legacyPropertyBinding;
+      if (legacyReservation && legacyReservation.propertyId !== params.propertyId) return null;
+      if (legacyProperty) {
+        if (legacyProperty.legacyPropertyId !== params.propertyId) return null;
+        if (
+          params.legacyCanonicalPropertyAccountIds?.size !== 1
+          || !params.legacyCanonicalPropertyAccountIds.has(legacyProperty.accountId)
+        ) return null;
+        candidates.add(legacyProperty.accountId);
+      }
+
+      if (params.reservationBinding) {
+        if (
+          params.reservationBinding.propertyId !== params.propertyId
+          && params.reservationBinding.propertyId !== legacyProperty?.canonicalPropertyId
+        ) return null;
+        candidates.add(params.reservationBinding.accountId);
+      }
+      if (!params.reservationBinding && (!legacyReservation || !legacyProperty)) return null;
+    } else {
+      if (!params.reservationBinding) return null;
+      if (params.propertyId && params.reservationBinding.propertyId && params.reservationBinding.propertyId !== params.propertyId) {
+        return null;
+      }
+      candidates.add(params.reservationBinding.accountId);
     }
-    candidates.add(binding.accountId);
   } else if (params.propertyId && !isUuid(params.propertyId)) {
-    // A text property id is never tenant evidence by itself. It is accepted only
-    // through an exact canonical reservation -> property relationship.
+    // A text property id is never tenant evidence without an exact legacy reservation.
     return null;
   }
 
@@ -231,8 +394,31 @@ export async function resolveEscalationReviewAccountId(
 
   const reservationId = normalized(review.reservationId);
   let reservationBinding: ReservationBinding | null = null;
+  let legacyReservationBinding: LegacyReservationBinding | null = null;
+  let legacyPropertyBinding: LegacyPropertyBinding | null = null;
+  let legacyCanonicalPropertyAccountIds: Set<string> | null = null;
   if (reservationId) {
-    reservationBinding = await resolveReservationBinding(reservationId);
+    const reservation = await resolveReservationBinding(reservationId);
+    if (!reservation.ok) return null;
+    reservationBinding = reservation.value;
+    if (propertyId && !isUuid(propertyId)) {
+      const [legacyReservation, legacyProperty] = await Promise.all([
+        resolveLegacyReservationBinding(reservationId),
+        lookupLegacyPropertyBinding(propertyId),
+      ]);
+      if (!legacyReservation.ok || !legacyProperty.ok) return null;
+      legacyReservationBinding = legacyReservation.value;
+      legacyPropertyBinding = legacyProperty.value;
+      if (legacyPropertyBinding) {
+        const canonicalProperty = await lookupAccounts(
+          'properties',
+          'id',
+          legacyPropertyBinding.canonicalPropertyId,
+        );
+        if (!canonicalProperty.ok) return null;
+        legacyCanonicalPropertyAccountIds = new Set(canonicalProperty.accountIds);
+      }
+    }
   }
 
   return tenantFromEvidence({
@@ -240,6 +426,9 @@ export async function resolveEscalationReviewAccountId(
     propertyId,
     propertyAccountIds,
     reservationBinding,
+    legacyReservationBinding,
+    legacyPropertyBinding,
+    legacyCanonicalPropertyAccountIds,
     reservationPresent: Boolean(reservationId),
   });
 }
@@ -292,7 +481,7 @@ export async function resolveTelegramTargetTenantScope(targetId: string): Promis
   }
 }
 
-/** Resolve a collection with at most four canonical lookups instead of one lookup per review. */
+/** Resolve a collection with bounded canonical and legacy binding lookups. */
 export async function resolveEscalationReviewAccountIds(
   reviews: EscalationReview[],
 ): Promise<Map<string, string | null>> {
@@ -303,15 +492,38 @@ export async function resolveEscalationReviewAccountIds(
     .map((review) => normalized(review.reservationId))
     .filter((value): value is string => Boolean(value)))];
   const reservationUuidIds = reservationIds.filter(isUuid);
+  const legacyPropertyIds = [...new Set(reviews
+    .map((review) => normalized(review.propertyId))
+    .filter((value): value is string => typeof value === 'string' && !isUuid(value)))];
+  const legacyReservationIds = [...new Set(reviews.flatMap((review) => {
+    const propertyId = normalized(review.propertyId);
+    const reservationId = normalized(review.reservationId);
+    return propertyId && !isUuid(propertyId) && reservationId ? [reservationId] : [];
+  }))];
 
-  const [properties, bookings, references, recordIds] = await Promise.all([
+  const [properties, bookings, references, recordIds, legacyIds, legacyBookings, legacyReferences, legacyProperties] = await Promise.all([
     batchLookupAccounts('properties', 'id', propertyIds),
     batchLookupReservationBindings('booking_id', reservationIds),
     batchLookupReservationBindings('asi_reference', reservationIds),
     batchLookupReservationBindings('id', reservationUuidIds),
+    batchLookupLegacyReservationBindings('id', legacyReservationIds),
+    batchLookupLegacyReservationBindings('booking_id', legacyReservationIds),
+    batchLookupLegacyReservationBindings('reservation_ref', legacyReservationIds),
+    batchLookupLegacyPropertyBindings(legacyPropertyIds),
   ]);
   const resolved = new Map<string, string | null>();
-  if (!properties || !bookings || !references || !recordIds) {
+  if (
+    !properties || !bookings || !references || !recordIds
+    || !legacyIds || !legacyBookings || !legacyReferences || !legacyProperties
+  ) {
+    reviews.forEach((review) => resolved.set(review.reviewId, null));
+    return resolved;
+  }
+  const legacyCanonicalPropertyIds = [...new Set([...legacyProperties.values()]
+    .flat()
+    .map((binding) => binding.canonicalPropertyId))];
+  const legacyCanonicalProperties = await batchLookupAccounts('properties', 'id', legacyCanonicalPropertyIds);
+  if (!legacyCanonicalProperties) {
     reviews.forEach((review) => resolved.set(review.reviewId, null));
     return resolved;
   }
@@ -321,19 +533,44 @@ export async function resolveEscalationReviewAccountIds(
     const propertyId = normalized(review.propertyId);
     const reservationId = normalized(review.reservationId);
     let reservationBinding: ReservationBinding | null = null;
+    let reservationBindingsValid = true;
     if (reservationId) {
       const bindings = new Map<string, ReservationBinding>();
       for (const source of [bookings, references, recordIds]) {
         source.get(reservationId)?.forEach((binding, id) => bindings.set(id, binding));
       }
+      reservationBindingsValid = bindings.size <= 1;
       reservationBinding = bindings.size === 1 ? [...bindings.values()][0]! : null;
     }
+
+    const legacyReservationBindings = new Map<string, LegacyReservationBinding>();
+    if (reservationId) {
+      for (const source of [legacyIds, legacyBookings, legacyReferences]) {
+        source.get(reservationId)?.forEach((binding, id) => legacyReservationBindings.set(id, binding));
+      }
+    }
+    const legacyPropertyCandidates = propertyId && !isUuid(propertyId)
+      ? (legacyProperties.get(propertyId) ?? [])
+      : [];
+
+    if (!reservationBindingsValid || legacyReservationBindings.size > 1 || legacyPropertyCandidates.length > 1) {
+      resolved.set(review.reviewId, null);
+      continue;
+    }
+    const legacyPropertyBinding = legacyPropertyCandidates.length === 1 ? legacyPropertyCandidates[0]! : null;
 
     resolved.set(review.reviewId, tenantFromEvidence({
       storedAccountId,
       propertyId,
       propertyAccountIds: propertyId && isUuid(propertyId) ? (properties.get(propertyId) ?? null) : null,
       reservationBinding,
+      legacyReservationBinding: legacyReservationBindings.size === 1
+        ? [...legacyReservationBindings.values()][0]!
+        : null,
+      legacyPropertyBinding,
+      legacyCanonicalPropertyAccountIds: legacyPropertyBinding
+        ? (legacyCanonicalProperties.get(legacyPropertyBinding.canonicalPropertyId) ?? null)
+        : null,
       reservationPresent: Boolean(reservationId),
     }));
   }

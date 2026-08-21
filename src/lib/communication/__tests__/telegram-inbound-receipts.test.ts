@@ -97,7 +97,19 @@ describe('durable Telegram inbound receipts', () => {
         account_id: 'account-a',
         property_id: 'test-prop-tg-live',
       }))
-      .mockReturnValueOnce(queryResult(null));
+      .mockReturnValueOnce(queryResult(null))
+      .mockReturnValueOnce(queryResult({
+        id: 'reservation-1',
+        property_id: 'test-prop-tg-live',
+      }))
+      .mockReturnValueOnce(queryResult({
+        legacy_property_id: 'test-prop-tg-live',
+        account_id: 'account-a',
+        canonical_property_id: '22222222-2222-4222-8222-222222222222',
+      }))
+      .mockReturnValueOnce(queryResult(null))
+      .mockReturnValueOnce(queryResult(null))
+      .mockReturnValueOnce(queryResult({ account_id: 'account-a' }));
     mocks.rpc.mockResolvedValue({
       data: [{
         action: 'process', receipt_id: 'receipt-1', claim_token: 'claim-1', retry_count: 0,
