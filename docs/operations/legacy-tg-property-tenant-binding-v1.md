@@ -104,7 +104,8 @@ property, or binding rolls the transaction back. It never changes or deletes
 
 ## Session correlation acceptance
 
-Before deploying PR #235, inspect `GET /api/auth/session` read-only and require:
+Before marking PR #235 ready for final review, inspect
+`GET /api/auth/session` read-only and require:
 
 - `user.id` exists;
 - `isCrmOperator === true`;
@@ -136,20 +137,28 @@ the bootstrap must not repair or trust it.
    canonical account/property pair.
 6. Run the tool in read-only mode and require every check to pass with
    `deployment_readiness: READY`.
-7. Only then deploy the reviewed PR #235 application commit.
-8. Run operator access acceptance: same-account GET/actions allowed; missing
-   membership, missing binding, ambiguity, and cross-account access return `403`;
-   unauthorized `send_reply` produces no provider call or mutation.
-9. Run the accepted email scenario: recognized guest/reservation,
-   `test-prop-tg-live`, manual mode, checkout `12:00`, grounded draft containing
-   `12:00`, `draft_only`, and zero automatic outbound email.
+7. Mark PR #235 ready for final review if appropriate.
+8. Merge PR #235 to `main` through the normal owner-gated review process.
+9. Record the exact resulting GitHub `main` / merge SHA.
+10. Run `Deploy to VPS` for that exact `main` SHA. The workflow may technically
+    accept an explicit SHA, but the supported ASI production process is:
+    **MERGE TO MAIN FIRST, THEN DEPLOY THE EXACT MAIN SHA**.
+11. Require the deploy workflow to pass, require `/api/health` to pass, and
+    verify that `/api/version.sha` equals the deployed `main` / merge SHA.
+12. Run operator tenant-isolation production acceptance: same-account operator
+    allowed; cross-account denied; missing binding or membership denied; denied
+    `send_reply` produces zero real provider calls.
+13. Run grounded email production acceptance: guest recognized; reservation
+    matched; property is `test-prop-tg-live`; `communication_autopilot` is
+    `manual`; checkout is `12:00`; the draft contains `12:00`; `outboundMode` is
+    `draft_only`; and there is zero automatic guest email send.
 
 Applying the migration before authentication is technically harmless because
 it creates schema only, but the operational path must not assume canonical rows
-exist. Deploying application code before steps 0–6 is technically safe because
-access fails closed, but it is **SAFE BUT OPERATIONALLY BLOCKING**: the operator
-UI is locked until the canonical layer and trusted binding are complete. It is
-not the recommended order.
+exist. Although the deploy workflow may technically accept an explicit SHA,
+deploying a feature-branch or PR commit is not the supported production path.
+Production rollout starts only after PR #235 is merged to `main`, and the exact
+resulting `main` SHA is deployed and verified before live acceptance.
 
 Existing legacy communication rows require a binding only when their text
 property ids are used by operator-review communication paths. Unbound rows
