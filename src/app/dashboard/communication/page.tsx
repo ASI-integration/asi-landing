@@ -391,6 +391,7 @@ function timelineEvents(review: EscalationReview): Array<{ label: string; detail
 }
 
 export default function CommunicationPage() {
+  const [operatorAccess, setOperatorAccess] = useState<boolean | null>(null);
   const [reviews, setReviews] = useState<EscalationReview[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -481,8 +482,25 @@ export default function CommunicationPage() {
   }
 
   useEffect(() => {
-    void loadReviews();
-    void loadLifecycleItems();
+    let active = true;
+    void (async () => {
+      try {
+        const response = await fetch('/api/auth/session', { cache: 'no-store' });
+        const payload = await response.json() as { isCrmOperator?: boolean };
+        const allowed = response.ok && payload.isCrmOperator === true;
+        if (!active) return;
+        setOperatorAccess(allowed);
+        if (allowed) {
+          void loadReviews();
+          void loadLifecycleItems();
+        }
+      } catch {
+        if (active) setOperatorAccess(false);
+      }
+    })();
+    return () => {
+      active = false;
+    };
   }, []);
 
   useEffect(() => {
@@ -676,6 +694,19 @@ export default function CommunicationPage() {
     foundation: 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200',
     planned: 'bg-amber-50 text-amber-700 ring-1 ring-amber-200',
   };
+
+  if (operatorAccess === null) {
+    return <div className="rounded-xl border border-slate-200 bg-white p-5 text-sm text-slate-600">Проверяем доступ...</div>;
+  }
+
+  if (!operatorAccess) {
+    return (
+      <div className="rounded-xl border border-amber-200 bg-amber-50 p-5">
+        <h1 className="text-lg font-semibold text-slate-900">Раздел доступен оператору</h1>
+        <p className="mt-1 text-sm text-slate-700">У вашей учётной записи нет доступа к рабочей очереди сообщений.</p>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-5">

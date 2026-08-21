@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getSession } from '@/lib/auth';
 import {
   approveEscalationReview,
   closeEscalationReview,
@@ -11,33 +10,44 @@ import {
   releaseSessionToAi,
   resolveOperatorHandoffWithReply,
 } from '@/lib/communication/handoff-lock';
+import {
+  requireEscalationReviewScope,
+  requireOperatorCommunicationScope,
+} from '@/lib/communication/operator-access';
 
 export const dynamic = 'force-dynamic';
 
-async function requireSession() {
-  const session = await getSession();
-  if (!session.userId) return null;
-  return session;
-}
-
 export async function GET(_req: NextRequest, ctx: { params: { reviewId: string } }) {
-  const session = await requireSession();
-  if (!session) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
+  const scope = await requireOperatorCommunicationScope();
+  if ('error' in scope) return scope.error;
 
   const review = getEscalationReview(ctx.params.reviewId);
   if (!review) {
     return NextResponse.json({ ok: false, error: 'not_found' }, { status: 404 });
   }
+  const reviewScope = await requireEscalationReviewScope(scope, review);
+  if ('error' in reviewScope) return reviewScope.error;
 
   return NextResponse.json({ ok: true, review });
 }
 
 export async function PATCH(req: NextRequest, ctx: { params: { reviewId: string } }) {
-  const session = await requireSession();
-  if (!session) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  const scope = await requireOperatorCommunicationScope();
+  if ('error' in scope) return scope.error;
+
+  const reviewId = ctx.params.reviewId;
+  const existing = getEscalationReview(reviewId);
+  if (!existing) {
+    return NextResponse.json({ ok: false, error: 'not_found' }, { status: 404 });
+  }
+  const reviewScope = await requireEscalationReviewScope(scope, existing);
+  if ('error' in reviewScope) return reviewScope.error;
+  const sessionReviews = getReviewsBySessionId(existing.sessionId);
+  for (const sessionReview of sessionReviews) {
+    const sessionReviewScope = await requireEscalationReviewScope(scope, sessionReview);
+    if ('error' in sessionReviewScope || sessionReviewScope.accountId !== reviewScope.accountId) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
   }
 
   let body: Record<string, unknown>;
@@ -48,13 +58,11 @@ export async function PATCH(req: NextRequest, ctx: { params: { reviewId: string 
   }
 
   const action = String(body.action ?? '');
-  const operatorId = session.userId;
-  const reviewId = ctx.params.reviewId;
+  const operatorId = scope.session.userId;
 
   try {
     if (action === 'acknowledge') {
-      const existing = getEscalationReview(reviewId);
-      const chatId = existing ? Number(existing.targetId) : NaN;
+      const chatId = Number(existing.targetId);
       const { review } = lockSessionForOperator({
         reviewId,
         operatorId,
@@ -84,18 +92,14 @@ export async function PATCH(req: NextRequest, ctx: { params: { reviewId: string 
       });
     }
     if (action === 'return_to_ai') {
-      const review = getEscalationReview(reviewId);
-      if (!review) {
-        return NextResponse.json({ ok: false, error: 'not_found' }, { status: 404 });
-      }
-      const chatId = Number(review.targetId);
+      const chatId = Number(existing.targetId);
       const release = releaseSessionToAi({
-        sessionId: review.sessionId,
+        sessionId: existing.sessionId,
         operatorId,
         reason: 'manual_return_to_ai',
         chatId: Number.isFinite(chatId) ? chatId : undefined,
       });
-      const reviews = getReviewsBySessionId(review.sessionId).sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
+      const reviews = getReviewsBySessionId(existing.sessionId).sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
       return NextResponse.json({
         ok: true,
         release,
