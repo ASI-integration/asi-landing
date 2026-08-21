@@ -158,6 +158,7 @@ function mapPropertyRow(row: any): TelegramPropertyObjectV1 {
     stringOrNull(row?.access_notes) ??
     stringOrNull(row?.checkin_instructions) ??
     stringOrNull(row?.check_in_text);
+  const communicationAutopilot = String(row?.communication_autopilot ?? '').trim().toLowerCase();
 
   return {
     object_id: String(row?.property_id ?? ''),
@@ -176,7 +177,11 @@ function mapPropertyRow(row: any): TelegramPropertyObjectV1 {
     house_rules_text: stringOrNull(row?.house_rules_text) ?? stringOrNull(row?.house_rules),
     door_code_notes: stringOrNull(row?.door_code_notes),
     communication_autopilot:
-      String(row?.communication_autopilot ?? '').trim().toLowerCase() === 'enabled' ? 'enabled' : 'disabled',
+      communicationAutopilot === 'enabled'
+        ? 'enabled'
+        : communicationAutopilot === 'manual'
+          ? 'manual'
+          : 'disabled',
   };
 }
 
