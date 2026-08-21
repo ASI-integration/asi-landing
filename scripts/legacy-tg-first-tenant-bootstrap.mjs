@@ -49,7 +49,6 @@ export function parseBootstrapOptions(argv) {
     if (options.confirm !== APPLY_CONFIRMATION) {
       throw new Error(`--apply requires --confirm ${APPLY_CONFIRMATION}`);
     }
-    if (!options.accountName) throw new Error('--apply requires --account-name');
     if (!options.propertyName) throw new Error('--apply requires --property-name');
   }
   return options;
@@ -60,6 +59,7 @@ function pass(value, detail) {
 }
 
 export function evaluateBootstrapReadiness(state) {
+  const userExists = state.userRows.length === 1;
   const accountExists = state.accountRows.length === 1;
   const membershipExists = state.membershipRows.length === 1;
   const propertyExists = state.propertyRows.length === 1;
@@ -77,6 +77,7 @@ export function evaluateBootstrapReadiness(state) {
     && binding.legacy_property_id === state.expected.legacyPropertyId;
 
   const checks = {
+    canonical_user_exists: pass(userExists, `${state.userRows.length} exact user row(s)`),
     canonical_account_exists: pass(accountExists, `${state.accountRows.length} exact account row(s)`),
     operator_membership_exists: pass(membershipExists, `${state.membershipRows.length} exact membership row(s)`),
     canonical_property_exists: pass(propertyExists, `${state.propertyRows.length} exact property row(s)`),
@@ -102,17 +103,24 @@ async function rows(client, sql, params) {
 
 export async function inspectBootstrapState(client, options) {
   const expected = {
+    userId: options.userId,
     accountId: options.accountId,
     propertyId: options.propertyId,
     legacyPropertyId: options.legacyPropertyId,
   };
   return {
     expected,
-    accountRows: await rows(client, 'SELECT id FROM public.accounts WHERE id = $1', [options.accountId]),
+    userRows: await rows(client, 'SELECT id FROM public.users WHERE id = $1', [options.userId]),
+    accountRows: await rows(client, 'SELECT id, name FROM public.accounts WHERE id = $1', [options.accountId]),
     membershipRows: await rows(
       client,
       'SELECT account_id, user_id, role FROM public.account_members WHERE account_id = $1 AND user_id = $2',
       [options.accountId, options.userId],
+    ),
+    userMembershipRows: await rows(
+      client,
+      'SELECT account_id, user_id, role FROM public.account_members WHERE user_id = $1',
+      [options.userId],
     ),
     propertyRows: await rows(
       client,
@@ -164,7 +172,27 @@ export async function applyBootstrap(client, options) {
     ) {
       throw new Error('legacy reservation must resolve uniquely to the explicit legacy property');
     }
-    exactly(before.accountRows, () => true, 'conflicting canonical account');
+    if (before.accountRows.length !== 1) {
+      const hasDifferentPersistedMembership = before.userMembershipRows.some(
+        (row) => row.account_id !== options.accountId,
+      );
+      throw new Error(hasDifferentPersistedMembership
+        ? 'owner-supplied account UUID conflicts with the persisted operator membership'
+        : 'canonical account must already exist through the normal authentication flow');
+    }
+    exactly(
+      before.accountRows,
+      (row) => !options.accountName || row.name === options.accountName,
+      'conflicting canonical account',
+    );
+    if (before.membershipRows.length !== 1) {
+      const hasDifferentPersistedMembership = before.userMembershipRows.some(
+        (row) => row.account_id !== options.accountId,
+      );
+      throw new Error(hasDifferentPersistedMembership
+        ? 'owner-supplied account UUID conflicts with the persisted operator membership'
+        : 'canonical account membership must already exist through the normal authentication flow');
+    }
     exactly(
       before.membershipRows,
       (row) => row.role === options.role,
@@ -184,21 +212,6 @@ export async function applyBootstrap(client, options) {
       'conflicting legacy property binding',
     );
 
-    await client.query(
-      `INSERT INTO public.accounts (id, name)
-       VALUES ($1, $2)
-       ON CONFLICT (id) DO NOTHING`,
-      [options.accountId, options.accountName],
-    );
-    const account = await rows(client, 'SELECT id, name FROM public.accounts WHERE id = $1', [options.accountId]);
-    exactly(account, (row) => row.name === options.accountName, 'conflicting canonical account');
-
-    await client.query(
-      `INSERT INTO public.account_members (account_id, user_id, role)
-       VALUES ($1, $2, $3)
-       ON CONFLICT (account_id, user_id) DO NOTHING`,
-      [options.accountId, options.userId, options.role],
-    );
     await client.query(
       `INSERT INTO public.properties (id, account_id, name, status)
        VALUES ($1, $2, $3, $4)
