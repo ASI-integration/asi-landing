@@ -2,7 +2,13 @@
 -- canonical tenant/property model. This migration intentionally creates no
 -- bindings: legacy rows fail closed until an operator backfills an exact map.
 
-CREATE TABLE public.legacy_tg_property_bindings (
+-- PostgreSQL requires every referenced composite key to be unique. Property ids
+-- are already globally unique, so this adds no new data semantic; it makes the
+-- same-account FK below valid against the canonical properties schema.
+CREATE UNIQUE INDEX IF NOT EXISTS properties_account_id_id_unique
+  ON public.properties(account_id, id);
+
+CREATE TABLE IF NOT EXISTS public.legacy_tg_property_bindings (
   legacy_property_id TEXT PRIMARY KEY
     REFERENCES public.tg_property_knowledge(property_id) ON DELETE CASCADE,
   account_id UUID NOT NULL,
@@ -16,7 +22,7 @@ CREATE TABLE public.legacy_tg_property_bindings (
     REFERENCES public.properties(account_id, id) ON DELETE CASCADE
 );
 
-CREATE INDEX legacy_tg_property_bindings_account_property_idx
+CREATE INDEX IF NOT EXISTS legacy_tg_property_bindings_account_property_idx
   ON public.legacy_tg_property_bindings(account_id, canonical_property_id);
 
 ALTER TABLE public.legacy_tg_property_bindings ENABLE ROW LEVEL SECURITY;

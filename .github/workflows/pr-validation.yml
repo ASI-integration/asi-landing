@@ -557,6 +557,21 @@ jobs:
           console.log('guest_lifecycle_cleanup_proof_ok', JSON.stringify(proof));
           NODE
 
+      - name: Run legacy tenant binding PostgreSQL contract
+        run: |
+          set -euo pipefail
+          npx vitest run \
+            src/lib/communication/__tests__/legacy-tenant-binding-migration.pg.integration.test.ts \
+            --reporter=verbose 2>&1 | tee legacy-tenant-binding-pg.out
+          if grep -E '↓|skipped|SKIPPED' legacy-tenant-binding-pg.out | grep -Fq 'legacy tenant binding migration PostgreSQL contract'; then
+            echo "Legacy tenant binding PostgreSQL integration was skipped — failing job"
+            exit 1
+          fi
+          if ! grep -Fq 'LEGACY_TENANT_BINDING_PG_PROOF' legacy-tenant-binding-pg.out; then
+            echo "Missing LEGACY_TENANT_BINDING_PG_PROOF output — failing job"
+            exit 1
+          fi
+
       - name: Partner Authenticated Inbox PostgreSQL integration
         id: partner_inbox_pg_integration
         run: |

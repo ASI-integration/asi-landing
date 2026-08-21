@@ -14,34 +14,108 @@ The operator-review resolver accepts this evidence only when one exact
 `property_id` equals the review property. Missing, duplicate, or conflicting
 reservation/property/account evidence fails closed.
 
-## Rollout and backfill
+## Empty canonical production state
 
-1. Prefer applying `20260821191132_legacy_tg_property_tenant_binding_v1.sql`
-   before deploying the code. Deploying code first is fail-closed and preserves
-   existing `booking_ops_records`-backed reviews, but no-booking-ops legacy
-   reviews remain hidden until the migration and required binding rows exist.
-2. Create or identify the canonical `public.properties` row for each active
-   legacy Telegram communication property.
-3. Backfill one row per active text property into
-   `public.legacy_tg_property_bindings`, using the exact legacy
-   `tg_property_knowledge.property_id`, the owning `accounts.id`, and the
-   canonical `properties.id` owned by that same account.
-4. Before deploying code, bind at minimum every active text property used by a
-   no-booking-ops operator-review path. For the known path this means the exact
-   `tg_property_knowledge` row whose `property_id` is `test-prop-tg-live`.
-   Its exact production `account_id` and canonical property UUID must be chosen
-   by the owner from existing canonical records; this artifact does not guess or
-   mutate either value.
-5. Verify each binding read-only by joining the bridge to `accounts`,
-   `properties`, `tg_property_knowledge`, and active `tg_guest_reservations` on
-   the exact property id. Confirm that every reservation resolves to exactly one
-   legacy property and one canonical tenant.
-6. Deploy the reviewed application commit only after the migration and required
-   bindings exist. No automatic message send is enabled by this rollout.
+An empty `accounts`, `account_members`, and `properties` layer is an expected
+first-rollout state, not evidence that an operator owns every legacy property.
+Application authorization remains fail-closed in that state: a CRM operator
+without a persisted `account_members` row receives `403`.
 
-Existing production rows require backfill only when their text property ids are
-used by operator-review communication paths. Unbound rows intentionally remain
-hidden and all operator mutations remain forbidden.
+The first tenant must be selected explicitly by the owner. Do not derive the
+account from an operator email, choose the first/only account, or create tenant
+rows during a normal API request. The known legacy property
+`test-prop-tg-live` can be bound only after its canonical account, operator
+membership, and canonical property exist.
+
+## Bootstrap/preflight tool
+
+[`scripts/legacy-tg-first-tenant-bootstrap.mjs`](../../scripts/legacy-tg-first-tenant-bootstrap.mjs)
+uses `LEGACY_TG_BOOTSTRAP_DATABASE_URL` and requires explicit account, user,
+canonical property, legacy property, and reservation identifiers. It never
+prints the connection string.
+
+With no `--apply` flag it is read-only and reports `PASS`/`FAIL` for:
+
+- canonical account existence;
+- exact operator membership;
+- canonical property existence;
+- legacy property existence;
+- one unambiguous legacy reservation matching that property;
+- the persisted legacy binding;
+- the same-account property/binding relationship;
+- final `READY` or `BLOCKED` deployment readiness.
+
+Example read-only invocation (replace every placeholder with an owner-selected
+value; do not reuse these labels as data):
+
+```powershell
+$env:LEGACY_TG_BOOTSTRAP_DATABASE_URL = '<owner-provided database connection>'
+node scripts/legacy-tg-first-tenant-bootstrap.mjs `
+  --account-id '<account UUID>' `
+  --user-id '<operator user UUID>' `
+  --property-id '<canonical property UUID>' `
+  --legacy-property-id 'test-prop-tg-live' `
+  --reservation-id '<exact legacy reservation identity>'
+```
+
+The tool exits `0` only for `READY`, `2` for a valid but blocked preflight, and
+`1` for an input/query error.
+
+The optional apply mode is a separately owner-approved production data
+mutation. It is not part of application deployment and must not be run without
+that exact approval. It additionally requires explicit names, an explicit
+`--apply` flag, and `--confirm FIRST_TENANT_BOOTSTRAP_V1`:
+
+```powershell
+node scripts/legacy-tg-first-tenant-bootstrap.mjs `
+  --apply --confirm FIRST_TENANT_BOOTSTRAP_V1 `
+  --account-id '<account UUID>' --account-name '<account name>' `
+  --user-id '<operator user UUID>' --role owner `
+  --property-id '<canonical property UUID>' --property-name '<property name>' `
+  --property-status active `
+  --legacy-property-id 'test-prop-tg-live' `
+  --reservation-id '<exact legacy reservation identity>'
+```
+
+Apply mode uses one transaction, inserts only missing canonical/bootstrap rows,
+and verifies `READY` before commit. Re-running the same exact values is
+idempotent. An unknown user, missing/ambiguous legacy evidence, or a conflicting
+account, membership, property, or binding rolls the transaction back. It never
+changes or deletes `tg_property_knowledge`, `tg_guest_reservations`, or email
+communication rows.
+
+## Required rollout order
+
+1. Apply the reviewed
+   `20260821191132_legacy_tg_property_tenant_binding_v1.sql` migration. It first
+   creates the non-partial unique index on `properties(account_id, id)` required
+   by PostgreSQL, then creates the composite same-account FK.
+2. Bootstrap the explicitly selected canonical `accounts` row.
+3. Create `account_members` membership for the explicitly selected operator/user.
+4. Create the explicitly selected canonical `properties` row representing
+   `test-prop-tg-live` in that same account.
+5. Insert the `legacy_tg_property_bindings` row from `test-prop-tg-live` to that
+   canonical account/property pair.
+6. Run the tool in read-only mode and require every check to pass with
+   `deployment_readiness: READY`.
+7. Only then deploy the reviewed PR #235 application commit.
+8. Run operator access acceptance: same-account GET/actions allowed; missing
+   membership, missing binding, ambiguity, and cross-account access return `403`;
+   unauthorized `send_reply` produces no provider call or mutation.
+9. Run the accepted email scenario: recognized guest/reservation,
+   `test-prop-tg-live`, manual mode, checkout `12:00`, grounded draft containing
+   `12:00`, `draft_only`, and zero automatic outbound email.
+
+Deploying application code before steps 1–6 is technically safe because access
+fails closed, but it is **SAFE BUT OPERATIONALLY BLOCKING**: the operator UI is
+locked until the canonical layer and trusted binding are complete. It is not
+the recommended order.
+
+Existing legacy communication rows require a binding only when their text
+property ids are used by operator-review communication paths. Unbound rows
+intentionally remain hidden and all operator mutations remain forbidden. The
+bootstrap preserves existing Telegram knowledge/reservations and email data;
+none is rewritten merely to establish the canonical tenant.
 
 ## Rollback
 
