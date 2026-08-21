@@ -5,6 +5,7 @@ import { supabase } from '@/lib/supabase';
 import { createOrUpdateEscalationReview, forceCloseActiveReviewForSession } from './operator-review';
 import { sha256Base64Url } from './reliability';
 import type { TelegramUpdate } from './types';
+import { resolveTelegramTargetTenantScope } from './operator-access';
 
 const BOT_SCOPE = 'core';
 
@@ -78,28 +79,8 @@ function eventMetadata(update: TelegramUpdate): {
 
 async function resolveServerOwnedScope(chatId: number | null): Promise<TenantScope> {
   if (chatId === null) return { accountId: null, propertyId: null };
-
-  const { data: session } = await supabase
-    .from('tg_conversation_sessions')
-    .select('property_id')
-    .eq('chat_id', chatId)
-    .maybeSingle();
-  const propertyId = typeof session?.property_id === 'string' && session.property_id.trim()
-    ? session.property_id.trim()
-    : null;
-  if (!propertyId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(propertyId)) {
-    return { accountId: null, propertyId };
-  }
-
-  const { data: property } = await supabase
-    .from('properties')
-    .select('account_id')
-    .eq('id', propertyId)
-    .maybeSingle();
-  const accountId = typeof property?.account_id === 'string' && property.account_id.trim()
-    ? property.account_id.trim()
-    : null;
-  return { accountId, propertyId };
+  const scope = await resolveTelegramTargetTenantScope(String(chatId));
+  return { accountId: scope.accountId, propertyId: scope.propertyId };
 }
 
 function parseClaimRow(data: unknown): ClaimRow {

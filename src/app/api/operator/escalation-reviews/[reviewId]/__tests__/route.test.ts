@@ -10,6 +10,7 @@ import {
 } from '@/lib/communication/handoff-lock';
 import {
   __resetEscalationReviewStoreForTests,
+  createOrUpdateEscalationReview,
   getEscalationReview,
 } from '@/lib/communication/operator-review';
 import {
@@ -22,6 +23,13 @@ const mocks = vi.hoisted(() => ({
   authStatus: 'allowed' as 'allowed' | 'unauthenticated' | 'forbidden',
   memberships: ['account-a'],
   propertyAccounts: {} as Record<string, string>,
+  bookingBindings: [] as Array<{
+    id: string;
+    booking_id: string | null;
+    asi_reference: string | null;
+    account_id: string;
+    property_id: string | null;
+  }>,
   sendMessage: vi.fn(async () => true),
 }));
 
@@ -54,6 +62,19 @@ vi.mock('@/lib/supabase', () => ({
           }),
         }),
       }),
+    }) : table === 'booking_ops_records' ? ({
+      select: () => ({
+        eq: (column: 'id' | 'booking_id' | 'asi_reference', value: string) => ({
+          limit: async () => ({
+            data: mocks.bookingBindings.filter((row) => row[column] === value),
+            error: null,
+          }),
+        }),
+        in: async (column: 'id' | 'booking_id' | 'asi_reference', values: string[]) => ({
+          data: mocks.bookingBindings.filter((row) => values.includes(String(row[column] ?? ''))),
+          error: null,
+        }),
+      }),
     }) : ({
       upsert: async () => ({ error: null }),
       select: () => ({
@@ -82,6 +103,7 @@ describe('PATCH /api/operator/escalation-reviews/[reviewId] acknowledge → lock
     mocks.authStatus = 'allowed';
     mocks.memberships = ['account-a'];
     mocks.propertyAccounts = {};
+    mocks.bookingBindings = [];
     mocks.sendMessage.mockClear();
   });
 
@@ -106,7 +128,13 @@ describe('PATCH /api/operator/escalation-reviews/[reviewId] acknowledge → lock
       chatId: 4241,
     });
     mocks.authStatus = 'forbidden';
-    const { PATCH } = await import('../route');
+    const { GET, PATCH } = await import('../route');
+
+    const deniedGet = await GET(
+      new NextRequest(`http://localhost/api/operator/escalation-reviews/${reviewId}`),
+      { params: { reviewId } },
+    );
+    expect(deniedGet.status).toBe(403);
 
     for (const action of ['acknowledge', 'approve', 'close', 'send_reply', 'return_to_ai']) {
       const res = await PATCH(new NextRequest(`http://localhost/api/operator/escalation-reviews/${reviewId}`, {
@@ -154,6 +182,114 @@ describe('PATCH /api/operator/escalation-reviews/[reviewId] acknowledge → lock
     expect(deniedPatch.status).toBe(403);
     expect(getEscalationReview(reviewId)?.status).toBe('pending');
     expect(mocks.sendMessage).not.toHaveBeenCalled();
+  });
+
+  it('keeps a production-shaped email review with a text property accessible through its canonical reservation binding', async () => {
+    mocks.bookingBindings = [{
+      id: '22222222-2222-4222-8222-222222222222',
+      booking_id: 'reservation-1',
+      asi_reference: null,
+      account_id: 'account-a',
+      property_id: 'test-prop-tg-live',
+    }];
+    const review = createOrUpdateEscalationReview({
+      sessionId: 'sess_grounded_email',
+      channel: 'email',
+      targetId: 'known.guest@example.test',
+      reservationId: 'reservation-1',
+      propertyId: 'test-prop-tg-live',
+      escalationReason: 'EMAIL_DRAFT_OPERATOR_REVIEW',
+      suggestedReply: 'Выезд до 12:00. Ключи оставьте по инструкции из заселения.',
+      source: { source: 'email_inbound', outboundMode: 'draft_only' },
+    });
+    const { GET, PATCH } = await import('../route');
+    const { GET: GETCollection } = await import('../../route');
+
+    const allowedGet = await GET(
+      new NextRequest(`http://localhost/api/operator/escalation-reviews/${review.reviewId}`),
+      { params: { reviewId: review.reviewId } },
+    );
+    const allowedAction = await PATCH(new NextRequest(
+      `http://localhost/api/operator/escalation-reviews/${review.reviewId}`,
+      {
+        method: 'PATCH',
+        body: JSON.stringify({ action: 'acknowledge' }),
+        headers: { 'content-type': 'application/json' },
+      },
+    ), { params: { reviewId: review.reviewId } });
+
+    expect(allowedGet.status).toBe(200);
+    expect(allowedAction.status).toBe(200);
+    const allowedCollection = await GETCollection(
+      new NextRequest('http://localhost/api/operator/escalation-reviews'),
+    );
+    const allowedCollectionBody = await allowedCollection.json();
+    expect(allowedCollectionBody.reviews).toEqual([
+      expect.objectContaining({ reviewId: review.reviewId, propertyId: 'test-prop-tg-live' }),
+    ]);
+    expect(getEscalationReview(review.reviewId)).toMatchObject({
+      status: 'acknowledged',
+      propertyId: 'test-prop-tg-live',
+      reservationId: 'reservation-1',
+      suggestedReply: expect.stringContaining('12:00'),
+    });
+
+    const beforeDenied = getEscalationReview(review.reviewId);
+    mocks.memberships = ['account-b'];
+    const deniedGet = await GET(
+      new NextRequest(`http://localhost/api/operator/escalation-reviews/${review.reviewId}`),
+      { params: { reviewId: review.reviewId } },
+    );
+    const deniedSend = await PATCH(new NextRequest(
+      `http://localhost/api/operator/escalation-reviews/${review.reviewId}`,
+      {
+        method: 'PATCH',
+        body: JSON.stringify({ action: 'send_reply', replyText: 'must not send' }),
+        headers: { 'content-type': 'application/json' },
+      },
+    ), { params: { reviewId: review.reviewId } });
+
+    expect(deniedGet.status).toBe(403);
+    expect(deniedSend.status).toBe(403);
+    expect(mocks.sendMessage).not.toHaveBeenCalled();
+    expect(getEscalationReview(review.reviewId)).toEqual(beforeDenied);
+  });
+
+  it('fails closed when a text property reservation binding is missing, ambiguous, or conflicting', async () => {
+    const { GET } = await import('../route');
+    const cases = [
+      { sessionId: 'missing', bindings: [] },
+      {
+        sessionId: 'ambiguous',
+        bindings: [
+          { id: 'record-a', booking_id: 'reservation-1', asi_reference: null, account_id: 'account-a', property_id: 'test-prop-tg-live' },
+          { id: 'record-b', booking_id: 'reservation-1', asi_reference: null, account_id: 'account-a', property_id: 'test-prop-tg-live' },
+        ],
+      },
+      {
+        sessionId: 'conflicting',
+        bindings: [
+          { id: 'record-c', booking_id: 'reservation-1', asi_reference: null, account_id: 'account-a', property_id: 'different-property' },
+        ],
+      },
+    ];
+
+    for (const testCase of cases) {
+      mocks.bookingBindings = testCase.bindings;
+      const review = createOrUpdateEscalationReview({
+        sessionId: `sess_text_${testCase.sessionId}`,
+        channel: 'email',
+        targetId: 'known.guest@example.test',
+        reservationId: 'reservation-1',
+        propertyId: 'test-prop-tg-live',
+        escalationReason: 'EMAIL_DRAFT_OPERATOR_REVIEW',
+      });
+      const response = await GET(
+        new NextRequest(`http://localhost/api/operator/escalation-reviews/${review.reviewId}`),
+        { params: { reviewId: review.reviewId } },
+      );
+      expect(response.status).toBe(403);
+    }
   });
 
   it('fails closed when review tenant scope is missing', async () => {
