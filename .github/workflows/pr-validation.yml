@@ -572,6 +572,21 @@ jobs:
             exit 1
           fi
 
+      - name: Run guest memory tenant isolation PostgreSQL contract
+        run: |
+          set -euo pipefail
+          npx vitest run \
+            src/lib/communication/__tests__/guest-memory-tenant-isolation.pg.integration.test.ts \
+            --reporter=verbose 2>&1 | tee guest-memory-tenant-isolation-pg.out
+          if grep -E '↓|skipped|SKIPPED' guest-memory-tenant-isolation-pg.out | grep -Fq 'guest memory tenant isolation migration PostgreSQL contract'; then
+            echo "Guest memory tenant isolation PostgreSQL integration was skipped — failing job"
+            exit 1
+          fi
+          if ! grep -Fq 'GUEST_MEMORY_TENANT_ISOLATION_PG_PROOF' guest-memory-tenant-isolation-pg.out; then
+            echo "Missing GUEST_MEMORY_TENANT_ISOLATION_PG_PROOF output — failing job"
+            exit 1
+          fi
+
       - name: Partner Authenticated Inbox PostgreSQL integration
         id: partner_inbox_pg_integration
         run: |

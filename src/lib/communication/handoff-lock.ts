@@ -33,6 +33,7 @@
 
 import {
   createOrUpdateEscalationReview,
+  closeReviewById,
   forceCloseActiveReviewForSession,
   getActiveEscalationReviewIdForSession,
   getEscalationReview,
@@ -230,16 +231,32 @@ export function lockSessionForOperator(
 
 export interface ReleaseSessionToAiInput {
   sessionId: string;
+  accountId?: string;
   operatorId: string;
   reason: string;
   chatId?: number;
   updateId?: number;
   approvedAnswer?: string;
+  reviewId?: string; // Explicit reviewId for atomic tenant-scoped release
 }
 
 /**
- * Operator releases the lock back to AI. Closes the active review (if any)
- * and ensures the durable session-status returns to `active`.
+ * Operator releases the lock back to AI. Closes the specific review (if reviewId provided)
+ * or active review (if only sessionId provided) and ensures the durable session-status returns to `active`.
+ *
+ * IMPORTANT: For tenant safety, always provide reviewId when possible to ensure atomic
+ * release of the specific authorized review rather than whichever review happens to be active.
+ *
+ * `accountId` here is a same-record safety check, not the authorization
+ * decision itself: callers MUST already have verified the caller may act on
+ * this review (e.g. via `requireEscalationReviewScope`, which resolves the
+ * review's tenant from canonical property/reservation evidence — the same
+ * value may differ from the review's raw stored `accountId` field). Pass
+ * the review's own raw `accountId` field as read at authorization time (not
+ * the resolved scope accountId) so this only rejects when the review
+ * identified by `reviewId` has actually changed underneath the caller
+ * (e.g. re-escalated to a different account) between authorization and
+ * this call — it does not re-derive or re-authorize tenant ownership.
  *
  * Returns `state: 'resolved'` for the call itself; subsequent reads of
  * `getHandoffLockState` will return `returned_to_ai`.
@@ -247,12 +264,44 @@ export interface ReleaseSessionToAiInput {
 export function releaseSessionToAi(
   input: ReleaseSessionToAiInput,
 ): { state: HandoffLockState; closedReviewId: string | null } {
-  const { closedReviewId } = forceCloseActiveReviewForSession({
-    sessionId: input.sessionId,
-    operatorId: input.operatorId,
-    reason: input.reason,
-    approvedAnswer: input.approvedAnswer,
-  });
+  let closedReviewId: string | null = null;
+
+  // Prefer explicit reviewId for atomic tenant-scoped release
+  if (input.reviewId) {
+    const review = getEscalationReview(input.reviewId);
+    if (review) {
+      // Verify the review belongs to the authorized account. Compared
+      // unconditionally (not only when input.accountId is present) so a
+      // caller that omits accountId can never bypass the check for a
+      // review that DOES have a resolved tenant — fail closed, not silent.
+      if (review.accountId !== input.accountId) {
+        console.warn('[handoff-lock] release rejected - account mismatch', {
+          reviewId: input.reviewId,
+          requestAccountId: input.accountId,
+          reviewAccountId: review.accountId,
+        });
+        return { state: HandoffLockState.AiActive, closedReviewId: null };
+      }
+      // Close the specific review, preserving the caller's reason/approvedAnswer
+      // (closeEscalationReview would discard both in favor of a generic reason).
+      const closed = closeReviewById({
+        reviewId: input.reviewId,
+        operatorId: input.operatorId,
+        reason: input.reason,
+        approvedAnswer: input.approvedAnswer,
+      });
+      closedReviewId = closed.closedReviewId;
+    }
+  } else {
+    // Fallback to session-based release (less safe, but backward compatible)
+    const result = forceCloseActiveReviewForSession({
+      sessionId: input.sessionId,
+      operatorId: input.operatorId,
+      reason: input.reason,
+      approvedAnswer: input.approvedAnswer,
+    });
+    closedReviewId = result.closedReviewId;
+  }
 
   if (!closedReviewId && typeof input.chatId === 'number' && Number.isFinite(input.chatId)) {
     transitionSessionStatus(input.chatId, SessionStatus.Active)
@@ -338,6 +387,8 @@ export async function resolveOperatorHandoffWithReply(input: {
   }
   const released = releaseSessionToAi({
     sessionId: review.sessionId,
+    reviewId: review.reviewId,
+    accountId: review.accountId,
     operatorId: input.operatorId,
     reason: 'operator_reply_resolved',
     approvedAnswer: input.replyText,
@@ -345,7 +396,8 @@ export async function resolveOperatorHandoffWithReply(input: {
   });
   const closed = getEscalationReview(review.reviewId) ?? review;
   const guestId = String(review.source?.guest_id ?? '').trim();
-  if (guestId && !sent.duplicatePrevented) {
+  const accountId = review.accountId?.trim();
+  if (guestId && !sent.duplicatePrevented && accountId) {
     const reason = String(review.escalationReason ?? '').toLowerCase();
     const eventType: GuestMemoryEventType = reason.includes('maintenance')
       ? 'maintenance_resolution'
@@ -358,6 +410,7 @@ export async function resolveOperatorHandoffWithReply(input: {
             : 'operator_confirmed_resolution';
     await recordGuestOperationalEvent({
       guestId,
+      accountId,
       type: eventType,
       summary: `Оператор подтвердил решение по событию: ${review.escalationReason}`,
       source: 'operator_confirmed',

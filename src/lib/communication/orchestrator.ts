@@ -1404,8 +1404,13 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
   });
   convSession = updateSessionFactsAndSummary({ key: sessionKey, session: convSession, text });
 
+  const inboundGuestMemoryAccountId = await resolveEscalationReviewAccountId({
+    reservationId: identity.reservationId,
+    propertyId: identity.propertyId,
+  });
   const guestMemoryObservation = await observeResolvedGuestInbound({
     guestId: identity.guestId,
+    accountId: inboundGuestMemoryAccountId,
     senderIdentity: senderRoute.senderIdentity,
     messageText: text,
     language: detectOperationalLanguage(text),
@@ -2417,8 +2422,13 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
               chatId,
           );
           const passport = propertyId ? await getGroundedKnowledge(propertyId) : null;
+          const autopilotGuestMemoryAccountId = await resolveEscalationReviewAccountId({
+            reservationId: identity.reservationId,
+            propertyId: identity.propertyId ?? propertyId ?? undefined,
+          });
           const guestMemory = await loadRelevantGuestMemory({
             guestId: identity.guestId,
+            accountId: autopilotGuestMemoryAccountId,
             requestText: text,
           });
           const autopilotResult = runCommunicationAutopilotV1({

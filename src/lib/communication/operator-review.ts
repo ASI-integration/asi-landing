@@ -170,28 +170,20 @@ export function getReviewsBySessionId(sessionId: string): EscalationReview[] {
 }
 
 /**
- * Test/admin escape hatch: force-close the active review for a session (if any).
- *
- * This should only be called from guarded code paths (allowlist / non-prod).
- * It intentionally does NOT attempt to send any outbound operator message.
+ * Shared close-by-id implementation used by both `forceCloseActiveReviewForSession`
+ * (resolves reviewId from the session's active pointer) and `closeReviewById`
+ * (caller already knows the exact reviewId — e.g. a tenant-scoped release).
+ * Applies the caller's `reason`/`approvedAnswer` to the resolution record,
+ * unlike `closeEscalationReview` which hardcodes a generic reason.
  */
-export function forceCloseActiveReviewForSession(params: {
-  sessionId: string;
-  operatorId: string;
-  reason: string;
-  approvedAnswer?: string;
-}): { closedReviewId: string | null } {
+function closeReviewByIdWithReason(
+  reviewId: string,
+  params: { operatorId: string; reason: string; approvedAnswer?: string },
+): { closedReviewId: string | null } {
   loadOnce();
-  const reviewId = cache.activeReviewIdBySessionId[params.sessionId] ?? null;
-  if (!reviewId) return { closedReviewId: null };
-
   try {
     const cur = cache.reviewsById[reviewId];
-    if (!cur) {
-      delete cache.activeReviewIdBySessionId[params.sessionId];
-      persist();
-      return { closedReviewId: null };
-    }
+    if (!cur) return { closedReviewId: null };
     const resolvedAt = nowIso();
     const approvedAnswer = String(params.approvedAnswer ?? '').trim().slice(0, 800);
     const updated: EscalationReview = {
@@ -239,6 +231,45 @@ export function forceCloseActiveReviewForSession(params: {
   }
 
   return { closedReviewId: reviewId };
+}
+
+/**
+ * Test/admin escape hatch: force-close the active review for a session (if any).
+ *
+ * This should only be called from guarded code paths (allowlist / non-prod).
+ * It intentionally does NOT attempt to send any outbound operator message.
+ */
+export function forceCloseActiveReviewForSession(params: {
+  sessionId: string;
+  operatorId: string;
+  reason: string;
+  approvedAnswer?: string;
+}): { closedReviewId: string | null } {
+  loadOnce();
+  const reviewId = cache.activeReviewIdBySessionId[params.sessionId] ?? null;
+  if (!reviewId) return { closedReviewId: null };
+  if (!cache.reviewsById[reviewId]) {
+    delete cache.activeReviewIdBySessionId[params.sessionId];
+    persist();
+    return { closedReviewId: null };
+  }
+  return closeReviewByIdWithReason(reviewId, params);
+}
+
+/**
+ * Close a specific review by id, applying the caller's reason/approvedAnswer
+ * to the resolution record — used by tenant-scoped release paths that
+ * already know the exact reviewId (see handoff-lock.ts's `releaseSessionToAi`)
+ * and must never fall back to "whichever review happens to be active for
+ * the session". Returns `closedReviewId: null` if the review does not exist.
+ */
+export function closeReviewById(params: {
+  reviewId: string;
+  operatorId: string;
+  reason: string;
+  approvedAnswer?: string;
+}): { closedReviewId: string | null } {
+  return closeReviewByIdWithReason(params.reviewId, params);
 }
 
 export function getEscalationReview(reviewId: string): EscalationReview | null {
