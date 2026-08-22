@@ -114,6 +114,14 @@ export interface LeadPatch {
 /**
  * Fetch operator leads from ASI-automation-core.
  * Mirrors GET /api/operator/leads contract: { ok, leads }
+ *
+ * ASI-automation-core's current contract has no notion of tenant/account —
+ * it returns leads globally. Tenant scoping is enforced locally by the
+ * caller (src/app/api/operator/leads/route.ts), which filters the returned
+ * leads by resolving each lead's `property_id` against asi-landing's own
+ * canonical `properties.account_id` table. Do not add an `account_id`
+ * request param here unless ASI-automation-core's contract is confirmed to
+ * support and enforce it — an unconfirmed param is not a security control.
  */
 export async function fetchLeads(
   status?: string,
@@ -125,6 +133,11 @@ export async function fetchLeads(
 /**
  * Update a lead in ASI-automation-core.
  * Calls PATCH /api/operator/leads/[leadId] with { status, internalNote, followUpNeeded }.
+ *
+ * Ownership MUST be verified by the caller before this is invoked (see
+ * src/app/api/operator/leads/route.ts) — this function performs no tenant
+ * check of its own and ASI-automation-core's current contract does not
+ * accept or enforce an account_id.
  */
 export async function patchLead(
   patch: LeadPatch,

@@ -67,6 +67,39 @@ async function lookupAccounts(
   }
 }
 
+/**
+ * Resolve the single account that canonically owns a property, from the
+ * trusted local `properties` table. Fails closed (returns null) on any
+ * lookup error or ambiguity (more than one account row for the id) — never
+ * guesses and never returns the property id itself as a substitute.
+ */
+export async function resolvePropertyAccountId(propertyId: string): Promise<string | null> {
+  const value = normalized(propertyId);
+  if (!value) return null;
+  const result = await lookupAccounts('properties', 'id', value);
+  if (!result.ok || result.accountIds.length !== 1) return null;
+  return result.accountIds[0]!;
+}
+
+/**
+ * Batched form of {@link resolvePropertyAccountId} for lists (e.g. leads).
+ * Any single lookup failure fails closed for every id in the batch — callers
+ * must treat a missing map entry as "ownership could not be established".
+ */
+export async function batchResolvePropertyAccountIds(
+  propertyIds: readonly string[],
+): Promise<Map<string, string> | null> {
+  const ids = [...new Set(propertyIds.map((id) => normalized(id)).filter((id): id is string => Boolean(id)))];
+  if (ids.length === 0) return new Map();
+  const resolved = await batchLookupAccounts('properties', 'id', ids);
+  if (!resolved) return null;
+  const result = new Map<string, string>();
+  for (const [propertyId, accountIds] of resolved) {
+    if (accountIds.size === 1) result.set(propertyId, [...accountIds][0]!);
+  }
+  return result;
+}
+
 type ReservationBinding = {
   id: string;
   accountId: string;
@@ -481,10 +514,17 @@ export async function resolveTelegramTargetTenantScope(targetId: string): Promis
   }
 }
 
-/** Resolve a collection with bounded canonical and legacy binding lookups. */
+/**
+ * Resolve a collection with bounded canonical and legacy binding lookups.
+ *
+ * Returns `{ ok: false }` when tenant resolution itself could not be
+ * established (a batch lookup errored) — this must never be conflated with
+ * a legitimate "no reviews match" result. Callers MUST fail closed (503) on
+ * `ok: false`, not render it as an empty list.
+ */
 export async function resolveEscalationReviewAccountIds(
   reviews: EscalationReview[],
-): Promise<Map<string, string | null>> {
+): Promise<{ ok: true; resolved: Map<string, string | null> } | { ok: false }> {
   const propertyIds = [...new Set(reviews
     .map((review) => normalized(review.propertyId))
     .filter((value): value is string => typeof value === 'string' && isUuid(value)))];
@@ -516,16 +556,16 @@ export async function resolveEscalationReviewAccountIds(
     !properties || !bookings || !references || !recordIds
     || !legacyIds || !legacyBookings || !legacyReferences || !legacyProperties
   ) {
-    reviews.forEach((review) => resolved.set(review.reviewId, null));
-    return resolved;
+    // Infra failure, not "no matches" — the caller must fail closed (503),
+    // never render this as an empty-but-successful review list.
+    return { ok: false };
   }
   const legacyCanonicalPropertyIds = [...new Set([...legacyProperties.values()]
     .flat()
     .map((binding) => binding.canonicalPropertyId))];
   const legacyCanonicalProperties = await batchLookupAccounts('properties', 'id', legacyCanonicalPropertyIds);
   if (!legacyCanonicalProperties) {
-    reviews.forEach((review) => resolved.set(review.reviewId, null));
-    return resolved;
+    return { ok: false };
   }
 
   for (const review of reviews) {
@@ -574,7 +614,7 @@ export async function resolveEscalationReviewAccountIds(
       reservationPresent: Boolean(reservationId),
     }));
   }
-  return resolved;
+  return { ok: true, resolved };
 }
 
 export async function requireEscalationReviewScope(

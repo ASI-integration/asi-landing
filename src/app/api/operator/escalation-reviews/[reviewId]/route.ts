@@ -95,6 +95,13 @@ export async function PATCH(req: NextRequest, ctx: { params: { reviewId: string 
       const chatId = Number(existing.targetId);
       const release = releaseSessionToAi({
         sessionId: existing.sessionId,
+        // The review's own raw accountId (as read at authorization time),
+        // not reviewScope.accountId — that resolved value can legitimately
+        // differ from the stored field (see releaseSessionToAi's doc
+        // comment). Tenant authorization already happened above via
+        // requireEscalationReviewScope; this is a same-record safety check.
+        accountId: existing.accountId,
+        reviewId: reviewId, // Use explicit reviewId for atomic tenant-scoped release
         operatorId,
         reason: 'manual_return_to_ai',
         chatId: Number.isFinite(chatId) ? chatId : undefined,

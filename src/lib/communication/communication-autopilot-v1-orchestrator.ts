@@ -18,6 +18,7 @@ import { classifyKnowledgeTopic, requiresAutopilotOperatorEscalation } from './k
 import { resolveTelegramGuestBookingObjectContext } from './telegram-booking-object-memory';
 import { buildOperatorEscalationDetail } from './guest-communication-brain';
 import { loadRelevantGuestMemory } from './guest-long-term-memory';
+import { resolveEscalationReviewAccountId } from './operator-access';
 import type { CommunicationIdentityRoutingDecision } from './communication-identity-routing';
 import { buildVoiceOutboundMetadata } from './voice-outbound';
 import { SessionStatus, transitionSessionStatus } from './session-status';
@@ -139,8 +140,13 @@ export async function tryCommunicationAutopilotV1OrchestratorTurn(
     input.identity.propertyId ??
     null;
   const passport = propertyId ? await getGroundedKnowledge(propertyId) : null;
+  const autopilotTurnAccountId = await resolveEscalationReviewAccountId({
+    reservationId: input.identity.reservationId,
+    propertyId: propertyId ?? undefined,
+  });
   const guestMemory = await loadRelevantGuestMemory({
     guestId: input.identity.guestId,
+    accountId: autopilotTurnAccountId,
     requestText: input.text,
   });
   const autopilotResult = runCommunicationAutopilotV1({

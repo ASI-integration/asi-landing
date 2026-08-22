@@ -183,7 +183,7 @@ async function resolveDefaultContext(
   if (!targetId) return { ok: false, reason: 'recipient_missing' };
   let guestMemory = null;
   try {
-    guestMemory = buildRelevantGuestMemoryContext(await loadGuestLongTermMemory(event.guestId, db), '');
+    guestMemory = buildRelevantGuestMemoryContext(await loadGuestLongTermMemory(event.guestId, record.accountId, db), '');
   } catch {
     guestMemory = null;
   }
@@ -430,8 +430,19 @@ export function createGuestLifecycleRuntimePort(options: GuestLifecycleRuntimeOp
     },
     async recordMemory(input) {
       if (!input.plan.memoryEvent) return;
+      // Fail closed if accountId is not available - cannot record memory without tenant context.
+      // accountId lives on `context` (resolved from the canonical booking_ops_records row in
+      // resolveDefaultContext), not on `event` (the raw inbound lifecycle event).
+      if (!input.context.accountId?.trim()) {
+        console.warn('[guest-lifecycle-runtime] skipping memory event - missing accountId', {
+          guestId: input.event.guestId,
+          eventType: input.plan.memoryEvent,
+        });
+        return;
+      }
       await recordGuestOperationalEvent({
         guestId: input.event.guestId,
+        accountId: input.context.accountId,
         type: input.plan.memoryEvent,
         summary: memorySummary(input),
         bookingReference: input.event.reservationId,

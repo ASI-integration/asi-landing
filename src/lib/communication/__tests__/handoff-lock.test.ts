@@ -4,6 +4,7 @@ import {
   __resetEscalationReviewStoreForTests,
   acknowledgeEscalationReview,
   getActiveEscalationReviewIdForSession,
+  getEscalationReview,
 } from '../operator-review';
 import {
   HandoffLockState,
@@ -12,6 +13,7 @@ import {
   lockSessionForOperator,
   releaseSessionToAi,
   requestOperatorHandoff,
+  resolveOperatorHandoffWithReply,
 } from '../handoff-lock';
 
 // Supabase is invoked best-effort by session-status.transitionSessionStatus.
@@ -204,5 +206,88 @@ describe('handoff lock — session ownership state machine', () => {
     expect(re.alreadyLocked).toBe(false);
     expect(re.reviewId).not.toBe(reviewId);
     expect(canAiReply('sess_i')).toBe(false);
+  });
+
+  // ─── Tenant boundary: reviewId-scoped release must never cross accounts ───
+
+  it('reviewId-scoped release rejects when the caller-supplied accountId does not match the review', () => {
+    const { reviewId } = requestOperatorHandoff({
+      accountId: 'account-a',
+      sessionId: 'sess_tenant_a',
+      channel: 'telegram',
+      targetId: '42',
+      escalationReason: 'REQUIRES_OPERATOR',
+    });
+    lockSessionForOperator({ reviewId, operatorId: 'op_a' });
+
+    // An action authorized for account B must not be able to release
+    // account A's review, even if it somehow supplies the right reviewId.
+    const rejected = releaseSessionToAi({
+      sessionId: 'sess_tenant_a',
+      reviewId,
+      accountId: 'account-b',
+      operatorId: 'op_b',
+      reason: 'cross_tenant_attempt',
+    });
+
+    expect(rejected.closedReviewId).toBe(null);
+    // The review must remain exactly as it was — untouched, still locked.
+    expect(getEscalationReview(reviewId)?.status).toBe('acknowledged');
+    expect(getHandoffLockState('sess_tenant_a')).toBe(HandoffLockState.OperatorActive);
+  });
+
+  it('reviewId-scoped release succeeds when the caller-supplied accountId matches, and never touches a concurrent different review', () => {
+    const reviewA = requestOperatorHandoff({
+      accountId: 'account-a',
+      sessionId: 'sess_tenant_concurrent_a',
+      channel: 'telegram',
+      targetId: '42',
+      escalationReason: 'REQUIRES_OPERATOR',
+    });
+    const reviewB = requestOperatorHandoff({
+      accountId: 'account-b',
+      sessionId: 'sess_tenant_concurrent_b',
+      channel: 'telegram',
+      targetId: '43',
+      escalationReason: 'REQUIRES_OPERATOR',
+    });
+
+    const released = releaseSessionToAi({
+      sessionId: reviewA.review.sessionId,
+      reviewId: reviewA.reviewId,
+      accountId: 'account-a',
+      operatorId: 'op_a',
+      reason: 'resolved_in_chat',
+    });
+
+    expect(released.closedReviewId).toBe(reviewA.reviewId);
+    expect(getEscalationReview(reviewA.reviewId)?.status).toBe('closed');
+    // Review B (a different account's concurrent review) must be untouched.
+    expect(getEscalationReview(reviewB.reviewId)?.status).toBe('pending');
+    expect(getHandoffLockState('sess_tenant_concurrent_b')).toBe(HandoffLockState.OperatorRequested);
+  });
+
+  it('resolveOperatorHandoffWithReply releases by the exact reviewId+accountId, not "whichever review is active for the session"', async () => {
+    const { reviewId, review } = requestOperatorHandoff({
+      accountId: 'account-a',
+      sessionId: 'sess_reply_tenant',
+      channel: 'telegram',
+      targetId: '77',
+      escalationReason: 'REQUIRES_OPERATOR',
+      chatId: 77,
+    });
+    lockSessionForOperator({ reviewId, operatorId: 'op_a' });
+
+    const result = await resolveOperatorHandoffWithReply({
+      reviewId,
+      operatorId: 'op_a',
+      replyText: 'Resolved — see you soon.',
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.review?.status).toBe('closed');
+    expect(review.accountId).toBe('account-a');
+    // Session returns to AI for exactly this review's session.
+    expect(getHandoffLockState('sess_reply_tenant')).toBe(HandoffLockState.ReturnedToAi);
   });
 });
