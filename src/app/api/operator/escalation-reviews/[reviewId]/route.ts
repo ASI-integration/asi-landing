@@ -4,7 +4,9 @@ import {
   approveEscalationReview,
   closeEscalationReview,
   getEscalationReview,
+  getOperatorReviewStoreHealth,
   getReviewsBySessionId,
+  OperatorReviewStoreUnavailableError,
 } from '@/lib/communication/operator-review';
 import {
   lockSessionForOperator,
@@ -13,6 +15,8 @@ import {
 } from '@/lib/communication/handoff-lock';
 
 export const dynamic = 'force-dynamic';
+
+const STORE_UNAVAILABLE_RESPONSE = { ok: false, error: 'operator_review_store_unavailable' } as const;
 
 async function requireSession() {
   const session = await getSession();
@@ -24,6 +28,12 @@ export async function GET(_req: NextRequest, ctx: { params: { reviewId: string }
   const session = await requireSession();
   if (!session) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
+  // A corrupted/unreadable store must not make a real review look "not
+  // found" — surface a distinct storage failure instead.
+  if (getOperatorReviewStoreHealth() === 'unavailable') {
+    return NextResponse.json(STORE_UNAVAILABLE_RESPONSE, { status: 503 });
   }
 
   const review = getEscalationReview(ctx.params.reviewId);
@@ -38,6 +48,12 @@ export async function PATCH(req: NextRequest, ctx: { params: { reviewId: string 
   const session = await requireSession();
   if (!session) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
+  // Never let acknowledge/approve/close/send_reply/return_to_ai mutate
+  // state while the store is known-unhealthy.
+  if (getOperatorReviewStoreHealth() === 'unavailable') {
+    return NextResponse.json(STORE_UNAVAILABLE_RESPONSE, { status: 503 });
   }
 
   let body: Record<string, unknown>;
@@ -105,6 +121,9 @@ export async function PATCH(req: NextRequest, ctx: { params: { reviewId: string 
 
     return NextResponse.json({ ok: false, error: 'unknown_action' }, { status: 400 });
   } catch (err) {
+    if (err instanceof OperatorReviewStoreUnavailableError) {
+      return NextResponse.json(STORE_UNAVAILABLE_RESPONSE, { status: 503 });
+    }
     const msg = err instanceof Error ? err.message : String(err);
     return NextResponse.json({ ok: false, error: msg }, { status: 500 });
   }
