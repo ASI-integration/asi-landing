@@ -36,6 +36,7 @@ import {
   forceCloseActiveReviewForSession,
   getActiveEscalationReviewIdForSession,
   getEscalationReview,
+  getOperatorReviewStoreHealth,
   getReviewsBySessionId,
   acknowledgeEscalationReview,
   sendOperatorReply,
@@ -104,8 +105,13 @@ export function getHandoffLockState(sessionId: string): HandoffLockState {
 /**
  * AI may reply when state is `ai_active` or `returned_to_ai`.
  * Returns false while operator handoff is requested or active.
+ *
+ * Fails closed: if the Operator Review store is unreadable/corrupt, its
+ * state cannot be trusted, so AI replies must not be unlocked — an
+ * unavailable store must never be read as "no active review".
  */
 export function canAiReply(sessionId: string): boolean {
+  if (getOperatorReviewStoreHealth() === 'unavailable') return false;
   const state = getHandoffLockState(sessionId);
   return state === HandoffLockState.AiActive || state === HandoffLockState.ReturnedToAi;
 }

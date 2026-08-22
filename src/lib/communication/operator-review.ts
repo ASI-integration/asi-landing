@@ -87,8 +87,30 @@ type StoreShape = {
   activeReviewIdBySessionId: Record<string, string>;
 };
 
+/**
+ * Health of the on-disk Operator Review store. An "unavailable" store means
+ * the last load attempt hit a read failure, a JSON parse failure, or a
+ * structurally invalid payload. It is intentionally distinct from "empty" —
+ * a missing file (store never created) stays "healthy" with an empty cache.
+ */
+export type OperatorReviewStoreHealth = 'healthy' | 'unavailable';
+
+/**
+ * Thrown by store-health-guarded reads/mutations when the store is known to
+ * be unavailable. Callers (routes, handoff-lock) must treat this as a
+ * distinct failure — never as "no matching review" / "no active reviews".
+ */
+export class OperatorReviewStoreUnavailableError extends Error {
+  constructor(message = 'operator_review_store_unavailable') {
+    super(message);
+    this.name = 'OperatorReviewStoreUnavailableError';
+  }
+}
+
 let loaded = false;
 let cache: StoreShape = { reviewsById: {}, activeReviewIdBySessionId: {} };
+let storeHealth: OperatorReviewStoreHealth = 'healthy';
+let unhealthyLogged = false;
 
 function nowIso(): string {
   return new Date().toISOString();
@@ -102,28 +124,104 @@ function safeMkdirp(dir: string): void {
   }
 }
 
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isValidStoreShape(value: unknown): value is Partial<StoreShape> {
+  if (!isPlainRecord(value)) return false;
+  if (value.reviewsById !== undefined && !isPlainRecord(value.reviewsById)) return false;
+  if (value.activeReviewIdBySessionId !== undefined && !isPlainRecord(value.activeReviewIdBySessionId)) return false;
+  return true;
+}
+
+function markStoreUnavailable(failureClass: 'read' | 'parse' | 'validation'): void {
+  storeHealth = 'unavailable';
+  // Emit once per process — avoid log spam on every subsequent read.
+  if (unhealthyLogged) return;
+  unhealthyLogged = true;
+  try {
+    console.error(JSON.stringify({
+      operator_review_store_unavailable: true,
+      failure_class: failureClass,
+      state_path: REVIEWS_PATH,
+      ts: nowIso(),
+    }));
+  } catch {
+    // ignore
+  }
+}
+
+function loadFromDisk(): void {
+  safeMkdirp(BASE_DIR);
+  if (!fs.existsSync(REVIEWS_PATH)) {
+    // The store has never been created — this is a legitimate empty state,
+    // not corruption, so it must not flip health to "unavailable".
+    return;
+  }
+  let raw: string;
+  try {
+    raw = fs.readFileSync(REVIEWS_PATH, 'utf-8');
+  } catch {
+    markStoreUnavailable('read');
+    return;
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    markStoreUnavailable('parse');
+    return;
+  }
+  if (!isValidStoreShape(parsed)) {
+    markStoreUnavailable('validation');
+    return;
+  }
+  cache = {
+    reviewsById: (parsed.reviewsById as StoreShape['reviewsById']) ?? {},
+    activeReviewIdBySessionId: (parsed.activeReviewIdBySessionId as StoreShape['activeReviewIdBySessionId']) ?? {},
+  };
+  storeHealth = 'healthy';
+}
+
 function loadOnce(): void {
   if (loaded || isTest) {
     loaded = true;
     return;
   }
   loaded = true;
-  safeMkdirp(BASE_DIR);
-  try {
-    if (!fs.existsSync(REVIEWS_PATH)) return;
-    const raw = fs.readFileSync(REVIEWS_PATH, 'utf-8');
-    const parsed = JSON.parse(raw) as Partial<StoreShape>;
-    cache = {
-      reviewsById: parsed.reviewsById ?? {},
-      activeReviewIdBySessionId: parsed.activeReviewIdBySessionId ?? {},
-    };
-  } catch {
-    cache = { reviewsById: {}, activeReviewIdBySessionId: {} };
+  loadFromDisk();
+}
+
+/**
+ * Returns the current store health without throwing. Safe to call from
+ * routes that need to branch on health (e.g. return 503) before deciding
+ * whether to call into read/mutation APIs.
+ */
+export function getOperatorReviewStoreHealth(): OperatorReviewStoreHealth {
+  loadOnce();
+  return storeHealth;
+}
+
+/**
+ * Guard for reads/mutations that must never proceed against an
+ * unreadable/corrupt store. Throws `OperatorReviewStoreUnavailableError`
+ * rather than silently treating the store as empty.
+ */
+export function assertOperatorReviewStoreHealthy(): void {
+  if (getOperatorReviewStoreHealth() === 'unavailable') {
+    throw new OperatorReviewStoreUnavailableError();
   }
 }
 
 function persist(): void {
   if (isTest) return;
+  if (storeHealth === 'unavailable') {
+    // Never overwrite a corrupted/unreadable store file with in-memory
+    // state — that would destroy whatever is actually on disk. A future
+    // repair/migration task handles recovery.
+    return;
+  }
   safeMkdirp(BASE_DIR);
   try {
     fs.writeFileSync(REVIEWS_PATH, JSON.stringify(cache), 'utf-8');
@@ -180,7 +278,7 @@ export function forceCloseActiveReviewForSession(params: {
   reason: string;
   approvedAnswer?: string;
 }): { closedReviewId: string | null } {
-  loadOnce();
+  assertOperatorReviewStoreHealthy();
   const reviewId = cache.activeReviewIdBySessionId[params.sessionId] ?? null;
   if (!reviewId) return { closedReviewId: null };
 
@@ -331,7 +429,7 @@ export function createOrUpdateEscalationReview(input: {
 }
 
 function updateStatus(reviewId: string, next: EscalationReviewStatus): EscalationReview {
-  loadOnce();
+  assertOperatorReviewStoreHealthy();
   const cur = cache.reviewsById[reviewId];
   if (!cur) throw new Error('review_not_found');
   const updated: EscalationReview = { ...cur, status: next, updatedAt: nowIso() };
@@ -390,7 +488,7 @@ export async function sendOperatorReply(input: {
   replyText: string;
   resumeAutomation?: boolean;
 }): Promise<{ ok: boolean; review: EscalationReview | null; duplicatePrevented?: boolean; error?: string }> {
-  loadOnce();
+  assertOperatorReviewStoreHealthy();
   const review = cache.reviewsById[input.reviewId];
   if (!review) return { ok: false, review: null, error: 'review_not_found' };
   if (!input.replyText || !String(input.replyText).trim()) return { ok: false, review, error: 'reply_required' };
@@ -482,5 +580,30 @@ export async function sendOperatorReply(input: {
 export function __resetEscalationReviewStoreForTests(): void {
   loaded = true;
   cache = { reviewsById: {}, activeReviewIdBySessionId: {} };
+  storeHealth = 'healthy';
+  unhealthyLogged = false;
+}
+
+/**
+ * @internal tests only
+ * Directly simulates store health without touching the filesystem — for
+ * tests that only need to prove downstream fail-closed propagation
+ * (canAiReply, route 503s, blocked mutations), not the disk-parsing logic
+ * itself (see `__forceReloadOperatorReviewStoreFromDiskForTests` for that).
+ */
+export function __setOperatorReviewStoreHealthForTests(health: OperatorReviewStoreHealth): void {
+  loaded = true;
+  storeHealth = health;
+}
+
+/**
+ * @internal tests only
+ * Forces a real read-from-disk attempt (bypassing the `isTest` fast path
+ * that normal `loadOnce()` uses), so tests can prove the actual read/parse/
+ * validate logic in `loadFromDisk()` against real files on disk.
+ */
+export function __forceReloadOperatorReviewStoreFromDiskForTests(): void {
+  loadFromDisk();
+  loaded = true;
 }
 
