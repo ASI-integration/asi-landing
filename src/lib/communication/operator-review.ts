@@ -116,11 +116,12 @@ function nowIso(): string {
   return new Date().toISOString();
 }
 
-function safeMkdirp(dir: string): void {
+function safeMkdirp(dir: string): boolean {
   try {
     fs.mkdirSync(dir, { recursive: true });
+    return true;
   } catch {
-    // best-effort
+    return false;
   }
 }
 
@@ -128,14 +129,53 @@ function isPlainRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-function isValidStoreShape(value: unknown): value is Partial<StoreShape> {
+const VALID_REVIEW_STATUSES: ReadonlySet<EscalationReviewStatus> = new Set([
+  'pending',
+  'acknowledged',
+  'approved',
+  'replied',
+  'closed',
+]);
+
+/**
+ * Validates a single review record deeply enough that downstream sorting
+ * (`createdAt` comparison) and status-based branching (handoff-lock,
+ * routes) cannot throw or silently derive the wrong lock state from a
+ * malformed entry.
+ */
+function isValidReviewRecord(value: unknown): value is EscalationReview {
   if (!isPlainRecord(value)) return false;
-  if (value.reviewsById !== undefined && !isPlainRecord(value.reviewsById)) return false;
-  if (value.activeReviewIdBySessionId !== undefined && !isPlainRecord(value.activeReviewIdBySessionId)) return false;
+  if (typeof value.reviewId !== 'string' || !value.reviewId) return false;
+  if (typeof value.sessionId !== 'string' || !value.sessionId) return false;
+  if (typeof value.status !== 'string' || !VALID_REVIEW_STATUSES.has(value.status as EscalationReviewStatus)) {
+    return false;
+  }
+  if (typeof value.createdAt !== 'string' || !value.createdAt) return false;
+  if (typeof value.updatedAt !== 'string' || !value.updatedAt) return false;
+  if (!Array.isArray(value.latestMessages)) return false;
   return true;
 }
 
-function markStoreUnavailable(failureClass: 'read' | 'parse' | 'validation'): void {
+function isValidStoreShape(value: unknown): value is Partial<StoreShape> {
+  if (!isPlainRecord(value)) return false;
+  const reviewsById = value.reviewsById;
+  if (reviewsById !== undefined) {
+    if (!isPlainRecord(reviewsById)) return false;
+    for (const review of Object.values(reviewsById)) {
+      if (!isValidReviewRecord(review)) return false;
+    }
+  }
+  const activeReviewIdBySessionId = value.activeReviewIdBySessionId;
+  if (activeReviewIdBySessionId !== undefined) {
+    if (!isPlainRecord(activeReviewIdBySessionId)) return false;
+    for (const activeId of Object.values(activeReviewIdBySessionId)) {
+      if (typeof activeId !== 'string' || !activeId) return false;
+    }
+  }
+  return true;
+}
+
+function markStoreUnavailable(failureClass: 'read' | 'parse' | 'validation' | 'init' | 'write'): void {
   storeHealth = 'unavailable';
   // Emit once per process — avoid log spam on every subsequent read.
   if (unhealthyLogged) return;
@@ -153,7 +193,14 @@ function markStoreUnavailable(failureClass: 'read' | 'parse' | 'validation'): vo
 }
 
 function loadFromDisk(): void {
-  safeMkdirp(BASE_DIR);
+  if (!safeMkdirp(BASE_DIR)) {
+    // Cannot verify whether the state directory is usable. Without it, a
+    // "missing file" existsSync check below cannot be trusted to mean
+    // "legitimately never created" — it may just mean the directory is
+    // inaccessible. Fail closed rather than assume "empty".
+    markStoreUnavailable('init');
+    return;
+  }
   if (!fs.existsSync(REVIEWS_PATH)) {
     // The store has never been created — this is a legitimate empty state,
     // not corruption, so it must not flip health to "unavailable".
@@ -214,19 +261,42 @@ export function assertOperatorReviewStoreHealthy(): void {
   }
 }
 
-function persist(): void {
-  if (isTest) return;
+function writeStoreToDisk(): boolean {
+  if (!safeMkdirp(BASE_DIR)) {
+    markStoreUnavailable('write');
+    return false;
+  }
+  try {
+    fs.writeFileSync(REVIEWS_PATH, JSON.stringify(cache), 'utf-8');
+    return true;
+  } catch {
+    markStoreUnavailable('write');
+    return false;
+  }
+}
+
+/**
+ * Persists the in-memory cache to disk. Returns false (and marks the store
+ * unavailable) when the state directory cannot be created/accessed or the
+ * write fails — callers performing a mutation must check this and fail
+ * closed rather than reporting success for state that only exists in
+ * memory and will disappear on restart.
+ */
+function persist(): boolean {
+  if (isTest) return true;
   if (storeHealth === 'unavailable') {
     // Never overwrite a corrupted/unreadable store file with in-memory
     // state — that would destroy whatever is actually on disk. A future
     // repair/migration task handles recovery.
-    return;
+    return false;
   }
-  safeMkdirp(BASE_DIR);
-  try {
-    fs.writeFileSync(REVIEWS_PATH, JSON.stringify(cache), 'utf-8');
-  } catch {
-    // best-effort
+  return writeStoreToDisk();
+}
+
+/** Persists and throws when the write did not durably succeed. */
+function persistOrThrow(): void {
+  if (!persist()) {
+    throw new OperatorReviewStoreUnavailableError();
   }
 }
 
@@ -370,7 +440,10 @@ export function createOrUpdateEscalationReview(input: {
   suggestedReply?: string;
   detail?: string;
 }): EscalationReview {
-  loadOnce();
+  // This mutation creates/updates the operator handoff lock itself — it
+  // must never fabricate a phantom in-memory review (and report success)
+  // against a store known to be corrupt/unreadable.
+  assertOperatorReviewStoreHealthy();
   const existingId = cache.activeReviewIdBySessionId[input.sessionId];
   const existing = existingId ? cache.reviewsById[existingId] : undefined;
 
@@ -415,7 +488,10 @@ export function createOrUpdateEscalationReview(input: {
   if (review.status !== 'closed') {
     cache.activeReviewIdBySessionId[input.sessionId] = review.reviewId;
   }
-  persist();
+  // Persist before reporting success/emitting the audit line — a write
+  // failure here must surface as a thrown error, not a silently
+  // in-memory-only "created" review that vanishes on restart.
+  persistOrThrow();
 
   appendAuditLine({
     type: 'review_created',
@@ -605,5 +681,16 @@ export function __setOperatorReviewStoreHealthForTests(health: OperatorReviewSto
 export function __forceReloadOperatorReviewStoreFromDiskForTests(): void {
   loadFromDisk();
   loaded = true;
+}
+
+/**
+ * @internal tests only
+ * Forces a real write-to-disk attempt (bypassing the `isTest` fast path
+ * that normal `persist()` uses), so tests can prove the actual mkdirp/write
+ * failure-handling logic against real files/directories on disk.
+ */
+export function __forcePersistToDiskForTests(): boolean {
+  if (storeHealth === 'unavailable') return false;
+  return writeStoreToDisk();
 }
 
