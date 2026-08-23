@@ -132,6 +132,79 @@ describe('operator review store — fail closed on corruption', () => {
     expect(() => mod.acknowledgeEscalationReview('x', 'op_1')).toThrow(mod.OperatorReviewStoreUnavailableError);
   });
 
+  it('G. a malformed review record (invalid status) marks the store unavailable', async () => {
+    const badStore = {
+      reviewsById: {
+        r1: {
+          reviewId: 'r1',
+          sessionId: 's1',
+          channel: 'telegram',
+          targetId: '1',
+          escalationReason: 'X',
+          latestMessages: [],
+          status: 'not_a_real_status',
+          createdAt: '2026-01-01T00:00:00.000Z',
+          updatedAt: '2026-01-01T00:00:00.000Z',
+        },
+      },
+      activeReviewIdBySessionId: {},
+    };
+    fs.writeFileSync(path.join(tmpDir, REVIEWS_FILENAME), JSON.stringify(badStore), 'utf-8');
+
+    const mod = await import('../operator-review');
+    mod.__forceReloadOperatorReviewStoreFromDiskForTests();
+
+    expect(mod.getOperatorReviewStoreHealth()).toBe('unavailable');
+  });
+
+  it('G2. a non-string active-review id marks the store unavailable', async () => {
+    const badStore = {
+      reviewsById: {},
+      activeReviewIdBySessionId: { sess_1: 42 },
+    };
+    fs.writeFileSync(path.join(tmpDir, REVIEWS_FILENAME), JSON.stringify(badStore), 'utf-8');
+
+    const mod = await import('../operator-review');
+    mod.__forceReloadOperatorReviewStoreFromDiskForTests();
+
+    expect(mod.getOperatorReviewStoreHealth()).toBe('unavailable');
+  });
+
+  it('H. createOrUpdateEscalationReview fails closed instead of creating a phantom review', async () => {
+    const mod = await import('../operator-review');
+    mod.__setOperatorReviewStoreHealthForTests('unavailable');
+
+    expect(() =>
+      mod.createOrUpdateEscalationReview({
+        sessionId: 'sess_phantom',
+        channel: 'telegram',
+        targetId: '1',
+        escalationReason: 'X',
+        latestMessages: [],
+      }),
+    ).toThrow(mod.OperatorReviewStoreUnavailableError);
+
+    // No phantom in-memory review must be observable via the read APIs either.
+    expect(mod.getReviewsBySessionId('sess_phantom')).toEqual([]);
+    expect(mod.getActiveEscalationReviewIdForSession('sess_phantom')).toBeNull();
+  });
+
+  it('I. a real write failure marks the store unavailable rather than staying silently healthy', async () => {
+    const mod = await import('../operator-review');
+    mod.__forceReloadOperatorReviewStoreFromDiskForTests();
+    expect(mod.getOperatorReviewStoreHealth()).toBe('healthy');
+
+    // Make the state directory unwritable — mkdirSync(recursive) on an
+    // already-existing dir won't fail, but the subsequent write will.
+    fs.chmodSync(tmpDir, 0o500);
+    try {
+      expect(mod.__forcePersistToDiskForTests()).toBe(false);
+      expect(mod.getOperatorReviewStoreHealth()).toBe('unavailable');
+    } finally {
+      fs.chmodSync(tmpDir, 0o700);
+    }
+  });
+
   it('F. reset helper clears both cache and store-health state', async () => {
     fs.writeFileSync(path.join(tmpDir, REVIEWS_FILENAME), 'not json at all', 'utf-8');
 
