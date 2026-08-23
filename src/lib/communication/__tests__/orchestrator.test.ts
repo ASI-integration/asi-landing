@@ -98,7 +98,11 @@ vi.mock('../reservation', () => ({
 import { processMessage, processUpdate } from '../orchestrator';
 import { __resetAutonomousSessionStoreForTests } from '../conversation-session-store';
 import { __resetConversationSessionEngineForTests } from '../conversation-session-engine';
-import { __resetEscalationReviewStoreForTests, listEscalationReviews } from '../operator-review';
+import {
+  __resetEscalationReviewStoreForTests,
+  __setOperatorReviewStoreHealthForTests,
+  listEscalationReviews,
+} from '../operator-review';
 import {
   buildTelegramOpsAcceptanceSyntheticUpdate,
   findAcceptanceEscalationReview,
@@ -404,6 +408,24 @@ describe('processUpdate', () => {
     await processUpdate(makeUpdate('problem with the lock'));
     const [, sentText] = mockSendMessage.mock.calls.at(-1)!;
     expect(String(sentText)).toBe('LLM: after reset ok');
+  });
+
+  it('completes /reset_session even when the operator review store is unavailable', async () => {
+    process.env.COMM_TELEGRAM_RESET_ALLOWLIST = '42';
+
+    // Get into escalated state
+    mockDetectIntent.mockResolvedValueOnce({ intent: IntentCategory.Unknown, confidence: 0.4 });
+    await processUpdate(makeUpdate('first message triggers escalation'));
+    expect(listEscalationReviews({ status: 'pending' }).length).toBe(1);
+
+    // Simulate the operator-review store becoming unreadable/corrupt. The
+    // best-effort review close inside /reset_session must not turn this into
+    // an unhandled rejection / processing failure for the whole update.
+    __setOperatorReviewStoreHealthForTests('unavailable');
+
+    await processUpdate(makeUpdate('/reset_session'));
+    const [, resetReply] = mockSendMessage.mock.calls.at(-1)!;
+    expect(String(resetReply)).toMatch(/Session reset/i);
   });
 
   it('creates pending escalation review for internal Telegram OPS acceptance synthetic update', async () => {

@@ -1,11 +1,20 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const mocks = vi.hoisted(() => ({
-  from: vi.fn(),
-  rpc: vi.fn(),
-  createReview: vi.fn(),
-  closeReview: vi.fn(),
-}));
+const mocks = vi.hoisted(() => {
+  class OperatorReviewStoreUnavailableError extends Error {
+    constructor(message = 'operator_review_store_unavailable') {
+      super(message);
+      this.name = 'OperatorReviewStoreUnavailableError';
+    }
+  }
+  return {
+    from: vi.fn(),
+    rpc: vi.fn(),
+    createReview: vi.fn(),
+    closeReview: vi.fn(),
+    OperatorReviewStoreUnavailableError,
+  };
+});
 
 vi.mock('@/lib/supabase', () => ({
   supabase: {
@@ -17,6 +26,7 @@ vi.mock('@/lib/supabase', () => ({
 vi.mock('../operator-review', () => ({
   createOrUpdateEscalationReview: (...args: unknown[]) => mocks.createReview(...args),
   forceCloseActiveReviewForSession: (...args: unknown[]) => mocks.closeReview(...args),
+  OperatorReviewStoreUnavailableError: mocks.OperatorReviewStoreUnavailableError,
 }));
 
 import {
@@ -138,5 +148,43 @@ describe('durable Telegram inbound receipts', () => {
     expect(mocks.closeReview).toHaveBeenCalledWith(expect.objectContaining({
       sessionId: 'telegram_inbound_failure:receipt-1',
     }));
+  });
+
+  it('does not fail an already-processed receipt when the operator review store is unavailable', async () => {
+    mocks.rpc.mockResolvedValue({ data: true, error: null });
+    mocks.closeReview.mockImplementation(() => {
+      throw new mocks.OperatorReviewStoreUnavailableError();
+    });
+    const claim = {
+      action: 'process' as const,
+      receiptId: 'receipt-1',
+      claimToken: 'claim-3',
+      retryCount: 1,
+      scope: { accountId: 'account-a', propertyId: 'property-a' },
+      update,
+    };
+
+    await expect(completeTelegramInboundReceipt({ claim, outcome: 'replied' })).resolves.toBeUndefined();
+
+    expect(mocks.rpc).toHaveBeenCalledWith('complete_telegram_inbound_receipt', expect.objectContaining({
+      p_receipt_id: 'receipt-1', p_status: 'processed', p_process_outcome: 'replied',
+    }));
+  });
+
+  it('still propagates unexpected errors from closing the review', async () => {
+    mocks.rpc.mockResolvedValue({ data: true, error: null });
+    mocks.closeReview.mockImplementation(() => {
+      throw new Error('unexpected boom');
+    });
+    const claim = {
+      action: 'process' as const,
+      receiptId: 'receipt-1',
+      claimToken: 'claim-4',
+      retryCount: 1,
+      scope: { accountId: 'account-a', propertyId: 'property-a' },
+      update,
+    };
+
+    await expect(completeTelegramInboundReceipt({ claim, outcome: 'replied' })).rejects.toThrow('unexpected boom');
   });
 });
