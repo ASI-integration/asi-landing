@@ -1,29 +1,67 @@
-import type { ReactNode } from 'react';
+import type { ButtonHTMLAttributes, ReactNode } from 'react';
 import type {
   RuntimeBridgeSafeResult,
   RuntimeBridgeTaskStatus,
 } from '@/lib/asi-runtime/bridge-types';
 import { safeAllowlistedPullRequestUrl } from '@/lib/development/pr-url';
-import { DEVELOPMENT_STATUS_LABELS, developmentStageText } from '@/lib/development/status-labels';
+import {
+  type ControlRoomColorTone,
+  developmentOwnerSemantics,
+  developmentStageText,
+  developmentStatusBadgeText,
+  developmentStatusTone,
+} from '@/lib/development/status-labels';
+
+export const CONTROL_ROOM_TONE_TEXT: Record<ControlRoomColorTone, string> = {
+  neutral: 'text-slate-700',
+  blue: 'text-sky-800',
+  orange: 'text-amber-900',
+  green: 'text-emerald-900',
+  red: 'text-red-900',
+};
+
+export const CONTROL_ROOM_TONE_SURFACE: Record<ControlRoomColorTone, string> = {
+  neutral: 'border-slate-200 bg-slate-100 text-slate-800',
+  blue: 'border-sky-300 bg-sky-100 text-sky-950',
+  orange: 'border-amber-300 bg-amber-100 text-amber-950',
+  green: 'border-emerald-300 bg-emerald-100 text-emerald-950',
+  red: 'border-red-300 bg-red-100 text-red-950',
+};
+
+export const CONTROL_ROOM_TONE_SOLID: Record<ControlRoomColorTone, string> = {
+  neutral: 'border-slate-300 bg-slate-700 text-white hover:bg-slate-800',
+  blue: 'border-sky-600 bg-sky-600 text-white hover:bg-sky-700',
+  orange: 'border-amber-500 bg-amber-500 text-white hover:bg-amber-600',
+  green: 'border-emerald-600 bg-emerald-600 text-white hover:bg-emerald-700',
+  red: 'border-red-600 bg-red-600 text-white hover:bg-red-700',
+};
+
+export const CONTROL_ROOM_TONE_IDLE: Record<ControlRoomColorTone, string> = {
+  neutral: 'border-slate-200 bg-white text-slate-500',
+  blue: 'border-sky-100 bg-white text-sky-400',
+  orange: 'border-amber-100 bg-white text-amber-400',
+  green: 'border-emerald-100 bg-white text-emerald-400',
+  red: 'border-red-100 bg-white text-red-400',
+};
 
 export const DEVELOPMENT_STATUS_COLOR_CLASS = {
-  queued: 'text-slate-700',
-  running: 'text-sky-700',
-  awaiting_owner: 'text-amber-700',
-  completed: 'text-emerald-700',
-  failed: 'text-red-700',
+  queued: CONTROL_ROOM_TONE_TEXT.neutral,
+  running: CONTROL_ROOM_TONE_TEXT.blue,
+  awaiting_owner: CONTROL_ROOM_TONE_TEXT.orange,
+  completed: CONTROL_ROOM_TONE_TEXT.green,
+  failed: CONTROL_ROOM_TONE_TEXT.red,
 } as const satisfies Record<RuntimeBridgeTaskStatus, string>;
 
 export const DEVELOPMENT_STATUS_BADGE_CLASS = {
-  queued: 'border-slate-200 bg-slate-50 text-slate-700',
-  running: 'border-sky-200 bg-sky-50 text-sky-800',
-  awaiting_owner: 'border-amber-200 bg-amber-50 text-amber-800',
-  completed: 'border-emerald-200 bg-emerald-50 text-emerald-800',
-  failed: 'border-red-200 bg-red-50 text-red-800',
+  queued: CONTROL_ROOM_TONE_SURFACE.neutral,
+  running: CONTROL_ROOM_TONE_SURFACE.blue,
+  awaiting_owner: CONTROL_ROOM_TONE_SURFACE.orange,
+  completed: CONTROL_ROOM_TONE_SURFACE.green,
+  failed: CONTROL_ROOM_TONE_SURFACE.red,
 } as const satisfies Record<RuntimeBridgeTaskStatus, string>;
 
 export function developmentStatusLabel(status: RuntimeBridgeTaskStatus): string {
-  return DEVELOPMENT_STATUS_LABELS[status] ?? status;
+  return developmentStatusBadgeText(status);
 }
 
 export function developmentStatusAriaLabel(status: RuntimeBridgeTaskStatus): string {
@@ -79,15 +117,65 @@ type TaskStatusBadgeProps = {
 
 export function TaskStatusBadge({ status }: TaskStatusBadgeProps) {
   const label = developmentStatusLabel(status);
+  const semantics = developmentOwnerSemantics(status);
   return (
     <span
       role="status"
       aria-label={developmentStatusAriaLabel(status)}
-      className={`inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-semibold ${DEVELOPMENT_STATUS_BADGE_CLASS[status]}`}
+      className={`inline-flex items-center rounded-lg border px-3 py-1 text-sm font-semibold ${DEVELOPMENT_STATUS_BADGE_CLASS[status]}`}
       data-task-status={status}
+      data-owner-semantics={semantics ?? undefined}
     >
       <span aria-hidden="true">{label}</span>
     </span>
+  );
+}
+
+type ControlRoomTileProps = {
+  label: string;
+  tone: ControlRoomColorTone;
+  active?: boolean;
+  hint?: string;
+  'data-testid'?: string;
+} & ButtonHTMLAttributes<HTMLButtonElement>;
+
+/** Large control-panel tile: action button or lit status indicator. */
+export function ControlRoomTile({
+  label,
+  tone,
+  active = false,
+  hint,
+  className = '',
+  type = 'button',
+  disabled,
+  ...props
+}: ControlRoomTileProps) {
+  const surface = active
+    ? CONTROL_ROOM_TONE_SOLID[tone]
+    : disabled
+      ? CONTROL_ROOM_TONE_IDLE[tone]
+      : `${CONTROL_ROOM_TONE_SURFACE[tone]} hover:brightness-[0.98]`;
+  const clickable = !disabled && typeof props.onClick === 'function';
+
+  return (
+    <button
+      type={type}
+      disabled={disabled}
+      aria-pressed={active || undefined}
+      className={[
+        'flex min-h-[5.5rem] flex-col items-start justify-between rounded-2xl border-2 px-4 py-3 text-left transition',
+        'focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-900',
+        surface,
+        disabled ? 'cursor-not-allowed opacity-70' : clickable ? 'cursor-pointer' : 'cursor-default',
+        className,
+      ].join(' ')}
+      data-control-room-tile={tone}
+      data-control-room-active={active ? 'true' : 'false'}
+      {...props}
+    >
+      <span className="text-base font-bold leading-tight sm:text-lg">{label}</span>
+      {hint ? <span className="mt-2 text-xs font-medium opacity-80">{hint}</span> : null}
+    </button>
   );
 }
 
@@ -113,34 +201,36 @@ export function DevelopmentTaskCard({ task }: DevelopmentTaskCardProps) {
   const pullRequestUrl = pullRequestUrlFromResult(task.result);
   const commitSha = commitShaFromResult(task.result);
   const stage = developmentStageText(task.status);
+  const tone = developmentStatusTone(task.status);
 
   return (
     <section
       aria-labelledby="development-task-card-title"
-      className="space-y-3 rounded-xl border border-slate-200 bg-white p-5 shadow-sm"
+      className={`space-y-3 rounded-2xl border-2 p-4 sm:p-5 ${CONTROL_ROOM_TONE_SURFACE[tone]}`}
       data-development-task-card="true"
+      data-control-room-tone={tone}
     >
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0 space-y-2">
           <h2
             id="development-task-card-title"
-            className="text-lg font-semibold text-slate-900"
+            className="text-lg font-bold text-slate-950"
             data-task-title="true"
           >
             {task.title}
           </h2>
           <TaskStatusBadge status={task.status} />
         </div>
-        <p className="text-xs text-slate-500" data-task-updated-at="true">
-          Обновлено: {formatDevelopmentTimestamp(task.updatedAt)}
+        <p className="text-xs font-medium opacity-70" data-task-updated-at="true">
+          {formatDevelopmentTimestamp(task.updatedAt)}
         </p>
       </div>
 
-      <p className="text-sm text-slate-700" data-task-stage="true">
+      <p className="text-sm font-semibold" data-task-stage="true">
         {stage}
       </p>
 
-      <p className="text-sm text-slate-800" data-task-summary="true">
+      <p className="line-clamp-2 text-sm opacity-90" data-task-summary="true">
         {summary}
       </p>
 
@@ -149,15 +239,15 @@ export function DevelopmentTaskCard({ task }: DevelopmentTaskCardProps) {
           href={pullRequestUrl}
           target="_blank"
           rel="noopener noreferrer"
-          className="inline-flex rounded-lg bg-slate-900 px-3 py-2 text-sm font-medium text-white hover:bg-slate-800"
+          className="inline-flex min-h-11 items-center rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-bold text-white hover:bg-slate-800"
           data-task-pr-link="true"
         >
           Открыть PR
         </a>
       ) : null}
 
-      <details className="rounded-lg border border-slate-200 bg-slate-50/70 px-3 py-2">
-        <summary className="cursor-pointer text-sm font-medium text-slate-800">Подробнее</summary>
+      <details className="rounded-xl border border-black/10 bg-white/70 px-3 py-2">
+        <summary className="cursor-pointer text-sm font-semibold text-slate-900">Подробнее</summary>
         <dl className="mt-3 grid gap-2 text-sm sm:grid-cols-2">
           <DetailField label="taskId" value={task.taskId} mono />
           <DetailField label="Репозиторий" value={task.repository} />
@@ -200,11 +290,11 @@ function DetailField({
 function SafeResultDetails({ result }: { result: RuntimeBridgeSafeResult }) {
   return (
     <div className="mt-4 space-y-3 border-t border-slate-200 pt-3">
-      <p className="text-xs uppercase tracking-wide text-slate-500">
-        Итог Runtime: {result.status}
+      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+        Итог: {result.status}
       </p>
 
-      <DetailBlock title="Изменённые файлы">
+      <DetailBlock title="Файлы">
         {result.changedFiles.length === 0 ? (
           <p className="text-sm text-slate-500">Нет</p>
         ) : (

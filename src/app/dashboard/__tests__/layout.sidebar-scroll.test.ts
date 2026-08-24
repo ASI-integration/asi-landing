@@ -48,10 +48,10 @@ describe('dashboard sidebar scroll layout', () => {
     expect(layoutSrc).toContain("{ href: '/dashboard/settings', key: 'settings', label: 'Настройки' }");
   });
 
-  it('exposes owner-only План ASI nav item immediately before Разработка ASI', () => {
+  it('exposes owner-only План ASI nav item immediately before Control Room', () => {
     expect(layoutSrc).toContain("{ href: '/dashboard/roadmap', key: 'roadmap', label: 'План ASI' }");
     expect(layoutSrc).toContain(
-      "{ href: '/dashboard/development', key: 'development', label: 'Разработка ASI' }",
+      "{ href: '/dashboard/development', key: 'development', label: 'Control Room' }",
     );
     expect(layoutSrc).toContain("item.key === 'development' || item.key === 'roadmap'");
 

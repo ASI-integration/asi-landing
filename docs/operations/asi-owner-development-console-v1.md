@@ -1,10 +1,10 @@
-# ASI Owner Development Console v1
+# ASI Owner Control Room v1
 
-Закрытая владельческая консоль разработки в опубликованном ASI-кабинете. Использует существующий durable ASI Runtime Bridge. Не создаёт второй Runtime, вторую очередь и не использует snapshot-контур как очередь.
+Закрытый владельческий Control Room в опубликованном ASI-кабинете. Использует существующий durable ASI Runtime Bridge. Не создаёт второй Runtime, вторую очередь и не использует snapshot-контур как очередь.
 
 ## Route
 
-- UI: `/dashboard/development`
+- UI: `/dashboard/development` — owner Control Room (control-panel presentation)
 - APIs:
   - `GET /api/dashboard/development/readiness`
   - `GET/POST /api/dashboard/development/tasks`
@@ -64,7 +64,7 @@ Do not set owner emails or bridge tokens/keys via `NEXT_PUBLIC_*`.
 ## Verify owner access
 
 1. Sign in to the ASI cabinet with an account whose email is listed in `ASI_DEVELOPMENT_OWNER_EMAILS`.
-2. Confirm sidebar shows **Разработка ASI**.
+2. Confirm sidebar shows **Control Room**.
 3. Open `/dashboard/development` and confirm the task form is visible.
 4. Sign in as a CRM operator who is **not** on `ASI_DEVELOPMENT_OWNER_EMAILS` and confirm:
    - sidebar item is hidden;

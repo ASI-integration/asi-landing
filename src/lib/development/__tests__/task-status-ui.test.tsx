@@ -2,8 +2,11 @@ import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import type { RuntimeBridgeSafeResult, RuntimeBridgeTaskStatus } from '@/lib/asi-runtime/bridge-types';
-import { developmentStageText } from '@/lib/development/status-labels';
+import { developmentOwnerSemantics, developmentStageText } from '@/lib/development/status-labels';
 import {
+  CONTROL_ROOM_TONE_SOLID,
+  CONTROL_ROOM_TONE_SURFACE,
+  ControlRoomTile,
   DEVELOPMENT_STATUS_BADGE_CLASS,
   DevelopmentTaskCard,
   TaskStatusBadge,
@@ -40,12 +43,45 @@ const RESULT_WITH_PR: RuntimeBridgeSafeResult = {
 describe('development task status UI', () => {
   it.each(STATUSES)('maps %s status badge with color and accessible label', (status) => {
     const html = renderToStaticMarkup(React.createElement(TaskStatusBadge, { status }));
+    const semantics = developmentOwnerSemantics(status);
 
     expect(html).toContain(`data-task-status="${status}"`);
     expect(html).toContain(developmentStatusLabel(status));
     expect(html).toContain(`aria-label="${developmentStatusAriaLabel(status)}"`);
     expect(html).toContain(DEVELOPMENT_STATUS_BADGE_CLASS[status]);
     expect(html).toContain('role="status"');
+    if (semantics) {
+      expect(html).toContain(`data-owner-semantics="${semantics}"`);
+    } else {
+      expect(html).not.toContain('data-owner-semantics=');
+    }
+  });
+
+  it('renders large control-room tiles with tone and active state', () => {
+    const idle = renderToStaticMarkup(
+      React.createElement(ControlRoomTile, {
+        label: 'В работе',
+        tone: 'blue',
+        active: false,
+        disabled: true,
+      }),
+    );
+    const active = renderToStaticMarkup(
+      React.createElement(ControlRoomTile, {
+        label: 'Объединить PR',
+        tone: 'green',
+        active: true,
+        onClick: () => undefined,
+      }),
+    );
+
+    expect(idle).toContain('data-control-room-tile="blue"');
+    expect(idle).toContain('data-control-room-active="false"');
+    expect(idle).toContain('В работе');
+    expect(active).toContain('data-control-room-active="true"');
+    expect(active).toContain(CONTROL_ROOM_TONE_SOLID.green.split(' ')[0]);
+    expect(active).toContain('Объединить PR');
+    expect(CONTROL_ROOM_TONE_SURFACE.orange).toContain('amber');
   });
 
   it('renders a compact card with title, stage, summary, updated time and PR link', () => {
@@ -67,6 +103,7 @@ describe('development task status UI', () => {
     );
 
     expect(html).toContain('data-development-task-card="true"');
+    expect(html).toContain('data-control-room-tone="green"');
     expect(html).toContain('data-task-title="true"');
     expect(html).toContain('Улучшить карточку задачи');
     expect(html).toContain('data-task-stage="true"');
