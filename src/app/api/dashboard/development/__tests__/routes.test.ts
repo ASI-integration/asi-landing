@@ -119,6 +119,17 @@ describe('development console API access', () => {
     expect(submitDevelopmentTask).not.toHaveBeenCalled();
   });
 
+  it('does not return recentTasks to an unauthorized session on GET /tasks', async () => {
+    getSession.mockResolvedValue({ userId: 'user-2', email: 'user@example.com' });
+    const { GET } = await import('@/app/api/dashboard/development/tasks/route');
+    const res = await GET();
+    const json = await res.json();
+
+    expect(res.status).toBe(403);
+    expect(listDevelopmentTasksForOwner).not.toHaveBeenCalled();
+    expect(json.recentTasks).toBeUndefined();
+  });
+
   it('denies CRM operator without owner allowlist membership', async () => {
     vi.stubEnv('ASI_DEVELOPMENT_OWNER_EMAILS', 'owner@example.com');
     vi.stubEnv('CRM_OPERATOR_EMAILS', 'crm@asi-global.ru');

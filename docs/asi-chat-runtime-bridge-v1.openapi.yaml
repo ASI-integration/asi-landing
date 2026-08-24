@@ -267,17 +267,22 @@ components:
           minimum: 1
           maximum: 50
     TaskListItem:
-      allOf:
-        - { $ref: '#/components/schemas/Task' }
-        - type: object
-          additionalProperties: false
-          required: [title, repository]
-          properties:
-            title:
-              allOf:
-                - { $ref: '#/components/schemas/CleanText' }
-                - { maxLength: 200 }
-            repository: { type: string, const: ASI-integration/asi-landing }
+      type: object
+      additionalProperties: false
+      required: [taskId, chatgptTaskId, conversationId, status, attemptCount, createdAt, updatedAt, title, repository]
+      properties:
+        taskId: { $ref: '#/components/schemas/Uuid' }
+        chatgptTaskId: { $ref: '#/components/schemas/StrictId' }
+        conversationId: { $ref: '#/components/schemas/StrictId' }
+        status: { type: string, enum: [queued, running, awaiting_owner, completed, failed] }
+        attemptCount: { type: integer, minimum: 0 }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        title:
+          allOf:
+            - { $ref: '#/components/schemas/CleanText' }
+            - { maxLength: 200 }
+        repository: { type: string, const: ASI-integration/asi-landing }
     Task:
       type: object
       additionalProperties: false

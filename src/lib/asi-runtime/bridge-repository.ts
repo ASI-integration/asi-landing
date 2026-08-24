@@ -41,6 +41,11 @@ function bridgeDb() {
   return runtimeBridgeSupabase;
 }
 
+async function convergeExpiredRuntimeBridgeOwnerGates(clientId: string): Promise<void> {
+  const expired = await bridgeDb().rpc('expire_asi_runtime_bridge_owner_gates', { p_client_id: clientId });
+  if (expired.error) rpcError(expired.error);
+}
+
 function rpcError(error: { message?: string; code?: string } | null): never {
   const message = error?.message ?? 'runtime_bridge_storage_error';
   if (message.includes('idempotency_conflict')) throw new RuntimeBridgeError('idempotency_conflict', 409);
@@ -145,8 +150,7 @@ export async function getRuntimeBridgeTaskRecord(
   clientId: string,
   taskId: string,
 ): Promise<RuntimeBridgeTaskRecord> {
-  const expired = await bridgeDb().rpc('expire_asi_runtime_bridge_owner_gates', { p_client_id: clientId });
-  if (expired.error) rpcError(expired.error);
+  await convergeExpiredRuntimeBridgeOwnerGates(clientId);
   const { data, error } = await bridgeDb()
     .from('asi_runtime_bridge_tasks')
     .select(
@@ -180,6 +184,7 @@ export async function listRuntimeBridgeTasks(
   conversationId: string,
   options?: { limit?: number },
 ): Promise<RuntimeBridgeTaskListItem[]> {
+  await convergeExpiredRuntimeBridgeOwnerGates(clientId);
   const limit = normalizeRuntimeBridgeListLimit(options?.limit);
   const { data, error } = await bridgeDb()
     .from('asi_runtime_bridge_tasks')
@@ -216,8 +221,7 @@ export async function getRuntimeBridgeOwnerGate(
   clientId: string,
   gateId: string,
 ): Promise<RuntimeBridgeOwnerGateView | null> {
-  const expired = await bridgeDb().rpc('expire_asi_runtime_bridge_owner_gates', { p_client_id: clientId });
-  if (expired.error) rpcError(expired.error);
+  await convergeExpiredRuntimeBridgeOwnerGates(clientId);
   const { data, error } = await bridgeDb()
     .from('asi_runtime_bridge_owner_gates')
     .select('id,task_id,status,request,created_at')
@@ -233,8 +237,7 @@ export async function getRuntimeBridgeResult(
   clientId: string,
   taskId: string,
 ): Promise<{ taskId: string; status: RuntimeBridgeTaskView['status']; result: RuntimeBridgeSafeResult | null }> {
-  const expired = await bridgeDb().rpc('expire_asi_runtime_bridge_owner_gates', { p_client_id: clientId });
-  if (expired.error) rpcError(expired.error);
+  await convergeExpiredRuntimeBridgeOwnerGates(clientId);
   const { data, error } = await bridgeDb()
     .from('asi_runtime_bridge_tasks')
     .select('id,status,result')
@@ -247,8 +250,7 @@ export async function getRuntimeBridgeResult(
 }
 
 export async function listRuntimeBridgeOwnerGates(clientId: string): Promise<RuntimeBridgeOwnerGateView[]> {
-  const expired = await bridgeDb().rpc('expire_asi_runtime_bridge_owner_gates', { p_client_id: clientId });
-  if (expired.error) rpcError(expired.error);
+  await convergeExpiredRuntimeBridgeOwnerGates(clientId);
   const { data, error } = await bridgeDb()
     .from('asi_runtime_bridge_owner_gates')
     .select('id,task_id,status,request,created_at')
@@ -263,8 +265,7 @@ export async function submitRuntimeBridgeOwnerDecision(
   clientId: string,
   input: Extract<RuntimeBridgeChatInput, { operation: 'runtime_submit_owner_decision' }>['input'],
 ): Promise<{ task: RuntimeBridgeTaskView; gate: RuntimeBridgeOwnerGateView; deduplicated: boolean }> {
-  const expired = await bridgeDb().rpc('expire_asi_runtime_bridge_owner_gates', { p_client_id: clientId });
-  if (expired.error) rpcError(expired.error);
+  await convergeExpiredRuntimeBridgeOwnerGates(clientId);
   const { data, error } = await bridgeDb().rpc('decide_asi_runtime_bridge_owner_gate', {
     p_client_id: clientId,
     p_task_id: input.taskId,

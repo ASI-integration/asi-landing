@@ -893,6 +893,21 @@ describe('listDevelopmentTasksForOwner', () => {
     expect(listed[0]?.status).toBe('awaiting_owner');
   });
 
+  it('does not mark converged failed tasks as owner-actionable', async () => {
+    const taskId = randomUUID();
+    seedTask({
+      ownerUserId: 'owner-a',
+      taskId,
+      title: 'Expired gate task',
+      status: 'failed',
+      updatedAt: '2026-07-30T00:04:30.000Z',
+    });
+    const { listDevelopmentTasksForOwner } = await import('../task-service');
+    const listed = await listDevelopmentTasksForOwner('owner-a');
+    expect(listed[0]?.status).toBe('failed');
+    expect(listed[0]?.needsOwnerAttention).toBe(false);
+  });
+
   it('does not change single-task lookup behavior', async () => {
     const ownerA = 'owner-a';
     const taskId = randomUUID();
