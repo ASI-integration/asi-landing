@@ -3,7 +3,7 @@ import { DevelopmentOwnerGuard } from '@/components/DevelopmentOwnerGuard';
 import DevelopmentConsoleClient from './DevelopmentConsoleClient';
 
 export const metadata = {
-  title: 'Разработка ASI | ASI',
+  title: 'Control Room | ASI',
 };
 
 export default function DevelopmentPage() {

@@ -4,7 +4,11 @@ import type {
   RuntimeBridgeTaskStatus,
 } from '@/lib/asi-runtime/bridge-types';
 import { safeAllowlistedPullRequestUrl } from '@/lib/development/pr-url';
-import { DEVELOPMENT_STATUS_LABELS, developmentStageText } from '@/lib/development/status-labels';
+import {
+  developmentOwnerSemantics,
+  developmentStageText,
+  developmentStatusBadgeText,
+} from '@/lib/development/status-labels';
 
 export const DEVELOPMENT_STATUS_COLOR_CLASS = {
   queued: 'text-slate-700',
@@ -23,7 +27,7 @@ export const DEVELOPMENT_STATUS_BADGE_CLASS = {
 } as const satisfies Record<RuntimeBridgeTaskStatus, string>;
 
 export function developmentStatusLabel(status: RuntimeBridgeTaskStatus): string {
-  return DEVELOPMENT_STATUS_LABELS[status] ?? status;
+  return developmentStatusBadgeText(status);
 }
 
 export function developmentStatusAriaLabel(status: RuntimeBridgeTaskStatus): string {
@@ -79,12 +83,14 @@ type TaskStatusBadgeProps = {
 
 export function TaskStatusBadge({ status }: TaskStatusBadgeProps) {
   const label = developmentStatusLabel(status);
+  const semantics = developmentOwnerSemantics(status);
   return (
     <span
       role="status"
       aria-label={developmentStatusAriaLabel(status)}
       className={`inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-semibold ${DEVELOPMENT_STATUS_BADGE_CLASS[status]}`}
       data-task-status={status}
+      data-owner-semantics={semantics ?? undefined}
     >
       <span aria-hidden="true">{label}</span>
     </span>

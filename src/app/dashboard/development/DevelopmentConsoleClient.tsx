@@ -107,7 +107,7 @@ export default function DevelopmentConsoleClient() {
       const title = typeof payload.task.title === 'string' ? payload.task.title.trim() : '';
       setTask({
         ...payload.task,
-        title: title || 'Задача разработки',
+        title: title || 'Задача Control Room',
       });
     }
     setResult(payload.result ?? null);
@@ -167,7 +167,7 @@ export default function DevelopmentConsoleClient() {
       const data = await readResponseJson<SnapshotResponse>(res, { ok: false, repositories: [] });
       if (cancelled) return;
       if (!res.ok || !data.ok) {
-        setError(data.message ?? 'Нет доступа к консоли разработки.');
+        setError(data.message ?? 'Нет доступа к Control Room.');
         return;
       }
       const repos = data.repositories ?? [];
@@ -180,7 +180,7 @@ export default function DevelopmentConsoleClient() {
       }
       setRepositoryId(resolveRememberedDevelopmentRepositoryId(repos, rememberedRepository));
     })().catch(() => {
-      if (!cancelled) setError('Не удалось инициализировать консоль.');
+      if (!cancelled) setError('Не удалось инициализировать Control Room.');
     });
     return () => {
       cancelled = true;
@@ -342,9 +342,9 @@ export default function DevelopmentConsoleClient() {
     <div className="mx-auto max-w-4xl space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold text-slate-900">Разработка ASI</h1>
+          <h1 className="text-2xl font-semibold text-slate-900">Control Room</h1>
           <p className="mt-1 text-sm text-slate-600">
-            Закрытая владельческая консоль: задача → Runtime Bridge → безопасный итог → owner gate.
+            Закрытый владельческий Control Room: задача → Runtime Bridge → безопасный итог → решение владельца.
           </p>
         </div>
         {task ? (

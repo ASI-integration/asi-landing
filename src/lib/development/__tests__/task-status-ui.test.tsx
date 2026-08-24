@@ -2,7 +2,10 @@ import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import type { RuntimeBridgeSafeResult, RuntimeBridgeTaskStatus } from '@/lib/asi-runtime/bridge-types';
-import { developmentStageText } from '@/lib/development/status-labels';
+import {
+  developmentOwnerSemantics,
+  developmentStageText,
+} from '@/lib/development/status-labels';
 import {
   DEVELOPMENT_STATUS_BADGE_CLASS,
   DevelopmentTaskCard,
@@ -40,12 +43,18 @@ const RESULT_WITH_PR: RuntimeBridgeSafeResult = {
 describe('development task status UI', () => {
   it.each(STATUSES)('maps %s status badge with color and accessible label', (status) => {
     const html = renderToStaticMarkup(React.createElement(TaskStatusBadge, { status }));
+    const semantics = developmentOwnerSemantics(status);
 
     expect(html).toContain(`data-task-status="${status}"`);
     expect(html).toContain(developmentStatusLabel(status));
     expect(html).toContain(`aria-label="${developmentStatusAriaLabel(status)}"`);
     expect(html).toContain(DEVELOPMENT_STATUS_BADGE_CLASS[status]);
     expect(html).toContain('role="status"');
+    if (semantics) {
+      expect(html).toContain(`data-owner-semantics="${semantics}"`);
+    } else {
+      expect(html).not.toContain('data-owner-semantics=');
+    }
   });
 
   it('renders a compact card with title, stage, summary, updated time and PR link', () => {

@@ -1,25 +1,52 @@
 import type { RuntimeBridgeTaskStatus } from '@/lib/asi-runtime/bridge-types';
 
+/** Owner-facing RU labels for the Control Room task lifecycle. */
 export const DEVELOPMENT_STATUS_LABELS: Record<RuntimeBridgeTaskStatus, string> = {
   queued: 'В очереди',
   running: 'Выполняется',
-  awaiting_owner: 'Требуется решение владельца',
-  completed: 'Завершено',
-  failed: 'Ошибка',
+  awaiting_owner: 'Нужно решение',
+  completed: 'Готово',
+  failed: 'Заблокировано',
 };
+
+/**
+ * READY/BLOCKED-style owner semantics layered on top of the durable Bridge statuses.
+ * queued/running stay process states; terminal and gate states map to READY/BLOCKED.
+ */
+export type DevelopmentOwnerSemantics = 'READY' | 'BLOCKED';
+
+export function developmentOwnerSemantics(
+  status: RuntimeBridgeTaskStatus,
+): DevelopmentOwnerSemantics | null {
+  switch (status) {
+    case 'awaiting_owner':
+    case 'completed':
+      return 'READY';
+    case 'failed':
+      return 'BLOCKED';
+    default:
+      return null;
+  }
+}
+
+export function developmentStatusBadgeText(status: RuntimeBridgeTaskStatus): string {
+  const label = DEVELOPMENT_STATUS_LABELS[status] ?? status;
+  const semantics = developmentOwnerSemantics(status);
+  return semantics ? `${label} · ${semantics}` : label;
+}
 
 export function developmentStageText(status: RuntimeBridgeTaskStatus): string {
   switch (status) {
     case 'queued':
-      return 'Задача принята Runtime Bridge и ожидает runner.';
+      return 'Задача принята и ждёт запуска.';
     case 'running':
-      return 'Runner выполняет задачу в disposable worktree.';
+      return 'Задача выполняется.';
     case 'awaiting_owner':
-      return 'Нужно явное решение владельца по owner gate.';
+      return 'Система готова к вашему решению (READY). Без него задача не продолжится.';
     case 'completed':
-      return 'Задача завершена. Ниже безопасный итог.';
+      return 'Результат готов (READY). Ниже безопасный итог.';
     case 'failed':
-      return 'Задача завершилась с ошибкой. Ниже безопасный итог.';
+      return 'Задача заблокирована (BLOCKED). Ниже безопасный итог.';
     default:
       return 'Статус обновляется.';
   }

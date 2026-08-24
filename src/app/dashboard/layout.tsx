@@ -44,7 +44,7 @@ const navItems: DashboardNavItem[] = [
   { href: '/dashboard/property-knowledge', key: 'propertyKnowledge', label: 'Данные объектов' },
   { href: '/dashboard/automations', key: 'automations', label: 'Автоматизация' },
   { href: '/dashboard/roadmap', key: 'roadmap', label: 'План ASI' },
-  { href: '/dashboard/development', key: 'development', label: 'Разработка ASI' },
+  { href: '/dashboard/development', key: 'development', label: 'Control Room' },
   { href: '/dashboard/settings', key: 'settings', label: 'Настройки' },
 ] as const;
 
