@@ -4,7 +4,7 @@
 
 ## Route
 
-- UI: `/dashboard/development`
+- UI: `/dashboard/development` — owner Control Room (control-panel presentation)
 - APIs:
   - `GET /api/dashboard/development/readiness`
   - `GET/POST /api/dashboard/development/tasks`

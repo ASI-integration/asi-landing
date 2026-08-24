@@ -1,17 +1,17 @@
 import type { RuntimeBridgeTaskStatus } from '@/lib/asi-runtime/bridge-types';
 
-/** Owner-facing RU labels for the Control Room task lifecycle. */
+/** Short owner-facing RU labels for the Control Room panel. */
 export const DEVELOPMENT_STATUS_LABELS: Record<RuntimeBridgeTaskStatus, string> = {
   queued: 'В очереди',
-  running: 'Выполняется',
-  awaiting_owner: 'Нужно решение',
-  completed: 'Готово',
-  failed: 'Заблокировано',
+  running: 'В работе',
+  awaiting_owner: 'Нужна помощь',
+  completed: 'Готово к проверке',
+  failed: 'Остановлено',
 };
 
 /**
- * READY/BLOCKED-style owner semantics layered on top of the durable Bridge statuses.
- * queued/running stay process states; terminal and gate states map to READY/BLOCKED.
+ * READY/BLOCKED-style owner semantics layered on Bridge statuses.
+ * Used for data attributes and tests; the visible badge stays short Russian.
  */
 export type DevelopmentOwnerSemantics = 'READY' | 'BLOCKED';
 
@@ -30,24 +30,43 @@ export function developmentOwnerSemantics(
 }
 
 export function developmentStatusBadgeText(status: RuntimeBridgeTaskStatus): string {
-  const label = DEVELOPMENT_STATUS_LABELS[status] ?? status;
-  const semantics = developmentOwnerSemantics(status);
-  return semantics ? `${label} · ${semantics}` : label;
+  return DEVELOPMENT_STATUS_LABELS[status] ?? status;
 }
 
+/** One-line status for the control panel — no paragraphs. */
 export function developmentStageText(status: RuntimeBridgeTaskStatus): string {
   switch (status) {
     case 'queued':
-      return 'Задача принята и ждёт запуска.';
+      return 'Ждёт запуска';
     case 'running':
-      return 'Задача выполняется.';
+      return 'Выполняется сейчас';
     case 'awaiting_owner':
-      return 'Система готова к вашему решению (READY). Без него задача не продолжится.';
+      return 'Нужно ваше решение';
     case 'completed':
-      return 'Результат готов (READY). Ниже безопасный итог.';
+      return 'Можно проверить итог';
     case 'failed':
-      return 'Задача заблокирована (BLOCKED). Ниже безопасный итог.';
+      return 'Остановлено с ошибкой';
     default:
-      return 'Статус обновляется.';
+      return 'Статус обновляется';
+  }
+}
+
+/** Visual category for consistent panel coloring. */
+export type ControlRoomColorTone = 'neutral' | 'blue' | 'orange' | 'green' | 'red';
+
+export function developmentStatusTone(status: RuntimeBridgeTaskStatus): ControlRoomColorTone {
+  switch (status) {
+    case 'queued':
+      return 'neutral';
+    case 'running':
+      return 'blue';
+    case 'awaiting_owner':
+      return 'orange';
+    case 'completed':
+      return 'green';
+    case 'failed':
+      return 'red';
+    default:
+      return 'neutral';
   }
 }

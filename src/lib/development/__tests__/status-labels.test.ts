@@ -5,6 +5,7 @@ import {
   developmentOwnerSemantics,
   developmentStageText,
   developmentStatusBadgeText,
+  developmentStatusTone,
 } from '@/lib/development/status-labels';
 
 const STATUSES: RuntimeBridgeTaskStatus[] = [
@@ -16,42 +17,31 @@ const STATUSES: RuntimeBridgeTaskStatus[] = [
 ];
 
 describe('Control Room status labels', () => {
-  it('maps every Bridge status to a clear Russian owner label', () => {
+  it('maps every Bridge status to a short Russian control-panel label', () => {
     expect(DEVELOPMENT_STATUS_LABELS).toEqual({
       queued: 'В очереди',
-      running: 'Выполняется',
-      awaiting_owner: 'Нужно решение',
-      completed: 'Готово',
-      failed: 'Заблокировано',
+      running: 'В работе',
+      awaiting_owner: 'Нужна помощь',
+      completed: 'Готово к проверке',
+      failed: 'Остановлено',
     });
   });
 
   it.each([
-    ['queued', null],
-    ['running', null],
-    ['awaiting_owner', 'READY'],
-    ['completed', 'READY'],
-    ['failed', 'BLOCKED'],
-  ] as const)('maps %s to owner semantics %s', (status, semantics) => {
+    ['queued', null, 'neutral'],
+    ['running', null, 'blue'],
+    ['awaiting_owner', 'READY', 'orange'],
+    ['completed', 'READY', 'green'],
+    ['failed', 'BLOCKED', 'red'],
+  ] as const)('maps %s to semantics %s and tone %s', (status, semantics, tone) => {
     expect(developmentOwnerSemantics(status)).toBe(semantics);
+    expect(developmentStatusTone(status)).toBe(tone);
+    expect(developmentStatusBadgeText(status)).toBe(DEVELOPMENT_STATUS_LABELS[status]);
   });
 
-  it.each(STATUSES)('badge text for %s includes RU label and READY/BLOCKED when applicable', (status) => {
-    const badge = developmentStatusBadgeText(status);
-    expect(badge).toContain(DEVELOPMENT_STATUS_LABELS[status]);
-    const semantics = developmentOwnerSemantics(status);
-    if (semantics) {
-      expect(badge).toContain(`· ${semantics}`);
-    } else {
-      expect(badge).toBe(DEVELOPMENT_STATUS_LABELS[status]);
-    }
-  });
-
-  it('keeps stage copy owner-facing and READY/BLOCKED-aware', () => {
-    expect(developmentStageText('queued')).toBe('Задача принята и ждёт запуска.');
-    expect(developmentStageText('running')).toBe('Задача выполняется.');
-    expect(developmentStageText('awaiting_owner')).toContain('READY');
-    expect(developmentStageText('completed')).toContain('READY');
-    expect(developmentStageText('failed')).toContain('BLOCKED');
+  it.each(STATUSES)('keeps stage copy to one short line for %s', (status) => {
+    const stage = developmentStageText(status);
+    expect(stage.length).toBeLessThan(40);
+    expect(stage.includes('.')).toBe(false);
   });
 });
