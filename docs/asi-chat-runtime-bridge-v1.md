@@ -21,6 +21,7 @@ OpenAPI: [`asi-chat-runtime-bridge-v1.openapi.yaml`](asi-chat-runtime-bridge-v1.
 | `runtime_submit_task` | Идемпотентно поставить задачу в очередь. |
 | `runtime_get_task` | Получить состояние точной задачи. |
 | `runtime_get_result` | Получить только безопасный итог; до terminal state `result=null`. |
+| `runtime_list_tasks` | Получить bounded-список durable-задач одного conversation scope, newest first. |
 | `runtime_list_owner_gates` | Получить pending owner gates текущего server-side owner scope. |
 | `runtime_submit_owner_decision` | Передать явное решение владельца для точных task/gate/cycle. |
 

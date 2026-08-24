@@ -7,6 +7,7 @@ const getSession = vi.fn();
 const isSessionSecretConfigured = vi.fn(() => true);
 const submitDevelopmentTask = vi.fn();
 const buildDevelopmentTaskSnapshot = vi.fn();
+const listDevelopmentTasksForOwner = vi.fn();
 const submitDevelopmentOwnerDecision = vi.fn();
 const submitDevelopmentMergeRequest = vi.fn();
 const getDevelopmentReadiness = vi.fn();
@@ -35,6 +36,7 @@ vi.mock('@/lib/development/task-service', () => ({
   DevelopmentConsoleError,
   submitDevelopmentTask,
   buildDevelopmentTaskSnapshot,
+  listDevelopmentTasksForOwner,
   submitDevelopmentOwnerDecision,
   submitDevelopmentMergeRequest,
 }));
@@ -84,6 +86,8 @@ beforeEach(() => {
   isSessionSecretConfigured.mockReturnValue(true);
   submitDevelopmentTask.mockReset();
   buildDevelopmentTaskSnapshot.mockReset();
+  listDevelopmentTasksForOwner.mockReset();
+  listDevelopmentTasksForOwner.mockResolvedValue([]);
   submitDevelopmentOwnerDecision.mockReset();
   submitDevelopmentMergeRequest.mockReset();
   getDevelopmentReadiness.mockReset();
@@ -366,6 +370,31 @@ describe('development console task submit API', () => {
 });
 
 describe('development console repository preference', () => {
+  it('returns owner-scoped recent tasks on GET /tasks', async () => {
+    getSession.mockResolvedValue(ownerSession());
+    listDevelopmentTasksForOwner.mockResolvedValue([
+      {
+        taskId: '11111111-1111-4111-8111-111111111111',
+        title: 'Recent task',
+        status: 'completed',
+        repository: 'ASI-integration/asi-landing',
+        provider: 'ASI-integration/asi-landing',
+        createdAt: '2026-07-30T00:00:00.000Z',
+        updatedAt: '2026-07-30T00:01:00.000Z',
+        needsOwnerAttention: false,
+      },
+    ]);
+
+    const { GET } = await import('@/app/api/dashboard/development/tasks/route');
+    const res = await GET();
+    const json = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(json.ok).toBe(true);
+    expect(json.recentTasks).toHaveLength(1);
+    expect(listDevelopmentTasksForOwner).toHaveBeenCalledWith('user-1');
+  });
+
   it('uses an allowlisted remembered repository and safely falls back', async () => {
     const repositories = await import('@/lib/development/repositories');
     const options = repositories.listDevelopmentRepositories();

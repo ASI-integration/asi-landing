@@ -7,6 +7,10 @@ import {
   type RuntimeRunnerReadinessStatus,
 } from './bridge-runner-readiness';
 import {
+  RUNTIME_BRIDGE_LIST_TASKS_DEFAULT_LIMIT,
+  RUNTIME_BRIDGE_LIST_TASKS_MAX_LIMIT,
+} from './bridge-schema';
+import {
   isRuntimeBridgeSupabaseConfigured,
   runtimeBridgeSupabase,
 } from './bridge-supabase';
@@ -73,6 +77,11 @@ export type RuntimeBridgeTaskRecord = RuntimeBridgeTaskView & {
   idempotencyKey: string;
   requestHash: string;
   request: RuntimeBridgeTaskRequest;
+};
+
+export type RuntimeBridgeTaskListItem = RuntimeBridgeTaskView & {
+  title: string;
+  repository: string;
 };
 
 /** Bounded, non-mutating storage probe used by the owner readiness check. */
@@ -149,6 +158,45 @@ export async function getRuntimeBridgeTaskRecord(
   if (error) rpcError(error);
   if (!data) throw new RuntimeBridgeError('task_not_found', 404);
   return taskRecord(data as Row);
+}
+
+function runtimeBridgeTaskTitle(request: RuntimeBridgeTaskRequest | null | undefined): string {
+  const title = typeof request?.title === 'string' ? request.title.trim() : '';
+  return title || 'Задача разработки';
+}
+
+function normalizeRuntimeBridgeListLimit(limit: number | undefined): number {
+  const requested = typeof limit === 'number' && Number.isFinite(limit)
+    ? Math.trunc(limit)
+    : RUNTIME_BRIDGE_LIST_TASKS_DEFAULT_LIMIT;
+  return Math.min(
+    RUNTIME_BRIDGE_LIST_TASKS_MAX_LIMIT,
+    Math.max(1, requested),
+  );
+}
+
+export async function listRuntimeBridgeTasks(
+  clientId: string,
+  conversationId: string,
+  options?: { limit?: number },
+): Promise<RuntimeBridgeTaskListItem[]> {
+  const limit = normalizeRuntimeBridgeListLimit(options?.limit);
+  const { data, error } = await bridgeDb()
+    .from('asi_runtime_bridge_tasks')
+    .select('id,chatgpt_task_id,conversation_id,status,attempt_count,created_at,updated_at,request')
+    .eq('client_id', clientId)
+    .eq('conversation_id', conversationId)
+    .order('updated_at', { ascending: false })
+    .limit(limit);
+  if (error) rpcError(error);
+  return (data ?? []).map((row) => {
+    const request = row.request as RuntimeBridgeTaskRequest;
+    return {
+      ...taskView(row as Row),
+      title: runtimeBridgeTaskTitle(request),
+      repository: request?.repository ?? 'ASI-integration/asi-landing',
+    };
+  });
 }
 
 export async function getRuntimeBridgeTask(clientId: string, taskId: string): Promise<RuntimeBridgeTaskView> {

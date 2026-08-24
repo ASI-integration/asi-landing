@@ -24,6 +24,10 @@ import {
   ReadinessRefreshIndicator,
 } from '@/lib/development/readiness-status-ui';
 import { DevelopmentTaskCard } from '@/lib/development/task-status-ui';
+import {
+  DevelopmentTaskHistoryPanel,
+  type DevelopmentTaskHistoryItemModel,
+} from '@/lib/development/task-history-ui';
 
 type RepositoryOption = { id: string; label: string; fullName: string };
 
@@ -50,6 +54,7 @@ type SnapshotResponse = {
   mergeGate?: ControlCenterMergeGateView | null;
   gate?: ControlCenterMergeGateView | null;
   repositories?: RepositoryOption[];
+  recentTasks?: DevelopmentTaskHistoryItemModel[];
 };
 
 type ReadinessResponse = {
@@ -98,6 +103,7 @@ export default function DevelopmentConsoleClient() {
   const [readiness, setReadiness] = useState<DevelopmentReadinessSnapshot | null>(null);
   const [readinessBusy, setReadinessBusy] = useState(true);
   const [readinessError, setReadinessError] = useState<string | null>(null);
+  const [recentTasks, setRecentTasks] = useState<DevelopmentTaskHistoryItemModel[]>([]);
 
   const idempotencyKeyRef = useRef<string | null>(null);
   const activeTaskId = task?.taskId ?? taskIdFromUrl;
@@ -157,6 +163,16 @@ export default function DevelopmentConsoleClient() {
     }
   }, []);
 
+  const loadRecentTasks = useCallback(async () => {
+    const res = await fetch('/api/dashboard/development/tasks', {
+      cache: 'no-store',
+      credentials: 'include',
+    });
+    const data = await readResponseJson<SnapshotResponse>(res, { ok: false, recentTasks: [] });
+    if (!res.ok || !data.ok) return;
+    setRecentTasks(Array.isArray(data.recentTasks) ? data.recentTasks : []);
+  }, []);
+
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -179,6 +195,7 @@ export default function DevelopmentConsoleClient() {
         // Storage may be unavailable; the first server-allowlisted repository remains safe.
       }
       setRepositoryId(resolveRememberedDevelopmentRepositoryId(repos, rememberedRepository));
+      setRecentTasks(Array.isArray(data.recentTasks) ? data.recentTasks : []);
     })().catch(() => {
       if (!cancelled) setError('Не удалось инициализировать консоль.');
     });
@@ -237,6 +254,7 @@ export default function DevelopmentConsoleClient() {
       applySnapshot(data);
       idempotencyKeyRef.current = null;
       router.replace(`/dashboard/development?taskId=${encodeURIComponent(data.taskId)}`);
+      void loadRecentTasks();
     } catch {
       setError('Не удалось создать задачу.');
     } finally {
@@ -332,6 +350,11 @@ export default function DevelopmentConsoleClient() {
     }
   }
 
+  function selectRecentTask(taskId: string) {
+    router.replace(`/dashboard/development?taskId=${encodeURIComponent(taskId)}`);
+    void loadTask(taskId);
+  }
+
   const showForm = !task;
   const pendingGate = useMemo(
     () => pendingGates.find((gate) => gate.status === 'pending') ?? null,
@@ -369,6 +392,12 @@ export default function DevelopmentConsoleClient() {
         busy={readinessBusy}
         error={readinessError}
         onRetry={() => void loadReadiness()}
+      />
+
+      <DevelopmentTaskHistoryPanel
+        tasks={recentTasks}
+        activeTaskId={activeTaskId}
+        onSelect={selectRecentTask}
       />
 
       {showForm ? (

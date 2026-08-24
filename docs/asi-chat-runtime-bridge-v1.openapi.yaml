@@ -48,6 +48,21 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
         '500': { $ref: '#/components/responses/InternalError' }
         '503': { $ref: '#/components/responses/Unavailable' }
+  /api/internal/asi-runtime/bridge/runtime_list_tasks:
+    post:
+      operationId: runtime_list_tasks
+      summary: List durable tasks for one conversation scope.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ListTasks' }
+      responses:
+        '200': { $ref: '#/components/responses/ListTasksResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '500': { $ref: '#/components/responses/InternalError' }
+        '503': { $ref: '#/components/responses/Unavailable' }
   /api/internal/asi-runtime/bridge/runtime_list_owner_gates:
     post:
       operationId: runtime_list_owner_gates
@@ -125,6 +140,11 @@ components:
       content:
         application/json:
           schema: { $ref: '#/components/schemas/ListOwnerGatesSuccess' }
+    ListTasksResponse:
+      description: Durable tasks for one conversation scope, newest first.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ListTasksSuccess' }
     OwnerDecisionResponse:
       description: Idempotent owner-decision outcome.
       content:
@@ -236,6 +256,28 @@ components:
           allOf:
             - { $ref: '#/components/schemas/CleanText' }
             - { maxLength: 2000 }
+    ListTasks:
+      type: object
+      additionalProperties: false
+      required: [conversationId]
+      properties:
+        conversationId: { $ref: '#/components/schemas/StrictId' }
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 50
+    TaskListItem:
+      allOf:
+        - { $ref: '#/components/schemas/Task' }
+        - type: object
+          additionalProperties: false
+          required: [title, repository]
+          properties:
+            title:
+              allOf:
+                - { $ref: '#/components/schemas/CleanText' }
+                - { maxLength: 200 }
+            repository: { type: string, const: ASI-integration/asi-landing }
     Task:
       type: object
       additionalProperties: false
@@ -353,6 +395,17 @@ components:
         gates:
           type: array
           items: { $ref: '#/components/schemas/OwnerGate' }
+    ListTasksSuccess:
+      type: object
+      additionalProperties: false
+      required: [ok, operation, tasks]
+      properties:
+        ok: { type: boolean, const: true }
+        operation: { type: string, const: runtime_list_tasks }
+        tasks:
+          type: array
+          maxItems: 50
+          items: { $ref: '#/components/schemas/TaskListItem' }
     OwnerDecisionSuccess:
       type: object
       additionalProperties: false

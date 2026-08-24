@@ -12,6 +12,8 @@ export const RUNTIME_BRIDGE_MAX_INSTRUCTIONS = 100;
 export const RUNTIME_BRIDGE_MAX_INSTRUCTION_LINE_CHARS = 2000;
 /** Sum of instruction line lengths; sized so UTF-8 Cyrillic stays under the 64 KiB body cap. */
 export const RUNTIME_BRIDGE_MAX_INSTRUCTION_TOTAL_CHARS = 24 * 1024;
+export const RUNTIME_BRIDGE_LIST_TASKS_DEFAULT_LIMIT = 20;
+export const RUNTIME_BRIDGE_LIST_TASKS_MAX_LIMIT = 50;
 
 const SHA = /^[0-9a-f]{40}$/;
 const ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/;
@@ -177,6 +179,18 @@ export function parseRuntimeBridgeChatInput(value: unknown): RuntimeBridgeChatIn
     case 'runtime_get_task':
     case 'runtime_get_result':
       return exact(input, ['taskId']) && text(input.taskId, 36, UUID) ? value as RuntimeBridgeChatInput : null;
+    case 'runtime_list_tasks': {
+      const keys = Object.keys(input);
+      if (!keys.every((key) => ['conversationId', 'limit'].includes(key)) || !Object.hasOwn(input, 'conversationId')) {
+        return null;
+      }
+      if (!text(input.conversationId, 200, ID)) return null;
+      if (input.limit !== undefined) {
+        const limit = Number(input.limit);
+        if (!Number.isInteger(limit) || limit < 1 || limit > RUNTIME_BRIDGE_LIST_TASKS_MAX_LIMIT) return null;
+      }
+      return value as RuntimeBridgeChatInput;
+    }
     case 'runtime_list_owner_gates':
       return Object.keys(input).length === 0 ? value as RuntimeBridgeChatInput : null;
     case 'runtime_submit_owner_decision': {

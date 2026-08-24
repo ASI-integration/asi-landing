@@ -2,6 +2,7 @@ export const RUNTIME_BRIDGE_CHAT_OPERATIONS = [
   'runtime_submit_task',
   'runtime_get_task',
   'runtime_get_result',
+  'runtime_list_tasks',
   'runtime_list_owner_gates',
   'runtime_submit_owner_decision',
 ] as const;
@@ -92,6 +93,7 @@ export type RuntimeBridgeChatInput =
     }
   | { operation: 'runtime_get_task'; input: { taskId: string } }
   | { operation: 'runtime_get_result'; input: { taskId: string } }
+  | { operation: 'runtime_list_tasks'; input: { conversationId: string; limit?: number } }
   | { operation: 'runtime_list_owner_gates'; input: Record<string, never> }
   | {
       operation: 'runtime_submit_owner_decision';

@@ -4,6 +4,7 @@ import { listDevelopmentRepositories } from '@/lib/development/repositories';
 import { getDevelopmentReadiness } from '@/lib/development/readiness';
 import {
   DevelopmentConsoleError,
+  listDevelopmentTasksForOwner,
   submitDevelopmentTask,
 } from '@/lib/development/task-service';
 
@@ -21,6 +22,7 @@ export async function GET() {
   return json({
     ok: true,
     repositories: listDevelopmentRepositories(),
+    recentTasks: await listDevelopmentTasksForOwner(auth.session.userId!),
   });
 }
 

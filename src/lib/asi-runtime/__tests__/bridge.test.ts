@@ -21,6 +21,7 @@ const repository = vi.hoisted(() => ({
   getRuntimeBridgeTask: vi.fn(),
   getRuntimeBridgeResult: vi.fn(),
   listRuntimeBridgeOwnerGates: vi.fn(),
+  listRuntimeBridgeTasks: vi.fn(),
   submitRuntimeBridgeOwnerDecision: vi.fn(),
   runRuntimeBridgeRunnerOperation: vi.fn(),
 }));
@@ -140,6 +141,25 @@ describe('runtime bridge authentication and schemas', () => {
     expect(parseRuntimeBridgeChatInput({
       ...submit,
       input: { ...submit.input, task: { ...task, objective: 'Read C:\\Users\\Admin\\secret.txt' } },
+    })).toBeNull();
+  });
+
+  it('accepts bounded runtime_list_tasks input for one conversation scope', () => {
+    expect(parseRuntimeBridgeChatInput({
+      operation: 'runtime_list_tasks',
+      input: { conversationId: 'dev-console-owner-abc' },
+    })?.operation).toBe('runtime_list_tasks');
+    expect(parseRuntimeBridgeChatInput({
+      operation: 'runtime_list_tasks',
+      input: { conversationId: 'dev-console-owner-abc', limit: 10 },
+    })?.operation).toBe('runtime_list_tasks');
+    expect(parseRuntimeBridgeChatInput({
+      operation: 'runtime_list_tasks',
+      input: { conversationId: 'dev-console-owner-abc', limit: 0 },
+    })).toBeNull();
+    expect(parseRuntimeBridgeChatInput({
+      operation: 'runtime_list_tasks',
+      input: { conversationId: 'dev-console-owner-abc', ownerId: 'attacker' },
     })).toBeNull();
   });
 
@@ -701,7 +721,7 @@ describe('runtime bridge durable contracts', () => {
     }
   }, 20_000);
 
-  it('OpenAPI exposes exactly the five strict Chat operations and typed responses', () => {
+  it('OpenAPI exposes exactly the six strict Chat operations and typed responses', () => {
     const openapi = readFileSync('docs/asi-chat-runtime-bridge-v1.openapi.yaml', 'utf8');
     const operationIds = [...openapi.matchAll(/^\s+operationId:\s+(\S+)$/gm)].map((match) => match[1]);
     expect(operationIds).toEqual(RUNTIME_BRIDGE_CHAT_OPERATIONS);
@@ -710,10 +730,11 @@ describe('runtime bridge durable contracts', () => {
     expect(openapi).toContain("SubmitTaskResponse:");
     expect(openapi).toContain("GetTaskResponse:");
     expect(openapi).toContain("GetResultResponse:");
+    expect(openapi).toContain("ListTasksResponse:");
     expect(openapi).toContain("ListOwnerGatesResponse:");
     expect(openapi).toContain("OwnerDecisionResponse:");
-    expect(openapi.match(/'401':/g)).toHaveLength(5);
-    expect(openapi.match(/'503':/g)).toHaveLength(5);
+    expect(openapi.match(/'401':/g)).toHaveLength(6);
+    expect(openapi.match(/'503':/g)).toHaveLength(6);
   });
 
   it('auth and repository modules enforce the server-only boundary', () => {
