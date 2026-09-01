@@ -1,6 +1,6 @@
 import 'server-only';
 import { isExactGitSha } from './baseline-sha';
-import { safeAllowlistedPullRequestUrl } from './pr-url';
+import { resolveAllowlistedPullRequestIdentity } from './pr-url';
 import type {
   ControlCenterMergeDependencies,
   ControlCenterPullRequest,
@@ -38,27 +38,18 @@ export class GitHubControlCenterError extends Error {
   }
 }
 
-function parsePullRequestUrl(value: string): {
-  safeUrl: string;
-  repository: 'ASI-integration/asi-landing';
-  owner: 'ASI-integration';
-  repo: 'asi-landing';
-  pullRequestNumber: number;
-} {
-  const safeUrl = safeAllowlistedPullRequestUrl(value);
-  if (!safeUrl) throw new GitHubControlCenterError('pull_request_invalid', 400);
-  const parts = new URL(safeUrl).pathname.split('/').filter(Boolean);
-  const pullRequestNumber = Number(parts[3]);
-  if (!Number.isSafeInteger(pullRequestNumber) || pullRequestNumber < 1) {
+function parsePullRequestUrl(value: string) {
+  try {
+    return resolveAllowlistedPullRequestIdentity(value);
+  } catch {
     throw new GitHubControlCenterError('pull_request_invalid', 400);
   }
-  return {
-    safeUrl,
-    repository: 'ASI-integration/asi-landing',
-    owner: 'ASI-integration',
-    repo: 'asi-landing',
-    pullRequestNumber,
-  };
+}
+
+function requireGitHubToken(): string {
+  const token = String(process.env.GITHUB_TOKEN ?? '').trim();
+  if (!token) throw new GitHubControlCenterError('pull_request_unavailable', 502);
+  return token;
 }
 
 function headers(token?: string): HeadersInit {
@@ -119,11 +110,12 @@ export async function loadControlCenterPullRequest(
   fetchImpl: typeof fetch = fetch,
 ): Promise<ControlCenterPullRequest> {
   const parsed = parsePullRequestUrl(pullRequestUrl);
+  const token = requireGitHubToken();
   let response: Response;
   try {
     response = await fetchImpl(
       `https://api.github.com/repos/${parsed.owner}/${parsed.repo}/pulls/${parsed.pullRequestNumber}`,
-      { method: 'GET', headers: headers(), cache: 'no-store' },
+      { method: 'GET', headers: headers(token), cache: 'no-store' },
     );
   } catch {
     throw new GitHubControlCenterError('pull_request_unavailable', 502);
@@ -150,6 +142,7 @@ export async function loadControlCenterPullRequest(
 async function loadBodies(
   url: string,
   sourcePrefix: string,
+  token: string,
   fetchImpl: typeof fetch,
 ): Promise<OwnerDecisionBusRecord[]> {
   const records: OwnerDecisionBusRecord[] = [];
@@ -158,7 +151,7 @@ async function loadBodies(
     try {
       response = await fetchImpl(
         `${url}${url.includes('?') ? '&' : '?'}page=${page}`,
-        { method: 'GET', headers: headers(), cache: 'no-store' },
+        { method: 'GET', headers: headers(token), cache: 'no-store' },
       );
     } catch {
       throw new GitHubControlCenterError('owner_gate_unavailable', 502);
@@ -192,11 +185,12 @@ export async function loadOwnerDecisionBusRecords(
   fetchImpl: typeof fetch = fetch,
 ): Promise<OwnerDecisionBusRecord[]> {
   const parsed = parsePullRequestUrl(pullRequest.pullRequestUrl);
+  const token = requireGitHubToken();
   const root = `https://api.github.com/repos/${parsed.owner}/${parsed.repo}`;
   const [busComments, pullRequestComments, reviews] = await Promise.all([
-    loadBodies(`${root}/issues/${OWNER_DECISION_BUS_ISSUE_NUMBER}/comments?per_page=100`, 'owner-bus', fetchImpl),
-    loadBodies(`${root}/issues/${parsed.pullRequestNumber}/comments?per_page=100`, 'pr-comment', fetchImpl),
-    loadBodies(`${root}/pulls/${parsed.pullRequestNumber}/reviews?per_page=100`, 'pr-review', fetchImpl),
+    loadBodies(`${root}/issues/${OWNER_DECISION_BUS_ISSUE_NUMBER}/comments?per_page=100`, 'owner-bus', token, fetchImpl),
+    loadBodies(`${root}/issues/${parsed.pullRequestNumber}/comments?per_page=100`, 'pr-comment', token, fetchImpl),
+    loadBodies(`${root}/pulls/${parsed.pullRequestNumber}/reviews?per_page=100`, 'pr-review', token, fetchImpl),
   ]);
   return [...busComments, ...pullRequestComments, ...reviews];
 }

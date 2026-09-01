@@ -1161,3 +1161,149 @@ describe('Control Center exact-SHA owner merge gate', () => {
     });
   });
 });
+
+describe('task repository ↔ pull request identity binding', () => {
+  const ownerUserId = 'owner-a';
+  const landingSha = 'a'.repeat(40);
+  const runtimeSha = 'b'.repeat(40);
+  const landingPr = 'https://github.com/ASI-integration/asi-landing/pull/10';
+  const runtimePr = 'https://github.com/ASI-integration/asi-os-runtime/pull/20';
+
+  function completedResult(pullRequestUrl: string, sha: string) {
+    return {
+      schemaVersion: 'asi.runtime.result.v1' as const,
+      status: 'completed' as const,
+      summary: 'Done',
+      changedFiles: [],
+      checks: [],
+      artifacts: [
+        { type: 'commit' as const, value: sha },
+        { type: 'pull_request' as const, value: pullRequestUrl },
+      ],
+      blockers: [],
+    };
+  }
+
+  function seedCompletedTask(repository: string, pullRequestUrl: string, sha: string) {
+    const bridge = createCompatibleBridge();
+    const taskId = randomUUID();
+    bridge.seedTask({
+      taskId,
+      chatgptTaskId: chatgptTaskIdFor(ownerUserId, `repo-bind-${repository}`),
+      conversationId: conversationIdFor(ownerUserId),
+      status: 'completed',
+      attemptCount: 1,
+      createdAt: '2026-07-30T00:00:00.000Z',
+      updatedAt: '2026-07-30T00:00:00.000Z',
+      idempotencyKey: `repo-bind-${repository}`,
+      requestHash: 'd'.repeat(64),
+      request: {
+        title: `Task for ${repository}`,
+        objective: 'Objective',
+        instructions: ['step'],
+        repository: repository as RuntimeBridgeTaskRequest['repository'],
+        baselineSha: sha,
+      },
+    });
+    getRuntimeBridgeResult.mockImplementation(async (_clientId: string, id: string) => {
+      if (id !== taskId) throw new RuntimeBridgeError('task_not_found', 404);
+      return { taskId, status: 'completed', result: completedResult(pullRequestUrl, sha) };
+    });
+    return taskId;
+  }
+
+  it('J: landing task + landing PR allows the owner merge gate path', async () => {
+    const taskId = seedCompletedTask('ASI-integration/asi-landing', landingPr, landingSha);
+    loadControlCenterPullRequest.mockResolvedValue({
+      repository: 'ASI-integration/asi-landing',
+      pullRequestNumber: 10,
+      pullRequestUrl: landingPr,
+      headSha: landingSha,
+      merged: false,
+      mergeCommitSha: null,
+    });
+    loadOwnerDecisionBusRecords.mockResolvedValue([]);
+
+    const { buildDevelopmentTaskSnapshot } = await import('../task-service');
+    const snapshot = await buildDevelopmentTaskSnapshot(taskId, ownerUserId);
+    expect(snapshot.mergeGate).toMatchObject({
+      mergeState: 'blocked',
+      blocker: { code: 'owner_gate_pending' },
+      repository: 'ASI-integration/asi-landing',
+    });
+    expect(loadControlCenterPullRequest).toHaveBeenCalledWith(landingPr);
+    expect(loadOwnerDecisionBusRecords).toHaveBeenCalled();
+  });
+
+  it('K: runtime task + runtime PR allows the owner merge gate path', async () => {
+    const taskId = seedCompletedTask('ASI-integration/asi-os-runtime', runtimePr, runtimeSha);
+    loadControlCenterPullRequest.mockResolvedValue({
+      repository: 'ASI-integration/asi-os-runtime',
+      pullRequestNumber: 20,
+      pullRequestUrl: runtimePr,
+      headSha: runtimeSha,
+      merged: false,
+      mergeCommitSha: null,
+    });
+    loadOwnerDecisionBusRecords.mockResolvedValue([]);
+
+    const { buildDevelopmentTaskSnapshot } = await import('../task-service');
+    const snapshot = await buildDevelopmentTaskSnapshot(taskId, ownerUserId);
+    expect(snapshot.mergeGate).toMatchObject({
+      mergeState: 'blocked',
+      blocker: { code: 'owner_gate_pending' },
+      repository: 'ASI-integration/asi-os-runtime',
+    });
+    expect(loadControlCenterPullRequest).toHaveBeenCalledWith(runtimePr);
+    expect(loadOwnerDecisionBusRecords).toHaveBeenCalled();
+  });
+
+  it('L: landing task + runtime PR is blocked without GitHub reads', async () => {
+    const taskId = seedCompletedTask('ASI-integration/asi-landing', runtimePr, runtimeSha);
+    const { buildDevelopmentTaskSnapshot } = await import('../task-service');
+    const snapshot = await buildDevelopmentTaskSnapshot(taskId, ownerUserId);
+    expect(snapshot.mergeGate).toMatchObject({
+      mergeState: 'blocked',
+      blocker: { code: 'task_repository_mismatch' },
+      repository: 'ASI-integration/asi-os-runtime',
+    });
+    expect(loadControlCenterPullRequest).not.toHaveBeenCalled();
+    expect(loadOwnerDecisionBusRecords).not.toHaveBeenCalled();
+  });
+
+  it('M: runtime task + landing PR is blocked without GitHub reads', async () => {
+    const taskId = seedCompletedTask('ASI-integration/asi-os-runtime', landingPr, landingSha);
+    const { buildDevelopmentTaskSnapshot } = await import('../task-service');
+    const snapshot = await buildDevelopmentTaskSnapshot(taskId, ownerUserId);
+    expect(snapshot.mergeGate).toMatchObject({
+      mergeState: 'blocked',
+      blocker: { code: 'task_repository_mismatch' },
+      repository: 'ASI-integration/asi-landing',
+    });
+    expect(loadControlCenterPullRequest).not.toHaveBeenCalled();
+    expect(loadOwnerDecisionBusRecords).not.toHaveBeenCalled();
+  });
+
+  it('N: missing or unknown task repository is blocked', async () => {
+    const taskId = seedCompletedTask('', landingPr, landingSha);
+    const { buildDevelopmentTaskSnapshot } = await import('../task-service');
+    const snapshot = await buildDevelopmentTaskSnapshot(taskId, ownerUserId);
+    expect(snapshot.mergeGate?.blocker?.code).toBe('task_repository_mismatch');
+    expect(loadControlCenterPullRequest).not.toHaveBeenCalled();
+  });
+
+  it('P: merge provider is never called on repository mismatch', async () => {
+    const taskId = seedCompletedTask('ASI-integration/asi-landing', runtimePr, runtimeSha);
+    const { submitDevelopmentMergeRequest } = await import('../task-service');
+    const outcome = await submitDevelopmentMergeRequest({
+      ownerUserId,
+      taskId,
+      pullRequestUrl: runtimePr,
+      expectedHeadSha: runtimeSha,
+    });
+    expect(outcome.merged).toBe(false);
+    expect(outcome.gate.blocker?.code).toBe('task_repository_mismatch');
+    expect(loadControlCenterPullRequest).not.toHaveBeenCalled();
+    expect(mergeControlCenterPullRequest).not.toHaveBeenCalled();
+  });
+});

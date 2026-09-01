@@ -3,6 +3,14 @@ import type { DevelopmentRepositoryDefinition } from './repositories';
 
 const SHA = /^[0-9a-f]{40}$/;
 
+function requireGitHubToken(): string {
+  const token = String(process.env.GITHUB_TOKEN ?? '').trim();
+  if (!token) {
+    throw new BaselineShaError('baseline_sha_unavailable');
+  }
+  return token;
+}
+
 export class BaselineShaError extends Error {
   constructor(public readonly code: 'baseline_sha_unavailable' | 'baseline_sha_invalid') {
     super(code);
@@ -25,6 +33,7 @@ export async function resolveAllowlistedBaselineSha(
   const repo = repository.githubRepo;
   const branch = repository.defaultBranch;
   const url = `https://api.github.com/repos/${owner}/${repo}/commits/${encodeURIComponent(branch)}`;
+  const token = requireGitHubToken();
 
   let response: Response;
   try {
@@ -32,6 +41,7 @@ export async function resolveAllowlistedBaselineSha(
       method: 'GET',
       headers: {
         Accept: 'application/vnd.github+json',
+        Authorization: `Bearer ${token}`,
         'User-Agent': 'asi-owner-development-console',
         'X-GitHub-Api-Version': '2022-11-28',
       },
