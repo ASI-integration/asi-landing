@@ -133,14 +133,18 @@ export default function DevelopmentConsoleClient() {
   }, [applySnapshot]);
 
   const loadReadiness = useCallback(async () => {
+    if (!repositoryId) return;
     setReadinessBusy(true);
     setReadinessError(null);
     // Keep the last successful snapshot visible while a refresh is in flight.
     try {
-      const res = await fetch('/api/dashboard/development/readiness', {
+      const res = await fetch(
+        `/api/dashboard/development/readiness?repositoryId=${encodeURIComponent(repositoryId)}`,
+        {
         cache: 'no-store',
         credentials: 'include',
-      });
+      },
+      );
       const data = await readResponseJson<ReadinessResponse>(res, {
         ok: false,
         message: 'Не удалось проверить готовность.',
@@ -155,7 +159,7 @@ export default function DevelopmentConsoleClient() {
     } finally {
       setReadinessBusy(false);
     }
-  }, []);
+  }, [repositoryId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -188,8 +192,9 @@ export default function DevelopmentConsoleClient() {
   }, []);
 
   useEffect(() => {
+    if (!repositoryId) return;
     void loadReadiness();
-  }, [loadReadiness]);
+  }, [repositoryId, loadReadiness]);
 
   useEffect(() => {
     if (!taskIdFromUrl) return;

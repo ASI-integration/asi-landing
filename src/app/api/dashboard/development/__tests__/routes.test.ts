@@ -276,6 +276,44 @@ describe('development console task submit API', () => {
     expect(submitDevelopmentTask).not.toHaveBeenCalled();
   });
 
+  it('H: POST task submission for asi-os-runtime checks readiness for the same repository', async () => {
+    getSession.mockResolvedValue(ownerSession());
+    submitDevelopmentTask.mockResolvedValue({
+      deduplicated: false,
+      snapshot: {
+        task: {
+          taskId: '22222222-2222-4222-8222-222222222222',
+          chatgptTaskId: 'dev-console-task-2',
+          conversationId: 'dev-console-owner-1',
+          status: 'queued',
+          attemptCount: 0,
+          createdAt: '2026-08-01T00:00:00.000Z',
+          updatedAt: '2026-08-01T00:00:00.000Z',
+          repository: 'ASI-integration/asi-os-runtime',
+        },
+        result: null,
+        pendingGates: [],
+      },
+    });
+
+    const { POST } = await import('@/app/api/dashboard/development/tasks/route');
+    const res = await POST(new Request('http://localhost/api/dashboard/development/tasks', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        repositoryId: 'asi-os-runtime',
+        prompt: 'Обнови runner readiness contract.',
+        idempotencyKey: 'dev-console-idem-runtime-repo',
+      }),
+    }));
+
+    expect(res.status).toBe(200);
+    expect(getDevelopmentReadiness).toHaveBeenCalledWith({ repositoryId: 'asi-os-runtime' });
+    expect(submitDevelopmentTask).toHaveBeenCalledWith(expect.objectContaining({
+      repositoryId: 'asi-os-runtime',
+    }));
+  });
+
   it('submits one required natural-language prompt without advanced fields', async () => {
     getSession.mockResolvedValue(ownerSession());
     submitDevelopmentTask.mockResolvedValue({
@@ -308,6 +346,7 @@ describe('development console task submit API', () => {
     }));
 
     expect(res.status).toBe(200);
+    expect(getDevelopmentReadiness).toHaveBeenCalledWith({ repositoryId: 'asi-landing' });
     expect(submitDevelopmentTask).toHaveBeenCalledWith(expect.objectContaining({
       prompt: 'Исправь ошибку, из-за которой задача падает при рассинхроне baseline.',
       title: undefined,

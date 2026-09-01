@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { requireDevelopmentOwnerSession } from '@/lib/development/api-auth';
-import { listDevelopmentRepositories } from '@/lib/development/repositories';
+import { listDevelopmentRepositories, resolveDevelopmentRepository } from '@/lib/development/repositories';
 import { getDevelopmentReadiness } from '@/lib/development/readiness';
 import {
   DevelopmentConsoleError,
@@ -40,9 +40,19 @@ export async function POST(request: Request) {
   }
 
   const payload = body as Record<string, unknown>;
+  const repository = resolveDevelopmentRepository(
+    typeof payload.repositoryId === 'string' ? payload.repositoryId : null,
+  );
+  if (!repository) {
+    return json({
+      ok: false,
+      code: 'repository_not_allowed',
+      message: 'Репозиторий не разрешён для консоли разработки.',
+    }, 400);
+  }
 
   try {
-    const readiness = await getDevelopmentReadiness();
+    const readiness = await getDevelopmentReadiness({ repositoryId: repository.id });
     if (!readiness.canLaunch) {
       return json({
         ok: false,
