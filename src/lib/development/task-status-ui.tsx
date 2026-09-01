@@ -4,6 +4,7 @@ import type {
   RuntimeBridgeTaskStatus,
 } from '@/lib/asi-runtime/bridge-types';
 import { safeAllowlistedPullRequestUrl } from '@/lib/development/pr-url';
+import { TASK_OUTCOME_HEADLINE } from '@/lib/development/development-console-presentation';
 import { DEVELOPMENT_STATUS_LABELS, developmentStageText } from '@/lib/development/status-labels';
 
 export const DEVELOPMENT_STATUS_COLOR_CLASS = {
@@ -113,6 +114,16 @@ export function DevelopmentTaskCard({ task }: DevelopmentTaskCardProps) {
   const pullRequestUrl = pullRequestUrlFromResult(task.result);
   const commitSha = commitShaFromResult(task.result);
   const stage = developmentStageText(task.status);
+  const outcomeHeadline =
+    task.status === 'completed' || task.status === 'failed'
+      ? TASK_OUTCOME_HEADLINE[task.status]
+      : null;
+  const outcomeClass =
+    task.status === 'completed'
+      ? 'border-emerald-300 bg-emerald-50 text-emerald-800'
+      : task.status === 'failed'
+        ? 'border-red-300 bg-red-50 text-red-800'
+        : '';
 
   return (
     <section
@@ -120,6 +131,18 @@ export function DevelopmentTaskCard({ task }: DevelopmentTaskCardProps) {
       className="space-y-3 rounded-xl border border-slate-200 bg-white p-5 shadow-sm"
       data-development-task-card="true"
     >
+      {outcomeHeadline ? (
+        <div
+          className={`rounded-xl border px-4 py-4 ${outcomeClass}`}
+          data-task-outcome-hero={task.status}
+        >
+          <p className="text-3xl font-black tracking-wide sm:text-4xl">{outcomeHeadline}</p>
+          <p className="mt-1 text-sm font-medium text-slate-800" data-task-summary="true">
+            {summary}
+          </p>
+        </div>
+      ) : null}
+
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0 space-y-2">
           <h2
@@ -129,32 +152,46 @@ export function DevelopmentTaskCard({ task }: DevelopmentTaskCardProps) {
           >
             {task.title}
           </h2>
-          <TaskStatusBadge status={task.status} />
+          {!outcomeHeadline ? <TaskStatusBadge status={task.status} /> : null}
         </div>
         <p className="text-xs text-slate-500" data-task-updated-at="true">
           Обновлено: {formatDevelopmentTimestamp(task.updatedAt)}
         </p>
       </div>
 
-      <p className="text-sm text-slate-700" data-task-stage="true">
-        {stage}
-      </p>
+      {!outcomeHeadline ? (
+        <>
+          <p className="text-sm text-slate-700" data-task-stage="true">
+            {stage}
+          </p>
+          <p className="text-sm text-slate-800" data-task-summary="true">
+            {summary}
+          </p>
+        </>
+      ) : (
+        <p className="text-sm text-slate-700" data-task-stage="true">
+          {stage}
+        </p>
+      )}
 
-      <p className="text-sm text-slate-800" data-task-summary="true">
-        {summary}
-      </p>
-
-      {pullRequestUrl ? (
-        <a
-          href={pullRequestUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="inline-flex rounded-lg bg-slate-900 px-3 py-2 text-sm font-medium text-white hover:bg-slate-800"
-          data-task-pr-link="true"
-        >
-          Открыть PR
-        </a>
-      ) : null}
+      <div className="flex flex-wrap items-center gap-3">
+        {pullRequestUrl ? (
+          <a
+            href={pullRequestUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex rounded-lg bg-slate-900 px-3 py-2 text-sm font-medium text-white hover:bg-slate-800"
+            data-task-pr-link="true"
+          >
+            Открыть PR
+          </a>
+        ) : null}
+        {commitSha ? (
+          <p className="text-sm text-slate-700" data-task-commit="true">
+            Commit: <span className="font-mono text-xs">{commitSha.slice(0, 7)}</span>
+          </p>
+        ) : null}
+      </div>
 
       <details className="rounded-lg border border-slate-200 bg-slate-50/70 px-3 py-2">
         <summary className="cursor-pointer text-sm font-medium text-slate-800">Подробнее</summary>
