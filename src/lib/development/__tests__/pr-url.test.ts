@@ -6,6 +6,9 @@ describe('safeAllowlistedPullRequestUrl', () => {
     expect(safeAllowlistedPullRequestUrl('https://github.com/ASI-integration/asi-landing/pull/116')).toBe(
       'https://github.com/ASI-integration/asi-landing/pull/116',
     );
+    expect(safeAllowlistedPullRequestUrl('https://github.com/ASI-integration/asi-os-runtime/pull/42')).toBe(
+      'https://github.com/ASI-integration/asi-os-runtime/pull/42',
+    );
   });
 
   it('rejects an invalid URL', () => {

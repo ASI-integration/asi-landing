@@ -9,6 +9,7 @@ import type {
 import { OWNER_DECISION_BUS_ISSUE_NUMBER } from './owner-merge-gate';
 import {
   DEVELOPMENT_REPOSITORY_ALLOWLIST,
+  resolveAllowlistedRepositoryFromPullRequestUrl,
   type DevelopmentRepositoryDefinition,
 } from './repositories';
 
@@ -40,13 +41,15 @@ export class GitHubControlCenterError extends Error {
 
 function parsePullRequestUrl(value: string): {
   safeUrl: string;
-  repository: 'ASI-integration/asi-landing';
-  owner: 'ASI-integration';
-  repo: 'asi-landing';
+  repository: DevelopmentRepositoryDefinition['fullName'];
+  owner: DevelopmentRepositoryDefinition['githubOwner'];
+  repo: DevelopmentRepositoryDefinition['githubRepo'];
   pullRequestNumber: number;
 } {
   const safeUrl = safeAllowlistedPullRequestUrl(value);
   if (!safeUrl) throw new GitHubControlCenterError('pull_request_invalid', 400);
+  const allowlisted = resolveAllowlistedRepositoryFromPullRequestUrl(safeUrl);
+  if (!allowlisted) throw new GitHubControlCenterError('pull_request_invalid', 400);
   const parts = new URL(safeUrl).pathname.split('/').filter(Boolean);
   const pullRequestNumber = Number(parts[3]);
   if (!Number.isSafeInteger(pullRequestNumber) || pullRequestNumber < 1) {
@@ -54,11 +57,17 @@ function parsePullRequestUrl(value: string): {
   }
   return {
     safeUrl,
-    repository: 'ASI-integration/asi-landing',
-    owner: 'ASI-integration',
-    repo: 'asi-landing',
+    repository: allowlisted.fullName,
+    owner: allowlisted.githubOwner,
+    repo: allowlisted.githubRepo,
     pullRequestNumber,
   };
+}
+
+function requireGitHubToken(): string {
+  const token = String(process.env.GITHUB_TOKEN ?? '').trim();
+  if (!token) throw new GitHubControlCenterError('pull_request_unavailable', 502);
+  return token;
 }
 
 function headers(token?: string): HeadersInit {
@@ -119,11 +128,12 @@ export async function loadControlCenterPullRequest(
   fetchImpl: typeof fetch = fetch,
 ): Promise<ControlCenterPullRequest> {
   const parsed = parsePullRequestUrl(pullRequestUrl);
+  const token = requireGitHubToken();
   let response: Response;
   try {
     response = await fetchImpl(
       `https://api.github.com/repos/${parsed.owner}/${parsed.repo}/pulls/${parsed.pullRequestNumber}`,
-      { method: 'GET', headers: headers(), cache: 'no-store' },
+      { method: 'GET', headers: headers(token), cache: 'no-store' },
     );
   } catch {
     throw new GitHubControlCenterError('pull_request_unavailable', 502);
@@ -151,6 +161,7 @@ async function loadBodies(
   url: string,
   sourcePrefix: string,
   fetchImpl: typeof fetch,
+  token: string,
 ): Promise<OwnerDecisionBusRecord[]> {
   const records: OwnerDecisionBusRecord[] = [];
   for (let page = 1; page <= 20; page += 1) {
@@ -158,7 +169,7 @@ async function loadBodies(
     try {
       response = await fetchImpl(
         `${url}${url.includes('?') ? '&' : '?'}page=${page}`,
-        { method: 'GET', headers: headers(), cache: 'no-store' },
+        { method: 'GET', headers: headers(token), cache: 'no-store' },
       );
     } catch {
       throw new GitHubControlCenterError('owner_gate_unavailable', 502);
@@ -192,11 +203,12 @@ export async function loadOwnerDecisionBusRecords(
   fetchImpl: typeof fetch = fetch,
 ): Promise<OwnerDecisionBusRecord[]> {
   const parsed = parsePullRequestUrl(pullRequest.pullRequestUrl);
+  const token = requireGitHubToken();
   const root = `https://api.github.com/repos/${parsed.owner}/${parsed.repo}`;
   const [busComments, pullRequestComments, reviews] = await Promise.all([
-    loadBodies(`${root}/issues/${OWNER_DECISION_BUS_ISSUE_NUMBER}/comments?per_page=100`, 'owner-bus', fetchImpl),
-    loadBodies(`${root}/issues/${parsed.pullRequestNumber}/comments?per_page=100`, 'pr-comment', fetchImpl),
-    loadBodies(`${root}/pulls/${parsed.pullRequestNumber}/reviews?per_page=100`, 'pr-review', fetchImpl),
+    loadBodies(`${root}/issues/${OWNER_DECISION_BUS_ISSUE_NUMBER}/comments?per_page=100`, 'owner-bus', fetchImpl, token),
+    loadBodies(`${root}/issues/${parsed.pullRequestNumber}/comments?per_page=100`, 'pr-comment', fetchImpl, token),
+    loadBodies(`${root}/pulls/${parsed.pullRequestNumber}/reviews?per_page=100`, 'pr-review', fetchImpl, token),
   ]);
   return [...busComments, ...pullRequestComments, ...reviews];
 }

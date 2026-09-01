@@ -69,3 +69,18 @@ export function resolveDevelopmentRepository(
 export function isAllowlistedDevelopmentRepositoryFullName(fullName: string): boolean {
   return DEVELOPMENT_REPOSITORY_ALLOWLIST.some((repo) => repo.fullName === fullName);
 }
+
+/** Re-resolve repository identity from a canonical allowlisted PR URL. */
+export function resolveAllowlistedRepositoryFromPullRequestUrl(
+  safePullRequestUrl: string,
+): DevelopmentRepositoryDefinition | null {
+  try {
+    const parts = new URL(safePullRequestUrl).pathname.split('/').filter(Boolean);
+    if (parts.length < 4 || parts[2] !== 'pull') return null;
+    return DEVELOPMENT_REPOSITORY_ALLOWLIST.find(
+      (entry) => entry.githubOwner === parts[0] && entry.githubRepo === parts[1],
+    ) ?? null;
+  } catch {
+    return null;
+  }
+}

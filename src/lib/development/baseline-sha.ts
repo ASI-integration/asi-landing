@@ -21,6 +21,11 @@ export async function resolveAllowlistedBaselineSha(
   repository: DevelopmentRepositoryDefinition,
   fetchImpl: typeof fetch = fetch,
 ): Promise<string> {
+  const token = String(process.env.GITHUB_TOKEN ?? '').trim();
+  if (!token) {
+    throw new BaselineShaError('baseline_sha_unavailable');
+  }
+
   const owner = repository.githubOwner;
   const repo = repository.githubRepo;
   const branch = repository.defaultBranch;
@@ -32,6 +37,7 @@ export async function resolveAllowlistedBaselineSha(
       method: 'GET',
       headers: {
         Accept: 'application/vnd.github+json',
+        Authorization: `Bearer ${token}`,
         'User-Agent': 'asi-owner-development-console',
         'X-GitHub-Api-Version': '2022-11-28',
       },

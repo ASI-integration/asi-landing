@@ -44,7 +44,11 @@ import {
   type ControlCenterPullRequest,
 } from './owner-merge-gate';
 import { safeAllowlistedPullRequestUrl } from './pr-url';
-import { resolveDevelopmentRepository } from './repositories';
+import {
+  isAllowlistedDevelopmentRepositoryFullName,
+  resolveAllowlistedRepositoryFromPullRequestUrl,
+  resolveDevelopmentRepository,
+} from './repositories';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const OWNER_PROMPT_MAX_CHARS = 4000;
@@ -293,11 +297,13 @@ function unavailablePullRequest(
   pullRequestUrl: string,
   expectedSha: string,
 ): ControlCenterPullRequest {
-  const parts = new URL(pullRequestUrl).pathname.split('/').filter(Boolean);
+  const safeUrl = safeAllowlistedPullRequestUrl(pullRequestUrl) ?? pullRequestUrl;
+  const allowlisted = resolveAllowlistedRepositoryFromPullRequestUrl(safeUrl);
+  const parts = new URL(safeUrl).pathname.split('/').filter(Boolean);
   return {
-    repository: 'ASI-integration/asi-landing',
+    repository: allowlisted?.fullName ?? 'ASI-integration/asi-landing',
     pullRequestNumber: Number(parts[3]),
-    pullRequestUrl,
+    pullRequestUrl: safeUrl,
     headSha: expectedSha,
     merged: false,
     mergeCommitSha: null,
@@ -365,7 +371,10 @@ export async function buildDevelopmentTaskSnapshot(
         attemptCount: record.attemptCount,
         createdAt: record.createdAt,
         updatedAt: record.updatedAt,
-        repository: 'ASI-integration/asi-landing',
+        repository: record.request?.repository
+          && isAllowlistedDevelopmentRepositoryFullName(record.request.repository)
+          ? record.request.repository
+          : 'ASI-integration/asi-landing',
         title: developmentTaskTitle(record.request),
       },
       result,
