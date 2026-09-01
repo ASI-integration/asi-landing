@@ -28,6 +28,13 @@ const runtimePr99Fixture = JSON.parse(
   ),
 ) as RuntimeRunnerReadinessRecordV2;
 
+const runtimePr100Fixture = JSON.parse(
+  readFileSync(
+    path.join(__dirname, '../../asi-runtime/__fixtures__/runner-readiness-v2-runtime-pr100.json'),
+    'utf8',
+  ),
+) as RuntimeRunnerReadinessRecordV2;
+
 function v1Record(baselineSha: string): RuntimeRunnerReadinessRecordV1 {
   return {
     schemaVersion: 'asi.runtime.runner-readiness.v1',
@@ -284,6 +291,95 @@ describe('runner-readiness.v2 bridge parsing', () => {
     });
     expect(parsed).toBeNull();
   });
+
+  it('accepts blocked runtime evidence with empty expectedOrigin when origin is missing', () => {
+    const parsed = parseRuntimeBridgeRunnerInput({
+      operation: 'runner_publish_readiness',
+      input: v2Record([
+        repositoryEvidence('landing', 'ASI-integration/asi-landing', landingSha),
+        repositoryEvidence('runtime', 'ASI-integration/asi-os-runtime', runtimeSha, {
+          expectedOrigin: '',
+          observedBaselineSha: null,
+          checkoutReady: false,
+          originReady: false,
+          baselineReady: false,
+          recoveryReady: false,
+          blockers: ['runtime_repository_origin_missing'],
+        }),
+      ]),
+    });
+    expect(parsed?.operation).toBe('runner_publish_readiness');
+  });
+
+  it('rejects empty expectedOrigin without runtime_repository_origin_missing blocker', () => {
+    const parsed = parseRuntimeBridgeRunnerInput({
+      operation: 'runner_publish_readiness',
+      input: v2Record([
+        repositoryEvidence('landing', 'ASI-integration/asi-landing', landingSha),
+        repositoryEvidence('runtime', 'ASI-integration/asi-os-runtime', runtimeSha, {
+          expectedOrigin: '',
+          observedBaselineSha: null,
+          checkoutReady: false,
+          originReady: false,
+          baselineReady: false,
+          recoveryReady: false,
+          blockers: ['runtime_checkout_probe_failed'],
+        }),
+      ]),
+    });
+    expect(parsed).toBeNull();
+  });
+
+  it('rejects empty expectedOrigin when originReady is true', () => {
+    const parsed = parseRuntimeBridgeRunnerInput({
+      operation: 'runner_publish_readiness',
+      input: v2Record([
+        repositoryEvidence('landing', 'ASI-integration/asi-landing', landingSha),
+        repositoryEvidence('runtime', 'ASI-integration/asi-os-runtime', runtimeSha, {
+          expectedOrigin: '',
+          observedBaselineSha: null,
+          checkoutReady: false,
+          originReady: true,
+          baselineReady: false,
+          recoveryReady: false,
+          blockers: ['runtime_repository_origin_missing'],
+        }),
+      ]),
+    });
+    expect(parsed).toBeNull();
+  });
+
+  it('rejects empty expectedOrigin when any readiness flag is true', () => {
+    const parsed = parseRuntimeBridgeRunnerInput({
+      operation: 'runner_publish_readiness',
+      input: v2Record([
+        repositoryEvidence('landing', 'ASI-integration/asi-landing', landingSha),
+        repositoryEvidence('runtime', 'ASI-integration/asi-os-runtime', runtimeSha, {
+          expectedOrigin: '',
+          observedBaselineSha: null,
+          checkoutReady: true,
+          originReady: false,
+          baselineReady: false,
+          recoveryReady: false,
+          blockers: ['runtime_repository_origin_missing'],
+        }),
+      ]),
+    });
+    expect(parsed).toBeNull();
+  });
+
+  it('rejects malformed non-empty expectedOrigin', () => {
+    const parsed = parseRuntimeBridgeRunnerInput({
+      operation: 'runner_publish_readiness',
+      input: v2Record([
+        repositoryEvidence('landing', 'ASI-integration/asi-landing', landingSha),
+        repositoryEvidence('runtime', 'ASI-integration/asi-os-runtime', runtimeSha, {
+          expectedOrigin: 'https://github.com/other-org/asi-os-runtime.git',
+        }),
+      ]),
+    });
+    expect(parsed).toBeNull();
+  });
 });
 
 describe('runner-readiness.v2 Runtime PR #99 cross-contract fixture', () => {
@@ -320,5 +416,37 @@ describe('runner-readiness.v2 Runtime PR #99 cross-contract fixture', () => {
     });
     expect(runtimeReadiness.canLaunch).toBe(true);
     expect(runtimeReadiness.runnerEvidence?.observedBaselineSha).toBe(runtimeSha);
+  });
+});
+
+describe('runner-readiness.v2 Runtime PR #100 missing-origin cross-contract fixture', () => {
+  it('parses the exact Runtime producer payload with blocked missing runtime origin', () => {
+    const parsed = parseRuntimeBridgeRunnerInput({
+      operation: 'runner_publish_readiness',
+      input: runtimePr100Fixture,
+    });
+    expect(parsed?.operation).toBe('runner_publish_readiness');
+    if (!parsed || parsed.operation !== 'runner_publish_readiness') return;
+    const record = parsed.input;
+    if (record.schemaVersion !== 'asi.runtime.runner-readiness.v2') return;
+    expect(record.repositories[1].expectedOrigin).toBe('');
+    expect(record.repositories[1].blockers).toEqual(['runtime_repository_origin_missing']);
+  });
+
+  it('keeps landing launchable while runtime stays independently blocked', async () => {
+    const landingReadiness = await actualReadiness('asi-landing', {
+      resolveBaselineSha: async () => landingSha,
+      loadRunnerReadiness: async () => runnerStatus(runtimePr100Fixture),
+    });
+    expect(landingReadiness.canLaunch).toBe(true);
+    expect(landingReadiness.runnerEvidence?.observedBaselineSha).toBe(landingSha);
+
+    const runtimeReadiness = await actualReadiness('asi-os-runtime', {
+      resolveBaselineSha: async () => runtimeSha,
+      loadRunnerReadiness: async () => runnerStatus(runtimePr100Fixture),
+    });
+    expect(runtimeReadiness.canLaunch).toBe(false);
+    expect(runtimeReadiness.components.checkouts.reasonCode).toBe('runtime_checkout_remote_mismatch');
+    expect(runtimeReadiness.runnerEvidence?.observedBaselineSha).toBeNull();
   });
 });
