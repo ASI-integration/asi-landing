@@ -370,8 +370,11 @@ describe('development console repository preference', () => {
     const repositories = await import('@/lib/development/repositories');
     const options = repositories.listDevelopmentRepositories();
 
+    expect(options).toHaveLength(2);
     expect(repositories.resolveRememberedDevelopmentRepositoryId(options, 'asi-landing'))
       .toBe('asi-landing');
+    expect(repositories.resolveRememberedDevelopmentRepositoryId(options, 'asi-os-runtime'))
+      .toBe('asi-os-runtime');
     expect(repositories.resolveRememberedDevelopmentRepositoryId(options, 'forged-repository'))
       .toBe(options[0].id);
   });

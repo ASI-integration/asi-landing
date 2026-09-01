@@ -1,20 +1,3 @@
-export type DevelopmentRepositoryDefinition = {
-  /** Stable selector id for the UI and API. */
-  id: string;
-  /** Exact GitHub full name accepted by Runtime Bridge. */
-  fullName: 'ASI-integration/asi-landing';
-  /** Human label shown in the console. */
-  label: string;
-  /** Branch used for baseline SHA resolution (server-only). */
-  defaultBranch: 'main';
-  githubOwner: 'ASI-integration';
-  githubRepo: 'asi-landing';
-};
-
-/**
- * Server-defined repository allowlist for the Owner Development Console.
- * Add new entries here later without rewriting the page.
- */
 export const DEVELOPMENT_REPOSITORY_ALLOWLIST = [
   {
     id: 'asi-landing',
@@ -24,9 +7,19 @@ export const DEVELOPMENT_REPOSITORY_ALLOWLIST = [
     githubOwner: 'ASI-integration',
     githubRepo: 'asi-landing',
   },
-] as const satisfies readonly DevelopmentRepositoryDefinition[];
+  {
+    id: 'asi-os-runtime',
+    fullName: 'ASI-integration/asi-os-runtime',
+    label: 'ASI-integration/asi-os-runtime',
+    defaultBranch: 'main',
+    githubOwner: 'ASI-integration',
+    githubRepo: 'asi-os-runtime',
+  },
+] as const;
 
-export type DevelopmentRepositoryId = (typeof DEVELOPMENT_REPOSITORY_ALLOWLIST)[number]['id'];
+export type DevelopmentRepositoryDefinition = (typeof DEVELOPMENT_REPOSITORY_ALLOWLIST)[number];
+export type DevelopmentRepositoryId = DevelopmentRepositoryDefinition['id'];
+export type DevelopmentRepositoryFullName = DevelopmentRepositoryDefinition['fullName'];
 
 export const DEVELOPMENT_REPOSITORY_STORAGE_KEY = 'asi.owner-console.last-repository';
 
