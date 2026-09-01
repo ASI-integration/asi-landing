@@ -69,3 +69,12 @@ export function resolveDevelopmentRepository(
 export function isAllowlistedDevelopmentRepositoryFullName(fullName: string): boolean {
   return DEVELOPMENT_REPOSITORY_ALLOWLIST.some((repo) => repo.fullName === fullName);
 }
+
+/** Canonical task repository from stored Runtime request — allowlist only, never defaulted. */
+export function resolveStoredTaskRepositoryFullName(
+  request: { repository?: unknown } | null | undefined,
+): DevelopmentRepositoryDefinition['fullName'] | null {
+  const fullName = typeof request?.repository === 'string' ? request.repository.trim() : '';
+  if (!fullName || !isAllowlistedDevelopmentRepositoryFullName(fullName)) return null;
+  return fullName as DevelopmentRepositoryDefinition['fullName'];
+}

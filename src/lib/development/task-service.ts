@@ -43,8 +43,8 @@ import {
   type ControlCenterMergeOutcome,
   type ControlCenterPullRequest,
 } from './owner-merge-gate';
-import { safeAllowlistedPullRequestUrl } from './pr-url';
-import { resolveDevelopmentRepository } from './repositories';
+import { safeAllowlistedPullRequestUrl, parseAllowlistedPullRequestUrl, resolveAllowlistedPullRequestRepository } from './pr-url';
+import { resolveDevelopmentRepository, resolveStoredTaskRepositoryFullName } from './repositories';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const OWNER_PROMPT_MAX_CHARS = 4000;
@@ -293,23 +293,74 @@ function unavailablePullRequest(
   pullRequestUrl: string,
   expectedSha: string,
 ): ControlCenterPullRequest {
-  const parts = new URL(pullRequestUrl).pathname.split('/').filter(Boolean);
+  const parsed = parseAllowlistedPullRequestUrl(pullRequestUrl);
+  if (!parsed) {
+    throw new DevelopmentConsoleError('invalid_merge_request', 400, 'Некорректный запрос на объединение PR.');
+  }
   return {
-    repository: 'ASI-integration/asi-landing',
-    pullRequestNumber: Number(parts[3]),
-    pullRequestUrl,
+    repository: parsed.repository.fullName,
+    pullRequestNumber: parsed.pullRequestNumber,
+    pullRequestUrl: parsed.safeUrl,
     headSha: expectedSha,
     merged: false,
     mergeCommitSha: null,
   };
 }
 
+function taskRepositoryIdentityBlockedMergeGate(input: {
+  pullRequestUrl: string;
+  expectedSha: string;
+  code: 'task_repository_mismatch' | 'task_repository_unavailable';
+  message: string;
+}): ControlCenterMergeGateView {
+  const pullRequest = unavailablePullRequest(input.pullRequestUrl, input.expectedSha);
+  return unavailableControlCenterMergeGate({
+    pullRequest,
+    expectedSha: input.expectedSha,
+    code: input.code,
+    message: input.message,
+  });
+}
+
+function assertTaskPullRequestRepositoryMatch(input: {
+  taskRepositoryFullName: string | null;
+  pullRequestUrl: string;
+  expectedSha: string;
+}): ControlCenterMergeGateView | null {
+  const pullRequestRepository = resolveAllowlistedPullRequestRepository(input.pullRequestUrl);
+  if (!input.taskRepositoryFullName) {
+    return taskRepositoryIdentityBlockedMergeGate({
+      pullRequestUrl: input.pullRequestUrl,
+      expectedSha: input.expectedSha,
+      code: 'task_repository_unavailable',
+      message: 'Репозиторий задачи не определён или не разрешён. Объединение заблокировано.',
+    });
+  }
+  if (!pullRequestRepository || pullRequestRepository !== input.taskRepositoryFullName) {
+    return taskRepositoryIdentityBlockedMergeGate({
+      pullRequestUrl: input.pullRequestUrl,
+      expectedSha: input.expectedSha,
+      code: 'task_repository_mismatch',
+      message: 'PR принадлежит другому репозиторию, чем задача. Объединение заблокировано.',
+    });
+  }
+  return null;
+}
+
 async function resolveDevelopmentMergeGate(
   result: RuntimeBridgeSafeResult | null,
+  taskRepositoryFullName: string | null,
 ): Promise<ControlCenterMergeGateView | null> {
   const pullRequestUrl = pullRequestArtifact(result);
   if (!pullRequestUrl) return null;
   const resultSha = commitArtifact(result) ?? '0000000000000000000000000000000000000000';
+  const repositoryBlock = assertTaskPullRequestRepositoryMatch({
+    taskRepositoryFullName,
+    pullRequestUrl,
+    expectedSha: resultSha,
+  });
+  if (repositoryBlock) return repositoryBlock;
+
   let pullRequest: ControlCenterPullRequest | null = null;
   try {
     pullRequest = await controlCenterMergeDependencies.loadPullRequest(pullRequestUrl);
@@ -348,7 +399,10 @@ export async function buildDevelopmentTaskSnapshot(
     if (record.status === 'completed' || record.status === 'failed') {
       const payload = await getRuntimeBridgeResult(clientId, taskId);
       result = payload.result;
-      mergeGate = await resolveDevelopmentMergeGate(result);
+      mergeGate = await resolveDevelopmentMergeGate(
+        result,
+        resolveStoredTaskRepositoryFullName(record.request),
+      );
     }
 
     if (record.status === 'awaiting_owner') {
@@ -365,7 +419,7 @@ export async function buildDevelopmentTaskSnapshot(
         attemptCount: record.attemptCount,
         createdAt: record.createdAt,
         updatedAt: record.updatedAt,
-        repository: 'ASI-integration/asi-landing',
+        repository: resolveStoredTaskRepositoryFullName(record.request) ?? '',
         title: developmentTaskTitle(record.request),
       },
       result,
@@ -396,9 +450,9 @@ export async function submitDevelopmentMergeRequest(input: {
 
   const clientId = requireClientId();
   try {
-    const task = await getRuntimeBridgeTask(clientId, taskId);
-    assertOwnerTaskScope(task, input.ownerUserId);
-    if (task.status !== 'completed') {
+    const record = await getRuntimeBridgeTaskRecord(clientId, taskId);
+    assertOwnerTaskScope(record, input.ownerUserId);
+    if (record.status !== 'completed') {
       throw new DevelopmentConsoleError(
         'merge_task_not_completed',
         409,
@@ -412,6 +466,21 @@ export async function submitDevelopmentMergeRequest(input: {
         409,
         'PR не принадлежит этой задаче.',
       );
+    }
+
+    const taskRepositoryFullName = resolveStoredTaskRepositoryFullName(record.request);
+    const repositoryBlock = assertTaskPullRequestRepositoryMatch({
+      taskRepositoryFullName,
+      pullRequestUrl,
+      expectedSha: expectedHeadSha,
+    });
+    if (repositoryBlock) {
+      return {
+        gate: repositoryBlock,
+        merged: false,
+        deduplicated: false,
+        mergeCommitSha: null,
+      };
     }
 
     let pullRequest: ControlCenterPullRequest;
@@ -521,7 +590,6 @@ export async function submitDevelopmentTask(input: {
       }
 
       const snapshot = await buildDevelopmentTaskSnapshot(existing.taskId, input.ownerUserId);
-      snapshot.task.repository = repository.fullName;
       return { snapshot, deduplicated: true };
     }
 
@@ -538,7 +606,6 @@ export async function submitDevelopmentTask(input: {
     });
 
     const snapshot = await buildDevelopmentTaskSnapshot(submitted.task.taskId, input.ownerUserId);
-    snapshot.task.repository = repository.fullName;
     return { snapshot, deduplicated: submitted.deduplicated };
   } catch (error) {
     mapBridgeError(error);

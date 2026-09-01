@@ -74,7 +74,9 @@ export type ControlCenterMergeBlocker = {
     | 'owner_gate_conflict'
     | 'owner_gate_unavailable'
     | 'merge_provider_not_configured'
-    | 'merge_provider_rejected';
+    | 'merge_provider_rejected'
+    | 'task_repository_mismatch'
+    | 'task_repository_unavailable';
   message: string;
   repository: string;
   pullRequestNumber: number;
@@ -282,7 +284,8 @@ function blockedView(input: {
 export function unavailableControlCenterMergeGate(input: {
   pullRequest: ControlCenterPullRequest;
   expectedSha: string;
-  code?: 'owner_gate_unavailable' | 'merge_provider_not_configured' | 'merge_provider_rejected';
+  code?: 'owner_gate_unavailable' | 'merge_provider_not_configured' | 'merge_provider_rejected'
+    | 'task_repository_mismatch' | 'task_repository_unavailable';
   message: string;
 }): ControlCenterMergeGateView {
   return blockedView({

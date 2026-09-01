@@ -1,6 +1,6 @@
 import 'server-only';
 import { isExactGitSha } from './baseline-sha';
-import { safeAllowlistedPullRequestUrl } from './pr-url';
+import { parseAllowlistedPullRequestUrl } from './pr-url';
 import type {
   ControlCenterMergeDependencies,
   ControlCenterPullRequest,
@@ -40,24 +40,19 @@ export class GitHubControlCenterError extends Error {
 
 function parsePullRequestUrl(value: string): {
   safeUrl: string;
-  repository: 'ASI-integration/asi-landing';
-  owner: 'ASI-integration';
-  repo: 'asi-landing';
+  repository: DevelopmentRepositoryDefinition['fullName'];
+  owner: DevelopmentRepositoryDefinition['githubOwner'];
+  repo: DevelopmentRepositoryDefinition['githubRepo'];
   pullRequestNumber: number;
 } {
-  const safeUrl = safeAllowlistedPullRequestUrl(value);
-  if (!safeUrl) throw new GitHubControlCenterError('pull_request_invalid', 400);
-  const parts = new URL(safeUrl).pathname.split('/').filter(Boolean);
-  const pullRequestNumber = Number(parts[3]);
-  if (!Number.isSafeInteger(pullRequestNumber) || pullRequestNumber < 1) {
-    throw new GitHubControlCenterError('pull_request_invalid', 400);
-  }
+  const parsed = parseAllowlistedPullRequestUrl(value);
+  if (!parsed) throw new GitHubControlCenterError('pull_request_invalid', 400);
   return {
-    safeUrl,
-    repository: 'ASI-integration/asi-landing',
-    owner: 'ASI-integration',
-    repo: 'asi-landing',
-    pullRequestNumber,
+    safeUrl: parsed.safeUrl,
+    repository: parsed.repository.fullName,
+    owner: parsed.repository.githubOwner,
+    repo: parsed.repository.githubRepo,
+    pullRequestNumber: parsed.pullRequestNumber,
   };
 }
 

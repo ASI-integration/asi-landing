@@ -1161,3 +1161,269 @@ describe('Control Center exact-SHA owner merge gate', () => {
     });
   });
 });
+
+describe('merge gate task repository identity', () => {
+  const ownerA = 'owner-a';
+  const headSha = 'a'.repeat(40);
+  const landingPrUrl = 'https://github.com/ASI-integration/asi-landing/pull/123';
+  const runtimePrUrl = 'https://github.com/ASI-integration/asi-os-runtime/pull/456';
+
+  function completedResult(pullRequestUrl: string) {
+    return {
+      schemaVersion: 'asi.runtime.result.v1' as const,
+      status: 'completed' as const,
+      summary: 'Done',
+      changedFiles: ['src/example.ts'],
+      checks: [{ name: 'typecheck', status: 'PASS' as const }],
+      artifacts: [
+        { type: 'commit' as const, value: headSha },
+        { type: 'pull_request' as const, value: pullRequestUrl },
+      ],
+      blockers: [],
+    };
+  }
+
+  function seedCompletedTask(input: {
+    taskId?: string;
+    repository: RuntimeBridgeTaskRequest['repository'];
+    pullRequestUrl: string;
+  }) {
+    const bridge = createCompatibleBridge();
+    const taskId = input.taskId ?? randomUUID();
+    bridge.seedTask({
+      taskId,
+      chatgptTaskId: chatgptTaskIdFor(ownerA, `dev-console-idem-${input.repository}`),
+      conversationId: conversationIdFor(ownerA),
+      status: 'completed',
+      attemptCount: 1,
+      createdAt: '2026-07-30T00:00:00.000Z',
+      updatedAt: '2026-07-30T00:05:00.000Z',
+      idempotencyKey: `dev-console-idem-${input.repository}`,
+      requestHash: 'f'.repeat(64),
+      request: {
+        title: 'Repository identity task',
+        objective: 'Verify merge gate repository binding',
+        instructions: ['run focused checks'],
+        repository: input.repository,
+        baselineSha: 'c'.repeat(40),
+      },
+    });
+    getRuntimeBridgeResult.mockImplementation(async (_clientId: string, requestedTaskId: string) => {
+      if (requestedTaskId !== taskId) throw new RuntimeBridgeError('task_not_found', 404);
+      return {
+        taskId,
+        status: 'completed',
+        result: completedResult(input.pullRequestUrl),
+      };
+    });
+    return { bridge, taskId };
+  }
+
+  function approvedOwnerGate(target: string) {
+    return {
+      sourceId: 'owner-approved',
+      body: `\`\`\`json\n${JSON.stringify({
+        schemaVersion: 'asi.agent-os.owner-gate.v1',
+        taskId: 'merge-task-cycle',
+        status: 'approved',
+        action: 'merge',
+        target,
+        identity: { sha: headSha },
+        allowedSideEffect: 'Merge only the exact reviewed PR head into main.',
+        postActionVerification: ['GitHub reports the PR merged at the reviewed head SHA.'],
+        authorization: {
+          source: 'explicit_owner_message',
+          owner: 'Nikolay',
+          scope: 'Approve merge for the exact reviewed PR head.',
+          taskCycle: 'merge-task-cycle',
+        },
+        typedConfirmation: { present: false, countsAsOwnerApproval: false },
+      })}\n\`\`\``,
+    };
+  }
+
+  beforeEach(() => {
+    loadControlCenterPullRequest.mockImplementation(async (pullRequestUrl: string) => {
+      const repository = pullRequestUrl.includes('asi-os-runtime')
+        ? 'ASI-integration/asi-os-runtime'
+        : 'ASI-integration/asi-landing';
+      const pullRequestNumber = Number(pullRequestUrl.split('/').pop());
+      return {
+        repository,
+        pullRequestNumber,
+        pullRequestUrl,
+        headSha,
+        merged: false,
+        mergeCommitSha: null,
+      };
+    });
+    loadOwnerDecisionBusRecords.mockResolvedValue([]);
+  });
+
+  it('allows landing task + landing PR through the owner gate', async () => {
+    const { taskId } = seedCompletedTask({
+      repository: 'ASI-integration/asi-landing',
+      pullRequestUrl: landingPrUrl,
+    });
+    loadOwnerDecisionBusRecords.mockResolvedValue([
+      approvedOwnerGate('ASI-integration/asi-landing#123'),
+    ]);
+
+    const { buildDevelopmentTaskSnapshot } = await import('../task-service');
+    const snapshot = await buildDevelopmentTaskSnapshot(taskId, ownerA);
+
+    expect(snapshot.task.repository).toBe('ASI-integration/asi-landing');
+    expect(snapshot.mergeGate).toMatchObject({
+      gateState: 'passed',
+      mergeState: 'merge_allowed',
+      repository: 'ASI-integration/asi-landing',
+      blocker: null,
+    });
+  });
+
+  it('allows runtime task + runtime PR through the owner gate', async () => {
+    const { taskId } = seedCompletedTask({
+      repository: 'ASI-integration/asi-os-runtime',
+      pullRequestUrl: runtimePrUrl,
+    });
+    loadOwnerDecisionBusRecords.mockResolvedValue([
+      approvedOwnerGate('ASI-integration/asi-os-runtime#456'),
+    ]);
+
+    const { buildDevelopmentTaskSnapshot } = await import('../task-service');
+    const snapshot = await buildDevelopmentTaskSnapshot(taskId, ownerA);
+
+    expect(snapshot.task.repository).toBe('ASI-integration/asi-os-runtime');
+    expect(snapshot.mergeGate).toMatchObject({
+      gateState: 'passed',
+      mergeState: 'merge_allowed',
+      repository: 'ASI-integration/asi-os-runtime',
+      blocker: null,
+    });
+  });
+
+  it('blocks landing task + runtime PR before owner gate evaluation', async () => {
+    const { taskId } = seedCompletedTask({
+      repository: 'ASI-integration/asi-landing',
+      pullRequestUrl: runtimePrUrl,
+    });
+
+    const { buildDevelopmentTaskSnapshot } = await import('../task-service');
+    const snapshot = await buildDevelopmentTaskSnapshot(taskId, ownerA);
+
+    expect(snapshot.mergeGate).toMatchObject({
+      gateState: 'failed',
+      mergeState: 'blocked',
+      repository: 'ASI-integration/asi-os-runtime',
+      blocker: { code: 'task_repository_mismatch' },
+    });
+    expect(loadOwnerDecisionBusRecords).not.toHaveBeenCalled();
+  });
+
+  it('blocks runtime task + landing PR before owner gate evaluation', async () => {
+    const { taskId } = seedCompletedTask({
+      repository: 'ASI-integration/asi-os-runtime',
+      pullRequestUrl: landingPrUrl,
+    });
+
+    const { buildDevelopmentTaskSnapshot } = await import('../task-service');
+    const snapshot = await buildDevelopmentTaskSnapshot(taskId, ownerA);
+
+    expect(snapshot.mergeGate).toMatchObject({
+      gateState: 'failed',
+      mergeState: 'blocked',
+      repository: 'ASI-integration/asi-landing',
+      blocker: { code: 'task_repository_mismatch' },
+    });
+    expect(loadOwnerDecisionBusRecords).not.toHaveBeenCalled();
+  });
+
+  it('fail-closes when stored task repository is missing or unknown', async () => {
+    const bridge = createCompatibleBridge();
+    const taskId = randomUUID();
+    bridge.seedTask({
+      taskId,
+      chatgptTaskId: chatgptTaskIdFor(ownerA, 'dev-console-idem-unknown'),
+      conversationId: conversationIdFor(ownerA),
+      status: 'completed',
+      attemptCount: 1,
+      createdAt: '2026-07-30T00:00:00.000Z',
+      updatedAt: '2026-07-30T00:05:00.000Z',
+      idempotencyKey: 'dev-console-idem-unknown',
+      requestHash: 'e'.repeat(64),
+      request: {
+        title: 'Unknown repository task',
+        objective: 'Should fail closed',
+        instructions: ['run'],
+        repository: 'ASI-integration/unknown-repo' as RuntimeBridgeTaskRequest['repository'],
+        baselineSha: 'd'.repeat(40),
+      },
+    });
+    getRuntimeBridgeResult.mockResolvedValue({
+      taskId,
+      status: 'completed',
+      result: completedResult(landingPrUrl),
+    });
+
+    const { buildDevelopmentTaskSnapshot } = await import('../task-service');
+    const snapshot = await buildDevelopmentTaskSnapshot(taskId, ownerA);
+
+    expect(snapshot.task.repository).toBe('');
+    expect(snapshot.mergeGate).toMatchObject({
+      mergeState: 'blocked',
+      blocker: { code: 'task_repository_unavailable' },
+    });
+    expect(loadOwnerDecisionBusRecords).not.toHaveBeenCalled();
+  });
+
+  it('preserves exact-head protection for valid matching repositories', async () => {
+    const { taskId } = seedCompletedTask({
+      repository: 'ASI-integration/asi-os-runtime',
+      pullRequestUrl: runtimePrUrl,
+    });
+    loadOwnerDecisionBusRecords.mockResolvedValue([
+      approvedOwnerGate('ASI-integration/asi-os-runtime#456'),
+    ]);
+
+    mergeControlCenterPullRequest.mockClear();
+    const { submitDevelopmentMergeRequest } = await import('../task-service');
+    const staleSha = 'b'.repeat(40);
+    const mergeOutcome = await submitDevelopmentMergeRequest({
+      ownerUserId: ownerA,
+      taskId,
+      pullRequestUrl: runtimePrUrl,
+      expectedHeadSha: staleSha,
+    });
+
+    expect(mergeOutcome.merged).toBe(false);
+    expect(mergeOutcome.gate).toMatchObject({
+      gateState: 'head_changed',
+      mergeState: 'blocked',
+      blocker: { code: 'pull_request_head_changed' },
+    });
+    expect(mergeControlCenterPullRequest).not.toHaveBeenCalled();
+  });
+
+  it('does not call merge provider when repositories mismatch on merge submit', async () => {
+    const { taskId } = seedCompletedTask({
+      repository: 'ASI-integration/asi-landing',
+      pullRequestUrl: runtimePrUrl,
+    });
+
+    const { submitDevelopmentMergeRequest } = await import('../task-service');
+    const outcome = await submitDevelopmentMergeRequest({
+      ownerUserId: ownerA,
+      taskId,
+      pullRequestUrl: runtimePrUrl,
+      expectedHeadSha: headSha,
+    });
+
+    expect(outcome.merged).toBe(false);
+    expect(outcome.gate).toMatchObject({
+      mergeState: 'blocked',
+      blocker: { code: 'task_repository_mismatch' },
+    });
+    expect(loadControlCenterPullRequest).not.toHaveBeenCalled();
+    expect(mergeControlCenterPullRequest).not.toHaveBeenCalled();
+  });
+});

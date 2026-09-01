@@ -1,10 +1,17 @@
 import { describe, expect, it } from 'vitest';
-import { safeAllowlistedPullRequestUrl } from '../pr-url';
+import {
+  parseAllowlistedPullRequestUrl,
+  resolveAllowlistedPullRequestRepository,
+  safeAllowlistedPullRequestUrl,
+} from '../pr-url';
 
 describe('safeAllowlistedPullRequestUrl', () => {
   it('accepts a valid allowlisted GitHub PR URL', () => {
     expect(safeAllowlistedPullRequestUrl('https://github.com/ASI-integration/asi-landing/pull/116')).toBe(
       'https://github.com/ASI-integration/asi-landing/pull/116',
+    );
+    expect(safeAllowlistedPullRequestUrl('https://github.com/ASI-integration/asi-os-runtime/pull/42')).toBe(
+      'https://github.com/ASI-integration/asi-os-runtime/pull/42',
     );
   });
 
@@ -22,5 +29,19 @@ describe('safeAllowlistedPullRequestUrl', () => {
   it('rejects another repository', () => {
     expect(safeAllowlistedPullRequestUrl('https://github.com/ASI-integration/other-repo/pull/1')).toBeNull();
     expect(safeAllowlistedPullRequestUrl('https://github.com/other/asi-landing/pull/1')).toBeNull();
+  });
+
+  it('resolves allowlisted PR repository identity server-side', () => {
+    expect(resolveAllowlistedPullRequestRepository('https://github.com/ASI-integration/asi-landing/pull/116')).toBe(
+      'ASI-integration/asi-landing',
+    );
+    expect(parseAllowlistedPullRequestUrl('https://github.com/ASI-integration/asi-os-runtime/pull/7')).toEqual({
+      safeUrl: 'https://github.com/ASI-integration/asi-os-runtime/pull/7',
+      pullRequestNumber: 7,
+      repository: expect.objectContaining({
+        fullName: 'ASI-integration/asi-os-runtime',
+        githubRepo: 'asi-os-runtime',
+      }),
+    });
   });
 });
