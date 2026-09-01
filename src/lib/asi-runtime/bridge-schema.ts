@@ -54,6 +54,58 @@ const RUNNER_READINESS_V2_FULL_NAMES = new Set([
 const RUNNER_READINESS_V2_HTTPS_ORIGIN = /^https:\/\/github\.com\/ASI-integration\/(asi-landing|asi-os-runtime)(\.git)?$/;
 const RUNNER_READINESS_V2_SSH_ALIAS_ORIGIN = /^git@github\.com-[a-z0-9-]+:ASI-integration\/(asi-landing|asi-os-runtime)(\.git)?$/;
 const RUNNER_READINESS_V2_SSH_URL_ORIGIN = /^ssh:\/\/git@github\.com\/ASI-integration\/(asi-landing|asi-os-runtime)(\.git)?$/;
+const RUNTIME_BRIDGE_CANONICAL_PULL_REQUEST_REPOSITORIES = [
+  { fullName: 'ASI-integration/asi-landing', owner: 'ASI-integration', repo: 'asi-landing' },
+  { fullName: 'ASI-integration/asi-os-runtime', owner: 'ASI-integration', repo: 'asi-os-runtime' },
+] as const satisfies ReadonlyArray<{
+  fullName: RuntimeBridgeTaskRequest['repository'];
+  owner: string;
+  repo: string;
+}>;
+
+function isSafePullRequestArtifactUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    if (url.protocol !== 'https:'
+      || url.hostname !== 'github.com'
+      || url.username !== ''
+      || url.password !== ''
+      || url.search !== ''
+      || url.hash !== '') return false;
+    return RUNTIME_BRIDGE_CANONICAL_PULL_REQUEST_REPOSITORIES.some(
+      (entry) => new RegExp(`^/${entry.owner}/${entry.repo}/pull/[1-9][0-9]*/?$`).test(url.pathname),
+    );
+  } catch {
+    return false;
+  }
+}
+
+/** Resolve allowlisted repository identity for a syntactically safe pull_request artifact URL. */
+export function resolveBridgePullRequestArtifactRepository(
+  value: string,
+): RuntimeBridgeTaskRequest['repository'] | null {
+  if (!isSafePullRequestArtifactUrl(value)) return null;
+  const parts = new URL(value).pathname.split('/').filter(Boolean);
+  const owner = parts[0];
+  const repo = parts[1];
+  const match = RUNTIME_BRIDGE_CANONICAL_PULL_REQUEST_REPOSITORIES.find(
+    (entry) => entry.owner === owner && entry.repo === repo,
+  );
+  return match?.fullName ?? null;
+}
+
+/** Authoritative task repository must match every pull_request artifact repository. */
+export function validateBridgeResultArtifactsMatchTaskRepository(
+  result: RuntimeBridgeSafeResult,
+  taskRepository: RuntimeBridgeTaskRequest['repository'],
+): boolean {
+  for (const artifact of result.artifacts) {
+    if (artifact.type !== 'pull_request') continue;
+    const artifactRepository = resolveBridgePullRequestArtifactRepository(artifact.value);
+    if (!artifactRepository || artifactRepository !== taskRepository) return false;
+  }
+  return true;
+}
 
 function object(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
@@ -104,18 +156,7 @@ function safeArtifact(value: unknown): boolean {
   if (value.type === 'commit') return SHA.test(value.value);
   if (value.type === 'report') return repoPath(value.value) && value.value.startsWith('docs/');
   if (value.type !== 'pull_request') return false;
-  try {
-    const url = new URL(value.value);
-    return url.protocol === 'https:'
-      && url.hostname === 'github.com'
-      && url.username === ''
-      && url.password === ''
-      && url.search === ''
-      && url.hash === ''
-      && /^\/ASI-integration\/asi-landing\/pull\/[1-9][0-9]*\/?$/.test(url.pathname);
-  } catch {
-    return false;
-  }
+  return isSafePullRequestArtifactUrl(value.value);
 }
 
 function parseTask(value: unknown): RuntimeBridgeTaskRequest | null {
@@ -238,11 +279,27 @@ function canonicalCheckoutPath(value: unknown): value is string {
     && !value.includes('\\');
 }
 
-function allowedRunnerExpectedOrigin(value: unknown): value is string {
-  if (!text(value, 500)) return false;
+function isCanonicalRunnerExpectedOrigin(value: string): boolean {
   return RUNNER_READINESS_V2_HTTPS_ORIGIN.test(value)
     || RUNNER_READINESS_V2_SSH_ALIAS_ORIGIN.test(value)
     || RUNNER_READINESS_V2_SSH_URL_ORIGIN.test(value);
+}
+
+function isBlockedMissingOriginRepositoryEvidence(value: Record<string, unknown>): boolean {
+  return value.expectedOrigin === ''
+    && value.originReady === false
+    && value.checkoutReady === false
+    && value.baselineReady === false
+    && value.recoveryReady === false
+    && Array.isArray(value.blockers)
+    && value.blockers.includes('runtime_repository_origin_missing');
+}
+
+function allowedRunnerRepositoryExpectedOrigin(value: unknown, evidence: Record<string, unknown>): boolean {
+  if (value === '' && isBlockedMissingOriginRepositoryEvidence(evidence)) return true;
+  if (typeof value !== 'string' || value.length === 0 || value.length > 500) return false;
+  if (value !== value.trim() || containsForbiddenStringContent(value)) return false;
+  return isCanonicalRunnerExpectedOrigin(value);
 }
 
 function parseRunnerReadinessV1Input(input: Record<string, unknown>): RuntimeBridgeRunnerInput | null {
@@ -280,7 +337,7 @@ function parseRunnerRepositoryEvidenceV2(value: unknown) {
   if (!RUNNER_READINESS_V2_REPOSITORY_IDS.has(String(value.repositoryId))
     || !RUNNER_READINESS_V2_FULL_NAMES.has(String(value.fullName))
     || !canonicalCheckoutPath(value.canonicalCheckoutPath)
-    || !allowedRunnerExpectedOrigin(value.expectedOrigin)
+    || !allowedRunnerRepositoryExpectedOrigin(value.expectedOrigin, value)
     || value.defaultBranch !== 'main'
     || !(value.observedBaselineSha === null || text(value.observedBaselineSha, 40, SHA))
     || typeof value.checkoutReady !== 'boolean'
