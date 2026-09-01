@@ -4,6 +4,7 @@ import type {
   RuntimeBridgeTaskStatus,
 } from '@/lib/asi-runtime/bridge-types';
 import { safeAllowlistedPullRequestUrl } from '@/lib/development/pr-url';
+import { TASK_TERMINAL_HEADLINE_LABELS } from '@/lib/development/development-console-presentation';
 import { DEVELOPMENT_STATUS_LABELS, developmentStageText } from '@/lib/development/status-labels';
 
 export const DEVELOPMENT_STATUS_COLOR_CLASS = {
@@ -108,11 +109,16 @@ type DevelopmentTaskCardProps = {
   task: DevelopmentTaskCardModel;
 };
 
+function isTerminalTaskStatus(status: RuntimeBridgeTaskStatus): status is 'completed' | 'failed' {
+  return status === 'completed' || status === 'failed';
+}
+
 export function DevelopmentTaskCard({ task }: DevelopmentTaskCardProps) {
   const summary = compactTaskSummary({ status: task.status, result: task.result });
   const pullRequestUrl = pullRequestUrlFromResult(task.result);
   const commitSha = commitShaFromResult(task.result);
   const stage = developmentStageText(task.status);
+  const terminal = isTerminalTaskStatus(task.status);
 
   return (
     <section
@@ -120,6 +126,21 @@ export function DevelopmentTaskCard({ task }: DevelopmentTaskCardProps) {
       className="space-y-3 rounded-xl border border-slate-200 bg-white p-5 shadow-sm"
       data-development-task-card="true"
     >
+      {terminal ? (
+        <p
+          className={`rounded-2xl border px-4 py-5 text-center text-3xl font-black tracking-wide sm:text-4xl ${
+            task.status === 'completed'
+              ? 'border-emerald-300 bg-emerald-50 text-emerald-800'
+              : 'border-red-300 bg-red-50 text-red-800'
+          }`}
+          data-task-terminal-headline={task.status}
+        >
+          {task.status === 'completed'
+            ? TASK_TERMINAL_HEADLINE_LABELS.completed
+            : TASK_TERMINAL_HEADLINE_LABELS.failed}
+        </p>
+      ) : null}
+
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0 space-y-2">
           <h2
@@ -129,32 +150,44 @@ export function DevelopmentTaskCard({ task }: DevelopmentTaskCardProps) {
           >
             {task.title}
           </h2>
-          <TaskStatusBadge status={task.status} />
+          {!terminal ? <TaskStatusBadge status={task.status} /> : null}
         </div>
         <p className="text-xs text-slate-500" data-task-updated-at="true">
           Обновлено: {formatDevelopmentTimestamp(task.updatedAt)}
         </p>
       </div>
 
-      <p className="text-sm text-slate-700" data-task-stage="true">
-        {stage}
-      </p>
+      {!terminal ? (
+        <p className="text-sm text-slate-700" data-task-stage="true">
+          {stage}
+        </p>
+      ) : null}
 
       <p className="text-sm text-slate-800" data-task-summary="true">
         {summary}
       </p>
 
-      {pullRequestUrl ? (
-        <a
-          href={pullRequestUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="inline-flex rounded-lg bg-slate-900 px-3 py-2 text-sm font-medium text-white hover:bg-slate-800"
-          data-task-pr-link="true"
-        >
-          Открыть PR
-        </a>
-      ) : null}
+      <div className="flex flex-wrap gap-2">
+        {pullRequestUrl ? (
+          <a
+            href={pullRequestUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex rounded-lg bg-slate-900 px-3 py-2 text-sm font-medium text-white hover:bg-slate-800"
+            data-task-pr-link="true"
+          >
+            Открыть PR
+          </a>
+        ) : null}
+        {commitSha ? (
+          <span
+            className="inline-flex items-center rounded-lg border border-slate-300 bg-slate-50 px-3 py-2 text-sm font-medium text-slate-800"
+            data-task-commit-sha="true"
+          >
+            Commit: {commitSha.slice(0, 7)}
+          </span>
+        ) : null}
+      </div>
 
       <details className="rounded-lg border border-slate-200 bg-slate-50/70 px-3 py-2">
         <summary className="cursor-pointer text-sm font-medium text-slate-800">Подробнее</summary>

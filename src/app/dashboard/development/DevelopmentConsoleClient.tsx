@@ -20,9 +20,17 @@ import type {
 } from '@/lib/development/readiness-types';
 import {
   ItemReadinessBadge,
-  OverallReadinessBadge,
   ReadinessRefreshIndicator,
 } from '@/lib/development/readiness-status-ui';
+import {
+  CompactReadinessRow,
+  DISPLAY_READINESS_GROUPS,
+  MergeGateHero,
+  TrafficLightHero,
+  mergeGateHeadline,
+  readinessShortReason,
+  resolveDisplayReadinessGroup,
+} from '@/lib/development/development-console-presentation';
 import { DevelopmentTaskCard } from '@/lib/development/task-status-ui';
 
 type RepositoryOption = { id: string; label: string; fullName: string };
@@ -468,7 +476,8 @@ export default function DevelopmentConsoleClient() {
             type="submit"
             disabled={submitting || !repositoryId || readinessBusy || Boolean(readinessError)
               || readiness?.canLaunch !== true}
-            className="rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-medium text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+            className="w-full rounded-xl bg-emerald-700 px-5 py-3.5 text-base font-semibold text-white shadow-sm hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-slate-400 disabled:opacity-80 sm:w-auto"
+            data-launch-task-button="true"
           >
             {submitting
               ? 'Запуск…'
@@ -639,64 +648,102 @@ function ReadinessPanel({
   error: string | null;
   onRetry: () => void;
 }) {
-  const overallMessage = readiness?.overallState === 'ready'
-    ? 'Система готова к запуску задачи.'
-    : readiness?.canLaunch === false
-      ? 'Запуск остановлен до устранения обязательных блокеров.'
-      : readiness
-        ? 'Запуск возможен, но отдельные возможности требуют внимания.'
-        : 'Выполняется безопасная проверка готовности.';
   const showRefreshIndicator = busy && readiness !== null;
+  const heroReason = error ?? (readiness ? readinessShortReason(readiness) : null);
 
   return (
     <section
       aria-labelledby="development-readiness-title"
       className="space-y-4 rounded-xl border border-slate-200 bg-white p-5 shadow-sm"
+      data-development-readiness-panel="true"
     >
       <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <div className="flex flex-wrap items-center gap-3">
-            <h2 id="development-readiness-title" className="text-lg font-semibold text-slate-900">
-              Готовность к запуску
-            </h2>
-            {readiness ? <OverallReadinessBadge state={readiness.overallState} /> : null}
-            {showRefreshIndicator ? <ReadinessRefreshIndicator /> : null}
-          </div>
-          <p className="mt-1 text-sm text-slate-600" aria-live="polite">
-            {error ?? overallMessage}
-          </p>
+        <h2 id="development-readiness-title" className="text-lg font-semibold text-slate-900">
+          Готовность к запуску
+        </h2>
+        <div className="flex items-center gap-2">
+          {showRefreshIndicator ? <ReadinessRefreshIndicator /> : null}
+          <button
+            type="button"
+            disabled={busy}
+            onClick={onRetry}
+            className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-800 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {busy ? 'Проверка…' : 'Проверить готовность'}
+          </button>
         </div>
-        <button
-          type="button"
-          disabled={busy}
-          onClick={onRetry}
-          className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-800 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
-        >
-          {busy ? 'Проверка…' : 'Проверить готовность'}
-        </button>
       </div>
 
+      {readiness || error ? (
+        <TrafficLightHero
+          state={readiness?.overallState ?? 'blocked'}
+          reason={heroReason}
+          busy={busy && !readiness}
+        />
+      ) : (
+        <div
+          className="rounded-2xl border border-slate-200 bg-slate-50 px-5 py-6 text-center text-sm font-medium text-slate-600"
+          data-readiness-loading="true"
+        >
+          Проверка готовности…
+        </div>
+      )}
+
       {readiness ? (
-        <div className="grid gap-3 sm:grid-cols-2">
-          {Object.entries(readiness.components).map(([id, item]) => (
-            <div key={id} className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
-              <div className="flex items-center justify-between gap-3">
-                <h3 className="text-sm font-medium text-slate-900">
-                  {READINESS_COMPONENT_LABELS[id as DevelopmentReadinessComponentId]}
-                </h3>
-                <ItemReadinessBadge state={item.state} />
-              </div>
-              <p className="mt-2 text-sm text-slate-700">{item.message}</p>
-              <p className="mt-1 break-all font-mono text-[11px] text-slate-500">{item.reasonCode}</p>
-            </div>
-          ))}
+        <div className="grid gap-2 sm:grid-cols-2">
+          {DISPLAY_READINESS_GROUPS.map((group) => {
+            const resolved = resolveDisplayReadinessGroup({
+              groupId: group.id,
+              readiness,
+            });
+            return (
+              <CompactReadinessRow
+                key={group.id}
+                label={group.label}
+                state={resolved.state}
+                message={resolved.message}
+              />
+            );
+          })}
         </div>
       ) : null}
 
       {readiness ? (
-        <p className="text-xs text-slate-500">
-          Последняя проверка: {formatDate(readiness.checkedAt)}
-        </p>
+        <details className="rounded-lg border border-slate-200 bg-slate-50/70 px-3 py-2" data-readiness-details="true">
+          <summary className="cursor-pointer text-sm font-medium text-slate-800">Подробнее</summary>
+          <div className="mt-3 space-y-3">
+            <div className="grid gap-3 sm:grid-cols-2">
+              {Object.entries(readiness.components).map(([id, item]) => (
+                <div key={id} className="rounded-lg border border-slate-200 bg-white px-3 py-2">
+                  <div className="flex items-center justify-between gap-3">
+                    <h3 className="text-sm font-medium text-slate-900">
+                      {READINESS_COMPONENT_LABELS[id as DevelopmentReadinessComponentId]}
+                    </h3>
+                    <ItemReadinessBadge state={item.state} />
+                  </div>
+                  <p className="mt-2 text-sm text-slate-700">{item.message}</p>
+                  <p className="mt-1 break-all font-mono text-[11px] text-slate-500">{item.reasonCode}</p>
+                </div>
+              ))}
+            </div>
+            {readiness.runnerEvidence ? (
+              <dl className="grid gap-2 text-sm sm:grid-cols-2">
+                <GateField label="Runner identity" value={readiness.runnerEvidence.identity} />
+                <GateField
+                  label="Проверено runner"
+                  value={formatDate(readiness.runnerEvidence.checkedAt)}
+                />
+                <GateField
+                  label="Действует до"
+                  value={formatDate(readiness.runnerEvidence.expiresAt)}
+                />
+              </dl>
+            ) : null}
+            <p className="text-xs text-slate-500">
+              Последняя проверка: {formatDate(readiness.checkedAt)}
+            </p>
+          </div>
+        </details>
       ) : null}
     </section>
   );
@@ -720,36 +767,47 @@ function MergeGatePanel({
   onRequestMerge: () => void;
 }) {
   const allowed = gate.mergeState === 'merge_allowed' && !gate.merged;
+  const headline = mergeGateHeadline(gate);
+  const reason = gate.blocker?.message ?? MERGE_GATE_LABELS[gate.gateState];
+
   return (
-    <section className={`space-y-4 rounded-xl border p-5 shadow-sm ${
-      allowed ? 'border-emerald-200 bg-emerald-50/60' : 'border-amber-200 bg-amber-50/60'
-    }`}>
-      <h2 className="text-lg font-semibold text-slate-900">Разрешение на объединение</h2>
-      <dl className="grid gap-3 text-sm sm:grid-cols-2">
-        <GateField label="Состояние проверки" value={MERGE_GATE_LABELS[gate.gateState]} />
-        <GateField
-          label="Объединение"
-          value={gate.merged ? 'PR уже объединён' : gate.mergeState === 'merge_allowed' ? 'Разрешено' : 'Заблокировано'}
-        />
-        <GateField label="PR" value={`${gate.repository}#${gate.pullRequestNumber}`} />
-        <GateField label="Текущая версия" value={gate.currentSha} />
-        <GateField label="Одобренная версия" value={gate.approvedSha ?? 'Нет'} />
-        <GateField label="Код запроса" value={gate.mergeRequestId} />
-      </dl>
-      {gate.blocker ? (
-        <p className="rounded-lg border border-amber-200 bg-white px-3 py-2 text-sm text-slate-800">
-          {gate.blocker.message}
-        </p>
-      ) : null}
-      <button
-        type="button"
-        disabled={!allowed || busy}
-        onClick={onRequestMerge}
-        className="rounded-lg bg-emerald-700 px-4 py-2.5 text-sm font-medium text-white hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-60"
-      >
-        {gate.merged ? 'PR уже объединён' : allowed ? 'Объединить PR' : 'Объединение заблокировано'}
-      </button>
-    </section>
+    <MergeGateHero label={headline.label} state={headline.state} reason={reason}>
+      <div className="flex flex-wrap justify-center gap-2">
+        {gate.pullRequestUrl ? (
+          <a
+            href={gate.pullRequestUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex rounded-lg bg-slate-900 px-3 py-2 text-sm font-medium text-white hover:bg-slate-800"
+          >
+            Открыть PR
+          </a>
+        ) : null}
+        <button
+          type="button"
+          disabled={!allowed || busy}
+          onClick={onRequestMerge}
+          className="rounded-lg bg-emerald-700 px-4 py-2.5 text-sm font-medium text-white hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-60"
+          data-merge-request-button="true"
+        >
+          {gate.merged ? 'PR уже объединён' : allowed ? 'Объединить PR' : 'Объединение недоступно'}
+        </button>
+      </div>
+      <details className="rounded-lg border border-current/20 bg-white/60 px-3 py-2">
+        <summary className="cursor-pointer text-sm font-medium">Подробнее</summary>
+        <dl className="mt-3 grid gap-3 text-sm sm:grid-cols-2">
+          <GateField label="Состояние проверки" value={MERGE_GATE_LABELS[gate.gateState]} />
+          <GateField
+            label="Объединение"
+            value={gate.merged ? 'PR уже объединён' : gate.mergeState === 'merge_allowed' ? 'Разрешено' : 'Заблокировано'}
+          />
+          <GateField label="PR" value={`${gate.repository}#${gate.pullRequestNumber}`} />
+          <GateField label="Текущая версия" value={gate.currentSha} />
+          <GateField label="Одобренная версия" value={gate.approvedSha ?? 'Нет'} />
+          <GateField label="Код запроса" value={gate.mergeRequestId} />
+        </dl>
+      </details>
+    </MergeGateHero>
   );
 }
 

@@ -67,20 +67,44 @@ describe('development task status UI', () => {
     );
 
     expect(html).toContain('data-development-task-card="true"');
+    expect(html).toContain('data-task-terminal-headline="completed"');
+    expect(html).toContain('ЗАВЕРШЕНО');
     expect(html).toContain('data-task-title="true"');
     expect(html).toContain('Улучшить карточку задачи');
-    expect(html).toContain('data-task-stage="true"');
-    expect(html).toContain(developmentStageText('completed'));
+    expect(html).not.toContain('data-task-stage="true"');
     expect(html).toContain('data-task-summary="true"');
     expect(html).toContain('Черновик PR готов к проверке.');
     expect(html).toContain('data-task-updated-at="true"');
     expect(html).toContain('data-task-pr-link="true"');
     expect(html).toContain('Открыть PR');
+    expect(html).toContain('data-task-commit-sha="true"');
     expect(html).toContain('https://github.com/ASI-integration/asi-landing/pull/42');
     expect(html).toContain('Подробнее');
     expect(html).toContain('taskId');
     expect(html).toContain('11111111-1111-4111-8111-111111111111');
     expect(html).toContain('a'.repeat(40));
+  });
+
+  it('renders large failed headline and keeps PR/commit outside details', () => {
+    const html = renderToStaticMarkup(
+      React.createElement(DevelopmentTaskCard, {
+        task: {
+          title: 'Задача с ошибкой',
+          status: 'failed',
+          updatedAt: '2026-08-02T12:00:00.000Z',
+          taskId: '33333333-3333-4333-8333-333333333333',
+          repository: 'ASI-integration/asi-landing',
+          attemptCount: 1,
+          createdAt: '2026-08-02T11:00:00.000Z',
+          result: RESULT_WITH_PR,
+        },
+      }),
+    );
+
+    expect(html).toContain('data-task-terminal-headline="failed"');
+    expect(html).toContain('ОШИБКА');
+    expect(html).toContain('data-task-pr-link="true"');
+    expect(html).toContain('data-task-commit-sha="true"');
   });
 
   it('keeps technical identifiers inside the collapsed details block', () => {

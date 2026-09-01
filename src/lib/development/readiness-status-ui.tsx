@@ -2,14 +2,14 @@ import type { DevelopmentReadinessState } from '@/lib/development/readiness-type
 
 export const READINESS_STATE_LABELS = {
   ready: 'Готово',
-  degraded: 'Требует внимания',
-  blocked: 'Есть блокер',
+  degraded: 'Внимание',
+  blocked: 'Стоп',
 } as const satisfies Record<DevelopmentReadinessState, string>;
 
 export const OVERALL_READINESS_STATUS_LABELS = {
-  ready: 'Система готова',
-  degraded: 'Требует внимания',
-  blocked: 'Есть блокер',
+  ready: 'ГОТОВО',
+  degraded: 'ВНИМАНИЕ',
+  blocked: 'СТОП',
 } as const satisfies Record<DevelopmentReadinessState, string>;
 
 const STATE_COLOR_CLASS = {

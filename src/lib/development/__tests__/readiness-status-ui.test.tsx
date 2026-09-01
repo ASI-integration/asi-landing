@@ -50,7 +50,9 @@ describe('readiness status visual mapping', () => {
     expect(icons.ready).not.toEqual(icons.degraded);
     expect(icons.ready).not.toEqual(icons.blocked);
     expect(icons.degraded).not.toEqual(icons.blocked);
-    expect(OVERALL_READINESS_STATUS_LABELS.ready).toBe('Система готова');
+    expect(OVERALL_READINESS_STATUS_LABELS.ready).toBe('ГОТОВО');
+    expect(OVERALL_READINESS_STATUS_LABELS.degraded).toBe('ВНИМАНИЕ');
+    expect(OVERALL_READINESS_STATUS_LABELS.blocked).toBe('СТОП');
   });
 
   it('announces each badge through a single accessible name', () => {
