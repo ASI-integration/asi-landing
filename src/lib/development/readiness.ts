@@ -6,6 +6,7 @@ import {
 } from '@/lib/asi-runtime/bridge-repository';
 import { readRuntimeBridgeSupabaseConfig } from '@/lib/asi-runtime/bridge-supabase';
 import type { RuntimeRunnerReadinessStatus } from '@/lib/asi-runtime/bridge-runner-readiness';
+import { reconcileRunnerReadinessForRepository } from '@/lib/asi-runtime/runner-readiness-contract';
 import { resolveAllowlistedBaselineSha } from './baseline-sha';
 import { probeGitHubMergeProvider } from './github-control-center';
 import {
@@ -51,6 +52,8 @@ const MESSAGES: Record<string, string> = {
   runtime_checkout_baseline_unavailable: 'Рабочие каталоги нельзя проверить без актуальной версии main.',
   runtime_runner_readiness_missing: 'Runtime Runner ещё не подтвердил готовность.',
   runtime_runner_readiness_stale: 'Подтверждение готовности Runtime Runner устарело.',
+  runtime_runner_readiness_unsupported_version: 'Версия подтверждения готовности Runtime Runner не поддерживается.',
+  runtime_runner_repository_evidence_missing: 'Runtime Runner не опубликовал подтверждение для выбранного репозитория.',
   runtime_baseline_recovery_ready: 'Восстановление рабочей версии Runtime готово.',
   runtime_baseline_recovery_unavailable: 'Runtime Runner не подтвердил безопасное восстановление рабочей версии.',
   baseline_ready: 'Текущая версия main определена.',
@@ -89,6 +92,8 @@ const CHECKOUT_REASON_CODES = new Set([
   'runtime_checkout_baseline_unavailable',
   'runtime_runner_readiness_missing',
   'runtime_runner_readiness_stale',
+  'runtime_runner_readiness_unsupported_version',
+  'runtime_runner_repository_evidence_missing',
   'runtime_baseline_recovery_unavailable',
 ]);
 
@@ -189,19 +194,11 @@ function blockedRepositorySnapshot(checkedAt: Date): DevelopmentReadinessSnapsho
   };
 }
 
-/**
- * runner-readiness.v1 publishes baselineSha for ASI-integration/asi-landing only.
- * Do not compare server-resolved asi-os-runtime/main against that landing-only field.
- * Follow-up: runner-readiness v2 will publish per-repository baseline evidence.
- */
-function shouldCompareRunnerV1BaselineSha(repository: DevelopmentRepositoryDefinition): boolean {
-  return repository.id === 'asi-landing';
-}
-
 function runnerComponents(
   runner: RuntimeRunnerReadinessStatus,
   baselineSha: string | null,
   repository: DevelopmentRepositoryDefinition,
+  nowMs: number,
 ): {
   checkouts: DevelopmentReadinessComponent;
   executor: DevelopmentReadinessComponent;
@@ -214,72 +211,51 @@ function runnerComponents(
       evidence: null,
     };
   }
-  const evidence = {
-    identity: runner.record.runnerId,
-    checkedAt: runner.record.checkedAt,
-    expiresAt: runner.record.expiresAt,
-  };
   if (runner.status === 'stale') {
     return {
       checkouts: component('blocked', 'runtime_runner_readiness_stale', true),
       executor: component('blocked', 'runtime_runner_readiness_stale', true),
-      evidence,
+      evidence: {
+        identity: runner.record.runnerId,
+        checkedAt: runner.record.checkedAt,
+        expiresAt: runner.record.expiresAt,
+        schemaVersion: runner.record.schemaVersion,
+        repositoryId: repository.id,
+        canonicalRepository: repository.fullName,
+        observedBaselineSha: null,
+        verifiedBaselineSha: baselineSha,
+        readinessState: 'blocked',
+        blockingReason: MESSAGES.runtime_runner_readiness_stale,
+        evidenceAgeMs: Math.max(0, nowMs - Date.parse(runner.record.checkedAt)),
+      },
     };
   }
 
-  const reportedExecutor = runner.record.capabilities.executor;
-  const executorReason = EXECUTOR_REASON_CODES.has(reportedExecutor.reasonCode)
-    ? reportedExecutor.reasonCode
-    : 'runtime_executor_probe_failed';
-  const executor = component(
-    reportedExecutor.state === 'ready' ? 'ready' : 'blocked',
-    executorReason,
-    reportedExecutor.state !== 'ready',
-  );
-  const reportedCheckouts = runner.record.capabilities.checkouts;
-  const checkoutReason = CHECKOUT_REASON_CODES.has(reportedCheckouts.reasonCode)
-    ? reportedCheckouts.reasonCode
+  const reconciled = reconcileRunnerReadinessForRepository({
+    record: runner.record,
+    repository,
+    baselineSha,
+    nowMs,
+  });
+  const checkoutReason = CHECKOUT_REASON_CODES.has(reconciled.checkoutReasonCode)
+    ? reconciled.checkoutReasonCode
     : 'runtime_checkout_probe_failed';
-  if (reportedCheckouts.state === 'blocked') {
-    return {
-      checkouts: component('blocked', checkoutReason, true),
-      executor,
-      evidence,
-    };
-  }
+  const executorReason = EXECUTOR_REASON_CODES.has(reconciled.executorReasonCode)
+    ? reconciled.executorReasonCode
+    : 'runtime_executor_probe_failed';
 
-  if (!baselineSha) {
-    return {
-      checkouts: component('blocked', 'runtime_checkout_baseline_unavailable', true),
-      executor,
-      evidence,
-    };
-  }
-  if (
-    shouldCompareRunnerV1BaselineSha(repository)
-    && runner.record.baselineSha !== baselineSha
-  ) {
-    return {
-      checkouts: component('blocked', 'runtime_baseline_remote_mismatch', true),
-      executor,
-      evidence,
-    };
-  }
-  if (runner.record.capabilities.baselineRecovery.state !== 'ready') {
-    return {
-      checkouts: component('blocked', 'runtime_baseline_recovery_unavailable', true),
-      executor,
-      evidence,
-    };
-  }
   return {
     checkouts: component(
-      reportedCheckouts.state,
+      reconciled.checkoutState,
       checkoutReason,
-      false,
+      reconciled.checkoutBlocking,
     ),
-    executor,
-    evidence,
+    executor: component(
+      reconciled.executorState,
+      executorReason,
+      reconciled.executorBlocking,
+    ),
+    evidence: reconciled.evidence,
   };
 }
 
@@ -324,7 +300,7 @@ export async function getDevelopmentReadiness(
       ? loadRunner(clientId, checkedAt.getTime()).catch(() => ({ status: 'missing' as const, record: null }))
       : Promise.resolve({ status: 'missing' as const, record: null }),
   ]);
-  const runnerResult = runnerComponents(runner, baseline.sha, repository);
+  const runnerResult = runnerComponents(runner, baseline.sha, repository, checkedAt.getTime());
   const components = {
     bridge,
     checkouts: runnerResult.checkouts,

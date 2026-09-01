@@ -67,7 +67,7 @@ export type RuntimeBridgeOwnerGateView = RuntimeBridgeOwnerGateRequest & {
 
 export type RuntimeRunnerCapabilityState = 'ready' | 'blocked' | 'degraded';
 
-export type RuntimeRunnerReadinessRecord = {
+export type RuntimeRunnerReadinessRecordV1 = {
   schemaVersion: 'asi.runtime.runner-readiness.v1';
   runnerId: string;
   checkedAt: string;
@@ -79,6 +79,36 @@ export type RuntimeRunnerReadinessRecord = {
     executor: { state: 'ready' | 'blocked'; reasonCode: string };
   };
 };
+
+export type RuntimeRunnerRepositoryEvidenceV2 = {
+  repositoryId: 'landing' | 'runtime';
+  fullName: 'ASI-integration/asi-landing' | 'ASI-integration/asi-os-runtime';
+  checkoutPath: string;
+  expectedOrigin: string;
+  defaultBranch: 'main';
+  observedBaselineSha: string | null;
+  checkoutReady: boolean;
+  originReady: boolean;
+  baselineReady: boolean;
+  recoveryReady: boolean;
+  blockers: string[];
+};
+
+export type RuntimeRunnerReadinessRecordV2 = {
+  schemaVersion: 'asi.runtime.runner-readiness.v2';
+  runnerId: string;
+  checkedAt: string;
+  expiresAt: string;
+  capabilities: {
+    executor: { state: 'ready' | 'blocked'; reasonCode: string };
+  };
+  blockers: string[];
+  repositories: RuntimeRunnerRepositoryEvidenceV2[];
+};
+
+export type RuntimeRunnerReadinessRecord =
+  | RuntimeRunnerReadinessRecordV1
+  | RuntimeRunnerReadinessRecordV2;
 
 export type RuntimeBridgeChatInput =
   | {
