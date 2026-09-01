@@ -132,8 +132,18 @@ describe('development console readiness API', () => {
   it('requires an owner session before running the bounded readiness check', async () => {
     getSession.mockResolvedValue({ userId: 'user-2', email: 'user@example.com' });
     const { GET } = await import('@/app/api/dashboard/development/readiness/route');
-    const res = await GET();
+    const res = await GET(new Request('http://localhost/api/dashboard/development/readiness?repositoryId=asi-landing'));
     expect(res.status).toBe(403);
+    expect(getDevelopmentReadiness).not.toHaveBeenCalled();
+  });
+
+  it('rejects forged repository ids before readiness checks', async () => {
+    getSession.mockResolvedValue(ownerSession());
+    const { GET } = await import('@/app/api/dashboard/development/readiness/route');
+    const res = await GET(new Request('http://localhost/api/dashboard/development/readiness?repositoryId=forged-repository'));
+    const json = await res.json();
+    expect(res.status).toBe(400);
+    expect(json).toMatchObject({ ok: false, code: 'repository_not_allowed' });
     expect(getDevelopmentReadiness).not.toHaveBeenCalled();
   });
 
@@ -141,11 +151,12 @@ describe('development console readiness API', () => {
     getSession.mockResolvedValue(ownerSession());
     getDevelopmentReadiness.mockResolvedValue(launchableReadiness);
     const { GET } = await import('@/app/api/dashboard/development/readiness/route');
-    const res = await GET();
+    const res = await GET(new Request('http://localhost/api/dashboard/development/readiness?repositoryId=asi-landing'));
     const json = await res.json();
     expect(res.status).toBe(200);
     expect(res.headers.get('cache-control')).toBe('no-store');
     expect(json).toEqual({ ok: true, readiness: launchableReadiness });
+    expect(getDevelopmentReadiness).toHaveBeenCalledWith({ repositoryId: 'asi-landing' });
     expect(JSON.stringify(json)).not.toMatch(/C:\\|\/srv\/|TOKEN|SERVICE_ROLE|stdout|stderr/i);
     for (const secret of Object.values(ROLE_TOKEN_VALUES)) {
       expect(JSON.stringify(json)).not.toContain(secret);
@@ -192,6 +203,7 @@ describe('development readiness component behavior', () => {
       '@/lib/development/readiness',
     );
     return actual.getDevelopmentReadiness({
+      repositoryId: 'asi-landing',
       env: readyEnv,
       now: () => new Date('2026-08-01T00:00:00.000Z'),
       probeBridgeStorage: async () => {},
@@ -231,6 +243,40 @@ describe('development readiness component behavior', () => {
     expect(first.canLaunch).toBe(true);
     expect(Object.values(first.components).every((item) => item.state === 'ready')).toBe(true);
   });
+
+  it('fails closed for forged repository ids', async () => {
+    const actual = await vi.importActual<typeof import('@/lib/development/readiness')>(
+      '@/lib/development/readiness',
+    );
+    await expect(actual.getDevelopmentReadiness({ repositoryId: 'forged-repository' }))
+      .rejects.toMatchObject({ code: 'repository_not_allowed' });
+  });
+
+  it('resolves baseline readiness for the selected landing repository', async () => {
+    const resolveBaselineSha = vi.fn(async () => 'b'.repeat(40));
+    const readiness = await actualReadiness({
+      repositoryId: 'asi-landing',
+      resolveBaselineSha,
+    });
+    expect(readiness.components.baseline.reasonCode).toBe('baseline_ready');
+    expect(resolveBaselineSha).toHaveBeenCalledTimes(1);
+  });
+
+  it('resolves baseline readiness for the selected asi-os-runtime repository', async () => {
+    const resolveBaselineSha = vi.fn(async () => 'c'.repeat(40));
+    const readiness = await actualReadiness({
+      repositoryId: 'asi-os-runtime',
+      resolveBaselineSha,
+    });
+    expect(readiness.components.baseline.reasonCode).toBe('baseline_ready');
+    expect(resolveBaselineSha).toHaveBeenCalledTimes(1);
+  });
+
+  it('probes GitHub readiness only for the selected repository', async () => {
+    const probeGitHub = vi.fn(async () => {});
+    await actualReadiness({ repositoryId: 'asi-os-runtime', probeGitHub });
+    expect(probeGitHub).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe('development console task submit API', () => {
@@ -254,7 +300,64 @@ describe('development console task submit API', () => {
 
     expect(res.status).toBe(503);
     await expect(res.json()).resolves.toMatchObject({ ok: false, code: 'readiness_blocked' });
+    expect(getDevelopmentReadiness).toHaveBeenCalledWith({ repositoryId: 'asi-landing' });
     expect(submitDevelopmentTask).not.toHaveBeenCalled();
+  });
+
+  it('rejects forged repository ids before readiness and submit', async () => {
+    getSession.mockResolvedValue(ownerSession());
+    const { POST } = await import('@/app/api/dashboard/development/tasks/route');
+    const res = await POST(new Request('http://localhost/api/dashboard/development/tasks', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        repositoryId: 'forged-repository',
+        prompt: 'Запусти задачу в чужой репозиторий.',
+        idempotencyKey: 'direct-forged-repo',
+      }),
+    }));
+
+    expect(res.status).toBe(400);
+    await expect(res.json()).resolves.toMatchObject({ ok: false, code: 'repository_not_allowed' });
+    expect(getDevelopmentReadiness).not.toHaveBeenCalled();
+    expect(submitDevelopmentTask).not.toHaveBeenCalled();
+  });
+
+  it('gates task submission on readiness for the same repository that will be submitted', async () => {
+    getSession.mockResolvedValue(ownerSession());
+    submitDevelopmentTask.mockResolvedValue({
+      deduplicated: false,
+      snapshot: {
+        task: {
+          taskId: '11111111-1111-4111-8111-111111111111',
+          chatgptTaskId: 'dev-console-task-1',
+          conversationId: 'dev-console-owner-1',
+          status: 'queued',
+          attemptCount: 0,
+          createdAt: '2026-08-01T00:00:00.000Z',
+          updatedAt: '2026-08-01T00:00:00.000Z',
+          repository: 'ASI-integration/asi-os-runtime',
+        },
+        result: null,
+        pendingGates: [],
+      },
+    });
+    const { POST } = await import('@/app/api/dashboard/development/tasks/route');
+    const res = await POST(new Request('http://localhost/api/dashboard/development/tasks', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        repositoryId: 'asi-os-runtime',
+        prompt: 'Обнови runtime rollout checklist.',
+        idempotencyKey: 'dev-console-idem-os-runtime',
+      }),
+    }));
+
+    expect(res.status).toBe(200);
+    expect(getDevelopmentReadiness).toHaveBeenCalledWith({ repositoryId: 'asi-os-runtime' });
+    expect(submitDevelopmentTask).toHaveBeenCalledWith(expect.objectContaining({
+      repositoryId: 'asi-os-runtime',
+    }));
   });
 
   it('rejects a direct POST when readiness cannot be loaded', async () => {
@@ -370,8 +473,11 @@ describe('development console repository preference', () => {
     const repositories = await import('@/lib/development/repositories');
     const options = repositories.listDevelopmentRepositories();
 
+    expect(options).toHaveLength(2);
     expect(repositories.resolveRememberedDevelopmentRepositoryId(options, 'asi-landing'))
       .toBe('asi-landing');
+    expect(repositories.resolveRememberedDevelopmentRepositoryId(options, 'asi-os-runtime'))
+      .toBe('asi-os-runtime');
     expect(repositories.resolveRememberedDevelopmentRepositoryId(options, 'forged-repository'))
       .toBe(options[0].id);
   });
@@ -615,7 +721,7 @@ describe('owner console autonomous acceptance command', () => {
     const fetchImpl = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
       const url = String(input);
       calls.push({ url, init });
-      if (url.endsWith('/api/dashboard/development/readiness')) {
+      if (url.includes('/api/dashboard/development/readiness')) {
         return new Response(JSON.stringify({
           ok: true,
           readiness: {
@@ -771,7 +877,7 @@ describe('owner console autonomous acceptance command', () => {
   ] as const)('rejects readiness with %s before task submission', async (_name, readiness) => {
     const fetchImpl = vi.fn(async (input: string | URL | Request) => {
       const url = String(input);
-      if (url.endsWith('/api/dashboard/development/readiness')) {
+      if (url.includes('/api/dashboard/development/readiness')) {
         return new Response(JSON.stringify({ ok: true, readiness }), { status: 200 });
       }
       return new Response('{}', { status: 500 });
@@ -808,7 +914,7 @@ describe('owner console autonomous acceptance command', () => {
     ].join('\n');
     const fetchImpl = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
       const url = String(input);
-      if (url.endsWith('/api/dashboard/development/readiness')) {
+      if (url.includes('/api/dashboard/development/readiness')) {
         return new Response(JSON.stringify({
           ok: true,
           readiness: launchableReadiness,
