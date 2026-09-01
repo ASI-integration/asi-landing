@@ -220,9 +220,30 @@ export function ReadinessDetailsPanel({ readiness, checkedAtLabel }: ReadinessDe
         </div>
         {readiness.runnerEvidence ? (
           <div className="rounded-lg border border-slate-200 bg-white px-3 py-2">
+            <DetailRow label="readiness version" value={readiness.runnerEvidence.schemaVersion} mono />
             <DetailRow label="runner identity" value={readiness.runnerEvidence.identity} mono />
+            <DetailRow label="canonical repository" value={readiness.runnerEvidence.canonicalRepository} mono />
+            <DetailRow label="repository id" value={readiness.runnerEvidence.repositoryId} mono />
             <DetailRow label="runner checkedAt" value={readiness.runnerEvidence.checkedAt} />
             <DetailRow label="runner expiresAt" value={readiness.runnerEvidence.expiresAt} />
+            <DetailRow
+              label="evidence age (ms)"
+              value={String(readiness.runnerEvidence.evidenceAgeMs)}
+            />
+            <DetailRow label="readiness state" value={readiness.runnerEvidence.readinessState} />
+            <DetailRow
+              label="observed baseline SHA"
+              value={readiness.runnerEvidence.observedBaselineSha ?? '—'}
+              mono
+            />
+            <DetailRow
+              label="verified baseline SHA"
+              value={readiness.runnerEvidence.verifiedBaselineSha ?? '—'}
+              mono
+            />
+            {readiness.runnerEvidence.blockingReason ? (
+              <DetailRow label="blocking reason" value={readiness.runnerEvidence.blockingReason} />
+            ) : null}
           </div>
         ) : null}
       </div>
@@ -268,8 +289,10 @@ export function MergeGateHero({ gate, children }: MergeGateHeroProps) {
           <DetailRow label="gateState" value={gate.gateState} />
           <DetailRow label="mergeState" value={gate.mergeState} />
           <DetailRow label="PR" value={`${gate.repository}#${gate.pullRequestNumber}`} />
+          <DetailRow label="PR URL" value={gate.pullRequestUrl} />
           <DetailRow label="Текущая версия" value={gate.currentSha} mono />
           <DetailRow label="Одобренная версия" value={gate.approvedSha ?? 'Нет'} mono />
+          <DetailRow label="expected SHA" value={gate.expectedSha} mono />
           <DetailRow label="Код запроса" value={gate.mergeRequestId} mono />
           {gate.blocker ? <DetailRow label="Блокер" value={gate.blocker.message} /> : null}
         </dl>

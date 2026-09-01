@@ -16,15 +16,25 @@ export type DevelopmentReadinessComponent = {
   blockingLaunch: boolean;
 };
 
+export type DevelopmentReadinessRunnerEvidence = {
+  identity: string;
+  checkedAt: string;
+  expiresAt: string;
+  schemaVersion: 'asi.runtime.runner-readiness.v1' | 'asi.runtime.runner-readiness.v2';
+  repositoryId: string;
+  canonicalRepository: string;
+  observedBaselineSha: string | null;
+  verifiedBaselineSha: string | null;
+  readinessState: DevelopmentReadinessState;
+  blockingReason: string | null;
+  evidenceAgeMs: number;
+};
+
 export type DevelopmentReadinessSnapshot = {
   schemaVersion: 'asi.owner-console.readiness.v1';
   overallState: DevelopmentReadinessState;
   canLaunch: boolean;
   checkedAt: string;
-  runnerEvidence: {
-    identity: string;
-    checkedAt: string;
-    expiresAt: string;
-  } | null;
+  runnerEvidence: DevelopmentReadinessRunnerEvidence | null;
   components: Record<DevelopmentReadinessComponentId, DevelopmentReadinessComponent>;
 };
