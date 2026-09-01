@@ -237,7 +237,7 @@ test('development readiness panel fails closed while loading or errored and pres
   });
 
   await page.goto('/dashboard/development', { waitUntil: 'domcontentloaded' });
-  await expect(page.getByRole('heading', { name: 'Готовность к запуску' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Готовность к запуску', level: 2 })).toBeHidden();
   await expect(page.getByLabel('Что нужно сделать?')).toBeVisible();
   await expect(page.getByText('Расширенные настройки')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Проверка готовности…' })).toBeDisabled();
@@ -248,15 +248,19 @@ test('development readiness panel fails closed while loading or errored and pres
 
   readinessMode = 'launchable';
   await page.getByRole('button', { name: 'Проверить готовность' }).click();
-  await expect(page.getByText('runtime_checkout_recoverable_drift')).toBeVisible();
+  await expect(page.getByText('github_provider_missing')).toBeHidden();
+  await page.getByText('Подробнее').first().click();
   await expect(page.getByText('github_provider_missing')).toBeVisible();
-  await expect(page.getByRole('status', { name: 'Статус компонента: Требует внимания' })).toBeVisible();
+  await expect(page.getByText('GitHub подключён и доступен.')).toBeHidden();
+  await expect(page.getByText('Подключение к GitHub не настроено.')).toBeVisible();
   await expect(page.getByRole('status', { name: 'Статус компонента: Есть блокер' })).toBeVisible();
-  await expect(page.getByRole('status', { name: 'Общий статус системы: Есть блокер' })).toBeVisible();
+  await expect(page.getByRole('status', { name: 'Общий статус системы: СТОП' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Запустить задачу' })).toBeEnabled();
 
   readinessMode = 'hard-blocked';
   await page.getByRole('button', { name: 'Проверить готовность' }).click();
+  await expect(page.getByText('runtime_checkout_dirty')).toBeHidden();
+  await page.getByText('Подробнее').first().click();
   await expect(page.getByText('runtime_checkout_dirty')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Запуск пока недоступен' })).toBeDisabled();
   await expect(page.locator('body')).not.toContainText('ASI_RUNTIME_BRIDGE_CHECKOUTS_JSON');
@@ -352,21 +356,25 @@ test('development readiness status icons follow live ready, degraded and blocked
   });
 
   await page.goto('/dashboard/development', { waitUntil: 'domcontentloaded' });
-  await expect(page.getByText('Система готова', { exact: true })).toBeVisible();
-  await expect(page.getByRole('status', { name: 'Общий статус системы: Система готова' })).toBeVisible();
+  await expect(page.getByText('ГОТОВО', { exact: true })).toBeVisible();
+  await expect(page.getByRole('status', { name: 'Общий статус системы: ГОТОВО' })).toBeVisible();
   await expect(page.getByRole('status', { name: 'Статус компонента: Готово' }).first()).toBeVisible();
 
   readinessMode = 'degraded';
   await page.getByRole('button', { name: 'Проверить готовность' }).click();
+  await expect(page.getByText('github_provider_degraded')).toBeHidden();
+  await page.getByText('Подробнее').first().click();
   await expect(page.getByText('github_provider_degraded')).toBeVisible();
-  await expect(page.getByText('Система готова', { exact: true })).toHaveCount(0);
-  await expect(page.getByRole('status', { name: 'Общий статус системы: Требует внимания' })).toBeVisible();
+  await expect(page.getByText('ГОТОВО', { exact: true })).toHaveCount(0);
+  await expect(page.getByRole('status', { name: 'Общий статус системы: ВНИМАНИЕ' })).toBeVisible();
   await expect(page.getByRole('status', { name: 'Статус компонента: Требует внимания' })).toBeVisible();
 
   readinessMode = 'blocked';
   await page.getByRole('button', { name: 'Проверить готовность' }).click();
+  await expect(page.getByText('runtime_checkout_dirty')).toBeHidden();
+  await page.getByText('Подробнее').first().click();
   await expect(page.getByText('runtime_checkout_dirty')).toBeVisible();
-  await expect(page.getByRole('status', { name: 'Общий статус системы: Есть блокер' })).toBeVisible();
+  await expect(page.getByRole('status', { name: 'Общий статус системы: СТОП' })).toBeVisible();
   await expect(page.getByRole('status', { name: 'Статус компонента: Есть блокер' })).toBeVisible();
 });
 
@@ -456,7 +464,9 @@ test('development readiness keeps the previous snapshot visible during a delayed
   });
 
   await page.goto('/dashboard/development', { waitUntil: 'domcontentloaded' });
-  await expect(page.getByRole('status', { name: 'Общий статус системы: Система готова' })).toBeVisible();
+  await expect(page.getByRole('status', { name: 'Общий статус системы: ГОТОВО' })).toBeVisible();
+  await expect(page.getByText('bridge_ready')).toBeHidden();
+  await page.getByText('Подробнее').first().click();
   await expect(page.getByText('bridge_ready')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Запустить задачу' })).toBeEnabled();
 
@@ -468,14 +478,14 @@ test('development readiness keeps the previous snapshot visible during a delayed
 
   await expect(page.getByLabel('Идёт повторная проверка готовности')).toBeVisible();
   await expect(page.getByText('Обновление…')).toBeVisible();
-  await expect(page.getByRole('status', { name: 'Общий статус системы: Система готова' })).toBeVisible();
+  await expect(page.getByRole('status', { name: 'Общий статус системы: ГОТОВО' })).toBeVisible();
   await expect(page.getByText('bridge_ready')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Проверка готовности…' })).toBeDisabled();
 
   readinessMode = 'refresh-error';
   releaseRefresh();
   await expect(page.getByText('Не удалось проверить готовность.')).toBeVisible();
-  await expect(page.getByRole('status', { name: 'Общий статус системы: Система готова' })).toBeVisible();
+  await expect(page.getByRole('status', { name: 'Общий статус системы: ГОТОВО' })).toBeVisible();
   await expect(page.getByText('bridge_ready')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Запуск пока недоступен' })).toBeDisabled();
   expect(readinessCalls).toBeGreaterThanOrEqual(2);

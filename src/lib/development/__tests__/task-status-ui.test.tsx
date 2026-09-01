@@ -67,6 +67,8 @@ describe('development task status UI', () => {
     );
 
     expect(html).toContain('data-development-task-card="true"');
+    expect(html).toContain('data-task-outcome-hero="completed"');
+    expect(html).toContain('ЗАВЕРШЕНО');
     expect(html).toContain('data-task-title="true"');
     expect(html).toContain('Улучшить карточку задачи');
     expect(html).toContain('data-task-stage="true"');
