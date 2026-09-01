@@ -8,7 +8,11 @@ import { readRuntimeBridgeSupabaseConfig } from '@/lib/asi-runtime/bridge-supaba
 import type { RuntimeRunnerReadinessStatus } from '@/lib/asi-runtime/bridge-runner-readiness';
 import { resolveAllowlistedBaselineSha } from './baseline-sha';
 import { probeGitHubMergeProvider } from './github-control-center';
-import { DEVELOPMENT_REPOSITORY_ALLOWLIST } from './repositories';
+import {
+  DEVELOPMENT_REPOSITORY_ALLOWLIST,
+  resolveDevelopmentRepository,
+  type DevelopmentRepositoryDefinition,
+} from './repositories';
 import type {
   DevelopmentReadinessComponent,
   DevelopmentReadinessSnapshot,
@@ -18,6 +22,7 @@ import type {
 type RuntimeEnvironment = Readonly<Record<string, string | undefined>>;
 
 type ReadinessDependencies = {
+  repositoryId?: string | null;
   env?: RuntimeEnvironment;
   now?: () => Date;
   probeBridgeStorage?: () => Promise<void>;
@@ -65,6 +70,7 @@ const MESSAGES: Record<string, string> = {
   github_provider_unauthenticated: 'GitHub не подтвердил доступ сервера.',
   github_provider_repository_mismatch: 'GitHub подключён не к разрешённому репозиторию.',
   github_provider_unreachable: 'GitHub сейчас недоступен для проверки.',
+  repository_not_allowed: 'Репозиторий не разрешён для консоли разработки.',
 };
 
 const CHECKOUT_REASON_CODES = new Set([
@@ -165,9 +171,37 @@ async function baselineReadiness(
   }
 }
 
+function blockedRepositorySnapshot(checkedAt: Date): DevelopmentReadinessSnapshot {
+  const blocked = component('blocked', 'repository_not_allowed', true);
+  return {
+    schemaVersion: 'asi.owner-console.readiness.v1',
+    overallState: 'blocked',
+    canLaunch: false,
+    checkedAt: checkedAt.toISOString(),
+    runnerEvidence: null,
+    components: {
+      bridge: blocked,
+      checkouts: blocked,
+      baseline: blocked,
+      executor: blocked,
+      github: blocked,
+    },
+  };
+}
+
+/**
+ * runner-readiness.v1 publishes baselineSha for ASI-integration/asi-landing only.
+ * Do not compare server-resolved asi-os-runtime/main against that landing-only field.
+ * Follow-up: runner-readiness v2 will publish per-repository baseline evidence.
+ */
+function shouldCompareRunnerV1BaselineSha(repository: DevelopmentRepositoryDefinition): boolean {
+  return repository.id === 'asi-landing';
+}
+
 function runnerComponents(
   runner: RuntimeRunnerReadinessStatus,
   baselineSha: string | null,
+  repository: DevelopmentRepositoryDefinition,
 ): {
   checkouts: DevelopmentReadinessComponent;
   executor: DevelopmentReadinessComponent;
@@ -221,7 +255,10 @@ function runnerComponents(
       evidence,
     };
   }
-  if (runner.record.baselineSha !== baselineSha) {
+  if (
+    shouldCompareRunnerV1BaselineSha(repository)
+    && runner.record.baselineSha !== baselineSha
+  ) {
     return {
       checkouts: component('blocked', 'runtime_baseline_remote_mismatch', true),
       executor,
@@ -263,20 +300,31 @@ export async function getDevelopmentReadiness(
   dependencies: ReadinessDependencies = {},
 ): Promise<DevelopmentReadinessSnapshot> {
   const env = dependencies.env ?? process.env;
-  const repository = DEVELOPMENT_REPOSITORY_ALLOWLIST[0];
   const checkedAt = (dependencies.now ?? (() => new Date()))();
+  const requestedRepositoryId = dependencies.repositoryId;
+  const hasExplicitRepositoryId = String(requestedRepositoryId ?? '').trim().length > 0;
+  const repository = hasExplicitRepositoryId
+    ? resolveDevelopmentRepository(requestedRepositoryId)
+    : DEVELOPMENT_REPOSITORY_ALLOWLIST[0];
+  if (hasExplicitRepositoryId && !repository) {
+    return blockedRepositorySnapshot(checkedAt);
+  }
+  if (!repository) {
+    return blockedRepositorySnapshot(checkedAt);
+  }
+
   const clientId = parseRuntimeBridgeClientId(env.ASI_RUNTIME_BRIDGE_CLIENT_ID);
   const loadRunner = dependencies.loadRunnerReadiness
     ?? (async (id: string, now: number) => getPublishedRuntimeRunnerReadiness(id, now));
   const [bridge, baseline, github, runner] = await Promise.all([
     bridgeReadiness(env, dependencies.probeBridgeStorage ?? (() => probeRuntimeBridgeStorage())),
     baselineReadiness(dependencies.resolveBaselineSha ?? (() => resolveAllowlistedBaselineSha(repository))),
-    githubReadiness(dependencies.probeGitHub ?? (() => probeGitHubMergeProvider())),
+    githubReadiness(dependencies.probeGitHub ?? (() => probeGitHubMergeProvider(repository))),
     clientId
       ? loadRunner(clientId, checkedAt.getTime()).catch(() => ({ status: 'missing' as const, record: null }))
       : Promise.resolve({ status: 'missing' as const, record: null }),
   ]);
-  const runnerResult = runnerComponents(runner, baseline.sha);
+  const runnerResult = runnerComponents(runner, baseline.sha, repository);
   const components = {
     bridge,
     checkouts: runnerResult.checkouts,

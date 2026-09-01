@@ -124,7 +124,11 @@ function parseTask(value: unknown): RuntimeBridgeTaskRequest | null {
     .flatMap((item) => item as string[])
     .reduce((total, item) => total + item.length, 0);
   if (packageChars > 4 * 1024) return null;
-  if (value.repository !== 'ASI-integration/asi-landing' || !text(value.baselineSha, 40, SHA)) return null;
+  const allowedRepositories = new Set([
+    'ASI-integration/asi-landing',
+    'ASI-integration/asi-os-runtime',
+  ]);
+  if (!allowedRepositories.has(String(value.repository)) || !text(value.baselineSha, 40, SHA)) return null;
   return value as RuntimeBridgeTaskRequest;
 }
 

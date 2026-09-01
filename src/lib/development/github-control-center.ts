@@ -7,6 +7,10 @@ import type {
   OwnerDecisionBusRecord,
 } from './owner-merge-gate';
 import { OWNER_DECISION_BUS_ISSUE_NUMBER } from './owner-merge-gate';
+import {
+  DEVELOPMENT_REPOSITORY_ALLOWLIST,
+  type DevelopmentRepositoryDefinition,
+} from './repositories';
 
 const API_VERSION = '2022-11-28';
 
@@ -66,8 +70,9 @@ function headers(token?: string): HeadersInit {
   };
 }
 
-/** Non-destructive authenticated probe for the only allowlisted repository. */
+/** Non-destructive authenticated probe for the selected allowlisted repository. */
 export async function probeGitHubMergeProvider(
+  repository: DevelopmentRepositoryDefinition = DEVELOPMENT_REPOSITORY_ALLOWLIST[0],
   fetchImpl: typeof fetch = fetch,
 ): Promise<void> {
   const token = String(process.env.GITHUB_TOKEN ?? '').trim();
@@ -75,12 +80,15 @@ export async function probeGitHubMergeProvider(
 
   let response: Response;
   try {
-    response = await fetchImpl('https://api.github.com/repos/ASI-integration/asi-landing', {
+    response = await fetchImpl(
+      `https://api.github.com/repos/${repository.githubOwner}/${repository.githubRepo}`,
+      {
       method: 'GET',
       headers: headers(token),
       cache: 'no-store',
       signal: AbortSignal.timeout(5_000),
-    });
+    },
+    );
   } catch {
     throw new GitHubProviderReadinessError('github_provider_unreachable');
   }
@@ -90,7 +98,7 @@ export async function probeGitHubMergeProvider(
   if (!response.ok) throw new GitHubProviderReadinessError('github_provider_unreachable');
 
   const payload = await responseJson(response);
-  if (payload.full_name !== 'ASI-integration/asi-landing') {
+  if (payload.full_name !== repository.fullName) {
     throw new GitHubProviderReadinessError('github_provider_repository_mismatch');
   }
 }
