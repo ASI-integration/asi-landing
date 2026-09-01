@@ -74,7 +74,8 @@ export type ControlCenterMergeBlocker = {
     | 'owner_gate_conflict'
     | 'owner_gate_unavailable'
     | 'merge_provider_not_configured'
-    | 'merge_provider_rejected';
+    | 'merge_provider_rejected'
+    | 'task_repository_mismatch';
   message: string;
   repository: string;
   pullRequestNumber: number;
@@ -277,6 +278,19 @@ function blockedView(input: {
     merged: input.pullRequest.merged,
     mergeCommitSha: input.pullRequest.mergeCommitSha,
   };
+}
+
+export function blockedTaskRepositoryMismatchMergeGate(input: {
+  pullRequest: ControlCenterPullRequest;
+  expectedSha: string;
+}): ControlCenterMergeGateView {
+  return blockedView({
+    gateState: 'failed',
+    pullRequest: input.pullRequest,
+    expectedSha: input.expectedSha,
+    code: 'task_repository_mismatch',
+    message: 'PR относится к другому репозиторию, чем задача. Объединение заблокировано.',
+  });
 }
 
 export function unavailableControlCenterMergeGate(input: {
