@@ -1,0 +1,49 @@
+{
+  "schemaVersion": "asi.runtime.runner-readiness.v2",
+  "runnerId": "runner-1234567890abcdef12345678",
+  "checkedAt": "2026-08-01T00:00:00.000Z",
+  "expiresAt": "2026-08-01T00:00:45.000Z",
+  "capabilities": {
+    "checkouts": {
+      "state": "ready",
+      "reasonCode": "runtime_checkouts_ready"
+    },
+    "baselineRecovery": {
+      "state": "ready",
+      "reasonCode": "runtime_baseline_recovery_ready"
+    },
+    "executor": {
+      "state": "ready",
+      "reasonCode": "runtime_executor_ready"
+    }
+  },
+  "blockers": [],
+  "repositories": [
+    {
+      "repositoryId": "landing",
+      "fullName": "ASI-integration/asi-landing",
+      "canonicalCheckoutPath": "/srv/asi-landing",
+      "expectedOrigin": "https://github.com/ASI-integration/asi-landing.git",
+      "defaultBranch": "main",
+      "observedBaselineSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "checkoutReady": true,
+      "originReady": true,
+      "baselineReady": true,
+      "recoveryReady": true,
+      "blockers": []
+    },
+    {
+      "repositoryId": "runtime",
+      "fullName": "ASI-integration/asi-os-runtime",
+      "canonicalCheckoutPath": "/srv/asi-os-runtime",
+      "expectedOrigin": "git@github.com-asi-os-runtime:ASI-integration/asi-os-runtime.git",
+      "defaultBranch": "main",
+      "observedBaselineSha": "cccccccccccccccccccccccccccccccccccccccc",
+      "checkoutReady": true,
+      "originReady": true,
+      "baselineReady": true,
+      "recoveryReady": true,
+      "blockers": []
+    }
+  ]
+}

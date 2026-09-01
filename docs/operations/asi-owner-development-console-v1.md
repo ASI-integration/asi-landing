@@ -83,6 +83,14 @@ Before submission, the page calls the owner-only readiness endpoint. The respons
 
 The bounded check reads no secret value into its response or logs. Bridge storage is probed with a read-only limited query. The actual Runtime runner process performs checkout, baseline-recovery and executor-entrypoint probes on its own host and publishes only a bounded safe record through the authenticated runner operation on the existing Bridge endpoint. The control plane accepts one stable runner identity while evidence is fresh. Missing or expired evidence fails closed.
 
+### runner-readiness.v2
+
+When Runtime publishes `asi.runtime.runner-readiness.v2`, the Owner Console selects repository evidence only for the server-allowlisted repository currently selected in the UI or validated on task submission. Each canonical repository carries its own observed baseline SHA, origin readiness, checkout readiness, baseline readiness, and recovery readiness. Missing, malformed, stale, cross-repository, or mismatched evidence fails closed and never falls back to another repository's baseline.
+
+Supported compatibility path for `asi.runtime.runner-readiness.v1` remains landing-only for `baselineSha` comparison: `ASI-integration/asi-landing` still requires an exact match with server-resolved `main`, while `ASI-integration/asi-os-runtime` uses server-resolved runtime `main` plus global executor/checkouts/baselineRecovery signals without comparing runtime `main` against landing-only `baselineSha`.
+
+The readiness details panel exposes: readiness version, canonical repository, observed baseline SHA, verified baseline SHA, evidence age, readiness state, and the exact blocking reason when launch is not allowed.
+
 Runner checkout validation uses read-only Git commands and `ls-remote`; it never fetches, checks out, resets, or cleans. Recoverable baseline drift is `degraded` and remains launchable. A missing, non-Git, dirty or wrong-origin checkout is a hard blocker. Missing or unauthenticated GitHub integration is visible as a blocker but does not disable task submission because execution itself can still start. The form stays disabled while readiness is loading or failed, and `POST /api/dashboard/development/tasks` repeats the hard-blocker check so a direct request cannot bypass it.
 
 **Проверить готовность** repeats the same non-mutating check. Retry is semantically idempotent; only the check time may change.
