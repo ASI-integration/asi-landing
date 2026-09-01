@@ -2,10 +2,12 @@ import { containsForbiddenStringContent } from './ingest-schema';
 import type {
   RuntimeBridgeChatInput,
   RuntimeBridgeOwnerGateRequest,
+  RuntimeBridgeRepository,
   RuntimeBridgeRunnerInput,
   RuntimeBridgeSafeResult,
   RuntimeBridgeTaskRequest,
 } from './bridge-types';
+import { RUNTIME_BRIDGE_ALLOWED_REPOSITORIES } from './bridge-types';
 
 export const RUNTIME_BRIDGE_MAX_BODY_BYTES = 64 * 1024;
 export const RUNTIME_BRIDGE_MAX_INSTRUCTIONS = 100;
@@ -13,6 +15,17 @@ export const RUNTIME_BRIDGE_MAX_INSTRUCTION_LINE_CHARS = 2000;
 /** Sum of instruction line lengths; sized so UTF-8 Cyrillic stays under the 64 KiB body cap. */
 export const RUNTIME_BRIDGE_MAX_INSTRUCTION_TOTAL_CHARS = 24 * 1024;
 
+function isAllowedRuntimeBridgeRepository(value: unknown): value is RuntimeBridgeRepository {
+  return typeof value === 'string'
+    && (RUNTIME_BRIDGE_ALLOWED_REPOSITORIES as readonly string[]).includes(value);
+}
+
+function allowlistedPullRequestPathname(pathname: string): boolean {
+  return RUNTIME_BRIDGE_ALLOWED_REPOSITORIES.some((repository) => {
+    const [owner, repo] = repository.split('/');
+    return new RegExp(`^/${owner}/${repo}/pull/[1-9][0-9]*/?$`).test(pathname);
+  });
+}
 const SHA = /^[0-9a-f]{40}$/;
 const ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -104,7 +117,7 @@ function safeArtifact(value: unknown): boolean {
       && url.password === ''
       && url.search === ''
       && url.hash === ''
-      && /^\/ASI-integration\/asi-landing\/pull\/[1-9][0-9]*\/?$/.test(url.pathname);
+      && allowlistedPullRequestPathname(url.pathname);
   } catch {
     return false;
   }
@@ -124,7 +137,7 @@ function parseTask(value: unknown): RuntimeBridgeTaskRequest | null {
     .flatMap((item) => item as string[])
     .reduce((total, item) => total + item.length, 0);
   if (packageChars > 4 * 1024) return null;
-  if (value.repository !== 'ASI-integration/asi-landing' || !text(value.baselineSha, 40, SHA)) return null;
+  if (!isAllowedRuntimeBridgeRepository(value.repository) || !text(value.baselineSha, 40, SHA)) return null;
   return value as RuntimeBridgeTaskRequest;
 }
 

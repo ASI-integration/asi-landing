@@ -295,7 +295,7 @@ function unavailablePullRequest(
 ): ControlCenterPullRequest {
   const parts = new URL(pullRequestUrl).pathname.split('/').filter(Boolean);
   return {
-    repository: 'ASI-integration/asi-landing',
+    repository: `${parts[0]}/${parts[1]}`,
     pullRequestNumber: Number(parts[3]),
     pullRequestUrl,
     headSha: expectedSha,
