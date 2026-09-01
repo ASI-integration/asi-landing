@@ -33,6 +33,19 @@ describe('baseline SHA helpers', () => {
     );
   });
 
+  it('resolves baseline SHA for asi-os-runtime using the server allowlist', async () => {
+    const sha = 'c'.repeat(40);
+    const fetchImpl = vi.fn(async () =>
+      new Response(JSON.stringify({ sha }), { status: 200, headers: { 'content-type': 'application/json' } }),
+    );
+    const resolved = await resolveAllowlistedBaselineSha(DEVELOPMENT_REPOSITORY_ALLOWLIST[1], fetchImpl as typeof fetch);
+    expect(resolved).toBe(sha);
+    expect(fetchImpl).toHaveBeenCalledWith(
+      'https://api.github.com/repos/ASI-integration/asi-os-runtime/commits/main',
+      expect.objectContaining({ method: 'GET', cache: 'no-store' }),
+    );
+  });
+
   it('rejects malformed SHA from GitHub', async () => {
     const fetchImpl = vi.fn(async () =>
       new Response(JSON.stringify({ sha: 'SHORT' }), { status: 200 }),

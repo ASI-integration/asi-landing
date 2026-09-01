@@ -1,5 +1,10 @@
 import 'server-only';
 import { isExactGitSha } from './baseline-sha';
+import {
+  DEVELOPMENT_REPOSITORY_ALLOWLIST,
+  isAllowlistedDevelopmentRepositoryFullName,
+  type DevelopmentRepositoryDefinition,
+} from './repositories';
 import { safeAllowlistedPullRequestUrl } from './pr-url';
 import type {
   ControlCenterMergeDependencies,
@@ -36,23 +41,29 @@ export class GitHubControlCenterError extends Error {
 
 function parsePullRequestUrl(value: string): {
   safeUrl: string;
-  repository: 'ASI-integration/asi-landing';
-  owner: 'ASI-integration';
-  repo: 'asi-landing';
+  repository: string;
+  owner: string;
+  repo: string;
   pullRequestNumber: number;
 } {
   const safeUrl = safeAllowlistedPullRequestUrl(value);
   if (!safeUrl) throw new GitHubControlCenterError('pull_request_invalid', 400);
   const parts = new URL(safeUrl).pathname.split('/').filter(Boolean);
+  const owner = parts[0];
+  const repo = parts[1];
+  const repository = `${owner}/${repo}`;
+  if (!isAllowlistedDevelopmentRepositoryFullName(repository)) {
+    throw new GitHubControlCenterError('pull_request_invalid', 400);
+  }
   const pullRequestNumber = Number(parts[3]);
   if (!Number.isSafeInteger(pullRequestNumber) || pullRequestNumber < 1) {
     throw new GitHubControlCenterError('pull_request_invalid', 400);
   }
   return {
     safeUrl,
-    repository: 'ASI-integration/asi-landing',
-    owner: 'ASI-integration',
-    repo: 'asi-landing',
+    repository,
+    owner,
+    repo,
     pullRequestNumber,
   };
 }
@@ -66,8 +77,9 @@ function headers(token?: string): HeadersInit {
   };
 }
 
-/** Non-destructive authenticated probe for the only allowlisted repository. */
+/** Non-destructive authenticated probe for one resolved allowlisted repository. */
 export async function probeGitHubMergeProvider(
+  repository: DevelopmentRepositoryDefinition = DEVELOPMENT_REPOSITORY_ALLOWLIST[0],
   fetchImpl: typeof fetch = fetch,
 ): Promise<void> {
   const token = String(process.env.GITHUB_TOKEN ?? '').trim();
@@ -75,12 +87,15 @@ export async function probeGitHubMergeProvider(
 
   let response: Response;
   try {
-    response = await fetchImpl('https://api.github.com/repos/ASI-integration/asi-landing', {
-      method: 'GET',
-      headers: headers(token),
-      cache: 'no-store',
-      signal: AbortSignal.timeout(5_000),
-    });
+    response = await fetchImpl(
+      `https://api.github.com/repos/${repository.githubOwner}/${repository.githubRepo}`,
+      {
+        method: 'GET',
+        headers: headers(token),
+        cache: 'no-store',
+        signal: AbortSignal.timeout(5_000),
+      },
+    );
   } catch {
     throw new GitHubProviderReadinessError('github_provider_unreachable');
   }
@@ -90,7 +105,7 @@ export async function probeGitHubMergeProvider(
   if (!response.ok) throw new GitHubProviderReadinessError('github_provider_unreachable');
 
   const payload = await responseJson(response);
-  if (payload.full_name !== 'ASI-integration/asi-landing') {
+  if (payload.full_name !== repository.fullName) {
     throw new GitHubProviderReadinessError('github_provider_repository_mismatch');
   }
 }

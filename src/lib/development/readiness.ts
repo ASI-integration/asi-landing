@@ -8,7 +8,7 @@ import { readRuntimeBridgeSupabaseConfig } from '@/lib/asi-runtime/bridge-supaba
 import type { RuntimeRunnerReadinessStatus } from '@/lib/asi-runtime/bridge-runner-readiness';
 import { resolveAllowlistedBaselineSha } from './baseline-sha';
 import { probeGitHubMergeProvider } from './github-control-center';
-import { DEVELOPMENT_REPOSITORY_ALLOWLIST } from './repositories';
+import { resolveDevelopmentRepository } from './repositories';
 import type {
   DevelopmentReadinessComponent,
   DevelopmentReadinessSnapshot,
@@ -18,6 +18,7 @@ import type {
 type RuntimeEnvironment = Readonly<Record<string, string | undefined>>;
 
 type ReadinessDependencies = {
+  repositoryId?: string | null;
   env?: RuntimeEnvironment;
   now?: () => Date;
   probeBridgeStorage?: () => Promise<void>;
@@ -25,6 +26,12 @@ type ReadinessDependencies = {
   loadRunnerReadiness?: (clientId: string, now: number) => Promise<RuntimeRunnerReadinessStatus>;
   probeGitHub?: () => Promise<void>;
 };
+
+export class DevelopmentReadinessRepositoryError extends Error {
+  constructor(public readonly code: 'repository_not_allowed') {
+    super(code);
+  }
+}
 
 const MESSAGES: Record<string, string> = {
   bridge_ready: 'Связь с Runtime Bridge готова.',
@@ -262,8 +269,11 @@ async function githubReadiness(probe: () => Promise<void>): Promise<DevelopmentR
 export async function getDevelopmentReadiness(
   dependencies: ReadinessDependencies = {},
 ): Promise<DevelopmentReadinessSnapshot> {
+  const repository = resolveDevelopmentRepository(dependencies.repositoryId);
+  if (!repository) {
+    throw new DevelopmentReadinessRepositoryError('repository_not_allowed');
+  }
   const env = dependencies.env ?? process.env;
-  const repository = DEVELOPMENT_REPOSITORY_ALLOWLIST[0];
   const checkedAt = (dependencies.now ?? (() => new Date()))();
   const clientId = parseRuntimeBridgeClientId(env.ASI_RUNTIME_BRIDGE_CLIENT_ID);
   const loadRunner = dependencies.loadRunnerReadiness
@@ -271,7 +281,7 @@ export async function getDevelopmentReadiness(
   const [bridge, baseline, github, runner] = await Promise.all([
     bridgeReadiness(env, dependencies.probeBridgeStorage ?? (() => probeRuntimeBridgeStorage())),
     baselineReadiness(dependencies.resolveBaselineSha ?? (() => resolveAllowlistedBaselineSha(repository))),
-    githubReadiness(dependencies.probeGitHub ?? (() => probeGitHubMergeProvider())),
+    githubReadiness(dependencies.probeGitHub ?? (() => probeGitHubMergeProvider(repository))),
     clientId
       ? loadRunner(clientId, checkedAt.getTime()).catch(() => ({ status: 'missing' as const, record: null }))
       : Promise.resolve({ status: 'missing' as const, record: null }),

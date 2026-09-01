@@ -192,7 +192,7 @@ export async function runOwnerConsoleRuntimeAcceptance({
     fetchImpl,
     url,
     cookie,
-    '/api/dashboard/development/readiness',
+    '/api/dashboard/development/readiness?repositoryId=asi-landing',
   );
   const readiness = readinessResponse?.readiness;
   if (readinessResponse?.ok !== true || !isLaunchableReadiness(readiness)) {

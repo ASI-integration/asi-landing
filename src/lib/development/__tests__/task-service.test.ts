@@ -364,6 +364,25 @@ describe('submitDevelopmentTask', () => {
     expect(submitRuntimeBridgeTask).not.toHaveBeenCalled();
   });
 
+  it('submits tasks for asi-os-runtime with the allowlisted full name and baseline SHA', async () => {
+    createCompatibleBridge();
+    resolveAllowlistedBaselineSha.mockResolvedValue('d'.repeat(40));
+    const { submitDevelopmentTask } = await import('../task-service');
+
+    await submitDevelopmentTask({
+      ownerUserId: 'user-1',
+      repositoryId: 'asi-os-runtime',
+      prompt: 'Обнови runtime rollout checklist.',
+      idempotencyKey: 'dev-console-idem-os-runtime',
+    });
+
+    const request = submitRuntimeBridgeTask.mock.calls[0][1].task as RuntimeBridgeTaskRequest;
+    expect(request.repository).toBe('ASI-integration/asi-os-runtime');
+    expect(resolveAllowlistedBaselineSha).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'asi-os-runtime', fullName: 'ASI-integration/asi-os-runtime' }),
+    );
+  });
+
   it('rejects browser-supplied baseline SHA', async () => {
     const { submitDevelopmentTask } = await import('../task-service');
     await expect(
