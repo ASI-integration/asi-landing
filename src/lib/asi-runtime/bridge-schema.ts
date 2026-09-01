@@ -47,6 +47,59 @@ const RUNNER_EXECUTOR_REASON_CODES = new Set([
   'runtime_executor_probe_failed',
 ]);
 
+const RUNTIME_BRIDGE_CANONICAL_PULL_REQUEST_REPOSITORIES = [
+  { fullName: 'ASI-integration/asi-landing', owner: 'ASI-integration', repo: 'asi-landing' },
+  { fullName: 'ASI-integration/asi-os-runtime', owner: 'ASI-integration', repo: 'asi-os-runtime' },
+] as const satisfies ReadonlyArray<{
+  fullName: RuntimeBridgeTaskRequest['repository'];
+  owner: string;
+  repo: string;
+}>;
+
+function isSafePullRequestArtifactUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    if (url.protocol !== 'https:'
+      || url.hostname !== 'github.com'
+      || url.username !== ''
+      || url.password !== ''
+      || url.search !== ''
+      || url.hash !== '') return false;
+    return RUNTIME_BRIDGE_CANONICAL_PULL_REQUEST_REPOSITORIES.some(
+      (entry) => new RegExp(`^/${entry.owner}/${entry.repo}/pull/[1-9][0-9]*/?$`).test(url.pathname),
+    );
+  } catch {
+    return false;
+  }
+}
+
+/** Resolve allowlisted repository identity for a syntactically safe pull_request artifact URL. */
+export function resolveBridgePullRequestArtifactRepository(
+  value: string,
+): RuntimeBridgeTaskRequest['repository'] | null {
+  if (!isSafePullRequestArtifactUrl(value)) return null;
+  const parts = new URL(value).pathname.split('/').filter(Boolean);
+  const owner = parts[0];
+  const repo = parts[1];
+  const match = RUNTIME_BRIDGE_CANONICAL_PULL_REQUEST_REPOSITORIES.find(
+    (entry) => entry.owner === owner && entry.repo === repo,
+  );
+  return match?.fullName ?? null;
+}
+
+/** Authoritative task repository must match every pull_request artifact repository. */
+export function validateBridgeResultArtifactsMatchTaskRepository(
+  result: RuntimeBridgeSafeResult,
+  taskRepository: RuntimeBridgeTaskRequest['repository'],
+): boolean {
+  for (const artifact of result.artifacts) {
+    if (artifact.type !== 'pull_request') continue;
+    const artifactRepository = resolveBridgePullRequestArtifactRepository(artifact.value);
+    if (!artifactRepository || artifactRepository !== taskRepository) return false;
+  }
+  return true;
+}
+
 function object(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }
@@ -96,18 +149,7 @@ function safeArtifact(value: unknown): boolean {
   if (value.type === 'commit') return SHA.test(value.value);
   if (value.type === 'report') return repoPath(value.value) && value.value.startsWith('docs/');
   if (value.type !== 'pull_request') return false;
-  try {
-    const url = new URL(value.value);
-    return url.protocol === 'https:'
-      && url.hostname === 'github.com'
-      && url.username === ''
-      && url.password === ''
-      && url.search === ''
-      && url.hash === ''
-      && /^\/ASI-integration\/asi-landing\/pull\/[1-9][0-9]*\/?$/.test(url.pathname);
-  } catch {
-    return false;
-  }
+  return isSafePullRequestArtifactUrl(value.value);
 }
 
 function parseTask(value: unknown): RuntimeBridgeTaskRequest | null {

@@ -248,6 +248,149 @@ describe('bridge-repository uses dedicated Bridge client', () => {
       .rejects.toMatchObject({ code: 'bridge_not_configured', status: 503 });
     expect(createClient).not.toHaveBeenCalled();
   });
+
+  it('completes runner_submit_result when pull_request artifact matches authoritative task repository', async () => {
+    process.env.ASI_RUNTIME_BRIDGE_SUPABASE_URL = `${BRIDGE_URL}/rest/v1`;
+    process.env.ASI_RUNTIME_BRIDGE_SUPABASE_SERVICE_ROLE_KEY = BRIDGE_KEY;
+    const taskId = '22222222-2222-4222-8222-222222222222';
+    const { rpc, maybeSingle } = mockBridgeClient();
+    rpc.mockImplementation(async (name: string) => {
+      if (name === 'expire_asi_runtime_bridge_owner_gates') return { data: null, error: null };
+      if (name === 'complete_asi_runtime_bridge_task') return { data: true, error: null };
+      return { data: null, error: null };
+    });
+    maybeSingle.mockResolvedValue({
+      data: {
+        id: taskId,
+        chatgpt_task_id: 'chat-runtime',
+        conversation_id: 'conv-runtime',
+        status: 'running',
+        attempt_count: 1,
+        created_at: '2026-09-01T00:00:00.000Z',
+        updated_at: '2026-09-01T00:00:00.000Z',
+        idempotency_key: 'idem-runtime',
+        request_hash: 'hash-runtime',
+        request: {
+          title: 'Runtime task',
+          objective: 'Ship runtime change.',
+          instructions: ['Run focused tests.'],
+          repository: 'ASI-integration/asi-os-runtime',
+          baselineSha: '6b96503fdd2782e1b2ce68a145251d6066f36db8',
+        },
+      },
+      error: null,
+    });
+
+    const { __resetRuntimeBridgeSupabaseForTests } = await import('../bridge-supabase');
+    __resetRuntimeBridgeSupabaseForTests();
+    const { runRuntimeBridgeRunnerOperation } = await import('../bridge-repository');
+
+    const result = {
+      schemaVersion: 'asi.runtime.result.v1' as const,
+      status: 'completed' as const,
+      summary: 'Done.',
+      changedFiles: ['src/example.ts'],
+      checks: [{ name: 'typecheck', status: 'PASS' as const }],
+      artifacts: [
+        { type: 'commit' as const, value: '6b96503fdd2782e1b2ce68a145251d6066f36db8' },
+        { type: 'pull_request' as const, value: 'https://github.com/ASI-integration/asi-os-runtime/pull/99' },
+      ],
+      blockers: [],
+    };
+
+    await expect(runRuntimeBridgeRunnerOperation('chatgpt-owner', {
+      operation: 'runner_submit_result',
+      input: {
+        runnerId: 'runner-1',
+        taskId,
+        leaseToken: '33333333-3333-4333-8333-333333333333',
+        result,
+      },
+    })).resolves.toBe(true);
+
+    expect(rpc).toHaveBeenCalledWith('complete_asi_runtime_bridge_task', expect.objectContaining({
+      p_task_id: taskId,
+      p_result: result,
+    }));
+  });
+
+  it('rejects runner_submit_result when pull_request artifact repository mismatches task repository', async () => {
+    process.env.ASI_RUNTIME_BRIDGE_SUPABASE_URL = `${BRIDGE_URL}/rest/v1`;
+    process.env.ASI_RUNTIME_BRIDGE_SUPABASE_SERVICE_ROLE_KEY = BRIDGE_KEY;
+    const taskId = '44444444-4444-4444-8444-444444444444';
+    const { rpc, maybeSingle } = mockBridgeClient();
+    rpc.mockResolvedValue({ data: null, error: null });
+    maybeSingle.mockResolvedValue({
+      data: {
+        id: taskId,
+        chatgpt_task_id: 'chat-landing',
+        conversation_id: 'conv-landing',
+        status: 'running',
+        attempt_count: 1,
+        created_at: '2026-09-01T00:00:00.000Z',
+        updated_at: '2026-09-01T00:00:00.000Z',
+        idempotency_key: 'idem-landing',
+        request_hash: 'hash-landing',
+        request: {
+          title: 'Landing task',
+          objective: 'Ship landing change.',
+          instructions: ['Run focused tests.'],
+          repository: 'ASI-integration/asi-landing',
+          baselineSha: '8301b36310c663818b56fb5adce92bbc0d8693a3',
+        },
+      },
+      error: null,
+    });
+
+    const { __resetRuntimeBridgeSupabaseForTests } = await import('../bridge-supabase');
+    __resetRuntimeBridgeSupabaseForTests();
+    const { runRuntimeBridgeRunnerOperation, RuntimeBridgeError } = await import('../bridge-repository');
+
+    await expect(runRuntimeBridgeRunnerOperation('chatgpt-owner', {
+      operation: 'runner_submit_result',
+      input: {
+        runnerId: 'runner-1',
+        taskId,
+        leaseToken: '55555555-5555-4555-8555-555555555555',
+        result: {
+          schemaVersion: 'asi.runtime.result.v1',
+          status: 'completed',
+          summary: 'Done.',
+          changedFiles: ['src/example.ts'],
+          checks: [{ name: 'typecheck', status: 'PASS' }],
+          artifacts: [
+            { type: 'pull_request', value: 'https://github.com/ASI-integration/asi-os-runtime/pull/99' },
+          ],
+          blockers: [],
+        },
+      },
+    })).rejects.toMatchObject({ code: 'result_artifact_repository_mismatch', status: 400 });
+
+    expect(rpc).not.toHaveBeenCalledWith('complete_asi_runtime_bridge_task', expect.anything());
+    try {
+      await runRuntimeBridgeRunnerOperation('chatgpt-owner', {
+        operation: 'runner_submit_result',
+        input: {
+          runnerId: 'runner-1',
+          taskId,
+          leaseToken: '55555555-5555-4555-8555-555555555555',
+          result: {
+            schemaVersion: 'asi.runtime.result.v1',
+            status: 'completed',
+            summary: 'Done.',
+            changedFiles: ['src/example.ts'],
+            checks: [{ name: 'typecheck', status: 'PASS' }],
+            artifacts: [
+              { type: 'pull_request', value: 'https://github.com/ASI-integration/asi-os-runtime/pull/99' },
+            ],
+            blockers: [],
+          },
+        },
+      });
+    } catch (error) {
+      expect(error).toBeInstanceOf(RuntimeBridgeError);
+    }
+  });
 });
 
 describe('runtime bridge configuration readiness', () => {

@@ -10,7 +10,9 @@ import { runtimeBridgeRequestHash } from '../bridge-hash';
 import {
   parseRuntimeBridgeChatInput,
   parseRuntimeBridgeRunnerInput,
+  resolveBridgePullRequestArtifactRepository,
   RUNTIME_BRIDGE_MAX_INSTRUCTION_TOTAL_CHARS,
+  validateBridgeResultArtifactsMatchTaskRepository,
 } from '../bridge-schema';
 import { RUNTIME_BRIDGE_CHAT_OPERATIONS } from '../bridge-types';
 
@@ -228,6 +230,103 @@ describe('runtime bridge authentication and schemas', () => {
         },
       },
     })).toBeNull();
+  });
+});
+
+function bridgeRunnerResult(artifacts: Array<{ type: 'commit' | 'pull_request' | 'report'; value: string }>) {
+  return {
+    operation: 'runner_submit_result' as const,
+    input: {
+      runnerId: 'runner-1',
+      taskId: randomUUID(),
+      leaseToken: randomUUID(),
+      result: {
+        schemaVersion: 'asi.runtime.result.v1' as const,
+        status: 'completed' as const,
+        summary: 'Done.',
+        changedFiles: ['src/example.ts'],
+        checks: [{ name: 'typecheck', status: 'PASS' as const }],
+        artifacts,
+        blockers: [],
+      },
+    },
+  };
+}
+
+describe('runtime bridge cross-repository result artifact acceptance', () => {
+  const landingPr = 'https://github.com/ASI-integration/asi-landing/pull/10';
+  const runtimePr = 'https://github.com/ASI-integration/asi-os-runtime/pull/99';
+  const commitSha = '6b96503fdd2782e1b2ce68a145251d6066f36db8';
+
+  it('accepts landing and runtime pull_request artifacts syntactically', () => {
+    expect(parseRuntimeBridgeRunnerInput(bridgeRunnerResult([{ type: 'pull_request', value: landingPr }]))?.operation)
+      .toBe('runner_submit_result');
+    expect(parseRuntimeBridgeRunnerInput(bridgeRunnerResult([{ type: 'pull_request', value: runtimePr }]))?.operation)
+      .toBe('runner_submit_result');
+  });
+
+  it('binds pull_request artifacts to the authoritative task repository', () => {
+    const result = bridgeRunnerResult([{ type: 'pull_request', value: landingPr }]).input.result;
+    expect(validateBridgeResultArtifactsMatchTaskRepository(result, 'ASI-integration/asi-landing')).toBe(true);
+    expect(validateBridgeResultArtifactsMatchTaskRepository(result, 'ASI-integration/asi-os-runtime')).toBe(false);
+
+    const runtimeResult = bridgeRunnerResult([{ type: 'pull_request', value: runtimePr }]).input.result;
+    expect(validateBridgeResultArtifactsMatchTaskRepository(runtimeResult, 'ASI-integration/asi-os-runtime')).toBe(true);
+    expect(validateBridgeResultArtifactsMatchTaskRepository(runtimeResult, 'ASI-integration/asi-landing')).toBe(false);
+  });
+
+  it('rejects foreign organization and foreign ASI-integration repository pull_request URLs', () => {
+    for (const value of [
+      'https://github.com/other-org/asi-landing/pull/1',
+      'https://github.com/ASI-integration/other-repo/pull/1',
+    ]) {
+      expect(parseRuntimeBridgeRunnerInput(bridgeRunnerResult([{ type: 'pull_request', value }]))).toBeNull();
+      expect(resolveBridgePullRequestArtifactRepository(value)).toBeNull();
+    }
+  });
+
+  it('rejects pull_request URLs with query strings, hashes, credentials, or alternate hosts', () => {
+    for (const value of [
+      `${runtimePr}?utm=1`,
+      `${runtimePr}#discussion`,
+      'https://www.github.com/ASI-integration/asi-os-runtime/pull/99',
+      'https://user:pass@github.com/ASI-integration/asi-os-runtime/pull/99',
+      'http://github.com/ASI-integration/asi-os-runtime/pull/99',
+    ]) {
+      expect(parseRuntimeBridgeRunnerInput(bridgeRunnerResult([{ type: 'pull_request', value }]))).toBeNull();
+    }
+  });
+
+  it('preserves commit and report artifact validation', () => {
+    expect(parseRuntimeBridgeRunnerInput(bridgeRunnerResult([
+      { type: 'commit', value: commitSha },
+      { type: 'report', value: 'docs/agent-os/report.md' },
+    ]))?.operation).toBe('runner_submit_result');
+    expect(parseRuntimeBridgeRunnerInput(bridgeRunnerResult([
+      { type: 'commit', value: 'not-a-sha' },
+    ]))).toBeNull();
+    expect(parseRuntimeBridgeRunnerInput(bridgeRunnerResult([
+      { type: 'report', value: '../secrets.env' },
+    ]))).toBeNull();
+  });
+
+  it('accepts incident #99 runtime task result with asi-os-runtime pull/99', () => {
+    const incidentResult = bridgeRunnerResult([
+      { type: 'commit', value: commitSha },
+      { type: 'pull_request', value: runtimePr },
+    ]).input.result;
+    expect(parseRuntimeBridgeRunnerInput({
+      ...bridgeRunnerResult([
+        { type: 'commit', value: commitSha },
+        { type: 'pull_request', value: runtimePr },
+      ]),
+    })?.operation).toBe('runner_submit_result');
+    expect(validateBridgeResultArtifactsMatchTaskRepository(
+      incidentResult,
+      'ASI-integration/asi-os-runtime',
+    )).toBe(true);
+    expect(resolveBridgePullRequestArtifactRepository(runtimePr))
+      .toBe('ASI-integration/asi-os-runtime');
   });
 });
 
