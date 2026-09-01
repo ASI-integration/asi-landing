@@ -46,6 +46,14 @@ const RUNNER_EXECUTOR_REASON_CODES = new Set([
   'runtime_executor_entrypoint_unavailable',
   'runtime_executor_probe_failed',
 ]);
+const RUNNER_READINESS_V2_REPOSITORY_IDS = new Set(['landing', 'runtime']);
+const RUNNER_READINESS_V2_FULL_NAMES = new Set([
+  'ASI-integration/asi-landing',
+  'ASI-integration/asi-os-runtime',
+]);
+const RUNNER_READINESS_V2_HTTPS_ORIGIN = /^https:\/\/github\.com\/ASI-integration\/(asi-landing|asi-os-runtime)(\.git)?$/;
+const RUNNER_READINESS_V2_SSH_ALIAS_ORIGIN = /^git@github\.com-[a-z0-9-]+:ASI-integration\/(asi-landing|asi-os-runtime)(\.git)?$/;
+const RUNNER_READINESS_V2_SSH_URL_ORIGIN = /^ssh:\/\/git@github\.com\/ASI-integration\/(asi-landing|asi-os-runtime)(\.git)?$/;
 
 function object(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
@@ -196,35 +204,137 @@ export function parseRuntimeBridgeChatInput(value: unknown): RuntimeBridgeChatIn
   }
 }
 
+function parseRunnerExecutorCapability(value: unknown): { state: 'ready' | 'blocked'; reasonCode: string } | null {
+  if (!object(value) || !exact(value, ['state', 'reasonCode'])
+    || !['ready', 'blocked'].includes(String(value.state))
+    || !text(value.reasonCode, 120, ID)
+    || !RUNNER_EXECUTOR_REASON_CODES.has(value.reasonCode)) return null;
+  return { state: value.state as 'ready' | 'blocked', reasonCode: value.reasonCode };
+}
+
+function parseRunnerCheckoutCapability(value: unknown): { state: 'ready' | 'blocked' | 'degraded'; reasonCode: string } | null {
+  if (!object(value) || !exact(value, ['state', 'reasonCode'])
+    || !['ready', 'blocked', 'degraded'].includes(String(value.state))
+    || !text(value.reasonCode, 120, ID)
+    || !RUNNER_CHECKOUT_REASON_CODES.has(value.reasonCode)) return null;
+  return { state: value.state as 'ready' | 'blocked' | 'degraded', reasonCode: value.reasonCode };
+}
+
+function parseRunnerBaselineRecoveryCapability(value: unknown): { state: 'ready' | 'blocked'; reasonCode: string } | null {
+  if (!object(value) || !exact(value, ['state', 'reasonCode'])
+    || !['ready', 'blocked'].includes(String(value.state))
+    || !text(value.reasonCode, 120, ID)
+    || !RUNNER_BASELINE_RECOVERY_REASON_CODES.has(value.reasonCode)) return null;
+  return { state: value.state as 'ready' | 'blocked', reasonCode: value.reasonCode };
+}
+
+function canonicalCheckoutPath(value: unknown): value is string {
+  return typeof value === 'string'
+    && value.length > 0
+    && value.length <= 500
+    && value === value.trim()
+    && !containsForbiddenStringContent(value)
+    && !value.split('/').includes('..')
+    && !value.includes('\\');
+}
+
+function allowedRunnerExpectedOrigin(value: unknown): value is string {
+  if (!text(value, 500)) return false;
+  return RUNNER_READINESS_V2_HTTPS_ORIGIN.test(value)
+    || RUNNER_READINESS_V2_SSH_ALIAS_ORIGIN.test(value)
+    || RUNNER_READINESS_V2_SSH_URL_ORIGIN.test(value);
+}
+
+function parseRunnerReadinessV1Input(input: Record<string, unknown>): RuntimeBridgeRunnerInput | null {
+  if (!exact(input, ['schemaVersion', 'runnerId', 'checkedAt', 'expiresAt', 'baselineSha', 'capabilities'])
+    || input.schemaVersion !== 'asi.runtime.runner-readiness.v1'
+    || !text(input.checkedAt, 64) || !text(input.expiresAt, 64)
+    || Number.isNaN(Date.parse(input.checkedAt)) || Number.isNaN(Date.parse(input.expiresAt))
+    || (input.baselineSha !== null && !text(input.baselineSha, 40, SHA))
+    || !object(input.capabilities)
+    || !exact(input.capabilities, ['checkouts', 'baselineRecovery', 'executor'])) return null;
+  const { checkouts, baselineRecovery, executor } = input.capabilities;
+  if (!object(checkouts) || !exact(checkouts, ['state', 'reasonCode'])
+    || !['ready', 'blocked', 'degraded'].includes(String(checkouts.state))
+    || !text(checkouts.reasonCode, 120, ID)
+    || !RUNNER_CHECKOUT_REASON_CODES.has(checkouts.reasonCode)) return null;
+  if (!object(baselineRecovery) || !exact(baselineRecovery, ['state', 'reasonCode'])
+    || !['ready', 'blocked'].includes(String(baselineRecovery.state))
+    || !text(baselineRecovery.reasonCode, 120, ID)
+    || !RUNNER_BASELINE_RECOVERY_REASON_CODES.has(baselineRecovery.reasonCode)) return null;
+  if (!parseRunnerExecutorCapability(executor)) return null;
+  if ((checkouts.state !== 'blocked' || baselineRecovery.state === 'ready')
+    && typeof input.baselineSha !== 'string') return null;
+  return {
+    operation: 'runner_publish_readiness',
+    input: input as Extract<RuntimeBridgeRunnerInput, { operation: 'runner_publish_readiness' }>['input'],
+  };
+}
+
+function parseRunnerRepositoryEvidenceV2(value: unknown) {
+  const keys = [
+    'repositoryId', 'fullName', 'canonicalCheckoutPath', 'expectedOrigin', 'defaultBranch',
+    'observedBaselineSha', 'checkoutReady', 'originReady', 'baselineReady', 'recoveryReady', 'blockers',
+  ];
+  if (!object(value) || !exact(value, keys)) return null;
+  if (!RUNNER_READINESS_V2_REPOSITORY_IDS.has(String(value.repositoryId))
+    || !RUNNER_READINESS_V2_FULL_NAMES.has(String(value.fullName))
+    || !canonicalCheckoutPath(value.canonicalCheckoutPath)
+    || !allowedRunnerExpectedOrigin(value.expectedOrigin)
+    || value.defaultBranch !== 'main'
+    || !(value.observedBaselineSha === null || text(value.observedBaselineSha, 40, SHA))
+    || typeof value.checkoutReady !== 'boolean'
+    || typeof value.originReady !== 'boolean'
+    || typeof value.baselineReady !== 'boolean'
+    || typeof value.recoveryReady !== 'boolean'
+    || !Array.isArray(value.blockers)
+    || value.blockers.length > 20
+    || !value.blockers.every((item) => text(item, 120, ID))) return null;
+  return value;
+}
+
+function parseRunnerReadinessV2Input(input: Record<string, unknown>): RuntimeBridgeRunnerInput | null {
+  if (!exact(input, ['schemaVersion', 'runnerId', 'checkedAt', 'expiresAt', 'capabilities', 'blockers', 'repositories'])
+    || input.schemaVersion !== 'asi.runtime.runner-readiness.v2'
+    || !text(input.checkedAt, 64) || !text(input.expiresAt, 64)
+    || Number.isNaN(Date.parse(input.checkedAt)) || Number.isNaN(Date.parse(input.expiresAt))
+    || !object(input.capabilities)
+    || !exact(input.capabilities, ['checkouts', 'baselineRecovery', 'executor'])
+    || !parseRunnerCheckoutCapability(input.capabilities.checkouts)
+    || !parseRunnerBaselineRecoveryCapability(input.capabilities.baselineRecovery)
+    || !parseRunnerExecutorCapability(input.capabilities.executor)
+    || !Array.isArray(input.blockers)
+    || input.blockers.length > 20
+    || !input.blockers.every((item) => text(item, 120, ID))
+    || !Array.isArray(input.repositories)
+    || input.repositories.length < 1
+    || input.repositories.length > 2
+    || !input.repositories.every((item) => parseRunnerRepositoryEvidenceV2(item))) return null;
+  const repositoryIds = input.repositories.map((item) => String((item as { repositoryId: string }).repositoryId));
+  if (new Set(repositoryIds).size !== repositoryIds.length) return null;
+  return {
+    operation: 'runner_publish_readiness',
+    input: input as Extract<RuntimeBridgeRunnerInput, { operation: 'runner_publish_readiness' }>['input'],
+  };
+}
+
+function parseRunnerReadinessInput(input: Record<string, unknown>): RuntimeBridgeRunnerInput | null {
+  if (input.schemaVersion === 'asi.runtime.runner-readiness.v1') {
+    return parseRunnerReadinessV1Input(input);
+  }
+  if (input.schemaVersion === 'asi.runtime.runner-readiness.v2') {
+    return parseRunnerReadinessV2Input(input);
+  }
+  return null;
+}
+
 export function parseRuntimeBridgeRunnerInput(value: unknown): RuntimeBridgeRunnerInput | null {
   if (!object(value) || !exact(value, ['operation', 'input']) || !object(value.input)) return null;
   const input = value.input;
   const runner = text(input.runnerId, 200, ID);
   if (!runner) return null;
   if (value.operation === 'runner_publish_readiness') {
-    if (!exact(input, ['schemaVersion', 'runnerId', 'checkedAt', 'expiresAt', 'baselineSha', 'capabilities'])
-      || input.schemaVersion !== 'asi.runtime.runner-readiness.v1'
-      || !text(input.checkedAt, 64) || !text(input.expiresAt, 64)
-      || Number.isNaN(Date.parse(input.checkedAt)) || Number.isNaN(Date.parse(input.expiresAt))
-      || (input.baselineSha !== null && !text(input.baselineSha, 40, SHA))
-      || !object(input.capabilities)
-      || !exact(input.capabilities, ['checkouts', 'baselineRecovery', 'executor'])) return null;
-    const { checkouts, baselineRecovery, executor } = input.capabilities;
-    if (!object(checkouts) || !exact(checkouts, ['state', 'reasonCode'])
-      || !['ready', 'blocked', 'degraded'].includes(String(checkouts.state))
-      || !text(checkouts.reasonCode, 120, ID)
-      || !RUNNER_CHECKOUT_REASON_CODES.has(checkouts.reasonCode)) return null;
-    if (!object(baselineRecovery) || !exact(baselineRecovery, ['state', 'reasonCode'])
-      || !['ready', 'blocked'].includes(String(baselineRecovery.state))
-      || !text(baselineRecovery.reasonCode, 120, ID)
-      || !RUNNER_BASELINE_RECOVERY_REASON_CODES.has(baselineRecovery.reasonCode)) return null;
-    if (!object(executor) || !exact(executor, ['state', 'reasonCode'])
-      || !['ready', 'blocked'].includes(String(executor.state))
-      || !text(executor.reasonCode, 120, ID)
-      || !RUNNER_EXECUTOR_REASON_CODES.has(executor.reasonCode)) return null;
-    if ((checkouts.state !== 'blocked' || baselineRecovery.state === 'ready')
-      && typeof input.baselineSha !== 'string') return null;
-    return value as RuntimeBridgeRunnerInput;
+    return parseRunnerReadinessInput(input);
   }
   if (value.operation === 'runner_claim_task') {
     return exact(input, ['runnerId', 'leaseSeconds']) && Number.isInteger(input.leaseSeconds) && Number(input.leaseSeconds) >= 30 && Number(input.leaseSeconds) <= 900
