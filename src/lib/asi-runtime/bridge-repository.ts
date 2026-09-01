@@ -1,5 +1,6 @@
 import 'server-only';
 import { runtimeBridgeRequestHash } from './bridge-hash';
+import { validateBridgeResultArtifactsMatchTaskRepository } from './bridge-schema';
 import {
   getRuntimeRunnerReadiness,
   publishRuntimeRunnerReadiness,
@@ -263,6 +264,10 @@ export async function runRuntimeBridgeRunnerOperation(clientId: string, request:
     }
     case 'runner_submit_result': {
       const input = request.input;
+      const record = await getRuntimeBridgeTaskRecord(clientId, input.taskId);
+      if (!validateBridgeResultArtifactsMatchTaskRepository(input.result, record.request.repository)) {
+        throw new RuntimeBridgeError('result_artifact_repository_mismatch', 400);
+      }
       rpc = 'complete_asi_runtime_bridge_task';
       args = {
         p_client_id: clientId, p_runner_id: input.runnerId, p_task_id: input.taskId,
