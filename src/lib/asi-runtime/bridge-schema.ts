@@ -1,4 +1,5 @@
 import { containsForbiddenStringContent } from './ingest-schema';
+import { isRunnerRepositoryEvidenceBindingValid } from './runner-readiness-contract';
 import type {
   RuntimeBridgeChatInput,
   RuntimeBridgeOwnerGateRequest,
@@ -45,11 +46,6 @@ const RUNNER_EXECUTOR_REASON_CODES = new Set([
   'runtime_executor_entrypoint_missing',
   'runtime_executor_entrypoint_unavailable',
   'runtime_executor_probe_failed',
-]);
-const RUNNER_READINESS_V2_REPOSITORY_IDS = new Set(['landing', 'runtime']);
-const RUNNER_READINESS_V2_FULL_NAMES = new Set([
-  'ASI-integration/asi-landing',
-  'ASI-integration/asi-os-runtime',
 ]);
 const RUNNER_READINESS_V2_HTTPS_ORIGIN = /^https:\/\/github\.com\/ASI-integration\/(asi-landing|asi-os-runtime)(\.git)?$/;
 const RUNNER_READINESS_V2_SSH_ALIAS_ORIGIN = /^git@github\.com-[a-z0-9-]+:ASI-integration\/(asi-landing|asi-os-runtime)(\.git)?$/;
@@ -269,12 +265,11 @@ function parseRunnerBaselineRecoveryCapability(value: unknown): { state: 'ready'
   return { state: value.state as 'ready' | 'blocked', reasonCode: value.reasonCode };
 }
 
-function canonicalCheckoutPath(value: unknown): value is string {
+function boundedCheckoutPath(value: unknown): value is string {
   return typeof value === 'string'
     && value.length > 0
     && value.length <= 500
     && value === value.trim()
-    && !containsForbiddenStringContent(value)
     && !value.split('/').includes('..')
     && !value.includes('\\');
 }
@@ -334,9 +329,12 @@ function parseRunnerRepositoryEvidenceV2(value: unknown) {
     'observedBaselineSha', 'checkoutReady', 'originReady', 'baselineReady', 'recoveryReady', 'blockers',
   ];
   if (!object(value) || !exact(value, keys)) return null;
-  if (!RUNNER_READINESS_V2_REPOSITORY_IDS.has(String(value.repositoryId))
-    || !RUNNER_READINESS_V2_FULL_NAMES.has(String(value.fullName))
-    || !canonicalCheckoutPath(value.canonicalCheckoutPath)
+  if (!boundedCheckoutPath(value.canonicalCheckoutPath)
+    || !isRunnerRepositoryEvidenceBindingValid(
+      value.repositoryId,
+      value.fullName,
+      value.canonicalCheckoutPath,
+    )
     || !allowedRunnerRepositoryExpectedOrigin(value.expectedOrigin, value)
     || value.defaultBranch !== 'main'
     || !(value.observedBaselineSha === null || text(value.observedBaselineSha, 40, SHA))
