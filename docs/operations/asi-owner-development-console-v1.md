@@ -116,7 +116,7 @@ When the terminal safe result contains artifact `type=pull_request` with an HTTP
 
 ## Merge owner gate
 
-Control Center never trusts a browser-supplied approval flag. For a PR artifact it reads the canonical `asi.agent-os.owner-gate.v1` records from Owner Decision Bus Issue #106 and the related PR discussion/reviews, then compares the approval target and SHA with the current GitHub PR head.
+Control Center never trusts a browser-supplied approval flag. For a PR artifact it reads the canonical `asi.agent-os.owner-gate.v1` records from Owner Decision Bus Issue #106 on `ASI-integration/asi-landing` (always, including for Runtime PRs) and from the related PR discussion/reviews on the PR repository, then compares the approval target and SHA with the current GitHub PR head. A missing Owner Decision Bus issue is treated as an empty bus source; PR comments and reviews remain authoritative. Genuine GitHub/transport failures stay fail-closed and are reported separately from `owner_gate_pending`.
 
 The review state is one of `pending`, `passed`, `failed`, `stale_sha`, or `head_changed`. The effective merge state is always either `blocked` or `merge_allowed`. The UI keeps **Объединить PR** disabled unless the server reports `passed` and `merge_allowed` for the exact current SHA.
 

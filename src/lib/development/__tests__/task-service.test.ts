@@ -1258,6 +1258,77 @@ describe('task repository ↔ pull request identity binding', () => {
     expect(loadOwnerDecisionBusRecords).toHaveBeenCalled();
   });
 
+  it('does not report owner-decision verification failure when Runtime PR sources load and no decision exists', async () => {
+    const taskId = seedCompletedTask('ASI-integration/asi-os-runtime', runtimePr, runtimeSha);
+    loadControlCenterPullRequest.mockResolvedValue({
+      repository: 'ASI-integration/asi-os-runtime',
+      pullRequestNumber: 20,
+      pullRequestUrl: runtimePr,
+      headSha: runtimeSha,
+      merged: false,
+      mergeCommitSha: null,
+    });
+    // Empty authoritative records must surface as waiting, not transport failure.
+    loadOwnerDecisionBusRecords.mockResolvedValue([]);
+
+    const { buildDevelopmentTaskSnapshot } = await import('../task-service');
+    const snapshot = await buildDevelopmentTaskSnapshot(taskId, ownerUserId);
+    expect(snapshot.mergeGate).toMatchObject({
+      gateState: 'pending',
+      mergeState: 'blocked',
+      blocker: {
+        code: 'owner_gate_pending',
+        message: 'Ожидается решение владельца для текущей версии PR.',
+      },
+    });
+    expect(snapshot.mergeGate?.blocker?.message).not.toContain('Не удалось проверить решение владельца');
+  });
+
+  it('distinguishes GitHub transport failure from waiting for an owner decision', async () => {
+    const taskId = seedCompletedTask('ASI-integration/asi-os-runtime', runtimePr, runtimeSha);
+    loadControlCenterPullRequest.mockResolvedValue({
+      repository: 'ASI-integration/asi-os-runtime',
+      pullRequestNumber: 20,
+      pullRequestUrl: runtimePr,
+      headSha: runtimeSha,
+      merged: false,
+      mergeCommitSha: null,
+    });
+    loadOwnerDecisionBusRecords.mockRejectedValue(
+      new GitHubControlCenterError('owner_gate_unavailable', 502),
+    );
+
+    const { buildDevelopmentTaskSnapshot } = await import('../task-service');
+    const snapshot = await buildDevelopmentTaskSnapshot(taskId, ownerUserId);
+    expect(snapshot.mergeGate).toMatchObject({
+      gateState: 'failed',
+      mergeState: 'blocked',
+      blocker: {
+        code: 'owner_gate_unavailable',
+        message: 'Не удалось связаться с GitHub для проверки решения владельца. Объединение заблокировано.',
+      },
+    });
+  });
+
+  it('distinguishes PR load failure from owner-decision verification failure', async () => {
+    const taskId = seedCompletedTask('ASI-integration/asi-os-runtime', runtimePr, runtimeSha);
+    loadControlCenterPullRequest.mockRejectedValue(
+      new GitHubControlCenterError('pull_request_unavailable', 502),
+    );
+
+    const { buildDevelopmentTaskSnapshot } = await import('../task-service');
+    const snapshot = await buildDevelopmentTaskSnapshot(taskId, ownerUserId);
+    expect(snapshot.mergeGate).toMatchObject({
+      gateState: 'failed',
+      mergeState: 'blocked',
+      blocker: {
+        code: 'owner_gate_unavailable',
+        message: 'Не удалось проверить текущую версию PR. Объединение заблокировано.',
+      },
+    });
+    expect(loadOwnerDecisionBusRecords).not.toHaveBeenCalled();
+  });
+
   it('L: landing task + runtime PR is blocked without GitHub reads', async () => {
     const taskId = seedCompletedTask('ASI-integration/asi-landing', runtimePr, runtimeSha);
     const { buildDevelopmentTaskSnapshot } = await import('../task-service');

@@ -344,20 +344,33 @@ async function resolveDevelopmentMergeGate(
     });
   }
 
-  let pullRequest: ControlCenterPullRequest | null = null;
+  let pullRequest: ControlCenterPullRequest;
   try {
     pullRequest = await controlCenterMergeDependencies.loadPullRequest(pullRequestUrl);
+  } catch {
+    return unavailableControlCenterMergeGate({
+      pullRequest: unavailablePullRequest(pullRequestUrl, resultSha),
+      expectedSha: resultSha,
+      message: 'Не удалось проверить текущую версию PR. Объединение заблокировано.',
+    });
+  }
+
+  try {
     const records = await controlCenterMergeDependencies.loadOwnerDecisionRecords(pullRequest);
     return evaluateControlCenterMergeGate({
       pullRequest,
       expectedSha: pullRequest.headSha,
       records,
     });
-  } catch {
+  } catch (error) {
+    const transportFailure = error instanceof GitHubControlCenterError
+      && error.code === 'owner_gate_unavailable';
     return unavailableControlCenterMergeGate({
-      pullRequest: pullRequest ?? unavailablePullRequest(pullRequestUrl, resultSha),
-      expectedSha: pullRequest?.headSha ?? resultSha,
-      message: 'Не удалось проверить решение владельца. Объединение заблокировано.',
+      pullRequest,
+      expectedSha: pullRequest.headSha,
+      message: transportFailure
+        ? 'Не удалось связаться с GitHub для проверки решения владельца. Объединение заблокировано.'
+        : 'Не удалось проверить решение владельца. Объединение заблокировано.',
     });
   }
 }
