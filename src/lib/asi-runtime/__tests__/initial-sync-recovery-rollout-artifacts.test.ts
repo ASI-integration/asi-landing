@@ -3,9 +3,11 @@ import { execSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { validateOwnerGate } from '../../../../scripts/agent-os/contracts.mjs';
 import { parseRuntimeBridgeChatInput } from '../bridge-schema';
+
+vi.mock('server-only', () => ({}));
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../..');
 const rolloutDir = path.join(repoRoot, 'docs/operations/initial-sync-recovery-v1');
