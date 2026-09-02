@@ -268,6 +268,85 @@ describe('runner-readiness.v2 bridge parsing', () => {
     expect(parsed?.operation).toBe('runner_publish_readiness');
   });
 
+  it('accepts repository-pool checkout paths from Runtime producer', () => {
+    const parsed = parseRuntimeBridgeRunnerInput({
+      operation: 'runner_publish_readiness',
+      input: v2Record([
+        repositoryEvidence('landing', 'ASI-integration/asi-landing', landingSha, {
+          canonicalCheckoutPath: '/var/lib/asi-runtime/repos/asi-landing',
+        }),
+        repositoryEvidence('runtime', 'ASI-integration/asi-os-runtime', runtimeSha, {
+          canonicalCheckoutPath: '/var/lib/asi-runtime/repos/asi-os-runtime',
+        }),
+      ]),
+    });
+    expect(parsed?.operation).toBe('runner_publish_readiness');
+  });
+
+  it('accepts mixed srv and repository-pool checkout layouts', () => {
+    const parsed = parseRuntimeBridgeRunnerInput({
+      operation: 'runner_publish_readiness',
+      input: v2Record([
+        repositoryEvidence('landing', 'ASI-integration/asi-landing', landingSha, {
+          canonicalCheckoutPath: '/var/lib/asi-runtime/repos/asi-landing',
+        }),
+        repositoryEvidence('runtime', 'ASI-integration/asi-os-runtime', runtimeSha, {
+          canonicalCheckoutPath: '/srv/asi-os-runtime',
+        }),
+      ]),
+    });
+    expect(parsed?.operation).toBe('runner_publish_readiness');
+  });
+
+  it('rejects wrong repository binding between repositoryId and fullName', () => {
+    const parsed = parseRuntimeBridgeRunnerInput({
+      operation: 'runner_publish_readiness',
+      input: v2Record([
+        repositoryEvidence('landing', 'ASI-integration/asi-os-runtime', landingSha),
+      ] as RuntimeRunnerReadinessRecordV2['repositories']),
+    });
+    expect(parsed).toBeNull();
+  });
+
+  it('rejects checkout paths bound to the wrong repository identity', () => {
+    const parsed = parseRuntimeBridgeRunnerInput({
+      operation: 'runner_publish_readiness',
+      input: v2Record([
+        repositoryEvidence('landing', 'ASI-integration/asi-landing', landingSha, {
+          canonicalCheckoutPath: '/srv/asi-os-runtime',
+        }),
+        repositoryEvidence('runtime', 'ASI-integration/asi-os-runtime', runtimeSha, {
+          canonicalCheckoutPath: '/srv/asi-landing',
+        }),
+      ]),
+    });
+    expect(parsed).toBeNull();
+  });
+
+  it('rejects unrelated checkout locations', () => {
+    const parsed = parseRuntimeBridgeRunnerInput({
+      operation: 'runner_publish_readiness',
+      input: v2Record([
+        repositoryEvidence('landing', 'ASI-integration/asi-landing', landingSha, {
+          canonicalCheckoutPath: '/tmp/asi-landing',
+        }),
+      ] as RuntimeRunnerReadinessRecordV2['repositories']),
+    });
+    expect(parsed).toBeNull();
+  });
+
+  it('rejects malformed checkout path values', () => {
+    const parsed = parseRuntimeBridgeRunnerInput({
+      operation: 'runner_publish_readiness',
+      input: v2Record([
+        repositoryEvidence('landing', 'ASI-integration/asi-landing', landingSha, {
+          canonicalCheckoutPath: '/var/lib/asi-runtime/repos/../asi-landing',
+        }),
+      ] as RuntimeRunnerReadinessRecordV2['repositories']),
+    });
+    expect(parsed).toBeNull();
+  });
+
   it('accepts bounded publication with one allowlisted repository', () => {
     const parsed = parseRuntimeBridgeRunnerInput({
       operation: 'runner_publish_readiness',

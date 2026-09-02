@@ -12,6 +12,45 @@ import type {
 export const RUNNER_READINESS_V2_REPOSITORY_IDS = ['landing', 'runtime'] as const;
 export type RunnerReadinessV2RepositoryId = typeof RUNNER_READINESS_V2_REPOSITORY_IDS[number];
 
+/** Approved srv and repository-pool checkout layouts per canonical Runtime repository. */
+export const RUNNER_READINESS_V2_APPROVED_CHECKOUT_PATHS = {
+  landing: [
+    '/srv/asi-landing',
+    '/var/lib/asi-runtime/repos/asi-landing',
+  ],
+  runtime: [
+    '/srv/asi-os-runtime',
+    '/var/lib/asi-runtime/repos/asi-os-runtime',
+  ],
+} as const satisfies Record<RunnerReadinessV2RepositoryId, readonly string[]>;
+
+const RUNNER_READINESS_V2_REPOSITORY_FULL_NAMES: Record<
+  RunnerReadinessV2RepositoryId,
+  (typeof DEVELOPMENT_REPOSITORY_ALLOWLIST)[number]['fullName']
+> = {
+  landing: 'ASI-integration/asi-landing',
+  runtime: 'ASI-integration/asi-os-runtime',
+};
+
+export function isApprovedRunnerCheckoutPath(
+  repositoryId: RunnerReadinessV2RepositoryId,
+  canonicalCheckoutPath: string,
+): boolean {
+  return RUNNER_READINESS_V2_APPROVED_CHECKOUT_PATHS[repositoryId]
+    .some((approvedPath) => approvedPath === canonicalCheckoutPath);
+}
+
+export function isRunnerRepositoryEvidenceBindingValid(
+  repositoryId: unknown,
+  fullName: unknown,
+  canonicalCheckoutPath: unknown,
+): repositoryId is RunnerReadinessV2RepositoryId {
+  if (repositoryId !== 'landing' && repositoryId !== 'runtime') return false;
+  if (fullName !== RUNNER_READINESS_V2_REPOSITORY_FULL_NAMES[repositoryId]) return false;
+  if (typeof canonicalCheckoutPath !== 'string') return false;
+  return isApprovedRunnerCheckoutPath(repositoryId, canonicalCheckoutPath);
+}
+
 const RUNNER_TO_DEVELOPMENT_REPOSITORY_ID: Record<RunnerReadinessV2RepositoryId, string> = {
   landing: 'asi-landing',
   runtime: 'asi-os-runtime',
