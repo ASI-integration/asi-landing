@@ -1,5 +1,4 @@
 import { containsForbiddenStringContent } from './ingest-schema';
-import { isRunnerRepositoryEvidenceBindingValid } from './runner-readiness-contract';
 import type {
   RuntimeBridgeChatInput,
   RuntimeBridgeOwnerGateRequest,
@@ -47,6 +46,16 @@ const RUNNER_EXECUTOR_REASON_CODES = new Set([
   'runtime_executor_entrypoint_unavailable',
   'runtime_executor_probe_failed',
 ]);
+const RUNNER_READINESS_V2_REPOSITORY_FULL_NAME_BY_ID = {
+  landing: 'ASI-integration/asi-landing',
+  runtime: 'ASI-integration/asi-os-runtime',
+} as const;
+type RunnerReadinessV2RepositoryId = keyof typeof RUNNER_READINESS_V2_REPOSITORY_FULL_NAME_BY_ID;
+const RUNNER_READINESS_V2_APPROVED_CHECKOUT_PATHS_BY_ID = {
+  landing: ['/srv/asi-landing', '/var/lib/asi-runtime/repos/asi-landing'],
+  runtime: ['/srv/asi-os-runtime', '/var/lib/asi-runtime/repos/asi-os-runtime'],
+} as const;
+
 const RUNNER_READINESS_V2_HTTPS_ORIGIN = /^https:\/\/github\.com\/ASI-integration\/(asi-landing|asi-os-runtime)(\.git)?$/;
 const RUNNER_READINESS_V2_SSH_ALIAS_ORIGIN = /^git@github\.com-[a-z0-9-]+:ASI-integration\/(asi-landing|asi-os-runtime)(\.git)?$/;
 const RUNNER_READINESS_V2_SSH_URL_ORIGIN = /^ssh:\/\/git@github\.com\/ASI-integration\/(asi-landing|asi-os-runtime)(\.git)?$/;
@@ -295,6 +304,18 @@ function allowedRunnerRepositoryExpectedOrigin(value: unknown, evidence: Record<
   if (typeof value !== 'string' || value.length === 0 || value.length > 500) return false;
   if (value !== value.trim() || containsForbiddenStringContent(value)) return false;
   return isCanonicalRunnerExpectedOrigin(value);
+}
+
+function isRunnerRepositoryEvidenceBindingValid(
+  repositoryId: unknown,
+  fullName: unknown,
+  canonicalCheckoutPath: unknown,
+): repositoryId is RunnerReadinessV2RepositoryId {
+  if (repositoryId !== 'landing' && repositoryId !== 'runtime') return false;
+  if (fullName !== RUNNER_READINESS_V2_REPOSITORY_FULL_NAME_BY_ID[repositoryId]) return false;
+  if (typeof canonicalCheckoutPath !== 'string') return false;
+  const approvedPaths: readonly string[] = RUNNER_READINESS_V2_APPROVED_CHECKOUT_PATHS_BY_ID[repositoryId];
+  return approvedPaths.includes(canonicalCheckoutPath);
 }
 
 function parseRunnerReadinessV1Input(input: Record<string, unknown>): RuntimeBridgeRunnerInput | null {
