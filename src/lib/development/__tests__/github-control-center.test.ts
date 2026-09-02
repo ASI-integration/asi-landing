@@ -76,13 +76,13 @@ describe('github control center authenticated reads', () => {
   it('F: loads runtime owner-decision records with authenticated GitHub access', async () => {
     const fetchImpl = vi.fn(async (url: string, init?: RequestInit) => {
       expect(init?.headers).toMatchObject({ Authorization: `Bearer ${TOKEN}` });
-      if (url.includes('/issues/106/comments')) {
+      if (url.includes('/repos/ASI-integration/asi-landing/issues/106/comments')) {
         return new Response(JSON.stringify([]), { status: 200 });
       }
-      if (url.includes('/issues/45/comments')) {
+      if (url.includes('/repos/ASI-integration/asi-os-runtime/issues/45/comments')) {
         return new Response(JSON.stringify([]), { status: 200 });
       }
-      if (url.includes('/pulls/45/reviews')) {
+      if (url.includes('/repos/ASI-integration/asi-os-runtime/pulls/45/reviews')) {
         return new Response(JSON.stringify([]), { status: 200 });
       }
       throw new Error(`unexpected url: ${url}`);
@@ -98,11 +98,101 @@ describe('github control center authenticated reads', () => {
     }, fetchImpl as typeof fetch);
 
     expect(records).toEqual([]);
+    expect(fetchImpl.mock.calls.map(([url]) => String(url))).toEqual(expect.arrayContaining([
+      expect.stringContaining('/repos/ASI-integration/asi-landing/issues/106/comments'),
+      expect.stringContaining('/repos/ASI-integration/asi-os-runtime/issues/45/comments'),
+      expect.stringContaining('/repos/ASI-integration/asi-os-runtime/pulls/45/reviews'),
+    ]));
+    expect(fetchImpl.mock.calls.some(([url]) =>
+      String(url).includes('/repos/ASI-integration/asi-os-runtime/issues/106/comments'),
+    )).toBe(false);
     expect(fetchImpl.mock.calls.every(([, init]) => {
       const headers = init?.headers as Record<string, string> | undefined;
       return headers?.Authorization === `Bearer ${TOKEN}`;
     })).toBe(true);
     expect(JSON.stringify(records)).not.toContain(TOKEN);
+  });
+
+  it('reads Runtime PR decisions without requiring Runtime issue #106', async () => {
+    const approvalBody = [
+      '```json',
+      JSON.stringify({
+        schemaVersion: 'asi.agent-os.owner-gate.v1',
+        taskId: 'runtime-merge-45',
+        status: 'approved',
+        action: 'merge',
+        target: 'ASI-integration/asi-os-runtime#45',
+        identity: { sha: RUNTIME_SHA },
+        allowedSideEffect: 'Merge only the exact reviewed PR head into main.',
+        postActionVerification: ['GitHub reports the PR merged at the reviewed head SHA.'],
+        authorization: {
+          source: 'explicit_owner_message',
+          owner: 'Nikolay',
+          scope: 'Approve merge for the exact reviewed PR head.',
+          taskCycle: 'runtime-merge-45',
+        },
+        typedConfirmation: { present: false, countsAsOwnerApproval: false },
+      }),
+      '```',
+    ].join('\n');
+
+    const fetchImpl = vi.fn(async (url: string) => {
+      const href = String(url);
+      if (href.includes('/repos/ASI-integration/asi-os-runtime/issues/106/comments')) {
+        throw new Error('must not query Runtime owner-bus issue #106');
+      }
+      if (href.includes('/repos/ASI-integration/asi-landing/issues/106/comments')) {
+        // Production-shaped gap: landing bus may be empty or absent; PR comments remain valid.
+        return new Response('Not Found', { status: 404 });
+      }
+      if (href.includes('/repos/ASI-integration/asi-os-runtime/issues/45/comments')) {
+        return new Response(JSON.stringify([
+          { id: 9001, body: approvalBody, user: { login: 'ASI-integration' } },
+        ]), { status: 200 });
+      }
+      if (href.includes('/repos/ASI-integration/asi-os-runtime/pulls/45/reviews')) {
+        return new Response(JSON.stringify([]), { status: 200 });
+      }
+      throw new Error(`unexpected url: ${href}`);
+    });
+
+    const records = await loadOwnerDecisionBusRecords({
+      repository: 'ASI-integration/asi-os-runtime',
+      pullRequestNumber: 45,
+      pullRequestUrl: RUNTIME_PR,
+      headSha: RUNTIME_SHA,
+      merged: false,
+      mergeCommitSha: null,
+    }, fetchImpl as typeof fetch);
+
+    expect(records).toEqual([
+      { sourceId: 'pr-comment:9001', body: approvalBody },
+    ]);
+  });
+
+  it('keeps fail-closed GitHub/transport errors for required PR decision sources', async () => {
+    const fetchImpl = vi.fn(async (url: string) => {
+      const href = String(url);
+      if (href.includes('/repos/ASI-integration/asi-landing/issues/106/comments')) {
+        return new Response(JSON.stringify([]), { status: 200 });
+      }
+      if (href.includes('/repos/ASI-integration/asi-os-runtime/issues/45/comments')) {
+        return new Response('Bad Gateway', { status: 502 });
+      }
+      if (href.includes('/repos/ASI-integration/asi-os-runtime/pulls/45/reviews')) {
+        return new Response(JSON.stringify([]), { status: 200 });
+      }
+      throw new Error(`unexpected url: ${href}`);
+    });
+
+    await expect(loadOwnerDecisionBusRecords({
+      repository: 'ASI-integration/asi-os-runtime',
+      pullRequestNumber: 45,
+      pullRequestUrl: RUNTIME_PR,
+      headSha: RUNTIME_SHA,
+      merged: false,
+      mergeCommitSha: null,
+    }, fetchImpl as typeof fetch)).rejects.toMatchObject({ code: 'owner_gate_unavailable' });
   });
 
   it('O: preserves exact-head merge protection for both repositories', async () => {

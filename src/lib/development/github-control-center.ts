@@ -144,6 +144,7 @@ async function loadBodies(
   sourcePrefix: string,
   token: string,
   fetchImpl: typeof fetch,
+  options?: { missingOk?: boolean },
 ): Promise<OwnerDecisionBusRecord[]> {
   const records: OwnerDecisionBusRecord[] = [];
   for (let page = 1; page <= 20; page += 1) {
@@ -156,7 +157,13 @@ async function loadBodies(
     } catch {
       throw new GitHubControlCenterError('owner_gate_unavailable', 502);
     }
-    if (!response.ok) throw new GitHubControlCenterError('owner_gate_unavailable', 502);
+    if (!response.ok) {
+      // Owner Decision Bus may be absent on a given checkout; PR comments/reviews remain authoritative.
+      if (options?.missingOk && (response.status === 404 || response.status === 410)) {
+        return [];
+      }
+      throw new GitHubControlCenterError('owner_gate_unavailable', 502);
+    }
     let payload: unknown;
     try {
       payload = await response.json();
@@ -180,17 +187,44 @@ async function loadBodies(
   return records;
 }
 
+function ownerDecisionBusRepository(): DevelopmentRepositoryDefinition {
+  const busRepository = DEVELOPMENT_REPOSITORY_ALLOWLIST.find((entry) => entry.id === 'asi-landing');
+  if (!busRepository) {
+    throw new GitHubControlCenterError('owner_gate_unavailable', 502);
+  }
+  return busRepository;
+}
+
 export async function loadOwnerDecisionBusRecords(
   pullRequest: ControlCenterPullRequest,
   fetchImpl: typeof fetch = fetch,
 ): Promise<OwnerDecisionBusRecord[]> {
   const parsed = parsePullRequestUrl(pullRequest.pullRequestUrl);
   const token = requireGitHubToken();
-  const root = `https://api.github.com/repos/${parsed.owner}/${parsed.repo}`;
+  const busRepository = ownerDecisionBusRepository();
+  // Canonical Owner Decision Bus lives on asi-landing issue #106, not on the PR repository.
+  const busRoot = `https://api.github.com/repos/${busRepository.githubOwner}/${busRepository.githubRepo}`;
+  const prRoot = `https://api.github.com/repos/${parsed.owner}/${parsed.repo}`;
   const [busComments, pullRequestComments, reviews] = await Promise.all([
-    loadBodies(`${root}/issues/${OWNER_DECISION_BUS_ISSUE_NUMBER}/comments?per_page=100`, 'owner-bus', token, fetchImpl),
-    loadBodies(`${root}/issues/${parsed.pullRequestNumber}/comments?per_page=100`, 'pr-comment', token, fetchImpl),
-    loadBodies(`${root}/pulls/${parsed.pullRequestNumber}/reviews?per_page=100`, 'pr-review', token, fetchImpl),
+    loadBodies(
+      `${busRoot}/issues/${OWNER_DECISION_BUS_ISSUE_NUMBER}/comments?per_page=100`,
+      'owner-bus',
+      token,
+      fetchImpl,
+      { missingOk: true },
+    ),
+    loadBodies(
+      `${prRoot}/issues/${parsed.pullRequestNumber}/comments?per_page=100`,
+      'pr-comment',
+      token,
+      fetchImpl,
+    ),
+    loadBodies(
+      `${prRoot}/pulls/${parsed.pullRequestNumber}/reviews?per_page=100`,
+      'pr-review',
+      token,
+      fetchImpl,
+    ),
   ]);
   return [...busComments, ...pullRequestComments, ...reviews];
 }
