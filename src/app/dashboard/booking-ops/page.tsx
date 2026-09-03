@@ -14,6 +14,11 @@ import { OpsAlertsPanel } from '@/components/booking-ops/OpsAlertsPanel';
 import { WorkerAssignmentPanel } from '@/components/booking-ops/WorkerAssignmentPanel';
 import { readResponseJson } from '@/lib/safeResponseJson';
 import {
+  bookingOpsFocusElementId,
+  resolveBookingOpsDeepLinkSelection,
+  type BookingOpsFocusTarget,
+} from '@/lib/booking-ops/booking-ops-deep-link';
+import {
   BOOKING_OPS_CHECKIN_READINESS_STATUS_LABELS_RU,
   BOOKING_OPS_CHECKIN_READINESS_STATUSES,
   BOOKING_OPS_CONTRACT_INTAKE_STATUS_LABELS_RU,
@@ -720,6 +725,7 @@ function BookingOpsPageInner() {
   const [message, setMessage] = useState('');
   const [isOpsAdmin, setIsOpsAdmin] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [pendingFocus, setPendingFocus] = useState<BookingOpsFocusTarget | null>(null);
   const [draft, setDraft] = useState<EditDraft | null>(null);
   const [saving, setSaving] = useState(false);
   const [confirmingAction, setConfirmingAction] = useState(false);
@@ -860,16 +866,29 @@ function BookingOpsPageInner() {
   }, [load]);
 
   useEffect(() => {
-    if (selectedId || records.length !== 1) return;
-    selectRecord(records[0]);
+    if (selectedId || records.length === 0) return;
+    const deepLink = resolveBookingOpsDeepLinkSelection(records, window.location.search);
+    if (deepLink.record) {
+      if (deepLink.focus) setPendingFocus(deepLink.focus);
+      selectRecord(deepLink.record);
+      return;
+    }
+    if (records.length === 1) {
+      selectRecord(records[0]);
+    }
   }, [records, selectedId]);
 
   useEffect(() => {
-    if (selectedId || records.length === 0) return;
-    const requestedId = new URLSearchParams(window.location.search).get('bookingId');
-    const requestedRecord = records.find((record) => record.id === requestedId);
-    if (requestedRecord) selectRecord(requestedRecord);
-  }, [records, selectedId]);
+    if (!selectedId || !pendingFocus) return;
+    const timer = window.setTimeout(() => {
+      document.getElementById(bookingOpsFocusElementId(pendingFocus))?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'start',
+      });
+      setPendingFocus(null);
+    }, 120);
+    return () => window.clearTimeout(timer);
+  }, [selectedId, pendingFocus, preCheckin, legalPayment, physicalReadiness, opsTasks]);
 
   useEffect(() => {
     if (!selectedId) {
@@ -2153,12 +2172,16 @@ function BookingOpsPageInner() {
               ) : null}
 
               {selectedRecord.readiness ? (
-                <ReadinessCard readiness={selectedRecord.readiness} />
+                <div id={bookingOpsFocusElementId('readiness')}>
+                  <ReadinessCard readiness={selectedRecord.readiness} />
+                </div>
               ) : null}
 
               <LifecycleOrchestratorPanel bookingId={selectedRecord.id} isOpsAdmin={isOpsAdmin} />
               {isOpsAdmin ? <GoldenPathAcceptancePanel bookingId={selectedRecord.id} /> : null}
-              <WorkerAssignmentPanel bookingId={selectedRecord.id} isOpsAdmin={isOpsAdmin} />
+              <div id={bookingOpsFocusElementId('tasks')}>
+                <WorkerAssignmentPanel bookingId={selectedRecord.id} isOpsAdmin={isOpsAdmin} />
+              </div>
 
               <PreCheckinControlCenterCard
                 readiness={preCheckin}
@@ -2178,13 +2201,15 @@ function BookingOpsPageInner() {
                 onAction={(action, extra) => void onCheckinExecutionAction(action, extra)}
               />
 
-              <PhysicalReadinessCard
-                readiness={physicalReadiness}
-                loading={physicalReadinessLoading}
-                isOpsAdmin={isOpsAdmin}
-                activeAction={physicalReadinessAction}
-                onAction={(action, extra) => void onPhysicalReadinessAction(action, extra)}
-              />
+              <div id={bookingOpsFocusElementId('cleaning')}>
+                <PhysicalReadinessCard
+                  readiness={physicalReadiness}
+                  loading={physicalReadinessLoading}
+                  isOpsAdmin={isOpsAdmin}
+                  activeAction={physicalReadinessAction}
+                  onAction={(action, extra) => void onPhysicalReadinessAction(action, extra)}
+                />
+              </div>
 
               <InStayCheckoutCard
                 instay={instayCheckout}
@@ -2203,21 +2228,27 @@ function BookingOpsPageInner() {
                   void onUpdateLifecycleGate(gateKey, status, reason, note)}
               />
 
-              <LegalPaymentCard
-                status={legalPayment}
-                readiness={guestLegal}
-                loading={legalPaymentLoading}
-                isOpsAdmin={isOpsAdmin}
-                activeAction={legalPaymentAction}
-                onAction={(action, extra) => void onLegalPaymentAction(action, extra)}
-              />
+              <div id={bookingOpsFocusElementId('legal')}>
+                <div id={bookingOpsFocusElementId('payment')}>
+                  <LegalPaymentCard
+                    status={legalPayment}
+                    readiness={guestLegal}
+                    loading={legalPaymentLoading}
+                    isOpsAdmin={isOpsAdmin}
+                    activeAction={legalPaymentAction}
+                    onAction={(action, extra) => void onLegalPaymentAction(action, extra)}
+                  />
+                </div>
+              </div>
 
-              <GuestIntakeCard
-                session={selectedRecord.guestIntake ?? null}
-                isOpsAdmin={isOpsAdmin}
-                recomputing={recomputingPreparation}
-                onRecompute={() => void onRecomputePreparation()}
-              />
+              <div id={bookingOpsFocusElementId('guest')}>
+                <GuestIntakeCard
+                  session={selectedRecord.guestIntake ?? null}
+                  isOpsAdmin={isOpsAdmin}
+                  recomputing={recomputingPreparation}
+                  onRecompute={() => void onRecomputePreparation()}
+                />
+              </div>
 
               <GuestIntakeReleaseCard
                 snapshot={guestIntakeRelease}

@@ -72,7 +72,7 @@ Each card shows:
 - reason and next recommended operator action
 - read-only link to `/dashboard/booking-ops`
 
-Deep link limitation: Booking Ops page does not yet auto-select a booking from query params. Operator opens Booking Ops and selects the booking by reference shown on the CRM card.
+Deep link: CRM cards and operator alerts open `/dashboard/booking-ops?bookingId=<ops-record-id>` (optional `&focus=`). Booking Ops selects that record on load and scrolls to the matching section when `focus` is present.
 
 Existing owner/lead queue columns, filters, operator inbox, metrics, and archive behavior are unchanged.
 

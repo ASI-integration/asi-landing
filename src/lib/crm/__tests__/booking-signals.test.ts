@@ -89,6 +89,7 @@ describe('crm booking signals', () => {
 
     expect(signal?.kind).toBe('documents_incomplete');
     expect(signal?.title).toContain('Документы');
+    expect(signal?.bookingOpsHref).toBe('/dashboard/booking-ops?bookingId=ops-1');
   });
 
   it('creates a CRM signal for incomplete deposit', () => {

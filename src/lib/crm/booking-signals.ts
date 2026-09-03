@@ -8,6 +8,7 @@ import type {
   BookingOpsRecord,
 } from '@/lib/booking-ops/types';
 import type { CrmContact } from './types';
+import { buildBookingOpsDeepLink, BOOKING_OPS_DASHBOARD_PATH } from '@/lib/booking-ops/booking-ops-deep-link';
 
 export const CRM_BOOKING_SIGNAL_KINDS = [
   'incident_blocker',
@@ -95,7 +96,7 @@ const CHECKOUT_DUE_STATUSES = new Set<InStayCheckoutSnapshot['status']>([
   'inspection_pending',
 ]);
 
-export const CRM_BOOKING_OPS_HREF = '/dashboard/booking-ops';
+export const CRM_BOOKING_OPS_HREF = BOOKING_OPS_DASHBOARD_PATH;
 
 function normalizePhone(value: string | null | undefined): string {
   return String(value ?? '').replace(/\D/g, '');
@@ -455,7 +456,7 @@ export function deriveCrmBookingSignalForRecord(
     id: `${record.id}:${best.kind}`,
     linkedContactId: link.contactId,
     linkedContactName: link.contactName,
-    bookingOpsHref: CRM_BOOKING_OPS_HREF,
+    bookingOpsHref: buildBookingOpsDeepLink(record.id),
   };
 }
 

@@ -7,6 +7,7 @@ import { useSession } from '@/contexts/SessionContext';
 import type { PilotRolloutMetrics } from '@/lib/crm/pilot-rollout';
 import { readResponseJson } from '@/lib/safeResponseJson';
 import { ExceptionOnlySummary } from '@/components/booking-ops/ExceptionOnlySummary';
+import { HospitalityOperatorBoardPanel } from '@/components/booking-ops/HospitalityOperatorBoardPanel';
 
 function formatDateRu(iso: string | null) {
   if (!iso) return '—';
@@ -85,6 +86,7 @@ export default function DashboardPage() {
     <div className="space-y-8 max-w-6xl">
 
       <ExceptionOnlySummary enabled={isCrmOperator} />
+      <HospitalityOperatorBoardPanel enabled={isCrmOperator} />
 
       {/* Block 1 — Состояние аккаунта */}
       <section>
