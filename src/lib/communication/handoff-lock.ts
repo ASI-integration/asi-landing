@@ -113,6 +113,7 @@ export function canAiReply(sessionId: string): boolean {
 // ─── Write API ───────────────────────────────────────────────────────────────
 
 export interface RequestOperatorHandoffInput {
+  accountId?: string;
   sessionId: string;
   channel: CommunicationChannel;
   /** Outbound routing target (e.g. Telegram chat id as string). */
@@ -155,6 +156,7 @@ export function requestOperatorHandoff(
   const alreadyLocked = Boolean(preExistingId);
 
   const review = createOrUpdateEscalationReview({
+    accountId:         input.accountId,
     sessionId:         input.sessionId,
     channel:           input.channel,
     targetId:          input.targetId,

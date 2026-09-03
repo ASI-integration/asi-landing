@@ -12,6 +12,7 @@ const mockAppendSession = vi.fn();
 const mockCreateReview = vi.fn();
 const mockNotifyOperator = vi.fn();
 const mockAuditDecision = vi.fn();
+const mockResolveReviewAccountId = vi.fn();
 
 vi.mock('../orchestrator', () => ({
   processMessage: (...args: unknown[]) => mockProcessMessage(...args),
@@ -47,6 +48,10 @@ vi.mock('../operator-review', () => ({
   createOrUpdateEscalationReview: (...args: unknown[]) => mockCreateReview(...args),
   getActiveEscalationReviewIdForSession: () => null,
   getEscalationReview: () => null,
+}));
+
+vi.mock('../operator-access', () => ({
+  resolveEscalationReviewAccountId: (...args: unknown[]) => mockResolveReviewAccountId(...args),
 }));
 
 vi.mock('../operator-notify', () => ({
@@ -101,6 +106,7 @@ describe('email draft-only grounded reply recovery', () => {
       mockCreateReview,
       mockNotifyOperator,
       mockAuditDecision,
+      mockResolveReviewAccountId,
     ]) {
       mock.mockReset();
     }
@@ -159,6 +165,7 @@ describe('email draft-only grounded reply recovery', () => {
     mockAppendSession.mockImplementation(({ session: current }) => current);
     mockCreateReview.mockReturnValue({ reviewId: 'review-grounded-email' });
     mockNotifyOperator.mockResolvedValue('telegram');
+    mockResolveReviewAccountId.mockResolvedValue('account-a');
   });
 
   it('replaces a stale booking clarification with the grounded 12:00 checkout draft', async () => {
@@ -198,7 +205,10 @@ describe('email draft-only grounded reply recovery', () => {
     );
     expect(mockCreateReview).toHaveBeenCalledWith(
       expect.objectContaining({
+        accountId: 'account-a',
         channel: 'email',
+        reservationId: 'reservation-1',
+        propertyId: 'test-prop-tg-live',
         suggestedReply: expect.stringContaining('12:00'),
       }),
     );

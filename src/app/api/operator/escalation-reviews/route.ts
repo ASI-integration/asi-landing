@@ -1,30 +1,33 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getSession } from '@/lib/auth';
 import { listEscalationReviews } from '@/lib/communication/operator-review';
+import {
+  requireOperatorCommunicationScope,
+  resolveEscalationReviewAccountIds,
+} from '@/lib/communication/operator-access';
 
 export const dynamic = 'force-dynamic';
 
-async function requireSession() {
-  const session = await getSession();
-  if (!session.userId) return null;
-  return session;
-}
-
 export async function GET(req: NextRequest) {
-  const session = await requireSession();
-  if (!session) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
+  const scope = await requireOperatorCommunicationScope();
+  if ('error' in scope) return scope.error;
 
   const { searchParams } = new URL(req.url);
   const status = searchParams.get('status') ?? undefined;
   const limitRaw = searchParams.get('limit');
-  const limit = limitRaw ? Number(limitRaw) : undefined;
+  const requestedLimit = limitRaw ? Number(limitRaw) : 200;
+  const limit = Number.isFinite(requestedLimit) && requestedLimit > 0 ? requestedLimit : 200;
 
-  const reviews = listEscalationReviews({
+  const candidates = listEscalationReviews({
     status: status ? (status as any) : undefined,
-    limit: Number.isFinite(limit) ? limit : undefined,
+    limit: Number.MAX_SAFE_INTEGER,
   });
+  const accountIds = await resolveEscalationReviewAccountIds(candidates);
+  const reviews = candidates
+    .filter((review) => {
+      const accountId = accountIds.get(review.reviewId);
+      return Boolean(accountId && scope.accountIds.has(accountId));
+    })
+    .slice(0, limit);
 
   return NextResponse.json({ ok: true, reviews });
 }
