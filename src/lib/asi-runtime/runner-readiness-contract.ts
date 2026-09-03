@@ -322,8 +322,13 @@ function isRecoverableCheckoutDriftNonBlocking(input: {
     return false;
   }
 
-  const repositoryCheckoutReason = repositoryEvidence.blockers[0];
-  if (repositoryCheckoutReason !== 'runtime_checkout_recoverable_drift') {
+  // Fail closed unless the authoritative repository blockers collection is
+  // exactly the single allowed recoverable-drift condition — additional codes
+  // (even after a leading recoverable-drift entry) must keep launch blocked.
+  if (
+    repositoryEvidence.blockers.length !== 1
+    || repositoryEvidence.blockers[0] !== 'runtime_checkout_recoverable_drift'
+  ) {
     return false;
   }
   if (reportedCheckouts.state !== 'degraded') return false;

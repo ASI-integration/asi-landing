@@ -411,6 +411,40 @@ describe('runner-readiness.v2 recoverable checkout drift self-healing', () => {
     expect(readiness.components.checkouts.blockingLaunch).toBe(true);
   });
 
+  it('blocks when recoverable drift is mixed with runtime_checkout_dirty in blockers', async () => {
+    const readiness = await actualReadiness('asi-os-runtime', {
+      resolveBaselineSha: async () => runtimeSha,
+      loadRunnerReadiness: async () => runnerStatus(v2Record([
+        repositoryEvidence('landing', 'ASI-integration/asi-landing', landingSha),
+        recoverableDriftEvidence('runtime', 'ASI-integration/asi-os-runtime', runtimeSha, {
+          blockers: ['runtime_checkout_recoverable_drift', 'runtime_checkout_dirty'],
+        }),
+      ], {
+        capabilities: degradedCheckoutsCapabilities(),
+      })),
+    });
+    expect(readiness.canLaunch).toBe(false);
+    expect(readiness.components.checkouts.blockingLaunch).toBe(true);
+    expect(readiness.components.checkouts.reasonCode).toBe('runtime_checkout_recoverable_drift');
+  });
+
+  it('blocks when recoverable drift is mixed with an unknown valid blocker code', async () => {
+    const readiness = await actualReadiness('asi-os-runtime', {
+      resolveBaselineSha: async () => runtimeSha,
+      loadRunnerReadiness: async () => runnerStatus(v2Record([
+        repositoryEvidence('landing', 'ASI-integration/asi-landing', landingSha),
+        recoverableDriftEvidence('runtime', 'ASI-integration/asi-os-runtime', runtimeSha, {
+          blockers: ['runtime_checkout_recoverable_drift', 'runtime_checkout_probe_failed'],
+        }),
+      ], {
+        capabilities: degradedCheckoutsCapabilities(),
+      })),
+    });
+    expect(readiness.canLaunch).toBe(false);
+    expect(readiness.components.checkouts.blockingLaunch).toBe(true);
+    expect(readiness.components.checkouts.reasonCode).toBe('runtime_checkout_recoverable_drift');
+  });
+
   it('blocks dirty checkout even when other flags resemble recoverable drift', async () => {
     const readiness = await actualReadiness('asi-os-runtime', {
       resolveBaselineSha: async () => runtimeSha,
