@@ -241,6 +241,323 @@ describe('runner-readiness.v2 reconciliation', () => {
   });
 });
 
+describe('runner-readiness.v2 recoverable checkout drift self-healing', () => {
+  function recoverableDriftEvidence(
+    repositoryId: 'landing' | 'runtime',
+    fullName: 'ASI-integration/asi-landing' | 'ASI-integration/asi-os-runtime',
+    observedBaselineSha: string,
+    overrides: Partial<RuntimeRunnerReadinessRecordV2['repositories'][number]> = {},
+  ) {
+    return repositoryEvidence(repositoryId, fullName, observedBaselineSha, {
+      checkoutReady: false,
+      blockers: ['runtime_checkout_recoverable_drift'],
+      ...overrides,
+    });
+  }
+
+  function degradedCheckoutsCapabilities(): RuntimeRunnerReadinessRecordV2['capabilities'] {
+    return {
+      checkouts: { state: 'degraded', reasonCode: 'runtime_checkout_recoverable_drift' },
+      baselineRecovery: { state: 'ready', reasonCode: 'runtime_baseline_recovery_ready' },
+      executor: { state: 'ready', reasonCode: 'runtime_executor_ready' },
+    };
+  }
+
+  it('allows launch when recoverable drift has valid safety evidence for runtime', async () => {
+    const readiness = await actualReadiness('asi-os-runtime', {
+      resolveBaselineSha: async () => runtimeSha,
+      loadRunnerReadiness: async () => runnerStatus(v2Record([
+        repositoryEvidence('landing', 'ASI-integration/asi-landing', landingSha),
+        recoverableDriftEvidence('runtime', 'ASI-integration/asi-os-runtime', runtimeSha),
+      ], {
+        capabilities: degradedCheckoutsCapabilities(),
+      })),
+    });
+    expect(readiness.canLaunch).toBe(true);
+    expect(readiness.components.checkouts.reasonCode).toBe('runtime_checkout_recoverable_drift');
+    expect(readiness.components.checkouts.blockingLaunch).toBe(false);
+    expect(readiness.components.checkouts.state).toBe('degraded');
+    expect(readiness.overallState).toBe('degraded');
+    expect(readiness.runnerEvidence?.readinessState).toBe('degraded');
+    expect(readiness.runnerEvidence?.blockingReason).toBeNull();
+  });
+
+  it('allows launch when recoverable drift has valid safety evidence for landing', async () => {
+    const readiness = await actualReadiness('asi-landing', {
+      resolveBaselineSha: async () => landingSha,
+      loadRunnerReadiness: async () => runnerStatus(v2Record([
+        recoverableDriftEvidence('landing', 'ASI-integration/asi-landing', landingSha),
+        repositoryEvidence('runtime', 'ASI-integration/asi-os-runtime', runtimeSha),
+      ], {
+        capabilities: degradedCheckoutsCapabilities(),
+      })),
+    });
+    expect(readiness.canLaunch).toBe(true);
+    expect(readiness.components.checkouts.blockingLaunch).toBe(false);
+    expect(readiness.components.checkouts.reasonCode).toBe('runtime_checkout_recoverable_drift');
+  });
+
+  it('blocks recoverable drift when originReady is false', async () => {
+    const readiness = await actualReadiness('asi-os-runtime', {
+      resolveBaselineSha: async () => runtimeSha,
+      loadRunnerReadiness: async () => runnerStatus(v2Record([
+        repositoryEvidence('landing', 'ASI-integration/asi-landing', landingSha),
+        recoverableDriftEvidence('runtime', 'ASI-integration/asi-os-runtime', runtimeSha, {
+          originReady: false,
+        }),
+      ], {
+        capabilities: degradedCheckoutsCapabilities(),
+      })),
+    });
+    expect(readiness.canLaunch).toBe(false);
+    expect(readiness.components.checkouts.reasonCode).toBe('runtime_checkout_remote_mismatch');
+  });
+
+  it('blocks recoverable drift when baselineReady is false', async () => {
+    const readiness = await actualReadiness('asi-os-runtime', {
+      resolveBaselineSha: async () => runtimeSha,
+      loadRunnerReadiness: async () => runnerStatus(v2Record([
+        repositoryEvidence('landing', 'ASI-integration/asi-landing', landingSha),
+        recoverableDriftEvidence('runtime', 'ASI-integration/asi-os-runtime', runtimeSha, {
+          baselineReady: false,
+        }),
+      ], {
+        capabilities: degradedCheckoutsCapabilities(),
+      })),
+    });
+    expect(readiness.canLaunch).toBe(false);
+    expect(readiness.components.checkouts.reasonCode).toBe('runtime_checkout_recoverable_drift');
+    expect(readiness.components.checkouts.blockingLaunch).toBe(true);
+  });
+
+  it('blocks recoverable drift when observedBaselineSha mismatches verified main', async () => {
+    const readiness = await actualReadiness('asi-os-runtime', {
+      resolveBaselineSha: async () => runtimeSha,
+      loadRunnerReadiness: async () => runnerStatus(v2Record([
+        repositoryEvidence('landing', 'ASI-integration/asi-landing', landingSha),
+        recoverableDriftEvidence('runtime', 'ASI-integration/asi-os-runtime', 'd'.repeat(40)),
+      ], {
+        capabilities: degradedCheckoutsCapabilities(),
+      })),
+    });
+    expect(readiness.canLaunch).toBe(false);
+    expect(readiness.components.checkouts.reasonCode).toBe('runtime_checkout_recoverable_drift');
+    expect(readiness.components.checkouts.blockingLaunch).toBe(true);
+  });
+
+  it('blocks recoverable drift when recoveryReady is false', async () => {
+    const readiness = await actualReadiness('asi-os-runtime', {
+      resolveBaselineSha: async () => runtimeSha,
+      loadRunnerReadiness: async () => runnerStatus(v2Record([
+        repositoryEvidence('landing', 'ASI-integration/asi-landing', landingSha),
+        recoverableDriftEvidence('runtime', 'ASI-integration/asi-os-runtime', runtimeSha, {
+          recoveryReady: false,
+        }),
+      ], {
+        capabilities: degradedCheckoutsCapabilities(),
+      })),
+    });
+    expect(readiness.canLaunch).toBe(false);
+    expect(readiness.components.checkouts.reasonCode).toBe('runtime_checkout_recoverable_drift');
+    expect(readiness.components.checkouts.blockingLaunch).toBe(true);
+  });
+
+  it('blocks recoverable drift when baselineRecovery capability is unavailable', async () => {
+    const readiness = await actualReadiness('asi-os-runtime', {
+      resolveBaselineSha: async () => runtimeSha,
+      loadRunnerReadiness: async () => runnerStatus(v2Record([
+        repositoryEvidence('landing', 'ASI-integration/asi-landing', landingSha),
+        recoverableDriftEvidence('runtime', 'ASI-integration/asi-os-runtime', runtimeSha),
+      ], {
+        capabilities: {
+          ...degradedCheckoutsCapabilities(),
+          baselineRecovery: { state: 'blocked', reasonCode: 'runtime_baseline_recovery_unavailable' },
+        },
+      })),
+    });
+    expect(readiness.canLaunch).toBe(false);
+    expect(readiness.components.checkouts.reasonCode).toBe('runtime_baseline_recovery_unavailable');
+  });
+
+  it('blocks recoverable drift when executor is unavailable', async () => {
+    const readiness = await actualReadiness('asi-os-runtime', {
+      resolveBaselineSha: async () => runtimeSha,
+      loadRunnerReadiness: async () => runnerStatus(v2Record([
+        repositoryEvidence('landing', 'ASI-integration/asi-landing', landingSha),
+        recoverableDriftEvidence('runtime', 'ASI-integration/asi-os-runtime', runtimeSha),
+      ], {
+        capabilities: {
+          ...degradedCheckoutsCapabilities(),
+          executor: { state: 'blocked', reasonCode: 'runtime_executor_unavailable' },
+        },
+      })),
+    });
+    expect(readiness.canLaunch).toBe(false);
+    expect(readiness.components.executor.blockingLaunch).toBe(true);
+  });
+
+  it('blocks recoverable drift when runner has global blockers', async () => {
+    const readiness = await actualReadiness('asi-os-runtime', {
+      resolveBaselineSha: async () => runtimeSha,
+      loadRunnerReadiness: async () => runnerStatus(v2Record([
+        repositoryEvidence('landing', 'ASI-integration/asi-landing', landingSha),
+        recoverableDriftEvidence('runtime', 'ASI-integration/asi-os-runtime', runtimeSha),
+      ], {
+        capabilities: degradedCheckoutsCapabilities(),
+        blockers: ['runtime_global_blocker'],
+      })),
+    });
+    expect(readiness.canLaunch).toBe(false);
+    expect(readiness.components.checkouts.blockingLaunch).toBe(true);
+  });
+
+  it('blocks when recoverable drift is mixed with runtime_checkout_dirty in blockers', async () => {
+    const readiness = await actualReadiness('asi-os-runtime', {
+      resolveBaselineSha: async () => runtimeSha,
+      loadRunnerReadiness: async () => runnerStatus(v2Record([
+        repositoryEvidence('landing', 'ASI-integration/asi-landing', landingSha),
+        recoverableDriftEvidence('runtime', 'ASI-integration/asi-os-runtime', runtimeSha, {
+          blockers: ['runtime_checkout_recoverable_drift', 'runtime_checkout_dirty'],
+        }),
+      ], {
+        capabilities: degradedCheckoutsCapabilities(),
+      })),
+    });
+    expect(readiness.canLaunch).toBe(false);
+    expect(readiness.components.checkouts.blockingLaunch).toBe(true);
+    expect(readiness.components.checkouts.reasonCode).toBe('runtime_checkout_recoverable_drift');
+  });
+
+  it('blocks when recoverable drift is mixed with an unknown valid blocker code', async () => {
+    const readiness = await actualReadiness('asi-os-runtime', {
+      resolveBaselineSha: async () => runtimeSha,
+      loadRunnerReadiness: async () => runnerStatus(v2Record([
+        repositoryEvidence('landing', 'ASI-integration/asi-landing', landingSha),
+        recoverableDriftEvidence('runtime', 'ASI-integration/asi-os-runtime', runtimeSha, {
+          blockers: ['runtime_checkout_recoverable_drift', 'runtime_checkout_probe_failed'],
+        }),
+      ], {
+        capabilities: degradedCheckoutsCapabilities(),
+      })),
+    });
+    expect(readiness.canLaunch).toBe(false);
+    expect(readiness.components.checkouts.blockingLaunch).toBe(true);
+    expect(readiness.components.checkouts.reasonCode).toBe('runtime_checkout_recoverable_drift');
+  });
+
+  it('blocks dirty checkout even when other flags resemble recoverable drift', async () => {
+    const readiness = await actualReadiness('asi-os-runtime', {
+      resolveBaselineSha: async () => runtimeSha,
+      loadRunnerReadiness: async () => runnerStatus(v2Record([
+        repositoryEvidence('landing', 'ASI-integration/asi-landing', landingSha),
+        recoverableDriftEvidence('runtime', 'ASI-integration/asi-os-runtime', runtimeSha, {
+          blockers: ['runtime_checkout_dirty'],
+        }),
+      ], {
+        capabilities: {
+          checkouts: { state: 'blocked', reasonCode: 'runtime_checkout_dirty' },
+          baselineRecovery: { state: 'ready', reasonCode: 'runtime_baseline_recovery_ready' },
+          executor: { state: 'ready', reasonCode: 'runtime_executor_ready' },
+        },
+      })),
+    });
+    expect(readiness.canLaunch).toBe(false);
+    expect(readiness.components.checkouts.reasonCode).toBe('runtime_checkout_dirty');
+  });
+
+  it('blocks when capability checkouts state is ready despite recoverable repository drift', async () => {
+    const readiness = await actualReadiness('asi-os-runtime', {
+      resolveBaselineSha: async () => runtimeSha,
+      loadRunnerReadiness: async () => runnerStatus(v2Record([
+        repositoryEvidence('landing', 'ASI-integration/asi-landing', landingSha),
+        recoverableDriftEvidence('runtime', 'ASI-integration/asi-os-runtime', runtimeSha),
+      ], {
+        capabilities: {
+          checkouts: { state: 'ready', reasonCode: 'runtime_checkouts_ready' },
+          baselineRecovery: { state: 'ready', reasonCode: 'runtime_baseline_recovery_ready' },
+          executor: { state: 'ready', reasonCode: 'runtime_executor_ready' },
+        },
+      })),
+    });
+    expect(readiness.canLaunch).toBe(false);
+    expect(readiness.components.checkouts.reasonCode).toBe('runtime_checkout_recoverable_drift');
+    expect(readiness.components.checkouts.blockingLaunch).toBe(true);
+  });
+
+  it('blocks when repository blockers omit recoverable drift even if capability claims it', async () => {
+    const readiness = await actualReadiness('asi-os-runtime', {
+      resolveBaselineSha: async () => runtimeSha,
+      loadRunnerReadiness: async () => runnerStatus(v2Record([
+        repositoryEvidence('landing', 'ASI-integration/asi-landing', landingSha),
+        recoverableDriftEvidence('runtime', 'ASI-integration/asi-os-runtime', runtimeSha, {
+          blockers: [],
+        }),
+      ], {
+        capabilities: degradedCheckoutsCapabilities(),
+      })),
+    });
+    expect(readiness.canLaunch).toBe(false);
+    expect(readiness.components.checkouts.blockingLaunch).toBe(true);
+  });
+
+  it('blocks when canonical checkout path is not an approved binding', async () => {
+    const readiness = await actualReadiness('asi-os-runtime', {
+      resolveBaselineSha: async () => runtimeSha,
+      loadRunnerReadiness: async () => runnerStatus(v2Record([
+        repositoryEvidence('landing', 'ASI-integration/asi-landing', landingSha),
+        recoverableDriftEvidence('runtime', 'ASI-integration/asi-os-runtime', runtimeSha, {
+          canonicalCheckoutPath: '/tmp/untrusted-runtime-checkout',
+        }),
+      ], {
+        capabilities: degradedCheckoutsCapabilities(),
+      })),
+    });
+    expect(readiness.canLaunch).toBe(false);
+    expect(readiness.components.checkouts.blockingLaunch).toBe(true);
+  });
+
+  it('blocks stale readiness even when recoverable drift evidence would otherwise allow launch', async () => {
+    const actual = await vi.importActual<typeof import('../readiness')>('../readiness');
+    const readiness = await actual.getDevelopmentReadiness({
+      repositoryId: 'asi-os-runtime',
+      env: readyEnv,
+      now: () => new Date('2026-08-01T00:02:00.000Z'),
+      probeBridgeStorage: async () => {},
+      probeGitHub: async () => {},
+      resolveBaselineSha: async () => runtimeSha,
+      loadRunnerReadiness: async () => ({
+        status: 'stale' as const,
+        record: v2Record([
+          repositoryEvidence('landing', 'ASI-integration/asi-landing', landingSha),
+          recoverableDriftEvidence('runtime', 'ASI-integration/asi-os-runtime', runtimeSha),
+        ], {
+          capabilities: degradedCheckoutsCapabilities(),
+        }),
+      }),
+    });
+    expect(readiness.canLaunch).toBe(false);
+    expect(readiness.components.checkouts.reasonCode).toBe('runtime_runner_readiness_stale');
+  });
+
+  it('preserves v1 recoverable drift launch compatibility for landing', async () => {
+    const readiness = await actualReadiness('asi-landing', {
+      resolveBaselineSha: async () => landingSha,
+      loadRunnerReadiness: async () => runnerStatus({
+        ...v1Record(landingSha),
+        capabilities: {
+          checkouts: { state: 'degraded', reasonCode: 'runtime_checkout_recoverable_drift' },
+          baselineRecovery: { state: 'ready', reasonCode: 'runtime_baseline_recovery_ready' },
+          executor: { state: 'ready', reasonCode: 'runtime_executor_ready' },
+        },
+      }),
+    });
+    expect(readiness.canLaunch).toBe(true);
+    expect(readiness.components.checkouts.reasonCode).toBe('runtime_checkout_recoverable_drift');
+    expect(readiness.components.checkouts.blockingLaunch).toBe(false);
+    expect(readiness.runnerEvidence?.schemaVersion).toBe('asi.runtime.runner-readiness.v1');
+  });
+});
+
 describe('runner-readiness.v2 bridge parsing', () => {
   it('accepts valid v2 publish payload', () => {
     const parsed = parseRuntimeBridgeRunnerInput({
