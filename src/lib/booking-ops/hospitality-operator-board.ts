@@ -169,7 +169,7 @@ export function resolveHospitalityOperatorBucket(
     return 'coming_next';
   }
 
-  if (state === 'waiting' || state === 'automatic_action_available' || !signal) {
+  if (state === 'waiting' || !signal) {
     return 'asi_handled';
   }
 
