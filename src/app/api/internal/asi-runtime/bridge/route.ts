@@ -4,6 +4,7 @@ import {
   getRuntimeBridgeResult,
   getRuntimeBridgeTask,
   listRuntimeBridgeOwnerGates,
+  listRuntimeBridgeTasks,
   RuntimeBridgeError,
   submitRuntimeBridgeOwnerDecision,
   submitRuntimeBridgeTask,
@@ -40,6 +41,14 @@ export async function handleRuntimeBridgeChatRequest(
         return response({ ok: true, operation: parsed.operation, task: await getRuntimeBridgeTask(clientId, parsed.input.taskId) });
       case 'runtime_get_result':
         return response({ ok: true, operation: parsed.operation, ...(await getRuntimeBridgeResult(clientId, parsed.input.taskId)) });
+      case 'runtime_list_tasks':
+        return response({
+          ok: true,
+          operation: parsed.operation,
+          tasks: await listRuntimeBridgeTasks(clientId, parsed.input.conversationId, {
+            limit: parsed.input.limit,
+          }),
+        });
       case 'runtime_list_owner_gates':
         return response({ ok: true, operation: parsed.operation, gates: await listRuntimeBridgeOwnerGates(clientId) });
       case 'runtime_submit_owner_decision':

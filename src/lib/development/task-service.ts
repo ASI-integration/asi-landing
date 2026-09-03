@@ -7,6 +7,7 @@ import {
   getRuntimeBridgeTask,
   getRuntimeBridgeTaskRecord,
   listRuntimeBridgeOwnerGates,
+  listRuntimeBridgeTasks,
   RuntimeBridgeError,
   submitRuntimeBridgeOwnerDecision,
   submitRuntimeBridgeTask,
@@ -182,6 +183,17 @@ export function deriveDevelopmentTaskPackage(input: {
 export type DevelopmentConsoleTaskView = RuntimeBridgeTaskView & {
   repository: string;
   title: string;
+};
+
+export type DevelopmentTaskHistoryItem = {
+  taskId: string;
+  title: string;
+  status: RuntimeBridgeTaskView['status'];
+  repository: string;
+  provider: string | null;
+  createdAt: string;
+  updatedAt: string;
+  needsOwnerAttention: boolean;
 };
 
 export type DevelopmentTaskSnapshot = {
@@ -372,6 +384,30 @@ async function resolveDevelopmentMergeGate(
         ? 'Не удалось связаться с GitHub для проверки решения владельца. Объединение заблокировано.'
         : 'Не удалось проверить решение владельца. Объединение заблокировано.',
     });
+  }
+}
+
+export async function listDevelopmentTasksForOwner(
+  ownerUserId: string,
+  options?: { limit?: number },
+): Promise<DevelopmentTaskHistoryItem[]> {
+  const clientId = requireClientId();
+  const conversationId = requireOwnerConversation(ownerUserId);
+
+  try {
+    const tasks = await listRuntimeBridgeTasks(clientId, conversationId, options);
+    return tasks.map((task) => ({
+      taskId: task.taskId,
+      title: task.title,
+      status: task.status,
+      repository: task.repository,
+      provider: task.repository,
+      createdAt: task.createdAt,
+      updatedAt: task.updatedAt,
+      needsOwnerAttention: task.status === 'awaiting_owner',
+    }));
+  } catch (error) {
+    mapBridgeError(error);
   }
 }
 

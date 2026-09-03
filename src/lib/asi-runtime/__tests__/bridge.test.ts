@@ -5,6 +5,9 @@ import { createServer } from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import Ajv2020 from 'ajv/dist/2020.js';
+import addFormats from 'ajv-formats';
+import yaml from 'js-yaml';
 import { isRuntimeBridgeAuthorized } from '../bridge-auth';
 import { runtimeBridgeRequestHash } from '../bridge-hash';
 import {
@@ -23,6 +26,7 @@ const repository = vi.hoisted(() => ({
   getRuntimeBridgeTask: vi.fn(),
   getRuntimeBridgeResult: vi.fn(),
   listRuntimeBridgeOwnerGates: vi.fn(),
+  listRuntimeBridgeTasks: vi.fn(),
   submitRuntimeBridgeOwnerDecision: vi.fn(),
   runRuntimeBridgeRunnerOperation: vi.fn(),
 }));
@@ -142,6 +146,25 @@ describe('runtime bridge authentication and schemas', () => {
     expect(parseRuntimeBridgeChatInput({
       ...submit,
       input: { ...submit.input, task: { ...task, objective: 'Read C:\\Users\\Admin\\secret.txt' } },
+    })).toBeNull();
+  });
+
+  it('accepts bounded runtime_list_tasks input for one conversation scope', () => {
+    expect(parseRuntimeBridgeChatInput({
+      operation: 'runtime_list_tasks',
+      input: { conversationId: 'dev-console-owner-abc' },
+    })?.operation).toBe('runtime_list_tasks');
+    expect(parseRuntimeBridgeChatInput({
+      operation: 'runtime_list_tasks',
+      input: { conversationId: 'dev-console-owner-abc', limit: 10 },
+    })?.operation).toBe('runtime_list_tasks');
+    expect(parseRuntimeBridgeChatInput({
+      operation: 'runtime_list_tasks',
+      input: { conversationId: 'dev-console-owner-abc', limit: 0 },
+    })).toBeNull();
+    expect(parseRuntimeBridgeChatInput({
+      operation: 'runtime_list_tasks',
+      input: { conversationId: 'dev-console-owner-abc', ownerId: 'attacker' },
     })).toBeNull();
   });
 
@@ -807,7 +830,7 @@ describe('runtime bridge durable contracts', () => {
     }
   }, 20_000);
 
-  it('OpenAPI exposes exactly the five strict Chat operations and typed responses', () => {
+  it('OpenAPI exposes exactly the six strict Chat operations and typed responses', () => {
     const openapi = readFileSync('docs/asi-chat-runtime-bridge-v1.openapi.yaml', 'utf8');
     const operationIds = [...openapi.matchAll(/^\s+operationId:\s+(\S+)$/gm)].map((match) => match[1]);
     expect(operationIds).toEqual(RUNTIME_BRIDGE_CHAT_OPERATIONS);
@@ -816,10 +839,54 @@ describe('runtime bridge durable contracts', () => {
     expect(openapi).toContain("SubmitTaskResponse:");
     expect(openapi).toContain("GetTaskResponse:");
     expect(openapi).toContain("GetResultResponse:");
+    expect(openapi).toContain("ListTasksResponse:");
     expect(openapi).toContain("ListOwnerGatesResponse:");
     expect(openapi).toContain("OwnerDecisionResponse:");
-    expect(openapi.match(/'401':/g)).toHaveLength(5);
-    expect(openapi.match(/'503':/g)).toHaveLength(5);
+    expect(openapi.match(/'401':/g)).toHaveLength(6);
+    expect(openapi.match(/'503':/g)).toHaveLength(6);
+  });
+
+  it('OpenAPI TaskListItem accepts runtime list payloads and rejects closed allOf composition', () => {
+    const document = yaml.load(
+      readFileSync('docs/asi-chat-runtime-bridge-v1.openapi.yaml', 'utf8'),
+    ) as { components: { schemas: Record<string, Record<string, unknown>> } };
+    const ajv = new Ajv2020({ allErrors: true, strict: false, validateSchema: false });
+    addFormats(ajv);
+    for (const [name, schema] of Object.entries(document.components.schemas)) {
+      ajv.addSchema({ ...schema, $id: `#/components/schemas/${name}` });
+    }
+
+    const sample = {
+      taskId: '11111111-1111-4111-8111-111111111111',
+      chatgptTaskId: 'dev-console-task-abc',
+      conversationId: 'dev-console-owner-abc',
+      status: 'awaiting_owner',
+      attemptCount: 1,
+      createdAt: '2026-07-30T00:00:00.000Z',
+      updatedAt: '2026-07-30T00:01:00.000Z',
+      title: 'Bridge task',
+      repository: 'ASI-integration/asi-landing',
+    };
+
+    const validateTaskListItem = ajv.getSchema('#/components/schemas/TaskListItem');
+    expect(validateTaskListItem).toBeTruthy();
+    expect(validateTaskListItem!(sample)).toBe(true);
+
+    const brokenComposition = ajv.compile({
+      allOf: [
+        document.components.schemas.Task,
+        {
+          type: 'object',
+          additionalProperties: false,
+          required: ['title', 'repository'],
+          properties: {
+            title: document.components.schemas.CleanText,
+            repository: { type: 'string', const: 'ASI-integration/asi-landing' },
+          },
+        },
+      ],
+    });
+    expect(brokenComposition(sample)).toBe(false);
   });
 
   it('auth and repository modules enforce the server-only boundary', () => {

@@ -18,6 +18,7 @@ const getRuntimeBridgeTask = vi.fn();
 const getRuntimeBridgeTaskRecord = vi.fn();
 const getRuntimeBridgeResult = vi.fn();
 const listRuntimeBridgeOwnerGates = vi.fn();
+const listRuntimeBridgeTasks = vi.fn();
 const getRuntimeBridgeOwnerGate = vi.fn();
 const submitRuntimeBridgeOwnerDecision = vi.fn();
 const resolveAllowlistedBaselineSha = vi.fn();
@@ -46,6 +47,7 @@ vi.mock('@/lib/asi-runtime/bridge-repository', () => ({
   getRuntimeBridgeTaskRecord,
   getRuntimeBridgeResult,
   listRuntimeBridgeOwnerGates,
+  listRuntimeBridgeTasks,
   getRuntimeBridgeOwnerGate,
   submitRuntimeBridgeOwnerDecision,
 }));
@@ -196,6 +198,29 @@ function createCompatibleBridge() {
     [...gates.values()].filter((gate) => gate.status === 'pending')
   ));
 
+  listRuntimeBridgeTasks.mockImplementation(async (
+    _clientId: string,
+    conversationId: string,
+    options?: { limit?: number },
+  ) => {
+    const limit = options?.limit ?? 20;
+    return [...tasks.values()]
+      .filter((task) => task.conversationId === conversationId)
+      .sort((left, right) => Date.parse(right.updatedAt) - Date.parse(left.updatedAt))
+      .slice(0, limit)
+      .map((task) => ({
+        taskId: task.taskId,
+        chatgptTaskId: task.chatgptTaskId,
+        conversationId: task.conversationId,
+        status: task.status,
+        attemptCount: task.attemptCount,
+        createdAt: task.createdAt,
+        updatedAt: task.updatedAt,
+        title: task.request.title,
+        repository: task.request.repository,
+      }));
+  });
+
   getRuntimeBridgeOwnerGate.mockImplementation(async (_clientId: string, gateId: string) => (
     gates.get(gateId) ?? null
   ));
@@ -282,6 +307,7 @@ beforeEach(() => {
   getRuntimeBridgeTaskRecord.mockReset();
   getRuntimeBridgeResult.mockReset();
   listRuntimeBridgeOwnerGates.mockReset();
+  listRuntimeBridgeTasks.mockReset();
   getRuntimeBridgeOwnerGate.mockReset();
   submitRuntimeBridgeOwnerDecision.mockReset();
   resolveAllowlistedBaselineSha.mockReset();
@@ -740,6 +766,164 @@ describe('buildDevelopmentTaskSnapshot owner scope', () => {
     expect(own.task.taskId).toBe(taskId);
     expect(own.task.title).toBe('Owned by A');
     expect(JSON.stringify(own)).not.toMatch(/ASI_DEVELOPMENT_OWNER_EMAILS|SERVICE_ROLE|TOKEN/i);
+  });
+});
+
+describe('listDevelopmentTasksForOwner', () => {
+  function seedTask(input: {
+    ownerUserId: string;
+    taskId: string;
+    title: string;
+    status: RuntimeBridgeTaskView['status'];
+    updatedAt: string;
+  }) {
+    const bridge = createCompatibleBridge();
+    bridge.seedTask({
+      taskId: input.taskId,
+      chatgptTaskId: chatgptTaskIdFor(input.ownerUserId, `dev-console-idem-${input.taskId}`),
+      conversationId: conversationIdFor(input.ownerUserId),
+      status: input.status,
+      attemptCount: 0,
+      createdAt: '2026-07-30T00:00:00.000Z',
+      updatedAt: input.updatedAt,
+      idempotencyKey: `dev-console-idem-${input.taskId}`,
+      requestHash: 'a'.repeat(64),
+      request: {
+        title: input.title,
+        objective: 'Objective',
+        instructions: ['step'],
+        repository: 'ASI-integration/asi-landing',
+        baselineSha: 'c'.repeat(40),
+      },
+    });
+    return bridge;
+  }
+
+  it('lists only the owner conversation tasks from the durable bridge store', async () => {
+    const ownerA = 'owner-a';
+    const ownerB = 'owner-b';
+    const taskA = randomUUID();
+    const taskB = randomUUID();
+    const bridge = createCompatibleBridge();
+    bridge.seedTask({
+      taskId: taskA,
+      chatgptTaskId: chatgptTaskIdFor(ownerA, `dev-console-idem-${taskA}`),
+      conversationId: conversationIdFor(ownerA),
+      status: 'completed',
+      attemptCount: 0,
+      createdAt: '2026-07-30T00:00:00.000Z',
+      updatedAt: '2026-07-30T00:02:00.000Z',
+      idempotencyKey: `dev-console-idem-${taskA}`,
+      requestHash: 'a'.repeat(64),
+      request: {
+        title: 'Task A',
+        objective: 'Objective',
+        instructions: ['step'],
+        repository: 'ASI-integration/asi-landing',
+        baselineSha: 'c'.repeat(40),
+      },
+    });
+    bridge.seedTask({
+      taskId: taskB,
+      chatgptTaskId: chatgptTaskIdFor(ownerB, `dev-console-idem-${taskB}`),
+      conversationId: conversationIdFor(ownerB),
+      status: 'queued',
+      attemptCount: 0,
+      createdAt: '2026-07-30T00:00:00.000Z',
+      updatedAt: '2026-07-30T00:03:00.000Z',
+      idempotencyKey: `dev-console-idem-${taskB}`,
+      requestHash: 'b'.repeat(64),
+      request: {
+        title: 'Task B',
+        objective: 'Objective',
+        instructions: ['step'],
+        repository: 'ASI-integration/asi-landing',
+        baselineSha: 'd'.repeat(40),
+      },
+    });
+
+    const { listDevelopmentTasksForOwner } = await import('../task-service');
+    const listed = await listDevelopmentTasksForOwner(ownerA);
+
+    expect(listRuntimeBridgeTasks).toHaveBeenCalledWith(
+      'chatgpt-owner',
+      conversationIdFor(ownerA),
+      undefined,
+    );
+    expect(getRuntimeBridgeTaskRecord).not.toHaveBeenCalled();
+    expect(listed.map((item) => item.taskId)).toEqual([taskA]);
+    expect(listed[0]).toMatchObject({
+      title: 'Task A',
+      status: 'completed',
+      provider: 'ASI-integration/asi-landing',
+      needsOwnerAttention: false,
+    });
+    expect(JSON.stringify(listed)).not.toMatch(/owner-b|Task B/i);
+  });
+
+  it('returns an empty list safely when the owner has no tasks', async () => {
+    createCompatibleBridge();
+    const { listDevelopmentTasksForOwner } = await import('../task-service');
+    await expect(listDevelopmentTasksForOwner('owner-empty')).resolves.toEqual([]);
+  });
+
+  it('bounds the durable list request size', async () => {
+    createCompatibleBridge();
+    const { listDevelopmentTasksForOwner } = await import('../task-service');
+    await listDevelopmentTasksForOwner('owner-a', { limit: 3 });
+    expect(listRuntimeBridgeTasks).toHaveBeenCalledWith(
+      'chatgpt-owner',
+      conversationIdFor('owner-a'),
+      { limit: 3 },
+    );
+  });
+
+  it('marks awaiting_owner tasks for owner attention', async () => {
+    const taskId = randomUUID();
+    seedTask({
+      ownerUserId: 'owner-a',
+      taskId,
+      title: 'Needs decision',
+      status: 'awaiting_owner',
+      updatedAt: '2026-07-30T00:04:00.000Z',
+    });
+    const { listDevelopmentTasksForOwner } = await import('../task-service');
+    const listed = await listDevelopmentTasksForOwner('owner-a');
+    expect(listed[0]?.needsOwnerAttention).toBe(true);
+    expect(listed[0]?.status).toBe('awaiting_owner');
+  });
+
+  it('does not mark converged failed tasks as owner-actionable', async () => {
+    const taskId = randomUUID();
+    seedTask({
+      ownerUserId: 'owner-a',
+      taskId,
+      title: 'Expired gate task',
+      status: 'failed',
+      updatedAt: '2026-07-30T00:04:30.000Z',
+    });
+    const { listDevelopmentTasksForOwner } = await import('../task-service');
+    const listed = await listDevelopmentTasksForOwner('owner-a');
+    expect(listed[0]?.status).toBe('failed');
+    expect(listed[0]?.needsOwnerAttention).toBe(false);
+  });
+
+  it('does not change single-task lookup behavior', async () => {
+    const ownerA = 'owner-a';
+    const taskId = randomUUID();
+    seedTask({
+      ownerUserId: ownerA,
+      taskId,
+      title: 'Lookup unchanged',
+      status: 'failed',
+      updatedAt: '2026-07-30T00:05:00.000Z',
+    });
+    const { buildDevelopmentTaskSnapshot, listDevelopmentTasksForOwner } = await import('../task-service');
+    const snapshot = await buildDevelopmentTaskSnapshot(taskId, ownerA);
+    expect(snapshot.task.taskId).toBe(taskId);
+    expect(getRuntimeBridgeTaskRecord).toHaveBeenCalled();
+    const listed = await listDevelopmentTasksForOwner(ownerA);
+    expect(listed[0]?.status).toBe('failed');
   });
 });
 

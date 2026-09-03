@@ -477,6 +477,7 @@ describe('runtime bridge configuration readiness', () => {
       getRuntimeBridgeTask: vi.fn(),
       getRuntimeBridgeResult: vi.fn(),
       listRuntimeBridgeOwnerGates: vi.fn(),
+      listRuntimeBridgeTasks: vi.fn(),
       submitRuntimeBridgeOwnerDecision: vi.fn(),
       RuntimeBridgeError: class RuntimeBridgeError extends Error {
         constructor(public code: string, public status: number) { super(code); }
