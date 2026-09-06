@@ -70,6 +70,70 @@ export type GuestLifecycleExecutionStatus =
   | 'operator_required'
   | 'failed';
 
+/** Owner Console labels for existing Guest Lifecycle event types. Display-only. */
+export const GUEST_LIFECYCLE_EVENT_LABELS_RU: Record<GuestLifecycleEventType, string> = {
+  'reservation.created': 'Бронь создана',
+  'reservation.confirmed': 'Бронь подтверждена',
+  'arrival.due_24h': 'Заезд через 24 часа',
+  'arrival.due_3h': 'Заезд через 3 часа',
+  'checkin.ready': 'Готово к заезду',
+  'guest.checked_in': 'Гость заехал',
+  'stay.active': 'Проживание',
+  'stay.checkin_followup': 'Сообщение после заезда',
+  'checkout.due_24h': 'Выезд через 24 часа',
+  'checkout.due_3h': 'Выезд через 3 часа',
+  'late_checkout.requested': 'Запрос позднего выезда',
+  'late_checkout.approved': 'Поздний выезд одобрен',
+  'late_checkout.denied': 'Поздний выезд отклонён',
+  'guest.checked_out': 'Гость выехал',
+  'stay.completed': 'Проживание завершено',
+  'reservation.cancelled': 'Бронь отменена',
+  'incident.reported': 'Обращение создано',
+  'incident.resolved': 'Обращение закрыто',
+};
+
+export const GUEST_LIFECYCLE_STAGE_LABELS_RU: Record<GuestLifecycleStage, string> = {
+  reservation: 'Бронирование',
+  arrival: 'Подготовка к заезду',
+  checkin: 'Заезд',
+  stay: 'Проживание',
+  checkout: 'Выезд',
+  completed: 'Завершено',
+  cancelled: 'Отменено',
+  incident: 'Обращение',
+};
+
+export const GUEST_LIFECYCLE_EXECUTION_STATUS_LABELS_RU: Record<GuestLifecycleExecutionStatus, string> = {
+  received: 'Получено',
+  scheduled: 'Запланировано',
+  processing: 'Обрабатывается',
+  sent: 'Отправлено',
+  dry_run: 'Без отправки',
+  completed: 'Завершено',
+  skipped: 'Пропущено',
+  blocked: 'Заблокировано',
+  operator_required: 'Нужен оператор',
+  failed: 'Ошибка',
+};
+
+export function formatGuestLifecycleEventLabelRu(eventType: string | null | undefined): string {
+  const raw = String(eventType ?? '').trim();
+  if (!raw) return '—';
+  return GUEST_LIFECYCLE_EVENT_LABELS_RU[raw as GuestLifecycleEventType] ?? raw;
+}
+
+export function formatGuestLifecycleStageLabelRu(stage: string | null | undefined): string {
+  const raw = String(stage ?? '').trim();
+  if (!raw) return '—';
+  return GUEST_LIFECYCLE_STAGE_LABELS_RU[raw as GuestLifecycleStage] ?? raw;
+}
+
+export function formatGuestLifecycleExecutionStatusLabelRu(status: string | null | undefined): string {
+  const raw = String(status ?? '').trim();
+  if (!raw) return '—';
+  return GUEST_LIFECYCLE_EXECUTION_STATUS_LABELS_RU[raw as GuestLifecycleExecutionStatus] ?? raw;
+}
+
 export type GuestLifecycleExecutionRecord = {
   id: string;
   idempotencyKey: string;

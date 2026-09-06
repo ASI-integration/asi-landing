@@ -1,3 +1,5 @@
+import type { ReservationStatus } from './types';
+
 export type ReservationView = 'upcoming' | 'active' | 'inquiries' | 'conflicts' | 'cancelled' | 'all';
 
 export type ReservationViewRow = {
@@ -20,6 +22,22 @@ export const reservationEmptyMessages: Record<ReservationView, string> = {
   cancelled: 'Нет отменённых броней',
   all: 'Броней пока нет',
 };
+
+/** Owner Console labels for existing reservation lifecycle statuses. Display-only. */
+export const RESERVATION_STATUS_LABELS_RU: Record<ReservationStatus, string> = {
+  inquiry: 'Запрос',
+  temporary_hold: 'Временное удержание',
+  confirmed: 'Подтверждено',
+  checked_in: 'Гость заехал',
+  checked_out: 'Гость выехал',
+  cancelled: 'Отменено',
+};
+
+export function formatReservationStatusLabelRu(status: string | null | undefined): string {
+  const raw = String(status ?? '').trim();
+  if (!raw) return '—';
+  return RESERVATION_STATUS_LABELS_RU[raw as ReservationStatus] ?? raw;
+}
 
 export function isReservationVisibleInView(input: {
   row: ReservationViewRow;
