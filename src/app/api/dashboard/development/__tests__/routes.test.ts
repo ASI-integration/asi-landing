@@ -134,6 +134,17 @@ describe('development console API access', () => {
     expect(res.status).toBe(403);
     expect(buildDevelopmentTaskSnapshot).not.toHaveBeenCalled();
   });
+
+  it('denies invited pilot_beta without owner allowlist membership', async () => {
+    vi.stubEnv('ASI_DEVELOPMENT_OWNER_EMAILS', 'owner@example.com');
+    vi.stubEnv('ASI_PILOT_BETA_EMAILS', 'strigunov@example.com');
+    getSession.mockResolvedValue({ userId: 'pilot-1', email: 'strigunov@example.com' });
+    const { GET } = await import('@/app/api/dashboard/development/tasks/route');
+    const res = await GET();
+    expect(res.status).toBe(403);
+    expect(submitDevelopmentTask).not.toHaveBeenCalled();
+    expect(buildDevelopmentTaskSnapshot).not.toHaveBeenCalled();
+  });
 });
 
 describe('development console readiness API', () => {

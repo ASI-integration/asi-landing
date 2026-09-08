@@ -1,10 +1,9 @@
 import { NextResponse } from 'next/server';
 import crypto from 'crypto';
 import { getSession, isSessionSecretConfigured } from '@/lib/auth';
+import { getGoogleOAuthRedirectUri, safeAuthRedirectPath } from '@/lib/auth/app-url';
 
 export const runtime = 'nodejs';
-
-const GOOGLE_REDIRECT_URI = 'https://www.asi-global.ru/api/auth/google/callback';
 
 function getRequestOrigin(req: Request): string {
   const u = new URL(req.url);
@@ -24,17 +23,13 @@ function googleAuthUrl(params: Record<string, string>): string {
   return url.toString();
 }
 
-function safeRedirectPath(value: string | null): string {
-  if (!value || !value.startsWith('/') || value.startsWith('//')) return '/dashboard';
-  return value;
-}
-
 export async function GET(req: Request) {
   const clientId = (process.env.GOOGLE_CLIENT_ID || process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || '').trim();
   const clientSecret = (process.env.GOOGLE_CLIENT_SECRET || '').trim();
   const debug = new URL(req.url).searchParams.get('debug') === '1';
   const plan = new URL(req.url).searchParams.get('plan');
-  const redirectPath = safeRedirectPath(new URL(req.url).searchParams.get('redirect'));
+  const redirectPath = safeAuthRedirectPath(new URL(req.url).searchParams.get('redirect'));
+  const googleRedirectUri = getGoogleOAuthRedirectUri();
 
   if (!clientId || !clientSecret) {
     const url = new URL('/connect', getRequestOrigin(req));
@@ -65,7 +60,7 @@ export async function GET(req: Request) {
 
   const url = googleAuthUrl({
     client_id: clientId,
-    redirect_uri: GOOGLE_REDIRECT_URI,
+    redirect_uri: googleRedirectUri,
     response_type: 'code',
     scope: 'openid email profile',
     include_granted_scopes: 'true',
@@ -77,7 +72,7 @@ export async function GET(req: Request) {
   if (debug) {
     console.info('[GoogleOAuth][start]', {
       origin,
-      redirectUri: GOOGLE_REDIRECT_URI,
+      redirectUri: googleRedirectUri,
       hasClientId: Boolean(clientId),
       hasClientSecret: Boolean(clientSecret),
     });
@@ -85,4 +80,3 @@ export async function GET(req: Request) {
 
   return NextResponse.redirect(url);
 }
-

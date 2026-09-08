@@ -12,6 +12,9 @@ export const RUNTIME_BRIDGE_MAX_INSTRUCTIONS = 100;
 export const RUNTIME_BRIDGE_MAX_INSTRUCTION_LINE_CHARS = 2000;
 /** Sum of instruction line lengths; sized so UTF-8 Cyrillic stays under the 64 KiB body cap. */
 export const RUNTIME_BRIDGE_MAX_INSTRUCTION_TOTAL_CHARS = 24 * 1024;
+/** Pilot / owner console history listing bounds (server-side clamp). */
+export const RUNTIME_BRIDGE_LIST_TASKS_DEFAULT_LIMIT = 20;
+export const RUNTIME_BRIDGE_LIST_TASKS_MAX_LIMIT = 50;
 
 const SHA = /^[0-9a-f]{40}$/;
 const ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/;

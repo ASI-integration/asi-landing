@@ -4,12 +4,10 @@ import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
 import { supabase } from '@/lib/supabase';
 import { getSession } from '@/lib/auth';
+import { getGoogleOAuthRedirectUri, safeAuthRedirectPath } from '@/lib/auth/app-url';
 import { ensureAccountForUser } from '@/lib/accounts';
 
 export const runtime = 'nodejs';
-
-// Must match Google Cloud Console OAuth redirect URI exactly.
-const GOOGLE_REDIRECT_URI = 'https://www.asi-global.ru/api/auth/google/callback';
 
 function getRequestOrigin(req: Request): string {
   const u = new URL(req.url);
@@ -53,16 +51,12 @@ function randomPassword(): string {
   return crypto.randomBytes(24).toString('base64').replace(/[+/=]/g, '').slice(0, 24);
 }
 
-function safeRedirectPath(value: string | undefined): string {
-  if (!value || !value.startsWith('/') || value.startsWith('//')) return '/dashboard';
-  return value;
-}
-
 export async function GET(req: Request) {
   const url = new URL(req.url);
   const code = url.searchParams.get('code') || '';
   const state = url.searchParams.get('state') || '';
   const debug = url.searchParams.get('debug') === '1';
+  const googleRedirectUri = getGoogleOAuthRedirectUri();
 
   const origin = getRequestOrigin(req);
   const fail = (reason: string) => {
@@ -99,7 +93,7 @@ export async function GET(req: Request) {
 
   const expectedState = session.googleOauthState;
   const plan = session.googleOauthPlan;
-  const redirectPath = safeRedirectPath(session.googleOauthRedirect);
+  const redirectPath = safeAuthRedirectPath(session.googleOauthRedirect);
   session.googleOauthState = undefined;
   session.googleOauthPlan = undefined;
   session.googleOauthRedirect = undefined;
@@ -112,7 +106,7 @@ export async function GET(req: Request) {
       code,
       clientId,
       clientSecret,
-      redirectUri: GOOGLE_REDIRECT_URI,
+      redirectUri: googleRedirectUri,
     });
     const idToken = (tokenResp.id_token || '').trim();
     if (!idToken) return fail('no_id_token');
