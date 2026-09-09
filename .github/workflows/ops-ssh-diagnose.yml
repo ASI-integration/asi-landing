@@ -1,4 +1,4 @@
-name: Ops Staging SSH Verify
+name: Ops Runtime Predeploy Verify
 
 on:
   push:
@@ -14,7 +14,7 @@ jobs:
     environment: staging
     timeout-minutes: 5
     steps:
-      - name: Verify configured staging SSH
+      - name: Verify staging Runtime host before Landing deploy
         shell: bash
         env:
           STAGING_SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
@@ -36,5 +36,30 @@ jobs:
             -o StrictHostKeyChecking=no \
             -o UserKnownHostsFile=/dev/null \
             -o ConnectTimeout=10 \
-            "$STAGING_SSH_USER@$STAGING_SSH_HOST" \
-            'set -e; printf "SSH_OK hostname="; hostname; printf " user="; id -un; test "$(hostname)" = "asi-agent-runner"; test "$(id -un)" = "project_ayfaar"; echo'
+            "$STAGING_SSH_USER@$STAGING_SSH_HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          echo "SSH_OK hostname=$(hostname) user=$(id -un)"
+          CURRENT="$(readlink -f /opt/asi-runtime/current)"
+          echo "RUNTIME_CURRENT=$CURRENT"
+          test -f "$CURRENT/lib/agent-ops/events.mjs"
+          grep -q 'strigunov_pilot_v1' "$CURRENT/lib/agent-ops/events.mjs"
+          echo 'SP01_CODE_PRESENT=YES'
+          ENV=/etc/asi-runtime/runtime.env
+          if [ ! -r "$ENV" ]; then
+            ENV_CMD='sudo -n cat /etc/asi-runtime/runtime.env'
+          else
+            ENV_CMD='cat /etc/asi-runtime/runtime.env'
+          fi
+          PROFILE="$(eval "$ENV_CMD" | sed -n 's/^ASI_OWNER_TELEGRAM_PROFILE=//p' | tail -1)"
+          BRIDGE_URL="$(eval "$ENV_CMD" | sed -n 's/^ASI_RUNTIME_BRIDGE_URL=//p' | tail -1)"
+          if eval "$ENV_CMD" | grep -Eq '^ASI_RUNTIME_BRIDGE_RUNNER_TOKEN=.+$'; then TOKEN=PRESENT; else TOKEN=MISSING; fi
+          echo "PROFILE=$PROFILE"
+          echo "BRIDGE_URL=$BRIDGE_URL"
+          echo "RUNNER_TOKEN=$TOKEN"
+          test "$PROFILE" = 'strigunov_pilot_v1'
+          test "$BRIDGE_URL" = 'https://staging.asi-global.ru'
+          test "$TOKEN" = 'PRESENT'
+          systemctl is-active --quiet asi-runtime-worker || sudo -n systemctl is-active --quiet asi-runtime-worker
+          systemctl is-active --quiet asi-runtime-bridge-runner || sudo -n systemctl is-active --quiet asi-runtime-bridge-runner
+          echo 'RUNTIME_PREDEPLOY_OK=YES'
+          REMOTE
