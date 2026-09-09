@@ -12,9 +12,9 @@ jobs:
   diagnose:
     runs-on: ubuntu-latest
     environment: staging
-    timeout-minutes: 10
+    timeout-minutes: 5
     steps:
-      - name: Prepare SSH key
+      - name: Show staging deploy public key only
         shell: bash
         env:
           STAGING_SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
@@ -24,49 +24,7 @@ jobs:
           chmod 700 ~/.ssh
           printf '%s\n' "$STAGING_SSH_PRIVATE_KEY" > ~/.ssh/staging_key
           chmod 600 ~/.ssh/staging_key
+          echo 'STAGING_DEPLOY_PUBLIC_KEY_BEGIN'
+          ssh-keygen -y -f ~/.ssh/staging_key
+          echo 'STAGING_DEPLOY_PUBLIC_KEY_END'
           ssh-keygen -lf ~/.ssh/staging_key
-
-      - name: Check staging SSH target identity without exposing secrets
-        shell: bash
-        env:
-          STAGING_SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
-          STAGING_SSH_USER: ${{ secrets.STAGING_SSH_USER }}
-          STAGING_SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
-        run: |
-          set -euo pipefail
-          if [ "$STAGING_SSH_HOST" = "2.29.31.29" ]; then echo 'STAGING_SSH_HOST_MATCH=YES'; else echo 'STAGING_SSH_HOST_MATCH=NO'; fi
-          if [ "${STAGING_SSH_PORT:-22}" = "22" ]; then echo 'STAGING_SSH_PORT_MATCH=YES'; else echo 'STAGING_SSH_PORT_MATCH=NO'; fi
-          if [ "$STAGING_SSH_USER" = "project_ayfaar" ]; then echo 'STAGING_SSH_USER_PROJECT_AYFAAR=YES'; else echo 'STAGING_SSH_USER_PROJECT_AYFAAR=NO'; fi
-
-      - name: Probe configured staging target
-        shell: bash
-        continue-on-error: true
-        env:
-          STAGING_SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
-          STAGING_SSH_USER: ${{ secrets.STAGING_SSH_USER }}
-          STAGING_SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
-        run: |
-          set -euo pipefail
-          PORT="${STAGING_SSH_PORT:-22}"
-          ssh -vv \
-            -i ~/.ssh/staging_key \
-            -p "$PORT" \
-            -o IdentitiesOnly=yes \
-            -o StrictHostKeyChecking=accept-new \
-            -o ConnectTimeout=10 \
-            "$STAGING_SSH_USER@$STAGING_SSH_HOST" 'echo CONFIGURED_TARGET_SSH_OK'
-
-      - name: Probe Hetzner target directly
-        shell: bash
-        continue-on-error: true
-        env:
-          STAGING_SSH_USER: ${{ secrets.STAGING_SSH_USER }}
-        run: |
-          set -euo pipefail
-          ssh -vv \
-            -i ~/.ssh/staging_key \
-            -p 22 \
-            -o IdentitiesOnly=yes \
-            -o StrictHostKeyChecking=accept-new \
-            -o ConnectTimeout=10 \
-            "$STAGING_SSH_USER@2.29.31.29" 'echo HETZNER_TARGET_SSH_OK'
