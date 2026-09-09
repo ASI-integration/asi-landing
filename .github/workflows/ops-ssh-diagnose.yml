@@ -1,4 +1,4 @@
-name: Ops Rescue Authorize
+name: Ops Staging SSH Verify
 
 on:
   push:
@@ -9,99 +9,32 @@ permissions:
   contents: read
 
 jobs:
-  authorize:
+  verify:
     runs-on: ubuntu-latest
     environment: staging
-    timeout-minutes: 10
+    timeout-minutes: 5
     steps:
-      - name: Prepare staging deploy key
+      - name: Verify configured staging SSH
         shell: bash
         env:
+          STAGING_SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+          STAGING_SSH_USER: ${{ secrets.STAGING_SSH_USER }}
+          STAGING_SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
           STAGING_SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
         run: |
           set -euo pipefail
+          test "$STAGING_SSH_HOST" = "2.29.31.29"
+          test "$STAGING_SSH_USER" = "project_ayfaar"
+          PORT="${STAGING_SSH_PORT:-22}"
           mkdir -p ~/.ssh
           chmod 700 ~/.ssh
           printf '%s\n' "$STAGING_SSH_PRIVATE_KEY" > ~/.ssh/staging_key
           chmod 600 ~/.ssh/staging_key
-          ssh-keygen -lf ~/.ssh/staging_key
-          ssh-keygen -y -f ~/.ssh/staging_key > ~/.ssh/staging_key.pub
-
-      - name: Wait for Hetzner rescue and authorize deploy key
-        shell: bash
-        run: |
-          set -euo pipefail
-          HOST='2.29.31.29'
-          SSH_OPTS=(
-            -i ~/.ssh/staging_key
-            -o IdentitiesOnly=yes
-            -o StrictHostKeyChecking=no
-            -o UserKnownHostsFile=/dev/null
-            -o ConnectTimeout=8
-            -o ServerAliveInterval=5
-            -o ServerAliveCountMax=2
-          )
-
-          ready=0
-          for attempt in $(seq 1 30); do
-            if ssh "${SSH_OPTS[@]}" root@"$HOST" 'echo RESCUE_SSH_OK' >/tmp/rescue_probe 2>&1; then
-              cat /tmp/rescue_probe
-              ready=1
-              break
-            fi
-            echo "Rescue SSH not ready yet (attempt $attempt/30)"
-            sleep 10
-          done
-          [ "$ready" -eq 1 ] || { echo 'ERROR: rescue SSH never became available with staging deploy key'; exit 1; }
-
-          PUB_KEY="$(cat ~/.ssh/staging_key.pub)"
-          ssh "${SSH_OPTS[@]}" root@"$HOST" "PUB_KEY='$PUB_KEY' bash -s" <<'REMOTE'
-          set -euo pipefail
-          mkdir -p /mnt/server
-          mountpoint -q /mnt/server || mount /dev/sda1 /mnt/server
-          test -f /mnt/server/etc/os-release
-          grep -q '^NAME="Ubuntu"' /mnt/server/etc/os-release
-
-          UID_NUM="$(chroot /mnt/server id -u project_ayfaar)"
-          GID_NUM="$(chroot /mnt/server id -g project_ayfaar)"
-          HOME_DIR='/mnt/server/home/project_ayfaar'
-
-          mkdir -p "$HOME_DIR/.ssh"
-          touch "$HOME_DIR/.ssh/authorized_keys"
-          grep -qxF "$PUB_KEY" "$HOME_DIR/.ssh/authorized_keys" || printf '%s\n' "$PUB_KEY" >> "$HOME_DIR/.ssh/authorized_keys"
-          chown -R "$UID_NUM:$GID_NUM" "$HOME_DIR/.ssh"
-          chmod 700 "$HOME_DIR/.ssh"
-          chmod 600 "$HOME_DIR/.ssh/authorized_keys"
-
-          echo 'GITHUB_DEPLOY_KEY_INSTALLED=YES'
-          sync
-          umount /mnt/server
-          nohup sh -c 'sleep 2; reboot' >/dev/null 2>&1 &
-          REMOTE
-
-      - name: Verify normal Ubuntu boot with project deploy user
-        shell: bash
-        run: |
-          set -euo pipefail
-          HOST='2.29.31.29'
-          SSH_OPTS=(
-            -i ~/.ssh/staging_key
-            -o IdentitiesOnly=yes
-            -o StrictHostKeyChecking=no
-            -o UserKnownHostsFile=/dev/null
-            -o ConnectTimeout=8
-          )
-          sleep 20
-          ok=0
-          for attempt in $(seq 1 36); do
-            if out="$(ssh "${SSH_OPTS[@]}" project_ayfaar@"$HOST" 'printf "NORMAL_SSH_OK hostname="; hostname; id -un' 2>&1)"; then
-              echo "$out"
-              if grep -q 'asi-agent-runner' <<<"$out"; then
-                ok=1
-                break
-              fi
-            fi
-            echo "Normal Ubuntu SSH not ready yet (attempt $attempt/36)"
-            sleep 10
-          done
-          [ "$ok" -eq 1 ] || { echo 'ERROR: normal Ubuntu did not accept staging deploy key'; exit 1; }
+          ssh -i ~/.ssh/staging_key \
+            -p "$PORT" \
+            -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=no \
+            -o UserKnownHostsFile=/dev/null \
+            -o ConnectTimeout=10 \
+            "$STAGING_SSH_USER@$STAGING_SSH_HOST" \
+            'set -e; printf "SSH_OK hostname="; hostname; printf " user="; id -un; test "$(hostname)" = "asi-agent-runner"; test "$(id -un)" = "project_ayfaar"; echo'
