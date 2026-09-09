@@ -26,8 +26,21 @@ jobs:
           chmod 600 ~/.ssh/staging_key
           ssh-keygen -lf ~/.ssh/staging_key
 
-      - name: Diagnose SSH and server auth
+      - name: Check staging SSH target identity without exposing secrets
         shell: bash
+        env:
+          STAGING_SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+          STAGING_SSH_USER: ${{ secrets.STAGING_SSH_USER }}
+          STAGING_SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
+        run: |
+          set -euo pipefail
+          if [ "$STAGING_SSH_HOST" = "2.29.31.29" ]; then echo 'STAGING_SSH_HOST_MATCH=YES'; else echo 'STAGING_SSH_HOST_MATCH=NO'; fi
+          if [ "${STAGING_SSH_PORT:-22}" = "22" ]; then echo 'STAGING_SSH_PORT_MATCH=YES'; else echo 'STAGING_SSH_PORT_MATCH=NO'; fi
+          if [ "$STAGING_SSH_USER" = "project_ayfaar" ]; then echo 'STAGING_SSH_USER_PROJECT_AYFAAR=YES'; else echo 'STAGING_SSH_USER_PROJECT_AYFAAR=NO'; fi
+
+      - name: Probe configured staging target
+        shell: bash
+        continue-on-error: true
         env:
           STAGING_SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
           STAGING_SSH_USER: ${{ secrets.STAGING_SSH_USER }}
@@ -40,39 +53,20 @@ jobs:
             -p "$PORT" \
             -o IdentitiesOnly=yes \
             -o StrictHostKeyChecking=accept-new \
-            -o ConnectTimeout=20 \
-            -o ServerAliveInterval=10 \
-            -o ServerAliveCountMax=3 \
-            "$STAGING_SSH_USER@$STAGING_SSH_HOST" 'bash -s' <<'REMOTE'
-          set +e
-          echo '=== IDENTITY ==='
-          id
-          hostname
-          date -Is
-          uptime
+            -o ConnectTimeout=10 \
+            "$STAGING_SSH_USER@$STAGING_SSH_HOST" 'echo CONFIGURED_TARGET_SSH_OK'
 
-          echo '=== SSH EFFECTIVE SETTINGS ==='
-          if sudo -n true 2>/dev/null; then SUDO='sudo -n'; else SUDO=''; fi
-          $SUDO sshd -T 2>/dev/null | grep -Ei '^(maxsessions|maxstartups|persource|logingracetime|clientalive|permitrootlogin|pubkeyauthentication|passwordauthentication|authenticationmethods|allowusers|denyusers)' || true
-
-          echo '=== SSH CONFIG OVERRIDES ==='
-          $SUDO grep -RniE '^[[:space:]]*(MaxStartups|MaxSessions|PerSource|LoginGraceTime|ClientAlive|PermitRootLogin|PubkeyAuthentication|PasswordAuthentication|AuthenticationMethods|AllowUsers|DenyUsers|Match)\b' /etc/ssh/sshd_config /etc/ssh/sshd_config.d 2>/dev/null || true
-
-          echo '=== SSH SERVICE STATUS ==='
-          $SUDO systemctl --no-pager --full status ssh 2>/dev/null | tail -40 || true
-
-          echo '=== SECURITY SERVICES ==='
-          for svc in fail2ban crowdsec sshguard; do
-            printf '%s: ' "$svc"
-            $SUDO systemctl is-active "$svc" 2>/dev/null || true
-          done
-
-          echo '=== SSH CONNECTIONS ==='
-          $SUDO ss -tnp state established '( sport = :22 )' 2>/dev/null || ss -tn state established '( sport = :22 )' 2>/dev/null || true
-
-          echo '=== RECENT SSH JOURNAL ==='
-          $SUDO journalctl -u ssh --since '-20 min' --no-pager 2>/dev/null | tail -160 || true
-
-          echo '=== RECENT KERNEL NETWORK EVENTS ==='
-          $SUDO journalctl -k --since '-20 min' --no-pager 2>/dev/null | grep -Ei 'ssh|drop|reject|conntrack|oom|kill' | tail -80 || true
-          REMOTE
+      - name: Probe Hetzner target directly
+        shell: bash
+        continue-on-error: true
+        env:
+          STAGING_SSH_USER: ${{ secrets.STAGING_SSH_USER }}
+        run: |
+          set -euo pipefail
+          ssh -vv \
+            -i ~/.ssh/staging_key \
+            -p 22 \
+            -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=accept-new \
+            -o ConnectTimeout=10 \
+            "$STAGING_SSH_USER@2.29.31.29" 'echo HETZNER_TARGET_SSH_OK'
