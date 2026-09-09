@@ -195,6 +195,8 @@ jobs:
             printf 'ASI_RUNTIME_BRIDGE_CLIENT_ID=%s\n' "$STAGING_ASI_RUNTIME_BRIDGE_CLIENT_ID"
             printf 'ASI_RUNTIME_BRIDGE_SUPABASE_URL=%s\n' "$STAGING_ASI_RUNTIME_BRIDGE_SUPABASE_URL"
             printf 'ASI_RUNTIME_BRIDGE_SUPABASE_SERVICE_ROLE_KEY=%s\n' "$STAGING_ASI_RUNTIME_BRIDGE_SUPABASE_SERVICE_ROLE_KEY"
+            # Free-tier staging exception: Bridge shares the staging Supabase project but uses dedicated runtime_bridge schema. Production requires isolated Bridge storage.
+            printf 'ASI_RUNTIME_BRIDGE_SUPABASE_SCHEMA=runtime_bridge\n'
             printf 'ASI_PILOT_BETA_EMAILS=%s\n' "$STAGING_ASI_PILOT_BETA_EMAILS"
             printf 'OPS_ADMIN_EMAILS=staging-acceptance@asi.local\n'
             printf 'CRM_OPERATOR_EMAILS=staging-acceptance@asi.local\n'
@@ -222,7 +224,8 @@ jobs:
             'EMAIL_AUTO_SEND=false' \
             'EMAIL_DRAFT_ONLY=true' \
             'LLM_ENABLED=false' \
-            'YOOKASSA_ENABLED=false'; do
+            'YOOKASSA_ENABLED=false' \
+            'ASI_RUNTIME_BRIDGE_SUPABASE_SCHEMA=runtime_bridge'; do
             grep -Fx "$expected" staging.env >/dev/null
           done
           echo 'STAGING_EXTERNAL_EFFECT_GUARDS PASS'

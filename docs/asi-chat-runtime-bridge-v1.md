@@ -65,6 +65,7 @@ ASI_RUNTIME_BRIDGE_RUNNER_TOKEN
 ASI_RUNTIME_BRIDGE_CLIENT_ID
 ASI_RUNTIME_BRIDGE_SUPABASE_URL
 ASI_RUNTIME_BRIDGE_SUPABASE_SERVICE_ROLE_KEY
+ASI_RUNTIME_BRIDGE_SUPABASE_SCHEMA
 ASI_RUNTIME_BRIDGE_URL
 ASI_RUNTIME_BRIDGE_EXECUTOR_JSON
 ASI_RUNTIME_BRIDGE_EXECUTION_TIMEOUT_MS
@@ -74,6 +75,10 @@ ASI_RUNTIME_BRIDGE_RUNNER_ID
 ```
 
 Bridge storage uses an **isolated** Supabase project (`ASI_RUNTIME_BRIDGE_SUPABASE_*`). Do not reuse primary `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` (auth, CRM, app data) for Bridge tables. Ready only when `ASI_RUNTIME_BRIDGE_CLIENT_ID`, `ASI_RUNTIME_BRIDGE_SUPABASE_URL`, and `ASI_RUNTIME_BRIDGE_SUPABASE_SERVICE_ROLE_KEY` are all set. Never expose Bridge URL or service-role key via `NEXT_PUBLIC_*` or browser responses.
+
+Production default schema is `public` on that isolated project (`ASI_RUNTIME_BRIDGE_SUPABASE_SCHEMA` unset or `public`). Do not change production to share the primary application database.
+
+Free-tier staging exception: Bridge shares the staging Supabase project but uses dedicated runtime_bridge schema. Production requires isolated Bridge storage. Staging-only SQL: `supabase/staging/20260909170000_runtime_bridge_schema_free_tier.sql` (not in the production `supabase/migrations` chain). Staging deploy sets `ASI_RUNTIME_BRIDGE_SUPABASE_SCHEMA=runtime_bridge`. Staging `ASI_RUNTIME_BRIDGE_SUPABASE_URL` / `ASI_RUNTIME_BRIDGE_SUPABASE_SERVICE_ROLE_KEY` may point at the existing asi-staging project; keep the dedicated env names. After applying the staging SQL, add `runtime_bridge` to Dashboard → Settings → API → Exposed schemas.
 
 Все три токена должны быть не короче 32 символов и попарно различаться. Owner token доступен только доверенному контуру, который получает явное сообщение владельца; обычный Chat token не может вызвать owner-decision endpoint. Bridge URL должен быть HTTPS; HTTP разрешён только для loopback.
 

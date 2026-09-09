@@ -42,6 +42,12 @@ Required values depend on the feature being tested, but staging should have its 
 
 Use staging URLs that route to the staging app. For local server checks, the app listens on `127.0.0.1:3001`.
 
+## Runtime Bridge (staging free-tier)
+
+Free-tier staging exception: Bridge shares the staging Supabase project but uses dedicated runtime_bridge schema. Production requires isolated Bridge storage.
+
+Keep dedicated env names `ASI_RUNTIME_BRIDGE_SUPABASE_URL`, `ASI_RUNTIME_BRIDGE_SUPABASE_SERVICE_ROLE_KEY`, and `ASI_RUNTIME_BRIDGE_CLIENT_ID`. Staging URL/key may point at the existing asi-staging project. `deploy-staging.yml` writes `ASI_RUNTIME_BRIDGE_SUPABASE_SCHEMA=runtime_bridge`. Apply `supabase/staging/20260909170000_runtime_bridge_schema_free_tier.sql` to asi-staging only (not production, not the `supabase/migrations` chain), then add `runtime_bridge` under Dashboard → Settings → API → Exposed schemas.
+
 ## Telegram Staging Bot
 
 Staging must use a separate Telegram bot token. Do not point the production bot at staging.

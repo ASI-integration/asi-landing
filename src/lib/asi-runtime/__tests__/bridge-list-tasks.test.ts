@@ -114,6 +114,7 @@ beforeEach(() => {
 afterEach(() => {
   delete process.env.ASI_RUNTIME_BRIDGE_SUPABASE_URL;
   delete process.env.ASI_RUNTIME_BRIDGE_SUPABASE_SERVICE_ROLE_KEY;
+  delete process.env.ASI_RUNTIME_BRIDGE_SUPABASE_SCHEMA;
   delete process.env.ASI_RUNTIME_BRIDGE_CLIENT_ID;
 });
 

@@ -3,6 +3,19 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 
 const BRIDGE_URL_ENV = 'ASI_RUNTIME_BRIDGE_SUPABASE_URL';
 const BRIDGE_KEY_ENV = 'ASI_RUNTIME_BRIDGE_SUPABASE_SERVICE_ROLE_KEY';
+const BRIDGE_SCHEMA_ENV = 'ASI_RUNTIME_BRIDGE_SUPABASE_SCHEMA';
+
+/** Isolated Bridge project / production default. */
+export const RUNTIME_BRIDGE_DEFAULT_SCHEMA = 'public';
+/**
+ * Free-tier staging exception: Bridge shares the staging Supabase project but uses
+ * dedicated runtime_bridge schema. Production requires isolated Bridge storage.
+ */
+export const RUNTIME_BRIDGE_STAGING_SCHEMA = 'runtime_bridge';
+
+export type RuntimeBridgeSupabaseSchema =
+  | typeof RUNTIME_BRIDGE_DEFAULT_SCHEMA
+  | typeof RUNTIME_BRIDGE_STAGING_SCHEMA;
 
 export class RuntimeBridgeSupabaseConfigError extends Error {
   readonly code = 'bridge_not_configured';
@@ -30,17 +43,27 @@ function normalizeSupabaseUrl(url: string): string {
   return parsed.toString().replace(/\/$/, '');
 }
 
+export function resolveRuntimeBridgeSupabaseSchema(
+  env: Readonly<Record<string, string | undefined>> = process.env,
+): RuntimeBridgeSupabaseSchema | null {
+  const raw = env[BRIDGE_SCHEMA_ENV]?.trim() ?? '';
+  if (!raw || raw === RUNTIME_BRIDGE_DEFAULT_SCHEMA) return RUNTIME_BRIDGE_DEFAULT_SCHEMA;
+  if (raw === RUNTIME_BRIDGE_STAGING_SCHEMA) return RUNTIME_BRIDGE_STAGING_SCHEMA;
+  return null;
+}
+
 export function readRuntimeBridgeSupabaseConfig(
   env: Readonly<Record<string, string | undefined>> = process.env,
 ):
-  | { ok: true; url: string; key: string }
+  | { ok: true; url: string; key: string; schema: RuntimeBridgeSupabaseSchema }
   | { ok: false } {
   const urlRaw = env[BRIDGE_URL_ENV]?.trim() ?? '';
   const key = env[BRIDGE_KEY_ENV]?.trim() ?? '';
-  if (!urlRaw || !key) return { ok: false };
+  const schema = resolveRuntimeBridgeSupabaseSchema(env);
+  if (!urlRaw || !key || schema == null) return { ok: false };
   try {
     const url = normalizeSupabaseUrl(urlRaw);
-    return { ok: true, url, key };
+    return { ok: true, url, key, schema };
   } catch {
     return { ok: false };
   }
@@ -58,11 +81,12 @@ function getRuntimeBridgeSupabaseClient(): SupabaseClient {
   if (!config.ok) {
     throw new RuntimeBridgeSupabaseConfigError();
   }
-  const fingerprint = `${config.url}\0${config.key}`;
+  const fingerprint = `${config.url}\0${config.key}\0${config.schema}`;
   if (!_client || _fingerprint !== fingerprint) {
     _client = createClient(config.url, config.key, {
       auth: { persistSession: false },
-    });
+      db: { schema: config.schema },
+    }) as SupabaseClient;
     _fingerprint = fingerprint;
   }
   return _client;

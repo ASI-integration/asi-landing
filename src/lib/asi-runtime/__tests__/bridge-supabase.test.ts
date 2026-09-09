@@ -30,6 +30,7 @@ beforeEach(() => {
   createClient.mockReset();
   delete process.env.ASI_RUNTIME_BRIDGE_SUPABASE_URL;
   delete process.env.ASI_RUNTIME_BRIDGE_SUPABASE_SERVICE_ROLE_KEY;
+  delete process.env.ASI_RUNTIME_BRIDGE_SUPABASE_SCHEMA;
   delete process.env.ASI_RUNTIME_BRIDGE_CLIENT_ID;
   delete process.env.SUPABASE_URL;
   delete process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -39,6 +40,7 @@ beforeEach(() => {
 afterEach(() => {
   delete process.env.ASI_RUNTIME_BRIDGE_SUPABASE_URL;
   delete process.env.ASI_RUNTIME_BRIDGE_SUPABASE_SERVICE_ROLE_KEY;
+  delete process.env.ASI_RUNTIME_BRIDGE_SUPABASE_SCHEMA;
   delete process.env.ASI_RUNTIME_BRIDGE_CLIENT_ID;
   delete process.env.SUPABASE_URL;
   delete process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -66,10 +68,52 @@ describe('runtime bridge dedicated supabase client', () => {
     expect(createClient).toHaveBeenCalledWith(
       BRIDGE_URL,
       BRIDGE_KEY,
-      expect.objectContaining({ auth: { persistSession: false } }),
+      expect.objectContaining({
+        auth: { persistSession: false },
+        db: { schema: 'public' },
+      }),
     );
     expect(createClient.mock.calls[0][0]).not.toBe(PRIMARY_URL);
     expect(createClient.mock.calls[0][1]).not.toBe(PRIMARY_KEY);
+  });
+
+  it('uses runtime_bridge schema only when the staging schema env is set', async () => {
+    process.env.ASI_RUNTIME_BRIDGE_SUPABASE_URL = BRIDGE_URL;
+    process.env.ASI_RUNTIME_BRIDGE_SUPABASE_SERVICE_ROLE_KEY = BRIDGE_KEY;
+    process.env.ASI_RUNTIME_BRIDGE_SUPABASE_SCHEMA = 'runtime_bridge';
+    mockBridgeClient();
+
+    const {
+      __resetRuntimeBridgeSupabaseForTests,
+      runtimeBridgeSupabase,
+      readRuntimeBridgeSupabaseConfig,
+    } = await import('../bridge-supabase');
+    __resetRuntimeBridgeSupabaseForTests();
+
+    expect(readRuntimeBridgeSupabaseConfig()).toEqual({
+      ok: true,
+      url: BRIDGE_URL,
+      key: BRIDGE_KEY,
+      schema: 'runtime_bridge',
+    });
+    void runtimeBridgeSupabase.from;
+    expect(createClient).toHaveBeenCalledWith(
+      BRIDGE_URL,
+      BRIDGE_KEY,
+      expect.objectContaining({
+        auth: { persistSession: false },
+        db: { schema: 'runtime_bridge' },
+      }),
+    );
+  });
+
+  it('treats an unknown Bridge schema as not configured', async () => {
+    process.env.ASI_RUNTIME_BRIDGE_SUPABASE_URL = BRIDGE_URL;
+    process.env.ASI_RUNTIME_BRIDGE_SUPABASE_SERVICE_ROLE_KEY = BRIDGE_KEY;
+    process.env.ASI_RUNTIME_BRIDGE_SUPABASE_SCHEMA = 'public_app';
+    const { isRuntimeBridgeSupabaseConfigured, readRuntimeBridgeSupabaseConfig } = await import('../bridge-supabase');
+    expect(isRuntimeBridgeSupabaseConfigured()).toBe(false);
+    expect(readRuntimeBridgeSupabaseConfig()).toEqual({ ok: false });
   });
 
   it('treats missing Bridge URL as not configured', async () => {
@@ -121,6 +165,7 @@ describe('runtime bridge dedicated supabase client', () => {
     const source = readFileSync('src/lib/asi-runtime/bridge-supabase.ts', 'utf8');
     expect(source).toContain('ASI_RUNTIME_BRIDGE_SUPABASE_URL');
     expect(source).toContain('ASI_RUNTIME_BRIDGE_SUPABASE_SERVICE_ROLE_KEY');
+    expect(source).toContain('ASI_RUNTIME_BRIDGE_SUPABASE_SCHEMA');
     expect(source).not.toContain('NEXT_PUBLIC_');
     expect(source).not.toMatch(/(?<![A-Z_])SUPABASE_URL(?![A-Z_])/);
     expect(source).not.toMatch(/(?<![A-Z_])SUPABASE_SERVICE_ROLE_KEY(?![A-Z_])/);
