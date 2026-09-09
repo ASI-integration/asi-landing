@@ -151,9 +151,6 @@ jobs:
           STAGING_BOOKING_OPS_ALERT_RUNNER_SECRET: ${{ secrets.STAGING_BOOKING_OPS_ALERT_RUNNER_SECRET }}
           STAGING_GOOGLE_CLIENT_ID: ${{ secrets.STAGING_GOOGLE_CLIENT_ID }}
           STAGING_GOOGLE_CLIENT_SECRET: ${{ secrets.STAGING_GOOGLE_CLIENT_SECRET }}
-          STAGING_ASI_RUNTIME_BRIDGE_CLIENT_ID: ${{ secrets.STAGING_ASI_RUNTIME_BRIDGE_CLIENT_ID }}
-          STAGING_ASI_RUNTIME_BRIDGE_SUPABASE_URL: ${{ secrets.STAGING_ASI_RUNTIME_BRIDGE_SUPABASE_URL }}
-          STAGING_ASI_RUNTIME_BRIDGE_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.STAGING_ASI_RUNTIME_BRIDGE_SUPABASE_SERVICE_ROLE_KEY }}
           STAGING_ASI_PILOT_BETA_EMAILS: ${{ secrets.STAGING_ASI_PILOT_BETA_EMAILS }}
         run: |
           set -euo pipefail
@@ -166,9 +163,6 @@ jobs:
             STAGING_BOOKING_OPS_ALERT_RUNNER_SECRET
             STAGING_GOOGLE_CLIENT_ID
             STAGING_GOOGLE_CLIENT_SECRET
-            STAGING_ASI_RUNTIME_BRIDGE_CLIENT_ID
-            STAGING_ASI_RUNTIME_BRIDGE_SUPABASE_URL
-            STAGING_ASI_RUNTIME_BRIDGE_SUPABASE_SERVICE_ROLE_KEY
             STAGING_ASI_PILOT_BETA_EMAILS
           )
           for key in "${required[@]}"; do
@@ -192,10 +186,10 @@ jobs:
             printf 'GOOGLE_CLIENT_ID=%s\n' "$STAGING_GOOGLE_CLIENT_ID"
             printf 'NEXT_PUBLIC_GOOGLE_CLIENT_ID=%s\n' "$STAGING_GOOGLE_CLIENT_ID"
             printf 'GOOGLE_CLIENT_SECRET=%s\n' "$STAGING_GOOGLE_CLIENT_SECRET"
-            printf 'ASI_RUNTIME_BRIDGE_CLIENT_ID=%s\n' "$STAGING_ASI_RUNTIME_BRIDGE_CLIENT_ID"
-            printf 'ASI_RUNTIME_BRIDGE_SUPABASE_URL=%s\n' "$STAGING_ASI_RUNTIME_BRIDGE_SUPABASE_URL"
-            printf 'ASI_RUNTIME_BRIDGE_SUPABASE_SERVICE_ROLE_KEY=%s\n' "$STAGING_ASI_RUNTIME_BRIDGE_SUPABASE_SERVICE_ROLE_KEY"
-            # Free-tier staging exception: Bridge shares the staging Supabase project but uses dedicated runtime_bridge schema. Production requires isolated Bridge storage.
+            # Free-tier staging exception: reuse existing asi-staging Supabase credentials, isolate Bridge by schema.
+            printf 'ASI_RUNTIME_BRIDGE_CLIENT_ID=strigunov-pilot-staging\n'
+            printf 'ASI_RUNTIME_BRIDGE_SUPABASE_URL=%s\n' "$STAGING_SUPABASE_URL"
+            printf 'ASI_RUNTIME_BRIDGE_SUPABASE_SERVICE_ROLE_KEY=%s\n' "$STAGING_SUPABASE_SERVICE_ROLE_KEY"
             printf 'ASI_RUNTIME_BRIDGE_SUPABASE_SCHEMA=runtime_bridge\n'
             printf 'ASI_PILOT_BETA_EMAILS=%s\n' "$STAGING_ASI_PILOT_BETA_EMAILS"
             printf 'OPS_ADMIN_EMAILS=staging-acceptance@asi.local\n'
@@ -225,6 +219,7 @@ jobs:
             'EMAIL_DRAFT_ONLY=true' \
             'LLM_ENABLED=false' \
             'YOOKASSA_ENABLED=false' \
+            'ASI_RUNTIME_BRIDGE_CLIENT_ID=strigunov-pilot-staging' \
             'ASI_RUNTIME_BRIDGE_SUPABASE_SCHEMA=runtime_bridge'; do
             grep -Fx "$expected" staging.env >/dev/null
           done
@@ -265,7 +260,7 @@ jobs:
           ssh "${SSH_OPTS[@]}" "$STAGING_SSH_USER@$STAGING_SSH_HOST" "mkdir -p '$REMOTE_TMP' && chmod 700 '$REMOTE_TMP'"
           scp "${SCP_OPTS[@]}" "$ARTIFACT" scripts/deploy-staging-artifact.sh staging.env "$STAGING_SSH_USER@$STAGING_SSH_HOST:$REMOTE_TMP/"
           ssh "${SSH_OPTS[@]}" "$STAGING_SSH_USER@$STAGING_SSH_HOST" \
-            "ASI_BASE_DIR='$STAGING_APP_PATH' PM2_APP_NAME='asi-landing-staging' APP_PORT='$STAGING_PORT' bash '$REMOTE_TMP/deploy-staging-artifact.sh' '$DEPLOY_SHA' '$REMOTE_TMP/$ARTIFACT' '$REMOTE_TMP/staging.env'; rc=\$?; rm -rf '$REMOTE_TMP'; exit \$rc"
+            "ASI_BASE_DIR='$STAGING_APP_PATH' PM2_APP_NAME='asi-landing-staging' APP_PORT='$STAGING_PORT' bash '$REMOTE_TMP/deploy-staging-artifact.sh' '$DEPLOY_SHA' '$REMOTE_TMP/$ARTIFACT'; rc=\$?; rm -rf '$REMOTE_TMP'; exit \$rc"
 
       - name: Verify public staging JSON endpoints
         shell: bash
