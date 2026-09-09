@@ -1,0 +1,78 @@
+name: Ops SSH Diagnose
+
+on:
+  push:
+    branches:
+      - ops/ssh-diagnose-20260909
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    environment: staging
+    timeout-minutes: 10
+    steps:
+      - name: Prepare SSH key
+        shell: bash
+        env:
+          STAGING_SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$STAGING_SSH_PRIVATE_KEY" > ~/.ssh/staging_key
+          chmod 600 ~/.ssh/staging_key
+          ssh-keygen -lf ~/.ssh/staging_key
+
+      - name: Diagnose SSH and server auth
+        shell: bash
+        env:
+          STAGING_SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+          STAGING_SSH_USER: ${{ secrets.STAGING_SSH_USER }}
+          STAGING_SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
+        run: |
+          set -euo pipefail
+          PORT="${STAGING_SSH_PORT:-22}"
+          ssh -vv \
+            -i ~/.ssh/staging_key \
+            -p "$PORT" \
+            -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=accept-new \
+            -o ConnectTimeout=20 \
+            -o ServerAliveInterval=10 \
+            -o ServerAliveCountMax=3 \
+            "$STAGING_SSH_USER@$STAGING_SSH_HOST" 'bash -s' <<'REMOTE'
+          set +e
+          echo '=== IDENTITY ==='
+          id
+          hostname
+          date -Is
+          uptime
+
+          echo '=== SSH EFFECTIVE SETTINGS ==='
+          if sudo -n true 2>/dev/null; then SUDO='sudo -n'; else SUDO=''; fi
+          $SUDO sshd -T 2>/dev/null | grep -Ei '^(maxsessions|maxstartups|persource|logingracetime|clientalive|permitrootlogin|pubkeyauthentication|passwordauthentication|authenticationmethods|allowusers|denyusers)' || true
+
+          echo '=== SSH CONFIG OVERRIDES ==='
+          $SUDO grep -RniE '^[[:space:]]*(MaxStartups|MaxSessions|PerSource|LoginGraceTime|ClientAlive|PermitRootLogin|PubkeyAuthentication|PasswordAuthentication|AuthenticationMethods|AllowUsers|DenyUsers|Match)\b' /etc/ssh/sshd_config /etc/ssh/sshd_config.d 2>/dev/null || true
+
+          echo '=== SSH SERVICE STATUS ==='
+          $SUDO systemctl --no-pager --full status ssh 2>/dev/null | tail -40 || true
+
+          echo '=== SECURITY SERVICES ==='
+          for svc in fail2ban crowdsec sshguard; do
+            printf '%s: ' "$svc"
+            $SUDO systemctl is-active "$svc" 2>/dev/null || true
+          done
+
+          echo '=== SSH CONNECTIONS ==='
+          $SUDO ss -tnp state established '( sport = :22 )' 2>/dev/null || ss -tn state established '( sport = :22 )' 2>/dev/null || true
+
+          echo '=== RECENT SSH JOURNAL ==='
+          $SUDO journalctl -u ssh --since '-20 min' --no-pager 2>/dev/null | tail -160 || true
+
+          echo '=== RECENT KERNEL NETWORK EVENTS ==='
+          $SUDO journalctl -k --since '-20 min' --no-pager 2>/dev/null | grep -Ei 'ssh|drop|reject|conntrack|oom|kill' | tail -80 || true
+          REMOTE
