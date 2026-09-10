@@ -15,7 +15,8 @@ jobs:
     runs-on: ubuntu-latest
     environment: staging
     steps:
-      - name: Probe live runner auth path without mutating Bridge
+      - uses: actions/checkout@v4
+      - name: Inspect live runner implementation safely
         shell: bash
         env:
           STAGING_SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
@@ -27,51 +28,64 @@ jobs:
           for key in STAGING_SSH_HOST STAGING_SSH_USER STAGING_SSH_PRIVATE_KEY; do
             if [ -z "${!key:-}" ]; then echo "Missing required staging secret: ${key}"; exit 1; fi
           done
+          EXPECTED_RUNNER_SHA="$(sha256sum scripts/asi-runtime-bridge-runner.mjs | awk '{print $1}')"
+          EXPECTED_CONFIG_SHA="$(sha256sum scripts/asi-runtime-runner-config.mjs | awk '{print $1}')"
           SSH_PORT="${STAGING_SSH_PORT:-22}"
           mkdir -p ~/.ssh
           chmod 700 ~/.ssh
           printf '%s\n' "$STAGING_SSH_PRIVATE_KEY" > ~/.ssh/staging_probe_key
           chmod 600 ~/.ssh/staging_probe_key
-          ssh -i ~/.ssh/staging_probe_key -p "$SSH_PORT" -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=20 "$STAGING_SSH_USER@$STAGING_SSH_HOST" 'bash -s' <<'REMOTE'
+          ssh -i ~/.ssh/staging_probe_key -p "$SSH_PORT" -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=20 "$STAGING_SSH_USER@$STAGING_SSH_HOST" \
+            "EXPECTED_RUNNER_SHA='$EXPECTED_RUNNER_SHA' EXPECTED_CONFIG_SHA='$EXPECTED_CONFIG_SHA' bash -s" <<'REMOTE'
           set -uo pipefail
-          APP_ENV=/var/www/asi-staging/shared/.env.staging.local
-          RUNNER_ENV=/etc/asi-runtime/runtime.env
+          ROOT=/opt/asi-runtime/current
+          ENVF=/etc/asi-runtime/runtime.env
 
-          echo '=== SERVICE STATE ==='
-          systemctl show asi-runtime-bridge-runner.service -p ActiveState -p SubState -p MainPID -p NRestarts --no-pager 2>/dev/null || true
-          systemctl show asi-landing-staging.service -p ActiveState -p SubState -p MainPID -p NRestarts --no-pager 2>/dev/null || true
-
-          echo '=== CONFIG CONSISTENCY ==='
-          app_runner="$(grep -m1 '^ASI_RUNTIME_BRIDGE_RUNNER_TOKEN=' "$APP_ENV" 2>/dev/null | cut -d= -f2- || true)"
-          runner_runner="$(grep -m1 '^ASI_RUNTIME_BRIDGE_RUNNER_TOKEN=' "$RUNNER_ENV" 2>/dev/null | cut -d= -f2- || true)"
-          runner_url="$(grep -m1 '^ASI_RUNTIME_BRIDGE_URL=' "$RUNNER_ENV" 2>/dev/null | cut -d= -f2- || true)"
-          runner_client="$(grep -m1 '^ASI_RUNTIME_BRIDGE_CLIENT_ID=' "$RUNNER_ENV" 2>/dev/null | cut -d= -f2- || true)"
-          app_client="$(grep -m1 '^ASI_RUNTIME_BRIDGE_CLIENT_ID=' "$APP_ENV" 2>/dev/null | cut -d= -f2- || true)"
-          [ -n "$app_runner" ] && echo 'app_runner_token=present' || echo 'app_runner_token=missing'
-          [ -n "$runner_runner" ] && echo 'runner_token=present' || echo 'runner_token=missing'
-          [ -n "$app_runner" ] && [ "$app_runner" = "$runner_runner" ] && echo 'runner_token_matches_app=true' || echo 'runner_token_matches_app=false'
-          [ "$runner_url" = 'https://staging.asi-global.ru' ] && echo 'runner_url_is_staging=true' || echo 'runner_url_is_staging=false'
-          [ -n "$runner_client" ] && [ "$runner_client" = "$app_client" ] && echo 'client_id_matches_app=true' || echo 'client_id_matches_app=false'
-
-          echo '=== NON-MUTATING AUTH PROBE ==='
-          if [ -n "$app_runner" ]; then
-            code="$(curl -sS -o /tmp/runner-probe.json -w '%{http_code}' \
-              -H "Authorization: Bearer $app_runner" \
-              -H 'Content-Type: application/json' \
-              --data '{}' \
-              'https://staging.asi-global.ru/api/internal/asi-runtime/bridge/runner' || true)"
-            echo "runner_endpoint_http=$code"
-            node - <<'NODE'
-          const fs=require('fs');
-          let x={}; try{x=JSON.parse(fs.readFileSync('/tmp/runner-probe.json','utf8'))}catch{}
-          console.log('runner_endpoint_error='+(typeof x.error==='string'?x.error:'none'));
-          NODE
-            rm -f /tmp/runner-probe.json
-          else
-            echo 'runner_endpoint_http=skipped_no_token'
+          echo '=== IMPLEMENTATION ==='
+          for item in scripts/asi-runtime-bridge-runner.mjs scripts/asi-runtime-runner-config.mjs; do
+            f="$ROOT/$item"
+            if [ -r "$f" ]; then
+              live="$(sha256sum "$f" | awk '{print $1}')"
+              case "$item" in
+                scripts/asi-runtime-bridge-runner.mjs) expected="$EXPECTED_RUNNER_SHA" ;;
+                *) expected="$EXPECTED_CONFIG_SHA" ;;
+              esac
+              [ "$live" = "$expected" ] && echo "$item matches_current_main=true" || echo "$item matches_current_main=false"
+            else
+              echo "$item readable=false"
+            fi
+          done
+          if [ -r "$ROOT/scripts/asi-runtime-bridge-runner.mjs" ]; then
+            grep -q 'ASI_RUNTIME_BRIDGE_CLIENT_ID' "$ROOT/scripts/asi-runtime-bridge-runner.mjs" \
+              && echo 'live_runner_uses_bridge_client_env=true' || echo 'live_runner_uses_bridge_client_env=false'
+            grep -q "schemaVersion: 'asi.runtime.runner-readiness.v2'" "$ROOT/scripts/asi-runtime-bridge-runner.mjs" \
+              && echo 'live_runner_readiness_version=v2' || \
+              { grep -q "schemaVersion: 'asi.runtime.runner-readiness.v1'" "$ROOT/scripts/asi-runtime-bridge-runner.mjs" \
+                && echo 'live_runner_readiness_version=v1' || echo 'live_runner_readiness_version=unknown'; }
           fi
 
-          echo '=== RUNNER PROCESS ==='
-          ps -eo pid,ppid,etimes,stat,comm,args | grep -E 'asi-runtime-bridge-runner|git .*asi-landing|git-upload-pack' | grep -v grep || true
+          echo '=== PREREQUISITE CONFIG SHAPE ==='
+          for key in ASI_RUNTIME_BRIDGE_URL ASI_RUNTIME_BRIDGE_RUNNER_TOKEN ASI_RUNTIME_BRIDGE_EXECUTOR_JSON ASI_RUNTIME_BRIDGE_CHECKOUTS_JSON; do
+            line="$(grep -m1 "^${key}=" "$ENVF" 2>/dev/null || true)"
+            [ -n "$line" ] && echo "$key=present" || echo "$key=missing"
+          done
+          node - "$ENVF" <<'NODE'
+          const fs=require('fs');
+          const env={};
+          for(const raw of fs.readFileSync(process.argv[2],'utf8').split(/\r?\n/)){
+            if(!raw || raw.startsWith('#') || !raw.includes('=')) continue;
+            const i=raw.indexOf('='); env[raw.slice(0,i)]=raw.slice(i+1);
+          }
+          let executor=null, checkouts=null;
+          try{executor=JSON.parse(env.ASI_RUNTIME_BRIDGE_EXECUTOR_JSON||'null')}catch{}
+          try{checkouts=JSON.parse(env.ASI_RUNTIME_BRIDGE_CHECKOUTS_JSON||'null')}catch{}
+          console.log('executor_json_valid='+String(Array.isArray(executor)&&executor.length>0));
+          if(Array.isArray(executor)&&executor.length) console.log('executor_command='+String(executor[0]).split('/').pop());
+          console.log('checkouts_json_valid='+String(Array.isArray(checkouts)&&checkouts.length===2));
+          if(Array.isArray(checkouts)) console.log('checkout_count='+checkouts.length);
+          NODE
+
+          echo '=== SERVICE ==='
+          systemctl show asi-runtime-bridge-runner.service -p ActiveState -p SubState -p MainPID -p NRestarts --no-pager 2>/dev/null || true
           echo '=== END ==='
           REMOTE
