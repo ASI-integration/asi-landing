@@ -1,0 +1,103 @@
+name: Ops Provision Staging Runtime Bridge Auth
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  provision:
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - name: Provision staging Bridge auth through Hetzner Rescue
+        shell: bash
+        env:
+          STAGING_SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+          STAGING_SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+          STAGING_SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
+        run: |
+          set -euo pipefail
+          for key in STAGING_SSH_HOST STAGING_SSH_PRIVATE_KEY; do
+            if [ -z "${!key:-}" ]; then
+              echo "Missing required staging secret: ${key}"
+              exit 1
+            fi
+          done
+
+          SSH_PORT="${STAGING_SSH_PORT:-22}"
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$STAGING_SSH_PRIVATE_KEY" > ~/.ssh/staging_rescue_key
+          chmod 600 ~/.ssh/staging_rescue_key
+
+          ssh -i ~/.ssh/staging_rescue_key -p "$SSH_PORT" \
+            -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=20 \
+            "root@$STAGING_SSH_HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+
+          grep -q '^ID=debian$' /etc/os-release || {
+            echo 'ERROR: Refusing to run outside Hetzner Rescue.' >&2
+            exit 1
+          }
+
+          TARGET=/mnt/server
+          mkdir -p "$TARGET"
+          if ! mountpoint -q "$TARGET"; then
+            mount /dev/sda1 "$TARGET"
+          fi
+          grep -q '^ID=ubuntu$' "$TARGET/etc/os-release" || {
+            echo 'ERROR: Mounted target is not the expected Ubuntu system.' >&2
+            exit 1
+          }
+
+          LANDING_ENV="$TARGET/var/www/asi-staging/shared/.env.staging.local"
+          RUNTIME_ENV="$TARGET/etc/asi-runtime/runtime.env"
+          [ -f "$LANDING_ENV" ] || { echo 'ERROR: staging Landing env not found.' >&2; exit 1; }
+          [ -f "$RUNTIME_ENV" ] || { echo 'ERROR: Runtime env not found.' >&2; exit 1; }
+
+          stamp="$(date -u +%Y%m%dT%H%M%SZ)"
+          cp -a "$LANDING_ENV" "$LANDING_ENV.bak-$stamp"
+          cp -a "$RUNTIME_ENV" "$RUNTIME_ENV.bak-$stamp"
+
+          chat_token="$(openssl rand -hex 32)"
+          owner_token="$(openssl rand -hex 32)"
+          runner_token="$(openssl rand -hex 32)"
+
+          set_env() {
+            file="$1"
+            key="$2"
+            value="$3"
+            if grep -q "^${key}=" "$file"; then
+              sed -i "s|^${key}=.*|${key}=${value}|" "$file"
+            else
+              printf '\n%s=%s\n' "$key" "$value" >> "$file"
+            fi
+          }
+
+          set_env "$LANDING_ENV" ASI_RUNTIME_BRIDGE_CHAT_TOKEN "$chat_token"
+          set_env "$LANDING_ENV" ASI_RUNTIME_BRIDGE_OWNER_TOKEN "$owner_token"
+          set_env "$LANDING_ENV" ASI_RUNTIME_BRIDGE_RUNNER_TOKEN "$runner_token"
+          set_env "$RUNTIME_ENV" ASI_RUNTIME_BRIDGE_URL 'https://staging.asi-global.ru'
+          set_env "$RUNTIME_ENV" ASI_RUNTIME_BRIDGE_RUNNER_TOKEN "$runner_token"
+          set_env "$RUNTIME_ENV" ASI_OWNER_TELEGRAM_PROFILE 'strigunov_pilot_v1'
+
+          # Verify presence/shape without printing secret values.
+          for key in ASI_RUNTIME_BRIDGE_CHAT_TOKEN ASI_RUNTIME_BRIDGE_OWNER_TOKEN ASI_RUNTIME_BRIDGE_RUNNER_TOKEN; do
+            value="$(grep -m1 "^${key}=" "$LANDING_ENV" | cut -d= -f2-)"
+            [ "${#value}" -ge 32 ] || { echo "ERROR: ${key} missing/short in Landing env" >&2; exit 1; }
+          done
+          runtime_runner="$(grep -m1 '^ASI_RUNTIME_BRIDGE_RUNNER_TOKEN=' "$RUNTIME_ENV" | cut -d= -f2-)"
+          [ "$runtime_runner" = "$runner_token" ] || { echo 'ERROR: runner token mismatch after write.' >&2; exit 1; }
+          grep -Fx 'ASI_RUNTIME_BRIDGE_URL=https://staging.asi-global.ru' "$RUNTIME_ENV" >/dev/null
+          grep -Fx 'ASI_OWNER_TELEGRAM_PROFILE=strigunov_pilot_v1' "$RUNTIME_ENV" >/dev/null
+
+          sync
+          echo 'STAGING_RUNTIME_BRIDGE_AUTH_PROVISIONED'
+          echo 'Landing tokens: PRESENT_AND_DISTINCT'
+          echo 'Runtime runner target: STAGING'
+          echo 'Telegram profile: strigunov_pilot_v1'
+
+          nohup sh -c 'sleep 3; /sbin/reboot' >/dev/null 2>&1 &
+          REMOTE
