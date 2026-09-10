@@ -109,6 +109,19 @@ jobs:
           fi
           rm -f /tmp/asi-runtime-readiness-probe.mjs /tmp/asi-runtime-readiness.out /tmp/asi-runtime-readiness.err
 
+          echo '=== CHECKOUT FILESYSTEM ==='
+          for p in /var/lib/asi-runtime/repos/asi-landing /srv/asi-landing /srv/asi-runtime/primary /srv/asi-runtime/secondary; do
+            printf '%s: ' "$p"
+            if [ -e "$p" ]; then
+              stat -c 'exists type=%F owner=%U:%G mode=%a' "$p" 2>/dev/null || echo exists
+              find "$p" -maxdepth 1 -mindepth 1 -printf '  %f\n' 2>/dev/null | head -n 12 || true
+            else
+              echo missing
+            fi
+          done
+          echo 'git_repositories_found:'
+          find /srv /var/lib/asi-runtime /opt/asi-runtime -maxdepth 5 -type d -name .git -print 2>/dev/null | sed 's#/.git$##' | head -n 20 || true
+
           echo '=== RECENT RUNNER LOGS ==='
           journalctl -u asi-runtime-bridge-runner.service --since '-10 minutes' -n 80 --no-pager 2>/dev/null \
             | grep -E 'Runtime bridge runner|runtime-baseline|runner_|error|failed|Failed' \
