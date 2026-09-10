@@ -1,4 +1,4 @@
-name: Ops Identify Systemd Socket On 443
+name: Ops Locate SSH Port 443 Config
 
 on:
   push:
@@ -14,7 +14,7 @@ jobs:
     environment: staging
     timeout-minutes: 3
     steps:
-      - name: Inspect socket activation on installed Ubuntu
+      - name: Locate SSH configuration that claims 443
         shell: bash
         env:
           STAGING_SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
@@ -30,15 +30,11 @@ jobs:
           chmod 600 ~/.ssh/staging_key
           ssh -i ~/.ssh/staging_key -p "$PORT" -o IdentitiesOnly=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=10 "$STAGING_SSH_USER@$STAGING_SSH_HOST" 'bash -s' <<'REMOTE'
           set +e
-          echo '=== LIST SOCKETS ==='
-          systemctl list-sockets --all --no-pager 2>&1 || true
-          echo '=== SSH SOCKET UNIT ==='
-          systemctl cat ssh.socket 2>&1 || true
-          echo '=== SSH SOCKET STATUS ==='
-          systemctl status ssh.socket --no-pager -l 2>&1 || true
-          echo '=== SSH SOCKET PROPERTIES ==='
-          systemctl show ssh.socket -p Listen -p FragmentPath -p DropInPaths -p ActiveState -p SubState --no-pager 2>&1 || true
-          echo '=== SUDO RIGHTS ==='
-          sudo -n -l 2>&1 || true
-          echo 'SOCKET_INSPECT_COMPLETE'
+          echo '=== SSHD PORT/LISTEN DIRECTIVES ==='
+          grep -RniE '^[[:space:]]*(Port|ListenAddress)[[:space:]]+' /etc/ssh/sshd_config /etc/ssh/sshd_config.d 2>/dev/null || true
+          echo '=== SSHD INCLUDE DIRECTIVES ==='
+          grep -niE '^[[:space:]]*Include[[:space:]]+' /etc/ssh/sshd_config 2>/dev/null || true
+          echo '=== GENERATOR OUTPUT ==='
+          cat /run/systemd/generator/ssh.socket.d/addresses.conf 2>/dev/null || true
+          echo 'SSH_CONFIG_LOCATE_COMPLETE'
           REMOTE
