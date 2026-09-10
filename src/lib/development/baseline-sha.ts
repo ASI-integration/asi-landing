@@ -2,13 +2,13 @@ import 'server-only';
 import type { DevelopmentRepositoryDefinition } from './repositories';
 
 const SHA = /^[0-9a-f]{40}$/;
+const PUBLIC_BASELINE_REPOSITORIES = new Set<DevelopmentRepositoryDefinition['fullName']>([
+  'ASI-integration/asi-landing',
+]);
 
-function requireGitHubToken(): string {
+function readGitHubToken(): string | null {
   const token = String(process.env.GITHUB_TOKEN ?? '').trim();
-  if (!token) {
-    throw new BaselineShaError('baseline_sha_unavailable');
-  }
-  return token;
+  return token || null;
 }
 
 export class BaselineShaError extends Error {
@@ -24,6 +24,8 @@ export function isExactGitSha(value: string): boolean {
 /**
  * Resolve the exact tip SHA of the allowlisted repository branch via GitHub API.
  * Repository and branch come only from the server allowlist — never from the browser.
+ * Public repositories may be resolved without credentials; private repositories still
+ * fail closed when GITHUB_TOKEN is absent.
  */
 export async function resolveAllowlistedBaselineSha(
   repository: DevelopmentRepositoryDefinition,
@@ -33,18 +35,24 @@ export async function resolveAllowlistedBaselineSha(
   const repo = repository.githubRepo;
   const branch = repository.defaultBranch;
   const url = `https://api.github.com/repos/${owner}/${repo}/commits/${encodeURIComponent(branch)}`;
-  const token = requireGitHubToken();
+  const token = readGitHubToken();
+
+  if (!token && !PUBLIC_BASELINE_REPOSITORIES.has(repository.fullName)) {
+    throw new BaselineShaError('baseline_sha_unavailable');
+  }
+
+  const headers: Record<string, string> = {
+    Accept: 'application/vnd.github+json',
+    'User-Agent': 'asi-owner-development-console',
+    'X-GitHub-Api-Version': '2022-11-28',
+  };
+  if (token) headers.Authorization = `Bearer ${token}`;
 
   let response: Response;
   try {
     response = await fetchImpl(url, {
       method: 'GET',
-      headers: {
-        Accept: 'application/vnd.github+json',
-        Authorization: `Bearer ${token}`,
-        'User-Agent': 'asi-owner-development-console',
-        'X-GitHub-Api-Version': '2022-11-28',
-      },
+      headers,
       cache: 'no-store',
       signal: AbortSignal.timeout(5_000),
     });
