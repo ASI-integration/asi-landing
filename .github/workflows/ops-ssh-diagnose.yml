@@ -1,4 +1,4 @@
-name: Ops Inspect Nginx Failure
+name: Ops Rescue Inspect Nginx Failure
 
 on:
   push:
@@ -12,13 +12,12 @@ jobs:
   inspect:
     runs-on: ubuntu-latest
     environment: staging
-    timeout-minutes: 3
+    timeout-minutes: 4
     steps:
-      - name: Inspect nginx failure without failing workflow
+      - name: Inspect installed Ubuntu from Hetzner Rescue
         shell: bash
         env:
           STAGING_SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
-          STAGING_SSH_USER: ${{ secrets.STAGING_SSH_USER }}
           STAGING_SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
           STAGING_SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
         run: |
@@ -28,12 +27,30 @@ jobs:
           chmod 700 ~/.ssh
           printf '%s\n' "$STAGING_SSH_PRIVATE_KEY" > ~/.ssh/staging_key
           chmod 600 ~/.ssh/staging_key
-          ssh -i ~/.ssh/staging_key -p "$PORT" -o IdentitiesOnly=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=10 "$STAGING_SSH_USER@$STAGING_SSH_HOST" 'bash -s' <<'REMOTE'
+          ssh -i ~/.ssh/staging_key -p "$PORT" -o IdentitiesOnly=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=10 "root@$STAGING_SSH_HOST" 'bash -s' <<'REMOTE'
           set +e
-          echo '=== NGINX STATUS ==='
-          systemctl status nginx --no-pager -l 2>&1 | head -160 || true
-          echo '=== RUNNING SOCKET UNITS ==='
-          systemctl --no-pager --plain --type=socket --state=running 2>&1 | head -120 || true
-          echo 'INSPECT_COMPLETE'
+          echo '=== RESCUE SYSTEM ==='
+          hostname
+          uname -a
+          echo '=== BLOCK DEVICES ==='
+          lsblk -f
+          mkdir -p /mnt/installed
+          mount /dev/sda1 /mnt/installed 2>/tmp/mount.err || true
+          cat /tmp/mount.err || true
+          echo '=== INSTALLED ROOT ==='
+          ls -la /mnt/installed | head -50 || true
+          echo '=== NGINX JOURNAL FROM INSTALLED SYSTEM ==='
+          if [ -d /mnt/installed/var/log/journal ]; then
+            journalctl --directory=/mnt/installed/var/log/journal -u nginx --no-pager -n 120 2>&1 || true
+          else
+            echo 'NO_PERSISTENT_JOURNAL'
+          fi
+          echo '=== BOOT LOG NGINX/BIND ==='
+          grep -RhiE 'nginx|bind\(\)|address already in use|:443|:80' /mnt/installed/var/log/syslog* /mnt/installed/var/log/messages* 2>/dev/null | tail -160 || true
+          echo '=== ENABLED SERVICES RELATED TO WEB/PROXY ==='
+          find /mnt/installed/etc/systemd/system /mnt/installed/usr/lib/systemd/system -maxdepth 3 -type f \( -name '*.service' -o -name '*.socket' \) -print0 2>/dev/null | xargs -0 grep -liE 'nginx|caddy|apache|haproxy|traefik|443|80|proxy' 2>/dev/null | head -120 || true
+          echo '=== NGINX CONFIG LISTENERS ==='
+          grep -RniE 'listen[[:space:]]+(80|443)|server_name[[:space:]]+staging\.asi-global\.ru' /mnt/installed/etc/nginx 2>/dev/null | head -160 || true
+          echo 'RESCUE_INSPECT_COMPLETE'
           REMOTE
           exit 0
