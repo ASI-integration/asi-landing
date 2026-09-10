@@ -291,6 +291,58 @@ function reconcileRunnerReadinessV1(input: {
   };
 }
 
+/**
+ * Non-blocking path for clean recoverable checkout drift.
+ * Allowed only when every authoritative safety signal is present and consistent;
+ * otherwise callers must keep fail-closed launch blocking.
+ * Evidence freshness is enforced upstream (stale runner readiness never reaches here).
+ */
+function isRecoverableCheckoutDriftNonBlocking(input: {
+  repositoryEvidence: RuntimeRunnerRepositoryEvidenceV2;
+  baselineSha: string | null;
+  reportedCheckouts: RuntimeRunnerReadinessRecordV2['capabilities']['checkouts'];
+  reportedBaselineRecovery: RuntimeRunnerReadinessRecordV2['capabilities']['baselineRecovery'];
+  executorBlocking: boolean;
+  globalBlockers: string[];
+}): boolean {
+  const {
+    repositoryEvidence,
+    baselineSha,
+    reportedCheckouts,
+    reportedBaselineRecovery,
+    executorBlocking,
+    globalBlockers,
+  } = input;
+
+  if (!isRunnerRepositoryEvidenceBindingValid(
+    repositoryEvidence.repositoryId,
+    repositoryEvidence.fullName,
+    repositoryEvidence.canonicalCheckoutPath,
+  )) {
+    return false;
+  }
+
+  // Fail closed unless the authoritative repository blockers collection is
+  // exactly the single allowed recoverable-drift condition — additional codes
+  // (even after a leading recoverable-drift entry) must keep launch blocked.
+  if (
+    repositoryEvidence.blockers.length !== 1
+    || repositoryEvidence.blockers[0] !== 'runtime_checkout_recoverable_drift'
+  ) {
+    return false;
+  }
+  if (reportedCheckouts.state !== 'degraded') return false;
+  if (reportedCheckouts.reasonCode !== 'runtime_checkout_recoverable_drift') return false;
+  if (!repositoryEvidence.originReady) return false;
+  if (!repositoryEvidence.baselineReady) return false;
+  if (!repositoryEvidence.recoveryReady) return false;
+  if (reportedBaselineRecovery.state !== 'ready') return false;
+  if (executorBlocking) return false;
+  if (globalBlockers.length > 0) return false;
+  if (!baselineSha) return false;
+  return repositoryEvidence.observedBaselineSha === baselineSha;
+}
+
 function reconcileRunnerReadinessV2(input: {
   record: RuntimeRunnerReadinessRecordV2;
   repository: DevelopmentRepositoryDefinition;
@@ -381,9 +433,31 @@ function reconcileRunnerReadinessV2(input: {
   }
 
   if (!repositoryEvidence.checkoutReady) {
-    const checkoutReason = repositoryEvidence.blockers[0] ?? 'runtime_checkout_probe_failed';
+    const repositoryCheckoutReason = repositoryEvidence.blockers[0] ?? 'runtime_checkout_probe_failed';
+    if (isRecoverableCheckoutDriftNonBlocking({
+      repositoryEvidence,
+      baselineSha,
+      reportedCheckouts,
+      reportedBaselineRecovery,
+      executorBlocking,
+      globalBlockers: record.blockers,
+    })) {
+      return {
+        checkoutReasonCode: 'runtime_checkout_recoverable_drift',
+        checkoutState: 'degraded',
+        checkoutBlocking: false,
+        executorReasonCode: executorReason,
+        executorState: reportedExecutor.state,
+        executorBlocking: false,
+        evidence: {
+          ...baseEvidence,
+          readinessState: 'degraded',
+          blockingReason: null,
+        },
+      };
+    }
     return {
-      checkoutReasonCode: checkoutReason,
+      checkoutReasonCode: repositoryCheckoutReason,
       checkoutState: 'blocked',
       checkoutBlocking: true,
       executorReasonCode: executorReason,
