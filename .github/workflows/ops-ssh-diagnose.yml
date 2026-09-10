@@ -1,4 +1,4 @@
-name: Ops Runtime Readonly Inspect
+name: Ops Rescue Configure Staging Deploy
 
 on:
   push:
@@ -9,16 +9,15 @@ permissions:
   contents: read
 
 jobs:
-  inspect:
+  configure:
     runs-on: ubuntu-latest
     environment: staging
     timeout-minutes: 5
     steps:
-      - name: Inspect staging sudo boundary
+      - name: Configure staging deploy permissions on mounted Ubuntu
         shell: bash
         env:
           STAGING_SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
-          STAGING_SSH_USER: ${{ secrets.STAGING_SSH_USER }}
           STAGING_SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
           STAGING_SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
         run: |
@@ -28,13 +27,45 @@ jobs:
           chmod 700 ~/.ssh
           printf '%s\n' "$STAGING_SSH_PRIVATE_KEY" > ~/.ssh/staging_key
           chmod 600 ~/.ssh/staging_key
-          ssh -i ~/.ssh/staging_key -p "$PORT" -o IdentitiesOnly=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=10 "$STAGING_SSH_USER@$STAGING_SSH_HOST" 'bash -s' <<'REMOTE'
-          set +e
-          echo "SSH_OK hostname=$(hostname) user=$(id -un)"
-          echo '=== SERVICE ==='
-          systemctl show asi-landing-staging -p User -p Group -p FragmentPath -p ExecStart -p WorkingDirectory -p EnvironmentFiles --no-pager 2>&1 || true
-          echo '=== SUDO ==='
-          sudo -n -l 2>&1 || true
-          echo '=== GROUPS ==='
-          id
+
+          ssh -i ~/.ssh/staging_key \
+            -p "$PORT" \
+            -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=no \
+            -o UserKnownHostsFile=/dev/null \
+            -o ConnectTimeout=10 \
+            "root@$STAGING_SSH_HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+
+          echo "RESCUE_SSH_OK hostname=$(hostname) user=$(id -un)"
+          mkdir -p /mnt/server
+          mountpoint -q /mnt/server || mount /dev/sda1 /mnt/server
+          test -f /mnt/server/etc/os-release
+          grep -q '^ID=ubuntu$' /mnt/server/etc/os-release
+
+          chroot /mnt/server /usr/sbin/usermod -aG asi-runtime project_ayfaar
+
+          for d in /var/www/asi-staging /var/www/asi-staging/releases /var/www/asi-staging/shared; do
+            chroot /mnt/server /usr/bin/mkdir -p "$d"
+            chroot /mnt/server /usr/bin/chgrp asi-runtime "$d"
+            chroot /mnt/server /usr/bin/chmod 2770 "$d"
+          done
+
+          cat > /mnt/server/etc/sudoers.d/asi-staging-deploy <<'EOF'
+          project_ayfaar ALL=(root) NOPASSWD: /usr/bin/systemctl restart asi-landing-staging.service
+          EOF
+          chmod 0440 /mnt/server/etc/sudoers.d/asi-staging-deploy
+          chroot /mnt/server /usr/sbin/visudo -cf /etc/sudoers.d/asi-staging-deploy
+
+          echo '=== VERIFY GROUP ==='
+          chroot /mnt/server /usr/bin/id project_ayfaar
+          echo '=== VERIFY DIRS ==='
+          chroot /mnt/server /usr/bin/stat -c '%A %U %G %n' \
+            /var/www/asi-staging \
+            /var/www/asi-staging/releases \
+            /var/www/asi-staging/shared
+          echo '=== VERIFY SUDOERS ==='
+          cat /mnt/server/etc/sudoers.d/asi-staging-deploy
+          sync
+          echo 'STAGING_DEPLOY_PERMISSIONS_CONFIGURED'
           REMOTE
