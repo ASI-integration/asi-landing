@@ -19,7 +19,7 @@ jobs:
       STAGING_SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
       STAGING_SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
     steps:
-      - name: Inspect production environment wiring names only
+      - name: Inspect deploy permissions and env names safely
         shell: bash
         run: |
           set -euo pipefail
@@ -33,35 +33,33 @@ jobs:
           "${SSH[@]}" "$STAGING_SSH_USER@$STAGING_SSH_HOST" 'bash -s' <<'REMOTE'
           set +e
           echo "HOST=$(hostname)"
-          echo '[section] unit metadata'
-          systemctl show asi-landing.service --no-pager \
-            -p User -p Group -p WorkingDirectory -p FragmentPath -p DropInPaths -p EnvironmentFiles -p MainPID -p ActiveState -p SubState 2>/dev/null
+          echo '[section] identity'
+          id
+          echo '[section] sudo-list'
+          sudo -n -l 2>&1 | sed -E 's/(PASSWD|NOPASSWD):.*/\1: [commands listed by sudo policy]/' | head -80
 
-          echo '[section] environment variable names only'
-          systemctl show asi-landing.service -p Environment --value 2>/dev/null | python3 -c '
-import shlex,sys
-raw=sys.stdin.read().strip()
-try: parts=shlex.split(raw)
-except Exception: parts=[]
-for item in parts:
-    if "=" in item:
-        print("[env-name] "+item.split("=",1)[0])
-' | sort -u
+          echo '[section] unit environment names only'
+          python3 - <<'PY'
+import shlex, subprocess
+raw = subprocess.run(['systemctl','show','asi-landing.service','-p','Environment','--value'], capture_output=True, text=True).stdout.strip()
+try:
+    parts=shlex.split(raw)
+except Exception:
+    parts=[]
+names=sorted({p.split('=',1)[0] for p in parts if '=' in p})
+for n in names:
+    print('[env-name]', n)
+print('[booking-secret-in-unit]', 'yes' if 'BOOKING_OPS_AUTO_SEND_RUNNER_SECRET' in names else 'no')
+PY
 
-          if systemctl show asi-landing.service -p Environment --value 2>/dev/null | grep -q 'BOOKING_OPS_AUTO_SEND_RUNNER_SECRET='; then
-            echo '[unit-booking-secret] present=yes'
-          else
-            echo '[unit-booking-secret] present=no'
-          fi
-
-          echo '[section] sanitized unit directives'
-          systemctl cat asi-landing.service 2>/dev/null | while IFS= read -r line; do
-            case "$line" in
-              User=*|Group=*|WorkingDirectory=*|EnvironmentFile=*|ExecStart=*|ExecStartPre=*) echo "$line" ;;
-              Environment=*)
-                printf '%s\n' "$line" | sed -E 's/(Environment=)?"?([^= ]+)=.*/EnvironmentName=\2/'
-                ;;
-            esac
+          echo '[section] writable checks'
+          for p in /srv/asi-landing /etc/systemd/system /etc/systemd/system/asi-landing.service.d; do
+            if [[ -e "$p" ]]; then
+              [[ -w "$p" ]] && w=yes || w=no
+              printf '[writable] path=%s direct=%s owner=%s mode=%s\n' "$p" "$w" "$(stat -c %U:%G "$p" 2>/dev/null)" "$(stat -c %a "$p" 2>/dev/null)"
+            else
+              printf '[writable] path=%s exists=no\n' "$p"
+            fi
           done
           exit 0
           REMOTE
