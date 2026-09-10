@@ -1,0 +1,49 @@
+name: One-time production systemd bootstrap
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: Type BOOTSTRAP_PRODUCTION_SYSTEMD
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  bootstrap:
+    if: ${{ inputs.confirm == 'BOOTSTRAP_PRODUCTION_SYSTEMD' }}
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Checkout audited bootstrap source
+        uses: actions/checkout@v4
+        with:
+          ref: 00f753cfd534425689fae18a8e628b85dd989361
+          fetch-depth: 1
+
+      - name: Bootstrap current production layout
+        shell: bash
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_PORT: ${{ secrets.VPS_PORT }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          [ -n "${VPS_HOST:-}" ] || { echo "Missing VPS_HOST"; exit 1; }
+          [ -n "${VPS_SSH_KEY:-}" ] || { echo "Missing VPS_SSH_KEY"; exit 1; }
+          REMOTE_PORT="${VPS_PORT:-22}"
+          REMOTE_USER="project_ayfaar"
+          REMOTE_SCRIPT="/home/project_ayfaar/bootstrap-production-systemd.sh"
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          SSH_OPTS=(-i ~/.ssh/id_ed25519 -p "$REMOTE_PORT" -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=20)
+          SCP_OPTS=(-i ~/.ssh/id_ed25519 -P "$REMOTE_PORT" -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=20)
+          ssh "${SSH_OPTS[@]}" "$REMOTE_USER@$VPS_HOST" 'test "$(id -un)" = project_ayfaar && sudo -n true && echo ROOT_PREFLIGHT_OK'
+          scp "${SCP_OPTS[@]}" scripts/bootstrap-production-systemd.sh "$REMOTE_USER@$VPS_HOST:$REMOTE_SCRIPT"
+          ssh "${SSH_OPTS[@]}" "$REMOTE_USER@$VPS_HOST" "chmod 700 '$REMOTE_SCRIPT' && sudo -n /usr/bin/bash '$REMOTE_SCRIPT'"
+          ssh "${SSH_OPTS[@]}" "$REMOTE_USER@$VPS_HOST" "readlink -f /var/www/asi/current; curl -fsS http://127.0.0.1:3000/api/health"
+          ssh "${SSH_OPTS[@]}" "$REMOTE_USER@$VPS_HOST" "rm -f '$REMOTE_SCRIPT'"
