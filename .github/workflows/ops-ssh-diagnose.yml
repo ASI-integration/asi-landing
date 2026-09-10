@@ -1,4 +1,4 @@
-name: Ops Inspect SSH Recovery Config
+name: Ops Inspect Effective SSHD Config
 
 on:
   push:
@@ -19,7 +19,7 @@ jobs:
       STAGING_SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
       STAGING_SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
     steps:
-      - name: Inspect current SSH config and firewall metadata
+      - name: Inspect effective sshd configuration
         shell: bash
         run: |
           set -euo pipefail
@@ -32,21 +32,10 @@ jobs:
 
           "${SSH[@]}" "$STAGING_SSH_USER@$STAGING_SSH_HOST" 'bash -s' <<'REMOTE'
           set +e
-          echo '=== MAIN SSHD CONFIG RELEVANT ==='
-          grep -nE '^[[:space:]]*(Include|Port|ListenAddress|PermitRootLogin|PasswordAuthentication|PubkeyAuthentication|AuthenticationMethods|AllowUsers|AllowGroups|DenyUsers|DenyGroups|MaxStartups|PerSource|LoginGraceTime|UseDNS|Match)[[:space:]]' /etc/ssh/sshd_config 2>/dev/null || true
-
-          for f in /etc/ssh/sshd_config.d/00-rescue-recovery.conf /etc/ssh/sshd_config.d/01-alt-port.conf /etc/ssh/sshd_config.d/50-cloud-init.conf; do
-            echo "=== FILE: $f ==="
-            ls -l "$f" 2>&1 || true
-            cat "$f" 2>&1 || true
-          done
-
-          echo '=== UFW FILE METADATA ==='
-          ls -l /etc/ufw/user.rules /etc/ufw/user6.rules 2>&1 || true
-          echo '=== UFW SSH RULE SNIPPETS IF READABLE ==='
-          grep -nEi '(22|ssh|limit|deny|reject)' /etc/ufw/user.rules /etc/ufw/user6.rules 2>&1 | head -80 || true
-
-          echo '=== SSH VERSION ==='
-          ssh -V 2>&1 || true
-          echo 'SSH_RECOVERY_CONFIG_DIAG_DONE'
+          echo '=== SSHD -T RELEVANT ==='
+          /usr/sbin/sshd -T 2>&1 | grep -Ei '^(port|usedns|maxstartups|persource|maxauthtries|logingracetime|passwordauthentication|pubkeyauthentication|permitrootlogin|authenticationmethods|allowusers|denyusers)' || true
+          echo "SSHD_T_RC=${PIPESTATUS[0]}"
+          echo '=== OTHER SECURITY SERVICES ==='
+          systemctl list-units --type=service --state=running --no-pager 2>/dev/null | grep -Ei '(sshguard|crowdsec|fail2ban|ufw|firewall)' || true
+          echo 'SSHD_EFFECTIVE_DIAG_DONE'
           REMOTE
