@@ -15,7 +15,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: staging
     steps:
-      - name: Inspect live Runtime Bridge runner status safely
+      - name: Inspect staging Bridge auth wiring without exposing credentials
         shell: bash
         env:
           STAGING_SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
@@ -34,51 +34,67 @@ jobs:
           chmod 600 ~/.ssh/staging_probe_key
           ssh -i ~/.ssh/staging_probe_key -p "$SSH_PORT" -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=20 "$STAGING_SSH_USER@$STAGING_SSH_HOST" 'bash -s' <<'REMOTE'
           set -uo pipefail
-          echo '=== RUNNER STATE ==='
+
+          echo '=== SERVICES ==='
           systemctl show asi-runtime-bridge-runner.service \
-            -p ActiveState -p SubState -p MainPID -p NRestarts -p ExecMainStatus -p ActiveEnterTimestamp -p User -p Group \
+            -p ActiveState -p SubState -p MainPID -p NRestarts -p ExecMainStatus -p User -p Group -p FragmentPath -p DropInPaths \
+            --no-pager 2>/dev/null || true
+          systemctl show asi-landing-staging.service \
+            -p ActiveState -p SubState -p MainPID -p NRestarts -p ExecMainStatus -p User -p Group -p FragmentPath -p DropInPaths \
             --no-pager 2>/dev/null || true
 
-          echo '=== PROCESS SNAPSHOT 1 ==='
-          ps -eo pid,ppid,etimes,stat,comm,args \
-            | grep -E 'asi-runtime-bridge-runner|git .*asi-landing|git-upload-pack' \
-            | grep -v grep || true
-
-          echo '=== CHECKOUT REFS ==='
-          for p in /var/lib/asi-runtime/repos/asi-landing /srv/asi-landing; do
-            echo "checkout=$p"
-            for ref in "$p/.git/refs/heads/main" "$p/.git/refs/remotes/origin/main"; do
-              label="$(basename "$(dirname "$ref")")/$(basename "$ref")"
-              if [ -r "$ref" ]; then
-                value="$(tr -d '\r\n' < "$ref" 2>/dev/null || true)"
-                if printf '%s' "$value" | grep -Eq '^[0-9a-fA-F]{40}$'; then
-                  echo "  $label=$value"
-                else
-                  echo "  $label=invalid_or_empty"
-                fi
-              elif [ -e "$ref" ]; then
-                echo "  $label=unreadable"
-              else
-                echo "  $label=missing_or_packed"
-              fi
-            done
-            if [ -e "$p/.git/index.lock" ]; then echo '  index_lock=present'; else echo '  index_lock=absent'; fi
-            if [ -e "$p/.git/FETCH_HEAD" ]; then
-              stat -c '  FETCH_HEAD_age_epoch=%Y size=%s' "$p/.git/FETCH_HEAD" 2>/dev/null || true
+          echo '=== ENV FILE METADATA ==='
+          for f in \
+            /var/www/asi-staging/shared/.env.staging.local \
+            /etc/asi-runtime/bridge.env \
+            /etc/asi-landing/staging-runtime-bridge.env; do
+            if [ -e "$f" ]; then
+              stat -c '%n owner=%U:%G mode=%a size=%s' "$f" 2>/dev/null || echo "$f metadata=unavailable"
             else
-              echo '  FETCH_HEAD=missing'
+              echo "$f missing"
             fi
           done
 
-          sleep 8
-          echo '=== PROCESS SNAPSHOT 2 ==='
+          echo '=== APP BRIDGE AUTH SHAPE ==='
+          APP_ENV=/var/www/asi-staging/shared/.env.staging.local
+          if [ -r "$APP_ENV" ]; then
+            for key in ASI_RUNTIME_BRIDGE_CHAT_TOKEN ASI_RUNTIME_BRIDGE_OWNER_TOKEN ASI_RUNTIME_BRIDGE_RUNNER_TOKEN ASI_RUNTIME_BRIDGE_CLIENT_ID ASI_RUNTIME_BRIDGE_SUPABASE_SCHEMA; do
+              line="$(grep -m1 "^${key}=" "$APP_ENV" 2>/dev/null || true)"
+              if [ -z "$line" ]; then
+                echo "$key=missing"
+              else
+                value="${line#*=}"
+                if [[ "$key" == *_TOKEN ]]; then
+                  echo "$key=present length=${#value}"
+                else
+                  echo "$key=present"
+                fi
+              fi
+            done
+            chat="$(grep -m1 '^ASI_RUNTIME_BRIDGE_CHAT_TOKEN=' "$APP_ENV" 2>/dev/null | cut -d= -f2- || true)"
+            owner="$(grep -m1 '^ASI_RUNTIME_BRIDGE_OWNER_TOKEN=' "$APP_ENV" 2>/dev/null | cut -d= -f2- || true)"
+            runner="$(grep -m1 '^ASI_RUNTIME_BRIDGE_RUNNER_TOKEN=' "$APP_ENV" 2>/dev/null | cut -d= -f2- || true)"
+            if [ -n "$chat" ] && [ -n "$owner" ] && [ -n "$runner" ]; then
+              if [ "$chat" = "$owner" ] || [ "$chat" = "$runner" ] || [ "$owner" = "$runner" ]; then
+                echo 'bridge_tokens_distinct=false'
+              else
+                echo 'bridge_tokens_distinct=true'
+              fi
+            else
+              echo 'bridge_tokens_distinct=unknown_missing_token'
+            fi
+          else
+            echo 'app_env=unreadable'
+          fi
+
+          echo '=== RECENT RUNNER LOG SHAPE ==='
+          journalctl -u asi-runtime-bridge-runner.service --since '-90 seconds' --no-pager 2>/dev/null \
+            | grep -E 'Runtime bridge runner poll failed|runtime-baseline|Started|Stopped|Failed' \
+            | tail -n 40 || echo 'journal=unavailable_or_empty'
+
+          echo '=== PROCESS ==='
           ps -eo pid,ppid,etimes,stat,comm,args \
             | grep -E 'asi-runtime-bridge-runner|git .*asi-landing|git-upload-pack' \
             | grep -v grep || true
-
-          echo '=== SERVICE SUMMARY ==='
-          systemctl show asi-runtime-bridge-runner.service \
-            -p ActiveState -p SubState -p MainPID -p NRestarts -p ExecMainStatus \
-            --no-pager 2>/dev/null || true
           echo '=== END ==='
           REMOTE
