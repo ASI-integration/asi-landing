@@ -1,0 +1,58 @@
+name: Ops Probe Staging Runtime Bridge Storage
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/ops-probe-staging-runtime-bridge-storage.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - name: Probe runtime_bridge schema without exposing credentials
+        shell: bash
+        env:
+          SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
+          SERVICE_KEY: ${{ secrets.STAGING_SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          set -euo pipefail
+          [ -n "${SUPABASE_URL:-}" ] || { echo 'supabase_url=missing'; exit 1; }
+          [ -n "${SERVICE_KEY:-}" ] || { echo 'service_key=missing'; exit 1; }
+          base="${SUPABASE_URL%/}/rest/v1"
+
+          table_code="$(curl -sS -o /tmp/table.json -w '%{http_code}' \
+            -H "apikey: $SERVICE_KEY" \
+            -H "Authorization: Bearer $SERVICE_KEY" \
+            -H 'Accept-Profile: runtime_bridge' \
+            "$base/asi_runtime_bridge_tasks?select=id&limit=1" || true)"
+          echo "table_read_http=$table_code"
+          if [ "$table_code" != 200 ]; then
+            node -e "const fs=require('fs');let x={};try{x=JSON.parse(fs.readFileSync('/tmp/table.json','utf8'))}catch{};console.log('table_error_code='+(x.code||'unknown'));console.log('table_error_hint='+(x.hint?'present':'absent'));"
+          fi
+
+          openapi_code="$(curl -sS -o /tmp/openapi.json -w '%{http_code}' \
+            -H "apikey: $SERVICE_KEY" \
+            -H "Authorization: Bearer $SERVICE_KEY" \
+            -H 'Accept-Profile: runtime_bridge' \
+            "$base/" || true)"
+          echo "openapi_http=$openapi_code"
+          node - <<'NODE'
+          const fs=require('fs');
+          let x={}; try{x=JSON.parse(fs.readFileSync('/tmp/openapi.json','utf8'))}catch{}
+          const paths=x.paths||{};
+          const required=[
+            '/rpc/submit_asi_runtime_bridge_task',
+            '/rpc/claim_asi_runtime_bridge_task',
+            '/rpc/expire_asi_runtime_bridge_owner_gates',
+            '/rpc/fail_asi_runtime_bridge_task'
+          ];
+          for (const p of required) console.log(`${p.slice(5)}=${paths[p]?'present':'missing'}`);
+          NODE
+
+          rm -f /tmp/table.json /tmp/openapi.json
