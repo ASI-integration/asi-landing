@@ -22,6 +22,7 @@ jobs:
           SERVICE_KEY: ${{ secrets.STAGING_SUPABASE_SERVICE_ROLE_KEY }}
         run: |
           set -euo pipefail
+          # Re-run after PostgREST config/cache reload.
           [ -n "${SUPABASE_URL:-}" ] || { echo 'supabase_url=missing'; exit 1; }
           [ -n "${SERVICE_KEY:-}" ] || { echo 'service_key=missing'; exit 1; }
           base="${SUPABASE_URL%/}/rest/v1"
