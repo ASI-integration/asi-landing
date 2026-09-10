@@ -15,7 +15,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: staging
     steps:
-      - name: Inspect live readiness evidence builder contract safely
+      - name: Inspect runner identity and readiness publication state safely
         shell: bash
         env:
           STAGING_SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
@@ -36,19 +36,24 @@ jobs:
           set -uo pipefail
           ROOT=/opt/asi-runtime/current/scripts
           RUNNER="$ROOT/asi-runtime-bridge-runner.mjs"
-          CONFIG="$ROOT/asi-runtime-runner-config.mjs"
           CYCLE="$ROOT/asi-runtime-bridge-runner-readiness.mjs"
+          ART=/var/lib/asi-runtime/state/bridge-runner-readiness.json
 
-          echo '=== RUNNER PUBLISH FLOW ==='
-          sed -n '430,472p' "$RUNNER" 2>/dev/null || true
+          echo '=== RUNNER BOOT/IDENTITY CODE ==='
+          sed -n '1,105p' "$RUNNER" 2>/dev/null || true
 
-          echo '=== EVIDENCE V2 BUILDER ==='
-          sed -n '650,738p' "$CONFIG" 2>/dev/null || true
+          echo '=== READINESS PUBLISH CYCLE IMPLEMENTATION ==='
+          sed -n '180,340p' "$CYCLE" 2>/dev/null || true
 
-          echo '=== READINESS PUBLISH CYCLE ==='
-          sed -n '1,180p' "$CYCLE" 2>/dev/null || true
+          echo '=== LOCAL READINESS ARTIFACT METADATA ==='
+          if [ -e "$ART" ]; then
+            stat -c 'artifact_exists=true owner=%U:%G mode=%a size=%s mtime_epoch=%Y' "$ART" 2>/dev/null || true
+            now="$(date +%s)"; mt="$(stat -c %Y "$ART" 2>/dev/null || echo 0)"; echo "artifact_age_seconds=$((now-mt))"
+          else
+            echo 'artifact_exists=false'
+          fi
 
-          echo '=== SERVICE ==='
-          systemctl show asi-runtime-bridge-runner.service -p ActiveState -p SubState -p MainPID -p NRestarts --no-pager 2>/dev/null || true
+          echo '=== PROCESS ==='
+          ps -eo pid,ppid,etimes,stat,comm,args | grep -E 'asi-runtime-bridge-runner|git .*asi-landing|git-upload-pack' | grep -v grep || true
           echo '=== END ==='
           REMOTE
