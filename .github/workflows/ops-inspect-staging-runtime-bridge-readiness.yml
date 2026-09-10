@@ -15,7 +15,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: staging
     steps:
-      - name: Inspect runner identity and readiness publication state safely
+      - name: Verify staging baseline resolver credentials safely
         shell: bash
         env:
           STAGING_SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
@@ -31,29 +31,45 @@ jobs:
           mkdir -p ~/.ssh
           chmod 700 ~/.ssh
           printf '%s\n' "$STAGING_SSH_PRIVATE_KEY" > ~/.ssh/staging_probe_key
+          chmod 600 ~/.ssh
           chmod 600 ~/.ssh/staging_probe_key
           ssh -i ~/.ssh/staging_probe_key -p "$SSH_PORT" -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=20 "$STAGING_SSH_USER@$STAGING_SSH_HOST" 'bash -s' <<'REMOTE'
           set -uo pipefail
-          ROOT=/opt/asi-runtime/current/scripts
-          RUNNER="$ROOT/asi-runtime-bridge-runner.mjs"
-          CYCLE="$ROOT/asi-runtime-bridge-runner-readiness.mjs"
-          ART=/var/lib/asi-runtime/state/bridge-runner-readiness.json
+          APP_ENV=/var/www/asi-staging/shared/.env.staging.local
 
-          echo '=== RUNNER BOOT/IDENTITY CODE ==='
-          sed -n '1,105p' "$RUNNER" 2>/dev/null || true
+          echo '=== REQUIRED READINESS ENV ==='
+          for key in GITHUB_TOKEN ASI_RUNTIME_BRIDGE_CLIENT_ID ASI_RUNTIME_BRIDGE_SUPABASE_URL ASI_RUNTIME_BRIDGE_SUPABASE_SERVICE_ROLE_KEY; do
+            line="$(grep -m1 "^${key}=" "$APP_ENV" 2>/dev/null || true)"
+            if [ -n "$line" ] && [ -n "${line#*=}" ]; then echo "$key=present"; else echo "$key=missing"; fi
+          done
 
-          echo '=== READINESS PUBLISH CYCLE IMPLEMENTATION ==='
-          sed -n '180,340p' "$CYCLE" 2>/dev/null || true
-
-          echo '=== LOCAL READINESS ARTIFACT METADATA ==='
-          if [ -e "$ART" ]; then
-            stat -c 'artifact_exists=true owner=%U:%G mode=%a size=%s mtime_epoch=%Y' "$ART" 2>/dev/null || true
-            now="$(date +%s)"; mt="$(stat -c %Y "$ART" 2>/dev/null || echo 0)"; echo "artifact_age_seconds=$((now-mt))"
+          echo '=== GITHUB BASELINE PROBE ==='
+          token="$(grep -m1 '^GITHUB_TOKEN=' "$APP_ENV" 2>/dev/null | cut -d= -f2- || true)"
+          if [ -z "$token" ]; then
+            echo 'github_baseline_http=skipped_missing_token'
           else
-            echo 'artifact_exists=false'
+            code="$(curl -sS -o /tmp/gh-baseline.json -w '%{http_code}' --max-time 8 \
+              -H 'Accept: application/vnd.github+json' \
+              -H "Authorization: Bearer $token" \
+              -H 'User-Agent: asi-owner-development-console' \
+              -H 'X-GitHub-Api-Version: 2022-11-28' \
+              https://api.github.com/repos/ASI-integration/asi-landing/commits/main || true)"
+            echo "github_baseline_http=$code"
+            if [ "$code" = 200 ]; then
+              node - <<'NODE'
+          const fs=require('fs'); let x={}; try{x=JSON.parse(fs.readFileSync('/tmp/gh-baseline.json','utf8'))}catch{}
+          console.log('github_baseline_sha_valid='+String(/^[0-9a-f]{40}$/.test(String(x.sha||''))));
+          NODE
+            fi
+            rm -f /tmp/gh-baseline.json
           fi
 
-          echo '=== PROCESS ==='
-          ps -eo pid,ppid,etimes,stat,comm,args | grep -E 'asi-runtime-bridge-runner|git .*asi-landing|git-upload-pack' | grep -v grep || true
+          echo '=== RUNNER LOCAL READINESS ==='
+          ART=/var/lib/asi-runtime/state/bridge-runner-readiness.json
+          if [ -e "$ART" ]; then
+            now="$(date +%s)"; mt="$(stat -c %Y "$ART" 2>/dev/null || echo 0)"; echo "artifact_age_seconds=$((now-mt))"
+          else
+            echo 'artifact_missing=true'
+          fi
           echo '=== END ==='
           REMOTE
