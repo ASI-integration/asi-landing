@@ -15,8 +15,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: staging
     steps:
-      - uses: actions/checkout@v4
-      - name: Inspect live runner implementation safely
+      - name: Inspect Runtime release layout and readiness publisher safely
         shell: bash
         env:
           STAGING_SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
@@ -28,63 +27,55 @@ jobs:
           for key in STAGING_SSH_HOST STAGING_SSH_USER STAGING_SSH_PRIVATE_KEY; do
             if [ -z "${!key:-}" ]; then echo "Missing required staging secret: ${key}"; exit 1; fi
           done
-          EXPECTED_RUNNER_SHA="$(sha256sum scripts/asi-runtime-bridge-runner.mjs | awk '{print $1}')"
-          EXPECTED_CONFIG_SHA="$(sha256sum scripts/asi-runtime-runner-config.mjs | awk '{print $1}')"
           SSH_PORT="${STAGING_SSH_PORT:-22}"
           mkdir -p ~/.ssh
           chmod 700 ~/.ssh
           printf '%s\n' "$STAGING_SSH_PRIVATE_KEY" > ~/.ssh/staging_probe_key
           chmod 600 ~/.ssh/staging_probe_key
-          ssh -i ~/.ssh/staging_probe_key -p "$SSH_PORT" -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=20 "$STAGING_SSH_USER@$STAGING_SSH_HOST" \
-            "EXPECTED_RUNNER_SHA='$EXPECTED_RUNNER_SHA' EXPECTED_CONFIG_SHA='$EXPECTED_CONFIG_SHA' bash -s" <<'REMOTE'
+          ssh -i ~/.ssh/staging_probe_key -p "$SSH_PORT" -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=20 "$STAGING_SSH_USER@$STAGING_SSH_HOST" 'bash -s' <<'REMOTE'
           set -uo pipefail
-          ROOT=/opt/asi-runtime/current
-          ENVF=/etc/asi-runtime/runtime.env
+          ROOT=/opt/asi-runtime
+          CURRENT="$ROOT/current"
+          RUNNER="$CURRENT/scripts/asi-runtime-bridge-runner.mjs"
 
-          echo '=== IMPLEMENTATION ==='
-          for item in scripts/asi-runtime-bridge-runner.mjs scripts/asi-runtime-runner-config.mjs; do
-            f="$ROOT/$item"
-            if [ -r "$f" ]; then
-              live="$(sha256sum "$f" | awk '{print $1}')"
-              case "$item" in
-                scripts/asi-runtime-bridge-runner.mjs) expected="$EXPECTED_RUNNER_SHA" ;;
-                *) expected="$EXPECTED_CONFIG_SHA" ;;
-              esac
-              [ "$live" = "$expected" ] && echo "$item matches_current_main=true" || echo "$item matches_current_main=false"
-            else
-              echo "$item readable=false"
-            fi
+          echo '=== RELEASE LAYOUT ==='
+          printf 'current_target='; readlink -f "$CURRENT" 2>/dev/null || echo unavailable
+          for p in "$ROOT" "$ROOT/releases" "$CURRENT" "$(readlink -f "$CURRENT" 2>/dev/null || true)"; do
+            [ -n "$p" ] || continue
+            if [ -e "$p" ]; then stat -c '%n owner=%U:%G mode=%a type=%F' "$p" 2>/dev/null || true; else echo "$p missing"; fi
           done
-          if [ -r "$ROOT/scripts/asi-runtime-bridge-runner.mjs" ]; then
-            grep -q 'ASI_RUNTIME_BRIDGE_CLIENT_ID' "$ROOT/scripts/asi-runtime-bridge-runner.mjs" \
-              && echo 'live_runner_uses_bridge_client_env=true' || echo 'live_runner_uses_bridge_client_env=false'
-            grep -q "schemaVersion: 'asi.runtime.runner-readiness.v2'" "$ROOT/scripts/asi-runtime-bridge-runner.mjs" \
-              && echo 'live_runner_readiness_version=v2' || \
-              { grep -q "schemaVersion: 'asi.runtime.runner-readiness.v1'" "$ROOT/scripts/asi-runtime-bridge-runner.mjs" \
-                && echo 'live_runner_readiness_version=v1' || echo 'live_runner_readiness_version=unknown'; }
+          if [ -d "$ROOT/releases" ]; then
+            echo 'release_count='"$(find "$ROOT/releases" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | wc -l)"
+            find "$ROOT/releases" -mindepth 1 -maxdepth 1 -type d -printf '%f\n' 2>/dev/null | tail -n 8 | sed 's/^/release=/' || true
+          fi
+          [ -f "$CURRENT/release-meta.json" ] && node - "$CURRENT/release-meta.json" <<'NODE' || true
+          const fs=require('fs'); const p=process.argv[2];
+          try { const m=JSON.parse(fs.readFileSync(p,'utf8')); console.log('release_meta_present=true'); console.log('release_git_sha='+(m.gitSha||'missing')); console.log('release_environment='+(m.environment||'missing')); } catch { console.log('release_meta_parse=false'); }
+          NODE
+          [ -d "$CURRENT/.git" ] && echo 'current_is_git=true' || echo 'current_is_git=false'
+
+          echo '=== LIVE RUNNER FEATURES ==='
+          if [ -r "$RUNNER" ]; then
+            for pattern in runner_publish_readiness publishRunnerReadiness runner_claim_task 'runner-readiness.v1' 'runner-readiness.v2'; do
+              if grep -Fq "$pattern" "$RUNNER"; then echo "feature_${pattern//[^A-Za-z0-9]/_}=present"; else echo "feature_${pattern//[^A-Za-z0-9]/_}=missing"; fi
+            done
+            echo 'runner_line_count='"$(wc -l < "$RUNNER")"
+            grep -nE 'runner_publish_readiness|publishRunnerReadiness|runner_claim_task|runner-readiness\.v[12]' "$RUNNER" \
+              | sed -E 's/(Bearer |token[^,; ]*=)[^,; ]+/\1[REDACTED]/Ig' | head -n 30 || true
+          else
+            echo 'runner_readable=false'
           fi
 
-          echo '=== PREREQUISITE CONFIG SHAPE ==='
-          for key in ASI_RUNTIME_BRIDGE_URL ASI_RUNTIME_BRIDGE_RUNNER_TOKEN ASI_RUNTIME_BRIDGE_EXECUTOR_JSON ASI_RUNTIME_BRIDGE_CHECKOUTS_JSON; do
-            line="$(grep -m1 "^${key}=" "$ENVF" 2>/dev/null || true)"
-            [ -n "$line" ] && echo "$key=present" || echo "$key=missing"
+          echo '=== RELATED LIVE FILES ==='
+          for f in asi-runtime-runner-config.mjs asi-runtime-baseline-recovery.mjs asi-runtime-bridge-executor-guard.mjs; do
+            p="$CURRENT/scripts/$f"
+            [ -r "$p" ] && echo "$f=present lines=$(wc -l < "$p")" || echo "$f=missing_or_unreadable"
           done
-          node - "$ENVF" <<'NODE'
-          const fs=require('fs');
-          const env={};
-          for(const raw of fs.readFileSync(process.argv[2],'utf8').split(/\r?\n/)){
-            if(!raw || raw.startsWith('#') || !raw.includes('=')) continue;
-            const i=raw.indexOf('='); env[raw.slice(0,i)]=raw.slice(i+1);
-          }
-          let executor=null, checkouts=null;
-          try{executor=JSON.parse(env.ASI_RUNTIME_BRIDGE_EXECUTOR_JSON||'null')}catch{}
-          try{checkouts=JSON.parse(env.ASI_RUNTIME_BRIDGE_CHECKOUTS_JSON||'null')}catch{}
-          console.log('executor_json_valid='+String(Array.isArray(executor)&&executor.length>0));
-          if(Array.isArray(executor)&&executor.length) console.log('executor_command='+String(executor[0]).split('/').pop());
-          console.log('checkouts_json_valid='+String(Array.isArray(checkouts)&&checkouts.length===2));
-          if(Array.isArray(checkouts)) console.log('checkout_count='+checkouts.length);
-          NODE
 
+          echo '=== WRITABILITY ==='
+          for p in "$ROOT" "$ROOT/releases"; do
+            [ -w "$p" ] && echo "$p writable=true" || echo "$p writable=false"
+          done
           echo '=== SERVICE ==='
           systemctl show asi-runtime-bridge-runner.service -p ActiveState -p SubState -p MainPID -p NRestarts --no-pager 2>/dev/null || true
           echo '=== END ==='
