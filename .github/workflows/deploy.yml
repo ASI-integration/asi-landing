@@ -209,7 +209,7 @@ jobs:
       GOOGLE_MAPS_SERVER_API_KEY: ${{ secrets.GOOGLE_MAPS_SERVER_API_KEY }}
       BOOKING_OPS_AUTO_SEND_RUNNER_SECRET: ${{ secrets.BOOKING_OPS_AUTO_SEND_RUNNER_SECRET }}
     steps:
-      - name: Checkout (deploy script for SCP)
+      - name: Checkout deploy scripts
         uses: actions/checkout@v4
         with:
           fetch-depth: 1
@@ -220,7 +220,28 @@ jobs:
           name: ${{ needs.build_release.outputs.artifact_name }}
           path: release-artifact
 
-      - name: Deploy over SSH
+      - name: Prepare production environment
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "${BOOKING_OPS_AUTO_SEND_RUNNER_SECRET:-}" ]; then
+            echo "Missing required secret: BOOKING_OPS_AUTO_SEND_RUNNER_SECRET"
+            exit 1
+          fi
+          umask 077
+          {
+            printf 'NODE_ENV=production\n'
+            printf 'PORT=3000\n'
+            printf 'BOOKING_OPS_AUTO_SEND_RUNNER_SECRET=%s\n' "$BOOKING_OPS_AUTO_SEND_RUNNER_SECRET"
+            if [ -n "${TWOGIS_CATALOG_API_KEY:-}" ]; then
+              printf 'TWOGIS_CATALOG_API_KEY=%s\n' "$TWOGIS_CATALOG_API_KEY"
+            fi
+            if [ -n "${GOOGLE_MAPS_SERVER_API_KEY:-}" ]; then
+              printf 'GOOGLE_MAPS_SERVER_API_KEY=%s\n' "$GOOGLE_MAPS_SERVER_API_KEY"
+            fi
+          } > production.env
+
+      - name: Deploy systemd release over SSH
         shell: bash
         env:
           VPS_HOST: ${{ secrets.VPS_HOST }}
@@ -230,194 +251,54 @@ jobs:
           set -euo pipefail
           SHA="${{ needs.build_release.outputs.sha }}"
           ARTIFACT_FILE="${{ needs.build_release.outputs.artifact_file }}"
-          RELEASE_DIR="release-artifact"
-          ARTIFACT_PATH="${RELEASE_DIR}/${ARTIFACT_FILE}"
-          if [ ! -f "$ARTIFACT_PATH" ]; then
-            ARTIFACT_PATH="$(find "$RELEASE_DIR" -type f -name "$ARTIFACT_FILE" | head -n1 || true)"
-          fi
-          if [ -z "${ARTIFACT_PATH:-}" ] || [ ! -f "$ARTIFACT_PATH" ]; then
-            echo "Artifact tarball not found (expected ${RELEASE_DIR}/${ARTIFACT_FILE})"
-            find "$RELEASE_DIR" -type f 2>/dev/null || ls -la
-            exit 1
-          fi
-
+          ARTIFACT_PATH="release-artifact/${ARTIFACT_FILE}"
           REMOTE_USER="project_ayfaar"
           REMOTE_TMP="/home/project_ayfaar/asi-deploy-tmp"
           REMOTE_PORT="${VPS_PORT:-22}"
 
-          if [ -z "${VPS_HOST:-}" ] || [ -z "${VPS_SSH_KEY:-}" ]; then
-            echo "Missing one of required secrets: VPS_HOST, VPS_SSH_KEY"
-            exit 1
-          fi
-
-          echo "Deploy target: ${REMOTE_USER}@${VPS_HOST}:${REMOTE_PORT}"
+          [ -f "$ARTIFACT_PATH" ] || { echo "Artifact missing: $ARTIFACT_PATH"; exit 1; }
+          [ -n "${VPS_HOST:-}" ] || { echo "Missing VPS_HOST"; exit 1; }
+          [ -n "${VPS_SSH_KEY:-}" ] || { echo "Missing VPS_SSH_KEY"; exit 1; }
 
           mkdir -p ~/.ssh
           chmod 700 ~/.ssh
-          SSH_KEY=~/.ssh/id_ed25519
-          printf '%s\n' "$VPS_SSH_KEY" > "$SSH_KEY"
-          chmod 600 "$SSH_KEY"
-
-          echo "SSH key diagnostics (fingerprint only, no key material):"
-          if ! SSH_KEY_FP="$(ssh-keygen -lf "$SSH_KEY" 2>&1)"; then
-            echo "VPS_SSH_KEY secret is not a valid SSH private key."
-            echo "${SSH_KEY_FP}"
-            echo "Ensure the secret contains a full OpenSSH private key (BEGIN/END lines, no extra quotes)."
-            exit 1
-          fi
-          echo "private_key: ${SSH_KEY_FP}"
-          if SSH_PUB_FP="$(ssh-keygen -y -f "$SSH_KEY" 2>/dev/null | ssh-keygen -lf - 2>/dev/null)"; then
-            echo "public_key:  ${SSH_PUB_FP}"
-          else
-            echo "public_key:  (could not derive from secret)"
-          fi
+          printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
 
           SSH_OPTS=(
-            -i "$SSH_KEY"
+            -i ~/.ssh/id_ed25519
             -p "$REMOTE_PORT"
             -o IdentitiesOnly=yes
             -o StrictHostKeyChecking=accept-new
-            -o LogLevel=ERROR
             -o ServerAliveInterval=15
             -o ServerAliveCountMax=4
             -o ConnectTimeout=20
           )
-
           SCP_OPTS=(
-            -i "$SSH_KEY"
+            -i ~/.ssh/id_ed25519
             -P "$REMOTE_PORT"
             -o IdentitiesOnly=yes
             -o StrictHostKeyChecking=accept-new
-            -o LogLevel=ERROR
             -o ServerAliveInterval=15
             -o ServerAliveCountMax=4
             -o ConnectTimeout=20
           )
 
-          touch ~/.ssh/known_hosts
-          chmod 600 ~/.ssh/known_hosts
-          ssh-keyscan -p "$REMOTE_PORT" -H "$VPS_HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
-
           echo "SSH preflight: ${REMOTE_USER}@${VPS_HOST}:${REMOTE_PORT}"
-          set +e
-          PREFLIGHT_OUT="$(ssh "${SSH_OPTS[@]}" "${REMOTE_USER}@${VPS_HOST}" \
-            'whoami; hostname; echo SSH_OK')"
-          PREFLIGHT_RC=$?
-          set -e
+          ssh "${SSH_OPTS[@]}" "$REMOTE_USER@$VPS_HOST" 'test "$(id -un)" = project_ayfaar && hostname && echo SSH_OK'
+          ssh "${SSH_OPTS[@]}" "$REMOTE_USER@$VPS_HOST" "mkdir -p '$REMOTE_TMP' && chmod 700 '$REMOTE_TMP'"
 
-          if [ "$PREFLIGHT_RC" -ne 0 ]; then
-            echo "SSH preflight failed (exit ${PREFLIGHT_RC}) for ${REMOTE_USER}@${VPS_HOST}:${REMOTE_PORT}"
-            if [ -n "${PREFLIGHT_OUT:-}" ]; then
-              echo "$PREFLIGHT_OUT"
-            fi
-            echo "Loaded key fingerprint: ${SSH_KEY_FP}"
-            echo "Compare public_key fingerprint above with ${REMOTE_USER}@server authorized_keys."
-            echo "Check VPS_HOST, VPS_PORT (default 22), and that VPS_SSH_KEY is authorized for user ${REMOTE_USER}."
-            exit 1
-          fi
-          echo "$PREFLIGHT_OUT"
+          scp "${SCP_OPTS[@]}" \
+            scripts/deploy-production-systemd-artifact.sh \
+            production.env \
+            "$ARTIFACT_PATH" \
+            "$REMOTE_USER@$VPS_HOST:$REMOTE_TMP/"
 
-          PREFLIGHT_LINES="$(printf '%s\n' "$PREFLIGHT_OUT" | grep -vE '^Warning: ')"
-          if ! printf '%s\n' "$PREFLIGHT_LINES" | grep -Fxq "$REMOTE_USER"; then
-            echo "SSH preflight connected as unexpected user: expected line '${REMOTE_USER}'"
-            echo "$PREFLIGHT_OUT"
-            exit 1
-          fi
-          if ! echo "$PREFLIGHT_OUT" | grep -q 'SSH_OK'; then
-            echo "SSH preflight missing SSH_OK marker"
-            exit 1
-          fi
-          echo "Ensuring remote deploy temp dir: ${REMOTE_TMP}"
-          ssh "${SSH_OPTS[@]}" "${REMOTE_USER}@${VPS_HOST}" \
-            "mkdir -p \"${REMOTE_TMP}\" && chmod 700 \"${REMOTE_TMP}\""
+          ssh "${SSH_OPTS[@]}" "$REMOTE_USER@$VPS_HOST" \
+            "ASI_BASE_DIR='/var/www/asi' APP_PORT='3000' bash '$REMOTE_TMP/deploy-production-systemd-artifact.sh' '$SHA' '$REMOTE_TMP/$ARTIFACT_FILE' '$REMOTE_TMP/production.env'"
 
-          echo "Cleaning stale remote deploy temp artifacts..."
-          ssh "${SSH_OPTS[@]}" "${REMOTE_USER}@${VPS_HOST}" \
-            "rm -f \"${REMOTE_TMP}\"/asi-release-*.tgz \"${REMOTE_TMP}\"/asi-deploy-artifact.sh \"${REMOTE_TMP}\"/deploy-shadow-env-guard.sh \"${REMOTE_TMP}\"/pm2-sync-ops-alert-scheduler.sh && df -h \"${REMOTE_TMP}\" && du -sh \"${REMOTE_TMP}\" || true"
+          ssh "${SSH_OPTS[@]}" "$REMOTE_USER@$VPS_HOST" \
+            "rm -f '$REMOTE_TMP/deploy-production-systemd-artifact.sh' '$REMOTE_TMP/production.env' '$REMOTE_TMP/$ARTIFACT_FILE'"
 
-          echo "Cleaning old remote releases before artifact upload..."
-          ssh "${SSH_OPTS[@]}" "${REMOTE_USER}@${VPS_HOST}" "bash -s" <<'REMOTE_RELEASE_CLEANUP'
-            set -euo pipefail
-
-            BASE_DIR="/var/www/asi"
-            RELEASES_DIR="${BASE_DIR}/releases"
-            CURRENT_LINK="${BASE_DIR}/current"
-            current_target="$(readlink -f "${CURRENT_LINK}" 2>/dev/null || true)"
-
-            if [ ! -d "${RELEASES_DIR}" ]; then
-              echo "Release dir does not exist yet: ${RELEASES_DIR}"
-              exit 0
-            fi
-
-            echo "Current release target: ${current_target:-unknown}"
-            echo "Disk before release cleanup:"
-            df -h "${BASE_DIR}" || true
-            du -sh "${RELEASES_DIR}" 2>/dev/null || true
-
-            remove_stale_release() {
-              local release_path="$1"
-              if rm -rf -- "${release_path}" 2>/dev/null; then
-                echo "Removed stale release: ${release_path}"
-                return 0
-              fi
-              echo "WARN: rm failed for ${release_path}, trying sudo..."
-              if sudo rm -rf -- "${release_path}" 2>/dev/null; then
-                echo "Removed stale release via sudo: ${release_path}"
-                return 0
-              fi
-              echo "WARN: sudo rm failed for ${release_path}, fixing ownership then retrying..."
-              sudo chown -R "$(whoami):$(whoami)" "${release_path}" 2>/dev/null || true
-              rm -rf -- "${release_path}" 2>/dev/null || sudo rm -rf -- "${release_path}" 2>/dev/null || true
-              if [ ! -e "${release_path}" ]; then
-                echo "Removed stale release after chown: ${release_path}"
-                return 0
-              fi
-              echo "ERROR: could not remove stale release ${release_path}"
-              return 1
-            }
-
-            find "${RELEASES_DIR}" -mindepth 1 -maxdepth 1 -type d -name "*.tmp.*" -exec rm -rf -- {} + 2>/dev/null || true
-            find "${RELEASES_DIR}" -mindepth 1 -maxdepth 1 -type d ! -name "*.tmp.*" -print 2>/dev/null |
-              while IFS= read -r release_path; do
-                [ -z "${release_path}" ] && continue
-                [ -n "${current_target}" ] && [ "${release_path}" = "${current_target}" ] && continue
-                remove_stale_release "${release_path}" || true
-              done
-
-            echo "Disk after release cleanup:"
-            df -h "${BASE_DIR}" || true
-            du -sh "${RELEASES_DIR}" 2>/dev/null || true
-          REMOTE_RELEASE_CLEANUP
-
-          echo "Copying deploy script + artifact to VPS ${REMOTE_TMP}..."
-          scp "${SCP_OPTS[@]}" scripts/deploy-artifact.sh "${REMOTE_USER}@${VPS_HOST}:${REMOTE_TMP}/asi-deploy-artifact.sh"
-          scp "${SCP_OPTS[@]}" scripts/deploy-shadow-env-guard.sh "${REMOTE_USER}@${VPS_HOST}:${REMOTE_TMP}/deploy-shadow-env-guard.sh"
-          scp "${SCP_OPTS[@]}" scripts/pm2-sync-ops-alert-scheduler.sh "${REMOTE_USER}@${VPS_HOST}:${REMOTE_TMP}/pm2-sync-ops-alert-scheduler.sh"
-          scp "${SCP_OPTS[@]}" "$ARTIFACT_PATH" "${REMOTE_USER}@${VPS_HOST}:${REMOTE_TMP}/${ARTIFACT_FILE}"
-
-          echo "Verifying artifact on VPS..."
-          ssh "${SSH_OPTS[@]}" "${REMOTE_USER}@${VPS_HOST}" \
-            "ls -lh ${REMOTE_TMP}/asi-release-*.tgz | tail -5"
-
-          if [ -z "${BOOKING_OPS_AUTO_SEND_RUNNER_SECRET:-}" ]; then
-            echo "Missing required secret: BOOKING_OPS_AUTO_SEND_RUNNER_SECRET"
-            exit 1
-          fi
-
-          printf '%s' "$BOOKING_OPS_AUTO_SEND_RUNNER_SECRET" | \
-            ssh "${SSH_OPTS[@]}" "${REMOTE_USER}@${VPS_HOST}" \
-              "bash \"${REMOTE_TMP}/deploy-shadow-env-guard.sh\" apply /var/www/asi/shared/.env.production.live"
-
-          ssh "${SSH_OPTS[@]}" "${REMOTE_USER}@${VPS_HOST}" \
-            "TWOGIS_CATALOG_API_KEY='${TWOGIS_CATALOG_API_KEY:-}' GOOGLE_MAPS_SERVER_API_KEY='${GOOGLE_MAPS_SERVER_API_KEY:-}' bash -lc 'set -euo pipefail
-              echo \"Deploying SHA: ${SHA}\"
-
-              chmod +x ${REMOTE_TMP}/asi-deploy-artifact.sh || true
-              ASI_BASE_DIR=\"/var/www/asi\" bash ${REMOTE_TMP}/asi-deploy-artifact.sh \"${SHA}\" \"${REMOTE_TMP}/${ARTIFACT_FILE}\"
-
-              rm -f ${REMOTE_TMP}/asi-deploy-artifact.sh ${REMOTE_TMP}/deploy-shadow-env-guard.sh ${REMOTE_TMP}/pm2-sync-ops-alert-scheduler.sh \"${REMOTE_TMP}/${ARTIFACT_FILE}\"
-
-              echo \"LIVE_SHA_EXPECTED=${SHA}\"
-              curl -fsS http://127.0.0.1:3000/api/version
-              pm2 status
-            '"
+          echo "LIVE_SHA_EXPECTED=$SHA"
+          curl -fsS --max-time 10 https://asi-global.ru/api/version
