@@ -53,16 +53,29 @@ describe('baseline SHA helpers', () => {
     );
   });
 
-  it('C: fails closed when GITHUB_TOKEN is missing', async () => {
+  it('C: resolves the public landing baseline without GITHUB_TOKEN', async () => {
+    delete process.env.GITHUB_TOKEN;
+    const sha = 'd'.repeat(40);
+    const fetchImpl = vi.fn(async (_url: string, init?: RequestInit) => {
+      expect(init?.headers).not.toHaveProperty('Authorization');
+      return new Response(JSON.stringify({ sha }), { status: 200, headers: { 'content-type': 'application/json' } });
+    });
+    await expect(
+      resolveAllowlistedBaselineSha(DEVELOPMENT_REPOSITORY_ALLOWLIST[0], fetchImpl as typeof fetch),
+    ).resolves.toBe(sha);
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it('D: fails closed for the private runtime baseline when GITHUB_TOKEN is missing', async () => {
     delete process.env.GITHUB_TOKEN;
     const fetchImpl = vi.fn();
     await expect(
-      resolveAllowlistedBaselineSha(DEVELOPMENT_REPOSITORY_ALLOWLIST[0], fetchImpl as typeof fetch),
+      resolveAllowlistedBaselineSha(DEVELOPMENT_REPOSITORY_ALLOWLIST[1], fetchImpl as typeof fetch),
     ).rejects.toMatchObject({ code: 'baseline_sha_unavailable' });
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 
-  it('D: never exposes the token in thrown errors', async () => {
+  it('E: never exposes the token in thrown errors', async () => {
     const fetchImpl = vi.fn(async () => new Response('forbidden', { status: 403 }));
     await expect(
       resolveAllowlistedBaselineSha(DEVELOPMENT_REPOSITORY_ALLOWLIST[0], fetchImpl as typeof fetch),
