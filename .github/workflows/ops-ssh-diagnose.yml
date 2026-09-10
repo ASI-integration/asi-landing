@@ -1,4 +1,4 @@
-name: Ops Runtime Readonly Diagnose
+name: Ops Controlled Deploy Probe
 
 on:
   push:
@@ -9,12 +9,12 @@ permissions:
   contents: read
 
 jobs:
-  diagnose:
+  probe:
     runs-on: ubuntu-latest
     environment: staging
     timeout-minutes: 5
     steps:
-      - name: Diagnose staging Runtime without sudo
+      - name: Probe existing target-side controlled deploy without sudo
         shell: bash
         env:
           STAGING_SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
@@ -37,23 +37,15 @@ jobs:
             "$STAGING_SSH_USER@$STAGING_SSH_HOST" 'bash -s' <<'REMOTE'
           set +e
           echo "SSH_OK hostname=$(hostname) user=$(id -un)"
-          echo "CURRENT_LINK=$(readlink /opt/asi-runtime/current 2>/dev/null || echo UNREADABLE)"
-          echo '--- permissions ---'
-          ls -ld /opt/asi-runtime /opt/asi-runtime/current 2>/dev/null || true
-          namei -l /opt/asi-runtime/current/lib/agent-ops/events.mjs 2>/dev/null || true
-          echo '--- unit metadata ---'
-          systemctl show asi-runtime-worker -p ActiveState -p SubState -p User -p EnvironmentFiles -p ExecStart --no-pager || true
-          systemctl show asi-runtime-bridge-runner -p ActiveState -p SubState -p User -p EnvironmentFiles -p ExecStart --no-pager || true
-          echo '--- safe selected environment ---'
-          for unit in asi-runtime-worker asi-runtime-bridge-runner; do
-            ENVLINE="$(systemctl show "$unit" -p Environment --value 2>/dev/null || true)"
-            printf '%s\n' "$ENVLINE" | tr ' ' '\n' | grep -E '^(ASI_OWNER_TELEGRAM_PROFILE|ASI_RUNTIME_BRIDGE_URL)=' || true
-            if printf '%s\n' "$ENVLINE" | tr ' ' '\n' | grep -Eq '^ASI_RUNTIME_BRIDGE_RUNNER_TOKEN=.+$'; then
-              echo "$unit RUNNER_TOKEN=PRESENT"
-            else
-              echo "$unit RUNNER_TOKEN=NOT_EXPOSED"
-            fi
-          done
-          echo '--- sudo capabilities ---'
-          sudo -n -l 2>&1 || true
+          echo '--- controlled deploy files ---'
+          ls -ld /usr/libexec/asi-controlled-deploy 2>&1 || true
+          ls -l /usr/libexec/asi-controlled-deploy/dispatch /usr/libexec/asi-controlled-deploy/deploy /usr/libexec/asi-controlled-deploy/restart 2>&1 || true
+          echo '--- deploy identity ---'
+          id asi-deploy 2>&1 || true
+          getent passwd asi-deploy 2>&1 || true
+          echo '--- project user groups ---'
+          id
+          echo '--- service state ---'
+          systemctl is-active asi-runtime-worker 2>&1 || true
+          systemctl is-active asi-runtime-bridge-runner 2>&1 || true
           REMOTE
