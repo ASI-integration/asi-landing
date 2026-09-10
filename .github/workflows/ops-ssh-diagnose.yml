@@ -19,7 +19,7 @@ jobs:
       STAGING_SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
       STAGING_SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
     steps:
-      - name: Locate live ASI process and config safely
+      - name: Inspect live systemd wiring safely
         shell: bash
         run: |
           set -euo pipefail
@@ -31,41 +31,33 @@ jobs:
           SSH=(ssh -i ~/.ssh/staging_key -p "$PORT" -o IdentitiesOnly=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=10 -o BatchMode=yes)
 
           "${SSH[@]}" "$STAGING_SSH_USER@$STAGING_SSH_HOST" 'bash -s' <<'REMOTE'
-          set -euo pipefail
+          set +e
           echo "HOST=$(hostname)"
-          echo "WHO=$(whoami)"
+          for unit in asi-landing.service asi-landing-staging.service; do
+            echo "[unit] $unit"
+            systemctl show "$unit" --no-pager \
+              -p User -p Group -p WorkingDirectory -p FragmentPath -p EnvironmentFiles -p ExecStart -p MainPID -p ActiveState -p SubState 2>/dev/null
+            echo '[unit-directives]'
+            systemctl cat "$unit" 2>/dev/null | grep -E '^(User|Group|WorkingDirectory|EnvironmentFile|ExecStart|ExecStartPre)=' || true
+          done
 
-          echo '[section] /srv/asi-landing metadata'
-          ls -la /srv/asi-landing 2>/dev/null | sed -n '1,80p' || true
-          git -C /srv/asi-landing rev-parse HEAD 2>/dev/null | sed 's/^/[git-sha] /' || true
-          git -C /srv/asi-landing status --short 2>/dev/null | sed 's/^/[git-status] /' || true
+          echo '[section] candidate env paths from units'
+          systemctl cat asi-landing.service asi-landing-staging.service 2>/dev/null \
+            | sed -nE 's/^EnvironmentFile=-?//p' \
+            | sed 's/^/[env-path] /' || true
 
-          echo '[section] listeners'
-          sudo ss -ltnp 2>/dev/null | grep -E ':(3000|3001|4173|8787|80|443)[[:space:]]' || true
+          echo '[section] sudo noninteractive capability'
+          if sudo -n true 2>/dev/null; then echo '[sudo] noninteractive=yes'; else echo '[sudo] noninteractive=no'; fi
 
-          echo '[section] node-like processes'
-          ps -eo user=,pid=,ppid=,args= | grep -E '(next-server|next start|node .*asi|pm2|npm .*start)' | grep -v grep | head -80 || true
-
-          echo '[section] asi systemd units'
-          systemctl list-units --type=service --all --no-pager 2>/dev/null | grep -Ei 'asi|landing|next|node' | head -80 || true
-          find /etc/systemd/system -maxdepth 1 -type f \( -iname '*asi*' -o -iname '*landing*' \) -printf '%f\n' 2>/dev/null | sed 's/^/[unit-file] /' || true
-
-          echo '[section] nginx proxy targets'
-          sudo grep -RHE 'server_name|proxy_pass|root ' /etc/nginx/sites-enabled /etc/nginx/conf.d 2>/dev/null | grep -E 'asi-global|3000|3001|4173|8787|server_name' | head -120 || true
-
-          echo '[section] process env booking-secret presence'
-          PIDS="$(sudo ss -ltnp 2>/dev/null | sed -nE 's/.*:3000 .*pid=([0-9]+).*/\1/p' | sort -u)"
-          if [[ -z "$PIDS" ]]; then
-            echo '[port3000] pid=none'
-          fi
-          for pid in $PIDS; do
-            cmd="$(sudo tr '\0' ' ' < /proc/$pid/cmdline 2>/dev/null || true)"
-            user="$(ps -o user= -p "$pid" 2>/dev/null | xargs || true)"
-            printf '[port3000] pid=%s user=%s cmd=%s\n' "$pid" "${user:-unknown}" "${cmd:-unknown}"
-            if sudo tr '\0' '\n' < /proc/$pid/environ 2>/dev/null | grep -q '^BOOKING_OPS_AUTO_SEND_RUNNER_SECRET='; then
+          echo '[section] prod process env booking secret presence'
+          pid="$(systemctl show asi-landing.service -p MainPID --value 2>/dev/null)"
+          if [[ -n "$pid" && "$pid" != "0" ]]; then
+            echo "[prod-pid] $pid"
+            if sudo -n tr '\0' '\n' < "/proc/$pid/environ" 2>/dev/null | grep -q '^BOOKING_OPS_AUTO_SEND_RUNNER_SECRET='; then
               echo '[process-booking-secret] present=yes'
             else
               echo '[process-booking-secret] present=no'
             fi
-          done
+          fi
+          exit 0
           REMOTE
