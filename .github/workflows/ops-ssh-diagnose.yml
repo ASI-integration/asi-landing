@@ -1,4 +1,4 @@
-name: Ops Compare Hetzner Connectivity
+name: Ops Classify Production SSH Target
 
 on:
   push:
@@ -11,30 +11,46 @@ permissions:
 jobs:
   diagnose:
     runs-on: ubuntu-latest
+    environment: production
     timeout-minutes: 3
+    env:
+      VPS_HOST: ${{ secrets.VPS_HOST }}
+      VPS_PORT: ${{ secrets.VPS_PORT }}
     steps:
-      - name: Probe candidate Hetzner endpoints
+      - name: Classify configured target without exposing secrets
         shell: bash
         run: |
           set -euo pipefail
+          case "${VPS_HOST:-}" in
+            2.29.31.29) echo 'TARGET=asi-agent-runner' ;;
+            2.29.18.190) echo 'TARGET=asi-web-host' ;;
+            '') echo 'TARGET=missing' ;;
+            *) echo 'TARGET=other' ;;
+          esac
+          PORT="${VPS_PORT:-22}"
+          case "$PORT" in
+            22) echo 'PORT_CLASS=22' ;;
+            443) echo 'PORT_CLASS=443' ;;
+            *) echo 'PORT_CLASS=other' ;;
+          esac
           python3 - <<'PY'
-          import socket, time
-          hosts = ['2.29.31.29', '2.29.18.190']
-          ports = [22, 443]
-          for host in hosts:
-              for port in ports:
-                  t0=time.time()
+          import os, socket, time
+          host=os.environ.get('VPS_HOST','')
+          port=int(os.environ.get('VPS_PORT') or '22')
+          for label,p in [('configured',port),('port22',22)]:
+              t0=time.time()
+              try:
+                  s=socket.create_connection((host,p),timeout=8)
+                  s.settimeout(3)
+                  data=b''
                   try:
-                      s=socket.create_connection((host,port),timeout=8)
-                      s.settimeout(3)
-                      data=b''
-                      try:
-                          data=s.recv(100)
-                      except Exception:
-                          pass
-                      s.close()
-                      text=data.decode('utf-8','replace').strip()
-                      print(f'{host}:{port} TCP_OK {time.time()-t0:.2f}s banner={text[:80]!r}')
-                  except Exception as e:
-                      print(f'{host}:{port} FAIL {type(e).__name__}: {e}')
+                      data=s.recv(100)
+                  except Exception:
+                      pass
+                  s.close()
+                  banner=data.decode('utf-8','replace').strip()
+                  kind='ssh' if banner.startswith('SSH-') else ('tcp-no-banner' if not banner else 'other')
+                  print(f'{label}=TCP_OK kind={kind} elapsed={time.time()-t0:.2f}s')
+              except Exception as e:
+                  print(f'{label}=FAIL {type(e).__name__}: {e}')
           PY
