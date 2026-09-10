@@ -33,13 +33,27 @@ RELEASE_DIR="$RELEASES_DIR/$SHA"
 STAGING_DIR="$RELEASE_DIR.tmp.$$"
 ENV_FILE="$SHARED_DIR/.env.production.local"
 ENV_TMP="$SHARED_DIR/.env.production.local.tmp.$$"
+ENV_BACKUP="$SHARED_DIR/.env.production.local.rollback.$$"
+HAD_ENV_FILE=0
+
+cleanup_sensitive() {
+  rm -f "$ENV_SOURCE" "$ENV_TMP" "$ENV_TMP.next" "$ENV_BACKUP"
+  rm -rf "$STAGING_DIR"
+}
+trap cleanup_sensitive EXIT
 
 mkdir -p "$RELEASES_DIR" "$SHARED_DIR"
 [[ -w "$RELEASES_DIR" ]] || die "Deploy user cannot write $RELEASES_DIR"
 [[ -w "$SHARED_DIR" ]] || die "Deploy user cannot write $SHARED_DIR"
 
 # Preserve any server-local variables, then overlay the CI-provided keys.
-if [[ -f "$ENV_FILE" ]]; then cp "$ENV_FILE" "$ENV_TMP"; else : > "$ENV_TMP"; fi
+if [[ -f "$ENV_FILE" ]]; then
+  cp -p "$ENV_FILE" "$ENV_BACKUP"
+  cp "$ENV_FILE" "$ENV_TMP"
+  HAD_ENV_FILE=1
+else
+  : > "$ENV_TMP"
+fi
 while IFS= read -r line || [[ -n "$line" ]]; do
   [[ -z "$line" || "$line" == \#* ]] && continue
   [[ "$line" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]] || die "Invalid environment line"
@@ -49,6 +63,7 @@ while IFS= read -r line || [[ -n "$line" ]]; do
   mv "$tmp2" "$ENV_TMP"
   printf '%s\n' "$line" >> "$ENV_TMP"
 done < "$ENV_SOURCE"
+rm -f "$ENV_SOURCE"
 
 for key in ASI_APP_ROOT ASI_RELEASE_PATH ASI_RELEASE_DEPLOYED_AT_ISO; do
   tmp2="$ENV_TMP.next"
@@ -57,10 +72,6 @@ for key in ASI_APP_ROOT ASI_RELEASE_PATH ASI_RELEASE_DEPLOYED_AT_ISO; do
 done
 printf 'ASI_APP_ROOT=%s\nASI_RELEASE_PATH=%s\nASI_RELEASE_DEPLOYED_AT_ISO=%s\n' \
   "$CURRENT_LINK" "$RELEASE_DIR" "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> "$ENV_TMP"
-
-chgrp "$SERVICE_GROUP" "$ENV_TMP"
-chmod 640 "$ENV_TMP"
-mv -f "$ENV_TMP" "$ENV_FILE"
 
 rm -rf "$STAGING_DIR"
 mkdir -p "$STAGING_DIR"
@@ -78,6 +89,9 @@ mv "$STAGING_DIR" "$RELEASE_DIR"
 ln -sfn "$ENV_FILE" "$RELEASE_DIR/.env.production.local"
 
 PREVIOUS_TARGET="$(readlink -f "$CURRENT_LINK" 2>/dev/null || true)"
+chgrp "$SERVICE_GROUP" "$ENV_TMP"
+chmod 640 "$ENV_TMP"
+mv -f "$ENV_TMP" "$ENV_FILE"
 SWAP_LINK="$BASE_DIR/current.swap.$$"
 ln -sfn "$RELEASE_DIR" "$SWAP_LINK"
 mv -Tf "$SWAP_LINK" "$CURRENT_LINK"
@@ -119,10 +133,12 @@ NODE
 if ! start_app || ! verify_release; then
   if [[ -n "$PREVIOUS_TARGET" && -d "$PREVIOUS_TARGET" ]]; then
     ln -sfn "$PREVIOUS_TARGET" "$CURRENT_LINK"
+    if [[ "$HAD_ENV_FILE" == "1" && -f "$ENV_BACKUP" ]]; then cp -p "$ENV_BACKUP" "$ENV_FILE"; else rm -f "$ENV_FILE"; fi
     start_app || true
   fi
   die "Production deploy failed; previous release restored when available"
 fi
 
+rm -f "$ENV_BACKUP"
 find "$RELEASES_DIR" -mindepth 1 -maxdepth 1 -type d ! -path "$RELEASE_DIR" ! -path "$PREVIOUS_TARGET" -mtime +7 -exec rm -rf -- {} + 2>/dev/null || true
 echo "Production deploy complete: SHA=$SHA service=$SERVICE_NAME port=$APP_PORT"
