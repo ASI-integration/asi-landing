@@ -14,7 +14,7 @@ jobs:
     environment: staging
     timeout-minutes: 5
     steps:
-      - name: Inspect live Runtime health without sudo
+      - name: Inspect staging PM2 path without sudo
         shell: bash
         env:
           STAGING_SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
@@ -35,13 +35,24 @@ jobs:
             -o UserKnownHostsFile=/dev/null \
             -o ConnectTimeout=10 \
             "$STAGING_SSH_USER@$STAGING_SSH_HOST" 'bash -s' <<'REMOTE'
-          set -euo pipefail
+          set +e
           echo "SSH_OK hostname=$(hostname) user=$(id -un)"
-          echo '=== RUNTIME HEALTH ==='
-          curl --fail --silent --show-error --max-time 5 http://127.0.0.1:4173/api/health
-          echo
-          echo '=== SERVICES ==='
-          printf 'worker='; systemctl is-active asi-runtime-worker
-          printf 'dashboard='; systemctl is-active asi-runtime-dashboard
-          printf 'bridge_runner='; systemctl is-active asi-runtime-bridge-runner
+          echo "PATH=$PATH"
+          echo '=== COMMANDS ==='
+          printf 'node='; command -v node || true
+          printf 'npm='; command -v npm || true
+          printf 'pm2='; command -v pm2 || true
+          printf 'npx='; command -v npx || true
+          echo '=== NPM GLOBAL ==='
+          npm prefix -g 2>&1 || true
+          npm root -g 2>&1 || true
+          echo '=== COMMON PM2 LOCATIONS ==='
+          for p in /usr/bin/pm2 /usr/local/bin/pm2 "$HOME/.local/bin/pm2" "$HOME/.npm-global/bin/pm2"; do
+            if [ -e "$p" ]; then ls -l "$p"; fi
+          done
+          echo '=== PROCESS HINTS ==='
+          ps -eo user,pid,args | grep -E '[p]m2|[n]ext' | head -30 || true
+          echo '=== PM2 HOME ==='
+          ls -ld "$HOME/.pm2" 2>&1 || true
+          ls -l "$HOME/.pm2" 2>&1 | head -30 || true
           REMOTE
