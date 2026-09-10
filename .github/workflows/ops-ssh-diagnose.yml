@@ -1,4 +1,4 @@
-name: Ops Rescue Identify Port 443 Owner
+name: Ops Rescue Inspect Custom Services
 
 on:
   push:
@@ -14,7 +14,7 @@ jobs:
     environment: staging
     timeout-minutes: 4
     steps:
-      - name: Inspect installed Ubuntu boot and services
+      - name: Inspect custom systemd services and port settings
         shell: bash
         env:
           STAGING_SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
@@ -31,21 +31,24 @@ jobs:
           set +e
           mkdir -p /mnt/installed
           mountpoint -q /mnt/installed || mount /dev/sda1 /mnt/installed
-          echo '=== FIRST FAILING BOOT WINDOW ==='
-          journalctl --directory=/mnt/installed/var/log/journal --since '2026-09-09 18:13:00' --until '2026-09-09 18:13:20' --no-pager -o short-iso 2>&1 | head -500 || true
-          echo '=== ENABLED UNIT SYMLINKS ==='
-          find /mnt/installed/etc/systemd/system -type l -printf '%p -> %l\n' 2>/dev/null | sort | head -300 || true
-          echo '=== PORT 443 REFERENCES IN SYSTEM CONFIG ==='
-          grep -RniE '(^|[^0-9])443([^0-9]|$)|listen.*443|:443' /mnt/installed/etc/systemd /mnt/installed/etc/default /mnt/installed/etc/init.d /mnt/installed/etc/nginx /mnt/installed/etc/tailscale 2>/dev/null | head -300 || true
-          echo '=== POSSIBLE PROXY BINARIES ==='
-          for n in nginx caddy apache2 httpd haproxy traefik xray sing-box cloudflared frps frpc socat stunnel; do
-            p=$(find /mnt/installed/usr /mnt/installed/opt /mnt/installed/usr/local -type f -name "$n" -perm -111 2>/dev/null | head -5)
-            [ -n "$p" ] && printf '%s\n%s\n' "$n" "$p"
+          echo '=== CUSTOM UNIT FILES ==='
+          for f in /mnt/installed/etc/systemd/system/asi-*.service; do
+            [ -f "$f" ] || continue
+            echo "--- $f ---"
+            sed -n '1,220p' "$f"
           done
-          echo '=== PSIMON FILES ==='
-          find /mnt/installed -xdev \( -name 'psimon' -o -name 'psimon*' \) 2>/dev/null | head -80 || true
-          echo '=== CUSTOM SYSTEMD SERVICES ==='
-          find /mnt/installed/etc/systemd/system -maxdepth 2 -type f -name '*.service' -print 2>/dev/null | sort | head -200 || true
-          echo 'IDENTIFY_COMPLETE'
+          echo '=== PORT/HOST SETTINGS FROM REFERENCED ENV FILES ==='
+          for f in $(grep -h '^EnvironmentFile=' /mnt/installed/etc/systemd/system/asi-*.service 2>/dev/null | sed 's/^EnvironmentFile=-\?//' | sort -u); do
+            rf="/mnt/installed$f"
+            echo "--- $f ---"
+            if [ -f "$rf" ]; then
+              grep -E '^[A-Z0-9_]*(PORT|HOST|BIND|LISTEN)[A-Z0-9_]*=' "$rf" 2>/dev/null || true
+            else
+              echo 'MISSING'
+            fi
+          done
+          echo '=== EXECUTABLES REFERENCED BY CUSTOM SERVICES ==='
+          grep -h '^ExecStart=' /mnt/installed/etc/systemd/system/asi-*.service 2>/dev/null | sort -u
+          echo 'CUSTOM_INSPECT_COMPLETE'
           REMOTE
           exit 0
