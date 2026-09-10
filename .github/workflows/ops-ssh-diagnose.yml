@@ -14,7 +14,7 @@ jobs:
     environment: staging
     timeout-minutes: 5
     steps:
-      - name: Inspect staging supervisor without sudo
+      - name: Inspect staging sudo boundary
         shell: bash
         env:
           STAGING_SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
@@ -31,14 +31,10 @@ jobs:
           ssh -i ~/.ssh/staging_key -p "$PORT" -o IdentitiesOnly=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=10 "$STAGING_SSH_USER@$STAGING_SSH_HOST" 'bash -s' <<'REMOTE'
           set +e
           echo "SSH_OK hostname=$(hostname) user=$(id -un)"
-          echo '=== PORTS ==='
-          ss -ltnp 2>&1 | grep -E ':3000|:3001' || true
-          echo '=== CANDIDATE SERVICES ==='
-          for unit in asi-landing-staging asi-landing; do
-            echo "--- $unit ---"
-            systemctl show "$unit" -p LoadState -p ActiveState -p SubState -p MainPID -p ExecStart -p WorkingDirectory --no-pager 2>&1 || true
-          done
-          echo '=== STAGING PATH ==='
-          ls -ld /var/www/asi-staging /var/www/asi-staging/current /var/www/asi-staging/shared 2>&1 || true
-          readlink -f /var/www/asi-staging/current 2>&1 || true
+          echo '=== SERVICE ==='
+          systemctl show asi-landing-staging -p User -p Group -p FragmentPath -p ExecStart -p WorkingDirectory -p EnvironmentFiles --no-pager 2>&1 || true
+          echo '=== SUDO ==='
+          sudo -n -l 2>&1 || true
+          echo '=== GROUPS ==='
+          id
           REMOTE
