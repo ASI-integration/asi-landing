@@ -1,4 +1,4 @@
-name: Ops Rescue Readonly Disk Inspect
+name: Ops Rescue Readonly Path Inspect
 
 on:
   push:
@@ -14,7 +14,7 @@ jobs:
     environment: staging
     timeout-minutes: 5
     steps:
-      - name: Read Runtime identity and safe config from local disk
+      - name: Enumerate Runtime paths on local disk
         shell: bash
         env:
           STAGING_SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
@@ -36,23 +36,10 @@ jobs:
             "root@$STAGING_SSH_HOST" 'bash -s' <<'REMOTE'
           set -euo pipefail
           echo "RESCUE_ROOT_SSH_OK hostname=$(hostname)"
-          command -v debugfs >/dev/null
-          test -b /dev/sda1
-          echo '--- runtime current ---'
-          debugfs -R 'stat /opt/asi-runtime/current' /dev/sda1 2>/dev/null || true
-          echo '--- source commit ---'
-          debugfs -R 'cat /opt/asi-runtime/current/SOURCE_COMMIT' /dev/sda1 2>/dev/null || true
-          echo '--- SP01 ---'
-          if debugfs -R 'cat /opt/asi-runtime/current/lib/agent-ops/events.mjs' /dev/sda1 2>/dev/null | grep -q 'strigunov_pilot_v1'; then
-            echo 'SP01_CODE_PRESENT=YES'
-          else
-            echo 'SP01_CODE_PRESENT=NO'
-          fi
-          echo '--- safe env ---'
-          debugfs -R 'cat /etc/asi-runtime/runtime.env' /dev/sda1 2>/dev/null | grep -E '^(ASI_OWNER_TELEGRAM_PROFILE|ASI_RUNTIME_BRIDGE_URL)=' || true
-          if debugfs -R 'cat /etc/asi-runtime/runtime.env' /dev/sda1 2>/dev/null | grep -Eq '^ASI_RUNTIME_BRIDGE_RUNNER_TOKEN=.+$'; then
-            echo 'RUNNER_TOKEN=PRESENT'
-          else
-            echo 'RUNNER_TOKEN=MISSING'
-          fi
+          echo '--- /opt/asi-runtime ---'
+          debugfs -R 'ls -l /opt/asi-runtime' /dev/sda1 2>&1 || true
+          echo '--- /opt/asi-runtime/releases ---'
+          debugfs -R 'ls -l /opt/asi-runtime/releases' /dev/sda1 2>&1 || true
+          echo '--- /etc/asi-runtime ---'
+          debugfs -R 'ls -l /etc/asi-runtime' /dev/sda1 2>&1 || true
           REMOTE
