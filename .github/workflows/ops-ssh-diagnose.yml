@@ -1,4 +1,4 @@
-name: Ops Rescue Readonly Path Inspect
+name: Ops Runtime Readonly Inspect
 
 on:
   push:
@@ -14,10 +14,11 @@ jobs:
     environment: staging
     timeout-minutes: 5
     steps:
-      - name: Enumerate Runtime paths on local disk
+      - name: Inspect Runtime without sudo
         shell: bash
         env:
           STAGING_SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+          STAGING_SSH_USER: ${{ secrets.STAGING_SSH_USER }}
           STAGING_SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
           STAGING_SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
         run: |
@@ -33,13 +34,32 @@ jobs:
             -o StrictHostKeyChecking=no \
             -o UserKnownHostsFile=/dev/null \
             -o ConnectTimeout=10 \
-            "root@$STAGING_SSH_HOST" 'bash -s' <<'REMOTE'
-          set -euo pipefail
-          echo "RESCUE_ROOT_SSH_OK hostname=$(hostname)"
-          echo '--- /opt/asi-runtime ---'
-          debugfs -R 'ls -l /opt/asi-runtime' /dev/sda1 2>&1 || true
-          echo '--- /opt/asi-runtime/releases ---'
-          debugfs -R 'ls -l /opt/asi-runtime/releases' /dev/sda1 2>&1 || true
-          echo '--- /etc/asi-runtime ---'
-          debugfs -R 'ls -l /etc/asi-runtime' /dev/sda1 2>&1 || true
+            "$STAGING_SSH_USER@$STAGING_SSH_HOST" 'bash -s' <<'REMOTE'
+          set +e
+          echo "SSH_OK hostname=$(hostname) user=$(id -un)"
+          echo '=== WORKER UNIT ==='
+          systemctl show asi-runtime-worker \
+            -p ActiveState -p SubState -p MainPID -p ExecStart -p FragmentPath -p EnvironmentFiles -p WorkingDirectory \
+            --no-pager
+          PID="$(systemctl show asi-runtime-worker -p MainPID --value)"
+          if [ -n "$PID" ] && [ "$PID" != "0" ]; then
+            echo "WORKER_PID=$PID"
+            echo -n 'WORKER_CMDLINE='; tr '\0' ' ' < "/proc/$PID/cmdline" 2>/dev/null; echo
+            echo -n 'WORKER_CWD='; readlink "/proc/$PID/cwd" 2>&1 || true
+          fi
+          echo '=== BRIDGE RUNNER UNIT ==='
+          systemctl show asi-runtime-bridge-runner \
+            -p ActiveState -p SubState -p MainPID -p ExecStart -p FragmentPath -p EnvironmentFiles -p WorkingDirectory \
+            --no-pager
+          BPID="$(systemctl show asi-runtime-bridge-runner -p MainPID --value)"
+          if [ -n "$BPID" ] && [ "$BPID" != "0" ]; then
+            echo "BRIDGE_PID=$BPID"
+            echo -n 'BRIDGE_CMDLINE='; tr '\0' ' ' < "/proc/$BPID/cmdline" 2>/dev/null; echo
+            echo -n 'BRIDGE_CWD='; readlink "/proc/$BPID/cwd" 2>&1 || true
+          fi
+          echo '=== PATH PERMISSIONS ==='
+          namei -l /opt/asi-runtime/current 2>&1 || true
+          echo '=== UNIT STATUS ==='
+          systemctl status asi-runtime-worker --no-pager -l 2>&1 | tail -30 || true
+          systemctl status asi-runtime-bridge-runner --no-pager -l 2>&1 | tail -30 || true
           REMOTE
