@@ -30,7 +30,6 @@ jobs:
               exit 1
             fi
           done
-
           SSH_PORT="${STAGING_SSH_PORT:-22}"
           mkdir -p ~/.ssh
           chmod 700 ~/.ssh
@@ -43,14 +42,11 @@ jobs:
           set -uo pipefail
           echo '=== SERVICE ==='
           printf 'runner_active='; systemctl is-active asi-runtime-bridge-runner.service 2>/dev/null || true
-          systemctl show asi-runtime-bridge-runner.service \
-            -p User -p Group -p WorkingDirectory -p EnvironmentFiles -p ExecStart \
-            --no-pager 2>/dev/null || true
+          systemctl show asi-runtime-bridge-runner.service -p User -p Group -p WorkingDirectory -p EnvironmentFiles -p ExecStart --no-pager 2>/dev/null || true
 
           echo '=== SAFE HOST READINESS ==='
           cat > /tmp/asi-runtime-readiness-probe.mjs <<'NODE'
           import fs from 'node:fs';
-          import { execFileSync } from 'node:child_process';
           const envPath = '/etc/asi-runtime/runtime.env';
           const runtimeRoot = '/opt/asi-runtime/current';
           const modulePath = 'file:///opt/asi-runtime/current/scripts/asi-runtime-runner-config.mjs';
@@ -62,44 +58,20 @@ jobs:
             if (i <= 0) continue;
             const key = trimmed.slice(0, i).trim();
             let value = trimmed.slice(i + 1).trim();
-            if ((value.startsWith("'") && value.endsWith("'")) || (value.startsWith('"') && value.endsWith('"'))) {
-              value = value.slice(1, -1);
-            }
+            if ((value.startsWith("'") && value.endsWith("'")) || (value.startsWith('"') && value.endsWith('"'))) value = value.slice(1, -1);
             process.env[key] = value;
           }
           process.chdir(runtimeRoot);
           const { inspectRuntimeRunnerHostReadiness } = await import(modulePath);
           const r = await inspectRuntimeRunnerHostReadiness();
-          let configuredCheckouts = [];
-          try {
-            const parsed = JSON.parse(process.env.ASI_RUNTIME_BRIDGE_CHECKOUTS_JSON || '[]');
-            configuredCheckouts = Array.isArray(parsed) ? parsed.map((item) => {
-              const p = typeof item?.path === 'string' ? item.path : '';
-              let git = false;
-              let head = null;
-              let remote = null;
-              if (p && fs.existsSync(p)) {
-                try { git = execFileSync('git', ['-C', p, 'rev-parse', '--is-inside-work-tree'], { encoding: 'utf8' }).trim() === 'true'; } catch {}
-                if (git) {
-                  try { head = execFileSync('git', ['-C', p, 'rev-parse', '--short=12', 'HEAD'], { encoding: 'utf8' }).trim(); } catch {}
-                  try { remote = execFileSync('git', ['-C', p, 'remote', 'get-url', 'origin'], { encoding: 'utf8' }).trim(); } catch {}
-                }
-              }
-              return { id: item?.id ?? null, path: p || null, exists: !!p && fs.existsSync(p), git, head, remote };
-            }) : [];
-          } catch {}
-          const gitEnv = Object.fromEntries(['GIT_DIR','GIT_WORK_TREE','GIT_CEILING_DIRECTORIES','GIT_COMMON_DIR'].map((k) => [k, process.env[k] ?? null]));
           console.log(JSON.stringify({
             canExecute: r.canExecute,
             baselineSha: r.baselineSha,
             capabilities: r.capabilities,
             checkoutCount: Array.isArray(r.runtimeCheckouts) ? r.runtimeCheckouts.length : 0,
             hasExecutorConfig: r.executorConfig !== null,
-            configuredCheckouts,
-            gitEnv,
           }));
           NODE
-
           chmod 644 /tmp/asi-runtime-readiness-probe.mjs
           if [ -r /etc/asi-runtime/runtime.env ]; then
             node /tmp/asi-runtime-readiness-probe.mjs || true
@@ -107,28 +79,35 @@ jobs:
             cat /tmp/asi-runtime-readiness.out
           else
             echo 'probe_unavailable=runtime_env_not_readable_and_no_safe_sudo'
-            cat /tmp/asi-runtime-readiness.err 2>/dev/null | tail -n 3 || true
           fi
           rm -f /tmp/asi-runtime-readiness-probe.mjs /tmp/asi-runtime-readiness.out /tmp/asi-runtime-readiness.err
 
-          echo '=== CHECKOUT FILESYSTEM ==='
-          for p in /var/lib/asi-runtime/repos/asi-landing /srv/asi-landing /srv/asi-runtime/primary /srv/asi-runtime/secondary; do
-            printf '%s: ' "$p"
-            if [ -e "$p" ]; then
-              stat -c 'exists type=%F owner=%U:%G mode=%a' "$p" 2>/dev/null || echo exists
-              [ -e "$p/.git" ] && stat -c '  .git type=%F owner=%U:%G mode=%a' "$p/.git" 2>/dev/null || true
-              printf '  git_as_deploy_user='; git -C "$p" rev-parse --is-inside-work-tree 2>/dev/null || echo false
-              printf '  git_as_asi_runtime='; sudo -n -u asi-runtime git -C "$p" rev-parse --is-inside-work-tree 2>/dev/null || echo false
-            else
-              echo missing
+          echo '=== GIT METADATA INTEGRITY ==='
+          for p in /var/lib/asi-runtime/repos/asi-landing /srv/asi-landing; do
+            echo "checkout=$p"
+            for f in HEAD config; do
+              if [ -f "$p/.git/$f" ]; then
+                printf '  %s=present size=' "$f"; stat -c %s "$p/.git/$f" 2>/dev/null || true
+              else
+                echo "  $f=missing"
+              fi
+            done
+            for d in objects refs; do
+              if [ -d "$p/.git/$d" ]; then
+                printf '  %s=present entries=' "$d"; find "$p/.git/$d" -mindepth 1 -maxdepth 2 2>/dev/null | wc -l
+              else
+                echo "  $d=missing"
+              fi
+            done
+            if [ -f "$p/.git/HEAD" ]; then
+              head_line="$(head -n1 "$p/.git/HEAD" 2>/dev/null || true)"
+              case "$head_line" in
+                ref:\ refs/heads/*) echo "  HEAD_shape=symbolic" ;;
+                [0-9a-f][0-9a-f]*) echo "  HEAD_shape=detached_or_sha" ;;
+                *) echo "  HEAD_shape=invalid" ;;
+              esac
             fi
+            printf '  git_rev_parse='; sudo -n -u asi-runtime git -C "$p" rev-parse --git-dir 2>/dev/null || echo FAIL
           done
-          echo 'git_repositories_found:'
-          find /srv /var/lib/asi-runtime /opt/asi-runtime -maxdepth 5 -type d -name .git -print 2>/dev/null | sed 's#/.git$##' | head -n 20 || true
-
-          echo '=== RECENT RUNNER LOGS ==='
-          journalctl -u asi-runtime-bridge-runner.service --since '-10 minutes' -n 80 --no-pager 2>/dev/null \
-            | grep -E 'Runtime bridge runner|runtime-baseline|runner_|error|failed|Failed' \
-            | tail -n 40 || true
           echo '=== END ==='
           REMOTE
