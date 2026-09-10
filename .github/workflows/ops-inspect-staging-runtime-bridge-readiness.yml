@@ -51,7 +51,8 @@ jobs:
           cat > /tmp/asi-runtime-readiness-probe.mjs <<'NODE'
           import fs from 'node:fs';
           const envPath = '/etc/asi-runtime/runtime.env';
-          const modulePath = 'file:///var/www/asi-staging/current/scripts/asi-runtime-runner-config.mjs';
+          const runtimeRoot = '/opt/asi-runtime/current';
+          const modulePath = 'file:///opt/asi-runtime/current/scripts/asi-runtime-runner-config.mjs';
           const raw = fs.readFileSync(envPath, 'utf8');
           for (const line of raw.split(/\r?\n/)) {
             const trimmed = line.trim();
@@ -65,7 +66,7 @@ jobs:
             }
             process.env[key] = value;
           }
-          process.chdir('/var/www/asi-staging/current');
+          process.chdir(runtimeRoot);
           const { inspectRuntimeRunnerHostReadiness } = await import(modulePath);
           const r = await inspectRuntimeRunnerHostReadiness();
           console.log(JSON.stringify({
