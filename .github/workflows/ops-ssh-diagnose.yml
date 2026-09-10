@@ -1,4 +1,5 @@
 name: Ops Verify Restored Nginx And Staging HTTPS
+# Connectivity recheck after local SSH timeout on 2026-09-10.
 
 on:
   push:
