@@ -15,7 +15,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: staging
     steps:
-      - name: Inspect staging Runtime Bridge readiness safely
+      - name: Inspect live Runtime Bridge runner status safely
         shell: bash
         env:
           STAGING_SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
@@ -34,19 +34,15 @@ jobs:
           chmod 600 ~/.ssh/staging_probe_key
           ssh -i ~/.ssh/staging_probe_key -p "$SSH_PORT" -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=20 "$STAGING_SSH_USER@$STAGING_SSH_HOST" 'bash -s' <<'REMOTE'
           set -uo pipefail
-          echo '=== SERVICE ==='
-          printf 'runner_active='; systemctl is-active asi-runtime-bridge-runner.service 2>/dev/null || true
-          echo '=== GIT PERMISSIONS ==='
-          for p in /var/lib/asi-runtime/repos/asi-landing /srv/asi-landing; do
-            echo "checkout=$p"
-            stat -c '  worktree=%U:%G %a' "$p" 2>/dev/null || true
-            stat -c '  gitdir=%U:%G %a' "$p/.git" 2>/dev/null || true
-            stat -c '  HEAD=%U:%G %a size=%s' "$p/.git/HEAD" 2>/dev/null || true
-            stat -c '  config=%U:%G %a size=%s' "$p/.git/config" 2>/dev/null || true
-            stat -c '  mainref=%U:%G %a size=%s' "$p/.git/refs/heads/main" 2>/dev/null || true
-            printf '  service_user_HEAD='; sudo -n -u asi-runtime sh -c 'tr -d "\r\n" < "$1/.git/HEAD"' sh "$p" 2>&1 || true; echo
-            echo '  service_user_git:'
-            sudo -n -u asi-runtime git -C "$p" rev-parse --is-inside-work-tree 2>&1 | sed 's/^/    /' || true
-          done
+          echo '=== RUNNER STATE ==='
+          systemctl show asi-runtime-bridge-runner.service \
+            -p ActiveState -p SubState -p MainPID -p NRestarts -p ExecMainStatus -p ActiveEnterTimestamp \
+            --no-pager 2>/dev/null || true
+          echo '=== RUNNER STATUS TAIL ==='
+          systemctl status asi-runtime-bridge-runner.service --no-pager -n 30 2>&1 \
+            | sed -E 's/(Bearer |token=)[^ ]+/\1[REDACTED]/Ig' \
+            | tail -n 45 || true
+          echo '=== LANDING STATE ==='
+          systemctl show asi-landing-staging.service -p ActiveState -p SubState -p MainPID -p NRestarts -p ExecMainStatus --no-pager 2>/dev/null || true
           echo '=== END ==='
           REMOTE
