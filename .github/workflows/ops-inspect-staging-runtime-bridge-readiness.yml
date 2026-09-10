@@ -15,7 +15,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: staging
     steps:
-      - name: Locate live runner environment source safely
+      - name: Probe live runner auth path without mutating Bridge
         shell: bash
         env:
           STAGING_SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
@@ -34,70 +34,44 @@ jobs:
           chmod 600 ~/.ssh/staging_probe_key
           ssh -i ~/.ssh/staging_probe_key -p "$SSH_PORT" -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=20 "$STAGING_SSH_USER@$STAGING_SSH_HOST" 'bash -s' <<'REMOTE'
           set -uo pipefail
-          UNIT=/etc/systemd/system/asi-runtime-bridge-runner.service
           APP_ENV=/var/www/asi-staging/shared/.env.staging.local
+          RUNNER_ENV=/etc/asi-runtime/runtime.env
 
-          echo '=== RUNNER SERVICE ==='
+          echo '=== SERVICE STATE ==='
           systemctl show asi-runtime-bridge-runner.service -p ActiveState -p SubState -p MainPID -p NRestarts --no-pager 2>/dev/null || true
-          if [ -r "$UNIT" ]; then
-            grep -E '^(User|Group|WorkingDirectory|ExecStart|EnvironmentFile)=' "$UNIT" \
-              | sed -E 's#^(EnvironmentFile=).*#\1[present]#' || true
+          systemctl show asi-landing-staging.service -p ActiveState -p SubState -p MainPID -p NRestarts --no-pager 2>/dev/null || true
+
+          echo '=== CONFIG CONSISTENCY ==='
+          app_runner="$(grep -m1 '^ASI_RUNTIME_BRIDGE_RUNNER_TOKEN=' "$APP_ENV" 2>/dev/null | cut -d= -f2- || true)"
+          runner_runner="$(grep -m1 '^ASI_RUNTIME_BRIDGE_RUNNER_TOKEN=' "$RUNNER_ENV" 2>/dev/null | cut -d= -f2- || true)"
+          runner_url="$(grep -m1 '^ASI_RUNTIME_BRIDGE_URL=' "$RUNNER_ENV" 2>/dev/null | cut -d= -f2- || true)"
+          runner_client="$(grep -m1 '^ASI_RUNTIME_BRIDGE_CLIENT_ID=' "$RUNNER_ENV" 2>/dev/null | cut -d= -f2- || true)"
+          app_client="$(grep -m1 '^ASI_RUNTIME_BRIDGE_CLIENT_ID=' "$APP_ENV" 2>/dev/null | cut -d= -f2- || true)"
+          [ -n "$app_runner" ] && echo 'app_runner_token=present' || echo 'app_runner_token=missing'
+          [ -n "$runner_runner" ] && echo 'runner_token=present' || echo 'runner_token=missing'
+          [ -n "$app_runner" ] && [ "$app_runner" = "$runner_runner" ] && echo 'runner_token_matches_app=true' || echo 'runner_token_matches_app=false'
+          [ "$runner_url" = 'https://staging.asi-global.ru' ] && echo 'runner_url_is_staging=true' || echo 'runner_url_is_staging=false'
+          [ -n "$runner_client" ] && [ "$runner_client" = "$app_client" ] && echo 'client_id_matches_app=true' || echo 'client_id_matches_app=false'
+
+          echo '=== NON-MUTATING AUTH PROBE ==='
+          if [ -n "$app_runner" ]; then
+            code="$(curl -sS -o /tmp/runner-probe.json -w '%{http_code}' \
+              -H "Authorization: Bearer $app_runner" \
+              -H 'Content-Type: application/json' \
+              --data '{}' \
+              'https://staging.asi-global.ru/api/internal/asi-runtime/bridge/runner' || true)"
+            echo "runner_endpoint_http=$code"
+            node - <<'NODE'
+          const fs=require('fs');
+          let x={}; try{x=JSON.parse(fs.readFileSync('/tmp/runner-probe.json','utf8'))}catch{}
+          console.log('runner_endpoint_error='+(typeof x.error==='string'?x.error:'none'));
+          NODE
+            rm -f /tmp/runner-probe.json
           else
-            echo 'unit_file=unreadable'
+            echo 'runner_endpoint_http=skipped_no_token'
           fi
 
-          echo '=== RUNNER ENV FILE PATHS ==='
-          paths="$(grep -E '^EnvironmentFile=' "$UNIT" 2>/dev/null | cut -d= -f2- | sed 's/^-//' || true)"
-          if [ -z "$paths" ]; then
-            echo 'environment_file=none_in_unit'
-          else
-            while IFS= read -r f; do
-              [ -n "$f" ] || continue
-              # Strip optional surrounding quotes without evaluating content.
-              f="${f#\"}"; f="${f%\"}"
-              echo "environment_file=$f"
-              if [ -e "$f" ]; then
-                stat -c '  owner=%U:%G mode=%a size=%s' "$f" 2>/dev/null || true
-                if [ -r "$f" ]; then
-                  line="$(grep -m1 '^ASI_RUNTIME_BRIDGE_RUNNER_TOKEN=' "$f" 2>/dev/null || true)"
-                  if [ -n "$line" ]; then
-                    rv="${line#*=}"
-                    echo "  runner_token=present length=${#rv}"
-                    av="$(grep -m1 '^ASI_RUNTIME_BRIDGE_RUNNER_TOKEN=' "$APP_ENV" 2>/dev/null | cut -d= -f2- || true)"
-                    if [ -n "$av" ]; then
-                      [ "$rv" = "$av" ] && echo '  runner_token_matches_app=true' || echo '  runner_token_matches_app=false'
-                    else
-                      echo '  runner_token_matches_app=unknown_app_missing'
-                    fi
-                  else
-                    echo '  runner_token=missing'
-                  fi
-                  url_line="$(grep -m1 '^ASI_RUNTIME_BRIDGE_URL=' "$f" 2>/dev/null || true)"
-                  [ -n "$url_line" ] && echo '  bridge_url=present' || echo '  bridge_url=missing'
-                  exec_line="$(grep -m1 '^ASI_RUNTIME_BRIDGE_EXECUTOR_JSON=' "$f" 2>/dev/null || true)"
-                  [ -n "$exec_line" ] && echo '  executor_config=present' || echo '  executor_config=missing'
-                  co_line="$(grep -m1 '^ASI_RUNTIME_BRIDGE_CHECKOUTS_JSON=' "$f" 2>/dev/null || true)"
-                  [ -n "$co_line" ] && echo '  checkout_config=present' || echo '  checkout_config=missing'
-                else
-                  echo '  readable_by_probe_user=false'
-                fi
-              else
-                echo '  file=missing'
-              fi
-            done <<< "$paths"
-          fi
-
-          echo '=== APP AUTH ==='
-          if [ -r "$APP_ENV" ]; then
-            for key in ASI_RUNTIME_BRIDGE_CHAT_TOKEN ASI_RUNTIME_BRIDGE_OWNER_TOKEN ASI_RUNTIME_BRIDGE_RUNNER_TOKEN; do
-              line="$(grep -m1 "^${key}=" "$APP_ENV" 2>/dev/null || true)"
-              if [ -n "$line" ]; then value="${line#*=}"; echo "$key=present length=${#value}"; else echo "$key=missing"; fi
-            done
-          else
-            echo 'app_env=unreadable'
-          fi
-
-          echo '=== PROCESS ==='
+          echo '=== RUNNER PROCESS ==='
           ps -eo pid,ppid,etimes,stat,comm,args | grep -E 'asi-runtime-bridge-runner|git .*asi-landing|git-upload-pack' | grep -v grep || true
           echo '=== END ==='
           REMOTE
