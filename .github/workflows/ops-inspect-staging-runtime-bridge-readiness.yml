@@ -15,7 +15,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: staging
     steps:
-      - name: Verify staging baseline resolver credentials safely
+      - name: Inspect staging Runtime readiness and SP-10 evidence safely
         shell: bash
         env:
           STAGING_SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
@@ -35,6 +35,8 @@ jobs:
           ssh -i ~/.ssh/staging_probe_key -p "$SSH_PORT" -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=20 "$STAGING_SSH_USER@$STAGING_SSH_HOST" 'bash -s' <<'REMOTE'
           set -uo pipefail
           APP_ENV=/var/www/asi-staging/shared/.env.staging.local
+          BRIDGE_TASK_ID='51078e7b-630d-49f1-b13c-742be9636c20'
+          RUNTIME_ROOT=/var/lib/asi-runtime
 
           echo '=== REQUIRED READINESS ENV ==='
           for key in GITHUB_TOKEN ASI_RUNTIME_BRIDGE_CLIENT_ID ASI_RUNTIME_BRIDGE_SUPABASE_URL ASI_RUNTIME_BRIDGE_SUPABASE_SERVICE_ROLE_KEY; do
@@ -42,33 +44,65 @@ jobs:
             if [ -n "$line" ] && [ -n "${line#*=}" ]; then echo "$key=present"; else echo "$key=missing"; fi
           done
 
-          echo '=== GITHUB BASELINE PROBE ==='
-          token="$(grep -m1 '^GITHUB_TOKEN=' "$APP_ENV" 2>/dev/null | cut -d= -f2- || true)"
-          if [ -z "$token" ]; then
-            echo 'github_baseline_http=skipped_missing_token'
-          else
-            code="$(curl -sS -o /tmp/gh-baseline.json -w '%{http_code}' --max-time 8 \
-              -H 'Accept: application/vnd.github+json' \
-              -H "Authorization: Bearer $token" \
-              -H 'User-Agent: asi-owner-development-console' \
-              -H 'X-GitHub-Api-Version: 2022-11-28' \
-              https://api.github.com/repos/ASI-integration/asi-landing/commits/main || true)"
-            echo "github_baseline_http=$code"
-            if [ "$code" = 200 ]; then
-              node - <<'NODE'
-          const fs=require('fs'); let x={}; try{x=JSON.parse(fs.readFileSync('/tmp/gh-baseline.json','utf8'))}catch{}
-          console.log('github_baseline_sha_valid='+String(/^[0-9a-f]{40}$/.test(String(x.sha||''))));
-          NODE
-            fi
-            rm -f /tmp/gh-baseline.json
-          fi
+          echo '=== PUBLIC GITHUB BASELINE PROBE ==='
+          code="$(curl -sS -o /tmp/gh-baseline.json -w '%{http_code}' --max-time 8 \
+            -H 'Accept: application/vnd.github+json' \
+            -H 'User-Agent: asi-owner-development-console' \
+            -H 'X-GitHub-Api-Version: 2022-11-28' \
+            https://api.github.com/repos/ASI-integration/asi-landing/commits/main || true)"
+          echo "github_public_baseline_http=$code"
+          rm -f /tmp/gh-baseline.json
+
+          echo '=== RUNTIME SERVICES ==='
+          for unit in asi-runtime-worker.service asi-runtime-dashboard.service asi-runtime-bridge-runner.service; do
+            printf '%s=' "$unit"
+            systemctl is-active "$unit" 2>/dev/null || true
+            systemctl show "$unit" -p MainPID -p NRestarts -p ActiveEnterTimestamp --no-pager 2>/dev/null | tr '\n' ' '; echo
+          done
+
+          echo '=== DASHBOARD HEALTH ==='
+          curl -fsS --max-time 5 http://127.0.0.1:4173/api/health 2>/dev/null | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{try{const x=JSON.parse(s); console.log(JSON.stringify({status:x.status,readOnly:x.readOnly,intakeEnabled:x.intakeEnabled,runtimeSha:x.runtimeSha,serverVersion:x.serverVersion}))}catch{console.log('health_unparseable')}})" || echo 'dashboard_health_failed=true'
+
+          echo '=== QUEUE ==='
+          curl -fsS --max-time 5 http://127.0.0.1:4173/api/queue 2>/dev/null | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{try{const x=JSON.parse(s); const pick=t=>t&&({taskId:t.taskId,title:t.title,status:t.status,position:t.position}); console.log(JSON.stringify({active:pick(x.active),waiting:Array.isArray(x.waiting)?x.waiting.slice(0,10).map(pick):[],canLaunch:x.canLaunch}))}catch{console.log('queue_unparseable')}})" || echo 'queue_probe_failed=true'
 
           echo '=== RUNNER LOCAL READINESS ==='
-          ART=/var/lib/asi-runtime/state/bridge-runner-readiness.json
+          ART="$RUNTIME_ROOT/state/bridge-runner-readiness.json"
           if [ -e "$ART" ]; then
             now="$(date +%s)"; mt="$(stat -c %Y "$ART" 2>/dev/null || echo 0)"; echo "artifact_age_seconds=$((now-mt))"
           else
             echo 'artifact_missing=true'
           fi
+
+          echo '=== BRIDGE TASK ID REFERENCES ==='
+          # Print paths only; never print file contents or environment values.
+          grep -RIl --exclude='*.log' --exclude='*.env' --exclude='runtime.env' "$BRIDGE_TASK_ID" "$RUNTIME_ROOT" 2>/dev/null | sort | head -n 80 || true
+
+          echo '=== RECENT RUNTIME TASK DIRECTORIES ==='
+          if [ -d "$RUNTIME_ROOT/state/tasks" ]; then
+            find "$RUNTIME_ROOT/state/tasks" -mindepth 1 -maxdepth 1 -type d -printf '%T@ %f\n' 2>/dev/null | sort -nr | head -n 20 | cut -d' ' -f2-
+          fi
+
+          echo '=== INBOX / PROCESSING / FAILED / ARCHIVE NAMES ==='
+          for d in inbox processing failed archive; do
+            echo "[$d]"
+            if [ -d "$RUNTIME_ROOT/$d" ]; then
+              find "$RUNTIME_ROOT/$d" -maxdepth 2 -type f -printf '%T@ %p\n' 2>/dev/null | sort -nr | head -n 20 | cut -d' ' -f2-
+            else
+              echo 'missing'
+            fi
+          done
+
+          echo '=== WORKER HOST HEARTBEATS ==='
+          find "$RUNTIME_ROOT/state" -maxdepth 4 -type f \( -name 'heartbeat.json' -o -name 'lease.json' \) -print 2>/dev/null | sort | head -n 30
+
+          echo '=== RECENT WORKER / BRIDGE JOURNAL (secret-redacted) ==='
+          for unit in asi-runtime-worker.service asi-runtime-bridge-runner.service; do
+            echo "[$unit]"
+            journalctl -u "$unit" --since '30 minutes ago' --no-pager -o cat 2>/dev/null \
+              | tail -n 160 \
+              | sed -E 's/(Bearer[[:space:]]+)[A-Za-z0-9._~+\/-]+/\1[REDACTED]/g; s/([A-Za-z0-9_]*(TOKEN|SECRET|KEY)[A-Za-z0-9_]*=)[^[:space:]]+/\1[REDACTED]/Ig' \
+              || echo 'journal_unavailable=true'
+          done
           echo '=== END ==='
           REMOTE
