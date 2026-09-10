@@ -19,7 +19,7 @@ jobs:
       STAGING_SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
       STAGING_SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
     steps:
-      - name: Inspect actual Hetzner app layout safely
+      - name: Locate live ASI process and config safely
         shell: bash
         run: |
           set -euo pipefail
@@ -34,46 +34,38 @@ jobs:
           set -euo pipefail
           echo "HOST=$(hostname)"
           echo "WHO=$(whoami)"
-          echo '[section] candidate directories'
-          for d in /srv/asi-landing /srv/asi-runtime /var/www/asi /home/project_ayfaar; do
-            if [[ -e "$d" ]]; then
-              printf '[dir] path=%s exists=yes kind=%s\n' "$d" "$(stat -c %F "$d" 2>/dev/null || echo unknown)"
-            else
-              printf '[dir] path=%s exists=no\n' "$d"
-            fi
-          done
 
-          echo '[section] pm2'
-          pm2 jlist 2>/dev/null | node - <<'NODE' || true
-          let data='';
-          process.stdin.on('data',c=>data+=c);
-          process.stdin.on('end',()=>{
-            try {
-              for (const p of JSON.parse(data)) {
-                const e=p.pm2_env||{};
-                console.log(`[pm2] name=${p.name||''} status=${e.status||''} cwd=${e.pm_cwd||''} exec=${e.pm_exec_path||''}`);
-              }
-            } catch { console.log('[pm2] parse_failed'); }
-          });
-          NODE
+          echo '[section] /srv/asi-landing metadata'
+          ls -la /srv/asi-landing 2>/dev/null | sed -n '1,80p' || true
+          git -C /srv/asi-landing rev-parse HEAD 2>/dev/null | sed 's/^/[git-sha] /' || true
+          git -C /srv/asi-landing status --short 2>/dev/null | sed 's/^/[git-status] /' || true
 
-          echo '[section] env file metadata + booking secret presence'
-          for f in \
-            /srv/asi-landing/.env \
-            /srv/asi-landing/.env.production \
-            /srv/asi-landing/.env.production.local \
-            /srv/asi-landing/.env.production.live \
-            /var/www/asi/shared/.env.production.live; do
-            if [[ -e "$f" ]]; then
-              printf '[env] path=%s exists=yes owner=%s mode=%s\n' "$f" "$(stat -c %U:%G "$f" 2>/dev/null || echo unknown)" "$(stat -c %a "$f" 2>/dev/null || echo unknown)"
-              if grep -q '^BOOKING_OPS_AUTO_SEND_RUNNER_SECRET=' "$f" 2>/dev/null; then
-                v="$(grep '^BOOKING_OPS_AUTO_SEND_RUNNER_SECRET=' "$f" | tail -n1 | cut -d= -f2-)"
-                if [[ -n "$v" ]]; then echo '[booking-secret] present=yes nonempty=yes'; else echo '[booking-secret] present=yes nonempty=no'; fi
-              else
-                echo '[booking-secret] present=no nonempty=no'
-              fi
+          echo '[section] listeners'
+          sudo ss -ltnp 2>/dev/null | grep -E ':(3000|3001|4173|8787|80|443)[[:space:]]' || true
+
+          echo '[section] node-like processes'
+          ps -eo user=,pid=,ppid=,args= | grep -E '(next-server|next start|node .*asi|pm2|npm .*start)' | grep -v grep | head -80 || true
+
+          echo '[section] asi systemd units'
+          systemctl list-units --type=service --all --no-pager 2>/dev/null | grep -Ei 'asi|landing|next|node' | head -80 || true
+          find /etc/systemd/system -maxdepth 1 -type f \( -iname '*asi*' -o -iname '*landing*' \) -printf '%f\n' 2>/dev/null | sed 's/^/[unit-file] /' || true
+
+          echo '[section] nginx proxy targets'
+          sudo grep -RHE 'server_name|proxy_pass|root ' /etc/nginx/sites-enabled /etc/nginx/conf.d 2>/dev/null | grep -E 'asi-global|3000|3001|4173|8787|server_name' | head -120 || true
+
+          echo '[section] process env booking-secret presence'
+          PIDS="$(sudo ss -ltnp 2>/dev/null | sed -nE 's/.*:3000 .*pid=([0-9]+).*/\1/p' | sort -u)"
+          if [[ -z "$PIDS" ]]; then
+            echo '[port3000] pid=none'
+          fi
+          for pid in $PIDS; do
+            cmd="$(sudo tr '\0' ' ' < /proc/$pid/cmdline 2>/dev/null || true)"
+            user="$(ps -o user= -p "$pid" 2>/dev/null | xargs || true)"
+            printf '[port3000] pid=%s user=%s cmd=%s\n' "$pid" "${user:-unknown}" "${cmd:-unknown}"
+            if sudo tr '\0' '\n' < /proc/$pid/environ 2>/dev/null | grep -q '^BOOKING_OPS_AUTO_SEND_RUNNER_SECRET='; then
+              echo '[process-booking-secret] present=yes'
             else
-              printf '[env] path=%s exists=no\n' "$f"
+              echo '[process-booking-secret] present=no'
             fi
           done
           REMOTE
