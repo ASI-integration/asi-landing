@@ -1,4 +1,4 @@
-name: Ops Locate SSH Port 443 Config
+name: Ops Remove SSH 443 Collision And Restore Nginx
 
 on:
   push:
@@ -9,12 +9,57 @@ permissions:
   contents: read
 
 jobs:
-  inspect:
+  repair:
     runs-on: ubuntu-latest
     environment: staging
-    timeout-minutes: 3
+    timeout-minutes: 8
     steps:
-      - name: Locate SSH configuration that claims 443
+      - name: Repair installed Ubuntu from Rescue and reboot
+        shell: bash
+        env:
+          STAGING_SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+          STAGING_SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
+          STAGING_SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          PORT="${STAGING_SSH_PORT:-22}"
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$STAGING_SSH_PRIVATE_KEY" > ~/.ssh/staging_key
+          chmod 600 ~/.ssh/staging_key
+          SSH_ROOT=(ssh -i ~/.ssh/staging_key -p "$PORT" -o IdentitiesOnly=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=10)
+
+          "${SSH_ROOT[@]}" "root@$STAGING_SSH_HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          mkdir -p /mnt/installed
+          mountpoint -q /mnt/installed || mount /dev/sda1 /mnt/installed
+
+          SSH_ALT=/mnt/installed/etc/ssh/sshd_config.d/01-alt-port.conf
+          test -f "$SSH_ALT"
+          cp -a "$SSH_ALT" "${SSH_ALT}.before-asi-443-fix"
+          sed -i -E '/^[[:space:]]*Port[[:space:]]+443([[:space:]]*(#.*)?)?$/d' "$SSH_ALT"
+
+          echo '=== SSH PORTS AFTER FIX ==='
+          grep -nE '^[[:space:]]*Port[[:space:]]+' "$SSH_ALT" || true
+          if grep -qE '^[[:space:]]*Port[[:space:]]+443([[:space:]]*(#.*)?)?$' "$SSH_ALT"; then
+            echo 'ERROR: Port 443 is still configured for SSH'
+            exit 1
+          fi
+          if ! grep -qE '^[[:space:]]*Port[[:space:]]+[0-9]+' "$SSH_ALT"; then
+            echo 'ERROR: no SSH port remains after repair'
+            exit 1
+          fi
+
+          rm -f /mnt/installed/etc/systemd/system/nginx.service.d/10-asi-debug-port443.conf
+          rm -f /mnt/installed/usr/local/sbin/asi-debug-port443-pre-nginx.sh
+          sync
+          echo 'SSH_443_REMOVED_AND_DEBUG_HOOK_CLEANED'
+
+          nohup sh -c 'sleep 2; reboot' >/dev/null 2>&1 &
+          echo 'REBOOT_TO_INSTALLED_UBUNTU_SCHEDULED'
+          REMOTE
+
+      - name: Wait for Ubuntu and verify nginx plus public staging HTTPS
         shell: bash
         env:
           STAGING_SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
@@ -28,13 +73,47 @@ jobs:
           chmod 700 ~/.ssh
           printf '%s\n' "$STAGING_SSH_PRIVATE_KEY" > ~/.ssh/staging_key
           chmod 600 ~/.ssh/staging_key
-          ssh -i ~/.ssh/staging_key -p "$PORT" -o IdentitiesOnly=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=10 "$STAGING_SSH_USER@$STAGING_SSH_HOST" 'bash -s' <<'REMOTE'
-          set +e
-          echo '=== SSHD PORT/LISTEN DIRECTIVES ==='
-          grep -RniE '^[[:space:]]*(Port|ListenAddress)[[:space:]]+' /etc/ssh/sshd_config /etc/ssh/sshd_config.d 2>/dev/null || true
-          echo '=== SSHD INCLUDE DIRECTIVES ==='
-          grep -niE '^[[:space:]]*Include[[:space:]]+' /etc/ssh/sshd_config 2>/dev/null || true
-          echo '=== GENERATOR OUTPUT ==='
-          cat /run/systemd/generator/ssh.socket.d/addresses.conf 2>/dev/null || true
-          echo 'SSH_CONFIG_LOCATE_COMPLETE'
+          SSH_USER=(ssh -i ~/.ssh/staging_key -p "$PORT" -o IdentitiesOnly=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=8)
+
+          sleep 15
+          ready=0
+          for attempt in $(seq 1 36); do
+            echo "Ubuntu probe $attempt/36"
+            if "${SSH_USER[@]}" "$STAGING_SSH_USER@$STAGING_SSH_HOST" 'test "$(hostname)" = asi-agent-runner'; then
+              ready=1
+              break
+            fi
+            sleep 5
+          done
+          [ "$ready" -eq 1 ] || { echo 'ERROR: installed Ubuntu did not become reachable'; exit 1; }
+
+          "${SSH_USER[@]}" "$STAGING_SSH_USER@$STAGING_SSH_HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          echo '=== NGINX ==='
+          systemctl is-active nginx
+          echo '=== PORTS ==='
+          ss -lnt | grep -E ':(80|443|3000|3001)\b' || true
+          echo '=== SSH CONFIG CHECK ==='
+          if grep -RqsE '^[[:space:]]*Port[[:space:]]+443([[:space:]]*(#.*)?)?$' /etc/ssh/sshd_config /etc/ssh/sshd_config.d; then
+            echo 'ERROR: SSH still claims port 443'
+            exit 1
+          fi
+          echo 'SERVER_SIDE_REPAIR_OK'
           REMOTE
+
+          echo '=== PUBLIC HTTPS ==='
+          for endpoint in /api/health /api/version; do
+            ok=0
+            for attempt in $(seq 1 12); do
+              if curl --fail --silent --show-error --max-time 15 "https://staging.asi-global.ru${endpoint}" >/tmp/asi-response.json; then
+                echo "${endpoint}: HTTP OK"
+                cat /tmp/asi-response.json
+                echo
+                ok=1
+                break
+              fi
+              sleep 5
+            done
+            [ "$ok" -eq 1 ] || { echo "ERROR: ${endpoint} did not become healthy"; exit 1; }
+          done
+          echo 'NGINX_HTTPS_RESTORED'
