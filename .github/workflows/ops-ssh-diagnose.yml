@@ -19,21 +19,21 @@ jobs:
       PORT: ${{ secrets.STAGING_SSH_PORT }}
       KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
     steps:
-      - name: Prepare key
+      - name: Checkout production deploy fix
+        uses: actions/checkout@v4
+        with:
+          ref: fix/prod-systemd-deploy-20260910
+          fetch-depth: 1
+      - name: Stage bootstrap script on Hetzner
         shell: bash
         run: |
+          set -euo pipefail
+          P="${PORT:-22}"
           mkdir -p ~/.ssh
           printf '%s\n' "$KEY" > ~/.ssh/k
           chmod 600 ~/.ssh/k
-      - name: Inspect production service safely
-        shell: bash
-        run: |
-          P="${PORT:-22}"
-          ssh -i ~/.ssh/k -p "$P" -o IdentitiesOnly=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o BatchMode=yes "$USER@$HOST" \
-            "echo HOST=\$(hostname); echo '[env names]'; systemctl show asi-landing.service -p Environment --value | tr ' ' '\n' | grep '=' | cut -d= -f1 | sort -u; echo '[restart]'; systemctl show asi-landing.service -p Restart -p RestartUSec -p MainPID --no-pager"
-      - name: Test owner SSH identity
-        continue-on-error: true
-        shell: bash
-        run: |
-          P="${PORT:-22}"
-          ssh -i ~/.ssh/k -p "$P" -o IdentitiesOnly=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o BatchMode=yes -o ConnectTimeout=8 "asi-runtime@$HOST" 'whoami; hostname'
+          SSH=( -i ~/.ssh/k -p "$P" -o IdentitiesOnly=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o BatchMode=yes )
+          SCP=( -i ~/.ssh/k -P "$P" -o IdentitiesOnly=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o BatchMode=yes )
+          ssh "${SSH[@]}" "$USER@$HOST" 'mkdir -p ~/asi-deploy-tmp && chmod 700 ~/asi-deploy-tmp'
+          scp "${SCP[@]}" scripts/bootstrap-production-systemd.sh "$USER@$HOST:~/asi-deploy-tmp/bootstrap-production-systemd.sh"
+          ssh "${SSH[@]}" "$USER@$HOST" 'chmod 700 ~/asi-deploy-tmp/bootstrap-production-systemd.sh; echo staged=$(realpath ~/asi-deploy-tmp/bootstrap-production-systemd.sh); sha256sum ~/asi-deploy-tmp/bootstrap-production-systemd.sh | cut -d" " -f1'
