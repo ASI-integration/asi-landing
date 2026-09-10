@@ -186,13 +186,13 @@ describe('Initial Sync Recovery v1 production rollout artifacts', () => {
     expect(JSON.stringify(envelope)).not.toMatch(/"method"\s*:\s*"POST"/i);
   });
 
-  it('keeps the existing deployment mechanism pinned in the runbook', () => {
+  it('keeps the production deployment mechanism pinned in the runbook', () => {
     const deployWorkflow = fs.readFileSync(path.join(repoRoot, '.github/workflows/deploy.yml'), 'utf8');
     const runbook = fs.readFileSync(path.join(rolloutDir, 'README.md'), 'utf8');
 
     expect(deployWorkflow).toContain('confirm_production_deploy');
     expect(deployWorkflow).toContain('DEPLOY_PRODUCTION');
-    expect(deployWorkflow).toContain('scripts/deploy-artifact.sh');
+    expect(deployWorkflow).toContain('scripts/deploy-production-systemd-artifact.sh');
     expect(runbook).toContain('-f sha=6b9f022e423e1032f66286b9348160c4dd59f45c');
     expect(runbook).toContain('https://asi-global.ru/api/dashboard/channel-manager/live-core-acceptance');
     expect(runbook).toContain('Do not send POST');
