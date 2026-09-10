@@ -50,6 +50,7 @@ jobs:
           echo '=== SAFE HOST READINESS ==='
           cat > /tmp/asi-runtime-readiness-probe.mjs <<'NODE'
           import fs from 'node:fs';
+          import { execFileSync } from 'node:child_process';
           const envPath = '/etc/asi-runtime/runtime.env';
           const runtimeRoot = '/opt/asi-runtime/current';
           const modulePath = 'file:///opt/asi-runtime/current/scripts/asi-runtime-runner-config.mjs';
@@ -69,12 +70,31 @@ jobs:
           process.chdir(runtimeRoot);
           const { inspectRuntimeRunnerHostReadiness } = await import(modulePath);
           const r = await inspectRuntimeRunnerHostReadiness();
+          let configuredCheckouts = [];
+          try {
+            const parsed = JSON.parse(process.env.ASI_RUNTIME_BRIDGE_CHECKOUTS_JSON || '[]');
+            configuredCheckouts = Array.isArray(parsed) ? parsed.map((item) => {
+              const p = typeof item?.path === 'string' ? item.path : '';
+              let git = false;
+              let head = null;
+              let remote = null;
+              if (p && fs.existsSync(p)) {
+                try { git = execFileSync('git', ['-C', p, 'rev-parse', '--is-inside-work-tree'], { encoding: 'utf8' }).trim() === 'true'; } catch {}
+                if (git) {
+                  try { head = execFileSync('git', ['-C', p, 'rev-parse', '--short=12', 'HEAD'], { encoding: 'utf8' }).trim(); } catch {}
+                  try { remote = execFileSync('git', ['-C', p, 'remote', 'get-url', 'origin'], { encoding: 'utf8' }).trim(); } catch {}
+                }
+              }
+              return { id: item?.id ?? null, path: p || null, exists: !!p && fs.existsSync(p), git, head, remote };
+            }) : [];
+          } catch {}
           console.log(JSON.stringify({
             canExecute: r.canExecute,
             baselineSha: r.baselineSha,
             capabilities: r.capabilities,
             checkoutCount: Array.isArray(r.runtimeCheckouts) ? r.runtimeCheckouts.length : 0,
             hasExecutorConfig: r.executorConfig !== null,
+            configuredCheckouts,
           }));
           NODE
 
