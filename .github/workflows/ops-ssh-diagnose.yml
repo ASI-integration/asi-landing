@@ -1,5 +1,4 @@
-name: Ops Verify Restored Nginx And Staging HTTPS
-# Connectivity recheck after local SSH timeout on 2026-09-10.
+name: Ops Diagnose Local SSH Timeout
 
 on:
   push:
@@ -10,18 +9,18 @@ permissions:
   contents: read
 
 jobs:
-  verify:
+  diagnose:
     runs-on: ubuntu-latest
     environment: staging
     timeout-minutes: 5
+    env:
+      STAGING_SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+      STAGING_SSH_USER: ${{ secrets.STAGING_SSH_USER }}
+      STAGING_SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
+      STAGING_SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
     steps:
-      - name: Verify server-side services and active SSH config
+      - name: Diagnose SSH from GitHub runner
         shell: bash
-        env:
-          STAGING_SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
-          STAGING_SSH_USER: ${{ secrets.STAGING_SSH_USER }}
-          STAGING_SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
-          STAGING_SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
         run: |
           set -euo pipefail
           PORT="${STAGING_SSH_PORT:-22}"
@@ -29,59 +28,27 @@ jobs:
           chmod 700 ~/.ssh
           printf '%s\n' "$STAGING_SSH_PRIVATE_KEY" > ~/.ssh/staging_key
           chmod 600 ~/.ssh/staging_key
+          SSH=(ssh -i ~/.ssh/staging_key -p "$PORT" -o IdentitiesOnly=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=10 -o BatchMode=yes)
 
-          ssh -i ~/.ssh/staging_key -p "$PORT" -o IdentitiesOnly=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=10 "$STAGING_SSH_USER@$STAGING_SSH_HOST" 'bash -s' <<'REMOTE'
-          set -euo pipefail
-          echo '=== NGINX ==='
-          test "$(systemctl is-active nginx)" = active
-          systemctl is-active nginx
-
-          echo '=== PORTS ==='
-          ss -lnt | grep -E ':(80|443|3000|3001)\b' || true
-
-          echo '=== ACTIVE SSH CONFIG FILES ==='
-          grep -nE '^[[:space:]]*Port[[:space:]]+' /etc/ssh/sshd_config 2>/dev/null || true
-          find /etc/ssh/sshd_config.d -maxdepth 1 -type f -name '*.conf' -print0 2>/dev/null \
-            | xargs -0 -r grep -nHE '^[[:space:]]*Port[[:space:]]+' || true
-
-          if grep -qE '^[[:space:]]*Port[[:space:]]+443([[:space:]]*(#.*)?)?$' /etc/ssh/sshd_config 2>/dev/null; then
-            echo 'ERROR: main sshd_config still claims 443'
-            exit 1
-          fi
-          while IFS= read -r -d '' file; do
-            if grep -qE '^[[:space:]]*Port[[:space:]]+443([[:space:]]*(#.*)?)?$' "$file"; then
-              echo "ERROR: active SSH drop-in still claims 443: $file"
-              exit 1
-            fi
-          done < <(find /etc/ssh/sshd_config.d -maxdepth 1 -type f -name '*.conf' -print0 2>/dev/null)
-
-          echo 'SERVER_SIDE_OK'
+          echo '=== NORMAL USER ==='
+          "${SSH[@]}" "$STAGING_SSH_USER@$STAGING_SSH_HOST" 'bash -s' <<'REMOTE'
+          set +e
+          echo USER_SSH_OK
+          id
+          echo '--- ssh units ---'
+          systemctl is-active ssh.service ssh.socket 2>&1 || true
+          systemctl show ssh.service -p ActiveState -p SubState -p NRestarts --no-pager 2>&1 || true
+          echo '--- listeners ---'
+          ss -lnt | grep -E ':(22|443)\b' || true
+          echo '--- fail2ban ---'
+          systemctl is-active fail2ban 2>&1 || true
+          echo '--- sudo ---'
+          sudo -n -l 2>&1 || true
           REMOTE
 
-      - name: Verify public staging HTTPS
-        shell: bash
-        run: |
-          set -euo pipefail
-          for endpoint in /api/health /api/version; do
-            ok=0
-            for attempt in $(seq 1 12); do
-              code=$(curl --silent --show-error --output /tmp/asi-response.json --write-out '%{http_code}' --max-time 15 "https://staging.asi-global.ru${endpoint}" || true)
-              echo "${endpoint} attempt ${attempt}: HTTP ${code}"
-              if [ "$code" = 200 ]; then
-                cat /tmp/asi-response.json
-                echo
-                ok=1
-                break
-              fi
-              sleep 5
-            done
-            [ "$ok" -eq 1 ] || { echo "ERROR: ${endpoint} did not return HTTP 200"; exit 1; }
-          done
-
-          pilot_code=$(curl --silent --show-error --output /tmp/asi-pilot.html --write-out '%{http_code}' --max-time 15 https://staging.asi-global.ru/pilot || true)
-          echo "/pilot: HTTP ${pilot_code}"
-          case "$pilot_code" in
-            200|301|302|303|307|308) ;;
-            *) echo 'ERROR: /pilot is not publicly reachable'; exit 1 ;;
-          esac
-          echo 'STAGING_HTTPS_OK'
+          echo '=== ROOT KEY TEST ==='
+          set +e
+          "${SSH[@]}" "root@$STAGING_SSH_HOST" 'echo ROOT_SSH_OK; id -u; systemctl is-active ssh.service ssh.socket 2>&1 || true'
+          ROOT_RC=$?
+          set -e
+          echo "ROOT_SSH_RC=$ROOT_RC"
