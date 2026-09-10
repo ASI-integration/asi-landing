@@ -1,4 +1,4 @@
-name: Ops Inspect Tailscale 443
+name: Ops Inspect Nginx Failure
 
 on:
   push:
@@ -14,7 +14,7 @@ jobs:
     environment: staging
     timeout-minutes: 3
     steps:
-      - name: Inspect tailscale serve state without failing workflow
+      - name: Inspect nginx failure without failing workflow
         shell: bash
         env:
           STAGING_SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
@@ -30,14 +30,10 @@ jobs:
           chmod 600 ~/.ssh/staging_key
           ssh -i ~/.ssh/staging_key -p "$PORT" -o IdentitiesOnly=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=10 "$STAGING_SSH_USER@$STAGING_SSH_HOST" 'bash -s' <<'REMOTE'
           set +e
-          echo '=== TAILSCALE STATUS ==='
-          tailscale status 2>&1 | head -120 || true
-          echo '=== TAILSCALE SERVE ==='
-          tailscale serve status 2>&1 || true
-          echo '=== TAILSCALE FUNNEL ==='
-          tailscale funnel status 2>&1 || true
-          echo '=== NGINX ==='
-          systemctl is-active nginx 2>&1 || true
+          echo '=== NGINX STATUS ==='
+          systemctl status nginx --no-pager -l 2>&1 | head -160 || true
+          echo '=== RUNNING SOCKET UNITS ==='
+          systemctl --no-pager --plain --type=socket --state=running 2>&1 | head -120 || true
           echo 'INSPECT_COMPLETE'
           REMOTE
           exit 0
