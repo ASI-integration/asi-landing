@@ -1,4 +1,4 @@
-name: Ops Rescue Reboot And Verify Staging Deploy
+name: Ops Public Staging Probe
 
 on:
   push:
@@ -9,56 +9,31 @@ permissions:
   contents: read
 
 jobs:
-  verify:
+  probe:
     runs-on: ubuntu-latest
-    environment: staging
-    timeout-minutes: 6
+    timeout-minutes: 3
     steps:
-      - name: Reboot rescue into Ubuntu and verify deploy access
+      - name: Probe staging public endpoints without failing workflow
         shell: bash
-        env:
-          STAGING_SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
-          STAGING_SSH_USER: ${{ secrets.STAGING_SSH_USER }}
-          STAGING_SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
-          STAGING_SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
         run: |
-          set -euo pipefail
-          PORT="${STAGING_SSH_PORT:-22}"
-          mkdir -p ~/.ssh
-          chmod 700 ~/.ssh
-          printf '%s\n' "$STAGING_SSH_PRIVATE_KEY" > ~/.ssh/staging_key
-          chmod 600 ~/.ssh/staging_key
-
-          SSH_BASE=(ssh -i ~/.ssh/staging_key -p "$PORT" -o IdentitiesOnly=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=8)
-
-          echo 'Scheduling Rescue reboot back to local disk...'
-          "${SSH_BASE[@]}" "root@$STAGING_SSH_HOST" "nohup sh -c 'sleep 2; reboot' >/dev/null 2>&1 & echo REBOOT_SCHEDULED"
-
-          sleep 15
-
-          ok=0
-          for attempt in $(seq 1 24); do
-            echo "Ubuntu SSH probe $attempt/24"
-            if "${SSH_BASE[@]}" "$STAGING_SSH_USER@$STAGING_SSH_HOST" 'bash -s' <<'REMOTE'
-          set -euo pipefail
-          [ "$(hostname)" = "asi-agent-runner" ]
-          id | grep -q 'asi-runtime'
-          test -w /var/www/asi-staging
-          test -w /var/www/asi-staging/releases
-          test -w /var/www/asi-staging/shared
-          sudo -n /usr/bin/systemctl restart asi-landing-staging.service
-          /usr/bin/systemctl is-active --quiet asi-landing-staging.service
-          echo "UBUNTU_SSH_OK hostname=$(hostname) user=$(id -un)"
-          echo "STAGING_GROUP_OK"
-          echo "STAGING_PATH_WRITE_OK"
-          echo "STAGING_SYSTEMD_RESTART_OK"
-          REMOTE
-            then
-              ok=1
-              break
-            fi
-            sleep 5
-          done
-
-          [ "$ok" -eq 1 ] || { echo 'ERROR: Ubuntu staging verification did not become ready'; exit 1; }
-          echo 'STAGING_DEPLOY_ACCESS_READY'
+          set +e
+          echo '=== DNS ==='
+          getent ahosts staging.asi-global.ru | head -20 || true
+          echo '=== HEALTH ==='
+          curl -sSvk --connect-timeout 10 --max-time 20 https://staging.asi-global.ru/api/health -o /tmp/health 2>/tmp/health.err
+          HEALTH_RC=$?
+          echo "health_rc=$HEALTH_RC"
+          tail -80 /tmp/health.err || true
+          echo 'health_body:'
+          cat /tmp/health 2>/dev/null || true
+          echo
+          echo '=== VERSION ==='
+          curl -sSvk --connect-timeout 10 --max-time 20 https://staging.asi-global.ru/api/version -o /tmp/version 2>/tmp/version.err
+          VERSION_RC=$?
+          echo "version_rc=$VERSION_RC"
+          tail -80 /tmp/version.err || true
+          echo 'version_body:'
+          cat /tmp/version 2>/dev/null || true
+          echo
+          echo 'PROBE_COMPLETE'
+          exit 0
