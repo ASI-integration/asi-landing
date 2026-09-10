@@ -19,7 +19,7 @@ jobs:
       STAGING_SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
       STAGING_SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
     steps:
-      - name: Inspect deploy permissions and env names safely
+      - name: Inspect deploy permissions safely
         shell: bash
         run: |
           set -euo pipefail
@@ -29,37 +29,28 @@ jobs:
           printf '%s\n' "$STAGING_SSH_PRIVATE_KEY" > ~/.ssh/staging_key
           chmod 600 ~/.ssh/staging_key
           SSH=(ssh -i ~/.ssh/staging_key -p "$PORT" -o IdentitiesOnly=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=10 -o BatchMode=yes)
-
           "${SSH[@]}" "$STAGING_SSH_USER@$STAGING_SSH_HOST" 'bash -s' <<'REMOTE'
           set +e
           echo "HOST=$(hostname)"
           echo '[section] identity'
           id
-          echo '[section] sudo-list'
-          sudo -n -l 2>&1 | sed -E 's/(PASSWD|NOPASSWD):.*/\1: [commands listed by sudo policy]/' | head -80
-
-          echo '[section] unit environment names only'
-          python3 - <<'PY'
-import shlex, subprocess
-raw = subprocess.run(['systemctl','show','asi-landing.service','-p','Environment','--value'], capture_output=True, text=True).stdout.strip()
-try:
-    parts=shlex.split(raw)
-except Exception:
-    parts=[]
-names=sorted({p.split('=',1)[0] for p in parts if '=' in p})
-for n in names:
-    print('[env-name]', n)
-print('[booking-secret-in-unit]', 'yes' if 'BOOKING_OPS_AUTO_SEND_RUNNER_SECRET' in names else 'no')
-PY
-
-          echo '[section] writable checks'
-          for p in /srv/asi-landing /etc/systemd/system /etc/systemd/system/asi-landing.service.d; do
-            if [[ -e "$p" ]]; then
-              [[ -w "$p" ]] && w=yes || w=no
-              printf '[writable] path=%s direct=%s owner=%s mode=%s\n' "$p" "$w" "$(stat -c %U:%G "$p" 2>/dev/null)" "$(stat -c %a "$p" 2>/dev/null)"
+          echo '[section] sudo-policy'
+          sudo -n -l 2>&1 | head -120
+          echo '[section] writable'
+          for p in /srv/asi-landing /srv /etc/systemd/system /etc/systemd/system/asi-landing.service; do
+            if [ -e "$p" ]; then
+              [ -w "$p" ] && w=yes || w=no
+              printf '[path] %s writable=%s owner=%s mode=%s\n' "$p" "$w" "$(stat -c %U:%G "$p" 2>/dev/null)" "$(stat -c %a "$p" 2>/dev/null)"
             else
-              printf '[writable] path=%s exists=no\n' "$p"
+              printf '[path] %s exists=no\n' "$p"
             fi
           done
+          echo '[section] git'
+          git -C /srv/asi-landing remote -v 2>/dev/null | sed -E 's#(https://)[^/@]+@#\1***@#g' | head -10
+          git -C /srv/asi-landing branch --show-current 2>/dev/null
+          git -C /srv/asi-landing rev-parse HEAD 2>/dev/null
+          echo '[section] service-restart-test-dry'
+          sudo -n systemctl status asi-landing.service --no-pager >/dev/null 2>&1; echo "sudo_status_rc=$?"
+          sudo -n systemctl restart asi-landing.service --dry-run >/dev/null 2>&1; echo "sudo_restart_dry_rc=$?"
           exit 0
           REMOTE
