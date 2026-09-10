@@ -15,7 +15,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: staging
     steps:
-      - name: Clear exact stale staging Runtime slot and failed SP-10 queue entry
+      - name: Sync and verify staging Runtime landing baseline
         shell: bash
         env:
           STAGING_SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
@@ -34,44 +34,31 @@ jobs:
           chmod 600 ~/.ssh/staging_probe_key
           ssh -i ~/.ssh/staging_probe_key -p "$SSH_PORT" -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=20 "$STAGING_SSH_USER@$STAGING_SSH_HOST" 'bash -s' <<'REMOTE'
           set -euo pipefail
-          OLD_TASK='dashboard-20260903061956-fef178'
-          SP10_TASK='dashboard-20260910103251-d70ff8'
-          BASE='http://127.0.0.1:4173'
+          REPO=/srv/asi-landing
+          API=https://api.github.com/repos/ASI-integration/asi-landing/commits/main
 
           echo '=== PRECHECK ==='
-          curl -fsS --max-time 5 "$BASE/api/queue" > /tmp/asi-queue-before.json
-          node - /tmp/asi-queue-before.json "$OLD_TASK" "$SP10_TASK" <<'NODE'
-          const fs=require('fs'); const [p,oldId,sp10Id]=process.argv.slice(2); const q=JSON.parse(fs.readFileSync(p,'utf8'));
-          const waiting=Array.isArray(q.waiting)?q.waiting:[];
-          const ok=q.active?.taskId===oldId && q.active?.status==='ACTION_REQUIRED' && waiting.some(x=>x.taskId===sp10Id && x.status==='QUEUED');
-          console.log(JSON.stringify({active:q.active&&{taskId:q.active.taskId,status:q.active.status,holdReason:q.active.holdReason},waiting:waiting.map(x=>({taskId:x.taskId,status:x.status,position:x.position})),canLaunch:q.canLaunch,guard:ok}));
-          if(!ok) process.exit(17);
-          NODE
+          test -d "$REPO/.git"
+          before="$(git -C "$REPO" rev-parse HEAD)"
+          echo "checkout_head_before=$before"
 
-          echo '=== REMOVE FAILED SP10 RUNTIME QUEUE ENTRY FIRST ==='
-          code="$(curl -sS -o /tmp/remove.json -w '%{http_code}' --max-time 10 -X DELETE "$BASE/api/queue/$SP10_TASK/remove")"
-          echo "remove_http=$code"
-          test "$code" = 200
-          node - /tmp/remove.json <<'NODE'
-          const fs=require('fs'); const x=JSON.parse(fs.readFileSync(process.argv[2],'utf8')); console.log(JSON.stringify({ok:x.ok,removed:x.removed,taskId:x.taskId})); if(!x.ok||!x.removed)process.exit(18);
-          NODE
+          echo '=== FETCH CURRENT MAIN ==='
+          if sudo -n -u asi-runtime git -C "$REPO" fetch --prune origin main >/dev/null 2>&1; then
+            GIT='sudo -n -u asi-runtime git'
+            echo 'fetch_mode=asi-runtime'
+          else
+            git -C "$REPO" fetch --prune origin main >/dev/null
+            GIT='git'
+            echo 'fetch_mode=ssh-user'
+          fi
 
-          echo '=== CANCEL OLD ORPHAN AND RELEASE SLOT ==='
-          code="$(curl -sS -o /tmp/finish.json -w '%{http_code}' --max-time 10 -X POST -H 'Content-Type: application/json' -d '{}' "$BASE/api/queue/$OLD_TASK/finish")"
-          echo "finish_http=$code"
-          test "$code" = 200
-          node - /tmp/finish.json <<'NODE'
-          const fs=require('fs'); const x=JSON.parse(fs.readFileSync(process.argv[2],'utf8')); console.log(JSON.stringify({ok:x.ok,finished:x.finished,taskId:x.taskId,nextTaskId:x.nextTaskId})); if(!x.ok||!x.finished)process.exit(19);
-          NODE
-
-          echo '=== VERIFY FREE LANE ==='
-          curl -fsS --max-time 5 "$BASE/api/queue" > /tmp/asi-queue-after.json
-          node - /tmp/asi-queue-after.json "$OLD_TASK" "$SP10_TASK" <<'NODE'
-          const fs=require('fs'); const [p,oldId,sp10Id]=process.argv.slice(2); const q=JSON.parse(fs.readFileSync(p,'utf8')); const waiting=Array.isArray(q.waiting)?q.waiting:[];
-          const ok=!q.active && q.canLaunch===true && !waiting.some(x=>x.taskId===sp10Id||x.taskId===oldId);
-          console.log(JSON.stringify({active:q.active,waiting:waiting.map(x=>({taskId:x.taskId,status:x.status,position:x.position})),canLaunch:q.canLaunch,verified:ok}));
-          if(!ok)process.exit(20);
-          NODE
-          echo 'STAGING_RUNTIME_LANE_CLEAN=true'
-          rm -f /tmp/asi-queue-before.json /tmp/asi-queue-after.json /tmp/remove.json /tmp/finish.json
+          remote="$($GIT -C "$REPO" rev-parse refs/remotes/origin/main)"
+          public="$(curl -fsS --max-time 10 -H 'Accept: application/vnd.github+json' -H 'User-Agent: asi-runtime-baseline-sync' "$API" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>console.log(JSON.parse(s).sha))")"
+          echo "origin_main=$remote"
+          echo "github_main=$public"
+          test "$remote" = "$public"
+          $GIT -C "$REPO" cat-file -e "${public}^{commit}"
+          after="$($GIT -C "$REPO" rev-parse HEAD)"
+          echo "checkout_head_after=$after"
+          echo 'RUNTIME_BASELINE_SYNCED=true'
           REMOTE
