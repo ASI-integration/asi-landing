@@ -1,5 +1,6 @@
 import { getIronSession } from 'iron-session';
 import { cookies } from 'next/headers';
+import { resolveSessionCookieDomain } from '@/lib/auth/app-url';
 
 export type SessionData = {
   userId: string;
@@ -10,26 +11,35 @@ export type SessionData = {
   googleOauthRedirect?: string;
 };
 
-const IS_PROD = process.env.NODE_ENV === 'production';
-
-const cookieOptions = {
-  // OAuth redirects from accounts.google.com require a cross-site cookie in modern browsers.
-  // In production we must use SameSite=None and Secure=true, and set domain to cover subdomains.
-  secure: IS_PROD,
-  httpOnly: true,
-  maxAge: 60 * 60 * 24 * 7, // 7 days
-  sameSite: (IS_PROD ? 'none' : 'lax') as 'none' | 'lax',
-  path: '/',
-  ...(IS_PROD ? { domain: '.asi-global.ru' } : {}),
-};
-
-/** Trimmed `SESSION_SECRET` for iron-session (must be ≥32 characters or getIronSession throws). */
-export function getSessionSecret(): string {
-  return (process.env.SESSION_SECRET || '').trim();
+export function getSessionCookieOptions(
+  env: Readonly<Record<string, string | undefined>> = process.env,
+  nodeEnv: string | undefined = process.env.NODE_ENV,
+) {
+  const isProd = nodeEnv === 'production';
+  const domain = resolveSessionCookieDomain(env, nodeEnv);
+  return {
+    // OAuth redirects from accounts.google.com require a cross-site cookie in modern browsers.
+    // Production www/apex keeps Domain=.asi-global.ru; staging stays host-only.
+    secure: isProd,
+    httpOnly: true,
+    maxAge: 60 * 60 * 24 * 7, // 7 days
+    sameSite: (isProd ? 'none' : 'lax') as 'none' | 'lax',
+    path: '/',
+    ...(domain ? { domain } : {}),
+  };
 }
 
-export function isSessionSecretConfigured(): boolean {
-  return getSessionSecret().length >= 32;
+/** Trimmed `SESSION_SECRET` for iron-session (must be ≥32 characters or getIronSession throws). */
+export function getSessionSecret(
+  env: Readonly<Record<string, string | undefined>> = process.env,
+): string {
+  return (env.SESSION_SECRET || '').trim();
+}
+
+export function isSessionSecretConfigured(
+  env: Readonly<Record<string, string | undefined>> = process.env,
+): boolean {
+  return getSessionSecret(env).length >= 32;
 }
 
 export async function getSession() {
@@ -37,6 +47,6 @@ export async function getSession() {
   return getIronSession<SessionData>(cookieStore, {
     password: getSessionSecret(),
     cookieName: 'asi_session',
-    cookieOptions,
+    cookieOptions: getSessionCookieOptions(),
   });
 }
