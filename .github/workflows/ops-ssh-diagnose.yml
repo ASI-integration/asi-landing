@@ -1,4 +1,4 @@
-name: Ops Inspect Effective SSHD Config
+name: Ops Compare Hetzner Connectivity
 
 on:
   push:
@@ -11,31 +11,30 @@ permissions:
 jobs:
   diagnose:
     runs-on: ubuntu-latest
-    environment: staging
-    timeout-minutes: 5
-    env:
-      STAGING_SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
-      STAGING_SSH_USER: ${{ secrets.STAGING_SSH_USER }}
-      STAGING_SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
-      STAGING_SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+    timeout-minutes: 3
     steps:
-      - name: Inspect effective sshd configuration
+      - name: Probe candidate Hetzner endpoints
         shell: bash
         run: |
           set -euo pipefail
-          PORT="${STAGING_SSH_PORT:-22}"
-          mkdir -p ~/.ssh
-          chmod 700 ~/.ssh
-          printf '%s\n' "$STAGING_SSH_PRIVATE_KEY" > ~/.ssh/staging_key
-          chmod 600 ~/.ssh/staging_key
-          SSH=(ssh -i ~/.ssh/staging_key -p "$PORT" -o IdentitiesOnly=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=10 -o BatchMode=yes)
-
-          "${SSH[@]}" "$STAGING_SSH_USER@$STAGING_SSH_HOST" 'bash -s' <<'REMOTE'
-          set +e
-          echo '=== SSHD -T RELEVANT ==='
-          /usr/sbin/sshd -T 2>&1 | grep -Ei '^(port|usedns|maxstartups|persource|maxauthtries|logingracetime|passwordauthentication|pubkeyauthentication|permitrootlogin|authenticationmethods|allowusers|denyusers)' || true
-          echo "SSHD_T_RC=${PIPESTATUS[0]}"
-          echo '=== OTHER SECURITY SERVICES ==='
-          systemctl list-units --type=service --state=running --no-pager 2>/dev/null | grep -Ei '(sshguard|crowdsec|fail2ban|ufw|firewall)' || true
-          echo 'SSHD_EFFECTIVE_DIAG_DONE'
-          REMOTE
+          python3 - <<'PY'
+          import socket, time
+          hosts = ['2.29.31.29', '2.29.18.190']
+          ports = [22, 443]
+          for host in hosts:
+              for port in ports:
+                  t0=time.time()
+                  try:
+                      s=socket.create_connection((host,port),timeout=8)
+                      s.settimeout(3)
+                      data=b''
+                      try:
+                          data=s.recv(100)
+                      except Exception:
+                          pass
+                      s.close()
+                      text=data.decode('utf-8','replace').strip()
+                      print(f'{host}:{port} TCP_OK {time.time()-t0:.2f}s banner={text[:80]!r}')
+                  except Exception as e:
+                      print(f'{host}:{port} FAIL {type(e).__name__}: {e}')
+          PY
