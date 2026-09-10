@@ -43,6 +43,25 @@ mkdir -p "$RELEASES_DIR" "$SHARED_DIR"
 rm -f "$ENV_TMP"
 install -m 640 "$ENV_SOURCE" "$ENV_TMP"
 chgrp "$SERVICE_GROUP" "$ENV_TMP" || { rm -f "$ENV_TMP"; die "Cannot assign staging env to $SERVICE_GROUP group"; }
+
+# Runtime Bridge bearer tokens are staging-host secrets. They are provisioned
+# once on the server and intentionally kept out of GitHub Actions. Preserve
+# them across application deploys when the generated staging.env does not
+# contain them.
+if [[ -f "$ENV_FILE" ]]; then
+  for key in \
+    ASI_RUNTIME_BRIDGE_CHAT_TOKEN \
+    ASI_RUNTIME_BRIDGE_OWNER_TOKEN \
+    ASI_RUNTIME_BRIDGE_RUNNER_TOKEN; do
+    if ! grep -q "^${key}=" "$ENV_SOURCE"; then
+      preserved="$(grep -m1 "^${key}=" "$ENV_FILE" || true)"
+      if [[ -n "$preserved" ]]; then
+        printf '%s\n' "$preserved" >> "$ENV_TMP"
+      fi
+    fi
+  done
+fi
+
 printf 'ASI_APP_ROOT=%s\nASI_RELEASE_PATH=%s\nASI_RELEASE_DEPLOYED_AT_ISO=%s\n' \
   "$CURRENT_LINK" "$RELEASE_DIR" "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> "$ENV_TMP"
 mv -f "$ENV_TMP" "$ENV_FILE"
