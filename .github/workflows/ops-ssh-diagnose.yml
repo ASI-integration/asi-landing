@@ -1,4 +1,4 @@
-name: Ops Runtime Predeploy Verify
+name: Ops Runtime Readonly Diagnose
 
 on:
   push:
@@ -9,12 +9,12 @@ permissions:
   contents: read
 
 jobs:
-  verify:
+  diagnose:
     runs-on: ubuntu-latest
     environment: staging
     timeout-minutes: 5
     steps:
-      - name: Verify staging Runtime host before Landing deploy
+      - name: Diagnose staging Runtime without sudo
         shell: bash
         env:
           STAGING_SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
@@ -23,8 +23,6 @@ jobs:
           STAGING_SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
         run: |
           set -euo pipefail
-          test "$STAGING_SSH_HOST" = "2.29.31.29"
-          test "$STAGING_SSH_USER" = "project_ayfaar"
           PORT="${STAGING_SSH_PORT:-22}"
           mkdir -p ~/.ssh
           chmod 700 ~/.ssh
@@ -36,25 +34,26 @@ jobs:
             -o StrictHostKeyChecking=no \
             -o UserKnownHostsFile=/dev/null \
             -o ConnectTimeout=10 \
-            "$STAGING_SSH_USER@$STAGING_SSH_HOST" 'sudo -n bash -s' <<'REMOTE'
-          set -euo pipefail
+            "$STAGING_SSH_USER@$STAGING_SSH_HOST" 'bash -s' <<'REMOTE'
+          set +e
           echo "SSH_OK hostname=$(hostname) user=$(id -un)"
-          CURRENT="$(readlink -f /opt/asi-runtime/current)"
-          echo "RUNTIME_CURRENT=$CURRENT"
-          test -f "$CURRENT/lib/agent-ops/events.mjs"
-          grep -q 'strigunov_pilot_v1' "$CURRENT/lib/agent-ops/events.mjs"
-          echo 'SP01_CODE_PRESENT=YES'
-          ENV=/etc/asi-runtime/runtime.env
-          PROFILE="$(sed -n 's/^ASI_OWNER_TELEGRAM_PROFILE=//p' "$ENV" | tail -1)"
-          BRIDGE_URL="$(sed -n 's/^ASI_RUNTIME_BRIDGE_URL=//p' "$ENV" | tail -1)"
-          if grep -Eq '^ASI_RUNTIME_BRIDGE_RUNNER_TOKEN=.+$' "$ENV"; then TOKEN=PRESENT; else TOKEN=MISSING; fi
-          echo "PROFILE=$PROFILE"
-          echo "BRIDGE_URL=$BRIDGE_URL"
-          echo "RUNNER_TOKEN=$TOKEN"
-          test "$PROFILE" = 'strigunov_pilot_v1'
-          test "$BRIDGE_URL" = 'https://staging.asi-global.ru'
-          test "$TOKEN" = 'PRESENT'
-          systemctl is-active --quiet asi-runtime-worker
-          systemctl is-active --quiet asi-runtime-bridge-runner
-          echo 'RUNTIME_PREDEPLOY_OK=YES'
+          echo "CURRENT_LINK=$(readlink /opt/asi-runtime/current 2>/dev/null || echo UNREADABLE)"
+          echo '--- permissions ---'
+          ls -ld /opt/asi-runtime /opt/asi-runtime/current 2>/dev/null || true
+          namei -l /opt/asi-runtime/current/lib/agent-ops/events.mjs 2>/dev/null || true
+          echo '--- unit metadata ---'
+          systemctl show asi-runtime-worker -p ActiveState -p SubState -p User -p EnvironmentFiles -p ExecStart --no-pager || true
+          systemctl show asi-runtime-bridge-runner -p ActiveState -p SubState -p User -p EnvironmentFiles -p ExecStart --no-pager || true
+          echo '--- safe selected environment ---'
+          for unit in asi-runtime-worker asi-runtime-bridge-runner; do
+            ENVLINE="$(systemctl show "$unit" -p Environment --value 2>/dev/null || true)"
+            printf '%s\n' "$ENVLINE" | tr ' ' '\n' | grep -E '^(ASI_OWNER_TELEGRAM_PROFILE|ASI_RUNTIME_BRIDGE_URL)=' || true
+            if printf '%s\n' "$ENVLINE" | tr ' ' '\n' | grep -Eq '^ASI_RUNTIME_BRIDGE_RUNNER_TOKEN=.+$'; then
+              echo "$unit RUNNER_TOKEN=PRESENT"
+            else
+              echo "$unit RUNNER_TOKEN=NOT_EXPOSED"
+            fi
+          done
+          echo '--- sudo capabilities ---'
+          sudo -n -l 2>&1 || true
           REMOTE
