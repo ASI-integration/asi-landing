@@ -14,7 +14,7 @@ jobs:
     environment: staging
     timeout-minutes: 5
     steps:
-      - name: Inspect staging PM2 path without sudo
+      - name: Inspect staging supervisor without sudo
         shell: bash
         env:
           STAGING_SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
@@ -28,31 +28,17 @@ jobs:
           chmod 700 ~/.ssh
           printf '%s\n' "$STAGING_SSH_PRIVATE_KEY" > ~/.ssh/staging_key
           chmod 600 ~/.ssh/staging_key
-          ssh -i ~/.ssh/staging_key \
-            -p "$PORT" \
-            -o IdentitiesOnly=yes \
-            -o StrictHostKeyChecking=no \
-            -o UserKnownHostsFile=/dev/null \
-            -o ConnectTimeout=10 \
-            "$STAGING_SSH_USER@$STAGING_SSH_HOST" 'bash -s' <<'REMOTE'
+          ssh -i ~/.ssh/staging_key -p "$PORT" -o IdentitiesOnly=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=10 "$STAGING_SSH_USER@$STAGING_SSH_HOST" 'bash -s' <<'REMOTE'
           set +e
           echo "SSH_OK hostname=$(hostname) user=$(id -un)"
-          echo "PATH=$PATH"
-          echo '=== COMMANDS ==='
-          printf 'node='; command -v node || true
-          printf 'npm='; command -v npm || true
-          printf 'pm2='; command -v pm2 || true
-          printf 'npx='; command -v npx || true
-          echo '=== NPM GLOBAL ==='
-          npm prefix -g 2>&1 || true
-          npm root -g 2>&1 || true
-          echo '=== COMMON PM2 LOCATIONS ==='
-          for p in /usr/bin/pm2 /usr/local/bin/pm2 "$HOME/.local/bin/pm2" "$HOME/.npm-global/bin/pm2"; do
-            if [ -e "$p" ]; then ls -l "$p"; fi
+          echo '=== PORTS ==='
+          ss -ltnp 2>&1 | grep -E ':3000|:3001' || true
+          echo '=== CANDIDATE SERVICES ==='
+          for unit in asi-landing-staging asi-landing; do
+            echo "--- $unit ---"
+            systemctl show "$unit" -p LoadState -p ActiveState -p SubState -p MainPID -p ExecStart -p WorkingDirectory --no-pager 2>&1 || true
           done
-          echo '=== PROCESS HINTS ==='
-          ps -eo user,pid,args | grep -E '[p]m2|[n]ext' | head -30 || true
-          echo '=== PM2 HOME ==='
-          ls -ld "$HOME/.pm2" 2>&1 || true
-          ls -l "$HOME/.pm2" 2>&1 | head -30 || true
+          echo '=== STAGING PATH ==='
+          ls -ld /var/www/asi-staging /var/www/asi-staging/current /var/www/asi-staging/shared 2>&1 || true
+          readlink -f /var/www/asi-staging/current 2>&1 || true
           REMOTE
