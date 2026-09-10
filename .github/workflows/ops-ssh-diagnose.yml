@@ -1,4 +1,4 @@
-name: Ops Controlled Deploy Probe
+name: Ops Rescue Root SSH Probe
 
 on:
   push:
@@ -14,11 +14,10 @@ jobs:
     environment: staging
     timeout-minutes: 5
     steps:
-      - name: Probe existing target-side controlled deploy without sudo
+      - name: Verify root SSH into Hetzner Rescue
         shell: bash
         env:
           STAGING_SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
-          STAGING_SSH_USER: ${{ secrets.STAGING_SSH_USER }}
           STAGING_SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
           STAGING_SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
         run: |
@@ -34,18 +33,4 @@ jobs:
             -o StrictHostKeyChecking=no \
             -o UserKnownHostsFile=/dev/null \
             -o ConnectTimeout=10 \
-            "$STAGING_SSH_USER@$STAGING_SSH_HOST" 'bash -s' <<'REMOTE'
-          set +e
-          echo "SSH_OK hostname=$(hostname) user=$(id -un)"
-          echo '--- controlled deploy files ---'
-          ls -ld /usr/libexec/asi-controlled-deploy 2>&1 || true
-          ls -l /usr/libexec/asi-controlled-deploy/dispatch /usr/libexec/asi-controlled-deploy/deploy /usr/libexec/asi-controlled-deploy/restart 2>&1 || true
-          echo '--- deploy identity ---'
-          id asi-deploy 2>&1 || true
-          getent passwd asi-deploy 2>&1 || true
-          echo '--- project user groups ---'
-          id
-          echo '--- service state ---'
-          systemctl is-active asi-runtime-worker 2>&1 || true
-          systemctl is-active asi-runtime-bridge-runner 2>&1 || true
-          REMOTE
+            "root@$STAGING_SSH_HOST" 'echo RESCUE_ROOT_SSH_OK; uname -sr'
