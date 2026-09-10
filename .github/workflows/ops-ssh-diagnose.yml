@@ -1,4 +1,4 @@
-name: Ops Diagnose Local SSH Timeout
+name: Ops Diagnose SSH Capacity And Policy
 
 on:
   push:
@@ -19,7 +19,7 @@ jobs:
       STAGING_SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
       STAGING_SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
     steps:
-      - name: Diagnose SSH from GitHub runner
+      - name: Inspect SSH capacity and policy
         shell: bash
         run: |
           set -euo pipefail
@@ -30,25 +30,27 @@ jobs:
           chmod 600 ~/.ssh/staging_key
           SSH=(ssh -i ~/.ssh/staging_key -p "$PORT" -o IdentitiesOnly=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=10 -o BatchMode=yes)
 
-          echo '=== NORMAL USER ==='
-          "${SSH[@]}" "$STAGING_SSH_USER@$STAGING_SSH_HOST" 'bash -s' <<'REMOTE'
+          "${SSH[@]}" "$STAGING_SSH_USER@$STAGING_SSH_HOST" "PORT='$PORT' bash -s" <<'REMOTE'
           set +e
-          echo USER_SSH_OK
-          id
-          echo '--- ssh units ---'
-          systemctl is-active ssh.service ssh.socket 2>&1 || true
-          systemctl show ssh.service -p ActiveState -p SubState -p NRestarts --no-pager 2>&1 || true
-          echo '--- listeners ---'
-          ss -lnt | grep -E ':(22|443)\b' || true
-          echo '--- fail2ban ---'
-          systemctl is-active fail2ban 2>&1 || true
-          echo '--- sudo ---'
-          sudo -n -l 2>&1 || true
-          REMOTE
+          echo '=== SSH POLICY ==='
+          grep -RniE '^[[:space:]]*(Port|ListenAddress|Match|AllowUsers|AllowGroups|DenyUsers|DenyGroups|MaxStartups|MaxAuthTries|LoginGraceTime|UseDNS|PerSource)[[:space:]]' /etc/ssh/sshd_config /etc/ssh/sshd_config.d 2>/dev/null || true
 
-          echo '=== ROOT KEY TEST ==='
-          set +e
-          "${SSH[@]}" "root@$STAGING_SSH_HOST" 'echo ROOT_SSH_OK; id -u; systemctl is-active ssh.service ssh.socket 2>&1 || true'
-          ROOT_RC=$?
-          set -e
-          echo "ROOT_SSH_RC=$ROOT_RC"
+          echo '=== SYSTEMD SOCKET ==='
+          systemctl show ssh.socket -p ActiveState -p SubState -p NConnections -p NAccepted -p TriggerLimitIntervalUSec -p TriggerLimitBurst --no-pager 2>&1 || true
+
+          echo '=== SSHD PROCESSES ==='
+          ps -eo user=,stat=,etimes=,cmd= | grep '[s]shd' | head -80 || true
+          printf 'SSHD_PROCESS_COUNT='; ps -eo cmd= | grep -c '[s]shd' || true
+
+          echo '=== ESTABLISHED SSH TCP COUNT ==='
+          printf 'ESTABLISHED_COUNT='; ss -Htn state established sport = :"$PORT" 2>/dev/null | wc -l || true
+          printf 'SYN_RECV_COUNT='; ss -Htn state syn-recv sport = :"$PORT" 2>/dev/null | wc -l || true
+
+          echo '=== SECURITY SERVICES ==='
+          printf 'FAIL2BAN='; systemctl is-active fail2ban 2>/dev/null || true
+          printf 'UFW='; systemctl is-active ufw 2>/dev/null || true
+          printf 'SSH_SERVICE='; systemctl is-active ssh.service 2>/dev/null || true
+          printf 'SSH_SOCKET='; systemctl is-active ssh.socket 2>/dev/null || true
+
+          echo 'SSH_CAPACITY_POLICY_DIAG_DONE'
+          REMOTE
