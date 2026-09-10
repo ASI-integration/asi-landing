@@ -1,4 +1,4 @@
-name: Ops Capture Port 443 Owner On Boot
+name: Ops Identify Systemd Socket On 443
 
 on:
   push:
@@ -9,62 +9,12 @@ permissions:
   contents: read
 
 jobs:
-  capture:
+  inspect:
     runs-on: ubuntu-latest
     environment: staging
-    timeout-minutes: 6
+    timeout-minutes: 3
     steps:
-      - name: Install one-boot nginx pre-start diagnostic from Rescue and reboot Ubuntu
-        shell: bash
-        env:
-          STAGING_SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
-          STAGING_SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
-          STAGING_SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
-        run: |
-          set -euo pipefail
-          PORT="${STAGING_SSH_PORT:-22}"
-          mkdir -p ~/.ssh
-          chmod 700 ~/.ssh
-          printf '%s\n' "$STAGING_SSH_PRIVATE_KEY" > ~/.ssh/staging_key
-          chmod 600 ~/.ssh/staging_key
-          SSH_ROOT=(ssh -i ~/.ssh/staging_key -p "$PORT" -o IdentitiesOnly=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=10)
-          "${SSH_ROOT[@]}" "root@$STAGING_SSH_HOST" 'bash -s' <<'REMOTE'
-          set -euo pipefail
-          mkdir -p /mnt/installed
-          mountpoint -q /mnt/installed || mount /dev/sda1 /mnt/installed
-          install -d -m 0755 /mnt/installed/usr/local/sbin
-          cat > /mnt/installed/usr/local/sbin/asi-debug-port443-pre-nginx.sh <<'SCRIPT'
-          #!/bin/sh
-          {
-            echo '=== CAPTURE BEFORE NGINX START ==='
-            date -Is
-            echo '=== SOCKETS ==='
-            /usr/bin/ss -lntp 2>&1 || true
-            echo '=== FUSER 443 ==='
-            /usr/bin/fuser -v 443/tcp 2>&1 || true
-            echo '=== LSOF 443 ==='
-            /usr/bin/lsof -nP -iTCP:443 -sTCP:LISTEN 2>&1 || true
-            echo '=== PROCESSES ==='
-            /usr/bin/ps -ef 2>&1 || true
-            echo '=== SYSTEMD STARTING/RUNNING ==='
-            /usr/bin/systemctl --no-pager --plain --type=service --state=running 2>&1 || true
-          } > /var/tmp/asi-port443-before-nginx.log 2>&1
-          chmod 0644 /var/tmp/asi-port443-before-nginx.log
-          exit 0
-          SCRIPT
-          chmod 0755 /mnt/installed/usr/local/sbin/asi-debug-port443-pre-nginx.sh
-          install -d -m 0755 /mnt/installed/etc/systemd/system/nginx.service.d
-          cat > /mnt/installed/etc/systemd/system/nginx.service.d/10-asi-debug-port443.conf <<'DROPIN'
-          [Service]
-          ExecStartPre=/usr/local/sbin/asi-debug-port443-pre-nginx.sh
-          DROPIN
-          sync
-          echo 'BOOT_CAPTURE_HOOK_INSTALLED'
-          nohup sh -c 'sleep 2; reboot' >/dev/null 2>&1 &
-          echo 'REBOOT_SCHEDULED'
-          REMOTE
-
-      - name: Wait for installed Ubuntu and collect capture
+      - name: Inspect socket activation on installed Ubuntu
         shell: bash
         env:
           STAGING_SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
@@ -78,25 +28,17 @@ jobs:
           chmod 700 ~/.ssh
           printf '%s\n' "$STAGING_SSH_PRIVATE_KEY" > ~/.ssh/staging_key
           chmod 600 ~/.ssh/staging_key
-          SSH_USER=(ssh -i ~/.ssh/staging_key -p "$PORT" -o IdentitiesOnly=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=8)
-          sleep 15
-          ok=0
-          for attempt in $(seq 1 30); do
-            echo "Ubuntu probe $attempt/30"
-            if "${SSH_USER[@]}" "$STAGING_SSH_USER@$STAGING_SSH_HOST" 'test "$(hostname)" = asi-agent-runner && test -f /var/tmp/asi-port443-before-nginx.log'; then
-              ok=1
-              break
-            fi
-            sleep 5
-          done
-          [ "$ok" -eq 1 ] || { echo 'ERROR: Ubuntu/capture did not become ready'; exit 1; }
-          "${SSH_USER[@]}" "$STAGING_SSH_USER@$STAGING_SSH_HOST" 'bash -s' <<'REMOTE'
+          ssh -i ~/.ssh/staging_key -p "$PORT" -o IdentitiesOnly=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=10 "$STAGING_SSH_USER@$STAGING_SSH_HOST" 'bash -s' <<'REMOTE'
           set +e
-          echo '=== CAPTURE FILE ==='
-          cat /var/tmp/asi-port443-before-nginx.log 2>&1 || true
-          echo '=== NGINX STATUS NOW ==='
-          systemctl status nginx --no-pager -l 2>&1 | head -120 || true
-          echo '=== PORTS NOW ==='
-          ss -lnt 2>&1 | grep -E ':(80|443|3000|3001)\b' || true
-          echo 'CAPTURE_COLLECTION_COMPLETE'
+          echo '=== LIST SOCKETS ==='
+          systemctl list-sockets --all --no-pager 2>&1 || true
+          echo '=== SSH SOCKET UNIT ==='
+          systemctl cat ssh.socket 2>&1 || true
+          echo '=== SSH SOCKET STATUS ==='
+          systemctl status ssh.socket --no-pager -l 2>&1 || true
+          echo '=== SSH SOCKET PROPERTIES ==='
+          systemctl show ssh.socket -p Listen -p FragmentPath -p DropInPaths -p ActiveState -p SubState --no-pager 2>&1 || true
+          echo '=== SUDO RIGHTS ==='
+          sudo -n -l 2>&1 || true
+          echo 'SOCKET_INSPECT_COMPLETE'
           REMOTE
