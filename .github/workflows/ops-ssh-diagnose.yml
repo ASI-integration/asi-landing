@@ -1,4 +1,4 @@
-name: Ops Inspect Nginx Staging TLS
+name: Ops Inspect Nginx Service
 
 on:
   push:
@@ -14,7 +14,7 @@ jobs:
     environment: staging
     timeout-minutes: 3
     steps:
-      - name: Inspect nginx listeners and staging vhost without failing workflow
+      - name: Inspect nginx service without failing workflow
         shell: bash
         env:
           STAGING_SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
@@ -30,22 +30,14 @@ jobs:
           chmod 600 ~/.ssh/staging_key
           ssh -i ~/.ssh/staging_key -p "$PORT" -o IdentitiesOnly=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=10 "$STAGING_SSH_USER@$STAGING_SSH_HOST" 'bash -s' <<'REMOTE'
           set +e
-          echo '=== LISTENERS ==='
-          ss -lnt | grep -E ':(80|443|3001)\b' || true
-          echo '=== SITES ENABLED ==='
-          ls -la /etc/nginx/sites-enabled 2>&1 || true
-          echo '=== STAGING REFERENCES ==='
-          grep -RniE 'staging\.asi-global\.ru|listen[[:space:]]+443|ssl_certificate|proxy_pass' /etc/nginx/sites-enabled /etc/nginx/conf.d 2>/dev/null | head -200 || true
-          echo '=== HTTP 443 LOCAL ==='
-          curl -sv --max-time 5 http://127.0.0.1:443/api/health -H 'Host: staging.asi-global.ru' -o /tmp/http443 2>/tmp/http443.err || true
-          tail -40 /tmp/http443.err || true
-          cat /tmp/http443 2>/dev/null || true
-          echo
-          echo '=== HTTPS 443 LOCAL ==='
-          curl -skv --max-time 5 https://127.0.0.1:443/api/health -H 'Host: staging.asi-global.ru' -o /tmp/https443 2>/tmp/https443.err || true
-          tail -40 /tmp/https443.err || true
-          cat /tmp/https443 2>/dev/null || true
-          echo
+          echo '=== NGINX ACTIVE ==='
+          systemctl is-active nginx 2>&1 || true
+          echo '=== NGINX PID ==='
+          systemctl show nginx -p MainPID -p ExecMainStatus -p ActiveState -p SubState --no-pager 2>&1 || true
+          echo '=== PORTS ==='
+          ss -lntp 2>&1 | grep -E ':(80|443|3001)\b' || true
+          echo '=== NGINX TEST ==='
+          nginx -t 2>&1 || true
           echo 'INSPECT_COMPLETE'
           REMOTE
           exit 0
