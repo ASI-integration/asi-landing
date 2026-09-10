@@ -1,4 +1,4 @@
-name: Ops Rescue Inspect Custom Services
+name: Ops Rescue Inspect Failing Boot Sequence
 
 on:
   push:
@@ -14,7 +14,7 @@ jobs:
     environment: staging
     timeout-minutes: 4
     steps:
-      - name: Inspect custom systemd services and port settings
+      - name: Inspect exact boot window around nginx bind failure
         shell: bash
         env:
           STAGING_SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
@@ -31,24 +31,10 @@ jobs:
           set +e
           mkdir -p /mnt/installed
           mountpoint -q /mnt/installed || mount /dev/sda1 /mnt/installed
-          echo '=== CUSTOM UNIT FILES ==='
-          for f in /mnt/installed/etc/systemd/system/asi-*.service; do
-            [ -f "$f" ] || continue
-            echo "--- $f ---"
-            sed -n '1,220p' "$f"
-          done
-          echo '=== PORT/HOST SETTINGS FROM REFERENCED ENV FILES ==='
-          for f in $(grep -h '^EnvironmentFile=' /mnt/installed/etc/systemd/system/asi-*.service 2>/dev/null | sed 's/^EnvironmentFile=-\?//' | sort -u); do
-            rf="/mnt/installed$f"
-            echo "--- $f ---"
-            if [ -f "$rf" ]; then
-              grep -E '^[A-Z0-9_]*(PORT|HOST|BIND|LISTEN)[A-Z0-9_]*=' "$rf" 2>/dev/null || true
-            else
-              echo 'MISSING'
-            fi
-          done
-          echo '=== EXECUTABLES REFERENCED BY CUSTOM SERVICES ==='
-          grep -h '^ExecStart=' /mnt/installed/etc/systemd/system/asi-*.service 2>/dev/null | sort -u
-          echo 'CUSTOM_INSPECT_COMPLETE'
+          echo '=== FAILING BOOT WINDOW LOCAL TIME ==='
+          journalctl --directory=/mnt/installed/var/log/journal --since '2026-09-09 20:12:50' --until '2026-09-09 20:13:25' --no-pager -o short-iso-precise 2>&1 | head -900 || true
+          echo '=== FAILING BOOT WINDOW UTC ==='
+          TZ=UTC journalctl --directory=/mnt/installed/var/log/journal --since '2026-09-09 18:12:50 UTC' --until '2026-09-09 18:13:25 UTC' --no-pager -o short-iso-precise 2>&1 | head -900 || true
+          echo 'BOOT_SEQUENCE_INSPECT_COMPLETE'
           REMOTE
           exit 0
