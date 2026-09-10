@@ -15,7 +15,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: staging
     steps:
-      - name: Inspect Runtime release layout and readiness publisher safely
+      - name: Identify live readiness contract and staging release safely
         shell: bash
         env:
           STAGING_SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
@@ -34,48 +34,52 @@ jobs:
           chmod 600 ~/.ssh/staging_probe_key
           ssh -i ~/.ssh/staging_probe_key -p "$SSH_PORT" -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=20 "$STAGING_SSH_USER@$STAGING_SSH_HOST" 'bash -s' <<'REMOTE'
           set -uo pipefail
-          ROOT=/opt/asi-runtime
-          CURRENT="$ROOT/current"
-          RUNNER="$CURRENT/scripts/asi-runtime-bridge-runner.mjs"
+          ROOT=/opt/asi-runtime/current
+          RUNNER="$ROOT/scripts/asi-runtime-bridge-runner.mjs"
 
-          echo '=== RELEASE LAYOUT ==='
-          printf 'current_target='; readlink -f "$CURRENT" 2>/dev/null || echo unavailable
-          for p in "$ROOT" "$ROOT/releases" "$CURRENT" "$(readlink -f "$CURRENT" 2>/dev/null || true)"; do
-            [ -n "$p" ] || continue
-            if [ -e "$p" ]; then stat -c '%n owner=%U:%G mode=%a type=%F' "$p" 2>/dev/null || true; else echo "$p missing"; fi
-          done
-          if [ -d "$ROOT/releases" ]; then
-            echo 'release_count='"$(find "$ROOT/releases" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | wc -l)"
-            find "$ROOT/releases" -mindepth 1 -maxdepth 1 -type d -printf '%f\n' 2>/dev/null | tail -n 8 | sed 's/^/release=/' || true
-          fi
-          [ -f "$CURRENT/release-meta.json" ] && node - "$CURRENT/release-meta.json" <<'NODE' || true
-          const fs=require('fs'); const p=process.argv[2];
-          try { const m=JSON.parse(fs.readFileSync(p,'utf8')); console.log('release_meta_present=true'); console.log('release_git_sha='+(m.gitSha||'missing')); console.log('release_environment='+(m.environment||'missing')); } catch { console.log('release_meta_parse=false'); }
+          echo '=== STAGING APP RELEASE ==='
+          curl -fsS --max-time 10 http://127.0.0.1:3001/api/version -o /tmp/asi-version.json || true
+          node - <<'NODE'
+          const fs=require('fs');
+          try {
+            const v=JSON.parse(fs.readFileSync('/tmp/asi-version.json','utf8'));
+            console.log('staging_environment='+(v.environment||'missing'));
+            console.log('staging_sha='+(v.sha||'missing'));
+            console.log('staging_app_version='+(v.appVersion||'missing'));
+          } catch { console.log('staging_version_unavailable=true'); }
           NODE
-          [ -d "$CURRENT/.git" ] && echo 'current_is_git=true' || echo 'current_is_git=false'
+          rm -f /tmp/asi-version.json
 
-          echo '=== LIVE RUNNER FEATURES ==='
+          echo '=== RUNNER READINESS IMPORT ==='
           if [ -r "$RUNNER" ]; then
-            for pattern in runner_publish_readiness publishRunnerReadiness runner_claim_task 'runner-readiness.v1' 'runner-readiness.v2'; do
-              if grep -Fq "$pattern" "$RUNNER"; then echo "feature_${pattern//[^A-Za-z0-9]/_}=present"; else echo "feature_${pattern//[^A-Za-z0-9]/_}=missing"; fi
-            done
-            echo 'runner_line_count='"$(wc -l < "$RUNNER")"
-            grep -nE 'runner_publish_readiness|publishRunnerReadiness|runner_claim_task|runner-readiness\.v[12]' "$RUNNER" \
-              | sed -E 's/(Bearer |token[^,; ]*=)[^,; ]+/\1[REDACTED]/Ig' | head -n 30 || true
+            grep -nE 'publishRunnerReadinessCycle|runner-readiness|readiness' "$RUNNER" | head -n 25 || true
           else
             echo 'runner_readable=false'
           fi
 
-          echo '=== RELATED LIVE FILES ==='
-          for f in asi-runtime-runner-config.mjs asi-runtime-baseline-recovery.mjs asi-runtime-bridge-executor-guard.mjs; do
-            p="$CURRENT/scripts/$f"
-            [ -r "$p" ] && echo "$f=present lines=$(wc -l < "$p")" || echo "$f=missing_or_unreadable"
-          done
+          echo '=== READINESS HELPER FILES ==='
+          helpers="$(grep -RIl --include='*.mjs' 'publishRunnerReadinessCycle' "$ROOT/scripts" 2>/dev/null || true)"
+          if [ -z "$helpers" ]; then
+            echo 'helper=not_found'
+          else
+            while IFS= read -r helper; do
+              [ -n "$helper" ] || continue
+              echo "helper=$(basename "$helper")"
+              echo "helper_lines=$(wc -l < "$helper")"
+              grep -nE "schemaVersion|runner-readiness\.v[12]|reasonCode|blockers|repositories|observedBaselineSha|baselineSha" "$helper" \
+                | head -n 90 || true
+            done <<< "$helpers"
+          fi
 
-          echo '=== WRITABILITY ==='
-          for p in "$ROOT" "$ROOT/releases"; do
-            [ -w "$p" ] && echo "$p writable=true" || echo "$p writable=false"
-          done
+          echo '=== LIVE CONFIG FEATURE KEYS ==='
+          CONFIG="$ROOT/scripts/asi-runtime-runner-config.mjs"
+          if [ -r "$CONFIG" ]; then
+            grep -nE "schemaVersion|runner-readiness\.v[12]|reasonCode|repositories|observedBaselineSha|baselineSha|canExecute" "$CONFIG" \
+              | head -n 100 || true
+          else
+            echo 'config_readable=false'
+          fi
+
           echo '=== SERVICE ==='
           systemctl show asi-runtime-bridge-runner.service -p ActiveState -p SubState -p MainPID -p NRestarts --no-pager 2>/dev/null || true
           echo '=== END ==='
