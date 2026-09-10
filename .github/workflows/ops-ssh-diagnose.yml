@@ -14,42 +14,26 @@ jobs:
     environment: staging
     timeout-minutes: 5
     env:
-      STAGING_SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
-      STAGING_SSH_USER: ${{ secrets.STAGING_SSH_USER }}
-      STAGING_SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
-      STAGING_SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      USER: ${{ secrets.STAGING_SSH_USER }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
     steps:
-      - name: Inspect prod service env and owner SSH safely
+      - name: Prepare key
         shell: bash
         run: |
-          set -euo pipefail
-          PORT="${STAGING_SSH_PORT:-22}"
           mkdir -p ~/.ssh
-          chmod 700 ~/.ssh
-          printf '%s\n' "$STAGING_SSH_PRIVATE_KEY" > ~/.ssh/staging_key
-          chmod 600 ~/.ssh/staging_key
-          BASE=( -i ~/.ssh/staging_key -p "$PORT" -o IdentitiesOnly=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=10 -o BatchMode=yes )
-          ssh "${BASE[@]}" "$STAGING_SSH_USER@$STAGING_SSH_HOST" 'bash -s' <<'REMOTE'
-          set +e
-          echo "HOST=$(hostname)"
-          echo '[section] service-env-names'
-          systemctl show asi-landing.service -p Environment --value 2>/dev/null \
-            | tr ' ' '\n' | sed -nE 's/^([^=]+)=.*/[env-name] \1/p'
-          if systemctl show asi-landing.service -p Environment --value 2>/dev/null | grep -q 'BOOKING_OPS_AUTO_SEND_RUNNER_SECRET='; then
-            echo '[booking-secret-in-unit] yes'
-          else
-            echo '[booking-secret-in-unit] no'
-          fi
-          echo '[section] restart-policy'
-          systemctl show asi-landing.service -p Restart -p RestartUSec -p KillMode -p MainPID --no-pager 2>/dev/null
-          echo '[section] repo-acl'
-          getfacl -cp /srv/asi-landing 2>/dev/null | head -40 || true
-          exit 0
-          REMOTE
-          echo '[section] owner-ssh-test'
-          set +e
-          OUT="$(ssh "${BASE[@]}" asi-runtime@"$STAGING_SSH_HOST" 'whoami; hostname' 2>&1)"
-          RC=$?
-          set -e
-          echo "owner_ssh_rc=$RC"
-          printf '%s\n' "$OUT" | tail -10
+          printf '%s\n' "$KEY" > ~/.ssh/k
+          chmod 600 ~/.ssh/k
+      - name: Inspect production service safely
+        shell: bash
+        run: |
+          P="${PORT:-22}"
+          ssh -i ~/.ssh/k -p "$P" -o IdentitiesOnly=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o BatchMode=yes "$USER@$HOST" \
+            "echo HOST=\$(hostname); echo '[env names]'; systemctl show asi-landing.service -p Environment --value | tr ' ' '\n' | grep '=' | cut -d= -f1 | sort -u; echo '[restart]'; systemctl show asi-landing.service -p Restart -p RestartUSec -p MainPID --no-pager"
+      - name: Test owner SSH identity
+        continue-on-error: true
+        shell: bash
+        run: |
+          P="${PORT:-22}"
+          ssh -i ~/.ssh/k -p "$P" -o IdentitiesOnly=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o BatchMode=yes -o ConnectTimeout=8 "asi-runtime@$HOST" 'whoami; hostname'
