@@ -34,15 +34,16 @@ jobs:
           chmod 600 ~/.ssh/staging_probe_key
           ssh -i ~/.ssh/staging_probe_key -p "$SSH_PORT" -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=20 "$STAGING_SSH_USER@$STAGING_SSH_HOST" 'bash -s' <<'REMOTE'
           set -euo pipefail
-          REPO=/srv/asi-landing
           API=https://api.github.com/repos/ASI-integration/asi-landing/commits/main
-
-          echo '=== PRECHECK ==='
-          test -d "$REPO/.git"
+          REPO=''
+          for candidate in /srv/asi-landing /var/lib/asi-runtime/repos/asi-landing; do
+            if git -C "$candidate" rev-parse --git-dir >/dev/null 2>&1; then REPO="$candidate"; break; fi
+          done
+          if [ -z "$REPO" ]; then echo 'runtime_landing_checkout_missing=true'; exit 21; fi
+          echo "runtime_landing_checkout=$REPO"
           before="$(git -C "$REPO" rev-parse HEAD)"
           echo "checkout_head_before=$before"
 
-          echo '=== FETCH CURRENT MAIN ==='
           if sudo -n -u asi-runtime git -C "$REPO" fetch --prune origin main >/dev/null 2>&1; then
             GIT='sudo -n -u asi-runtime git'
             echo 'fetch_mode=asi-runtime'
@@ -58,7 +59,8 @@ jobs:
           echo "github_main=$public"
           test "$remote" = "$public"
           $GIT -C "$REPO" cat-file -e "${public}^{commit}"
-          after="$($GIT -C "$REPO" rev-parse HEAD)"
-          echo "checkout_head_after=$after"
           echo 'RUNTIME_BASELINE_SYNCED=true'
+
+          curl -fsS --max-time 5 http://127.0.0.1:4173/api/queue | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const q=JSON.parse(s); console.log(JSON.stringify({active:q.active,waiting:q.waiting,canLaunch:q.canLaunch})); if(q.active||q.waiting?.length||q.canLaunch!==true)process.exit(22)})"
+          echo 'RUNTIME_LANE_FREE=true'
           REMOTE
