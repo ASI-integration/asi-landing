@@ -1,4 +1,4 @@
-name: Ops Classify Production SSH Target
+name: Ops SSH Diagnose
 
 on:
   push:
@@ -11,46 +11,69 @@ permissions:
 jobs:
   diagnose:
     runs-on: ubuntu-latest
-    environment: production
-    timeout-minutes: 3
+    environment: staging
+    timeout-minutes: 5
     env:
-      VPS_HOST: ${{ secrets.VPS_HOST }}
-      VPS_PORT: ${{ secrets.VPS_PORT }}
+      STAGING_SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+      STAGING_SSH_USER: ${{ secrets.STAGING_SSH_USER }}
+      STAGING_SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
+      STAGING_SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
     steps:
-      - name: Classify configured target without exposing secrets
+      - name: Inspect actual Hetzner app layout safely
         shell: bash
         run: |
           set -euo pipefail
-          case "${VPS_HOST:-}" in
-            2.29.31.29) echo 'TARGET=asi-agent-runner' ;;
-            2.29.18.190) echo 'TARGET=asi-web-host' ;;
-            '') echo 'TARGET=missing' ;;
-            *) echo 'TARGET=other' ;;
-          esac
-          PORT="${VPS_PORT:-22}"
-          case "$PORT" in
-            22) echo 'PORT_CLASS=22' ;;
-            443) echo 'PORT_CLASS=443' ;;
-            *) echo 'PORT_CLASS=other' ;;
-          esac
-          python3 - <<'PY'
-          import os, socket, time
-          host=os.environ.get('VPS_HOST','')
-          port=int(os.environ.get('VPS_PORT') or '22')
-          for label,p in [('configured',port),('port22',22)]:
-              t0=time.time()
-              try:
-                  s=socket.create_connection((host,p),timeout=8)
-                  s.settimeout(3)
-                  data=b''
-                  try:
-                      data=s.recv(100)
-                  except Exception:
-                      pass
-                  s.close()
-                  banner=data.decode('utf-8','replace').strip()
-                  kind='ssh' if banner.startswith('SSH-') else ('tcp-no-banner' if not banner else 'other')
-                  print(f'{label}=TCP_OK kind={kind} elapsed={time.time()-t0:.2f}s')
-              except Exception as e:
-                  print(f'{label}=FAIL {type(e).__name__}: {e}')
-          PY
+          PORT="${STAGING_SSH_PORT:-22}"
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$STAGING_SSH_PRIVATE_KEY" > ~/.ssh/staging_key
+          chmod 600 ~/.ssh/staging_key
+          SSH=(ssh -i ~/.ssh/staging_key -p "$PORT" -o IdentitiesOnly=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=10 -o BatchMode=yes)
+
+          "${SSH[@]}" "$STAGING_SSH_USER@$STAGING_SSH_HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          echo "HOST=$(hostname)"
+          echo "WHO=$(whoami)"
+          echo '[section] candidate directories'
+          for d in /srv/asi-landing /srv/asi-runtime /var/www/asi /home/project_ayfaar; do
+            if [[ -e "$d" ]]; then
+              printf '[dir] path=%s exists=yes kind=%s\n' "$d" "$(stat -c %F "$d" 2>/dev/null || echo unknown)"
+            else
+              printf '[dir] path=%s exists=no\n' "$d"
+            fi
+          done
+
+          echo '[section] pm2'
+          pm2 jlist 2>/dev/null | node - <<'NODE' || true
+          let data='';
+          process.stdin.on('data',c=>data+=c);
+          process.stdin.on('end',()=>{
+            try {
+              for (const p of JSON.parse(data)) {
+                const e=p.pm2_env||{};
+                console.log(`[pm2] name=${p.name||''} status=${e.status||''} cwd=${e.pm_cwd||''} exec=${e.pm_exec_path||''}`);
+              }
+            } catch { console.log('[pm2] parse_failed'); }
+          });
+          NODE
+
+          echo '[section] env file metadata + booking secret presence'
+          for f in \
+            /srv/asi-landing/.env \
+            /srv/asi-landing/.env.production \
+            /srv/asi-landing/.env.production.local \
+            /srv/asi-landing/.env.production.live \
+            /var/www/asi/shared/.env.production.live; do
+            if [[ -e "$f" ]]; then
+              printf '[env] path=%s exists=yes owner=%s mode=%s\n' "$f" "$(stat -c %U:%G "$f" 2>/dev/null || echo unknown)" "$(stat -c %a "$f" 2>/dev/null || echo unknown)"
+              if grep -q '^BOOKING_OPS_AUTO_SEND_RUNNER_SECRET=' "$f" 2>/dev/null; then
+                v="$(grep '^BOOKING_OPS_AUTO_SEND_RUNNER_SECRET=' "$f" | tail -n1 | cut -d= -f2-)"
+                if [[ -n "$v" ]]; then echo '[booking-secret] present=yes nonempty=yes'; else echo '[booking-secret] present=yes nonempty=no'; fi
+              else
+                echo '[booking-secret] present=no nonempty=no'
+              fi
+            else
+              printf '[env] path=%s exists=no\n' "$f"
+            fi
+          done
+          REMOTE
