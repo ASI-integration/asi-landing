@@ -15,7 +15,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: staging
     steps:
-      - name: Inspect staging Runtime readiness and SP-10 evidence safely
+      - name: Clear exact stale staging Runtime slot and failed SP-10 queue entry
         shell: bash
         env:
           STAGING_SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
@@ -33,98 +33,45 @@ jobs:
           printf '%s\n' "$STAGING_SSH_PRIVATE_KEY" > ~/.ssh/staging_probe_key
           chmod 600 ~/.ssh/staging_probe_key
           ssh -i ~/.ssh/staging_probe_key -p "$SSH_PORT" -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=20 "$STAGING_SSH_USER@$STAGING_SSH_HOST" 'bash -s' <<'REMOTE'
-          set -uo pipefail
-          APP_ENV=/var/www/asi-staging/shared/.env.staging.local
-          BRIDGE_TASK_ID='51078e7b-630d-49f1-b13c-742be9636c20'
-          OLD_TASK_ID='dashboard-20260903061956-fef178'
-          SP10_RUNTIME_TASK_ID='dashboard-20260910103251-d70ff8'
-          RUNTIME_ROOT=/var/lib/asi-runtime
-          OCP="$RUNTIME_ROOT/state/owner-control-plane"
+          set -euo pipefail
+          OLD_TASK='dashboard-20260903061956-fef178'
+          SP10_TASK='dashboard-20260910103251-d70ff8'
+          BASE='http://127.0.0.1:4173'
 
-          echo '=== REQUIRED READINESS ENV ==='
-          for key in GITHUB_TOKEN ASI_RUNTIME_BRIDGE_CLIENT_ID ASI_RUNTIME_BRIDGE_SUPABASE_URL ASI_RUNTIME_BRIDGE_SUPABASE_SERVICE_ROLE_KEY; do
-            line="$(grep -m1 "^${key}=" "$APP_ENV" 2>/dev/null || true)"
-            if [ -n "$line" ] && [ -n "${line#*=}" ]; then echo "$key=present"; else echo "$key=missing"; fi
-          done
-
-          echo '=== PUBLIC GITHUB BASELINE PROBE ==='
-          code="$(curl -sS -o /tmp/gh-baseline.json -w '%{http_code}' --max-time 8 \
-            -H 'Accept: application/vnd.github+json' \
-            -H 'User-Agent: asi-owner-development-console' \
-            -H 'X-GitHub-Api-Version: 2022-11-28' \
-            https://api.github.com/repos/ASI-integration/asi-landing/commits/main || true)"
-          echo "github_public_baseline_http=$code"
-          rm -f /tmp/gh-baseline.json
-
-          echo '=== RUNTIME SERVICES ==='
-          for unit in asi-runtime-worker.service asi-runtime-dashboard.service asi-runtime-bridge-runner.service; do
-            printf '%s=' "$unit"
-            systemctl is-active "$unit" 2>/dev/null || true
-            systemctl show "$unit" -p MainPID -p NRestarts -p ActiveEnterTimestamp --no-pager 2>/dev/null | tr '\n' ' '; echo
-          done
-
-          echo '=== DASHBOARD HEALTH ==='
-          curl -fsS --max-time 5 http://127.0.0.1:4173/api/health 2>/dev/null | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{try{const x=JSON.parse(s); console.log(JSON.stringify({status:x.status,readOnly:x.readOnly,intakeEnabled:x.intakeEnabled,runtimeSha:x.runtimeSha,serverVersion:x.serverVersion}))}catch{console.log('health_unparseable')}})" || echo 'dashboard_health_failed=true'
-
-          echo '=== QUEUE ==='
-          curl -fsS --max-time 5 http://127.0.0.1:4173/api/queue 2>/dev/null | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{try{const x=JSON.parse(s); const pick=t=>t&&({taskId:t.taskId,title:t.title,status:t.status,holdReason:t.holdReason,position:t.position,enqueuedAt:t.enqueuedAt}); console.log(JSON.stringify({active:pick(x.active),waiting:Array.isArray(x.waiting)?x.waiting.slice(0,10).map(pick):[],canLaunch:x.canLaunch}))}catch{console.log('queue_unparseable')}})" || echo 'queue_probe_failed=true'
-
-          echo '=== EXECUTION SLOT SAFE FIELDS ==='
-          node - "$OCP/execution-slot.json" <<'NODE'
-          const fs=require('fs'); const p=process.argv[2];
-          try { const x=JSON.parse(fs.readFileSync(p,'utf8')); const pid=x.holderPid; let pidAlive=null; if(Number.isInteger(pid)&&pid>0){try{process.kill(pid,0);pidAlive=true}catch{pidAlive=false}}; console.log(JSON.stringify({status:x.status,taskId:x.taskId,title:x.title,holderWorkerId:x.holderWorkerId,holderPid:x.holderPid,pidAlive,generation:x.generation,acquiredAt:x.acquiredAt,heartbeatAt:x.heartbeatAt,expiresAt:x.expiresAt,holdReason:x.holdReason})); } catch(e){ console.log('slot_unreadable='+e.code); }
+          echo '=== PRECHECK ==='
+          curl -fsS --max-time 5 "$BASE/api/queue" > /tmp/asi-queue-before.json
+          node - /tmp/asi-queue-before.json "$OLD_TASK" "$SP10_TASK" <<'NODE'
+          const fs=require('fs'); const [p,oldId,sp10Id]=process.argv.slice(2); const q=JSON.parse(fs.readFileSync(p,'utf8'));
+          const waiting=Array.isArray(q.waiting)?q.waiting:[];
+          const ok=q.active?.taskId===oldId && q.active?.status==='ACTION_REQUIRED' && waiting.some(x=>x.taskId===sp10Id && x.status==='QUEUED');
+          console.log(JSON.stringify({active:q.active&&{taskId:q.active.taskId,status:q.active.status,holdReason:q.active.holdReason},waiting:waiting.map(x=>({taskId:x.taskId,status:x.status,position:x.position})),canLaunch:q.canLaunch,guard:ok}));
+          if(!ok) process.exit(17);
           NODE
 
-          echo '=== QUEUE ENTRY SAFE FIELDS ==='
-          node - "$OCP/queue/index.json" "$OLD_TASK_ID" "$SP10_RUNTIME_TASK_ID" <<'NODE'
-          const fs=require('fs'); const [p,a,b]=process.argv.slice(2);
-          try { const q=JSON.parse(fs.readFileSync(p,'utf8')); const clean=id=>{const x=q.entries?.[id]; return x?{taskId:x.taskId,status:x.status,enqueuedAt:x.enqueuedAt,title:x.title,draftId:x.draftId,manualOrder:x.manualOrder}:null}; console.log(JSON.stringify({revision:q.revision,updatedAt:q.updatedAt,old:clean(a),sp10:clean(b),orderedTaskIds:q.orderedTaskIds})); } catch(e){ console.log('queue_index_unreadable='+e.code); }
+          echo '=== REMOVE FAILED SP10 RUNTIME QUEUE ENTRY FIRST ==='
+          code="$(curl -sS -o /tmp/remove.json -w '%{http_code}' --max-time 10 -X DELETE "$BASE/api/queue/$SP10_TASK/remove")"
+          echo "remove_http=$code"
+          test "$code" = 200
+          node - /tmp/remove.json <<'NODE'
+          const fs=require('fs'); const x=JSON.parse(fs.readFileSync(process.argv[2],'utf8')); console.log(JSON.stringify({ok:x.ok,removed:x.removed,taskId:x.taskId})); if(!x.ok||!x.removed)process.exit(18);
           NODE
 
-          echo '=== OLD ACTIVE TASK EVIDENCE ==='
-          for p in \
-            "$RUNTIME_ROOT/state/tasks/$OLD_TASK_ID/state.json" \
-            "$OCP/processing/$OLD_TASK_ID.json" \
-            "$OCP/archive/$OLD_TASK_ID.json" \
-            "$OCP/failed/$OLD_TASK_ID.json"; do
-            if [ -e "$p" ]; then
-              stat -c 'exists path=%n mtime=%y size=%s' "$p" 2>/dev/null || true
-            else
-              echo "missing path=$p"
-            fi
-          done
-          if [ -r "$RUNTIME_ROOT/state/tasks/$OLD_TASK_ID/state.json" ]; then
-            node - "$RUNTIME_ROOT/state/tasks/$OLD_TASK_ID/state.json" <<'NODE'
-          const fs=require('fs'); try{const x=JSON.parse(fs.readFileSync(process.argv[2],'utf8')); console.log(JSON.stringify({status:x.status,updatedAt:x.updatedAt,attemptId:x.attemptId,failureCode:x.failureCode,failureReason:x.failureReason,resultPresent:Boolean(x.resultPath)}))}catch(e){console.log('old_state_unreadable='+e.code)}
+          echo '=== CANCEL OLD ORPHAN AND RELEASE SLOT ==='
+          code="$(curl -sS -o /tmp/finish.json -w '%{http_code}' --max-time 10 -X POST -H 'Content-Type: application/json' -d '{}' "$BASE/api/queue/$OLD_TASK/finish")"
+          echo "finish_http=$code"
+          test "$code" = 200
+          node - /tmp/finish.json <<'NODE'
+          const fs=require('fs'); const x=JSON.parse(fs.readFileSync(process.argv[2],'utf8')); console.log(JSON.stringify({ok:x.ok,finished:x.finished,taskId:x.taskId,nextTaskId:x.nextTaskId})); if(!x.ok||!x.finished)process.exit(19);
           NODE
-          fi
 
-          echo '=== SP10 RUNTIME EVIDENCE ==='
-          for p in \
-            "$RUNTIME_ROOT/inbox/$SP10_RUNTIME_TASK_ID.json" \
-            "$OCP/processing/$SP10_RUNTIME_TASK_ID.json" \
-            "$RUNTIME_ROOT/state/tasks/$SP10_RUNTIME_TASK_ID/state.json"; do
-            if [ -e "$p" ]; then stat -c 'exists path=%n mtime=%y size=%s' "$p" 2>/dev/null || true; else echo "missing path=$p"; fi
-          done
-
-          echo '=== RUNNER LOCAL READINESS ==='
-          ART="$RUNTIME_ROOT/state/bridge-runner-readiness.json"
-          if [ -e "$ART" ]; then
-            now="$(date +%s)"; mt="$(stat -c %Y "$ART" 2>/dev/null || echo 0)"; echo "artifact_age_seconds=$((now-mt))"
-          else
-            echo 'artifact_missing=true'
-          fi
-
-          echo '=== BRIDGE TASK ID REFERENCES ==='
-          grep -RIl --exclude='*.log' --exclude='*.env' --exclude='runtime.env' "$BRIDGE_TASK_ID" "$RUNTIME_ROOT" 2>/dev/null | sort | head -n 80 || true
-
-          echo '=== RECENT WORKER / BRIDGE JOURNAL (secret-redacted) ==='
-          for unit in asi-runtime-worker.service asi-runtime-bridge-runner.service; do
-            echo "[$unit]"
-            journalctl -u "$unit" --since '30 minutes ago' --no-pager -o cat 2>/dev/null \
-              | tail -n 160 \
-              | sed -E 's/(Bearer[[:space:]]+)[A-Za-z0-9._~+\/-]+/\1[REDACTED]/g; s/([A-Za-z0-9_]*(TOKEN|SECRET|KEY)[A-Za-z0-9_]*=)[^[:space:]]+/\1[REDACTED]/Ig' \
-              || echo 'journal_unavailable=true'
-          done
-          echo '=== END ==='
+          echo '=== VERIFY FREE LANE ==='
+          curl -fsS --max-time 5 "$BASE/api/queue" > /tmp/asi-queue-after.json
+          node - /tmp/asi-queue-after.json "$OLD_TASK" "$SP10_TASK" <<'NODE'
+          const fs=require('fs'); const [p,oldId,sp10Id]=process.argv.slice(2); const q=JSON.parse(fs.readFileSync(p,'utf8')); const waiting=Array.isArray(q.waiting)?q.waiting:[];
+          const ok=!q.active && q.canLaunch===true && !waiting.some(x=>x.taskId===sp10Id||x.taskId===oldId);
+          console.log(JSON.stringify({active:q.active,waiting:waiting.map(x=>({taskId:x.taskId,status:x.status,position:x.position})),canLaunch:q.canLaunch,verified:ok}));
+          if(!ok)process.exit(20);
+          NODE
+          echo 'STAGING_RUNTIME_LANE_CLEAN=true'
+          rm -f /tmp/asi-queue-before.json /tmp/asi-queue-after.json /tmp/remove.json /tmp/finish.json
           REMOTE
