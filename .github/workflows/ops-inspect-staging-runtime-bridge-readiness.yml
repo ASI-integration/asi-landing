@@ -25,89 +25,39 @@ jobs:
         run: |
           set -euo pipefail
           for key in STAGING_SSH_HOST STAGING_SSH_USER STAGING_SSH_PRIVATE_KEY; do
-            if [ -z "${!key:-}" ]; then
-              echo "Missing required staging secret: ${key}"
-              exit 1
-            fi
+            if [ -z "${!key:-}" ]; then echo "Missing required staging secret: ${key}"; exit 1; fi
           done
           SSH_PORT="${STAGING_SSH_PORT:-22}"
           mkdir -p ~/.ssh
           chmod 700 ~/.ssh
           printf '%s\n' "$STAGING_SSH_PRIVATE_KEY" > ~/.ssh/staging_probe_key
           chmod 600 ~/.ssh/staging_probe_key
-
-          ssh -i ~/.ssh/staging_probe_key -p "$SSH_PORT" \
-            -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=20 \
-            "$STAGING_SSH_USER@$STAGING_SSH_HOST" 'bash -s' <<'REMOTE'
+          ssh -i ~/.ssh/staging_probe_key -p "$SSH_PORT" -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=20 "$STAGING_SSH_USER@$STAGING_SSH_HOST" 'bash -s' <<'REMOTE'
           set -uo pipefail
           echo '=== SERVICE ==='
           printf 'runner_active='; systemctl is-active asi-runtime-bridge-runner.service 2>/dev/null || true
-          systemctl show asi-runtime-bridge-runner.service -p User -p Group -p WorkingDirectory -p EnvironmentFiles -p ExecStart --no-pager 2>/dev/null || true
 
-          echo '=== SAFE HOST READINESS ==='
-          cat > /tmp/asi-runtime-readiness-probe.mjs <<'NODE'
-          import fs from 'node:fs';
-          const envPath = '/etc/asi-runtime/runtime.env';
-          const runtimeRoot = '/opt/asi-runtime/current';
-          const modulePath = 'file:///opt/asi-runtime/current/scripts/asi-runtime-runner-config.mjs';
-          const raw = fs.readFileSync(envPath, 'utf8');
-          for (const line of raw.split(/\r?\n/)) {
-            const trimmed = line.trim();
-            if (!trimmed || trimmed.startsWith('#')) continue;
-            const i = trimmed.indexOf('=');
-            if (i <= 0) continue;
-            const key = trimmed.slice(0, i).trim();
-            let value = trimmed.slice(i + 1).trim();
-            if ((value.startsWith("'") && value.endsWith("'")) || (value.startsWith('"') && value.endsWith('"'))) value = value.slice(1, -1);
-            process.env[key] = value;
-          }
-          process.chdir(runtimeRoot);
-          const { inspectRuntimeRunnerHostReadiness } = await import(modulePath);
-          const r = await inspectRuntimeRunnerHostReadiness();
-          console.log(JSON.stringify({
-            canExecute: r.canExecute,
-            baselineSha: r.baselineSha,
-            capabilities: r.capabilities,
-            checkoutCount: Array.isArray(r.runtimeCheckouts) ? r.runtimeCheckouts.length : 0,
-            hasExecutorConfig: r.executorConfig !== null,
-          }));
-          NODE
-          chmod 644 /tmp/asi-runtime-readiness-probe.mjs
-          if [ -r /etc/asi-runtime/runtime.env ]; then
-            node /tmp/asi-runtime-readiness-probe.mjs || true
-          elif sudo -n -u asi-runtime /usr/bin/node /tmp/asi-runtime-readiness-probe.mjs >/tmp/asi-runtime-readiness.out 2>/tmp/asi-runtime-readiness.err; then
-            cat /tmp/asi-runtime-readiness.out
-          else
-            echo 'probe_unavailable=runtime_env_not_readable_and_no_safe_sudo'
-          fi
-          rm -f /tmp/asi-runtime-readiness-probe.mjs /tmp/asi-runtime-readiness.out /tmp/asi-runtime-readiness.err
-
-          echo '=== GIT METADATA INTEGRITY ==='
+          echo '=== HEAD CLASSIFICATION ==='
           for p in /var/lib/asi-runtime/repos/asi-landing /srv/asi-landing; do
-            echo "checkout=$p"
-            for f in HEAD config; do
-              if [ -f "$p/.git/$f" ]; then
-                printf '  %s=present size=' "$f"; stat -c %s "$p/.git/$f" 2>/dev/null || true
-              else
-                echo "  $f=missing"
-              fi
-            done
-            for d in objects refs; do
-              if [ -d "$p/.git/$d" ]; then
-                printf '  %s=present entries=' "$d"; find "$p/.git/$d" -mindepth 1 -maxdepth 2 2>/dev/null | wc -l
-              else
-                echo "  $d=missing"
-              fi
-            done
-            if [ -f "$p/.git/HEAD" ]; then
-              head_line="$(head -n1 "$p/.git/HEAD" 2>/dev/null || true)"
-              case "$head_line" in
-                ref:\ refs/heads/*) echo "  HEAD_shape=symbolic" ;;
-                [0-9a-f][0-9a-f]*) echo "  HEAD_shape=detached_or_sha" ;;
-                *) echo "  HEAD_shape=invalid" ;;
-              esac
+            printf '%s: ' "$p"
+            h="$(tr -d '\r\n' < "$p/.git/HEAD" 2>/dev/null || true)"
+            if printf '%s' "$h" | grep -Eq '^[0-9a-fA-F]{40}$'; then
+              echo "HEAD=sha40:${h}"
+            elif printf '%s' "$h" | grep -Eq '^ref: refs/heads/[A-Za-z0-9._/-]+$'; then
+              echo "HEAD=symbolic:${h#ref: }"
+            else
+              printf 'HEAD=invalid hex='
+              od -An -tx1 -N48 "$p/.git/HEAD" 2>/dev/null | tr -d ' \n'; echo
             fi
-            printf '  git_rev_parse='; sudo -n -u asi-runtime git -C "$p" rev-parse --git-dir 2>/dev/null || echo FAIL
+            for ref in "$p/.git/refs/heads/main" "$p/.git/refs/remotes/origin/main"; do
+              if [ -f "$ref" ]; then
+                v="$(tr -d '\r\n' < "$ref")"
+                if printf '%s' "$v" | grep -Eq '^[0-9a-fA-F]{40}$'; then echo "  $(basename "$ref")=sha40:${v}"; else echo "  $(basename "$ref")=invalid"; fi
+              else
+                echo "  $(basename "$ref")=missing"
+              fi
+            done
+            [ -f "$p/.git/packed-refs" ] && echo '  packed_refs=present' || echo '  packed_refs=missing'
           done
           echo '=== END ==='
           REMOTE
