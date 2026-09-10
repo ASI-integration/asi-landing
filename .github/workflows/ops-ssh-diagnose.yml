@@ -1,4 +1,4 @@
-name: Ops Inspect Nginx Service
+name: Ops Identify Listener Service
 
 on:
   push:
@@ -14,7 +14,7 @@ jobs:
     environment: staging
     timeout-minutes: 3
     steps:
-      - name: Inspect nginx service without failing workflow
+      - name: Identify listener service without failing workflow
         shell: bash
         env:
           STAGING_SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
@@ -30,14 +30,14 @@ jobs:
           chmod 600 ~/.ssh/staging_key
           ssh -i ~/.ssh/staging_key -p "$PORT" -o IdentitiesOnly=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=10 "$STAGING_SSH_USER@$STAGING_SSH_HOST" 'bash -s' <<'REMOTE'
           set +e
-          echo '=== NGINX ACTIVE ==='
-          systemctl is-active nginx 2>&1 || true
-          echo '=== NGINX PID ==='
-          systemctl show nginx -p MainPID -p ExecMainStatus -p ActiveState -p SubState --no-pager 2>&1 || true
-          echo '=== PORTS ==='
-          ss -lntp 2>&1 | grep -E ':(80|443|3001)\b' || true
-          echo '=== NGINX TEST ==='
-          nginx -t 2>&1 || true
+          echo '=== RUNNING SERVICES ==='
+          systemctl --no-pager --plain --type=service --state=running 2>&1 | head -200 || true
+          echo '=== PROCESS NAMES ==='
+          ps -eo pid,user,comm --sort=comm | head -250 || true
+          echo '=== FUSER 443 ==='
+          fuser -n tcp 443 2>&1 || true
+          echo '=== LSOF 443 ==='
+          lsof -nP -iTCP:443 -sTCP:LISTEN 2>&1 || true
           echo 'INSPECT_COMPLETE'
           REMOTE
           exit 0
