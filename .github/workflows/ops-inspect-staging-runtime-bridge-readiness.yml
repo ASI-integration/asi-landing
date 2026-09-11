@@ -15,7 +15,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: staging
     steps:
-      - name: Sync and verify staging Runtime landing baseline
+      - name: Inspect staging Runtime checkout configuration safely
         shell: bash
         env:
           STAGING_SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
@@ -33,34 +33,87 @@ jobs:
           printf '%s\n' "$STAGING_SSH_PRIVATE_KEY" > ~/.ssh/staging_probe_key
           chmod 600 ~/.ssh/staging_probe_key
           ssh -i ~/.ssh/staging_probe_key -p "$SSH_PORT" -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=20 "$STAGING_SSH_USER@$STAGING_SSH_HOST" 'bash -s' <<'REMOTE'
-          set -euo pipefail
-          API=https://api.github.com/repos/ASI-integration/asi-landing/commits/main
-          REPO=''
-          for candidate in /srv/asi-landing /var/lib/asi-runtime/repos/asi-landing; do
-            if git -C "$candidate" rev-parse --git-dir >/dev/null 2>&1; then REPO="$candidate"; break; fi
-          done
-          if [ -z "$REPO" ]; then echo 'runtime_landing_checkout_missing=true'; exit 21; fi
-          echo "runtime_landing_checkout=$REPO"
-          before="$(git -C "$REPO" rev-parse HEAD)"
-          echo "checkout_head_before=$before"
+          set -uo pipefail
 
-          if sudo -n -u asi-runtime git -C "$REPO" fetch --prune origin main >/dev/null 2>&1; then
-            GIT='sudo -n -u asi-runtime git'
-            echo 'fetch_mode=asi-runtime'
+          echo '=== IDENTITY / SUDO CAPABILITY ==='
+          echo "ssh_user=$(id -un)"
+          if sudo -n -u asi-runtime true 2>/dev/null; then echo 'sudo_as_asi_runtime=true'; else echo 'sudo_as_asi_runtime=false'; fi
+          if sudo -n true 2>/dev/null; then echo 'sudo_root=true'; else echo 'sudo_root=false'; fi
+
+          echo '=== RUNTIME SERVICE ENVIRONMENT SOURCES ==='
+          for unit in asi-runtime-worker.service asi-runtime-dashboard.service asi-runtime-bridge-runner.service; do
+            echo "[$unit]"
+            systemctl show "$unit" -p User -p Group -p EnvironmentFiles -p ExecStart --no-pager 2>/dev/null \
+              | sed -E 's/(TOKEN|SECRET|KEY)=[^ ;]*/\1=[REDACTED]/Ig' || true
+          done
+
+          echo '=== SAFE RUNTIME ENV PATH SETTINGS ==='
+          ENV_FILE=/etc/asi-runtime/runtime.env
+          if [ -r "$ENV_FILE" ]; then
+            for key in ASI_RUNTIME_CONFIG_FILE ASI_RUNTIME_DATA_ROOT ASI_RUNTIME_WORKTREE_ROOT; do
+              value="$(awk -F= -v k="$key" '$1==k {sub(/^[^=]*=/,""); print; exit}' "$ENV_FILE")"
+              if [ -n "$value" ]; then echo "$key=$value"; else echo "$key=unset"; fi
+            done
+            repos_line="$(grep -m1 '^ASI_RUNTIME_BRIDGE_REPOSITORIES_JSON=' "$ENV_FILE" || true)"
+            if [ -n "$repos_line" ]; then
+              raw="${repos_line#*=}"
+              RAW_REPOS="$raw" node - <<'NODE'
+          try {
+            const pools=JSON.parse(process.env.RAW_REPOS||'[]');
+            console.log('bridge_repository_pools='+JSON.stringify(pools.map(p=>({repository:p.repository,runtimeRepositoryId:p.runtimeRepositoryId,branch:p.branch,checkouts:(p.checkouts||[]).map(c=>({id:c.id,path:c.path}))}))));
+          } catch { console.log('bridge_repository_pools=unparseable'); }
+          NODE
+            else
+              echo 'bridge_repository_pools=missing'
+            fi
           else
-            git -C "$REPO" fetch --prune origin main >/dev/null
-            GIT='git'
-            echo 'fetch_mode=ssh-user'
+            echo 'runtime_env_unreadable=true'
           fi
 
-          remote="$($GIT -C "$REPO" rev-parse refs/remotes/origin/main)"
-          public="$(curl -fsS --max-time 10 -H 'Accept: application/vnd.github+json' -H 'User-Agent: asi-runtime-baseline-sync' "$API" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>console.log(JSON.parse(s).sha))")"
-          echo "origin_main=$remote"
-          echo "github_main=$public"
-          test "$remote" = "$public"
-          $GIT -C "$REPO" cat-file -e "${public}^{commit}"
-          echo 'RUNTIME_BASELINE_SYNCED=true'
+          echo '=== RUNTIME CONFIG SAFE FIELDS ==='
+          CONFIG_FILE=''
+          if [ -r "$ENV_FILE" ]; then
+            CONFIG_FILE="$(awk -F= '$1=="ASI_RUNTIME_CONFIG_FILE" {sub(/^[^=]*=/,""); print; exit}' "$ENV_FILE")"
+            CONFIG_FILE="${CONFIG_FILE%\"}"; CONFIG_FILE="${CONFIG_FILE#\"}"
+          fi
+          if [ -z "$CONFIG_FILE" ]; then
+            current="$(readlink -f /opt/asi-runtime/current 2>/dev/null || true)"
+            [ -n "$current" ] && CONFIG_FILE="$current/config/runtime.json"
+          fi
+          echo "config_file=$CONFIG_FILE"
+          if [ -n "$CONFIG_FILE" ] && [ -r "$CONFIG_FILE" ]; then
+            node - "$CONFIG_FILE" <<'NODE'
+          const fs=require('fs');
+          const p=process.argv[2];
+          try {
+            const x=JSON.parse(fs.readFileSync(p,'utf8'));
+            console.log(JSON.stringify({runtimeVersion:x.runtimeVersion,dataRoot:x.dataRoot,worktreeRoot:x.worktreeRoot,repositoryPath:x.repositoryPath,defaultRepositoryId:x.defaultRepositoryId,repositories:Array.isArray(x.repositories)?x.repositories.map(r=>({id:r.id,path:r.path,repository:r.repository,defaultBranch:r.defaultBranch})):null}));
+          } catch(e) { console.log('runtime_config_unparseable='+String(e.code||e.message)); }
+          NODE
+          else
+            echo 'runtime_config_unreadable=true'
+          fi
 
-          curl -fsS --max-time 5 http://127.0.0.1:4173/api/queue | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const q=JSON.parse(s); console.log(JSON.stringify({active:q.active,waiting:q.waiting,canLaunch:q.canLaunch})); if(q.active||q.waiting?.length||q.canLaunch!==true)process.exit(22)})"
-          echo 'RUNTIME_LANE_FREE=true'
+          echo '=== CHECKOUT PATHS / PERMISSIONS ==='
+          for p in /var/lib/asi-runtime /var/lib/asi-runtime/repos /var/lib/asi-runtime/repos/asi-landing /var/lib/asi-runtime/repos/asi-os-runtime /srv /srv/asi-landing /srv/asi-os-runtime; do
+            if [ -e "$p" ]; then
+              stat -c 'path=%n type=%F owner=%U:%G mode=%a' "$p" 2>/dev/null || true
+              if git -C "$p" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+                echo "git_repo=$p"
+                git -C "$p" remote get-url origin 2>/dev/null | sed -E 's#https://[^/@]+@github.com/#https://[REDACTED]@github.com/#' | sed "s#^#origin=#" || true
+                git -C "$p" rev-parse HEAD 2>/dev/null | sed 's/^/head=/' || true
+              else
+                echo "git_repo=false path=$p"
+              fi
+            else
+              echo "missing path=$p"
+            fi
+          done
+
+          echo '=== LIVE RUNTIME HEALTH ==='
+          curl -fsS --max-time 5 http://127.0.0.1:4173/api/health 2>/dev/null \
+            | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{try{const x=JSON.parse(s);console.log(JSON.stringify({status:x.status,readOnly:x.readOnly,intakeEnabled:x.intakeEnabled,runtimeSha:x.runtimeSha,serverVersion:x.serverVersion}))}catch{console.log('health_unparseable')}})" || true
+          curl -fsS --max-time 5 http://127.0.0.1:4173/api/queue 2>/dev/null \
+            | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{try{const x=JSON.parse(s);console.log(JSON.stringify({active:x.active&&{taskId:x.active.taskId,status:x.active.status},waiting:Array.isArray(x.waiting)?x.waiting.map(t=>({taskId:t.taskId,status:t.status,position:t.position})):[],canLaunch:x.canLaunch}))}catch{console.log('queue_unparseable')}})" || true
+          echo '=== END ==='
           REMOTE
