@@ -15,10 +15,11 @@ describe('VK webhook route', () => {
 
   it('returns VK confirmation code for confirmation callback', async () => {
     process.env.VK_CONFIRMATION_CODE = 'vk-confirm-123';
+    process.env.VK_CALLBACK_SECRET = 'secret-1';
     const { POST } = await import('../route');
     const req = new Request('http://localhost/api/vk/webhook', {
       method: 'POST',
-      body: JSON.stringify({ type: 'confirmation', group_id: 77 }),
+      body: JSON.stringify({ type: 'confirmation', group_id: 77, secret: 'secret-1' }),
       headers: { 'Content-Type': 'application/json' },
     });
 

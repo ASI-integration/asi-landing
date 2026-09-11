@@ -131,7 +131,7 @@ export class PhoneAdapter implements ChannelAdapter {
 
 export function verifyPhoneWebhookSecret(headers: Headers, requestUrl?: string): boolean {
   const expected = String(process.env.PHONE_WEBHOOK_SECRET ?? '').trim();
-  if (!expected) return true;
+  if (!expected) return false;
 
   const candidates: string[] = [];
   for (const header of SECRET_HEADER_NAMES) {

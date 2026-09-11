@@ -5,11 +5,10 @@ import { sendTelegramMessage } from '@/lib/telegram';
 import { sweepExpiredPaymentSessions } from '@/lib/communication/session-status';
 import { runStayFlowAdvancement } from '@/lib/ops/stay-flow-runner';
 
-const CRON_SECRET = process.env.CRON_SECRET;
-
 export async function GET(req: Request) {
+  const cronSecret = process.env.CRON_SECRET?.trim();
   const authHeader = req.headers.get('authorization');
-  if (CRON_SECRET && authHeader !== `Bearer ${CRON_SECRET}`) {
+  if (!cronSecret || authHeader !== `Bearer ${cronSecret}`) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
