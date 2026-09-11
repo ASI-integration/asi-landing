@@ -17,7 +17,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: production
     steps:
-      - name: Inspect production env key names only
+      - name: Inspect production env key locations only
         shell: bash
         env:
           VPS_HOST: ${{ secrets.VPS_HOST }}
@@ -25,8 +25,6 @@ jobs:
           VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
         run: |
           set -euo pipefail
-          [ -n "${VPS_HOST:-}" ] || { echo "Missing VPS_HOST"; exit 1; }
-          [ -n "${VPS_SSH_KEY:-}" ] || { echo "Missing VPS_SSH_KEY"; exit 1; }
           REMOTE_PORT="${VPS_PORT:-22}"
           mkdir -p ~/.ssh && chmod 700 ~/.ssh
           printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/id_ed25519
@@ -34,18 +32,27 @@ jobs:
           SSH_OPTS=(-i ~/.ssh/id_ed25519 -p "$REMOTE_PORT" -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=20)
           ssh "${SSH_OPTS[@]}" "root@$VPS_HOST" 'bash -s' <<'REMOTE'
           set -euo pipefail
-          echo '=== SERVICE ==='
-          systemctl show asi-landing.service -p ActiveState -p SubState -p MainPID -p FragmentPath -p DropInPaths --no-pager
-          echo '=== ENV FILE KEY NAMES ==='
-          for f in /srv/asi-landing/.env /srv/asi-landing/.env.local /srv/asi-landing/.env.production /srv/asi-landing/.env.production.local /var/www/asi/shared/.env.production.local; do
+          echo '=== SERVICE UNIT SAFE FIELDS ==='
+          grep -E '^(User|Group|WorkingDirectory|ExecStart|EnvironmentFile)=' /etc/systemd/system/asi-landing.service || true
+          for f in /etc/systemd/system/asi-landing.service.d/*.conf; do
             [ -f "$f" ] || continue
             echo "--- $f"
-            sed -nE 's/^([A-Za-z_][A-Za-z0-9_]*)=.*/\1/p' "$f" | sort -u
+            grep -E '^(User|Group|WorkingDirectory|ExecStart|EnvironmentFile)=' "$f" || true
+            sed -nE 's/^Environment="?([A-Za-z_][A-Za-z0-9_]*)=.*/EnvironmentKey=\1/p' "$f" || true
           done
+          echo '=== ENV-LIKE FILES ==='
+          find /srv/asi-landing /etc /home/project_ayfaar -xdev -type f \
+            \( -name '.env*' -o -name '*env*.conf' -o -name '*env*.service' \) \
+            2>/dev/null | grep -vE '/(node_modules|\.next|\.git)/' | sort | head -200
+          echo '=== FILES CONTAINING REQUIRED KEY NAMES ==='
+          for key in SUPABASE_URL NEXT_PUBLIC_SUPABASE_URL SUPABASE_SERVICE_ROLE_KEY; do
+            echo "--- $key"
+            grep -RIl --exclude-dir=node_modules --exclude-dir=.next --exclude-dir=.git \
+              --include='.env*' --include='*.conf' --include='*.service' --include='*.sh' \
+              "^${key}=" /srv/asi-landing /etc /home/project_ayfaar 2>/dev/null | sort -u | head -50 || true
+          done
+          echo '=== CURRENT REQUIRED KEY PRESENCE ==='
           pid="$(systemctl show asi-landing.service -p MainPID --value)"
-          echo '=== PROCESS RELEVANT ENV KEYS ==='
-          tr '\0' '\n' < "/proc/$pid/environ" | sed -nE 's/^([A-Za-z_][A-Za-z0-9_]*)=.*/\1/p' | grep -E '^(SUPABASE|NEXT_PUBLIC_SUPABASE|BOOKING_OPS|CRON_SECRET|TELEGRAM|OPENAI|GOOGLE_|NEXT_PUBLIC_)' | sort -u || true
-          echo '=== REQUIRED KEY PRESENCE ==='
           for key in SUPABASE_URL NEXT_PUBLIC_SUPABASE_URL SUPABASE_SERVICE_ROLE_KEY BOOKING_OPS_AUTO_SEND_RUNNER_SECRET; do
             if tr '\0' '\n' < "/proc/$pid/environ" | grep -q "^${key}="; then echo "$key=SET"; else echo "$key=MISSING"; fi
           done
