@@ -1,10 +1,10 @@
-name: One-time production systemd bootstrap
+name: One-time production env diagnostic
 
 on:
   workflow_dispatch:
     inputs:
       confirm:
-        description: Type BOOTSTRAP_PRODUCTION_SYSTEMD
+        description: Type DIAGNOSE_PRODUCTION_ENV
         required: true
         type: string
 
@@ -12,18 +12,12 @@ permissions:
   contents: read
 
 jobs:
-  bootstrap:
-    if: ${{ inputs.confirm == 'BOOTSTRAP_PRODUCTION_SYSTEMD' }}
+  diagnose:
+    if: ${{ inputs.confirm == 'DIAGNOSE_PRODUCTION_ENV' }}
     runs-on: ubuntu-latest
     environment: production
     steps:
-      - name: Checkout audited bootstrap source
-        uses: actions/checkout@v4
-        with:
-          ref: 00f753cfd534425689fae18a8e628b85dd989361
-          fetch-depth: 1
-
-      - name: Bootstrap current production layout
+      - name: Inspect production env key names only
         shell: bash
         env:
           VPS_HOST: ${{ secrets.VPS_HOST }}
@@ -34,16 +28,25 @@ jobs:
           [ -n "${VPS_HOST:-}" ] || { echo "Missing VPS_HOST"; exit 1; }
           [ -n "${VPS_SSH_KEY:-}" ] || { echo "Missing VPS_SSH_KEY"; exit 1; }
           REMOTE_PORT="${VPS_PORT:-22}"
-          REMOTE_USER="root"
-          REMOTE_SCRIPT="/root/bootstrap-production-systemd.sh"
-          mkdir -p ~/.ssh
-          chmod 700 ~/.ssh
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
           printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
           SSH_OPTS=(-i ~/.ssh/id_ed25519 -p "$REMOTE_PORT" -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=20)
-          SCP_OPTS=(-i ~/.ssh/id_ed25519 -P "$REMOTE_PORT" -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=20)
-          ssh "${SSH_OPTS[@]}" "$REMOTE_USER@$VPS_HOST" 'test "$(id -u)" = 0 && echo ROOT_SSH_OK'
-          scp "${SCP_OPTS[@]}" scripts/bootstrap-production-systemd.sh "$REMOTE_USER@$VPS_HOST:$REMOTE_SCRIPT"
-          ssh "${SSH_OPTS[@]}" "$REMOTE_USER@$VPS_HOST" "chmod 700 '$REMOTE_SCRIPT' && /usr/bin/bash '$REMOTE_SCRIPT'"
-          ssh "${SSH_OPTS[@]}" "$REMOTE_USER@$VPS_HOST" "readlink -f /var/www/asi/current; curl -fsS http://127.0.0.1:3000/api/health"
-          ssh "${SSH_OPTS[@]}" "$REMOTE_USER@$VPS_HOST" "rm -f '$REMOTE_SCRIPT'"
+          ssh "${SSH_OPTS[@]}" "root@$VPS_HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          echo '=== SERVICE ==='
+          systemctl show asi-landing.service -p ActiveState -p SubState -p MainPID -p FragmentPath -p DropInPaths --no-pager
+          echo '=== ENV FILE KEY NAMES ==='
+          for f in /srv/asi-landing/.env /srv/asi-landing/.env.local /srv/asi-landing/.env.production /srv/asi-landing/.env.production.local /var/www/asi/shared/.env.production.local; do
+            [ -f "$f" ] || continue
+            echo "--- $f"
+            sed -nE 's/^([A-Za-z_][A-Za-z0-9_]*)=.*/\1/p' "$f" | sort -u
+          done
+          pid="$(systemctl show asi-landing.service -p MainPID --value)"
+          echo '=== PROCESS RELEVANT ENV KEYS ==='
+          tr '\0' '\n' < "/proc/$pid/environ" | sed -nE 's/^([A-Za-z_][A-Za-z0-9_]*)=.*/\1/p' | grep -E '^(SUPABASE|NEXT_PUBLIC_SUPABASE|BOOKING_OPS|CRON_SECRET|TELEGRAM|OPENAI|GOOGLE_|NEXT_PUBLIC_)' | sort -u || true
+          echo '=== REQUIRED KEY PRESENCE ==='
+          for key in SUPABASE_URL NEXT_PUBLIC_SUPABASE_URL SUPABASE_SERVICE_ROLE_KEY BOOKING_OPS_AUTO_SEND_RUNNER_SECRET; do
+            if tr '\0' '\n' < "/proc/$pid/environ" | grep -q "^${key}="; then echo "$key=SET"; else echo "$key=MISSING"; fi
+          done
+          REMOTE
