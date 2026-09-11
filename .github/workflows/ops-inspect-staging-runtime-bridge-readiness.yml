@@ -35,24 +35,37 @@ jobs:
           ssh -i ~/.ssh/staging_probe_key -p "$SSH_PORT" -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=20 "$STAGING_SSH_USER@$STAGING_SSH_HOST" 'bash -s' <<'REMOTE'
           set -euo pipefail
 
-          [ "$(id -u)" = 0 ] || { echo 'BLOCKED: staging SSH user must be root for guarded checkout bootstrap'; exit 20; }
-          command -v runuser >/dev/null || { echo 'BLOCKED: runuser is unavailable'; exit 21; }
-          getent passwd asi-runtime >/dev/null || { echo 'BLOCKED: asi-runtime user missing'; exit 22; }
+          getent passwd asi-runtime >/dev/null || { echo 'BLOCKED: asi-runtime user missing'; exit 20; }
           RUNTIME_HOME="$(getent passwd asi-runtime | cut -d: -f6)"
-          [ -d "$RUNTIME_HOME" ] || { echo 'BLOCKED: asi-runtime home missing'; exit 23; }
+          [ -d "$RUNTIME_HOME" ] || { echo 'BLOCKED: asi-runtime home missing'; exit 21; }
+          CURRENT_USER="$(id -un)"
+          CURRENT_UID="$(id -u)"
+          echo "ssh_identity=${CURRENT_USER} uid=${CURRENT_UID}"
 
-          as_runtime() {
-            runuser -u asi-runtime -- env HOME="$RUNTIME_HOME" USER=asi-runtime LOGNAME=asi-runtime "$@"
-          }
+          if [ "$CURRENT_USER" = asi-runtime ]; then
+            AS_MODE=direct
+            as_runtime() { env HOME="$RUNTIME_HOME" USER=asi-runtime LOGNAME=asi-runtime "$@"; }
+          elif [ "$CURRENT_UID" = 0 ] && command -v runuser >/dev/null; then
+            AS_MODE=runuser
+            as_runtime() { runuser -u asi-runtime -- env HOME="$RUNTIME_HOME" USER=asi-runtime LOGNAME=asi-runtime "$@"; }
+          elif command -v sudo >/dev/null && sudo -n -u asi-runtime true 2>/dev/null; then
+            AS_MODE=sudo
+            as_runtime() { sudo -n -u asi-runtime env HOME="$RUNTIME_HOME" USER=asi-runtime LOGNAME=asi-runtime "$@"; }
+          else
+            echo 'BLOCKED: SSH identity cannot execute as asi-runtime without interaction'
+            echo "srv_landing_writable=$([ -w /srv/asi-landing ] && echo true || echo false)"
+            echo "srv_runtime_writable=$([ -w /srv/asi-os-runtime ] && echo true || echo false)"
+            echo "repo_pool_writable=$([ -w /var/lib/asi-runtime/repos ] && echo true || echo false)"
+            exit 22
+          fi
+          echo "runtime_exec_mode=${AS_MODE}"
 
           echo '=== PRECHECK: EXECUTION LANE MUST BE FREE ==='
           curl -fsS --max-time 5 http://127.0.0.1:4173/api/queue > /tmp/asi-runtime-queue.json
           node - /tmp/asi-runtime-queue.json <<'NODE'
-          const fs=require('fs');
-          const q=JSON.parse(fs.readFileSync(process.argv[2],'utf8'));
-          const safe={active:q.active&&{taskId:q.active.taskId,status:q.active.status},waiting:Array.isArray(q.waiting)?q.waiting.map(x=>({taskId:x.taskId,status:x.status,position:x.position})):[],canLaunch:q.canLaunch};
-          console.log(JSON.stringify(safe));
-          if(q.active || (Array.isArray(q.waiting)&&q.waiting.length) || q.canLaunch!==true) process.exit(24);
+          const fs=require('fs'); const q=JSON.parse(fs.readFileSync(process.argv[2],'utf8'));
+          console.log(JSON.stringify({active:q.active&&{taskId:q.active.taskId,status:q.active.status},waiting:Array.isArray(q.waiting)?q.waiting.map(x=>({taskId:x.taskId,status:x.status,position:x.position})):[],canLaunch:q.canLaunch}));
+          if(q.active || (Array.isArray(q.waiting)&&q.waiting.length) || q.canLaunch!==true) process.exit(23);
           NODE
 
           LANDING_ORIGIN='git@github.com-asi-landing:ASI-integration/asi-landing.git'
@@ -63,29 +76,36 @@ jobs:
             local label="$1" origin="$2" result sha
             if ! result="$(as_runtime git ls-remote "$origin" refs/heads/main 2>/tmp/${label}-lsremote.err)"; then
               echo "BLOCKED: ${label} GitHub SSH identity cannot read main"
-              sed -E 's/(token|secret|key)[^[:space:]]*/\1=[REDACTED]/Ig' /tmp/${label}-lsremote.err | tail -n 8 || true
-              exit 25
+              tail -n 8 /tmp/${label}-lsremote.err | sed -E 's/(token|secret|key)[^[:space:]]*/\1=[REDACTED]/Ig' || true
+              exit 24
             fi
             sha="${result%%[[:space:]]*}"
-            [[ "$sha" =~ ^[0-9a-f]{40}$ ]] || { echo "BLOCKED: ${label} main did not resolve to a commit"; exit 26; }
+            [[ "$sha" =~ ^[0-9a-f]{40}$ ]] || { echo "BLOCKED: ${label} main did not resolve to a commit"; exit 25; }
             echo "${label}_remote_main=${sha}"
           }
           probe_remote landing "$LANDING_ORIGIN"
           probe_remote runtime "$RUNTIME_ORIGIN"
 
+          ensure_runtime_dir() {
+            local path="$1"
+            if [ -d "$path" ]; then return 0; fi
+            if as_runtime mkdir -p "$path" 2>/dev/null; then return 0; fi
+            if [ "$CURRENT_UID" = 0 ]; then
+              install -d -o asi-runtime -g asi-runtime -m 0755 "$path"; return 0
+            fi
+            echo "BLOCKED: cannot create ${path} as asi-runtime"; exit 26
+          }
+
           ensure_checkout() {
             local label="$1" path="$2" origin="$3"
             echo "=== CHECKOUT ${label}: ${path} ==="
-            if [ -e "$path" ] && [ ! -d "$path" ]; then
-              echo "BLOCKED: ${path} exists and is not a directory"; exit 30
-            fi
+            if [ -e "$path" ] && [ ! -d "$path" ]; then echo "BLOCKED: ${path} is not a directory"; exit 30; fi
             if [ -d "$path" ] && ! as_runtime git -C "$path" rev-parse --git-dir >/dev/null 2>&1; then
               if [ -n "$(find "$path" -mindepth 1 -maxdepth 1 -print -quit 2>/dev/null)" ]; then
-                echo "BLOCKED: ${path} is non-empty and not a Git repository; refusing destructive bootstrap"; exit 31
+                echo "BLOCKED: ${path} is non-empty and not Git; refusing destructive bootstrap"; exit 31
               fi
             fi
-
-            install -d -o asi-runtime -g asi-runtime -m 0755 "$path"
+            ensure_runtime_dir "$path"
 
             if ! as_runtime git -C "$path" rev-parse --git-dir >/dev/null 2>&1; then
               as_runtime git -C "$path" init --initial-branch=main >/dev/null
@@ -97,12 +117,8 @@ jobs:
 
             local observed_origin
             observed_origin="$(as_runtime git -C "$path" remote get-url origin 2>/dev/null || true)"
-            if [ "$observed_origin" != "$origin" ]; then
-              echo "BLOCKED: ${path} origin mismatch"; exit 32
-            fi
-            if [ -n "$(as_runtime git -C "$path" status --porcelain --untracked-files=all 2>/dev/null || true)" ]; then
-              echo "BLOCKED: ${path} is dirty; refusing to reset it"; exit 33
-            fi
+            [ "$observed_origin" = "$origin" ] || { echo "BLOCKED: ${path} origin mismatch"; exit 32; }
+            [ -z "$(as_runtime git -C "$path" status --porcelain --untracked-files=all 2>/dev/null || true)" ] || { echo "BLOCKED: ${path} is dirty"; exit 33; }
 
             as_runtime git -C "$path" fetch --prune origin main >/dev/null
             local remote_sha head branch
@@ -123,22 +139,13 @@ jobs:
           ensure_checkout runtime-pool /var/lib/asi-runtime/repos/asi-os-runtime "$RUNTIME_ORIGIN"
 
           echo '=== WAIT FOR BRIDGE RUNNER READINESS RECONCILIATION ==='
-          sleep 12
+          sleep 15
           ART=/var/lib/asi-runtime/state/bridge-runner-readiness.json
           [ -r "$ART" ] || { echo 'BLOCKED: readiness artifact missing'; exit 40; }
           node - "$ART" <<'NODE'
-          const fs=require('fs');
-          const x=JSON.parse(fs.readFileSync(process.argv[2],'utf8'));
-          const out={
-            schemaVersion:x.schemaVersion,
-            checkedAt:x.checkedAt,
-            expiresAt:x.expiresAt,
-            capabilities:x.capabilities,
-            blockers:x.blockers,
-            repositories:Array.isArray(x.repositories)?x.repositories.map(r=>({repositoryId:r.repositoryId,fullName:r.fullName,canonicalCheckoutPath:r.canonicalCheckoutPath,observedBaselineSha:r.observedBaselineSha,checkoutReady:r.checkoutReady,originReady:r.originReady,baselineReady:r.baselineReady,recoveryReady:r.recoveryReady,blockers:r.blockers})):[]
-          };
-          console.log(JSON.stringify(out));
-          const repos=out.repositories;
+          const fs=require('fs'); const x=JSON.parse(fs.readFileSync(process.argv[2],'utf8'));
+          const repos=Array.isArray(x.repositories)?x.repositories.map(r=>({repositoryId:r.repositoryId,fullName:r.fullName,canonicalCheckoutPath:r.canonicalCheckoutPath,observedBaselineSha:r.observedBaselineSha,checkoutReady:r.checkoutReady,originReady:r.originReady,baselineReady:r.baselineReady,recoveryReady:r.recoveryReady,blockers:r.blockers})):[];
+          console.log(JSON.stringify({schemaVersion:x.schemaVersion,checkedAt:x.checkedAt,expiresAt:x.expiresAt,capabilities:x.capabilities,blockers:x.blockers,repositories:repos}));
           const everyRepoReady=repos.length>=4 && repos.every(r=>r.checkoutReady&&r.originReady&&r.baselineReady&&r.recoveryReady&&(!r.blockers||r.blockers.length===0));
           const caps=x.capabilities||{};
           const capabilitiesReady=caps.checkouts?.state==='ready' && caps.baselineRecovery?.state==='ready' && caps.executor?.state==='ready';
