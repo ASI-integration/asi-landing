@@ -45,6 +45,7 @@ function cloneRecord(record: GuestLifecycleExecutionRecord): GuestLifecycleExecu
 export function syntheticLifecycleContext(overrides: Partial<GuestLifecycleReservationContext> = {}): GuestLifecycleReservationContext {
   return {
     bookingOpsRecordId: '11111111-1111-4111-8111-111111111111',
+    accountId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
     reservationId: 'synthetic-reservation-1',
     propertyId: 'synthetic-property-1',
     guestId: 'synthetic-guest-1',

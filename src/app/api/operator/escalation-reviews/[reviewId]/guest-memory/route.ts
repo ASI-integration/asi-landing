@@ -9,6 +9,7 @@ import {
   upsertGuestPreference,
   type GuestPreferenceKey,
 } from '@/lib/communication/guest-long-term-memory';
+import { resolveGuestMemoryAccountId } from '@/lib/communication/guest-memory-account';
 
 export const dynamic = 'force-dynamic';
 
@@ -19,7 +20,12 @@ async function authorizedReview(reviewId: string) {
   if (!review) return { ok: false as const, error: 'not_found' as const };
   const guestId = String(review.source?.guest_id ?? '').trim();
   if (!guestId) return { ok: false as const, error: 'guest_memory_unavailable' as const };
-  return { ok: true as const, session, review, guestId };
+  const accountId = await resolveGuestMemoryAccountId({
+    reservationId: review.reservationId,
+    propertyId: review.propertyId,
+  });
+  if (!accountId) return { ok: false as const, error: 'guest_memory_unavailable' as const };
+  return { ok: true as const, session, review, guestId, accountId };
 }
 
 function errorResponse(error: string) {
@@ -32,7 +38,7 @@ export async function GET(_req: NextRequest, ctx: { params: { reviewId: string }
   const authorized = await authorizedReview(ctx.params.reviewId);
   if (!authorized.ok) return errorResponse(authorized.error);
   try {
-    const memory = await loadGuestLongTermMemory(authorized.guestId);
+    const memory = await loadGuestLongTermMemory(authorized.guestId, authorized.accountId);
     return NextResponse.json({ ok: true, memory });
   } catch (error) {
     return NextResponse.json({
@@ -58,6 +64,7 @@ export async function PATCH(req: NextRequest, ctx: { params: { reviewId: string 
     if (action === 'correct_preference') {
       await upsertGuestPreference({
         guestId: authorized.guestId,
+        accountId: authorized.accountId,
         key: String(body.key ?? '') as GuestPreferenceKey,
         value: String(body.value ?? ''),
         source: 'operator_confirmed',
@@ -67,25 +74,27 @@ export async function PATCH(req: NextRequest, ctx: { params: { reviewId: string 
     } else if (action === 'delete_preference' || action === 'delete_event') {
       await deleteGuestMemoryItem({
         guestId: authorized.guestId,
+        accountId: authorized.accountId,
         kind: action === 'delete_preference' ? 'preference' : 'event',
         itemId: String(body.itemId ?? ''),
       });
     } else if (action === 'correct_event') {
       await correctGuestOperationalEvent({
         guestId: authorized.guestId,
+        accountId: authorized.accountId,
         itemId: String(body.itemId ?? ''),
         summary: String(body.summary ?? ''),
         sourceRef: `operator:${authorized.session.userId}:review:${authorized.review.reviewId}`,
       });
     } else if (action === 'forget_all') {
-      await forgetGuestLongTermMemory(authorized.guestId);
+      await forgetGuestLongTermMemory(authorized.guestId, authorized.accountId);
     } else {
       return NextResponse.json({ ok: false, error: 'unknown_action' }, { status: 400 });
     }
 
     const memory = action === 'forget_all'
       ? { profile: null, preferences: [], events: [] }
-      : await loadGuestLongTermMemory(authorized.guestId);
+      : await loadGuestLongTermMemory(authorized.guestId, authorized.accountId);
     return NextResponse.json({ ok: true, memory });
   } catch (error) {
     return NextResponse.json({
