@@ -30,7 +30,13 @@ ALTER TABLE public.guest_memory_profiles
 DO $$
 BEGIN
   IF NOT EXISTS (
-    SELECT 1 FROM pg_constraint WHERE conname = 'guest_memory_profiles_id_pkey'
+    SELECT 1
+    FROM pg_constraint con
+    JOIN pg_class rel ON rel.oid = con.conrelid
+    JOIN pg_namespace nsp ON nsp.oid = rel.relnamespace
+    WHERE nsp.nspname = 'public'
+      AND rel.relname = 'guest_memory_profiles'
+      AND con.conname = 'guest_memory_profiles_id_pkey'
   ) THEN
     ALTER TABLE public.guest_memory_profiles ADD CONSTRAINT guest_memory_profiles_id_pkey PRIMARY KEY (id);
   END IF;
@@ -54,7 +60,7 @@ BEGIN
     AND rel.relname = 'guest_memory_preferences'
     AND con.contype = 'u'
     AND (
-      SELECT array_agg(attname ORDER BY attname)
+      SELECT array_agg(attr.attname::text ORDER BY attr.attname::text)
       FROM unnest(con.conkey) AS colnum
       JOIN pg_attribute attr ON attr.attrelid = con.conrelid AND attr.attnum = colnum
     ) = ARRAY['guest_id', 'preference_key']::text[];

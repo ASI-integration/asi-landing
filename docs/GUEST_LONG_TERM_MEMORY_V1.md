@@ -7,6 +7,8 @@ Guest long-term memory is a durable layer keyed by the existing unified `guestId
 - Every read, write, correction, deletion, and “forget guest” path requires both `account_id` and `guest_id`.
 - Missing or unproven `accountId` fails closed (empty read / no write). It never falls back to a global guest search.
 - `propertyId` is never used as a substitute for `accountId`.
+- Legacy non-UUID text `propertyId` values remain fail-closed for account resolution until a separate trusted binding exists; they are not guessed from the only/first row.
+- Operator guest-memory API access requires CRM-operator authentication plus exact `account_members` membership for the proven review `accountId` (403 before any memory read/write on denial).
 - `guest_memory_profiles` stores bounded profile fields: preferred language, text/voice preference, stay count, and first/last-seen timestamps.
 - `guest_memory_preferences` stores one replaceable row per supported operational preference, with source, confidence, and timestamps.
 - `guest_memory_events` stores structured operational history. A database trigger keeps at most 50 active events per `(account_id, guest_id)`.
@@ -38,8 +40,14 @@ These are separate owner-controlled actions after the draft PR is reviewed and m
 7. In the operator communication dashboard, use a controlled guest record to verify language persistence, one explicit preference, correction, deletion, and full forget within one account. Do not send a real guest message for this verification.
 8. Confirm that a current property parking answer overrides older guest history and that previous late checkout appears only as history.
 9. Confirm that the same `guestId` under two accounts remains isolated, and that missing tenant evidence produces no memory read/write.
+10. Confirm that a non-CRM signed-in user and a cross-account CRM operator both receive 403 with zero memory mutations.
 
 No new environment variable, subscription, external provider, or secret is required.
+
+## Known fail-closed limits
+
+- Non-UUID legacy text `propertyId` does not resolve to an `accountId` in this v1 path. Memory observation/load for those reviews stays unavailable until a separate trusted binding is reviewed and applied.
+- Pre-isolation rows with `account_id IS NULL` are intentionally excluded from tenant-scoped application reads and are not auto-assigned.
 
 ## Rollback
 

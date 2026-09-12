@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getSession } from '@/lib/auth';
+import { requireCrmOperatorSession } from '@/lib/crm/api-auth';
 import { getEscalationReview } from '@/lib/communication/operator-review';
 import {
   correctGuestOperationalEvent,
@@ -9,34 +9,57 @@ import {
   upsertGuestPreference,
   type GuestPreferenceKey,
 } from '@/lib/communication/guest-long-term-memory';
-import { resolveGuestMemoryAccountId } from '@/lib/communication/guest-memory-account';
+import {
+  assertExactAccountMembership,
+  resolveGuestMemoryAccountId,
+} from '@/lib/communication/guest-memory-account';
 
 export const dynamic = 'force-dynamic';
 
+function forbidden(): NextResponse {
+  return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+}
+
 async function authorizedReview(reviewId: string) {
-  const session = await getSession();
-  if (!session.userId) return { ok: false as const, error: 'unauthorized' as const };
+  const auth = await requireCrmOperatorSession();
+  if ('error' in auth) return { ok: false as const, response: auth.error };
+
   const review = getEscalationReview(reviewId);
-  if (!review) return { ok: false as const, error: 'not_found' as const };
+  if (!review) {
+    return { ok: false as const, response: NextResponse.json({ error: 'not_found' }, { status: 404 }) };
+  }
+
   const guestId = String(review.source?.guest_id ?? '').trim();
-  if (!guestId) return { ok: false as const, error: 'guest_memory_unavailable' as const };
+  if (!guestId) {
+    return { ok: false as const, response: NextResponse.json({ ok: true, memory: null, unavailable: true }) };
+  }
+
   const accountId = await resolveGuestMemoryAccountId({
     reservationId: review.reservationId,
     propertyId: review.propertyId,
   });
-  if (!accountId) return { ok: false as const, error: 'guest_memory_unavailable' as const };
-  return { ok: true as const, session, review, guestId, accountId };
-}
+  if (!accountId) {
+    return { ok: false as const, response: NextResponse.json({ ok: true, memory: null, unavailable: true }) };
+  }
 
-function errorResponse(error: string) {
-  if (error === 'unauthorized') return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  if (error === 'not_found') return NextResponse.json({ error }, { status: 404 });
-  return NextResponse.json({ ok: true, memory: null, unavailable: true });
+  const member = await assertExactAccountMembership({
+    userId: auth.session.userId,
+    accountId,
+  });
+  if (!member) return { ok: false as const, response: forbidden() };
+
+  return {
+    ok: true as const,
+    session: auth.session,
+    review,
+    guestId,
+    accountId,
+  };
 }
 
 export async function GET(_req: NextRequest, ctx: { params: { reviewId: string } }) {
   const authorized = await authorizedReview(ctx.params.reviewId);
-  if (!authorized.ok) return errorResponse(authorized.error);
+  if (!authorized.ok) return authorized.response;
   try {
     const memory = await loadGuestLongTermMemory(authorized.guestId, authorized.accountId);
     return NextResponse.json({ ok: true, memory });
@@ -50,7 +73,7 @@ export async function GET(_req: NextRequest, ctx: { params: { reviewId: string }
 
 export async function PATCH(req: NextRequest, ctx: { params: { reviewId: string } }) {
   const authorized = await authorizedReview(ctx.params.reviewId);
-  if (!authorized.ok) return errorResponse(authorized.error);
+  if (!authorized.ok) return authorized.response;
 
   let body: Record<string, unknown>;
   try {
