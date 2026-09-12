@@ -8,13 +8,14 @@ import { LocalePathSync } from '@/components/LocalePathSync';
 import { hostnameFromHostHeader, isRuRuntimeHost } from '@/lib/runtimeHost';
 
 export const metadata: Metadata = {
-  title: 'ASI — Full operational automation',
-  description: 'Full operational automation for real estate and hospitality: guest comms, listings, pricing, bookings, and execution — replaces the ops layer, not another tool.',
+  title: 'ASI Global — Autonomous Operational Intelligence',
+  description:
+    'ASI connects systems, people and AI and carries real operational processes from event to verified outcome.',
   alternates: {
+    canonical: 'https://asi-global.com',
     languages: {
       'x-default': 'https://asi-global.com',
       en: 'https://asi-global.com',
-      ru: 'https://asi-global.ru/',
     },
   },
 };

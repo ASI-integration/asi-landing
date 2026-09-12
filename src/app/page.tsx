@@ -1,10 +1,7 @@
 import Link from 'next/link';
 import { headers } from 'next/headers';
 import type { Metadata } from 'next';
-import { HeroSection } from '@/components/HeroSection';
 
-import { STRIPE_PAYMENT_LINK } from '@/config/payments';
-import { FaqAccordion } from '@/components/FaqAccordion';
 import { productSupportEmail } from '@/config/contact';
 import { telegramSupportBotHandle, telegramSupportBotUrl } from '@/config/telegramBots';
 import { TgIcon } from '@/components/TgIcon';
@@ -12,44 +9,53 @@ import { RU_PUBLIC_ORIGIN, EN_PUBLIC_ORIGIN } from '@/config/publicOrigins';
 import { hostnameFromHostHeader, isRuRuntimeHost } from '@/lib/runtimeHost';
 import HomeRu from '@/app/ru/page';
 
-/* ─── Contacts ──────────────────────────────────────────────────────────────── */
-function ContactLinks({ orientation = 'row' }: { orientation?: 'row' | 'col' }) {
-  const cls = orientation === 'row'
-    ? 'flex flex-col sm:flex-row justify-center gap-4'
-    : 'flex flex-col gap-3';
+const PROCESS_STEPS = [
+  ['01', 'Event', 'A message, booking, sensor alert, payment issue, task, or operational change enters the system.'],
+  ['02', 'Context', 'ASI gathers the relevant state, history, rules, dependencies, and live signals.'],
+  ['03', 'Decision', 'The system decides what should happen next within the allowed operating policy.'],
+  ['04', 'Action', 'It triggers the required actions across connected systems, people, and AI tools.'],
+  ['05', 'Control', 'ASI checks execution, deadlines, exceptions, and whether the expected result actually happened.'],
+  ['06', 'Outcome', 'The process is completed, escalated when necessary, and recorded in an audit trail.'],
+] as const;
 
-  return (
-    <div className={cls}>
-      <a
-        href={telegramSupportBotUrl}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="inline-flex items-center justify-center gap-3 px-6 py-3.5 rounded-xl bg-[#2CA5E0]/10 border border-[#2CA5E0]/30 text-white font-semibold text-sm hover:bg-[#2CA5E0]/20 hover:border-[#2CA5E0]/60 transition-all"
-      >
-        <TgIcon />
-        @{telegramSupportBotHandle}
-      </a>
-      <a
-        href={`mailto:${productSupportEmail}`}
-        className="inline-flex items-center justify-center gap-3 px-6 py-3.5 rounded-xl bg-slate-800/60 border border-slate-700 text-white font-semibold text-sm hover:bg-slate-800 hover:border-slate-600 transition-all"
-      >
-        <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5 text-slate-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5} aria-hidden="true">
-          <path strokeLinecap="round" strokeLinejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25H4.5a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5H4.5a2.25 2.25 0 00-2.25 2.25m19.5 0L12 13.5 2.25 6.75" />
-        </svg>
-        {productSupportEmail}
-      </a>
-    </div>
-  );
-}
+const USE_CASES = [
+  {
+    eyebrow: 'Working vertical',
+    title: 'Hospitality & Property Operations',
+    body: 'Guest communication, booking intake, access, housekeeping, inspections, maintenance coordination, and exception handling.',
+  },
+  {
+    eyebrow: 'Expansion vertical',
+    title: 'Commercial Property',
+    body: 'Operational events, tenant workflows, service requests, payment timing, maintenance, and property-level coordination.',
+  },
+  {
+    eyebrow: 'Expansion vertical',
+    title: 'Field & Service Operations',
+    body: 'Dispatch, task ownership, SLA control, technician coordination, follow-up, and evidence of completion.',
+  },
+  {
+    eyebrow: 'Reusable core',
+    title: 'Back-Office Processes',
+    body: 'Multi-step workflows that currently depend on people checking inboxes, dashboards, spreadsheets, and separate AI tools.',
+  },
+] as const;
 
-/* ─── Host detection helper ─────────────────────────────────────────────────── */
+const HOSPITALITY_CAPABILITIES = [
+  'Guest and web intake',
+  'End-to-end communication',
+  'Booking intake and operational handoff',
+  'Housekeeping, linen, inspection, and maintenance workflows',
+  'Rules, approvals, escalation, and owner control',
+  'Execution history and audit trail',
+] as const;
+
 async function getIsRuHost(): Promise<boolean> {
   const h = await headers();
   const raw = h.get('x-forwarded-host')?.split(',')[0]?.trim() ?? h.get('host') ?? '';
   return isRuRuntimeHost(hostnameFromHostHeader(raw));
 }
 
-/* ─── Metadata (RU or EN based on host) ─────────────────────────────────────── */
 export async function generateMetadata(): Promise<Metadata> {
   if (await getIsRuHost()) {
     return {
@@ -59,254 +65,274 @@ export async function generateMetadata(): Promise<Metadata> {
       alternates: {
         canonical: `${RU_PUBLIC_ORIGIN}/`,
         languages: {
-          'x-default': EN_PUBLIC_ORIGIN,
-          en: EN_PUBLIC_ORIGIN,
           ru: `${RU_PUBLIC_ORIGIN}/`,
         },
       },
     };
   }
-  return {};
+
+  return {
+    title: 'ASI Global — Autonomous Operational Intelligence',
+    description:
+      'ASI connects your systems, people and AI, then carries real operational processes from event to verified outcome.',
+    alternates: {
+      canonical: EN_PUBLIC_ORIGIN,
+      languages: {
+        'x-default': EN_PUBLIC_ORIGIN,
+        en: EN_PUBLIC_ORIGIN,
+      },
+    },
+  };
 }
 
-/* ─── Page ──────────────────────────────────────────────────────────────────── */
 export default async function Home() {
   if (await getIsRuHost()) return <HomeRu />;
+
   return (
-    <div className="min-h-screen bg-slate-950">
+    <div className="min-h-screen bg-slate-950 text-white">
+      <header className="sticky top-0 z-50 border-b border-slate-800/70 bg-slate-950/90 backdrop-blur-md">
+        <div className="mx-auto flex max-w-6xl items-center justify-between gap-6 px-4 py-4 sm:px-6">
+          <Link href="/" className="shrink-0 text-xl font-bold tracking-tight">
+            ASI Global
+          </Link>
 
-      {/* ── Header ── */}
-      <header className="sticky top-0 z-50 bg-slate-950/90 backdrop-blur-md border-b border-slate-800/60">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 py-3.5 flex items-center justify-between gap-4">
+          <nav className="hidden items-center gap-6 text-sm text-slate-400 md:flex">
+            <a href="#how" className="transition-colors hover:text-white">How it works</a>
+            <a href="#use-cases" className="transition-colors hover:text-white">Use cases</a>
+            <a href="#hospitality" className="transition-colors hover:text-white">Working product</a>
+            <a href="#demo" className="transition-colors hover:text-white">Demo flow</a>
+          </nav>
 
-          {/* Brand + nav */}
-          <div className="flex items-center gap-6">
-            <Link href="/" className="text-2xl font-bold text-white tracking-tight shrink-0">
-              ASI
-            </Link>
-            <Link href="/features/location-analysis" className="hidden sm:block text-sm text-slate-400 hover:text-white transition-colors">
-              Location Analysis
-            </Link>
-            <Link href="/features/communication" className="hidden sm:block text-sm text-slate-400 hover:text-white transition-colors">
-              Communication
-            </Link>
-            <a href="#faq" className="hidden sm:block text-sm text-slate-400 hover:text-white transition-colors">
-              FAQ
-            </a>
-          </div>
-
-          {/* Right: contacts + Telegram + Login */}
-          <div className="flex items-center gap-3 sm:gap-4">
-            <a
-              href={`mailto:${productSupportEmail}`}
-              className="hidden sm:block text-sm text-slate-400 hover:text-white transition-colors truncate max-w-[11rem] md:max-w-none"
-              title={productSupportEmail}
-            >
-              {productSupportEmail}
-            </a>
-            <span className="hidden sm:block w-px h-4 bg-slate-800 shrink-0" />
-            <a
-              href={telegramSupportBotUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="hidden sm:inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-[#2CA5E0]/10 border border-[#2CA5E0]/25 text-sky-300 hover:bg-[#2CA5E0]/20 hover:border-[#2CA5E0]/50 transition-all text-sm font-semibold"
-            >
-              <TgIcon className="w-4 h-4 shrink-0" />
-              Telegram
-            </a>
-            <div className="flex items-center gap-1 text-sm">
-              <span className="px-2 py-1 rounded font-semibold text-white bg-slate-800">EN</span>
-              <span className="text-slate-700">|</span>
-              <a href={`${RU_PUBLIC_ORIGIN}/`} className="px-2 py-1 rounded text-slate-400 hover:text-white transition-colors">RU</a>
-            </div>
+          <div className="flex items-center gap-3">
             <Link
               href="/login"
-              className="inline-flex items-center justify-center px-4 py-2 bg-white text-slate-900 text-sm font-semibold rounded-lg hover:bg-slate-100 transition-colors shadow-sm"
+              className="hidden rounded-lg border border-slate-700 px-4 py-2 text-sm font-semibold text-slate-200 transition-colors hover:border-slate-500 hover:text-white sm:inline-flex"
             >
               Log in
             </Link>
+            <a
+              href="#contact"
+              className="inline-flex rounded-lg bg-white px-4 py-2 text-sm font-semibold text-slate-950 transition-transform hover:scale-[1.02]"
+            >
+              Book a demo
+            </a>
           </div>
         </div>
       </header>
 
       <main>
-
-        {/* ── Hero ── */}
-        <HeroSection content={{
-          aboutLabel: 'About',
-          aboutHeadline: 'AI Operational System for Short-Term Rentals',
-          aboutBody: 'ASI is not a dashboard or tool you manage. It replaces your ops team — handling guests, bookings, pricing, and property access automatically, around the clock.',
-          aboutPoints: [
-            'Not a dashboard',
-            'Not a tool you manage',
-            'Replaces your operational team',
-          ],
-          detailsLabel: 'Contact',
-          loginLabel: 'Log in',
-          loginHref: '/login',
-          offerHeadline: <>Your rental property <span className="text-slate-300">runs itself.</span></>,
-          offerSub: <>AI operational system for short-term rental owners.<br className="hidden sm:block" /> No operations, no staff — just income.</>,
-          ctaLabel: 'Get access',
-          ctaHref: STRIPE_PAYMENT_LINK,
-          ctaSub: 'One-time payment · $10 · Instant access',
-        }} />
-
-        {/* ── Product modules ── */}
-        <section className="py-16 sm:py-20 px-4 sm:px-6 bg-slate-950 border-t border-slate-800/60">
-          <div className="max-w-5xl mx-auto">
-            <h2 className="text-2xl sm:text-3xl font-bold text-white mb-2">
-              Three modules
-            </h2>
-            <p className="text-slate-400 mb-10">
-              Each covers a distinct part of operations — and works as part of one system.
+        <section className="relative overflow-hidden px-4 py-24 sm:px-6 sm:py-32">
+          <div className="pointer-events-none absolute inset-0 opacity-[0.04]" style={{
+            backgroundImage:
+              'linear-gradient(rgba(255,255,255,0.15) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.15) 1px, transparent 1px)',
+            backgroundSize: '64px 64px',
+          }} />
+          <div className="relative mx-auto max-w-5xl text-center">
+            <p className="mb-6 text-xs font-bold uppercase tracking-[0.28em] text-slate-500">
+              Autonomous Operational Intelligence
             </p>
-            <div className="grid sm:grid-cols-3 gap-6">
-
-              {/* Module 1 — Location */}
-              <Link
-                href="/features/location-analysis"
-                className="group flex flex-col p-7 rounded-2xl border border-slate-800 bg-slate-900/60 hover:border-indigo-500/50 hover:bg-indigo-950/20 transition-all"
-              >
-                <div className="text-3xl mb-4">📍</div>
-                <h3 className="font-bold text-white text-lg mb-2">Location Analysis</h3>
-                <p className="text-sm text-slate-400 leading-relaxed mb-6 flex-1">
-                  Instant demo preview: enter an address and get a fast, approximate estimate (magnets, competition density, income range).
-                  Request the full report separately — deeper signals and a slower async run for dense cities.
-                </p>
-                <span className="inline-flex items-center gap-1.5 text-sm font-semibold text-indigo-400 group-hover:text-indigo-300 transition-colors">
-                  Open demo →
-                </span>
-              </Link>
-
-              {/* Module 2 — Communication */}
-              <Link
-                href="/features/communication"
-                className="group flex flex-col p-7 rounded-2xl border border-slate-800 bg-slate-900/60 hover:border-sky-500/50 hover:bg-sky-950/20 transition-all"
-              >
-                <div className="text-3xl mb-4">💬</div>
-                <h3 className="font-bold text-white text-lg mb-2">Communication Module</h3>
-                <p className="text-sm text-slate-400 leading-relaxed mb-6 flex-1">
-                  AI handles all guest messaging end to end — instant replies, in-chat execution, escalation only for true edge cases.
-                </p>
-                <span className="inline-flex items-center gap-1.5 text-sm font-semibold text-sky-400 group-hover:text-sky-300 transition-colors">
-                  Open demo →
-                </span>
-              </Link>
-
-              {/* Module 3 — Full Platform */}
-              <div className="flex flex-col p-7 rounded-2xl border border-indigo-500/40 bg-indigo-950/20">
-                <div className="text-3xl mb-4">🔄</div>
-                <h3 className="font-bold text-white text-lg mb-2">Full Platform</h3>
-                <p className="text-sm text-slate-300 leading-relaxed mb-6 flex-1">
-                  Operations autopilot: guest comms, bookings, pricing, access control, and task execution — no ops team required.
-                </p>
-                <a
-                  href={STRIPE_PAYMENT_LINK}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1.5 text-sm font-semibold text-white hover:opacity-80 transition-opacity"
-                >
-                  Get access — $10 →
-                </a>
-              </div>
-
-            </div>
-          </div>
-        </section>
-
-        {/* ── FAQ ── */}
-        <section id="faq" className="scroll-mt-20 py-20 sm:py-24 px-4 sm:px-6 bg-slate-950 border-t border-slate-800/60">
-          <div className="max-w-3xl mx-auto">
-            <h2 className="text-3xl sm:text-4xl font-bold text-white text-center tracking-tight">
-              How the automation works
-            </h2>
-            <p className="mt-3 text-center text-sm text-slate-400 max-w-xl mx-auto">
-              Direct answers — no marketing, no jargon.
+            <h1 className="text-5xl font-bold tracking-tight sm:text-7xl lg:text-8xl">
+              Your operations run themselves.
+            </h1>
+            <p className="mx-auto mt-8 max-w-3xl text-lg leading-relaxed text-slate-300 sm:text-2xl">
+              ASI connects the systems, people and AI you already use — and carries real operational processes from event to outcome.
             </p>
-            <div className="mt-10">
-              <FaqAccordion />
-            </div>
-          </div>
-        </section>
-
-        {/* ── CTA + contacts ── */}
-        <section className="py-20 sm:py-24 px-4 sm:px-6 border-t border-slate-800/60">
-          <div className="max-w-2xl mx-auto text-center">
-            <h2 className="text-3xl sm:text-4xl font-bold text-white">
-              Put your rental on autopilot
-            </h2>
-            <p className="mt-4 text-slate-400 text-lg">
-              Full access to ASI. One payment, no subscription.
+            <p className="mx-auto mt-5 max-w-2xl text-base leading-relaxed text-slate-500 sm:text-lg">
+              It understands context, decides what should happen next, launches the required actions, checks the result, and escalates only when human judgment is needed.
             </p>
-            <div className="mt-8 flex flex-col sm:flex-row gap-4 justify-center">
+
+            <div className="mt-10 flex flex-col items-center justify-center gap-3 sm:flex-row">
               <a
-                href={STRIPE_PAYMENT_LINK}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center justify-center px-10 py-5 bg-white text-slate-900 font-bold rounded-xl hover:bg-slate-100 active:scale-[0.98] transition-all shadow-lg shadow-white/10 hover:shadow-xl hover:shadow-white/20 hover:scale-[1.02] text-lg"
+                href="#how"
+                className="inline-flex min-w-52 items-center justify-center rounded-xl bg-white px-7 py-4 font-semibold text-slate-950 transition-transform hover:scale-[1.02]"
               >
-                Get Access — $10
+                See how it works
+              </a>
+              <a
+                href="#hospitality"
+                className="inline-flex min-w-52 items-center justify-center rounded-xl border border-slate-700 px-7 py-4 font-semibold text-slate-200 transition-colors hover:border-slate-500 hover:text-white"
+              >
+                See the working vertical
+              </a>
+            </div>
+          </div>
+        </section>
+
+        <section className="border-y border-slate-800/70 bg-slate-900/30 px-4 py-20 sm:px-6">
+          <div className="mx-auto grid max-w-6xl gap-10 md:grid-cols-[0.9fr_1.1fr] md:items-start">
+            <div>
+              <p className="text-xs font-bold uppercase tracking-[0.24em] text-slate-500">What ASI is</p>
+              <h2 className="mt-4 text-3xl font-bold tracking-tight sm:text-5xl">Not another dashboard.</h2>
+            </div>
+            <div className="space-y-6 text-lg leading-relaxed text-slate-300">
+              <p>
+                Most operational software still leaves the real work to people: notice the event, open several systems, decide what to do, message someone, follow up, and check whether it was completed.
+              </p>
+              <p>
+                ASI is the layer that keeps that process moving. Existing software remains in place; ASI connects it into one controlled operational flow.
+              </p>
+            </div>
+          </div>
+        </section>
+
+        <section id="how" className="scroll-mt-24 px-4 py-24 sm:px-6">
+          <div className="mx-auto max-w-6xl">
+            <div className="max-w-3xl">
+              <p className="text-xs font-bold uppercase tracking-[0.24em] text-slate-500">From event to outcome</p>
+              <h2 className="mt-4 text-3xl font-bold tracking-tight sm:text-5xl">One complete operational cycle.</h2>
+              <p className="mt-5 text-lg leading-relaxed text-slate-400">
+                The same core pattern can run across different industries because the hard part is not generating text. It is carrying a real process through safely and reliably.
+              </p>
+            </div>
+
+            <div className="mt-12 grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+              {PROCESS_STEPS.map(([number, title, body]) => (
+                <div key={number} className="rounded-2xl border border-slate-800 bg-slate-900/50 p-6">
+                  <span className="text-xs font-bold tracking-[0.2em] text-slate-600">{number}</span>
+                  <h3 className="mt-5 text-xl font-bold">{title}</h3>
+                  <p className="mt-3 text-sm leading-relaxed text-slate-400">{body}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        <section id="use-cases" className="scroll-mt-24 border-y border-slate-800/70 bg-slate-900/30 px-4 py-24 sm:px-6">
+          <div className="mx-auto max-w-6xl">
+            <div className="max-w-3xl">
+              <p className="text-xs font-bold uppercase tracking-[0.24em] text-slate-500">Where it applies</p>
+              <h2 className="mt-4 text-3xl font-bold tracking-tight sm:text-5xl">Built for real-world operations.</h2>
+              <p className="mt-5 text-lg leading-relaxed text-slate-400">
+                ASI is vertical-agnostic at the core. Industry rules, tools, approvals, and workflows sit on top of the same operational engine.
+              </p>
+            </div>
+
+            <div className="mt-12 grid gap-5 md:grid-cols-2">
+              {USE_CASES.map(({ eyebrow, title, body }) => (
+                <div key={title} className="rounded-2xl border border-slate-800 bg-slate-950/70 p-7">
+                  <p className="text-xs font-bold uppercase tracking-[0.18em] text-slate-600">{eyebrow}</p>
+                  <h3 className="mt-4 text-2xl font-bold">{title}</h3>
+                  <p className="mt-3 leading-relaxed text-slate-400">{body}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        <section id="hospitality" className="scroll-mt-24 px-4 py-24 sm:px-6">
+          <div className="mx-auto grid max-w-6xl gap-12 lg:grid-cols-[0.9fr_1.1fr] lg:items-start">
+            <div>
+              <p className="text-xs font-bold uppercase tracking-[0.24em] text-slate-500">First deployed vertical</p>
+              <h2 className="mt-4 text-3xl font-bold tracking-tight sm:text-5xl">Hospitality & Property Operations</h2>
+              <p className="mt-6 text-lg leading-relaxed text-slate-400">
+                Our first complete vertical proves the model in an environment with constant messages, bookings, deadlines, physical tasks, exceptions, and multiple external systems.
+              </p>
+              <div className="mt-8 flex flex-wrap gap-3">
+                <Link href="/features/communication" className="rounded-xl bg-white px-6 py-3 font-semibold text-slate-950">
+                  Communication demo
+                </Link>
+                <Link href="/features/location-analysis" className="rounded-xl border border-slate-700 px-6 py-3 font-semibold text-slate-200 hover:border-slate-500">
+                  Location analysis
+                </Link>
+              </div>
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-2">
+              {HOSPITALITY_CAPABILITIES.map((capability) => (
+                <div key={capability} className="flex min-h-28 items-end rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
+                  <p className="font-semibold leading-snug text-slate-200">{capability}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        <section className="border-y border-slate-800/70 bg-slate-900/30 px-4 py-24 sm:px-6">
+          <div className="mx-auto max-w-6xl">
+            <div className="grid gap-12 lg:grid-cols-2">
+              <div>
+                <p className="text-xs font-bold uppercase tracking-[0.24em] text-slate-500">No rip-and-replace</p>
+                <h2 className="mt-4 text-3xl font-bold tracking-tight sm:text-5xl">Connect what you already use.</h2>
+              </div>
+              <div className="space-y-5 text-lg leading-relaxed text-slate-400">
+                <p>
+                  ASI is designed to sit above existing systems rather than force an organization onto one giant replacement platform.
+                </p>
+                <p>
+                  APIs, messaging channels, databases, internal tools, human approvals, AI models, and operational staff can all remain part of the process — with ASI deciding and controlling what happens next.
+                </p>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section id="demo" className="scroll-mt-24 px-4 py-24 sm:px-6">
+          <div className="mx-auto max-w-6xl">
+            <div className="max-w-3xl">
+              <p className="text-xs font-bold uppercase tracking-[0.24em] text-slate-500">Hong Kong demo flow</p>
+              <h2 className="mt-4 text-3xl font-bold tracking-tight sm:text-5xl">One incident. Full autonomous follow-through.</h2>
+              <p className="mt-5 text-lg leading-relaxed text-slate-400">
+                A universal scenario for showing agentic AI in real operations — without tying the story to one industry.
+              </p>
+            </div>
+
+            <div className="mt-12 rounded-3xl border border-slate-800 bg-slate-900/50 p-7 sm:p-10">
+              <div className="grid gap-8 lg:grid-cols-[0.75fr_1.25fr]">
+                <div>
+                  <p className="text-sm font-semibold text-slate-500">Example event</p>
+                  <p className="mt-3 text-2xl font-bold leading-snug">
+                    A critical asset issue is reported while the site is occupied and a service SLA is already running.
+                  </p>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {[
+                    'Classify urgency and understand the live context',
+                    'Check occupancy, rules, dependencies, and available response paths',
+                    'Notify the affected person with the right instructions',
+                    'Assign the right technician or internal team automatically',
+                    'Track acknowledgement, arrival, completion, and SLA risk',
+                    'Escalate only if the normal path fails or approval is required',
+                    'Verify the outcome instead of assuming the task is done',
+                    'Store the decisions, actions, evidence, and final result',
+                  ].map((item) => (
+                    <div key={item} className="rounded-xl border border-slate-800 bg-slate-950/70 p-4 text-sm leading-relaxed text-slate-300">
+                      {item}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section id="contact" className="scroll-mt-24 border-t border-slate-800/70 px-4 py-24 sm:px-6">
+          <div className="mx-auto max-w-3xl text-center">
+            <p className="text-xs font-bold uppercase tracking-[0.24em] text-slate-500">ASI Global</p>
+            <h2 className="mt-4 text-3xl font-bold tracking-tight sm:text-5xl">See the system run a real process.</h2>
+            <p className="mx-auto mt-5 max-w-2xl text-lg leading-relaxed text-slate-400">
+              We are preparing ASI for international pilots and partnerships. Tell us what operation you want to automate and we will map the flow from event to outcome.
+            </p>
+
+            <div className="mt-9 flex flex-col justify-center gap-3 sm:flex-row">
+              <a
+                href={`mailto:${productSupportEmail}`}
+                className="inline-flex items-center justify-center rounded-xl bg-white px-7 py-4 font-semibold text-slate-950"
+              >
+                {productSupportEmail}
               </a>
               <a
                 href={telegramSupportBotUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex items-center justify-center gap-2 px-10 py-5 border border-slate-600 text-slate-300 font-semibold rounded-xl hover:border-slate-400 hover:text-white transition-all text-lg"
+                className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-700 px-7 py-4 font-semibold text-slate-200 hover:border-slate-500"
               >
-                Book a demo
+                <TgIcon className="h-4 w-4" />
+                @{telegramSupportBotHandle}
               </a>
-            </div>
-            <p className="mt-4 text-sm text-slate-400">One-time payment · Instant access · No commitment required</p>
-
-            <div className="mt-10 pt-8 border-t border-slate-800/60">
-              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400 mb-5">
-                Or reach out directly
-              </p>
-              <ContactLinks />
-              <p className="mt-4 text-xs text-slate-400">
-                Mon–Fri, 9:00–18:00 UTC+3 · usually faster
-              </p>
             </div>
           </div>
         </section>
-
       </main>
-
-      {/* ── Footer ── */}
-      <footer className="py-8 px-4 sm:px-6 border-t border-slate-800/60 bg-slate-950">
-        <div className="max-w-6xl mx-auto flex flex-col sm:flex-row justify-between items-center gap-4">
-          <div className="flex items-center gap-4">
-            <span className="text-white font-bold text-lg">ASI</span>
-            <span className="text-xs text-slate-400">© {new Date().getFullYear()}</span>
-          </div>
-
-          <div className="flex flex-col sm:flex-row items-center gap-3 sm:gap-5 text-sm">
-            <a
-              href={telegramSupportBotUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center gap-2 text-slate-400 hover:text-sky-300 transition-colors"
-            >
-              <TgIcon className="w-4 h-4" />
-              @{telegramSupportBotHandle}
-            </a>
-            <span className="hidden sm:block w-px h-3 bg-slate-800" />
-            <a
-              href={`mailto:${productSupportEmail}`}
-              className="text-slate-400 hover:text-white transition-colors"
-            >
-              {productSupportEmail}
-            </a>
-          </div>
-
-          <div className="flex flex-wrap justify-center gap-x-5 gap-y-1">
-            <Link href="/privacy" className="text-slate-400 hover:text-slate-200 text-xs">Privacy</Link>
-            <Link href="/offer" className="text-slate-400 hover:text-slate-200 text-xs">Terms</Link>
-            <Link href="/legal" className="text-slate-400 hover:text-slate-200 text-xs">Legal</Link>
-          </div>
-        </div>
-      </footer>
-
     </div>
   );
 }
