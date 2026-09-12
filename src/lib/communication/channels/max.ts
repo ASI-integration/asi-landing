@@ -176,8 +176,8 @@ export class MaxAdapter implements ChannelAdapter {
 }
 
 export function verifyMaxWebhookSecret(headerSecret: string | null | undefined): boolean {
-  const expected = process.env.MAX_WEBHOOK_SECRET;
-  if (!expected) return true;
+  const expected = process.env.MAX_WEBHOOK_SECRET?.trim();
+  if (!expected) return false;
   return String(headerSecret ?? '') === expected;
 }
 

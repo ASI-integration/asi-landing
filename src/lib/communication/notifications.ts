@@ -1,5 +1,8 @@
 import { replyToTelegram } from '../telegram';
-import { hasConfirmationBeenSent, markConfirmationSent } from '../payments/events';
+import {
+  claimPaymentConfirmation,
+  releasePaymentConfirmation,
+} from '../payments/events';
 
 export async function sendPaymentConfirmation(params: {
   paymentId: string;
@@ -10,7 +13,7 @@ export async function sendPaymentConfirmation(params: {
 }): Promise<void> {
   const { paymentId, chatId, amount, currency, serviceType } = params;
 
-  if (hasConfirmationBeenSent(paymentId)) {
+  if (!(await claimPaymentConfirmation(paymentId))) {
     console.log(`[Notifications] Confirmation already sent for payment ${paymentId}, skipping.`);
     return;
   }
@@ -20,10 +23,12 @@ export async function sendPaymentConfirmation(params: {
     : `✅ Payment received. Your request is being processed.`;
 
   try {
-    await replyToTelegram(chatId, text);
-    markConfirmationSent(paymentId);
+    const sent = await replyToTelegram(chatId, text);
+    if (!sent) throw new Error('Payment confirmation delivery failed');
     console.log(`[Notifications] Sent payment confirmation to chat ${chatId} for payment ${paymentId}`);
   } catch (err) {
+    await releasePaymentConfirmation(paymentId);
     console.error(`[Notifications] Failed to send payment confirmation to chat ${chatId}`, err);
+    throw err;
   }
 }

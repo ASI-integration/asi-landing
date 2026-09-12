@@ -143,9 +143,10 @@ export class YookassaProvider implements PaymentProvider, YooKassaProviderSkelet
   }
 
   verifyWebhookSignature(_payload: string | Buffer, _signature: string): boolean {
-    // YooKassa uses IP whitelisting rather than HMAC signatures.
-    // In production: verify the request originates from YooKassa's IP ranges.
-    return true;
+    // YooKassa does not provide an HMAC signature for this webhook contract.
+    // Source verification belongs at the HTTP boundary, where the peer address
+    // can be supplied by trusted server plumbing. Never treat payloads as signed.
+    return false;
   }
 
   async parseWebhookEvent(

@@ -1,12 +1,13 @@
 import { PaymentRequest, PaymentStatus } from './types';
+import { getPaymentsSupabase } from './supabase';
 
 /**
  * Payment store with two layers:
  *   1. In-memory Maps (byId, byProviderTxId) — fast path, always consistent within a process
  *   2. Supabase `operational_payments` table — persistent across restarts (best-effort)
  *
- * Supabase writes are fire-and-forget: failures are logged but never block the caller.
- * Reads fall back to in-memory so the system stays functional if Supabase is unavailable.
+ * Supabase writes are awaited but best-effort: failures are logged without losing the
+ * process-local record. Reads warm the in-memory cache after a process restart.
  *
  * Schema required (run once):
  *   create table operational_payments (
@@ -32,18 +33,54 @@ import { PaymentRequest, PaymentStatus } from './types';
 const byId = new Map<string, PaymentRequest>();
 const byProviderTxId = new Map<string, string>(); // providerTxId → internal id
 
-function getSupabase() {
-  try {
-    // Lazy import to avoid crashing if env vars are missing
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    return require('@/lib/supabase').supabase;
-  } catch {
-    return null;
+type OperationalPaymentRow = {
+  id: string;
+  provider: PaymentRequest['provider'];
+  provider_transaction_id: string | null;
+  chat_id: string | null;
+  reservation_id: string | null;
+  property_id: string | null;
+  guest_id: string | null;
+  service_type: string | null;
+  amount: number | string;
+  currency: string;
+  status: PaymentRequest['status'];
+  payment_url: string | null;
+  expires_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+function paymentFromRow(data: OperationalPaymentRow): PaymentRequest {
+  return {
+    id: data.id,
+    provider: data.provider,
+    providerTransactionId: data.provider_transaction_id ?? null,
+    chatId: data.chat_id ?? undefined,
+    reservationId: data.reservation_id ?? undefined,
+    propertyId: data.property_id ?? undefined,
+    guestId: data.guest_id ?? undefined,
+    serviceType: data.service_type ?? undefined,
+    amount: Number(data.amount),
+    currency: data.currency,
+    status: data.status,
+    paymentUrl: data.payment_url ?? undefined,
+    expiresAt: data.expires_at ? new Date(data.expires_at) : undefined,
+    createdAt: new Date(data.created_at),
+    updatedAt: new Date(data.updated_at),
+  };
+}
+
+function warmPayment(payment: PaymentRequest): PaymentRequest {
+  byId.set(payment.id, payment);
+  if (payment.providerTransactionId) {
+    byProviderTxId.set(payment.providerTransactionId, payment.id);
   }
+  return payment;
 }
 
 async function persistCreate(payment: PaymentRequest): Promise<void> {
-  const sb = getSupabase();
+  const sb = getPaymentsSupabase();
   if (!sb) return;
   try {
     await sb.from('operational_payments').upsert({
@@ -69,7 +106,7 @@ async function persistCreate(payment: PaymentRequest): Promise<void> {
 }
 
 async function persistStatusUpdate(id: string, status: PaymentStatus): Promise<void> {
-  const sb = getSupabase();
+  const sb = getPaymentsSupabase();
   if (!sb) return;
   try {
     await sb
@@ -82,15 +119,28 @@ async function persistStatusUpdate(id: string, status: PaymentStatus): Promise<v
 }
 
 export async function createPaymentRecord(payment: PaymentRequest): Promise<void> {
-  byId.set(payment.id, { ...payment });
-  if (payment.providerTransactionId) {
-    byProviderTxId.set(payment.providerTransactionId, payment.id);
-  }
-  void persistCreate(payment);
+  warmPayment({ ...payment });
+  await persistCreate(payment);
 }
 
 export async function getPaymentById(id: string): Promise<PaymentRequest | null> {
-  return byId.get(id) ?? null;
+  const cached = byId.get(id);
+  if (cached) return cached;
+
+  const sb = getPaymentsSupabase();
+  if (!sb) return null;
+  try {
+    const { data, error } = await sb
+      .from('operational_payments')
+      .select('*')
+      .eq('id', id)
+      .maybeSingle();
+    if (error) throw error;
+    return data ? warmPayment(paymentFromRow(data as OperationalPaymentRow)) : null;
+  } catch (err) {
+    console.warn('[payments/db] getPaymentById Supabase fallback failed:', err);
+    return null;
+  }
 }
 
 export async function getPaymentByTransactionId(transactionId: string): Promise<PaymentRequest | null> {
@@ -99,36 +149,17 @@ export async function getPaymentByTransactionId(transactionId: string): Promise<
   if (id) return byId.get(id) ?? null;
 
   // Cold-start fallback — Supabase
-  const sb = getSupabase();
+  const sb = getPaymentsSupabase();
   if (!sb) return null;
   try {
-    const { data } = await sb
+    const { data, error } = await sb
       .from('operational_payments')
       .select('*')
       .eq('provider_transaction_id', transactionId)
-      .single();
+      .maybeSingle();
+    if (error) throw error;
     if (data) {
-      const payment: PaymentRequest = {
-        id:                    data.id,
-        provider:              data.provider,
-        providerTransactionId: data.provider_transaction_id ?? null,
-        chatId:                data.chat_id ?? undefined,
-        reservationId:         data.reservation_id ?? undefined,
-        propertyId:            data.property_id ?? undefined,
-        guestId:               data.guest_id ?? undefined,
-        serviceType:           data.service_type ?? undefined,
-        amount:                Number(data.amount),
-        currency:              data.currency,
-        status:                data.status as PaymentRequest['status'],
-        paymentUrl:            data.payment_url ?? undefined,
-        expiresAt:             data.expires_at ? new Date(data.expires_at) : undefined,
-        createdAt:             new Date(data.created_at),
-        updatedAt:             new Date(data.updated_at),
-      };
-      // Warm the in-memory store to avoid redundant DB hits within the same process lifetime.
-      byId.set(payment.id, payment);
-      byProviderTxId.set(transactionId, payment.id);
-      return payment;
+      return warmPayment(paymentFromRow(data as OperationalPaymentRow));
     }
   } catch (err) {
     console.warn('[payments/db] getPaymentByTransactionId Supabase fallback failed:', err);
@@ -149,6 +180,23 @@ export async function getActivePaymentForContext(chatId: string): Promise<Paymen
       return payment;
     }
   }
+
+  const sb = getPaymentsSupabase();
+  if (!sb) return null;
+  try {
+    const { data, error } = await sb
+      .from('operational_payments')
+      .select('*')
+      .eq('chat_id', chatId)
+      .in('status', ['pending', 'requires_action'])
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (error) throw error;
+    return data ? warmPayment(paymentFromRow(data as OperationalPaymentRow)) : null;
+  } catch (err) {
+    console.warn('[payments/db] getActivePaymentForContext Supabase fallback failed:', err);
+  }
   return null;
 }
 
@@ -160,14 +208,12 @@ export async function updatePaymentStatus(
   transactionId: string,
   status: PaymentStatus
 ): Promise<boolean> {
-  const id = byProviderTxId.get(transactionId);
-  if (!id) return false;
-  const payment = byId.get(id);
+  const payment = await getPaymentByTransactionId(transactionId);
   if (!payment) return false;
   if (payment.status === status) return false;
   payment.status = status;
   payment.updatedAt = new Date();
-  void persistStatusUpdate(id, status);
+  await persistStatusUpdate(payment.id, status);
   return true;
 }
 
@@ -179,12 +225,12 @@ export async function updatePaymentStatusById(
   id: string,
   status: PaymentStatus
 ): Promise<boolean> {
-  const payment = byId.get(id);
+  const payment = await getPaymentById(id);
   if (!payment) return false;
   if (payment.status === status) return false;
   payment.status = status;
   payment.updatedAt = new Date();
-  void persistStatusUpdate(id, status);
+  await persistStatusUpdate(id, status);
   return true;
 }
 

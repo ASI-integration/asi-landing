@@ -14,7 +14,7 @@
  *
  * Required env vars:
  *   VK_CONFIRMATION_CODE  — confirmation string from VK Callback API settings
- *   VK_CALLBACK_SECRET    — optional shared secret for payload verification
+ *   VK_CALLBACK_SECRET    — required shared secret for payload verification
  */
 
 import { NextResponse } from 'next/server';
@@ -33,6 +33,12 @@ export async function POST(req: Request): Promise<Response> {
     return NextResponse.json({ error: 'invalid_json' }, { status: 400 });
   }
 
+  // VK includes the configured shared secret on callbacks, including confirmation.
+  if (!verifyVkWebhookSecret(payload)) {
+    console.warn('[vk:webhook] secret mismatch');
+    return NextResponse.json({ error: 'forbidden' }, { status: 403 });
+  }
+
   // VK confirmation handshake — must respond with the confirmation string as plain text
   if (payload.type === 'confirmation') {
     const confirmation = process.env.VK_CONFIRMATION_CODE;
@@ -41,12 +47,6 @@ export async function POST(req: Request): Promise<Response> {
       return new Response('ok', { status: 200 });
     }
     return new Response(confirmation, { status: 200, headers: { 'Content-Type': 'text/plain' } });
-  }
-
-  // Verify shared secret
-  if (!verifyVkWebhookSecret(payload)) {
-    console.warn('[vk:webhook] secret mismatch');
-    return NextResponse.json({ error: 'forbidden' }, { status: 403 });
   }
 
   // Only process new messages

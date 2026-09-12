@@ -13,11 +13,12 @@ function debugEnabled(): boolean {
 }
 
 function verifySignature(rawBody: string, signatureHeader: string | null): boolean {
-  const secret = process.env.WHATSAPP_APP_SECRET;
-  if (!secret || !secret.trim()) return true; // optional hardening
+  const secret = process.env.WHATSAPP_APP_SECRET?.trim();
+  if (!secret) return false;
   const sig = String(signatureHeader ?? '').trim();
   if (!sig.startsWith('sha256=')) return false;
   const expected = sig.slice('sha256='.length);
+  if (!/^[a-f0-9]{64}$/i.test(expected)) return false;
   const actual = createHmac('sha256', secret).update(rawBody, 'utf8').digest('hex');
   try {
     return timingSafeEqual(Buffer.from(expected, 'hex'), Buffer.from(actual, 'hex'));

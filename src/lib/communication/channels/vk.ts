@@ -104,12 +104,11 @@ export class VkAdapter implements ChannelAdapter {
 // ─── Webhook signature verification ──────────────────────────────────────────
 
 /**
- * Returns true if the payload's `secret` matches VK_WEBHOOK_SECRET.
- * If the env var is not set, all payloads are accepted (useful for local dev).
+ * Returns true only if the payload's `secret` matches the configured secret.
  */
 export function verifyVkWebhookSecret(payload: VkCallbackPayload): boolean {
-  const expected = process.env.VK_CALLBACK_SECRET;
-  if (!expected) return true;
+  const expected = process.env.VK_CALLBACK_SECRET?.trim();
+  if (!expected) return false;
   return payload.secret === expected;
 }
 
