@@ -27,3 +27,16 @@ export function createPilotChatgptTaskId(pilotUserId: string, idempotencyKey: st
 export function createPilotIdempotencyKey(): string {
   return `pilot-beta-idem-${randomUUID()}`;
 }
+
+export function createPilotDecisionId(input: {
+  taskId: string;
+  gateId: string;
+  taskCycle: string;
+  decision: 'approved' | 'rejected';
+}): string {
+  const digest = createHash('sha256')
+    .update(`pilot_beta|${input.taskId}|${input.gateId}|${input.taskCycle}|${input.decision}`, 'utf8')
+    .digest('hex')
+    .slice(0, 32);
+  return `pilot-beta-decision-${digest}`;
+}

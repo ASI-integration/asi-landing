@@ -24,6 +24,11 @@ export type RuntimeBridgeTaskRequest = {
   baselineSha: string;
 };
 
+export type RuntimeOwnerGateClassification =
+  | 'pilot_docs_green'
+  | 'privileged'
+  | 'unclassified';
+
 export type RuntimeBridgeOwnerGateRequest = {
   schemaVersion: 'asi.runtime.owner-gate.v1';
   action: string;
@@ -36,6 +41,8 @@ export type RuntimeBridgeOwnerGateRequest = {
   postActionVerification: string[];
   taskCycle: string;
   expiresAt: string;
+  /** Optional Runtime classification. Missing/unknown is fail-closed for /pilot continue. */
+  classification?: RuntimeOwnerGateClassification | string;
 };
 
 export type RuntimeBridgeSafeResult = {

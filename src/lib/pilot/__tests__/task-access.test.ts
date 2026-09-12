@@ -9,6 +9,7 @@ const getRuntimeBridgeClientId = vi.fn(() => 'pilot-client');
 const getRuntimeBridgeTaskRecord = vi.fn();
 const getRuntimeBridgeResult = vi.fn();
 const listRuntimeBridgeTasks = vi.fn();
+const listRuntimeBridgeOwnerGates = vi.fn();
 const isRuntimeBridgeSupabaseConfigured = vi.fn(() => true);
 
 vi.mock('@/lib/asi-runtime/bridge-auth', () => ({
@@ -33,6 +34,7 @@ vi.mock('@/lib/asi-runtime/bridge-repository', () => ({
   getRuntimeBridgeTaskRecord,
   getRuntimeBridgeResult,
   listRuntimeBridgeTasks,
+  listRuntimeBridgeOwnerGates,
 }));
 
 function seedRecord(ownerUserId: string, overrides: {
@@ -69,6 +71,8 @@ beforeEach(() => {
   getRuntimeBridgeTaskRecord.mockReset();
   getRuntimeBridgeResult.mockReset();
   listRuntimeBridgeTasks.mockReset();
+  listRuntimeBridgeOwnerGates.mockReset();
+  listRuntimeBridgeOwnerGates.mockResolvedValue([]);
   isRuntimeBridgeSupabaseConfigured.mockReset();
   isRuntimeBridgeSupabaseConfigured.mockReturnValue(true);
 });

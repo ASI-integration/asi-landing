@@ -12,7 +12,9 @@ vi.mock('@supabase/supabase-js', () => ({
 const BRIDGE_URL = 'https://asi-staging.supabase.co';
 const BRIDGE_KEY = 'staging-service-role-key-shared-project-not-a-secret';
 const STAGING_SQL = 'supabase/staging/20260909170000_runtime_bridge_schema_free_tier.sql';
+const STAGING_ADMISSION_SQL = 'supabase/staging/20260912210000_runtime_bridge_single_lane_admission_v1.sql';
 const PRODUCTION_SQL = 'supabase/migrations/20260724120000_asi_chat_runtime_bridge_v1.sql';
+const PRODUCTION_ADMISSION_SQL = 'supabase/migrations/20260912210000_asi_runtime_bridge_single_lane_admission_v1.sql';
 const FREE_TIER_NOTE =
   'Free-tier staging exception: Bridge shares the staging Supabase project but uses dedicated runtime_bridge schema. Production requires isolated Bridge storage.';
 
@@ -119,13 +121,27 @@ describe('staging runtime_bridge schema SQL', () => {
     expect(original).not.toMatch(/CREATE SCHEMA IF NOT EXISTS runtime_bridge/);
     expect(original).not.toMatch(/CREATE TABLE runtime_bridge\./);
     expect(original).not.toMatch(/CREATE FUNCTION runtime_bridge\./);
+
+    const stagingAdmission = readFileSync(STAGING_ADMISSION_SQL, 'utf8');
+    const productionAdmission = readFileSync(PRODUCTION_ADMISSION_SQL, 'utf8');
+    expect(stagingAdmission).toContain('CREATE OR REPLACE FUNCTION runtime_bridge.submit_asi_runtime_bridge_task');
+    expect(stagingAdmission).toContain('idx_asi_runtime_bridge_single_nonterminal');
+    expect(stagingAdmission).toContain('asi_runtime_bridge_single_lane_preflight_failed');
+    expect(stagingAdmission.indexOf('asi_runtime_bridge_single_lane_preflight_failed'))
+      .toBeLessThan(stagingAdmission.indexOf('CREATE UNIQUE INDEX IF NOT EXISTS idx_asi_runtime_bridge_single_nonterminal'));
+    expect(stagingAdmission).toContain('admission_busy');
+    expect(stagingAdmission).not.toMatch(/\bpublic\./);
+    expect(productionAdmission).toContain('CREATE OR REPLACE FUNCTION public.submit_asi_runtime_bridge_task');
+    expect(productionAdmission).toContain('asi_runtime_bridge_single_lane_preflight_failed');
+    expect(productionAdmission).toContain('admission_busy');
+    expect(productionAdmission).not.toMatch(/CREATE TABLE public.asi_runtime_bridge_tasks/);
   });
 
   it('keeps the staging SQL outside the production migration chain', () => {
     const deploy = readFileSync('.github/workflows/deploy-staging.yml', 'utf8');
     const productionDeploy = readFileSync('.github/workflows/deploy.yml', 'utf8');
     expect(deploy).toContain('ASI_RUNTIME_BRIDGE_SUPABASE_SCHEMA=runtime_bridge');
-    expect(deploy).toContain(FREE_TIER_NOTE);
+    expect(deploy).toMatch(/Free-tier staging exception/);
     expect(productionDeploy).not.toContain('ASI_RUNTIME_BRIDGE_SUPABASE_SCHEMA');
     expect(productionDeploy).not.toContain('runtime_bridge');
   });

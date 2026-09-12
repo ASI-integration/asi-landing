@@ -7,6 +7,7 @@ import { containsForbiddenStringContent } from '@/lib/asi-runtime/ingest-schema'
 import { isExactGitSha } from '@/lib/development/baseline-sha';
 import { safeAllowlistedPullRequestUrl } from '@/lib/development/pr-url';
 import type { PilotConsoleStatus } from './status';
+import { containsPilotInternalCopy } from './user-copy';
 
 const SUMMARY_MAX = 500;
 const BLOCKER_MAX = 240;
@@ -26,6 +27,7 @@ function sanitizeText(value: string, max: number): string | null {
   const trimmed = value.replace(/\s+/g, ' ').trim();
   if (!trimmed) return null;
   if (containsForbiddenStringContent(trimmed)) return null;
+  if (containsPilotInternalCopy(trimmed)) return null;
   if (trimmed.length <= max) return trimmed;
   return `${trimmed.slice(0, max - 1)}…`;
 }
@@ -48,6 +50,22 @@ export function buildPilotSafeResultView(input: {
   bridgeResult: RuntimeBridgeSafeResult | null | undefined;
 }): PilotSafeResultView {
   const { consoleStatus, bridgeResult } = input;
+
+  if (consoleStatus === 'blocked') {
+    const blockers = (bridgeResult?.blockers ?? [])
+      .filter((item): item is string => typeof item === 'string')
+      .map((item) => sanitizeText(item, BLOCKER_MAX))
+      .filter((item): item is string => Boolean(item))
+      .slice(0, MAX_BLOCKERS);
+    return {
+      outcome: null,
+      summary: sanitizeText(String(bridgeResult?.summary ?? ''), SUMMARY_MAX),
+      changedFiles: [],
+      pullRequestUrl: null,
+      commitSha: null,
+      blockers,
+    };
+  }
 
   if (!bridgeResult || (consoleStatus !== 'succeeded' && consoleStatus !== 'failed')) {
     return {

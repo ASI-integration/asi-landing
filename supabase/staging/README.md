@@ -4,7 +4,23 @@ These files are **not** part of `supabase/migrations` and must not be applied to
 
 ## Runtime Bridge free-tier schema
 
-File: `20260909170000_runtime_bridge_schema_free_tier.sql`
+Files:
+- `20260909170000_runtime_bridge_schema_free_tier.sql` (historical bootstrap; do not rewrite)
+- `20260912210000_runtime_bridge_single_lane_admission_v1.sql` (forward single-lane admission)
+
+Before applying the single-lane admission follow-up, record:
+
+```sql
+SELECT count(*)
+FROM runtime_bridge.asi_runtime_bridge_tasks
+WHERE status IN ('queued', 'running', 'awaiting_owner');
+```
+
+- `0` → safe to apply
+- `1` → safe to apply; the existing task becomes the unique occupant
+- `>1` → **STOP**; owner-authorized reconciliation required. Do not auto-reconcile, delete, fail, or cancel historical rows.
+
+The SQL file re-checks this count and raises `asi_runtime_bridge_single_lane_preflight_failed` before creating `idx_asi_runtime_bridge_single_nonterminal`. See `docs/operations/strigunov-pilot-sp10-staging-acceptance.md`. Do not apply from this README.
 
 Free-tier staging exception: Bridge shares the staging Supabase project but uses dedicated runtime_bridge schema. Production requires isolated Bridge storage.
 

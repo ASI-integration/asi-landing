@@ -45,6 +45,7 @@ function bridgeDb() {
 function rpcError(error: { message?: string; code?: string } | null): never {
   const message = error?.message ?? 'runtime_bridge_storage_error';
   if (message.includes('idempotency_conflict')) throw new RuntimeBridgeError('idempotency_conflict', 409);
+  if (message.includes('admission_busy')) throw new RuntimeBridgeError('admission_busy', 503);
   if (message.includes('decision_conflict')) throw new RuntimeBridgeError('decision_conflict', 409);
   if (message.includes('owner_gate_mismatch')) throw new RuntimeBridgeError('owner_gate_mismatch', 409);
   if (message.includes('lease_conflict')) throw new RuntimeBridgeError('lease_conflict', 409);

@@ -3,12 +3,14 @@ import { getRuntimeBridgeClientId } from '@/lib/asi-runtime/bridge-auth';
 import {
   getRuntimeBridgeResult,
   getRuntimeBridgeTaskRecord,
+  listRuntimeBridgeOwnerGates,
   listRuntimeBridgeTasks,
   RuntimeBridgeError,
   type RuntimeBridgeTaskRecord,
 } from '@/lib/asi-runtime/bridge-repository';
 import type { RuntimeBridgeTaskRequest, RuntimeBridgeTaskView } from '@/lib/asi-runtime/bridge-types';
 import { isRuntimeBridgeSupabaseConfigured } from '@/lib/asi-runtime/bridge-supabase';
+import { buildPilotHitlView, type PilotHitlView } from './hitl';
 import { createPilotConversationId } from './ids';
 import { PilotAccessError } from './errors';
 import { buildPilotSafeResultView, type PilotSafeResultView } from './result-view';
@@ -30,7 +32,7 @@ function requireClientId(): string {
     throw new PilotAccessError(
       'bridge_not_configured',
       503,
-      'Runtime Bridge не настроен.',
+      'Временно недоступно',
     );
   }
   return clientId;
@@ -81,13 +83,13 @@ function mapBridgeError(error: unknown): never {
   if (error instanceof PilotAccessError) throw error;
   if (error instanceof RuntimeBridgeError) {
     const messages: Record<string, string> = {
-      bridge_not_configured: 'Runtime Bridge не настроен.',
+      bridge_not_configured: 'Временно недоступно',
       task_not_found: 'Задача не найдена.',
     };
     throw new PilotAccessError(
       error.code,
       error.status,
-      messages[error.code] ?? 'Ошибка Runtime Bridge.',
+      messages[error.code] ?? 'Временно недоступно',
     );
   }
   throw new PilotAccessError('runtime_bridge_error', 500, 'Не удалось выполнить операцию.');
@@ -106,6 +108,7 @@ export type PilotTaskHistoryItem = {
 export type PilotTaskDetail = {
   task: PilotTaskView;
   result: PilotSafeResultView;
+  hitl: PilotHitlView | null;
 };
 
 /**
@@ -178,12 +181,20 @@ export async function getPilotTaskDetailForUser(
       bridgeResult = payload.result;
     }
 
+    let hitl: PilotHitlView | null = null;
+    if (record.status === 'awaiting_owner') {
+      const gates = await listRuntimeBridgeOwnerGates(clientId);
+      const pending = gates.find((gate) => gate.taskId === record.taskId && gate.status === 'pending') ?? null;
+      hitl = buildPilotHitlView(pending);
+    }
+
     return {
       task,
       result: buildPilotSafeResultView({
         consoleStatus: task.consoleStatus,
         bridgeResult,
       }),
+      hitl,
     };
   } catch (error) {
     mapBridgeError(error);

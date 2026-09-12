@@ -5,6 +5,8 @@ import {
   pilotConsoleStatusTone,
 } from '@/lib/pilot/status-ui';
 import { buildPilotResultCardModel } from '@/lib/pilot/result-card';
+import type { PilotHitlView } from '@/lib/pilot/hitl';
+import { PILOT_USER_STATE } from '@/lib/pilot/user-copy';
 
 export type PilotTaskListItem = {
   taskId: string;
@@ -165,8 +167,8 @@ export function PilotReadinessBanner(props: {
       <p data-pilot-readiness-message="true" className="leading-relaxed">
         {messageRu
           ?? (state === 'ready'
-            ? 'Система готова к запуску задач пилота.'
-            : 'Сейчас нельзя создать новую задачу. Попробуйте позже.')}
+            ? PILOT_USER_STATE.readyToWork
+            : PILOT_USER_STATE.temporarilyUnavailable)}
       </p>
       <button
         type="button"
@@ -178,6 +180,67 @@ export function PilotReadinessBanner(props: {
         {refreshing ? 'Обновление…' : 'Обновить'}
       </button>
     </div>
+  );
+}
+
+export function PilotHitlPanel(props: {
+  hitl: PilotHitlView;
+  busy: boolean;
+  error: string | null;
+  onContinue: () => void;
+  onCancel: () => void;
+}) {
+  const { hitl, busy, error, onContinue, onCancel } = props;
+
+  return (
+    <section
+      data-pilot-hitl="true"
+      data-pilot-hitl-can-continue={hitl.canContinue ? 'true' : 'false'}
+      className="space-y-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950"
+    >
+      <p className="font-medium" data-pilot-hitl-headline="true">
+        {PILOT_USER_STATE.needsAnswer}
+      </p>
+      <p data-pilot-hitl-question="true" className="leading-relaxed">
+        {hitl.questionRu}
+      </p>
+      {hitl.reasonRu && hitl.reasonRu !== hitl.questionRu ? (
+        <p data-pilot-hitl-reason="true" className="leading-relaxed text-amber-900">
+          {hitl.reasonRu}
+        </p>
+      ) : null}
+      {error ? (
+        <p data-pilot-hitl-error="true" className="text-rose-700" role="alert">
+          {error}
+        </p>
+      ) : null}
+      {hitl.canContinue ? (
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            data-pilot-hitl-continue="true"
+            disabled={busy}
+            onClick={onContinue}
+            className="inline-flex rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {busy ? 'Отправка…' : 'Продолжить'}
+          </button>
+          <button
+            type="button"
+            data-pilot-hitl-cancel="true"
+            disabled={busy}
+            onClick={onCancel}
+            className="inline-flex rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-800 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            Отменить задачу
+          </button>
+        </div>
+      ) : (
+        <p data-pilot-hitl-wait="true" className="text-amber-900">
+          После ответа задача продолжится автоматически. Новую задачу создавать не нужно.
+        </p>
+      )}
+    </section>
   );
 }
 
@@ -323,12 +386,28 @@ export function PilotTaskDetail(props: {
   result: PilotSafeResult | null;
   loading: boolean;
   error: string | null;
+  hitl?: PilotHitlView | null;
+  hitlBusy?: boolean;
+  hitlError?: string | null;
+  onHitlContinue?: () => void;
+  onHitlCancel?: () => void;
 }) {
-  const { task, result, loading, error } = props;
+  const {
+    task,
+    result,
+    loading,
+    error,
+    hitl = null,
+    hitlBusy = false,
+    hitlError = null,
+    onHitlContinue,
+    onHitlCancel,
+  } = props;
   const card = task
     ? buildPilotResultCardModel({
       consoleStatus: task.consoleStatus,
       result,
+      hitl,
     })
     : null;
 
@@ -388,6 +467,16 @@ export function PilotTaskDetail(props: {
               {card.nextActionRu}
             </p>
           </div>
+
+          {hitl && task.consoleStatus === 'blocked' ? (
+            <PilotHitlPanel
+              hitl={hitl}
+              busy={hitlBusy}
+              error={hitlError}
+              onContinue={() => onHitlContinue?.()}
+              onCancel={() => onHitlCancel?.()}
+            />
+          ) : null}
 
           {card.kind === 'succeeded' || card.kind === 'failed' || card.kind === 'blocked' ? (
             <div data-pilot-result="true" className="space-y-3 border-t border-slate-100 pt-4">
