@@ -225,17 +225,34 @@ export function boundGuestLongTermMemory(memory: GuestLongTermMemory): GuestLong
   return { profile: memory.profile, preferences, events };
 }
 
+function requireAccountId(accountIdInput: unknown): string {
+  const accountId = boundedText(accountIdInput, 120);
+  if (!accountId) throw new Error('account_id_required');
+  return accountId;
+}
+
 export async function loadGuestLongTermMemory(
   guestIdInput: string,
+  accountIdInput?: string | null,
   db: SupabaseLike = supabase as unknown as SupabaseLike,
 ): Promise<GuestLongTermMemory> {
   const guestId = safeGuestId(guestIdInput);
+  const accountId = boundedText(accountIdInput, 120) || null;
+
+  // Missing/unproven accountId must never fall back to a global guest search.
+  if (!accountId) {
+    return { profile: null, preferences: [], events: [] };
+  }
+
   const [profileRow, preferenceRows, eventRows] = await Promise.all([
-    maybeOne(db.from('guest_memory_profiles').select('*').eq('guest_id', guestId)),
+    maybeOne(
+      db.from('guest_memory_profiles').select('*').eq('guest_id', guestId).eq('account_id', accountId),
+    ),
     responseData(
       db.from('guest_memory_preferences')
         .select('*')
         .eq('guest_id', guestId)
+        .eq('account_id', accountId)
         .eq('status', 'active')
         .order('updated_at', { ascending: false })
         .limit(GUEST_MEMORY_MAX_PREFERENCES),
@@ -244,6 +261,7 @@ export async function loadGuestLongTermMemory(
       db.from('guest_memory_events')
         .select('*')
         .eq('guest_id', guestId)
+        .eq('account_id', accountId)
         .eq('status', 'active')
         .order('occurred_at', { ascending: false })
         .limit(GUEST_MEMORY_MAX_EVENTS),
@@ -258,6 +276,7 @@ export async function loadGuestLongTermMemory(
 
 export async function recordGuestSeen(input: {
   guestId: string;
+  accountId: string;
   preferredLanguage?: GuestMemoryLanguage | null;
   preferredCommunicationMode?: GuestCommunicationMode | null;
   source?: 'explicit_guest' | 'deterministic_system';
@@ -266,8 +285,10 @@ export async function recordGuestSeen(input: {
 }): Promise<void> {
   const db = input.db ?? (supabase as unknown as SupabaseLike);
   const source = input.source ?? 'deterministic_system';
+  const accountId = requireAccountId(input.accountId);
   const record: Record<string, unknown> = {
     guest_id: safeGuestId(input.guestId),
+    account_id: accountId,
     last_seen_at: input.seenAt ?? new Date().toISOString(),
   };
   if (input.preferredLanguage === 'ru' || input.preferredLanguage === 'en') {
@@ -278,11 +299,14 @@ export async function recordGuestSeen(input: {
     record.preferred_communication_mode = input.preferredCommunicationMode;
     record.preferred_communication_mode_source = source;
   }
-  await responseData(db.from('guest_memory_profiles').upsert(record, { onConflict: 'guest_id' }));
+  await responseData(db.from('guest_memory_profiles').upsert(record, {
+    onConflict: 'account_id,guest_id',
+  }));
 }
 
 export async function upsertGuestPreference(input: {
   guestId: string;
+  accountId: string;
   key: GuestPreferenceKey;
   value: string;
   source: GuestMemorySource;
@@ -292,20 +316,23 @@ export async function upsertGuestPreference(input: {
 }): Promise<void> {
   if (!PREFERENCE_KEYS.has(input.key)) throw new Error('unsupported_preference_key');
   if (!SOURCES.has(input.source)) throw new Error('unsupported_memory_source');
+  const accountId = requireAccountId(input.accountId);
   const db = input.db ?? (supabase as unknown as SupabaseLike);
   await responseData(db.from('guest_memory_preferences').upsert({
     guest_id: safeGuestId(input.guestId),
+    account_id: accountId,
     preference_key: input.key,
     preference_value: assertSafeMemoryText(input.value, 240, 'preference_value'),
     source_kind: input.source,
     source_ref: safeSourceRef(input.sourceRef),
     confidence: safeConfidence(input.confidence),
     status: 'active',
-  }, { onConflict: 'guest_id,preference_key' }));
+  }, { onConflict: 'account_id,guest_id,preference_key' }));
 }
 
 export async function recordGuestOperationalEvent(input: {
   guestId: string;
+  accountId: string;
   type: GuestMemoryEventType;
   summary: string;
   source: Exclude<GuestMemorySource, 'explicit_guest'>;
@@ -319,9 +346,11 @@ export async function recordGuestOperationalEvent(input: {
   if (!SOURCES.has(input.source)) {
     throw new Error('unverified_memory_event_source');
   }
+  const accountId = requireAccountId(input.accountId);
   const db = input.db ?? (supabase as unknown as SupabaseLike);
   await responseData(db.from('guest_memory_events').insert({
     guest_id: safeGuestId(input.guestId),
+    account_id: accountId,
     event_type: input.type,
     summary: assertSafeMemoryText(input.summary, 600, 'event_summary'),
     booking_reference: input.bookingReference ? assertSafeMemoryText(input.bookingReference, 80, 'booking_reference') : null,
@@ -335,11 +364,13 @@ export async function recordGuestOperationalEvent(input: {
 
 export async function correctGuestOperationalEvent(input: {
   guestId: string;
+  accountId: string;
   itemId: string;
   summary: string;
   sourceRef?: string | null;
   db?: SupabaseLike;
 }): Promise<void> {
+  const accountId = requireAccountId(input.accountId);
   const db = input.db ?? (supabase as unknown as SupabaseLike);
   await responseData(
     db.from('guest_memory_events')
@@ -351,34 +382,46 @@ export async function correctGuestOperationalEvent(input: {
         status: 'active',
       })
       .eq('guest_id', safeGuestId(input.guestId))
+      .eq('account_id', accountId)
       .eq('id', boundedText(input.itemId, 80)),
   );
 }
 
 export async function deleteGuestMemoryItem(input: {
   guestId: string;
+  accountId: string;
   kind: 'preference' | 'event';
   itemId: string;
   db?: SupabaseLike;
 }): Promise<void> {
+  const accountId = requireAccountId(input.accountId);
   const db = input.db ?? (supabase as unknown as SupabaseLike);
   const table = input.kind === 'preference' ? 'guest_memory_preferences' : 'guest_memory_events';
   await responseData(
     db.from(table)
       .update({ status: 'deleted' })
       .eq('guest_id', safeGuestId(input.guestId))
+      .eq('account_id', accountId)
       .eq('id', boundedText(input.itemId, 80)),
   );
 }
 
 export async function forgetGuestLongTermMemory(
   guestIdInput: string,
+  accountIdInput: string,
   db: SupabaseLike = supabase as unknown as SupabaseLike,
 ): Promise<void> {
   const guestId = safeGuestId(guestIdInput);
-  await responseData(db.from('guest_memory_preferences').delete().eq('guest_id', guestId));
-  await responseData(db.from('guest_memory_events').delete().eq('guest_id', guestId));
-  await responseData(db.from('guest_memory_profiles').delete().eq('guest_id', guestId));
+  const accountId = requireAccountId(accountIdInput);
+  await responseData(
+    db.from('guest_memory_preferences').delete().eq('guest_id', guestId).eq('account_id', accountId),
+  );
+  await responseData(
+    db.from('guest_memory_events').delete().eq('guest_id', guestId).eq('account_id', accountId),
+  );
+  await responseData(
+    db.from('guest_memory_profiles').delete().eq('guest_id', guestId).eq('account_id', accountId),
+  );
 }
 
 const RELEVANCE: Record<GuestPreferenceKey | GuestMemoryEventType, RegExp> = {
@@ -506,6 +549,7 @@ export function isExplicitGuestPreferenceOnlyMessage(messageText: string): boole
 
 export async function observeGuestCommunication(input: {
   guestId: string;
+  accountId: string;
   messageText: string;
   language: GuestMemoryLanguage;
   transport: string;
@@ -521,6 +565,7 @@ export async function observeGuestCommunication(input: {
   const preferences = extractExplicitGuestPreferences(input.messageText);
   await recordGuestSeen({
     guestId: input.guestId,
+    accountId: input.accountId,
     preferredLanguage: explicitProfile.language ?? clearlyUsesLanguage(input.messageText) ?? input.language,
     preferredCommunicationMode: mode,
     source: 'deterministic_system',
@@ -528,6 +573,7 @@ export async function observeGuestCommunication(input: {
   });
   await Promise.all(preferences.map((preference) => upsertGuestPreference({
     guestId: input.guestId,
+    accountId: input.accountId,
     ...preference,
     source: 'explicit_guest',
     sourceRef: input.sourceRef,
@@ -538,6 +584,7 @@ export async function observeGuestCommunication(input: {
 
 export async function observeResolvedGuestInbound(input: {
   guestId: string | null | undefined;
+  accountId: string | null | undefined;
   senderIdentity: string | null | undefined;
   messageText: string;
   language: GuestMemoryLanguage;
@@ -550,8 +597,13 @@ export async function observeResolvedGuestInbound(input: {
   if (containsForbiddenGuestMemoryContent(input.messageText)) {
     return { observed: false, preferenceOnly: false, sensitiveRejected: true };
   }
+  if (!boundedText(input.accountId, 120)) {
+    // Fail closed without tenant context — never write globally by guestId alone.
+    return { observed: false, preferenceOnly: false, sensitiveRejected: false };
+  }
   await observeGuestCommunication({
     guestId: input.guestId!,
+    accountId: input.accountId!,
     messageText: input.messageText,
     language: input.language,
     transport: input.transport,
@@ -567,16 +619,19 @@ export async function observeResolvedGuestInbound(input: {
 
 export async function loadRelevantGuestMemory(input: {
   guestId: string | null | undefined;
+  accountId: string | null | undefined;
   requestText: string;
   db?: SupabaseLike;
 }): Promise<RelevantGuestMemoryContext | null> {
   if (!input.guestId) return null;
+  if (!boundedText(input.accountId, 120)) return null;
   try {
-    const memory = await loadGuestLongTermMemory(input.guestId, input.db);
+    const memory = await loadGuestLongTermMemory(input.guestId, input.accountId, input.db);
     return buildRelevantGuestMemoryContext(memory, input.requestText);
   } catch (error) {
     console.warn('[guest-long-term-memory] load failed', {
       guestId: boundedText(input.guestId, 120),
+      accountId: boundedText(input.accountId, 120),
       error: error instanceof Error ? error.message : String(error),
     });
     return null;
