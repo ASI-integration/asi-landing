@@ -4,7 +4,9 @@ These files are **not** part of `supabase/migrations` and must not be applied to
 
 ## Runtime Bridge free-tier schema
 
-File: `20260909170000_runtime_bridge_schema_free_tier.sql`
+Files:
+- `20260909170000_runtime_bridge_schema_free_tier.sql` (historical bootstrap; do not rewrite)
+- `20260912210000_runtime_bridge_single_lane_admission_v1.sql` (forward single-lane admission)
 
 Free-tier staging exception: Bridge shares the staging Supabase project but uses dedicated runtime_bridge schema. Production requires isolated Bridge storage.
 

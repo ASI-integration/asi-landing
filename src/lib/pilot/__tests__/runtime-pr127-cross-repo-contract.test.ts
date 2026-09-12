@@ -1,6 +1,6 @@
 /**
  * Cross-repo contract: Landing PR #272 ↔ Runtime PR #127
- * (asi-os-runtime @ 62584a11064b369f2ffbe4c9c8ca19a1ca3a1eb3).
+ * (asi-os-runtime @ 61197da129b8eb2f2d15f366cfb139d7519125a1).
  *
  * Landing must consume runner-readiness.v2 `capabilities.executor` only.
  * It must NOT parse owner-control-plane execution-slot records, Bridge leases,
@@ -11,6 +11,10 @@ import { resolve } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { parseRuntimeBridgeRunnerInput } from '@/lib/asi-runtime/bridge-schema';
 import type { RuntimeBridgeOwnerGateView } from '@/lib/asi-runtime/bridge-types';
+import {
+  EXECUTION_LANE_REASON_CODES,
+  LEGACY_EXECUTOR_READY_REASON,
+} from '@/lib/asi-runtime/execution-lane-contract';
 import type { DevelopmentReadinessSnapshot } from '@/lib/development/readiness-types';
 import { buildPilotHitlView, canContinuePilotOwnerGate } from '../hitl';
 import { evaluatePilotReadiness, getPilotReadiness } from '../readiness';
@@ -22,13 +26,13 @@ const NOW = '2026-09-12T12:00:00.000Z';
 const FRESH_EXPIRY = '2026-09-12T12:01:00.000Z';
 const NOW_MS = Date.parse(NOW);
 
-/** Runtime PR #127 bounded executor reason codes (diagnostic only on Landing). */
+/** Runtime PR #127 bounded executor reason codes. Only READY authorizes /pilot create. */
 const RUNTIME_PR127_EXECUTOR_REASONS = {
-  ready: 'runtime_execution_lane_ready',
-  occupied: 'runtime_execution_lane_occupied',
-  actionRequired: 'runtime_execution_lane_owner_action_required',
-  recoveryBlocked: 'runtime_execution_lane_recovery_blocked',
-  unavailable: 'runtime_execution_lane_unavailable',
+  ready: EXECUTION_LANE_REASON_CODES.READY,
+  occupied: EXECUTION_LANE_REASON_CODES.OCCUPIED,
+  actionRequired: EXECUTION_LANE_REASON_CODES.OWNER_ACTION_REQUIRED,
+  recoveryBlocked: EXECUTION_LANE_REASON_CODES.RECOVERY_BLOCKED,
+  unavailable: EXECUTION_LANE_REASON_CODES.UNAVAILABLE,
 } as const;
 
 function component(
@@ -236,5 +240,44 @@ describe('cross-repo #272+#127: Landing consumes Runtime executor capability onl
     const snapshot = withExecutor('blocked', RUNTIME_PR127_EXECUTOR_REASONS.occupied);
     snapshot.components.bridge = component('ready', 'bridge_ready', false);
     expect(evaluatePilotReadiness({ snapshot, nowMs: NOW_MS }).ok).toBe(false);
+  });
+
+  it('rejects old lane-unaware executor readiness for /pilot create', () => {
+    expect(evaluatePilotReadiness({
+      snapshot: withExecutor('ready', LEGACY_EXECUTOR_READY_REASON),
+      nowMs: NOW_MS,
+    }).ok).toBe(false);
+    expect(evaluatePilotReadiness({
+      snapshot: withExecutor('ready', ''),
+      nowMs: NOW_MS,
+    }).ok).toBe(false);
+    expect(evaluatePilotReadiness({
+      snapshot: withExecutor('ready', 'runtime_unknown_reason'),
+      nowMs: NOW_MS,
+    }).ok).toBe(false);
+    expect(evaluatePilotReadiness({
+      snapshot: withExecutor('ready', RUNTIME_PR127_EXECUTOR_REASONS.occupied),
+      nowMs: NOW_MS,
+    }).ok).toBe(false);
+
+    const historical = JSON.parse(
+      readFileSync(
+        resolve('src/lib/asi-runtime/__fixtures__/runner-readiness-v2-runtime-pr99.json'),
+        'utf8',
+      ),
+    ) as { capabilities: { executor: { reasonCode: string } } };
+    expect(historical.capabilities.executor.reasonCode).toBe(LEGACY_EXECUTOR_READY_REASON);
+
+    const laneAware = JSON.parse(
+      readFileSync(
+        resolve('src/lib/asi-runtime/__fixtures__/runner-readiness-v2-runtime-pr127.json'),
+        'utf8',
+      ),
+    ) as { capabilities: { executor: { reasonCode: string } } };
+    expect(laneAware.capabilities.executor.reasonCode).toBe(RUNTIME_PR127_EXECUTOR_REASONS.ready);
+    expect(evaluatePilotReadiness({
+      snapshot: withExecutor('ready', laneAware.capabilities.executor.reasonCode),
+      nowMs: NOW_MS,
+    }).ok).toBe(true);
   });
 });

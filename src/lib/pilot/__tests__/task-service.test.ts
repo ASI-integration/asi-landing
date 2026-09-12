@@ -191,6 +191,26 @@ describe('SP-02 — submitPilotTask Bridge seam', () => {
     expect(resolveAllowlistedBaselineSha).not.toHaveBeenCalled();
   });
 
+  it('rejects create when Bridge admission is busy even if readiness snapshot is still READY', async () => {
+    submitRuntimeBridgeTask.mockRejectedValue(
+      new RuntimeBridgeError('admission_busy', 503),
+    );
+    const { submitPilotTask } = await import('../task-service');
+    await expect(submitPilotTask({
+      pilotUserId: 'pilot-a',
+      body: {
+        goal: 'Add a proof markdown under docs/pilot/.',
+        idempotencyKey: 'pilot-beta-idem-stale-ready',
+      },
+    })).rejects.toMatchObject({
+      code: 'admission_busy',
+      status: 503,
+      messageRu: 'Временно недоступно',
+    });
+    expect(assertPilotSubmissionReady).toHaveBeenCalled();
+    expect(submitRuntimeBridgeTask).toHaveBeenCalledTimes(1);
+  });
+
   it('does not allow pilot B to reuse pilot A idempotency row', async () => {
     const ownerA = 'pilot-a';
     const ownerB = 'pilot-b';

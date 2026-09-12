@@ -460,6 +460,34 @@ describe('SP-02 — POST /api/pilot/tasks green create', () => {
     expect(json.code).toBe('readiness_blocked');
     expect(json.taskId).toBeUndefined();
   });
+
+  it('returns 503 Временно недоступно when admission is busy', async () => {
+    getSession.mockResolvedValue(pilotSession());
+    submitPilotTask.mockRejectedValue(
+      new PilotAccessError(
+        'admission_busy',
+        503,
+        'Временно недоступно',
+      ),
+    );
+    const { POST } = await import('@/app/api/pilot/tasks/route');
+    const res = await POST(new Request('http://localhost/api/pilot/tasks', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        goal: 'Add a proof markdown under docs/pilot/.',
+        idempotencyKey: 'pilot-beta-idem-admission-busy',
+      }),
+    }));
+    const json = await res.json();
+    expect(res.status).toBe(503);
+    expect(json).toEqual({
+      ok: false,
+      code: 'admission_busy',
+      message: 'Временно недоступно',
+    });
+    expect(JSON.stringify(json)).not.toMatch(/runtime|bridge|runner|lease|lane|executor/i);
+  });
 });
 
 describe('SP-08 GET /api/pilot/readiness', () => {

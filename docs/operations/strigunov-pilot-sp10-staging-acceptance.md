@@ -8,7 +8,7 @@ Pinned heads (update if either PR moves before staging):
 | Repo | PR | Branch | SHA |
 | --- | --- | --- | --- |
 | `ASI-integration/asi-landing` | [#272](https://github.com/ASI-integration/asi-landing/pull/272) | `codex/strigunov-pilot-closed-beta` | use PR #272 HEAD at staging time (cross-repo contract + this plan) |
-| `ASI-integration/asi-os-runtime` | [#127](https://github.com/ASI-integration/asi-os-runtime/pull/127) | `fix/owner-control-plane-orphan-slot-recovery` | `62584a11064b369f2ffbe4c9c8ca19a1ca3a1eb3` |
+| `ASI-integration/asi-os-runtime` | [#127](https://github.com/ASI-integration/asi-os-runtime/pull/127) | `fix/owner-control-plane-orphan-slot-recovery` | `61197da129b8eb2f2d15f366cfb139d7519125a1` |
 
 ## Contract under test
 

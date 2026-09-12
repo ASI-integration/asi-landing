@@ -92,6 +92,7 @@ function mapBridgeError(error: unknown): never {
     const messages: Record<string, string> = {
       bridge_not_configured: 'Временно недоступно',
       task_not_found: 'Задача не найдена.',
+      admission_busy: 'Временно недоступно',
       idempotency_conflict: 'Повторный запрос с другим содержимым отклонён.',
       owner_gate_mismatch: 'Нельзя продолжить задачу. Обновите страницу.',
       decision_conflict: 'Это решение уже обработано.',

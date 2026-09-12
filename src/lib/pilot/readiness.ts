@@ -1,10 +1,12 @@
 /**
  * Fail-closed /pilot readiness.
  * Authoritative execution availability is runner-readiness.v2
- * `capabilities.executor.state === 'ready'` after owner-console reconciliation.
+ * `capabilities.executor` after owner-console reconciliation, and only when
+ * reasonCode is runtime_execution_lane_ready.
  * Public view never includes components, paths, secrets, or internal words.
  */
 import 'server-only';
+import { isAuthoritativeExecutionLaneReady } from '@/lib/asi-runtime/execution-lane-contract';
 import { getDevelopmentReadiness } from '@/lib/development/readiness';
 import type {
   DevelopmentReadinessComponent,
@@ -100,12 +102,13 @@ function reasonOf(
 function isAuthoritativeExecutorReady(
   executor: DevelopmentReadinessComponent | undefined,
 ): boolean {
-  return Boolean(executor && executor.state === 'ready' && executor.blockingLaunch === false);
+  return Boolean(executor && isAuthoritativeExecutionLaneReady(executor));
 }
 
 /**
  * Truthful AND-gate for /pilot create. Unknown/stale/missing/blocked → fail closed.
- * Executor availability is `capabilities.executor.state === 'ready'` only.
+ * Executor availability requires lane-aware Runtime #127 evidence:
+ * state=ready, blockingLaunch=false, reasonCode=runtime_execution_lane_ready.
  */
 export function evaluatePilotReadiness(input: {
   snapshot: DevelopmentReadinessSnapshot | null | undefined;

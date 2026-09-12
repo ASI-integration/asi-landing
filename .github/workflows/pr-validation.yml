@@ -327,6 +327,22 @@ jobs:
           chmod +x scripts/ci-artifact-smoke.sh
           bash scripts/ci-artifact-smoke.sh "$OUT" 13077
 
+      - name: Strigunov pilot readiness and Bridge admission regression
+        run: |
+          set -euo pipefail
+          npx vitest run \
+            src/lib/pilot/__tests__/readiness.test.ts \
+            src/lib/pilot/__tests__/runtime-pr127-cross-repo-contract.test.ts \
+            src/lib/pilot/__tests__/task-service.test.ts \
+            src/lib/pilot/__tests__/hitl.test.ts \
+            src/lib/pilot/__tests__/handoff.integration.test.ts \
+            src/lib/pilot/__tests__/strigunov-pilot-acceptance.test.ts \
+            src/app/api/pilot/__tests__/routes.test.ts \
+            src/lib/asi-runtime/__tests__/bridge.test.ts \
+            src/lib/asi-runtime/__tests__/bridge-staging-schema.test.ts \
+            src/lib/asi-runtime/__tests__/bridge-supabase.test.ts \
+            --reporter=verbose
+
       - name: Whitespace check (git diff --check)
         run: git diff --check
 
@@ -703,3 +719,19 @@ jobs:
           }
           console.log('partner_revenue_proof_ok', JSON.stringify(proof));
           NODE
+
+      - name: Bridge single-lane admission PostgreSQL contract
+        id: bridge_admission_pg_integration
+        run: |
+          set -euo pipefail
+          npx vitest run \
+            src/lib/asi-runtime/__tests__/bridge-single-lane-admission.pg.integration.test.ts \
+            --reporter=verbose 2>&1 | tee bridge-admission-pg.out
+          if grep -E '↓|skipped|SKIPPED' bridge-admission-pg.out | grep -Fq 'Bridge single-lane admission PostgreSQL contract'; then
+            echo "Bridge admission PostgreSQL suite was skipped — failing job"
+            exit 1
+          fi
+          if ! grep -Fq 'BRIDGE_SINGLE_LANE_PG_PROOF' bridge-admission-pg.out; then
+            echo "Missing BRIDGE_SINGLE_LANE_PG_PROOF — failing job"
+            exit 1
+          fi

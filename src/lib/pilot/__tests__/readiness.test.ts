@@ -2,6 +2,10 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { parseRuntimeBridgeRunnerInput } from '@/lib/asi-runtime/bridge-schema';
+import {
+  EXECUTION_LANE_REASON_CODES,
+  LEGACY_EXECUTOR_READY_REASON,
+} from '@/lib/asi-runtime/execution-lane-contract';
 import { PilotAccessError } from '../errors';
 import { evaluatePilotReadiness } from '../readiness';
 import { buildPilotHitlView, canContinuePilotOwnerGate } from '../hitl';
@@ -54,7 +58,7 @@ function healthySnapshot(overrides: Partial<DevelopmentReadinessSnapshot> = {}):
       bridge: component('ready', 'bridge_ready', false),
       checkouts: component('ready', 'runtime_checkouts_ready', false),
       baseline: component('ready', 'baseline_ready', false),
-      executor: component('ready', 'runtime_executor_ready', false),
+      executor: component('ready', EXECUTION_LANE_REASON_CODES.READY, false),
       github: component('degraded', 'github_provider_unreachable', false),
     },
     ...overrides,
@@ -94,7 +98,7 @@ function v2Fixture(): Record<string, unknown> {
 }
 
 describe('evaluatePilotReadiness fail-closed AND-gate', () => {
-  it('A: fresh v2 + executor ready + repository gates healthy enables submit', () => {
+  it('A: fresh v2 + runtime_execution_lane_ready + repository gates healthy enables submit', () => {
     const verdict = evaluatePilotReadiness({
       snapshot: healthySnapshot(),
       nowMs: NOW_MS,
@@ -102,9 +106,93 @@ describe('evaluatePilotReadiness fail-closed AND-gate', () => {
     expect(verdict.ok).toBe(true);
   });
 
-  it('accepts diagnostic executor reason codes when state is ready', () => {
+  it('blocks fresh v2 + runtime_executor_ready even when state is ready', () => {
     const snapshot = healthySnapshot();
-    snapshot.components.executor = component('ready', 'runtime_execution_lane_ready', false);
+    snapshot.components.executor = component('ready', LEGACY_EXECUTOR_READY_REASON, false);
+    expect(evaluatePilotReadiness({ snapshot, nowMs: NOW_MS }).ok).toBe(false);
+  });
+
+  it('blocks ready executor with a missing reasonCode', () => {
+    const snapshot = healthySnapshot();
+    snapshot.components.executor = component('ready', '', false);
+    expect(evaluatePilotReadiness({ snapshot, nowMs: NOW_MS }).ok).toBe(false);
+  });
+
+  it('blocks ready executor with an unknown reasonCode', () => {
+    const snapshot = healthySnapshot();
+    snapshot.components.executor = component('ready', 'runtime_executor_probably_fine', false);
+    expect(evaluatePilotReadiness({ snapshot, nowMs: NOW_MS }).ok).toBe(false);
+  });
+
+  it('blocks ready + occupied or busy/ACTION_REQUIRED reasons', () => {
+    for (const reason of [
+      EXECUTION_LANE_REASON_CODES.OCCUPIED,
+      EXECUTION_LANE_REASON_CODES.OWNER_ACTION_REQUIRED,
+      EXECUTION_LANE_REASON_CODES.RECOVERY_BLOCKED,
+      EXECUTION_LANE_REASON_CODES.UNAVAILABLE,
+    ]) {
+      const snapshot = healthySnapshot();
+      snapshot.components.executor = component('ready', reason, false);
+      expect(evaluatePilotReadiness({ snapshot, nowMs: NOW_MS }).ok).toBe(false);
+    }
+  });
+
+  it('blocks contradictory state/reason pairs', () => {
+    const readyOccupied = healthySnapshot();
+    readyOccupied.components.executor = component(
+      'ready',
+      EXECUTION_LANE_REASON_CODES.OCCUPIED,
+      false,
+    );
+    expect(evaluatePilotReadiness({ snapshot: readyOccupied, nowMs: NOW_MS }).ok).toBe(false);
+
+    const blockedReadyReason = healthySnapshot();
+    blockedReadyReason.components.executor = component(
+      'blocked',
+      EXECUTION_LANE_REASON_CODES.READY,
+      true,
+    );
+    expect(evaluatePilotReadiness({ snapshot: blockedReadyReason, nowMs: NOW_MS }).ok).toBe(false);
+
+    const readyButBlocking = healthySnapshot();
+    readyButBlocking.components.executor = component(
+      'ready',
+      EXECUTION_LANE_REASON_CODES.READY,
+      true,
+    );
+    expect(evaluatePilotReadiness({ snapshot: readyButBlocking, nowMs: NOW_MS }).ok).toBe(false);
+  });
+
+  it('blocks the historical v2 readiness fixture that only proves executor probe ready', () => {
+    const snapshot = healthySnapshot();
+    snapshot.components.executor = component('ready', LEGACY_EXECUTOR_READY_REASON, false);
+    expect(evaluatePilotReadiness({ snapshot, nowMs: NOW_MS }).ok).toBe(false);
+    const historical = JSON.parse(
+      readFileSync(
+        resolve('src/lib/asi-runtime/__fixtures__/runner-readiness-v2-runtime-pr99.json'),
+        'utf8',
+      ),
+    ) as { capabilities: { executor: { reasonCode: string } } };
+    expect(historical.capabilities.executor.reasonCode).toBe(LEGACY_EXECUTOR_READY_REASON);
+  });
+
+  it('allows the Runtime #127 lane-aware fixture when other gates pass', () => {
+    const fixture = JSON.parse(
+      readFileSync(
+        resolve('src/lib/asi-runtime/__fixtures__/runner-readiness-v2-runtime-pr127.json'),
+        'utf8',
+      ),
+    ) as { capabilities: { executor: { state: string; reasonCode: string } } };
+    expect(fixture.capabilities.executor).toEqual({
+      state: 'ready',
+      reasonCode: EXECUTION_LANE_REASON_CODES.READY,
+    });
+    const snapshot = healthySnapshot();
+    snapshot.components.executor = component(
+      'ready',
+      fixture.capabilities.executor.reasonCode,
+      false,
+    );
     expect(evaluatePilotReadiness({ snapshot, nowMs: NOW_MS }).ok).toBe(true);
   });
 

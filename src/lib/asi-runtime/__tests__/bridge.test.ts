@@ -471,6 +471,19 @@ describe('runtime bridge durable contracts', () => {
     expect(sql).toContain('IF FOUND THEN RETURN NULL; END IF;');
     expect(sql).toContain('runner_id = p_runner_id AND lease_token = p_lease_token');
     expect(sql).toContain('idempotency_conflict');
+    expect(sql).not.toContain('admission_busy');
+
+    const admissionSql = readFileSync(
+      'supabase/migrations/20260912210000_asi_runtime_bridge_single_lane_admission_v1.sql',
+      'utf8',
+    );
+    expect(admissionSql).toContain('CREATE OR REPLACE FUNCTION public.submit_asi_runtime_bridge_task');
+    expect(admissionSql).toContain('idx_asi_runtime_bridge_single_nonterminal');
+    expect(admissionSql).toContain('asi_runtime_bridge_single_lane');
+    expect(admissionSql).toContain('admission_busy');
+    expect(admissionSql).toContain("status IN ('queued', 'running', 'awaiting_owner')");
+    expect(admissionSql).toContain('idempotency_conflict');
+    expect(admissionSql).not.toContain('ALTER TABLE public.asi_runtime_bridge_tasks');
     expect(sql).toContain('decision_conflict');
     expect(sql).toContain('p_task_cycle IS NULL');
     expect(sql).toContain('IS DISTINCT FROM p_task_cycle');
@@ -844,6 +857,11 @@ describe('runtime bridge durable contracts', () => {
           if (existing.hash !== hash) throw new Error('idempotency_conflict');
           return existing;
         }
+        if (durable.tasks.some((item) => (
+          item.status === 'queued' || item.status === 'running' || item.status === 'awaiting_owner'
+        ))) {
+          throw new Error('admission_busy');
+        }
         const created = { id: randomUUID(), key, hash, status: 'queued', attempt: 0 };
         durable.tasks.push(created);
         return created;
@@ -882,6 +900,7 @@ describe('runtime bridge durable contracts', () => {
     const original = firstProcess.submit('key-1', 'hash-1');
     expect(firstProcess.submit('key-1', 'hash-1').id).toBe(original.id);
     expect(() => firstProcess.submit('key-1', 'changed')).toThrow('idempotency_conflict');
+    expect(() => firstProcess.submit('key-2', 'hash-2')).toThrow('admission_busy');
     const firstClaim = firstProcess.claim()!;
     expect(firstProcess.claim()).toBeNull();
     firstProcess.recover(firstClaim.id);
@@ -898,5 +917,6 @@ describe('runtime bridge durable contracts', () => {
     expect(resumed.id).toBe(original.id);
     restarted.complete(resumed.id, resumed.lease!, { status: 'completed' });
     expect(durable.tasks[0]).toMatchObject({ id: original.id, status: 'completed', attempt: 3 });
+    expect(restarted.submit('key-2', 'hash-2').status).toBe('queued');
   });
 });

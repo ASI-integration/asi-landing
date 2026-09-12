@@ -113,6 +113,11 @@ function installDurableBridgeMock(store: { rows: DurableRow[] }) {
           error: null,
         };
       }
+      if (store.rows.some((row) => (
+        row.status === 'queued' || row.status === 'running' || row.status === 'awaiting_owner'
+      ))) {
+        return { data: null, error: { message: 'admission_busy' } };
+      }
       const row: DurableRow = {
         id: randomUUID(),
         client_id: clientId,
