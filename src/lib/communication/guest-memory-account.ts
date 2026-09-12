@@ -112,3 +112,34 @@ function uniqueAccountIds(rows: unknown): string[] {
   }
   return [...accounts];
 }
+
+/**
+ * Exact membership check for a proven accountId.
+ * Never invents or selects "first/only" membership — requires one exact
+ * (user_id, account_id) row. Lookup errors and ambiguity fail closed.
+ */
+export async function assertExactAccountMembership(input: {
+  userId: string;
+  accountId: string;
+  db?: SupabaseLike;
+}): Promise<boolean> {
+  const userId = normalized(input.userId);
+  const accountId = normalized(input.accountId);
+  if (!userId || !accountId) return false;
+
+  const db = input.db ?? (supabase as unknown as SupabaseLike);
+  try {
+    const result = await db
+      .from('account_members')
+      .select('account_id')
+      .eq('user_id', userId)
+      .eq('account_id', accountId)
+      .limit(2);
+    if (result?.error) return false;
+    const rows = Array.isArray(result?.data) ? result.data : [];
+    if (rows.length !== 1) return false;
+    return normalized((rows[0] as { account_id?: unknown }).account_id) === accountId;
+  } catch {
+    return false;
+  }
+}
