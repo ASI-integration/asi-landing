@@ -241,6 +241,7 @@ function runnerComponents(
     ? reconciled.checkoutReasonCode
     : 'runtime_checkout_probe_failed';
   const executorReason = EXECUTOR_REASON_CODES.has(reconciled.executorReasonCode)
+    || /^[A-Za-z0-9][A-Za-z0-9._:-]{0,119}$/.test(reconciled.executorReasonCode)
     ? reconciled.executorReasonCode
     : 'runtime_executor_probe_failed';
 

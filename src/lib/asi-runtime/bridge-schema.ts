@@ -1,4 +1,3 @@
-import { parseRuntimeExecutionLaneEvidence } from './execution-lane';
 import { containsForbiddenStringContent } from './ingest-schema';
 import type {
   RuntimeBridgeChatInput,
@@ -37,18 +36,6 @@ const RUNNER_CHECKOUT_REASON_CODES = new Set([
 const RUNNER_BASELINE_RECOVERY_REASON_CODES = new Set([
   'runtime_baseline_recovery_ready',
   'runtime_baseline_recovery_unavailable',
-]);
-const RUNNER_EXECUTOR_REASON_CODES = new Set([
-  'runtime_executor_ready',
-  'runtime_runner_url_missing',
-  'runtime_runner_url_invalid',
-  'runtime_runner_credentials_invalid',
-  'runtime_executor_missing',
-  'runtime_executor_invalid',
-  'runtime_executor_unavailable',
-  'runtime_executor_entrypoint_missing',
-  'runtime_executor_entrypoint_unavailable',
-  'runtime_executor_probe_failed',
 ]);
 const RUNNER_READINESS_V2_REPOSITORY_FULL_NAME_BY_ID = {
   landing: 'ASI-integration/asi-landing',
@@ -268,8 +255,7 @@ export function parseRuntimeBridgeChatInput(value: unknown): RuntimeBridgeChatIn
 function parseRunnerExecutorCapability(value: unknown): { state: 'ready' | 'blocked'; reasonCode: string } | null {
   if (!object(value) || !exact(value, ['state', 'reasonCode'])
     || !['ready', 'blocked'].includes(String(value.state))
-    || !text(value.reasonCode, 120, ID)
-    || !RUNNER_EXECUTOR_REASON_CODES.has(value.reasonCode)) return null;
+    || !text(value.reasonCode, 120, ID)) return null;
   return { state: value.state as 'ready' | 'blocked', reasonCode: value.reasonCode };
 }
 
@@ -385,8 +371,7 @@ function parseRunnerRepositoryEvidenceV2(value: unknown) {
 }
 
 function parseRunnerReadinessV2Input(input: Record<string, unknown>): RuntimeBridgeRunnerInput | null {
-  const required = ['schemaVersion', 'runnerId', 'checkedAt', 'expiresAt', 'capabilities', 'blockers', 'repositories'];
-  if (!exactWithOptional(input, required, ['executionLane'])
+  if (!exact(input, ['schemaVersion', 'runnerId', 'checkedAt', 'expiresAt', 'capabilities', 'blockers', 'repositories'])
     || input.schemaVersion !== 'asi.runtime.runner-readiness.v2'
     || !text(input.checkedAt, 64) || !text(input.expiresAt, 64)
     || Number.isNaN(Date.parse(input.checkedAt)) || Number.isNaN(Date.parse(input.expiresAt))
@@ -404,7 +389,6 @@ function parseRunnerReadinessV2Input(input: Record<string, unknown>): RuntimeBri
     || !input.repositories.every((item) => parseRunnerRepositoryEvidenceV2(item))) return null;
   const repositoryIds = input.repositories.map((item) => String((item as { repositoryId: string }).repositoryId));
   if (new Set(repositoryIds).size !== repositoryIds.length) return null;
-  if (Object.hasOwn(input, 'executionLane') && !parseRuntimeExecutionLaneEvidence(input.executionLane)) return null;
   return {
     operation: 'runner_publish_readiness',
     input: input as Extract<RuntimeBridgeRunnerInput, { operation: 'runner_publish_readiness' }>['input'],

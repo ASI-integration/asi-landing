@@ -1,5 +1,3 @@
-import type { RuntimeExecutionLaneEvidence } from './execution-lane';
-
 export const RUNTIME_BRIDGE_CHAT_OPERATIONS = [
   'runtime_submit_task',
   'runtime_get_task',
@@ -115,11 +113,6 @@ export type RuntimeRunnerReadinessRecordV2 = {
   };
   blockers: string[];
   repositories: RuntimeRunnerRepositoryEvidenceV2[];
-  /**
-   * Optional authoritative single-runner lane evidence from Runtime.
-   * Absent/invalid is fail-closed for /pilot — never inferred from Bridge leases.
-   */
-  executionLane?: RuntimeExecutionLaneEvidence;
 };
 
 export type RuntimeRunnerReadinessRecord =

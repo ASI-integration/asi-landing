@@ -99,42 +99,6 @@ export async function probeRuntimeBridgeStorage(timeoutMs = 5_000): Promise<void
   }
 }
 
-export type RuntimeBridgeLeaseOccupancyProbe = {
-  occupied: boolean;
-};
-
-/**
- * Additional fail-closed signal: a live Bridge `running` lease means /pilot
- * must not create. Absence of a lease is NOT proof the Runtime execution
- * lane can accept work — that requires authoritative runner/control-plane
- * `executionLane` evidence.
- */
-export async function probeRuntimeBridgeLeaseOccupancy(
-  timeoutMs = 5_000,
-): Promise<RuntimeBridgeLeaseOccupancyProbe> {
-  try {
-    const { data, error } = await bridgeDb()
-      .from('asi_runtime_bridge_tasks')
-      .select('id,lease_expires_at')
-      .eq('status', 'running')
-      .limit(8)
-      .abortSignal(AbortSignal.timeout(timeoutMs));
-    if (error) throw error;
-    const now = Date.now();
-    const occupied = (data ?? []).some((row) => {
-      const raw = (row as Row).lease_expires_at;
-      if (raw == null || raw === '') return true;
-      const expires = Date.parse(String(raw));
-      if (!Number.isFinite(expires)) return true;
-      return expires > now;
-    });
-    return { occupied };
-  } catch (error) {
-    if (error instanceof RuntimeBridgeError) throw error;
-    throw new RuntimeBridgeError('runtime_bridge_storage_unreachable', 503);
-  }
-}
-
 function taskRecord(row: Row): RuntimeBridgeTaskRecord {
   return {
     ...taskView(row),

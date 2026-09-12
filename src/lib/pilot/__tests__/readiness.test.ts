@@ -1,8 +1,12 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
-import type { RuntimeExecutionLaneEvidence } from '@/lib/asi-runtime/execution-lane';
+import { parseRuntimeBridgeRunnerInput } from '@/lib/asi-runtime/bridge-schema';
 import { PilotAccessError } from '../errors';
 import { evaluatePilotReadiness } from '../readiness';
+import { buildPilotHitlView, canContinuePilotOwnerGate } from '../hitl';
 import type { DevelopmentReadinessSnapshot } from '@/lib/development/readiness-types';
+import type { RuntimeBridgeOwnerGateView } from '@/lib/asi-runtime/bridge-types';
 import { PILOT_USER_STATE } from '../user-copy';
 
 vi.mock('server-only', () => ({}));
@@ -27,7 +31,7 @@ function runnerEvidence(
     identity: 'runner-host-secret',
     checkedAt: NOW,
     expiresAt: FRESH_EXPIRY,
-    schemaVersion: 'asi.runtime.runner-readiness.v1',
+    schemaVersion: 'asi.runtime.runner-readiness.v2',
     repositoryId: 'asi-landing',
     canonicalRepository: 'ASI-integration/asi-landing',
     observedBaselineSha: 'a'.repeat(40),
@@ -57,48 +61,55 @@ function healthySnapshot(overrides: Partial<DevelopmentReadinessSnapshot> = {}):
   };
 }
 
-function freeRuntimeLane(
-  overrides: Partial<RuntimeExecutionLaneEvidence> = {},
-): RuntimeExecutionLaneEvidence {
+function pendingGate(): RuntimeBridgeOwnerGateView {
   return {
-    schemaVersion: 'asi.runtime.execution-lane.v1',
-    state: 'free',
-    reasonCode: 'runtime_execution_lane_free',
-    checkedAt: NOW,
-    expiresAt: FRESH_EXPIRY,
-    ...overrides,
+    schemaVersion: 'asi.runtime.owner-gate.v1',
+    action: 'Продолжить правку документации',
+    exactTarget: 'docs/pilot/proof.md',
+    identity: 'task-cycle-1',
+    reason: 'Нужно подтвердить формулировку в proof-файле.',
+    evidence: ['raw diagnostic payload should not leak'],
+    allowedSideEffect: 'update the same task only',
+    rollback: 'leave files unchanged',
+    postActionVerification: ['same taskId'],
+    taskCycle: 'cycle-1',
+    expiresAt: '2026-09-08T13:00:00.000Z',
+    gateId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+    taskId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+    status: 'pending',
+    createdAt: NOW,
   };
 }
 
-function actionRequiredRuntimeLane(): RuntimeExecutionLaneEvidence {
-  return {
-    schemaVersion: 'asi.runtime.execution-lane.v1',
-    state: 'action_required',
-    reasonCode: 'runtime_execution_lane_action_required',
-    checkedAt: NOW,
-    expiresAt: FRESH_EXPIRY,
-  };
-}
-
-function healthyInput(
-  overrides: Partial<Parameters<typeof evaluatePilotReadiness>[0]> = {},
-) {
-  return {
-    snapshot: healthySnapshot(),
-    bridgeLease: { occupied: false },
-    runtimeLane: freeRuntimeLane(),
-    nowMs: NOW_MS,
-    ...overrides,
-  };
+function v2Fixture(): Record<string, unknown> {
+  const fixture = JSON.parse(
+    readFileSync(
+      resolve('src/lib/asi-runtime/__fixtures__/runner-readiness-v2-runtime-pr99.json'),
+      'utf8',
+    ),
+  ) as Record<string, unknown>;
+  fixture.checkedAt = new Date().toISOString();
+  fixture.expiresAt = new Date(Date.now() + 45_000).toISOString();
+  return fixture;
 }
 
 describe('evaluatePilotReadiness fail-closed AND-gate', () => {
-  it('fully healthy enables submit', () => {
-    expect(evaluatePilotReadiness(healthyInput()).ok).toBe(true);
+  it('A: fresh v2 + executor ready + repository gates healthy enables submit', () => {
+    const verdict = evaluatePilotReadiness({
+      snapshot: healthySnapshot(),
+      nowMs: NOW_MS,
+    });
+    expect(verdict.ok).toBe(true);
+  });
+
+  it('accepts diagnostic executor reason codes when state is ready', () => {
+    const snapshot = healthySnapshot();
+    snapshot.components.executor = component('ready', 'runtime_execution_lane_ready', false);
+    expect(evaluatePilotReadiness({ snapshot, nowMs: NOW_MS }).ok).toBe(true);
   });
 
   it('does not treat canLaunch-only as ready', () => {
-    const verdict = evaluatePilotReadiness(healthyInput({
+    const verdict = evaluatePilotReadiness({
       snapshot: {
         ...healthySnapshot(),
         runnerEvidence: null,
@@ -110,7 +121,8 @@ describe('evaluatePilotReadiness fail-closed AND-gate', () => {
           github: component('ready', 'github_provider_ready', false),
         },
       },
-    }));
+      nowMs: NOW_MS,
+    });
     expect(verdict.ok).toBe(false);
   });
 
@@ -118,10 +130,10 @@ describe('evaluatePilotReadiness fail-closed AND-gate', () => {
     const snapshot = healthySnapshot();
     snapshot.components.bridge = component('blocked', 'bridge_storage_unreachable', true);
     snapshot.canLaunch = false;
-    expect(evaluatePilotReadiness(healthyInput({ snapshot })).ok).toBe(false);
+    expect(evaluatePilotReadiness({ snapshot, nowMs: NOW_MS }).ok).toBe(false);
   });
 
-  it('stale readiness fails closed', () => {
+  it('E: stale readiness fails closed even if executor says ready', () => {
     const snapshot = healthySnapshot({
       runnerEvidence: runnerEvidence({
         checkedAt: '2026-09-08T11:50:00.000Z',
@@ -131,70 +143,88 @@ describe('evaluatePilotReadiness fail-closed AND-gate', () => {
       }),
     });
     snapshot.components.checkouts = component('blocked', 'runtime_runner_readiness_stale', true);
-    snapshot.components.executor = component('blocked', 'runtime_runner_readiness_stale', true);
+    snapshot.components.executor = component('ready', 'runtime_executor_ready', false);
     snapshot.canLaunch = false;
-    expect(evaluatePilotReadiness(healthyInput({ snapshot })).ok).toBe(false);
+    expect(evaluatePilotReadiness({ snapshot, nowMs: NOW_MS }).ok).toBe(false);
+
+    const stillStale = healthySnapshot({
+      runnerEvidence: runnerEvidence({
+        checkedAt: '2026-09-08T11:50:00.000Z',
+        expiresAt: STALE_EXPIRY,
+      }),
+    });
+    stillStale.components.executor = component('ready', 'runtime_executor_ready', false);
+    expect(evaluatePilotReadiness({ snapshot: stillStale, nowMs: NOW_MS }).ok).toBe(false);
   });
 
   it('checkout unavailable fails closed', () => {
     const snapshot = healthySnapshot();
     snapshot.components.checkouts = component('blocked', 'runtime_checkout_missing', true);
     snapshot.canLaunch = false;
-    expect(evaluatePilotReadiness(healthyInput({ snapshot })).ok).toBe(false);
+    expect(evaluatePilotReadiness({ snapshot, nowMs: NOW_MS }).ok).toBe(false);
   });
 
   it('invalid repository origin fails closed', () => {
     const snapshot = healthySnapshot();
     snapshot.components.checkouts = component('blocked', 'runtime_checkout_remote_mismatch', true);
     snapshot.canLaunch = false;
-    expect(evaluatePilotReadiness(healthyInput({ snapshot })).ok).toBe(false);
+    expect(evaluatePilotReadiness({ snapshot, nowMs: NOW_MS }).ok).toBe(false);
   });
 
   it('baseline unavailable/mismatch fails closed', () => {
     const unavailable = healthySnapshot();
     unavailable.components.baseline = component('blocked', 'baseline_unavailable', true);
     unavailable.canLaunch = false;
-    expect(evaluatePilotReadiness(healthyInput({ snapshot: unavailable })).ok).toBe(false);
+    expect(evaluatePilotReadiness({ snapshot: unavailable, nowMs: NOW_MS }).ok).toBe(false);
 
     const mismatch = healthySnapshot();
     mismatch.components.checkouts = component('blocked', 'runtime_baseline_remote_mismatch', true);
     mismatch.canLaunch = false;
-    expect(evaluatePilotReadiness(healthyInput({ snapshot: mismatch })).ok).toBe(false);
+    expect(evaluatePilotReadiness({ snapshot: mismatch, nowMs: NOW_MS }).ok).toBe(false);
   });
 
-  it('executor blocked fails closed', () => {
+  it('B: executor blocked fails closed', () => {
     const snapshot = healthySnapshot();
-    snapshot.components.executor = component('blocked', 'runtime_executor_unavailable', true);
-    snapshot.canLaunch = false;
-    expect(evaluatePilotReadiness(healthyInput({ snapshot })).ok).toBe(false);
+    snapshot.components.executor = component(
+      'blocked',
+      'runtime_execution_lane_owner_action_required',
+      true,
+    );
+    expect(evaluatePilotReadiness({ snapshot, nowMs: NOW_MS }).ok).toBe(false);
   });
 
-  it('Bridge lease occupancy is an additional fail-closed signal', () => {
-    expect(evaluatePilotReadiness(healthyInput({
-      bridgeLease: { occupied: true },
-    })).ok).toBe(false);
+  it('C: executor missing fails closed', () => {
+    const snapshot = healthySnapshot();
+    snapshot.components.executor = component('blocked', 'runtime_executor_missing', true);
+    expect(evaluatePilotReadiness({ snapshot, nowMs: NOW_MS }).ok).toBe(false);
+    const omitted = healthySnapshot();
+    delete (omitted.components as { executor?: unknown }).executor;
+    expect(evaluatePilotReadiness({ snapshot: omitted, nowMs: NOW_MS }).ok).toBe(false);
   });
 
-  it('does not treat empty Bridge leases as proof the Runtime lane is free', () => {
-    expect(evaluatePilotReadiness(healthyInput({
-      bridgeLease: { occupied: false },
-      runtimeLane: null,
-    })).ok).toBe(false);
+  it('G: absence of blockers cannot make a non-ready executor ready', () => {
+    const snapshot = healthySnapshot();
+    snapshot.components.executor = component('blocked', 'runtime_execution_lane_occupied', true);
+    snapshot.canLaunch = true;
+    expect(evaluatePilotReadiness({ snapshot, nowMs: NOW_MS }).ok).toBe(false);
   });
 
-  it('keeps /pilot unavailable when Bridge has no live running lease but Runtime lane is ACTION_REQUIRED', () => {
-    const verdict = evaluatePilotReadiness(healthyInput({
-      snapshot: healthySnapshot({ canLaunch: true }),
-      bridgeLease: { occupied: false },
-      runtimeLane: actionRequiredRuntimeLane(),
-    }));
-    expect(verdict.ok).toBe(false);
-    expect(verdict.failClosed).toBe(true);
+  it('F: healthy Bridge with no lease inference cannot make executor ready', () => {
+    const snapshot = healthySnapshot();
+    snapshot.components.bridge = component('ready', 'bridge_ready', false);
+    snapshot.components.executor = component('blocked', 'runtime_execution_lane_unavailable', true);
+    expect(evaluatePilotReadiness({ snapshot, nowMs: NOW_MS }).ok).toBe(false);
   });
 
-  it('unknown snapshot or lease probe fails closed', () => {
-    expect(evaluatePilotReadiness(healthyInput({ snapshot: null })).ok).toBe(false);
-    expect(evaluatePilotReadiness(healthyInput({ bridgeLease: null })).ok).toBe(false);
+  it('unknown snapshot fails closed', () => {
+    expect(evaluatePilotReadiness({ snapshot: null, nowMs: NOW_MS }).ok).toBe(false);
+  });
+
+  it('v1 runner evidence is not authoritative for /pilot', () => {
+    const snapshot = healthySnapshot({
+      runnerEvidence: runnerEvidence({ schemaVersion: 'asi.runtime.runner-readiness.v1' }),
+    });
+    expect(evaluatePilotReadiness({ snapshot, nowMs: NOW_MS }).ok).toBe(false);
   });
 });
 
@@ -203,8 +233,6 @@ describe('getPilotReadiness public view', () => {
     const { getPilotReadiness } = await import('../readiness');
     const view = await getPilotReadiness({
       loadOwnerReadiness: async () => healthySnapshot(),
-      probeBridgeLeaseOccupancy: async () => ({ occupied: false }),
-      loadRuntimeExecutionLane: async () => freeRuntimeLane(),
       now: () => new Date(NOW),
     });
     expect(view).toEqual({
@@ -216,54 +244,120 @@ describe('getPilotReadiness public view', () => {
     expect(JSON.stringify(view)).not.toMatch(/runtime|bridge|runner|baseline|checkout|executor|lane|runner-host-secret/i);
   });
 
-  it('Bridge lease occupancy disables create and does not claim the system is ready', async () => {
+  it('executor blocked disables create and does not claim the system is ready', async () => {
     const { getPilotReadiness, assertPilotSubmissionReady } = await import('../readiness');
+    const snapshot = healthySnapshot();
+    snapshot.components.executor = component(
+      'blocked',
+      'runtime_execution_lane_owner_action_required',
+      true,
+    );
+    snapshot.canLaunch = false;
     const view = await getPilotReadiness({
-      loadOwnerReadiness: async () => healthySnapshot(),
-      probeBridgeLeaseOccupancy: async () => ({ occupied: true }),
-      loadRuntimeExecutionLane: async () => freeRuntimeLane(),
+      loadOwnerReadiness: async () => snapshot,
       now: () => new Date(NOW),
     });
     expect(view.canSubmit).toBe(false);
     expect(view.state).toBe('not_ready');
     expect(view.messageRu).toBe(PILOT_USER_STATE.temporarilyUnavailable);
     await expect(assertPilotSubmissionReady({
-      loadOwnerReadiness: async () => healthySnapshot(),
-      probeBridgeLeaseOccupancy: async () => ({ occupied: true }),
-      loadRuntimeExecutionLane: async () => freeRuntimeLane(),
+      loadOwnerReadiness: async () => snapshot,
     })).rejects.toBeInstanceOf(PilotAccessError);
   });
+});
 
-  it('ACTION_REQUIRED Runtime lane keeps /pilot unavailable even with no Bridge running lease', async () => {
-    const { getPilotReadiness, assertPilotSubmissionReady } = await import('../readiness');
-    const view = await getPilotReadiness({
-      loadOwnerReadiness: async () => healthySnapshot(),
-      probeBridgeLeaseOccupancy: async () => ({ occupied: false }),
-      loadRuntimeExecutionLane: async () => actionRequiredRuntimeLane(),
-      now: () => new Date(NOW),
+describe('H: existing-task HITL vs new-task create', () => {
+  it('keeps HITL continue on the same taskId while executor-blocked create stays unavailable', () => {
+    const snapshot = healthySnapshot();
+    snapshot.components.executor = component(
+      'blocked',
+      'runtime_execution_lane_owner_action_required',
+      true,
+    );
+    snapshot.canLaunch = false;
+    expect(evaluatePilotReadiness({ snapshot, nowMs: NOW_MS }).ok).toBe(false);
+
+    const gate = pendingGate();
+    expect(canContinuePilotOwnerGate(gate)).toBe(true);
+    const hitl = buildPilotHitlView(gate);
+    expect(hitl).toMatchObject({
+      canContinue: true,
+      gateId: gate.gateId,
+      taskCycle: gate.taskCycle,
     });
-    expect(view.canSubmit).toBe(false);
-    expect(view.state).toBe('not_ready');
-    expect(view.messageRu).toBe(PILOT_USER_STATE.temporarilyUnavailable);
-    await expect(assertPilotSubmissionReady({
-      loadOwnerReadiness: async () => healthySnapshot(),
-      probeBridgeLeaseOccupancy: async () => ({ occupied: false }),
-      loadRuntimeExecutionLane: async () => actionRequiredRuntimeLane(),
-    })).rejects.toBeInstanceOf(PilotAccessError);
   });
+});
 
-  it('lease occupancy probe failure is error, not ready', async () => {
-    const { getPilotReadiness } = await import('../readiness');
-    const view = await getPilotReadiness({
-      loadOwnerReadiness: async () => healthySnapshot(),
-      probeBridgeLeaseOccupancy: async () => {
-        throw new Error('offline');
+describe('D/I: runner-readiness.v2 executor contract', () => {
+  it('D: malformed executor capability is rejected', () => {
+    const fixture = v2Fixture();
+    const capabilities = fixture.capabilities as Record<string, unknown>;
+    expect(parseRuntimeBridgeRunnerInput({
+      operation: 'runner_publish_readiness',
+      input: {
+        ...fixture,
+        capabilities: {
+          ...capabilities,
+          executor: { state: 'ready' },
+        },
       },
-      loadRuntimeExecutionLane: async () => freeRuntimeLane(),
-      now: () => new Date(NOW),
-    });
-    expect(view.state).toBe('error');
-    expect(view.canSubmit).toBe(false);
-    expect(view.messageRu).toBe(PILOT_USER_STATE.temporarilyUnavailable);
+    })).toBeNull();
+    expect(parseRuntimeBridgeRunnerInput({
+      operation: 'runner_publish_readiness',
+      input: {
+        ...fixture,
+        capabilities: {
+          ...capabilities,
+          executor: { state: 'unknown', reasonCode: 'runtime_executor_ready' },
+        },
+      },
+    })).toBeNull();
+    expect(parseRuntimeBridgeRunnerInput({
+      operation: 'runner_publish_readiness',
+      input: {
+        ...fixture,
+        capabilities: {
+          ...capabilities,
+          executor: { state: 'ready', reasonCode: 'runtime_executor_ready', extra: true },
+        },
+      },
+    })).toBeNull();
+  });
+
+  it('I: executionLane is not part of the runner-readiness public contract', () => {
+    const fixture = v2Fixture();
+    expect(parseRuntimeBridgeRunnerInput({
+      operation: 'runner_publish_readiness',
+      input: fixture,
+    })?.operation).toBe('runner_publish_readiness');
+    expect(parseRuntimeBridgeRunnerInput({
+      operation: 'runner_publish_readiness',
+      input: {
+        ...fixture,
+        executionLane: {
+          schemaVersion: 'asi.runtime.execution-lane.v1',
+          state: 'free',
+          reasonCode: 'runtime_execution_lane_free',
+          checkedAt: fixture.checkedAt,
+          expiresAt: fixture.expiresAt,
+        },
+      },
+    })).toBeNull();
+    expect(JSON.stringify(fixture)).not.toMatch(/executionLane/);
+  });
+
+  it('accepts bounded diagnostic executor reason codes on v2 without a Landing allowlist change', () => {
+    const fixture = v2Fixture();
+    const capabilities = fixture.capabilities as Record<string, unknown>;
+    expect(parseRuntimeBridgeRunnerInput({
+      operation: 'runner_publish_readiness',
+      input: {
+        ...fixture,
+        capabilities: {
+          ...capabilities,
+          executor: { state: 'blocked', reasonCode: 'runtime_execution_lane_owner_action_required' },
+        },
+      },
+    })?.operation).toBe('runner_publish_readiness');
   });
 });
