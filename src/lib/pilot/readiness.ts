@@ -1,13 +1,21 @@
 /**
  * Fail-closed /pilot readiness.
- * Reuses owner-console readiness plus a live execution-lane probe.
+ * Requires owner-console readiness AND authoritative Runtime lane evidence.
+ * Bridge lease occupancy is only an extra fail-closed signal — never proof the lane is free.
  * Public view never includes components, paths, secrets, or internal words.
  */
 import 'server-only';
+import { parseRuntimeBridgeClientId } from '@/lib/asi-runtime/bridge-auth';
 import {
-  probeRuntimeBridgeExecutionLane,
-  type RuntimeBridgeExecutionLaneProbe,
+  getPublishedRuntimeRunnerReadiness,
+  probeRuntimeBridgeLeaseOccupancy,
+  type RuntimeBridgeLeaseOccupancyProbe,
 } from '@/lib/asi-runtime/bridge-repository';
+import {
+  isRuntimeExecutionLaneAuthoritativelyFree,
+  resolveRuntimeExecutionLaneEvidence,
+  type RuntimeExecutionLaneEvidence,
+} from '@/lib/asi-runtime/execution-lane';
 import { getDevelopmentReadiness } from '@/lib/development/readiness';
 import type {
   DevelopmentReadinessComponent,
@@ -25,7 +33,8 @@ export type PilotReadinessView = {
   checkedAt: string;
 };
 
-export type PilotLaneProbe = RuntimeBridgeExecutionLaneProbe;
+export type PilotBridgeLeaseOccupancy = RuntimeBridgeLeaseOccupancyProbe;
+export type PilotRuntimeLaneEvidence = RuntimeExecutionLaneEvidence;
 
 const MSG_READY = PILOT_USER_STATE.readyToWork;
 const MSG_UNAVAILABLE = PILOT_USER_STATE.temporarilyUnavailable;
@@ -55,7 +64,8 @@ const CLOCK_SKEW_MS = 5_000;
 
 export type PilotReadinessDependencies = {
   loadOwnerReadiness?: () => Promise<DevelopmentReadinessSnapshot>;
-  probeExecutionLane?: () => Promise<PilotLaneProbe>;
+  probeBridgeLeaseOccupancy?: () => Promise<PilotBridgeLeaseOccupancy>;
+  loadRuntimeExecutionLane?: () => Promise<PilotRuntimeLaneEvidence | null>;
   now?: () => Date;
 };
 
@@ -102,17 +112,30 @@ function reasonOf(
   return snapshot.components?.[id]?.reasonCode ?? '';
 }
 
+function defaultLoadRuntimeExecutionLane(nowMs: number): RuntimeExecutionLaneEvidence | null {
+  const clientId = parseRuntimeBridgeClientId(process.env.ASI_RUNTIME_BRIDGE_CLIENT_ID);
+  if (!clientId) return null;
+  const status = getPublishedRuntimeRunnerReadiness(clientId, nowMs);
+  if (status.status !== 'fresh' || !status.record) return null;
+  return resolveRuntimeExecutionLaneEvidence(status.record);
+}
+
 /**
  * Truthful AND-gate for /pilot create. Unknown/stale/missing/blocked → fail closed.
+ * Bridge lease absence is not treated as a free Runtime execution lane.
  */
 export function evaluatePilotReadiness(input: {
   snapshot: DevelopmentReadinessSnapshot | null | undefined;
-  lane: PilotLaneProbe | null | undefined;
+  bridgeLease: PilotBridgeLeaseOccupancy | null | undefined;
+  runtimeLane: PilotRuntimeLaneEvidence | null | undefined;
   nowMs: number;
 }): { ok: boolean; failClosed: boolean } {
   const snapshot = input.snapshot;
-  const lane = input.lane;
-  if (!snapshot || !lane || lane.canAccept !== true) {
+  const bridgeLease = input.bridgeLease;
+  if (!snapshot || !bridgeLease || bridgeLease.occupied !== false) {
+    return { ok: false, failClosed: true };
+  }
+  if (!isRuntimeExecutionLaneAuthoritativelyFree(input.runtimeLane, input.nowMs, CLOCK_SKEW_MS)) {
     return { ok: false, failClosed: true };
   }
   if (snapshot.canLaunch !== true) {
@@ -161,7 +184,7 @@ export function evaluatePilotReadiness(input: {
 }
 
 /**
- * Safe pilot-facing readiness derived from owner-console readiness + lane probe.
+ * Safe pilot-facing readiness derived from owner-console readiness + lane evidence.
  */
 export async function getPilotReadiness(
   deps: PilotReadinessDependencies = {},
@@ -170,18 +193,28 @@ export async function getPilotReadiness(
   const checkedFallback = now().toISOString();
   try {
     const snapshot = await (deps.loadOwnerReadiness ?? getDevelopmentReadiness)();
-    let lane: PilotLaneProbe | null = null;
+    let bridgeLease: PilotBridgeLeaseOccupancy | null = null;
     try {
-      lane = await (deps.probeExecutionLane ?? (() => probeRuntimeBridgeExecutionLane()))();
+      bridgeLease = await (deps.probeBridgeLeaseOccupancy ?? (() => probeRuntimeBridgeLeaseOccupancy()))();
     } catch {
       return publicView('error', false, snapshot.checkedAt || checkedFallback);
     }
-    if (!lane || typeof lane.canAccept !== 'boolean') {
+    if (!bridgeLease || typeof bridgeLease.occupied !== 'boolean') {
       return publicView('error', false, snapshot.checkedAt || checkedFallback);
     }
+
+    let runtimeLane: PilotRuntimeLaneEvidence | null = null;
+    try {
+      runtimeLane = await (deps.loadRuntimeExecutionLane
+        ?? (async () => defaultLoadRuntimeExecutionLane(now().getTime())))();
+    } catch {
+      return publicView('error', false, snapshot.checkedAt || checkedFallback);
+    }
+
     const verdict = evaluatePilotReadiness({
       snapshot,
-      lane,
+      bridgeLease,
+      runtimeLane,
       nowMs: now().getTime(),
     });
     if (!verdict.ok) {

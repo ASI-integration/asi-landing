@@ -1,3 +1,4 @@
+import { parseRuntimeExecutionLaneEvidence } from './execution-lane';
 import { containsForbiddenStringContent } from './ingest-schema';
 import type {
   RuntimeBridgeChatInput,
@@ -124,6 +125,16 @@ function exact(value: Record<string, unknown>, keys: string[]): boolean {
     && keys.every((key) => Object.hasOwn(value, key));
 }
 
+function exactWithOptional(
+  value: Record<string, unknown>,
+  required: string[],
+  optional: string[],
+): boolean {
+  const keys = Object.keys(value);
+  if (!required.every((key) => keys.includes(key))) return false;
+  return keys.every((key) => required.includes(key) || optional.includes(key));
+}
+
 function text(value: unknown, max: number, pattern?: RegExp): value is string {
   return typeof value === 'string'
     && value.length > 0
@@ -191,12 +202,13 @@ function parseTask(value: unknown): RuntimeBridgeTaskRequest | null {
 
 function parseGate(value: unknown): RuntimeBridgeOwnerGateRequest | null {
   const keys = ['schemaVersion', 'action', 'exactTarget', 'identity', 'reason', 'evidence', 'allowedSideEffect', 'rollback', 'postActionVerification', 'taskCycle', 'expiresAt'];
-  if (!object(value) || !exact(value, keys) || value.schemaVersion !== 'asi.runtime.owner-gate.v1') return null;
+  if (!object(value) || !exactWithOptional(value, keys, ['classification']) || value.schemaVersion !== 'asi.runtime.owner-gate.v1') return null;
   if (!text(value.action, 120) || !text(value.exactTarget, 500) || !text(value.identity, 500)) return null;
   if (!text(value.reason, 2000) || !textList(value.evidence, 20, 1000)) return null;
   if (!text(value.allowedSideEffect, 1000) || !text(value.rollback, 1000)) return null;
   if (!textList(value.postActionVerification, 20, 1000) || !text(value.taskCycle, 200, ID)) return null;
   if (!text(value.expiresAt, 64) || Number.isNaN(Date.parse(value.expiresAt)) || Date.parse(value.expiresAt) <= Date.now()) return null;
+  if (Object.hasOwn(value, 'classification') && !text(value.classification, 120, ID)) return null;
   return value as RuntimeBridgeOwnerGateRequest;
 }
 
@@ -373,7 +385,8 @@ function parseRunnerRepositoryEvidenceV2(value: unknown) {
 }
 
 function parseRunnerReadinessV2Input(input: Record<string, unknown>): RuntimeBridgeRunnerInput | null {
-  if (!exact(input, ['schemaVersion', 'runnerId', 'checkedAt', 'expiresAt', 'capabilities', 'blockers', 'repositories'])
+  const required = ['schemaVersion', 'runnerId', 'checkedAt', 'expiresAt', 'capabilities', 'blockers', 'repositories'];
+  if (!exactWithOptional(input, required, ['executionLane'])
     || input.schemaVersion !== 'asi.runtime.runner-readiness.v2'
     || !text(input.checkedAt, 64) || !text(input.expiresAt, 64)
     || Number.isNaN(Date.parse(input.checkedAt)) || Number.isNaN(Date.parse(input.expiresAt))
@@ -391,6 +404,7 @@ function parseRunnerReadinessV2Input(input: Record<string, unknown>): RuntimeBri
     || !input.repositories.every((item) => parseRunnerRepositoryEvidenceV2(item))) return null;
   const repositoryIds = input.repositories.map((item) => String((item as { repositoryId: string }).repositoryId));
   if (new Set(repositoryIds).size !== repositoryIds.length) return null;
+  if (Object.hasOwn(input, 'executionLane') && !parseRuntimeExecutionLaneEvidence(input.executionLane)) return null;
   return {
     operation: 'runner_publish_readiness',
     input: input as Extract<RuntimeBridgeRunnerInput, { operation: 'runner_publish_readiness' }>['input'],

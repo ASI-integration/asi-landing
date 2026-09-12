@@ -6,7 +6,7 @@ import { randomUUID } from 'node:crypto';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 import { PilotCreateForm, PilotHitlPanel, PilotStatusBadge, PilotTaskDetail } from '@/app/pilot/PilotConsoleView';
-import { buildPilotHitlView, isPrivilegedPilotOwnerGate } from '../hitl';
+import { buildPilotHitlView, canContinuePilotOwnerGate } from '../hitl';
 import { buildPilotResultCardModel } from '../result-card';
 import { PILOT_CONSOLE_STATUS_LABELS } from '../status-ui';
 import { isTerminalPilotConsoleStatus } from '../status';
@@ -83,7 +83,7 @@ describe('closed-beta user states', () => {
 describe('closed-beta owner approval HITL', () => {
   it('shows question/reason and continue controls without raw diagnostics', () => {
     const gate = pendingGate();
-    expect(isPrivilegedPilotOwnerGate(gate)).toBe(false);
+    expect(canContinuePilotOwnerGate(gate)).toBe(true);
     const hitl = buildPilotHitlView(gate);
     expect(hitl).toMatchObject({
       required: true,
@@ -126,12 +126,12 @@ describe('closed-beta owner approval HITL', () => {
 
   it('blocks privileged merge/deploy continuation from /pilot', () => {
     const gate = pendingGate({
-      action: 'merge pull request',
+      action: 'merge',
       allowedSideEffect: 'Merge the exact SHA into main',
       exactTarget: 'production',
       reason: 'Owner merge required',
     });
-    expect(isPrivilegedPilotOwnerGate(gate)).toBe(true);
+    expect(canContinuePilotOwnerGate(gate)).toBe(false);
     const hitl = buildPilotHitlView(gate);
     expect(hitl?.canContinue).toBe(false);
     const html = renderToStaticMarkup(

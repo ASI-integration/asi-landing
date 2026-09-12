@@ -13,7 +13,7 @@ import { containsForbiddenStringContent } from '@/lib/asi-runtime/ingest-schema'
 import { BaselineShaError, resolveAllowlistedBaselineSha } from '@/lib/development/baseline-sha';
 import { normalizeClientIdempotencyKey } from '@/lib/development/ids';
 import { DEVELOPMENT_REPOSITORY_ALLOWLIST } from '@/lib/development/repositories';
-import { isPrivilegedPilotOwnerGate } from './hitl';
+import { canContinuePilotOwnerGate } from './hitl';
 import {
   createPilotChatgptTaskId,
   createPilotConversationId,
@@ -253,7 +253,7 @@ export async function submitPilotOwnerDecision(input: {
         'Нельзя продолжить задачу. Обновите страницу.',
       );
     }
-    if (isPrivilegedPilotOwnerGate(gate)) {
+    if (!canContinuePilotOwnerGate(gate)) {
       throw new PilotAccessError(
         'hitl_not_available',
         403,
