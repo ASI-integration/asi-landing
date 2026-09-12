@@ -15,7 +15,10 @@ import {
   STRIGUNOV_PILOT_ACCEPTANCE_STAGES,
   STRIGUNOV_PILOT_TELEGRAM_MATRIX,
 } from '../acceptance/stage-ids';
-import { importRuntimeOwnerTelegramEvents } from '../acceptance/runtime-events';
+import {
+  getLandingStrigunovPilotTelegramEvents,
+  loadStrigunovPilotTelegramEvents,
+} from '../acceptance/runtime-events';
 import {
   assertExecutorCompatiblePilotEnvelope,
   buildPilotClaimableEnvelope,
@@ -464,20 +467,44 @@ describe('stage:pilot_result_card', () => {
   });
 });
 
+describe('landing telegram contract without sibling Runtime checkout', () => {
+  it('covers S3.4 / S4 notify matrix from the landing-local fallback', () => {
+    const runtime = getLandingStrigunovPilotTelegramEvents();
+    const profile = runtime.STRIGUNOV_PILOT_TELEGRAM_PROFILE;
+    expect(profile).toBe(STRIGUNOV_PILOT_TELEGRAM_MATRIX.profile);
+
+    for (const event of STRIGUNOV_PILOT_TELEGRAM_MATRIX.silentEvents) {
+      expect(runtime.isNotifiableEvent(event, { profile })).toBe(false);
+    }
+    expect(runtime.isNotifiableEvent(runtime.TASK_EVENTS.READY_FOR_OWNER, {
+      profile,
+      payload: { verdict: 'GO' },
+    })).toBe(false);
+
+    for (const event of STRIGUNOV_PILOT_TELEGRAM_MATRIX.notifyEvents) {
+      expect(runtime.isNotifiableEvent(event, { profile })).toBe(true);
+    }
+    expect(runtime.isNotifiableEvent(runtime.TASK_EVENTS.READY_FOR_OWNER, {
+      profile,
+      payload: { ownerMergeGate: true },
+    })).toBe(true);
+    expect(runtime.isExplicitHitlPayload({ ownerMergeGate: true })).toBe(true);
+  });
+});
+
 describe('stage:pilot_telegram_silent_success', () => {
   it('S3.4 / matrix — happy-path lifecycle stays silent under strigunov_pilot_v1', async () => {
     expect(STRIGUNOV_PILOT_TELEGRAM_MATRIX.profile).toBe('strigunov_pilot_v1');
     expect(STRIGUNOV_PILOT_TELEGRAM_MATRIX.silentBareReadyForOwner).toBe(true);
 
-    const runtime = await importRuntimeOwnerTelegramEvents();
-    expect(runtime, 'asi-os-runtime events module required for SP-09 telegram stages').toBeTruthy();
-    const profile = runtime!.STRIGUNOV_PILOT_TELEGRAM_PROFILE;
+    const runtime = await loadStrigunovPilotTelegramEvents();
+    const profile = runtime.STRIGUNOV_PILOT_TELEGRAM_PROFILE;
     expect(profile).toBe('strigunov_pilot_v1');
 
     for (const event of STRIGUNOV_PILOT_TELEGRAM_MATRIX.silentEvents) {
-      expect(runtime!.isNotifiableEvent(event, { profile })).toBe(false);
+      expect(runtime.isNotifiableEvent(event, { profile })).toBe(false);
     }
-    expect(runtime!.isNotifiableEvent(runtime!.TASK_EVENTS.READY_FOR_OWNER, {
+    expect(runtime.isNotifiableEvent(runtime.TASK_EVENTS.READY_FOR_OWNER, {
       profile,
       payload: { verdict: 'GO' },
     })).toBe(false);
@@ -486,21 +513,20 @@ describe('stage:pilot_telegram_silent_success', () => {
 
 describe('stage:pilot_telegram_blocked', () => {
   it('S4.1–S4.4 — BLOCKED/FAILED/HITL notify; progress silent; pilot UI shows attention/failed', async () => {
-    const runtime = await importRuntimeOwnerTelegramEvents();
-    expect(runtime).toBeTruthy();
-    const profile = runtime!.STRIGUNOV_PILOT_TELEGRAM_PROFILE;
+    const runtime = await loadStrigunovPilotTelegramEvents();
+    const profile = runtime.STRIGUNOV_PILOT_TELEGRAM_PROFILE;
 
     for (const event of STRIGUNOV_PILOT_TELEGRAM_MATRIX.notifyEvents) {
-      expect(runtime!.isNotifiableEvent(event, { profile })).toBe(true);
+      expect(runtime.isNotifiableEvent(event, { profile })).toBe(true);
     }
-    expect(runtime!.isNotifiableEvent(runtime!.TASK_EVENTS.READY_FOR_OWNER, {
+    expect(runtime.isNotifiableEvent(runtime.TASK_EVENTS.READY_FOR_OWNER, {
       profile,
       payload: { ownerMergeGate: true },
     })).toBe(true);
-    expect(runtime!.isExplicitHitlPayload({ ownerMergeGate: true })).toBe(true);
+    expect(runtime.isExplicitHitlPayload({ ownerMergeGate: true })).toBe(true);
 
     for (const event of STRIGUNOV_PILOT_TELEGRAM_MATRIX.silentEvents) {
-      expect(runtime!.isNotifiableEvent(event, { profile })).toBe(false);
+      expect(runtime.isNotifiableEvent(event, { profile })).toBe(false);
     }
 
     const blockedHtml = renderToStaticMarkup(
