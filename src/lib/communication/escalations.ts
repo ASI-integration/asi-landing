@@ -3,6 +3,7 @@ import { requestOperatorHandoff } from './handoff-lock';
 import type { EscalationReview } from './operator-review';
 import { syncAutoOpsTasks } from '@/lib/ops-v1/auto-tasks';
 import type { CommunicationChannel, Message, Role } from './types';
+import { resolveEscalationReviewAccountId } from './operator-access';
 
 export type CommunicationEscalationSource = 'communication_autopilot' | 'telegram';
 
@@ -84,10 +85,15 @@ export async function recordCommunicationEscalation(
   const contactId = input.contactId?.trim() || null;
   const parsedChatId = Number(input.targetId);
   const chatId = Number.isFinite(parsedChatId) ? parsedChatId : undefined;
+  const accountId = await resolveEscalationReviewAccountId({
+    reservationId: input.reservationId,
+    propertyId: input.objectId ?? undefined,
+  });
 
   // Route through handoff-lock so escalate emits handoff_requested /
   // handoff_request_idempotent audits and reuses one active review per session.
   const { review } = requestOperatorHandoff({
+    accountId: accountId ?? undefined,
     sessionId: input.sessionId,
     channel: input.channel,
     targetId: input.targetId,

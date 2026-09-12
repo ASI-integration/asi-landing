@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getSession } from '@/lib/auth';
 import { getEscalationReview } from '@/lib/communication/operator-review';
+import {
+  requireEscalationReviewScope,
+  requireOperatorCommunicationScope,
+} from '@/lib/communication/operator-access';
 import {
   correctGuestOperationalEvent,
   deleteGuestMemoryItem,
@@ -13,24 +16,22 @@ import {
 export const dynamic = 'force-dynamic';
 
 async function authorizedReview(reviewId: string) {
-  const session = await getSession();
-  if (!session.userId) return { ok: false as const, error: 'unauthorized' as const };
+  const scope = await requireOperatorCommunicationScope();
+  if ('error' in scope) return { ok: false as const, response: scope.error };
   const review = getEscalationReview(reviewId);
-  if (!review) return { ok: false as const, error: 'not_found' as const };
+  if (!review) return { ok: false as const, response: NextResponse.json({ error: 'not_found' }, { status: 404 }) };
+  const reviewScope = await requireEscalationReviewScope(scope, review);
+  if ('error' in reviewScope) return { ok: false as const, response: reviewScope.error };
   const guestId = String(review.source?.guest_id ?? '').trim();
-  if (!guestId) return { ok: false as const, error: 'guest_memory_unavailable' as const };
-  return { ok: true as const, session, review, guestId };
-}
-
-function errorResponse(error: string) {
-  if (error === 'unauthorized') return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  if (error === 'not_found') return NextResponse.json({ error }, { status: 404 });
-  return NextResponse.json({ ok: true, memory: null, unavailable: true });
+  if (!guestId) {
+    return { ok: false as const, response: NextResponse.json({ ok: true, memory: null, unavailable: true }) };
+  }
+  return { ok: true as const, session: scope.session, review, guestId };
 }
 
 export async function GET(_req: NextRequest, ctx: { params: { reviewId: string } }) {
   const authorized = await authorizedReview(ctx.params.reviewId);
-  if (!authorized.ok) return errorResponse(authorized.error);
+  if (!authorized.ok) return authorized.response;
   try {
     const memory = await loadGuestLongTermMemory(authorized.guestId);
     return NextResponse.json({ ok: true, memory });
@@ -44,7 +45,7 @@ export async function GET(_req: NextRequest, ctx: { params: { reviewId: string }
 
 export async function PATCH(req: NextRequest, ctx: { params: { reviewId: string } }) {
   const authorized = await authorizedReview(ctx.params.reviewId);
-  if (!authorized.ok) return errorResponse(authorized.error);
+  if (!authorized.ok) return authorized.response;
 
   let body: Record<string, unknown>;
   try {

@@ -90,6 +90,10 @@ import {
 import { recordCommunicationEscalation } from './escalations';
 import { canAiReply, recordHandoffAuditEvent } from './handoff-lock';
 import {
+  resolveEscalationReviewAccountId,
+  resolveTelegramTargetTenantScope,
+} from './operator-access';
+import {
   SessionStatus,
   setPaymentExpiry,
   transitionSessionStatus,
@@ -1770,7 +1774,12 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
               : senderRoute.route === 'support_problem'
                 ? 'Пользователь выбрал поддержку.'
                 : 'Пользователь пишет как владелец или управляющий, это не гостевой автопилот.';
+      const reviewAccountId = await resolveEscalationReviewAccountId({
+        reservationId: identity.reservationId,
+        propertyId: identity.propertyId,
+      });
       createOrUpdateEscalationReview({
+        accountId: reviewAccountId ?? undefined,
         sessionId: convSession.sessionId,
         channel: envelope.channel,
         targetId: String(targetId),
@@ -4914,12 +4923,16 @@ async function handleTelegramPromptInjectionGuard(params: {
       update_id: params.update.update_id,
       detail: `PROMPT_INJECTION_REPEAT reason=${guard.reason}`,
     });
+    const tenantScope = await resolveTelegramTargetTenantScope(String(params.message.chat.id));
     createOrUpdateEscalationReview({
+      accountId: tenantScope.accountId ?? undefined,
       sessionId: `telegram:${params.message.chat.id}:prompt_injection`,
       channel: 'telegram',
       targetId: String(params.message.chat.id),
       actorId: String(params.message.chat.id),
       role: 'guest',
+      reservationId: tenantScope.reservationId ?? undefined,
+      propertyId: tenantScope.propertyId ?? undefined,
       escalationReason: 'PROMPT_INJECTION_REPEAT',
       confidence: 1,
       source: {
