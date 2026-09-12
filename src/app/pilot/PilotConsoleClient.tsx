@@ -27,6 +27,8 @@ import {
   type PilotSafeResult,
   type PilotTaskListItem,
 } from './PilotConsoleView';
+import type { PilotHitlView } from '@/lib/pilot/hitl';
+import { PILOT_USER_STATE } from '@/lib/pilot/user-copy';
 
 type SessionResponse = {
   ok?: boolean;
@@ -46,7 +48,10 @@ type DetailResponse = {
   ok?: boolean;
   task?: PilotTaskListItem;
   result?: PilotSafeResult;
+  hitl?: PilotHitlView | null;
   message?: string;
+  code?: string;
+  taskId?: string;
 };
 
 type CreateResponse = {
@@ -98,6 +103,9 @@ export default function PilotConsoleClient() {
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(taskIdFromUrl);
   const [selectedTask, setSelectedTask] = useState<PilotTaskListItem | null>(null);
   const [result, setResult] = useState<PilotSafeResult | null>(null);
+  const [hitl, setHitl] = useState<PilotHitlView | null>(null);
+  const [hitlBusy, setHitlBusy] = useState(false);
+  const [hitlError, setHitlError] = useState<string | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
 
@@ -151,7 +159,7 @@ export default function PilotConsoleClient() {
       }
       if (!res.ok || !data.ok || !data.readiness) {
         setReadinessState('error');
-        setReadinessMessage(data.message ?? 'Не удалось проверить готовность. Попробуйте позже.');
+        setReadinessMessage(data.message ?? PILOT_USER_STATE.temporarilyUnavailable);
         return;
       }
       const nextState = data.readiness.state === 'ready'
@@ -163,7 +171,7 @@ export default function PilotConsoleClient() {
       setReadinessMessage(data.readiness.messageRu ?? null);
     } catch {
       setReadinessState('error');
-      setReadinessMessage('Не удалось проверить готовность. Попробуйте позже.');
+      setReadinessMessage(PILOT_USER_STATE.temporarilyUnavailable);
     } finally {
       setReadinessRefreshing(false);
     }
@@ -211,10 +219,13 @@ export default function PilotConsoleClient() {
         setDetailError(data.message ?? 'Не удалось загрузить задачу.');
         setSelectedTask(null);
         setResult(null);
+        setHitl(null);
         return;
       }
       setDetailError(null);
+      setHitlError(null);
       setSelectedTask(data.task);
+      setHitl(data.hitl ?? null);
       setResult(data.result ?? {
         outcome: null,
         summary: null,
@@ -276,7 +287,7 @@ export default function PilotConsoleClient() {
     event.preventDefault();
     setCreateError(null);
     if (readinessState !== 'ready') {
-      setCreateError(readinessMessage ?? 'Сейчас нельзя создать новую задачу.');
+      setCreateError(readinessMessage ?? PILOT_USER_STATE.temporarilyUnavailable);
       return;
     }
     const trimmedGoal = goal.trim();
@@ -328,6 +339,55 @@ export default function PilotConsoleClient() {
       setCreateError('Не удалось создать задачу.');
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const sendHitlDecision = async (decision: 'continue' | 'cancel') => {
+    if (!selectedTaskId || !hitl?.canContinue) return;
+    setHitlBusy(true);
+    setHitlError(null);
+    try {
+      const res = await fetch(`/api/pilot/tasks/${encodeURIComponent(selectedTaskId)}`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          decision,
+          gateId: hitl.gateId,
+          taskCycle: hitl.taskCycle,
+        }),
+      });
+      const data = await readResponseJson<DetailResponse & { taskId?: string }>(res, { ok: false });
+      if (res.status === 401) {
+        setAccess('unauthenticated');
+        return;
+      }
+      if (res.status === 403 && data.code !== 'hitl_not_available') {
+        setAccess('uninvited');
+        return;
+      }
+      if (!res.ok || !data.ok || !data.task) {
+        setHitlError(data.message ?? 'Не удалось отправить ответ.');
+        return;
+      }
+      setSelectedTask(data.task);
+      setHitl(data.hitl ?? null);
+      setResult(data.result ?? {
+        outcome: null,
+        summary: null,
+        changedFiles: [],
+        pullRequestUrl: null,
+        commitSha: null,
+        blockers: [],
+      });
+      setTasks((prev) => {
+        const next = prev.filter((item) => item.taskId !== data.task!.taskId);
+        return [data.task!, ...next];
+      });
+    } catch {
+      setHitlError('Не удалось отправить ответ.');
+    } finally {
+      setHitlBusy(false);
     }
   };
 
@@ -385,6 +445,15 @@ export default function PilotConsoleClient() {
             result={result}
             loading={detailLoading}
             error={detailError}
+            hitl={hitl}
+            hitlBusy={hitlBusy}
+            hitlError={hitlError}
+            onHitlContinue={() => {
+              void sendHitlDecision('continue');
+            }}
+            onHitlCancel={() => {
+              void sendHitlDecision('cancel');
+            }}
           />
         </div>
       </div>

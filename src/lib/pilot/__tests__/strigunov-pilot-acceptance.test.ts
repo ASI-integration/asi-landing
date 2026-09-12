@@ -200,14 +200,14 @@ beforeEach(() => {
   assertPilotSubmissionReady.mockResolvedValue({
     state: 'ready',
     canSubmit: true,
-    messageRu: 'Система готова к запуску задач пилота.',
+    messageRu: 'Готово к работе',
     checkedAt: NOW,
   });
   getPilotReadiness.mockReset();
   getPilotReadiness.mockResolvedValue({
     state: 'ready',
     canSubmit: true,
-    messageRu: 'Система готова к запуску задач пилота.',
+    messageRu: 'Готово к работе',
     checkedAt: NOW,
   });
   resetPilotCreateRateLimitForTests();
@@ -585,7 +585,7 @@ describe('stage:pilot_readiness_failclosed', () => {
       new PilotAccessError(
         'readiness_blocked',
         503,
-        'Сейчас нельзя создать новую задачу. Runtime ещё не готов — попробуйте позже.',
+        'Временно недоступно',
       ),
     );
     const store = { rows: [] as DurableRow[] };

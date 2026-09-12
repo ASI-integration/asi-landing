@@ -99,6 +99,41 @@ export async function probeRuntimeBridgeStorage(timeoutMs = 5_000): Promise<void
   }
 }
 
+export type RuntimeBridgeExecutionLaneProbe = {
+  canAccept: boolean;
+};
+
+/**
+ * Read-only probe for the single-runner execution lane.
+ * Matches claim SQL: any live `running` lease occupies the lane.
+ * Unknown/invalid lease timestamps fail closed as occupied.
+ */
+export async function probeRuntimeBridgeExecutionLane(
+  timeoutMs = 5_000,
+): Promise<RuntimeBridgeExecutionLaneProbe> {
+  try {
+    const { data, error } = await bridgeDb()
+      .from('asi_runtime_bridge_tasks')
+      .select('id,lease_expires_at')
+      .eq('status', 'running')
+      .limit(8)
+      .abortSignal(AbortSignal.timeout(timeoutMs));
+    if (error) throw error;
+    const now = Date.now();
+    const occupied = (data ?? []).some((row) => {
+      const raw = (row as Row).lease_expires_at;
+      if (raw == null || raw === '') return true;
+      const expires = Date.parse(String(raw));
+      if (!Number.isFinite(expires)) return true;
+      return expires > now;
+    });
+    return { canAccept: !occupied };
+  } catch (error) {
+    if (error instanceof RuntimeBridgeError) throw error;
+    throw new RuntimeBridgeError('runtime_bridge_storage_unreachable', 503);
+  }
+}
+
 function taskRecord(row: Row): RuntimeBridgeTaskRecord {
   return {
     ...taskView(row),

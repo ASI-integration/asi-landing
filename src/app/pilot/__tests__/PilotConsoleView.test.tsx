@@ -180,7 +180,7 @@ describe('SP-05 Pilot Console UI', () => {
     expect(html).toContain('data-pilot-result-card="succeeded"');
     expect(html).toContain('data-pilot-result="true"');
     expect(html).toContain('Proof markdown added');
-    expect(html).toContain('Успешно');
+    expect(html).toContain('Готово');
     expect(html).toContain('docs/pilot/proof.md');
     expect(html).toContain('https://github.com/ASI-integration/asi-landing/pull/9');
     expect(html).toContain('a'.repeat(40));
@@ -213,7 +213,7 @@ describe('SP-05 Pilot Console UI', () => {
     expect(blocked).toContain('data-pilot-result-card="blocked"');
     expect(blocked).toContain('data-pilot-status="blocked"');
     expect(blocked).toContain('Owner review required');
-    expect(blocked).toContain('Вам ничего делать не нужно');
+    expect(blocked).toContain('Нужен ваш ответ');
 
     const failed = renderToStaticMarkup(
       React.createElement(PilotTaskDetail, {
@@ -239,7 +239,7 @@ describe('SP-05 Pilot Console UI', () => {
     );
     expect(failed).toContain('data-pilot-result-card="failed"');
     expect(failed).toContain('data-pilot-status-tone="danger"');
-    expect(failed).toContain('Ошибка');
+    expect(failed).toContain('Не удалось выполнить');
   });
 
   it('status badges use API consoleStatus values only', () => {

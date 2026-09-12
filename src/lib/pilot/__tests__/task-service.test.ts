@@ -176,7 +176,7 @@ describe('SP-02 — submitPilotTask Bridge seam', () => {
       new PilotAccessError(
         'readiness_blocked',
         503,
-        'Сейчас нельзя создать новую задачу. Runtime ещё не готов — попробуйте позже.',
+        'Временно недоступно',
       ),
     );
     const { submitPilotTask } = await import('../task-service');
