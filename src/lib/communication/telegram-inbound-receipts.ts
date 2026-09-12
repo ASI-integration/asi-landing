@@ -2,7 +2,11 @@ import { randomUUID } from 'crypto';
 
 import { supabase } from '@/lib/supabase';
 
-import { createOrUpdateEscalationReview, forceCloseActiveReviewForSession } from './operator-review';
+import {
+  createOrUpdateEscalationReview,
+  forceCloseActiveReviewForSession,
+  OperatorReviewStoreUnavailableError,
+} from './operator-review';
 import { sha256Base64Url } from './reliability';
 import type { TelegramUpdate } from './types';
 
@@ -207,11 +211,18 @@ export async function completeTelegramInboundReceipt(params: {
     status: 'processed',
     outcome: params.outcome,
   });
-  forceCloseActiveReviewForSession({
-    sessionId: receiptReviewSessionId(params.claim.receiptId),
-    operatorId: 'telegram_inbound_recovery',
-    reason: 'inbound_retry_processed',
-  });
+  // Best-effort cleanup: the inbound receipt has already been durably marked
+  // processed above, so an unavailable operator-review store must not turn
+  // an otherwise-successful message into a reported processing failure.
+  try {
+    forceCloseActiveReviewForSession({
+      sessionId: receiptReviewSessionId(params.claim.receiptId),
+      operatorId: 'telegram_inbound_recovery',
+      reason: 'inbound_retry_processed',
+    });
+  } catch (err) {
+    if (!(err instanceof OperatorReviewStoreUnavailableError)) throw err;
+  }
 }
 
 export async function failTelegramInboundReceipt(params: {
