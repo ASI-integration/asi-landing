@@ -189,6 +189,8 @@ describe('SP-02 — submitPilotTask Bridge seam', () => {
     })).rejects.toMatchObject({ code: 'readiness_blocked', status: 503 });
     expect(submitRuntimeBridgeTask).not.toHaveBeenCalled();
     expect(resolveAllowlistedBaselineSha).not.toHaveBeenCalled();
+    expect(findRuntimeBridgeTaskByIdempotencyKey).toHaveBeenCalled();
+    expect(assertPilotSubmissionReady).toHaveBeenCalled();
   });
 
   it('rejects create when Bridge admission is busy even if readiness snapshot is still READY', async () => {

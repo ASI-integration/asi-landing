@@ -126,9 +126,13 @@ describe('staging runtime_bridge schema SQL', () => {
     const productionAdmission = readFileSync(PRODUCTION_ADMISSION_SQL, 'utf8');
     expect(stagingAdmission).toContain('CREATE OR REPLACE FUNCTION runtime_bridge.submit_asi_runtime_bridge_task');
     expect(stagingAdmission).toContain('idx_asi_runtime_bridge_single_nonterminal');
+    expect(stagingAdmission).toContain('asi_runtime_bridge_single_lane_preflight_failed');
+    expect(stagingAdmission.indexOf('asi_runtime_bridge_single_lane_preflight_failed'))
+      .toBeLessThan(stagingAdmission.indexOf('CREATE UNIQUE INDEX IF NOT EXISTS idx_asi_runtime_bridge_single_nonterminal'));
     expect(stagingAdmission).toContain('admission_busy');
     expect(stagingAdmission).not.toMatch(/\bpublic\./);
     expect(productionAdmission).toContain('CREATE OR REPLACE FUNCTION public.submit_asi_runtime_bridge_task');
+    expect(productionAdmission).toContain('asi_runtime_bridge_single_lane_preflight_failed');
     expect(productionAdmission).toContain('admission_busy');
     expect(productionAdmission).not.toMatch(/CREATE TABLE public.asi_runtime_bridge_tasks/);
   });

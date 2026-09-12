@@ -114,14 +114,25 @@ export type SubmitPilotTaskResult = {
 
 /**
  * SP-02: validate green template, bind pilot conversation, submit via existing Bridge seam.
+ *
+ * Ordering is load-bearing. For a structurally valid request, idempotency
+ * resolution MUST precede new-create rate-limit and Runtime readiness:
+ *   1. reject privileged / invalid input
+ *   2. build the safe Pilot task package
+ *   3. validate / normalize the idempotency key
+ *   4. resolve clientId + Pilot conversation identity
+ *   5. look up existing task by client + key
+ *      - exact same request → return it (no readiness, no create rate limit)
+ *      - conflicting content → idempotency_conflict (never masked by readiness)
+ *   6. only if no existing row: rate-limit, readiness, baseline, Bridge admit
+ * The database RPC remains the final race-safe authority if two identical
+ * requests both miss the pre-submit lookup.
  */
 export async function submitPilotTask(input: {
   pilotUserId: string;
   body: Record<string, unknown>;
 }): Promise<SubmitPilotTaskResult> {
   assertNoPrivilegedPilotFields(input.body);
-  assertPilotCreateRateLimit(input.pilotUserId);
-  await assertPilotSubmissionReady();
 
   const taskPackage = buildPilotGreenTemplate({
     goal: input.body.goal,
@@ -171,6 +182,9 @@ export async function submitPilotTask(input: {
       const task = await getPilotTaskForUser(existing.taskId, input.pilotUserId);
       return { task, deduplicated: true, template: taskPackage };
     }
+
+    assertPilotCreateRateLimit(input.pilotUserId);
+    await assertPilotSubmissionReady();
 
     const baselineSha = await resolveAllowlistedBaselineSha(repository);
     const bridgeTask = toBridgeTaskRequest(taskPackage, baselineSha);

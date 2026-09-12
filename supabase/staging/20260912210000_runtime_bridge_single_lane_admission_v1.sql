@@ -5,6 +5,33 @@
 -- Rollback:
 --   DROP INDEX IF EXISTS runtime_bridge.idx_asi_runtime_bridge_single_nonterminal;
 --   restore submit_asi_runtime_bridge_task from 20260909170000_runtime_bridge_schema_free_tier.sql.
+--
+-- Operator preflight (record before apply; do not auto-reconcile).
+-- 0 → safe to apply
+-- 1 → safe to apply; existing task becomes the unique occupant
+-- >1 → STOP; owner-authorized reconciliation required before this migration
+/*
+SELECT count(*)
+FROM runtime_bridge.asi_runtime_bridge_tasks
+WHERE status IN ('queued', 'running', 'awaiting_owner');
+*/
+
+DO $$
+DECLARE
+  v_nonterminal_count INTEGER;
+BEGIN
+  SELECT count(*)::integer
+    INTO v_nonterminal_count
+  FROM runtime_bridge.asi_runtime_bridge_tasks
+  WHERE status IN ('queued', 'running', 'awaiting_owner');
+
+  IF v_nonterminal_count > 1 THEN
+    RAISE EXCEPTION
+      'asi_runtime_bridge_single_lane_preflight_failed: non_terminal_count=% (queued|running|awaiting_owner). STOP; owner-authorized reconciliation required before creating idx_asi_runtime_bridge_single_nonterminal. Acceptable count is 0 or 1. Do not auto-reconcile.',
+      v_nonterminal_count;
+  END IF;
+END
+$$;
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_asi_runtime_bridge_single_nonterminal
   ON runtime_bridge.asi_runtime_bridge_tasks ((true))

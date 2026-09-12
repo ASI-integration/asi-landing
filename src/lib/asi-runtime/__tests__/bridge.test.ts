@@ -480,6 +480,9 @@ describe('runtime bridge durable contracts', () => {
     expect(admissionSql).toContain('CREATE OR REPLACE FUNCTION public.submit_asi_runtime_bridge_task');
     expect(admissionSql).toContain('idx_asi_runtime_bridge_single_nonterminal');
     expect(admissionSql).toContain('asi_runtime_bridge_single_lane');
+    expect(admissionSql).toContain('asi_runtime_bridge_single_lane_preflight_failed');
+    expect(admissionSql.indexOf('asi_runtime_bridge_single_lane_preflight_failed'))
+      .toBeLessThan(admissionSql.indexOf('CREATE UNIQUE INDEX IF NOT EXISTS idx_asi_runtime_bridge_single_nonterminal'));
     expect(admissionSql).toContain('admission_busy');
     expect(admissionSql).toContain("status IN ('queued', 'running', 'awaiting_owner')");
     expect(admissionSql).toContain('idempotency_conflict');

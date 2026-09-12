@@ -27,11 +27,48 @@ Pinned heads (update if either PR moves before staging):
 3. Do not leave production on new Landing + old Runtime: Landing would trust a
    pre-#127 executor signal that may ignore a busy lane.
 
+## Migration preflight (mandatory, recorded, fail-closed)
+
+Do **not** apply `20260912210000_asi_runtime_bridge_single_lane_admission_v1`
+(public) or `20260912210000_runtime_bridge_single_lane_admission_v1`
+(`runtime_bridge` staging follow-up) until this count is recorded.
+
+Operator query (use the schema you are about to migrate):
+
+```sql
+SELECT count(*)
+FROM public.asi_runtime_bridge_tasks
+WHERE status IN ('queued', 'running', 'awaiting_owner');
+```
+
+Staging free-tier schema variant:
+
+```sql
+SELECT count(*)
+FROM runtime_bridge.asi_runtime_bridge_tasks
+WHERE status IN ('queued', 'running', 'awaiting_owner');
+```
+
+| Count | Action |
+| --- | --- |
+| 0 | Safe to apply. Record the count and SHA, then apply. |
+| 1 | Safe to apply. The existing row becomes the unique occupant. Record the count, `task_id`, and SHA, then apply. |
+| >1 | **STOP.** Do not apply. Do not pick a winner. Do not delete, fail, cancel, or mutate historical rows. Owner-authorized reconciliation is required first. |
+
+The migration itself re-runs this count and raises
+`asi_runtime_bridge_single_lane_preflight_failed` when count > 1, before
+creating `idx_asi_runtime_bridge_single_nonterminal`. That is a backstop, not a
+substitute for recording the operator query.
+
+This document does not authorize applying the migration.
+
 ## Staging sequence (deterministic)
 
 Prerequisites: isolated staging Runtime + Landing at the pinned SHAs above;
 invited `pilot_beta` session; green docs/pilot template only; no merge/deploy
-capabilities exposed through `/pilot`.
+capabilities exposed through `/pilot`; **Bridge single-lane migration preflight
+recorded as 0 or 1** (see above). Do not start the sequence below if the
+preflight count is >1 or unrecorded.
 
 | Step | Action | Pass evidence |
 | --- | --- | --- |
