@@ -72,6 +72,39 @@ export type RuntimeBridgeOwnerGateView = RuntimeBridgeOwnerGateRequest & {
   createdAt: string;
 };
 
+/**
+ * Bounded, restart-reconcilable status for runner_reconcile_owner_gate.
+ * See docs/asi-chat-runtime-bridge-v1.md "Owner gate crash recovery".
+ */
+export type RuntimeOwnerGateReconcileStatus =
+  | 'COMMITTED'
+  | 'COMMITTED_DEDUPLICATED'
+  | 'RECOVERED_AND_COMMITTED'
+  | 'TERMINAL'
+  | 'SUPERSEDED'
+  | 'CONFLICT';
+
+export type RuntimeBridgeOwnerGateReconcileTaskView = {
+  taskId: string;
+  status: RuntimeBridgeTaskStatus;
+  attemptCount: number;
+  updatedAt: string;
+};
+
+export type RuntimeBridgeOwnerGateReconcileGateView = {
+  gateId: string;
+  taskId: string;
+  status: RuntimeBridgeOwnerGateView['status'];
+  taskCycle: string;
+  createdAt: string;
+};
+
+export type RuntimeBridgeOwnerGateReconcileResult = {
+  status: RuntimeOwnerGateReconcileStatus;
+  task: RuntimeBridgeOwnerGateReconcileTaskView | null;
+  gate: RuntimeBridgeOwnerGateReconcileGateView | null;
+};
+
 export type RuntimeRunnerCapabilityState = 'ready' | 'blocked' | 'degraded';
 
 export type RuntimeRunnerReadinessRecordV1 = {
@@ -163,4 +196,14 @@ export type RuntimeBridgeRunnerInput =
   | {
       operation: 'runner_fail_task';
       input: { runnerId: string; taskId: string; leaseToken: string; retryable: boolean; errorCode: string };
+    }
+  | {
+      operation: 'runner_reconcile_owner_gate';
+      input: {
+        runnerId: string;
+        taskId: string;
+        attemptCount: number;
+        originalLeaseToken?: string;
+        gate: RuntimeBridgeOwnerGateRequest;
+      };
     };

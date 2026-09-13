@@ -49,6 +49,7 @@ function rpcError(error: { message?: string; code?: string } | null): never {
   if (message.includes('decision_conflict')) throw new RuntimeBridgeError('decision_conflict', 409);
   if (message.includes('owner_gate_mismatch')) throw new RuntimeBridgeError('owner_gate_mismatch', 409);
   if (message.includes('lease_conflict')) throw new RuntimeBridgeError('lease_conflict', 409);
+  if (message.includes('invalid_owner_gate_reconcile')) throw new RuntimeBridgeError('invalid_owner_gate_reconcile', 400);
   throw new RuntimeBridgeError('runtime_bridge_storage_error', 500);
 }
 
@@ -342,6 +343,18 @@ export async function runRuntimeBridgeRunnerOperation(clientId: string, request:
       args = {
         p_client_id: clientId, p_runner_id: input.runnerId, p_task_id: input.taskId,
         p_lease_token: input.leaseToken, p_retryable: input.retryable, p_error_code: input.errorCode,
+      };
+      break;
+    }
+    case 'runner_reconcile_owner_gate': {
+      const input = request.input;
+      const expired = await bridgeDb().rpc('expire_asi_runtime_bridge_owner_gates', { p_client_id: clientId });
+      if (expired.error) rpcError(expired.error);
+      rpc = 'reconcile_asi_runtime_bridge_owner_gate';
+      args = {
+        p_client_id: clientId, p_runner_id: input.runnerId, p_task_id: input.taskId,
+        p_attempt_count: input.attemptCount, p_original_lease_token: input.originalLeaseToken ?? null,
+        p_gate: input.gate,
       };
       break;
     }

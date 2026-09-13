@@ -7,6 +7,7 @@ These files are **not** part of `supabase/migrations` and must not be applied to
 Files:
 - `20260909170000_runtime_bridge_schema_free_tier.sql` (historical bootstrap; do not rewrite)
 - `20260912210000_runtime_bridge_single_lane_admission_v1.sql` (forward single-lane admission)
+- `20260913000000_runtime_bridge_owner_gate_reconcile_v1.sql` (forward owner-gate crash-recovery reconciliation; runner-internal only, no schema/index changes)
 
 Before applying the single-lane admission follow-up, record:
 

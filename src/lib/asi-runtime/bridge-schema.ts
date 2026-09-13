@@ -187,14 +187,19 @@ function parseTask(value: unknown): RuntimeBridgeTaskRequest | null {
   return value as RuntimeBridgeTaskRequest;
 }
 
-function parseGate(value: unknown): RuntimeBridgeOwnerGateRequest | null {
+function parseGate(
+  value: unknown,
+  options?: { requireFutureExpiry?: boolean },
+): RuntimeBridgeOwnerGateRequest | null {
+  const requireFutureExpiry = options?.requireFutureExpiry ?? true;
   const keys = ['schemaVersion', 'action', 'exactTarget', 'identity', 'reason', 'evidence', 'allowedSideEffect', 'rollback', 'postActionVerification', 'taskCycle', 'expiresAt'];
   if (!object(value) || !exactWithOptional(value, keys, ['classification']) || value.schemaVersion !== 'asi.runtime.owner-gate.v1') return null;
   if (!text(value.action, 120) || !text(value.exactTarget, 500) || !text(value.identity, 500)) return null;
   if (!text(value.reason, 2000) || !textList(value.evidence, 20, 1000)) return null;
   if (!text(value.allowedSideEffect, 1000) || !text(value.rollback, 1000)) return null;
   if (!textList(value.postActionVerification, 20, 1000) || !text(value.taskCycle, 200, ID)) return null;
-  if (!text(value.expiresAt, 64) || Number.isNaN(Date.parse(value.expiresAt)) || Date.parse(value.expiresAt) <= Date.now()) return null;
+  if (!text(value.expiresAt, 64) || Number.isNaN(Date.parse(value.expiresAt))) return null;
+  if (requireFutureExpiry && Date.parse(value.expiresAt) <= Date.now()) return null;
   if (Object.hasOwn(value, 'classification') && !text(value.classification, 120, ID)) return null;
   return value as RuntimeBridgeOwnerGateRequest;
 }
@@ -405,6 +410,18 @@ function parseRunnerReadinessInput(input: Record<string, unknown>): RuntimeBridg
   return null;
 }
 
+function parseRunnerReconcileOwnerGateInput(input: Record<string, unknown>): RuntimeBridgeRunnerInput | null {
+  const required = ['runnerId', 'taskId', 'attemptCount', 'gate'];
+  const optional = ['originalLeaseToken'];
+  if (!exactWithOptional(input, required, optional)) return null;
+  if (!text(input.taskId, 36, UUID)) return null;
+  if (!Number.isInteger(input.attemptCount) || Number(input.attemptCount) < 0 || Number(input.attemptCount) > 1_000_000) return null;
+  if (Object.hasOwn(input, 'originalLeaseToken') && !text(input.originalLeaseToken, 36, UUID)) return null;
+  const gate = parseGate(input.gate, { requireFutureExpiry: false });
+  if (!gate) return null;
+  return { operation: 'runner_reconcile_owner_gate', input: { ...input, gate } } as RuntimeBridgeRunnerInput;
+}
+
 export function parseRuntimeBridgeRunnerInput(value: unknown): RuntimeBridgeRunnerInput | null {
   if (!object(value) || !exact(value, ['operation', 'input']) || !object(value.input)) return null;
   const input = value.input;
@@ -416,6 +433,9 @@ export function parseRuntimeBridgeRunnerInput(value: unknown): RuntimeBridgeRunn
   if (value.operation === 'runner_claim_task') {
     return exact(input, ['runnerId', 'leaseSeconds']) && Number.isInteger(input.leaseSeconds) && Number(input.leaseSeconds) >= 30 && Number(input.leaseSeconds) <= 900
       ? value as RuntimeBridgeRunnerInput : null;
+  }
+  if (value.operation === 'runner_reconcile_owner_gate') {
+    return parseRunnerReconcileOwnerGateInput(input);
   }
   const base = ['runnerId', 'taskId', 'leaseToken'];
   if (!text(input.taskId, 36, UUID) || !text(input.leaseToken, 36, UUID)) return null;
