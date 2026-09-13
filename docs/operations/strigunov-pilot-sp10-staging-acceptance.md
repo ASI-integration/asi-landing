@@ -86,8 +86,8 @@ WHERE status IN ('queued', 'running', 'awaiting_owner');
 
 | Count | Action |
 | --- | --- |
-| 0 | Proceed. Record the count and SHA, then apply. |
-| 1 | Proceed. The existing row becomes the unique occupant. Record the count, `task_id`, and SHA, then apply. |
+| 0 | Safe to apply. Record the count and SHA, then apply. |
+| 1 | Safe to apply. The existing row becomes the unique occupant. Record the count, `task_id`, and SHA, then apply. |
 | >1 | **STOP.** Do not apply. Do not pick a winner. Do not delete, fail, cancel, or mutate historical rows to force the count down. Owner-authorized reconciliation is required first. |
 
 The single-lane migration itself re-runs this count and raises
@@ -122,9 +122,9 @@ so. Nothing in this sequence implies or authorizes a production deployment.
 Prerequisites: isolated staging Runtime + Landing at the pinned SHAs above;
 invited `pilot_beta` session; green docs/pilot template only; no merge/deploy
 capabilities exposed through `/pilot`; **Bridge single-lane migration preflight
-recorded as 0 or 1**, and both migrations applied in the order above. Do not
-start the sequence below if the preflight count is >1 or unrecorded, or if
-either migration has not been applied.
+recorded as 0 or 1**, and both migrations applied in the order above.
+Do not start the sequence below if the
+preflight count is >1 or unrecorded, or if either migration has not been applied.
 
 | Step | Action | Pass evidence |
 | --- | --- | --- |
