@@ -751,3 +751,19 @@ jobs:
             echo "Missing BRIDGE_SINGLE_LANE_PREFLIGHT_PG_PROOF — failing job"
             exit 1
           fi
+
+      - name: Bridge owner-gate reconciliation PostgreSQL contract
+        id: bridge_reconcile_pg_integration
+        run: |
+          set -euo pipefail
+          npx vitest run \
+            src/lib/asi-runtime/__tests__/bridge-owner-gate-reconcile.pg.integration.test.ts \
+            --reporter=verbose 2>&1 | tee bridge-reconcile-pg.out
+          if grep -E '↓|skipped|SKIPPED' bridge-reconcile-pg.out | grep -Fq 'Bridge owner-gate reconciliation PostgreSQL contract'; then
+            echo "Bridge owner-gate reconciliation PostgreSQL suite was skipped — failing job"
+            exit 1
+          fi
+          if ! grep -Fq 'BRIDGE_RECONCILE_CONCURRENT_PG_PROOF' bridge-reconcile-pg.out; then
+            echo "Missing BRIDGE_RECONCILE_CONCURRENT_PG_PROOF — failing job"
+            exit 1
+          fi
