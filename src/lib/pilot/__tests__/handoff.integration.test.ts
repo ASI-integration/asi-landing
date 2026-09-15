@@ -91,6 +91,11 @@ function installDurableBridgeMock(store: { rows: DurableRow[] }) {
           error: null,
         };
       }
+      if (store.rows.some((row) => (
+        row.status === 'queued' || row.status === 'running' || row.status === 'awaiting_owner'
+      ))) {
+        return { data: null, error: { message: 'admission_busy' } };
+      }
       const row: DurableRow = {
         id: randomUUID(),
         client_id: clientId,
@@ -303,6 +308,38 @@ describe('SP-06 Bridge handoff integration harness', () => {
     });
     expect(again.deduplicated).toBe(true);
     expect(again.task.taskId).toBe(row.id);
+    expect(store.rows).toHaveLength(1);
+  });
+
+  it('rejects a second create while the first task is still non-terminal', async () => {
+    const store = { rows: [] as DurableRow[] };
+    installDurableBridgeMock(store);
+    const { __resetRuntimeBridgeSupabaseForTests } = await import('@/lib/asi-runtime/bridge-supabase');
+    __resetRuntimeBridgeSupabaseForTests();
+    const { submitPilotTask } = await import('../task-service');
+
+    await submitPilotTask({
+      pilotUserId: 'pilot-handoff-user',
+      body: {
+        goal: 'Add a proof markdown under docs/pilot/ for SP-06 handoff harness.',
+        title: 'SP-06 proof',
+        idempotencyKey: 'pilot-beta-idem-sp06-first',
+      },
+    });
+    store.rows[0]!.status = 'awaiting_owner';
+
+    await expect(submitPilotTask({
+      pilotUserId: 'pilot-handoff-user',
+      body: {
+        goal: 'Add a second proof markdown under docs/pilot/.',
+        title: 'SP-06 second',
+        idempotencyKey: 'pilot-beta-idem-sp06-second',
+      },
+    })).rejects.toMatchObject({
+      code: 'admission_busy',
+      status: 503,
+      messageRu: 'Временно недоступно',
+    });
     expect(store.rows).toHaveLength(1);
   });
 
