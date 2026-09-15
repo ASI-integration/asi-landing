@@ -113,8 +113,19 @@ export default function PilotConsoleClient() {
 
   const selectTask = useCallback((taskId: string) => {
     setSelectedTaskId(taskId);
-    router.replace(`/pilot?taskId=${encodeURIComponent(taskId)}`, { scroll: false });
+    // push (not replace): each task selection is a real, back/forward-
+    // navigable history entry, matching normal link-click navigation.
+    router.push(`/pilot?taskId=${encodeURIComponent(taskId)}`, { scroll: false });
   }, [router]);
+
+  // Keep the shown task in sync with the URL for any change that doesn't go
+  // through selectTask above - browser back/forward, or a direct navigation
+  // to a different ?taskId= while this component stays mounted. Without
+  // this, selectedTaskId (a useState initializer) would only ever reflect
+  // whatever ?taskId= was present on the very first render.
+  useEffect(() => {
+    setSelectedTaskId(taskIdFromUrl);
+  }, [taskIdFromUrl]);
 
   const checkSession = useCallback(async () => {
     const res = await fetch('/api/pilot/session', {

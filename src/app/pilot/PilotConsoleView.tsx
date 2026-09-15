@@ -1,4 +1,4 @@
-import type { FormEvent, ReactNode } from 'react';
+import type { FormEvent, MouseEvent, ReactNode } from 'react';
 import type { PilotConsoleStatus } from '@/lib/pilot/status';
 import {
   pilotConsoleStatusLabel,
@@ -63,6 +63,47 @@ function formatDate(value: string): string {
 
 function shortId(taskId: string): string {
   return taskId.slice(0, 8);
+}
+
+export function pilotTaskHref(taskId: string): string {
+  return `/pilot?taskId=${encodeURIComponent(taskId)}`;
+}
+
+type MinimalClickEvent = {
+  defaultPrevented: boolean;
+  button: number;
+  metaKey: boolean;
+  ctrlKey: boolean;
+  shiftKey: boolean;
+  altKey: boolean;
+  preventDefault: () => void;
+};
+
+/**
+ * Decides whether a task-row click should be handled as an in-app SPA
+ * navigation (preventDefault + onSelect) or left alone so the browser can do
+ * its own thing (open in new tab on modifier/middle click, right-click menu,
+ * etc). Enter/Space activation on a focused <a> synthesizes a plain click
+ * (button 0, no modifiers), so this same check naturally covers keyboard
+ * activation with no separate keydown handler needed.
+ */
+export function handleTaskRowClick(
+  event: MinimalClickEvent,
+  taskId: string,
+  onSelect: (taskId: string) => void,
+): void {
+  if (
+    event.defaultPrevented
+    || event.button !== 0
+    || event.metaKey
+    || event.ctrlKey
+    || event.shiftKey
+    || event.altKey
+  ) {
+    return;
+  }
+  event.preventDefault();
+  onSelect(taskId);
 }
 
 export function PilotAccessPanel(props: {
@@ -355,13 +396,17 @@ export function PilotTaskList(props: {
             const selected = task.taskId === selectedTaskId;
             return (
               <li key={task.taskId}>
-                <button
-                  type="button"
+                <a
+                  href={pilotTaskHref(task.taskId)}
                   data-pilot-task-item={task.taskId}
                   data-pilot-task-selected={selected ? 'true' : 'false'}
-                  onClick={() => onSelect(task.taskId)}
-                  className={`flex w-full flex-col gap-2 px-5 py-4 text-left transition-colors hover:bg-slate-50 sm:flex-row sm:items-center sm:justify-between ${
-                    selected ? 'bg-slate-50' : ''
+                  aria-current={selected ? 'true' : undefined}
+                  onClick={(event: MouseEvent<HTMLAnchorElement>) =>
+                    handleTaskRowClick(event, task.taskId, onSelect)}
+                  className={`flex w-full flex-col gap-2 px-5 py-4 text-left transition-colors hover:bg-slate-50 focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-sky-600 sm:flex-row sm:items-center sm:justify-between ${
+                    selected
+                      ? 'bg-sky-50 ring-1 ring-inset ring-sky-300'
+                      : ''
                   }`}
                 >
                   <div className="min-w-0">
@@ -371,7 +416,7 @@ export function PilotTaskList(props: {
                     </p>
                   </div>
                   <PilotStatusBadge status={task.consoleStatus} />
-                </button>
+                </a>
               </li>
             );
           })}
