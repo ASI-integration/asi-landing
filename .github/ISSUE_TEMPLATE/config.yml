@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Agent-ready task intake
+    url: https://github.com/ASI-integration/asi-landing/issues/new?template=agent-ready-task.yml
+    about: Use the Agent-ready task form. Free-form issues are disabled so intake stays machine-checkable.
