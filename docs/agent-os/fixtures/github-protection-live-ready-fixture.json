@@ -1,0 +1,44 @@
+{
+  "auditedAt": "2026-09-16T00:00:00.000Z",
+  "repository": "ASI-integration/asi-landing",
+  "branchProtection": {
+    "enabled": true,
+    "requirePullRequest": true,
+    "requiredApprovingReviewCount": 1,
+    "dismissStaleReviews": true,
+    "requireCodeOwnerReviews": true,
+    "requiredStatusChecks": ["validate"],
+    "allowForcePushes": false,
+    "allowDeletions": false,
+    "enforceAdmins": true
+  },
+  "rulesets": [
+    {
+      "id": 1,
+      "name": "protect-main",
+      "enforcement": "active",
+      "includeRefs": ["refs/heads/main"],
+      "ruleTypes": ["pull_request", "required_status_checks", "non_fast_forward", "deletion"]
+    }
+  ],
+  "environments": {
+    "staging": {
+      "name": "staging",
+      "canAdminsBypass": false,
+      "reviewers": ["ASI-integration"],
+      "deploymentBranches": ["main"]
+    },
+    "production": {
+      "name": "Production",
+      "canAdminsBypass": false,
+      "reviewers": ["ASI-integration"],
+      "deploymentBranches": ["main"]
+    },
+    "production-migration-approval": {
+      "name": "production-migration-approval",
+      "canAdminsBypass": false,
+      "reviewers": ["ASI-integration"],
+      "deploymentBranches": ["main"]
+    }
+  }
+}
