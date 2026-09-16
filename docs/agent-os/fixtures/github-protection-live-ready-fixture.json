@@ -4,9 +4,9 @@
   "branchProtection": {
     "enabled": true,
     "requirePullRequest": true,
-    "requiredApprovingReviewCount": 1,
+    "requiredApprovingReviewCount": 0,
     "dismissStaleReviews": true,
-    "requireCodeOwnerReviews": true,
+    "requireCodeOwnerReviews": false,
     "requiredStatusChecks": ["validate"],
     "allowForcePushes": false,
     "allowDeletions": false,
