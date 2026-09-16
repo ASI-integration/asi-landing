@@ -1,8 +1,11 @@
 /**
  * Public support email for mailto links and legal copy.
  * `NEXT_PUBLIC_*` is inlined at build time; set it on the server and rebuild to override.
+ *
+ * The neutral/global fallback intentionally uses the international domain.
+ * Deployments that need a market-specific address should set NEXT_PUBLIC_CONTACT_EMAIL.
  */
-const DEFAULT_SUPPORT = 'support@asi-global.ru';
+const DEFAULT_SUPPORT = 'support@asi-global.com';
 
 /** Reject mistaken env values (setup instructions pasted into .env, example.com, etc.). */
 function sanitizedContactEmailFromEnv(raw: string | undefined): string {
