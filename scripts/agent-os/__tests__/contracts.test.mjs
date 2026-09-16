@@ -200,7 +200,17 @@ test('change map recognizes repository-local Skill paths', () => {
     loadChangeMap(repoRoot),
   );
   assert.deepEqual(selected.matchedRuleIds, ['agent-os-contracts']);
-  assert(selected.checks.includes('skill-quick-validate'));
+  assert(selected.checks.includes('skill-structure-validation'));
+  assert(selected.checks.includes('skill-forward-test'));
+});
+
+test('change map recognizes staging and production skill paths', () => {
+  const selected = selectChecks([
+    '.agents/skills/asi-staging-acceptance/SKILL.md',
+    '.agents/skills/asi-production-rollout/SKILL.md',
+  ], loadChangeMap(repoRoot));
+  assert.deepEqual(selected.matchedRuleIds, ['agent-os-contracts']);
+  assert(selected.checks.includes('skill-structure-validation'));
 });
 
 test('runtime artifacts reject properties outside their schema', () => {
