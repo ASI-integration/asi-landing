@@ -42,8 +42,8 @@ Machine-enforced active release gates are listed in `docs/agent-os/release-gates
 
 ## Ограничения baseline
 
-- GitHub API не показал branch protection или rulesets для `main` на момент аудита.
-- GitHub API не показал environment protection rules/reviewers, хотя workflows ссылаются на `staging` и `production`.
+- Live GitHub API 2026-09-16: `main` still lacks enforced protection (classic 404; ruleset `MyRule` disabled). Desired state + owner runbook: `docs/agent-os/GITHUB_PROTECTION.md` (AO-001 open).
+- Live GitHub API 2026-09-16: `production` has reviewer+main policy; `staging` has no reviewers/branch policy; `production-migration-approval` still allows admin bypass (AO-002 open).
 - `docs/BOOKING_OPS_STAGING_BOOTSTRAP.md` больше не содержит ручной migration count; CI проверяет drift через `scripts/agent-os/check-migration-count-docs.mjs`.
 - Migration mechanisms remain implemented by existing SQL/CLI/helpers/workflows, but their planning, target identity, apply gate, verification, and rollback policy are unified by `docs/agent-os/MIGRATION_PROCESS.md`.
 - Acceptance scripts различаются по способности писать/удалять данные и по наличию явного confirmation gate.

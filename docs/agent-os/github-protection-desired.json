@@ -1,0 +1,50 @@
+{
+  "schemaVersion": "asi.agent-os.github-protection-desired.v1",
+  "repository": "ASI-integration/asi-landing",
+  "mainProtection": {
+    "branch": "main",
+    "requirePullRequest": true,
+    "requiredApprovingReviewCount": 1,
+    "dismissStaleReviews": true,
+    "requireCodeOwnerReviews": true,
+    "requiredStatusChecks": ["validate"],
+    "blockDirectPush": true,
+    "allowForcePushes": false,
+    "allowDeletions": false,
+    "includeAdministrators": true
+  },
+  "environments": [
+    {
+      "name": "staging",
+      "requiredReviewers": ["ASI-integration"],
+      "deploymentBranches": ["main"],
+      "canAdminsBypass": false,
+      "preventSelfReview": false
+    },
+    {
+      "name": "production",
+      "requiredReviewers": ["ASI-integration"],
+      "deploymentBranches": ["main"],
+      "canAdminsBypass": false,
+      "preventSelfReview": false
+    },
+    {
+      "name": "production-migration-approval",
+      "requiredReviewers": ["ASI-integration"],
+      "deploymentBranches": ["main"],
+      "canAdminsBypass": false,
+      "preventSelfReview": false
+    }
+  ],
+  "ownerActionsRequired": [
+    "Enable enforced main ruleset/branch protection with PR + review + required check validate",
+    "Add required reviewers and main-only deployment policy on staging; disable admin bypass",
+    "Confirm production and production-migration-approval keep required reviewers + main-only policy with admin bypass disabled",
+    "Verify with a docs-only test PR and a staging environment wait-for-review dispatch (no mutation)"
+  ],
+  "closure": {
+    "ao001": "open",
+    "ao002": "open",
+    "requiresLiveVerification": true
+  }
+}
