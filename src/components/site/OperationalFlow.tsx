@@ -13,7 +13,7 @@ export function OperationalFlow({ dark = false }: { dark?: boolean }) {
                 isHuman
                   ? 'bg-asi-gold text-asi-navy border-asi-gold'
                   : isException
-                    ? `border-asi-gold ${dark ? 'text-asi-gold-soft' : 'text-asi-gold'}`
+                    ? `border-asi-gold ${dark ? 'text-asi-gold-soft' : 'text-asi-gold-text'}`
                     : dark
                       ? 'border-asi-ivory/25 text-asi-ivory/80'
                       : 'border-asi-border text-asi-navy/75'

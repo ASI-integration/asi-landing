@@ -3,10 +3,30 @@ import { SiteHeader } from '@/components/site/SiteHeader';
 import { SiteFooter } from '@/components/site/SiteFooter';
 import { Section, Eyebrow, Headline } from '@/components/site/primitives';
 import { MediaCard } from '@/components/site/MediaCard';
+import { EN_PUBLIC_ORIGIN } from '@/config/publicOrigins';
+
+const title = 'ASI Media';
+const description = 'Watch and read ASI Global media — the Japan pitch deck, concept film, and market materials.';
+const url = `${EN_PUBLIC_ORIGIN}/media`;
 
 export const metadata: Metadata = {
-  title: 'ASI Media',
-  description: 'Watch and read ASI Global media — the Japan pitch deck, concept film, and market materials.',
+  title,
+  description,
+  alternates: { canonical: url },
+  openGraph: {
+    title,
+    description,
+    url,
+    siteName: 'ASI Global',
+    type: 'website',
+    images: [{ url: `${EN_PUBLIC_ORIGIN}/images/japan/cabin-clean.jpg` }],
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title,
+    description,
+    images: [`${EN_PUBLIC_ORIGIN}/images/japan/cabin-clean.jpg`],
+  },
 };
 
 // Set this once the approved Japan pitch deck asset (PDF or slide embed URL) is uploaded.
@@ -47,7 +67,7 @@ export default function MediaPage() {
                 allowFullScreen
               />
             ) : (
-              <p className="text-sm text-asi-navy/50 px-8 text-center">
+              <p className="text-sm text-asi-navy/65 px-8 text-center">
                 The approved Japan pitch deck asset has not been uploaded yet. This viewer will
                 display it in place once it is available.
               </p>

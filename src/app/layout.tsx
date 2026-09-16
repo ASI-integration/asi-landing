@@ -17,6 +17,9 @@ export const metadata: Metadata = {
       ru: 'https://asi-global.ru/',
     },
   },
+  icons: {
+    icon: '/brand/asi-global-mark.png',
+  },
 };
 
 export default async function RootLayout({

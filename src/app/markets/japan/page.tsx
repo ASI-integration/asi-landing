@@ -8,11 +8,32 @@ import { Shiro } from '@/components/site/Shiro';
 import { CircleFeature } from '@/components/site/CircleFeature';
 import { MediaCard } from '@/components/site/MediaCard';
 import { OperationalFlow } from '@/components/site/OperationalFlow';
+import { productSupportEmail } from '@/config/contact';
+import { EN_PUBLIC_ORIGIN } from '@/config/publicOrigins';
+
+const title = 'ASI Japan — Micro Hotels, from Osaka to the next generation';
+const description =
+  'ASI Japan brings autonomous operations to micro-hospitality, respecting the birthplace of capsule hospitality while building real private rooms for modern travelers.';
+const url = `${EN_PUBLIC_ORIGIN}/markets/japan`;
 
 export const metadata: Metadata = {
-  title: 'ASI Japan — Micro Hotels, from Osaka to the next generation',
-  description:
-    'ASI Japan brings autonomous operations to micro-hospitality, respecting the birthplace of capsule hospitality while building real private rooms for modern travelers.',
+  title,
+  description,
+  alternates: { canonical: url },
+  openGraph: {
+    title,
+    description,
+    url,
+    siteName: 'ASI Global',
+    type: 'website',
+    images: [{ url: `${EN_PUBLIC_ORIGIN}/images/japan/cabin-clean.jpg` }],
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title,
+    description,
+    images: [`${EN_PUBLIC_ORIGIN}/images/japan/cabin-clean.jpg`],
+  },
 };
 
 const OPERATIONS = ['Booking', 'Payment', 'Guest communication', 'Digital access', 'Cleaning coordination', 'Maintenance', 'Pricing', 'Exceptions'];
@@ -31,7 +52,7 @@ export default function JapanMarketPage() {
                 <LogoMark size={32} />
                 <span className="font-serif text-xl text-asi-navy">ASI Global</span>
               </div>
-              <p className="mt-2 text-xs font-sans uppercase tracking-[0.22em] text-asi-navy/50">
+              <p className="mt-2 text-xs font-sans uppercase tracking-[0.22em] text-asi-navy/65">
                 Micro Hotels · Autonomous Operations
               </p>
               <Headline as="h1" className="mt-7 text-4xl sm:text-6xl">
@@ -48,7 +69,7 @@ export default function JapanMarketPage() {
               <p className="text-asi-navy/70 max-w-lg leading-relaxed">
                 A real private room for two, designed for today&apos;s cities.
               </p>
-              <p className="mt-3 text-sm text-asi-navy/55 max-w-lg leading-relaxed">
+              <p className="mt-3 text-sm text-asi-navy/65 max-w-lg leading-relaxed">
                 Respecting the birthplace of capsule hospitality while reimagining private urban
                 stays for modern travelers.
               </p>
@@ -58,7 +79,7 @@ export default function JapanMarketPage() {
               </div>
               <div className="mt-12 flex items-center gap-3">
                 <GoldRule className="w-8" />
-                <span className="text-xs font-sans uppercase tracking-[0.18em] text-asi-navy/45">
+                <span className="text-xs font-sans uppercase tracking-[0.18em] text-asi-navy/65">
                   People × Places × Possibilities
                 </span>
               </div>
@@ -165,7 +186,7 @@ export default function JapanMarketPage() {
                 demand, operations and economics.
               </p>
               <div className="mt-6">
-                <PrimaryCta href="mailto:partners@asi-global.com">Partner on the Japan Pilot</PrimaryCta>
+                <PrimaryCta href={`mailto:${productSupportEmail}`}>Partner on the Japan Pilot</PrimaryCta>
               </div>
             </div>
           </div>

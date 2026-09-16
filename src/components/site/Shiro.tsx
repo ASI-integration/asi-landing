@@ -31,7 +31,7 @@ export function Shiro({
       {signature ? (
         <span className="flex flex-col leading-tight">
           <span className={`font-serif italic text-lg ${dark ? 'text-asi-ivory' : 'text-asi-navy'}`}>Shiro</span>
-          <span className={`text-[10px] font-sans uppercase tracking-[0.14em] ${dark ? 'text-asi-ivory/50' : 'text-asi-navy/50'}`}>
+          <span className={`text-[10px] font-sans uppercase tracking-[0.14em] ${dark ? 'text-asi-ivory/50' : 'text-asi-navy/65'}`}>
             Good stays, brighter tomorrows
           </span>
         </span>

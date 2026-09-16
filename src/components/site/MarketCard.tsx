@@ -21,9 +21,9 @@ export function MarketCard({
         <div className="flex items-center justify-between mb-6">
           <Shiro country={country} size={26} className="text-asi-navy" />
           {status === 'active' ? (
-            <span className="text-[11px] font-sans font-semibold uppercase tracking-[0.16em] text-asi-gold">Active</span>
+            <span className="text-[11px] font-sans font-semibold uppercase tracking-[0.16em] text-asi-gold-text">Active</span>
           ) : (
-            <span className="text-[11px] font-sans font-semibold uppercase tracking-[0.16em] text-asi-navy/40">Coming next</span>
+            <span className="text-[11px] font-sans font-semibold uppercase tracking-[0.16em] text-asi-navy/60">Coming next</span>
           )}
         </div>
         <h3 className="font-serif text-2xl text-asi-navy">{name}</h3>
@@ -34,7 +34,7 @@ export function MarketCard({
           Explore <FlagCircle country={country} size={14} />
         </span>
       ) : (
-        <span className="mt-6 text-sm text-asi-navy/40">Details soon</span>
+        <span className="mt-6 text-sm text-asi-navy/60">Details soon</span>
       )}
     </div>
   );

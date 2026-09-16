@@ -4,6 +4,7 @@ import { headers } from 'next/headers';
 import type { Metadata } from 'next';
 
 import { RU_PUBLIC_ORIGIN, EN_PUBLIC_ORIGIN } from '@/config/publicOrigins';
+import { productSupportEmail } from '@/config/contact';
 import { hostnameFromHostHeader, isRuRuntimeHost } from '@/lib/runtimeHost';
 import HomeRu from '@/app/ru/page';
 
@@ -41,10 +42,28 @@ export async function generateMetadata(): Promise<Metadata> {
       },
     };
   }
+  const title = 'ASI Global — Operations on autopilot. Humans on exceptions.';
+  const description =
+    'ASI handles the daily work of physical businesses — bookings, payments, messages, access, cleaning and maintenance — automatically. People step in only when something unusual needs a decision.';
+  const url = EN_PUBLIC_ORIGIN;
   return {
-    title: 'ASI Global — Operations on autopilot. Humans on exceptions.',
-    description:
-      'ASI handles the daily work of physical businesses — bookings, payments, messages, access, cleaning and maintenance — automatically. People step in only when something unusual needs a decision.',
+    title,
+    description,
+    alternates: { canonical: url },
+    openGraph: {
+      title,
+      description,
+      url,
+      siteName: 'ASI Global',
+      type: 'website',
+      images: [{ url: `${url}/images/japan/cityscape-wide.jpg` }],
+    },
+    twitter: {
+      card: 'summary_large_image',
+      title,
+      description,
+      images: [`${url}/images/japan/cityscape-wide.jpg`],
+    },
   };
 }
 
@@ -72,7 +91,7 @@ export default async function Home() {
                 <LogoMark size={34} />
                 <span className="font-serif text-2xl text-asi-navy">ASI Global</span>
               </div>
-              <p className="mt-2 text-xs font-sans uppercase tracking-[0.22em] text-asi-navy/50">
+              <p className="mt-2 text-xs font-sans uppercase tracking-[0.22em] text-asi-navy/65">
                 Micro Hotels · Autonomous Operations
               </p>
               <Headline as="h1" className="mt-8 text-4xl sm:text-6xl lg:text-[4rem]">
@@ -112,7 +131,7 @@ export default async function Home() {
           <Headline className="text-3xl sm:text-5xl max-w-3xl">One system. Two layers.</Headline>
           <div className="mt-12 grid md:grid-cols-2 gap-px bg-asi-border border border-asi-border">
             <div className="bg-asi-ivory p-8 sm:p-10">
-              <span className="text-xs font-sans font-semibold uppercase tracking-[0.18em] text-asi-gold">Layer 1</span>
+              <span className="text-xs font-sans font-semibold uppercase tracking-[0.18em] text-asi-gold-text">Layer 1</span>
               <h3 className="mt-4 font-serif text-2xl sm:text-3xl">ASI Intelligence</h3>
               <p className="mt-3 text-asi-navy/70 leading-relaxed">
                 The operating intelligence behind autonomous businesses.
@@ -124,7 +143,7 @@ export default async function Home() {
               </p>
             </div>
             <div id="micro-hotels" className="bg-asi-ivory p-8 sm:p-10">
-              <span className="text-xs font-sans font-semibold uppercase tracking-[0.18em] text-asi-gold">Layer 2</span>
+              <span className="text-xs font-sans font-semibold uppercase tracking-[0.18em] text-asi-gold-text">Layer 2</span>
               <h3 className="mt-4 font-serif text-2xl sm:text-3xl">ASI Physical</h3>
               <p className="mt-3 text-asi-navy/70 leading-relaxed">
                 Physical spaces designed to operate with minimal manual coordination.
@@ -248,9 +267,9 @@ export default async function Home() {
             </p>
             <div className="mt-9 flex flex-wrap gap-4 justify-center">
               <PrimaryCta href="/markets/japan#pilot">Partner on the Japan Pilot</PrimaryCta>
-              <SecondaryCta href="mailto:partners@asi-global.com">Contact ASI Global</SecondaryCta>
+              <SecondaryCta href={`mailto:${productSupportEmail}`}>Contact ASI Global</SecondaryCta>
             </div>
-            <p className="mt-8 text-xs text-asi-ivory/40">
+            <p className="mt-8 text-xs text-asi-ivory/60">
               Looking for the short-term rental automation product?{' '}
               <Link href="/rental-autopilot" className="underline hover:text-asi-ivory/70">
                 Rental Autopilot →
