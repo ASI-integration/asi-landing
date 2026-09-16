@@ -1,0 +1,22 @@
+{
+  "schemaVersion": "asi.agent-os.release-gates.v1",
+  "repository": "ASI-integration/asi-landing",
+  "sourceBranch": "main",
+  "gates": [
+    {
+      "id": "pr-validation",
+      "workflow": ".github/workflows/pr-validation.yml",
+      "description": "Pull request lint, typecheck, focused tests, build, and artifact smoke"
+    },
+    {
+      "id": "deploy-staging",
+      "workflow": ".github/workflows/deploy-staging.yml",
+      "description": "Manual staging artifact deploy with identity checks and optional schema smoke"
+    },
+    {
+      "id": "deploy-production",
+      "workflow": ".github/workflows/deploy.yml",
+      "description": "Manual production artifact deploy with owner confirmation and SHA health checks"
+    }
+  ]
+}
