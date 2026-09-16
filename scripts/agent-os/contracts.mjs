@@ -28,7 +28,7 @@ function contractValidators(repoRoot = DEFAULT_REPO_ROOT) {
 
   const schemaDir = path.join(resolvedRoot, 'docs/agent-os/schemas');
   const schemaFiles = fs.readdirSync(schemaDir).filter((name) => name.endsWith('.schema.json')).sort();
-  invariant(schemaFiles.length === 5, `Expected 5 schemas, found ${schemaFiles.length}`);
+  invariant(schemaFiles.length === 8, `Expected 8 schemas, found ${schemaFiles.length}`);
 
   const ajv = new Ajv2020({ allErrors: true, strict: true });
   addFormats(ajv);
@@ -158,6 +158,30 @@ export function validateProductionPreflight(value, repoRoot = DEFAULT_REPO_ROOT)
   return value;
 }
 
+export function validateMigrationPlanArtifact(value, repoRoot = DEFAULT_REPO_ROOT) {
+  validateArtifact('migration-plan', value, repoRoot);
+  invariant(value.mutationAllowed === false, 'Migration plan mutationAllowed must be false');
+  invariant(value.target.identity === value.target.expectedIdentity, 'Migration plan target identity mismatch');
+  return value;
+}
+
+export function validateMigrationResultArtifact(value, repoRoot = DEFAULT_REPO_ROOT) {
+  validateArtifact('migration-result', value, repoRoot);
+  if (value.status === 'PASS') {
+    invariant(value.targetMatch === true, 'PASS migration result requires targetMatch');
+  }
+  if (value.applyHandoff) {
+    invariant(value.applyHandoff.executed === false, 'Migration apply handoff must not execute DDL');
+  }
+  return value;
+}
+
+export function validateMigrationMechanismRegistry(value, repoRoot = DEFAULT_REPO_ROOT) {
+  validateArtifact('migration-mechanism-registry', value, repoRoot);
+  invariant(value.mechanisms.length > 0, 'Migration mechanism registry is empty');
+  return value;
+}
+
 function uniqueStrings(values) {
   return [...new Set((values ?? []).filter((value) => typeof value === 'string' && value.length > 0))];
 }
@@ -243,5 +267,8 @@ export function validateContractBundle(repoRoot) {
   validateOwnerGate(readJson(path.join(fixtures, 'typed-confirmation-only-owner-gate.json')), null, repoRoot);
   validateStagingFixture(readJson(path.join(fixtures, 'isolated-staging-fixture.json')), repoRoot);
   validateProductionPreflight(readJson(path.join(fixtures, 'production-read-only-preflight.json')), repoRoot);
-  return { schemas: schemaFiles.length, fixtures: 5 };
+  validateMigrationPlanArtifact(readJson(path.join(fixtures, 'migration-plan-fixture.json')), repoRoot);
+  validateMigrationResultArtifact(readJson(path.join(fixtures, 'migration-result-fixture.json')), repoRoot);
+  validateMigrationMechanismRegistry(readJson(path.join(repoRoot, 'docs/agent-os/migration-mechanisms.json')), repoRoot);
+  return { schemas: schemaFiles.length, fixtures: 7 };
 }

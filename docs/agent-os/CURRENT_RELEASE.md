@@ -36,16 +36,16 @@ Baseline SHA — это состояние source branch, а не утвержд
 | Pull request | `.github/workflows/pr-validation.yml`: lint, typecheck, фиксированный набор Vitest-тестов, build и artifact smoke |
 | Staging | ручной `.github/workflows/deploy-staging.yml`, отдельный GitHub environment name, identity checks, schema smoke, typecheck, build, health/version и optional acceptance |
 | Production deploy | ручной `.github/workflows/deploy.yml`, точная фраза подтверждения, build gates, artifact smoke, environment name и SHA health checks |
-| Production migrations | три ручных workflow для отдельных Booking migrations с точной фразой подтверждения |
+| Production migrations | dedicated manual workflows + partner controlled rollout; unified by `docs/agent-os/MIGRATION_PROCESS.md` |
 | Production acceptance | несколько ручных workflows; уровень подтверждения и safety contract между ними неодинаков |
 | Migration ordering | numeric-prefix и dependency test в `src/lib/__tests__/migration-dependency-order.test.ts` |
+| Migration process contract | `scripts/agent-os/migration-process.mjs` + registry/CI (`AO-004`) |
 
 ## Ограничения baseline
 
 - GitHub API не показал branch protection или rulesets для `main` на момент аудита.
 - GitHub API не показал environment protection rules/reviewers, хотя workflows ссылаются на `staging` и `production`.
-- `docs/BOOKING_OPS_STAGING_BOOTSTRAP.md` указывает 80 migrations, tracked baseline содержит 82.
-- Migration execution распределён между ordered SQL, прямыми CLI-командами, Python helpers и тремя специализированными production workflows.
+- `docs/BOOKING_OPS_STAGING_BOOTSTRAP.md` указывает 80 migrations, tracked baseline содержит больше (AO-005).
 - Acceptance scripts различаются по способности писать/удалять данные и по наличию явного confirmation gate.
 - До этой ветки не было единого Agent OS контракта, blocker registry и agent-ready GitHub templates.
 

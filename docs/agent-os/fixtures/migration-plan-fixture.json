@@ -1,0 +1,34 @@
+{
+  "schemaVersion": "asi.agent-os.migration-plan.v1",
+  "mode": "dry-run",
+  "mechanismId": "supabase-cli-staging-push",
+  "target": {
+    "environment": "staging",
+    "identity": "asi-staging-example",
+    "expectedIdentity": "asi-staging-example"
+  },
+  "migrations": [
+    {
+      "path": "supabase/migrations/001_initial_schema.sql",
+      "version": "001",
+      "sha256": null
+    }
+  ],
+  "applyGate": {
+    "required": true,
+    "ownerGateAction": "staging_operator_approval",
+    "status": "missing",
+    "confirmationPhrase": null,
+    "establishedApplyPath": "scripts/staging-booking-ops-schema-smoke.sh"
+  },
+  "verification": [
+    "Confirm STAGING_SUPABASE_PROJECT_REF matches target.identity",
+    "Retain dry-run output before any apply"
+  ],
+  "rollback": {
+    "policy": "owner-gated-new-migration",
+    "strategy": "Do not reverse applied DDL in place; prepare an append-only forward-fix migration and obtain a new gate."
+  },
+  "mutationAllowed": false,
+  "generatedAt": "2026-09-16T00:00:00.000Z"
+}

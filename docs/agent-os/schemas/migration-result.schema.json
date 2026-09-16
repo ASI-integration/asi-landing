@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://asi.local/agent-os/migration-result.schema.json",
+  "title": "ASI Agent OS migration result",
+  "description": "Machine-readable evidence from a migration plan, dry-run, or apply-gate evaluation. Must never claim a database mutation unless mutationPerformed is true.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "planRef",
+    "mode",
+    "status",
+    "target",
+    "targetMatch",
+    "mutationPerformed",
+    "verificationEvidence",
+    "generatedAt"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "asi.agent-os.migration-result.v1" },
+    "planRef": { "type": "string", "minLength": 1 },
+    "mode": { "enum": ["plan", "dry-run", "apply"] },
+    "status": { "enum": ["PASS", "FAIL", "BLOCKED"] },
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["environment", "identity"],
+      "properties": {
+        "environment": { "enum": ["local", "staging", "production"] },
+        "identity": { "type": "string", "minLength": 1 }
+      }
+    },
+    "targetMatch": { "type": "boolean" },
+    "mutationPerformed": { "type": "boolean" },
+    "verificationEvidence": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "applyHandoff": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["mechanismId", "establishedApplyPath", "executed"],
+      "properties": {
+        "mechanismId": { "type": "string", "minLength": 1 },
+        "establishedApplyPath": { "type": "string", "minLength": 1 },
+        "executed": { "const": false }
+      }
+    },
+    "generatedAt": { "type": "string", "format": "date-time" }
+  }
+}
