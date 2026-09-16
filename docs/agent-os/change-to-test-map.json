@@ -27,6 +27,7 @@
         "agent-os-contract-validation",
         "agent-intake-check",
         "release-manifest-check",
+        "github-protection-offline-check",
         "skill-quick-validate",
         "skill-structure-validation",
         "skill-forward-test",
@@ -34,6 +35,25 @@
         "git-diff-check"
       ],
       "protected": false
+    },
+    {
+      "id": "github-protection",
+      "prefixes": [
+        "docs/agent-os/GITHUB_PROTECTION.md",
+        "docs/agent-os/github-protection-desired.json",
+        "docs/agent-os/schemas/github-protection-desired.schema.json",
+        "scripts/agent-os/check-github-protection.mjs",
+        ".github/CODEOWNERS"
+      ],
+      "checks": [
+        "github-protection-offline-check",
+        "agent-os-contract-validation",
+        "focused-contract-test",
+        "git-diff-check"
+      ],
+      "protected": true,
+      "redActions": ["repository_or_environment_settings_change"],
+      "notes": "Repo contract only. Live GitHub Settings remain owner-gated; YAML never closes AO-001/AO-002."
     },
     {
       "id": "github-templates",

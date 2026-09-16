@@ -50,7 +50,7 @@ function approvedGate(overrides = {}) {
 }
 
 test('contract bundle validates real fixtures with Draft 2020-12 schemas', () => {
-  assert.deepEqual(validateContractBundle(repoRoot), { schemas: 6, fixtures: 5 });
+  assert.deepEqual(validateContractBundle(repoRoot), { schemas: 7, fixtures: 5 });
 });
 
 test('Draft 2020-12 validation rejects an incomplete approved owner gate', () => {

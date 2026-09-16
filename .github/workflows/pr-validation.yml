@@ -47,6 +47,8 @@ jobs:
         run: |
           node scripts/agent-os/validate-contracts.mjs
           node scripts/agent-os/check-migration-count-docs.mjs
+          node scripts/agent-os/check-github-protection.mjs --mode offline
+          node --test scripts/agent-os/__tests__/github-protection.test.mjs
           node scripts/agent-os/validate-skills.mjs
           node --test scripts/agent-os/__tests__/contracts.test.mjs
           node --test scripts/agent-os/__tests__/migration-count.test.mjs
