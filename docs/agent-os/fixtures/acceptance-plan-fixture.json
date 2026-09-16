@@ -1,0 +1,22 @@
+{
+  "schemaVersion": "asi.agent-os.acceptance-plan.v1",
+  "runnerId": "guest-lifecycle-db-acceptance",
+  "target": {
+    "environment": "staging",
+    "identity": "asi-staging"
+  },
+  "safety": {
+    "noExternalActions": true,
+    "externalActionsJustification": null
+  },
+  "fixtureOwnership": {
+    "isolated": true,
+    "namespace": "asi_fixture_ao008_demo"
+  },
+  "cleanup": {
+    "required": true,
+    "strategy": "Delete only records carrying the exact fixture namespace, then verify zero residue."
+  },
+  "generatedAt": "2026-09-16T00:00:00Z",
+  "ownerGateRequired": false
+}

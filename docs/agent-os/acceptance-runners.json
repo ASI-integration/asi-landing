@@ -1,0 +1,242 @@
+{
+  "schemaVersion": "asi.agent-os.acceptance-runner-registry.v1",
+  "generatedAt": "2026-09-16T00:00:00Z",
+  "discovery": {
+    "dir": "scripts",
+    "includePattern": "acceptance",
+    "excludePattern": "\\.runner\\.ts$|\\.ps1$|\\.test\\.|__tests__"
+  },
+  "runners": [
+    {
+      "runnerId": "guest-lifecycle-db-acceptance",
+      "file": "scripts/guest-lifecycle-db-acceptance.ts",
+      "environment": "staging",
+      "evidenceStatus": "emits-contract",
+      "evidenceMechanism": "legacy-guest-lifecycle-schema",
+      "noExternalActions": true,
+      "fixtureOwnership": "isolated",
+      "cleanupEvidence": "proven",
+      "notes": "Emits schemaVersion asi.guest-lifecycle.synthetic-result.v1 with runId/targetId, cleanupPreview, restart-replay, and noExternalActions:true. Proven in CI by .github/workflows/guest-lifecycle-production-acceptance.yml and pr-validation.yml, which hard-assert GUEST_LIFECYCLE_CLEANUP_PG_PROOF (zeroResidue, productionTouched:false)."
+    },
+    {
+      "runnerId": "guest-lifecycle-synthetic-acceptance",
+      "file": "scripts/guest-lifecycle-synthetic-acceptance.ts",
+      "environment": "local",
+      "evidenceStatus": "emits-contract",
+      "evidenceMechanism": "legacy-guest-lifecycle-schema",
+      "noExternalActions": true,
+      "fixtureOwnership": "none",
+      "cleanupEvidence": "proven",
+      "notes": "In-process synthetic harness, no real IO. CLI wrapper fails the run if report.noExternalActions !== true."
+    },
+    {
+      "runnerId": "booking-guest-intake-release-acceptance",
+      "file": "scripts/booking-guest-intake-release-acceptance.mjs",
+      "environment": "staging",
+      "evidenceStatus": "not-yet-instrumented",
+      "evidenceMechanism": null,
+      "noExternalActions": "unknown",
+      "fixtureOwnership": "unknown",
+      "cleanupEvidence": "unknown",
+      "notes": "Writes to Supabase (staging) plus CRM/ops email envs and ACCEPTANCE_BASE_URL. No plan/result JSON evidence emitted today."
+    },
+    {
+      "runnerId": "booking-lifecycle-orchestrator-v1-prod-acceptance",
+      "file": "scripts/booking-lifecycle-orchestrator-v1-prod-acceptance.mjs",
+      "environment": "production",
+      "evidenceStatus": "not-yet-instrumented",
+      "evidenceMechanism": null,
+      "noExternalActions": "unknown",
+      "fixtureOwnership": "unknown",
+      "cleanupEvidence": "unknown",
+      "notes": "Name and EXPECTED_SHA gate indicate a production-targeting runner. No standardized noExternalActions/cleanup evidence emitted."
+    },
+    {
+      "runnerId": "booking-ops-v13-full-lifecycle-acceptance",
+      "file": "scripts/booking-ops-v13-full-lifecycle-acceptance.mjs",
+      "environment": "staging",
+      "evidenceStatus": "not-yet-instrumented",
+      "evidenceMechanism": null,
+      "noExternalActions": "unknown",
+      "fixtureOwnership": "unknown",
+      "cleanupEvidence": "unknown",
+      "notes": "This is the scenario cited verbatim in AO-008's evidence text: 'staging full lifecycle creates/modifies/deletes fixtures.' Has internal dryRun references but no machine-readable plan/result artifact."
+    },
+    {
+      "runnerId": "booking-physical-readiness-acceptance",
+      "file": "scripts/booking-physical-readiness-acceptance.mjs",
+      "environment": "staging",
+      "evidenceStatus": "not-yet-instrumented",
+      "evidenceMechanism": null,
+      "noExternalActions": "unknown",
+      "fixtureOwnership": "unknown",
+      "cleanupEvidence": "unknown",
+      "notes": "Supabase + CRM/ops email envs + ACCEPTANCE_BASE_URL. No standardized evidence."
+    },
+    {
+      "runnerId": "comm-v1-automated-acceptance",
+      "file": "scripts/comm-v1-automated-acceptance.mjs",
+      "environment": "staging",
+      "evidenceStatus": "not-yet-instrumented",
+      "evidenceMechanism": null,
+      "noExternalActions": "unknown",
+      "fixtureOwnership": "unknown",
+      "cleanupEvidence": "unknown",
+      "notes": "COMM_V*/NODE_ENV driven; delegates to comm-v1-automated-acceptance.runner.ts. No standardized evidence."
+    },
+    {
+      "runnerId": "communication-ops-live-acceptance",
+      "file": "scripts/communication-ops-live-acceptance.mjs",
+      "environment": "staging",
+      "evidenceStatus": "not-yet-instrumented",
+      "evidenceMechanism": null,
+      "noExternalActions": "unknown",
+      "fixtureOwnership": "shared",
+      "cleanupEvidence": "declared",
+      "notes": "Has a confirm-phrase gate (COMM_OPS_ACCEPTANCE_CONFIRM) and a documented cleanup opt-out (KEEP_OPS_ACCEPTANCE_DATA), but no machine-readable plan/result artifact and no proven zero-residue check."
+    },
+    {
+      "runnerId": "guest-concierge-http-acceptance",
+      "file": "scripts/guest-concierge-http-acceptance.mjs",
+      "environment": "production",
+      "evidenceStatus": "not-yet-instrumented",
+      "evidenceMechanism": null,
+      "noExternalActions": "unknown",
+      "fixtureOwnership": "unknown",
+      "cleanupEvidence": "unknown",
+      "notes": "Defaults to PRODUCTION_URL when ACCEPTANCE_BASE_URL is unset; also calls a real LLM model endpoint. No standardized evidence."
+    },
+    {
+      "runnerId": "ops-v12-live-acceptance",
+      "file": "scripts/ops-v12-live-acceptance.mjs",
+      "environment": "staging",
+      "evidenceStatus": "not-yet-instrumented",
+      "evidenceMechanism": null,
+      "noExternalActions": "unknown",
+      "fixtureOwnership": "shared",
+      "cleanupEvidence": "declared",
+      "notes": "Supabase URL + service key are env-selected (staging or production, not enforced). Has OPS_ACCEPTANCE_CONFIRM gate and an OPS_ACCEPTANCE_CLEANUP=1 mode that deletes ASI_OPS_ACCEPTANCE_* CRM contacts, but no plan/result JSON and no target-identity assertion."
+    },
+    {
+      "runnerId": "owner-console-runtime-acceptance",
+      "file": "scripts/owner-console-runtime-acceptance.mjs",
+      "environment": "local",
+      "evidenceStatus": "not-yet-instrumented",
+      "evidenceMechanism": null,
+      "noExternalActions": "unknown",
+      "fixtureOwnership": "unknown",
+      "cleanupEvidence": "unknown",
+      "notes": "No external credentials detected in a static scan, but not verified line-by-line. No standardized evidence."
+    },
+    {
+      "runnerId": "pilot-readiness-live-acceptance",
+      "file": "scripts/pilot-readiness-live-acceptance.mjs",
+      "environment": "staging",
+      "evidenceStatus": "not-yet-instrumented",
+      "evidenceMechanism": null,
+      "noExternalActions": "unknown",
+      "fixtureOwnership": "unknown",
+      "cleanupEvidence": "unknown",
+      "notes": "Supabase + INTERNAL_TEST_SECRET + PILOT_READINESS_ACCEPTANCE_CONFIRM gate. No standardized evidence."
+    },
+    {
+      "runnerId": "strigunov-pilot-acceptance",
+      "file": "scripts/strigunov-pilot-acceptance.mjs",
+      "environment": "local",
+      "evidenceStatus": "not-yet-instrumented",
+      "evidenceMechanism": null,
+      "noExternalActions": "unknown",
+      "fixtureOwnership": "unknown",
+      "cleanupEvidence": "unknown",
+      "notes": "Reads ASI_OS_RUNTIME_ROOT only in the static scan. No standardized evidence."
+    },
+    {
+      "runnerId": "support-bot-live-acceptance",
+      "file": "scripts/support-bot-live-acceptance.mjs",
+      "environment": "staging",
+      "evidenceStatus": "not-yet-instrumented",
+      "evidenceMechanism": null,
+      "noExternalActions": "unknown",
+      "fixtureOwnership": "unknown",
+      "cleanupEvidence": "unknown",
+      "notes": "Supabase + SUPPORT_BOT_ACCEPTANCE_CONFIRM gate. No standardized evidence."
+    },
+    {
+      "runnerId": "telegram-autopilot-live-acceptance",
+      "file": "scripts/telegram-autopilot-live-acceptance.mjs",
+      "environment": "staging",
+      "evidenceStatus": "not-yet-instrumented",
+      "evidenceMechanism": null,
+      "noExternalActions": "unknown",
+      "fixtureOwnership": "unknown",
+      "cleanupEvidence": "unknown",
+      "notes": "Supabase + TELEGRAM_AUTOPILOT_PROPERTY_ID; has internal DRY_RUN/dryRun references but no machine-readable evidence."
+    },
+    {
+      "runnerId": "telegram-identity-live-acceptance",
+      "file": "scripts/telegram-identity-live-acceptance.mjs",
+      "environment": "external",
+      "evidenceStatus": "not-yet-instrumented",
+      "evidenceMechanism": null,
+      "noExternalActions": false,
+      "fixtureOwnership": "none",
+      "cleanupEvidence": "none",
+      "notes": "Calls the real Telegram Bot API with TELEGRAM_BOT_TOKEN. noExternalActions is known false; no plan/result artifact declares it today."
+    },
+    {
+      "runnerId": "telegram-live-acceptance",
+      "file": "scripts/telegram-live-acceptance.mjs",
+      "environment": "external",
+      "evidenceStatus": "not-yet-instrumented",
+      "evidenceMechanism": null,
+      "noExternalActions": false,
+      "fixtureOwnership": "none",
+      "cleanupEvidence": "none",
+      "notes": "Calls the real Telegram Bot API with TELEGRAM_BOT_TOKEN/TELEGRAM_CHAT_ID. noExternalActions is known false; no plan/result artifact declares it today."
+    },
+    {
+      "runnerId": "telegram-ops-live-acceptance",
+      "file": "scripts/telegram-ops-live-acceptance.mjs",
+      "environment": "production",
+      "evidenceStatus": "not-yet-instrumented",
+      "evidenceMechanism": null,
+      "noExternalActions": "unknown",
+      "fixtureOwnership": "unknown",
+      "cleanupEvidence": "unknown",
+      "notes": "Hits PRODUCTION_URL directly plus INTERNAL_TEST_SECRET; has a TELEGRAM_OPS_ACCEPTANCE_CONFIRM/_MODE gate. No standardized evidence."
+    },
+    {
+      "runnerId": "telegram-voice-acceptance-input",
+      "file": "scripts/telegram-voice-acceptance-input.mjs",
+      "environment": "external",
+      "evidenceStatus": "not-yet-instrumented",
+      "evidenceMechanism": null,
+      "noExternalActions": "unknown",
+      "fixtureOwnership": "unknown",
+      "cleanupEvidence": "unknown",
+      "notes": "Uses TELEGRAM_TEST_CHAT_ID; not fully inspected line-by-line for whether calls are real or stubbed. No standardized evidence."
+    },
+    {
+      "runnerId": "telegram-wizard-v2-acceptance",
+      "file": "scripts/telegram-wizard-v2-acceptance.mjs",
+      "environment": "production",
+      "evidenceStatus": "not-yet-instrumented",
+      "evidenceMechanism": null,
+      "noExternalActions": "unknown",
+      "fixtureOwnership": "unknown",
+      "cleanupEvidence": "unknown",
+      "notes": "Defaults to PRODUCTION_URL when ACCEPTANCE_BASE_URL is unset, plus TELEGRAM_TEST_CHAT_ID. No standardized evidence."
+    },
+    {
+      "runnerId": "voice-live-acceptance-custom",
+      "file": "scripts/voice-live-acceptance-custom.mjs",
+      "environment": "external",
+      "evidenceStatus": "not-yet-instrumented",
+      "evidenceMechanism": null,
+      "noExternalActions": false,
+      "fixtureOwnership": "none",
+      "cleanupEvidence": "none",
+      "notes": "Calls the real Telegram Bot API with TELEGRAM_BOT_TOKEN. noExternalActions is known false; no plan/result artifact declares it today."
+    }
+  ]
+}
