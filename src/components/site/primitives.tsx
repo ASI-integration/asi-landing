@@ -34,7 +34,7 @@ export function Eyebrow({ children, dark = false }: { children: ReactNode; dark?
   return (
     <p
       className={`flex items-center gap-3 text-xs font-sans font-semibold uppercase tracking-[0.22em] mb-4 ${
-        dark ? 'text-asi-gold-soft' : 'text-asi-gold'
+        dark ? 'text-asi-gold-soft' : 'text-asi-gold-text'
       }`}
     >
       <span className={`h-px w-8 ${dark ? 'bg-asi-gold-soft' : 'bg-asi-gold'}`} />

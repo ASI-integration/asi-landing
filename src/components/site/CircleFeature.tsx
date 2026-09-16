@@ -37,7 +37,7 @@ export function CircleFeature({
       </span>
       <div>
         <p className="font-serif text-base text-asi-navy leading-snug">{title}</p>
-        <p className="mt-1 text-sm text-asi-navy/55 leading-relaxed">{description}</p>
+        <p className="mt-1 text-sm text-asi-navy/65 leading-relaxed">{description}</p>
       </div>
     </div>
   );

@@ -16,6 +16,9 @@ module.exports = {
           'navy-2': '#2A2D36',
           gold: '#A6813C',
           'gold-soft': '#C9AD73',
+          // Darker than `gold`: meets WCAG AA (4.5:1) for small text on ivory/paper.
+          // Use for eyebrow labels / status tags; keep `gold` for large text, rules, icon strokes.
+          'gold-text': '#806028',
           border: '#E5DCC6',
         },
       },
