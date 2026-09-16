@@ -32,6 +32,7 @@ const REQUIRED_CRITICAL_IDS = [
   'ch-first-real-adapter',
   'comm-production-llm',
   'comm-safe-auto-send',
+  'comm-guest-lifecycle',
   'pilot-manual-e2e',
   'pilot-first-connected-object',
   'pilot-closed-3-5',
@@ -112,8 +113,26 @@ describe('ASI product roadmap data integrity', () => {
     expect(byId['legal-payment-provider']?.status).toBe('blocked');
     expect(byId['legal-mvd-external-send']?.status).toBe('blocked');
     expect(byId['comm-production-llm']?.status).not.toBe('done');
+    expect(byId['comm-guest-operational']?.status).toBe('done');
+    expect(byId['comm-guest-long-term-memory']?.status).toBe('in_progress');
+    expect(byId['comm-guest-long-term-memory']?.currentState).toMatch(/not production-accepted/i);
+    expect(byId['comm-guest-lifecycle']?.status).toBe('done');
+    expect(byId['comm-guest-lifecycle']?.criticalForPilot).toBe(true);
+    expect(byId['comm-guest-lifecycle']?.currentState).toMatch(/GUEST_LIFECYCLE_PRODUCTION_ACCEPTANCE_OK/);
+    expect(byId['comm-guest-lifecycle']?.currentState).toMatch(/lifecycle events 9/i);
+    expect(byId['comm-guest-lifecycle']?.currentState).toMatch(/dry-run deliveries 9/i);
+    expect(byId['comm-guest-lifecycle']?.currentState).toMatch(/same-process replay 9\/9/i);
+    expect(byId['comm-guest-lifecycle']?.currentState).toMatch(/fresh-process replay 9\/9/i);
+    expect(byId['comm-guest-lifecycle']?.currentState).toMatch(/dashboard projection PASS/i);
+    expect(byId['comm-guest-lifecycle']?.currentState).toMatch(/external actions attempted 0/i);
+    expect(byId['comm-guest-lifecycle']?.currentState).toMatch(/cleanup PASS/i);
+    expect(byId['comm-guest-lifecycle']?.currentState).toMatch(/zero residue true/i);
+    expect(byId['comm-guest-lifecycle']?.currentState).not.toMatch(/Not production-accepted/i);
+    expect(byId['comm-guest-lifecycle']?.nextStep).toMatch(/send scope/i);
+    expect(byId['rt-owner-console']?.status).toBe('done');
     expect(byId['rt-single-executor']?.status).toBe('done');
     expect(byId['rt-worker-pool']?.status).toBe('later');
+    expect(ROADMAP_LAST_AUDITED_AT).toBe('2026-08-11');
   });
 
   it('marks the near-term pilot critical path without making every unfinished stage critical', () => {
