@@ -147,7 +147,14 @@ describe('Partner revenue processor', () => {
     if (!('recommendations' in first) || !('recommendations' in replay)) throw new Error('expected shadow');
     expect(first.recommendations[0].recommendationRef).toMatch(/^prc_[A-Za-z0-9_-]{32,96}$/); expect(replay.recommendations[0].recommendationRef).toBe(first.recommendations[0].recommendationRef);
     expect(first.recommendations[0]).toMatchObject({ recommendedPrice: 6500, mode: 'shadow' }); expect(first.summary).toMatchObject({ coverage: 1, pilotBaseline: { observationCount: 1, actualOccupancy: 1, actualADR: 6000, actualRevPAR: 6000 }, counterfactual: { provenRevenueUplift: null, status: 'NOT_PROVEN' } });
-    expect(first).not.toHaveProperty('pricingProfileId'); expect(JSON.stringify(first)).not.toMatch(/auto.?appl|final_price|ota/i);
+    expect(first).not.toHaveProperty('pricingProfileId');
+    // Scrub opaque random refs (base64url) before the forbidden-language scan: they are
+    // cryptographically random, not semantic content, and can coincidentally contain a
+    // 3-letter substring like "ota" purely by chance, which previously caused an
+    // intermittent, unrelated CI flake (see PR fixing that regression).
+    const { auditRef: _auditRef, ...restOfFirst } = first;
+    const sanitized = { ...restOfFirst, recommendations: first.recommendations.map(({ recommendationRef: _recommendationRef, ...rest }) => rest) };
+    expect(JSON.stringify(sanitized)).not.toMatch(/auto.?appl|final_price|ota/i);
   });
   it.each(['accepted', 'rejected', 'ignored'] as const)('persists %s feedback idempotently without changing price', async (status) => {
     const db = memoryDatabase(); const process = createPartnerRevenueProcessor(db, engine); await process(principal, validatePartnerRevenueEvent(observationInput));
