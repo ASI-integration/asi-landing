@@ -20,6 +20,10 @@ export interface PaymentRequest {
   guestId?: string;
   /** Telegram chat ID stored as string for flexibility across channels */
   chatId?: string;
+  /** Bounded owner key (user/org) — never a secret */
+  ownerId?: string;
+  /** Stable create idempotency key for provider Idempotence-Key header */
+  idempotencyKey?: string;
   amount: number;
   currency: string;
   description?: string;
@@ -29,6 +33,9 @@ export interface PaymentRequest {
   expiresAt?: Date;
   createdAt: Date;
   updatedAt: Date;
+  paidAt?: Date;
+  /** Bounded JSON-safe metadata only */
+  metadata?: Record<string, string>;
 }
 
 export interface PaymentProvider {
@@ -38,7 +45,10 @@ export interface PaymentProvider {
    * internal payment ID in provider metadata for webhook correlation.
    */
   createPaymentLink(
-    request: Omit<PaymentRequest, 'provider' | 'providerTransactionId' | 'status' | 'createdAt' | 'updatedAt' | 'paymentUrl'>
+    request: Omit<
+      PaymentRequest,
+      'provider' | 'providerTransactionId' | 'status' | 'createdAt' | 'updatedAt' | 'paymentUrl'
+    >,
   ): Promise<{ paymentUrl: string; transactionId: string }>;
 
   /** Verifies the cryptographic signature / origin of the webhook request. */
@@ -51,6 +61,6 @@ export interface PaymentProvider {
    */
   parseWebhookEvent(
     payload: string | Buffer,
-    signature: string
+    signature: string,
   ): Promise<{ transactionId: string; status: PaymentStatus; eventId?: string; rawEvent: unknown }>;
 }
