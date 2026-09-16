@@ -7,6 +7,20 @@ description: Execute agent-ready tasks in ASI-integration/asi-landing from intak
 
 Execute one task to a verifiable result while preserving product contracts and stopping before red actions.
 
+## Allowed actions
+
+- Read Agent OS contracts and translate an Issue into a task preflight.
+- Create a task branch, implement the minimal in-scope patch, and run focused checks.
+- Commit exact paths, push the task branch, and open a draft PR for green/yellow work.
+- Return a machine-readable result bundle.
+
+## Forbidden actions
+
+- Merge, production write/dispatch, secret-value access, DNS, payments, or real external messages.
+- Broad test suites without an explicit red gate.
+- Capturing unrelated dirty-tree files or writing under `tmp/`.
+- Treating typed confirmation as owner approval.
+
 ## Workflow
 
 1. Read root `AGENTS.md`, `docs/agent-os/CURRENT_RELEASE.md`, `WORKFLOW.md`, `PRODUCT_CONTRACT.md`, `AUTONOMY_POLICY.md`, `DEFINITION_OF_DONE.md`, and `BLOCKERS.md`.

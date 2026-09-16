@@ -43,9 +43,22 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
-      - name: Agent OS intake and DoD enforcement
+      - name: Agent OS contract, migration count, and project skills validation
         run: |
           node scripts/agent-os/validate-contracts.mjs
+          node scripts/agent-os/check-migration-count-docs.mjs
+          node scripts/agent-os/validate-skills.mjs
+          node --test scripts/agent-os/__tests__/contracts.test.mjs
+          node --test scripts/agent-os/__tests__/migration-count.test.mjs
+          node --test scripts/agent-os/__tests__/skills.test.mjs
+
+      - name: Agent OS release manifest enforcement
+        run: |
+          node scripts/agent-os/check-release-manifest.mjs
+          node --test scripts/agent-os/__tests__/release-manifest.test.mjs
+
+      - name: Agent OS intake and DoD enforcement
+        run: |
           node scripts/agent-os/check-agent-intake.mjs --repo
           node scripts/agent-os/check-agent-intake.mjs --task-input docs/agent-os/fixtures/docs-only-task-input.json
           node scripts/agent-os/check-agent-intake.mjs --issue-body docs/agent-os/fixtures/agent-ready-issue-body.md
@@ -58,7 +71,6 @@ jobs:
             echo "Incomplete issue body must fail closed"
             exit 1
           fi
-          node --test scripts/agent-os/__tests__/contracts.test.mjs
           node --test scripts/agent-os/__tests__/agent-intake.test.mjs
 
       - name: Partner authenticated inbox focused regression
