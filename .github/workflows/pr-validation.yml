@@ -59,6 +59,11 @@ jobs:
           node scripts/agent-os/check-release-manifest.mjs
           node --test scripts/agent-os/__tests__/release-manifest.test.mjs
 
+      - name: Agent OS migration process contract
+        run: |
+          node scripts/agent-os/check-migration-process.mjs
+          node --test scripts/agent-os/__tests__/migration-process.test.mjs
+
       - name: Agent OS intake and DoD enforcement
         run: |
           node scripts/agent-os/check-agent-intake.mjs --repo

@@ -1,0 +1,18 @@
+{
+  "schemaVersion": "asi.agent-os.migration-result.v1",
+  "planRef": "supabase-cli-staging-push:staging:asi-staging-example",
+  "mode": "dry-run",
+  "status": "PASS",
+  "target": {
+    "environment": "staging",
+    "identity": "asi-staging-example"
+  },
+  "targetMatch": true,
+  "mutationPerformed": false,
+  "verificationEvidence": [
+    "target identity matched expectedIdentity",
+    "plan listed tracked migrations without connecting to a database"
+  ],
+  "applyHandoff": null,
+  "generatedAt": "2026-09-16T00:00:00.000Z"
+}
