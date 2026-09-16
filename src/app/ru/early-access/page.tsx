@@ -1,8 +1,16 @@
 import type { Metadata } from 'next';
+import Link from 'next/link';
 import { EarlyAccessObjectForm } from '@/components/early-access/EarlyAccessObjectForm';
+import { PilotCheckoutCta } from '@/components/ru/PilotCheckoutCta';
 import { RuBottomQuickLinks } from '@/components/ru/RuBottomQuickLinks';
 import { RuComplianceFooter } from '@/components/ru/RuComplianceFooter';
 import { RuPublicNavHeader } from '@/components/ru/RuPublicNavHeader';
+import { ruCompliance } from '@/config/ruCompliance';
+import {
+  COMMUNICATION_PILOT_PAYMENT_DESCRIPTION,
+  COMMUNICATION_PILOT_PRICE_RUB,
+  COMMUNICATION_PILOT_SERVICE_TITLE,
+} from '@/lib/payments/yookassa-env';
 import { ThemeProvider } from '@/theme/ThemeProvider';
 
 export const metadata: Metadata = {
@@ -78,10 +86,10 @@ export default function RuEarlyAccessPage() {
                     Подключить объект
                   </a>
                   <a
-                    href="#pilot-form"
+                    href="#pilot-tariff"
                     className="inline-flex min-h-12 items-center justify-center rounded-lg border border-[var(--t-border)] bg-[var(--t-surface)] px-7 py-3 text-sm font-bold text-[var(--t-text)] transition hover:bg-[var(--t-surface-2)]"
                   >
-                    Участвовать в пилоте
+                    Тариф и оплата
                   </a>
                 </div>
                 <p className="mt-4 max-w-2xl text-sm leading-7 text-[var(--t-muted)]">
@@ -107,7 +115,67 @@ export default function RuEarlyAccessPage() {
           </div>
         </section>
 
-        <section className="border-y border-[var(--t-border)] bg-[var(--t-surface-2)] px-4 py-12 sm:px-6 sm:py-16">
+        <section
+          id="pilot-tariff"
+          className="border-y border-[var(--t-border)] bg-[var(--t-surface-2)] px-4 py-12 sm:px-6 sm:py-16"
+        >
+          <div className="mx-auto max-w-6xl grid gap-8 lg:grid-cols-[1.1fr_0.9fr] lg:items-start">
+            <div>
+              <p className="text-sm font-bold uppercase tracking-[0.18em] text-[var(--t-muted)]">Платный MVP</p>
+              <h2 className="mt-3 text-2xl font-bold text-[var(--t-text)] sm:text-3xl">
+                {COMMUNICATION_PILOT_SERVICE_TITLE}
+              </h2>
+              <p className="mt-3 text-sm leading-7 text-[var(--t-text-2)] sm:text-base">
+                {COMMUNICATION_PILOT_PAYMENT_DESCRIPTION}. Опубликованная стоимость:{' '}
+                <strong>{COMMUNICATION_PILOT_PRICE_RUB}&nbsp;₽</strong>.
+              </p>
+              <ul className="mt-5 space-y-2 text-sm leading-7 text-[var(--t-text-2)]">
+                <li>Ответы на частые вопросы гостей в цифровых каналах</li>
+                <li>Подключение одного объекта на один месяц</li>
+                <li>Услуга оказывается дистанционно после подтверждения оплаты</li>
+              </ul>
+              <p className="mt-4 text-sm leading-7 text-[var(--t-muted)]">
+                Оплата через ЮKassa подключается после модерации мерчанта. Документы:{' '}
+                <Link href="/ru/payment" className="underline underline-offset-2">
+                  оплата и доставка
+                </Link>
+                ,{' '}
+                <Link href="/ru/offer" className="underline underline-offset-2">
+                  оферта
+                </Link>
+                ,{' '}
+                <Link href="/ru/refund" className="underline underline-offset-2">
+                  возврат
+                </Link>
+                ,{' '}
+                <Link href="/ru/privacy" className="underline underline-offset-2">
+                  конфиденциальность
+                </Link>
+                ,{' '}
+                <Link href="/ru/contacts" className="underline underline-offset-2">
+                  контакты
+                </Link>
+                .
+              </p>
+              <p className="mt-4 text-sm leading-7 text-[var(--t-text-2)]">
+                Исполнитель: {ruCompliance.fullName}, ИНН {ruCompliance.inn}. Телефон:{' '}
+                <a href={`tel:${ruCompliance.phoneTel}`} className="underline underline-offset-2">
+                  {ruCompliance.phone}
+                </a>
+                . Email:{' '}
+                <a href={`mailto:${ruCompliance.email}`} className="underline underline-offset-2">
+                  {ruCompliance.email}
+                </a>
+                . Адрес: {ruCompliance.address}.
+              </p>
+            </div>
+            <div className="rounded-lg border border-[var(--t-border)] bg-[var(--t-surface)] p-5">
+              <PilotCheckoutCta />
+            </div>
+          </div>
+        </section>
+
+        <section className="px-4 py-12 sm:px-6 sm:py-16">
           <div className="mx-auto max-w-5xl">
             <p className="text-sm font-bold uppercase tracking-[0.18em] text-[var(--t-muted)]">Главное</p>
             <h2 className="mt-4 text-2xl font-bold leading-tight text-[var(--t-text)] sm:text-4xl">
@@ -162,7 +230,13 @@ export default function RuEarlyAccessPage() {
             <p className="text-sm font-bold uppercase tracking-[0.18em] text-[var(--t-muted)]">Условия пилота</p>
             <h2 className="mt-3 text-2xl font-bold text-[var(--t-text)]">Запуск с ручным сопровождением</h2>
             <p className="mt-3 text-sm leading-7 text-[var(--t-text-2)]">
-              Для первых объектов команда ASI помогает собрать данные, подготовить рабочий контур и пройти одну бронь от заявки до закрытия. Условия подключения подтверждаются отдельно с участником пилота.
+              Для первых объектов команда ASI помогает собрать данные, подготовить рабочий контур и пройти одну бронь от
+              заявки до закрытия. Опубликованный тариф пилота AI-коммуникаций — {COMMUNICATION_PILOT_PRICE_RUB}&nbsp;₽ за
+              объект в месяц; детали оплаты — на странице{' '}
+              <Link href="/ru/payment" className="underline underline-offset-2">
+                оплаты
+              </Link>
+              .
             </p>
           </div>
         </section>

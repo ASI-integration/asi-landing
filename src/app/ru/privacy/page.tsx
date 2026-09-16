@@ -28,6 +28,16 @@ export default function RuPrivacyPage() {
             {ruCompliance.email}
           </a>
         </p>
+        <p>
+          Телефон:{' '}
+          <a
+            href={`tel:${ruCompliance.phoneTel}`}
+            className="text-[var(--t-text)] underline underline-offset-2 decoration-[var(--t-border)] hover:decoration-[var(--t-text)]"
+          >
+            {ruCompliance.phone}
+          </a>
+        </p>
+        <p>Адрес для корреспонденции: {ruCompliance.address}</p>
       </section>
 
       <section className="space-y-3">

@@ -87,7 +87,17 @@ export default function RuHowItWorksPage() {
             Как работает ASI (платформа и сценарии)
           </h1>
           <p className="mt-4 text-[var(--t-text-2)] text-base sm:text-lg leading-relaxed">
-            Это страница с более подробным описанием. Здесь будет удобно добавлять демо-видео, расширенные объяснения и сравнения.
+            Ниже — обзор платформы и сценариев. Платный MVP сейчас: ранний доступ к AI-коммуникациям для одного объекта
+            на один месяц — см.{' '}
+            <Link href="/ru/early-access" className="underline underline-offset-2">
+              Пилот ASI
+            </Link>{' '}
+            и{' '}
+            <Link href="/ru/payment" className="underline underline-offset-2">
+              оплату
+            </Link>
+            . Остальные модули на странице описывают развитие продукта и не являются отдельным платным тарифом на этом
+            этапе.
           </p>
           <div className="mt-6 flex flex-wrap gap-3">
             <Link
@@ -97,10 +107,10 @@ export default function RuHowItWorksPage() {
               ← На главную
             </Link>
             <Link
-              href="/connect"
+              href="/ru/early-access"
               className="inline-flex items-center justify-center px-5 py-3 rounded-xl bg-[var(--t-accent)] text-white font-semibold text-sm hover:bg-[var(--t-accent-hover)] transition-colors"
             >
-              Запросить подключение →
+              К пилоту и тарифу →
             </Link>
           </div>
         </section>
