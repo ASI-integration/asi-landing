@@ -43,6 +43,15 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
+      - name: Agent OS contract validation
+        run: node scripts/agent-os/validate-contracts.mjs
+
+      - name: Agent OS migration count enforcement
+        run: |
+          node scripts/agent-os/check-migration-count-docs.mjs
+          node --test scripts/agent-os/__tests__/contracts.test.mjs
+          node --test scripts/agent-os/__tests__/migration-count.test.mjs
+
       - name: Partner authenticated inbox focused regression
         run: |
           npx vitest run \
