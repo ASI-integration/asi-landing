@@ -97,6 +97,13 @@ export default function RuPaymentPage() {
             {ruCompliance.email}
           </a>
         </p>
+        <p>
+          Телефон:{' '}
+          <a href={`tel:${ruCompliance.phoneTel}`} className="underline underline-offset-2">
+            {ruCompliance.phone}
+          </a>
+        </p>
+        <p>Адрес для корреспонденции: {ruCompliance.address}</p>
       </section>
     </RuLegalPageLayout>
   );

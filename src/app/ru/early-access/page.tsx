@@ -5,6 +5,7 @@ import { PilotCheckoutCta } from '@/components/ru/PilotCheckoutCta';
 import { RuBottomQuickLinks } from '@/components/ru/RuBottomQuickLinks';
 import { RuComplianceFooter } from '@/components/ru/RuComplianceFooter';
 import { RuPublicNavHeader } from '@/components/ru/RuPublicNavHeader';
+import { ruCompliance } from '@/config/ruCompliance';
 import {
   COMMUNICATION_PILOT_PAYMENT_DESCRIPTION,
   COMMUNICATION_PILOT_PRICE_RUB,
@@ -146,7 +147,26 @@ export default function RuEarlyAccessPage() {
                 <Link href="/ru/refund" className="underline underline-offset-2">
                   возврат
                 </Link>
+                ,{' '}
+                <Link href="/ru/privacy" className="underline underline-offset-2">
+                  конфиденциальность
+                </Link>
+                ,{' '}
+                <Link href="/ru/contacts" className="underline underline-offset-2">
+                  контакты
+                </Link>
                 .
+              </p>
+              <p className="mt-4 text-sm leading-7 text-[var(--t-text-2)]">
+                Исполнитель: {ruCompliance.fullName}, ИНН {ruCompliance.inn}. Телефон:{' '}
+                <a href={`tel:${ruCompliance.phoneTel}`} className="underline underline-offset-2">
+                  {ruCompliance.phone}
+                </a>
+                . Email:{' '}
+                <a href={`mailto:${ruCompliance.email}`} className="underline underline-offset-2">
+                  {ruCompliance.email}
+                </a>
+                . Адрес: {ruCompliance.address}.
               </p>
             </div>
             <div className="rounded-lg border border-[var(--t-border)] bg-[var(--t-surface)] p-5">

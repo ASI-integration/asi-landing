@@ -24,6 +24,15 @@ export default function RuContactsPage() {
             </a>
           </li>
           <li>
+            Телефон:{' '}
+            <a
+              href={`tel:${ruCompliance.phoneTel}`}
+              className="text-[var(--t-text)] underline underline-offset-2 decoration-[var(--t-border)] hover:decoration-[var(--t-text)]"
+            >
+              {ruCompliance.phone}
+            </a>
+          </li>
+          <li>
             Telegram:{' '}
             <a
               href={ruCompliance.telegram}
@@ -34,14 +43,7 @@ export default function RuContactsPage() {
               @{telegramSupportBotHandle}
             </a>
           </li>
-          {ruCompliance.phone ? <li>Телефон: {ruCompliance.phone}</li> : null}
         </ul>
-        {!ruCompliance.phone ? (
-          <p className="text-sm text-[var(--t-muted)]">
-            Публичный телефон для связи будет добавлен после подтверждения владельцем. Сейчас пишите на email или в
-            Telegram.
-          </p>
-        ) : null}
       </section>
 
       <section className="space-y-3">
@@ -49,19 +51,7 @@ export default function RuContactsPage() {
         <ul className="list-disc space-y-2 pl-5">
           <li>Самозанятый: {ruCompliance.fullName}</li>
           <li>ИНН: {ruCompliance.inn}</li>
-          {ruCompliance.address ? (
-            <li>Адрес для корреспонденции: {ruCompliance.address}</li>
-          ) : (
-            <li>
-              Адрес для корреспонденции: предоставляется по запросу на{' '}
-              <a
-                href={`mailto:${ruCompliance.email}`}
-                className="text-[var(--t-text)] underline underline-offset-2 decoration-[var(--t-border)] hover:decoration-[var(--t-text)]"
-              >
-                {ruCompliance.email}
-              </a>
-            </li>
-          )}
+          <li>Адрес для корреспонденции: {ruCompliance.address}</li>
         </ul>
       </section>
 

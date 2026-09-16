@@ -27,6 +27,15 @@ export default function RuRefundPage() {
           </a>
         </li>
         <li>
+          Телефон:{' '}
+          <a
+            href={`tel:${ruCompliance.phoneTel}`}
+            className="text-[var(--t-text)] underline underline-offset-2 decoration-[var(--t-border)] hover:decoration-[var(--t-text)]"
+          >
+            {ruCompliance.phone}
+          </a>
+        </li>
+        <li>
           Telegram:{' '}
           <a
             href={ruCompliance.telegram}
@@ -38,6 +47,8 @@ export default function RuRefundPage() {
           </a>
         </li>
       </ul>
+      <p>Исполнитель: {ruCompliance.fullName}, ИНН {ruCompliance.inn}.</p>
+      <p>Адрес для корреспонденции: {ruCompliance.address}</p>
       <p>В обращении необходимо указать:</p>
       <ul className="list-disc pl-5 space-y-2">
         <li>ФИО плательщика</li>

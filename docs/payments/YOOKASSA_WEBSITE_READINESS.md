@@ -3,7 +3,7 @@
 Map of public RU surfaces prepared for YooKassa merchant review.
 Live payments and production deploy are **not** enabled by this work.
 
-## Published MVP
+## Published MVP (VERIFIED)
 
 | Field | Value | Source |
 | --- | --- | --- |
@@ -22,26 +22,29 @@ Live payments and production deploy are **not** enabled by this work.
 | `/ru/offer` | Public offer |
 | `/ru/privacy` | Privacy policy |
 | `/ru/refund` | Refund / cancellation |
-| `/ru/contacts` | Contacts + legal entity (no invented phone/address) |
+| `/ru/contacts` | Contacts + legal entity |
 | `/ru/how-it-works` | Platform overview; points MVP sale to early-access |
 
 Footer/nav: `RuComplianceFooter`, `RuBottomQuickLinks`, `RuPublicNavHeader`.
 
-## Proven seller data (in repo)
+## VERIFIED seller data (owner-confirmed, publishable on RU surfaces)
 
-- Self-employed: Реутова Юлия Игоревна
-- INN: 235307941957
-- Email: `support@asi-global.ru` (overridable via `NEXT_PUBLIC_CONTACT_EMAIL`)
-- Telegram: `@ASI_Support_Bot`
+| Field | Value | Status |
+| --- | --- | --- |
+| Seller | Реутова Юлия Игоревна | VERIFIED |
+| INN | 235307941957 | VERIFIED |
+| Email | `support@asi-global.ru` | VERIFIED |
+| Phone | `+7 995 889-49-03` | VERIFIED |
+| Correspondence address | Ленинградская область, г. Мурино, ул. Оборонная, д. 37, корп. 1 | VERIFIED |
+| MVP tariff | 1000 ₽ / 1 object / 1 month AI communications pilot | VERIFIED |
+| Telegram | `@ASI_Support_Bot` | VERIFIED (support channel) |
+| OGRN / OGRNIP | N/A — not provided for самозанятый; do not invent | N/A |
 
-## Owner input still required
-
-- Public phone number (not published until confirmed)
-- Correspondence address (page says “по запросу на email” until confirmed)
-- OGRN/OGRNIP: not applicable for самозанятый; confirm if YooKassa asks for another registration id
+Source of truth: `src/config/ruCompliance.ts` (+ email via `productSupportEmail`).
 
 ## Explicitly out of scope here
 
 - Enabling `YOOKASSA_ENABLED=true`
 - Live charges, production deploy, merge to main
-- Inventing legal/price/contact data beyond repo sources
+- Inventing postal index, apartment number, OGRN/OGRNIP, or other legal/price data
+- Publishing seller postal details on international ASI Global marketing pages
