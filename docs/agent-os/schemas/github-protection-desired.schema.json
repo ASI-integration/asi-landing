@@ -1,0 +1,95 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://asi.local/agent-os/github-protection-desired.schema.json",
+  "title": "ASI Agent OS desired GitHub protection state",
+  "description": "Machine-readable desired state for AO-001 (main protection) and AO-002 (staging/production environment gates). Live GitHub Settings must match this contract; YAML alone never closes the blockers.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "repository",
+    "mainProtection",
+    "environments",
+    "ownerActionsRequired",
+    "closure"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "asi.agent-os.github-protection-desired.v1" },
+    "repository": { "const": "ASI-integration/asi-landing" },
+    "mainProtection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "branch",
+        "requirePullRequest",
+        "requiredApprovingReviewCount",
+        "requiredStatusChecks",
+        "blockDirectPush",
+        "allowForcePushes",
+        "allowDeletions",
+        "includeAdministrators"
+      ],
+      "properties": {
+        "branch": { "const": "main" },
+        "requirePullRequest": { "const": true },
+        "requiredApprovingReviewCount": { "type": "integer", "minimum": 1 },
+        "dismissStaleReviews": { "type": "boolean" },
+        "requireCodeOwnerReviews": { "type": "boolean" },
+        "requiredStatusChecks": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "blockDirectPush": { "const": true },
+        "allowForcePushes": { "const": false },
+        "allowDeletions": { "const": false },
+        "includeAdministrators": { "const": true }
+      }
+    },
+    "environments": {
+      "type": "array",
+      "minItems": 2,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "requiredReviewers",
+          "deploymentBranches",
+          "canAdminsBypass",
+          "preventSelfReview"
+        ],
+        "properties": {
+          "name": { "enum": ["staging", "production", "production-migration-approval"] },
+          "requiredReviewers": {
+            "type": "array",
+            "minItems": 1,
+            "items": { "type": "string", "minLength": 1 }
+          },
+          "deploymentBranches": {
+            "type": "array",
+            "minItems": 1,
+            "items": { "type": "string", "minLength": 1 }
+          },
+          "canAdminsBypass": { "const": false },
+          "preventSelfReview": { "type": "boolean" }
+        }
+      }
+    },
+    "ownerActionsRequired": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "closure": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ao001", "ao002", "requiresLiveVerification"],
+      "properties": {
+        "ao001": { "enum": ["open", "closed"] },
+        "ao002": { "enum": ["open", "closed"] },
+        "requiresLiveVerification": { "const": true }
+      }
+    }
+  }
+}

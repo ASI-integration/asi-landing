@@ -28,7 +28,7 @@ function contractValidators(repoRoot = DEFAULT_REPO_ROOT) {
 
   const schemaDir = path.join(resolvedRoot, 'docs/agent-os/schemas');
   const schemaFiles = fs.readdirSync(schemaDir).filter((name) => name.endsWith('.schema.json')).sort();
-  invariant(schemaFiles.length === 6, `Expected 6 schemas, found ${schemaFiles.length}`);
+  invariant(schemaFiles.length === 7, `Expected 7 schemas, found ${schemaFiles.length}`);
 
   const ajv = new Ajv2020({ allErrors: true, strict: true });
   addFormats(ajv);
@@ -239,6 +239,12 @@ export function validateReleaseManifest(value, repoRoot = DEFAULT_REPO_ROOT) {
   return validateArtifact('release-manifest', value, repoRoot);
 }
 
+export function validateGithubProtectionDesired(value, repoRoot = DEFAULT_REPO_ROOT) {
+  validateArtifact('github-protection-desired', value, repoRoot);
+  invariant(value.closure.requiresLiveVerification === true, 'GitHub protection closure requires live verification');
+  return value;
+}
+
 export function validateContractBundle(repoRoot) {
   const { schemaFiles } = contractValidators(repoRoot);
   const fixtures = path.join(repoRoot, 'docs/agent-os/fixtures');
@@ -248,5 +254,6 @@ export function validateContractBundle(repoRoot) {
   validateStagingFixture(readJson(path.join(fixtures, 'isolated-staging-fixture.json')), repoRoot);
   validateProductionPreflight(readJson(path.join(fixtures, 'production-read-only-preflight.json')), repoRoot);
   validateReleaseManifest(readJson(path.join(repoRoot, 'docs/agent-os/generated/release-manifest.json')), repoRoot);
+  validateGithubProtectionDesired(readJson(path.join(repoRoot, 'docs/agent-os/github-protection-desired.json')), repoRoot);
   return { schemas: schemaFiles.length, fixtures: 5 };
 }

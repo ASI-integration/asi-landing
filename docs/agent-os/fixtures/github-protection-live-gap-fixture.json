@@ -1,0 +1,34 @@
+{
+  "auditedAt": "2026-09-16T00:00:00.000Z",
+  "repository": "ASI-integration/asi-landing",
+  "branchProtection": null,
+  "rulesets": [
+    {
+      "id": 20612480,
+      "name": "MyRule",
+      "enforcement": "disabled",
+      "includeRefs": [],
+      "ruleTypes": ["deletion", "non_fast_forward"]
+    }
+  ],
+  "environments": {
+    "staging": {
+      "name": "staging",
+      "canAdminsBypass": true,
+      "reviewers": [],
+      "deploymentBranches": []
+    },
+    "production": {
+      "name": "Production",
+      "canAdminsBypass": false,
+      "reviewers": ["ASI-integration"],
+      "deploymentBranches": ["main"]
+    },
+    "production-migration-approval": {
+      "name": "production-migration-approval",
+      "canAdminsBypass": true,
+      "reviewers": ["ASI-integration"],
+      "deploymentBranches": ["main"]
+    }
+  }
+}
