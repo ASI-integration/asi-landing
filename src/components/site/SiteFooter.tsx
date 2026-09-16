@@ -35,6 +35,15 @@ export function SiteFooter() {
               <Link href="/#partner" className="hover:text-asi-ivory transition-colors">Partner with ASI</Link>
               <Link href="/rental-autopilot" className="hover:text-asi-ivory transition-colors">Rental Autopilot product</Link>
             </div>
+            <div className="flex flex-col gap-2.5">
+              <span className="text-xs font-semibold uppercase tracking-[0.18em] text-asi-gold-soft mb-1">Legal (RU)</span>
+              <Link href="/ru/early-access" className="hover:text-asi-ivory transition-colors">Pilot &amp; tariff</Link>
+              <Link href="/ru/payment" className="hover:text-asi-ivory transition-colors">Payment</Link>
+              <Link href="/ru/offer" className="hover:text-asi-ivory transition-colors">Offer</Link>
+              <Link href="/ru/privacy" className="hover:text-asi-ivory transition-colors">Privacy</Link>
+              <Link href="/ru/refund" className="hover:text-asi-ivory transition-colors">Refund</Link>
+              <Link href="/ru/contacts" className="hover:text-asi-ivory transition-colors">Contacts</Link>
+            </div>
           </div>
         </div>
 
