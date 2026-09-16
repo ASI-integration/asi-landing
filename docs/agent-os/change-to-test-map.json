@@ -8,14 +8,15 @@
     {
       "id": "agent-os-contracts",
       "prefixes": ["docs/agent-os/", ".agents/skills/asi-task-execution/", "scripts/agent-os/"],
-      "checks": ["agent-os-contract-validation", "skill-quick-validate", "focused-contract-test", "git-diff-check"],
+      "checks": ["agent-os-contract-validation", "agent-intake-check", "skill-quick-validate", "focused-contract-test", "git-diff-check"],
       "protected": false
     },
     {
       "id": "github-templates",
       "prefixes": [".github/ISSUE_TEMPLATE/", ".github/PULL_REQUEST_TEMPLATE.md"],
-      "checks": ["yaml-or-markdown-parse", "local-link-check", "git-diff-check"],
-      "protected": false
+      "checks": ["agent-intake-check", "yaml-or-markdown-parse", "local-link-check", "git-diff-check"],
+      "protected": false,
+      "notes": "AO-006: templates are the default intake flow and must remain machine-checkable."
     },
     {
       "id": "location-protected",

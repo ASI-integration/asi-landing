@@ -1,0 +1,8 @@
+{
+  "task": {
+    "id": "incomplete-intake",
+    "title": "Incomplete fixture"
+  },
+  "classification": "yellow",
+  "redActions": []
+}

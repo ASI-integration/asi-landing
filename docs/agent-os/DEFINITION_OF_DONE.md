@@ -8,6 +8,7 @@
 - Определён owner, autonomy level и список red-действий.
 - Указаны затронутые product contracts, migrations, UX, external providers и environments.
 - Неоднозначности разрешены до потенциально рискованного действия.
+- Intake обязан пройти machine check `scripts/agent-os/check-agent-intake.mjs` (Issue form / task input / PR DoD). Incomplete intake — `BLOCKED`, не `READY`.
 
 ## 2. Реализация
 

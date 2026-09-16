@@ -43,6 +43,24 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
+      - name: Agent OS intake and DoD enforcement
+        run: |
+          node scripts/agent-os/validate-contracts.mjs
+          node scripts/agent-os/check-agent-intake.mjs --repo
+          node scripts/agent-os/check-agent-intake.mjs --task-input docs/agent-os/fixtures/docs-only-task-input.json
+          node scripts/agent-os/check-agent-intake.mjs --issue-body docs/agent-os/fixtures/agent-ready-issue-body.md
+          node scripts/agent-os/check-agent-intake.mjs --pr-body docs/agent-os/fixtures/agent-ready-pr-body.md
+          if node scripts/agent-os/check-agent-intake.mjs --task-input docs/agent-os/fixtures/incomplete-task-input.json; then
+            echo "Incomplete task input must fail closed"
+            exit 1
+          fi
+          if node scripts/agent-os/check-agent-intake.mjs --issue-body docs/agent-os/fixtures/incomplete-issue-body.md; then
+            echo "Incomplete issue body must fail closed"
+            exit 1
+          fi
+          node --test scripts/agent-os/__tests__/contracts.test.mjs
+          node --test scripts/agent-os/__tests__/agent-intake.test.mjs
+
       - name: Partner authenticated inbox focused regression
         run: |
           npx vitest run \

@@ -13,7 +13,7 @@
 - требуемые checks;
 - возможные blockers.
 
-Если Issue неполный, агент самостоятельно восстанавливает безопасный контекст из репозитория. Вопрос владельцу нужен только когда разные ответы меняют продуктовый контракт или риск.
+Default GitHub intake — только form `.github/ISSUE_TEMPLATE/agent-ready-task.yml` (`blank_issues_enabled: false`). Triage workflow `.github/workflows/agent-intake-triage.yml` и checker `scripts/agent-os/check-agent-intake.mjs` fail-closed блокируют неполный Issue. Если Issue неполный, статус `BLOCKED`/triage comment; агент не объявляет задачу `READY`. Вопрос владельцу нужен только когда разные ответы меняют продуктовый контракт или риск.
 
 ### 2. Baseline и ветка
 
