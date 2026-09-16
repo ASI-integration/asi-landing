@@ -7,6 +7,22 @@ module.exports = {
   ],
   theme: {
     extend: {
+      colors: {
+        asi: {
+          ivory: '#F7F3EA',
+          'ivory-warm': '#F1E9D8',
+          paper: '#FBF9F4',
+          navy: '#13151B',
+          'navy-2': '#2A2D36',
+          gold: '#A6813C',
+          'gold-soft': '#C9AD73',
+          border: '#E5DCC6',
+        },
+      },
+      fontFamily: {
+        serif: ['"Iowan Old Style"', '"Palatino Linotype"', 'Georgia', 'Cambria', 'serif'],
+        jp: ['"Hiragino Kaku Gothic ProN"', '"Noto Sans JP"', '"Yu Gothic"', 'sans-serif'],
+      },
       fontSize: {
         // Base scale bumped ~12% (18px root instead of 16px)
         base: ['1.125rem', { lineHeight: '1.75' }],
