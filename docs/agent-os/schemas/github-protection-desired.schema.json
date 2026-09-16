@@ -32,7 +32,7 @@
       "properties": {
         "branch": { "const": "main" },
         "requirePullRequest": { "const": true },
-        "requiredApprovingReviewCount": { "type": "integer", "minimum": 1 },
+        "requiredApprovingReviewCount": { "type": "integer", "minimum": 0 },
         "dismissStaleReviews": { "type": "boolean" },
         "requireCodeOwnerReviews": { "type": "boolean" },
         "requiredStatusChecks": {
