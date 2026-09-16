@@ -3,6 +3,10 @@ name: Apply Booking Lifecycle Migration
 on:
   workflow_dispatch:
     inputs:
+      owner_gate_json:
+        description: Approved asi.agent-os.owner-gate.v1 JSON (required; typed confirmation is not approval)
+        required: true
+        type: string
       confirm_production_migration:
         description: Type APPLY_BOOKING_LIFECYCLE_MIGRATION to run production DDL
         required: true
@@ -12,7 +16,14 @@ permissions:
   contents: read
 
 jobs:
+  production_owner_gate:
+    uses: ./.github/workflows/production-owner-gate.yml
+    with:
+      requested_action: production_migration
+      environment_identity: production
+      owner_gate_json: ${{ inputs.owner_gate_json }}
   apply_booking_lifecycle_migration:
+    needs: [production_owner_gate]
     runs-on: ubuntu-latest
     environment: production
     steps:

@@ -28,6 +28,7 @@
         "agent-intake-check",
         "release-manifest-check",
         "github-protection-offline-check",
+        "production-owner-gate-coverage",
         "skill-quick-validate",
         "skill-structure-validation",
         "skill-forward-test",
@@ -35,6 +36,34 @@
         "git-diff-check"
       ],
       "protected": false
+    },
+    {
+      "id": "production-owner-gate",
+      "prefixes": [
+        ".github/workflows/",
+        "docs/agent-os/OWNER_GATE.md",
+        "docs/agent-os/production-workflow-inventory.json",
+        "scripts/agent-os/enforce-production-owner-gate.mjs",
+        "scripts/agent-os/check-production-owner-gate-coverage.mjs",
+        "scripts/agent-os/wire-production-owner-gate-workflows.mjs"
+      ],
+      "checks": [
+        "production-owner-gate-coverage",
+        "agent-os-contract-validation",
+        "focused-contract-test",
+        "git-diff-check"
+      ],
+      "protected": true,
+      "redActions": [
+        "production_deploy",
+        "production_migration",
+        "production_data_mutation",
+        "real_external_message_or_provider_call",
+        "secret_value_access",
+        "repository_or_environment_settings_change",
+        "production_backup_access"
+      ],
+      "notes": "AO-003: every class-A production mutator must invoke the shared reusable owner-gate; typed confirmation is never approval."
     },
     {
       "id": "github-protection",
