@@ -1,0 +1,4 @@
+interface:
+  display_name: "ASI Staging Acceptance"
+  short_description: "Isolated staging acceptance preflight with fail-closed safety"
+  default_prompt: "Use $asi-staging-acceptance to prepare isolated ASI staging acceptance from fixture contracts without mutating staging or production."

@@ -2,9 +2,19 @@
 
 ## Статус
 
-Это проект трёх repository-specific Skills для второй фазы. В v0 они не устанавливаются и не получают доступ к production. Каждый Skill должен быть создан через стандартный skill scaffold, содержать короткий `SKILL.md`, UI metadata в `agents/openai.yaml`, необходимые references/scripts и пройти `quick_validate.py`.
+Три repository-specific Skills установлены в `.agents/skills/`:
 
-Подробные контракты должны ссылаться на Agent OS документы, а не копировать их в каждый Skill.
+- `asi-task-execution` — intake → focused validation → draft PR;
+- `asi-staging-acceptance` — isolated staging contract preflight/result; no live staging mutation;
+- `asi-production-rollout` — read-only production preflight; no dispatch/mutation.
+
+Machine validation:
+
+- `scripts/agent-os/validate-skills.mjs`
+- `scripts/agent-os/__tests__/skills.test.mjs`
+- PR Validation step `Agent OS contract and project skills validation`
+
+Подробные контракты ссылаются на Agent OS документы и schemas, а не копируют их в каждый Skill.
 
 ## 1. `asi-task-execution`
 

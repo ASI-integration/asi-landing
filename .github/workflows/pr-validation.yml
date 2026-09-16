@@ -43,14 +43,14 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
-      - name: Agent OS contract validation
-        run: node scripts/agent-os/validate-contracts.mjs
-
-      - name: Agent OS migration count enforcement
+      - name: Agent OS contract, migration count, and project skills validation
         run: |
+          node scripts/agent-os/validate-contracts.mjs
           node scripts/agent-os/check-migration-count-docs.mjs
+          node scripts/agent-os/validate-skills.mjs
           node --test scripts/agent-os/__tests__/contracts.test.mjs
           node --test scripts/agent-os/__tests__/migration-count.test.mjs
+          node --test scripts/agent-os/__tests__/skills.test.mjs
 
       - name: Agent OS release manifest enforcement
         run: |

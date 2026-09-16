@@ -7,8 +7,14 @@
   "rules": [
     {
       "id": "agent-os-contracts",
-      "prefixes": ["docs/agent-os/", ".agents/skills/asi-task-execution/", "scripts/agent-os/"],
-      "checks": ["agent-os-contract-validation", "release-manifest-check", "skill-quick-validate", "focused-contract-test", "git-diff-check"],
+      "prefixes": [
+        "docs/agent-os/",
+        ".agents/skills/asi-task-execution/",
+        ".agents/skills/asi-staging-acceptance/",
+        ".agents/skills/asi-production-rollout/",
+        "scripts/agent-os/"
+      ],
+      "checks": ["agent-os-contract-validation", "release-manifest-check", "skill-quick-validate", "skill-structure-validation", "skill-forward-test", "focused-contract-test", "git-diff-check"],
       "protected": false
     },
     {

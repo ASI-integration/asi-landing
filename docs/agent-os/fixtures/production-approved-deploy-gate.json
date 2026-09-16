@@ -1,0 +1,22 @@
+{
+  "schemaVersion": "asi.agent-os.owner-gate.v1",
+  "taskId": "ao009-production-tabletop",
+  "status": "approved",
+  "action": "production_deploy",
+  "target": "production",
+  "identity": {
+    "sha": "2222222222222222222222222222222222222222"
+  },
+  "allowedSideEffect": "Deploy the exact approved artifact.",
+  "postActionVerification": ["Verify the exact runtime SHA."],
+  "authorization": {
+    "source": "explicit_owner_message",
+    "owner": "Nikolay",
+    "scope": "production deploy only",
+    "taskCycle": "ao009-cycle-1"
+  },
+  "typedConfirmation": {
+    "present": true,
+    "countsAsOwnerApproval": false
+  }
+}
