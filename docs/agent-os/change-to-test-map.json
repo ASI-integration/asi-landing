@@ -47,9 +47,16 @@
     {
       "id": "staging-scripts",
       "prefixes": ["scripts/deploy-artifact-staging", "scripts/rollback-artifact-staging", "scripts/staging-"],
-      "checks": ["shell-or-node-syntax", "fail-closed-guard", "staging-identity-review", "git-diff-check"],
+      "checks": ["shell-or-node-syntax", "fail-closed-guard", "staging-identity-review", "migration-count-doc-check", "git-diff-check"],
       "protected": true,
       "notes": "Do not execute against an external staging target unless every v0 blocker prerequisite is closed."
+    },
+    {
+      "id": "staging-bootstrap-runbook",
+      "prefixes": ["docs/BOOKING_OPS_STAGING_BOOTSTRAP.md"],
+      "checks": ["migration-count-doc-check", "local-link-check", "git-diff-check"],
+      "protected": false,
+      "notes": "Runbook must not hard-code migration counts; CI derives them from supabase/migrations/."
     },
     {
       "id": "production-operations",

@@ -43,11 +43,13 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
-      - name: Agent OS contract and project skills validation
+      - name: Agent OS contract, migration count, and project skills validation
         run: |
           node scripts/agent-os/validate-contracts.mjs
+          node scripts/agent-os/check-migration-count-docs.mjs
           node scripts/agent-os/validate-skills.mjs
           node --test scripts/agent-os/__tests__/contracts.test.mjs
+          node --test scripts/agent-os/__tests__/migration-count.test.mjs
           node --test scripts/agent-os/__tests__/skills.test.mjs
 
       - name: Partner authenticated inbox focused regression

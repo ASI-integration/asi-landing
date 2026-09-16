@@ -44,7 +44,7 @@ Baseline SHA — это состояние source branch, а не утвержд
 
 - GitHub API не показал branch protection или rulesets для `main` на момент аудита.
 - GitHub API не показал environment protection rules/reviewers, хотя workflows ссылаются на `staging` и `production`.
-- `docs/BOOKING_OPS_STAGING_BOOTSTRAP.md` указывает 80 migrations, tracked baseline содержит 82.
+- `docs/BOOKING_OPS_STAGING_BOOTSTRAP.md` больше не содержит ручной migration count; CI проверяет drift через `scripts/agent-os/check-migration-count-docs.mjs`.
 - Migration execution распределён между ordered SQL, прямыми CLI-командами, Python helpers и тремя специализированными production workflows.
 - Acceptance scripts различаются по способности писать/удалять данные и по наличию явного confirmation gate.
 - До этой ветки не было единого Agent OS контракта, blocker registry и agent-ready GitHub templates.

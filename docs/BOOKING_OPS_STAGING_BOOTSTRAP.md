@@ -24,7 +24,7 @@ Booking Ops needs these runtime settings to be usable:
 - `INTERNAL_TEST_SECRET` for the later internal smoke scenarios;
 - dedicated inbound, auto-send runner, and alert runner secrets listed below.
 
-The repository contains 80 ordered SQL files in `supabase/migrations`. A clean staging database therefore requires the committed migration history before Booking Ops smoke testing. Deployment does not apply migrations.
+The repository tracks ordered SQL migrations in `supabase/migrations/`. CI derives the migration count from that directory and rejects runbooks that hard-code a numeric count. Before Booking Ops smoke testing, a clean staging database must contain the full committed migration history for the deployed ref. Deployment does not apply migrations.
 
 ## Required GitHub `staging` environment secrets
 
