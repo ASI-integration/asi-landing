@@ -1,0 +1,258 @@
+{
+  "schemaVersion": "asi.agent-os.migration-mechanism-registry.v1",
+  "canonicalRunbook": "docs/agent-os/MIGRATION_PROCESS.md",
+  "discovery": {
+    "sqlChainDir": "supabase/migrations",
+    "helperGlob": "scripts/apply-*migration*",
+    "workflowGlobs": [
+      ".github/workflows/apply-*.yml",
+      ".github/workflows/partner-production-rollout-control-v1.yml"
+    ],
+    "stagingSmoke": "scripts/staging-booking-ops-schema-smoke.sh"
+  },
+  "mechanisms": [
+    {
+      "id": "supabase-migrations-chain",
+      "kind": "sql-chain",
+      "role": "source-of-truth",
+      "paths": ["supabase/migrations"],
+      "environments": ["local", "staging", "production"],
+      "ownerGateRequired": false,
+      "supportsDryRun": true,
+      "rollbackPolicy": "append-only-forward-fix",
+      "notes": "Canonical ordered SQL history. Creating files is yellow; applying to any database is red/owner-gated per environment."
+    },
+    {
+      "id": "supabase-cli-staging-push",
+      "kind": "cli-push",
+      "role": "apply-backend",
+      "paths": [
+        "docs/BOOKING_OPS_STAGING_BOOTSTRAP.md",
+        "scripts/staging-booking-ops-schema-smoke.sh"
+      ],
+      "environments": ["staging"],
+      "ownerGateRequired": true,
+      "supportsDryRun": true,
+      "rollbackPolicy": "owner-gated-new-migration",
+      "notes": "Existing staging operator path: identity-checked supabase db push --dry-run then owner-approved push. Count drift is tracked separately by AO-005."
+    },
+    {
+      "id": "partner-production-rollout",
+      "kind": "controlled-rollout",
+      "role": "apply-backend",
+      "paths": [
+        "docs/operations/partner-production-rollout-v1/README.md",
+        "docs/operations/partner-production-rollout-v1/manifest.json",
+        ".github/workflows/partner-production-rollout-control-v1.yml"
+      ],
+      "environments": ["production"],
+      "ownerGateRequired": true,
+      "supportsDryRun": true,
+      "rollbackPolicy": "atomic-transaction",
+      "migrationPaths": [
+        "supabase/migrations/20260816144742_partner_property_knowledge_schema_completion_v1.sql",
+        "supabase/migrations/20260815102111_partner_communication_durable_state_v1.sql",
+        "supabase/migrations/20260815130000_partner_authenticated_inbox_v1.sql",
+        "supabase/migrations/20260815160000_partner_communication_brain_v1.sql",
+        "supabase/migrations/20260815190000_partner_service_recovery_loop_v1.sql",
+        "supabase/migrations/20260815210000_partner_review_reputation_engine_v1.sql",
+        "supabase/migrations/20260815230000_partner_revenue_shadow_pricing_v1.sql"
+      ],
+      "notes": "Checksum-pinned seven-file production rollout with preflight/apply split and atomic psql transaction."
+    },
+    {
+      "id": "workflow-booking-lifecycle",
+      "kind": "github-workflow",
+      "role": "apply-backend",
+      "paths": [
+        ".github/workflows/apply-booking-lifecycle-migration.yml",
+        "scripts/apply-booking-lifecycle-migration-remote.py"
+      ],
+      "environments": ["production"],
+      "ownerGateRequired": true,
+      "supportsDryRun": false,
+      "rollbackPolicy": "owner-gated-new-migration",
+      "migrationPaths": ["supabase/migrations/20260630000001_booking_lifecycle_gates_v1.sql"],
+      "notes": "Typed-confirmation production workflow; phrase is not owner approval."
+    },
+    {
+      "id": "workflow-booking-legal-payment",
+      "kind": "github-workflow",
+      "role": "apply-backend",
+      "paths": [
+        ".github/workflows/apply-booking-legal-payment-migration.yml",
+        "scripts/apply-booking-legal-payment-migration-remote.py"
+      ],
+      "environments": ["production"],
+      "ownerGateRequired": true,
+      "supportsDryRun": false,
+      "rollbackPolicy": "owner-gated-new-migration",
+      "migrationPaths": ["supabase/migrations/20260629235959_booking_legal_payment_autopilot_v1.sql"],
+      "notes": "Typed-confirmation production workflow for legal/payment autopilot DDL. Workflow YAML still names a historical filename; registry pins the existing SQL chain file."
+    },
+    {
+      "id": "workflow-booking-instay-checkout",
+      "kind": "github-workflow",
+      "role": "apply-backend",
+      "paths": [
+        ".github/workflows/apply-booking-instay-checkout-migration.yml",
+        "scripts/apply-booking-instay-checkout-migration-remote.py"
+      ],
+      "environments": ["production"],
+      "ownerGateRequired": true,
+      "supportsDryRun": false,
+      "rollbackPolicy": "owner-gated-new-migration",
+      "migrationPaths": ["supabase/migrations/20260630000003_booking_instay_checkout_v1.sql"],
+      "notes": "Typed-confirmation production workflow for in-stay/checkout DDL."
+    },
+    {
+      "id": "workflow-asi-runtime-snapshot",
+      "kind": "github-workflow",
+      "role": "apply-backend",
+      "paths": [
+        ".github/workflows/apply-asi-runtime-snapshot-migration.yml",
+        "scripts/apply-asi-runtime-snapshot-migration-remote.py"
+      ],
+      "environments": ["production"],
+      "ownerGateRequired": true,
+      "supportsDryRun": false,
+      "rollbackPolicy": "owner-gated-new-migration",
+      "migrationPaths": ["supabase/migrations/20260720120000_asi_runtime_snapshot_v1.sql"],
+      "notes": "Production workflow embeds/uses the remote helper path for ASI runtime snapshot DDL."
+    },
+    {
+      "id": "workflow-channel-manager-synthetic-recovery",
+      "kind": "github-workflow",
+      "role": "apply-backend",
+      "paths": [
+        ".github/workflows/apply-channel-manager-live-core-synthetic-recovery-migration.yml",
+        "docs/operations/initial-sync-recovery-v1/README.md",
+        "docs/operations/initial-sync-recovery-v1/migration-owner-gate.json"
+      ],
+      "environments": ["production"],
+      "ownerGateRequired": true,
+      "supportsDryRun": false,
+      "rollbackPolicy": "owner-gated-new-migration",
+      "migrationPaths": ["supabase/migrations/20260805120000_channel_manager_live_core_synthetic_recovery_v1.sql"],
+      "notes": "Exact-SHA exact-blob production migration with owner-gate artifact; does not supabase db push."
+    },
+    {
+      "id": "workflow-channel-manager-recovery-fk-fix",
+      "kind": "github-workflow",
+      "role": "apply-backend",
+      "paths": [".github/workflows/apply-channel-manager-recovery-fk-expectation-fix.yml"],
+      "environments": ["production"],
+      "ownerGateRequired": true,
+      "supportsDryRun": false,
+      "rollbackPolicy": "owner-gated-new-migration",
+      "migrationPaths": ["supabase/migrations/20260808041000_channel_manager_live_core_recovery_fk_expectation_fix_v1.sql"],
+      "notes": "Exact-file production migration workflow for recovery FK expectation fix."
+    },
+    {
+      "id": "workflow-channel-manager-acceptance-cleanup-v2",
+      "kind": "github-workflow",
+      "role": "apply-backend",
+      "paths": [".github/workflows/apply-channel-manager-live-core-acceptance-cleanup-v2.yml"],
+      "environments": ["production"],
+      "ownerGateRequired": true,
+      "supportsDryRun": false,
+      "rollbackPolicy": "owner-gated-new-migration",
+      "migrationPaths": ["supabase/migrations/20260808051000_channel_manager_live_core_acceptance_cleanup_v2.sql"],
+      "notes": "Exact-file production migration workflow for live-core acceptance cleanup v2."
+    },
+    {
+      "id": "helper-booking-ops",
+      "kind": "python-helper",
+      "role": "apply-backend",
+      "paths": ["scripts/apply-booking-ops-migration.py"],
+      "environments": ["local", "staging", "production"],
+      "ownerGateRequired": true,
+      "supportsDryRun": false,
+      "rollbackPolicy": "owner-gated-new-migration",
+      "migrationPaths": ["supabase/migrations/20260627000001_booking_ops_v1.sql"],
+      "notes": "Legacy direct helper. Must not run against production without owner gate; prefer dedicated workflow when one exists."
+    },
+    {
+      "id": "helper-booking-ops-tasks",
+      "kind": "python-helper",
+      "role": "apply-backend",
+      "paths": ["scripts/apply-booking-ops-tasks-migration.py"],
+      "environments": ["local", "staging", "production"],
+      "ownerGateRequired": true,
+      "supportsDryRun": false,
+      "rollbackPolicy": "owner-gated-new-migration",
+      "migrationPaths": ["supabase/migrations/20260628000003_booking_ops_tasks_v1.sql"],
+      "notes": "Legacy direct helper without a dedicated production workflow."
+    },
+    {
+      "id": "helper-booking-inbound-intake",
+      "kind": "python-helper",
+      "role": "apply-backend",
+      "paths": ["scripts/apply-booking-inbound-intake-migration.py"],
+      "environments": ["local", "staging", "production"],
+      "ownerGateRequired": true,
+      "supportsDryRun": false,
+      "rollbackPolicy": "owner-gated-new-migration",
+      "migrationPaths": ["supabase/migrations/20260701150000_booking_inbound_intake_events_v1.sql"],
+      "notes": "Legacy direct helper without a dedicated production workflow."
+    },
+    {
+      "id": "helper-owner-object-setup-autopilot",
+      "kind": "python-helper",
+      "role": "apply-backend",
+      "paths": ["scripts/apply-owner-object-setup-autopilot-migration.py"],
+      "environments": ["local", "staging", "production"],
+      "ownerGateRequired": true,
+      "supportsDryRun": false,
+      "rollbackPolicy": "owner-gated-new-migration",
+      "migrationPaths": ["supabase/migrations/20260701110000_owner_object_setup_autopilot_v1.sql"],
+      "notes": "Legacy direct helper without a dedicated production workflow. Helper script still names a historical filename; registry pins the existing SQL chain file."
+    },
+    {
+      "id": "helper-pricing-intelligence-tariff-grid",
+      "kind": "python-helper",
+      "role": "apply-backend",
+      "paths": ["scripts/apply-pricing-intelligence-tariff-grid-migration.py"],
+      "environments": ["local", "staging", "production"],
+      "ownerGateRequired": true,
+      "supportsDryRun": false,
+      "rollbackPolicy": "owner-gated-new-migration",
+      "migrationPaths": ["supabase/migrations/20260701180000_pricing_intelligence_tariff_grid_v1.sql"],
+      "notes": "Legacy direct helper without a dedicated production workflow."
+    },
+    {
+      "id": "helper-pilot-chain-crm-events",
+      "kind": "python-helper",
+      "role": "apply-backend",
+      "paths": ["scripts/apply-pilot-chain-crm-events-migration.py"],
+      "environments": ["local", "staging", "production"],
+      "ownerGateRequired": true,
+      "supportsDryRun": false,
+      "rollbackPolicy": "owner-gated-new-migration",
+      "migrationPaths": ["supabase/migrations/20260625000001_pilot_chain_crm_events_types.sql"],
+      "notes": "Legacy direct helper without a dedicated production workflow."
+    },
+    {
+      "id": "reference-docs-sql",
+      "kind": "reference-only",
+      "role": "reference-only",
+      "paths": ["docs/migrations"],
+      "environments": ["local"],
+      "ownerGateRequired": false,
+      "supportsDryRun": false,
+      "rollbackPolicy": "not-applicable",
+      "notes": "Draft/reference SQL only. Never an apply path."
+    },
+    {
+      "id": "reference-scripts-migrations",
+      "kind": "reference-only",
+      "role": "reference-only",
+      "paths": ["scripts/migrations"],
+      "environments": ["local"],
+      "ownerGateRequired": false,
+      "supportsDryRun": false,
+      "rollbackPolicy": "not-applicable",
+      "notes": "Legacy helper SQL outside the canonical supabase/migrations chain. Never an apply path."
+    }
+  ]
+}

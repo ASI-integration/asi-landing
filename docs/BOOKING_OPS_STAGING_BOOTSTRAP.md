@@ -24,7 +24,7 @@ Booking Ops needs these runtime settings to be usable:
 - `INTERNAL_TEST_SECRET` for the later internal smoke scenarios;
 - dedicated inbound, auto-send runner, and alert runner secrets listed below.
 
-The repository tracks ordered SQL migrations in `supabase/migrations/`. CI derives the migration count from that directory and rejects runbooks that hard-code a numeric count. Before Booking Ops smoke testing, a clean staging database must contain the full committed migration history for the deployed ref. Deployment does not apply migrations.
+The repository tracks ordered SQL migrations in `supabase/migrations/`. CI derives the migration count from that directory and rejects runbooks that hard-code a numeric count. Deployment does not apply migrations. The canonical migration process — plan artifact, dry-run/plan mode, apply gate, verification evidence, rollback policy, and target identity — is documented in [`docs/agent-os/MIGRATION_PROCESS.md`](./agent-os/MIGRATION_PROCESS.md). Do not invent a parallel apply path.
 
 ## Required GitHub `staging` environment secrets
 
@@ -63,7 +63,17 @@ npx supabase migration --help
 npx supabase db --help
 ```
 
-The expected affected environment is only the Supabase project identified by `STAGING_SUPABASE_PROJECT_REF`. With `STAGING_DATABASE_URL` exported locally and verified, the repository's current direct migration command is:
+The expected affected environment is only the Supabase project identified by `STAGING_SUPABASE_PROJECT_REF`. Generate a contract dry-run first:
+
+```bash
+node scripts/agent-os/migration-process.mjs dry-run \
+  --mechanism supabase-cli-staging-push \
+  --environment staging \
+  --identity "$STAGING_SUPABASE_PROJECT_REF" \
+  --expected-identity "$STAGING_SUPABASE_PROJECT_REF"
+```
+
+With `STAGING_DATABASE_URL` exported locally and verified, the established staging backend remains:
 
 ```bash
 npx supabase db push --db-url "$STAGING_DATABASE_URL" --include-all --dry-run

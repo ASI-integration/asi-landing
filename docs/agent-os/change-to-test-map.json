@@ -110,10 +110,36 @@
       "checks": [
         "destructive-sql-review",
         "migration-dependency-order-test",
+        "migration-process-contract",
         "git-diff-check"
       ],
       "protected": true,
-      "notes": "Creating a migration can be yellow; applying it to any database is outside this map and requires the applicable gate."
+      "notes": "Creating a migration can be yellow; applying it to any database requires docs/agent-os/MIGRATION_PROCESS.md and the applicable gate."
+    },
+    {
+      "id": "migration-process",
+      "prefixes": [
+        "docs/agent-os/MIGRATION_PROCESS.md",
+        "docs/agent-os/migration-mechanisms.json",
+        "docs/agent-os/schemas/migration-",
+        "scripts/agent-os/migration-process.mjs",
+        "scripts/agent-os/check-migration-process.mjs",
+        "scripts/apply-",
+        ".github/workflows/apply-",
+        ".github/workflows/partner-production-rollout-control-v1.yml",
+        "scripts/staging-booking-ops-schema-smoke.sh"
+      ],
+      "checks": [
+        "migration-process-contract",
+        "agent-os-contract-validation",
+        "focused-contract-test",
+        "git-diff-check"
+      ],
+      "protected": true,
+      "redActions": [
+        "production_migration"
+      ],
+      "notes": "Unify behind the shared migration contract; do not invent a second framework or apply DDL from CI."
     },
     {
       "id": "staging-scripts",
@@ -127,6 +153,7 @@
         "fail-closed-guard",
         "staging-identity-review",
         "migration-count-doc-check",
+        "migration-process-contract",
         "git-diff-check"
       ],
       "protected": true,

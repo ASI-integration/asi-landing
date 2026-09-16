@@ -1,0 +1,83 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://asi.local/agent-os/migration-mechanism-registry.schema.json",
+  "title": "ASI Agent OS migration mechanism registry",
+  "description": "Declares every known migration mechanism in the repository so CI can fail closed on undiscovered apply scripts/workflows. Does not introduce a second migration framework.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "canonicalRunbook", "discovery", "mechanisms"],
+  "properties": {
+    "schemaVersion": { "const": "asi.agent-os.migration-mechanism-registry.v1" },
+    "canonicalRunbook": { "type": "string", "minLength": 1 },
+    "discovery": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sqlChainDir", "helperGlob", "workflowGlobs", "stagingSmoke"],
+      "properties": {
+        "sqlChainDir": { "type": "string", "minLength": 1 },
+        "helperGlob": { "type": "string", "minLength": 1 },
+        "workflowGlobs": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "stagingSmoke": { "type": "string", "minLength": 1 }
+      }
+    },
+    "mechanisms": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "kind",
+          "role",
+          "paths",
+          "environments",
+          "ownerGateRequired",
+          "supportsDryRun",
+          "rollbackPolicy",
+          "notes"
+        ],
+        "properties": {
+          "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*[a-z0-9]$" },
+          "kind": {
+            "enum": [
+              "sql-chain",
+              "cli-push",
+              "python-helper",
+              "github-workflow",
+              "controlled-rollout",
+              "reference-only"
+            ]
+          },
+          "role": {
+            "enum": ["source-of-truth", "plan-input", "apply-backend", "verify", "reference-only"]
+          },
+          "paths": {
+            "type": "array",
+            "minItems": 1,
+            "items": { "type": "string", "minLength": 1 }
+          },
+          "environments": {
+            "type": "array",
+            "minItems": 1,
+            "items": { "enum": ["local", "staging", "production"] }
+          },
+          "ownerGateRequired": { "type": "boolean" },
+          "supportsDryRun": { "type": "boolean" },
+          "rollbackPolicy": {
+            "enum": ["append-only-forward-fix", "atomic-transaction", "owner-gated-new-migration", "not-applicable"]
+          },
+          "migrationPaths": {
+            "type": "array",
+            "items": { "type": "string", "minLength": 1 }
+          },
+          "notes": { "type": "string", "minLength": 1 }
+        }
+      }
+    }
+  }
+}
