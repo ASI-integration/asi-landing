@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://asi.local/agent-os/acceptance-runner-registry.schema.json",
+  "title": "ASI acceptance runner inventory/coverage registry",
+  "description": "Declares every known acceptance runner entrypoint in the repository and whether it emits acceptance-plan/acceptance-result evidence. The coverage checker fails closed for any discovered runner file missing from this list.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "generatedAt", "discovery", "runners"],
+  "properties": {
+    "schemaVersion": { "const": "asi.agent-os.acceptance-runner-registry.v1" },
+    "generatedAt": { "type": "string", "format": "date-time" },
+    "discovery": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["dir", "includePattern", "excludePattern"],
+      "properties": {
+        "dir": { "type": "string", "minLength": 1 },
+        "includePattern": { "type": "string", "minLength": 1 },
+        "excludePattern": { "type": "string", "minLength": 1 }
+      }
+    },
+    "runners": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["runnerId", "file", "environment", "evidenceStatus", "noExternalActions", "fixtureOwnership", "cleanupEvidence", "notes"],
+        "properties": {
+          "runnerId": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*[a-z0-9]$" },
+          "file": { "type": "string", "minLength": 1 },
+          "environment": { "enum": ["local", "staging", "production", "external"] },
+          "evidenceStatus": { "enum": ["emits-contract", "not-yet-instrumented"] },
+          "evidenceMechanism": { "type": ["string", "null"] },
+          "noExternalActions": { "enum": [true, false, "conditional", "unknown"] },
+          "fixtureOwnership": { "enum": ["isolated", "shared", "none", "unknown"] },
+          "cleanupEvidence": { "enum": ["proven", "declared", "none", "unknown"] },
+          "notes": { "type": "string" }
+        }
+      }
+    }
+  }
+}

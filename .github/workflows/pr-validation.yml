@@ -37,6 +37,15 @@ jobs:
       - name: Install deps
         run: npm ci
 
+      - name: Agent OS contract validation
+        run: node scripts/agent-os/validate-contracts.mjs
+
+      - name: Agent OS unit tests
+        run: node --test scripts/agent-os/__tests__/*.test.mjs
+
+      - name: Acceptance runner coverage (fail-closed on uncovered runners)
+        run: node scripts/agent-os/check-acceptance-coverage.mjs
+
       - name: Lint
         run: npm run lint
 

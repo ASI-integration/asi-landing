@@ -28,7 +28,7 @@ function contractValidators(repoRoot = DEFAULT_REPO_ROOT) {
 
   const schemaDir = path.join(resolvedRoot, 'docs/agent-os/schemas');
   const schemaFiles = fs.readdirSync(schemaDir).filter((name) => name.endsWith('.schema.json')).sort();
-  invariant(schemaFiles.length === 5, `Expected 5 schemas, found ${schemaFiles.length}`);
+  invariant(schemaFiles.length === 8, `Expected 8 schemas, found ${schemaFiles.length}`);
 
   const ajv = new Ajv2020({ allErrors: true, strict: true });
   addFormats(ajv);
@@ -158,6 +158,46 @@ export function validateProductionPreflight(value, repoRoot = DEFAULT_REPO_ROOT)
   return value;
 }
 
+export function validateAcceptancePlan(value, repoRoot = DEFAULT_REPO_ROOT) {
+  validateArtifact('acceptance-plan', value, repoRoot);
+  if (value.safety.noExternalActions === false) {
+    invariant(
+      typeof value.safety.externalActionsJustification === 'string' && value.safety.externalActionsJustification.length > 0,
+      'External actions require a justification',
+    );
+  }
+  if (value.target.environment === 'production') {
+    invariant(value.ownerGateRequired === true, 'Production plan requires owner gate');
+  }
+  return value;
+}
+
+export function validateAcceptanceResult(value, repoRoot = DEFAULT_REPO_ROOT) {
+  validateArtifact('acceptance-result', value, repoRoot);
+  if (value.target.environment === 'production') {
+    invariant(value.safety.productionMutation === false, 'Production result must not mutate production');
+  }
+  if (value.status === 'PASS') {
+    invariant(value.cleanup.performed === true, 'A passing result must have performed cleanup');
+  }
+  return value;
+}
+
+export function validateAcceptanceRunnerRegistry(value, repoRoot = DEFAULT_REPO_ROOT) {
+  validateArtifact('acceptance-runner-registry', value, repoRoot);
+  for (const runner of value.runners) {
+    if (runner.evidenceStatus === 'emits-contract') {
+      invariant(
+        typeof runner.evidenceMechanism === 'string' && runner.evidenceMechanism.length > 0,
+        `Runner ${runner.runnerId} claims emits-contract but has no evidenceMechanism`,
+      );
+    }
+  }
+  const ids = value.runners.map((runner) => runner.runnerId);
+  invariant(new Set(ids).size === ids.length, 'Registry contains duplicate runnerId entries');
+  return value;
+}
+
 function uniqueStrings(values) {
   return [...new Set((values ?? []).filter((value) => typeof value === 'string' && value.length > 0))];
 }
@@ -243,5 +283,8 @@ export function validateContractBundle(repoRoot) {
   validateOwnerGate(readJson(path.join(fixtures, 'typed-confirmation-only-owner-gate.json')), null, repoRoot);
   validateStagingFixture(readJson(path.join(fixtures, 'isolated-staging-fixture.json')), repoRoot);
   validateProductionPreflight(readJson(path.join(fixtures, 'production-read-only-preflight.json')), repoRoot);
-  return { schemas: schemaFiles.length, fixtures: 5 };
+  validateAcceptancePlan(readJson(path.join(fixtures, 'acceptance-plan-fixture.json')), repoRoot);
+  validateAcceptanceResult(readJson(path.join(fixtures, 'acceptance-result-fixture.json')), repoRoot);
+  validateAcceptanceRunnerRegistry(readJson(path.join(repoRoot, 'docs/agent-os/acceptance-runners.json')), repoRoot);
+  return { schemas: schemaFiles.length, fixtures: 7 };
 }

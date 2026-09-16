@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://asi.local/agent-os/acceptance-plan.schema.json",
+  "title": "ASI acceptance runner plan evidence",
+  "description": "Machine-readable plan a runner must emit before it takes any action, declaring target identity, external-action posture, fixture ownership, and the cleanup it intends to run.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "runnerId", "target", "safety", "fixtureOwnership", "cleanup", "generatedAt", "ownerGateRequired"],
+  "properties": {
+    "schemaVersion": { "const": "asi.agent-os.acceptance-plan.v1" },
+    "runnerId": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*[a-z0-9]$" },
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["environment", "identity"],
+      "properties": {
+        "environment": { "enum": ["local", "staging", "production"] },
+        "identity": { "type": "string", "minLength": 1 }
+      }
+    },
+    "safety": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["noExternalActions", "externalActionsJustification"],
+      "properties": {
+        "noExternalActions": { "type": "boolean" },
+        "externalActionsJustification": { "type": ["string", "null"] }
+      }
+    },
+    "fixtureOwnership": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["isolated", "namespace"],
+      "properties": {
+        "isolated": { "type": "boolean" },
+        "namespace": { "type": ["string", "null"], "minLength": 1 }
+      }
+    },
+    "cleanup": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["required", "strategy"],
+      "properties": {
+        "required": { "type": "boolean" },
+        "strategy": { "type": "string", "minLength": 1 }
+      }
+    },
+    "generatedAt": { "type": "string", "format": "date-time" },
+    "ownerGateRequired": { "type": "boolean" }
+  }
+}

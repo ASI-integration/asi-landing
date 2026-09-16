@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://asi.local/agent-os/acceptance-result.schema.json",
+  "title": "ASI acceptance runner result evidence",
+  "description": "Machine-readable result a runner must emit after it finishes, proving what it actually did against the plan it declared.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "runnerId", "planRef", "target", "status", "safety", "cleanup", "generatedAt"],
+  "properties": {
+    "schemaVersion": { "const": "asi.agent-os.acceptance-result.v1" },
+    "runnerId": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*[a-z0-9]$" },
+    "planRef": { "type": "string", "minLength": 1 },
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["environment", "identity"],
+      "properties": {
+        "environment": { "enum": ["local", "staging", "production"] },
+        "identity": { "type": "string", "minLength": 1 }
+      }
+    },
+    "status": { "enum": ["PASS", "FAIL", "BLOCKED"] },
+    "safety": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["noExternalActions", "productionMutation"],
+      "properties": {
+        "noExternalActions": { "type": "boolean" },
+        "productionMutation": { "type": "boolean" }
+      }
+    },
+    "cleanup": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["performed", "verifyZeroResidue"],
+      "properties": {
+        "performed": { "type": "boolean" },
+        "verifyZeroResidue": { "type": ["boolean", "null"] }
+      }
+    },
+    "evidence": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+    "generatedAt": { "type": "string", "format": "date-time" }
+  }
+}
