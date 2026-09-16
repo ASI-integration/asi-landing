@@ -1,15 +1,19 @@
 import { NextResponse } from 'next/server';
-import { createPaymentRequest } from '@/lib/payments/factory';
+import { createPaymentForProduct } from '@/lib/payments/factory';
 import {
   COMMUNICATION_PILOT_PAYMENT_DESCRIPTION,
   COMMUNICATION_PILOT_PAYMENT_PENDING_MESSAGE,
-  COMMUNICATION_PILOT_PRICE_KOPEKS,
   COMMUNICATION_PILOT_PRICE_RUB,
   COMMUNICATION_PILOT_SERVICE_TITLE,
   COMMUNICATION_PILOT_SERVICE_TYPE,
+  getYooKassaConfig,
   isYooKassaEnabled,
 } from '@/lib/payments/yookassa-env';
 
+/**
+ * Create YooKassa checkout for the ASI MVP catalog product.
+ * Client may send objectId/contact/ownerId/idempotencyKey — never a trusted amount.
+ */
 export async function POST(req: Request): Promise<NextResponse> {
   if (!isYooKassaEnabled()) {
     return NextResponse.json(
@@ -24,29 +28,65 @@ export async function POST(req: Request): Promise<NextResponse> {
     );
   }
 
-  let body: { objectId?: string; contact?: string } = {};
   try {
-    body = (await req.json()) as { objectId?: string; contact?: string };
+    getYooKassaConfig();
+  } catch (error) {
+    return NextResponse.json(
+      {
+        status: 'misconfigured',
+        message: error instanceof Error ? error.message : 'YooKassa configuration invalid',
+      },
+      { status: 503 },
+    );
+  }
+
+  let body: {
+    objectId?: string;
+    contact?: string;
+    ownerId?: string;
+    idempotencyKey?: string;
+    amount?: number;
+    amountRub?: number;
+    productId?: string;
+  } = {};
+  try {
+    body = (await req.json()) as typeof body;
   } catch {
     body = {};
   }
 
-  const payment = await createPaymentRequest({
-    amount: COMMUNICATION_PILOT_PRICE_KOPEKS,
-    currency: 'RUB',
-    propertyId: body.objectId?.trim() || undefined,
-    guestId: body.contact?.trim() || undefined,
-    description: COMMUNICATION_PILOT_PAYMENT_DESCRIPTION,
-    serviceType: COMMUNICATION_PILOT_SERVICE_TYPE,
-    provider: 'yookassa',
-  });
+  // Explicitly ignore any client-supplied amount fields.
+  if (body.amount !== undefined || body.amountRub !== undefined) {
+    return NextResponse.json(
+      { error: 'Client-supplied amount is not accepted' },
+      { status: 400 },
+    );
+  }
 
-  return NextResponse.json({
-    status: payment.status,
-    service: COMMUNICATION_PILOT_SERVICE_TITLE,
-    description: COMMUNICATION_PILOT_PAYMENT_DESCRIPTION,
-    amountRub: COMMUNICATION_PILOT_PRICE_RUB,
-    paymentUrl: payment.paymentUrl ?? null,
-    paymentId: payment.id,
-  });
+  const productId = body.productId?.trim() || COMMUNICATION_PILOT_SERVICE_TYPE;
+
+  try {
+    const payment = await createPaymentForProduct({
+      productId,
+      propertyId: body.objectId?.trim() || undefined,
+      guestId: body.contact?.trim() || undefined,
+      ownerId: body.ownerId?.trim() || undefined,
+      idempotencyKey: body.idempotencyKey?.trim() || undefined,
+    });
+
+    return NextResponse.json({
+      status: payment.status,
+      service: COMMUNICATION_PILOT_SERVICE_TITLE,
+      description: COMMUNICATION_PILOT_PAYMENT_DESCRIPTION,
+      amountRub: COMMUNICATION_PILOT_PRICE_RUB,
+      paymentUrl: payment.paymentUrl ?? null,
+      paymentId: payment.id,
+      providerPaymentId: payment.providerTransactionId,
+    });
+  } catch (error) {
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : 'Payment create failed' },
+      { status: 400 },
+    );
+  }
 }

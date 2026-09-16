@@ -1,145 +1,93 @@
 import { NextResponse } from 'next/server';
 import { getProvider } from '@/lib/payments/factory';
-import { updatePaymentStatus, getPaymentByTransactionId } from '@/lib/payments/db';
+import { getPaymentByTransactionId } from '@/lib/payments/db';
 import { sendPaymentConfirmation } from '@/lib/communication/notifications';
-import { claimWebhookEvent, releaseWebhookEvent } from '@/lib/payments/events';
-import { supabase } from '@/lib/supabase';
-import { sendTelegramMessage } from '@/lib/telegram';
-import { SessionStatus, transitionSessionStatus } from '@/lib/communication/session-status';
+import { processYooKassaPaymentEvent } from '@/lib/payments/process-yookassa-event';
 import { isYooKassaEnabled, YOOKASSA_PENDING_REVIEW_MESSAGE } from '@/lib/payments/yookassa-env';
+import { SessionStatus, transitionSessionStatus } from '@/lib/communication/session-status';
+import { claimPaymentConfirmation } from '@/lib/payments/events';
 
 /**
- * Общая обработка уведомлений ЮKassa.
- * Доступно как POST /api/webhooks/yookassa и POST /api/payments/webhook.
+ * Canonical YooKassa notification handler.
+ * Available as POST /api/webhooks/yookassa and POST /api/payments/webhook.
+ *
+ * Trust model:
+ * - webhook payload is a hint only
+ * - authoritative status/amount/currency come from GET /payments/{id}
+ * - redirect return URLs are never treated as payment proof
  */
 export async function handleYookassaWebhook(req: Request): Promise<NextResponse> {
-  let claimedEventId: string | undefined;
   try {
     if (!isYooKassaEnabled()) {
-      return NextResponse.json({
-        received: false,
-        handled: false,
-        status: 'disabled',
-        message: YOOKASSA_PENDING_REVIEW_MESSAGE,
-      }, { status: 503 });
-    }
-
-    if (!isYooKassaWebhookSourceVerified(req)) {
-      console.error('[YooKassa Webhook] Trusted source verification unavailable');
-      return NextResponse.json({ error: 'Invalid origin' }, { status: 403 });
+      return NextResponse.json(
+        {
+          received: false,
+          handled: false,
+          status: 'disabled',
+          message: YOOKASSA_PENDING_REVIEW_MESSAGE,
+        },
+        { status: 503 },
+      );
     }
 
     const provider = getProvider('yookassa');
     const bodyText = await req.text();
+    const { transactionId, eventId, rawEvent } = await provider.parseWebhookEvent(bodyText, '');
 
-    const { transactionId, status, eventId, rawEvent } = await provider.parseWebhookEvent(
-      bodyText,
-      ''
+    const raw = rawEvent as { event?: string };
+    console.info(
+      `[YooKassa Webhook] event=${raw?.event ?? '?'} eventId=${eventId ?? 'n/a'} tx=${transactionId}`,
     );
 
-    const raw = rawEvent as { event?: string; object?: Record<string, unknown> };
-    console.log(
-      `[YooKassa Webhook] event=${raw?.event ?? '?'} eventId=${eventId} tx=${transactionId} status=${status}`
-    );
-
-    if (eventId && !(await claimWebhookEvent('yookassa', eventId))) {
-      console.log(`[YooKassa Webhook] Event ${eventId} already processed, skipping.`);
-      return NextResponse.json({ received: true });
+    if (!eventId) {
+      return NextResponse.json({ error: 'Malformed event' }, { status: 400 });
     }
-    claimedEventId = eventId;
 
-    // Подписка (дашборд): metadata.user_id или metadata.userId из /api/payments/create
-    const paymentObj = raw?.object ?? {};
-    const meta = paymentObj.metadata as Record<string, string> | undefined;
-    const userId = meta?.user_id || meta?.userId;
-    const paymentMethodId = (paymentObj.payment_method as Record<string, string> | undefined)?.id;
+    const result = await processYooKassaPaymentEvent({
+      eventType: raw?.event ?? 'unknown',
+      eventId,
+      providerPaymentId: transactionId,
+    });
 
-    const isSubscriptionSuccess =
-      raw?.event === 'payment.succeeded' && userId && status === 'paid';
+    if (!result.ok) {
+      console.warn(`[YooKassa Webhook] rejected reason=${result.reason} tx=${transactionId}`);
+      // Fail closed for unknown/mismatch; provider may retry.
+      return NextResponse.json({ error: result.reason ?? 'rejected' }, { status: 409 });
+    }
 
-    if (isSubscriptionSuccess) {
-      const { data: existing } = await supabase
-        .from('payments')
-        .select('id')
-        .eq('yookassa_payment_id', transactionId)
-        .single();
-
-      const amountRaw = (paymentObj.amount as { value?: string } | undefined)?.value;
-      const amountCents = amountRaw ? Math.round(parseFloat(amountRaw) * 100) : 0;
-
-      if (existing) {
-        await supabase.from('payments').update({ status: 'succeeded' }).eq('yookassa_payment_id', transactionId);
-      } else {
-        await supabase.from('payments').insert({
-          user_id: userId,
-          yookassa_payment_id: transactionId,
-          amount: amountCents,
-          status: 'succeeded',
-        });
+    if (result.status === 'paid' && result.paymentId) {
+      const payment = await getPaymentByTransactionId(transactionId);
+      if (payment?.chatId) {
+        const claimed = await claimPaymentConfirmation(`notify:${payment.id}`);
+        if (claimed) {
+          const numericChatId = parseInt(payment.chatId, 10);
+          if (!Number.isNaN(numericChatId)) {
+            await sendPaymentConfirmation({
+              paymentId: payment.id,
+              chatId: numericChatId,
+              amount: payment.amount,
+              currency: payment.currency,
+              serviceType: payment.serviceType,
+            });
+            await transitionSessionStatus(numericChatId, SessionStatus.Paid);
+          }
+        }
       }
+    }
 
-      const periodEnd = new Date();
-      periodEnd.setDate(periodEnd.getDate() + 30);
-      const { error: subError } = await supabase
-        .from('subscriptions')
-        .update({
-          status: 'active',
-          current_period_end: periodEnd.toISOString(),
-          payment_method_id: paymentMethodId ?? null,
-        })
-        .eq('user_id', userId);
-
-      if (subError) {
-        console.error('[YooKassa Webhook] subscriptions update failed', subError);
-      } else {
-        console.log(`[YooKassa Webhook] payment.succeeded → subscription active user_id=${userId}`);
+    if (result.status === 'cancelled') {
+      const payment = await getPaymentByTransactionId(transactionId);
+      if (payment?.chatId) {
+        const numericChatId = parseInt(payment.chatId, 10);
+        if (!Number.isNaN(numericChatId)) {
+          await transitionSessionStatus(numericChatId, SessionStatus.Cancelled);
+        }
       }
-
-      const { data: user } = await supabase.from('users').select('email').eq('id', userId).single();
-      await sendTelegramMessage(`✅ Subscription payment: ${user?.email ?? userId}`);
-
-      return NextResponse.json({ received: true });
     }
 
-    const payment = await getPaymentByTransactionId(transactionId);
-    if (!payment) {
-      console.warn(`[YooKassa Webhook] Unrecognized transaction ID ${transactionId}`);
-      return NextResponse.json({ received: true });
-    }
-
-    const updated = await updatePaymentStatus(transactionId, status);
-    console.log(`[YooKassa Webhook] Status update tx=${transactionId} status=${status} changed=${updated}`);
-
-    if (status === 'paid' && payment.chatId) {
-      const numericChatId = parseInt(payment.chatId, 10);
-      await sendPaymentConfirmation({
-        paymentId: payment.id,
-        chatId: numericChatId,
-        amount: payment.amount,
-        currency: payment.currency,
-        serviceType: payment.serviceType,
-      });
-      await transitionSessionStatus(numericChatId, SessionStatus.Paid);
-    }
-
-    if (updated && status === 'cancelled' && payment.chatId) {
-      await transitionSessionStatus(parseInt(payment.chatId, 10), SessionStatus.Cancelled);
-    }
-
-    return NextResponse.json({ received: true });
+    return NextResponse.json({ received: true, handled: result.handled });
   } catch (err) {
-    if (claimedEventId) await releaseWebhookEvent('yookassa', claimedEventId);
-    console.error('[YooKassa Webhook Error]', err);
+    console.error('[YooKassa Webhook Error]', err instanceof Error ? err.message : 'unknown');
     return NextResponse.json({ error: 'Webhook processing failed' }, { status: 500 });
   }
-}
-
-/**
- * Next.js' standard Request does not expose the transport peer address. Forwarded
- * IP headers are client-controlled unless a trusted proxy overwrites them, and
- * this route has no such verified contract. Keep the boundary closed until the
- * server adapter supplies a trustworthy peer address.
- */
-export function isYooKassaWebhookSourceVerified(_req: Request): boolean {
-  return false;
 }

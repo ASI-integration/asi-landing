@@ -93,8 +93,10 @@ describe('Payment factory — provider routing', () => {
 
   it('creates a YooKassa checkout with a paid report status return URL', async () => {
     process.env.YOOKASSA_ENABLED = 'true';
+    process.env.YOOKASSA_MODE = 'test';
     process.env.YOOKASSA_SHOP_ID = 'shop-1';
-    process.env.YOOKASSA_SECRET_KEY = 'secret-1';
+    process.env.YOOKASSA_SECRET_KEY = 'test_secret-1';
+    process.env.YOOKASSA_FORCE_TEST_KEY = 'true';
     process.env.NEXT_PUBLIC_APP_URL = 'https://asi.example';
 
     const payment = await createPaymentRequest({
@@ -112,10 +114,12 @@ describe('Payment factory — provider routing', () => {
     expect(payment.paymentUrl).toContain('yoomoney.ru/checkout');
     expect(payload.confirmation).toMatchObject({
       type: 'redirect',
-      return_url: 'https://asi.example/ru/location-report/status?requestId=request-1',
+      return_url: expect.stringContaining('/payments/return?'),
     });
+    expect(payload.confirmation.return_url).toContain(`paymentId=${payment.id}`);
     expect(payload.metadata).toMatchObject({
       request_id: 'request-1',
+      payment_id: payment.id,
     });
   });
 
