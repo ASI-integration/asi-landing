@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-EXPECTED_MIGRATION_COUNT=82
 : "${STAGING_DATABASE_URL:?Missing STAGING_DATABASE_URL}"
 : "${STAGING_SUPABASE_PROJECT_REF:?Missing STAGING_SUPABASE_PROJECT_REF}"
 
@@ -25,8 +24,8 @@ done | LC_ALL=C sort > "$local_versions"
 
 local_count="$(wc -l < "$local_versions" | tr -d ' ')"
 unique_count="$(LC_ALL=C sort -u "$local_versions" | wc -l | tr -d ' ')"
-if [ "$local_count" -ne "$EXPECTED_MIGRATION_COUNT" ]; then
-  echo "Expected ${EXPECTED_MIGRATION_COUNT} local migrations, found ${local_count}"
+if [ "$local_count" -eq 0 ]; then
+  echo 'No local migrations found in supabase/migrations'
   exit 1
 fi
 if [ "$unique_count" -ne "$local_count" ]; then
@@ -40,8 +39,8 @@ psql "$STAGING_DATABASE_URL" -X -v ON_ERROR_STOP=1 -Atc \
   | LC_ALL=C sort > "$remote_versions"
 
 remote_count="$(wc -l < "$remote_versions" | tr -d ' ')"
-if [ "$remote_count" -ne "$EXPECTED_MIGRATION_COUNT" ]; then
-  echo "Expected ${EXPECTED_MIGRATION_COUNT} staging migrations, found ${remote_count}"
+if [ "$remote_count" -ne "$local_count" ]; then
+  echo "Expected ${local_count} staging migrations from tracked files, found ${remote_count}"
   exit 1
 fi
 if ! diff -u "$local_versions" "$remote_versions"; then

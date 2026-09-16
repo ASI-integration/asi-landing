@@ -1,0 +1,9 @@
+{
+  "projectRef": "wrong-ref",
+  "appPath": "/var/www/asi-staging",
+  "port": 3001,
+  "requestedSha": "2222222222222222222222222222222222222222",
+  "dryRun": true,
+  "productionCredentials": false,
+  "mutateStaging": false
+}

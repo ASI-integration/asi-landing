@@ -28,7 +28,7 @@ function contractValidators(repoRoot = DEFAULT_REPO_ROOT) {
 
   const schemaDir = path.join(resolvedRoot, 'docs/agent-os/schemas');
   const schemaFiles = fs.readdirSync(schemaDir).filter((name) => name.endsWith('.schema.json')).sort();
-  invariant(schemaFiles.length === 8, `Expected 8 schemas, found ${schemaFiles.length}`);
+  invariant(schemaFiles.length === 9, `Expected 9 schemas, found ${schemaFiles.length}`);
 
   const ajv = new Ajv2020({ allErrors: true, strict: true });
   addFormats(ajv);
@@ -259,6 +259,10 @@ export function buildBlockedTaskPreflight({ input = {}, repository = {}, paths =
   return { matchedRuleIds: selected.matchedRuleIds, preflight };
 }
 
+export function validateReleaseManifest(value, repoRoot = DEFAULT_REPO_ROOT) {
+  return validateArtifact('release-manifest', value, repoRoot);
+}
+
 export function validateContractBundle(repoRoot) {
   const { schemaFiles } = contractValidators(repoRoot);
   const fixtures = path.join(repoRoot, 'docs/agent-os/fixtures');
@@ -270,5 +274,6 @@ export function validateContractBundle(repoRoot) {
   validateMigrationPlanArtifact(readJson(path.join(fixtures, 'migration-plan-fixture.json')), repoRoot);
   validateMigrationResultArtifact(readJson(path.join(fixtures, 'migration-result-fixture.json')), repoRoot);
   validateMigrationMechanismRegistry(readJson(path.join(repoRoot, 'docs/agent-os/migration-mechanisms.json')), repoRoot);
+  validateReleaseManifest(readJson(path.join(repoRoot, 'docs/agent-os/generated/release-manifest.json')), repoRoot);
   return { schemas: schemaFiles.length, fixtures: 7 };
 }

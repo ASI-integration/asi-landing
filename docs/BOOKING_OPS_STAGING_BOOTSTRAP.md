@@ -24,7 +24,7 @@ Booking Ops needs these runtime settings to be usable:
 - `INTERNAL_TEST_SECRET` for the later internal smoke scenarios;
 - dedicated inbound, auto-send runner, and alert runner secrets listed below.
 
-The repository tracks ordered SQL migrations in `supabase/migrations/`. Deployment does not apply migrations. The canonical migration process — plan artifact, dry-run/plan mode, apply gate, verification evidence, rollback policy, and target identity — is documented in [`docs/agent-os/MIGRATION_PROCESS.md`](./agent-os/MIGRATION_PROCESS.md). Do not invent a parallel apply path.
+The repository tracks ordered SQL migrations in `supabase/migrations/`. CI derives the migration count from that directory and rejects runbooks that hard-code a numeric count. Deployment does not apply migrations. The canonical migration process — plan artifact, dry-run/plan mode, apply gate, verification evidence, rollback policy, and target identity — is documented in [`docs/agent-os/MIGRATION_PROCESS.md`](./agent-os/MIGRATION_PROCESS.md). Do not invent a parallel apply path.
 
 ## Required GitHub `staging` environment secrets
 

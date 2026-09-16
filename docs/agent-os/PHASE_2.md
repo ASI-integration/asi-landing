@@ -11,11 +11,11 @@
 | 1 | Draft 2020-12 validation для task preflight, result, owner gate и safety artifacts | implemented |
 | 2 | Единый owner-gate contract; typed confirmation не является approval | implemented |
 | 3 | Change-to-test map с fail-closed protected/red classification | implemented |
-| 4 | Repository Skill `asi-task-execution` и локальные validators | implemented |
+| 4 | Repository Skills `asi-task-execution`, `asi-staging-acceptance`, `asi-production-rollout` и локальные validators | implemented |
 | 5 | Docs-only agent-ready pilot Issue | created: `#103` |
 | 6 | Safe internal-tooling code-fix Issue | created: `#104`, scheduled after `#103` |
-| 7 | Staging acceptance | contract-only; допускаются только isolated fixtures |
-| 8 | Production rollout | read-only preflight artifacts only; dispatch отсутствует |
+| 7 | Staging acceptance | skill installed; contract-only fixtures; no live staging mutation |
+| 8 | Production rollout | skill installed; read-only preflight only; dispatch отсутствует |
 
 ## Не входит в Phase 2 без отдельного red-разрешения
 
@@ -29,6 +29,7 @@
 
 ```powershell
 node scripts/agent-os/validate-contracts.mjs
+node scripts/agent-os/validate-skills.mjs
 node --test scripts/agent-os/__tests__/contracts.test.mjs
-python C:/Users/Admin/.codex/skills/.system/skill-creator/scripts/quick_validate.py .agents/skills/asi-task-execution
+node --test scripts/agent-os/__tests__/skills.test.mjs
 ```

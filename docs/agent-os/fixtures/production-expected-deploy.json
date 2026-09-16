@@ -1,0 +1,12 @@
+{
+  "taskId": "ao009-production-tabletop",
+  "action": "production_deploy",
+  "target": "production",
+  "identity": {
+    "sha": "2222222222222222222222222222222222222222"
+  },
+  "allowedSideEffect": "Deploy the exact approved artifact.",
+  "postActionVerification": ["Verify the exact runtime SHA."],
+  "scope": "production deploy only",
+  "taskCycle": "ao009-cycle-1"
+}

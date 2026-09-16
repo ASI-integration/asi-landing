@@ -1,21 +1,18 @@
 # ASI Agent OS v0 — current release
 
-## Baseline
+## Machine-readable baseline
 
-Снимок подготовлен 2026-07-15 по tracked-состоянию `origin/main`.
+Live repository baseline is owned by the CI-generated release manifest:
 
-| Поле | Значение |
-| --- | --- |
-| Репозиторий | `ASI-integration/asi-landing` |
-| Source branch | `main` |
-| Baseline SHA | `b2cfa055206d9d932ecb8e46004a7fa0ff8d15a3` |
-| Package | `landing-asi` |
-| Package version | `0.1.0` |
-| Production source | `main` + manual artifact deploy |
-| Staging source | выбранный SHA/ref + отдельный staging workflow |
-| Migration history | 82 tracked SQL-файла в `supabase/migrations/` |
+- `docs/agent-os/generated/release-manifest.json`
+- generator: `scripts/agent-os/generate-release-manifest.mjs`
+- drift check: `scripts/agent-os/check-release-manifest.mjs`
 
-Baseline SHA — это состояние source branch, а не утверждение о текущем production SHA. В рамках Agent OS v0 production не проверялся и не изменялся.
+PR Validation regenerates the canonical manifest from repository state and fails when the committed manifest or this document drift from tracked `HEAD`, package metadata, migration history, or the explicit release gate list in `docs/agent-os/release-gates.json`.
+
+Do not manually maintain baseline SHA, package version, migration count, or active gate inventory in this file. Those values are machine-derived and checked by CI.
+
+Baseline SHA in the manifest is the checked-out source branch state, not a claim about the current production runtime SHA. Production deploy still requires a separate live verification through the approved runbook.
 
 ## Текущие продуктовые контуры
 
@@ -41,16 +38,19 @@ Baseline SHA — это состояние source branch, а не утвержд
 | Migration ordering | numeric-prefix и dependency test в `src/lib/__tests__/migration-dependency-order.test.ts` |
 | Migration process contract | `scripts/agent-os/migration-process.mjs` + registry/CI (`AO-004`) |
 
+Machine-enforced active release gates are listed in `docs/agent-os/release-gates.json` and copied into the generated manifest. Additional operational workflows may exist without being part of the Agent OS release baseline.
+
 ## Ограничения baseline
 
 - GitHub API не показал branch protection или rulesets для `main` на момент аудита.
 - GitHub API не показал environment protection rules/reviewers, хотя workflows ссылаются на `staging` и `production`.
-- `docs/BOOKING_OPS_STAGING_BOOTSTRAP.md` указывает 80 migrations, tracked baseline содержит больше (AO-005).
+- `docs/BOOKING_OPS_STAGING_BOOTSTRAP.md` больше не содержит ручной migration count; CI проверяет drift через `scripts/agent-os/check-migration-count-docs.mjs`.
+- Migration mechanisms remain implemented by existing SQL/CLI/helpers/workflows, but their planning, target identity, apply gate, verification, and rollback policy are unified by `docs/agent-os/MIGRATION_PROCESS.md`.
 - Acceptance scripts различаются по способности писать/удалять данные и по наличию явного confirmation gate.
-- До этой ветки не было единого Agent OS контракта, blocker registry и agent-ready GitHub templates.
+- До Agent OS v0 не было единого Agent OS контракта, blocker registry и agent-ready GitHub templates.
 
 Актуальный статус пробелов ведётся в `docs/agent-os/BLOCKERS.md`.
 
 ## Правило обновления
 
-Обновлять этот файл в каждом release PR, который меняет source baseline, активные контуры, migrations или release gates. Не объявлять production SHA без отдельной live-проверки по утверждённому runbook.
+Обновлять narrative sections этого файла, когда меняются продуктовые контуры, operational context или release-gate semantics. Любое изменение machine-owned baseline fields должно происходить только через `docs/agent-os/release-gates.json`, migration history, package metadata, или regeneration of `docs/agent-os/generated/release-manifest.json` under CI. Не объявлять production SHA без отдельной live-проверки по утверждённому runbook.

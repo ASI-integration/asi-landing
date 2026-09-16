@@ -1,0 +1,4 @@
+interface:
+  display_name: "ASI Production Rollout"
+  short_description: "Fail-closed production preflight without dispatch or mutation"
+  default_prompt: "Use $asi-production-rollout to prepare a read-only ASI production preflight and stop before any deploy, migration, or mutation."
