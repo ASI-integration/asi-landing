@@ -52,6 +52,11 @@ jobs:
           node --test scripts/agent-os/__tests__/migration-count.test.mjs
           node --test scripts/agent-os/__tests__/skills.test.mjs
 
+      - name: Agent OS release manifest enforcement
+        run: |
+          node scripts/agent-os/check-release-manifest.mjs
+          node --test scripts/agent-os/__tests__/release-manifest.test.mjs
+
       - name: Partner authenticated inbox focused regression
         run: |
           npx vitest run \
