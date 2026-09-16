@@ -33,9 +33,10 @@ Baseline SHA in the manifest is the checked-out source branch state, not a claim
 | Pull request | `.github/workflows/pr-validation.yml`: lint, typecheck, фиксированный набор Vitest-тестов, build и artifact smoke |
 | Staging | ручной `.github/workflows/deploy-staging.yml`, отдельный GitHub environment name, identity checks, schema smoke, typecheck, build, health/version и optional acceptance |
 | Production deploy | ручной `.github/workflows/deploy.yml`, точная фраза подтверждения, build gates, artifact smoke, environment name и SHA health checks |
-| Production migrations | три ручных workflow для отдельных Booking migrations с точной фразой подтверждения |
+| Production migrations | dedicated manual workflows + partner controlled rollout; unified by `docs/agent-os/MIGRATION_PROCESS.md` |
 | Production acceptance | несколько ручных workflows; уровень подтверждения и safety contract между ними неодинаков |
 | Migration ordering | numeric-prefix и dependency test в `src/lib/__tests__/migration-dependency-order.test.ts` |
+| Migration process contract | `scripts/agent-os/migration-process.mjs` + registry/CI (`AO-004`) |
 
 Machine-enforced active release gates are listed in `docs/agent-os/release-gates.json` and copied into the generated manifest. Additional operational workflows may exist without being part of the Agent OS release baseline.
 
@@ -44,7 +45,7 @@ Machine-enforced active release gates are listed in `docs/agent-os/release-gates
 - Live GitHub API 2026-09-16: `main` still lacks enforced protection (classic 404; ruleset `MyRule` disabled). Desired state + owner runbook: `docs/agent-os/GITHUB_PROTECTION.md` (AO-001 open).
 - Live GitHub API 2026-09-16: `production` has reviewer+main policy; `staging` has no reviewers/branch policy; `production-migration-approval` still allows admin bypass (AO-002 open).
 - `docs/BOOKING_OPS_STAGING_BOOTSTRAP.md` больше не содержит ручной migration count; CI проверяет drift через `scripts/agent-os/check-migration-count-docs.mjs`.
-- Migration execution распределён между ordered SQL, прямыми CLI-командами, Python helpers и тремя специализированными production workflows.
+- Migration mechanisms remain implemented by existing SQL/CLI/helpers/workflows, but their planning, target identity, apply gate, verification, and rollback policy are unified by `docs/agent-os/MIGRATION_PROCESS.md`.
 - Acceptance scripts различаются по способности писать/удалять данные и по наличию явного confirmation gate.
 - До Agent OS v0 не было единого Agent OS контракта, blocker registry и agent-ready GitHub templates.
 
