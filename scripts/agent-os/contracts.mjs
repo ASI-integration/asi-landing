@@ -28,7 +28,7 @@ function contractValidators(repoRoot = DEFAULT_REPO_ROOT) {
 
   const schemaDir = path.join(resolvedRoot, 'docs/agent-os/schemas');
   const schemaFiles = fs.readdirSync(schemaDir).filter((name) => name.endsWith('.schema.json')).sort();
-  invariant(schemaFiles.length === 10, Expected 10 schemas, found );
+  invariant(schemaFiles.length === 10, `Expected 10 schemas, found ${schemaFiles.length}`);
 
   const ajv = new Ajv2020({ allErrors: true, strict: true });
   addFormats(ajv);
