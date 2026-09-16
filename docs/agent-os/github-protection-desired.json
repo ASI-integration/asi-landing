@@ -4,9 +4,9 @@
   "mainProtection": {
     "branch": "main",
     "requirePullRequest": true,
-    "requiredApprovingReviewCount": 1,
+    "requiredApprovingReviewCount": 0,
     "dismissStaleReviews": true,
-    "requireCodeOwnerReviews": true,
+    "requireCodeOwnerReviews": false,
     "requiredStatusChecks": ["validate"],
     "blockDirectPush": true,
     "allowForcePushes": false,
@@ -37,7 +37,7 @@
     }
   ],
   "ownerActionsRequired": [
-    "Enable enforced main ruleset/branch protection with PR + review + required check validate",
+    "Enable enforced main branch protection with PR + required check validate (human-review count is 0 by deliberate solo-owner policy; see docs/agent-os/GITHUB_PROTECTION.md)",
     "Add required reviewers and main-only deployment policy on staging; disable admin bypass",
     "Confirm production and production-migration-approval keep required reviewers + main-only policy with admin bypass disabled",
     "Verify with a docs-only test PR and a staging environment wait-for-review dispatch (no mutation)"

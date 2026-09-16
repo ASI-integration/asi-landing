@@ -5,6 +5,22 @@ This document is the owner runbook for closing **AO-001** (main protection) and 
 Machine contract: [`github-protection-desired.json`](./github-protection-desired.json).  
 Auditor: `node scripts/agent-os/check-github-protection.mjs`.
 
+## Solo-owner review policy (2026-09-16)
+
+This repository currently has **one real owner/collaborator**: `ASI-integration`. GitHub does not allow — and cannot be configured to allow — a pull request author to approve their own pull request. Combined with `.github/CODEOWNERS` naming that same account as the only code owner, the original AO-001 design (`required_approving_review_count: 1` + `require_code_owner_reviews: true`) created an **impossible merge condition**: every PR is authored by the only account able to satisfy the review requirement, so no PR could ever merge (confirmed in practice on PR #280).
+
+**Fix applied**: `required_approving_review_count` is set to `0` and `require_code_owner_reviews` is set to `false`. Every other control is unchanged and still fully enforced, including for the owner:
+
+- a pull request is still required before merging into `main` (no direct pushes);
+- the `validate` required status check is still strict and blocks merge until CI is green;
+- `enforce_admins` is still `true` — the owner cannot bypass any of the above;
+- force pushes and branch deletion on `main` are still disabled;
+- no bypass list exists.
+
+This preserves the actual safety gate (CI + PR-only merges, enforced for everyone including admins) while removing only the literally-impossible human-approval step. The owner-controlled production gate is unaffected by this change — it lives in the `production` GitHub Environment's required-reviewer rule, which (unlike branch-protection PR review) GitHub does permit the same account to self-approve.
+
+**If a genuine second reviewer is added later** (a real second collaborator, not a rubber-stamp bot), re-enable human review deliberately: set `required_approving_review_count` back to `1` and `require_code_owner_reviews` back to `true` in both live GitHub settings and this contract, and update `.github/CODEOWNERS` if the new reviewer should be a code owner.
+
 ## Live audit snapshot (2026-09-16)
 
 Captured with GitHub API against `ASI-integration/asi-landing` (owner type: User `ASI-integration`).
@@ -50,9 +66,9 @@ Do these in order. Do not deploy and do not change secrets.
    - **Restrict deletions**
    - **Block force pushes**
    - **Require a pull request before merging**
-     - Required approvals: `1`
+     - Required approvals: `0` (solo-owner policy — see above; raise to `1` if a genuine second reviewer joins)
      - Dismiss stale pull request approvals when new commits are pushed: **ON**
-     - Require review from Code Owners: **ON**
+     - Require review from Code Owners: **OFF** (solo-owner policy — see above)
    - **Require status checks to pass**
      - Do not allow bypassing: **ON** if shown
      - Add required check exactly: `validate`
@@ -94,7 +110,7 @@ Expect `"ok": true` and empty `gaps`.
 2. AO-001 test PR: open a docs-only PR into `main`. Confirm:
    - direct push to `main` is rejected;
    - merge is blocked until `validate` is green;
-   - merge is blocked until 1 approving review / Code Owners review.
+   - merge does not require an approving review (solo-owner policy — required review count is `0` by design).
 3. AO-002 verification without mutation:
    - Dispatch a **read-only** staging workflow that uses `environment: staging` (for example inspect/probe workflows) and confirm it waits for environment approval.
    - Do **not** run deploy or migration apply for this verification if avoidable.
