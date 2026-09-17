@@ -10,5 +10,11 @@ export const EN_PUBLIC_ORIGIN = 'https://asi-global.com';
  * legal, contact, or corporate-data relationship to asi-global.ru — do not
  * reuse RU_PUBLIC_ORIGIN, RU contact addresses, or RU legal/footer content
  * on pages that use this origin.
+ *
+ * `www` is the canonical host, not the apex. The apex (guestautopilot.com)
+ * is redirect-only (301 → www) at the nginx layer — see
+ * deploy/nginx/guestautopilot.com.conf. Every canonical/OG/public-origin
+ * reference in the app must point at `www` so nothing advertises the
+ * redirect-only apex as if it were the real address.
  */
-export const GUEST_AUTOPILOT_ORIGIN = 'https://guestautopilot.com';
+export const GUEST_AUTOPILOT_ORIGIN = 'https://www.guestautopilot.com';

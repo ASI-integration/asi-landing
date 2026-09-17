@@ -32,7 +32,7 @@ export default async function PrivacyPage() {
               1. Data Controller
             </h2>
             <p>
-              This Privacy Policy applies to the ASI service{isRuHost ? '' : ' at guestautopilot.com'}.
+              This Privacy Policy applies to the ASI service{isRuHost ? '' : ' at www.guestautopilot.com'}.
             </p>
             {isRuHost ? (
               <div className="mt-3 p-4 bg-slate-50 rounded-lg border border-slate-200 space-y-1">
@@ -177,7 +177,7 @@ export default async function PrivacyPage() {
             </h2>
             <p>
               We may update this Privacy Policy from time to time. The current version is always
-              available at <span className="font-medium text-slate-900">guestautopilot.com/privacy</span>.
+              available at <span className="font-medium text-slate-900">www.guestautopilot.com/privacy</span>.
               Continued use of the service after an update constitutes acceptance of the revised policy.
             </p>
           </section>
