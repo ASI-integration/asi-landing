@@ -1,5 +1,13 @@
 import Link from 'next/link';
+import type { Metadata } from 'next';
 import { STRIPE_PAYMENT_LINK } from '@/config/payments';
+import { GUEST_AUTOPILOT_ORIGIN } from '@/config/publicOrigins';
+
+export const metadata: Metadata = {
+  title: 'OTA Integration — ASI',
+  description: 'Connect your OTA channels so ASI can run bookings, pricing, and guest flows end-to-end.',
+  alternates: { canonical: `${GUEST_AUTOPILOT_ORIGIN}/ota` },
+};
 
 export default function OtaPage() {
   return (

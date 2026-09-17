@@ -1,12 +1,13 @@
 import Link from 'next/link';
 import { productSupportEmail } from '@/config/contact';
 import { legalConfig } from '@/config/legal';
-import { telegramSupportBotHandle, telegramSupportBotUrl } from '@/config/telegramBots';
 import { getIsRuHost } from '@/lib/getIsRuHost';
+import { GUEST_AUTOPILOT_ORIGIN } from '@/config/publicOrigins';
 
 export const metadata = {
   title: 'Privacy Policy — ASI',
   description: 'Privacy and personal data processing policy for the ASI service.',
+  alternates: { canonical: `${GUEST_AUTOPILOT_ORIGIN}/privacy` },
 };
 
 export default async function PrivacyPage() {
@@ -59,12 +60,9 @@ export default async function PrivacyPage() {
             ) : (
               <div className="mt-3 p-4 bg-slate-50 rounded-lg border border-slate-200 space-y-1">
                 <p>
-                  Legal entity details for this international site are being finalized.
-                  Reach the controller via Telegram at{' '}
-                  <a href={telegramSupportBotUrl} target="_blank" rel="noopener noreferrer" className="text-slate-900 hover:underline">
-                    @{telegramSupportBotHandle}
-                  </a>{' '}
-                  or the <Link href="/contacts" className="text-slate-900 hover:underline">Contact page</Link>.
+                  Legal entity details for this international site are being finalized. See the{' '}
+                  <Link href="/contacts" className="text-slate-900 hover:underline">Contact page</Link>{' '}
+                  for updates.
                 </p>
               </div>
             )}

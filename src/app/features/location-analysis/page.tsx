@@ -6,12 +6,14 @@ import { TgIcon } from '@/components/TgIcon';
 import { productSupportEmail } from '@/config/contact';
 import { telegramSupportBotHandle, telegramSupportBotUrl } from '@/config/telegramBots';
 import { STRIPE_PAYMENT_LINK } from '@/config/payments';
-import { RU_PUBLIC_ORIGIN } from '@/config/publicOrigins';
+import { RU_PUBLIC_ORIGIN, GUEST_AUTOPILOT_ORIGIN } from '@/config/publicOrigins';
+import { getIsRuHost } from '@/lib/getIsRuHost';
 
 export const metadata: Metadata = {
   title: 'Location Analysis — ASI',
   description:
     'AI-powered location analysis for short-term rental properties. Understand demand patterns, competition density, and foot traffic to maximise occupancy.',
+  alternates: { canonical: `${GUEST_AUTOPILOT_ORIGIN}/features/location-analysis` },
 };
 
 export default async function LocationAnalysisPage(
@@ -19,6 +21,7 @@ export default async function LocationAnalysisPage(
 ) {
   const searchParams = await props.searchParams;
   const mode = searchParams.mode === 'commercial' ? 'commercial' as const : 'residential' as const;
+  const isRuHost = await getIsRuHost();
   return (
     <LocationTelemetryProvider>
       <div className="min-h-screen bg-slate-950">
@@ -40,12 +43,16 @@ export default async function LocationAnalysisPage(
               >
                 Communication Module
               </Link>
-              <span className="hidden sm:block w-px h-4 bg-slate-800 shrink-0" />
-              <div className="flex items-center gap-1 text-sm">
-                <span className="px-2 py-1 rounded font-semibold text-white bg-slate-800">EN</span>
-                <span className="text-slate-700">|</span>
-                <a href={`${RU_PUBLIC_ORIGIN}/`} className="px-2 py-1 rounded text-slate-400 hover:text-white transition-colors">RU</a>
-              </div>
+              {isRuHost ? (
+                <>
+                  <span className="hidden sm:block w-px h-4 bg-slate-800 shrink-0" />
+                  <div className="flex items-center gap-1 text-sm">
+                    <span className="px-2 py-1 rounded font-semibold text-white bg-slate-800">EN</span>
+                    <span className="text-slate-700">|</span>
+                    <a href={`${RU_PUBLIC_ORIGIN}/`} className="px-2 py-1 rounded text-slate-400 hover:text-white transition-colors">RU</a>
+                  </div>
+                </>
+              ) : null}
               <Link
                 href="/login"
                 className="inline-flex items-center justify-center px-4 py-2 bg-white text-slate-900 text-sm font-semibold rounded-lg hover:bg-slate-100 transition-colors shadow-sm"
@@ -124,23 +131,31 @@ export default async function LocationAnalysisPage(
                   Communication Module →
                 </Link>
               </div>
-              <div className="mt-8 flex justify-center gap-4 flex-wrap">
-                <a
-                  href={telegramSupportBotUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-2 text-sm text-slate-400 hover:text-sky-300 transition-colors"
-                >
-                  <TgIcon className="w-4 h-4" />
-                  @{telegramSupportBotHandle}
-                </a>
-                <a
-                  href={`mailto:${productSupportEmail}`}
-                  className="text-sm text-slate-400 hover:text-white transition-colors"
-                >
-                  {productSupportEmail}
-                </a>
-              </div>
+              {isRuHost ? (
+                <div className="mt-8 flex justify-center gap-4 flex-wrap">
+                  <a
+                    href={telegramSupportBotUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-2 text-sm text-slate-400 hover:text-sky-300 transition-colors"
+                  >
+                    <TgIcon className="w-4 h-4" />
+                    @{telegramSupportBotHandle}
+                  </a>
+                  <a
+                    href={`mailto:${productSupportEmail}`}
+                    className="text-sm text-slate-400 hover:text-white transition-colors"
+                  >
+                    {productSupportEmail}
+                  </a>
+                </div>
+              ) : (
+                <div className="mt-8 flex justify-center">
+                  <Link href="/contacts" className="text-sm text-slate-400 hover:text-white transition-colors">
+                    Contact
+                  </Link>
+                </div>
+              )}
             </div>
           </section>
 

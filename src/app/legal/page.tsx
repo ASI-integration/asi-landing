@@ -1,12 +1,13 @@
 import Link from 'next/link';
 import { productSupportEmail } from '@/config/contact';
 import { legalConfig } from '@/config/legal';
-import { telegramSupportBotHandle, telegramSupportBotUrl } from '@/config/telegramBots';
 import { getIsRuHost } from '@/lib/getIsRuHost';
+import { GUEST_AUTOPILOT_ORIGIN } from '@/config/publicOrigins';
 
 export const metadata = {
   title: 'Legal Information — ASI',
   description: 'Legal information and terms of use for the ASI service.',
+  alternates: { canonical: `${GUEST_AUTOPILOT_ORIGIN}/legal` },
 };
 
 export default async function LegalPage() {
@@ -44,12 +45,9 @@ export default async function LegalPage() {
               </>
             ) : (
               <p>
-                Legal entity details for this international site are being finalized. For
-                support, reach us via Telegram at{' '}
-                <a href={telegramSupportBotUrl} target="_blank" rel="noopener noreferrer" className="text-slate-900 hover:underline">
-                  @{telegramSupportBotHandle}
-                </a>{' '}
-                or the <Link href="/contacts" className="text-slate-900 hover:underline">Contact page</Link>.
+                Legal entity details for this international site are being finalized. See the{' '}
+                <Link href="/contacts" className="text-slate-900 hover:underline">Contact page</Link>{' '}
+                for updates.
               </p>
             )}
           </section>

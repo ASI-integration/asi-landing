@@ -1,12 +1,13 @@
 import Link from 'next/link';
 import { productSupportEmail } from '@/config/contact';
 import { legalConfig } from '@/config/legal';
-import { telegramSupportBotHandle, telegramSupportBotUrl } from '@/config/telegramBots';
 import { getIsRuHost } from '@/lib/getIsRuHost';
+import { GUEST_AUTOPILOT_ORIGIN } from '@/config/publicOrigins';
 
 export const metadata = {
   title: 'Terms of Service — ASI',
   description: 'Terms of service for access to the ASI platform.',
+  alternates: { canonical: `${GUEST_AUTOPILOT_ORIGIN}/offer` },
 };
 
 export default async function OfferPage() {
@@ -54,12 +55,9 @@ export default async function OfferPage() {
             ) : (
               <div className="p-4 bg-slate-50 rounded-lg border border-slate-200 space-y-1">
                 <p>
-                  Legal entity details for this international site are being finalized. Reach
-                  the service provider via Telegram at{' '}
-                  <a href={telegramSupportBotUrl} target="_blank" rel="noopener noreferrer" className="text-slate-900 hover:underline">
-                    @{telegramSupportBotHandle}
-                  </a>{' '}
-                  or the <Link href="/contacts" className="text-slate-900 hover:underline">Contact page</Link>.
+                  Legal entity details for this international site are being finalized. See the{' '}
+                  <Link href="/contacts" className="text-slate-900 hover:underline">Contact page</Link>{' '}
+                  for updates.
                 </p>
               </div>
             )}
@@ -74,8 +72,8 @@ export default async function OfferPage() {
               for automating short-term rental property management, provided under a subscription model.
             </p>
             <p className="mt-3">
-              The platform automates listing management, booking processing, guest communication via
-              Telegram bot, and payment integrations.
+              The platform automates listing management, booking processing, guest communication,
+              and payment integrations.
             </p>
             <p className="mt-3">
               By registering an account or completing a subscription payment you accept these Terms in
@@ -139,7 +137,7 @@ export default async function OfferPage() {
             <p className="font-medium text-slate-900">The service provider undertakes to:</p>
             <ul className="mt-2 list-disc pl-5 space-y-1.5">
               <li>Maintain service availability of at least 99% per month (SLA).</li>
-              <li>Provide technical support by email within 1 business day.</li>
+              <li>Provide technical support within 1 business day via the published contact channel.</li>
               <li>Notify users of planned maintenance at least 24 hours in advance.</li>
               <li>Store personal data in accordance with the Privacy Policy.</li>
             </ul>
