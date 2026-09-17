@@ -38,11 +38,13 @@ export function HeroSection({
   telegramVariant = 'handle',
   showTopRow = true,
   showEmail = true,
+  showTelegram = true,
 }: {
   content: HeroContent;
   telegramVariant?: 'handle' | 'icon';
   showTopRow?: boolean;
   showEmail?: boolean;
+  showTelegram?: boolean;
 }) {
   const {
     aboutLabel, aboutHeadline, aboutBody, aboutPoints,
@@ -113,21 +115,23 @@ export function HeroSection({
                   {detailsLabel}
                 </p>
                 <div className="flex flex-col items-start sm:items-end gap-3">
-                  <a
-                    href={telegramSupportBotUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    aria-label="Telegram"
-                    title="Telegram"
-                    className={
-                      telegramVariant === 'icon'
-                        ? 'inline-flex items-center justify-center w-11 h-11 rounded-xl bg-[#2CA5E0]/10 border border-[#2CA5E0]/25 text-sky-300 hover:bg-[#2CA5E0]/20 hover:border-[#2CA5E0]/50 transition-all'
-                        : 'inline-flex items-center gap-2.5 px-4 py-2.5 rounded-xl bg-[#2CA5E0]/10 border border-[#2CA5E0]/25 text-sky-300 hover:bg-[#2CA5E0]/20 hover:border-[#2CA5E0]/50 transition-all text-sm font-semibold'
-                    }
-                  >
-                    <TgIcon className="w-4 h-4 shrink-0" />
-                    {telegramVariant === 'handle' ? `@${telegramSupportBotHandle}` : <span className="sr-only">Telegram</span>}
-                  </a>
+                  {showTelegram ? (
+                    <a
+                      href={telegramSupportBotUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      aria-label="Telegram"
+                      title="Telegram"
+                      className={
+                        telegramVariant === 'icon'
+                          ? 'inline-flex items-center justify-center w-11 h-11 rounded-xl bg-[#2CA5E0]/10 border border-[#2CA5E0]/25 text-sky-300 hover:bg-[#2CA5E0]/20 hover:border-[#2CA5E0]/50 transition-all'
+                          : 'inline-flex items-center gap-2.5 px-4 py-2.5 rounded-xl bg-[#2CA5E0]/10 border border-[#2CA5E0]/25 text-sky-300 hover:bg-[#2CA5E0]/20 hover:border-[#2CA5E0]/50 transition-all text-sm font-semibold'
+                      }
+                    >
+                      <TgIcon className="w-4 h-4 shrink-0" />
+                      {telegramVariant === 'handle' ? `@${telegramSupportBotHandle}` : <span className="sr-only">Telegram</span>}
+                    </a>
+                  ) : null}
                   {showEmail ? (
                     <a
                       href={`mailto:${productSupportEmail}`}
