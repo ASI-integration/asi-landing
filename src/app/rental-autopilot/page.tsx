@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import type { Metadata } from 'next';
+import { headers } from 'next/headers';
 import { HeroSection } from '@/components/HeroSection';
 
 import { STRIPE_PAYMENT_LINK } from '@/config/payments';
@@ -8,6 +9,13 @@ import { productSupportEmail } from '@/config/contact';
 import { telegramSupportBotHandle, telegramSupportBotUrl } from '@/config/telegramBots';
 import { TgIcon } from '@/components/TgIcon';
 import { RU_PUBLIC_ORIGIN } from '@/config/publicOrigins';
+import { hostnameFromHostHeader, isRuRuntimeHost } from '@/lib/runtimeHost';
+
+async function getIsRuHost(): Promise<boolean> {
+  const h = await headers();
+  const raw = h.get('x-forwarded-host')?.split(',')[0]?.trim() ?? h.get('host') ?? '';
+  return isRuRuntimeHost(hostnameFromHostHeader(raw));
+}
 
 export const metadata: Metadata = {
   title: 'Rental Autopilot — ASI',
@@ -16,7 +24,7 @@ export const metadata: Metadata = {
 };
 
 /* ─── Contacts ──────────────────────────────────────────────────────────────── */
-function ContactLinks({ orientation = 'row' }: { orientation?: 'row' | 'col' }) {
+function ContactLinks({ orientation = 'row', showEmail }: { orientation?: 'row' | 'col'; showEmail: boolean }) {
   const cls = orientation === 'row'
     ? 'flex flex-col sm:flex-row justify-center gap-4'
     : 'flex flex-col gap-3';
@@ -32,21 +40,24 @@ function ContactLinks({ orientation = 'row' }: { orientation?: 'row' | 'col' }) 
         <TgIcon />
         @{telegramSupportBotHandle}
       </a>
-      <a
-        href={`mailto:${productSupportEmail}`}
-        className="inline-flex items-center justify-center gap-3 px-6 py-3.5 rounded-xl bg-slate-800/60 border border-slate-700 text-white font-semibold text-sm hover:bg-slate-800 hover:border-slate-600 transition-all"
-      >
-        <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5 text-slate-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5} aria-hidden="true">
-          <path strokeLinecap="round" strokeLinejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25H4.5a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5H4.5a2.25 2.25 0 00-2.25 2.25m19.5 0L12 13.5 2.25 6.75" />
-        </svg>
-        {productSupportEmail}
-      </a>
+      {showEmail ? (
+        <a
+          href={`mailto:${productSupportEmail}`}
+          className="inline-flex items-center justify-center gap-3 px-6 py-3.5 rounded-xl bg-slate-800/60 border border-slate-700 text-white font-semibold text-sm hover:bg-slate-800 hover:border-slate-600 transition-all"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5 text-slate-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5} aria-hidden="true">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25H4.5a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5H4.5a2.25 2.25 0 00-2.25 2.25m19.5 0L12 13.5 2.25 6.75" />
+          </svg>
+          {productSupportEmail}
+        </a>
+      ) : null}
     </div>
   );
 }
 
 /* ─── Page ──────────────────────────────────────────────────────────────────── */
-export default function RentalAutopilot() {
+export default async function RentalAutopilot() {
+  const isRuHost = await getIsRuHost();
   return (
     <div className="min-h-screen bg-slate-950">
 
@@ -72,14 +83,18 @@ export default function RentalAutopilot() {
 
           {/* Right: contacts + Telegram + Login */}
           <div className="flex items-center gap-3 sm:gap-4">
-            <a
-              href={`mailto:${productSupportEmail}`}
-              className="hidden sm:block text-sm text-slate-400 hover:text-white transition-colors truncate max-w-[11rem] md:max-w-none"
-              title={productSupportEmail}
-            >
-              {productSupportEmail}
-            </a>
-            <span className="hidden sm:block w-px h-4 bg-slate-800 shrink-0" />
+            {isRuHost ? (
+              <>
+                <a
+                  href={`mailto:${productSupportEmail}`}
+                  className="hidden sm:block text-sm text-slate-400 hover:text-white transition-colors truncate max-w-[11rem] md:max-w-none"
+                  title={productSupportEmail}
+                >
+                  {productSupportEmail}
+                </a>
+                <span className="hidden sm:block w-px h-4 bg-slate-800 shrink-0" />
+              </>
+            ) : null}
             <a
               href={telegramSupportBotUrl}
               target="_blank"
@@ -89,11 +104,13 @@ export default function RentalAutopilot() {
               <TgIcon className="w-4 h-4 shrink-0" />
               Telegram
             </a>
-            <div className="flex items-center gap-1 text-sm">
-              <span className="px-2 py-1 rounded font-semibold text-white bg-slate-800">EN</span>
-              <span className="text-slate-700">|</span>
-              <a href={`${RU_PUBLIC_ORIGIN}/`} className="px-2 py-1 rounded text-slate-400 hover:text-white transition-colors">RU</a>
-            </div>
+            {isRuHost ? (
+              <div className="flex items-center gap-1 text-sm">
+                <span className="px-2 py-1 rounded font-semibold text-white bg-slate-800">EN</span>
+                <span className="text-slate-700">|</span>
+                <a href={`${RU_PUBLIC_ORIGIN}/`} className="px-2 py-1 rounded text-slate-400 hover:text-white transition-colors">RU</a>
+              </div>
+            ) : null}
             <Link
               href="/login"
               className="inline-flex items-center justify-center px-4 py-2 bg-white text-slate-900 text-sm font-semibold rounded-lg hover:bg-slate-100 transition-colors shadow-sm"
@@ -107,7 +124,7 @@ export default function RentalAutopilot() {
       <main>
 
         {/* ── Hero ── */}
-        <HeroSection content={{
+        <HeroSection showEmail={isRuHost} content={{
           aboutLabel: 'About',
           aboutHeadline: 'AI Operational System for Short-Term Rentals',
           aboutBody: 'ASI is not a dashboard or tool you manage. It replaces your ops team — handling guests, bookings, pricing, and property access automatically, around the clock.',
@@ -237,10 +254,12 @@ export default function RentalAutopilot() {
               <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400 mb-5">
                 Or reach out directly
               </p>
-              <ContactLinks />
-              <p className="mt-4 text-xs text-slate-400">
-                Mon–Fri, 9:00–18:00 UTC+3 · usually faster
-              </p>
+              <ContactLinks showEmail={isRuHost} />
+              {isRuHost ? (
+                <p className="mt-4 text-xs text-slate-400">
+                  Mon–Fri, 9:00–18:00 UTC+3 · usually faster
+                </p>
+              ) : null}
             </div>
           </div>
         </section>
@@ -265,13 +284,17 @@ export default function RentalAutopilot() {
               <TgIcon className="w-4 h-4" />
               @{telegramSupportBotHandle}
             </a>
-            <span className="hidden sm:block w-px h-3 bg-slate-800" />
-            <a
-              href={`mailto:${productSupportEmail}`}
-              className="text-slate-400 hover:text-white transition-colors"
-            >
-              {productSupportEmail}
-            </a>
+            {isRuHost ? (
+              <>
+                <span className="hidden sm:block w-px h-3 bg-slate-800" />
+                <a
+                  href={`mailto:${productSupportEmail}`}
+                  className="text-slate-400 hover:text-white transition-colors"
+                >
+                  {productSupportEmail}
+                </a>
+              </>
+            ) : null}
           </div>
 
           <div className="flex flex-wrap justify-center gap-x-5 gap-y-1">

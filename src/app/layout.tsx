@@ -7,20 +7,36 @@ import { FooterGate } from '@/components/FooterGate';
 import { LocalePathSync } from '@/components/LocalePathSync';
 import { hostnameFromHostHeader, isRuRuntimeHost } from '@/lib/runtimeHost';
 
-export const metadata: Metadata = {
+const baseMetadata = {
   title: 'ASI — Full operational automation',
   description: 'Full operational automation for real estate and hospitality: guest comms, listings, pricing, bookings, and execution — replaces the ops layer, not another tool.',
-  alternates: {
-    languages: {
-      'x-default': 'https://asi-global.com',
-      en: 'https://asi-global.com',
-      ru: 'https://asi-global.ru/',
-    },
-  },
   icons: {
     icon: '/brand/asi-global-mark.png',
   },
 };
+
+export async function generateMetadata(): Promise<Metadata> {
+  const h = await headers();
+  const raw = h.get('x-forwarded-host')?.split(',')[0]?.trim() ?? h.get('host') ?? '';
+  const isRuHost = isRuRuntimeHost(hostnameFromHostHeader(raw));
+
+  // Only the RU deployment advertises the `ru` hreflang alternate as a default. A
+  // guestautopilot.com page that doesn't set its own `alternates` must not inherit a
+  // pointer to asi-global.ru — that host has no legal/contact relationship to it.
+  if (isRuHost) {
+    return {
+      ...baseMetadata,
+      alternates: {
+        languages: {
+          'x-default': 'https://asi-global.com',
+          en: 'https://asi-global.com',
+          ru: 'https://asi-global.ru/',
+        },
+      },
+    };
+  }
+  return baseMetadata;
+}
 
 export default async function RootLayout({
   children,

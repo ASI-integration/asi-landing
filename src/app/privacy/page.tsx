@@ -1,13 +1,16 @@
 import Link from 'next/link';
 import { productSupportEmail } from '@/config/contact';
 import { legalConfig } from '@/config/legal';
+import { telegramSupportBotHandle, telegramSupportBotUrl } from '@/config/telegramBots';
+import { getIsRuHost } from '@/lib/getIsRuHost';
 
 export const metadata = {
   title: 'Privacy Policy — ASI',
-  description: 'Privacy and personal data processing policy for ASI Integrations.',
+  description: 'Privacy and personal data processing policy for the ASI service.',
 };
 
-export default function PrivacyPage() {
+export default async function PrivacyPage() {
+  const isRuHost = await getIsRuHost();
   return (
     <div className="min-h-screen bg-white">
       <div className="max-w-2xl mx-auto px-4 sm:px-6 py-16">
@@ -28,30 +31,43 @@ export default function PrivacyPage() {
               1. Data Controller
             </h2>
             <p>
-              This Privacy Policy applies to the ASI Integrations service and its associated websites.
+              This Privacy Policy applies to the ASI service{isRuHost ? '' : ' at guestautopilot.com'}.
             </p>
-            <div className="mt-3 p-4 bg-slate-50 rounded-lg border border-slate-200 space-y-1">
-              <p>
-                <span className="font-medium text-slate-900">Controller:</span>{' '}
-                {legalConfig.name}
-              </p>
-              <p>
-                <span className="font-medium text-slate-900">Status:</span>{' '}
-                {legalConfig.status}
-              </p>
-              <p>
-                <span className="font-medium text-slate-900">Legal inquiries:</span>{' '}
-                <a href={`mailto:${legalConfig.email}`} className="text-slate-900 hover:underline">
-                  {legalConfig.email}
-                </a>
-              </p>
-              <p>
-                <span className="font-medium text-slate-900">Product support:</span>{' '}
-                <a href={`mailto:${productSupportEmail}`} className="text-slate-900 hover:underline">
-                  {productSupportEmail}
-                </a>
-              </p>
-            </div>
+            {isRuHost ? (
+              <div className="mt-3 p-4 bg-slate-50 rounded-lg border border-slate-200 space-y-1">
+                <p>
+                  <span className="font-medium text-slate-900">Controller:</span>{' '}
+                  {legalConfig.name}
+                </p>
+                <p>
+                  <span className="font-medium text-slate-900">Status:</span>{' '}
+                  {legalConfig.status}
+                </p>
+                <p>
+                  <span className="font-medium text-slate-900">Legal inquiries:</span>{' '}
+                  <a href={`mailto:${legalConfig.email}`} className="text-slate-900 hover:underline">
+                    {legalConfig.email}
+                  </a>
+                </p>
+                <p>
+                  <span className="font-medium text-slate-900">Product support:</span>{' '}
+                  <a href={`mailto:${productSupportEmail}`} className="text-slate-900 hover:underline">
+                    {productSupportEmail}
+                  </a>
+                </p>
+              </div>
+            ) : (
+              <div className="mt-3 p-4 bg-slate-50 rounded-lg border border-slate-200 space-y-1">
+                <p>
+                  Legal entity details for this international site are being finalized.
+                  Reach the controller via Telegram at{' '}
+                  <a href={telegramSupportBotUrl} target="_blank" rel="noopener noreferrer" className="text-slate-900 hover:underline">
+                    @{telegramSupportBotHandle}
+                  </a>{' '}
+                  or the <Link href="/contacts" className="text-slate-900 hover:underline">Contact page</Link>.
+                </p>
+              </div>
+            )}
           </section>
 
           {/* 2. Data we collect */}
@@ -130,11 +146,20 @@ export default function PrivacyPage() {
               <li>Withdraw consent to data processing at any time.</li>
             </ul>
             <p className="mt-3">
-              To exercise your rights, send a request to{' '}
-              <a href={`mailto:${legalConfig.email}`} className="text-slate-900 hover:underline">
-                {legalConfig.email}
-              </a>
-              .
+              {isRuHost ? (
+                <>
+                  To exercise your rights, send a request to{' '}
+                  <a href={`mailto:${legalConfig.email}`} className="text-slate-900 hover:underline">
+                    {legalConfig.email}
+                  </a>
+                  .
+                </>
+              ) : (
+                <>
+                  To exercise your rights, contact us via the{' '}
+                  <Link href="/contacts" className="text-slate-900 hover:underline">Contact page</Link>.
+                </>
+              )}
             </p>
           </section>
 
