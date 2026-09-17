@@ -255,9 +255,11 @@ export default async function RentalAutopilot() {
                 Or reach out directly
               </p>
               <ContactLinks showEmail={isRuHost} />
-              <p className="mt-4 text-xs text-slate-400">
-                Mon–Fri, 9:00–18:00 UTC+3 · usually faster
-              </p>
+              {isRuHost ? (
+                <p className="mt-4 text-xs text-slate-400">
+                  Mon–Fri, 9:00–18:00 UTC+3 · usually faster
+                </p>
+              ) : null}
             </div>
           </div>
         </section>

@@ -1,13 +1,16 @@
 import Link from 'next/link';
 import { productSupportEmail } from '@/config/contact';
 import { legalConfig } from '@/config/legal';
+import { telegramSupportBotHandle, telegramSupportBotUrl } from '@/config/telegramBots';
+import { getIsRuHost } from '@/lib/getIsRuHost';
 
 export const metadata = {
   title: 'Terms of Service — ASI',
-  description: 'Terms of service for access to the ASI Integrations platform.',
+  description: 'Terms of service for access to the ASI platform.',
 };
 
-export default function OfferPage() {
+export default async function OfferPage() {
+  const isRuHost = await getIsRuHost();
   return (
     <div className="min-h-screen bg-white">
       <div className="max-w-2xl mx-auto px-4 sm:px-6 py-16">
@@ -25,28 +28,41 @@ export default function OfferPage() {
           {/* 1. Service provider */}
           <section>
             <h2 className="text-base font-semibold text-slate-900 mb-3">1. Service Provider</h2>
-            <div className="p-4 bg-slate-50 rounded-lg border border-slate-200 space-y-1">
-              <p>
-                <span className="font-medium text-slate-900">Name:</span>{' '}
-                {legalConfig.name}
-              </p>
-              <p>
-                <span className="font-medium text-slate-900">Status:</span>{' '}
-                {legalConfig.status}
-              </p>
-              <p>
-                <span className="font-medium text-slate-900">Legal inquiries:</span>{' '}
-                <a href={`mailto:${legalConfig.email}`} className="text-slate-900 hover:underline">
-                  {legalConfig.email}
-                </a>
-              </p>
-              <p>
-                <span className="font-medium text-slate-900">Product support:</span>{' '}
-                <a href={`mailto:${productSupportEmail}`} className="text-slate-900 hover:underline">
-                  {productSupportEmail}
-                </a>
-              </p>
-            </div>
+            {isRuHost ? (
+              <div className="p-4 bg-slate-50 rounded-lg border border-slate-200 space-y-1">
+                <p>
+                  <span className="font-medium text-slate-900">Name:</span>{' '}
+                  {legalConfig.name}
+                </p>
+                <p>
+                  <span className="font-medium text-slate-900">Status:</span>{' '}
+                  {legalConfig.status}
+                </p>
+                <p>
+                  <span className="font-medium text-slate-900">Legal inquiries:</span>{' '}
+                  <a href={`mailto:${legalConfig.email}`} className="text-slate-900 hover:underline">
+                    {legalConfig.email}
+                  </a>
+                </p>
+                <p>
+                  <span className="font-medium text-slate-900">Product support:</span>{' '}
+                  <a href={`mailto:${productSupportEmail}`} className="text-slate-900 hover:underline">
+                    {productSupportEmail}
+                  </a>
+                </p>
+              </div>
+            ) : (
+              <div className="p-4 bg-slate-50 rounded-lg border border-slate-200 space-y-1">
+                <p>
+                  Legal entity details for this international site are being finalized. Reach
+                  the service provider via Telegram at{' '}
+                  <a href={telegramSupportBotUrl} target="_blank" rel="noopener noreferrer" className="text-slate-900 hover:underline">
+                    @{telegramSupportBotHandle}
+                  </a>{' '}
+                  or the <Link href="/contacts" className="text-slate-900 hover:underline">Contact page</Link>.
+                </p>
+              </div>
+            )}
           </section>
 
           {/* 2. Subject */}
@@ -54,7 +70,7 @@ export default function OfferPage() {
             <h2 className="text-base font-semibold text-slate-900 mb-3">2. Subject</h2>
             <p>
               These Terms govern access to{' '}
-              <span className="font-medium text-slate-900">ASI Integrations</span>, a SaaS platform
+              <span className="font-medium text-slate-900">ASI</span>, a SaaS platform
               for automating short-term rental property management, provided under a subscription model.
             </p>
             <p className="mt-3">
@@ -150,12 +166,18 @@ export default function OfferPage() {
             <h2 className="text-base font-semibold text-slate-900 mb-3">8. Dispute Resolution</h2>
             <p>
               Disputes shall be resolved through negotiation in the first instance. If no agreement is
-              reached, disputes may be referred to the competent courts. You may also contact us
-              directly at{' '}
-              <a href={`mailto:${legalConfig.email}`} className="text-slate-900 hover:underline">
-                {legalConfig.email}
-              </a>
-              .
+              reached, disputes may be referred to the competent courts. You may also contact us{' '}
+              {isRuHost ? (
+                <>
+                  directly at{' '}
+                  <a href={`mailto:${legalConfig.email}`} className="text-slate-900 hover:underline">
+                    {legalConfig.email}
+                  </a>
+                  .
+                </>
+              ) : (
+                <>via the <Link href="/contacts" className="text-slate-900 hover:underline">Contact page</Link>.</>
+              )}
             </p>
           </section>
 

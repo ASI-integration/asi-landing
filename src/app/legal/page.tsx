@@ -1,13 +1,16 @@
 import Link from 'next/link';
 import { productSupportEmail } from '@/config/contact';
 import { legalConfig } from '@/config/legal';
+import { telegramSupportBotHandle, telegramSupportBotUrl } from '@/config/telegramBots';
+import { getIsRuHost } from '@/lib/getIsRuHost';
 
 export const metadata = {
   title: 'Legal Information — ASI',
   description: 'Legal information and terms of use for the ASI service.',
 };
 
-export default function LegalPage() {
+export default async function LegalPage() {
+  const isRuHost = await getIsRuHost();
   return (
     <div className="min-h-screen bg-white">
       <div className="max-w-2xl mx-auto px-4 sm:px-6 py-16">
@@ -22,20 +25,33 @@ export default function LegalPage() {
         <div className="mt-8 space-y-6 text-slate-700 text-sm leading-relaxed">
           <section>
             <h2 className="font-semibold text-slate-900 mb-2">Service provider:</h2>
-            <p>{legalConfig.name}</p>
-            <p>
-              Legal &amp; official inquiries:{' '}
-              <a href={`mailto:${legalConfig.email}`} className="text-slate-900 hover:underline">
-                {legalConfig.email}
-              </a>
-            </p>
-            <p>
-              ASI product support:{' '}
-              <a href={`mailto:${productSupportEmail}`} className="text-slate-900 hover:underline">
-                {productSupportEmail}
-              </a>
-            </p>
-            <p>{legalConfig.status}</p>
+            {isRuHost ? (
+              <>
+                <p>{legalConfig.name}</p>
+                <p>
+                  Legal &amp; official inquiries:{' '}
+                  <a href={`mailto:${legalConfig.email}`} className="text-slate-900 hover:underline">
+                    {legalConfig.email}
+                  </a>
+                </p>
+                <p>
+                  ASI product support:{' '}
+                  <a href={`mailto:${productSupportEmail}`} className="text-slate-900 hover:underline">
+                    {productSupportEmail}
+                  </a>
+                </p>
+                <p>{legalConfig.status}</p>
+              </>
+            ) : (
+              <p>
+                Legal entity details for this international site are being finalized. For
+                support, reach us via Telegram at{' '}
+                <a href={telegramSupportBotUrl} target="_blank" rel="noopener noreferrer" className="text-slate-900 hover:underline">
+                  @{telegramSupportBotHandle}
+                </a>{' '}
+                or the <Link href="/contacts" className="text-slate-900 hover:underline">Contact page</Link>.
+              </p>
+            )}
           </section>
 
           <section>
