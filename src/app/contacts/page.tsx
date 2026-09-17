@@ -3,10 +3,12 @@ import { productSupportEmail } from '@/config/contact';
 import { telegramSupportBotHandle, telegramSupportBotUrl } from '@/config/telegramBots';
 import { legalConfig } from '@/config/legal';
 import { getIsRuHost } from '@/lib/getIsRuHost';
+import { GUEST_AUTOPILOT_ORIGIN } from '@/config/publicOrigins';
 
 export const metadata = {
   title: 'Contact & Support — ASI',
-  description: 'Reach the ASI team via the Telegram assistant.',
+  description: 'How to reach the ASI team.',
+  alternates: { canonical: `${GUEST_AUTOPILOT_ORIGIN}/contacts` },
 };
 
 export default async function ContactsPage() {
@@ -29,7 +31,9 @@ export default async function ContactsPage() {
           Contact &amp; Support
         </h1>
         <p className="mt-4 text-slate-400 text-base leading-relaxed max-w-xl">
-          We respond within one business day. Choose a contact method below.
+          {isRuHost
+            ? 'We respond within one business day. Choose a contact method below.'
+            : 'An international contact channel for guestautopilot.com is being finalized.'}
         </p>
       </div>
 
@@ -85,72 +89,86 @@ export default async function ContactsPage() {
         ) : null}
 
         {/* Telegram */}
-        <div className="rounded-2xl bg-slate-900 border border-slate-800 p-7 flex flex-col gap-4">
-          <div className="w-10 h-10 rounded-xl bg-slate-800 flex items-center justify-center">
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              className="w-5 h-5 text-slate-300"
-              viewBox="0 0 24 24"
-              fill="currentColor"
-            >
-              <path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.894 8.221-1.97 9.28c-.145.658-.537.818-1.084.508l-3-2.21-1.447 1.394c-.16.16-.295.295-.605.295l.213-3.053 5.56-5.023c.242-.213-.054-.333-.373-.12L7.17 13.595l-2.96-.924c-.643-.204-.657-.643.136-.953l11.57-4.461c.537-.194 1.006.131.978.964z" />
-            </svg>
-          </div>
-          <div>
-            <p className="text-xs font-medium text-slate-500 uppercase tracking-widest mb-1">
-              Telegram
+        {isRuHost ? (
+          <div className="rounded-2xl bg-slate-900 border border-slate-800 p-7 flex flex-col gap-4">
+            <div className="w-10 h-10 rounded-xl bg-slate-800 flex items-center justify-center">
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                className="w-5 h-5 text-slate-300"
+                viewBox="0 0 24 24"
+                fill="currentColor"
+              >
+                <path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.894 8.221-1.97 9.28c-.145.658-.537.818-1.084.508l-3-2.21-1.447 1.394c-.16.16-.295.295-.605.295l.213-3.053 5.56-5.023c.242-.213-.054-.333-.373-.12L7.17 13.595l-2.96-.924c-.643-.204-.657-.643.136-.953l11.57-4.461c.537-.194 1.006.131.978.964z" />
+              </svg>
+            </div>
+            <div>
+              <p className="text-xs font-medium text-slate-500 uppercase tracking-widest mb-1">
+                Telegram
+              </p>
+              <a
+                href={telegramSupportBotUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-xl font-semibold text-white hover:text-slate-300 transition-colors"
+              >
+                @{telegramSupportBotHandle}
+              </a>
+            </div>
+            <p className="text-sm text-slate-400 leading-relaxed">
+              ASI AI assistant available 24/7 — helps with setup, answers pricing questions,
+              and escalates complex requests to the team.
             </p>
             <a
               href={telegramSupportBotUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="text-xl font-semibold text-white hover:text-slate-300 transition-colors"
+              className="mt-auto inline-flex items-center justify-center px-5 py-3 rounded-xl bg-slate-700 text-white text-sm font-semibold hover:bg-slate-600 transition-colors"
             >
-              @{telegramSupportBotHandle}
+              Open in Telegram
             </a>
           </div>
-          <p className="text-sm text-slate-400 leading-relaxed">
-            ASI AI assistant available 24/7 — helps with setup, answers pricing questions,
-            and escalates complex requests to the team.
-          </p>
-          <a
-            href={telegramSupportBotUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="mt-auto inline-flex items-center justify-center px-5 py-3 rounded-xl bg-slate-700 text-white text-sm font-semibold hover:bg-slate-600 transition-colors"
-          >
-            Open in Telegram
-          </a>
-        </div>
+        ) : (
+          <div className="rounded-2xl bg-slate-900 border border-slate-800 p-7 flex flex-col gap-3">
+            <p className="text-xs font-medium text-slate-500 uppercase tracking-widest">
+              International contact
+            </p>
+            <p className="text-sm text-slate-400 leading-relaxed">
+              A direct contact channel for guestautopilot.com is being finalized.
+              Check back shortly.
+            </p>
+          </div>
+        )}
       </div>
 
       {/* Response time note */}
-      <div className="max-w-3xl mx-auto px-4 sm:px-6 mt-8">
-        <div className="rounded-xl border border-slate-800 bg-slate-900/40 px-6 py-4 flex items-start gap-3">
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            className="w-5 h-5 text-emerald-400 shrink-0 mt-0.5"
-            fill="none"
-            viewBox="0 0 24 24"
-            stroke="currentColor"
-            strokeWidth={2}
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z"
-            />
-          </svg>
-          <p className="text-sm text-slate-400 leading-relaxed">
-            <span className="text-slate-200 font-medium">Response time:</span> support requests
-            are handled within one business day{isRuHost ? ' (Mon–Fri, 9:00–18:00 UTC+3)' : ''}. This aligns with our{' '}
-            <Link href="/offer" className="text-slate-300 hover:text-white underline underline-offset-2 transition-colors">
-              terms of service
-            </Link>
-            .
-          </p>
+      {isRuHost ? (
+        <div className="max-w-3xl mx-auto px-4 sm:px-6 mt-8">
+          <div className="rounded-xl border border-slate-800 bg-slate-900/40 px-6 py-4 flex items-start gap-3">
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              className="w-5 h-5 text-emerald-400 shrink-0 mt-0.5"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              strokeWidth={2}
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z"
+              />
+            </svg>
+            <p className="text-sm text-slate-400 leading-relaxed">
+              <span className="text-slate-200 font-medium">Response time:</span> support requests
+              are handled within one business day (Mon–Fri, 9:00–18:00 UTC+3). This aligns with our{' '}
+              <Link href="/offer" className="text-slate-300 hover:text-white underline underline-offset-2 transition-colors">
+                terms of service
+              </Link>
+              .
+            </p>
+          </div>
         </div>
-      </div>
+      ) : null}
 
       {/* Divider */}
       <div className="max-w-3xl mx-auto px-4 sm:px-6">
