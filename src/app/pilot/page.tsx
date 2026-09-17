@@ -1,8 +1,22 @@
+import type { Metadata } from 'next';
 import { Suspense } from 'react';
 import PilotConsoleClient from './PilotConsoleClient';
 
-export const metadata = {
+/**
+ * Engineering Pilot Console — invite/internal tooling.
+ * Not the commercial customer pilot (`/ru/early-access`).
+ * Kept out of RU public nav; de-indexed from public search.
+ */
+export const metadata: Metadata = {
   title: 'Pilot Console | ASI',
+  robots: {
+    index: false,
+    follow: false,
+    googleBot: {
+      index: false,
+      follow: false,
+    },
+  },
 };
 
 export default function PilotPage() {
