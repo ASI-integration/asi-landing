@@ -13,6 +13,11 @@ type Session = {
     subscription_status: string;
     trial_started_at: string | null;
     trial_ends_at: string | null;
+    lifecycle_status?: string | null;
+    card_verified_at?: string | null;
+    integration_started_at?: string | null;
+    integration_ready_at?: string | null;
+    billing_started_at?: string | null;
   } | null;
   isCrmOperator?: boolean;
   isDevelopmentOwner?: boolean;
