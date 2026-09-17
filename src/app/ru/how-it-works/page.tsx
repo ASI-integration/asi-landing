@@ -1,11 +1,8 @@
 import Link from 'next/link';
-import { productSupportEmail } from '@/config/contact';
-import { telegramSupportBotUrl } from '@/config/telegramBots';
 import { ThemeProvider } from '@/theme/ThemeProvider';
 import { RuPublicNavHeader } from '@/components/ru/RuPublicNavHeader';
 import { RuBottomQuickLinks } from '@/components/ru/RuBottomQuickLinks';
 import { RuComplianceFooter } from '@/components/ru/RuComplianceFooter';
-import { TgIcon } from '@/components/TgIcon';
 import {
   COMMUNICATION_PILOT_PRICE_RUB,
   COMMUNICATION_PILOT_SERVICE_TITLE,
@@ -147,33 +144,6 @@ export default function RuHowItWorksPage() {
 
       <footer>
         <RuBottomQuickLinks tone="theme" />
-        <div className="border-t border-[var(--t-border)] bg-[var(--t-bg)] px-4 py-6 sm:px-6">
-          <div className="mx-auto flex max-w-6xl flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex items-center gap-4">
-              <span className="text-lg font-bold text-[var(--t-text)]">ASI</span>
-              <span className="text-xs text-[var(--t-muted)]">© {new Date().getFullYear()}</span>
-            </div>
-            <div className="flex flex-col items-start gap-3 text-sm sm:flex-row sm:items-center sm:gap-5">
-              <a
-                href={telegramSupportBotUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                aria-label="Telegram"
-                title="Telegram"
-                className="flex h-9 w-9 items-center justify-center rounded-lg border border-[#2CA5E0]/25 bg-[#2CA5E0]/10 text-sky-300 transition-all hover:border-[#2CA5E0]/50 hover:bg-[#2CA5E0]/20"
-              >
-                <TgIcon className="h-4 w-4" />
-                <span className="sr-only">Telegram</span>
-              </a>
-              <a
-                href={`mailto:${productSupportEmail}`}
-                className="break-all text-[var(--t-muted)] transition-colors hover:text-[var(--t-text)]"
-              >
-                {productSupportEmail}
-              </a>
-            </div>
-          </div>
-        </div>
         <RuComplianceFooter tone="theme" />
       </footer>
     </ThemeProvider>
