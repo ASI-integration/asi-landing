@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import { RuLegalPageLayout } from '@/components/ru/RuLegalPageLayout';
-import { ruCompliance } from '@/config/ruCompliance';
+import { ruCompliance, ruComplianceRoutes } from '@/config/ruCompliance';
 import { telegramSupportBotHandle } from '@/config/telegramBots';
 
 export const metadata: Metadata = {
@@ -10,73 +10,68 @@ export const metadata: Metadata = {
 
 export default function RuContactsPage() {
   return (
-    <RuLegalPageLayout title="Контакты и реквизиты">
-      <section className="space-y-3">
-        <h2 className="text-base font-semibold text-[var(--t-text)]">Связь</h2>
-        <ul className="list-disc space-y-2 pl-5">
-          <li>
-            Email:{' '}
-            <a
-              href={`mailto:${ruCompliance.email}`}
-              className="text-[var(--t-text)] underline underline-offset-2 decoration-[var(--t-border)] hover:decoration-[var(--t-text)]"
-            >
-              {ruCompliance.email}
-            </a>
-          </li>
-          <li>
-            Телефон:{' '}
-            <a
-              href={`tel:${ruCompliance.phoneTel}`}
-              className="text-[var(--t-text)] underline underline-offset-2 decoration-[var(--t-border)] hover:decoration-[var(--t-text)]"
-            >
-              {ruCompliance.phone}
-            </a>
-          </li>
-          <li>
-            Telegram:{' '}
-            <a
-              href={ruCompliance.telegram}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-[var(--t-text)] underline underline-offset-2 decoration-[var(--t-border)] hover:decoration-[var(--t-text)] break-all"
-            >
-              @{telegramSupportBotHandle}
-            </a>
-          </li>
-        </ul>
-      </section>
+    <RuLegalPageLayout
+      title="Контакты и реквизиты"
+      intro="Как связаться с исполнителем и где посмотреть юридические документы."
+      wide
+    >
+      <div className="grid sm:grid-cols-2 gap-px bg-asi-border border border-asi-border mb-2 !mt-0">
+        <div className="bg-asi-paper p-6 sm:p-7">
+          <p className="text-[10px] font-sans font-semibold uppercase tracking-[0.18em] text-asi-gold-text !mb-0">
+            Связь
+          </p>
+          <ul className="mt-4 !pl-0 !list-none space-y-4">
+            <li>
+              <span className="block text-xs text-asi-navy/50 mb-1">Email</span>
+              <a href={`mailto:${ruCompliance.email}`}>{ruCompliance.email}</a>
+            </li>
+            <li>
+              <span className="block text-xs text-asi-navy/50 mb-1">Телефон</span>
+              <a href={`tel:${ruCompliance.phoneTel}`}>{ruCompliance.phone}</a>
+            </li>
+            <li>
+              <span className="block text-xs text-asi-navy/50 mb-1">Telegram</span>
+              <a href={ruCompliance.telegram} target="_blank" rel="noopener noreferrer">
+                @{telegramSupportBotHandle}
+              </a>
+            </li>
+          </ul>
+        </div>
+        <div className="bg-asi-paper p-6 sm:p-7">
+          <p className="text-[10px] font-sans font-semibold uppercase tracking-[0.18em] text-asi-gold-text !mb-0">
+            Реквизиты
+          </p>
+          <ul className="mt-4 !pl-0 !list-none space-y-4">
+            <li>
+              <span className="block text-xs text-asi-navy/50 mb-1">Самозанятый</span>
+              <span className="text-asi-navy">{ruCompliance.fullName}</span>
+            </li>
+            <li>
+              <span className="block text-xs text-asi-navy/50 mb-1">ИНН</span>
+              <span className="text-asi-navy">{ruCompliance.inn}</span>
+            </li>
+            <li>
+              <span className="block text-xs text-asi-navy/50 mb-1">Адрес для корреспонденции</span>
+              <span className="text-asi-navy">{ruCompliance.address}</span>
+            </li>
+          </ul>
+        </div>
+      </div>
 
-      <section className="space-y-3">
-        <h2 className="text-base font-semibold text-[var(--t-text)]">Реквизиты исполнителя</h2>
-        <ul className="list-disc space-y-2 pl-5">
-          <li>Самозанятый: {ruCompliance.fullName}</li>
-          <li>ИНН: {ruCompliance.inn}</li>
-          <li>Адрес для корреспонденции: {ruCompliance.address}</li>
-        </ul>
-      </section>
-
-      <section className="space-y-3">
-        <h2 className="text-base font-semibold text-[var(--t-text)]">Документы</h2>
-        <ul className="list-disc space-y-2 pl-5">
+      <section>
+        <h2>Документы</h2>
+        <ul>
           <li>
-            <a href="/ru/offer" className="underline underline-offset-2">
-              Публичная оферта
-            </a>
+            <a href={ruComplianceRoutes.offer}>Публичная оферта</a>
           </li>
           <li>
-            <a href="/ru/privacy" className="underline underline-offset-2">
-              Политика конфиденциальности
-            </a>
+            <a href={ruComplianceRoutes.privacy}>Политика конфиденциальности</a>
           </li>
           <li>
-            <a href="/ru/payment" className="underline underline-offset-2">
-              Оплата и доставка услуги
-            </a>
+            <a href={ruComplianceRoutes.payment}>Оплата и доставка услуги</a>
           </li>
           <li>
-            <a href="/ru/refund" className="underline underline-offset-2">
-              Возврат и отказ
-            </a>
+            <a href={ruComplianceRoutes.refund}>Возврат и отказ</a>
           </li>
         </ul>
       </section>
