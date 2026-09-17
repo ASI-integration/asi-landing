@@ -37,10 +37,12 @@ export function HeroSection({
   content,
   telegramVariant = 'handle',
   showTopRow = true,
+  showEmail = true,
 }: {
   content: HeroContent;
   telegramVariant?: 'handle' | 'icon';
   showTopRow?: boolean;
+  showEmail?: boolean;
 }) {
   const {
     aboutLabel, aboutHeadline, aboutBody, aboutPoints,
@@ -126,15 +128,17 @@ export function HeroSection({
                     <TgIcon className="w-4 h-4 shrink-0" />
                     {telegramVariant === 'handle' ? `@${telegramSupportBotHandle}` : <span className="sr-only">Telegram</span>}
                   </a>
-                  <a
-                    href={`mailto:${productSupportEmail}`}
-                    className="inline-flex items-center gap-2.5 px-4 py-2.5 rounded-xl bg-[var(--t-surface)] border border-[var(--t-border)] text-[var(--t-text-2)] hover:bg-[var(--t-surface-2)] transition-all text-sm"
-                  >
-                    <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4 text-[var(--t-muted)] shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5} aria-hidden="true">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25H4.5a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5H4.5a2.25 2.25 0 00-2.25 2.25m19.5 0L12 13.5 2.25 6.75" />
-                    </svg>
-                    {productSupportEmail}
-                  </a>
+                  {showEmail ? (
+                    <a
+                      href={`mailto:${productSupportEmail}`}
+                      className="inline-flex items-center gap-2.5 px-4 py-2.5 rounded-xl bg-[var(--t-surface)] border border-[var(--t-border)] text-[var(--t-text-2)] hover:bg-[var(--t-surface-2)] transition-all text-sm"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4 text-[var(--t-muted)] shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5} aria-hidden="true">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25H4.5a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5H4.5a2.25 2.25 0 00-2.25 2.25m19.5 0L12 13.5 2.25 6.75" />
+                      </svg>
+                      {productSupportEmail}
+                    </a>
+                  ) : null}
                   <Link
                     href={loginHref}
                     className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[var(--t-surface)] border border-[var(--t-border)] text-[var(--t-text-2)] hover:bg-[var(--t-surface-2)] transition-all text-sm"

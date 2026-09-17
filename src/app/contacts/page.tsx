@@ -2,13 +2,15 @@ import Link from 'next/link';
 import { productSupportEmail } from '@/config/contact';
 import { telegramSupportBotHandle, telegramSupportBotUrl } from '@/config/telegramBots';
 import { legalConfig } from '@/config/legal';
+import { getIsRuHost } from '@/lib/getIsRuHost';
 
 export const metadata = {
   title: 'Contact & Support — ASI',
-  description: 'Reach the ASI Integrations team by email or via the Telegram assistant.',
+  description: 'Reach the ASI team via the Telegram assistant.',
 };
 
-export default function ContactsPage() {
+export default async function ContactsPage() {
+  const isRuHost = await getIsRuHost();
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100">
       {/* Nav */}
@@ -37,48 +39,50 @@ export default function ContactsPage() {
       </div>
 
       {/* Channels */}
-      <div className="max-w-3xl mx-auto px-4 sm:px-6 mt-12 grid grid-cols-1 sm:grid-cols-2 gap-6">
+      <div className={`max-w-3xl mx-auto px-4 sm:px-6 mt-12 grid grid-cols-1 ${isRuHost ? 'sm:grid-cols-2' : ''} gap-6`}>
 
         {/* Email */}
-        <div className="rounded-2xl bg-slate-900 border border-slate-800 p-7 flex flex-col gap-4">
-          <div className="w-10 h-10 rounded-xl bg-slate-800 flex items-center justify-center">
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              className="w-5 h-5 text-slate-300"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-              strokeWidth={1.5}
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25H4.5a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5H4.5a2.25 2.25 0 00-2.25 2.25m19.5 0L12 13.5 2.25 6.75"
-              />
-            </svg>
-          </div>
-          <div>
-            <p className="text-xs font-medium text-slate-500 uppercase tracking-widest mb-1">
-              Email
+        {isRuHost ? (
+          <div className="rounded-2xl bg-slate-900 border border-slate-800 p-7 flex flex-col gap-4">
+            <div className="w-10 h-10 rounded-xl bg-slate-800 flex items-center justify-center">
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                className="w-5 h-5 text-slate-300"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                strokeWidth={1.5}
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25H4.5a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5H4.5a2.25 2.25 0 00-2.25 2.25m19.5 0L12 13.5 2.25 6.75"
+                />
+              </svg>
+            </div>
+            <div>
+              <p className="text-xs font-medium text-slate-500 uppercase tracking-widest mb-1">
+                Email
+              </p>
+              <a
+                href={`mailto:${productSupportEmail}`}
+                className="text-xl font-semibold text-white hover:text-slate-300 transition-colors break-all"
+              >
+                {productSupportEmail}
+              </a>
+            </div>
+            <p className="text-sm text-slate-400 leading-relaxed">
+              Primary support channel. Include your property name or account number in the subject
+              line to speed up processing.
             </p>
             <a
               href={`mailto:${productSupportEmail}`}
-              className="text-xl font-semibold text-white hover:text-slate-300 transition-colors break-all"
+              className="mt-auto inline-flex items-center justify-center px-5 py-3 rounded-xl bg-white text-slate-900 text-sm font-semibold hover:bg-slate-100 transition-colors"
             >
-              {productSupportEmail}
+              Send email
             </a>
           </div>
-          <p className="text-sm text-slate-400 leading-relaxed">
-            Primary support channel. Include your property name or account number in the subject
-            line to speed up processing.
-          </p>
-          <a
-            href={`mailto:${productSupportEmail}`}
-            className="mt-auto inline-flex items-center justify-center px-5 py-3 rounded-xl bg-white text-slate-900 text-sm font-semibold hover:bg-slate-100 transition-colors"
-          >
-            Send email
-          </a>
-        </div>
+        ) : null}
 
         {/* Telegram */}
         <div className="rounded-2xl bg-slate-900 border border-slate-800 p-7 flex flex-col gap-4">
@@ -138,8 +142,8 @@ export default function ContactsPage() {
             />
           </svg>
           <p className="text-sm text-slate-400 leading-relaxed">
-            <span className="text-slate-200 font-medium">Business hours:</span> support requests
-            are handled within one business day (Mon–Fri, 9:00–18:00 UTC+3). This aligns with our{' '}
+            <span className="text-slate-200 font-medium">Response time:</span> support requests
+            are handled within one business day{isRuHost ? ' (Mon–Fri, 9:00–18:00 UTC+3)' : ''}. This aligns with our{' '}
             <Link href="/offer" className="text-slate-300 hover:text-white underline underline-offset-2 transition-colors">
               terms of service
             </Link>
@@ -159,13 +163,19 @@ export default function ContactsPage() {
           Legal entity
         </p>
         <div className="rounded-2xl bg-slate-900 border border-slate-800 px-7 py-6 space-y-2 text-sm text-slate-400">
-          <p className="text-slate-200 font-semibold">{legalConfig.name}</p>
-          <p>
-            Email:{' '}
-            <a href={`mailto:${legalConfig.email}`} className="text-slate-300 hover:text-white transition-colors">
-              {legalConfig.email}
-            </a>
-          </p>
+          {isRuHost ? (
+            <>
+              <p className="text-slate-200 font-semibold">{legalConfig.name}</p>
+              <p>
+                Email:{' '}
+                <a href={`mailto:${legalConfig.email}`} className="text-slate-300 hover:text-white transition-colors">
+                  {legalConfig.email}
+                </a>
+              </p>
+            </>
+          ) : (
+            <p>Legal entity details for this international site are being finalized.</p>
+          )}
           <div className="pt-3 mt-3 border-t border-slate-800 flex flex-wrap gap-4 text-xs">
             <Link href="/offer" className="text-slate-500 hover:text-slate-300 transition-colors">
               Terms of Service
