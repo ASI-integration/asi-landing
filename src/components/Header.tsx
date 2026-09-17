@@ -9,7 +9,7 @@ import { telegramSupportBotUrl } from '@/config/telegramBots';
 import { RU_PUBLIC_ORIGIN } from '@/config/publicOrigins';
 import { TgIcon } from '@/components/TgIcon';
 
-export function Header() {
+export function Header({ isRuHost = false }: { isRuHost?: boolean }) {
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
   const onRu = Boolean(pathname?.startsWith('/ru'));
@@ -21,42 +21,48 @@ export function Header() {
         {/* Top row: contacts + email + Telegram + locale + login */}
         <div className="hidden md:flex items-center justify-between py-2.5 gap-4">
           <div className="flex items-center gap-3 min-w-0">
-            <a
-              href={`mailto:${productSupportEmail}`}
-              className="text-sm text-slate-600 hover:text-slate-900 font-medium transition-colors truncate"
-              title={productSupportEmail}
-            >
-              {productSupportEmail}
-            </a>
+            {isRuHost ? (
+              <a
+                href={`mailto:${productSupportEmail}`}
+                className="text-sm text-slate-600 hover:text-slate-900 font-medium transition-colors truncate"
+                title={productSupportEmail}
+              >
+                {productSupportEmail}
+              </a>
+            ) : null}
           </div>
 
           <div className="flex items-center gap-3 shrink-0">
-            <a
-              href={telegramSupportBotUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              aria-label="Telegram"
-              title="Telegram"
-              className="inline-flex items-center justify-center w-9 h-9 rounded-lg bg-[#2CA5E0]/10 border border-[#2CA5E0]/25 text-[#229ED9] hover:bg-[#2CA5E0]/20 hover:border-[#2CA5E0]/50 transition-all"
-            >
-              <TgIcon className="w-4 h-4 shrink-0" />
-              <span className="sr-only">Telegram</span>
-            </a>
-            <div className="flex items-center gap-1 text-slate-500 text-sm">
-              <Link
-                href="/"
-                className={`px-2 py-1 rounded transition-colors ${!onRu ? 'font-semibold text-slate-900 bg-slate-100' : 'hover:text-slate-900'}`}
-              >
-                EN
-              </Link>
-              <span className="text-slate-300">|</span>
+            {isRuHost ? (
               <a
-                href={`${RU_PUBLIC_ORIGIN}/ru`}
-                className={`px-2 py-1 rounded transition-colors ${onRu ? 'font-semibold text-slate-900 bg-slate-100' : 'hover:text-slate-900'}`}
+                href={telegramSupportBotUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label="Telegram"
+                title="Telegram"
+                className="inline-flex items-center justify-center w-9 h-9 rounded-lg bg-[#2CA5E0]/10 border border-[#2CA5E0]/25 text-[#229ED9] hover:bg-[#2CA5E0]/20 hover:border-[#2CA5E0]/50 transition-all"
               >
-                RU
+                <TgIcon className="w-4 h-4 shrink-0" />
+                <span className="sr-only">Telegram</span>
               </a>
-            </div>
+            ) : null}
+            {isRuHost ? (
+              <div className="flex items-center gap-1 text-slate-500 text-sm">
+                <Link
+                  href="/"
+                  className={`px-2 py-1 rounded transition-colors ${!onRu ? 'font-semibold text-slate-900 bg-slate-100' : 'hover:text-slate-900'}`}
+                >
+                  EN
+                </Link>
+                <span className="text-slate-300">|</span>
+                <a
+                  href={`${RU_PUBLIC_ORIGIN}/ru`}
+                  className={`px-2 py-1 rounded transition-colors ${onRu ? 'font-semibold text-slate-900 bg-slate-100' : 'hover:text-slate-900'}`}
+                >
+                  RU
+                </a>
+              </div>
+            ) : null}
             <Link
               href="/login"
               className="inline-flex items-center justify-center px-5 py-2.5 bg-slate-900 text-white text-sm font-semibold rounded-xl hover:bg-slate-800 transition-all duration-200 shadow-sm hover:shadow-md"
@@ -90,12 +96,18 @@ export function Header() {
             <a href="#faq" className="text-base text-slate-700 hover:text-slate-900 font-medium transition-colors">
               {t('nav.faq')}
             </a>
-            <a
-              href={`mailto:${productSupportEmail}`}
-              className="text-base text-slate-700 hover:text-slate-900 font-medium transition-colors"
-            >
-              {t('nav.contacts')}
-            </a>
+            {isRuHost ? (
+              <a
+                href={`mailto:${productSupportEmail}`}
+                className="text-base text-slate-700 hover:text-slate-900 font-medium transition-colors"
+              >
+                {t('nav.contacts')}
+              </a>
+            ) : (
+              <Link href="/contacts" className="text-base text-slate-700 hover:text-slate-900 font-medium transition-colors">
+                {t('nav.contacts')}
+              </Link>
+            )}
           </div>
 
           <button
@@ -121,17 +133,29 @@ export function Header() {
           <a href="#features" className="block text-slate-600 hover:text-slate-900" onClick={() => setOpen(false)}>{t('nav.features')}</a>
           <a href="#pricing" className="block text-slate-600 hover:text-slate-900" onClick={() => setOpen(false)}>{t('nav.pricing')}</a>
           <a href="#faq" className="block text-slate-600 hover:text-slate-900" onClick={() => setOpen(false)}>{t('nav.faq')}</a>
-          <div className="flex gap-2">
-            <Link href="/" onClick={() => setOpen(false)} className={`px-2 py-1 text-sm rounded ${!onRu ? 'font-semibold bg-slate-100' : ''}`}>EN</Link>
-            <a href={`${RU_PUBLIC_ORIGIN}/ru`} onClick={() => setOpen(false)} className={`px-2 py-1 text-sm rounded ${onRu ? 'font-semibold bg-slate-100' : ''}`}>RU</a>
-          </div>
-          <a
-            href={`mailto:${productSupportEmail}`}
-            className="block text-sm text-slate-600 hover:text-slate-900 transition-colors"
-            onClick={() => setOpen(false)}
-          >
-            {t('nav.contacts')}
-          </a>
+          {isRuHost ? (
+            <div className="flex gap-2">
+              <Link href="/" onClick={() => setOpen(false)} className={`px-2 py-1 text-sm rounded ${!onRu ? 'font-semibold bg-slate-100' : ''}`}>EN</Link>
+              <a href={`${RU_PUBLIC_ORIGIN}/ru`} onClick={() => setOpen(false)} className={`px-2 py-1 text-sm rounded ${onRu ? 'font-semibold bg-slate-100' : ''}`}>RU</a>
+            </div>
+          ) : null}
+          {isRuHost ? (
+            <a
+              href={`mailto:${productSupportEmail}`}
+              className="block text-sm text-slate-600 hover:text-slate-900 transition-colors"
+              onClick={() => setOpen(false)}
+            >
+              {t('nav.contacts')}
+            </a>
+          ) : (
+            <Link
+              href="/contacts"
+              className="block text-sm text-slate-600 hover:text-slate-900 transition-colors"
+              onClick={() => setOpen(false)}
+            >
+              {t('nav.contacts')}
+            </Link>
+          )}
           <Link
             href="/login"
             className="block text-center py-3 bg-slate-900 text-white rounded-xl font-semibold"
