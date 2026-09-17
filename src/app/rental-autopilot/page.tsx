@@ -3,7 +3,6 @@ import type { Metadata } from 'next';
 import { headers } from 'next/headers';
 import { HeroSection } from '@/components/HeroSection';
 
-import { STRIPE_PAYMENT_LINK } from '@/config/payments';
 import { FaqAccordion } from '@/components/FaqAccordion';
 import { productSupportEmail } from '@/config/contact';
 import { telegramSupportBotHandle, telegramSupportBotUrl } from '@/config/telegramBots';
@@ -162,9 +161,10 @@ export default async function RentalAutopilot() {
           loginHref: '/login',
           offerHeadline: <>Your rental property <span className="text-slate-300">runs itself.</span></>,
           offerSub: <>AI operational system for short-term rental owners.<br className="hidden sm:block" /> No operations, no staff — just income.</>,
-          ctaLabel: 'Get access',
-          ctaHref: STRIPE_PAYMENT_LINK,
-          ctaSub: 'One-time payment · $10 · Instant access',
+          ctaLabel: 'Get started',
+          ctaHref: '/connect',
+          ctaExternal: false,
+          ctaSub: 'Create your account — no charge today',
         }} />
 
         {/* ── Product modules ── */}
@@ -216,14 +216,12 @@ export default async function RentalAutopilot() {
                 <p className="text-sm text-slate-300 leading-relaxed mb-6 flex-1">
                   Operations autopilot: guest comms, bookings, pricing, access control, and task execution — no ops team required.
                 </p>
-                <a
-                  href={STRIPE_PAYMENT_LINK}
-                  target="_blank"
-                  rel="noopener noreferrer"
+                <Link
+                  href="/connect"
                   className="inline-flex items-center gap-1.5 text-sm font-semibold text-white hover:opacity-80 transition-opacity"
                 >
-                  Get access — $10 →
-                </a>
+                  Get started →
+                </Link>
               </div>
 
             </div>
@@ -252,17 +250,15 @@ export default async function RentalAutopilot() {
               Put your rental on autopilot
             </h2>
             <p className="mt-4 text-slate-400 text-lg">
-              Full access to ASI. One payment, no subscription.
+              Create your account to get started — no charge today.
             </p>
             <div className="mt-8 flex flex-col sm:flex-row gap-4 justify-center">
-              <a
-                href={STRIPE_PAYMENT_LINK}
-                target="_blank"
-                rel="noopener noreferrer"
+              <Link
+                href="/connect"
                 className="inline-flex items-center justify-center px-10 py-5 bg-white text-slate-900 font-bold rounded-xl hover:bg-slate-100 active:scale-[0.98] transition-all shadow-lg shadow-white/10 hover:shadow-xl hover:shadow-white/20 hover:scale-[1.02] text-lg"
               >
-                Get Access — $10
-              </a>
+                Get started
+              </Link>
               {isRuHost ? (
                 <a
                   href={telegramSupportBotUrl}
@@ -281,7 +277,7 @@ export default async function RentalAutopilot() {
                 </Link>
               )}
             </div>
-            <p className="mt-4 text-sm text-slate-400">One-time payment · Instant access · No commitment required</p>
+            <p className="mt-4 text-sm text-slate-400">No charge today · Setup and integration are free · Cancel anytime before your trial converts</p>
 
             <div className="mt-10 pt-8 border-t border-slate-800/60">
               <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400 mb-5">
