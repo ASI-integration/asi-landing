@@ -40,7 +40,7 @@ export async function GET() {
   try {
     const { data: membership } = await supabase
       .from('account_members')
-      .select('account_id, accounts:account_id ( id, name, plan_code, subscription_status, trial_started_at, trial_ends_at )')
+      .select('account_id, accounts:account_id ( id, name, plan_code, subscription_status, trial_started_at, trial_ends_at, lifecycle_status, card_verified_at, integration_started_at, integration_ready_at, billing_started_at )')
       .eq('user_id', session.userId)
       .order('created_at', { ascending: true })
       .limit(1)

@@ -57,17 +57,16 @@ export function middleware(request: NextRequest) {
 
   const origin = publicOrigin(request);
 
-  // RU deployment: Stripe/report flows are not offered — send users elsewhere.
-  if (isRuDomain) {
-    if (
-      pathname === '/report' ||
-      pathname.startsWith('/report/') ||
-      pathname === '/compare' ||
-      pathname.startsWith('/compare/')
-    ) {
-      const dest = new URL('/connect', origin);
-      return NextResponse.redirect(dest, { status: 307 });
-    }
+  // Legacy report/compare flows only resolve to RU-only report paths and are not offered
+  // on either deployment — send users to /connect instead of a broken redirect chain.
+  if (
+    pathname === '/report' ||
+    pathname.startsWith('/report/') ||
+    pathname === '/compare' ||
+    pathname.startsWith('/compare/')
+  ) {
+    const dest = new URL('/connect', origin);
+    return NextResponse.redirect(dest, { status: 307 });
   }
 
   // .ru domain — `/` is handled by app/page.tsx reading the Host header directly;

@@ -3,12 +3,11 @@ import type { Metadata } from 'next';
 import { headers } from 'next/headers';
 import { HeroSection } from '@/components/HeroSection';
 
-import { STRIPE_PAYMENT_LINK } from '@/config/payments';
 import { FaqAccordion } from '@/components/FaqAccordion';
 import { productSupportEmail } from '@/config/contact';
 import { telegramSupportBotHandle, telegramSupportBotUrl } from '@/config/telegramBots';
 import { TgIcon } from '@/components/TgIcon';
-import { RU_PUBLIC_ORIGIN } from '@/config/publicOrigins';
+import { RU_PUBLIC_ORIGIN, GUEST_AUTOPILOT_ORIGIN } from '@/config/publicOrigins';
 import { hostnameFromHostHeader, isRuRuntimeHost } from '@/lib/runtimeHost';
 
 async function getIsRuHost(): Promise<boolean> {
@@ -21,25 +20,40 @@ export const metadata: Metadata = {
   title: 'Rental Autopilot — ASI',
   description:
     'AI operational system for short-term rental owners: guest comms, bookings, pricing, and property access, automated end to end.',
+  alternates: { canonical: `${GUEST_AUTOPILOT_ORIGIN}/rental-autopilot` },
 };
 
 /* ─── Contacts ──────────────────────────────────────────────────────────────── */
-function ContactLinks({ orientation = 'row', showEmail }: { orientation?: 'row' | 'col'; showEmail: boolean }) {
+function ContactLinks({ orientation = 'row', showEmail, showTelegram }: { orientation?: 'row' | 'col'; showEmail: boolean; showTelegram: boolean }) {
   const cls = orientation === 'row'
     ? 'flex flex-col sm:flex-row justify-center gap-4'
     : 'flex flex-col gap-3';
 
+  if (!showEmail && !showTelegram) {
+    return (
+      <p className="text-sm text-slate-400">
+        International contact channel launching soon — see the{' '}
+        <Link href="/contacts" className="text-slate-300 hover:text-white underline underline-offset-2">
+          Contact page
+        </Link>{' '}
+        for updates.
+      </p>
+    );
+  }
+
   return (
     <div className={cls}>
-      <a
-        href={telegramSupportBotUrl}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="inline-flex items-center justify-center gap-3 px-6 py-3.5 rounded-xl bg-[#2CA5E0]/10 border border-[#2CA5E0]/30 text-white font-semibold text-sm hover:bg-[#2CA5E0]/20 hover:border-[#2CA5E0]/60 transition-all"
-      >
-        <TgIcon />
-        @{telegramSupportBotHandle}
-      </a>
+      {showTelegram ? (
+        <a
+          href={telegramSupportBotUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center justify-center gap-3 px-6 py-3.5 rounded-xl bg-[#2CA5E0]/10 border border-[#2CA5E0]/30 text-white font-semibold text-sm hover:bg-[#2CA5E0]/20 hover:border-[#2CA5E0]/60 transition-all"
+        >
+          <TgIcon />
+          @{telegramSupportBotHandle}
+        </a>
+      ) : null}
       {showEmail ? (
         <a
           href={`mailto:${productSupportEmail}`}
@@ -95,15 +109,24 @@ export default async function RentalAutopilot() {
                 <span className="hidden sm:block w-px h-4 bg-slate-800 shrink-0" />
               </>
             ) : null}
-            <a
-              href={telegramSupportBotUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="hidden sm:inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-[#2CA5E0]/10 border border-[#2CA5E0]/25 text-sky-300 hover:bg-[#2CA5E0]/20 hover:border-[#2CA5E0]/50 transition-all text-sm font-semibold"
-            >
-              <TgIcon className="w-4 h-4 shrink-0" />
-              Telegram
-            </a>
+            {isRuHost ? (
+              <a
+                href={telegramSupportBotUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="hidden sm:inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-[#2CA5E0]/10 border border-[#2CA5E0]/25 text-sky-300 hover:bg-[#2CA5E0]/20 hover:border-[#2CA5E0]/50 transition-all text-sm font-semibold"
+              >
+                <TgIcon className="w-4 h-4 shrink-0" />
+                Telegram
+              </a>
+            ) : (
+              <Link
+                href="/contacts"
+                className="hidden sm:inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-800/60 border border-slate-700 text-slate-300 hover:bg-slate-800 hover:border-slate-600 transition-all text-sm font-semibold"
+              >
+                Contact
+              </Link>
+            )}
             {isRuHost ? (
               <div className="flex items-center gap-1 text-sm">
                 <span className="px-2 py-1 rounded font-semibold text-white bg-slate-800">EN</span>
@@ -124,7 +147,7 @@ export default async function RentalAutopilot() {
       <main>
 
         {/* ── Hero ── */}
-        <HeroSection showEmail={isRuHost} content={{
+        <HeroSection showEmail={isRuHost} showTelegram={isRuHost} content={{
           aboutLabel: 'About',
           aboutHeadline: 'AI Operational System for Short-Term Rentals',
           aboutBody: 'ASI is not a dashboard or tool you manage. It replaces your ops team — handling guests, bookings, pricing, and property access automatically, around the clock.',
@@ -138,9 +161,10 @@ export default async function RentalAutopilot() {
           loginHref: '/login',
           offerHeadline: <>Your rental property <span className="text-slate-300">runs itself.</span></>,
           offerSub: <>AI operational system for short-term rental owners.<br className="hidden sm:block" /> No operations, no staff — just income.</>,
-          ctaLabel: 'Get access',
-          ctaHref: STRIPE_PAYMENT_LINK,
-          ctaSub: 'One-time payment · $10 · Instant access',
+          ctaLabel: 'Get started',
+          ctaHref: '/connect',
+          ctaExternal: false,
+          ctaSub: 'Create your account — no charge today',
         }} />
 
         {/* ── Product modules ── */}
@@ -192,14 +216,12 @@ export default async function RentalAutopilot() {
                 <p className="text-sm text-slate-300 leading-relaxed mb-6 flex-1">
                   Operations autopilot: guest comms, bookings, pricing, access control, and task execution — no ops team required.
                 </p>
-                <a
-                  href={STRIPE_PAYMENT_LINK}
-                  target="_blank"
-                  rel="noopener noreferrer"
+                <Link
+                  href="/connect"
                   className="inline-flex items-center gap-1.5 text-sm font-semibold text-white hover:opacity-80 transition-opacity"
                 >
-                  Get access — $10 →
-                </a>
+                  Get started →
+                </Link>
               </div>
 
             </div>
@@ -228,33 +250,40 @@ export default async function RentalAutopilot() {
               Put your rental on autopilot
             </h2>
             <p className="mt-4 text-slate-400 text-lg">
-              Full access to ASI. One payment, no subscription.
+              Create your account to get started — no charge today.
             </p>
             <div className="mt-8 flex flex-col sm:flex-row gap-4 justify-center">
-              <a
-                href={STRIPE_PAYMENT_LINK}
-                target="_blank"
-                rel="noopener noreferrer"
+              <Link
+                href="/connect"
                 className="inline-flex items-center justify-center px-10 py-5 bg-white text-slate-900 font-bold rounded-xl hover:bg-slate-100 active:scale-[0.98] transition-all shadow-lg shadow-white/10 hover:shadow-xl hover:shadow-white/20 hover:scale-[1.02] text-lg"
               >
-                Get Access — $10
-              </a>
-              <a
-                href={telegramSupportBotUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center justify-center gap-2 px-10 py-5 border border-slate-600 text-slate-300 font-semibold rounded-xl hover:border-slate-400 hover:text-white transition-all text-lg"
-              >
-                Book a demo
-              </a>
+                Get started
+              </Link>
+              {isRuHost ? (
+                <a
+                  href={telegramSupportBotUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center justify-center gap-2 px-10 py-5 border border-slate-600 text-slate-300 font-semibold rounded-xl hover:border-slate-400 hover:text-white transition-all text-lg"
+                >
+                  Book a demo
+                </a>
+              ) : (
+                <Link
+                  href="/contacts"
+                  className="inline-flex items-center justify-center gap-2 px-10 py-5 border border-slate-600 text-slate-300 font-semibold rounded-xl hover:border-slate-400 hover:text-white transition-all text-lg"
+                >
+                  Contact us
+                </Link>
+              )}
             </div>
-            <p className="mt-4 text-sm text-slate-400">One-time payment · Instant access · No commitment required</p>
+            <p className="mt-4 text-sm text-slate-400">No charge today · Setup and integration are free · Cancel anytime before your trial converts</p>
 
             <div className="mt-10 pt-8 border-t border-slate-800/60">
               <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400 mb-5">
                 Or reach out directly
               </p>
-              <ContactLinks showEmail={isRuHost} />
+              <ContactLinks showEmail={isRuHost} showTelegram={isRuHost} />
               {isRuHost ? (
                 <p className="mt-4 text-xs text-slate-400">
                   Mon–Fri, 9:00–18:00 UTC+3 · usually faster
@@ -275,17 +304,17 @@ export default async function RentalAutopilot() {
           </div>
 
           <div className="flex flex-col sm:flex-row items-center gap-3 sm:gap-5 text-sm">
-            <a
-              href={telegramSupportBotUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center gap-2 text-slate-400 hover:text-sky-300 transition-colors"
-            >
-              <TgIcon className="w-4 h-4" />
-              @{telegramSupportBotHandle}
-            </a>
             {isRuHost ? (
               <>
+                <a
+                  href={telegramSupportBotUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-2 text-slate-400 hover:text-sky-300 transition-colors"
+                >
+                  <TgIcon className="w-4 h-4" />
+                  @{telegramSupportBotHandle}
+                </a>
                 <span className="hidden sm:block w-px h-3 bg-slate-800" />
                 <a
                   href={`mailto:${productSupportEmail}`}
@@ -294,7 +323,11 @@ export default async function RentalAutopilot() {
                   {productSupportEmail}
                 </a>
               </>
-            ) : null}
+            ) : (
+              <Link href="/contacts" className="text-slate-400 hover:text-white transition-colors">
+                Contact
+              </Link>
+            )}
           </div>
 
           <div className="flex flex-wrap justify-center gap-x-5 gap-y-1">
