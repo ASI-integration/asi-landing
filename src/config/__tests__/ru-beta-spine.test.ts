@@ -17,16 +17,17 @@ function readSrc(relativePath: string): string {
 describe('RU-02/RU-03 closed-beta spine + pilot boundary', () => {
   it('homepage primary acquisition path points to communications pilot', () => {
     const home = readSrc('src/app/ru/page.tsx');
-    expect(home).toContain("ctaHref: PILOT_HREF");
     expect(home).toContain("const PILOT_HREF = '/ru/early-access'");
-    expect(home).toContain("ctaLabel: 'Подключить пилот'");
+    expect(home).toContain('BrandPrimaryCta href={PILOT_HREF}');
+    expect(home).toContain('Подключить пилот');
     expect(home).toContain('AI-ответы гостям');
-    expect(home).toContain('Сейчас / пилот');
+    expect(home).toContain('Сейчас в пилоте');
     expect(home).toContain('Дорожная карта платформы');
-    // Primary CTA must not lead to location scoring
-    expect(home).not.toMatch(/ctaHref:\s*RU_LOCATION_CHECK_HREF/);
+    expect(home).not.toMatch(/BrandPrimaryCta href=\{RU_LOCATION_CHECK_HREF\}/);
     expect(home).toContain('Оценка локации — отдельный инструмент');
     expect(home).toContain('Дополнительно');
+    expect(home).toContain('Рутина → ASI');
+    expect(home).toContain('Исключение → человек');
   });
 
   it('location remains secondary and nav does not promote engineering /pilot', () => {
