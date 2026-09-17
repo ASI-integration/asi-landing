@@ -1,13 +1,14 @@
 import { ruComplianceRoutes } from '@/config/ruCompliance';
 
-/** Primary RU header destinations (landing sections match `src/app/ru/page.tsx`). */
+/**
+ * Primary RU header destinations for closed-beta customer journey.
+ * Commercial pilot is `/ru/early-access` — not the engineering `/pilot` console.
+ */
 export const ruNavMainLinks = [
   { href: '/ru', label: 'Главная' },
-  { href: '/ru/early-access', label: 'Пилот ASI' },
-  { href: '/ru/otchet-po-dohodnosti-obektov', label: 'Оценка доходности' },
+  { href: '/ru/early-access', label: 'Пилот' },
   { href: '/ru/how-it-works', label: 'Как это работает' },
-  { href: '/ru#faq', label: 'Вопросы' },
-  { href: '/connect', label: 'Подключение' },
+  { href: '/ru/otchet-po-dohodnosti-obektov', label: 'Оценка локации' },
 ] as const;
 
 /** Extra compliance destinations for the lightweight bottom quick-links strip. */

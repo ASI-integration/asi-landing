@@ -6,70 +6,54 @@ import { RuPublicNavHeader } from '@/components/ru/RuPublicNavHeader';
 import { RuBottomQuickLinks } from '@/components/ru/RuBottomQuickLinks';
 import { RuComplianceFooter } from '@/components/ru/RuComplianceFooter';
 import { TgIcon } from '@/components/TgIcon';
+import {
+  COMMUNICATION_PILOT_PRICE_RUB,
+  COMMUNICATION_PILOT_SERVICE_TITLE,
+} from '@/lib/payments/yookassa-env';
 
-const AUTOMATED_ITEMS = [
+const NOW_ITEMS = [
   {
-    title: 'Коммуникация с гостями',
-    desc: 'ИИ отвечает мгновенно, 24/7 — заменяет стойку и мониторинг почты.',
+    title: 'AI-ответы гостям',
+    desc: 'Типовые вопросы по заселению, Wi-Fi, правилам объекта и быту — в цифровых каналах.',
   },
   {
-    title: 'Управление объявлениями',
-    desc: 'Создание, обновления и синхронизация по каналам — заменяет администратора листингов.',
+    title: 'Человек на исключениях',
+    desc: 'Нестандартные ситуации уходят владельцу или оператору с контекстом переписки.',
   },
   {
-    title: 'Ценообразование',
-    desc: 'Автоматически подстраивается под сигналы спроса — заменяет ручной тарифный стол.',
+    title: 'Пилот на один объект',
+    desc: `${COMMUNICATION_PILOT_SERVICE_TITLE}: 1 объект, 1 месяц, ${COMMUNICATION_PILOT_PRICE_RUB} ₽.`,
   },
   {
-    title: 'Обработка бронирований',
-    desc: 'Подтверждения и календарь исполняются автоматически — заменяет координатора броней.',
-  },
-  {
-    title: 'Отзывы',
-    desc: 'Запросы и ответы по политике — заменяет ручную работу с репутацией.',
-  },
-  {
-    title: 'Инциденты и вопросы',
-    desc: 'ИИ доводит большинство кейсов до решения — заменяет первую линию поддержки.',
-  },
-  {
-    title: 'Синхронизация каналов',
-    desc: 'Работает с площадками; заменяет менеджеров каналов и табличный операционный контур.',
-  },
-  {
-    title: 'Финансовый учёт',
-    desc: 'Доход, показатели и прогнозы собираются автоматически — заменяет операционную отчётность.',
+    title: 'Оценка локации (отдельно)',
+    desc: 'Проверка адреса по спросу и окружению — вспомогательный инструмент, не замена пилоту коммуникаций.',
   },
 ] as const;
 
-const EXECUTION_LAYER = [
+const ROADMAP_ITEMS = [
   {
-    title: 'Коммуникация с гостями',
-    body: 'Ведёт входящие обращения гостей круглосуточно — без задержек и пропущенных тредов.',
-  },
-  {
-    title: 'Сбор данных и приём заявок',
-    body: 'Исполняет квалификацию и сбор данных целиком — заменяет сотрудника на приёме.',
-  },
-  {
-    title: 'Рабочие процессы и расписание',
-    body: 'Коды доступа, уборка, повторяющиеся задачи — система выполняет и закрывает автоматически.',
-  },
-  {
-    title: 'Платежи и монетизация',
-    body: 'Доплаты, поздний выезд, дополнительные услуги — счёт в чате, оплата в один клик.',
+    title: 'Управление объявлениями и каналами',
+    desc: 'Направление платформы: синхронизация и обновления по площадкам. Не входит в текущий пилот как готовая услуга.',
   },
   {
     title: 'Динамическое ценообразование',
-    body: 'Тарифы двигаются со спросом, конкурентами и загрузкой — без ревеню-менеджера в контуре.',
+    desc: 'Направление платформы: автоматическая подстройка тарифов. Сейчас в пилоте не продаётся как отдельный модуль.',
   },
   {
-    title: 'Редкий вызов оператора',
-    body: 'Истинные исключения уходят человеку с полным контекстом. Всё остальное исполняется автоматически.',
+    title: 'Уборки, доступы, расписание',
+    desc: 'Направление платформы: координация операционных задач. Не обещаем как текущую возможность пилота.',
   },
   {
-    title: 'Безопасность и контроль доступа',
-    body: 'Мониторинг в реальном времени, контроль доступа, обнаружение инцидентов и автоматические сценарии реагирования.',
+    title: 'Отзывы и репутация',
+    desc: 'Направление платформы. В пилоте фокус на гостевой переписке.',
+  },
+  {
+    title: 'Финансовая отчётность',
+    desc: 'Направление платформы: сводки и прогнозы. Не часть тарифа 1 объект / 1 месяц.',
+  },
+  {
+    title: 'Мониторинг безопасности',
+    desc: 'Направление платформы. Не заявляем как live-функцию закрытого пилота.',
   },
 ] as const;
 
@@ -79,190 +63,83 @@ export default function RuHowItWorksPage() {
       <RuPublicNavHeader surface="theme" density="landing" />
 
       <main className="px-4 sm:px-6">
-        <section className="max-w-4xl mx-auto pt-14 sm:pt-18 pb-10 sm:pb-14">
-          <p className="text-[10px] font-bold uppercase tracking-[0.25em] text-[var(--t-muted)] mb-4">
-            Детали
-          </p>
-          <h1 className="text-3xl sm:text-4xl font-bold text-[var(--t-text)] tracking-tight">
-            Как работает ASI (платформа и сценарии)
+        <section className="mx-auto max-w-4xl pb-10 pt-14 sm:pb-14 sm:pt-18">
+          <p className="mb-4 text-[10px] font-bold uppercase tracking-[0.25em] text-[var(--t-muted)]">Сейчас и дорожная карта</p>
+          <h1 className="text-3xl font-bold tracking-tight text-[var(--t-text)] sm:text-4xl">
+            Как работает ASI
           </h1>
-          <p className="mt-4 text-[var(--t-text-2)] text-base sm:text-lg leading-relaxed">
-            Ниже — обзор платформы и сценариев. Платный MVP сейчас: ранний доступ к AI-коммуникациям для одного объекта
-            на один месяц — см.{' '}
-            <Link href="/ru/early-access" className="underline underline-offset-2">
-              Пилот ASI
-            </Link>{' '}
-            и{' '}
-            <Link href="/ru/payment" className="underline underline-offset-2">
-              оплату
-            </Link>
-            . Остальные модули на странице описывают развитие продукта и не являются отдельным платным тарифом на этом
-            этапе.
+          <p className="mt-4 text-base leading-relaxed text-[var(--t-text-2)] sm:text-lg">
+            Здесь разделены возможности <strong>текущего пилота</strong> и <strong>направление платформы</strong>. Платный
+            MVP сейчас — AI-коммуникации для одного объекта на один месяц.
           </p>
           <div className="mt-6 flex flex-wrap gap-3">
             <Link
+              href="/ru/early-access"
+              className="inline-flex items-center justify-center rounded-xl bg-[var(--t-accent)] px-5 py-3 text-sm font-semibold text-white transition-colors hover:bg-[var(--t-accent-hover)]"
+            >
+              Подключить пилот →
+            </Link>
+            <Link
               href="/ru"
-              className="inline-flex items-center justify-center px-5 py-3 rounded-xl border border-[var(--t-border)] bg-[var(--t-surface)] hover:bg-[var(--t-surface-2)] transition-colors text-sm font-semibold"
+              className="inline-flex items-center justify-center rounded-xl border border-[var(--t-border)] bg-[var(--t-surface)] px-5 py-3 text-sm font-semibold transition-colors hover:bg-[var(--t-surface-2)]"
             >
               ← На главную
             </Link>
-            <Link
-              href="/ru/early-access"
-              className="inline-flex items-center justify-center px-5 py-3 rounded-xl bg-[var(--t-accent)] text-white font-semibold text-sm hover:bg-[var(--t-accent-hover)] transition-colors"
-            >
-              К пилоту и тарифу →
-            </Link>
           </div>
         </section>
 
-        <section className="max-w-4xl mx-auto py-12 sm:py-14 border-t border-[var(--t-border)]">
-          <h2 className="text-2xl sm:text-3xl font-bold text-[var(--t-text)]">
-            Почему ASI уже сейчас
-          </h2>
-          <p className="mt-3 text-[var(--t-text-2)] text-base sm:text-lg leading-relaxed">
-            Два модуля уже работают. Ниже — конкретные ситуации, в которых они применяются прямо сейчас.
+        <section className="mx-auto max-w-4xl border-t border-[var(--t-border)] py-12 sm:py-14">
+          <p className="text-xs font-bold uppercase tracking-[0.18em] text-[var(--t-muted)]">Сейчас / пилот</p>
+          <h2 className="mt-3 text-2xl font-bold text-[var(--t-text)] sm:text-3xl">Что доступно в закрытом пилоте</h2>
+          <p className="mt-3 text-base leading-relaxed text-[var(--t-text-2)]">
+            Фокус — рутинная переписка с гостями. Это не «полная автоматизация объекта на 99%».
           </p>
-
-          <div className="mt-7 space-y-6">
-            <div className="rounded-2xl border border-[var(--t-border)] bg-[var(--t-surface)] p-6">
-              <p className="text-xs font-semibold uppercase tracking-widest text-[var(--t-muted)]">
-                Сценарий 1
-              </p>
-              <h3 className="mt-2 font-bold text-[var(--t-text)] text-base">
-                Обращение в нерабочее время
-              </h3>
-              <p className="mt-2 text-sm text-[var(--t-text-2)] leading-relaxed">
-                Гость пишет в 23:00. Без системы — обращение висит до утра. С ASI — ответ уходит сразу, данные собраны, сценарий продолжается без участия оператора.
-              </p>
-            </div>
-
-            <div className="rounded-2xl border border-[var(--t-border)] bg-[var(--t-surface)] p-6">
-              <p className="text-xs font-semibold uppercase tracking-widest text-[var(--t-muted)]">
-                Сценарий 2
-              </p>
-              <h3 className="mt-2 font-bold text-[var(--t-text)] text-base">
-                Объект недозагружен
-              </h3>
-              <p className="mt-2 text-sm text-[var(--t-text-2)] leading-relaxed">
-                Заполняемость падает, причина неочевидна. Модуль оценки локации показывает, где именно объект теряет: спрос в зоне, конкуренты, магниты трафика рядом.
-              </p>
-            </div>
-
-            <div className="rounded-2xl border border-[var(--t-border)] bg-[var(--t-surface)] p-6">
-              <p className="text-xs font-semibold uppercase tracking-widest text-[var(--t-muted)]">
-                Сценарий 3
-              </p>
-              <h3 className="mt-2 font-bold text-[var(--t-text)] text-base">
-                Оператор работает с портфелем
-              </h3>
-              <p className="mt-2 text-sm text-[var(--t-text-2)] leading-relaxed">
-                Несколько объектов — разные чаты, задачи, аналитика по каждому. ASI сводит входящие обращения, доступы и видимость по доходности в единый рабочий контур.
-              </p>
-            </div>
-          </div>
-        </section>
-
-        <section className="max-w-4xl mx-auto py-12 sm:py-14 border-t border-[var(--t-border)]">
-          <h2 className="text-2xl sm:text-3xl font-bold text-[var(--t-text)]">
-            Что автоматизируется в ASI
-          </h2>
-          <p className="mt-3 text-[var(--t-text-2)] text-base sm:text-lg leading-relaxed">
-            Конкретные операционные функции — не обещания. Система исполняет их без участия команды.
-          </p>
-
-          <div className="mt-7 rounded-2xl border border-[var(--t-border)] bg-[var(--t-surface)] p-6">
-            <ul className="space-y-4">
-              {AUTOMATED_ITEMS.map((item) => (
-                <li key={item.title} className="flex flex-col gap-1">
-                  <p className="font-semibold text-[var(--t-text)]">{item.title}</p>
-                  <p className="text-sm text-[var(--t-muted)] leading-relaxed">{item.desc}</p>
-                </li>
-              ))}
-            </ul>
-          </div>
-        </section>
-
-        <section className="max-w-4xl mx-auto py-12 sm:py-14 border-t border-[var(--t-border)]">
-          <h2 className="text-2xl sm:text-3xl font-bold text-[var(--t-text)]">
-            Не CRM, не channel manager, не PMS
-          </h2>
-          <p className="mt-3 text-[var(--t-text-2)] text-base sm:text-lg leading-relaxed">
-            Все эти инструменты требуют операторов, которые их используют. ASI — это слой исполнения: система сама ведёт операции от начала до конца.
-          </p>
-
-          <div className="mt-7 grid gap-4">
-            {[
-              {
-                label: 'CRM',
-                gap: 'Фиксирует данные. Требует оператора, который с ними работает.',
-              },
-              {
-                label: 'Channel manager',
-                gap: 'Синхронизирует площадки. Не ведёт коммуникацию и не принимает решений.',
-              },
-              {
-                label: 'PMS',
-                gap: 'Управляет объектами. Не обрабатывает гостей и не закрывает инциденты.',
-              },
-              {
-                label: 'Точечная автоматизация',
-                gap: 'Закрывает одну функцию. Остальные всё равно требуют ручного труда.',
-              },
-            ].map((item) => (
-              <div key={item.label} className="rounded-2xl border border-[var(--t-border)] bg-[var(--t-surface)] p-6">
-                <p className="text-sm font-semibold text-[var(--t-text)]">{item.label}</p>
-                <p className="mt-2 text-sm text-[var(--t-muted)] leading-relaxed">
-                  {item.gap}
-                </p>
-              </div>
-            ))}
-          </div>
-
-          <div className="mt-6 rounded-2xl border-2 border-[color:var(--t-accent)] bg-[color-mix(in_srgb,var(--t-accent)_8%,var(--t-surface))] p-6">
-            <p className="font-bold text-[var(--t-text)] text-base">
-              ASI — операционный слой
-            </p>
-            <p className="mt-2 text-sm text-[var(--t-text-2)] leading-relaxed">
-              Заменяет операционный контур целиком: принимает обращения, ведёт гостей, исполняет задачи, контролирует платежи и доступы — без команды операторов в цепочке.
-            </p>
-          </div>
-        </section>
-
-        <section className="max-w-4xl mx-auto py-12 sm:py-14 border-t border-[var(--t-border)]">
-          <h2 className="text-2xl sm:text-3xl font-bold text-[var(--t-text)]">
-            Слой исполнения
-          </h2>
-          <p className="mt-3 text-[var(--t-muted)] text-base sm:text-lg leading-relaxed">
-            Работа, которая лежала на операционном отделе, — система ведёт от начала до конца.
-          </p>
-
-          <div className="mt-7 grid sm:grid-cols-2 gap-4">
-            {EXECUTION_LAYER.map((item) => (
+          <div className="mt-7 space-y-4">
+            {NOW_ITEMS.map((item) => (
               <div key={item.title} className="rounded-2xl border border-[var(--t-border)] bg-[var(--t-surface)] p-6">
-                <h3 className="font-semibold text-[var(--t-text)] text-base">
-                  {item.title}
-                </h3>
-                <p className="mt-2 text-sm text-[var(--t-muted)] leading-relaxed">
-                  {item.body}
-                </p>
+                <h3 className="font-semibold text-[var(--t-text)]">{item.title}</h3>
+                <p className="mt-2 text-sm leading-relaxed text-[var(--t-muted)]">{item.desc}</p>
+              </div>
+            ))}
+          </div>
+          <div className="mt-6 rounded-2xl border border-[var(--t-border)] bg-[var(--t-surface-2)] p-6">
+            <h3 className="font-semibold text-[var(--t-text)]">Пример: обращение ночью</h3>
+            <p className="mt-2 text-sm leading-relaxed text-[var(--t-text-2)]">
+              Гость пишет в 23:00 про Wi-Fi или заезд. В пилоте система отвечает по данным объекта. Если вопрос выходит за
+              рамки типового сценария — подключается человек.
+            </p>
+          </div>
+        </section>
+
+        <section className="mx-auto max-w-4xl border-t border-[var(--t-border)] py-12 sm:py-14">
+          <p className="text-xs font-bold uppercase tracking-[0.18em] text-[var(--t-muted)]">Дорожная карта платформы</p>
+          <h2 className="mt-3 text-2xl font-bold text-[var(--t-text)] sm:text-3xl">Куда развивается ASI</h2>
+          <p className="mt-3 text-base leading-relaxed text-[var(--t-text-2)]">
+            Ниже — направление продукта. Эти пункты не продаются как готовые модули текущего пилота и не имеют сроков в
+            публичном обещании.
+          </p>
+          <div className="mt-7 grid gap-4 sm:grid-cols-2">
+            {ROADMAP_ITEMS.map((item) => (
+              <div key={item.title} className="rounded-2xl border border-dashed border-[var(--t-border)] bg-[var(--t-surface)] p-6">
+                <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-[var(--t-muted)]">Roadmap</p>
+                <h3 className="mt-2 font-semibold text-[var(--t-text)]">{item.title}</h3>
+                <p className="mt-2 text-sm leading-relaxed text-[var(--t-muted)]">{item.desc}</p>
               </div>
             ))}
           </div>
         </section>
 
-        <section className="max-w-4xl mx-auto py-12 sm:py-14 border-t border-[var(--t-border)]">
-          <h2 className="text-2xl sm:text-3xl font-bold text-[var(--t-text)]">
-            Следующие шаги
-          </h2>
-          <p className="mt-3 text-[var(--t-text-2)] text-base sm:text-lg leading-relaxed">
-            Эту страницу можно расширять без перегруза главной: добавить демо-видео, подробное описание модулей и интеграций, а также большие сравнения и кейсы.
+        <section className="mx-auto max-w-4xl border-t border-[var(--t-border)] py-12 sm:py-14">
+          <h2 className="text-2xl font-bold text-[var(--t-text)] sm:text-3xl">Следующий шаг</h2>
+          <p className="mt-3 text-base leading-relaxed text-[var(--t-text-2)]">
+            Чтобы участвовать в закрытом пилоте AI-ответов гостям, начните со страницы пилота и заявки.
           </p>
           <div className="mt-6">
             <Link
-              href="/connect"
-              className="inline-flex items-center justify-center px-7 py-4 rounded-xl bg-[var(--t-accent)] text-white font-bold hover:bg-[var(--t-accent-hover)] transition-colors"
+              href="/ru/early-access"
+              className="inline-flex items-center justify-center rounded-xl bg-[var(--t-accent)] px-7 py-4 font-bold text-white transition-colors hover:bg-[var(--t-accent-hover)]"
             >
-              Запросить разбор объектов
+              Подключить пилот
             </Link>
           </div>
         </section>
@@ -270,27 +147,27 @@ export default function RuHowItWorksPage() {
 
       <footer>
         <RuBottomQuickLinks tone="theme" />
-        <div className="py-6 px-4 sm:px-6 border-t border-[var(--t-border)] bg-[var(--t-bg)]">
-          <div className="max-w-6xl mx-auto flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div className="border-t border-[var(--t-border)] bg-[var(--t-bg)] px-4 py-6 sm:px-6">
+          <div className="mx-auto flex max-w-6xl flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex items-center gap-4">
-              <span className="text-[var(--t-text)] font-bold text-lg">ASI</span>
+              <span className="text-lg font-bold text-[var(--t-text)]">ASI</span>
               <span className="text-xs text-[var(--t-muted)]">© {new Date().getFullYear()}</span>
             </div>
-            <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 sm:gap-5 text-sm">
+            <div className="flex flex-col items-start gap-3 text-sm sm:flex-row sm:items-center sm:gap-5">
               <a
                 href={telegramSupportBotUrl}
                 target="_blank"
                 rel="noopener noreferrer"
                 aria-label="Telegram"
                 title="Telegram"
-                className="flex items-center justify-center w-9 h-9 rounded-lg bg-[#2CA5E0]/10 border border-[#2CA5E0]/25 text-sky-300 hover:bg-[#2CA5E0]/20 hover:border-[#2CA5E0]/50 transition-all"
+                className="flex h-9 w-9 items-center justify-center rounded-lg border border-[#2CA5E0]/25 bg-[#2CA5E0]/10 text-sky-300 transition-all hover:border-[#2CA5E0]/50 hover:bg-[#2CA5E0]/20"
               >
-                <TgIcon className="w-4 h-4" />
+                <TgIcon className="h-4 w-4" />
                 <span className="sr-only">Telegram</span>
               </a>
               <a
                 href={`mailto:${productSupportEmail}`}
-                className="text-[var(--t-muted)] hover:text-[var(--t-text)] transition-colors break-all"
+                className="break-all text-[var(--t-muted)] transition-colors hover:text-[var(--t-text)]"
               >
                 {productSupportEmail}
               </a>
@@ -302,4 +179,3 @@ export default function RuHowItWorksPage() {
     </ThemeProvider>
   );
 }
-

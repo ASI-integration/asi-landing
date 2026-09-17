@@ -56,13 +56,14 @@ const surfaceLangActive: Record<RuPublicNavSurface, string> = {
   dark: 'px-2 py-1 rounded font-semibold text-white bg-slate-800 border border-slate-600',
 };
 
+/** Login is utility navigation — not a primary acquisition CTA. */
 const surfaceLogin: Record<RuPublicNavSurface, string> = {
   theme:
-    'inline-flex items-center justify-center px-4 py-2 bg-[var(--t-accent)] text-white text-sm font-semibold rounded-lg hover:bg-[var(--t-accent-hover)] transition-colors shadow-sm',
+    'inline-flex items-center justify-center px-3 py-2 text-sm font-medium text-[var(--t-muted)] transition-colors hover:text-[var(--t-text)]',
   light:
-    'inline-flex items-center justify-center px-4 py-2 bg-slate-900 text-white text-sm font-semibold rounded-lg hover:bg-slate-800 transition-colors shadow-sm',
+    'inline-flex items-center justify-center px-3 py-2 text-sm font-medium text-slate-600 transition-colors hover:text-slate-900',
   dark:
-    'inline-flex items-center justify-center px-4 py-2 bg-white text-slate-900 text-sm font-semibold rounded-lg hover:bg-slate-100 transition-colors shadow-sm',
+    'inline-flex items-center justify-center px-3 py-2 text-sm font-medium text-slate-400 transition-colors hover:text-white',
 };
 
 const surfaceTg: Record<RuPublicNavSurface, string> = {
