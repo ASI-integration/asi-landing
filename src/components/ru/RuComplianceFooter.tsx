@@ -53,6 +53,19 @@ export function RuComplianceFooter({ tone = 'theme' }: { tone?: Tone }) {
           >
             {ruCompliance.email}
           </a>
+          {' · '}
+          <a
+            href={`tel:${ruCompliance.phoneTel}`}
+            className={
+              tone === 'light'
+                ? 'text-slate-900 underline underline-offset-2 hover:text-slate-700'
+                : tone === 'dark'
+                  ? 'text-white underline underline-offset-2 hover:text-slate-200'
+                  : 'text-[var(--t-text)] underline underline-offset-2 hover:text-[var(--t-muted)]'
+            }
+          >
+            {ruCompliance.phone}
+          </a>
         </p>
 
         <div>
@@ -81,6 +94,8 @@ export function RuComplianceFooter({ tone = 'theme' }: { tone?: Tone }) {
             Самозанятый: {ruCompliance.fullName}
             <br />
             ИНН: {ruCompliance.inn}
+            <br />
+            Адрес: {ruCompliance.address}
           </p>
         </div>
       </div>
