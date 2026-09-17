@@ -23,8 +23,18 @@ export async function ensureAccountForUser(opts: {
   email: string;
   selectedPlan?: unknown;
   trialDays?: number;
+  /**
+   * Guest Autopilot (international) lifecycle: do not start the legacy
+   * trial_started_at/trial_ends_at fields at account creation. The account
+   * is created with lifecycle_status='signup' instead; the 14-day trial is
+   * later activated by lib/billing/account-lifecycle.ts once integration is
+   * accepted, never here. Ignored (no behavior change) when false/omitted —
+   * existing RU and legacy callers are unaffected.
+   */
+  deferTrial?: boolean;
 }): Promise<EnsureAccountResult> {
   const plan = normalizePlan(opts.selectedPlan);
+  const deferTrial = opts.deferTrial === true;
   const trialDays = typeof opts.trialDays === 'number' && opts.trialDays > 0 ? opts.trialDays : 7;
 
   // 1) Try to find existing membership -> account
@@ -58,9 +68,11 @@ export async function ensureAccountForUser(opts: {
 
     const patch: Record<string, any> = {};
     if (acct?.plan_code !== plan) patch.plan_code = plan;
-    if (!acct?.trial_started_at) patch.trial_started_at = now.toISOString();
-    if (!acct?.trial_ends_at) patch.trial_ends_at = trialEnds.toISOString();
-    if (acct?.subscription_status !== 'trial') patch.subscription_status = 'trial';
+    if (!deferTrial) {
+      if (!acct?.trial_started_at) patch.trial_started_at = now.toISOString();
+      if (!acct?.trial_ends_at) patch.trial_ends_at = trialEnds.toISOString();
+      if (acct?.subscription_status !== 'trial') patch.subscription_status = 'trial';
+    }
     if (Object.keys(patch).length) {
       const { error: upErr } = await supabase.from('accounts').update(patch).eq('id', accountId);
       if (upErr) throw upErr;
@@ -74,13 +86,26 @@ export async function ensureAccountForUser(opts: {
   try {
     const { data: account, error: accountErr } = await supabase
       .from('accounts')
-      .insert({
-        name: accountName,
-        plan_code: plan,
-        subscription_status: 'trial',
-        trial_started_at: now.toISOString(),
-        trial_ends_at: trialEnds.toISOString(),
-      })
+      .insert(
+        deferTrial
+          ? {
+              name: accountName,
+              plan_code: plan,
+              lifecycle_status: 'signup',
+              // Legacy compatibility projection only — see
+              // src/lib/billing/account-lifecycle.ts. lifecycle_status is
+              // the authoritative field; this is never read back to decide
+              // anything for a lifecycle-tracked account.
+              subscription_status: 'trial',
+            }
+          : {
+              name: accountName,
+              plan_code: plan,
+              subscription_status: 'trial',
+              trial_started_at: now.toISOString(),
+              trial_ends_at: trialEnds.toISOString(),
+            },
+      )
       .select('id')
       .single();
 

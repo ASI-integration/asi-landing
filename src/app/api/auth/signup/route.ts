@@ -5,6 +5,7 @@ import { getSession } from '@/lib/auth';
 import { sendTelegramMessage } from '@/lib/telegram';
 import { ensureAccountForUser } from '@/lib/accounts';
 import { readRequestJson } from '@/lib/safeRequestJson';
+import { getIsRuHost } from '@/lib/getIsRuHost';
 
 export const runtime = 'nodejs';
 
@@ -55,21 +56,29 @@ export async function POST(req: Request) {
     }
     createdUserId = user.id;
 
-    const now = new Date();
-    const trialEnd = new Date(now);
-    trialEnd.setDate(trialEnd.getDate() + 7);
+    const isRuHost = await getIsRuHost();
 
-    const { error: subError } = await supabase.from('subscriptions').upsert(
-      {
-        user_id: user.id,
-        status: 'trial',
-        trial_start: now.toISOString(),
-        trial_end: trialEnd.toISOString(),
-      },
-      { onConflict: 'user_id' }
-    );
+    if (isRuHost) {
+      // Unchanged legacy behavior — the RU commercial/account flow is not touched.
+      const now = new Date();
+      const trialEnd = new Date(now);
+      trialEnd.setDate(trialEnd.getDate() + 7);
 
-    if (subError) throw subError;
+      const { error: subError } = await supabase.from('subscriptions').upsert(
+        {
+          user_id: user.id,
+          status: 'trial',
+          trial_start: now.toISOString(),
+          trial_end: trialEnd.toISOString(),
+        },
+        { onConflict: 'user_id' }
+      );
+
+      if (subError) throw subError;
+    }
+    // International (guestautopilot.com): no subscriptions row, no immediate
+    // trial. The 14-day trial only starts once integration is accepted — see
+    // lib/billing/account-lifecycle.ts. Nothing here creates one.
 
     // Best-effort ops notification: must not block signup.
     try {
@@ -78,12 +87,11 @@ export async function POST(req: Request) {
       console.warn('[Signup] telegram notify failed', e);
     }
 
-    await ensureAccountForUser({
-      userId: user.id,
-      email: user.email,
-      selectedPlan: plan,
-      trialDays: 7,
-    });
+    await ensureAccountForUser(
+      isRuHost
+        ? { userId: user.id, email: user.email, selectedPlan: plan, trialDays: 7 }
+        : { userId: user.id, email: user.email, selectedPlan: plan, deferTrial: true }
+    );
 
     const session = await getSession();
     session.userId = user.id;

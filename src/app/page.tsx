@@ -247,7 +247,7 @@ export default async function Home() {
           <Eyebrow>ASI Media</Eyebrow>
           <Headline className="text-3xl sm:text-5xl max-w-2xl">ASI Media</Headline>
           <div className="mt-12 grid sm:grid-cols-3 gap-6">
-            <MediaCard label="Deck" title="Japan Pitch Deck" action="view" href="/media#japan-deck" />
+            <MediaCard label="Deck" title="Japan Pitch Deck" action="coming-soon" />
             <MediaCard label="Film" title="Japan Concept Film" action="coming-soon" />
             <MediaCard label="Deck" title="Hong Kong Pitch Deck" action="coming-soon" />
           </div>
