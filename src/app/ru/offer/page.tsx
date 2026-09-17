@@ -51,8 +51,11 @@ export default function RuOfferPage() {
 
       <section className="space-y-3">
         <h2 className="text-base font-semibold text-[var(--t-text)]">5. Стоимость и оплата</h2>
-        <p>Стоимость услуг указывается на сайте.</p>
-        <p>Оплата производится безналичным способом с использованием доступных платёжных инструментов.</p>
+        <p>Стоимость услуг указывается на сайте (страницы пилота и оплаты).</p>
+        <p>
+          Оплата производится безналичным способом через доступные платёжные инструменты сайта, включая ЮKassa после
+          включения приёма платежей.
+        </p>
       </section>
 
       <section className="space-y-3">
@@ -88,6 +91,16 @@ export default function RuOfferPage() {
             {ruCompliance.email}
           </a>
         </p>
+        <p>
+          Телефон:{' '}
+          <a
+            href={`tel:${ruCompliance.phoneTel}`}
+            className="text-[var(--t-text)] underline underline-offset-2 decoration-[var(--t-border)] hover:decoration-[var(--t-text)]"
+          >
+            {ruCompliance.phone}
+          </a>
+        </p>
+        <p>Адрес для корреспонденции: {ruCompliance.address}</p>
         <p>
           Telegram:{' '}
           <a

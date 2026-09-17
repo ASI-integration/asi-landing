@@ -27,6 +27,15 @@ export default function RuRefundPage() {
           </a>
         </li>
         <li>
+          Телефон:{' '}
+          <a
+            href={`tel:${ruCompliance.phoneTel}`}
+            className="text-[var(--t-text)] underline underline-offset-2 decoration-[var(--t-border)] hover:decoration-[var(--t-text)]"
+          >
+            {ruCompliance.phone}
+          </a>
+        </li>
+        <li>
           Telegram:{' '}
           <a
             href={ruCompliance.telegram}
@@ -38,6 +47,8 @@ export default function RuRefundPage() {
           </a>
         </li>
       </ul>
+      <p>Исполнитель: {ruCompliance.fullName}, ИНН {ruCompliance.inn}.</p>
+      <p>Адрес для корреспонденции: {ruCompliance.address}</p>
       <p>В обращении необходимо указать:</p>
       <ul className="list-disc pl-5 space-y-2">
         <li>ФИО плательщика</li>
@@ -64,8 +75,9 @@ export default function RuRefundPage() {
         </li>
       </ul>
       <p>
-        Возврат денежных средств осуществляется тем же способом, которым была произведена оплата, если иной порядок не
-        согласован дополнительно и не противоречит правилам платёжной системы и законодательству РФ.
+        Возврат денежных средств осуществляется тем же способом, которым была произведена оплата (включая возврат через
+        ЮKassa при оплате через ЮKassa), если иной порядок не согласован дополнительно и не противоречит правилам
+        платёжной системы и законодательству РФ.
       </p>
       <p>
         Если услуга уже была оказана в полном объёме, возврат производится с учётом фактически оказанных услуг и

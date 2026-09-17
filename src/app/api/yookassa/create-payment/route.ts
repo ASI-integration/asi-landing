@@ -1,5 +1,4 @@
 import { NextResponse } from 'next/server';
-import { createPaymentRequest } from '@/lib/payments/factory';
 import {
   COMMUNICATION_PILOT_PAYMENT_DESCRIPTION,
   COMMUNICATION_PILOT_PAYMENT_PENDING_MESSAGE,
@@ -23,6 +22,8 @@ export async function POST(req: Request): Promise<NextResponse> {
       { status: 503 },
     );
   }
+
+  const { createPaymentRequest } = await import('@/lib/payments/factory');
 
   let body: { objectId?: string; contact?: string } = {};
   try {
