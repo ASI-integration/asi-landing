@@ -43,10 +43,14 @@ describe('RU-DESIGN-03 early-access visual migration', () => {
     expect(page).toContain('Подключить пилот');
     expect(page).toContain('#pilot-form');
     expect(page).toContain('id="pilot-tariff"');
+    expect(page).toContain('Типовые вопросы — системе.');
+    expect(page).toContain('Исключения — человеку.');
     expect(page).toContain("label: 'Сейчас в пилоте'");
     expect(page).toContain("label: 'Дорожная карта'");
     expect(page).toContain('Дальше в ASI');
     expect(page).toContain('Отдельный инструмент');
+    expect(page).toContain('Гость задаёт вопрос');
+    expect(page).toContain('Собираем данные объекта');
     expect(page).toContain('EarlyAccessObjectForm');
     expect(page).toContain('PilotCheckoutCta');
     expect(page).toContain('ruCompliance.fullName');
