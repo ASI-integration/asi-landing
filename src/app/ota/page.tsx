@@ -1,5 +1,12 @@
 import Link from 'next/link';
-import { STRIPE_PAYMENT_LINK } from '@/config/payments';
+import type { Metadata } from 'next';
+import { GUEST_AUTOPILOT_ORIGIN } from '@/config/publicOrigins';
+
+export const metadata: Metadata = {
+  title: 'OTA Integration — ASI',
+  description: 'Connect your OTA channels so ASI can run bookings, pricing, and guest flows end-to-end.',
+  alternates: { canonical: `${GUEST_AUTOPILOT_ORIGIN}/ota` },
+};
 
 export default function OtaPage() {
   return (
@@ -58,14 +65,12 @@ export default function OtaPage() {
             workflow so the system is actually usable in production.
           </p>
           <div className="mt-6 flex flex-col sm:flex-row gap-3">
-            <a
-              href={STRIPE_PAYMENT_LINK}
-              target="_blank"
-              rel="noopener noreferrer"
+            <Link
+              href="/connect"
               className="inline-flex items-center justify-center px-7 py-3.5 bg-white text-slate-900 font-bold rounded-xl hover:bg-slate-100 active:scale-[0.98] transition-all"
             >
-              Get access
-            </a>
+              Get started
+            </Link>
             <Link
               href="/connect"
               className="inline-flex items-center justify-center px-7 py-3.5 rounded-xl border border-slate-700 text-slate-200 hover:bg-slate-900/40 hover:border-slate-600 transition-all"

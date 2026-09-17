@@ -4,6 +4,8 @@ import crypto from 'crypto';
 import { supabase } from '@/lib/supabase';
 import { getSession } from '@/lib/auth';
 import { sendTelegramMessage } from '@/lib/telegram';
+import { getIsRuHost } from '@/lib/getIsRuHost';
+import { ensureAccountForUser } from '@/lib/accounts';
 
 function randomPassword(): string {
   return crypto.randomBytes(24).toString('base64').replace(/[+/=]/g, '').slice(0, 24);
@@ -45,18 +47,33 @@ export async function POST(req: Request) {
       throw userError;
     }
 
-    const now = new Date();
-    const trialEnd = new Date(now);
-    trialEnd.setDate(trialEnd.getDate() + 14);
+    const isRuHost = await getIsRuHost();
 
-    const { error: subError } = await supabase.from('subscriptions').insert({
-      user_id: user.id,
-      status: 'trial',
-      trial_start: now.toISOString(),
-      trial_end: trialEnd.toISOString(),
-    });
+    if (isRuHost) {
+      // Unchanged legacy behavior — the RU commercial/account flow is not touched.
+      const now = new Date();
+      const trialEnd = new Date(now);
+      trialEnd.setDate(trialEnd.getDate() + 14);
 
-    if (subError) throw subError;
+      const { error: subError } = await supabase.from('subscriptions').insert({
+        user_id: user.id,
+        status: 'trial',
+        trial_start: now.toISOString(),
+        trial_end: trialEnd.toISOString(),
+      });
+
+      if (subError) throw subError;
+    }
+    // International (guestautopilot.com): no subscriptions row, no immediate
+    // trial — see lib/billing/account-lifecycle.ts. lifecycle_status is the
+    // sole source of truth; ensureAccountForUser(deferTrial: true) below
+    // creates the account at lifecycle_status='signup'.
+
+    await ensureAccountForUser(
+      isRuHost
+        ? { userId: user.id, email: user.email, trialDays: 14 }
+        : { userId: user.id, email: user.email, deferTrial: true }
+    );
 
     const leadLines = [
       '🆕 New onboarding / connection request',

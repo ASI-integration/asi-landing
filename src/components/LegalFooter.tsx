@@ -37,27 +37,29 @@ export function LegalFooter({ ruSite = false }: { ruSite?: boolean }) {
           </div>
           <div className="space-y-1">
             {ruSite ? (
-              <p>
-                E-mail:{' '}
-                <a
-                  href={`mailto:${productSupportEmail}`}
-                  className="hover:text-slate-200 transition-colors"
-                >
-                  {productSupportEmail}
-                </a>
-              </p>
+              <>
+                <p>
+                  E-mail:{' '}
+                  <a
+                    href={`mailto:${productSupportEmail}`}
+                    className="hover:text-slate-200 transition-colors"
+                  >
+                    {productSupportEmail}
+                  </a>
+                </p>
+                <p>
+                  Telegram:{' '}
+                  <a
+                    href={telegramSupportBotUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="hover:text-slate-200 transition-colors"
+                  >
+                    @{telegramSupportBotHandle}
+                  </a>
+                </p>
+              </>
             ) : null}
-            <p>
-              Telegram:{' '}
-              <a
-                href={telegramSupportBotUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="hover:text-slate-200 transition-colors"
-              >
-                @{telegramSupportBotHandle}
-              </a>
-            </p>
           </div>
         </div>
       </div>

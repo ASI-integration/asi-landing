@@ -31,9 +31,6 @@ export const metadata: Metadata = {
   },
 };
 
-// Set this once the approved Japan pitch deck asset (PDF or slide embed URL) is uploaded.
-const JAPAN_DECK_EMBED_URL: string | null = null;
-
 export default function MediaPage() {
   return (
     <div className="font-sans bg-asi-ivory text-asi-navy">
@@ -51,29 +48,9 @@ export default function MediaPage() {
 
         <Section variant="paper">
           <div className="grid sm:grid-cols-3 gap-6">
-            <MediaCard label="Deck" title="Japan Pitch Deck" action="view" href="#japan-deck" />
+            <MediaCard label="Deck" title="Japan Pitch Deck" action="coming-soon" />
             <MediaCard label="Film" title="Japan Concept Film" action="coming-soon" />
             <MediaCard label="Deck" title="Hong Kong Pitch Deck" action="coming-soon" />
-          </div>
-        </Section>
-
-        <Section id="japan-deck" variant="ivory">
-          <Eyebrow>Now viewing</Eyebrow>
-          <Headline className="text-2xl sm:text-4xl">Japan Pitch Deck</Headline>
-          <div className="mt-8 border border-asi-border bg-asi-paper aspect-[16/9] max-w-4xl flex items-center justify-center">
-            {JAPAN_DECK_EMBED_URL ? (
-              <iframe
-                src={JAPAN_DECK_EMBED_URL}
-                title="Japan Pitch Deck"
-                className="w-full h-full"
-                allowFullScreen
-              />
-            ) : (
-              <p className="text-sm text-asi-navy/65 px-8 text-center">
-                The approved Japan pitch deck asset has not been uploaded yet. This viewer will
-                display it in place once it is available.
-              </p>
-            )}
           </div>
         </Section>
       </main>
