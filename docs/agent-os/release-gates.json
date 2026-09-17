@@ -17,6 +17,11 @@
       "id": "deploy-production",
       "workflow": ".github/workflows/deploy.yml",
       "description": "Manual production artifact deploy with owner confirmation and SHA health checks"
+    },
+    {
+      "id": "deploy-guestautopilot-production",
+      "workflow": ".github/workflows/deploy-guestautopilot-production.yml",
+      "description": "Manual Guest Autopilot (guestautopilot.com) Hetzner artifact deploy with owner confirmation and SHA health checks; fully separate from the asi-global.ru deploy gate"
     }
   ]
 }
