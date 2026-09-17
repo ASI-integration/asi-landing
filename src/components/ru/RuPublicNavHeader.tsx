@@ -33,6 +33,7 @@ export function RuPublicNavHeader({
   const [open, setOpen] = useState(false);
 
   const isCurrentHref = (href: string) => {
+    if (!pathname) return false;
     if (href.includes('#')) return false;
     if (href === '/ru') return pathname === '/' || pathname === '/ru';
     return pathname === href || pathname.startsWith(`${href}/`);

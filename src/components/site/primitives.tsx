@@ -85,7 +85,7 @@ export function PrimaryCta({
 }) {
   const external = isExternal(href);
   const cls =
-    'inline-flex items-center justify-center gap-2 px-7 py-3.5 bg-asi-navy text-asi-ivory text-sm font-sans font-semibold tracking-wide rounded-sm border border-asi-navy hover:bg-asi-navy-2 transition-colors';
+    'inline-flex items-center justify-center gap-2 px-7 py-3.5 bg-asi-navy text-asi-ivory text-sm font-sans font-semibold tracking-wide rounded-sm border border-asi-navy hover:bg-asi-navy-2 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-asi-gold';
   if (disabledReason) {
     return (
       <button type="button" disabled aria-label={disabledReason} title={disabledReason} className={`${cls} opacity-60 cursor-not-allowed hover:bg-asi-navy`}>
@@ -116,7 +116,7 @@ export function SecondaryCta({
 }) {
   const external = isExternal(href);
   const cls =
-    'inline-flex items-center justify-center gap-2 px-7 py-3.5 bg-transparent text-asi-navy text-sm font-sans font-semibold tracking-wide rounded-sm border border-asi-navy/70 hover:border-asi-navy transition-colors';
+    'inline-flex items-center justify-center gap-2 px-7 py-3.5 bg-transparent text-asi-navy text-sm font-sans font-semibold tracking-wide rounded-sm border border-asi-navy/70 hover:border-asi-navy transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-asi-gold';
   if (disabledReason) {
     return (
       <button type="button" disabled aria-label={disabledReason} title={disabledReason} className={`${cls} opacity-60 cursor-not-allowed hover:border-asi-navy/70`}>

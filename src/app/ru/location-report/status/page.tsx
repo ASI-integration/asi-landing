@@ -1,7 +1,15 @@
 import type { Metadata } from 'next';
 import type { ReactNode } from 'react';
-import Link from 'next/link';
-import { LOCATION_REPORT_PRODUCT_PATH } from '@/lib/location/report-state';
+import {
+  BrandGoldRule,
+  BrandHeadline,
+  BrandLogoMark,
+  BrandSecondaryCta,
+} from '@/components/brand';
+import { RuBottomQuickLinks } from '@/components/ru/RuBottomQuickLinks';
+import { RuComplianceFooter } from '@/components/ru/RuComplianceFooter';
+import { RuLocationProductNav } from '@/components/ru/RuLocationProductNav';
+import { RuPublicNavHeader } from '@/components/ru/RuPublicNavHeader';
 import {
   isValidLocationReportRequestId,
   LOCATION_REPORT_STATUS_DELIVERY_HINT,
@@ -15,6 +23,8 @@ export const metadata: Metadata = {
   robots: { index: false, follow: false },
 };
 
+const ANALYSIS_HREF = '/ru/location-analysis?mode=residential#location-check';
+
 function StatusPageShell({
   eyebrow,
   title,
@@ -27,24 +37,39 @@ function StatusPageShell({
   children?: ReactNode;
 }) {
   return (
-    <main className="min-h-screen bg-slate-950 text-white">
-      <div className="mx-auto max-w-4xl px-4 py-12 sm:px-6 sm:py-16">
-        <div className="rounded-3xl border border-slate-800/70 bg-slate-900/30 p-6 sm:p-10">
-          <p className="text-[11px] uppercase tracking-[0.22em] text-slate-400">{eyebrow}</p>
-          <h1 className="mt-3 text-3xl font-bold tracking-tight sm:text-4xl">{title}</h1>
-          <div className="mt-4 max-w-3xl text-sm leading-relaxed text-slate-200 sm:text-base">{intro}</div>
-          {children}
-          <div className="mt-8 flex flex-wrap gap-3">
-            <Link
-              href={LOCATION_REPORT_PRODUCT_PATH}
-              className="inline-flex min-h-[48px] items-center justify-center rounded-xl border border-slate-700 px-5 py-3 text-sm font-semibold text-slate-200 transition-colors hover:border-slate-600 hover:text-white"
-            >
-              Вернуться к форме
-            </Link>
+    <div className="min-h-screen flex flex-col font-sans bg-asi-ivory text-asi-navy antialiased">
+      <RuPublicNavHeader density="landing" />
+
+      <main className="flex-1 px-5 sm:px-8 py-12 sm:py-20">
+        <div className="max-w-6xl mx-auto">
+          <RuLocationProductNav currentPath="/ru/location-report/status" />
+
+          <div className="max-w-3xl border border-asi-border bg-asi-paper p-8 sm:p-10">
+            <div className="flex items-center gap-3">
+              <BrandLogoMark size={28} />
+              <span className="font-serif text-lg text-asi-navy">ASI</span>
+            </div>
+            <p className="mt-6 text-[10px] font-sans font-semibold uppercase tracking-[0.18em] text-asi-gold-text">
+              {eyebrow}
+            </p>
+            <BrandHeadline as="h1" className="mt-4 text-3xl sm:text-4xl">
+              {title}
+            </BrandHeadline>
+            <BrandGoldRule className="mt-6 mb-6" />
+            <div className="max-w-3xl text-asi-navy/70 leading-relaxed">{intro}</div>
+            {children}
+            <div className="mt-8">
+              <BrandSecondaryCta href={ANALYSIS_HREF}>К проверке адреса</BrandSecondaryCta>
+            </div>
           </div>
         </div>
-      </div>
-    </main>
+      </main>
+
+      <footer>
+        <RuBottomQuickLinks tone="theme" />
+        <RuComplianceFooter tone="theme" />
+      </footer>
+    </div>
   );
 }
 

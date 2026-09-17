@@ -36,12 +36,12 @@ export function RuLegalTrustBlock({ tone = 'light' }: { tone?: Tone }) {
         </li>
         <li>
           <Link href={ruComplianceRoutes.privacy} className={link}>
-            Конфиденциальность
+            Политика данных
           </Link>
         </li>
         <li>
           <Link href={ruComplianceRoutes.offer} className={link}>
-            Условия
+            Оферта
           </Link>
         </li>
       </ul>

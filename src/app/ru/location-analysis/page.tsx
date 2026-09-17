@@ -80,7 +80,9 @@ export default async function RuLocationAnalysisPage(props: {
           </section>
         </main>
 
-        <RuComplianceFooter tone="theme" />
+        <footer>
+          <RuComplianceFooter tone="theme" />
+        </footer>
       </LocationTelemetryProvider>
     </div>
   );

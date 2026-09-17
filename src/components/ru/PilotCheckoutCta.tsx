@@ -72,7 +72,7 @@ export function PilotCheckoutCta({ className = '' }: { className?: string }) {
         type="button"
         onClick={onCheckout}
         disabled={busy}
-        className="inline-flex min-h-12 w-full sm:w-auto items-center justify-center gap-2 px-7 py-3.5 bg-asi-navy text-asi-ivory text-sm font-sans font-semibold tracking-wide rounded-sm border border-asi-navy hover:bg-asi-navy-2 transition-colors disabled:cursor-not-allowed disabled:opacity-60"
+        className="inline-flex min-h-12 w-full sm:w-auto items-center justify-center gap-2 px-7 py-3.5 bg-asi-navy text-asi-ivory text-sm font-sans font-semibold tracking-wide rounded-sm border border-asi-navy hover:bg-asi-navy-2 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-asi-gold disabled:cursor-not-allowed disabled:opacity-60"
       >
         {busy ? 'Проверяем оплату…' : 'Перейти к оплате'}
       </button>

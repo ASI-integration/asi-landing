@@ -32,6 +32,8 @@ describe('ASI shared brand foundation', () => {
     expect(asiBrandShiro.assetPath).toBe('/brand/shiro-badge.png');
     expect(asiBrandLayout.contentMaxClass).toBe('max-w-6xl');
     expect(asiBrandButtonClasses.primary).toContain('bg-asi-navy');
+    expect(asiBrandButtonClasses.primary).toContain('focus-visible:outline');
+    expect(asiBrandButtonClasses.headerOutline).toContain('focus-visible:outline');
   });
 
   it('RU shell uses shared brand chrome without engineering /pilot nav', () => {

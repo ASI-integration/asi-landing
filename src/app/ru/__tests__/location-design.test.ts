@@ -67,12 +67,27 @@ describe('RU-DESIGN-06 location product family visual migration', () => {
     expect(page).toContain('RuPublicNavHeader');
     expect(page).toContain('RuComplianceFooter');
     expect(page).toContain('BrandHeadline');
-    expect(page).toContain('LOCATION_REPORT_PRODUCT_PATH');
     expect(page).toContain('LOCATION_REPORT_SAMPLE_PATH');
+    expect(page).toContain('/ru/location-analysis?mode=residential#location-check');
+    expect(page).toContain('Оценить объект по адресу');
     expect(page).toContain('Отчёт открывается по личной ссылке');
     expect(page).toContain('bg-asi-ivory');
     expect(page).not.toContain('bg-slate-950');
     expect(page).not.toContain('rounded-3xl');
+  });
+
+  it('migrates sample and status public shells away from dark slate', () => {
+    const sample = readSrc('src/app/ru/location-report/sample/page.tsx');
+    const status = readSrc('src/app/ru/location-report/status/page.tsx');
+    for (const page of [sample, status]) {
+      expect(page).toContain('RuPublicNavHeader');
+      expect(page).toContain('RuComplianceFooter');
+      expect(page).toContain('bg-asi-ivory');
+      expect(page).not.toContain('bg-slate-950');
+      expect(page).not.toContain('rounded-3xl');
+    }
+    expect(sample).toContain('LOCATION_REPORT_SAMPLE_PDF_PATH');
+    expect(status).toContain('location-analysis');
   });
 
   it('keeps primary nav location destination and shared product nav routes', () => {
