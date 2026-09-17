@@ -3,15 +3,17 @@ import { SiteHeader } from '@/components/site/SiteHeader';
 import { SiteFooter } from '@/components/site/SiteFooter';
 import { Section, Eyebrow, Headline } from '@/components/site/primitives';
 import { MediaCard } from '@/components/site/MediaCard';
-import { EN_PUBLIC_ORIGIN } from '@/config/publicOrigins';
+import { GUEST_AUTOPILOT_ORIGIN } from '@/config/publicOrigins';
 
 const title = 'ASI Media';
 const description = 'Watch and read ASI Global media — the Japan pitch deck, concept film, and market materials.';
-const url = `${EN_PUBLIC_ORIGIN}/media`;
+const url = `${GUEST_AUTOPILOT_ORIGIN}/media`;
 
 export const metadata: Metadata = {
   title,
   description,
+  // No `languages` alternate here on purpose: this international marketing site
+  // (guestautopilot.com) has no legal/contact relationship to asi-global.ru.
   alternates: { canonical: url },
   openGraph: {
     title,
@@ -19,13 +21,13 @@ export const metadata: Metadata = {
     url,
     siteName: 'ASI Global',
     type: 'website',
-    images: [{ url: `${EN_PUBLIC_ORIGIN}/images/japan/cabin-clean.jpg` }],
+    images: [{ url: `${GUEST_AUTOPILOT_ORIGIN}/images/japan/cabin-clean.jpg` }],
   },
   twitter: {
     card: 'summary_large_image',
     title,
     description,
-    images: [`${EN_PUBLIC_ORIGIN}/images/japan/cabin-clean.jpg`],
+    images: [`${GUEST_AUTOPILOT_ORIGIN}/images/japan/cabin-clean.jpg`],
   },
 };
 

@@ -73,10 +73,26 @@ function isExternal(href: string) {
   return /^https?:\/\//.test(href) || href.startsWith('mailto:');
 }
 
-export function PrimaryCta({ href, children }: { href: string; children: ReactNode }) {
+export function PrimaryCta({
+  href,
+  children,
+  disabledReason,
+}: {
+  href: string;
+  children: ReactNode;
+  /** When set, renders the identical button with no live destination — no navigation, no fabricated contact. */
+  disabledReason?: string;
+}) {
   const external = isExternal(href);
   const cls =
     'inline-flex items-center justify-center gap-2 px-7 py-3.5 bg-asi-navy text-asi-ivory text-sm font-sans font-semibold tracking-wide rounded-sm border border-asi-navy hover:bg-asi-navy-2 transition-colors';
+  if (disabledReason) {
+    return (
+      <button type="button" disabled aria-label={disabledReason} title={disabledReason} className={`${cls} opacity-60 cursor-not-allowed hover:bg-asi-navy`}>
+        {children}
+      </button>
+    );
+  }
   return external ? (
     <a href={href} target="_blank" rel="noopener noreferrer" className={cls}>
       {children}
@@ -88,10 +104,26 @@ export function PrimaryCta({ href, children }: { href: string; children: ReactNo
   );
 }
 
-export function SecondaryCta({ href, children }: { href: string; children: ReactNode }) {
+export function SecondaryCta({
+  href,
+  children,
+  disabledReason,
+}: {
+  href: string;
+  children: ReactNode;
+  /** When set, renders the identical button with no live destination — no navigation, no fabricated contact. */
+  disabledReason?: string;
+}) {
   const external = isExternal(href);
   const cls =
     'inline-flex items-center justify-center gap-2 px-7 py-3.5 bg-transparent text-asi-navy text-sm font-sans font-semibold tracking-wide rounded-sm border border-asi-navy/70 hover:border-asi-navy transition-colors';
+  if (disabledReason) {
+    return (
+      <button type="button" disabled aria-label={disabledReason} title={disabledReason} className={`${cls} opacity-60 cursor-not-allowed hover:border-asi-navy/70`}>
+        {children}
+      </button>
+    );
+  }
   return external ? (
     <a href={href} target="_blank" rel="noopener noreferrer" className={cls}>
       {children}

@@ -3,8 +3,7 @@ import Image from 'next/image';
 import { headers } from 'next/headers';
 import type { Metadata } from 'next';
 
-import { RU_PUBLIC_ORIGIN, EN_PUBLIC_ORIGIN } from '@/config/publicOrigins';
-import { productSupportEmail } from '@/config/contact';
+import { RU_PUBLIC_ORIGIN, EN_PUBLIC_ORIGIN, GUEST_AUTOPILOT_ORIGIN } from '@/config/publicOrigins';
 import { hostnameFromHostHeader, isRuRuntimeHost } from '@/lib/runtimeHost';
 import HomeRu from '@/app/ru/page';
 
@@ -45,10 +44,13 @@ export async function generateMetadata(): Promise<Metadata> {
   const title = 'ASI Global — Operations on autopilot. Humans on exceptions.';
   const description =
     'ASI handles the daily work of physical businesses — bookings, payments, messages, access, cleaning and maintenance — automatically. People step in only when something unusual needs a decision.';
-  const url = EN_PUBLIC_ORIGIN;
+  const url = GUEST_AUTOPILOT_ORIGIN;
   return {
     title,
     description,
+    // No `languages` alternate here on purpose: this international marketing site
+    // (guestautopilot.com) has no legal/contact relationship to asi-global.ru and must
+    // not advertise it as an hreflang alternate.
     alternates: { canonical: url },
     openGraph: {
       title,
@@ -267,9 +269,12 @@ export default async function Home() {
             </p>
             <div className="mt-9 flex flex-wrap gap-4 justify-center">
               <PrimaryCta href="/markets/japan#pilot">Partner on the Japan Pilot</PrimaryCta>
-              <SecondaryCta href={`mailto:${productSupportEmail}`}>Contact ASI Global</SecondaryCta>
+              <SecondaryCta href="#" disabledReason="International contact channel launching soon">Contact ASI Global</SecondaryCta>
             </div>
             <p className="mt-8 text-xs text-asi-ivory/60">
+              International contact channel launching soon.
+            </p>
+            <p className="mt-3 text-xs text-asi-ivory/60">
               Looking for the short-term rental automation product?{' '}
               <Link href="/rental-autopilot" className="underline hover:text-asi-ivory/70">
                 Rental Autopilot →

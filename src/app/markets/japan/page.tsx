@@ -8,17 +8,18 @@ import { Shiro } from '@/components/site/Shiro';
 import { CircleFeature } from '@/components/site/CircleFeature';
 import { MediaCard } from '@/components/site/MediaCard';
 import { OperationalFlow } from '@/components/site/OperationalFlow';
-import { productSupportEmail } from '@/config/contact';
-import { EN_PUBLIC_ORIGIN } from '@/config/publicOrigins';
+import { GUEST_AUTOPILOT_ORIGIN } from '@/config/publicOrigins';
 
 const title = 'ASI Japan — Micro Hotels, from Osaka to the next generation';
 const description =
   'ASI Japan brings autonomous operations to micro-hospitality, respecting the birthplace of capsule hospitality while building real private rooms for modern travelers.';
-const url = `${EN_PUBLIC_ORIGIN}/markets/japan`;
+const url = `${GUEST_AUTOPILOT_ORIGIN}/markets/japan`;
 
 export const metadata: Metadata = {
   title,
   description,
+  // No `languages` alternate here on purpose: this international marketing site
+  // (guestautopilot.com) has no legal/contact relationship to asi-global.ru.
   alternates: { canonical: url },
   openGraph: {
     title,
@@ -26,13 +27,13 @@ export const metadata: Metadata = {
     url,
     siteName: 'ASI Global',
     type: 'website',
-    images: [{ url: `${EN_PUBLIC_ORIGIN}/images/japan/cabin-clean.jpg` }],
+    images: [{ url: `${GUEST_AUTOPILOT_ORIGIN}/images/japan/cabin-clean.jpg` }],
   },
   twitter: {
     card: 'summary_large_image',
     title,
     description,
-    images: [`${EN_PUBLIC_ORIGIN}/images/japan/cabin-clean.jpg`],
+    images: [`${GUEST_AUTOPILOT_ORIGIN}/images/japan/cabin-clean.jpg`],
   },
 };
 
@@ -186,8 +187,9 @@ export default function JapanMarketPage() {
                 demand, operations and economics.
               </p>
               <div className="mt-6">
-                <PrimaryCta href={`mailto:${productSupportEmail}`}>Partner on the Japan Pilot</PrimaryCta>
+                <PrimaryCta href="#" disabledReason="International contact channel launching soon">Partner on the Japan Pilot</PrimaryCta>
               </div>
+              <p className="mt-3 text-xs text-asi-navy/60">International contact channel launching soon.</p>
             </div>
           </div>
         </Section>
