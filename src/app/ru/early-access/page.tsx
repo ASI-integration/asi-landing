@@ -1,5 +1,15 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
+import {
+  BrandEyebrow,
+  BrandGoldRule,
+  BrandHeadline,
+  BrandLogoMark,
+  BrandPrimaryCta,
+  BrandSecondaryCta,
+  BrandSection,
+  BrandShiro,
+} from '@/components/brand';
 import { EarlyAccessObjectForm } from '@/components/early-access/EarlyAccessObjectForm';
 import { PilotCheckoutCta } from '@/components/ru/PilotCheckoutCta';
 import { RuBottomQuickLinks } from '@/components/ru/RuBottomQuickLinks';
@@ -11,7 +21,6 @@ import {
   COMMUNICATION_PILOT_PRICE_RUB,
   COMMUNICATION_PILOT_SERVICE_TITLE,
 } from '@/lib/payments/yookassa-env';
-import { ThemeProvider } from '@/theme/ThemeProvider';
 
 export const metadata: Metadata = {
   title: 'Пилот ASI для посуточной аренды',
@@ -19,256 +28,411 @@ export const metadata: Metadata = {
     'Закрытый пилот AI-ответов гостям для владельцев посуточных объектов: 1 объект, 1 месяц, меньше ручной переписки.',
 };
 
-const featureItems = [
+const FLOW_STEPS = [
   {
-    title: 'Круглосуточные ответы гостям без постоянного сидения в телефоне',
-    label: 'Сейчас в пилоте',
-    text: 'Сервис помогает отвечать гостям в Telegram текстом и голосом: про заселение, Wi-Fi, парковку, правила объекта, заезд, выезд и бытовые вопросы. Владелец подключается к срочным или нестандартным ситуациям.',
+    n: '01',
+    title: 'Гость спрашивает',
+    body: 'Заселение, Wi-Fi, парковка, правила объекта, заезд / выезд и бытовые уточнения.',
   },
   {
-    title: 'Подготовка к работе с площадками',
-    label: 'Дорожная карта / на пилоте вручную',
-    text: 'ASI может собирать данные объекта для дальнейшей работы с каналами. На текущем пилоте публикация и импорт выполняются вручную или полуавтоматически — это не отдельный готовый модуль тарифа.',
+    n: '02',
+    title: 'ASI закрывает рутину',
+    body: 'Ответ строится по данным вашего объекта — без постоянного сидения в переписке.',
   },
   {
-    title: 'Подсказки по ценам на ночь',
-    label: 'Дорожная карта',
-    text: 'Направление платформы: подсказки по тарифам на основе спроса и района. Не входит в обещание текущего пилота AI-ответов как автоматическое исполнение цен.',
+    n: '03',
+    title: 'Исключение?',
+    body: 'Нестандартный или срочный вопрос не закрывается шаблоном — нужен человек.',
   },
   {
-    title: 'Оценка района и локации',
-    label: 'Отдельный инструмент',
-    text: 'Доступна как вспомогательная проверка локации. Для закрытого пилота коммуникаций это не основной продукт.',
+    n: '04',
+    title: 'Человек подключается',
+    body: 'Оператор получает контекст и принимает решение. Пилот не заменяет вас целиком.',
   },
-  {
-    title: 'Уборки, отзывы, замки в одной связке',
-    label: 'Дорожная карта',
-    text: 'Направление платформы. В пилоте фокус на гостевой переписке, а не на полной операционной автоматизации.',
-  },
-  {
-    title: 'Меньше ручной переписки',
-    label: 'Цель пилота',
-    text: 'После настройки объекта большинство типовых вопросов гостей закрывается без вашего участия. Исключения остаются за человеком.',
-  },
-];
+] as const;
 
-const securityItems = [
+const FEATURE_GROUPS = [
   {
-    mark: '🔐',
-    text: 'Нам не нужны ваши пароли от личных кабинетов Avito, Островок, Суточно.ру или Циан.',
+    label: 'Сейчас в пилоте',
+    items: [
+      {
+        title: 'AI-ответы гостям',
+        text: 'Типовые вопросы в цифровых каналах: заселение, Wi-Fi, парковка, правила, заезд и выезд.',
+      },
+      {
+        title: 'Знание объекта',
+        text: 'Ответы опираются на памятку и основную информацию, которую вы передаёте при подключении.',
+      },
+      {
+        title: 'Рутинная переписка',
+        text: 'Повторяющиеся сценарии закрываются системой — меньше ручной переписки.',
+      },
+      {
+        title: 'Исключения — человеку',
+        text: 'Срочные и нестандартные ситуации остаются за оператором с контекстом переписки.',
+      },
+    ],
   },
   {
-    mark: '❌',
-    text: 'Нам не нужен доступ к вашим деньгам, расчетным счетам или картам.',
+    label: 'Дорожная карта',
+    items: [
+      {
+        title: 'Каналы и объявления',
+        text: 'Направление платформы: синхронизация с площадками. На пилоте публикация и импорт — вручную или полуавтоматически.',
+      },
+      {
+        title: 'Подсказки по ценам',
+        text: 'Направление платформы. Не входит в текущий тариф как автоматическое исполнение цен.',
+      },
+      {
+        title: 'Уборки, доступы, отзывы',
+        text: 'Операционный контур — дорожная карта. В пилоте фокус на гостевой переписке.',
+      },
+    ],
+  },
+] as const;
+
+const SECURITY_ITEMS = [
+  {
+    n: '01',
+    title: 'Без паролей площадок',
+    text: 'Нам не нужны пароли от личных кабинетов Avito, Островок, Суточно.ру или Циан.',
   },
   {
-    mark: '🤖',
-    text: 'Для проверки сервиса достаточно открытых данных: памятка для гостя, Wi-Fi, адрес и основная информация по объектам. Если вопрос окажется сложным, гость сразу получит понятный ответ текстом — помощь не пропадёт.',
+    n: '02',
+    title: 'Без доступа к деньгам',
+    text: 'Нам не нужен доступ к вашим деньгам, расчётным счетам или картам.',
   },
-];
+  {
+    n: '03',
+    title: 'Данные для ответов',
+    text: 'Пилот стартует с информации объекта: памятка для гостя, Wi-Fi, адрес и основные сведения. Сложные вопросы эскалируются человеку.',
+  },
+] as const;
+
+const PROCESS_STEPS = [
+  {
+    n: '01',
+    title: 'Заявка',
+    body: 'Оставляете контакты и коротко описываете объекты.',
+  },
+  {
+    n: '02',
+    title: 'Настройка объекта',
+    body: 'Собираем гостевые инструкции и рабочие данные для ответов.',
+  },
+  {
+    n: '03',
+    title: 'Первые обращения',
+    body: 'ASI начинает закрывать типовые вопросы гостей.',
+  },
+  {
+    n: '04',
+    title: 'Проверка пилота',
+    body: 'Человек остаётся доступен для исключений и согласований.',
+  },
+] as const;
+
+function HeroOfferPanel() {
+  return (
+    <div className="relative border border-asi-border bg-asi-paper p-6 sm:p-8 min-h-[20rem] sm:min-h-[26rem] flex flex-col justify-between">
+      <div className="flex items-center justify-between gap-4">
+        <div className="flex items-center gap-3">
+          <BrandLogoMark size={28} />
+          <span className="font-serif text-xl text-asi-navy">ASI</span>
+        </div>
+        <span className="text-[10px] font-sans font-semibold uppercase tracking-[0.18em] text-asi-gold-text">
+          Пилот
+        </span>
+      </div>
+
+      <div className="mt-8">
+        <p className="text-[10px] font-sans font-semibold uppercase tracking-[0.18em] text-asi-gold-text">
+          Тариф пилота
+        </p>
+        <p className="mt-4 font-serif text-5xl sm:text-6xl text-asi-navy tracking-tight">
+          {COMMUNICATION_PILOT_PRICE_RUB}&nbsp;₽
+        </p>
+        <p className="mt-3 text-asi-navy/65">1 объект · 1 месяц</p>
+        <BrandGoldRule className="mt-6 mb-6" />
+        <p className="text-sm text-asi-navy/70 leading-relaxed max-w-sm">
+          AI-коммуникации для посуточной аренды. Рутина — системе, исключения — человеку.
+        </p>
+      </div>
+
+      <div className="mt-8 flex items-end justify-between gap-4">
+        <p className="text-xs font-sans uppercase tracking-[0.14em] text-asi-navy/50">
+          Закрытый пилот
+        </p>
+        <BrandShiro size={48} />
+      </div>
+    </div>
+  );
+}
 
 export default function RuEarlyAccessPage() {
   return (
-    <ThemeProvider defaultTheme="light" className="theme-transition min-h-screen bg-[var(--t-bg)] text-[var(--t-text)]">
-      <RuPublicNavHeader surface="theme" density="landing" />
+    <div className="font-sans bg-asi-ivory text-asi-navy antialiased">
+      <RuPublicNavHeader density="landing" />
 
       <main>
-        <section className="px-4 py-12 sm:px-6 sm:py-16">
-          <div className="mx-auto grid max-w-6xl gap-10 lg:grid-cols-[1.05fr_0.95fr] lg:items-center">
+        {/* ── 1. Hero ── */}
+        <section className="relative bg-asi-ivory px-5 sm:px-8 pt-12 sm:pt-20 pb-16 sm:pb-24 overflow-hidden">
+          <div className="max-w-6xl mx-auto grid lg:grid-cols-[1.05fr,0.95fr] gap-12 lg:gap-16 items-center">
             <div>
-              <p className="text-sm font-bold uppercase tracking-[0.18em] text-[var(--t-muted)]">Первые подключения</p>
-              <h1 className="mt-4 max-w-4xl text-3xl font-bold leading-tight tracking-tight text-[var(--t-text)] sm:text-5xl">
-                Умные ответы гостям для посуточной аренды
-              </h1>
-              <p className="mt-5 max-w-3xl text-base leading-8 text-[var(--t-text-2)] sm:text-lg">
-                Сервис помогает отвечать на частые вопросы гостей, не пропускать важные сообщения и сокращать рутину в переписке.
-              </p>
-              <div className="mt-7">
-                <div className="flex flex-wrap gap-3">
-                  <a
-                    href="#pilot-form"
-                    className="inline-flex min-h-12 items-center justify-center rounded-lg bg-[var(--t-accent)] px-7 py-3 text-sm font-bold text-white transition hover:bg-[var(--t-accent-hover)]"
-                  >
-                    Подключить пилот
-                  </a>
-                  <a
-                    href="#pilot-tariff"
-                    className="inline-flex min-h-12 items-center justify-center rounded-lg border border-[var(--t-border)] bg-[var(--t-surface)] px-7 py-3 text-sm font-bold text-[var(--t-text)] transition hover:bg-[var(--t-surface-2)]"
-                  >
-                    Тариф пилота
-                  </a>
-                </div>
-                <p className="mt-4 max-w-2xl text-sm leading-7 text-[var(--t-muted)]">
-                  Подключаем ограниченное количество объектов, чтобы спокойно проверить работу сервиса на реальных гостях и подстроить ответы под ваш объект.
-                </p>
+              <div className="flex items-center gap-3">
+                <BrandLogoMark size={34} />
+                <span className="font-serif text-2xl text-asi-navy">ASI</span>
               </div>
+              <p className="mt-2 text-xs font-sans uppercase tracking-[0.22em] text-asi-navy/65">
+                ASI · закрытый пилот
+              </p>
+              <BrandHeadline as="h1" className="mt-8 text-4xl sm:text-5xl lg:text-[3.5rem]">
+                Меньше переписки.
+                <br />
+                <span className="text-asi-gold">Больше времени на объект.</span>
+              </BrandHeadline>
+              <BrandGoldRule className="mt-6 mb-6" />
+              <p className="text-lg text-asi-navy/70 max-w-lg leading-relaxed">
+                ASI закрывает типовые вопросы гостей по данным объекта. Оператор подключается, когда
+                нужна человеческая оценка.
+              </p>
+              <p className="mt-4 text-sm font-sans text-asi-navy/60 tracking-wide">
+                {COMMUNICATION_PILOT_PRICE_RUB}&nbsp;₽ · 1 объект · 1 месяц
+              </p>
+              <div className="mt-9 flex flex-wrap gap-4">
+                <BrandPrimaryCta href="/ru/early-access#pilot-form">Подключить пилот</BrandPrimaryCta>
+                <BrandSecondaryCta href="/ru/early-access#pilot-tariff">Что входит</BrandSecondaryCta>
+              </div>
+              <p className="mt-5 max-w-md text-sm text-asi-navy/55 leading-relaxed">
+                Ограниченное число объектов — чтобы спокойно проверить сервис на реальных гостях.
+              </p>
             </div>
-
-            <div className="rounded-lg border border-[var(--t-border)] bg-[var(--t-surface)] p-5 shadow-sm">
-              <h2 className="text-xl font-bold text-[var(--t-text)]">Что делает сервис</h2>
-              <ul className="mt-5 space-y-3">
-                {[
-                  'Отвечает на частые вопросы гостей',
-                  'Помогает сократить рутину в переписке',
-                  'Если голосом ответить нельзя, гость получит ответ текстом',
-                ].map((item) => (
-                  <li key={item} className="rounded-lg border border-[var(--t-border)] bg-[var(--t-surface-2)] px-4 py-3 text-sm leading-6 text-[var(--t-text-2)]">
-                    {item}
-                  </li>
-                ))}
-              </ul>
-            </div>
+            <HeroOfferPanel />
           </div>
         </section>
 
-        <section
-          id="pilot-tariff"
-          className="border-y border-[var(--t-border)] bg-[var(--t-surface-2)] px-4 py-12 sm:px-6 sm:py-16"
-        >
-          <div className="mx-auto max-w-6xl grid gap-8 lg:grid-cols-[1.1fr_0.9fr] lg:items-start">
+        {/* ── 2. Operating model ── */}
+        <BrandSection variant="navy">
+          <BrandEyebrow dark>Как проходит пилот</BrandEyebrow>
+          <BrandHeadline className="text-3xl sm:text-5xl max-w-3xl text-asi-ivory">
+            Гость спрашивает.
+            <br />
+            ASI отвечает на рутину.
+          </BrandHeadline>
+          <p className="mt-5 max-w-2xl text-asi-ivory/65 leading-relaxed">
+            Модель текущего пилота — не полная автоматизация объекта. Исключения остаются за человеком.
+          </p>
+          <ol className="mt-12 grid sm:grid-cols-2 lg:grid-cols-4 gap-px bg-asi-ivory/15 border border-asi-ivory/15">
+            {FLOW_STEPS.map((step) => (
+              <li key={step.n} className="bg-asi-navy p-6 sm:p-8">
+                <span className="font-serif text-asi-gold-soft text-2xl">{step.n}</span>
+                <h3 className="mt-4 font-serif text-xl text-asi-ivory">{step.title}</h3>
+                <p className="mt-3 text-sm text-asi-ivory/65 leading-relaxed">{step.body}</p>
+              </li>
+            ))}
+          </ol>
+        </BrandSection>
+
+        {/* ── 3. Tariff + checkout ── */}
+        <BrandSection variant="paper" id="pilot-tariff">
+          <div className="grid lg:grid-cols-[1.1fr,0.9fr] gap-10 lg:gap-16 items-start">
             <div>
-              <p className="text-sm font-bold uppercase tracking-[0.18em] text-[var(--t-muted)]">Платный MVP</p>
-              <h2 className="mt-3 text-2xl font-bold text-[var(--t-text)] sm:text-3xl">
+              <BrandEyebrow>Платный MVP</BrandEyebrow>
+              <BrandHeadline className="text-3xl sm:text-5xl max-w-2xl">
                 {COMMUNICATION_PILOT_SERVICE_TITLE}
-              </h2>
-              <p className="mt-3 text-sm leading-7 text-[var(--t-text-2)] sm:text-base">
+              </BrandHeadline>
+              <BrandGoldRule className="mt-6 mb-6" />
+              <p className="text-asi-navy/70 leading-relaxed max-w-xl">
                 {COMMUNICATION_PILOT_PAYMENT_DESCRIPTION}. Опубликованная стоимость:{' '}
-                <strong>{COMMUNICATION_PILOT_PRICE_RUB}&nbsp;₽</strong>.
+                <span className="font-semibold text-asi-navy">
+                  {COMMUNICATION_PILOT_PRICE_RUB}&nbsp;₽
+                </span>
+                .
               </p>
-              <ul className="mt-5 space-y-2 text-sm leading-7 text-[var(--t-text-2)]">
-                <li>AI-ответы на частые вопросы гостей в цифровых каналах</li>
-                <li>Один объект: вы передаёте данные объекта, мы настраиваем ответы под него</li>
-                <li>Тариф на один месяц; нестандартные случаи — с участием человека</li>
-                <li>Услуга оказывается дистанционно после подтверждения оплаты или согласования подключения</li>
+              <ul className="mt-6 space-y-2 text-sm text-asi-navy/65">
+                <li className="border-t border-asi-border/70 pt-2">
+                  AI-ответы на частые вопросы гостей в цифровых каналах
+                </li>
+                <li className="border-t border-asi-border/70 pt-2">
+                  Один объект: настройка ответов по вашим данным
+                </li>
+                <li className="border-t border-asi-border/70 pt-2">
+                  Тариф на один месяц; исключения — с участием человека
+                </li>
+                <li className="border-t border-asi-border/70 pt-2">
+                  Услуга оказывается дистанционно после подтверждения оплаты или согласования
+                </li>
               </ul>
-              <p className="mt-4 text-sm leading-7 text-[var(--t-muted)]">
+              <p className="mt-6 text-sm text-asi-navy/55 leading-relaxed max-w-xl">
                 Оплата через ЮKassa подключается после модерации мерчанта. Документы:{' '}
-                <Link href="/ru/payment" className="underline underline-offset-2">
+                <Link href="/ru/payment" className="underline underline-offset-2 text-asi-navy/70">
                   оплата и доставка
                 </Link>
                 ,{' '}
-                <Link href="/ru/offer" className="underline underline-offset-2">
+                <Link href="/ru/offer" className="underline underline-offset-2 text-asi-navy/70">
                   оферта
                 </Link>
                 ,{' '}
-                <Link href="/ru/refund" className="underline underline-offset-2">
+                <Link href="/ru/refund" className="underline underline-offset-2 text-asi-navy/70">
                   возврат
                 </Link>
                 ,{' '}
-                <Link href="/ru/privacy" className="underline underline-offset-2">
+                <Link href="/ru/privacy" className="underline underline-offset-2 text-asi-navy/70">
                   конфиденциальность
                 </Link>
                 ,{' '}
-                <Link href="/ru/contacts" className="underline underline-offset-2">
+                <Link href="/ru/contacts" className="underline underline-offset-2 text-asi-navy/70">
                   контакты
                 </Link>
                 .
               </p>
-              <p className="mt-4 text-sm leading-7 text-[var(--t-text-2)]">
+              <p className="mt-4 text-sm text-asi-navy/55 leading-relaxed max-w-xl">
                 Исполнитель: {ruCompliance.fullName}, ИНН {ruCompliance.inn}. Телефон:{' '}
-                <a href={`tel:${ruCompliance.phoneTel}`} className="underline underline-offset-2">
+                <a
+                  href={`tel:${ruCompliance.phoneTel}`}
+                  className="underline underline-offset-2 text-asi-navy/70"
+                >
                   {ruCompliance.phone}
                 </a>
                 . Email:{' '}
-                <a href={`mailto:${ruCompliance.email}`} className="underline underline-offset-2">
+                <a
+                  href={`mailto:${ruCompliance.email}`}
+                  className="underline underline-offset-2 text-asi-navy/70"
+                >
                   {ruCompliance.email}
                 </a>
                 . Адрес: {ruCompliance.address}.
               </p>
             </div>
-            <div className="rounded-lg border border-[var(--t-border)] bg-[var(--t-surface)] p-5">
-              <PilotCheckoutCta />
-            </div>
-          </div>
-        </section>
-
-        <section className="px-4 py-12 sm:px-6 sm:py-16">
-          <div className="mx-auto max-w-5xl">
-            <p className="text-sm font-bold uppercase tracking-[0.18em] text-[var(--t-muted)]">Сейчас в пилоте</p>
-            <h2 className="mt-4 text-2xl font-bold leading-tight text-[var(--t-text)] sm:text-4xl">
-              AI-ответы гостям на одном объекте — без обещания полной автоматизации бизнеса
-            </h2>
-            <p className="mt-5 text-base leading-8 text-[var(--t-text-2)] sm:text-lg">
-              В закрытом пилоте фокус на типовой гостевой переписке. Исключения остаются за человеком. Полный операционный
-              контур (каналы, цены, уборки, доступы) — направление платформы, а не состав текущего тарифа.
-            </p>
-          </div>
-        </section>
-
-        <section className="px-4 py-12 sm:px-6 sm:py-16">
-          <div className="mx-auto max-w-6xl">
-            <p className="text-sm font-bold uppercase tracking-[0.18em] text-[var(--t-muted)]">Сейчас и дорожная карта</p>
-            <div className="mt-6 grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-              {featureItems.map((item, index) => (
-                <article key={item.title} className="rounded-lg border border-[var(--t-border)] bg-[var(--t-surface)] p-5">
-                  <div className="flex items-start gap-3">
-                    <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[var(--t-surface-2)] text-sm font-bold text-[var(--t-text)]">
-                      {index + 1}
-                    </span>
-                    <div>
-                      <h2 className="text-lg font-bold text-[var(--t-text)]">{item.title}</h2>
-                      {item.label ? <p className="mt-1 text-xs font-semibold text-[var(--t-muted)]">({item.label})</p> : null}
-                    </div>
-                  </div>
-                  <p className="mt-4 text-sm leading-7 text-[var(--t-text-2)]">{item.text}</p>
-                </article>
-              ))}
-            </div>
-          </div>
-        </section>
-
-        <section className="border-y border-[var(--t-border)] bg-[var(--t-surface-2)] px-4 py-12 sm:px-6 sm:py-16">
-          <div className="mx-auto max-w-6xl">
-            <p className="text-sm font-bold uppercase tracking-[0.18em] text-[var(--t-muted)]">Безопасность</p>
-            <div className="mt-6 grid gap-4 lg:grid-cols-3">
-              {securityItems.map((item) => (
-                <div key={item.text} className="rounded-lg border border-[var(--t-border)] bg-[var(--t-surface)] p-5">
-                  <span className="text-2xl" aria-hidden="true">
-                    {item.mark}
-                  </span>
-                  <p className="mt-3 text-sm leading-7 text-[var(--t-text-2)]">{item.text}</p>
-                </div>
-              ))}
-            </div>
-          </div>
-        </section>
-
-        <section className="px-4 py-12 sm:px-6 sm:py-16">
-          <div className="mx-auto max-w-5xl rounded-lg border border-[var(--t-border)] bg-[var(--t-surface)] p-6">
-            <p className="text-sm font-bold uppercase tracking-[0.18em] text-[var(--t-muted)]">Условия пилота</p>
-            <h2 className="mt-3 text-2xl font-bold text-[var(--t-text)]">Запуск с ручным сопровождением</h2>
-            <p className="mt-3 text-sm leading-7 text-[var(--t-text-2)]">
-              Для первых объектов команда ASI помогает собрать данные, подготовить рабочий контур и пройти одну бронь от
-              заявки до закрытия. Опубликованный тариф пилота AI-коммуникаций — {COMMUNICATION_PILOT_PRICE_RUB}&nbsp;₽ за
-              объект в месяц; детали оплаты — на странице{' '}
-              <Link href="/ru/payment" className="underline underline-offset-2">
-                оплаты
-              </Link>
-              .
-            </p>
-          </div>
-        </section>
-
-        <section className="border-t border-[var(--t-border)] bg-[var(--t-surface-2)] px-4 py-12 sm:px-6 sm:py-16">
-          <div className="mx-auto max-w-4xl">
-            <div className="mb-8">
-              <p className="text-sm font-bold uppercase tracking-[0.18em] text-[var(--t-muted)]">Заявка</p>
-              <h2 className="mt-3 text-2xl font-bold text-[var(--t-text)] sm:text-3xl">
-                Подключить объект
-              </h2>
-              <p className="mt-3 max-w-2xl text-sm leading-7 text-[var(--t-text-2)]">
-                Оставьте контакты — свяжемся и поможем с подключением.
+            <div className="border border-asi-border bg-asi-ivory p-7 sm:p-9">
+              <p className="text-xs font-sans font-semibold uppercase tracking-[0.18em] text-asi-gold-text">
+                Оплата пилота
               </p>
+              <p className="mt-4 font-serif text-5xl sm:text-6xl text-asi-navy tracking-tight">
+                {COMMUNICATION_PILOT_PRICE_RUB}&nbsp;₽
+              </p>
+              <p className="mt-2 text-asi-navy/65">1 объект · 1 месяц</p>
+              <div className="mt-8">
+                <PilotCheckoutCta />
+              </div>
             </div>
+          </div>
+        </BrandSection>
+
+        {/* ── 4. Current vs roadmap ── */}
+        <BrandSection variant="ivory">
+          <BrandEyebrow>Состав пилота</BrandEyebrow>
+          <BrandHeadline className="text-3xl sm:text-5xl max-w-3xl">
+            Сейчас в пилоте — и куда идёт ASI
+          </BrandHeadline>
+          <p className="mt-5 max-w-2xl text-asi-navy/70 leading-relaxed">
+            Не смешиваем текущий тариф с дорожной картой. Полный операционный контур — направление
+            платформы, а не обещание «уже сейчас».
+          </p>
+
+          <div className="mt-12 grid lg:grid-cols-2 gap-8 lg:gap-12">
+            {FEATURE_GROUPS.map((group) => (
+              <div key={group.label}>
+                <p className="text-xs font-sans font-semibold uppercase tracking-[0.18em] text-asi-gold-text">
+                  {group.label}
+                </p>
+                {group.label === 'Дорожная карта' ? (
+                  <h3 className="mt-3 font-serif text-2xl text-asi-navy">Дальше в ASI</h3>
+                ) : (
+                  <h3 className="mt-3 font-serif text-2xl text-asi-navy">В тарифе пилота</h3>
+                )}
+                <ul className="mt-6 divide-y divide-asi-border border-y border-asi-border">
+                  {group.items.map((item) => (
+                    <li key={item.title} className="py-5">
+                      <h4 className="font-serif text-lg text-asi-navy">{item.title}</h4>
+                      <p className="mt-2 text-sm text-asi-navy/65 leading-relaxed">{item.text}</p>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </div>
+
+          <div className="mt-12 border border-asi-border bg-asi-paper p-7 sm:p-8 max-w-2xl">
+            <p className="text-xs font-sans font-semibold uppercase tracking-[0.18em] text-asi-gold-text">
+              Отдельный инструмент
+            </p>
+            <h3 className="mt-3 font-serif text-xl text-asi-navy">Оценка района и локации</h3>
+            <p className="mt-3 text-sm text-asi-navy/65 leading-relaxed">
+              Вспомогательная проверка локации. Не входит в тариф пилота AI-коммуникаций за{' '}
+              {COMMUNICATION_PILOT_PRICE_RUB}&nbsp;₽.
+            </p>
+            <Link
+              href="/ru/location-analysis?mode=residential#location-check"
+              className="mt-5 inline-flex text-sm font-sans font-semibold text-asi-navy underline-offset-4 hover:underline"
+            >
+              Оценить локацию →
+            </Link>
+          </div>
+        </BrandSection>
+
+        {/* ── 5. Security ── */}
+        <BrandSection variant="paper">
+          <BrandEyebrow>Доступ и доверие</BrandEyebrow>
+          <BrandHeadline className="text-3xl sm:text-4xl max-w-3xl">
+            Без паролей площадок и без доступа к счетам
+          </BrandHeadline>
+          <ol className="mt-12 grid md:grid-cols-3 gap-0 border border-asi-border divide-y md:divide-y-0 md:divide-x divide-asi-border">
+            {SECURITY_ITEMS.map((item) => (
+              <li key={item.n} className="bg-asi-ivory p-7 sm:p-8">
+                <span className="font-serif text-asi-gold text-2xl">{item.n}</span>
+                <h3 className="mt-4 font-serif text-xl text-asi-navy">{item.title}</h3>
+                <p className="mt-3 text-sm text-asi-navy/65 leading-relaxed">{item.text}</p>
+              </li>
+            ))}
+          </ol>
+        </BrandSection>
+
+        {/* ── 6. Process ── */}
+        <BrandSection variant="navy">
+          <BrandEyebrow dark>Условия пилота</BrandEyebrow>
+          <BrandHeadline className="text-3xl sm:text-5xl max-w-3xl text-asi-ivory">
+            Четыре шага до первых ответов
+          </BrandHeadline>
+          <ol className="mt-12 grid sm:grid-cols-2 lg:grid-cols-4 gap-px bg-asi-ivory/15 border border-asi-ivory/15">
+            {PROCESS_STEPS.map((step) => (
+              <li key={step.n} className="bg-asi-navy p-6 sm:p-8">
+                <span className="font-serif text-asi-gold-soft text-2xl">{step.n}</span>
+                <h3 className="mt-4 font-serif text-xl text-asi-ivory">{step.title}</h3>
+                <p className="mt-3 text-sm text-asi-ivory/65 leading-relaxed">{step.body}</p>
+              </li>
+            ))}
+          </ol>
+          <p className="mt-8 text-asi-ivory/55 max-w-xl leading-relaxed text-sm">
+            Тариф пилота AI-коммуникаций — {COMMUNICATION_PILOT_PRICE_RUB}&nbsp;₽ за объект в месяц.
+            Детали оплаты — на странице{' '}
+            <Link href="/ru/payment" className="underline underline-offset-2 text-asi-ivory/75">
+              оплаты
+            </Link>
+            .
+          </p>
+        </BrandSection>
+
+        {/* ── 7. Application form ── */}
+        <BrandSection variant="ivory" id="pilot-form-section">
+          <BrandEyebrow>Заявка</BrandEyebrow>
+          <BrandHeadline className="text-3xl sm:text-5xl max-w-2xl">
+            Подключить объект к пилоту
+          </BrandHeadline>
+          <p className="mt-5 max-w-xl text-asi-navy/70 leading-relaxed">
+            Оставьте контакты — свяжемся и поможем с настройкой одного объекта.
+          </p>
+          <div className="mt-10 max-w-2xl">
             <EarlyAccessObjectForm />
           </div>
-        </section>
+        </BrandSection>
       </main>
 
       <footer>
         <RuBottomQuickLinks tone="theme" />
         <RuComplianceFooter tone="theme" />
       </footer>
-    </ThemeProvider>
+    </div>
   );
 }
