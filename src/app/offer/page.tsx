@@ -84,20 +84,30 @@ export default async function OfferPage() {
           {/* 3. Access */}
           <section>
             <h2 className="text-base font-semibold text-slate-900 mb-3">3. Access</h2>
-            <ul className="list-disc pl-5 space-y-1.5">
-              <li>
-                Access is provisioned within{' '}
-                <span className="font-medium text-slate-900">24 hours</span> of payment confirmation.
-              </li>
-              <li>
-                A free trial may be granted after registration. Duration and conditions are stated on
-                the pricing page.
-              </li>
-              <li>
-                Access is valid for the paid subscription period (monthly, quarterly, or annual,
-                depending on the selected plan).
-              </li>
-            </ul>
+            {isRuHost ? (
+              <ul className="list-disc pl-5 space-y-1.5">
+                <li>
+                  Access is provisioned within{' '}
+                  <span className="font-medium text-slate-900">24 hours</span> of payment confirmation.
+                </li>
+                <li>
+                  A free trial may be granted after registration. Duration and conditions are stated on
+                  the pricing page.
+                </li>
+                <li>
+                  Access is valid for the paid subscription period (monthly, quarterly, or annual,
+                  depending on the selected plan).
+                </li>
+              </ul>
+            ) : (
+              <ul className="list-disc pl-5 space-y-1.5">
+                <li>Account access begins immediately after registration. No payment is taken at this stage.</li>
+                <li>A valid payment method must be attached before integration/setup work begins — attaching it does not charge you.</li>
+                <li>Setup and integration time is free, for as long as it takes.</li>
+                <li>A 14-day operational trial begins only once your integration is confirmed and accepted — never at registration.</li>
+                <li>Paid service can begin only after the trial ends, and only under a plan you have explicitly accepted.</li>
+              </ul>
+            )}
           </section>
 
           {/* 4. Pricing & payment */}
@@ -120,15 +130,23 @@ export default async function OfferPage() {
           {/* 5. Subscription terms */}
           <section>
             <h2 className="text-base font-semibold text-slate-900 mb-3">5. Subscription Terms</h2>
-            <ul className="list-disc pl-5 space-y-1.5">
-              <li>Subscriptions are paid in advance for the chosen period.</li>
-              <li>Access is suspended at the end of the paid period until the next payment.</li>
-              <li>You may cancel at any time; access continues until the end of the paid period.</li>
-              <li>
-                Refunds for unused periods are not provided, except where the service is unavailable
-                due to a fault on the provider&apos;s side for more than 72 consecutive hours.
-              </li>
-            </ul>
+            {isRuHost ? (
+              <ul className="list-disc pl-5 space-y-1.5">
+                <li>Subscriptions are paid in advance for the chosen period.</li>
+                <li>Access is suspended at the end of the paid period until the next payment.</li>
+                <li>You may cancel at any time; access continues until the end of the paid period.</li>
+                <li>
+                  Refunds for unused periods are not provided, except where the service is unavailable
+                  due to a fault on the provider&apos;s side for more than 72 consecutive hours.
+                </li>
+              </ul>
+            ) : (
+              <ul className="list-disc pl-5 space-y-1.5">
+                <li>No paid subscription is currently offered. Nothing is charged during setup or the trial.</li>
+                <li>You may cancel at any time during setup or the trial at no cost.</li>
+                <li>Billing frequency, plan pricing, and refund policy will be published before any paid service becomes available.</li>
+              </ul>
+            )}
           </section>
 
           {/* 6. Obligations */}

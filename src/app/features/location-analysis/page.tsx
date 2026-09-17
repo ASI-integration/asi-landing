@@ -5,7 +5,6 @@ import { LocationTelemetryProvider } from '@/context/landing-location-telemetry'
 import { TgIcon } from '@/components/TgIcon';
 import { productSupportEmail } from '@/config/contact';
 import { telegramSupportBotHandle, telegramSupportBotUrl } from '@/config/telegramBots';
-import { STRIPE_PAYMENT_LINK } from '@/config/payments';
 import { RU_PUBLIC_ORIGIN, GUEST_AUTOPILOT_ORIGIN } from '@/config/publicOrigins';
 import { getIsRuHost } from '@/lib/getIsRuHost';
 
@@ -116,14 +115,12 @@ export default async function LocationAnalysisPage(
                 communications, pricing, operations, and more.
               </p>
               <div className="flex flex-col sm:flex-row gap-4 justify-center">
-                <a
-                  href={STRIPE_PAYMENT_LINK}
-                  target="_blank"
-                  rel="noopener noreferrer"
+                <Link
+                  href="/connect"
                   className="inline-flex items-center justify-center px-8 py-4 bg-white text-slate-900 font-bold rounded-xl hover:bg-slate-100 transition-all shadow-lg text-base"
                 >
-                  Get Access — $10
-                </a>
+                  Get started
+                </Link>
                 <Link
                   href="/features/communication"
                   className="inline-flex items-center justify-center px-8 py-4 border border-slate-700 text-slate-300 font-semibold rounded-xl hover:border-slate-500 hover:text-white transition-all text-base"

@@ -4,7 +4,6 @@ import { CommDemo } from '@/components/CommDemo';
 import { TgIcon } from '@/components/TgIcon';
 import { productSupportEmail } from '@/config/contact';
 import { telegramSupportBotHandle, telegramSupportBotUrl } from '@/config/telegramBots';
-import { STRIPE_PAYMENT_LINK } from '@/config/payments';
 import { RU_PUBLIC_ORIGIN, GUEST_AUTOPILOT_ORIGIN } from '@/config/publicOrigins';
 import { getIsRuHost } from '@/lib/getIsRuHost';
 
@@ -139,17 +138,15 @@ export default async function CommunicationModulePage() {
             </h2>
             <p className="text-slate-400 mb-8">
               Full access to the Communication Module and all other ASI capabilities.
-              One payment, instant setup.
+              Create an account to get started — no charge today.
             </p>
             <div className="flex flex-col sm:flex-row gap-4 justify-center">
-              <a
-                href={STRIPE_PAYMENT_LINK}
-                target="_blank"
-                rel="noopener noreferrer"
+              <Link
+                href="/connect"
                 className="inline-flex items-center justify-center px-8 py-4 bg-white text-slate-900 font-bold rounded-xl hover:bg-slate-100 transition-all shadow-lg text-base"
               >
-                Get Access — $10
-              </a>
+                Get started
+              </Link>
               {isRuHost ? (
                 <a
                   href={telegramSupportBotUrl}

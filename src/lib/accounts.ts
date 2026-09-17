@@ -88,7 +88,16 @@ export async function ensureAccountForUser(opts: {
       .from('accounts')
       .insert(
         deferTrial
-          ? { name: accountName, plan_code: plan, lifecycle_status: 'signup' }
+          ? {
+              name: accountName,
+              plan_code: plan,
+              lifecycle_status: 'signup',
+              // Legacy compatibility projection only — see
+              // src/lib/billing/account-lifecycle.ts. lifecycle_status is
+              // the authoritative field; this is never read back to decide
+              // anything for a lifecycle-tracked account.
+              subscription_status: 'trial',
+            }
           : {
               name: accountName,
               plan_code: plan,

@@ -2,8 +2,8 @@
   "schemaVersion": "asi.agent-os.release-manifest.v1",
   "repository": "ASI-integration/asi-landing",
   "sourceBranch": "main",
-  "baselineSha": "50a77d9399a857d18fbefab44e680387201d713f",
-  "generatedAt": "2026-09-17T11:16:34.907Z",
+  "baselineSha": "5e81483004805c30439f72ba67ad9296370bccd0",
+  "generatedAt": "2026-09-17T11:39:16.653Z",
   "package": {
     "name": "landing-asi",
     "version": "0.1.0"

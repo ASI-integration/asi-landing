@@ -62,12 +62,21 @@ export default async function LegalPage() {
 
           <section>
             <h2 className="font-semibold text-slate-900 mb-2">Terms of service:</h2>
-            <ul className="list-disc pl-5 space-y-2">
-              <li>Subscription is billed monthly.</li>
-              <li>Free trial period — 14 days.</li>
-              <li>Cancellation is available at any time.</li>
-              <li>Refunds are not provided after the paid period begins.</li>
-            </ul>
+            {isRuHost ? (
+              <ul className="list-disc pl-5 space-y-2">
+                <li>Subscription is billed monthly.</li>
+                <li>Free trial period — 14 days.</li>
+                <li>Cancellation is available at any time.</li>
+                <li>Refunds are not provided after the paid period begins.</li>
+              </ul>
+            ) : (
+              <ul className="list-disc pl-5 space-y-2">
+                <li>Account setup and system integration are free — nothing is charged during this period.</li>
+                <li>A 14-day operational trial begins once your integration is confirmed and accepted, not at signup.</li>
+                <li>You may cancel at any time during setup or during the trial.</li>
+                <li>Billing frequency and refund policy for paid service will be published before any charge is ever taken.</li>
+              </ul>
+            )}
           </section>
         </div>
       </div>

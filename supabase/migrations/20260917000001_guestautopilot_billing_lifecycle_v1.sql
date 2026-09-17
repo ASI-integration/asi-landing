@@ -6,15 +6,23 @@
 -- does not change the meaning of any existing RU-facing column.
 --
 -- Adds, on the existing multitenant `accounts` table (20260408000001):
---  - a fine-grained lifecycle_status distinct from the coarser
---    subscription_status the dashboard already reads
+--  - lifecycle_status: the SOLE authoritative onboarding/billing state for
+--    accounts that opt into the new lifecycle. NULLABLE, no default — NULL
+--    means "this account predates the new lifecycle; legacy
+--    subscription_status/trial_started_at/trial_ends_at/subscriptions
+--    remain authoritative for it, unchanged, forever." Existing rows are
+--    left NULL by this migration (see migration mapping in the PR
+--    description) — never defaulted to any lifecycle value, since a
+--    non-null sentinel would misleadingly imply they occupy a real
+--    position on the new state machine. Legacy subscription_status is
+--    maintained only as a compatibility projection once an account does
+--    join the new lifecycle — see src/lib/billing/account-lifecycle.ts.
 --  - Stripe onboarding references (customer/payment-method/setup-intent) —
 --    a dedicated card-on-file capture, no charge
 --  - lifecycle timestamps; trial_started_at/trial_ends_at (existing columns)
 --    are reused for their existing meaning, now derived from
 --    integration_ready_at instead of account creation for accounts that opt
---    into the new lifecycle (existing/legacy accounts are unaffected — see
---    default below)
+--    into the new lifecycle
 --  - future-billing fields (accepted_plan_id, billing_consent_at,
 --    stripe_subscription_id) left null until pricing/legal entity approved
 --
@@ -33,7 +41,7 @@ DO $$
 BEGIN
   IF to_regclass('public.accounts') IS NOT NULL THEN
     ALTER TABLE public.accounts
-      ADD COLUMN IF NOT EXISTS lifecycle_status TEXT NOT NULL DEFAULT 'trial_active',
+      ADD COLUMN IF NOT EXISTS lifecycle_status TEXT,
       ADD COLUMN IF NOT EXISTS card_verified_at TIMESTAMPTZ,
       ADD COLUMN IF NOT EXISTS integration_started_at TIMESTAMPTZ,
       ADD COLUMN IF NOT EXISTS integration_ready_at TIMESTAMPTZ,
@@ -45,17 +53,18 @@ BEGIN
       ADD COLUMN IF NOT EXISTS billing_consent_at TIMESTAMPTZ,
       ADD COLUMN IF NOT EXISTS stripe_subscription_id TEXT;
 
-    -- Existing rows predate this lifecycle and are grandfathered at
-    -- 'trial_active' (the column default) — they are never gated by the new
-    -- signup/card_verified/integration_* states retroactively. Only accounts
-    -- created through the new international signup path explicitly insert
-    -- lifecycle_status = 'signup'.
+    -- Existing rows are left NULL (untouched, no backfill) — never gated by
+    -- the new signup/card_verified/integration_* states retroactively. Only
+    -- accounts created through the new international signup path explicitly
+    -- insert lifecycle_status = 'signup'. A CHECK constraint does not apply
+    -- to NULL values in standard SQL, so NULL remains valid alongside the
+    -- six real lifecycle states.
     IF NOT EXISTS (
       SELECT 1 FROM pg_constraint WHERE conname = 'accounts_lifecycle_status_check'
     ) THEN
       ALTER TABLE public.accounts
         ADD CONSTRAINT accounts_lifecycle_status_check
-        CHECK (lifecycle_status IN (
+        CHECK (lifecycle_status IS NULL OR lifecycle_status IN (
           'signup', 'card_verified', 'integration_in_progress',
           'integration_ready', 'trial_active', 'paid_active'
         ));

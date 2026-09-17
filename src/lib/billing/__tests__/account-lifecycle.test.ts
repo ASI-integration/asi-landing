@@ -95,6 +95,7 @@ import {
   defineIntegrationRequirement,
   acceptIntegrationRequirement,
   requestPaidActivation,
+  getAccountLifecycle,
 } from '../account-lifecycle';
 import { isInternationalBillingEnabled } from '../config';
 
@@ -150,6 +151,30 @@ describe('markCardVerified', () => {
     expect(second.status).toBe('integration_in_progress');
     expect(accounts.get('acc_1')!.card_verified_at).toBe('2026-01-01T00:00:00.000Z');
   });
+
+  it('does not swap the saved payment method on a duplicate delivery carrying different Stripe refs', async () => {
+    seedAccount('acc_1');
+    await markCardVerified(
+      'acc_1',
+      { stripeCustomerId: 'cus_1', stripePaymentMethodId: 'pm_1', stripeSetupIntentId: 'seti_1' },
+      new Date('2026-01-01T00:00:00Z'),
+    );
+    // A different SetupIntent's success event replayed/misdelivered for the same account.
+    await markCardVerified(
+      'acc_1',
+      { stripeCustomerId: 'cus_1', stripePaymentMethodId: 'pm_DIFFERENT', stripeSetupIntentId: 'seti_2' },
+      new Date('2026-01-05T00:00:00Z'),
+    );
+    expect(accounts.get('acc_1')!.stripe_payment_method_id).toBe('pm_1');
+    expect(accounts.get('acc_1')!.stripe_setup_intent_id).toBe('seti_1');
+  });
+
+  it('scenario L: rejects when the account has never signed up onto the lifecycle (legacy/NULL account)', async () => {
+    seedAccount('acc_1', { lifecycle_status: null });
+    await expect(
+      markCardVerified('acc_1', { stripeCustomerId: 'cus_1', stripePaymentMethodId: 'pm_1', stripeSetupIntentId: 'seti_1' }),
+    ).rejects.toThrow(/not on the new lifecycle/);
+  });
 });
 
 describe('acceptIntegrationRequirement', () => {
@@ -194,6 +219,58 @@ describe('acceptIntegrationRequirement', () => {
     seedAccount('acc_1', { lifecycle_status: 'integration_in_progress' });
     await expect(acceptIntegrationRequirement('acc_1', 'channel_manager', {})).rejects.toThrow(/never defined/);
   });
+
+  it('scenario L: rejects acceptance for an account still at signup (card required before integration)', async () => {
+    seedAccount('acc_1', { lifecycle_status: 'signup' });
+    await defineIntegrationRequirement('acc_1', 'channel_manager', 'Channel Manager', true);
+    await expect(acceptIntegrationRequirement('acc_1', 'channel_manager', {})).rejects.toThrow(
+      /cannot accept integration from status "signup"/,
+    );
+  });
+
+  it('scenario M: a duplicate acceptance after trial_active leaves the original timestamps untouched', async () => {
+    seedAccount('acc_1', { lifecycle_status: 'integration_in_progress', integration_started_at: '2026-01-01T00:05:00.000Z' });
+    await defineIntegrationRequirement('acc_1', 'channel_manager', 'Channel Manager', true);
+
+    const first = await acceptIntegrationRequirement('acc_1', 'channel_manager', {}, new Date('2026-01-10T00:00:00Z'));
+    expect(first.state.status).toBe('trial_active');
+
+    const dup = await acceptIntegrationRequirement('acc_1', 'channel_manager', { retried: true }, new Date('2026-03-01T00:00:00Z'));
+    expect(dup.state.timestamps.integrationReadyAt).toEqual(new Date('2026-01-10T00:00:00Z'));
+    expect(dup.state.timestamps.trialStartedAt).toEqual(new Date('2026-01-10T00:00:00Z'));
+    expect(dup.state.timestamps.trialEndsAt).toEqual(new Date('2026-01-24T00:00:00Z'));
+  });
+
+  it('scenario N: refuses to touch a legacy/migrated account (lifecycle_status NULL)', async () => {
+    seedAccount('acc_1', {
+      lifecycle_status: null,
+      subscription_status: 'active',
+      trial_started_at: '2025-06-01T00:00:00.000Z',
+      trial_ends_at: '2025-06-08T00:00:00.000Z',
+    });
+    await defineIntegrationRequirement('acc_1', 'channel_manager', 'Channel Manager', true);
+    await expect(acceptIntegrationRequirement('acc_1', 'channel_manager', {})).rejects.toThrow(
+      /not on the new lifecycle/,
+    );
+    // Untouched — no unexpected trial reset on the legacy fields.
+    const row = accounts.get('acc_1')!;
+    expect(row.subscription_status).toBe('active');
+    expect(row.trial_started_at).toBe('2025-06-01T00:00:00.000Z');
+    expect(row.trial_ends_at).toBe('2025-06-08T00:00:00.000Z');
+  });
+});
+
+describe('scenario K: signup produces no trial timestamps', () => {
+  it('a freshly seeded signup-status account has every timestamp null', () => {
+    seedAccount('acc_1', { lifecycle_status: 'signup' });
+    const row = accounts.get('acc_1')!;
+    expect(row.card_verified_at).toBeNull();
+    expect(row.integration_started_at).toBeNull();
+    expect(row.integration_ready_at).toBeNull();
+    expect(row.trial_started_at).toBeNull();
+    expect(row.trial_ends_at).toBeNull();
+    expect(row.billing_started_at).toBeNull();
+  });
 });
 
 describe('requestPaidActivation — scenario J: no live charge/subscription possible from this flow', () => {
@@ -237,5 +314,25 @@ describe('requestPaidActivation — scenario J: no live charge/subscription poss
         new Date('2026-01-15T00:00:00Z'), // before trial_ends_at
       ),
     ).rejects.toThrow(/trial has not ended/);
+  });
+
+  it('scenario N: refuses paid activation for a legacy/migrated account (lifecycle_status NULL)', async () => {
+    seedAccount('acc_1', { lifecycle_status: null, subscription_status: 'active' });
+    await expect(
+      requestPaidActivation('acc_1', { acceptedPlanId: 'plan_small', billingConsentAt: new Date() }),
+    ).rejects.toThrow(/not on the new lifecycle/);
+  });
+});
+
+describe('getAccountLifecycle', () => {
+  it('returns null for a legacy/migrated account instead of guessing a starting state', async () => {
+    seedAccount('acc_1', { lifecycle_status: null });
+    expect(await getAccountLifecycle('acc_1')).toBeNull();
+  });
+
+  it('returns the real state for a lifecycle-tracked account', async () => {
+    seedAccount('acc_1', { lifecycle_status: 'signup' });
+    const state = await getAccountLifecycle('acc_1');
+    expect(state?.status).toBe('signup');
   });
 });
