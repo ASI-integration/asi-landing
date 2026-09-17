@@ -1,12 +1,13 @@
 import Link from 'next/link';
 import { productSupportEmail } from '@/config/contact';
 import { legalConfig } from '@/config/legal';
-import { telegramSupportBotHandle, telegramSupportBotUrl } from '@/config/telegramBots';
 import { getIsRuHost } from '@/lib/getIsRuHost';
+import { GUEST_AUTOPILOT_ORIGIN } from '@/config/publicOrigins';
 
 export const metadata = {
   title: 'Legal Information — ASI',
   description: 'Legal information and terms of use for the ASI service.',
+  alternates: { canonical: `${GUEST_AUTOPILOT_ORIGIN}/legal` },
 };
 
 export default async function LegalPage() {
@@ -44,12 +45,9 @@ export default async function LegalPage() {
               </>
             ) : (
               <p>
-                Legal entity details for this international site are being finalized. For
-                support, reach us via Telegram at{' '}
-                <a href={telegramSupportBotUrl} target="_blank" rel="noopener noreferrer" className="text-slate-900 hover:underline">
-                  @{telegramSupportBotHandle}
-                </a>{' '}
-                or the <Link href="/contacts" className="text-slate-900 hover:underline">Contact page</Link>.
+                Legal entity details for this international site are being finalized. See the{' '}
+                <Link href="/contacts" className="text-slate-900 hover:underline">Contact page</Link>{' '}
+                for updates.
               </p>
             )}
           </section>
@@ -64,12 +62,21 @@ export default async function LegalPage() {
 
           <section>
             <h2 className="font-semibold text-slate-900 mb-2">Terms of service:</h2>
-            <ul className="list-disc pl-5 space-y-2">
-              <li>Subscription is billed monthly.</li>
-              <li>Free trial period — 14 days.</li>
-              <li>Cancellation is available at any time.</li>
-              <li>Refunds are not provided after the paid period begins.</li>
-            </ul>
+            {isRuHost ? (
+              <ul className="list-disc pl-5 space-y-2">
+                <li>Subscription is billed monthly.</li>
+                <li>Free trial period — 14 days.</li>
+                <li>Cancellation is available at any time.</li>
+                <li>Refunds are not provided after the paid period begins.</li>
+              </ul>
+            ) : (
+              <ul className="list-disc pl-5 space-y-2">
+                <li>Account setup and system integration are free — nothing is charged during this period.</li>
+                <li>A 14-day operational trial begins once your integration is confirmed and accepted, not at signup.</li>
+                <li>You may cancel at any time during setup or during the trial.</li>
+                <li>Billing frequency and refund policy for paid service will be published before any charge is ever taken.</li>
+              </ul>
+            )}
           </section>
         </div>
       </div>

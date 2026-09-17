@@ -6,6 +6,7 @@ import { supabase } from '@/lib/supabase';
 import { getSession } from '@/lib/auth';
 import { getGoogleOAuthRedirectUri, safeAuthRedirectPath } from '@/lib/auth/app-url';
 import { ensureAccountForUser } from '@/lib/accounts';
+import { getIsRuHost } from '@/lib/getIsRuHost';
 
 export const runtime = 'nodejs';
 
@@ -128,6 +129,7 @@ export async function GET(req: Request) {
     if (lookupErr) throw lookupErr;
 
     let userId = existing?.id as string | undefined;
+    const isRuHost = await getIsRuHost();
     if (!userId) {
       const passwordHash = await bcrypt.hash(randomPassword(), 10);
       const { data: created, error: createErr } = await supabase
@@ -138,18 +140,23 @@ export async function GET(req: Request) {
       if (createErr) throw createErr;
       userId = created.id;
 
-      const now = new Date();
-      const trialEnd = new Date(now);
-      trialEnd.setDate(trialEnd.getDate() + 7);
-      await supabase.from('subscriptions').upsert(
-        {
-          user_id: userId,
-          status: 'trial',
-          trial_start: now.toISOString(),
-          trial_end: trialEnd.toISOString(),
-        },
-        { onConflict: 'user_id' }
-      );
+      if (isRuHost) {
+        // Unchanged legacy behavior — the RU commercial/account flow is not touched.
+        const now = new Date();
+        const trialEnd = new Date(now);
+        trialEnd.setDate(trialEnd.getDate() + 7);
+        await supabase.from('subscriptions').upsert(
+          {
+            user_id: userId,
+            status: 'trial',
+            trial_start: now.toISOString(),
+            trial_end: trialEnd.toISOString(),
+          },
+          { onConflict: 'user_id' }
+        );
+      }
+      // International (guestautopilot.com): no subscriptions row, no immediate
+      // trial — see lib/billing/account-lifecycle.ts.
     }
 
     session.userId = userId!;
@@ -162,12 +169,11 @@ export async function GET(req: Request) {
       hasCookieHeaderAfterSave: Boolean(req.headers.get('cookie')),
     });
 
-    await ensureAccountForUser({
-      userId: userId!,
-      email,
-      selectedPlan: plan,
-      trialDays: 7,
-    });
+    await ensureAccountForUser(
+      isRuHost
+        ? { userId: userId!, email, selectedPlan: plan, trialDays: 7 }
+        : { userId: userId!, email, selectedPlan: plan, deferTrial: true }
+    );
 
     console.info('[GoogleOAuth][callback] redirecting to dashboard', {
       userId,
