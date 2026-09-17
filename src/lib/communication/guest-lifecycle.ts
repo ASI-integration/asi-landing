@@ -89,6 +89,8 @@ export type GuestLifecycleExecutionRecord = {
 
 export type GuestLifecycleReservationContext = {
   bookingOpsRecordId: string;
+  /** Server-resolved tenant from the canonical Booking Ops record. */
+  accountId?: string | null;
   reservationId: string;
   propertyId: string;
   guestId: string;

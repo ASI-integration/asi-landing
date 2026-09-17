@@ -18,6 +18,7 @@ export type EscalationReviewStatus =
 
 export type EscalationReview = {
   reviewId: string;
+  accountId?: string;
   sessionId: string;
   channel: CommunicationChannel;
   /**
@@ -257,6 +258,7 @@ export function listEscalationReviews(params?: {
 }
 
 export function createOrUpdateEscalationReview(input: {
+  accountId?: string;
   sessionId: string;
   channel: CommunicationChannel;
   targetId: string;
@@ -274,12 +276,14 @@ export function createOrUpdateEscalationReview(input: {
 }): EscalationReview {
   loadOnce();
   const existingId = cache.activeReviewIdBySessionId[input.sessionId];
-  const existing = existingId ? cache.reviewsById[existingId] : undefined;
+  const candidate = existingId ? cache.reviewsById[existingId] : undefined;
+  const existing = candidate?.accountId === input.accountId ? candidate : undefined;
 
   const ts = nowIso();
   const review: EscalationReview = existing
     ? {
         ...existing,
+        accountId: input.accountId ?? existing.accountId,
         // Keep earliest createdAt; update evidence and reason
         escalationReason: input.escalationReason || existing.escalationReason,
         confidence: input.confidence ?? existing.confidence,
@@ -294,6 +298,7 @@ export function createOrUpdateEscalationReview(input: {
       }
     : {
         reviewId: randomUUID(),
+        accountId: input.accountId,
         sessionId: input.sessionId,
         channel: input.channel,
         targetId: input.targetId,

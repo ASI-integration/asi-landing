@@ -42,6 +42,7 @@ import {
 } from './telegram-booking-object-memory';
 import { decideCommunicationAutopilotResponse } from './autopilot';
 import { canClassifyInboundCommunication } from './communication-autopilot-settings';
+import { resolveEscalationReviewAccountId } from './operator-access';
 
 export type EmailInboundProcessingResult = {
   ok: boolean;
@@ -314,14 +315,19 @@ async function createEmailOperatorDraft(params: {
     params.envelope.email ||
     params.envelope.externalUserId;
 
+  const reservationId = sessionForReview.reservationId ?? params.identity?.reservationId;
+  const propertyId = sessionForReview.propertyId ?? params.identity?.propertyId;
+  const accountId = await resolveEscalationReviewAccountId({ reservationId, propertyId });
+
   return createOrUpdateEscalationReview({
+    accountId: accountId ?? undefined,
     sessionId: sessionForReview.sessionId,
     channel: 'email',
     targetId,
     actorId: sessionForReview.actorId,
     role: params.identity?.role ?? sessionForReview.role,
-    reservationId: sessionForReview.reservationId ?? params.identity?.reservationId,
-    propertyId: sessionForReview.propertyId ?? params.identity?.propertyId,
+    reservationId,
+    propertyId,
     leadId: sessionForReview.leadId ?? params.identity?.leadId,
     escalationReason,
     confidence: params.identity?.confidence ?? sessionForReview.confidence,
