@@ -1,51 +1,33 @@
-/** Shared quick links footer for RU public pages and `/connect`. */
+/** Shared quick links strip for RU public pages — ASI brand visual language. */
 'use client';
 
 import Link from 'next/link';
 import { ruNavComplianceLinks, ruNavMainLinks } from '@/config/ruNav';
+import { asiBrandLayout } from '@/config/brand/tokens';
 
 type Tone = 'theme' | 'light' | 'dark';
-
-const wrapTone: Record<Tone, string> = {
-  theme: 'border-t border-[var(--t-border)] bg-[color-mix(in_srgb,var(--t-bg)_96%,transparent)]',
-  light: 'border-t border-slate-200 bg-slate-50/80',
-  dark: 'border-t border-slate-800/60 bg-slate-950',
-};
-
-const labelTone: Record<Tone, string> = {
-  theme: 'text-[var(--t-muted)]',
-  light: 'text-slate-500',
-  dark: 'text-slate-500',
-};
-
-const linkTone: Record<Tone, string> = {
-  theme:
-    'text-xs text-[var(--t-muted)] hover:text-[var(--t-text)] underline-offset-2 hover:underline transition-colors',
-  light: 'text-xs text-slate-500 hover:text-slate-800 underline-offset-2 hover:underline transition-colors',
-  dark: 'text-xs text-slate-500 hover:text-slate-200 underline-offset-2 hover:underline transition-colors',
-};
-
-const topTone: Record<Tone, string> = {
-  theme:
-    'text-xs text-[var(--t-muted)] hover:text-[var(--t-text)] underline-offset-2 hover:underline transition-colors shrink-0',
-  light: 'text-xs text-slate-500 hover:text-slate-800 underline-offset-2 hover:underline transition-colors shrink-0',
-  dark: 'text-xs text-slate-500 hover:text-slate-200 underline-offset-2 hover:underline transition-colors shrink-0',
-};
 
 const allLinks = [...ruNavMainLinks, ...ruNavComplianceLinks];
 
 export function RuBottomQuickLinks({
-  tone,
+  tone: _tone,
   showBackToTop = true,
 }: {
   tone: Tone;
   showBackToTop?: boolean;
 }) {
+  void _tone;
+
   return (
-    <section className={`${wrapTone[tone]} py-5 px-4 sm:px-6`} aria-label="Быстрые ссылки">
-      <div className="max-w-6xl mx-auto flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-6">
+    <section
+      className="border-t border-asi-border bg-asi-paper/80 py-5 px-5 sm:px-8"
+      aria-label="Быстрые ссылки"
+    >
+      <div
+        className={`${asiBrandLayout.contentMaxClass} mx-auto flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-6`}
+      >
         <div className="min-w-0 flex-1">
-          <p className={`text-[10px] font-semibold uppercase tracking-[0.18em] ${labelTone[tone]}`}>
+          <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-asi-gold-text">
             Навигация
           </p>
           <nav
@@ -53,7 +35,11 @@ export function RuBottomQuickLinks({
             aria-label="Быстрые ссылки по сайту"
           >
             {allLinks.map(({ href, label }) => (
-              <Link key={href} href={href} className={linkTone[tone]}>
+              <Link
+                key={href}
+                href={href}
+                className="text-xs text-asi-navy/65 hover:text-asi-navy underline-offset-2 hover:underline transition-colors"
+              >
                 {label}
               </Link>
             ))}
@@ -62,7 +48,7 @@ export function RuBottomQuickLinks({
         {showBackToTop ? (
           <button
             type="button"
-            className={topTone[tone]}
+            className="text-xs text-asi-navy/65 hover:text-asi-navy underline-offset-2 hover:underline transition-colors shrink-0"
             onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
           >
             Наверх

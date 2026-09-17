@@ -1,0 +1,27 @@
+/* ASI shared brand bridge — aligns RU ThemeProvider tokens with guestautopilot palette.
+ * Visual only. Market/legal content remains in RU config layers.
+ */
+
+[data-theme='light'] {
+  --t-bg: #f7f3ea; /* asi-ivory */
+  --t-surface: #fbf9f4; /* asi-paper */
+  --t-surface-2: #f1e9d8; /* asi-ivory-warm */
+  --t-text: #13151b; /* asi-navy */
+  --t-text-2: #2a2d36; /* asi-navy-2 */
+  --t-muted: #5c5e64;
+  --t-border: #e5dcc6; /* asi-border */
+  --t-accent: #13151b;
+  --t-accent-hover: #2a2d36;
+}
+
+[data-theme='midnight'] {
+  --t-bg: #13151b;
+  --t-surface: #2a2d36;
+  --t-surface-2: #1a1c22;
+  --t-text: #f7f3ea;
+  --t-text-2: #e5dcc6;
+  --t-muted: #c9ad73;
+  --t-border: #3a3d46;
+  --t-accent: #a6813c;
+  --t-accent-hover: #c9ad73;
+}

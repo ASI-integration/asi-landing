@@ -2,93 +2,36 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { ThemeSwitcher } from '@/components/ThemeSwitcher';
+import { useState } from 'react';
+import { BrandLogoMark } from '@/components/brand';
 import { TgIcon } from '@/components/TgIcon';
 import { productSupportEmail } from '@/config/contact';
 import { telegramSupportBotUrl } from '@/config/telegramBots';
+import { asiBrandButtonClasses, asiBrandLayout } from '@/config/brand/tokens';
 import { ruNavMainLinks } from '@/config/ruNav';
 import { ruComplianceRoutes } from '@/config/ruCompliance';
 
 export type RuPublicNavSurface = 'theme' | 'light' | 'dark';
 export type RuPublicNavDensity = 'legal' | 'landing';
 
-const surfaceHeader: Record<RuPublicNavSurface, string> = {
-  theme:
-    'sticky top-0 z-50 bg-[color-mix(in_srgb,var(--t-bg)_96%,transparent)] backdrop-blur-sm border-b border-[var(--t-border)]',
-  light: 'sticky top-0 z-50 bg-white/95 backdrop-blur-sm border-b border-slate-200',
-  dark: 'sticky top-0 z-50 bg-slate-950/95 backdrop-blur-sm border-b border-slate-800/60',
-};
+const PRIMARY_CTA = { href: '/ru/early-access', label: 'Подключить пилот' } as const;
 
-const surfaceLogo: Record<RuPublicNavSurface, string> = {
-  theme: 'text-[2rem] sm:text-[2.4rem] font-bold leading-none text-[var(--t-text)] tracking-tight shrink-0',
-  light: 'text-[2rem] sm:text-[2.4rem] font-bold leading-none text-slate-900 tracking-tight shrink-0',
-  dark: 'text-[2rem] sm:text-[2.4rem] font-bold leading-none text-white tracking-tight shrink-0',
-};
-
-const surfaceNav: Record<RuPublicNavSurface, string> = {
-  theme: 'text-[var(--t-muted)] hover:text-[var(--t-text)]',
-  light: 'text-slate-600 hover:text-slate-900',
-  dark: 'text-slate-400 hover:text-white',
-};
-
-const surfaceNavActive: Record<RuPublicNavSurface, string> = {
-  theme: 'text-[var(--t-text)] bg-[var(--t-surface-2)] border-[var(--t-border)]',
-  light: 'text-slate-950 bg-slate-100 border-slate-200',
-  dark: 'text-white bg-slate-800 border-slate-700',
-};
-
-const surfaceMuted: Record<RuPublicNavSurface, string> = {
-  theme: 'text-[var(--t-muted)] hover:text-[var(--t-text)]',
-  light: 'text-slate-600 hover:text-slate-900',
-  dark: 'text-slate-400 hover:text-white',
-};
-
-const surfaceDivider: Record<RuPublicNavSurface, string> = {
-  theme: 'bg-[var(--t-border)]',
-  light: 'bg-slate-200',
-  dark: 'bg-slate-700',
-};
-
-const surfaceLangActive: Record<RuPublicNavSurface, string> = {
-  theme:
-    'px-2 py-1 rounded font-semibold text-[var(--t-text)] bg-[var(--t-surface-2)] border border-[var(--t-border)]',
-  light: 'px-2 py-1 rounded font-semibold text-slate-900 bg-slate-100 border border-slate-200',
-  dark: 'px-2 py-1 rounded font-semibold text-white bg-slate-800 border border-slate-600',
-};
-
-/** Login is utility navigation — not a primary acquisition CTA. */
-const surfaceLogin: Record<RuPublicNavSurface, string> = {
-  theme:
-    'inline-flex items-center justify-center px-3 py-2 text-sm font-medium text-[var(--t-muted)] transition-colors hover:text-[var(--t-text)]',
-  light:
-    'inline-flex items-center justify-center px-3 py-2 text-sm font-medium text-slate-600 transition-colors hover:text-slate-900',
-  dark:
-    'inline-flex items-center justify-center px-3 py-2 text-sm font-medium text-slate-400 transition-colors hover:text-white',
-};
-
-const surfaceTg: Record<RuPublicNavSurface, string> = {
-  theme:
-    'inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-[#2CA5E0]/30 bg-[#2CA5E0]/10 px-3 py-2 text-sm font-semibold text-[#229ED9] transition-all hover:bg-[#2CA5E0]/20 hover:border-[#2CA5E0]/50',
-  light:
-    'inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-[#2CA5E0]/30 bg-[#2CA5E0]/10 px-3 py-2 text-sm font-semibold text-[#229ED9] transition-all hover:bg-[#2CA5E0]/20 hover:border-[#2CA5E0]/50',
-  dark:
-    'inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-slate-600 bg-slate-800 px-3 py-2 text-sm font-semibold text-sky-300 transition-all hover:bg-slate-700',
-};
-
+/**
+ * RU public header — guestautopilot visual language, RU customer journey labels.
+ * Login remains utility; primary acquisition CTA is communications pilot.
+ */
 export function RuPublicNavHeader({
-  surface,
   density,
   showContacts = true,
 }: {
-  surface: RuPublicNavSurface;
+  /** Kept for call-site compatibility; visual system is shared ASI brand. */
+  surface?: RuPublicNavSurface;
   density: RuPublicNavDensity;
   showContacts?: boolean;
 }) {
   const pathname = usePathname();
-  const navCls =
-    'rounded-lg border px-2.5 py-2 text-[13px] font-medium whitespace-nowrap transition-colors sm:text-sm lg:text-[15px]';
+  const [open, setOpen] = useState(false);
 
-  const showTheme = surface === 'theme';
   const isCurrentHref = (href: string) => {
     if (href.includes('#')) return false;
     if (href === '/ru') return pathname === '/' || pathname === '/ru';
@@ -96,81 +39,129 @@ export function RuPublicNavHeader({
   };
 
   return (
-    <header className={surfaceHeader[surface]}>
-      <div className="max-w-6xl mx-auto px-4 sm:px-6">
-        {/* Top row: contacts + email + Telegram + lang + theme + login */}
-        {density === 'landing' ? (
-          <div className="py-1.5 sm:py-2 flex items-center justify-between gap-x-3 min-w-0">
-            {showContacts ? (
-              <div className="flex items-center gap-x-3 min-w-0 overflow-hidden">
-                <Link
-                  href={ruComplianceRoutes.contacts}
-                  className={`text-sm font-medium transition-colors ${surfaceMuted[surface]}`}
-                >
-                  Контакты
-                </Link>
-                <span className={`hidden sm:block w-px h-4 shrink-0 ${surfaceDivider[surface]}`} />
-                <a
-                  href={`mailto:${productSupportEmail}`}
-                  className={`hidden lg:block text-sm truncate max-w-[12rem] xl:max-w-[16rem] transition-colors ${surfaceMuted[surface]}`}
-                  title={productSupportEmail}
-                >
-                  {productSupportEmail}
-                </a>
-              </div>
-            ) : (
-              <div />
-            )}
+    <header className="sticky top-0 z-50 bg-asi-ivory/90 backdrop-blur-md border-b border-asi-border">
+      <div
+        className={`${asiBrandLayout.contentMaxClass} mx-auto ${asiBrandLayout.pagePadXClass} ${asiBrandLayout.headerHeightClass} flex items-center justify-between gap-4`}
+      >
+        <Link
+          href="/ru"
+          className="flex items-center gap-2.5 sm:gap-3 shrink-0 text-asi-navy"
+          onClick={() => setOpen(false)}
+        >
+          <BrandLogoMark size={26} />
+          <span className="font-serif text-lg tracking-tight">ASI</span>
+        </Link>
 
-            <div className="flex items-center gap-2 sm:gap-3 justify-end shrink-0">
-              {showContacts ? (
-                <a
-                  href={telegramSupportBotUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  aria-label="Написать в Telegram"
-                  title="Написать в Telegram"
-                  className={surfaceTg[surface]}
-                >
-                  <TgIcon className="h-5 w-5 shrink-0" />
-                  <span>Telegram</span>
-                </a>
-              ) : null}
-              {showTheme ? <ThemeSwitcher /> : null}
-              <Link href="/login" className={surfaceLogin[surface]}>
-                Войти
+        <nav className="hidden lg:flex items-center gap-7" aria-label="Основная навигация">
+          {ruNavMainLinks.map(({ href, label }) => {
+            const isCurrent = isCurrentHref(href);
+            return (
+              <Link
+                key={href}
+                href={href}
+                aria-current={isCurrent ? 'page' : undefined}
+                className={`text-sm font-sans transition-colors ${
+                  isCurrent ? 'text-asi-navy font-semibold' : 'text-asi-navy/70 hover:text-asi-navy'
+                }`}
+              >
+                {label}
               </Link>
-            </div>
-          </div>
-        ) : null}
+            );
+          })}
+        </nav>
 
-        <div className={`h-px ${surfaceDivider[surface]} opacity-60`} />
-
-        {/* Bottom row: logo + main nav */}
-        <div className="py-2 sm:py-2.5 flex items-center gap-3 sm:gap-4">
-          <Link href="/ru" className={surfaceLogo[surface]}>
-            ASI
-          </Link>
-          <nav
-            className="flex items-center gap-x-3 sm:gap-x-3.5 lg:gap-x-4 xl:gap-x-5 overflow-x-auto [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden min-w-0"
-            aria-label="Основная навигация"
+        <div className="hidden lg:flex items-center gap-4 shrink-0">
+          {density === 'landing' && showContacts ? (
+            <a
+              href={telegramSupportBotUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label="Написать в Telegram"
+              className="inline-flex items-center gap-2 text-sm font-sans text-asi-navy/70 hover:text-asi-navy transition-colors"
+            >
+              <TgIcon className="h-4 w-4" />
+              <span className="hidden xl:inline">Telegram</span>
+            </a>
+          ) : null}
+          <Link
+            href="/login"
+            className="text-sm font-sans text-asi-navy/65 hover:text-asi-navy transition-colors"
           >
-            {ruNavMainLinks.map(({ href, label }) => {
-              const isCurrent = isCurrentHref(href);
-              return (
-                <Link
-                  key={href}
-                  href={href}
-                  aria-current={isCurrent ? 'page' : undefined}
-                  className={`${navCls} ${isCurrent ? surfaceNavActive[surface] : `border-transparent ${surfaceNav[surface]}`}`}
-                >
-                  {label}
-                </Link>
-              );
-            })}
-          </nav>
+            Войти
+          </Link>
+          <Link href={PRIMARY_CTA.href} className={asiBrandButtonClasses.headerOutline}>
+            {PRIMARY_CTA.label}
+          </Link>
         </div>
+
+        <button
+          type="button"
+          className="lg:hidden inline-flex items-center justify-center w-10 h-10 text-asi-navy"
+          aria-label={open ? 'Закрыть меню' : 'Открыть меню'}
+          aria-expanded={open}
+          onClick={() => setOpen((v) => !v)}
+        >
+          <svg width="22" height="22" viewBox="0 0 22 22" fill="none" aria-hidden>
+            {open ? (
+              <path d="M4 4L18 18M18 4L4 18" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+            ) : (
+              <>
+                <line x1="2" y1="6" x2="20" y2="6" stroke="currentColor" strokeWidth="1.5" />
+                <line x1="2" y1="11" x2="20" y2="11" stroke="currentColor" strokeWidth="1.5" />
+                <line x1="2" y1="16" x2="20" y2="16" stroke="currentColor" strokeWidth="1.5" />
+              </>
+            )}
+          </svg>
+        </button>
       </div>
+
+      {open ? (
+        <div className="lg:hidden border-t border-asi-border bg-asi-ivory px-5 py-4 flex flex-col gap-1">
+          <nav className="flex flex-col" aria-label="Мобильная навигация">
+            {ruNavMainLinks.map(({ href, label }) => (
+              <Link
+                key={href}
+                href={href}
+                onClick={() => setOpen(false)}
+                className="py-2.5 text-base font-sans text-asi-navy border-b border-asi-border/60 last:border-b-0"
+              >
+                {label}
+              </Link>
+            ))}
+          </nav>
+          {density === 'landing' && showContacts ? (
+            <div className="mt-3 flex flex-col gap-2 text-sm font-sans text-asi-navy/75">
+              <Link href={ruComplianceRoutes.contacts} onClick={() => setOpen(false)}>
+                Контакты
+              </Link>
+              <a href={`mailto:${productSupportEmail}`}>{productSupportEmail}</a>
+              <a
+                href={telegramSupportBotUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-2"
+              >
+                <TgIcon className="h-4 w-4" />
+                Telegram
+              </a>
+            </div>
+          ) : null}
+          <Link
+            href="/login"
+            onClick={() => setOpen(false)}
+            className="mt-3 text-sm font-sans text-asi-navy/65"
+          >
+            Войти
+          </Link>
+          <Link
+            href={PRIMARY_CTA.href}
+            onClick={() => setOpen(false)}
+            className={`mt-3 ${asiBrandButtonClasses.primary}`}
+          >
+            {PRIMARY_CTA.label}
+          </Link>
+        </div>
+      ) : null}
     </header>
   );
 }

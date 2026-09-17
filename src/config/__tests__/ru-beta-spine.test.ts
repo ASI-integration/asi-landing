@@ -47,7 +47,7 @@ describe('RU-02/RU-03 closed-beta spine + pilot boundary', () => {
     const header = readSrc('src/components/ru/RuPublicNavHeader.tsx');
     expect(header).toContain('ruNavMainLinks');
     expect(header).not.toMatch(/href=["']\/pilot["']/);
-    expect(header).toContain('Login is utility navigation');
+    expect(header).toMatch(/Login remains utility/i);
 
     const bottom = readSrc('src/components/ru/RuBottomQuickLinks.tsx');
     expect(bottom).not.toMatch(/['"]\/pilot['"]/);

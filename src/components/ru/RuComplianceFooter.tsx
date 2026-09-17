@@ -1,101 +1,82 @@
-/** Shared compliance footer for RU public pages and `/connect`. */
+/** RU compliance footer — guestautopilot navy visual shell; RU merchant content only. */
 import Link from 'next/link';
+import { BrandShiro } from '@/components/brand';
 import { ruCompliance, ruComplianceRoutes } from '@/config/ruCompliance';
-
-const linkBase =
-  'text-sm text-[var(--t-muted)] hover:text-[var(--t-text)] underline-offset-2 hover:underline transition-colors';
-const linkBaseLight = 'text-sm text-slate-600 hover:text-slate-900 underline-offset-2 hover:underline transition-colors';
-const linkBaseDark = 'text-sm text-slate-400 hover:text-white underline-offset-2 hover:underline transition-colors';
+import { asiBrandLayout } from '@/config/brand/tokens';
 
 type Tone = 'theme' | 'light' | 'dark';
 
-export function RuComplianceFooter({ tone = 'theme' }: { tone?: Tone }) {
-  const link = tone === 'light' ? linkBaseLight : tone === 'dark' ? linkBaseDark : linkBase;
-  const heading =
-    tone === 'light'
-      ? 'text-xs font-semibold uppercase tracking-[0.2em] text-slate-500'
-      : tone === 'dark'
-        ? 'text-xs font-semibold uppercase tracking-[0.2em] text-slate-500'
-        : 'text-xs font-semibold uppercase tracking-[0.2em] text-[var(--t-muted)]';
-  const contactLine =
-    tone === 'light'
-      ? 'text-sm text-slate-700'
-      : tone === 'dark'
-        ? 'text-sm text-slate-300'
-        : 'text-sm text-[var(--t-text-2)]';
-  const req =
-    tone === 'light'
-      ? 'text-xs text-slate-600 leading-relaxed'
-      : tone === 'dark'
-        ? 'text-xs text-slate-400 leading-relaxed'
-        : 'text-xs text-[var(--t-muted)] leading-relaxed';
-  const border =
-    tone === 'light'
-      ? 'border-t border-slate-200 bg-slate-50'
-      : tone === 'dark'
-        ? 'border-t border-slate-800 bg-slate-950'
-        : 'border-t border-[var(--t-border)] bg-[var(--t-bg)]';
+export function RuComplianceFooter({ tone: _tone = 'theme' }: { tone?: Tone }) {
+  // Tone kept for call-site compatibility; shared brand footer is navy.
+  void _tone;
 
   return (
-    <footer className={`${border} py-8 px-4 sm:px-6`}>
-      <div className="max-w-6xl mx-auto flex flex-col gap-6">
-        <p className={contactLine}>
-          <span className="font-medium">Связаться с нами:</span>{' '}
-          <a
-            href={`mailto:${ruCompliance.email}`}
-            className={
-              tone === 'light'
-                ? 'text-slate-900 underline underline-offset-2 hover:text-slate-700'
-                : tone === 'dark'
-                  ? 'text-white underline underline-offset-2 hover:text-slate-200'
-                  : 'text-[var(--t-text)] underline underline-offset-2 hover:text-[var(--t-muted)]'
-            }
-          >
-            {ruCompliance.email}
-          </a>
-          {' · '}
-          <a
-            href={`tel:${ruCompliance.phoneTel}`}
-            className={
-              tone === 'light'
-                ? 'text-slate-900 underline underline-offset-2 hover:text-slate-700'
-                : tone === 'dark'
-                  ? 'text-white underline underline-offset-2 hover:text-slate-200'
-                  : 'text-[var(--t-text)] underline underline-offset-2 hover:text-[var(--t-muted)]'
-            }
-          >
-            {ruCompliance.phone}
-          </a>
-        </p>
+    <footer className="bg-asi-navy text-asi-ivory/80 py-12 sm:py-14 px-5 sm:px-8">
+      <div className={`${asiBrandLayout.contentMaxClass} mx-auto flex flex-col gap-10`}>
+        <div className="flex flex-col sm:flex-row justify-between gap-10 sm:gap-6">
+          <div className="max-w-sm">
+            <p className="font-serif text-lg text-asi-ivory tracking-tight">ASI</p>
+            <p className="mt-3 text-sm leading-relaxed text-asi-ivory/60">
+              AI-ответы гостям для посуточной аренды. Закрытый пилот — один объект, один месяц.
+            </p>
+            <p className="mt-4 text-sm text-asi-ivory/75">
+              <a
+                href={`mailto:${ruCompliance.email}`}
+                className="underline underline-offset-2 hover:text-asi-ivory"
+              >
+                {ruCompliance.email}
+              </a>
+              {' · '}
+              <a
+                href={`tel:${ruCompliance.phoneTel}`}
+                className="underline underline-offset-2 hover:text-asi-ivory"
+              >
+                {ruCompliance.phone}
+              </a>
+            </p>
+          </div>
 
-        <div>
-          <h2 className={heading}>Документы и контакты</h2>
-          <nav className="mt-3 flex flex-col sm:flex-row sm:flex-wrap gap-x-6 gap-y-2" aria-label="Правовая информация">
-            <Link href={ruComplianceRoutes.contacts} className={link}>
-              Правовые документы
-            </Link>
-            <Link href={ruComplianceRoutes.payment} className={link}>
-              Оплата
-            </Link>
-            <Link href={ruComplianceRoutes.refund} className={link}>
-              Возврат
-            </Link>
-            <Link href={ruComplianceRoutes.privacy} className={link}>
-              Конфиденциальность
-            </Link>
-            <Link href={ruComplianceRoutes.offer} className={link}>
-              Условия
-            </Link>
-          </nav>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-8 text-sm">
+            <div className="flex flex-col gap-2.5">
+              <span className="text-xs font-semibold uppercase tracking-[0.18em] text-asi-gold-soft mb-1">
+                Документы
+              </span>
+              <Link href={ruComplianceRoutes.payment} className="hover:text-asi-ivory transition-colors">
+                Оплата
+              </Link>
+              <Link href={ruComplianceRoutes.refund} className="hover:text-asi-ivory transition-colors">
+                Возврат
+              </Link>
+              <Link href={ruComplianceRoutes.privacy} className="hover:text-asi-ivory transition-colors">
+                Конфиденциальность
+              </Link>
+              <Link href={ruComplianceRoutes.offer} className="hover:text-asi-ivory transition-colors">
+                Условия
+              </Link>
+              <Link href={ruComplianceRoutes.contacts} className="hover:text-asi-ivory transition-colors">
+                Контакты
+              </Link>
+            </div>
+            <div className="flex flex-col gap-2.5">
+              <span className="text-xs font-semibold uppercase tracking-[0.18em] text-asi-gold-soft mb-1">
+                Исполнитель
+              </span>
+              <p className="text-asi-ivory/80 leading-relaxed">
+                Самозанятый: {ruCompliance.fullName}
+                <br />
+                ИНН: {ruCompliance.inn}
+                <br />
+                {ruCompliance.address}
+              </p>
+            </div>
+          </div>
         </div>
 
-        <div className={`pt-4 border-t ${tone === 'light' ? 'border-slate-200' : tone === 'dark' ? 'border-slate-800' : 'border-[var(--t-border)]'}`}>
-          <p className={req}>
-            Самозанятый: {ruCompliance.fullName}
-            <br />
-            ИНН: {ruCompliance.inn}
-            <br />
-            Адрес: {ruCompliance.address}
+        <div className="pt-8 border-t border-asi-ivory/15 flex flex-col sm:flex-row sm:items-center gap-5">
+          <BrandShiro size={40} signature dark />
+          <p className="text-xs text-asi-ivory/50 leading-relaxed max-w-2xl">
+            Shiro — официальная подпись бренда ASI. Локальные адаптации сохраняют ту же визуальную
+            систему; юридические и контактные данные рынка остаются отдельными.
           </p>
         </div>
       </div>

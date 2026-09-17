@@ -4,6 +4,7 @@
 
 /* -------------------------------------------------------------------------- */
 /* Theme tokens (RU-scoped via [data-theme])                                  */
+/* Aligned with shared ASI brand (guestautopilot) — see src/styles/brand/     */
 /* -------------------------------------------------------------------------- */
 
 /* Fallback when no ThemeProvider (e.g. EN landing FAQ). RU ThemeProvider overrides via [data-theme]. */
@@ -21,27 +22,27 @@
 
 /* Default values live on [data-theme="light"] (first-time visitors). */
 [data-theme="light"] {
-  --t-bg: #F8FAFC;
-  --t-surface: #FFFFFF;
-  --t-surface-2: #F1F5F9;
-  --t-text: #0F172A;
-  --t-text-2: #334155;
-  --t-muted: #5F6F86;
-  --t-border: #E2E8F0;
-  --t-accent: #312E81;
-  --t-accent-hover: #1E1B4B;
+  --t-bg: #f7f3ea; /* asi-ivory */
+  --t-surface: #fbf9f4; /* asi-paper */
+  --t-surface-2: #f1e9d8; /* asi-ivory-warm */
+  --t-text: #13151b; /* asi-navy */
+  --t-text-2: #2a2d36; /* asi-navy-2 */
+  --t-muted: #5c5e64;
+  --t-border: #e5dcc6; /* asi-border */
+  --t-accent: #13151b;
+  --t-accent-hover: #2a2d36;
 }
 
 [data-theme="midnight"] {
-  --t-bg: #020617;
-  --t-surface: #0F172A;
-  --t-surface-2: #111827;
-  --t-text: #F8FAFC;
-  --t-text-2: #CBD5E1;
-  --t-muted: #94A3B8;
-  --t-border: #1E293B;
-  --t-accent: #6366F1;
-  --t-accent-hover: #818CF8;
+  --t-bg: #13151b;
+  --t-surface: #2a2d36;
+  --t-surface-2: #1a1c22;
+  --t-text: #f7f3ea;
+  --t-text-2: #e5dcc6;
+  --t-muted: #c9ad73;
+  --t-border: #3a3d46;
+  --t-accent: #a6813c;
+  --t-accent-hover: #c9ad73;
 }
 
 [data-theme] {
