@@ -72,6 +72,11 @@ describe('RU-02/RU-03 closed-beta spine + pilot boundary', () => {
     expect(how).toContain('Дорожная карта платформы');
     expect(how).toContain('Подключить объект бесплатно');
     expect(how).toContain('/ru/early-access');
+    expect(how).toContain('Бесплатное подключение и настройка — 0');
+    expect(how).toContain('14 дней операционного пилота — 0');
+    expect(how).not.toContain('Оплата пилота');
+    expect(how).not.toContain('Платный MVP');
+    expect(how).not.toContain('1 объект · 1 месяц');
     expect(how).not.toMatch(/['"]\/pilot['"]/);
     expect(how).toMatch(/не «полная автоматизация объекта на 99%»|не.*99%/);
 
@@ -79,6 +84,12 @@ describe('RU-02/RU-03 closed-beta spine + pilot boundary', () => {
     expect(early).toContain("label: 'Сейчас в пилоте'");
     expect(early).toContain("label: 'Дорожная карта'");
     expect(early).toContain('Подключить объект бесплатно');
+    expect(early).toContain('Подключение и настройка — 0');
+    expect(early).toContain('14 дней реальной работы — 0');
+    expect(early).not.toContain('PilotCheckoutCta');
+    expect(early).not.toContain('Оплата пилота');
+    expect(early).not.toContain('Платный MVP');
+    expect(early).not.toContain('1 объект · 1 месяц');
     expect(early).not.toMatch(/['"]\/pilot['"]/);
     expect(early).not.toContain('Уже можно подключить');
     expect(early).not.toContain('Автоматические цены на ночь');

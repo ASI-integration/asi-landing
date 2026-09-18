@@ -1,16 +1,24 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import {
-  COMMUNICATION_PILOT_PRICE_RUB,
-  COMMUNICATION_PILOT_SERVICE_TITLE,
-} from '@/lib/payments/yookassa-env';
+import { COMMUNICATION_PILOT_PRICE_RUB } from '@/lib/payments/yookassa-env';
 
 const root = process.cwd();
 
 function readSrc(relativePath: string): string {
   return readFileSync(join(root, relativePath), 'utf8');
 }
+
+const LEGACY_PILOT_PRICE_PATTERNS = [
+  'Оплата пилота',
+  'Платный MVP',
+  'Тариф пилота',
+  '1 объект · 1 месяц',
+  '1 объект, 1 месяц',
+  '1 объект / 1 месяц',
+  `${COMMUNICATION_PILOT_PRICE_RUB} ₽ · 1 объект · 1 месяц`,
+  `${COMMUNICATION_PILOT_PRICE_RUB}&nbsp;₽ · 1 объект · 1 месяц`,
+] as const;
 
 describe('RU-DESIGN-04 how-it-works visual migration', () => {
   it('uses shared brand primitives and ASI editorial grammar', () => {
@@ -31,12 +39,10 @@ describe('RU-DESIGN-04 how-it-works visual migration', () => {
     expect(page).not.toContain('Hong Kong');
   });
 
-  it('preserves current vs roadmap semantics and pilot conversion', () => {
+  it('preserves current vs roadmap semantics with free-pilot commercial model', () => {
     const page = readSrc('src/app/ru/how-it-works/page.tsx');
     expect(COMMUNICATION_PILOT_PRICE_RUB).toBe(1000);
     expect(page).toContain('COMMUNICATION_PILOT_PRICE_RUB');
-    expect(page).toContain('COMMUNICATION_PILOT_SERVICE_TITLE');
-    expect(COMMUNICATION_PILOT_SERVICE_TITLE).toContain('AI-коммуникации');
     expect(page).toContain('NOW_ITEMS');
     expect(page).toContain('ROADMAP_ITEMS');
     expect(page).toContain('Сейчас / пилот');
@@ -47,9 +53,15 @@ describe('RU-DESIGN-04 how-it-works visual migration', () => {
     expect(page).toContain('/ru/early-access');
     expect(page).toContain('id="current-pilot"');
     expect(page).toContain('23:07');
-    expect(page).toContain('Начните с одного объекта');
+    expect(page).toContain('Бесплатное подключение и настройка — 0');
+    expect(page).toContain('14 дней операционного пилота — 0');
+    expect(page).toContain('После пилота');
+    expect(page).toContain('Начните с бесплатного подключения объекта');
     expect(page).toMatch(/не «полная автоматизация объекта на 99%»|не.*99%/);
     expect(page).not.toMatch(/['"]\/pilot['"]/);
     expect(page.indexOf('Сейчас / пилот')).toBeLessThan(page.indexOf('Дорожная карта платформы'));
+    for (const legacy of LEGACY_PILOT_PRICE_PATTERNS) {
+      expect(page, `must not present legacy paid-pilot copy: ${legacy}`).not.toContain(legacy);
+    }
   });
 });

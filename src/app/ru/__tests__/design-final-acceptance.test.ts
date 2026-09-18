@@ -126,6 +126,13 @@ describe('RU-DESIGN-FINAL acceptance', () => {
     expect(home).toContain('export const metadata');
     expect(home).toContain('операции посуточной аренды на автопилоте');
     expect(home).not.toContain('Полная операционная автоматизация');
+    expect(home).toContain('Подключить объект бесплатно');
+    expect(home).toContain('Подключение и настройка — 0');
+    expect(home).toContain('14 дней реальной работы — 0');
+    expect(home).not.toContain('Оплата пилота');
+    expect(home).not.toContain('Платный MVP');
+    expect(home).not.toContain('1 объект · 1 месяц');
+    expect(home).not.toContain('PilotCheckoutCta');
     expect(how).toContain('export const metadata');
     expect(how).toContain('Как работает пилот');
   });
