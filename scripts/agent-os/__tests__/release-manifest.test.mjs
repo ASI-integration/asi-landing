@@ -129,6 +129,7 @@ test('writeReleaseManifest creates committed artifact used by CI', () => {
   fs.writeFileSync(path.join(tempRoot, '.github/workflows/pr-validation.yml'), 'name: PR Validation\n');
   fs.writeFileSync(path.join(tempRoot, '.github/workflows/deploy-staging.yml'), 'name: Deploy Staging\n');
   fs.writeFileSync(path.join(tempRoot, '.github/workflows/deploy.yml'), 'name: Deploy\n');
+  fs.writeFileSync(path.join(tempRoot, '.github/workflows/deploy-guestautopilot-production.yml'), 'name: Deploy Guest Autopilot\n');
   execFileSync('git', ['init'], { cwd: tempRoot });
   execFileSync('git', ['config', 'user.email', 'agent@example.com'], { cwd: tempRoot });
   execFileSync('git', ['config', 'user.name', 'Agent'], { cwd: tempRoot });

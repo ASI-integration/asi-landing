@@ -1,0 +1,44 @@
+[Unit]
+Description=Guest Autopilot (guestautopilot.com) Next.js production service
+Documentation=https://github.com/ASI-integration/asi-landing/blob/main/docs/deployment-source-of-truth.md
+After=network.target
+# Deliberately no dependency on, or ordering relative to, any RU/asi-global.ru
+# service — this unit exists on its own dedicated Hetzner VPS and knows
+# nothing about the Timeweb box.
+
+[Service]
+Type=simple
+User=guestautopilot
+Group=guestautopilot
+
+WorkingDirectory=/var/www/guestautopilot/current
+EnvironmentFile=/var/www/guestautopilot/shared/.env.production.local
+Environment=NODE_ENV=production
+Environment=PORT=3000
+
+# PM2 is unnecessary here: this is a single Next.js process on a single
+# dedicated host with no sibling app to multiplex against. systemd already
+# gives us process supervision, restart-on-failure, log capture (journald),
+# and boot-time startup — everything PM2's ecosystem.config.cjs exists to
+# provide for the shared Timeweb box, where PM2 also has to coexist with
+# whatever else that box was already running. Adding PM2 as a second
+# supervisor under systemd here would just be two process managers doing the
+# same job with nothing to divide.
+ExecStart=/usr/bin/node /var/www/guestautopilot/current/node_modules/next/dist/bin/next start -H 127.0.0.1 -p 3000
+
+Restart=on-failure
+RestartSec=3
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+# Hardening — this process only needs to read its own release tree and env
+# file, and bind a loopback TCP port. It has no business writing outside its
+# own directories.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/var/www/guestautopilot/current /var/www/guestautopilot/shared
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target
