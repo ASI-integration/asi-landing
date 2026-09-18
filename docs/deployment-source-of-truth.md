@@ -1,13 +1,40 @@
 # Deployment Source Of Truth
 
-This document prevents mixing up local branches, GitHub PRs, Vercel previews, and Timeweb production.
+This document prevents mixing up local branches, GitHub PRs, Vercel previews, and production hosting — for **two separate properties** built from this one repository.
 
-## Canonical Rules
+## Two Properties, Two Production Targets
 
-- `main` is the production source branch.
-- Feature branches and PRs are not live production.
-- Vercel is preview/check only for this project. A green Vercel preview does not mean production changed.
-- Timeweb VPS is production hosting.
+| | ASI Global RU | Guest Autopilot |
+|---|---|---|
+| Public domain | `www.asi-global.ru` | `www.guestautopilot.com` |
+| Hosting | Existing Timeweb VPS (unchanged, this section) | Dedicated Hetzner VPS (EU) — see [`docs/guestautopilot-hetzner-bootstrap.md`](./guestautopilot-hetzner-bootstrap.md) |
+| Deploy workflow | `.github/workflows/deploy.yml` | `.github/workflows/deploy-guestautopilot-production.yml` |
+| Deploy script | `scripts/deploy-production-systemd-artifact.sh` | `scripts/deploy-guestautopilot-production.sh` |
+| nginx config | `deploy/nginx/asi-global.ru.conf` | `deploy/nginx/guestautopilot.com.conf` |
+| Systemd/process manager | PM2 app `asi-landing` under `asi-landing.service` | `guestautopilot.service` (systemd only, no PM2 — see the bootstrap doc for why) |
+| Release path | `/var/www/asi/current` | `/var/www/guestautopilot/current` |
+| Host detection at runtime | `.ru` hostname / no `HOST_VARIANT` needed | `HOST_VARIANT=international` (explicit, see bootstrap doc §4) |
+| GitHub Environment (secrets) | `production` | `guestautopilot-production` (separate — an RU deploy approval can never authorize a Guest Autopilot deploy) |
+| Deploy is manual-only | Yes | Yes |
+| Vercel production dependency | No | **No** — a stale Vercel deployment of `guestautopilot.com` exists today from before this infrastructure was built; it is being replaced by DNS cutover to Hetzner, not repaired or depended on |
+
+Nothing in the RU column changes because of the Guest Autopilot work. Nothing
+in the Guest Autopilot column reuses RU secrets, RU paths, RU env files, or
+the RU service.
+
+The rest of this document (below) describes the **ASI Global RU / Timeweb**
+flow specifically. For Guest Autopilot / Hetzner, see
+[`docs/guestautopilot-hetzner-bootstrap.md`](./guestautopilot-hetzner-bootstrap.md)
+instead — the two flows are intentionally not merged into one set of
+instructions, for the same reason the deploy scripts aren't shared (see that
+doc's header comment).
+
+## Canonical Rules (ASI Global RU / Timeweb)
+
+- `main` is the production source branch for both properties.
+- Feature branches and PRs are not live production for either property.
+- Vercel is preview/check only for this project — for **both** properties. A green Vercel preview does not mean production changed, and (once Hetzner cutover happens) Guest Autopilot's Vercel domain attachment stops being relevant entirely.
+- Timeweb VPS is production hosting **for asi-global.ru only**.
 - Production deploys are artifact-based through GitHub Actions on `main`.
 - Production runtime is the PM2 app `asi-landing` running from `/var/www/asi/current`.
 - Production Telegram webhook must point to the Timeweb production URL, not localhost, ngrok, or Vercel.
