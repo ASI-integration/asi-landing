@@ -24,7 +24,6 @@ const dashboardReportsPath = path.join(repoRoot, 'src/app/dashboard/reports/Repo
 const dashboardReportPlaceholderPath = path.join(repoRoot, 'src/app/dashboard/reports/[reportId]/ReportPlaceholderClient.tsx');
 
 const reportMarketingSourcePaths = [
-  ruHomePath,
   ruPagePath,
   ruReportProductPath,
   ruReportShellPath,
@@ -45,17 +44,20 @@ const forbiddenReportMarketingCopy = [
 ] as const;
 
 describe('RU /ru/location-analysis public demo UI contract', () => {
-  it('RU landing keeps location as a secondary tool with analysis CTA', () => {
+  it('RU landing keeps location tooling out of the primary one-page acquisition flow', () => {
     const homeSrc = fs.readFileSync(ruHomePath, 'utf8');
 
-    expect(homeSrc).toContain('Оценка локации — отдельный инструмент');
-    expect(homeSrc).toContain('Дополнительно');
-    expect(homeSrc).toContain('href={RU_LOCATION_CHECK_HREF}');
-    expect(homeSrc).toContain('Оценить локацию по адресу');
     expect(homeSrc).toContain('Подключить объект бесплатно');
-    expect(homeSrc.indexOf('Подключить объект бесплатно')).toBeLessThan(homeSrc.indexOf('Оценить локацию по адресу'));
+    expect(homeSrc).toContain('Как мы подключаем ваш объект: шаг за шагом');
+    expect(homeSrc).toContain('Простые условия запуска');
+
+    expect(homeSrc).not.toContain('Оценка локации — отдельный инструмент');
+    expect(homeSrc).not.toContain('Дополнительно');
+    expect(homeSrc).not.toContain('RU_LOCATION_CHECK_HREF');
+    expect(homeSrc).not.toContain('Оценить локацию по адресу');
     expect(homeSrc).not.toContain("ctaLabel: 'Оценить объект по адресу'");
     expect(homeSrc).not.toContain('Три шага: проверить адрес');
+
     for (const forbidden of [
       'Request report',
       'Generating',
@@ -84,7 +86,6 @@ describe('RU /ru/location-analysis public demo UI contract', () => {
   });
 
   it('RU report marketing copy positions the report before any object decision', () => {
-    const homeSrc = fs.readFileSync(ruHomePath, 'utf8');
     const reportProductSrc = fs.readFileSync(ruReportProductPath, 'utf8');
     const methodologySrc = fs.readFileSync(
       path.join(repoRoot, 'src/app/ru/kak-my-ocenivaem-dohodnost-obektov/page.tsx'),
@@ -92,7 +93,6 @@ describe('RU /ru/location-analysis public demo UI contract', () => {
     );
     const combined = reportMarketingSourcePaths.map(file => fs.readFileSync(file, 'utf8')).join('\n');
 
-    expect(homeSrc).toContain('Оценка локации — отдельный инструмент');
     expect(methodologySrc).toContain('Отчёт нужен до любого решения по объекту');
     expect(reportProductSrc).toContain('Оценить объект по адресу');
     expect(reportProductSrc).toContain('не обещаем доход');
