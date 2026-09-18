@@ -103,6 +103,9 @@ export function validateSkillStructure(repoRoot = DEFAULT_REPO_ROOT) {
       invariant(/site-audit/i.test(skillMd), `${skill.id} must use the deterministic site auditor for verification`);
       invariant(/PRODUCT_CONTRACT/.test(skillMd), `${skill.id} must ground edits in the product contract`);
       invariant(!/gh pr merge|npm run deploy|vercel deploy|workflow_dispatch/i.test(skillMd), `${skill.id} must not instruct a merge or deploy action`);
+      invariant(/pre-edit visitor baseline/i.test(skillMd), `${skill.id} must label production as a pre-edit visitor baseline`);
+      invariant(/post-edit deterministic verification|post-edit verification/i.test(skillMd), `${skill.id} must define post-edit verification separately from the pre-edit baseline`);
+      invariant(/never (?:be )?reported as post-edit verification|never.*substitute for a branch-rendered check|can never substitute/i.test(skillMd), `${skill.id} must forbid production from masquerading as post-edit verification`);
     }
 
     findings.push({

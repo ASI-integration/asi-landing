@@ -2,7 +2,8 @@
 
 Mapping and configuration only — this file holds no editorial answers. `scripts/preflight.mjs`'s `ROUTE_MAP` constant must stay in sync with the table below, the same convention `asi-staging-acceptance` uses for its fixed identity constants.
 
-- Production public host: `https://www.asi-global.ru`
+- Production public host: `https://www.asi-global.ru` — **pre-edit visitor-baseline reading only.** Never audited or cited as post-edit verification of a task branch's source changes.
+- Local verification target: `http://127.0.0.1:3101` — start with `npm run dev -- --hostname 127.0.0.1 --port 3101` from the current task branch, run `npm run site:audit -- --base-url http://127.0.0.1:3101<route>` against it, then stop the server. This is the **only** valid post-edit deterministic-auditor target, because it renders the edited branch's source rather than unchanged production. Port `3101` is fixed here (distinct from the default dev port `3000` and from `asi-staging-acceptance`'s fixed staging port `3001`) so it never collides with another local server; keep `LOCAL_VERIFICATION_PORT` in `scripts/preflight.mjs` in sync with this value.
 - Supported markets in v0: `ru` only. The structure below is designed so additional RU routes, and later additional markets, can be appended without rewriting this Skill.
 
 ## Routes

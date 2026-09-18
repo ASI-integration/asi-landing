@@ -18,6 +18,25 @@ export const ROUTE_MAP = {
   },
 };
 
+// Keep in sync with references/ru-public-site-map.md.
+export const PRODUCTION_HOST = 'https://www.asi-global.ru';
+export const LOCAL_VERIFICATION_HOST = 'http://127.0.0.1';
+export const LOCAL_VERIFICATION_PORT = 3101;
+
+/**
+ * The pre-edit visitor baseline (live production) and the post-edit
+ * deterministic-auditor target (the branch rendered locally) must never
+ * be the same host: production can never substitute for branch-rendered
+ * post-edit verification.
+ */
+function verificationTargets(route) {
+  return {
+    preEditBaseline: `${PRODUCTION_HOST}${route}`,
+    postEditTarget: `${LOCAL_VERIFICATION_HOST}:${LOCAL_VERIFICATION_PORT}${route}`,
+    productionMaySubstituteForPostEditVerification: false,
+  };
+}
+
 function argument(name) {
   const index = process.argv.indexOf(name);
   if (index < 0 || !process.argv[index + 1]) return null;
@@ -63,6 +82,7 @@ export function buildWebsiteEditorPreflight({ market, mode, route, gate = null, 
     route,
     source: routeEntry.source,
     focusedTest: routeEntry.focusedTest,
+    verification: verificationTargets(route),
   };
 
   if (mode === 'review') {

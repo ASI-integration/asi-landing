@@ -204,6 +204,21 @@ test('website editor apply is READY_TO_APPLY only with a matching approved owner
   assert.equal('deployed' in preflight, false);
 });
 
+test('website editor skill distinguishes production pre-edit baseline from branch-rendered post-edit verification', () => {
+  const review = buildWebsiteEditorPreflight({ market: 'ru', mode: 'review', route: '/ru', repoRoot });
+  const { verification } = review;
+  assert.ok(verification.preEditBaseline.startsWith('https://www.asi-global.ru'));
+  assert.ok(verification.postEditTarget.startsWith('http://127.0.0.1:'));
+  assert.notEqual(verification.preEditBaseline, verification.postEditTarget);
+  assert.equal(verification.productionMaySubstituteForPostEditVerification, false);
+
+  const expected = readJson(path.join(fixtures, 'website-editor-expected-apply.json'));
+  const gate = readJson(path.join(fixtures, 'website-editor-approved-apply-gate.json'));
+  const apply = buildWebsiteEditorPreflight({ market: 'ru', mode: 'apply', route: '/ru', gate, expected, repoRoot });
+  assert.deepEqual(apply.verification, verification);
+  assert.equal(apply.status, 'READY_TO_APPLY');
+});
+
 test('website editor skill and its fixtures never encode the live homepage hero text or its answer', () => {
   const homepageSource = fs.readFileSync(path.join(repoRoot, 'src/app/ru/page.tsx'), 'utf8');
   const heroMatch = homepageSource.match(/<BrandHeadline\s+as="h1"[^>]*>\s*([^<]+?)\s*<\/BrandHeadline>/);
