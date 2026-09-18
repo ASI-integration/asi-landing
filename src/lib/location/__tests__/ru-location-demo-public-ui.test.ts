@@ -52,8 +52,8 @@ describe('RU /ru/location-analysis public demo UI contract', () => {
     expect(homeSrc).toContain('Дополнительно');
     expect(homeSrc).toContain('href={RU_LOCATION_CHECK_HREF}');
     expect(homeSrc).toContain('Оценить локацию по адресу');
-    expect(homeSrc).toContain('Подключить пилот');
-    expect(homeSrc.indexOf('Подключить пилот')).toBeLessThan(homeSrc.indexOf('Оценить локацию по адресу'));
+    expect(homeSrc).toContain('Подключить объект бесплатно');
+    expect(homeSrc.indexOf('Подключить объект бесплатно')).toBeLessThan(homeSrc.indexOf('Оценить локацию по адресу'));
     expect(homeSrc).not.toContain("ctaLabel: 'Оценить объект по адресу'");
     expect(homeSrc).not.toContain('Три шага: проверить адрес');
     for (const forbidden of [

@@ -205,7 +205,7 @@ export default function RuEarlyAccessPage() {
                 {COMMUNICATION_PILOT_PRICE_RUB}&nbsp;₽ · 1 объект · 1 месяц
               </p>
               <div className="mt-9 flex flex-wrap gap-4">
-                <BrandPrimaryCta href="/ru/early-access#pilot-form">Подключить пилот</BrandPrimaryCta>
+                <BrandPrimaryCta href="/ru/early-access#pilot-form">Подключить объект бесплатно</BrandPrimaryCta>
                 <BrandSecondaryCta href="/ru/early-access#pilot-tariff">Что входит</BrandSecondaryCta>
               </div>
               <p className="mt-5 max-w-md text-sm text-asi-navy/55 leading-relaxed">

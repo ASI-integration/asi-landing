@@ -135,7 +135,7 @@ export default function RuHowItWorksPage() {
                 {COMMUNICATION_PILOT_PRICE_RUB}&nbsp;₽ · 1 объект · 1 месяц
               </p>
               <div className="mt-9 flex flex-wrap gap-4">
-                <BrandPrimaryCta href={PILOT_HREF}>Подключить пилот</BrandPrimaryCta>
+                <BrandPrimaryCta href={PILOT_HREF}>Подключить объект бесплатно</BrandPrimaryCta>
                 <BrandSecondaryCta href="#current-pilot">Сейчас в пилоте</BrandSecondaryCta>
               </div>
             </div>
@@ -391,7 +391,7 @@ export default function RuHowItWorksPage() {
                 {COMMUNICATION_PILOT_PRICE_RUB}&nbsp;₽ · 1 объект · 1 месяц
               </p>
               <div className="mt-8 flex flex-wrap gap-4">
-                <BrandPrimaryCta href={PILOT_HREF}>Подключить пилот</BrandPrimaryCta>
+                <BrandPrimaryCta href={PILOT_HREF}>Подключить объект бесплатно</BrandPrimaryCta>
                 <BrandSecondaryCta href={HOME_HREF}>На главную</BrandSecondaryCta>
               </div>
             </div>

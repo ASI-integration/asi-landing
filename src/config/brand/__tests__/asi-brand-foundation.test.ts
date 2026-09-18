@@ -41,7 +41,7 @@ describe('ASI shared brand foundation', () => {
     expect(header).toContain('bg-asi-ivory/90');
     expect(header).toContain('BrandLogoMark');
     expect(header).toContain('/ru/early-access');
-    expect(header).toContain('Подключить пилот');
+    expect(header).toContain('Подключить объект бесплатно');
     expect(header).not.toMatch(/href=\{?['"]\/pilot['"]\}?/);
     expect(header).toContain('Войти');
 

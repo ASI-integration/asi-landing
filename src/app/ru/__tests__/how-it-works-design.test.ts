@@ -43,7 +43,7 @@ describe('RU-DESIGN-04 how-it-works visual migration', () => {
     expect(page).toContain('Дорожная карта платформы');
     expect(page).toContain('Направление платформы');
     expect(page).toContain('Отдельный инструмент');
-    expect(page).toContain('Подключить пилот');
+    expect(page).toContain('Подключить объект бесплатно');
     expect(page).toContain('/ru/early-access');
     expect(page).toContain('id="current-pilot"');
     expect(page).toContain('23:07');

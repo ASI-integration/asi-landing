@@ -18,7 +18,7 @@ export function RuComplianceFooter({ tone: _tone = 'theme' }: { tone?: Tone }) {
           <div className="max-w-sm">
             <p className="font-serif text-lg text-asi-ivory tracking-tight">ASI</p>
             <p className="mt-3 text-sm leading-relaxed text-asi-ivory/60">
-              AI-ответы гостям для посуточной аренды. Закрытый пилот — один объект, один месяц.
+              Операции посуточной аренды на автопилоте. Человек — только для исключений.
             </p>
             <p className="mt-4 text-sm text-asi-ivory/75">
               <a

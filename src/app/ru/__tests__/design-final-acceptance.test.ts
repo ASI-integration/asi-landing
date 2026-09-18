@@ -44,7 +44,7 @@ describe('RU-DESIGN-FINAL acceptance', () => {
     ]);
 
     const header = readSrc('src/components/ru/RuPublicNavHeader.tsx');
-    expect(header).toContain('Подключить пилот');
+    expect(header).toContain('Подключить объект бесплатно');
     expect(header).toContain('/ru/early-access');
     expect(header).not.toMatch(/href=\{?['"]\/pilot['"]\}?/);
     expect(header).toContain('ruNavMainLinks');
@@ -57,9 +57,9 @@ describe('RU-DESIGN-FINAL acceptance', () => {
     const methodology = readSrc('src/app/ru/kak-my-ocenivaem-dohodnost-obektov/page.tsx');
     const report = readSrc('src/app/ru/location-report/page.tsx');
 
-    expect(home).toContain('Подключить пилот');
+    expect(home).toContain('Подключить объект бесплатно');
     expect(home).toContain("const PILOT_HREF = '/ru/early-access'");
-    expect(home).toContain(`${COMMUNICATION_PILOT_PRICE_RUB}`);
+    expect(home).toContain('COMMUNICATION_PILOT_PRICE_RUB');
     expect(home).toContain('Оценка локации — отдельный инструмент');
 
     for (const page of [locationLanding, analysis, methodology, report]) {
@@ -124,7 +124,7 @@ describe('RU-DESIGN-FINAL acceptance', () => {
     const home = readSrc('src/app/ru/page.tsx');
     const how = readSrc('src/app/ru/how-it-works/page.tsx');
     expect(home).toContain('export const metadata');
-    expect(home).toContain('AI-ответы гостям');
+    expect(home).toContain('операции посуточной аренды на автопилоте');
     expect(home).not.toContain('Полная операционная автоматизация');
     expect(how).toContain('export const metadata');
     expect(how).toContain('Как работает пилот');
@@ -162,7 +162,7 @@ describe('RU-DESIGN-FINAL acceptance', () => {
     expect(gate).toContain("pathname === '/'");
     expect(gate).toContain('isRuHost');
     const homeMeta = readSrc('src/app/page.tsx');
-    expect(homeMeta).toContain('AI-ответы гостям');
+    expect(homeMeta).toContain('операции посуточной аренды на автопилоте');
     expect(homeMeta).not.toContain('Полная операционная автоматизация');
   });
 });

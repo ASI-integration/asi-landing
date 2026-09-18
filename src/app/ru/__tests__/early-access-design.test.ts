@@ -40,7 +40,7 @@ describe('RU-DESIGN-03 early-access visual migration', () => {
     expect(page).toContain('COMMUNICATION_PILOT_PAYMENT_DESCRIPTION');
     expect(COMMUNICATION_PILOT_SERVICE_TITLE).toContain('AI-коммуникации');
     expect(COMMUNICATION_PILOT_PAYMENT_DESCRIPTION).toContain('1 объект');
-    expect(page).toContain('Подключить пилот');
+    expect(page).toContain('Подключить объект бесплатно');
     expect(page).toContain('#pilot-form');
     expect(page).toContain('id="pilot-tariff"');
     expect(page).toContain('Типовые вопросы — системе.');
