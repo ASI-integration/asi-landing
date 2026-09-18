@@ -40,6 +40,7 @@ export const RU_PUBLIC_SITE_CONTRACT = Object.freeze({
      */
     onePageFlowProductionShas: Object.freeze([
       'fb7d6f8e79b2ce99b35164b3dc0f4acfc7e62874',
+      'c3c12b7f8ab1c3740b8287e4d8480c52169418a0',
     ]),
   }),
 });

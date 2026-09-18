@@ -16,6 +16,8 @@ import {
   analyzeHashLinks,
   analyzePageStructure,
   analyzeLinkStatuses,
+  analyzeHomepageFormContract,
+  findHomepagePage,
   resolveHomepageContractMode,
 } from '../rule-engine.mjs';
 import {
@@ -287,14 +289,91 @@ test('link status provenance lists sorted referrers', () => {
 
 test('homepage contract auto mode is SHA-allowlist exact match only', () => {
   const known = 'fb7d6f8e79b2ce99b35164b3dc0f4acfc7e62874';
+  const live = 'c3c12b7f8ab1c3740b8287e4d8480c52169418a0';
   assert.equal(resolveHomepageContractMode('disabled', known).enforce, false);
   assert.equal(resolveHomepageContractMode('enabled', 'unknown').enforce, true);
   assert.equal(resolveHomepageContractMode('auto', known).enforce, true);
+  assert.equal(resolveHomepageContractMode('auto', live).enforce, true);
   assert.equal(resolveHomepageContractMode('auto', '53461e999ad115cf9c5dd43a93a9c13bb14e6c6d').enforce, false);
   assert.equal(resolveHomepageContractMode('auto', 'unknown').enforce, false);
   // Lexicographically "greater" SHA must not enable without exact allowlist membership.
-  assert.equal(productionShaInAllowlist('zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz', [known]), false);
-  assert.equal(productionShaInAllowlist(known, [known]), true);
+  assert.equal(productionShaInAllowlist('zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz', [known, live]), false);
+  assert.equal(productionShaInAllowlist(live, [known, live]), true);
+});
+
+test('redirected /ru homepage is selected over /ru/contacts', () => {
+  const home = htmlPage({
+    requestedUrl: 'https://asi-global.ru/ru',
+    finalUrl: 'https://asi-global.ru/',
+    forms: [
+      {
+        labels: ['Ваше имя', 'Телефон или Telegram', 'Количество объектов в управлении'],
+        submitLabel: 'Подключить объект бесплатно',
+      },
+    ],
+    visibleText: 'Ваше имя Телефон или Telegram Количество объектов Подключить объект бесплатно',
+  });
+  const contacts = htmlPage({
+    requestedUrl: 'https://asi-global.ru/ru/contacts',
+    finalUrl: 'https://asi-global.ru/ru/contacts',
+    forms: [],
+    visibleText: 'Контакты',
+  });
+  const selected = findHomepagePage([contacts, home], BASE);
+  assert.equal(selected?.requestedUrl, 'https://asi-global.ru/ru');
+  assert.equal(selected?.finalUrl, 'https://asi-global.ru/');
+
+  const findings = analyzeHomepageFormContract([contacts, home], BASE, {
+    mode: 'enabled',
+    productionVersion: 'c3c12b7f8ab1c3740b8287e4d8480c52169418a0',
+  });
+  assert.equal(findings.some((f) => f.id.startsWith('FORM_HOMEPAGE')), false);
+  assert.equal(findings.some((f) => String(f.sourcePage || '').includes('/contacts')), false);
+});
+
+test('redirected /ru missing field reports homepage identity, not contacts', () => {
+  const home = htmlPage({
+    requestedUrl: 'https://asi-global.ru/ru',
+    finalUrl: 'https://asi-global.ru/',
+    forms: [{ labels: ['Телефон или Telegram', 'Количество объектов'], submitLabel: 'Go' }],
+    visibleText: 'Телефон или Telegram Количество объектов',
+  });
+  const contacts = htmlPage({
+    requestedUrl: 'https://asi-global.ru/ru/contacts',
+    finalUrl: 'https://asi-global.ru/ru/contacts',
+    forms: [],
+    visibleText: 'Контакты',
+  });
+  const findings = analyzeHomepageFormContract([contacts, home], BASE, {
+    mode: 'enabled',
+    productionVersion: 'unknown',
+  });
+  const missing = findings.filter((f) => f.id === 'FORM_HOMEPAGE_FIELD_MISSING');
+  assert.ok(missing.length >= 1);
+  assert.ok(missing.every((f) => f.sourcePage === 'https://asi-global.ru/ru'));
+  assert.ok(missing.every((f) => !String(f.sourcePage).includes('contacts')));
+  assert.ok(missing.some((f) => f.evidence.includes('Ваше имя') && f.evidence.includes('requested:')));
+  assert.ok(missing.some((f) => f.evidence.includes('final: https://asi-global.ru/')));
+});
+
+test('missing exact homepage identity emits FORM_HOMEPAGE_MISSING', () => {
+  const contacts = htmlPage({
+    requestedUrl: 'https://asi-global.ru/ru/contacts',
+    finalUrl: 'https://asi-global.ru/ru/contacts',
+    forms: [
+      {
+        labels: ['Ваше имя', 'Телефон или Telegram', 'Количество объектов'],
+        submitLabel: 'Подключить объект бесплатно',
+      },
+    ],
+    visibleText: 'Ваше имя',
+  });
+  const findings = analyzeHomepageFormContract([contacts], BASE, {
+    mode: 'enabled',
+    productionVersion: 'c3c12b7f8ab1c3740b8287e4d8480c52169418a0',
+  });
+  assert.ok(findings.some((f) => f.id === 'FORM_HOMEPAGE_MISSING'));
+  assert.equal(findings.some((f) => f.id === 'FORM_HOMEPAGE_FIELD_MISSING'), false);
 });
 
 test('version probe records unknown without failing', async () => {
