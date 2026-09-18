@@ -31,7 +31,7 @@ describe('RU homepage one-page client flow', () => {
     const home = readSrc('src/app/ru/page.tsx');
     expect(COMMUNICATION_PILOT_PRICE_RUB).toBe(1000);
     expect(home).toContain('COMMUNICATION_PILOT_PRICE_RUB');
-    expect(home).toContain('Меньше ручной переписки в посуточной аренде');
+    expect(home).toContain('ASI отвечает гостям вашего объекта');
     expect(home).toContain('id="how-it-works"');
     expect(home).toContain('id="example"');
     expect(home).toContain('id="pricing"');

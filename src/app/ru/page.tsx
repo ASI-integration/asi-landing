@@ -107,7 +107,7 @@ export default function HomeRu() {
                 <span className="font-serif text-2xl text-asi-navy">ASI Global</span>
               </div>
               <BrandHeadline as="h1" className="mt-8 text-4xl sm:text-5xl lg:text-[3.25rem]">
-                Меньше ручной переписки в посуточной аренде
+                ASI отвечает гостям вашего объекта
               </BrandHeadline>
               <BrandGoldRule className="mt-6 mb-6" />
               <p className="text-lg text-asi-navy/70 max-w-xl leading-relaxed">
