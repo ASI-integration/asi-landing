@@ -1,0 +1,4 @@
+interface:
+  display_name: "ASI Website Editor"
+  short_description: "Visitor-first RU public-copy review with owner-gated apply"
+  default_prompt: "Use $asi-website-editor to review (and, if authorized, edit) RU public site copy for first-time-visitor clarity."
