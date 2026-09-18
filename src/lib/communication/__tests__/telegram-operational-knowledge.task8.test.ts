@@ -85,7 +85,7 @@ describe('TASK8 property knowledge lookup for Telegram operational intake', () =
   beforeEach(() => __resetAutonomousSessionStoreForTests());
   afterEach(() => __resetAutonomousSessionStoreForTests());
 
-  it('A. Wi-Fi for John Smith at Nevsky 24 → grounded Wi-Fi reply without inventing; password gated until booking verified', async () => {
+  it('A. Wi-Fi for John Smith at Nevsky 24 → grounded without inventing; booking-gated fields blocked until verified identity', async () => {
     const db = makeDb([
       {
         when: q => q._table === 'tg_property_knowledge' && q._filters.some((f: any) => f.op === 'ilike' && f.col === 'location'),
@@ -112,10 +112,12 @@ describe('TASK8 property knowledge lookup for Telegram operational intake', () =
     const { r, reply } = await runOne({ chatId: 8001, update_id: 201, text: 'Can you check Wi‑Fi for John Smith at Nevsky 24?', db });
     expect(r.hit.category).toBe('wifi_issue');
     expect((r.hit.extractedFacts as any).property_knowledge_status).toBe('knowledge_found');
+    expect((r.hit.extractedFacts as any).booking_verified_for_knowledge).toBe(false);
     expect(r.hit.finalAction).toBe('reply');
-    expect(reply).toMatch(/GuestWifi/);
-    // P0-02: unverified guest must not receive legacy/canonical password.
+    // Public troubleshooting notes may ground; SSID/password stay gated without verified identity.
+    expect(reply).toMatch(/hallway|closet|Router/i);
     expect(reply).not.toMatch(/secret123/);
+    expect(reply).not.toMatch(/GuestWifi/);
     expect(reply).not.toMatch(/Which property is this for\?/i);
   });
 
@@ -148,7 +150,7 @@ describe('TASK8 property knowledge lookup for Telegram operational intake', () =
     expect(reply).not.toMatch(/Which property is this for\?/i);
   });
 
-  it('C. Access issue urgent at Nevsky 24 → escalates urgent; access secrets stay in knowledge, not guest reply without verified identity', async () => {
+  it('C. Access issue urgent at Nevsky 24 → escalates urgent; access secrets blocked without verified identity', async () => {
     const db = makeDb([
       {
         when: q =>
@@ -182,11 +184,12 @@ describe('TASK8 property knowledge lookup for Telegram operational intake', () =
     const { r, reply } = await runOne({ chatId: 8003, update_id: 203, text: 'Hi, guest John Smith is checking in today at 18:00 at Nevsky 24. He says the door code does not work.', db });
     expect(r.hit.category).toBe('access_issue');
     expect(r.hit.finalAction).toBe('escalate_urgent');
-    expect((r.hit.extractedFacts as any).property_knowledge_status).toBe('knowledge_found');
-    expect((r.hit.extractedFacts as any).property_knowledge_fields).toEqual(expect.arrayContaining(['door_code_notes']));
-    expect((r.hit.extractedFacts as any).property_knowledge?.door_code_notes).toMatch(/4829/);
+    expect((r.hit.extractedFacts as any).booking_verified_for_knowledge).toBe(false);
+    // Reservation match alone does not unlock booking-gated access facts.
+    expect((r.hit.extractedFacts as any).property_knowledge?.door_code_notes).toBeNull();
+    expect((r.hit.extractedFacts as any).property_knowledge?.access_notes).toBeNull();
+    expect((r.hit.extractedFacts as any).property_knowledge?.checkin_instructions).toBeNull();
     expect(reply).toMatch(/urgent/i);
-    // Guest-facing escalate text must not leak access secrets without verified identity.
     expect(reply).not.toMatch(/4829/);
   });
 

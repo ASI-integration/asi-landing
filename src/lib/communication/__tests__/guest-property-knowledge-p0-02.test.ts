@@ -296,7 +296,7 @@ describe('P0-02 guest property knowledge SSOT', () => {
     expect(a.knowledge.parking_rules).not.toBe(b.knowledge.parking_rules);
   });
 
-  it('9. canonical checkout/check-in facts compose correctly', async () => {
+  it('9. canonical check-in/checkout map correctly; checkout has no standalone live Telegram category', async () => {
     const db = makeTableDb({
       object_knowledge_entries: [
         okEntry({
@@ -310,39 +310,59 @@ describe('P0-02 guest property knowledge SSOT', () => {
           category: 'checkout',
           value_text: 'Выезд до 11:00',
         }),
+        okEntry({
+          key: 'door_code_notes',
+          category: 'access',
+          value_text: 'Код 4829',
+          visibility: 'guest_after_booking_verified',
+          sensitivity: 'access_code',
+        }),
       ],
       tg_property_knowledge: [],
     });
 
-    const result = await loadTelegramPropertyKnowledgeV1({
+    const verified = await loadTelegramPropertyKnowledgeV1({
       matched_property_id: 'prop_a',
       booking_verified: true,
       db,
     });
+    expect(verified.knowledge.checkin_instructions).toBe('Заезд с 15:00, ключ в сейфе 1234');
+    expect(verified.knowledge.checkout_notes).toBe('Выезд до 11:00');
+    expect(verified.knowledge.door_code_notes).toBe('Код 4829');
 
-    expect(result.knowledge.checkin_instructions).toBe('Заезд с 15:00, ключ в сейфе 1234');
-    expect(result.knowledge.checkout_notes).toBe('Выезд до 11:00');
+    const unverified = await loadTelegramPropertyKnowledgeV1({
+      matched_property_id: 'prop_a',
+      booking_verified: false,
+      db,
+    });
+    expect(unverified.knowledge.checkin_instructions).toBeNull();
+    expect(unverified.knowledge.door_code_notes).toBeNull();
+    // Public checkout time remains usable without booking verification.
+    expect(unverified.knowledge.checkout_notes).toBe('Выезд до 11:00');
 
-    const composed = composeTelegramOperationalReply({
-      update_id: 901,
-      category: 'parking_question',
-      action: 'reply',
+    // Access-issue urgent compose uses access snippet only when identity can reveal details.
+    const accessReply = composeTelegramOperationalReply({
+      update_id: 902,
+      category: 'access_issue',
+      action: 'escalate_urgent',
       lang: 'ru',
-      text: 'парковка?',
+      text: 'код не работает',
       extractedFacts: {
         matched_property_id: 'prop_a',
-        property_knowledge: result.knowledge,
-        property_knowledge_status: result.status,
+        property_knowledge: verified.knowledge,
+        guest_identity: { status: 'unknown', confidence: 0, suspicious: false },
       },
       missingFacts: [],
-      urgency: 'normal',
+      urgency: 'urgent',
       linkingState: null,
       sessionCase: null,
       sessionMemory: null,
     });
-    // Parking missing → non-inventing hold, not fabricated parking rules.
-    expect(composed.text).not.toMatch(/Заезд с 15:00/);
-    expect(composed.text.toLowerCase()).not.toMatch(/secret|password|паркуйтесь у ворот/i);
+    expect(accessReply.text).toMatch(/срочн|urgent|передаю|escalat/i);
+    expect(accessReply.text).not.toMatch(/4829|сейфе 1234/);
+
+    // Note: there is no standalone `checkout` Telegram operational category today;
+    // checkout_notes are resolved for grounding other flows, not a dedicated reply template.
   });
 
   it('10. late checkout policy requiring approval escalates (not auto-approval)', async () => {
@@ -372,6 +392,9 @@ describe('P0-02 guest property knowledge SSOT', () => {
           value_text: 'Поздний выезд только по согласованию с менеджером',
         }),
       ],
+      tg_guest_identities: [],
+      tg_guest_profiles: [],
+      tg_suspicious_users: [],
     });
 
     const r = await processTelegramOperationalIntakeWithSessionMemory({
@@ -446,9 +469,8 @@ describe('P0-02 guest property knowledge SSOT', () => {
         okEntry({
           key: 'wifi_name',
           value_text: 'CanonicalSSID',
-          visibility: 'guest_public',
+          visibility: 'guest_after_booking_verified',
         }),
-        // Canonical blocked password — legacy must not fill it.
         okEntry({
           key: 'wifi_password',
           value_text: 'CanonicalSecret',
@@ -473,7 +495,7 @@ describe('P0-02 guest property knowledge SSOT', () => {
       audit_message_id: 'tg:test:12',
     });
 
-    expect(blocked.knowledge.wifi_name).toBe('CanonicalSSID');
+    expect(blocked.knowledge.wifi_name).toBeNull();
     expect(blocked.knowledge.wifi_password).toBeNull();
     const pwd = blocked.field_resolutions.find((r) => r.field === 'wifi_password');
     expect(pwd?.source).toBe('canonical');
@@ -492,7 +514,7 @@ describe('P0-02 guest property knowledge SSOT', () => {
     spy.mockRestore();
   });
 
-  it('buildCanonicalGuestFactUpserts maps admin fields to one canonical key each', () => {
+  it('buildCanonicalGuestFactUpserts maps values and explicit clears', () => {
     const rows = buildCanonicalGuestFactUpserts({
       property_id: 'prop_admin',
       fields: {
@@ -510,5 +532,388 @@ describe('P0-02 guest property knowledge SSOT', () => {
     expect(byKey.get('parking_text')?.value_text).toBe('Yard');
     expect(byKey.get('checkout_time')?.value_text).toBe('11:00');
     expect(rows.filter((r) => r.key === 'check_in_text')).toHaveLength(1);
+
+    const cleared = buildCanonicalGuestFactUpserts({
+      property_id: 'prop_admin',
+      fields: { wifi_password: '' },
+    });
+    expect(cleared).toHaveLength(1);
+    expect(cleared[0]?.key).toBe('wifi_password');
+    expect(cleared[0]?.value_text).toBeNull();
+
+    const omitted = buildCanonicalGuestFactUpserts({
+      property_id: 'prop_admin',
+      fields: { wifi_name: 'OnlyName' },
+    });
+    expect(omitted.map((r) => r.key)).toEqual(['wifi_name']);
+  });
+
+  it('canonical empty tombstone blocks legacy password resurrection', async () => {
+    const db = makeTableDb({
+      object_knowledge_entries: [
+        okEntry({
+          key: 'wifi_password',
+          value_text: null,
+          visibility: 'guest_after_booking_verified',
+          sensitivity: 'password',
+        }),
+      ],
+      tg_property_knowledge: [{ property_id: 'prop_a', wifi_password: 'LegacyOldSecret' }],
+    });
+
+    const result = await resolveGuestPropertyKnowledge({
+      property_id: 'prop_a',
+      booking_verified: true,
+      db,
+    });
+    expect(result.knowledge.wifi_password).toBeNull();
+    const pwd = result.field_resolutions.find((r) => r.field === 'wifi_password');
+    expect(pwd?.source).toBe('canonical');
+    expect(pwd?.status).toBe('missing');
+    expect(pwd?.usable).toBe(false);
+  });
+
+  it('legacy wifi_instructions combined field never leaks password to unverified guest', async () => {
+    const audits: string[] = [];
+    const spy = vi.spyOn(console, 'log').mockImplementation((line: unknown) => {
+      audits.push(String(line));
+    });
+
+    const db = makeTableDb({
+      object_knowledge_entries: [],
+      tg_property_knowledge: [
+        {
+          property_id: 'prop_a',
+          wifi_instructions: 'Network: LegacyNet, Password: LegacySecret',
+          parking_rules: 'Yard free',
+        },
+      ],
+    });
+
+    const result = await resolveGuestPropertyKnowledge({
+      property_id: 'prop_a',
+      booking_verified: false,
+      db,
+      audit_message_id: 'tg:wifi-instr',
+    });
+
+    expect(result.knowledge.wifi_notes).toBeNull();
+    expect(result.knowledge.wifi_name).toBeNull();
+    expect(result.knowledge.wifi_password).toBeNull();
+    expect(JSON.stringify(result.knowledge)).not.toMatch(/LegacySecret/);
+    expect(audits.join('\n')).not.toMatch(/LegacySecret/);
+
+    const reply = composeTelegramOperationalReply({
+      update_id: 1,
+      category: 'wifi_issue',
+      action: 'reply',
+      lang: 'en',
+      text: 'wifi broken',
+      extractedFacts: {
+        matched_property_id: 'prop_a',
+        property_knowledge: result.knowledge,
+        property_knowledge_status: 'knowledge_found',
+      },
+      missingFacts: [],
+      urgency: 'normal',
+      linkingState: null,
+      sessionCase: null,
+      sessionMemory: null,
+    });
+    expect(reply.text).not.toMatch(/LegacySecret|LegacyNet/);
+    spy.mockRestore();
+  });
+
+  it('legacy private access fields are booking-gated for unverified guests', async () => {
+    const db = makeTableDb({
+      object_knowledge_entries: [],
+      tg_property_knowledge: [
+        {
+          property_id: 'prop_a',
+          wifi_name: 'LegNet',
+          wifi_password: 'LegPass',
+          checkin_instructions: 'Private check-in at rear door',
+          access_notes: 'Private access via courtyard',
+          door_code_notes: 'Code 9999',
+          parking_rules: 'Public parking OK',
+        },
+      ],
+    });
+
+    const unverified = await resolveGuestPropertyKnowledge({
+      property_id: 'prop_a',
+      booking_verified: false,
+      db,
+    });
+    expect(unverified.knowledge.wifi_name).toBeNull();
+    expect(unverified.knowledge.wifi_password).toBeNull();
+    expect(unverified.knowledge.checkin_instructions).toBeNull();
+    expect(unverified.knowledge.access_notes).toBeNull();
+    expect(unverified.knowledge.door_code_notes).toBeNull();
+    expect(unverified.knowledge.parking_rules).toBe('Public parking OK');
+
+    const verified = await resolveGuestPropertyKnowledge({
+      property_id: 'prop_a',
+      booking_verified: true,
+      db,
+    });
+    expect(verified.knowledge.wifi_name).toBe('LegNet');
+    expect(verified.knowledge.wifi_password).toBe('LegPass');
+    expect(verified.knowledge.checkin_instructions).toBe('Private check-in at rear door');
+    expect(verified.knowledge.door_code_notes).toBe('Code 9999');
+  });
+
+  describe('live seam identity→knowledge authorization', () => {
+    async function runLive(params: { chatId: number; update_id: number; text: string; db: any }) {
+      const r = await processTelegramOperationalIntakeWithSessionMemory({
+        chatId: params.chatId,
+        channel: 'telegram',
+        surfaceLang: 'en',
+        update_id: params.update_id,
+        text: params.text,
+        db: params.db,
+      });
+      expect(r.handled).toBe(true);
+      if (!r.handled) throw new Error('expected handled');
+      const reply = composeTelegramOperationalReply({
+        update_id: params.update_id,
+        category: r.hit.category,
+        action: r.hit.finalAction,
+        lang: 'en',
+        text: params.text,
+        extractedFacts: r.hit.extractedFacts ?? {},
+        missingFacts: r.hit.missingFacts ?? [],
+        urgency: r.hit.finalAction === 'escalate_urgent' ? 'urgent' : 'normal',
+        linkingState: null,
+        sessionCase: r.case ?? null,
+        sessionMemory: null,
+      });
+      return { r, reply: reply.text };
+    }
+
+    it('A. name-only attack: reservation matched for routing but secrets blocked', async () => {
+      const db = makeTableDb({
+        tg_guest_identities: [],
+        tg_guest_profiles: [],
+        tg_suspicious_users: [],
+        tg_guest_reservations: [
+          {
+            id: 'res_js',
+            property_id: 'prop_nev',
+            guest_name: 'John Smith',
+            check_in: '2026-04-23T14:00:00.000Z',
+            check_out: '2026-04-26T11:00:00.000Z',
+          },
+        ],
+        tg_property_knowledge: [{ property_id: 'prop_nev', location: 'Nevsky 24' }],
+        object_knowledge_entries: [
+          okEntry({
+            object_id: 'prop_nev',
+            property_id: 'prop_nev',
+            key: 'wifi_name',
+            value_text: 'NevskyWifi',
+            visibility: 'guest_after_booking_verified',
+          }),
+          okEntry({
+            object_id: 'prop_nev',
+            property_id: 'prop_nev',
+            key: 'wifi_password',
+            value_text: 'AttackSecret99',
+            visibility: 'guest_after_booking_verified',
+            sensitivity: 'password',
+          }),
+        ],
+      });
+
+      const { r, reply } = await runLive({
+        chatId: 7001,
+        update_id: 701,
+        text: 'Can you check Wi‑Fi for John Smith at Nevsky 24?',
+        db,
+      });
+      expect(r.hit.category).toBe('wifi_issue');
+      expect((r.hit.extractedFacts as any).matched_reservation_id).toBeTruthy();
+      expect((r.hit.extractedFacts as any).booking_verified_for_knowledge).toBe(false);
+      expect((r.hit.extractedFacts as any).property_knowledge?.wifi_password).toBeNull();
+      expect((r.hit.extractedFacts as any).property_knowledge?.wifi_name).toBeNull();
+      expect(reply).not.toMatch(/AttackSecret99/);
+      expect(reply).not.toMatch(/NevskyWifi/);
+    });
+
+    it('B. property-only attack: no password/door/check-in secrets', async () => {
+      const db = makeTableDb({
+        tg_guest_identities: [],
+        tg_guest_profiles: [],
+        tg_suspicious_users: [],
+        tg_guest_reservations: [
+          {
+            id: 'res_only',
+            property_id: 'prop_nev',
+            guest_name: 'Only Guest',
+            check_in: '2026-04-23T14:00:00.000Z',
+          },
+        ],
+        tg_property_knowledge: [{ property_id: 'prop_nev', location: 'Nevsky 24' }],
+        object_knowledge_entries: [
+          okEntry({
+            object_id: 'prop_nev',
+            property_id: 'prop_nev',
+            key: 'wifi_password',
+            value_text: 'PropOnlySecret',
+            visibility: 'guest_after_booking_verified',
+            sensitivity: 'password',
+          }),
+          okEntry({
+            object_id: 'prop_nev',
+            property_id: 'prop_nev',
+            key: 'door_code_notes',
+            value_text: 'Door 1111',
+            visibility: 'guest_after_booking_verified',
+            sensitivity: 'access_code',
+          }),
+          okEntry({
+            object_id: 'prop_nev',
+            property_id: 'prop_nev',
+            key: 'check_in_text',
+            value_text: 'Private rear entrance',
+            visibility: 'guest_after_booking_verified',
+          }),
+        ],
+      });
+
+      const { r, reply } = await runLive({
+        chatId: 7002,
+        update_id: 702,
+        text: 'Wi‑Fi is broken at Nevsky 24',
+        db,
+      });
+      expect((r.hit.extractedFacts as any).booking_verified_for_knowledge).toBe(false);
+      expect((r.hit.extractedFacts as any).property_knowledge?.wifi_password).toBeNull();
+      expect((r.hit.extractedFacts as any).property_knowledge?.door_code_notes).toBeNull();
+      expect((r.hit.extractedFacts as any).property_knowledge?.checkin_instructions).toBeNull();
+      expect(reply).not.toMatch(/PropOnlySecret|Door 1111|Private rear entrance/);
+    });
+
+    it('C. legit verified guest may receive fresh canonical Wi-Fi credentials', async () => {
+      const chatId = 910001;
+      const db = makeTableDb({
+        tg_guest_identities: [
+          {
+            guest_id: 'guest-returning-1',
+            telegram_chat_id: chatId,
+            first_name: 'Anna',
+            last_name: 'Ivanova',
+            phone: '79990000001',
+            stays_count: 3,
+          },
+        ],
+        tg_guest_profiles: [],
+        tg_suspicious_users: [],
+        tg_guest_reservations: [
+          {
+            id: 'RES-1',
+            booking_id: 'BK-ASI-001',
+            property_id: 'prop_nev',
+            guest_id: 'guest-returning-1',
+            guest_name: 'Anna Ivanova',
+            phone: '79990000001',
+            guest_phone: '79990000001',
+            chat_id: chatId,
+            check_in: '2026-05-27T12:00:00.000Z',
+            check_out: '2026-05-30T12:00:00.000Z',
+          },
+        ],
+        tg_property_knowledge: [{ property_id: 'prop_nev', location: 'Nevsky 24' }],
+        object_knowledge_entries: [
+          okEntry({
+            object_id: 'prop_nev',
+            property_id: 'prop_nev',
+            key: 'wifi_name',
+            value_text: 'VerifiedNet',
+            visibility: 'guest_after_booking_verified',
+          }),
+          okEntry({
+            object_id: 'prop_nev',
+            property_id: 'prop_nev',
+            key: 'wifi_password',
+            value_text: 'VerifiedPass42',
+            visibility: 'guest_after_booking_verified',
+            sensitivity: 'password',
+          }),
+        ],
+      });
+
+      const { r, reply } = await runLive({
+        chatId,
+        update_id: 703,
+        text: 'Wi‑Fi is not working at Nevsky 24',
+        db,
+      });
+      expect((r.hit.extractedFacts as any).booking_verified_for_knowledge).toBe(true);
+      expect((r.hit.extractedFacts as any).property_knowledge?.wifi_name).toBe('VerifiedNet');
+      expect((r.hit.extractedFacts as any).property_knowledge?.wifi_password).toBe('VerifiedPass42');
+      expect(reply).toMatch(/VerifiedNet/);
+      expect(reply).toMatch(/VerifiedPass42/);
+    });
+
+    it('D. cross-property identity: verified for A does not unlock B secrets', async () => {
+      const chatId = 910002;
+      const db = makeTableDb({
+        tg_guest_identities: [
+          {
+            guest_id: 'guest-a',
+            telegram_chat_id: chatId,
+            phone: '79990000002',
+            stays_count: 2,
+          },
+        ],
+        tg_guest_profiles: [],
+        tg_suspicious_users: [],
+        tg_guest_reservations: [
+          {
+            id: 'RES-A',
+            property_id: 'prop_a',
+            guest_id: 'guest-a',
+            guest_name: 'Guest A',
+            phone: '79990000002',
+            chat_id: chatId,
+            check_in: '2026-05-27T12:00:00.000Z',
+          },
+        ],
+        tg_property_knowledge: [
+          { property_id: 'prop_a', location: 'Nevsky 10' },
+          { property_id: 'prop_b', location: 'Liteyny 12' },
+        ],
+        object_knowledge_entries: [
+          okEntry({
+            object_id: 'prop_b',
+            property_id: 'prop_b',
+            key: 'wifi_password',
+            value_text: 'PropBSecret',
+            visibility: 'guest_after_booking_verified',
+            sensitivity: 'password',
+          }),
+          okEntry({
+            object_id: 'prop_b',
+            property_id: 'prop_b',
+            key: 'wifi_name',
+            value_text: 'PropBNet',
+            visibility: 'guest_after_booking_verified',
+          }),
+        ],
+      });
+
+      const { r, reply } = await runLive({
+        chatId,
+        update_id: 704,
+        text: 'Wi‑Fi broken at Liteyny 12',
+        db,
+      });
+      expect((r.hit.extractedFacts as any).matched_property_id).toBe('prop_b');
+      expect((r.hit.extractedFacts as any).booking_verified_for_knowledge).toBe(false);
+      expect((r.hit.extractedFacts as any).property_knowledge?.wifi_password).toBeNull();
+      expect((r.hit.extractedFacts as any).property_knowledge?.wifi_name).toBeNull();
+      expect(reply).not.toMatch(/PropBSecret|PropBNet/);
+    });
   });
 });

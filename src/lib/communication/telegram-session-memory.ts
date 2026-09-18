@@ -10,6 +10,7 @@ import {
 } from './telegram-operational-intake';
 import { matchTelegramOperationalEntitiesV1 } from './telegram-operational-matching';
 import { loadTelegramPropertyKnowledgeV1, logTelegramPropertyKnowledgeLookup } from './telegram-property-knowledge';
+import { isBookingVerifiedForGuestKnowledge } from './guest-property-knowledge';
 import { composeTelegramOperationalReply } from './telegram-reply-composer';
 import type { CommunicationCanonNormalization } from './communication-normalizer';
 import {
@@ -1096,8 +1097,11 @@ export async function processTelegramOperationalIntakeWithSessionMemory(params: 
             (propertyMatchConfidence === 'high_confidence_match' || propertyMatchConfidence === 'medium_confidence_match'));
 
       if (shouldLookup && matchedPropertyId) {
-        const bookingVerified =
-          match.reservation_match_status === 'matched' && Boolean(match.matched_reservation_id);
+        const bookingVerified = isBookingVerifiedForGuestKnowledge({
+          guestIdentity,
+          matchedPropertyId,
+          matchedReservationId: match.matched_reservation_id,
+        });
         const kn = await loadTelegramPropertyKnowledgeV1({
           matched_property_id: matchedPropertyId,
           booking_verified: bookingVerified,
