@@ -2,8 +2,8 @@
   "schemaVersion": "asi.agent-os.release-manifest.v1",
   "repository": "ASI-integration/asi-landing",
   "sourceBranch": "main",
-  "baselineSha": "5e81483004805c30439f72ba67ad9296370bccd0",
-  "generatedAt": "2026-09-17T11:39:16.653Z",
+  "baselineSha": "90d9611bc0827478197705c79cddb58feacdb50c",
+  "generatedAt": "2026-09-17T16:33:33.525Z",
   "package": {
     "name": "landing-asi",
     "version": "0.1.0"
@@ -24,6 +24,10 @@
     {
       "id": "deploy-production",
       "workflow": ".github/workflows/deploy.yml"
+    },
+    {
+      "id": "deploy-guestautopilot-production",
+      "workflow": ".github/workflows/deploy-guestautopilot-production.yml"
     }
   ]
 }
