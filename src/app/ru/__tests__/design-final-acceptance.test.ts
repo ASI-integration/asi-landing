@@ -124,7 +124,7 @@ describe('RU-DESIGN-FINAL acceptance', () => {
     const home = readSrc('src/app/ru/page.tsx');
     const how = readSrc('src/app/ru/how-it-works/page.tsx');
     expect(home).toContain('export const metadata');
-    expect(home).toContain('операции посуточной аренды на автопилоте');
+    expect(home).toContain('общение с гостями по данным объекта');
     expect(home).not.toContain('Полная операционная автоматизация');
     expect(home).toContain('Подключить объект бесплатно');
     expect(home).toContain('Подключение и настройка — 0');
@@ -134,7 +134,8 @@ describe('RU-DESIGN-FINAL acceptance', () => {
     expect(home).not.toContain('1 объект · 1 месяц');
     expect(home).not.toContain('PilotCheckoutCta');
     expect(how).toContain('export const metadata');
-    expect(how).toContain('Как работает пилот');
+    expect(how).toContain('Как работает ASI');
+    expect(how).toContain('Управлять посуточными квартирами — не значит весь день сидеть в чатах');
   });
 
   it('migrates sample/status public shells off dark-slate SaaS chrome', () => {
