@@ -1,0 +1,83 @@
+name: RU VPS target safety check
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  confirm_same_server:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Confirm VPS_HOST serves asi-global.ru
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_PORT: ${{ secrets.VPS_PORT }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          REMOTE_USER="project_ayfaar"
+          REMOTE_PORT="${VPS_PORT:-22}"
+          EXPECTED_PUBLIC_IP="2.29.31.29"
+
+          [ -n "${VPS_HOST:-}" ] || { echo "Missing VPS_HOST"; exit 1; }
+          [ -n "${VPS_SSH_KEY:-}" ] || { echo "Missing VPS_SSH_KEY"; exit 1; }
+
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+
+          SSH_OPTS=(
+            -i ~/.ssh/id_ed25519
+            -p "$REMOTE_PORT"
+            -o IdentitiesOnly=yes
+            -o StrictHostKeyChecking=accept-new
+            -o ConnectTimeout=20
+          )
+
+          PUBLIC_JSON="$(curl -fsS --max-time 15 https://asi-global.ru/api/version)"
+          PUBLIC_SHA="$(printf '%s' "$PUBLIC_JSON" | node -e "let s='';process.stdin.on('data',d=>s+=d);process.stdin.on('end',()=>{const j=JSON.parse(s);process.stdout.write(String(j.sha||''));});")"
+          PUBLIC_RELEASE="$(printf '%s' "$PUBLIC_JSON" | node -e "let s='';process.stdin.on('data',d=>s+=d);process.stdin.on('end',()=>{const j=JSON.parse(s);process.stdout.write(String(j.releasePath||''));});")"
+          echo "PUBLIC_SHA=$PUBLIC_SHA"
+          echo "PUBLIC_RELEASE_PATH=$PUBLIC_RELEASE"
+
+          REMOTE_REPORT="$(ssh "${SSH_OPTS[@]}" "$REMOTE_USER@$VPS_HOST" bash -s <<'EOS'
+set -euo pipefail
+echo "REMOTE_USER=$(id -un)"
+test "$(id -un)" = "project_ayfaar"
+hostname
+echo "BASE_EXISTS=$(test -d /var/www/asi && echo yes || echo no)"
+echo "RELEASES_EXISTS=$(test -d /var/www/asi/releases && echo yes || echo no)"
+echo "CURRENT_LINK=$(readlink -f /var/www/asi/current 2>/dev/null || true)"
+echo "SERVICE_ACTIVE=$(systemctl is-active asi-landing.service 2>/dev/null || true)"
+LOCAL_JSON="$(curl -fsS --max-time 10 http://127.0.0.1:3000/api/version)"
+echo "LOCAL_VERSION_JSON=$LOCAL_JSON"
+LOCAL_HEALTH="$(curl -fsS --max-time 10 http://127.0.0.1:3000/api/health)"
+echo "LOCAL_HEALTH_JSON=$LOCAL_HEALTH"
+REMOTE_IP="$(curl -fsS --max-time 8 https://api.ipify.org || true)"
+echo "REMOTE_PUBLIC_IP=$REMOTE_IP"
+EOS
+)"
+
+          echo "$REMOTE_REPORT"
+
+          echo "$REMOTE_REPORT" | grep -q 'REMOTE_USER=project_ayfaar'
+          echo "$REMOTE_REPORT" | grep -q 'BASE_EXISTS=yes'
+          echo "$REMOTE_REPORT" | grep -q 'RELEASES_EXISTS=yes'
+          echo "$REMOTE_REPORT" | grep -q '/var/www/asi/releases/'
+          echo "$REMOTE_REPORT" | grep -q 'SERVICE_ACTIVE=active'
+          echo "$REMOTE_REPORT" | grep -q "REMOTE_PUBLIC_IP=$EXPECTED_PUBLIC_IP"
+
+          LOCAL_SHA="$(printf '%s\n' "$REMOTE_REPORT" | sed -n 's/^LOCAL_VERSION_JSON=//p' | node -e "let s='';process.stdin.on('data',d=>s+=d);process.stdin.on('end',()=>{const j=JSON.parse(s.trim());process.stdout.write(String(j.sha||''));});")"
+          echo "LOCAL_SHA=$LOCAL_SHA"
+          test "$LOCAL_SHA" = "$PUBLIC_SHA"
+
+          echo "TARGET_SAFETY=PASS"
