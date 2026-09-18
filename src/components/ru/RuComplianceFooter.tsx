@@ -11,7 +11,8 @@ export function RuComplianceFooter({ tone: _tone = 'theme' }: { tone?: Tone }) {
   void _tone;
 
   return (
-    <footer className="bg-asi-navy text-asi-ivory/80 py-12 sm:py-14 px-5 sm:px-8">
+    // Root is a div so page shells can own the single footer landmark.
+    <div className="bg-asi-navy text-asi-ivory/80 py-12 sm:py-14 px-5 sm:px-8">
       <div className={`${asiBrandLayout.contentMaxClass} mx-auto flex flex-col gap-10`}>
         <div className="flex flex-col sm:flex-row justify-between gap-10 sm:gap-6">
           <div className="max-w-sm">
@@ -48,10 +49,10 @@ export function RuComplianceFooter({ tone: _tone = 'theme' }: { tone?: Tone }) {
                 Возврат
               </Link>
               <Link href={ruComplianceRoutes.privacy} className="hover:text-asi-ivory transition-colors">
-                Конфиденциальность
+                Политика данных
               </Link>
               <Link href={ruComplianceRoutes.offer} className="hover:text-asi-ivory transition-colors">
-                Условия
+                Оферта
               </Link>
               <Link href={ruComplianceRoutes.contacts} className="hover:text-asi-ivory transition-colors">
                 Контакты
@@ -80,6 +81,6 @@ export function RuComplianceFooter({ tone: _tone = 'theme' }: { tone?: Tone }) {
           </p>
         </div>
       </div>
-    </footer>
+    </div>
   );
 }

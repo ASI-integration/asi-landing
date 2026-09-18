@@ -160,10 +160,11 @@ export function EarlyAccessObjectForm() {
           </select>
         </label>
 
-        <fieldset className="grid gap-0 border-y border-asi-border">
+        <fieldset className="border-y border-asi-border">
           <legend className="mb-3 text-sm font-sans font-semibold text-asi-navy">
             Условия участия
           </legend>
+          <div className="grid gap-0">
           {communityOptions.map((option) => {
             const selected = form.communityStatus === option.value;
             return (
@@ -187,12 +188,13 @@ export function EarlyAccessObjectForm() {
               </label>
             );
           })}
+          </div>
         </fieldset>
 
         <button
           type="submit"
           disabled={saving}
-          className="inline-flex min-h-12 items-center justify-center gap-2 px-7 py-3.5 bg-asi-navy text-asi-ivory text-sm font-sans font-semibold tracking-wide rounded-sm border border-asi-navy hover:bg-asi-navy-2 transition-colors disabled:cursor-not-allowed disabled:opacity-60"
+          className="inline-flex min-h-12 items-center justify-center gap-2 px-7 py-3.5 bg-asi-navy text-asi-ivory text-sm font-sans font-semibold tracking-wide rounded-sm border border-asi-navy hover:bg-asi-navy-2 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-asi-gold disabled:cursor-not-allowed disabled:opacity-60"
         >
           {saving ? 'Отправляем...' : 'Отправить заявку'}
         </button>

@@ -11,7 +11,7 @@ import { RuBottomQuickLinks } from '@/components/ru/RuBottomQuickLinks';
 import { RuComplianceFooter } from '@/components/ru/RuComplianceFooter';
 import { RuLocationProductNav } from '@/components/ru/RuLocationProductNav';
 import { RuPublicNavHeader } from '@/components/ru/RuPublicNavHeader';
-import { LOCATION_REPORT_PRODUCT_PATH, LOCATION_REPORT_SAMPLE_PATH } from '@/lib/location/report-state';
+import { LOCATION_REPORT_SAMPLE_PATH } from '@/lib/location/report-state';
 
 export const metadata: Metadata = {
   title: 'Полный отчёт по локации — ASI',
@@ -47,7 +47,7 @@ export default function RuLocationFullReportPage() {
               личном кабинете.
             </p>
             <div className="mt-8 flex flex-wrap gap-4">
-              <BrandPrimaryCta href={LOCATION_REPORT_PRODUCT_PATH}>
+              <BrandPrimaryCta href={ANALYSIS_HREF}>
                 Оценить объект по адресу
               </BrandPrimaryCta>
               <BrandSecondaryCta href={LOCATION_REPORT_SAMPLE_PATH}>

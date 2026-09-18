@@ -42,14 +42,17 @@ export const asiBrandShiro = {
   alt: 'Shiro, the ASI Global signature',
 } as const;
 
+const asiBrandFocusVisibleClass =
+  'focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-asi-gold';
+
 /** Tailwind class fragments for shared button look (visual only). */
 export const asiBrandButtonClasses = {
   primary:
-    'inline-flex items-center justify-center gap-2 px-7 py-3.5 bg-asi-navy text-asi-ivory text-sm font-sans font-semibold tracking-wide rounded-sm border border-asi-navy hover:bg-asi-navy-2 transition-colors',
+    `inline-flex items-center justify-center gap-2 px-7 py-3.5 bg-asi-navy text-asi-ivory text-sm font-sans font-semibold tracking-wide rounded-sm border border-asi-navy hover:bg-asi-navy-2 transition-colors ${asiBrandFocusVisibleClass}`,
   secondary:
-    'inline-flex items-center justify-center gap-2 px-7 py-3.5 bg-transparent text-asi-navy text-sm font-sans font-semibold tracking-wide rounded-sm border border-asi-navy/70 hover:border-asi-navy transition-colors',
+    `inline-flex items-center justify-center gap-2 px-7 py-3.5 bg-transparent text-asi-navy text-sm font-sans font-semibold tracking-wide rounded-sm border border-asi-navy/70 hover:border-asi-navy transition-colors ${asiBrandFocusVisibleClass}`,
   headerOutline:
-    'inline-flex items-center px-5 py-2.5 border border-asi-navy text-asi-navy text-sm font-sans font-semibold tracking-wide rounded-sm hover:bg-asi-navy hover:text-asi-ivory transition-colors',
+    `inline-flex items-center px-5 py-2.5 border border-asi-navy text-asi-navy text-sm font-sans font-semibold tracking-wide rounded-sm hover:bg-asi-navy hover:text-asi-ivory transition-colors ${asiBrandFocusVisibleClass}`,
 } as const;
 
 export const asiBrandCardClasses = {

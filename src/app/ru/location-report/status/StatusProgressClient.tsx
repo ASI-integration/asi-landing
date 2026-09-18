@@ -53,29 +53,30 @@ function reportArtifactFromPayload(payload: unknown): ReportArtifact | null {
 }
 
 function badgeClassName(state: 'done' | 'active' | 'waiting'): string {
-  if (state === 'done') return 'bg-emerald-500/20 text-emerald-300';
-  if (state === 'active') return 'bg-amber-500/20 text-amber-200';
-  return 'bg-slate-800 text-slate-400';
+  if (state === 'done') return 'bg-asi-navy text-asi-ivory';
+  if (state === 'active') return 'bg-asi-gold/20 text-asi-gold-text';
+  return 'bg-asi-ivory text-asi-navy/50 border border-asi-border';
 }
 
 function actionClassName(tone: 'primary' | 'secondary'): string {
   if (tone === 'primary') {
-    return 'inline-flex min-h-[48px] items-center justify-center rounded-xl bg-white px-5 py-3 text-sm font-bold text-slate-900 transition-colors hover:bg-slate-100';
+    return 'inline-flex min-h-12 items-center justify-center rounded-sm bg-asi-navy px-5 py-3 text-sm font-sans font-semibold text-asi-ivory transition-colors hover:bg-asi-navy-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-asi-navy';
   }
-  return 'inline-flex min-h-[48px] items-center justify-center rounded-xl border border-slate-700 px-5 py-3 text-sm font-semibold text-slate-200 transition-colors hover:border-slate-600 hover:text-white';
+  return 'inline-flex min-h-12 items-center justify-center rounded-sm border border-asi-navy/70 px-5 py-3 text-sm font-sans font-semibold text-asi-navy transition-colors hover:border-asi-navy focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-asi-navy';
 }
 
 function StatusLoadingIndicator() {
   return (
     <div
-      className="mt-6 flex items-center gap-3 rounded-2xl border border-slate-800 bg-slate-950/50 px-4 py-3"
+      className="mt-6 flex items-center gap-3 border border-asi-border bg-asi-ivory px-4 py-3"
       data-location-report-loading="true"
+      role="status"
     >
       <span
-        className="inline-block h-5 w-5 animate-spin rounded-full border-2 border-slate-600 border-t-amber-300"
+        className="inline-block h-5 w-5 animate-spin rounded-full border-2 border-asi-border border-t-asi-gold"
         aria-hidden="true"
       />
-      <p className="text-sm text-slate-300">Обновляем статус формирования отчёта…</p>
+      <p className="text-sm text-asi-navy/70">Обновляем статус формирования отчёта…</p>
     </div>
   );
 }
@@ -168,9 +169,10 @@ export function StatusProgressClient({ requestId, initialArtifact = null }: Stat
   if (requestNotFound) {
     return (
       <div
-        className="mt-8 rounded-2xl border border-amber-500/30 bg-amber-500/10 px-5 py-4 text-sm leading-relaxed text-amber-100"
+        className="mt-8 border border-asi-border bg-asi-ivory px-5 py-4 text-sm leading-relaxed text-asi-navy/75"
         data-location-report-request-id={requestId}
         data-location-report-invalid-request="true"
+        role="status"
       >
         {LOCATION_REPORT_STATUS_INVALID_REQUEST_MESSAGE}
       </div>
@@ -180,9 +182,10 @@ export function StatusProgressClient({ requestId, initialArtifact = null }: Stat
   if (status === REPORT_ARTIFACT_STATUS.failed) {
     return (
       <div
-        className="mt-8 rounded-2xl border border-rose-500/30 bg-rose-500/10 px-5 py-4 text-sm leading-relaxed text-rose-100"
+        className="mt-8 border border-asi-border bg-asi-ivory px-5 py-4 text-sm leading-relaxed text-asi-navy/75"
         data-location-report-request-id={requestId}
         data-location-report-stage={status}
+        role="alert"
       >
         Не удалось сформировать отчёт. Мы проверим заказ и вернёмся с решением.
       </div>
@@ -192,22 +195,29 @@ export function StatusProgressClient({ requestId, initialArtifact = null }: Stat
   return (
     <>
       <section
-        className="mt-8 rounded-2xl border border-slate-800 bg-slate-950/50 p-5"
+        className="mt-8 border border-asi-border bg-asi-ivory p-5"
         data-location-report-request-id={requestId}
         data-location-report-poll-path={pollPath}
         data-location-report-stage={status}
       >
-        <p className="text-[11px] uppercase tracking-[0.18em] text-slate-500">Текущий этап</p>
-        <h2 className="mt-2 text-xl font-semibold text-white sm:text-2xl">{currentStageCopy.label}</h2>
-        <p className="mt-2 text-sm leading-relaxed text-slate-300 sm:text-base">{currentStageCopy.detail}</p>
+        <p className="text-[10px] font-sans font-semibold uppercase tracking-[0.18em] text-asi-gold-text">
+          Текущий этап
+        </p>
+        <h2 className="mt-2 font-serif text-xl tracking-tight text-asi-navy sm:text-2xl">
+          {currentStageCopy.label}
+        </h2>
+        <p className="mt-2 text-sm leading-relaxed text-asi-navy/70 sm:text-base">
+          {currentStageCopy.detail}
+        </p>
         {isLoading ? <StatusLoadingIndicator /> : null}
         {!isLoading ? (
-          <p className="mt-4 text-sm text-slate-400">Статус обновляется автоматически.</p>
+          <p className="mt-4 text-sm text-asi-navy/50">Статус обновляется автоматически.</p>
         ) : null}
         {pollError ? (
           <p
-            className="mt-4 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm leading-relaxed text-amber-100"
+            className="mt-4 border border-asi-border bg-asi-paper px-4 py-3 text-sm leading-relaxed text-asi-navy/75"
             data-location-report-poll-error="true"
+            role="status"
           >
             {pollError}
           </p>
@@ -224,15 +234,15 @@ export function StatusProgressClient({ requestId, initialArtifact = null }: Stat
             <div
               key={item}
               role="listitem"
-              className="flex flex-col gap-4 rounded-2xl border border-slate-800/80 bg-slate-950/40 p-4 sm:flex-row sm:items-start sm:justify-between"
+              className="flex flex-col gap-4 border border-asi-border bg-asi-ivory p-4 sm:flex-row sm:items-start sm:justify-between"
               data-location-report-step={item}
               data-location-report-step-state={state}
             >
               <div className="min-w-0 flex-1 space-y-2">
-                <p className="text-sm font-semibold text-slate-100 sm:text-base">{copy.label}</p>
-                <p className="text-sm leading-relaxed text-slate-400">{copy.detail}</p>
+                <p className="text-sm font-semibold text-asi-navy sm:text-base">{copy.label}</p>
+                <p className="text-sm leading-relaxed text-asi-navy/60">{copy.detail}</p>
               </div>
-              <span className={`shrink-0 rounded-full px-3 py-1 text-xs font-semibold ${badgeClassName(state)}`}>
+              <span className={`shrink-0 rounded-sm px-3 py-1 text-xs font-semibold ${badgeClassName(state)}`}>
                 {isDone ? 'готово' : isActive ? 'в процессе' : 'ожидает'}
               </span>
             </div>
@@ -241,13 +251,16 @@ export function StatusProgressClient({ requestId, initialArtifact = null }: Stat
       </div>
 
       {reportSections.length > 0 ? (
-        <div className="mt-8 rounded-2xl border border-slate-800 bg-slate-950/30 p-5">
-          <p className="text-sm font-semibold text-slate-100">Разделы отчёта</p>
+        <div className="mt-8 border border-asi-border bg-asi-ivory p-5">
+          <p className="text-sm font-semibold text-asi-navy">Разделы отчёта</p>
           <ul className="mt-3 space-y-3">
             {reportSections.map(section => (
-              <li key={section.id} className="flex flex-col gap-1 text-sm sm:flex-row sm:items-center sm:justify-between">
-                <span className="font-medium text-slate-200">{section.title}</span>
-                <span className="text-slate-400">{section.summary}</span>
+              <li
+                key={section.id}
+                className="flex flex-col gap-1 text-sm sm:flex-row sm:items-center sm:justify-between"
+              >
+                <span className="font-medium text-asi-navy">{section.title}</span>
+                <span className="text-asi-navy/60">{section.summary}</span>
               </li>
             ))}
           </ul>

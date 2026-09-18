@@ -1,3 +1,4 @@
+import type { Metadata } from 'next';
 import {
   BrandEyebrow,
   BrandGoldRule,
@@ -15,6 +16,12 @@ import {
   COMMUNICATION_PILOT_PRICE_RUB,
   COMMUNICATION_PILOT_SERVICE_TITLE,
 } from '@/lib/payments/yookassa-env';
+
+export const metadata: Metadata = {
+  title: 'Как работает пилот ASI — AI-ответы гостям',
+  description:
+    'Как устроен закрытый пилот AI-ответов гостям: что входит сейчас, что на дорожной карте платформы, и как подать заявку.',
+};
 
 const PILOT_HREF = '/ru/early-access';
 const HOME_HREF = '/ru';

@@ -11,7 +11,9 @@ describe('/ru/location-report/status', () => {
 
     expect(html).toContain('data-location-report-invalid-request="true"');
     expect(html).toContain('Не удалось найти заявку на отчёт');
-    expect(html).toContain('Вернуться к форме');
+    expect(html).toContain('К проверке адреса');
+    expect(html).toContain('location-analysis');
+    expect(html).not.toContain('Вернуться к форме');
     expect(html).not.toContain('data-location-report-stage=');
     expect(html).not.toContain('data-location-report-poll-path');
     expect(html).not.toContain('в процессе');

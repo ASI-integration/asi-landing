@@ -28,9 +28,9 @@ async function getIsRuHost(): Promise<boolean> {
 export async function generateMetadata(): Promise<Metadata> {
   if (await getIsRuHost()) {
     return {
-      title: 'ASI — Полная операционная автоматизация',
+      title: 'ASI — AI-ответы гостям для посуточной аренды',
       description:
-        'Автоматизация операций для недвижимости и гостеприимства: коммуникации, объявления, цены, брони и исполнение — замена операционного слоя, а не очередной инструмент.',
+        'Закрытый пилот AI-коммуникаций с гостями: 1 объект, 1 месяц, 1000 ₽. Оценка локации — отдельный инструмент.',
       alternates: {
         canonical: `${RU_PUBLIC_ORIGIN}/`,
         languages: {

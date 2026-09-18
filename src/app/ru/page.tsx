@@ -1,3 +1,4 @@
+import type { Metadata } from 'next';
 import Link from 'next/link';
 import {
   BrandEyebrow,
@@ -16,6 +17,12 @@ import {
   COMMUNICATION_PILOT_PRICE_RUB,
   COMMUNICATION_PILOT_SERVICE_TITLE,
 } from '@/lib/payments/yookassa-env';
+
+export const metadata: Metadata = {
+  title: 'ASI — AI-ответы гостям для посуточной аренды',
+  description:
+    'Закрытый пилот AI-коммуникаций с гостями: 1 объект, 1 месяц, 1000 ₽. Оценка локации — отдельный инструмент.',
+};
 
 const PILOT_HREF = '/ru/early-access';
 const CONNECT_HREF = '/connect';
