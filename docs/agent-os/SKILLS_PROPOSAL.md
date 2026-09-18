@@ -2,11 +2,12 @@
 
 ## Статус
 
-Три repository-specific Skills установлены в `.agents/skills/`:
+Четыре repository-specific Skills установлены в `.agents/skills/`:
 
 - `asi-task-execution` — intake → focused validation → draft PR;
 - `asi-staging-acceptance` — isolated staging contract preflight/result; no live staging mutation;
-- `asi-production-rollout` — read-only production preflight; no dispatch/mutation.
+- `asi-production-rollout` — read-only production preflight; no dispatch/mutation;
+- `asi-website-editor` — visitor-first RU public-copy review; owner-gated apply; no merge/deploy.
 
 Machine validation:
 
@@ -120,6 +121,42 @@ description: Prepare owner-gated ASI production rollout, migration, reconciliati
 1. Без approval Skill выдаёт готовый preflight и `AWAITING_OWNER`, но не dispatch.
 2. SHA mismatch прекращает rollout.
 3. Разрешение на deploy не разрешает migration или data mutation.
+
+## 4. `asi-website-editor`
+
+### Trigger description
+
+```yaml
+---
+name: asi-website-editor
+description: Review ASI-integration/asi-landing public RU site copy as a first-time visitor, ground findings in approved product/pricing contracts, and (only with an explicit owner-approved public-copy gate) apply the smallest source edit, verify it with the deterministic Website Auditor, and open a draft PR. Use for RU acquisition-page editorial clarity work; never merges or deploys.
+---
+```
+
+### Ответственность
+
+- прочитать публичный маршрут как посетитель без внутреннего контекста ASI, прежде чем читать implementation source;
+- обосновать findings через `docs/agent-os/PRODUCT_CONTRACT.md` и `RU_PUBLIC_SITE_CONTRACT`;
+- подготовить edit plan без диктовки точной формулировки owner'у;
+- запросить owner-gate через `scripts/preflight.mjs` и остановиться на `AWAITING_OWNER`, если scope/action не совпадает;
+- в authorized apply внести минимальное изменение только в allowlisted source;
+- проверить изменение deterministic Website Auditor'ом, focused tests, lint и typecheck;
+- stage exact paths, commit, push и создать draft PR;
+- никогда не merge и не deploy.
+
+### Предлагаемые resources
+
+- `references/editorial-contract.md` — first-time-visitor критерии и claim-safety grounding;
+- `references/ru-public-site-map.md` — RU route-to-source mapping и auditor entrypoint;
+- `references/result-contract.md` — machine-readable поля review/apply результата;
+- `scripts/preflight.mjs` — read-only market/mode/route/owner-gate resolution.
+
+### Forward tests
+
+1. `review` на `/ru` возвращает `READY` и `applyAllowed: false` без owner-gate.
+2. `apply` без gate возвращает `AWAITING_OWNER` с предложенным scope, а не готовую формулировку.
+3. Gate с другим action/target (например, production-разрешение) блокирует apply — approval атомарен.
+4. Валидный совпадающий gate переводит preflight в `READY_TO_APPLY`, но не выполняет edit, commit или merge сам по себе.
 
 ## Порядок реализации во второй фазе
 

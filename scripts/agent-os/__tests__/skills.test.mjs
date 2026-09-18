@@ -9,6 +9,7 @@ import { buildStagingPreflight } from '../../../.agents/skills/asi-staging-accep
 import { buildStagingResult } from '../../../.agents/skills/asi-staging-acceptance/scripts/staging-result.mjs';
 import { verifyReleaseIdentity } from '../../../.agents/skills/asi-production-rollout/scripts/verify-release-identity.mjs';
 import { buildProductionRolloutReport } from '../../../.agents/skills/asi-production-rollout/scripts/red-approval-check.mjs';
+import { buildWebsiteEditorPreflight } from '../../../.agents/skills/asi-website-editor/scripts/preflight.mjs';
 import { readJson } from '../contracts.mjs';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
@@ -17,7 +18,7 @@ const fixtures = path.join(repoRoot, 'docs/agent-os/fixtures');
 test('required project skills are installed and structurally valid', () => {
   const result = validateSkillStructure(repoRoot);
   assert.equal(result.ok, true);
-  assert.equal(result.skillCount, 3);
+  assert.equal(result.skillCount, 4);
   assert.deepEqual(result.skills.map((skill) => skill.id).sort(), REQUIRED_SKILLS.map((skill) => skill.id).sort());
 });
 
@@ -143,4 +144,93 @@ test('valid deploy gate still remains preflight-only with dispatch disabled', ()
   assert.equal(report.dispatchAllowed, false);
   assert.equal(report.mutationAllowed, false);
   assert.equal(report.ownerGateStatus, 'approved');
+});
+
+test('website editor skill defaults to read-only review with apply disabled', () => {
+  const preflight = buildWebsiteEditorPreflight({ market: 'ru', mode: 'review', route: '/ru', repoRoot });
+  assert.equal(preflight.status, 'READY');
+  assert.equal(preflight.applyAllowed, false);
+  assert.equal(preflight.source, 'src/app/ru/page.tsx');
+});
+
+test('website editor skill blocks unsupported market and unmapped route', () => {
+  const badMarket = buildWebsiteEditorPreflight({ market: 'en', mode: 'review', route: '/ru', repoRoot });
+  assert.equal(badMarket.status, 'BLOCKED');
+  assert.ok(badMarket.blockers.some((item) => /market/i.test(item)));
+
+  const badRoute = buildWebsiteEditorPreflight({ market: 'ru', mode: 'review', route: '/ru/nowhere', repoRoot });
+  assert.equal(badRoute.status, 'BLOCKED');
+  assert.ok(badRoute.blockers.some((item) => /route/i.test(item)));
+});
+
+test('website editor skill returns AWAITING_OWNER for apply without a gate and never dictates wording', () => {
+  const preflight = buildWebsiteEditorPreflight({ market: 'ru', mode: 'apply', route: '/ru', repoRoot });
+  assert.equal(preflight.status, 'AWAITING_OWNER');
+  assert.equal(preflight.applyAllowed, false);
+  assert.equal(preflight.proposedScope.action, 'approved_ux_or_public_copy_change');
+  assert.equal(preflight.proposedScope.target, 'ru-public-site:/ru');
+  assert.equal('replacementText' in preflight, false);
+});
+
+test('website editor apply is blocked by a gate approved for a different action/target', () => {
+  const expected = readJson(path.join(fixtures, 'website-editor-expected-apply.json'));
+  const mismatchedGate = readJson(path.join(fixtures, 'production-approved-deploy-gate.json'));
+  const preflight = buildWebsiteEditorPreflight({
+    market: 'ru',
+    mode: 'apply',
+    route: '/ru',
+    gate: mismatchedGate,
+    expected,
+    repoRoot,
+  });
+  assert.equal(preflight.status, 'BLOCKED');
+  assert.equal(preflight.applyAllowed, false);
+});
+
+test('website editor apply is READY_TO_APPLY only with a matching approved owner gate, and still never merges/deploys', () => {
+  const expected = readJson(path.join(fixtures, 'website-editor-expected-apply.json'));
+  const gate = readJson(path.join(fixtures, 'website-editor-approved-apply-gate.json'));
+  const preflight = buildWebsiteEditorPreflight({
+    market: 'ru',
+    mode: 'apply',
+    route: '/ru',
+    gate,
+    expected,
+    repoRoot,
+  });
+  assert.equal(preflight.status, 'READY_TO_APPLY');
+  assert.equal(preflight.applyAllowed, true);
+  assert.equal('merged' in preflight, false);
+  assert.equal('deployed' in preflight, false);
+});
+
+test('website editor skill and its fixtures never encode the live homepage hero text or its answer', () => {
+  const homepageSource = fs.readFileSync(path.join(repoRoot, 'src/app/ru/page.tsx'), 'utf8');
+  const heroMatch = homepageSource.match(/<BrandHeadline\s+as="h1"[^>]*>\s*([^<]+?)\s*<\/BrandHeadline>/);
+  assert.ok(heroMatch, 'Expected to locate the current RU homepage h1 to run the blind-acceptance guard');
+  const currentHeroText = heroMatch[1].trim();
+  assert.ok(currentHeroText.length > 5);
+
+  const skillRoot = path.join(repoRoot, '.agents/skills/asi-website-editor');
+  const fixturePaths = [
+    path.join(fixtures, 'website-editor-expected-apply.json'),
+    path.join(fixtures, 'website-editor-approved-apply-gate.json'),
+  ];
+
+  function collectFiles(dir) {
+    return fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+      const full = path.join(dir, entry.name);
+      return entry.isDirectory() ? collectFiles(full) : [full];
+    });
+  }
+
+  const filesToCheck = [...collectFiles(skillRoot), ...fixturePaths];
+  for (const filePath of filesToCheck) {
+    const content = fs.readFileSync(filePath, 'utf8');
+    assert.equal(
+      content.includes(currentHeroText),
+      false,
+      `${path.relative(repoRoot, filePath)} must not encode the current live homepage hero text`,
+    );
+  }
 });

@@ -7,7 +7,7 @@ Task instructions override this file when they are more specific.
 - Product invariants: [PRODUCT_CONTRACT](docs/agent-os/PRODUCT_CONTRACT.md).
 - Autonomy and owner approval rules: [AUTONOMY_POLICY](docs/agent-os/AUTONOMY_POLICY.md).
 - Completion and blocker contracts: [DEFINITION_OF_DONE](docs/agent-os/DEFINITION_OF_DONE.md) and [BLOCKERS](docs/agent-os/BLOCKERS.md).
-- Project Skills: `.agents/skills/asi-task-execution`, `asi-staging-acceptance`, `asi-production-rollout`.
+- Project Skills: `.agents/skills/asi-task-execution`, `asi-staging-acceptance`, `asi-production-rollout`, `asi-website-editor`.
 - These documents supplement this file; the testing budget, protected areas, and deploy rules below remain authoritative.
 
 ## Testing Budget

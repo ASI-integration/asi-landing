@@ -1,0 +1,22 @@
+{
+  "schemaVersion": "asi.agent-os.owner-gate.v1",
+  "taskId": "web-editor-ru-home-v0",
+  "status": "approved",
+  "action": "approved_ux_or_public_copy_change",
+  "target": "ru-public-site:/ru",
+  "identity": {
+    "ref": "src/app/ru/page.tsx"
+  },
+  "allowedSideEffect": "Edit RU homepage copy within the authorized route scope only.",
+  "postActionVerification": ["Run scripts/site-audit against /ru and confirm no new critical/major findings."],
+  "authorization": {
+    "source": "explicit_owner_message",
+    "owner": "Nikolay",
+    "scope": "ru public route /ru copy only",
+    "taskCycle": "web-editor-ru-home-cycle-1"
+  },
+  "typedConfirmation": {
+    "present": true,
+    "countsAsOwnerApproval": false
+  }
+}

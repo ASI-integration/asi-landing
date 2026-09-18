@@ -38,6 +38,17 @@ export const REQUIRED_SKILLS = [
       'scripts/red-approval-check.mjs',
     ],
   },
+  {
+    id: 'asi-website-editor',
+    requiredFiles: [
+      'SKILL.md',
+      'agents/openai.yaml',
+      'references/editorial-contract.md',
+      'references/ru-public-site-map.md',
+      'references/result-contract.md',
+      'scripts/preflight.mjs',
+    ],
+  },
 ];
 
 function invariant(condition, message) {
@@ -84,6 +95,14 @@ export function validateSkillStructure(repoRoot = DEFAULT_REPO_ROOT) {
     }
     if (skill.id === 'asi-staging-acceptance') {
       invariant(/never.*SSH|never mutates|not SSH/i.test(skillMd), `${skill.id} must forbid live staging mutation`);
+    }
+    if (skill.id === 'asi-website-editor') {
+      invariant(/review/i.test(skillMd) && /apply/i.test(skillMd), `${skill.id} must declare review and apply modes`);
+      invariant(/AWAITING_OWNER/.test(skillMd), `${skill.id} must declare an AWAITING_OWNER gate for apply`);
+      invariant(/Public-site-first/i.test(skillMd), `${skill.id} must require a public-site-first review`);
+      invariant(/site-audit/i.test(skillMd), `${skill.id} must use the deterministic site auditor for verification`);
+      invariant(/PRODUCT_CONTRACT/.test(skillMd), `${skill.id} must ground edits in the product contract`);
+      invariant(!/gh pr merge|npm run deploy|vercel deploy|workflow_dispatch/i.test(skillMd), `${skill.id} must not instruct a merge or deploy action`);
     }
 
     findings.push({
