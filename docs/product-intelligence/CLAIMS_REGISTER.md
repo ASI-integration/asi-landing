@@ -1,8 +1,12 @@
-# Claims Register (v1)
+# Claims Register (v2)
 
 Grounding material for `asi-website-editor`. For every claim: status, supporting evidence, scope/population, allowed public wording (in plain Russian, per `AGENTS.md` → Language And Style), and prohibited stronger wording. Deterministic claim-safety rules already exist in `scripts/site-audit/contracts/ru-public-site.mjs` (`UNSUPPORTED_CLAIM_PATTERNS`, `OBSOLETE_JARGON_PATTERNS`) — this register is the editorial layer above that regex floor, not a replacement for it.
 
 Status values: **SAFE_NOW** (may publish as-is) / **QUALIFY** (may publish only with the stated qualifier attached) / **EVIDENCE_NEEDED** (do not publish until the named evidence exists) / **FUTURE_ONLY** (may describe as a direction/roadmap item, never as current) / **REJECT** (do not publish in any form given current evidence).
+
+**This register tracks Public Claim Status only — never Strategic Intent.** `CAPABILITY_INVENTORY.md` v2 separates Maturity, Public Claim Status (here), and Strategic Intent as three independent fields. A capability the owner has confirmed as `NEXT_BUILD` does not earn a better claim status here until its Maturity actually changes — see `ROADMAP_PUBLIC_BOUNDARY.md`'s explicit warning against leaking strategic intent into present-tense or beta copy.
+
+**Absence-of-evidence discipline for market/competitor facts:** where this register or the documents it cites could not confirm whether a competitor has a given feature, integration, or market-availability path, the correct phrasing is "не найдено в проверенных источниках" / "не найден готовый путь интеграции" / "публично не заявляется" / "требует прямой проверки у вендора" — never "не существует" or "не работает," unless a source explicitly states the negative. This applies throughout `POSITIONING_MAP.md` and `PAIN_MAP.md` as well.
 
 ---
 
@@ -161,3 +165,21 @@ Status values: **SAFE_NOW** (may publish as-is) / **QUALIFY** (may publish only 
 - **Status:** EVIDENCE_NEEDED / internal flag, not a publishable claim at all.
 - **Supporting evidence:** `POSITIONING_MAP.md` — at least three distinct brand narratives currently coexist: the RU guest-communication pilot (`src/app/ru/**`), the EN "ASI Intelligence"/"ASI Micro Hotels" positioning (`src/app/page.tsx`), and a `/rental-autopilot` cross-link labeled "Rental Autopilot." These are not obviously the same product to a first-time visitor.
 - **Recommendation:** this is a positioning-hygiene issue for `asi-website-editor` and site owners to resolve deliberately, not a claim to publish either way. Flagged here so it isn't silently perpetuated when RU pages are next edited.
+
+## 19. Reputation / review-recovery tracking
+
+- **Claim:** ASI tracks whether a guest issue was resolved before it became a public review, and classifies review severity.
+- **Status:** QUALIFY.
+- **Supporting evidence:** `CAPABILITY_INVENTORY.md` #24 — a real, tested module (`src/lib/partner-reputation/`), including one real Postgres integration test. This was missed in v1 of this register and is a genuinely stronger existing capability than the v1 inventory reflected.
+- **Scope/population:** analysis only.
+- **Allowed wording:** «ASI фиксирует, была ли проблема гостя решена до появления отзыва, и оценивает серьёзность отзыва.»
+- **Prohibited stronger wording:** any claim that ASI responds to reviews, contacts review platforms, or issues compensation — the module's own migration explicitly disclaims all three.
+
+## 20. Upsell / cross-sell
+
+- **Claim:** ASI detects and/or executes guest upsell requests (extra services, early check-in, etc.).
+- **Status:** QUALIFY for detection; **REJECT** for execution.
+- **Supporting evidence:** `CAPABILITY_INVENTORY.md` #29 — real intent classification (`upsell_request`) exists; no execution/fulfillment exists anywhere.
+- **Important existing violation:** `src/app/features/communication/page.tsx` (EN, international site — not RU, not edited by this task) currently claims ASI "Executes in-chat: upsells, payments, access codes, task dispatch." This is inaccurate against current evidence for three of the four items and should be corrected when that page is next touched.
+- **Allowed wording (RU, if ever surfaced):** «ASI распознаёт, когда вопрос гостя похож на запрос дополнительной услуги» — detection only, never "оформляет" or "продаёт."
+- **Prohibited stronger wording:** any claim that ASI charges for, confirms, or fulfills an upsell.
