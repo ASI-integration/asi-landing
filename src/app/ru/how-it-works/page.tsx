@@ -15,117 +15,74 @@ import { RuPublicNavHeader } from '@/components/ru/RuPublicNavHeader';
 import { COMMUNICATION_PILOT_PRICE_RUB } from '@/lib/payments/yookassa-env';
 
 export const metadata: Metadata = {
-  title: 'Как работает пилот ASI',
+  title: 'Как работает ASI',
   description:
-    'Бесплатное подключение объекта, 14 дней операционного пилота после готовности, итоговый отчёт и опциональное продолжение за 1 000 ₽ за объект в месяц.',
+    'ASI берёт на себя повторяющиеся вопросы гостей по данным объекта. Бесплатное подключение, 14 дней пилота после готовности, 1 000 ₽ за объект в месяц только если решите продолжить.',
 };
 
 const PILOT_HREF = '/ru/early-access';
 const HOME_HREF = '/ru';
 const PRIMARY_CTA_LABEL = 'Подключить объект бесплатно';
 
-const NOW_ITEMS = [
+const EXAMPLE_QUESTIONS = [
+  '«Как подключиться к Wi-Fi?»',
+  '«Где парковаться?»',
+  '«Как попасть в квартиру?»',
+  '«Можно заехать раньше?»',
+  '«Можно выехать позже?»',
+  '«Какие правила действуют в квартире?»',
+] as const;
+
+const PILOT_WATCH_ITEMS = [
+  'какие типовые вопросы система может обрабатывать по данным объекта;',
+  'где информации не хватает;',
+  'в каких ситуациях требуется человек.',
+] as const;
+
+const PRICE_ROWS = [
   {
-    title: 'AI-ответы гостям',
-    desc: 'Типовые вопросы по заселению, Wi-Fi, правилам объекта и быту — в цифровых каналах.',
+    title: 'Подключение и настройка — 0 ₽',
+    body: 'Этот этап не входит в 14 дней пилота.',
   },
   {
-    title: 'Человек на исключениях',
-    desc: 'Нестандартные ситуации уходят владельцу или оператору с контекстом переписки.',
+    title: '14 дней работы на объекте — 0 ₽',
+    body: 'Отсчёт начинается только после полной готовности.',
   },
   {
-    title: 'Пилот после готовности',
-    desc: 'Бесплатное подключение и настройка, затем 14 дней реальной работы на объекте — без оплаты за старт.',
-  },
-  {
-    title: 'Оценка локации (отдельно)',
-    desc: 'Проверка адреса по спросу и окружению — вспомогательный инструмент, не замена пилоту коммуникаций.',
-    separate: true,
+    title: `После пилота — ${COMMUNICATION_PILOT_PRICE_RUB} ₽ за объект в месяц`,
+    body: 'Только если вы увидели пользу и решили продолжить.',
   },
 ] as const;
 
+/** De-emphasized below the conversion story; not part of the main sales narrative. */
 const ROADMAP_ITEMS = [
   {
     title: 'Управление объявлениями и каналами',
-    desc: 'Направление платформы: синхронизация и обновления по площадкам. Не входит в текущий пилот как готовая услуга.',
+    desc: 'Направление продукта. Не входит в текущий пилот как готовая услуга.',
   },
   {
-    title: 'Динамическое ценообразование',
-    desc: 'Направление платформы: автоматическая подстройка тарифов. Сейчас в пилоте не продаётся как отдельный модуль.',
+    title: 'Подсказки по ценам',
+    desc: 'Направление продукта. Сейчас в пилоте не продаётся как отдельный модуль.',
   },
   {
     title: 'Уборки, доступы, расписание',
-    desc: 'Направление платформы: координация операционных задач. Не обещаем как текущую возможность пилота.',
+    desc: 'Направление продукта. Не обещаем как текущую возможность пилота.',
   },
   {
     title: 'Отзывы и репутация',
-    desc: 'Направление платформы. В пилоте фокус на гостевой переписке.',
+    desc: 'Направление продукта. В пилоте фокус на общении с гостями.',
   },
   {
     title: 'Финансовая отчётность',
-    desc: 'Направление платформы: сводки и прогнозы. Не часть текущего операционного пилота.',
+    desc: 'Направление продукта. Не часть текущего пилота.',
   },
   {
     title: 'Мониторинг безопасности',
-    desc: 'Направление платформы. Не заявляем как live-функцию текущего пилота.',
-  },
-] as const;
-
-const FLOW_STEPS = [
-  {
-    n: '01',
-    title: 'Сообщение гостя',
-    body: 'Вопрос о Wi-Fi, заезде, парковке, правилах или выезде.',
-  },
-  {
-    n: '02',
-    title: 'ASI получает контекст',
-    body: 'Ответ строится по данным конкретного объекта.',
-  },
-  {
-    n: '03',
-    title: 'Рутина закрывается',
-    body: 'Типовой сценарий обрабатывается без постоянного участия владельца.',
-  },
-  {
-    n: '04',
-    title: 'Исключение?',
-    body: 'Если запрос выходит за рамки типового — нужен человек.',
-  },
-  {
-    n: '05',
-    title: 'Человек получает кейс',
-    body: 'Оператор видит контекст и принимает решение.',
-  },
-] as const;
-
-const COMMERCIAL_STAGES = [
-  {
-    n: '01',
-    title: 'Бесплатное подключение и настройка — 0 ₽',
-    body: 'До старта пилота. Не расходует 14 дней.',
-  },
-  {
-    n: '02',
-    title: '14 дней операционного пилота — 0 ₽',
-    body: 'Отсчёт только после полной технической готовности.',
-  },
-  {
-    n: '03',
-    title: 'Итоговый отчёт',
-    body: 'Результаты пилота до решения о продолжении.',
-  },
-  {
-    n: '04',
-    title: `После пилота — ${COMMUNICATION_PILOT_PRICE_RUB} ₽ / объект / месяц`,
-    body: 'Только если вы решаете продолжить.',
+    desc: 'Направление продукта. Не заявляем как live-функцию текущего пилота.',
   },
 ] as const;
 
 export default function RuHowItWorksPage() {
-  const nowCore = NOW_ITEMS.filter((item) => !('separate' in item && item.separate));
-  const locationItem = NOW_ITEMS.find((item) => 'separate' in item && item.separate);
-
   return (
     <div className="font-sans bg-asi-ivory text-asi-navy antialiased">
       <RuPublicNavHeader density="landing" />
@@ -142,294 +99,217 @@ export default function RuHowItWorksPage() {
               <p className="mt-2 text-xs font-sans uppercase tracking-[0.22em] text-asi-navy/65">
                 Как работает ASI
               </p>
-              <BrandHeadline as="h1" className="mt-8 text-4xl sm:text-5xl lg:text-[3.5rem]">
-                Рутина движется автоматически.
-                <br />
-                <span className="text-asi-gold">Человек подключается к исключениям.</span>
+              <BrandHeadline as="h1" className="mt-8 text-4xl sm:text-5xl lg:text-[3.25rem]">
+                Управлять посуточными квартирами — не значит весь день сидеть в чатах
               </BrandHeadline>
               <BrandGoldRule className="mt-6 mb-6" />
               <p className="text-lg text-asi-navy/70 max-w-xl leading-relaxed">
-                RU-пилот начинается с бесплатного подключения объекта и 14 дней реальной работы после
-                готовности. Здесь — как устроена модель сегодня и куда идёт платформа.
+                ASI автоматизирует типовую рутину вокруг каждого объекта: берёт на себя однотипные
+                вопросы гостей, опирается на данные конкретного объекта и заданные сценарии и
+                оставляет человеку ситуации, где действительно нужно решение.
               </p>
               <p className="mt-4 text-sm font-sans text-asi-navy/60 tracking-wide leading-relaxed max-w-xl">
-                Подключение — 0&nbsp;₽ · 14 дней после готовности — 0&nbsp;₽ · затем{' '}
-                {COMMUNICATION_PILOT_PRICE_RUB}&nbsp;₽ / объект / месяц при решении продолжить
+                Бесплатное подключение и настройка · 14 дней пилота отсчитываются только после полной
+                готовности · {COMMUNICATION_PILOT_PRICE_RUB}&nbsp;₽ / объект в месяц, если решите
+                продолжить
               </p>
               <div className="mt-9 flex flex-wrap gap-4">
                 <BrandPrimaryCta href={PILOT_HREF}>{PRIMARY_CTA_LABEL}</BrandPrimaryCta>
-                <BrandSecondaryCta href="#current-pilot">Сейчас в пилоте</BrandSecondaryCta>
+                <BrandSecondaryCta href="#market-problem">Почему это важно</BrandSecondaryCta>
               </div>
             </div>
 
             <div className="border border-asi-border bg-asi-paper p-6 sm:p-8">
               <p className="text-[10px] font-sans font-semibold uppercase tracking-[0.18em] text-asi-gold-text">
-                Принцип
+                Коротко
               </p>
               <p className="mt-4 font-serif text-2xl sm:text-3xl text-asi-navy leading-snug">
-                Операции на автопилоте.
+                Система занимается повторяемым.
                 <br />
-                Человек — только для исключений.
+                Человек — решениями.
               </p>
               <BrandGoldRule className="mt-6 mb-6" />
               <p className="text-sm text-asi-navy/65 leading-relaxed">
-                Это направление платформы. Текущий коммерческий шаг — операционный пилот на объекте,
-                а не полная автоматизация бизнеса уже сейчас.
+                Если ответа в данных объекта нет или ситуация требует оценки — автоматический ответ
+                останавливается, и вопрос передаётся человеку.
               </p>
+              <div className="mt-8 flex justify-end">
+                <BrandShiro size={48} />
+              </div>
             </div>
           </div>
         </section>
 
-        {/* ── 2. Operating model ── */}
-        <BrandSection variant="navy">
-          <BrandEyebrow dark>Модель работы</BrandEyebrow>
-          <BrandHeadline className="text-3xl sm:text-5xl max-w-3xl text-asi-ivory">
-            От сообщения гостя до ответа
-            <br />
-            или эскалации человеку
+        {/* ── 2. Market problem ── */}
+        <BrandSection variant="navy" id="market-problem">
+          <BrandEyebrow dark>Проблема рынка</BrandEyebrow>
+          <BrandHeadline className="text-3xl sm:text-5xl max-w-4xl text-asi-ivory">
+            Чем больше объектов в управлении, тем больше людей приходится нанимать
           </BrandHeadline>
           <p className="mt-5 max-w-2xl text-asi-ivory/65 leading-relaxed">
-            Типовые сценарии закрывает ASI по данным объекта. Нестандартные ситуации остаются за
-            человеком — с контекстом переписки.
+            Сегодня рост бизнеса посуточной аренды почти всегда означает рост ручной работы.
           </p>
-          <ol className="mt-12 grid sm:grid-cols-2 lg:grid-cols-5 gap-px bg-asi-ivory/15 border border-asi-ivory/15">
-            {FLOW_STEPS.map((step) => (
-              <li key={step.n} className="bg-asi-navy p-5 sm:p-6">
-                <span className="font-serif text-asi-gold-soft text-2xl">{step.n}</span>
-                <h3 className="mt-4 font-serif text-lg text-asi-ivory leading-snug">{step.title}</h3>
-                <p className="mt-3 text-sm text-asi-ivory/65 leading-relaxed">{step.body}</p>
-              </li>
-            ))}
-          </ol>
+          <p className="mt-4 max-w-2xl text-asi-ivory/65 leading-relaxed">
+            Один новый объект — это не только дополнительная выручка. Это новые бронирования,
+            одинаковые вопросы гостей, заселения, выезды и постоянный поток сообщений.
+          </p>
+          <div className="mt-12 border border-asi-ivory/15 bg-asi-navy p-6 sm:p-8">
+            <p className="font-serif text-xl sm:text-2xl text-asi-ivory leading-snug">
+              Больше квартир → Больше сообщений → Больше администраторов → Больше расходов и ошибок
+            </p>
+          </div>
+          <p className="mt-8 max-w-2xl text-asi-ivory/70 leading-relaxed">
+            Мы создаём другой способ управления: новый объект должен добавлять бизнесу прибыль, а не
+            ещё одного сотрудника, который весь день отвечает на однотипные сообщения.
+          </p>
         </BrandSection>
 
-        {/* ── 3. Current pilot ── */}
-        <BrandSection variant="paper" id="current-pilot">
-          <BrandEyebrow>Сейчас / пилот</BrandEyebrow>
+        {/* ── 3. What ASI does ── */}
+        <BrandSection variant="paper" id="what-asi-does">
+          <BrandEyebrow>Что делает ASI</BrandEyebrow>
           <BrandHeadline className="text-3xl sm:text-5xl max-w-3xl">
-            Что доступно в операционном пилоте
+            ASI берёт на себя повторяющиеся операции
           </BrandHeadline>
           <p className="mt-5 max-w-2xl text-asi-navy/70 leading-relaxed">
-            Фокус — рутинная переписка с гостями. Это не «полная автоматизация объекта на 99%».
+            Система определяет, к какому объекту относится запрос, и использует подтверждённые данные
+            этого объекта.
           </p>
-          <div className="mt-12 grid sm:grid-cols-3 gap-px bg-asi-border border border-asi-border">
-            {nowCore.map((item) => (
-              <div key={item.title} className="bg-asi-ivory p-7 sm:p-8">
-                <h3 className="font-serif text-xl text-asi-navy">{item.title}</h3>
-                <p className="mt-3 text-sm text-asi-navy/65 leading-relaxed">{item.desc}</p>
-              </div>
-            ))}
-          </div>
-          {locationItem ? (
-            <div className="mt-8 border border-asi-border bg-asi-paper p-7 sm:p-8 max-w-2xl">
-              <p className="text-xs font-sans font-semibold uppercase tracking-[0.18em] text-asi-gold-text">
-                Отдельный инструмент
-              </p>
-              <h3 className="mt-3 font-serif text-xl text-asi-navy">{locationItem.title}</h3>
-              <p className="mt-3 text-sm text-asi-navy/65 leading-relaxed">{locationItem.desc}</p>
-              <p className="mt-4 text-sm text-asi-navy/55">
-                Не входит в операционный пилот коммуникаций.
-              </p>
-            </div>
-          ) : null}
-        </BrandSection>
-
-        {/* ── 4. Commercial chronology ── */}
-        <BrandSection variant="ivory" id="pilot-path">
-          <BrandEyebrow>Коммерческая модель</BrandEyebrow>
-          <BrandHeadline className="text-3xl sm:text-5xl max-w-3xl">
-            Пилот бесплатный. Оплата — только после решения продолжить.
-          </BrandHeadline>
-          <ol className="mt-12 grid sm:grid-cols-2 lg:grid-cols-4 gap-0 border border-asi-border divide-y sm:divide-y-0 sm:divide-x divide-asi-border">
-            {COMMERCIAL_STAGES.map((step) => (
-              <li key={step.n} className="bg-asi-paper p-6 sm:p-7">
-                <span className="font-serif text-asi-gold text-2xl">{step.n}</span>
-                <h3 className="mt-4 font-serif text-lg text-asi-navy leading-snug">{step.title}</h3>
-                <p className="mt-3 text-sm text-asi-navy/65 leading-relaxed">{step.body}</p>
-              </li>
-            ))}
-          </ol>
-        </BrandSection>
-
-        {/* ── 5. Real-world examples ── */}
-        <BrandSection variant="paper">
-          <BrandEyebrow>Пример</BrandEyebrow>
-          <BrandHeadline className="text-3xl sm:text-4xl max-w-3xl">
-            Как это выглядит в реальном обращении
-          </BrandHeadline>
-          <div className="mt-12 grid lg:grid-cols-2 gap-8 lg:gap-12">
-            <article className="border border-asi-border bg-asi-ivory p-7 sm:p-8">
-              <p className="font-serif text-asi-gold text-2xl">23:07</p>
-              <p className="mt-2 text-xs font-sans font-semibold uppercase tracking-[0.16em] text-asi-gold-text">
-                Типовой сценарий
-              </p>
-              <div className="mt-6 space-y-5">
-                <div>
-                  <p className="text-[10px] font-sans font-semibold uppercase tracking-[0.16em] text-asi-navy/45">
-                    Гость
-                  </p>
-                  <p className="mt-2 font-serif text-xl text-asi-navy leading-snug">
-                    «Не могу найти пароль от Wi-Fi»
-                  </p>
-                </div>
-                <div className="h-px w-10 bg-asi-gold" aria-hidden />
-                <div>
-                  <p className="text-[10px] font-sans font-semibold uppercase tracking-[0.16em] text-asi-navy/45">
-                    ASI
-                  </p>
-                  <p className="mt-2 text-sm text-asi-navy/70 leading-relaxed">
-                    Отвечает по данным объекта: сеть, пароль, подсказки по подключению — без
-                    ожидания владельца ночью.
-                  </p>
-                </div>
-              </div>
-            </article>
-
-            <article className="border border-asi-border bg-asi-navy p-7 sm:p-8 text-asi-ivory">
-              <p className="font-serif text-asi-gold-soft text-2xl">Исключение</p>
-              <p className="mt-2 text-xs font-sans font-semibold uppercase tracking-[0.16em] text-asi-gold-soft">
-                Нужна оценка человека
-              </p>
-              <div className="mt-6 space-y-5">
-                <div>
-                  <p className="text-[10px] font-sans font-semibold uppercase tracking-[0.16em] text-asi-ivory/45">
-                    Гость
-                  </p>
-                  <p className="mt-2 font-serif text-xl text-asi-ivory leading-snug">
-                    Сообщает о нетиповой ситуации, где нужен разбор и решение.
-                  </p>
-                </div>
-                <div className="h-px w-10 bg-asi-gold-soft" aria-hidden />
-                <div>
-                  <p className="text-[10px] font-sans font-semibold uppercase tracking-[0.16em] text-asi-ivory/45">
-                    Человек подключается
-                  </p>
-                  <p className="mt-2 text-sm text-asi-ivory/70 leading-relaxed">
-                    Владелец или оператор получает кейс с контекстом переписки. Решение остаётся за
-                    человеком.
-                  </p>
-                </div>
-              </div>
-            </article>
-          </div>
-        </BrandSection>
-
-        {/* ── 6. Current vs future ── */}
-        <BrandSection variant="ivory">
-          <BrandEyebrow>Сейчас и дальше</BrandEyebrow>
-          <BrandHeadline className="text-3xl sm:text-5xl max-w-3xl">
-            Сначала коммуникации.
-            <br />
-            Затем операционный слой.
-          </BrandHeadline>
-          <p className="mt-5 max-w-2xl text-asi-navy/70 leading-relaxed">
-            Ниже — явное разделение: что входит в текущий пилот, а что остаётся направлением
-            платформы без сроков и без обещания «уже сейчас».
-          </p>
-
-          <div className="mt-12 grid lg:grid-cols-2 gap-10 lg:gap-16">
-            <div>
-              <p className="text-xs font-sans font-semibold uppercase tracking-[0.18em] text-asi-gold-text">
-                Сейчас
-              </p>
-              <h3 className="mt-3 font-serif text-2xl text-asi-navy">Гостевые коммуникации</h3>
-              <ul className="mt-6 divide-y divide-asi-border border-y border-asi-border">
-                <li className="py-4 text-sm text-asi-navy/75">AI-ответы на типовые вопросы гостей</li>
-                <li className="py-4 text-sm text-asi-navy/75">Эскалация исключений человеку</li>
-                <li className="py-4 text-sm text-asi-navy/75">Знание конкретного объекта</li>
-                <li className="py-4 text-sm text-asi-navy/75">
-                  Подключение и 14 дней пилота — 0&nbsp;₽; продолжение —{' '}
-                  {COMMUNICATION_PILOT_PRICE_RUB}&nbsp;₽ / объект / месяц
-                </li>
-              </ul>
-            </div>
-            <div>
-              <p className="text-xs font-sans font-semibold uppercase tracking-[0.18em] text-asi-gold-text">
-                Дальше
-              </p>
-              <h3 className="mt-3 font-serif text-2xl text-asi-navy">Операционная платформа ASI</h3>
-              <p className="mt-3 text-sm text-asi-navy/65 leading-relaxed">
-                Те же принципы — рутина системе, человек на исключениях — для более широкого
-                контура объекта. Это направление, а не состав текущего пилота.
-              </p>
-            </div>
-          </div>
-        </BrandSection>
-
-        {/* ── 7. Roadmap ── */}
-        <BrandSection variant="navy" id="roadmap">
-          <BrandEyebrow dark>Дорожная карта платформы</BrandEyebrow>
-          <BrandHeadline className="text-3xl sm:text-5xl max-w-3xl text-asi-ivory">
-            Куда развивается ASI
-          </BrandHeadline>
-          <p className="mt-5 max-w-2xl text-asi-ivory/65 leading-relaxed">
-            Направление продукта. Эти пункты не продаются как готовые модули текущего пилота и не
-            имеют сроков в публичном обещании.
-          </p>
-          <ul className="mt-12 grid sm:grid-cols-2 lg:grid-cols-3 gap-px bg-asi-ivory/15 border border-asi-ivory/15">
-            {ROADMAP_ITEMS.map((item) => (
-              <li key={item.title} className="bg-asi-navy p-6 sm:p-7">
-                <p className="text-[10px] font-sans font-semibold uppercase tracking-[0.16em] text-asi-gold-soft">
-                  Направление платформы
-                </p>
-                <h3 className="mt-3 font-serif text-lg text-asi-ivory">{item.title}</h3>
-                <p className="mt-3 text-sm text-asi-ivory/65 leading-relaxed">{item.desc}</p>
+          <ul className="mt-10 grid sm:grid-cols-2 gap-px bg-asi-border border border-asi-border">
+            {EXAMPLE_QUESTIONS.map((q) => (
+              <li key={q} className="bg-asi-ivory p-5 sm:p-6 font-serif text-lg text-asi-navy leading-snug">
+                {q}
               </li>
             ))}
           </ul>
+          <div className="mt-10 max-w-2xl space-y-4 text-asi-navy/70 leading-relaxed">
+            <p>Если ответ есть в подтверждённых данных объекта — ASI использует эти данные.</p>
+            <p>
+              Если информации недостаточно или ситуация требует решения человека — автоматический
+              ответ останавливается, а ситуация передаётся на проверку человеку.
+            </p>
+          </div>
+          <p className="mt-8 font-serif text-2xl sm:text-3xl text-asi-navy leading-snug max-w-xl">
+            Система занимается повторяемым. Человек — решениями.
+          </p>
         </BrandSection>
 
-        {/* ── 8. Bigger idea ── */}
-        <BrandSection variant="paper">
-          <BrandEyebrow>Направление</BrandEyebrow>
-          <BrandHeadline className="text-3xl sm:text-4xl max-w-3xl">
-            Операционный слой для физического бизнеса
+        {/* ── 4. Not a chatbot ── */}
+        <BrandSection variant="ivory">
+          <BrandEyebrow>Отличие</BrandEyebrow>
+          <BrandHeadline className="text-3xl sm:text-5xl max-w-3xl">
+            ASI — это не ещё один чат-бот
           </BrandHeadline>
           <BrandGoldRule className="mt-6 mb-6" />
-          <div className="grid lg:grid-cols-2 gap-10 lg:gap-16 max-w-5xl">
-            <div>
-              <p className="text-xs font-sans font-semibold uppercase tracking-[0.18em] text-asi-gold-text">
-                Сегодня
-              </p>
-              <p className="mt-3 font-serif text-xl text-asi-navy leading-snug">
-                Гостевые коммуникации — первый операционный слой.
-              </p>
-              <p className="mt-3 text-sm text-asi-navy/65 leading-relaxed">
-                Операционный пилот проверяет модель на объекте: типовые вопросы системе, решения —
-                человеку.
-              </p>
-            </div>
-            <div>
-              <p className="text-xs font-sans font-semibold uppercase tracking-[0.18em] text-asi-gold-text">
-                Платформа
-              </p>
-              <p className="mt-3 font-serif text-xl text-asi-navy leading-snug">
-                Больше рутинных доменов — в ту же модель исключений.
-              </p>
-              <p className="mt-3 text-sm text-asi-navy/65 leading-relaxed">
-                Каналы, цены, уборки, доступы и отчётность — направление. Не обещание текущего RU
-                пилота.
-              </p>
-            </div>
+          <div className="max-w-2xl space-y-4 text-asi-navy/70 leading-relaxed">
+            <p>Обычный чат-бот в первую очередь пытается ответить на входящее сообщение.</p>
+            <p>
+              ASI строится вокруг конкретного объекта: его данных, бронирования, обращения гостя и
+              заданных сценариев работы.
+            </p>
+            <p>
+              Наша задача — не просто поддержать беседу, а сократить количество ситуаций, которые
+              вообще требуют ручного контроля сотрудника.
+            </p>
           </div>
         </BrandSection>
 
-        {/* ── 9. Closing conversion ── */}
+        {/* ── 5. Free setup ── */}
+        <BrandSection variant="paper" id="free-setup">
+          <BrandEyebrow>Подключение</BrandEyebrow>
+          <BrandHeadline className="text-3xl sm:text-5xl max-w-3xl">
+            Сначала мы бесплатно настраиваем ваш объект
+          </BrandHeadline>
+          <p className="mt-5 max-w-2xl text-asi-navy/70 leading-relaxed">
+            Вы передаёте основные данные: адрес, правила, инструкции по заселению, Wi-Fi и другую
+            информацию, необходимую для общения с гостями.
+          </p>
+          <p className="mt-4 max-w-2xl text-asi-navy/70 leading-relaxed">
+            Мы заносим данные в систему, проверяем основные сценарии и готовность объекта к пилоту.
+          </p>
+          <div className="mt-10 border border-asi-border bg-asi-ivory p-6 sm:p-8 max-w-2xl">
+            <p className="text-xs font-sans font-semibold uppercase tracking-[0.18em] text-asi-gold-text">
+              Важно
+            </p>
+            <p className="mt-3 font-serif text-xl sm:text-2xl text-asi-navy leading-snug">
+              Этот этап не входит в 14 дней пилота.
+            </p>
+            <p className="mt-3 text-sm text-asi-navy/65 leading-relaxed">
+              Отсчёт начинается только после того, как объект готов к реальной работе.
+            </p>
+          </div>
+        </BrandSection>
+
+        {/* ── 6. Real pilot ── */}
+        <BrandSection variant="navy" id="real-pilot">
+          <BrandEyebrow dark>Пилот</BrandEyebrow>
+          <BrandHeadline className="text-3xl sm:text-5xl max-w-3xl text-asi-ivory">
+            Затем ASI работает на вашем реальном объекте 14 дней
+          </BrandHeadline>
+          <p className="mt-5 max-w-2xl text-asi-ivory/65 leading-relaxed">
+            Не на демо и не на выдуманном примере — на реальном объекте и с реальными обращениями.
+          </p>
+          <p className="mt-6 text-asi-ivory/70">В течение пилота мы смотрим:</p>
+          <ul className="mt-4 max-w-2xl space-y-3 text-asi-ivory/65 leading-relaxed">
+            {PILOT_WATCH_ITEMS.map((item) => (
+              <li key={item} className="border-t border-asi-ivory/15 pt-3">
+                {item}
+              </li>
+            ))}
+          </ul>
+          <p className="mt-8 max-w-2xl text-asi-ivory/70 leading-relaxed">
+            Нестандартные ситуации остаются под контролем владельца или оператора.
+          </p>
+        </BrandSection>
+
+        {/* ── 7. Result ── */}
+        <BrandSection variant="ivory" id="pilot-result">
+          <BrandEyebrow>Итог</BrandEyebrow>
+          <BrandHeadline className="text-3xl sm:text-5xl max-w-3xl">
+            По итогам — результат, а не обещания
+          </BrandHeadline>
+          <BrandGoldRule className="mt-6 mb-6" />
+          <div className="max-w-2xl space-y-4 text-asi-navy/70 leading-relaxed">
+            <p>После пилота вы получаете итоговый разбор работы ASI на объекте.</p>
+            <p>
+              Мы показываем, какие типовые сценарии проходили через систему, где требовалось участие
+              человека и какие инструкции стоит добавить или уточнить, чтобы сократить ручную работу
+              дальше.
+            </p>
+            <p>После этого вы сами решаете, продолжать или нет.</p>
+          </div>
+        </BrandSection>
+
+        {/* ── 8. Price ── */}
+        <BrandSection variant="paper" id="pilot-offer">
+          <BrandEyebrow>Условия</BrandEyebrow>
+          <BrandHeadline className="text-3xl sm:text-5xl max-w-3xl">Прозрачные условия</BrandHeadline>
+          <ul className="mt-12 max-w-2xl space-y-0 border border-asi-border divide-y divide-asi-border">
+            {PRICE_ROWS.map((row) => (
+              <li key={row.title} className="bg-asi-ivory p-6 sm:p-7">
+                <h3 className="font-serif text-xl text-asi-navy leading-snug">{row.title}</h3>
+                <p className="mt-2 text-sm text-asi-navy/65 leading-relaxed">{row.body}</p>
+              </li>
+            ))}
+          </ul>
+          <p className="mt-8 max-w-xl text-asi-navy/70 leading-relaxed">
+            Только если вы увидели пользу и решили продолжить.
+            <br />
+            Никакого автоматического перехода на оплату после пилота.
+          </p>
+        </BrandSection>
+
+        {/* ── 9. Final CTA ── */}
         <BrandSection variant="ivory">
           <div className="grid lg:grid-cols-[1.2fr,0.8fr] gap-10 lg:gap-16 items-center">
             <div>
               <BrandEyebrow>Следующий шаг</BrandEyebrow>
               <BrandHeadline className="text-3xl sm:text-5xl max-w-2xl">
-                Начните с бесплатного подключения объекта.
+                Хотите посмотреть, как это сработает на ваших объектах?
               </BrandHeadline>
               <BrandGoldRule className="mt-6 mb-6" />
               <p className="text-asi-navy/70 leading-relaxed max-w-xl">
-                Оставьте заявку. Настройка и 14 дней пилота — без оплаты. Решение о продолжении —
-                после отчёта.
-              </p>
-              <p className="mt-4 text-sm font-sans text-asi-navy/60 tracking-wide leading-relaxed">
-                После пилота — {COMMUNICATION_PILOT_PRICE_RUB}&nbsp;₽ / объект / месяц при решении
-                продолжить
+                Мы бесплатно подготовим данные объекта и систему к работе. После полной готовности
+                начнутся 14 дней пилота на реальных обращениях.
               </p>
               <div className="mt-8 flex flex-wrap gap-4">
                 <BrandPrimaryCta href={PILOT_HREF}>{PRIMARY_CTA_LABEL}</BrandPrimaryCta>
@@ -454,6 +334,25 @@ export default function RuHowItWorksPage() {
               </div>
             </div>
           </div>
+        </BrandSection>
+
+        {/* ── De-emphasized roadmap (below conversion story) ── */}
+        <BrandSection variant="navy" id="roadmap">
+          <BrandEyebrow dark>Дополнительно</BrandEyebrow>
+          <BrandHeadline className="text-2xl sm:text-3xl max-w-3xl text-asi-ivory/90">
+            Направления продукта вне текущего пилота
+          </BrandHeadline>
+          <p className="mt-4 max-w-2xl text-asi-ivory/50 text-sm leading-relaxed">
+            Ниже — ориентиры развития. Они не входят в текущий пилот и не имеют публичных сроков.
+          </p>
+          <ul className="mt-10 grid sm:grid-cols-2 lg:grid-cols-3 gap-px bg-asi-ivory/10 border border-asi-ivory/10 opacity-90">
+            {ROADMAP_ITEMS.map((item) => (
+              <li key={item.title} className="bg-asi-navy p-5 sm:p-6">
+                <h3 className="font-serif text-base text-asi-ivory/85">{item.title}</h3>
+                <p className="mt-2 text-xs text-asi-ivory/50 leading-relaxed">{item.desc}</p>
+              </li>
+            ))}
+          </ul>
         </BrandSection>
       </main>
 

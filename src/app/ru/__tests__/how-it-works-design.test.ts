@@ -20,7 +20,7 @@ const LEGACY_PILOT_PRICE_PATTERNS = [
   `${COMMUNICATION_PILOT_PRICE_RUB}&nbsp;₽ · 1 объект · 1 месяц`,
 ] as const;
 
-describe('RU-DESIGN-04 how-it-works visual migration', () => {
+describe('RU how-it-works plain-language copy', () => {
   it('uses shared brand primitives and ASI editorial grammar', () => {
     const page = readSrc('src/app/ru/how-it-works/page.tsx');
     expect(page).toContain('BrandHeadline');
@@ -39,27 +39,38 @@ describe('RU-DESIGN-04 how-it-works visual migration', () => {
     expect(page).not.toContain('Hong Kong');
   });
 
-  it('preserves current vs roadmap semantics with free-pilot commercial model', () => {
+  it('tells the plain-language conversion story before de-emphasized roadmap', () => {
     const page = readSrc('src/app/ru/how-it-works/page.tsx');
     expect(COMMUNICATION_PILOT_PRICE_RUB).toBe(1000);
     expect(page).toContain('COMMUNICATION_PILOT_PRICE_RUB');
-    expect(page).toContain('NOW_ITEMS');
-    expect(page).toContain('ROADMAP_ITEMS');
-    expect(page).toContain('Сейчас / пилот');
-    expect(page).toContain('Дорожная карта платформы');
-    expect(page).toContain('Направление платформы');
-    expect(page).toContain('Отдельный инструмент');
+    expect(page).toContain('Управлять посуточными квартирами — не значит весь день сидеть в чатах');
     expect(page).toContain('Подключить объект бесплатно');
     expect(page).toContain('/ru/early-access');
-    expect(page).toContain('id="current-pilot"');
-    expect(page).toContain('23:07');
-    expect(page).toContain('Бесплатное подключение и настройка — 0');
-    expect(page).toContain('14 дней операционного пилота — 0');
+    expect(page).toContain('Чем больше объектов в управлении');
+    expect(page).toContain('Больше квартир → Больше сообщений → Больше администраторов');
+    expect(page).toContain('ASI берёт на себя повторяющиеся операции');
+    expect(page).toContain('«Как подключиться к Wi-Fi?»');
+    expect(page).toContain('ASI — это не ещё один чат-бот');
+    expect(page).toContain('Сначала мы бесплатно настраиваем ваш объект');
+    expect(page).toContain('Этот этап не входит в 14 дней пилота');
+    expect(page).toContain('Затем ASI работает на вашем реальном объекте 14 дней');
+    expect(page).toContain('По итогам — результат, а не обещания');
+    expect(page).toContain('Прозрачные условия');
+    expect(page).toContain('Подключение и настройка — 0');
+    expect(page).toContain('14 дней работы на объекте — 0');
     expect(page).toContain('После пилота');
-    expect(page).toContain('Начните с бесплатного подключения объекта');
-    expect(page).toMatch(/не «полная автоматизация объекта на 99%»|не.*99%/);
-    expect(page).not.toMatch(/['"]\/pilot['"]/);
-    expect(page.indexOf('Сейчас / пилот')).toBeLessThan(page.indexOf('Дорожная карта платформы'));
+    expect(page).toContain('Никакого автоматического перехода на оплату после пилота');
+    expect(page).toContain('Хотите посмотреть, как это сработает на ваших объектах?');
+    expect(page).toContain('Система занимается повторяемым. Человек — решениями.');
+    expect(page).not.toContain('Рутина движется автоматически');
+    expect(page).not.toContain('операционный слой');
+    expect(page).not.toContain('операционный контур');
+    expect(page).not.toContain('модель платформы');
+    expect(page).not.toContain('куда движется платформа');
+    expect(page).toContain('id="roadmap"');
+    expect(page).toContain('ROADMAP_ITEMS');
+    expect(page.indexOf('Чем больше объектов в управлении')).toBeLessThan(page.indexOf('id="roadmap"'));
+    expect(page.indexOf('Прозрачные условия')).toBeLessThan(page.indexOf('id="roadmap"'));
     for (const legacy of LEGACY_PILOT_PRICE_PATTERNS) {
       expect(page, `must not present legacy paid-pilot copy: ${legacy}`).not.toContain(legacy);
     }

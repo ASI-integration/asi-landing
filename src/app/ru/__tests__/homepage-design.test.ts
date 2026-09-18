@@ -9,7 +9,7 @@ function readSrc(relativePath: string): string {
   return readFileSync(join(root, relativePath), 'utf8');
 }
 
-describe('RU-DESIGN-02 homepage visual migration', () => {
+describe('RU homepage plain-language alignment', () => {
   it('uses shared brand primitives and guestautopilot visual grammar', () => {
     const home = readSrc('src/app/ru/page.tsx');
     expect(home).toContain('BrandHeadline');
@@ -28,25 +28,31 @@ describe('RU-DESIGN-02 homepage visual migration', () => {
     expect(home).not.toContain('Hong Kong');
   });
 
-  it('preserves production copy model, pricing constant, and secondary location placement', () => {
+  it('aligns hero and commercial model with plain-language proposition', () => {
     const home = readSrc('src/app/ru/page.tsx');
     expect(COMMUNICATION_PILOT_PRICE_RUB).toBe(1000);
     expect(home).toContain('COMMUNICATION_PILOT_PRICE_RUB');
-    expect(home).toContain('Операции посуточной аренды на автопилоте');
+    expect(home).toContain('Управлять посуточными квартирами — не значит весь день сидеть в чатах');
+    expect(home).toContain('повторяющиеся вопросы гостей по данным объекта');
     expect(home).toContain('Подключить объект бесплатно');
     expect(home).toContain('Как работает пилот');
-    expect(home).toContain('Операционный слой поверх вашего Менеджера Каналов');
+    expect(home).toContain('Работает вместе с вашим менеджером каналов');
     expect(home).toContain('Обычные ситуации vs Исключения');
     expect(home).toContain('Точность коммуникации и базы знаний');
     expect(home).toContain('От заявки до результата');
-    expect(home).toContain('Итоговый 14-дневный отчёт');
+    expect(home).toContain('Итоговый разбор после пилота');
     expect(home).toContain('Подключение и настройка — 0');
     expect(home).toContain('14 дней реальной работы — 0');
     expect(home).toContain('Кому подходит ASI');
-    expect(home).toContain('Подключите ваш объект к операционному автопилоту');
+    expect(home).toContain('Подключите объект бесплатно');
     expect(home).toContain('Дополнительно');
     expect(home).toContain('Оценка локации — отдельный инструмент');
-    expect(home.indexOf('Операционный слой')).toBeLessThan(home.indexOf('Дополнительно'));
+    expect(home).not.toContain('Операции посуточной аренды на автопилоте');
+    expect(home).not.toContain('Операционный слой поверх вашего Менеджера Каналов');
+    expect(home).not.toContain('операционный контур');
+    expect(home.indexOf('Работает вместе с вашим менеджером каналов')).toBeLessThan(
+      home.indexOf('Дополнительно'),
+    );
     expect(home.indexOf('BrandPrimaryCta href={PILOT_HREF}')).toBeLessThan(
       home.indexOf('BrandSecondaryCta href={RU_LOCATION_CHECK_HREF}'),
     );
