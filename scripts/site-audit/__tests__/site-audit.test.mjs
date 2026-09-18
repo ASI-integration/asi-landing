@@ -13,7 +13,10 @@ import {
   detectPatternFindings,
   runRuleEngine,
   sortFindings,
-  analyzeLinks,
+  analyzeHashLinks,
+  analyzePageStructure,
+  analyzeLinkStatuses,
+  resolveHomepageContractMode,
 } from '../rule-engine.mjs';
 import {
   UNSUPPORTED_CLAIM_PATTERNS,
@@ -21,10 +24,35 @@ import {
   SENSITIVE_PATTERNS,
   maskSensitive,
 } from '../contracts/ru-public-site.mjs';
-import { cleanVisibleText, toCorpusRecord } from '../page-extractor.mjs';
+import { cleanVisibleText, toCorpusRecord, buildHashRef } from '../page-extractor.mjs';
+import { isHtmlContentType } from '../content-type.mjs';
 import { resolveExitCode } from '../report.mjs';
+import { productionShaInAllowlist, probeProductionVersion } from '../version-probe.mjs';
 
 const BASE = 'https://asi-global.ru/ru';
+const HOME = 'https://asi-global.ru/ru';
+const OTHER = 'https://asi-global.ru/ru/early-access';
+
+function htmlPage(partial) {
+  return {
+    status: 200,
+    isHtmlDocument: true,
+    contentType: 'text/html',
+    title: 'ASI',
+    metaDescription: 'desc',
+    h1Count: 1,
+    h1Texts: ['H1'],
+    h2Texts: [],
+    visibleText: 'ok',
+    ctaLabels: ['Go'],
+    internalLinks: [],
+    hashRefs: [],
+    externalLinks: [],
+    elementIds: [],
+    forms: [],
+    ...partial,
+  };
+}
 
 test('normalizeUrl strips hash and trailing slash', () => {
   assert.equal(
@@ -44,7 +72,7 @@ test('same-origin policy and skip list', () => {
   assert.equal(shouldCrawlHref('#pilot-form', BASE).crawl, false);
 });
 
-test('fragment target validation', () => {
+test('fragment target validation helper', () => {
   assert.equal(hashTargetExists('#pilot-form', ['pilot-form', 'pricing']), true);
   assert.equal(hashTargetExists('#missing', ['pilot-form']), false);
 });
@@ -133,19 +161,161 @@ test('deterministic ordering of findings', () => {
   );
 });
 
-test('hash missing target produces LINK_MISSING_HASH_TARGET', () => {
-  const findings = analyzeLinks(
+test('same-page valid hash passes; missing hash fails', () => {
+  const page = htmlPage({
+    requestedUrl: HOME,
+    finalUrl: HOME,
+    elementIds: ['pricing'],
+    hashRefs: [buildHashRef('#pricing', HOME), buildHashRef('#missing', HOME)],
+  });
+  const findings = analyzeHashLinks([page], BASE);
+  assert.equal(findings.some((f) => f.id === 'LINK_MISSING_HASH_TARGET' && f.evidence.includes('#pricing')), false);
+  assert.ok(findings.some((f) => f.id === 'LINK_MISSING_HASH_TARGET' && f.evidence.includes('#missing')));
+});
+
+test('cross-page hash validates target page, not source', () => {
+  const source = htmlPage({
+    requestedUrl: OTHER,
+    finalUrl: OTHER,
+    elementIds: ['unrelated-only'],
+    hashRefs: [
+      buildHashRef(`${HOME}#location-check`, OTHER),
+      buildHashRef(`${HOME}#does-not-exist`, OTHER),
+    ],
+  });
+  const target = htmlPage({
+    requestedUrl: HOME,
+    finalUrl: HOME,
+    elementIds: ['location-check'],
+  });
+  const findings = analyzeHashLinks([source, target], BASE);
+  assert.equal(
+    findings.some((f) => f.id === 'LINK_MISSING_HASH_TARGET' && f.evidence.includes('#location-check')),
+    false,
+    'must not fail valid cross-page hash against source ids',
+  );
+  const missing = findings.find(
+    (f) => f.id === 'LINK_MISSING_HASH_TARGET' && f.evidence.includes('#does-not-exist'),
+  );
+  assert.ok(missing);
+  assert.equal(missing.sourcePage, OTHER);
+  assert.equal(missing.targetUrl, HOME);
+});
+
+test('unavailable hash target does not emit MAJOR missing-target', () => {
+  const source = htmlPage({
+    requestedUrl: OTHER,
+    finalUrl: OTHER,
+    elementIds: [],
+    hashRefs: [buildHashRef(`${HOME}#pricing`, OTHER)],
+  });
+  const findings = analyzeHashLinks([source], BASE);
+  assert.equal(findings.some((f) => f.id === 'LINK_MISSING_HASH_TARGET'), false);
+  assert.ok(findings.some((f) => f.id === 'LINK_HASH_TARGET_UNVERIFIED' && f.severity === 'info'));
+});
+
+test('non-HTML responses skip structure rules but keep 5xx', () => {
+  const pdf = {
+    requestedUrl: 'https://asi-global.ru/ru/location-report/sample/pdf',
+    finalUrl: 'https://asi-global.ru/ru/location-report/sample/pdf',
+    status: 502,
+    isHtmlDocument: false,
+    contentType: 'application/pdf',
+    title: '',
+    metaDescription: '',
+    h1Count: 0,
+    h1Texts: [],
+    h2Texts: [],
+    visibleText: '',
+    ctaLabels: [],
+    internalLinks: [],
+    hashRefs: [],
+    externalLinks: [],
+    elementIds: [],
+    forms: [],
+  };
+  assert.equal(analyzePageStructure(pdf).length, 0);
+  assert.equal(isHtmlContentType('application/pdf'), false);
+  assert.equal(isHtmlContentType('text/html; charset=utf-8'), true);
+
+  const findings = runRuleEngine({
+    pages: [pdf],
+    baseUrl: BASE,
+    linkStatusMap: { [pdf.requestedUrl]: 502 },
+    linkReferrers: {
+      [pdf.requestedUrl]: [HOME],
+    },
+    homepageContractMode: 'disabled',
+    productionVersion: 'unknown',
+  });
+  assert.ok(findings.some((f) => f.id === 'LINK_INTERNAL_5XX'));
+  assert.equal(findings.some((f) => f.id === 'STRUCT_MISSING_H1'), false);
+  assert.equal(findings.some((f) => f.id === 'STRUCT_MISSING_TITLE'), false);
+  assert.equal(findings.some((f) => f.id === 'STRUCT_MISSING_META_DESCRIPTION'), false);
+  const five = findings.find((f) => f.id === 'LINK_INTERNAL_5XX');
+  assert.match(five.evidence, /SOURCE:/);
+  assert.match(five.evidence, /TARGET:/);
+  assert.equal(five.sourcePage, HOME);
+  assert.equal(five.targetUrl, pdf.requestedUrl);
+});
+
+test('link status provenance lists sorted referrers', () => {
+  const target = 'https://asi-global.ru/ru/broken';
+  const findings = analyzeLinkStatuses(
+    [
+      htmlPage({
+        requestedUrl: target,
+        finalUrl: target,
+        status: 502,
+        title: '',
+        metaDescription: '',
+        h1Count: 0,
+        h1Texts: [],
+        isHtmlDocument: true,
+      }),
+    ],
+    { [target]: 502 },
     {
-      finalUrl: 'https://asi-global.ru/ru',
-      hashLinks: ['#does-not-exist'],
-      internalLinks: [],
-      externalLinks: [],
-      elementIds: ['pricing'],
+      [target]: ['https://asi-global.ru/ru/z', 'https://asi-global.ru/ru/a'],
     },
     BASE,
-    {},
   );
-  assert.ok(findings.some((f) => f.id === 'LINK_MISSING_HASH_TARGET'));
+  const f = findings.find((x) => x.id === 'LINK_INTERNAL_5XX');
+  assert.ok(f);
+  assert.match(f.evidence, /SOURCE: https:\/\/asi-global\.ru\/ru\/a, https:\/\/asi-global\.ru\/ru\/z/);
+});
+
+test('homepage contract auto mode is SHA-allowlist exact match only', () => {
+  const known = 'fb7d6f8e79b2ce99b35164b3dc0f4acfc7e62874';
+  assert.equal(resolveHomepageContractMode('disabled', known).enforce, false);
+  assert.equal(resolveHomepageContractMode('enabled', 'unknown').enforce, true);
+  assert.equal(resolveHomepageContractMode('auto', known).enforce, true);
+  assert.equal(resolveHomepageContractMode('auto', '53461e999ad115cf9c5dd43a93a9c13bb14e6c6d').enforce, false);
+  assert.equal(resolveHomepageContractMode('auto', 'unknown').enforce, false);
+  // Lexicographically "greater" SHA must not enable without exact allowlist membership.
+  assert.equal(productionShaInAllowlist('zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz', [known]), false);
+  assert.equal(productionShaInAllowlist(known, [known]), true);
+});
+
+test('version probe records unknown without failing', async () => {
+  const result = await probeProductionVersion(BASE, {
+    fetchImpl: async () => {
+      throw new Error('network down');
+    },
+  });
+  assert.equal(result.productionVersion, 'unknown');
+  assert.equal(result.versionProbeOk, false);
+  assert.match(result.versionProbeUrl, /\/api\/version$/);
+
+  const ok = await probeProductionVersion(BASE, {
+    fetchImpl: async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ sha: 'abc123' }),
+    }),
+  });
+  assert.equal(ok.productionVersion, 'abc123');
+  assert.equal(ok.deployedSha, 'abc123');
 });
 
 test('corpus extraction cleans scripts/styles leftovers', () => {
@@ -178,28 +348,29 @@ test('exit codes honor fail-on policy', () => {
 });
 
 test('runRuleEngine is deterministic for identical pages', () => {
-  const page = {
+  const page = htmlPage({
     requestedUrl: 'https://asi-global.ru/ru',
     finalUrl: 'https://asi-global.ru/ru',
-    status: 200,
-    title: 'ASI',
-    metaDescription: 'desc',
-    h1Count: 1,
-    h1Texts: ['Заголовок'],
-    h2Texts: [],
     visibleText:
       'Подключение и настройка — 0 ₽. 14 дней работы — 0 ₽. После пилота — 1000 ₽ / объект в месяц.',
     ctaLabels: ['Подключить объект бесплатно'],
-    internalLinks: [],
-    hashLinks: [],
-    externalLinks: [],
-    elementIds: [],
-    forms: [],
-  };
-  const a = runRuleEngine({ pages: [page], baseUrl: BASE, linkStatusMap: {} });
-  const b = runRuleEngine({ pages: [page], baseUrl: BASE, linkStatusMap: {} });
+  });
+  const a = runRuleEngine({
+    pages: [page],
+    baseUrl: BASE,
+    linkStatusMap: {},
+    homepageContractMode: 'disabled',
+    productionVersion: 'unknown',
+  });
+  const b = runRuleEngine({
+    pages: [page],
+    baseUrl: BASE,
+    linkStatusMap: {},
+    homepageContractMode: 'disabled',
+    productionVersion: 'unknown',
+  });
   assert.deepEqual(
-    a.map((f) => `${f.id}|${f.severity}|${f.url}`),
-    b.map((f) => `${f.id}|${f.severity}|${f.url}`),
+    a.map((f) => `${f.id}|${f.severity}|${f.url}|${f.targetUrl || ''}`),
+    b.map((f) => `${f.id}|${f.severity}|${f.url}|${f.targetUrl || ''}`),
   );
 });

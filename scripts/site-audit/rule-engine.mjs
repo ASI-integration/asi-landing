@@ -16,7 +16,8 @@ import {
   parseAbsoluteUrl,
   normalizeUrl,
 } from './url-policy.mjs';
-import { cleanVisibleText } from './page-extractor.mjs';
+import { cleanVisibleText, buildHashRef } from './page-extractor.mjs';
+import { productionShaInAllowlist } from './version-probe.mjs';
 
 /**
  * @typedef {'critical'|'major'|'minor'|'info'} Severity
@@ -24,6 +25,8 @@ import { cleanVisibleText } from './page-extractor.mjs';
  *   id: string,
  *   severity: Severity,
  *   url: string,
+ *   sourcePage?: string | null,
+ *   targetUrl?: string | null,
  *   category: string,
  *   title: string,
  *   evidence: string,
@@ -37,6 +40,8 @@ function finding(partial) {
     id: partial.id,
     severity: partial.severity,
     url: partial.url,
+    sourcePage: partial.sourcePage ?? partial.url ?? null,
+    targetUrl: partial.targetUrl ?? null,
     category: partial.category,
     title: partial.title,
     evidence: partial.evidence,
@@ -59,6 +64,12 @@ function snippetAround(text, index, len = 80) {
   return text.slice(start, end).replace(/\s+/g, ' ').trim();
 }
 
+function isAnalyzableHtmlPage(page) {
+  if (page.isHtmlDocument === false) return false;
+  // Default true for fixtures that omit the flag (unit tests / HTML corpus).
+  return page.isHtmlDocument !== false;
+}
+
 /** Commercial contradiction detectors across a page's visible text. */
 export function detectCommercialConflicts(text, url) {
   /** @type {Finding[]} */
@@ -79,6 +90,7 @@ export function detectCommercialConflicts(text, url) {
         id: 'COMMERCIAL_PAID_PILOT_CONFLICT',
         severity: 'critical',
         url,
+        sourcePage: url,
         category: 'commercial-contract',
         title: 'Pilot described as paid',
         evidence: snippetAround(
@@ -103,6 +115,7 @@ export function detectCommercialConflicts(text, url) {
         id: 'COMMERCIAL_PILOT_DURATION_CONFLICT',
         severity: 'critical',
         url,
+        sourcePage: url,
         category: 'commercial-contract',
         title: 'Pilot duration differs from 14 days',
         evidence: m[0],
@@ -126,6 +139,7 @@ export function detectCommercialConflicts(text, url) {
         id: 'COMMERCIAL_SETUP_CONSUMES_PILOT',
         severity: 'critical',
         url,
+        sourcePage: url,
         category: 'commercial-contract',
         title: 'Implies 14-day pilot starts during setup',
         evidence: snippetAround(t, t.search(/входят\s+в\s+14|(?<!не\s)расходуют\s+14|во\s+время\s+настройк/i)),
@@ -148,6 +162,7 @@ export function detectCommercialConflicts(text, url) {
           id: 'COMMERCIAL_CONTINUATION_PRICE_CONFLICT',
           severity: 'critical',
           url,
+          sourcePage: url,
           category: 'commercial-contract',
           title: 'Continuation monthly price differs from 1 000 ₽',
           evidence: m[0],
@@ -173,6 +188,7 @@ export function detectCommercialConflicts(text, url) {
         id: 'COMMERCIAL_AUTO_PAID_TRANSITION',
         severity: 'critical',
         url,
+        sourcePage: url,
         category: 'commercial-contract',
         title: 'Automatic paid transition/renewal implied',
         evidence: snippetAround(
@@ -195,6 +211,7 @@ export function detectCommercialConflicts(text, url) {
           id: 'COMMERCIAL_SETUP_PRICE_CONFLICT',
           severity: 'critical',
           url,
+          sourcePage: url,
           category: 'commercial-contract',
           title: 'Setup/connection price differs from 0 ₽',
           evidence: setupPrice[0],
@@ -223,6 +240,7 @@ export function detectPatternFindings(text, url, patterns, category) {
         id: rule.id,
         severity: rule.severity,
         url,
+        sourcePage: url,
         category,
         title: rule.title,
         evidence,
@@ -245,12 +263,17 @@ export function analyzePageStructure(page) {
   const out = [];
   const url = page.finalUrl || page.requestedUrl;
 
+  if (!isAnalyzableHtmlPage(page)) {
+    return out;
+  }
+
   if (!page.title || !String(page.title).trim()) {
     out.push(
       finding({
         id: 'STRUCT_MISSING_TITLE',
         severity: 'major',
         url,
+        sourcePage: url,
         category: 'structure',
         title: 'Missing page title',
         evidence: '(empty)',
@@ -266,6 +289,7 @@ export function analyzePageStructure(page) {
         id: 'STRUCT_MISSING_META_DESCRIPTION',
         severity: 'minor',
         url,
+        sourcePage: url,
         category: 'structure',
         title: 'Missing meta description',
         evidence: '(empty)',
@@ -282,6 +306,7 @@ export function analyzePageStructure(page) {
         id: 'STRUCT_MISSING_H1',
         severity: 'major',
         url,
+        sourcePage: url,
         category: 'structure',
         title: 'Missing visible H1',
         evidence: 'h1Count=0',
@@ -295,6 +320,7 @@ export function analyzePageStructure(page) {
         id: 'STRUCT_DUPLICATE_H1',
         severity: 'major',
         url,
+        sourcePage: url,
         category: 'structure',
         title: 'Duplicate visible H1',
         evidence: (page.h1Texts || []).join(' | '),
@@ -313,6 +339,7 @@ export function analyzePageStructure(page) {
           id: 'STRUCT_EMPTY_CTA',
           severity: 'minor',
           url,
+          sourcePage: url,
           category: 'structure',
           title: 'Empty or meaningless CTA label',
           evidence: JSON.stringify(label),
@@ -326,29 +353,126 @@ export function analyzePageStructure(page) {
   return out;
 }
 
-export function analyzeLinks(page, baseUrl, linkStatusMap) {
+/**
+ * Normalize hash refs from page.hashRefs or legacy page.hashLinks strings.
+ */
+export function resolvePageHashRefs(page, baseUrl) {
+  const sourceUrl = page.finalUrl || page.requestedUrl || baseUrl;
+  if (Array.isArray(page.hashRefs) && page.hashRefs.length) {
+    return page.hashRefs.map((ref) => ({
+      href: String(ref.href || ''),
+      targetUrl: String(ref.targetUrl || ''),
+      hash: String(ref.hash || ''),
+    }));
+  }
+  /** @type {{ href: string, targetUrl: string, hash: string }[]} */
+  const out = [];
+  for (const raw of page.hashLinks || []) {
+    const built = buildHashRef(raw, sourceUrl);
+    if (built) out.push(built);
+  }
+  return out;
+}
+
+/**
+ * Validate fragment targets against the TARGET page's element IDs (not the source).
+ * @param {object[]} pages
+ * @param {string} baseUrl
+ */
+export function analyzeHashLinks(pages, baseUrl) {
+  /** @type {Finding[]} */
+  const out = [];
+  /** @type {Map<string, object>} */
+  const byNorm = new Map();
+  for (const page of pages) {
+    for (const candidate of [page.finalUrl, page.requestedUrl]) {
+      const norm = normalizeUrl(candidate, baseUrl);
+      if (norm && !byNorm.has(norm)) byNorm.set(norm, page);
+    }
+  }
+
+  for (const page of pages) {
+    if (!isAnalyzableHtmlPage(page)) continue;
+    const sourcePage = page.finalUrl || page.requestedUrl;
+    for (const ref of resolvePageHashRefs(page, baseUrl)) {
+      const hash = ref.hash.includes('#') ? `#${ref.hash.split('#').pop()}` : ref.hash;
+      if (!hash || hash === '#') continue;
+      const targetNorm = normalizeUrl(ref.targetUrl || sourcePage, baseUrl);
+      const targetPage = targetNorm ? byNorm.get(targetNorm) : null;
+
+      if (!targetPage) {
+        out.push(
+          finding({
+            id: 'LINK_HASH_TARGET_UNVERIFIED',
+            severity: 'info',
+            url: sourcePage,
+            sourcePage,
+            targetUrl: targetNorm || ref.targetUrl || null,
+            category: 'links',
+            title: 'Hash target page not crawled — unverifiable',
+            evidence: `${ref.href || hash} → ${targetNorm || ref.targetUrl || '(unknown)'}`,
+            explanation:
+              'Target page was not in the crawl corpus (max-pages, skip, or not discovered). Not treated as a missing ID.',
+            action: 're-audit with higher max-pages or open the target page directly',
+          }),
+        );
+        continue;
+      }
+
+      if (targetPage.navigationError || (targetPage.status && targetPage.status >= 400)) {
+        // Navigation/HTTP failure is reported separately — do not also claim missing ID.
+        continue;
+      }
+
+      if (targetPage.isHtmlDocument === false) {
+        out.push(
+          finding({
+            id: 'LINK_HASH_TARGET_UNVERIFIED',
+            severity: 'info',
+            url: sourcePage,
+            sourcePage,
+            targetUrl: targetNorm,
+            category: 'links',
+            title: 'Hash target is non-HTML — unverifiable',
+            evidence: `${hash} on ${targetNorm} (contentType=${targetPage.contentType || 'unknown'})`,
+            explanation: 'Fragment IDs are only validated on successfully crawled HTML documents.',
+            action: 'confirm the link intent manually',
+          }),
+        );
+        continue;
+      }
+
+      const ids = new Set(targetPage.elementIds || []);
+      if (!hashTargetExists(hash, ids)) {
+        out.push(
+          finding({
+            id: 'LINK_MISSING_HASH_TARGET',
+            severity: 'major',
+            url: sourcePage,
+            sourcePage,
+            targetUrl: targetNorm,
+            category: 'links',
+            title: 'Hash link target ID does not exist',
+            evidence: `SOURCE: ${sourcePage} | TARGET: ${targetNorm} | HASH: ${hash}`,
+            explanation: `No element with id="${hash.slice(1)}" on target page ${targetNorm}.`,
+            action: 'fix anchor target or remove link',
+          }),
+        );
+      }
+    }
+  }
+
+  return out;
+}
+
+/**
+ * Non-hash link checks for a single page (Google URLs, malformed hrefs).
+ * Status-based failures are handled separately with referrer provenance.
+ */
+export function analyzeLinks(page, baseUrl) {
   /** @type {Finding[]} */
   const out = [];
   const url = page.finalUrl || page.requestedUrl;
-  const ids = new Set(page.elementIds || []);
-
-  for (const href of page.hashLinks || []) {
-    const hash = href.includes('#') ? `#${href.split('#').pop()}` : href;
-    if (!hashTargetExists(hash, ids)) {
-      out.push(
-        finding({
-          id: 'LINK_MISSING_HASH_TARGET',
-          severity: 'major',
-          url,
-          category: 'links',
-          title: 'Hash link target ID does not exist',
-          evidence: hash,
-          explanation: `No element with id="${hash.slice(1)}" on the page.`,
-          action: 'fix anchor target or remove link',
-        }),
-      );
-    }
-  }
 
   for (const href of [...(page.internalLinks || []), ...(page.externalLinks || [])]) {
     if (!String(href || '').trim()) continue;
@@ -358,6 +482,8 @@ export function analyzeLinks(page, baseUrl, linkStatusMap) {
           id: 'LINK_GOOGLE_SEARCH_URL',
           severity: 'critical',
           url,
+          sourcePage: url,
+          targetUrl: href,
           category: 'links',
           title: 'Google search/redirect URL where internal route expected',
           evidence: href,
@@ -368,13 +494,14 @@ export function analyzeLinks(page, baseUrl, linkStatusMap) {
     }
     const parsed = parseAbsoluteUrl(href, baseUrl);
     if (!parsed) {
-      // Skip hash-only and protocol skips already filtered by extractor; flag only opaque garbage
       if (/^[a-z][a-z0-9+.-]*:/i.test(String(href)) === false && String(href).includes(' ')) {
         out.push(
           finding({
             id: 'LINK_MALFORMED_HREF',
             severity: 'major',
             url,
+            sourcePage: url,
+            targetUrl: String(href).slice(0, 200),
             category: 'links',
             title: 'Malformed href',
             evidence: String(href).slice(0, 120),
@@ -386,17 +513,83 @@ export function analyzeLinks(page, baseUrl, linkStatusMap) {
     }
   }
 
+  return out;
+}
+
+/**
+ * Emit HTTP/nav failure findings with source-page provenance.
+ * @param {object[]} pages
+ * @param {Record<string, number|null>} linkStatusMap
+ * @param {Record<string, string[]>} linkReferrers
+ * @param {string} baseUrl
+ */
+export function analyzeLinkStatuses(pages, linkStatusMap, linkReferrers, baseUrl) {
+  /** @type {Finding[]} */
+  const out = [];
+  const reportedTargets = new Set();
+
+  for (const page of pages) {
+    const pageUrl = page.finalUrl || page.requestedUrl;
+    const pageNorm = normalizeUrl(page.requestedUrl || pageUrl, baseUrl) || page.requestedUrl;
+    if (page.navigationError) {
+      const sources = sortedReferrers(linkReferrers, pageNorm, page.requestedUrl, pageUrl);
+      out.push(
+        finding({
+          id: 'LINK_NAV_FAILURE',
+          severity: 'critical',
+          url: sources[0] || pageUrl,
+          sourcePage: sources[0] || pageUrl,
+          targetUrl: pageUrl,
+          category: 'links',
+          title: 'Navigation failure',
+          evidence: formatLinkEvidence(sources, pageUrl, page.navigationError),
+          explanation: 'Page navigation failed.',
+          action: 'investigate route',
+        }),
+      );
+      reportedTargets.add(pageNorm);
+      reportedTargets.add(page.requestedUrl);
+    }
+    if (page.status && page.status >= 400) {
+      const fail = classifyLinkFailure(page.status);
+      if (fail) {
+        const sources = sortedReferrers(linkReferrers, pageNorm, page.requestedUrl, pageUrl);
+        out.push(
+          finding({
+            id: page.status >= 500 ? 'LINK_INTERNAL_5XX' : 'LINK_INTERNAL_4XX',
+            severity: fail.severity,
+            url: sources[0] || pageUrl,
+            sourcePage: sources[0] || pageUrl,
+            targetUrl: pageUrl,
+            category: 'links',
+            title: fail.title,
+            evidence: formatLinkEvidence(sources, pageUrl, `status=${page.status}`),
+            explanation: 'Crawled page returned an error status.',
+            action: 'fix route',
+          }),
+        );
+        reportedTargets.add(pageNorm);
+        reportedTargets.add(page.requestedUrl);
+      }
+    }
+  }
+
   for (const [linkUrl, status] of Object.entries(linkStatusMap || {})) {
     const fail = classifyLinkFailure(status);
     if (!fail) continue;
+    const norm = normalizeUrl(linkUrl, baseUrl) || linkUrl;
+    if (reportedTargets.has(linkUrl) || reportedTargets.has(norm)) continue;
+    const sources = sortedReferrers(linkReferrers, norm, linkUrl);
     out.push(
       finding({
         id: status >= 500 ? 'LINK_INTERNAL_5XX' : status == null ? 'LINK_NAV_FAILURE' : 'LINK_INTERNAL_4XX',
         severity: fail.severity,
-        url: linkUrl,
+        url: sources[0] || linkUrl,
+        sourcePage: sources[0] || linkUrl,
+        targetUrl: linkUrl,
         category: 'links',
         title: fail.title,
-        evidence: `status=${status}`,
+        evidence: formatLinkEvidence(sources, linkUrl, `status=${status}`),
         explanation: 'Internal GET navigation did not succeed.',
         action: 'fix route or remove dead link',
       }),
@@ -406,12 +599,28 @@ export function analyzeLinks(page, baseUrl, linkStatusMap) {
   return out;
 }
 
+function sortedReferrers(linkReferrers, ...keys) {
+  const set = new Set();
+  for (const key of keys) {
+    if (!key) continue;
+    for (const src of linkReferrers?.[key] || []) set.add(src);
+  }
+  return [...set].sort((a, b) => a.localeCompare(b));
+}
+
+function formatLinkEvidence(sources, targetUrl, statusPart) {
+  const sourceLine =
+    sources.length > 0 ? sources.join(', ') : '(no referrer recorded — seed or direct crawl)';
+  return `SOURCE: ${sourceLine} | TARGET: ${targetUrl} | ${statusPart}`;
+}
+
 export function analyzeDuplicateTitles(pages) {
   /** @type {Finding[]} */
   const out = [];
   /** @type {Map<string, string[]>} */
   const byTitle = new Map();
   for (const page of pages) {
+    if (!isAnalyzableHtmlPage(page)) continue;
     const title = String(page.title || '').trim().toLowerCase();
     if (!title) continue;
     const url = page.finalUrl || page.requestedUrl;
@@ -426,6 +635,8 @@ export function analyzeDuplicateTitles(pages) {
         id: 'STRUCT_DUPLICATE_TITLE',
         severity: 'minor',
         url: unique[0],
+        sourcePage: unique[0],
+        targetUrl: unique.slice(1).join(', ') || null,
         category: 'structure',
         title: 'Duplicate document titles across public pages',
         evidence: `${title} → ${unique.join(', ')}`,
@@ -456,6 +667,8 @@ export function analyzeNearDuplicateUrls(pages, baseUrl) {
         id: 'LINK_NEAR_DUPLICATE_URL',
         severity: 'info',
         url: norm,
+        sourcePage: unique[0],
+        targetUrl: norm,
         category: 'links',
         title: 'Near-duplicate URLs after slash/hash normalization',
         evidence: unique.join(' | '),
@@ -468,8 +681,142 @@ export function analyzeNearDuplicateUrls(pages, baseUrl) {
 }
 
 /**
+ * Resolve whether homepage form contract should be enforced.
+ * @param {'auto'|'enabled'|'disabled'} mode
+ * @param {string | null | undefined} productionVersion
+ * @returns {{ enforce: boolean, reason: string }}
+ */
+export function resolveHomepageContractMode(mode, productionVersion) {
+  const normalized = String(mode || 'auto').toLowerCase();
+  if (normalized === 'enabled') {
+    return { enforce: true, reason: 'homepage-contract=enabled' };
+  }
+  if (normalized === 'disabled') {
+    return { enforce: false, reason: 'homepage-contract=disabled' };
+  }
+  // auto
+  const known = RU_PUBLIC_SITE_CONTRACT.homepageForm.onePageFlowProductionShas || [];
+  if (productionShaInAllowlist(productionVersion, known)) {
+    return {
+      enforce: true,
+      reason: `auto: production SHA ${productionVersion} is in onePageFlowProductionShas`,
+    };
+  }
+  return {
+    enforce: false,
+    reason: `auto: production SHA ${productionVersion || 'unknown'} not in onePageFlowProductionShas (exact match only)`,
+  };
+}
+
+export function analyzeHomepageFormContract(pages, baseUrl, { mode = 'auto', productionVersion = 'unknown' } = {}) {
+  /** @type {Finding[]} */
+  const out = [];
+  const decision = resolveHomepageContractMode(mode, productionVersion);
+  const pathHint = RU_PUBLIC_SITE_CONTRACT.homepageForm.path;
+
+  if (!decision.enforce) {
+    out.push(
+      finding({
+        id: 'FORM_HOMEPAGE_CONTRACT_INFO',
+        severity: 'info',
+        url: pathHint,
+        sourcePage: pathHint,
+        category: 'forms',
+        title: 'Homepage form contract checks not enforced',
+        evidence: decision.reason,
+        explanation:
+          'Form field contract stays informational until production exposes a known one-page SHA or --homepage-contract enabled is passed.',
+        action: 'deploy one-page homepage or pass --homepage-contract enabled',
+      }),
+    );
+    return out;
+  }
+
+  const homepage =
+    pages.find((p) => {
+      const u = normalizeUrl(p.finalUrl || p.requestedUrl, baseUrl);
+      const want = normalizeUrl(new URL(pathHint, baseUrl).href, baseUrl);
+      return u && want && u === want;
+    }) ||
+    pages.find((p) => String(p.finalUrl || p.requestedUrl || '').includes(pathHint));
+
+  if (!homepage || !isAnalyzableHtmlPage(homepage)) {
+    out.push(
+      finding({
+        id: 'FORM_HOMEPAGE_MISSING',
+        severity: 'major',
+        url: pathHint,
+        sourcePage: pathHint,
+        category: 'forms',
+        title: 'Homepage not available for form contract',
+        evidence: decision.reason,
+        explanation: 'Homepage form enforcement was enabled but /ru was not crawled as HTML.',
+        action: 'ensure /ru is reachable in the crawl',
+      }),
+    );
+    return out;
+  }
+
+  const url = homepage.finalUrl || homepage.requestedUrl;
+  const labels = (homepage.forms || []).flatMap((f) => f.labels || []);
+  const labelBlob = labels.join('\n');
+  const text = pageText(homepage);
+  const expected = RU_PUBLIC_SITE_CONTRACT.homepageForm.expectedVisibleFields;
+
+  for (const field of expected) {
+    if (!labelBlob.includes(field) && !text.includes(field)) {
+      out.push(
+        finding({
+          id: 'FORM_HOMEPAGE_FIELD_MISSING',
+          severity: 'major',
+          url,
+          sourcePage: url,
+          category: 'forms',
+          title: 'Expected homepage form field missing',
+          evidence: field,
+          explanation: `Expected visible field "${field}" on acquisition form.`,
+          action: 'restore compact 3-field form',
+        }),
+      );
+    }
+  }
+
+  if (
+    /сообществ/i.test(labelBlob) ||
+    /membership/i.test(labelBlob) ||
+    /radio/i.test(labelBlob.toLowerCase())
+  ) {
+    // Soft heuristic — community radios are typically labeled; keep narrow.
+  }
+  if (/участник\s+сообществ|community\s+member/i.test(text + '\n' + labelBlob)) {
+    out.push(
+      finding({
+        id: 'FORM_HOMEPAGE_COMMUNITY_RADIOS',
+        severity: 'major',
+        url,
+        sourcePage: url,
+        category: 'forms',
+        title: 'Community membership radios present on homepage form',
+        evidence: 'community membership wording detected near form',
+        explanation: 'Compact acquisition form must not show community membership radios.',
+        action: 'remove community radios from homepage form',
+      }),
+    );
+  }
+
+  return out;
+}
+
+/**
  * Run all rules against crawl results.
- * @param {{ pages: object[], baseUrl: string, linkStatusMap?: Record<string, number|null> }} input
+ * @param {{
+ *   pages: object[],
+ *   baseUrl: string,
+ *   linkStatusMap?: Record<string, number|null>,
+ *   linkReferrers?: Record<string, string[]>,
+ *   homepageContractMode?: 'auto'|'enabled'|'disabled',
+ *   productionVersion?: string,
+ * }} input
  */
 export function runRuleEngine(input) {
   const pages = [...(input.pages || [])].sort((a, b) =>
@@ -480,75 +827,41 @@ export function runRuleEngine(input) {
 
   for (const page of pages) {
     const url = page.finalUrl || page.requestedUrl;
-    const text = pageText(page);
     findings.push(...analyzePageStructure(page));
-    findings.push(...analyzeLinks(page, input.baseUrl, {}));
-    findings.push(...detectCommercialConflicts(text, url));
-    findings.push(...detectPatternFindings(text, url, UNSUPPORTED_CLAIM_PATTERNS, 'unsupported-claim'));
-    findings.push(...detectPatternFindings(text, url, OBSOLETE_JARGON_PATTERNS, 'jargon'));
-    findings.push(...detectPatternFindings(text, url, SENSITIVE_PATTERNS, 'sensitive'));
+    findings.push(...analyzeLinks(page, input.baseUrl));
 
-    if (page.navigationError) {
-      findings.push(
-        finding({
-          id: 'LINK_NAV_FAILURE',
-          severity: 'critical',
-          url,
-          category: 'links',
-          title: 'Navigation failure',
-          evidence: String(page.navigationError),
-          explanation: 'Page navigation failed.',
-          action: 'investigate route',
-        }),
-      );
-    }
-    if (page.status && page.status >= 400) {
-      const fail = classifyLinkFailure(page.status);
-      if (fail) {
-        findings.push(
-          finding({
-            id: page.status >= 500 ? 'LINK_INTERNAL_5XX' : 'LINK_INTERNAL_4XX',
-            severity: fail.severity,
-            url,
-            category: 'links',
-            title: fail.title,
-            evidence: `status=${page.status}`,
-            explanation: 'Crawled page returned an error status.',
-            action: 'fix route',
-          }),
-        );
-      }
+    if (isAnalyzableHtmlPage(page) && !(page.status && page.status >= 400)) {
+      const text = pageText(page);
+      findings.push(...detectCommercialConflicts(text, url));
+      findings.push(...detectPatternFindings(text, url, UNSUPPORTED_CLAIM_PATTERNS, 'unsupported-claim'));
+      findings.push(...detectPatternFindings(text, url, OBSOLETE_JARGON_PATTERNS, 'jargon'));
+      findings.push(...detectPatternFindings(text, url, SENSITIVE_PATTERNS, 'sensitive'));
     }
   }
 
-  findings.push(...analyzeLinks({ finalUrl: input.baseUrl, hashLinks: [], internalLinks: [], externalLinks: [], elementIds: [] }, input.baseUrl, input.linkStatusMap || {}));
+  findings.push(...analyzeHashLinks(pages, input.baseUrl));
+  findings.push(
+    ...analyzeLinkStatuses(
+      pages,
+      input.linkStatusMap || {},
+      input.linkReferrers || {},
+      input.baseUrl,
+    ),
+  );
   findings.push(...analyzeDuplicateTitles(pages));
   findings.push(...analyzeNearDuplicateUrls(pages, input.baseUrl));
+  findings.push(
+    ...analyzeHomepageFormContract(pages, input.baseUrl, {
+      mode: input.homepageContractMode || 'auto',
+      productionVersion: input.productionVersion || 'unknown',
+    }),
+  );
 
-  // Homepage form informational check (disabled by default)
-  if (RU_PUBLIC_SITE_CONTRACT.homepageForm.enabled) {
-    // reserved for v1.1 enablement
-  } else {
-    findings.push(
-      finding({
-        id: 'FORM_HOMEPAGE_CONTRACT_INFO',
-        severity: 'info',
-        url: RU_PUBLIC_SITE_CONTRACT.homepageForm.path,
-        category: 'forms',
-        title: 'Homepage form contract checks are informational until enabled',
-        evidence: 'homepageForm.enabled=false',
-        explanation:
-          'Expected post-#308 acquisition form fields are configured but not hard-failing live production yet.',
-        action: 'enable homepageForm checks after production deploy of one-page flow',
-      }),
-    );
-  }
-
-  // Deduplicate identical findings (same id+url+evidence)
+  // Deduplicate identical findings (same id+url+evidence+target)
   const seen = new Set();
   const deduped = [];
   for (const f of findings) {
-    const key = `${f.id}|${f.url}|${f.evidence}`;
+    const key = `${f.id}|${f.url}|${f.targetUrl || ''}|${f.evidence}`;
     if (seen.has(key)) continue;
     seen.add(key);
     deduped.push(f);
@@ -564,7 +877,9 @@ export function sortFindings(findings) {
     if (s !== 0) return s;
     const id = a.id.localeCompare(b.id);
     if (id !== 0) return id;
-    return a.url.localeCompare(b.url);
+    const u = a.url.localeCompare(b.url);
+    if (u !== 0) return u;
+    return String(a.targetUrl || '').localeCompare(String(b.targetUrl || ''));
   });
 }
 

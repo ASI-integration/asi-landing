@@ -27,12 +27,19 @@ export function writeAuditOutputs({
       tool: 'ASI Website Auditor',
       version: 1,
       baseUrl,
+      auditBaseUrl: meta.auditBaseUrl || baseUrl,
+      productionVersion: meta.productionVersion ?? 'unknown',
+      deployedSha: meta.deployedSha ?? null,
+      versionProbeUrl: meta.versionProbeUrl ?? null,
+      versionProbeOk: meta.versionProbeOk ?? null,
+      homepageContractMode: meta.homepageContractMode ?? 'auto',
       pagesCrawled: pages.length,
       durationMs,
       contractId: RU_PUBLIC_SITE_CONTRACT.id,
       generatedAt: meta.generatedAt || null,
       readOnly: true,
       formsSubmitted: false,
+      note: 'productionVersion is from live /api/version — not inferred from repository HEAD',
     },
     summary: counts,
     findings,
@@ -53,7 +60,8 @@ export function renderMarkdown(report) {
   const lines = [];
   lines.push('# ASI Website Audit');
   lines.push('');
-  lines.push(`- Base URL: ${report.meta.baseUrl}`);
+  lines.push(`- Audit base URL: ${report.meta.auditBaseUrl || report.meta.baseUrl}`);
+  lines.push(`- Production / deployed SHA: ${report.meta.productionVersion ?? 'unknown'}`);
   lines.push(`- Pages crawled: ${report.meta.pagesCrawled}`);
   lines.push(`- Critical: ${report.summary.critical}`);
   lines.push(`- Major: ${report.summary.major}`);
@@ -62,6 +70,7 @@ export function renderMarkdown(report) {
   if (report.meta.durationMs != null) {
     lines.push(`- Duration ms: ${report.meta.durationMs}`);
   }
+  lines.push(`- Homepage contract mode: ${report.meta.homepageContractMode ?? 'auto'}`);
   lines.push(`- Read-only: ${report.meta.readOnly}`);
   lines.push(`- Forms submitted: ${report.meta.formsSubmitted}`);
   lines.push('');
@@ -76,6 +85,8 @@ export function renderMarkdown(report) {
     lines.push(`### ${f.id}`);
     lines.push('');
     lines.push(`- SEVERITY: ${f.severity}`);
+    lines.push(`- SOURCE: ${f.sourcePage || f.url}`);
+    if (f.targetUrl) lines.push(`- TARGET: ${f.targetUrl}`);
     lines.push(`- URL: ${f.url}`);
     lines.push(`- CATEGORY: ${f.category}`);
     lines.push(`- TITLE: ${f.title}`);
@@ -87,8 +98,9 @@ export function renderMarkdown(report) {
   return `${lines.join('\n')}`;
 }
 
-export function printConsoleSummary({ pagesCrawled, counts, durationMs }) {
+export function printConsoleSummary({ pagesCrawled, counts, durationMs, productionVersion }) {
   console.log('ASI WEBSITE AUDIT');
+  if (productionVersion != null) console.log(`Production SHA: ${productionVersion}`);
   console.log(`Pages crawled: ${pagesCrawled}`);
   console.log(`Critical: ${counts.critical}`);
   console.log(`Major: ${counts.major}`);

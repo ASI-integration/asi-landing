@@ -24,14 +24,23 @@ export const RU_PUBLIC_SITE_CONTRACT = Object.freeze({
   }),
   /**
    * Homepage acquisition form expectations after one-page flow ships to production.
-   * Informational by default — do not hard-fail live production until explicitly enabled.
+   * Default CLI mode is `auto`: enforce only when /api/version SHA is in
+   * onePageFlowProductionShas (exact match — no lexicographic ancestry).
    */
   homepageForm: Object.freeze({
+    /** Legacy static flag; CLI --homepage-contract overrides at runtime. */
     enabled: false,
     path: '/ru',
     expectedVisibleFields: ['Ваше имя', 'Телефон или Telegram', 'Количество объектов'],
     expectedCta: 'Подключить объект бесплатно',
     mustNotShowCommunityRadios: true,
+    /**
+     * Exact production SHAs known to include the merged one-page homepage (#308).
+     * Add SHAs only after they are confirmed live — never compare SHAs lexicographically.
+     */
+    onePageFlowProductionShas: Object.freeze([
+      'fb7d6f8e79b2ce99b35164b3dc0f4acfc7e62874',
+    ]),
   }),
 });
 

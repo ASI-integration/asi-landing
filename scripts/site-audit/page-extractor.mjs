@@ -56,20 +56,33 @@ export function browserExtractSource() {
 
     const anchors = [...document.querySelectorAll('a[href]')];
     const internalLinks = [];
-    const hashLinks = [];
+    /** @type {{ href: string, targetUrl: string, hash: string }[]} */
+    const hashRefs = [];
     const externalLinks = [];
+    const pageUrlNoHash = (() => {
+      const u = new URL(window.location.href);
+      u.hash = '';
+      return u.href;
+    })();
+    const pushHashRef = (href, targetUrl, hash) => {
+      if (!hash || hash === '#') return;
+      hashRefs.push({ href, targetUrl, hash });
+    };
     for (const a of anchors) {
       const href = a.getAttribute('href') || '';
       if (!href) continue;
       if (href.startsWith('#')) {
-        hashLinks.push(href);
+        pushHashRef(href, pageUrlNoHash, href);
         continue;
       }
       try {
         const abs = new URL(href, window.location.href);
         if (abs.origin === window.location.origin) {
+          const target = new URL(abs.href);
+          const hash = abs.hash || '';
+          target.hash = '';
           internalLinks.push(abs.href);
-          if (abs.hash) hashLinks.push(abs.hash);
+          if (hash) pushHashRef(abs.href, target.href, hash);
         } else {
           externalLinks.push(abs.href);
         }
@@ -117,6 +130,22 @@ export function browserExtractSource() {
     const metaDescription =
       document.querySelector('meta[name="description"]')?.getAttribute('content') || '';
 
+    const seenHash = new Set();
+    const uniqueHashRefs = [];
+    for (const ref of hashRefs) {
+      const key = `${ref.href}|${ref.targetUrl}|${ref.hash}`;
+      if (seenHash.has(key)) continue;
+      seenHash.add(key);
+      uniqueHashRefs.push(ref);
+    }
+    uniqueHashRefs.sort((a, b) => {
+      const h = a.href.localeCompare(b.href);
+      if (h !== 0) return h;
+      const t = a.targetUrl.localeCompare(b.targetUrl);
+      if (t !== 0) return t;
+      return a.hash.localeCompare(b.hash);
+    });
+
     return {
       title: document.title || '',
       metaDescription,
@@ -127,10 +156,61 @@ export function browserExtractSource() {
       visibleText,
       ctaLabels: [...new Set(ctaLabels)],
       internalLinks: [...new Set(internalLinks)],
-      hashLinks: [...new Set(hashLinks)],
+      hashRefs: uniqueHashRefs,
       externalLinks: [...new Set(externalLinks)],
       forms,
       elementIds: [...new Set(ids)],
     };
   };
+}
+
+/**
+ * Stable de-dupe for hash reference objects (browser + unit helpers).
+ * @param {{ href: string, targetUrl: string, hash: string }[]} refs
+ */
+export function dedupeHashRefs(refs) {
+  const seen = new Set();
+  const out = [];
+  for (const ref of refs || []) {
+    const key = `${ref.href}|${ref.targetUrl}|${ref.hash}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({
+      href: String(ref.href || ''),
+      targetUrl: String(ref.targetUrl || ''),
+      hash: String(ref.hash || ''),
+    });
+  }
+  return out.sort((a, b) => {
+    const h = a.href.localeCompare(b.href);
+    if (h !== 0) return h;
+    const t = a.targetUrl.localeCompare(b.targetUrl);
+    if (t !== 0) return t;
+    return a.hash.localeCompare(b.hash);
+  });
+}
+
+/**
+ * Build a hash ref for tests / offline fixtures.
+ * @param {string} href
+ * @param {string} sourceUrl
+ */
+export function buildHashRef(href, sourceUrl) {
+  const raw = String(href || '').trim();
+  if (!raw) return null;
+  if (raw.startsWith('#')) {
+    const base = new URL(sourceUrl);
+    base.hash = '';
+    return { href: raw, targetUrl: base.href, hash: raw };
+  }
+  try {
+    const abs = new URL(raw, sourceUrl);
+    const hash = abs.hash || '';
+    if (!hash) return null;
+    const target = new URL(abs.href);
+    target.hash = '';
+    return { href: abs.href, targetUrl: target.href, hash };
+  } catch {
+    return null;
+  }
 }

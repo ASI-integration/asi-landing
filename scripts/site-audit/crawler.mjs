@@ -6,6 +6,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { chromium } from 'playwright-core';
+import { isHtmlContentType, mediaType } from './content-type.mjs';
 import { browserExtractSource, toCorpusRecord } from './page-extractor.mjs';
 import { normalizeUrl, shouldCrawlHref } from './url-policy.mjs';
 
@@ -76,6 +77,18 @@ export function resolveChromiumExecutablePath() {
 }
 
 /**
+ * Record that sourcePage links to targetUrl (normalized keys preferred).
+ * @param {Record<string, Set<string>>} referrerSets
+ * @param {string} targetUrl
+ * @param {string} sourcePage
+ */
+function addReferrer(referrerSets, targetUrl, sourcePage) {
+  if (!targetUrl || !sourcePage) return;
+  if (!referrerSets[targetUrl]) referrerSets[targetUrl] = new Set();
+  referrerSets[targetUrl].add(sourcePage);
+}
+
+/**
  * @param {{ baseUrl: string, maxPages?: number }} options
  */
 export async function crawlPublicSite(options) {
@@ -105,6 +118,8 @@ export async function crawlPublicSite(options) {
   const pages = [];
   /** @type {Record<string, number|null>} */
   const linkStatusMap = {};
+  /** @type {Record<string, Set<string>>} */
+  const referrerSets = {};
   const queue = [];
   const seen = new Set();
 
@@ -134,6 +149,8 @@ export async function crawlPublicSite(options) {
       let finalUrl = requestedUrl;
       let navigationError = null;
       let extracted = null;
+      let contentType = '';
+      let isHtmlDocument = false;
 
       try {
         const response = await page.goto(requestedUrl, {
@@ -142,8 +159,16 @@ export async function crawlPublicSite(options) {
         });
         status = response?.status() ?? null;
         finalUrl = page.url();
-        // Read-only extract — never click/type/submit
-        extracted = await page.evaluate(extract);
+        contentType = response?.headers()?.['content-type'] || '';
+        isHtmlDocument = isHtmlContentType(contentType);
+        // Fallback: if header missing but navigation succeeded, treat as HTML for extract.
+        if (!contentType && status && status < 400) {
+          isHtmlDocument = true;
+        }
+        if (isHtmlDocument) {
+          // Read-only extract — never click/type/submit
+          extracted = await page.evaluate(extract);
+        }
       } catch (err) {
         navigationError = String(err?.message || err);
       } finally {
@@ -157,6 +182,8 @@ export async function crawlPublicSite(options) {
         finalUrl,
         status,
         navigationError,
+        contentType: mediaType(contentType) || contentType || '',
+        isHtmlDocument,
         consoleErrors: consoleErrors.slice(0, 20),
         title: extracted?.title || '',
         metaDescription: extracted?.metaDescription || '',
@@ -167,7 +194,7 @@ export async function crawlPublicSite(options) {
         visibleText: extracted?.visibleText || '',
         ctaLabels: extracted?.ctaLabels || [],
         internalLinks: extracted?.internalLinks || [],
-        hashLinks: extracted?.hashLinks || [],
+        hashRefs: extracted?.hashRefs || [],
         externalLinks: extracted?.externalLinks || [],
         forms: extracted?.forms || [],
         elementIds: extracted?.elementIds || [],
@@ -176,13 +203,12 @@ export async function crawlPublicSite(options) {
 
       if (!extracted || (status && status >= 400)) continue;
 
+      const sourceKey = normalizeUrl(finalUrl || requestedUrl, baseUrl) || requestedUrl;
       for (const href of extracted.internalLinks || []) {
         const decision = shouldCrawlHref(href, baseUrl);
         if (!decision.crawl || !decision.normalized) continue;
+        addReferrer(referrerSets, decision.normalized, sourceKey);
         if (seen.has(decision.normalized)) continue;
-        if (seen.size + queue.length >= maxPages && !seen.has(decision.normalized)) {
-          // still allow enqueue until pages.length hits max; bound seen growth
-        }
         if (pages.length + queue.length >= maxPages) break;
         seen.add(decision.normalized);
         queue.push(decision.normalized);
@@ -194,9 +220,17 @@ export async function crawlPublicSite(options) {
   }
 
   pages.sort((a, b) => String(a.finalUrl).localeCompare(String(b.finalUrl)));
+
+  /** @type {Record<string, string[]>} */
+  const linkReferrers = {};
+  for (const [target, sources] of Object.entries(referrerSets)) {
+    linkReferrers[target] = [...sources].sort((a, b) => a.localeCompare(b));
+  }
+
   return {
     pages,
     linkStatusMap,
+    linkReferrers,
     corpus: pages.map(toCorpusRecord),
     crawledCount: pages.length,
   };
