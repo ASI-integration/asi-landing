@@ -56,6 +56,9 @@ const communitySubmissionLabels: Record<CommunityStatus, string> = {
   community_info: 'Другая рекомендация или источник.',
 };
 
+const fieldClass =
+  'mt-2 w-full border border-asi-border bg-asi-paper px-4 py-3.5 text-sm font-sans text-asi-navy rounded-sm outline-none transition focus:border-asi-gold focus:ring-1 focus:ring-asi-gold/40';
+
 export function EarlyAccessObjectForm() {
   const [form, setForm] = useState<FormState>(initialState);
   const [saving, setSaving] = useState(false);
@@ -110,34 +113,43 @@ export function EarlyAccessObjectForm() {
 
   return (
     <div id="pilot-form" className="scroll-mt-24">
-      <form onSubmit={handleSubmit} className="grid gap-5 rounded-lg border border-[var(--t-border)] bg-[var(--t-surface)] p-5">
-        <label>
-          <span className="block text-sm font-semibold text-[var(--t-text)]">Ваше имя</span>
+      <form
+        onSubmit={handleSubmit}
+        className="grid gap-6 border border-asi-border bg-asi-paper p-6 sm:p-8"
+      >
+        <label className="block">
+          <span className="block text-sm font-sans font-semibold text-asi-navy">Ваше имя</span>
           <input
             value={form.name}
             onChange={(event) => updateField('name', event.target.value)}
             required
-            className="mt-1 w-full rounded-lg border border-[var(--t-border)] bg-[var(--t-surface)] px-4 py-3 text-sm text-[var(--t-text)] outline-none transition focus:border-[var(--t-accent)] focus:ring-2 focus:ring-[color:var(--t-accent)]/20"
+            autoComplete="name"
+            className={fieldClass}
           />
         </label>
 
-        <label>
-          <span className="block text-sm font-semibold text-[var(--t-text)]">Телефон / Telegram</span>
+        <label className="block">
+          <span className="block text-sm font-sans font-semibold text-asi-navy">
+            Телефон / Telegram
+          </span>
           <input
             value={form.contact}
             onChange={(event) => updateField('contact', event.target.value)}
             required
-            className="mt-1 w-full rounded-lg border border-[var(--t-border)] bg-[var(--t-surface)] px-4 py-3 text-sm text-[var(--t-text)] outline-none transition focus:border-[var(--t-accent)] focus:ring-2 focus:ring-[color:var(--t-accent)]/20"
+            autoComplete="tel"
+            className={fieldClass}
           />
         </label>
 
-        <label>
-          <span className="block text-sm font-semibold text-[var(--t-text)]">Сколько у вас объектов?</span>
+        <label className="block">
+          <span className="block text-sm font-sans font-semibold text-asi-navy">
+            Сколько у вас объектов?
+          </span>
           <select
             value={form.objectsCount}
             onChange={(event) => updateField('objectsCount', event.target.value)}
             required
-            className="mt-1 w-full rounded-lg border border-[var(--t-border)] bg-[var(--t-surface)] px-4 py-3 text-sm text-[var(--t-text)] outline-none transition focus:border-[var(--t-accent)] focus:ring-2 focus:ring-[color:var(--t-accent)]/20"
+            className={fieldClass}
           >
             <option value="">Выберите количество</option>
             {objectCountOptions.map((option) => (
@@ -148,34 +160,50 @@ export function EarlyAccessObjectForm() {
           </select>
         </label>
 
-        <fieldset className="grid gap-3">
-          <legend className="text-sm font-semibold text-[var(--t-text)]">Условия участия</legend>
-          {communityOptions.map((option) => (
-            <label key={option.value} className="flex gap-3 rounded-lg border border-[var(--t-border)] bg-[var(--t-surface-2)] px-4 py-3 text-sm leading-6 text-[var(--t-text-2)]">
-              <input
-                type="radio"
-                name="communityStatus"
-                value={option.value}
-                checked={form.communityStatus === option.value}
-                onChange={() => updateField('communityStatus', option.value)}
-                className="mt-1 h-4 w-4"
-              />
-              <span>{option.label}</span>
-            </label>
-          ))}
+        <fieldset className="grid gap-0 border-y border-asi-border">
+          <legend className="mb-3 text-sm font-sans font-semibold text-asi-navy">
+            Условия участия
+          </legend>
+          {communityOptions.map((option) => {
+            const selected = form.communityStatus === option.value;
+            return (
+              <label
+                key={option.value}
+                className={`flex gap-3 border-t border-asi-border px-1 py-4 text-sm leading-6 text-asi-navy/75 cursor-pointer transition-colors ${
+                  selected ? 'text-asi-navy' : 'hover:text-asi-navy'
+                }`}
+              >
+                <input
+                  type="radio"
+                  name="communityStatus"
+                  value={option.value}
+                  checked={selected}
+                  onChange={() => updateField('communityStatus', option.value)}
+                  className="mt-1 h-4 w-4 accent-asi-navy"
+                />
+                <span className={selected ? 'font-medium text-asi-navy' : undefined}>
+                  {option.label}
+                </span>
+              </label>
+            );
+          })}
         </fieldset>
 
         <button
           type="submit"
           disabled={saving}
-          className="inline-flex min-h-12 items-center justify-center rounded-lg bg-[var(--t-accent)] px-6 py-3 text-sm font-bold text-white transition hover:bg-[var(--t-accent-hover)] disabled:cursor-not-allowed disabled:opacity-60"
+          className="inline-flex min-h-12 items-center justify-center gap-2 px-7 py-3.5 bg-asi-navy text-asi-ivory text-sm font-sans font-semibold tracking-wide rounded-sm border border-asi-navy hover:bg-asi-navy-2 transition-colors disabled:cursor-not-allowed disabled:opacity-60"
         >
           {saving ? 'Отправляем...' : 'Отправить заявку'}
         </button>
       </form>
 
       {status ? (
-        <div className="mt-5 rounded-lg border border-[var(--t-border)] bg-[var(--t-surface)] px-4 py-3 text-sm font-medium text-[var(--t-text)]" aria-live="polite">
+        <div
+          className="mt-5 border border-asi-border bg-asi-ivory px-4 py-3 text-sm font-sans text-asi-navy leading-relaxed"
+          aria-live="polite"
+          role="status"
+        >
           {status}
         </div>
       ) : null}

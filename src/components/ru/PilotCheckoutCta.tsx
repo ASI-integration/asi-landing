@@ -52,24 +52,46 @@ export function PilotCheckoutCta({ className = '' }: { className?: string }) {
   };
 
   return (
-    <div className={`space-y-3 ${className}`.trim()}>
-      <div className="rounded-lg border border-[var(--t-border)] bg-[var(--t-surface-2)] px-4 py-3 text-sm leading-6 text-[var(--t-text-2)]">
-        <p className="font-semibold text-[var(--t-text)]">{COMMUNICATION_PILOT_SERVICE_TITLE}</p>
-        <p className="mt-1">{COMMUNICATION_PILOT_PAYMENT_DESCRIPTION}</p>
-        <p className="mt-1">Стоимость: {COMMUNICATION_PILOT_PRICE_RUB}&nbsp;₽</p>
+    <div className={`space-y-5 ${className}`.trim()}>
+      <div className="border-t border-asi-border pt-5">
+        <p className="font-serif text-lg text-asi-navy leading-snug">
+          {COMMUNICATION_PILOT_SERVICE_TITLE}
+        </p>
+        <p className="mt-2 text-sm text-asi-navy/65 leading-relaxed">
+          {COMMUNICATION_PILOT_PAYMENT_DESCRIPTION}
+        </p>
+        <p className="mt-3 text-sm font-sans text-asi-navy/70">
+          Стоимость:{' '}
+          <span className="font-semibold text-asi-navy">
+            {COMMUNICATION_PILOT_PRICE_RUB}&nbsp;₽
+          </span>
+        </p>
       </div>
+
       <button
         type="button"
         onClick={onCheckout}
         disabled={busy}
-        className="inline-flex min-h-11 items-center justify-center rounded-lg bg-[var(--t-accent)] px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[var(--t-accent-hover)] disabled:cursor-not-allowed disabled:opacity-60"
+        className="inline-flex min-h-12 w-full sm:w-auto items-center justify-center gap-2 px-7 py-3.5 bg-asi-navy text-asi-ivory text-sm font-sans font-semibold tracking-wide rounded-sm border border-asi-navy hover:bg-asi-navy-2 transition-colors disabled:cursor-not-allowed disabled:opacity-60"
       >
         {busy ? 'Проверяем оплату…' : 'Перейти к оплате'}
       </button>
+
+      <p className="text-xs text-asi-navy/50 leading-relaxed">
+        Приём оплаты через ЮKassa включается после модерации. Пока платежи отключены, кнопка не
+        создаёт успешный платёж — вы увидите статус ожидания.
+      </p>
+
       {feedback ? (
-        <p className="text-sm leading-6 text-[var(--t-muted)]" role="status">
-          {feedback}
-        </p>
+        <div
+          className="border border-asi-border bg-asi-paper px-4 py-3 text-sm leading-relaxed text-asi-navy/75"
+          role="status"
+        >
+          <p className="text-[10px] font-sans font-semibold uppercase tracking-[0.16em] text-asi-gold-text">
+            Статус оплаты
+          </p>
+          <p className="mt-2">{feedback}</p>
+        </div>
       ) : null}
     </div>
   );
