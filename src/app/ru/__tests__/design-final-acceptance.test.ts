@@ -58,9 +58,11 @@ describe('RU-DESIGN-FINAL acceptance', () => {
     const report = readSrc('src/app/ru/location-report/page.tsx');
 
     expect(home).toContain('Подключить объект бесплатно');
-    expect(home).toContain("const PILOT_HREF = '/ru/early-access'");
+    expect(home).toContain("const FORM_HREF = '/ru#pilot-form'");
     expect(home).toContain('COMMUNICATION_PILOT_PRICE_RUB');
-    expect(home).toContain('Оценка локации — отдельный инструмент');
+    expect(home).toContain('EarlyAccessObjectForm');
+    expect(home).not.toContain('Оценка локации — отдельный инструмент');
+    expect(home).not.toContain('Работает вместе с вашим менеджером каналов');
 
     for (const page of [locationLanding, analysis, methodology, report]) {
       expect(page).toContain('RuPublicNavHeader');
@@ -128,7 +130,7 @@ describe('RU-DESIGN-FINAL acceptance', () => {
     expect(home).not.toContain('Полная операционная автоматизация');
     expect(home).toContain('Подключить объект бесплатно');
     expect(home).toContain('Подключение и настройка — 0');
-    expect(home).toContain('14 дней реальной работы — 0');
+    expect(home).toContain('14 дней работы на объекте — 0');
     expect(home).not.toContain('Оплата пилота');
     expect(home).not.toContain('Платный MVP');
     expect(home).not.toContain('1 объект · 1 месяц');

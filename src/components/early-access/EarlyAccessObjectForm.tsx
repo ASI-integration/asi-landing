@@ -59,7 +59,12 @@ const communitySubmissionLabels: Record<CommunityStatus, string> = {
 const fieldClass =
   'mt-2 w-full border border-asi-border bg-asi-paper px-4 py-3.5 text-sm font-sans text-asi-navy rounded-sm outline-none transition focus:border-asi-gold focus:ring-1 focus:ring-asi-gold/40';
 
-export function EarlyAccessObjectForm() {
+export function EarlyAccessObjectForm({
+  submitLabel = 'Подключить объект бесплатно',
+}: {
+  /** Homepage and early-access share one submit implementation; label can vary by surface. */
+  submitLabel?: string;
+} = {}) {
   const [form, setForm] = useState<FormState>(initialState);
   const [saving, setSaving] = useState(false);
   const [status, setStatus] = useState('');
@@ -130,7 +135,7 @@ export function EarlyAccessObjectForm() {
 
         <label className="block">
           <span className="block text-sm font-sans font-semibold text-asi-navy">
-            Телефон / Telegram
+            Телефон или Telegram (@username)
           </span>
           <input
             value={form.contact}
@@ -143,7 +148,7 @@ export function EarlyAccessObjectForm() {
 
         <label className="block">
           <span className="block text-sm font-sans font-semibold text-asi-navy">
-            Сколько у вас объектов?
+            Количество объектов в управлении
           </span>
           <select
             value={form.objectsCount}
@@ -196,7 +201,7 @@ export function EarlyAccessObjectForm() {
           disabled={saving}
           className="inline-flex min-h-12 items-center justify-center gap-2 px-7 py-3.5 bg-asi-navy text-asi-ivory text-sm font-sans font-semibold tracking-wide rounded-sm border border-asi-navy hover:bg-asi-navy-2 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-asi-gold disabled:cursor-not-allowed disabled:opacity-60"
         >
-          {saving ? 'Отправляем...' : 'Отправить заявку'}
+          {saving ? 'Отправляем...' : submitLabel}
         </button>
       </form>
 
