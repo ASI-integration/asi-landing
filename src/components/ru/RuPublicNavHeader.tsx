@@ -29,6 +29,7 @@ const DEFAULT_PRIMARY_CTA = {
 export function RuPublicNavHeader({
   density,
   showContacts = true,
+  showLogin = true,
   brandLabel = 'ASI',
   mainLinks = ruNavMainLinks,
   primaryCta = DEFAULT_PRIMARY_CTA,
@@ -37,6 +38,8 @@ export function RuPublicNavHeader({
   surface?: RuPublicNavSurface;
   density: RuPublicNavDensity;
   showContacts?: boolean;
+  /** When false, hides the utility login link (homepage acquisition chrome). */
+  showLogin?: boolean;
   brandLabel?: string;
   mainLinks?: readonly RuPublicNavLink[];
   primaryCta?: RuPublicNavLink;
@@ -96,12 +99,14 @@ export function RuPublicNavHeader({
               <span className="hidden xl:inline">Telegram</span>
             </a>
           ) : null}
-          <Link
-            href="/login"
-            className="text-sm font-sans text-asi-navy/65 hover:text-asi-navy transition-colors"
-          >
-            Войти
-          </Link>
+          {showLogin ? (
+            <Link
+              href="/login"
+              className="text-sm font-sans text-asi-navy/65 hover:text-asi-navy transition-colors"
+            >
+              Войти
+            </Link>
+          ) : null}
           <Link href={primaryCta.href} className={asiBrandButtonClasses.headerOutline}>
             {primaryCta.label}
           </Link>
@@ -159,13 +164,15 @@ export function RuPublicNavHeader({
               </a>
             </div>
           ) : null}
-          <Link
-            href="/login"
-            onClick={() => setOpen(false)}
-            className="mt-3 text-sm font-sans text-asi-navy/65"
-          >
-            Войти
-          </Link>
+          {showLogin ? (
+            <Link
+              href="/login"
+              onClick={() => setOpen(false)}
+              className="mt-3 text-sm font-sans text-asi-navy/65"
+            >
+              Войти
+            </Link>
+          ) : null}
           <Link
             href={primaryCta.href}
             onClick={() => setOpen(false)}

@@ -1,5 +1,4 @@
 import type { Metadata } from 'next';
-import Link from 'next/link';
 import {
   BrandGoldRule,
   BrandHeadline,
@@ -11,9 +10,6 @@ import {
 import { EarlyAccessObjectForm } from '@/components/early-access/EarlyAccessObjectForm';
 import { RuComplianceFooter } from '@/components/ru/RuComplianceFooter';
 import { RuPublicNavHeader } from '@/components/ru/RuPublicNavHeader';
-import { productSupportEmail } from '@/config/contact';
-import { ruComplianceRoutes } from '@/config/ruCompliance';
-import { telegramSupportBotUrl } from '@/config/telegramBots';
 import { COMMUNICATION_PILOT_PRICE_RUB } from '@/lib/payments/yookassa-env';
 
 export const metadata: Metadata = {
@@ -64,8 +60,8 @@ const CLIENT_STEPS = [
 const EXAMPLES = [
   {
     title: 'Типовой запрос → Ответ по данным объекта',
-    guest: '«Подскажите, пожалуйста, какой пароль от Wi-Fi и как припарковаться?»',
-    asi: '«Здравствуйте! Данные Wi-Fi доступны для этого объекта. Перед отправкой чувствительной информации система проверяет данные бронирования. Парковка бесплатная во дворе, заезд со стороны улицы.»',
+    guest: '«Подскажите, пожалуйста, во сколько заезд и где парковаться?»',
+    asi: '«По данным этого объекта, заезд — после 15:00. Парковка бесплатная во дворе, заезд со стороны улицы.»',
   },
   {
     title: 'Нетиповая ситуация или бизнес-решение → Передача человеку',
@@ -95,6 +91,8 @@ export default function HomeRu() {
       <RuPublicNavHeader
         density="landing"
         brandLabel="ASI Global"
+        showContacts={false}
+        showLogin={false}
         mainLinks={HOME_NAV_LINKS}
         primaryCta={{ href: FORM_HREF, label: PRIMARY_CTA_LABEL }}
       />
@@ -235,56 +233,13 @@ export default function HomeRu() {
             запустим 14 дней тест-драйва на реальном потоке гостей только после полной готовности.
           </p>
           <div className="mt-10 max-w-2xl">
-            <EarlyAccessObjectForm submitLabel={PRIMARY_CTA_LABEL} />
+            <EarlyAccessObjectForm variant="compact" submitLabel={PRIMARY_CTA_LABEL} />
           </div>
         </BrandSection>
       </main>
 
       <footer>
-        <div className="bg-asi-paper border-t border-asi-border px-5 sm:px-8 py-12 sm:py-14">
-          <div className="max-w-6xl mx-auto grid gap-8 lg:grid-cols-[1.2fr,0.8fr]">
-            <div>
-              <p className="font-serif text-lg text-asi-navy">ASI Global © 2026.</p>
-              <p className="mt-3 text-sm text-asi-navy/65 leading-relaxed max-w-md">
-                Автоматизация гостевых коммуникаций в посуточной аренде.
-              </p>
-              <div className="mt-5 space-y-2 text-sm text-asi-navy/75">
-                <p>
-                  Telegram:{' '}
-                  <a
-                    href={telegramSupportBotUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="underline underline-offset-2 hover:text-asi-navy"
-                  >
-                    @ASI_Support_Bot
-                  </a>
-                </p>
-                <p>
-                  Email:{' '}
-                  <a
-                    href={`mailto:${productSupportEmail}`}
-                    className="underline underline-offset-2 hover:text-asi-navy"
-                  >
-                    support@asi-global.ru
-                  </a>
-                </p>
-              </div>
-            </div>
-            <nav className="flex flex-col gap-2.5 text-sm" aria-label="Юридические ссылки">
-              <Link href={ruComplianceRoutes.offer} className="text-asi-navy/75 hover:text-asi-navy">
-                Оферта
-              </Link>
-              <Link href={ruComplianceRoutes.privacy} className="text-asi-navy/75 hover:text-asi-navy">
-                Политика конфиденциальности
-              </Link>
-              <Link href={ruComplianceRoutes.contacts} className="text-asi-navy/75 hover:text-asi-navy">
-                Контакты
-              </Link>
-            </nav>
-          </div>
-        </div>
-        <RuComplianceFooter tone="theme" />
+        <RuComplianceFooter tone="theme" variant="compact" />
       </footer>
     </div>
   );
