@@ -77,6 +77,7 @@ describe('RU-DESIGN-03 early-access visual migration', () => {
 
   it('keeps application form contract and community routing labels', () => {
     const form = readSrc('src/components/early-access/EarlyAccessObjectForm.tsx');
+    const early = readSrc('src/app/ru/early-access/page.tsx');
     expect(form).toContain("fetch('/api/early-access/objects'");
     expect(form).toContain("id=\"pilot-form\"");
     expect(form).toContain("'community_member'");
@@ -85,10 +86,16 @@ describe('RU-DESIGN-03 early-access visual migration', () => {
     expect(form).toContain('Участник группы Ярослава Стригунова');
     expect(form).toContain('Участник группы Анатолия Брагина');
     expect(form).toContain('Другая рекомендация или источник');
+    expect(form).toContain('Условия участия');
     expect(form).toContain('ownerContact');
     expect(form).toContain('additionalFeatures');
     expect(form).toContain('bg-asi-paper');
     expect(form).not.toContain('rounded-lg');
+    expect(form).toContain("variant === 'compact'");
+    expect(form).toContain('Источник заявки: главная страница ASI.');
+    // /ru/early-access keeps the full community selector (default variant).
+    expect(early).toContain('<EarlyAccessObjectForm />');
+    expect(early).not.toContain('variant="compact"');
   });
 
   it('keeps checkout component fail-closed for future use, off the pre-pilot journey', () => {

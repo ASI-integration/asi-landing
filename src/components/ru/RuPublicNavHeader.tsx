@@ -14,20 +14,35 @@ import { ruComplianceRoutes } from '@/config/ruCompliance';
 export type RuPublicNavSurface = 'theme' | 'light' | 'dark';
 export type RuPublicNavDensity = 'legal' | 'landing';
 
-const PRIMARY_CTA = { href: '/ru/early-access', label: 'Подключить объект бесплатно' } as const;
+type RuPublicNavLink = { readonly href: string; readonly label: string };
+
+const DEFAULT_PRIMARY_CTA = {
+  href: '/ru/early-access',
+  label: 'Подключить объект бесплатно',
+} as const;
 
 /**
  * RU public header — guestautopilot visual language, RU customer journey labels.
  * Login remains utility; primary acquisition CTA is communications pilot.
+ * Homepage can override links to same-page anchors without changing other routes.
  */
 export function RuPublicNavHeader({
   density,
   showContacts = true,
+  showLogin = true,
+  brandLabel = 'ASI',
+  mainLinks = ruNavMainLinks,
+  primaryCta = DEFAULT_PRIMARY_CTA,
 }: {
   /** Kept for call-site compatibility; visual system is shared ASI brand. */
   surface?: RuPublicNavSurface;
   density: RuPublicNavDensity;
   showContacts?: boolean;
+  /** When false, hides the utility login link (homepage acquisition chrome). */
+  showLogin?: boolean;
+  brandLabel?: string;
+  mainLinks?: readonly RuPublicNavLink[];
+  primaryCta?: RuPublicNavLink;
 }) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
@@ -50,11 +65,11 @@ export function RuPublicNavHeader({
           onClick={() => setOpen(false)}
         >
           <BrandLogoMark size={26} />
-          <span className="font-serif text-lg tracking-tight">ASI</span>
+          <span className="font-serif text-lg tracking-tight">{brandLabel}</span>
         </Link>
 
         <nav className="hidden lg:flex items-center gap-7" aria-label="Основная навигация">
-          {ruNavMainLinks.map(({ href, label }) => {
+          {mainLinks.map(({ href, label }) => {
             const isCurrent = isCurrentHref(href);
             return (
               <Link
@@ -84,14 +99,16 @@ export function RuPublicNavHeader({
               <span className="hidden xl:inline">Telegram</span>
             </a>
           ) : null}
-          <Link
-            href="/login"
-            className="text-sm font-sans text-asi-navy/65 hover:text-asi-navy transition-colors"
-          >
-            Войти
-          </Link>
-          <Link href={PRIMARY_CTA.href} className={asiBrandButtonClasses.headerOutline}>
-            {PRIMARY_CTA.label}
+          {showLogin ? (
+            <Link
+              href="/login"
+              className="text-sm font-sans text-asi-navy/65 hover:text-asi-navy transition-colors"
+            >
+              Войти
+            </Link>
+          ) : null}
+          <Link href={primaryCta.href} className={asiBrandButtonClasses.headerOutline}>
+            {primaryCta.label}
           </Link>
         </div>
 
@@ -119,7 +136,7 @@ export function RuPublicNavHeader({
       {open ? (
         <div className="lg:hidden border-t border-asi-border bg-asi-ivory px-5 py-4 flex flex-col gap-1">
           <nav className="flex flex-col" aria-label="Мобильная навигация">
-            {ruNavMainLinks.map(({ href, label }) => (
+            {mainLinks.map(({ href, label }) => (
               <Link
                 key={href}
                 href={href}
@@ -147,19 +164,21 @@ export function RuPublicNavHeader({
               </a>
             </div>
           ) : null}
+          {showLogin ? (
+            <Link
+              href="/login"
+              onClick={() => setOpen(false)}
+              className="mt-3 text-sm font-sans text-asi-navy/65"
+            >
+              Войти
+            </Link>
+          ) : null}
           <Link
-            href="/login"
-            onClick={() => setOpen(false)}
-            className="mt-3 text-sm font-sans text-asi-navy/65"
-          >
-            Войти
-          </Link>
-          <Link
-            href={PRIMARY_CTA.href}
+            href={primaryCta.href}
             onClick={() => setOpen(false)}
             className={`mt-3 ${asiBrandButtonClasses.primary}`}
           >
-            {PRIMARY_CTA.label}
+            {primaryCta.label}
           </Link>
         </div>
       ) : null}
