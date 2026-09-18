@@ -708,19 +708,60 @@ export function resolveHomepageContractMode(mode, productionVersion) {
   };
 }
 
+/**
+ * Expected homepage URL from contract path + audit baseUrl.
+ * @param {string} baseUrl
+ */
+export function expectedHomepageUrl(baseUrl) {
+  const pathHint = RU_PUBLIC_SITE_CONTRACT.homepageForm.path;
+  return normalizeUrl(new URL(pathHint, baseUrl).href, baseUrl);
+}
+
+/**
+ * Redirect-safe homepage identity.
+ * Prefer requestedUrl match (seed `/ru` even when final is `/`), then exact finalUrl.
+ * Never use broad `.includes('/ru')` matching.
+ * @param {object[]} pages
+ * @param {string} baseUrl
+ */
+export function findHomepagePage(pages, baseUrl) {
+  const want = expectedHomepageUrl(baseUrl);
+  if (!want) return null;
+
+  const byRequested = (pages || []).find((p) => {
+    const requested = normalizeUrl(p.requestedUrl, baseUrl);
+    return requested && requested === want;
+  });
+  if (byRequested) return byRequested;
+
+  const byFinal = (pages || []).find((p) => {
+    const finalNorm = normalizeUrl(p.finalUrl, baseUrl);
+    return finalNorm && finalNorm === want;
+  });
+  return byFinal || null;
+}
+
+function homepageRedirectEvidence(page) {
+  const requested = page?.requestedUrl || '(unknown)';
+  const final = page?.finalUrl || '(unknown)';
+  if (requested === final) return `requested: ${requested}`;
+  return `requested: ${requested} | final: ${final}`;
+}
+
 export function analyzeHomepageFormContract(pages, baseUrl, { mode = 'auto', productionVersion = 'unknown' } = {}) {
   /** @type {Finding[]} */
   const out = [];
   const decision = resolveHomepageContractMode(mode, productionVersion);
   const pathHint = RU_PUBLIC_SITE_CONTRACT.homepageForm.path;
+  const expectedUrl = expectedHomepageUrl(baseUrl) || pathHint;
 
   if (!decision.enforce) {
     out.push(
       finding({
         id: 'FORM_HOMEPAGE_CONTRACT_INFO',
         severity: 'info',
-        url: pathHint,
-        sourcePage: pathHint,
+        url: expectedUrl,
+        sourcePage: expectedUrl,
         category: 'forms',
         title: 'Homepage form contract checks not enforced',
         evidence: decision.reason,
@@ -732,32 +773,30 @@ export function analyzeHomepageFormContract(pages, baseUrl, { mode = 'auto', pro
     return out;
   }
 
-  const homepage =
-    pages.find((p) => {
-      const u = normalizeUrl(p.finalUrl || p.requestedUrl, baseUrl);
-      const want = normalizeUrl(new URL(pathHint, baseUrl).href, baseUrl);
-      return u && want && u === want;
-    }) ||
-    pages.find((p) => String(p.finalUrl || p.requestedUrl || '').includes(pathHint));
+  const homepage = findHomepagePage(pages, baseUrl);
 
   if (!homepage || !isAnalyzableHtmlPage(homepage)) {
     out.push(
       finding({
         id: 'FORM_HOMEPAGE_MISSING',
         severity: 'major',
-        url: pathHint,
-        sourcePage: pathHint,
+        url: expectedUrl,
+        sourcePage: expectedUrl,
+        targetUrl: expectedUrl,
         category: 'forms',
         title: 'Homepage not available for form contract',
-        evidence: decision.reason,
-        explanation: 'Homepage form enforcement was enabled but /ru was not crawled as HTML.',
-        action: 'ensure /ru is reachable in the crawl',
+        evidence: `${decision.reason} | expected: ${expectedUrl}`,
+        explanation:
+          'Homepage form enforcement was enabled but no crawled page matched the configured homepage by exact requestedUrl or finalUrl.',
+        action: 'ensure the homepage path is crawled (requested identity preferred over redirect final URL)',
       }),
     );
     return out;
   }
 
-  const url = homepage.finalUrl || homepage.requestedUrl;
+  const requested = homepage.requestedUrl || expectedUrl;
+  const final = homepage.finalUrl || requested;
+  const redirectNote = homepageRedirectEvidence(homepage);
   const labels = (homepage.forms || []).flatMap((f) => f.labels || []);
   const labelBlob = labels.join('\n');
   const text = pageText(homepage);
@@ -769,11 +808,12 @@ export function analyzeHomepageFormContract(pages, baseUrl, { mode = 'auto', pro
         finding({
           id: 'FORM_HOMEPAGE_FIELD_MISSING',
           severity: 'major',
-          url,
-          sourcePage: url,
+          url: requested,
+          sourcePage: requested,
+          targetUrl: final !== requested ? final : null,
           category: 'forms',
           title: 'Expected homepage form field missing',
-          evidence: field,
+          evidence: `${field} | ${redirectNote}`,
           explanation: `Expected visible field "${field}" on acquisition form.`,
           action: 'restore compact 3-field form',
         }),
@@ -781,23 +821,17 @@ export function analyzeHomepageFormContract(pages, baseUrl, { mode = 'auto', pro
     }
   }
 
-  if (
-    /сообществ/i.test(labelBlob) ||
-    /membership/i.test(labelBlob) ||
-    /radio/i.test(labelBlob.toLowerCase())
-  ) {
-    // Soft heuristic — community radios are typically labeled; keep narrow.
-  }
   if (/участник\s+сообществ|community\s+member/i.test(text + '\n' + labelBlob)) {
     out.push(
       finding({
         id: 'FORM_HOMEPAGE_COMMUNITY_RADIOS',
         severity: 'major',
-        url,
-        sourcePage: url,
+        url: requested,
+        sourcePage: requested,
+        targetUrl: final !== requested ? final : null,
         category: 'forms',
         title: 'Community membership radios present on homepage form',
-        evidence: 'community membership wording detected near form',
+        evidence: `community membership wording detected near form | ${redirectNote}`,
         explanation: 'Compact acquisition form must not show community membership radios.',
         action: 'remove community radios from homepage form',
       }),
