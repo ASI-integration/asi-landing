@@ -85,7 +85,7 @@ describe('TASK8 property knowledge lookup for Telegram operational intake', () =
   beforeEach(() => __resetAutonomousSessionStoreForTests());
   afterEach(() => __resetAutonomousSessionStoreForTests());
 
-  it('A. Wi-Fi for John Smith at Nevsky 24 → grounded Wi-Fi reply with network/password', async () => {
+  it('A. Wi-Fi for John Smith at Nevsky 24 → grounded Wi-Fi reply without inventing; password gated until booking verified', async () => {
     const db = makeDb([
       {
         when: q => q._table === 'tg_property_knowledge' && q._filters.some((f: any) => f.op === 'ilike' && f.col === 'location'),
@@ -103,6 +103,10 @@ describe('TASK8 property knowledge lookup for Telegram operational intake', () =
           error: null,
         },
       },
+      {
+        when: q => q._table === 'object_knowledge_entries',
+        respond: { data: [], error: null },
+      },
     ]);
 
     const { r, reply } = await runOne({ chatId: 8001, update_id: 201, text: 'Can you check Wi‑Fi for John Smith at Nevsky 24?', db });
@@ -110,7 +114,8 @@ describe('TASK8 property knowledge lookup for Telegram operational intake', () =
     expect((r.hit.extractedFacts as any).property_knowledge_status).toBe('knowledge_found');
     expect(r.hit.finalAction).toBe('reply');
     expect(reply).toMatch(/GuestWifi/);
-    expect(reply).toMatch(/secret123/);
+    // P0-02: unverified guest must not receive legacy/canonical password.
+    expect(reply).not.toMatch(/secret123/);
     expect(reply).not.toMatch(/Which property is this for\?/i);
   });
 
@@ -143,7 +148,7 @@ describe('TASK8 property knowledge lookup for Telegram operational intake', () =
     expect(reply).not.toMatch(/Which property is this for\?/i);
   });
 
-  it('C. Access issue urgent at Nevsky 24 → escalates urgent, operator summary has property knowledge', async () => {
+  it('C. Access issue urgent at Nevsky 24 → escalates urgent; access secrets stay in knowledge, not guest reply without verified identity', async () => {
     const db = makeDb([
       {
         when: q =>
@@ -168,6 +173,10 @@ describe('TASK8 property knowledge lookup for Telegram operational intake', () =
           error: null,
         },
       },
+      {
+        when: q => q._table === 'object_knowledge_entries',
+        respond: { data: [], error: null },
+      },
     ]);
 
     const { r, reply } = await runOne({ chatId: 8003, update_id: 203, text: 'Hi, guest John Smith is checking in today at 18:00 at Nevsky 24. He says the door code does not work.', db });
@@ -175,8 +184,10 @@ describe('TASK8 property knowledge lookup for Telegram operational intake', () =
     expect(r.hit.finalAction).toBe('escalate_urgent');
     expect((r.hit.extractedFacts as any).property_knowledge_status).toBe('knowledge_found');
     expect((r.hit.extractedFacts as any).property_knowledge_fields).toEqual(expect.arrayContaining(['door_code_notes']));
+    expect((r.hit.extractedFacts as any).property_knowledge?.door_code_notes).toMatch(/4829/);
     expect(reply).toMatch(/urgent/i);
-    expect(reply).toMatch(/4829|concierge/);
+    // Guest-facing escalate text must not leak access secrets without verified identity.
+    expect(reply).not.toMatch(/4829/);
   });
 
   it('D. Late checkout with policy → policy-aware reply', async () => {
@@ -195,6 +206,10 @@ describe('TASK8 property knowledge lookup for Telegram operational intake', () =
           error: null,
         },
       },
+      {
+        when: q => q._table === 'object_knowledge_entries',
+        respond: { data: [], error: null },
+      },
     ]);
 
     const { r, reply } = await runOne({ chatId: 8004, update_id: 204, text: 'Hello. Guest Anna Petrova asks for late checkout tomorrow until 13:00 at Liteyny 12.', db });
@@ -207,7 +222,7 @@ describe('TASK8 property knowledge lookup for Telegram operational intake', () =
     }
   });
 
-  it('E. No heating urgent with heating notes → escalates urgent, reply includes emergency/heating hint', async () => {
+  it('E. No heating urgent with heating notes → escalates urgent; grounded heating facts attached for operators', async () => {
     const db = makeDb([
       {
         when: q => q._table === 'tg_property_knowledge' && q._filters.some((f: any) => f.op === 'ilike' && f.col === 'location'),
@@ -224,13 +239,18 @@ describe('TASK8 property knowledge lookup for Telegram operational intake', () =
           error: null,
         },
       },
+      {
+        when: q => q._table === 'object_knowledge_entries',
+        respond: { data: [], error: null },
+      },
     ]);
 
     const { r, reply } = await runOne({ chatId: 8005, update_id: 205, text: 'Guest says there is no heating in the apartment at Nevsky 24 and it is very cold.', db });
     expect(r.hit.category).toBe('no_heating');
     expect(r.hit.finalAction).toBe('escalate_urgent');
     expect((r.hit.extractedFacts as any).property_knowledge_status).toBe('knowledge_found');
+    expect((r.hit.extractedFacts as any).property_knowledge?.heating_notes).toMatch(/Thermostat|boiler/i);
+    expect((r.hit.extractedFacts as any).property_knowledge?.emergency_contact_notes).toMatch(/555-01-99|maintenance/i);
     expect(reply).toMatch(/urgent/i);
-    expect(reply).toMatch(/Thermostat|boiler|555-01-99|maintenance/i);
   });
 });

@@ -27,10 +27,12 @@
  * Behaviour:
  *   - Creates row if property_id is new.
  *   - Updates existing row if property_id already exists.
- *   - Maps the public/admin request names onto the canonical tg_property_knowledge
- *     columns used by the production communication loader.
+ *   - Maps the public/admin request names onto tg_property_knowledge columns
+ *     (matching / readiness / templates / ops metadata).
+ *   - Dual-writes guest-facing facts into object_knowledge_entries via the
+ *     shared P0-02 canonical mapping (canonical wins on the live Telegram path).
  *   - When wifi_name + wifi_password are supplied, wifi_instructions is
- *     auto-composed so getGroundedKnowledge() can answer directly.
+ *     auto-composed for legacy consumers.
  *   - Idempotent: safe to call multiple times with the same payload.
  *
  * Returns:
@@ -44,6 +46,7 @@ import { NextResponse } from 'next/server';
 import { requireAdminSecret } from '@/lib/admin-auth';
 import { supabase } from '@/lib/supabase';
 import { appendTimelineEvent } from '@/lib/communication/timeline';
+import { buildCanonicalGuestFactUpserts } from '@/lib/communication/guest-property-knowledge';
 
 export async function POST(req: Request) {
   const authFailure = requireAdminSecret(req);
@@ -117,6 +120,34 @@ export async function POST(req: Request) {
 
   if (error) {
     return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
+  }
+
+  // P0-02: dual-write guest facts into canonical object_knowledge_entries so the
+  // live Telegram path never treats tg_property_knowledge as competing truth once
+  // a canonical row exists for the same key.
+  const canonicalRows = buildCanonicalGuestFactUpserts({
+    property_id: String(property_id),
+    fields: {
+      wifi_name,
+      wifi_password,
+      check_in_instructions,
+      checkin_instructions: check_in_instructions,
+      checkout_notes: check_out_instructions,
+      check_out_time,
+      house_rules,
+      parking_instructions,
+    },
+  });
+  if (canonicalRows.length > 0) {
+    const { error: okError } = await supabase
+      .from('object_knowledge_entries')
+      .upsert(canonicalRows, { onConflict: 'object_id,key' });
+    if (okError) {
+      return NextResponse.json(
+        { ok: false, error: `canonical_guest_fact_upsert_failed:${okError.message}` },
+        { status: 500 },
+      );
+    }
   }
 
   await appendTimelineEvent(

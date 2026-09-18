@@ -31,6 +31,12 @@ vi.mock('@/lib/supabase', () => ({
           }),
         };
       }
+      if (table === 'object_knowledge_entries') {
+        return {
+          upsert: (_row: unknown, _opts: unknown) =>
+            Promise.resolve({ error: null, data: [] }),
+        };
+      }
       return { from: () => ({}) };
     },
   },
