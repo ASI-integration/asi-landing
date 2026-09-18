@@ -21,6 +21,7 @@
     "test:e2e": "playwright test",
     "test:e2e:report": "playwright show-report",
     "lighthouse": "node scripts/lighthouse.mjs",
+    "site:audit": "node scripts/site-audit/cli.mjs",
     "test:telegram:live": "node scripts/telegram-live-acceptance.mjs",
     "test:telegram:autopilot:live": "node scripts/telegram-autopilot-live-acceptance.mjs",
     "test:telegram:identity:live": "node scripts/telegram-identity-live-acceptance.mjs",
