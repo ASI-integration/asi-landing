@@ -30,17 +30,36 @@ CREATE TABLE IF NOT EXISTS public.ru_commercial_pilot_lifecycle (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   CONSTRAINT ru_commercial_pilot_lifecycle_account_property_key
     UNIQUE (account_id, property_id),
+  -- Pilot window is all-or-nothing.
   CONSTRAINT ru_commercial_pilot_lifecycle_pilot_window_chk
     CHECK (
       (pilot_started_at IS NULL AND pilot_ends_at IS NULL)
       OR (pilot_started_at IS NOT NULL AND pilot_ends_at IS NOT NULL)
     ),
-  CONSTRAINT ru_commercial_pilot_lifecycle_pilot_order_chk
+  -- Pilot start is impossible without ready_at, and must not precede it.
+  CONSTRAINT ru_commercial_pilot_lifecycle_pilot_after_ready_chk
     CHECK (
       pilot_started_at IS NULL
-      OR ready_at IS NULL
-      OR pilot_started_at >= ready_at
+      OR (ready_at IS NOT NULL AND pilot_started_at >= ready_at)
+    ),
+  -- Status → timestamp consistency (SSOT cannot hold impossible rows).
+  CONSTRAINT ru_commercial_pilot_lifecycle_status_ready_at_chk
+    CHECK (
+      status IN ('application', 'setup')
+      OR ready_at IS NOT NULL
+    ),
+  CONSTRAINT ru_commercial_pilot_lifecycle_status_pilot_window_chk
+    CHECK (
+      status IN ('application', 'setup', 'ready')
+      OR (pilot_started_at IS NOT NULL AND pilot_ends_at IS NOT NULL)
+    ),
+  CONSTRAINT ru_commercial_pilot_lifecycle_status_completed_at_chk
+    CHECK (
+      status IN ('application', 'setup', 'ready', 'pilot_active')
+      OR pilot_completed_at IS NOT NULL
     )
+  -- report_ready_at / continuation_decided_at intentionally NOT required yet:
+  -- report_ready / continued / stopped are reserved; wiring is a later P0.
 );
 
 CREATE INDEX IF NOT EXISTS idx_ru_commercial_pilot_lifecycle_account_status

@@ -43,10 +43,18 @@ function requireOwned(
   return null;
 }
 
+/**
+ * Persist a domain transition with compare-and-set.
+ * On CAS loss: reload and re-apply the same domain action.
+ * - If re-apply is an idempotent no-op, return success with current state.
+ * - If re-apply still wants to change state, return concurrent_update_retry_required
+ *   (do NOT claim the original transition succeeded).
+ */
 async function persistTransition(
   deps: RuCommercialPilotServiceDeps,
   previous: RuCommercialPilotState | null,
   result: RuCommercialPilotTransitionResult,
+  reapply: (current: RuCommercialPilotState) => RuCommercialPilotTransitionResult,
 ): Promise<RuCommercialPilotTransitionResult> {
   if (!result.ok) return result;
   if (!result.changed) return result;
@@ -57,12 +65,15 @@ async function persistTransition(
     expected,
     result.state,
   );
-  if (!saved) {
-    const current = await deps.store.get(result.state.accountId, result.state.propertyId);
-    if (!current) return { ok: false, reason: 'concurrent_update_lost' };
-    return { ok: true, state: current, changed: false };
-  }
-  return result;
+  if (saved) return result;
+
+  const current = await deps.store.get(result.state.accountId, result.state.propertyId);
+  if (!current) return { ok: false, reason: 'concurrent_update_lost' };
+
+  const again = reapply(current);
+  if (!again.ok) return again;
+  if (!again.changed) return again;
+  return { ok: false, reason: 'concurrent_update_retry_required' };
 }
 
 export async function getPilotLifecycle(
@@ -105,7 +116,7 @@ export async function beginSetup(
   }
   const now = (deps.now ?? (() => new Date()))();
   const result = applyBeginSetup(current, now);
-  return persistTransition(deps, current, result);
+  return persistTransition(deps, current, result, (latest) => applyBeginSetup(latest, now));
 }
 
 export async function deriveReady(
@@ -124,7 +135,9 @@ export async function deriveReady(
   const readiness = await deps.isReadinessSatisfied(propertyId);
   const now = (deps.now ?? (() => new Date()))();
   const result = applyDeriveReady(current, readiness, now);
-  return persistTransition(deps, current, result);
+  return persistTransition(deps, current, result, (latest) =>
+    applyDeriveReady(latest, readiness, now),
+  );
 }
 
 export async function startPilot(
@@ -139,7 +152,9 @@ export async function startPilot(
   const readiness = await deps.isReadinessSatisfied(propertyId);
   const now = (deps.now ?? (() => new Date()))();
   const result = applyStartPilot(current, readiness, now);
-  return persistTransition(deps, current, result);
+  return persistTransition(deps, current, result, (latest) =>
+    applyStartPilot(latest, readiness, now),
+  );
 }
 
 export async function completePilot(
@@ -153,5 +168,5 @@ export async function completePilot(
   if (!current) return { ok: false, reason: 'lifecycle_not_found' };
   const now = (deps.now ?? (() => new Date()))();
   const result = applyCompletePilot(current, now);
-  return persistTransition(deps, current, result);
+  return persistTransition(deps, current, result, (latest) => applyCompletePilot(latest, now));
 }

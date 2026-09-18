@@ -1,3 +1,5 @@
+import fs from 'node:fs';
+import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import {
   RU_COMMERCIAL_PILOT_DAYS,
@@ -232,31 +234,146 @@ describe('P0-01 acceptance scenarios', () => {
     if (!restart.ok) expect(restart.reason).toMatch(/cannot restart pilot/);
   });
 
-  it('concurrent start keeps original timestamps', async () => {
+  it('concurrent start_pilot with different clocks keeps the winner original timestamps', async () => {
     const store = createMemoryRuCommercialPilotStore();
-    let readiness = true;
-    let now = new Date('2026-05-01T00:00:00.000Z');
-    const deps: RuCommercialPilotServiceDeps = {
+    const base: Omit<RuCommercialPilotServiceDeps, 'now'> = {
       store,
-      isReadinessSatisfied: async () => readiness,
+      isReadinessSatisfied: async () => true,
       ownsProperty: async () => true,
-      now: () => now,
     };
-    await beginSetup(deps, 'acct-a', 'prop-a');
-    await deriveReady(deps, 'acct-a', 'prop-a');
+    const prepNow = new Date('2026-05-01T00:00:00.000Z');
+    await beginSetup({ ...base, now: () => prepNow }, 'acct-a', 'prop-a');
+    await deriveReady({ ...base, now: () => prepNow }, 'acct-a', 'prop-a');
+
+    const clockA = new Date('2026-05-01T12:00:00.000Z');
+    const clockB = new Date('2026-05-10T18:30:00.000Z');
     const [a, b] = await Promise.all([
-      startPilot(deps, 'acct-a', 'prop-a'),
-      startPilot(deps, 'acct-a', 'prop-a'),
+      startPilot({ ...base, now: () => clockA }, 'acct-a', 'prop-a'),
+      startPilot({ ...base, now: () => clockB }, 'acct-a', 'prop-a'),
     ]);
     expect(a.ok && b.ok).toBe(true);
     if (!a.ok || !b.ok) return;
+    expect(a.state.status).toBe('pilot_active');
+    expect(b.state.status).toBe('pilot_active');
     expect(a.state.timestamps.pilotStartedAt?.toISOString()).toBe(
       b.state.timestamps.pilotStartedAt?.toISOString(),
     );
-    now = new Date('2026-05-02T00:00:00.000Z');
-    const again = await startPilot(deps, 'acct-a', 'prop-a');
-    expect(again.ok && again.state.timestamps.pilotStartedAt?.toISOString()).toBe(
-      a.state.timestamps.pilotStartedAt?.toISOString(),
+    expect(a.state.timestamps.pilotEndsAt?.toISOString()).toBe(
+      b.state.timestamps.pilotEndsAt?.toISOString(),
+    );
+    const started = a.state.timestamps.pilotStartedAt!.toISOString();
+    expect([clockA.toISOString(), clockB.toISOString()]).toContain(started);
+
+    const later = await startPilot(
+      { ...base, now: () => new Date('2026-06-01T00:00:00.000Z') },
+      'acct-a',
+      'prop-a',
+    );
+    expect(later.ok).toBe(true);
+    if (!later.ok) return;
+    expect(later.changed).toBe(false);
+    expect(later.state.timestamps.pilotStartedAt?.toISOString()).toBe(started);
+  });
+
+  it('concurrent complete_pilot is idempotent on the winner state', async () => {
+    const store = createMemoryRuCommercialPilotStore();
+    const base: Omit<RuCommercialPilotServiceDeps, 'now'> = {
+      store,
+      isReadinessSatisfied: async () => true,
+      ownsProperty: async () => true,
+    };
+    const t0 = new Date('2026-05-01T00:00:00.000Z');
+    await beginSetup({ ...base, now: () => t0 }, 'acct-a', 'prop-a');
+    await deriveReady({ ...base, now: () => t0 }, 'acct-a', 'prop-a');
+    await startPilot({ ...base, now: () => t0 }, 'acct-a', 'prop-a');
+
+    const endA = new Date('2026-05-16T00:00:00.000Z');
+    const endB = new Date('2026-05-20T00:00:00.000Z');
+    const [a, b] = await Promise.all([
+      completePilot({ ...base, now: () => endA }, 'acct-a', 'prop-a'),
+      completePilot({ ...base, now: () => endB }, 'acct-a', 'prop-a'),
+    ]);
+    expect(a.ok && b.ok).toBe(true);
+    if (!a.ok || !b.ok) return;
+    expect(a.state.status).toBe('pilot_completed');
+    expect(b.state.status).toBe('pilot_completed');
+    expect(a.state.timestamps.pilotCompletedAt?.toISOString()).toBe(
+      b.state.timestamps.pilotCompletedAt?.toISOString(),
+    );
+  });
+
+  it('derive_ready cannot report success when only setup was persisted by a competing writer', async () => {
+    const inner = createMemoryRuCommercialPilotStore();
+    const prep: RuCommercialPilotServiceDeps = {
+      store: inner,
+      isReadinessSatisfied: async () => true,
+      ownsProperty: async () => true,
+      now: () => new Date('2026-05-01T00:00:00.000Z'),
+    };
+    await ensureApplication(prep, 'acct-a', 'prop-a');
+    const application = await inner.get('acct-a', 'prop-a');
+    expect(application?.status).toBe('application');
+
+    const setupResult = await beginSetup(prep, 'acct-a', 'prop-a');
+    expect(setupResult.ok && setupResult.state.status).toBe('setup');
+
+    let staleReadsRemaining = 1;
+    const racingStore: RuCommercialPilotServiceDeps['store'] = {
+      get: async (accountId, propertyId) => {
+        if (staleReadsRemaining > 0) {
+          staleReadsRemaining -= 1;
+          return application;
+        }
+        return inner.get(accountId, propertyId);
+      },
+      compareAndSet: (accountId, propertyId, expectedStatus, next) =>
+        inner.compareAndSet(accountId, propertyId, expectedStatus, next),
+      upsertIfAbsent: (state) => inner.upsertIfAbsent(state),
+    };
+
+    const staleDerive = await deriveReady(
+      {
+        store: racingStore,
+        isReadinessSatisfied: async () => true,
+        ownsProperty: async () => true,
+        now: () => new Date('2026-05-02T00:00:00.000Z'),
+      },
+      'acct-a',
+      'prop-a',
+    );
+    expect(staleDerive.ok).toBe(false);
+    if (staleDerive.ok) return;
+    expect(staleDerive.reason).toBe('concurrent_update_retry_required');
+
+    const persisted = await inner.get('acct-a', 'prop-a');
+    expect(persisted?.status).toBe('setup');
+  });
+});
+
+describe('migration invariants (SQL SSOT)', () => {
+  it('encodes pilot_started_at requires ready_at and status↔timestamp checks', () => {
+    const migrationPath = path.join(
+      process.cwd(),
+      'supabase/migrations/20260918120000_ru_commercial_pilot_lifecycle_v1.sql',
+    );
+    const sql = fs.readFileSync(migrationPath, 'utf8');
+    const compact = sql.replace(/\s+/g, ' ');
+
+    expect(compact).toContain(
+      'pilot_started_at IS NULL OR (ready_at IS NOT NULL AND pilot_started_at >= ready_at)',
+    );
+    expect(compact).not.toContain(
+      'pilot_started_at IS NULL OR ready_at IS NULL OR pilot_started_at >= ready_at',
+    );
+
+    expect(sql).toMatch(
+      /CONSTRAINT ru_commercial_pilot_lifecycle_status_ready_at_chk[\s\S]*?ready_at IS NOT NULL/,
+    );
+    expect(sql).toMatch(
+      /CONSTRAINT ru_commercial_pilot_lifecycle_status_pilot_window_chk[\s\S]*?pilot_started_at IS NOT NULL AND pilot_ends_at IS NOT NULL/,
+    );
+    expect(sql).toMatch(
+      /CONSTRAINT ru_commercial_pilot_lifecycle_status_completed_at_chk[\s\S]*?pilot_completed_at IS NOT NULL/,
     );
   });
 });
