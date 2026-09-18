@@ -1,0 +1,335 @@
+name: Apply RU Commercial Pilot Lifecycle v1 Migration
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm_production_migration:
+        description: Type APPLY_20260918120000_RU_COMMERCIAL_PILOT_LIFECYCLE_V1_TO_PRODUCTION to run this exact production DDL
+        required: true
+        type: string
+
+concurrency:
+  group: production-migration-ru-commercial-pilot-lifecycle-v1
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  AUTHORIZED_REPOSITORY: ASI-integration/asi-landing
+  AUTHORIZED_SHA: 9701e0bcf05775671a910b74a68f29f754b128ba
+  AUTHORIZED_PRE_MIGRATION_SHA: 7c201dd973fc56d28272443ee072b9ab43dec6cc
+  AUTHORIZED_MIGRATION: supabase/migrations/20260918120000_ru_commercial_pilot_lifecycle_v1.sql
+  AUTHORIZED_MIGRATION_SHA256: dcbfd3275a2ae7a8a9163f5de9114ee9a5fef3afacad52cea70358c32446f6cb
+  AUTHORIZED_MIGRATION_BLOB: 85ffdd88af474b8bb7403ffaf1b870b91aba995f
+  EXPECTED_SUPABASE_PROJECT_REF: jwinifeienvzejofmbua
+
+jobs:
+  exact_artifact_preflight:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require exact production migration confirmation
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${{ inputs.confirm_production_migration }}" != "APPLY_20260918120000_RU_COMMERCIAL_PILOT_LIFECYCLE_V1_TO_PRODUCTION" ]]; then
+            echo "Set confirm_production_migration to APPLY_20260918120000_RU_COMMERCIAL_PILOT_LIFECYCLE_V1_TO_PRODUCTION."
+            exit 1
+          fi
+          if [[ "$GITHUB_REPOSITORY" != "$AUTHORIZED_REPOSITORY" ]]; then
+            echo "Unexpected repository: $GITHUB_REPOSITORY"
+            exit 1
+          fi
+
+      - name: Checkout the authorized source commit
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          ref: 9701e0bcf05775671a910b74a68f29f754b128ba
+
+      - name: Verify exact commit and migration bytes
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$AUTHORIZED_SHA"
+          test "$(git hash-object "$AUTHORIZED_MIGRATION")" = "$AUTHORIZED_MIGRATION_BLOB"
+          ACTUAL_SHA256="$(
+            git cat-file blob "${AUTHORIZED_SHA}:${AUTHORIZED_MIGRATION}" | sha256sum | awk '{print $1}'
+          )"
+          test "$ACTUAL_SHA256" = "$AUTHORIZED_MIGRATION_SHA256"
+          test -z "$(git status --porcelain)"
+
+      - name: Verify current public production release
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION_JSON="$(curl --fail --silent --show-error --max-time 20 https://asi-global.ru/api/version)"
+          VERSION_JSON="$VERSION_JSON" node <<'NODE'
+          const value = JSON.parse(process.env.VERSION_JSON || '{}');
+          const expected = process.env.AUTHORIZED_PRE_MIGRATION_SHA;
+          if (value.environment !== 'production' || value.sha !== expected) {
+            throw new Error(`Production release mismatch: expected ${expected}, received ${String(value.sha || 'unknown')}`);
+          }
+          console.log(`production_release_verified=${value.sha}`);
+          NODE
+
+  apply_exact_migration:
+    runs-on: ubuntu-latest
+    needs: [exact_artifact_preflight]
+    environment: production
+    steps:
+      - name: Checkout the authorized source commit
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          ref: 9701e0bcf05775671a910b74a68f29f754b128ba
+
+      - name: Reverify exact commit and migration bytes
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = "$AUTHORIZED_REPOSITORY"
+          test "$(git rev-parse HEAD)" = "$AUTHORIZED_SHA"
+          test "$(git hash-object "$AUTHORIZED_MIGRATION")" = "$AUTHORIZED_MIGRATION_BLOB"
+          ACTUAL_SHA256="$(
+            git cat-file blob "${AUTHORIZED_SHA}:${AUTHORIZED_MIGRATION}" | sha256sum | awk '{print $1}'
+          )"
+          test "$ACTUAL_SHA256" = "$AUTHORIZED_MIGRATION_SHA256"
+
+      - name: Require GitHub production SUPABASE_DB_URL and verify project identity
+        shell: bash
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          EXPECTED_SUPABASE_PROJECT_REF: ${{ env.EXPECTED_SUPABASE_PROJECT_REF }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${SUPABASE_DB_URL:-}" ]]; then
+            echo "::error::SUPABASE_DB_URL secret is missing."
+            exit 1
+          fi
+          echo "::add-mask::${SUPABASE_DB_URL}"
+
+          # Identity only: never print URL, password, or userinfo.
+          # Accept ONLY exact direct host db.<ref>.supabase.co OR
+          # hostname ending with .pooler.supabase.com AND username exactly postgres.<ref>.
+          SUPABASE_DB_URL="$SUPABASE_DB_URL" EXPECTED_SUPABASE_PROJECT_REF="$EXPECTED_SUPABASE_PROJECT_REF" python3 - <<'PY'
+          import os
+          from urllib.parse import unquote, urlparse
+
+          raw = os.environ.get("SUPABASE_DB_URL", "")
+          expected = (os.environ.get("EXPECTED_SUPABASE_PROJECT_REF") or "").strip().lower()
+
+          if not raw or not raw.strip():
+              raise SystemExit("SUPABASE_DB_URL secret is missing.")
+
+          normalized = raw.strip()
+          if len(normalized) >= 2 and normalized[0] in ("'", '"', "`") and normalized[-1] == normalized[0]:
+              normalized = normalized[1:-1].strip()
+          if not normalized or ("\r" in normalized) or ("\n" in normalized):
+              raise SystemExit("SUPABASE_DB_URL is invalid.")
+
+          parsed = urlparse(normalized)
+          scheme_ok = parsed.scheme in ("postgres", "postgresql")
+          hostname = (parsed.hostname or "").lower()
+          username = unquote(parsed.username or "").lower()
+          direct_host = f"db.{expected}.supabase.co"
+          pooler_user = f"postgres.{expected}"
+          host_has_ref = bool(expected) and hostname == direct_host
+          user_has_ref = bool(expected) and username == pooler_user
+          pooler_host_ok = hostname.endswith(".pooler.supabase.com")
+          identity_ok = host_has_ref or (pooler_host_ok and user_has_ref)
+
+          print(f"secret_present=true")
+          print(f"scheme_is_postgres={str(scheme_ok).lower()}")
+          print(f"hostname_has_expected_ref={str(host_has_ref).lower()}")
+          print(f"username_has_expected_ref={str(user_has_ref).lower()}")
+          print(f"expected_project_ref={expected}")
+
+          if not scheme_ok:
+              raise SystemExit("SUPABASE_DB_URL must be a postgres/postgresql URL.")
+          if not identity_ok:
+              raise SystemExit("SUPABASE_DB_URL project identity mismatch.")
+          print("production_supabase_db_identity_verified=yes")
+          PY
+
+      - name: Reverify public production runtime identity before SQL
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION_JSON="$(curl --fail --silent --show-error --max-time 20 https://asi-global.ru/api/version)"
+          VERSION_JSON="$VERSION_JSON" node <<'NODE'
+          const value = JSON.parse(process.env.VERSION_JSON || '{}');
+          const expected = process.env.AUTHORIZED_PRE_MIGRATION_SHA;
+          if (value.environment !== 'production' || value.sha !== expected) {
+            throw new Error(`Production release mismatch before SQL: expected ${expected}, received ${String(value.sha || 'unknown')}`);
+          }
+          console.log(`pre_sql_production_runtime_verified=${value.sha}`);
+          NODE
+
+      - name: Install PostgreSQL client
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq postgresql-client
+
+      - name: Apply only the authorized migration via GitHub production SUPABASE_DB_URL
+        shell: bash
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          EXPECTED_SUPABASE_PROJECT_REF: ${{ env.EXPECTED_SUPABASE_PROJECT_REF }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${SUPABASE_DB_URL:-}" ]]; then
+            echo "::error::SUPABASE_DB_URL secret is missing."
+            exit 1
+          fi
+          echo "::add-mask::${SUPABASE_DB_URL}"
+
+          # Fail closed again immediately before SQL (no VPS process-env or shared-env DB credential fallback).
+          # Same strict identity rules: exact direct host OR pooler suffix + exact postgres.<ref> username.
+          SUPABASE_DB_URL="$SUPABASE_DB_URL" EXPECTED_SUPABASE_PROJECT_REF="$EXPECTED_SUPABASE_PROJECT_REF" python3 - <<'PY'
+          import os
+          from urllib.parse import unquote, urlparse
+
+          raw = os.environ.get("SUPABASE_DB_URL", "")
+          expected = (os.environ.get("EXPECTED_SUPABASE_PROJECT_REF") or "").strip().lower()
+          if not raw or not raw.strip():
+              raise SystemExit("SUPABASE_DB_URL secret is missing.")
+          normalized = raw.strip()
+          if len(normalized) >= 2 and normalized[0] in ("'", '"', "`") and normalized[-1] == normalized[0]:
+              normalized = normalized[1:-1].strip()
+          if not normalized or ("\r" in normalized) or ("\n" in normalized):
+              raise SystemExit("SUPABASE_DB_URL is invalid.")
+          parsed = urlparse(normalized)
+          hostname = (parsed.hostname or "").lower()
+          username = unquote(parsed.username or "").lower()
+          direct_host = f"db.{expected}.supabase.co"
+          pooler_user = f"postgres.{expected}"
+          if parsed.scheme not in ("postgres", "postgresql"):
+              raise SystemExit("SUPABASE_DB_URL must be a postgres/postgresql URL.")
+          if hostname != direct_host and not (
+              hostname.endswith(".pooler.supabase.com") and username == pooler_user
+          ):
+              raise SystemExit("SUPABASE_DB_URL project identity mismatch.")
+          print("pre_sql_identity_reverified=yes")
+          PY
+
+          VERIFY_BLOCK="DO \$verify\$
+          DECLARE
+            v_col text;
+            v_constraint text;
+          BEGIN
+            IF to_regclass('public.ru_commercial_pilot_lifecycle') IS NULL THEN
+              RAISE EXCEPTION 'missing table public.ru_commercial_pilot_lifecycle';
+            END IF;
+
+            FOREACH v_col IN ARRAY ARRAY[
+              'account_id',
+              'property_id',
+              'status',
+              'setup_started_at',
+              'ready_at',
+              'pilot_started_at',
+              'pilot_ends_at',
+              'pilot_completed_at',
+              'report_ready_at',
+              'continuation_decided_at'
+            ] LOOP
+              IF NOT EXISTS (
+                SELECT 1
+                FROM information_schema.columns
+                WHERE table_schema = 'public'
+                  AND table_name = 'ru_commercial_pilot_lifecycle'
+                  AND column_name = v_col
+              ) THEN
+                RAISE EXCEPTION 'missing column public.ru_commercial_pilot_lifecycle.%', v_col;
+              END IF;
+            END LOOP;
+
+            IF NOT EXISTS (
+              SELECT 1
+              FROM pg_constraint
+              WHERE conrelid = 'public.ru_commercial_pilot_lifecycle'::regclass
+                AND contype = 'u'
+                AND conname = 'ru_commercial_pilot_lifecycle_account_property_key'
+            ) THEN
+              RAISE EXCEPTION 'missing unique constraint ru_commercial_pilot_lifecycle_account_property_key';
+            END IF;
+
+            FOREACH v_constraint IN ARRAY ARRAY[
+              'ru_commercial_pilot_lifecycle_pilot_after_ready_chk',
+              'ru_commercial_pilot_lifecycle_status_ready_at_chk',
+              'ru_commercial_pilot_lifecycle_status_pilot_window_chk',
+              'ru_commercial_pilot_lifecycle_status_completed_at_chk'
+            ] LOOP
+              IF NOT EXISTS (
+                SELECT 1
+                FROM pg_constraint
+                WHERE conrelid = 'public.ru_commercial_pilot_lifecycle'::regclass
+                  AND contype = 'c'
+                  AND conname = v_constraint
+              ) THEN
+                RAISE EXCEPTION 'missing check constraint %', v_constraint;
+              END IF;
+            END LOOP;
+
+            IF NOT EXISTS (
+              SELECT 1
+              FROM pg_class c
+              JOIN pg_namespace n ON n.oid = c.relnamespace
+              WHERE n.nspname = 'public'
+                AND c.relname = 'ru_commercial_pilot_lifecycle'
+                AND c.relrowsecurity
+            ) THEN
+              RAISE EXCEPTION 'RLS is not enabled on public.ru_commercial_pilot_lifecycle';
+            END IF;
+
+            IF NOT EXISTS (
+              SELECT 1
+              FROM pg_policies
+              WHERE schemaname = 'public'
+                AND tablename = 'ru_commercial_pilot_lifecycle'
+                AND policyname = 'ru_commercial_pilot_lifecycle_service_role_all'
+                AND roles @> ARRAY['service_role']::name[]
+            ) THEN
+              RAISE EXCEPTION 'missing service_role policy ru_commercial_pilot_lifecycle_service_role_all';
+            END IF;
+
+            IF has_table_privilege('anon', 'public.ru_commercial_pilot_lifecycle', 'INSERT')
+               OR has_table_privilege('anon', 'public.ru_commercial_pilot_lifecycle', 'UPDATE')
+               OR has_table_privilege('anon', 'public.ru_commercial_pilot_lifecycle', 'DELETE')
+               OR has_table_privilege('authenticated', 'public.ru_commercial_pilot_lifecycle', 'INSERT')
+               OR has_table_privilege('authenticated', 'public.ru_commercial_pilot_lifecycle', 'UPDATE')
+               OR has_table_privilege('authenticated', 'public.ru_commercial_pilot_lifecycle', 'DELETE') THEN
+              RAISE EXCEPTION 'anon/authenticated must not have mutation privileges on public.ru_commercial_pilot_lifecycle';
+            END IF;
+          END
+          \$verify\$;"
+
+          psql -X "$SUPABASE_DB_URL" --set ON_ERROR_STOP=1 --single-transaction \
+            --file "$AUTHORIZED_MIGRATION" \
+            --command "NOTIFY pgrst, 'reload schema';" \
+            --command "$VERIFY_BLOCK"
+
+          echo "MIGRATION_STATUS=applied_and_verified"
+
+      - name: Confirm production runtime unchanged after migration
+        shell: bash
+        run: |
+          set -euo pipefail
+          HEALTH_JSON="$(curl --fail --silent --show-error --max-time 20 https://asi-global.ru/api/health)"
+          VERSION_JSON="$(curl --fail --silent --show-error --max-time 20 https://asi-global.ru/api/version)"
+          HEALTH_JSON="$HEALTH_JSON" VERSION_JSON="$VERSION_JSON" node <<'NODE'
+          const health = JSON.parse(process.env.HEALTH_JSON || '{}');
+          const value = JSON.parse(process.env.VERSION_JSON || '{}');
+          const expected = process.env.AUTHORIZED_PRE_MIGRATION_SHA;
+          if (health.ok !== true) {
+            throw new Error(`Production health check failed after migration: ${JSON.stringify(health)}`);
+          }
+          if (value.environment !== 'production' || value.sha !== expected) {
+            throw new Error(`Production runtime changed during migration: expected ${expected}, received ${String(value.sha || 'unknown')}`);
+          }
+          console.log('post_migration_health_ok=yes');
+          console.log('post_migration_runtime_unchanged=yes');
+          NODE

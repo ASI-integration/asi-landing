@@ -156,6 +156,12 @@ jobs:
           console.log('rollout_artifact_proof_ok', JSON.stringify(proof));
           NODE
 
+      - name: RU commercial pilot lifecycle migration artifact regression
+        run: |
+          npx vitest run \
+            src/lib/asi-runtime/__tests__/ru-commercial-pilot-lifecycle-migration-artifacts.test.ts \
+            --reporter=verbose
+
       - name: Initial Sync Recovery production env diagnostic workflow regression
         id: env_diag_workflow_regression
         run: |

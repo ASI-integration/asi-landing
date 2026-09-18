@@ -1,0 +1,25 @@
+{
+  "schemaVersion": "asi.agent-os.owner-gate.v1",
+  "taskId": "ru-commercial-pilot-lifecycle-v1-production-migration",
+  "status": "missing",
+  "action": "production_migration",
+  "target": "production Supabase database for project jwinifeienvzejofmbua reached only through the GitHub production environment SUPABASE_DB_URL secret",
+  "identity": {
+    "ref": "refs/heads/main",
+    "sha": "9701e0bcf05775671a910b74a68f29f754b128ba",
+    "migration": "supabase/migrations/20260918120000_ru_commercial_pilot_lifecycle_v1.sql"
+  },
+  "allowedSideEffect": "Execute only the checksum-pinned additive SQL migration that creates public.ru_commercial_pilot_lifecycle with its integrity constraints and service-role RLS policy; do not deploy the application, do not apply any other migration, and do not mutate application rows.",
+  "postActionVerification": [
+    "The dedicated production workflow reports MIGRATION_STATUS=applied_and_verified.",
+    "public.ru_commercial_pilot_lifecycle exists with the required commercial lifecycle columns.",
+    "Unique (account_id, property_id) and the readiness/start plus status timestamp check constraints exist.",
+    "RLS is enabled and the intended service_role policy exists; anon and authenticated lack mutation privileges.",
+    "Production /api/health remains healthy and /api/version still reports pre-migration application SHA 7c201dd973fc56d28272443ee072b9ab43dec6cc."
+  ],
+  "authorization": null,
+  "typedConfirmation": {
+    "present": true,
+    "countsAsOwnerApproval": false
+  }
+}
