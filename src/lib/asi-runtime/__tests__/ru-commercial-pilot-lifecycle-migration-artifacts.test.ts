@@ -15,11 +15,11 @@ const workflowPath = path.join(
 );
 const migrationPath = 'supabase/migrations/20260918120000_ru_commercial_pilot_lifecycle_v1.sql';
 const migrationAbsolutePath = path.join(repoRoot, migrationPath);
-const authorizedSourceSha = '9701e0bcf05775671a910b74a68f29f754b128ba';
+const authorizedSourceSha = 'de40e3a0f048f414c3d01440acef9b24e241f428';
 const preMigrationAppSha = '7c201dd973fc56d28272443ee072b9ab43dec6cc';
-const migrationBlobSha = '85ffdd88af474b8bb7403ffaf1b870b91aba995f';
-const migrationBlobSize = 3400;
-const migrationSha256 = 'dcbfd3275a2ae7a8a9163f5de9114ee9a5fef3afacad52cea70358c32446f6cb';
+const migrationBlobSha = 'b2fe7622327b0c77060dd643a42a49af180dde67';
+const migrationBlobSize = 3822;
+const migrationSha256 = '1313099cb86b85c494841b8e3240a11811a641c63498f5232e0fdf629ae83517';
 const expectedProjectRef = 'jwinifeienvzejofmbua';
 const typedConfirmation = 'APPLY_20260918120000_RU_COMMERCIAL_PILOT_LIFECYCLE_V1_TO_PRODUCTION';
 
@@ -86,6 +86,29 @@ describe('RU commercial pilot lifecycle v1 production migration artifacts', () =
     expect(createHash('sha256').update(blobBytes).digest('hex')).toBe(migrationSha256);
   });
 
+  it('encodes explicit Data API revoke/grant privileges in the migration', () => {
+    const sql = fs.readFileSync(migrationAbsolutePath, 'utf8');
+    const compact = sql.replace(/\s+/g, ' ');
+
+    expect(compact).toContain(
+      'REVOKE ALL ON TABLE public.ru_commercial_pilot_lifecycle FROM PUBLIC',
+    );
+    expect(compact).toContain(
+      'REVOKE ALL ON TABLE public.ru_commercial_pilot_lifecycle FROM anon',
+    );
+    expect(compact).toContain(
+      'REVOKE ALL ON TABLE public.ru_commercial_pilot_lifecycle FROM authenticated',
+    );
+    expect(compact).toContain(
+      'GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.ru_commercial_pilot_lifecycle TO service_role',
+    );
+    expect(sql).toContain('ru_commercial_pilot_lifecycle_service_role_all');
+    expect(sql).not.toMatch(/grant\s+[\s\S]*\bto\s+anon\b/i);
+    expect(sql).not.toMatch(/grant\s+[\s\S]*\bto\s+authenticated\b/i);
+    expect(sql).not.toMatch(/create\s+policy[\s\S]*\bto\s+anon\b/i);
+    expect(sql).not.toMatch(/create\s+policy[\s\S]*\bto\s+authenticated\b/i);
+  });
+
   it('keeps the migration owner gate pending and exact', () => {
     const migrationGate = readJson<OwnerGateArtifact>(rolloutDir, 'migration-owner-gate.json');
     const runbook = fs.readFileSync(path.join(rolloutDir, 'README.md'), 'utf8');
@@ -105,6 +128,7 @@ describe('RU commercial pilot lifecycle v1 production migration artifacts', () =
     expect(runbook).toContain(typedConfirmation);
     expect(runbook).toContain(migrationSha256);
     expect(runbook).toContain(expectedProjectRef);
+    expect(runbook).toContain(authorizedSourceSha);
   });
 
   it('registers the exact migration as a production apply-backend mechanism', () => {
@@ -128,7 +152,7 @@ describe('RU commercial pilot lifecycle v1 production migration artifacts', () =
     );
   });
 
-  it('uses GitHub production SUPABASE_DB_URL with exact-file psql and never prints secrets', () => {
+  it('verifies service_role CRUD, denies client roles, and emits success only after runtime checks', () => {
     const workflowText = fs.readFileSync(workflowPath, 'utf8');
 
     expect(workflowText).toContain('SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}');
@@ -143,7 +167,27 @@ describe('RU commercial pilot lifecycle v1 production migration artifacts', () =
     expect(workflowText).toContain('--set ON_ERROR_STOP=1');
     expect(workflowText).toContain('--single-transaction');
     expect(workflowText).toContain("NOTIFY pgrst, 'reload schema'");
-    expect(workflowText).toContain('MIGRATION_STATUS=applied_and_verified');
+    expect(workflowText).toContain(
+      "has_table_privilege('service_role', 'public.ru_commercial_pilot_lifecycle', 'SELECT')",
+    );
+    expect(workflowText).toContain(
+      "has_table_privilege('service_role', 'public.ru_commercial_pilot_lifecycle', 'INSERT')",
+    );
+    expect(workflowText).toContain(
+      "has_table_privilege('service_role', 'public.ru_commercial_pilot_lifecycle', 'UPDATE')",
+    );
+    expect(workflowText).toContain(
+      "has_table_privilege('service_role', 'public.ru_commercial_pilot_lifecycle', 'DELETE')",
+    );
+    expect(workflowText).toContain(
+      "has_table_privilege('anon', 'public.ru_commercial_pilot_lifecycle', 'SELECT')",
+    );
+    expect(workflowText).toContain(
+      "has_table_privilege('authenticated', 'public.ru_commercial_pilot_lifecycle', 'SELECT')",
+    );
+    expect(workflowText).toContain(
+      'anon/authenticated must not have SELECT/INSERT/UPDATE/DELETE on public.ru_commercial_pilot_lifecycle',
+    );
     expect(workflowText).toContain('ru_commercial_pilot_lifecycle_pilot_after_ready_chk');
     expect(workflowText).toContain('ru_commercial_pilot_lifecycle_status_ready_at_chk');
     expect(workflowText).toContain('ru_commercial_pilot_lifecycle_status_pilot_window_chk');
@@ -152,6 +196,14 @@ describe('RU commercial pilot lifecycle v1 production migration artifacts', () =
     expect(workflowText).toContain('post_migration_runtime_unchanged=yes');
     expect(workflowText).toContain('https://asi-global.ru/api/health');
     expect(workflowText).toContain('https://asi-global.ru/api/version');
+
+    const runtimeUnchangedIndex = workflowText.indexOf('post_migration_runtime_unchanged=yes');
+    const healthOkIndex = workflowText.indexOf('post_migration_health_ok=yes');
+    const successMarkerIndex = workflowText.indexOf('MIGRATION_STATUS=applied_and_verified');
+    expect(healthOkIndex).toBeGreaterThan(-1);
+    expect(runtimeUnchangedIndex).toBeGreaterThan(healthOkIndex);
+    expect(successMarkerIndex).toBeGreaterThan(runtimeUnchangedIndex);
+    expect(workflowText.match(/MIGRATION_STATUS=applied_and_verified/g)).toHaveLength(1);
 
     expect(workflowText).not.toMatch(/\becho\s+"\$\{?SUPABASE_DB_URL\}?"/);
     expect(workflowText).not.toMatch(/\becho\s+\$\{?SUPABASE_DB_URL\}?\b/);

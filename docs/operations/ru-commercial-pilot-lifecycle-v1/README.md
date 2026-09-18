@@ -7,20 +7,31 @@ Status: **preflight / scaffolding only — no production action is authorized or
 | Item | Authorized value |
 | --- | --- |
 | Repository | `ASI-integration/asi-landing` |
-| Migration source commit | `9701e0bcf05775671a910b74a68f29f754b128ba` |
+| Migration source commit (Commit A) | `de40e3a0f048f414c3d01440acef9b24e241f428` |
 | Migration | `supabase/migrations/20260918120000_ru_commercial_pilot_lifecycle_v1.sql` |
-| Migration Git blob | `85ffdd88af474b8bb7403ffaf1b870b91aba995f` |
-| Migration SHA-256 | `dcbfd3275a2ae7a8a9163f5de9114ee9a5fef3afacad52cea70358c32446f6cb` |
+| Migration Git blob | `b2fe7622327b0c77060dd643a42a49af180dde67` |
+| Migration SHA-256 | `1313099cb86b85c494841b8e3240a11811a641c63498f5232e0fdf629ae83517` |
 | Expected pre-migration production application SHA | `7c201dd973fc56d28272443ee072b9ab43dec6cc` |
 | Expected production Supabase project ref | `jwinifeienvzejofmbua` |
+
+The authorized migration source SHA is the commit that contains the corrected migration bytes (including explicit Data API revoke/grant). Later authorization/scaffold commits that only re-pin workflow artifacts must not become the migration source SHA.
 
 Migration SHA-256 is derived from the exact Git blob bytes at the authorized commit:
 
 ```bash
-git cat-file blob 9701e0bcf05775671a910b74a68f29f754b128ba:supabase/migrations/20260918120000_ru_commercial_pilot_lifecycle_v1.sql | sha256sum
+git cat-file blob de40e3a0f048f414c3d01440acef9b24e241f428:supabase/migrations/20260918120000_ru_commercial_pilot_lifecycle_v1.sql | sha256sum
 ```
 
-Do not derive checksums from an edited working-tree copy. The checked-out file must still match Git blob `85ffdd88af474b8bb7403ffaf1b870b91aba995f` via `git hash-object`.
+Do not derive checksums from an edited working-tree copy. The checked-out file must still match Git blob `b2fe7622327b0c77060dd643a42a49af180dde67` via `git hash-object`.
+
+## Privilege contract
+
+The migration creates an internal server-side table and must:
+
+- `REVOKE ALL` from `PUBLIC`, `anon`, and `authenticated`
+- `GRANT SELECT, INSERT, UPDATE, DELETE` to `service_role` only
+- keep RLS enabled with `ru_commercial_pilot_lifecycle_service_role_all`
+- never add anon/authenticated policies or browser Data API access
 
 ## Installation prerequisite
 
@@ -43,7 +54,7 @@ Owner gate: [`migration-owner-gate.json`](migration-owner-gate.json).
 
 Established mechanism: [`.github/workflows/apply-ru-commercial-pilot-lifecycle-v1.yml`](../../../.github/workflows/apply-ru-commercial-pilot-lifecycle-v1.yml).
 
-The workflow is intentionally unable to select another migration, another source SHA, another target environment, or arbitrary SQL. It does **not** use `supabase db push`. It executes only the checksum-pinned SQL file with `psql` (`ON_ERROR_STOP=1`, single transaction), reloads PostgREST schema, verifies table/columns/constraints/RLS, and confirms `/api/version` still reports the pre-migration application SHA.
+The workflow is intentionally unable to select another migration, another source SHA, another target environment, or arbitrary SQL. It does **not** use `supabase db push`. It executes only the checksum-pinned SQL file with `psql` (`ON_ERROR_STOP=1`, single transaction), reloads PostgREST schema, verifies table/columns/constraints/RLS/grants, then confirms `/api/health` and `/api/version` still report the pre-migration application SHA. Only after those final runtime checks does it emit `MIGRATION_STATUS=applied_and_verified`.
 
 Prepared dispatch command — do **not** run without the matching approved and unconsumed migration gate:
 
