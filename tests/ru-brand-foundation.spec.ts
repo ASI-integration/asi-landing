@@ -12,9 +12,11 @@ test.describe('RU brand foundation shell', () => {
     const header = page.locator('header').first();
     await expect(header).toBeVisible();
     await expect(header).toHaveClass(/bg-asi-ivory/);
-    await expect(page.getByRole('link', { name: 'Подключить пилот' }).first()).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Подключить объект бесплатно' }).first()).toBeVisible();
     await expect(page.locator('a[href="/pilot"]')).toHaveCount(0);
-    await expect(page.getByRole('heading', { name: /AI-ответы гостям/i }).first()).toBeVisible();
+    await expect(
+      page.getByRole('heading', { name: /Операции посуточной аренды на автопилоте/i }).first(),
+    ).toBeVisible();
 
     const footer = page.locator('footer').last();
     await expect(footer).toHaveClass(/bg-asi-navy/);
@@ -27,9 +29,9 @@ test.describe('RU homepage editorial composition', () => {
 
   test('hero and navy operating model are present', async ({ page }) => {
     await page.goto('/ru', { waitUntil: 'domcontentloaded' });
-    await expect(page.getByText('ASI · закрытый пилот')).toBeVisible();
-    await expect(page.getByText(/1000/)).toBeVisible();
-    await expect(page.getByRole('heading', { name: /Рутина идёт автоматически/i })).toBeVisible();
+    await expect(page.getByText('ASI · операционный автопилот')).toBeVisible();
+    await expect(page.getByText(/1\s*000|1000/)).toBeVisible();
+    await expect(page.getByRole('heading', { name: /Обычные ситуации vs Исключения/i })).toBeVisible();
     await expect(page.getByRole('heading', { name: /Оценка локации/i })).toBeVisible();
   });
 });
@@ -48,6 +50,6 @@ test.describe('RU brand foundation shell mobile', () => {
     expect(headerBox?.height ?? 999).toBeLessThan(120);
 
     await page.getByRole('button', { name: /меню/i }).click();
-    await expect(page.getByRole('link', { name: 'Подключить пилот' }).last()).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Подключить объект бесплатно' }).last()).toBeVisible();
   });
 });

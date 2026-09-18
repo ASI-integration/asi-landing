@@ -14,7 +14,7 @@ import { ruComplianceRoutes } from '@/config/ruCompliance';
 export type RuPublicNavSurface = 'theme' | 'light' | 'dark';
 export type RuPublicNavDensity = 'legal' | 'landing';
 
-const PRIMARY_CTA = { href: '/ru/early-access', label: 'Подключить пилот' } as const;
+const PRIMARY_CTA = { href: '/ru/early-access', label: 'Подключить объект бесплатно' } as const;
 
 /**
  * RU public header — guestautopilot visual language, RU customer journey labels.

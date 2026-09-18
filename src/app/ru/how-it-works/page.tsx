@@ -12,19 +12,17 @@ import {
 import { RuBottomQuickLinks } from '@/components/ru/RuBottomQuickLinks';
 import { RuComplianceFooter } from '@/components/ru/RuComplianceFooter';
 import { RuPublicNavHeader } from '@/components/ru/RuPublicNavHeader';
-import {
-  COMMUNICATION_PILOT_PRICE_RUB,
-  COMMUNICATION_PILOT_SERVICE_TITLE,
-} from '@/lib/payments/yookassa-env';
+import { COMMUNICATION_PILOT_PRICE_RUB } from '@/lib/payments/yookassa-env';
 
 export const metadata: Metadata = {
-  title: 'Как работает пилот ASI — AI-ответы гостям',
+  title: 'Как работает пилот ASI',
   description:
-    'Как устроен закрытый пилот AI-ответов гостям: что входит сейчас, что на дорожной карте платформы, и как подать заявку.',
+    'Бесплатное подключение объекта, 14 дней операционного пилота после готовности, итоговый отчёт и опциональное продолжение за 1 000 ₽ за объект в месяц.',
 };
 
 const PILOT_HREF = '/ru/early-access';
 const HOME_HREF = '/ru';
+const PRIMARY_CTA_LABEL = 'Подключить объект бесплатно';
 
 const NOW_ITEMS = [
   {
@@ -36,8 +34,8 @@ const NOW_ITEMS = [
     desc: 'Нестандартные ситуации уходят владельцу или оператору с контекстом переписки.',
   },
   {
-    title: 'Пилот на один объект',
-    desc: `${COMMUNICATION_PILOT_SERVICE_TITLE}: 1 объект, 1 месяц, ${COMMUNICATION_PILOT_PRICE_RUB} ₽.`,
+    title: 'Пилот после готовности',
+    desc: 'Бесплатное подключение и настройка, затем 14 дней реальной работы на объекте — без оплаты за старт.',
   },
   {
     title: 'Оценка локации (отдельно)',
@@ -65,11 +63,11 @@ const ROADMAP_ITEMS = [
   },
   {
     title: 'Финансовая отчётность',
-    desc: 'Направление платформы: сводки и прогнозы. Не часть тарифа 1 объект / 1 месяц.',
+    desc: 'Направление платформы: сводки и прогнозы. Не часть текущего операционного пилота.',
   },
   {
     title: 'Мониторинг безопасности',
-    desc: 'Направление платформы. Не заявляем как live-функцию закрытого пилота.',
+    desc: 'Направление платформы. Не заявляем как live-функцию текущего пилота.',
   },
 ] as const;
 
@@ -101,6 +99,29 @@ const FLOW_STEPS = [
   },
 ] as const;
 
+const COMMERCIAL_STAGES = [
+  {
+    n: '01',
+    title: 'Бесплатное подключение и настройка — 0 ₽',
+    body: 'До старта пилота. Не расходует 14 дней.',
+  },
+  {
+    n: '02',
+    title: '14 дней операционного пилота — 0 ₽',
+    body: 'Отсчёт только после полной технической готовности.',
+  },
+  {
+    n: '03',
+    title: 'Итоговый отчёт',
+    body: 'Результаты пилота до решения о продолжении.',
+  },
+  {
+    n: '04',
+    title: `После пилота — ${COMMUNICATION_PILOT_PRICE_RUB} ₽ / объект / месяц`,
+    body: 'Только если вы решаете продолжить.',
+  },
+] as const;
+
 export default function RuHowItWorksPage() {
   const nowCore = NOW_ITEMS.filter((item) => !('separate' in item && item.separate));
   const locationItem = NOW_ITEMS.find((item) => 'separate' in item && item.separate);
@@ -128,14 +149,15 @@ export default function RuHowItWorksPage() {
               </BrandHeadline>
               <BrandGoldRule className="mt-6 mb-6" />
               <p className="text-lg text-asi-navy/70 max-w-xl leading-relaxed">
-                Закрытый RU-пилот начинается с гостевых коммуникаций для одного объекта посуточной
-                аренды. Здесь — как устроена модель сегодня и куда идёт платформа.
+                RU-пилот начинается с бесплатного подключения объекта и 14 дней реальной работы после
+                готовности. Здесь — как устроена модель сегодня и куда идёт платформа.
               </p>
-              <p className="mt-4 text-sm font-sans text-asi-navy/60 tracking-wide">
-                {COMMUNICATION_PILOT_PRICE_RUB}&nbsp;₽ · 1 объект · 1 месяц
+              <p className="mt-4 text-sm font-sans text-asi-navy/60 tracking-wide leading-relaxed max-w-xl">
+                Подключение — 0&nbsp;₽ · 14 дней после готовности — 0&nbsp;₽ · затем{' '}
+                {COMMUNICATION_PILOT_PRICE_RUB}&nbsp;₽ / объект / месяц при решении продолжить
               </p>
               <div className="mt-9 flex flex-wrap gap-4">
-                <BrandPrimaryCta href={PILOT_HREF}>Подключить пилот</BrandPrimaryCta>
+                <BrandPrimaryCta href={PILOT_HREF}>{PRIMARY_CTA_LABEL}</BrandPrimaryCta>
                 <BrandSecondaryCta href="#current-pilot">Сейчас в пилоте</BrandSecondaryCta>
               </div>
             </div>
@@ -151,8 +173,8 @@ export default function RuHowItWorksPage() {
               </p>
               <BrandGoldRule className="mt-6 mb-6" />
               <p className="text-sm text-asi-navy/65 leading-relaxed">
-                Это направление платформы. Текущий коммерческий шаг — AI-ответы гостям на одном
-                объекте, а не полная автоматизация бизнеса уже сейчас.
+                Это направление платформы. Текущий коммерческий шаг — операционный пилот на объекте,
+                а не полная автоматизация бизнеса уже сейчас.
               </p>
             </div>
           </div>
@@ -185,7 +207,7 @@ export default function RuHowItWorksPage() {
         <BrandSection variant="paper" id="current-pilot">
           <BrandEyebrow>Сейчас / пилот</BrandEyebrow>
           <BrandHeadline className="text-3xl sm:text-5xl max-w-3xl">
-            Что доступно в закрытом пилоте
+            Что доступно в операционном пилоте
           </BrandHeadline>
           <p className="mt-5 max-w-2xl text-asi-navy/70 leading-relaxed">
             Фокус — рутинная переписка с гостями. Это не «полная автоматизация объекта на 99%».
@@ -206,20 +228,37 @@ export default function RuHowItWorksPage() {
               <h3 className="mt-3 font-serif text-xl text-asi-navy">{locationItem.title}</h3>
               <p className="mt-3 text-sm text-asi-navy/65 leading-relaxed">{locationItem.desc}</p>
               <p className="mt-4 text-sm text-asi-navy/55">
-                Не входит в тариф пилота AI-коммуникаций за {COMMUNICATION_PILOT_PRICE_RUB}&nbsp;₽.
+                Не входит в операционный пилот коммуникаций.
               </p>
             </div>
           ) : null}
         </BrandSection>
 
-        {/* ── 4. Real-world examples ── */}
-        <BrandSection variant="ivory">
+        {/* ── 4. Commercial chronology ── */}
+        <BrandSection variant="ivory" id="pilot-path">
+          <BrandEyebrow>Коммерческая модель</BrandEyebrow>
+          <BrandHeadline className="text-3xl sm:text-5xl max-w-3xl">
+            Пилот бесплатный. Оплата — только после решения продолжить.
+          </BrandHeadline>
+          <ol className="mt-12 grid sm:grid-cols-2 lg:grid-cols-4 gap-0 border border-asi-border divide-y sm:divide-y-0 sm:divide-x divide-asi-border">
+            {COMMERCIAL_STAGES.map((step) => (
+              <li key={step.n} className="bg-asi-paper p-6 sm:p-7">
+                <span className="font-serif text-asi-gold text-2xl">{step.n}</span>
+                <h3 className="mt-4 font-serif text-lg text-asi-navy leading-snug">{step.title}</h3>
+                <p className="mt-3 text-sm text-asi-navy/65 leading-relaxed">{step.body}</p>
+              </li>
+            ))}
+          </ol>
+        </BrandSection>
+
+        {/* ── 5. Real-world examples ── */}
+        <BrandSection variant="paper">
           <BrandEyebrow>Пример</BrandEyebrow>
           <BrandHeadline className="text-3xl sm:text-4xl max-w-3xl">
             Как это выглядит в реальном обращении
           </BrandHeadline>
           <div className="mt-12 grid lg:grid-cols-2 gap-8 lg:gap-12">
-            <article className="border border-asi-border bg-asi-paper p-7 sm:p-8">
+            <article className="border border-asi-border bg-asi-ivory p-7 sm:p-8">
               <p className="font-serif text-asi-gold text-2xl">23:07</p>
               <p className="mt-2 text-xs font-sans font-semibold uppercase tracking-[0.16em] text-asi-gold-text">
                 Типовой сценарий
@@ -275,8 +314,8 @@ export default function RuHowItWorksPage() {
           </div>
         </BrandSection>
 
-        {/* ── 5. Current vs future ── */}
-        <BrandSection variant="paper">
+        {/* ── 6. Current vs future ── */}
+        <BrandSection variant="ivory">
           <BrandEyebrow>Сейчас и дальше</BrandEyebrow>
           <BrandHeadline className="text-3xl sm:text-5xl max-w-3xl">
             Сначала коммуникации.
@@ -299,7 +338,8 @@ export default function RuHowItWorksPage() {
                 <li className="py-4 text-sm text-asi-navy/75">Эскалация исключений человеку</li>
                 <li className="py-4 text-sm text-asi-navy/75">Знание конкретного объекта</li>
                 <li className="py-4 text-sm text-asi-navy/75">
-                  Пилот: 1 объект · 1 месяц · {COMMUNICATION_PILOT_PRICE_RUB}&nbsp;₽
+                  Подключение и 14 дней пилота — 0&nbsp;₽; продолжение —{' '}
+                  {COMMUNICATION_PILOT_PRICE_RUB}&nbsp;₽ / объект / месяц
                 </li>
               </ul>
             </div>
@@ -310,13 +350,13 @@ export default function RuHowItWorksPage() {
               <h3 className="mt-3 font-serif text-2xl text-asi-navy">Операционная платформа ASI</h3>
               <p className="mt-3 text-sm text-asi-navy/65 leading-relaxed">
                 Те же принципы — рутина системе, человек на исключениях — для более широкого
-                контура объекта. Это направление, а не состав текущего тарифа.
+                контура объекта. Это направление, а не состав текущего пилота.
               </p>
             </div>
           </div>
         </BrandSection>
 
-        {/* ── 6. Roadmap ── */}
+        {/* ── 7. Roadmap ── */}
         <BrandSection variant="navy" id="roadmap">
           <BrandEyebrow dark>Дорожная карта платформы</BrandEyebrow>
           <BrandHeadline className="text-3xl sm:text-5xl max-w-3xl text-asi-ivory">
@@ -339,8 +379,8 @@ export default function RuHowItWorksPage() {
           </ul>
         </BrandSection>
 
-        {/* ── 7. Bigger idea ── */}
-        <BrandSection variant="ivory">
+        {/* ── 8. Bigger idea ── */}
+        <BrandSection variant="paper">
           <BrandEyebrow>Направление</BrandEyebrow>
           <BrandHeadline className="text-3xl sm:text-4xl max-w-3xl">
             Операционный слой для физического бизнеса
@@ -355,7 +395,7 @@ export default function RuHowItWorksPage() {
                 Гостевые коммуникации — первый операционный слой.
               </p>
               <p className="mt-3 text-sm text-asi-navy/65 leading-relaxed">
-                Закрытый пилот проверяет модель на одном объекте: типовые вопросы системе, решения —
+                Операционный пилот проверяет модель на объекте: типовые вопросы системе, решения —
                 человеку.
               </p>
             </div>
@@ -368,45 +408,47 @@ export default function RuHowItWorksPage() {
               </p>
               <p className="mt-3 text-sm text-asi-navy/65 leading-relaxed">
                 Каналы, цены, уборки, доступы и отчётность — направление. Не обещание текущего RU
-                тарифа.
+                пилота.
               </p>
             </div>
           </div>
         </BrandSection>
 
-        {/* ── 8. Closing conversion ── */}
-        <BrandSection variant="paper">
+        {/* ── 9. Closing conversion ── */}
+        <BrandSection variant="ivory">
           <div className="grid lg:grid-cols-[1.2fr,0.8fr] gap-10 lg:gap-16 items-center">
             <div>
               <BrandEyebrow>Следующий шаг</BrandEyebrow>
               <BrandHeadline className="text-3xl sm:text-5xl max-w-2xl">
-                Начните с одного объекта.
+                Начните с бесплатного подключения объекта.
               </BrandHeadline>
               <BrandGoldRule className="mt-6 mb-6" />
               <p className="text-asi-navy/70 leading-relaxed max-w-xl">
-                Закрытый пилот стартует с одного объекта и гостевых коммуникаций. Условия и заявка —
-                на странице пилота.
+                Оставьте заявку. Настройка и 14 дней пилота — без оплаты. Решение о продолжении —
+                после отчёта.
               </p>
-              <p className="mt-4 text-sm font-sans text-asi-navy/60 tracking-wide">
-                {COMMUNICATION_PILOT_PRICE_RUB}&nbsp;₽ · 1 объект · 1 месяц
+              <p className="mt-4 text-sm font-sans text-asi-navy/60 tracking-wide leading-relaxed">
+                После пилота — {COMMUNICATION_PILOT_PRICE_RUB}&nbsp;₽ / объект / месяц при решении
+                продолжить
               </p>
               <div className="mt-8 flex flex-wrap gap-4">
-                <BrandPrimaryCta href={PILOT_HREF}>Подключить пилот</BrandPrimaryCta>
+                <BrandPrimaryCta href={PILOT_HREF}>{PRIMARY_CTA_LABEL}</BrandPrimaryCta>
                 <BrandSecondaryCta href={HOME_HREF}>На главную</BrandSecondaryCta>
               </div>
             </div>
-            <div className="border border-asi-border bg-asi-ivory p-8 flex flex-col justify-between min-h-[14rem]">
+            <div className="border border-asi-border bg-asi-paper p-8 flex flex-col justify-between min-h-[14rem]">
               <div>
                 <p className="text-xs font-sans font-semibold uppercase tracking-[0.18em] text-asi-gold-text">
-                  Пилот коммуникаций
+                  Старт без оплаты
                 </p>
                 <p className="mt-4 font-serif text-2xl text-asi-navy leading-snug">
-                  {COMMUNICATION_PILOT_SERVICE_TITLE}
+                  Подключение и 14 дней — 0&nbsp;₽
                 </p>
               </div>
               <div className="mt-8 flex items-end justify-between gap-4">
-                <p className="text-sm text-asi-navy/60">
-                  {COMMUNICATION_PILOT_PRICE_RUB}&nbsp;₽ · 1 объект · 1 месяц
+                <p className="text-sm text-asi-navy/60 leading-relaxed max-w-[12rem]">
+                  Затем {COMMUNICATION_PILOT_PRICE_RUB}&nbsp;₽ / объект / месяц — только после
+                  решения продолжить
                 </p>
                 <BrandShiro size={48} />
               </div>
