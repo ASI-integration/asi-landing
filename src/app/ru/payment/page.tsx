@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
+import { BrandGoldRule } from '@/components/brand';
 import { RuLegalPageLayout } from '@/components/ru/RuLegalPageLayout';
 import { PilotCheckoutCta } from '@/components/ru/PilotCheckoutCta';
 import { ruCompliance, ruComplianceRoutes } from '@/config/ruCompliance';
@@ -16,9 +17,26 @@ export const metadata: Metadata = {
 
 export default function RuPaymentPage() {
   return (
-    <RuLegalPageLayout title="Оплата и доставка услуги">
-      <section className="space-y-3">
-        <h2 className="text-base font-semibold text-[var(--t-text)]">Что продаётся</h2>
+    <RuLegalPageLayout
+      title="Оплата и доставка услуги"
+      intro="Условия оплаты закрытого пилота AI-коммуникаций: состав услуги, стоимость и статус приёма платежей."
+      wide
+    >
+      <div className="border border-asi-border bg-asi-paper p-6 sm:p-8 mb-2 !mt-0">
+        <p className="text-[10px] font-sans font-semibold uppercase tracking-[0.18em] text-asi-gold-text !mb-0">
+          Тариф пилота
+        </p>
+        <p className="mt-3 font-serif text-4xl sm:text-5xl text-asi-navy tracking-tight !mb-0">
+          {COMMUNICATION_PILOT_PRICE_RUB}&nbsp;₽
+        </p>
+        <p className="mt-2 text-asi-navy/65 !mb-0">1 объект · 1 месяц</p>
+        <BrandGoldRule className="mt-5 mb-5" />
+        <p className="font-serif text-lg text-asi-navy !mb-0">{COMMUNICATION_PILOT_SERVICE_TITLE}</p>
+        <p className="mt-2 text-sm text-asi-navy/65 !mb-0">{COMMUNICATION_PILOT_PAYMENT_DESCRIPTION}.</p>
+      </div>
+
+      <section>
+        <h2>Что продаётся</h2>
         <p>
           Платный MVP-тариф: <strong>{COMMUNICATION_PILOT_SERVICE_TITLE}</strong>.
         </p>
@@ -28,18 +46,18 @@ export default function RuPaymentPage() {
         </p>
         <p>
           Подробное описание и заявка на подключение:{' '}
-          <Link href="/ru/early-access" className="underline underline-offset-2">
-            Пилот ASI
-          </Link>
-          .
+          <Link href="/ru/early-access">Пилот ASI</Link>.
         </p>
       </section>
 
-      <section className="space-y-3">
-        <h2 className="text-base font-semibold text-[var(--t-text)]">Как оказывается услуга</h2>
-        <ol className="list-decimal space-y-2 pl-5">
+      <section>
+        <h2>Как оказывается услуга</h2>
+        <ol>
           <li>Пользователь оставляет заявку на странице пилота или выбирает оплату на этой странице.</li>
-          <li>Подключается один объект: клиент передаёт необходимые данные объекта (правила, Wi-Fi, заезд/выезд и т.п.).</li>
+          <li>
+            Подключается один объект: клиент передаёт необходимые данные объекта (правила, Wi-Fi, заезд/выезд и
+            т.п.).
+          </li>
           <li>После подтверждения оплаты исполнитель настраивает объект в контуре AI-ответов гостям.</li>
           <li>
             Услуга оказывается дистанционно: типовые ответы гостям в цифровых каналах в рамках тарифа (1 объект, 1
@@ -49,8 +67,8 @@ export default function RuPaymentPage() {
         </ol>
       </section>
 
-      <section className="space-y-3">
-        <h2 className="text-base font-semibold text-[var(--t-text)]">Способ оплаты</h2>
+      <section>
+        <h2>Способ оплаты</h2>
         <p>
           Оплата принимается безналично через платёжный сервис ЮKassa после завершения модерации мерчанта и включения
           приёма платежей на сайте.
@@ -59,50 +77,38 @@ export default function RuPaymentPage() {
           До включения ЮKassa кнопка оплаты показывает статус подключения и не создаёт платёж. Живые платежи и деплой
           продакшена в рамках этой подготовки не запускаются.
         </p>
-        <PilotCheckoutCta />
+        <div className="mt-6 border border-asi-border bg-asi-ivory p-5 sm:p-6">
+          <PilotCheckoutCta />
+        </div>
       </section>
 
-      <section className="space-y-3">
-        <h2 className="text-base font-semibold text-[var(--t-text)]">Документы</h2>
-        <ul className="list-disc space-y-2 pl-5">
+      <section>
+        <h2>Документы</h2>
+        <ul>
           <li>
-            <Link href={ruComplianceRoutes.offer} className="underline underline-offset-2">
-              Публичная оферта
-            </Link>
+            <Link href={ruComplianceRoutes.offer}>Публичная оферта</Link>
           </li>
           <li>
-            <Link href={ruComplianceRoutes.refund} className="underline underline-offset-2">
-              Возврат и отказ
-            </Link>
+            <Link href={ruComplianceRoutes.refund}>Возврат и отказ</Link>
           </li>
           <li>
-            <Link href={ruComplianceRoutes.privacy} className="underline underline-offset-2">
-              Политика конфиденциальности
-            </Link>
+            <Link href={ruComplianceRoutes.privacy}>Политика конфиденциальности</Link>
           </li>
           <li>
-            <Link href={ruComplianceRoutes.contacts} className="underline underline-offset-2">
-              Контакты и реквизиты
-            </Link>
+            <Link href={ruComplianceRoutes.contacts}>Контакты и реквизиты</Link>
           </li>
         </ul>
       </section>
 
-      <section className="space-y-2">
-        <h2 className="text-base font-semibold text-[var(--t-text)]">Исполнитель</h2>
+      <section>
+        <h2>Исполнитель</h2>
         <p>Самозанятый: {ruCompliance.fullName}</p>
         <p>ИНН: {ruCompliance.inn}</p>
         <p>
-          Email:{' '}
-          <a href={`mailto:${ruCompliance.email}`} className="underline underline-offset-2">
-            {ruCompliance.email}
-          </a>
+          Email: <a href={`mailto:${ruCompliance.email}`}>{ruCompliance.email}</a>
         </p>
         <p>
-          Телефон:{' '}
-          <a href={`tel:${ruCompliance.phoneTel}`} className="underline underline-offset-2">
-            {ruCompliance.phone}
-          </a>
+          Телефон: <a href={`tel:${ruCompliance.phoneTel}`}>{ruCompliance.phone}</a>
         </p>
         <p>Адрес для корреспонденции: {ruCompliance.address}</p>
       </section>
