@@ -73,6 +73,14 @@ COMMENT ON TABLE public.ru_commercial_pilot_lifecycle IS
 
 ALTER TABLE public.ru_commercial_pilot_lifecycle ENABLE ROW LEVEL SECURITY;
 
+-- Internal server-side table: Data API via service_role only (see docs/supabase-data-api-grants.md).
+REVOKE ALL ON TABLE public.ru_commercial_pilot_lifecycle FROM PUBLIC;
+REVOKE ALL ON TABLE public.ru_commercial_pilot_lifecycle FROM anon;
+REVOKE ALL ON TABLE public.ru_commercial_pilot_lifecycle FROM authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE
+  ON TABLE public.ru_commercial_pilot_lifecycle
+  TO service_role;
+
 DROP POLICY IF EXISTS ru_commercial_pilot_lifecycle_service_role_all
   ON public.ru_commercial_pilot_lifecycle;
 CREATE POLICY ru_commercial_pilot_lifecycle_service_role_all

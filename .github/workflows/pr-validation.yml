@@ -26,7 +26,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          fetch-depth: 1
+          # Full history: migration authorization regressions resolve checksum-pinned
+          # historical source commits (e.g. git rev-parse <sha>:<migration-path>).
+          fetch-depth: 0
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -155,6 +157,12 @@ jobs:
           }
           console.log('rollout_artifact_proof_ok', JSON.stringify(proof));
           NODE
+
+      - name: RU commercial pilot lifecycle migration artifact regression
+        run: |
+          npx vitest run \
+            src/lib/asi-runtime/__tests__/ru-commercial-pilot-lifecycle-migration-artifacts.test.ts \
+            --reporter=verbose
 
       - name: Initial Sync Recovery production env diagnostic workflow regression
         id: env_diag_workflow_regression

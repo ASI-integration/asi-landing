@@ -161,6 +161,22 @@
       "notes": "Exact-file production migration workflow for live-core acceptance cleanup v2."
     },
     {
+      "id": "workflow-ru-commercial-pilot-lifecycle-v1",
+      "kind": "github-workflow",
+      "role": "apply-backend",
+      "paths": [
+        ".github/workflows/apply-ru-commercial-pilot-lifecycle-v1.yml",
+        "docs/operations/ru-commercial-pilot-lifecycle-v1/README.md",
+        "docs/operations/ru-commercial-pilot-lifecycle-v1/migration-owner-gate.json"
+      ],
+      "environments": ["production"],
+      "ownerGateRequired": true,
+      "supportsDryRun": false,
+      "rollbackPolicy": "owner-gated-new-migration",
+      "migrationPaths": ["supabase/migrations/20260918120000_ru_commercial_pilot_lifecycle_v1.sql"],
+      "notes": "Exact-SHA exact-blob production migration for RU commercial pilot lifecycle SSOT; does not supabase db push; does not deploy the application."
+    },
+    {
       "id": "helper-booking-ops",
       "kind": "python-helper",
       "role": "apply-backend",
