@@ -1,0 +1,305 @@
+name: Deploy Guest Autopilot to Hetzner (production)
+
+on:
+  # Production deploy is manual only.
+  # Pushes to main must not deploy Guest Autopilot production.
+  # This workflow only ever touches the dedicated Guest Autopilot Hetzner
+  # VPS — it has no access to, and never runs anything against, the RU
+  # asi-global.ru Timeweb VPS or its secrets.
+  workflow_dispatch:
+    inputs:
+      confirm_production_deploy:
+        description: Type DEPLOY_PRODUCTION to deploy Guest Autopilot production
+        required: true
+        type: string
+      sha:
+        description: Commit SHA or ref to build+deploy (defaults to the triggering SHA)
+        required: false
+        type: string
+
+concurrency:
+  group: deploy-guestautopilot-production
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  confirm_production_deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require explicit production confirmation
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${{ inputs.confirm_production_deploy }}" != "DEPLOY_PRODUCTION" ]; then
+            echo "Production deploy is manual only. Set confirm_production_deploy to DEPLOY_PRODUCTION."
+            exit 1
+          fi
+
+  build_release:
+    runs-on: ubuntu-latest
+    needs: [confirm_production_deploy]
+    outputs:
+      sha: ${{ steps.build_meta.outputs.sha }}
+      artifact_name: ${{ steps.build_meta.outputs.artifact_name }}
+      artifact_file: ${{ steps.build_meta.outputs.artifact_file }}
+    steps:
+      - name: Resolve checkout ref
+        id: checkout_ref
+        shell: bash
+        run: |
+          set -euo pipefail
+          REF_INPUT="${{ inputs.sha }}"
+          if [ -n "${REF_INPUT:-}" ]; then
+            echo "ref=${REF_INPUT}" >> "$GITHUB_OUTPUT"
+          else
+            echo "ref=${{ github.sha }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout exact ref
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          ref: ${{ steps.checkout_ref.outputs.ref }}
+
+      - name: Resolve canonical SHA + artifact names
+        id: build_meta
+        shell: bash
+        run: |
+          set -euo pipefail
+          FULL="$(git rev-parse HEAD)"
+          echo "sha=${FULL}" >> "$GITHUB_OUTPUT"
+          echo "artifact_name=guestautopilot-release-${FULL}" >> "$GITHUB_OUTPUT"
+          echo "artifact_file=guestautopilot-release-${FULL}.tgz" >> "$GITHUB_OUTPUT"
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install deps
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Tests (billing/lifecycle focused gate)
+        run: npx vitest run src/lib/billing/__tests__/
+
+      - name: Refuse to build with INTERNATIONAL_BILLING_ENABLED set true
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${INTERNATIONAL_BILLING_ENABLED:-}" = "true" ]; then
+            echo "Refusing to build Guest Autopilot production with INTERNATIONAL_BILLING_ENABLED=true"
+            exit 1
+          fi
+
+      - name: Build (production)
+        run: npm run build
+        env:
+          # Explicit and intentional: never 'ru'. See src/lib/getIsRuHost.ts /
+          # src/lib/runtimeHost.ts — only the literal string 'ru' means
+          # anything special; any other value (including this one) already
+          # behaves as international today. Kept explicit here so a future
+          # change to that check has an actual value to fail loudly against,
+          # instead of silently relying on "unset happens to be safe".
+          HOST_VARIANT: international
+
+      - name: Prune devDependencies for runtime bundle
+        run: npm prune --omit=dev
+
+      - name: Create release artifact (.tgz)
+        shell: bash
+        run: |
+          set -euo pipefail
+          SHA="${{ steps.build_meta.outputs.sha }}"
+
+          rm -rf release
+          mkdir -p release
+
+          cp package.json package-lock.json next.config.js release/
+          cp -R .next node_modules release/
+          if [ -d public ]; then cp -R public release/; fi
+
+          node - <<'NODE'
+          const fs = require('fs');
+          const pkg = require('./package.json');
+          fs.writeFileSync('release/release-meta.json', JSON.stringify({
+            gitSha: process.env.DEPLOY_SHA,
+            appVersion: pkg.version || null,
+            environment: 'production',
+            service: 'guestautopilot',
+            builtAt: new Date().toISOString(),
+          }, null, 2) + '\n');
+          NODE
+        env:
+          DEPLOY_SHA: ${{ steps.build_meta.outputs.sha }}
+
+      - name: Tar release
+        shell: bash
+        run: |
+          set -euo pipefail
+          OUT="${{ steps.build_meta.outputs.artifact_file }}"
+          tar -czf "$OUT" -C release .
+
+      - name: Upload release artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.build_meta.outputs.artifact_name }}
+          path: ${{ steps.build_meta.outputs.artifact_file }}
+          if-no-files-found: error
+
+  deploy:
+    runs-on: ubuntu-latest
+    needs: [build_release]
+    environment: guestautopilot-production
+    steps:
+      - name: Checkout deploy script
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Download release artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.build_release.outputs.artifact_name }}
+          path: release-artifact
+
+      - name: Prepare Guest Autopilot production environment
+        shell: bash
+        env:
+          SUPABASE_URL: ${{ secrets.GUESTAUTOPILOT_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.GUESTAUTOPILOT_SUPABASE_SERVICE_ROLE_KEY }}
+          SESSION_SECRET: ${{ secrets.GUESTAUTOPILOT_SESSION_SECRET }}
+          GOOGLE_CLIENT_ID: ${{ secrets.GUESTAUTOPILOT_GOOGLE_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET: ${{ secrets.GUESTAUTOPILOT_GOOGLE_CLIENT_SECRET }}
+          ADMIN_SECRET: ${{ secrets.GUESTAUTOPILOT_ADMIN_SECRET }}
+          STRIPE_ONBOARDING_ENABLED: ${{ secrets.GUESTAUTOPILOT_STRIPE_ONBOARDING_ENABLED }}
+          STRIPE_ONBOARDING_SECRET_KEY: ${{ secrets.GUESTAUTOPILOT_STRIPE_ONBOARDING_SECRET_KEY }}
+          STRIPE_ONBOARDING_WEBHOOK_SECRET: ${{ secrets.GUESTAUTOPILOT_STRIPE_ONBOARDING_WEBHOOK_SECRET }}
+        run: |
+          set -euo pipefail
+          required=(SUPABASE_URL SUPABASE_SERVICE_ROLE_KEY SESSION_SECRET GOOGLE_CLIENT_ID GOOGLE_CLIENT_SECRET ADMIN_SECRET)
+          for key in "${required[@]}"; do
+            if [ -z "${!key:-}" ]; then
+              echo "Missing required secret: GUESTAUTOPILOT_${key}"
+              exit 1
+            fi
+          done
+          # Hard fail-closed: this workflow refuses to produce an env file
+          # that could enable live billing. INTERNATIONAL_BILLING_ENABLED is
+          # only ever written as 'false' here, regardless of what secret
+          # value (if any) exists — flipping it on is a deliberate, separate,
+          # future change, not something this deploy can do by accident.
+          case "${STRIPE_ONBOARDING_SECRET_KEY:-}" in
+            sk_live_*)
+              echo "Refusing a live Stripe secret key — test mode only in this phase"
+              exit 1
+              ;;
+          esac
+          umask 077
+          {
+            printf 'NODE_ENV=production\n'
+            printf 'PORT=3000\n'
+            printf 'ASI_DEPLOY_ENV=production\n'
+            printf 'HOST_VARIANT=international\n'
+            printf 'NEXT_PUBLIC_APP_URL=https://www.guestautopilot.com\n'
+            printf 'NEXT_PUBLIC_URL=https://www.guestautopilot.com\n'
+            printf 'SUPABASE_URL=%s\n' "$SUPABASE_URL"
+            printf 'NEXT_PUBLIC_SUPABASE_URL=%s\n' "$SUPABASE_URL"
+            printf 'SUPABASE_SERVICE_ROLE_KEY=%s\n' "$SUPABASE_SERVICE_ROLE_KEY"
+            printf 'SESSION_SECRET=%s\n' "$SESSION_SECRET"
+            printf 'GOOGLE_CLIENT_ID=%s\n' "$GOOGLE_CLIENT_ID"
+            printf 'NEXT_PUBLIC_GOOGLE_CLIENT_ID=%s\n' "$GOOGLE_CLIENT_ID"
+            printf 'GOOGLE_CLIENT_SECRET=%s\n' "$GOOGLE_CLIENT_SECRET"
+            printf 'ADMIN_SECRET=%s\n' "$ADMIN_SECRET"
+            # Stripe onboarding: test-mode only, and only written at all if a
+            # value is actually configured. Absent secrets -> absent lines ->
+            # the app's own stripe-client.ts fail-closed gate applies
+            # (missing config = feature unavailable).
+            if [ -n "${STRIPE_ONBOARDING_ENABLED:-}" ]; then
+              printf 'STRIPE_ONBOARDING_ENABLED=%s\n' "$STRIPE_ONBOARDING_ENABLED"
+            fi
+            if [ -n "${STRIPE_ONBOARDING_SECRET_KEY:-}" ]; then
+              printf 'STRIPE_ONBOARDING_SECRET_KEY=%s\n' "$STRIPE_ONBOARDING_SECRET_KEY"
+            fi
+            if [ -n "${STRIPE_ONBOARDING_WEBHOOK_SECRET:-}" ]; then
+              printf 'STRIPE_ONBOARDING_WEBHOOK_SECRET=%s\n' "$STRIPE_ONBOARDING_WEBHOOK_SECRET"
+            fi
+            # Never enabled by this workflow. Flipping this on for real is a
+            # separate, explicit, reviewed change — not a deploy side effect.
+            printf 'INTERNATIONAL_BILLING_ENABLED=false\n'
+          } > guestautopilot-production.env
+
+      - name: Verify safety flags before shipping the env file
+        shell: bash
+        run: |
+          set -euo pipefail
+          for expected in \
+            'HOST_VARIANT=international' \
+            'INTERNATIONAL_BILLING_ENABLED=false'; do
+            grep -Fx "$expected" guestautopilot-production.env >/dev/null
+          done
+          if grep -q '^HOST_VARIANT=ru$' guestautopilot-production.env; then
+            echo "Refusing to deploy: HOST_VARIANT=ru present in generated env"
+            exit 1
+          fi
+          echo 'GUESTAUTOPILOT_ENV_SAFETY_GUARDS PASS'
+
+      - name: Deploy over SSH
+        shell: bash
+        env:
+          DEPLOY_SHA: ${{ needs.build_release.outputs.sha }}
+          ARTIFACT_FILE: ${{ needs.build_release.outputs.artifact_file }}
+          GUESTAUTOPILOT_SSH_HOST: ${{ secrets.GUESTAUTOPILOT_SSH_HOST }}
+          GUESTAUTOPILOT_SSH_USER: ${{ secrets.GUESTAUTOPILOT_SSH_USER }}
+          GUESTAUTOPILOT_SSH_PRIVATE_KEY: ${{ secrets.GUESTAUTOPILOT_SSH_PRIVATE_KEY }}
+          GUESTAUTOPILOT_SSH_PORT: ${{ secrets.GUESTAUTOPILOT_SSH_PORT }}
+        run: |
+          set -euo pipefail
+          for key in GUESTAUTOPILOT_SSH_HOST GUESTAUTOPILOT_SSH_USER GUESTAUTOPILOT_SSH_PRIVATE_KEY; do
+            if [ -z "${!key:-}" ]; then
+              echo "Missing required secret: ${key}"
+              exit 1
+            fi
+          done
+
+          SHA="$DEPLOY_SHA"
+          ARTIFACT_PATH="release-artifact/${ARTIFACT_FILE}"
+          [ -f "$ARTIFACT_PATH" ] || { echo "Artifact missing: $ARTIFACT_PATH"; exit 1; }
+
+          REMOTE_TMP="/home/${GUESTAUTOPILOT_SSH_USER}/guestautopilot-deploy-tmp"
+          SSH_PORT="${GUESTAUTOPILOT_SSH_PORT:-22}"
+
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$GUESTAUTOPILOT_SSH_PRIVATE_KEY" > ~/.ssh/guestautopilot_deploy_key
+          chmod 600 ~/.ssh/guestautopilot_deploy_key
+          ssh-keygen -lf ~/.ssh/guestautopilot_deploy_key
+
+          SSH_OPTS=(-i ~/.ssh/guestautopilot_deploy_key -p "$SSH_PORT" -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=15 -o ServerAliveCountMax=4 -o ConnectTimeout=20)
+          SCP_OPTS=(-i ~/.ssh/guestautopilot_deploy_key -P "$SSH_PORT" -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=15 -o ServerAliveCountMax=4 -o ConnectTimeout=20)
+
+          echo "SSH preflight: ${GUESTAUTOPILOT_SSH_USER}@${GUESTAUTOPILOT_SSH_HOST}:${SSH_PORT}"
+          ssh "${SSH_OPTS[@]}" "${GUESTAUTOPILOT_SSH_USER}@${GUESTAUTOPILOT_SSH_HOST}" 'hostname && echo SSH_OK'
+          ssh "${SSH_OPTS[@]}" "${GUESTAUTOPILOT_SSH_USER}@${GUESTAUTOPILOT_SSH_HOST}" "mkdir -p '$REMOTE_TMP' && chmod 700 '$REMOTE_TMP'"
+
+          scp "${SCP_OPTS[@]}" \
+            scripts/deploy-guestautopilot-production.sh \
+            guestautopilot-production.env \
+            "$ARTIFACT_PATH" \
+            "${GUESTAUTOPILOT_SSH_USER}@${GUESTAUTOPILOT_SSH_HOST}:$REMOTE_TMP/"
+
+          ssh "${SSH_OPTS[@]}" "${GUESTAUTOPILOT_SSH_USER}@${GUESTAUTOPILOT_SSH_HOST}" \
+            "ASI_BASE_DIR='/var/www/guestautopilot' APP_PORT='3000' bash '$REMOTE_TMP/deploy-guestautopilot-production.sh' '$SHA' '$REMOTE_TMP/$ARTIFACT_FILE' '$REMOTE_TMP/guestautopilot-production.env'"
+
+          ssh "${SSH_OPTS[@]}" "${GUESTAUTOPILOT_SSH_USER}@${GUESTAUTOPILOT_SSH_HOST}" \
+            "rm -f '$REMOTE_TMP/deploy-guestautopilot-production.sh' '$REMOTE_TMP/guestautopilot-production.env' '$REMOTE_TMP/$ARTIFACT_FILE'"
+
+          echo "GUESTAUTOPILOT_DEPLOYED_SHA=$SHA"
