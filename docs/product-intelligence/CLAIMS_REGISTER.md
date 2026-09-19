@@ -4,7 +4,7 @@ Grounding material for `asi-website-editor`. For every claim: status, supporting
 
 Status values: **SAFE_NOW** (may publish as-is) / **QUALIFY** (may publish only with the stated qualifier attached) / **EVIDENCE_NEEDED** (do not publish until the named evidence exists) / **FUTURE_ONLY** (may describe as a direction/roadmap item, never as current) / **REJECT** (do not publish in any form given current evidence).
 
-**This register tracks Public Claim Status only — never Strategic Intent or Roadmap Horizon.** `CAPABILITY_INVENTORY.md` v3 separates Maturity, Public Claim Status (here), Strategic Intent, and Roadmap Horizon as four independent fields. A capability the owner has confirmed as `NEXT_BUILD` with horizon `NEXT` does not earn a better claim status here until its Maturity actually changes — see `ROADMAP_PUBLIC_BOUNDARY.md`'s explicit warning against leaking strategic intent or timing into present-tense or beta copy.
+**This register tracks Public Claim Status (B) only — never Strategic Status (C), Delivery Strategy (D), or Roadmap Horizon (E).** `CAPABILITY_INVENTORY.md` v4 separates Maturity, Public Claim Status (here), Strategic Status, Delivery Strategy, and Roadmap Horizon as five independent fields, and Public Claim Status is derived mechanically from Maturity alone. A capability the owner has confirmed as `ROADMAP_CONFIRMED` with horizon `NEXT` does not earn a better claim status here until its Maturity actually changes — see `ROADMAP_PUBLIC_BOUNDARY.md`'s explicit warning against leaking strategic status, delivery mechanism, or timing into present-tense or beta copy.
 
 **Absence-of-evidence discipline for market/competitor facts:** where this register or the documents it cites could not confirm whether a competitor has a given feature, integration, or market-availability path, the correct phrasing is "не найдено в проверенных источниках" / "не найден готовый путь интеграции" / "публично не заявляется" / "требует прямой проверки у вендора" — never "не существует" or "не работает," unless a source explicitly states the negative. This applies throughout `POSITIONING_MAP.md` and `PAIN_MAP.md` as well.
 
@@ -32,10 +32,10 @@ Status values: **SAFE_NOW** (may publish as-is) / **QUALIFY** (may publish only 
 
 - **Claim:** free setup before the pilot; the 14-day pilot clock starts only after full readiness confirmation; continuation is 1000₽/property/month only if the client decides to continue; no automatic paid transition.
 - **Status:** SAFE_NOW.
-- **Supporting evidence:** `CAPABILITY_INVENTORY.md` #17 (real, tested readiness-gating engine) and #18 (real pricing constant, matches `RU_PUBLIC_SITE_CONTRACT.pricing`). This is one of the best code-supported claims in the entire inventory.
+- **Supporting evidence:** `CAPABILITY_INVENTORY.md` #17 (real, tested readiness-gating engine) and #18a (real pricing constant, matches `RU_PUBLIC_SITE_CONTRACT.pricing`). This is one of the best code-supported claims in the entire inventory.
 - **Scope/population:** RU market, per property.
 - **Allowed wording:** exactly as already published — no change needed.
-- **Prohibited stronger wording:** implying the 1000₽/month continuation is billed automatically (it is not — billing for this is PLANNED, see #18).
+- **Prohibited stronger wording:** implying the 1000₽/month continuation is billed automatically (it is not — billing for this is PLANNED, see #18b).
 
 ## 4. Location analysis
 
@@ -68,7 +68,7 @@ Status values: **SAFE_NOW** (may publish as-is) / **QUALIFY** (may publish only 
 
 - **Claim:** ASI handles migration registration (МВД), deposit collection, or document verification.
 - **Status:** REJECT for МВД filing, deposit payment, and document verification specifically; **QUALIFY** for the readiness-checklist framing.
-- **Supporting evidence:** `CAPABILITY_INVENTORY.md` #3 — real workflow/checklist gating exists and is well-tested, but every status implying a real integration is explicitly suffixed `_placeholder` in the code; no МВД e-filing client, no payment capture, no document OCR exists.
+- **Supporting evidence:** `CAPABILITY_INVENTORY.md` #3a — real workflow/checklist gating exists and is well-tested, but every status implying a real integration is explicitly suffixed `_placeholder` in the code; no МВД e-filing client, no payment capture, no document OCR exists (that's the separate #3b row, IDEA_ONLY, now owner-confirmed `ROADMAP_CONFIRMED`).
 - **Scope/population:** internal operator checklist only.
 - **Allowed wording (if surfaced at all — likely an operator-facing, not public-acquisition, claim):** «ASI отслеживает готовность по документам, договору, депозиту и уведомлению МВД как чек-лист для оператора» — never as something ASI files/collects/verifies itself.
 - **Prohibited stronger wording:** "автоматическая подача в МВД," "автоматический сбор депозита," or any claim of document verification.
@@ -179,7 +179,7 @@ Status values: **SAFE_NOW** (may publish as-is) / **QUALIFY** (may publish only 
 
 - **Claim:** ASI detects and/or executes guest upsell requests (extra services, early check-in, etc.).
 - **Status:** QUALIFY for detection; **REJECT** for execution.
-- **Supporting evidence:** `CAPABILITY_INVENTORY.md` #29 — real intent classification (`upsell_request`) exists; no execution/fulfillment exists anywhere.
+- **Supporting evidence:** `CAPABILITY_INVENTORY.md` #29a — real intent classification (`upsell_request`) exists; #29b (execution/fulfillment) does not exist anywhere.
 - **Important existing violation:** `src/app/features/communication/page.tsx` (EN, international site — not RU, not edited by this task) currently claims ASI "Executes in-chat: upsells, payments, access codes, task dispatch." This is inaccurate against current evidence for three of the four items and should be corrected when that page is next touched.
 - **Allowed wording (RU, if ever surfaced):** «ASI распознаёт, когда вопрос гостя похож на запрос дополнительной услуги» — detection only, never "оформляет" or "продаёт."
 - **Prohibited stronger wording:** any claim that ASI charges for, confirms, or fulfills an upsell.
