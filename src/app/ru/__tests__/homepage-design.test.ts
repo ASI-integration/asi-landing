@@ -54,11 +54,12 @@ describe('RU homepage one-page client flow', () => {
       expect(positions[i - 1]).toBeLessThan(positions[i]);
     }
 
-    // Hero: names ASI + current capability + the broader coordination
-    // principle, without being Telegram-centric or overclaiming.
-    expect(home).toContain('ASI отвечает гостям и проверяет объект к заезду');
-    expect(home).toContain('снижается ручная координация в управлении объектом');
-    expect(home.indexOf('ASI отвечает гостям и проверяет объект к заезду')).toBeLessThan(
+    // Hero: leads with the coordination benefit, immediately followed by a
+    // subheadline naming ASI and its two current capabilities (guest
+    // replies + pre-arrival checks), read together as one hero block.
+    expect(home).toContain('Меньше ручной координации в посуточной аренде');
+    expect(home).toContain('ASI берёт на себя типовые вопросы гостей и проверки перед заездом');
+    expect(home.indexOf('Меньше ручной координации в посуточной аренде')).toBeLessThan(
       home.indexOf('id="coordination"'),
     );
 
@@ -81,7 +82,7 @@ describe('RU homepage one-page client flow', () => {
 
     // Section 3 — existing automation does not compete on capability; no
     // named-competitor capability attack.
-    expect(home).toContain('Отдельные сервисы автоматизируют отдельные действия');
+    expect(home).toContain('Почему отдельных программ уже недостаточно');
     expect(home).not.toContain('Bnovo');
     expect(home).not.toContain('RealtyCalendar');
     expect(home).not.toContain('TravelLine');
@@ -94,9 +95,9 @@ describe('RU homepage one-page client flow', () => {
     expect(home).not.toContain('заменяет все сервисы');
 
     // Section 6 — current capability groups, customer language only.
-    expect(home).toContain('Ответы гостям по данным объекта');
-    expect(home).toContain('Проверка готовности перед заездом');
-    expect(home).toContain('Рекомендованная цена с учётом объекта');
+    expect(home).toContain('Ответы гостям');
+    expect(home).toContain('Готовность перед заездом');
+    expect(home).toContain('Рекомендация цены');
     expect(home).toContain('Личный кабинет');
     // Readiness gate must read as a checklist, never as ASI itself filing
     // with МВД, collecting a deposit, or verifying documents. Mentioning
@@ -108,7 +109,7 @@ describe('RU homepage one-page client flow', () => {
     expect(home).not.toContain('собирает депозит');
     expect(home).not.toContain('собираем депозит');
     // Pricing must stay a recommendation; no live feed/auto-publish claim.
-    expect(home).toContain('Это рекомендация');
+    expect(home).toContain('остаётся рекомендацией');
     expect(home).toContain('не публикуется на площадках автоматически');
     expect(home).not.toContain('динамическ');
     expect(home).not.toContain('погод');
@@ -163,39 +164,41 @@ describe('RU homepage one-page client flow', () => {
 
     expect(home).toContain('Вы оставляете заявку');
     expect(home).toContain('Мы бесплатно настраиваем объект');
-    expect(home).toContain('Запуск 14 дней реальной работы');
-    expect(home).toContain('Итоговый разбор пилота');
+    expect(home).toContain('Начинается 14-дневный пилот');
+    expect(home).toContain('Итоги через 14 дней');
     expect(home).toContain('Вы принимаете решение');
     expect(home.indexOf('Вы оставляете заявку')).toBeLessThan(home.indexOf('Мы бесплатно настраиваем объект'));
     expect(home.indexOf('Мы бесплатно настраиваем объект')).toBeLessThan(
-      home.indexOf('Запуск 14 дней реальной работы'),
+      home.indexOf('Начинается 14-дневный пилот'),
     );
-    expect(home.indexOf('Запуск 14 дней реальной работы')).toBeLessThan(
-      home.indexOf('Итоговый разбор пилота'),
+    expect(home.indexOf('Начинается 14-дневный пилот')).toBeLessThan(
+      home.indexOf('Итоги через 14 дней'),
     );
-    expect(home.indexOf('Итоговый разбор пилота')).toBeLessThan(home.indexOf('Вы принимаете решение'));
+    expect(home.indexOf('Итоги через 14 дней')).toBeLessThan(home.indexOf('Вы принимаете решение'));
 
-    // Commercial model preserved exactly (WEB-EDITOR-03 "pilot and
-    // commercial terms" requirement): setup free before pilot, 14-day
-    // pilot only after full readiness, 1000₽/object/month continuation
-    // only on client decision, no automatic paid transition.
-    expect(home).toContain('Подключение и настройка — 0');
-    expect(home).toContain('14 дней работы на объекте — 0');
+    // Commercial model facts preserved exactly (WEB-EDITOR-03 "pilot and
+    // commercial terms" requirement), in the approved copy's wording:
+    // setup free before pilot, 14-day pilot only after full readiness,
+    // 1000₽/object/month continuation only on client decision, no
+    // automatic paid transition.
+    expect(home).toContain('Платить ничего не нужно');
+    expect(home).toContain('14 дней пилота ещё не идут');
     expect(home).toContain('только после полной готовности');
-    expect(home).toContain('14 дней пилота ещё НЕ начались');
+    expect(home).toContain('После подтверждения полной готовности');
     expect(home).toContain('автоматических продлений');
-    expect(home).toContain('продолжать и платить не нужно');
-    expect(home).toContain('Только если клиент увидел результат и решил продолжить');
+    expect(home).toContain('Без автоматического перехода на платный тариф');
+    expect(home).toContain('Только если вы решили продолжить');
 
     expect(home).toContain('Типовой вопрос → Ответ по данным объекта');
-    expect(home).toContain('во сколько заезд и где парковаться');
-    expect(home).toContain('заезд — после 15:00');
+    expect(home).toContain('парковка бесплатная во дворе');
+    expect(home).toContain('Данные для подключения к Wi-Fi');
     expect(home).toContain('Данные для заезда → Проверка готовности');
     expect(home).toContain('Нестандартная просьба → Передача человеку');
     expect(home).not.toContain('пароль от Wi-Fi');
     expect(home).not.toContain('Wi-Fi доступны');
     expect(home).not.toContain('код от');
     expect(home).not.toContain('пароль');
+    expect(home).not.toContain('[данные из карточки объекта]');
 
     expect(home).toContain("variant=\"compact\"");
     expect(home).toMatch(/<footer[\s>][\s\S]*RuComplianceFooter/);
