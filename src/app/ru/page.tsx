@@ -1,5 +1,7 @@
 import type { Metadata } from 'next';
 import {
+  BrandCard,
+  BrandEyebrow,
   BrandGoldRule,
   BrandHeadline,
   BrandLogoMark,
@@ -13,77 +15,87 @@ import { RuPublicNavHeader } from '@/components/ru/RuPublicNavHeader';
 import { COMMUNICATION_PILOT_PRICE_RUB } from '@/lib/payments/yookassa-env';
 
 export const metadata: Metadata = {
-  title: 'ASI — общение с гостями по данным объекта',
+  title: 'ASI — меньше ручной координации в посуточной аренде',
   description:
-    'ASI берёт на себя однотипные вопросы гостей по данным конкретного объекта. Бесплатное подключение, 14 дней пилота после полной готовности, затем 1 000 ₽ за объект в месяц — только если решите продолжить.',
+    'ASI берёт на себя типовые вопросы гостей и проверку готовности объекта перед заездом — по данным конкретного объекта. Бесплатное подключение, 14 дней пилота после полной готовности, затем 1 000 ₽ за объект в месяц — только если решите продолжить.',
 };
 
 const FORM_HREF = '/ru#pilot-form';
 const PRIMARY_CTA_LABEL = 'Подключить объект бесплатно';
 
 const HOME_NAV_LINKS = [
-  { href: '/ru#how-it-works', label: 'Как это работает' },
+  { href: '/ru#capabilities', label: 'Что делает ASI' },
   { href: '/ru#example', label: 'Пример' },
   { href: '/ru#pricing', label: 'Условия' },
 ] as const;
+
+const CAPABILITY_GROUPS = [
+  {
+    title: 'Ответы гостям',
+    body: 'Отвечает в Telegram на типовые вопросы по данным объекта: время заезда, Wi-Fi, парковка, правила дома. Если требуется нестандартное решение — автоматический ответ останавливается, вопрос передаётся вам.',
+  },
+  {
+    title: 'Готовность перед заездом',
+    body: 'Перед отправкой инструкций ASI учитывает статус уборки и отметки в чек-листе готовности документов и депозита. Пока нужные условия не подтверждены, инструкции для заезда не открываются.',
+  },
+  {
+    title: 'Рекомендация цены',
+    body: 'Предлагает рекомендованную цену с учётом сезона, срока до заезда, конкурентных предложений и данных о локации. Цена остаётся рекомендацией и не публикуется на площадках автоматически.',
+  },
+] as const;
+
+const SECONDARY_CAPABILITY = {
+  title: 'Личный кабинет',
+  body: 'В одном месте видны данные объекта и статус пилота.',
+} as const;
 
 const CLIENT_STEPS = [
   {
     n: '01',
     title: 'Вы оставляете заявку',
-    body: 'Указываете имя, Telegram и количество объектов в управлении.',
-    note: '0 ₽. Никаких карт, подписок и обязательств.',
+    body: 'Платить ничего не нужно.',
   },
   {
     n: '02',
     title: 'Мы бесплатно настраиваем объект',
-    body: 'Вы передаете правила дома, Wi-Fi, инструкции по заезду и бытовой технике. Мы вносим их в базу знаний и проверяем готовность системы.',
-    note: '14 дней пилота ещё НЕ начались. Этот этап не урезает ваш тестовый период.',
+    body: 'Собираем инструкции и данные, формируем базу знаний. В это время 14 дней пилота ещё не идут.',
   },
   {
     n: '03',
-    title: 'Запуск 14 дней реальной работы',
-    body: 'Отсчёт начинается только после подтверждения полной технической готовности. ASI начинает обрабатывать входящие вопросы гостей по базе знаний. Если информации недостаточно или ситуация требует решения человека — автоматический ответ останавливается, а запрос передается на проверку.',
+    title: 'Начинается 14-дневный пилот',
+    body: 'После подтверждения полной готовности ASI обрабатывает реальные обращения гостей в Telegram по данным вашего объекта.',
   },
   {
     n: '04',
-    title: 'Итоговый разбор пилота',
-    body: 'По истечении 14 дней мы показываем, какие типовые сценарии проходили через систему, где понадобился человек и какие инструкции стоит дополнить.',
+    title: 'Итоги через 14 дней',
+    body: 'Показываем, какие типовые сценарии прошли через систему и где понадобился человек.',
   },
   {
     n: '05',
     title: 'Вы принимаете решение',
-    body: `Если вы увидели пользу и хотите продолжать — ${COMMUNICATION_PILOT_PRICE_RUB} ₽ / объект в месяц. Если нет — пилот завершается, продолжать и платить не нужно.`,
+    body: 'Продолжать или нет — решаете сами.',
   },
 ] as const;
 
 const EXAMPLES = [
   {
-    title: 'Типовой запрос → Ответ по данным объекта',
-    guest: '«Подскажите, пожалуйста, во сколько заезд и где парковаться?»',
-    asi: '«По данным этого объекта, заезд — после 15:00. Парковка бесплатная во дворе, заезд со стороны улицы.»',
+    title: 'Типовой вопрос → Ответ по данным объекта',
+    guest: '«Здравствуйте! Где можно оставить машину и как подключиться к Wi-Fi?»',
+    asi: '«Для этого объекта парковка бесплатная во дворе. Данные для подключения к Wi-Fi есть в инструкции по заезду.»',
   },
   {
-    title: 'Нетиповая ситуация или бизнес-решение → Передача человеку',
-    guest: '«Мы можем остаться еще на одни сутки, но со скидкой 30%?»',
+    title: 'Данные для заезда → Проверка готовности',
+    guest: '«Мы уже приехали. Можно получить инструкции для заезда?»',
+    asi: '«Проверяю готовность объекта. Как только необходимые условия будут подтверждены, инструкции для заезда станут доступны.»',
+  },
+  {
+    title: 'Нестандартная просьба → Передача человеку',
+    guest: '«Можно завтра выехать на три часа позже? Мы готовы доплатить.»',
     asi: '«Этот вопрос требует решения управляющего. Автоматический ответ остановлен, запрос передан на проверку.»',
   },
 ] as const;
 
-const PRICING_STAGES = [
-  {
-    title: 'Подключение и настройка — 0 ₽',
-    body: 'Выполняется до старта пилота.',
-  },
-  {
-    title: '14 дней работы на объекте — 0 ₽',
-    body: 'Отсчитываются после подтверждения полной готовности.',
-  },
-  {
-    title: `После завершения пилота — ${COMMUNICATION_PILOT_PRICE_RUB} ₽ / объект в месяц`,
-    body: 'Только если клиент увидел результат и решил продолжить.',
-  },
-] as const;
+const PRICING_HEADLINE = `После пилота — ${COMMUNICATION_PILOT_PRICE_RUB} ₽ за объект в месяц`;
 
 export default function HomeRu() {
   return (
@@ -107,15 +119,15 @@ export default function HomeRu() {
                 <span className="font-serif text-2xl text-asi-navy">ASI Global</span>
               </div>
               <BrandHeadline as="h1" className="mt-8 text-4xl sm:text-5xl lg:text-[3.25rem]">
-                ASI отвечает гостям вашего объекта
+                ASI помогает снижать ручную координацию в посуточной аренде
               </BrandHeadline>
               <BrandGoldRule className="mt-6 mb-6" />
               <p className="text-lg text-asi-navy/70 max-w-xl leading-relaxed">
-                ASI берет на себя однотипные вопросы гостей по данным конкретного объекта. Человек
-                подключается там, где действительно нужно решение.
+                ASI берёт на себя типовые вопросы гостей и проверки перед заездом. Система выполняет
+                понятную рутину, а вы подключаетесь там, где нужно принять решение.
               </p>
               <p className="mt-5 text-base font-serif text-asi-navy leading-snug max-w-xl">
-                Больше объектов не должно означать больше людей в чатах.
+                Больше объектов не должно означать больше времени в чатах и ручных проверках.
               </p>
               <p className="mt-5 text-sm font-sans text-asi-navy/60 tracking-wide leading-relaxed max-w-xl">
                 Настройка 0&nbsp;₽ • 14 дней пилота отсчитываются только после полной готовности •{' '}
@@ -150,38 +162,103 @@ export default function HomeRu() {
           </div>
         </section>
 
-        {/* ── 2. Client journey ── */}
-        <BrandSection variant="paper" id="how-it-works" className="scroll-mt-24">
+        {/* ── 2. Проблема масштабирования ── */}
+        <BrandSection variant="paper" id="coordination" className="scroll-mt-24">
+          <BrandEyebrow>Масштабирование</BrandEyebrow>
           <BrandHeadline className="text-3xl sm:text-5xl max-w-4xl">
-            Как мы подключаем ваш объект: шаг за шагом
+            Больше объектов — больше координации, а не только больше дохода
           </BrandHeadline>
-          <ol className="mt-12 grid gap-0 border border-asi-border divide-y divide-asi-border">
-            {CLIENT_STEPS.map((step) => (
-              <li key={step.n} className="bg-asi-ivory p-7 sm:p-8 grid sm:grid-cols-[4.5rem,1fr] gap-4 sm:gap-8">
-                <span className="font-serif text-asi-gold text-2xl">{step.n}</span>
-                <div>
-                  <h3 className="font-serif text-xl sm:text-2xl text-asi-navy">{step.title}</h3>
-                  <p className="mt-3 text-sm sm:text-base text-asi-navy/70 leading-relaxed">{step.body}</p>
-                  {'note' in step && step.note ? (
-                    <p className="mt-3 text-sm font-sans font-medium text-asi-navy leading-relaxed">
-                      {step.note}
-                    </p>
-                  ) : null}
-                </div>
-              </li>
-            ))}
-          </ol>
+          <p className="mt-6 max-w-3xl text-base sm:text-lg text-asi-navy/70 leading-relaxed">
+            Каждый новый объект — это не только доход, но и новые бронирования, сообщения, задачи по
+            уборке, исключения и созвоны между сотрудниками. Рост количества объектов и сотрудников не
+            гарантирует пропорционального роста чистой прибыли: вместе с масштабом растёт и объём
+            координации, переписки и нестандартных ситуаций.
+          </p>
         </BrandSection>
 
-        {/* ── 3. Examples ── */}
+        {/* ── 3. Почему отдельные автоматизации не снимают эту нагрузку целиком ── */}
+        <BrandSection variant="ivory" id="automation-gap" className="scroll-mt-24">
+          <BrandEyebrow>Существующая автоматизация</BrandEyebrow>
+          <BrandHeadline className="text-3xl sm:text-5xl max-w-4xl">
+            Почему отдельных программ уже недостаточно
+          </BrandHeadline>
+          <p className="mt-6 max-w-3xl text-base sm:text-lg text-asi-navy/70 leading-relaxed">
+            Рынок посуточной аренды уже хорошо автоматизирован. Есть сильные менеджеры каналов,
+            календари и системы учёта — и они хорошо решают свои задачи.
+          </p>
+          <p className="mt-4 max-w-3xl text-base sm:text-lg text-asi-navy/70 leading-relaxed">
+            Но автоматизировать отдельную функцию и связать несколько состояний в одно решение — не
+            одно и то же. Уборка — один процесс, общение с гостем — другой, готовность документов —
+            третий. ASI создаётся для того, чтобы постепенно уменьшать ручную работу между такими
+            этапами.
+          </p>
+        </BrandSection>
+
+        {/* ── 4. Общение с гостями ── */}
+        <BrandSection variant="paper" id="guest-communication" className="scroll-mt-24">
+          <BrandEyebrow>Общение с гостями</BrandEyebrow>
+          <BrandHeadline className="text-3xl sm:text-5xl max-w-4xl">
+            Переписка, которая забирает время
+          </BrandHeadline>
+          <p className="mt-6 max-w-3xl text-base sm:text-lg text-asi-navy/70 leading-relaxed">
+            «Во сколько заезд?», «Где парковаться?», «Как подключиться к Wi-Fi?» — одни и те же вопросы
+            повторяются изо дня в день. Гости пишут в разное время и ждут понятного ответа.
+          </p>
+          <p className="mt-4 max-w-3xl text-base sm:text-lg text-asi-navy leading-relaxed">
+            ASI берёт типовые вопросы на себя и отвечает по данным конкретного объекта. Если ситуация
+            требует решения или ответственности — автоматический ответ останавливается, а запрос
+            передаётся человеку.
+          </p>
+        </BrandSection>
+
+        {/* ── 5. Принцип ASI ── */}
+        <BrandSection variant="ivory" id="principle" className="scroll-mt-24">
+          <BrandEyebrow>Принцип ASI</BrandEyebrow>
+          <BrandHeadline className="text-3xl sm:text-5xl max-w-4xl">
+            Система занимается повторяемым. Человек — решениями.
+          </BrandHeadline>
+          <p className="mt-6 max-w-3xl text-base sm:text-lg text-asi-navy/70 leading-relaxed">
+            ASI — не просто бот для ответов. Задача продукта — постепенно передавать системе те
+            действия и проверки, которые она может выполнять надёжно, а человеку оставлять ситуации,
+            где действительно нужно решение.
+          </p>
+          <p className="mt-4 max-w-3xl text-base sm:text-lg text-asi-navy/70 leading-relaxed">
+            Сегодня в ASI уже работают несколько таких связей между этапами. Они позволяют передать
+            системе часть повторяющейся ежедневной работы, не создавая впечатление, что автоматизация
+            уже завершена там, где её ещё нет.
+          </p>
+        </BrandSection>
+
+        {/* ── 6. Что ASI делает сегодня ── */}
+        <BrandSection variant="paper" id="capabilities" className="scroll-mt-24">
+          <BrandEyebrow>Что ASI делает сегодня</BrandEyebrow>
+          <BrandHeadline className="text-3xl sm:text-5xl max-w-4xl">
+            Что умеет пилотная версия ASI
+          </BrandHeadline>
+          <div className="mt-12 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+            {CAPABILITY_GROUPS.map((group) => (
+              <BrandCard key={group.title} className="p-7 sm:p-8">
+                <h3 className="font-serif text-xl text-asi-navy leading-snug">{group.title}</h3>
+                <p className="mt-3 text-sm text-asi-navy/70 leading-relaxed">{group.body}</p>
+              </BrandCard>
+            ))}
+          </div>
+          <div className="mt-6 max-w-xl border-t border-asi-border pt-6">
+            <h3 className="font-serif text-lg text-asi-navy">{SECONDARY_CAPABILITY.title}</h3>
+            <p className="mt-2 text-sm text-asi-navy/65 leading-relaxed">{SECONDARY_CAPABILITY.body}</p>
+          </div>
+        </BrandSection>
+
+        {/* ── 7. Пример из практики ── */}
         <BrandSection variant="ivory" id="example" className="scroll-mt-24">
           <BrandHeadline className="text-3xl sm:text-5xl max-w-4xl">
-            Как ASI работает с входящими вопросами
+            Как это выглядит на практике
           </BrandHeadline>
           <p className="mt-5 max-w-2xl text-sm text-asi-navy/60 leading-relaxed">
-            Ниже — примеры поведения системы, а не гарантия конкретного ответа в каждой ситуации.
+            Примеры показывают логику работы системы. Реальные ответы зависят от правил и данных
+            конкретного объекта.
           </p>
-          <div className="mt-12 grid gap-px bg-asi-border border border-asi-border lg:grid-cols-2">
+          <div className="mt-12 grid gap-px bg-asi-border border border-asi-border lg:grid-cols-3">
             {EXAMPLES.map((example) => (
               <div key={example.title} className="bg-asi-paper p-7 sm:p-8">
                 <h3 className="font-serif text-xl text-asi-navy leading-snug">{example.title}</h3>
@@ -204,27 +281,42 @@ export default function HomeRu() {
           </div>
         </BrandSection>
 
-        {/* ── 4. Pricing ── */}
-        <BrandSection variant="paper" id="pricing" className="scroll-mt-24">
-          <BrandHeadline className="text-3xl sm:text-5xl max-w-3xl">
-            Простые условия запуска
+        {/* ── 8a. Пилот: шаг за шагом ── */}
+        <BrandSection variant="paper" id="how-it-works" className="scroll-mt-24">
+          <BrandHeadline className="text-3xl sm:text-5xl max-w-4xl">
+            Как мы подключаем ваш объект: шаг за шагом
           </BrandHeadline>
-          <BrandGoldRule className="mt-6 mb-8" />
-          <ul className="max-w-3xl space-y-0 border border-asi-border divide-y divide-asi-border">
-            {PRICING_STAGES.map((stage) => (
-              <li key={stage.title} className="bg-asi-ivory px-6 py-6 sm:px-8 sm:py-7">
-                <p className="font-serif text-xl text-asi-navy">{stage.title}</p>
-                <p className="mt-2 text-sm text-asi-navy/65 leading-relaxed">{stage.body}</p>
+          <ol className="mt-12 grid gap-0 border border-asi-border divide-y divide-asi-border">
+            {CLIENT_STEPS.map((step) => (
+              <li key={step.n} className="bg-asi-ivory p-7 sm:p-8 grid sm:grid-cols-[4.5rem,1fr] gap-4 sm:gap-8">
+                <span className="font-serif text-asi-gold text-2xl">{step.n}</span>
+                <div>
+                  <h3 className="font-serif text-xl sm:text-2xl text-asi-navy">{step.title}</h3>
+                  <p className="mt-3 text-sm sm:text-base text-asi-navy/70 leading-relaxed">{step.body}</p>
+                </div>
               </li>
             ))}
-          </ul>
+          </ol>
+        </BrandSection>
+
+        {/* ── 8b. Условия и цена ── */}
+        <BrandSection variant="ivory" id="pricing" className="scroll-mt-24">
+          <BrandHeadline className="text-3xl sm:text-5xl max-w-3xl">
+            {PRICING_HEADLINE}
+          </BrandHeadline>
+          <BrandGoldRule className="mt-6 mb-8" />
+          <div className="max-w-3xl border border-asi-border bg-asi-paper px-6 py-6 sm:px-8 sm:py-7">
+            <p className="text-base sm:text-lg text-asi-navy leading-relaxed">
+              Только если вы решили продолжить. Без автоматического перехода на платный тариф.
+            </p>
+          </div>
           <p className="mt-8 max-w-2xl text-sm text-asi-navy/65 leading-relaxed">
             Никаких скрытых платежей, списаний с оборота или автоматических продлений.
           </p>
         </BrandSection>
 
-        {/* ── 5. Application form ── */}
-        <BrandSection variant="ivory" id="pilot-form-section" className="scroll-mt-24">
+        {/* ── 9. Форма заявки ── */}
+        <BrandSection variant="paper" id="pilot-form-section" className="scroll-mt-24">
           <BrandHeadline className="text-3xl sm:text-5xl max-w-4xl">
             Хотите посмотреть, как это сработает на ваших объектах?
           </BrandHeadline>
