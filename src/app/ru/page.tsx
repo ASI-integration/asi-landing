@@ -4,28 +4,24 @@ import {
   BrandEyebrow,
   BrandGoldRule,
   BrandHeadline,
-  BrandLogoMark,
-  BrandPrimaryCta,
   BrandSection,
   BrandShiro,
 } from '@/components/brand';
-import { EarlyAccessObjectForm } from '@/components/early-access/EarlyAccessObjectForm';
+import { ConnectCta, RU_CONNECT_HREF } from '@/components/ru/ConnectCta';
 import { RuComplianceFooter } from '@/components/ru/RuComplianceFooter';
 import { RuPublicNavHeader } from '@/components/ru/RuPublicNavHeader';
 import { COMMUNICATION_PILOT_PRICE_RUB } from '@/lib/payments/yookassa-env';
 
 export const metadata: Metadata = {
-  title: 'ASI — меньше ручной координации в посуточной аренде',
+  title: 'ASI — рутина посуточной аренды на автопилоте',
   description:
     'ASI берёт на себя типовые вопросы гостей и проверку готовности объекта перед заездом — по данным конкретного объекта. Бесплатное подключение, 14 дней пилота после полной готовности, затем 1 000 ₽ за объект в месяц — только если решите продолжить.',
 };
 
-const FORM_HREF = '/ru#pilot-form';
-const PRIMARY_CTA_LABEL = 'Подключить объект бесплатно';
 
 const HOME_NAV_LINKS = [
   { href: '/ru#capabilities', label: 'Что делает ASI' },
-  { href: '/ru#example', label: 'Пример' },
+  { href: '/ru#how-it-works', label: 'Как подключить' },
   { href: '/ru#pricing', label: 'Условия' },
 ] as const;
 
@@ -50,31 +46,10 @@ const SECONDARY_CAPABILITY = {
 } as const;
 
 const CLIENT_STEPS = [
-  {
-    n: '01',
-    title: 'Вы оставляете заявку',
-    body: 'Платить ничего не нужно.',
-  },
-  {
-    n: '02',
-    title: 'Мы бесплатно настраиваем объект',
-    body: 'Собираем инструкции и данные, формируем базу знаний. В это время 14 дней пилота ещё не идут.',
-  },
-  {
-    n: '03',
-    title: 'Начинается 14-дневный пилот',
-    body: 'После подтверждения полной готовности ASI обрабатывает реальные обращения гостей в Telegram по данным вашего объекта.',
-  },
-  {
-    n: '04',
-    title: 'Итоги через 14 дней',
-    body: 'Показываем, какие типовые сценарии прошли через систему и где понадобился человек.',
-  },
-  {
-    n: '05',
-    title: 'Вы принимаете решение',
-    body: 'Продолжать или нет — решаете сами.',
-  },
+  { n: '01', title: 'Укажите менеджер каналов', body: 'Bnovo, RealtyCalendar или другой сервис. Если такого сервиса нет — поможем выбрать, с чего начать.' },
+  { n: '02', title: 'Выберите площадки бронирования', body: 'Отметьте, где размещены ваши объекты. Мы проверим доступные способы подключения.' },
+  { n: '03', title: 'Добавьте данные объекта', body: 'Правила дома, время заезда, Wi-Fi и инструкции для гостей. Всё сохраняется в вашем кабинете.' },
+  { n: '04', title: 'Запуск и проверка', body: 'Проверяем работу на вашем объекте. 14 бесплатных дней начинаются только после полной готовности.' },
 ] as const;
 
 const EXAMPLES = [
@@ -95,7 +70,6 @@ const EXAMPLES = [
   },
 ] as const;
 
-const PRICING_HEADLINE = `После пилота — ${COMMUNICATION_PILOT_PRICE_RUB} ₽ за объект в месяц`;
 
 export default function HomeRu() {
   return (
@@ -106,61 +80,75 @@ export default function HomeRu() {
         showContacts={false}
         showLogin={false}
         mainLinks={HOME_NAV_LINKS}
-        primaryCta={{ href: FORM_HREF, label: PRIMARY_CTA_LABEL }}
+        primaryCta={{ href: RU_CONNECT_HREF, label: 'Войти / подключить' }}
       />
 
       <main>
-        {/* ── 1. Hero ── */}
-        <section className="relative bg-asi-ivory px-5 sm:px-8 pt-12 sm:pt-20 pb-16 sm:pb-24 overflow-hidden">
-          <div className="max-w-6xl mx-auto grid lg:grid-cols-[1.1fr,0.9fr] gap-12 lg:gap-16 items-center">
-            <div>
-              <div className="flex items-center gap-3">
-                <BrandLogoMark size={34} />
-                <span className="font-serif text-2xl text-asi-navy">ASI Global</span>
-              </div>
-              <BrandHeadline as="h1" className="mt-8 text-4xl sm:text-5xl lg:text-[3.25rem]">
-                ASI помогает снижать ручную координацию в посуточной аренде
+        <section className="bg-asi-ivory px-5 sm:px-8 pt-9 sm:pt-14 pb-12 sm:pb-16">
+          <div className="max-w-6xl mx-auto">
+            <p className="text-sm font-semibold text-asi-gold-text">Один из продуктов ASI Global</p>
+            <div className="mt-5 flex items-start justify-between gap-6">
+              <BrandHeadline as="h1" className="text-[2.25rem] sm:text-5xl lg:text-[3.75rem] max-w-4xl !leading-[1.08]">
+                ASI сама ведёт рутину ваших объектов. От и до.
               </BrandHeadline>
-              <BrandGoldRule className="mt-6 mb-6" />
-              <p className="text-lg text-asi-navy/70 max-w-xl leading-relaxed">
-                ASI берёт на себя типовые вопросы гостей и проверки перед заездом. Система выполняет
-                понятную рутину, а вы подключаетесь там, где нужно принять решение.
-              </p>
-              <p className="mt-5 text-base font-serif text-asi-navy leading-snug max-w-xl">
-                Больше объектов не должно означать больше времени в чатах и ручных проверках.
-              </p>
-              <p className="mt-5 text-sm font-sans text-asi-navy/60 tracking-wide leading-relaxed max-w-xl">
-                Настройка 0&nbsp;₽ • 14 дней пилота отсчитываются только после полной готовности •{' '}
-                {COMMUNICATION_PILOT_PRICE_RUB}&nbsp;₽ / объект в месяц, если решите продолжить
-              </p>
-              <div className="mt-9">
-                <BrandPrimaryCta href={FORM_HREF}>{PRIMARY_CTA_LABEL}</BrandPrimaryCta>
-              </div>
+              <div className="hidden sm:block shrink-0 pt-2"><BrandShiro size={80} /></div>
             </div>
-            <div className="relative border border-asi-border bg-asi-paper p-6 sm:p-8 min-h-[18rem] flex flex-col justify-between">
-              <div className="flex items-center justify-between gap-4">
-                <div className="flex items-center gap-3">
-                  <BrandLogoMark size={28} />
-                  <span className="font-serif text-xl text-asi-navy">ASI</span>
-                </div>
-                <span className="text-[10px] font-sans font-semibold uppercase tracking-[0.18em] text-asi-gold-text">
-                  Пилот
-                </span>
-              </div>
-              <div className="mt-8 space-y-4">
-                <p className="font-serif text-2xl text-asi-navy leading-snug">
-                  Типовые вопросы — по данным объекта.
-                </p>
-                <p className="text-sm text-asi-navy/65 leading-relaxed">
-                  Нестандартные ситуации и бизнес-решения остаются за человеком.
-                </p>
-              </div>
-              <div className="mt-8 flex justify-end">
-                <BrandShiro size={56} />
-              </div>
-            </div>
+            <p className="mt-6 max-w-3xl text-base sm:text-xl text-asi-navy/75 leading-relaxed">
+              Календарь — в одной программе, переписка — в другой, уборка — в чате.
+              ASI создаётся, чтобы связать всё это: от вопросов гостя и подготовки заезда
+              до работы с площадками бронирования.
+            </p>
+            <p className="mt-4 text-lg sm:text-xl font-semibold">
+              Система ведёт повседневные задачи. Вы решаете нестандартные вопросы.
+            </p>
+            <div className="mt-7 sm:mt-9"><ConnectCta /></div>
+            <p className="mt-3 text-sm text-asi-navy/65">
+              Сейчас — пилот: настраиваем доступные функции под ваш объект. Подключение и настройка — 0 ₽.
+            </p>
           </div>
         </section>
+
+        <BrandSection variant="paper" id="how-it-works" className="scroll-mt-24">
+          <BrandHeadline className="text-3xl sm:text-5xl max-w-3xl !leading-tight">
+            Как запустить ASI на вашем объекте
+          </BrandHeadline>
+          <ol className="mt-10 grid gap-8 sm:grid-cols-2 lg:grid-cols-4">
+            {CLIENT_STEPS.map((step) => (
+              <li key={step.n} className="border-t-2 border-asi-gold pt-5">
+                <span className="font-serif text-4xl text-asi-gold-text" aria-hidden="true">{step.n}</span>
+                <h3 className="mt-4 text-xl sm:text-2xl font-semibold leading-tight">{step.title}</h3>
+                <p className="mt-3 text-base text-asi-navy/70 leading-relaxed">{step.body}</p>
+              </li>
+            ))}
+          </ol>
+          <div className="mt-10"><ConnectCta /></div>
+        </BrandSection>
+
+        <BrandSection variant="ivory" id="pricing" className="scroll-mt-24">
+          <BrandHeadline className="text-3xl sm:text-5xl max-w-4xl !leading-tight">
+            Специальные условия для участников группы «Стрегуново»
+          </BrandHeadline>
+          <dl className="mt-10 grid gap-6 sm:grid-cols-3">
+            <div className="border-t border-asi-border pt-5">
+              <dt className="text-base text-asi-navy/70">Подключение и настройка</dt>
+              <dd className="mt-3 font-serif text-4xl sm:text-5xl">0 ₽</dd>
+            </div>
+            <div className="border-t border-asi-border pt-5">
+              <dt className="text-base text-asi-navy/70">После полной готовности объекта</dt>
+              <dd className="mt-3 font-serif text-4xl sm:text-5xl">14 дней</dd>
+              <p className="mt-3 text-base">Работы бесплатно</p>
+            </div>
+            <div className="border-t border-asi-border pt-5">
+              <dt className="text-base text-asi-navy/70">После пилота, если решите продолжить</dt>
+              <dd className="mt-3 font-serif text-4xl sm:text-5xl">{COMMUNICATION_PILOT_PRICE_RUB.toLocaleString('ru-RU')} ₽</dd>
+              <p className="mt-3 text-base">За объект в месяц</p>
+            </div>
+          </dl>
+          <p className="mt-8 max-w-3xl text-lg leading-relaxed">
+            Эта цена сохраняется для участника группы на 12 месяцев с момента перехода на платный режим.
+            Без автоматического перехода на платный тариф.
+          </p>
+        </BrandSection>
 
         {/* ── 2. Проблема масштабирования ── */}
         <BrandSection variant="paper" id="coordination" className="scroll-mt-24">
@@ -281,52 +269,14 @@ export default function HomeRu() {
           </div>
         </BrandSection>
 
-        {/* ── 8a. Пилот: шаг за шагом ── */}
-        <BrandSection variant="paper" id="how-it-works" className="scroll-mt-24">
-          <BrandHeadline className="text-3xl sm:text-5xl max-w-4xl">
-            Как мы подключаем ваш объект: шаг за шагом
+        <BrandSection variant="paper" id="pilot-form" className="scroll-mt-24">
+          <BrandHeadline className="text-3xl sm:text-5xl max-w-4xl !leading-tight">
+            Начните с одного объекта
           </BrandHeadline>
-          <ol className="mt-12 grid gap-0 border border-asi-border divide-y divide-asi-border">
-            {CLIENT_STEPS.map((step) => (
-              <li key={step.n} className="bg-asi-ivory p-7 sm:p-8 grid sm:grid-cols-[4.5rem,1fr] gap-4 sm:gap-8">
-                <span className="font-serif text-asi-gold text-2xl">{step.n}</span>
-                <div>
-                  <h3 className="font-serif text-xl sm:text-2xl text-asi-navy">{step.title}</h3>
-                  <p className="mt-3 text-sm sm:text-base text-asi-navy/70 leading-relaxed">{step.body}</p>
-                </div>
-              </li>
-            ))}
-          </ol>
-        </BrandSection>
-
-        {/* ── 8b. Условия и цена ── */}
-        <BrandSection variant="ivory" id="pricing" className="scroll-mt-24">
-          <BrandHeadline className="text-3xl sm:text-5xl max-w-3xl">
-            {PRICING_HEADLINE}
-          </BrandHeadline>
-          <BrandGoldRule className="mt-6 mb-8" />
-          <div className="max-w-3xl border border-asi-border bg-asi-paper px-6 py-6 sm:px-8 sm:py-7">
-            <p className="text-base sm:text-lg text-asi-navy leading-relaxed">
-              Только если вы решили продолжить. Без автоматического перехода на платный тариф.
-            </p>
-          </div>
-          <p className="mt-8 max-w-2xl text-sm text-asi-navy/65 leading-relaxed">
-            Никаких скрытых платежей, списаний с оборота или автоматических продлений.
+          <p className="mt-5 text-lg text-asi-navy/70">
+            Создайте кабинет, укажите ваши сервисы и добавьте данные. Мы поможем подготовить объект к запуску.
           </p>
-        </BrandSection>
-
-        {/* ── 9. Форма заявки ── */}
-        <BrandSection variant="paper" id="pilot-form-section" className="scroll-mt-24">
-          <BrandHeadline className="text-3xl sm:text-5xl max-w-4xl">
-            Хотите посмотреть, как это сработает на ваших объектах?
-          </BrandHeadline>
-          <p className="mt-5 max-w-2xl text-asi-navy/70 leading-relaxed">
-            Заполните форму — мы бесплатно соберем базу знаний вашего объекта, подключим систему и
-            запустим 14 дней тест-драйва на реальном потоке гостей только после полной готовности.
-          </p>
-          <div className="mt-10 max-w-2xl">
-            <EarlyAccessObjectForm variant="compact" submitLabel={PRIMARY_CTA_LABEL} />
-          </div>
+          <div className="mt-8"><ConnectCta /></div>
         </BrandSection>
       </main>
 

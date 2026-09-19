@@ -1,3 +1,4 @@
+import type { RentalConnectionDraft } from '@/lib/rental-connect/model';
 export const onboardingSteps = ['business', 'owner', 'properties', 'units', 'operations', 'channel_manager', 'reservations', 'communications', 'legal_payments', 'staff', 'verification', 'launch'] as const;
 export type OnboardingStep = typeof onboardingSteps[number];
 
@@ -11,6 +12,8 @@ export type StaffDraft = { key: string; name?: string; role?: StaffRole; preferr
 export type VerificationItem = { key: string; propertyKey: string; status: 'pending' | 'passed' | 'issue'; blocking?: boolean; notes?: string; photoMetadata?: Record<string, unknown>[]; maintenanceTaskId?: string; reinspectionRequired?: boolean };
 
 export type OnboardingData = {
+  /** Owner-facing intake; readiness and pilot activation remain in their canonical services. */
+  rentalConnection?: RentalConnectionDraft;
   business?: { name?: string; legalName?: string };
   owner?: { name?: string; phone?: string; email?: string };
   properties?: PropertyDraft[];

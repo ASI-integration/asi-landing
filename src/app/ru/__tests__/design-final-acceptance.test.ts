@@ -57,10 +57,10 @@ describe('RU-DESIGN-FINAL acceptance', () => {
     const methodology = readSrc('src/app/ru/kak-my-ocenivaem-dohodnost-obektov/page.tsx');
     const report = readSrc('src/app/ru/location-report/page.tsx');
 
-    expect(home).toContain('Подключить объект бесплатно');
-    expect(home).toContain("const FORM_HREF = '/ru#pilot-form'");
+    expect(home).toContain('ConnectCta');
+    expect(home).toContain('href: RU_CONNECT_HREF');
     expect(home).toContain('COMMUNICATION_PILOT_PRICE_RUB');
-    expect(home).toContain('EarlyAccessObjectForm');
+    expect(home).toContain('id="pilot-form"');
     expect(home).not.toContain('Оценка локации — отдельный инструмент');
     expect(home).not.toContain('Работает вместе с вашим менеджером каналов');
 
@@ -126,11 +126,12 @@ describe('RU-DESIGN-FINAL acceptance', () => {
     const home = readSrc('src/app/ru/page.tsx');
     const how = readSrc('src/app/ru/how-it-works/page.tsx');
     expect(home).toContain('export const metadata');
-    expect(home).toContain('общение с гостями по данным объекта');
+    expect(home).toContain('по данным конкретного объекта');
     expect(home).not.toContain('Полная операционная автоматизация');
-    expect(home).toContain('Подключить объект бесплатно');
+    expect(home).toContain('ConnectCta');
     expect(home).toContain('Подключение и настройка — 0');
-    expect(home).toContain('14 дней работы на объекте — 0');
+    expect(home).toContain('14 дней');
+    expect(home).toContain('Работы бесплатно');
     expect(home).not.toContain('Оплата пилота');
     expect(home).not.toContain('Платный MVP');
     expect(home).not.toContain('1 объект · 1 месяц');

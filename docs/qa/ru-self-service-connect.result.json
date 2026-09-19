@@ -1,0 +1,84 @@
+{
+  "schemaVersion": "asi.agent-os.task-result.v1",
+  "taskId": "ru-self-service-connect",
+  "status": "PARTIAL",
+  "branch": "feat/ru-self-service-connect",
+  "commitSha": null,
+  "prUrl": null,
+  "changedFiles": [
+    "docs/qa/ru-self-service-connect.md",
+    "package.json",
+    "scripts/dev.mjs",
+    "src/app/api/auth/google/callback/route.ts",
+    "src/app/api/auth/google/route.ts",
+    "src/app/api/auth/google/start/route.ts",
+    "src/app/api/auth/login/route.ts",
+    "src/app/api/auth/signup/route.ts",
+    "src/app/api/cabinet/connect/route.ts",
+    "src/app/connect/page.tsx",
+    "src/app/dashboard/channel-connections/page.tsx",
+    "src/app/ru/__tests__/design-final-acceptance.test.ts",
+    "src/app/ru/__tests__/homepage-design.test.ts",
+    "src/app/ru/connect/page.tsx",
+    "src/app/ru/page.tsx",
+    "src/components/OnboardingPageContent.tsx",
+    "src/components/dashboard/RentalConnectionFlow.tsx",
+    "src/components/ru/ConnectCta.tsx",
+    "src/lib/accounts.ts",
+    "src/lib/auth/app-url.ts",
+    "src/lib/ops-v17/types.ts",
+    "src/lib/rental-connect/__tests__/journey.test.ts",
+    "src/lib/rental-connect/model.ts",
+    "src/lib/rental-connect/service.ts"
+  ],
+  "checks": [
+    {
+      "name": "focused tests",
+      "status": "PASS",
+      "evidence": "30/30; 3 files"
+    },
+    {
+      "name": "touched ESLint",
+      "status": "PASS",
+      "evidence": "exit 0"
+    },
+    {
+      "name": "typecheck",
+      "status": "PASS",
+      "evidence": "exit 0"
+    },
+    {
+      "name": "production build",
+      "status": "PASS",
+      "evidence": "exit 0; 134 static pages"
+    },
+    {
+      "name": "diff check",
+      "status": "PASS",
+      "evidence": "exit 0"
+    },
+    {
+      "name": "desktop/mobile CTA",
+      "status": "PASS",
+      "evidence": "3 desktop clicks, responsive 360/390, public mobile connect"
+    },
+    {
+      "name": "live auth/database E2E",
+      "status": "SKIP",
+      "evidence": "No configured local test database/OAuth secrets; tested isolated boundaries only"
+    }
+  ],
+  "sideEffects": {
+    "production": false,
+    "database": false,
+    "secrets": false,
+    "dns": false,
+    "payments": false,
+    "realMessages": false,
+    "approvedUx": false
+  },
+  "blockers": [
+    "Live browser signup/OAuth and persistence acceptance needs a configured non-production environment."
+  ],
+  "ownerDecision": "Requested public UX and commercial-flow changes explicitly authorized in task; no deploy or merge. sideEffects records external effects; proposed UX changes are in this branch."
+}

@@ -6,6 +6,8 @@ import { useRouter } from 'next/navigation';
 import { useSearchParams } from 'next/navigation';
 import { loadGoogleIdentityServices } from '@/lib/googleIdentity';
 import { readResponseJson } from '@/lib/safeResponseJson';
+import { safeAuthRedirectPath } from '@/lib/auth/app-url';
+import { RU_SETUP_PATH } from '@/lib/rental-connect/model';
 import { productSupportEmail } from '@/config/contact';
 import { telegramSupportBotUrl } from '@/config/telegramBots';
 
@@ -21,12 +23,7 @@ const emptyPublicConfig: PublicConfigResponse = {};
 type PricingPlan = 'small' | 'growth' | 'enterprise';
 const SELECTED_PLAN_STORAGE_KEY = 'asi.selectedPlan';
 
-function safeRedirectPath(value: string | null): string {
-  if (!value || !value.startsWith('/') || value.startsWith('//')) return '/dashboard';
-  return value;
-}
-
-export default function OnboardingPageContent() {
+export default function OnboardingPageContent({ rental = false }: { rental?: boolean }) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [mode, setMode] = useState<'signup' | 'login'>('signup');
@@ -49,8 +46,8 @@ export default function OnboardingPageContent() {
   const gsiButtonHostRef = useRef<HTMLDivElement | null>(null);
   const debugGoogle = useMemo(() => searchParams.get('debugGoogle') === '1', [searchParams]);
   const afterAuthRedirect = useMemo(
-    () => safeRedirectPath(searchParams.get('redirect')),
-    [searchParams],
+    () => safeAuthRedirectPath(searchParams.get('redirect') || (rental ? RU_SETUP_PATH : null)),
+    [searchParams, rental],
   );
   const publicConfigFetchAttemptedRef = useRef(false);
 
@@ -171,8 +168,8 @@ export default function OnboardingPageContent() {
   const googleReady = googleOAuthConfigured && !googleConfigLoading;
   const demoMailto = useMemo(
     () =>
-      `mailto:${productSupportEmail}?subject=${encodeURIComponent('Доступ к демо / тест (7 дней)')}&body=${encodeURIComponent('Здравствуйте! Хочу получить доступ к демо.\n\nКомпания / контакт:\n')}`,
-    [],
+      `mailto:${productSupportEmail}?subject=${encodeURIComponent(rental ? 'Подключение объекта к ASI' : 'Доступ к демо / тест (7 дней)')}&body=${encodeURIComponent('Здравствуйте! Хочу получить доступ к демо.\n\nКомпания / контакт:\n')}`,
+    [rental],
   );
 
   const handleEmailAuth = async (e: React.FormEvent) => {
@@ -189,7 +186,7 @@ export default function OnboardingPageContent() {
       const res = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: email.trim(), password, plan: selectedPlanValue, debug: debugGoogle }),
+        body: JSON.stringify({ email: email.trim(), password, plan: rental ? undefined : selectedPlanValue, debug: debugGoogle }),
       });
       const data = await readResponseJson(res, {} as { error?: string; message?: string });
       if (!res.ok) {
@@ -197,7 +194,7 @@ export default function OnboardingPageContent() {
           (data && typeof data.message === 'string' && data.message.trim()) ||
           (data && typeof data.error === 'string' && data.error.trim()) ||
           'Ошибка авторизации.';
-        setError(msg);
+        setError(rental && res.status === 401 ? 'Неверный email или пароль.' : rental && !data.message ? 'Не удалось войти. Проверьте данные и попробуйте ещё раз.' : msg);
         return;
       }
       router.push(afterAuthRedirect);
@@ -226,7 +223,7 @@ export default function OnboardingPageContent() {
       // Mode 1: redirect OAuth (requires server-side client secret).
       if (googleOAuthMode === 'redirect') {
         const debug = debugGoogle ? '1' : '0';
-        const url = `/api/auth/google/start?plan=${encodeURIComponent(String(selectedPlanValue))}&debug=${debug}&redirect=${encodeURIComponent(afterAuthRedirect)}`;
+        const url = `/api/auth/google/start?${rental ? '' : `plan=${encodeURIComponent(String(selectedPlanValue))}&`}debug=${debug}&redirect=${encodeURIComponent(afterAuthRedirect)}`;
         setGoogleStatus('Открываем Google…');
         window.location.assign(url);
         return;
@@ -373,7 +370,7 @@ export default function OnboardingPageContent() {
       const res = await fetch('/api/auth/google', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ idToken, plan: selectedPlanValue, debug: debugGoogle }),
+        body: JSON.stringify({ idToken, plan: rental ? undefined : selectedPlanValue, debug: debugGoogle }),
       });
       const data = await readResponseJson(res, {} as { error?: string });
       if (!res.ok) {
@@ -402,10 +399,16 @@ export default function OnboardingPageContent() {
   return (
     <div className="w-full bg-transparent flex items-center justify-center px-4 py-10">
       <div className="w-full max-w-2xl">
-        <div className="bg-slate-50 border border-slate-200 rounded-2xl p-6 sm:p-8 shadow-sm">
+        <div className={rental ? "bg-asi-paper border border-asi-border p-5 sm:p-8" : "bg-slate-50 border border-slate-200 rounded-2xl p-6 sm:p-8 shadow-sm"}>
           <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 tracking-tight">
-            Начать 7‑дневный тест
+            {rental ? 'Подключение объекта к ASI' : 'Начать 7‑дневный тест'}
           </h1>
+          {rental ? (
+            <div className="mt-4 space-y-3 text-base text-slate-700">
+              <p>Войдите или создайте кабинет. Следующий шаг — выбрать ваш менеджер каналов, затем площадки и данные объекта.</p>
+              <p>Настройка — 0 ₽. 14 бесплатных дней начнутся после полной готовности объекта, а не после регистрации.</p>
+            </div>
+          ) : (<>
           <p className="mt-2 text-slate-600">
             Вы выбрали тариф <span className="font-semibold text-slate-900">{selectedPlanLabel}</span>. После регистрации вы получите доступ к кабинету и сможете подключить каналы.
           </p>
@@ -425,7 +428,9 @@ export default function OnboardingPageContent() {
             </div>
           </div>
 
-          <div className="mt-8 grid sm:grid-cols-2 gap-6">
+          </>)}
+
+          <div className={`mt-8 grid gap-6 ${rental ? "" : "sm:grid-cols-2"}`}>
             <div
               className="bg-white rounded-2xl border border-slate-200 p-5"
               data-connect-google-status={googleReady ? 'ready' : googleConfigLoading ? 'checking' : 'unavailable'}
@@ -450,7 +455,7 @@ export default function OnboardingPageContent() {
                     ? (googleOAuthMode === 'redirect'
                         ? 'Google: доступен'
                         : googleOAuthMode === 'gis'
-                          ? 'Google: доступен (упрощённый режим)'
+                          ? 'Google: доступен'
                           : 'Google: недоступен')
                     : 'Google: недоступен — выберите другой способ'}
               </p>
@@ -472,6 +477,8 @@ export default function OnboardingPageContent() {
                 >
                   {loading ? 'Открываем Google…' : 'Войти через Google'}
                 </button>
+              ) : rental ? (
+                <p className="mt-3 text-base text-slate-600">Вход через Google сейчас недоступен. Зарегистрируйтесь или войдите по почте ниже.</p>
               ) : (
                 <div className="mt-3 space-y-2">
                   <p className="text-sm text-slate-600">
@@ -511,7 +518,7 @@ export default function OnboardingPageContent() {
                 </div>
               )}
               {googleStatus ? <p className="mt-2 text-xs text-slate-600">{googleStatus}</p> : null}
-              {error ? <p className="mt-2 text-sm text-red-600">{error}</p> : null}
+              {error ? <p role="alert" className="mt-2 text-base text-red-700">{error}</p> : null}
               {/* Off-screen, not clipped — GIS needs real dimensions to render and click */}
               <div
                 ref={gsiButtonHostRef}
@@ -519,7 +526,7 @@ export default function OnboardingPageContent() {
                 style={{ position: 'fixed', top: '-9999px', left: '-9999px', width: '400px', height: '80px', overflow: 'visible' }}
               />
               <p className="mt-3 text-xs text-slate-500">
-                Мы создадим рабочее пространство и запустим 7‑дневный тест.
+                {rental ? 'Вы вернётесь к настройке после входа.' : 'Мы создадим рабочее пространство и запустим 7‑дневный тест.'}
               </p>
             </div>
 
@@ -556,8 +563,12 @@ export default function OnboardingPageContent() {
 
               <form onSubmit={handleEmailAuth} className="mt-4 space-y-3">
                 <div>
-                  <label className="block text-xs font-medium text-slate-600">Email</label>
+                  <label htmlFor="connect-email-input" className="block text-sm font-medium text-slate-600">Электронная почта</label>
                   <input
+                    id="connect-email-input"
+                    name="email"
+                    autoComplete="email"
+                    required
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     type="email"
@@ -567,8 +578,13 @@ export default function OnboardingPageContent() {
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-slate-600">Пароль</label>
+                  <label htmlFor="connect-password" className="block text-sm font-medium text-slate-600">Пароль</label>
                   <input
+                    id="connect-password"
+                    name="password"
+                    autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
+                    minLength={mode === 'signup' ? 6 : undefined}
+                    required
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     type="password"
@@ -582,7 +598,7 @@ export default function OnboardingPageContent() {
                   disabled={loading}
                   className="w-full px-5 py-3 rounded-xl bg-white border border-slate-900 text-slate-900 font-semibold hover:bg-slate-50 disabled:opacity-60"
                 >
-                  {mode === 'signup' ? 'Создать аккаунт и начать тест' : 'Войти и продолжить'}
+                  {loading ? 'Подождите…' : mode === 'signup' ? (rental ? 'Создать кабинет и продолжить →' : 'Создать аккаунт и начать тест') : 'Войти и продолжить →'}
                 </button>
               </form>
             </div>

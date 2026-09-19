@@ -1,15 +1,18 @@
 import { ChannelConnectionsPanel } from '@/components/dashboard/ChannelConnectionsPanel';
 import { ChannelManagerConnectionFlow } from '@/components/dashboard/ChannelManagerConnectionFlow';
+import { RentalConnectionFlow } from '@/components/dashboard/RentalConnectionFlow';
 
 type PageProps = {
   searchParams?: {
     contactId?: string;
     objectId?: string;
     source?: string;
+    setup?: string;
   };
 };
 
 export default function ChannelConnectionsPage({ searchParams }: PageProps) {
+  if (searchParams?.setup === '1') return <RentalConnectionFlow />;
   const contactId = searchParams?.contactId?.trim() ?? '';
   const objectId = searchParams?.objectId?.trim() ?? '';
   const source = searchParams?.source?.trim() || 'dashboard';

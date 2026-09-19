@@ -5,7 +5,6 @@ import { getSession } from '@/lib/auth';
 import { sendTelegramMessage } from '@/lib/telegram';
 import { ensureAccountForUser } from '@/lib/accounts';
 import { readRequestJson } from '@/lib/safeRequestJson';
-import { getIsRuHost } from '@/lib/getIsRuHost';
 
 export const runtime = 'nodejs';
 
@@ -56,41 +55,17 @@ export async function POST(req: Request) {
     }
     createdUserId = user.id;
 
-    const isRuHost = await getIsRuHost();
-
-    if (isRuHost) {
-      // Unchanged legacy behavior — the RU commercial/account flow is not touched.
-      const now = new Date();
-      const trialEnd = new Date(now);
-      trialEnd.setDate(trialEnd.getDate() + 7);
-
-      const { error: subError } = await supabase.from('subscriptions').upsert(
-        {
-          user_id: user.id,
-          status: 'trial',
-          trial_start: now.toISOString(),
-          trial_end: trialEnd.toISOString(),
-        },
-        { onConflict: 'user_id' }
-      );
-
-      if (subError) throw subError;
-    }
-    // International (guestautopilot.com): no subscriptions row, no immediate
-    // trial. The 14-day trial only starts once integration is accepted — see
-    // lib/billing/account-lifecycle.ts. Nothing here creates one.
+    // Registration does not start the RU pilot or the international trial.
 
     // Best-effort ops notification: must not block signup.
     try {
-      await sendTelegramMessage(`🆕 New trial user registered: ${user.email}`);
+      await sendTelegramMessage(`🆕 New user registered: ${user.email}`);
     } catch (e) {
       console.warn('[Signup] telegram notify failed', e);
     }
 
     await ensureAccountForUser(
-      isRuHost
-        ? { userId: user.id, email: user.email, selectedPlan: plan, trialDays: 7 }
-        : { userId: user.id, email: user.email, selectedPlan: plan, deferTrial: true }
+      { userId: user.id, email: user.email, selectedPlan: plan, deferTrial: true }
     );
 
     const session = await getSession();

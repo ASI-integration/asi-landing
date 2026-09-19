@@ -52,6 +52,6 @@ export function resolveSessionCookieDomain(
 
 /** Path-only post-login redirect; blocks open redirects. */
 export function safeAuthRedirectPath(value: string | null | undefined): string {
-  if (!value || !value.startsWith('/') || value.startsWith('//')) return '/dashboard';
+  if (!value || !value.startsWith('/') || value.startsWith('//') || /[\\\x00-\x20]/.test(value)) return '/dashboard';
   return value;
 }

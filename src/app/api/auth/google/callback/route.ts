@@ -6,7 +6,6 @@ import { supabase } from '@/lib/supabase';
 import { getSession } from '@/lib/auth';
 import { getGoogleOAuthRedirectUri, safeAuthRedirectPath } from '@/lib/auth/app-url';
 import { ensureAccountForUser } from '@/lib/accounts';
-import { getIsRuHost } from '@/lib/getIsRuHost';
 
 export const runtime = 'nodejs';
 
@@ -60,9 +59,11 @@ export async function GET(req: Request) {
   const googleRedirectUri = getGoogleOAuthRedirectUri();
 
   const origin = getRequestOrigin(req);
+  let redirectPath = '/dashboard';
   const fail = (reason: string) => {
     const u = new URL('/connect', origin);
     u.searchParams.set('google_error', reason);
+    u.searchParams.set('redirect', redirectPath);
     if (debug) u.searchParams.set('debugGoogle', '1');
     return NextResponse.redirect(u);
   };
@@ -94,7 +95,7 @@ export async function GET(req: Request) {
 
   const expectedState = session.googleOauthState;
   const plan = session.googleOauthPlan;
-  const redirectPath = safeAuthRedirectPath(session.googleOauthRedirect);
+  redirectPath = safeAuthRedirectPath(session.googleOauthRedirect);
   session.googleOauthState = undefined;
   session.googleOauthPlan = undefined;
   session.googleOauthRedirect = undefined;
@@ -129,7 +130,6 @@ export async function GET(req: Request) {
     if (lookupErr) throw lookupErr;
 
     let userId = existing?.id as string | undefined;
-    const isRuHost = await getIsRuHost();
     if (!userId) {
       const passwordHash = await bcrypt.hash(randomPassword(), 10);
       const { data: created, error: createErr } = await supabase
@@ -140,23 +140,7 @@ export async function GET(req: Request) {
       if (createErr) throw createErr;
       userId = created.id;
 
-      if (isRuHost) {
-        // Unchanged legacy behavior — the RU commercial/account flow is not touched.
-        const now = new Date();
-        const trialEnd = new Date(now);
-        trialEnd.setDate(trialEnd.getDate() + 7);
-        await supabase.from('subscriptions').upsert(
-          {
-            user_id: userId,
-            status: 'trial',
-            trial_start: now.toISOString(),
-            trial_end: trialEnd.toISOString(),
-          },
-          { onConflict: 'user_id' }
-        );
-      }
-      // International (guestautopilot.com): no subscriptions row, no immediate
-      // trial — see lib/billing/account-lifecycle.ts.
+      // Registration never starts the pilot clock.
     }
 
     session.userId = userId!;
@@ -170,9 +154,7 @@ export async function GET(req: Request) {
     });
 
     await ensureAccountForUser(
-      isRuHost
-        ? { userId: userId!, email, selectedPlan: plan, trialDays: 7 }
-        : { userId: userId!, email, selectedPlan: plan, deferTrial: true }
+      { userId: userId!, email, selectedPlan: plan, deferTrial: true }
     );
 
     console.info('[GoogleOAuth][callback] redirecting to dashboard', {

@@ -33,6 +33,7 @@ export async function GET(req: Request) {
 
   if (!clientId || !clientSecret) {
     const url = new URL('/connect', getRequestOrigin(req));
+    url.searchParams.set('redirect', redirectPath);
     url.searchParams.set('google_error', 'not_configured');
     if (debug) url.searchParams.set('debugGoogle', '1');
     return NextResponse.redirect(url);
@@ -40,6 +41,7 @@ export async function GET(req: Request) {
 
   if (!isSessionSecretConfigured()) {
     const url = new URL('/connect', getRequestOrigin(req));
+    url.searchParams.set('redirect', redirectPath);
     url.searchParams.set('google_error', 'session_not_configured');
     if (debug) url.searchParams.set('debugGoogle', '1');
     return NextResponse.redirect(url);

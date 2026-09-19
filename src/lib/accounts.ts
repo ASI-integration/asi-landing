@@ -67,7 +67,7 @@ export async function ensureAccountForUser(opts: {
     const acct: any = (membership as any).accounts;
 
     const patch: Record<string, any> = {};
-    if (acct?.plan_code !== plan) patch.plan_code = plan;
+    if (opts.selectedPlan != null && acct?.plan_code !== plan) patch.plan_code = plan;
     if (!deferTrial) {
       if (!acct?.trial_started_at) patch.trial_started_at = now.toISOString();
       if (!acct?.trial_ends_at) patch.trial_ends_at = trialEnds.toISOString();
