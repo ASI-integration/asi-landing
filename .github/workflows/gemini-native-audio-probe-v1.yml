@@ -3,6 +3,10 @@ name: Gemini Native Audio Probe v1
 on:
   workflow_dispatch:
     inputs:
+      owner_gate_json:
+        description: Approved asi.agent-os.owner-gate.v1 JSON (required; typed confirmation is not approval)
+        required: true
+        type: string
       safety_acknowledgement:
         description: Type authorized_for_selected_mode to authorize exactly four Gemini Native Audio generations and four Telegram deliveries
         required: true
@@ -20,7 +24,14 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  production_owner_gate:
+    uses: ./.github/workflows/production-owner-gate.yml
+    with:
+      requested_action: real_external_message_or_provider_call
+      environment_identity: production
+      owner_gate_json: ${{ inputs.owner_gate_json }}
   native_audio_probe:
+    needs: [production_owner_gate]
     runs-on: ubuntu-latest
     environment: production
     timeout-minutes: 12

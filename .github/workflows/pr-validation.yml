@@ -56,6 +56,11 @@ jobs:
           node --test scripts/agent-os/__tests__/migration-count.test.mjs
           node --test scripts/agent-os/__tests__/skills.test.mjs
 
+      - name: AO-003 production owner-gate coverage
+        run: |
+          node scripts/agent-os/check-production-owner-gate-coverage.mjs
+          node --test scripts/agent-os/__tests__/production-owner-gate.test.mjs
+
       - name: Agent OS release manifest enforcement
         run: |
           node scripts/agent-os/check-release-manifest.mjs

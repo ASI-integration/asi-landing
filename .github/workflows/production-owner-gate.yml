@@ -1,0 +1,71 @@
+name: Production owner gate
+
+# Reusable fail-closed owner-gate for every production-mutating workflow (AO-003).
+# GitHub Environment reviewers remain complementary and never replace this gate.
+# workflow_dispatch confirmation phrases are NOT owner approval.
+
+on:
+  workflow_call:
+    inputs:
+      requested_action:
+        description: Exact redAction this workflow intends to perform
+        required: true
+        type: string
+      owner_gate_json:
+        description: Full asi.agent-os.owner-gate.v1 JSON (approved artifact)
+        required: true
+        type: string
+      environment_identity:
+        description: Must be exactly production
+        required: true
+        type: string
+        default: production
+      target_identity_json:
+        description: Optional JSON identity fragment that must match gate.identity (e.g. {"sha":"..."})
+        required: false
+        type: string
+        default: ''
+
+permissions:
+  contents: read
+
+jobs:
+  enforce:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install deps
+        run: npm ci
+
+      - name: Enforce production owner-gate contract
+        env:
+          OWNER_GATE_JSON: ${{ inputs.owner_gate_json }}
+          TARGET_IDENTITY_JSON: ${{ inputs.target_identity_json }}
+          REQUESTED_ACTION: ${{ inputs.requested_action }}
+          ENVIRONMENT_IDENTITY: ${{ inputs.environment_identity }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -z "${OWNER_GATE_JSON//[[:space:]]/}" ]]; then
+            echo "::error::owner_gate_json is empty — typed confirmation / dispatch alone is not approval"
+            exit 1
+          fi
+          ARGS=(
+            --action "${REQUESTED_ACTION}"
+            --environment "${ENVIRONMENT_IDENTITY}"
+            --gate-json "${OWNER_GATE_JSON}"
+          )
+          if [[ -n "${TARGET_IDENTITY_JSON//[[:space:]]/}" ]]; then
+            ARGS+=(--identity-json "${TARGET_IDENTITY_JSON}")
+          fi
+          node scripts/agent-os/enforce-production-owner-gate.mjs "${ARGS[@]}"
