@@ -68,7 +68,7 @@ export function assertPilotBridgeHandoffInput(input: {
     throw new PilotAccessError(
       'pilot_handoff_invalid',
       500,
-      'Некорректный baseline SHA пилота.',
+      'Временно недоступно',
     );
   }
   if (!taskRequestHasPilotProvenance(input.task)) {

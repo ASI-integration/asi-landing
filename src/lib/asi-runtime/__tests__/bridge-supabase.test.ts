@@ -243,6 +243,48 @@ describe('bridge-repository uses dedicated Bridge client', () => {
     expect(result.deduplicated).toBe(false);
   });
 
+  it('maps admission_busy without leaking storage details', async () => {
+    process.env.ASI_RUNTIME_BRIDGE_SUPABASE_URL = BRIDGE_URL;
+    process.env.ASI_RUNTIME_BRIDGE_SUPABASE_SERVICE_ROLE_KEY = BRIDGE_KEY;
+    const { rpc } = mockBridgeClient();
+    rpc.mockResolvedValue({
+      data: null,
+      error: { message: 'admission_busy', code: 'P0001' },
+    });
+    const { __resetRuntimeBridgeSupabaseForTests } = await import('../bridge-supabase');
+    __resetRuntimeBridgeSupabaseForTests();
+    const { submitRuntimeBridgeTask, RuntimeBridgeError } = await import('../bridge-repository');
+    await expect(submitRuntimeBridgeTask('chatgpt-owner', {
+      chatgptTaskId: 'chat-1',
+      conversationId: 'conv-1',
+      idempotencyKey: 'idem-busy',
+      task: {
+        title: 'Title',
+        objective: 'Objective',
+        instructions: ['Do it'],
+        repository: 'ASI-integration/asi-landing',
+        baselineSha: '8301b36310c663818b56fb5adce92bbc0d8693a3',
+      },
+    })).rejects.toMatchObject({ code: 'admission_busy', status: 503 });
+    try {
+      await submitRuntimeBridgeTask('chatgpt-owner', {
+        chatgptTaskId: 'chat-1',
+        conversationId: 'conv-1',
+        idempotencyKey: 'idem-busy',
+        task: {
+          title: 'Title',
+          objective: 'Objective',
+          instructions: ['Do it'],
+          repository: 'ASI-integration/asi-landing',
+          baselineSha: '8301b36310c663818b56fb5adce92bbc0d8693a3',
+        },
+      });
+    } catch (error) {
+      expect(error).toBeInstanceOf(RuntimeBridgeError);
+      expect(String(error)).not.toMatch(/P0001|SERVICE_ROLE|postgresql/i);
+    }
+  });
+
   it('returns bridge_not_configured when Bridge URL is missing', async () => {
     process.env.ASI_RUNTIME_BRIDGE_SUPABASE_SERVICE_ROLE_KEY = BRIDGE_KEY;
     const { __resetRuntimeBridgeSupabaseForTests } = await import('../bridge-supabase');

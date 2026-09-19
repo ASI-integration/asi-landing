@@ -2,8 +2,10 @@
  * SP-07 — user-facing result card model (Russian copy + action guidance).
  * Consumes the sanitized SP-04 result view; does not re-read raw Bridge payloads.
  */
+import type { PilotHitlView } from './hitl';
 import type { PilotConsoleStatus } from './status';
 import type { PilotSafeResultView } from './result-view';
+import { PILOT_USER_STATE } from './user-copy';
 
 export const PILOT_RESULT_FALLBACK_SUCCEEDED =
   'Задача завершена. Если нужны дополнительные детали — обратитесь к владельцу ASI.' as const;
@@ -12,8 +14,8 @@ export const PILOT_RESULT_FALLBACK_FAILED =
   'Задача завершилась с ошибкой. Безопасные детали недоступны — обратитесь к владельцу ASI.' as const;
 
 export const PILOT_OUTCOME_LABELS = {
-  succeeded: 'Успешно',
-  failed: 'Ошибка',
+  succeeded: PILOT_USER_STATE.done,
+  failed: PILOT_USER_STATE.failed,
 } as const;
 
 export type PilotResultCardKind = 'pending' | 'succeeded' | 'blocked' | 'failed';
@@ -49,8 +51,10 @@ function emptyArtifacts(): Pick<
 export function buildPilotResultCardModel(input: {
   consoleStatus: PilotConsoleStatus;
   result: PilotSafeResultView | null | undefined;
+  hitl?: PilotHitlView | null;
 }): PilotResultCardModel {
   const result = input.result ?? null;
+  const hitl = input.hitl ?? null;
   const artifacts = {
     changedFiles: result?.changedFiles ?? [],
     pullRequestUrl: result?.pullRequestUrl ?? null,
@@ -64,7 +68,7 @@ export function buildPilotResultCardModel(input: {
         || PILOT_RESULT_FALLBACK_SUCCEEDED;
       return {
         kind: 'succeeded',
-        headlineRu: 'Готово',
+        headlineRu: PILOT_USER_STATE.done,
         summaryRu,
         outcomeLabelRu: PILOT_OUTCOME_LABELS.succeeded,
         nextActionRu: 'Действий с вашей стороны не требуется.',
@@ -73,14 +77,17 @@ export function buildPilotResultCardModel(input: {
       };
     }
     case 'blocked': {
+      const question = hitl?.questionRu?.trim() || null;
+      const canContinue = hitl?.canContinue === true;
       return {
         kind: 'blocked',
-        headlineRu: 'Нужно внимание владельца',
-        summaryRu: result?.summary?.trim() || null,
+        headlineRu: PILOT_USER_STATE.needsAnswer,
+        summaryRu: question || result?.summary?.trim() || null,
         outcomeLabelRu: null,
-        nextActionRu:
-          'Вам ничего делать не нужно. Владелец ASI получит эскалацию в Telegram и разберёт задачу.',
-        userActionRequired: false,
+        nextActionRu: canContinue
+          ? 'Ответьте на вопрос ниже, чтобы продолжить эту же задачу.'
+          : 'Нужен ваш ответ. После ответа задача продолжится автоматически.',
+        userActionRequired: canContinue,
         ...artifacts,
         blockers: artifacts.blockers,
       };
@@ -90,7 +97,7 @@ export function buildPilotResultCardModel(input: {
         || (artifacts.blockers[0] ?? PILOT_RESULT_FALLBACK_FAILED);
       return {
         kind: 'failed',
-        headlineRu: 'Ошибка',
+        headlineRu: PILOT_USER_STATE.failed,
         summaryRu,
         outcomeLabelRu: PILOT_OUTCOME_LABELS.failed,
         nextActionRu:
@@ -104,7 +111,9 @@ export function buildPilotResultCardModel(input: {
     default:
       return {
         kind: 'pending',
-        headlineRu: input.consoleStatus === 'running' ? 'В работе' : 'В очереди',
+        headlineRu: input.consoleStatus === 'running'
+          ? PILOT_USER_STATE.inProgress
+          : PILOT_USER_STATE.readyToWork,
         summaryRu: null,
         outcomeLabelRu: null,
         nextActionRu: 'Результат появится автоматически. Пока ничего делать не нужно.',
