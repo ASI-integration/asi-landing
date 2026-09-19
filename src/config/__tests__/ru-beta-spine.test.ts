@@ -15,19 +15,20 @@ function readSrc(relativePath: string): string {
 }
 
 describe('RU-02/RU-03 closed-beta spine + pilot boundary', () => {
-  it('homepage primary acquisition path points to communications pilot', () => {
+  it('homepage primary acquisition path points to RU self-service connection', () => {
     const home = readSrc('src/app/ru/page.tsx');
-    expect(home).toContain("const PILOT_HREF = '/ru/early-access'");
-    expect(home).toContain('BrandPrimaryCta href={PILOT_HREF}');
-    expect(home).toContain('Подключить объект бесплатно');
-    expect(home).toContain('Операции посуточной аренды на автопилоте');
-    expect(home).toContain('Операционный слой поверх вашего Менеджера Каналов');
-    expect(home).toContain('От заявки до результата');
-    expect(home).not.toMatch(/BrandPrimaryCta href=\{RU_LOCATION_CHECK_HREF\}/);
-    expect(home).toContain('Оценка локации — отдельный инструмент');
-    expect(home).toContain('Дополнительно');
-    expect(home).toContain('Рутина → ASI');
-    expect(home).toContain('Исключение → человек');
+    const cta = readSrc('src/components/ru/ConnectCta.tsx');
+
+    expect(cta).toContain("RU_CONNECT_HREF = '/ru/connect'");
+    expect(home).toContain('RU_CONNECT_HREF');
+    expect(home.match(/<ConnectCta\b/g) ?? []).toHaveLength(3);
+    expect(home).toContain('id="how-it-works"');
+    expect(home).toContain('id="pricing"');
+    expect(home).toContain('id="pilot-form"');
+    expect(home).toContain('COMMUNICATION_PILOT_PRICE_RUB');
+    expect(home).toContain('12 месяцев');
+    expect(home).not.toContain('RU_LOCATION_CHECK_HREF');
+    expect(home).not.toContain('Оценка локации — отдельный инструмент');
   });
 
   it('location remains secondary and nav does not promote engineering /pilot', () => {
@@ -82,7 +83,7 @@ describe('RU-02/RU-03 closed-beta spine + pilot boundary', () => {
 
     const early = readSrc('src/app/ru/early-access/page.tsx');
     expect(early).toContain("label: 'Сейчас в пилоте'");
-    expect(early).toContain("label: 'Дорожная карта'");
+    expect(early).toContain("label: 'Позже'");
     expect(early).toContain('Подключить объект бесплатно');
     expect(early).toContain('Подключение и настройка — 0');
     expect(early).toContain('14 дней реальной работы — 0');
