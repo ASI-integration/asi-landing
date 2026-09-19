@@ -54,12 +54,12 @@ describe('RU homepage one-page client flow', () => {
       expect(positions[i - 1]).toBeLessThan(positions[i]);
     }
 
-    // Hero: leads with the coordination benefit, immediately followed by a
-    // subheadline naming ASI and its two current capabilities (guest
-    // replies + pre-arrival checks), read together as one hero block.
-    expect(home).toContain('Меньше ручной координации в посуточной аренде');
+    // Hero: H1 names ASI as the actor (not just the desired outcome),
+    // immediately followed by a subheadline naming its two current
+    // capabilities (guest replies + pre-arrival checks).
+    expect(home).toContain('ASI помогает снижать ручную координацию в посуточной аренде');
     expect(home).toContain('ASI берёт на себя типовые вопросы гостей и проверки перед заездом');
-    expect(home.indexOf('Меньше ручной координации в посуточной аренде')).toBeLessThan(
+    expect(home.indexOf('ASI помогает снижать ручную координацию в посуточной аренде')).toBeLessThan(
       home.indexOf('id="coordination"'),
     );
 

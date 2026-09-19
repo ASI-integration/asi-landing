@@ -15,7 +15,7 @@ import { RuPublicNavHeader } from '@/components/ru/RuPublicNavHeader';
 import { COMMUNICATION_PILOT_PRICE_RUB } from '@/lib/payments/yookassa-env';
 
 export const metadata: Metadata = {
-  title: 'ASI — общение с гостями по данным объекта',
+  title: 'ASI — меньше ручной координации в посуточной аренде',
   description:
     'ASI берёт на себя типовые вопросы гостей и проверку готовности объекта перед заездом — по данным конкретного объекта. Бесплатное подключение, 14 дней пилота после полной готовности, затем 1 000 ₽ за объект в месяц — только если решите продолжить.',
 };
@@ -119,7 +119,7 @@ export default function HomeRu() {
                 <span className="font-serif text-2xl text-asi-navy">ASI Global</span>
               </div>
               <BrandHeadline as="h1" className="mt-8 text-4xl sm:text-5xl lg:text-[3.25rem]">
-                Меньше ручной координации в посуточной аренде
+                ASI помогает снижать ручную координацию в посуточной аренде
               </BrandHeadline>
               <BrandGoldRule className="mt-6 mb-6" />
               <p className="text-lg text-asi-navy/70 max-w-xl leading-relaxed">
