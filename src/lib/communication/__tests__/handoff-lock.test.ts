@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { _resetForTesting } from '../idempotency';
 import {
   __resetEscalationReviewStoreForTests,
+  __setOperatorReviewStoreHealthForTests,
   acknowledgeEscalationReview,
   getActiveEscalationReviewIdForSession,
 } from '../operator-review';
@@ -204,5 +205,30 @@ describe('handoff lock — session ownership state machine', () => {
     expect(re.alreadyLocked).toBe(false);
     expect(re.reviewId).not.toBe(reviewId);
     expect(canAiReply('sess_i')).toBe(false);
+  });
+
+  describe('operator review store unavailable — fail closed', () => {
+    it('canAiReply returns false even for a session that was never escalated', () => {
+      // Without a store failure, a never-escalated session may reply.
+      expect(canAiReply('sess_never_escalated')).toBe(true);
+
+      __setOperatorReviewStoreHealthForTests('unavailable');
+      expect(canAiReply('sess_never_escalated')).toBe(false);
+    });
+
+    it('canAiReply returns false for a session previously returned_to_ai', () => {
+      const { reviewId } = requestOperatorHandoff({
+        sessionId: 'sess_store_fail',
+        channel: 'telegram',
+        targetId: '42',
+        escalationReason: 'REQUIRES_OPERATOR',
+      });
+      releaseSessionToAi({ sessionId: 'sess_store_fail', operatorId: 'op_x', reason: 'done' });
+      expect(canAiReply('sess_store_fail')).toBe(true);
+      void reviewId;
+
+      __setOperatorReviewStoreHealthForTests('unavailable');
+      expect(canAiReply('sess_store_fail')).toBe(false);
+    });
   });
 });
