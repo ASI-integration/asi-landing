@@ -3,10 +3,11 @@
   "taskId": "ru-self-service-connect",
   "status": "PARTIAL",
   "branch": "feat/ru-self-service-connect",
-  "commitSha": null,
-  "prUrl": null,
+  "commitSha": "b8ef1425f1cd0aad055fedc2fc0be2a48802fb91",
+  "prUrl": "https://github.com/ASI-integration/asi-landing/pull/318",
   "changedFiles": [
     "docs/qa/ru-self-service-connect.md",
+    "docs/qa/ru-self-service-connect.result.json",
     "package.json",
     "scripts/dev.mjs",
     "src/app/api/auth/google/callback/route.ts",
