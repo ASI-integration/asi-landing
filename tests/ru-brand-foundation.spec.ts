@@ -19,7 +19,8 @@ test.describe('RU brand foundation shell', () => {
     ).toBeVisible();
 
     const footer = page.locator('footer').last();
-    await expect(footer).toHaveClass(/bg-asi-navy/);
+    await expect(footer).toBeVisible();
+    await expect(footer.locator('.bg-asi-navy').first()).toBeVisible();
     await expect(page.getByAltText(/Shiro/i).first()).toBeVisible();
   });
 });
@@ -41,7 +42,7 @@ test.describe('RU brand foundation shell mobile', () => {
   test.use({ viewport: { width: 375, height: 812 } });
 
   test('375px header is compact without page overflow', async ({ page }) => {
-    await page.goto('/ru', { waitUntil: 'domcontentloaded' });
+    await page.goto('/ru', { waitUntil: 'networkidle' });
     const overflow = await page.evaluate(
       () => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1,
     );
@@ -50,7 +51,9 @@ test.describe('RU brand foundation shell mobile', () => {
     const headerBox = await page.locator('header').first().boundingBox();
     expect(headerBox?.height ?? 999).toBeLessThan(120);
 
-    await page.getByRole('button', { name: /меню/i }).click();
+    const menuButton = page.getByRole('button', { name: /меню/i });
+    await menuButton.click();
+    await expect(menuButton).toHaveAttribute('aria-expanded', 'true');
     await expect(page.getByRole('link', { name: 'Войти / подключить' }).last()).toBeVisible();
   });
 });
