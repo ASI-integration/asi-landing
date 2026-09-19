@@ -32,7 +32,7 @@ Status values: **SAFE_NOW** (may publish as-is) / **QUALIFY** (may publish only 
 
 - **Claim:** free setup before the pilot; the 14-day pilot clock starts only after full readiness confirmation; continuation is 1000₽/property/month only if the client decides to continue; no automatic paid transition.
 - **Status:** SAFE_NOW.
-- **Supporting evidence:** `CAPABILITY_INVENTORY.md` #17 (real, tested readiness-gating engine) and #18a (real pricing constant, matches `RU_PUBLIC_SITE_CONTRACT.pricing`). This is one of the best code-supported claims in the entire inventory.
+- **Supporting evidence:** `CAPABILITY_INVENTORY.md` #17 (real, tested readiness-gating engine) and the `COMMUNICATION_PILOT_PRICE_RUB` constant (matches `RU_PUBLIC_SITE_CONTRACT.pricing`) — the pricing figure itself, not the YooKassa provider/webhook code in #18a, which is backend payment infrastructure and is not itself a customer-facing claim (see `CAPABILITY_INVENTORY.md` #18a, downgraded to `REJECT` for that reason). This is one of the best code-supported claims in the entire inventory.
 - **Scope/population:** RU market, per property.
 - **Allowed wording:** exactly as already published — no change needed.
 - **Prohibited stronger wording:** implying the 1000₽/month continuation is billed automatically (it is not — billing for this is PLANNED, see #18b).

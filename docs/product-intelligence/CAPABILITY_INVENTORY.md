@@ -9,7 +9,7 @@ Every capability answers five separate questions, tracked as five separate field
 **A. Maturity** — what is actually built, and how strong is the evidence?
 `LIVE_PROVEN` / `PILOT` / `BUILT_NEEDS_ACCEPTANCE` / `PLANNED` / `IDEA_ONLY` / `UNKNOWN`
 
-**B. Public claim status** — what is the site currently allowed to say? Derived **only** from Maturity and evidence quality — never from Strategic Status or Delivery Strategy. Full wording lives in `CLAIMS_REGISTER.md`; the value here is the ceiling.
+**B. Public claim status** — may this capability be presented to a Russian prospective customer, and in what form? Maturity answers a different question ("how technically implemented and evidenced is this?") and therefore only sets the **maximum allowed ceiling** for this field — it does not by itself decide the final value. The actual value is chosen from evidence *and* scope, RU applicability, customer relevance, and legal/compliance constraints, and **may always be stricter (lower) than the ceiling, never looser (higher)**. Strategic Status (C), Delivery Strategy (D), and Roadmap Horizon (E) may never raise this field either — full wording lives in `CLAIMS_REGISTER.md`; the value here is the ceiling-respecting status, not the sentence itself.
 `SAFE_NOW` / `QUALIFY` / `EVIDENCE_NEEDED` / `FUTURE_ONLY` / `REJECT`
 
 **C. Strategic status** — do we want this capability in ASI's target system, independent of *how* it would be delivered?
@@ -36,20 +36,33 @@ Every capability answers five separate questions, tracked as five separate field
 
 **`LIVE_PROVEN = 0` across this entire inventory does not mean "ASI doesn't work."** It means no evidence of routine, real-guest-scale production operation was found for any single capability, which is a deliberately high bar. A `PILOT` and a large `BUILT_NEEDS_ACCEPTANCE` core both represent genuine, often carefully safety-engineered work — a different, lower rung on this evidence ladder, not "not functional." The codebase's own `_placeholder`/`honest_label` markers are treated as authoritative: where the code says "placeholder," this inventory treats the capability as not live regardless of surrounding scaffolding. Most `*acceptance*.test.ts` files run against a mocked Supabase — "acceptance" here means "the internal contract behaves correctly under test," not "proven against production." Only `.pg.integration.test.ts` files, manually-dispatched `*-live-acceptance*` scripts/workflows, and Playwright specs under `tests/` touch anything genuinely live.
 
-### Public claim status — derivation rule
+### Public claim status — ceiling rule (corrected in this revision)
 
-Public Claim Status is assigned **mechanically from Maturity alone**, with one named exception (RU-market applicability):
+**A prior version of this document assigned Public Claim Status mechanically from Maturity alone. That rule was wrong and is replaced here.** Maturity answers "how technically implemented and evidenced is this capability?" — a fact about the codebase. Public Claim Status answers "may this be presented to a Russian prospective customer, and in what form?" — a fact about audience, scope, RU applicability, customer relevance, and legal/compliance constraints. Maturity therefore defines only the **maximum allowed ceiling**:
 
-| Maturity | → Public claim status |
+| Maturity | Maximum public-claim ceiling |
 |---|---|
 | LIVE_PROVEN | SAFE_NOW |
-| PILOT | SAFE_NOW (with the specific proven scope/channel named) |
+| PILOT | SAFE_NOW, limited to the actually proven scope |
 | BUILT_NEEDS_ACCEPTANCE | QUALIFY |
 | PLANNED | FUTURE_ONLY |
 | IDEA_ONLY | REJECT |
-| UNKNOWN | REJECT (fail closed on unknown evidence) |
+| UNKNOWN | REJECT |
 
-**Named exception:** #19 (international/non-RU Stripe billing) is `BUILT_NEEDS_ACCEPTANCE` by evidence but assigned `REJECT` for this RU-market document, because it is a different, gated-off product line, not because of its evidence quality — this is the one deliberate departure from the mechanical rule, and it is called out here so the rule otherwise holds without silent exceptions elsewhere. `EVIDENCE_NEEDED` is not used at the capability level in this table (every capability here has a clear built/not-built answer); it remains the correct status for general market/economic claims not tied to one capability — see `CLAIMS_REGISTER.md`'s Ringelmann, retention-economics, and guest-comm-reputation entries.
+**The actual Public Claim Status may always be assigned stricter (lower) than this ceiling — never looser (higher).** A row sits below its ceiling whenever one of these applies:
+
+- internal-only capability (the customer/guest never sees or benefits from it directly);
+- non-customer-facing infrastructure (backend plumbing that enables a feature but isn't itself a describable benefit);
+- a different market/product line than the one this document covers (RU);
+- not practically applicable in Russia today, regardless of build status;
+- legal/compliance restrictions;
+- the claim would require external evidence this document doesn't have;
+- the capability's name is broader than its actually-proven scope;
+- the capability exists technically but shouldn't be marketed as a customer benefit.
+
+**Strategic Status (C), Delivery Strategy (D), and Roadmap Horizon (E) may never raise Public Claim Status** — a `ROADMAP_CONFIRMED` capability does not get a better claim status than an unconfirmed one at the same Maturity; only Maturity sets the ceiling, and only the reasons above pull a value down from it.
+
+Four rows in the master table below sit strictly below their Maturity ceiling for these reasons — **#7** (WhatsApp inbound voice: built, but the channel itself is market-moot in Russia since the 2026-02-12 block, so built status does not make it suitable for current RU acquisition positioning), **#10** (Owner/lead CRM: internal ASI sales/pilot tooling, never customer-facing — `QUALIFY (internal-only)` was self-contradictory and is corrected to `REJECT`), **#12** (manual-import reconciliation engine: internal safety machinery supporting a channel-manager integration that isn't live; backend mechanism, not an independently marketable capability), and **#18a** (YooKassa provider/webhook code: backend payment infrastructure, not itself a customer-facing claim — the customer-relevant fact is the pricing figure, already covered as its own `SAFE_NOW` claim in `CLAIMS_REGISTER.md`, independent of this backend code). **#19** (international Stripe billing) remains `REJECT` as before, but is now presented as an ordinary instance of this same ceiling-vs-actual gap (different product/market scope), not as the document's only exception. `EVIDENCE_NEEDED` is not used at the capability level in this table (every capability here has a clear built/not-built answer); it remains correct for general market/economic claims not tied to one capability — see `CLAIMS_REGISTER.md`'s Ringelmann, retention-economics, and guest-comm-reputation entries.
 
 ---
 
@@ -66,20 +79,20 @@ Public Claim Status is assigned **mechanically from Maturity alone**, with one n
 | 4 | Guest messaging — Telegram (send) | PILOT | SAFE_NOW (Telegram only) | CORE_NOW | PARTNER_OR_INTEGRATE | NOW |
 | 5 | Guest messaging — Email | BUILT_NEEDS_ACCEPTANCE | QUALIFY | CORE_NOW | PARTNER_OR_INTEGRATE | NOW |
 | 6 | Guest messaging — WhatsApp (outbound) | IDEA_ONLY | REJECT | NOT_STRATEGIC | NONE | UNDECIDED |
-| 7 | Guest messaging — WhatsApp (inbound voice) | BUILT_NEEDS_ACCEPTANCE | QUALIFY | HOLD | UNDECIDED | UNDECIDED |
+| 7 | Guest messaging — WhatsApp (inbound voice) | BUILT_NEEDS_ACCEPTANCE | **REJECT** *(below ceiling QUALIFY — channel is market-moot in RU since the 2026-02-12 block, regardless of build status)* | HOLD | UNDECIDED | UNDECIDED |
 | 8 | Guest identity & repeat-guest memory | BUILT_NEEDS_ACCEPTANCE | QUALIFY | CORE_NOW | BUILD | NOW |
 | 9 | LLM reply guardrails & escalation | BUILT_NEEDS_ACCEPTANCE | QUALIFY | CORE_NOW | BUILD | NOW |
-| 10 | Owner/lead CRM & pilot rollout (internal) | BUILT_NEEDS_ACCEPTANCE | QUALIFY (internal-only) | CORE_NOW | BUILD | NOW |
+| 10 | Owner/lead CRM & pilot rollout (internal) | BUILT_NEEDS_ACCEPTANCE | **REJECT** *(below ceiling QUALIFY — internal ASI sales/pilot tooling, not a customer-facing feature)* | CORE_NOW | BUILD | NOW |
 | 11 | Channel manager/OTA sync (named platforms) | PLANNED | FUTURE_ONLY | RESEARCH_BEFORE_DECISION *(proposed, not owner-confirmed)* | PARTNER_OR_INTEGRATE *(proposed)* | UNDECIDED |
-| 12 | Manual-import reconciliation engine (internal) | BUILT_NEEDS_ACCEPTANCE | QUALIFY (internal-only) | CORE_NOW | BUILD | NOW |
+| 12 | Manual-import reconciliation engine (internal) | BUILT_NEEDS_ACCEPTANCE | **REJECT** *(below ceiling QUALIFY — internal backend safety mechanism supporting a not-yet-live channel-manager path; not an independently marketable capability)* | CORE_NOW | BUILD | NOW |
 | 13 | Pricing recommendation engine | BUILT_NEEDS_ACCEPTANCE | QUALIFY | CORE_NOW | HYBRID *(engine built; external market/weather/events feed still an open buy decision)* | NOW |
 | 14 | Location scoring & report — residential | BUILT_NEEDS_ACCEPTANCE | QUALIFY | CORE_NOW | HYBRID *(built scoring + integrated OSM/geocode/EIS data)* | NOW |
 | 15 | Location scoring & report — commercial/retail | BUILT_NEEDS_ACCEPTANCE | QUALIFY | RESEARCH_BEFORE_DECISION *(footfall-data-provider economics unresolved)* | HYBRID | RESEARCH |
 | 16 | Owner/operator dashboard UI | BUILT_NEEDS_ACCEPTANCE | QUALIFY | CORE_NOW *(e2e-acceptance investment level is an open question, not a separate capability)* | BUILD | NOW |
 | 17 | Object/pilot readiness gating (onboarding) | BUILT_NEEDS_ACCEPTANCE | QUALIFY | CORE_NOW | BUILD | NOW |
-| 18a | ASI subscription — YooKassa provider/webhook code | BUILT_NEEDS_ACCEPTANCE | QUALIFY | CORE_NOW | HYBRID | NOW |
+| 18a | ASI subscription — YooKassa provider/webhook code | BUILT_NEEDS_ACCEPTANCE | **REJECT** *(below ceiling QUALIFY — backend payment infrastructure, not itself a customer-facing claim; the pricing figure it supports is a separate, already-`SAFE_NOW` claim)* | CORE_NOW | HYBRID | NOW |
 | 18b | ASI subscription — recurring billing loop | PLANNED | FUTURE_ONLY | CORE_NOW *(finishing current commercial model, not a new bet)* | HYBRID | NOW |
-| 19 | International (non-RU) Stripe billing | BUILT_NEEDS_ACCEPTANCE | **REJECT** *(named exception — different product line, not an evidence gap)* | NOT_STRATEGIC | NONE | UNDECIDED |
+| 19 | International (non-RU) Stripe billing | BUILT_NEEDS_ACCEPTANCE | **REJECT** *(below ceiling QUALIFY — different product line/market scope, not an evidence gap; an ordinary instance of the ceiling-vs-actual gap, not a unique exception)* | NOT_STRATEGIC | NONE | UNDECIDED |
 | 20 | Smart access / lock control | IDEA_ONLY | REJECT | **ROADMAP_CONFIRMED** (owner) | **PARTNER_OR_INTEGRATE** (owner) | **LATER** (owner) |
 | 21 | OTA payout & commission reconciliation | IDEA_ONLY | REJECT | **ROADMAP_CONFIRMED** (owner) | **BUILD** (owner, "unless a credible integration target is later found") | **UNDECIDED** (owner — explicitly not scheduled) |
 | 22 | Guest-facing booking payment/deposit processing | IDEA_ONLY | REJECT | RESEARCH_BEFORE_DECISION | UNDECIDED | RESEARCH |
@@ -122,11 +135,13 @@ Bold values mark the seven rows carrying an explicit owner instruction from this
 | Status | Count | Rows |
 |---|---|---|
 | SAFE_NOW | 1 | 4 |
-| QUALIFY | 19 | 1, 2, 3a, 5, 7, 8, 9, 10, 12, 13, 14, 15, 16, 17, 18a, 24, 26a, 29a, 33 |
+| QUALIFY | 15 | 1, 2, 3a, 5, 8, 9, 13, 14, 15, 16, 17, 24, 26a, 29a, 33 |
 | EVIDENCE_NEEDED | 0 | — (used only for non-capability-specific claims in `CLAIMS_REGISTER.md`) |
 | FUTURE_ONLY | 3 | 11, 18b, 23 |
-| REJECT | 18 | 3b, 6, 19 (named exception), 20, 21, 22, 25, 26b, 27, 28, 29b, 30, 31, 32, 34, 35, 36a, 36b |
+| REJECT | 22 | 3b, 6, 7, 10, 12, 18a, 19, 20, 21, 22, 25, 26b, 27, 28, 29b, 30, 31, 32, 34, 35, 36a, 36b |
 | **Total** | **41** | |
+
+Four rows (7, 10, 12, 18a) moved from `QUALIFY` to `REJECT` in this revision under the ceiling rule above; #19 stayed `REJECT` but is no longer framed as a unique exception. No row moved in the opposite direction (no upgrades), consistent with the rule that Public Claim Status may only be pulled down from its Maturity ceiling, never up.
 
 ## Summary by strategic status (C)
 
