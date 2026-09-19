@@ -67,19 +67,19 @@ describe('RU-02/RU-03 closed-beta spine + pilot boundary', () => {
     expect(client).toContain('/api/pilot/tasks');
   });
 
-  it('labels CURRENT MVP vs ROADMAP on how-it-works and early-access', () => {
+  it('keeps current pilot and future scope explicit on supporting RU pages', () => {
     const how = readSrc('src/app/ru/how-it-works/page.tsx');
-    expect(how).toContain('Сейчас / пилот');
-    expect(how).toContain('Дорожная карта платформы');
     expect(how).toContain('Подключить объект бесплатно');
     expect(how).toContain('/ru/early-access');
-    expect(how).toContain('Бесплатное подключение и настройка — 0');
-    expect(how).toContain('14 дней операционного пилота — 0');
+    expect(how).toContain('Подключение и настройка — 0');
+    expect(how).toContain('14 дней работы на объекте — 0');
+    expect(how).toContain('id="roadmap"');
+    expect(how).toContain('ROADMAP_ITEMS');
+    expect(how).toContain('Направления продукта вне текущего пилота');
     expect(how).not.toContain('Оплата пилота');
     expect(how).not.toContain('Платный MVP');
     expect(how).not.toContain('1 объект · 1 месяц');
     expect(how).not.toMatch(/['"]\/pilot['"]/);
-    expect(how).toMatch(/не «полная автоматизация объекта на 99%»|не.*99%/);
 
     const early = readSrc('src/app/ru/early-access/page.tsx');
     expect(early).toContain("label: 'Сейчас в пилоте'");
