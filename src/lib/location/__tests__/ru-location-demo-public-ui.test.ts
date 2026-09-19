@@ -48,8 +48,9 @@ describe('RU /ru/location-analysis public demo UI contract', () => {
     const homeSrc = fs.readFileSync(ruHomePath, 'utf8');
 
     expect(homeSrc).toContain('Подключить объект бесплатно');
-    expect(homeSrc).toContain('Как мы подключаем ваш объект: шаг за шагом');
-    expect(homeSrc).toContain('Простые условия запуска');
+    expect(homeSrc).toContain('id="how-it-works"');
+    expect(homeSrc).toContain('id="pricing"');
+    expect(homeSrc).toContain('id="pilot-form-section"');
 
     expect(homeSrc).not.toContain('Оценка локации — отдельный инструмент');
     expect(homeSrc).not.toContain('Дополнительно');
