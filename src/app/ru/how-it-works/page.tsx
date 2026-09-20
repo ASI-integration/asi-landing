@@ -9,6 +9,7 @@ import {
   BrandSection,
   BrandShiro,
 } from '@/components/brand';
+import { RU_CONNECT_HREF } from '@/components/ru/ConnectCta';
 import { RuBottomQuickLinks } from '@/components/ru/RuBottomQuickLinks';
 import { RuComplianceFooter } from '@/components/ru/RuComplianceFooter';
 import { RuPublicNavHeader } from '@/components/ru/RuPublicNavHeader';
@@ -20,7 +21,6 @@ export const metadata: Metadata = {
     'ASI берёт на себя повторяющиеся вопросы гостей по данным объекта. Бесплатное подключение, 14 дней пилота после готовности, 1 000 ₽ за объект в месяц только если решите продолжить.',
 };
 
-const PILOT_HREF = '/ru/early-access';
 const HOME_HREF = '/ru';
 const PRIMARY_CTA_LABEL = 'Подключить объект бесплатно';
 
@@ -114,7 +114,7 @@ export default function RuHowItWorksPage() {
                 продолжить
               </p>
               <div className="mt-9 flex flex-wrap gap-4">
-                <BrandPrimaryCta href={PILOT_HREF}>{PRIMARY_CTA_LABEL}</BrandPrimaryCta>
+                <BrandPrimaryCta href={RU_CONNECT_HREF}>{PRIMARY_CTA_LABEL}</BrandPrimaryCta>
                 <BrandSecondaryCta href="#market-problem">Почему это важно</BrandSecondaryCta>
               </div>
             </div>
@@ -312,7 +312,7 @@ export default function RuHowItWorksPage() {
                 начнутся 14 дней пилота на реальных обращениях.
               </p>
               <div className="mt-8 flex flex-wrap gap-4">
-                <BrandPrimaryCta href={PILOT_HREF}>{PRIMARY_CTA_LABEL}</BrandPrimaryCta>
+                <BrandPrimaryCta href={RU_CONNECT_HREF}>{PRIMARY_CTA_LABEL}</BrandPrimaryCta>
                 <BrandSecondaryCta href={HOME_HREF}>На главную</BrandSecondaryCta>
               </div>
             </div>

@@ -40,8 +40,9 @@ describe('ASI shared brand foundation', () => {
     const header = readSrc('src/components/ru/RuPublicNavHeader.tsx');
     expect(header).toContain('bg-asi-ivory/90');
     expect(header).toContain('BrandLogoMark');
-    expect(header).toContain('/ru/early-access');
-    expect(header).toContain('Подключить объект бесплатно');
+    expect(header).toContain('href: RU_CONNECT_HREF');
+    expect(header).toContain("label: 'Войти / подключить'");
+    expect(header).not.toContain("href: '/ru/early-access'");
     expect(header).not.toMatch(/href=\{?['"]\/pilot['"]\}?/);
     expect(header).toContain('Войти');
 

@@ -47,10 +47,12 @@ describe('RU /ru/location-analysis public demo UI contract', () => {
   it('RU landing keeps location tooling out of the primary one-page acquisition flow', () => {
     const homeSrc = fs.readFileSync(ruHomePath, 'utf8');
 
-    expect(homeSrc).toContain('Подключить объект бесплатно');
+    expect(homeSrc).toContain('RU_CONNECT_HREF');
+    expect(homeSrc).toContain('<ConnectCta');
     expect(homeSrc).toContain('id="how-it-works"');
-    expect(homeSrc).toContain('id="pricing"');
-    expect(homeSrc).toContain('id="pilot-form-section"');
+    expect(homeSrc).toContain('id="special-offer"');
+    expect(homeSrc).not.toContain('id="pricing"');
+    expect(homeSrc).toContain('id="pilot-form"');
 
     expect(homeSrc).not.toContain('Оценка локации — отдельный инструмент');
     expect(homeSrc).not.toContain('Дополнительно');

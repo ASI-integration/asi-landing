@@ -112,6 +112,8 @@ export type OpsContactSummary = {
 };
 
 export type CreateOpsOperatorTaskInput = {
+  /** Optional server-derived identity for callers requiring atomic retry protection. */
+  taskId?: string | null;
   taskType: OpsTaskType;
   taskStatus?: OpsTaskStatus;
   priority?: OpsTaskPriority;

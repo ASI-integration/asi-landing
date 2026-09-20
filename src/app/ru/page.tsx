@@ -1,38 +1,32 @@
-import type { Metadata } from 'next';
+import { RU_HOME_METADATA } from '@/config/ruHomeMetadata';
 import {
   BrandCard,
   BrandEyebrow,
-  BrandGoldRule,
   BrandHeadline,
-  BrandLogoMark,
-  BrandPrimaryCta,
   BrandSection,
   BrandShiro,
 } from '@/components/brand';
-import { EarlyAccessObjectForm } from '@/components/early-access/EarlyAccessObjectForm';
+import {
+  ConnectCta,
+  RU_CONNECT_HREF,
+  RU_SPECIAL_OFFER_HREF,
+} from '@/components/ru/ConnectCta';
 import { RuComplianceFooter } from '@/components/ru/RuComplianceFooter';
 import { RuPublicNavHeader } from '@/components/ru/RuPublicNavHeader';
 import { COMMUNICATION_PILOT_PRICE_RUB } from '@/lib/payments/yookassa-env';
 
-export const metadata: Metadata = {
-  title: 'ASI — меньше ручной координации в посуточной аренде',
-  description:
-    'ASI берёт на себя типовые вопросы гостей и проверку готовности объекта перед заездом — по данным конкретного объекта. Бесплатное подключение, 14 дней пилота после полной готовности, затем 1 000 ₽ за объект в месяц — только если решите продолжить.',
-};
-
-const FORM_HREF = '/ru#pilot-form';
-const PRIMARY_CTA_LABEL = 'Подключить объект бесплатно';
+export const metadata = RU_HOME_METADATA;
 
 const HOME_NAV_LINKS = [
   { href: '/ru#capabilities', label: 'Что делает ASI' },
-  { href: '/ru#example', label: 'Пример' },
-  { href: '/ru#pricing', label: 'Условия' },
+  { href: '/ru#how-it-works', label: 'Как подключить' },
+  { href: '/ru#special-offer', label: 'Условия' },
 ] as const;
 
 const CAPABILITY_GROUPS = [
   {
     title: 'Ответы гостям',
-    body: 'Отвечает в Telegram на типовые вопросы по данным объекта: время заезда, Wi-Fi, парковка, правила дома. Если требуется нестандартное решение — автоматический ответ останавливается, вопрос передаётся вам.',
+    body: 'ASI сама отвечает на частые вопросы гостей, опираясь на правила вашего объекта. А если ситуация нестандартная и нужно принять решение — система сразу передаёт диалог вам.',
   },
   {
     title: 'Готовность перед заездом',
@@ -50,31 +44,10 @@ const SECONDARY_CAPABILITY = {
 } as const;
 
 const CLIENT_STEPS = [
-  {
-    n: '01',
-    title: 'Вы оставляете заявку',
-    body: 'Платить ничего не нужно.',
-  },
-  {
-    n: '02',
-    title: 'Мы бесплатно настраиваем объект',
-    body: 'Собираем инструкции и данные, формируем базу знаний. В это время 14 дней пилота ещё не идут.',
-  },
-  {
-    n: '03',
-    title: 'Начинается 14-дневный пилот',
-    body: 'После подтверждения полной готовности ASI обрабатывает реальные обращения гостей в Telegram по данным вашего объекта.',
-  },
-  {
-    n: '04',
-    title: 'Итоги через 14 дней',
-    body: 'Показываем, какие типовые сценарии прошли через систему и где понадобился человек.',
-  },
-  {
-    n: '05',
-    title: 'Вы принимаете решение',
-    body: 'Продолжать или нет — решаете сами.',
-  },
+  { n: '01', title: 'Укажите менеджер каналов', body: 'Bnovo, RealtyCalendar или другой сервис. Если такого сервиса нет — поможем выбрать, с чего начать.' },
+  { n: '02', title: 'Выберите площадки бронирования', body: 'Отметьте, где размещены ваши объекты. Мы проверим доступные способы подключения.' },
+  { n: '03', title: 'Добавьте данные объекта', body: 'Правила дома, время заезда, Wi-Fi и инструкции для гостей. Всё сохраняется в вашем кабинете.' },
+  { n: '04', title: 'Запуск и проверка', body: 'Проверяем работу на вашем объекте. 14 бесплатных дней начинаются только после полной готовности.' },
 ] as const;
 
 const EXAMPLES = [
@@ -91,11 +64,10 @@ const EXAMPLES = [
   {
     title: 'Нестандартная просьба → Передача человеку',
     guest: '«Можно завтра выехать на три часа позже? Мы готовы доплатить.»',
-    asi: '«Этот вопрос требует решения управляющего. Автоматический ответ остановлен, запрос передан на проверку.»',
+    asi: '«Поздний выезд нужно согласовать. Передаю вашу просьбу управляющему.»',
   },
 ] as const;
 
-const PRICING_HEADLINE = `После пилота — ${COMMUNICATION_PILOT_PRICE_RUB} ₽ за объект в месяц`;
 
 export default function HomeRu() {
   return (
@@ -106,73 +78,102 @@ export default function HomeRu() {
         showContacts={false}
         showLogin={false}
         mainLinks={HOME_NAV_LINKS}
-        primaryCta={{ href: FORM_HREF, label: PRIMARY_CTA_LABEL }}
+        primaryCta={{ href: RU_CONNECT_HREF, label: 'Войти / подключить' }}
       />
 
       <main>
-        {/* ── 1. Hero ── */}
-        <section className="relative bg-asi-ivory px-5 sm:px-8 pt-12 sm:pt-20 pb-16 sm:pb-24 overflow-hidden">
-          <div className="max-w-6xl mx-auto grid lg:grid-cols-[1.1fr,0.9fr] gap-12 lg:gap-16 items-center">
-            <div>
-              <div className="flex items-center gap-3">
-                <BrandLogoMark size={34} />
-                <span className="font-serif text-2xl text-asi-navy">ASI Global</span>
-              </div>
-              <BrandHeadline as="h1" className="mt-8 text-4xl sm:text-5xl lg:text-[3.25rem]">
-                ASI помогает снижать ручную координацию в посуточной аренде
+        <section className="bg-asi-ivory px-5 sm:px-8 pt-9 sm:pt-14 pb-12 sm:pb-16">
+          <div className="max-w-6xl mx-auto">
+            <p className="text-sm font-semibold text-asi-gold-text">Один из продуктов ASI Global</p>
+            <div className="mt-5 flex items-start justify-between gap-6">
+              <BrandHeadline as="h1" className="text-[2.25rem] sm:text-5xl lg:text-[3.75rem] max-w-4xl !leading-[1.08]">
+                ASI сама ведёт рутину ваших объектов. От и до.
               </BrandHeadline>
-              <BrandGoldRule className="mt-6 mb-6" />
-              <p className="text-lg text-asi-navy/70 max-w-xl leading-relaxed">
-                ASI берёт на себя типовые вопросы гостей и проверки перед заездом. Система выполняет
-                понятную рутину, а вы подключаетесь там, где нужно принять решение.
-              </p>
-              <p className="mt-5 text-base font-serif text-asi-navy leading-snug max-w-xl">
-                Больше объектов не должно означать больше времени в чатах и ручных проверках.
-              </p>
-              <p className="mt-5 text-sm font-sans text-asi-navy/60 tracking-wide leading-relaxed max-w-xl">
-                Настройка 0&nbsp;₽ • 14 дней пилота отсчитываются только после полной готовности •{' '}
-                {COMMUNICATION_PILOT_PRICE_RUB}&nbsp;₽ / объект в месяц, если решите продолжить
-              </p>
-              <div className="mt-9">
-                <BrandPrimaryCta href={FORM_HREF}>{PRIMARY_CTA_LABEL}</BrandPrimaryCta>
-              </div>
+              <div className="hidden sm:block shrink-0 pt-2"><BrandShiro size={80} /></div>
             </div>
-            <div className="relative border border-asi-border bg-asi-paper p-6 sm:p-8 min-h-[18rem] flex flex-col justify-between">
-              <div className="flex items-center justify-between gap-4">
-                <div className="flex items-center gap-3">
-                  <BrandLogoMark size={28} />
-                  <span className="font-serif text-xl text-asi-navy">ASI</span>
-                </div>
-                <span className="text-[10px] font-sans font-semibold uppercase tracking-[0.18em] text-asi-gold-text">
-                  Пилот
-                </span>
-              </div>
-              <div className="mt-8 space-y-4">
-                <p className="font-serif text-2xl text-asi-navy leading-snug">
-                  Типовые вопросы — по данным объекта.
-                </p>
-                <p className="text-sm text-asi-navy/65 leading-relaxed">
-                  Нестандартные ситуации и бизнес-решения остаются за человеком.
-                </p>
-              </div>
-              <div className="mt-8 flex justify-end">
-                <BrandShiro size={56} />
-              </div>
+            <p className="mt-6 max-w-3xl text-base sm:text-xl text-asi-navy/75 leading-relaxed">
+              Календарь — в одной программе, переписка — в другой, уборка — в чате.
+              ASI сама ведёт рутинную работу объекта: от вопросов гостя и подготовки заезда
+              до ежедневных задач с площадками бронирования.
+            </p>
+            <p className="mt-4 text-lg sm:text-xl font-semibold">
+              Система ведёт повседневные задачи. Вы решаете нестандартные вопросы.
+            </p>
+            <div className="mt-7 sm:mt-9">
+              <ConnectCta href={RU_SPECIAL_OFFER_HREF} />
             </div>
+            <p className="mt-3 text-sm text-asi-navy/65">
+              Сейчас — пилот: настраиваем доступные функции под ваш объект. Подключение и настройка — 0 ₽.
+            </p>
+            <p className="mt-4 max-w-3xl text-sm text-asi-navy/65">
+              Здесь — ASI для жилой и посуточной недвижимости. ASI Global развивает и другие продукты.
+            </p>
           </div>
         </section>
+
+        <BrandSection variant="paper" id="how-it-works" className="scroll-mt-24">
+          <BrandHeadline className="text-3xl sm:text-5xl max-w-3xl !leading-tight">
+            Как запустить ASI на вашем объекте
+          </BrandHeadline>
+          <ol className="mt-10 grid gap-8 sm:grid-cols-2 lg:grid-cols-4">
+            {CLIENT_STEPS.map((step) => (
+              <li key={step.n} className="border-t-2 border-asi-gold pt-5">
+                <span className="font-serif text-4xl text-asi-gold-text" aria-hidden="true">{step.n}</span>
+                <h3 className="mt-4 text-xl sm:text-2xl font-semibold leading-tight">{step.title}</h3>
+                <p className="mt-3 text-base text-asi-navy/70 leading-relaxed">{step.body}</p>
+              </li>
+            ))}
+          </ol>
+          <div className="mt-10">
+            <ConnectCta href={RU_SPECIAL_OFFER_HREF} />
+          </div>
+        </BrandSection>
+
+        <BrandSection variant="ivory" id="special-offer" className="scroll-mt-24">
+          <BrandHeadline className="text-3xl sm:text-5xl max-w-4xl !leading-tight">
+            Специальные условия для участников закрытой группы Ярослава Стригунова
+          </BrandHeadline>
+          <p className="mt-6 max-w-3xl text-base sm:text-lg text-asi-navy/70 leading-relaxed">
+            Для участников закрытой группы Ярослава Стригунова мы сейчас предлагаем специальные условия на подключение и использование ASI.
+          </p>
+          <dl className="mt-10 grid gap-6 sm:grid-cols-3">
+            <div className="border-t border-asi-border pt-5">
+              <dt className="text-base text-asi-navy/70">Подключение и настройка</dt>
+              <dd className="mt-3 font-serif text-4xl sm:text-5xl">0 ₽</dd>
+            </div>
+            <div className="border-t border-asi-border pt-5">
+              <dt className="text-base text-asi-navy/70">После полной готовности объекта</dt>
+              <dd className="mt-3 font-serif text-4xl sm:text-5xl">14 дней</dd>
+              <p className="mt-3 text-base">Работы бесплатно</p>
+            </div>
+            <div className="border-t border-asi-border pt-5">
+              <dt className="text-base text-asi-navy/70">После пилота, если решите продолжить</dt>
+              <dd className="mt-3 font-serif text-4xl sm:text-5xl">{COMMUNICATION_PILOT_PRICE_RUB.toLocaleString('ru-RU')} ₽</dd>
+              <p className="mt-3 text-base">За объект в месяц</p>
+            </div>
+          </dl>
+          <p className="mt-8 max-w-3xl text-lg leading-relaxed">
+            Эта цена сохраняется для участника группы на 12 месяцев с момента перехода на платный режим.
+            Без автоматического перехода на платный тариф.
+          </p>
+          <div className="mt-10">
+            <ConnectCta
+              title="ПРОДОЛЖИТЬ ПОДКЛЮЧЕНИЕ"
+              description="Вход или регистрация, затем настройка объекта."
+              testId="continue-connection"
+            />
+          </div>
+        </BrandSection>
 
         {/* ── 2. Проблема масштабирования ── */}
         <BrandSection variant="paper" id="coordination" className="scroll-mt-24">
           <BrandEyebrow>Масштабирование</BrandEyebrow>
           <BrandHeadline className="text-3xl sm:text-5xl max-w-4xl">
-            Больше объектов — больше координации, а не только больше дохода
+            Каждый новый объект — это рост прибыли. Но вместе с ней растёт и рутина.
           </BrandHeadline>
           <p className="mt-6 max-w-3xl text-base sm:text-lg text-asi-navy/70 leading-relaxed">
-            Каждый новый объект — это не только доход, но и новые бронирования, сообщения, задачи по
-            уборке, исключения и созвоны между сотрудниками. Рост количества объектов и сотрудников не
-            гарантирует пропорционального роста чистой прибыли: вместе с масштабом растёт и объём
-            координации, переписки и нестандартных ситуаций.
+            С ростом бизнеса увеличивается доход, но вместе с ним — количество чатов, мелких задач и
+            ситуаций, которые нужно постоянно держать под контролем.
           </p>
         </BrandSection>
 
@@ -186,12 +187,11 @@ export default function HomeRu() {
             Рынок посуточной аренды уже хорошо автоматизирован. Есть сильные менеджеры каналов,
             календари и системы учёта — и они хорошо решают свои задачи.
           </p>
-          <p className="mt-4 max-w-3xl text-base sm:text-lg text-asi-navy/70 leading-relaxed">
-            Но автоматизировать отдельную функцию и связать несколько состояний в одно решение — не
-            одно и то же. Уборка — один процесс, общение с гостем — другой, готовность документов —
-            третий. ASI создаётся для того, чтобы постепенно уменьшать ручную работу между такими
-            этапами.
-          </p>
+          <ul className="mt-6 grid gap-5 sm:grid-cols-3 text-base sm:text-lg text-asi-navy/75 leading-relaxed">
+            <li className="border-t border-asi-gold pt-4"><strong className="block text-asi-navy">Календарь</strong>Показывает бронирования, но не отвечает гостям.</li>
+            <li className="border-t border-asi-gold pt-4"><strong className="block text-asi-navy">Бот</strong>Отвечает в чате, но сам по себе не проверяет готовность квартиры.</li>
+            <li className="border-t border-asi-gold pt-4"><strong className="block text-asi-navy">ASI</strong>Ведёт повторяемую работу объекта как одну систему — от вопроса гостя до подготовки заезда.</li>
+          </ul>
         </BrandSection>
 
         {/* ── 4. Общение с гостями ── */}
@@ -204,10 +204,9 @@ export default function HomeRu() {
             «Во сколько заезд?», «Где парковаться?», «Как подключиться к Wi-Fi?» — одни и те же вопросы
             повторяются изо дня в день. Гости пишут в разное время и ждут понятного ответа.
           </p>
-          <p className="mt-4 max-w-3xl text-base sm:text-lg text-asi-navy leading-relaxed">
-            ASI берёт типовые вопросы на себя и отвечает по данным конкретного объекта. Если ситуация
-            требует решения или ответственности — автоматический ответ останавливается, а запрос
-            передаётся человеку.
+          <p className="mt-6 max-w-3xl border-l-2 border-asi-gold pl-5 text-lg sm:text-xl font-medium leading-relaxed">
+            ASI сама отвечает на частые вопросы гостей, опираясь на правила вашего объекта. А если
+            ситуация нестандартная и нужно принять решение — система сразу передаёт диалог вам.
           </p>
         </BrandSection>
 
@@ -217,15 +216,13 @@ export default function HomeRu() {
           <BrandHeadline className="text-3xl sm:text-5xl max-w-4xl">
             Система занимается повторяемым. Человек — решениями.
           </BrandHeadline>
-          <p className="mt-6 max-w-3xl text-base sm:text-lg text-asi-navy/70 leading-relaxed">
-            ASI — не просто бот для ответов. Задача продукта — постепенно передавать системе те
-            действия и проверки, которые она может выполнять надёжно, а человеку оставлять ситуации,
-            где действительно нужно решение.
+          <p className="mt-6 max-w-3xl text-lg sm:text-xl font-medium leading-relaxed">
+            ASI — не просто бот и не менеджер каналов. Система сама ведёт повторяемую работу объекта,
+            а вы подключаетесь, когда нужно нестандартное решение.
           </p>
           <p className="mt-4 max-w-3xl text-base sm:text-lg text-asi-navy/70 leading-relaxed">
-            Сегодня в ASI уже работают несколько таких связей между этапами. Они позволяют передать
-            системе часть повторяющейся ежедневной работы, не создавая впечатление, что автоматизация
-            уже завершена там, где её ещё нет.
+            Во время настройки проверяем, какие функции доступны для вашего объекта и сервисов.
+            После проверки вместе с вами согласуем запуск.
           </p>
         </BrandSection>
 
@@ -238,14 +235,14 @@ export default function HomeRu() {
           <div className="mt-12 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
             {CAPABILITY_GROUPS.map((group) => (
               <BrandCard key={group.title} className="p-7 sm:p-8">
-                <h3 className="font-serif text-xl text-asi-navy leading-snug">{group.title}</h3>
-                <p className="mt-3 text-sm text-asi-navy/70 leading-relaxed">{group.body}</p>
+                <h3 className="font-serif text-2xl text-asi-navy leading-snug">{group.title}</h3>
+                <p className="mt-3 text-base text-asi-navy/70 leading-relaxed">{group.body}</p>
               </BrandCard>
             ))}
           </div>
           <div className="mt-6 max-w-xl border-t border-asi-border pt-6">
-            <h3 className="font-serif text-lg text-asi-navy">{SECONDARY_CAPABILITY.title}</h3>
-            <p className="mt-2 text-sm text-asi-navy/65 leading-relaxed">{SECONDARY_CAPABILITY.body}</p>
+            <h3 className="font-serif text-2xl text-asi-navy">{SECONDARY_CAPABILITY.title}</h3>
+            <p className="mt-2 text-base text-asi-navy/65 leading-relaxed">{SECONDARY_CAPABILITY.body}</p>
           </div>
         </BrandSection>
 
@@ -261,19 +258,19 @@ export default function HomeRu() {
           <div className="mt-12 grid gap-px bg-asi-border border border-asi-border lg:grid-cols-3">
             {EXAMPLES.map((example) => (
               <div key={example.title} className="bg-asi-paper p-7 sm:p-8">
-                <h3 className="font-serif text-xl text-asi-navy leading-snug">{example.title}</h3>
+                <h3 className="font-serif text-2xl text-asi-navy leading-snug">{example.title}</h3>
                 <div className="mt-6 space-y-5">
                   <div>
-                    <p className="text-[10px] font-sans font-semibold uppercase tracking-[0.18em] text-asi-gold-text">
+                    <p className="text-sm font-sans font-semibold uppercase tracking-[0.18em] text-asi-gold-text">
                       Гость
                     </p>
-                    <p className="mt-2 text-sm text-asi-navy/75 leading-relaxed">{example.guest}</p>
+                    <p className="mt-2 text-base text-asi-navy/75 leading-relaxed">{example.guest}</p>
                   </div>
                   <div>
-                    <p className="text-[10px] font-sans font-semibold uppercase tracking-[0.18em] text-asi-gold-text">
+                    <p className="text-sm font-sans font-semibold uppercase tracking-[0.18em] text-asi-gold-text">
                       ASI
                     </p>
-                    <p className="mt-2 text-sm text-asi-navy/75 leading-relaxed">{example.asi}</p>
+                    <p className="mt-2 text-base text-asi-navy/75 leading-relaxed">{example.asi}</p>
                   </div>
                 </div>
               </div>
@@ -281,51 +278,15 @@ export default function HomeRu() {
           </div>
         </BrandSection>
 
-        {/* ── 8a. Пилот: шаг за шагом ── */}
-        <BrandSection variant="paper" id="how-it-works" className="scroll-mt-24">
-          <BrandHeadline className="text-3xl sm:text-5xl max-w-4xl">
-            Как мы подключаем ваш объект: шаг за шагом
+        <BrandSection variant="paper" id="pilot-form" className="scroll-mt-24">
+          <BrandHeadline className="text-3xl sm:text-5xl max-w-4xl !leading-tight">
+            Начните с одного объекта
           </BrandHeadline>
-          <ol className="mt-12 grid gap-0 border border-asi-border divide-y divide-asi-border">
-            {CLIENT_STEPS.map((step) => (
-              <li key={step.n} className="bg-asi-ivory p-7 sm:p-8 grid sm:grid-cols-[4.5rem,1fr] gap-4 sm:gap-8">
-                <span className="font-serif text-asi-gold text-2xl">{step.n}</span>
-                <div>
-                  <h3 className="font-serif text-xl sm:text-2xl text-asi-navy">{step.title}</h3>
-                  <p className="mt-3 text-sm sm:text-base text-asi-navy/70 leading-relaxed">{step.body}</p>
-                </div>
-              </li>
-            ))}
-          </ol>
-        </BrandSection>
-
-        {/* ── 8b. Условия и цена ── */}
-        <BrandSection variant="ivory" id="pricing" className="scroll-mt-24">
-          <BrandHeadline className="text-3xl sm:text-5xl max-w-3xl">
-            {PRICING_HEADLINE}
-          </BrandHeadline>
-          <BrandGoldRule className="mt-6 mb-8" />
-          <div className="max-w-3xl border border-asi-border bg-asi-paper px-6 py-6 sm:px-8 sm:py-7">
-            <p className="text-base sm:text-lg text-asi-navy leading-relaxed">
-              Только если вы решили продолжить. Без автоматического перехода на платный тариф.
-            </p>
-          </div>
-          <p className="mt-8 max-w-2xl text-sm text-asi-navy/65 leading-relaxed">
-            Никаких скрытых платежей, списаний с оборота или автоматических продлений.
+          <p className="mt-5 text-lg text-asi-navy/70">
+            Создайте кабинет, укажите ваши сервисы и добавьте данные. Мы поможем подготовить объект к запуску.
           </p>
-        </BrandSection>
-
-        {/* ── 9. Форма заявки ── */}
-        <BrandSection variant="paper" id="pilot-form-section" className="scroll-mt-24">
-          <BrandHeadline className="text-3xl sm:text-5xl max-w-4xl">
-            Хотите посмотреть, как это сработает на ваших объектах?
-          </BrandHeadline>
-          <p className="mt-5 max-w-2xl text-asi-navy/70 leading-relaxed">
-            Заполните форму — мы бесплатно соберем базу знаний вашего объекта, подключим систему и
-            запустим 14 дней тест-драйва на реальном потоке гостей только после полной готовности.
-          </p>
-          <div className="mt-10 max-w-2xl">
-            <EarlyAccessObjectForm variant="compact" submitLabel={PRIMARY_CTA_LABEL} />
+          <div className="mt-8">
+            <ConnectCta href={RU_SPECIAL_OFFER_HREF} />
           </div>
         </BrandSection>
       </main>

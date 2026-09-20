@@ -49,29 +49,9 @@ export async function POST(req: Request) {
 
     const isRuHost = await getIsRuHost();
 
-    if (isRuHost) {
-      // Unchanged legacy behavior — the RU commercial/account flow is not touched.
-      const now = new Date();
-      const trialEnd = new Date(now);
-      trialEnd.setDate(trialEnd.getDate() + 14);
-
-      const { error: subError } = await supabase.from('subscriptions').insert({
-        user_id: user.id,
-        status: 'trial',
-        trial_start: now.toISOString(),
-        trial_end: trialEnd.toISOString(),
-      });
-
-      if (subError) throw subError;
-    }
-    // International (guestautopilot.com): no subscriptions row, no immediate
-    // trial — see lib/billing/account-lifecycle.ts. lifecycle_status is the
-    // sole source of truth; ensureAccountForUser(deferTrial: true) below
-    // creates the account at lifecycle_status='signup'.
-
     await ensureAccountForUser(
       isRuHost
-        ? { userId: user.id, email: user.email, trialDays: 14 }
+        ? { userId: user.id, email: user.email, ruCommercial: true }
         : { userId: user.id, email: user.email, deferTrial: true }
     );
 

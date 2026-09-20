@@ -6,6 +6,7 @@ import type { Metadata } from 'next';
 import { RU_PUBLIC_ORIGIN, EN_PUBLIC_ORIGIN, GUEST_AUTOPILOT_ORIGIN } from '@/config/publicOrigins';
 import { hostnameFromHostHeader, isRuRuntimeHost } from '@/lib/runtimeHost';
 import HomeRu from '@/app/ru/page';
+import { RU_HOME_METADATA } from '@/config/ruHomeMetadata';
 
 import { SiteHeader } from '@/components/site/SiteHeader';
 import { SiteFooter } from '@/components/site/SiteFooter';
@@ -28,9 +29,7 @@ async function getIsRuHost(): Promise<boolean> {
 export async function generateMetadata(): Promise<Metadata> {
   if (await getIsRuHost()) {
     return {
-      title: 'ASI — операции посуточной аренды на автопилоте',
-      description:
-        'ASI берёт на себя рутинную коммуникацию с гостями и координацию операционных задач. Бесплатное подключение, 14 дней пилота после готовности объекта, затем 1 000 ₽ за объект в месяц.',
+      ...RU_HOME_METADATA,
       alternates: {
         canonical: `${RU_PUBLIC_ORIGIN}/`,
         languages: {

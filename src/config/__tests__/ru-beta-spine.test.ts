@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { ruComplianceRoutes } from '@/config/ruCompliance';
 import { ruNavMainLinks } from '@/config/ruNav';
 import {
   COMMUNICATION_PILOT_PAYMENT_DESCRIPTION,
@@ -15,19 +16,67 @@ function readSrc(relativePath: string): string {
 }
 
 describe('RU-02/RU-03 closed-beta spine + pilot boundary', () => {
-  it('homepage primary acquisition path points to communications pilot', () => {
+  it('homepage primary acquisition path points to RU self-service connection', () => {
     const home = readSrc('src/app/ru/page.tsx');
-    expect(home).toContain("const PILOT_HREF = '/ru/early-access'");
-    expect(home).toContain('BrandPrimaryCta href={PILOT_HREF}');
-    expect(home).toContain('Подключить объект бесплатно');
-    expect(home).toContain('Операции посуточной аренды на автопилоте');
-    expect(home).toContain('Операционный слой поверх вашего Менеджера Каналов');
-    expect(home).toContain('От заявки до результата');
-    expect(home).not.toMatch(/BrandPrimaryCta href=\{RU_LOCATION_CHECK_HREF\}/);
-    expect(home).toContain('Оценка локации — отдельный инструмент');
-    expect(home).toContain('Дополнительно');
-    expect(home).toContain('Рутина → ASI');
-    expect(home).toContain('Исключение → человек');
+    const cta = readSrc('src/components/ru/ConnectCta.tsx');
+
+    expect(cta).toContain("RU_CONNECT_HREF = '/ru/connect'");
+    expect(cta).toContain("RU_SPECIAL_OFFER_HREF = '#special-offer'");
+    expect(home).toContain('RU_CONNECT_HREF');
+    expect(home).toContain('RU_SPECIAL_OFFER_HREF');
+    expect(home.match(/<ConnectCta\b/g) ?? []).toHaveLength(4);
+    expect(home).toContain('id="how-it-works"');
+    expect(home).toContain('id="special-offer"');
+    expect(home).not.toContain('id="pricing"');
+    expect(home).toContain('id="pilot-form"');
+    expect(home).toContain('COMMUNICATION_PILOT_PRICE_RUB');
+    expect(home).toContain('12 месяцев');
+    expect(home).not.toContain('RU_LOCATION_CHECK_HREF');
+    expect(home).not.toContain('Оценка локации — отдельный инструмент');
+  });
+
+  it('routes RU acquisition and login CTAs to /ru/connect without moving Пилот or legal/location', () => {
+    const header = readSrc('src/components/ru/RuPublicNavHeader.tsx');
+    const desktop = header.slice(
+      header.indexOf('hidden lg:flex items-center gap-4'),
+      header.indexOf('lg:hidden inline-flex'),
+    );
+    const mobile = header.slice(header.indexOf('{open ? ('));
+
+    expect(header).toContain("href: RU_CONNECT_HREF");
+    expect(header).toContain("label: 'Войти / подключить'");
+    expect(header).not.toContain("href: '/ru/early-access'");
+    expect(desktop).toContain('href={RU_CONNECT_HREF}');
+    expect(desktop).toContain('Войти');
+    expect(desktop).not.toContain('href="/login"');
+    expect(mobile).toContain('href={RU_CONNECT_HREF}');
+    expect(mobile).toContain('Войти');
+    expect(mobile).not.toContain('href="/login"');
+
+    const how = readSrc('src/app/ru/how-it-works/page.tsx');
+    expect(how.match(/<BrandPrimaryCta href=\{RU_CONNECT_HREF\}>/g) ?? []).toHaveLength(2);
+    expect(how).not.toContain("PILOT_HREF = '/ru/early-access'");
+
+    const home = readSrc('src/app/ru/page.tsx');
+    expect(home.match(/href=\{RU_SPECIAL_OFFER_HREF\}/g) ?? []).toHaveLength(3);
+    expect(home).toContain("href: '/ru#special-offer'");
+    expect(home).toContain('testId="continue-connection"');
+    expect(home).toContain("primaryCta={{ href: RU_CONNECT_HREF, label: 'Войти / подключить' }}");
+
+    expect(ruNavMainLinks).toContainEqual({ href: '/ru/early-access', label: 'Пилот' });
+    expect(ruNavMainLinks.map((link) => link.href)).toEqual([
+      '/ru',
+      '/ru/early-access',
+      '/ru/how-it-works',
+      '/ru/otchet-po-dohodnosti-obektov',
+    ]);
+    expect(ruComplianceRoutes).toEqual({
+      contacts: '/ru/contacts',
+      payment: '/ru/payment',
+      refund: '/ru/refund',
+      privacy: '/ru/privacy',
+      offer: '/ru/offer',
+    });
   });
 
   it('location remains secondary and nav does not promote engineering /pilot', () => {
@@ -49,6 +98,11 @@ describe('RU-02/RU-03 closed-beta spine + pilot boundary', () => {
     expect(header).toContain('ruNavMainLinks');
     expect(header).not.toMatch(/href=["']\/pilot["']/);
     expect(header).toMatch(/Login remains utility/i);
+    expect(header).toContain("label: 'Войти / подключить'");
+    expect(header).toContain('href: RU_CONNECT_HREF');
+    expect(header).not.toContain("href: '/ru/early-access'");
+    expect(header).not.toContain('href="/login"');
+    expect(header.match(/href=\{RU_CONNECT_HREF\}/g) ?? []).toHaveLength(2);
 
     const bottom = readSrc('src/components/ru/RuBottomQuickLinks.tsx');
     expect(bottom).not.toMatch(/['"]\/pilot['"]/);
@@ -66,23 +120,24 @@ describe('RU-02/RU-03 closed-beta spine + pilot boundary', () => {
     expect(client).toContain('/api/pilot/tasks');
   });
 
-  it('labels CURRENT MVP vs ROADMAP on how-it-works and early-access', () => {
+  it('keeps current pilot and future scope explicit on supporting RU pages', () => {
     const how = readSrc('src/app/ru/how-it-works/page.tsx');
-    expect(how).toContain('Сейчас / пилот');
-    expect(how).toContain('Дорожная карта платформы');
     expect(how).toContain('Подключить объект бесплатно');
-    expect(how).toContain('/ru/early-access');
-    expect(how).toContain('Бесплатное подключение и настройка — 0');
-    expect(how).toContain('14 дней операционного пилота — 0');
+    expect(how).toContain('RU_CONNECT_HREF');
+    expect(how).not.toContain("PILOT_HREF = '/ru/early-access'");
+    expect(how).toContain('Подключение и настройка — 0');
+    expect(how).toContain('14 дней работы на объекте — 0');
+    expect(how).toContain('id="roadmap"');
+    expect(how).toContain('ROADMAP_ITEMS');
+    expect(how).toContain('Направления продукта вне текущего пилота');
     expect(how).not.toContain('Оплата пилота');
     expect(how).not.toContain('Платный MVP');
     expect(how).not.toContain('1 объект · 1 месяц');
     expect(how).not.toMatch(/['"]\/pilot['"]/);
-    expect(how).toMatch(/не «полная автоматизация объекта на 99%»|не.*99%/);
 
     const early = readSrc('src/app/ru/early-access/page.tsx');
     expect(early).toContain("label: 'Сейчас в пилоте'");
-    expect(early).toContain("label: 'Дорожная карта'");
+    expect(early).toContain("label: 'Позже'");
     expect(early).toContain('Подключить объект бесплатно');
     expect(early).toContain('Подключение и настройка — 0');
     expect(early).toContain('14 дней реальной работы — 0');

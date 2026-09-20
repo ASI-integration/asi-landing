@@ -1,10 +1,10 @@
+import { getIsRuHost } from '@/lib/getIsRuHost';
 import { NextResponse } from 'next/server';
 import bcrypt from 'bcryptjs';
 import { supabase } from '@/lib/supabase';
 import { getSession } from '@/lib/auth';
 import { ensureAccountForUser } from '@/lib/accounts';
 import { readRequestJson } from '@/lib/safeRequestJson';
-import { getIsRuHost } from '@/lib/getIsRuHost';
 
 export async function POST(req: Request) {
   try {
@@ -39,16 +39,9 @@ export async function POST(req: Request) {
     session.email = user.email;
     await session.save();
 
-    // On every login, ensureAccountForUser backfills an account for a user
-    // who somehow doesn't have one yet (legacy/imported users). It must NOT
-    // re-trigger the legacy immediate-trial write path for an existing
-    // international account on repeat logins — deferTrial keeps the
-    // membership-exists branch a no-op for trial fields, same as signup.
-    const isRuHost = await getIsRuHost();
+    // Login never starts or resets a pilot; readiness owns that transition.
     await ensureAccountForUser(
-      isRuHost
-        ? { userId: user.id, email: user.email, selectedPlan: plan, trialDays: 7 }
-        : { userId: user.id, email: user.email, selectedPlan: plan, deferTrial: true }
+      { userId: user.id, email: user.email, selectedPlan: plan, ...(await getIsRuHost() ? { ruCommercial: true } : { deferTrial: true }) }
     );
 
     return NextResponse.json({ ok: true, userId: user.id });

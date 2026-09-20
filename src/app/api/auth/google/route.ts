@@ -1,3 +1,4 @@
+import { getIsRuHost } from '@/lib/getIsRuHost';
 import { NextResponse } from 'next/server';
 import crypto from 'crypto';
 import { OAuth2Client } from 'google-auth-library';
@@ -6,7 +7,6 @@ import { supabase } from '@/lib/supabase';
 import { getSession } from '@/lib/auth';
 import { ensureAccountForUser } from '@/lib/accounts';
 import { readRequestJson } from '@/lib/safeRequestJson';
-import { getIsRuHost } from '@/lib/getIsRuHost';
 
 function randomPassword(): string {
   return crypto.randomBytes(24).toString('base64').replace(/[+/=]/g, '').slice(0, 24);
@@ -61,7 +61,6 @@ export async function POST(req: Request) {
     if (lookupErr) throw lookupErr;
 
     let userId = existing?.id as string | undefined;
-    const isRuHost = await getIsRuHost();
 
     if (!userId) {
       // users.password_hash is NOT NULL; create a valid bcrypt hash for compatibility with email login.
@@ -74,23 +73,7 @@ export async function POST(req: Request) {
       if (createErr) throw createErr;
       userId = created.id;
 
-      if (isRuHost) {
-        // Unchanged legacy behavior — the RU commercial/account flow is not touched.
-        const now = new Date();
-        const trialEnd = new Date(now);
-        trialEnd.setDate(trialEnd.getDate() + 7);
-        await supabase.from('subscriptions').upsert(
-          {
-            user_id: userId,
-            status: 'trial',
-            trial_start: now.toISOString(),
-            trial_end: trialEnd.toISOString(),
-          },
-          { onConflict: 'user_id' }
-        );
-      }
-      // International (guestautopilot.com): no subscriptions row, no immediate
-      // trial — see lib/billing/account-lifecycle.ts.
+      // Registration never starts the pilot clock.
     }
 
     const session = await getSession();
@@ -99,9 +82,7 @@ export async function POST(req: Request) {
     await session.save();
 
     await ensureAccountForUser(
-      isRuHost
-        ? { userId: userId!, email, selectedPlan: plan, trialDays: 7 }
-        : { userId: userId!, email, selectedPlan: plan, deferTrial: true }
+      { userId: userId!, email, selectedPlan: plan, ...(await getIsRuHost() ? { ruCommercial: true } : { deferTrial: true }) }
     );
 
     return NextResponse.json({ ok: true, userId });

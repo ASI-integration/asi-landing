@@ -86,7 +86,9 @@ describe('RU-DESIGN-06 location product family visual migration', () => {
       expect(page).not.toContain('bg-slate-950');
       expect(page).not.toContain('rounded-3xl');
     }
-    expect(sample).toContain('LOCATION_REPORT_SAMPLE_PDF_PATH');
+    expect(sample).toContain('LOCATION_REPORT_SAMPLE_PRINT_PATH');
+    expect(sample).not.toContain('LOCATION_REPORT_SAMPLE_PDF_PATH');
+    expect(sample).toContain('Открыть пример отчёта');
     expect(status).toContain('location-analysis');
   });
 
