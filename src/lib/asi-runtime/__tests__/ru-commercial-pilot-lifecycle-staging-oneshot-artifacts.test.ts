@@ -43,6 +43,8 @@ describe('RU commercial pilot lifecycle v1 staging one-shot artifacts', () => {
     expect(workflowText).toContain('--set ON_ERROR_STOP=1');
     expect(workflowText).toContain('--single-transaction');
     expect(workflowText).toContain(`ORPHAN_REMOTE_VERSIONS: '${orphanCsv}'`);
+    expect(workflowText).toContain('--file "$HISTORY_SNAPSHOT_FILE"');
+    expect(workflowText).toContain("WHERE version = :'target_version'");
     expect(workflowText).toContain('ORPHAN_MIGRATION_IDS_UNTOUCHED=PASS');
     expect(workflowText).toContain('SCHEMA_MIGRATIONS_CHANGED=NO');
     expect(workflowText).toContain('schema_migrations_recording_status=unresolved_no_approved_mechanism');

@@ -319,25 +319,34 @@ jobs:
           SQL
           )
 
-          HISTORY_SNAPSHOT_SQL=$(cat <<'SQL'
-          SELECT
-            (SELECT count(*)::bigint FROM supabase_migrations.schema_migrations) AS schema_migrations_count,
-            EXISTS (
-              SELECT 1
-              FROM supabase_migrations.schema_migrations
-              WHERE version = :'target_version'
-            ) AS target_version_recorded,
-            (
-              SELECT coalesce(string_agg(version, ',' ORDER BY version), '')
-              FROM supabase_migrations.schema_migrations
-              WHERE version = ANY (string_to_array(:'orphan_csv', ','))
-            ) AS orphan_versions_present,
-            (to_regclass('public.ru_commercial_pilot_lifecycle') IS NOT NULL) AS table_exists;
-          SQL
-          )
+          # Fixed non-secret constants only; write via file so psql :'var' expansion works.
+          if [[ ! "$AUTHORIZED_MIGRATION_VERSION" =~ ^[0-9]{14}$ ]]; then
+            echo "::error::Unexpected AUTHORIZED_MIGRATION_VERSION shape."
+            exit 1
+          fi
+          if [[ ! "$ORPHAN_REMOTE_VERSIONS" =~ ^[0-9]{14}(,[0-9]{14}){6}$ ]]; then
+            echo "::error::Unexpected ORPHAN_REMOTE_VERSIONS shape."
+            exit 1
+          fi
 
-          echo "=== PREFLIGHT_HISTORY_SNAPSHOT ==="
-          PREFLIGHT_OUT="$(
+          HISTORY_SNAPSHOT_FILE="$(mktemp)"
+          cat >"$HISTORY_SNAPSHOT_FILE" <<'SQL'
+SELECT
+  (SELECT count(*)::bigint FROM supabase_migrations.schema_migrations) AS schema_migrations_count,
+  EXISTS (
+    SELECT 1
+    FROM supabase_migrations.schema_migrations
+    WHERE version = :'target_version'
+  ) AS target_version_recorded,
+  (
+    SELECT coalesce(string_agg(version, ',' ORDER BY version), '')
+    FROM supabase_migrations.schema_migrations
+    WHERE version = ANY (string_to_array(:'orphan_csv', ','))
+  ) AS orphan_versions_present,
+  (to_regclass('public.ru_commercial_pilot_lifecycle') IS NOT NULL) AS table_exists;
+SQL
+
+          snapshot_history() {
             psql -X "$STAGING_DATABASE_URL" \
               --no-psqlrc \
               --set ON_ERROR_STOP=1 \
@@ -346,8 +355,11 @@ jobs:
               --tuples-only \
               --no-align \
               --field-separator='|' \
-              --command "$HISTORY_SNAPSHOT_SQL"
-          )"
+              --file "$HISTORY_SNAPSHOT_FILE"
+          }
+
+          echo "=== PREFLIGHT_HISTORY_SNAPSHOT ==="
+          PREFLIGHT_OUT="$(snapshot_history)"
           echo "preflight_raw=${PREFLIGHT_OUT}"
           IFS='|' read -r PRE_COUNT PRE_RECORDED PRE_ORPHANS PRE_TABLE_EXISTS <<<"$PREFLIGHT_OUT"
           PRE_COUNT="$(echo "$PRE_COUNT" | tr -d '[:space:]')"
@@ -395,17 +407,7 @@ jobs:
           fi
 
           echo "=== POST_HISTORY_SNAPSHOT ==="
-          POST_OUT="$(
-            psql -X "$STAGING_DATABASE_URL" \
-              --no-psqlrc \
-              --set ON_ERROR_STOP=1 \
-              --set "target_version=${AUTHORIZED_MIGRATION_VERSION}" \
-              --set "orphan_csv=${ORPHAN_REMOTE_VERSIONS}" \
-              --tuples-only \
-              --no-align \
-              --field-separator='|' \
-              --command "$HISTORY_SNAPSHOT_SQL"
-          )"
+          POST_OUT="$(snapshot_history)"
           echo "post_raw=${POST_OUT}"
           IFS='|' read -r POST_COUNT POST_RECORDED POST_ORPHANS POST_TABLE_EXISTS <<<"$POST_OUT"
           POST_COUNT="$(echo "$POST_COUNT" | tr -d '[:space:]')"
