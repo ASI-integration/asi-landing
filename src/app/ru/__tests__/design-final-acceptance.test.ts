@@ -44,8 +44,9 @@ describe('RU-DESIGN-FINAL acceptance', () => {
     ]);
 
     const header = readSrc('src/components/ru/RuPublicNavHeader.tsx');
-    expect(header).toContain('Подключить объект бесплатно');
-    expect(header).toContain('/ru/early-access');
+    expect(header).toContain("label: 'Войти / подключить'");
+    expect(header).toContain('href: RU_CONNECT_HREF');
+    expect(header).not.toContain("href: '/ru/early-access'");
     expect(header).not.toMatch(/href=\{?['"]\/pilot['"]\}?/);
     expect(header).toContain('ruNavMainLinks');
   });

@@ -45,7 +45,8 @@ describe('RU how-it-works plain-language copy', () => {
     expect(page).toContain('COMMUNICATION_PILOT_PRICE_RUB');
     expect(page).toContain('Управлять посуточными квартирами — не значит весь день сидеть в чатах');
     expect(page).toContain('Подключить объект бесплатно');
-    expect(page).toContain('/ru/early-access');
+    expect(page).toContain('RU_CONNECT_HREF');
+    expect(page).not.toContain("PILOT_HREF = '/ru/early-access'");
     expect(page).toContain('Чем больше объектов в управлении');
     expect(page).toContain('Больше квартир → Больше сообщений → Больше администраторов');
     expect(page).toContain('ASI берёт на себя повторяющиеся операции');

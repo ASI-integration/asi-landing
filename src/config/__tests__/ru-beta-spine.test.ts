@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { ruComplianceRoutes } from '@/config/ruCompliance';
 import { ruNavMainLinks } from '@/config/ruNav';
 import {
   COMMUNICATION_PILOT_PAYMENT_DESCRIPTION,
@@ -31,6 +32,48 @@ describe('RU-02/RU-03 closed-beta spine + pilot boundary', () => {
     expect(home).not.toContain('Оценка локации — отдельный инструмент');
   });
 
+  it('routes RU acquisition and login CTAs to /ru/connect without moving Пилот or legal/location', () => {
+    const header = readSrc('src/components/ru/RuPublicNavHeader.tsx');
+    const desktop = header.slice(
+      header.indexOf('hidden lg:flex items-center gap-4'),
+      header.indexOf('lg:hidden inline-flex'),
+    );
+    const mobile = header.slice(header.indexOf('{open ? ('));
+
+    expect(header).toContain("href: RU_CONNECT_HREF");
+    expect(header).toContain("label: 'Войти / подключить'");
+    expect(header).not.toContain("href: '/ru/early-access'");
+    expect(desktop).toContain('href={RU_CONNECT_HREF}');
+    expect(desktop).toContain('Войти');
+    expect(desktop).not.toContain('href="/login"');
+    expect(mobile).toContain('href={RU_CONNECT_HREF}');
+    expect(mobile).toContain('Войти');
+    expect(mobile).not.toContain('href="/login"');
+
+    const how = readSrc('src/app/ru/how-it-works/page.tsx');
+    expect(how.match(/<BrandPrimaryCta href=\{RU_CONNECT_HREF\}>/g) ?? []).toHaveLength(2);
+    expect(how).not.toContain("PILOT_HREF = '/ru/early-access'");
+
+    const home = readSrc('src/app/ru/page.tsx');
+    expect(home.match(/<ConnectCta\b/g) ?? []).toHaveLength(3);
+    expect(home).toContain("href: RU_CONNECT_HREF");
+
+    expect(ruNavMainLinks).toContainEqual({ href: '/ru/early-access', label: 'Пилот' });
+    expect(ruNavMainLinks.map((link) => link.href)).toEqual([
+      '/ru',
+      '/ru/early-access',
+      '/ru/how-it-works',
+      '/ru/otchet-po-dohodnosti-obektov',
+    ]);
+    expect(ruComplianceRoutes).toEqual({
+      contacts: '/ru/contacts',
+      payment: '/ru/payment',
+      refund: '/ru/refund',
+      privacy: '/ru/privacy',
+      offer: '/ru/offer',
+    });
+  });
+
   it('location remains secondary and nav does not promote engineering /pilot', () => {
     const navHrefs = ruNavMainLinks.map((l) => l.href as string);
     expect(navHrefs).toEqual([
@@ -50,6 +93,11 @@ describe('RU-02/RU-03 closed-beta spine + pilot boundary', () => {
     expect(header).toContain('ruNavMainLinks');
     expect(header).not.toMatch(/href=["']\/pilot["']/);
     expect(header).toMatch(/Login remains utility/i);
+    expect(header).toContain("label: 'Войти / подключить'");
+    expect(header).toContain('href: RU_CONNECT_HREF');
+    expect(header).not.toContain("href: '/ru/early-access'");
+    expect(header).not.toContain('href="/login"');
+    expect(header.match(/href=\{RU_CONNECT_HREF\}/g) ?? []).toHaveLength(2);
 
     const bottom = readSrc('src/components/ru/RuBottomQuickLinks.tsx');
     expect(bottom).not.toMatch(/['"]\/pilot['"]/);
@@ -70,7 +118,8 @@ describe('RU-02/RU-03 closed-beta spine + pilot boundary', () => {
   it('keeps current pilot and future scope explicit on supporting RU pages', () => {
     const how = readSrc('src/app/ru/how-it-works/page.tsx');
     expect(how).toContain('Подключить объект бесплатно');
-    expect(how).toContain('/ru/early-access');
+    expect(how).toContain('RU_CONNECT_HREF');
+    expect(how).not.toContain("PILOT_HREF = '/ru/early-access'");
     expect(how).toContain('Подключение и настройка — 0');
     expect(how).toContain('14 дней работы на объекте — 0');
     expect(how).toContain('id="roadmap"');
