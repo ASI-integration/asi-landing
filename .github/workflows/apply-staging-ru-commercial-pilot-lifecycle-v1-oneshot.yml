@@ -326,20 +326,20 @@ jobs:
           \$verify\$;"
 
           HISTORY_SNAPSHOT_SQL="
-SELECT
-  (SELECT count(*)::bigint FROM supabase_migrations.schema_migrations) AS schema_migrations_count,
-  EXISTS (
-    SELECT 1
-    FROM supabase_migrations.schema_migrations
-    WHERE version = '${AUTHORIZED_MIGRATION_VERSION}'
-  ) AS target_version_recorded,
-  (
-    SELECT coalesce(string_agg(version, ',' ORDER BY version), '')
-    FROM supabase_migrations.schema_migrations
-    WHERE version = ANY (string_to_array('${ORPHAN_REMOTE_VERSIONS}', ','))
-  ) AS orphan_versions_present,
-  (to_regclass('public.ru_commercial_pilot_lifecycle') IS NOT NULL) AS table_exists;
-"
+          SELECT
+            (SELECT count(*)::bigint FROM supabase_migrations.schema_migrations) AS schema_migrations_count,
+            EXISTS (
+              SELECT 1
+              FROM supabase_migrations.schema_migrations
+              WHERE version = '${AUTHORIZED_MIGRATION_VERSION}'
+            ) AS target_version_recorded,
+            (
+              SELECT coalesce(string_agg(version, ',' ORDER BY version), '')
+              FROM supabase_migrations.schema_migrations
+              WHERE version = ANY (string_to_array('${ORPHAN_REMOTE_VERSIONS}', ','))
+            ) AS orphan_versions_present,
+            (to_regclass('public.ru_commercial_pilot_lifecycle') IS NOT NULL) AS table_exists;
+          "
 
           snapshot_history() {
             psql -X "$STAGING_DATABASE_URL" \
