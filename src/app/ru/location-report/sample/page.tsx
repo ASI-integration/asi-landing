@@ -12,7 +12,7 @@ import { RuLocationProductNav } from '@/components/ru/RuLocationProductNav';
 import { RuPublicNavHeader } from '@/components/ru/RuPublicNavHeader';
 import {
   LOCATION_REPORT_PRODUCT_PATH,
-  LOCATION_REPORT_SAMPLE_PDF_PATH,
+  LOCATION_REPORT_SAMPLE_PRINT_PATH,
 } from '@/lib/location/report-state';
 import { YOOKASSA_PENDING_REVIEW_MESSAGE } from '@/lib/payments/yookassa-env';
 
@@ -52,14 +52,15 @@ export default function RuLocationReportSamplePage() {
             </p>
 
             <div className="mt-8 flex flex-wrap gap-4">
-              <BrandPrimaryCta href={LOCATION_REPORT_SAMPLE_PDF_PATH}>
-                Открыть PDF-версию
+              <BrandPrimaryCta href={LOCATION_REPORT_SAMPLE_PRINT_PATH}>
+                Открыть пример отчёта
               </BrandPrimaryCta>
-              <BrandSecondaryCta href={`${LOCATION_REPORT_SAMPLE_PDF_PATH}?download=1`}>
-                Скачать PDF
-              </BrandSecondaryCta>
               <BrandSecondaryCta href={ANALYSIS_HREF}>Оценить объект по адресу</BrandSecondaryCta>
             </div>
+            <p className="mt-4 text-sm text-asi-navy/60 leading-relaxed">
+              Печатная версия открывается в браузере. Готовый PDF-файл доступен после расчёта платного
+              отчёта, когда сервис PDF настроен на сервере.
+            </p>
           </div>
 
           <section className="mt-10 grid gap-4 sm:grid-cols-2 max-w-3xl">
