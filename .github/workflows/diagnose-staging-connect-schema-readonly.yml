@@ -134,4 +134,3 @@ jobs:
           path: staging-connect-schema-diagnostic.txt
           if-no-files-found: error
           retention-days: 7
-)
