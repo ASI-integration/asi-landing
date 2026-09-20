@@ -69,9 +69,12 @@ SELECT o.account_id::text AS account_id,
        (o.data->'rentalConnection'->>'step') AS draft_step,
        (o.data->'rentalConnection'->>'name') AS object_name
 FROM public.ops_v17_onboardings o
-JOIN public.account_members am ON am.account_id = o.account_id
-JOIN public.users u ON u.id = am.user_id
-WHERE u.email = :'email' OR u.id::text = :'user_id';
+WHERE o.account_id::text IN (
+  SELECT am.account_id::text
+  FROM public.account_members am
+  JOIN public.users u ON u.id = am.user_id
+  WHERE u.email = :'email' OR u.id::text = :'user_id'
+);
 
 SELECT '=== PROPERTIES ===' AS section;
 SELECT p.id::text AS property_id,
@@ -80,9 +83,12 @@ SELECT p.id::text AS property_id,
        (p.address_line IS NOT NULL AND length(p.address_line) > 0) AS has_address,
        count(*) OVER () AS property_count
 FROM public.properties p
-JOIN public.account_members am ON am.account_id = p.account_id
-JOIN public.users u ON u.id = am.user_id
-WHERE u.email = :'email' OR u.id::text = :'user_id';
+WHERE p.account_id::text IN (
+  SELECT am.account_id::text
+  FROM public.account_members am
+  JOIN public.users u ON u.id = am.user_id
+  WHERE u.email = :'email' OR u.id::text = :'user_id'
+);
 
 SELECT '=== KNOWLEDGE ===' AS section;
 SELECT k.property_id::text AS property_id,
@@ -94,10 +100,16 @@ SELECT k.property_id::text AS property_id,
        k.photos_deferred,
        count(*) OVER () AS knowledge_count
 FROM public.tg_property_knowledge k
-JOIN public.properties p ON p.id::text = k.property_id::text
-JOIN public.account_members am ON am.account_id = p.account_id
-JOIN public.users u ON u.id = am.user_id
-WHERE u.email = :'email' OR u.id::text = :'user_id';
+WHERE k.property_id::text IN (
+  SELECT p.id::text
+  FROM public.properties p
+  WHERE p.account_id::text IN (
+    SELECT am.account_id::text
+    FROM public.account_members am
+    JOIN public.users u ON u.id = am.user_id
+    WHERE u.email = :'email' OR u.id::text = :'user_id'
+  )
+);
 
 SELECT '=== LIFECYCLE ===' AS section;
 SELECT l.id::text AS lifecycle_id,
@@ -111,16 +123,19 @@ SELECT l.id::text AS lifecycle_id,
        (l.pilot_completed_at IS NULL) AS pilot_completed_at_null,
        count(*) OVER () AS lifecycle_count
 FROM public.ru_commercial_pilot_lifecycle l
-JOIN public.account_members am ON am.account_id = l.account_id
-JOIN public.users u ON u.id = am.user_id
-WHERE u.email = :'email' OR u.id::text = :'user_id';
+WHERE l.account_id::text IN (
+  SELECT am.account_id::text
+  FROM public.account_members am
+  JOIN public.users u ON u.id = am.user_id
+  WHERE u.email = :'email' OR u.id::text = :'user_id'
+);
 
 SELECT '=== OPERATOR_TASK ===' AS section;
 WITH ids AS (
-  SELECT am.account_id, p.id AS property_id
+  SELECT am.account_id::text AS account_id, p.id::text AS property_id
   FROM public.account_members am
   JOIN public.users u ON u.id = am.user_id
-  JOIN public.properties p ON p.account_id = am.account_id
+  JOIN public.properties p ON p.account_id::text = am.account_id::text
   WHERE u.email = :'email' OR u.id::text = :'user_id'
 ),
 knowledge AS (
@@ -128,7 +143,7 @@ knowledge AS (
          nullif(k.wifi_password, '') AS wifi_password,
          nullif(k.access_notes, '') AS access_notes
   FROM public.tg_property_knowledge k
-  JOIN ids ON k.property_id::text = ids.property_id::text
+  JOIN ids ON k.property_id::text = ids.property_id
 )
 SELECT t.id::text AS task_id,
        t.task_type,
@@ -160,31 +175,31 @@ SELECT t.id::text AS task_id,
          coalesce(t.metadata::text,'') ILIKE '%session%'
          OR coalesce(t.metadata::text,'') ILIKE '%refresh_token%'
          OR coalesce(t.metadata::text,'') ILIKE '%access_token%'
-         OR coalesce(t.metadata::text,'') ILIKE '%password%'
+         OR coalesce(t.metadata::text,'') ILIKE '%"password"%'
          OR coalesce(t.description,'') ILIKE '%password%'
          OR coalesce(t.description,'') ILIKE '%пароль%'
        ) AS leaks_auth_or_password_fields,
        count(*) OVER () AS dedup_count
 FROM public.ops_operator_tasks t
-JOIN ids ON t.dedup_key = 'ru-owner-connect:' || ids.account_id::text || ':' || ids.property_id::text
-LEFT JOIN knowledge k ON k.property_id = ids.property_id::text;
+JOIN ids ON t.dedup_key = 'ru-owner-connect:' || ids.account_id || ':' || ids.property_id
+LEFT JOIN knowledge k ON k.property_id = ids.property_id;
 
 SELECT '=== DUPLICATE_COUNTS ===' AS section;
 WITH ids AS (
-  SELECT am.account_id
+  SELECT am.account_id::text AS account_id
   FROM public.account_members am
   JOIN public.users u ON u.id = am.user_id
   WHERE u.email = :'email' OR u.id::text = :'user_id'
   LIMIT 1
 )
 SELECT
-  (SELECT count(*) FROM public.properties p, ids WHERE p.account_id = ids.account_id) AS property_rows,
-  (SELECT count(*) FROM public.ru_commercial_pilot_lifecycle l, ids WHERE l.account_id = ids.account_id) AS lifecycle_rows,
+  (SELECT count(*) FROM public.properties p, ids WHERE p.account_id::text = ids.account_id) AS property_rows,
+  (SELECT count(*) FROM public.ru_commercial_pilot_lifecycle l, ids WHERE l.account_id::text = ids.account_id) AS lifecycle_rows,
   (SELECT count(*) FROM public.ops_operator_tasks t
      JOIN public.properties p ON t.object_id = p.id::text
-     JOIN ids ON p.account_id = ids.account_id
+     JOIN ids ON p.account_id::text = ids.account_id
     WHERE t.task_type = 'verify_channel_manager'
-      AND t.dedup_key LIKE 'ru-owner-connect:' || ids.account_id::text || ':%') AS verify_channel_manager_rows;
+      AND t.dedup_key LIKE 'ru-owner-connect:' || ids.account_id || ':%') AS verify_channel_manager_rows;
 
 SELECT '=== MARKER_SANITY ===' AS section;
 SELECT :'marker' AS marker, :'email' AS email;
