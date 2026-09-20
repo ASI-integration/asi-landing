@@ -193,6 +193,10 @@ ROLLBACK;
 SQL
 )
 
+SQL_FILE="$(mktemp)"
+trap 'rm -f "$SQL_FILE"' EXIT
+printf '%s\n' "$SQL" > "$SQL_FILE"
+
 {
   echo "BEGIN"
   echo "marker=${MARKER}"
@@ -204,7 +208,7 @@ SQL
     -v user_id="$USER_ID" \
     -v marker="$MARKER" \
     -P pager=off \
-    -c "$SQL"
+    -f "$SQL_FILE"
   echo "END"
 } | tee "$ARTIFACT"
 
