@@ -213,8 +213,16 @@ jobs:
           print("STAGING_IDENTITY_CHECK=PASS")
           PY
 
-          VERIFY_BLOCK=$(cat <<'SQL'
-          DO $verify$
+          if [[ ! "$AUTHORIZED_MIGRATION_VERSION" =~ ^[0-9]{14}$ ]]; then
+            echo "::error::Unexpected AUTHORIZED_MIGRATION_VERSION shape."
+            exit 1
+          fi
+          if [[ ! "$ORPHAN_REMOTE_VERSIONS" =~ ^[0-9]{14}(,[0-9]{14}){6}$ ]]; then
+            echo "::error::Unexpected ORPHAN_REMOTE_VERSIONS shape."
+            exit 1
+          fi
+
+          VERIFY_BLOCK="DO \$verify\$
           DECLARE
             v_col text;
             v_constraint text;
@@ -315,47 +323,32 @@ jobs:
               RAISE EXCEPTION 'anon/authenticated must not have SELECT/INSERT/UPDATE/DELETE on public.ru_commercial_pilot_lifecycle';
             END IF;
           END
-          $verify$;
-          SQL
-          )
+          \$verify\$;"
 
-          # Fixed non-secret constants only; write via file so psql :'var' expansion works.
-          if [[ ! "$AUTHORIZED_MIGRATION_VERSION" =~ ^[0-9]{14}$ ]]; then
-            echo "::error::Unexpected AUTHORIZED_MIGRATION_VERSION shape."
-            exit 1
-          fi
-          if [[ ! "$ORPHAN_REMOTE_VERSIONS" =~ ^[0-9]{14}(,[0-9]{14}){6}$ ]]; then
-            echo "::error::Unexpected ORPHAN_REMOTE_VERSIONS shape."
-            exit 1
-          fi
-
-          HISTORY_SNAPSHOT_FILE="$(mktemp)"
-          cat >"$HISTORY_SNAPSHOT_FILE" <<'SQL'
+          HISTORY_SNAPSHOT_SQL="
 SELECT
   (SELECT count(*)::bigint FROM supabase_migrations.schema_migrations) AS schema_migrations_count,
   EXISTS (
     SELECT 1
     FROM supabase_migrations.schema_migrations
-    WHERE version = :'target_version'
+    WHERE version = '${AUTHORIZED_MIGRATION_VERSION}'
   ) AS target_version_recorded,
   (
     SELECT coalesce(string_agg(version, ',' ORDER BY version), '')
     FROM supabase_migrations.schema_migrations
-    WHERE version = ANY (string_to_array(:'orphan_csv', ','))
+    WHERE version = ANY (string_to_array('${ORPHAN_REMOTE_VERSIONS}', ','))
   ) AS orphan_versions_present,
   (to_regclass('public.ru_commercial_pilot_lifecycle') IS NOT NULL) AS table_exists;
-SQL
+"
 
           snapshot_history() {
             psql -X "$STAGING_DATABASE_URL" \
               --no-psqlrc \
               --set ON_ERROR_STOP=1 \
-              --set "target_version=${AUTHORIZED_MIGRATION_VERSION}" \
-              --set "orphan_csv=${ORPHAN_REMOTE_VERSIONS}" \
               --tuples-only \
               --no-align \
               --field-separator='|' \
-              --file "$HISTORY_SNAPSHOT_FILE"
+              --command "$HISTORY_SNAPSHOT_SQL"
           }
 
           echo "=== PREFLIGHT_HISTORY_SNAPSHOT ==="
