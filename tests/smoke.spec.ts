@@ -177,9 +177,9 @@ test.describe('C. Navigation flows', () => {
     expect(page.url()).toContain('otchet-po-dohodnosti-obektov');
   });
 
-  test('Contacts link is reachable from a landing page that exposes it', async ({ page }) => {
+  test('Contacts link is reachable from footer legal navigation', async ({ page }) => {
     await page.goto('/ru/otchet-po-dohodnosti-obektov', { waitUntil: 'domcontentloaded' });
-    const contactLink = page.locator('header').getByRole('link', { name: /Контакты/i });
+    const contactLink = page.locator('footer').getByRole('link', { name: /Контакты/i });
     await expect(contactLink.first()).toBeVisible();
     const href = await contactLink.first().getAttribute('href');
     expect(href).toBeTruthy();
