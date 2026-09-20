@@ -122,3 +122,5 @@ jobs:
           path: staging-e2e-ru-connect-row-diagnostic.txt
           if-no-files-found: error
           retention-days: 7
+
+# retrigger 2026-09-20T16:14:11.7159973+03:00
