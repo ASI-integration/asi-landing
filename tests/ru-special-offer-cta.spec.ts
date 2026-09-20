@@ -104,12 +104,13 @@ test.describe('RU homepage special-offer CTA click-through (read-only)', () => {
       await expectStatusOk(request, origin, href!, `nav ${label}`);
     }
 
-    await page
-      .locator('header nav')
-      .getByRole('link', { name: /Оценка локации/i })
-      .click();
-    await page.waitForLoadState('domcontentloaded');
-    expect(page.url()).toContain('/ru/otchet-po-dohodnosti-obektov');
+    const locationLink = journeyNav.getByRole('link', { name: /Оценка локации/i });
+    await expect(locationLink).toBeVisible();
+    await expect(locationLink).toHaveAttribute('href', '/ru/otchet-po-dohodnosti-obektov');
+    await Promise.all([
+      page.waitForURL(/\/ru\/otchet-po-dohodnosti-obektov/),
+      locationLink.click(),
+    ]);
 
     for (const path of [
       '/ru/otchet-po-dohodnosti-obektov',
