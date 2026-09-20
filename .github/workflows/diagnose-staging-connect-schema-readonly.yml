@@ -108,6 +108,7 @@ jobs:
           psql --version
 
       - name: Inspect staging connect schema read-only
+        id: inspect
         shell: bash
         env:
           STAGING_SUPABASE_PROJECT_REF: ${{ secrets.STAGING_SUPABASE_PROJECT_REF }}
@@ -128,6 +129,7 @@ jobs:
           echo "=== DIAGNOSTIC_ARTIFACT_END ==="
 
       - name: Upload sanitized diagnostic artifact
+        if: ${{ always() && hashFiles('staging-connect-schema-diagnostic.txt') != '' }}
         uses: actions/upload-artifact@v4
         with:
           name: staging-connect-schema-diagnostic
