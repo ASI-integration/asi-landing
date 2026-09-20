@@ -119,21 +119,28 @@ jobs:
           fi
 
           echo "[section] journal window ${WINDOW_SINCE} .. ${WINDOW_UNTIL}"
-          if journalctl -u "$SERVICE" --since "$WINDOW_SINCE" --until "$WINDOW_UNTIL" -o cat >/tmp/_signup_journal_window.txt 2>/tmp/_signup_journal_err.txt; then
-            grep -E '\[Signup\]|SIGNUP_FAILED|Supabase|Supabase env vars not configured' /tmp/_signup_journal_window.txt \
-              | sed -E \
-                  -e 's/("?password_hash"?[[:space:]]*[:=][[:space:]]*)"[^"]*"/\1"[REDACTED]"/gI' \
-                  -e 's/("?password"?[[:space:]]*[:=][[:space:]]*)"[^"]*"/\1"[REDACTED]"/gI' \
-                  -e 's/("?cookie"?[[:space:]]*[:=][[:space:]]*)"[^"]*"/\1"[REDACTED]"/gI' \
-                  -e 's/("?authorization"?[[:space:]]*[:=][[:space:]]*)"[^"]*"/\1"[REDACTED]"/gI' \
-                  -e 's/(postgres(ql)?:\/\/)[^[:space:]"]+/\1[REDACTED]/gI' \
-                  -e 's/("?[a-z_]*token[a-z_]*"?[[:space:]]*[:=][[:space:]]*)"[^"]*"/\1"[REDACTED]"/gI' \
-                  -e 's/("?[a-z_]*secret[a-z_]*"?[[:space:]]*[:=][[:space:]]*)"[^"]*"/\1"[REDACTED]"/gI' \
-                  -e 's/("?[a-z_]*key[a-z_]*"?[[:space:]]*[:=][[:space:]]*)"[^"]*"/\1"[REDACTED]"/gI' \
-              | head -n 200 || echo "[journal] no matching [Signup]/SIGNUP_FAILED/Supabase lines in window"
+          JOURNAL_STATUS=0
+          JOURNAL_OUTPUT="$(journalctl -u "$SERVICE" --since "$WINDOW_SINCE" --until "$WINDOW_UNTIL" -o cat 2>/dev/null)" || JOURNAL_STATUS=$?
+
+          if [[ $JOURNAL_STATUS -eq 0 ]]; then
+            FILTERED="$(printf '%s\n' "$JOURNAL_OUTPUT" | grep -E '\[Signup\]|SIGNUP_FAILED|Supabase|Supabase env vars not configured' || true)"
+            if [[ -n "$FILTERED" ]]; then
+              printf '%s\n' "$FILTERED" \
+                | sed -E \
+                    -e 's/("?password_hash"?[[:space:]]*[:=][[:space:]]*)"[^"]*"/\1"[REDACTED]"/gI' \
+                    -e 's/("?password"?[[:space:]]*[:=][[:space:]]*)"[^"]*"/\1"[REDACTED]"/gI' \
+                    -e 's/("?cookie"?[[:space:]]*[:=][[:space:]]*)"[^"]*"/\1"[REDACTED]"/gI' \
+                    -e 's/("?authorization"?[[:space:]]*[:=][[:space:]]*)"[^"]*"/\1"[REDACTED]"/gI' \
+                    -e 's/(postgres(ql)?:\/\/)[^[:space:]"]+/\1[REDACTED]/gI' \
+                    -e 's/("?[a-z_]*token[a-z_]*"?[[:space:]]*[:=][[:space:]]*)"[^"]*"/\1"[REDACTED]"/gI' \
+                    -e 's/("?[a-z_]*secret[a-z_]*"?[[:space:]]*[:=][[:space:]]*)"[^"]*"/\1"[REDACTED]"/gI' \
+                    -e 's/("?[a-z_]*key[a-z_]*"?[[:space:]]*[:=][[:space:]]*)"[^"]*"/\1"[REDACTED]"/gI' \
+                | head -n 200
+            else
+              echo "[journal] no matching [Signup]/SIGNUP_FAILED/Supabase lines in window"
+            fi
           else
-            echo "[journal] journalctl not readable by ${REMOTE_USER} for ${SERVICE}:"
-            cat /tmp/_signup_journal_err.txt 2>/dev/null || true
+            echo "[journal] journalctl read failed for ${SERVICE} (exit=${JOURNAL_STATUS}); access may be restricted for ${REMOTE_USER}"
           fi
-          rm -f /tmp/_signup_journal_window.txt /tmp/_signup_journal_err.txt
+          unset JOURNAL_OUTPUT FILTERED
           REMOTE
