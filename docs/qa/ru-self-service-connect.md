@@ -35,3 +35,23 @@ Baseline: `e438803a5dfe167198b36670984decd5bea381c0`.
 ## Авторизация изменений
 
 Исходный запрос владельца прямо разрешает заменить первый экран, CTA, условия группы и путь подключения. Это основание для изменений red-категории public UX/commercial flow; дополнительное разрешение на эти же изменения не требуется. Оно не распространяется на deploy или merge. Старые тесты текста заменены проверками утверждённого пути, количества/назначения CTA и условий; остальные acceptance guards сохранены.
+
+
+## Исправление schema blocker и передача оператору (PR #318)
+
+База исправления: `8cedcb3a863aa9a3a310ed075e2e17a9354bcfcf`. Последующие изменения UI из этой ветки сохранены. Homepage/copy и компоненты формы не менялись.
+
+- В signup/login/Google token/Google callback восстановлен выбор по `getIsRuHost()`: RU → `ruCommercial`, international → прежний `deferTrial`.
+- RU account создаётся с name/plan_code и owner membership. Не передаются lifecycle_status, trial_started_at, trial_ends_at; не создаётся subscriptions clock. Повторный RU login также не пишет таймер. Дефолт схемы subscription_status не является clock и не используется как RU commercial SSOT.
+- Старый `/api/auth/onboarding` приведён к тому же RU-правилу, чтобы через него нельзя было случайно запустить 14 дней при регистрации. International ветка сохранена.
+- Завершение анкеты создаёт `verify_channel_manager` в существующей `ops_operator_tasks`, видимой оператору в operational board. Задача содержит account/property/manager/channel summary; Wi-Fi и инструкции доступа в неё не копируются. Повторная отправка использует существующий dedup lookup и обновляет описание открытой задачи, не сбрасывая работу оператора. Это минимальный handoff, не полный автоматический bridge. Гарантию конкурентной уникальности сверх существующего repository здесь не добавляли.
+- Ошибка создания задачи возвращает ошибку сохранения: wizard не переходит в завершённый шаг; повторная попытка проверена.
+- Удалена запись `ops_v17.data.channelManager` из owner intake: анкета не создаёт параллельный статус подключения. SSOT подключения не меняется; RU pilot clock остаётся в `ru_commercial_pilot_lifecycle`.
+
+Проверки исправления: focused/auth **39/39** в 5 файлах; `test:location-golden` **457/457** в 76 файлах; typecheck PASS; полный lint PASS с существующим предупреждением `ThemeProvider.tsx:49` (useMemo dependency); diff-check PASS. Первая сборка скомпилировала код и 134 страницы, но упала на очистке `.next/export` (ENOTEMPTY); выполнен повтор после очистки только сгенерированного каталога.
+
+Regression fixture по умолчанию отклоняет любую запись accounts.lifecycle_status с PGRST204. В этих условиях проходят RU signup, membership, login и оба Google-входа. Отдельно проверено прежнее international lifecycle_status=signup, без trial clock. Все БД/session/provider boundary в тестах изолированы; production schema не менялась и live signup этим отчётом не подтверждается.
+
+Миграции, production, merge, deploy, секреты и реальные внешние сообщения не затронуты. Расширенные auth/location проверки явно запрошены владельцем в задаче исправления.
+
+Финальная сборка: **PASS**, `npm run build`, exit 0, 134 страницы после полной очистки сгенерированного `.next`. Runtime/конфигурация/зависимости проекта не менялись. Implementation commit: `7ba5f47ff04e6cdea503e996d93c8270ee298848`. Исправление auth blocker и минимальный operator handoff завершены; live E2E остаётся отдельной непроведённой проверкой исходной полной приёмки.

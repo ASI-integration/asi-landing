@@ -3,17 +3,16 @@
   "taskId": "ru-self-service-connect",
   "status": "PARTIAL",
   "branch": "feat/ru-self-service-connect",
-  "commitSha": "b8ef1425f1cd0aad055fedc2fc0be2a48802fb91",
+  "commitSha": "7ba5f47ff04e6cdea503e996d93c8270ee298848",
   "prUrl": "https://github.com/ASI-integration/asi-landing/pull/318",
   "changedFiles": [
     "docs/qa/ru-self-service-connect.md",
     "docs/qa/ru-self-service-connect.result.json",
-    "package.json",
-    "scripts/dev.mjs",
     "src/app/api/auth/google/callback/route.ts",
     "src/app/api/auth/google/route.ts",
     "src/app/api/auth/google/start/route.ts",
     "src/app/api/auth/login/route.ts",
+    "src/app/api/auth/onboarding/route.ts",
     "src/app/api/auth/signup/route.ts",
     "src/app/api/cabinet/connect/route.ts",
     "src/app/connect/page.tsx",
@@ -25,48 +24,56 @@
     "src/components/OnboardingPageContent.tsx",
     "src/components/dashboard/RentalConnectionFlow.tsx",
     "src/components/ru/ConnectCta.tsx",
+    "src/config/__tests__/ru-beta-spine.test.ts",
     "src/lib/accounts.ts",
     "src/lib/auth/app-url.ts",
+    "src/lib/location/__tests__/ru-location-demo-public-ui.test.ts",
     "src/lib/ops-v17/types.ts",
     "src/lib/rental-connect/__tests__/journey.test.ts",
     "src/lib/rental-connect/model.ts",
-    "src/lib/rental-connect/service.ts"
+    "src/lib/rental-connect/service.ts",
+    "tests/ru-brand-foundation.spec.ts"
   ],
   "checks": [
     {
-      "name": "focused tests",
+      "name": "focused/auth",
       "status": "PASS",
-      "evidence": "30/30; 3 files"
+      "evidence": "39/39 tests, 5 files, includes no-lifecycle_status RU schema fixture, international auth and operator handoff retry"
     },
     {
-      "name": "touched ESLint",
+      "name": "location golden",
       "status": "PASS",
-      "evidence": "exit 0"
+      "evidence": "457/457 tests, 76 files; explicitly requested"
+    },
+    {
+      "name": "lint",
+      "status": "PASS",
+      "evidence": "npm run lint; pre-existing ThemeProvider.tsx:49 hook dependency warning"
     },
     {
       "name": "typecheck",
       "status": "PASS",
-      "evidence": "exit 0"
+      "evidence": "npm run typecheck exit 0"
     },
     {
       "name": "production build",
       "status": "PASS",
-      "evidence": "exit 0; 134 static pages"
+      "evidence": "npm run build exit 0, 134 pages; earlier ENOTEMPTY resolved by cleaning generated .next"
     },
     {
       "name": "diff check",
       "status": "PASS",
-      "evidence": "exit 0"
+      "evidence": "git diff --check and staged check"
     },
     {
-      "name": "desktop/mobile CTA",
+      "name": "homepage UX preservation",
       "status": "PASS",
-      "evidence": "3 desktop clicks, responsive 360/390, public mobile connect"
+      "evidence": "No page/component changes in blocker fix"
     },
     {
       "name": "live auth/database E2E",
       "status": "SKIP",
-      "evidence": "No configured local test database/OAuth secrets; tested isolated boundaries only"
+      "evidence": "No live credentials/database mutations; isolated regression verifies schema compatibility"
     }
   ],
   "sideEffects": {
@@ -79,7 +86,7 @@
     "approvedUx": false
   },
   "blockers": [
-    "Live browser signup/OAuth and persistence acceptance needs a configured non-production environment."
+    "Auth/lifecycle blocker and operator handoff are fixed and locally verified. Original live browser/DB acceptance remains unperformed."
   ],
-  "ownerDecision": "Requested public UX and commercial-flow changes explicitly authorized in task; no deploy or merge. sideEffects records external effects; proposed UX changes are in this branch."
+  "ownerDecision": null
 }
