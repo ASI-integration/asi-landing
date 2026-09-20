@@ -1,0 +1,139 @@
+# TEMPORARY / diagnostic-only, adapted from diagnose-initial-sync-recovery-production-env.yml.
+# That workflow assumes PM2; production is systemd-managed (asi-landing.service).
+# Read-only: process env-key PRESENCE/NONEMPTY (never values) + sanitized journal window
+# around the SIGNUP_FAILED incident. No mutation, no restart, no deploy, no migration.
+name: Diagnose Production Signup (systemd, Read-Only)
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm_read_only_diagnostic:
+        description: Type DIAGNOSE_PRODUCTION_SIGNUP_SYSTEMD_READ_ONLY to run
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: diagnose-production-signup-systemd-readonly
+  cancel-in-progress: false
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 15
+    steps:
+      - name: Validate owner gate phrase
+        shell: bash
+        run: |
+          set -euo pipefail
+          REQUIRED="DIAGNOSE_PRODUCTION_SIGNUP_SYSTEMD_READ_ONLY"
+          PROVIDED="${{ github.event.inputs.confirm_read_only_diagnostic }}"
+          if [[ "$PROVIDED" != "$REQUIRED" ]]; then
+            echo "::error::Confirmation phrase mismatch. Refusing to run diagnostics."
+            exit 1
+          fi
+
+      - name: Start SSH agent with production key
+        uses: webfactory/ssh-agent@dc588b651fe13675774614f8e6a936a468676387 # v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.VPS_SSH_KEY }}
+          log-public-key: false
+
+      - name: Read-only systemd process, env-key presence, and journal window
+        shell: bash
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_PORT: ${{ secrets.VPS_PORT }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${VPS_HOST:-}" ]]; then
+            echo "::error::Missing VPS_HOST"
+            exit 1
+          fi
+          if [[ -z "${SSH_AUTH_SOCK:-}" || ! -S "$SSH_AUTH_SOCK" ]]; then
+            echo "::error::SSH agent socket is unavailable"
+            exit 1
+          fi
+          if ! ssh-add -l >/dev/null 2>&1; then
+            echo "::error::No SSH identity is loaded"
+            exit 1
+          fi
+
+          REMOTE_USER="project_ayfaar"
+          REMOTE_PORT="${VPS_PORT:-22}"
+
+          SSH_OPTS=(
+            -p "$REMOTE_PORT"
+            -o "IdentityAgent=${SSH_AUTH_SOCK}"
+            -o IdentitiesOnly=no
+            -o BatchMode=yes
+            -o StrictHostKeyChecking=accept-new
+            -o ConnectTimeout=20
+          )
+
+          ssh "${SSH_OPTS[@]}" "${REMOTE_USER}@${VPS_HOST}" "bash -s" <<'REMOTE'
+          set -euo pipefail
+
+          SERVICE="asi-landing.service"
+          KEYS=(
+            "SUPABASE_URL"
+            "NEXT_PUBLIC_SUPABASE_URL"
+            "SUPABASE_SERVICE_ROLE_KEY"
+            "SESSION_SECRET"
+            "HOST_VARIANT"
+          )
+          WINDOW_SINCE="2026-09-20T17:12:00Z"
+          WINDOW_UNTIL="2026-09-20T17:22:00Z"
+
+          echo "[section] systemd service identity"
+          systemctl show "$SERVICE" -p ActiveState -p SubState -p MainPID -p FragmentPath -p WorkingDirectory -p EnvironmentFiles 2>&1 || true
+
+          MAIN_PID="$(systemctl show "$SERVICE" -p MainPID --value 2>/dev/null || echo 0)"
+          echo "[systemd] service=$SERVICE main_pid=$MAIN_PID"
+
+          echo "[section] process env-key presence (values never printed)"
+          if [[ "$MAIN_PID" != "0" && -r "/proc/$MAIN_PID/environ" ]]; then
+            ENVIRON_KEYS="$(tr '\0' '\n' < "/proc/$MAIN_PID/environ" 2>/dev/null | sed -nE 's/^([A-Za-z_][A-Za-z0-9_]*)=.*/\1/p')"
+            for key in "${KEYS[@]}"; do
+              line="$(tr '\0' '\n' < "/proc/$MAIN_PID/environ" 2>/dev/null | grep -E "^${key}=" || true)"
+              if [[ -z "$line" ]]; then
+                if printf '%s\n' "$ENVIRON_KEYS" | grep -qx "$key"; then
+                  printf 'key=%s present=yes nonempty=unknown\n' "$key"
+                else
+                  printf 'key=%s present=no nonempty=no\n' "$key"
+                fi
+                continue
+              fi
+              value="${line#*=}"
+              if [[ -n "$value" ]]; then
+                printf 'key=%s present=yes nonempty=yes\n' "$key"
+              else
+                printf 'key=%s present=yes nonempty=no\n' "$key"
+              fi
+            done
+          else
+            echo "[proc-environ] MainPID environ not readable by ${REMOTE_USER}; presence check skipped (reporting fact, not bypassing permissions)"
+          fi
+
+          echo "[section] journal window ${WINDOW_SINCE} .. ${WINDOW_UNTIL}"
+          if journalctl -u "$SERVICE" --since "$WINDOW_SINCE" --until "$WINDOW_UNTIL" -o cat >/tmp/_signup_journal_window.txt 2>/tmp/_signup_journal_err.txt; then
+            grep -E '\[Signup\]|SIGNUP_FAILED|Supabase|Supabase env vars not configured' /tmp/_signup_journal_window.txt \
+              | sed -E \
+                  -e 's/("?password_hash"?[[:space:]]*[:=][[:space:]]*)"[^"]*"/\1"[REDACTED]"/gI' \
+                  -e 's/("?password"?[[:space:]]*[:=][[:space:]]*)"[^"]*"/\1"[REDACTED]"/gI' \
+                  -e 's/("?cookie"?[[:space:]]*[:=][[:space:]]*)"[^"]*"/\1"[REDACTED]"/gI' \
+                  -e 's/("?authorization"?[[:space:]]*[:=][[:space:]]*)"[^"]*"/\1"[REDACTED]"/gI' \
+                  -e 's/(postgres(ql)?:\/\/)[^[:space:]"]+/\1[REDACTED]/gI' \
+                  -e 's/("?[a-z_]*token[a-z_]*"?[[:space:]]*[:=][[:space:]]*)"[^"]*"/\1"[REDACTED]"/gI' \
+                  -e 's/("?[a-z_]*secret[a-z_]*"?[[:space:]]*[:=][[:space:]]*)"[^"]*"/\1"[REDACTED]"/gI' \
+                  -e 's/("?[a-z_]*key[a-z_]*"?[[:space:]]*[:=][[:space:]]*)"[^"]*"/\1"[REDACTED]"/gI' \
+              | head -n 200 || echo "[journal] no matching [Signup]/SIGNUP_FAILED/Supabase lines in window"
+          else
+            echo "[journal] journalctl not readable by ${REMOTE_USER} for ${SERVICE}:"
+            cat /tmp/_signup_journal_err.txt 2>/dev/null || true
+          fi
+          rm -f /tmp/_signup_journal_window.txt /tmp/_signup_journal_err.txt
+          REMOTE
