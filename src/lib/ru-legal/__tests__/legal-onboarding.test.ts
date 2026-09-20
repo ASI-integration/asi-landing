@@ -104,7 +104,7 @@ function acceptance(type: 'offer' | 'personal_data_consent', version: string) {
     accepted_by_user_id: 'owner-1',
     document_type: type,
     document_version: version,
-    document_sha256: 'a'.repeat(64),
+    document_sha256: ruLegalDocumentSha256(RU_LEGAL_DOCUMENTS[type]),
     accepted_at: '2026-09-20T20:30:00.000Z',
   };
 }
@@ -173,6 +173,18 @@ describe('RU legal onboarding contract', () => {
     expect(fixture.rows.ru_legal_acceptances).toHaveLength(0);
   });
 
+  it('enforces offer-before-personal-data-consent on the API, not only in the UI', async () => {
+    const response = await acceptLegal(request({ documentType: 'personal_data_consent' }));
+    expect(response.status).toBe(428);
+    expect((await response.json()).code).toBe('RU_LEGAL_OFFER_REQUIRED');
+    expect(fixture.rows.ru_legal_acceptances).toHaveLength(0);
+
+    fixture.rows.ru_legal_acceptances.push(acceptance('offer', '1.0'));
+    const accepted = await acceptLegal(request({ documentType: 'personal_data_consent' }));
+    expect(accepted.status).toBe(200);
+    expect(fixture.rows.ru_legal_acceptances).toHaveLength(2);
+  });
+
   it('requires both current documents and treats one acceptance as insufficient', async () => {
     fixture.rows.ru_legal_acceptances.push(acceptance('offer', '1.0'));
     expect((await getRuLegalOnboardingStateForUser('owner-1'))?.complete).toBe(false);
@@ -180,6 +192,15 @@ describe('RU legal onboarding contract', () => {
     const response = await saveConnection(request({ step: 0, values: { manager: 'bnovo', otherManager: '' } }));
     expect(response.status).toBe(428);
     expect((await response.json()).code).toBe('LEGAL_ACCEPTANCE_REQUIRED');
+  });
+
+  it('requires reacceptance when the stored hash does not match the current canonical document', async () => {
+    const stale = acceptance('offer', '1.0');
+    stale.document_sha256 = 'a'.repeat(64);
+    fixture.rows.ru_legal_acceptances.push(stale, acceptance('personal_data_consent', '1.0'));
+    const state = await getRuLegalOnboardingStateForUser('owner-1');
+    expect(state?.accepted.offer).toBeUndefined();
+    expect(state?.complete).toBe(false);
   });
 
   it('requires reacceptance when only old document versions exist', async () => {

@@ -47,7 +47,7 @@ export async function getRuLegalOnboardingStateForAccount(
 ): Promise<RuLegalOnboardingState> {
   const { data, error } = await supabase
     .from('ru_legal_acceptances')
-    .select('document_type, document_version, accepted_at')
+    .select('document_type, document_version, document_sha256, accepted_at')
     .eq('account_id', accountId)
     .in('document_type', ['offer', 'personal_data_consent']);
   if (error) throw new Error(`[ru-legal] acceptance lookup failed: ${error.message}`);
@@ -56,7 +56,7 @@ export async function getRuLegalOnboardingStateForAccount(
   for (const row of data ?? []) {
     const type = row.document_type as RuLegalDocumentType;
     const current = RU_LEGAL_DOCUMENTS[type];
-    if (current && row.document_version === current.version) {
+    if (current && row.document_version === current.version && row.document_sha256 === ruLegalDocumentSha256(current)) {
       accepted[type] = {
         documentType: type,
         documentVersion: row.document_version,
@@ -95,6 +95,9 @@ export async function acceptCurrentRuLegalDocument(input: {
 
   const document = RU_LEGAL_DOCUMENTS[input.documentType];
   const existing = await getRuLegalOnboardingStateForAccount(membership.account_id, membership.role);
+  if (input.documentType === 'personal_data_consent' && !existing.accepted.offer) {
+    throw new Error('RU_LEGAL_OFFER_REQUIRED');
+  }
   const current = existing.accepted[input.documentType];
   if (current) return current;
 

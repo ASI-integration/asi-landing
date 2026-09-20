@@ -52,6 +52,9 @@ export async function POST(req: Request) {
     if (code === 'RU_LEGAL_OWNER_REQUIRED') {
       return NextResponse.json({ ok: false, code }, { status: 403 });
     }
+    if (code === 'RU_LEGAL_OFFER_REQUIRED') {
+      return NextResponse.json({ ok: false, code }, { status: 428 });
+    }
     if (code === 'RU_ACCOUNT_MEMBERSHIP_REQUIRED') {
       return NextResponse.json({ ok: false, code }, { status: 403 });
     }

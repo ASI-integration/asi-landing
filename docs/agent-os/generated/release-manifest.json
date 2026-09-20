@@ -2,15 +2,15 @@
   "schemaVersion": "asi.agent-os.release-manifest.v1",
   "repository": "ASI-integration/asi-landing",
   "sourceBranch": "main",
-  "baselineSha": "aa1fc405f6838561d49218bd22df43da93570820",
-  "generatedAt": "2026-09-18T10:50:40.932Z",
+  "baselineSha": "7ef31c317bee3cc1b93ed587705dea79a8f4088d",
+  "generatedAt": "2026-09-20T22:01:35.275Z",
   "package": {
     "name": "landing-asi",
     "version": "0.1.0"
   },
   "migrations": {
     "directory": "supabase/migrations",
-    "count": 118
+    "count": 119
   },
   "activeGates": [
     {
