@@ -34,7 +34,7 @@ describe('RU owner connection journey — approved 2026-09-19', () => {
 
   it('states community terms with a readiness gate and optional continuation', () => {
     const html = render();
-    for (const term of ['Стрегуново', '0 ₽', '14 дней', '1 000 ₽', '12 месяцев', 'с момента перехода на платный режим', 'Без автоматического перехода на платный тариф', 'только после полной готовности']) expect(html).toContain(term);
+    for (const term of ['закрытой группы Ярослава Стригунова', '0 ₽', '14 дней', '1 000 ₽', '12 месяцев', 'с момента перехода на платный режим', 'Без автоматического перехода на платный тариф', 'только после полной готовности']) expect(html).toContain(term);
     expect(html.toLowerCase()).not.toContain('скидк');
   });
 
@@ -43,7 +43,7 @@ describe('RU owner connection journey — approved 2026-09-19', () => {
     expect(html).toContain('Сейчас — пилот');
     expect(html).toContain('ASI создаётся');
     expect(html).toContain('не публикуется на площадках автоматически');
-    expect(html).toContain('вопрос передаётся вам');
+    expect(html).toContain('система сразу передаёт диалог вам');
     expect(html).toContain('Shiro');
     expect(html).toContain('bg-asi-ivory');
     expect(html).not.toMatch(/95%|99%|полностью автономн|заменяет сотрудников|автоматическая синхронизация/);
