@@ -1,3 +1,4 @@
+import { getIsRuHost } from '@/lib/getIsRuHost';
 import { NextResponse } from 'next/server';
 import crypto from 'crypto';
 import { OAuth2Client } from 'google-auth-library';
@@ -81,7 +82,7 @@ export async function POST(req: Request) {
     await session.save();
 
     await ensureAccountForUser(
-      { userId: userId!, email, selectedPlan: plan, deferTrial: true }
+      { userId: userId!, email, selectedPlan: plan, ...(await getIsRuHost() ? { ruCommercial: true } : { deferTrial: true }) }
     );
 
     return NextResponse.json({ ok: true, userId });

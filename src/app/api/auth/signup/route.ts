@@ -1,3 +1,4 @@
+import { getIsRuHost } from '@/lib/getIsRuHost';
 import { NextResponse } from 'next/server';
 import bcrypt from 'bcryptjs';
 import { supabase } from '@/lib/supabase';
@@ -65,7 +66,7 @@ export async function POST(req: Request) {
     }
 
     await ensureAccountForUser(
-      { userId: user.id, email: user.email, selectedPlan: plan, deferTrial: true }
+      { userId: user.id, email: user.email, selectedPlan: plan, ...(await getIsRuHost() ? { ruCommercial: true } : { deferTrial: true }) }
     );
 
     const session = await getSession();

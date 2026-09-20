@@ -1,5 +1,6 @@
 import 'server-only';
 import { createHash } from 'node:crypto';
+import { createOpsOperatorTask } from '@/lib/ops-board/repository';
 import { supabase } from '@/lib/supabase';
 import { loadOnboarding, saveOnboardingStep } from '@/lib/ops-v17/service';
 import { getPilotReadinessForProperty, upsertPilotObjectKnowledge } from '@/lib/pilot-readiness/repository';
@@ -63,12 +64,30 @@ export async function saveConnection(accountId: string, actorId: string, step: n
     // The existing RU commercial lifecycle owns the clock. Intake only enters setup.
     const pilot = await beginSetup(pilotDeps(), accountId, propertyId);
     if (!pilot.ok) throw new Error('Не удалось подготовить проверку объекта. Повторите попытку.');
+
+    // Intake summary only: the existing channel-manager connection remains authoritative.
+    // Reuse the operator queue and its object-scoped deduplication; never send credentials.
+    const summary = [
+      `Аккаунт: ${accountId}`, `Объект: ${propertyId} — ${draft.name}`,
+      `Менеджер каналов: ${draft.manager}${draft.otherManager ? ` (${draft.otherManager})` : ''}`,
+      `Площадки: ${draft.channels.map((code) => BOOKING_SITES.find((site) => site.value === code)?.label).join(', ')}`,
+      'Анкета владельца заполнена. Проверьте доступы и продолжите подключение в существующем контуре Менеджера Каналов.',
+    ].join('\n');
+    const handoff = await createOpsOperatorTask({
+      taskType: 'verify_channel_manager', taskStatus: 'needs_operator', source: 'channel_manager',
+      objectId: propertyId, objectLabel: draft.name,
+      dedupKey: `ru-owner-connect:${accountId}:${propertyId}`,
+      description: summary, lastEventText: 'Владелец заполнил данные для подключения',
+      metadata: { account_id: accountId, property_id: propertyId, actor_id: actorId, integration: 'ru_owner_connect' },
+      updateIfExists: { description: summary },
+    });
+    if (!handoff.ok || !handoff.task) throw new Error('Не удалось передать данные оператору. Повторите попытку.');
   }
 
   await saveOnboardingStep({
     accountId, actorId,
     step: step === 0 ? 'channel_manager' : step === 1 ? 'reservations' : 'verification',
-    patch: { rentalConnection: draft, ...(step === 0 ? { channelManager: { ...saved?.data.channelManager, provider: draft.manager, status: 'configuration_required' as const } } : {}) },
+    patch: { rentalConnection: draft },
   });
   return readConnection(accountId);
 }

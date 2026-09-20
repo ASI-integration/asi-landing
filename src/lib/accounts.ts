@@ -29,12 +29,15 @@ export async function ensureAccountForUser(opts: {
    * is created with lifecycle_status='signup' instead; the 14-day trial is
    * later activated by lib/billing/account-lifecycle.ts once integration is
    * accepted, never here. Ignored (no behavior change) when false/omitted —
-   * existing RU and legacy callers are unaffected.
+   * legacy callers are unaffected. RU auth must use ruCommercial instead.
    */
   deferTrial?: boolean;
+  /** RU pilot state and clock live only in ru_commercial_pilot_lifecycle. */
+  ruCommercial?: boolean;
 }): Promise<EnsureAccountResult> {
   const plan = normalizePlan(opts.selectedPlan);
-  const deferTrial = opts.deferTrial === true;
+  const ruCommercial = opts.ruCommercial === true;
+  const deferTrial = ruCommercial || opts.deferTrial === true;
   const trialDays = typeof opts.trialDays === 'number' && opts.trialDays > 0 ? opts.trialDays : 7;
 
   // 1) Try to find existing membership -> account
@@ -87,7 +90,9 @@ export async function ensureAccountForUser(opts: {
     const { data: account, error: accountErr } = await supabase
       .from('accounts')
       .insert(
-        deferTrial
+        ruCommercial
+          ? { name: accountName, plan_code: plan }
+          : deferTrial
           ? {
               name: accountName,
               plan_code: plan,

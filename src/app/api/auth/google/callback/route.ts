@@ -1,3 +1,4 @@
+import { getIsRuHost } from '@/lib/getIsRuHost';
 import { NextResponse } from 'next/server';
 import { OAuth2Client } from 'google-auth-library';
 import bcrypt from 'bcryptjs';
@@ -154,7 +155,7 @@ export async function GET(req: Request) {
     });
 
     await ensureAccountForUser(
-      { userId: userId!, email, selectedPlan: plan, deferTrial: true }
+      { userId: userId!, email, selectedPlan: plan, ...(await getIsRuHost() ? { ruCommercial: true } : { deferTrial: true }) }
     );
 
     console.info('[GoogleOAuth][callback] redirecting to dashboard', {

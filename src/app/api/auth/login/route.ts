@@ -1,3 +1,4 @@
+import { getIsRuHost } from '@/lib/getIsRuHost';
 import { NextResponse } from 'next/server';
 import bcrypt from 'bcryptjs';
 import { supabase } from '@/lib/supabase';
@@ -40,7 +41,7 @@ export async function POST(req: Request) {
 
     // Login never starts or resets a pilot; readiness owns that transition.
     await ensureAccountForUser(
-      { userId: user.id, email: user.email, selectedPlan: plan, deferTrial: true }
+      { userId: user.id, email: user.email, selectedPlan: plan, ...(await getIsRuHost() ? { ruCommercial: true } : { deferTrial: true }) }
     );
 
     return NextResponse.json({ ok: true, userId: user.id });

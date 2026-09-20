@@ -5,9 +5,12 @@ import { NextResponse } from 'next/server';
 const fixture = vi.hoisted(() => ({
   rows: {} as Record<string, Record<string, any>[]>,
   failTable: '',
+  ruHost: true,
+  noLifecycleColumn: true,
   session: { userId: '', email: '', googleOauthState: undefined as string | undefined, googleOauthPlan: undefined as unknown, googleOauthRedirect: undefined as string | undefined, save: vi.fn(async () => {}) },
 }));
 
+vi.mock('@/lib/getIsRuHost', () => ({ getIsRuHost: async () => fixture.ruHost }));
 vi.mock('server-only', () => ({}));
 vi.mock('@/lib/auth', () => ({ getSession: async () => fixture.session, isSessionSecretConfigured: () => true }));
 vi.mock('@/lib/telegram', () => ({ sendTelegramMessage: vi.fn(async () => {}) }));
@@ -33,6 +36,7 @@ vi.mock('@/lib/supabase', () => ({ supabase: { from(table: string) {
   };
   function execute(single: boolean) {
     if (fixture.failTable === table) return { data: null, error: { message: 'fixture storage failure' } };
+    if (table === 'accounts' && fixture.noLifecycleColumn && payload.some((row) => 'lifecycle_status' in row)) return { data: null, error: { code: 'PGRST204', message: "Could not find the 'lifecycle_status' column of 'accounts' in the schema cache" } };
     const rows = fixture.rows[table] ??= [];
     let selected = rows.filter((row) => filters.every((f) => f(row)));
     if (action === 'insert' || action === 'upsert') {
@@ -63,6 +67,7 @@ vi.mock('@/lib/pilot-readiness/repository', () => ({
 }));
 
 import { POST as signup } from '@/app/api/auth/signup/route';
+import { POST as legacyOnboarding } from '@/app/api/auth/onboarding/route';
 import { POST as login } from '@/app/api/auth/login/route';
 import { POST as google } from '@/app/api/auth/google/route';
 import { GET as googleStart } from '@/app/api/auth/google/start/route';
@@ -80,16 +85,19 @@ const saveManager = () => save(request({ step: 0, values: { manager: 'bnovo', ot
 async function prepare() { await createOwner(); await saveManager(); await save(request({ step: 1, values: { channels: ['direct'] } })); }
 
 beforeEach(() => {
-  fixture.rows = {}; fixture.failTable = '';
+  fixture.rows = {}; fixture.failTable = ''; fixture.ruHost = true; fixture.noLifecycleColumn = true;
   Object.assign(fixture.session, { userId: '', email: '', googleOauthState: undefined, googleOauthPlan: undefined, googleOauthRedirect: undefined });
   vi.clearAllMocks(); vi.unstubAllGlobals(); vi.unstubAllEnvs();
 });
 
 describe('RU connection route and persistence contracts', () => {
-  it('registers with email/password, saves the session and logs in without starting a trial', async () => {
+  it('RU signup succeeds without accounts.lifecycle_status, creates membership and never starts a trial', async () => {
     await createOwner();
     expect(await bcrypt.compare(credentials.password, fixture.rows.users[0].password_hash)).toBe(true);
     expect(fixture.session.save).toHaveBeenCalled();
+    expect(fixture.rows.account_members[0]).toMatchObject({ account_id: fixture.rows.accounts[0].id, user_id: fixture.rows.users[0].id, role: 'owner' });
+    expect(fixture.rows.accounts[0]).not.toHaveProperty('lifecycle_status');
+    expect(fixture.rows.accounts[0]).not.toHaveProperty('trial_ends_at');
     expect(fixture.rows.subscriptions ?? []).toHaveLength(0);
     expect(fixture.rows.accounts[0].trial_started_at).toBeUndefined();
     fixture.session.userId = '';
@@ -144,7 +152,7 @@ describe('RU connection route and persistence contracts', () => {
     expect(fixture.rows.properties[0].account_id).toBe(fixture.rows.accounts[0].id);
     expect(fixture.rows.tg_property_knowledge[0]).toMatchObject({ object_name: property.name, communication_autopilot: 'disabled' });
     expect(fixture.rows.ru_commercial_pilot_lifecycle[0].pilot_started_at).toBeNull();
-    expect(fixture.rows.ops_v17_onboardings[0].data.channelManager).toMatchObject({ provider: 'bnovo', status: 'configuration_required' });
+    expect(fixture.rows.ops_v17_onboardings[0].data.rentalConnection.manager).toBe('bnovo');
   });
 
   it('requires the manager, a named other service and prior steps', async () => {
@@ -189,6 +197,55 @@ describe('RU connection route and persistence contracts', () => {
     const previousName = fixture.rows.properties[0].name;
     expect((await save(request({ step: 2, values: { ...property, name: 'Changed' } }))).status).toBe(400);
     expect(fixture.rows.properties[0].name).toBe(previousName);
+  });
+
+  it('creates one operator handoff and retries a failed handoff without completing the wizard', async () => {
+    await prepare(); fixture.failTable = 'ops_operator_tasks';
+    expect((await save(request({ step: 2, values: property }))).status).toBe(503);
+    expect((await (await read()).json()).draft.step).toBe(2);
+    fixture.failTable = '';
+    expect((await save(request({ step: 2, values: property }))).status).toBe(200);
+    await save(request({ step: 2, values: property }));
+    expect(fixture.rows.ops_operator_tasks).toHaveLength(1);
+    const task = fixture.rows.ops_operator_tasks[0];
+    expect(task).toMatchObject({ task_type: 'verify_channel_manager', task_status: 'needs_operator', object_id: fixture.rows.properties[0].id });
+    expect(task.metadata.account_id).toBe(fixture.rows.accounts[0].id);
+    expect(task.description).toContain('bnovo');
+    expect(task.description).toContain('Свой сайт / соцсети');
+    expect(JSON.stringify(task)).not.toContain(property.wifiPassword);
+    expect(fixture.rows.ops_v17_onboardings[0].data.channelManager).toBeUndefined();
+    expect(fixture.rows.channel_manager_connections).toBeUndefined();
+  });
+
+  it('keeps international signup and login on the deferred international lifecycle', async () => {
+    fixture.ruHost = false; fixture.noLifecycleColumn = false;
+    await createOwner(); await login(request(credentials));
+    expect(fixture.rows.accounts[0].lifecycle_status).toBe('signup');
+    expect(fixture.rows.accounts[0].trial_started_at).toBeUndefined();
+    expect(fixture.rows.subscriptions ?? []).toHaveLength(0);
+  });
+
+  it('keeps the legacy RU registration endpoint free of all pilot clocks', async () => {
+    expect((await legacyOnboarding(request({ name: 'Fixture owner', email: credentials.email }))).status).toBe(200);
+    expect(fixture.rows.accounts[0]).not.toHaveProperty('lifecycle_status');
+    expect(fixture.rows.accounts[0]).not.toHaveProperty('trial_started_at');
+    expect(fixture.rows.accounts[0]).not.toHaveProperty('trial_ends_at');
+    expect(fixture.rows.subscriptions ?? []).toHaveLength(0);
+  });
+
+  it.each(['token', 'callback'])('keeps international Google %s on the international lifecycle', async (method) => {
+    fixture.ruHost = false; fixture.noLifecycleColumn = false;
+    vi.stubEnv('GOOGLE_CLIENT_ID', 'fixture-client'); vi.stubEnv('GOOGLE_CLIENT_SECRET', 'fixture-secret');
+    if (method === 'token') {
+      expect((await google(request({ idToken: 'synthetic-token' }))).status).toBe(200);
+    } else {
+      fixture.session.googleOauthState = 'fixture-state';
+      vi.stubGlobal('fetch', vi.fn(async () => Response.json({ id_token: 'synthetic-token' })));
+      expect((await googleCallback(new Request('http://localhost/api/auth/google/callback?code=test&state=fixture-state'))).status).toBe(307);
+    }
+    expect(fixture.rows.accounts[0].lifecycle_status).toBe('signup');
+    expect(fixture.rows.accounts[0]).not.toHaveProperty('trial_started_at');
+    expect(fixture.rows.subscriptions ?? []).toHaveLength(0);
   });
 
   it('keeps the intended internal redirect and rejects external/open redirect variants', () => {
