@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { readFileSync } from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
 import HomeRu from '../page';
-import { RU_CONNECT_HREF } from '@/components/ru/ConnectCta';
+import { RU_CONNECT_HREF, RU_SPECIAL_OFFER_HREF } from '@/components/ru/ConnectCta';
 
 vi.mock('next/navigation', () => ({ usePathname: () => '/ru' }));
 const render = () => renderToStaticMarkup(React.createElement(HomeRu));
@@ -13,28 +13,61 @@ describe('RU owner connection journey — approved 2026-09-19', () => {
     const html = render();
     expect(html).toContain('ASI сама ведёт рутину ваших объектов. От и до.');
     expect(html.indexOf('data-testid="start-connection"')).toBeLessThan(html.indexOf('id="how-it-works"'));
-    const sections = ['how-it-works', 'pricing', 'coordination', 'automation-gap', 'guest-communication', 'principle', 'capabilities', 'example', 'pilot-form'];
+    const sections = [
+      'how-it-works',
+      'special-offer',
+      'coordination',
+      'automation-gap',
+      'guest-communication',
+      'principle',
+      'capabilities',
+      'example',
+      'pilot-form',
+    ];
     const positions = sections.map((id) => html.indexOf(`id="${id}"`));
     expect(positions.every((position) => position > 0)).toBe(true);
     expect(positions).toEqual([...positions].sort((a, b) => a - b));
-    const steps = html.slice(html.indexOf('id="how-it-works"'), html.indexOf('id="pricing"'));
+    const steps = html.slice(html.indexOf('id="how-it-works"'), html.indexOf('id="special-offer"'));
     expect(steps.match(/<h3/g)).toHaveLength(4);
     expect(steps).toContain('Bnovo');
     expect(steps).toContain('RealtyCalendar');
   });
 
-  it('sends all three large actions to the same public page, without a protected dashboard link', () => {
+  it('routes three wide CTAs to #special-offer and continue CTA to /ru/connect', () => {
     const html = render();
-    const actions = html.match(/<a[^>]*data-testid="start-connection"[^>]*>/g) ?? [];
-    expect(actions).toHaveLength(3);
-    for (const action of actions) expect(action).toContain(`href="${RU_CONNECT_HREF}"`);
+    const wideActions = html.match(/<a[^>]*data-testid="start-connection"[^>]*>/g) ?? [];
+    expect(wideActions).toHaveLength(3);
+    for (const action of wideActions) expect(action).toContain(`href="${RU_SPECIAL_OFFER_HREF}"`);
+
+    expect(html).toContain('id="special-offer"');
+    expect(html).toContain('href="/ru#special-offer"');
+    expect(html).not.toContain('id="pricing"');
+    expect(html).not.toContain('href="/ru#pricing"');
+
+    const continueActions = html.match(/<a[^>]*data-testid="continue-connection"[^>]*>/g) ?? [];
+    expect(continueActions).toHaveLength(1);
+    expect(continueActions[0]).toContain(`href="${RU_CONNECT_HREF}"`);
+    expect(html).toContain('ПРОДОЛЖИТЬ ПОДКЛЮЧЕНИЕ');
+    expect(html).toContain('Вход или регистрация, затем настройка объекта.');
+
+    expect(html).toContain(`href="${RU_CONNECT_HREF}"`);
+    expect(html).toContain('Войти / подключить');
     expect(html).not.toContain('href="/dashboard');
-    expect(html).toContain('Сначала вход или регистрация. Затем — настройка объекта.');
   });
 
   it('states community terms with a readiness gate and optional continuation', () => {
     const html = render();
-    for (const term of ['закрытой группы Ярослава Стригунова', '0 ₽', '14 дней', '1 000 ₽', '12 месяцев', 'с момента перехода на платный режим', 'Без автоматического перехода на платный тариф', 'только после полной готовности']) expect(html).toContain(term);
+    for (const term of [
+      'закрытой группы Ярослава Стригунова',
+      '0 ₽',
+      '14 дней',
+      '1 000 ₽',
+      '12 месяцев',
+      'с момента перехода на платный режим',
+      'Без автоматического перехода на платный тариф',
+      'только после полной готовности',
+    ])
+      expect(html).toContain(term);
     expect(html.toLowerCase()).not.toContain('скидк');
   });
 

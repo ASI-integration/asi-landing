@@ -27,6 +27,12 @@ const RU_NAV_PAGES = [
   '/ru/kak-my-ocenivaem-dohodnost-obektov',
 ] as const;
 
+/** Homepage overrides mainLinks; default journey nav lives on other RU surfaces. */
+const RU_DEFAULT_JOURNEY_NAV_PAGES = [
+  '/ru/otchet-po-dohodnosti-obektov',
+  '/ru/kak-my-ocenivaem-dohodnost-obektov',
+] as const;
+
 // ────────────────────────────────────────────────────────────
 // A. Pages load — no 404 / 5xx
 // ────────────────────────────────────────────────────────────
@@ -58,29 +64,33 @@ test.describe('B. Header — structure and correctness', () => {
 
       test('logo link is present', async ({ page }) => {
         await page.goto(path, { waitUntil: 'domcontentloaded' });
-        // Logo is <a href="/">ASI</a> — filtered by text to avoid strict-mode clash
-        // with: (1) support email whose accessible name contains "ASI",
-        //        (2) nav "Главная" link which also has href="/"
-        const logo = page.locator('header a[href="/"]').filter({ hasText: /^ASI$/ });
+        // RU public brand mark links to /ru; tolerate either home path.
+        const logo = page
+          .locator('header a')
+          .filter({ hasText: /^ASI/ })
+          .first();
         await expect(logo).toBeVisible();
+        const href = await logo.getAttribute('href');
+        expect(href === '/' || href === '/ru').toBe(true);
       });
 
-      test('nav link "Оценка доходности" is present and clickable', async ({ page }) => {
-        await page.goto(path, { waitUntil: 'domcontentloaded' });
-        const link = page
-          .locator('header nav')
-          .getByRole('link', { name: /Оценка доходности/i });
-        await expect(link).toBeVisible();
-        // Must have a non-empty, non-hash href
-        const href = await link.getAttribute('href');
-        expect(href, 'Оценка доходности href must not be "#" or empty').toBeTruthy();
-        expect(href).not.toBe('#');
-      });
+      if ((RU_DEFAULT_JOURNEY_NAV_PAGES as readonly string[]).includes(path)) {
+        test('nav link "Оценка локации" is present and clickable', async ({ page }) => {
+          await page.goto(path, { waitUntil: 'domcontentloaded' });
+          const link = page
+            .locator('header nav')
+            .getByRole('link', { name: /Оценка локации/i });
+          await expect(link).toBeVisible();
+          const href = await link.getAttribute('href');
+          expect(href, 'Оценка локации href must not be "#" or empty').toBeTruthy();
+          expect(href).not.toBe('#');
+        });
+      }
 
-      test('login button is present', async ({ page }) => {
+      test('login or connect CTA is present', async ({ page }) => {
         await page.goto(path, { waitUntil: 'domcontentloaded' });
         const loginBtn = page.locator('header').getByRole('link', { name: /Войти/i });
-        await expect(loginBtn).toBeVisible();
+        await expect(loginBtn.first()).toBeVisible();
       });
 
       test('no duplicate "Контакты" in header', async ({ page }) => {
@@ -133,11 +143,11 @@ test.describe('B. Header — structure and correctness', () => {
 // C. Navigation flows
 // ────────────────────────────────────────────────────────────
 test.describe('C. Navigation flows', () => {
-  test('Home → Revenue report (via header nav)', async ({ page }) => {
-    await page.goto('/ru', { waitUntil: 'domcontentloaded' });
+  test('Location landing → Location report product path (via header nav)', async ({ page }) => {
+    await page.goto('/ru/how-it-works', { waitUntil: 'domcontentloaded' });
     await page
       .locator('header nav')
-      .getByRole('link', { name: /Оценка доходности/i })
+      .getByRole('link', { name: /Оценка локации/i })
       .click();
     await page.waitForLoadState('domcontentloaded');
     expect(page.url()).toContain('otchet-po-dohodnosti-obektov');
@@ -155,26 +165,25 @@ test.describe('C. Navigation flows', () => {
     expect(page.url()).toContain('kak-my-ocenivaem-dohodnost-obektov');
   });
 
-  test('Methodology → back to Revenue report (via header nav)', async ({ page }) => {
+  test('Methodology → back to Location report (via header nav)', async ({ page }) => {
     await page.goto('/ru/kak-my-ocenivaem-dohodnost-obektov', {
       waitUntil: 'domcontentloaded',
     });
     await page
       .locator('header nav')
-      .getByRole('link', { name: /Оценка доходности/i })
+      .getByRole('link', { name: /Оценка локации/i })
       .click();
     await page.waitForLoadState('domcontentloaded');
     expect(page.url()).toContain('otchet-po-dohodnosti-obektov');
   });
 
-  test('Contacts link in header navigates correctly', async ({ page }) => {
-    await page.goto('/ru', { waitUntil: 'domcontentloaded' });
+  test('Contacts link is reachable from a landing page that exposes it', async ({ page }) => {
+    await page.goto('/ru/otchet-po-dohodnosti-obektov', { waitUntil: 'domcontentloaded' });
     const contactLink = page.locator('header').getByRole('link', { name: /Контакты/i });
-    await expect(contactLink).toBeVisible();
-    const href = await contactLink.getAttribute('href');
+    await expect(contactLink.first()).toBeVisible();
+    const href = await contactLink.first().getAttribute('href');
     expect(href).toBeTruthy();
     expect(href).not.toBe('#');
-    // Visit the contacts href and expect a valid page
     const response = await page.goto(href!, { waitUntil: 'domcontentloaded' });
     expect(response?.status() ?? 0).toBeLessThan(400);
   });

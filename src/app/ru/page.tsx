@@ -6,7 +6,11 @@ import {
   BrandSection,
   BrandShiro,
 } from '@/components/brand';
-import { ConnectCta, RU_CONNECT_HREF } from '@/components/ru/ConnectCta';
+import {
+  ConnectCta,
+  RU_CONNECT_HREF,
+  RU_SPECIAL_OFFER_HREF,
+} from '@/components/ru/ConnectCta';
 import { RuComplianceFooter } from '@/components/ru/RuComplianceFooter';
 import { RuPublicNavHeader } from '@/components/ru/RuPublicNavHeader';
 import { COMMUNICATION_PILOT_PRICE_RUB } from '@/lib/payments/yookassa-env';
@@ -16,7 +20,7 @@ export const metadata = RU_HOME_METADATA;
 const HOME_NAV_LINKS = [
   { href: '/ru#capabilities', label: 'Что делает ASI' },
   { href: '/ru#how-it-works', label: 'Как подключить' },
-  { href: '/ru#pricing', label: 'Условия' },
+  { href: '/ru#special-offer', label: 'Условия' },
 ] as const;
 
 const CAPABILITY_GROUPS = [
@@ -95,7 +99,9 @@ export default function HomeRu() {
             <p className="mt-4 text-lg sm:text-xl font-semibold">
               Система ведёт повседневные задачи. Вы решаете нестандартные вопросы.
             </p>
-            <div className="mt-7 sm:mt-9"><ConnectCta /></div>
+            <div className="mt-7 sm:mt-9">
+              <ConnectCta href={RU_SPECIAL_OFFER_HREF} />
+            </div>
             <p className="mt-3 text-sm text-asi-navy/65">
               Сейчас — пилот: настраиваем доступные функции под ваш объект. Подключение и настройка — 0 ₽.
             </p>
@@ -118,10 +124,12 @@ export default function HomeRu() {
               </li>
             ))}
           </ol>
-          <div className="mt-10"><ConnectCta /></div>
+          <div className="mt-10">
+            <ConnectCta href={RU_SPECIAL_OFFER_HREF} />
+          </div>
         </BrandSection>
 
-        <BrandSection variant="ivory" id="pricing" className="scroll-mt-24">
+        <BrandSection variant="ivory" id="special-offer" className="scroll-mt-24">
           <BrandHeadline className="text-3xl sm:text-5xl max-w-4xl !leading-tight">
             Специальные условия для участников закрытой группы Ярослава Стригунова
           </BrandHeadline>
@@ -148,6 +156,13 @@ export default function HomeRu() {
             Эта цена сохраняется для участника группы на 12 месяцев с момента перехода на платный режим.
             Без автоматического перехода на платный тариф.
           </p>
+          <div className="mt-10">
+            <ConnectCta
+              title="ПРОДОЛЖИТЬ ПОДКЛЮЧЕНИЕ"
+              description="Вход или регистрация, затем настройка объекта."
+              testId="continue-connection"
+            />
+          </div>
         </BrandSection>
 
         {/* ── 2. Проблема масштабирования ── */}
@@ -270,7 +285,9 @@ export default function HomeRu() {
           <p className="mt-5 text-lg text-asi-navy/70">
             Создайте кабинет, укажите ваши сервисы и добавьте данные. Мы поможем подготовить объект к запуску.
           </p>
-          <div className="mt-8"><ConnectCta /></div>
+          <div className="mt-8">
+            <ConnectCta href={RU_SPECIAL_OFFER_HREF} />
+          </div>
         </BrandSection>
       </main>
 

@@ -21,10 +21,13 @@ describe('RU-02/RU-03 closed-beta spine + pilot boundary', () => {
     const cta = readSrc('src/components/ru/ConnectCta.tsx');
 
     expect(cta).toContain("RU_CONNECT_HREF = '/ru/connect'");
+    expect(cta).toContain("RU_SPECIAL_OFFER_HREF = '#special-offer'");
     expect(home).toContain('RU_CONNECT_HREF');
-    expect(home.match(/<ConnectCta\b/g) ?? []).toHaveLength(3);
+    expect(home).toContain('RU_SPECIAL_OFFER_HREF');
+    expect(home.match(/<ConnectCta\b/g) ?? []).toHaveLength(4);
     expect(home).toContain('id="how-it-works"');
-    expect(home).toContain('id="pricing"');
+    expect(home).toContain('id="special-offer"');
+    expect(home).not.toContain('id="pricing"');
     expect(home).toContain('id="pilot-form"');
     expect(home).toContain('COMMUNICATION_PILOT_PRICE_RUB');
     expect(home).toContain('12 месяцев');
@@ -55,8 +58,10 @@ describe('RU-02/RU-03 closed-beta spine + pilot boundary', () => {
     expect(how).not.toContain("PILOT_HREF = '/ru/early-access'");
 
     const home = readSrc('src/app/ru/page.tsx');
-    expect(home.match(/<ConnectCta\b/g) ?? []).toHaveLength(3);
-    expect(home).toContain("href: RU_CONNECT_HREF");
+    expect(home.match(/href=\{RU_SPECIAL_OFFER_HREF\}/g) ?? []).toHaveLength(3);
+    expect(home).toContain("href: '/ru#special-offer'");
+    expect(home).toContain('testId="continue-connection"');
+    expect(home).toContain("primaryCta={{ href: RU_CONNECT_HREF, label: 'Войти / подключить' }}");
 
     expect(ruNavMainLinks).toContainEqual({ href: '/ru/early-access', label: 'Пилот' });
     expect(ruNavMainLinks.map((link) => link.href)).toEqual([

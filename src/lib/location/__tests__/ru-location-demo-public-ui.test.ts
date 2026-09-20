@@ -50,7 +50,8 @@ describe('RU /ru/location-analysis public demo UI contract', () => {
     expect(homeSrc).toContain('RU_CONNECT_HREF');
     expect(homeSrc).toContain('<ConnectCta');
     expect(homeSrc).toContain('id="how-it-works"');
-    expect(homeSrc).toContain('id="pricing"');
+    expect(homeSrc).toContain('id="special-offer"');
+    expect(homeSrc).not.toContain('id="pricing"');
     expect(homeSrc).toContain('id="pilot-form"');
 
     expect(homeSrc).not.toContain('Оценка локации — отдельный инструмент');
