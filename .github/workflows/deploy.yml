@@ -208,6 +208,9 @@ jobs:
       TWOGIS_CATALOG_API_KEY: ${{ secrets.TWOGIS_CATALOG_API_KEY }}
       GOOGLE_MAPS_SERVER_API_KEY: ${{ secrets.GOOGLE_MAPS_SERVER_API_KEY }}
       BOOKING_OPS_AUTO_SEND_RUNNER_SECRET: ${{ secrets.BOOKING_OPS_AUTO_SEND_RUNNER_SECRET }}
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      SESSION_SECRET: ${{ secrets.SESSION_SECRET }}
     steps:
       - name: Checkout deploy scripts
         uses: actions/checkout@v4
@@ -228,11 +231,30 @@ jobs:
             echo "Missing required secret: BOOKING_OPS_AUTO_SEND_RUNNER_SECRET"
             exit 1
           fi
+          if [ -z "${SUPABASE_URL:-}" ]; then
+            echo "Missing required secret: SUPABASE_URL"
+            exit 1
+          fi
+          if [ -z "${SUPABASE_SERVICE_ROLE_KEY:-}" ]; then
+            echo "Missing required secret: SUPABASE_SERVICE_ROLE_KEY"
+            exit 1
+          fi
+          if [ -z "${SESSION_SECRET:-}" ]; then
+            echo "Missing required secret: SESSION_SECRET"
+            exit 1
+          fi
+          if [ "${#SESSION_SECRET}" -lt 32 ]; then
+            echo "SESSION_SECRET does not meet the minimum length of 32 characters"
+            exit 1
+          fi
           umask 077
           {
             printf 'NODE_ENV=production\n'
             printf 'PORT=3000\n'
             printf 'BOOKING_OPS_AUTO_SEND_RUNNER_SECRET=%s\n' "$BOOKING_OPS_AUTO_SEND_RUNNER_SECRET"
+            printf 'SUPABASE_URL=%s\n' "$SUPABASE_URL"
+            printf 'SUPABASE_SERVICE_ROLE_KEY=%s\n' "$SUPABASE_SERVICE_ROLE_KEY"
+            printf 'SESSION_SECRET=%s\n' "$SESSION_SECRET"
             if [ -n "${TWOGIS_CATALOG_API_KEY:-}" ]; then
               printf 'TWOGIS_CATALOG_API_KEY=%s\n' "$TWOGIS_CATALOG_API_KEY"
             fi
