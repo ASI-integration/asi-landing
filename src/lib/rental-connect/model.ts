@@ -2,6 +2,7 @@ import { CHANNEL_MANAGER_CONNECTION_METHOD_VALUES } from '@/lib/channel-manager-
 import { CHANNEL_MANAGER_PROVIDERS } from '@/lib/channel-connections/providers';
 
 export const RU_SETUP_PATH = '/dashboard/channel-connections?setup=1';
+export const RU_LEGAL_ONBOARDING_PATH = '/ru/legal-onboarding';
 export const CONNECTION_STEPS = ['Менеджер каналов', 'Площадки бронирования', 'Данные объекта', 'Готовность к запуску'] as const;
 export const MANAGERS = [
   { value: 'bnovo', label: 'Bnovo' },
@@ -31,13 +32,12 @@ export type RentalConnectionDraft = {
   wifiPassword: string;
   instructions: string;
   photosLater: boolean;
-  communityMember: boolean;
 };
 
 export const EMPTY_CONNECTION: RentalConnectionDraft = {
   step: 0, manager: '', otherManager: '', channels: [], name: '', address: '', description: '',
   rules: '', checkIn: '14:00', checkOut: '12:00', wifiName: '', wifiPassword: '', instructions: '',
-  photosLater: false, communityMember: false,
+  photosLater: false,
 };
 
 export function validateConnection(draft: RentalConnectionDraft, throughStep: number): string | null {
@@ -59,7 +59,7 @@ export function parseConnectionInput(value: unknown): { step: number; values: Pa
   if (!Number.isInteger(body.step) || Number(body.step) < 0 || Number(body.step) > 2) throw new Error('Недопустимый шаг.');
   if (!body.values || typeof body.values !== 'object' || Array.isArray(body.values)) throw new Error('Заполните данные шага.');
   const allowed = body.step === 0 ? ['manager', 'otherManager'] : body.step === 1 ? ['channels'] :
-    ['name', 'address', 'description', 'rules', 'checkIn', 'checkOut', 'wifiName', 'wifiPassword', 'instructions', 'photosLater', 'communityMember'];
+    ['name', 'address', 'description', 'rules', 'checkIn', 'checkOut', 'wifiName', 'wifiPassword', 'instructions', 'photosLater'];
   const values = body.values as Record<string, unknown>;
   const clean: Record<string, unknown> = {};
   for (const [key, item] of Object.entries(values)) {
@@ -67,7 +67,7 @@ export function parseConnectionInput(value: unknown): { step: number; values: Pa
     if (key === 'channels') {
       if (!Array.isArray(item) || item.length > BOOKING_SITES.length || item.some((site) => !BOOKING_SITES.some((s) => s.value === site))) throw new Error('Выберите площадки из списка.');
       clean[key] = [...new Set(item)];
-    } else if (key === 'photosLater' || key === 'communityMember') {
+    } else if (key === 'photosLater') {
       if (typeof item !== 'boolean') throw new Error('Некорректная отметка.');
       clean[key] = item;
     } else {

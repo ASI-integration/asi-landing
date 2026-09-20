@@ -41,7 +41,7 @@ describe('RU-DESIGN-03 early-access visual migration', () => {
   it('uses free-pilot commercial chronology and application CTA, not pre-pilot checkout', () => {
     const page = readSrc('src/app/ru/early-access/page.tsx');
     expect(COMMUNICATION_PILOT_PRICE_RUB).toBe(1000);
-    expect(page).toContain('COMMUNICATION_PILOT_PRICE_RUB');
+    expect(page).not.toContain('COMMUNICATION_PILOT_PRICE_RUB');
     expect(page).toContain('Подключить объект бесплатно');
     expect(page).toContain('#pilot-form');
     expect(page).toContain('id="pilot-path"');
@@ -75,18 +75,15 @@ describe('RU-DESIGN-03 early-access visual migration', () => {
     }
   });
 
-  it('keeps application form contract and community routing labels', () => {
+  it('keeps application form contract without public community entitlement fields', () => {
     const form = readSrc('src/components/early-access/EarlyAccessObjectForm.tsx');
     const early = readSrc('src/app/ru/early-access/page.tsx');
     expect(form).toContain("fetch('/api/early-access/objects'");
     expect(form).toContain("id=\"pilot-form\"");
-    expect(form).toContain("'community_member'");
-    expect(form).toContain("'standard_terms'");
-    expect(form).toContain("'community_info'");
-    expect(form).toContain('Участник группы Ярослава Стригунова');
-    expect(form).toContain('Участник группы Анатолия Брагина');
-    expect(form).toContain('Другая рекомендация или источник');
-    expect(form).toContain('Условия участия');
+    expect(form).not.toContain("'community_member'");
+    expect(form).not.toContain("'standard_terms'");
+    expect(form).not.toContain("'community_info'");
+    expect(form).not.toContain('Стригунова');
     expect(form).toContain('ownerContact');
     expect(form).toContain('additionalFeatures');
     expect(form).toContain('bg-asi-paper');

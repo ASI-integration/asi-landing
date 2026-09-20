@@ -5,13 +5,10 @@ import { useState } from 'react';
 import { readResponseJson } from '@/lib/safeResponseJson';
 import type { PilotObjectSummary } from '@/lib/communication/pilot-object-intake';
 
-type CommunityStatus = 'community_member' | 'standard_terms' | 'community_info';
-
 type FormState = {
   name: string;
   contact: string;
   objectsCount: string;
-  communityStatus: CommunityStatus;
 };
 
 type SaveResponse = {
@@ -24,7 +21,6 @@ const initialState: FormState = {
   name: '',
   contact: '',
   objectsCount: '',
-  communityStatus: 'community_member',
 };
 
 const objectCountOptions = [
@@ -35,29 +31,9 @@ const objectCountOptions = [
   'Более 20 объектов',
 ];
 
-const communityOptions: Array<{ value: CommunityStatus; label: string }> = [
-  {
-    value: 'community_member',
-    label: 'Участник группы Ярослава Стригунова',
-  },
-  {
-    value: 'standard_terms',
-    label: 'Участник группы Анатолия Брагина',
-  },
-  {
-    value: 'community_info',
-    label: 'Другая рекомендация или источник',
-  },
-];
-
-const communitySubmissionLabels: Record<CommunityStatus, string> = {
-  community_member: 'Участник группы Ярослава Стригунова.',
-  standard_terms: 'Участник группы Анатолия Брагина.',
-  community_info: 'Другая рекомендация или источник.',
-};
-
 /** Neutral source marker for homepage compact mode — never a community membership claim. */
 export const HOMEPAGE_LEAD_SOURCE_MARKER = 'Источник заявки: главная страница ASI.';
+const PILOT_PAGE_LEAD_SOURCE_MARKER = 'Источник заявки: страница пилота ASI.';
 
 const fieldClass =
   'mt-2 w-full border border-asi-border bg-asi-paper px-4 py-3.5 text-sm font-sans text-asi-navy rounded-sm outline-none transition focus:border-asi-gold focus:ring-1 focus:ring-asi-gold/40';
@@ -73,7 +49,6 @@ export function EarlyAccessObjectForm({
   const [form, setForm] = useState<FormState>(initialState);
   const [saving, setSaving] = useState(false);
   const [status, setStatus] = useState('');
-  const isCompact = variant === 'compact';
 
   const updateField = <K extends keyof FormState>(name: K, value: FormState[K]) => {
     setForm((current) => ({ ...current, [name]: value }));
@@ -84,12 +59,8 @@ export function EarlyAccessObjectForm({
     setSaving(true);
     setStatus('');
 
-    const details = isCompact
-      ? [`Количество объектов: ${form.objectsCount}`, HOMEPAGE_LEAD_SOURCE_MARKER].join('\n')
-      : [
-          `Количество объектов: ${form.objectsCount}`,
-          `Условия участия: ${communitySubmissionLabels[form.communityStatus]}`,
-        ].join('\n');
+    const sourceMarker = variant === 'compact' ? HOMEPAGE_LEAD_SOURCE_MARKER : PILOT_PAGE_LEAD_SOURCE_MARKER;
+    const details = [`Количество объектов: ${form.objectsCount}`, sourceMarker].join('\n');
 
     try {
       const res = await fetch('/api/early-access/objects', {
@@ -173,39 +144,6 @@ export function EarlyAccessObjectForm({
             ))}
           </select>
         </label>
-
-        {!isCompact ? (
-          <fieldset className="border-y border-asi-border">
-            <legend className="mb-3 text-sm font-sans font-semibold text-asi-navy">
-              Условия участия
-            </legend>
-            <div className="grid gap-0">
-              {communityOptions.map((option) => {
-                const selected = form.communityStatus === option.value;
-                return (
-                  <label
-                    key={option.value}
-                    className={`flex gap-3 border-t border-asi-border px-1 py-4 text-sm leading-6 text-asi-navy/75 cursor-pointer transition-colors ${
-                      selected ? 'text-asi-navy' : 'hover:text-asi-navy'
-                    }`}
-                  >
-                    <input
-                      type="radio"
-                      name="communityStatus"
-                      value={option.value}
-                      checked={selected}
-                      onChange={() => updateField('communityStatus', option.value)}
-                      className="mt-1 h-4 w-4 accent-asi-navy"
-                    />
-                    <span className={selected ? 'font-medium text-asi-navy' : undefined}>
-                      {option.label}
-                    </span>
-                  </label>
-                );
-              })}
-            </div>
-          </fieldset>
-        ) : null}
 
         <button
           type="submit"

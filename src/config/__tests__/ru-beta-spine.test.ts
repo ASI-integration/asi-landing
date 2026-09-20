@@ -29,8 +29,9 @@ describe('RU-02/RU-03 closed-beta spine + pilot boundary', () => {
     expect(home).toContain('id="special-offer"');
     expect(home).not.toContain('id="pricing"');
     expect(home).toContain('id="pilot-form"');
-    expect(home).toContain('COMMUNICATION_PILOT_PRICE_RUB');
-    expect(home).toContain('12 месяцев');
+    expect(home).toContain('RuCommercialTimeline');
+    expect(home).toContain('Без оплаты на старте');
+    expect(home).not.toMatch(/COMMUNICATION_PILOT_PRICE_RUB|12 месяцев|Стригунова/);
     expect(home).not.toContain('RU_LOCATION_CHECK_HREF');
     expect(home).not.toContain('Оценка локации — отдельный инструмент');
   });
@@ -76,6 +77,7 @@ describe('RU-02/RU-03 closed-beta spine + pilot boundary', () => {
       refund: '/ru/refund',
       privacy: '/ru/privacy',
       offer: '/ru/offer',
+      personalDataConsent: '/ru/personal-data-consent',
     });
   });
 
@@ -158,7 +160,7 @@ describe('RU-02/RU-03 closed-beta spine + pilot boundary', () => {
 
     const home = readSrc('src/app/ru/page.tsx');
     const early = readSrc('src/app/ru/early-access/page.tsx');
-    expect(home).toContain('COMMUNICATION_PILOT_PRICE_RUB');
-    expect(early).toContain('COMMUNICATION_PILOT_PRICE_RUB');
+    expect(home).not.toContain('COMMUNICATION_PILOT_PRICE_RUB');
+    expect(early).not.toContain('COMMUNICATION_PILOT_PRICE_RUB');
   });
 });

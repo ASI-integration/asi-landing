@@ -55,19 +55,18 @@ describe('RU owner connection journey — approved 2026-09-19', () => {
     expect(html).not.toContain('href="/dashboard');
   });
 
-  it('states community terms with a readiness gate and optional continuation', () => {
+  it('states the three-stage commercial path without provisional public promises', () => {
     const html = render();
     for (const term of [
-      'закрытой группы Ярослава Стригунова',
+      'Подключение и настройка',
       '0 ₽',
       '14 дней',
-      '1 000 ₽',
-      '12 месяцев',
-      'с момента перехода на платный режим',
-      'Без автоматического перехода на платный тариф',
-      'только после полной готовности',
+      'Только по вашему решению',
+      'Никакого автоматического перехода на оплату',
+      'Период начинается только после готовности объекта',
     ])
       expect(html).toContain(term);
+    expect(html).not.toMatch(/Стригунова|1(?:[\s\u00a0])?000 ₽|12 месяцев/);
     expect(html.toLowerCase()).not.toContain('скидк');
   });
 
@@ -93,11 +92,11 @@ describe('RU owner connection journey — approved 2026-09-19', () => {
     expect(html.match(/<footer/g)).toHaveLength(1);
   });
 
-  it('requires an explicit community declaration and leaves the legacy intake available', () => {
+  it('removes public community entitlement fields and leaves the legacy intake available', () => {
     const flow = readFileSync('src/components/dashboard/RentalConnectionFlow.tsx', 'utf8');
-    expect(flow).toContain('checked={draft.communityMember}');
+    expect(flow).not.toContain('communityMember');
     const model = readFileSync('src/lib/rental-connect/model.ts', 'utf8');
-    expect(model).toContain('communityMember: false');
+    expect(model).not.toContain('communityMember');
     const early = readFileSync('src/app/ru/early-access/page.tsx', 'utf8');
     expect(early).toContain('<EarlyAccessObjectForm />');
   });

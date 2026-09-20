@@ -1,6 +1,9 @@
+import { redirect } from 'next/navigation';
 import { ChannelConnectionsPanel } from '@/components/dashboard/ChannelConnectionsPanel';
 import { ChannelManagerConnectionFlow } from '@/components/dashboard/ChannelManagerConnectionFlow';
 import { RentalConnectionFlow } from '@/components/dashboard/RentalConnectionFlow';
+import { getSession, isSessionSecretConfigured } from '@/lib/auth';
+import { getRuLegalOnboardingStateForUser } from '@/lib/ru-legal';
 
 type PageProps = {
   searchParams?: {
@@ -11,8 +14,15 @@ type PageProps = {
   };
 };
 
-export default function ChannelConnectionsPage({ searchParams }: PageProps) {
-  if (searchParams?.setup === '1') return <RentalConnectionFlow />;
+export default async function ChannelConnectionsPage({ searchParams }: PageProps) {
+  if (searchParams?.setup === '1') {
+    if (!isSessionSecretConfigured()) redirect('/ru/legal-onboarding');
+    const session = await getSession();
+    if (!session.userId) redirect('/ru/legal-onboarding');
+    const legal = await getRuLegalOnboardingStateForUser(session.userId);
+    if (!legal?.complete) redirect('/ru/legal-onboarding');
+    return <RentalConnectionFlow />;
+  }
   const contactId = searchParams?.contactId?.trim() ?? '';
   const objectId = searchParams?.objectId?.trim() ?? '';
   const source = searchParams?.source?.trim() || 'dashboard';

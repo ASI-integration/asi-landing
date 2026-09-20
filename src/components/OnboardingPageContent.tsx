@@ -7,7 +7,7 @@ import { useSearchParams } from 'next/navigation';
 import { loadGoogleIdentityServices } from '@/lib/googleIdentity';
 import { readResponseJson } from '@/lib/safeResponseJson';
 import { safeAuthRedirectPath } from '@/lib/auth/app-url';
-import { RU_SETUP_PATH } from '@/lib/rental-connect/model';
+import { RU_LEGAL_ONBOARDING_PATH } from '@/lib/rental-connect/model';
 import { productSupportEmail } from '@/config/contact';
 import { telegramSupportBotUrl } from '@/config/telegramBots';
 
@@ -46,7 +46,7 @@ export default function OnboardingPageContent({ rental = false }: { rental?: boo
   const gsiButtonHostRef = useRef<HTMLDivElement | null>(null);
   const debugGoogle = useMemo(() => searchParams.get('debugGoogle') === '1', [searchParams]);
   const afterAuthRedirect = useMemo(
-    () => safeAuthRedirectPath(searchParams.get('redirect') || (rental ? RU_SETUP_PATH : null)),
+    () => safeAuthRedirectPath(searchParams.get('redirect') || (rental ? RU_LEGAL_ONBOARDING_PATH : null)),
     [searchParams, rental],
   );
   const publicConfigFetchAttemptedRef = useRef(false);

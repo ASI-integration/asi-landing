@@ -39,6 +39,7 @@ describe('RU-DESIGN-05 trust/legal visual unification', () => {
       refund: '/ru/refund',
       privacy: '/ru/privacy',
       offer: '/ru/offer',
+      personalDataConsent: '/ru/personal-data-consent',
     });
   });
 
@@ -50,9 +51,8 @@ describe('RU-DESIGN-05 trust/legal visual unification', () => {
     const privacy = readSrc('src/app/ru/privacy/page.tsx');
 
     expect(COMMUNICATION_PILOT_PRICE_RUB).toBe(1000);
-    expect(payment).toContain('COMMUNICATION_PILOT_PRICE_RUB');
-    expect(payment).toContain('COMMUNICATION_PILOT_SERVICE_TITLE');
-    expect(payment).toContain('PilotCheckoutCta');
+    expect(payment).not.toContain('COMMUNICATION_PILOT_PRICE_RUB');
+    expect(payment).not.toContain('PilotCheckoutCta');
     expect(COMMUNICATION_PILOT_SERVICE_TITLE).toContain('AI-коммуникации');
 
     for (const src of [payment, contacts, offer, refund, privacy]) {
@@ -68,7 +68,8 @@ describe('RU-DESIGN-05 trust/legal visual unification', () => {
     expect(contacts).toContain('ruComplianceRoutes.');
     expect(refund).toContain('до 10 рабочих дней');
     expect(privacy).toContain('1. Оператор персональных данных');
-    expect(offer).toContain('8. Реквизиты исполнителя');
+    expect(offer).toContain('RU_OFFER_DOCUMENT');
+    expect(offer).toContain('RuCommercialTimeline');
 
     expect(ruCompliance.fullName).toContain('Реутова');
     expect(ruCompliance.inn).toBe('235307941957');

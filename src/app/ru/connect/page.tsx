@@ -6,7 +6,7 @@ import OnboardingPageContent from '@/components/OnboardingPageContent';
 import { BrandLogoMark, BrandPageShell } from '@/components/brand';
 import { getSession, isSessionSecretConfigured } from '@/lib/auth';
 import { safeAuthRedirectPath } from '@/lib/auth/app-url';
-import { RU_SETUP_PATH } from '@/lib/rental-connect/model';
+import { RU_LEGAL_ONBOARDING_PATH } from '@/lib/rental-connect/model';
 
 export const metadata: Metadata = { title: 'Подключение объекта — ASI', robots: { index: false, follow: true } };
 export const dynamic = 'force-dynamic';
@@ -14,7 +14,7 @@ export const dynamic = 'force-dynamic';
 export default async function RuConnectPage({ searchParams }: { searchParams?: { redirect?: string } }) {
   if (isSessionSecretConfigured()) {
     const session = await getSession();
-    if (session.userId) redirect(safeAuthRedirectPath(searchParams?.redirect || RU_SETUP_PATH));
+    if (session.userId) redirect(safeAuthRedirectPath(searchParams?.redirect || RU_LEGAL_ONBOARDING_PATH));
   }
   return (
     <BrandPageShell>

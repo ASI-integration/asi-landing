@@ -39,7 +39,7 @@ export const asiBrandShiro = {
   defaultSize: 40,
   mobileSize: 32,
   footerSize: 40,
-  alt: 'Shiro, the ASI Global signature',
+  alt: 'Shiro — официальный маскот бренда ASI Global',
 } as const;
 
 const asiBrandFocusVisibleClass =

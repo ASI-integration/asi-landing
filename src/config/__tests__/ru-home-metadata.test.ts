@@ -13,7 +13,8 @@ describe('RU homepage metadata source', () => {
     expect(metadata).toBe(RU_HOME_METADATA);
     expect(await generateMetadata()).toMatchObject(RU_HOME_METADATA);
     expect(metadata.title).toBe('ASI сама ведёт рутину ваших объектов');
-    for (const term of ['Подключение бесплатно', '14 дней после готовности', '1 000 ₽', 'если решите продолжить']) expect(metadata.description).toContain(term);
+    for (const term of ['Подключение бесплатно', '14 дней после готовности', 'только по вашему решению']) expect(metadata.description).toContain(term);
+    expect(metadata.description).not.toMatch(/1(?:[\s\u00a0])?000 ₽|12 месяцев|Стригунова/);
   });
   it('also selects RU copy with the explicit local RU configuration', async () => {
     vi.stubEnv('HOST_VARIANT', 'ru');

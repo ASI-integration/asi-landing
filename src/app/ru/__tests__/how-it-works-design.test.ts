@@ -42,7 +42,7 @@ describe('RU how-it-works plain-language copy', () => {
   it('tells the plain-language conversion story before de-emphasized roadmap', () => {
     const page = readSrc('src/app/ru/how-it-works/page.tsx');
     expect(COMMUNICATION_PILOT_PRICE_RUB).toBe(1000);
-    expect(page).toContain('COMMUNICATION_PILOT_PRICE_RUB');
+    expect(page).not.toContain('COMMUNICATION_PILOT_PRICE_RUB');
     expect(page).toContain('Управлять посуточными квартирами — не значит весь день сидеть в чатах');
     expect(page).toContain('Подключить объект бесплатно');
     expect(page).toContain('RU_CONNECT_HREF');

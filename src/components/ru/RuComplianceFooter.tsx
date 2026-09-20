@@ -27,9 +27,9 @@ export function RuComplianceFooter({
         <div className={`${asiBrandLayout.contentMaxClass} mx-auto flex flex-col gap-8`}>
           <div className="grid gap-8 lg:grid-cols-[1.2fr,0.8fr]">
             <div>
-              <p className="font-serif text-lg text-asi-ivory tracking-tight">ASI Global © 2026.</p>
+              <p className="font-serif text-lg text-asi-ivory tracking-tight">ASI Global</p>
               <p className="mt-3 text-sm leading-relaxed text-asi-ivory/65 max-w-md">
-                ASI сама ведёт рутину объектов посуточной аренды.
+                Автоматизация операций с объектами
               </p>
               <div className="mt-5 space-y-2 text-sm text-asi-ivory/80">
                 <p>
@@ -65,6 +65,12 @@ export function RuComplianceFooter({
                 Политика конфиденциальности
               </Link>
               <Link
+                href={ruComplianceRoutes.personalDataConsent}
+                className="hover:text-asi-ivory transition-colors"
+              >
+                Согласие на обработку персональных данных
+              </Link>
+              <Link
                 href={ruComplianceRoutes.contacts}
                 className="hover:text-asi-ivory transition-colors"
               >
@@ -75,11 +81,14 @@ export function RuComplianceFooter({
           <div className="pt-6 border-t border-asi-ivory/15 flex flex-col sm:flex-row sm:items-end gap-4 justify-between">
             <div className="text-xs text-asi-ivory/55 leading-relaxed">
               <p>
-                Самозанятый: {ruCompliance.fullName} · ИНН: {ruCompliance.inn}
+                Исполнитель: {ruCompliance.fullName}
               </p>
-              <p className="mt-1">{ruCompliance.address}</p>
+              <p className="mt-1">Самозанятая · ИНН {ruCompliance.inn}</p>
             </div>
-            <BrandShiro size={36} signature dark />
+            <div className="flex items-center gap-3">
+              <BrandShiro size={36} dark />
+              <p className="text-xs text-asi-ivory/55">Shiro — официальный маскот ASI Global</p>
+            </div>
           </div>
         </div>
       </div>
@@ -92,9 +101,9 @@ export function RuComplianceFooter({
       <div className={`${asiBrandLayout.contentMaxClass} mx-auto flex flex-col gap-10`}>
         <div className="flex flex-col sm:flex-row justify-between gap-10 sm:gap-6">
           <div className="max-w-sm">
-            <p className="font-serif text-lg text-asi-ivory tracking-tight">ASI</p>
+            <p className="font-serif text-lg text-asi-ivory tracking-tight">ASI Global</p>
             <p className="mt-3 text-sm leading-relaxed text-asi-ivory/60">
-              Операции посуточной аренды на автопилоте. Человек — только для исключений.
+              Автоматизация операций с объектами
             </p>
             <p className="mt-4 text-sm text-asi-ivory/75">
               <a
@@ -125,7 +134,10 @@ export function RuComplianceFooter({
                 Возврат
               </Link>
               <Link href={ruComplianceRoutes.privacy} className="hover:text-asi-ivory transition-colors">
-                Политика данных
+                Политика конфиденциальности
+              </Link>
+              <Link href={ruComplianceRoutes.personalDataConsent} className="hover:text-asi-ivory transition-colors">
+                Согласие на обработку персональных данных
               </Link>
               <Link href={ruComplianceRoutes.offer} className="hover:text-asi-ivory transition-colors">
                 Оферта
@@ -139,9 +151,9 @@ export function RuComplianceFooter({
                 Исполнитель
               </span>
               <p className="text-asi-ivory/80 leading-relaxed">
-                Самозанятый: {ruCompliance.fullName}
+                {ruCompliance.fullName}
                 <br />
-                ИНН: {ruCompliance.inn}
+                Самозанятая · ИНН {ruCompliance.inn}
                 <br />
                 {ruCompliance.address}
               </p>
@@ -150,10 +162,9 @@ export function RuComplianceFooter({
         </div>
 
         <div className="pt-8 border-t border-asi-ivory/15 flex flex-col sm:flex-row sm:items-center gap-5">
-          <BrandShiro size={40} signature dark />
+          <BrandShiro size={40} dark />
           <p className="text-xs text-asi-ivory/50 leading-relaxed max-w-2xl">
-            Shiro — официальная подпись бренда ASI. Локальные адаптации сохраняют ту же визуальную
-            систему; юридические и контактные данные рынка остаются отдельными.
+            Shiro — официальный маскот ASI Global. ASI Global — бренд сервиса.
           </p>
         </div>
       </div>

@@ -223,7 +223,7 @@ export default function OtchetPoDohodnostiPage() {
                 Отдельный инструмент
               </p>
               <p className="mt-4 font-serif text-xl text-asi-navy leading-snug">
-                Оценка локации не входит в пилот AI-коммуникаций за 1000&nbsp;₽.
+                Оценка локации не входит в бесплатный пилот AI-коммуникаций.
               </p>
               <div className="mt-8 flex justify-end">
                 <BrandShiro size={48} />
