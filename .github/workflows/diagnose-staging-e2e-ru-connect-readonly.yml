@@ -5,7 +5,7 @@ name: Diagnose Staging E2E RU Connect Rows (Read-Only)
 on:
   push:
     branches:
-      - ops/staging-e2e-row-verify-readonly-20260920
+      - ops/staging-e2e-race-verify-readonly-20260920
     paths:
       - '.github/workflows/diagnose-staging-e2e-ru-connect-readonly.yml'
       - 'scripts/diagnose-staging-e2e-ru-connect-readonly.sh'
@@ -102,9 +102,9 @@ jobs:
           STAGING_SUPABASE_PROJECT_REF: ${{ secrets.STAGING_SUPABASE_PROJECT_REF }}
           STAGING_DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
           STAGING_E2E_ROW_DIAGNOSTIC_ARTIFACT: staging-e2e-ru-connect-row-diagnostic.txt
-          E2E_EMAIL: asi.ru.e2e.20260920115458@example.com
-          E2E_USER_ID: 0ec65355-2195-4daf-a84d-68207f6a9bbc
-          E2E_MARKER: RU_E2E_20260920115458
+          E2E_EMAIL: asi.ru.race.e2e.1789916949263@example.com
+          E2E_USER_ID: f62d16c8-9f38-4bff-9d43-45de863757c7
+          E2E_MARKER: RU_RACE_E2E_20260920T150909Z
           PGCONNECT_TIMEOUT: "10"
         run: |
           set -euo pipefail
@@ -124,3 +124,4 @@ jobs:
           retention-days: 7
 
 # retrigger 2026-09-20T16:14:11.7159973+03:00
+# reused for RU_RACE_E2E_20260920T150909Z concurrency acceptance
