@@ -29,7 +29,7 @@ export function RuComplianceFooter({
             <div>
               <p className="font-serif text-lg text-asi-ivory tracking-tight">ASI Global © 2026.</p>
               <p className="mt-3 text-sm leading-relaxed text-asi-ivory/65 max-w-md">
-                Автоматизация гостевых коммуникаций в посуточной аренде.
+                ASI сама ведёт рутину объектов посуточной аренды.
               </p>
               <div className="mt-5 space-y-2 text-sm text-asi-ivory/80">
                 <p>

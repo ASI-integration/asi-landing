@@ -126,7 +126,7 @@ describe('RU-DESIGN-FINAL acceptance', () => {
     const home = readSrc('src/app/ru/page.tsx');
     const how = readSrc('src/app/ru/how-it-works/page.tsx');
     expect(home).toContain('export const metadata');
-    expect(home).toContain('по данным конкретного объекта');
+    expect(home.replace(/\s+/g, ' ')).toContain('Реальные ответы зависят от правил и данных конкретного объекта');
     expect(home).not.toContain('Полная операционная автоматизация');
     expect(home).toContain('ConnectCta');
     expect(home).toContain('Подключение и настройка — 0');
@@ -173,7 +173,7 @@ describe('RU-DESIGN-FINAL acceptance', () => {
     expect(gate).toContain("pathname === '/'");
     expect(gate).toContain('isRuHost');
     const homeMeta = readSrc('src/app/page.tsx');
-    expect(homeMeta).toContain('операции посуточной аренды на автопилоте');
+    expect(homeMeta).toContain('...RU_HOME_METADATA');
     expect(homeMeta).not.toContain('Полная операционная автоматизация');
   });
 });

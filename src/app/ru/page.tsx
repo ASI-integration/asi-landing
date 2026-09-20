@@ -1,8 +1,7 @@
-import type { Metadata } from 'next';
+import { RU_HOME_METADATA } from '@/config/ruHomeMetadata';
 import {
   BrandCard,
   BrandEyebrow,
-  BrandGoldRule,
   BrandHeadline,
   BrandSection,
   BrandShiro,
@@ -12,12 +11,7 @@ import { RuComplianceFooter } from '@/components/ru/RuComplianceFooter';
 import { RuPublicNavHeader } from '@/components/ru/RuPublicNavHeader';
 import { COMMUNICATION_PILOT_PRICE_RUB } from '@/lib/payments/yookassa-env';
 
-export const metadata: Metadata = {
-  title: 'ASI — рутина посуточной аренды на автопилоте',
-  description:
-    'ASI берёт на себя типовые вопросы гостей и проверку готовности объекта перед заездом — по данным конкретного объекта. Бесплатное подключение, 14 дней пилота после полной готовности, затем 1 000 ₽ за объект в месяц — только если решите продолжить.',
-};
-
+export const metadata = RU_HOME_METADATA;
 
 const HOME_NAV_LINKS = [
   { href: '/ru#capabilities', label: 'Что делает ASI' },
@@ -66,7 +60,7 @@ const EXAMPLES = [
   {
     title: 'Нестандартная просьба → Передача человеку',
     guest: '«Можно завтра выехать на три часа позже? Мы готовы доплатить.»',
-    asi: '«Этот вопрос требует решения управляющего. Автоматический ответ остановлен, запрос передан на проверку.»',
+    asi: '«Поздний выезд нужно согласовать. Передаю вашу просьбу управляющему.»',
   },
 ] as const;
 
@@ -95,8 +89,8 @@ export default function HomeRu() {
             </div>
             <p className="mt-6 max-w-3xl text-base sm:text-xl text-asi-navy/75 leading-relaxed">
               Календарь — в одной программе, переписка — в другой, уборка — в чате.
-              ASI создаётся, чтобы связать всё это: от вопросов гостя и подготовки заезда
-              до работы с площадками бронирования.
+              ASI сама ведёт рутинную работу объекта: от вопросов гостя и подготовки заезда
+              до ежедневных задач с площадками бронирования.
             </p>
             <p className="mt-4 text-lg sm:text-xl font-semibold">
               Система ведёт повседневные задачи. Вы решаете нестандартные вопросы.
@@ -104,6 +98,9 @@ export default function HomeRu() {
             <div className="mt-7 sm:mt-9"><ConnectCta /></div>
             <p className="mt-3 text-sm text-asi-navy/65">
               Сейчас — пилот: настраиваем доступные функции под ваш объект. Подключение и настройка — 0 ₽.
+            </p>
+            <p className="mt-4 max-w-3xl text-sm text-asi-navy/65">
+              Здесь — ASI для жилой и посуточной недвижимости. ASI Global развивает и другие продукты.
             </p>
           </div>
         </section>
@@ -175,12 +172,11 @@ export default function HomeRu() {
             Рынок посуточной аренды уже хорошо автоматизирован. Есть сильные менеджеры каналов,
             календари и системы учёта — и они хорошо решают свои задачи.
           </p>
-          <p className="mt-4 max-w-3xl text-base sm:text-lg text-asi-navy/70 leading-relaxed">
-            Но автоматизировать отдельную функцию и связать несколько состояний в одно решение — не
-            одно и то же. Уборка — один процесс, общение с гостем — другой, готовность документов —
-            третий. ASI создаётся для того, чтобы постепенно уменьшать ручную работу между такими
-            этапами.
-          </p>
+          <ul className="mt-6 grid gap-5 sm:grid-cols-3 text-base sm:text-lg text-asi-navy/75 leading-relaxed">
+            <li className="border-t border-asi-gold pt-4"><strong className="block text-asi-navy">Календарь</strong>Показывает бронирования, но не отвечает гостям.</li>
+            <li className="border-t border-asi-gold pt-4"><strong className="block text-asi-navy">Бот</strong>Отвечает в чате, но сам по себе не проверяет готовность квартиры.</li>
+            <li className="border-t border-asi-gold pt-4"><strong className="block text-asi-navy">ASI</strong>Ведёт повторяемую работу объекта как одну систему — от вопроса гостя до подготовки заезда.</li>
+          </ul>
         </BrandSection>
 
         {/* ── 4. Общение с гостями ── */}
@@ -193,7 +189,7 @@ export default function HomeRu() {
             «Во сколько заезд?», «Где парковаться?», «Как подключиться к Wi-Fi?» — одни и те же вопросы
             повторяются изо дня в день. Гости пишут в разное время и ждут понятного ответа.
           </p>
-          <p className="mt-4 max-w-3xl text-base sm:text-lg text-asi-navy leading-relaxed">
+          <p className="mt-6 max-w-3xl border-l-2 border-asi-gold pl-5 text-lg sm:text-xl font-medium leading-relaxed">
             ASI сама отвечает на частые вопросы гостей, опираясь на правила вашего объекта. А если
             ситуация нестандартная и нужно принять решение — система сразу передаёт диалог вам.
           </p>
@@ -205,15 +201,13 @@ export default function HomeRu() {
           <BrandHeadline className="text-3xl sm:text-5xl max-w-4xl">
             Система занимается повторяемым. Человек — решениями.
           </BrandHeadline>
-          <p className="mt-6 max-w-3xl text-base sm:text-lg text-asi-navy/70 leading-relaxed">
-            ASI — не просто бот для ответов. Задача продукта — постепенно передавать системе те
-            действия и проверки, которые она может выполнять надёжно, а человеку оставлять ситуации,
-            где действительно нужно решение.
+          <p className="mt-6 max-w-3xl text-lg sm:text-xl font-medium leading-relaxed">
+            ASI — не просто бот и не менеджер каналов. Система сама ведёт повторяемую работу объекта,
+            а вы подключаетесь, когда нужно нестандартное решение.
           </p>
           <p className="mt-4 max-w-3xl text-base sm:text-lg text-asi-navy/70 leading-relaxed">
-            Сегодня в ASI уже работают несколько таких связей между этапами. Они позволяют передать
-            системе часть повторяющейся ежедневной работы, не создавая впечатление, что автоматизация
-            уже завершена там, где её ещё нет.
+            Во время настройки проверяем, какие функции доступны для вашего объекта и сервисов.
+            После проверки вместе с вами согласуем запуск.
           </p>
         </BrandSection>
 
@@ -226,14 +220,14 @@ export default function HomeRu() {
           <div className="mt-12 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
             {CAPABILITY_GROUPS.map((group) => (
               <BrandCard key={group.title} className="p-7 sm:p-8">
-                <h3 className="font-serif text-xl text-asi-navy leading-snug">{group.title}</h3>
-                <p className="mt-3 text-sm text-asi-navy/70 leading-relaxed">{group.body}</p>
+                <h3 className="font-serif text-2xl text-asi-navy leading-snug">{group.title}</h3>
+                <p className="mt-3 text-base text-asi-navy/70 leading-relaxed">{group.body}</p>
               </BrandCard>
             ))}
           </div>
           <div className="mt-6 max-w-xl border-t border-asi-border pt-6">
-            <h3 className="font-serif text-lg text-asi-navy">{SECONDARY_CAPABILITY.title}</h3>
-            <p className="mt-2 text-sm text-asi-navy/65 leading-relaxed">{SECONDARY_CAPABILITY.body}</p>
+            <h3 className="font-serif text-2xl text-asi-navy">{SECONDARY_CAPABILITY.title}</h3>
+            <p className="mt-2 text-base text-asi-navy/65 leading-relaxed">{SECONDARY_CAPABILITY.body}</p>
           </div>
         </BrandSection>
 
@@ -249,19 +243,19 @@ export default function HomeRu() {
           <div className="mt-12 grid gap-px bg-asi-border border border-asi-border lg:grid-cols-3">
             {EXAMPLES.map((example) => (
               <div key={example.title} className="bg-asi-paper p-7 sm:p-8">
-                <h3 className="font-serif text-xl text-asi-navy leading-snug">{example.title}</h3>
+                <h3 className="font-serif text-2xl text-asi-navy leading-snug">{example.title}</h3>
                 <div className="mt-6 space-y-5">
                   <div>
-                    <p className="text-[10px] font-sans font-semibold uppercase tracking-[0.18em] text-asi-gold-text">
+                    <p className="text-sm font-sans font-semibold uppercase tracking-[0.18em] text-asi-gold-text">
                       Гость
                     </p>
-                    <p className="mt-2 text-sm text-asi-navy/75 leading-relaxed">{example.guest}</p>
+                    <p className="mt-2 text-base text-asi-navy/75 leading-relaxed">{example.guest}</p>
                   </div>
                   <div>
-                    <p className="text-[10px] font-sans font-semibold uppercase tracking-[0.18em] text-asi-gold-text">
+                    <p className="text-sm font-sans font-semibold uppercase tracking-[0.18em] text-asi-gold-text">
                       ASI
                     </p>
-                    <p className="mt-2 text-sm text-asi-navy/75 leading-relaxed">{example.asi}</p>
+                    <p className="mt-2 text-base text-asi-navy/75 leading-relaxed">{example.asi}</p>
                   </div>
                 </div>
               </div>

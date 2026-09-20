@@ -55,3 +55,22 @@ Regression fixture по умолчанию отклоняет любую зап�
 Миграции, production, merge, deploy, секреты и реальные внешние сообщения не затронуты. Расширенные auth/location проверки явно запрошены владельцем в задаче исправления.
 
 Финальная сборка: **PASS**, `npm run build`, exit 0, 134 страницы после полной очистки сгенерированного `.next`. Runtime/конфигурация/зависимости проекта не менялись. Implementation commit: `7ba5f47ff04e6cdea503e996d93c8270ee298848`. Исправление auth blocker и минимальный operator handoff завершены; live E2E остаётся отдельной непроведённой проверкой исходной полной приёмки.
+
+## Final RU public-path gap review — 2026-09-20
+
+Base: `a5ecac2336367120bb7c3c5df618feb048cf2274`, same draft PR #318.
+
+- One `RU_HOME_METADATA` source now supplies title/description for host-routed `/` and `/ru`. Title: «ASI сама ведёт рутину ваших объектов». Description includes free setup, 14 days after readiness and optional 1 000 ₽/object/month. International metadata remains unchanged; runtime tests cover both hosts and HOST_VARIANT=ru.
+- Preserved approved H1, three wide CTAs, four steps and all commercial terms. Replaced the tentative «ASI создаётся» and abstract lower-section paragraphs with direct product language. Added the two-sentence ASI Global/product explanation. Comparison is now three short items; card headings and dialogue labels are more readable. Example: «Поздний выезд нужно согласовать. Передаю вашу просьбу управляющему». Compact footer now describes object routine, not only guest messaging.
+- Owner wizard labels now use «закрытой группы Ярослава Стригунова». No auth, billing, connection SSOT or operator-handoff implementation changed in this iteration.
+- Updated obsolete text assertions, retained structural/commercial guards, added three metadata regression tests. The browser spec's group-name assertion follows the approved name; this spec was not run through a second browser driver.
+
+Verification:
+- PASS: 72 focused homepage/metadata/auth/connect/billing tests across 9 files, including RU signup against a fixture without accounts.lifecycle_status and operator-handoff retry.
+- PASS: `npm run test:location-golden`, 457 tests / 76 files.
+- PASS: `npm run typecheck`; ESLint on all touched TypeScript files; `git diff --check`.
+- PASS: production build, 134 pages. First attempt collided with the running dev server's generated cache; stopped preview, moved generated .next aside and rebuilt cleanly. No runtime/config/dependency changes committed.
+- Browser: local HOST_VARIANT=ru. Desktop root, all three CTA clicks, header CTA, /ru/connect and legacy /connect redirect inspected. Responsive iframe content viewports 390 and 360 px; no horizontal overflow. Inspected hero/header, steps, pricing, comparison, capability cards and bottom CTA/footer. Mobile menu entry opens /ru/connect. Production build also served locally for final verification.
+- LIMITATION: responsive desktop-browser frames are not physical-device testing. Live email/Google authentication, real session cookies, real database persistence and live operator task delivery remain unverified: local credentials and a test database are not configured. Isolated auth/connect tests are not live E2E evidence.
+
+Code is ready for final review; full-task acceptance remains PARTIAL pending live auth-to-wizard acceptance in a configured test environment. No merge or production deploy.

@@ -32,7 +32,7 @@ test.describe('RU homepage editorial composition', () => {
     await page.goto('/ru', { waitUntil: 'domcontentloaded' });
     await expect(page.getByText('Один из продуктов ASI Global')).toBeVisible();
     await expect(page.getByRole('heading', { name: /Как запустить ASI на вашем объекте/i })).toBeVisible();
-    await expect(page.getByRole('heading', { name: /Специальные условия для участников группы «Стрегуново»/i })).toBeVisible();
+    await expect(page.getByRole('heading', { name: /Специальные условия для участников закрытой группы Ярослава Стригунова/i })).toBeVisible();
     await expect(page.getByRole('link', { name: /НАЧАТЬ ПОДКЛЮЧЕНИЕ/i })).toHaveCount(3);
     await expect(page.getByText(/1\s*000|1000/)).toBeVisible();
   });

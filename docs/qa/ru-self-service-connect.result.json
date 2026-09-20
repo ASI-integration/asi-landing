@@ -3,7 +3,6 @@
   "taskId": "ru-self-service-connect",
   "status": "PARTIAL",
   "branch": "feat/ru-self-service-connect",
-  "commitSha": "7ba5f47ff04e6cdea503e996d93c8270ee298848",
   "prUrl": "https://github.com/ASI-integration/asi-landing/pull/318",
   "changedFiles": [
     "docs/qa/ru-self-service-connect.md",
@@ -32,48 +31,52 @@
     "src/lib/rental-connect/__tests__/journey.test.ts",
     "src/lib/rental-connect/model.ts",
     "src/lib/rental-connect/service.ts",
-    "tests/ru-brand-foundation.spec.ts"
+    "tests/ru-brand-foundation.spec.ts",
+    "src/app/page.tsx",
+    "src/config/ruHomeMetadata.ts",
+    "src/config/__tests__/ru-home-metadata.test.ts",
+    "src/components/ru/RuComplianceFooter.tsx"
   ],
   "checks": [
     {
-      "name": "focused/auth",
+      "name": "focused homepage/metadata/auth/connect/billing",
       "status": "PASS",
-      "evidence": "39/39 tests, 5 files, includes no-lifecycle_status RU schema fixture, international auth and operator handoff retry"
+      "evidence": "72 tests / 9 files; RU no-lifecycle_status signup and operator handoff regression preserved"
     },
     {
       "name": "location golden",
       "status": "PASS",
-      "evidence": "457/457 tests, 76 files; explicitly requested"
-    },
-    {
-      "name": "lint",
-      "status": "PASS",
-      "evidence": "npm run lint; pre-existing ThemeProvider.tsx:49 hook dependency warning"
+      "evidence": "457 tests / 76 files"
     },
     {
       "name": "typecheck",
       "status": "PASS",
-      "evidence": "npm run typecheck exit 0"
+      "evidence": "npm run typecheck"
+    },
+    {
+      "name": "touched-file lint",
+      "status": "PASS",
+      "evidence": "ESLint on all touched TypeScript files"
     },
     {
       "name": "production build",
       "status": "PASS",
-      "evidence": "npm run build exit 0, 134 pages; earlier ENOTEMPTY resolved by cleaning generated .next"
+      "evidence": "134 pages; clean build after stopping dev cache contention"
     },
     {
       "name": "diff check",
       "status": "PASS",
-      "evidence": "git diff --check and staged check"
+      "evidence": "git diff --check"
     },
     {
-      "name": "homepage UX preservation",
+      "name": "public browser journey",
       "status": "PASS",
-      "evidence": "No page/component changes in blocker fix"
+      "evidence": "RU local runtime: desktop, 390/360 content-width responsive frames, all 3 CTA clicks and desktop/mobile header; legacy /connect redirect"
     },
     {
       "name": "live auth/database E2E",
       "status": "SKIP",
-      "evidence": "No live credentials/database mutations; isolated regression verifies schema compatibility"
+      "evidence": "No configured OAuth/test database; only isolated integration fixtures"
     }
   ],
   "sideEffects": {
@@ -83,10 +86,12 @@
     "dns": false,
     "payments": false,
     "realMessages": false,
-    "approvedUx": false
+    "approvedUx": true
   },
   "blockers": [
-    "Auth/lifecycle blocker and operator handoff are fixed and locally verified. Original live browser/DB acceptance remains unperformed."
+    "Live email/Google browser auth, real session cookies, persistence and operator task delivery remain unverified. Code ready for review; full-task acceptance remains PARTIAL."
   ],
-  "ownerDecision": null
+  "ownerDecision": null,
+  "baseSha": "a5ecac2336367120bb7c3c5df618feb048cf2274",
+  "iteration": "final-ru-public-gap-review"
 }

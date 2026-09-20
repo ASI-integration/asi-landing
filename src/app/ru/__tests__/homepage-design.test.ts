@@ -41,7 +41,9 @@ describe('RU owner connection journey — approved 2026-09-19', () => {
   it('retains truthful capability boundaries and the existing brand', () => {
     const html = render();
     expect(html).toContain('Сейчас — пилот');
-    expect(html).toContain('ASI создаётся');
+    expect(html).toContain('Система сама ведёт повторяемую работу объекта');
+    expect(html).not.toContain('Автоматический ответ остановлен');
+    expect(html).toContain('ASI Global развивает и другие продукты.');
     expect(html).toContain('не публикуется на площадках автоматически');
     expect(html).toContain('система сразу передаёт диалог вам');
     expect(html).toContain('Shiro');
