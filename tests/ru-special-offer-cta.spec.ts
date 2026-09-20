@@ -75,9 +75,10 @@ test.describe('RU homepage special-offer CTA click-through (read-only)', () => {
       const continueCta = page.locator('[data-testid="continue-connection"]');
       await expect(continueCta).toBeVisible();
       await expect(continueCta).toHaveAttribute('href', '/ru/connect');
-      await continueCta.click();
-      await page.waitForLoadState('domcontentloaded');
-      expect(page.url()).toContain('/ru/connect');
+      await Promise.all([
+        page.waitForURL(/\/ru\/connect(?:[?#]|$)/),
+        continueCta.click(),
+      ]);
     }
 
     expect(

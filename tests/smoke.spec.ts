@@ -145,11 +145,13 @@ test.describe('B. Header — structure and correctness', () => {
 test.describe('C. Navigation flows', () => {
   test('Location landing → Location report product path (via header nav)', async ({ page }) => {
     await page.goto('/ru/how-it-works', { waitUntil: 'domcontentloaded' });
-    await page
+    const locationLink = page
       .locator('header nav')
-      .getByRole('link', { name: /Оценка локации/i })
-      .click();
-    await page.waitForLoadState('domcontentloaded');
+      .getByRole('link', { name: /Оценка локации/i });
+    await Promise.all([
+      page.waitForURL(/otchet-po-dohodnosti-obektov/),
+      locationLink.click(),
+    ]);
     expect(page.url()).toContain('otchet-po-dohodnosti-obektov');
     await expect(page.locator('header')).toBeVisible();
   });
@@ -160,8 +162,10 @@ test.describe('C. Navigation flows', () => {
     // "Методология" is the section heading above it
     const methodLink = page.locator('a[href="/ru/kak-my-ocenivaem-dohodnost-obektov"]').first();
     await expect(methodLink).toBeVisible();
-    await methodLink.click();
-    await page.waitForLoadState('domcontentloaded');
+    await Promise.all([
+      page.waitForURL(/kak-my-ocenivaem-dohodnost-obektov/),
+      methodLink.click(),
+    ]);
     expect(page.url()).toContain('kak-my-ocenivaem-dohodnost-obektov');
   });
 
@@ -169,11 +173,13 @@ test.describe('C. Navigation flows', () => {
     await page.goto('/ru/kak-my-ocenivaem-dohodnost-obektov', {
       waitUntil: 'domcontentloaded',
     });
-    await page
+    const locationLink = page
       .locator('header nav')
-      .getByRole('link', { name: /Оценка локации/i })
-      .click();
-    await page.waitForLoadState('domcontentloaded');
+      .getByRole('link', { name: /Оценка локации/i });
+    await Promise.all([
+      page.waitForURL(/otchet-po-dohodnosti-obektov/),
+      locationLink.click(),
+    ]);
     expect(page.url()).toContain('otchet-po-dohodnosti-obektov');
   });
 
