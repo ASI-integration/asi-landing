@@ -119,13 +119,83 @@ jobs:
             echo "[proc-environ] MainPID environ not readable by ${REMOTE_USER}; presence check skipped (reporting fact, not bypassing permissions)"
           fi
 
+          ENV_FILE="/var/www/asi/shared/.env.production.local"
+          echo "[section] env file key presence (values never printed): ${ENV_FILE}"
+          if [[ -r "$ENV_FILE" ]]; then
+            for key in "${KEYS[@]}"; do
+              line="$(grep -E "^[[:space:]]*${key}=" "$ENV_FILE" | tail -n 1 || true)"
+              if [[ -z "$line" ]]; then
+                printf 'env_file key=%s present=no nonempty=no\n' "$key"
+                continue
+              fi
+              value="${line#*=}"
+              value="${value%\"}"
+              value="${value#\"}"
+              if [[ -n "${value//[[:space:]]/}" ]]; then
+                printf 'env_file key=%s present=yes nonempty=yes\n' "$key"
+              else
+                printf 'env_file key=%s present=yes nonempty=no\n' "$key"
+              fi
+            done
+          else
+            echo "[env-file] ${ENV_FILE} not readable by ${REMOTE_USER}; presence check skipped (reporting fact, not bypassing permissions)"
+          fi
+
+          echo "[section] systemd Environment= key presence (raw property never printed)"
+          SYSTEMD_ENVIRONMENT="$(systemctl show "$SERVICE" -p Environment --value 2>/dev/null || true)"
+          for key in "${KEYS[@]}"; do
+            if printf '%s' "$SYSTEMD_ENVIRONMENT" | grep -qE "(^|[[:space:]])${key}="; then
+              # Environment= values may be shell-quoted by systemd; splitting on
+              # whitespace here is not a faithful parse, so emptiness is not
+              # safely determinable without risking a wrong or partial read.
+              printf 'systemd_environment key=%s present=yes nonempty=unknown\n' "$key"
+            else
+              printf 'systemd_environment key=%s present=no nonempty=no\n' "$key"
+            fi
+          done
+          unset SYSTEMD_ENVIRONMENT
+
+          echo "[section] PassEnvironment / UnsetEnvironment key presence (raw property never printed)"
+          PASS_ENVIRONMENT="$(systemctl show "$SERVICE" -p PassEnvironment --value 2>/dev/null || true)"
+          UNSET_ENVIRONMENT="$(systemctl show "$SERVICE" -p UnsetEnvironment --value 2>/dev/null || true)"
+          for key in "${KEYS[@]}"; do
+            if printf '%s\n' "$PASS_ENVIRONMENT" | tr ' ' '\n' | grep -qx "$key"; then
+              printf 'pass_environment key=%s present=yes\n' "$key"
+            else
+              printf 'pass_environment key=%s present=no\n' "$key"
+            fi
+            if printf '%s\n' "$UNSET_ENVIRONMENT" | tr ' ' '\n' | grep -qx "$key"; then
+              printf 'unset_environment key=%s present=yes\n' "$key"
+            else
+              printf 'unset_environment key=%s present=no\n' "$key"
+            fi
+          done
+          unset PASS_ENVIRONMENT UNSET_ENVIRONMENT
+
+          echo "[section] ${REMOTE_USER} group membership"
+          USER_GROUPS="$(id -nG "$REMOTE_USER" 2>/dev/null || true)"
+          for grp in systemd-journal adm; do
+            if printf '%s\n' "$USER_GROUPS" | tr ' ' '\n' | grep -qx "$grp"; then
+              printf 'group=%s member=yes\n' "$grp"
+            else
+              printf 'group=%s member=no\n' "$grp"
+            fi
+          done
+          unset USER_GROUPS
+
           echo "[section] journal window ${WINDOW_SINCE} .. ${WINDOW_UNTIL}"
           JOURNAL_STATUS=0
           JOURNAL_OUTPUT="$(journalctl -u "$SERVICE" --since "$WINDOW_SINCE" --until "$WINDOW_UNTIL" -o cat 2>/dev/null)" || JOURNAL_STATUS=$?
 
           if [[ $JOURNAL_STATUS -eq 0 ]]; then
+            if [[ -z "$JOURNAL_OUTPUT" ]]; then
+              TOTAL_LINES=0
+            else
+              TOTAL_LINES="$(printf '%s\n' "$JOURNAL_OUTPUT" | wc -l)"
+            fi
             FILTERED="$(printf '%s\n' "$JOURNAL_OUTPUT" | grep -E '\[Signup\]|SIGNUP_FAILED|Supabase|Supabase env vars not configured' || true)"
             if [[ -n "$FILTERED" ]]; then
+              MATCHED_LINES="$(printf '%s\n' "$FILTERED" | wc -l)"
               printf '%s\n' "$FILTERED" \
                 | sed -E \
                     -e 's/("?password_hash"?[[:space:]]*[:=][[:space:]]*)"[^"]*"/\1"[REDACTED]"/gI' \
@@ -138,10 +208,12 @@ jobs:
                     -e 's/("?[a-z_]*key[a-z_]*"?[[:space:]]*[:=][[:space:]]*)"[^"]*"/\1"[REDACTED]"/gI' \
                 | head -n 200
             else
+              MATCHED_LINES=0
               echo "[journal] no matching [Signup]/SIGNUP_FAILED/Supabase lines in window"
             fi
+            echo "[journal] total_lines=${TOTAL_LINES} matched_lines=${MATCHED_LINES}"
           else
             echo "[journal] journalctl read failed for ${SERVICE} (exit=${JOURNAL_STATUS}); access may be restricted for ${REMOTE_USER}"
           fi
-          unset JOURNAL_OUTPUT FILTERED
+          unset JOURNAL_OUTPUT FILTERED TOTAL_LINES MATCHED_LINES
           REMOTE
