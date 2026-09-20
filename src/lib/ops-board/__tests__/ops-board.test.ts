@@ -8,10 +8,25 @@ type Row = Record<string, unknown>;
 
 let rows: Row[] = [];
 let crmEvents: Row[] = [];
+let dedupReadBarrier: (() => Promise<void>) | null = null;
+let statusOnConflict: string | null = null;
+let insertError: { code: string; message: string } | null = null;
+let hideConflictRow = false;
+
+function forceConcurrentDedupReads() {
+  let arrived = 0;
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => { release = resolve; });
+  dedupReadBarrier = async () => {
+    if (++arrived === 2) release();
+    await gate;
+  };
+}
 
 function resetStore(): void {
   rows = [];
   crmEvents = [];
+  dedupReadBarrier = null; statusOnConflict = null; insertError = null; hideConflictRow = false;
 }
 
 function findOpenByDedup(dedupKey: string): Row | undefined {
@@ -39,8 +54,11 @@ vi.mock('@/lib/supabase', () => ({
         insert: (row: Row) => ({
           select: () => ({
             single: async () => {
-              const dedup = String(row.dedup_key ?? '');
-              if (findOpenByDedup(dedup)) {
+              if (insertError) return { data: null, error: insertError };
+              // Production has a UUID primary key, NOT a unique dedup_key.
+              const existing = row.id ? rows.find((item) => item.id === row.id) : undefined;
+              if (existing) {
+                if (statusOnConflict) existing.task_status = statusOnConflict;
                 return { data: null, error: { message: 'duplicate', code: '23505' } };
               }
               const created = {
@@ -73,10 +91,14 @@ vi.mock('@/lib/supabase', () => ({
                 }),
               }),
             }),
-            maybeSingle: async () => ({ data: rows.find((row) => row[col] === val) ?? null, error: null }),
+            maybeSingle: async () => ({ data: hideConflictRow ? null : rows.find((row) => row[col] === val) ?? null, error: null }),
             order: () => ({
               limit: () => ({
-                maybeSingle: async () => ({ data: rows.find((row) => row[col] === val) ?? null, error: null }),
+                maybeSingle: async () => {
+                  const match = rows.find((row) => row[col] === val) ?? null;
+                  if (dedupReadBarrier && col === 'dedup_key') await dedupReadBarrier();
+                  return { data: match, error: null };
+                },
               }),
             }),
           }),
@@ -228,6 +250,54 @@ describe('ops-board v1', () => {
     expect(second.task?.id).toBe(first.task?.id);
     expect(findOpenByDedup(dedup)).toBeTruthy();
     expect(rows).toHaveLength(1);
+  });
+
+  const concurrentInput = {
+    taskId: '23777b7d-d094-53cb-a6ef-226c14b95d29',
+    taskType: 'verify_channel_manager' as const,
+    taskStatus: 'needs_operator' as const,
+    source: 'channel_manager' as const,
+    objectId: 'fixture-property',
+    dedupKey: 'ru-owner-connect:fixture-account:fixture-property',
+    description: 'Original summary',
+    lastEventText: 'Owner submitted',
+    updateIfExists: { description: 'Updated summary' },
+  };
+
+  it.each(['needs_operator', 'in_progress', 'done'])('recovers concurrent PK conflict without resetting %s', async (status) => {
+    forceConcurrentDedupReads();
+    statusOnConflict = status;
+    const [a, b] = await Promise.all([
+      createOpsOperatorTask(concurrentInput), createOpsOperatorTask(concurrentInput),
+    ]);
+    expect(a.ok && b.ok).toBe(true);
+    expect([a.created, b.created].sort()).toEqual([false, true]);
+    expect(a.task?.id).toBe(b.task?.id);
+    expect(a.task?.id).toBe(concurrentInput.taskId);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      dedup_key: concurrentInput.dedupKey, task_status: status,
+      description: status === 'done' ? 'Original summary' : 'Updated summary',
+      last_event_text: 'Owner submitted',
+    });
+    const recovered = [a, b].find((result) => !result.created)!;
+    expect(recovered.task?.taskStatus).toBe(status);
+    console.info('concurrency proof', { rows: rows.length, created: [a.created, b.created], ids: [a.task?.id, b.task?.id], status: rows[0].task_status });
+  });
+
+  it('fails safely when the PK conflict row cannot be read', async () => {
+    forceConcurrentDedupReads(); hideConflictRow = true;
+    const results = await Promise.all([createOpsOperatorTask(concurrentInput), createOpsOperatorTask(concurrentInput)]);
+    expect(results.filter((result) => result.ok)).toHaveLength(1);
+    expect(results.find((result) => !result.ok)).toMatchObject({ created: false, task: null });
+    expect(rows).toHaveLength(1);
+  });
+
+  it.each(['23505', 'XX000'])('keeps insert errors as failures without a recoverable task (%s)', async (code) => {
+    insertError = { code, message: 'Synthetic insert failure' };
+    const result = await createOpsOperatorTask({ taskType: 'other', source: 'manual' });
+    expect(result).toMatchObject({ ok: false, created: false, task: null, error: insertError.message });
+    expect(rows).toHaveLength(0);
   });
 
   it('writes Activity Feed events for create and status changes', async () => {

@@ -75,7 +75,7 @@ import { GET as googleCallback } from '@/app/api/auth/google/callback/route';
 import { GET as read, POST as save } from '@/app/api/cabinet/connect/route';
 import { safeAuthRedirectPath } from '@/lib/auth/app-url';
 import { RU_SETUP_PATH } from '../model';
-import { connectionPropertyId } from '../service';
+import { connectionOperatorTaskId, connectionPropertyId } from '../service';
 
 const request = (body: unknown) => new Request('http://localhost/api/test', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
 const credentials = { email: 'owner@example.test', password: 'fixture-password-2026' };
@@ -91,6 +91,15 @@ beforeEach(() => {
 });
 
 describe('RU connection route and persistence contracts', () => {
+  it('derives stable, distinct server task UUIDs', () => {
+    const id = connectionOperatorTaskId('account-a', 'property-a');
+    expect(id).toBe(connectionOperatorTaskId('account-a', 'property-a'));
+    expect(id).not.toBe(connectionOperatorTaskId('account-a', 'property-b'));
+    expect(id).not.toBe(connectionOperatorTaskId('account-b', 'property-a'));
+    expect(id).not.toBe(connectionPropertyId('account-a'));
+    expect(id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+  });
+
   it('RU signup succeeds without accounts.lifecycle_status, creates membership and never starts a trial', async () => {
     await createOwner();
     expect(await bcrypt.compare(credentials.password, fixture.rows.users[0].password_hash)).toBe(true);
@@ -209,6 +218,7 @@ describe('RU connection route and persistence contracts', () => {
     expect(fixture.rows.ops_operator_tasks).toHaveLength(1);
     const task = fixture.rows.ops_operator_tasks[0];
     expect(task).toMatchObject({ task_type: 'verify_channel_manager', task_status: 'needs_operator', object_id: fixture.rows.properties[0].id });
+    expect(task.id).toBe(connectionOperatorTaskId(fixture.rows.accounts[0].id, fixture.rows.properties[0].id));
     expect(task.metadata.account_id).toBe(fixture.rows.accounts[0].id);
     expect(task.description).toContain('bnovo');
     expect(task.description).toContain('Свой сайт / соцсети');

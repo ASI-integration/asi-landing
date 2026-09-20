@@ -113,6 +113,40 @@ async function findOpenTaskByDedupKey(dedupKey: string): Promise<OpsOperatorTask
   return task;
 }
 
+async function reuseExistingTask(existing: OpsOperatorTask, input: CreateOpsOperatorTaskInput) {
+  if (!OPS_OPEN_STATUSES.includes(existing.taskStatus)) {
+    return { ok: true, task: existing, created: false };
+  }
+
+  if (input.updateIfExists) {
+    const updates: UpdateOpsOperatorTaskInput = {
+      taskStatus: input.updateIfExists.taskStatus ?? existing.taskStatus,
+      lastEventText: input.updateIfExists.lastEventText,
+    };
+    if (input.updateIfExists.description !== undefined) {
+      const { data, error } = await supabase
+        .from('ops_operator_tasks')
+        .update({
+          description: input.updateIfExists.description,
+          ...(input.updateIfExists.taskStatus != null ? { task_status: updates.taskStatus } : {}),
+          ...(updates.lastEventText != null ? { last_event_text: updates.lastEventText } : {}),
+          ...(updates.lastEventText ? { last_event_at: nowIso() } : {}),
+          updated_at: nowIso(),
+        })
+        .eq('id', existing.id)
+        .select('*')
+        .maybeSingle();
+      if (error) {
+        return { ok: false, task: null, created: false, error: error.message };
+      }
+      if (data) {
+        return { ok: true, task: mapRow(data as OpsOperatorTaskRow), created: false };
+      }
+    }
+  }
+  return { ok: true, task: existing, created: false };
+}
+
 export async function createOpsOperatorTask(
   input: CreateOpsOperatorTaskInput,
 ): Promise<{ ok: boolean; task: OpsOperatorTask | null; created: boolean; error?: string }> {
@@ -126,41 +160,12 @@ export async function createOpsOperatorTask(
 
   const existing = await findTaskByDedupKey(dedupKey);
   if (existing) {
-    if (!OPS_OPEN_STATUSES.includes(existing.taskStatus)) {
-      return { ok: true, task: existing, created: false };
-    }
-
-    if (input.updateIfExists) {
-      const updates: UpdateOpsOperatorTaskInput = {
-        taskStatus: input.updateIfExists.taskStatus ?? existing.taskStatus,
-        lastEventText: input.updateIfExists.lastEventText,
-      };
-      if (input.updateIfExists.description !== undefined) {
-        const { data, error } = await supabase
-          .from('ops_operator_tasks')
-          .update({
-            description: input.updateIfExists.description,
-            task_status: updates.taskStatus,
-            last_event_text: updates.lastEventText ?? existing.lastEventText,
-            last_event_at: updates.lastEventText ? nowIso() : existing.lastEventAt,
-            updated_at: nowIso(),
-          })
-          .eq('id', existing.id)
-          .select('*')
-          .maybeSingle();
-        if (error) {
-          return { ok: false, task: null, created: false, error: error.message };
-        }
-        if (data) {
-          return { ok: true, task: mapRow(data as OpsOperatorTaskRow), created: false };
-        }
-      }
-    }
-    return { ok: true, task: existing, created: false };
+    return reuseExistingTask(existing, input);
   }
 
   const now = nowIso();
   const row = {
+    ...(input.taskId ? { id: input.taskId } : {}),
     task_type: input.taskType,
     task_status: input.taskStatus ?? 'new',
     priority: input.priority ?? 'normal',
@@ -182,6 +187,11 @@ export async function createOpsOperatorTask(
 
   const { data, error } = await supabase.from('ops_operator_tasks').insert(row).select('*').single();
   if (error) {
+    if (input.taskId && error.code === '23505') {
+      const concurrent = await getOpsOperatorTask(input.taskId);
+      if (concurrent.ok && concurrent.task) return reuseExistingTask(concurrent.task, input);
+      return { ok: false, task: null, created: false, error: concurrent.error ?? 'task_conflict_recovery_failed' };
+    }
     return { ok: false, task: null, created: false, error: error.message };
   }
 

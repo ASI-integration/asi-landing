@@ -13,6 +13,12 @@ export function connectionPropertyId(accountId: string): string {
   return `${hash.slice(0, 8)}-${hash.slice(8, 12)}-4${hash.slice(13, 16)}-a${hash.slice(17, 20)}-${hash.slice(20, 32)}`;
 }
 
+/** Server-derived task identity; existing UUID primary key arbitrates concurrent submissions. */
+export function connectionOperatorTaskId(accountId: string, propertyId: string): string {
+  const hash = createHash('sha256').update(`asi:ru-owner-connect-task:v1:${accountId}:${propertyId}`).digest('hex');
+  return `${hash.slice(0, 8)}-${hash.slice(8, 12)}-5${hash.slice(13, 16)}-a${hash.slice(17, 20)}-${hash.slice(20, 32)}`;
+}
+
 export class ConnectionValidationError extends Error {}
 
 const pilotDeps = () => ({ store: createSupabaseRuCommercialPilotStore(), ownsProperty: supabaseOwnsProperty, isReadinessSatisfied: supabaseReadinessProbe });
@@ -74,6 +80,7 @@ export async function saveConnection(accountId: string, actorId: string, step: n
       'Анкета владельца заполнена. Проверьте доступы и продолжите подключение в существующем контуре Менеджера Каналов.',
     ].join('\n');
     const handoff = await createOpsOperatorTask({
+      taskId: connectionOperatorTaskId(accountId, propertyId),
       taskType: 'verify_channel_manager', taskStatus: 'needs_operator', source: 'channel_manager',
       objectId: propertyId, objectLabel: draft.name,
       dedupKey: `ru-owner-connect:${accountId}:${propertyId}`,
