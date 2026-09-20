@@ -1,0 +1,80 @@
+# TEMPORARY / diagnostic-only for PR #318 production pre-deploy prerequisite check.
+# Read-only schema/catalog verification of public.ru_commercial_pilot_lifecycle in production.
+# Does not deploy, migrate, or mutate. No application-row reads.
+name: Diagnose Production Lifecycle Schema (Read-Only)
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm_readonly_diagnostic:
+        description: Type RUN_PRODUCTION_LIFECYCLE_SCHEMA_READONLY_DIAGNOSTIC
+        required: true
+        type: string
+
+env:
+  EXPECTED_SUPABASE_PROJECT_REF: jwinifeienvzejofmbua
+
+permissions:
+  contents: read
+
+concurrency:
+  group: diagnose-production-lifecycle-schema-readonly
+  cancel-in-progress: false
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 10
+    steps:
+      - name: Require explicit read-only confirmation
+        shell: bash
+        env:
+          CONFIRM_READONLY_DIAGNOSTIC: ${{ inputs.confirm_readonly_diagnostic }}
+        run: |
+          set -euo pipefail
+          required="RUN_PRODUCTION_LIFECYCLE_SCHEMA_READONLY_DIAGNOSTIC"
+          if [[ "$CONFIRM_READONLY_DIAGNOSTIC" != "$required" ]]; then
+            echo "::error::Read-only diagnostic confirmation phrase mismatch."
+            exit 1
+          fi
+
+      - name: Checkout diagnostic script
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Ensure PostgreSQL client is available
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! command -v psql >/dev/null 2>&1; then
+            sudo apt-get update -qq
+            sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq postgresql-client
+          fi
+          psql --version
+
+      - name: Inspect production lifecycle schema read-only
+        id: inspect
+        shell: bash
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          EXPECTED_SUPABASE_PROJECT_REF: ${{ env.EXPECTED_SUPABASE_PROJECT_REF }}
+          PROD_LIFECYCLE_SCHEMA_DIAGNOSTIC_ARTIFACT: production-lifecycle-schema-diagnostic.txt
+          PGCONNECT_TIMEOUT: "10"
+        run: |
+          set -euo pipefail
+          chmod +x scripts/diagnose-production-lifecycle-schema-readonly.sh
+          bash scripts/diagnose-production-lifecycle-schema-readonly.sh
+          echo "=== DIAGNOSTIC_ARTIFACT_BEGIN ==="
+          cat production-lifecycle-schema-diagnostic.txt
+          echo "=== DIAGNOSTIC_ARTIFACT_END ==="
+
+      - name: Upload sanitized diagnostic artifact
+        if: ${{ always() && hashFiles('production-lifecycle-schema-diagnostic.txt') != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: production-lifecycle-schema-diagnostic
+          path: production-lifecycle-schema-diagnostic.txt
+          if-no-files-found: error
+          retention-days: 7
