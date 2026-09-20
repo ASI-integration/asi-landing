@@ -3,6 +3,14 @@
 name: Diagnose Staging Connect Schema (Read-Only)
 
 on:
+  # Temporary: push trigger is required until this file exists on default branch,
+  # because GitHub rejects workflow_dispatch for workflows that are not on main.
+  push:
+    branches:
+      - diagnose/staging-connect-schema-readonly
+    paths:
+      - '.github/workflows/diagnose-staging-connect-schema-readonly.yml'
+      - 'scripts/diagnose-staging-connect-schema-readonly.sh'
   workflow_dispatch:
     inputs:
       confirm_readonly_diagnostic:
@@ -24,6 +32,7 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: Require explicit read-only confirmation
+        if: ${{ github.event_name == 'workflow_dispatch' }}
         shell: bash
         env:
           CONFIRM_READONLY_DIAGNOSTIC: ${{ inputs.confirm_readonly_diagnostic }}
@@ -34,6 +43,16 @@ jobs:
             echo "::error::Read-only diagnostic confirmation phrase mismatch."
             exit 1
           fi
+
+      - name: Confirm temporary push-path diagnostic
+        if: ${{ github.event_name == 'push' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "TEMPORARY_PUSH_PATH_DIAGNOSTIC=true"
+          echo "branch=${GITHUB_REF_NAME}"
+          echo "sha=${GITHUB_SHA}"
+          echo "scope=read_only_staging_catalog_only"
 
       - name: Checkout diagnostic script
         uses: actions/checkout@v4
