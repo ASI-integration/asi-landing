@@ -78,7 +78,7 @@ export default function HomeRu() {
 
       <main>
         {/* 1. Hero */}
-        <section className="bg-asi-ivory px-5 sm:px-8 pt-9 sm:pt-14 pb-5 sm:pb-7">
+        <section className="bg-asi-ivory px-5 sm:px-8 pt-9 sm:pt-14 pb-2 sm:pb-3">
           <div className="max-w-6xl mx-auto">
             <p className="text-sm font-semibold text-asi-gold-text">Один из продуктов ASI Global</p>
             <div className="mt-5 flex items-start justify-between gap-6">
@@ -99,17 +99,14 @@ export default function HomeRu() {
             <div className="mt-7 sm:mt-9">
               <ConnectCta href={RU_CONNECT_HREF} />
             </div>
-            <p className="mt-3 text-sm text-asi-navy/65">
+            <p className="mt-3 max-w-4xl text-[16px] sm:text-[18px] font-medium tracking-[-0.01em] text-asi-navy/80 leading-relaxed">
               Сейчас — пилот: настраиваем доступные функции под ваш объект. Подключение и настройка — 0 ₽.
-            </p>
-            <p className="mt-4 max-w-3xl text-sm text-asi-navy/65">
-              Здесь — ASI для жилой и посуточной недвижимости. ASI Global развивает и другие продукты.
             </p>
           </div>
         </section>
 
         {/* 2. Масштабирование */}
-        <BrandSection variant="ivory" id="coordination" className="scroll-mt-24 !pt-6 sm:!pt-8 !pb-10 sm:!pb-12">
+        <BrandSection variant="ivory" id="coordination" className="scroll-mt-24 !pt-4 sm:!pt-5 !pb-10 sm:!pb-12">
           <BrandEyebrow>Масштабирование</BrandEyebrow>
           <BrandHeadline className="text-3xl sm:text-5xl max-w-4xl !leading-tight">
             Больше объектов не значит больше чистой прибыли
