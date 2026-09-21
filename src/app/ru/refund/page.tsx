@@ -27,9 +27,6 @@ export default function RuRefundPage() {
             Email: <a href={`mailto:${ruCompliance.email}`}>{ruCompliance.email}</a>
           </li>
           <li>
-            Телефон: <a href={`tel:${ruCompliance.phoneTel}`}>{ruCompliance.phone}</a>
-          </li>
-          <li>
             Telegram:{' '}
             <a href={ruCompliance.telegram} target="_blank" rel="noopener noreferrer">
               @{telegramSupportBotHandle}

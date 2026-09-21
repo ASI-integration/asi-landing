@@ -26,10 +26,6 @@ export default function RuContactsPage() {
               <a href={`mailto:${ruCompliance.email}`}>{ruCompliance.email}</a>
             </li>
             <li>
-              <span className="block text-xs text-asi-navy/50 mb-1">Телефон</span>
-              <a href={`tel:${ruCompliance.phoneTel}`}>{ruCompliance.phone}</a>
-            </li>
-            <li>
               <span className="block text-xs text-asi-navy/50 mb-1">Telegram</span>
               <a href={ruCompliance.telegram} target="_blank" rel="noopener noreferrer">
                 @{telegramSupportBotHandle}

@@ -112,13 +112,6 @@ export function RuComplianceFooter({
               >
                 {ruCompliance.email}
               </a>
-              {' · '}
-              <a
-                href={`tel:${ruCompliance.phoneTel}`}
-                className="underline underline-offset-2 hover:text-asi-ivory"
-              >
-                {ruCompliance.phone}
-              </a>
             </p>
           </div>
 
