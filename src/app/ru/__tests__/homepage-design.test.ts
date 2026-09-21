@@ -42,6 +42,18 @@ describe('RU owner connection journey — approved 2026-09-21', () => {
     expect(html).toContain('эффектом Рингельмана');
   });
 
+  it('keeps the hero CTA microcopy concise, readable, and close to scaling', () => {
+    const html = render();
+    const hero = html.slice(0, html.indexOf('id="coordination"'));
+    expect(hero).toContain(
+      'Сейчас — пилот: настраиваем доступные функции под ваш объект. Подключение и настройка — 0 ₽.',
+    );
+    expect(hero).not.toContain('Здесь — ASI для жилой и посуточной недвижимости');
+    expect(hero).toContain('text-[16px] sm:text-[18px]');
+    expect(hero).toContain('pb-2 sm:pb-3');
+    expect(html).toContain('!pt-4 sm:!pt-5');
+  });
+
   it('routes all four wide CTAs directly to the connection flow', () => {
     const html = render();
     const wideActions = html.match(/<a[^>]*data-testid="start-connection"[^>]*>/g) ?? [];
