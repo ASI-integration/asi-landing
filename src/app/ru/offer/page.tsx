@@ -13,7 +13,7 @@ export default function RuOfferPage() {
   return (
     <RuLegalPageLayout
       title="Публичная оферта"
-      intro="На предоставление доступа к сервису ASI и оказание услуг по автоматизации · редакция 1.1"
+      intro={`На предоставление доступа к сервису ASI и оказание услуг по автоматизации · редакция ${RU_OFFER_DOCUMENT.version}`}
       wide
     >
       <div className="print:hidden"><RuCommercialTimeline compact /></div>
