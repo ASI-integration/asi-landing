@@ -29,12 +29,31 @@ describe('RU capabilities and ecosystem page', () => {
       'Встроенный бесплатный Channel Manager',
       'OTA Reconciliation',
       'ASI Micro Lux',
-      '10–12 м²',
       'Поданы заявки в Роспатент',
       'международная процедура PCT',
     ]) {
       expect(html).toContain(copy);
     }
+  });
+
+  it('presents Micro Lux as a separate physical vertical without disclosing implementation details', () => {
+    const html = render();
+    const microLux = html.slice(html.indexOf('id="micro-lux"'), html.indexOf('id="intellectual-property"'));
+
+    expect(microLux).toContain('ASI Micro Lux');
+    expect(microLux).toContain('Отдельная физическая вертикаль ASI Global');
+    expect(microLux).toContain('единый управляющий слой');
+    expect(microLux).toContain('альтернатива не только отелям, но и хостелам');
+    expect(microLux).toContain('Micro Lux находится на более ранней стадии развития');
+
+    expect(microLux).not.toContain('10–12 м²');
+    expect(microLux).not.toContain('10-12 м²');
+    expect(microLux).not.toMatch(/\d+\s*[–-]\s*\d+\s*м²/);
+    expect(microLux).not.toContain('ASI полностью управляет');
+    expect(microLux).not.toContain('без персонала на точке');
+    expect(microLux).not.toContain('аэропорт');
+    expect(microLux).not.toContain('вокзал');
+    expect(microLux).not.toContain('бизнес-парк');
   });
 
   it('labels future technology as roadmap rather than current pilot functionality', () => {

@@ -176,8 +176,14 @@ export default function RuCapabilitiesPage() {
               <BrandHeadline className="text-4xl sm:text-6xl">ASI Micro Lux</BrandHeadline>
               <BrandGoldRule className="mb-7 mt-7" />
               <p className="max-w-xl text-lg leading-relaxed text-asi-navy/70">
-                Компактные автономные гостиничные модули премиум-класса площадью около 10–12 м² для
-                аэропортов, бизнес-парков и вокзалов.
+                Отдельная физическая вертикаль ASI Global: компактные модульные пространства для
+                краткосрочного проживания в дорогих локациях с высоким спросом на размещение — там,
+                где классический номер дорог, а бюджетные форматы не дают достаточной приватности.
+              </p>
+              <p className="mt-5 max-w-xl text-lg leading-relaxed text-asi-navy/70">
+                Формат задуман как конкурентная альтернатива не только отелям, но и хостелам:
+                меньше пространства на одного гостя, но собственная приватная среда и высокий
+                уровень автоматизации.
               </p>
             </div>
 
@@ -187,11 +193,15 @@ export default function RuCapabilitiesPage() {
                   ASI внутри модуля
                 </p>
                 <p className="mt-5 font-serif text-2xl leading-snug sm:text-3xl">
-                  Операционный мозг кабины без персонала на точке
+                  ASI — управляющий слой Micro Lux
                 </p>
                 <p className="mt-5 leading-relaxed text-asi-ivory/65">
-                  ASI полностью управляет доступом, клинингом, микроклиматом и техническим
-                  состоянием модуля.
+                  В этой вертикали ASI проектируется как единый управляющий слой для бронирования,
+                  доступа, обслуживания и операционных задач модуля.
+                </p>
+                <p className="mt-5 text-sm leading-relaxed text-asi-ivory/50">
+                  Micro Lux находится на более ранней стадии развития, чем текущая программная
+                  вертикаль ASI для недвижимости.
                 </p>
               </div>
               <div className="mt-10 flex justify-end">
