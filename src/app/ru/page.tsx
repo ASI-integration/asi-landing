@@ -92,12 +92,13 @@ export default function HomeRu() {
               <div className="hidden sm:block shrink-0 pt-2"><BrandShiro size={80} /></div>
             </div>
             <p className="mt-6 max-w-3xl text-base sm:text-xl text-asi-navy/75 leading-relaxed">
-              Обычно управление объектами выглядит так: календарь — в одной программе, переписка — в другой, уборка — в чате.
-              ASI сама ведёт рутинную работу объекта: от вопросов гостя и подготовки заезда
-              до ежедневных задач с площадками бронирования.
+              Сейчас управление объектами — это постоянное переключение: брони в одном месте, чаты с гостями в другом, задачи горничным в третьем.
+            </p>
+            <p className="mt-4 max-w-3xl text-base sm:text-xl text-asi-navy/75 leading-relaxed">
+              <strong>ASI связывает эти процессы и ведет их сама:</strong> ответит гостю, проверит готовность объекта к заезду и согласует детали с площадками.
             </p>
             <p className="mt-4 text-lg sm:text-xl font-semibold">
-              Система ведёт повседневные задачи. Вы решаете нестандартные вопросы.
+              Рутинную работу делает система. За человеком — только ключевые решения.
             </p>
             <div className="mt-7 sm:mt-9">
               <ConnectCta href={RU_SPECIAL_OFFER_HREF} />
