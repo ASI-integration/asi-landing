@@ -3,81 +3,82 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { readFileSync } from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
 import HomeRu from '../page';
-import { RU_CONNECT_HREF, RU_SPECIAL_OFFER_HREF } from '@/components/ru/ConnectCta';
+import { RU_CONNECT_HREF } from '@/components/ru/ConnectCta';
 
 vi.mock('next/navigation', () => ({ usePathname: () => '/ru' }));
 const render = () => renderToStaticMarkup(React.createElement(HomeRu));
 
-describe('RU owner connection journey — approved 2026-09-19', () => {
-  it('puts product, action and four steps before the supporting articles', () => {
+describe('RU owner connection journey — approved 2026-09-21', () => {
+  it('renders the approved problem-to-action flow in order', () => {
     const html = render();
     expect(html).toContain('ASI сама ведёт рутину ваших объектов. От и до.');
-    expect(html.indexOf('data-testid="start-connection"')).toBeLessThan(html.indexOf('id="how-it-works"'));
     const sections = [
-      'how-it-works',
-      'special-offer',
       'coordination',
+      'quick-connect-1',
+      'how-it-works',
+      'quick-connect-2',
       'automation-gap',
-      'guest-communication',
-      'principle',
       'capabilities',
-      'example',
+      'special-offer',
       'pilot-form',
     ];
     const positions = sections.map((id) => html.indexOf(`id="${id}"`));
     expect(positions.every((position) => position > 0)).toBe(true);
     expect(positions).toEqual([...positions].sort((a, b) => a - b));
-    const steps = html.slice(html.indexOf('id="how-it-works"'), html.indexOf('id="special-offer"'));
+
+    const steps = html.slice(html.indexOf('id="how-it-works"'), html.indexOf('id="quick-connect-2"'));
     expect(steps.match(/<h3/g)).toHaveLength(4);
     expect(steps).toContain('Bnovo');
     expect(steps).toContain('RealtyCalendar');
+    for (const n of ['>1<', '>2<', '>3<', '>4<']) expect(steps).toContain(n);
   });
 
-  it('routes three wide CTAs to #special-offer and continue CTA to /ru/connect', () => {
+  it('keeps scaling and comparison hierarchy consistent and highlights the staffing outcome', () => {
+    const html = render();
+    expect(html).toContain('Больше объектов не значит больше чистой прибыли');
+    expect(html).toContain('Почему обычных сервисов уже недостаточно');
+    expect(html).toContain('1–2 человека вместо раздутого штата');
+    expect(html).toContain('управление 100+ объектами');
+    expect(html).toContain('эффектом Рингельмана');
+  });
+
+  it('routes all four wide CTAs directly to the connection flow', () => {
     const html = render();
     const wideActions = html.match(/<a[^>]*data-testid="start-connection"[^>]*>/g) ?? [];
-    expect(wideActions).toHaveLength(3);
-    for (const action of wideActions) expect(action).toContain(`href="${RU_SPECIAL_OFFER_HREF}"`);
+    expect(wideActions).toHaveLength(4);
+    for (const action of wideActions) expect(action).toContain(`href="${RU_CONNECT_HREF}"`);
 
     expect(html).toContain('id="special-offer"');
-    expect(html).toContain('href="/ru#special-offer"');
     expect(html).not.toContain('id="pricing"');
     expect(html).not.toContain('href="/ru#pricing"');
-
-    const continueActions = html.match(/<a[^>]*data-testid="continue-connection"[^>]*>/g) ?? [];
-    expect(continueActions).toHaveLength(1);
-    expect(continueActions[0]).toContain(`href="${RU_CONNECT_HREF}"`);
-    expect(html).toContain('ПРОДОЛЖИТЬ ПОДКЛЮЧЕНИЕ');
-    expect(html).toContain('Вход или регистрация, затем настройка объекта.');
-
-    expect(html).toContain(`href="${RU_CONNECT_HREF}"`);
     expect(html).toContain('Войти / подключить');
     expect(html).not.toContain('href="/dashboard');
   });
 
-  it('states the three-stage commercial path without provisional public promises', () => {
+  it('states the special Strigunov terms exactly and keeps payment opt-in', () => {
     const html = render();
     for (const term of [
-      'Подключение и настройка',
+      'Условия для сообщества Ярослава Стригунова',
       '0 ₽',
       '14 дней',
-      'Только по вашему решению',
+      '1 000 ₽/объект',
+      '12 месяцев',
       'Никакого автоматического перехода на оплату',
-      'Период начинается только после готовности объекта',
+      'полной готовности объекта',
     ])
       expect(html).toContain(term);
-    expect(html).not.toMatch(/Стригунова|1(?:[\s\u00a0])?000 ₽|12 месяцев/);
-    expect(html.toLowerCase()).not.toContain('скидк');
   });
 
-  it('retains truthful capability boundaries and the existing brand', () => {
+  it('retains truthful capability boundaries and combines capabilities with examples', () => {
     const html = render();
     expect(html).toContain('Сейчас — пилот');
     expect(html).toContain('Система сама ведёт повторяемую работу объекта');
-    expect(html).not.toContain('Автоматический ответ остановлен');
-    expect(html).toContain('ASI Global развивает и другие продукты.');
     expect(html).toContain('не публикуется на площадках автоматически');
     expect(html).toContain('система сразу передаёт диалог вам');
+    expect(html).toContain('Как это выглядит на практике');
+    expect(html).not.toContain('id="guest-communication"');
+    expect(html).not.toContain('id="principle"');
+    expect(html).not.toContain('id="example"');
     expect(html).toContain('Shiro');
     expect(html).toContain('bg-asi-ivory');
     expect(html).not.toMatch(/95%|99%|полностью автономн|заменяет сотрудников|автоматическая синхронизация/);
