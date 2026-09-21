@@ -1,4 +1,4 @@
-﻿-- RU commercial pilot entitlement guard v1.
+-- RU commercial pilot entitlement guard v1.
 -- Prevents a new registration/email from silently granting another standard pilot
 -- for the same physical property. Additive only; no production apply in this change.
 
