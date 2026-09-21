@@ -257,7 +257,8 @@ jobs:
           ssh-keygen -lf ~/.ssh/staging_deploy_key
           SSH_OPTS=(-i ~/.ssh/staging_deploy_key -p "$SSH_PORT" -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=20)
           SCP_OPTS=(-i ~/.ssh/staging_deploy_key -P "$SSH_PORT" -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=20)
-          ssh "${SSH_OPTS[@]}" "$STAGING_SSH_USER@$STAGING_SSH_HOST" "mkdir -p '$REMOTE_TMP' && chmod 700 '$REMOTE_TMP'"
+          ssh "${SSH_OPTS[@]}" "$STAGING_SSH_USER@$STAGING_SSH_HOST" \
+            "set -e; base='$STAGING_APP_PATH'; releases='$STAGING_APP_PATH/releases'; current=\$(readlink -f '$STAGING_APP_PATH/current' 2>/dev/null || true); echo 'Disk before staging pre-clean:'; df -h \"\$base\" || true; find /tmp -mindepth 1 -maxdepth 1 -type d -name 'asi-staging-*' -exec rm -rf -- {} + 2>/dev/null || true; mkdir -p \"\$releases\"; find \"\$releases\" -mindepth 1 -maxdepth 1 -type d -name '*.tmp.*' -exec rm -rf -- {} + 2>/dev/null || true; for release_path in \"\$releases\"/*; do [ -d \"\$release_path\" ] || continue; resolved=\$(readlink -f \"\$release_path\" 2>/dev/null || true); if [ -n \"\$current\" ] && [ \"\$resolved\" = \"\$current\" ]; then continue; fi; rm -rf -- \"\$release_path\"; done; mkdir -p '$REMOTE_TMP'; chmod 700 '$REMOTE_TMP'; echo 'Disk after staging pre-clean:'; df -h \"\$base\" || true"
           scp "${SCP_OPTS[@]}" "$ARTIFACT" scripts/deploy-staging-artifact.sh staging.env "$STAGING_SSH_USER@$STAGING_SSH_HOST:$REMOTE_TMP/"
           ssh "${SSH_OPTS[@]}" "$STAGING_SSH_USER@$STAGING_SSH_HOST" \
             "ASI_BASE_DIR='$STAGING_APP_PATH' PM2_APP_NAME='asi-landing-staging' APP_PORT='$STAGING_PORT' bash '$REMOTE_TMP/deploy-staging-artifact.sh' '$DEPLOY_SHA' '$REMOTE_TMP/$ARTIFACT' '$REMOTE_TMP/staging.env'; rc=\$?; rm -rf '$REMOTE_TMP'; exit \$rc"
