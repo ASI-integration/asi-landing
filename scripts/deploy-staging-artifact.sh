@@ -38,6 +38,25 @@ mkdir -p "$RELEASES_DIR" "$SHARED_DIR"
 [[ -w "$RELEASES_DIR" ]] || die "Staging deploy user cannot write $RELEASES_DIR"
 [[ -w "$SHARED_DIR" ]] || die "Staging deploy user cannot write $SHARED_DIR"
 
+CURRENT_TARGET="$(readlink -f "$CURRENT_LINK" 2>/dev/null || true)"
+echo "Disk before staging release cleanup:"
+df -h "$BASE_DIR" || true
+du -sh "$RELEASES_DIR" 2>/dev/null || true
+
+# Free space before artifact extraction. Preserve the release currently served
+# so this deployment still has a rollback target until the new release is verified.
+find "$RELEASES_DIR" -mindepth 1 -maxdepth 1 -type d -name '*.tmp.*' -exec rm -rf -- {} + 2>/dev/null || true
+while IFS= read -r release_path; do
+  [[ -z "$release_path" ]] && continue
+  [[ -n "$CURRENT_TARGET" && "$release_path" == "$CURRENT_TARGET" ]] && continue
+  [[ "$release_path" == "$RELEASE_DIR" ]] && continue
+  rm -rf -- "$release_path"
+done < <(find "$RELEASES_DIR" -mindepth 1 -maxdepth 1 -type d ! -name '*.tmp.*' -print 2>/dev/null || true)
+
+echo "Disk after staging release cleanup:"
+df -h "$BASE_DIR" || true
+du -sh "$RELEASES_DIR" 2>/dev/null || true
+
 # Write the service environment atomically. The deploy user is expected to be
 # a member of the asi-runtime group; the systemd service runs as asi-runtime.
 rm -f "$ENV_TMP"
