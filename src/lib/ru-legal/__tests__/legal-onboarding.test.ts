@@ -122,7 +122,7 @@ beforeEach(() => {
 
 describe('RU legal onboarding contract', () => {
   it('uses current, distinct canonical versions and stable SHA-256 evidence', () => {
-    expect(RU_OFFER_VERSION).toBe('1.1');
+    expect(RU_OFFER_VERSION).toBe('1.2');
     expect(RU_PD_CONSENT_VERSION).toBe('1.0');
     const offerHash = ruLegalDocumentSha256(RU_LEGAL_DOCUMENTS.offer);
     const consentHash = ruLegalDocumentSha256(RU_LEGAL_DOCUMENTS.personal_data_consent);
@@ -130,6 +130,23 @@ describe('RU legal onboarding contract', () => {
     expect(consentHash).toMatch(/^[0-9a-f]{64}$/);
     expect(offerHash).not.toBe(consentHash);
     expect(ruLegalDocumentSha256(RU_LEGAL_DOCUMENTS.offer)).toBe(offerHash);
+  });
+
+  it('publishes the approved IP contractor wording and final requisites exactly', () => {
+    const offer = RU_LEGAL_DOCUMENTS.offer;
+    expect(offer.sections[0].paragraphs[0]).toBe(
+      '1.1. Исполнитель — Индивидуальный предприниматель Реутова Юлия Игоревна (ИНН 235307941957), предоставляющая Пользователю право использования программного комплекса и инфраструктуры автоматизации ASI Global (ASI Integrations).',
+    );
+    const requisites = offer.sections[offer.sections.length - 1];
+    expect(requisites.heading).toBe('15. Реквизиты и контакты Исполнителя');
+    expect(requisites.paragraphs).toEqual([
+      'Исполнитель: Индивидуальный предприниматель Реутова Юлия Игоревна',
+      'ИНН: 235307941957',
+      'Сервис / Бренд: ASI Global (ASI Integrations)',
+      'Официальный сайт: https://asi-global.ru',
+      'Служба поддержки: Telegram: @ASI_Support_Bot',
+      'Электронная почта: support@asi-global.ru',
+    ]);
   });
 
   it('fails closed unless the localization review gate is explicitly enabled', () => {
@@ -142,14 +159,14 @@ describe('RU legal onboarding contract', () => {
     const accepted = await acceptCurrentRuLegalDocument({
       userId: 'owner-1', email: 'OWNER@example.test', documentType: 'offer', ipAddress: '127.0.0.1', userAgent: 'test',
     });
-    expect(accepted.documentVersion).toBe('1.1');
+    expect(accepted.documentVersion).toBe('1.2');
     const insert = fixture.inserted[0];
     expect(insert.table).toBe('ru_legal_acceptances');
     expect(insert.value).toMatchObject({
       account_id: 'account-1',
       accepted_by_user_id: 'owner-1',
       document_type: 'offer',
-      document_version: '1.1',
+      document_version: '1.2',
       email_snapshot: 'owner@example.test',
     });
     expect(insert.value.document_sha256).toMatch(/^[0-9a-f]{64}$/);
@@ -179,14 +196,14 @@ describe('RU legal onboarding contract', () => {
     expect((await response.json()).code).toBe('RU_LEGAL_OFFER_REQUIRED');
     expect(fixture.rows.ru_legal_acceptances).toHaveLength(0);
 
-    fixture.rows.ru_legal_acceptances.push(acceptance('offer', '1.1'));
+    fixture.rows.ru_legal_acceptances.push(acceptance('offer', '1.2'));
     const accepted = await acceptLegal(request({ documentType: 'personal_data_consent' }));
     expect(accepted.status).toBe(200);
     expect(fixture.rows.ru_legal_acceptances).toHaveLength(2);
   });
 
   it('requires both current documents and treats one acceptance as insufficient', async () => {
-    fixture.rows.ru_legal_acceptances.push(acceptance('offer', '1.1'));
+    fixture.rows.ru_legal_acceptances.push(acceptance('offer', '1.2'));
     expect((await getRuLegalOnboardingStateForUser('owner-1'))?.complete).toBe(false);
     expect(await hasCurrentRuLegalAcceptance('account-1')).toBe(false);
     const response = await saveConnection(request({ step: 0, values: { manager: 'bnovo', otherManager: '' } }));
@@ -195,7 +212,7 @@ describe('RU legal onboarding contract', () => {
   });
 
   it('requires reacceptance when the stored hash does not match the current canonical document', async () => {
-    const stale = acceptance('offer', '1.1');
+    const stale = acceptance('offer', '1.2');
     stale.document_sha256 = 'a'.repeat(64);
     fixture.rows.ru_legal_acceptances.push(stale, acceptance('personal_data_consent', '1.0'));
     const state = await getRuLegalOnboardingStateForUser('owner-1');
@@ -215,7 +232,7 @@ describe('RU legal onboarding contract', () => {
 
   it('does not repeatedly block or duplicate a fully accepted current account', async () => {
     fixture.rows.ru_legal_acceptances.push(
-      acceptance('offer', '1.1'),
+      acceptance('offer', '1.2'),
       acceptance('personal_data_consent', '1.0'),
     );
     expect(await hasCurrentRuLegalAcceptance('account-1')).toBe(true);
