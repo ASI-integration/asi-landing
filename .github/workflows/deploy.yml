@@ -310,6 +310,25 @@ jobs:
           ssh "${SSH_OPTS[@]}" "$REMOTE_USER@$VPS_HOST" 'test "$(id -un)" = project_ayfaar && hostname && echo SSH_OK'
           ssh "${SSH_OPTS[@]}" "$REMOTE_USER@$VPS_HOST" "mkdir -p '$REMOTE_TMP' && chmod 700 '$REMOTE_TMP'"
 
+          echo "Pre-deploy disk cleanup"
+          ssh "${SSH_OPTS[@]}" "$REMOTE_USER@$VPS_HOST" "
+            set -e
+            CURRENT_TARGET=\$(readlink -f /var/www/asi/current 2>/dev/null || true)
+            echo 'Disk before cleanup:'
+            df -h /var/www/asi || true
+            rm -f '$REMOTE_TMP'/*.tgz '$REMOTE_TMP'/production.env '$REMOTE_TMP'/deploy-production-systemd-artifact.sh 2>/dev/null || true
+            find /var/www/asi/releases -mindepth 1 -maxdepth 1 -type d -name '*.tmp.*' -exec rm -rf -- {} + 2>/dev/null || true
+            while IFS= read -r release_path; do
+              [ -z "\$release_path" ] && continue
+              if [ -n "\$CURRENT_TARGET" ] && [ "\$release_path" = "\$CURRENT_TARGET" ]; then
+                continue
+              fi
+              rm -rf -- "\$release_path"
+            done < <(find /var/www/asi/releases -mindepth 1 -maxdepth 1 -type d ! -name '*.tmp.*' -print 2>/dev/null || true)
+            echo 'Disk after cleanup:'
+            df -h /var/www/asi || true
+          "
+
           scp "${SCP_OPTS[@]}" \
             scripts/deploy-production-systemd-artifact.sh \
             production.env \

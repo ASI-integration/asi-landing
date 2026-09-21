@@ -46,6 +46,20 @@ mkdir -p "$RELEASES_DIR" "$SHARED_DIR"
 [[ -w "$RELEASES_DIR" ]] || die "Deploy user cannot write $RELEASES_DIR"
 [[ -w "$SHARED_DIR" ]] || die "Deploy user cannot write $SHARED_DIR"
 
+CURRENT_TARGET="$(readlink -f "$CURRENT_LINK" 2>/dev/null || true)"
+echo "Disk before pre-deploy cleanup:"
+df -h "$BASE_DIR" || true
+find "$RELEASES_DIR" -mindepth 1 -maxdepth 1 -type d -name '*.tmp.*' -exec rm -rf -- {} + 2>/dev/null || true
+while IFS= read -r release_path; do
+  [[ -z "$release_path" ]] && continue
+  if [[ -n "$CURRENT_TARGET" && "$release_path" == "$CURRENT_TARGET" ]]; then
+    continue
+  fi
+  rm -rf -- "$release_path"
+done < <(find "$RELEASES_DIR" -mindepth 1 -maxdepth 1 -type d ! -name '*.tmp.*' -print 2>/dev/null || true)
+echo "Disk after pre-deploy cleanup:"
+df -h "$BASE_DIR" || true
+
 # Preserve any server-local variables, then overlay the CI-provided keys.
 if [[ -f "$ENV_FILE" ]]; then
   cp -p "$ENV_FILE" "$ENV_BACKUP"
