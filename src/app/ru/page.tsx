@@ -92,7 +92,7 @@ export default function HomeRu() {
               <div className="hidden sm:block shrink-0 pt-2"><BrandShiro size={80} /></div>
             </div>
             <p className="mt-6 max-w-3xl text-base sm:text-xl text-asi-navy/75 leading-relaxed">
-              Календарь — в одной программе, переписка — в другой, уборка — в чате.
+              Обычно управление объектами выглядит так: календарь — в одной программе, переписка — в другой, уборка — в чате.
               ASI сама ведёт рутинную работу объекта: от вопросов гостя и подготовки заезда
               до ежедневных задач с площадками бронирования.
             </p>
