@@ -32,6 +32,7 @@ function ownedDeps(overrides?: Partial<RuCommercialPilotServiceDeps>): RuCommerc
       propertyId === 'prop-a' ? readiness : false,
     ownsProperty: async (accountId, propertyId) => owned.has(`${accountId}::${propertyId}`),
     now: () => now,
+    claimPilotEntitlement: async () => ({ ok: true as const, reused: false as const }),
   };
   const deps = { ...base, ...overrides };
   return Object.assign(deps, {
@@ -112,6 +113,19 @@ describe('P0-01 acceptance scenarios', () => {
     expect(started.state.status).toBe('pilot_active');
     expect(started.state.timestamps.pilotStartedAt?.toISOString()).toBe(startAt.toISOString());
     expect(started.state.timestamps.pilotEndsAt?.toISOString()).toBe('2026-04-15T08:00:00.000Z');
+  });
+
+  it('3b. blocks a standard pilot when the property entitlement was already consumed', async () => {
+    const harness = ownedDeps({
+      claimPilotEntitlement: async () => ({ ok: false as const, reason: 'standard_pilot_already_used' as const }),
+    }) as ReturnType<typeof ownedDeps> & { setReadiness: (v: boolean) => void };
+    await beginSetup(harness, 'acct-a', 'prop-a');
+    harness.setReadiness(true);
+    await deriveReady(harness, 'acct-a', 'prop-a');
+    const started = await startPilot(harness, 'acct-a', 'prop-a');
+    expect(started).toEqual({ ok: false, reason: 'standard_pilot_already_used' });
+    const got = await getPilotLifecycle(harness, 'acct-a', 'prop-a');
+    expect(got.ok && got.state?.status).toBe('ready');
   });
 
   it('4. retry does not restart clock', async () => {
@@ -240,6 +254,7 @@ describe('P0-01 acceptance scenarios', () => {
       store,
       isReadinessSatisfied: async () => true,
       ownsProperty: async () => true,
+      claimPilotEntitlement: async () => ({ ok: true as const, reused: false as const }),
     };
     const prepNow = new Date('2026-05-01T00:00:00.000Z');
     await beginSetup({ ...base, now: () => prepNow }, 'acct-a', 'prop-a');
@@ -281,6 +296,7 @@ describe('P0-01 acceptance scenarios', () => {
       store,
       isReadinessSatisfied: async () => true,
       ownsProperty: async () => true,
+      claimPilotEntitlement: async () => ({ ok: true as const, reused: false as const }),
     };
     const t0 = new Date('2026-05-01T00:00:00.000Z');
     await beginSetup({ ...base, now: () => t0 }, 'acct-a', 'prop-a');
