@@ -13,12 +13,11 @@ import { RU_CONNECT_HREF } from '@/components/ru/ConnectCta';
 import { RuBottomQuickLinks } from '@/components/ru/RuBottomQuickLinks';
 import { RuComplianceFooter } from '@/components/ru/RuComplianceFooter';
 import { RuPublicNavHeader } from '@/components/ru/RuPublicNavHeader';
-import { COMMUNICATION_PILOT_PRICE_RUB } from '@/lib/payments/yookassa-env';
 
 export const metadata: Metadata = {
   title: 'Как работает ASI',
   description:
-    'ASI берёт на себя повторяющиеся вопросы гостей по данным объекта. Бесплатное подключение, 14 дней пилота после готовности, 1 000 ₽ за объект в месяц только если решите продолжить.',
+    'ASI берёт на себя повторяющиеся вопросы гостей по данным объекта. Бесплатное подключение и 14 дней полноценной работы после готовности. Продолжение — только по вашему решению.',
 };
 
 const HOME_HREF = '/ru';
@@ -49,8 +48,8 @@ const PRICE_ROWS = [
     body: 'Отсчёт начинается только после полной готовности.',
   },
   {
-    title: `После пилота — ${COMMUNICATION_PILOT_PRICE_RUB} ₽ за объект в месяц`,
-    body: 'Только если вы увидели пользу и решили продолжить.',
+    title: 'После пилота — только по вашему решению',
+    body: 'Действующая цена или назначенное аккаунту предложение будут показаны до подтверждения.',
   },
 ] as const;
 
@@ -110,8 +109,7 @@ export default function RuHowItWorksPage() {
               </p>
               <p className="mt-4 text-sm font-sans text-asi-navy/60 tracking-wide leading-relaxed max-w-xl">
                 Бесплатное подключение и настройка · 14 дней пилота отсчитываются только после полной
-                готовности · {COMMUNICATION_PILOT_PRICE_RUB}&nbsp;₽ / объект в месяц, если решите
-                продолжить
+                готовности · продолжение только по вашему решению
               </p>
               <div className="mt-9 flex flex-wrap gap-4">
                 <BrandPrimaryCta href={RU_CONNECT_HREF}>{PRIMARY_CTA_LABEL}</BrandPrimaryCta>
@@ -327,8 +325,7 @@ export default function RuHowItWorksPage() {
               </div>
               <div className="mt-8 flex items-end justify-between gap-4">
                 <p className="text-sm text-asi-navy/60 leading-relaxed max-w-[12rem]">
-                  Затем {COMMUNICATION_PILOT_PRICE_RUB}&nbsp;₽ / объект / месяц — только после
-                  решения продолжить
+                  Дальше — только после вашего решения и подтверждения показанной цены
                 </p>
                 <BrandShiro size={48} />
               </div>

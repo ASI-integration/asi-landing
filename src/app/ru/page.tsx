@@ -12,8 +12,8 @@ import {
   RU_SPECIAL_OFFER_HREF,
 } from '@/components/ru/ConnectCta';
 import { RuComplianceFooter } from '@/components/ru/RuComplianceFooter';
+import { RuCommercialTimeline } from '@/components/ru/RuCommercialTimeline';
 import { RuPublicNavHeader } from '@/components/ru/RuPublicNavHeader';
-import { COMMUNICATION_PILOT_PRICE_RUB } from '@/lib/payments/yookassa-env';
 
 export const metadata = RU_HOME_METADATA;
 
@@ -131,31 +131,12 @@ export default function HomeRu() {
 
         <BrandSection variant="ivory" id="special-offer" className="scroll-mt-24">
           <BrandHeadline className="text-3xl sm:text-5xl max-w-4xl !leading-tight">
-            Специальные условия для участников закрытой группы Ярослава Стригунова
+            Понятный путь от подключения до решения о продолжении
           </BrandHeadline>
           <p className="mt-6 max-w-3xl text-base sm:text-lg text-asi-navy/70 leading-relaxed">
-            Для участников закрытой группы Ярослава Стригунова мы сейчас предлагаем специальные условия на подключение и использование ASI.
+            Без оплаты на старте. Сначала подключаем и настраиваем объект, затем даём 14 дней полноценной работы ASI.
           </p>
-          <dl className="mt-10 grid gap-6 sm:grid-cols-3">
-            <div className="border-t border-asi-border pt-5">
-              <dt className="text-base text-asi-navy/70">Подключение и настройка</dt>
-              <dd className="mt-3 font-serif text-4xl sm:text-5xl">0 ₽</dd>
-            </div>
-            <div className="border-t border-asi-border pt-5">
-              <dt className="text-base text-asi-navy/70">После полной готовности объекта</dt>
-              <dd className="mt-3 font-serif text-4xl sm:text-5xl">14 дней</dd>
-              <p className="mt-3 text-base">Работы бесплатно</p>
-            </div>
-            <div className="border-t border-asi-border pt-5">
-              <dt className="text-base text-asi-navy/70">После пилота, если решите продолжить</dt>
-              <dd className="mt-3 font-serif text-4xl sm:text-5xl">{COMMUNICATION_PILOT_PRICE_RUB.toLocaleString('ru-RU')} ₽</dd>
-              <p className="mt-3 text-base">За объект в месяц</p>
-            </div>
-          </dl>
-          <p className="mt-8 max-w-3xl text-lg leading-relaxed">
-            Эта цена сохраняется для участника группы на 12 месяцев с момента перехода на платный режим.
-            Без автоматического перехода на платный тариф.
-          </p>
+          <div className="mt-10"><RuCommercialTimeline compact /></div>
           <div className="mt-10">
             <ConnectCta
               title="ПРОДОЛЖИТЬ ПОДКЛЮЧЕНИЕ"

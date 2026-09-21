@@ -3,6 +3,7 @@ import { requireCabinetSession } from '@/lib/cabinet/api-auth';
 import { supabase } from '@/lib/supabase';
 import { parseConnectionInput } from '@/lib/rental-connect/model';
 import { ConnectionValidationError, readConnection, saveConnection } from '@/lib/rental-connect/service';
+import { LEGAL_ACCEPTANCE_REQUIRED_CODE, hasCurrentRuLegalAcceptance } from '@/lib/ru-legal';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -32,6 +33,12 @@ export async function POST(req: Request) {
   try {
     const auth = await requireOwner();
     if ('error' in auth) return auth.error;
+    if (!(await hasCurrentRuLegalAcceptance(auth.accountId))) {
+      return NextResponse.json(
+        { ok: false, code: LEGAL_ACCEPTANCE_REQUIRED_CODE },
+        { status: 428 },
+      );
+    }
     let input;
     try { input = parseConnectionInput(await req.json()); } catch (error) {
       return NextResponse.json({ message: error instanceof Error ? error.message : 'Некорректные данные.' }, { status: 400 });

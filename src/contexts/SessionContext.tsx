@@ -19,6 +19,11 @@ type Session = {
     integration_ready_at?: string | null;
     billing_started_at?: string | null;
   } | null;
+  ruCommercialPilot?: {
+    status: string;
+    pilot_started_at: string | null;
+    pilot_ends_at: string | null;
+  } | null;
   isCrmOperator?: boolean;
   isDevelopmentOwner?: boolean;
 };
@@ -40,6 +45,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
         user: null as Session['user'] | null,
         subscription: null as Session['subscription'] | null,
         account: null as Session['account'] | null,
+        ruCommercialPilot: null as Session['ruCommercialPilot'],
         isCrmOperator: false,
         isDevelopmentOwner: false,
       });
@@ -48,6 +54,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
           user: data.user,
           subscription: data.subscription,
           account: data.account ?? null,
+          ruCommercialPilot: data.ruCommercialPilot ?? null,
           isCrmOperator: data.isCrmOperator === true,
           isDevelopmentOwner: data.isDevelopmentOwner === true,
         });

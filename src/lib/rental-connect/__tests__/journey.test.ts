@@ -15,6 +15,10 @@ vi.mock('server-only', () => ({}));
 vi.mock('@/lib/auth', () => ({ getSession: async () => fixture.session, isSessionSecretConfigured: () => true }));
 vi.mock('@/lib/telegram', () => ({ sendTelegramMessage: vi.fn(async () => {}) }));
 vi.mock('@/lib/cabinet/api-auth', () => ({ requireCabinetSession: async () => fixture.session.userId ? { session: fixture.session } : { error: NextResponse.json({ message: 'Войдите' }, { status: 401 }) } }));
+vi.mock('@/lib/ru-legal', () => ({
+  LEGAL_ACCEPTANCE_REQUIRED_CODE: 'LEGAL_ACCEPTANCE_REQUIRED',
+  hasCurrentRuLegalAcceptance: async () => true,
+}));
 vi.mock('google-auth-library', () => ({ OAuth2Client: class { async verifyIdToken() { return { getPayload: () => ({ email: 'oauth@example.test', aud: 'fixture-client' }) }; } } }));
 
 // In-memory Data API boundary: real route, password hashing, account service,
@@ -79,7 +83,7 @@ import { connectionOperatorTaskId, connectionPropertyId } from '../service';
 
 const request = (body: unknown) => new Request('http://localhost/api/test', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
 const credentials = { email: 'owner@example.test', password: 'fixture-password-2026' };
-const property = { name: 'Тестовая квартира', address: 'Тестовый адрес', description: 'Описание для проверки', rules: 'Не курить', checkIn: '14:00', checkOut: '12:00', wifiName: 'TestNetwork', wifiPassword: 'synthetic-wifi', instructions: 'Инструкция для теста', photosLater: true, communityMember: true };
+const property = { name: 'Тестовая квартира', address: 'Тестовый адрес', description: 'Описание для проверки', rules: 'Не курить', checkIn: '14:00', checkOut: '12:00', wifiName: 'TestNetwork', wifiPassword: 'synthetic-wifi', instructions: 'Инструкция для теста', photosLater: true };
 const createOwner = async () => { expect((await signup(request(credentials))).status).toBe(200); };
 const saveManager = () => save(request({ step: 0, values: { manager: 'bnovo', otherManager: '' } }));
 async function prepare() { await createOwner(); await saveManager(); await save(request({ step: 1, values: { channels: ['direct'] } })); }

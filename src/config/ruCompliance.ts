@@ -27,4 +27,5 @@ export const ruComplianceRoutes = {
   refund: '/ru/refund',
   privacy: '/ru/privacy',
   offer: '/ru/offer',
+  personalDataConsent: '/ru/personal-data-consent',
 } as const;

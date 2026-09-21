@@ -32,7 +32,7 @@ describe('RU merchant host isolation + tariff readiness', () => {
     expect(contacts).not.toContain('сделаем позже');
   });
 
-  it('keeps MVP tariff at 1000 RUB / 1 object / 1 month', () => {
+  it('keeps legacy payment constants internal and removes them from public promises', () => {
     expect(COMMUNICATION_PILOT_PRICE_RUB).toBe(1000);
     expect(COMMUNICATION_PILOT_SERVICE_TITLE).toContain('AI-коммуникации');
     expect(COMMUNICATION_PILOT_PAYMENT_DESCRIPTION).toContain('1 объект');
@@ -40,10 +40,9 @@ describe('RU merchant host isolation + tariff readiness', () => {
 
     const earlyAccess = readSrc('src/app/ru/early-access/page.tsx');
     const payment = readSrc('src/app/ru/payment/page.tsx');
-    expect(earlyAccess).toContain('COMMUNICATION_PILOT_PRICE_RUB');
-    expect(payment).toContain('COMMUNICATION_PILOT_PRICE_RUB');
-    expect(earlyAccess).not.toContain('подтверждаются отдельно');
-    expect(payment).not.toContain('подтверждаются отдельно');
+    expect(earlyAccess).not.toContain('COMMUNICATION_PILOT_PRICE_RUB');
+    expect(payment).not.toContain('COMMUNICATION_PILOT_PRICE_RUB');
+    expect(payment).toContain('покажем до подтверждения');
   });
 
   it('exposes RU legal routes only via RU compliance surfaces', () => {
@@ -53,11 +52,13 @@ describe('RU merchant host isolation + tariff readiness', () => {
       refund: '/ru/refund',
       privacy: '/ru/privacy',
       offer: '/ru/offer',
+      personalDataConsent: '/ru/personal-data-consent',
     });
 
     const ruFooter = readSrc('src/components/ru/RuComplianceFooter.tsx');
     expect(ruFooter).toContain('ruComplianceRoutes.payment');
     expect(ruFooter).toContain('ruComplianceRoutes.contacts');
+    expect(ruFooter).toContain('ruComplianceRoutes.personalDataConsent');
     expect(ruFooter).toContain('ruCompliance.fullName');
     expect(ruFooter).toContain('ruCompliance.inn');
     expect(ruFooter).toContain('ruCompliance.phone');

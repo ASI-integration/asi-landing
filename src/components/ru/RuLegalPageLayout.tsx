@@ -38,7 +38,7 @@ export function RuLegalPageLayout({
     <div className="min-h-screen flex flex-col font-sans bg-asi-ivory text-asi-navy antialiased">
       <RuPublicNavHeader density="legal" />
 
-      <main className="flex-1 w-full px-5 sm:px-8 py-12 sm:py-16">
+      <main className="flex-1 w-full px-5 sm:px-8 py-12 sm:py-16 print:px-0 print:py-0">
         <div className={`mx-auto ${wide ? 'max-w-5xl' : 'max-w-4xl'}`}>
           <div className="flex items-center gap-3 mb-6">
             <BrandLogoMark size={28} />

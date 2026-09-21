@@ -15,12 +15,11 @@ import { RuBottomQuickLinks } from '@/components/ru/RuBottomQuickLinks';
 import { RuComplianceFooter } from '@/components/ru/RuComplianceFooter';
 import { RuPublicNavHeader } from '@/components/ru/RuPublicNavHeader';
 import { ruCompliance } from '@/config/ruCompliance';
-import { COMMUNICATION_PILOT_PRICE_RUB } from '@/lib/payments/yookassa-env';
 
 export const metadata: Metadata = {
   title: 'Подключить объект к пилоту ASI',
   description:
-    'Заявка, бесплатная настройка, готовность объекта, затем 14 дней пилота. 1 000 ₽ за объект в месяц — только если решите продолжить.',
+    'Заявка, бесплатная настройка, готовность объекта, затем 14 дней пилота. Продолжение — только по вашему решению.',
 };
 
 const PRIMARY_CTA_LABEL = 'Подключить объект бесплатно';
@@ -131,8 +130,8 @@ const COMMERCIAL_STAGES = [
   },
   {
     n: '04',
-    title: `После пилота — ${COMMUNICATION_PILOT_PRICE_RUB} ₽ / объект / месяц`,
-    body: 'Сначала итоговый разбор. Затем вы сами решаете, продолжать или нет. Автоматического перехода на оплату нет.',
+    title: 'После пилота — только по вашему решению',
+    body: 'Сначала итоговый разбор и показ действующей цены. Автоматического перехода на оплату нет.',
   },
 ] as const;
 
@@ -162,7 +161,7 @@ function HeroOfferPanel() {
           </li>
           <li className="border-t border-asi-border/70 pt-3">
             <strong className="font-semibold text-asi-navy">
-              После пилота — {COMMUNICATION_PILOT_PRICE_RUB}&nbsp;₽ / объект / месяц
+              После пилота — только по вашему решению
             </strong>
           </li>
         </ul>
@@ -211,8 +210,7 @@ export default function RuEarlyAccessPage() {
                 когда нужно решение. Оплата — только если после пилота вы решите продолжить.
               </p>
               <p className="mt-4 text-sm font-sans text-asi-navy/60 tracking-wide leading-relaxed max-w-xl">
-                Настройка и подключение — 0&nbsp;₽ · 14 дней после готовности — 0&nbsp;₽ · затем{' '}
-                {COMMUNICATION_PILOT_PRICE_RUB}&nbsp;₽ / объект / месяц при решении продолжить
+                Настройка и подключение — 0&nbsp;₽ · 14 дней после готовности — 0&nbsp;₽ · дальше только по вашему решению
               </p>
               <div className="mt-9 flex flex-wrap gap-4">
                 <BrandPrimaryCta href="/ru/early-access#pilot-form">{PRIMARY_CTA_LABEL}</BrandPrimaryCta>
@@ -318,8 +316,8 @@ export default function RuEarlyAccessPage() {
               </p>
               <p className="mt-4 text-sm text-asi-navy/65 leading-relaxed">
                 Оставьте заявку. Мы подготовим объект и начнём 14-дневный пилот только после полной
-                готовности. {COMMUNICATION_PILOT_PRICE_RUB}&nbsp;₽ / объект / месяц — только при
-                решении продолжить после итогового разбора.
+                готовности. Дальше — только при вашем решении продолжить после итогового разбора и
+                подтверждения показанной цены.
               </p>
               <div className="mt-8">
                 <BrandPrimaryCta href="/ru/early-access#pilot-form">{PRIMARY_CTA_LABEL}</BrandPrimaryCta>

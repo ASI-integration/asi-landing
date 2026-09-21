@@ -6,3 +6,5 @@ export {
   supabaseOwnsProperty,
   supabaseReadinessProbe,
 } from './repository';
+
+export * from './entitlement';

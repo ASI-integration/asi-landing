@@ -60,7 +60,8 @@ describe('RU-DESIGN-FINAL acceptance', () => {
 
     expect(home).toContain('ConnectCta');
     expect(home).toContain('href: RU_CONNECT_HREF');
-    expect(home).toContain('COMMUNICATION_PILOT_PRICE_RUB');
+    expect(home).toContain('RuCommercialTimeline');
+    expect(home).not.toContain('COMMUNICATION_PILOT_PRICE_RUB');
     expect(home).toContain('id="pilot-form"');
     expect(home).not.toContain('Оценка локации — отдельный инструмент');
     expect(home).not.toContain('Работает вместе с вашим менеджером каналов');
@@ -130,7 +131,8 @@ describe('RU-DESIGN-FINAL acceptance', () => {
     expect(home.replace(/\s+/g, ' ')).toContain('Реальные ответы зависят от правил и данных конкретного объекта');
     expect(home).not.toContain('Полная операционная автоматизация');
     expect(home).toContain('ConnectCta');
-    expect(home).toContain('Подключение и настройка — 0');
+    expect(home).toContain('RuCommercialTimeline');
+    expect(home).toContain('Без оплаты на старте');
     expect(home).toContain('14 дней');
     expect(home).toContain('Работы бесплатно');
     expect(home).not.toContain('Оплата пилота');

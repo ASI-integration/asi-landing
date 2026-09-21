@@ -1,3 +1,4 @@
+import { claimStandardPilotEntitlement } from './entitlement';
 import {
   applyBeginSetup,
   applyCompletePilot,
@@ -28,12 +29,14 @@ export type ReadinessProbe = (propertyId: string) => Promise<boolean>;
 export type OwnershipProbe = (accountId: string, propertyId: string) => Promise<boolean>;
 
 export type RuCommercialPilotClock = () => Date;
+export type PilotEntitlementClaimProbe = (input: { accountId: string; propertyId: string; startedAt: Date }) => Promise<{ ok: true; reused: boolean } | { ok: false; reason: 'standard_pilot_already_used' }>;
 
 export type RuCommercialPilotServiceDeps = {
   store: RuCommercialPilotStore;
   isReadinessSatisfied: ReadinessProbe;
   ownsProperty: OwnershipProbe;
   now?: RuCommercialPilotClock;
+  claimPilotEntitlement?: PilotEntitlementClaimProbe;
 };
 
 function requireOwned(
@@ -151,6 +154,10 @@ export async function startPilot(
   if (!current) return { ok: false, reason: 'lifecycle_not_found' };
   const readiness = await deps.isReadinessSatisfied(propertyId);
   const now = (deps.now ?? (() => new Date()))();
+  if (current.status === 'ready' && readiness) {
+    const entitlement = await (deps.claimPilotEntitlement ?? claimStandardPilotEntitlement)({ accountId, propertyId, startedAt: now });
+    if (!entitlement.ok) return { ok: false, reason: entitlement.reason };
+  }
   const result = applyStartPilot(current, readiness, now);
   return persistTransition(deps, current, result, (latest) =>
     applyStartPilot(latest, readiness, now),

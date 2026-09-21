@@ -1,104 +1,53 @@
 import type { Metadata } from 'next';
+import { PrintPageButton } from '@/components/ru/PrintPageButton';
+import { RuCommercialTimeline } from '@/components/ru/RuCommercialTimeline';
 import { RuLegalPageLayout } from '@/components/ru/RuLegalPageLayout';
-import { ruCompliance } from '@/config/ruCompliance';
-import { telegramSupportBotHandle } from '@/config/telegramBots';
+import { RU_OFFER_DOCUMENT } from '@/lib/ru-legal';
 
 export const metadata: Metadata = {
   title: 'Публичная оферта — ASI',
-  description: 'Публичная оферта на оказание информационных и цифровых услуг.',
+  description: 'Публичная оферта на предоставление доступа к сервису ASI и оказание услуг по автоматизации.',
 };
 
 export default function RuOfferPage() {
   return (
     <RuLegalPageLayout
       title="Публичная оферта"
-      intro="Предложение заключить договор на оказание информационных и/или цифровых услуг на условиях ниже."
+      intro="На предоставление доступа к сервису ASI и оказание услуг по автоматизации · редакция 1.1"
+      wide
     >
-      <p>
-        Настоящий документ является предложением заключить договор на оказание информационных и/или цифровых услуг на
-        условиях, изложенных ниже.
+      <div className="print:hidden"><RuCommercialTimeline compact /></div>
+      <p className="border-l-2 border-asi-gold pl-4 text-base">
+        Без оплаты на старте. Сначала подключаем и настраиваем объект, затем даём 14 дней полноценной работы ASI.
       </p>
 
-      <section>
-        <h2>1. Общие положения</h2>
-        <p>
-          Исполнитель предоставляет пользователю доступ к функциональности сервиса, размещённой на сайте, на условиях
-          выбранного тарифа или услуги.
-        </p>
-      </section>
+      <div className="flex flex-wrap items-center gap-4 print:hidden">
+        <PrintPageButton />
+      </div>
 
-      <section>
-        <h2>2. Оформление заказа</h2>
-        <p>
-          Заказ оформляется пользователем путём выбора соответствующей услуги, заполнения необходимых данных и
-          подтверждения намерения оплатить услугу на сайте.
-        </p>
-      </section>
+      <nav aria-label="Содержание оферты" className="border border-asi-border bg-asi-paper p-5 print:hidden">
+        <p className="font-semibold text-asi-navy">Содержание</p>
+        <ol className="mt-3 columns-1 gap-8 sm:columns-2">
+          {RU_OFFER_DOCUMENT.sections.map((section, index) => (
+            <li key={section.heading} className="break-inside-avoid">
+              <a href={`#offer-section-${index + 1}`}>{section.heading}</a>
+            </li>
+          ))}
+        </ol>
+      </nav>
 
-      <section>
-        <h2>3. Момент заключения договора</h2>
-        <p>
-          Договор считается заключённым с момента подтверждения оплаты выбранной услуги, если иное не указано на странице
-          услуги.
-        </p>
-      </section>
+      <div className="border-y border-asi-border py-6">
+        <p className="font-serif text-2xl text-asi-navy">{RU_OFFER_DOCUMENT.title}</p>
+        <p className="mt-2 font-medium text-asi-navy">{RU_OFFER_DOCUMENT.subtitle}</p>
+        <p className="mt-1">Редакция {RU_OFFER_DOCUMENT.version}</p>
+      </div>
 
-      <section>
-        <h2>4. Порядок оказания услуг</h2>
-        <p>Услуги оказываются дистанционно через сайт и/или связанные цифровые каналы сервиса.</p>
-        <p>
-          Сроки предоставления доступа или начала оказания услуги определяются описанием соответствующей услуги на сайте
-          либо следуют сразу после подтверждения оплаты, если иное не указано отдельно.
-        </p>
-      </section>
-
-      <section>
-        <h2>5. Стоимость и оплата</h2>
-        <p>Стоимость услуг указывается на сайте (страницы пилота и оплаты).</p>
-        <p>
-          Оплата производится безналичным способом через доступные платёжные инструменты сайта, включая ЮKassa после
-          включения приёма платежей.
-        </p>
-      </section>
-
-      <section>
-        <h2>6. Права и обязанности сторон</h2>
-        <p>
-          Исполнитель обязуется предоставить пользователю доступ к оплаченной функциональности или услуге в соответствии с
-          описанием на сайте.
-        </p>
-        <p>
-          Пользователь обязуется предоставить корректные данные, необходимые для оказания услуги, и соблюдать правила
-          использования сервиса.
-        </p>
-      </section>
-
-      <section>
-        <h2>7. Возврат и отказ</h2>
-        <p>
-          Порядок отказа от услуги и возврата денежных средств определяется отдельной страницей «Возврат и отказ от
-          покупки», размещённой на сайте.
-        </p>
-      </section>
-
-      <section>
-        <h2>8. Реквизиты исполнителя</h2>
-        <p>Исполнитель: {ruCompliance.fullName}, самозанятый</p>
-        <p>ИНН: {ruCompliance.inn}</p>
-        <p>
-          Email: <a href={`mailto:${ruCompliance.email}`}>{ruCompliance.email}</a>
-        </p>
-        <p>
-          Телефон: <a href={`tel:${ruCompliance.phoneTel}`}>{ruCompliance.phone}</a>
-        </p>
-        <p>Адрес для корреспонденции: {ruCompliance.address}</p>
-        <p>
-          Telegram:{' '}
-          <a href={ruCompliance.telegram} target="_blank" rel="noopener noreferrer">
-            @{telegramSupportBotHandle}
-          </a>
-        </p>
-      </section>
+      {RU_OFFER_DOCUMENT.sections.map((section, index) => (
+        <section key={section.heading} id={`offer-section-${index + 1}`} className="scroll-mt-24 break-inside-avoid-page">
+          <h2>{section.heading}</h2>
+          {section.paragraphs.map((paragraph) => <p key={paragraph}>{paragraph}</p>)}
+        </section>
+      ))}
     </RuLegalPageLayout>
   );
 }

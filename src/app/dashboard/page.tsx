@@ -30,6 +30,17 @@ function subscriptionStatusLabel(status: string | null | undefined) {
   return '—';
 }
 
+function ruPilotStatusLabel(status: string | null | undefined) {
+  if (!status || status === 'not_started' || status === 'application') return 'Подключение не начато';
+  if (status === 'setup') return 'Бесплатная настройка';
+  if (status === 'ready') return 'Готов к запуску';
+  if (status === 'pilot_active') return '14 дней бесплатной работы';
+  if (status === 'pilot_completed' || status === 'report_ready') return 'Бесплатный период завершён';
+  if (status === 'continued') return 'Продолжение подтверждено';
+  if (status === 'stopped') return 'Остановлено';
+  return '—';
+}
+
 const modules = [
   {
     title: 'Коммуникации',
@@ -78,8 +89,11 @@ export default function DashboardPage() {
     })();
   }, [isCrmOperator]);
 
-  const trialEnds = account?.trial_ends_at ?? null;
-  const subStatus = subscriptionStatusLabel(account?.subscription_status);
+  const ruPilot = session?.ruCommercialPilot ?? null;
+  const trialEnds = ruPilot ? ruPilot.pilot_ends_at : account?.trial_ends_at ?? null;
+  const subStatus = ruPilot
+    ? ruPilotStatusLabel(ruPilot.status)
+    : subscriptionStatusLabel(account?.subscription_status);
 
   return (
     <div className="space-y-8 max-w-6xl">

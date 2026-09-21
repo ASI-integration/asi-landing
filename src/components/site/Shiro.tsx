@@ -2,7 +2,7 @@ import Image from 'next/image';
 import { FlagCircle, type CountryCode } from './FlagCircle';
 
 /**
- * Shiro — the recurring ASI Global brand signature. This is the approved
+ * Shiro — the official ASI Global brand mascot. This is the approved
  * character artwork (cropped from the brand reference), not a redraw.
  * Pass `country` on market pages to pair it with a small circular market
  * identifier, and `signature` to show the "Shiro" script + tagline lockup.
@@ -26,7 +26,7 @@ export function Shiro({
         className="relative inline-block shrink-0 rounded-full overflow-hidden"
         style={{ width: size, height: size }}
       >
-        <Image src="/brand/shiro-badge.png" alt="Shiro, the ASI Global signature" fill sizes={`${size}px`} className="object-cover" />
+        <Image src="/brand/shiro-badge.png" alt="Shiro — официальный маскот бренда ASI Global" fill sizes={`${size}px`} className="object-cover" />
       </span>
       {signature ? (
         <span className="flex flex-col leading-tight">

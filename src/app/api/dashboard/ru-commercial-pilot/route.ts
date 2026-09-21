@@ -13,6 +13,7 @@ import {
   type RuCommercialPilotServiceDeps,
   type RuCommercialPilotState,
 } from '@/lib/ru-commercial-pilot';
+import { LEGAL_ACCEPTANCE_REQUIRED_CODE, hasCurrentRuLegalAcceptance } from '@/lib/ru-legal';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -89,6 +90,13 @@ export async function POST(req: Request): Promise<NextResponse> {
     return NextResponse.json(
       { ok: false, message: 'accountId and propertyId are required.' },
       { status: 400 },
+    );
+  }
+
+  if (!(await hasCurrentRuLegalAcceptance(accountId))) {
+    return NextResponse.json(
+      { ok: false, code: LEGAL_ACCEPTANCE_REQUIRED_CODE },
+      { status: 428 },
     );
   }
 

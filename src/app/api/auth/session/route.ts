@@ -4,8 +4,9 @@ import { getSession, isSessionSecretConfigured } from '@/lib/auth';
 import { supabase } from '@/lib/supabase';
 import { isCrmOperatorEmail, isOpsAdminEmail } from '@/lib/crm/access';
 import { isDevelopmentOwnerEmail } from '@/lib/development/access';
+import { getIsRuHost } from '@/lib/getIsRuHost';
 
-const emptySessionPayload = { user: null, subscription: null, account: null };
+const emptySessionPayload = { user: null, subscription: null, account: null, ruCommercialPilot: null };
 
 export async function GET() {
   const cookieHeader = headers().get('cookie') || '';
@@ -27,7 +28,7 @@ export async function GET() {
     hasUserId: Boolean(session.userId),
   });
   if (!session.userId) {
-    return NextResponse.json({ user: null, subscription: null, account: null });
+    return NextResponse.json({ user: null, subscription: null, account: null, ruCommercialPilot: null });
   }
 
   const { data: sub } = await supabase
@@ -37,6 +38,7 @@ export async function GET() {
     .single();
 
   let account: unknown = null;
+  let accountId: string | null = null;
   try {
     const { data: membership } = await supabase
       .from('account_members')
@@ -46,16 +48,37 @@ export async function GET() {
       .limit(1)
       .maybeSingle();
     account = membership?.accounts ?? null;
+    accountId = (membership?.account_id as string | undefined) ?? null;
   } catch (e) {
     // If the multitenant account layer isn't deployed yet, don't break the entire session endpoint.
     console.warn('[Session] account lookup failed; returning account=null', e);
     account = null;
   }
 
+  let ruCommercialPilot: { status: string; pilot_started_at: string | null; pilot_ends_at: string | null } | null = null;
+  if (accountId && await getIsRuHost()) {
+    const { data: pilot, error: pilotError } = await supabase
+      .from('ru_commercial_pilot_lifecycle')
+      .select('status, pilot_started_at, pilot_ends_at')
+      .eq('account_id', accountId)
+      .order('updated_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (pilotError) console.warn('[Session] RU pilot lookup failed', pilotError);
+    ruCommercialPilot = pilot
+      ? {
+          status: pilot.status,
+          pilot_started_at: pilot.pilot_started_at,
+          pilot_ends_at: pilot.pilot_ends_at,
+        }
+      : { status: 'not_started', pilot_started_at: null, pilot_ends_at: null };
+  }
+
   return NextResponse.json({
     user: { id: session.userId, email: session.email },
     subscription: sub,
     account,
+    ruCommercialPilot,
     isCrmOperator: isCrmOperatorEmail(session.email),
     isOpsAdmin: isOpsAdminEmail(session.email),
     isDevelopmentOwner: isDevelopmentOwnerEmail(session.email),
