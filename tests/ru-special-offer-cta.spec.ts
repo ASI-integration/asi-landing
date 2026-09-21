@@ -1,11 +1,8 @@
 /**
- * Read-only staging click-through for RU homepage special-offer CTA flow.
+ * Read-only click-through for the RU homepage connection flow.
  * Does not submit forms, create users, log in, pay, or send messages.
- *
- * The special-offer CTA assertions require a deployed SHA that includes
- * id="special-offer". Older staging builds still run the remaining link checks.
  */
-import { test, expect, type Page, type APIRequestContext } from '@playwright/test';
+import { test, expect, type APIRequestContext } from '@playwright/test';
 
 async function expectStatusOk(
   request: APIRequestContext,
@@ -22,23 +19,8 @@ async function expectStatusOk(
   expect(response.status(), `${label} (${href}) returned ${response.status()}`).toBeLessThan(400);
 }
 
-async function assertSpecialOfferInView(page: Page) {
-  const section = page.locator('#special-offer');
-  await expect(section).toBeVisible();
-  await expect
-    .poll(async () => {
-      return page.evaluate(() => {
-        const el = document.getElementById('special-offer');
-        if (!el) return false;
-        const rect = el.getBoundingClientRect();
-        return rect.top < window.innerHeight && rect.bottom > 0;
-      });
-    })
-    .toBe(true);
-}
-
-test.describe('RU homepage special-offer CTA click-through (read-only)', () => {
-  test('wide CTAs, continue connect, header/nav/footer and location links', async ({
+test.describe('RU homepage connection CTA click-through (read-only)', () => {
+  test('wide CTAs, header/nav/footer and location links', async ({
     page,
     request,
     baseURL,
@@ -46,38 +28,20 @@ test.describe('RU homepage special-offer CTA click-through (read-only)', () => {
     test.setTimeout(120_000);
     const origin = (baseURL ?? 'https://staging.asi-global.ru').replace(/\/$/, '');
 
-    const versionRes = await request.get(`${origin}/api/version`, { timeout: 15_000 });
-    const version = versionRes.ok() ? ((await versionRes.json()) as { sha?: string }) : {};
-    const deployedSha = version.sha ?? 'unknown';
-
     const home = await page.goto('/ru', { waitUntil: 'domcontentloaded' });
     expect(home?.status() ?? 0).toBeLessThan(400);
 
-    const specialOfferCount = await page.locator('#special-offer').count();
+    await expect(page.locator('#special-offer')).toBeVisible();
     const wideCtas = page.locator('[data-testid="start-connection"]');
-    await expect(wideCtas).toHaveCount(3);
+    await expect(wideCtas).toHaveCount(4);
 
-    if (specialOfferCount === 0) {
-      test.info().annotations.push({
-        type: 'note',
-        description: `Staging SHA ${deployedSha} does not include #special-offer yet; CTA scroll flow skipped until redeploy of feat/ru-self-service-connect.`,
-      });
-    } else {
-      for (let i = 0; i < 3; i++) {
-        await page.goto('/ru', { waitUntil: 'domcontentloaded' });
-        const cta = page.locator('[data-testid="start-connection"]').nth(i);
-        await expect(cta).toHaveAttribute('href', '#special-offer');
-        await cta.click();
-        await assertSpecialOfferInView(page);
-        expect(page.url()).toMatch(/#special-offer$/);
-      }
-
-      const continueCta = page.locator('[data-testid="continue-connection"]');
-      await expect(continueCta).toBeVisible();
-      await expect(continueCta).toHaveAttribute('href', '/ru/connect');
+    for (let i = 0; i < 4; i++) {
+      await page.goto('/ru', { waitUntil: 'domcontentloaded' });
+      const cta = page.locator('[data-testid="start-connection"]').nth(i);
+      await expect(cta).toHaveAttribute('href', '/ru/connect');
       await Promise.all([
         page.waitForURL(/\/ru\/connect(?:[?#]|$)/),
-        continueCta.click(),
+        cta.click(),
       ]);
     }
 
