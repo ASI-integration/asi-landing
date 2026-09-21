@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import { RU_HOME_METADATA } from '@/config/ruHomeMetadata';
 import {
   BrandCard,
@@ -206,6 +207,16 @@ export default function HomeRu() {
             <h3 className="font-serif text-2xl text-asi-navy">{SECONDARY_CAPABILITY.title}</h3>
             <p className="mt-2 text-base text-asi-navy/65 leading-relaxed">{SECONDARY_CAPABILITY.body}</p>
           </div>
+
+          <Link
+            href="/ru/capabilities"
+            className="group mt-8 flex max-w-4xl items-center justify-between gap-6 border-y border-asi-gold/60 py-5 text-base sm:text-lg font-semibold text-asi-navy transition-colors hover:border-asi-gold focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-asi-gold"
+          >
+            <span>Посмотреть все технологии, вертикали и дорожную карту ASI Global</span>
+            <span className="shrink-0 text-2xl font-normal transition-transform group-hover:translate-x-1" aria-hidden="true">
+              →
+            </span>
+          </Link>
 
           <div className="mt-14 sm:mt-16 border-t border-asi-border pt-10 sm:pt-12">
             <BrandHeadline className="text-3xl sm:text-5xl max-w-4xl !leading-tight">

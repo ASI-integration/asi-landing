@@ -96,6 +96,16 @@ describe('RU owner connection journey — approved 2026-09-21', () => {
     expect(html).not.toMatch(/95%|99%|полностью автономн|заменяет сотрудников|автоматическая синхронизация/);
   });
 
+  it('links the pilot capabilities to the ASI Global ecosystem roadmap', () => {
+    const html = render();
+    const capabilities = html.slice(html.indexOf('id="capabilities"'), html.indexOf('id="special-offer"'));
+    for (const title of ['Ответы гостям', 'Готовность перед заездом', 'Рекомендация цены']) {
+      expect(capabilities).toContain(title);
+    }
+    expect(capabilities).toContain('href="/ru/capabilities"');
+    expect(capabilities).toContain('Посмотреть все технологии, вертикали и дорожную карту ASI Global');
+  });
+
   it('preserves legal navigation and safe guest examples', () => {
     const html = render();
     for (const path of ['/ru/privacy', '/ru/offer', '/ru/contacts']) expect(html).toContain(`href="${path}"`);
