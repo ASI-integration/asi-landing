@@ -97,6 +97,11 @@ test('commercial contract: correct 0/14/1000 flow passes', () => {
   assert.equal(findings.length, 0);
 });
 
+test('commercial contract: free pilot wording does not trigger paid-pilot conflict', () => {
+  const findings = detectCommercialConflicts('Бесплатный пилот длится 14 дней. Оценка локации не входит в бесплатный пилот.', '/ru/x');
+  assert.ok(!findings.some((f) => f.id === 'COMMERCIAL_PAID_PILOT_CONFLICT'));
+});
+
 test('commercial contract: paid pilot conflict fails', () => {
   const findings = detectCommercialConflicts('Платный пилот доступен сразу после заявки.', '/ru/x');
   assert.ok(findings.some((f) => f.id === 'COMMERCIAL_PAID_PILOT_CONFLICT'));
