@@ -11,10 +11,6 @@ export const ruCompliance = {
   inn: '235307941957',
   email: productSupportEmail,
   telegram: telegramSupportBotUrl,
-  /** Owner-verified public phone. */
-  phone: '+7 995 889-49-03',
-  /** tel: href without spaces/dashes. */
-  phoneTel: '+79958894903',
   /** Owner-verified correspondence/contact address (no invented index/apartment). */
   address: 'Ленинградская область, г. Мурино, ул. Оборонная, д. 37, корп. 1',
   /** Self-employed: OGRN/OGRNIP not applicable / not provided. */

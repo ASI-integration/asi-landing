@@ -135,18 +135,20 @@ describe('RU legal onboarding contract', () => {
   it('publishes the approved IP contractor wording and final requisites exactly', () => {
     const offer = RU_LEGAL_DOCUMENTS.offer;
     expect(offer.sections[0].paragraphs[0]).toBe(
-      '1.1. Исполнитель — Индивидуальный предприниматель Реутова Юлия Игоревна (ИНН 235307941957), предоставляющая Пользователю право использования программного комплекса и инфраструктуры автоматизации ASI Global (ASI Integrations).',
+      '1.1. Исполнитель — Реутова Юлия Игоревна (ИНН 235307941957), применяющая специальный налоговый режим «Налог на профессиональный доход» (самозанятая), предоставляющая Пользователю право использования программного комплекса и инфраструктуры автоматизации ASI Global (ASI Integrations).',
     );
     const requisites = offer.sections[offer.sections.length - 1];
     expect(requisites.heading).toBe('15. Реквизиты и контакты Исполнителя');
     expect(requisites.paragraphs).toEqual([
-      'Исполнитель: Индивидуальный предприниматель Реутова Юлия Игоревна',
+      'Исполнитель: Реутова Юлия Игоревна',
+      'Статус: Самозанятая',
       'ИНН: 235307941957',
       'Сервис / Бренд: ASI Global (ASI Integrations)',
       'Официальный сайт: https://asi-global.ru',
       'Служба поддержки: Telegram: @ASI_Support_Bot',
       'Электронная почта: support@asi-global.ru',
     ]);
+    expect(requisites.paragraphs.some((line) => /телефон|tel:|\+7/i.test(line))).toBe(false);
   });
 
   it('fails closed unless the localization review gate is explicitly enabled', () => {

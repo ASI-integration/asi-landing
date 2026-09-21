@@ -80,9 +80,6 @@ export default function RuPaymentPage() {
         <p>
           Email: <a href={`mailto:${ruCompliance.email}`}>{ruCompliance.email}</a>
         </p>
-        <p>
-          Телефон: <a href={`tel:${ruCompliance.phoneTel}`}>{ruCompliance.phone}</a>
-        </p>
         <p>Адрес для корреспонденции: {ruCompliance.address}</p>
       </section>
     </RuLegalPageLayout>
