@@ -290,14 +290,7 @@ export default function RuEarlyAccessPage() {
                 .
               </p>
               <p className="mt-4 text-sm text-asi-navy/55 leading-relaxed max-w-xl">
-                Исполнитель: {ruCompliance.fullName}, ИНН {ruCompliance.inn}. Телефон:{' '}
-                <a
-                  href={`tel:${ruCompliance.phoneTel}`}
-                  className="underline underline-offset-2 text-asi-navy/70"
-                >
-                  {ruCompliance.phone}
-                </a>
-                . Email:{' '}
+                Исполнитель: {ruCompliance.fullName}, ИНН {ruCompliance.inn}. Email:{' '}
                 <a
                   href={`mailto:${ruCompliance.email}`}
                   className="underline underline-offset-2 text-asi-navy/70"

@@ -19,17 +19,34 @@ describe('RU merchant host isolation + tariff readiness', () => {
     expect(ruCompliance.fullName).toBe('Реутова Юлия Игоревна');
     expect(ruCompliance.inn).toBe('235307941957');
     expect(ruCompliance.email).toContain('@');
-    expect(ruCompliance.phone).toBe('+7 995 889-49-03');
-    expect(ruCompliance.phoneTel).toBe('+79958894903');
+    expect(ruCompliance).not.toHaveProperty('phone');
+    expect(ruCompliance).not.toHaveProperty('phoneTel');
     expect(ruCompliance.address).toBe(
       'Ленинградская область, г. Мурино, ул. Оборонная, д. 37, корп. 1',
     );
     expect(ruCompliance.ogrn).toBeNull();
 
     const contacts = readSrc('src/app/ru/contacts/page.tsx');
-    expect(contacts).toContain('ruCompliance.phone');
+    expect(contacts).not.toContain('ruCompliance.phone');
     expect(contacts).toContain('ruCompliance.address');
     expect(contacts).not.toContain('сделаем позже');
+  });
+
+  it('removes the personal phone number from every public RU surface', () => {
+    const publicFiles = [
+      'src/components/ru/RuComplianceFooter.tsx',
+      'src/app/ru/contacts/page.tsx',
+      'src/app/ru/refund/page.tsx',
+      'src/app/ru/privacy/page.tsx',
+      'src/app/ru/payment/page.tsx',
+      'src/app/ru/early-access/page.tsx',
+    ].map((file) => readSrc(file)).join('\n');
+
+    expect(publicFiles).not.toContain('889-49-03');
+    expect(publicFiles).not.toContain('79958894903');
+    expect(publicFiles).not.toContain('ruCompliance.phone');
+    expect(publicFiles).not.toContain('ruCompliance.phoneTel');
+    expect(publicFiles).not.toMatch(/Телефон/);
   });
 
   it('keeps legacy payment constants internal and removes them from public promises', () => {
@@ -61,7 +78,7 @@ describe('RU merchant host isolation + tariff readiness', () => {
     expect(ruFooter).toContain('ruComplianceRoutes.personalDataConsent');
     expect(ruFooter).toContain('ruCompliance.fullName');
     expect(ruFooter).toContain('ruCompliance.inn');
-    expect(ruFooter).toContain('ruCompliance.phone');
+    expect(ruFooter).not.toContain('ruCompliance.phone');
     expect(ruFooter).toContain('ruCompliance.address');
   });
 
