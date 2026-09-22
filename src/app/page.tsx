@@ -38,6 +38,9 @@ export async function generateMetadata(): Promise<Metadata> {
           ru: `${RU_PUBLIC_ORIGIN}/`,
         },
       },
+      other: {
+        'zen-verification': 'PEA1UbOl0f6rAz61ami1mJm9Y0lsCe5fzUcnTOqIAuWSi37Ohv2YqdbovfJkCW7',
+      },
     };
   }
   const title = 'ASI Global — Operations on autopilot. Humans on exceptions.';
