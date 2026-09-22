@@ -62,7 +62,7 @@ jobs:
                   sub(/^# configuration file /, "", file)
                   sub(/:$/, "", file)
                 }
-                /server_name[[:space:]].*asi-global\.ru/ { print file }
+                /server_name/ && $0 ~ /(^|[[:space:]])asi-global\.ru([[:space:];]|$)/ { print file }
               ' |
               sort -u
           )
