@@ -1,0 +1,92 @@
+name: Apply Zen verification nginx exception
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: Type APPLY_ZEN_NGINX
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  apply:
+    if: ${{ inputs.confirm == 'APPLY_ZEN_NGINX' }}
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install nginx config safely
+        shell: bash
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_PORT: ${{ secrets.VPS_PORT }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          REMOTE_PORT="${VPS_PORT:-22}"
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+
+          SSH_OPTS=(
+            -i ~/.ssh/id_ed25519
+            -p "$REMOTE_PORT"
+            -o IdentitiesOnly=yes
+            -o StrictHostKeyChecking=accept-new
+            -o ConnectTimeout=20
+          )
+          SCP_OPTS=(
+            -i ~/.ssh/id_ed25519
+            -P "$REMOTE_PORT"
+            -o IdentitiesOnly=yes
+            -o StrictHostKeyChecking=accept-new
+            -o ConnectTimeout=20
+          )
+
+          TMP="/tmp/asi-global.ru.conf.${GITHUB_RUN_ID}"
+          scp "${SCP_OPTS[@]}" deploy/nginx/asi-global.ru.conf "root@$VPS_HOST:$TMP"
+
+          ssh "${SSH_OPTS[@]}" "root@$VPS_HOST" "TMP='$TMP' bash -s" <<'REMOTE'
+          set -euo pipefail
+          TARGET=/etc/nginx/sites-available/asi-global.ru
+          BACKUP="${TARGET}.bak.$(date +%s)"
+
+          cp -a "$TARGET" "$BACKUP"
+          install -m 0644 "$TMP" "$TARGET"
+          rm -f "$TMP"
+
+          if ! nginx -t; then
+            cp -a "$BACKUP" "$TARGET"
+            nginx -t
+            rm -f "$BACKUP"
+            echo "New nginx config failed validation; restored previous config."
+            exit 1
+          fi
+
+          systemctl reload nginx
+          rm -f "$BACKUP"
+          REMOTE
+
+      - name: Verify Zen file returns 200 without redirects
+        shell: bash
+        run: |
+          set -euo pipefail
+          FILE='zen_PEA1UbOl0f6rAz61ami1mJm9Y0lsCe5fzUcnTOqIAuWSi37Ohv2YqdbovfJkCW7.html'
+          EXPECT='PEA1UbOl0f6rAz61ami1mJm9Y0lsCe5fzUcnTOqIAuWSi37Ohv2YqdbovfJkCW7'
+          for URL in \
+            "http://asi-global.ru/$FILE" \
+            "https://asi-global.ru/$FILE" \
+            "http://www.asi-global.ru/$FILE" \
+            "https://www.asi-global.ru/$FILE"
+          do
+            echo "Checking $URL"
+            CODE="$(curl -sS -o /tmp/zen-body -w '%{http_code}' --max-redirs 0 "$URL")"
+            test "$CODE" = "200"
+            grep -F "$EXPECT" /tmp/zen-body >/dev/null
+          done
