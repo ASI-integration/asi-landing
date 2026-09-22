@@ -54,7 +54,33 @@ jobs:
 
           ssh "${SSH_OPTS[@]}" "root@$VPS_HOST" "TMP='$TMP' bash -s" <<'REMOTE'
           set -euo pipefail
-          TARGET=/etc/nginx/sites-available/asi-global.ru
+          mapfile -t CANDIDATES < <(
+            nginx -T 2>/dev/null |
+              awk '
+                /^# configuration file / {
+                  file=$0
+                  sub(/^# configuration file /, "", file)
+                  sub(/:$/, "", file)
+                }
+                /server_name[[:space:]].*asi-global\.ru/ { print file }
+              ' |
+              sort -u
+          )
+
+          if [ "${#CANDIDATES[@]}" -ne 1 ]; then
+            echo "Expected exactly one active nginx config containing asi-global.ru; found ${#CANDIDATES[@]}."
+            printf '%s\n' "${CANDIDATES[@]}"
+            rm -f "$TMP"
+            exit 1
+          fi
+
+          TARGET="$(readlink -f "${CANDIDATES[0]}")"
+          case "$TARGET" in
+            /etc/nginx/*) ;;
+            *) echo "Refusing unexpected nginx target: $TARGET"; rm -f "$TMP"; exit 1 ;;
+          esac
+
+          echo "Updating active nginx config: $TARGET"
           BACKUP="${TARGET}.bak.$(date +%s)"
 
           cp -a "$TARGET" "$BACKUP"
