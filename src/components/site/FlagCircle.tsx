@@ -1,4 +1,4 @@
-export type CountryCode = 'jp' | 'hk' | 'tw' | 'sg' | 'kr' | 'ae';
+export type CountryCode = 'jp' | 'hk' | 'tw' | 'sg' | 'kr' | 'ae' | 'nl';
 
 const FLAG_EMOJI: Record<CountryCode, string> = {
   jp: '🇯🇵',
@@ -7,6 +7,7 @@ const FLAG_EMOJI: Record<CountryCode, string> = {
   sg: '🇸🇬',
   kr: '🇰🇷',
   ae: '🇦🇪',
+  nl: '🇳🇱',
 };
 
 const FLAG_NAME: Record<CountryCode, string> = {
@@ -16,6 +17,7 @@ const FLAG_NAME: Record<CountryCode, string> = {
   sg: 'Singapore',
   kr: 'Korea',
   ae: 'UAE',
+  nl: 'Netherlands',
 };
 
 export function FlagCircle({ country, size = 20 }: { country: CountryCode; size?: number }) {
