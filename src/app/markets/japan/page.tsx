@@ -10,9 +10,9 @@ import { MediaCard } from '@/components/site/MediaCard';
 import { OperationalFlow } from '@/components/site/OperationalFlow';
 import { GUEST_AUTOPILOT_ORIGIN } from '@/config/publicOrigins';
 
-const title = 'ASI Japan — Micro Hotels, from Osaka to the next generation';
+const title = 'ASI Global Japan — Autonomous Hospitality & Micro Hotels';
 const description =
-  'ASI Japan brings autonomous operations to micro-hospitality, respecting the birthplace of capsule hospitality while building real private rooms for modern travelers.';
+  'ASI Global combines private micro-hotel rooms with an autonomous operating platform for booking, access, guest communication, cleaning and daily operations.';
 const url = `${GUEST_AUTOPILOT_ORIGIN}/markets/japan`;
 
 export const metadata: Metadata = {
@@ -151,6 +151,15 @@ export default function JapanMarketPage() {
                 <CircleFeature icon="gear" title="Autonomous operations" description="Bookings, access, support, cleaning, optimization." />
                 <CircleFeature icon="chart" title="Underused space, reactivated" description="Turning empty square meters into brighter city stays." />
               </div>
+              <div className="mt-8 grid sm:grid-cols-2 gap-3 max-w-xl text-sm text-asi-navy/65">
+                <div className="border border-asi-border bg-asi-ivory p-4">Approx. 10–12 m²</div>
+                <div className="border border-asi-border bg-asi-ivory p-4">Designed for two</div>
+                <div className="border border-asi-border bg-asi-ivory p-4">Real bed · workspace · storage</div>
+                <div className="border border-asi-border bg-asi-ivory p-4">Private shower / WC concept</div>
+              </div>
+              <p className="mt-5 text-sm text-asi-navy/60 max-w-xl leading-relaxed">
+                This is a compact private room, not a sleeping capsule.
+              </p>
             </div>
           </div>
         </Section>
@@ -161,6 +170,10 @@ export default function JapanMarketPage() {
           <Headline className="text-2xl sm:text-4xl max-w-2xl text-asi-ivory">
             Operations on autopilot. Humans on exceptions.
           </Headline>
+          <p className="mt-5 text-asi-ivory/65 max-w-2xl leading-relaxed">
+            Most routine operations are handled by ASI. Humans step in when something unusual
+            needs a decision.
+          </p>
           <div className="mt-10 flex flex-wrap gap-3">
             {OPERATIONS.map((op) => (
               <span key={op} className="px-3.5 py-2 text-sm font-sans text-asi-ivory/80 border border-asi-ivory/25 rounded-sm">
@@ -191,6 +204,25 @@ export default function JapanMarketPage() {
               </div>
               <p className="mt-3 text-xs text-asi-navy/60">International contact channel launching soon.</p>
             </div>
+          </div>
+        </Section>
+
+        {/* ── Onlab market-entry track ── */}
+        <Section variant="paper">
+          <Eyebrow>Japan market entry</Eyebrow>
+          <Headline className="text-2xl sm:text-4xl max-w-2xl">
+            Open Network Lab 32nd
+          </Headline>
+          <div className="mt-8 grid md:grid-cols-[0.7fr,1.3fr] gap-8 items-start">
+            <div className="border-l-2 border-asi-gold pl-5">
+              <p className="text-xs uppercase tracking-[0.16em] text-asi-navy/55">Status</p>
+              <p className="mt-2 font-serif text-xl">Target program</p>
+            </div>
+            <p className="text-sm text-asi-navy/65 leading-relaxed max-w-2xl">
+              The Japan track combines ASI Micro Hotels with the ASI operating engine: compact
+              private rooms, localized guest operations and a small 3–5 cabin pilot. This page
+              does not imply selection, endorsement or partnership with Open Network Lab.
+            </p>
           </div>
         </Section>
 

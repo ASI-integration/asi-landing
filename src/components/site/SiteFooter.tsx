@@ -25,9 +25,10 @@ export function SiteFooter() {
             </div>
             <div className="flex flex-col gap-2.5">
               <span className="text-xs font-semibold uppercase tracking-[0.18em] text-asi-gold-soft mb-1">Explore</span>
-              <Link href="/#markets" className="hover:text-asi-ivory transition-colors">Markets</Link>
+              <Link href="/markets" className="hover:text-asi-ivory transition-colors">Markets</Link>
               <Link href="/media" className="hover:text-asi-ivory transition-colors">Media</Link>
               <Link href="/markets/japan" className="hover:text-asi-ivory transition-colors">Japan</Link>
+              <Link href="/markets/netherlands" className="hover:text-asi-ivory transition-colors">Netherlands / Europe</Link>
             </div>
             <div className="flex flex-col gap-2.5">
               <span className="text-xs font-semibold uppercase tracking-[0.18em] text-asi-gold-soft mb-1">Company</span>

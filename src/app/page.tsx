@@ -230,17 +230,37 @@ export default async function Home() {
           </div>
         </Section>
 
-        {/* ── 6. Markets ── */}
+        {/* ── 6. Global expansion ── */}
         <Section id="markets" variant="ivory">
-          <Eyebrow>Markets</Eyebrow>
-          <Headline className="text-3xl sm:text-5xl max-w-3xl">Designed globally. Adapted locally.</Headline>
-          <div className="mt-12 grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
-            <MarketCard country="jp" name="Japan" line="Osaka heritage, reimagined for modern micro-hospitality." href="/markets/japan" status="active" />
-            <MarketCard country="hk" name="Hong Kong" line="Dense urban cores, compact private stays." status="coming-next" />
-            <MarketCard country="tw" name="Taiwan" line="Urban infill hospitality for modern travelers." status="coming-next" />
-            <MarketCard country="sg" name="Singapore" line="Premium micro-stays for a global hub." status="coming-next" />
-            <MarketCard country="kr" name="Korea" line="Compact urban hospitality, autonomously run." status="coming-next" />
-            <MarketCard country="ae" name="UAE" line="Autonomous hospitality for a fast-growing market." status="coming-next" />
+          <Eyebrow>Global expansion</Eyebrow>
+          <Headline className="text-3xl sm:text-5xl max-w-3xl">
+            One engine. Different real-world operations.
+          </Headline>
+          <p className="mt-5 max-w-3xl text-asi-navy/70 leading-relaxed">
+            In Japan, ASI begins with autonomous hospitality. In Europe, the same operating
+            engine expands into industrial and field operations.
+          </p>
+          <p className="mt-3 max-w-3xl font-serif text-xl text-asi-navy/80">
+            Different markets. Same principle: operations on autopilot, humans on exceptions.
+          </p>
+          <div className="mt-12 grid md:grid-cols-2 gap-6">
+            <MarketCard
+              country="jp"
+              name="Japan — Autonomous Hospitality"
+              line="ASI Micro Hotels + autonomous daily operations. Target program: Open Network Lab 32nd."
+              href="/markets/japan"
+              status="active"
+            />
+            <MarketCard
+              country="nl"
+              name="Netherlands / Europe — Industrial Operations"
+              line="Construction, field work, contractors and SLAs. Target program: LANDCROS Innovation Studios Europe Challenge 2026."
+              href="/markets/netherlands"
+              status="active"
+            />
+          </div>
+          <div className="mt-8">
+            <SecondaryCta href="/markets">Explore all markets</SecondaryCta>
           </div>
         </Section>
 
@@ -251,7 +271,7 @@ export default async function Home() {
           <div className="mt-12 grid sm:grid-cols-3 gap-6">
             <MediaCard label="Deck" title="Japan Pitch Deck" action="coming-soon" />
             <MediaCard label="Film" title="Japan Concept Film" action="coming-soon" />
-            <MediaCard label="Deck" title="Hong Kong Pitch Deck" action="coming-soon" />
+            <MediaCard label="Deck" title="Europe Industrial Deck" action="coming-soon" />
           </div>
           <div className="mt-10">
             <SecondaryCta href="/media">View Media</SecondaryCta>
