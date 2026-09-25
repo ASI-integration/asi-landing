@@ -243,22 +243,42 @@ export default async function Home() {
           <p className="mt-3 max-w-3xl font-serif text-xl text-asi-navy/80">
             Different markets. Same principle: operations on autopilot, humans on exceptions.
           </p>
-          <div className="mt-12 grid md:grid-cols-2 gap-6">
-            <MarketCard
-              country="jp"
-              name="Japan — Autonomous Hospitality"
-              line="ASI Micro Hotels + autonomous daily operations. Target program: Open Network Lab 32nd."
-              href="/markets/japan"
-              status="active"
-            />
-            <MarketCard
-              country="nl"
-              name="Netherlands / Europe — Industrial Operations"
-              line="Construction, field work, contractors and SLAs. Target program: LANDCROS Innovation Studios Europe Challenge 2026."
-              href="/markets/netherlands"
-              status="active"
-            />
+
+          <div className="mt-12">
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-asi-gold-text">
+              Active tracks
+            </p>
+            <div className="mt-5 grid md:grid-cols-2 gap-6">
+              <MarketCard
+                country="jp"
+                name="Japan — Autonomous Hospitality"
+                line="ASI Micro Hotels + autonomous daily operations. Target program: Open Network Lab 32nd."
+                href="/markets/japan"
+                status="active"
+              />
+              <MarketCard
+                country="nl"
+                name="Netherlands / Europe — Industrial Operations"
+                line="Construction, field work, contractors and SLAs. Target program: LANDCROS Innovation Studios Europe Challenge 2026."
+                href="/markets/netherlands"
+                status="active"
+              />
+            </div>
           </div>
+
+          <div className="mt-12 pt-10 border-t border-asi-border">
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-asi-navy/55">
+              Coming next
+            </p>
+            <div className="mt-5 grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
+              <MarketCard country="hk" name="Hong Kong" line="Dense urban cores, compact private stays." status="coming-next" />
+              <MarketCard country="tw" name="Taiwan" line="Urban infill hospitality for modern travelers." status="coming-next" />
+              <MarketCard country="sg" name="Singapore" line="Premium micro-stays for a global hub." status="coming-next" />
+              <MarketCard country="kr" name="Korea" line="Compact urban hospitality, autonomously run." status="coming-next" />
+              <MarketCard country="ae" name="UAE" line="Autonomous hospitality for a fast-growing market." status="coming-next" />
+            </div>
+          </div>
+
           <div className="mt-8">
             <SecondaryCta href="/markets">Explore all markets</SecondaryCta>
           </div>

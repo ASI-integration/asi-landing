@@ -31,14 +31,11 @@ export const metadata: Metadata = {
 };
 
 const NEXT_MARKETS = [
-  'Taiwan',
-  'South Korea',
-  'Hong Kong',
-  'Singapore',
-  'Malaysia',
-  'Chile',
-  'Spain',
-  'Azerbaijan',
+  { country: 'hk' as const, name: 'Hong Kong', line: 'Dense urban cores, compact private stays.' },
+  { country: 'tw' as const, name: 'Taiwan', line: 'Urban infill hospitality for modern travelers.' },
+  { country: 'sg' as const, name: 'Singapore', line: 'Premium micro-stays for a global hub.' },
+  { country: 'kr' as const, name: 'Korea', line: 'Compact urban hospitality, autonomously run.' },
+  { country: 'ae' as const, name: 'UAE', line: 'Autonomous hospitality for a fast-growing market.' },
 ] as const;
 
 export default function MarketsPage() {
@@ -70,7 +67,7 @@ export default function MarketsPage() {
         </section>
 
         <Section variant="paper">
-          <Eyebrow>Current expansion tracks</Eyebrow>
+          <Eyebrow>Active tracks</Eyebrow>
           <Headline className="text-3xl sm:text-5xl max-w-3xl">
             Different markets. Same principle.
           </Headline>
@@ -97,23 +94,24 @@ export default function MarketsPage() {
         </Section>
 
         <Section variant="ivory">
-          <Eyebrow>Next markets</Eyebrow>
+          <Eyebrow>Coming next</Eyebrow>
           <Headline className="text-3xl sm:text-5xl max-w-3xl">
-            We expand where the operating model fits.
+            Future markets stay visible — without mixing them with active tracks.
           </Headline>
-          <div className="mt-10 flex flex-wrap gap-3">
+          <div className="mt-12 grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
             {NEXT_MARKETS.map((market) => (
-              <span
-                key={market}
-                className="px-4 py-2.5 border border-asi-border bg-asi-paper text-sm text-asi-navy/70 rounded-sm"
-              >
-                {market}
-              </span>
+              <MarketCard
+                key={market.name}
+                country={market.country}
+                name={market.name}
+                line={market.line}
+                status="coming-next"
+              />
             ))}
           </div>
           <p className="mt-8 max-w-2xl text-sm text-asi-navy/60 leading-relaxed">
-            These are exploration markets, not announced launches. New country pages appear only
-            when there is a concrete pilot, partner or market-entry track to explain.
+            These are future market directions, not announced launches. We create a dedicated
+            country page only when there is a concrete pilot, partner or market-entry track to explain.
           </p>
         </Section>
       </main>
