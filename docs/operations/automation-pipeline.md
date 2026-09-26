@@ -51,3 +51,7 @@ The automated flow must stay inside these limits unless a separate explicit owne
 - Do not run broad test suites; focused-test policy comes only from `agentOs.focusedTestMode` and Runtime baseline evidence.
 - Verification is independent and read-only: it must not mutate the implementation workspace as trusted evidence of success.
 - Red actions from Agent OS (`AUTONOMY_POLICY.md` / `OWNER_GATE.md`) always stop the agent until the owner grants an exact-target approval.
+
+## Runtime rollout verification — 3 August 2026
+
+Runtime SHA `615001a78a646d0ed02cecb90fd194e07facd43d` was installed. Services worker, dashboard, and bridge runner were restarted successfully. Terminal-state reconciliation was verified.
