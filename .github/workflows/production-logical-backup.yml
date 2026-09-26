@@ -3,6 +3,10 @@ name: Production Logical Backup
 on:
   workflow_dispatch:
     inputs:
+      owner_gate_json:
+        description: Approved asi.agent-os.owner-gate.v1 JSON (required; typed confirmation is not approval)
+        required: true
+        type: string
       confirm_backup:
         description: Type BACKUP_PRODUCTION to create an encrypted production backup
         required: true
@@ -16,7 +20,14 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  production_owner_gate:
+    uses: ./.github/workflows/production-owner-gate.yml
+    with:
+      requested_action: production_backup_access
+      environment_identity: production
+      owner_gate_json: ${{ inputs.owner_gate_json }}
   backup:
+    needs: [production_owner_gate]
     runs-on: ubuntu-latest
     environment: production
     timeout-minutes: 60

@@ -3,6 +3,10 @@ name: Telegram Autopilot Live Acceptance
 on:
   workflow_dispatch:
     inputs:
+      owner_gate_json:
+        description: Approved asi.agent-os.owner-gate.v1 JSON (required; typed confirmation is not approval)
+        required: true
+        type: string
       production_url:
         description: Production URL to verify
         required: false
@@ -13,7 +17,14 @@ permissions:
   contents: read
 
 jobs:
+  production_owner_gate:
+    uses: ./.github/workflows/production-owner-gate.yml
+    with:
+      requested_action: production_data_mutation
+      environment_identity: production
+      owner_gate_json: ${{ inputs.owner_gate_json }}
   live_acceptance:
+    needs: [production_owner_gate]
     runs-on: ubuntu-latest
     environment: production
     env:

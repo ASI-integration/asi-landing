@@ -36,3 +36,22 @@ Fail-closed правила:
 ## Safe default
 
 Без валидного approval агент возвращает `AWAITING_OWNER` с готовым preflight и не вызывает workflow, provider или mutation path.
+
+## Production workflow enforcement (AO-003)
+
+Every repository workflow capable of mutating production must invoke the shared reusable gate
+[`.github/workflows/production-owner-gate.yml`](../../.github/workflows/production-owner-gate.yml)
+before mutation jobs. The gate runs
+[`scripts/agent-os/enforce-production-owner-gate.mjs`](../../scripts/agent-os/enforce-production-owner-gate.mjs)
+against an `asi.agent-os.owner-gate.v1` artifact.
+
+Machine-readable inventory:
+[`production-workflow-inventory.json`](production-workflow-inventory.json)
+(class A = production-mutating, B = production read-only, C = non-production).
+
+Coverage is enforced by
+[`scripts/agent-os/check-production-owner-gate-coverage.mjs`](../../scripts/agent-os/check-production-owner-gate-coverage.mjs)
+in PR validation. Uncovered or bypassing mutators fail closed.
+
+GitHub Environment reviewers remain complementary protections and never substitute for this
+machine owner-gate. Typed `workflow_dispatch` confirmation phrases also never authorize mutation.
