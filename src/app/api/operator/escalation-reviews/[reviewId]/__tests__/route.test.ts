@@ -8,7 +8,10 @@ import {
   HandoffLockState,
   requestOperatorHandoff,
 } from '@/lib/communication/handoff-lock';
-import { __resetEscalationReviewStoreForTests } from '@/lib/communication/operator-review';
+import {
+  __resetEscalationReviewStoreForTests,
+  __setOperatorReviewStoreHealthForTests,
+} from '@/lib/communication/operator-review';
 import {
   getCommAgentSessionMemory,
   resetCommAgentSessionMemoryForTests,
@@ -163,6 +166,74 @@ describe('PATCH /api/operator/escalation-reviews/[reviewId] acknowledge → lock
       pending_operator_status: 'resolved',
       unresolved_action: null,
       last_safe_reply: 'Мастер придёт после 18:00.',
+    });
+  });
+
+  describe('operator review store unavailable — fail closed', () => {
+    it('GET returns 503 (not 404) instead of treating the review as not found', async () => {
+      const { reviewId } = requestOperatorHandoff({
+        sessionId: 'sess_route_unavailable_get',
+        channel: 'telegram',
+        targetId: '5001',
+        escalationReason: 'REQUIRES_OPERATOR',
+      });
+      __setOperatorReviewStoreHealthForTests('unavailable');
+
+      const { GET } = await import('../route');
+      const res = await GET(
+        new NextRequest(`http://localhost/api/operator/escalation-reviews/${reviewId}`),
+        { params: { reviewId } },
+      );
+      const body = await res.json();
+
+      expect(res.status).toBe(503);
+      expect(body).toEqual({ ok: false, error: 'operator_review_store_unavailable' });
+    });
+
+    it('PATCH acknowledge returns 503 and does not mutate state', async () => {
+      const { reviewId } = requestOperatorHandoff({
+        sessionId: 'sess_route_unavailable_patch',
+        channel: 'telegram',
+        targetId: '5002',
+        escalationReason: 'REQUIRES_OPERATOR',
+      });
+      __setOperatorReviewStoreHealthForTests('unavailable');
+
+      const { PATCH } = await import('../route');
+      const req = new NextRequest(`http://localhost/api/operator/escalation-reviews/${reviewId}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ action: 'acknowledge' }),
+        headers: { 'content-type': 'application/json' },
+      });
+      const res = await PATCH(req, { params: { reviewId } });
+      const body = await res.json();
+
+      expect(res.status).toBe(503);
+      expect(body).toEqual({ ok: false, error: 'operator_review_store_unavailable' });
+      expect(mocks.sendMessage).not.toHaveBeenCalled();
+    });
+
+    it('PATCH send_reply returns 503 and never calls the channel adapter', async () => {
+      const { reviewId } = requestOperatorHandoff({
+        sessionId: 'sess_route_unavailable_reply',
+        channel: 'telegram',
+        targetId: '5003',
+        escalationReason: 'REQUIRES_OPERATOR',
+      });
+      __setOperatorReviewStoreHealthForTests('unavailable');
+
+      const { PATCH } = await import('../route');
+      const req = new NextRequest(`http://localhost/api/operator/escalation-reviews/${reviewId}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ action: 'send_reply', replyText: 'hello' }),
+        headers: { 'content-type': 'application/json' },
+      });
+      const res = await PATCH(req, { params: { reviewId } });
+      const body = await res.json();
+
+      expect(res.status).toBe(503);
+      expect(body).toEqual({ ok: false, error: 'operator_review_store_unavailable' });
+      expect(mocks.sendMessage).not.toHaveBeenCalled();
     });
   });
 });
