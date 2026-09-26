@@ -181,9 +181,15 @@ async function resolveDefaultContext(
   if (!binding) return { ok: false, reason: 'reservation_guest_mismatch' };
   const targetId = binding.chatId || text(record.guestEmail, 240);
   if (!targetId) return { ok: false, reason: 'recipient_missing' };
+  const accountId = text(record.accountId, 120) || null;
   let guestMemory = null;
   try {
-    guestMemory = buildRelevantGuestMemoryContext(await loadGuestLongTermMemory(event.guestId, db), '');
+    if (accountId) {
+      guestMemory = buildRelevantGuestMemoryContext(
+        await loadGuestLongTermMemory(event.guestId, accountId, db),
+        '',
+      );
+    }
   } catch {
     guestMemory = null;
   }
@@ -195,6 +201,7 @@ async function resolveDefaultContext(
     ok: true,
     context: {
       bookingOpsRecordId: record.id,
+      accountId,
       reservationId: event.reservationId,
       propertyId: event.propertyId,
       guestId: event.guestId,
@@ -428,8 +435,17 @@ export function createGuestLifecycleRuntimePort(options: GuestLifecycleRuntimeOp
     },
     async recordMemory(input) {
       if (!input.plan.memoryEvent) return;
+      // Fail closed if accountId is not available — cannot record memory without tenant context.
+      if (!input.context.accountId?.trim()) {
+        console.warn('[guest-lifecycle-runtime] skipping memory event - missing accountId', {
+          guestId: input.event.guestId,
+          eventType: input.plan.memoryEvent,
+        });
+        return;
+      }
       await recordGuestOperationalEvent({
         guestId: input.event.guestId,
+        accountId: input.context.accountId,
         type: input.plan.memoryEvent,
         summary: memorySummary(input),
         bookingReference: input.event.reservationId,

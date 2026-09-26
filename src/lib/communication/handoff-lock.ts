@@ -60,6 +60,7 @@ import {
   recordGuestOperationalEvent,
   type GuestMemoryEventType,
 } from './guest-long-term-memory';
+import { resolveGuestMemoryAccountId } from './guest-memory-account';
 
 // ─── State ───────────────────────────────────────────────────────────────────
 
@@ -343,7 +344,11 @@ export async function resolveOperatorHandoffWithReply(input: {
   });
   const closed = getEscalationReview(review.reviewId) ?? review;
   const guestId = String(review.source?.guest_id ?? '').trim();
-  if (guestId && !sent.duplicatePrevented) {
+  const accountId = await resolveGuestMemoryAccountId({
+    reservationId: review.reservationId,
+    propertyId: review.propertyId,
+  });
+  if (guestId && accountId && !sent.duplicatePrevented) {
     const reason = String(review.escalationReason ?? '').toLowerCase();
     const eventType: GuestMemoryEventType = reason.includes('maintenance')
       ? 'maintenance_resolution'
@@ -356,6 +361,7 @@ export async function resolveOperatorHandoffWithReply(input: {
             : 'operator_confirmed_resolution';
     await recordGuestOperationalEvent({
       guestId,
+      accountId,
       type: eventType,
       summary: `Оператор подтвердил решение по событию: ${review.escalationReason}`,
       source: 'operator_confirmed',
@@ -366,6 +372,11 @@ export async function resolveOperatorHandoffWithReply(input: {
         reviewId: review.reviewId,
         error: error instanceof Error ? error.message : String(error),
       });
+    });
+  } else if (guestId && !accountId && !sent.duplicatePrevented) {
+    console.warn('[handoff-lock] guest memory event skipped - missing accountId', {
+      reviewId: review.reviewId,
+      guestId,
     });
   }
   logCommAgentHandoffLifecycleMetric({
