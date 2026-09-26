@@ -2,7 +2,11 @@
 
 import { FormEvent, useCallback, useEffect, useState } from 'react';
 import { CrmAccessGuard } from '@/components/CrmAccessGuard';
-import { reservationEmptyMessages, type ReservationView } from '@/lib/reservations/views';
+import {
+  formatReservationStatusLabelRu,
+  reservationEmptyMessages,
+  type ReservationView,
+} from '@/lib/reservations/views';
 
 type Row = { id: string; asi_reference: string; property_id: string; unit_id: string | null; source_type: string; check_in_at: string; check_out_at: string; guest_name: string; normalized_status: string };
 const tabs: Array<[ReservationView, string]> = [['upcoming', 'Предстоящие'], ['active', 'Сейчас проживают'], ['inquiries', 'Запросы и удержания'], ['conflicts', 'Конфликты'], ['cancelled', 'Отменённые'], ['all', 'Все']];
@@ -47,7 +51,7 @@ function Workspace() {
     {showForm === 'block' ? <BlockForm onDone={async () => { setShowForm(null); await load(); }} onMessage={setMessage} /> : null}
     {unassignedLegacyCount > 0 ? <p role="status" className="rounded-lg bg-amber-50 p-3 text-amber-900">Есть неназначенные старые брони. Запустите безопасное назначение аккаунту.</p> : null}
     {message ? <p role="status" className="rounded-lg bg-amber-50 p-3 text-amber-900">{message}</p> : null}
-    <div className="overflow-x-auto rounded-xl border bg-white">{rows.length === 0 ? <p className="p-8 text-center text-slate-600">{reservationEmptyMessages[view]}</p> : <table className="w-full min-w-[800px] text-left text-sm"><thead className="bg-slate-50"><tr>{['Номер', 'Гость', 'Объект', 'Даты', 'Источник', 'Статус'].map((label) => <th key={label} className="p-3">{label}</th>)}</tr></thead><tbody>{rows.map((row) => <tr key={row.id} className="border-t"><td className="p-3 font-semibold">{row.asi_reference}</td><td className="p-3">{row.guest_name}</td><td className="p-3">{row.property_id}{row.unit_id ? ` / ${row.unit_id}` : ''}</td><td className="p-3">{new Date(row.check_in_at).toLocaleDateString('ru-RU')} — {new Date(row.check_out_at).toLocaleDateString('ru-RU')}</td><td className="p-3">{row.source_type}</td><td className="p-3">{row.normalized_status}</td></tr>)}</tbody></table>}</div>
+    <div className="overflow-x-auto rounded-xl border bg-white">{rows.length === 0 ? <p className="p-8 text-center text-slate-600">{reservationEmptyMessages[view]}</p> : <table className="w-full min-w-[800px] text-left text-sm"><thead className="bg-slate-50"><tr>{['Номер', 'Гость', 'Объект', 'Даты', 'Источник', 'Статус'].map((label) => <th key={label} className="p-3">{label}</th>)}</tr></thead><tbody>{rows.map((row) => <tr key={row.id} className="border-t"><td className="p-3 font-semibold">{row.asi_reference}</td><td className="p-3">{row.guest_name}</td><td className="p-3">{row.property_id}{row.unit_id ? ` / ${row.unit_id}` : ''}</td><td className="p-3">{new Date(row.check_in_at).toLocaleDateString('ru-RU')} — {new Date(row.check_out_at).toLocaleDateString('ru-RU')}</td><td className="p-3">{row.source_type}</td><td className="p-3">{formatReservationStatusLabelRu(row.normalized_status)}</td></tr>)}</tbody></table>}</div>
   </div>;
 }
 
