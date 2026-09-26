@@ -10,6 +10,7 @@ import {
 } from './telegram-operational-intake';
 import { matchTelegramOperationalEntitiesV1 } from './telegram-operational-matching';
 import { loadTelegramPropertyKnowledgeV1, logTelegramPropertyKnowledgeLookup } from './telegram-property-knowledge';
+import { isBookingVerifiedForGuestKnowledge } from './guest-property-knowledge';
 import { composeTelegramOperationalReply } from './telegram-reply-composer';
 import type { CommunicationCanonNormalization } from './communication-normalizer';
 import {
@@ -1096,14 +1097,24 @@ export async function processTelegramOperationalIntakeWithSessionMemory(params: 
             (propertyMatchConfidence === 'high_confidence_match' || propertyMatchConfidence === 'medium_confidence_match'));
 
       if (shouldLookup && matchedPropertyId) {
+        const bookingVerified = isBookingVerifiedForGuestKnowledge({
+          guestIdentity,
+          matchedPropertyId,
+          matchedReservationId: match.matched_reservation_id,
+        });
         const kn = await loadTelegramPropertyKnowledgeV1({
           matched_property_id: matchedPropertyId,
+          booking_verified: bookingVerified,
           db: params.db,
+          audit_message_id: `tg:${params.chatId}:${params.update_id}`,
         });
 
         (hit.extractedFacts as any).property_knowledge_status = kn.status;
         (hit.extractedFacts as any).property_knowledge_fields = kn.available_fields;
         (hit.extractedFacts as any).property_knowledge = kn.knowledge;
+        (hit.extractedFacts as any).property_knowledge_source = kn.knowledge_source ?? null;
+        (hit.extractedFacts as any).property_knowledge_resolutions = kn.field_resolutions ?? [];
+        (hit.extractedFacts as any).booking_verified_for_knowledge = bookingVerified;
 
         // Category-specific grounded-reply upgrade: when we have the data a guest needs,
         // turn clarify/escalate_operator into a grounded reply.

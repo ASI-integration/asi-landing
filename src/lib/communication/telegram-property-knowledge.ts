@@ -1,4 +1,9 @@
 import { supabase } from '@/lib/supabase';
+import {
+  resolveGuestPropertyKnowledge,
+  type GuestFactFieldResolution,
+  type GuestFactSource,
+} from './guest-property-knowledge';
 
 export type TelegramPropertyKnowledgeLookupStatus =
   | 'knowledge_found'
@@ -30,29 +35,13 @@ export type TelegramPropertyKnowledgeLookupResultV1 = {
   property_id: string | null;
   knowledge: TelegramPropertyKnowledgeFields;
   available_fields: string[];
+  /** P0-02: per-field resolution (canonical vs legacy_adapter). */
+  field_resolutions?: GuestFactFieldResolution[];
+  /** Aggregate source hint for audit/logging. */
+  knowledge_source?: GuestFactSource | 'mixed';
 };
 
 type SupabaseLike = { from: (table: string) => any };
-
-const KNOWLEDGE_FIELD_KEYS: (keyof TelegramPropertyKnowledgeFields)[] = [
-  'wifi_name',
-  'wifi_password',
-  'wifi_notes',
-  'checkin_instructions',
-  'door_code_notes',
-  'access_notes',
-  'parking_rules',
-  'parking_paid_or_free',
-  'parking_location_notes',
-  'quiet_hours',
-  'house_rules',
-  'heating_notes',
-  'emergency_contact_notes',
-  'checkout_notes',
-  'late_checkout_policy',
-  'early_checkin_policy',
-  'timezone',
-];
 
 function emptyKnowledge(): TelegramPropertyKnowledgeFields {
   return {
@@ -82,38 +71,34 @@ function stringOrNull(v: unknown): string | null {
   return s.length > 0 ? s : null;
 }
 
-function mapRowToKnowledge(row: any): { fields: TelegramPropertyKnowledgeFields; available: string[] } {
-  const fields = emptyKnowledge();
-  const available: string[] = [];
-  for (const key of KNOWLEDGE_FIELD_KEYS) {
-    const v = stringOrNull((row ?? {})[key]);
-    if (v) {
-      fields[key] = v;
-      available.push(key);
-    }
-  }
-  // Legacy compatibility: some rows still use wifi_instructions combined field.
-  if (!fields.wifi_notes) {
-    const legacy = stringOrNull((row ?? {}).wifi_instructions);
-    if (legacy) {
-      fields.wifi_notes = legacy;
-      available.push('wifi_notes');
-    }
-  }
-  return { fields, available };
+function aggregateSource(resolutions: GuestFactFieldResolution[]): GuestFactSource | 'mixed' {
+  const used = new Set(
+    resolutions.filter((r) => r.usable || r.source !== 'none').map((r) => r.source),
+  );
+  used.delete('none');
+  if (used.size === 0) return 'none';
+  if (used.size === 1) return [...used][0]!;
+  return 'mixed';
 }
 
 /**
- * Load property knowledge by matched_property_id. Deterministic, no LLM.
+ * Load guest-facing property facts by matched_property_id.
+ *
+ * P0-02: compatibility facade — guest facts resolve through canonical
+ * `object_knowledge_entries` (with explicit legacy adapter when no canonical
+ * entry exists for a key). Telegram callers must not query both stores.
  *
  * Returns a normalized result with one of:
- *  - knowledge_found (row exists and at least one knowledge field is populated)
- *  - property_found_but_knowledge_missing (row exists but all fields empty)
- *  - property_not_found (no row)
+ *  - knowledge_found (at least one usable guest-facing field)
+ *  - property_found_but_knowledge_missing (property known but no usable facts)
+ *  - property_not_found (no canonical entries and no legacy row)
  */
 export async function loadTelegramPropertyKnowledgeV1(params: {
   matched_property_id: string | null | undefined;
+  booking_verified?: boolean;
   db?: SupabaseLike;
+  audit_message_id?: string;
+  now?: Date;
 }): Promise<TelegramPropertyKnowledgeLookupResultV1> {
   const propertyId = params.matched_property_id ? String(params.matched_property_id).trim() : '';
   if (!propertyId) {
@@ -122,41 +107,57 @@ export async function loadTelegramPropertyKnowledgeV1(params: {
       property_id: null,
       knowledge: emptyKnowledge(),
       available_fields: [],
+      field_resolutions: [],
+      knowledge_source: 'none',
     };
   }
 
-  const db = (params.db ?? (supabase as unknown as SupabaseLike));
+  const db = params.db ?? (supabase as unknown as SupabaseLike);
 
   try {
-    const { data, error } = await db
-      .from('tg_property_knowledge')
-      .select('*')
-      .eq('property_id', propertyId)
-      .maybeSingle();
+    const resolved = await resolveGuestPropertyKnowledge({
+      property_id: propertyId,
+      booking_verified: Boolean(params.booking_verified),
+      db,
+      now: params.now,
+      audit_message_id: params.audit_message_id,
+    });
 
-    if (error || !data) {
+    const knowledge_source = aggregateSource(resolved.field_resolutions);
+    const propertyKnown =
+      resolved.has_canonical_guest_entries ||
+      resolved.has_legacy_row ||
+      resolved.available_fields.length > 0;
+
+    if (resolved.available_fields.length > 0) {
       return {
-        status: 'property_not_found',
+        status: 'knowledge_found',
         property_id: propertyId,
-        knowledge: emptyKnowledge(),
-        available_fields: [],
+        knowledge: resolved.knowledge,
+        available_fields: resolved.available_fields,
+        field_resolutions: resolved.field_resolutions,
+        knowledge_source,
       };
     }
 
-    const { fields, available } = mapRowToKnowledge(data);
-    if (available.length === 0) {
+    if (propertyKnown) {
       return {
         status: 'property_found_but_knowledge_missing',
         property_id: propertyId,
-        knowledge: fields,
+        knowledge: resolved.knowledge,
         available_fields: [],
+        field_resolutions: resolved.field_resolutions,
+        knowledge_source,
       };
     }
+
     return {
-      status: 'knowledge_found',
+      status: 'property_not_found',
       property_id: propertyId,
-      knowledge: fields,
-      available_fields: available,
+      knowledge: emptyKnowledge(),
+      available_fields: [],
+      field_resolutions: resolved.field_resolutions,
+      knowledge_source: 'none',
     };
   } catch {
     return {
@@ -164,6 +165,8 @@ export async function loadTelegramPropertyKnowledgeV1(params: {
       property_id: propertyId,
       knowledge: emptyKnowledge(),
       available_fields: [],
+      field_resolutions: [],
+      knowledge_source: 'none',
     };
   }
 }
