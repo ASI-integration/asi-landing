@@ -7,6 +7,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
   requestOperatorHandoff: vi.fn(),
   supabaseUpdate: vi.fn(),
+  resolveAccountId: vi.fn(),
 }));
 
 vi.mock('../handoff-lock', () => ({
@@ -23,6 +24,10 @@ vi.mock('@/lib/supabase', () => ({
   },
 }));
 
+vi.mock('../operator-access', () => ({
+  resolveEscalationReviewAccountId: mocks.resolveAccountId,
+}));
+
 import { recordCommunicationEscalation } from '../escalations';
 
 describe('recordCommunicationEscalation', () => {
@@ -30,6 +35,8 @@ describe('recordCommunicationEscalation', () => {
     mocks.requestOperatorHandoff.mockReset();
     mocks.supabaseUpdate.mockReset();
     mocks.supabaseUpdate.mockResolvedValue({ error: null });
+    mocks.resolveAccountId.mockReset();
+    mocks.resolveAccountId.mockResolvedValue('account-a');
     mocks.requestOperatorHandoff.mockReturnValue({
       reviewId: 'rev-acceptance-1',
       alreadyLocked: false,
@@ -52,6 +59,7 @@ describe('recordCommunicationEscalation', () => {
       targetId: '12345',
       contactId: 'contact-1',
       objectId: 'OBJ-1',
+      reservationId: 'reservation-1',
       messageText: 'Помогите с замком',
       reason: 'low_confidence',
       source: 'communication_autopilot',
@@ -60,13 +68,19 @@ describe('recordCommunicationEscalation', () => {
     expect(result.review.reviewId).toBe('rev-acceptance-1');
     expect(mocks.requestOperatorHandoff).toHaveBeenCalledWith(
       expect.objectContaining({
+        accountId: 'account-a',
         sessionId: 'sess-1',
+        reservationId: 'reservation-1',
         leadId: 'contact-1',
         propertyId: 'OBJ-1',
         escalationReason: 'low_confidence',
         chatId: 12345,
       }),
     );
+    expect(mocks.resolveAccountId).toHaveBeenCalledWith({
+      reservationId: 'reservation-1',
+      propertyId: 'OBJ-1',
+    });
     expect(mocks.supabaseUpdate).toHaveBeenCalledWith(
       expect.objectContaining({
         communication_status: 'needs_manual_reaction',

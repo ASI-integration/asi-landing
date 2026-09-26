@@ -41,6 +41,7 @@ function queryResult(data: Record<string, unknown> | null) {
   const query = {
     select: vi.fn(),
     eq: vi.fn(),
+    limit: vi.fn().mockResolvedValue({ data: data ? [data] : [], error: null }),
     maybeSingle: vi.fn().mockResolvedValue({ data, error: null }),
   };
   query.select.mockReturnValue(query);
@@ -78,6 +79,54 @@ describe('durable Telegram inbound receipts', () => {
     expect(mocks.rpc).toHaveBeenCalledWith('claim_telegram_inbound_receipt', expect.objectContaining({
       p_bot_scope: 'core', p_update_id: 7001, p_chat_id: 9001,
       p_account_id: 'account-a', p_property_id: '11111111-1111-4111-8111-111111111111',
+    }));
+  });
+
+  it('resolves a text property only through the server-owned Telegram reservation binding', async () => {
+    mocks.from
+      .mockReturnValueOnce(queryResult({
+        property_id: 'test-prop-tg-live',
+        conversation_context_v1: {
+          current_object: { property_id: 'test-prop-tg-live' },
+          current_booking: { reservation_id: 'reservation-1' },
+        },
+      }))
+      .mockReturnValueOnce(queryResult({
+        id: 'booking-record-1',
+        booking_id: 'reservation-1',
+        account_id: 'account-a',
+        property_id: 'test-prop-tg-live',
+      }))
+      .mockReturnValueOnce(queryResult(null))
+      .mockReturnValueOnce(queryResult({
+        id: 'reservation-1',
+        property_id: 'test-prop-tg-live',
+      }))
+      .mockReturnValueOnce(queryResult({
+        legacy_property_id: 'test-prop-tg-live',
+        account_id: 'account-a',
+        canonical_property_id: '22222222-2222-4222-8222-222222222222',
+      }))
+      .mockReturnValueOnce(queryResult(null))
+      .mockReturnValueOnce(queryResult(null))
+      .mockReturnValueOnce(queryResult({ account_id: 'account-a' }));
+    mocks.rpc.mockResolvedValue({
+      data: [{
+        action: 'process', receipt_id: 'receipt-1', claim_token: 'claim-1', retry_count: 0,
+        account_id: 'account-a', property_id: 'test-prop-tg-live', payload: update,
+      }],
+      error: null,
+    });
+
+    const claim = await claimTelegramInboundReceipt(update);
+
+    expect(claim).toMatchObject({
+      action: 'process',
+      scope: { accountId: 'account-a', propertyId: 'test-prop-tg-live' },
+    });
+    expect(mocks.rpc).toHaveBeenCalledWith('claim_telegram_inbound_receipt', expect.objectContaining({
+      p_account_id: 'account-a',
+      p_property_id: 'test-prop-tg-live',
     }));
   });
 

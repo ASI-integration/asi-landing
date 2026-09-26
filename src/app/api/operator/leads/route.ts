@@ -19,26 +19,16 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getSession } from '@/lib/auth';
+import { requireCrmOperatorSession } from '@/lib/crm/api-auth';
 import { fetchLeads, patchLead } from '@/lib/core-api';
 
 export const dynamic = 'force-dynamic';
 
-// ─── Auth guard ───────────────────────────────────────────────────────────────
-
-async function requireSession() {
-  const session = await getSession();
-  if (!session.userId) return null;
-  return session;
-}
-
 // ─── GET ──────────────────────────────────────────────────────────────────────
 
 export async function GET(req: NextRequest) {
-  const session = await requireSession();
-  if (!session) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
+  const auth = await requireCrmOperatorSession();
+  if ('error' in auth) return auth.error;
 
   const { searchParams } = new URL(req.url);
   const status = searchParams.get('status') ?? undefined;
@@ -56,10 +46,8 @@ export async function GET(req: NextRequest) {
 // ─── PATCH ────────────────────────────────────────────────────────────────────
 
 export async function PATCH(req: NextRequest) {
-  const session = await requireSession();
-  if (!session) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
+  const auth = await requireCrmOperatorSession();
+  if ('error' in auth) return auth.error;
 
   let body: Record<string, unknown>;
   try {
@@ -83,7 +71,7 @@ export async function PATCH(req: NextRequest) {
     });
 
     console.log(
-      `[operator/leads] PATCH leadId=${leadId} status=${status ?? 'unchanged'} by user=${session.userId}`,
+      `[operator/leads] PATCH leadId=${leadId} status=${status ?? 'unchanged'} by user=${auth.session.userId}`,
     );
 
     return NextResponse.json(result);
