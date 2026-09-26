@@ -267,6 +267,7 @@ function mapBridgeError(error: unknown): never {
     const messages: Record<string, string> = {
       bridge_not_configured: 'Runtime Bridge не настроен.',
       task_not_found: 'Задача не найдена.',
+      admission_busy: 'Временно недоступно',
       idempotency_conflict: 'Повторный запрос с другим содержимым отклонён.',
       decision_conflict: 'Решение по этому gate уже принято с другим значением.',
       owner_gate_mismatch: 'Gate не принадлежит этой задаче или уже недоступен.',

@@ -59,6 +59,11 @@ const MESSAGES: Record<string, string> = {
   baseline_ready: 'Текущая версия main определена.',
   baseline_unavailable: 'Не удалось получить текущую версию main.',
   runtime_executor_ready: 'Исполнитель задач готов.',
+  runtime_execution_lane_ready: 'Исполнитель задач готов.',
+  runtime_execution_lane_occupied: 'Исполнитель задач сейчас занят.',
+  runtime_execution_lane_owner_action_required: 'Исполнитель задач ждёт ответ владельца.',
+  runtime_execution_lane_recovery_blocked: 'Исполнитель задач недоступен.',
+  runtime_execution_lane_unavailable: 'Исполнитель задач недоступен.',
   runtime_runner_url_missing: 'Адрес Runtime Runner не настроен.',
   runtime_runner_url_invalid: 'Адрес Runtime Runner указан некорректно.',
   runtime_runner_credentials_invalid: 'Доступ Runtime Runner не настроен или настроен некорректно.',
@@ -241,6 +246,7 @@ function runnerComponents(
     ? reconciled.checkoutReasonCode
     : 'runtime_checkout_probe_failed';
   const executorReason = EXECUTOR_REASON_CODES.has(reconciled.executorReasonCode)
+    || /^[A-Za-z0-9][A-Za-z0-9._:-]{0,119}$/.test(reconciled.executorReasonCode)
     ? reconciled.executorReasonCode
     : 'runtime_executor_probe_failed';
 

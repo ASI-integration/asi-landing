@@ -54,6 +54,40 @@ Runner может вернуть `asi.runtime.owner-gate.v1` только с:
 
 Решение принимается только с `source=explicit_owner_message`. Typed confirmation не считается approval. Повтор того же `decisionId` для того же gate идемпотентен; другой decision для уже решённого gate возвращает conflict. Один `decisionId` нельзя повторно использовать для другого gate в том же client scope. Approval ставит ту же задачу обратно в очередь. Rejection завершает её безопасным machine result.
 
+## Owner gate crash recovery (`runner_reconcile_owner_gate`)
+
+Runner-internal операция (не Pilot API), закрывает окно между тем, как executor произвёл `owner_gate`, и durable commit в Landing: crash до/во время/после `runner_submit_owner_gate` не даёт Runtime понять, закоммитил ли Landing gate. `runner_submit_owner_gate` не изменён и остаётся обычным путём для свежего lease.
+
+Запрос: `{ runnerId, taskId, attemptCount, originalLeaseToken?, gate }`, где `attemptCount` и опциональный `originalLeaseToken` — identity исходного claim, который произвёл `gate`. В отличие от `runner_submit_owner_gate`, здесь `gate.expiresAt` может уже быть в прошлом — операция реплеит исторический факт, а не открывает новое окно approval.
+
+Операция атомарна (advisory lock + `FOR UPDATE` на task row) и идемпотентна. Bounded результат — ровно один из:
+
+- `COMMITTED` — gate только что создан, `running → awaiting_owner` для точного исходного attempt (даже если lease уже истекла, если новый attempt не подтверждён);
+- `COMMITTED_DEDUPLICATED` — точный такой же gate уже был закоммичен (потерянный HTTP response); ничего не меняется;
+- `RECOVERED_AND_COMMITTED` — задача была `queued` после recovery по истёкшей lease с тем же `attemptCount`, без нового claim; gate создаётся без повторного запуска executor;
+- `TERMINAL` — задача уже `completed`/`failed`, либо тот же gate уже отклонён/consumed, либо сам исходный gate был просрочен к моменту reconciliation (тогда задача атомарно переводится в `failed` с тем же `owner_gate_expired`, что и обычный expiry);
+- `SUPERSEDED` — `attemptCount`/`runnerId`/`leaseToken` не совпадают с текущим claim (новый claim уже существует), либо gate уже approved/consumed и задача продолжилась дальше — старый вызов fenced, без мутации;
+- `CONFLICT` — тот же `taskId`+`taskCycle` уже несёт другой payload, либо `taskId` неизвестен/принадлежит другому client_id (одинаковый bounded ответ в обоих случаях — без утечки существования).
+
+Два одновременных идентичных вызова reconciliation детерминированно дают ровно одну gate-строку: один вызов получает `COMMITTED`/`RECOVERED_AND_COMMITTED`, второй — `COMMITTED_DEDUPLICATED`.
+
+Ожидаемый будущий Runtime flow (реализуется в отдельном Runtime-only изменении, не здесь):
+
+```
+executor produces owner_gate
+  -> Runtime persists local pending reconciliation evidence
+     (runnerId, taskId, attemptCount, originalLeaseToken, exact gate payload)
+  -> physical slot ACTION_REQUIRED
+  -> call runner_reconcile_owner_gate
+  -> on COMMITTED | COMMITTED_DEDUPLICATED | RECOVERED_AND_COMMITTED:
+       mark local ownership remotely confirmed
+  -> crash/restart: retry the same reconciliation call verbatim
+  -> on TERMINAL | SUPERSEDED: safely clear/release the stale local hold
+  -> on CONFLICT: fail closed and require investigation
+```
+
+Контрактный fixture: [`src/lib/asi-runtime/__fixtures__/owner-gate-reconcile-runner-request-v1.json`](../src/lib/asi-runtime/__fixtures__/owner-gate-reconcile-runner-request-v1.json).
+
 ## Конфигурация
 
 Нужны только server-side env names (значения не выводить в логи):

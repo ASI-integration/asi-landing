@@ -11,6 +11,8 @@ import {
   PilotStatusBadge,
   PilotTaskDetail,
   PilotTaskList,
+  handleTaskRowClick,
+  pilotTaskHref,
 } from '../PilotConsoleView';
 import { PILOT_CONSOLE_STATUS_LABELS } from '@/lib/pilot/status-ui';
 import type { PilotConsoleStatus } from '@/lib/pilot/status';
@@ -141,6 +143,181 @@ describe('SP-05 Pilot Console UI', () => {
     }
   });
 
+  it('each task row is a real whole-row link to /pilot?taskId=<id>, not just the title/id text', () => {
+    const tasks = [
+      {
+        taskId: '11111111-1111-4111-8111-111111111111',
+        title: 'First task',
+        status: 'queued',
+        consoleStatus: 'running' as const,
+        createdAt: '2026-09-08T00:00:00.000Z',
+        updatedAt: '2026-09-08T00:00:00.000Z',
+      },
+      {
+        taskId: '22222222-2222-4222-8222-222222222222',
+        title: 'Second task',
+        status: 'queued',
+        consoleStatus: 'blocked' as const,
+        createdAt: '2026-09-08T00:00:00.000Z',
+        updatedAt: '2026-09-08T00:00:00.000Z',
+      },
+    ];
+    const html = renderToStaticMarkup(
+      React.createElement(PilotTaskList, {
+        tasks,
+        selectedTaskId: null,
+        empty: false,
+        onSelect: () => undefined,
+      }),
+    );
+    for (const task of tasks) {
+      // The row is one <a> whose href is the exact deep link; title, id, date
+      // and the status badge must all sit inside that same anchor, not
+      // require clicking only the title/id text.
+      const anchorStart = html.indexOf(`data-pilot-task-item="${task.taskId}"`);
+      expect(anchorStart).toBeGreaterThan(-1);
+      const tagStart = html.lastIndexOf('<a', anchorStart);
+      expect(tagStart).toBeGreaterThan(-1);
+      const tagEnd = html.indexOf('>', anchorStart);
+      const openingTag = html.slice(tagStart, tagEnd);
+      expect(openingTag).toContain(`href="${pilotTaskHref(task.taskId)}"`);
+      const closingIndex = html.indexOf('</a>', tagEnd);
+      const rowMarkup = html.slice(tagEnd, closingIndex);
+      expect(rowMarkup).toContain(task.title);
+      expect(rowMarkup).toContain(task.taskId.slice(0, 8));
+      expect(rowMarkup).toContain(`data-pilot-status="${task.consoleStatus}"`);
+    }
+  });
+
+  it('gives the selected task a distinct visual state and aria-current, unlike unselected rows', () => {
+    const tasks = [
+      {
+        taskId: '33333333-3333-4333-8333-333333333333',
+        title: 'Selected',
+        status: 'queued',
+        consoleStatus: 'running' as const,
+        createdAt: '2026-09-08T00:00:00.000Z',
+        updatedAt: '2026-09-08T00:00:00.000Z',
+      },
+      {
+        taskId: '44444444-4444-4444-8444-444444444444',
+        title: 'Not selected',
+        status: 'queued',
+        consoleStatus: 'running' as const,
+        createdAt: '2026-09-08T00:00:00.000Z',
+        updatedAt: '2026-09-08T00:00:00.000Z',
+      },
+    ];
+    const html = renderToStaticMarkup(
+      React.createElement(PilotTaskList, {
+        tasks,
+        selectedTaskId: tasks[0].taskId,
+        empty: false,
+        onSelect: () => undefined,
+      }),
+    );
+    expect(html).toContain(`data-pilot-task-item="${tasks[0].taskId}" data-pilot-task-selected="true" aria-current="true"`);
+    expect(html).toContain(`data-pilot-task-item="${tasks[1].taskId}" data-pilot-task-selected="false"`);
+    // The unselected row must not carry aria-current at all (not even "false").
+    const unselectedStart = html.indexOf(`data-pilot-task-item="${tasks[1].taskId}"`);
+    const unselectedTagEnd = html.indexOf('>', unselectedStart);
+    expect(html.slice(unselectedStart, unselectedTagEnd)).not.toContain('aria-current');
+    // Selected state must be visually distinct from the plain hover class,
+    // not the same bg-slate-50 the hover state also uses.
+    const selectedStart = html.indexOf(`data-pilot-task-item="${tasks[0].taskId}"`);
+    const selectedTagEnd = html.indexOf('>', selectedStart);
+    const selectedOpeningTag = html.slice(selectedStart, selectedTagEnd);
+    expect(selectedOpeningTag).toMatch(/ring-sky-300/);
+    const classMatch = selectedOpeningTag.match(/class="([^"]*)"/);
+    const classTokens = (classMatch?.[1] ?? '').split(/\s+/);
+    // "bg-slate-50" (bare, not the "hover:bg-slate-50" variant) is the plain
+    // hover background; the selected row must not rely on that same token.
+    expect(classTokens).not.toContain('bg-slate-50');
+  });
+
+  it('task rows are real anchors, keyboard-focusable and activatable by native browser semantics', () => {
+    const html = renderToStaticMarkup(
+      React.createElement(PilotTaskList, {
+        tasks: [{
+          taskId: '55555555-5555-4555-8555-555555555555',
+          title: 'Keyboard reachable',
+          status: 'queued',
+          consoleStatus: 'running',
+          createdAt: '2026-09-08T00:00:00.000Z',
+          updatedAt: '2026-09-08T00:00:00.000Z',
+        }],
+        selectedTaskId: null,
+        empty: false,
+        onSelect: () => undefined,
+      }),
+    );
+    const start = html.indexOf('data-pilot-task-item=');
+    const tagEnd = html.indexOf('>', start);
+    const openingTag = html.slice(html.lastIndexOf('<a', start), tagEnd);
+    // A real <a href> is Tab-focusable and Enter-activatable with no extra
+    // wiring; it must not be neutralized with tabIndex="-1" or rendered as a
+    // non-interactive element with a synthetic click handler.
+    expect(openingTag.startsWith('<a')).toBe(true);
+    expect(openingTag).not.toContain('tabindex="-1"');
+    expect(openingTag).toMatch(/focus-visible:outline/);
+  });
+
+  describe('handleTaskRowClick', () => {
+    function clickEvent(overrides: Partial<{
+      defaultPrevented: boolean;
+      button: number;
+      metaKey: boolean;
+      ctrlKey: boolean;
+      shiftKey: boolean;
+      altKey: boolean;
+    }> = {}) {
+      const prevented = { called: false };
+      const event = {
+        defaultPrevented: false,
+        button: 0,
+        metaKey: false,
+        ctrlKey: false,
+        shiftKey: false,
+        altKey: false,
+        ...overrides,
+        preventDefault: () => { prevented.called = true; },
+      };
+      return { event, prevented };
+    }
+
+    it('intercepts a plain left click (and thus a keyboard Enter/Space activation) to select the task', () => {
+      const { event, prevented } = clickEvent();
+      let selected: string | null = null;
+      handleTaskRowClick(event, 'task-a', (id) => { selected = id; });
+      expect(prevented.called).toBe(true);
+      expect(selected).toBe('task-a');
+    });
+
+    it('leaves modifier-key and non-primary-button clicks to native browser handling', () => {
+      for (const overrides of [
+        { metaKey: true },
+        { ctrlKey: true },
+        { shiftKey: true },
+        { altKey: true },
+        { button: 1 },
+      ]) {
+        const { event, prevented } = clickEvent(overrides);
+        let selected: string | null = null;
+        handleTaskRowClick(event, 'task-a', (id) => { selected = id; });
+        expect(prevented.called).toBe(false);
+        expect(selected).toBe(null);
+      }
+    });
+
+    it('is a no-op when the event was already handled elsewhere', () => {
+      const { event, prevented } = clickEvent({ defaultPrevented: true });
+      let selected: string | null = null;
+      handleTaskRowClick(event, 'task-a', (id) => { selected = id; });
+      expect(prevented.called).toBe(false);
+      expect(selected).toBe(null);
+    });
+  });
+
   it('shows empty task list state', () => {
     const html = renderToStaticMarkup(
       React.createElement(PilotTaskList, {
@@ -180,7 +357,7 @@ describe('SP-05 Pilot Console UI', () => {
     expect(html).toContain('data-pilot-result-card="succeeded"');
     expect(html).toContain('data-pilot-result="true"');
     expect(html).toContain('Proof markdown added');
-    expect(html).toContain('Успешно');
+    expect(html).toContain('Готово');
     expect(html).toContain('docs/pilot/proof.md');
     expect(html).toContain('https://github.com/ASI-integration/asi-landing/pull/9');
     expect(html).toContain('a'.repeat(40));
@@ -213,7 +390,7 @@ describe('SP-05 Pilot Console UI', () => {
     expect(blocked).toContain('data-pilot-result-card="blocked"');
     expect(blocked).toContain('data-pilot-status="blocked"');
     expect(blocked).toContain('Owner review required');
-    expect(blocked).toContain('Вам ничего делать не нужно');
+    expect(blocked).toContain('Нужен ваш ответ');
 
     const failed = renderToStaticMarkup(
       React.createElement(PilotTaskDetail, {
@@ -239,7 +416,7 @@ describe('SP-05 Pilot Console UI', () => {
     );
     expect(failed).toContain('data-pilot-result-card="failed"');
     expect(failed).toContain('data-pilot-status-tone="danger"');
-    expect(failed).toContain('Ошибка');
+    expect(failed).toContain('Не удалось выполнить');
   });
 
   it('status badges use API consoleStatus values only', () => {
