@@ -86,6 +86,7 @@ import {
   createOrUpdateEscalationReview,
   getActiveEscalationReviewIdForSession,
   forceCloseActiveReviewForSession,
+  OperatorReviewStoreUnavailableError,
 } from './operator-review';
 import { recordCommunicationEscalation } from './escalations';
 import { canAiReply, recordHandoffAuditEvent } from './handoff-lock';
@@ -1545,11 +1546,17 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
       const previous = convSession.state;
 
       // Close operator review flag (if any) so escalation block is cleared.
-      forceCloseActiveReviewForSession({
-        sessionId: convSession.sessionId,
-        operatorId: 'acceptance_reset',
-        reason: 'telegram_reset_session',
-      });
+      // Best-effort: an unavailable store must not turn a normal /reset_session
+      // command into a processing failure for the whole inbound webhook.
+      try {
+        forceCloseActiveReviewForSession({
+          sessionId: convSession.sessionId,
+          operatorId: 'acceptance_reset',
+          reason: 'telegram_reset_session',
+        });
+      } catch (err) {
+        if (!(err instanceof OperatorReviewStoreUnavailableError)) throw err;
+      }
 
       // Reset the conversation-session engine memory/state.
       const actorId = resolveActorId(envelope, identity);
@@ -1615,11 +1622,17 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
     if (resetIdentityAllowed) {
       const previous = convSession.state;
 
-      forceCloseActiveReviewForSession({
-        sessionId: convSession.sessionId,
-        operatorId: 'acceptance_reset_identity',
-        reason: 'telegram_reset_identity',
-      });
+      // Best-effort: an unavailable store must not turn a normal /reset_identity
+      // command into a processing failure for the whole inbound webhook.
+      try {
+        forceCloseActiveReviewForSession({
+          sessionId: convSession.sessionId,
+          operatorId: 'acceptance_reset_identity',
+          reason: 'telegram_reset_identity',
+        });
+      } catch (err) {
+        if (!(err instanceof OperatorReviewStoreUnavailableError)) throw err;
+      }
 
       const actorId = resolveActorId(envelope, identity);
       resetConversationSessionForAcceptance({
