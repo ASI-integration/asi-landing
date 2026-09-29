@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getSession } from '@/lib/auth';
+import { requireCrmOperatorSession } from '@/lib/crm/api-auth';
 import { getEscalationReview } from '@/lib/communication/operator-review';
 import {
   correctGuestOperationalEvent,
@@ -9,30 +9,59 @@ import {
   upsertGuestPreference,
   type GuestPreferenceKey,
 } from '@/lib/communication/guest-long-term-memory';
+import {
+  assertExactAccountMembership,
+  resolveGuestMemoryAccountId,
+} from '@/lib/communication/guest-memory-account';
 
 export const dynamic = 'force-dynamic';
 
-async function authorizedReview(reviewId: string) {
-  const session = await getSession();
-  if (!session.userId) return { ok: false as const, error: 'unauthorized' as const };
-  const review = getEscalationReview(reviewId);
-  if (!review) return { ok: false as const, error: 'not_found' as const };
-  const guestId = String(review.source?.guest_id ?? '').trim();
-  if (!guestId) return { ok: false as const, error: 'guest_memory_unavailable' as const };
-  return { ok: true as const, session, review, guestId };
+function forbidden(): NextResponse {
+  return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
 }
 
-function errorResponse(error: string) {
-  if (error === 'unauthorized') return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  if (error === 'not_found') return NextResponse.json({ error }, { status: 404 });
-  return NextResponse.json({ ok: true, memory: null, unavailable: true });
+async function authorizedReview(reviewId: string) {
+  const auth = await requireCrmOperatorSession();
+  if ('error' in auth) return { ok: false as const, response: auth.error };
+
+  const review = getEscalationReview(reviewId);
+  if (!review) {
+    return { ok: false as const, response: NextResponse.json({ error: 'not_found' }, { status: 404 }) };
+  }
+
+  const guestId = String(review.source?.guest_id ?? '').trim();
+  if (!guestId) {
+    return { ok: false as const, response: NextResponse.json({ ok: true, memory: null, unavailable: true }) };
+  }
+
+  const accountId = await resolveGuestMemoryAccountId({
+    reservationId: review.reservationId,
+    propertyId: review.propertyId,
+  });
+  if (!accountId) {
+    return { ok: false as const, response: NextResponse.json({ ok: true, memory: null, unavailable: true }) };
+  }
+
+  const member = await assertExactAccountMembership({
+    userId: auth.session.userId,
+    accountId,
+  });
+  if (!member) return { ok: false as const, response: forbidden() };
+
+  return {
+    ok: true as const,
+    session: auth.session,
+    review,
+    guestId,
+    accountId,
+  };
 }
 
 export async function GET(_req: NextRequest, ctx: { params: { reviewId: string } }) {
   const authorized = await authorizedReview(ctx.params.reviewId);
-  if (!authorized.ok) return errorResponse(authorized.error);
+  if (!authorized.ok) return authorized.response;
   try {
-    const memory = await loadGuestLongTermMemory(authorized.guestId);
+    const memory = await loadGuestLongTermMemory(authorized.guestId, authorized.accountId);
     return NextResponse.json({ ok: true, memory });
   } catch (error) {
     return NextResponse.json({
@@ -44,7 +73,7 @@ export async function GET(_req: NextRequest, ctx: { params: { reviewId: string }
 
 export async function PATCH(req: NextRequest, ctx: { params: { reviewId: string } }) {
   const authorized = await authorizedReview(ctx.params.reviewId);
-  if (!authorized.ok) return errorResponse(authorized.error);
+  if (!authorized.ok) return authorized.response;
 
   let body: Record<string, unknown>;
   try {
@@ -58,6 +87,7 @@ export async function PATCH(req: NextRequest, ctx: { params: { reviewId: string 
     if (action === 'correct_preference') {
       await upsertGuestPreference({
         guestId: authorized.guestId,
+        accountId: authorized.accountId,
         key: String(body.key ?? '') as GuestPreferenceKey,
         value: String(body.value ?? ''),
         source: 'operator_confirmed',
@@ -67,25 +97,27 @@ export async function PATCH(req: NextRequest, ctx: { params: { reviewId: string 
     } else if (action === 'delete_preference' || action === 'delete_event') {
       await deleteGuestMemoryItem({
         guestId: authorized.guestId,
+        accountId: authorized.accountId,
         kind: action === 'delete_preference' ? 'preference' : 'event',
         itemId: String(body.itemId ?? ''),
       });
     } else if (action === 'correct_event') {
       await correctGuestOperationalEvent({
         guestId: authorized.guestId,
+        accountId: authorized.accountId,
         itemId: String(body.itemId ?? ''),
         summary: String(body.summary ?? ''),
         sourceRef: `operator:${authorized.session.userId}:review:${authorized.review.reviewId}`,
       });
     } else if (action === 'forget_all') {
-      await forgetGuestLongTermMemory(authorized.guestId);
+      await forgetGuestLongTermMemory(authorized.guestId, authorized.accountId);
     } else {
       return NextResponse.json({ ok: false, error: 'unknown_action' }, { status: 400 });
     }
 
     const memory = action === 'forget_all'
       ? { profile: null, preferences: [], events: [] }
-      : await loadGuestLongTermMemory(authorized.guestId);
+      : await loadGuestLongTermMemory(authorized.guestId, authorized.accountId);
     return NextResponse.json({ ok: true, memory });
   } catch (error) {
     return NextResponse.json({
