@@ -1,4 +1,3 @@
-#!/usr/bin/env node
 import process from 'node:process';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
