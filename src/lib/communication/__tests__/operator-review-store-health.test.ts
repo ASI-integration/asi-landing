@@ -194,15 +194,12 @@ describe('operator review store — fail closed on corruption', () => {
     mod.__forceReloadOperatorReviewStoreFromDiskForTests();
     expect(mod.getOperatorReviewStoreHealth()).toBe('healthy');
 
-    // Make the state directory unwritable — mkdirSync(recursive) on an
-    // already-existing dir won't fail, but the subsequent write will.
-    fs.chmodSync(tmpDir, 0o500);
-    try {
-      expect(mod.__forcePersistToDiskForTests()).toBe(false);
-      expect(mod.getOperatorReviewStoreHealth()).toBe('unavailable');
-    } finally {
-      fs.chmodSync(tmpDir, 0o700);
-    }
+    // Portable real write failure: after the healthy empty load, replace
+    // the would-be store file with a directory. writeFileSync must reject
+    // that path on Windows and POSIX alike (unlike chmod-based tests).
+    fs.mkdirSync(path.join(tmpDir, REVIEWS_FILENAME));
+    expect(mod.__forcePersistToDiskForTests()).toBe(false);
+    expect(mod.getOperatorReviewStoreHealth()).toBe('unavailable');
   });
 
   it('F. reset helper clears both cache and store-health state', async () => {
