@@ -16,7 +16,7 @@ import {
   getOrCreateConversationSession,
 } from './conversation-session-engine';
 import {
-  createOrUpdateEscalationReview,
+  createOrUpdateEscalationReviewBound,
   getActiveEscalationReviewIdForSession,
   getEscalationReview,
 } from './operator-review';
@@ -314,7 +314,7 @@ async function createEmailOperatorDraft(params: {
     params.envelope.email ||
     params.envelope.externalUserId;
 
-  return createOrUpdateEscalationReview({
+  return createOrUpdateEscalationReviewBound({
     sessionId: sessionForReview.sessionId,
     channel: 'email',
     targetId,

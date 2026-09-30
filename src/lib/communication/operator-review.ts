@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { randomUUID } from 'crypto';
+import { supabase } from '@/lib/supabase';
 import { sha256Base64Url } from './reliability';
 import { checkAndMarkKey } from './idempotency';
 import { getChannelAdapter } from './channels';
@@ -296,6 +297,30 @@ export function listEscalationReviewsForAccount(accountId: string, params?: {
   return listEscalationReviews(params).filter((review) => review.accountId === accountId);
 }
 
+export async function resolveEscalationReviewAccountId(input: {
+  accountId?: string | null;
+  propertyId?: string | null;
+  reservationId?: string | null;
+}): Promise<string | null> {
+  const explicit = typeof input.accountId === 'string' && input.accountId.trim() ? input.accountId.trim() : null;
+  if (explicit) return explicit;
+  try {
+    if (input.propertyId) {
+      const result = await supabase.from('properties').select('account_id').eq('id', input.propertyId).maybeSingle();
+      const accountId = typeof result.data?.account_id === 'string' ? result.data.account_id.trim() : '';
+      if (accountId) return accountId;
+    }
+    if (input.reservationId) {
+      const result = await supabase.from('booking_ops_records').select('account_id').eq('id', input.reservationId).maybeSingle();
+      const accountId = typeof result.data?.account_id === 'string' ? result.data.account_id.trim() : '';
+      if (accountId) return accountId;
+    }
+  } catch {
+    // Resolution failure must never guess tenant ownership. Caller will create an unbound, API-hidden review.
+  }
+  return null;
+}
+
 export function createOrUpdateEscalationReview(input: {
   accountId?: string | null;
   sessionId: string;
@@ -376,6 +401,13 @@ export function createOrUpdateEscalationReview(input: {
   });
 
   return review;
+}
+
+export async function createOrUpdateEscalationReviewBound(
+  input: Parameters<typeof createOrUpdateEscalationReview>[0],
+): Promise<EscalationReview> {
+  const accountId = await resolveEscalationReviewAccountId(input);
+  return createOrUpdateEscalationReview({ ...input, accountId });
 }
 
 function updateStatus(reviewId: string, next: EscalationReviewStatus): EscalationReview {

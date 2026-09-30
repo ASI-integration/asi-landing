@@ -1,6 +1,6 @@
 import { supabase } from '@/lib/supabase';
 import { requestOperatorHandoff } from './handoff-lock';
-import type { EscalationReview } from './operator-review';
+import { resolveEscalationReviewAccountId, type EscalationReview } from './operator-review';
 import { syncAutoOpsTasks } from '@/lib/ops-v1/auto-tasks';
 import type { CommunicationChannel, Message, Role } from './types';
 
@@ -85,9 +85,16 @@ export async function recordCommunicationEscalation(
   const parsedChatId = Number(input.targetId);
   const chatId = Number.isFinite(parsedChatId) ? parsedChatId : undefined;
 
+  // Resolve tenant only from canonical server-side property/reservation evidence.
+  const accountId = await resolveEscalationReviewAccountId({
+    propertyId: input.objectId ?? undefined,
+    reservationId: input.reservationId,
+  });
+
   // Route through handoff-lock so escalate emits handoff_requested /
   // handoff_request_idempotent audits and reuses one active review per session.
   const { review } = requestOperatorHandoff({
+    accountId,
     sessionId: input.sessionId,
     channel: input.channel,
     targetId: input.targetId,

@@ -16,7 +16,7 @@ import {
   recordGuestOperationalEvent,
 } from './guest-long-term-memory';
 import { requestOperatorHandoff } from './handoff-lock';
-import { listEscalationReviews } from './operator-review';
+import { listEscalationReviews, resolveEscalationReviewAccountId } from './operator-review';
 import {
   executeGuestLifecycleEvent,
   guestLifecycleStage,
@@ -403,7 +403,12 @@ export function createGuestLifecycleRuntimePort(options: GuestLifecycleRuntimeOp
     deliver: (input) => deliverDefault(input, db, options),
     async requestOperator(input) {
       const chatId = Number(input.context.targetId);
+      const accountId = await resolveEscalationReviewAccountId({
+        propertyId: input.event.propertyId,
+        reservationId: input.event.reservationId,
+      });
       const handoff = requestOperatorHandoff({
+        accountId,
         sessionId: `lifecycle:${input.event.reservationId}:${input.event.eventType}`,
         channel: input.context.channel,
         targetId: input.context.targetId,

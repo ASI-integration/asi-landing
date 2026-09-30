@@ -83,7 +83,7 @@ import { buildCommunicationContext } from './context';
 import { evaluateActionSafety } from './action';
 import { buildOperatorHandoff } from './handoff';
 import {
-  createOrUpdateEscalationReview,
+  createOrUpdateEscalationReviewBound,
   getActiveEscalationReviewIdForSession,
   forceCloseActiveReviewForSession,
 } from './operator-review';
@@ -1770,7 +1770,7 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
               : senderRoute.route === 'support_problem'
                 ? 'Пользователь выбрал поддержку.'
                 : 'Пользователь пишет как владелец или управляющий, это не гостевой автопилот.';
-      createOrUpdateEscalationReview({
+      await createOrUpdateEscalationReviewBound({
         sessionId: convSession.sessionId,
         channel: envelope.channel,
         targetId: String(targetId),
@@ -4914,7 +4914,7 @@ async function handleTelegramPromptInjectionGuard(params: {
       update_id: params.update.update_id,
       detail: `PROMPT_INJECTION_REPEAT reason=${guard.reason}`,
     });
-    createOrUpdateEscalationReview({
+    await createOrUpdateEscalationReviewBound({
       sessionId: `telegram:${params.message.chat.id}:prompt_injection`,
       channel: 'telegram',
       targetId: String(params.message.chat.id),
