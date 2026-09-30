@@ -102,6 +102,7 @@ export async function PATCH(req: NextRequest, ctx: { params: { reviewId: string 
     if (action === 'return_to_ai') {
       const chatId = Number(existing.targetId);
       const release = releaseSessionToAi({
+        expectedReviewId: existing.reviewId,
         sessionId: existing.sessionId,
         operatorId,
         reason: 'manual_return_to_ai',

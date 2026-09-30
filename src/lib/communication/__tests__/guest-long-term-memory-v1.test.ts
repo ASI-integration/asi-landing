@@ -7,6 +7,8 @@ import {
   buildRelevantGuestMemoryContext,
   containsForbiddenGuestMemoryContent,
   deleteGuestMemoryItem,
+  correctGuestOperationalEvent,
+  forgetGuestLongTermMemory,
   extractExplicitGuestPreferences,
   isExplicitGuestPreferenceOnlyMessage,
   loadGuestLongTermMemory,
@@ -313,6 +315,29 @@ describe('Guest Long-Term Memory v1', () => {
     expect(corrected.preferences[0]?.value).toBe('Больше не путешествует с животным');
     await deleteGuestMemoryItem({ accountId: ACCOUNT_A, guestId: 'guest-correct', kind: 'preference', itemId: corrected.preferences[0]!.id, db });
     expect((await loadGuestLongTermMemory({ accountId: ACCOUNT_A, guestId: 'guest-correct' }, db)).preferences).toHaveLength(0);
+  });
+
+  it('cross-account event correction and forget cannot change the same guest in B', async () => {
+    const db = new FakeMemoryDb();
+    for (const accountId of [ACCOUNT_A, 'account-b']) {
+      await recordGuestSeen({ accountId, guestId: 'shared-forget', db });
+      await recordGuestOperationalEvent({
+        accountId, guestId: 'shared-forget', type: 'operator_confirmed_resolution',
+        summary: 'Issue resolved', source: 'operator_confirmed', occurredAt: '2026-09-30', db,
+      });
+    }
+    const before = await loadGuestLongTermMemory({ accountId: 'account-b', guestId: 'shared-forget' }, db);
+    await correctGuestOperationalEvent({
+      accountId: ACCOUNT_A, guestId: 'shared-forget', itemId: before.events[0]!.id,
+      summary: 'Unauthorized change', sourceRef: 'operator:A', db,
+    });
+    await deleteGuestMemoryItem({
+      accountId: ACCOUNT_A, guestId: 'shared-forget', kind: 'event', itemId: before.events[0]!.id, db,
+    });
+    await forgetGuestLongTermMemory({ accountId: ACCOUNT_A, guestId: 'shared-forget' }, db);
+    expect(await loadGuestLongTermMemory({ accountId: 'account-b', guestId: 'shared-forget' }, db)).toEqual(before);
+    expect(await loadGuestLongTermMemory({ accountId: ACCOUNT_A, guestId: 'shared-forget' }, db))
+      .toEqual({ profile: null, preferences: [], events: [] });
   });
 
   it('11. bounds in-memory reads and database retention at 50 events', () => {

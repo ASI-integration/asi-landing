@@ -235,6 +235,7 @@ export function lockSessionForOperator(
 }
 
 export interface ReleaseSessionToAiInput {
+  expectedReviewId?: string;
   sessionId: string;
   operatorId: string;
   reason: string;
@@ -258,6 +259,7 @@ export function releaseSessionToAi(
     operatorId: input.operatorId,
     reason: input.reason,
     approvedAnswer: input.approvedAnswer,
+    expectedReviewId: input.expectedReviewId,
   });
 
   if (!closedReviewId && typeof input.chatId === 'number' && Number.isFinite(input.chatId)) {
@@ -343,6 +345,7 @@ export async function resolveOperatorHandoffWithReply(input: {
     }
   }
   const released = releaseSessionToAi({
+    expectedReviewId: review.reviewId,
     sessionId: review.sessionId,
     operatorId: input.operatorId,
     reason: 'operator_reply_resolved',
@@ -353,6 +356,7 @@ export async function resolveOperatorHandoffWithReply(input: {
   const guestId = String(review.source?.guest_id ?? '').trim();
   if (guestId && !sent.duplicatePrevented) {
     const accountId = await resolveGuestMemoryAccountId({
+      accountId: review.accountId,
       propertyId: review.propertyId,
       reservationId: review.reservationId,
     });
@@ -366,7 +370,7 @@ export async function resolveOperatorHandoffWithReply(input: {
           : reason.includes('late_checkout')
             ? 'late_checkout_history'
             : 'operator_confirmed_resolution';
-    if (accountId) await recordGuestOperationalEvent({
+    if (review.accountId && accountId === review.accountId) await recordGuestOperationalEvent({
       accountId,
       guestId,
       type: eventType,

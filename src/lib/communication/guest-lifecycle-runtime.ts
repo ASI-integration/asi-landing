@@ -184,7 +184,8 @@ async function resolveDefaultContext(
   if (!targetId) return { ok: false, reason: 'recipient_missing' };
   let guestMemory = null;
   try {
-    const accountId = record.accountId ?? await resolveGuestMemoryAccountId({
+    const accountId = await resolveGuestMemoryAccountId({
+      accountId: record.accountId,
       propertyId: event.propertyId,
       reservationId: record.id,
       db,

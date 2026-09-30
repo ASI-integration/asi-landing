@@ -138,24 +138,29 @@ export async function resolveGuestMemoryAccountId(input: {
   reservationId?: string | null;
   db?: SupabaseLike;
 }): Promise<string | null> {
+  // accountId is a trusted server assertion, never a substitute for checking
+  // any supplied canonical property/reservation evidence.
   const explicit = boundedText(input.accountId, 120);
-  if (explicit) return explicit;
+  const owners: string[] = explicit ? [explicit] : [];
   const db = input.db ?? (supabase as unknown as SupabaseLike);
   try {
     if (input.propertyId) {
       const row = await maybeOne(db.from('properties').select('account_id').eq('id', input.propertyId));
       const accountId = boundedText(row?.account_id, 120);
-      if (accountId) return accountId;
+      if (!accountId) return null;
+      owners.push(accountId);
     }
     if (input.reservationId) {
-      const row = await maybeOne(db.from('booking_ops_records').select('account_id').eq('id', input.reservationId));
+      const row = await maybeOne(db.from('booking_ops_records').select('account_id,property_id').eq('id', input.reservationId));
       const accountId = boundedText(row?.account_id, 120);
-      if (accountId) return accountId;
+      if (!accountId || (input.propertyId && row?.property_id !== input.propertyId)) return null;
+      owners.push(accountId);
     }
+    return owners.length && owners.every((owner) => owner === owners[0]) ? owners[0] : null;
   } catch {
-    // Never infer tenant ownership from guest identity or untrusted metadata.
+    // Missing, conflicting or unreadable evidence cannot authorize memory access.
+    return null;
   }
-  return null;
 }
 
 function safeSourceRef(value: unknown): string | null {
