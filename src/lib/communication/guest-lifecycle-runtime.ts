@@ -14,6 +14,7 @@ import {
   buildRelevantGuestMemoryContext,
   loadGuestLongTermMemory,
   recordGuestOperationalEvent,
+  resolveGuestMemoryAccountId,
 } from './guest-long-term-memory';
 import { requestOperatorHandoff } from './handoff-lock';
 import { listEscalationReviews, resolveEscalationReviewAccountId } from './operator-review';
@@ -183,7 +184,14 @@ async function resolveDefaultContext(
   if (!targetId) return { ok: false, reason: 'recipient_missing' };
   let guestMemory = null;
   try {
-    guestMemory = buildRelevantGuestMemoryContext(await loadGuestLongTermMemory(event.guestId, db), '');
+    const accountId = record.accountId ?? await resolveGuestMemoryAccountId({
+      propertyId: event.propertyId,
+      reservationId: record.id,
+      db,
+    });
+    guestMemory = accountId
+      ? buildRelevantGuestMemoryContext(await loadGuestLongTermMemory({ accountId, guestId: event.guestId }, db), '')
+      : null;
   } catch {
     guestMemory = null;
   }
@@ -433,7 +441,14 @@ export function createGuestLifecycleRuntimePort(options: GuestLifecycleRuntimeOp
     },
     async recordMemory(input) {
       if (!input.plan.memoryEvent) return;
+      const accountId = await resolveGuestMemoryAccountId({
+        propertyId: input.event.propertyId,
+        reservationId: input.event.reservationId,
+        db,
+      });
+      if (!accountId) return;
       await recordGuestOperationalEvent({
+        accountId,
         guestId: input.event.guestId,
         type: input.plan.memoryEvent,
         summary: memorySummary(input),

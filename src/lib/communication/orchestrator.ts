@@ -1401,6 +1401,8 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
   convSession = updateSessionFactsAndSummary({ key: sessionKey, session: convSession, text });
 
   const guestMemoryObservation = await observeResolvedGuestInbound({
+    propertyId: identity.propertyId,
+    reservationId: identity.reservationId,
     guestId: identity.guestId,
     senderIdentity: senderRoute.senderIdentity,
     messageText: text,
@@ -2409,6 +2411,8 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
           );
           const passport = propertyId ? await getGroundedKnowledge(propertyId) : null;
           const guestMemory = await loadRelevantGuestMemory({
+            propertyId,
+            reservationId: identity.reservationId,
             guestId: identity.guestId,
             requestText: text,
           });

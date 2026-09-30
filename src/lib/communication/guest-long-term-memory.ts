@@ -84,6 +84,11 @@ export type GuestMemoryInboundObservation = {
   sensitiveRejected: boolean;
 };
 
+export type GuestMemoryScope = {
+  accountId: string;
+  guestId: string;
+};
+
 type SupabaseLike = { from: (table: string) => any };
 
 const PREFERENCE_KEYS = new Set<GuestPreferenceKey>([
@@ -115,10 +120,42 @@ function boundedText(value: unknown, max: number): string {
   return String(value ?? '').replace(/\s+/g, ' ').trim().slice(0, max);
 }
 
+function safeAccountId(value: unknown): string {
+  const accountId = boundedText(value, 120);
+  if (!accountId) throw new Error('account_id_required');
+  return accountId;
+}
+
 function safeGuestId(value: unknown): string {
   const guestId = boundedText(value, 120);
   if (!guestId) throw new Error('guest_id_required');
   return guestId;
+}
+
+export async function resolveGuestMemoryAccountId(input: {
+  accountId?: string | null;
+  propertyId?: string | null;
+  reservationId?: string | null;
+  db?: SupabaseLike;
+}): Promise<string | null> {
+  const explicit = boundedText(input.accountId, 120);
+  if (explicit) return explicit;
+  const db = input.db ?? (supabase as unknown as SupabaseLike);
+  try {
+    if (input.propertyId) {
+      const row = await maybeOne(db.from('properties').select('account_id').eq('id', input.propertyId));
+      const accountId = boundedText(row?.account_id, 120);
+      if (accountId) return accountId;
+    }
+    if (input.reservationId) {
+      const row = await maybeOne(db.from('booking_ops_records').select('account_id').eq('id', input.reservationId));
+      const accountId = boundedText(row?.account_id, 120);
+      if (accountId) return accountId;
+    }
+  } catch {
+    // Never infer tenant ownership from guest identity or untrusted metadata.
+  }
+  return null;
 }
 
 function safeSourceRef(value: unknown): string | null {
@@ -226,15 +263,17 @@ export function boundGuestLongTermMemory(memory: GuestLongTermMemory): GuestLong
 }
 
 export async function loadGuestLongTermMemory(
-  guestIdInput: string,
+  scope: GuestMemoryScope,
   db: SupabaseLike = supabase as unknown as SupabaseLike,
 ): Promise<GuestLongTermMemory> {
-  const guestId = safeGuestId(guestIdInput);
+  const accountId = safeAccountId(scope.accountId);
+  const guestId = safeGuestId(scope.guestId);
   const [profileRow, preferenceRows, eventRows] = await Promise.all([
-    maybeOne(db.from('guest_memory_profiles').select('*').eq('guest_id', guestId)),
+    maybeOne(db.from('guest_memory_profiles').select('*').eq('account_id', accountId).eq('guest_id', guestId)),
     responseData(
       db.from('guest_memory_preferences')
         .select('*')
+        .eq('account_id', accountId)
         .eq('guest_id', guestId)
         .eq('status', 'active')
         .order('updated_at', { ascending: false })
@@ -243,6 +282,7 @@ export async function loadGuestLongTermMemory(
     responseData(
       db.from('guest_memory_events')
         .select('*')
+        .eq('account_id', accountId)
         .eq('guest_id', guestId)
         .eq('status', 'active')
         .order('occurred_at', { ascending: false })
@@ -257,6 +297,7 @@ export async function loadGuestLongTermMemory(
 }
 
 export async function recordGuestSeen(input: {
+  accountId: string;
   guestId: string;
   preferredLanguage?: GuestMemoryLanguage | null;
   preferredCommunicationMode?: GuestCommunicationMode | null;
@@ -267,6 +308,7 @@ export async function recordGuestSeen(input: {
   const db = input.db ?? (supabase as unknown as SupabaseLike);
   const source = input.source ?? 'deterministic_system';
   const record: Record<string, unknown> = {
+    account_id: safeAccountId(input.accountId),
     guest_id: safeGuestId(input.guestId),
     last_seen_at: input.seenAt ?? new Date().toISOString(),
   };
@@ -278,10 +320,11 @@ export async function recordGuestSeen(input: {
     record.preferred_communication_mode = input.preferredCommunicationMode;
     record.preferred_communication_mode_source = source;
   }
-  await responseData(db.from('guest_memory_profiles').upsert(record, { onConflict: 'guest_id' }));
+  await responseData(db.from('guest_memory_profiles').upsert(record, { onConflict: 'account_id,guest_id' }));
 }
 
 export async function upsertGuestPreference(input: {
+  accountId: string;
   guestId: string;
   key: GuestPreferenceKey;
   value: string;
@@ -294,6 +337,7 @@ export async function upsertGuestPreference(input: {
   if (!SOURCES.has(input.source)) throw new Error('unsupported_memory_source');
   const db = input.db ?? (supabase as unknown as SupabaseLike);
   await responseData(db.from('guest_memory_preferences').upsert({
+    account_id: safeAccountId(input.accountId),
     guest_id: safeGuestId(input.guestId),
     preference_key: input.key,
     preference_value: assertSafeMemoryText(input.value, 240, 'preference_value'),
@@ -301,10 +345,11 @@ export async function upsertGuestPreference(input: {
     source_ref: safeSourceRef(input.sourceRef),
     confidence: safeConfidence(input.confidence),
     status: 'active',
-  }, { onConflict: 'guest_id,preference_key' }));
+  }, { onConflict: 'account_id,guest_id,preference_key' }));
 }
 
 export async function recordGuestOperationalEvent(input: {
+  accountId: string;
   guestId: string;
   type: GuestMemoryEventType;
   summary: string;
@@ -321,6 +366,7 @@ export async function recordGuestOperationalEvent(input: {
   }
   const db = input.db ?? (supabase as unknown as SupabaseLike);
   await responseData(db.from('guest_memory_events').insert({
+    account_id: safeAccountId(input.accountId),
     guest_id: safeGuestId(input.guestId),
     event_type: input.type,
     summary: assertSafeMemoryText(input.summary, 600, 'event_summary'),
@@ -334,6 +380,7 @@ export async function recordGuestOperationalEvent(input: {
 }
 
 export async function correctGuestOperationalEvent(input: {
+  accountId: string;
   guestId: string;
   itemId: string;
   summary: string;
@@ -350,12 +397,14 @@ export async function correctGuestOperationalEvent(input: {
         confidence: 1,
         status: 'active',
       })
+      .eq('account_id', safeAccountId(input.accountId))
       .eq('guest_id', safeGuestId(input.guestId))
       .eq('id', boundedText(input.itemId, 80)),
   );
 }
 
 export async function deleteGuestMemoryItem(input: {
+  accountId: string;
   guestId: string;
   kind: 'preference' | 'event';
   itemId: string;
@@ -366,19 +415,21 @@ export async function deleteGuestMemoryItem(input: {
   await responseData(
     db.from(table)
       .update({ status: 'deleted' })
+      .eq('account_id', safeAccountId(input.accountId))
       .eq('guest_id', safeGuestId(input.guestId))
       .eq('id', boundedText(input.itemId, 80)),
   );
 }
 
 export async function forgetGuestLongTermMemory(
-  guestIdInput: string,
+  scope: GuestMemoryScope,
   db: SupabaseLike = supabase as unknown as SupabaseLike,
 ): Promise<void> {
-  const guestId = safeGuestId(guestIdInput);
-  await responseData(db.from('guest_memory_preferences').delete().eq('guest_id', guestId));
-  await responseData(db.from('guest_memory_events').delete().eq('guest_id', guestId));
-  await responseData(db.from('guest_memory_profiles').delete().eq('guest_id', guestId));
+  const accountId = safeAccountId(scope.accountId);
+  const guestId = safeGuestId(scope.guestId);
+  await responseData(db.from('guest_memory_preferences').delete().eq('account_id', accountId).eq('guest_id', guestId));
+  await responseData(db.from('guest_memory_events').delete().eq('account_id', accountId).eq('guest_id', guestId));
+  await responseData(db.from('guest_memory_profiles').delete().eq('account_id', accountId).eq('guest_id', guestId));
 }
 
 const RELEVANCE: Record<GuestPreferenceKey | GuestMemoryEventType, RegExp> = {
@@ -505,6 +556,7 @@ export function isExplicitGuestPreferenceOnlyMessage(messageText: string): boole
 }
 
 export async function observeGuestCommunication(input: {
+  accountId: string;
   guestId: string;
   messageText: string;
   language: GuestMemoryLanguage;
@@ -520,6 +572,7 @@ export async function observeGuestCommunication(input: {
   const db = input.db ?? (supabase as unknown as SupabaseLike);
   const preferences = extractExplicitGuestPreferences(input.messageText);
   await recordGuestSeen({
+    accountId: input.accountId,
     guestId: input.guestId,
     preferredLanguage: explicitProfile.language ?? clearlyUsesLanguage(input.messageText) ?? input.language,
     preferredCommunicationMode: mode,
@@ -527,6 +580,7 @@ export async function observeGuestCommunication(input: {
     db,
   });
   await Promise.all(preferences.map((preference) => upsertGuestPreference({
+    accountId: input.accountId,
     guestId: input.guestId,
     ...preference,
     source: 'explicit_guest',
@@ -537,6 +591,9 @@ export async function observeGuestCommunication(input: {
 }
 
 export async function observeResolvedGuestInbound(input: {
+  accountId?: string | null;
+  propertyId?: string | null;
+  reservationId?: string | null;
   guestId: string | null | undefined;
   senderIdentity: string | null | undefined;
   messageText: string;
@@ -550,7 +607,10 @@ export async function observeResolvedGuestInbound(input: {
   if (containsForbiddenGuestMemoryContent(input.messageText)) {
     return { observed: false, preferenceOnly: false, sensitiveRejected: true };
   }
+  const accountId = await resolveGuestMemoryAccountId(input);
+  if (!accountId) return { observed: false, preferenceOnly: false, sensitiveRejected: false };
   await observeGuestCommunication({
+    accountId,
     guestId: input.guestId!,
     messageText: input.messageText,
     language: input.language,
@@ -566,13 +626,18 @@ export async function observeResolvedGuestInbound(input: {
 }
 
 export async function loadRelevantGuestMemory(input: {
+  accountId?: string | null;
+  propertyId?: string | null;
+  reservationId?: string | null;
   guestId: string | null | undefined;
   requestText: string;
   db?: SupabaseLike;
 }): Promise<RelevantGuestMemoryContext | null> {
   if (!input.guestId) return null;
   try {
-    const memory = await loadGuestLongTermMemory(input.guestId, input.db);
+    const accountId = await resolveGuestMemoryAccountId(input);
+    if (!accountId) return null;
+    const memory = await loadGuestLongTermMemory({ accountId, guestId: input.guestId }, input.db);
     return buildRelevantGuestMemoryContext(memory, input.requestText);
   } catch (error) {
     console.warn('[guest-long-term-memory] load failed', {
