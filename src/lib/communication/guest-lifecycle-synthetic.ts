@@ -88,6 +88,7 @@ export function syntheticLifecycleContext(overrides: Partial<GuestLifecycleReser
     reservationCancelled: false,
     operatorHandoffActive: false,
     ...overrides,
+    accountId: overrides.accountId === undefined ? 'synthetic-account-1' : overrides.accountId,
   };
 }
 

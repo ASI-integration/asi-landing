@@ -87,6 +87,7 @@ import {
   getActiveEscalationReviewIdForSession,
   forceCloseActiveReviewForSession,
 } from './operator-review';
+import { resolveCanonicalOperatorReviewAccountId } from './operator-review-account';
 import { recordCommunicationEscalation } from './escalations';
 import { canAiReply, recordHandoffAuditEvent } from './handoff-lock';
 import {
@@ -1770,7 +1771,13 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
               : senderRoute.route === 'support_problem'
                 ? 'Пользователь выбрал поддержку.'
                 : 'Пользователь пишет как владелец или управляющий, это не гостевой автопилот.';
+      const reviewAccountId = await resolveCanonicalOperatorReviewAccountId({
+        reservationId: identity.reservationId,
+        propertyId: identity.propertyId,
+        telegramChatId: envelope.channel === 'telegram' ? Number(targetId) : null,
+      });
       createOrUpdateEscalationReview({
+        accountId: reviewAccountId,
         sessionId: convSession.sessionId,
         channel: envelope.channel,
         targetId: String(targetId),
@@ -4914,7 +4921,11 @@ async function handleTelegramPromptInjectionGuard(params: {
       update_id: params.update.update_id,
       detail: `PROMPT_INJECTION_REPEAT reason=${guard.reason}`,
     });
+    const reviewAccountId = await resolveCanonicalOperatorReviewAccountId({
+      telegramChatId: params.message.chat.id,
+    });
     createOrUpdateEscalationReview({
+      accountId: reviewAccountId,
       sessionId: `telegram:${params.message.chat.id}:prompt_injection`,
       channel: 'telegram',
       targetId: String(params.message.chat.id),

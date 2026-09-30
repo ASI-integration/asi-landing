@@ -114,6 +114,7 @@ export function canAiReply(sessionId: string): boolean {
 
 export interface RequestOperatorHandoffInput {
   sessionId: string;
+  accountId?: string | null;
   channel: CommunicationChannel;
   /** Outbound routing target (e.g. Telegram chat id as string). */
   targetId: string;
@@ -156,6 +157,7 @@ export function requestOperatorHandoff(
 
   const review = createOrUpdateEscalationReview({
     sessionId:         input.sessionId,
+    accountId:         input.accountId ?? null,
     channel:           input.channel,
     targetId:          input.targetId,
     actorId:           input.actorId,

@@ -133,6 +133,20 @@ export async function ensureAccountForUser(opts: {
   }
 }
 
+export async function resolveAccountIdsForUser(userId: string): Promise<string[]> {
+  const { data, error } = await supabase
+    .from('account_members')
+    .select('account_id')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: true });
+  if (error) throw error;
+  return [...new Set(
+    (Array.isArray(data) ? data : [])
+      .map((row: { account_id?: unknown }) => typeof row.account_id === 'string' ? row.account_id.trim() : '')
+      .filter(Boolean),
+  )];
+}
+
 export async function resolveAccountIdForUser(userId: string): Promise<string | null> {
   try {
     const { data, error } = await supabase

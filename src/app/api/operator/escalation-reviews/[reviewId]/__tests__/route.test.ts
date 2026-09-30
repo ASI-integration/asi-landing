@@ -21,6 +21,10 @@ vi.mock('@/lib/auth', () => ({
   getSession: vi.fn(async () => ({ userId: 'op_route_1', email: 'op@example.com' })),
 }));
 
+vi.mock('@/lib/accounts', () => ({
+  resolveAccountIdsForUser: vi.fn(async () => ['account-a']),
+}));
+
 vi.mock('@/lib/supabase', () => ({
   supabase: {
     from: () => ({
@@ -56,6 +60,7 @@ describe('PATCH /api/operator/escalation-reviews/[reviewId] acknowledge → lock
       sessionId: 'sess_route_ack',
       channel: 'telegram',
       targetId: '4242',
+      accountId: 'account-a',
       escalationReason: 'REQUIRES_OPERATOR',
       chatId: 4242,
     });
@@ -89,6 +94,7 @@ describe('PATCH /api/operator/escalation-reviews/[reviewId] acknowledge → lock
       sessionId: 'sess_route_ack_idem',
       channel: 'telegram',
       targetId: '4243',
+      accountId: 'account-a',
       escalationReason: 'REQUIRES_OPERATOR',
       chatId: 4243,
     });
@@ -127,6 +133,7 @@ describe('PATCH /api/operator/escalation-reviews/[reviewId] acknowledge → lock
       sessionId: 'sess_route_resolve',
       channel: 'telegram',
       targetId: '4244',
+      accountId: 'account-a',
       escalationReason: 'maintenance_issue',
       chatId: 4244,
     });
@@ -164,5 +171,83 @@ describe('PATCH /api/operator/escalation-reviews/[reviewId] acknowledge → lock
       unresolved_action: null,
       last_safe_reply: 'Мастер придёт после 18:00.',
     });
+  });
+
+  it('denies cross-account list/get/mutations before any outbound send', async () => {
+    const accountA = requestOperatorHandoff({
+      sessionId: 'sess_account_a',
+      channel: 'telegram',
+      targetId: '4301',
+      accountId: 'account-a',
+      escalationReason: 'REQUIRES_OPERATOR',
+      chatId: 4301,
+    });
+    const accountB = requestOperatorHandoff({
+      sessionId: 'sess_account_b',
+      channel: 'telegram',
+      targetId: '4302',
+      accountId: 'account-b',
+      escalationReason: 'REQUIRES_OPERATOR',
+      chatId: 4302,
+    });
+    const unbound = requestOperatorHandoff({
+      sessionId: 'sess_unbound',
+      channel: 'telegram',
+      targetId: '4303',
+      escalationReason: 'REQUIRES_OPERATOR',
+      chatId: 4303,
+    });
+
+    const listRoute = await import('../../route');
+    const detailRoute = await import('../route');
+    const listRes = await listRoute.GET(new NextRequest('http://localhost/api/operator/escalation-reviews'));
+    const listBody = await listRes.json();
+    expect(listBody.reviews.map((review: { reviewId: string }) => review.reviewId)).toEqual([accountA.reviewId]);
+
+    const ownGet = await detailRoute.GET(
+      new NextRequest(`http://localhost/api/operator/escalation-reviews/${accountA.reviewId}`),
+      { params: { reviewId: accountA.reviewId } },
+    );
+    expect(ownGet.status).toBe(200);
+
+    const foreignGet = await detailRoute.GET(
+      new NextRequest(`http://localhost/api/operator/escalation-reviews/${accountB.reviewId}`),
+      { params: { reviewId: accountB.reviewId } },
+    );
+    expect(foreignGet.status).toBe(404);
+    const unboundGet = await detailRoute.GET(
+      new NextRequest(`http://localhost/api/operator/escalation-reviews/${unbound.reviewId}`),
+      { params: { reviewId: unbound.reviewId } },
+    );
+    expect(unboundGet.status).toBe(404);
+
+    for (const body of [
+      { action: 'acknowledge' },
+      { action: 'send_reply', replyText: 'must not send' },
+      { action: 'return_to_ai' },
+    ]) {
+      const res = await detailRoute.PATCH(
+        new NextRequest(`http://localhost/api/operator/escalation-reviews/${accountB.reviewId}`, {
+          method: 'PATCH',
+          body: JSON.stringify(body),
+          headers: { 'content-type': 'application/json' },
+        }),
+        { params: { reviewId: accountB.reviewId } },
+      );
+      expect(res.status).toBe(404);
+    }
+
+    const unboundMutation = await detailRoute.PATCH(
+      new NextRequest(`http://localhost/api/operator/escalation-reviews/${unbound.reviewId}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ action: 'send_reply', replyText: 'must not send unbound' }),
+        headers: { 'content-type': 'application/json' },
+      }),
+      { params: { reviewId: unbound.reviewId } },
+    );
+    expect(unboundMutation.status).toBe(404);
+    expect(mocks.sendMessage).not.toHaveBeenCalled();
+    expect(getHandoffLockState('sess_account_b')).toBe(HandoffLockState.OperatorRequested);
+    expect(getHandoffLockState('sess_unbound')).toBe(HandoffLockState.OperatorRequested);
   });
 });

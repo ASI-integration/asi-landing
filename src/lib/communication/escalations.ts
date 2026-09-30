@@ -1,6 +1,7 @@
 import { supabase } from '@/lib/supabase';
 import { requestOperatorHandoff } from './handoff-lock';
 import type { EscalationReview } from './operator-review';
+import { resolveCanonicalOperatorReviewAccountId } from './operator-review-account';
 import { syncAutoOpsTasks } from '@/lib/ops-v1/auto-tasks';
 import type { CommunicationChannel, Message, Role } from './types';
 
@@ -85,9 +86,16 @@ export async function recordCommunicationEscalation(
   const parsedChatId = Number(input.targetId);
   const chatId = Number.isFinite(parsedChatId) ? parsedChatId : undefined;
 
+  const accountId = await resolveCanonicalOperatorReviewAccountId({
+    reservationId: input.reservationId,
+    propertyId: input.objectId,
+    telegramChatId: input.channel === 'telegram' && Number.isSafeInteger(chatId) ? chatId : null,
+  });
+
   // Route through handoff-lock so escalate emits handoff_requested /
   // handoff_request_idempotent audits and reuses one active review per session.
   const { review } = requestOperatorHandoff({
+    accountId,
     sessionId: input.sessionId,
     channel: input.channel,
     targetId: input.targetId,
