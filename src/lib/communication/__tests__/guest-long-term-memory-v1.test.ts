@@ -79,7 +79,7 @@ class FakeQuery implements PromiseLike<{ data: any; error: null }> {
       rows.push(this.db.decorate(this.table, this.payload));
       if (this.table === 'guest_memory_events') {
         const guestRows = rows
-          .filter((row) => row.guest_id === this.payload?.guest_id && row.status === 'active')
+          .filter((row) => row.account_id === this.payload?.account_id && row.guest_id === this.payload?.guest_id && row.status === 'active')
           .sort((a, b) => String(b.occurred_at).localeCompare(String(a.occurred_at)));
         for (const extra of guestRows.slice(GUEST_MEMORY_MAX_EVENTS)) {
           rows.splice(rows.indexOf(extra), 1);
@@ -134,6 +134,9 @@ class FakeMemoryDb {
   }
 }
 
+const ACCOUNT_A = 'account-a';
+const ACCOUNT_B = 'account-b';
+
 const property: TelegramPropertyObjectV1 = {
   object_id: 'property-current',
   object_name: 'Current object',
@@ -156,25 +159,25 @@ const property: TelegramPropertyObjectV1 = {
 describe('Guest Long-Term Memory v1', () => {
   it('1. recognizes the same guestId after short-term session expiry', async () => {
     const db = new FakeMemoryDb();
-    await recordGuestSeen({ guestId: 'guest-returning', preferredLanguage: 'ru', seenAt: '2026-08-09T12:00:00.000Z', db });
-    await recordGuestSeen({ guestId: 'guest-returning', preferredLanguage: 'ru', seenAt: '2026-08-11T12:00:00.000Z', db });
-    const afterSessionExpiry = await loadGuestLongTermMemory('guest-returning', db);
+    await recordGuestSeen({ accountId: ACCOUNT_A, guestId: 'guest-returning', preferredLanguage: 'ru', seenAt: '2026-08-09T12:00:00.000Z', db });
+    await recordGuestSeen({ accountId: ACCOUNT_A, guestId: 'guest-returning', preferredLanguage: 'ru', seenAt: '2026-08-11T12:00:00.000Z', db });
+    const afterSessionExpiry = await loadGuestLongTermMemory({ accountId: ACCOUNT_A, guestId: 'guest-returning' }, db);
     expect(afterSessionExpiry.profile).toMatchObject({ guestId: 'guest-returning', preferredLanguage: 'ru' });
     expect(buildRelevantGuestMemoryContext(afterSessionExpiry, 'Здравствуйте').returningGuest).toBe(true);
   });
 
   it('2. shares one profile across merged phone/email channel paths', async () => {
     const db = new FakeMemoryDb();
-    await upsertGuestPreference({ guestId: 'guest-merged', key: 'parking', value: 'Обычно нужна парковка', source: 'explicit_guest', db });
-    const viaPhone = await loadGuestLongTermMemory('guest-merged', db);
-    const viaEmail = await loadGuestLongTermMemory('guest-merged', db);
+    await upsertGuestPreference({ accountId: ACCOUNT_A, guestId: 'guest-merged', key: 'parking', value: 'Обычно нужна парковка', source: 'explicit_guest', db });
+    const viaPhone = await loadGuestLongTermMemory({ accountId: ACCOUNT_A, guestId: 'guest-merged' }, db);
+    const viaEmail = await loadGuestLongTermMemory({ accountId: ACCOUNT_A, guestId: 'guest-merged' }, db);
     expect(viaEmail.preferences).toEqual(viaPhone.preferences);
   });
 
   it('3. keeps preferred language across sessions unless the current message switches', async () => {
     const db = new FakeMemoryDb();
-    await recordGuestSeen({ guestId: 'guest-language', preferredLanguage: 'en', db });
-    const context = buildRelevantGuestMemoryContext(await loadGuestLongTermMemory('guest-language', db), '...');
+    await recordGuestSeen({ accountId: ACCOUNT_A, guestId: 'guest-language', preferredLanguage: 'en', db });
+    const context = buildRelevantGuestMemoryContext(await loadGuestLongTermMemory({ accountId: ACCOUNT_A, guestId: 'guest-language' }, db), '...');
     expect(resolveLanguageWithGuestMemory({ messageText: '...', detectedLanguage: 'ru', memory: context })).toBe('en');
     expect(resolveLanguageWithGuestMemory({ messageText: 'Ответьте по-русски', detectedLanguage: 'ru', memory: context })).toBe('ru');
   });
@@ -182,6 +185,7 @@ describe('Guest Long-Term Memory v1', () => {
   it('4. records Russian language, text mode, and quiet-room preference from an explicit statement', async () => {
     const db = new FakeMemoryDb();
     const result = await observeResolvedGuestInbound({
+      accountId: ACCOUNT_A,
       guestId: 'guest-explicit',
       senderIdentity: 'guest',
       messageText: 'Я предпочитаю общаться по-русски и текстом. Люблю тихие квартиры.',
@@ -189,7 +193,7 @@ describe('Guest Long-Term Memory v1', () => {
       transport: 'telegram_text',
       db,
     });
-    const memory = await loadGuestLongTermMemory('guest-explicit', db);
+    const memory = await loadGuestLongTermMemory({ accountId: ACCOUNT_A, guestId: 'guest-explicit' }, db);
     expect(result).toMatchObject({ observed: true, preferenceOnly: true, sensitiveRejected: false });
     expect(memory.profile).toMatchObject({ preferredLanguage: 'ru', preferredCommunicationMode: 'text' });
     expect(memory.preferences.map((item) => item.key)).toEqual(['quiet_room']);
@@ -198,6 +202,7 @@ describe('Guest Long-Term Memory v1', () => {
   it('4b. records the English equivalent at the same identity-level seam', async () => {
     const db = new FakeMemoryDb();
     await observeResolvedGuestInbound({
+      accountId: ACCOUNT_A,
       guestId: 'guest-explicit-en',
       senderIdentity: 'test_guest',
       messageText: 'I prefer to communicate in English and text. I love quiet apartments.',
@@ -205,7 +210,7 @@ describe('Guest Long-Term Memory v1', () => {
       transport: 'telegram_text',
       db,
     });
-    const memory = await loadGuestLongTermMemory('guest-explicit-en', db);
+    const memory = await loadGuestLongTermMemory({ accountId: ACCOUNT_A, guestId: 'guest-explicit-en' }, db);
     expect(memory.profile).toMatchObject({ preferredLanguage: 'en', preferredCommunicationMode: 'text' });
     expect(memory.preferences.map((item) => item.key)).toEqual(['quiet_room']);
   });
@@ -223,6 +228,7 @@ describe('Guest Long-Term Memory v1', () => {
   it('6. stores an operator-confirmed outcome as a structured event', async () => {
     const db = new FakeMemoryDb();
     await recordGuestOperationalEvent({
+      accountId: ACCOUNT_A,
       guestId: 'guest-event',
       type: 'maintenance_resolution',
       summary: 'Оператор подтвердил завершение ремонта.',
@@ -230,7 +236,7 @@ describe('Guest Long-Term Memory v1', () => {
       sourceRef: 'review-1',
       db,
     });
-    expect((await loadGuestLongTermMemory('guest-event', db)).events[0]).toMatchObject({
+    expect((await loadGuestLongTermMemory({ accountId: ACCOUNT_A, guestId: 'guest-event' }, db)).events[0]).toMatchObject({
       type: 'maintenance_resolution', source: 'operator_confirmed', sourceRef: 'review-1',
     });
   });
@@ -264,21 +270,49 @@ describe('Guest Long-Term Memory v1', () => {
     expect(result.replyText).not.toContain('на улице');
   });
 
-  it('9. isolates different guests', async () => {
+  it('9. isolates the same guestId across accounts', async () => {
     const db = new FakeMemoryDb();
-    await upsertGuestPreference({ guestId: 'guest-a', key: 'crib', value: 'Нужна кроватка', source: 'explicit_guest', db });
-    expect((await loadGuestLongTermMemory('guest-a', db)).preferences).toHaveLength(1);
-    expect((await loadGuestLongTermMemory('guest-b', db)).preferences).toHaveLength(0);
+    await upsertGuestPreference({ accountId: ACCOUNT_A, guestId: 'guest-shared', key: 'crib', value: 'Нужна кроватка', source: 'explicit_guest', db });
+    await upsertGuestPreference({ accountId: ACCOUNT_B, guestId: 'guest-shared', key: 'parking', value: 'Нужна парковка', source: 'explicit_guest', db });
+    const accountA = await loadGuestLongTermMemory({ accountId: ACCOUNT_A, guestId: 'guest-shared' }, db);
+    const accountB = await loadGuestLongTermMemory({ accountId: ACCOUNT_B, guestId: 'guest-shared' }, db);
+    expect(accountA.preferences.map((item) => item.key)).toEqual(['crib']);
+    expect(accountB.preferences.map((item) => item.key)).toEqual(['parking']);
+  });
+
+  it('9b. keeps legacy unbound rows inaccessible to scoped reads', async () => {
+    const db = new FakeMemoryDb();
+    db.rows('guest_memory_profiles').push({
+      guest_id: 'guest-legacy',
+      preferred_language: 'en',
+      stay_count: 4,
+      first_seen_at: '2026-01-01T00:00:00.000Z',
+      last_seen_at: '2026-01-02T00:00:00.000Z',
+    });
+    db.rows('guest_memory_preferences').push({
+      id: 'legacy-pref',
+      guest_id: 'guest-legacy',
+      preference_key: 'parking',
+      preference_value: 'legacy parking',
+      source_kind: 'explicit_guest',
+      confidence: 1,
+      status: 'active',
+      created_at: '2026-01-01T00:00:00.000Z',
+      updated_at: '2026-01-01T00:00:00.000Z',
+    });
+    const memory = await loadGuestLongTermMemory({ accountId: ACCOUNT_A, guestId: 'guest-legacy' }, db);
+    expect(memory.profile).toBeNull();
+    expect(memory.preferences).toEqual([]);
   });
 
   it('10. removes corrected or deleted memory from subsequent reads', async () => {
     const db = new FakeMemoryDb();
-    await upsertGuestPreference({ guestId: 'guest-correct', key: 'pet', value: 'Путешествует с собакой', source: 'explicit_guest', db });
-    await upsertGuestPreference({ guestId: 'guest-correct', key: 'pet', value: 'Больше не путешествует с животным', source: 'operator_confirmed', db });
-    const corrected = await loadGuestLongTermMemory('guest-correct', db);
+    await upsertGuestPreference({ accountId: ACCOUNT_A, guestId: 'guest-correct', key: 'pet', value: 'Путешествует с собакой', source: 'explicit_guest', db });
+    await upsertGuestPreference({ accountId: ACCOUNT_A, guestId: 'guest-correct', key: 'pet', value: 'Больше не путешествует с животным', source: 'operator_confirmed', db });
+    const corrected = await loadGuestLongTermMemory({ accountId: ACCOUNT_A, guestId: 'guest-correct' }, db);
     expect(corrected.preferences[0]?.value).toBe('Больше не путешествует с животным');
-    await deleteGuestMemoryItem({ guestId: 'guest-correct', kind: 'preference', itemId: corrected.preferences[0]!.id, db });
-    expect((await loadGuestLongTermMemory('guest-correct', db)).preferences).toHaveLength(0);
+    await deleteGuestMemoryItem({ accountId: ACCOUNT_A, guestId: 'guest-correct', kind: 'preference', itemId: corrected.preferences[0]!.id, db });
+    expect((await loadGuestLongTermMemory({ accountId: ACCOUNT_A, guestId: 'guest-correct' }, db)).preferences).toHaveLength(0);
   });
 
   it('11. bounds in-memory reads and database retention at 50 events', () => {
@@ -288,22 +322,28 @@ describe('Guest Long-Term Memory v1', () => {
       createdAt: '2026-01-01', historyOnly: false,
     }));
     expect(boundGuestLongTermMemory({ profile: null, preferences: [], events }).events).toHaveLength(50);
-    const migration = fs.readFileSync(path.join(process.cwd(), 'supabase/migrations/20260809120000_guest_long_term_memory_v1.sql'), 'utf8');
-    expect(migration).toContain('OFFSET 50');
-    expect(migration).toContain('REFERENCES public.tg_contacts(id)');
+    const originalMigration = fs.readFileSync(path.join(process.cwd(), 'supabase/migrations/20260809120000_guest_long_term_memory_v1.sql'), 'utf8');
+    const tenancyMigration = fs.readFileSync(path.join(process.cwd(), 'supabase/migrations/20260930200000_guest_long_term_memory_account_scope.sql'), 'utf8');
+    expect(originalMigration).toContain('OFFSET 50');
+    expect(originalMigration).toContain('REFERENCES public.tg_contacts(id)');
+    expect(tenancyMigration).toContain('CHECK (account_id IS NOT NULL) NOT VALID');
+    expect(tenancyMigration).toContain('WHERE events.account_id = NEW.account_id');
+    expect(tenancyMigration).toContain('ON CONFLICT (account_id, guest_id)');
     const migrationNames = fs.readdirSync(path.join(process.cwd(), 'supabase/migrations')).filter((name) => name.endsWith('.sql')).sort();
     const numericPrefixes = migrationNames.map((name) => name.match(/^(\d+)/)?.[1]).filter(Boolean);
     expect(new Set(numericPrefixes).size).toBe(numericPrefixes.length);
-    expect(migrationNames.at(-1)).toBe('20260809120000_guest_long_term_memory_v1.sql');
+    expect(migrationNames.at(-1)).toBe('20260930200000_guest_long_term_memory_account_scope.sql');
   });
 
   it('12. rejects sensitive payloads and provides no transcript/blob columns', async () => {
     const db = new FakeMemoryDb();
     expect(containsForbiddenGuestMemoryContent('door code: 1234')).toBe(true);
     await expect(upsertGuestPreference({
+      accountId: ACCOUNT_A,
       guestId: 'guest-sensitive', key: 'parking', value: 'door code: 1234', source: 'explicit_guest', db,
     })).rejects.toThrow('forbidden_sensitive_memory_content');
     const observation = await observeResolvedGuestInbound({
+      accountId: ACCOUNT_A,
       guestId: 'guest-sensitive',
       senderIdentity: 'guest',
       messageText: 'I prefer quiet apartments. door code: 1234',
@@ -320,9 +360,9 @@ describe('Guest Long-Term Memory v1', () => {
 
   it('13. gives text and voice paths the same durable context', async () => {
     const db = new FakeMemoryDb();
-    await observeGuestCommunication({ guestId: 'guest-multimodal', messageText: 'I always need parking.', language: 'en', transport: 'telegram_text', db });
-    await observeGuestCommunication({ guestId: 'guest-multimodal', messageText: 'Where is parking?', language: 'en', transport: 'telegram_voice', db });
-    const memory = await loadGuestLongTermMemory('guest-multimodal', db);
+    await observeGuestCommunication({ accountId: ACCOUNT_A, guestId: 'guest-multimodal', messageText: 'I always need parking.', language: 'en', transport: 'telegram_text', db });
+    await observeGuestCommunication({ accountId: ACCOUNT_A, guestId: 'guest-multimodal', messageText: 'Where is parking?', language: 'en', transport: 'telegram_voice', db });
+    const memory = await loadGuestLongTermMemory({ accountId: ACCOUNT_A, guestId: 'guest-multimodal' }, db);
     const context = buildRelevantGuestMemoryContext(memory, 'Where is parking?');
     const text = runCommunicationAutopilotV1({ messageText: 'Where is parking?', property, bookingVerified: true, guestMemory: context });
     const voice = runCommunicationAutopilotV1({ messageText: 'Where is parking?', property, bookingVerified: true, guestMemory: context });

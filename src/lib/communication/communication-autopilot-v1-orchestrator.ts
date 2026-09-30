@@ -140,6 +140,8 @@ export async function tryCommunicationAutopilotV1OrchestratorTurn(
     null;
   const passport = propertyId ? await getGroundedKnowledge(propertyId) : null;
   const guestMemory = await loadRelevantGuestMemory({
+    propertyId,
+    reservationId: input.identity.reservationId,
     guestId: input.identity.guestId,
     requestText: input.text,
   });

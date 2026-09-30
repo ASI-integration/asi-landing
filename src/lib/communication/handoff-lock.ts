@@ -58,6 +58,7 @@ import {
 } from './conversation-session-store';
 import {
   recordGuestOperationalEvent,
+  resolveGuestMemoryAccountId,
   type GuestMemoryEventType,
 } from './guest-long-term-memory';
 
@@ -344,6 +345,10 @@ export async function resolveOperatorHandoffWithReply(input: {
   const closed = getEscalationReview(review.reviewId) ?? review;
   const guestId = String(review.source?.guest_id ?? '').trim();
   if (guestId && !sent.duplicatePrevented) {
+    const accountId = await resolveGuestMemoryAccountId({
+      propertyId: review.propertyId,
+      reservationId: review.reservationId,
+    });
     const reason = String(review.escalationReason ?? '').toLowerCase();
     const eventType: GuestMemoryEventType = reason.includes('maintenance')
       ? 'maintenance_resolution'
@@ -354,7 +359,8 @@ export async function resolveOperatorHandoffWithReply(input: {
           : reason.includes('late_checkout')
             ? 'late_checkout_history'
             : 'operator_confirmed_resolution';
-    await recordGuestOperationalEvent({
+    if (accountId) await recordGuestOperationalEvent({
+      accountId,
       guestId,
       type: eventType,
       summary: `Оператор подтвердил решение по событию: ${review.escalationReason}`,
