@@ -188,13 +188,16 @@ async function resolveDefaultContext(
     guestMemory = null;
   }
   const channel = binding.chatId ? 'telegram' as const : 'email' as const;
-  const activeHandoff = listEscalationReviews({ limit: 500 }).some((review) =>
-    review.targetId === targetId && review.status !== 'closed',
-  );
+  const accountId = record.accountId ?? null;
+  const activeHandoff = listEscalationReviews({
+    limit: 500,
+    accountIds: accountId ? [accountId] : [],
+  }).some((review) => review.targetId === targetId && review.status !== 'closed');
   return {
     ok: true,
     context: {
       bookingOpsRecordId: record.id,
+      accountId,
       reservationId: event.reservationId,
       propertyId: event.propertyId,
       guestId: event.guestId,
@@ -404,6 +407,7 @@ export function createGuestLifecycleRuntimePort(options: GuestLifecycleRuntimeOp
     async requestOperator(input) {
       const chatId = Number(input.context.targetId);
       const handoff = requestOperatorHandoff({
+        accountId: input.context.accountId,
         sessionId: `lifecycle:${input.event.reservationId}:${input.event.eventType}`,
         channel: input.context.channel,
         targetId: input.context.targetId,

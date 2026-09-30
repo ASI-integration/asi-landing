@@ -221,6 +221,7 @@ export async function failTelegramInboundReceipt(params: {
   const metadata = eventMetadata(params.claim.update);
   const review = createOrUpdateEscalationReview({
     sessionId: receiptReviewSessionId(params.claim.receiptId),
+    accountId: params.claim.scope.accountId,
     channel: 'telegram',
     targetId: String(metadata.chatId ?? ''),
     actorId: metadata.chatId === null ? undefined : String(metadata.chatId),

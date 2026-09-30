@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { listEscalationReviews } from '@/lib/communication/operator-review';
+import { resolveOperatorReviewAccountScope } from '@/lib/communication/operator-review-access';
 
 export const dynamic = 'force-dynamic';
 
@@ -21,11 +22,16 @@ export async function GET(req: NextRequest) {
   const limitRaw = searchParams.get('limit');
   const limit = limitRaw ? Number(limitRaw) : undefined;
 
-  const reviews = listEscalationReviews({
-    status: status ? (status as any) : undefined,
-    limit: Number.isFinite(limit) ? limit : undefined,
-  });
-
-  return NextResponse.json({ ok: true, reviews });
+  try {
+    const accountScope = await resolveOperatorReviewAccountScope(session.userId);
+    const reviews = listEscalationReviews({
+      status: status ? (status as any) : undefined,
+      limit: Number.isFinite(limit) ? limit : undefined,
+      accountIds: [...accountScope],
+    });
+    return NextResponse.json({ ok: true, reviews });
+  } catch {
+    return NextResponse.json({ ok: false, error: 'account_scope_unavailable' }, { status: 503 });
+  }
 }
 

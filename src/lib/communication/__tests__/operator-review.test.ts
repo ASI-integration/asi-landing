@@ -47,6 +47,7 @@ describe('operator escalation review store', () => {
       sessionId: 'sess_1',
       channel: 'telegram',
       targetId: '42',
+      accountId: 'account-a',
       escalationReason: 'LOW_INTENT_CONFIDENCE',
       confidence: 0.4,
       latestMessages: [],
@@ -61,6 +62,7 @@ describe('operator escalation review store', () => {
       sessionId: 'sess_2',
       channel: 'telegram',
       targetId: '42',
+      accountId: 'account-a',
       escalationReason: 'REQUIRES_OPERATOR',
       latestMessages: [],
     });
@@ -76,6 +78,7 @@ describe('operator escalation review store', () => {
       sessionId: 'sess_3',
       channel: 'telegram',
       targetId: '42',
+      accountId: 'account-a',
       escalationReason: 'REQUIRES_OPERATOR',
       latestMessages: [],
     });
@@ -105,6 +108,7 @@ describe('operator escalation review store', () => {
       sessionId: 'sess_4',
       channel: 'telegram',
       targetId: '42',
+      accountId: 'account-a',
       escalationReason: 'REQUIRES_OPERATOR',
       latestMessages: [],
     });
@@ -120,6 +124,7 @@ describe('operator escalation review store', () => {
       sessionId: 'sess_5',
       channel: 'telegram',
       targetId: '42',
+      accountId: 'account-a',
       escalationReason: 'X',
       latestMessages: [],
     });
@@ -127,11 +132,34 @@ describe('operator escalation review store', () => {
       sessionId: 'sess_6',
       channel: 'telegram',
       targetId: '43',
+      accountId: 'account-a',
       escalationReason: 'Y',
       latestMessages: [],
     });
     const pending = listEscalationReviews({ status: 'pending' });
     expect(pending.length).toBe(2);
+  });
+
+  it('persists immutable account ownership on a review', () => {
+    const review = createOrUpdateEscalationReview({
+      sessionId: 'sess_account',
+      channel: 'telegram',
+      targetId: '44',
+      accountId: 'account-a',
+      escalationReason: 'REQUIRES_OPERATOR',
+      latestMessages: [],
+    });
+    expect(review.accountId).toBe('account-a');
+
+    expect(() => createOrUpdateEscalationReview({
+      sessionId: 'sess_account',
+      channel: 'telegram',
+      targetId: '44',
+      accountId: 'account-b',
+      escalationReason: 'REQUIRES_OPERATOR',
+      latestMessages: [],
+    })).toThrow('review_account_mismatch');
+    expect(getEscalationReview(review.reviewId)?.accountId).toBe('account-a');
   });
 });
 

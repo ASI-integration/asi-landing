@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
-import { getEscalationReview } from '@/lib/communication/operator-review';
+import { getAuthorizedEscalationReview } from '@/lib/communication/operator-review-access';
 import {
   correctGuestOperationalEvent,
   deleteGuestMemoryItem,
@@ -15,7 +15,12 @@ export const dynamic = 'force-dynamic';
 async function authorizedReview(reviewId: string) {
   const session = await getSession();
   if (!session.userId) return { ok: false as const, error: 'unauthorized' as const };
-  const review = getEscalationReview(reviewId);
+  let review;
+  try {
+    review = await getAuthorizedEscalationReview(reviewId, session.userId);
+  } catch {
+    return { ok: false as const, error: 'account_scope_unavailable' as const };
+  }
   if (!review) return { ok: false as const, error: 'not_found' as const };
   const guestId = String(review.source?.guest_id ?? '').trim();
   if (!guestId) return { ok: false as const, error: 'guest_memory_unavailable' as const };
@@ -25,6 +30,9 @@ async function authorizedReview(reviewId: string) {
 function errorResponse(error: string) {
   if (error === 'unauthorized') return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   if (error === 'not_found') return NextResponse.json({ error }, { status: 404 });
+  if (error === 'account_scope_unavailable') {
+    return NextResponse.json({ ok: false, error }, { status: 503 });
+  }
   return NextResponse.json({ ok: true, memory: null, unavailable: true });
 }
 

@@ -21,6 +21,7 @@ import {
   getEscalationReview,
 } from './operator-review';
 import { notifyOperator } from './operator-notify';
+import { resolveCanonicalOperatorReviewAccountId } from './operator-review-account';
 import { auditInbound, auditDecision } from './audit';
 import { checkAndMarkKey } from './idempotency';
 import {
@@ -313,15 +314,19 @@ async function createEmailOperatorDraft(params: {
     getPrimaryEmailAddress(params.payload.from) ||
     params.envelope.email ||
     params.envelope.externalUserId;
+  const reservationId = sessionForReview.reservationId ?? params.identity?.reservationId;
+  const propertyId = sessionForReview.propertyId ?? params.identity?.propertyId;
+  const accountId = await resolveCanonicalOperatorReviewAccountId({ reservationId, propertyId });
 
   return createOrUpdateEscalationReview({
+    accountId,
     sessionId: sessionForReview.sessionId,
     channel: 'email',
     targetId,
     actorId: sessionForReview.actorId,
     role: params.identity?.role ?? sessionForReview.role,
-    reservationId: sessionForReview.reservationId ?? params.identity?.reservationId,
-    propertyId: sessionForReview.propertyId ?? params.identity?.propertyId,
+    reservationId,
+    propertyId,
     leadId: sessionForReview.leadId ?? params.identity?.leadId,
     escalationReason,
     confidence: params.identity?.confidence ?? sessionForReview.confidence,

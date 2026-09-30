@@ -18,6 +18,7 @@ export type EscalationReviewStatus =
 
 export type EscalationReview = {
   reviewId: string;
+  accountId: string | null;
   sessionId: string;
   channel: CommunicationChannel;
   /**
@@ -92,6 +93,10 @@ let cache: StoreShape = { reviewsById: {}, activeReviewIdBySessionId: {} };
 
 function nowIso(): string {
   return new Date().toISOString();
+}
+
+function normalizeAccountId(value: unknown): string | null {
+  return typeof value === 'string' && value.trim() ? value.trim() : null;
 }
 
 function safeMkdirp(dir: string): void {
@@ -248,16 +253,22 @@ export function getEscalationReview(reviewId: string): EscalationReview | null {
 export function listEscalationReviews(params?: {
   status?: EscalationReviewStatus;
   limit?: number;
+  accountIds?: readonly string[];
 }): EscalationReview[] {
   loadOnce();
   const all = Object.values(cache.reviewsById).sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
-  const filtered = params?.status ? all.filter(r => r.status === params.status) : all;
+  const accountScope = params?.accountIds ? new Set(params.accountIds) : null;
+  const accountFiltered = accountScope
+    ? all.filter(r => Boolean(r.accountId && accountScope.has(r.accountId)))
+    : all;
+  const filtered = params?.status ? accountFiltered.filter(r => r.status === params.status) : accountFiltered;
   const limit = params?.limit && params.limit > 0 ? params.limit : 200;
   return filtered.slice(0, limit);
 }
 
 export function createOrUpdateEscalationReview(input: {
   sessionId: string;
+  accountId?: string | null;
   channel: CommunicationChannel;
   targetId: string;
   actorId?: string;
@@ -275,11 +286,18 @@ export function createOrUpdateEscalationReview(input: {
   loadOnce();
   const existingId = cache.activeReviewIdBySessionId[input.sessionId];
   const existing = existingId ? cache.reviewsById[existingId] : undefined;
+  const requestedAccountId = normalizeAccountId(input.accountId);
+  const existingAccountId = normalizeAccountId(existing?.accountId);
+  if (existingAccountId && requestedAccountId && existingAccountId !== requestedAccountId) {
+    throw new Error('review_account_mismatch');
+  }
+  const accountId = existingAccountId ?? requestedAccountId;
 
   const ts = nowIso();
   const review: EscalationReview = existing
     ? {
         ...existing,
+        accountId,
         // Keep earliest createdAt; update evidence and reason
         escalationReason: input.escalationReason || existing.escalationReason,
         confidence: input.confidence ?? existing.confidence,
@@ -294,6 +312,7 @@ export function createOrUpdateEscalationReview(input: {
       }
     : {
         reviewId: randomUUID(),
+        accountId,
         sessionId: input.sessionId,
         channel: input.channel,
         targetId: input.targetId,
