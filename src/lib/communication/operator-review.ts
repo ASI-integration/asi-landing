@@ -298,12 +298,9 @@ export function listEscalationReviewsForAccount(accountId: string, params?: {
 }
 
 export async function resolveEscalationReviewAccountId(input: {
-  accountId?: string | null;
   propertyId?: string | null;
   reservationId?: string | null;
 }): Promise<string | null> {
-  const explicit = typeof input.accountId === 'string' && input.accountId.trim() ? input.accountId.trim() : null;
-  if (explicit) return explicit;
   try {
     if (input.propertyId) {
       const result = await supabase.from('properties').select('account_id').eq('id', input.propertyId).maybeSingle();
@@ -406,7 +403,10 @@ export function createOrUpdateEscalationReview(input: {
 export async function createOrUpdateEscalationReviewBound(
   input: Parameters<typeof createOrUpdateEscalationReview>[0],
 ): Promise<EscalationReview> {
-  const accountId = await resolveEscalationReviewAccountId(input);
+  const accountId = await resolveEscalationReviewAccountId({
+    propertyId: input.propertyId,
+    reservationId: input.reservationId,
+  });
   return createOrUpdateEscalationReview({ ...input, accountId });
 }
 
