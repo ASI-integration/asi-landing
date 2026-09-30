@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
-import { getEscalationReview } from '@/lib/communication/operator-review';
+import { resolveAccountIdForUser } from '@/lib/accounts';
+import { getEscalationReviewForAccount } from '@/lib/communication/operator-review';
 import {
   correctGuestOperationalEvent,
   deleteGuestMemoryItem,
@@ -15,15 +16,27 @@ export const dynamic = 'force-dynamic';
 async function authorizedReview(reviewId: string) {
   const session = await getSession();
   if (!session.userId) return { ok: false as const, error: 'unauthorized' as const };
-  const review = getEscalationReview(reviewId);
+  const accountId = await resolveAccountIdForUser(session.userId);
+  if (!accountId || accountId === 'legacy') return { ok: false as const, error: 'account_workspace_unavailable' as const };
+  let review;
+  try {
+    review = getEscalationReviewForAccount(reviewId, accountId);
+  } catch (error) {
+    if (error instanceof Error && error.message === 'operator_review_store_unhealthy') {
+      return { ok: false as const, error: 'operator_review_store_unhealthy' as const };
+    }
+    throw error;
+  }
   if (!review) return { ok: false as const, error: 'not_found' as const };
   const guestId = String(review.source?.guest_id ?? '').trim();
   if (!guestId) return { ok: false as const, error: 'guest_memory_unavailable' as const };
-  return { ok: true as const, session, review, guestId };
+  return { ok: true as const, session, review, guestId, accountId };
 }
 
 function errorResponse(error: string) {
   if (error === 'unauthorized') return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  if (error === 'account_workspace_unavailable') return NextResponse.json({ error }, { status: 403 });
+  if (error === 'operator_review_store_unhealthy') return NextResponse.json({ error }, { status: 503 });
   if (error === 'not_found') return NextResponse.json({ error }, { status: 404 });
   return NextResponse.json({ ok: true, memory: null, unavailable: true });
 }

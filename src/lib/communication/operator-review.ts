@@ -18,6 +18,8 @@ export type EscalationReviewStatus =
 
 export type EscalationReview = {
   reviewId: string;
+  /** Canonical tenant owner. Null means legacy/unresolved and must never be exposed through operator APIs. */
+  accountId: string | null;
   sessionId: string;
   channel: CommunicationChannel;
   /**
@@ -89,6 +91,21 @@ type StoreShape = {
 
 let loaded = false;
 let cache: StoreShape = { reviewsById: {}, activeReviewIdBySessionId: {} };
+let storeHealth: { healthy: boolean; error?: string } = { healthy: true };
+
+function markStoreUnhealthy(error: unknown): never {
+  const message = error instanceof Error ? error.message : String(error);
+  storeHealth = { healthy: false, error: message.slice(0, 240) };
+  throw new Error('operator_review_store_unhealthy');
+}
+
+function assertStoreHealthy(): void {
+  if (!storeHealth.healthy) throw new Error('operator_review_store_unhealthy');
+}
+
+export function isEscalationReviewStoreHealthy(): boolean {
+  return storeHealth.healthy;
+}
 
 function nowIso(): string {
   return new Date().toISOString();
@@ -105,30 +122,36 @@ function safeMkdirp(dir: string): void {
 function loadOnce(): void {
   if (loaded || isTest) {
     loaded = true;
+    assertStoreHealthy();
     return;
   }
   loaded = true;
   safeMkdirp(BASE_DIR);
   try {
-    if (!fs.existsSync(REVIEWS_PATH)) return;
+    if (!fs.existsSync(REVIEWS_PATH)) {
+      storeHealth = { healthy: true };
+      return;
+    }
     const raw = fs.readFileSync(REVIEWS_PATH, 'utf-8');
     const parsed = JSON.parse(raw) as Partial<StoreShape>;
     cache = {
       reviewsById: parsed.reviewsById ?? {},
       activeReviewIdBySessionId: parsed.activeReviewIdBySessionId ?? {},
     };
-  } catch {
-    cache = { reviewsById: {}, activeReviewIdBySessionId: {} };
+    storeHealth = { healthy: true };
+  } catch (error) {
+    markStoreUnhealthy(error);
   }
 }
 
 function persist(): void {
+  assertStoreHealthy();
   if (isTest) return;
   safeMkdirp(BASE_DIR);
   try {
     fs.writeFileSync(REVIEWS_PATH, JSON.stringify(cache), 'utf-8');
-  } catch {
-    // best-effort
+  } catch (error) {
+    markStoreUnhealthy(error);
   }
 }
 
@@ -166,6 +189,10 @@ export function getActiveEscalationReviewIdForSession(sessionId: string): string
 export function getReviewsBySessionId(sessionId: string): EscalationReview[] {
   loadOnce();
   return Object.values(cache.reviewsById).filter(r => r.sessionId === sessionId);
+}
+
+export function getReviewsBySessionIdForAccount(sessionId: string, accountId: string): EscalationReview[] {
+  return getReviewsBySessionId(sessionId).filter((review) => review.accountId === accountId);
 }
 
 /**
@@ -245,6 +272,12 @@ export function getEscalationReview(reviewId: string): EscalationReview | null {
   return cache.reviewsById[reviewId] ?? null;
 }
 
+export function getEscalationReviewForAccount(reviewId: string, accountId: string): EscalationReview | null {
+  const review = getEscalationReview(reviewId);
+  if (!review?.accountId || review.accountId !== accountId) return null;
+  return review;
+}
+
 export function listEscalationReviews(params?: {
   status?: EscalationReviewStatus;
   limit?: number;
@@ -256,7 +289,15 @@ export function listEscalationReviews(params?: {
   return filtered.slice(0, limit);
 }
 
+export function listEscalationReviewsForAccount(accountId: string, params?: {
+  status?: EscalationReviewStatus;
+  limit?: number;
+}): EscalationReview[] {
+  return listEscalationReviews(params).filter((review) => review.accountId === accountId);
+}
+
 export function createOrUpdateEscalationReview(input: {
+  accountId?: string | null;
   sessionId: string;
   channel: CommunicationChannel;
   targetId: string;
@@ -277,9 +318,15 @@ export function createOrUpdateEscalationReview(input: {
   const existing = existingId ? cache.reviewsById[existingId] : undefined;
 
   const ts = nowIso();
+  const requestedAccountId = typeof input.accountId === 'string' && input.accountId.trim() ? input.accountId.trim() : null;
+  if (existing?.accountId && requestedAccountId && existing.accountId !== requestedAccountId) {
+    throw new Error('review_account_mismatch');
+  }
+  const accountId = existing?.accountId ?? requestedAccountId;
   const review: EscalationReview = existing
     ? {
         ...existing,
+        accountId,
         // Keep earliest createdAt; update evidence and reason
         escalationReason: input.escalationReason || existing.escalationReason,
         confidence: input.confidence ?? existing.confidence,
@@ -294,6 +341,7 @@ export function createOrUpdateEscalationReview(input: {
       }
     : {
         reviewId: randomUUID(),
+        accountId,
         sessionId: input.sessionId,
         channel: input.channel,
         targetId: input.targetId,
@@ -482,5 +530,11 @@ export async function sendOperatorReply(input: {
 export function __resetEscalationReviewStoreForTests(): void {
   loaded = true;
   cache = { reviewsById: {}, activeReviewIdBySessionId: {} };
+  storeHealth = { healthy: true };
+}
+
+/** @internal tests only */
+export function __setEscalationReviewStoreHealthForTests(healthy: boolean): void {
+  storeHealth = healthy ? { healthy: true } : { healthy: false, error: 'test_corruption' };
 }
 

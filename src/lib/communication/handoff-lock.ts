@@ -106,13 +106,19 @@ export function getHandoffLockState(sessionId: string): HandoffLockState {
  * Returns false while operator handoff is requested or active.
  */
 export function canAiReply(sessionId: string): boolean {
-  const state = getHandoffLockState(sessionId);
-  return state === HandoffLockState.AiActive || state === HandoffLockState.ReturnedToAi;
+  try {
+    const state = getHandoffLockState(sessionId);
+    return state === HandoffLockState.AiActive || state === HandoffLockState.ReturnedToAi;
+  } catch {
+    // Review-store ambiguity must never unlock AI replies.
+    return false;
+  }
 }
 
 // ─── Write API ───────────────────────────────────────────────────────────────
 
 export interface RequestOperatorHandoffInput {
+  accountId?: string | null;
   sessionId: string;
   channel: CommunicationChannel;
   /** Outbound routing target (e.g. Telegram chat id as string). */
@@ -155,6 +161,7 @@ export function requestOperatorHandoff(
   const alreadyLocked = Boolean(preExistingId);
 
   const review = createOrUpdateEscalationReview({
+    accountId:         input.accountId,
     sessionId:         input.sessionId,
     channel:           input.channel,
     targetId:          input.targetId,
