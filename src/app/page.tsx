@@ -45,7 +45,7 @@ export async function generateMetadata(): Promise<Metadata> {
   }
   const title = 'ASI Global — Operations on autopilot. Humans on exceptions.';
   const description =
-    'ASI handles the daily work of physical businesses — bookings, payments, messages, access, cleaning and maintenance — automatically. People step in only when something unusual needs a decision.';
+    'ASI coordinates routine operational workflows across physical businesses. Supported actions can move automatically when the required policy and integration are in place; people handle exceptions and unsupported external steps.';
   const url = GUEST_AUTOPILOT_ORIGIN;
   return {
     title,
@@ -96,7 +96,7 @@ export default async function Home() {
                 <span className="font-serif text-2xl text-asi-navy">ASI Global</span>
               </div>
               <p className="mt-2 text-xs font-sans uppercase tracking-[0.22em] text-asi-navy/65">
-                Micro Hotels · Autonomous Operations
+                Micro Hotels · Automation-first Operations
               </p>
               <Headline as="h1" className="mt-8 text-4xl sm:text-6xl lg:text-[4rem]">
                 Operations on autopilot.
@@ -105,8 +105,8 @@ export default async function Home() {
               </Headline>
               <GoldRule className="mt-6 mb-6" />
               <p className="text-lg text-asi-navy/70 max-w-lg leading-relaxed">
-                ASI handles most routine operations across physical businesses. People step in
-                when something unusual needs a decision.
+                ASI coordinates routine operations across physical businesses. Supported workflows can move
+                automatically; people handle exceptions, sensitive decisions, and unsupported external steps.
               </p>
               <div className="mt-9 flex flex-wrap gap-4">
                 <PrimaryCta href="#intelligence">Explore ASI</PrimaryCta>
@@ -138,12 +138,12 @@ export default async function Home() {
               <span className="text-xs font-sans font-semibold uppercase tracking-[0.18em] text-asi-gold-text">Layer 1</span>
               <h3 className="mt-4 font-serif text-2xl sm:text-3xl">ASI Intelligence</h3>
               <p className="mt-3 text-asi-navy/70 leading-relaxed">
-                The operating intelligence behind autonomous businesses.
+                The operating intelligence for automation-first physical businesses.
               </p>
               <p className="mt-4 text-sm text-asi-navy/60 leading-relaxed">
-                ASI coordinates routine work, decisions and workflows across bookings, payments,
+                ASI coordinates workflows and decision support across bookings, payments,
                 communication, access, cleaning, maintenance, pricing and other operational
-                processes.
+                processes, with automation enabled where the required integration is available.
               </p>
             </div>
             <div id="micro-hotels" className="bg-asi-ivory p-8 sm:p-10">
@@ -183,7 +183,7 @@ export default async function Home() {
         <Section variant="navy">
           <Eyebrow dark>How ASI works</Eyebrow>
           <Headline className="text-3xl sm:text-5xl max-w-3xl text-asi-ivory">
-            Routine work moves automatically.
+            Supported routine work moves automatically.
             <br />
             People handle exceptions.
           </Headline>
@@ -191,8 +191,8 @@ export default async function Home() {
             <OperationalFlow dark />
           </div>
           <p className="mt-8 text-asi-ivory/60 max-w-xl leading-relaxed">
-            Most routine operations continue automatically. When something unusual happens, ASI
-            brings the right person in.
+            Within enabled workflows, routine steps can continue automatically. When policy, data, or an
+            integration cannot safely complete a step, ASI brings the right person in.
           </p>
         </Section>
 
@@ -210,9 +210,9 @@ export default async function Home() {
             </div>
             <div className="order-1 lg:order-2">
               <Eyebrow>ASI Micro Hotels</Eyebrow>
-              <Headline className="text-3xl sm:text-5xl">A physical proof of autonomous hospitality.</Headline>
+              <Headline className="text-3xl sm:text-5xl">A physical implementation of the ASI operating model.</Headline>
               <p className="mt-5 text-asi-navy/70 leading-relaxed max-w-xl">
-                ASI Micro Hotels combine real private rooms with autonomous operations.
+                ASI Micro Hotels are designed to combine real private rooms with automation-first operations.
               </p>
               <p className="mt-4 text-sm text-asi-navy/60 leading-relaxed max-w-xl">
                 They are designed for underused urban spaces where conventional hospitality is
@@ -220,7 +220,7 @@ export default async function Home() {
               </p>
               <div className="mt-8 grid sm:grid-cols-2 gap-6 max-w-xl">
                 <CircleFeature icon="bed" title="Private room for two" description="Real privacy, real comfort." />
-                <CircleFeature icon="gear" title="Autonomous operations" description="Bookings, access, support, cleaning." />
+                <CircleFeature icon="gear" title="Automation-first operations" description="Designed around bookings, access, support, and cleaning workflows." />
                 <CircleFeature icon="chart" title="Underused space, reactivated" description="Compact urban footprint." />
               </div>
               <div className="mt-8">
