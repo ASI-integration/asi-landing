@@ -302,4 +302,16 @@ describe('Check-in Execution Autopilot v1', () => {
     expect(status.status).toBe('checked_in');
     expect(lifecycle.completed.map((item) => item.gateKey)).toContain('guest_checked_in');
   });
+
+  it.each(['markGuestCheckedIn', 'markAccessReady', 'markCheckinInstructionsSent'] as const)(
+    '%s fails closed when the required lifecycle write fails',
+    async (action) => {
+      const { completeGate } = await import('../lifecycle');
+      vi.mocked(completeGate).mockResolvedValueOnce({ ok: false, error: 'injected_gate_write_failure' });
+      const service = await import('../checkin-execution-autopilot');
+      await expect(service[action](record.id)).rejects.toThrow('injected_gate_write_failure');
+      expect(tables.booking_checkin_execution).toHaveLength(0);
+      expect(updateBookingOpsRecord).not.toHaveBeenCalled();
+    },
+  );
 });

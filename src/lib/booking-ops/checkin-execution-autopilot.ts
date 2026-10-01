@@ -483,10 +483,11 @@ export async function markCheckinInstructionsSent(
   const legalGuard = await shouldBlockCheckinInstructions(record.id);
   if (legalGuard.block) throw new Error(legalGuard.reason ?? 'Нельзя отметить инструкции отправленными: есть юридические ограничения.');
   await assertCheckinReadiness(record.id);
-  await completeGate(record.id, 'checkin_instructions_sent', {
+  const gateResult = await completeGate(record.id, 'checkin_instructions_sent', {
     source: 'checkin_execution_autopilot_v1',
     ...safeMetadata(metadata),
   });
+  if (!gateResult.ok) throw new Error(gateResult.error ?? 'checkin_gate_write_failed');
   await upsertExecution(record.id, {
     status: 'instructions_sent',
     instructions_status: 'sent',
@@ -540,11 +541,12 @@ export async function markAccessReady(
 ): Promise<CheckinExecutionSnapshot> {
   const record = await loadRecord(bookingId);
   await assertCheckinReadiness(record.id);
-  await completeGate(record.id, 'property_ready', {
+  const gateResult = await completeGate(record.id, 'property_ready', {
     source: 'checkin_execution_autopilot_v1',
     accessReady: true,
     ...safeMetadata(metadata),
   });
+  if (!gateResult.ok) throw new Error(gateResult.error ?? 'checkin_gate_write_failed');
   await upsertExecution(record.id, {
     status: 'access_ready',
     access_status: 'ready',
@@ -594,10 +596,11 @@ export async function markGuestCheckedIn(
   const record = await loadRecord(bookingId);
   await assertCheckinReadiness(record.id);
   const now = new Date().toISOString();
-  await completeGate(record.id, 'guest_checked_in', {
+  const gateResult = await completeGate(record.id, 'guest_checked_in', {
     source: 'checkin_execution_autopilot_v1',
     ...safeMetadata(metadata),
   });
+  if (!gateResult.ok) throw new Error(gateResult.error ?? 'checkin_gate_write_failed');
   await upsertExecution(record.id, {
     status: 'checked_in',
     arrival_status: 'confirmed',
