@@ -1,3 +1,4 @@
+import { prepareRuntimeKnowledgeReply, prepareCommunicationFactReply } from './knowledge-boundary';
 import { getChannelAdapter } from './channels';
 import { bindIdentity } from './identity-binding';
 import { evictIdentityCacheForTelegramChatId } from './identity';
@@ -88,7 +89,7 @@ import {
   forceCloseActiveReviewForSession,
 } from './operator-review';
 import { recordCommunicationEscalation } from './escalations';
-import { canAiReply, recordHandoffAuditEvent } from './handoff-lock';
+import { canAiReply, recordHandoffAuditEvent, requestOperatorHandoff } from './handoff-lock';
 import {
   SessionStatus,
   setPaymentExpiry,
@@ -2135,7 +2136,51 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
       });
     };
 
-    if (commContext.knowledge.loadStatus === 'lookup_failed') {
+    // Fact questions must not fall through to passport/session/LLM guesses.
+    const preparedKnowledge = senderRoute.shouldRunGuestConcierge && !escalationSafetyGate
+      ? await prepareRuntimeKnowledgeReply({
+          message: text, channel: envelope.channel, chatId, ru: classification.lang === 'ru',
+          propertyId: identity.propertyId, reservationId: identity.reservationId,
+        })
+      : null;
+    // Fact validity is not transport permission. Wave 2 stays operator-assisted:
+    // even verified public facts are drafts, never a new bypass around auto-send policy.
+    const knowledgeReply = preparedKnowledge && !preparedKnowledge.reviewRequired
+      ? prepareCommunicationFactReply({
+          ready: false, scope: preparedKnowledge.result.scope,
+          decisions: preparedKnowledge.result.decisions.map(({ key }) => ({
+            key, use: 'operator_review', reason: 'operator_controlled',
+          })),
+        }, classification.lang === 'ru')
+      : preparedKnowledge;
+    if (knowledgeReply) {
+      if (knowledgeReply.reviewRequired) {
+        const target = resolveOutboundTargetId(envelope, identity.guestId);
+        if (!target) throw new Error('knowledge_review_target_unavailable');
+        // Persist through the existing handoff lock before acknowledging. Never re-derive
+        // a different tenant, or confuse a Telegram reservation ID with a Booking Ops ID.
+        const verifiedScope = knowledgeReply.result.scope;
+        requestOperatorHandoff({
+          accountId: verifiedScope?.accountId, propertyId: verifiedScope?.propertyId,
+          sessionId: convSession.sessionId, channel: envelope.channel, targetId: String(target),
+          actorId: convSession.actorId, role: identity.role,
+          escalationReason: 'communication_knowledge_review', detail: knowledgeReply.summary,
+          suggestedReply: preparedKnowledge && !preparedKnowledge.reviewRequired ? preparedKnowledge.text : undefined,
+          source: { route: 'communication_knowledge', needs_operator: true,
+            knowledge_booking_ref: verifiedScope?.bookingId ?? null },
+        });
+        await transitionSessionStatus(chatId, SessionStatus.OperatorReviewRequired);
+        convSession = transitionConversationSessionState(convSession, 'escalated', 'communication_knowledge_review');
+        escalation = createEscalationEvent({
+          reason: EscalationReason.RequiresOperator, chat_id: chatId, update_id,
+          classification, summary: knowledgeReply.summary,
+        });
+      }
+      replyText = adapter.formatResponse(knowledgeReply.text, commContext as unknown as Record<string, unknown>);
+      llmSucceeded = true;
+    }
+
+    if (!replyText && commContext.knowledge.loadStatus === 'lookup_failed') {
       escalation = createEscalationEvent({
         reason: EscalationReason.ProcessingError,
         chat_id: chatId,
@@ -2229,7 +2274,7 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
         null,
     };
 
-    if (envelope.channel === 'telegram' && telegramMetaStoredReply) {
+    if (!replyText && envelope.channel === 'telegram' && telegramMetaStoredReply) {
       cp('branch.telegram_text_meta_deterministic.pre_operational', { chat_id: chatId, kind: telegramMetaRouteKind });
       replyText = adapter.formatResponse(telegramMetaStoredReply, commContext as unknown as Record<string, unknown>);
       llmSucceeded = true;
