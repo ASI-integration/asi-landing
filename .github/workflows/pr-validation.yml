@@ -441,6 +441,50 @@ jobs:
           })();
           NODE
 
+      - name: Wave 0 guest-memory tenancy PostgreSQL migration integration
+        id: wave0_guest_memory_pg
+        run: |
+          set -euo pipefail
+          npx vitest run \
+            src/lib/communication/__tests__/wave0-guest-memory-tenancy.pg.integration.test.ts \
+            --reporter=verbose 2>&1 | tee wave0-guest-memory-pg.out
+          if grep -E '↓|skipped|SKIPPED' wave0-guest-memory-pg.out | grep -Fq 'Wave 0 guest-memory PostgreSQL migration integration'; then
+            echo "Wave 0 guest-memory PG integration was skipped — failing job"
+            exit 1
+          fi
+          if ! grep -Fq 'ASI_WAVE0_GUEST_MEMORY_PG_PROOF' wave0-guest-memory-pg.out; then
+            echo "Missing ASI_WAVE0_GUEST_MEMORY_PG_PROOF — failing job"
+            exit 1
+          fi
+          node - <<'NODE'
+          const fs = require('fs');
+          const out = fs.readFileSync('wave0-guest-memory-pg.out', 'utf8');
+          const line = out.split(/\r?\n/).find((l) => l.includes('ASI_WAVE0_GUEST_MEMORY_PG_PROOF'));
+          if (!line) process.exit(1);
+          const json = line.slice(line.indexOf('ASI_WAVE0_GUEST_MEMORY_PG_PROOF') + 'ASI_WAVE0_GUEST_MEMORY_PG_PROOF'.length).trim();
+          const proof = JSON.parse(json);
+          const expected = {
+            hasDisposablePg: true,
+            runtimeVerified: true,
+            legacyRowsPreserved: true,
+            unscopedWritesRejected: true,
+            sameGuestCrossAccountIsolated: true,
+            accountScopedUniqueness: true,
+            retentionScoped: true,
+            completedStayScoped: true,
+            migrationReplayPassed: true,
+            partialStateReplayPassed: true,
+            finalTransactionRolledBack: true,
+            productionTouched: false,
+            stagingTouched: false,
+          };
+          if (JSON.stringify(proof) !== JSON.stringify(expected)) {
+            console.error('wave0_guest_memory_pg_proof_mismatch', proof);
+            process.exit(1);
+          }
+          console.log('wave0_guest_memory_pg_proof_ok', JSON.stringify(proof));
+          NODE
+
       - name: Run Live Core recovery PostgreSQL RPC integration
         id: pg_integration
         run: |
