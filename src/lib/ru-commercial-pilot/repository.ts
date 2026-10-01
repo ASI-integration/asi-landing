@@ -6,7 +6,7 @@ import {
   type RuCommercialPilotTimestamps,
 } from './lifecycle';
 import type { OwnershipProbe, ReadinessProbe, RuCommercialPilotStore } from './service';
-import { getPilotReadinessForProperty } from '@/lib/pilot-readiness/repository';
+import { isOperationallyReadyForPilotProperty } from '@/lib/ops-v17/service';
 
 type LifecycleRow = {
   account_id: string;
@@ -126,10 +126,8 @@ export const supabaseOwnsProperty: OwnershipProbe = async (accountId, propertyId
   return true;
 };
 
-export const supabaseReadinessProbe: ReadinessProbe = async (propertyId) => {
-  const result = await getPilotReadinessForProperty(propertyId);
-  return result?.ready === true;
-};
+export const supabaseReadinessProbe: ReadinessProbe = async (accountId, propertyId) =>
+  isOperationallyReadyForPilotProperty(accountId, propertyId);
 
 export function emptyLifecycleState(
   accountId: string,

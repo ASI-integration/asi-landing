@@ -2,9 +2,15 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { OnboardingData } from '../types';
 
 type Row = Record<string, any>;
-const state = vi.hoisted(() => ({ tables: {} as Record<string, Row[]>, errors: {} as Record<string, string> }));
+const state = vi.hoisted(() => ({
+  tables: {} as Record<string, Row[]>,
+  errors: {} as Record<string, string>,
+  readiness: {} as Record<string, { ready: boolean; checks: Array<{ id: string; ok: boolean }>; missingLabelsRu: string[] }>,
+}));
 
-vi.mock('@/lib/pilot-readiness/repository', () => ({ getPilotReadinessForProperty: vi.fn().mockResolvedValue({ ready: true, checks: [{ id: 'operator', ok: true }], missingLabelsRu: [] }) }));
+vi.mock('@/lib/pilot-readiness/repository', () => ({
+  getPilotReadinessForProperty: vi.fn(async (propertyId: string) => state.readiness[propertyId] ?? null),
+}));
 
 vi.mock('@/lib/supabase', () => ({ supabase: { from: (table: string) => {
   let matches = (_row: Row) => true;
@@ -29,7 +35,7 @@ vi.mock('@/lib/supabase', () => ({ supabase: { from: (table: string) => {
   };
   return query;
 } } }));
-import { activatePilot } from '../service';
+import { activatePilot, isOperationallyReadyForPilotProperty } from '../service';
 
 const readyData: OnboardingData = {
   business: { name: 'ASI Pilot' },
@@ -47,10 +53,13 @@ const readyData: OnboardingData = {
 
 beforeEach(() => {
   state.errors = {};
+  state.readiness = {
+    'property-A': { ready: true, checks: [{ id: 'operator', ok: true }], missingLabelsRu: [] },
+  };
   state.tables = {
     ops_v17_onboardings: [{ id: 'o1', account_id: 'A', data: structuredClone(readyData), current_step: 'launch', pilot_activated_at: null }],
     ops_v17_module_state: [],
-    properties: [{ id: 'property-A', account_id: 'A' }],
+    properties: [{ id: 'property-A', account_id: 'A', name: 'Лесная', address_line: 'Лесная, 1' }],
     ops_v17_audit_log: [],
   };
 });
@@ -72,9 +81,40 @@ describe('pilot activation operational readiness gate', () => {
     expect(state.tables.ops_v17_onboardings[0].pilot_activated_at).toBeNull();
   });
 
+  it('uses the same full operational contract for commercial property readiness', async () => {
+    state.tables.ops_v17_onboardings[0].data.communications = {
+      guestChannel: 'telegram', workerChannel: 'phone',
+    };
+    await expect(isOperationallyReadyForPilotProperty('A', 'property-A')).resolves.toBe(false);
+
+    state.tables.ops_v17_onboardings[0].data.communications = {
+      guestChannel: 'telegram', workerChannel: 'phone', pilotMode: 'operator_assisted',
+    };
+    await expect(isOperationallyReadyForPilotProperty('A', 'property-A')).resolves.toBe(true);
+  });
+
   it('blocks activation when the canonical account has no persisted property', async () => {
     state.tables.properties = [];
+    await expect(activatePilot('A', 'owner-A')).rejects.toThrow('operational_readiness_unavailable');
+  });
+
+  it('does not let a different ready owned property satisfy an unready configured target', async () => {
+    state.tables.ops_v17_onboardings[0].data.properties = [{ key: 'pB', name: 'Невский', address: 'Невский, 8' }];
+    state.tables.ops_v17_onboardings[0].data.units = [{ key: 'uB', propertyKey: 'pB', name: '1' }];
+    state.tables.ops_v17_onboardings[0].data.staff = [{ key: 'op1', name: 'Оператор', role: 'operator', contact: '+7111', propertyKeys: ['pB'] }];
+    state.tables.ops_v17_onboardings[0].data.verification = [{ key: 'pilot_readiness', propertyKey: 'pB', status: 'passed' }];
+    state.tables.properties = [
+      { id: 'property-A', account_id: 'A', name: 'Лесная', address_line: 'Лесная, 1' },
+      { id: 'property-B', account_id: 'A', name: 'Невский', address_line: 'Невский, 8' },
+    ];
+    state.readiness['property-B'] = {
+      ready: false,
+      checks: [{ id: 'operator', ok: true }],
+      missingLabelsRu: ['Инструкции доступа'],
+    };
+
     await expect(activatePilot('A', 'owner-A')).rejects.toThrow('launch_blocked');
+    expect(state.tables.ops_v17_onboardings[0].pilot_activated_at).toBeNull();
   });
 
   it('fails closed when RU connect points at a different persisted object', async () => {

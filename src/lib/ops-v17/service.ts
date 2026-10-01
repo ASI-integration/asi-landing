@@ -38,21 +38,54 @@ export async function synchronizeModules(onboardingId: string, data: OnboardingD
   return modules;
 }
 
-export async function getWorkspace(accountId: string) {
+function normalized(value: unknown): string {
+  return String(value ?? '').trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+function resolvePilotPropertyIds(
+  accountId: string,
+  data: OnboardingData,
+  owned: Array<{ id: unknown; name?: unknown; address_line?: unknown }>,
+): string[] {
+  const ownedIds = new Set(owned.map((row) => String(row.id)));
+  const canonicalFirstPilotPropertyId = data.rentalConnection?.step && data.rentalConnection.step >= 3
+    ? connectionPropertyId(accountId)
+    : null;
+  if (canonicalFirstPilotPropertyId) {
+    if (!ownedIds.has(canonicalFirstPilotPropertyId)) throw new Error('operational_readiness_unavailable');
+    return [canonicalFirstPilotPropertyId];
+  }
+
+  const configured = data.properties ?? [];
+  if (configured.length === 0) return [];
+  const resolved: string[] = [];
+  for (const property of configured) {
+    let id = ownedIds.has(property.key) ? property.key : null;
+    if (!id) {
+      const matches = owned.filter((row) =>
+        normalized(row.name) === normalized(property.name) &&
+        normalized(row.address_line) === normalized(property.address));
+      if (matches.length !== 1) throw new Error('operational_readiness_unavailable');
+      id = String(matches[0].id);
+    }
+    if (resolved.includes(id)) throw new Error('operational_readiness_unavailable');
+    resolved.push(id);
+  }
+  return resolved;
+}
+
+export async function getWorkspace(accountId: string, requiredPropertyId?: string) {
   const onboarding = await loadOnboarding(accountId);
   if (!onboarding) return null;
   const result = await supabase.from('ops_v17_module_state').select('module_key,status,idempotency_key,detail').eq('onboarding_id', onboarding.id);
   if (result.error) throw new Error(result.error.message);
-  const properties = await supabase.from('properties').select('id').eq('account_id', accountId);
+  const properties = await supabase.from('properties').select('id,name,address_line').eq('account_id', accountId);
   if (properties.error) throw new Error('operational_readiness_unavailable');
-  const ownedPropertyIds = (properties.data ?? []).map((property) => String(property.id));
-  const canonicalFirstPilotPropertyId = onboarding.data.rentalConnection?.step && onboarding.data.rentalConnection.step >= 3
-    ? connectionPropertyId(accountId)
-    : null;
-  if (canonicalFirstPilotPropertyId && !ownedPropertyIds.includes(canonicalFirstPilotPropertyId)) {
+  const ownedProperties = (properties.data ?? []) as Array<{ id: unknown; name?: unknown; address_line?: unknown }>;
+  const readinessPropertyIds = resolvePilotPropertyIds(accountId, onboarding.data, ownedProperties);
+  if (requiredPropertyId && !readinessPropertyIds.includes(requiredPropertyId)) {
     throw new Error('operational_readiness_unavailable');
   }
-  const readinessPropertyIds = canonicalFirstPilotPropertyId ? [canonicalFirstPilotPropertyId] : ownedPropertyIds;
   let propertyReadiness;
   try {
     propertyReadiness = await Promise.all(readinessPropertyIds.map((propertyId) => getPilotReadinessForProperty(propertyId)));
@@ -60,7 +93,7 @@ export async function getWorkspace(accountId: string) {
     throw new Error('operational_readiness_unavailable');
   }
   const verified = propertyReadiness.filter((item) => item?.ready === true);
-  const operatorReady = propertyReadiness.some((item) => item?.checks.some((check) => check.id === 'operator' && check.ok));
+  const operatorReady = propertyReadiness.length > 0 && propertyReadiness.every((item) => item?.checks.some((check) => check.id === 'operator' && check.ok));
   const readinessDetails = propertyReadiness.flatMap((item, index) =>
     item?.ready
       ? []
@@ -69,13 +102,22 @@ export async function getWorkspace(accountId: string) {
   const readiness = computeLaunchReadiness(onboarding.data, modules, Boolean(onboarding.pilot_activated_at));
   // Automatic sending remains blocked until onboarding is wired to the canonical auto-send scope/runtime status.
   const operationalReadiness = computeOperationalReadiness(onboarding.data, readiness, {
-    ownedPropertyCount: ownedPropertyIds.length,
+    ownedPropertyCount: readinessPropertyIds.length,
     verifiedPropertyCount: verified.length,
     operatorReady,
     readinessDetails,
     automaticSendingReady: false,
   });
   return { onboarding, progress: onboardingProgress(onboarding.data), modules, readiness, operationalReadiness, communicationDefaults: communicationPolicyDefaults };
+}
+
+export async function isOperationallyReadyForPilotProperty(accountId: string, propertyId: string): Promise<boolean> {
+  try {
+    const workspace = await getWorkspace(accountId, propertyId);
+    return workspace?.operationalReadiness.ready === true;
+  } catch {
+    return false;
+  }
 }
 
 export async function createVerificationIssue(input: { accountId: string; actorId: string; itemKey: string; propertyKey: string; notes?: string; blocking?: boolean }) {
