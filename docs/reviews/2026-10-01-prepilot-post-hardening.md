@@ -12,8 +12,8 @@ That audit is intentionally preserved as historical evidence. Its activation-rea
 Base:
 `35c6b9eccb65f4f93400a3f06951b4ef1ae32159`
 
-Current code candidate after the pre-Astra hardening pass:
-`15d66561`
+Current code/CI candidate after the pre-Astra hardening pass:
+`e64b0d34`
 
 Key commits after the audit:
 - `d82459de` — gate pilot activation on operational readiness
@@ -25,6 +25,7 @@ Key commits after the audit:
 - `6e0f5b16` — require actual deposit resolution before booking close
 - `ecacff05` — enforce first-pilot safety regression in PR validation
 - `15d66561` — allow explicit operator-assisted/manual booking intake without pretending live channel sync
+- `e64b0d34` — keep the manual-intake fallback and channel-manager truth contract in the first-pilot CI gate
 
 No push, merge, deploy, production/staging DB action, external send, payment mutation, DNS change, or live-provider write was performed for this packet.
 
@@ -151,9 +152,9 @@ The booking UI now explicitly warns operators not to interpret an unavailable pa
 
 ## Cross-tenant regression sweep
 
-Focused tenancy/security sweep:
-- 12 test files
-- 79 tests PASS
+Focused tenancy/security sweep (latest rerun):
+- 15 test files
+- 128 tests PASS
 
 Covered:
 - owner/manager/operator role boundary,
@@ -179,9 +180,9 @@ PR validation now includes a dedicated first-pilot regression step covering:
 - check-in execution,
 - in-stay / checkout closeout.
 
-Local execution of that exact CI set:
-- 9 test files
-- 82 tests PASS
+Local execution of the current exact CI set:
+- 11 test files
+- 116 tests PASS
 
 ## Wider local evidence
 
@@ -193,9 +194,9 @@ Pre-check-in / operator / observability contour:
 - 17 test files
 - 177 tests PASS
 
-Cross-tenant contour:
-- 12 test files
-- 79 tests PASS
+Cross-tenant contour (latest rerun):
+- 15 test files
+- 128 tests PASS
 
 Channel fallback + auto-send + checkout contour:
 - 9 test files
@@ -230,7 +231,7 @@ The CRM text intentionally says the final report is operator-generated after pil
 
 Review the full range:
 
-`35c6b9ec..15d66561`
+`35c6b9ec..e64b0d34`
 
 Primary question:
 
