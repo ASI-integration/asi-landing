@@ -43,7 +43,7 @@ export function CrmPilotChainActions({ contact }: Props) {
 
   useEffect(() => { void loadPilot(); }, [loadPilot]);
 
-  async function runPilotAction(action: 'derive_ready' | 'start_pilot') {
+  async function runPilotAction(action: 'derive_ready' | 'start_pilot' | 'complete_pilot') {
     if (!propertyId) return;
     setPilotBusy(true); setPilotMessage('');
     try {
@@ -63,13 +63,20 @@ export function CrmPilotChainActions({ contact }: Props) {
         return;
       }
       setPilotState(payload.state ?? null);
-      setPilotMessage(action === 'start_pilot' ? '14-дневный пилот запущен.' : 'Готовность пересчитана.');
+      setPilotMessage(action === 'start_pilot'
+        ? '14-дневный пилот запущен.'
+        : action === 'complete_pilot'
+          ? '14-дневный пилот завершён.'
+          : 'Готовность пересчитана.');
     } finally {
       setPilotBusy(false);
     }
   }
 
   if (actions.length === 0 && !propertyId) return null;
+  const pilotEnded = pilotState?.timestamps.pilotEndsAt
+    ? new Date(pilotState.timestamps.pilotEndsAt).getTime() <= Date.now()
+    : false;
 
   return (
     <div className="mt-3 rounded-md border border-slate-200 bg-white p-3 text-sm">
@@ -96,18 +103,21 @@ export function CrmPilotChainActions({ contact }: Props) {
         <div className="text-xs font-medium uppercase tracking-wide text-slate-500">Коммерческий пилот</div>
         <p className="mt-1 text-xs text-slate-700">
           {pilotState?.status === 'pilot_active'
-            ? '14-дневный период идёт.'
-            : pilotState?.status === 'ready'
-              ? 'Рабочая готовность подтверждена. Можно запускать 14 дней.'
-              : pilotState?.status === 'setup'
-                ? 'Объект на настройке. Пересчитайте готовность после проверки.'
-                : pilotState?.status
-                  ? `Статус: ${pilotState.status}`
-                  : 'Коммерческий цикл ещё не подтверждён.'}
+            ? (pilotEnded ? '14-дневный период завершён по времени. Зафиксируйте завершение.' : '14-дневный период идёт.')
+            : pilotState?.status === 'pilot_completed'
+              ? 'Пилот завершён. Итоговый отчёт пока формируется оператором.'
+              : pilotState?.status === 'ready'
+                ? 'Рабочая готовность подтверждена. Можно запускать 14 дней.'
+                : pilotState?.status === 'setup'
+                  ? 'Объект на настройке. Пересчитайте готовность после проверки.'
+                  : pilotState?.status
+                    ? `Статус: ${pilotState.status}`
+                    : 'Коммерческий цикл ещё не подтверждён.'}
         </p>
         {pilotState?.timestamps.pilotEndsAt ? <p className="mt-1 text-xs text-slate-500">Окончание: {new Date(pilotState.timestamps.pilotEndsAt).toLocaleDateString('ru-RU')}</p> : null}
         {canManage && pilotState?.status === 'setup' ? <button type="button" disabled={pilotBusy} onClick={() => void runPilotAction('derive_ready')} className="mt-2 rounded border border-slate-300 px-2 py-1 text-xs disabled:opacity-50">Проверить готовность</button> : null}
         {canManage && pilotState?.status === 'ready' ? <button type="button" disabled={pilotBusy} onClick={() => void runPilotAction('start_pilot')} className="mt-2 rounded border border-emerald-300 bg-emerald-50 px-2 py-1 text-xs font-medium text-emerald-900 disabled:opacity-50">Запустить 14 дней</button> : null}
+        {canManage && pilotState?.status === 'pilot_active' && pilotEnded ? <button type="button" disabled={pilotBusy} onClick={() => void runPilotAction('complete_pilot')} className="mt-2 rounded border border-slate-300 bg-slate-50 px-2 py-1 text-xs font-medium text-slate-900 disabled:opacity-50">Зафиксировать завершение</button> : null}
         {pilotMessage ? <p className="mt-2 text-xs text-slate-600">{pilotMessage}</p> : null}
       </div> : null}
     </div>

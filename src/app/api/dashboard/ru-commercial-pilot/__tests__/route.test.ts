@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const getPilotLifecycle = vi.fn();
 const deriveReady = vi.fn();
 const startPilot = vi.fn();
+const completePilot = vi.fn();
 const hasCurrentRuLegalAcceptance = vi.fn();
 
 vi.mock('@/lib/crm/api-auth', () => ({
@@ -16,7 +17,7 @@ vi.mock('@/lib/ru-legal', () => ({
 }));
 vi.mock('@/lib/ru-commercial-pilot', () => ({
   beginSetup: vi.fn(),
-  completePilot: vi.fn(),
+  completePilot,
   createSupabaseRuCommercialPilotStore: vi.fn(() => ({})),
   deriveReady,
   ensureApplication: vi.fn(),
@@ -45,11 +46,13 @@ beforeEach(() => {
   getPilotLifecycle.mockReset();
   deriveReady.mockReset();
   startPilot.mockReset();
+  completePilot.mockReset();
   hasCurrentRuLegalAcceptance.mockReset();
   hasCurrentRuLegalAcceptance.mockResolvedValue(true);
   getPilotLifecycle.mockResolvedValue({ ok: true, state: null });
   deriveReady.mockResolvedValue({ ok: true, changed: true, state: { accountId: 'account-A', propertyId: 'property-A', status: 'ready', timestamps: {} } });
   startPilot.mockResolvedValue({ ok: true, changed: true, state: { accountId: 'account-A', propertyId: 'property-A', status: 'pilot_active', timestamps: {} } });
+  completePilot.mockResolvedValue({ ok: true, changed: true, state: { accountId: 'account-A', propertyId: 'property-A', status: 'pilot_completed', timestamps: {} } });
 });
 
 describe('/api/dashboard/ru-commercial-pilot', () => {
@@ -80,6 +83,16 @@ describe('/api/dashboard/ru-commercial-pilot', () => {
     }));
     expect(res.status).toBe(200);
     expect(startPilot).toHaveBeenCalledWith(expect.anything(), 'account-A', 'property-A');
+  });
+
+  it('completes the canonical pilot through the same operator surface', async () => {
+    const { POST } = await import('../route');
+    const res = await POST(new Request('http://local/api/dashboard/ru-commercial-pilot', {
+      method: 'POST',
+      body: JSON.stringify({ action: 'complete_pilot', propertyId: 'property-A' }),
+    }));
+    expect(res.status).toBe(200);
+    expect(completePilot).toHaveBeenCalledWith(expect.anything(), 'account-A', 'property-A');
   });
 
   it('fails closed when the property cannot be resolved', async () => {
