@@ -1,3 +1,4 @@
+import type { SpatialValidation } from './spatial-validation-types';
 // ── Gravity / Evergreen engine — shared types ─────────────────────────────────
 // Map/OSM data types live here alongside ASI interpretation types.
 // Keep them clearly separated in comments: real-world vs ASI layer.
@@ -509,6 +510,8 @@ export interface SpatialFoundationSnapshot {
 
 /** Full structured output of the gravity engine */
 export interface LocationAnalysis {
+  /** Evidence validity is separate from heuristic scoring and does not certify business returns. */
+  locationValidation?: SpatialValidation;
   // Score
   evergreenIndex: number;
   scoreBand: ScoreBand;

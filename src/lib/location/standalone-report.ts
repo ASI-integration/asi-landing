@@ -1,3 +1,4 @@
+import type { SpatialValidation } from './spatial-validation-types';
 import type { LocationAnalysis, OSMElement, RecommendedStrategy, SpatialTier } from './types';
 import type { CommercialFormatFitEntry, CommercialOverallVerdict } from './commercial-format-fit';
 import { buildCommercialFormatFit } from './commercial-format-fit';
@@ -116,6 +117,7 @@ export type StrLocationReportProjection = {
 };
 
 export type LocationStandaloneReport = {
+  locationValidation?: SpatialValidation;
   version: 'v1';
   /** Filled by persistence layer for saved reports. */
   reportId?: string;
@@ -209,6 +211,7 @@ export type LocationStandaloneReport = {
 // ── Commercial standalone report ─────────────────────────────────────────────
 
 export type LocationCommercialReport = {
+  locationValidation?: SpatialValidation;
   version: 'v2-commercial';
   address: string;
   generated_at_iso: string;
@@ -360,6 +363,7 @@ export function buildCommercialReport(args: {
 
   return {
     version: 'v2-commercial',
+    locationValidation: args.analysis.locationValidation,
     accessStatus: 'paid_unlocked',
     address: args.address,
     generated_at_iso: generatedAtIso,
@@ -777,6 +781,7 @@ export function buildLocationStandaloneReport(args: {
     ...(args.providerWarningsRu?.length ? { providerWarningsRu: args.providerWarningsRu } : {}),
   });
   const reportEnvelope = {
+    locationValidation: args.analysis.locationValidation,
     inputAddress: metadata.inputAddress,
     normalizedAddress: metadata.normalizedAddress,
     calculatedAt: metadata.calculatedAt,

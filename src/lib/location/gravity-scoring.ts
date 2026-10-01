@@ -1,3 +1,4 @@
+import { haversineMeters } from './geometry';
 /**
  * Gravity / Evergreen scoring engine — pure functions, no I/O.
  *
@@ -81,17 +82,7 @@ function effectiveBusinessWeight(baseWeight: number, subType: string | undefined
 
 // ── Distance helpers ──────────────────────────────────────────────────────────
 
-export function haversineMeters(lat1: number, lon1: number, lat2: number, lon2: number): number {
-  const R = 6371000;
-  const dLat = (lat2 - lat1) * Math.PI / 180;
-  const dLon = (lon2 - lon1) * Math.PI / 180;
-  const a =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-    Math.sin(dLon / 2) ** 2;
-  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-}
-
+export { haversineMeters } from './geometry';
 export function formatDist(m: number): string {
   return m < 1000 ? `${Math.round(m / 10) * 10} m` : `${(m / 1000).toFixed(1)} km`;
 }

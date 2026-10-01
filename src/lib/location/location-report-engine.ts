@@ -1,8 +1,9 @@
+import { validatePublicOsmLocation } from './spatial-validation-osm';
+import { validCoordinates } from './spatial-validation';
 import type { PersistedStandaloneReportEntity } from './standalone-report-store';
 import { createStandaloneReport, getStandaloneReportById } from './standalone-report-store';
 import { geocodePlainAddressForMarket } from './address-providers/geocode-pipeline';
-import { resolveRuAddressSearchProfiles } from './address-providers/ru-address-search-profile';
-import { normalizeRuAddressQuery } from './address-providers/ru-normalize';
+
 import type { AddressMarket } from './address-providers/types';
 import {
   mapPaidReportProviderWarningsRu,
@@ -62,8 +63,6 @@ export type PaidReportCoordinateResolution = {
   mapDisplay: LocationReportMapDisplay;
 };
 
-const RU_DEFAULT_CENTER = { lat: 55.75, lon: 37.62 } as const;
-
 export function isPaidReportRecoverableProcessingError(err: unknown): boolean {
   const msg = err instanceof Error ? err.message : String(err);
   return /geocode_timeout|overpass|osm|network|aborted|timeout|terminated|fetch failed|econnreset|enotfound|socket/i.test(msg);
@@ -112,22 +111,6 @@ export async function fetchOsmDataForPaidReport(
   }
 }
 
-function resolveCityCenterFallback(
-  market: AddressMarket,
-  address: string,
-): { lat: number; lon: number } | null {
-  if (market !== 'ru') return null;
-  const { normalized } = normalizeRuAddressQuery(address);
-  const resolution = resolveRuAddressSearchProfiles({
-    normalizedQuery: normalized,
-    contextCity: null,
-    biasLat: null,
-    biasLon: null,
-  });
-  const center = resolution.profiles[0]?.biasCenter;
-  return center ?? RU_DEFAULT_CENTER;
-}
-
 export async function resolvePaidReportCoordinates(
   entity: LocationReportRequestEntity,
 ): Promise<PaidReportCoordinateResolution> {
@@ -136,25 +119,19 @@ export async function resolvePaidReportCoordinates(
   if (!rawAddress) throw new Error('address_required');
 
   const providerWarnings: string[] = [];
-  let mapDisplay: LocationReportMapDisplay = 'available';
+  const mapDisplay: LocationReportMapDisplay = 'available';
 
   if (entity.lat != null && entity.lon != null) {
+    if (!validCoordinates({ lat: entity.lat, lon: entity.lon })) throw new Error('invalid_coordinates');
     return { lat: entity.lat, lon: entity.lon, providerWarnings, mapDisplay };
   }
 
   const { result } = await geocodePlainAddressForPaidReport(market, rawAddress);
-  if (result) {
+  if (result && validCoordinates(result)) {
     return { lat: result.lat, lon: result.lon, providerWarnings, mapDisplay };
   }
 
-  const fallback = resolveCityCenterFallback(market, rawAddress);
-  if (!fallback) {
-    throw new Error('address_not_found');
-  }
-
-  providerWarnings.push(PAID_REPORT_GEOCODE_UNAVAILABLE_WARNING);
-  mapDisplay = 'unavailable';
-  return { ...fallback, providerWarnings, mapDisplay };
+  throw new Error('address_not_found');
 }
 
 function applyPaidReportMapDataIntegrity(
@@ -398,6 +375,15 @@ async function buildPaidLocationReportFromRequest(
 
   const osm = await fetchOsmDataForPaidReport(lat, lon);
   const { analysis, integrityWarnings } = buildPaidLocationAnalysis(lat, lon, osm);
+  const validationNow = new Date();
+  analysis.locationValidation = validatePublicOsmLocation({
+    mode: entity.mode === 'commercial' ? 'commercial' : 'residential', lat, lon, address: rawAddress,
+    elements: osm.elements, observedAt: validationNow.toISOString(), now: validationNow,
+    hadProviderFailure: osm.hadProviderFailure, usedFallbackQuery: osm.usedFallbackQuery,
+  });
+  if (!analysis.locationValidation.ok || analysis.analysisIntegrity?.scoreBlockedDueToIncompleteData) {
+    throw new Error('spatial_evidence_unavailable');
+  }
   if (integrityWarnings.length > 0) {
     providerWarnings.push(...integrityWarnings);
     mapDisplay = 'unavailable';
@@ -479,12 +465,22 @@ async function resolveOrComputePaidAnalysis(
   lon: number,
 ): Promise<LocationAnalysis> {
   const cachedByAddr = await cacheGetByAddress(address);
-  if (cachedByAddr?.entry.analysis?.locationScore) {
+  if (cachedByAddr?.freshness === 'fresh' && cachedByAddr.entry.analysis?.locationScore
+    && cachedByAddr.entry.lat === lat && cachedByAddr.entry.lon === lon
+    && cachedByAddr.entry.analysis.locationValidation?.ok) {
     return cachedByAddr.entry.analysis;
   }
 
   const osm = await fetchOsmDataForPaidReport(lat, lon);
   const { analysis } = buildPaidLocationAnalysis(lat, lon, osm);
+  if (analysis.analysisIntegrity?.scoreBlockedDueToIncompleteData) throw new Error('spatial_evidence_unavailable');
+  const validationNow = new Date();
+  analysis.locationValidation = validatePublicOsmLocation({
+    mode: 'residential', lat, lon, address, elements: osm.elements,
+    observedAt: validationNow.toISOString(), now: validationNow,
+    hadProviderFailure: osm.hadProviderFailure, usedFallbackQuery: osm.usedFallbackQuery,
+  });
+  if (!analysis.locationValidation.ok) throw new Error('spatial_evidence_unavailable');
   return analysis;
 }
 
@@ -587,6 +583,13 @@ export async function generateFreeLocationReport(
     });
   }
 
+  const validationNow = new Date();
+  analysis.locationValidation = validatePublicOsmLocation({
+    mode: 'residential', lat, lon, address: rawAddress, elements: rawOsmElements,
+    observedAt: cachedByAddr ? new Date(cachedByAddr.entry.updatedAt).toISOString() : validationNow.toISOString(),
+    now: validationNow, cached: !!cachedByAddr, source: cachedByAddr?.entry.source,
+    hadProviderFailure: !!analysis.analysisIntegrity?.scoreBlockedDueToIncompleteData,
+  });
   if (!analysis.locationScore) throw new Error('locationScore_unavailable');
 
   const report = buildLocationStandaloneReport({

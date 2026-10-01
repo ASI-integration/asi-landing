@@ -1,3 +1,4 @@
+import { validatePublicOsmLocation } from '@/lib/location/spatial-validation-osm';
 import { NextRequest, NextResponse } from 'next/server';
 import {
   fetchOsmData,
@@ -218,6 +219,13 @@ function withDemoSanityPayload(args: {
 }) {
   const { analysis, elementsCount, meta, locale, wantSpatial, lat, lon, osmElements, inputAddress, geocodeResult } =
     args;
+  analysis.locationValidation = validatePublicOsmLocation({
+    mode: wantSpatial ? 'commercial' : 'residential', lat, lon,
+    address: inputAddress ?? geocodeResult?.displayName ?? '',
+    elements: osmElements, observedAt: meta.updatedAt, now: new Date(),
+    hadProviderFailure: !!analysis.analysisIntegrity?.scoreBlockedDueToIncompleteData,
+    usedFallbackQuery: meta.usedFallbackQuery, cached: meta.cached, source: meta.source,
+  });
   const blocked = !!analysis.analysisIntegrity?.scoreBlockedDueToIncompleteData;
 
   let analysisOut = analysis;
