@@ -3,6 +3,12 @@ import { classifyElement } from './overpass-classify';
 import { validateSpatialEvidence } from './spatial-validation';
 import type { SpatialEntity, SpatialEvidence, SpatialLocation, SpatialRequest, SpatialSource } from './spatial-validation-types';
 
+function validOsmIdentity(element: OSMElement): boolean {
+  return ['node', 'way', 'relation'].includes(element.type)
+    && Number.isSafeInteger(element.id)
+    && element.id > 0;
+}
+
 /** OSM query recovery is still real data; partial coverage is never a synthetic complete survey. */
 export function osmSpatialEvidence(args: {
   request: SpatialRequest; location: SpatialLocation; elements: readonly OSMElement[];
@@ -15,12 +21,17 @@ export function osmSpatialEvidence(args: {
     delivery: args.hadProviderFailure ? 'unavailable' : args.cached ? 'cached' : 'live',
   };
   const entities: SpatialEntity[] = [];
+  let malformedProviderEntity = false;
   for (const el of args.elements) {
     const coordinates = { lat: el.lat ?? el.center?.lat ?? NaN, lon: el.lon ?? el.center?.lon ?? NaN };
     const classification = classifyElement(el);
     const tags = el.tags ?? {};
     const category = classification?.categoryId ?? tags.shop ?? tags.amenity;
     if (!category) continue;
+    if (!validOsmIdentity(el)) {
+      malformedProviderEntity = true;
+      continue;
+    }
     const kind = category === 'competitor' ? 'competitor'
       : ['metro', 'railway_station', 'airport', 'strategicTransportHub'].includes(category) ? 'transit'
       : category === 'attraction' ? 'attraction'
@@ -35,11 +46,12 @@ export function osmSpatialEvidence(args: {
       entities.push({ ...entity, kind: 'competitor', category: 'lodging' });
     }
   }
+  if (malformedProviderEntity) source.delivery = 'unavailable';
   return {
     scope: args.request.scope, mode: args.request.mode, center: args.location.coordinates!,
     radiusMeters: args.request.radiusMeters,
     // Existing category-dependent Overpass radii do not establish exhaustive business-category coverage.
-    status: args.hadProviderFailure ? 'unavailable' : 'partial',
+    status: args.hadProviderFailure || malformedProviderEntity ? 'unavailable' : 'partial',
     coverage: [], source, entities,
   };
 }

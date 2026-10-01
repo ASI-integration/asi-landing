@@ -1,9 +1,54 @@
 import { haversineMeters } from './geometry';
-import type { Coordinates, SpatialEvidence, SpatialLocation, SpatialRequest, SpatialScope, SpatialSource, SpatialValidation } from './spatial-validation-types';
+import type { Coordinates, SpatialEntityKind, SpatialEvidence, SpatialLocation, SpatialRequest, SpatialScope, SpatialSource, SpatialValidation } from './spatial-validation-types';
 
 export const SPATIAL_RADIUS_MIN_METERS = 1000;
 export const SPATIAL_RADIUS_MAX_METERS = 5000;
 export const SPATIAL_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+const SPATIAL_ENTITY_KINDS = new Set<SpatialEntityKind>(['poi', 'competitor', 'transit', 'attraction', 'demand_anchor']);
+
+function validSpatialEntityKind(value: unknown): value is SpatialEntityKind {
+  return typeof value === 'string' && SPATIAL_ENTITY_KINDS.has(value as SpatialEntityKind);
+}
+
+function cloneScope(scope: SpatialScope): SpatialScope {
+  return scope.kind === 'account'
+    ? { kind: 'account', accountId: scope.accountId, locationId: scope.locationId }
+    : { kind: 'public', locationId: scope.locationId };
+}
+
+function cloneRequest(request: SpatialRequest): SpatialRequest {
+  return { scope: cloneScope(request.scope), mode: request.mode, purpose: request.purpose, radiusMeters: request.radiusMeters };
+}
+
+function cloneSource(source: SpatialSource): SpatialSource {
+  return { ...source };
+}
+
+function cloneLocation(location: SpatialLocation): SpatialLocation {
+  return {
+    ...location,
+    scope: cloneScope(location.scope),
+    coordinates: location.coordinates ? { ...location.coordinates } : null,
+    addressCoordinates: location.addressCoordinates ? { ...location.addressCoordinates } : undefined,
+    source: cloneSource(location.source),
+  };
+}
+
+function cloneEvidence(batch: SpatialEvidence): SpatialEvidence {
+  return {
+    ...batch,
+    scope: cloneScope(batch.scope),
+    center: { ...batch.center },
+    source: cloneSource(batch.source),
+    coverage: [...batch.coverage],
+    entities: batch.entities.map((entity) => ({
+      ...entity,
+      coordinates: { ...entity.coordinates },
+      source: entity.source ? cloneSource(entity.source) : entity.source,
+    })),
+  };
+}
+
 export function validCoordinates(p: Coordinates | null | undefined): p is Coordinates {
   return !!p && Number.isFinite(p.lat) && Number.isFinite(p.lon)
     && Math.abs(p.lat) <= 90 && Math.abs(p.lon) <= 180;
@@ -50,7 +95,11 @@ export function validateSpatialEvidence(
   check('address_available', typeof target.address === 'string' && !!target.address.trim());
   if (!check('coordinates_valid', validCoordinates(target.coordinates))) return result;
   const center = target.coordinates!;
-  const sourceValid = (source: SpatialSource, key: string) => {
+  const sourceValid = (source: SpatialSource | null | undefined, key: string) => {
+    if (!source) {
+      check(key, false);
+      return false;
+    }
     const observed = Date.parse(source.observedAt);
     const valid = !!source.provider?.trim() && source.origin !== 'synthetic'
       && ['external', 'manual'].includes(source.origin)
@@ -86,6 +135,7 @@ export function validateSpatialEvidence(
     if (!sourceValid(batch.source, 'evidence_provenance') || batch.status === 'unavailable') {
       check('provider_available', false); continue;
     }
+    if (!check('evidence_coverage_valid', batch.coverage.every(validSpatialEntityKind))) continue;
     if (batch.status === 'partial') {
       result.warnings.push('partial_provider_coverage');
       manual('verify_missing_map_coverage');
@@ -93,6 +143,7 @@ export function validateSpatialEvidence(
     } else if (batch.status === 'available') batch.coverage.forEach(kind => covered.add(kind));
     else { check('provider_status_known', false); continue; }
     for (const entity of batch.entities) {
+      if (!validSpatialEntityKind(entity.kind)) { check('entity_kind_valid', false); continue; }
       if (!validCoordinates(entity.coordinates)) { check('entity_coordinates_valid', false); continue; }
       if (!sourceValid(entity.source, 'entity_provenance')) continue;
       if (!entity.id?.trim() || !entity.category?.trim()) { check('entity_identity', false); continue; }
@@ -133,22 +184,38 @@ export type SpatialValidationDependencies = {
 };
 /** Shared runner, no persistence/global cache and no implicit provider/mock fallback. */
 export async function validateLocation(request: SpatialRequest, deps: SpatialValidationDependencies, now: Date): Promise<SpatialValidation> {
-  let location: SpatialLocation | null = null;
+  const requestSnapshot = cloneRequest(request);
+  let locationSnapshot: SpatialLocation | null = null;
   try {
-    if (!validSpatialRequest(request)) return validateSpatialEvidence(request, null, [], now);
-    location = await deps.resolveLocation(request);
-    if (!location || !sameSpatialScope(request.scope, location.scope) || location.mode !== request.mode || !validCoordinates(location.coordinates)) {
-      return validateSpatialEvidence(request, location, [], now);
+    if (!validSpatialRequest(requestSnapshot)) return validateSpatialEvidence(requestSnapshot, null, [], now);
+
+    const resolved = await deps.resolveLocation(cloneRequest(requestSnapshot));
+    if (!resolved) return validateSpatialEvidence(requestSnapshot, null, [], now);
+    locationSnapshot = cloneLocation(resolved);
+
+    if (!sameSpatialScope(requestSnapshot.scope, locationSnapshot.scope)
+      || locationSnapshot.mode !== requestSnapshot.mode
+      || !validCoordinates(locationSnapshot.coordinates)) {
+      return validateSpatialEvidence(requestSnapshot, locationSnapshot, [], now);
     }
-    const evidence = await deps.loadEvidence(location, request);
-    // Re-resolve after the awaited provider: no stale ownership/coordinates may release evidence.
-    const latest = await deps.resolveLocation(request);
-    if (!latest || JSON.stringify(latest) !== JSON.stringify(location)) {
-      return { ...validateSpatialEvidence(request, null, [], now), blockers: ['location_changed_during_validation'] };
+
+    const evidence = (await deps.loadEvidence(
+      cloneLocation(locationSnapshot),
+      cloneRequest(requestSnapshot),
+    )).map(cloneEvidence);
+
+    // Re-resolve against an immutable copy of the original request identity.
+    const latestResolved = await deps.resolveLocation(cloneRequest(requestSnapshot));
+    const latestSnapshot = latestResolved ? cloneLocation(latestResolved) : null;
+    if (!latestSnapshot
+      || !sameSpatialScope(requestSnapshot.scope, latestSnapshot.scope)
+      || JSON.stringify(latestSnapshot) !== JSON.stringify(locationSnapshot)) {
+      return { ...validateSpatialEvidence(requestSnapshot, null, [], now), blockers: ['location_changed_during_validation'] };
     }
-    return validateSpatialEvidence(request, location, evidence, now);
+
+    return validateSpatialEvidence(requestSnapshot, locationSnapshot, evidence, now);
   } catch {
-    const result = validateSpatialEvidence(request, null, [], now);
+    const result = validateSpatialEvidence(requestSnapshot, null, [], now);
     return { ...result, blockers: ['spatial_dependency_unavailable'] };
   }
 }
