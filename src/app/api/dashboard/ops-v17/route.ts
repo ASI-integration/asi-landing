@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { requireCabinetSession } from '@/lib/cabinet/api-auth';
-import { resolveAccountIdForUser } from '@/lib/accounts';
+import { resolveOwnerAccountIdForUser } from '@/lib/accounts';
 import { getWorkspace, saveOnboardingStep } from '@/lib/ops-v17/service';
 import { onboardingSteps, type OnboardingData, type OnboardingStep } from '@/lib/ops-v17/types';
 
@@ -10,7 +10,7 @@ export const dynamic = 'force-dynamic';
 async function requireOwnerWorkspace() {
   const auth = await requireCabinetSession();
   if ('error' in auth) return auth;
-  const accountId = await resolveAccountIdForUser(auth.session.userId!);
+  const accountId = await resolveOwnerAccountIdForUser(auth.session.userId!);
   if (!accountId || accountId === 'legacy') {
     return { error: NextResponse.json({ ok: false, message: 'account_workspace_unavailable' }, { status: 403 }) };
   }

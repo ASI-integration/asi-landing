@@ -1,13 +1,13 @@
 import { NextResponse } from 'next/server';
 import { requireCabinetSession } from '@/lib/cabinet/api-auth';
 import { requireOpsAdminSession } from '@/lib/crm/api-auth';
-import { resolveAccountIdForUser } from '@/lib/accounts';
+import { resolveAccountIdForUser, resolveOwnerAccountIdForUser } from '@/lib/accounts';
 import { activatePilot, bootstrapPilot, createVerificationIssue } from '@/lib/ops-v17/service';
 
 async function requireOwnerWorkspace() {
   const auth = await requireCabinetSession();
   if ('error' in auth) return auth;
-  const accountId = await resolveAccountIdForUser(auth.session.userId!);
+  const accountId = await resolveOwnerAccountIdForUser(auth.session.userId!);
   if (!accountId || accountId === 'legacy') {
     return { error: NextResponse.json({ ok: false, message: 'account_workspace_unavailable' }, { status: 403 }) };
   }

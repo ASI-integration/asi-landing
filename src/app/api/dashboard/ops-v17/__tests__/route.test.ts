@@ -11,7 +11,7 @@ const createVerificationIssue = vi.fn();
 
 vi.mock('@/lib/cabinet/api-auth', () => ({ requireCabinetSession }));
 vi.mock('@/lib/crm/api-auth', () => ({ requireOpsAdminSession }));
-vi.mock('@/lib/accounts', () => ({ resolveAccountIdForUser }));
+vi.mock('@/lib/accounts', () => ({ resolveAccountIdForUser, resolveOwnerAccountIdForUser: resolveAccountIdForUser }));
 vi.mock('@/lib/ops-v17/service', () => ({
   getWorkspace,
   saveOnboardingStep,
