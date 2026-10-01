@@ -191,6 +191,20 @@ jobs:
             src/app/api/dashboard/booking-ops/lifecycle-orchestrator/__tests__/route.test.ts \
             src/lib/reservations/__tests__/visibility-hotfix.test.ts
 
+      - name: First-pilot activation, readiness, and closeout regression
+        run: |
+          npx vitest run \
+            src/app/api/dashboard/ops-v17/__tests__/route.test.ts \
+            src/app/api/dashboard/ops-v17/__tests__/owner-role-adversarial.test.ts \
+            src/lib/ops-v17/__tests__/activation-readiness.test.ts \
+            src/lib/ops-v17/__tests__/bootstrap-tenancy.test.ts \
+            src/app/api/dashboard/ru-commercial-pilot/__tests__/route.test.ts \
+            src/lib/ru-commercial-pilot/__tests__/lifecycle.test.ts \
+            src/lib/booking-ops/__tests__/pre-checkin-control-center.test.ts \
+            src/lib/booking-ops/__tests__/checkin-execution-autopilot.test.ts \
+            src/lib/booking-ops/__tests__/instay-checkout-autopilot.test.ts \
+            --reporter=verbose
+
       - name: Syntax check ops-alert-scheduler.mjs
         run: node --check scripts/ops-alert-scheduler.mjs
 
