@@ -38,6 +38,6 @@ function Readiness({ workspace, onActivate, busy }: { workspace: Workspace | nul
     <div><h3 className="font-semibold">Проверка запуска</h3><ul className="mt-2 space-y-2">{operational?.checks.map((check) => <li key={check.key} className="rounded border p-3"><b>{check.status === 'ready' ? 'Готово' : check.status === 'manual' ? 'Вручную' : 'Нужно исправить'}: {check.label}</b>{check.detail ? <p className="text-sm text-slate-600">{check.detail}</p> : null}</li>)}</ul></div>
     {operational?.blockers.length ? <div><h3 className="font-semibold">Что мешает запуску</h3><ul className="list-disc pl-5">{operational.blockers.map((x) => <li key={x}>{x}</li>)}</ul></div> : null}
     {operational?.manualControls.length ? <div><h3 className="font-semibold">Что остаётся под контролем оператора</h3><ul className="list-disc pl-5">{operational.manualControls.map((x) => <li key={x}>{x}</li>)}</ul></div> : null}
-    {operational?.ready ? <button disabled={busy} onClick={onActivate} className="rounded-lg bg-emerald-700 px-4 py-2 text-white">Активировать пилот</button> : null}
+    {operational?.ready ? <button disabled={busy} onClick={onActivate} className="rounded-lg bg-emerald-700 px-4 py-2 text-white">Подтвердить готовность к запуску</button> : null}
     <details><summary>Подготовленные модули</summary><p>{r?.initializedModules.join(', ') || 'Пока нет'}</p></details></div>;
 }

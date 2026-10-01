@@ -77,6 +77,16 @@ describe('pilot activation operational readiness gate', () => {
     await expect(activatePilot('A', 'owner-A')).rejects.toThrow('launch_blocked');
   });
 
+  it('fails closed when RU connect points at a different persisted object', async () => {
+    state.tables.ops_v17_onboardings[0].data.rentalConnection = {
+      step: 3, manager: 'none_yet', otherManager: '', channels: ['direct'],
+      name: 'Лесная', address: 'Лесная, 1', description: 'Описание', rules: 'Правила',
+      checkIn: '15:00', checkOut: '12:00', wifiName: '', wifiPassword: '',
+      instructions: 'Инструкция', photosLater: true,
+    };
+    await expect(activatePilot('A', 'owner-A')).rejects.toThrow('operational_readiness_unavailable');
+  });
+
   it('fails closed when operational dependency lookup fails', async () => {
     state.errors.properties = 'db unavailable';
     await expect(activatePilot('A', 'owner-A')).rejects.toThrow('operational_readiness_unavailable');

@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { supabase } from '@/lib/supabase';
 import { getPilotReadinessForProperty } from '@/lib/pilot-readiness/repository';
+import { connectionPropertyId } from '@/lib/rental-connect/identity';
 import { communicationPolicyDefaults, computeLaunchReadiness, computeOperationalReadiness, initializeModules, onboardingProgress, reportVerificationIssue } from './core';
 import type { ModuleState, OnboardingData, OnboardingStep } from './types';
 
@@ -45,9 +46,16 @@ export async function getWorkspace(accountId: string) {
   const properties = await supabase.from('properties').select('id').eq('account_id', accountId);
   if (properties.error) throw new Error('operational_readiness_unavailable');
   const ownedPropertyIds = (properties.data ?? []).map((property) => String(property.id));
+  const canonicalFirstPilotPropertyId = onboarding.data.rentalConnection?.step && onboarding.data.rentalConnection.step >= 3
+    ? connectionPropertyId(accountId)
+    : null;
+  if (canonicalFirstPilotPropertyId && !ownedPropertyIds.includes(canonicalFirstPilotPropertyId)) {
+    throw new Error('operational_readiness_unavailable');
+  }
+  const readinessPropertyIds = canonicalFirstPilotPropertyId ? [canonicalFirstPilotPropertyId] : ownedPropertyIds;
   let propertyReadiness;
   try {
-    propertyReadiness = await Promise.all(ownedPropertyIds.map((propertyId) => getPilotReadinessForProperty(propertyId)));
+    propertyReadiness = await Promise.all(readinessPropertyIds.map((propertyId) => getPilotReadinessForProperty(propertyId)));
   } catch {
     throw new Error('operational_readiness_unavailable');
   }
@@ -56,7 +64,7 @@ export async function getWorkspace(accountId: string) {
   const readinessDetails = propertyReadiness.flatMap((item, index) =>
     item?.ready
       ? []
-      : [`${ownedPropertyIds[index]}: ${item?.missingLabelsRu.join(', ') || 'рабочая проверка недоступна'}`]);
+      : [`${readinessPropertyIds[index]}: ${item?.missingLabelsRu.join(', ') || 'рабочая проверка недоступна'}`]);
   const modules = (result.data ?? []).map((m) => ({ key: m.module_key, status: m.status, idempotencyKey: m.idempotency_key, detail: m.detail })) as ModuleState[];
   const readiness = computeLaunchReadiness(onboarding.data, modules, Boolean(onboarding.pilot_activated_at));
   // Automatic sending remains blocked until onboarding is wired to the canonical auto-send scope/runtime status.
