@@ -69,11 +69,13 @@ export default async function OfferPage() {
             <p>
               These Terms govern access to{' '}
               <span className="font-medium text-slate-900">ASI</span>, a SaaS platform
-              for automating short-term rental property management, provided under a subscription model.
+              for coordinating and automating supported short-term rental workflows. Paid plans are offered
+              only where they are explicitly published and accepted by the customer.
             </p>
             <p className="mt-3">
-              The platform automates listing management, booking processing, guest communication,
-              and payment integrations.
+              The platform coordinates booking operations, guest communication, readiness, tasks, and
+              supported integrations. External actions remain manual or operator-controlled where a specific
+              integration has not been enabled and accepted.
             </p>
             <p className="mt-3">
               By registering an account or completing a subscription payment you accept these Terms in
@@ -86,23 +88,14 @@ export default async function OfferPage() {
             <h2 className="text-base font-semibold text-slate-900 mb-3">3. Access</h2>
             {isRuHost ? (
               <ul className="list-disc pl-5 space-y-1.5">
-                <li>
-                  Access is provisioned within{' '}
-                  <span className="font-medium text-slate-900">24 hours</span> of payment confirmation.
-                </li>
-                <li>
-                  A free trial may be granted after registration. Duration and conditions are stated on
-                  the pricing page.
-                </li>
-                <li>
-                  Access is valid for the paid subscription period (monthly, quarterly, or annual,
-                  depending on the selected plan).
-                </li>
+                <li>Account and pilot access are provided under the current onboarding terms shown before activation.</li>
+                <li>Registration or pilot participation does not by itself activate a paid plan or recurring charge.</li>
+                <li>If a paid plan is offered, its price, billing period, and activation terms are shown before you accept it.</li>
               </ul>
             ) : (
               <ul className="list-disc pl-5 space-y-1.5">
                 <li>Account access begins immediately after registration. No payment is taken at this stage.</li>
-                <li>A valid payment method must be attached before integration/setup work begins — attaching it does not charge you.</li>
+                <li>If a particular setup flow requires a payment method, that requirement is shown before collection; attaching a method does not itself activate a paid plan or charge.</li>
                 <li>Setup and integration time is free, for as long as it takes.</li>
                 <li>A 14-day operational trial begins only once your integration is confirmed and accepted — never at registration.</li>
                 <li>Paid service can begin only after the trial ends, and only under a plan you have explicitly accepted.</li>
@@ -114,13 +107,13 @@ export default async function OfferPage() {
           <section>
             <h2 className="text-base font-semibold text-slate-900 mb-3">4. Pricing &amp; Payment</h2>
             <p>
-              Pricing is published on the website and may be updated with at least 7 calendar days&apos;
-              notice to existing subscribers before changes take effect.
+              Pricing and billing terms for any paid plan are shown before activation. Changes to an
+              existing paid plan are communicated under the terms applicable to that plan before they take effect.
             </p>
             <p className="mt-3">
-              Payments are processed by our payment provider (Stripe or applicable local processor).
-              Accepted methods include major credit/debit cards and other methods available through
-              the payment provider.
+              When a paid plan is available, payments are processed by the configured payment provider
+              for the relevant market. Available payment methods are the methods shown by that provider
+              at the time of payment.
             </p>
             <p className="mt-3">
               Payment is considered complete upon confirmation from the payment provider.
@@ -154,16 +147,16 @@ export default async function OfferPage() {
             <h2 className="text-base font-semibold text-slate-900 mb-3">6. Obligations</h2>
             <p className="font-medium text-slate-900">The service provider undertakes to:</p>
             <ul className="mt-2 list-disc pl-5 space-y-1.5">
-              <li>Maintain service availability of at least 99% per month (SLA).</li>
-              <li>Provide technical support within 1 business day via the published contact channel.</li>
-              <li>Notify users of planned maintenance at least 24 hours in advance.</li>
+              <li>Use commercially reasonable efforts to keep the service available. Any formal uptime SLA is agreed and published separately before it becomes part of a paid plan.</li>
+              <li>Provide technical support through the published contact channel; fixed response-time commitments apply only when separately stated in an agreed service plan.</li>
+              <li>When practical, notify users in advance of planned maintenance that is expected to affect service availability.</li>
               <li>Store personal data in accordance with the Privacy Policy.</li>
             </ul>
             <p className="mt-4 font-medium text-slate-900">You undertake to:</p>
             <ul className="mt-2 list-disc pl-5 space-y-1.5">
               <li>Use the service for its intended lawful purpose.</li>
               <li>Not share account access with third parties.</li>
-              <li>Pay subscription fees on time.</li>
+              <li>Pay applicable fees only after selecting a paid plan and confirming its payment terms.</li>
             </ul>
           </section>
 
