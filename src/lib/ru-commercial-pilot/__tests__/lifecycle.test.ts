@@ -128,6 +128,24 @@ describe('P0-01 acceptance scenarios', () => {
     expect(got.ok && got.state?.status).toBe('ready');
   });
 
+  it('3c. rechecks readiness at start and blocks a stale ready state', async () => {
+    const harness = ownedDeps() as ReturnType<typeof ownedDeps> & {
+      setReadiness: (v: boolean) => void;
+    };
+    await beginSetup(harness, 'acct-a', 'prop-a');
+    harness.setReadiness(true);
+    const ready = await deriveReady(harness, 'acct-a', 'prop-a');
+    expect(ready.ok && ready.state.status).toBe('ready');
+
+    harness.setReadiness(false);
+    const started = await startPilot(harness, 'acct-a', 'prop-a');
+    expect(started).toEqual({ ok: false, reason: 'readiness_not_satisfied' });
+
+    const got = await getPilotLifecycle(harness, 'acct-a', 'prop-a');
+    expect(got.ok && got.state?.status).toBe('ready');
+    expect(got.ok && got.state?.timestamps.pilotStartedAt).toBeFalsy();
+  });
+
   it('4. retry does not restart clock', async () => {
     const harness = ownedDeps() as ReturnType<typeof ownedDeps> & {
       setReadiness: (v: boolean) => void;
