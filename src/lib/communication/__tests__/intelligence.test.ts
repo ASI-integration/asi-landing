@@ -6,22 +6,24 @@ import { classifyIssuePriority } from '../triage';
 import { evaluateActionSafety } from '../action';
 import { IntentCategory } from '../types';
 
+vi.mock('@/lib/supabase', () => ({ supabase: { from: () => { throw new Error('Offline canonical store'); } } }));
+
 describe('ReservationMatcher', () => {
-  it('matches exactly by booking reference', async () => {
+  it('does not adopt demo booking reference during a canonical outage', async () => {
     const res = await matchReservation({ bookingReference: 'res_111' });
-    expect(res.status).toBe('matched');
-    expect(res.guestName).toBe('John Doe');
+    expect(res.status).toBe('unmatched');
+    expect(res.guestName).toBeUndefined();
   });
 
-  it('matches exactly by phone', async () => {
+  it('does not adopt demo phone during a canonical outage', async () => {
     const res = await matchReservation({ phone: '+1234567890' });
-    expect(res.status).toBe('matched');
+    expect(res.status).toBe('unmatched');
   });
 
-  it('detects ambiguous names', async () => {
+  it('does not invent demo candidates during a canonical outage', async () => {
     const res = await matchReservation({ guestName: 'Jane Smith' });
-    expect(res.status).toBe('ambiguous');
-    expect(res.candidates?.length).toBe(2);
+    expect(res.status).toBe('unmatched');
+    expect(res.candidates).toBeUndefined();
   });
 
   it('returns unmatched securely', async () => {
