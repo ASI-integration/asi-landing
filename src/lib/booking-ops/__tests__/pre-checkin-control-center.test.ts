@@ -41,7 +41,7 @@ const required: BookingLifecycleGateKey[] = [
   'documents_verified',
   'contract_signed',
   'deposit_received',
-  'mvd_report_prepared',
+  'mvd_report_submitted',
   'cleaning_scheduled',
   'linen_scheduled',
   'inspection_scheduled',

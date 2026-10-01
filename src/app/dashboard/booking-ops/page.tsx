@@ -718,6 +718,7 @@ function BookingOpsPageInner() {
   const [records, setRecords] = useState<BookingOpsRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState('');
+  const [panelLoadIssues, setPanelLoadIssues] = useState<Record<string, string>>({});
   const [isOpsAdmin, setIsOpsAdmin] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [draft, setDraft] = useState<EditDraft | null>(null);
@@ -807,6 +808,18 @@ function BookingOpsPageInner() {
     notes: '',
   });
 
+  const setPanelLoadIssue = useCallback((key: string, issue: string | null) => {
+    setPanelLoadIssues((current) => {
+      if (!issue) {
+        if (!(key in current)) return current;
+        const next = { ...current };
+        delete next[key];
+        return next;
+      }
+      return current[key] === issue ? current : { ...current, [key]: issue };
+    });
+  }, []);
+
   const selectedRecord = useMemo(
     () => records.find((record) => record.id === selectedId) ?? null,
     [records, selectedId],
@@ -860,6 +873,10 @@ function BookingOpsPageInner() {
   }, [load]);
 
   useEffect(() => {
+    setPanelLoadIssues({});
+  }, [selectedId]);
+
+  useEffect(() => {
     if (selectedId || records.length !== 1) return;
     selectRecord(records[0]);
   }, [records, selectedId]);
@@ -908,11 +925,18 @@ function BookingOpsPageInner() {
     void fetch(`/api/dashboard/booking-ops/guest-intake-release?bookingId=${encodeURIComponent(selectedId)}`, { credentials: 'include' })
       .then(async (res) => {
         const payload = await readResponseJson<GuestIntakeReleaseResponse>(res, { ok: false });
-        if (!cancelled) setGuestIntakeRelease(res.ok && payload.ok ? payload.snapshot ?? null : null);
+        if (cancelled) return;
+        if (!res.ok || !payload.ok) {
+          setGuestIntakeRelease(null);
+          setPanelLoadIssue('guest_intake', 'Не удалось загрузить статус данных гостя и допуска к заезду.');
+          return;
+        }
+        setPanelLoadIssue('guest_intake', null);
+        setGuestIntakeRelease(payload.snapshot ?? null);
       })
       .finally(() => { if (!cancelled) setGuestIntakeReleaseLoading(false); });
     return () => { cancelled = true; };
-  }, [selectedId]);
+  }, [selectedId, setPanelLoadIssue]);
 
   useEffect(() => {
     if (!selectedId) {
@@ -924,11 +948,18 @@ function BookingOpsPageInner() {
     void fetch(`/api/dashboard/booking-ops/physical-readiness?bookingId=${encodeURIComponent(selectedId)}`, { credentials: 'include' })
       .then(async (res) => {
         const payload = await readResponseJson<PhysicalReadinessResponse>(res, { ok: false });
-        if (!cancelled) setPhysicalReadiness(res.ok && payload.ok ? payload.readiness ?? null : null);
+        if (cancelled) return;
+        if (!res.ok || !payload.ok) {
+          setPhysicalReadiness(null);
+          setPanelLoadIssue('physical_readiness', 'Не удалось загрузить физическую готовность объекта.');
+          return;
+        }
+        setPanelLoadIssue('physical_readiness', null);
+        setPhysicalReadiness(payload.readiness ?? null);
       })
       .finally(() => { if (!cancelled) setPhysicalReadinessLoading(false); });
     return () => { cancelled = true; };
-  }, [selectedId]);
+  }, [selectedId, setPanelLoadIssue]);
 
   useEffect(() => {
     if (!selectedId) {
@@ -1029,8 +1060,10 @@ function BookingOpsPageInner() {
         if (cancelled) return;
         if (!res.ok || !payload.ok) {
           setLifecycle(null);
+          setPanelLoadIssue('lifecycle', 'Не удалось загрузить жизненный цикл брони.');
           return;
         }
+        setPanelLoadIssue('lifecycle', null);
         setLifecycle(payload.lifecycle ?? null);
       })
       .finally(() => {
@@ -1040,7 +1073,7 @@ function BookingOpsPageInner() {
     return () => {
       cancelled = true;
     };
-  }, [selectedId]);
+  }, [selectedId, setPanelLoadIssue]);
 
   useEffect(() => {
     if (!selectedId) {
@@ -1059,8 +1092,10 @@ function BookingOpsPageInner() {
         if (cancelled) return;
         if (!res.ok || !payload.ok) {
           setLegalPayment(null);
+          setPanelLoadIssue('legal_payment', 'Не удалось загрузить договор, депозит или платёжный статус.');
           return;
         }
+        setPanelLoadIssue('legal_payment', null);
         setLegalPayment(payload.status ?? null);
       })
       .finally(() => {
@@ -1069,13 +1104,20 @@ function BookingOpsPageInner() {
     void fetch(`/api/dashboard/guest-legal/status?bookingId=${encodeURIComponent(selectedId)}`, { credentials: 'include' })
       .then(async (res) => {
         const payload = await readResponseJson<GuestLegalResponse>(res, { ok: false });
-        if (!cancelled) setGuestLegal(res.ok && payload.ok ? payload.status?.readiness ?? null : null);
+        if (cancelled) return;
+        if (!res.ok || !payload.ok) {
+          setGuestLegal(null);
+          setPanelLoadIssue('guest_legal', 'Не удалось загрузить готовность документов, договора, депозита или МВД.');
+          return;
+        }
+        setPanelLoadIssue('guest_legal', null);
+        setGuestLegal(payload.status?.readiness ?? null);
       });
 
     return () => {
       cancelled = true;
     };
-  }, [selectedId]);
+  }, [selectedId, setPanelLoadIssue]);
 
   useEffect(() => {
     if (!selectedId) {
@@ -1093,8 +1135,10 @@ function BookingOpsPageInner() {
         if (cancelled) return;
         if (!res.ok || !payload.ok) {
           setPreCheckin(null);
+          setPanelLoadIssue('pre_checkin', 'Не удалось загрузить итоговую готовность к заезду.');
           return;
         }
+        setPanelLoadIssue('pre_checkin', null);
         setPreCheckin(payload.readiness ?? null);
       })
       .finally(() => {
@@ -1104,7 +1148,7 @@ function BookingOpsPageInner() {
     return () => {
       cancelled = true;
     };
-  }, [selectedId]);
+  }, [selectedId, setPanelLoadIssue]);
 
   useEffect(() => {
     if (!selectedId) {
@@ -1122,8 +1166,10 @@ function BookingOpsPageInner() {
         if (cancelled) return;
         if (!res.ok || !payload.ok) {
           setCheckinExecution(null);
+          setPanelLoadIssue('checkin_execution', 'Не удалось загрузить выполнение заезда и статус доступа.');
           return;
         }
+        setPanelLoadIssue('checkin_execution', null);
         setCheckinExecution(payload.checkin ?? null);
       })
       .finally(() => {
@@ -1133,7 +1179,7 @@ function BookingOpsPageInner() {
     return () => {
       cancelled = true;
     };
-  }, [selectedId]);
+  }, [selectedId, setPanelLoadIssue]);
 
   useEffect(() => {
     if (!selectedId) {
@@ -1873,6 +1919,16 @@ function BookingOpsPageInner() {
       {message ? (
         <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
           {message}
+        </div>
+      ) : null}
+
+      {Object.keys(panelLoadIssues).length > 0 ? (
+        <div role="alert" className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-900">
+          <p className="font-semibold">Часть рабочего состояния не загрузилась</p>
+          <ul className="mt-1 list-disc pl-5">
+            {Object.entries(panelLoadIssues).map(([key, issue]) => <li key={key}>{issue}</li>)}
+          </ul>
+          <p className="mt-2 text-xs">Не считайте пустой блок подтверждением готовности. Обновите страницу или устраните ошибку перед заездом.</p>
         </div>
       ) : null}
 
