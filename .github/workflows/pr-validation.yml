@@ -198,6 +198,8 @@ jobs:
             src/app/api/dashboard/ops-v17/__tests__/owner-role-adversarial.test.ts \
             src/lib/ops-v17/__tests__/activation-readiness.test.ts \
             src/lib/ops-v17/__tests__/bootstrap-tenancy.test.ts \
+            src/lib/ops-v17/__tests__/core.test.ts \
+            src/lib/booking-ops/__tests__/channel-manager-access-import.test.ts \
             src/app/api/dashboard/ru-commercial-pilot/__tests__/route.test.ts \
             src/lib/ru-commercial-pilot/__tests__/lifecycle.test.ts \
             src/lib/booking-ops/__tests__/pre-checkin-control-center.test.ts \
