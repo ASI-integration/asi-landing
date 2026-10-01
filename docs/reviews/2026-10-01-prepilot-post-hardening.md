@@ -12,8 +12,8 @@ That audit is intentionally preserved as historical evidence. Its activation-rea
 Base:
 `35c6b9eccb65f4f93400a3f06951b4ef1ae32159`
 
-Current local candidate at packet creation:
-`ecacff05`
+Current code candidate after the pre-Astra hardening pass:
+`15d66561`
 
 Key commits after the audit:
 - `d82459de` — gate pilot activation on operational readiness
@@ -24,6 +24,7 @@ Key commits after the audit:
 - `f8ea9465` — surface critical pre-check-in load failures
 - `6e0f5b16` — require actual deposit resolution before booking close
 - `ecacff05` — enforce first-pilot safety regression in PR validation
+- `15d66561` — allow explicit operator-assisted/manual booking intake without pretending live channel sync
 
 No push, merge, deploy, production/staging DB action, external send, payment mutation, DNS change, or live-provider write was performed for this packet.
 
@@ -229,7 +230,7 @@ The CRM text intentionally says the final report is operator-generated after pil
 
 Review the full range:
 
-`35c6b9ec..ecacff05`
+`35c6b9ec..15d66561`
 
 Primary question:
 
