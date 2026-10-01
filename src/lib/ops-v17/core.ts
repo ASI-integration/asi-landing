@@ -7,7 +7,11 @@ const required: Record<OnboardingStep, (data: OnboardingData) => string[]> = {
   properties: (d) => d.properties?.length && d.properties.every((p) => p.name && p.address) ? [] : ['Название и адрес каждого объекта'],
   units: (d) => d.units?.length && d.units.every((u) => u.name && u.propertyKey) ? [] : ['Помещения каждого объекта'],
   operations: (d) => [!d.operations?.checkInTime && 'Время заезда', !d.operations?.checkOutTime && 'Время выезда', !d.operations?.cleaningRule && 'Правила уборки'].filter(Boolean) as string[],
-  channel_manager: (d) => d.channelManager?.provider && (d.channelManager.credentialsRef || d.channelManager.snapshotReady) ? [] : ['Подключение менеджера каналов или файл для импорта'],
+  channel_manager: (d) => {
+    const connectedOrSnapshot = Boolean(d.channelManager?.provider && (d.channelManager.credentialsRef || d.channelManager.snapshotReady));
+    const explicitManualPilot = ['manual', 'csv', 'skip'].includes(d.reservations?.choice ?? '') && d.reservations?.directIntakeReady === true;
+    return connectedOrSnapshot || explicitManualPilot ? [] : ['Подключение менеджера каналов, файл для импорта или явный ручной режим пилота'];
+  },
   reservations: (d) => d.reservations?.completed || d.reservations?.choice === 'skip' ? [] : ['Импортируйте существующие брони или явно пропустите этот шаг'],
   communications: (d) => d.communications?.guestChannel && d.communications?.workerChannel ? [] : ['Каналы связи с гостями и сотрудниками'],
   legal_payments: (d) => d.legalPayments?.legalMode && d.legalPayments?.depositMode && d.legalPayments?.mvdMode ? [] : ['Правила документов, депозита и МВД'],

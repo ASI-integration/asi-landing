@@ -26,6 +26,20 @@ describe('OPS v17 zero-touch onboarding', () => {
   it('rejects revoked and expired staff links', () => { expect(taskLinkScopeAllows({ propertyKey: 'p1', taskId: 't1', expiresAt: '2099-01-01', revokedAt: '2026-01-01' }, 'p1', 't1')).toBe(false); expect(taskLinkScopeAllows({ propertyKey: 'p1', taskId: 't1', expiresAt: '2020-01-01' }, 'p1', 't1')).toBe(false); });
   it('applies a channel checkpoint once', () => { const batch = { records: [1], checkpoint: 'c1', idempotencyKey: 'i1' }; expect(acceptAdapterBatch(undefined, batch).applied).toBe(true); expect(acceptAdapterBatch('c1', batch).applied).toBe(false); });
   it('keeps manual snapshot fallback available', () => { const readiness = computeLaunchReadiness(complete, initializeModules('o1', complete)); expect(readiness.channelManagerReady).toBe(true); expect(readiness.connectedIntegrations).toEqual(['manual_import']); });
+  it('allows an explicit operator-assisted booking intake without pretending live channel sync exists', () => {
+    const data: OnboardingData = {
+      ...complete,
+      channelManager: undefined,
+      reservations: { choice: 'manual', completed: true, criticalConflicts: 0, mappingsComplete: true, ledgerInitialized: true, directIntakeReady: true },
+    };
+    const launch = computeLaunchReadiness(data, initializeModules('o1', data));
+    const operational = computeOperationalReadiness(data, launch, readyFacts);
+    expect(launch.blockingItems).not.toContain(expect.stringContaining('менеджера каналов'));
+    expect(launch.channelManagerReady).toBe(false);
+    expect(launch.connectedIntegrations).toEqual([]);
+    expect(operational.ready).toBe(true);
+    expect(operational.manualControls).toEqual(expect.arrayContaining([expect.stringContaining('брони контролируются оператором')]));
+  });
   it('computes authoritative launch readiness', () => { const readiness = computeLaunchReadiness(complete, initializeModules('o1', complete)); expect(readiness.status).toBe('ready_for_pilot'); expect(readiness.blockingItems).toEqual([]); expect(readiness.propertiesReady).toBe(1); });
   it('uses safe automatic communication defaults', () => { expect(communicationPolicyDefaults.automatic).toContain('booking_acknowledgement'); expect(communicationPolicyDefaults.sendingEnabled).toBe(false); });
   it('keeps sensitive communication under review', () => { expect(communicationPolicyDefaults.reviewRequired).toEqual(expect.arrayContaining(['documents', 'deposit', 'mvd', 'access_codes', 'refunds', 'complaints'])); });
