@@ -65,6 +65,17 @@ describe('OPS v17 owner zero-touch boundary', () => {
     expect(activatePilot).toHaveBeenCalledWith('account-owner', 'user-1');
   });
 
+  it('ignores forged account/property identifiers during owner activation', async () => {
+    activatePilot.mockResolvedValue({ activatedAt: '2026-10-01T08:00:00.000Z' });
+    const { POST } = await import('../action/route');
+    const response = await POST(new Request('http://local', {
+      method: 'POST',
+      body: JSON.stringify({ action: 'activate', accountId: 'account-foreign', propertyId: 'property-foreign' }),
+    }));
+    expect(response.status).toBe(200);
+    expect(activatePilot).toHaveBeenCalledWith('account-owner', 'user-1');
+  });
+
   it('keeps bootstrap admin-only and canonical-account scoped', async () => {
     bootstrapPilot.mockResolvedValue({ dryRun: true });
     const { POST } = await import('../action/route');

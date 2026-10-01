@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { onboardingSteps, type AdapterBatch, type LaunchReadiness, type ModuleKey, type ModuleState, type OnboardingData, type OnboardingStep, type VerificationItem } from './types';
+import { onboardingSteps, type AdapterBatch, type LaunchReadiness, type ModuleKey, type ModuleState, type OnboardingData, type OnboardingStep, type OperationalReadiness, type OperationalReadinessCheck, type VerificationItem } from './types';
 
 const required: Record<OnboardingStep, (data: OnboardingData) => string[]> = {
   business: (d) => d.business?.name ? [] : ['Название компании'],
@@ -71,6 +71,80 @@ export function computeLaunchReadiness(data: OnboardingData, modules: ModuleStat
   const staffReady = (data.staff ?? []).filter((s) => s.name && s.role && s.contact && s.propertyKeys?.length).length;
   const status = active ? (blockingItems.length ? 'degraded' : 'pilot_active') : blockingItems.length ? (issues.length ? 'blocked' : progress.percentage < 80 ? 'collecting_data' : 'needs_verification') : 'ready_for_pilot';
   return { status, percentage: Math.round(((progress.percentage * 10) + (initializedModules.length / 14 * 100) + (channelManagerReady ? 100 : 0)) / 12), blockingItems: [...new Set(blockingItems)], warnings, initializedModules, connectedIntegrations: channelManagerReady ? [data.channelManager?.provider ?? 'manual_import'] : [], propertiesReady: readyPropertyKeys.size, propertiesTotal, staffReady, staffTotal, communicationReady: initializedModules.includes('communication_policies'), bookingIntakeReady: initializedModules.includes('booking_intake'), channelManagerReady, nextAction: blockingItems[0] ?? (active ? 'Следить только за исключениями' : 'Активировать пилот может администратор операций') };
+}
+
+export function computeOperationalReadiness(
+  data: OnboardingData,
+  launch: LaunchReadiness,
+  facts: { ownedPropertyCount: number; verifiedPropertyCount: number; operatorReady: boolean; readinessDetails: string[]; automaticSendingReady: boolean },
+): OperationalReadiness {
+  const checks: OperationalReadinessCheck[] = [];
+  const blockers: string[] = [];
+  const manualControls: string[] = [];
+  const add = (check: OperationalReadinessCheck) => {
+    checks.push(check);
+    if (check.status === 'blocked') blockers.push(check.detail ?? check.label);
+    if (check.status === 'manual') manualControls.push(check.detail ?? check.label);
+  };
+
+  add(launch.blockingItems.length
+    ? { key: 'launch_contract', label: 'Базовая настройка', status: 'blocked', detail: launch.blockingItems.join('; ') }
+    : { key: 'launch_contract', label: 'Базовая настройка', status: 'ready' });
+
+  const configuredProperties = data.properties?.length ?? 0;
+  add(facts.ownedPropertyCount > 0 && facts.ownedPropertyCount >= configuredProperties
+    ? { key: 'owned_properties', label: 'Объекты аккаунта', status: 'ready' }
+    : { key: 'owned_properties', label: 'Объекты аккаунта', status: 'blocked', detail: 'Нет подтверждённого объекта этого аккаунта или не все настроенные объекты сохранены' });
+
+  const requiredPropertyCount = Math.max(configuredProperties, 1);
+  add(facts.verifiedPropertyCount >= requiredPropertyCount
+    ? { key: 'property_verification', label: 'Проверка объектов', status: 'ready' }
+    : {
+        key: 'property_verification',
+        label: 'Проверка объектов',
+        status: 'blocked',
+        detail: facts.readinessDetails.length
+          ? `Не завершены проверки: ${facts.readinessDetails.join('; ')}`
+          : 'Каждый запускаемый объект должен пройти рабочую проверку',
+      });
+
+  add(facts.operatorReady
+    ? { key: 'operator_escalation', label: 'Оператор для исключений', status: 'ready' }
+    : { key: 'operator_escalation', label: 'Оператор для исключений', status: 'blocked', detail: 'Рабочий оператор для исключений не подтверждён' });
+
+  const mode = data.communications?.pilotMode;
+  if (mode === 'automatic') {
+    add(data.communications?.scopedPilotSendingEnabled === true && facts.automaticSendingReady
+      ? { key: 'guest_messaging', label: 'Сообщения гостям', status: 'ready' }
+      : {
+          key: 'guest_messaging',
+          label: 'Сообщения гостям',
+          status: 'blocked',
+          detail: data.communications?.scopedPilotSendingEnabled === true
+            ? 'Автоматическая отправка отмечена в настройке, но рабочий runtime ещё не подтверждён'
+            : 'Автоматическая отправка для пилота не включена',
+        });
+  } else if (mode === 'operator_assisted') {
+    add(facts.operatorReady
+      ? { key: 'guest_messaging', label: 'Сообщения гостям', status: 'manual', detail: 'Сообщения гостям отправляет оператор; ASI готовит и маршрутизирует исключения' }
+      : { key: 'guest_messaging', label: 'Сообщения гостям', status: 'blocked', detail: 'Для ручного режима нужен подтверждённый оператор' });
+  } else {
+    add({ key: 'guest_messaging', label: 'Сообщения гостям', status: 'blocked', detail: 'Выберите режим пилота: автоматический или с участием оператора' });
+  }
+
+  if (launch.channelManagerReady) {
+    add({ key: 'booking_source', label: 'Источник броней', status: 'ready' });
+  } else if (['manual', 'csv', 'skip'].includes(data.reservations?.choice ?? '')) {
+    add({ key: 'booking_source', label: 'Источник броней', status: 'manual', detail: 'Новые брони контролируются оператором до подключения менеджера каналов' });
+  } else {
+    add({ key: 'booking_source', label: 'Источник броней', status: 'blocked', detail: 'Нет рабочего источника броней или явного ручного режима' });
+  }
+
+  if (data.legalPayments?.legalMode && data.legalPayments?.depositMode && data.legalPayments?.mvdMode) {
+    add({ key: 'legal_deposit', label: 'Документы и депозит', status: 'manual', detail: 'Документы, депозит и МВД выполняются по выбранным правилам с контролем оператора' });
+  }
+
+  return { ready: blockers.length === 0, blockers: [...new Set(blockers)], manualControls: [...new Set(manualControls)], checks };
 }
 
 export const communicationPolicyDefaults = {

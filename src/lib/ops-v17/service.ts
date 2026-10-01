@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { supabase } from '@/lib/supabase';
-import { communicationPolicyDefaults, computeLaunchReadiness, initializeModules, onboardingProgress, reportVerificationIssue } from './core';
+import { getPilotReadinessForProperty } from '@/lib/pilot-readiness/repository';
+import { communicationPolicyDefaults, computeLaunchReadiness, computeOperationalReadiness, initializeModules, onboardingProgress, reportVerificationIssue } from './core';
 import type { ModuleState, OnboardingData, OnboardingStep } from './types';
 
 export async function loadOnboarding(accountId: string) {
@@ -41,13 +42,38 @@ export async function getWorkspace(accountId: string) {
   if (!onboarding) return null;
   const result = await supabase.from('ops_v17_module_state').select('module_key,status,idempotency_key,detail').eq('onboarding_id', onboarding.id);
   if (result.error) throw new Error(result.error.message);
+  const properties = await supabase.from('properties').select('id').eq('account_id', accountId);
+  if (properties.error) throw new Error('operational_readiness_unavailable');
+  const ownedPropertyIds = (properties.data ?? []).map((property) => String(property.id));
+  let propertyReadiness;
+  try {
+    propertyReadiness = await Promise.all(ownedPropertyIds.map((propertyId) => getPilotReadinessForProperty(propertyId)));
+  } catch {
+    throw new Error('operational_readiness_unavailable');
+  }
+  const verified = propertyReadiness.filter((item) => item?.ready === true);
+  const operatorReady = propertyReadiness.some((item) => item?.checks.some((check) => check.id === 'operator' && check.ok));
+  const readinessDetails = propertyReadiness.flatMap((item, index) =>
+    item?.ready
+      ? []
+      : [`${ownedPropertyIds[index]}: ${item?.missingLabelsRu.join(', ') || 'рабочая проверка недоступна'}`]);
   const modules = (result.data ?? []).map((m) => ({ key: m.module_key, status: m.status, idempotencyKey: m.idempotency_key, detail: m.detail })) as ModuleState[];
-  return { onboarding, progress: onboardingProgress(onboarding.data), modules, readiness: computeLaunchReadiness(onboarding.data, modules, Boolean(onboarding.pilot_activated_at)), communicationDefaults: communicationPolicyDefaults };
+  const readiness = computeLaunchReadiness(onboarding.data, modules, Boolean(onboarding.pilot_activated_at));
+  // Automatic sending remains blocked until onboarding is wired to the canonical auto-send scope/runtime status.
+  const operationalReadiness = computeOperationalReadiness(onboarding.data, readiness, {
+    ownedPropertyCount: ownedPropertyIds.length,
+    verifiedPropertyCount: verified.length,
+    operatorReady,
+    readinessDetails,
+    automaticSendingReady: false,
+  });
+  return { onboarding, progress: onboardingProgress(onboarding.data), modules, readiness, operationalReadiness, communicationDefaults: communicationPolicyDefaults };
 }
 
 export async function createVerificationIssue(input: { accountId: string; actorId: string; itemKey: string; propertyKey: string; notes?: string; blocking?: boolean }) {
   const onboarding = await loadOnboarding(input.accountId);
   if (!onboarding) throw new Error('onboarding_not_found');
+  if (!(onboarding.data.properties ?? []).some((property) => property.key === input.propertyKey)) throw new Error('verification_property_not_found');
   const taskId = randomUUID();
   const task = await supabase.from('ops_v17_maintenance_tasks').insert({ id: taskId, onboarding_id: onboarding.id, property_key: input.propertyKey, verification_key: input.itemKey, status: 'open', notes: input.notes ?? null });
   if (task.error) throw new Error(task.error.message);
@@ -60,12 +86,22 @@ export async function createVerificationIssue(input: { accountId: string; actorI
 export async function activatePilot(accountId: string, actorId: string) {
   const workspace = await getWorkspace(accountId);
   if (!workspace) throw new Error('onboarding_not_found');
-  if (workspace.readiness.status !== 'ready_for_pilot') throw new Error('launch_blocked');
+  if (workspace.onboarding.pilot_activated_at) {
+    return { activatedAt: workspace.onboarding.pilot_activated_at, alreadyActive: true };
+  }
+  if (workspace.readiness.status !== 'ready_for_pilot' || !workspace.operationalReadiness.ready) {
+    throw new Error('launch_blocked');
+  }
   const activatedAt = new Date().toISOString();
-  const result = await supabase.from('ops_v17_onboardings').update({ pilot_activated_at: activatedAt, pilot_activated_by: actorId }).eq('id', workspace.onboarding.id);
+  const result = await supabase.from('ops_v17_onboardings').update({ pilot_activated_at: activatedAt, pilot_activated_by: actorId }).eq('id', workspace.onboarding.id).select('id').maybeSingle();
   if (result.error) throw new Error(result.error.message);
-  await audit(workspace.onboarding.id, 'pilot_activated', actorId, { activatedAt });
-  return { activatedAt };
+  if (!result.data) throw new Error('launch_state_changed');
+  await audit(workspace.onboarding.id, 'pilot_activated', actorId, {
+    activatedAt,
+    manualControls: workspace.operationalReadiness.manualControls,
+    checks: workspace.operationalReadiness.checks,
+  });
+  return { activatedAt, alreadyActive: false, manualControls: workspace.operationalReadiness.manualControls };
 }
 
 export async function bootstrapPilot(input: { accountId: string; actorId: string; confirm: boolean }) {
