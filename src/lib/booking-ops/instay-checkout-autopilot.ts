@@ -558,12 +558,15 @@ export async function validateBookingClosePrerequisites(
   }
   if (
     record.depositRequired !== false
-    && !gateCompleted(lifecycle, 'deposit_return_ready')
-    && execution?.depositReturnStatus !== 'ready'
+    && record.depositIntakeStatus !== 'returned'
     && execution?.depositReturnStatus !== 'returned'
     && execution?.depositReturnStatus !== 'waived'
   ) {
-    missing.push(missingPrerequisite('deposit_return_not_ready', 'deposit', 'Deposit return or resolution is not ready.'));
+    missing.push(missingPrerequisite(
+      'deposit_return_incomplete',
+      'deposit',
+      'Deposit return is only prepared; confirm the actual return or explicit waiver before closing the booking.',
+    ));
   }
 
   const openIssues = issues.filter((issue) => OPEN_ISSUE_STATUSES.has(issue.status));

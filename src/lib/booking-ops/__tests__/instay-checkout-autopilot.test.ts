@@ -384,11 +384,27 @@ describe('In-stay & Checkout Autopilot v1', () => {
     expect(lifecycle.completed.map((item) => item.gateKey)).toContain('deposit_return_ready');
   });
 
+  it('does not close while deposit return is only prepared, not actually returned', async () => {
+    guestCheckedIn = true;
+    guestCheckedOut = true;
+    inspectionDone = true;
+    depositReady = true;
+    const { markBookingClosed } = await import('../instay-checkout-autopilot');
+
+    await expect(markBookingClosed(record.id)).rejects.toMatchObject({
+      missingPrerequisites: expect.arrayContaining([
+        expect.objectContaining({ key: 'deposit_return_incomplete' }),
+      ]),
+    });
+    expect(lifecycle.completed.map((item) => item.gateKey)).not.toContain('booking_closed');
+  });
+
   it('mark booking closed completes booking_closed gate', async () => {
     guestCheckedIn = true;
     guestCheckedOut = true;
     inspectionDone = true;
     depositReady = true;
+    recordOverrides = { depositIntakeStatus: 'returned' };
     const { markBookingClosed } = await import('../instay-checkout-autopilot');
 
     const status = await markBookingClosed(record.id);
@@ -402,6 +418,7 @@ describe('In-stay & Checkout Autopilot v1', () => {
     guestCheckedOut = true;
     inspectionDone = true;
     depositReady = true;
+    recordOverrides = { depositIntakeStatus: 'returned' };
     legalDocumentsStatus = 'requested';
     const { markBookingClosed, BookingClosePrerequisiteError } = await import('../instay-checkout-autopilot');
 
@@ -419,6 +436,7 @@ describe('In-stay & Checkout Autopilot v1', () => {
     guestCheckedOut = true;
     inspectionDone = true;
     depositReady = true;
+    recordOverrides = { depositIntakeStatus: 'returned' };
     legalDepositStatus = 'pending';
     const { markBookingClosed } = await import('../instay-checkout-autopilot');
 
@@ -435,7 +453,7 @@ describe('In-stay & Checkout Autopilot v1', () => {
     guestCheckedOut = true;
     inspectionDone = true;
     depositReady = true;
-    recordOverrides = { guestName: null };
+    recordOverrides = { guestName: null, depositIntakeStatus: 'returned' };
     const { markBookingClosed } = await import('../instay-checkout-autopilot');
 
     await expect(markBookingClosed(record.id)).rejects.toMatchObject({
