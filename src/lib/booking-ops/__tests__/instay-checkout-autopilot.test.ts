@@ -16,6 +16,7 @@ const lifecycle = {
   inProgress: [] as Array<{ bookingId: string; gateKey: string }>,
 };
 
+let issueStoreFails = false;
 let guestCheckedIn = false;
 let guestCheckedOut = false;
 let inspectionDone = false;
@@ -72,7 +73,9 @@ function makeSelect(table: keyof typeof tables) {
     maybeSingle: vi.fn(async () => ({ data: result[0] ?? null, error: null })),
     single: vi.fn(async () => ({ data: result[0] ?? null, error: result[0] ? null : { message: 'not_found' } })),
     then(resolve: (value: unknown) => void) {
-      resolve({ data: result, error: null });
+      resolve(issueStoreFails && table === 'booking_guest_stay_issues'
+        ? { data: null, error: { message: 'injected_issue_store_failure' } }
+        : { data: result, error: null });
     },
   };
   return query;
@@ -234,6 +237,7 @@ describe('In-stay & Checkout Autopilot v1', () => {
     lifecycle.completed = [];
     lifecycle.blocked = [];
     lifecycle.inProgress = [];
+    issueStoreFails = false;
     guestCheckedIn = false;
     guestCheckedOut = false;
     inspectionDone = false;
@@ -473,5 +477,25 @@ describe('In-stay & Checkout Autopilot v1', () => {
 
     expect(result.created).toBe(false);
     expect(lifecycle.blocked).toHaveLength(0);
+  });
+
+  it('does not close or hide incidents when the issue store cannot be read', async () => {
+    guestCheckedIn = true; guestCheckedOut = true; inspectionDone = true;
+    recordOverrides = { depositIntakeStatus: 'returned' };
+    issueStoreFails = true;
+    const { markBookingClosed, getInStayCheckoutStatus } = await import('../instay-checkout-autopilot');
+    await expect(markBookingClosed(record.id)).rejects.toThrow('injected_issue_store_failure');
+    await expect(getInStayCheckoutStatus(record.id)).rejects.toThrow('injected_issue_store_failure');
+    expect(tables.booking_instay_checkout).toHaveLength(0);
+    expect(lifecycle.completed).toHaveLength(0);
+  });
+  it('does not mark closed when the canonical close gate write fails', async () => {
+    guestCheckedIn = true; guestCheckedOut = true; inspectionDone = true;
+    recordOverrides = { depositIntakeStatus: 'returned' };
+    const { completeGate } = await import('../lifecycle');
+    vi.mocked(completeGate).mockResolvedValueOnce({ ok: false, error: 'injected_close_write_failure' });
+    const { markBookingClosed } = await import('../instay-checkout-autopilot');
+    await expect(markBookingClosed(record.id)).rejects.toThrow('injected_close_write_failure');
+    expect(tables.booking_instay_checkout).toHaveLength(0);
   });
 });

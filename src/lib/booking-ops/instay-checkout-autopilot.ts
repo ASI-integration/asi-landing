@@ -243,8 +243,8 @@ async function listIssueRows(bookingId: string): Promise<GuestStayIssueRow[]> {
     .select('*')
     .eq('booking_id', bookingId)
     .order('updated_at', { ascending: false });
-  if (error || !data) return [];
-  return (data as GuestStayIssueDbRow[]).map(mapIssueRow);
+  if (error) throw new Error(error.message || 'guest_stay_issues_unavailable');
+  return ((data ?? []) as GuestStayIssueDbRow[]).map(mapIssueRow);
 }
 
 async function getIssueRow(bookingId: string, issueId: string): Promise<GuestStayIssueRow | null> {
@@ -1029,10 +1029,11 @@ export async function markBookingClosed(
   if (missingPrerequisites.length > 0) {
     throw new BookingClosePrerequisiteError(missingPrerequisites);
   }
-  await completeGate(record.id, 'booking_closed', {
+  const gateResult = await completeGate(record.id, 'booking_closed', {
     source: 'instay_checkout_autopilot_v1',
     ...safeMetadata(metadata),
   });
+  if (!gateResult.ok) throw new Error(gateResult.error ?? 'booking_close_gate_write_failed');
   await upsertExecution(record.id, {
     status: 'closed',
     closure_status: 'closed',
