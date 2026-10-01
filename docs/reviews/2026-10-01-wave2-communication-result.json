@@ -1,0 +1,89 @@
+{
+  "schemaVersion": "asi.agent-os.task-result.v1",
+  "taskId": "wave2-communication-provenance",
+  "status": "PARTIAL",
+  "branch": "astra/wave2-communication-provenance-20261001",
+  "commitSha": "bd8cd7f505f1c5ef44b39ea764803a4f56a088d0",
+  "prUrl": null,
+  "changedFiles": [
+    "src/lib/communication/reservation.ts",
+    "src/lib/communication/knowledge-provenance.ts",
+    "src/lib/communication/knowledge-boundary.ts",
+    "src/lib/communication/orchestrator.ts",
+    "src/lib/communication/__tests__/intelligence.test.ts",
+    "src/lib/communication/__tests__/knowledge-provenance.test.ts",
+    "src/lib/communication/__tests__/knowledge-boundary.test.ts",
+    "src/lib/communication/__tests__/orchestrator.test.ts",
+    "docs/wave2-communication-provenance.md",
+    "docs/reviews/2026-10-01-wave2-communication-result.json"
+  ],
+  "checks": [
+    {
+      "name": "knowledge-provenance-and-boundary",
+      "status": "PASS",
+      "evidence": "79/79: 45 evaluator/resolver and 34 adapter/preparation/delivery-identity tests; local mocks only."
+    },
+    {
+      "name": "actual-orchestrator-wave2",
+      "status": "PASS",
+      "evidence": "9/9 new cases PASS; focused selector excludes 23 pre-existing cases. Eight specified questions require review; verified facts stay operator drafts."
+    },
+    {
+      "name": "communication-regression",
+      "status": "PASS",
+      "evidence": "84/84 existing intelligence, operator review/handoff, guest memory tenancy, auto-send policy/executor checks. Combined with new provenance tests: 163/163 in 9 files."
+    },
+    {
+      "name": "first-pilot-frozen",
+      "status": "PASS",
+      "evidence": "124/124 in 11 files."
+    },
+    {
+      "name": "wave1-location-frozen",
+      "status": "PASS",
+      "evidence": "147/147 in 8 files; includes preserved untracked 44-case remediation verification, not included in this commit."
+    },
+    {
+      "name": "legacy-orchestrator-full",
+      "status": "FAIL",
+      "evidence": "Baseline 5189aca5 independently reproduces 14 failures / 9 passes in 23 cases. Earlier changed candidate also had 14 failures / 9 passes before adding new cases. Full-suite acceptance is not claimed."
+    },
+    {
+      "name": "typecheck",
+      "status": "PASS",
+      "evidence": "npm.cmd run typecheck"
+    },
+    {
+      "name": "touched-eslint",
+      "status": "PASS",
+      "evidence": "8 changed TypeScript source/test files; no output/errors."
+    },
+    {
+      "name": "diff-check",
+      "status": "PASS",
+      "evidence": "Working and staged git diff --check."
+    },
+    {
+      "name": "preflight-exact-scope",
+      "status": "PASS",
+      "evidence": "READY/yellow using canonical builder and exact Wave2 paths; pre-existing unrelated Wave1 artifacts excluded from scope, preserved on disk."
+    }
+  ],
+  "sideEffects": {
+    "production": false,
+    "database": false,
+    "secrets": false,
+    "dns": false,
+    "payments": false,
+    "realMessages": false,
+    "approvedUx": false
+  },
+  "blockers": [
+    "Unclassified/context-only operational requests and legacy LLM/passport/template generation lack complete approved-fact projection enforcement.",
+    "Proactive Booking Ops communication intents and their approval boundary have not been integrated with this provenance contract.",
+    "Non-Telegram authoritative binding and operational/provider/CRM/legal/deposit/cleaning adapters remain unsupported for trusted factual preparation.",
+    "Unbound locked reviews remain hidden by tenant APIs; unidentified-conversation operator operability needs explicit acceptance.",
+    "Legacy orchestrator routing suite remains non-green on the frozen baseline; no full Communication or repository acceptance claimed."
+  ],
+  "ownerDecision": null
+}
