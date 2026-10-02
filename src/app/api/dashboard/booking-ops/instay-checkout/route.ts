@@ -1,5 +1,9 @@
 import { NextResponse } from 'next/server';
 import { requireCrmOperatorSession } from '@/lib/crm/api-auth';
+import { resolveReservationAccess } from '@/lib/reservations/access';
+import { sameIdentity } from '@/lib/platform/decision';
+import { adaptResidentialOpsDecision } from '@/lib/platform/ops-decision';
+import { resolveResidentialBookingIdentity } from '@/lib/platform/residential-booking-scope';
 import {
   BookingClosePrerequisiteError,
   getInStayCheckoutStatus,
@@ -62,11 +66,44 @@ export async function GET(req: Request): Promise<NextResponse> {
   }
 
   try {
+    const access = await resolveReservationAccess(auth.session);
+    const identity = await resolveResidentialBookingIdentity(bookingId, access.accountId);
     const instayCheckout = await getInStayCheckoutStatus(bookingId);
-    return NextResponse.json({ ok: true, instayCheckout });
+    const currentIdentity = await resolveResidentialBookingIdentity(bookingId, access.accountId);
+    if (!sameIdentity(identity, currentIdentity)) {
+      return NextResponse.json({ ok: false, message: 'Состояние бронирования изменилось. Повторите запрос.' }, { status: 409 });
+    }
+
+    const snapshot = {
+      available: true as const,
+      identity,
+      observedAt: instayCheckout.updatedAt,
+    };
+    const now = Date.now();
+    const platformDecisions = {
+      inStay: adaptResidentialOpsDecision(identity, 'in_stay', {
+        ...snapshot, value: { kind: 'in_stay' as const, checkout: instayCheckout },
+      }, now),
+      checkout: adaptResidentialOpsDecision(identity, 'checkout', {
+        ...snapshot, value: { kind: 'checkout' as const, checkout: instayCheckout },
+      }, now),
+      deposit: adaptResidentialOpsDecision(identity, 'deposit', {
+        ...snapshot, value: { kind: 'deposit' as const, checkout: instayCheckout },
+      }, now),
+    };
+    return NextResponse.json({ ok: true, instayCheckout, platformDecisions });
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Не удалось загрузить проживание.';
-    return NextResponse.json({ ok: false, message }, { status: statusForError(message) });
+    const code = error instanceof Error ? error.message : '';
+    if (code === 'booking_not_found') {
+      return NextResponse.json({ ok: false, message: 'Бронирование не найдено.' }, { status: 404 });
+    }
+    if (code === 'booking_scope_mismatch' || code === 'reservation_account_not_found') {
+      return NextResponse.json({ ok: false, message: 'Нет доступа к бронированию.' }, { status: 403 });
+    }
+    if (code === 'booking_scope_unavailable') {
+      return NextResponse.json({ ok: false, message: 'Не удалось подтвердить область бронирования.' }, { status: 409 });
+    }
+    return NextResponse.json({ ok: false, message: 'Не удалось загрузить проживание.' }, { status: statusForError(code) });
   }
 }
 
