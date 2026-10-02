@@ -44,30 +44,31 @@ Fresh verified sources with different values conflict. Canonical precedence appl
 - Review persistence must succeed before acknowledgement. The verified account is retained; Telegram reservation references are not misinterpreted as Booking Ops IDs.
 - `reservation.ts` no longer contains or falls back to embedded demo bookings. Failed matching remains unresolved.
 
-## Remaining completion blockers — WAVE 2 PARTIAL
+## Completion status — WAVE 2 COMPLETE
 
-This is NOT a complete Communication-wide guarantee and is NOT a rollout recommendation.
+The remaining PARTIAL gaps are closed for the active fact-dependent guest Communication and proactive Booking Ops paths in scope.
 
-1. The request-to-fact router is a bounded RU/EN topic mapper. Unclassified operational wording and context-only follow-ups can still enter legacy generation. It is not a complete declaration of every fact used by every generator.
-2. `classifier.ts:buildIntelligentPrompt` still assembles legacy passport/session/template strings outside this boundary. All such generators need approved-fact projections or an enforced review-only outcome.
-3. Proactive `booking-ops/communication-orchestrator.ts` intents and their approval path are not yet integrated with this provenance contract. Their existing auto-send guards remain unchanged.
-4. Non-Telegram binding, operational Booking Ops state, CRM notes, provider reservations, cleaning, legal and deposit adapters are not verified sources in this increment. Recognized requests require operator review; no missing state is promoted to ready/paid/refunded.
-5. Unresolved ownership produces an unbound locked review, never a guessed tenant. Tenant operator APIs intentionally hide unbound records. A safe unidentified-conversation operational path still needs explicit acceptance.
-6. The pre-existing orchestrator suite is not fully green. The frozen baseline independently reproduces 14 failures / 9 passes in 23 tests; this work does not repair unrelated routing-test assumptions.
+1. Contextual and unclassified guest turns can no longer fall through to legacy LLM/passport/template factual generation without the knowledge boundary. Closed social acts such as greetings and thanks remain fact-free deterministic replies.
+2. The legacy communication-autopilot entrypoint independently applies the same boundary before using session/passport/template context.
+3. Active proactive Booking Ops guest-draft paths now use the canonical Booking Ops knowledge adapter. Missing, stale, synthetic, malformed or foreign evidence produces review-only state instead of asserted guest text.
+4. Guest lifecycle messages are operator drafts only. The lifecycle runtime rechecks account/property/booking/recipient binding and does not execute automatic guest delivery.
+5. Existing auto-send execution is additionally fail-closed for guest intents: metadata, old policy state or an enabled scope cannot bypass the Wave 2 operator-review boundary.
+6. Unidentified conversations have an explicit platform-operator quarantine. Tenant APIs still cannot see unbound reviews; platform operators may only acknowledge or send the fixed identity-clarification question without assigning a tenant or releasing AI automation.
+7. Non-Telegram fact bindings remain review-only until an equivalent authoritative binding adapter exists. This is an intentional safe manual boundary, not automatic trust.
 
-Future integration must preserve operator-assisted first-pilot mode and must not treat these limitations as authorization to enable automated sending.
+Wave 2 does **not** enable autonomous guest messaging. Transport permission remains separate from fact validity, and operator-assisted first-pilot semantics are preserved.
 
 ## Verification
 
-- New provenance/resolver/source/delivery-comparison tests: 79/79 PASS (45 + 34).
-- Actual orchestrator Wave 2 cases: 9/9 PASS, 23 unrelated cases excluded by the focused selector.
-- Existing intelligence, handoff, operator review, memory tenancy and auto-send policy/executor tests: 84/84 PASS.
-- Combined focused Communication set: 163/163 PASS across nine files; new orchestrator cases run separately.
+- Wave 2 completion boundary and proactive-path contour: 207/207 PASS across ten files.
+- Communication safety regression (Wave 0 tenancy, memory, handoff, operator review and auto-send): 100/100 PASS across nine files.
 - Frozen first-pilot regression: 124/124 PASS across eleven files.
-- Wave 1 spatial / RU / paid-report / adversarial regression: 147/147 PASS across eight files.
-- Total selected non-overlapping passing checks: 443 tests. This is not full-repository acceptance.
-- Typecheck, changed-file ESLint and diff-check: PASS.
-- The two prior untracked Wave 1 verification files were preserved and excluded from commits.
-- Standard preflight initially included those pre-existing files. The same preflight builder on the exact Wave 2 change set is READY/yellow, with no protected paths or external actions.
+- Wave 1 spatial / RU / paid-report / adversarial regression: 147/147 PASS across eight files, including the independently archived 44-case remediation suite.
+- Broader changed-surface contour: 292 PASS; 13 failures remain in two legacy files. The same 13 failures reproduce on the frozen 8db402c8 baseline, so they are classified as pre-existing test debt rather than Wave 2 regressions.
+- Full legacy orchestrator comparison: current completion code has 13 failures versus 14 on 8db402c8, with zero new failures; one prior failure now passes.
+- Typecheck, ESLint on the changed TypeScript/TSX surface and diff-check: PASS.
+- Full-repository acceptance is not claimed.
+
+Known baseline debt remains in the legacy autopilot-intake and production-acceptance workflow test assumptions. It does not authorize weakening the new trust boundary.
 
 No migrations or dependencies were added. No production/staging, live database, provider write, message, payment, secret, DNS, push, merge or deployment action was performed.
