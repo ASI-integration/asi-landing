@@ -1,0 +1,29 @@
+{
+  "task": {
+    "id": "wave3-residential-decision-core",
+    "title": "RU residential PlatformDecision v0",
+    "objective": "Finish the existing RU residential PlatformDecision v0; make Ops actions stage-aware, fail closed on contradictory snapshots, and create one local checkpoint after the authorized regressions pass.",
+    "acceptanceCriteria": [
+      "Strict contract, thin Communication/Ops/Residential Location and incident adapters.",
+      "Adversarial identity/freshness/privacy/permission tests and requested frozen regressions pass.",
+      "Automatic guest sending remains forbidden; no external side effects."
+    ],
+    "inScope": [
+      "src/lib/platform/",
+      "src/lib/booking-ops/__tests__/checkin-execution-autopilot.test.ts",
+      "src/lib/booking-ops/__tests__/instay-checkout-autopilot.test.ts",
+      "docs/wave3-residential-decision-core.md",
+      "docs/reviews/2026-10-02-wave3-*"
+    ],
+    "outOfScope": [
+      "Commercial and international expansion",
+      "Execution, database mutations, providers, messages, payments, migration, push, merge, deploy"
+    ]
+  },
+  "classification": "yellow",
+  "redActions": [],
+  "focusedTests": [
+    "src/lib/platform/__tests__/decision.test.ts",
+    "src/lib/platform/__tests__/adapters.test.ts"
+  ]
+}

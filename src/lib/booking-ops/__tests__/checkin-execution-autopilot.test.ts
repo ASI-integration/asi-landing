@@ -197,6 +197,52 @@ describe('Check-in Execution Autopilot v1', () => {
     updateBookingOpsRecord.mockClear();
   });
 
+  it.each(['unprepared', 'prepared', 'checked_in', 'access_issue', 'cleaning'] as const)(
+    'Wave 3 adapts the actual check-in snapshot: %s', async state => {
+    vi.useFakeTimers();
+    const observedAt = '2026-06-30T10:00:00.000Z';
+    vi.setSystemTime(new Date(observedAt));
+    try {
+      const { markAccessReady, prepareCheckinInstructions, getCheckinExecutionStatus } = await import('../checkin-execution-autopilot');
+      const { adaptResidentialOpsDecision } = await import('../../platform/ops-decision');
+      const { isPlatformDecision } = await import('../../platform/decision');
+      const { shouldBlockCheckinInstructions } = await import('../guest-legal-deposit-mvd-execution');
+      const legalGuard: Awaited<ReturnType<typeof shouldBlockCheckinInstructions>> = { block: false, reason: null, readiness: {
+        id: 'legal-1', bookingId: record.id, propertySetupId: null, propertyId: record.propertyId,
+        status: 'ready_for_checkin', documentsStatus: 'verified', contractStatus: 'signed_manual',
+        depositStatus: 'paid_manual', mvdStatus: 'accepted_manual', availabilityStatus: 'no_conflict',
+        blockers: [], warnings: [], safeSummary: null, nextAction: null, lastCheckedAt: observedAt,
+        metadata: {}, createdAt: observedAt, updatedAt: observedAt,
+      } };
+      await markAccessReady(record.id);
+      if (state === 'prepared') await prepareCheckinInstructions(record.id);
+      if (state === 'checked_in') guestCheckedIn = true;
+      if (state === 'access_issue') {
+        guestCheckedIn = true;
+        tables.booking_checkin_execution[0].access_status = 'issue';
+      }
+      if (state === 'cleaning') {
+        preCheckinStatus = 'blocked';
+        preCheckinBlockers = [{ key: 'physical:cleaning_not_verified', title: 'Cleaning', reason: 'DO_NOT_LEAK', fallbackEligible: true }];
+      }
+      const snapshot = await getCheckinExecutionStatus(record.id);
+      const before = JSON.stringify(tables);
+      const identity = { kind: 'identified' as const, accountId: 'account-1', propertyId: record.propertyId, bookingId: record.id };
+      const decision = adaptResidentialOpsDecision(identity, 'checkin', {
+        available: true, identity, observedAt, value: { kind: 'checkin', checkin: snapshot, legalGuard },
+      }, Date.now());
+      expect(isPlatformDecision(decision)).toBe(true);
+      expect(decision.status).toBe(state === 'cleaning' || state === 'access_issue' ? 'blocked'
+        : state === 'unprepared' ? 'review_required' : 'allowed');
+      expect(decision.permission.allowedActions.includes('release_access')).toBe(state === 'prepared');
+      expect(decision.permission.allowedActions.includes('release_instructions')).toBe(state === 'prepared');
+      if (state === 'checked_in') expect(decision.permission.allowedActions).toEqual([]);
+      expect(decision.permission.automaticActionAllowed).toBe(false);
+      expect(JSON.stringify(decision)).not.toContain('DO_NOT_LEAK');
+      expect(JSON.stringify(tables)).toBe(before);
+    } finally { vi.useRealTimers(); }
+  });
+
   it('returns not_ready when pre-checkin has blockers', async () => {
     preCheckinStatus = 'needs_attention';
     preCheckinBlockers = [{ key: 'documents', title: 'Документы', reason: 'Нет документов', fallbackEligible: false }];

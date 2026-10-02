@@ -1,0 +1,326 @@
+{
+  "baseline": "484d0784158444a5f6f7cc0c36c925f77fe2de1b",
+  "branch": "astra/wave3-residential-decision-core-20261002",
+  "verdict": "PASS",
+  "uniqueFiles": 42,
+  "uniqueTests": 700,
+  "groups": [
+    {
+      "name": "focused",
+      "tests": 162,
+      "passed": 162,
+      "failed": 0,
+      "files": [
+        {
+          "path": "src/lib/booking-ops/__tests__/checkin-execution-autopilot.test.ts",
+          "tests": 19,
+          "status": "passed"
+        },
+        {
+          "path": "src/lib/booking-ops/__tests__/instay-checkout-autopilot.test.ts",
+          "tests": 27,
+          "status": "passed"
+        },
+        {
+          "path": "src/lib/platform/__tests__/adapters.test.ts",
+          "tests": 86,
+          "status": "passed"
+        },
+        {
+          "path": "src/lib/platform/__tests__/decision.test.ts",
+          "tests": 30,
+          "status": "passed"
+        }
+      ],
+      "skipped": 0,
+      "command": "node_modules/.bin/vitest.cmd run src/lib/booking-ops/__tests__/checkin-execution-autopilot.test.ts src/lib/booking-ops/__tests__/instay-checkout-autopilot.test.ts src/lib/platform/__tests__/adapters.test.ts src/lib/platform/__tests__/decision.test.ts --reporter=dot",
+      "evidence": "Remote Desktop Commander PID 2524, exit 0; 4 files / 162 passed."
+    },
+    {
+      "name": "pilot",
+      "tests": 135,
+      "passed": 135,
+      "failed": 0,
+      "files": [
+        {
+          "path": "src/lib/ops-v17/__tests__/activation-readiness.test.ts",
+          "tests": 8,
+          "status": "passed"
+        },
+        {
+          "path": "src/lib/ops-v17/__tests__/bootstrap-tenancy.test.ts",
+          "tests": 3,
+          "status": "passed"
+        },
+        {
+          "path": "src/lib/ops-v17/__tests__/core.test.ts",
+          "tests": 21,
+          "status": "passed"
+        },
+        {
+          "path": "src/lib/ru-commercial-pilot/__tests__/lifecycle.test.ts",
+          "tests": 21,
+          "status": "passed"
+        },
+        {
+          "path": "src/app/api/dashboard/ops-v17/__tests__/owner-role-adversarial.test.ts",
+          "tests": 4,
+          "status": "passed"
+        },
+        {
+          "path": "src/app/api/dashboard/property-setup/__tests__/owner-setup-routes.test.ts",
+          "tests": 5,
+          "status": "passed"
+        },
+        {
+          "path": "src/app/api/dashboard/ru-commercial-pilot/__tests__/route.test.ts",
+          "tests": 5,
+          "status": "passed"
+        },
+        {
+          "path": "src/lib/booking-ops/__tests__/channel-manager-access-import.test.ts",
+          "tests": 13,
+          "status": "passed"
+        },
+        {
+          "path": "src/lib/booking-ops/__tests__/checkin-execution-autopilot.test.ts",
+          "tests": 19,
+          "status": "passed"
+        },
+        {
+          "path": "src/lib/booking-ops/__tests__/instay-checkout-autopilot.test.ts",
+          "tests": 27,
+          "status": "passed"
+        },
+        {
+          "path": "src/lib/booking-ops/__tests__/pre-checkin-control-center.test.ts",
+          "tests": 9,
+          "status": "passed"
+        }
+      ],
+      "skipped": 0,
+      "command": "node node_modules/vitest/vitest.mjs run src/lib/booking-ops/__tests__/channel-manager-access-import.test.ts src/lib/booking-ops/__tests__/checkin-execution-autopilot.test.ts src/lib/booking-ops/__tests__/instay-checkout-autopilot.test.ts src/lib/booking-ops/__tests__/pre-checkin-control-center.test.ts src/lib/ops-v17/__tests__/activation-readiness.test.ts src/lib/ops-v17/__tests__/bootstrap-tenancy.test.ts src/lib/ops-v17/__tests__/core.test.ts src/lib/ru-commercial-pilot/__tests__/lifecycle.test.ts src/app/api/dashboard/ops-v17/__tests__/owner-role-adversarial.test.ts src/app/api/dashboard/property-setup/__tests__/owner-setup-routes.test.ts src/app/api/dashboard/ru-commercial-pilot/__tests__/route.test.ts --maxWorkers=2 --reporter=json --outputFile=node_modules/.cache/wave3-stage-20261002/pilot.json"
+    },
+    {
+      "name": "location",
+      "tests": 110,
+      "passed": 110,
+      "failed": 0,
+      "files": [
+        {
+          "path": "src/lib/location/__tests__/geocode-city-sanity.test.ts",
+          "tests": 26,
+          "status": "passed"
+        },
+        {
+          "path": "src/lib/location/__tests__/paid-report-map-independence.test.tsx",
+          "tests": 10,
+          "status": "passed"
+        },
+        {
+          "path": "src/lib/location/__tests__/ru-address-search-profile.test.ts",
+          "tests": 13,
+          "status": "passed"
+        },
+        {
+          "path": "src/lib/location/__tests__/ru-residential-golden-matrix.test.ts",
+          "tests": 16,
+          "status": "passed"
+        },
+        {
+          "path": "src/lib/location/__tests__/spatial-validation-integration.test.ts",
+          "tests": 7,
+          "status": "passed"
+        },
+        {
+          "path": "src/lib/location/__tests__/spatial-validation.test.ts",
+          "tests": 23,
+          "status": "passed"
+        },
+        {
+          "path": "src/lib/location/__tests__/wave1-independent-adversarial.test.ts",
+          "tests": 15,
+          "status": "passed"
+        }
+      ],
+      "skipped": 0,
+      "command": "node node_modules/vitest/vitest.mjs run src/lib/location/__tests__/geocode-city-sanity.test.ts src/lib/location/__tests__/paid-report-map-independence.test.tsx src/lib/location/__tests__/ru-address-search-profile.test.ts src/lib/location/__tests__/ru-residential-golden-matrix.test.ts src/lib/location/__tests__/spatial-validation-integration.test.ts src/lib/location/__tests__/spatial-validation.test.ts src/lib/location/__tests__/wave1-independent-adversarial.test.ts --maxWorkers=2 --reporter=json --outputFile=node_modules/.cache/wave3-stage-20261002/location.json"
+    },
+    {
+      "name": "wave2",
+      "tests": 240,
+      "passed": 240,
+      "failed": 0,
+      "files": [
+        {
+          "path": "src/lib/booking-ops/__tests__/communication-auto-send-executor.test.ts",
+          "tests": 17,
+          "status": "passed"
+        },
+        {
+          "path": "src/lib/booking-ops/__tests__/communication-orchestrator.test.ts",
+          "tests": 11,
+          "status": "passed"
+        },
+        {
+          "path": "src/lib/booking-ops/__tests__/legal-payment-autopilot.test.ts",
+          "tests": 8,
+          "status": "passed"
+        },
+        {
+          "path": "src/lib/booking-ops/__tests__/lifecycle-autopilot.test.ts",
+          "tests": 20,
+          "status": "passed"
+        },
+        {
+          "path": "src/lib/communication/__tests__/guest-lifecycle-communications-v1.test.ts",
+          "tests": 24,
+          "status": "passed"
+        },
+        {
+          "path": "src/lib/communication/__tests__/knowledge-boundary.test.ts",
+          "tests": 34,
+          "status": "passed"
+        },
+        {
+          "path": "src/lib/communication/__tests__/knowledge-provenance.test.ts",
+          "tests": 45,
+          "status": "passed"
+        },
+        {
+          "path": "src/lib/communication/__tests__/unidentified-review.test.ts",
+          "tests": 17,
+          "status": "passed"
+        },
+        {
+          "path": "src/lib/communication/__tests__/wave2-completion.test.ts",
+          "tests": 29,
+          "status": "passed"
+        },
+        {
+          "path": "src/lib/communication/__tests__/wave2-final-adversarial.test.ts",
+          "tests": 20,
+          "status": "passed"
+        },
+        {
+          "path": "src/lib/communication/__tests__/wave2-lifecycle-boundary.test.ts",
+          "tests": 15,
+          "status": "passed"
+        }
+      ],
+      "skipped": 0,
+      "command": "node node_modules/vitest/vitest.mjs run src/lib/booking-ops/__tests__/communication-auto-send-executor.test.ts src/lib/booking-ops/__tests__/communication-orchestrator.test.ts src/lib/booking-ops/__tests__/legal-payment-autopilot.test.ts src/lib/booking-ops/__tests__/lifecycle-autopilot.test.ts src/lib/communication/__tests__/guest-lifecycle-communications-v1.test.ts src/lib/communication/__tests__/knowledge-boundary.test.ts src/lib/communication/__tests__/knowledge-provenance.test.ts src/lib/communication/__tests__/unidentified-review.test.ts src/lib/communication/__tests__/wave2-completion.test.ts src/lib/communication/__tests__/wave2-final-adversarial.test.ts src/lib/communication/__tests__/wave2-lifecycle-boundary.test.ts --maxWorkers=2 --reporter=json --outputFile=node_modules/.cache/wave3-stage-20261002/wave2.json"
+    },
+    {
+      "name": "safety",
+      "tests": 87,
+      "passed": 87,
+      "failed": 0,
+      "files": [
+        {
+          "path": "src/app/api/__tests__/wave0-security.test.ts",
+          "tests": 10,
+          "status": "passed"
+        },
+        {
+          "path": "src/lib/booking-ops/__tests__/communication-auto-send-policy.test.ts",
+          "tests": 15,
+          "status": "passed"
+        },
+        {
+          "path": "src/lib/communication/__tests__/guest-long-term-memory-v1.test.ts",
+          "tests": 19,
+          "status": "passed"
+        },
+        {
+          "path": "src/lib/communication/__tests__/handoff-lock.test.ts",
+          "tests": 10,
+          "status": "passed"
+        },
+        {
+          "path": "src/lib/communication/__tests__/operator-handoff-decision.test.ts",
+          "tests": 3,
+          "status": "passed"
+        },
+        {
+          "path": "src/lib/communication/__tests__/operator-review.test.ts",
+          "tests": 6,
+          "status": "passed"
+        },
+        {
+          "path": "src/lib/communication/__tests__/telegram-guest-memory-foundation.test.ts",
+          "tests": 5,
+          "status": "passed"
+        },
+        {
+          "path": "src/lib/communication/__tests__/wave0-adversarial.test.ts",
+          "tests": 12,
+          "status": "passed"
+        },
+        {
+          "path": "src/lib/communication/__tests__/wave0-memory-ownership.test.ts",
+          "tests": 7,
+          "status": "passed"
+        }
+      ],
+      "skipped": 0,
+      "command": "node node_modules/vitest/vitest.mjs run src/app/api/__tests__/wave0-security.test.ts src/lib/booking-ops/__tests__/communication-auto-send-policy.test.ts src/lib/communication/__tests__/guest-long-term-memory-v1.test.ts src/lib/communication/__tests__/handoff-lock.test.ts src/lib/communication/__tests__/operator-handoff-decision.test.ts src/lib/communication/__tests__/operator-review.test.ts src/lib/communication/__tests__/telegram-guest-memory-foundation.test.ts src/lib/communication/__tests__/wave0-adversarial.test.ts src/lib/communication/__tests__/wave0-memory-ownership.test.ts --maxWorkers=2 --reporter=json --outputFile=node_modules/.cache/wave3-stage-20261002/safety.json"
+    },
+    {
+      "name": "additional-frozen",
+      "tests": 12,
+      "passed": 12,
+      "failed": 0,
+      "files": [
+        {
+          "path": "src/lib/location/__tests__/spatial-foundation.test.ts",
+          "tests": 6,
+          "status": "passed"
+        },
+        {
+          "path": "src/app/api/dashboard/ops-v17/__tests__/route.test.ts",
+          "tests": 6,
+          "status": "passed"
+        }
+      ],
+      "skipped": 0,
+      "command": "node node_modules/vitest/vitest.mjs run src/lib/location/__tests__/spatial-foundation.test.ts src/app/api/dashboard/ops-v17/__tests__/route.test.ts --maxWorkers=2 --reporter=json --outputFile=node_modules/.cache/wave3-stage-20261002/additional-frozen.json"
+    }
+  ],
+  "independentWave2Source": "b82f1583:src/lib/communication/__tests__/wave2-final-adversarial.test.ts",
+  "checks": {
+    "typecheck": "PASS: npm.cmd run typecheck; PID 2912 exit 0",
+    "touchedEslint": "PASS: 9 TypeScript files; PID 14452 exit 0, no diagnostics",
+    "diffCheck": "PASS: git diff --cached --check",
+    "exactDiffReview": "PASS: explicit 12 task files only"
+  },
+  "externalActions": false,
+  "testExecutions": 746,
+  "completedAt": "2026-10-02T21:00:57.038Z",
+  "worktree": "C:\\Users\\Admin\\Documents\\GitHub\\asi-landing-wave3-residential-decision-core",
+  "device": "DESKTOP-I29K350",
+  "scope": "local advisory v0 checkpoint only",
+  "beforeFix": {
+    "adapterTests": 86,
+    "failed": 28,
+    "passed": 58,
+    "evidence": "PID 6728 exit 1 before Ops permission patch"
+  },
+  "changedFiles": [
+    "docs/reviews/2026-10-02-wave3-task-input.json",
+    "docs/reviews/2026-10-02-wave3-verification.json",
+    "docs/wave3-residential-decision-core.md",
+    "src/lib/booking-ops/__tests__/checkin-execution-autopilot.test.ts",
+    "src/lib/booking-ops/__tests__/instay-checkout-autopilot.test.ts",
+    "src/lib/platform/__tests__/adapters.test.ts",
+    "src/lib/platform/__tests__/decision.test.ts",
+    "src/lib/platform/communication-decision.ts",
+    "src/lib/platform/decision.ts",
+    "src/lib/platform/location-decision.ts",
+    "src/lib/platform/ops-decision.ts",
+    "src/lib/platform/snapshot.ts"
+  ],
+  "frozenWave2Blob": "5c831a40f744efb3737d4210f77545f2df158612",
+  "frozenWave2Temporary": true,
+  "remainingGaps": []
+}

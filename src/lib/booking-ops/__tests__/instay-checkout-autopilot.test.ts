@@ -260,6 +260,46 @@ describe('In-stay & Checkout Autopilot v1', () => {
     syncBookingOpsTasksForRecordId.mockClear();
   });
 
+  it.each(['prepared', 'returned', 'waived', 'incident', 'closed', 'closed_incident', 'closed_deposit'] as const)(
+    'Wave 3 preserves actual close guard: %s', async state => {
+    guestCheckedIn = true; guestCheckedOut = true; inspectionDone = true; depositReady = true;
+    const service = await import('../instay-checkout-autopilot');
+    const { getBookingOpsRecord } = await import('../repository');
+    const { adaptResidentialOpsDecision } = await import('../../platform/ops-decision');
+    const { isPlatformDecision } = await import('../../platform/decision');
+    await service.markDepositReturnReady(record.id);
+    if (state === 'returned' || state === 'incident') recordOverrides = { depositIntakeStatus: 'returned' };
+    if (state === 'waived') tables.booking_instay_checkout[0].deposit_return_status = 'waived';
+    if (state === 'closed' || state === 'closed_incident') {
+      recordOverrides = { depositIntakeStatus: 'returned' };
+      tables.booking_instay_checkout[0].deposit_return_status = 'returned';
+    }
+    if (state === 'incident' || state === 'closed_incident') await service.createGuestStayIssue(record.id, 'noise', 'medium', 'DO_NOT_LEAK');
+    if (state.startsWith('closed')) bookingClosed = true;
+    const checkout = await service.getInStayCheckoutStatus(record.id);
+    const canonicalRecord = await getBookingOpsRecord(record.id);
+    const prerequisites = await service.validateBookingClosePrerequisites(canonicalRecord!);
+    const before = JSON.stringify(tables);
+    const identity = { kind: 'identified' as const, accountId: 'account-1', propertyId: record.propertyId, bookingId: record.id };
+    const now = Date.now();
+    const decision = adaptResidentialOpsDecision(identity, 'closeout', {
+      available: true, identity, observedAt: new Date(now).toISOString(), value: { kind: 'closeout', checkout, prerequisites },
+    }, now);
+    expect(isPlatformDecision(decision)).toBe(true);
+    expect(decision.status).toBe(['returned', 'waived', 'closed'].includes(state) ? 'allowed' : 'blocked');
+    expect(decision.permission.allowedActions.includes('close_booking')).toBe(state === 'returned' || state === 'waived');
+    if (state === 'prepared') expect(decision.blockers).toContain('deposit_unresolved');
+    if (state === 'incident' || state === 'closed_incident') expect(decision.blockers).toContain('open_incident');
+    if (state === 'closed_deposit') expect(decision.blockers).toContain('deposit_unresolved');
+    if (state.startsWith('closed')) {
+      expect(decision.permission.forbiddenActions).toContain('confirm_checkout');
+      expect(decision.permission.forbiddenActions).toContain('record_deposit_resolved');
+      if (state === 'closed') expect(decision.permission.allowedActions).toEqual([]);
+    }
+    expect(JSON.stringify(decision)).not.toContain('DO_NOT_LEAK');
+    expect(JSON.stringify(tables)).toBe(before);
+  });
+
   it('returns not_checked_in when guest has not checked in', async () => {
     const { getInStayCheckoutStatus } = await import('../instay-checkout-autopilot');
 
