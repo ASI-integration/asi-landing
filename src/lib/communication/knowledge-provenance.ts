@@ -87,7 +87,10 @@ export function evaluateCommunicationFacts(input: {
       return { key, use: 'operator_review', reason: 'sensitive' };
     }
     // Volatile runtime state needs a dedicated authoritative adapter, not a generic row.
-    if (!propertyKeys.has(key)) return { key, use: 'operator_review', reason: 'untrusted' };
+    const runtimeFact = ['booking_status', 'checkin_at', 'checkout_at'].includes(key)
+      && fresh.every((fact) => fact.origin === 'canonical' && fact.source === 'booking_ops_records'
+        && fact.reference === input.scope.bookingId);
+    if (!propertyKeys.has(key) && !runtimeFact) return { key, use: 'operator_review', reason: 'untrusted' };
     const chosen = fresh.find((fact) => fact.origin === 'canonical') ?? fresh[0];
     return { key, use: 'automatic', reason: 'verified', fact: { ...chosen, scope: { ...chosen.scope } } };
   });

@@ -1,3 +1,4 @@
+import { guardBookingCommunicationDraft } from '@/lib/communication/booking-knowledge-boundary';
 import { randomUUID } from 'node:crypto';
 import { supabase } from '@/lib/supabase';
 import { buildAutoSendDecisionMetadata } from './communication-auto-send-policy';
@@ -572,6 +573,7 @@ async function ensureCheckinInstructionsDraft(record: BookingOpsRecord): Promise
     propertyId: record.propertyId,
     guestRef: record.guestTelegram ?? record.guestEmail ?? record.guestPhone,
   });
+  const knowledge = await guardBookingCommunicationDraft(record, 'send_checkin_instructions');
   await supabase.from('booking_ops_communication_intents').insert({
     id: randomUUID(),
     booking_ops_record_id: record.id,
@@ -581,10 +583,10 @@ async function ensureCheckinInstructionsDraft(record: BookingOpsRecord): Promise
     actor_label: text(record.guestName) || 'Гость',
     purpose: 'send_checkin_instructions',
     channel,
-    status: 'draft_ready',
-    message_text: messageText,
+    status: knowledge.status,
+    message_text: knowledge.messageText,
     message_template_key: 'guest.pre_checkin.instructions.v1',
-    metadata,
+    metadata: { ...metadata, ...knowledge.metadata },
     created_at: now,
     updated_at: now,
     superseded_at: null,

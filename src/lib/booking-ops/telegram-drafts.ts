@@ -1,3 +1,4 @@
+import { guardBookingCommunicationDraft } from '@/lib/communication/booking-knowledge-boundary';
 import { randomUUID } from 'node:crypto';
 import { supabase } from '@/lib/supabase';
 import { getBookingOpsActionTemplateById } from './action-templates';
@@ -275,6 +276,9 @@ export async function createTelegramDraftFromBookingOpsAction(
   }
 
   const target = await dependencies.resolveTarget(record);
+  let knowledge: Awaited<ReturnType<typeof guardBookingCommunicationDraft>>;
+  try { knowledge = await guardBookingCommunicationDraft(record, action); }
+  catch { return { ok: false, error: 'knowledge_unavailable', message: 'Не удалось проверить данные объекта и бронирования.' }; }
   const inserted = await dependencies.insertDraft({
     id: randomUUID(),
     bookingOpsRecordId: record.id,
@@ -282,13 +286,14 @@ export async function createTelegramDraftFromBookingOpsAction(
     telegramChatId: target.chatId,
     telegramTarget: target.target,
     actionId: action,
-    messageText: template.messageTemplate,
+    messageText: knowledge.messageText,
     createdBy: text(options?.createdBy) || null,
-    warning: target.warning,
+    warning: target.warning ?? 'Проверьте факты и получателя перед ручной отправкой.',
     metadata: {
       property_id: record.propertyId,
       ota_source: record.otaSource,
       template_warnings: template.warnings,
+      ...knowledge.metadata,
     },
   });
 

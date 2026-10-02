@@ -1,4 +1,4 @@
-import { prepareRuntimeKnowledgeReply, prepareCommunicationFactReply } from './knowledge-boundary';
+import { prepareRuntimeKnowledgeReply, prepareCommunicationFactReply, conversationalReply } from './knowledge-boundary';
 import { getChannelAdapter } from './channels';
 import { bindIdentity } from './identity-binding';
 import { evictIdentityCacheForTelegramChatId } from './identity';
@@ -2137,9 +2137,14 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
     };
 
     // Fact questions must not fall through to passport/session/LLM guesses.
-    const preparedKnowledge = senderRoute.shouldRunGuestConcierge && !escalationSafetyGate
+    const neutralKnowledgeReply = conversationalReply(text, classification.lang === 'ru');
+    if (senderRoute.shouldRunGuestConcierge && !escalationSafetyGate && neutralKnowledgeReply) {
+      replyText = neutralKnowledgeReply;
+      llmSucceeded = true;
+    }
+    const preparedKnowledge = senderRoute.shouldRunGuestConcierge && !escalationSafetyGate && !neutralKnowledgeReply
       ? await prepareRuntimeKnowledgeReply({
-          message: text, channel: envelope.channel, chatId, ru: classification.lang === 'ru',
+          coverUnclassified: true, message: text, channel: envelope.channel, chatId, ru: classification.lang === 'ru',
           propertyId: identity.propertyId, reservationId: identity.reservationId,
         })
       : null;

@@ -1,3 +1,5 @@
+import { prepareRuntimeKnowledgeReply, KNOWLEDGE_REVIEW_REPLY_RU } from './knowledge-boundary';
+import { requestOperatorHandoff } from './handoff-lock';
 import type { ChannelAdapter } from './channels/base';
 import { recordCommunicationAutopilotTurn } from './communication-autopilot-crm';
 import { isCommunicationAutopilotEnabled } from './communication-autopilot-settings';
@@ -119,6 +121,32 @@ export async function tryCommunicationAutopilotV1OrchestratorTurn(
   const sessionCollectedData = loadAutonomousSession(input.chatId)?.collected_data ?? {};
   const sessionMemory = autopilotSessionFromCollectedData(sessionCollectedData);
   if (!shouldPreferCommunicationAutopilotV1(input.text, sessionMemory)) return null;
+
+  // This entrypoint can also be called independently of the main orchestrator.
+  // Legacy session/passport/template strings are not evidence, including follow-ups.
+  const prepared = await prepareRuntimeKnowledgeReply({
+    message: input.text, coverUnclassified: true, channel: input.envelope.channel,
+    chatId: input.chatId, ru: true,
+    propertyId: input.identity.propertyId, reservationId: input.identity.reservationId,
+  });
+  if (prepared) {
+    const target = input.resolveOutboundTargetId(input.envelope, input.identity.guestId);
+    if (!target) return { outcome: ProcessOutcome.Error, update_id: input.update_id, chat_id: input.chatId };
+    requestOperatorHandoff({
+      accountId: prepared.result.scope?.accountId, propertyId: prepared.result.scope?.propertyId,
+      sessionId: input.sessionId, channel: input.envelope.channel, targetId: String(target),
+      actorId: input.guestIdentity ?? undefined, role: 'guest',
+      escalationReason: 'communication_knowledge_review', detail: prepared.summary,
+      suggestedReply: prepared.reviewRequired ? undefined : prepared.text,
+      source: { route: 'communication_knowledge', needs_operator: true },
+    });
+    await transitionSessionStatus(input.chatId, SessionStatus.OperatorReviewRequired);
+    const sent = await input.adapter.sendMessage(String(target), KNOWLEDGE_REVIEW_REPLY_RU, {
+      reply_handler: 'orchestrator:knowledge_review', needs_operator: true,
+    });
+    return { outcome: sent ? ProcessOutcome.Replied : ProcessOutcome.Error,
+      update_id: input.update_id, chat_id: input.chatId, reply: KNOWLEDGE_REVIEW_REPLY_RU };
+  }
 
   const bookingObjectCtx = await input.withAwaitCheckpoint(
     'memory/booking_object.resolve.await',

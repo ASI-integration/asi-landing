@@ -1,3 +1,4 @@
+import { guardBookingCommunicationDraft } from '@/lib/communication/booking-knowledge-boundary';
 import { randomUUID } from 'node:crypto';
 import { supabase } from '@/lib/supabase';
 import {
@@ -545,7 +546,7 @@ async function recordCommunicationEvent(input: {
     bookingOpsRecordId: input.recordId,
     eventType,
     title,
-    description: input.communication.messageText,
+    description: 'Черновик сообщения: требуется проверка оператором.',
     actorType: 'system',
     metadata: {
       communicationId: input.communication.id,
@@ -606,6 +607,12 @@ export async function syncBookingOpsCommunications(input: {
       guestRef: input.record.guestTelegram ?? input.record.guestEmail ?? input.record.guestPhone,
       unresolvedComplaint: input.record.guestIntake?.intakeStatus === 'fallback_required',
     });
+    if (item.desired.actorType === 'guest') {
+      const knowledge = await guardBookingCommunicationDraft(input.record, item.desired.purpose);
+      item.desired.messageText = knowledge.messageText;
+      item.desired.status = knowledge.status;
+      item.desired.metadata = { ...item.desired.metadata, ...knowledge.metadata };
+    }
     const { data } = await supabase
       .from('booking_ops_communication_intents')
       .update({
@@ -614,7 +621,8 @@ export async function syncBookingOpsCommunications(input: {
         status: item.desired.status,
         message_text: item.desired.messageText,
         message_template_key: item.desired.messageTemplateKey,
-        metadata: attachAutoSendDecisionMetadata(item.desired.metadata ?? {}, autoSendDecision),
+        metadata: { ...attachAutoSendDecisionMetadata(item.desired.metadata ?? {}, autoSendDecision),
+          ...(item.desired.actorType === 'guest' ? { actual_send_enabled: false, operator_review_required: true } : {}) },
         updated_at: now,
       })
       .eq('id', item.existing.id)
@@ -637,6 +645,12 @@ export async function syncBookingOpsCommunications(input: {
       guestRef: input.record.guestTelegram ?? input.record.guestEmail ?? input.record.guestPhone,
       unresolvedComplaint: input.record.guestIntake?.intakeStatus === 'fallback_required',
     });
+    if (item.actorType === 'guest') {
+      const knowledge = await guardBookingCommunicationDraft(input.record, item.purpose);
+      item.messageText = knowledge.messageText;
+      item.status = knowledge.status;
+      item.metadata = { ...item.metadata, ...knowledge.metadata };
+    }
     const { data } = await supabase
       .from('booking_ops_communication_intents')
       .insert({
@@ -651,7 +665,8 @@ export async function syncBookingOpsCommunications(input: {
         status: item.status,
         message_text: item.messageText,
         message_template_key: item.messageTemplateKey,
-        metadata: attachAutoSendDecisionMetadata(item.metadata ?? {}, autoSendDecision),
+        metadata: { ...attachAutoSendDecisionMetadata(item.metadata ?? {}, autoSendDecision),
+          ...(item.actorType === 'guest' ? { actual_send_enabled: false, operator_review_required: true } : {}) },
         created_at: now,
         updated_at: now,
       })

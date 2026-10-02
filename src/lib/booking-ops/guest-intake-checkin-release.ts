@@ -1,3 +1,4 @@
+import { guardBookingCommunicationDraft } from '@/lib/communication/booking-knowledge-boundary';
 import { randomUUID } from 'node:crypto';
 import { supabase } from '@/lib/supabase';
 import { recomputeGuestLegalReadiness, type GuestLegalReadiness } from './guest-legal-deposit-mvd-execution';
@@ -226,18 +227,29 @@ function guestDraftBody(record: BookingOpsRecord, session: SessionRow, kind: 'in
   ].filter(Boolean).join('\n');
 }
 
-async function ensureTelegramDraft(record: BookingOpsRecord, session: SessionRow, actionId: string, body: string) {
+async function ensureTelegramDraft(record: BookingOpsRecord, session: SessionRow, actionId: string, _body: string) {
   const { data: existing, error: findError } = await supabase.from('booking_ops_telegram_drafts')
     .select('*').eq('booking_ops_record_id', record.id).eq('action_id', actionId)
     .in('status', ['draft', 'copied']).order('created_at', { ascending: false }).limit(1).maybeSingle();
   if (findError) throw new Error(findError.message);
-  if (existing) return existing;
+  const knowledge = await guardBookingCommunicationDraft(record, actionId);
+  if (actionId === 'initial_guest_intake' || actionId === 'missing_guest_data') {
+    // A neutral request contains no asserted property, booking or access fact.
+    knowledge.messageText = 'Здравствуйте! Уточните, пожалуйста, имя и фамилию, контакт для связи, количество гостей и ожидаемое время прибытия. Данные документов и коды доступа сюда отправлять не нужно.';
+  }
+  if (existing) {
+    const refreshed = await supabase.from('booking_ops_telegram_drafts').update({
+      message_text: knowledge.messageText, metadata: { ...existing.metadata, ...knowledge.metadata },
+    }).eq('id', existing.id).eq('booking_ops_record_id', record.id).select('*').single();
+    if (refreshed.error || !refreshed.data) throw new Error('communication_draft_refresh_failed');
+    return refreshed.data;
+  }
   const { data, error } = await supabase.from('booking_ops_telegram_drafts').insert({
     id: randomUUID(), booking_ops_record_id: record.id, source_booking_id: record.bookingId,
     telegram_target: session.telegram_username ?? session.telegram_chat_id ?? record.guestTelegram ?? null,
-    action_id: actionId, message_text: body, status: 'draft',
+    action_id: actionId, message_text: knowledge.messageText, status: 'draft',
     warning: 'Черновик не отправлен. Проверьте получателя и текст вручную.',
-    metadata: { draftOnly: true, noExternalSend: true, guestIntakeSessionId: session.id },
+    metadata: { draftOnly: true, noExternalSend: true, guestIntakeSessionId: session.id, ...knowledge.metadata },
   }).select('*').single();
   if (error || !data) throw new Error(error?.message ?? 'Не удалось создать черновик.');
   return data;
@@ -367,7 +379,7 @@ export async function prepareCheckinReleaseDraft(bookingId: unknown, operatorId?
     id: snapshot.release?.id ?? randomUUID(), booking_id: record.id, property_id: record.propertyId,
     guest_intake_session_id: snapshot.session.id, status: 'draft_prepared', blocker_reasons: [],
     draft_channel: 'telegram', draft_recipient: snapshot.session.telegram_username ?? snapshot.session.telegram_chat_id ?? record.guestTelegram ?? null,
-    draft_body: body, prepared_at: snapshot.release?.preparedAt ?? now, approved_at: now,
+    draft_body: telegramDraft.message_text, prepared_at: snapshot.release?.preparedAt ?? now, approved_at: null,
     metadata: { draftOnly: true, noExternalSend: true, telegramDraftId: telegramDraft.id }, updated_at: now,
   }, { onConflict: 'booking_id' }).select('*').single();
   if (error || !data) throw new Error(error?.message ?? 'Не удалось подготовить инструкции.');

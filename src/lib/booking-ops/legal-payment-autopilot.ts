@@ -1,3 +1,4 @@
+import { guardBookingCommunicationDraft } from '@/lib/communication/booking-knowledge-boundary';
 import { randomUUID } from 'node:crypto';
 import { supabase } from '@/lib/supabase';
 import { buildAutoSendDecisionMetadata } from './communication-auto-send-policy';
@@ -504,6 +505,7 @@ async function createOrUpdateCommunication(input: {
     .limit(1)
     .maybeSingle();
 
+  const knowledge = await guardBookingCommunicationDraft(input.record, input.purpose);
   const payload = {
     booking_ops_record_id: input.record.id,
     booking_id: input.record.bookingId,
@@ -512,10 +514,10 @@ async function createOrUpdateCommunication(input: {
     actor_label: guestName(input.record),
     purpose: input.purpose,
     channel,
-    status: input.status ?? 'draft_ready',
-    message_text: input.messageText,
+    status: knowledge.status,
+    message_text: knowledge.messageText,
     message_template_key: input.templateKey,
-    metadata,
+    metadata: { ...metadata, ...knowledge.metadata },
     updated_at: now,
   };
 

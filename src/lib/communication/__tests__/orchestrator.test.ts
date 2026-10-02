@@ -225,7 +225,8 @@ describe('processUpdate', () => {
   });
 
   it.each(['Какой код от двери?', 'Какой пароль Wi-Fi?', 'Залог уже вернули?', 'Можно заехать сейчас?',
-    'Где ключи?', 'Уборка закончена?', 'Когда выезд?', 'Мой договор подписан?'])(
+    'Где ключи?', 'Уборка закончена?', 'Когда выезд?', 'Мой договор подписан?',
+    'А завтра?', 'А можно раньше?', 'Пришлите это ещё раз', 'Есть ли фен?'])(
     'Wave 2: missing authoritative facts never become a guest assertion: %s', async (messageText) => {
       const result = await processMessage({
         channel: 'telegram', chatId: '93119812', externalUserId: '567508', messageText,

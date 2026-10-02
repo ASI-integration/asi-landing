@@ -1,3 +1,4 @@
+import { guardBookingCommunicationDraft } from '@/lib/communication/booking-knowledge-boundary';
 import { randomUUID } from 'node:crypto';
 import { supabase } from '@/lib/supabase';
 import { buildAutoSendDecisionMetadata } from './communication-auto-send-policy';
@@ -374,6 +375,7 @@ async function ensureCommunicationIntent(input: {
     propertyId: input.record.propertyId,
     guestRef: input.record.guestTelegram ?? input.record.guestEmail ?? input.record.guestPhone,
   });
+  const knowledge = await guardBookingCommunicationDraft(input.record, input.purpose);
   const { data, error } = await supabase
     .from('booking_ops_communication_intents')
     .insert({
@@ -385,10 +387,10 @@ async function ensureCommunicationIntent(input: {
       actor_label: text(input.record.guestName) || 'Гость',
       purpose: input.purpose,
       channel,
-      status: 'draft_ready',
-      message_text: input.messageText,
+      message_text: knowledge.messageText,
       message_template_key: input.messageTemplateKey,
-      metadata,
+      status: knowledge.status,
+      metadata: { ...metadata, ...knowledge.metadata },
       created_at: now,
       updated_at: now,
       superseded_at: null,

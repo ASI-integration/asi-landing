@@ -88,6 +88,7 @@ export type GuestLifecycleExecutionRecord = {
 };
 
 export type GuestLifecycleReservationContext = {
+  accountId?: string;
   bookingOpsRecordId: string;
   reservationId: string;
   propertyId: string;

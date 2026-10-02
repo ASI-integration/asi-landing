@@ -3,6 +3,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 type Row = Record<string, unknown>;
 
 const tables = {
+  booking_ops_records: [] as Row[],
+  properties: [] as Row[],
+  object_knowledge_entries: [] as Row[],
   booking_instay_checkout: [] as Row[],
   booking_guest_stay_issues: [] as Row[],
   booking_ops_communication_intents: [] as Row[],
@@ -234,6 +237,12 @@ describe('In-stay & Checkout Autopilot v1', () => {
     tables.booking_instay_checkout = [];
     tables.booking_guest_stay_issues = [];
     tables.booking_ops_communication_intents = [];
+    tables.booking_ops_records = [{
+      id: record.id, booking_id: record.bookingId, property_id: record.propertyId,
+      account_id: 'account-1', ops_status: 'created', updated_at: new Date().toISOString(),
+    }];
+    tables.properties = [{ id: record.propertyId, account_id: 'account-1' }];
+    tables.object_knowledge_entries = [];
     lifecycle.completed = [];
     lifecycle.blocked = [];
     lifecycle.inProgress = [];
@@ -313,7 +322,7 @@ describe('In-stay & Checkout Autopilot v1', () => {
     expect(tables.booking_ops_communication_intents).toHaveLength(1);
     expect(tables.booking_ops_communication_intents[0]).toMatchObject({
       purpose: 'checkout_instructions',
-      status: 'draft_ready',
+      status: 'waiting_for_external_input',
     });
   });
 

@@ -43,7 +43,7 @@ export function canDeliverPreparedFacts(initial: PreparedKnowledgeReply, fresh: 
     });
 }type RuntimeInput = {
   message: string; channel: string; chatId: number; ru: boolean;
-  propertyId?: string; reservationId?: string;
+  propertyId?: string; reservationId?: string; coverUnclassified?: boolean;
 };
 type KnowledgeDb = typeof supabase;
 type Row = Record<string, unknown>;
@@ -114,7 +114,8 @@ export async function prepareRuntimeKnowledgeReply(
   rawInput: RuntimeInput, db: KnowledgeDb = supabase, now: () => number = Date.now,
 ): Promise<PreparedKnowledgeReply | null> {
   const input = Object.freeze({ ...rawInput });
-  const keys = requestedCommunicationFacts(input.message);
+  const requested = requestedCommunicationFacts(input.message);
+  const keys = requested.length ? requested : input.coverUnclassified ? ['operational_context'] : [];
   if (!keys.length) return null;
   try {
     const scope = Object.freeze(await readCommunicationDependency(() => resolveRuntimeScope(input, db)));
@@ -137,4 +138,24 @@ export async function prepareRuntimeKnowledgeReply(
       decisions: keys.map((key) => ({ key, use: 'unusable', reason: 'dependency_failed' })),
     }, input.ru);
   }
+}
+
+
+/** Closed, context-free social acts need no property facts or LLM prompt.
+ * Follow-ups such as "and tomorrow?" still require evidence or human review. */
+export function conversationalReply(message: string, ru = true): string | null {
+  const text = message.trim().toLowerCase().replace(/[!?.。,]+$/u, '').trim();
+  if (/^(?:привет|здравствуйте|добрый день|доброе утро|добрый вечер|hello|hi|hey)$/u.test(text)) {
+    return ru ? 'Здравствуйте! Чем могу помочь?' : 'Hello! How can I help?';
+  }
+  if (/^(?:спасибо|благодарю|thanks|thank you)$/u.test(text)) {
+    return ru ? 'Пожалуйста!' : 'You are welcome!';
+  }
+  if (/^(?:как дела|как ты|how are you|я устал|устал с дороги|хочу отдохнуть|i am tired|i'm tired)$/u.test(text)) {
+    return ru ? 'Я здесь, если понадобится помощь. Желаю хорошего отдыха!' : 'I am here if you need help. Have a good rest!';
+  }
+  if (/^(?:до свидания|пока|goodbye|bye)$/u.test(text)) {
+    return ru ? 'До свидания!' : 'Goodbye!';
+  }
+  return null;
 }

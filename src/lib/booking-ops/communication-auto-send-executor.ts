@@ -544,6 +544,12 @@ export async function executeAutoSendDelivery(
     return { ok: true as const, delivery: dryRunDelivery, dryRun: true, decision, scope: safeScopeView(scope) };
   }
 
+  // Wave 2 is operator-assisted. Stored metadata, old drafts, policy toggles
+  // and a verified fact never grant permission for an automatic guest send.
+  if (String(intent.actorType) === 'guest') {
+    const blocked = await blockDelivery(delivery, decision, 'knowledge_operator_review_required');
+    return { ok: false as const, error: 'knowledge_operator_review_required', delivery: blocked };
+  }
   const sender = options.sender ?? defaultSender;
   try {
     const result = await sender({

@@ -95,7 +95,7 @@ const enabledScope = {
   reason: 'pilot',
   maxBatchSize: 10,
   allowedChannels: ['telegram' as const, 'email' as const],
-  allowedMessageTypes: ['request_arrival_time'],
+  allowedMessageTypes: ['request_arrival_time', 'cleaner_task_assignment'],
   dryRunOnly: false,
   emergencyStop: false,
   createdAt: '2026-07-01T09:00:00.000Z',
@@ -161,6 +161,14 @@ beforeEach(() => {
 });
 
 describe('controlled actual auto-send executor', () => {
+  it('keeps guest auto-send disabled even with an enabled scope and eligible legacy metadata', async () => {
+    const intent = seedIntent();
+    const queued = await enqueueAutoSendDelivery(intent.id);
+    const sender = vi.fn();
+    const result = await executeAutoSendDelivery(queued.ok ? queued.delivery.id : '', { sender });
+    expect(result).toMatchObject({ ok: false, error: 'knowledge_operator_review_required' });
+    expect(sender).not.toHaveBeenCalled();
+  });
   it('creates one idempotent delivery for an eligible safe intent', async () => {
     const intent = seedIntent();
     const first = await enqueueAutoSendDelivery(intent.id);
@@ -214,7 +222,7 @@ describe('controlled actual auto-send executor', () => {
   });
 
   it('sends a safe message through the injected sender', async () => {
-    const intent = seedIntent();
+    const intent = seedIntent({ actor_type: 'cleaner', purpose: 'cleaner_task_assignment', metadata: { recipient_ref: 'staff-123' } });
     const queued = await enqueueAutoSendDelivery(intent.id);
     const sender = vi.fn(async () => ({ ok: true, providerMessageId: 'provider-1' }));
     const result = await executeAutoSendDelivery(queued.ok ? queued.delivery.id : '', { sender });
@@ -261,7 +269,7 @@ describe('controlled actual auto-send executor', () => {
   });
 
   it('does not send a duplicate completed delivery', async () => {
-    const intent = seedIntent();
+    const intent = seedIntent({ actor_type: 'cleaner', purpose: 'cleaner_task_assignment', metadata: { recipient_ref: 'staff-123' } });
     const queued = await enqueueAutoSendDelivery(intent.id);
     const sender = vi.fn(async () => ({ ok: true }));
     const id = queued.ok ? queued.delivery.id : '';
@@ -272,7 +280,7 @@ describe('controlled actual auto-send executor', () => {
   });
 
   it('records failure and retries the same safe delivery', async () => {
-    const intent = seedIntent();
+    const intent = seedIntent({ actor_type: 'cleaner', purpose: 'cleaner_task_assignment', metadata: { recipient_ref: 'staff-123' } });
     const queued = await enqueueAutoSendDelivery(intent.id);
     const id = queued.ok ? queued.delivery.id : '';
     const sender = vi.fn()

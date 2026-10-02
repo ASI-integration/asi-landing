@@ -1,3 +1,4 @@
+import { guardBookingCommunicationDraft } from '@/lib/communication/booking-knowledge-boundary';
 import { createHash, randomUUID } from 'node:crypto';
 import { supabase } from '@/lib/supabase';
 import { text as cleanText } from '@/lib/pilot-data/test-markers';
@@ -670,6 +671,9 @@ async function upsertInboundCommunication(input: {
 }): Promise<string | null> {
   const channel = input.channel ?? await preferredGuestChannel(input.record);
   const actorType = input.actorType ?? 'guest';
+  // An unbound enquiry remains an operator intake; it is not a verified booking
+  // acknowledgement. Preserve intake, but create no guest-facing fact draft.
+  if (actorType === 'guest' && (!input.record.accountId || !input.record.propertyId)) return null;
   const autoSendDecision = await canAutoSendCommunicationIntent({
     actorType,
     purpose: input.purpose,
@@ -694,11 +698,14 @@ async function upsertInboundCommunication(input: {
     .in('status', ['draft_ready', 'waiting_for_external_input'])
     .maybeSingle();
 
+  const knowledge = actorType === 'guest' ? await guardBookingCommunicationDraft(input.record, input.purpose) : null;
+  if (knowledge) Object.assign(metadata, knowledge.metadata);
   if (existing) {
     await supabase
       .from('booking_ops_communication_intents')
       .update({
-        message_text: input.messageText,
+        status: knowledge?.status ?? 'draft_ready',
+        message_text: knowledge?.messageText ?? input.messageText,
         message_template_key: input.templateKey,
         channel,
         metadata,
@@ -718,8 +725,8 @@ async function upsertInboundCommunication(input: {
     actor_label: input.record.guestName ?? 'Гость',
     purpose: input.purpose,
     channel,
-    status: 'draft_ready',
-    message_text: input.messageText,
+    status: knowledge?.status ?? 'draft_ready',
+    message_text: knowledge?.messageText ?? input.messageText,
     message_template_key: input.templateKey,
     metadata,
     created_at: now,
