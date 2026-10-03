@@ -2,6 +2,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { supabase } from '@/lib/supabase';
 import { processInboundBookingRequest } from '@/lib/booking-ops/real-booking-intake-autopilot';
 import { updateBookingOpsRecord } from '@/lib/booking-ops/repository';
+import { resolveResidentialBookingIdentity } from '@/lib/platform/residential-booking-scope';
 import type { DirectReservationInput, SafeAvailabilityConflict } from './types';
 
 const text = (value: unknown) => typeof value === 'string' ? value.trim() : '';
@@ -68,11 +69,63 @@ export async function createDirectReservation(input: DirectReservationInput) {
 }
 
 export async function cancelReservation(input: { accountId: string; reservationId: string; actorId: string; reason?: string }) {
-  const current = await supabase.from('booking_ops_records').select('normalized_status').eq('id', input.reservationId).eq('account_id', input.accountId).maybeSingle(); if (current.error) throw new Error(current.error.message); if (!current.data) throw new Error('not_found'); if (current.data.normalized_status === 'cancelled') return { changed: false };
-  const now = new Date().toISOString(); const saved = await supabase.from('booking_ops_records').update({ normalized_status: 'cancelled', cancelled_at: now, cancellation_reason: input.reason ?? null, availability_status: 'unchecked', updated_at: now }).eq('id', input.reservationId).eq('account_id', input.accountId); if (saved.error) throw new Error(saved.error.message);
-  await supabase.from('booking_availability_holds').update({ status: 'released', updated_at: now }).eq('booking_id', input.reservationId).eq('account_id', input.accountId);
-  await updateBookingOpsRecord(input.reservationId, { isBlocked: true, blockerReason: 'Reservation cancelled' }, { actorType: 'admin' });
-  await auditReservationMutation({ accountId: input.accountId, actorId: input.actorId, reservationId: input.reservationId, action: 'reservation_cancelled', before: { status: current.data.normalized_status }, after: { status: 'cancelled', reason: input.reason ?? null, messagesSent: false } });
+  const identity = await resolveResidentialBookingIdentity(input.reservationId, input.accountId);
+  if (!identity.bookingId || !identity.propertyId) throw new Error('booking_scope_unavailable');
+  const expectedScope = { accountId: identity.accountId, propertyId: identity.propertyId };
+  const current = await supabase
+    .from('booking_ops_records')
+    .select('normalized_status,property_id')
+    .eq('id', identity.bookingId)
+    .eq('account_id', identity.accountId)
+    .eq('property_id', identity.propertyId)
+    .maybeSingle();
+  if (current.error) throw new Error(current.error.message);
+  if (!current.data) throw new Error('booking_scope_mismatch');
+  if (current.data.normalized_status === 'cancelled') return { changed: false };
+
+  const now = new Date().toISOString();
+  const saved = await supabase
+    .from('booking_ops_records')
+    .update({
+      normalized_status: 'cancelled',
+      cancelled_at: now,
+      cancellation_reason: input.reason ?? null,
+      availability_status: 'unchecked',
+      updated_at: now,
+    })
+    .eq('id', identity.bookingId)
+    .eq('account_id', identity.accountId)
+    .eq('property_id', identity.propertyId)
+    .select('id')
+    .maybeSingle();
+  if (saved.error) throw new Error(saved.error.message);
+  if (!saved.data) throw new Error('booking_scope_mismatch');
+
+  const holds = await supabase
+    .from('booking_availability_holds')
+    .update({ status: 'released', updated_at: now })
+    .eq('booking_id', identity.bookingId)
+    .eq('account_id', identity.accountId)
+    .eq('property_id', identity.propertyId);
+  if (holds.error) throw new Error(holds.error.message);
+
+  const blocked = await updateBookingOpsRecord(
+    identity.bookingId,
+    { isBlocked: true, blockerReason: 'Reservation cancelled' },
+    { actorType: 'admin', expectedScope },
+  );
+  if (!blocked.ok) {
+    throw new Error(blocked.error === 'scope_mismatch' ? 'booking_scope_mismatch' : blocked.error ?? 'update_failed');
+  }
+
+  await auditReservationMutation({
+    accountId: identity.accountId,
+    actorId: input.actorId,
+    reservationId: identity.bookingId,
+    action: 'reservation_cancelled',
+    before: { status: current.data.normalized_status },
+    after: { status: 'cancelled', reason: input.reason ?? null, messagesSent: false },
+  });
   return { changed: true };
 }
 
@@ -87,51 +140,72 @@ export async function restoreReservation(input: {
   checkOut: string;
   reason?: string;
 }) {
+  const identity = await resolveResidentialBookingIdentity(input.reservationId, input.accountId);
+  if (!identity.bookingId || !identity.propertyId) throw new Error('booking_scope_unavailable');
+  if (identity.propertyId !== input.propertyId) throw new Error('booking_scope_mismatch');
+  const expectedScope = { accountId: identity.accountId, propertyId: identity.propertyId };
+
   const current = await supabase
     .from('booking_ops_records')
     .select('id,normalized_status,property_id,unit_id,check_in_at,check_out_at')
-    .eq('id', input.reservationId)
-    .eq('account_id', input.accountId)
+    .eq('id', identity.bookingId)
+    .eq('account_id', identity.accountId)
+    .eq('property_id', identity.propertyId)
     .maybeSingle();
   if (current.error) throw new Error(current.error.message);
-  if (!current.data) throw new Error('not_found');
+  if (!current.data) throw new Error('booking_scope_mismatch');
   const status = String(current.data.normalized_status ?? '').toLowerCase();
   if (status !== 'cancelled' && status !== 'canceled') {
     return { changed: false, blocked: false as const, conflicts: [] as SafeAvailabilityConflict[] };
   }
+
   const range = validateStayRange(input.checkIn, input.checkOut);
   const availability = await getUnifiedAvailability({
-    accountId: input.accountId,
-    propertyId: input.propertyId,
+    accountId: identity.accountId,
+    propertyId: identity.propertyId,
     unitId: input.unitId ?? null,
     checkIn: range.from,
     checkOut: range.to,
-    excludeReservationId: input.reservationId,
+    excludeReservationId: identity.bookingId,
   });
   if (!availability.available) {
     return { changed: false, blocked: true as const, conflicts: availability.conflicts };
   }
+
   const now = new Date().toISOString();
-  const saved = await supabase.from('booking_ops_records').update({
-    normalized_status: 'confirmed',
-    cancelled_at: null,
-    cancellation_reason: null,
-    availability_status: 'confirmed',
-    check_in_at: range.from,
-    check_out_at: range.to,
-    updated_at: now,
-  }).eq('id', input.reservationId).eq('account_id', input.accountId);
+  const saved = await supabase
+    .from('booking_ops_records')
+    .update({
+      normalized_status: 'confirmed',
+      cancelled_at: null,
+      cancellation_reason: null,
+      availability_status: 'confirmed',
+      check_in_at: range.from,
+      check_out_at: range.to,
+      updated_at: now,
+    })
+    .eq('id', identity.bookingId)
+    .eq('account_id', identity.accountId)
+    .eq('property_id', identity.propertyId)
+    .select('id')
+    .maybeSingle();
   if (saved.error) throw new Error(saved.error.message);
-  await updateBookingOpsRecord(input.reservationId, {
+  if (!saved.data) throw new Error('booking_scope_mismatch');
+
+  const unblocked = await updateBookingOpsRecord(identity.bookingId, {
     isBlocked: false,
     blockerReason: null,
     checkInAt: range.from,
     checkOutAt: range.to,
-  }, { actorType: 'admin' });
+  }, { actorType: 'admin', expectedScope });
+  if (!unblocked.ok) {
+    throw new Error(unblocked.error === 'scope_mismatch' ? 'booking_scope_mismatch' : unblocked.error ?? 'update_failed');
+  }
+
   await auditReservationMutation({
-    accountId: input.accountId,
+    accountId: identity.accountId,
     actorId: input.actorId,
-    reservationId: input.reservationId,
+    reservationId: identity.bookingId,
     action: 'reservation_restored',
     before: { status: current.data.normalized_status },
     after: { status: 'confirmed', reason: input.reason ?? null, messagesSent: false },
