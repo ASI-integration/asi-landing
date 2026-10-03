@@ -45,6 +45,7 @@ type BookingOpsRow = {
   guest_email: string | null;
   guest_telegram: string | null;
   property_id: string | null;
+  unit_id: string | null;
   property_label: string | null;
   ota_source: string | null;
   check_in_at: string | null;
@@ -534,6 +535,11 @@ export async function updateBookingOpsRecord(
       accountId: string;
       propertyId: string;
     };
+    /** Canonical scope after a successful mutation (for property transfers and post-write effects). */
+    resultScope?: {
+      accountId: string;
+      propertyId: string;
+    };
   },
 ): Promise<{ ok: boolean; record?: BookingOpsRecord; error?: string }> {
   const recordId = text(id);
@@ -547,6 +553,33 @@ export async function updateBookingOpsRecord(
   if (expectedScope && (!expectedScope.accountId || !expectedScope.propertyId)) {
     return { ok: false, error: 'expected_scope_invalid' };
   }
+  const resultScope = options?.resultScope
+    ? {
+      accountId: text(options.resultScope.accountId),
+      propertyId: text(options.resultScope.propertyId),
+    }
+    : expectedScope;
+  if (resultScope && (!resultScope.accountId || !resultScope.propertyId)) {
+    return { ok: false, error: 'result_scope_invalid' };
+  }
+  if (expectedScope && resultScope && expectedScope.accountId !== resultScope.accountId) {
+    return { ok: false, error: 'result_scope_invalid' };
+  }
+  if (
+    resultScope
+    && input.propertyId !== undefined
+    && text(input.propertyId) !== resultScope.propertyId
+  ) {
+    return { ok: false, error: 'result_scope_invalid' };
+  }
+  if (
+    expectedScope
+    && resultScope
+    && expectedScope.propertyId !== resultScope.propertyId
+    && text(input.propertyId) !== resultScope.propertyId
+  ) {
+    return { ok: false, error: 'result_scope_invalid' };
+  }
 
   const patch: Record<string, unknown> = { updated_at: new Date().toISOString() };
 
@@ -556,6 +589,7 @@ export async function updateBookingOpsRecord(
   if (input.guestEmail !== undefined) patch.guest_email = text(input.guestEmail) || null;
   if (input.guestTelegram !== undefined) patch.guest_telegram = text(input.guestTelegram) || null;
   if (input.propertyId !== undefined) patch.property_id = text(input.propertyId) || null;
+  if (input.unitId !== undefined) patch.unit_id = text(input.unitId) || null;
   if (input.propertyLabel !== undefined) patch.property_label = text(input.propertyLabel) || null;
   if (input.otaSource !== undefined) patch.ota_source = text(input.otaSource) || null;
   if (input.checkInAt !== undefined) patch.check_in_at = toIsoDate(input.checkInAt);
@@ -634,6 +668,20 @@ export async function updateBookingOpsRecord(
     return { ok: false, error: expectedScope ? 'scope_mismatch' : 'not_found' };
   }
 
+  if (
+    resultScope
+    && (!expectedScope || resultScope.propertyId !== expectedScope.propertyId)
+  ) {
+    try {
+      await requireBookingOpsPropertyAccountScope(resultScope.accountId, resultScope.propertyId);
+    } catch (error) {
+      return {
+        ok: false,
+        error: error instanceof Error ? error.message : 'property_scope_unavailable',
+      };
+    }
+  }
+
   let updateQuery = supabase
     .from('booking_ops_records')
     .update(patch)
@@ -658,7 +706,7 @@ export async function updateBookingOpsRecord(
   if (changedKeys.length > 0) {
     const identityKeys = new Set([
       'booking_id', 'guest_name', 'guest_phone', 'guest_email', 'guest_telegram',
-      'property_id', 'property_label', 'ota_source', 'check_in_at', 'check_out_at', 'guest_count',
+      'property_id', 'unit_id', 'property_label', 'ota_source', 'check_in_at', 'check_out_at', 'guest_count',
     ]);
     const readinessKeys = new Set([
       'payment_status', 'document_required', 'document_collected',
@@ -692,7 +740,7 @@ export async function updateBookingOpsRecord(
     ok: true,
     record: await enrichRecordWithTaskSync(
       mapRow(data as BookingOpsRow),
-      expectedScope ?? undefined,
+      resultScope ?? undefined,
     ),
   };
 }

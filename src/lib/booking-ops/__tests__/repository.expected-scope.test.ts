@@ -217,6 +217,59 @@ describe('updateBookingOpsRecord expectedScope', () => {
     expect(syncLifecycleFromBookingOpsRecord).not.toHaveBeenCalled();
   });
 
+  it('moves property + unit under the old scope and uses the new scope for post-write effects', async () => {
+    const record = seedRecord({ unit_id: 'unit-old' });
+    const result = await updateBookingOpsRecord(
+      RECORD_ID,
+      { propertyId: 'prop-b', unitId: 'unit-b' },
+      {
+        actorType: 'admin',
+        expectedScope: { accountId: ACCOUNT_A, propertyId: PROPERTY_A },
+        resultScope: { accountId: ACCOUNT_A, propertyId: 'prop-b' },
+      },
+    );
+
+    expect(result.ok).toBe(true);
+    expect(record.property_id).toBe('prop-b');
+    expect((record as Row).unit_id).toBe('unit-b');
+    expect(requireBookingOpsPropertyAccountScope).toHaveBeenCalledWith(ACCOUNT_A, 'prop-b');
+    expect(applyBookingOpsTaskSync).toHaveBeenCalledWith(
+      expect.objectContaining({ id: RECORD_ID, propertyId: 'prop-b' }),
+      { accountId: ACCOUNT_A, propertyId: 'prop-b' },
+    );
+    expect(syncGuestIntakeAutopilot).toHaveBeenCalledWith(
+      expect.objectContaining({ id: RECORD_ID, propertyId: 'prop-b' }),
+      { accountId: ACCOUNT_A, propertyId: 'prop-b' },
+    );
+    expect(syncLifecycleFromBookingOpsRecord).toHaveBeenCalledWith(
+      expect.objectContaining({ id: RECORD_ID, propertyId: 'prop-b' }),
+      { accountId: ACCOUNT_A, propertyId: 'prop-b' },
+    );
+  });
+
+  it('rejects a transfer if the target property fails canonical account validation', async () => {
+    const record = seedRecord({ unit_id: 'unit-old' });
+    requireBookingOpsPropertyAccountScope.mockRejectedValueOnce(new Error('property_scope_mismatch'));
+
+    const result = await updateBookingOpsRecord(
+      RECORD_ID,
+      { propertyId: 'foreign-property', unitId: 'foreign-unit' },
+      {
+        actorType: 'admin',
+        expectedScope: { accountId: ACCOUNT_A, propertyId: PROPERTY_A },
+        resultScope: { accountId: ACCOUNT_A, propertyId: 'foreign-property' },
+      },
+    );
+
+    expect(result).toMatchObject({ ok: false, error: 'property_scope_mismatch' });
+    expect(record.property_id).toBe(PROPERTY_A);
+    expect((record as Row).unit_id).toBe('unit-old');
+    expect(recordBookingOpsEvent).not.toHaveBeenCalled();
+    expect(applyBookingOpsTaskSync).not.toHaveBeenCalled();
+    expect(syncGuestIntakeAutopilot).not.toHaveBeenCalled();
+    expect(syncLifecycleFromBookingOpsRecord).not.toHaveBeenCalled();
+  });
+
   it('callers without expectedScope keep id-only behavior', async () => {
     seedRecord({ guest_count: 2, account_id: 'anywhere', property_id: 'anywhere' });
     const result = await updateBookingOpsRecord(RECORD_ID, { guestCount: 3 }, { actorType: 'system' });

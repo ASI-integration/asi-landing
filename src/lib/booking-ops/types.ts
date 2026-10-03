@@ -733,6 +733,8 @@ export type CreateBookingOpsInput = {
 export type UpdateBookingOpsInput = Partial<
   Omit<CreateBookingOpsInput, never>
 > & {
+  /** Server-only reservation unit binding used by scoped dashboard mutations. */
+  unitId?: string | null;
   manualNextAction?: string | null;
   isBlocked?: boolean;
   blockerReason?: string | null;
