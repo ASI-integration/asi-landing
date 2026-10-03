@@ -6,7 +6,7 @@ import {
   parseUpdateBookingOpsTaskInput,
 } from '@/lib/booking-ops/tasks';
 import { updateBookingOpsTaskWithCompletionEffects } from '@/lib/booking-ops/task-completion-effects';
-import { getBookingOpsRecord } from '@/lib/booking-ops/repository';
+import { requireBookingOpsRecordScope } from '@/lib/booking-ops/repository';
 import { syncBookingOpsCommunications } from '@/lib/booking-ops/communication-orchestrator';
 
 export const runtime = 'nodejs';
@@ -38,11 +38,28 @@ export async function PATCH(req: Request, context: RouteContext): Promise<NextRe
     return NextResponse.json({ ok: false, message }, { status: 400 });
   }
 
-  const result = await updateBookingOpsTaskWithCompletionEffects(
-    context.params.id,
-    context.params.taskId,
-    parsed.input,
-  );
+  const expectedScope = { accountId: access.accountId, propertyId: access.propertyId };
+  try {
+    await requireBookingOpsRecordScope(access.bookingId, expectedScope);
+  } catch {
+    return NextResponse.json({ ok: false, message: 'booking_scope_mismatch' }, { status: 403 });
+  }
+
+  let result;
+  try {
+    result = await updateBookingOpsTaskWithCompletionEffects(
+      access.bookingId,
+      context.params.taskId,
+      parsed.input,
+      undefined,
+      expectedScope,
+    );
+  } catch (error) {
+    if (error instanceof Error && error.message === 'booking_scope_mismatch') {
+      return NextResponse.json({ ok: false, message: error.message }, { status: 403 });
+    }
+    throw error;
+  }
   if (!result.ok) {
     const status = result.error === 'not_found'
       ? 404
@@ -56,13 +73,14 @@ export async function PATCH(req: Request, context: RouteContext): Promise<NextRe
   }
 
   const [record, tasksResult] = await Promise.all([
-    getBookingOpsRecord(context.params.id),
-    listBookingOpsTasksForRecord(context.params.id),
+    requireBookingOpsRecordScope(access.bookingId, expectedScope),
+    listBookingOpsTasksForRecord(access.bookingId, { expectedScope }),
   ]);
   if (record && tasksResult.ok) {
     await syncBookingOpsCommunications({
       record,
       tasks: tasksResult.tasks,
+      expectedScope,
     });
   }
 

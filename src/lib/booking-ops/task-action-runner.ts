@@ -4,6 +4,7 @@ import {
   propertyLabelForGuestFacingCopy,
 } from './display-labels';
 import { recordBookingOpsEvent } from './events';
+import { requireBookingOpsRecordScope } from './repository';
 import {
   canCreateTelegramDraftForAction,
   computeBookingReadiness,
@@ -30,6 +31,8 @@ import {
   BOOKING_OPS_TELEGRAM_DRAFT_ACTIONS,
   BOOKING_OPS_TELEGRAM_DRAFT_STATUS_LABELS_RU,
 } from './types';
+
+type ExpectedScope = { accountId: string; propertyId: string };
 
 export type BookingOpsTaskActionResult = {
   ok: boolean;
@@ -126,7 +129,9 @@ function findReusableDraft(
 async function recordTelegramDraftReuse(
   recordId: string,
   draft: BookingOpsTelegramDraft,
+  expectedScope?: ExpectedScope,
 ): Promise<void> {
+  if (expectedScope) await requireBookingOpsRecordScope(recordId, expectedScope);
   await recordBookingOpsEvent({
     bookingOpsRecordId: recordId,
     eventType: 'telegram_draft_reused',
@@ -146,7 +151,7 @@ async function recordTelegramDraftReuse(
 async function createOrReuseTelegramDraft(
   record: BookingOpsRecord,
   actionId: BookingOpsTelegramDraftActionId,
-  options?: { createdBy?: string | null },
+  options?: { createdBy?: string | null; expectedScope?: ExpectedScope },
 ): Promise<
   | { ok: true; draft: BookingOpsTelegramDraft; reused: boolean }
   | { ok: false; message: string; blockingReason: string | null }
@@ -155,14 +160,14 @@ async function createOrReuseTelegramDraft(
   const drafts = listed.ok ? listed.drafts : [];
   const existing = findReusableDraft(drafts, actionId);
   if (existing) {
-    await recordTelegramDraftReuse(record.id, existing);
+    await recordTelegramDraftReuse(record.id, existing, options?.expectedScope);
     return { ok: true, draft: existing, reused: true };
   }
 
   const result = await createTelegramDraftFromBookingOpsAction(
     record.id,
     actionId,
-    { createdBy: options?.createdBy ?? null },
+    { createdBy: options?.createdBy ?? null, expectedScope: options?.expectedScope },
   );
   if (!result.ok) {
     return {
@@ -233,7 +238,7 @@ async function runTelegramDraftTask(
   record: BookingOpsRecord,
   task: BookingOpsTask,
   actionId: BookingOpsTelegramDraftActionId,
-  options?: { createdBy?: string | null },
+  options?: { createdBy?: string | null; expectedScope?: ExpectedScope },
 ): Promise<BookingOpsTaskActionResult> {
   const operatorId = TASK_OPERATOR_ACTION[task.taskType];
   if (operatorId) {
@@ -261,8 +266,9 @@ async function runTelegramDraftTask(
 async function runBookingOpsTaskActionInternal(
   record: BookingOpsRecord,
   task: BookingOpsTask,
-  options?: { createdBy?: string | null },
+  options?: { createdBy?: string | null; expectedScope?: ExpectedScope },
 ): Promise<BookingOpsTaskActionResult> {
+  if (options?.expectedScope) await requireBookingOpsRecordScope(record.id, options.expectedScope);
   const taskType = task.taskType;
 
   switch (taskType) {
@@ -416,7 +422,7 @@ async function runBookingOpsTaskActionInternal(
         }
         const reusable = findReusableDraft(existingDrafts, actionId);
         if (reusable) {
-          await recordTelegramDraftReuse(record.id, reusable);
+          await recordTelegramDraftReuse(record.id, reusable, options?.expectedScope);
           createdIds.push(reusable.id);
           continue;
         }
@@ -568,9 +574,11 @@ async function runBookingOpsTaskActionInternal(
 export async function runBookingOpsTaskAction(
   record: BookingOpsRecord,
   task: BookingOpsTask,
-  options?: { createdBy?: string | null },
+  options?: { createdBy?: string | null; expectedScope?: ExpectedScope },
 ): Promise<BookingOpsTaskActionResult> {
+  if (options?.expectedScope) await requireBookingOpsRecordScope(record.id, options.expectedScope);
   const result = await runBookingOpsTaskActionInternal(record, task, options);
+  if (options?.expectedScope) await requireBookingOpsRecordScope(record.id, options.expectedScope);
   await recordBookingOpsEvent({
     bookingOpsRecordId: record.id,
     eventType: 'task_action_run',

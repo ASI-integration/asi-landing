@@ -74,9 +74,11 @@ function mapRow(row: BookingOpsTaskRow): BookingOpsTask {
 
 export async function listBookingOpsTasksForRecord(
   bookingOpsRecordId: string,
+  options?: { expectedScope?: ExpectedScope },
 ): Promise<{ ok: true; tasks: BookingOpsTask[] } | { ok: false; error: string }> {
   const recordId = text(bookingOpsRecordId);
   if (!recordId) return { ok: false, error: 'id_required' };
+  if (options?.expectedScope) await requireBookingOpsRecordScope(recordId, options.expectedScope);
 
   const { data, error } = await supabase
     .from('booking_ops_tasks')
@@ -284,7 +286,9 @@ async function cancelObsoleteSourceTasks(
   bookingOpsRecordId: string,
   source: BookingOpsTaskSource,
   plannedTypes: Set<BookingOpsTaskType>,
+  expectedScope?: ExpectedScope,
 ): Promise<void> {
+  if (expectedScope) await requireBookingOpsRecordScope(bookingOpsRecordId, expectedScope);
   const { data, error } = await supabase
     .from('booking_ops_tasks')
     .select('id, task_type, status')
@@ -300,39 +304,47 @@ async function cancelObsoleteSourceTasks(
   if (obsolete.length === 0) return;
 
   const now = nowIso();
+  if (expectedScope) await requireBookingOpsRecordScope(bookingOpsRecordId, expectedScope);
   await supabase
     .from('booking_ops_tasks')
     .update({ status: 'cancelled', updated_at: now })
+    .eq('booking_ops_record_id', bookingOpsRecordId)
     .in('id', obsolete.map((row) => row.id));
 
-  await Promise.all(obsolete.map((row) => recordBookingOpsEvent({
-    bookingOpsRecordId,
-    eventType: 'task_status_changed',
-    title: 'Автоматическая задача отменена',
-    description: BOOKING_OPS_TASK_TYPE_LABELS_RU[row.task_type as BookingOpsTaskType],
-    actorType: 'system',
-    metadata: {
-      taskId: row.id,
-      taskType: row.task_type,
-      previousStatus: row.status,
-      status: 'cancelled',
-    },
-    dedupeKey: `task-status:${row.id}:${row.status}:cancelled:${now}`,
-  })));
+  for (const row of obsolete) {
+    if (expectedScope) await requireBookingOpsRecordScope(bookingOpsRecordId, expectedScope);
+    await recordBookingOpsEvent({
+      bookingOpsRecordId,
+      eventType: 'task_status_changed',
+      title: 'Автоматическая задача отменена',
+      description: BOOKING_OPS_TASK_TYPE_LABELS_RU[row.task_type as BookingOpsTaskType],
+      actorType: 'system',
+      metadata: {
+        taskId: row.id,
+        taskType: row.task_type,
+        previousStatus: row.status,
+        status: 'cancelled',
+      },
+      dedupeKey: `task-status:${row.id}:${row.status}:cancelled:${now}`,
+    });
+  }
 }
 
 async function cancelObsoleteReadinessTasks(
   bookingOpsRecordId: string,
   plannedTypes: Set<BookingOpsTaskType>,
+  expectedScope?: ExpectedScope,
 ): Promise<void> {
-  await cancelObsoleteSourceTasks(bookingOpsRecordId, 'readiness_gate', plannedTypes);
+  await cancelObsoleteSourceTasks(bookingOpsRecordId, 'readiness_gate', plannedTypes, expectedScope);
 }
 
 async function upsertPlannedTask(
   record: BookingOpsRecord,
   item: BookingOpsTaskPlanItem,
   source: BookingOpsTaskSource = 'readiness_gate',
+  expectedScope?: ExpectedScope,
 ): Promise<{ created: boolean; taskType: BookingOpsTaskType }> {
+  if (expectedScope) await requireBookingOpsRecordScope(record.id, expectedScope);
   const existing = await findOpenTaskByType(record.id, item.taskType);
   if (existing) {
     const metadataChanged =
@@ -343,6 +355,7 @@ async function upsertPlannedTask(
       || existing.priority !== item.priority
       || metadataChanged
     ) {
+      if (expectedScope) await requireBookingOpsRecordScope(record.id, expectedScope);
       await supabase
         .from('booking_ops_tasks')
         .update({
@@ -356,7 +369,8 @@ async function upsertPlannedTask(
           },
           updated_at: nowIso(),
         })
-        .eq('id', existing.id);
+        .eq('id', existing.id)
+        .eq('booking_ops_record_id', record.id);
     }
     return { created: false, taskType: item.taskType };
   }
@@ -378,7 +392,7 @@ async function upsertPlannedTask(
       ...(item.metadata ?? {}),
       readinessStatus: item.metadata?.readinessStatus,
     },
-  });
+  }, { expectedScope });
   return {
     created: created.ok ? created.created : false,
     taskType: item.taskType,
@@ -395,30 +409,34 @@ export type BookingOpsTaskSyncResult = {
 
 export async function applyBookingOpsTaskSync(
   record: BookingOpsRecord,
+  expectedScope?: ExpectedScope,
 ): Promise<BookingOpsTaskSyncResult> {
+  if (expectedScope) await requireBookingOpsRecordScope(record.id, expectedScope);
   const drafts = await fetchTelegramDraftStatusesForRecord(record.id);
+  if (expectedScope) await requireBookingOpsRecordScope(record.id, expectedScope);
   const readiness = computeBookingReadiness({ ...record, telegramDrafts: drafts });
   const plan = syncBookingOpsTasksForReadiness(record, readiness);
   const plannedTypes = new Set(plan.items.map((item) => item.taskType));
 
-  await cancelObsoleteReadinessTasks(record.id, plannedTypes);
+  await cancelObsoleteReadinessTasks(record.id, plannedTypes, expectedScope);
   for (const item of plan.items) {
-    await upsertPlannedTask(record, item, 'readiness_gate');
+    await upsertPlannedTask(record, item, 'readiness_gate', expectedScope);
   }
 
-  const listedBeforeTurnover = await listBookingOpsTasksForRecord(record.id);
+  const listedBeforeTurnover = await listBookingOpsTasksForRecord(record.id, { expectedScope });
   const tasksBeforeTurnover = listedBeforeTurnover.ok ? listedBeforeTurnover.tasks : [];
   const preparation = planBookingOpsPreparation(record, tasksBeforeTurnover);
   const preparationTypes = new Set<BookingOpsTaskType>(preparation.requiredTaskTypes);
-  await cancelObsoleteSourceTasks(record.id, 'system', preparationTypes);
+  await cancelObsoleteSourceTasks(record.id, 'system', preparationTypes, expectedScope);
 
   let turnoverStarted = false;
   for (const item of preparation.items) {
-    const result = await upsertPlannedTask(record, item, 'system');
+    const result = await upsertPlannedTask(record, item, 'system', expectedScope);
     turnoverStarted = turnoverStarted || result.created;
   }
 
   if (turnoverStarted && !tasksBeforeTurnover.some((task) => task.source === 'system')) {
+    if (expectedScope) await requireBookingOpsRecordScope(record.id, expectedScope);
     await recordBookingOpsEvent({
       bookingOpsRecordId: record.id,
       eventType: 'turnover_started',
@@ -430,7 +448,7 @@ export async function applyBookingOpsTaskSync(
     });
   }
 
-  const listed = await listBookingOpsTasksForRecord(record.id);
+  const listed = await listBookingOpsTasksForRecord(record.id, { expectedScope });
   const allTasks = listed.ok ? listed.tasks : [];
   const finalPreparation = planBookingOpsPreparation(record, allTasks);
   const readinessGate = computePropertyReadinessGate(record, allTasks);
@@ -444,10 +462,18 @@ export async function applyBookingOpsTaskSync(
   const unitReadiness = gateToUnitStatus[readinessGate.status];
   if (unitReadiness !== record.unitReadinessStatus) {
     const previous = record.unitReadinessStatus ?? 'not_ready';
-    await supabase
+    if (expectedScope) await requireBookingOpsRecordScope(record.id, expectedScope);
+    let readinessUpdate = supabase
       .from('booking_ops_records')
       .update({ unit_readiness_status: unitReadiness, updated_at: nowIso() })
       .eq('id', record.id);
+    if (expectedScope) {
+      readinessUpdate = readinessUpdate
+        .eq('account_id', expectedScope.accountId)
+        .eq('property_id', expectedScope.propertyId);
+    }
+    await readinessUpdate;
+    if (expectedScope) await requireBookingOpsRecordScope(record.id, expectedScope);
     await recordBookingOpsEvent({
       bookingOpsRecordId: record.id,
       eventType: 'unit_readiness_changed',
@@ -462,6 +488,7 @@ export async function applyBookingOpsTaskSync(
     });
   }
 
+  if (expectedScope) await requireBookingOpsRecordScope(record.id, expectedScope);
   await recordBookingOpsReadinessEvent({
     bookingOpsRecordId: record.id,
     readinessStatus: readiness.status,
@@ -472,6 +499,7 @@ export async function applyBookingOpsTaskSync(
   await syncBookingOpsCommunications({
     record: { ...record, readiness },
     tasks: allTasks,
+    expectedScope,
   });
 
   if (!listed.ok) {

@@ -386,7 +386,7 @@ export async function syncBookingOpsTasksForRecordId(
 
   const drafts = await fetchTelegramDraftStatusesForRecord(recordIdClean);
   const record = attachBookingReadiness(mapRow(data as BookingOpsRow), drafts);
-  const result = await applyBookingOpsTaskSync(record);
+  const result = await applyBookingOpsTaskSync(record, options?.expectedScope);
   return result.ok ? { ok: true } : { ok: false, error: result.error };
 }
 

@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { requireBookingOpsApiAccess } from '../../../../access';
 import { requireOpsAdminSession } from '@/lib/crm/api-auth';
-import { getBookingOpsRecord } from '@/lib/booking-ops/repository';
+import { requireBookingOpsRecordScope } from '@/lib/booking-ops/repository';
 import { runBookingOpsTaskAction } from '@/lib/booking-ops/task-action-runner';
 import { BOOKING_OPS_OPEN_TASK_STATUSES } from '@/lib/booking-ops/task-types';
 import { getBookingOpsTask } from '@/lib/booking-ops/tasks';
@@ -17,14 +17,17 @@ export async function POST(_req: Request, context: RouteContext): Promise<NextRe
   const access = await requireBookingOpsApiAccess(auth.session, context.params.id);
   if (!access.ok) return access.response;
 
-  const recordId = context.params.id;
+  const recordId = access.bookingId;
   const taskId = context.params.taskId;
+  const expectedScope = { accountId: access.accountId, propertyId: access.propertyId };
 
-  const record = await getBookingOpsRecord(recordId);
-  if (!record) {
+  let record;
+  try {
+    record = await requireBookingOpsRecordScope(recordId, expectedScope);
+  } catch {
     return NextResponse.json(
-      { ok: false, message: 'Операционная запись не найдена.' },
-      { status: 404 },
+      { ok: false, message: 'booking_scope_mismatch' },
+      { status: 403 },
     );
   }
 
@@ -45,9 +48,18 @@ export async function POST(_req: Request, context: RouteContext): Promise<NextRe
     );
   }
 
-  const actionResult = await runBookingOpsTaskAction(record, task, {
-    createdBy: auth.session.email,
-  });
+  let actionResult;
+  try {
+    actionResult = await runBookingOpsTaskAction(record, task, {
+      createdBy: auth.session.email,
+      expectedScope,
+    });
+  } catch (error) {
+    if (error instanceof Error && error.message === 'booking_scope_mismatch') {
+      return NextResponse.json({ ok: false, message: error.message }, { status: 403 });
+    }
+    throw error;
+  }
 
   if (actionResult.blockingReason === 'invalid_task_type') {
     return NextResponse.json(

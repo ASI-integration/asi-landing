@@ -4,7 +4,7 @@ import { supabase } from '@/lib/supabase';
 import { getBookingOpsActionTemplateById } from './action-templates';
 import { recordBookingOpsEvent } from './events';
 import { canCreateTelegramDraftForAction, fetchTelegramDraftStatusesForRecord } from './readiness';
-import { syncBookingOpsTasksForRecordId, getBookingOpsRecord } from './repository';
+import { syncBookingOpsTasksForRecordId, getBookingOpsRecord, requireBookingOpsRecordScope } from './repository';
 import {
   BOOKING_OPS_OPERATOR_ACTIONS,
   BOOKING_OPS_TELEGRAM_DRAFT_ACTIONS,
@@ -14,6 +14,8 @@ import {
   type BookingOpsTelegramDraftActionId,
   type BookingOpsTelegramDraftStatus,
 } from './types';
+
+type ExpectedScope = { accountId: string; propertyId: string };
 
 type TelegramDraftRow = {
   id: string;
@@ -224,7 +226,7 @@ export async function updateBookingOpsTelegramDraftStatus(
 export async function createTelegramDraftFromBookingOpsAction(
   recordId: string,
   actionId: string,
-  options?: { createdBy?: string | null },
+  options?: { createdBy?: string | null; expectedScope?: ExpectedScope },
   dependencies: TelegramDraftDependencies = DEFAULT_DEPENDENCIES,
 ): Promise<
   | { ok: true; draft: BookingOpsTelegramDraft }
@@ -244,7 +246,9 @@ export async function createTelegramDraftFromBookingOpsAction(
     };
   }
 
-  const record = await dependencies.getRecord(id);
+  const record = options?.expectedScope
+    ? await requireBookingOpsRecordScope(id, options.expectedScope)
+    : await dependencies.getRecord(id);
   if (!record) return { ok: false, error: 'not_found', message: 'Операционная запись не найдена.' };
 
   const template = getBookingOpsActionTemplateById(record, action);
@@ -276,9 +280,11 @@ export async function createTelegramDraftFromBookingOpsAction(
   }
 
   const target = await dependencies.resolveTarget(record);
+  if (options?.expectedScope) await requireBookingOpsRecordScope(id, options.expectedScope);
   let knowledge: Awaited<ReturnType<typeof guardBookingCommunicationDraft>>;
   try { knowledge = await guardBookingCommunicationDraft(record, action); }
   catch { return { ok: false, error: 'knowledge_unavailable', message: 'Не удалось проверить данные объекта и бронирования.' }; }
+  if (options?.expectedScope) await requireBookingOpsRecordScope(id, options.expectedScope);
   const inserted = await dependencies.insertDraft({
     id: randomUUID(),
     bookingOpsRecordId: record.id,
@@ -300,6 +306,7 @@ export async function createTelegramDraftFromBookingOpsAction(
   if (!inserted.ok) {
     return { ok: false, error: 'database_error', message: inserted.error };
   }
+  if (options?.expectedScope) await requireBookingOpsRecordScope(id, options.expectedScope);
   await recordBookingOpsEvent({
     bookingOpsRecordId: record.id,
     eventType: 'telegram_draft_created',
@@ -314,6 +321,6 @@ export async function createTelegramDraftFromBookingOpsAction(
     },
     dedupeKey: `telegram-draft-created:${inserted.draft.id}`,
   });
-  await (dependencies.syncTasks ?? syncBookingOpsTasksForRecordId)(record.id);
+  await (dependencies.syncTasks ?? syncBookingOpsTasksForRecordId)(record.id, { expectedScope: options?.expectedScope });
   return inserted;
 }

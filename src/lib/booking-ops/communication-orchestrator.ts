@@ -7,6 +7,7 @@ import {
   evaluateAndPersistIntentAutoSendDecision,
 } from './communication-auto-send-policy';
 import { recordBookingOpsEvent } from './events';
+import { requireBookingOpsRecordScope } from './repository';
 import { computeBookingReadiness } from './readiness';
 import {
   BOOKING_OPS_COMMUNICATION_ACTOR_TYPES,
@@ -21,6 +22,8 @@ import {
   type BookingOpsRecord,
 } from './types';
 import type { BookingOpsTask, BookingOpsTaskType } from './task-types';
+
+type ExpectedScope = { accountId: string; propertyId: string };
 
 export type PlannedBookingOpsCommunication = {
   actorType: BookingOpsCommunicationActorType;
@@ -562,12 +565,14 @@ async function recordCommunicationEvent(input: {
 export async function syncBookingOpsCommunications(input: {
   record: BookingOpsRecord;
   tasks: BookingOpsTask[];
+  expectedScope?: ExpectedScope;
 }): Promise<{
   ok: boolean;
   communications: BookingOpsCommunicationIntent[];
   plan: BookingOpsCommunicationPlan;
   error?: string;
 }> {
+  if (input.expectedScope) await requireBookingOpsRecordScope(input.record.id, input.expectedScope);
   const existingResult = await listBookingOpsCommunicationsForRecord(input.record.id);
   if (!existingResult.ok) {
     return {
@@ -585,13 +590,16 @@ export async function syncBookingOpsCommunications(input: {
   const now = new Date().toISOString();
 
   for (const item of plan.toSupersede) {
+    if (input.expectedScope) await requireBookingOpsRecordScope(input.record.id, input.expectedScope);
     const { data } = await supabase
       .from('booking_ops_communication_intents')
       .update({ status: 'superseded', superseded_at: now, updated_at: now })
       .eq('id', item.id)
+      .eq('booking_ops_record_id', input.record.id)
       .select('*')
       .maybeSingle();
     if (data) {
+      if (input.expectedScope) await requireBookingOpsRecordScope(input.record.id, input.expectedScope);
       await recordCommunicationEvent({
         recordId: input.record.id,
         type: 'superseded',
@@ -613,6 +621,7 @@ export async function syncBookingOpsCommunications(input: {
       item.desired.status = knowledge.status;
       item.desired.metadata = { ...item.desired.metadata, ...knowledge.metadata };
     }
+    if (input.expectedScope) await requireBookingOpsRecordScope(input.record.id, input.expectedScope);
     const { data } = await supabase
       .from('booking_ops_communication_intents')
       .update({
@@ -626,10 +635,12 @@ export async function syncBookingOpsCommunications(input: {
         updated_at: now,
       })
       .eq('id', item.existing.id)
+      .eq('booking_ops_record_id', input.record.id)
       .select('*')
       .maybeSingle();
     if (data) {
       const communication = mapRow(data as CommunicationRow);
+      if (input.expectedScope) await requireBookingOpsRecordScope(input.record.id, input.expectedScope);
       await recordCommunicationEvent({
         recordId: input.record.id,
         type: communication.status === 'waiting_for_external_input' ? 'waiting' : 'updated',
@@ -651,6 +662,7 @@ export async function syncBookingOpsCommunications(input: {
       item.status = knowledge.status;
       item.metadata = { ...item.metadata, ...knowledge.metadata };
     }
+    if (input.expectedScope) await requireBookingOpsRecordScope(input.record.id, input.expectedScope);
     const { data } = await supabase
       .from('booking_ops_communication_intents')
       .insert({
@@ -674,12 +686,14 @@ export async function syncBookingOpsCommunications(input: {
       .single();
     if (data) {
       const communication = mapRow(data as CommunicationRow);
+      if (input.expectedScope) await requireBookingOpsRecordScope(input.record.id, input.expectedScope);
       await recordCommunicationEvent({
         recordId: input.record.id,
         type: 'created',
         communication,
       });
       if (communication.status === 'draft_ready') {
+        if (input.expectedScope) await requireBookingOpsRecordScope(input.record.id, input.expectedScope);
         await recordCommunicationEvent({
           recordId: input.record.id,
           type: 'updated',
@@ -696,9 +710,12 @@ export async function syncBookingOpsCommunications(input: {
       propertyId: input.record.propertyId,
       guestRef: input.record.guestTelegram ?? input.record.guestEmail ?? input.record.guestPhone,
       unresolvedComplaint: input.record.guestIntake?.intakeStatus === 'fallback_required',
-    });
+    }, input.expectedScope ? {
+      beforePersist: () => requireBookingOpsRecordScope(input.record.id, input.expectedScope as ExpectedScope),
+    } : undefined);
   }
 
+  if (input.expectedScope) await requireBookingOpsRecordScope(input.record.id, input.expectedScope);
   const finalResult = await listBookingOpsCommunicationsForRecord(input.record.id);
   return {
     ok: finalResult.ok,
