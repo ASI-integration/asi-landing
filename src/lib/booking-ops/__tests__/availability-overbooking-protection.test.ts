@@ -90,6 +90,7 @@ import {
   isChannelCalendarDateCoveredByImportedBooking,
   isConfirmationLikeCommunication,
   normalizeAvailabilityDate,
+  shouldBlockCommunicationIntent,
   rangesOverlap,
   type AvailabilityConflict,
 } from '../availability-overbooking-protection';
@@ -112,6 +113,15 @@ function seedSelfBookingScenario(options?: {
   extraCalendar?: Row[];
   extraOpsBooking?: Row;
 }) {
+  rows('booking_channel_manager_connections').push({
+    id: CONNECTION_ID,
+    property_setup_id: PROPERTY_SETUP_ID,
+  });
+  rows('booking_property_setup_profiles').push({
+    id: PROPERTY_SETUP_ID,
+    property_id: 'prop-a',
+  });
+  rows('properties').push({ id: 'prop-a', account_id: 'account-a' });
   rows('booking_channel_imported_objects').push({
     id: 'obj-1',
     connection_id: CONNECTION_ID,
@@ -150,6 +160,7 @@ function seedSelfBookingScenario(options?: {
   );
   rows('booking_ops_records').push({
     id: BOOKING_OPS_ID,
+    account_id: 'account-a',
     property_id: 'prop-a',
     check_in_at: '2026-07-10T00:00:00.000Z',
     check_out_at: '2026-07-12T00:00:00.000Z',
@@ -334,6 +345,13 @@ describe('channel import availability self-conflicts', () => {
     expect(results[0]?.conflicts).toEqual([]);
   });
 
+  it('fails closed when an imported object points outside the canonical connection property', async () => {
+    seedSelfBookingScenario();
+    rows('booking_channel_imported_objects')[0]!.matched_property_id = 'prop-b';
+
+    await expect(auditChannelImportAvailability(CONNECTION_ID)).rejects.toThrow('property_scope_mismatch');
+  });
+
   it('still blocks when another overlapping booking_ops stay exists', async () => {
     seedSelfBookingScenario({
       extraOpsBooking: {
@@ -424,5 +442,28 @@ describe('availability canonical account scope', () => {
 
     expect(result.status).toBe('failed');
     expect(result.safeSummary).toBe('property_scope_mismatch');
+  });
+
+  it('fails closed confirmation communication when the booking is outside the expected account', async () => {
+    rows('properties').push({ id: 'prop-a', account_id: 'account-b' });
+    rows('booking_ops_records').push({
+      id: BOOKING_OPS_ID,
+      account_id: 'account-b',
+      property_id: 'prop-a',
+      check_in_at: '2026-07-10T00:00:00.000Z',
+      check_out_at: '2026-07-12T00:00:00.000Z',
+    });
+
+    const guard = await shouldBlockCommunicationIntent({
+      purpose: 'unit_ready_notice',
+      messageText: 'Объект готов к заезду.',
+      bookingOpsRecordId: BOOKING_OPS_ID,
+    }, { accountId: 'account-a' });
+
+    expect(guard).toMatchObject({
+      block: true,
+      status: 'failed',
+      check: { safeSummary: 'booking_scope_mismatch' },
+    });
   });
 });

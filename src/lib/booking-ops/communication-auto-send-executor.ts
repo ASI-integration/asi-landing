@@ -357,7 +357,9 @@ export async function enqueueAutoSendDelivery(
   if (options.accountId && context.record?.accountId !== options.accountId) {
     return { ok: false as const, error: 'booking_scope_mismatch' };
   }
-  const availabilityGuard = await shouldBlockCommunicationIntent(intent);
+  const availabilityGuard = await shouldBlockCommunicationIntent(intent, {
+    accountId: context.record?.accountId ?? null,
+  });
   if (availabilityGuard.block) {
     return {
       ok: false as const,
@@ -499,7 +501,9 @@ export async function executeAutoSendDelivery(
   if (options.accountId && executionContext.record?.accountId !== options.accountId) {
     return { ok: false as const, error: 'booking_scope_mismatch', delivery: null };
   }
-  const availabilityGuard = await shouldBlockCommunicationIntent(intent);
+  const availabilityGuard = await shouldBlockCommunicationIntent(intent, {
+    accountId: executionContext.record?.accountId ?? null,
+  });
   if (availabilityGuard.block) {
     const blocked = await blockDelivery(delivery, null, 'availability_blocked');
     return { ok: false as const, error: 'availability_blocked', delivery: blocked, availabilityGuard };

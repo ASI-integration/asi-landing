@@ -76,6 +76,7 @@ beforeEach(() => {
     id: PROPERTY_ID, owner_setup_id: OWNER_ID, property_id: 'prop-a', title: 'Лесной дом', address_city: 'Тверь', guest_capacity: 4,
     channel_access_status: 'not_requested', created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
   });
+  rows('properties').push({ id: 'prop-a', account_id: 'acct-access-import' });
   canAutoSendCommunicationIntent.mockResolvedValue({ eligible: false, reason: 'global_off' });
   processInboundBookingRequest.mockImplementation(async (
     input: Row,

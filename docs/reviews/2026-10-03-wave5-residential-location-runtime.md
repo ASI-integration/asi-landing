@@ -146,8 +146,16 @@ Scope: canonical property-bound residential location evidence and advisory Platf
 - Prepared `20261003150000_booking_availability_account_scope_v1.sql` adds conflict-check account lineage and an account-bound atomic hold RPC; it was contract-tested only and not applied.
 - Changed files: four dashboard availability routes, shared Booking Ops access helper, availability runtime/tests, intake availability initialization, route/access tests, and the prepared migration.
 - Verification: focused availability contour **52/52 PASS**; frozen Booking Ops + Channel Manager + reservation regression **136/136 PASS**; TypeScript **PASS**; changed-file ESLint **PASS**; `git diff --check` **PASS**.
-- Blocker: the availability checkpoint is fully staged and green, but the current execution environment blocked the local `git commit` operation. HEAD therefore remains `75a21784`; no further production edits should be layered onto this staged slice until it is committed.
-- Smallest safe next step after that commit: make `shouldBlockCommunicationIntent` accept the already-resolved `executionContext.record.accountId` at both auto-send call sites, then bind channel-import availability audit to canonical connection/property ownership. The unused summary/confirmation helpers can follow the same pattern if activated. Secret-backed Telegram intake still lacks a canonical resolver and must remain unbound/fail-closed rather than trusting payload scope.
+- Committed locally as `dadd3d4b` (`fix(booking-ops): isolate availability scope by account`); no push, deploy, or migration apply was performed.
+
+## Availability internal caller hardening
+
+- Baseline HEAD: `dadd3d4ba0ddcd740a7e345f1930be5b07035810`.
+- Auto-send enqueue/execution now pass the server-resolved booking account into the availability communication guard; confirmation-like messages fail closed on account mismatch.
+- Channel-import availability now derives canonical scope from `connection -> property setup -> property -> account`, rejects imported mappings outside that property, and evaluates conflicts with the canonical account.
+- Changed files: availability runtime/test, auto-send executor, plus two Channel Manager fixtures updated with canonical property ownership.
+- Verification: focused availability + auto-send contour **49/49 PASS**; frozen Booking Ops + Channel Manager + reservation regression **136/136 PASS**; TypeScript **PASS**; changed-file ESLint **PASS**; `git diff --check` **PASS**.
+- Smallest safe next step: the unused accountless availability summary/confirmation helpers can take the same server-owned account seam if activated. Secret-backed Telegram intake still has no canonical account resolver and must remain unbound/fail-closed rather than trusting payload scope.
 
 ## Operational boundary
 

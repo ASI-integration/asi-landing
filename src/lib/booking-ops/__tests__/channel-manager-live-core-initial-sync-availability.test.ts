@@ -183,6 +183,7 @@ beforeEach(() => {
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
   });
+  rows('properties').push({ id: 'prop-a', account_id: ACCOUNT_ID });
   canAutoSendCommunicationIntent.mockReset();
   processInboundBookingRequest.mockReset();
   updateBookingOpsRecord.mockReset();

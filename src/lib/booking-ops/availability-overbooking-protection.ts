@@ -719,7 +719,10 @@ export function isConfirmationLikeCommunication(intent: Pick<IntentLike, 'purpos
   return /(?:бронь|бронирован\w*|даты).{0,40}(?:подтвержден\w*|гарантирован\w*)|оплат(?:ите|а).{0,40}(?:подтвержден\w*|брон)/iu.test(intent.messageText);
 }
 
-export async function shouldBlockCommunicationIntent(intent: IntentLike) {
+export async function shouldBlockCommunicationIntent(
+  intent: IntentLike,
+  options: { accountId?: string | null } = {},
+) {
   if (!isConfirmationLikeCommunication(intent)) {
     return { block: false, status: 'not_applicable' as const, summary: 'Нейтральное сообщение разрешено.' };
   }
@@ -727,7 +730,10 @@ export async function shouldBlockCommunicationIntent(intent: IntentLike) {
   if (!bookingId || !UUID_RE.test(bookingId)) {
     return { block: true, status: 'missing_data' as const, summary: 'Нет данных брони для подтверждения доступности.' };
   }
-  const check = await checkAvailabilityConflict({ bookingId }, { checkType: 'communication_guard' });
+  const check = await checkAvailabilityConflict(
+    { bookingId },
+    { checkType: 'communication_guard', accountId: options.accountId },
+  );
   return {
     block: check.status !== 'no_conflict', status: check.status,
     summary: check.status === 'no_conflict' ? 'Доступность подтверждена проверкой.' : 'Подтверждающее сообщение заблокировано до проверки доступности.',
@@ -735,23 +741,73 @@ export async function shouldBlockCommunicationIntent(intent: IntentLike) {
   };
 }
 
+async function resolveChannelImportAvailabilityScope(connectionId: string): Promise<{
+  accountId: string;
+  propertyId: string;
+  propertySetupId: string;
+}> {
+  const connection = await supabase.from('booking_channel_manager_connections')
+    .select('id,property_setup_id')
+    .eq('id', connectionId)
+    .maybeSingle();
+  if (connection.error) throw new Error(connection.error.message);
+  const propertySetupId = text(connection.data?.property_setup_id);
+  if (!propertySetupId) throw new Error('connection_scope_invalid');
+
+  const setup = await supabase.from('booking_property_setup_profiles')
+    .select('id,property_id')
+    .eq('id', propertySetupId)
+    .maybeSingle();
+  if (setup.error) throw new Error(setup.error.message);
+  const propertyId = text(setup.data?.property_id);
+  if (!propertyId) throw new Error('connection_scope_invalid');
+
+  const property = await supabase.from('properties')
+    .select('id,account_id')
+    .eq('id', propertyId)
+    .maybeSingle();
+  if (property.error) throw new Error(property.error.message);
+  const accountId = text(property.data?.account_id);
+  if (!accountId) throw new Error('connection_scope_invalid');
+
+  return { accountId, propertyId, propertySetupId };
+}
+
 export async function auditChannelImportAvailability(connectionId: string) {
-  if (!UUID_RE.test(text(connectionId))) throw new Error('Некорректный ID подключения.');
+  const canonicalConnectionId = text(connectionId);
+  if (!UUID_RE.test(canonicalConnectionId)) throw new Error('Некорректный ID подключения.');
+  const canonical = await resolveChannelImportAvailabilityScope(canonicalConnectionId);
   const { data, error } = await supabase.from('booking_channel_imported_bookings')
     .select('id,matched_booking_id,matched_property_setup_id,external_object_id,checkin_date,checkout_date,status')
-    .eq('connection_id', connectionId).neq('status', 'cancelled');
+    .eq('connection_id', canonicalConnectionId).neq('status', 'cancelled');
   if (error) throw new Error(error.message);
   const results: AvailabilityCheckResult[] = [];
   for (const row of data ?? []) {
     let propertySetupId = text(row.matched_property_setup_id) || null;
     let propertyId: string | null = null;
-    if (!propertySetupId && row.external_object_id) {
-      const { data: object } = await supabase.from('booking_channel_imported_objects')
-        .select('matched_property_setup_id,matched_property_id').eq('connection_id', connectionId)
+    if (row.external_object_id) {
+      const { data: object, error: objectError } = await supabase.from('booking_channel_imported_objects')
+        .select('matched_property_setup_id,matched_property_id').eq('connection_id', canonicalConnectionId)
         .eq('external_object_id', row.external_object_id).maybeSingle();
-      propertySetupId = text(object?.matched_property_setup_id) || null;
-      propertyId = text(object?.matched_property_id) || null;
+      if (objectError) throw new Error(objectError.message);
+      const objectPropertySetupId = text(object?.matched_property_setup_id) || null;
+      const objectPropertyId = text(object?.matched_property_id) || null;
+      if (propertySetupId && objectPropertySetupId && propertySetupId !== objectPropertySetupId) {
+        throw new Error('property_scope_mismatch');
+      }
+      propertySetupId ??= objectPropertySetupId;
+      propertyId = objectPropertyId;
     }
+    if (propertySetupId && propertySetupId !== canonical.propertySetupId) {
+      throw new Error('property_scope_mismatch');
+    }
+    if (propertyId && propertyId !== canonical.propertyId) {
+      throw new Error('property_scope_mismatch');
+    }
+    if (propertySetupId === canonical.propertySetupId && !propertyId) {
+      propertyId = canonical.propertyId;
+    }
+
     results.push(await checkAvailabilityConflict({
       bookingId: text(row.matched_booking_id) || null,
       excludeChannelImportedBookingId: text(row.id) || null,
@@ -759,7 +815,7 @@ export async function auditChannelImportAvailability(connectionId: string) {
       propertyId,
       dateFrom: row.checkin_date,
       dateTo: row.checkout_date,
-    }, { checkType: 'channel_import' }));
+    }, { checkType: 'channel_import', accountId: canonical.accountId }));
   }
   return results;
 }
