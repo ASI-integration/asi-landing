@@ -244,13 +244,67 @@ Scope: canonical property-bound residential location evidence and advisory Platf
 
 ## Nested priority lifecycle scope checkpoint
 
-- Baseline HEAD: `4ee64c01bd257862c6c4e699b7d589314b7ce109`. Result: local checkpoint titled `fix(booking-ops): retain scope through nested lifecycle mutations` (see branch log).
+- Baseline HEAD: `4ee64c01bd257862c6c4e699b7d589314b7ce109`. Result: `8b85e8c1c5a0947e847f2603dfe1507cd19040c5` (`fix(booking-ops): retain scope through nested lifecycle mutations`).
 - Files: `lifecycle.ts`, `legal-payment-autopilot.ts`, `guest-legal-deposit-mvd-execution.ts`, `physical-readiness-execution.ts`, `pre-checkin-control-center.ts`; corresponding legal-payment, guest-legal, physical-readiness, pre-checkin-scope-propagation and lifecycle-task-scope tests; this review.
 - All priority lifecycle calls carry canonical expected scope into guarded initialization, gate and exception writes. Legal status initialization, MVD skip, pre-checkin override/clear/resolve/block/skip and fallback snapshots retain scope. Payload metadata remains non-authoritative.
 - Verification: **187/187 focused (13 files)**; frozen contour **315/315 (29 files)**; TypeScript / touched-file ESLint / staged and unstaged diff-check **PASS**.
 - Remaining blocker: `[id]/tasks/[taskId]/route.ts` and `run/route.ts` do not yet bind task completion/action downstream effects to canonical scope. Repository task sync currently scopes its initial record read but drops scope in `applyBookingOpsTaskSync`; communication and Telegram draft persistence need guards after policy/knowledge awaits.
 - Smallest safe next slice: propagate scope through task completion effects and repository/task-sync writes, then communication intents/events and Telegram draft insertion/reuse before enabling the task update/run routes to use the complete guarded chain. Preserve existing readiness/provenance/manual-send policy; route-only changes are insufficient.
 - The three requested priority mutation areas are hardened; Wave 5 remains **PARTIAL** until the remaining mutation/internal-caller scope audit is finished.
+
+## Continuation verification ledger
+
+Worktree: `C:\Users\Admin\Documents\GitHub\asi-landing-wave5-residential-location-runtime`.
+Continuation starting HEAD: `b99eeb48b54304802f67f88ad2dbe43a159a502c`.
+Latest verified production HEAD: `8b85e8c1c5a0947e847f2603dfe1507cd19040c5`.
+All six checkpoints below were committed normally; no safety-layer bypass was needed.
+
+| Result HEAD | Slice | Focused | Frozen |
+| --- | --- | --- | --- |
+| `ec429574` | Preserved staged release checkpoint | 66/66, 7 files | 309/309, 29 files |
+| `2e6312a6` | Legal/payment | 47/47, 3 files | 309/309, 29 files |
+| `49f15c70` | Guest legal | 65/65, 3 files | 309/309, 29 files |
+| `5fb5e28e` | Physical + nested pre-checkin | 119/119, 11 files | 315/315, 29 files |
+| `4ee64c01` | Manual tasks + lifecycle writes | 62/62, 7 files | 315/315, 29 files |
+| `8b85e8c1` | Priority nested lifecycle callers | 187/187, 13 files | 315/315, 29 files |
+
+TypeScript and touched-file ESLint passed at every production checkpoint. Staged/unstaged diff-check and the cumulative diff from the starting HEAD passed. Test counts describe separate contours and must not be summed as unique tests.
+
+Exact changed paths since the continuation baseline (31 files, including the preserved staged work):
+
+```text
+docs/reviews/2026-10-03-wave5-residential-location-runtime.md
+src/app/api/dashboard/booking-ops/[id]/tasks/route.ts
+src/app/api/dashboard/booking-ops/__tests__/task-create-scope.test.ts
+src/app/api/dashboard/booking-ops/checkin-release/route.ts
+src/app/api/dashboard/booking-ops/guest-intake-release/__tests__/route.test.ts
+src/app/api/dashboard/booking-ops/guest-intake-release/route.ts
+src/app/api/dashboard/booking-ops/legal-payment/__tests__/route-scope.test.ts
+src/app/api/dashboard/booking-ops/legal-payment/route.ts
+src/app/api/dashboard/booking-ops/physical-readiness/__tests__/route.test.ts
+src/app/api/dashboard/booking-ops/physical-readiness/route.ts
+src/app/api/dashboard/guest-legal/__tests__/route-scope.test.ts
+src/app/api/dashboard/guest-legal/action/route.ts
+src/app/api/dashboard/guest-legal/events/route.ts
+src/app/api/dashboard/guest-legal/explain/route.ts
+src/app/api/dashboard/guest-legal/status/route.ts
+src/lib/booking-ops/__tests__/guest-intake-checkin-release-scope.test.ts
+src/lib/booking-ops/__tests__/guest-legal-scope.test.ts
+src/lib/booking-ops/__tests__/legal-payment-scope.test.ts
+src/lib/booking-ops/__tests__/lifecycle-entry-adapter.test.ts
+src/lib/booking-ops/__tests__/lifecycle-task-scope.test.ts
+src/lib/booking-ops/__tests__/physical-readiness-scope.test.ts
+src/lib/booking-ops/__tests__/pre-checkin-scope-propagation.test.ts
+src/lib/booking-ops/__tests__/tasks-scope.test.ts
+src/lib/booking-ops/guest-intake-checkin-release.ts
+src/lib/booking-ops/guest-legal-deposit-mvd-execution.ts
+src/lib/booking-ops/legal-payment-autopilot.ts
+src/lib/booking-ops/lifecycle-entry-adapter.ts
+src/lib/booking-ops/lifecycle.ts
+src/lib/booking-ops/physical-readiness-execution.ts
+src/lib/booking-ops/pre-checkin-control-center.ts
+src/lib/booking-ops/tasks.ts
+```
 
 ## Operational boundary
 
