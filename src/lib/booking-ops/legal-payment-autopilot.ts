@@ -2,7 +2,7 @@ import { guardBookingCommunicationDraft } from '@/lib/communication/booking-know
 import { randomUUID } from 'node:crypto';
 import { supabase } from '@/lib/supabase';
 import { buildAutoSendDecisionMetadata } from './communication-auto-send-policy';
-import { getBookingOpsRecord, updateBookingOpsRecord } from './repository';
+import { getBookingOpsRecord, requireBookingOpsRecordScope, updateBookingOpsRecord } from './repository';
 import {
   blockGate,
   completeGate,
@@ -336,10 +336,12 @@ function preferredGuestChannel(record: BookingOpsRecord): BookingOpsCommunicatio
   return 'manual';
 }
 
-async function ensureBookingRecord(bookingId: string): Promise<BookingOpsRecord | null> {
+type ExpectedScope = { accountId: string; propertyId: string };
+
+async function ensureBookingRecord(bookingId: string, expectedScope?: ExpectedScope): Promise<BookingOpsRecord | null> {
   const id = text(bookingId);
   if (!id) return null;
-  return getBookingOpsRecord(id);
+  return expectedScope ? requireBookingOpsRecordScope(id, expectedScope) : getBookingOpsRecord(id);
 }
 
 async function listDocuments(bookingId: string): Promise<BookingGuestDocument[]> {
@@ -401,8 +403,10 @@ async function listCommunications(bookingId: string): Promise<BookingOpsCommunic
 async function upsertContract(
   bookingId: string,
   patch: Partial<ContractRow>,
+  expectedScope?: ExpectedScope,
 ): Promise<void> {
   const existing = await latestContract(bookingId);
+  if (expectedScope) await requireBookingOpsRecordScope(bookingId, expectedScope);
   const now = new Date().toISOString();
   await supabase
     .from('booking_contracts')
@@ -426,8 +430,10 @@ async function upsertContract(
 async function upsertDeposit(
   bookingId: string,
   patch: Partial<DepositRow>,
+  expectedScope?: ExpectedScope,
 ): Promise<void> {
   const existing = await latestDeposit(bookingId);
+  if (expectedScope) await requireBookingOpsRecordScope(bookingId, expectedScope);
   const now = new Date().toISOString();
   await supabase
     .from('booking_deposits')
@@ -452,8 +458,10 @@ async function upsertDeposit(
 async function upsertMvdReport(
   bookingId: string,
   patch: Partial<MvdRow>,
+  expectedScope?: ExpectedScope,
 ): Promise<void> {
   const existing = await latestMvdReport(bookingId);
+  if (expectedScope) await requireBookingOpsRecordScope(bookingId, expectedScope);
   const now = new Date().toISOString();
   await supabase
     .from('booking_mvd_reports')
@@ -480,8 +488,10 @@ async function createOrUpdateCommunication(input: {
   messageText: string;
   status?: 'draft_ready' | 'waiting_for_external_input';
   metadata?: Record<string, unknown>;
+  expectedScope?: ExpectedScope;
 }): Promise<void> {
   const now = new Date().toISOString();
+  if (input.expectedScope) await requireBookingOpsRecordScope(input.record.id, input.expectedScope);
   const channel = preferredGuestChannel(input.record);
   const metadata = await buildAutoSendDecisionMetadata({
     actorType: 'guest',
@@ -506,6 +516,7 @@ async function createOrUpdateCommunication(input: {
     .maybeSingle();
 
   const knowledge = await guardBookingCommunicationDraft(input.record, input.purpose);
+  if (input.expectedScope) await requireBookingOpsRecordScope(input.record.id, input.expectedScope);
   const payload = {
     booking_ops_record_id: input.record.id,
     booking_id: input.record.bookingId,
@@ -525,7 +536,8 @@ async function createOrUpdateCommunication(input: {
     await supabase
       .from('booking_ops_communication_intents')
       .update(payload)
-      .eq('id', (data as CommunicationRow).id);
+      .eq('id', (data as CommunicationRow).id)
+      .eq('booking_ops_record_id', input.record.id);
     return;
   }
 
@@ -541,27 +553,36 @@ async function createOrUpdateCommunication(input: {
 async function updateOpsSummary(
   bookingId: string,
   patch: Parameters<typeof updateBookingOpsRecord>[1],
+  expectedScope?: ExpectedScope,
 ): Promise<void> {
-  await updateBookingOpsRecord(bookingId, patch, { actorType: 'system' });
+  if (expectedScope) await requireBookingOpsRecordScope(bookingId, expectedScope);
+  const result = await updateBookingOpsRecord(bookingId, patch, { actorType: 'system', expectedScope });
+  if (!result.ok) throw new Error(result.error ?? 'booking_ops_summary_sync_failed');
 }
 
-export async function initializeLegalPaymentForBooking(bookingId: string): Promise<LegalPaymentStatus> {
-  const record = await ensureBookingRecord(bookingId);
+export async function initializeLegalPaymentForBooking(
+  bookingId: string,
+  expectedScope?: ExpectedScope,
+): Promise<LegalPaymentStatus> {
+  const record = await ensureBookingRecord(bookingId, expectedScope);
   if (!record) throw new Error('booking_not_found');
+  if (expectedScope) await requireBookingOpsRecordScope(record.id, expectedScope);
   await initializeLifecycleForBooking(record.id);
-  await upsertContract(record.id, { status: 'not_started', provider: 'manual', metadata: { initialized: true } });
-  await upsertDeposit(record.id, { status: 'not_requested', provider: 'manual', metadata: { initialized: true } });
-  await upsertMvdReport(record.id, { status: 'not_started', provider: 'manual', metadata: { initialized: true } });
-  return getLegalPaymentStatus(record.id);
+  await upsertContract(record.id, { status: 'not_started', provider: 'manual', metadata: { initialized: true } }, expectedScope);
+  await upsertDeposit(record.id, { status: 'not_requested', provider: 'manual', metadata: { initialized: true } }, expectedScope);
+  await upsertMvdReport(record.id, { status: 'not_started', provider: 'manual', metadata: { initialized: true } }, expectedScope);
+  return getLegalPaymentStatus(record.id, expectedScope);
 }
 
 export async function requestGuestDocuments(
   bookingId: string,
   requiredDocuments: string[],
   extraMetadata?: Record<string, unknown>,
+  expectedScope?: ExpectedScope,
 ): Promise<LegalPaymentStatus> {
-  const record = await ensureBookingRecord(bookingId);
+  const record = await ensureBookingRecord(bookingId, expectedScope);
   if (!record) throw new Error('booking_not_found');
+  if (expectedScope) await requireBookingOpsRecordScope(record.id, expectedScope);
   await initializeLifecycleForBooking(record.id);
   const now = new Date().toISOString();
   const docs = (requiredDocuments.length ? requiredDocuments : ['passport']).map((documentType) => ({
@@ -581,43 +602,51 @@ export async function requestGuestDocuments(
     created_at: now,
     updated_at: now,
   }));
+  if (expectedScope) await requireBookingOpsRecordScope(record.id, expectedScope);
   await supabase.from('booking_guest_documents').insert(docs);
+  if (expectedScope) await requireBookingOpsRecordScope(record.id, expectedScope);
   await completeGate(record.id, 'documents_requested', { requiredDocuments: docs.map((item) => item.document_type) });
-  await updateOpsSummary(record.id, { documentsStatus: 'requested', documentRequired: true });
+  await updateOpsSummary(record.id, { documentsStatus: 'requested', documentRequired: true }, expectedScope);
   await createOrUpdateCommunication({
     record,
+    expectedScope,
     purpose: 'request_guest_documents',
     templateKey: 'guest.legal_payment.documents_request.v1',
     messageText: `Здравствуйте, ${guestName(record)}. Для подготовки заезда по объекту ${propertyName(record)} нужны документы гостей. Пришлите их, пожалуйста, удобным способом.`,
     metadata: { requiredDocuments: docs.map((item) => item.document_type) },
   });
-  return getLegalPaymentStatus(record.id);
+  return getLegalPaymentStatus(record.id, expectedScope);
 }
 
 export async function markDocumentsReceived(
   bookingId: string,
   extraMetadata?: Record<string, unknown>,
+  expectedScope?: ExpectedScope,
 ): Promise<LegalPaymentStatus> {
-  const record = await ensureBookingRecord(bookingId);
+  const record = await ensureBookingRecord(bookingId, expectedScope);
   if (!record) throw new Error('booking_not_found');
   const now = new Date().toISOString();
+  if (expectedScope) await requireBookingOpsRecordScope(record.id, expectedScope);
   await supabase
     .from('booking_guest_documents')
     .update({ status: 'received', metadata: metadata(extraMetadata), updated_at: now })
     .eq('booking_id', record.id)
     .in('status', ['requested', 'missing']);
+  if (expectedScope) await requireBookingOpsRecordScope(record.id, expectedScope);
   await completeGate(record.id, 'documents_received', metadata(extraMetadata));
-  await updateOpsSummary(record.id, { documentsStatus: 'received', documentCollected: true });
-  return getLegalPaymentStatus(record.id);
+  await updateOpsSummary(record.id, { documentsStatus: 'received', documentCollected: true }, expectedScope);
+  return getLegalPaymentStatus(record.id, expectedScope);
 }
 
 export async function verifyGuestDocuments(
   bookingId: string,
   extraMetadata?: Record<string, unknown>,
+  expectedScope?: ExpectedScope,
 ): Promise<LegalPaymentStatus> {
-  const record = await ensureBookingRecord(bookingId);
+  const record = await ensureBookingRecord(bookingId, expectedScope);
   if (!record) throw new Error('booking_not_found');
   const now = new Date().toISOString();
+  if (expectedScope) await requireBookingOpsRecordScope(record.id, expectedScope);
   await supabase
     .from('booking_guest_documents')
     .update({
@@ -628,26 +657,30 @@ export async function verifyGuestDocuments(
     })
     .eq('booking_id', record.id)
     .in('status', ['requested', 'received', 'missing']);
+  if (expectedScope) await requireBookingOpsRecordScope(record.id, expectedScope);
   await completeGate(record.id, 'documents_received', metadata(extraMetadata));
+  if (expectedScope) await requireBookingOpsRecordScope(record.id, expectedScope);
   await completeGate(record.id, 'documents_verified', metadata(extraMetadata));
   await updateOpsSummary(record.id, {
     documentsStatus: 'verified',
     documentCollected: true,
     documentVerificationStatus: 'verified',
-  });
-  await recomputePreCheckinReadiness(record.id);
-  return getLegalPaymentStatus(record.id);
+  }, expectedScope);
+  await recomputePreCheckinReadiness(record.id, expectedScope);
+  return getLegalPaymentStatus(record.id, expectedScope);
 }
 
 export async function rejectGuestDocuments(
   bookingId: string,
   reason: string,
   extraMetadata?: Record<string, unknown>,
+  expectedScope?: ExpectedScope,
 ): Promise<LegalPaymentStatus> {
-  const record = await ensureBookingRecord(bookingId);
+  const record = await ensureBookingRecord(bookingId, expectedScope);
   if (!record) throw new Error('booking_not_found');
   const now = new Date().toISOString();
   const cleanReason = text(reason) || 'Документы отклонены';
+  if (expectedScope) await requireBookingOpsRecordScope(record.id, expectedScope);
   await supabase
     .from('booking_guest_documents')
     .update({
@@ -657,78 +690,89 @@ export async function rejectGuestDocuments(
       updated_at: now,
     })
     .eq('booking_id', record.id);
+  if (expectedScope) await requireBookingOpsRecordScope(record.id, expectedScope);
   await blockGate(record.id, 'documents_verified', cleanReason, metadata(extraMetadata));
   await updateOpsSummary(record.id, {
     documentsStatus: 'problem',
     documentVerificationStatus: 'rejected',
     documentNotes: cleanReason,
-  });
-  return getLegalPaymentStatus(record.id);
+  }, expectedScope);
+  return getLegalPaymentStatus(record.id, expectedScope);
 }
 
 export async function prepareContract(
   bookingId: string,
   templateKey?: string,
   extraMetadata?: Record<string, unknown>,
+  expectedScope?: ExpectedScope,
 ): Promise<LegalPaymentStatus> {
-  const record = await ensureBookingRecord(bookingId);
+  const record = await ensureBookingRecord(bookingId, expectedScope);
   if (!record) throw new Error('booking_not_found');
   await upsertContract(record.id, {
     status: 'prepared',
     template_key: text(templateKey) || null,
     metadata: metadata(extraMetadata),
-  });
+  }, expectedScope);
+  if (expectedScope) await requireBookingOpsRecordScope(record.id, expectedScope);
   await completeGate(record.id, 'contract_prepared', metadata(extraMetadata));
   await updateOpsSummary(record.id, {
     contractStatus: 'prepared',
     contractRequired: true,
     contractProvider: 'manual',
     contractIntakeStatus: 'prepared',
-  });
-  return getLegalPaymentStatus(record.id);
+  }, expectedScope);
+  return getLegalPaymentStatus(record.id, expectedScope);
 }
 
 export async function markContractSent(
   bookingId: string,
   extraMetadata?: Record<string, unknown>,
+  expectedScope?: ExpectedScope,
 ): Promise<LegalPaymentStatus> {
-  const record = await ensureBookingRecord(bookingId);
+  const record = await ensureBookingRecord(bookingId, expectedScope);
   if (!record) throw new Error('booking_not_found');
   await upsertContract(record.id, {
     status: 'sent',
     sent_at: new Date().toISOString(),
     metadata: metadata(extraMetadata),
-  });
+  }, expectedScope);
+  if (expectedScope) await requireBookingOpsRecordScope(record.id, expectedScope);
   await completeGate(record.id, 'contract_prepared', metadata(extraMetadata));
+  if (expectedScope) await requireBookingOpsRecordScope(record.id, expectedScope);
   await completeGate(record.id, 'contract_sent', metadata(extraMetadata));
-  await updateOpsSummary(record.id, { contractStatus: 'sent', contractIntakeStatus: 'sent' });
+  await updateOpsSummary(record.id, { contractStatus: 'sent', contractIntakeStatus: 'sent' }, expectedScope);
   await createOrUpdateCommunication({
     record,
+    expectedScope,
     purpose: 'request_contract_confirmation',
     templateKey: 'guest.legal_payment.contract_signature.v1',
     messageText: `Здравствуйте, ${guestName(record)}. Договор по объекту ${propertyName(record)} подготовлен. Проверьте его, пожалуйста, и подтвердите подписание.`,
     metadata: metadata(extraMetadata),
   });
-  return getLegalPaymentStatus(record.id);
+  return getLegalPaymentStatus(record.id, expectedScope);
 }
 
 export async function markContractSigned(
   bookingId: string,
   extraMetadata?: Record<string, unknown>,
+  expectedScope?: ExpectedScope,
 ): Promise<LegalPaymentStatus> {
-  const record = await ensureBookingRecord(bookingId);
+  const record = await ensureBookingRecord(bookingId, expectedScope);
   if (!record) throw new Error('booking_not_found');
   await upsertContract(record.id, {
     status: 'signed',
     signed_at: new Date().toISOString(),
     metadata: metadata(extraMetadata),
-  });
+  }, expectedScope);
+  if (expectedScope) await requireBookingOpsRecordScope(record.id, expectedScope);
   await completeGate(record.id, 'contract_prepared', metadata(extraMetadata));
+  if (expectedScope) await requireBookingOpsRecordScope(record.id, expectedScope);
   await completeGate(record.id, 'contract_sent', metadata(extraMetadata));
+  if (expectedScope) await requireBookingOpsRecordScope(record.id, expectedScope);
   await completeGate(record.id, 'contract_signed', metadata(extraMetadata));
-  await updateOpsSummary(record.id, { contractStatus: 'signed', contractIntakeStatus: 'signed' });
-  await recomputePreCheckinReadiness(record.id);
-  return getLegalPaymentStatus(record.id);
+  await updateOpsSummary(record.id, { contractStatus: 'signed', contractIntakeStatus: 'signed' }, expectedScope);
+  await recomputePreCheckinReadiness(record.id, expectedScope);
+  return getLegalPaymentStatus(record.id, expectedScope);
 }
 
 export async function requestDeposit(
@@ -736,8 +780,9 @@ export async function requestDeposit(
   amount: number,
   currency: string,
   extraMetadata?: Record<string, unknown>,
+  expectedScope?: ExpectedScope,
 ): Promise<LegalPaymentStatus> {
-  const record = await ensureBookingRecord(bookingId);
+  const record = await ensureBookingRecord(bookingId, expectedScope);
   if (!record) throw new Error('booking_not_found');
   const cleanAmount = Number.isFinite(Number(amount)) ? Number(amount) : 0;
   const cleanCurrency = text(currency).toUpperCase() || 'RUB';
@@ -747,123 +792,143 @@ export async function requestDeposit(
     currency: cleanCurrency,
     requested_at: new Date().toISOString(),
     metadata: metadata(extraMetadata),
-  });
+  }, expectedScope);
+  if (expectedScope) await requireBookingOpsRecordScope(record.id, expectedScope);
   await completeGate(record.id, 'deposit_requested', { amount: cleanAmount, currency: cleanCurrency });
   await updateOpsSummary(record.id, {
     depositStatus: 'requested',
     depositRequired: true,
     depositAmount: cleanAmount,
     depositIntakeStatus: 'requested',
-  });
+  }, expectedScope);
   await createOrUpdateCommunication({
     record,
+    expectedScope,
     purpose: 'request_deposit_payment',
     templateKey: 'guest.legal_payment.deposit_request.v1',
     messageText: `Здравствуйте, ${guestName(record)}. Для завершения подготовки брони по объекту ${propertyName(record)} нужно внести депозит ${cleanAmount} ${cleanCurrency}. Подскажите, пожалуйста, когда будет удобно оплатить.`,
     metadata: { amount: cleanAmount, currency: cleanCurrency },
   });
-  return getLegalPaymentStatus(record.id);
+  return getLegalPaymentStatus(record.id, expectedScope);
 }
 
 export async function markDepositReceived(
   bookingId: string,
   extraMetadata?: Record<string, unknown>,
+  expectedScope?: ExpectedScope,
 ): Promise<LegalPaymentStatus> {
-  const record = await ensureBookingRecord(bookingId);
+  const record = await ensureBookingRecord(bookingId, expectedScope);
   if (!record) throw new Error('booking_not_found');
   await upsertDeposit(record.id, {
     status: 'received',
     received_at: new Date().toISOString(),
     metadata: metadata(extraMetadata),
-  });
+  }, expectedScope);
+  if (expectedScope) await requireBookingOpsRecordScope(record.id, expectedScope);
   await completeGate(record.id, 'deposit_requested', metadata(extraMetadata));
+  if (expectedScope) await requireBookingOpsRecordScope(record.id, expectedScope);
   await completeGate(record.id, 'deposit_received', metadata(extraMetadata));
-  await updateOpsSummary(record.id, { depositStatus: 'confirmed', depositIntakeStatus: 'received' });
-  await recomputePreCheckinReadiness(record.id);
-  return getLegalPaymentStatus(record.id);
+  await updateOpsSummary(record.id, { depositStatus: 'confirmed', depositIntakeStatus: 'received' }, expectedScope);
+  await recomputePreCheckinReadiness(record.id, expectedScope);
+  return getLegalPaymentStatus(record.id, expectedScope);
 }
 
 export async function waiveDeposit(
   bookingId: string,
   reason: string,
   extraMetadata?: Record<string, unknown>,
+  expectedScope?: ExpectedScope,
 ): Promise<LegalPaymentStatus> {
-  const record = await ensureBookingRecord(bookingId);
+  const record = await ensureBookingRecord(bookingId, expectedScope);
   if (!record) throw new Error('booking_not_found');
   await upsertDeposit(record.id, {
     status: 'waived',
     failure_reason: text(reason) || 'Депозит отменён вручную',
     metadata: metadata(extraMetadata),
-  });
+  }, expectedScope);
+  if (expectedScope) await requireBookingOpsRecordScope(record.id, expectedScope);
   await completeGate(record.id, 'deposit_requested', metadata(extraMetadata));
+  if (expectedScope) await requireBookingOpsRecordScope(record.id, expectedScope);
   await completeGate(record.id, 'deposit_received', { waived: true, reason: text(reason) });
   await updateOpsSummary(record.id, {
     depositStatus: 'confirmed',
     depositRequired: false,
     depositIntakeStatus: 'not_required',
     depositNotes: text(reason) || null,
-  });
-  await recomputePreCheckinReadiness(record.id);
-  return getLegalPaymentStatus(record.id);
+  }, expectedScope);
+  await recomputePreCheckinReadiness(record.id, expectedScope);
+  return getLegalPaymentStatus(record.id, expectedScope);
 }
 
 export async function prepareMvdReport(
   bookingId: string,
   extraMetadata?: Record<string, unknown>,
+  expectedScope?: ExpectedScope,
 ): Promise<LegalPaymentStatus> {
-  const record = await ensureBookingRecord(bookingId);
+  const record = await ensureBookingRecord(bookingId, expectedScope);
   if (!record) throw new Error('booking_not_found');
   await upsertMvdReport(record.id, {
     status: 'prepared',
     prepared_at: new Date().toISOString(),
     metadata: metadata(extraMetadata),
-  });
+  }, expectedScope);
+  if (expectedScope) await requireBookingOpsRecordScope(record.id, expectedScope);
   await completeGate(record.id, 'mvd_report_prepared', metadata(extraMetadata));
   await updateOpsSummary(record.id, {
     mvdStatus: 'prepared',
     mvdRequired: true,
     mvdDataStatus: 'prepared',
-  });
-  return getLegalPaymentStatus(record.id);
+  }, expectedScope);
+  return getLegalPaymentStatus(record.id, expectedScope);
 }
 
 export async function markMvdReportSubmitted(
   bookingId: string,
   extraMetadata?: Record<string, unknown>,
+  expectedScope?: ExpectedScope,
 ): Promise<LegalPaymentStatus> {
-  const record = await ensureBookingRecord(bookingId);
+  const record = await ensureBookingRecord(bookingId, expectedScope);
   if (!record) throw new Error('booking_not_found');
   await upsertMvdReport(record.id, {
     status: 'submitted',
     submitted_at: new Date().toISOString(),
     metadata: metadata(extraMetadata),
-  });
+  }, expectedScope);
+  if (expectedScope) await requireBookingOpsRecordScope(record.id, expectedScope);
   await completeGate(record.id, 'mvd_report_prepared', metadata(extraMetadata));
+  if (expectedScope) await requireBookingOpsRecordScope(record.id, expectedScope);
   await completeGate(record.id, 'mvd_report_submitted', metadata(extraMetadata));
-  await updateOpsSummary(record.id, { mvdStatus: 'submitted', mvdDataStatus: 'submitted' });
-  await recomputePreCheckinReadiness(record.id);
-  return getLegalPaymentStatus(record.id);
+  await updateOpsSummary(record.id, { mvdStatus: 'submitted', mvdDataStatus: 'submitted' }, expectedScope);
+  await recomputePreCheckinReadiness(record.id, expectedScope);
+  return getLegalPaymentStatus(record.id, expectedScope);
 }
 
 export async function markMvdReportAccepted(
   bookingId: string,
   extraMetadata?: Record<string, unknown>,
+  expectedScope?: ExpectedScope,
 ): Promise<LegalPaymentStatus> {
-  const record = await ensureBookingRecord(bookingId);
+  const record = await ensureBookingRecord(bookingId, expectedScope);
   if (!record) throw new Error('booking_not_found');
   await upsertMvdReport(record.id, {
     status: 'accepted',
     accepted_at: new Date().toISOString(),
     metadata: metadata(extraMetadata),
-  });
+  }, expectedScope);
+  if (expectedScope) await requireBookingOpsRecordScope(record.id, expectedScope);
   await completeGate(record.id, 'mvd_report_prepared', metadata(extraMetadata));
+  if (expectedScope) await requireBookingOpsRecordScope(record.id, expectedScope);
   await completeGate(record.id, 'mvd_report_submitted', metadata(extraMetadata));
-  await updateOpsSummary(record.id, { mvdStatus: 'submitted', mvdDataStatus: 'confirmed' });
-  await recomputePreCheckinReadiness(record.id);
-  return getLegalPaymentStatus(record.id);
+  await updateOpsSummary(record.id, { mvdStatus: 'submitted', mvdDataStatus: 'confirmed' }, expectedScope);
+  await recomputePreCheckinReadiness(record.id, expectedScope);
+  return getLegalPaymentStatus(record.id, expectedScope);
 }
 
-export async function getLegalPaymentBlockers(bookingId: string): Promise<LegalPaymentBlocker[]> {
+export async function getLegalPaymentBlockers(
+  bookingId: string,
+  expectedScope?: ExpectedScope,
+): Promise<LegalPaymentBlocker[]> {
+  if (expectedScope) await requireBookingOpsRecordScope(bookingId, expectedScope);
   const documents = await listDocuments(bookingId);
   const contract = await latestContract(bookingId);
   const deposit = await latestDeposit(bookingId);
@@ -888,9 +953,14 @@ export async function getLegalPaymentBlockers(bookingId: string): Promise<LegalP
   return blockers;
 }
 
-export async function recomputePreCheckinReadiness(bookingId: string): Promise<LegalPaymentStatus> {
+export async function recomputePreCheckinReadiness(
+  bookingId: string,
+  expectedScope?: ExpectedScope,
+): Promise<LegalPaymentStatus> {
   const id = text(bookingId);
-  const status = await getLegalPaymentStatus(id);
+  const record = await ensureBookingRecord(id, expectedScope);
+  if (!record) throw new Error('booking_not_found');
+  const status = await getLegalPaymentStatus(record.id, expectedScope);
   const gates = status.lifecycle?.gates ?? [];
   const required = [
     'documents_verified',
@@ -903,13 +973,16 @@ export async function recomputePreCheckinReadiness(bookingId: string): Promise<L
     return gate?.status === 'completed' || gate?.status === 'skipped';
   });
   if (completeOrSkipped && status.blockers.length === 0) {
+    if (expectedScope) await requireBookingOpsRecordScope(record.id, expectedScope);
     await completeGate(id, 'property_ready', { legalPaymentReady: true });
   } else if (status.blockers.length > 0) {
+    if (expectedScope) await requireBookingOpsRecordScope(record.id, expectedScope);
     await markGateInProgress(id, 'property_ready', { legalPaymentReady: false });
-    const record = await ensureBookingRecord(id);
-    if (record) {
+    const refreshedRecord = await ensureBookingRecord(id, expectedScope);
+    if (refreshedRecord) {
       await createOrUpdateCommunication({
-        record,
+        record: refreshedRecord,
+        expectedScope,
         purpose: 'remind_guest_before_checkin',
         templateKey: 'guest.legal_payment.precheckin_blockers.v1',
         messageText: `Здравствуйте, ${guestName(record)}. По брони ${propertyName(record)} остались шаги перед заездом. Оператор проверит детали и подскажет следующий шаг.`,
@@ -918,11 +991,17 @@ export async function recomputePreCheckinReadiness(bookingId: string): Promise<L
       });
     }
   }
-  return getLegalPaymentStatus(id);
+  return getLegalPaymentStatus(id, expectedScope);
 }
 
-export async function getLegalPaymentStatus(bookingId: string): Promise<LegalPaymentStatus> {
-  const id = text(bookingId);
+export async function getLegalPaymentStatus(
+  bookingId: string,
+  expectedScope?: ExpectedScope,
+): Promise<LegalPaymentStatus> {
+  const record = await ensureBookingRecord(bookingId, expectedScope);
+  if (!record) throw new Error('booking_not_found');
+  const id = record.id;
+  if (expectedScope) await requireBookingOpsRecordScope(record.id, expectedScope);
   await initializeLifecycleForBooking(id);
   const [documents, contract, deposit, mvdReport, communications, lifecycleResult] = await Promise.all([
     listDocuments(id),
@@ -938,7 +1017,7 @@ export async function getLegalPaymentStatus(bookingId: string): Promise<LegalPay
     contract,
     deposit,
     mvdReport,
-    blockers: await getLegalPaymentBlockers(id),
+    blockers: await getLegalPaymentBlockers(id, expectedScope),
     communications,
     lifecycle: lifecycleResult.lifecycle ?? null,
   };

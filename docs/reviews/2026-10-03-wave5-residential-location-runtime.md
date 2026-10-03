@@ -206,6 +206,15 @@ Scope: canonical property-bound residential location evidence and advisory Platf
 - Verification: focused release/legal/physical contour **66/66 PASS**; frozen Booking Ops + Channel Manager + reservation + owner-Telegram + check-in/in-stay + release/legal/physical regression **309/309 PASS**; TypeScript **PASS**; changed-file ESLint **PASS**; `git diff --check` **PASS**.
 - Next step: audit `legal-payment` and dashboard guest-legal action routes, then move the physical-readiness route to the shared access helper and carry expected scope through its mutation dispatcher; do not grant authority from payload-only/unbound fields.
 
+## Legal/payment execution scope checkpoint
+
+- Preserved release checkpoint committed normally as `ec42957425a133f6ba4f029132cf8e69005a48ad`; repeated verification: **66/66 focused**, **309/309 frozen**, TypeScript / ESLint / staged and unstaged diff-check **PASS**.
+- Baseline HEAD: `ec42957425a133f6ba4f029132cf8e69005a48ad`. Result: local commit titled `fix(booking-ops): revalidate legal payment mutation scope` (see branch log).
+- Files: `legal-payment/route.ts`, `legal-payment/__tests__/route-scope.test.ts`, `legal-payment-autopilot.ts`, `legal-payment-scope.test.ts`, this review.
+- Shared API access supplies canonical booking/account/property; all 14 actions and status initialization carry expected scope. Domain guards run before documents, singleton upserts, lifecycle gates, scoped Booking Ops summary writes, and knowledge-reviewed communication persistence. No sending policy changed.
+- Verification: **47/47 focused (3 files)**; frozen contour **309/309 (29 files)**; TypeScript / touched-file ESLint / diff-check **PASS**. Adversarial tests cover denied/unbound route access, all domain entries, ownership changes after reads/initialization/knowledge review, and scoped summary propagation.
+- Remaining blocker: guest-legal action/status/explain and physical mutation routes still need scope propagation. Smallest next step: guest-legal route access plus all nested document/legal/readiness/event operations.
+
 ## Operational boundary
 
 Wave 5 migration files are prepared and contract-tested but were **not applied to any live/local database** in this pass. No push, merge, deploy, live database mutation, DNS, secret, or package-install action was performed.
