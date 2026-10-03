@@ -20,14 +20,22 @@ export async function GET(_req: Request, context: RouteContext): Promise<NextRes
   const access = await requireBookingOpsApiAccess(auth.session, context.params.id);
   if (!access.ok) return access.response;
 
-  const result = await listBookingOpsTasksForRecord(access.bookingId);
-  if (!result.ok) {
-    return NextResponse.json(
-      { ok: false, message: result.error ?? 'Не удалось загрузить задачи.' },
-      { status: 500 },
-    );
+  const expectedScope = { accountId: access.accountId, propertyId: access.propertyId };
+  try {
+    const result = await listBookingOpsTasksForRecord(access.bookingId, { expectedScope });
+    if (!result.ok) {
+      return NextResponse.json(
+        { ok: false, message: result.error ?? 'Не удалось загрузить задачи.' },
+        { status: 500 },
+      );
+    }
+    return NextResponse.json({ ok: true, tasks: result.tasks });
+  } catch (error) {
+    if (error instanceof Error && error.message === 'booking_scope_mismatch') {
+      return NextResponse.json({ ok: false, message: 'Нет доступа к бронированию.' }, { status: 403 });
+    }
+    return NextResponse.json({ ok: false, message: 'Не удалось загрузить задачи.' }, { status: 500 });
   }
-  return NextResponse.json({ ok: true, tasks: result.tasks });
 }
 
 export async function POST(req: Request, context: RouteContext): Promise<NextResponse> {

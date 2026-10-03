@@ -28,6 +28,13 @@ vi.mock('@/lib/booking-ops/repository', () => ({
     bookingId: 'reservation-route',
     guestIntake: null,
   })),
+  requireBookingOpsRecordScope: vi.fn(async () => ({
+    id: 'ops-route',
+    bookingId: 'reservation-route',
+    propertyId: 'property-1',
+    guestIntake: null,
+  })),
+  updateBookingOpsRecord: vi.fn(async () => ({ ok: true, record: { id: 'ops-route' } })),
 }));
 
 vi.mock('@/lib/booking-ops/lifecycle', () => ({
