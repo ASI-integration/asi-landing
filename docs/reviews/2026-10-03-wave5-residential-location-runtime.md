@@ -329,14 +329,15 @@ src/lib/booking-ops/tasks.ts
 - Verification: focused **37/37 PASS (3 files)**; frozen regression **318/318 PASS (29 files)**; TypeScript / touched-file ESLint / `git diff --check` **PASS**.
 - The null-property -> canonical-property attach gap is closed in the verified staged checkpoint below; the next unbound mutation seam is guest/data attachment.
 
-## Account-bound review and Channel Manager update checkpoints
+## Account-bound review and canonical mutation checkpoints
 
 - `eb91915a9c783aeebdcf5642379b221a228da914` (`fix(booking-ops): guard unbound review mutations`) commits the guarded property-attach and account-bound/property-unbound review-data seams. Unbound guest/data updates require the expected account and `property_id IS NULL`, remain review-only, and do not start task, guest-intake, lifecycle, or communication side effects before canonical property binding.
-- `43a02c0f769fbb191474a7ab27052c808588e579` (`fix(booking-ops): scope channel sync updates`) closes the Channel Manager read-to-write race: live booking updates now persist only while the booking still matches the canonical `{ accountId, propertyId }`; a scope change fails closed as `account_scope_mismatch` and incremental cursor advancement is blocked.
+- `43a02c0f769fbb191474a7ab27052c808588e579` (`fix(booking-ops): scope channel sync updates`) closes the Channel Manager read-to-write race: live booking updates persist only while the booking still matches canonical `{ accountId, propertyId }`; a scope change fails closed and blocks incremental cursor advancement.
+- `f782b1178e0d0defa767f658e43a8446f0a3f988` (`fix(reservations): retain canonical mutation scope`) binds reservation cancellation/restoration to the shared canonical booking identity. Booking status mutation, hold release, availability checks, and repository side effects retain the same account/property scope; a moved or mismatched booking fails closed.
 - PlatformDecision remains advisory only. Domain guards/revalidation remain authoritative, and guest auto-send policy is unchanged.
-- Verification for the latest checkpoint: focused Channel Manager contour **45/45 PASS (3 files)**; frozen regression **162/162 + 165/165 = 327/327 PASS (29 files)**; TypeScript, touched-file ESLint, and `git diff --check` **PASS**.
-- Changed files in `43a02c0f`: `channel-manager-live-core.ts`, `channel-manager-live-incremental-sync.test.ts`, plus a test-only typing cleanup in `repository.expected-scope.test.ts`.
-- No blocker at this checkpoint. Next safe step: audit remaining production callers that still invoke booking mutations without retaining canonical account/property/booking scope; change only a caller with a proven live path and a focused regression contour.
+- Latest verification: focused reservation mutation contour **16/16 PASS (3 files)**; frozen regression **162/162 + 168/168 = 330/330 PASS (30 files)**; TypeScript, touched-file ESLint, and `git diff --check` **PASS**.
+- Changed files in `f782b117`: `reservations/ledger.ts` and new `reservations/__tests__/ledger-mutation-scope.test.ts`.
+- No blocker at this checkpoint. The dashboard reservation PATCH supports property transfer and therefore needs a dedicated transfer contract rather than blindly reusing the old-property scope; guest-intake inbound also spans record/session/event/task/communication effects and should be scoped as one coherent slice, not partially.
 
 ## Operational boundary
 
