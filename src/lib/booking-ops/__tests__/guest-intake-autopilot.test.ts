@@ -122,6 +122,7 @@ describe('Booking Ops Guest Intake Autopilot v1', () => {
         createdAt: '2026-06-29T08:00:00.000Z',
         updatedAt: '2026-06-29T08:00:00.000Z',
       },
+      now: new Date('2026-06-29T09:00:00.000Z'),
     });
     expect(state.intakeStatus).toBe('partially_completed');
     expect(state.missingFields).toContain('documents');

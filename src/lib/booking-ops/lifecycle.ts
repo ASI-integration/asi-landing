@@ -421,45 +421,49 @@ export async function syncLifecycleFromTask(task: BookingOpsTask, expectedScope?
   }
 }
 
-export async function syncLifecycleFromBookingOpsRecord(record: BookingOpsRecord): Promise<void> {
+export async function syncLifecycleFromBookingOpsRecord(
+  record: BookingOpsRecord,
+  expectedScope?: ExpectedScope,
+): Promise<void> {
+  if (expectedScope) await requireBookingOpsRecordScope(record.id, expectedScope);
   const metadata = { sourceBookingId: record.bookingId };
-  await initializeLifecycleForBooking(record.id);
+  await initializeLifecycleForBooking(record.id, expectedScope);
   if (record.guestIntake?.intakeStatus === 'waiting_for_guest') {
-    await markGateInProgress(record.id, 'guest_data_requested', metadata);
+    await markGateInProgress(record.id, 'guest_data_requested', metadata, expectedScope);
   }
   if (record.guestIntake?.intakeStatus === 'completed') {
-    await completeGate(record.id, 'guest_data_completed', metadata);
+    await completeGate(record.id, 'guest_data_completed', metadata, expectedScope);
   }
   if (record.guestIntake?.intakeStatus === 'fallback_required') {
-    await blockGate(record.id, 'guest_data_completed', record.guestIntake.fallbackReason ?? 'Гость не может завершить ввод данных', metadata);
+    await blockGate(record.id, 'guest_data_completed', record.guestIntake.fallbackReason ?? 'Гость не может завершить ввод данных', metadata, expectedScope);
   }
-  if (record.documentsStatus === 'requested') await completeGate(record.id, 'documents_requested', metadata);
-  if (record.documentsStatus === 'received') await completeGate(record.id, 'documents_received', metadata);
+  if (record.documentsStatus === 'requested') await completeGate(record.id, 'documents_requested', metadata, expectedScope);
+  if (record.documentsStatus === 'received') await completeGate(record.id, 'documents_received', metadata, expectedScope);
   if (record.documentsStatus === 'verified') {
-    await completeGate(record.id, 'documents_received', metadata);
-    await completeGate(record.id, 'documents_verified', metadata);
+    await completeGate(record.id, 'documents_received', metadata, expectedScope);
+    await completeGate(record.id, 'documents_verified', metadata, expectedScope);
   }
-  if (record.documentsStatus === 'problem') await blockGate(record.id, 'documents_received', 'Проблема с документами', metadata);
-  if (record.contractStatus === 'prepared') await completeGate(record.id, 'contract_prepared', metadata);
-  if (record.contractStatus === 'sent') await completeGate(record.id, 'contract_sent', metadata);
+  if (record.documentsStatus === 'problem') await blockGate(record.id, 'documents_received', 'Проблема с документами', metadata, expectedScope);
+  if (record.contractStatus === 'prepared') await completeGate(record.id, 'contract_prepared', metadata, expectedScope);
+  if (record.contractStatus === 'sent') await completeGate(record.id, 'contract_sent', metadata, expectedScope);
   if (record.contractStatus === 'signed') {
-    await completeGate(record.id, 'contract_prepared', metadata);
-    await completeGate(record.id, 'contract_sent', metadata);
-    await completeGate(record.id, 'contract_signed', metadata);
+    await completeGate(record.id, 'contract_prepared', metadata, expectedScope);
+    await completeGate(record.id, 'contract_sent', metadata, expectedScope);
+    await completeGate(record.id, 'contract_signed', metadata, expectedScope);
   }
-  if (record.depositStatus === 'requested') await completeGate(record.id, 'deposit_requested', metadata);
+  if (record.depositStatus === 'requested') await completeGate(record.id, 'deposit_requested', metadata, expectedScope);
   if (record.depositStatus === 'confirmed') {
-    await completeGate(record.id, 'deposit_requested', metadata);
-    await completeGate(record.id, 'deposit_received', metadata);
+    await completeGate(record.id, 'deposit_requested', metadata, expectedScope);
+    await completeGate(record.id, 'deposit_received', metadata, expectedScope);
   }
-  if (record.mvdStatus === 'prepared') await completeGate(record.id, 'mvd_report_prepared', metadata);
+  if (record.mvdStatus === 'prepared') await completeGate(record.id, 'mvd_report_prepared', metadata, expectedScope);
   if (record.mvdStatus === 'submitted') {
-    await completeGate(record.id, 'mvd_report_prepared', metadata);
-    await completeGate(record.id, 'mvd_report_submitted', metadata);
+    await completeGate(record.id, 'mvd_report_prepared', metadata, expectedScope);
+    await completeGate(record.id, 'mvd_report_submitted', metadata, expectedScope);
   }
-  if (record.checkinReadinessStatus === 'ready') await completeGate(record.id, 'checkin_instructions_sent', metadata);
-  if (record.unitReadinessStatus === 'ready') await completeGate(record.id, 'property_ready', metadata);
+  if (record.checkinReadinessStatus === 'ready') await completeGate(record.id, 'checkin_instructions_sent', metadata, expectedScope);
+  if (record.unitReadinessStatus === 'ready') await completeGate(record.id, 'property_ready', metadata, expectedScope);
   if (record.isBlocked || record.opsStatus === 'problem_blocked') {
-    await blockGate(record.id, 'booking_closed', record.blockerReason ?? 'Бронь заблокирована', metadata);
+    await blockGate(record.id, 'booking_closed', record.blockerReason ?? 'Бронь заблокирована', metadata, expectedScope);
   }
 }

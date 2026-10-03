@@ -5,7 +5,7 @@ import { sameIdentity } from '@/lib/platform/decision';
 import { adaptCommunicationDecision } from '@/lib/platform/communication-decision';
 import { resolveResidentialBookingIdentity } from '@/lib/platform/residential-booking-scope';
 import { prepareBookingCommunication } from '@/lib/communication/booking-knowledge-boundary';
-import { getBookingOpsRecord } from '@/lib/booking-ops/repository';
+import { requireBookingOpsRecordScope } from '@/lib/booking-ops/repository';
 import {
   listBookingOpsCommunicationsForRecord,
   syncBookingOpsCommunications,
@@ -79,37 +79,43 @@ export async function POST(_req: Request, context: RouteContext): Promise<NextRe
   if ('error' in auth) return auth.error;
   const access = await requireBookingOpsApiAccess(auth.session, context.params.id);
   if (!access.ok) return access.response;
+  const expectedScope = { accountId: access.accountId, propertyId: access.propertyId };
 
-  const [record, tasksResult] = await Promise.all([
-    getBookingOpsRecord(context.params.id),
-    listBookingOpsTasksForRecord(context.params.id),
-  ]);
-  if (!record) {
-    return NextResponse.json({ ok: false, message: 'Запись не найдена.' }, { status: 404 });
-  }
-  if (!tasksResult.ok) {
-    return NextResponse.json(
-      { ok: false, message: tasksResult.error ?? 'Не удалось загрузить задачи.' },
-      { status: 500 },
-    );
-  }
+  try {
+    const [record, tasksResult] = await Promise.all([
+      requireBookingOpsRecordScope(access.bookingId, expectedScope),
+      listBookingOpsTasksForRecord(access.bookingId, { expectedScope }),
+    ]);
+    if (!tasksResult.ok) {
+      return NextResponse.json(
+        { ok: false, message: tasksResult.error ?? 'Не удалось загрузить задачи.' },
+        { status: 500 },
+      );
+    }
 
-  const guestIntake = await syncGuestIntakeAutopilot(record);
-  const result = await syncBookingOpsCommunications({
-    record: { ...record, guestIntake: guestIntake.session ?? record.guestIntake ?? null },
-    tasks: tasksResult.tasks,
-  });
-  if (!result.ok) {
-    return NextResponse.json(
-      { ok: false, message: result.error ?? 'Не удалось пересчитать коммуникации.' },
-      { status: 500 },
-    );
-  }
+    const guestIntake = await syncGuestIntakeAutopilot(record, expectedScope);
+    const result = await syncBookingOpsCommunications({
+      record: { ...record, guestIntake: guestIntake.session ?? record.guestIntake ?? null },
+      tasks: tasksResult.tasks,
+      expectedScope,
+    });
+    if (!result.ok) {
+      return NextResponse.json(
+        { ok: false, message: result.error ?? 'Не удалось пересчитать коммуникации.' },
+        { status: 500 },
+      );
+    }
 
-  return NextResponse.json({
-    ok: true,
-    communications: result.communications,
-    nextAction: result.plan.nextAction,
-    message: 'Коммуникации пересчитаны. Внешние сообщения не отправлялись.',
-  });
+    return NextResponse.json({
+      ok: true,
+      communications: result.communications,
+      nextAction: result.plan.nextAction,
+      message: 'Коммуникации пересчитаны. Внешние сообщения не отправлялись.',
+    });
+  } catch (error) {
+    if (error instanceof Error && error.message === 'booking_scope_mismatch') {
+      return NextResponse.json({ ok: false, message: 'Нет доступа к бронированию.' }, { status: 403 });
+    }
+    return NextResponse.json({ ok: false, message: 'Не удалось пересчитать коммуникации.' }, { status: 500 });
+  }
 }
