@@ -276,11 +276,13 @@ export async function skipGate(
   bookingId: string,
   gateKey: BookingLifecycleGateKey,
   reason?: string,
+  expectedScope?: ExpectedScope,
 ): Promise<{ ok: boolean; gate?: BookingLifecycleGate; error?: string }> {
-  return updateGate({ bookingId, gateKey, status: 'skipped', reason: reason ?? null });
+  return updateGate({ bookingId, gateKey, status: 'skipped', reason: reason ?? null, expectedScope });
 }
 
 export async function adminUpdateLifecycleGate(input: {
+  expectedScope?: ExpectedScope;
   bookingId: string;
   gateKey: unknown;
   status: unknown;
@@ -291,6 +293,7 @@ export async function adminUpdateLifecycleGate(input: {
   if (!isLifecycleGateKey(input.gateKey)) return { ok: false, error: 'invalid_gate_key' };
   if (!isLifecycleStatus(input.status)) return { ok: false, error: 'invalid_status' };
   return updateGate({
+    expectedScope: input.expectedScope,
     bookingId: input.bookingId,
     gateKey: input.gateKey,
     status: input.status,
@@ -352,14 +355,15 @@ export async function readLifecycleStatus(bookingId: string): Promise<{
   };
 }
 
-export async function getLifecycleStatus(bookingId: string): Promise<{
+export async function getLifecycleStatus(bookingId: string, expectedScope?: ExpectedScope): Promise<{
   ok: boolean;
   lifecycle?: BookingLifecycleSnapshot;
   error?: string;
 }> {
   const id = text(bookingId);
   if (!id) return { ok: false, error: 'booking_id_required' };
-  const initialized = await initializeLifecycleForBooking(id);
+  const initialized = await initializeLifecycleForBooking(id, expectedScope);
+  if (expectedScope) await requireBookingOpsRecordScope(id, expectedScope);
   if (!initialized.ok) return { ok: false, error: initialized.error };
   return readLifecycleStatus(id);
 }

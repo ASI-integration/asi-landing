@@ -65,6 +65,13 @@ describe('legal/payment execution canonical scope', () => {
     mocks.update.mockResolvedValue({ ok: true });
     mocks.knowledge.mockResolvedValue({ status: 'draft_ready', messageText: 'review', metadata: {} });
   });
+  it.each(mutations)('carries scope into nested lifecycle operations for %s', async (_name, call) => {
+    await call();
+    expect(mocks.initialize).toHaveBeenCalled();
+    for (const fn of [mocks.initialize, mocks.complete, mocks.block, mocks.progress]) {
+      for (const args of fn.mock.calls) expect(args.at(-1)).toEqual(scope);
+    }
+  });
   it.each(mutations)('blocks %s after canonical account/property mismatch', async (_name, call) => {
     mocks.scope.mockRejectedValue(new Error('booking_scope_mismatch'));
     await expect(call()).rejects.toThrow('booking_scope_mismatch');

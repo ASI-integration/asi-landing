@@ -335,20 +335,20 @@ export async function syncGuestLegalReadinessToBookingOpsRecord(
 
 async function syncLifecycle(bookingId: string, readiness: GuestLegalReadiness, expectedScope?: ExpectedScope): Promise<void> {
   if (expectedScope) await requireBookingOpsRecordScope(bookingId, expectedScope);
-  await initializeLifecycleForBooking(bookingId);
+  await initializeLifecycleForBooking(bookingId, expectedScope);
   if (expectedScope) await requireBookingOpsRecordScope(bookingId, expectedScope);
-  if (readiness.documentsStatus === 'verified') await completeGate(bookingId, 'documents_verified', { source: 'guest_legal_execution_v1', manual: true });
-  else await markGateInProgress(bookingId, 'documents_verified', { source: 'guest_legal_execution_v1' });
+  if (readiness.documentsStatus === 'verified') await completeGate(bookingId, 'documents_verified', { source: 'guest_legal_execution_v1', manual: true }, expectedScope);
+  else await markGateInProgress(bookingId, 'documents_verified', { source: 'guest_legal_execution_v1' }, expectedScope);
   if (expectedScope) await requireBookingOpsRecordScope(bookingId, expectedScope);
-  if (['signed_manual', 'signed_provider_placeholder'].includes(readiness.contractStatus)) await completeGate(bookingId, 'contract_signed', { source: 'guest_legal_execution_v1', status: readiness.contractStatus });
-  else await markGateInProgress(bookingId, 'contract_signed', { source: 'guest_legal_execution_v1' });
+  if (['signed_manual', 'signed_provider_placeholder'].includes(readiness.contractStatus)) await completeGate(bookingId, 'contract_signed', { source: 'guest_legal_execution_v1', status: readiness.contractStatus }, expectedScope);
+  else await markGateInProgress(bookingId, 'contract_signed', { source: 'guest_legal_execution_v1' }, expectedScope);
   if (expectedScope) await requireBookingOpsRecordScope(bookingId, expectedScope);
-  if (['paid_manual', 'paid_provider_placeholder', 'waived_manual'].includes(readiness.depositStatus)) await completeGate(bookingId, 'deposit_received', { source: 'guest_legal_execution_v1', status: readiness.depositStatus });
-  else await markGateInProgress(bookingId, 'deposit_received', { source: 'guest_legal_execution_v1' });
+  if (['paid_manual', 'paid_provider_placeholder', 'waived_manual'].includes(readiness.depositStatus)) await completeGate(bookingId, 'deposit_received', { source: 'guest_legal_execution_v1', status: readiness.depositStatus }, expectedScope);
+  else await markGateInProgress(bookingId, 'deposit_received', { source: 'guest_legal_execution_v1' }, expectedScope);
   if (expectedScope) await requireBookingOpsRecordScope(bookingId, expectedScope);
-  if (readiness.mvdStatus === 'not_required') await skipGate(bookingId, 'mvd_report_submitted', 'МВД не требуется: подтверждено оператором.');
-  else if (['submitted_manual', 'submitted_provider_placeholder', 'accepted_manual'].includes(readiness.mvdStatus)) await completeGate(bookingId, 'mvd_report_submitted', { source: 'guest_legal_execution_v1', status: readiness.mvdStatus });
-  else await markGateInProgress(bookingId, 'mvd_report_submitted', { source: 'guest_legal_execution_v1' });
+  if (readiness.mvdStatus === 'not_required') await skipGate(bookingId, 'mvd_report_submitted', 'МВД не требуется: подтверждено оператором.', expectedScope);
+  else if (['submitted_manual', 'submitted_provider_placeholder', 'accepted_manual'].includes(readiness.mvdStatus)) await completeGate(bookingId, 'mvd_report_submitted', { source: 'guest_legal_execution_v1', status: readiness.mvdStatus }, expectedScope);
+  else await markGateInProgress(bookingId, 'mvd_report_submitted', { source: 'guest_legal_execution_v1' }, expectedScope);
 }
 
 export async function initializeGuestLegalExecution(bookingId: string, options: Record<string, unknown> = {}, expectedScope?: ExpectedScope): Promise<GuestLegalReadiness> {
@@ -572,7 +572,7 @@ export async function blockGuestLegalFlow(bookingId: string, reason: string, met
   const { error } = await supabase.from('booking_guest_legal_readiness').update({ status: 'blocked', blockers: [...current.blockers, { key: 'legal_flow', reason: cleanReason }], metadata: { ...current.metadata, explicitlyBlocked: true }, safe_summary: 'Юридический контур заблокирован оператором.', updated_at: new Date().toISOString() }).eq('booking_id', record.id);
   if (error) throw new Error(error.message);
   if (expectedScope) await requireBookingOpsRecordScope(record.id, expectedScope);
-  await blockGate(record.id, 'documents_verified', cleanReason, { source: 'guest_legal_execution_v1' });
+  await blockGate(record.id, 'documents_verified', cleanReason, { source: 'guest_legal_execution_v1' }, expectedScope);
   await recordEvent(record.id, 'legal_flow_blocked', 'blocked', cleanReason, metadata, expectedScope);
   return (await getGuestLegalReadiness(record.id, expectedScope))!;
 }

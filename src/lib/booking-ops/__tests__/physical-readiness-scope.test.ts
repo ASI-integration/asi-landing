@@ -88,6 +88,16 @@ describe('physical readiness canonical mutation scope', () => {
     expect(mocks.createTask).toHaveBeenCalledWith(expect.objectContaining({ bookingOpsRecordId: id }), { expectedScope: scope });
     expect(mocks.updateTask).toHaveBeenCalledWith(id, ticket, { status: 'completed' }, { expectedScope: scope });
     expect(mocks.checkin).toHaveBeenCalledWith(id, { expectedScope: scope });
+    expect(mocks.complete).toHaveBeenCalled();
+    for (const fn of [mocks.complete, mocks.progress]) {
+      for (const args of fn.mock.calls) expect(args.at(-1)).toEqual(scope);
+    }
+  });
+  it('retains scope in the invalidated-approval blocker gate', async () => {
+    rows.booking_physical_readiness[0].approved_at = '2026-10-03T12:00:00Z';
+    await physical.recomputePhysicalReadiness(id, scope);
+    expect(mocks.block).toHaveBeenCalled();
+    expect(mocks.block.mock.calls[0].at(-1)).toEqual(scope);
   });
   it('rejects ownership changes during operator-task closure before gate/event writes', async () => {
     rows.booking_physical_readiness[0].approved_at = '2026-10-03T12:00:00Z';

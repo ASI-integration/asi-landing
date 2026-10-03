@@ -382,13 +382,13 @@ async function syncPhysicalReadinessClosure(input: {
   await syncReadinessOperatorTask(input.record, input.computed.finalReady, decision.readinessTask === 'open', input.expectedScope);
   if (decision.gateStatus === 'blocked') {
     if (input.expectedScope) await requireBookingOpsRecordScope(input.record.id, input.expectedScope);
-    await blockGate(input.record.id, 'property_ready', input.computed.operationalBlockers.map((item) => item.key).join(','), metadata);
+    await blockGate(input.record.id, 'property_ready', input.computed.operationalBlockers.map((item) => item.key).join(','), metadata, input.expectedScope);
   } else if (decision.gateStatus === 'completed') {
     if (input.expectedScope) await requireBookingOpsRecordScope(input.record.id, input.expectedScope);
-    await completeGate(input.record.id, 'property_ready', metadata);
+    await completeGate(input.record.id, 'property_ready', metadata, input.expectedScope);
   } else {
     if (input.expectedScope) await requireBookingOpsRecordScope(input.record.id, input.expectedScope);
-    await markGateInProgress(input.record.id, 'property_ready', metadata);
+    await markGateInProgress(input.record.id, 'property_ready', metadata, input.expectedScope);
   }
   if (input.computed.status === 'ready_for_review' && input.previousStatus !== 'ready_for_review') {
     await recordPhysicalEvent({ expectedScope: input.expectedScope, bookingId: input.record.id, propertyId: input.record.propertyId ?? null,

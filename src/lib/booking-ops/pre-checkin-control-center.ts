@@ -485,7 +485,7 @@ async function loadSnapshotInputs(bookingId: string, expectedScope?: ExpectedSco
   const record = expectedScope ? await requireBookingOpsRecordScope(id, expectedScope) : await getBookingOpsRecord(id);
   if (!record) throw new Error('booking_not_found');
   if (expectedScope) await requireBookingOpsRecordScope(record.id, expectedScope);
-  const initialized = await initializeLifecycleForBooking(record.id);
+  const initialized = await initializeLifecycleForBooking(record.id, expectedScope);
   if (!initialized.ok) throw new Error(initialized.error ?? 'lifecycle_unavailable');
   return readSnapshotInputs(record.id, expectedScope);
 }
@@ -670,10 +670,10 @@ export async function recomputeBookingCheckinReadiness(
     if (expectedScope) await requireBookingOpsRecordScope(input.record.id, expectedScope);
     await blockGate(input.record.id, 'maintenance_resolved', 'Есть незакрытая задача по ремонту', {
       source: 'pre_checkin_control_center_v1',
-    });
+    }, expectedScope);
   } else if (preparationDone && !isDone(prepGates.get('property_ready'))) {
     if (expectedScope) await requireBookingOpsRecordScope(input.record.id, expectedScope);
-    await completeGate(input.record.id, 'property_ready', { source: 'pre_checkin_control_center_v1' });
+    await completeGate(input.record.id, 'property_ready', { source: 'pre_checkin_control_center_v1' }, expectedScope);
   }
 
   const refreshed = await loadSnapshotInputs(input.record.id, expectedScope);
@@ -728,17 +728,18 @@ export async function createPreCheckinFallbackIfNeeded(
   bookingId: string,
   reason: string,
   metadata?: Record<string, unknown>,
+  expectedScope?: ExpectedScope,
 ): Promise<{ ok: boolean; created: boolean; snapshot: PreCheckinReadinessSnapshot; error?: string }> {
-  const snapshot = await getPreCheckinStatus(bookingId);
+  const snapshot = await getPreCheckinStatus(bookingId, expectedScope);
   const blocker = snapshot.hardBlockers.find((item) => item.fallbackEligible && item.gateKey);
   if (!blocker?.gateKey) return { ok: true, created: false, snapshot };
   const result = await blockGate(bookingId, blocker.gateKey, text(reason) || blocker.reason, {
     ...(metadata ?? {}),
     source: 'pre_checkin_control_center_v1',
     blocker: blocker.key,
-  });
+  }, expectedScope);
   if (!result.ok) return { ok: false, created: false, snapshot, error: result.error };
-  return { ok: true, created: true, snapshot: await getPreCheckinStatus(bookingId) };
+  return { ok: true, created: true, snapshot: await getPreCheckinStatus(bookingId, expectedScope) };
 }
 
 export async function runPreCheckinAction(input: {
@@ -759,6 +760,7 @@ export async function runPreCheckinAction(input: {
       return recomputeBookingCheckinReadiness(bookingId, { expectedScope: input.expectedScope });
     case 'mark_ready_override':
       await adminUpdateLifecycleGate({
+        expectedScope: input.expectedScope,
         bookingId,
         gateKey: 'property_ready',
         status: 'completed',
@@ -767,6 +769,7 @@ export async function runPreCheckinAction(input: {
         metadata: { manualOverride: true, ...(input.metadata ?? {}) },
       });
       await adminUpdateLifecycleGate({
+        expectedScope: input.expectedScope,
         bookingId,
         gateKey: 'checkin_instructions_sent',
         status: 'completed',
@@ -777,6 +780,7 @@ export async function runPreCheckinAction(input: {
       break;
     case 'clear_ready_override':
       await adminUpdateLifecycleGate({
+        expectedScope: input.expectedScope,
         bookingId,
         gateKey: 'property_ready',
         status: 'in_progress',
@@ -786,10 +790,11 @@ export async function runPreCheckinAction(input: {
       });
       break;
     case 'create_fallback':
-      await createPreCheckinFallbackIfNeeded(bookingId, reason || 'Создан ручной fallback', input.metadata);
+      await createPreCheckinFallbackIfNeeded(bookingId, reason || 'Создан ручной fallback', input.metadata, input.expectedScope);
       break;
     case 'resolve_fallback':
       await adminUpdateLifecycleGate({
+        expectedScope: input.expectedScope,
         bookingId,
         gateKey: input.gateKey,
         status: 'in_progress',
@@ -809,6 +814,7 @@ export async function runPreCheckinAction(input: {
     }
     case 'block_gate':
       await adminUpdateLifecycleGate({
+        expectedScope: input.expectedScope,
         bookingId,
         gateKey: input.gateKey,
         status: 'blocked',
@@ -819,6 +825,7 @@ export async function runPreCheckinAction(input: {
       break;
     case 'skip_gate':
       await adminUpdateLifecycleGate({
+        expectedScope: input.expectedScope,
         bookingId,
         gateKey: input.gateKey,
         status: 'skipped',

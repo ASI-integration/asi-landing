@@ -93,6 +93,12 @@ describe('guest legal execution expected scope', () => {
     expect(mocks.update).not.toHaveBeenCalled();
     expect(writes).toEqual(['booking_guest_legal_readiness']);
   });
+  it('retains scope inside nested lifecycle initialization and each readiness gate', async () => {
+    await legal.recomputeGuestLegalReadiness(id, {}, scope);
+    expect(mocks.initialize).toHaveBeenCalledWith(id, scope);
+    expect(mocks.progress).toHaveBeenCalledTimes(4);
+    for (const args of mocks.progress.mock.calls) expect(args.at(-1)).toEqual(scope);
+  });
   it('carries scope through summary synchronization', async () => {
     await legal.recomputeGuestLegalReadiness(id, {}, scope);
     expect(mocks.update).toHaveBeenCalledWith(id, expect.any(Object), { actorType: 'system', expectedScope: scope });

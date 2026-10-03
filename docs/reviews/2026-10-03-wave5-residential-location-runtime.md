@@ -235,12 +235,22 @@ Scope: canonical property-bound residential location evidence and advisory Platf
 
 ## Manual task creation and lifecycle scope checkpoint
 
-- Baseline HEAD: `5fb5e28e22e51e74ec7a9306fb780bda8a838147`. Result: local checkpoint titled `fix(booking-ops): bind manual tasks and lifecycle writes to scope` (see branch log).
+- Baseline HEAD: `5fb5e28e22e51e74ec7a9306fb780bda8a838147`. Result: `4ee64c01bd257862c6c4e699b7d589314b7ce109` (`fix(booking-ops): bind manual tasks and lifecycle writes to scope`).
 - Files: `[id]/tasks/route.ts`, `__tests__/task-create-scope.test.ts`, `tasks.ts`, `lifecycle.ts`, `tasks-scope.test.ts`, `lifecycle-task-scope.test.ts`, this review.
 - Manual creation uses canonical shared-access ID and scope. The domain derives source booking from its final canonical record, ignores caller source identity, and refuses a corrupt duplicate source link. Task lifecycle propagation now retains expected scope through initialization, gate updates, exception writes and secondary maintenance/inspection gates.
 - Verification: **62/62 focused (7 files)**; frozen contour **315/315 (29 files)**; TypeScript / touched-file ESLint / diff-check **PASS**.
 - Remaining blocker: task update/run completion and communication effects still need end-to-end scope propagation. Existing legal/physical/pre-checkin gate callers need to pass scope into the newly guarded nested lifecycle write seam.
 - Smallest safe next step: propagate lifecycle scope from the already scoped priority domains and pre-checkin override/fallback actions; then separately trace task completion/action communication effects.
+
+## Nested priority lifecycle scope checkpoint
+
+- Baseline HEAD: `4ee64c01bd257862c6c4e699b7d589314b7ce109`. Result: local checkpoint titled `fix(booking-ops): retain scope through nested lifecycle mutations` (see branch log).
+- Files: `lifecycle.ts`, `legal-payment-autopilot.ts`, `guest-legal-deposit-mvd-execution.ts`, `physical-readiness-execution.ts`, `pre-checkin-control-center.ts`; corresponding legal-payment, guest-legal, physical-readiness, pre-checkin-scope-propagation and lifecycle-task-scope tests; this review.
+- All priority lifecycle calls carry canonical expected scope into guarded initialization, gate and exception writes. Legal status initialization, MVD skip, pre-checkin override/clear/resolve/block/skip and fallback snapshots retain scope. Payload metadata remains non-authoritative.
+- Verification: **187/187 focused (13 files)**; frozen contour **315/315 (29 files)**; TypeScript / touched-file ESLint / staged and unstaged diff-check **PASS**.
+- Remaining blocker: `[id]/tasks/[taskId]/route.ts` and `run/route.ts` do not yet bind task completion/action downstream effects to canonical scope. Repository task sync currently scopes its initial record read but drops scope in `applyBookingOpsTaskSync`; communication and Telegram draft persistence need guards after policy/knowledge awaits.
+- Smallest safe next slice: propagate scope through task completion effects and repository/task-sync writes, then communication intents/events and Telegram draft insertion/reuse before enabling the task update/run routes to use the complete guarded chain. Preserve existing readiness/provenance/manual-send policy; route-only changes are insufficient.
+- The three requested priority mutation areas are hardened; Wave 5 remains **PARTIAL** until the remaining mutation/internal-caller scope audit is finished.
 
 ## Operational boundary
 

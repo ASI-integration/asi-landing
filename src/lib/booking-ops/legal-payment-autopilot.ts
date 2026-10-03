@@ -567,7 +567,7 @@ export async function initializeLegalPaymentForBooking(
   const record = await ensureBookingRecord(bookingId, expectedScope);
   if (!record) throw new Error('booking_not_found');
   if (expectedScope) await requireBookingOpsRecordScope(record.id, expectedScope);
-  await initializeLifecycleForBooking(record.id);
+  await initializeLifecycleForBooking(record.id, expectedScope);
   await upsertContract(record.id, { status: 'not_started', provider: 'manual', metadata: { initialized: true } }, expectedScope);
   await upsertDeposit(record.id, { status: 'not_requested', provider: 'manual', metadata: { initialized: true } }, expectedScope);
   await upsertMvdReport(record.id, { status: 'not_started', provider: 'manual', metadata: { initialized: true } }, expectedScope);
@@ -583,7 +583,7 @@ export async function requestGuestDocuments(
   const record = await ensureBookingRecord(bookingId, expectedScope);
   if (!record) throw new Error('booking_not_found');
   if (expectedScope) await requireBookingOpsRecordScope(record.id, expectedScope);
-  await initializeLifecycleForBooking(record.id);
+  await initializeLifecycleForBooking(record.id, expectedScope);
   const now = new Date().toISOString();
   const docs = (requiredDocuments.length ? requiredDocuments : ['passport']).map((documentType) => ({
     id: randomUUID(),
@@ -605,7 +605,7 @@ export async function requestGuestDocuments(
   if (expectedScope) await requireBookingOpsRecordScope(record.id, expectedScope);
   await supabase.from('booking_guest_documents').insert(docs);
   if (expectedScope) await requireBookingOpsRecordScope(record.id, expectedScope);
-  await completeGate(record.id, 'documents_requested', { requiredDocuments: docs.map((item) => item.document_type) });
+  await completeGate(record.id, 'documents_requested', { requiredDocuments: docs.map((item) => item.document_type) }, expectedScope);
   await updateOpsSummary(record.id, { documentsStatus: 'requested', documentRequired: true }, expectedScope);
   await createOrUpdateCommunication({
     record,
@@ -633,7 +633,7 @@ export async function markDocumentsReceived(
     .eq('booking_id', record.id)
     .in('status', ['requested', 'missing']);
   if (expectedScope) await requireBookingOpsRecordScope(record.id, expectedScope);
-  await completeGate(record.id, 'documents_received', metadata(extraMetadata));
+  await completeGate(record.id, 'documents_received', metadata(extraMetadata), expectedScope);
   await updateOpsSummary(record.id, { documentsStatus: 'received', documentCollected: true }, expectedScope);
   return getLegalPaymentStatus(record.id, expectedScope);
 }
@@ -658,9 +658,9 @@ export async function verifyGuestDocuments(
     .eq('booking_id', record.id)
     .in('status', ['requested', 'received', 'missing']);
   if (expectedScope) await requireBookingOpsRecordScope(record.id, expectedScope);
-  await completeGate(record.id, 'documents_received', metadata(extraMetadata));
+  await completeGate(record.id, 'documents_received', metadata(extraMetadata), expectedScope);
   if (expectedScope) await requireBookingOpsRecordScope(record.id, expectedScope);
-  await completeGate(record.id, 'documents_verified', metadata(extraMetadata));
+  await completeGate(record.id, 'documents_verified', metadata(extraMetadata), expectedScope);
   await updateOpsSummary(record.id, {
     documentsStatus: 'verified',
     documentCollected: true,
@@ -691,7 +691,7 @@ export async function rejectGuestDocuments(
     })
     .eq('booking_id', record.id);
   if (expectedScope) await requireBookingOpsRecordScope(record.id, expectedScope);
-  await blockGate(record.id, 'documents_verified', cleanReason, metadata(extraMetadata));
+  await blockGate(record.id, 'documents_verified', cleanReason, metadata(extraMetadata), expectedScope);
   await updateOpsSummary(record.id, {
     documentsStatus: 'problem',
     documentVerificationStatus: 'rejected',
@@ -714,7 +714,7 @@ export async function prepareContract(
     metadata: metadata(extraMetadata),
   }, expectedScope);
   if (expectedScope) await requireBookingOpsRecordScope(record.id, expectedScope);
-  await completeGate(record.id, 'contract_prepared', metadata(extraMetadata));
+  await completeGate(record.id, 'contract_prepared', metadata(extraMetadata), expectedScope);
   await updateOpsSummary(record.id, {
     contractStatus: 'prepared',
     contractRequired: true,
@@ -737,9 +737,9 @@ export async function markContractSent(
     metadata: metadata(extraMetadata),
   }, expectedScope);
   if (expectedScope) await requireBookingOpsRecordScope(record.id, expectedScope);
-  await completeGate(record.id, 'contract_prepared', metadata(extraMetadata));
+  await completeGate(record.id, 'contract_prepared', metadata(extraMetadata), expectedScope);
   if (expectedScope) await requireBookingOpsRecordScope(record.id, expectedScope);
-  await completeGate(record.id, 'contract_sent', metadata(extraMetadata));
+  await completeGate(record.id, 'contract_sent', metadata(extraMetadata), expectedScope);
   await updateOpsSummary(record.id, { contractStatus: 'sent', contractIntakeStatus: 'sent' }, expectedScope);
   await createOrUpdateCommunication({
     record,
@@ -765,11 +765,11 @@ export async function markContractSigned(
     metadata: metadata(extraMetadata),
   }, expectedScope);
   if (expectedScope) await requireBookingOpsRecordScope(record.id, expectedScope);
-  await completeGate(record.id, 'contract_prepared', metadata(extraMetadata));
+  await completeGate(record.id, 'contract_prepared', metadata(extraMetadata), expectedScope);
   if (expectedScope) await requireBookingOpsRecordScope(record.id, expectedScope);
-  await completeGate(record.id, 'contract_sent', metadata(extraMetadata));
+  await completeGate(record.id, 'contract_sent', metadata(extraMetadata), expectedScope);
   if (expectedScope) await requireBookingOpsRecordScope(record.id, expectedScope);
-  await completeGate(record.id, 'contract_signed', metadata(extraMetadata));
+  await completeGate(record.id, 'contract_signed', metadata(extraMetadata), expectedScope);
   await updateOpsSummary(record.id, { contractStatus: 'signed', contractIntakeStatus: 'signed' }, expectedScope);
   await recomputePreCheckinReadiness(record.id, expectedScope);
   return getLegalPaymentStatus(record.id, expectedScope);
@@ -794,7 +794,7 @@ export async function requestDeposit(
     metadata: metadata(extraMetadata),
   }, expectedScope);
   if (expectedScope) await requireBookingOpsRecordScope(record.id, expectedScope);
-  await completeGate(record.id, 'deposit_requested', { amount: cleanAmount, currency: cleanCurrency });
+  await completeGate(record.id, 'deposit_requested', { amount: cleanAmount, currency: cleanCurrency }, expectedScope);
   await updateOpsSummary(record.id, {
     depositStatus: 'requested',
     depositRequired: true,
@@ -825,9 +825,9 @@ export async function markDepositReceived(
     metadata: metadata(extraMetadata),
   }, expectedScope);
   if (expectedScope) await requireBookingOpsRecordScope(record.id, expectedScope);
-  await completeGate(record.id, 'deposit_requested', metadata(extraMetadata));
+  await completeGate(record.id, 'deposit_requested', metadata(extraMetadata), expectedScope);
   if (expectedScope) await requireBookingOpsRecordScope(record.id, expectedScope);
-  await completeGate(record.id, 'deposit_received', metadata(extraMetadata));
+  await completeGate(record.id, 'deposit_received', metadata(extraMetadata), expectedScope);
   await updateOpsSummary(record.id, { depositStatus: 'confirmed', depositIntakeStatus: 'received' }, expectedScope);
   await recomputePreCheckinReadiness(record.id, expectedScope);
   return getLegalPaymentStatus(record.id, expectedScope);
@@ -847,9 +847,9 @@ export async function waiveDeposit(
     metadata: metadata(extraMetadata),
   }, expectedScope);
   if (expectedScope) await requireBookingOpsRecordScope(record.id, expectedScope);
-  await completeGate(record.id, 'deposit_requested', metadata(extraMetadata));
+  await completeGate(record.id, 'deposit_requested', metadata(extraMetadata), expectedScope);
   if (expectedScope) await requireBookingOpsRecordScope(record.id, expectedScope);
-  await completeGate(record.id, 'deposit_received', { waived: true, reason: text(reason) });
+  await completeGate(record.id, 'deposit_received', { waived: true, reason: text(reason) }, expectedScope);
   await updateOpsSummary(record.id, {
     depositStatus: 'confirmed',
     depositRequired: false,
@@ -873,7 +873,7 @@ export async function prepareMvdReport(
     metadata: metadata(extraMetadata),
   }, expectedScope);
   if (expectedScope) await requireBookingOpsRecordScope(record.id, expectedScope);
-  await completeGate(record.id, 'mvd_report_prepared', metadata(extraMetadata));
+  await completeGate(record.id, 'mvd_report_prepared', metadata(extraMetadata), expectedScope);
   await updateOpsSummary(record.id, {
     mvdStatus: 'prepared',
     mvdRequired: true,
@@ -895,9 +895,9 @@ export async function markMvdReportSubmitted(
     metadata: metadata(extraMetadata),
   }, expectedScope);
   if (expectedScope) await requireBookingOpsRecordScope(record.id, expectedScope);
-  await completeGate(record.id, 'mvd_report_prepared', metadata(extraMetadata));
+  await completeGate(record.id, 'mvd_report_prepared', metadata(extraMetadata), expectedScope);
   if (expectedScope) await requireBookingOpsRecordScope(record.id, expectedScope);
-  await completeGate(record.id, 'mvd_report_submitted', metadata(extraMetadata));
+  await completeGate(record.id, 'mvd_report_submitted', metadata(extraMetadata), expectedScope);
   await updateOpsSummary(record.id, { mvdStatus: 'submitted', mvdDataStatus: 'submitted' }, expectedScope);
   await recomputePreCheckinReadiness(record.id, expectedScope);
   return getLegalPaymentStatus(record.id, expectedScope);
@@ -916,9 +916,9 @@ export async function markMvdReportAccepted(
     metadata: metadata(extraMetadata),
   }, expectedScope);
   if (expectedScope) await requireBookingOpsRecordScope(record.id, expectedScope);
-  await completeGate(record.id, 'mvd_report_prepared', metadata(extraMetadata));
+  await completeGate(record.id, 'mvd_report_prepared', metadata(extraMetadata), expectedScope);
   if (expectedScope) await requireBookingOpsRecordScope(record.id, expectedScope);
-  await completeGate(record.id, 'mvd_report_submitted', metadata(extraMetadata));
+  await completeGate(record.id, 'mvd_report_submitted', metadata(extraMetadata), expectedScope);
   await updateOpsSummary(record.id, { mvdStatus: 'submitted', mvdDataStatus: 'confirmed' }, expectedScope);
   await recomputePreCheckinReadiness(record.id, expectedScope);
   return getLegalPaymentStatus(record.id, expectedScope);
@@ -974,10 +974,10 @@ export async function recomputePreCheckinReadiness(
   });
   if (completeOrSkipped && status.blockers.length === 0) {
     if (expectedScope) await requireBookingOpsRecordScope(record.id, expectedScope);
-    await completeGate(id, 'property_ready', { legalPaymentReady: true });
+    await completeGate(id, 'property_ready', { legalPaymentReady: true }, expectedScope);
   } else if (status.blockers.length > 0) {
     if (expectedScope) await requireBookingOpsRecordScope(record.id, expectedScope);
-    await markGateInProgress(id, 'property_ready', { legalPaymentReady: false });
+    await markGateInProgress(id, 'property_ready', { legalPaymentReady: false }, expectedScope);
     const refreshedRecord = await ensureBookingRecord(id, expectedScope);
     if (refreshedRecord) {
       await createOrUpdateCommunication({
@@ -1002,14 +1002,14 @@ export async function getLegalPaymentStatus(
   if (!record) throw new Error('booking_not_found');
   const id = record.id;
   if (expectedScope) await requireBookingOpsRecordScope(record.id, expectedScope);
-  await initializeLifecycleForBooking(id);
+  await initializeLifecycleForBooking(id, expectedScope);
   const [documents, contract, deposit, mvdReport, communications, lifecycleResult] = await Promise.all([
     listDocuments(id),
     latestContract(id),
     latestDeposit(id),
     latestMvdReport(id),
     listCommunications(id),
-    getLifecycleStatus(id),
+    getLifecycleStatus(id, expectedScope),
   ]);
   return {
     bookingId: id,

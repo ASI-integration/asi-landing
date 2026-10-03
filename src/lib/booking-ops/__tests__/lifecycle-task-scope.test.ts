@@ -3,7 +3,7 @@ import type { BookingOpsTask } from '../task-types';
 const mocks = vi.hoisted(() => ({ scope: vi.fn(), from: vi.fn() }));
 vi.mock('../repository', () => ({ requireBookingOpsRecordScope: mocks.scope }));
 vi.mock('@/lib/supabase', () => ({ supabase: { from: mocks.from } }));
-import { syncLifecycleFromTask } from '../lifecycle';
+import { syncLifecycleFromTask, adminUpdateLifecycleGate, skipGate, getLifecycleStatus } from '../lifecycle';
 const scope = { accountId: 'account-a', propertyId: 'property-a' };
 const writes: string[] = [];
 let afterInit: (() => void) | undefined;
@@ -55,6 +55,24 @@ describe('task lifecycle execution scope', () => {
     });
     await expect(syncLifecycleFromTask(task('completed', taskType), scope)).rejects.toThrow('booking_scope_mismatch');
     expect(writes).toEqual(['booking_lifecycle_gates:init', 'booking_lifecycle_gates:gate', 'booking_lifecycle_exceptions:resolve']);
+  });
+  it.each([
+    ['admin', () => adminUpdateLifecycleGate({ bookingId: 'ops-a', gateKey: 'property_ready', status: 'completed', expectedScope: scope })],
+    ['skip', () => skipGate('ops-a', 'mvd_report_submitted', 'manual', scope)],
+    ['status', () => getLifecycleStatus('ops-a', scope)],
+  ])('rejects %s without canonical ownership before writes', async (_name, call) => {
+    mocks.scope.mockRejectedValue(new Error('booking_scope_mismatch'));
+    await expect(call()).rejects.toThrow('booking_scope_mismatch');
+    expect(writes).toEqual([]);
+  });
+  it.each([
+    ['admin', () => adminUpdateLifecycleGate({ bookingId: 'ops-a', gateKey: 'property_ready', status: 'completed', expectedScope: scope })],
+    ['skip', () => skipGate('ops-a', 'mvd_report_submitted', 'manual', scope)],
+    ['status', () => getLifecycleStatus('ops-a', scope)],
+  ])('revalidates %s after nested initialization', async (_name, call) => {
+    afterInit = () => mocks.scope.mockRejectedValue(new Error('booking_scope_mismatch'));
+    await expect(call()).rejects.toThrow('booking_scope_mismatch');
+    expect(writes).toEqual(['booking_lifecycle_gates:init']);
   });
   it('preserves the existing scoped open-task lifecycle behavior', async () => {
     await syncLifecycleFromTask(task(), scope);
