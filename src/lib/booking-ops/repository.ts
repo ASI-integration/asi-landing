@@ -14,6 +14,7 @@ import { initializeBookingOpsCoreLoop } from './core-loop-initialization';
 import { resolveAcceptanceReservationMetadataForCreate } from './channel-manager-live-core-acceptance-context';
 import { syncLifecycleFromBookingOpsRecord } from './lifecycle';
 import { lookupPropertyKnowledge, lookupPropertyKnowledgeBatch } from './property-knowledge';
+import { requireBookingOpsPropertyAccountScope } from './route-access';
 import type {
   BookingOpsRecord,
   CreateBookingOpsInput,
@@ -119,12 +120,15 @@ async function enrichRecord(record: BookingOpsRecord): Promise<BookingOpsRecord>
   return { ...withReadiness, guestIntake };
 }
 
-async function enrichRecordWithTaskSync(record: BookingOpsRecord): Promise<BookingOpsRecord> {
+async function enrichRecordWithTaskSync(
+  record: BookingOpsRecord,
+  expectedScope?: { accountId: string; propertyId: string },
+): Promise<BookingOpsRecord> {
   const enriched = await enrichRecord(record);
-  await applyBookingOpsTaskSync(enriched);
-  const intake = await syncGuestIntakeAutopilot(enriched);
+  await applyBookingOpsTaskSync(enriched, expectedScope);
+  const intake = await syncGuestIntakeAutopilot(enriched, expectedScope);
   const withIntake = { ...enriched, guestIntake: intake.session ?? enriched.guestIntake ?? null };
-  await syncLifecycleFromBookingOpsRecord(withIntake);
+  await syncLifecycleFromBookingOpsRecord(withIntake, expectedScope);
   return withIntake;
 }
 
@@ -254,6 +258,136 @@ export async function requireBookingOpsRecordScope(
   if (error) throw new Error('booking_scope_unavailable');
   if (!data) throw new Error('booking_scope_mismatch');
   return enrichRecord(mapRow(data as BookingOpsRow));
+}
+
+export async function updateUnboundBookingOpsReviewData(
+  id: string,
+  input: {
+    guestName?: string | null;
+    guestPhone?: string | null;
+    guestEmail?: string | null;
+    guestTelegram?: string | null;
+    propertyLabel?: string | null;
+    checkInAt?: string | null;
+    checkOutAt?: string | null;
+  },
+  expectedAccountId: string,
+): Promise<{ ok: boolean; record?: BookingOpsRecord; error?: string }> {
+  const recordId = text(id);
+  const accountId = text(expectedAccountId);
+  if (!recordId) return { ok: false, error: 'id_required' };
+  if (!accountId || accountId === 'legacy') return { ok: false, error: 'account_workspace_unavailable' };
+
+  const { data: previousData, error: previousError } = await supabase
+    .from('booking_ops_records')
+    .select('*')
+    .eq('id', recordId)
+    .eq('account_id', accountId)
+    .is('property_id', null)
+    .maybeSingle();
+  if (previousError) return { ok: false, error: previousError.message };
+  if (!previousData) return { ok: false, error: 'scope_mismatch' };
+
+  const patch: Record<string, unknown> = {};
+  if (input.guestName !== undefined) patch.guest_name = text(input.guestName) || null;
+  if (input.guestPhone !== undefined) patch.guest_phone = text(input.guestPhone) || null;
+  if (input.guestEmail !== undefined) patch.guest_email = text(input.guestEmail) || null;
+  if (input.guestTelegram !== undefined) patch.guest_telegram = text(input.guestTelegram) || null;
+  if (input.propertyLabel !== undefined) patch.property_label = text(input.propertyLabel) || null;
+  if (input.checkInAt !== undefined) patch.check_in_at = toIsoDate(input.checkInAt);
+  if (input.checkOutAt !== undefined) patch.check_out_at = toIsoDate(input.checkOutAt);
+
+  if (Object.keys(patch).length === 0) {
+    return { ok: true, record: await enrichRecord(mapRow(previousData as BookingOpsRow)) };
+  }
+  patch.updated_at = new Date().toISOString();
+
+  const { data, error } = await supabase
+    .from('booking_ops_records')
+    .update(patch)
+    .eq('id', recordId)
+    .eq('account_id', accountId)
+    .is('property_id', null)
+    .select('*')
+    .maybeSingle();
+  if (error) return { ok: false, error: error.message };
+  if (!data) return { ok: false, error: 'scope_mismatch' };
+
+  // Property-unbound authenticated intake remains review-only. Do not run task,
+  // guest-intake, lifecycle, or communication side effects until property binding.
+  return { ok: true, record: await enrichRecord(mapRow(data as BookingOpsRow)) };
+}
+
+export async function attachBookingOpsRecordProperty(
+  id: string,
+  input: { accountId: string; propertyId: string; propertyLabel?: string | null },
+  options?: { actorType?: BookingOpsEventActorType },
+): Promise<{ ok: boolean; record?: BookingOpsRecord; error?: string }> {
+  const recordId = text(id);
+  const accountId = text(input.accountId);
+  const propertyId = text(input.propertyId);
+  if (!recordId) return { ok: false, error: 'id_required' };
+  if (!accountId || accountId === 'legacy') return { ok: false, error: 'account_workspace_unavailable' };
+  if (!propertyId) return { ok: false, error: 'property_id_required' };
+
+  try {
+    await requireBookingOpsPropertyAccountScope(accountId, propertyId);
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : 'property_scope_unavailable' };
+  }
+
+  const { data: previousData, error: previousError } = await supabase
+    .from('booking_ops_records')
+    .select('*')
+    .eq('id', recordId)
+    .eq('account_id', accountId)
+    .is('property_id', null)
+    .maybeSingle();
+  if (previousError) return { ok: false, error: previousError.message };
+  if (!previousData) return { ok: false, error: 'scope_mismatch' };
+
+  // Revalidate the canonical target immediately before the write. The UPDATE itself
+  // is conditional on the booking still belonging to this account and still being unbound.
+  try {
+    await requireBookingOpsPropertyAccountScope(accountId, propertyId);
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : 'property_scope_unavailable' };
+  }
+
+  const patch: Record<string, unknown> = {
+    property_id: propertyId,
+    updated_at: new Date().toISOString(),
+  };
+  if (input.propertyLabel !== undefined) {
+    patch.property_label = text(input.propertyLabel) || null;
+  }
+
+  const { data, error } = await supabase
+    .from('booking_ops_records')
+    .update(patch)
+    .eq('id', recordId)
+    .eq('account_id', accountId)
+    .is('property_id', null)
+    .select('*')
+    .maybeSingle();
+  if (error) return { ok: false, error: error.message };
+  if (!data) return { ok: false, error: 'scope_mismatch' };
+
+  const expectedScope = { accountId, propertyId };
+  await recordBookingOpsEvent({
+    bookingOpsRecordId: recordId,
+    eventType: 'booking_updated',
+    title: 'Данные брони обновлены',
+    description: 'Объект привязан к заявке.',
+    actorType: options?.actorType ?? 'system',
+    metadata: { changedGroups: ['booking_details'] },
+    dedupeKey: `booking-property-attached:${recordId}:${propertyId}:${String((data as BookingOpsRow).updated_at)}`,
+  });
+
+  return {
+    ok: true,
+    record: await enrichRecordWithTaskSync(mapRow(data as BookingOpsRow), expectedScope),
+  };
 }
 
 export async function getBookingOpsByBookingId(bookingId: string): Promise<BookingOpsRecord | null> {
@@ -554,5 +688,11 @@ export async function updateBookingOpsRecord(
       dedupeKey: `booking-updated:${(data as BookingOpsRow).updated_at}`,
     });
   }
-  return { ok: true, record: await enrichRecordWithTaskSync(mapRow(data as BookingOpsRow)) };
+  return {
+    ok: true,
+    record: await enrichRecordWithTaskSync(
+      mapRow(data as BookingOpsRow),
+      expectedScope ?? undefined,
+    ),
+  };
 }

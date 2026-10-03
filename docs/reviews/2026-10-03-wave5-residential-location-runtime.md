@@ -256,7 +256,8 @@ Scope: canonical property-bound residential location evidence and advisory Platf
 
 Worktree: `C:\Users\Admin\Documents\GitHub\asi-landing-wave5-residential-location-runtime`.
 Continuation starting HEAD: `b99eeb48b54304802f67f88ad2dbe43a159a502c`.
-Latest verified production HEAD: `f973f2ab224ba637107fb60b2bb9e4c7ad9f99f8`.
+Current committed HEAD: `717781d4c52d6fb088ea2b2f850a71522e25dee0`.
+Latest committed production HEAD: `fd1d135d1fc73cbe206b995476edb5743a00815e`.
 All checkpoints below were committed normally; no safety-layer bypass was needed.
 
 | Result HEAD | Slice | Focused | Frozen |
@@ -326,7 +327,18 @@ src/lib/booking-ops/tasks.ts
 - Authenticated account-bound intake with no canonical property remains a review-only record: no tenant lifecycle, task/readiness stack or communication persistence runs until a property is resolved. Public/accountless inquiry behavior is unchanged.
 - Once a property-bound record exists, the domain derives server-owned `{ accountId, propertyId }`, propagates it through automation/readiness/task/lifecycle/communication helpers, and revalidates scope after policy/knowledge awaits before persistence. Dashboard lifecycle emission re-resolves the booking through the shared access helper and uses canonical booking/property/account values.
 - Verification: focused **37/37 PASS (3 files)**; frozen regression **318/318 PASS (29 files)**; TypeScript / touched-file ESLint / `git diff --check` **PASS**.
-- Remaining narrow gap: the actual null-property -> canonical-property attach mutation still uses a general record update. The smallest safe follow-up is a dedicated account-bound, currently-unbound attach seam with write-time account + null-property preconditions; do not weaken the full account/property expected-scope contract.
+- The null-property -> canonical-property attach gap is closed in the verified staged checkpoint below; the next unbound mutation seam is guest/data attachment.
+
+## Account-bound property attach checkpoint
+
+- Baseline/current committed HEAD: `717781d4c52d6fb088ea2b2f850a71522e25dee0`. The coherent production/test checkpoint is staged but not committed because the runtime safety gate rejected the local `git commit` command after verification; no bypass was attempted.
+- Changed files: `route-access.ts`, `repository.ts`, `real-booking-intake-autopilot.ts`, and three focused test files.
+- The shared property/account access helper is now reusable without a session. Property attachment validates the target against the canonical account, requires the booking to still match `id + account_id + property_id IS NULL` at write time, revalidates the target immediately before the write, then propagates the new full expected scope through task, guest-intake, and lifecycle effects.
+- Matched account-owned unbound intake records now bind the property through this dedicated seam before any later record patch; already property-bound account/Channel Manager updates retain expected scope instead of dropping it in repository post-update effects. PlatformDecision remains advisory only and guest auto-send policy is unchanged.
+- Verification: focused **45/45 PASS (4 files)**; frozen contour **158/158 + 165/165 PASS (29 files, 323 tests total)**; TypeScript, touched-file ESLint, staged/unstaged `git diff --check` **PASS**.
+- The same staged production checkpoint also routes account-bound, property-unbound guest/data attachment through an account + `property_id IS NULL` guarded review-only update. It does not run task, guest-intake, lifecycle, or communication side effects until canonical property binding.
+- Added adversarial coverage for wrong-account updates, null-to-bound write races, and the no-automation guarantee. Focused repository/intake verification: **31/31 PASS (2 files)**. No new production code was added after the existing **323/323** frozen run.
+- Blocker: local commit creation only. After a coherent local commit, the next safe step is to continue auditing remaining Booking Ops mutation routes for any caller that still drops canonical account/property/booking scope.
 
 ## Operational boundary
 

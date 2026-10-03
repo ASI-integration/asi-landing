@@ -40,20 +40,30 @@ export async function requireBookingOpsRouteAccess(
   };
 }
 
-export async function requireBookingOpsPropertyAccess(
-  session: Session,
+export async function requireBookingOpsPropertyAccountScope(
+  accountId: string,
   propertyId: string,
-): Promise<{ accountId: string; actorId: string; propertyId: string }> {
-  const access = await resolveBookingOpsAccount(session);
+): Promise<{ accountId: string; propertyId: string }> {
+  const account = text(accountId);
   const id = text(propertyId);
+  if (!account || account === 'legacy') throw new Error('account_workspace_unavailable');
   if (!id) throw new Error('property_id_required');
   const result = await supabase
     .from('properties')
     .select('id,account_id')
     .eq('id', id)
-    .eq('account_id', access.accountId)
+    .eq('account_id', account)
     .maybeSingle();
   if (result.error) throw new Error('property_scope_unavailable');
   if (!result.data) throw new Error('property_scope_mismatch');
-  return { ...access, propertyId: id };
+  return { accountId: account, propertyId: id };
+}
+
+export async function requireBookingOpsPropertyAccess(
+  session: Session,
+  propertyId: string,
+): Promise<{ accountId: string; actorId: string; propertyId: string }> {
+  const access = await resolveBookingOpsAccount(session);
+  const property = await requireBookingOpsPropertyAccountScope(access.accountId, propertyId);
+  return { ...access, propertyId: property.propertyId };
 }

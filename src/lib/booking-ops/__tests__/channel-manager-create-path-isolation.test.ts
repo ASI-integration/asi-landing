@@ -9,6 +9,7 @@ import { randomUUID } from 'node:crypto';
 type Row = Record<string, any>;
 
 const {
+  attachBookingOpsRecordProperty,
   createBookingOpsRecord,
   getBookingOpsRecord,
   requireBookingOpsRecordScope,
@@ -24,6 +25,7 @@ const {
   checkAvailabilityConflict,
   initializeBookingOpsCoreLoop,
 } = vi.hoisted(() => ({
+  attachBookingOpsRecordProperty: vi.fn(),
   createBookingOpsRecord: vi.fn(),
   getBookingOpsRecord: vi.fn(),
   requireBookingOpsRecordScope: vi.fn(),
@@ -139,6 +141,7 @@ vi.mock('@/lib/supabase', () => ({
 }));
 
 vi.mock('../repository', () => ({
+  attachBookingOpsRecordProperty,
   createBookingOpsRecord,
   getBookingOpsRecord,
   requireBookingOpsRecordScope,
@@ -260,6 +263,7 @@ function seedImported(id: string, connectionId: string, provider = 'manual') {
 beforeEach(() => {
   for (const key of Object.keys(tables)) tables[key] = [];
   callOrder.length = 0;
+  attachBookingOpsRecordProperty.mockReset();
   createBookingOpsRecord.mockReset();
   getBookingOpsRecord.mockReset();
   requireBookingOpsRecordScope.mockReset();

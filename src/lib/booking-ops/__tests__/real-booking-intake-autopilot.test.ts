@@ -1,10 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const {
+  attachBookingOpsRecordProperty,
   createBookingOpsRecord,
   getBookingOpsRecord,
   requireBookingOpsRecordScope,
   updateBookingOpsRecord,
+  updateUnboundBookingOpsReviewData,
   initializeCheckinExecutionBaseline,
   initializeInStayCheckoutBaseline,
   recomputeBookingCheckinReadiness,
@@ -13,10 +15,12 @@ const {
   canAutoSendCommunicationIntent,
   recordAndProcessBookingEvent,
 } = vi.hoisted(() => ({
+  attachBookingOpsRecordProperty: vi.fn(),
   createBookingOpsRecord: vi.fn(),
   getBookingOpsRecord: vi.fn(),
   requireBookingOpsRecordScope: vi.fn(),
   updateBookingOpsRecord: vi.fn(),
+  updateUnboundBookingOpsReviewData: vi.fn(),
   initializeCheckinExecutionBaseline: vi.fn(),
   initializeInStayCheckoutBaseline: vi.fn(),
   recomputeBookingCheckinReadiness: vi.fn(),
@@ -113,10 +117,12 @@ vi.mock('@/lib/supabase', () => ({
 }));
 
 vi.mock('../repository', () => ({
+  attachBookingOpsRecordProperty,
   createBookingOpsRecord,
   getBookingOpsRecord,
   requireBookingOpsRecordScope,
   updateBookingOpsRecord,
+  updateUnboundBookingOpsReviewData,
   syncBookingOpsTasksForRecordId,
 }));
 
@@ -166,10 +172,12 @@ describe('Real Booking Intake Autopilot v1', () => {
     tables.booking_checkin_execution = [];
     tables.booking_instay_checkout = [];
 
+    attachBookingOpsRecordProperty.mockResolvedValue({ ok: false, error: 'scope_mismatch' });
     createBookingOpsRecord.mockResolvedValue({ ok: true, record: bookingRecord });
     getBookingOpsRecord.mockResolvedValue(bookingRecord);
     requireBookingOpsRecordScope.mockResolvedValue(bookingRecord);
     updateBookingOpsRecord.mockResolvedValue({ ok: true, record: bookingRecord });
+    updateUnboundBookingOpsReviewData.mockResolvedValue({ ok: true, record: bookingRecord });
     initializeCheckinExecutionBaseline.mockResolvedValue({ id: 'checkin-1' });
     initializeInStayCheckoutBaseline.mockResolvedValue({ id: 'instay-1' });
     recomputeBookingCheckinReadiness.mockResolvedValue({ status: 'needs_attention' });
@@ -305,6 +313,71 @@ describe('Real Booking Intake Autopilot v1', () => {
       { accountId: 'account-a', propertyId: 'OBJ-1' },
     );
     expect(recordAndProcessBookingEvent).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'booking.received' }));
+  });
+
+  it('uses the account-bound unbound attach seam instead of a general record update', async () => {
+    const unbound = { ...bookingRecord, accountId: 'account-a', propertyId: null };
+    const bound = { ...unbound, propertyId: 'prop-a', propertyLabel: 'Unit A' };
+    attachBookingOpsRecordProperty.mockResolvedValueOnce({ ok: true, record: bound });
+
+    const { attachBookingToOwnerProperty } = await import('../real-booking-intake-autopilot');
+    const result = await attachBookingToOwnerProperty(
+      unbound.id,
+      { propertyId: 'prop-a', propertyLabel: 'Unit A' },
+      'account-a',
+    );
+
+    expect(result).toEqual(bound);
+    expect(attachBookingOpsRecordProperty).toHaveBeenCalledWith(
+      unbound.id,
+      { accountId: 'account-a', propertyId: 'prop-a', propertyLabel: 'Unit A' },
+      { actorType: 'admin' },
+    );
+    expect(updateBookingOpsRecord).not.toHaveBeenCalled();
+  });
+
+  it('binds a matched account-owned unbound record before applying scoped updates', async () => {
+    const unbound = {
+      ...bookingRecord,
+      id: 'unbound-booking',
+      bookingId: 'unbound-booking',
+      accountId: 'account-a',
+      propertyId: null,
+      propertyLabel: null,
+    };
+    const bound = { ...unbound, propertyId: 'prop-a', propertyLabel: 'Unit A' };
+    tables.booking_ops_records.push({
+      id: unbound.id,
+      booking_id: unbound.bookingId,
+      account_id: 'account-a',
+      property_id: null,
+      guest_phone: unbound.guestPhone,
+      updated_at: '2026-08-07T10:00:00.000Z',
+    });
+    getBookingOpsRecord.mockResolvedValueOnce(unbound);
+    attachBookingOpsRecordProperty.mockResolvedValueOnce({ ok: true, record: bound });
+
+    const api = await import('../real-booking-intake-autopilot');
+    const normalized = api.normalizeInboundBookingRequest({
+      bookingReference: unbound.id,
+      propertyId: 'prop-a',
+      propertyLabel: 'Unit A',
+    }, 'admin');
+    const result = await api.findOrCreateBookingFromInbound(
+      normalized,
+      'admin',
+      null,
+      true,
+      'account-a',
+    );
+
+    expect(result.record).toEqual(bound);
+    expect(attachBookingOpsRecordProperty).toHaveBeenCalledWith(
+      unbound.id,
+      { accountId: 'account-a', propertyId: 'prop-a', propertyLabel: 'Unit A' },
+      { actorType: 'system' },
+    );
+    expect(updateBookingOpsRecord).not.toHaveBeenCalled();
   });
 
   it('accountless telegram intake never matches a tenant-owned booking', async () => {

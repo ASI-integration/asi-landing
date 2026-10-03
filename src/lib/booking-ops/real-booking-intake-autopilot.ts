@@ -13,11 +13,13 @@ import { recordBookingOpsEvent } from './events';
 import { getLifecycleStatus } from './lifecycle';
 import { recomputeBookingCheckinReadiness } from './pre-checkin-control-center';
 import {
+  attachBookingOpsRecordProperty,
   createBookingOpsRecord,
   getBookingOpsRecord,
   requireBookingOpsRecordScope,
   syncBookingOpsTasksForRecordId,
   updateBookingOpsRecord,
+  updateUnboundBookingOpsReviewData,
 } from './repository';
 import { resolveAcceptanceReservationMetadataForCreate } from './channel-manager-live-core-acceptance-context';
 import type {
@@ -658,24 +660,60 @@ export async function findOrCreateBookingFromInbound(
       );
     }
     const wasGuestDataComplete = hasCompleteGuestData(existing);
-    const patch: Record<string, unknown> = {};
-    if (!existing.guestPhone && input.guestPhone) patch.guestPhone = input.guestPhone;
-    if (!existing.guestEmail && input.guestEmail) patch.guestEmail = input.guestEmail;
-    if (!existing.guestTelegram && input.guestTelegram) patch.guestTelegram = input.guestTelegram;
-    if (!existing.checkInAt && input.checkInAt) patch.checkInAt = input.checkInAt;
-    if (!existing.checkOutAt && input.checkOutAt) patch.checkOutAt = input.checkOutAt;
-    if (!existing.propertyId && input.propertyId) patch.propertyId = input.propertyId;
-    if (!existing.propertyLabel && input.propertyLabel) patch.propertyLabel = input.propertyLabel;
-    // Never patch account_id/property_id onto a booking that already belongs to a different contour.
+    let current = existing;
+
+    if (accountId && !current.propertyId && input.propertyId) {
+      const attached = await attachBookingOpsRecordProperty(current.id, {
+        accountId,
+        propertyId: input.propertyId,
+        propertyLabel: input.propertyLabel,
+      }, { actorType: 'system' });
+      if (!attached.ok || !attached.record) {
+        const error = Object.assign(new Error('property_attach_failed'), {
+          code: attached.error ?? 'account_scope_mismatch',
+        });
+        throw error;
+      }
+      current = attached.record;
+    }
+
+    const patch: {
+      guestPhone?: string | null;
+      guestEmail?: string | null;
+      guestTelegram?: string | null;
+      checkInAt?: string | null;
+      checkOutAt?: string | null;
+      propertyId?: string | null;
+      propertyLabel?: string | null;
+    } = {};
+    if (!current.guestPhone && input.guestPhone) patch.guestPhone = input.guestPhone;
+    if (!current.guestEmail && input.guestEmail) patch.guestEmail = input.guestEmail;
+    if (!current.guestTelegram && input.guestTelegram) patch.guestTelegram = input.guestTelegram;
+    if (!current.checkInAt && input.checkInAt) patch.checkInAt = input.checkInAt;
+    if (!current.checkOutAt && input.checkOutAt) patch.checkOutAt = input.checkOutAt;
+    if (!current.propertyId && input.propertyId) patch.propertyId = input.propertyId;
+    if (!current.propertyLabel && input.propertyLabel) patch.propertyLabel = input.propertyLabel;
+    const expectedScope = scope
+      ? { accountId: scope.accountId, propertyId: scope.propertyId }
+      : accountId && current.propertyId
+        ? { accountId, propertyId: current.propertyId }
+        : undefined;
+    // Never let an account-bound property-unbound review item enter the normal
+    // task/lifecycle write path before a canonical property has been resolved.
     if (Object.keys(patch).length > 0) {
-      const updated = await updateBookingOpsRecord(existing.id, patch, { actorType: 'system' });
+      const updated = accountId && !current.propertyId
+        ? await updateUnboundBookingOpsReviewData(current.id, patch, accountId)
+        : await updateBookingOpsRecord(current.id, patch, {
+          actorType: 'system',
+          ...(expectedScope ? { expectedScope } : {}),
+        });
       if (updated.ok && updated.record) return {
         record: updated.record,
         created: false,
         guestDataBecameComplete: !wasGuestDataComplete && hasCompleteGuestData(updated.record),
       };
     }
-    return { record: existing, created: false, guestDataBecameComplete: false };
+    return { record: current, created: false, guestDataBecameComplete: false };
   }
 
   const result = await createBookingOpsRecord(
@@ -707,16 +745,34 @@ function hasCompleteGuestData(record: Pick<BookingOpsRecord, 'guestName' | 'gues
 export async function attachBookingToOwnerProperty(
   bookingOpsRecordId: string,
   input: { ownerId?: string | null; propertyId?: string | null; propertyLabel?: string | null },
+  expectedAccountId?: string | null,
 ): Promise<BookingOpsRecord | null> {
-  const patch: Record<string, unknown> = {};
-  if (input.propertyId) patch.propertyId = input.propertyId;
-  if (input.propertyLabel) patch.propertyLabel = input.propertyLabel;
-  if (Object.keys(patch).length === 0) return getBookingOpsRecord(bookingOpsRecordId);
+  let result: { ok: boolean; record?: BookingOpsRecord; error?: string };
 
-  const result = await updateBookingOpsRecord(bookingOpsRecordId, patch, { actorType: 'admin' });
+  if (expectedAccountId) {
+    if (!input.propertyId) return null;
+    result = await attachBookingOpsRecordProperty(bookingOpsRecordId, {
+      accountId: expectedAccountId,
+      propertyId: input.propertyId,
+      propertyLabel: input.propertyLabel,
+    }, { actorType: 'admin' });
+  } else {
+    const patch: Record<string, unknown> = {};
+    if (input.propertyId) patch.propertyId = input.propertyId;
+    if (input.propertyLabel) patch.propertyLabel = input.propertyLabel;
+    if (Object.keys(patch).length === 0) return getBookingOpsRecord(bookingOpsRecordId);
+    result = await updateBookingOpsRecord(bookingOpsRecordId, patch, { actorType: 'admin' });
+  }
+
   if (!result.ok || !result.record) return null;
 
   if (input.ownerId) {
+    if (expectedAccountId && input.propertyId) {
+      await requireBookingOpsRecordScope(bookingOpsRecordId, {
+        accountId: expectedAccountId,
+        propertyId: input.propertyId,
+      });
+    }
     await recordBookingOpsEvent({
       bookingOpsRecordId,
       eventType: 'booking_updated',
@@ -1265,7 +1321,7 @@ export async function processInboundBookingRequest(
         ownerId: normalized.ownerId,
         propertyId: options.attachPropertyId ?? normalized.propertyId,
         propertyLabel: options.attachPropertyLabel ?? normalized.propertyLabel,
-      });
+      }, accountId);
       if (!attached) throw new Error('attach_property_failed');
       record = attached;
     } else if (options?.action === 'attach_guest' && options.intakeEventId) {
@@ -1276,12 +1332,20 @@ export async function processInboundBookingRequest(
       if (!status?.bookingId) throw new Error('booking_not_found');
       const existing = await getBookingOpsRecord(status.bookingId);
       assertBookingWithinIntakeAccount(existing, accountId);
-      const updated = await updateBookingOpsRecord(status.bookingId, {
+      const guestPatch = {
         guestName: options.attachGuestName ?? normalized.guestName ?? undefined,
         guestPhone: options.attachGuestPhone ?? normalized.guestPhone ?? undefined,
         guestEmail: options.attachGuestEmail ?? normalized.guestEmail ?? undefined,
         guestTelegram: options.attachGuestTelegram ?? normalized.guestTelegram ?? undefined,
-      }, { actorType: 'admin' });
+      };
+      const updated = accountId && !existing.propertyId
+        ? await updateUnboundBookingOpsReviewData(status.bookingId, guestPatch, accountId)
+        : await updateBookingOpsRecord(status.bookingId, guestPatch, {
+          actorType: 'admin',
+          ...(accountId && existing.propertyId
+            ? { expectedScope: { accountId, propertyId: existing.propertyId } }
+            : {}),
+        });
       if (!updated.ok || !updated.record) throw new Error('attach_guest_failed');
       record = updated.record;
     } else {
@@ -1296,12 +1360,12 @@ export async function processInboundBookingRequest(
       created = bookingResult.created;
       guestDataBecameComplete = bookingResult.guestDataBecameComplete;
 
-      if (!scope && (normalized.ownerId || normalized.propertyId)) {
+      if (!scope && !record.propertyId && (normalized.ownerId || normalized.propertyId)) {
         const attached = await attachBookingToOwnerProperty(record.id, {
           ownerId: normalized.ownerId,
           propertyId: normalized.propertyId,
           propertyLabel: normalized.propertyLabel,
-        });
+        }, accountId);
         if (attached) record = attached;
       }
     }
