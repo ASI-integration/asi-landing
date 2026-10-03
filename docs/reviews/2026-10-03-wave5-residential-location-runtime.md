@@ -209,11 +209,19 @@ Scope: canonical property-bound residential location evidence and advisory Platf
 ## Legal/payment execution scope checkpoint
 
 - Preserved release checkpoint committed normally as `ec42957425a133f6ba4f029132cf8e69005a48ad`; repeated verification: **66/66 focused**, **309/309 frozen**, TypeScript / ESLint / staged and unstaged diff-check **PASS**.
-- Baseline HEAD: `ec42957425a133f6ba4f029132cf8e69005a48ad`. Result: local commit titled `fix(booking-ops): revalidate legal payment mutation scope` (see branch log).
+- Baseline HEAD: `ec42957425a133f6ba4f029132cf8e69005a48ad`. Resulting HEAD: `2e6312a676078f5d9fa3cfb05545c1f2115dc045`.
 - Files: `legal-payment/route.ts`, `legal-payment/__tests__/route-scope.test.ts`, `legal-payment-autopilot.ts`, `legal-payment-scope.test.ts`, this review.
 - Shared API access supplies canonical booking/account/property; all 14 actions and status initialization carry expected scope. Domain guards run before documents, singleton upserts, lifecycle gates, scoped Booking Ops summary writes, and knowledge-reviewed communication persistence. No sending policy changed.
 - Verification: **47/47 focused (3 files)**; frozen contour **309/309 (29 files)**; TypeScript / touched-file ESLint / diff-check **PASS**. Adversarial tests cover denied/unbound route access, all domain entries, ownership changes after reads/initialization/knowledge review, and scoped summary propagation.
 - Remaining blocker: guest-legal action/status/explain and physical mutation routes still need scope propagation. Smallest next step: guest-legal route access plus all nested document/legal/readiness/event operations.
+
+## Guest-legal execution scope checkpoint
+
+- Baseline HEAD: `2e6312a676078f5d9fa3cfb05545c1f2115dc045`. Result: local commit titled `fix(booking-ops): bind guest legal execution to canonical scope` (see branch log).
+- Files: guest-legal `action`, `status`, `explain`, `events` routes and `__tests__/route-scope.test.ts`; `guest-legal-deposit-mvd-execution.ts`; `guest-legal-scope.test.ts`; this review.
+- Shared route access binds all 17 actions, status/explanation recompute, and event reads. Expected scope reaches documents, singleton legal writes, account-scoped availability, readiness, each lifecycle gate, scoped summary sync and legal execution events; guards repeat after asynchronous reads/checks and before writes.
+- Verification: **65/65 focused (3 files)**; frozen contour **309/309 (29 files)**; TypeScript / touched-file ESLint / diff-check **PASS**. Adversarial tests include all action entries, unbound/cross-account routes, post-read ownership change, availability-time change, between-gate change and post-summary event rejection.
+- Remaining blocker: physical readiness mutation route still uses account-only route authorization. Smallest safe next step: shared route access and expected scope through physical mutations, task closure, approval and lifecycle/event effects.
 
 ## Operational boundary
 
