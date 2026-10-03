@@ -69,12 +69,24 @@ export async function POST(req: Request): Promise<NextResponse> {
     intakeEventId: typeof body.intakeEventId === 'string' ? body.intakeEventId : undefined,
   });
 
-  if (result.bookingId && result.intakeStatus !== 'duplicate') {
+  if (result.bookingId && result.intakeStatus !== 'duplicate' && !result.missingRequiredFields.includes('property')) {
+    const bookingAccess = await requireBookingOpsApiAccess(auth.session, result.bookingId);
+    if (!bookingAccess.ok) return bookingAccess.response;
+    const expectedScope = {
+      accountId: bookingAccess.accountId,
+      propertyId: bookingAccess.propertyId,
+    };
     await recordAndProcessBookingEvent({
-      id: result.intakeId, bookingId: result.bookingId, type: 'booking.received', actorType: 'operator',
-      actorId: auth.session.email ?? auth.session.userId ?? null, source: `booking_intake:${source}`,
-      correlationId: result.intakeId, payload: { intakeStatus: result.intakeStatus },
-    });
+      id: result.intakeId,
+      bookingId: bookingAccess.bookingId,
+      objectId: bookingAccess.propertyId,
+      type: 'booking.received',
+      actorType: 'operator',
+      actorId: auth.session.email ?? auth.session.userId ?? null,
+      source: `booking_intake:${source}`,
+      correlationId: result.intakeId,
+      payload: { intakeStatus: result.intakeStatus },
+    }, expectedScope);
   }
 
   return NextResponse.json({ ok: true, result }, { status: 200 });

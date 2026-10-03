@@ -11,6 +11,7 @@ type Row = Record<string, any>;
 const {
   createBookingOpsRecord,
   getBookingOpsRecord,
+  requireBookingOpsRecordScope,
   updateBookingOpsRecord,
   syncBookingOpsTasksForRecordId,
   initializeCheckinExecutionBaseline,
@@ -25,6 +26,7 @@ const {
 } = vi.hoisted(() => ({
   createBookingOpsRecord: vi.fn(),
   getBookingOpsRecord: vi.fn(),
+  requireBookingOpsRecordScope: vi.fn(),
   updateBookingOpsRecord: vi.fn(),
   syncBookingOpsTasksForRecordId: vi.fn(),
   initializeCheckinExecutionBaseline: vi.fn(),
@@ -139,6 +141,7 @@ vi.mock('@/lib/supabase', () => ({
 vi.mock('../repository', () => ({
   createBookingOpsRecord,
   getBookingOpsRecord,
+  requireBookingOpsRecordScope,
   updateBookingOpsRecord,
   syncBookingOpsTasksForRecordId,
 }));
@@ -259,6 +262,7 @@ beforeEach(() => {
   callOrder.length = 0;
   createBookingOpsRecord.mockReset();
   getBookingOpsRecord.mockReset();
+  requireBookingOpsRecordScope.mockReset();
   updateBookingOpsRecord.mockReset();
   syncBookingOpsTasksForRecordId.mockReset();
   initializeCheckinExecutionBaseline.mockReset();
@@ -328,6 +332,17 @@ beforeEach(() => {
   getBookingOpsRecord.mockImplementation(async (id: string) => {
     const row = rows('booking_ops_records').find((item) => item.id === id);
     return row ? mapRecord(row) : null;
+  });
+
+  requireBookingOpsRecordScope.mockImplementation(async (
+    id: string,
+    scope: { accountId: string; propertyId: string },
+  ) => {
+    const row = rows('booking_ops_records').find((item) => item.id === id);
+    if (!row || row.account_id !== scope.accountId || row.property_id !== scope.propertyId) {
+      throw new Error('booking_scope_mismatch');
+    }
+    return mapRecord(row);
   });
 
   updateBookingOpsRecord.mockImplementation(async (id: string, patch: Row) => {

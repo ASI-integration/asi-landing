@@ -15,6 +15,7 @@ import { recomputeBookingCheckinReadiness } from './pre-checkin-control-center';
 import {
   createBookingOpsRecord,
   getBookingOpsRecord,
+  requireBookingOpsRecordScope,
   syncBookingOpsTasksForRecordId,
   updateBookingOpsRecord,
 } from './repository';
@@ -31,6 +32,8 @@ import {
   type AvailabilityConflictStatus,
 } from './availability-overbooking-protection';
 import { durableEventId, recordAndProcessBookingEvent } from './lifecycle-autopilot-service';
+
+type ExpectedScope = { accountId: string; propertyId: string };
 
 export const INBOUND_BOOKING_SOURCES = [
   'web',
@@ -740,7 +743,8 @@ async function upsertInboundCommunication(input: {
   messageText: string;
   actorType?: 'guest' | 'admin';
   channel?: BookingOpsCommunicationChannel;
-}): Promise<string | null> {
+}, expectedScope?: ExpectedScope): Promise<string | null> {
+  if (expectedScope) await requireBookingOpsRecordScope(input.record.id, expectedScope);
   const channel = input.channel ?? await preferredGuestChannel(input.record);
   const actorType = input.actorType ?? 'guest';
   // An unbound enquiry remains an operator intake; it is not a verified booking
@@ -761,6 +765,7 @@ async function upsertInboundCommunication(input: {
     { messageType: input.purpose, intakeAutopilot: true },
     autoSendDecision,
   );
+  if (expectedScope) await requireBookingOpsRecordScope(input.record.id, expectedScope);
   const now = new Date().toISOString();
   const { data: existing } = await supabase
     .from('booking_ops_communication_intents')
@@ -772,6 +777,7 @@ async function upsertInboundCommunication(input: {
 
   const knowledge = actorType === 'guest' ? await guardBookingCommunicationDraft(input.record, input.purpose) : null;
   if (knowledge) Object.assign(metadata, knowledge.metadata);
+  if (expectedScope) await requireBookingOpsRecordScope(input.record.id, expectedScope);
   if (existing) {
     await supabase
       .from('booking_ops_communication_intents')
@@ -810,8 +816,11 @@ async function upsertInboundCommunication(input: {
 export async function queueInitialBookingCommunications(
   bookingOpsRecordId: string,
   context?: { missingFields?: string[] },
+  expectedScope?: ExpectedScope,
 ): Promise<string[]> {
-  const record = await getBookingOpsRecord(bookingOpsRecordId);
+  const record = expectedScope
+    ? await requireBookingOpsRecordScope(bookingOpsRecordId, expectedScope)
+    : await getBookingOpsRecord(bookingOpsRecordId);
   if (!record) return [];
 
   const created: string[] = [];
@@ -843,7 +852,7 @@ export async function queueInitialBookingCommunications(
     purpose: 'neutral_booking_acknowledgement',
     templateKey: 'guest.booking_ack.v1',
     messageText: `Здравствуйте, ${guest}. Мы получили вашу заявку по объекту ${property}. Скоро вернёмся с уточнениями.`,
-  });
+  }, expectedScope);
   if (ackId) created.push(ackId);
 
   if (missing.includes('guest_contact') || missing.includes('guest_name')) {
@@ -852,7 +861,7 @@ export async function queueInitialBookingCommunications(
       purpose: 'request_missing_guest_data',
       templateKey: 'guest.missing_data.v1',
       messageText: 'Здравствуйте! Чтобы продолжить бронирование, пришлите, пожалуйста, имя и контакт для связи.',
-    });
+    }, expectedScope);
     if (id) created.push(id);
   }
 
@@ -862,7 +871,7 @@ export async function queueInitialBookingCommunications(
       purpose: 'request_arrival_time',
       templateKey: 'guest.arrival_time.v1',
       messageText: `Здравствуйте, ${guest}. Подскажите, пожалуйста, планируемое время заезда.`,
-    });
+    }, expectedScope);
     if (id) created.push(id);
   }
 
@@ -873,7 +882,7 @@ export async function queueInitialBookingCommunications(
     messageText: `Новая входящая заявка: ${guest}, объект ${property}. Статус intake обработан автоматически.`,
     actorType: 'admin',
     channel: 'internal',
-  });
+  }, expectedScope);
   if (internalId) created.push(internalId);
 
   return created;
@@ -882,27 +891,31 @@ export async function queueInitialBookingCommunications(
 export async function initializeBookingAutomationStack(
   bookingOpsRecordId: string,
   context?: { missingFields?: string[]; source?: InboundBookingSource },
+  expectedScope?: ExpectedScope,
 ): Promise<{ initializedModules: string[] }> {
   const modules: string[] = ['lifecycle_gates', 'legal_payment_placeholders', 'guest_intake_autopilot'];
 
+  if (expectedScope) await requireBookingOpsRecordScope(bookingOpsRecordId, expectedScope);
   await initializeCheckinExecutionBaseline(bookingOpsRecordId);
   modules.push('checkin_execution_baseline');
 
+  if (expectedScope) await requireBookingOpsRecordScope(bookingOpsRecordId, expectedScope);
   await initializeInStayCheckoutBaseline(bookingOpsRecordId);
   modules.push('instay_checkout_baseline');
 
-  await recomputeBookingCheckinReadiness(bookingOpsRecordId);
+  await recomputeBookingCheckinReadiness(bookingOpsRecordId, expectedScope ? { expectedScope } : undefined);
   modules.push('pre_checkin_readiness');
 
-  await syncBookingOpsTasksForRecordId(bookingOpsRecordId);
+  await syncBookingOpsTasksForRecordId(bookingOpsRecordId, expectedScope ? { expectedScope } : undefined);
   modules.push('ops_tasks');
 
   const lifecycle = await getLifecycleStatus(bookingOpsRecordId);
   if (lifecycle.ok) modules.push('lifecycle_sync');
 
-  const comms = await queueInitialBookingCommunications(bookingOpsRecordId, context);
+  const comms = await queueInitialBookingCommunications(bookingOpsRecordId, context, expectedScope);
   if (comms.length > 0) modules.push('communication_intents');
 
+  if (expectedScope) await requireBookingOpsRecordScope(bookingOpsRecordId, expectedScope);
   await recordBookingOpsEvent({
     bookingOpsRecordId,
     eventType: 'booking_updated',
@@ -1306,6 +1319,15 @@ export async function processInboundBookingRequest(
       );
     }
 
+    const canonicalPropertyId = text(record.propertyId) || null;
+    const expectedScope: ExpectedScope | undefined = accountId && canonicalPropertyId
+      ? { accountId, propertyId: canonicalPropertyId }
+      : undefined;
+    const authenticatedUnboundReview = Boolean(accountId && !canonicalPropertyId);
+    const effectiveMissingFields = accountId && canonicalPropertyId
+      ? missingFields.filter((field) => field !== 'property')
+      : missingFields;
+
     let initializedModules: string[] = [];
     let createdCommunicationIntents: string[] = [];
     const fallbackCreated = record.guestIntake?.intakeStatus === 'fallback_required';
@@ -1319,18 +1341,32 @@ export async function processInboundBookingRequest(
       availabilityStatus = 'failed';
     }
 
-    if (created || options?.force || options?.action === 'process' || !options?.action) {
-      const stack = await initializeBookingAutomationStack(record.id, { missingFields, source });
+    if (!authenticatedUnboundReview && (
+      created || options?.force || options?.action === 'process' || options?.action === 'attach_property' || !options?.action
+    )) {
+      const stack = await initializeBookingAutomationStack(
+        record.id,
+        { missingFields: effectiveMissingFields, source },
+        expectedScope,
+      );
       initializedModules = [...initializedModules, ...stack.initializedModules];
-      createdCommunicationIntents = await queueInitialBookingCommunications(record.id, { missingFields });
+      createdCommunicationIntents = await queueInitialBookingCommunications(
+        record.id,
+        { missingFields: effectiveMissingFields },
+        expectedScope,
+      );
     }
 
-    if (options?.action === 'request_missing_data') {
-      createdCommunicationIntents = await queueInitialBookingCommunications(record.id, { missingFields });
+    if (!authenticatedUnboundReview && options?.action === 'request_missing_data') {
+      createdCommunicationIntents = await queueInitialBookingCommunications(
+        record.id,
+        { missingFields: effectiveMissingFields },
+        expectedScope,
+      );
     }
 
-    const nextRequiredActions = computeNextRequiredActions(missingFields, record);
-    const intakeStatus: InboundIntakeStatus = missingFields.includes('property')
+    const nextRequiredActions = computeNextRequiredActions(effectiveMissingFields, record);
+    const intakeStatus: InboundIntakeStatus = effectiveMissingFields.includes('property')
       ? 'needs_review'
       : 'processed';
     const safeSummary = created
@@ -1349,7 +1385,7 @@ export async function processInboundBookingRequest(
       ownerId: normalized.ownerId,
       propertyId: record.propertyId,
       normalizedPayload: safePayload,
-      missingFields,
+      missingFields: effectiveMissingFields,
       automationResult: {
         initializedModules,
         createdCommunicationIntents,
@@ -1362,30 +1398,34 @@ export async function processInboundBookingRequest(
     });
 
     const correlationId = durableEventId('real_booking_intake', event.id);
-    if (created) {
-      await recordAndProcessBookingEvent({
+    if (!authenticatedUnboundReview && created) {
+      const lifecycleInput = {
         id: durableEventId(event.id, 'booking.received'),
         bookingId: record.id,
         objectId: record.propertyId,
         type: 'booking.received',
-        actorType: 'system',
+        actorType: 'system' as const,
         source: 'real_booking_intake',
         correlationId,
         causationId: null,
         payload: { intakeEventId: event.id, intakeSource: source },
-      });
-    } else if (guestDataBecameComplete) {
-      await recordAndProcessBookingEvent({
+      };
+      if (expectedScope) await recordAndProcessBookingEvent(lifecycleInput, expectedScope);
+      else await recordAndProcessBookingEvent(lifecycleInput);
+    } else if (!authenticatedUnboundReview && guestDataBecameComplete) {
+      const lifecycleInput = {
         id: durableEventId(event.id, 'guest.data_submitted'),
         bookingId: record.id,
         objectId: record.propertyId,
         type: 'guest.data_submitted',
-        actorType: 'system',
+        actorType: 'system' as const,
         source: 'real_booking_intake',
         correlationId,
         causationId: null,
         payload: { intakeEventId: event.id, intakeSource: source, complete: true },
-      });
+      };
+      if (expectedScope) await recordAndProcessBookingEvent(lifecycleInput, expectedScope);
+      else await recordAndProcessBookingEvent(lifecycleInput);
     }
 
     return {

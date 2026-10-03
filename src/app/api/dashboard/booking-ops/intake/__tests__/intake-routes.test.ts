@@ -100,6 +100,66 @@ describe('Booking Ops intake tenant scope', () => {
     );
   });
 
+  it('emits dashboard lifecycle events only after canonical property-bound access resolves', async () => {
+    const auth = await import('@/lib/crm/api-auth');
+    const access = await import('../../access');
+    const autopilot = await import('@/lib/booking-ops/real-booking-intake-autopilot');
+    const lifecycle = await import('@/lib/booking-ops/lifecycle-autopilot-service');
+    vi.mocked(access.requireBookingOpsApiAccess).mockClear();
+    vi.mocked(lifecycle.recordAndProcessBookingEvent).mockClear();
+    vi.mocked(auth.requireOpsAdminSession).mockResolvedValueOnce({
+      session: { userId: 'operator-1', email: 'operator@asi.test' },
+    } as never);
+    vi.mocked(autopilot.processInboundBookingRequest).mockResolvedValueOnce({
+      intakeId: 'intake-bound', bookingId: 'booking-bound', guestId: 'guest-1', intakeStatus: 'processed',
+      initializedModules: ['lifecycle_sync'], createdCommunicationIntents: [], missingRequiredFields: [],
+      nextRequiredActions: [], fallbackCreated: false, duplicateOfBookingId: null, safeSummary: 'ok',
+    });
+
+    const { POST } = await import('@/app/api/dashboard/booking-ops/intake/process/route');
+    const res = await POST(new Request('http://localhost/api/dashboard/booking-ops/intake/process', {
+      method: 'POST', body: JSON.stringify({ source: 'admin', guestName: 'Guest' }),
+    }));
+
+    expect(res.status).toBe(200);
+    expect(access.requireBookingOpsApiAccess).toHaveBeenCalledWith(expect.anything(), 'booking-bound');
+    expect(lifecycle.recordAndProcessBookingEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        bookingId: 'booking-bound',
+        objectId: 'property-1',
+        actorType: 'operator',
+        source: 'booking_intake:admin',
+      }),
+      { accountId: 'account-1', propertyId: 'property-1' },
+    );
+  });
+
+  it('keeps property-unbound dashboard review items free of lifecycle side effects', async () => {
+    const auth = await import('@/lib/crm/api-auth');
+    const access = await import('../../access');
+    const autopilot = await import('@/lib/booking-ops/real-booking-intake-autopilot');
+    const lifecycle = await import('@/lib/booking-ops/lifecycle-autopilot-service');
+    vi.mocked(access.requireBookingOpsApiAccess).mockClear();
+    vi.mocked(lifecycle.recordAndProcessBookingEvent).mockClear();
+    vi.mocked(auth.requireOpsAdminSession).mockResolvedValueOnce({
+      session: { userId: 'operator-1', email: 'operator@asi.test' },
+    } as never);
+    vi.mocked(autopilot.processInboundBookingRequest).mockResolvedValueOnce({
+      intakeId: 'intake-unbound', bookingId: 'booking-unbound', guestId: 'guest-1', intakeStatus: 'needs_review',
+      initializedModules: [], createdCommunicationIntents: [], missingRequiredFields: ['property'],
+      nextRequiredActions: ['attach_property'], fallbackCreated: false, duplicateOfBookingId: null, safeSummary: 'review',
+    });
+
+    const { POST } = await import('@/app/api/dashboard/booking-ops/intake/process/route');
+    const res = await POST(new Request('http://localhost/api/dashboard/booking-ops/intake/process', {
+      method: 'POST', body: JSON.stringify({ source: 'admin', guestName: 'Guest' }),
+    }));
+
+    expect(res.status).toBe(200);
+    expect(access.requireBookingOpsApiAccess).not.toHaveBeenCalled();
+    expect(lifecycle.recordAndProcessBookingEvent).not.toHaveBeenCalled();
+  });
+
   it('scopes dashboard status and event reads to the authenticated account', async () => {
     const auth = await import('@/lib/crm/api-auth');
     const autopilot = await import('@/lib/booking-ops/real-booking-intake-autopilot');

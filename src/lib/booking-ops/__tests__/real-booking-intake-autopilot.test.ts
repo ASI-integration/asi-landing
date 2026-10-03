@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const {
   createBookingOpsRecord,
   getBookingOpsRecord,
+  requireBookingOpsRecordScope,
   updateBookingOpsRecord,
   initializeCheckinExecutionBaseline,
   initializeInStayCheckoutBaseline,
@@ -14,6 +15,7 @@ const {
 } = vi.hoisted(() => ({
   createBookingOpsRecord: vi.fn(),
   getBookingOpsRecord: vi.fn(),
+  requireBookingOpsRecordScope: vi.fn(),
   updateBookingOpsRecord: vi.fn(),
   initializeCheckinExecutionBaseline: vi.fn(),
   initializeInStayCheckoutBaseline: vi.fn(),
@@ -113,6 +115,7 @@ vi.mock('@/lib/supabase', () => ({
 vi.mock('../repository', () => ({
   createBookingOpsRecord,
   getBookingOpsRecord,
+  requireBookingOpsRecordScope,
   updateBookingOpsRecord,
   syncBookingOpsTasksForRecordId,
 }));
@@ -165,6 +168,7 @@ describe('Real Booking Intake Autopilot v1', () => {
 
     createBookingOpsRecord.mockResolvedValue({ ok: true, record: bookingRecord });
     getBookingOpsRecord.mockResolvedValue(bookingRecord);
+    requireBookingOpsRecordScope.mockResolvedValue(bookingRecord);
     updateBookingOpsRecord.mockResolvedValue({ ok: true, record: bookingRecord });
     initializeCheckinExecutionBaseline.mockResolvedValue({ id: 'checkin-1' });
     initializeInStayCheckoutBaseline.mockResolvedValue({ id: 'instay-1' });
@@ -296,7 +300,10 @@ describe('Real Booking Intake Autopilot v1', () => {
     tables.booking_ops_records.push({ id: incomplete.id, account_id: 'account-a', guest_name: incomplete.guestName, property_id: 'OBJ-1' });
     const { processInboundBookingRequest: process } = await import('../real-booking-intake-autopilot');
     await process({ guestName: 'Guest', guestPhone: '+79990000001', propertyId: 'OBJ-1', externalSourceId: 'sync-complete-1' }, 'admin', { accountId: 'account-a' });
-    expect(recordAndProcessBookingEvent).toHaveBeenCalledWith(expect.objectContaining({ type: 'guest.data_submitted', source: 'real_booking_intake' }));
+    expect(recordAndProcessBookingEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'guest.data_submitted', source: 'real_booking_intake' }),
+      { accountId: 'account-a', propertyId: 'OBJ-1' },
+    );
     expect(recordAndProcessBookingEvent).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'booking.received' }));
   });
 
