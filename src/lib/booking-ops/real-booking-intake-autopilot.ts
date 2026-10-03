@@ -445,6 +445,22 @@ function guestContactRef(input: NormalizedInboundBookingRequest): string | null 
     ?? (input.telegramUserId ? `tg:${input.telegramUserId}` : null);
 }
 
+function assertBookingWithinIntakeAccount(
+  record: Pick<BookingOpsRecord, 'accountId'> | null | undefined,
+  accountId: string | null,
+): asserts record is Pick<BookingOpsRecord, 'accountId'> {
+  if (!record) {
+    throw Object.assign(new Error('Связанная бронь не найдена.'), { code: 'booking_not_found' });
+  }
+  const recordAccountId = text(record.accountId) || null;
+  if (accountId ? recordAccountId !== accountId : recordAccountId !== null) {
+    throw Object.assign(
+      new Error('Связанная бронь находится вне canonical account контура intake.'),
+      { code: 'account_scope_mismatch' },
+    );
+  }
+}
+
 export async function findOrCreateGuestFromInbound(
   input: NormalizedInboundBookingRequest,
   options?: { allowExistingBookingMatch?: boolean; accountId?: string | null },
@@ -1117,6 +1133,9 @@ export async function processInboundBookingRequest(
     );
   }
   const accountId = scope?.accountId ?? requestedAccountId;
+  // Without a server-owned account/CM contour, intake may create an unbound review item
+  // but must never match or mutate an existing tenant-owned booking.
+  const tenantBoundMatchingAllowed = Boolean(scope || accountId);
   const normalized = unscopedPublicWeb
     ? normalizeUnscopedPublicWebRequest(rawInput)
     : normalizeInboundBookingRequest(rawInput, source);
@@ -1156,15 +1175,10 @@ export async function processInboundBookingRequest(
     && (!options?.action || options.action === 'process')
   ) {
     const existingBooking = await getBookingOpsRecord(existingEvent.bookingId);
+    assertBookingWithinIntakeAccount(existingBooking, accountId);
     if (scope && !bookingBelongsToContour(existingBooking, scope)) {
       throw Object.assign(
         new Error('Существующее intake-событие указывает на бронь вне canonical контура.'),
-        { code: 'account_scope_mismatch' },
-      );
-    }
-    if (accountId && text(existingBooking?.accountId) !== accountId) {
-      throw Object.assign(
-        new Error('Существующее intake-событие указывает на бронь другого аккаунта.'),
         { code: 'account_scope_mismatch' },
       );
     }
@@ -1184,15 +1198,8 @@ export async function processInboundBookingRequest(
   }
 
   if (options?.action === 'mark_duplicate' && options.duplicateOfBookingId) {
-    if (accountId) {
-      const duplicateTarget = await getBookingOpsRecord(options.duplicateOfBookingId);
-      if (!duplicateTarget || text(duplicateTarget.accountId) !== accountId) {
-        throw Object.assign(
-          new Error('Дубликат указывает на бронь вне canonical account контура.'),
-          { code: 'account_scope_mismatch' },
-        );
-      }
-    }
+    const duplicateTarget = await getBookingOpsRecord(options.duplicateOfBookingId);
+    assertBookingWithinIntakeAccount(duplicateTarget, accountId);
     const event = await upsertIntakeEvent({
       id: existingEvent?.id,
       accountId,
@@ -1226,7 +1233,7 @@ export async function processInboundBookingRequest(
 
   try {
     const { guestId } = await findOrCreateGuestFromInbound(normalized, {
-      allowExistingBookingMatch: !unscopedPublicWeb,
+      allowExistingBookingMatch: tenantBoundMatchingAllowed,
       accountId,
     });
     let record: BookingOpsRecord;
@@ -1239,15 +1246,8 @@ export async function processInboundBookingRequest(
         accountId,
       );
       if (!status?.bookingId) throw new Error('booking_not_found');
-      if (accountId) {
-        const existing = await getBookingOpsRecord(status.bookingId);
-        if (!existing || text(existing.accountId) !== accountId) {
-          throw Object.assign(
-            new Error('Intake-событие указывает на бронь вне canonical account контура.'),
-            { code: 'account_scope_mismatch' },
-          );
-        }
-      }
+      const existing = await getBookingOpsRecord(status.bookingId);
+      assertBookingWithinIntakeAccount(existing, accountId);
       const attached = await attachBookingToOwnerProperty(status.bookingId, {
         ownerId: normalized.ownerId,
         propertyId: options.attachPropertyId ?? normalized.propertyId,
@@ -1261,15 +1261,8 @@ export async function processInboundBookingRequest(
         accountId,
       );
       if (!status?.bookingId) throw new Error('booking_not_found');
-      if (accountId) {
-        const existing = await getBookingOpsRecord(status.bookingId);
-        if (!existing || text(existing.accountId) !== accountId) {
-          throw Object.assign(
-            new Error('Intake-событие указывает на бронь вне canonical account контура.'),
-            { code: 'account_scope_mismatch' },
-          );
-        }
-      }
+      const existing = await getBookingOpsRecord(status.bookingId);
+      assertBookingWithinIntakeAccount(existing, accountId);
       const updated = await updateBookingOpsRecord(status.bookingId, {
         guestName: options.attachGuestName ?? normalized.guestName ?? undefined,
         guestPhone: options.attachGuestPhone ?? normalized.guestPhone ?? undefined,
@@ -1283,7 +1276,7 @@ export async function processInboundBookingRequest(
         normalized,
         source,
         scope,
-        !unscopedPublicWeb,
+        tenantBoundMatchingAllowed,
         accountId,
       );
       record = bookingResult.record;

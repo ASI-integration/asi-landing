@@ -290,14 +290,57 @@ describe('Real Booking Intake Autopilot v1', () => {
   });
 
   it('existing booking emits guest.data_submitted only on incomplete-to-complete transition', async () => {
-    const incomplete = { ...bookingRecord, guestName: 'Guest', guestPhone: null, guestEmail: null, guestTelegram: null };
+    const incomplete = { ...bookingRecord, accountId: 'account-a', guestName: 'Guest', guestPhone: null, guestEmail: null, guestTelegram: null };
     getBookingOpsRecord.mockResolvedValueOnce(incomplete);
-    updateBookingOpsRecord.mockResolvedValueOnce({ ok: true, record: { ...incomplete, guestPhone: '+79990000001' } });
-    tables.booking_ops_records.push({ id: incomplete.id, guest_name: incomplete.guestName, property_id: 'OBJ-1' });
+    updateBookingOpsRecord.mockResolvedValue({ ok: true, record: { ...incomplete, guestPhone: '+79990000001' } });
+    tables.booking_ops_records.push({ id: incomplete.id, account_id: 'account-a', guest_name: incomplete.guestName, property_id: 'OBJ-1' });
     const { processInboundBookingRequest: process } = await import('../real-booking-intake-autopilot');
-    await process({ guestName: 'Guest', guestPhone: '+79990000001', propertyId: 'OBJ-1', externalSourceId: 'sync-complete-1' }, 'admin');
+    await process({ guestName: 'Guest', guestPhone: '+79990000001', propertyId: 'OBJ-1', externalSourceId: 'sync-complete-1' }, 'admin', { accountId: 'account-a' });
     expect(recordAndProcessBookingEvent).toHaveBeenCalledWith(expect.objectContaining({ type: 'guest.data_submitted', source: 'real_booking_intake' }));
     expect(recordAndProcessBookingEvent).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'booking.received' }));
+  });
+
+  it('accountless telegram intake never matches a tenant-owned booking', async () => {
+    const { processInboundBookingRequest: process } = await import('../real-booking-intake-autopilot');
+    tables.booking_ops_records.push({
+      id: 'foreign-booking',
+      account_id: 'account-b',
+      booking_id: 'shared-telegram-ref',
+      guest_phone: '+79990000009',
+    });
+    const result = await process({
+      guestName: 'Мария',
+      guestPhone: '+79990000009',
+      bookingReference: 'shared-telegram-ref',
+      sourceMessageId: 'telegram:message:tenant-boundary',
+    }, 'telegram');
+
+    expect(createBookingOpsRecord).toHaveBeenCalledTimes(1);
+    expect(result.bookingId).toBe('booking-ops-intake-1');
+  });
+
+  it('accountless intake rejects a stale event linked to a tenant-owned booking', async () => {
+    const api = await import('../real-booking-intake-autopilot');
+    const payload = {
+      guestName: 'Мария',
+      guestPhone: '+79990000008',
+      sourceMessageId: 'telegram:message:stale-cross-tenant',
+    };
+    const normalized = api.normalizeInboundBookingRequest(payload, 'telegram');
+    const key = api.computeInboundIdempotencyKey(normalized, 'telegram');
+    const now = new Date().toISOString();
+    tables.booking_inbound_intake_events.push({
+      id: 'stale-event', account_id: null, source: 'telegram', source_ref: payload.sourceMessageId,
+      idempotency_key: key, status: 'processed', booking_id: 'foreign-booking',
+      guest_id: null, owner_id: null, property_id: null, normalized_payload: {},
+      missing_fields: [], automation_result: {}, failure_reason: null,
+      duplicate_of_booking_id: null, created_at: now, updated_at: now,
+    });
+    getBookingOpsRecord.mockResolvedValueOnce({ ...bookingRecord, id: 'foreign-booking', accountId: 'account-b' });
+
+    await expect(api.processInboundBookingRequest(payload, 'telegram'))
+      .rejects.toMatchObject({ code: 'account_scope_mismatch' });
+    expect(createBookingOpsRecord).not.toHaveBeenCalled();
   });
 
   it('duplicate partial telegram request does not create duplicate booking', async () => {

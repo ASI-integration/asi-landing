@@ -155,7 +155,16 @@ Scope: canonical property-bound residential location evidence and advisory Platf
 - Channel-import availability now derives canonical scope from `connection -> property setup -> property -> account`, rejects imported mappings outside that property, and evaluates conflicts with the canonical account.
 - Changed files: availability runtime/test, auto-send executor, plus two Channel Manager fixtures updated with canonical property ownership.
 - Verification: focused availability + auto-send contour **49/49 PASS**; frozen Booking Ops + Channel Manager + reservation regression **136/136 PASS**; TypeScript **PASS**; changed-file ESLint **PASS**; `git diff --check` **PASS**.
-- Smallest safe next step: the unused accountless availability summary/confirmation helpers can take the same server-owned account seam if activated. Secret-backed Telegram intake still has no canonical account resolver and must remain unbound/fail-closed rather than trusting payload scope.
+- Smallest safe next step: the unused accountless availability summary/confirmation helpers can take the same server-owned account seam if activated.
+
+## Accountless intake fail-closed matching
+
+- Baseline HEAD: `fbd22c4a256009f960a79cb64f5ccf7ea1a10954`.
+- Intake without a server-owned account or Channel Manager contour can create an unbound review item, but it cannot match/reuse an existing booking by contact or booking reference.
+- Accountless duplicate-event, duplicate-target, and attach paths revalidate the linked booking and reject tenant-owned records; stale legacy unbound events cannot bridge into another account.
+- Owner Telegram session object IDs remain local `OBJ-*` references, not canonical property authority; no account is inferred from payload/session labels.
+- Verification: focused intake/owner-Telegram contour **32/32 PASS**; frozen Booking Ops + Channel Manager + reservation + owner-Telegram regression **142/142 PASS**; TypeScript **PASS**; changed-file ESLint **PASS**; `git diff --check` **PASS**.
+- Smallest safe next step: add a server-owned owner-Telegram session -> canonical property/account binding before allowing tenant matching. Until then, both secret-backed and owner-session Telegram intake remain unbound/fail-closed.
 
 ## Operational boundary
 
