@@ -217,11 +217,21 @@ Scope: canonical property-bound residential location evidence and advisory Platf
 
 ## Guest-legal execution scope checkpoint
 
-- Baseline HEAD: `2e6312a676078f5d9fa3cfb05545c1f2115dc045`. Result: local commit titled `fix(booking-ops): bind guest legal execution to canonical scope` (see branch log).
+- Baseline HEAD: `2e6312a676078f5d9fa3cfb05545c1f2115dc045`. Result: `49f15c709367ac3111fe35c8a9308b55245d6da4` (`fix(booking-ops): bind guest legal execution to canonical scope`).
 - Files: guest-legal `action`, `status`, `explain`, `events` routes and `__tests__/route-scope.test.ts`; `guest-legal-deposit-mvd-execution.ts`; `guest-legal-scope.test.ts`; this review.
 - Shared route access binds all 17 actions, status/explanation recompute, and event reads. Expected scope reaches documents, singleton legal writes, account-scoped availability, readiness, each lifecycle gate, scoped summary sync and legal execution events; guards repeat after asynchronous reads/checks and before writes.
 - Verification: **65/65 focused (3 files)**; frozen contour **309/309 (29 files)**; TypeScript / touched-file ESLint / diff-check **PASS**. Adversarial tests include all action entries, unbound/cross-account routes, post-read ownership change, availability-time change, between-gate change and post-summary event rejection.
 - Remaining blocker: physical readiness mutation route still uses account-only route authorization. Smallest safe next step: shared route access and expected scope through physical mutations, task closure, approval and lifecycle/event effects.
+
+## Physical readiness execution scope checkpoint
+
+- Baseline HEAD: `49f15c709367ac3111fe35c8a9308b55245d6da4`. Result: local checkpoint titled `fix(booking-ops): revalidate physical readiness execution scope` (see branch log).
+- Files: physical-readiness route and route test; physical-readiness execution; tasks; lifecycle-entry adapter and test; guest-legal execution; pre-checkin control center; new physical-readiness-scope, tasks-scope and pre-checkin-scope-propagation tests; this review.
+- Shared route access carries canonical scope through all physical actions, initialization/recompute, cleaning/linen/supplies/maintenance, coordination drafts, final approval, task closure and lifecycle/audit events. Domain guards repeat before writes and after asynchronous reads; nested pre-checkin/legal/physical readiness and knowledge-reviewed draft preparation retain expected scope.
+- Verification: **119/119 focused (11 files: physical/task/lifecycle 100 + pre-checkin 19)**; frozen contour **315/315 (29 files, original 309 plus 6 lifecycle scope cases)**; TypeScript / touched-file ESLint / diff-check **PASS**.
+- Adversarial tests cover ownership changes before task writes, approval/event effects and knowledge-reviewed draft persistence. Guest sending, simulated release, provenance and readiness gates remain unchanged.
+- Remaining blocker: task create/update/run routes still drop canonical scope before completion/communication effects; pre-checkin override/fallback paths need a separate execution-time scope audit.
+- Smallest safe next step: trace task completion/action effects end to end, then bind task routes and domain effects to canonical scope; never accept source booking identity from payloads.
 
 ## Operational boundary
 

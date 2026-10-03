@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { requireBookingOpsRecordScope } from './repository';
 import { supabase } from '@/lib/supabase';
 import { planBookingOpsPreparation } from './automation-engine';
 import { syncBookingOpsCommunications } from './communication-orchestrator';
@@ -24,6 +25,8 @@ import {
 } from './task-types';
 import type { BookingOpsRecord, BookingOpsUnitReadinessStatus } from './types';
 import { BOOKING_OPS_UNIT_READINESS_STATUS_LABELS_RU } from './types';
+
+type ExpectedScope = { accountId: string; propertyId: string };
 
 type BookingOpsTaskRow = {
   id: string;
@@ -122,16 +125,20 @@ async function findLatestTaskByType(
 
 export async function createBookingOpsTask(
   input: CreateBookingOpsTaskInput,
+  options?: { expectedScope?: ExpectedScope },
 ): Promise<{ ok: true; task: BookingOpsTask; created: boolean } | { ok: false; error: string }> {
   const recordId = text(input.bookingOpsRecordId);
   const taskType = input.taskType;
   if (!recordId) return { ok: false, error: 'id_required' };
 
+  if (options?.expectedScope) await requireBookingOpsRecordScope(recordId, options.expectedScope);
   const existing = await findOpenTaskByType(recordId, taskType);
+  if (options?.expectedScope) await requireBookingOpsRecordScope(recordId, options.expectedScope);
   if (existing) return { ok: true, task: existing, created: false };
 
   const now = nowIso();
   const id = randomUUID();
+  if (options?.expectedScope) await requireBookingOpsRecordScope(recordId, options.expectedScope);
   const { data, error } = await supabase
     .from('booking_ops_tasks')
     .insert({
@@ -154,6 +161,7 @@ export async function createBookingOpsTask(
 
   if (error || !data) return { ok: false, error: error?.message ?? 'task_create_failed' };
   const task = mapRow(data as BookingOpsTaskRow);
+  if (options?.expectedScope) await requireBookingOpsRecordScope(recordId, options.expectedScope);
   await recordBookingOpsEvent({
     bookingOpsRecordId: recordId,
     eventType: 'operational_task_created',
@@ -169,6 +177,7 @@ export async function createBookingOpsTask(
     },
     dedupeKey: `task-created:${task.id}`,
   });
+  if (options?.expectedScope) await requireBookingOpsRecordScope(recordId, options.expectedScope);
   await syncLifecycleFromTask(task);
   return { ok: true, task, created: true };
 }
@@ -197,11 +206,13 @@ export async function updateBookingOpsTask(
   bookingOpsRecordId: string,
   taskId: string,
   input: UpdateBookingOpsTaskInput,
+  options?: { expectedScope?: ExpectedScope },
 ): Promise<{ ok: true; task: BookingOpsTask } | { ok: false; error: string }> {
   const recordId = text(bookingOpsRecordId);
   const id = text(taskId);
   if (!recordId || !id) return { ok: false, error: 'id_required' };
 
+  if (options?.expectedScope) await requireBookingOpsRecordScope(recordId, options.expectedScope);
   const previousResult = await getBookingOpsTask(recordId, id);
   if (!previousResult.ok) return previousResult;
 
@@ -226,6 +237,7 @@ export async function updateBookingOpsTask(
     patch.description = text(input.description) || null;
   }
 
+  if (options?.expectedScope) await requireBookingOpsRecordScope(recordId, options.expectedScope);
   const { data, error } = await supabase
     .from('booking_ops_tasks')
     .update(patch)
@@ -238,6 +250,7 @@ export async function updateBookingOpsTask(
   if (!data) return { ok: false, error: 'not_found' };
   const task = mapRow(data as BookingOpsTaskRow);
   if (input.status !== undefined && task.status !== previousResult.task.status) {
+    if (options?.expectedScope) await requireBookingOpsRecordScope(recordId, options.expectedScope);
     await recordBookingOpsEvent({
       bookingOpsRecordId: recordId,
       eventType: 'task_status_changed',
@@ -253,6 +266,7 @@ export async function updateBookingOpsTask(
       dedupeKey: `task-status:${task.id}:${previousResult.task.status}:${task.status}:${previousResult.task.updatedAt}`,
     });
   }
+  if (options?.expectedScope) await requireBookingOpsRecordScope(recordId, options.expectedScope);
   await syncLifecycleFromTask(task);
   return { ok: true, task };
 }

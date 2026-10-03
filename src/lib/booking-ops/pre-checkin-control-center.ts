@@ -456,10 +456,12 @@ async function listCommunications(bookingId: string): Promise<BookingOpsCommunic
   }));
 }
 
-async function readSnapshotInputs(bookingId: string) {
+type ExpectedScope = { accountId: string; propertyId: string };
+
+async function readSnapshotInputs(bookingId: string, expectedScope?: ExpectedScope) {
   const id = text(bookingId);
   if (!id) throw new Error('booking_id_required');
-  const record = await getBookingOpsRecord(id);
+  const record = expectedScope ? await requireBookingOpsRecordScope(id, expectedScope) : await getBookingOpsRecord(id);
   if (!record) throw new Error('booking_not_found');
   const [lifecycleResult, tasksResult, communications] = await Promise.all([
     readLifecycleStatus(record.id),
@@ -477,14 +479,15 @@ async function readSnapshotInputs(bookingId: string) {
   };
 }
 
-async function loadSnapshotInputs(bookingId: string) {
+async function loadSnapshotInputs(bookingId: string, expectedScope?: ExpectedScope) {
   const id = text(bookingId);
   if (!id) throw new Error('booking_id_required');
-  const record = await getBookingOpsRecord(id);
+  const record = expectedScope ? await requireBookingOpsRecordScope(id, expectedScope) : await getBookingOpsRecord(id);
   if (!record) throw new Error('booking_not_found');
+  if (expectedScope) await requireBookingOpsRecordScope(record.id, expectedScope);
   const initialized = await initializeLifecycleForBooking(record.id);
   if (!initialized.ok) throw new Error(initialized.error ?? 'lifecycle_unavailable');
-  return readSnapshotInputs(record.id);
+  return readSnapshotInputs(record.id, expectedScope);
 }
 
 function mergeDomainReadiness(
@@ -578,14 +581,14 @@ export async function readPreCheckinStatus(bookingId: string): Promise<PreChecki
   };
 }
 
-export async function getPreCheckinStatus(bookingId: string): Promise<PreCheckinReadinessSnapshot> {
+export async function getPreCheckinStatus(bookingId: string, expectedScope?: ExpectedScope): Promise<PreCheckinReadinessSnapshot> {
   const { recomputeGuestLegalReadiness } = await import('./guest-legal-deposit-mvd-execution');
   const { ensurePhysicalTasks } = await import('./physical-readiness-execution');
   const [legal, physical] = await Promise.all([
-    recomputeGuestLegalReadiness(bookingId, { source: 'pre_checkin' }),
-    ensurePhysicalTasks(bookingId),
+    recomputeGuestLegalReadiness(bookingId, { source: 'pre_checkin' }, expectedScope),
+    ensurePhysicalTasks(bookingId, expectedScope),
   ]);
-  const input = await loadSnapshotInputs(bookingId);
+  const input = await loadSnapshotInputs(bookingId, expectedScope);
   const snapshot = computePreCheckinReadinessSnapshot({
     bookingId: input.record.id,
     record: input.record,
@@ -612,7 +615,7 @@ export async function getPreCheckinRequiredActions(bookingId: string): Promise<P
   return (await getPreCheckinStatus(bookingId)).requiredActions;
 }
 
-async function ensureCheckinInstructionsDraft(record: BookingOpsRecord): Promise<void> {
+async function ensureCheckinInstructionsDraft(record: BookingOpsRecord, expectedScope?: ExpectedScope): Promise<void> {
   const communications = await listCommunications(record.id);
   const existing = communications.find((item) =>
     item.purpose === 'send_checkin_instructions'
@@ -633,6 +636,7 @@ async function ensureCheckinInstructionsDraft(record: BookingOpsRecord): Promise
     guestRef: record.guestTelegram ?? record.guestEmail ?? record.guestPhone,
   });
   const knowledge = await guardBookingCommunicationDraft(record, 'send_checkin_instructions');
+  if (expectedScope) await requireBookingOpsRecordScope(record.id, expectedScope);
   await supabase.from('booking_ops_communication_intents').insert({
     id: randomUUID(),
     booking_ops_record_id: record.id,
@@ -656,20 +660,23 @@ export async function recomputeBookingCheckinReadiness(
   bookingId: string,
   options?: { expectedScope?: { accountId: string; propertyId: string } },
 ): Promise<PreCheckinReadinessSnapshot> {
-  if (options?.expectedScope) await requireBookingOpsRecordScope(bookingId, options.expectedScope);
-  const input = await loadSnapshotInputs(bookingId);
+  const expectedScope = options?.expectedScope;
+  if (expectedScope) await requireBookingOpsRecordScope(bookingId, expectedScope);
+  const input = await loadSnapshotInputs(bookingId, expectedScope);
   const prepGates = gateMap(input.lifecycle);
   const preparationDone = ['cleaning_scheduled', 'linen_scheduled', 'inspection_scheduled']
     .every((gateKey) => isDone(prepGates.get(gateKey as BookingLifecycleGateKey)));
   if (preparationDone && isDone(prepGates.get('maintenance_required')) && !isDone(prepGates.get('maintenance_resolved'))) {
+    if (expectedScope) await requireBookingOpsRecordScope(input.record.id, expectedScope);
     await blockGate(input.record.id, 'maintenance_resolved', 'Есть незакрытая задача по ремонту', {
       source: 'pre_checkin_control_center_v1',
     });
   } else if (preparationDone && !isDone(prepGates.get('property_ready'))) {
+    if (expectedScope) await requireBookingOpsRecordScope(input.record.id, expectedScope);
     await completeGate(input.record.id, 'property_ready', { source: 'pre_checkin_control_center_v1' });
   }
 
-  const refreshed = await loadSnapshotInputs(input.record.id);
+  const refreshed = await loadSnapshotInputs(input.record.id, expectedScope);
   let snapshot = computePreCheckinReadinessSnapshot({
     bookingId: refreshed.record.id,
     record: refreshed.record,
@@ -684,8 +691,8 @@ export async function recomputeBookingCheckinReadiness(
     if (options?.expectedScope) {
       await requireBookingOpsRecordScope(refreshed.record.id, options.expectedScope);
     }
-    await ensureCheckinInstructionsDraft(refreshed.record);
-    snapshot = await getPreCheckinStatus(refreshed.record.id);
+    await ensureCheckinInstructionsDraft(refreshed.record, expectedScope);
+    snapshot = await getPreCheckinStatus(refreshed.record.id, expectedScope);
   }
 
   if (snapshot.status === 'ready_for_checkin') {
@@ -823,5 +830,5 @@ export async function runPreCheckinAction(input: {
     default:
       throw new Error('invalid_action');
   }
-  return getPreCheckinStatus(bookingId);
+  return getPreCheckinStatus(bookingId, input.expectedScope);
 }

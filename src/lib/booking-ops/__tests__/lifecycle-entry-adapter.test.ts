@@ -63,6 +63,19 @@ describe('OPS v16 lifecycle entry adapters', () => {
     expect(recordAndProcessBookingEvent).toHaveBeenLastCalledWith(expect.objectContaining({ type, bookingId: 'booking-1' }));
   });
 
+  it.each([
+    ['update_cleaning', 'verified'], ['update_linen', 'delivered'],
+    ['update_supplies', 'completed'], ['create_maintenance', ''],
+    ['update_maintenance', 'resolved'], ['final_approval', ''],
+  ])('rejects physical %s lifecycle emission after scope changes', async (action, status) => {
+    requireBookingOpsRecordScope.mockRejectedValueOnce(new Error('booking_scope_mismatch'));
+    await expect(emitPhysicalLifecycle({
+      bookingId: 'booking-1', action, body: { status },
+      expectedScope: { accountId: 'account-a', propertyId: 'property-a' },
+    })).rejects.toThrow('booking_scope_mismatch');
+    expect(recordAndProcessBookingEvent).not.toHaveBeenCalled();
+  });
+
   it('does not map completed cleaning to cleaner.task_completed before verification', async () => {
     await emitPhysicalLifecycle({ bookingId: 'booking-1', action: 'update_cleaning', body: { id: 'work-1', status: 'completed' } });
     expect(recordAndProcessBookingEvent).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'cleaner.task_completed' }));

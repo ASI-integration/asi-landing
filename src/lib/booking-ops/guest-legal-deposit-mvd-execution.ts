@@ -599,7 +599,7 @@ export async function readCheckinInstructionsGuard(
 ): Promise<{ block: boolean; readiness: GuestLegalReadiness; reason: string | null } | null> {
   const readiness = await getGuestLegalReadiness(bookingId, expectedScope);
   const { canReleaseCheckInInstructions, readPhysicalReadiness } = await import('./physical-readiness-execution');
-  const physical = await readPhysicalReadiness(bookingId);
+  const physical = await readPhysicalReadiness(bookingId, expectedScope);
   if (!readiness || !physical) return null;
   const gate = canReleaseCheckInInstructions({
     legalReady: readiness.status === 'ready_for_checkin',

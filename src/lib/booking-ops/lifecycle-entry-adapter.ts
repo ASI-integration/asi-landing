@@ -27,7 +27,7 @@ export async function emitLifecycleForAction(input: { bookingId: string; action:
   });
 }
 
-export async function emitPhysicalLifecycle(input: { bookingId: string; action: string; actorId?: string | null; body: Record<string, unknown> }) {
+export async function emitPhysicalLifecycle(input: { bookingId: string; action: string; actorId?: string | null; body: Record<string, unknown>; expectedScope?: { accountId: string; propertyId: string } }) {
   const status = String(input.body.status ?? '');
   let type: string | null = null;
   if (input.action === 'update_cleaning' && status === 'verified') type = 'cleaner.task_completed';
@@ -37,5 +37,6 @@ export async function emitPhysicalLifecycle(input: { bookingId: string; action: 
   if (input.action === 'update_maintenance' && ['completed', 'resolved'].includes(status)) type = 'maintenance.task_completed';
   if (input.action === 'final_approval') type = 'inspection.completed';
   if (!type) return null;
+  if (input.expectedScope) await requireBookingOpsRecordScope(input.bookingId, input.expectedScope);
   return recordAndProcessBookingEvent({ id: durableEventId('physical_readiness', input.bookingId, input.action, String(input.body.id ?? ''), status), bookingId: input.bookingId, type, actorType: 'operator', actorId: input.actorId, source: 'physical_readiness', correlationId: durableEventId('physical_readiness', input.bookingId, input.action), payload: { action: input.action, status } });
 }
