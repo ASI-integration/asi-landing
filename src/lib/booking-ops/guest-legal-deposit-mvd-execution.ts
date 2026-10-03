@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { supabase } from '@/lib/supabase';
 import { checkBookingOverbookingRisk } from './availability-overbooking-protection';
 import { blockGate, completeGate, initializeLifecycleForBooking, markGateInProgress, skipGate } from './lifecycle';
-import { getBookingOpsRecord, updateBookingOpsRecord } from './repository';
+import { getBookingOpsRecord, requireBookingOpsRecordScope, updateBookingOpsRecord } from './repository';
 import type {
   BookingOpsCommunicationPurpose,
   BookingOpsContractStatus,
@@ -194,9 +194,13 @@ export function computeGuestLegalReadiness(input: ReadinessInput): {
   return { status, blockers, warnings, nextAction, safeSummary };
 }
 
-async function requireRecord(bookingId: string): Promise<BookingOpsRecord> {
+type ExpectedScope = { accountId: string; propertyId: string };
+
+async function requireRecord(bookingId: string, expectedScope?: ExpectedScope): Promise<BookingOpsRecord> {
   const id = requireBookingId(bookingId);
-  const record = await getBookingOpsRecord(id);
+  const record = expectedScope
+    ? await requireBookingOpsRecordScope(id, expectedScope)
+    : await getBookingOpsRecord(id);
   if (!record) throw new Error('Бронь не найдена.');
   return record;
 }
@@ -300,8 +304,11 @@ function mapMvdStatusToBookingOps(status: MvdStatus): BookingOpsMvdStatus {
 
 export async function syncGuestLegalReadinessToBookingOpsRecord(
   readiness: GuestLegalReadiness,
+  expectedScope?: ExpectedScope,
 ): Promise<{ ok: boolean; changed: boolean; error?: string }> {
-  const record = await getBookingOpsRecord(readiness.bookingId);
+  const record = expectedScope
+    ? await requireBookingOpsRecordScope(readiness.bookingId, expectedScope)
+    : await getBookingOpsRecord(readiness.bookingId);
   if (!record) return { ok: false, changed: false, error: 'booking_not_found' };
 
   const next = {
@@ -318,7 +325,7 @@ export async function syncGuestLegalReadinessToBookingOpsRecord(
 
   if (!changed) return { ok: true, changed: false };
 
-  const result = await updateBookingOpsRecord(record.id, next, { actorType: 'system' });
+  const result = await updateBookingOpsRecord(record.id, next, { actorType: 'system', expectedScope });
   return result.ok
     ? { ok: true, changed: true }
     : { ok: false, changed: false, error: result.error };
@@ -361,12 +368,19 @@ export async function initializeGuestLegalExecution(bookingId: string, options: 
   return recomputeGuestLegalReadiness(record.id, options);
 }
 
-export async function recomputeGuestLegalReadiness(bookingId: string, options: Record<string, unknown> = {}): Promise<GuestLegalReadiness> {
-  const record = await requireRecord(bookingId);
+export async function recomputeGuestLegalReadiness(
+  bookingId: string,
+  options: Record<string, unknown> = {},
+  expectedScope?: ExpectedScope,
+): Promise<GuestLegalReadiness> {
+  const record = await requireRecord(bookingId, expectedScope);
   const [documents, contract, deposit, mvd, existing, availability] = await Promise.all([
     allDocuments(record.id), latestStatus('booking_contracts', record.id), latestStatus('booking_deposits', record.id),
     latestStatus('booking_mvd_reports', record.id), latestStatus('booking_guest_legal_readiness', record.id),
-    checkBookingOverbookingRisk(record.id, { checkType: 'manual_review' }),
+    checkBookingOverbookingRisk(record.id, {
+      checkType: 'manual_review',
+      accountId: expectedScope?.accountId,
+    }),
   ]);
   const input: ReadinessInput = {
     documentsStatus: aggregateDocuments(documents), contractStatus: mapLegacyContractStatus(contract?.status),
@@ -386,11 +400,13 @@ export async function recomputeGuestLegalReadiness(bookingId: string, options: R
     metadata: { ...(existing?.metadata as Record<string, unknown> ?? {}), ...safeMetadata(options) },
     created_at: existing?.created_at ?? now, updated_at: now,
   };
+  if (expectedScope) await requireBookingOpsRecordScope(record.id, expectedScope);
   const { data, error } = await supabase.from('booking_guest_legal_readiness').upsert(payload, { onConflict: 'booking_id' }).select('*').single();
   if (error || !data) throw new Error(error?.message ?? 'Не удалось пересчитать готовность.');
   const readiness = mapReadinessRow(data as Record<string, unknown>);
+  if (expectedScope) await requireBookingOpsRecordScope(record.id, expectedScope);
   await syncLifecycle(record.id, readiness);
-  const bridge = await syncGuestLegalReadinessToBookingOpsRecord(readiness);
+  const bridge = await syncGuestLegalReadinessToBookingOpsRecord(readiness, expectedScope);
   if (!bridge.ok) throw new Error(bridge.error ?? 'booking_ops_summary_sync_failed');
   await recordEvent(record.id, 'readiness_recomputed', readiness.status, readiness.safeSummary ?? 'Готовность пересчитана.', { blockerCount: readiness.blockers.length });
   return readiness;

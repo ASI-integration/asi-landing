@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { supabase } from '@/lib/supabase';
-import { getBookingOpsRecord } from './repository';
+import { getBookingOpsRecord, requireBookingOpsRecordScope } from './repository';
 import { blockGate, completeGate, markGateInProgress } from './lifecycle';
 import { createBookingOpsTask, updateBookingOpsTask } from './tasks';
 import { durableEventId, recordProcessedBookingAuditEvent } from './lifecycle-autopilot-service';
@@ -224,9 +224,13 @@ function mapDraft(row: Record<string, unknown>): PhysicalCoordinationDraft {
     createdBy: text(row.created_by) || null, createdAt: String(row.created_at),
   };
 }
-async function requireRecord(bookingId: unknown) {
+type ExpectedScope = { accountId: string; propertyId: string };
+
+async function requireRecord(bookingId: unknown, expectedScope?: ExpectedScope) {
   const id = requireUuid(bookingId);
-  const record = await getBookingOpsRecord(id);
+  const record = expectedScope
+    ? await requireBookingOpsRecordScope(id, expectedScope)
+    : await getBookingOpsRecord(id);
   if (!record) throw new Error('booking_not_found');
   return record;
 }
@@ -393,8 +397,8 @@ async function syncPhysicalReadinessClosure(input: {
   }
 }
 
-export async function ensurePhysicalTasks(bookingId: string): Promise<PhysicalReadiness> {
-  const record = await requireRecord(bookingId);
+export async function ensurePhysicalTasks(bookingId: string, expectedScope?: ExpectedScope): Promise<PhysicalReadiness> {
+  const record = await requireRecord(bookingId, expectedScope);
   const now = new Date().toISOString();
   const dueAt = record.checkInAt ? new Date(record.checkInAt).toISOString() : null;
   const rows = [
@@ -403,22 +407,24 @@ export async function ensurePhysicalTasks(bookingId: string): Promise<PhysicalRe
     ['booking_supplies_tasks', { id: randomUUID(), booking_id: record.id, property_id: record.propertyId, status: 'pending', due_at: dueAt, critical_items: ['туалетная бумага', 'мыло', 'полотенца', 'базовые принадлежности'], report_payload: {}, created_at: now, updated_at: now }],
   ] as const;
   for (const [table, row] of rows) {
+    if (expectedScope) await requireBookingOpsRecordScope(record.id, expectedScope);
     const { error } = await supabase.from(table).upsert(row, { onConflict: 'booking_id', ignoreDuplicates: true });
     if (error) throw new Error(error.message);
   }
   const existing = await singleton('booking_physical_readiness', record.id);
   if (!existing) {
+    if (expectedScope) await requireBookingOpsRecordScope(record.id, expectedScope);
     const { error } = await supabase.from('booking_physical_readiness').insert({
       id: randomUUID(), booking_id: record.id, property_id: record.propertyId, status: 'not_ready',
       blockers: [], final_ready: false, metadata: {}, created_at: now, updated_at: now,
     });
     if (error) throw new Error(error.message);
   }
-  return recomputePhysicalReadiness(record.id);
+  return recomputePhysicalReadiness(record.id, expectedScope);
 }
 
-export async function recomputePhysicalReadiness(bookingId: string): Promise<PhysicalReadiness> {
-  const record = await requireRecord(bookingId);
+export async function recomputePhysicalReadiness(bookingId: string, expectedScope?: ExpectedScope): Promise<PhysicalReadiness> {
+  const record = await requireRecord(bookingId, expectedScope);
   const rows = await readPhysicalRows(record.id);
   const { cleaningRow, linenRow, suppliesRow, maintenanceRows, readinessRow, draftRows } = rows;
   const operationalInput = physicalOperationalInput(rows);
@@ -433,8 +439,10 @@ export async function recomputePhysicalReadiness(bookingId: string): Promise<Phy
     approved_by: approvalStillValid ? readinessRow?.approved_by : null,
     metadata: object(readinessRow?.metadata), created_at: readinessRow?.created_at ?? now, updated_at: now,
   };
+  if (expectedScope) await requireBookingOpsRecordScope(record.id, expectedScope);
   const { data, error } = await supabase.from('booking_physical_readiness').upsert(payload, { onConflict: 'booking_id' }).select('*').single();
   if (error || !data) throw new Error(error?.message ?? 'physical_readiness_update_failed');
+  if (expectedScope) await requireBookingOpsRecordScope(record.id, expectedScope);
   await syncPhysicalReadinessClosure({
     record, previousStatus: text(readinessRow?.status) || 'not_ready',
     previousApprovedAt: text(readinessRow?.approved_at) || null, computed,

@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { supabase } from '@/lib/supabase';
 import { recomputeGuestLegalReadiness, type GuestLegalReadiness } from './guest-legal-deposit-mvd-execution';
 import { ensurePhysicalTasks, type PhysicalReadiness } from './physical-readiness-execution';
-import { getBookingOpsRecord } from './repository';
+import { getBookingOpsRecord, requireBookingOpsRecordScope } from './repository';
 import type { BookingOpsRecord } from './types';
 
 export const GUEST_INTAKE_REQUIRED_FIELDS = [
@@ -161,8 +161,11 @@ export function validateGuestIntakeFields(value: unknown): GuestIntakeValidation
   };
 }
 
-async function requireRecord(bookingId: unknown): Promise<BookingOpsRecord> {
+type ExpectedScope = { accountId: string; propertyId: string };
+
+async function requireRecord(bookingId: unknown, expectedScope?: ExpectedScope): Promise<BookingOpsRecord> {
   const id = requireBookingId(bookingId);
+  if (expectedScope) return requireBookingOpsRecordScope(id, expectedScope);
   const record = await getBookingOpsRecord(id);
   if (!record) throw new Error('Бронь не найдена.');
   return record;
@@ -184,10 +187,14 @@ async function getSession(recordId: string): Promise<SessionRow | null> {
   return data as SessionRow | null;
 }
 
-export async function ensureGuestIntakeSession(bookingId: unknown): Promise<SessionRow> {
-  const record = await requireRecord(bookingId);
+export async function ensureGuestIntakeSession(bookingId: unknown, expectedScope?: ExpectedScope): Promise<SessionRow> {
+  const record = await requireRecord(bookingId, expectedScope);
   const existing = await getSession(record.id);
-  if (existing) return existing;
+  if (existing) {
+    if (expectedScope) await requireBookingOpsRecordScope(record.id, expectedScope);
+    return existing;
+  }
+  if (expectedScope) await requireBookingOpsRecordScope(record.id, expectedScope);
   const now = new Date().toISOString();
   const { data, error } = await supabase.from('booking_ops_guest_intake_sessions').upsert({
     id: randomUUID(), booking_ops_record_id: record.id, booking_id: record.bookingId,
@@ -227,12 +234,19 @@ function guestDraftBody(record: BookingOpsRecord, session: SessionRow, kind: 'in
   ].filter(Boolean).join('\n');
 }
 
-async function ensureTelegramDraft(record: BookingOpsRecord, session: SessionRow, actionId: string, _body: string) {
+async function ensureTelegramDraft(
+  record: BookingOpsRecord,
+  session: SessionRow,
+  actionId: string,
+  _body: string,
+  expectedScope?: ExpectedScope,
+) {
   const { data: existing, error: findError } = await supabase.from('booking_ops_telegram_drafts')
     .select('*').eq('booking_ops_record_id', record.id).eq('action_id', actionId)
     .in('status', ['draft', 'copied']).order('created_at', { ascending: false }).limit(1).maybeSingle();
   if (findError) throw new Error(findError.message);
   const knowledge = await guardBookingCommunicationDraft(record, actionId);
+  if (expectedScope) await requireBookingOpsRecordScope(record.id, expectedScope);
   if (actionId === 'initial_guest_intake' || actionId === 'missing_guest_data') {
     // A neutral request contains no asserted property, booking or access fact.
     knowledge.messageText = 'Здравствуйте! Уточните, пожалуйста, имя и фамилию, контакт для связи, количество гостей и ожидаемое время прибытия. Данные документов и коды доступа сюда отправлять не нужно.';
@@ -255,11 +269,22 @@ async function ensureTelegramDraft(record: BookingOpsRecord, session: SessionRow
   return data;
 }
 
-export async function prepareGuestIntakeDraft(bookingId: unknown, kind: 'initial' | 'reminder' = 'initial') {
-  const record = await requireRecord(bookingId);
-  const session = await ensureGuestIntakeSession(record.id);
-  const draft = await ensureTelegramDraft(record, session, kind === 'initial' ? 'initial_guest_intake' : 'missing_guest_data', guestDraftBody(record, session, kind));
+export async function prepareGuestIntakeDraft(
+  bookingId: unknown,
+  kind: 'initial' | 'reminder' = 'initial',
+  expectedScope?: ExpectedScope,
+) {
+  const record = await requireRecord(bookingId, expectedScope);
+  const session = await ensureGuestIntakeSession(record.id, expectedScope);
+  const draft = await ensureTelegramDraft(
+    record,
+    session,
+    kind === 'initial' ? 'initial_guest_intake' : 'missing_guest_data',
+    guestDraftBody(record, session, kind),
+    expectedScope,
+  );
   const now = new Date().toISOString();
+  if (expectedScope) await requireBookingOpsRecordScope(record.id, expectedScope);
   const { data, error } = await supabase.from('booking_ops_guest_intake_sessions').update({
     intake_status: session.intake_status === 'not_started' ? 'waiting_for_guest' : session.intake_status,
     updated_at: now,
@@ -269,8 +294,14 @@ export async function prepareGuestIntakeDraft(bookingId: unknown, kind: 'initial
   return { session: data as SessionRow, draft };
 }
 
-export async function submitGuestIntakeSimulated(bookingId: unknown, value: unknown, actorId?: string) {
-  const session = await ensureGuestIntakeSession(bookingId);
+export async function submitGuestIntakeSimulated(
+  bookingId: unknown,
+  value: unknown,
+  actorId?: string,
+  expectedScope?: ExpectedScope,
+) {
+  const session = await ensureGuestIntakeSession(bookingId, expectedScope);
+  if (expectedScope) await requireBookingOpsRecordScope(session.booking_ops_record_id, expectedScope);
   const merged = { ...(session.submitted_fields ?? {}), ...cleanFields(value) };
   const validation = validateGuestIntakeFields(merged);
   const now = new Date().toISOString();
@@ -292,9 +323,14 @@ export async function submitGuestIntakeSimulated(bookingId: unknown, value: unkn
   return { session: updated, validation };
 }
 
-export async function escalateGuestIntake(bookingId: unknown, reason: unknown, operatorId?: string) {
-  const record = await requireRecord(bookingId);
-  const session = await ensureGuestIntakeSession(record.id);
+export async function escalateGuestIntake(
+  bookingId: unknown,
+  reason: unknown,
+  operatorId?: string,
+  expectedScope?: ExpectedScope,
+) {
+  const record = await requireRecord(bookingId, expectedScope);
+  const session = await ensureGuestIntakeSession(record.id, expectedScope);
   const cleanReason = text(reason, 500);
   if (!cleanReason) throw new Error('Укажите причину передачи оператору.');
   const validation = validateGuestIntakeFields(session.submitted_fields);
@@ -304,7 +340,14 @@ export async function escalateGuestIntake(bookingId: unknown, reason: unknown, o
     `Причина: ${cleanReason}.`, 'Рекомендуемое действие: связаться с гостем вручную и проверить данные.',
     'Это внутренний черновик. Он не отправлен гостю.',
   ].join('\n');
-  const draft = await ensureTelegramDraft(record, session, 'operator_guest_intake', body);
+  const draft = await ensureTelegramDraft(
+    record,
+    session,
+    'operator_guest_intake',
+    body,
+    expectedScope,
+  );
+  if (expectedScope) await requireBookingOpsRecordScope(record.id, expectedScope);
   const { data, error } = await supabase.from('booking_ops_guest_intake_sessions').update({
     intake_status: 'fallback_required', fallback_reason: cleanReason, operator_notes: cleanReason,
     escalation_status: 'draft_prepared', updated_at: new Date().toISOString(),
@@ -330,12 +373,15 @@ async function releaseRow(recordId: string): Promise<ReleaseRow | null> {
   return data as ReleaseRow | null;
 }
 
-export async function getGuestIntakeReleaseSnapshot(bookingId: unknown) {
-  const record = await requireRecord(bookingId);
-  const session = await ensureGuestIntakeSession(record.id);
+export async function getGuestIntakeReleaseSnapshot(bookingId: unknown, expectedScope?: ExpectedScope) {
+  const record = await requireRecord(bookingId, expectedScope);
+  const session = await ensureGuestIntakeSession(record.id, expectedScope);
   const validation = validateGuestIntakeFields(session.submitted_fields);
+  if (expectedScope) await requireBookingOpsRecordScope(record.id, expectedScope);
   const [legal, physical, release, eventResult, draftResult] = await Promise.all([
-    recomputeGuestLegalReadiness(record.id), ensurePhysicalTasks(record.id), releaseRow(record.id),
+    recomputeGuestLegalReadiness(record.id, {}, expectedScope),
+    ensurePhysicalTasks(record.id, expectedScope),
+    releaseRow(record.id),
     supabase.from('booking_ops_guest_intake_events').select('*').eq('session_id', session.id).order('created_at', { ascending: false }).limit(20),
     supabase.from('booking_ops_telegram_drafts').select('*').eq('booking_ops_record_id', record.id)
       .in('action_id', ['initial_guest_intake', 'missing_guest_data', 'operator_guest_intake', 'final_checkin_instructions'])
@@ -365,15 +411,26 @@ function finalDraftBody(record: BookingOpsRecord): string {
   ].join('\n');
 }
 
-export async function prepareCheckinReleaseDraft(bookingId: unknown, operatorId?: string) {
-  const record = await requireRecord(bookingId);
-  const snapshot = await getGuestIntakeReleaseSnapshot(record.id);
+export async function prepareCheckinReleaseDraft(
+  bookingId: unknown,
+  operatorId?: string,
+  expectedScope?: ExpectedScope,
+) {
+  const record = await requireRecord(bookingId, expectedScope);
+  const snapshot = await getGuestIntakeReleaseSnapshot(record.id, expectedScope);
   if (!snapshot.canPrepareCheckinReleaseDraft) {
     await addEvent(snapshot.session, 'checkin_release_blocked', { blockers: snapshot.blockers }, 'operator', operatorId);
     throw new Error(`Инструкции заблокированы: ${snapshot.blockers.join(', ')}`);
   }
   const body = finalDraftBody(record);
-  const telegramDraft = await ensureTelegramDraft(record, snapshot.session, 'final_checkin_instructions', body);
+  const telegramDraft = await ensureTelegramDraft(
+    record,
+    snapshot.session,
+    'final_checkin_instructions',
+    body,
+    expectedScope,
+  );
+  if (expectedScope) await requireBookingOpsRecordScope(record.id, expectedScope);
   const now = new Date().toISOString();
   const { data, error } = await supabase.from('booking_ops_checkin_release_drafts').upsert({
     id: snapshot.release?.id ?? randomUUID(), booking_id: record.id, property_id: record.propertyId,
@@ -387,12 +444,18 @@ export async function prepareCheckinReleaseDraft(bookingId: unknown, operatorId?
   return { release: mapRelease(data as ReleaseRow), telegramDraft };
 }
 
-export async function simulateCheckinRelease(bookingId: unknown, confirmed: unknown, operatorId?: string) {
+export async function simulateCheckinRelease(
+  bookingId: unknown,
+  confirmed: unknown,
+  operatorId?: string,
+  expectedScope?: ExpectedScope,
+) {
   if (confirmed !== true) throw new Error('Нужно явно подтвердить тестовую выдачу инструкций.');
-  const snapshot = await getGuestIntakeReleaseSnapshot(bookingId);
+  const snapshot = await getGuestIntakeReleaseSnapshot(bookingId, expectedScope);
   if (!snapshot.canPrepareCheckinReleaseDraft || snapshot.release?.status !== 'draft_prepared') {
     throw new Error('Тестовая выдача недоступна: черновик или обязательные проверки не готовы.');
   }
+  if (expectedScope) await requireBookingOpsRecordScope(snapshot.session.booking_ops_record_id, expectedScope);
   const now = new Date().toISOString();
   const { data, error } = await supabase.from('booking_ops_checkin_release_drafts').update({
     status: 'released_simulated', released_simulated_at: now, updated_at: now,

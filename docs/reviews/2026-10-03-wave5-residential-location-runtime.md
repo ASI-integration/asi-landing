@@ -195,6 +195,17 @@ Scope: canonical property-bound residential location evidence and advisory Platf
 - Verification: focused mutation/scope contour **117/117 PASS**; frozen Booking Ops + Channel Manager + reservation + owner-Telegram + pre-checkin/check-in/in-stay regression **243/243 PASS**; TypeScript **PASS**; changed-file ESLint **PASS**; `git diff --check` **PASS**.
 - Next step: continue the remaining route-only mutation audit, prioritizing check-in release, legal/payment and guest-legal action routes, then physical-readiness mutations; keep any payload-only/unbound contour fail-closed.
 
+## Guest intake / check-in release scope revalidation
+
+- Baseline HEAD: `b99eeb48b54304802f67f88ad2dbe43a159a502c`.
+- Guest-intake and check-in-release routes keep using the shared Booking Ops API access helper, then pass its canonical booking/account/property scope through every release/intake domain mutation and post-action snapshot.
+- Guest-intake session/draft/submission/escalation and check-in-release draft/simulated-release writes revalidate canonical scope before side effects. Lifecycle emission keeps its independent scope guard.
+- Nested legal readiness now carries the canonical account into availability checks and scoped Booking Ops summary updates; nested physical task initialization/recompute revalidates scope before task/readiness/lifecycle writes.
+- Communication remains draft-only and simulated release performs no external guest send. PlatformDecision is not used as execution authorization.
+- Changed files: the two release/intake routes and route tests, guest-intake/check-in-release domain, legal readiness bridge, physical readiness initialization/recompute, and focused scope test.
+- Verification: focused release/legal/physical contour **66/66 PASS**; frozen Booking Ops + Channel Manager + reservation + owner-Telegram + check-in/in-stay + release/legal/physical regression **309/309 PASS**; TypeScript **PASS**; changed-file ESLint **PASS**; `git diff --check` **PASS**.
+- Next step: audit `legal-payment` and dashboard guest-legal action routes, then move the physical-readiness route to the shared access helper and carry expected scope through its mutation dispatcher; do not grant authority from payload-only/unbound fields.
+
 ## Operational boundary
 
 Wave 5 migration files are prepared and contract-tested but were **not applied to any live/local database** in this pass. No push, merge, deploy, live database mutation, DNS, secret, or package-install action was performed.
