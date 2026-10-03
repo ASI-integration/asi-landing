@@ -6,7 +6,8 @@ import { adaptResidentialIncidentDecision, adaptResidentialOpsDecision } from '@
 import { resolveResidentialBookingIdentity } from '@/lib/platform/residential-booking-scope';
 import {
   BookingClosePrerequisiteError,
-  getInStayCheckoutStatus,
+  readBookingClosePrerequisites,
+  readInStayCheckoutStatus,
   runInStayCheckoutAction,
 } from '@/lib/booking-ops/instay-checkout-autopilot';
 import {
@@ -68,7 +69,8 @@ export async function GET(req: Request): Promise<NextResponse> {
   try {
     const access = await resolveReservationAccess(auth.session);
     const identity = await resolveResidentialBookingIdentity(bookingId, access.accountId);
-    const instayCheckout = await getInStayCheckoutStatus(bookingId);
+    const instayCheckout = await readInStayCheckoutStatus(bookingId);
+    const closePrerequisites = await readBookingClosePrerequisites(bookingId, instayCheckout);
     const currentIdentity = await resolveResidentialBookingIdentity(bookingId, access.accountId);
     if (!sameIdentity(identity, currentIdentity)) {
       return NextResponse.json({ ok: false, message: 'Состояние бронирования изменилось. Повторите запрос.' }, { status: 409 });
@@ -89,6 +91,10 @@ export async function GET(req: Request): Promise<NextResponse> {
       }, now),
       deposit: adaptResidentialOpsDecision(identity, 'deposit', {
         ...snapshot, value: { kind: 'deposit' as const, checkout: instayCheckout },
+      }, now),
+      closeout: adaptResidentialOpsDecision(identity, 'closeout', {
+        ...snapshot,
+        value: { kind: 'closeout' as const, checkout: instayCheckout, prerequisites: closePrerequisites },
       }, now),
       incidents: instayCheckout.openIssues.map((issue) => adaptResidentialIncidentDecision(identity, {
         available: true,

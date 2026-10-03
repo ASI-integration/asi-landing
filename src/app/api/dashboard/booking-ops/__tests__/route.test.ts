@@ -177,8 +177,8 @@ vi.mock('@/lib/booking-ops/checkin-execution-autopilot', () => {
   };
 });
 
-vi.mock('@/lib/booking-ops/instay-checkout-autopilot', () => ({
-  getInStayCheckoutStatus: vi.fn(async () => ({
+vi.mock('@/lib/booking-ops/instay-checkout-autopilot', () => {
+  const snapshot = () => ({
     bookingId: 'ops-route',
     status: 'in_stay',
     execution: null,
@@ -194,25 +194,23 @@ vi.mock('@/lib/booking-ops/instay-checkout-autopilot', () => ({
     communications: [],
     nextAction: 'Следить за проживанием и готовить выезд',
     updatedAt: new Date().toISOString(),
-  })),
-  runInStayCheckoutAction: vi.fn(async () => ({
-    bookingId: 'ops-route',
-    status: 'checkout_instructions_queued',
-    execution: null,
-    checkoutInstructionsStatus: 'queued',
-    checkoutConfirmationStatus: 'not_requested',
-    inspectionStatus: 'not_started',
-    depositReturnStatus: 'not_ready',
-    closureStatus: 'open',
-    openIssuesCount: 0,
-    openIssues: [],
-    lifecycle: null,
-    blockers: [],
-    communications: [],
-    nextAction: 'Проверить черновик и отметить отправку',
-    updatedAt: new Date().toISOString(),
-  })),
-}));
+  });
+  return {
+    getInStayCheckoutStatus: vi.fn(async () => snapshot()),
+    readInStayCheckoutStatus: vi.fn(async () => snapshot()),
+    readBookingClosePrerequisites: vi.fn(async () => ([
+      { key: 'guest_not_checked_out', category: 'lifecycle', message: 'Guest check-out is not completed.' },
+      { key: 'post_checkout_inspection_incomplete', category: 'lifecycle', message: 'Post-checkout inspection is not completed.' },
+      { key: 'deposit_return_incomplete', category: 'deposit', message: 'Deposit return is incomplete.' },
+    ])),
+    runInStayCheckoutAction: vi.fn(async () => ({
+      ...snapshot(),
+      status: 'checkout_instructions_queued',
+      checkoutInstructionsStatus: 'queued',
+      nextAction: 'Проверить черновик и отметить отправку',
+    })),
+  };
+});
 
 describe('Booking Ops dashboard routes', () => {
   it('list route returns 200', async () => {
@@ -341,20 +339,27 @@ describe('Booking Ops dashboard routes', () => {
     expect(response.status).toBe(400);
   });
 
-  it('instay-checkout GET returns advisory in-stay, checkout, deposit and incident decisions', async () => {
+  it('instay-checkout GET uses pure reads and returns advisory stay, checkout, deposit and closeout decisions', async () => {
+    const instay = await import('@/lib/booking-ops/instay-checkout-autopilot');
+    vi.mocked(instay.getInStayCheckoutStatus).mockClear();
+    vi.mocked(instay.readInStayCheckoutStatus).mockClear();
     const route = await import('../instay-checkout/route');
     const response = await route.GET(new Request('https://asi.test?bookingId=ops-route'));
     const payload = await response.json();
     expect(response.status).toBe(200);
     expect(payload.platformDecisions.inStay.topic).toBe('in_stay');
     expect(payload.platformDecisions.checkout.topic).toBe('checkout');
+    expect(instay.readInStayCheckoutStatus).toHaveBeenCalledWith('ops-route');
+    expect(instay.getInStayCheckoutStatus).not.toHaveBeenCalled();
     expect(payload.platformDecisions.deposit.topic).toBe('deposit');
+    expect(payload.platformDecisions.closeout).toMatchObject({ topic: 'closeout', status: 'blocked' });
+    expect(payload.platformDecisions.closeout.permission.allowedActions).not.toContain('close_booking');
     expect(payload.platformDecisions.incidents).toEqual([]);
-    expect(payload.platformDecisions.closeout).toBeUndefined();
     for (const decision of [
       payload.platformDecisions.inStay,
       payload.platformDecisions.checkout,
       payload.platformDecisions.deposit,
+      payload.platformDecisions.closeout,
     ]) {
       expect(decision.permission.automaticActionAllowed).toBe(false);
       expect(decision.permission.executionAuthority).toBe('domain_revalidation_required');
@@ -362,10 +367,49 @@ describe('Booking Ops dashboard routes', () => {
     }
   });
 
+  it('proposes close_booking only when pure canonical close prerequisites are empty', async () => {
+    const instay = await import('@/lib/booking-ops/instay-checkout-autopilot');
+    const updatedAt = new Date().toISOString();
+    vi.mocked(instay.readInStayCheckoutStatus).mockResolvedValueOnce({
+      bookingId: 'ops-route',
+      status: 'ready_to_close',
+      execution: null,
+      checkoutInstructionsStatus: 'sent',
+      checkoutConfirmationStatus: 'confirmed',
+      inspectionStatus: 'done',
+      depositReturnStatus: 'returned',
+      closureStatus: 'ready_to_close',
+      openIssuesCount: 0,
+      openIssues: [],
+      lifecycle: null,
+      blockers: [],
+      communications: [],
+      nextAction: 'Закрыть бронь',
+      updatedAt,
+    } as never);
+    vi.mocked(instay.readBookingClosePrerequisites).mockResolvedValueOnce([]);
+
+    const route = await import('../instay-checkout/route');
+    const response = await route.GET(new Request('https://asi.test?bookingId=ops-route'));
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(payload.platformDecisions.closeout).toMatchObject({
+      topic: 'closeout',
+      status: 'allowed',
+      permission: {
+        automaticActionAllowed: false,
+        executionAuthority: 'domain_revalidation_required',
+      },
+    });
+    expect(payload.platformDecisions.closeout.permission.allowedActions).toContain('close_booking');
+    expect(payload.platformDecisions.closeout.permission.forbiddenActions).toContain('send_guest_automatically');
+  });
+
   it('maps canonical open stay issues to advisory incident decisions', async () => {
     const instay = await import('@/lib/booking-ops/instay-checkout-autopilot');
     const updatedAt = new Date().toISOString();
-    vi.mocked(instay.getInStayCheckoutStatus).mockResolvedValueOnce({
+    vi.mocked(instay.readInStayCheckoutStatus).mockResolvedValueOnce({
       bookingId: 'ops-route',
       status: 'guest_issue_open',
       execution: null,

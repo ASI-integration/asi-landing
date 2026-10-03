@@ -9,6 +9,7 @@ import {
   completeGate,
   getLifecycleStatus,
   initializeLifecycleForBooking,
+  readLifecycleStatus,
   markGateInProgress,
 } from './lifecycle';
 import { getBookingOpsRecord, syncBookingOpsTasksForRecordId } from './repository';
@@ -488,14 +489,25 @@ function missingPrerequisite(
   return { key, category, message };
 }
 
-export async function validateBookingClosePrerequisites(
-  record: BookingOpsRecord,
-): Promise<BookingCloseMissingPrerequisite[]> {
+type BookingCloseLegalState = {
+  documentsStatus: string;
+  contractStatus: string;
+  depositStatus: string;
+  mvdStatus: string;
+};
+
+function computeBookingClosePrerequisites(input: {
+  record: BookingOpsRecord;
+  legal: BookingCloseLegalState | null;
+  legalError?: string | null;
+  execution: InStayCheckoutRow | null;
+  issues: GuestStayIssueRow[];
+  lifecycle: InStayCheckoutSnapshot['lifecycle'];
+}): BookingCloseMissingPrerequisite[] {
+  const { record, legal, execution, issues, lifecycle } = input;
   const missing: BookingCloseMissingPrerequisite[] = [];
 
-  if (!text(record.guestName)) {
-    missing.push(missingPrerequisite('guest_name_missing', 'guest_data', 'Guest name is missing.'));
-  }
+  if (!text(record.guestName)) missing.push(missingPrerequisite('guest_name_missing', 'guest_data', 'Guest name is missing.'));
   if (!text(record.guestPhone) && !text(record.guestEmail) && !text(record.guestTelegram)) {
     missing.push(missingPrerequisite('guest_contact_missing', 'guest_data', 'Guest contact is missing.'));
   }
@@ -509,44 +521,28 @@ export async function validateBookingClosePrerequisites(
     missing.push(missingPrerequisite('guest_count_missing', 'guest_data', 'Guest count is missing.'));
   }
 
-  try {
-    const { recomputeGuestLegalReadiness } = await import('./guest-legal-deposit-mvd-execution');
-    const legal = await recomputeGuestLegalReadiness(record.id, { source: 'close_guard' });
-    if (record.documentRequired !== false && legal.documentsStatus !== 'verified') {
-      missing.push(missingPrerequisite('documents_incomplete', 'documents', 'Required guest documents are not verified.'));
-    }
-    if (
-      record.contractRequired !== false
-      && !['signed_manual', 'signed_provider_placeholder'].includes(legal.contractStatus)
-    ) {
-      missing.push(missingPrerequisite('contract_incomplete', 'contract', 'Required contract is not signed.'));
-    }
-    if (
-      record.depositRequired !== false
-      && !['paid_manual', 'paid_provider_placeholder', 'waived_manual'].includes(legal.depositStatus)
-    ) {
-      missing.push(missingPrerequisite('deposit_incomplete', 'deposit', 'Required deposit is not collected or waived.'));
-    }
-    if (
-      record.mvdRequired !== false
-      && !['not_required', 'submitted_manual', 'submitted_provider_placeholder', 'accepted_manual'].includes(legal.mvdStatus)
-    ) {
-      missing.push(missingPrerequisite('mvd_incomplete', 'mvd', 'MVD/reporting preparation is incomplete.'));
-    }
-  } catch (error) {
+  if (!legal) {
     missing.push(missingPrerequisite(
       'legal_readiness_unavailable',
       'lifecycle',
-      error instanceof Error ? error.message : 'Legal readiness could not be checked.',
+      input.legalError ?? 'Legal readiness could not be checked.',
     ));
+  } else {
+    if (record.documentRequired !== false && legal.documentsStatus !== 'verified') {
+      missing.push(missingPrerequisite('documents_incomplete', 'documents', 'Required guest documents are not verified.'));
+    }
+    if (record.contractRequired !== false && !['signed_manual', 'signed_provider_placeholder'].includes(legal.contractStatus)) {
+      missing.push(missingPrerequisite('contract_incomplete', 'contract', 'Required contract is not signed.'));
+    }
+    if (record.depositRequired !== false
+      && !['paid_manual', 'paid_provider_placeholder', 'waived_manual'].includes(legal.depositStatus)) {
+      missing.push(missingPrerequisite('deposit_incomplete', 'deposit', 'Required deposit is not collected or waived.'));
+    }
+    if (record.mvdRequired !== false
+      && !['not_required', 'submitted_manual', 'submitted_provider_placeholder', 'accepted_manual'].includes(legal.mvdStatus)) {
+      missing.push(missingPrerequisite('mvd_incomplete', 'mvd', 'MVD/reporting preparation is incomplete.'));
+    }
   }
-
-  const [execution, issues, lifecycleResult] = await Promise.all([
-    getExecutionRow(record.id),
-    listIssueRows(record.id),
-    getLifecycleStatus(record.id),
-  ]);
-  const lifecycle = lifecycleResult.ok ? lifecycleResult.lifecycle : null;
 
   if (!gateCompleted(lifecycle, 'guest_checked_in')) {
     missing.push(missingPrerequisite('guest_not_checked_in', 'lifecycle', 'Guest check-in is not completed.'));
@@ -557,25 +553,89 @@ export async function validateBookingClosePrerequisites(
   if (!gateCompleted(lifecycle, 'post_checkout_inspection_done') && execution?.inspectionStatus !== 'done') {
     missing.push(missingPrerequisite('post_checkout_inspection_incomplete', 'lifecycle', 'Post-checkout inspection is not completed.'));
   }
-  if (
-    record.depositRequired !== false
+  if (record.depositRequired !== false
     && record.depositIntakeStatus !== 'returned'
     && execution?.depositReturnStatus !== 'returned'
-    && execution?.depositReturnStatus !== 'waived'
-  ) {
+    && execution?.depositReturnStatus !== 'waived') {
     missing.push(missingPrerequisite(
       'deposit_return_incomplete',
       'deposit',
       'Deposit return is only prepared; confirm the actual return or explicit waiver before closing the booking.',
     ));
   }
-
-  const openIssues = issues.filter((issue) => OPEN_ISSUE_STATUSES.has(issue.status));
-  if (openIssues.length > 0) {
+  if (issues.some((issue) => OPEN_ISSUE_STATUSES.has(issue.status))) {
     missing.push(missingPrerequisite('open_stay_issues', 'incident', 'There are unresolved guest stay issues.'));
   }
-
   return missing;
+}
+
+export async function readBookingClosePrerequisites(
+  bookingId: string,
+  snapshot?: InStayCheckoutSnapshot,
+): Promise<BookingCloseMissingPrerequisite[]> {
+  const record = await loadRecord(bookingId);
+  if (snapshot && snapshot.bookingId !== record.id) throw new Error('booking_scope_mismatch');
+
+  let legal: BookingCloseLegalState | null = null;
+  let legalError: string | null = null;
+  try {
+    const { getGuestLegalReadiness } = await import('./guest-legal-deposit-mvd-execution');
+    legal = await getGuestLegalReadiness(record.id);
+    if (!legal) legalError = 'legal_readiness_unavailable';
+  } catch (error) {
+    legalError = error instanceof Error ? error.message : 'Legal readiness could not be checked.';
+  }
+
+  if (snapshot) {
+    return computeBookingClosePrerequisites({
+      record,
+      legal,
+      legalError,
+      execution: snapshot.execution,
+      issues: snapshot.openIssues,
+      lifecycle: snapshot.lifecycle,
+    });
+  }
+
+  const [execution, issues, lifecycleResult] = await Promise.all([
+    getExecutionRow(record.id),
+    listIssueRows(record.id),
+    readLifecycleStatus(record.id),
+  ]);
+  return computeBookingClosePrerequisites({
+    record,
+    legal,
+    legalError,
+    execution,
+    issues,
+    lifecycle: lifecycleResult.ok ? lifecycleResult.lifecycle ?? null : null,
+  });
+}
+
+export async function validateBookingClosePrerequisites(
+  record: BookingOpsRecord,
+): Promise<BookingCloseMissingPrerequisite[]> {
+  let legal: BookingCloseLegalState | null = null;
+  let legalError: string | null = null;
+  try {
+    const { recomputeGuestLegalReadiness } = await import('./guest-legal-deposit-mvd-execution');
+    legal = await recomputeGuestLegalReadiness(record.id, { source: 'close_guard' });
+  } catch (error) {
+    legalError = error instanceof Error ? error.message : 'Legal readiness could not be checked.';
+  }
+  const [execution, issues, lifecycleResult] = await Promise.all([
+    getExecutionRow(record.id),
+    listIssueRows(record.id),
+    getLifecycleStatus(record.id),
+  ]);
+  return computeBookingClosePrerequisites({
+    record,
+    legal,
+    legalError,
+    execution,
+    issues,
+    lifecycle: lifecycleResult.ok ? lifecycleResult.lifecycle ?? null : null,
+  });
 }
 
 function nextAction(status: InStayCheckoutStatus): string | null {
@@ -687,6 +747,86 @@ async function ensureCommunicationIntent(input: {
   return refreshed.ok ? refreshed.communications.find((item) => item.id === String((data as { id: string }).id)) ?? null : null;
 }
 
+const INSTAY_LIFECYCLE_OBSERVED_GATES = new Set([
+  'guest_checked_in',
+  'guest_checked_out',
+  'post_checkout_inspection_done',
+  'deposit_return_ready',
+  'booking_closed',
+]);
+
+function pureInStayObservedAt(
+  execution: InStayCheckoutRow | null,
+  lifecycle: InStayCheckoutSnapshot['lifecycle'],
+): string {
+  const values = [
+    execution?.updatedAt,
+    ...(lifecycle?.gates
+      .filter((gate) => INSTAY_LIFECYCLE_OBSERVED_GATES.has(gate.gateKey))
+      .map((gate) => gate.updatedAt) ?? []),
+  ].filter((value): value is string => typeof value === 'string' && Number.isFinite(Date.parse(value)));
+  if (!values.length) return new Date(0).toISOString();
+  return values.sort((a, b) => Date.parse(a) - Date.parse(b))[0]!;
+}
+
+function buildInStayCheckoutSnapshot(input: {
+  record: BookingOpsRecord;
+  execution: InStayCheckoutRow | null;
+  issues: GuestStayIssueRow[];
+  lifecycle: InStayCheckoutSnapshot['lifecycle'];
+  communications: BookingOpsCommunicationIntent[];
+  updatedAt: string;
+}): InStayCheckoutSnapshot {
+  const openIssues = input.issues.filter((item) => OPEN_ISSUE_STATUSES.has(item.status));
+  const status = resolveStatus({
+    execution: input.execution,
+    openIssues,
+    lifecycleGuestCheckedIn: gateCompleted(input.lifecycle, 'guest_checked_in'),
+    lifecycleGuestCheckedOut: gateCompleted(input.lifecycle, 'guest_checked_out'),
+    lifecycleInspectionDone: gateCompleted(input.lifecycle, 'post_checkout_inspection_done'),
+    lifecycleDepositReady: gateCompleted(input.lifecycle, 'deposit_return_ready'),
+    lifecycleBookingClosed: gateCompleted(input.lifecycle, 'booking_closed'),
+  });
+  return {
+    bookingId: input.record.id,
+    status,
+    execution: input.execution,
+    checkoutInstructionsStatus: input.execution?.checkoutInstructionsStatus ?? 'not_prepared',
+    checkoutConfirmationStatus: input.execution?.checkoutConfirmationStatus ?? 'not_requested',
+    inspectionStatus: input.execution?.inspectionStatus ?? 'not_started',
+    depositReturnStatus: input.execution?.depositReturnStatus ?? 'not_ready',
+    closureStatus: input.execution?.closureStatus ?? 'open',
+    openIssuesCount: openIssues.length,
+    openIssues,
+    lifecycle: input.lifecycle,
+    blockers: buildBlockers({ execution: input.execution, openIssues: input.issues }),
+    communications: input.communications,
+    nextAction: nextAction(status),
+    updatedAt: input.updatedAt,
+  };
+}
+
+export async function readInStayCheckoutStatus(bookingId: string): Promise<InStayCheckoutSnapshot> {
+  const record = await loadRecord(bookingId);
+  const [execution, issues, lifecycleResult, communicationResult] = await Promise.all([
+    getExecutionRow(record.id),
+    listIssueRows(record.id),
+    readLifecycleStatus(record.id),
+    listBookingOpsCommunicationsForRecord(record.id),
+  ]);
+  if (!lifecycleResult.ok || !lifecycleResult.lifecycle) {
+    throw new Error(lifecycleResult.error ?? 'lifecycle_unavailable');
+  }
+  return buildInStayCheckoutSnapshot({
+    record,
+    execution,
+    issues,
+    lifecycle: lifecycleResult.lifecycle,
+    communications: communicationResult.ok ? communicationResult.communications : [],
+    updatedAt: pureInStayObservedAt(execution, lifecycleResult.lifecycle),
+  });
+}
+
 export async function getInStayCheckoutStatus(bookingId: string): Promise<InStayCheckoutSnapshot> {
   const record = await loadRecord(bookingId);
   await initializeLifecycleForBooking(record.id);
@@ -696,34 +836,14 @@ export async function getInStayCheckoutStatus(bookingId: string): Promise<InStay
     getLifecycleStatus(record.id),
     listBookingOpsCommunicationsForRecord(record.id),
   ]);
-  const lifecycle = lifecycleResult.lifecycle ?? null;
-  const openIssues = issues.filter((item) => OPEN_ISSUE_STATUSES.has(item.status));
-  const status = resolveStatus({
+  return buildInStayCheckoutSnapshot({
+    record,
     execution,
-    openIssues,
-    lifecycleGuestCheckedIn: gateCompleted(lifecycle, 'guest_checked_in'),
-    lifecycleGuestCheckedOut: gateCompleted(lifecycle, 'guest_checked_out'),
-    lifecycleInspectionDone: gateCompleted(lifecycle, 'post_checkout_inspection_done'),
-    lifecycleDepositReady: gateCompleted(lifecycle, 'deposit_return_ready'),
-    lifecycleBookingClosed: gateCompleted(lifecycle, 'booking_closed'),
-  });
-  return {
-    bookingId: record.id,
-    status,
-    execution,
-    checkoutInstructionsStatus: execution?.checkoutInstructionsStatus ?? 'not_prepared',
-    checkoutConfirmationStatus: execution?.checkoutConfirmationStatus ?? 'not_requested',
-    inspectionStatus: execution?.inspectionStatus ?? 'not_started',
-    depositReturnStatus: execution?.depositReturnStatus ?? 'not_ready',
-    closureStatus: execution?.closureStatus ?? 'open',
-    openIssuesCount: openIssues.length,
-    openIssues,
-    lifecycle,
-    blockers: buildBlockers({ execution, openIssues: issues }),
+    issues,
+    lifecycle: lifecycleResult.lifecycle ?? null,
     communications: communicationResult.ok ? communicationResult.communications : [],
-    nextAction: nextAction(status),
     updatedAt: execution?.updatedAt ?? new Date().toISOString(),
-  };
+  });
 }
 
 export async function openInStaySupportWindow(

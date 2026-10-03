@@ -141,8 +141,8 @@ vi.mock('../repository', () => ({
   syncBookingOpsTasksForRecordId,
 }));
 
-vi.mock('../guest-legal-deposit-mvd-execution', () => ({
-  recomputeGuestLegalReadiness: vi.fn(async (bookingId: string) => ({
+vi.mock('../guest-legal-deposit-mvd-execution', () => {
+  const readiness = (bookingId: string) => ({
     id: 'legal-readiness-1',
     bookingId,
     propertySetupId: null,
@@ -166,16 +166,21 @@ vi.mock('../guest-legal-deposit-mvd-execution', () => ({
     metadata: {},
     createdAt: '2026-07-10T00:00:00.000Z',
     updatedAt: '2026-07-10T00:00:00.000Z',
-  })),
-}));
+  });
+  return {
+    recomputeGuestLegalReadiness: vi.fn(async (bookingId: string) => readiness(bookingId)),
+    getGuestLegalReadiness: vi.fn(async (bookingId: string) => readiness(bookingId)),
+  };
+});
 
 function buildLifecycleGates() {
-  const gates: Array<{ gateKey: string; status: string }> = [];
-  if (guestCheckedIn) gates.push({ gateKey: 'guest_checked_in', status: 'completed' });
-  if (guestCheckedOut) gates.push({ gateKey: 'guest_checked_out', status: 'completed' });
-  if (inspectionDone) gates.push({ gateKey: 'post_checkout_inspection_done', status: 'completed' });
-  if (depositReady) gates.push({ gateKey: 'deposit_return_ready', status: 'completed' });
-  if (bookingClosed) gates.push({ gateKey: 'booking_closed', status: 'completed' });
+  const updatedAt = '2026-07-10T00:00:00.000Z';
+  const gates: Array<{ gateKey: string; status: string; updatedAt: string }> = [];
+  if (guestCheckedIn) gates.push({ gateKey: 'guest_checked_in', status: 'completed', updatedAt });
+  if (guestCheckedOut) gates.push({ gateKey: 'guest_checked_out', status: 'completed', updatedAt });
+  if (inspectionDone) gates.push({ gateKey: 'post_checkout_inspection_done', status: 'completed', updatedAt });
+  if (depositReady) gates.push({ gateKey: 'deposit_return_ready', status: 'completed', updatedAt });
+  if (bookingClosed) gates.push({ gateKey: 'booking_closed', status: 'completed', updatedAt });
   return gates;
 }
 
@@ -195,6 +200,19 @@ vi.mock('../lifecycle', () => ({
   }),
   adminUpdateLifecycleGate: vi.fn(async () => ({ ok: true })),
   getLifecycleStatus: vi.fn(async () => ({
+    ok: true,
+    lifecycle: {
+      bookingId: record.id,
+      gates: buildLifecycleGates(),
+      readinessScore: 100,
+      currentActiveGate: null,
+      blockedGates: [],
+      completedGates: [],
+      nextRequiredGates: [],
+      exceptions: [],
+    },
+  })),
+  readLifecycleStatus: vi.fn(async () => ({
     ok: true,
     lifecycle: {
       bookingId: record.id,
@@ -258,6 +276,31 @@ describe('In-stay & Checkout Autopilot v1', () => {
     legalMvdStatus = 'accepted_manual';
     recordOverrides = {};
     syncBookingOpsTasksForRecordId.mockClear();
+  });
+
+  it('pure in-stay and closeout reads do not initialize lifecycle or recompute legal readiness', async () => {
+    guestCheckedIn = true;
+    const lifecycleModule = await import('../lifecycle');
+    const legalModule = await import('../guest-legal-deposit-mvd-execution');
+    vi.mocked(lifecycleModule.initializeLifecycleForBooking).mockClear();
+    vi.mocked(legalModule.recomputeGuestLegalReadiness).mockClear();
+    vi.mocked(legalModule.getGuestLegalReadiness).mockClear();
+    const service = await import('../instay-checkout-autopilot');
+    const before = JSON.stringify(tables);
+
+    const snapshot = await service.readInStayCheckoutStatus(record.id);
+    const prerequisites = await service.readBookingClosePrerequisites(record.id, snapshot);
+
+    expect(snapshot.status).toBe('in_stay');
+    expect(prerequisites.map((item) => item.key)).toEqual(expect.arrayContaining([
+      'guest_not_checked_out',
+      'post_checkout_inspection_incomplete',
+      'deposit_return_incomplete',
+    ]));
+    expect(lifecycleModule.initializeLifecycleForBooking).not.toHaveBeenCalled();
+    expect(legalModule.recomputeGuestLegalReadiness).not.toHaveBeenCalled();
+    expect(legalModule.getGuestLegalReadiness).toHaveBeenCalledWith(record.id);
+    expect(JSON.stringify(tables)).toBe(before);
   });
 
   it.each(['prepared', 'returned', 'waived', 'incident', 'closed', 'closed_incident', 'closed_deposit'] as const)(
