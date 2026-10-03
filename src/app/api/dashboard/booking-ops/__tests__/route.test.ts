@@ -318,6 +318,21 @@ describe('Booking Ops dashboard routes', () => {
     expect(response.status).toBe(401);
   });
 
+  it('pre-checkin list is restricted to the authenticated account', async () => {
+    const preCheckin = await import('@/lib/booking-ops/pre-checkin-control-center');
+    vi.mocked(preCheckin.listBookingsByReadinessStatus).mockClear();
+    const route = await import('../pre-checkin/route');
+
+    const response = await route.GET(new Request('https://asi.test?status=needs_attention&limit=25'));
+
+    expect(response.status).toBe(200);
+    expect(preCheckin.listBookingsByReadinessStatus).toHaveBeenCalledWith({
+      accountId: 'account-1',
+      status: 'needs_attention',
+      limit: 25,
+    });
+  });
+
   it('single pre-checkin read returns an account-scoped advisory PlatformDecision', async () => {
     const route = await import('../pre-checkin/route');
     const response = await route.GET(new Request('https://asi.test?bookingId=ops-route'));

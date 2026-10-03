@@ -696,14 +696,18 @@ export async function recomputeBookingCheckinReadiness(bookingId: string): Promi
   return snapshot;
 }
 
-export async function listBookingsByReadinessStatus(filters?: {
+export async function listBookingsByReadinessStatus(filters: {
+  accountId: string;
   status?: PreCheckinReadinessStatus;
   limit?: number;
 }): Promise<PreCheckinReadinessSnapshot[]> {
-  const listed = await listBookingOpsRecords({ limit: filters?.limit ?? 100 });
+  const listed = await listBookingOpsRecords({
+    limit: filters.limit ?? 100,
+    accountId: filters.accountId,
+  });
   if (!listed.ok) throw new Error(listed.error ?? 'booking_list_failed');
   const snapshots = await Promise.all(listed.records.map((record) => getPreCheckinStatus(record.id)));
-  return filters?.status ? snapshots.filter((item) => item.status === filters.status) : snapshots;
+  return filters.status ? snapshots.filter((item) => item.status === filters.status) : snapshots;
 }
 
 export async function createPreCheckinFallbackIfNeeded(

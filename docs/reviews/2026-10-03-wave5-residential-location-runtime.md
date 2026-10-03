@@ -164,7 +164,16 @@ Scope: canonical property-bound residential location evidence and advisory Platf
 - Accountless duplicate-event, duplicate-target, and attach paths revalidate the linked booking and reject tenant-owned records; stale legacy unbound events cannot bridge into another account.
 - Owner Telegram session object IDs remain local `OBJ-*` references, not canonical property authority; no account is inferred from payload/session labels.
 - Verification: focused intake/owner-Telegram contour **32/32 PASS**; frozen Booking Ops + Channel Manager + reservation + owner-Telegram regression **142/142 PASS**; TypeScript **PASS**; changed-file ESLint **PASS**; `git diff --check` **PASS**.
-- Smallest safe next step: add a server-owned owner-Telegram session -> canonical property/account binding before allowing tenant matching. Until then, both secret-backed and owner-session Telegram intake remain unbound/fail-closed.
+- Smallest safe next step for Telegram: add a server-owned owner-Telegram session -> canonical property/account binding before allowing tenant matching. Until then, both secret-backed and owner-session Telegram intake remain unbound/fail-closed.
+
+## Pre-checkin list account isolation
+
+- Baseline HEAD: `761d17f2c55cb0a92a24971fe01fae894866f4e3`.
+- The dashboard pre-checkin list now resolves the authenticated reservation account before listing and rejects the legacy/unresolved workspace path.
+- `listBookingsByReadinessStatus` now requires `accountId` and passes it to `listBookingOpsRecords`, so the list query cannot silently fall back to a cross-tenant scan.
+- Individual booking reads keep canonical booking identity checks and PlatformDecision remains advisory only.
+- Verification: focused pre-checkin route/read contour **40/40 PASS**; frozen Booking Ops + Channel Manager + reservation + owner-Telegram + pre-checkin regression **156/156 PASS**; TypeScript **PASS**; changed-file ESLint **PASS**; `git diff --check` **PASS**.
+- Next step: continue the remaining dashboard Booking Ops list/read route audit; do not add tenant authority where only payload/session labels exist.
 
 ## Operational boundary
 

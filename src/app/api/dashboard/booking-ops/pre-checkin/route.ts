@@ -33,8 +33,9 @@ export async function GET(req: Request): Promise<NextResponse> {
   const bookingId = text(params.get('bookingId'));
 
   try {
+    const access = await resolveReservationAccess(auth.session);
+    if (access.accountId === 'legacy') throw new Error('reservation_account_not_found');
     if (bookingId) {
-      const access = await resolveReservationAccess(auth.session);
       const identity = await resolveResidentialBookingIdentity(bookingId, access.accountId);
       const readiness = await getPreCheckinStatus(bookingId);
       const currentIdentity = await resolveResidentialBookingIdentity(bookingId, access.accountId);
@@ -51,6 +52,7 @@ export async function GET(req: Request): Promise<NextResponse> {
     }
 
     const readiness = await listBookingsByReadinessStatus({
+      accountId: access.accountId,
       status: normalizeStatus(params.get('status')),
       limit: Number(params.get('limit')) || 100,
     });

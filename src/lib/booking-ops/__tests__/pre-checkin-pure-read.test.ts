@@ -131,6 +131,18 @@ describe('pre-check-in pure read', () => {
     expect(writes.delete).not.toHaveBeenCalled();
   });
 
+  it('passes canonical account scope into the readiness list repository query', async () => {
+    const repository = await import('../repository');
+    const { listBookingsByReadinessStatus } = await import('../pre-checkin-control-center');
+
+    await listBookingsByReadinessStatus({ accountId: 'account-a', limit: 25 });
+
+    expect(repository.listBookingOpsRecords).toHaveBeenCalledWith({
+      accountId: 'account-a',
+      limit: 25,
+    });
+  });
+
   it('uses the oldest required domain observation so stale physical state fails freshness', async () => {
     state.physicalAt = STALE;
     const { readPreCheckinStatus } = await import('../pre-checkin-control-center');
