@@ -339,6 +339,7 @@ src/lib/booking-ops/tasks.ts
 - Latest verification: focused guest-intake contour **34/34 PASS (3 files)**; frozen regression **162/162 + 187/187 = 349/349 PASS (31 files)**; TypeScript, touched-file ESLint, and `git diff --check` **PASS**.
 - Changed files in `ae1f4602`: `guest-intake-inbound.ts` and `guest-intake-autopilot.test.ts`.
 - No blocker at this checkpoint. Remaining non-trivial scope work is intentionally separate: dashboard reservation PATCH needs a dedicated property-transfer contract, while legacy `tg_guest_reservations` synchronization lacks canonical `account_id` and needs an explicit legacy-to-account mapping rather than inferred ownership.
+- Smallest safe next step: specify focused property-transfer tests before production edits. They must prove old-scope authorization, new-property ownership validation, atomic/fail-closed transfer behavior, and that all post-transfer effects use the new canonical scope. Do not patch the legacy sync until an account mapping exists.
 
 ## Operational boundary
 
