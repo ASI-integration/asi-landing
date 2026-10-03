@@ -1834,15 +1834,26 @@ async function applyExternalBookingUpdate(
   const guestCountChanged = guestCount != null && guestCount !== numberOrNull(current.guest_count);
   if (!datesChanged && !guestChanged && !guestCountChanged) return 'skipped';
 
+  const accountId = scope?.accountId || nullableText(current.account_id);
+  const propertyId = scope?.propertyId || nullableText(current.property_id);
+  if (!accountId || !propertyId) {
+    warnings.push({
+      type: 'account_scope_mismatch',
+      severity: 'blocker',
+      entityId: text(imported.id),
+      message: 'Нельзя обновить бронь: canonical account/property контур недоступен.',
+    });
+    return 'failed';
+  }
+  const expectedScope = { accountId, propertyId };
+
   if (datesChanged) {
-    const accountId = scope?.accountId || nullableText(current.account_id);
-    const propertyId = scope?.propertyId || nullableText(current.property_id);
-    if (!accountId || !propertyId || !checkIn || !checkOut) {
+    if (!checkIn || !checkOut) {
       warnings.push({
         type: 'availability_update_blocked',
         severity: 'blocker',
         entityId: text(imported.id),
-        message: 'Нельзя изменить даты: недостаточно account_id/property_id/дат. Нужна проверка оператором.',
+        message: 'Нельзя изменить даты: недостаточно дат. Нужна проверка оператором.',
       });
       return 'failed';
     }
@@ -1868,16 +1879,32 @@ async function applyExternalBookingUpdate(
       guestCount: guestCountChanged ? guestCount ?? undefined : undefined,
       checkInAt: checkIn,
       checkOutAt: checkOut,
-    }, { actorType: 'admin' });
-    if (!result.ok) throw new Error(result.error ?? 'Не удалось обновить бронь.');
+    }, { actorType: 'admin', expectedScope });
+    if (!result.ok) {
+      if (result.error === 'scope_mismatch') {
+        throw Object.assign(
+          new Error('Бронь сменила canonical account/property контур до обновления.'),
+          { code: 'account_scope_mismatch' },
+        );
+      }
+      throw new Error(result.error ?? 'Не удалось обновить бронь.');
+    }
     return 'updated';
   }
 
   const result = await updateBookingOpsRecord(matchedBookingId, {
     guestName: guestChanged ? guestName ?? undefined : undefined,
     guestCount: guestCountChanged ? guestCount ?? undefined : undefined,
-  }, { actorType: 'admin' });
-  if (!result.ok) throw new Error(result.error ?? 'Не удалось обновить бронь.');
+  }, { actorType: 'admin', expectedScope });
+  if (!result.ok) {
+    if (result.error === 'scope_mismatch') {
+      throw Object.assign(
+        new Error('Бронь сменила canonical account/property контур до обновления.'),
+        { code: 'account_scope_mismatch' },
+      );
+    }
+    throw new Error(result.error ?? 'Не удалось обновить бронь.');
+  }
   return 'updated';
 }
 

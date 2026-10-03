@@ -982,7 +982,10 @@ describe('Channel Manager Live Incremental Sync v1', () => {
       expect(updateBookingOpsRecord).toHaveBeenCalledWith(
         BOOKING_OPS_ID,
         expect.objectContaining({ checkInAt: '2026-07-11', checkOutAt: '2026-07-13' }),
-        expect.anything(),
+        {
+          actorType: 'admin',
+          expectedScope: { accountId: ACCOUNT_ID, propertyId: 'prop-a' },
+        },
       );
 
       cancelReservation.mockClear();
@@ -1047,6 +1050,40 @@ describe('Channel Manager Live Incremental Sync v1', () => {
       expect(blocked.warnings.some((item) => item.type === 'availability_conflict' && item.severity === 'blocker')).toBe(true);
       expect(blocked.cursorCommitted).toBe(false);
       expect(committedCheckpoint()).toBe('cursor-unchanged');
+    });
+
+    it('fails closed when booking scope changes between read and persistence', async () => {
+      const connection = await seedInitialSync();
+      updateBookingOpsRecord.mockResolvedValueOnce({ ok: false, error: 'scope_mismatch' });
+
+      const result = await runChannelManagerIncrementalSync({
+        connectionId: connection.id,
+        delta: baseDelta({
+          booking: {
+            change_kind: 'updated',
+            status: 'modified',
+            guest_count: 3,
+          },
+          currentCursor: null,
+          nextCursor: { stream: 'incremental', checkpoint: 'cursor-scope-race' },
+        }),
+      });
+
+      expect(result.status).toBe('failed');
+      expect(result.cursorCommitted).toBe(false);
+      expect(result.safeError?.code).toBe('account_scope_mismatch');
+      expect(committedCheckpoint()).toBeNull();
+      expect(result.warnings.some((item) => (
+        item.type === 'account_scope_mismatch' && item.severity === 'blocker'
+      ))).toBe(true);
+      expect(updateBookingOpsRecord).toHaveBeenCalledWith(
+        BOOKING_OPS_ID,
+        expect.objectContaining({ guestCount: 3 }),
+        {
+          actorType: 'admin',
+          expectedScope: { accountId: ACCOUNT_ID, propertyId: 'prop-a' },
+        },
+      );
     });
   });
 

@@ -308,8 +308,8 @@ describe('updateBookingOpsRecord expectedScope', () => {
     );
 
     expect(result.ok).toBe(true);
-    expect(record.guest_phone).toBe('+79990000001');
-    expect(record.guest_email).toBe('anna@example.test');
+    expect((record as Row).guest_phone).toBe('+79990000001');
+    expect((record as Row).guest_email).toBe('anna@example.test');
     expect(record.property_id).toBeNull();
     expect(recordBookingOpsEvent).not.toHaveBeenCalled();
     expect(applyBookingOpsTaskSync).not.toHaveBeenCalled();
@@ -330,7 +330,7 @@ describe('updateBookingOpsRecord expectedScope', () => {
     );
 
     expect(result).toMatchObject({ ok: false, error: 'scope_mismatch' });
-    expect(record.guest_phone).toBeNull();
+    expect((record as Row).guest_phone).toBeNull();
     expect(recordBookingOpsEvent).not.toHaveBeenCalled();
     expect(applyBookingOpsTaskSync).not.toHaveBeenCalled();
     expect(syncGuestIntakeAutopilot).not.toHaveBeenCalled();
@@ -358,7 +358,7 @@ describe('updateBookingOpsRecord expectedScope', () => {
 
     expect(result).toMatchObject({ ok: false, error: 'scope_mismatch' });
     expect(record.property_id).toBe(PROPERTY_A);
-    expect(record.guest_phone).toBeNull();
+    expect((record as Row).guest_phone).toBeNull();
     expect(recordBookingOpsEvent).not.toHaveBeenCalled();
     expect(applyBookingOpsTaskSync).not.toHaveBeenCalled();
     expect(syncGuestIntakeAutopilot).not.toHaveBeenCalled();
