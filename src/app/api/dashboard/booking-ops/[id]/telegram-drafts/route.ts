@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { requireBookingOpsApiAccess } from '../../access';
 import { requireCrmOperatorSession, requireOpsAdminSession } from '@/lib/crm/api-auth';
 import {
   createTelegramDraftFromBookingOpsAction,
@@ -14,6 +15,8 @@ type RouteContext = { params: { id: string } };
 export async function GET(_req: Request, context: RouteContext): Promise<NextResponse> {
   const auth = await requireCrmOperatorSession();
   if ('error' in auth) return auth.error;
+  const access = await requireBookingOpsApiAccess(auth.session, context.params.id);
+  if (!access.ok) return access.response;
 
   const result = await listBookingOpsTelegramDrafts(context.params.id);
   if (!result.ok) {
@@ -28,6 +31,8 @@ export async function GET(_req: Request, context: RouteContext): Promise<NextRes
 export async function POST(req: Request, context: RouteContext): Promise<NextResponse> {
   const auth = await requireOpsAdminSession();
   if ('error' in auth) return auth.error;
+  const access = await requireBookingOpsApiAccess(auth.session, context.params.id);
+  if (!access.ok) return access.response;
 
   let body: Record<string, unknown>;
   try {
@@ -51,6 +56,8 @@ export async function POST(req: Request, context: RouteContext): Promise<NextRes
 export async function PATCH(req: Request, context: RouteContext): Promise<NextResponse> {
   const auth = await requireOpsAdminSession();
   if ('error' in auth) return auth.error;
+  const access = await requireBookingOpsApiAccess(auth.session, context.params.id);
+  if (!access.ok) return access.response;
 
   let body: Record<string, unknown>;
   try {

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { requireCrmOperatorSession, requireOpsAdminSession } from '@/lib/crm/api-auth';
+import { requireBookingOpsApiAccess } from '../access';
 import {
   getGuestIntakeReleaseSnapshot,
   prepareCheckinReleaseDraft,
@@ -14,6 +15,8 @@ export async function GET(req: Request): Promise<NextResponse> {
   const auth = await requireCrmOperatorSession();
   if ('error' in auth) return auth.error;
   const bookingId = new URL(req.url).searchParams.get('bookingId');
+  const access = await requireBookingOpsApiAccess(auth.session, String(bookingId ?? ''));
+  if (!access.ok) return access.response;
   try {
     return NextResponse.json({ ok: true, snapshot: await getGuestIntakeReleaseSnapshot(bookingId) });
   } catch (error) {
@@ -28,6 +31,8 @@ export async function POST(req: Request): Promise<NextResponse> {
   try { body = await req.json() as Record<string, unknown>; }
   catch { return NextResponse.json({ ok: false, message: 'Некорректный JSON.' }, { status: 400 }); }
   const bookingId = body.bookingId ?? body.booking_id;
+  const access = await requireBookingOpsApiAccess(auth.session, String(bookingId ?? ''));
+  if (!access.ok) return access.response;
   try {
     if (body.action === 'prepare_draft') await prepareCheckinReleaseDraft(bookingId, auth.session.email ?? undefined);
     else if (body.action === 'simulate_release') {

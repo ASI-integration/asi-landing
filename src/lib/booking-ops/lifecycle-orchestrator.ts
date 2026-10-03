@@ -413,9 +413,11 @@ export async function getBookingLifecycleOrchestratorSnapshot(bookingIdValue: un
   };
 }
 
-export async function orchestrateDueBookingLifecycles(input: { now?: string; limit?: number } = {}) {
+export async function orchestrateDueBookingLifecycles(input: { now?: string; limit?: number; accountId?: string } = {}) {
   const limit = Math.min(Math.max(input.limit ?? 50, 1), 100);
-  const { data, error } = await supabase.from('booking_ops_records').select('id').neq('ops_status', 'cancelled').order('updated_at').limit(limit);
+  let query = supabase.from('booking_ops_records').select('id').neq('ops_status', 'cancelled').order('updated_at').limit(limit);
+  if (input.accountId) query = query.eq('account_id', input.accountId);
+  const { data, error } = await query;
   if (error) throw new Error(error.message);
   const results: Array<{ bookingId: string; ok: boolean; error?: string }> = [];
   for (const row of data ?? []) {

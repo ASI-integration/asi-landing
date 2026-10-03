@@ -12,6 +12,7 @@ import {
 } from '@/lib/booking-ops/communication-orchestrator';
 import { listBookingOpsTasksForRecord } from '@/lib/booking-ops/tasks';
 import { syncGuestIntakeAutopilot } from '@/lib/booking-ops/guest-intake-autopilot';
+import { requireBookingOpsApiAccess } from '../../access';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -76,6 +77,8 @@ export async function GET(_req: Request, context: RouteContext): Promise<NextRes
 export async function POST(_req: Request, context: RouteContext): Promise<NextResponse> {
   const auth = await requireOpsAdminSession();
   if ('error' in auth) return auth.error;
+  const access = await requireBookingOpsApiAccess(auth.session, context.params.id);
+  if (!access.ok) return access.response;
 
   const [record, tasksResult] = await Promise.all([
     getBookingOpsRecord(context.params.id),

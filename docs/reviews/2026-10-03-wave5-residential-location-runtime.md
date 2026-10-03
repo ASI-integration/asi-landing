@@ -76,6 +76,24 @@ Scope: canonical property-bound residential location evidence and advisory Platf
   - safety: **87/87 PASS**
   - additional: **12/12 PASS**
 
+## Booking Ops tenant runtime boundary
+
+- Added shared account/property/booking route-access helpers backed by canonical reservation/account resolution and canonical `booking_ops_records.account_id + property_id` identity.
+- Account-scoped Booking Ops list/create now binds reads and creates to the authenticated workspace; property assignment is revalidated server-side before create.
+- Existing per-booking dashboard routes for lifecycle, recompute, tasks, events, Telegram drafts, worker links, communications, and per-intent auto-send controls now reject foreign bookings before domain reads or mutations.
+- Check-in release and guest-intake release now enforce the same booking/account boundary.
+- Lifecycle Orchestrator GET/POST now resolves canonical booking scope before reads, overrides, escalations, or orchestration.
+- Lifecycle Orchestrator due-batch now filters `booking_ops_records` by the authenticated account instead of scanning all tenants.
+- Root auto-send batch/scope APIs and inbound-intake APIs remain the next audit target because several still operate on global tables or intake identifiers without an account column on the API boundary.
+
+## Additional verification
+
+- Booking Ops focused route contour: **34/34 PASS**.
+- Lifecycle Orchestrator route contour: **5/5 PASS**.
+- TypeScript typecheck after tenant hardening: **PASS**.
+- Booking Ops / route-access ESLint: **PASS**.
+- `git diff --check`: **PASS**.
+
 ## Operational boundary
 
 The migration file is prepared and contract-tested but was **not applied to any live/local database** in this pass. No push, merge, deploy, live database mutation, DNS, secret, or package-install action was performed.

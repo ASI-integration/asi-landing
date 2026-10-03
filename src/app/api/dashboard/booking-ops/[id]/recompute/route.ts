@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { requireBookingOpsApiAccess } from '../../access';
 import { requireOpsAdminSession } from '@/lib/crm/api-auth';
 import {
   getBookingOpsRecord,
@@ -17,6 +18,8 @@ type RouteContext = { params: { id: string } };
 export async function POST(_req: Request, context: RouteContext): Promise<NextResponse> {
   const auth = await requireOpsAdminSession();
   if ('error' in auth) return auth.error;
+  const access = await requireBookingOpsApiAccess(auth.session, context.params.id);
+  if (!access.ok) return access.response;
 
   const sync = await syncBookingOpsTasksForRecordId(context.params.id);
   if (!sync.ok) {

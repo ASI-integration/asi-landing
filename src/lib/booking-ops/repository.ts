@@ -205,13 +205,16 @@ function mapRow(row: BookingOpsRow): BookingOpsRecord {
 
 export async function listBookingOpsRecords(options?: {
   limit?: number;
+  accountId?: string;
 }): Promise<{ ok: boolean; records: BookingOpsRecord[]; error?: string }> {
   const limit = options?.limit ?? 200;
-  const { data, error } = await supabase
+  let query = supabase
     .from('booking_ops_records')
     .select('*')
     .order('updated_at', { ascending: false })
     .limit(limit);
+  if (options?.accountId) query = query.eq('account_id', options.accountId);
+  const { data, error } = await query;
 
   if (error) return { ok: false, records: [], error: error.message };
   const records = await enrichRecords(((data ?? []) as BookingOpsRow[]).map(mapRow));

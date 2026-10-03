@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { requireOpsAdminSession } from '@/lib/crm/api-auth';
+import { requireBookingOpsApiAccess } from '../../../../access';
 import { supabase } from '@/lib/supabase';
 import {
   blockIntentAutoSend,
@@ -27,6 +28,8 @@ const ACTIONS = new Set<Action>([
 export async function POST(req: Request, context: RouteContext): Promise<NextResponse> {
   const auth = await requireOpsAdminSession();
   if ('error' in auth) return auth.error;
+  const access = await requireBookingOpsApiAccess(auth.session, context.params.id);
+  if (!access.ok) return access.response;
 
   let body: { action?: unknown };
   try {

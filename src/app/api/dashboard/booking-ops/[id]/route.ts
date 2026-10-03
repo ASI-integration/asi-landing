@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { requireBookingOpsApiAccess } from '../access';
 import { requireOpsAdminSession } from '@/lib/crm/api-auth';
 import { getBookingOpsRecord, updateBookingOpsRecord } from '@/lib/booking-ops/repository';
 import { parseUpdateBookingOpsInput } from '@/lib/booking-ops/validation';
@@ -11,6 +12,8 @@ type RouteContext = { params: { id: string } };
 export async function GET(_req: Request, context: RouteContext): Promise<NextResponse> {
   const auth = await requireOpsAdminSession();
   if ('error' in auth) return auth.error;
+  const access = await requireBookingOpsApiAccess(auth.session, context.params.id);
+  if (!access.ok) return access.response;
 
   const record = await getBookingOpsRecord(context.params.id);
   if (!record) {
@@ -22,6 +25,8 @@ export async function GET(_req: Request, context: RouteContext): Promise<NextRes
 export async function PATCH(req: Request, context: RouteContext): Promise<NextResponse> {
   const auth = await requireOpsAdminSession();
   if ('error' in auth) return auth.error;
+  const access = await requireBookingOpsApiAccess(auth.session, context.params.id);
+  if (!access.ok) return access.response;
 
   let body: Record<string, unknown>;
   try {

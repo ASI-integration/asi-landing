@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { requireOpsAdminSession } from '@/lib/crm/api-auth';
+import { requireBookingOpsApiAccess } from '../../../../../access';
 import { supabase } from '@/lib/supabase';
 import {
   enqueueAutoSendDelivery,
@@ -16,6 +17,8 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-
 export async function POST(req: Request, context: RouteContext): Promise<NextResponse> {
   const auth = await requireOpsAdminSession();
   if ('error' in auth) return auth.error;
+  const access = await requireBookingOpsApiAccess(auth.session, context.params.id);
+  if (!access.ok) return access.response;
   if (!UUID_RE.test(context.params.communicationId)) {
     return NextResponse.json({ ok: false, message: 'Некорректный идентификатор коммуникации.' }, { status: 400 });
   }
