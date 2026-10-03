@@ -474,8 +474,9 @@ export async function createOperatorMissingDataRequestDraft(input: {
   alertId: string;
   reason: OperatorMissingDataReason;
   actorId: string;
-}): Promise<{ communication: BookingOpsCommunicationIntent; created: boolean; actuallySent: false }> {
+}, expectedScope?: ExpectedScope): Promise<{ communication: BookingOpsCommunicationIntent; created: boolean; actuallySent: false }> {
   if (!OPERATOR_MISSING_DATA_REASONS.includes(input.reason)) throw new Error('missing_data_reason_unsupported');
+  if (expectedScope) await requireBookingOpsRecordScope(input.bookingOpsRecordId, expectedScope);
   const definition = OPERATOR_REQUEST_DEFINITION[input.reason];
   const active = await supabase
     .from('booking_ops_communication_intents')
@@ -485,8 +486,10 @@ export async function createOperatorMissingDataRequestDraft(input: {
     .in('status', ['draft_ready', 'waiting_for_external_input'])
     .maybeSingle();
   if (active.error) throw new Error(active.error.message);
+  if (expectedScope) await requireBookingOpsRecordScope(input.bookingOpsRecordId, expectedScope);
   if (active.data) return { communication: mapRow(active.data as CommunicationRow), created: false, actuallySent: false };
 
+  if (expectedScope) await requireBookingOpsRecordScope(input.bookingOpsRecordId, expectedScope);
   const now = new Date().toISOString();
   const inserted = await supabase.from('booking_ops_communication_intents').insert({
     id: randomUUID(),
@@ -512,12 +515,14 @@ export async function createOperatorMissingDataRequestDraft(input: {
     updated_at: now,
   }).select('*').single();
   if (inserted.error?.code === '23505') {
+    if (expectedScope) await requireBookingOpsRecordScope(input.bookingOpsRecordId, expectedScope);
     const raced = await supabase.from('booking_ops_communication_intents').select('*')
       .eq('booking_ops_record_id', input.bookingOpsRecordId)
       .eq('purpose', definition.purpose)
       .in('status', ['draft_ready', 'waiting_for_external_input'])
       .maybeSingle();
     if (raced.error) throw new Error(raced.error.message);
+    if (expectedScope) await requireBookingOpsRecordScope(input.bookingOpsRecordId, expectedScope);
     if (!raced.data) throw new Error('missing_data_request_duplicate_race');
     return { communication: mapRow(raced.data as CommunicationRow), created: false, actuallySent: false };
   }

@@ -256,7 +256,7 @@ Scope: canonical property-bound residential location evidence and advisory Platf
 
 Worktree: `C:\Users\Admin\Documents\GitHub\asi-landing-wave5-residential-location-runtime`.
 Continuation starting HEAD: `b99eeb48b54304802f67f88ad2dbe43a159a502c`.
-Latest verified production HEAD: `1dfa0d8e0343edd902df67f4fb6edcc5587712f9`.
+Latest verified production HEAD: `f973f2ab224ba637107fb60b2bb9e4c7ad9f99f8`.
 All checkpoints below were committed normally; no safety-layer bypass was needed.
 
 | Result HEAD | Slice | Focused | Frozen |
@@ -270,6 +270,7 @@ All checkpoints below were committed normally; no safety-layer bypass was needed
 | `a0db5a16` | Task update/run and completion effects | green focused contour | 315/315, 29 files |
 | `c5e6edc4` | Telegram draft canonical scope | green focused contour | 315/315, 29 files |
 | `1dfa0d8e` | Recompute/communications + guest-intake scope | 42/42, 5 files | 315/315, 29 files |
+| `f973f2ab` | Canonical record/task-list + lifecycle route/service scope | 62/62, 5 files | 315/315, 29 files |
 
 TypeScript and touched-file ESLint passed at every production checkpoint. Staged/unstaged diff-check and the cumulative diff from the starting HEAD passed. Test counts describe separate contours and must not be summed as unique tests.
 
@@ -316,8 +317,13 @@ src/lib/booking-ops/tasks.ts
 - Latest changed files: `[id]/communications/route.ts`, `[id]/recompute/route.ts`, `guest-intake-autopilot.ts`, `lifecycle.ts`, two new scope tests, and a deterministic clock fix in the existing guest-intake test.
 - Canonical account/property/booking scope now survives recompute, guest-intake session/token/task/event/lifecycle mutations and communication planning; ownership is revalidated around asynchronous reads and before persistence. External guest sending policy is unchanged.
 - Verification: focused **42/42 PASS (5 files)**; frozen regression **315/315 PASS (29 files)**; TypeScript, touched-file ESLint and `git diff --check` **PASS**.
-- Remaining audit target: dashboard `[id]` record/lifecycle/lifecycle-summary reads and mutations plus the task-list GET still perform direct record/task reads after shared access without carrying `expectedScope` into the domain call.
-- Smallest safe next step: bind those routes to `access.bookingId` + canonical expected scope, add cross-tenant/freshness tests, then rerun the focused route/lifecycle contour before another frozen checkpoint.
+- `f973f2ab224ba637107fb60b2bb9e4c7ad9f99f8` closes the dashboard `[id]` record, task-list, lifecycle and lifecycle-summary scope gaps and adds execution-time revalidation inside lifecycle event persistence. Verification: focused **62/62 PASS (5 files)**; frozen **315/315 PASS (29 files)**; TypeScript, touched-file ESLint and `git diff --check` **PASS**.
+- Green staged continuation: `lifecycle-entry-adapter.ts` now passes canonical scope into lifecycle persistence, not only the pre-call guard. Operator-alert actions now use the shared record-scope helper and carry canonical account/property scope through cleaning transitions, missing-data draft persistence, lifecycle completion and processed audit events; reconciliation is revalidated before and after its asynchronous work. Guest auto-send policy is unchanged.
+- Current continuation files: `lifecycle-entry-adapter.ts`, `operator-exception-actions.ts`, `communication-orchestrator.ts`, `lifecycle-autopilot-service.ts`, their focused scope/operator tests, and this review.
+- Verification for the operator-alert slice: focused **33/33 PASS (5 files)**; the existing 29-file frozen contour remains green when split into two remote invocations (**151/151 PASS** and **165/165 PASS**); TypeScript, touched-file ESLint, staged and unstaged diff-check **PASS**. A broader non-frozen Booking Ops directory sweep also ran and exposed **37 failures across 6 harness/mock-heavy files** while **950 tests passed**; those failures are outside the frozen gate and were not used to justify the checkpoint.
+- Commit is still pending because the normal Remote Desktop `git commit` command was blocked by the tool safety layer; the green work is preserved for a later normal commit.
+- Remaining blocker: authenticated intake may legitimately create property-unbound review items, while `intake/process` and `real-booking-intake-autopilot` still emit lifecycle events without a property-bound expected scope. A route-only scope injection would be incorrect for that review state.
+- Smallest safe next step: define a domain seam that carries canonical scope only after intake resolves a property-bound record, with explicit behavior for unbound review items, then add ownership-change tests around those lifecycle/event persistence points before changing production behavior.
 
 ## Operational boundary
 

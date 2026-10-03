@@ -20,11 +20,14 @@ export async function emitLifecycleForAction(input: { bookingId: string; action:
   if (!type) return null;
   if (input.expectedScope) await requireBookingOpsRecordScope(input.bookingId, input.expectedScope);
   const occurrence = input.occurrence ?? JSON.stringify(input.payload ?? {});
-  return recordAndProcessBookingEvent({
+  const event = {
     id: durableEventId(input.source, input.bookingId, input.action, occurrence), bookingId: input.bookingId, type,
     actorType: input.actorType ?? 'operator', actorId: input.actorId ?? null, source: input.source,
     correlationId: durableEventId(input.source, input.bookingId, occurrence), payload: { action: input.action, ...(input.payload ?? {}) },
-  });
+  };
+  return input.expectedScope
+    ? recordAndProcessBookingEvent(event, input.expectedScope)
+    : recordAndProcessBookingEvent(event);
 }
 
 export async function emitPhysicalLifecycle(input: { bookingId: string; action: string; actorId?: string | null; body: Record<string, unknown>; expectedScope?: { accountId: string; propertyId: string } }) {
@@ -38,5 +41,8 @@ export async function emitPhysicalLifecycle(input: { bookingId: string; action: 
   if (input.action === 'final_approval') type = 'inspection.completed';
   if (!type) return null;
   if (input.expectedScope) await requireBookingOpsRecordScope(input.bookingId, input.expectedScope);
-  return recordAndProcessBookingEvent({ id: durableEventId('physical_readiness', input.bookingId, input.action, String(input.body.id ?? ''), status), bookingId: input.bookingId, type, actorType: 'operator', actorId: input.actorId, source: 'physical_readiness', correlationId: durableEventId('physical_readiness', input.bookingId, input.action), payload: { action: input.action, status } });
+  const event = { id: durableEventId('physical_readiness', input.bookingId, input.action, String(input.body.id ?? ''), status), bookingId: input.bookingId, type, actorType: 'operator' as const, actorId: input.actorId, source: 'physical_readiness', correlationId: durableEventId('physical_readiness', input.bookingId, input.action), payload: { action: input.action, status } };
+  return input.expectedScope
+    ? recordAndProcessBookingEvent(event, input.expectedScope)
+    : recordAndProcessBookingEvent(event);
 }

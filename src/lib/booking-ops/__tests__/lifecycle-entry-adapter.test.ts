@@ -38,6 +38,17 @@ describe('OPS v16 lifecycle entry adapters', () => {
     expect(recordAndProcessBookingEvent).toHaveBeenLastCalledWith(expect.objectContaining({ type, bookingId: 'booking-1' }));
   });
 
+  it('passes canonical scope into lifecycle persistence for execution-time revalidation', async () => {
+    const expectedScope = { accountId: 'account-a', propertyId: 'property-a' };
+    await emitLifecycleForAction({
+      bookingId: 'booking-1', action: 'mark_guest_checked_out', source: 'test', expectedScope,
+    });
+    expect(recordAndProcessBookingEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'checkout.started', bookingId: 'booking-1' }),
+      expectedScope,
+    );
+  });
+
   it('revalidates canonical scope before emitting a mapped lifecycle event', async () => {
     requireBookingOpsRecordScope.mockRejectedValueOnce(new Error('booking_scope_mismatch'));
 

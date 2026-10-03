@@ -94,7 +94,8 @@ export async function recordAndProcessBookingEvent(input: RecordEventInput, expe
   }
 }
 
-export async function recordProcessedBookingAuditEvent(input: RecordEventInput) {
+export async function recordProcessedBookingAuditEvent(input: RecordEventInput, expectedScope?: ExpectedScope) {
+  if (expectedScope) await requireBookingOpsRecordScope(input.bookingId, expectedScope);
   const eventId = input.id ?? randomUUID();
   const now = input.createdAt ?? new Date().toISOString();
   const insert = await supabase.from('booking_ops_domain_events').insert({

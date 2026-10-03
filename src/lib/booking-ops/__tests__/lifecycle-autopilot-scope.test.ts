@@ -16,6 +16,7 @@ vi.mock('@/lib/supabase', () => ({
 import {
   getBookingLifecycleSummary,
   recordAndProcessBookingEvent,
+  recordProcessedBookingAuditEvent,
 } from '../lifecycle-autopilot-service';
 
 const expectedScope = { accountId: 'account-a', propertyId: 'property-a' };
@@ -94,6 +95,21 @@ describe('lifecycle autopilot canonical scope', () => {
       'booking_ops_domain_events',
       'booking_ops_domain_events',
     ]);
+  });
+
+  it('rejects a processed audit event before persistence when canonical ownership mismatches', async () => {
+    mocks.requireScope.mockRejectedValueOnce(new Error('booking_scope_mismatch'));
+
+    await expect(recordProcessedBookingAuditEvent({
+      id: 'audit-a',
+      bookingId: 'booking-a',
+      objectId: 'property-a',
+      type: 'operator_alert.acknowledge',
+      actorType: 'operator',
+      source: 'operator_alert_actions',
+    }, expectedScope)).rejects.toThrow('booking_scope_mismatch');
+
+    expect(mocks.from).not.toHaveBeenCalled();
   });
 
   it('revalidates lifecycle summary ownership after asynchronous reads', async () => {

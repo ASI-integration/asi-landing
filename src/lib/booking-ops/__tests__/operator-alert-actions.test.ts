@@ -41,6 +41,13 @@ const mocks = vi.hoisted(() => {
   return {
     state,
     supabase: { from: (table: string) => new Query(table) },
+    requireScope: vi.fn(async (bookingId: string, expectedScope: { accountId: string; propertyId: string }) => {
+      const row = state.bookings.find((item) => item.id === bookingId
+        && item.account_id === expectedScope.accountId
+        && item.property_id === expectedScope.propertyId);
+      if (!row) throw new Error('booking_scope_mismatch');
+      return { id: row.id, bookingId: row.booking_id ?? null, accountId: row.account_id, propertyId: row.property_id };
+    }),
     recordAudit: vi.fn(async (input: Row) => {
       state.domainEvents.push({ id: input.id, booking_id: input.bookingId, source: input.source, payload: input.payload, created_at: '2026-07-13T00:00:00Z' });
       return { processed: true };
@@ -64,6 +71,7 @@ const mocks = vi.hoisted(() => {
 });
 
 vi.mock('@/lib/supabase', () => ({ supabase: mocks.supabase }));
+vi.mock('../repository', () => ({ requireBookingOpsRecordScope: mocks.requireScope }));
 vi.mock('../communication-orchestrator', () => ({
   OPERATOR_MISSING_DATA_REASONS: ['guest_data', 'guest_documents', 'legal_confirmation', 'payment', 'compliance', 'arrival', 'communication'],
   createOperatorMissingDataRequestDraft: mocks.createDraft,
@@ -109,7 +117,10 @@ describe('Operator Alert canonical actions', () => {
   it('acknowledges without resolving and records the operator audit', async () => {
     const result = await applyOperatorAlertAction({ accountId: 'account-a', alertId: 'alert-1', action: 'acknowledge', actorId: 'operator-1', canOverrideHighRisk: false });
     expect(result.alert).toMatchObject({ status: 'acknowledged', acknowledgedBy: 'operator-1' });
-    expect(mocks.recordAudit).toHaveBeenCalledWith(expect.objectContaining({ actorId: 'operator-1', payload: expect.objectContaining({ actionType: 'acknowledge', accountId: 'account-a', noExternalSend: true }) }));
+    expect(mocks.recordAudit).toHaveBeenCalledWith(
+      expect.objectContaining({ actorId: 'operator-1', payload: expect.objectContaining({ actionType: 'acknowledge', accountId: 'account-a', noExternalSend: true }) }),
+      { accountId: 'account-a', propertyId: 'property-1' },
+    );
   });
 
   it('assigns an existing worker task by exact task identity', async () => {
@@ -122,7 +133,11 @@ describe('Operator Alert canonical actions', () => {
   it('assigns cleaning through the existing cleaning transition service', async () => {
     mocks.state.cleaningTasks = [{ id: 'cleaning-1', booking_id: 'booking-1', property_id: 'property-1', status: 'pending' }];
     await applyOperatorAlertAction({ accountId: 'account-a', alertId: 'alert-1', action: 'assign_executor', actorId: 'operator-1', canOverrideHighRisk: false, assignedToName: 'Исполнитель' });
-    expect(mocks.updateCleaning).toHaveBeenCalledWith('booking-1', expect.objectContaining({ status: 'assigned', assignedToName: 'Исполнитель' }));
+    expect(mocks.updateCleaning).toHaveBeenCalledWith(
+      'booking-1',
+      expect.objectContaining({ status: 'assigned', assignedToName: 'Исполнитель' }),
+      { accountId: 'account-a', propertyId: 'property-1' },
+    );
   });
 
   it('does not advance canonical work twice for a repeated idempotency key', async () => {
@@ -138,7 +153,10 @@ describe('Operator Alert canonical actions', () => {
     mocks.state.alert = alert({ sourceDomain: 'guest', sourceGate: 'guest_data_completed' });
     const result = await applyOperatorAlertAction({ accountId: 'account-a', alertId: 'alert-1', action: 'request_missing_data', actorId: 'operator-1', canOverrideHighRisk: false, missingDataReason: 'guest_data' });
     expect(result).toMatchObject({ communication: { id: 'draft-1', created: true }, actuallySent: false });
-    expect(mocks.createDraft).toHaveBeenCalledWith(expect.objectContaining({ alertId: 'alert-1', reason: 'guest_data' }));
+    expect(mocks.createDraft).toHaveBeenCalledWith(
+      expect.objectContaining({ alertId: 'alert-1', reason: 'guest_data' }),
+      { accountId: 'account-a', propertyId: 'property-1' },
+    );
   });
 
   it('reuses an active request for the same reason', async () => {
@@ -152,7 +170,10 @@ describe('Operator Alert canonical actions', () => {
     mocks.state.alert = alert({ sourceGate: 'inspection', metadata: { taskId: 'task-1' } });
     mocks.state.workerTasks = [{ id: 'task-1', booking_id: 'booking-1', object_id: 'property-1', task_key: 'booking-1:inspector', assigned_role: 'inspector', status: 'assigned' }];
     await applyOperatorAlertAction({ accountId: 'account-a', alertId: 'alert-1', action: 'advance_work', actorId: 'operator-1', canOverrideHighRisk: false });
-    expect(mocks.recordEvent).toHaveBeenCalledWith(expect.objectContaining({ type: 'inspection.completed', payload: { taskId: 'task-1', taskKey: 'booking-1:inspector', alertId: 'alert-1' } }));
+    expect(mocks.recordEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'inspection.completed', payload: { taskId: 'task-1', taskKey: 'booking-1:inspector', alertId: 'alert-1' } }),
+      { accountId: 'account-a', propertyId: 'property-1' },
+    );
   });
 
   it('rejects completion from a blocked worker state', async () => {
@@ -168,6 +189,20 @@ describe('Operator Alert canonical actions', () => {
     mocks.state.clearOnReconcile = true;
     const result = await applyOperatorAlertAction({ accountId: 'account-a', alertId: 'alert-1', action: 'advance_work', actorId: 'operator-1', canOverrideHighRisk: false });
     expect(result.alert).toMatchObject({ status: 'resolved' });
+  });
+
+  it('fails closed before an operator mutation when canonical property ownership changes', async () => {
+    mocks.state.bookings[0].property_id = 'property-b';
+
+    await expect(applyOperatorAlertAction({
+      accountId: 'account-a',
+      alertId: 'alert-1',
+      action: 'acknowledge',
+      actorId: 'operator-1',
+      canOverrideHighRisk: false,
+    })).rejects.toThrow('booking_scope_mismatch');
+
+    expect(mocks.recordAudit).not.toHaveBeenCalled();
   });
 
   it('requires an explicit category and reason for manual resolution', async () => {

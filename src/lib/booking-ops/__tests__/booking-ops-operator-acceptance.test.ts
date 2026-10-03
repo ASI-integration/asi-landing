@@ -39,6 +39,13 @@ const mocks = vi.hoisted(() => {
   return {
     state,
     supabase: { from: (table: string) => new Query(table) },
+    requireScope: vi.fn(async (bookingId: string, expectedScope: { accountId: string; propertyId: string }) => {
+      const row = state.bookings.find((item) => item.id === bookingId
+        && item.account_id === expectedScope.accountId
+        && item.property_id === expectedScope.propertyId);
+      if (!row) throw new Error('booking_scope_mismatch');
+      return { id: row.id, bookingId: row.booking_id ?? null, accountId: row.account_id, propertyId: row.property_id };
+    }),
     audit: vi.fn(async (input: Row) => {
       state.events.push({ id: input.id, booking_id: input.bookingId, source: input.source, payload: input.payload, created_at: '2026-07-13T09:00:00Z' });
       return { processed: true };
@@ -64,6 +71,7 @@ const mocks = vi.hoisted(() => {
 });
 
 vi.mock('@/lib/supabase', () => ({ supabase: mocks.supabase }));
+vi.mock('../repository', () => ({ requireBookingOpsRecordScope: mocks.requireScope }));
 vi.mock('../communication-orchestrator', () => ({
   OPERATOR_MISSING_DATA_REASONS: ['guest_data', 'guest_documents', 'legal_confirmation', 'payment', 'compliance', 'arrival', 'communication'],
   createOperatorMissingDataRequestDraft: mocks.createDraft,
@@ -122,7 +130,10 @@ describe('Booking Ops operator and alert acceptance', () => {
     expect(first).toMatchObject({ communication: { created: true }, actuallySent: false });
     expect(second).toMatchObject({ communication: { created: false }, actuallySent: false });
     expect(mocks.state.drafts).toHaveLength(1);
-    expect(mocks.audit).toHaveBeenCalledWith(expect.objectContaining({ payload: expect.objectContaining({ noExternalSend: true }) }));
+    expect(mocks.audit).toHaveBeenCalledWith(
+      expect.objectContaining({ payload: expect.objectContaining({ noExternalSend: true }) }),
+      { accountId: 'account-a', propertyId: 'property-1' },
+    );
   });
 
   it('resolves a cleared payment condition automatically and keeps its acknowledged history auditable', async () => {

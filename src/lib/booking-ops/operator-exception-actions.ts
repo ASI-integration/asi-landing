@@ -15,6 +15,7 @@ import {
   OPERATOR_ALERT_RESOLUTION_CATEGORIES,
 } from './operator-alerts';
 import { updateCleaningTask } from './physical-readiness-execution';
+import { requireBookingOpsRecordScope } from './repository';
 
 export const OPERATOR_ALERT_ACTIONS = [
   'acknowledge',
@@ -67,13 +68,12 @@ function roleForGate(gate: string): string | null {
           : null;
 }
 
-async function requireOwnedBooking(alert: OperatorAlert, accountId: string): Promise<Row> {
-  const result = await supabase.from('booking_ops_records').select('id,account_id,property_id,booking_id')
-    .eq('id', alert.bookingId).eq('account_id', accountId).maybeSingle();
-  if (result.error) throw new Error(result.error.message);
-  if (!result.data) throw new Error('booking_not_found');
-  if (text(result.data.property_id) !== alert.propertyId) throw new Error('booking_property_mismatch');
-  return result.data as Row;
+async function requireOwnedBooking(alert: OperatorAlert, accountId: string) {
+  if (alert.accountId !== accountId) throw new Error('booking_account_mismatch');
+  return requireBookingOpsRecordScope(alert.bookingId, {
+    accountId,
+    propertyId: alert.propertyId,
+  });
 }
 
 async function linkedObject(alert: OperatorAlert): Promise<LinkedObject> {
@@ -172,6 +172,7 @@ async function auditAction(input: {
   resultingState: string;
   reason?: string | null;
   idempotencyKey?: string;
+  expectedScope: { accountId: string; propertyId: string };
 }) {
   const correlationId = durableEventId('operator_alert', input.alert.id);
   const fingerprint = input.idempotencyKey || [input.action, input.linked?.id, input.previousState, input.resultingState, input.reason].join(':');
@@ -199,11 +200,13 @@ async function auditAction(input: {
       causationId: input.alert.id,
       noExternalSend: true,
     },
-  });
+  }, input.expectedScope);
 }
 
-async function reconcile(alert: OperatorAlert) {
+async function reconcile(alert: OperatorAlert, expectedScope: { accountId: string; propertyId: string }) {
+  await requireBookingOpsRecordScope(alert.bookingId, expectedScope);
   const result = await reconcileOperatorAlertsForBooking(alert.bookingId, new Date().toISOString(), alert.accountId);
+  await requireBookingOpsRecordScope(alert.bookingId, expectedScope);
   if (result.errors.length) throw new Error(`operator_alert_reconcile_failed:${result.errors.join(',')}`);
   return result;
 }
@@ -225,6 +228,7 @@ export async function applyOperatorAlertAction(input: {
 }) {
   const alert = await getOperatorAlert(input.accountId, input.alertId);
   if (!alert) throw new Error('alert_not_found');
+  const expectedScope = { accountId: input.accountId, propertyId: alert.propertyId };
   const booking = await requireOwnedBooking(alert, input.accountId);
   const linked = await linkedObject(alert);
   const idempotencyKey = text(input.idempotencyKey, 160) || JSON.stringify([
@@ -238,8 +242,9 @@ export async function applyOperatorAlertAction(input: {
   if (previousAttempt.data) return { alert, idempotent: true, control: await getOperatorAlertControl(alert, input.canOverrideHighRisk) };
 
   if (input.action === 'acknowledge') {
+    await requireBookingOpsRecordScope(alert.bookingId, expectedScope);
     const updated = await acknowledgeOperatorAlert(input.accountId, alert.id, input.actorId);
-    await auditAction({ alert, action: input.action, actorId: input.actorId, linked, previousState: alert.status, resultingState: updated.status, idempotencyKey });
+    await auditAction({ alert, action: input.action, actorId: input.actorId, linked, previousState: alert.status, resultingState: updated.status, idempotencyKey, expectedScope });
     return { alert: updated, control: await getOperatorAlertControl(updated, input.canOverrideHighRisk) };
   }
   if (alert.status === 'resolved') throw new Error('alert_already_resolved');
@@ -251,20 +256,21 @@ export async function applyOperatorAlertAction(input: {
       if (!executorId) throw new Error('executor_id_required');
       if (!SUPPORTED_WORKER_ROLES.has(linked.role ?? '')) throw new Error('worker_role_unsupported');
       if (!ASSIGNABLE_WORKER_STATES.has(linked.status)) throw new Error(`worker_task_assignment_invalid:${linked.status}`);
+      await requireBookingOpsRecordScope(alert.bookingId, expectedScope);
       const write = await supabase.from('booking_ops_worker_tasks').update({ assigned_person_id: executorId, status: 'assigned', updated_at: new Date().toISOString() })
         .eq('id', linked.id).eq('booking_id', alert.bookingId).eq('assigned_role', linked.role!).in('status', [...ASSIGNABLE_WORKER_STATES]).select('id,status').maybeSingle();
       if (write.error) throw new Error(write.error.message);
       if (!write.data) throw new Error('worker_task_assignment_conflict');
-      await auditAction({ alert, action: input.action, actorId: input.actorId, linked, previousState: linked.status, resultingState: 'assigned', idempotencyKey });
+      await auditAction({ alert, action: input.action, actorId: input.actorId, linked, previousState: linked.status, resultingState: 'assigned', idempotencyKey, expectedScope });
     } else {
       const assignedToName = text(input.assignedToName, 200);
       const assignedToPhone = text(input.assignedToPhone, 100);
       const assignedToTelegram = text(input.assignedToTelegram, 100);
       if (!assignedToName && !assignedToPhone && !assignedToTelegram) throw new Error('cleaning_executor_required');
-      const readiness = await updateCleaningTask(alert.bookingId, { status: 'assigned', assignedToName, assignedToPhone, assignedToTelegram });
-      await auditAction({ alert, action: input.action, actorId: input.actorId, linked, previousState: linked.status, resultingState: readiness.cleaning?.status ?? 'assigned', idempotencyKey });
+      const readiness = await updateCleaningTask(alert.bookingId, { status: 'assigned', assignedToName, assignedToPhone, assignedToTelegram }, expectedScope);
+      await auditAction({ alert, action: input.action, actorId: input.actorId, linked, previousState: linked.status, resultingState: readiness.cleaning?.status ?? 'assigned', idempotencyKey, expectedScope });
     }
-    const alertReconciliation = await reconcile(alert);
+    const alertReconciliation = await reconcile(alert, expectedScope);
     const refreshed = await getOperatorAlert(input.accountId, alert.id);
     return { alert: refreshed, alertReconciliation, control: refreshed ? await getOperatorAlertControl(refreshed, input.canOverrideHighRisk) : null };
   }
@@ -275,12 +281,12 @@ export async function applyOperatorAlertAction(input: {
     if (!OPERATOR_MISSING_DATA_REASONS.includes(reason)) throw new Error('missing_data_reason_unsupported');
     const draft = await createOperatorMissingDataRequestDraft({
       bookingOpsRecordId: alert.bookingId,
-      bookingId: text(booking.booking_id) || null,
+      bookingId: booking.bookingId,
       alertId: alert.id,
       reason,
       actorId: input.actorId,
-    });
-    await auditAction({ alert, action: input.action, actorId: input.actorId, linked, previousState: alert.status, resultingState: draft.created ? 'draft_ready' : 'draft_already_active', reason, idempotencyKey });
+    }, expectedScope);
+    await auditAction({ alert, action: input.action, actorId: input.actorId, linked, previousState: alert.status, resultingState: draft.created ? 'draft_ready' : 'draft_already_active', reason, idempotencyKey, expectedScope });
     return { alert, communication: { id: draft.communication.id, status: draft.communication.status, created: draft.created }, actuallySent: false, control: await getOperatorAlertControl(alert, input.canOverrideHighRisk) };
   }
 
@@ -290,7 +296,7 @@ export async function applyOperatorAlertAction(input: {
     if (linked.kind === 'cleaning') {
       const next = linked.status === 'assigned' ? 'in_progress' : linked.status === 'in_progress' ? 'completed' : linked.status === 'completed' ? 'verified' : null;
       if (!next) throw new Error(`cleaning_transition_invalid:${linked.status}`);
-      const readiness = await updateCleaningTask(alert.bookingId, { status: next });
+      const readiness = await updateCleaningTask(alert.bookingId, { status: next }, expectedScope);
       resultingState = readiness.cleaning?.status ?? next;
     } else {
       if (!SUPPORTED_WORKER_ROLES.has(linked.role ?? '')) throw new Error('worker_role_unsupported');
@@ -310,12 +316,12 @@ export async function applyOperatorAlertAction(input: {
           id: durableEventId('operator_alert_completion', alert.id, linked.id), bookingId: alert.bookingId, objectId: alert.propertyId,
           type: eventType, actorType: 'operator', actorId: input.actorId, source: 'operator_alert_actions',
           correlationId: durableEventId('operator_alert', alert.id), payload: { taskId: linked.id, taskKey: text(task.data.task_key), alertId: alert.id },
-        });
+        }, expectedScope);
         resultingState = 'completed';
       }
     }
-    await auditAction({ alert, action: input.action, actorId: input.actorId, linked, previousState: linked.status, resultingState, idempotencyKey });
-    const alertReconciliation = await reconcile(alert);
+    await auditAction({ alert, action: input.action, actorId: input.actorId, linked, previousState: linked.status, resultingState, idempotencyKey, expectedScope });
+    const alertReconciliation = await reconcile(alert, expectedScope);
     const refreshed = await getOperatorAlert(input.accountId, alert.id);
     return { alert: refreshed, alertReconciliation, control: refreshed ? await getOperatorAlertControl(refreshed, input.canOverrideHighRisk) : null };
   }
@@ -325,7 +331,8 @@ export async function applyOperatorAlertAction(input: {
   if (!OPERATOR_ALERT_RESOLUTION_CATEGORIES.includes(category)) throw new Error('resolution_category_unsupported');
   if (!reason) throw new Error('resolution_reason_required');
   if (alert.severity === 'critical' && !input.canOverrideHighRisk) throw new Error('high_risk_alert_override_forbidden');
+  await requireBookingOpsRecordScope(alert.bookingId, expectedScope);
   const updated = await resolveOperatorAlertOccurrence(input.accountId, alert.id, input.actorId, category, reason);
-  await auditAction({ alert, action: input.action, actorId: input.actorId, linked, previousState: alert.status, resultingState: updated.status, reason: `${category}:${reason}`, idempotencyKey });
+  await auditAction({ alert, action: input.action, actorId: input.actorId, linked, previousState: alert.status, resultingState: updated.status, reason: `${category}:${reason}`, idempotencyKey, expectedScope });
   return { alert: updated, canRecur: true, control: await getOperatorAlertControl(updated, input.canOverrideHighRisk) };
 }
