@@ -97,6 +97,7 @@ export type NormalizedInboundBookingRequest = {
 
 export type InboundBookingIntakeEvent = {
   id: string;
+  accountId: string | null;
   source: InboundBookingSource;
   sourceRef: string | null;
   idempotencyKey: string;
@@ -156,6 +157,8 @@ export type ProcessInboundBookingOptions = {
    * Never accept this value from a request body.
    */
   inputTrust?: 'authenticated_internal';
+  /** Server-only authenticated account contour. Never accept from public bodies. */
+  accountId?: string;
 };
 
 /** Stable Channel Manager intake namespace: connection + provider + external booking ID. */
@@ -182,6 +185,7 @@ const PUBLIC_WEB_FORBIDDEN_MESSAGE = 'Публичная заявка содер
 
 type IntakeEventRow = {
   id: string;
+  account_id: string | null;
   source: InboundBookingSource;
   source_ref: string | null;
   idempotency_key: string;
@@ -224,6 +228,7 @@ function toIsoDate(value: string | null): string | null {
 function mapEventRow(row: IntakeEventRow): InboundBookingIntakeEvent {
   return {
     id: row.id,
+    accountId: text(row.account_id) || null,
     source: row.source,
     sourceRef: text(row.source_ref) || null,
     idempotencyKey: row.idempotency_key,
@@ -442,7 +447,7 @@ function guestContactRef(input: NormalizedInboundBookingRequest): string | null 
 
 export async function findOrCreateGuestFromInbound(
   input: NormalizedInboundBookingRequest,
-  options?: { allowExistingBookingMatch?: boolean },
+  options?: { allowExistingBookingMatch?: boolean; accountId?: string | null },
 ): Promise<{ guestId: string | null; matchedRecordId: string | null }> {
   const contactRef = guestContactRef(input);
   if (!contactRef) return { guestId: null, matchedRecordId: null };
@@ -450,14 +455,16 @@ export async function findOrCreateGuestFromInbound(
     return { guestId: contactRef, matchedRecordId: null };
   }
 
-  const { data } = await supabase
+  let query = supabase
     .from('booking_ops_records')
     .select('id, guest_phone, guest_email, guest_telegram')
     .or([
       input.guestPhone ? `guest_phone.eq.${input.guestPhone}` : null,
       input.guestEmail ? `guest_email.eq.${input.guestEmail}` : null,
       input.guestTelegram ? `guest_telegram.eq.${input.guestTelegram}` : null,
-    ].filter(Boolean).join(','))
+    ].filter(Boolean).join(','));
+  if (options?.accountId) query = query.eq('account_id', options.accountId);
+  const { data } = await query
     .order('updated_at', { ascending: false })
     .limit(1)
     .maybeSingle();
@@ -472,8 +479,9 @@ async function findMatchingBookingRecord(
   input: NormalizedInboundBookingRequest,
   scope?: ChannelManagerIntakeScope | null,
   allowUnscopedMatching = true,
+  accountId?: string | null,
 ): Promise<BookingOpsRecord | null> {
-  if (!scope && !allowUnscopedMatching) return null;
+  if (!scope && !accountId && !allowUnscopedMatching) return null;
   if (input.bookingReference) {
     if (scope) {
       // Contour-required match: never return a foreign booking by raw external ID or UUID.
@@ -489,6 +497,29 @@ async function findMatchingBookingRecord(
       if (data) {
         const record = await getBookingOpsRecord(text((data as { id: string }).id));
         if (record && bookingBelongsToContour(record, scope)) return record;
+      }
+    } else if (accountId) {
+      const { data: byIdData } = await supabase
+        .from('booking_ops_records')
+        .select('id')
+        .eq('id', input.bookingReference)
+        .eq('account_id', accountId)
+        .maybeSingle();
+      if (byIdData) {
+        const record = await getBookingOpsRecord(text((byIdData as { id: string }).id));
+        if (record && text(record.accountId) === accountId) return record;
+      }
+      const { data } = await supabase
+        .from('booking_ops_records')
+        .select('id')
+        .eq('booking_id', input.bookingReference)
+        .eq('account_id', accountId)
+        .order('updated_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (data) {
+        const record = await getBookingOpsRecord(text((data as { id: string }).id));
+        if (record && text(record.accountId) === accountId) return record;
       }
     } else {
       const byId = await getBookingOpsRecord(input.bookingReference);
@@ -516,6 +547,8 @@ async function findMatchingBookingRecord(
     .or(filters.join(','));
   if (scope) {
     query = query.eq('account_id', scope.accountId).eq('property_id', scope.propertyId);
+  } else if (accountId) {
+    query = query.eq('account_id', accountId);
   }
   const { data: candidates } = await query
     .order('updated_at', { ascending: false })
@@ -532,6 +565,7 @@ async function findMatchingBookingRecord(
     if (sameDates && sameProperty) {
       const record = await getBookingOpsRecord(text(row.id));
       if (scope && !bookingBelongsToContour(record, scope)) continue;
+      if (accountId && text(record?.accountId) !== accountId) continue;
       return record;
     }
   }
@@ -542,6 +576,7 @@ function toCreateInput(
   input: NormalizedInboundBookingRequest,
   source: InboundBookingSource,
   scope?: ChannelManagerIntakeScope | null,
+  accountId?: string | null,
 ): CreateBookingOpsInput {
   const guestName = input.guestName
     ?? (hasGuestContact(input) ? 'Гость (входящая заявка)' : 'Гость (без контакта)');
@@ -558,7 +593,7 @@ function toCreateInput(
   });
   return {
     bookingId: input.bookingReference,
-    ...(scope?.accountId ? { accountId: scope.accountId } : {}),
+    ...(scope?.accountId || accountId ? { accountId: scope?.accountId ?? accountId } : {}),
     guestName,
     guestPhone: input.guestPhone,
     guestEmail: input.guestEmail,
@@ -582,12 +617,24 @@ export async function findOrCreateBookingFromInbound(
   source: InboundBookingSource,
   scope?: ChannelManagerIntakeScope | null,
   allowUnscopedMatching = true,
+  accountId?: string | null,
 ): Promise<{ record: BookingOpsRecord; created: boolean; guestDataBecameComplete: boolean }> {
-  const existing = await findMatchingBookingRecord(input, scope, allowUnscopedMatching);
+  const existing = await findMatchingBookingRecord(
+    input,
+    scope,
+    allowUnscopedMatching,
+    accountId,
+  );
   if (existing) {
     if (scope && !bookingBelongsToContour(existing, scope)) {
       throw Object.assign(
         new Error('Найдена бронь вне canonical account/property контура.'),
+        { code: 'account_scope_mismatch' },
+      );
+    }
+    if (accountId && text(existing.accountId) !== accountId) {
+      throw Object.assign(
+        new Error('Найдена бронь вне canonical account контура.'),
         { code: 'account_scope_mismatch' },
       );
     }
@@ -612,13 +659,22 @@ export async function findOrCreateBookingFromInbound(
     return { record: existing, created: false, guestDataBecameComplete: false };
   }
 
-  const result = await createBookingOpsRecord(toCreateInput(input, source, scope), { actorType: 'system' });
+  const result = await createBookingOpsRecord(
+    toCreateInput(input, source, scope, accountId),
+    { actorType: 'system' },
+  );
   if (!result.ok || !result.record) {
     throw new Error(result.error ?? 'booking_create_failed');
   }
   if (scope && !bookingBelongsToContour(result.record, scope)) {
     throw Object.assign(
       new Error('Созданная бронь не получила canonical account/property контур.'),
+      { code: 'account_scope_mismatch' },
+    );
+  }
+  if (accountId && text(result.record.accountId) !== accountId) {
+    throw Object.assign(
+      new Error('Созданная бронь не получила canonical account контур.'),
       { code: 'account_scope_mismatch' },
     );
   }
@@ -873,18 +929,25 @@ async function initializeBookingAvailability(
   };
 }
 
-async function getIntakeEventByKey(idempotencyKey: string): Promise<InboundBookingIntakeEvent | null> {
-  const { data, error } = await supabase
+async function getIntakeEventByKey(
+  idempotencyKey: string,
+  accountId?: string | null,
+): Promise<InboundBookingIntakeEvent | null> {
+  let query = supabase
     .from('booking_inbound_intake_events')
     .select('*')
-    .eq('idempotency_key', idempotencyKey)
-    .maybeSingle();
+    .eq('idempotency_key', idempotencyKey);
+  query = accountId
+    ? query.eq('account_id', accountId)
+    : query.is('account_id', null);
+  const { data, error } = await query.maybeSingle();
   if (error || !data) return null;
   return mapEventRow(data as IntakeEventRow);
 }
 
 async function upsertIntakeEvent(input: {
   id?: string;
+  accountId?: string | null;
   source: InboundBookingSource;
   sourceRef?: string | null;
   idempotencyKey: string;
@@ -902,6 +965,7 @@ async function upsertIntakeEvent(input: {
   const now = new Date().toISOString();
   const row = {
     id: input.id ?? randomUUID(),
+    account_id: input.accountId ?? null,
     source: input.source,
     source_ref: input.sourceRef ?? null,
     idempotency_key: input.idempotencyKey,
@@ -921,7 +985,7 @@ async function upsertIntakeEvent(input: {
 
   const { data, error } = await supabase
     .from('booking_inbound_intake_events')
-    .upsert(row, { onConflict: 'idempotency_key' })
+    .upsert(row, { onConflict: 'account_scope_key,idempotency_key' })
     .select('*')
     .single();
 
@@ -931,21 +995,25 @@ async function upsertIntakeEvent(input: {
 
 export async function getInboundBookingIntakeStatus(
   lookup: { intakeId?: string; bookingId?: string },
+  accountId?: string | null,
 ): Promise<InboundBookingIntakeResult | null> {
   let event: InboundBookingIntakeEvent | null = null;
 
   if (lookup.intakeId) {
-    const { data } = await supabase
+    let query = supabase
       .from('booking_inbound_intake_events')
       .select('*')
-      .eq('id', lookup.intakeId)
-      .maybeSingle();
+      .eq('id', lookup.intakeId);
+    query = accountId ? query.eq('account_id', accountId) : query.is('account_id', null);
+    const { data } = await query.maybeSingle();
     if (data) event = mapEventRow(data as IntakeEventRow);
   } else if (lookup.bookingId) {
-    const { data } = await supabase
+    let query = supabase
       .from('booking_inbound_intake_events')
       .select('*')
-      .eq('booking_id', lookup.bookingId)
+      .eq('booking_id', lookup.bookingId);
+    query = accountId ? query.eq('account_id', accountId) : query.is('account_id', null);
+    const { data } = await query
       .order('created_at', { ascending: false })
       .limit(1)
       .maybeSingle();
@@ -979,6 +1047,7 @@ export async function getInboundBookingIntakeStatus(
 export async function listInboundIntakeEvents(options?: {
   limit?: number;
   status?: InboundIntakeStatus;
+  accountId?: string | null;
 }): Promise<InboundBookingIntakeEvent[]> {
   const limit = options?.limit ?? 50;
   let query = supabase
@@ -986,6 +1055,9 @@ export async function listInboundIntakeEvents(options?: {
     .select('*')
     .order('created_at', { ascending: false })
     .limit(limit);
+  query = options?.accountId
+    ? query.eq('account_id', options.accountId)
+    : query.is('account_id', null);
   if (options?.status) query = query.eq('status', options.status);
   const { data, error } = await query;
   if (error) return [];
@@ -1037,6 +1109,14 @@ export async function processInboundBookingRequest(
     }
   }
   const scope = assertChannelManagerScope(options?.channelManagerScope);
+  const requestedAccountId = text(options?.accountId) || null;
+  if (scope && requestedAccountId && scope.accountId !== requestedAccountId) {
+    throw Object.assign(
+      new Error('Intake account не совпадает с Channel Manager account contour.'),
+      { code: 'account_scope_mismatch' },
+    );
+  }
+  const accountId = scope?.accountId ?? requestedAccountId;
   const normalized = unscopedPublicWeb
     ? normalizeUnscopedPublicWebRequest(rawInput)
     : normalizeInboundBookingRequest(rawInput, source);
@@ -1065,24 +1145,28 @@ export async function processInboundBookingRequest(
     ...(scope ? {
       channelManagerConnectionId: scope.connectionId,
       channelManagerProvider: scope.provider,
-      accountId: scope.accountId,
     } : {}),
+    ...(accountId ? { accountId } : {}),
   };
 
-  const existingEvent = await getIntakeEventByKey(idempotencyKey);
+  const existingEvent = await getIntakeEventByKey(idempotencyKey, accountId);
   if (
     existingEvent?.bookingId
     && !options?.force
     && (!options?.action || options.action === 'process')
   ) {
-    if (scope) {
-      const existingBooking = await getBookingOpsRecord(existingEvent.bookingId);
-      if (!bookingBelongsToContour(existingBooking, scope)) {
-        throw Object.assign(
-          new Error('Существующее intake-событие указывает на бронь вне canonical контура.'),
-          { code: 'account_scope_mismatch' },
-        );
-      }
+    const existingBooking = await getBookingOpsRecord(existingEvent.bookingId);
+    if (scope && !bookingBelongsToContour(existingBooking, scope)) {
+      throw Object.assign(
+        new Error('Существующее intake-событие указывает на бронь вне canonical контура.'),
+        { code: 'account_scope_mismatch' },
+      );
+    }
+    if (accountId && text(existingBooking?.accountId) !== accountId) {
+      throw Object.assign(
+        new Error('Существующее intake-событие указывает на бронь другого аккаунта.'),
+        { code: 'account_scope_mismatch' },
+      );
     }
     return {
       intakeId: existingEvent.id,
@@ -1100,8 +1184,18 @@ export async function processInboundBookingRequest(
   }
 
   if (options?.action === 'mark_duplicate' && options.duplicateOfBookingId) {
+    if (accountId) {
+      const duplicateTarget = await getBookingOpsRecord(options.duplicateOfBookingId);
+      if (!duplicateTarget || text(duplicateTarget.accountId) !== accountId) {
+        throw Object.assign(
+          new Error('Дубликат указывает на бронь вне canonical account контура.'),
+          { code: 'account_scope_mismatch' },
+        );
+      }
+    }
     const event = await upsertIntakeEvent({
       id: existingEvent?.id,
+      accountId,
       source,
       sourceRef: normalized.sourceMessageId ?? normalized.externalSourceId,
       idempotencyKey,
@@ -1133,14 +1227,27 @@ export async function processInboundBookingRequest(
   try {
     const { guestId } = await findOrCreateGuestFromInbound(normalized, {
       allowExistingBookingMatch: !unscopedPublicWeb,
+      accountId,
     });
     let record: BookingOpsRecord;
     let created = false;
     let guestDataBecameComplete = false;
 
     if (options?.action === 'attach_property' && options.intakeEventId) {
-      const status = await getInboundBookingIntakeStatus({ intakeId: options.intakeEventId });
+      const status = await getInboundBookingIntakeStatus(
+        { intakeId: options.intakeEventId },
+        accountId,
+      );
       if (!status?.bookingId) throw new Error('booking_not_found');
+      if (accountId) {
+        const existing = await getBookingOpsRecord(status.bookingId);
+        if (!existing || text(existing.accountId) !== accountId) {
+          throw Object.assign(
+            new Error('Intake-событие указывает на бронь вне canonical account контура.'),
+            { code: 'account_scope_mismatch' },
+          );
+        }
+      }
       const attached = await attachBookingToOwnerProperty(status.bookingId, {
         ownerId: normalized.ownerId,
         propertyId: options.attachPropertyId ?? normalized.propertyId,
@@ -1149,8 +1256,20 @@ export async function processInboundBookingRequest(
       if (!attached) throw new Error('attach_property_failed');
       record = attached;
     } else if (options?.action === 'attach_guest' && options.intakeEventId) {
-      const status = await getInboundBookingIntakeStatus({ intakeId: options.intakeEventId });
+      const status = await getInboundBookingIntakeStatus(
+        { intakeId: options.intakeEventId },
+        accountId,
+      );
       if (!status?.bookingId) throw new Error('booking_not_found');
+      if (accountId) {
+        const existing = await getBookingOpsRecord(status.bookingId);
+        if (!existing || text(existing.accountId) !== accountId) {
+          throw Object.assign(
+            new Error('Intake-событие указывает на бронь вне canonical account контура.'),
+            { code: 'account_scope_mismatch' },
+          );
+        }
+      }
       const updated = await updateBookingOpsRecord(status.bookingId, {
         guestName: options.attachGuestName ?? normalized.guestName ?? undefined,
         guestPhone: options.attachGuestPhone ?? normalized.guestPhone ?? undefined,
@@ -1165,6 +1284,7 @@ export async function processInboundBookingRequest(
         source,
         scope,
         !unscopedPublicWeb,
+        accountId,
       );
       record = bookingResult.record;
       created = bookingResult.created;
@@ -1183,6 +1303,12 @@ export async function processInboundBookingRequest(
     if (scope && !bookingBelongsToContour(record, scope)) {
       throw Object.assign(
         new Error('Intake вернул бронь вне canonical account/property контура.'),
+        { code: 'account_scope_mismatch' },
+      );
+    }
+    if (accountId && text(record.accountId) !== accountId) {
+      throw Object.assign(
+        new Error('Intake вернул бронь вне canonical account контура.'),
         { code: 'account_scope_mismatch' },
       );
     }
@@ -1220,6 +1346,7 @@ export async function processInboundBookingRequest(
 
     const event = await upsertIntakeEvent({
       id: existingEvent?.id,
+      accountId,
       source,
       sourceRef: normalized.sourceMessageId ?? normalized.externalSourceId,
       idempotencyKey,
@@ -1289,6 +1416,7 @@ export async function processInboundBookingRequest(
     const message = error instanceof Error ? error.message : 'intake_failed';
     const event = await upsertIntakeEvent({
       id: existingEvent?.id,
+      accountId,
       source,
       sourceRef: normalized.sourceMessageId ?? normalized.externalSourceId,
       idempotencyKey,
@@ -1317,13 +1445,16 @@ export async function processInboundBookingRequest(
   }
 }
 
-export async function listInboundIntakeEventsEnriched(limit = 30): Promise<Array<InboundBookingIntakeEvent & {
+export async function listInboundIntakeEventsEnriched(
+  limit = 30,
+  accountId?: string | null,
+): Promise<Array<InboundBookingIntakeEvent & {
   guestContactStatus: string;
   propertyStatus: string;
   datesStatus: string;
   nextAction: string | null;
 }>> {
-  const events = await listInboundIntakeEvents({ limit });
+  const events = await listInboundIntakeEvents({ limit, accountId });
   return events.map((event) => ({
     ...event,
     guestContactStatus: event.missingFields.includes('guest_contact') ? 'needs_contact' : 'known',

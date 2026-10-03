@@ -2,7 +2,7 @@
 
 Branch: `sol/wave5-residential-location-runtime-20261003`
 Starting HEAD: `520eb93731e294162882f3f4439d54bcae892965`
-Latest committed baseline before the final auto-send scope slice: `e08fa16ab34ee7405d061be61c3ad99b4bdc9b9c`.
+Latest committed baseline before the inbound-intake slice: `8826c5b25d2527e77563cc51efa8a1b48a0e84a8`.
 Scope: canonical property-bound residential location evidence and advisory PlatformDecision reads.
 
 ## Implemented
@@ -112,6 +112,19 @@ Scope: canonical property-bound residential location evidence and advisory Platf
 - Actual execution checks both delivery account lineage and the canonical booking record before any provider call.
 - Internal scheduled auto-send now requires an explicit UUID `accountId`; there is no global cross-tenant scheduled batch.
 - PlatformDecision semantics are unchanged; auto-send remains governed by its independent fail-closed policy and domain ownership checks.
+
+## Inbound intake account isolation
+
+- Dashboard intake events/status/process now resolve the authenticated Booking Ops account through the shared access helper.
+- Dashboard processing passes a server-owned `accountId`; request-body account identity is never authoritative.
+- Referenced dashboard property targets and duplicate booking targets are canonical-access checked before processing.
+- `booking_inbound_intake_events` gains prepared account lineage and account-local idempotency (`account_scope_key + idempotency_key`); the migration is contract-tested only and was not applied.
+- Account-scoped guest/booking matching cannot reuse another tenant's Booking Ops record; duplicate retries are isolated per account.
+- Attach/duplicate flows revalidate the linked booking account before any mutation, so a stale/corrupt intake event cannot mutate a foreign booking before the post-action check.
+- Public web intake remains unbound and cannot supply authoritative account/property/booking fields. Channel Manager intake keeps its existing canonical account/property contour.
+- Changed files for this slice: dashboard intake routes/tests, `real-booking-intake-autopilot.ts` and tests, Channel Manager isolation harness, and `20261003141500_booking_inbound_intake_account_scope_v1.sql`.
+- Verification: focused inbound/CM contour **34/34 PASS**; broader Booking Ops + Channel Manager contour **120/120 PASS**; TypeScript **PASS**; changed-file ESLint **PASS**; `git diff --check` **PASS**.
+- Remaining blocker/next step: the secret-backed internal Telegram intake and older accountless callers still lack a canonical server-owned account resolver. Do not trust an account/property from their payloads; the smallest safe next step is to bind those callers to an existing canonical account source or keep them unbound/fail-closed for cross-tenant matching.
 
 ## Operational boundary
 

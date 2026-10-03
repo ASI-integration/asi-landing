@@ -54,6 +54,10 @@ class Query {
     this.filtered = this.filtered.filter((row) => row[column] === value);
     return this;
   }
+  is(column: string, value: unknown) {
+    this.filtered = this.filtered.filter((row) => row[column] === value);
+    return this;
+  }
   neq(column: string, value: unknown) {
     this.filtered = this.filtered.filter((row) => row[column] !== value);
     return this;
@@ -156,6 +160,13 @@ vi.mock('../communication-auto-send-policy', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../communication-auto-send-policy')>();
   return { ...actual, canAutoSendCommunicationIntent };
 });
+vi.mock('@/lib/communication/booking-knowledge-boundary', () => ({
+  guardBookingCommunicationDraft: vi.fn(async () => ({
+    messageText: 'Требуется проверка оператора.',
+    metadata: { knowledgeDisposition: 'operator_review' },
+    status: 'waiting_for_external_input',
+  })),
+}));
 vi.mock('../availability-overbooking-protection', () => ({
   createAvailabilityHold,
   checkAvailabilityConflict,
@@ -490,6 +501,7 @@ describe('Channel Manager create-path isolation (real shared intake)', () => {
     const scopedKey = computeChannelManagerIdempotencyKey(CONNECTION_A, 'manual', EXTERNAL_ID);
     rows('booking_inbound_intake_events').push({
       id: randomUUID(),
+      account_id: ACCOUNT_A,
       source: 'channel_manager_placeholder',
       idempotency_key: scopedKey,
       status: 'processed',
