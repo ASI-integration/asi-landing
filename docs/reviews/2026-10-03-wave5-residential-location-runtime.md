@@ -2,7 +2,7 @@
 
 Branch: `sol/wave5-residential-location-runtime-20261003`
 Starting HEAD: `520eb93731e294162882f3f4439d54bcae892965`
-Latest committed baseline before the inbound-intake slice: `8826c5b25d2527e77563cc51efa8a1b48a0e84a8`.
+Inbound-intake checkpoint: `449ae1f2fe56a39dc9eecebd9e41bf799faecb1a` (built from `8826c5b25d2527e77563cc51efa8a1b48a0e84a8`).
 Scope: canonical property-bound residential location evidence and advisory PlatformDecision reads.
 
 ## Implemented
@@ -125,6 +125,17 @@ Scope: canonical property-bound residential location evidence and advisory Platf
 - Changed files for this slice: dashboard intake routes/tests, `real-booking-intake-autopilot.ts` and tests, Channel Manager isolation harness, and `20261003141500_booking_inbound_intake_account_scope_v1.sql`.
 - Verification: focused inbound/CM contour **34/34 PASS**; broader Booking Ops + Channel Manager contour **120/120 PASS**; TypeScript **PASS**; changed-file ESLint **PASS**; `git diff --check` **PASS**.
 - Remaining blocker/next step: the secret-backed internal Telegram intake and older accountless callers still lack a canonical server-owned account resolver. Do not trust an account/property from their payloads; the smallest safe next step is to bind those callers to an existing canonical account source or keep them unbound/fail-closed for cross-tenant matching.
+
+## Canonical reservation account isolation
+
+- Dashboard reservation mutations now resolve the authenticated Booking Ops account through the shared access helper.
+- Create, availability, and block actions require canonical property access; cancellation requires canonical booking access before domain execution.
+- Direct reservation intake carries the server-owned account into `processInboundBookingRequest` before booking creation instead of assigning ownership afterward.
+- Intake idempotency and source-link reuse are account-scoped and reused booking IDs are revalidated against the same account.
+- Post-intake booking and availability-hold mutations include the canonical account predicate.
+- Changed files: dashboard reservations route + scope tests, reservation ledger + account-scope contract test.
+- Verification: focused reservation/intake contour **34/34 PASS**; broader Booking Ops + Channel Manager + reservation contour **136/136 PASS**; TypeScript **PASS**; changed-file ESLint **PASS**; `git diff --check` **PASS**.
+- Next safe gap: `dashboard/availability/action` and its availability service still contain ID/property-only hold/block/check mutations. That contour needs account-aware service semantics, not only a route wrapper. Secret-backed Telegram intake also still lacks a canonical server-owned account resolver.
 
 ## Operational boundary
 
