@@ -357,3 +357,72 @@ describe('channel import availability self-conflicts', () => {
     expect(result.conflicts.some((item) => item.type === 'booking' && item.id === OTHER_BOOKING_OPS_ID)).toBe(true);
   });
 });
+
+describe('availability canonical account scope', () => {
+  it('ignores foreign-account holds, blocks, and bookings after canonical property revalidation', async () => {
+    rows('properties').push({ id: 'prop-a', account_id: 'account-a' });
+    rows('booking_ops_records').push(
+      {
+        id: BOOKING_OPS_ID,
+        account_id: 'account-a',
+        property_id: 'prop-a',
+        check_in_at: '2026-07-10T00:00:00.000Z',
+        check_out_at: '2026-07-12T00:00:00.000Z',
+      },
+      {
+        id: OTHER_BOOKING_OPS_ID,
+        account_id: 'account-b',
+        property_id: 'prop-a',
+        check_in_at: '2026-07-10T00:00:00.000Z',
+        check_out_at: '2026-07-12T00:00:00.000Z',
+      },
+    );
+    rows('booking_availability_holds').push({
+      id: '50000000-0000-4000-8000-000000000005',
+      account_id: 'account-b',
+      property_id: 'prop-a',
+      status: 'active',
+      date_from: '2026-07-10',
+      date_to: '2026-07-12',
+    });
+    rows('booking_availability_blocks').push({
+      id: '60000000-0000-4000-8000-000000000006',
+      account_id: 'account-b',
+      property_id: 'prop-a',
+      status: 'active',
+      date_from: '2026-07-10',
+      date_to: '2026-07-12',
+    });
+
+    const result = await checkAvailabilityConflict({
+      bookingId: BOOKING_OPS_ID,
+      propertyId: 'prop-a',
+      dateFrom: '2026-07-10',
+      dateTo: '2026-07-12',
+    }, { accountId: 'account-a', persist: false });
+
+    expect(result.status).toBe('no_conflict');
+    expect(result.conflicts).toEqual([]);
+  });
+
+  it('fails closed when the property is not owned by the expected account', async () => {
+    rows('properties').push({ id: 'prop-a', account_id: 'account-b' });
+    rows('booking_ops_records').push({
+      id: BOOKING_OPS_ID,
+      account_id: 'account-a',
+      property_id: 'prop-a',
+      check_in_at: '2026-07-10T00:00:00.000Z',
+      check_out_at: '2026-07-12T00:00:00.000Z',
+    });
+
+    const result = await checkAvailabilityConflict({
+      bookingId: BOOKING_OPS_ID,
+      propertyId: 'prop-a',
+      dateFrom: '2026-07-10',
+      dateTo: '2026-07-12',
+    }, { accountId: 'account-a', persist: false });
+
+    expect(result.status).toBe('failed');
+    expect(result.safeSummary).toBe('property_scope_mismatch');
+  });
+});

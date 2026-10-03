@@ -46,6 +46,7 @@ type CheckOptions = {
   checkType?: AvailabilityCheckType;
   persist?: boolean;
   dryRun?: boolean;
+  accountId?: string | null;
 };
 
 type ChannelImportedBookingRow = {
@@ -207,31 +208,60 @@ function validateRange(range: AvailabilityDateRange): { dateFrom: string; dateTo
 async function resolveScopeAndRange(
   scopeInput: AvailabilityScope,
   rangeInput: AvailabilityDateRange = {},
+  expectedAccountId?: string | null,
 ): Promise<Required<AvailabilityScope> & { dateFrom: string | null; dateTo: string | null }> {
   const scope = validateScope(scopeInput);
+  const accountId = text(expectedAccountId) || null;
   let propertyId = scope.propertyId;
   let propertySetupId = scope.propertySetupId;
   let dateFrom = normalizeAvailabilityDate(rangeInput.dateFrom);
   let dateTo = normalizeAvailabilityDate(rangeInput.dateTo);
+
   if (scope.bookingId) {
-    const { data, error } = await supabase.from('booking_ops_records')
-      .select('id,property_id,check_in_at,check_out_at').eq('id', scope.bookingId).maybeSingle();
+    let bookingQuery = supabase.from('booking_ops_records')
+      .select('id,property_id,check_in_at,check_out_at')
+      .eq('id', scope.bookingId);
+    if (accountId) bookingQuery = bookingQuery.eq('account_id', accountId);
+    const { data, error } = await bookingQuery.maybeSingle();
     if (error) throw new Error(error.message);
-    propertyId ??= text(data?.property_id) || null;
+    if (accountId && !data) throw new Error('booking_scope_mismatch');
+    const bookingPropertyId = text(data?.property_id) || null;
+    if (propertyId && bookingPropertyId && propertyId !== bookingPropertyId) {
+      throw new Error('property_scope_mismatch');
+    }
+    propertyId ??= bookingPropertyId;
     dateFrom ??= normalizeAvailabilityDate(data?.check_in_at);
     dateTo ??= normalizeAvailabilityDate(data?.check_out_at);
   }
-  if (propertySetupId && !propertyId) {
+
+  if (propertySetupId) {
     const { data, error } = await supabase.from('booking_property_setup_profiles')
       .select('property_id').eq('id', propertySetupId).maybeSingle();
     if (error) throw new Error(error.message);
-    propertyId = text(data?.property_id) || null;
+    const setupPropertyId = text(data?.property_id) || null;
+    if (accountId && !setupPropertyId) throw new Error('property_scope_mismatch');
+    if (propertyId && setupPropertyId && propertyId !== setupPropertyId) {
+      throw new Error('property_scope_mismatch');
+    }
+    propertyId ??= setupPropertyId;
   }
+
+  if (accountId && propertyId) {
+    const ownership = await supabase.from('properties')
+      .select('id')
+      .eq('id', propertyId)
+      .eq('account_id', accountId)
+      .maybeSingle();
+    if (ownership.error) throw new Error(ownership.error.message);
+    if (!ownership.data) throw new Error('property_scope_mismatch');
+  }
+
   if (propertyId && !propertySetupId) {
     const { data } = await supabase.from('booking_property_setup_profiles')
       .select('id').eq('property_id', propertyId).order('updated_at', { ascending: false }).limit(1).maybeSingle();
     propertySetupId = text(data?.id) || null;
   }
+
   return {
     bookingId: scope.bookingId ?? null,
     propertySetupId: propertySetupId ?? null,
@@ -249,9 +279,14 @@ function scopeOr(propertySetupId: string | null, propertyId: string | null): str
   ].filter(Boolean).join(',');
 }
 
-async function persistCheck(result: AvailabilityCheckResult, checkType: AvailabilityCheckType): Promise<string | null> {
+async function persistCheck(
+  result: AvailabilityCheckResult,
+  checkType: AvailabilityCheckType,
+  accountId?: string | null,
+): Promise<string | null> {
   const { data, error } = await supabase.from('booking_overbooking_conflict_checks').insert({
-    id: randomUUID(), property_setup_id: result.propertySetupId, property_id: result.propertyId,
+    id: randomUUID(), account_id: text(accountId) || null,
+    property_setup_id: result.propertySetupId, property_id: result.propertyId,
     booking_id: result.bookingId, check_type: checkType, status: result.status,
     requested_date_from: result.dateFrom, requested_date_to: result.dateTo,
     conflicts: result.conflicts, warnings: result.warnings, blockers: result.blockers,
@@ -261,17 +296,29 @@ async function persistCheck(result: AvailabilityCheckResult, checkType: Availabi
   return text(data?.id) || null;
 }
 
-async function updateBookingRisk(result: AvailabilityCheckResult): Promise<void> {
+async function updateBookingRisk(
+  result: AvailabilityCheckResult,
+  accountId?: string | null,
+): Promise<void> {
   if (!result.bookingId) return;
   const availabilityStatus = result.status === 'no_conflict' ? 'held'
     : result.status === 'missing_data' ? 'missing_data'
       : result.status === 'failed' ? 'blocked' : 'conflict';
-  await supabase.from('booking_ops_records').update({
+  let query = supabase.from('booking_ops_records').update({
     availability_status: availabilityStatus,
     overbooking_risk_status: result.status,
     availability_summary: { status: result.status, check_id: result.id, blockers: result.blockers },
     updated_at: new Date().toISOString(),
   }).eq('id', result.bookingId);
+  const canonicalAccountId = text(accountId);
+  if (canonicalAccountId) {
+    query = query.eq('account_id', canonicalAccountId);
+    const { data, error } = await query.select('id').maybeSingle();
+    if (error) throw new Error(error.message);
+    if (!data) throw new Error('booking_scope_mismatch');
+    return;
+  }
+  await query;
 }
 
 function toAvailabilityResultBase(
@@ -292,7 +339,7 @@ export async function checkAvailabilityConflict(
 ): Promise<AvailabilityCheckResult> {
   let resolved: Awaited<ReturnType<typeof resolveScopeAndRange>>;
   try {
-    resolved = await resolveScopeAndRange(input, input);
+    resolved = await resolveScopeAndRange(input, input, options.accountId);
   } catch (error) {
     return {
       id: null, status: 'failed', propertySetupId: text(input.propertySetupId) || null,
@@ -310,8 +357,8 @@ export async function checkAvailabilityConflict(
       id: null, status: 'missing_data', ...scopeBase, conflicts: [], warnings: [], blockers: missing,
       safeSummary: 'Недостаточно данных для проверки доступности.',
     };
-    if (options.persist !== false) result.id = await persistCheck(result, options.checkType ?? 'manual_review');
-    await updateBookingRisk(result);
+    if (options.persist !== false) result.id = await persistCheck(result, options.checkType ?? 'manual_review', options.accountId);
+    await updateBookingRisk(result, options.accountId);
     return result;
   }
   if (resolved.dateFrom! >= resolved.dateTo!) {
@@ -319,8 +366,8 @@ export async function checkAvailabilityConflict(
       id: null, status: 'failed', ...scopeBase, conflicts: [], warnings: [],
       blockers: ['Дата заезда должна быть раньше даты выезда.'], safeSummary: 'Некорректный диапазон дат.',
     };
-    if (options.persist !== false) result.id = await persistCheck(result, options.checkType ?? 'manual_review');
-    await updateBookingRisk(result);
+    if (options.persist !== false) result.id = await persistCheck(result, options.checkType ?? 'manual_review', options.accountId);
+    await updateBookingRisk(result, options.accountId);
     return result;
   }
   if (options.dryRun) {
@@ -330,17 +377,31 @@ export async function checkAvailabilityConflict(
   const conflicts: AvailabilityConflict[] = [];
   const errors: string[] = [];
   const orFilter = scopeOr(resolved.propertySetupId, resolved.propertyId);
+  const canonicalAccountId = text(options.accountId);
+
+  let holdsQuery = supabase.from('booking_availability_holds')
+    .select('id,booking_id,status,hold_expires_at')
+    .or(orFilter).in('status', ['active', 'confirmed'])
+    .lt('date_from', resolved.dateTo!).gt('date_to', resolved.dateFrom!);
+  let blocksQuery = supabase.from('booking_availability_blocks')
+    .select('id,status').or(orFilter).in('status', ['active', 'blocked'])
+    .lt('date_from', resolved.dateTo!).gt('date_to', resolved.dateFrom!);
+  let bookingsQuery = resolved.propertyId
+    ? supabase.from('booking_ops_records').select('id').eq('property_id', resolved.propertyId)
+      .lt('check_in_at', `${resolved.dateTo}T00:00:00.000Z`)
+      .gt('check_out_at', `${resolved.dateFrom}T00:00:00.000Z`)
+    : null;
+
+  if (canonicalAccountId) {
+    holdsQuery = holdsQuery.eq('account_id', canonicalAccountId);
+    blocksQuery = blocksQuery.eq('account_id', canonicalAccountId);
+    if (bookingsQuery) bookingsQuery = bookingsQuery.eq('account_id', canonicalAccountId);
+  }
+
   const [holdsResult, blocksResult, bookingsResult] = await Promise.all([
-    supabase.from('booking_availability_holds').select('id,booking_id,status,hold_expires_at')
-      .or(orFilter).in('status', ['active', 'confirmed']).lt('date_from', resolved.dateTo!)
-      .gt('date_to', resolved.dateFrom!),
-    supabase.from('booking_availability_blocks').select('id,status').or(orFilter)
-      .in('status', ['active', 'blocked']).lt('date_from', resolved.dateTo!).gt('date_to', resolved.dateFrom!),
-    resolved.propertyId
-      ? supabase.from('booking_ops_records').select('id').eq('property_id', resolved.propertyId)
-        .lt('check_in_at', `${resolved.dateTo}T00:00:00.000Z`)
-        .gt('check_out_at', `${resolved.dateFrom}T00:00:00.000Z`)
-      : Promise.resolve({ data: [], error: null }),
+    holdsQuery,
+    blocksQuery,
+    bookingsQuery ?? Promise.resolve({ data: [], error: null }),
   ]);
   if (holdsResult.error || blocksResult.error || bookingsResult.error) errors.push('Основной календарь временно недоступен.');
   const now = Date.now();
@@ -398,58 +459,115 @@ export async function checkAvailabilityConflict(
     safeSummary: status === 'no_conflict' ? 'Пересечений не найдено.'
       : status === 'failed' ? 'Проверка доступности не завершена.' : `Найдено пересечений: ${conflicts.length}.`,
   };
-  if (options.persist !== false) result.id = await persistCheck(result, options.checkType ?? 'manual_review');
-  await updateBookingRisk(result);
+  if (options.persist !== false) result.id = await persistCheck(result, options.checkType ?? 'manual_review', options.accountId);
+  await updateBookingRisk(result, options.accountId);
   return result;
 }
 
 export async function createAvailabilityHold(
   input: AvailabilityScope & AvailabilityDateRange & { source: AvailabilityHoldSource; holdMinutes?: number; safeSummary?: string },
-  options?: { metadata?: Record<string, unknown> },
+  options?: { metadata?: Record<string, unknown>; accountId?: string | null },
 ): Promise<Record<string, unknown>> {
-  const resolved = await resolveScopeAndRange(input, input);
+  const canonicalAccountId = text(options?.accountId);
+  const resolved = await resolveScopeAndRange(input, input, canonicalAccountId || null);
   if (!resolved.propertyId && !resolved.propertySetupId) throw new Error('Укажите объект.');
   const range = validateRange(resolved);
   const holdMinutes = Math.min(7 * 24 * 60, Math.max(5, Math.round(input.holdMinutes ?? 30)));
   const expiresAt = new Date(Date.now() + holdMinutes * 60_000).toISOString();
   const key = createHash('sha256').update([
-    resolved.bookingId ?? '-', resolved.propertySetupId ?? '-', resolved.propertyId ?? '-', range.dateFrom, range.dateTo, input.source,
+    canonicalAccountId || '-', resolved.bookingId ?? '-', resolved.propertySetupId ?? '-',
+    resolved.propertyId ?? '-', range.dateFrom, range.dateTo, input.source,
   ].join('|')).digest('hex');
-  const { data, error } = await supabase.rpc('create_booking_availability_hold_atomic', {
+  const commonArgs = {
     p_property_setup_id: resolved.propertySetupId, p_property_id: resolved.propertyId,
     p_booking_id: resolved.bookingId, p_source: input.source, p_date_from: range.dateFrom,
     p_date_to: range.dateTo, p_hold_expires_at: expiresAt,
     p_safe_summary: text(input.safeSummary) || 'Временная бронь дат.',
     p_metadata: safeMetadata(options?.metadata), p_idempotency_key: key,
-  });
+  };
+  const { data, error } = canonicalAccountId
+    ? await supabase.rpc('create_booking_availability_hold_atomic_account_v1', {
+      p_account_id: canonicalAccountId,
+      ...commonArgs,
+    })
+    : await supabase.rpc('create_booking_availability_hold_atomic', commonArgs);
   if (error) throw new Error(error.message);
   return (data ?? {}) as Record<string, unknown>;
 }
 
-export async function releaseAvailabilityHold(holdId: string, metadata?: Record<string, unknown>) {
+export async function releaseAvailabilityHold(
+  holdId: string,
+  metadata?: Record<string, unknown>,
+  accountId?: string | null,
+  expectedScope?: Pick<AvailabilityScope, 'propertyId' | 'propertySetupId'>,
+) {
   if (!UUID_RE.test(text(holdId))) throw new Error('Некорректный ID удержания.');
-  const { data, error } = await supabase.from('booking_availability_holds').update({
+  let query = supabase.from('booking_availability_holds').update({
     status: 'released', metadata: safeMetadata(metadata), updated_at: new Date().toISOString(),
-  }).eq('id', holdId).in('status', ['active', 'blocked']).select('*').maybeSingle();
+  }).eq('id', holdId).in('status', ['active', 'blocked']);
+  const canonicalAccountId = text(accountId);
+  if (canonicalAccountId) query = query.eq('account_id', canonicalAccountId);
+  const expectedOr = scopeOr(
+    text(expectedScope?.propertySetupId) || null,
+    text(expectedScope?.propertyId) || null,
+  );
+  if (expectedOr) query = query.or(expectedOr);
+  const { data, error } = await query.select('*').maybeSingle();
   if (error) throw new Error(error.message);
+  if (canonicalAccountId && !data) throw new Error('availability_scope_mismatch');
   return data;
 }
 
-export async function confirmAvailabilityHold(holdId: string, bookingId?: string, metadata?: Record<string, unknown>) {
+export async function confirmAvailabilityHold(
+  holdId: string,
+  bookingId?: string,
+  metadata?: Record<string, unknown>,
+  accountId?: string | null,
+  expectedScope?: Pick<AvailabilityScope, 'propertyId' | 'propertySetupId'>,
+) {
   if (!UUID_RE.test(text(holdId)) || (bookingId && !UUID_RE.test(text(bookingId)))) throw new Error('Некорректный ID.');
-  const patch: Record<string, unknown> = { status: 'confirmed', hold_expires_at: null, metadata: safeMetadata(metadata), updated_at: new Date().toISOString() };
+  const canonicalAccountId = text(accountId);
+  if (canonicalAccountId && bookingId) {
+    const booking = await supabase.from('booking_ops_records').select('id')
+      .eq('id', bookingId).eq('account_id', canonicalAccountId).maybeSingle();
+    if (booking.error) throw new Error(booking.error.message);
+    if (!booking.data) throw new Error('booking_scope_mismatch');
+  }
+  const patch: Record<string, unknown> = {
+    status: 'confirmed', hold_expires_at: null, metadata: safeMetadata(metadata),
+    updated_at: new Date().toISOString(),
+  };
   if (bookingId) patch.booking_id = bookingId;
-  const { data, error } = await supabase.from('booking_availability_holds').update(patch)
-    .eq('id', holdId).eq('conflict_status', 'no_conflict').select('*').maybeSingle();
+  let query = supabase.from('booking_availability_holds').update(patch)
+    .eq('id', holdId).eq('conflict_status', 'no_conflict');
+  if (canonicalAccountId) query = query.eq('account_id', canonicalAccountId);
+  const expectedOr = scopeOr(
+    text(expectedScope?.propertySetupId) || null,
+    text(expectedScope?.propertyId) || null,
+  );
+  if (expectedOr) query = query.or(expectedOr);
+  const { data, error } = await query.select('*').maybeSingle();
   if (error) throw new Error(error.message);
-  if (!data) throw new Error('Удержание нельзя подтвердить без успешной проверки.');
+  if (!data) {
+    if (canonicalAccountId) throw new Error('availability_scope_mismatch');
+    throw new Error('Удержание нельзя подтвердить без успешной проверки.');
+  }
   return data;
 }
 
-export async function expireAvailabilityHolds(options?: { propertyId?: string; before?: string }) {
-  let query = supabase.from('booking_availability_holds').update({ status: 'expired', updated_at: new Date().toISOString() })
+export async function expireAvailabilityHolds(options?: {
+  propertyId?: string;
+  before?: string;
+  accountId?: string | null;
+}) {
+  let query = supabase.from('booking_availability_holds')
+    .update({ status: 'expired', updated_at: new Date().toISOString() })
     .eq('status', 'active').lte('hold_expires_at', options?.before ?? new Date().toISOString());
-  if (options?.propertyId) query = query.eq('property_id', validateScope({ propertyId: options.propertyId }).propertyId!);
+  if (options?.propertyId) {
+    query = query.eq('property_id', validateScope({ propertyId: options.propertyId }).propertyId!);
+  }
+  const canonicalAccountId = text(options?.accountId);
+  if (canonicalAccountId) query = query.eq('account_id', canonicalAccountId);
   const { data, error } = await query.select('id');
   if (error) throw new Error(error.message);
   return { expired: data?.length ?? 0 };
@@ -458,25 +576,43 @@ export async function expireAvailabilityHolds(options?: { propertyId?: string; b
 export async function createAvailabilityBlock(
   input: AvailabilityScope & AvailabilityDateRange & { source?: 'operator' | 'maintenance' | 'owner_stay' | 'channel_import' | 'internal'; reason?: string },
   metadata?: Record<string, unknown>,
+  accountId?: string | null,
 ) {
-  const resolved = await resolveScopeAndRange(input, input);
+  const canonicalAccountId = text(accountId);
+  const resolved = await resolveScopeAndRange(input, input, canonicalAccountId || null);
   if (!resolved.propertyId && !resolved.propertySetupId) throw new Error('Укажите объект.');
   const range = validateRange(resolved);
   const { data, error } = await supabase.from('booking_availability_blocks').insert({
-    id: randomUUID(), property_setup_id: resolved.propertySetupId, property_id: resolved.propertyId,
+    id: randomUUID(), account_id: canonicalAccountId || null,
+    property_setup_id: resolved.propertySetupId, property_id: resolved.propertyId,
     source: input.source ?? 'operator', status: 'active', date_from: range.dateFrom, date_to: range.dateTo,
-    reason: text(input.reason).slice(0, 500) || null, safe_summary: 'Даты закрыты оператором.', metadata: safeMetadata(metadata),
+    reason: text(input.reason).slice(0, 500) || null, safe_summary: 'Даты закрыты оператором.',
+    metadata: safeMetadata(metadata),
   }).select('*').single();
   if (error) throw new Error(error.message);
   return data;
 }
 
-export async function releaseAvailabilityBlock(blockId: string, metadata?: Record<string, unknown>) {
+export async function releaseAvailabilityBlock(
+  blockId: string,
+  metadata?: Record<string, unknown>,
+  accountId?: string | null,
+  expectedScope?: Pick<AvailabilityScope, 'propertyId' | 'propertySetupId'>,
+) {
   if (!UUID_RE.test(text(blockId))) throw new Error('Некорректный ID блокировки.');
-  const { data, error } = await supabase.from('booking_availability_blocks').update({
+  let query = supabase.from('booking_availability_blocks').update({
     status: 'released', metadata: safeMetadata(metadata), updated_at: new Date().toISOString(),
-  }).eq('id', blockId).select('*').maybeSingle();
+  }).eq('id', blockId);
+  const canonicalAccountId = text(accountId);
+  if (canonicalAccountId) query = query.eq('account_id', canonicalAccountId);
+  const expectedOr = scopeOr(
+    text(expectedScope?.propertySetupId) || null,
+    text(expectedScope?.propertyId) || null,
+  );
+  if (expectedOr) query = query.or(expectedOr);
+  const { data, error } = await query.select('*').maybeSingle();
   if (error) throw new Error(error.message);
+  if (canonicalAccountId && !data) throw new Error('availability_scope_mismatch');
   return data;
 }
 
@@ -490,20 +626,32 @@ export async function checkPropertyDateRange(
   return checkAvailabilityConflict({ ...property, dateFrom, dateTo }, options);
 }
 
-export async function getAvailabilityStatus(scopeInput: AvailabilityScope, dateRange: AvailabilityDateRange = {}) {
-  const resolved = await resolveScopeAndRange(scopeInput, dateRange);
+export async function getAvailabilityStatus(
+  scopeInput: AvailabilityScope,
+  dateRange: AvailabilityDateRange = {},
+  options?: { accountId?: string | null },
+) {
+  const canonicalAccountId = text(options?.accountId);
+  const resolved = await resolveScopeAndRange(scopeInput, dateRange, canonicalAccountId || null);
   const orFilter = scopeOr(resolved.propertySetupId, resolved.propertyId);
   if (!orFilter) return {
     status: 'missing_data', activeHolds: [], activeBlocks: [], conflicts: [], lastCheck: null,
     blockers: ['Не указан объект.'], nextAction: 'Укажите объект и даты проживания.', range: resolved,
   };
   const now = new Date().toISOString();
-  const [holds, blocks, checks] = await Promise.all([
-    supabase.from('booking_availability_holds').select('*').or(orFilter).in('status', ['active', 'confirmed'])
-      .or(`hold_expires_at.is.null,hold_expires_at.gt.${now}`).order('date_from'),
-    supabase.from('booking_availability_blocks').select('*').or(orFilter).in('status', ['active', 'blocked']).order('date_from'),
-    supabase.from('booking_overbooking_conflict_checks').select('*').or(orFilter).order('created_at', { ascending: false }).limit(50),
-  ]);
+  let holdsQuery = supabase.from('booking_availability_holds').select('*').or(orFilter)
+    .in('status', ['active', 'confirmed'])
+    .or(`hold_expires_at.is.null,hold_expires_at.gt.${now}`).order('date_from');
+  let blocksQuery = supabase.from('booking_availability_blocks').select('*').or(orFilter)
+    .in('status', ['active', 'blocked']).order('date_from');
+  let checksQuery = supabase.from('booking_overbooking_conflict_checks').select('*').or(orFilter)
+    .order('created_at', { ascending: false }).limit(50);
+  if (canonicalAccountId) {
+    holdsQuery = holdsQuery.eq('account_id', canonicalAccountId);
+    blocksQuery = blocksQuery.eq('account_id', canonicalAccountId);
+    checksQuery = checksQuery.eq('account_id', canonicalAccountId);
+  }
+  const [holds, blocks, checks] = await Promise.all([holdsQuery, blocksQuery, checksQuery]);
   if (holds.error || blocks.error || checks.error) throw new Error(holds.error?.message ?? blocks.error?.message ?? checks.error?.message);
   const conflictRows = (checks.data ?? []).filter((row) => ['possible_conflict', 'confirmed_conflict', 'failed', 'missing_data'].includes(row.status));
   const lastCheck = checks.data?.[0] ?? null;
@@ -522,15 +670,23 @@ export async function getAvailabilityStatus(scopeInput: AvailabilityScope, dateR
   };
 }
 
-export async function getAvailabilityBlockers(scope: AvailabilityScope) {
-  return (await getAvailabilityStatus(scope)).blockers;
+export async function getAvailabilityBlockers(
+  scope: AvailabilityScope,
+  options?: { accountId?: string | null },
+) {
+  return (await getAvailabilityStatus(scope, {}, options)).blockers;
 }
 
-export async function explainAvailabilityConflict(input: { checkId?: string; bookingId?: string }) {
+export async function explainAvailabilityConflict(
+  input: { checkId?: string; bookingId?: string },
+  accountId?: string | null,
+) {
   let query = supabase.from('booking_overbooking_conflict_checks').select('*');
   if (input.checkId) query = query.eq('id', input.checkId);
   else if (input.bookingId) query = query.eq('booking_id', input.bookingId).order('created_at', { ascending: false }).limit(1);
   else throw new Error('Укажите ID проверки или брони.');
+  const canonicalAccountId = text(accountId);
+  if (canonicalAccountId) query = query.eq('account_id', canonicalAccountId);
   const { data, error } = await query.maybeSingle();
   if (error) throw new Error(error.message);
   if (!data) return null;

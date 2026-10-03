@@ -910,7 +910,7 @@ async function initializeBookingAvailability(
   if (!record.propertyId || !record.checkInAt || !record.checkOutAt) {
     const check = await checkAvailabilityConflict(
       { bookingId: record.id },
-      { checkType: 'pre_intake' },
+      { checkType: 'pre_intake', accountId: record.accountId ?? null },
     );
     return { status: check.status, initialized: false };
   }
@@ -922,7 +922,7 @@ async function initializeBookingAvailability(
     source: 'booking_intake',
     holdMinutes: 30,
     safeSummary: 'Даты заявки временно удерживаются на время проверки.',
-  }, { metadata: { intake_autopilot: true } });
+  }, { metadata: { intake_autopilot: true }, accountId: record.accountId ?? null });
   return {
     status: String(hold.conflict_status ?? 'failed') as AvailabilityConflictStatus,
     initialized: hold.status === 'active',

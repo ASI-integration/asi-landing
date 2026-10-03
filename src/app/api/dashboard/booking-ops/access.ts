@@ -9,6 +9,10 @@ import { supabase } from '@/lib/supabase';
 
 type Session = Parameters<typeof resolveReservationAccess>[0];
 
+function text(value: unknown): string {
+  return String(value ?? '').trim();
+}
+
 function responseFor(code: string): NextResponse {
   if (code === 'booking_not_found') {
     return NextResponse.json({ ok: false, message: 'Бронирование не найдено.' }, { status: 404 });
@@ -18,6 +22,15 @@ function responseFor(code: string): NextResponse {
   }
   if (code === 'delivery_not_found') {
     return NextResponse.json({ ok: false, message: 'Доставка не найдена.' }, { status: 404 });
+  }
+  if (code === 'availability_check_not_found') {
+    return NextResponse.json({ ok: false, message: 'Проверка доступности не найдена.' }, { status: 404 });
+  }
+  if (code === 'availability_hold_not_found') {
+    return NextResponse.json({ ok: false, message: 'Удержание доступности не найдено.' }, { status: 404 });
+  }
+  if (code === 'availability_block_not_found') {
+    return NextResponse.json({ ok: false, message: 'Блокировка доступности не найдена.' }, { status: 404 });
   }
   if (code === 'booking_scope_mismatch'
     || code === 'reservation_account_not_found'
@@ -67,6 +80,181 @@ export async function requireBookingOpsApiAccess(session: Session, bookingId: st
 export async function requireBookingOpsApiPropertyAccess(session: Session, propertyId: string) {
   try {
     return { ok: true as const, ...(await requireBookingOpsPropertyAccess(session, propertyId)) };
+  } catch (error) {
+    return {
+      ok: false as const,
+      response: responseFor(error instanceof Error ? error.message : ''),
+    };
+  }
+}
+
+async function resolveAvailabilityPropertySetup(propertySetupId: string): Promise<string> {
+  const result = await supabase
+    .from('booking_property_setup_profiles')
+    .select('property_id')
+    .eq('id', propertySetupId)
+    .maybeSingle();
+  if (result.error) throw new Error('property_scope_unavailable');
+  const propertyId = text(result.data?.property_id);
+  if (!propertyId) throw new Error('property_scope_mismatch');
+  return propertyId;
+}
+
+export async function requireBookingOpsApiAvailabilityScopeAccess(
+  session: Session,
+  scope: { bookingId?: string | null; propertyId?: string | null; propertySetupId?: string | null },
+) {
+  try {
+    const bookingId = text(scope.bookingId);
+    const requestedPropertyId = text(scope.propertyId);
+    const propertySetupId = text(scope.propertySetupId);
+    const setupPropertyId = propertySetupId
+      ? await resolveAvailabilityPropertySetup(propertySetupId)
+      : '';
+
+    if (bookingId) {
+      const access = await requireBookingOpsRouteAccess(session, bookingId);
+      if (requestedPropertyId && requestedPropertyId !== access.propertyId) {
+        throw new Error('property_scope_mismatch');
+      }
+      if (setupPropertyId && setupPropertyId !== access.propertyId) {
+        throw new Error('property_scope_mismatch');
+      }
+      return {
+        ok: true as const,
+        ...access,
+        propertySetupId: propertySetupId || null,
+      };
+    }
+
+    const propertyId = requestedPropertyId || setupPropertyId;
+    if (!propertyId) throw new Error('property_id_required');
+    if (requestedPropertyId && setupPropertyId && requestedPropertyId !== setupPropertyId) {
+      throw new Error('property_scope_mismatch');
+    }
+    return {
+      ok: true as const,
+      ...(await requireBookingOpsPropertyAccess(session, propertyId)),
+      bookingId: null,
+      propertySetupId: propertySetupId || null,
+    };
+  } catch (error) {
+    return {
+      ok: false as const,
+      response: responseFor(error instanceof Error ? error.message : ''),
+    };
+  }
+}
+
+type AvailabilityStoredScope = {
+  account_id?: unknown;
+  booking_id?: unknown;
+  property_id?: unknown;
+  property_setup_id?: unknown;
+};
+
+async function resolveAvailabilityStoredScopeAccess(session: Session, row: AvailabilityStoredScope) {
+  const account = await resolveBookingOpsAccount(session);
+  const storedAccountId = text(row.account_id);
+  if (storedAccountId && storedAccountId !== account.accountId) {
+    throw new Error('booking_scope_mismatch');
+  }
+
+  const bookingId = text(row.booking_id);
+  const storedPropertyId = text(row.property_id);
+  const propertySetupId = text(row.property_setup_id);
+  if (bookingId) {
+    const access = await requireBookingOpsRouteAccess(session, bookingId);
+    if (storedPropertyId && storedPropertyId !== access.propertyId) {
+      throw new Error('property_scope_mismatch');
+    }
+    if (propertySetupId) {
+      const setupPropertyId = await resolveAvailabilityPropertySetup(propertySetupId);
+      if (setupPropertyId !== access.propertyId) throw new Error('property_scope_mismatch');
+    }
+    return {
+      ...access,
+      propertySetupId: propertySetupId || null,
+    };
+  }
+
+  const propertyId = storedPropertyId || (propertySetupId
+    ? await resolveAvailabilityPropertySetup(propertySetupId)
+    : '');
+  if (!propertyId) throw new Error('property_scope_mismatch');
+  return {
+    ...(await requireBookingOpsPropertyAccess(session, propertyId)),
+    bookingId: null,
+    propertySetupId: propertySetupId || null,
+  };
+}
+
+export async function requireBookingOpsApiAvailabilityCheckAccess(session: Session, checkId: string) {
+  try {
+    const id = text(checkId);
+    if (!id) throw new Error('availability_check_not_found');
+
+    const result = await supabase
+      .from('booking_overbooking_conflict_checks')
+      .select('id,account_id,booking_id,property_id,property_setup_id')
+      .eq('id', id)
+      .maybeSingle();
+    if (result.error) throw new Error('booking_scope_unavailable');
+    if (!result.data) throw new Error('availability_check_not_found');
+
+    return {
+      ok: true as const,
+      ...(await resolveAvailabilityStoredScopeAccess(session, result.data)),
+      checkId: id,
+    };
+  } catch (error) {
+    return {
+      ok: false as const,
+      response: responseFor(error instanceof Error ? error.message : ''),
+    };
+  }
+}
+
+export async function requireBookingOpsApiAvailabilityHoldAccess(session: Session, holdId: string) {
+  try {
+    const id = text(holdId);
+    if (!id) throw new Error('availability_hold_not_found');
+    const result = await supabase
+      .from('booking_availability_holds')
+      .select('id,account_id,booking_id,property_id,property_setup_id')
+      .eq('id', id)
+      .maybeSingle();
+    if (result.error) throw new Error('booking_scope_unavailable');
+    if (!result.data) throw new Error('availability_hold_not_found');
+    return {
+      ok: true as const,
+      ...(await resolveAvailabilityStoredScopeAccess(session, result.data)),
+      holdId: id,
+    };
+  } catch (error) {
+    return {
+      ok: false as const,
+      response: responseFor(error instanceof Error ? error.message : ''),
+    };
+  }
+}
+
+export async function requireBookingOpsApiAvailabilityBlockAccess(session: Session, blockId: string) {
+  try {
+    const id = text(blockId);
+    if (!id) throw new Error('availability_block_not_found');
+    const result = await supabase
+      .from('booking_availability_blocks')
+      .select('id,account_id,property_id,property_setup_id')
+      .eq('id', id)
+      .maybeSingle();
+    if (result.error) throw new Error('booking_scope_unavailable');
+    if (!result.data) throw new Error('availability_block_not_found');
+    return {
+      ok: true as const,
+      ...(await resolveAvailabilityStoredScopeAccess(session, result.data)),
+      blockId: id,
+    };
   } catch (error) {
     return {
       ok: false as const,

@@ -2,6 +2,12 @@ import { NextResponse } from 'next/server';
 import { requireOpsAdminSession } from '@/lib/crm/api-auth';
 import { supabase } from '@/lib/supabase';
 import {
+  requireBookingOpsApiAvailabilityBlockAccess,
+  requireBookingOpsApiAvailabilityCheckAccess,
+  requireBookingOpsApiAvailabilityHoldAccess,
+  requireBookingOpsApiAvailabilityScopeAccess,
+} from '@/app/api/dashboard/booking-ops/access';
+import {
   checkAvailabilityConflict,
   confirmAvailabilityHold,
   createAvailabilityBlock,
@@ -45,30 +51,86 @@ export async function POST(req: Request) {
   if (!ACTIONS.has(action)) return NextResponse.json({ ok: false, message: 'Неизвестное действие.' }, { status: 400 });
   try {
     let result: unknown;
-    if (action === 'check_conflict') result = await checkAvailabilityConflict(scope(body), { checkType: 'manual_review' });
-    else if (action === 'create_hold') result = await createAvailabilityHold({ ...scope(body), source: 'operator', holdMinutes: Number(body.holdMinutes ?? 30) });
-    else if (action === 'release_hold') result = await releaseAvailabilityHold(value(body, 'holdId', 'hold_id') ?? '');
-    else if (action === 'confirm_hold') result = await confirmAvailabilityHold(value(body, 'holdId', 'hold_id') ?? '', value(body, 'bookingId', 'booking_id') ?? undefined);
-    else if (action === 'expire_holds') result = await expireAvailabilityHolds({ propertyId: value(body, 'propertyId', 'property_id') ?? undefined });
-    else if (action === 'create_block') result = await createAvailabilityBlock({ ...scope(body), source: 'operator', reason: String(body.reason ?? '').slice(0, 500) });
-    else if (action === 'release_block') result = await releaseAvailabilityBlock(value(body, 'blockId', 'block_id') ?? '');
+    const requested = scope(body);
+    const holdId = value(body, 'holdId', 'hold_id') ?? '';
+    const blockId = value(body, 'blockId', 'block_id') ?? '';
+    const access = action === 'add_note'
+      ? null
+      : action === 'release_hold' || action === 'confirm_hold'
+        ? await requireBookingOpsApiAvailabilityHoldAccess(auth.session, holdId)
+        : action === 'release_block'
+          ? await requireBookingOpsApiAvailabilityBlockAccess(auth.session, blockId)
+          : await requireBookingOpsApiAvailabilityScopeAccess(auth.session, requested);
+    if (access && !access.ok) return access.response;
+    const canonicalScope = access?.ok ? {
+      bookingId: access.bookingId,
+      propertySetupId: access.propertySetupId,
+      propertyId: access.propertyId,
+      dateFrom: requested.dateFrom,
+      dateTo: requested.dateTo,
+    } : requested;
+    const accountId = access?.ok ? access.accountId : '';
+    const expectedEntityScope = {
+      propertyId: canonicalScope.propertyId,
+      propertySetupId: canonicalScope.propertySetupId,
+    };
+
+    if (action === 'check_conflict') result = await checkAvailabilityConflict(
+      canonicalScope, { checkType: 'manual_review', accountId },
+    );
+    else if (action === 'create_hold') result = await createAvailabilityHold(
+      { ...canonicalScope, source: 'operator', holdMinutes: Number(body.holdMinutes ?? 30) },
+      { accountId },
+    );
+    else if (action === 'release_hold') result = await releaseAvailabilityHold(
+      holdId, undefined, accountId, expectedEntityScope,
+    );
+    else if (action === 'confirm_hold') {
+      let bookingId = canonicalScope.bookingId;
+      if (requested.bookingId && requested.bookingId !== bookingId) {
+        const bookingAccess = await requireBookingOpsApiAvailabilityScopeAccess(auth.session, {
+          bookingId: requested.bookingId,
+          propertyId: canonicalScope.propertyId,
+        });
+        if (!bookingAccess.ok) return bookingAccess.response;
+        bookingId = bookingAccess.bookingId;
+      }
+      result = await confirmAvailabilityHold(
+        holdId, bookingId ?? undefined, undefined, accountId, expectedEntityScope,
+      );
+    } else if (action === 'expire_holds') result = await expireAvailabilityHolds({
+      propertyId: canonicalScope.propertyId ?? undefined, accountId,
+    });
+    else if (action === 'create_block') result = await createAvailabilityBlock(
+      { ...canonicalScope, source: 'operator', reason: String(body.reason ?? '').slice(0, 500) },
+      undefined,
+      accountId,
+    );
+    else if (action === 'release_block') result = await releaseAvailabilityBlock(
+      blockId, undefined, accountId, expectedEntityScope,
+    );
     else if (action === 'mark_needs_review') {
-      const bookingId = value(body, 'bookingId', 'booking_id');
+      const bookingId = canonicalScope.bookingId;
       if (!bookingId) throw new Error('Укажите ID брони.');
       const { data, error } = await supabase.from('booking_ops_records').update({
         overbooking_risk_status: 'needs_review', availability_status: 'blocked', updated_at: new Date().toISOString(),
-      }).eq('id', bookingId).select('id').maybeSingle();
+      }).eq('id', bookingId).eq('account_id', accountId).select('id').maybeSingle();
       if (error) throw new Error(error.message);
+      if (!data) throw new Error('Бронирование не найдено.');
       result = data;
     } else {
       const checkId = value(body, 'checkId', 'check_id');
       const note = String(body.note ?? '').trim().slice(0, 500);
       if (!checkId || !SAFE_ID.test(checkId) || !note) throw new Error('Укажите проверку и заметку.');
-      const { data: existing, error: readError } = await supabase.from('booking_overbooking_conflict_checks').select('warnings').eq('id', checkId).maybeSingle();
+      const checkAccess = await requireBookingOpsApiAvailabilityCheckAccess(auth.session, checkId);
+      if (!checkAccess.ok) return checkAccess.response;
+      const { data: existing, error: readError } = await supabase.from('booking_overbooking_conflict_checks')
+        .select('warnings').eq('id', checkAccess.checkId).eq('account_id', checkAccess.accountId).maybeSingle();
       if (readError || !existing) throw new Error(readError?.message ?? 'Проверка не найдена.');
       const warnings = Array.isArray(existing.warnings) ? existing.warnings.map(String) : [];
       const { data, error } = await supabase.from('booking_overbooking_conflict_checks')
-        .update({ warnings: [...warnings, note], updated_at: new Date().toISOString() }).eq('id', checkId).select('id,warnings').single();
+        .update({ warnings: [...warnings, note], updated_at: new Date().toISOString() })
+        .eq('id', checkAccess.checkId).eq('account_id', checkAccess.accountId).select('id,warnings').single();
       if (error) throw new Error(error.message);
       result = data;
     }

@@ -90,7 +90,7 @@ Scope: canonical property-bound residential location evidence and advisory Platf
 - Auto-send scopes, runs, deliveries, queue/status APIs, and the internal scheduled runner are now account-explicit end to end. The prepared migration adds canonical `account_id` lineage, changes scope uniqueness to `account + type + ref`, and disables legacy non-global scopes before deterministic backfill.
 - Booking/property send scopes require canonical account ownership. Legacy free-form owner/pilot scopes are fail-closed in the RU residential dashboard until they have their own canonical ownership seam; the UI exposes only booking/property scopes.
 - The global emergency-stop intentionally remains a platform-admin kill switch and is not tenant-scoped.
-- Inbound-intake root APIs remain the next tenant-boundary audit target.
+- Inbound intake, reservation, and availability tenant-boundary follow-ups are recorded in the dedicated sections below.
 
 ## Additional verification
 
@@ -135,8 +135,20 @@ Scope: canonical property-bound residential location evidence and advisory Platf
 - Post-intake booking and availability-hold mutations include the canonical account predicate.
 - Changed files: dashboard reservations route + scope tests, reservation ledger + account-scope contract test.
 - Verification: focused reservation/intake contour **34/34 PASS**; broader Booking Ops + Channel Manager + reservation contour **136/136 PASS**; TypeScript **PASS**; changed-file ESLint **PASS**; `git diff --check` **PASS**.
-- Next safe gap: `dashboard/availability/action` and its availability service still contain ID/property-only hold/block/check mutations. That contour needs account-aware service semantics, not only a route wrapper. Secret-backed Telegram intake also still lacks a canonical server-owned account resolver.
+- The next audited gap was the availability/overbooking contour; it is covered by the checkpoint below.
+
+## Availability / overbooking account isolation
+
+- Baseline HEAD before this slice: `75a21784dc031c6b31d3ef1694374ea8103e877d`.
+- Availability action/status/conflicts/explain routes now resolve canonical account/property/booking scope through the shared Booking Ops access helper.
+- Hold/block release and hold confirmation derive authorization from the stored target entity, not request-supplied property scope; execution revalidates canonical account plus expected property/setup scope.
+- Conflict checks, holds, blocks, status reads, risk updates, and intake-created holds carry canonical account lineage. Existing unbound lower-level callers remain compatible but do not gain tenant authority from payload data.
+- Prepared `20261003150000_booking_availability_account_scope_v1.sql` adds conflict-check account lineage and an account-bound atomic hold RPC; it was contract-tested only and not applied.
+- Changed files: four dashboard availability routes, shared Booking Ops access helper, availability runtime/tests, intake availability initialization, route/access tests, and the prepared migration.
+- Verification: focused availability contour **52/52 PASS**; frozen Booking Ops + Channel Manager + reservation regression **136/136 PASS**; TypeScript **PASS**; changed-file ESLint **PASS**; `git diff --check` **PASS**.
+- Blocker: the availability checkpoint is fully staged and green, but the current execution environment blocked the local `git commit` operation. HEAD therefore remains `75a21784`; no further production edits should be layered onto this staged slice until it is committed.
+- Smallest safe next step after that commit: make `shouldBlockCommunicationIntent` accept the already-resolved `executionContext.record.accountId` at both auto-send call sites, then bind channel-import availability audit to canonical connection/property ownership. The unused summary/confirmation helpers can follow the same pattern if activated. Secret-backed Telegram intake still lacks a canonical resolver and must remain unbound/fail-closed rather than trusting payload scope.
 
 ## Operational boundary
 
-The migration file is prepared and contract-tested but was **not applied to any live/local database** in this pass. No push, merge, deploy, live database mutation, DNS, secret, or package-install action was performed.
+Wave 5 migration files are prepared and contract-tested but were **not applied to any live/local database** in this pass. No push, merge, deploy, live database mutation, DNS, secret, or package-install action was performed.
