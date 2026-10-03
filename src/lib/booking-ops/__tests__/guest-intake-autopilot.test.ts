@@ -336,6 +336,18 @@ describe('Booking Ops Guest Intake Autopilot v1', () => {
     expect(JSON.stringify(metadata)).not.toContain('raw-passport');
   });
 
+  it('retains canonical scope through inbound guest-intake mutations', () => {
+    const inboundSource = readFileSync('src/lib/booking-ops/guest-intake-inbound.ts', 'utf8');
+    expect(inboundSource).toContain('requireBookingOpsRecordScope');
+    expect(inboundSource).toContain('ensureGuestIntakePublicToken(session, expectedScope)');
+    expect(inboundSource).toContain(".eq('booking_ops_record_id', loaded.record.id)");
+    expect(inboundSource).toContain(".eq('booking_ops_record_id', update.record.id)");
+    expect(inboundSource).toContain("updateBookingOpsRecord(loaded.record.id, patch, { actorType: 'system', expectedScope })");
+    expect(inboundSource).toContain('listBookingOpsTasksForRecord(record.id, { expectedScope })');
+    expect(inboundSource).toContain('syncBookingOpsCommunications({ record, tasks: tasks.tasks, expectedScope })');
+    expect(inboundSource).toContain('await syncDownstream(finalRecord, expectedScope)');
+  });
+
   it('does not include uncontrolled Telegram or email send calls', () => {
     const stateSource = readFileSync('src/lib/booking-ops/guest-intake-state.ts', 'utf8');
     const autopilotSource = readFileSync('src/lib/booking-ops/guest-intake-autopilot.ts', 'utf8');
