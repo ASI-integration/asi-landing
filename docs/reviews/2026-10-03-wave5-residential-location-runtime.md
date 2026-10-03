@@ -334,10 +334,11 @@ src/lib/booking-ops/tasks.ts
 - `eb91915a9c783aeebdcf5642379b221a228da914` (`fix(booking-ops): guard unbound review mutations`) commits the guarded property-attach and account-bound/property-unbound review-data seams. Unbound guest/data updates require the expected account and `property_id IS NULL`, remain review-only, and do not start task, guest-intake, lifecycle, or communication side effects before canonical property binding.
 - `43a02c0f769fbb191474a7ab27052c808588e579` (`fix(booking-ops): scope channel sync updates`) closes the Channel Manager read-to-write race: live booking updates persist only while the booking still matches canonical `{ accountId, propertyId }`; a scope change fails closed and blocks incremental cursor advancement.
 - `f782b1178e0d0defa767f658e43a8446f0a3f988` (`fix(reservations): retain canonical mutation scope`) binds reservation cancellation/restoration to the shared canonical booking identity. Booking status mutation, hold release, availability checks, and repository side effects retain the same account/property scope; a moved or mismatched booking fails closed.
+- `ae1f4602e4c15fc03f461bb52bec426c70e216e5` (`fix(booking-ops): scope guest intake mutations`) carries canonical account/property scope through token/session updates, guest record mutation, submission audit, intake automation, task reads, and communication planning. Account-bound records without a canonical property fail closed; legacy/accountless fallback behavior is unchanged.
 - PlatformDecision remains advisory only. Domain guards/revalidation remain authoritative, and guest auto-send policy is unchanged.
-- Latest verification: focused reservation mutation contour **16/16 PASS (3 files)**; frozen regression **162/162 + 168/168 = 330/330 PASS (30 files)**; TypeScript, touched-file ESLint, and `git diff --check` **PASS**.
-- Changed files in `f782b117`: `reservations/ledger.ts` and new `reservations/__tests__/ledger-mutation-scope.test.ts`.
-- No blocker at this checkpoint. The dashboard reservation PATCH supports property transfer and therefore needs a dedicated transfer contract rather than blindly reusing the old-property scope; guest-intake inbound also spans record/session/event/task/communication effects and should be scoped as one coherent slice, not partially.
+- Latest verification: focused guest-intake contour **34/34 PASS (3 files)**; frozen regression **162/162 + 187/187 = 349/349 PASS (31 files)**; TypeScript, touched-file ESLint, and `git diff --check` **PASS**.
+- Changed files in `ae1f4602`: `guest-intake-inbound.ts` and `guest-intake-autopilot.test.ts`.
+- No blocker at this checkpoint. Remaining non-trivial scope work is intentionally separate: dashboard reservation PATCH needs a dedicated property-transfer contract, while legacy `tg_guest_reservations` synchronization lacks canonical `account_id` and needs an explicit legacy-to-account mapping rather than inferred ownership.
 
 ## Operational boundary
 
