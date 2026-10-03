@@ -2,6 +2,7 @@
 
 Branch: `sol/wave4-residential-decision-integration-20261003`
 Starting HEAD: `aea51a1988f128ac67a024919225a500cea49fa4`
+Previous green checkpoint: `ec7821242d86e33b957ab86e83d42cdf1681c3f0`
 Scope: local RU residential authenticated/server-side reads only.
 
 ## Implemented
@@ -10,6 +11,7 @@ Scope: local RU residential authenticated/server-side reads only.
 - Authenticated account ownership is checked before readiness/status loading and rechecked after the read.
 - Single-booking pre-check-in GET now returns advisory `platformDecision` built from the existing canonical readiness snapshot.
 - In-stay/checkout GET now returns advisory `in_stay`, `checkout`, and `deposit` decisions from the already-loaded canonical snapshot.
+- The same GET now maps already-loaded canonical `openIssues` through the existing incident adapter; no extra DB read or guard/recompute call is added.
 - Existing readiness/status engines remain authoritative; no second readiness engine was introduced.
 - No POST/action route consumes PlatformDecision as authorization.
 - `automaticActionAllowed` remains false and `send_guest_automatically` remains forbidden.
@@ -26,7 +28,8 @@ Scope: local RU residential authenticated/server-side reads only.
 
 ## Verification
 
-- Focused Wave 4: **137/137 PASS**.
+- Previous focused Wave 4 checkpoint: **137/137 PASS**.
+- Incident integration focused contour: **131/131 PASS**.
 - TypeScript typecheck: **PASS**.
 - Changed-file ESLint: **PASS**.
 - `git diff --check`: **PASS**.

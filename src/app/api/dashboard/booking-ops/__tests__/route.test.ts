@@ -300,7 +300,7 @@ describe('Booking Ops dashboard routes', () => {
     expect(response.status).toBe(400);
   });
 
-  it('instay-checkout GET returns advisory in-stay, checkout and deposit decisions only', async () => {
+  it('instay-checkout GET returns advisory in-stay, checkout, deposit and incident decisions', async () => {
     const route = await import('../instay-checkout/route');
     const response = await route.GET(new Request('https://asi.test?bookingId=ops-route'));
     const payload = await response.json();
@@ -308,6 +308,7 @@ describe('Booking Ops dashboard routes', () => {
     expect(payload.platformDecisions.inStay.topic).toBe('in_stay');
     expect(payload.platformDecisions.checkout.topic).toBe('checkout');
     expect(payload.platformDecisions.deposit.topic).toBe('deposit');
+    expect(payload.platformDecisions.incidents).toEqual([]);
     expect(payload.platformDecisions.closeout).toBeUndefined();
     for (const decision of [
       payload.platformDecisions.inStay,
@@ -318,6 +319,61 @@ describe('Booking Ops dashboard routes', () => {
       expect(decision.permission.executionAuthority).toBe('domain_revalidation_required');
       expect(decision.permission.forbiddenActions).toContain('send_guest_automatically');
     }
+  });
+
+  it('maps canonical open stay issues to advisory incident decisions', async () => {
+    const instay = await import('@/lib/booking-ops/instay-checkout-autopilot');
+    const updatedAt = new Date().toISOString();
+    vi.mocked(instay.getInStayCheckoutStatus).mockResolvedValueOnce({
+      bookingId: 'ops-route',
+      status: 'guest_issue_open',
+      execution: null,
+      checkoutInstructionsStatus: 'not_prepared',
+      checkoutConfirmationStatus: 'not_requested',
+      inspectionStatus: 'not_started',
+      depositReturnStatus: 'not_ready',
+      closureStatus: 'open',
+      openIssuesCount: 1,
+      openIssues: [{
+        id: '11111111-1111-4111-8111-111111111111',
+        bookingId: 'ops-route',
+        issueType: 'access_issue',
+        severity: 'high',
+        status: 'open',
+        source: 'operator',
+        description: null,
+        resolution: null,
+        assignedToType: null,
+        assignedToRef: null,
+        openedAt: updatedAt,
+        resolvedAt: null,
+        metadata: {},
+        createdAt: updatedAt,
+        updatedAt,
+      }],
+      lifecycle: null,
+      blockers: [],
+      communications: [],
+      nextAction: 'Разобрать проблему гостя',
+      updatedAt,
+    } as never);
+
+    const route = await import('../instay-checkout/route');
+    const response = await route.GET(new Request('https://asi.test?bookingId=ops-route'));
+    const payload = await response.json();
+    expect(response.status).toBe(200);
+    expect(payload.platformDecisions.incidents).toHaveLength(1);
+    expect(payload.platformDecisions.incidents[0]).toMatchObject({
+      topic: 'incident',
+      status: 'review_required',
+      identity: { kind: 'identified', accountId: 'account-1', propertyId: 'property-1', bookingId: 'ops-route' },
+      evidence: [{ source: 'stay_issue', recordId: '11111111-1111-4111-8111-111111111111' }],
+      permission: { automaticActionAllowed: false, executionAuthority: 'domain_revalidation_required' },
+    });
+    expect(payload.platformDecisions.incidents[0].permission.allowedActions)
+      .toEqual(expect.arrayContaining(['request_operator_review', 'remediate']));
+    expect(payload.platformDecisions.incidents[0].permission.forbiddenActions)
+      .toEqual(expect.arrayContaining(['resolve_incident', 'send_guest_automatically']));
   });
 
   it('instay-checkout API returns 401 when unauthenticated', async () => {

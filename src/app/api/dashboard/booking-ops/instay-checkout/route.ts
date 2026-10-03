@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { requireCrmOperatorSession } from '@/lib/crm/api-auth';
 import { resolveReservationAccess } from '@/lib/reservations/access';
 import { sameIdentity } from '@/lib/platform/decision';
-import { adaptResidentialOpsDecision } from '@/lib/platform/ops-decision';
+import { adaptResidentialIncidentDecision, adaptResidentialOpsDecision } from '@/lib/platform/ops-decision';
 import { resolveResidentialBookingIdentity } from '@/lib/platform/residential-booking-scope';
 import {
   BookingClosePrerequisiteError,
@@ -90,6 +90,12 @@ export async function GET(req: Request): Promise<NextResponse> {
       deposit: adaptResidentialOpsDecision(identity, 'deposit', {
         ...snapshot, value: { kind: 'deposit' as const, checkout: instayCheckout },
       }, now),
+      incidents: instayCheckout.openIssues.map((issue) => adaptResidentialIncidentDecision(identity, {
+        available: true,
+        identity,
+        observedAt: issue.updatedAt,
+        value: issue,
+      }, now)),
     };
     return NextResponse.json({ ok: true, instayCheckout, platformDecisions });
   } catch (error) {
