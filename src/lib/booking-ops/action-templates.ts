@@ -9,7 +9,7 @@ import {
   opsStatusForNextAction,
 } from './decision-engine';
 import { wouldDowngradeOpsStatus } from './reservation-mapping';
-import { getBookingOpsRecord, updateBookingOpsRecord } from './repository';
+import { getBookingOpsRecord, requireBookingOpsRecordScope, updateBookingOpsRecord } from './repository';
 import type {
   BookingOpsActionFieldsOnConfirm,
   BookingOpsActionTemplate,
@@ -612,15 +612,21 @@ export async function applyBookingOpsOperatorAction(
   }
   const operatorActionId = rawAction as BookingOpsOperatorActionId;
 
-  const record = await getBookingOpsRecord(id);
-  if (!record) return { ok: false, error: 'not_found' };
   const expectedScope = options?.expectedScope;
-  if (expectedScope && (
-    record.accountId !== expectedScope.accountId
-    || record.propertyId !== expectedScope.propertyId
-  )) {
-    return { ok: false, error: 'scope_mismatch' };
+  let record: BookingOpsRecord | null;
+  try {
+    record = expectedScope
+      ? await requireBookingOpsRecordScope(id, expectedScope)
+      : await getBookingOpsRecord(id);
+  } catch (error) {
+    return {
+      ok: false,
+      error: error instanceof Error && error.message === 'booking_scope_mismatch'
+        ? 'scope_mismatch'
+        : 'scope_unavailable',
+    };
   }
+  if (!record) return { ok: false, error: 'not_found' };
 
   const built = buildConfirmUpdateInput(record, operatorActionId);
   if ('error' in built) return { ok: false, error: built.error };

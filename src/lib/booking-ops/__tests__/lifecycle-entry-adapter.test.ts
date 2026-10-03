@@ -1,10 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { recordAndProcessBookingEvent } = vi.hoisted(() => ({ recordAndProcessBookingEvent: vi.fn() }));
+const { recordAndProcessBookingEvent, requireBookingOpsRecordScope } = vi.hoisted(() => ({
+  recordAndProcessBookingEvent: vi.fn(),
+  requireBookingOpsRecordScope: vi.fn(),
+}));
 vi.mock('../lifecycle-autopilot-service', () => ({
   durableEventId: (...parts: string[]) => `id:${parts.join(':')}`,
   recordAndProcessBookingEvent,
 }));
+vi.mock('../repository', () => ({ requireBookingOpsRecordScope }));
 
 import { emitLifecycleForAction, emitPhysicalLifecycle } from '../lifecycle-entry-adapter';
 
@@ -12,6 +16,8 @@ describe('OPS v16 lifecycle entry adapters', () => {
   beforeEach(() => {
     recordAndProcessBookingEvent.mockReset();
     recordAndProcessBookingEvent.mockResolvedValue({ processed: true, duplicate: false });
+    requireBookingOpsRecordScope.mockReset();
+    requireBookingOpsRecordScope.mockResolvedValue({ id: 'booking-1' });
   });
 
   it.each([
@@ -30,6 +36,19 @@ describe('OPS v16 lifecycle entry adapters', () => {
   ])('maps legal and operational action %s to %s', async (action, type) => {
     await emitLifecycleForAction({ bookingId: 'booking-1', action, source: 'test' });
     expect(recordAndProcessBookingEvent).toHaveBeenLastCalledWith(expect.objectContaining({ type, bookingId: 'booking-1' }));
+  });
+
+  it('revalidates canonical scope before emitting a mapped lifecycle event', async () => {
+    requireBookingOpsRecordScope.mockRejectedValueOnce(new Error('booking_scope_mismatch'));
+
+    await expect(emitLifecycleForAction({
+      bookingId: 'booking-1',
+      action: 'mark_guest_checked_out',
+      source: 'test',
+      expectedScope: { accountId: 'account-a', propertyId: 'property-a' },
+    })).rejects.toThrow('booking_scope_mismatch');
+
+    expect(recordAndProcessBookingEvent).not.toHaveBeenCalled();
   });
 
   it.each([

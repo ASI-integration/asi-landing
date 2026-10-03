@@ -235,6 +235,27 @@ export async function getBookingOpsRecord(id: string): Promise<BookingOpsRecord 
   return enrichRecord(mapRow(data as BookingOpsRow));
 }
 
+export async function requireBookingOpsRecordScope(
+  id: string,
+  expectedScope: { accountId: string; propertyId: string },
+): Promise<BookingOpsRecord> {
+  const recordId = text(id);
+  const accountId = text(expectedScope.accountId);
+  const propertyId = text(expectedScope.propertyId);
+  if (!recordId || !accountId || !propertyId) throw new Error('booking_scope_unavailable');
+
+  const { data, error } = await supabase
+    .from('booking_ops_records')
+    .select('*')
+    .eq('id', recordId)
+    .eq('account_id', accountId)
+    .eq('property_id', propertyId)
+    .maybeSingle();
+  if (error) throw new Error('booking_scope_unavailable');
+  if (!data) throw new Error('booking_scope_mismatch');
+  return enrichRecord(mapRow(data as BookingOpsRow));
+}
+
 export async function getBookingOpsByBookingId(bookingId: string): Promise<BookingOpsRecord | null> {
   const sourceBookingId = text(bookingId);
   if (!sourceBookingId) return null;
@@ -344,18 +365,24 @@ export async function createBookingOpsRecord(
 
 export async function syncBookingOpsTasksForRecordId(
   recordId: string,
+  options?: { expectedScope?: { accountId: string; propertyId: string } },
 ): Promise<{ ok: boolean; error?: string }> {
   const recordIdClean = text(recordId);
   if (!recordIdClean) return { ok: false, error: 'id_required' };
 
-  const { data, error } = await supabase
+  let recordQuery = supabase
     .from('booking_ops_records')
     .select('*')
-    .eq('id', recordIdClean)
-    .maybeSingle();
+    .eq('id', recordIdClean);
+  if (options?.expectedScope) {
+    recordQuery = recordQuery
+      .eq('account_id', text(options.expectedScope.accountId))
+      .eq('property_id', text(options.expectedScope.propertyId));
+  }
+  const { data, error } = await recordQuery.maybeSingle();
 
   if (error) return { ok: false, error: error.message };
-  if (!data) return { ok: false, error: 'not_found' };
+  if (!data) return { ok: false, error: options?.expectedScope ? 'scope_mismatch' : 'not_found' };
 
   const drafts = await fetchTelegramDraftStatusesForRecord(recordIdClean);
   const record = attachBookingReadiness(mapRow(data as BookingOpsRow), drafts);

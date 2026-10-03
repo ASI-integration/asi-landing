@@ -1,5 +1,6 @@
 import { durableEventId, recordAndProcessBookingEvent } from './lifecycle-autopilot-service';
 import type { BookingEventActor } from './lifecycle-autopilot';
+import { requireBookingOpsRecordScope } from './repository';
 
 const ACTION_EVENTS: Record<string, string | null> = {
   documents_received: 'guest.documents_received', verify_documents: 'guest.documents_verified', prepare_contract: 'contract.generated',
@@ -14,9 +15,10 @@ const ACTION_EVENTS: Record<string, string | null> = {
   simulate_release: 'checkin.instructions_released',
 };
 
-export async function emitLifecycleForAction(input: { bookingId: string; action: string; actorType?: BookingEventActor; actorId?: string | null; source: string; payload?: Record<string, unknown>; occurrence?: string }) {
+export async function emitLifecycleForAction(input: { bookingId: string; action: string; actorType?: BookingEventActor; actorId?: string | null; source: string; payload?: Record<string, unknown>; occurrence?: string; expectedScope?: { accountId: string; propertyId: string } }) {
   const type = ACTION_EVENTS[input.action];
   if (!type) return null;
+  if (input.expectedScope) await requireBookingOpsRecordScope(input.bookingId, input.expectedScope);
   const occurrence = input.occurrence ?? JSON.stringify(input.payload ?? {});
   return recordAndProcessBookingEvent({
     id: durableEventId(input.source, input.bookingId, input.action, occurrence), bookingId: input.bookingId, type,

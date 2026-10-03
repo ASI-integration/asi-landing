@@ -12,7 +12,7 @@ import {
   readLifecycleStatus,
   markGateInProgress,
 } from './lifecycle';
-import { getBookingOpsRecord, syncBookingOpsTasksForRecordId } from './repository';
+import { getBookingOpsRecord, requireBookingOpsRecordScope, syncBookingOpsTasksForRecordId } from './repository';
 import type {
   BookingOpsCommunicationChannel,
   BookingOpsCommunicationIntent,
@@ -1040,6 +1040,7 @@ export async function markGuestCheckedOut(
   bookingId: string,
   actualCheckoutAt?: string | Date | null,
   metadata?: Record<string, unknown>,
+  expectedScope?: { accountId: string; propertyId: string },
 ): Promise<InStayCheckoutSnapshot> {
   const record = await loadRecord(bookingId);
   const checkoutAt = actualCheckoutAt ? new Date(actualCheckoutAt).toISOString() : new Date().toISOString();
@@ -1053,7 +1054,10 @@ export async function markGuestCheckedOut(
     actual_checkout_at: checkoutAt,
     metadata: { source: 'instay_checkout_autopilot_v1', checkedOutAt: checkoutAt, ...safeMetadata(metadata) },
   });
-  await syncBookingOpsTasksForRecordId(record.id);
+  const taskSync = expectedScope
+    ? await syncBookingOpsTasksForRecordId(record.id, { expectedScope })
+    : await syncBookingOpsTasksForRecordId(record.id);
+  if (!taskSync.ok) throw new Error(taskSync.error ?? 'task_sync_failed');
   return getInStayCheckoutStatus(record.id);
 }
 
@@ -1211,8 +1215,10 @@ export async function runInStayCheckoutAction(input: {
   result?: unknown;
   actualCheckoutAt?: unknown;
   metadata?: Record<string, unknown>;
+  expectedScope?: { accountId: string; propertyId: string };
 }): Promise<InStayCheckoutSnapshot> {
   const bookingId = text(input.bookingId);
+  if (input.expectedScope) await requireBookingOpsRecordScope(bookingId, input.expectedScope);
   const reason = text(input.reason);
   const note = text(input.note);
   const issueId = text(input.issueId);
@@ -1242,7 +1248,12 @@ export async function runInStayCheckoutAction(input: {
     case 'request_checkout_confirmation':
       return requestCheckoutConfirmation(bookingId, input.metadata);
     case 'mark_guest_checked_out':
-      return markGuestCheckedOut(bookingId, text(input.actualCheckoutAt) || null, input.metadata);
+      return markGuestCheckedOut(
+        bookingId,
+        text(input.actualCheckoutAt) || null,
+        input.metadata,
+        input.expectedScope,
+      );
     case 'trigger_post_checkout_inspection':
       return triggerPostCheckoutInspection(bookingId, input.metadata);
     case 'mark_post_checkout_inspection_done':

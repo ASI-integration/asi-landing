@@ -283,6 +283,11 @@ describe('Booking Ops dashboard routes', () => {
     }));
     const payload = await response.json();
     expect(response.status).toBe(200);
+    const preCheckin = await import('@/lib/booking-ops/pre-checkin-control-center');
+    expect(preCheckin.recomputeBookingCheckinReadiness).toHaveBeenCalledWith(
+      'ops-route',
+      { expectedScope: { accountId: 'account-1', propertyId: 'property-1' } },
+    );
     expect(payload.readiness.status).toBe('ready_for_checkin');
     expect(payload.platformDecision).toMatchObject({
       topic: 'pre_checkin',
@@ -419,7 +424,11 @@ describe('Booking Ops dashboard routes', () => {
     const payload = await response.json();
 
     expect(response.status).toBe(200);
-    expect(checkin.runCheckinExecutionAction).toHaveBeenCalled();
+    expect(checkin.runCheckinExecutionAction).toHaveBeenCalledWith(expect.objectContaining({
+      bookingId: 'ops-route',
+      action: 'prepare_instructions',
+      expectedScope: { accountId: 'account-1', propertyId: 'property-1' },
+    }));
     expect(checkin.readCheckinExecutionStatus).toHaveBeenCalledWith('ops-route');
     expect(payload.platformDecision).toMatchObject({
       topic: 'checkin',
@@ -644,7 +653,11 @@ describe('Booking Ops dashboard routes', () => {
     const payload = await response.json();
 
     expect(response.status).toBe(200);
-    expect(instay.runInStayCheckoutAction).toHaveBeenCalled();
+    expect(instay.runInStayCheckoutAction).toHaveBeenCalledWith(expect.objectContaining({
+      bookingId: 'ops-route',
+      action: 'prepare_checkout_instructions',
+      expectedScope: { accountId: 'account-1', propertyId: 'property-1' },
+    }));
     expect(instay.readInStayCheckoutStatus).toHaveBeenCalledWith('ops-route');
     expect(payload.platformDecisions.inStay).toMatchObject({
       topic: 'in_stay',

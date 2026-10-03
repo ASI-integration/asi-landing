@@ -16,12 +16,17 @@ vi.mock('@/lib/supabase', () => ({
     from(table: string) {
       let operation = 'select';
       let updatePayload: Record<string, unknown> | null = null;
+      const filters: Record<string, unknown> = {};
       const query = {
         select() { operation = 'select'; return query; },
         update(payload: Record<string, unknown>) { operation = 'update'; updatePayload = payload; return query; },
-        eq() { return query; }, neq() { return query; }, gte() { return query; }, order() { return query; }, limit() { return query; },
+        eq(column: string, value: unknown) { filters[column] = value; return query; },
+        neq() { return query; }, gte() { return query; }, order() { return query; }, limit() { return query; },
         async maybeSingle() {
-          if (table === 'booking_ops_records') return { data: mocks.previous, error: null };
+          if (table === 'booking_ops_records') {
+            const matches = Object.entries(filters).every(([column, value]) => mocks.previous[column] === value);
+            return { data: matches ? mocks.previous : null, error: null };
+          }
           if (table === 'booking_cleaning_tasks') return { data: mocks.cleaning, error: null };
           return { data: null, error: null };
         },
@@ -81,6 +86,18 @@ describe('checkout turnover cleaning activation', () => {
       const selected = selectEarliestEligibleUpcomingBooking({ previousBookingId: 'previous', accountId: 'account-a', propertyId: 'property-a', boundary: '2026-07-13T10:00:00Z', candidates: [candidate(status, '2026-07-14T10:00:00Z', 'account-a', 'property-a', status)] });
       expect(selected).toBeNull();
     }
+  });
+
+  it('fails closed before turnover work when canonical checkout scope changed', async () => {
+    await expect(activateTurnoverCleaningAfterCheckout(
+      String(mocks.previous.id),
+      undefined,
+      { expectedScope: { accountId: 'account-b', propertyId: 'property-a' } },
+    )).rejects.toThrow('booking_scope_mismatch');
+
+    expect(mocks.ensurePhysicalTasks).not.toHaveBeenCalled();
+    expect(mocks.createBookingOpsTask).not.toHaveBeenCalled();
+    expect(mocks.recordProcessedBookingAuditEvent).not.toHaveBeenCalled();
   });
 
   it('ensures physical tasks and links exactly one cleaning row to the next booking', async () => {

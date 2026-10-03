@@ -184,6 +184,17 @@ Scope: canonical property-bound residential location evidence and advisory Platf
 - Verification: focused route/action/repository scope contour **9/9 PASS**; route mock-isolation pair **31/31 PASS**; frozen Booking Ops + Channel Manager + reservation + pre-checkin/action regression **162/162 PASS**; TypeScript **PASS**; changed-file ESLint **PASS**; `git diff --check` **PASS**.
 - Next step: audit other dashboard mutation handlers for route-only ownership checks followed by unscoped domain updates, prioritizing check-in/in-stay/pre-checkin actions.
 
+## Check-in / in-stay / pre-checkin mutation scope revalidation
+
+- Baseline HEAD: `101b72cbe103373a62fd35550fec51b5091999a3`.
+- Check-in, in-stay/checkout, and pre-checkin mutation routes now use the shared Booking Ops API access helper and pass canonical account/property scope into the domain mutation layer.
+- Domain entry points revalidate the booking scope before mutation; main Booking Ops record updates and task-sync reads carry the same expected scope instead of relying on the route check alone.
+- Lifecycle event emission and checkout turnover-cleaning activation revalidate canonical scope before creating downstream side effects. Pre-checkin recompute preserves scope through nested recompute/draft/update paths.
+- Post-action PlatformDecision projection remains advisory only; authorization is still enforced by domain guards and canonical revalidation. No guest auto-send policy was widened.
+- Changed files: the three Booking Ops mutation routes, shared repository/action/check-in/in-stay/pre-checkin domain paths, lifecycle/turnover side-effect adapters, and focused scope tests.
+- Verification: focused mutation/scope contour **117/117 PASS**; frozen Booking Ops + Channel Manager + reservation + owner-Telegram + pre-checkin/check-in/in-stay regression **243/243 PASS**; TypeScript **PASS**; changed-file ESLint **PASS**; `git diff --check` **PASS**.
+- Next step: continue the remaining route-only mutation audit, prioritizing check-in release, legal/payment and guest-legal action routes, then physical-readiness mutations; keep any payload-only/unbound contour fail-closed.
+
 ## Operational boundary
 
 Wave 5 migration files are prepared and contract-tested but were **not applied to any live/local database** in this pass. No push, merge, deploy, live database mutation, DNS, secret, or package-install action was performed.

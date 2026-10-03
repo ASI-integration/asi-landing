@@ -33,6 +33,7 @@ const record = {
 };
 
 const updateBookingOpsRecord = vi.fn(async () => ({ ok: true, record }));
+const requireBookingOpsRecordScope = vi.fn(async () => record);
 
 vi.mock('../guest-legal-deposit-mvd-execution', () => ({
   shouldBlockCheckinInstructions: vi.fn(async () => ({ block: false, readiness: null, reason: null })),
@@ -106,6 +107,7 @@ vi.mock('@/lib/supabase', () => ({
 
 vi.mock('../repository', () => ({
   getBookingOpsRecord: vi.fn(async () => record),
+  requireBookingOpsRecordScope,
   updateBookingOpsRecord,
 }));
 
@@ -221,6 +223,8 @@ describe('Check-in Execution Autopilot v1', () => {
     preCheckinBlockers = [];
     guestCheckedIn = false;
     updateBookingOpsRecord.mockClear();
+    requireBookingOpsRecordScope.mockReset();
+    requireBookingOpsRecordScope.mockResolvedValue(record);
   });
 
   it.each(['unprepared', 'prepared', 'checked_in', 'access_issue', 'cleaning'] as const)(
@@ -400,6 +404,21 @@ describe('Check-in Execution Autopilot v1', () => {
 
     expect(status.status).toBe('checked_in');
     expect(lifecycle.completed.map((item) => item.gateKey)).toContain('guest_checked_in');
+  });
+
+  it('fails closed before check-in mutation when canonical scope no longer matches', async () => {
+    requireBookingOpsRecordScope.mockRejectedValueOnce(new Error('booking_scope_mismatch'));
+    const { runCheckinExecutionAction } = await import('../checkin-execution-autopilot');
+
+    await expect(runCheckinExecutionAction({
+      bookingId: record.id,
+      action: 'mark_guest_checked_in',
+      expectedScope: { accountId: 'account-1', propertyId: record.propertyId },
+    })).rejects.toThrow('booking_scope_mismatch');
+
+    expect(lifecycle.completed).toHaveLength(0);
+    expect(updateBookingOpsRecord).not.toHaveBeenCalled();
+    expect(tables.booking_checkin_execution).toHaveLength(0);
   });
 
   it.each(['markGuestCheckedIn', 'markAccessReady', 'markCheckinInstructionsSent'] as const)(

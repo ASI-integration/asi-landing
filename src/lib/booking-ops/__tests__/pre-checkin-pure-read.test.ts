@@ -8,6 +8,9 @@ const state = {
   legalAt: FRESH,
   physicalAt: FRESH,
 };
+const requireBookingOpsRecordScope = vi.fn(async () => ({ id: BOOKING_ID, notes: null }));
+const updateBookingOpsRecord = vi.fn();
+const adminUpdateLifecycleGate = vi.fn();
 
 const requiredGates = [
   'guest_data_completed',
@@ -29,11 +32,12 @@ vi.mock('../repository', () => ({
     manualNextAction: null,
   })),
   listBookingOpsRecords: vi.fn(async () => ({ ok: true, records: [] })),
-  updateBookingOpsRecord: vi.fn(),
+  requireBookingOpsRecordScope,
+  updateBookingOpsRecord,
 }));
 
 vi.mock('../lifecycle', () => ({
-  adminUpdateLifecycleGate: vi.fn(),
+  adminUpdateLifecycleGate,
   blockGate: vi.fn(),
   completeGate: vi.fn(),
   getLifecycleStatus: vi.fn(),
@@ -112,6 +116,7 @@ describe('pre-check-in pure read', () => {
     state.legalAt = FRESH;
     state.physicalAt = FRESH;
     vi.clearAllMocks();
+    requireBookingOpsRecordScope.mockResolvedValue({ id: BOOKING_ID, notes: null });
   });
 
   it('builds current readiness from persisted domain state without writes', async () => {
@@ -141,6 +146,21 @@ describe('pre-check-in pure read', () => {
       accountId: 'account-a',
       limit: 25,
     });
+  });
+
+  it('fails closed before pre-check-in mutation when canonical scope changed', async () => {
+    requireBookingOpsRecordScope.mockRejectedValueOnce(new Error('booking_scope_mismatch'));
+    const { runPreCheckinAction } = await import('../pre-checkin-control-center');
+
+    await expect(runPreCheckinAction({
+      bookingId: BOOKING_ID,
+      action: 'block_gate',
+      gateKey: 'property_ready',
+      expectedScope: { accountId: 'account-a', propertyId: 'property-a' },
+    })).rejects.toThrow('booking_scope_mismatch');
+
+    expect(adminUpdateLifecycleGate).not.toHaveBeenCalled();
+    expect(updateBookingOpsRecord).not.toHaveBeenCalled();
   });
 
   it('uses the oldest required domain observation so stale physical state fails freshness', async () => {

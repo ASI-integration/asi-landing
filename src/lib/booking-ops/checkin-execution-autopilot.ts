@@ -13,7 +13,7 @@ import {
   markGateInProgress,
 } from './lifecycle';
 import { getPreCheckinStatus, readPreCheckinStatus, type PreCheckinReadinessSnapshot } from './pre-checkin-control-center';
-import { getBookingOpsRecord, updateBookingOpsRecord } from './repository';
+import { getBookingOpsRecord, requireBookingOpsRecordScope, updateBookingOpsRecord } from './repository';
 import { shouldBlockCheckinInstructions } from './guest-legal-deposit-mvd-execution';
 import type {
   BookingOpsCommunicationChannel,
@@ -523,6 +523,7 @@ export async function queueCheckinInstructions(
 export async function markCheckinInstructionsSent(
   bookingId: string,
   metadata?: Record<string, unknown>,
+  expectedScope?: { accountId: string; propertyId: string },
 ): Promise<CheckinExecutionSnapshot> {
   const record = await loadRecord(bookingId);
   const legalGuard = await shouldBlockCheckinInstructions(record.id);
@@ -538,7 +539,10 @@ export async function markCheckinInstructionsSent(
     instructions_status: 'sent',
     metadata: { source: 'checkin_execution_autopilot_v1', sentAt: new Date().toISOString(), ...safeMetadata(metadata) },
   });
-  await updateBookingOpsRecord(record.id, { checkinReadinessStatus: 'ready' }, { actorType: 'system' });
+  await updateBookingOpsRecord(record.id, { checkinReadinessStatus: 'ready' }, {
+    actorType: 'system',
+    expectedScope,
+  });
   return getCheckinExecutionStatus(record.id);
 }
 
@@ -605,6 +609,7 @@ export async function reportAccessIssue(
   bookingId: string,
   reason: string,
   metadata?: Record<string, unknown>,
+  expectedScope?: { accountId: string; propertyId: string },
 ): Promise<CheckinExecutionSnapshot> {
   const record = await loadRecord(bookingId);
   const cleanReason = text(reason) || 'Проблема доступа при заезде';
@@ -630,13 +635,14 @@ export async function reportAccessIssue(
     opsStatus: 'problem_blocked',
     checkinReadinessStatus: 'problem',
     blockerReason: cleanReason,
-  }, { actorType: 'system' });
+  }, { actorType: 'system', expectedScope });
   return getCheckinExecutionStatus(record.id);
 }
 
 export async function markGuestCheckedIn(
   bookingId: string,
   metadata?: Record<string, unknown>,
+  expectedScope?: { accountId: string; propertyId: string },
 ): Promise<CheckinExecutionSnapshot> {
   const record = await loadRecord(bookingId);
   await assertCheckinReadiness(record.id);
@@ -656,7 +662,7 @@ export async function markGuestCheckedIn(
   await updateBookingOpsRecord(record.id, {
     opsStatus: 'ready_for_checkin',
     checkinReadinessStatus: 'ready',
-  }, { actorType: 'system' });
+  }, { actorType: 'system', expectedScope });
   return getCheckinExecutionStatus(record.id);
 }
 
@@ -691,8 +697,10 @@ export async function runCheckinExecutionAction(input: {
   note?: unknown;
   arrivalTime?: unknown;
   metadata?: Record<string, unknown>;
+  expectedScope?: { accountId: string; propertyId: string };
 }): Promise<CheckinExecutionSnapshot> {
   const bookingId = text(input.bookingId);
+  if (input.expectedScope) await requireBookingOpsRecordScope(bookingId, input.expectedScope);
   const reason = text(input.reason);
   const note = text(input.note);
   switch (input.action) {
@@ -701,7 +709,7 @@ export async function runCheckinExecutionAction(input: {
     case 'queue_instructions':
       return queueCheckinInstructions(bookingId, input.channel, input.metadata);
     case 'mark_instructions_sent':
-      return markCheckinInstructionsSent(bookingId, input.metadata);
+      return markCheckinInstructionsSent(bookingId, input.metadata, input.expectedScope);
     case 'request_arrival_confirmation':
       return requestArrivalConfirmation(bookingId, input.metadata);
     case 'mark_arrival_confirmed':
@@ -709,7 +717,12 @@ export async function runCheckinExecutionAction(input: {
     case 'mark_access_ready':
       return markAccessReady(bookingId, input.metadata);
     case 'report_access_issue':
-      return reportAccessIssue(bookingId, reason || 'Проблема доступа при заезде', input.metadata);
+      return reportAccessIssue(
+        bookingId,
+        reason || 'Проблема доступа при заезде',
+        input.metadata,
+        input.expectedScope,
+      );
     case 'resolve_access_issue':
       await adminUpdateLifecycleGate({
         bookingId,
@@ -727,7 +740,7 @@ export async function runCheckinExecutionAction(input: {
       });
       return getCheckinExecutionStatus(bookingId);
     case 'mark_guest_checked_in':
-      return markGuestCheckedIn(bookingId, input.metadata);
+      return markGuestCheckedIn(bookingId, input.metadata, input.expectedScope);
     case 'create_fallback':
       return (await createCheckinFallbackIfNeeded(bookingId, reason || 'Нужен ручной план заезда', input.metadata)).snapshot;
     case 'add_note': {

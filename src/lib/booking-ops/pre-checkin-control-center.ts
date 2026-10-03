@@ -2,7 +2,7 @@ import { guardBookingCommunicationDraft } from '@/lib/communication/booking-know
 import { randomUUID } from 'node:crypto';
 import { supabase } from '@/lib/supabase';
 import { buildAutoSendDecisionMetadata } from './communication-auto-send-policy';
-import { getBookingOpsRecord, listBookingOpsRecords, updateBookingOpsRecord } from './repository';
+import { getBookingOpsRecord, listBookingOpsRecords, requireBookingOpsRecordScope, updateBookingOpsRecord } from './repository';
 import {
   adminUpdateLifecycleGate,
   blockGate,
@@ -652,7 +652,11 @@ async function ensureCheckinInstructionsDraft(record: BookingOpsRecord): Promise
   });
 }
 
-export async function recomputeBookingCheckinReadiness(bookingId: string): Promise<PreCheckinReadinessSnapshot> {
+export async function recomputeBookingCheckinReadiness(
+  bookingId: string,
+  options?: { expectedScope?: { accountId: string; propertyId: string } },
+): Promise<PreCheckinReadinessSnapshot> {
+  if (options?.expectedScope) await requireBookingOpsRecordScope(bookingId, options.expectedScope);
   const input = await loadSnapshotInputs(bookingId);
   const prepGates = gateMap(input.lifecycle);
   const preparationDone = ['cleaning_scheduled', 'linen_scheduled', 'inspection_scheduled']
@@ -677,6 +681,9 @@ export async function recomputeBookingCheckinReadiness(bookingId: string): Promi
   const allExceptInstructions = snapshot.hardBlockers.every((item) =>
     item.gateKey === 'checkin_instructions_sent' && item.severity === 'missing');
   if (allExceptInstructions && snapshot.hardBlockers.length === 1) {
+    if (options?.expectedScope) {
+      await requireBookingOpsRecordScope(refreshed.record.id, options.expectedScope);
+    }
     await ensureCheckinInstructionsDraft(refreshed.record);
     snapshot = await getPreCheckinStatus(refreshed.record.id);
   }
@@ -685,13 +692,13 @@ export async function recomputeBookingCheckinReadiness(bookingId: string): Promi
     await updateBookingOpsRecord(refreshed.record.id, {
       opsStatus: 'ready_for_checkin',
       checkinReadinessStatus: 'ready',
-    }, { actorType: 'system' });
+    }, { actorType: 'system', expectedScope: options?.expectedScope });
   } else if (snapshot.status === 'blocked' || snapshot.status === 'overdue') {
     await updateBookingOpsRecord(refreshed.record.id, {
       opsStatus: 'problem_blocked',
       checkinReadinessStatus: 'problem',
       blockerReason: snapshot.topBlocker?.reason ?? null,
-    }, { actorType: 'system' });
+    }, { actorType: 'system', expectedScope: options?.expectedScope });
   }
   return snapshot;
 }
@@ -734,13 +741,15 @@ export async function runPreCheckinAction(input: {
   reason?: unknown;
   note?: unknown;
   metadata?: Record<string, unknown>;
+  expectedScope?: { accountId: string; propertyId: string };
 }): Promise<PreCheckinReadinessSnapshot> {
   const bookingId = text(input.bookingId);
+  if (input.expectedScope) await requireBookingOpsRecordScope(bookingId, input.expectedScope);
   const reason = text(input.reason);
   const note = text(input.note);
   switch (input.action) {
     case 'recompute':
-      return recomputeBookingCheckinReadiness(bookingId);
+      return recomputeBookingCheckinReadiness(bookingId, { expectedScope: input.expectedScope });
     case 'mark_ready_override':
       await adminUpdateLifecycleGate({
         bookingId,
@@ -783,10 +792,12 @@ export async function runPreCheckinAction(input: {
       });
       break;
     case 'add_note': {
-      const record = await getBookingOpsRecord(bookingId);
+      const record = input.expectedScope
+        ? await requireBookingOpsRecordScope(bookingId, input.expectedScope)
+        : await getBookingOpsRecord(bookingId);
       await updateBookingOpsRecord(bookingId, {
         notes: [record?.notes, note || reason].filter(Boolean).join('\n'),
-      }, { actorType: 'admin' });
+      }, { actorType: 'admin', expectedScope: input.expectedScope });
       break;
     }
     case 'block_gate':

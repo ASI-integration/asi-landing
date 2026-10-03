@@ -43,13 +43,23 @@ export type TurnoverCleaningActivation =
   | { kind: 'upcoming_booking'; previousBookingId: string; nextBookingId: string; cleaningTaskId: string; created: boolean }
   | { kind: 'fallback_task'; previousBookingId: string; taskId: string; created: boolean };
 
-export async function activateTurnoverCleaningAfterCheckout(previousBookingId: string, occurredAt?: string): Promise<TurnoverCleaningActivation> {
-  const previousResult = await supabase.from('booking_ops_records')
+export async function activateTurnoverCleaningAfterCheckout(
+  previousBookingId: string,
+  occurredAt?: string,
+  options?: { expectedScope?: { accountId: string; propertyId: string } },
+): Promise<TurnoverCleaningActivation> {
+  let previousQuery = supabase.from('booking_ops_records')
     .select('id,booking_id,account_id,property_id,check_out_at,normalized_status,ops_status')
-    .eq('id', previousBookingId).maybeSingle();
+    .eq('id', previousBookingId);
+  if (options?.expectedScope) {
+    previousQuery = previousQuery
+      .eq('account_id', options.expectedScope.accountId)
+      .eq('property_id', options.expectedScope.propertyId);
+  }
+  const previousResult = await previousQuery.maybeSingle();
   if (previousResult.error) throw new Error(previousResult.error.message);
   const previous = previousResult.data as (ReservationCandidate & { booking_id?: string | null; check_out_at?: string | null }) | null;
-  if (!previous) throw new Error('booking_not_found');
+  if (!previous) throw new Error(options?.expectedScope ? 'booking_scope_mismatch' : 'booking_not_found');
   const accountId = text(previous.account_id);
   const propertyId = text(previous.property_id);
   if (!accountId || accountId === 'legacy') throw new Error('booking_account_missing');

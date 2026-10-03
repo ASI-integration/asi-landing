@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { requireCrmOperatorSession } from '@/lib/crm/api-auth';
-import { resolveReservationAccess } from '@/lib/reservations/access';
+import { requireBookingOpsApiAccess } from '@/app/api/dashboard/booking-ops/access';
 import { sameIdentity, type PlatformDecision } from '@/lib/platform/decision';
 import { adaptResidentialIncidentDecision, adaptResidentialOpsDecision } from '@/lib/platform/ops-decision';
 import { resolveResidentialBookingIdentity } from '@/lib/platform/residential-booking-scope';
@@ -140,8 +140,14 @@ export async function GET(req: Request): Promise<NextResponse> {
   }
 
   try {
-    const access = await resolveReservationAccess(auth.session);
-    const identity = await resolveResidentialBookingIdentity(bookingId, access.accountId);
+    const access = await requireBookingOpsApiAccess(auth.session, bookingId);
+    if (!access.ok) return access.response;
+    const identity = {
+      kind: 'identified' as const,
+      accountId: access.accountId,
+      propertyId: access.propertyId,
+      bookingId: access.bookingId,
+    };
     const instayCheckout = await readInStayCheckoutStatus(bookingId);
     const closePrerequisites = await readBookingClosePrerequisites(bookingId, instayCheckout);
     const currentIdentity = await resolveResidentialBookingIdentity(bookingId, access.accountId);
@@ -213,8 +219,14 @@ export async function POST(req: Request): Promise<NextResponse> {
   }
 
   try {
-    const access = await resolveReservationAccess(auth.session);
-    const identity = await resolveResidentialBookingIdentity(bookingId, access.accountId);
+    const access = await requireBookingOpsApiAccess(auth.session, bookingId);
+    if (!access.ok) return access.response;
+    const identity = {
+      kind: 'identified' as const,
+      accountId: access.accountId,
+      propertyId: access.propertyId,
+      bookingId: access.bookingId,
+    };
     const actionResult = await runInStayCheckoutAction({
       bookingId,
       action,
@@ -229,6 +241,7 @@ export async function POST(req: Request): Promise<NextResponse> {
       result: body.result,
       actualCheckoutAt: body.actualCheckoutAt ?? body.actual_checkout_at,
       metadata: typeof body.metadata === 'object' && body.metadata ? body.metadata as Record<string, unknown> : {},
+      expectedScope: { accountId: identity.accountId, propertyId: identity.propertyId },
     });
     await emitLifecycleForAction({
       bookingId,
@@ -236,11 +249,13 @@ export async function POST(req: Request): Promise<NextResponse> {
       actorId: auth.session.email ?? auth.session.userId ?? null,
       source: 'instay_checkout',
       payload: { actualCheckoutAt: body.actualCheckoutAt ?? body.actual_checkout_at ?? null },
+      expectedScope: { accountId: access.accountId, propertyId: access.propertyId },
     });
     if (action === 'mark_guest_checked_out') {
       await activateTurnoverCleaningAfterCheckout(
         bookingId,
         text(body.actualCheckoutAt ?? body.actual_checkout_at) || undefined,
+        { expectedScope: { accountId: access.accountId, propertyId: access.propertyId } },
       );
     }
     const projected = await projectInStayAfterAction({

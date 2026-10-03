@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { requireCrmOperatorSession } from '@/lib/crm/api-auth';
-import { resolveReservationAccess } from '@/lib/reservations/access';
+import { requireBookingOpsApiAccess } from '@/app/api/dashboard/booking-ops/access';
 import { sameIdentity } from '@/lib/platform/decision';
 import { adaptResidentialOpsDecision } from '@/lib/platform/ops-decision';
 import { resolveResidentialBookingIdentity } from '@/lib/platform/residential-booking-scope';
@@ -105,8 +105,14 @@ export async function GET(req: Request): Promise<NextResponse> {
   }
 
   try {
-    const access = await resolveReservationAccess(auth.session);
-    const identity = await resolveResidentialBookingIdentity(bookingId, access.accountId);
+    const access = await requireBookingOpsApiAccess(auth.session, bookingId);
+    if (!access.ok) return access.response;
+    const identity = {
+      kind: 'identified' as const,
+      accountId: access.accountId,
+      propertyId: access.propertyId,
+      bookingId: access.bookingId,
+    };
     const [checkin, legalGuard] = await Promise.all([
       readCheckinExecutionStatus(bookingId),
       readCheckinInstructionsGuard(bookingId),
@@ -168,8 +174,14 @@ export async function POST(req: Request): Promise<NextResponse> {
   }
 
   try {
-    const access = await resolveReservationAccess(auth.session);
-    const identity = await resolveResidentialBookingIdentity(bookingId, access.accountId);
+    const access = await requireBookingOpsApiAccess(auth.session, bookingId);
+    if (!access.ok) return access.response;
+    const identity = {
+      kind: 'identified' as const,
+      accountId: access.accountId,
+      propertyId: access.propertyId,
+      bookingId: access.bookingId,
+    };
     const actionResult = await runCheckinExecutionAction({
       bookingId,
       action,
@@ -178,6 +190,7 @@ export async function POST(req: Request): Promise<NextResponse> {
       note: body.note,
       arrivalTime: body.arrivalTime ?? body.arrival_time,
       metadata: typeof body.metadata === 'object' && body.metadata ? body.metadata as Record<string, unknown> : {},
+      expectedScope: { accountId: identity.accountId, propertyId: identity.propertyId },
     });
     await emitLifecycleForAction({
       bookingId,
@@ -185,6 +198,7 @@ export async function POST(req: Request): Promise<NextResponse> {
       actorId: auth.session.email ?? auth.session.userId ?? null,
       source: 'checkin_execution',
       payload: { arrivalTime: body.arrivalTime ?? body.arrival_time ?? null },
+      expectedScope: { accountId: access.accountId, propertyId: access.propertyId },
     });
     const projected = await projectCheckinAfterAction({
       bookingId,

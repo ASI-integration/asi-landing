@@ -31,6 +31,7 @@ let legalDepositStatus = 'paid_manual';
 let legalMvdStatus = 'accepted_manual';
 let recordOverrides: Row = {};
 const syncBookingOpsTasksForRecordId = vi.fn(async () => ({ ok: true }));
+const requireBookingOpsRecordScope = vi.fn(async () => currentRecord());
 
 const baseRecord = {
   id: '11111111-1111-4111-8111-111111111111',
@@ -138,6 +139,7 @@ vi.mock('@/lib/supabase', () => ({
 
 vi.mock('../repository', () => ({
   getBookingOpsRecord: vi.fn(async () => currentRecord()),
+  requireBookingOpsRecordScope,
   syncBookingOpsTasksForRecordId,
 }));
 
@@ -276,6 +278,8 @@ describe('In-stay & Checkout Autopilot v1', () => {
     legalMvdStatus = 'accepted_manual';
     recordOverrides = {};
     syncBookingOpsTasksForRecordId.mockClear();
+    requireBookingOpsRecordScope.mockReset();
+    requireBookingOpsRecordScope.mockImplementation(async () => currentRecord());
   });
 
   it('pure in-stay and closeout reads do not initialize lifecycle or recompute legal readiness', async () => {
@@ -455,6 +459,22 @@ describe('In-stay & Checkout Autopilot v1', () => {
     expect(status.status).toBe('checked_out');
     expect(lifecycle.completed.map((item) => item.gateKey)).toContain('guest_checked_out');
     expect(syncBookingOpsTasksForRecordId).toHaveBeenCalledWith(record.id);
+  });
+
+  it('fails closed before checkout mutation when canonical scope no longer matches', async () => {
+    guestCheckedIn = true;
+    requireBookingOpsRecordScope.mockRejectedValueOnce(new Error('booking_scope_mismatch'));
+    const { runInStayCheckoutAction } = await import('../instay-checkout-autopilot');
+
+    await expect(runInStayCheckoutAction({
+      bookingId: record.id,
+      action: 'mark_guest_checked_out',
+      expectedScope: { accountId: 'account-1', propertyId: record.propertyId },
+    })).rejects.toThrow('booking_scope_mismatch');
+
+    expect(lifecycle.completed).toHaveLength(0);
+    expect(syncBookingOpsTasksForRecordId).not.toHaveBeenCalled();
+    expect(tables.booking_instay_checkout).toHaveLength(0);
   });
 
   it('mark inspection done completes post_checkout_inspection_done gate', async () => {

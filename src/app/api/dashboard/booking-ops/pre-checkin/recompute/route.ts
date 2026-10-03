@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { requireOpsAdminSession } from '@/lib/crm/api-auth';
-import { resolveReservationAccess } from '@/lib/reservations/access';
+import { requireBookingOpsApiAccess } from '@/app/api/dashboard/booking-ops/access';
 import { sameIdentity } from '@/lib/platform/decision';
 import { adaptResidentialOpsDecision } from '@/lib/platform/ops-decision';
 import { resolveResidentialBookingIdentity } from '@/lib/platform/residential-booking-scope';
@@ -33,8 +33,15 @@ export async function POST(req: Request): Promise<NextResponse> {
   }
 
   try {
-    const access = await resolveReservationAccess(auth.session);
-    const identity = await resolveResidentialBookingIdentity(bookingId, access.accountId);
+    const access = await requireBookingOpsApiAccess(auth.session, bookingId);
+    if (!access.ok) return access.response;
+    const identity = {
+      kind: 'identified' as const,
+      accountId: access.accountId,
+      propertyId: access.propertyId,
+      bookingId: access.bookingId,
+    };
+    const expectedScope = { accountId: access.accountId, propertyId: access.propertyId };
     const readiness = body.action
       ? await runPreCheckinAction({
           bookingId,
@@ -45,8 +52,9 @@ export async function POST(req: Request): Promise<NextResponse> {
           metadata: body.metadata && typeof body.metadata === 'object' && !Array.isArray(body.metadata)
             ? body.metadata as Record<string, unknown>
             : {},
+          expectedScope,
         })
-      : await recomputeBookingCheckinReadiness(bookingId);
+      : await recomputeBookingCheckinReadiness(bookingId, { expectedScope });
 
     let platformDecision = adaptResidentialOpsDecision(identity, 'pre_checkin', {
       available: true,

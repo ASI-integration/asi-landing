@@ -2,11 +2,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   getBookingOpsRecord: vi.fn(),
+  requireBookingOpsRecordScope: vi.fn(),
   updateBookingOpsRecord: vi.fn(),
 }));
 
 vi.mock('../repository', () => ({
   getBookingOpsRecord: mocks.getBookingOpsRecord,
+  requireBookingOpsRecordScope: mocks.requireBookingOpsRecordScope,
   updateBookingOpsRecord: mocks.updateBookingOpsRecord,
 }));
 
@@ -44,11 +46,12 @@ describe('Booking Ops action mutation tenant scope', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.getBookingOpsRecord.mockResolvedValue({ ...record });
+    mocks.requireBookingOpsRecordScope.mockResolvedValue({ ...record });
     mocks.updateBookingOpsRecord.mockResolvedValue({ ok: true, record: { ...record, documentsStatus: 'requested' } });
   });
 
   it('rejects a record outside the expected account/property before update', async () => {
-    mocks.getBookingOpsRecord.mockResolvedValueOnce({ ...record, accountId: 'account-b' });
+    mocks.requireBookingOpsRecordScope.mockRejectedValueOnce(new Error('booking_scope_mismatch'));
 
     const result = await applyBookingOpsOperatorAction(
       record.id,
