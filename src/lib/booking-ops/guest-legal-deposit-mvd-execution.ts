@@ -560,6 +560,26 @@ export async function listGuestLegalEvents(bookingId: string): Promise<GuestLega
   return (data ?? []).map((row) => ({ id: row.id, bookingId: row.booking_id, eventType: row.event_type, status: row.status, safeSummary: row.safe_summary, metadata: row.metadata ?? {}, createdAt: row.created_at })) as GuestLegalExecutionEvent[];
 }
 
+export async function readCheckinInstructionsGuard(
+  bookingId: string,
+): Promise<{ block: boolean; readiness: GuestLegalReadiness; reason: string | null } | null> {
+  const readiness = await getGuestLegalReadiness(bookingId);
+  const { canReleaseCheckInInstructions, readPhysicalReadiness } = await import('./physical-readiness-execution');
+  const physical = await readPhysicalReadiness(bookingId);
+  if (!readiness || !physical) return null;
+  const gate = canReleaseCheckInInstructions({
+    legalReady: readiness.status === 'ready_for_checkin',
+    physical,
+  });
+  return {
+    block: !gate.allowed,
+    readiness,
+    reason: readiness.status !== 'ready_for_checkin'
+      ? readiness.nextAction
+      : physical.blockers[0]?.reason ?? null,
+  };
+}
+
 export async function shouldBlockCheckinInstructions(bookingId: string): Promise<{ block: boolean; readiness: GuestLegalReadiness; reason: string | null }> {
   const readiness = await recomputeGuestLegalReadiness(bookingId);
   const { canReleaseCheckInInstructions, ensurePhysicalTasks } = await import('./physical-readiness-execution');

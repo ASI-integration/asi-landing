@@ -249,6 +249,86 @@ async function list(table: string, bookingId: string): Promise<Record<string, un
   return (data ?? []) as Record<string, unknown>[];
 }
 
+type PhysicalReadRows = {
+  cleaningRow: Record<string, unknown> | null;
+  linenRow: Record<string, unknown> | null;
+  suppliesRow: Record<string, unknown> | null;
+  maintenanceRows: Record<string, unknown>[];
+  readinessRow: Record<string, unknown> | null;
+  draftRows: Record<string, unknown>[];
+};
+
+async function readPhysicalRows(bookingId: string): Promise<PhysicalReadRows> {
+  const [cleaningRow, linenRow, suppliesRow, maintenanceRows, readinessRow, draftRows] = await Promise.all([
+    singleton('booking_cleaning_tasks', bookingId),
+    singleton('booking_linen_tasks', bookingId),
+    singleton('booking_supplies_tasks', bookingId),
+    list('booking_maintenance_tickets', bookingId),
+    singleton('booking_physical_readiness', bookingId),
+    list('booking_physical_coordination_drafts', bookingId),
+  ]);
+  return { cleaningRow, linenRow, suppliesRow, maintenanceRows, readinessRow, draftRows };
+}
+
+function oldestPhysicalObservedAt(rows: PhysicalReadRows): string {
+  const values = [
+    rows.readinessRow?.updated_at,
+    rows.cleaningRow?.updated_at,
+    rows.linenRow?.updated_at,
+    rows.suppliesRow?.updated_at,
+    ...rows.maintenanceRows.map((row) => row.updated_at),
+  ].map((value) => text(value, 64)).filter(Boolean);
+  const valid = values.filter((value) => Number.isFinite(Date.parse(value)));
+  if (!valid.length || valid.length !== values.length) return new Date(0).toISOString();
+  return valid.sort((a, b) => Date.parse(a) - Date.parse(b))[0]!;
+}
+
+function physicalOperationalInput(rows: PhysicalReadRows): ComputeInput {
+  return {
+    cleaningStatus: text(rows.cleaningRow?.status),
+    linenStatus: text(rows.linenRow?.status),
+    suppliesStatus: text(rows.suppliesRow?.status),
+    suppliesWaiverReason: text(rows.suppliesRow?.waiver_reason),
+    maintenance: rows.maintenanceRows.map((row) => ({
+      status: text(row.status),
+      isBlocking: Boolean(row.is_blocking),
+      reason: text(row.blocker_reason) || text(row.notes),
+    })),
+  };
+}
+
+function buildPhysicalReadSnapshot(
+  record: Awaited<ReturnType<typeof requireRecord>>,
+  rows: PhysicalReadRows,
+): PhysicalReadiness | null {
+  if (!rows.readinessRow) return null;
+  const operationalInput = physicalOperationalInput(rows);
+  const beforeApproval = computePhysicalReadiness({ ...operationalInput, finalApproved: false });
+  const approvalStillValid = beforeApproval.operationalBlockers.length === 0 && Boolean(rows.readinessRow.approved_at);
+  const computed = computePhysicalReadiness({ ...operationalInput, finalApproved: approvalStillValid });
+  return {
+    bookingId: record.id,
+    propertyId: record.propertyId ?? null,
+    status: computed.status,
+    blockers: computed.blockers,
+    operationalBlockers: computed.operationalBlockers,
+    finalReady: computed.finalReady,
+    approvedAt: approvalStillValid ? text(rows.readinessRow.approved_at) || null : null,
+    approvedBy: approvalStillValid ? text(rows.readinessRow.approved_by) || null : null,
+    cleaning: rows.cleaningRow ? mapTask(rows.cleaningRow) : null,
+    linen: rows.linenRow ? mapTask(rows.linenRow) : null,
+    supplies: rows.suppliesRow ? mapTask(rows.suppliesRow) : null,
+    maintenance: rows.maintenanceRows.map(mapTask),
+    drafts: rows.draftRows.map(mapDraft),
+    updatedAt: oldestPhysicalObservedAt(rows),
+  };
+}
+
+export async function readPhysicalReadiness(bookingId: string): Promise<PhysicalReadiness | null> {
+  const record = await requireRecord(bookingId);
+  return buildPhysicalReadSnapshot(record, await readPhysicalRows(record.id));
+}
+
 async function recordPhysicalEvent(input: { bookingId: string; propertyId: string | null; type: string; key: string; payload: Record<string, unknown> }) {
   return recordProcessedBookingAuditEvent({
     id: durableEventId('physical_readiness', input.bookingId, input.type, input.key),
@@ -339,16 +419,9 @@ export async function ensurePhysicalTasks(bookingId: string): Promise<PhysicalRe
 
 export async function recomputePhysicalReadiness(bookingId: string): Promise<PhysicalReadiness> {
   const record = await requireRecord(bookingId);
-  const [cleaningRow, linenRow, suppliesRow, maintenanceRows, readinessRow, draftRows] = await Promise.all([
-    singleton('booking_cleaning_tasks', record.id), singleton('booking_linen_tasks', record.id),
-    singleton('booking_supplies_tasks', record.id), list('booking_maintenance_tickets', record.id),
-    singleton('booking_physical_readiness', record.id), list('booking_physical_coordination_drafts', record.id),
-  ]);
-  const operationalInput = {
-    cleaningStatus: text(cleaningRow?.status), linenStatus: text(linenRow?.status), suppliesStatus: text(suppliesRow?.status),
-    suppliesWaiverReason: text(suppliesRow?.waiver_reason),
-    maintenance: maintenanceRows.map((row) => ({ status: text(row.status), isBlocking: Boolean(row.is_blocking), reason: text(row.blocker_reason) || text(row.notes) })),
-  };
+  const rows = await readPhysicalRows(record.id);
+  const { cleaningRow, linenRow, suppliesRow, maintenanceRows, readinessRow, draftRows } = rows;
+  const operationalInput = physicalOperationalInput(rows);
   const beforeApproval = computePhysicalReadiness({ ...operationalInput, finalApproved: false });
   const approvalStillValid = beforeApproval.operationalBlockers.length === 0 && Boolean(readinessRow?.approved_at);
   const computed = computePhysicalReadiness({ ...operationalInput, finalApproved: approvalStillValid });
@@ -514,7 +587,5 @@ export async function approveFinalPhysicalReadiness(bookingId: string, approvedB
 }
 
 export async function getPhysicalReadiness(bookingId: string): Promise<PhysicalReadiness | null> {
-  const id = requireUuid(bookingId);
-  const existing = await singleton('booking_physical_readiness', id);
-  return existing ? recomputePhysicalReadiness(id) : null;
+  return readPhysicalReadiness(bookingId);
 }

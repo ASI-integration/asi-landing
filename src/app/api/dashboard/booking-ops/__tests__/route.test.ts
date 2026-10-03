@@ -74,6 +74,20 @@ vi.mock('@/lib/booking-ops/legal-payment-autopilot', () => ({
   markMvdReportAccepted: vi.fn(),
 }));
 
+vi.mock('@/lib/booking-ops/guest-legal-deposit-mvd-execution', () => ({
+  readCheckinInstructionsGuard: vi.fn(async () => ({
+    block: false,
+    reason: null,
+    readiness: {
+      bookingId: 'ops-route',
+      propertyId: 'property-1',
+      status: 'ready_for_checkin',
+      blockers: [],
+      lastCheckedAt: new Date().toISOString(),
+    },
+  })),
+}));
+
 vi.mock('@/lib/booking-ops/pre-checkin-control-center', () => ({
   getPreCheckinStatus: vi.fn(async () => ({
     bookingId: 'ops-route',
@@ -125,38 +139,43 @@ vi.mock('@/lib/booking-ops/pre-checkin-control-center', () => ({
   ],
 }));
 
-vi.mock('@/lib/booking-ops/checkin-execution-autopilot', () => ({
-  getCheckinExecutionStatus: vi.fn(async () => ({
-    bookingId: 'ops-route',
-    status: 'ready_to_send_instructions',
-    execution: null,
-    instructionsStatus: 'not_prepared',
-    arrivalStatus: 'unknown',
-    accessStatus: 'unknown',
-    lifecycleReady: true,
-    lifecycle: null,
-    preCheckin: { status: 'ready_for_checkin' },
-    blockers: [],
-    communications: [],
-    nextAction: 'Подготовить или поставить инструкции в очередь',
-    updatedAt: '2026-06-30T10:00:00.000Z',
-  })),
-  runCheckinExecutionAction: vi.fn(async () => ({
-    bookingId: 'ops-route',
-    status: 'instructions_queued',
-    execution: null,
-    instructionsStatus: 'queued',
-    arrivalStatus: 'unknown',
-    accessStatus: 'unknown',
-    lifecycleReady: true,
-    lifecycle: null,
-    preCheckin: { status: 'ready_for_checkin' },
-    blockers: [],
-    communications: [],
-    nextAction: 'Проверить черновик и отметить отправку',
-    updatedAt: '2026-06-30T10:00:00.000Z',
-  })),
-}));
+vi.mock('@/lib/booking-ops/checkin-execution-autopilot', () => {
+  const snapshot = () => {
+    const now = new Date().toISOString();
+    return {
+      bookingId: 'ops-route',
+      status: 'ready_to_send_instructions',
+      execution: null,
+      instructionsStatus: 'not_prepared',
+      arrivalStatus: 'unknown',
+      accessStatus: 'ready',
+      lifecycleReady: true,
+      lifecycle: null,
+      preCheckin: {
+        bookingId: 'ops-route',
+        status: 'ready_for_checkin',
+        readinessScore: 100,
+        hardBlockers: [],
+        warnings: [],
+        requiredActions: [],
+        timeline: [],
+        topBlocker: null,
+        lifecycleScore: 100,
+        lastRecomputedAt: now,
+        metadata: {},
+      },
+      blockers: [],
+      communications: [],
+      nextAction: 'Подготовить или поставить инструкции в очередь',
+      updatedAt: now,
+    };
+  };
+  return {
+    getCheckinExecutionStatus: vi.fn(async () => snapshot()),
+    readCheckinExecutionStatus: vi.fn(async () => snapshot()),
+    runCheckinExecutionAction: vi.fn(async () => ({ ...snapshot(), status: 'instructions_queued', instructionsStatus: 'queued' })),
+  };
+});
 
 vi.mock('@/lib/booking-ops/instay-checkout-autopilot', () => ({
   getInStayCheckoutStatus: vi.fn(async () => ({
@@ -289,6 +308,28 @@ describe('Booking Ops dashboard routes', () => {
     const route = await import('../checkin-execution/route');
     const response = await route.GET(new Request('https://asi.test?bookingId=ops-route'));
     expect(response.status).toBe(401);
+  });
+
+  it('check-in GET uses the pure read path and returns an advisory decision', async () => {
+    const checkinModule = await import('@/lib/booking-ops/checkin-execution-autopilot');
+    vi.mocked(checkinModule.getCheckinExecutionStatus).mockClear();
+    vi.mocked(checkinModule.readCheckinExecutionStatus).mockClear();
+
+    const route = await import('../checkin-execution/route');
+    const response = await route.GET(new Request('https://asi.test?bookingId=ops-route'));
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(checkinModule.readCheckinExecutionStatus).toHaveBeenCalledWith('ops-route');
+    expect(checkinModule.getCheckinExecutionStatus).not.toHaveBeenCalled();
+    expect(payload.platformDecision).toMatchObject({
+      version: 'platform-decision-v0',
+      topic: 'checkin',
+      identity: { kind: 'identified', accountId: 'account-1', propertyId: 'property-1', bookingId: 'ops-route' },
+      permission: { automaticActionAllowed: false, executionAuthority: 'domain_revalidation_required' },
+    });
+    expect(payload.platformDecision.permission.allowedActions).not.toContain('release_instructions');
+    expect(payload.platformDecision.permission.forbiddenActions).toContain('send_guest_automatically');
   });
 
   it('check-in execution API rejects invalid action', async () => {

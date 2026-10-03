@@ -123,6 +123,19 @@ vi.mock('../pre-checkin-control-center', () => ({
     lastRecomputedAt: '2026-06-30T10:00:00.000Z',
     metadata: {},
   })),
+  readPreCheckinStatus: vi.fn(async () => ({
+    bookingId: record.id,
+    status: preCheckinStatus,
+    readinessScore: preCheckinStatus === 'ready_for_checkin' ? 100 : 50,
+    hardBlockers: preCheckinBlockers,
+    warnings: [],
+    requiredActions: [],
+    timeline: [],
+    topBlocker: preCheckinBlockers[0] ?? null,
+    lifecycleScore: 80,
+    lastRecomputedAt: '2026-06-30T10:00:00.000Z',
+    metadata: { readMode: 'persisted_current_state' },
+  })),
 }));
 
 vi.mock('../lifecycle', () => ({
@@ -141,6 +154,19 @@ vi.mock('../lifecycle', () => ({
   }),
   adminUpdateLifecycleGate: vi.fn(async () => ({ ok: true })),
   getLifecycleStatus: vi.fn(async () => ({
+    ok: true,
+    lifecycle: {
+      bookingId: record.id,
+      gates: guestCheckedIn ? [{ gateKey: 'guest_checked_in', status: 'completed' }] : [],
+      readinessScore: 100,
+      currentActiveGate: null,
+      blockedGates: [],
+      completedGates: [],
+      nextRequiredGates: [],
+      exceptions: [],
+    },
+  })),
+  readLifecycleStatus: vi.fn(async () => ({
     ok: true,
     lifecycle: {
       bookingId: record.id,
@@ -259,6 +285,24 @@ describe('Check-in Execution Autopilot v1', () => {
     const status = await getCheckinExecutionStatus(record.id);
 
     expect(status.status).toBe('ready_to_send_instructions');
+  });
+
+  it('pure check-in read does not initialize lifecycle or call the mutating pre-checkin getter', async () => {
+    const lifecycleModule = await import('../lifecycle');
+    const preCheckinModule = await import('../pre-checkin-control-center');
+    vi.mocked(lifecycleModule.initializeLifecycleForBooking).mockClear();
+    vi.mocked(preCheckinModule.getPreCheckinStatus).mockClear();
+    vi.mocked(preCheckinModule.readPreCheckinStatus).mockClear();
+
+    const { readCheckinExecutionStatus } = await import('../checkin-execution-autopilot');
+    const before = JSON.stringify(tables);
+    const status = await readCheckinExecutionStatus(record.id);
+
+    expect(status.status).toBe('ready_to_send_instructions');
+    expect(lifecycleModule.initializeLifecycleForBooking).not.toHaveBeenCalled();
+    expect(preCheckinModule.getPreCheckinStatus).not.toHaveBeenCalled();
+    expect(preCheckinModule.readPreCheckinStatus).toHaveBeenCalledWith(record.id);
+    expect(JSON.stringify(tables)).toBe(before);
   });
 
   it('queues instructions by creating one communication intent', async () => {

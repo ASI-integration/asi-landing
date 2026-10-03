@@ -9,6 +9,7 @@ import {
   completeGate,
   getLifecycleStatus,
   initializeLifecycleForBooking,
+  readLifecycleStatus,
 } from './lifecycle';
 import {
   BOOKING_LIFECYCLE_GATE_LABELS_RU,
@@ -455,40 +456,42 @@ async function listCommunications(bookingId: string): Promise<BookingOpsCommunic
   }));
 }
 
-async function loadSnapshotInputs(bookingId: string) {
+async function readSnapshotInputs(bookingId: string) {
   const id = text(bookingId);
   if (!id) throw new Error('booking_id_required');
   const record = await getBookingOpsRecord(id);
   if (!record) throw new Error('booking_not_found');
-  await initializeLifecycleForBooking(record.id);
   const [lifecycleResult, tasksResult, communications] = await Promise.all([
-    getLifecycleStatus(record.id),
+    readLifecycleStatus(record.id),
     listBookingOpsTasksForRecord(record.id),
     listCommunications(record.id),
   ]);
+  if (!lifecycleResult.ok || !lifecycleResult.lifecycle) {
+    throw new Error(lifecycleResult.error ?? 'lifecycle_unavailable');
+  }
   return {
     record,
-    lifecycle: lifecycleResult.lifecycle ?? null,
+    lifecycle: lifecycleResult.lifecycle,
     tasks: tasksResult.ok ? tasksResult.tasks : [],
     communications,
   };
 }
 
-export async function getPreCheckinStatus(bookingId: string): Promise<PreCheckinReadinessSnapshot> {
-  const { recomputeGuestLegalReadiness } = await import('./guest-legal-deposit-mvd-execution');
-  const { ensurePhysicalTasks } = await import('./physical-readiness-execution');
-  const [legal, physical] = await Promise.all([
-    recomputeGuestLegalReadiness(bookingId, { source: 'pre_checkin' }),
-    ensurePhysicalTasks(bookingId),
-  ]);
-  const input = await loadSnapshotInputs(bookingId);
-  const snapshot = computePreCheckinReadinessSnapshot({
-    bookingId: input.record.id,
-    record: input.record,
-    lifecycle: input.lifecycle,
-    tasks: input.tasks,
-    communications: input.communications,
-  });
+async function loadSnapshotInputs(bookingId: string) {
+  const id = text(bookingId);
+  if (!id) throw new Error('booking_id_required');
+  const record = await getBookingOpsRecord(id);
+  if (!record) throw new Error('booking_not_found');
+  const initialized = await initializeLifecycleForBooking(record.id);
+  if (!initialized.ok) throw new Error(initialized.error ?? 'lifecycle_unavailable');
+  return readSnapshotInputs(record.id);
+}
+
+function mergeDomainReadiness(
+  snapshot: PreCheckinReadinessSnapshot,
+  legal: { status: string; blockers: Array<{ key: string; reason: string }> },
+  physical: { status: string; blockers: Array<{ key: string; reason: string }>; finalReady: boolean },
+): PreCheckinReadinessSnapshot {
   const legalBlockers = legal.blockers
     .filter((item) => item.key === 'availability' || item.key === 'legal_flow')
     .map((item) => ({
@@ -517,7 +520,13 @@ export async function getPreCheckinStatus(bookingId: string): Promise<PreCheckin
     fallbackEligible: true,
   }));
   const extra = [...legalBlockers, ...physicalBlockers];
-  if (!extra.length) return snapshot;
+  const metadata = {
+    ...snapshot.metadata,
+    legalReadinessStatus: legal.status,
+    physicalReadinessStatus: physical.status,
+    physicalFinalReady: physical.finalReady,
+  };
+  if (!extra.length) return { ...snapshot, metadata };
   const hardBlockers = dedupeItems([...extra, ...snapshot.hardBlockers]);
   return {
     ...snapshot,
@@ -528,13 +537,63 @@ export async function getPreCheckinStatus(bookingId: string): Promise<PreCheckin
       key: item.key, title: item.title, action: 'Разобрать блокер', gateKey: item.gateKey,
     })),
     topBlocker: hardBlockers[0] ?? null,
-    metadata: {
-      ...snapshot.metadata,
-      legalReadinessStatus: legal.status,
-      physicalReadinessStatus: physical.status,
-      physicalFinalReady: physical.finalReady,
-    },
+    metadata,
   };
+}
+
+function oldestRequiredObservedAt(values: Array<string | null | undefined>): string {
+  const valid = values
+    .map((value) => text(value))
+    .filter((value) => value && Number.isFinite(Date.parse(value)))
+    .sort((a, b) => Date.parse(a) - Date.parse(b));
+  return valid.length === values.length ? valid[0]! : new Date(0).toISOString();
+}
+
+export async function readPreCheckinStatus(bookingId: string): Promise<PreCheckinReadinessSnapshot> {
+  const [{ getGuestLegalReadiness }, { readPhysicalReadiness }] = await Promise.all([
+    import('./guest-legal-deposit-mvd-execution'),
+    import('./physical-readiness-execution'),
+  ]);
+  const [legal, physical, input] = await Promise.all([
+    getGuestLegalReadiness(bookingId),
+    readPhysicalReadiness(bookingId),
+    readSnapshotInputs(bookingId),
+  ]);
+  if (!legal || !physical) throw new Error('precheckin_readiness_unavailable');
+  const snapshot = mergeDomainReadiness(computePreCheckinReadinessSnapshot({
+    bookingId: input.record.id,
+    record: input.record,
+    lifecycle: input.lifecycle,
+    tasks: input.tasks,
+    communications: input.communications,
+  }), legal, physical);
+  return {
+    ...snapshot,
+    // A fresh booking/task touch must never mask stale legal or physical readiness.
+    lastRecomputedAt: oldestRequiredObservedAt([
+      legal.lastCheckedAt ?? legal.updatedAt,
+      physical.updatedAt,
+    ]),
+    metadata: { ...snapshot.metadata, readMode: 'persisted_current_state' },
+  };
+}
+
+export async function getPreCheckinStatus(bookingId: string): Promise<PreCheckinReadinessSnapshot> {
+  const { recomputeGuestLegalReadiness } = await import('./guest-legal-deposit-mvd-execution');
+  const { ensurePhysicalTasks } = await import('./physical-readiness-execution');
+  const [legal, physical] = await Promise.all([
+    recomputeGuestLegalReadiness(bookingId, { source: 'pre_checkin' }),
+    ensurePhysicalTasks(bookingId),
+  ]);
+  const input = await loadSnapshotInputs(bookingId);
+  const snapshot = computePreCheckinReadinessSnapshot({
+    bookingId: input.record.id,
+    record: input.record,
+    lifecycle: input.lifecycle,
+    tasks: input.tasks,
+    communications: input.communications,
+  });
+  return mergeDomainReadiness(snapshot, legal, physical);
 }
 
 export async function getPreCheckinBlockers(bookingId: string): Promise<PreCheckinReadinessItem[]> {

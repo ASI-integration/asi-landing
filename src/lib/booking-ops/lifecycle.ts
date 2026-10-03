@@ -310,16 +310,15 @@ export async function getNextRequiredGates(bookingId: string): Promise<BookingLi
     .slice(0, 5);
 }
 
-export async function getLifecycleStatus(bookingId: string): Promise<{
+export async function readLifecycleStatus(bookingId: string): Promise<{
   ok: boolean;
   lifecycle?: BookingLifecycleSnapshot;
   error?: string;
 }> {
   const id = text(bookingId);
   if (!id) return { ok: false, error: 'booking_id_required' };
-  const initialized = await initializeLifecycleForBooking(id);
-  if (!initialized.ok) return { ok: false, error: initialized.error };
-  const gates = initialized.gates ?? await listGates(id);
+  const gates = await listGates(id);
+  if (!gates.length) return { ok: false, error: 'lifecycle_not_initialized' };
   const blockedGates = gates.filter((gate) => gate.status === 'blocked' || gate.status === 'failed');
   const nextRequiredGates = gates
     .filter((gate) => gate.status === 'pending' || gate.status === 'in_progress')
@@ -337,6 +336,18 @@ export async function getLifecycleStatus(bookingId: string): Promise<{
       exceptions: await listOpenExceptions(id),
     },
   };
+}
+
+export async function getLifecycleStatus(bookingId: string): Promise<{
+  ok: boolean;
+  lifecycle?: BookingLifecycleSnapshot;
+  error?: string;
+}> {
+  const id = text(bookingId);
+  if (!id) return { ok: false, error: 'booking_id_required' };
+  const initialized = await initializeLifecycleForBooking(id);
+  if (!initialized.ok) return { ok: false, error: initialized.error };
+  return readLifecycleStatus(id);
 }
 
 const TASK_GATE_MAP: Partial<Record<BookingOpsTaskType, BookingLifecycleGateKey>> = {

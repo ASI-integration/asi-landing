@@ -1,8 +1,12 @@
 import { NextResponse } from 'next/server';
 import { requireCrmOperatorSession } from '@/lib/crm/api-auth';
+import { resolveReservationAccess } from '@/lib/reservations/access';
+import { sameIdentity } from '@/lib/platform/decision';
+import { adaptResidentialOpsDecision } from '@/lib/platform/ops-decision';
+import { resolveResidentialBookingIdentity } from '@/lib/platform/residential-booking-scope';
 import {
   CheckinReadinessPrerequisiteError,
-  getCheckinExecutionStatus,
+  readCheckinExecutionStatus,
   runCheckinExecutionAction,
 } from '@/lib/booking-ops/checkin-execution-autopilot';
 import {
@@ -10,6 +14,7 @@ import {
   type BookingOpsCommunicationChannel,
 } from '@/lib/booking-ops/types';
 import { emitLifecycleForAction } from '@/lib/booking-ops/lifecycle-entry-adapter';
+import { readCheckinInstructionsGuard } from '@/lib/booking-ops/guest-legal-deposit-mvd-execution';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -55,8 +60,25 @@ export async function GET(req: Request): Promise<NextResponse> {
   }
 
   try {
-    const checkin = await getCheckinExecutionStatus(bookingId);
-    return NextResponse.json({ ok: true, checkin });
+    const access = await resolveReservationAccess(auth.session);
+    const identity = await resolveResidentialBookingIdentity(bookingId, access.accountId);
+    const [checkin, legalGuard] = await Promise.all([
+      readCheckinExecutionStatus(bookingId),
+      readCheckinInstructionsGuard(bookingId),
+    ]);
+    const currentIdentity = await resolveResidentialBookingIdentity(bookingId, access.accountId);
+    if (!sameIdentity(identity, currentIdentity)) {
+      return NextResponse.json({ ok: false, message: 'Состояние бронирования изменилось. Повторите запрос.' }, { status: 409 });
+    }
+    const platformDecision = legalGuard
+      ? adaptResidentialOpsDecision(identity, 'checkin', {
+          available: true,
+          identity,
+          observedAt: checkin.updatedAt,
+          value: { kind: 'checkin', checkin, legalGuard },
+        }, Date.now())
+      : adaptResidentialOpsDecision(identity, 'checkin', { available: false, reason: 'unavailable' }, Date.now());
+    return NextResponse.json({ ok: true, checkin, platformDecision });
   } catch (error) {
     if (error instanceof CheckinReadinessPrerequisiteError) {
       return NextResponse.json({
@@ -66,8 +88,17 @@ export async function GET(req: Request): Promise<NextResponse> {
         missingPrerequisites: error.missingPrerequisites,
       }, { status: 400 });
     }
-    const message = error instanceof Error ? error.message : 'Не удалось загрузить заселение.';
-    return NextResponse.json({ ok: false, message }, { status: statusForError(message) });
+    const code = error instanceof Error ? error.message : '';
+    if (code === 'booking_not_found') {
+      return NextResponse.json({ ok: false, message: 'Бронирование не найдено.' }, { status: 404 });
+    }
+    if (code === 'booking_scope_mismatch' || code === 'reservation_account_not_found') {
+      return NextResponse.json({ ok: false, message: 'Нет доступа к бронированию.' }, { status: 403 });
+    }
+    if (code === 'booking_scope_unavailable') {
+      return NextResponse.json({ ok: false, message: 'Не удалось подтвердить область бронирования.' }, { status: 409 });
+    }
+    return NextResponse.json({ ok: false, message: 'Не удалось загрузить заселение.' }, { status: statusForError(code) });
   }
 }
 

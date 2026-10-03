@@ -108,6 +108,27 @@ describe('Booking Lifecycle Gates v1', () => {
     });
   });
 
+  it('reads an initialized lifecycle without mutating persisted gates', async () => {
+    const { initializeLifecycleForBooking, readLifecycleStatus } = await import('../lifecycle');
+    await initializeLifecycleForBooking('ops-read');
+    const before = JSON.stringify(tables);
+
+    const result = await readLifecycleStatus('ops-read');
+
+    expect(result.ok).toBe(true);
+    expect(result.lifecycle?.bookingId).toBe('ops-read');
+    expect(JSON.stringify(tables)).toBe(before);
+  });
+
+  it('pure lifecycle read fails closed when lifecycle was never initialized', async () => {
+    const { readLifecycleStatus } = await import('../lifecycle');
+    await expect(readLifecycleStatus('ops-missing')).resolves.toEqual({
+      ok: false,
+      error: 'lifecycle_not_initialized',
+    });
+    expect(tables.booking_lifecycle_gates).toEqual([]);
+  });
+
   it('completes gates and updates readiness score', async () => {
     const {
       completeGate,

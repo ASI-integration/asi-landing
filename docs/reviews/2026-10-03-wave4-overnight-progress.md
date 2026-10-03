@@ -2,7 +2,7 @@
 
 Branch: `sol/wave4-residential-decision-integration-20261003`
 Starting HEAD: `aea51a1988f128ac67a024919225a500cea49fa4`
-Previous green checkpoint: `ec7821242d86e33b957ab86e83d42cdf1681c3f0`
+Previous green checkpoint: `9fdf0f191a738fc02b12400afda1665f44175ecb`
 Scope: local RU residential authenticated/server-side reads only.
 
 ## Implemented
@@ -11,11 +11,12 @@ Scope: local RU residential authenticated/server-side reads only.
 - Authenticated account ownership is checked before readiness/status loading and rechecked after the read.
 - Single-booking pre-check-in GET now returns advisory `platformDecision` built from the existing canonical readiness snapshot.
 - In-stay/checkout GET now returns advisory `in_stay`, `checkout`, and `deposit` decisions from the already-loaded canonical snapshot.
-- The same GET now maps already-loaded canonical `openIssues` through the existing incident adapter; no extra DB read or guard/recompute call is added.
-- Existing readiness/status engines remain authoritative; no second readiness engine was introduced.
+- The same GET maps already-loaded canonical `openIssues` through the existing incident adapter; no extra DB read or guard/recompute call is added.
+- Check-in GET now uses pure lifecycle/physical/pre-check-in/check-in readers and returns an advisory `checkin` PlatformDecision without lifecycle initialization, readiness recompute, physical writes, or `checkin_blocked` event writes.
+- Pure physical and pre-check-in readers reuse the existing domain compute functions; no second readiness engine was introduced.
 - No POST/action route consumes PlatformDecision as authorization.
 - `automaticActionAllowed` remains false and `send_guest_automatically` remains forbidden.
-- Check-in and closeout decisions were intentionally not wired: their current prerequisite/guard seams can recompute or write state.
+- Closeout remains intentionally unwired until its prerequisite seam is pure read-only.
 
 ## Changed files
 
@@ -23,19 +24,30 @@ Scope: local RU residential authenticated/server-side reads only.
 - `src/lib/platform/__tests__/residential-booking-scope.test.ts`
 - `src/app/api/dashboard/booking-ops/pre-checkin/route.ts`
 - `src/app/api/dashboard/booking-ops/instay-checkout/route.ts`
+- `src/app/api/dashboard/booking-ops/checkin-execution/route.ts`
 - `src/app/api/dashboard/booking-ops/__tests__/route.test.ts`
+- `src/lib/booking-ops/lifecycle.ts`
+- `src/lib/booking-ops/physical-readiness-execution.ts`
+- `src/lib/booking-ops/pre-checkin-control-center.ts`
+- `src/lib/booking-ops/checkin-execution-autopilot.ts`
+- `src/lib/booking-ops/guest-legal-deposit-mvd-execution.ts`
+- `src/lib/booking-ops/__tests__/physical-readiness-read.test.ts`
+- `src/lib/booking-ops/__tests__/pre-checkin-pure-read.test.ts`
+- `src/lib/booking-ops/__tests__/checkin-execution-autopilot.test.ts`
+- `src/lib/booking-ops/__tests__/lifecycle.test.ts`
 - `docs/reviews/2026-10-03-wave4-overnight-progress.md`
 
 ## Verification
 
 - Previous focused Wave 4 checkpoint: **137/137 PASS**.
 - Incident integration focused contour: **131/131 PASS**.
+- Pure check-in integration focused contour: **214/214 PASS**.
 - TypeScript typecheck: **PASS**.
 - Changed-file ESLint: **PASS**.
 - `git diff --check`: **PASS**.
 - Frozen Wave 3 groups, run once at final checkpoint:
-  - focused: **162/162 PASS**
-  - pilot: **135/135 PASS**
+  - focused: **163/163 PASS**
+  - pilot: **136/136 PASS**
   - location: **110/110 PASS**
   - Wave 2 current contour: **220/220 PASS** across 10 present files
   - safety: **87/87 PASS**
@@ -44,6 +56,6 @@ Scope: local RU residential authenticated/server-side reads only.
 
 ## Blockers / next step
 
-Current bounded Wave 4 slice has no failing blocker. Further check-in integration should first expose a pure read-only legal/readiness seam; closeout should first expose a pure read-only prerequisite seam. Until then, keep both out of PlatformDecision read integration rather than triggering stateful guards from GETs.
+Current bounded Wave 4 slice has no failing blocker. Next step: inspect `validateBookingClosePrerequisites` and split its existing prerequisite calculation into a pure read-only seam before wiring `closeout`; do not call recomputing/writing guards from GET.
 
 No push, merge, deploy, live DB/system, DNS, secret, package-install, or migration actions were performed.

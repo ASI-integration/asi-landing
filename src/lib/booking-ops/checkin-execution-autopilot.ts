@@ -9,9 +9,10 @@ import {
   completeGate,
   getLifecycleStatus,
   initializeLifecycleForBooking,
+  readLifecycleStatus,
   markGateInProgress,
 } from './lifecycle';
-import { getPreCheckinStatus, type PreCheckinReadinessSnapshot } from './pre-checkin-control-center';
+import { getPreCheckinStatus, readPreCheckinStatus, type PreCheckinReadinessSnapshot } from './pre-checkin-control-center';
 import { getBookingOpsRecord, updateBookingOpsRecord } from './repository';
 import { shouldBlockCheckinInstructions } from './guest-legal-deposit-mvd-execution';
 import type {
@@ -402,6 +403,60 @@ async function ensureCommunicationIntent(input: {
   return refreshed.ok ? refreshed.communications.find((item) => item.id === String((data as { id: string }).id)) ?? null : null;
 }
 
+function buildCheckinExecutionSnapshot(input: {
+  record: BookingOpsRecord;
+  execution: CheckinExecutionRow | null;
+  preCheckin: PreCheckinReadinessSnapshot;
+  lifecycle: Awaited<ReturnType<typeof readLifecycleStatus>>['lifecycle'] | null;
+  communications: BookingOpsCommunicationIntent[];
+}): CheckinExecutionSnapshot {
+  const guestCheckedIn = input.lifecycle?.gates.some((gate) =>
+    gate.gateKey === 'guest_checked_in' && (gate.status === 'completed' || gate.status === 'skipped')) ?? false;
+  const status = resolveStatus({
+    execution: input.execution,
+    preCheckin: input.preCheckin,
+    lifecycleGuestCheckedIn: guestCheckedIn,
+  });
+  const updatedAt = [input.execution?.updatedAt, input.preCheckin.lastRecomputedAt]
+    .filter((value): value is string => typeof value === 'string' && Number.isFinite(Date.parse(value)))
+    .sort((a, b) => Date.parse(b) - Date.parse(a))[0] ?? input.preCheckin.lastRecomputedAt;
+  return {
+    bookingId: input.record.id,
+    status,
+    execution: input.execution,
+    instructionsStatus: input.execution?.instructionsStatus ?? 'not_prepared',
+    arrivalStatus: input.execution?.arrivalStatus ?? 'unknown',
+    accessStatus: input.execution?.accessStatus ?? 'unknown',
+    lifecycleReady: input.preCheckin.status === 'ready_for_checkin' || isInstructionsOnlyBlocker(input.preCheckin),
+    lifecycle: input.lifecycle,
+    preCheckin: input.preCheckin,
+    blockers: buildBlockers({ execution: input.execution, preCheckin: input.preCheckin }),
+    communications: input.communications,
+    nextAction: nextAction(status),
+    updatedAt,
+  };
+}
+
+export async function readCheckinExecutionStatus(bookingId: string): Promise<CheckinExecutionSnapshot> {
+  const record = await loadRecord(bookingId);
+  const [execution, preCheckin, lifecycleResult, communicationResult] = await Promise.all([
+    getExecutionRow(record.id),
+    readPreCheckinStatus(record.id),
+    readLifecycleStatus(record.id),
+    listBookingOpsCommunicationsForRecord(record.id),
+  ]);
+  if (!lifecycleResult.ok || !lifecycleResult.lifecycle) {
+    throw new Error(lifecycleResult.error ?? 'lifecycle_unavailable');
+  }
+  return buildCheckinExecutionSnapshot({
+    record,
+    execution,
+    preCheckin,
+    lifecycle: lifecycleResult.lifecycle,
+    communications: communicationResult.ok ? communicationResult.communications : [],
+  });
+}
+
 export async function getCheckinExecutionStatus(bookingId: string): Promise<CheckinExecutionSnapshot> {
   const record = await loadRecord(bookingId);
   await initializeLifecycleForBooking(record.id);
@@ -411,25 +466,13 @@ export async function getCheckinExecutionStatus(bookingId: string): Promise<Chec
     getLifecycleStatus(record.id),
     listBookingOpsCommunicationsForRecord(record.id),
   ]);
-  const lifecycle = lifecycleResult.lifecycle ?? null;
-  const guestCheckedIn = lifecycle?.gates.some((gate) =>
-    gate.gateKey === 'guest_checked_in' && (gate.status === 'completed' || gate.status === 'skipped')) ?? false;
-  const status = resolveStatus({ execution, preCheckin, lifecycleGuestCheckedIn: guestCheckedIn });
-  return {
-    bookingId: record.id,
-    status,
+  return buildCheckinExecutionSnapshot({
+    record,
     execution,
-    instructionsStatus: execution?.instructionsStatus ?? 'not_prepared',
-    arrivalStatus: execution?.arrivalStatus ?? 'unknown',
-    accessStatus: execution?.accessStatus ?? 'unknown',
-    lifecycleReady: preCheckin.status === 'ready_for_checkin' || isInstructionsOnlyBlocker(preCheckin),
-    lifecycle,
     preCheckin,
-    blockers: buildBlockers({ execution, preCheckin }),
+    lifecycle: lifecycleResult.lifecycle ?? null,
     communications: communicationResult.ok ? communicationResult.communications : [],
-    nextAction: nextAction(status),
-    updatedAt: execution?.updatedAt ?? preCheckin.lastRecomputedAt,
-  };
+  });
 }
 
 export async function prepareCheckinInstructions(
