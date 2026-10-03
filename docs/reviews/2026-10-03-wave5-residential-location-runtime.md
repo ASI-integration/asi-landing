@@ -256,8 +256,8 @@ Scope: canonical property-bound residential location evidence and advisory Platf
 
 Worktree: `C:\Users\Admin\Documents\GitHub\asi-landing-wave5-residential-location-runtime`.
 Continuation starting HEAD: `b99eeb48b54304802f67f88ad2dbe43a159a502c`.
-Latest verified production HEAD: `8b85e8c1c5a0947e847f2603dfe1507cd19040c5`.
-All six checkpoints below were committed normally; no safety-layer bypass was needed.
+Latest verified production HEAD: `1dfa0d8e0343edd902df67f4fb6edcc5587712f9`.
+All checkpoints below were committed normally; no safety-layer bypass was needed.
 
 | Result HEAD | Slice | Focused | Frozen |
 | --- | --- | --- | --- |
@@ -267,10 +267,13 @@ All six checkpoints below were committed normally; no safety-layer bypass was ne
 | `5fb5e28e` | Physical + nested pre-checkin | 119/119, 11 files | 315/315, 29 files |
 | `4ee64c01` | Manual tasks + lifecycle writes | 62/62, 7 files | 315/315, 29 files |
 | `8b85e8c1` | Priority nested lifecycle callers | 187/187, 13 files | 315/315, 29 files |
+| `a0db5a16` | Task update/run and completion effects | green focused contour | 315/315, 29 files |
+| `c5e6edc4` | Telegram draft canonical scope | green focused contour | 315/315, 29 files |
+| `1dfa0d8e` | Recompute/communications + guest-intake scope | 42/42, 5 files | 315/315, 29 files |
 
 TypeScript and touched-file ESLint passed at every production checkpoint. Staged/unstaged diff-check and the cumulative diff from the starting HEAD passed. Test counts describe separate contours and must not be summed as unique tests.
 
-Exact changed paths since the continuation baseline (31 files, including the preserved staged work):
+Changed paths through `8b85e8c1` (31 files, including the preserved staged work); later checkpoints are summarized below:
 
 ```text
 docs/reviews/2026-10-03-wave5-residential-location-runtime.md
@@ -305,6 +308,16 @@ src/lib/booking-ops/physical-readiness-execution.ts
 src/lib/booking-ops/pre-checkin-control-center.ts
 src/lib/booking-ops/tasks.ts
 ```
+
+## Task effects, Telegram drafts, and recompute/intake continuation
+
+- `a0db5a16` binds task update/run, completion effects, task sync and communication side effects to canonical scope; `c5e6edc4` binds Telegram draft route create/reuse/update to the same scope.
+- Baseline for the latest slice: `c5e6edc42408c39e52981263978635a414031c2e`; result: `1dfa0d8e0343edd902df67f4fb6edcc5587712f9` (`fix(booking-ops): retain scope through recompute and guest intake`).
+- Latest changed files: `[id]/communications/route.ts`, `[id]/recompute/route.ts`, `guest-intake-autopilot.ts`, `lifecycle.ts`, two new scope tests, and a deterministic clock fix in the existing guest-intake test.
+- Canonical account/property/booking scope now survives recompute, guest-intake session/token/task/event/lifecycle mutations and communication planning; ownership is revalidated around asynchronous reads and before persistence. External guest sending policy is unchanged.
+- Verification: focused **42/42 PASS (5 files)**; frozen regression **315/315 PASS (29 files)**; TypeScript, touched-file ESLint and `git diff --check` **PASS**.
+- Remaining audit target: dashboard `[id]` record/lifecycle/lifecycle-summary reads and mutations plus the task-list GET still perform direct record/task reads after shared access without carrying `expectedScope` into the domain call.
+- Smallest safe next step: bind those routes to `access.bookingId` + canonical expected scope, add cross-tenant/freshness tests, then rerun the focused route/lifecycle contour before another frozen checkpoint.
 
 ## Operational boundary
 
