@@ -225,6 +225,27 @@ describe('controlled actual auto-send executor', () => {
     expect(sender).not.toHaveBeenCalled();
   });
 
+  it('blocks legacy owner or pilot scopes for account-scoped residential execution', async () => {
+    const intent = seedIntent({
+      actor_type: 'cleaner',
+      purpose: 'cleaner_task_assignment',
+      metadata: { recipient_ref: 'staff-123', owner_id: 'owner-legacy' },
+    });
+    scopeDecision.mockResolvedValueOnce({
+      enabled: true,
+      scope: { ...enabledScope, scopeType: 'owner', scopeRef: 'owner-legacy' },
+      globalEmergencyStop: false,
+    });
+    const queued = await enqueueAutoSendDelivery(intent.id, {}, { accountId: 'account-1' });
+    const sender = vi.fn(async () => ({ ok: true }));
+    const result = await executeAutoSendDelivery(
+      queued.ok ? queued.delivery.id : '',
+      { accountId: 'account-1', sender },
+    );
+    expect(result).toMatchObject({ ok: false, error: 'scope_not_account_bound' });
+    expect(sender).not.toHaveBeenCalled();
+  });
+
   it('records a scope dry-run-only execution without calling a provider', async () => {
     const intent = seedIntent();
     scopeDecision.mockResolvedValueOnce({
@@ -351,6 +372,24 @@ describe('controlled actual auto-send executor', () => {
       emergency.POST(new Request('https://asi.test/api/dashboard/booking-ops/communications/auto-send/emergency-stop', { method: 'POST', body: '{}' })),
     ]);
     expect(responses.map((response) => response.status)).toEqual([401, 401, 401, 401, 401, 401, 401, 401]);
+  });
+
+  it('requires an explicit accountId for the internal scheduled runner', async () => {
+    vi.stubEnv('BOOKING_OPS_AUTO_SEND_RUNNER_SECRET', 'runner-secret');
+    const internal = await import('@/app/api/internal/booking-ops/communications/auto-send/run/route');
+    const response = await internal.POST(new Request(
+      'https://asi.test/api/internal/booking-ops/communications/auto-send/run',
+      {
+        method: 'POST',
+        headers: {
+          Authorization: 'Bearer runner-secret',
+          'Content-Type': 'application/json',
+        },
+        body: '{}',
+      },
+    ));
+    expect(response.status).toBe(400);
+    vi.unstubAllEnvs();
   });
 
   it('requires a valid internal runner secret', async () => {

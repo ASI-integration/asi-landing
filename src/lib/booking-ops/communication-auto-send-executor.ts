@@ -36,6 +36,7 @@ export type ActualAutoSendChannel = 'telegram' | 'email' | 'web' | 'sms';
 
 export type BookingOpsCommunicationDelivery = {
   id: string;
+  accountId: string | null;
   communicationIntentId: string;
   bookingId: string | null;
   recipientRole: string;
@@ -123,6 +124,7 @@ type IntentRow = {
 
 type DeliveryRow = {
   id: string;
+  account_id: string | null;
   communication_intent_id: string;
   booking_id: string | null;
   recipient_role: string;
@@ -169,6 +171,7 @@ function mapIntent(row: IntentRow): BookingOpsCommunicationIntent {
 function mapDelivery(row: DeliveryRow): BookingOpsCommunicationDelivery {
   return {
     id: row.id,
+    accountId: row.account_id ?? null,
     communicationIntentId: row.communication_intent_id,
     bookingId: row.booking_id,
     recipientRole: row.recipient_role,
@@ -370,6 +373,7 @@ export async function enqueueAutoSendDelivery(
   const now = new Date().toISOString();
   const values = {
     id: randomUUID(),
+    account_id: context.record?.accountId ?? null,
     communication_intent_id: intent.id,
     booking_id: intent.bookingId ?? context.record?.bookingId ?? null,
     recipient_role: intent.actorType,
@@ -472,6 +476,9 @@ export async function executeAutoSendDelivery(
 ) {
   const delivery = await readDelivery(deliveryId);
   if (!delivery) return { ok: false as const, error: 'delivery_not_found' };
+  if (options.accountId && delivery.accountId !== options.accountId) {
+    return { ok: false as const, error: 'booking_scope_mismatch', delivery: null };
+  }
   if (delivery.status === 'sent') return { ok: true as const, delivery, duplicate: true };
 
   const intent = await readIntent(delivery.communicationIntentId);
@@ -504,6 +511,7 @@ export async function executeAutoSendDelivery(
     return { ok: false as const, error: decision.decision, delivery: blocked, decision };
   }
   const scopeResult = await (options.scopeResolver ?? resolveAutoSendScope)({
+    accountId: options.accountId ?? executionContext.record?.accountId ?? null,
     bookingId: executionContext.policyContext.bookingId,
     propertyId: executionContext.policyContext.propertyId,
     ownerId: executionContext.policyContext.ownerId,
@@ -517,6 +525,15 @@ export async function executeAutoSendDelivery(
     return { ok: false as const, error: reason, delivery: blocked, decision };
   }
   const scope = scopeResult.scope;
+  if (options.accountId && scope.scopeType !== 'booking' && scope.scopeType !== 'property') {
+    const blocked = await blockDelivery(delivery, decision, 'scope_not_account_bound');
+    return {
+      ok: false as const,
+      error: 'scope_not_account_bound',
+      delivery: blocked,
+      decision,
+    };
+  }
   const scopeKey = `${scope.scopeType}:${scope.scopeRef ?? ''}`;
   const scopeUsage = options.scopeUsage;
   const used = scopeUsage?.get(scopeKey) ?? 0;
@@ -638,7 +655,11 @@ export async function executeAutoSendDelivery(
 
 export async function executeEligibleAutoSendBatch(options: ExecuteAutoSendOptions = {}) {
   const maxBatchSize = Math.min(Math.max(options.maxBatchSize ?? 10, 1), 20);
-  const runId = await startAutoSendRun({ source: options.source ?? 'operator', dryRun: options.dryRun === true });
+  const runId = await startAutoSendRun({
+    source: options.source ?? 'operator',
+    dryRun: options.dryRun === true,
+    accountId: options.accountId ?? null,
+  });
   const eligible = await getEligibleAutoSendIntents({ limit: maxBatchSize, accountId: options.accountId });
   if (!eligible.ok) {
     await finishAutoSendRun(runId, {

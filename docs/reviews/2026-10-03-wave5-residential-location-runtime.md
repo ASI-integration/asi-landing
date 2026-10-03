@@ -2,6 +2,7 @@
 
 Branch: `sol/wave5-residential-location-runtime-20261003`
 Starting HEAD: `520eb93731e294162882f3f4439d54bcae892965`
+Latest committed baseline before the final auto-send scope slice: `e08fa16ab34ee7405d061be61c3ad99b4bdc9b9c`.
 Scope: canonical property-bound residential location evidence and advisory PlatformDecision reads.
 
 ## Implemented
@@ -72,7 +73,7 @@ Scope: canonical property-bound residential location evidence and advisory Platf
   - focused: **165/165 PASS**
   - pilot: **137/137 PASS**
   - location: **110/110 PASS**
-  - Wave 2: **220/220 PASS**
+  - Wave 2 current contour: **225/225 PASS**
   - safety: **87/87 PASS**
   - additional: **12/12 PASS**
 
@@ -86,16 +87,31 @@ Scope: canonical property-bound residential location evidence and advisory Platf
 - Lifecycle Orchestrator due-batch now filters `booking_ops_records` by the authenticated account instead of scanning all tenants.
 - Root auto-send queue/execute/dry-run paths now resolve the authenticated account, filter batch candidates by canonical `booking_ops_records.account_id`, require intent/delivery-to-booking access for direct operations, and recheck account ownership inside enqueue/execution before any delivery mutation or provider call.
 - Guest actual-send remains hard-blocked by the existing `knowledge_operator_review_required` guard even when a narrow send scope is enabled.
-- Auto-send scope-management/status tables remain accountless and inbound-intake APIs still operate on intake identifiers without an account column; these are the next tenant-boundary audit targets.
+- Auto-send scopes, runs, deliveries, queue/status APIs, and the internal scheduled runner are now account-explicit end to end. The prepared migration adds canonical `account_id` lineage, changes scope uniqueness to `account + type + ref`, and disables legacy non-global scopes before deterministic backfill.
+- Booking/property send scopes require canonical account ownership. Legacy free-form owner/pilot scopes are fail-closed in the RU residential dashboard until they have their own canonical ownership seam; the UI exposes only booking/property scopes.
+- The global emergency-stop intentionally remains a platform-admin kill switch and is not tenant-scoped.
+- Inbound-intake root APIs remain the next tenant-boundary audit target.
 
 ## Additional verification
 
 - Booking Ops focused route contour: **34/34 PASS**.
 - Lifecycle Orchestrator route contour: **5/5 PASS**.
-- Auto-send executor/account contour: **20/20 PASS**; combined Booking Ops + auto-send contour: **46/46 PASS**.
+- Final auto-send account-scope focused contour: **53/53 PASS** across executor, policy, scope isolation, API access, route wiring, scheduled-runner, and migration-contract tests.
 - TypeScript typecheck after tenant hardening: **PASS**.
 - Booking Ops / route-access ESLint: **PASS**.
 - `git diff --check`: **PASS**.
+
+## Auto-send account isolation
+
+- Added `supabase/migrations/20261003124500_booking_ops_auto_send_account_scope_v1.sql` (prepared and contract-tested only; not applied).
+- `booking_ops_communication_auto_send_scopes`, runs, and deliveries gain canonical account lineage.
+- Existing non-global scopes are disabled before backfill. Booking/property scopes are backfilled only when ownership resolves to exactly one canonical account; ambiguous/free-form legacy scopes remain disabled.
+- Delivery lineage is backfilled through communication intent -> booking record ownership.
+- Scope uniqueness becomes `account_scope_key + scope_type + scope_ref_key`, preventing cross-tenant collisions on identical external booking/property references.
+- Operational status filters scopes/runs/delivery counts to the authenticated account while still surfacing the global emergency stop.
+- Actual execution checks both delivery account lineage and the canonical booking record before any provider call.
+- Internal scheduled auto-send now requires an explicit UUID `accountId`; there is no global cross-tenant scheduled batch.
+- PlatformDecision semantics are unchanged; auto-send remains governed by its independent fail-closed policy and domain ownership checks.
 
 ## Operational boundary
 

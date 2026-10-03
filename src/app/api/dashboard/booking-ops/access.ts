@@ -27,6 +27,12 @@ function responseFor(code: string): NextResponse {
   if (code === 'property_id_required') {
     return NextResponse.json({ ok: false, message: 'Не указан объект.' }, { status: 400 });
   }
+  if (code === 'scope_not_account_bound') {
+    return NextResponse.json(
+      { ok: false, message: 'Этот уровень автоотправки пока не привязан к подтверждённой области аккаунта.' },
+      { status: 409 },
+    );
+  }
   if (code === 'account_workspace_unavailable') {
     return NextResponse.json({ ok: false, message: code }, { status: 503 });
   }
@@ -114,6 +120,54 @@ export async function requireBookingOpsApiDeliveryAccess(session: Session, deliv
       communicationId,
       ...(await requireBookingOpsRouteAccess(session, bookingId)),
     };
+  } catch (error) {
+    return {
+      ok: false as const,
+      response: responseFor(error instanceof Error ? error.message : ''),
+    };
+  }
+}
+
+export async function requireBookingOpsApiAutoSendScopeAccess(
+  session: Session,
+  scopeType: 'owner' | 'property' | 'booking' | 'pilot',
+  scopeRef: string,
+) {
+  try {
+    const account = await resolveBookingOpsAccount(session);
+    const ref = String(scopeRef ?? '').trim();
+    if (!ref) throw new Error('booking_scope_unavailable');
+
+    if (scopeType === 'property') {
+      await requireBookingOpsPropertyAccess(session, ref);
+      return { ok: true as const, ...account, scopeType, scopeRef: ref };
+    }
+
+    if (scopeType === 'booking') {
+      const bySource = await supabase
+        .from('booking_ops_records')
+        .select('id')
+        .eq('account_id', account.accountId)
+        .eq('booking_id', ref)
+        .limit(1)
+        .maybeSingle();
+      if (bySource.error) throw new Error('booking_scope_unavailable');
+      if (!bySource.data) {
+        const byId = await supabase
+          .from('booking_ops_records')
+          .select('id')
+          .eq('account_id', account.accountId)
+          .eq('id', ref)
+          .maybeSingle();
+        if (byId.error) throw new Error('booking_scope_unavailable');
+        if (!byId.data) throw new Error('booking_scope_mismatch');
+      }
+      return { ok: true as const, ...account, scopeType, scopeRef: ref };
+    }
+
+    // Owner and pilot refs are legacy/free-form in this residential contour.
+    // Do not let them authorize actual delivery until they have canonical account ownership.
+    throw new Error('scope_not_account_bound');
   } catch (error) {
     return {
       ok: false as const,

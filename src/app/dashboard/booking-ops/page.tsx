@@ -3702,7 +3702,7 @@ function communicationDelivery(item: BookingOpsCommunicationIntent) {
 }
 
 type AutoSendScopeView = {
-  scopeType: 'owner' | 'property' | 'booking' | 'pilot';
+  scopeType: 'property' | 'booking';
   scopeRef: string;
   actualSendEnabled: boolean;
   dryRunOnly: boolean;
@@ -3802,7 +3802,7 @@ function AutoSendOperationsCard({
         <div className="mt-3 space-y-3 rounded-md border border-emerald-200 bg-white p-3">
           <div className="grid gap-2 sm:grid-cols-[160px_1fr_auto]">
             <select value={scopeType} onChange={(event) => setScopeType(event.target.value as AutoSendScopeView['scopeType'])} className="rounded border border-slate-300 px-2 py-1.5 text-xs">
-              <option value="booking">Бронь</option><option value="property">Объект</option><option value="owner">Владелец</option><option value="pilot">Пилот / демо</option>
+              <option value="booking">Бронь</option><option value="property">Объект</option>
             </select>
             <input value={scopeRef} onChange={(event) => setScopeRef(event.target.value)} placeholder="ID уровня" className="rounded border border-slate-300 px-2 py-1.5 text-xs" />
             <label className="flex items-center gap-2 text-xs"><input type="checkbox" checked={dryRunOnly} onChange={(event) => setDryRunOnly(event.target.checked)} />Только проверка</label>
