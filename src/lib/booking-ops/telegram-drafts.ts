@@ -182,9 +182,11 @@ export async function insertBookingOpsTelegramDraft(
 
 export async function listBookingOpsTelegramDrafts(
   bookingOpsRecordId: string,
+  options?: { expectedScope?: ExpectedScope },
 ): Promise<{ ok: true; drafts: BookingOpsTelegramDraft[] } | { ok: false; error: string }> {
   const recordId = text(bookingOpsRecordId);
   if (!recordId) return { ok: false, error: 'id_required' };
+  if (options?.expectedScope) await requireBookingOpsRecordScope(recordId, options.expectedScope);
 
   const { data, error } = await supabase
     .from('booking_ops_telegram_drafts')
@@ -193,6 +195,7 @@ export async function listBookingOpsTelegramDrafts(
     .order('created_at', { ascending: false });
 
   if (error) return { ok: false, error: error.message };
+  if (options?.expectedScope) await requireBookingOpsRecordScope(recordId, options.expectedScope);
   return { ok: true, drafts: ((data ?? []) as TelegramDraftRow[]).map(mapRow) };
 }
 
@@ -200,6 +203,7 @@ export async function updateBookingOpsTelegramDraftStatus(
   bookingOpsRecordId: string,
   draftId: string,
   status: string,
+  options?: { expectedScope?: ExpectedScope },
 ): Promise<{ ok: true; draft: BookingOpsTelegramDraft } | { ok: false; error: string }> {
   const recordId = text(bookingOpsRecordId);
   const id = text(draftId);
@@ -208,6 +212,7 @@ export async function updateBookingOpsTelegramDraftStatus(
   if (!(BOOKING_OPS_TELEGRAM_DRAFT_STATUSES as readonly string[]).includes(nextStatus)) {
     return { ok: false, error: 'invalid_status' };
   }
+  if (options?.expectedScope) await requireBookingOpsRecordScope(recordId, options.expectedScope);
 
   const { data, error } = await supabase
     .from('booking_ops_telegram_drafts')
@@ -219,7 +224,9 @@ export async function updateBookingOpsTelegramDraftStatus(
 
   if (error) return { ok: false, error: error.message };
   if (!data) return { ok: false, error: 'not_found' };
-  await syncBookingOpsTasksForRecordId(recordId);
+  if (options?.expectedScope) await requireBookingOpsRecordScope(recordId, options.expectedScope);
+  const syncOptions = options?.expectedScope ? { expectedScope: options.expectedScope } : undefined;
+  await syncBookingOpsTasksForRecordId(recordId, syncOptions);
   return { ok: true, draft: mapRow(data as TelegramDraftRow) };
 }
 
