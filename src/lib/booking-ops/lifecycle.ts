@@ -1,5 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { supabase } from '@/lib/supabase';
+import { requireBookingOpsRecordScope } from './repository';
+
 import type { BookingOpsRecord } from './types';
 import type { BookingOpsTask, BookingOpsTaskType } from './task-types';
 import {
@@ -29,6 +31,8 @@ export type {
   BookingLifecycleSource,
   BookingLifecycleStatus,
 } from './lifecycle-types';
+
+type ExpectedScope = { accountId: string; propertyId: string };
 
 type GateRow = {
   id: string;
@@ -128,12 +132,14 @@ async function listOpenExceptions(bookingId: string): Promise<BookingLifecycleEx
 }
 
 async function ensureException(input: {
+  expectedScope?: ExpectedScope;
   bookingId: string;
   gateKey: BookingLifecycleGateKey;
   reason: string;
   source: BookingLifecycleSource;
   metadata?: Record<string, unknown>;
 }): Promise<void> {
+  if (input.expectedScope) await requireBookingOpsRecordScope(input.bookingId, input.expectedScope);
   const now = new Date().toISOString();
   await supabase
     .from('booking_lifecycle_exceptions')
@@ -151,7 +157,8 @@ async function ensureException(input: {
     }, { onConflict: 'booking_id,gate_key' });
 }
 
-async function resolveException(bookingId: string, gateKey: BookingLifecycleGateKey): Promise<void> {
+async function resolveException(bookingId: string, gateKey: BookingLifecycleGateKey, expectedScope?: ExpectedScope): Promise<void> {
+  if (expectedScope) await requireBookingOpsRecordScope(bookingId, expectedScope);
   const now = new Date().toISOString();
   await supabase
     .from('booking_lifecycle_exceptions')
@@ -161,13 +168,14 @@ async function resolveException(bookingId: string, gateKey: BookingLifecycleGate
     .eq('status', 'open');
 }
 
-export async function initializeLifecycleForBooking(bookingId: string): Promise<{
+export async function initializeLifecycleForBooking(bookingId: string, expectedScope?: ExpectedScope): Promise<{
   ok: boolean;
   gates?: BookingLifecycleGate[];
   error?: string;
 }> {
   const id = text(bookingId);
   if (!id) return { ok: false, error: 'booking_id_required' };
+  if (expectedScope) await requireBookingOpsRecordScope(id, expectedScope);
   const now = new Date().toISOString();
   const rows = BOOKING_LIFECYCLE_GATE_KEYS.map((gateKey) => ({
     id: randomUUID(),
@@ -189,6 +197,7 @@ export async function initializeLifecycleForBooking(bookingId: string): Promise<
 }
 
 async function updateGate(input: {
+  expectedScope?: ExpectedScope;
   bookingId: string;
   gateKey: BookingLifecycleGateKey;
   status: BookingLifecycleStatus;
@@ -199,7 +208,8 @@ async function updateGate(input: {
 }): Promise<{ ok: boolean; gate?: BookingLifecycleGate; error?: string }> {
   const id = text(input.bookingId);
   if (!id) return { ok: false, error: 'booking_id_required' };
-  await initializeLifecycleForBooking(id);
+  await initializeLifecycleForBooking(id, input.expectedScope);
+  if (input.expectedScope) await requireBookingOpsRecordScope(id, input.expectedScope);
   const now = new Date().toISOString();
   const source = input.source ?? 'system';
   const row = {
@@ -221,6 +231,7 @@ async function updateGate(input: {
   if (error || !data) return { ok: false, error: error?.message ?? 'gate_update_failed' };
   if (input.status === 'blocked' || input.status === 'failed') {
     await ensureException({
+      expectedScope: input.expectedScope,
       bookingId: id,
       gateKey: input.gateKey,
       reason: text(input.reason) || input.status,
@@ -228,7 +239,7 @@ async function updateGate(input: {
       metadata: input.metadata,
     });
   } else if (input.status === 'completed' || input.status === 'skipped') {
-    await resolveException(id, input.gateKey);
+    await resolveException(id, input.gateKey, input.expectedScope);
   }
   return { ok: true, gate: mapGate(data as GateRow) };
 }
@@ -237,16 +248,18 @@ export async function markGateInProgress(
   bookingId: string,
   gateKey: BookingLifecycleGateKey,
   metadata?: Record<string, unknown>,
+  expectedScope?: ExpectedScope,
 ): Promise<{ ok: boolean; gate?: BookingLifecycleGate; error?: string }> {
-  return updateGate({ bookingId, gateKey, status: 'in_progress', metadata });
+  return updateGate({ bookingId, gateKey, status: 'in_progress', metadata, expectedScope });
 }
 
 export async function completeGate(
   bookingId: string,
   gateKey: BookingLifecycleGateKey,
   metadata?: Record<string, unknown>,
+  expectedScope?: ExpectedScope,
 ): Promise<{ ok: boolean; gate?: BookingLifecycleGate; error?: string }> {
-  return updateGate({ bookingId, gateKey, status: 'completed', metadata });
+  return updateGate({ bookingId, gateKey, status: 'completed', metadata, expectedScope });
 }
 
 export async function blockGate(
@@ -254,8 +267,9 @@ export async function blockGate(
   gateKey: BookingLifecycleGateKey,
   reason: string,
   metadata?: Record<string, unknown>,
+  expectedScope?: ExpectedScope,
 ): Promise<{ ok: boolean; gate?: BookingLifecycleGate; error?: string }> {
-  return updateGate({ bookingId, gateKey, status: 'blocked', reason, metadata });
+  return updateGate({ bookingId, gateKey, status: 'blocked', reason, metadata, expectedScope });
 }
 
 export async function skipGate(
@@ -375,30 +389,31 @@ const TASK_GATE_MAP: Partial<Record<BookingOpsTaskType, BookingLifecycleGateKey>
   track_deposit_return: 'deposit_return_ready',
 };
 
-export async function syncLifecycleFromTask(task: BookingOpsTask): Promise<void> {
+export async function syncLifecycleFromTask(task: BookingOpsTask, expectedScope?: ExpectedScope): Promise<void> {
   const gateKey = TASK_GATE_MAP[task.taskType];
   if (!gateKey) return;
+  if (expectedScope) await requireBookingOpsRecordScope(task.bookingOpsRecordId, expectedScope);
   const metadata = { taskId: task.id, taskType: task.taskType, taskStatus: task.status };
   if (task.status === 'blocked') {
-    await blockGate(task.bookingOpsRecordId, gateKey, task.description ?? 'Задача заблокирована', metadata);
+    await blockGate(task.bookingOpsRecordId, gateKey, task.description ?? 'Задача заблокирована', metadata, expectedScope);
     return;
   }
   if (task.status === 'completed') {
-    await completeGate(task.bookingOpsRecordId, gateKey, metadata);
+    await completeGate(task.bookingOpsRecordId, gateKey, metadata, expectedScope);
     if (task.taskType === 'maintenance_needed') {
-      await completeGate(task.bookingOpsRecordId, 'maintenance_resolved', metadata);
+      await completeGate(task.bookingOpsRecordId, 'maintenance_resolved', metadata, expectedScope);
     }
     if (task.taskType === 'unit_inspection_needed' || task.taskType === 'inspection_needed') {
-      await completeGate(task.bookingOpsRecordId, 'post_checkout_inspection_done', metadata);
+      await completeGate(task.bookingOpsRecordId, 'post_checkout_inspection_done', metadata, expectedScope);
     }
     return;
   }
   if (task.status === 'in_progress') {
-    await markGateInProgress(task.bookingOpsRecordId, gateKey, metadata);
+    await markGateInProgress(task.bookingOpsRecordId, gateKey, metadata, expectedScope);
     return;
   }
   if (task.status === 'open') {
-    await completeGate(task.bookingOpsRecordId, gateKey, metadata);
+    await completeGate(task.bookingOpsRecordId, gateKey, metadata, expectedScope);
   }
 }
 

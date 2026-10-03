@@ -133,18 +133,27 @@ export async function createBookingOpsTask(
 
   if (options?.expectedScope) await requireBookingOpsRecordScope(recordId, options.expectedScope);
   const existing = await findOpenTaskByType(recordId, taskType);
-  if (options?.expectedScope) await requireBookingOpsRecordScope(recordId, options.expectedScope);
-  if (existing) return { ok: true, task: existing, created: false };
+  const canonicalRecord = options?.expectedScope
+    ? await requireBookingOpsRecordScope(recordId, options.expectedScope)
+    : null;
+  if (existing) {
+    if (canonicalRecord && existing.bookingId !== canonicalRecord.bookingId) {
+      return { ok: false, error: 'task_booking_scope_mismatch' };
+    }
+    return { ok: true, task: existing, created: false };
+  }
 
   const now = nowIso();
   const id = randomUUID();
-  if (options?.expectedScope) await requireBookingOpsRecordScope(recordId, options.expectedScope);
+  const writeRecord = options?.expectedScope
+    ? await requireBookingOpsRecordScope(recordId, options.expectedScope)
+    : null;
   const { data, error } = await supabase
     .from('booking_ops_tasks')
     .insert({
       id,
       booking_ops_record_id: recordId,
-      booking_id: text(input.bookingId) || null,
+      booking_id: writeRecord ? writeRecord.bookingId : text(input.bookingId) || null,
       task_type: taskType,
       title: input.title,
       description: input.description ?? null,
@@ -178,7 +187,7 @@ export async function createBookingOpsTask(
     dedupeKey: `task-created:${task.id}`,
   });
   if (options?.expectedScope) await requireBookingOpsRecordScope(recordId, options.expectedScope);
-  await syncLifecycleFromTask(task);
+  await syncLifecycleFromTask(task, options?.expectedScope);
   return { ok: true, task, created: true };
 }
 
@@ -267,7 +276,7 @@ export async function updateBookingOpsTask(
     });
   }
   if (options?.expectedScope) await requireBookingOpsRecordScope(recordId, options.expectedScope);
-  await syncLifecycleFromTask(task);
+  await syncLifecycleFromTask(task, options?.expectedScope);
   return { ok: true, task };
 }
 

@@ -28,7 +28,7 @@ function query() {
 describe('operator task mutation execution scope', () => {
   beforeEach(() => {
     vi.resetAllMocks(); writes.length = 0; existing = null; onRead = undefined;
-    mocks.scope.mockResolvedValue({ id: 'ops-a', ...scope });
+    mocks.scope.mockResolvedValue({ id: 'ops-a', bookingId: 'canonical-source-booking', ...scope });
     mocks.from.mockImplementation(query);
   });
   it.each([
@@ -39,6 +39,29 @@ describe('operator task mutation execution scope', () => {
     await expect(call()).rejects.toThrow('booking_scope_mismatch');
     expect(mocks.from).not.toHaveBeenCalled();
     expect(mocks.event).not.toHaveBeenCalled();
+  });
+  it('binds source booking to the final canonical record rather than caller input', async () => {
+    mocks.scope.mockResolvedValueOnce({ id: 'ops-a', bookingId: 'old-source', ...scope });
+    mocks.scope.mockResolvedValueOnce({ id: 'ops-a', bookingId: 'old-source', ...scope });
+    const result = await createBookingOpsTask({ ...input, bookingId: 'foreign-source' }, { expectedScope: scope });
+    expect(result.ok && result.task.bookingId).toBe('canonical-source-booking');
+    expect(mocks.sync).toHaveBeenCalledWith(expect.objectContaining({
+      bookingOpsRecordId: 'ops-a', bookingId: 'canonical-source-booking',
+    }), scope);
+  });
+  it('rejects a corrupt duplicate source-booking link without effects', async () => {
+    existing = { id: 'task-a', booking_ops_record_id: 'ops-a', booking_id: 'foreign-source', status: 'open' };
+    const result = await createBookingOpsTask(input, { expectedScope: scope });
+    expect(result).toEqual({ ok: false, error: 'task_booking_scope_mismatch' });
+    expect(writes).toEqual([]);
+    expect(mocks.event).not.toHaveBeenCalled();
+    expect(mocks.sync).not.toHaveBeenCalled();
+  });
+  it('reuses a canonically linked duplicate without effects', async () => {
+    existing = { id: 'task-a', booking_ops_record_id: 'ops-a', booking_id: 'canonical-source-booking', status: 'open' };
+    const result = await createBookingOpsTask(input, { expectedScope: scope });
+    expect(result.ok && result.created).toBe(false);
+    expect(writes).toEqual([]);
   });
   it('revalidates after the duplicate-task lookup before creation', async () => {
     onRead = () => mocks.scope.mockRejectedValue(new Error('booking_scope_mismatch'));

@@ -225,13 +225,22 @@ Scope: canonical property-bound residential location evidence and advisory Platf
 
 ## Physical readiness execution scope checkpoint
 
-- Baseline HEAD: `49f15c709367ac3111fe35c8a9308b55245d6da4`. Result: local checkpoint titled `fix(booking-ops): revalidate physical readiness execution scope` (see branch log).
+- Baseline HEAD: `49f15c709367ac3111fe35c8a9308b55245d6da4`. Result: `5fb5e28e22e51e74ec7a9306fb780bda8a838147` (`fix(booking-ops): revalidate physical readiness execution scope`).
 - Files: physical-readiness route and route test; physical-readiness execution; tasks; lifecycle-entry adapter and test; guest-legal execution; pre-checkin control center; new physical-readiness-scope, tasks-scope and pre-checkin-scope-propagation tests; this review.
 - Shared route access carries canonical scope through all physical actions, initialization/recompute, cleaning/linen/supplies/maintenance, coordination drafts, final approval, task closure and lifecycle/audit events. Domain guards repeat before writes and after asynchronous reads; nested pre-checkin/legal/physical readiness and knowledge-reviewed draft preparation retain expected scope.
 - Verification: **119/119 focused (11 files: physical/task/lifecycle 100 + pre-checkin 19)**; frozen contour **315/315 (29 files, original 309 plus 6 lifecycle scope cases)**; TypeScript / touched-file ESLint / diff-check **PASS**.
 - Adversarial tests cover ownership changes before task writes, approval/event effects and knowledge-reviewed draft persistence. Guest sending, simulated release, provenance and readiness gates remain unchanged.
 - Remaining blocker: task create/update/run routes still drop canonical scope before completion/communication effects; pre-checkin override/fallback paths need a separate execution-time scope audit.
 - Smallest safe next step: trace task completion/action effects end to end, then bind task routes and domain effects to canonical scope; never accept source booking identity from payloads.
+
+## Manual task creation and lifecycle scope checkpoint
+
+- Baseline HEAD: `5fb5e28e22e51e74ec7a9306fb780bda8a838147`. Result: local checkpoint titled `fix(booking-ops): bind manual tasks and lifecycle writes to scope` (see branch log).
+- Files: `[id]/tasks/route.ts`, `__tests__/task-create-scope.test.ts`, `tasks.ts`, `lifecycle.ts`, `tasks-scope.test.ts`, `lifecycle-task-scope.test.ts`, this review.
+- Manual creation uses canonical shared-access ID and scope. The domain derives source booking from its final canonical record, ignores caller source identity, and refuses a corrupt duplicate source link. Task lifecycle propagation now retains expected scope through initialization, gate updates, exception writes and secondary maintenance/inspection gates.
+- Verification: **62/62 focused (7 files)**; frozen contour **315/315 (29 files)**; TypeScript / touched-file ESLint / diff-check **PASS**.
+- Remaining blocker: task update/run completion and communication effects still need end-to-end scope propagation. Existing legal/physical/pre-checkin gate callers need to pass scope into the newly guarded nested lifecycle write seam.
+- Smallest safe next step: propagate lifecycle scope from the already scoped priority domains and pre-checkin override/fallback actions; then separately trace task completion/action communication effects.
 
 ## Operational boundary
 
