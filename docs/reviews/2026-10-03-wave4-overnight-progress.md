@@ -2,7 +2,7 @@
 
 Branch: `sol/wave4-residential-decision-integration-20261003`
 Starting HEAD: `aea51a1988f128ac67a024919225a500cea49fa4`
-Previous green checkpoint: `305da37ce3958659102b72a7517c27b437182613`
+Previous green checkpoint: `7d2989da844c9cc180bf359eecd373723a97f693`
 Scope: local RU residential authenticated/server-side reads only.
 
 ## Implemented
@@ -16,6 +16,8 @@ Scope: local RU residential authenticated/server-side reads only.
 - Pure physical and pre-check-in readers reuse the existing domain compute functions; no second readiness engine was introduced.
 - In-stay/checkout GET now also uses a pure persisted-state reader and exposes advisory `closeout`; the existing close-prerequisite calculation is shared between pure GET reads and the mutating command guard.
 - `close_booking` is proposed only when pure canonical prerequisites are empty; the POST close command still recomputes legal readiness and revalidates the canonical guard.
+- Authenticated Booking Ops communications GET is now account-scoped and re-runs the existing Wave 2 authoritative fact resolver for guest intents before adapting its exact result to advisory `communication` PlatformDecisions.
+- Persisted `knowledge_summary` metadata is not treated as evidence; missing authoritative fact scope produces an unavailable decision. Internal/non-guest intents are not given fabricated fact decisions.
 - No POST/action route consumes PlatformDecision as authorization.
 - `automaticActionAllowed` remains false and `send_guest_automatically` remains forbidden.
 
@@ -38,6 +40,8 @@ Scope: local RU residential authenticated/server-side reads only.
 - `src/lib/booking-ops/__tests__/lifecycle.test.ts`
 - `src/lib/booking-ops/instay-checkout-autopilot.ts`
 - `src/lib/booking-ops/__tests__/instay-checkout-autopilot.test.ts`
+- `src/app/api/dashboard/booking-ops/[id]/communications/route.ts`
+- `src/app/api/dashboard/booking-ops/__tests__/communications-platform-route.test.ts`
 - `docs/reviews/2026-10-03-wave4-overnight-progress.md`
 
 ## Verification
@@ -46,6 +50,7 @@ Scope: local RU residential authenticated/server-side reads only.
 - Incident integration focused contour: **131/131 PASS**.
 - Pure check-in integration focused contour: **214/214 PASS**.
 - Pure closeout integration focused contour: **167/167 PASS**.
+- Communication integration focused contour: **193/193 PASS**.
 - TypeScript typecheck: **PASS**.
 - Changed-file ESLint: **PASS**.
 - `git diff --check`: **PASS**.
@@ -60,6 +65,6 @@ Scope: local RU residential authenticated/server-side reads only.
 
 ## Blockers / next step
 
-Current bounded Wave 4 Booking Ops read slice has no failing blocker. Next step: inventory remaining RU residential PlatformDecision adapters/read paths (especially location/communication) and integrate only where canonical authenticated evidence already exists; otherwise stop rather than inventing a new state engine.
+Current bounded Wave 4 RU residential read integration has no failing blocker. Booking Ops now exposes advisory decisions for pre-check-in, check-in, in-stay, checkout, deposit, incidents, closeout, and guest communication reads. The remaining location adapter has no safe production seam yet: current location APIs are address/request scoped rather than bound to a canonical authenticated residential property identity. Do not attach a property-scoped PlatformDecision there until such a canonical property read seam exists.
 
 No push, merge, deploy, live DB/system, DNS, secret, package-install, or migration actions were performed.
