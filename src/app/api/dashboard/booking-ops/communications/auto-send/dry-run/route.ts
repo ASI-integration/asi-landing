@@ -1,6 +1,10 @@
 import { NextResponse } from 'next/server';
 import { requireOpsAdminSession } from '@/lib/crm/api-auth';
 import {
+  requireBookingOpsApiAccount,
+  requireBookingOpsApiCommunicationAccess,
+} from '../../../access';
+import {
   enqueueAutoSendDelivery,
   executeAutoSendDelivery,
   executeEligibleAutoSendBatch,
@@ -15,6 +19,8 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-
 export async function POST(req: Request): Promise<NextResponse> {
   const auth = await requireOpsAdminSession();
   if ('error' in auth) return auth.error;
+  const account = await requireBookingOpsApiAccount(auth.session);
+  if (!account.ok) return account.response;
   let body: { intentId?: unknown; maxBatchSize?: unknown };
   try {
     body = await req.json();
@@ -24,14 +30,24 @@ export async function POST(req: Request): Promise<NextResponse> {
   const intentId = String(body.intentId ?? '');
   if (intentId) {
     if (!UUID_RE.test(intentId)) return NextResponse.json({ ok: false, message: 'Некорректный идентификатор коммуникации.' }, { status: 400 });
-    const queued = await enqueueAutoSendDelivery(intentId, { source: 'operator_dry_run', dry_run: true });
+    const access = await requireBookingOpsApiCommunicationAccess(auth.session, intentId);
+    if (!access.ok) return access.response;
+    const queued = await enqueueAutoSendDelivery(
+      intentId,
+      { source: 'operator_dry_run', dry_run: true },
+      { accountId: account.accountId },
+    );
     if (!queued.ok) return NextResponse.json({ ok: false, message: 'Проверка не разрешена.', reason: queued.error }, { status: 409 });
-    const result = await executeAutoSendDelivery(queued.delivery.id, { dryRun: true });
+    const result = await executeAutoSendDelivery(queued.delivery.id, {
+      dryRun: true,
+      accountId: account.accountId,
+    });
     return NextResponse.json({ ...result, delivery: toSafeDeliveryView(result.delivery ?? null) }, { status: result.ok ? 200 : 409 });
   }
   const result = await executeEligibleAutoSendBatch({
     dryRun: true,
     maxBatchSize: Math.min(Math.max(Number(body.maxBatchSize ?? 20) || 20, 1), 50),
+    accountId: account.accountId,
   });
   return NextResponse.json(result, { status: result.ok ? 200 : 500 });
 }

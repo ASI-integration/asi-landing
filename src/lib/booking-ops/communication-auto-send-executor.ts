@@ -88,6 +88,7 @@ export type AutoSendSender = (input: {
 export type ExecuteAutoSendOptions = {
   dryRun?: boolean;
   maxBatchSize?: number;
+  accountId?: string;
   allowedChannels?: ActualAutoSendChannel[];
   allowedMessageTypes?: string[];
   forcePolicyRecheck?: boolean;
@@ -305,27 +306,44 @@ async function readDelivery(deliveryId: string): Promise<BookingOpsCommunication
 
 export async function getEligibleAutoSendIntents(filters: {
   bookingOpsRecordId?: string;
+  accountId?: string;
   channel?: BookingOpsCommunicationChannel;
   limit?: number;
 } = {}) {
+  const requestedLimit = Math.min(Math.max(filters.limit ?? 20, 1), 100);
+  const candidateLimit = filters.accountId ? Math.min(requestedLimit * 5, 500) : requestedLimit;
   let query = supabase
     .from('booking_ops_communication_intents')
     .select('*')
     .eq('metadata->>auto_send_eligible', 'true')
     .in('status', ['draft_ready', 'waiting_for_external_input'])
     .order('updated_at', { ascending: true })
-    .limit(Math.min(Math.max(filters.limit ?? 20, 1), 100));
+    .limit(candidateLimit);
   if (filters.bookingOpsRecordId) query = query.eq('booking_ops_record_id', filters.bookingOpsRecordId);
   if (filters.channel) query = query.eq('channel', filters.channel);
   const { data, error } = await query;
-  const intents = error ? [] : ((data ?? []) as IntentRow[]).map(mapIntent)
+  if (error) return { ok: false as const, error: error.message, intents: [] };
+
+  let intents = ((data ?? []) as IntentRow[]).map(mapIntent)
     .filter((intent) => SUPPORTED_TYPES.has(intent.purpose));
-  return error ? { ok: false as const, error: error.message, intents } : { ok: true as const, intents };
+  if (filters.accountId && intents.length) {
+    const recordIds = [...new Set(intents.map((intent) => intent.bookingOpsRecordId))];
+    const scoped = await supabase
+      .from('booking_ops_records')
+      .select('id')
+      .in('id', recordIds)
+      .eq('account_id', filters.accountId);
+    if (scoped.error) return { ok: false as const, error: scoped.error.message, intents: [] };
+    const allowed = new Set((scoped.data ?? []).map((row) => String(row.id)));
+    intents = intents.filter((intent) => allowed.has(intent.bookingOpsRecordId));
+  }
+  return { ok: true as const, intents: intents.slice(0, requestedLimit) };
 }
 
 export async function enqueueAutoSendDelivery(
   intentId: string,
   metadata: Record<string, unknown> = {},
+  options: { accountId?: string } = {},
 ) {
   const intent = await readIntent(intentId);
   if (!intent) return { ok: false as const, error: 'intent_not_found' };
@@ -333,6 +351,9 @@ export async function enqueueAutoSendDelivery(
   const channel = channelForIntent(intent);
   if (!channel) return { ok: false as const, error: 'unsupported_channel' };
   const context = await resolveExecutionContext(intent);
+  if (options.accountId && context.record?.accountId !== options.accountId) {
+    return { ok: false as const, error: 'booking_scope_mismatch' };
+  }
   const availabilityGuard = await shouldBlockCommunicationIntent(intent);
   if (availabilityGuard.block) {
     return {
@@ -468,6 +489,9 @@ export async function executeAutoSendDelivery(
   }
 
   const executionContext = await resolveExecutionContext(intent);
+  if (options.accountId && executionContext.record?.accountId !== options.accountId) {
+    return { ok: false as const, error: 'booking_scope_mismatch', delivery: null };
+  }
   const availabilityGuard = await shouldBlockCommunicationIntent(intent);
   if (availabilityGuard.block) {
     const blocked = await blockDelivery(delivery, null, 'availability_blocked');
@@ -615,7 +639,7 @@ export async function executeAutoSendDelivery(
 export async function executeEligibleAutoSendBatch(options: ExecuteAutoSendOptions = {}) {
   const maxBatchSize = Math.min(Math.max(options.maxBatchSize ?? 10, 1), 20);
   const runId = await startAutoSendRun({ source: options.source ?? 'operator', dryRun: options.dryRun === true });
-  const eligible = await getEligibleAutoSendIntents({ limit: maxBatchSize });
+  const eligible = await getEligibleAutoSendIntents({ limit: maxBatchSize, accountId: options.accountId });
   if (!eligible.ok) {
     await finishAutoSendRun(runId, {
       status: 'failed', processed: 0, sent: 0, failed: 1, blocked: 0,
@@ -626,7 +650,11 @@ export async function executeEligibleAutoSendBatch(options: ExecuteAutoSendOptio
   const results: unknown[] = [];
   const scopeUsage = new Map<string, number>();
   for (const intent of eligible.intents.slice(0, maxBatchSize)) {
-    const enqueued = await enqueueAutoSendDelivery(intent.id, { source: options.source === 'scheduled' ? 'scheduled_batch' : 'manual_batch' });
+    const enqueued = await enqueueAutoSendDelivery(
+      intent.id,
+      { source: options.source === 'scheduled' ? 'scheduled_batch' : 'manual_batch' },
+      { accountId: options.accountId },
+    );
     if (!enqueued.ok) {
       results.push(enqueued);
       continue;

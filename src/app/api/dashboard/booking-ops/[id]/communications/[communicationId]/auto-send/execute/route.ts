@@ -32,12 +32,19 @@ export async function POST(req: Request, context: RouteContext): Promise<NextRes
   if (!data) return NextResponse.json({ ok: false, message: 'Коммуникация не найдена.' }, { status: 404 });
   let body: { dryRun?: unknown } = {};
   try { body = await req.json(); } catch { /* empty body means actual execution */ }
-  const queued = await enqueueAutoSendDelivery(context.params.communicationId, {
-    source: 'booking_ops_operator',
-    dry_run: body.dryRun === true,
-  });
+  const queued = await enqueueAutoSendDelivery(
+    context.params.communicationId,
+    {
+      source: 'booking_ops_operator',
+      dry_run: body.dryRun === true,
+    },
+    { accountId: access.accountId },
+  );
   if (!queued.ok) return NextResponse.json({ ok: false, message: 'Отправка не разрешена.', reason: queued.error }, { status: 409 });
-  const result = await executeAutoSendDelivery(queued.delivery.id, { dryRun: body.dryRun === true });
+  const result = await executeAutoSendDelivery(queued.delivery.id, {
+    dryRun: body.dryRun === true,
+    accountId: access.accountId,
+  });
   return NextResponse.json({
     ...result,
     delivery: toSafeDeliveryView(result.delivery ?? null),

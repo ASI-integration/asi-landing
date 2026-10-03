@@ -4,6 +4,7 @@ type Row = Record<string, any>;
 const tables: Record<string, Row[]> = {
   booking_ops_communication_intents: [],
   booking_ops_communication_deliveries: [],
+  booking_ops_records: [],
 };
 
 class Query {
@@ -14,7 +15,13 @@ class Query {
 
   constructor(private table: string) {}
   select() { return this; }
-  eq(field: string, value: unknown) { this.filters.push((row) => row[field] === value); return this; }
+  eq(field: string, value: unknown) {
+    this.filters.push((row) => {
+      if (field.startsWith('metadata->>')) return String(row.metadata?.[field.slice('metadata->>'.length)] ?? '') === String(value);
+      return row[field] === value;
+    });
+    return this;
+  }
   gte(field: string, value: unknown) { this.filters.push((row) => String(row[field]) >= String(value)); return this; }
   in(field: string, values: unknown[]) { this.filters.push((row) => values.includes(row[field])); return this; }
   order() { return this; }
@@ -59,6 +66,7 @@ vi.mock('@/lib/booking-ops/repository', () => ({
     id: '11111111-1111-4111-8111-111111111111',
     bookingId: 'booking-1',
     propertyId: 'property-1',
+    accountId: 'account-1',
     guestTelegram: '123456',
     guestEmail: 'guest@example.test',
     guestIntake: null,
@@ -115,6 +123,7 @@ vi.mock('@/lib/booking-ops/communication-auto-send-scopes', () => ({
 import {
   enqueueAutoSendDelivery,
   executeAutoSendDelivery,
+  getEligibleAutoSendIntents,
 } from '../communication-auto-send-executor';
 
 const allowedDecision = {
@@ -153,6 +162,10 @@ function seedIntent(overrides: Row = {}) {
 beforeEach(() => {
   tables.booking_ops_communication_intents = [];
   tables.booking_ops_communication_deliveries = [];
+  tables.booking_ops_records = [{
+    id: '11111111-1111-4111-8111-111111111111',
+    account_id: 'account-1',
+  }];
   policyDecision.mockReset();
   policyDecision.mockResolvedValue({ ...allowedDecision });
   recordAttempt.mockClear();
@@ -161,6 +174,30 @@ beforeEach(() => {
 });
 
 describe('controlled actual auto-send executor', () => {
+  it('filters eligible queue candidates by canonical account ownership', async () => {
+    seedIntent();
+    const own = await getEligibleAutoSendIntents({ accountId: 'account-1' });
+    const foreign = await getEligibleAutoSendIntents({ accountId: 'account-2' });
+    expect(own.ok && own.intents).toHaveLength(1);
+    expect(foreign.ok && foreign.intents).toHaveLength(0);
+  });
+
+  it('rejects enqueue when the canonical booking belongs to another account', async () => {
+    const intent = seedIntent();
+    const result = await enqueueAutoSendDelivery(intent.id, {}, { accountId: 'account-2' });
+    expect(result).toMatchObject({ ok: false, error: 'booking_scope_mismatch' });
+    expect(tables.booking_ops_communication_deliveries).toHaveLength(0);
+  });
+
+  it('rechecks account ownership immediately before delivery execution', async () => {
+    const intent = seedIntent({ actor_type: 'cleaner', purpose: 'cleaner_task_assignment', metadata: { recipient_ref: 'staff-123' } });
+    const queued = await enqueueAutoSendDelivery(intent.id);
+    const sender = vi.fn(async () => ({ ok: true }));
+    const result = await executeAutoSendDelivery(queued.ok ? queued.delivery.id : '', { accountId: 'account-2', sender });
+    expect(result).toMatchObject({ ok: false, error: 'booking_scope_mismatch' });
+    expect(sender).not.toHaveBeenCalled();
+  });
+
   it('keeps guest auto-send disabled even with an enabled scope and eligible legacy metadata', async () => {
     const intent = seedIntent();
     const queued = await enqueueAutoSendDelivery(intent.id);

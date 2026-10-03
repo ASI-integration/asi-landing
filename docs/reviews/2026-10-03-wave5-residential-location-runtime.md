@@ -84,12 +84,15 @@ Scope: canonical property-bound residential location evidence and advisory Platf
 - Check-in release and guest-intake release now enforce the same booking/account boundary.
 - Lifecycle Orchestrator GET/POST now resolves canonical booking scope before reads, overrides, escalations, or orchestration.
 - Lifecycle Orchestrator due-batch now filters `booking_ops_records` by the authenticated account instead of scanning all tenants.
-- Root auto-send batch/scope APIs and inbound-intake APIs remain the next audit target because several still operate on global tables or intake identifiers without an account column on the API boundary.
+- Root auto-send queue/execute/dry-run paths now resolve the authenticated account, filter batch candidates by canonical `booking_ops_records.account_id`, require intent/delivery-to-booking access for direct operations, and recheck account ownership inside enqueue/execution before any delivery mutation or provider call.
+- Guest actual-send remains hard-blocked by the existing `knowledge_operator_review_required` guard even when a narrow send scope is enabled.
+- Auto-send scope-management/status tables remain accountless and inbound-intake APIs still operate on intake identifiers without an account column; these are the next tenant-boundary audit targets.
 
 ## Additional verification
 
 - Booking Ops focused route contour: **34/34 PASS**.
 - Lifecycle Orchestrator route contour: **5/5 PASS**.
+- Auto-send executor/account contour: **20/20 PASS**; combined Booking Ops + auto-send contour: **46/46 PASS**.
 - TypeScript typecheck after tenant hardening: **PASS**.
 - Booking Ops / route-access ESLint: **PASS**.
 - `git diff --check`: **PASS**.
