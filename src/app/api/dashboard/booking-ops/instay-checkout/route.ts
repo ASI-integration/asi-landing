@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { requireCrmOperatorSession } from '@/lib/crm/api-auth';
 import { resolveReservationAccess } from '@/lib/reservations/access';
-import { sameIdentity } from '@/lib/platform/decision';
+import { sameIdentity, type PlatformDecision } from '@/lib/platform/decision';
 import { adaptResidentialIncidentDecision, adaptResidentialOpsDecision } from '@/lib/platform/ops-decision';
 import { resolveResidentialBookingIdentity } from '@/lib/platform/residential-booking-scope';
 import {
@@ -55,6 +55,79 @@ function normalizeChannel(value: unknown): BookingOpsCommunicationChannel | unde
   return (BOOKING_OPS_COMMUNICATION_CHANNELS as readonly string[]).includes(raw)
     ? raw as BookingOpsCommunicationChannel
     : undefined;
+}
+
+function unavailableInStayDecisions(
+  identity: Awaited<ReturnType<typeof resolveResidentialBookingIdentity>>,
+  reason: 'unavailable' | 'state_changed',
+): {
+  inStay: PlatformDecision;
+  checkout: PlatformDecision;
+  deposit: PlatformDecision;
+  closeout: PlatformDecision;
+  incidents: PlatformDecision[];
+} {
+  const now = Date.now();
+  const missing = { available: false as const, reason };
+  return {
+    inStay: adaptResidentialOpsDecision(identity, 'in_stay', missing, now),
+    checkout: adaptResidentialOpsDecision(identity, 'checkout', missing, now),
+    deposit: adaptResidentialOpsDecision(identity, 'deposit', missing, now),
+    closeout: adaptResidentialOpsDecision(identity, 'closeout', missing, now),
+    incidents: [],
+  };
+}
+
+async function projectInStayAfterAction(input: {
+  bookingId: string;
+  accountId: string;
+  identity: Awaited<ReturnType<typeof resolveResidentialBookingIdentity>>;
+  fallback: Awaited<ReturnType<typeof runInStayCheckoutAction>>;
+}) {
+  let instayCheckout = input.fallback;
+  let platformDecisions = unavailableInStayDecisions(input.identity, 'unavailable');
+  try {
+    const current = await readInStayCheckoutStatus(input.bookingId);
+    const closePrerequisites = await readBookingClosePrerequisites(input.bookingId, current);
+    const currentIdentity = await resolveResidentialBookingIdentity(input.bookingId, input.accountId);
+    if (!sameIdentity(input.identity, currentIdentity)) {
+      return {
+        instayCheckout,
+        platformDecisions: unavailableInStayDecisions(input.identity, 'state_changed'),
+      };
+    }
+    instayCheckout = current;
+    const snapshot = {
+      available: true as const,
+      identity: input.identity,
+      observedAt: current.updatedAt,
+    };
+    const now = Date.now();
+    platformDecisions = {
+      inStay: adaptResidentialOpsDecision(input.identity, 'in_stay', {
+        ...snapshot, value: { kind: 'in_stay' as const, checkout: current },
+      }, now),
+      checkout: adaptResidentialOpsDecision(input.identity, 'checkout', {
+        ...snapshot, value: { kind: 'checkout' as const, checkout: current },
+      }, now),
+      deposit: adaptResidentialOpsDecision(input.identity, 'deposit', {
+        ...snapshot, value: { kind: 'deposit' as const, checkout: current },
+      }, now),
+      closeout: adaptResidentialOpsDecision(input.identity, 'closeout', {
+        ...snapshot,
+        value: { kind: 'closeout' as const, checkout: current, prerequisites: closePrerequisites },
+      }, now),
+      incidents: current.openIssues.map((issue) => adaptResidentialIncidentDecision(input.identity, {
+        available: true,
+        identity: input.identity,
+        observedAt: issue.updatedAt,
+        value: issue,
+      }, now)),
+    };
+  } catch {
+    // The command already succeeded. Projection failure must not make the client retry the mutation.
+  }
+  return { instayCheckout, platformDecisions };
 }
 
 export async function GET(req: Request): Promise<NextResponse> {
@@ -140,7 +213,9 @@ export async function POST(req: Request): Promise<NextResponse> {
   }
 
   try {
-    const instayCheckout = await runInStayCheckoutAction({
+    const access = await resolveReservationAccess(auth.session);
+    const identity = await resolveResidentialBookingIdentity(bookingId, access.accountId);
+    const actionResult = await runInStayCheckoutAction({
       bookingId,
       action,
       channel: normalizeChannel(body.channel),
@@ -155,11 +230,26 @@ export async function POST(req: Request): Promise<NextResponse> {
       actualCheckoutAt: body.actualCheckoutAt ?? body.actual_checkout_at,
       metadata: typeof body.metadata === 'object' && body.metadata ? body.metadata as Record<string, unknown> : {},
     });
-    await emitLifecycleForAction({ bookingId, action, actorId: auth.session.email ?? auth.session.userId ?? null, source: 'instay_checkout', payload: { actualCheckoutAt: body.actualCheckoutAt ?? body.actual_checkout_at ?? null } });
+    await emitLifecycleForAction({
+      bookingId,
+      action,
+      actorId: auth.session.email ?? auth.session.userId ?? null,
+      source: 'instay_checkout',
+      payload: { actualCheckoutAt: body.actualCheckoutAt ?? body.actual_checkout_at ?? null },
+    });
     if (action === 'mark_guest_checked_out') {
-      await activateTurnoverCleaningAfterCheckout(bookingId, text(body.actualCheckoutAt ?? body.actual_checkout_at) || undefined);
+      await activateTurnoverCleaningAfterCheckout(
+        bookingId,
+        text(body.actualCheckoutAt ?? body.actual_checkout_at) || undefined,
+      );
     }
-    return NextResponse.json({ ok: true, instayCheckout });
+    const projected = await projectInStayAfterAction({
+      bookingId,
+      accountId: access.accountId,
+      identity,
+      fallback: actionResult,
+    });
+    return NextResponse.json({ ok: true, ...projected });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Не удалось обновить проживание.';
     if (error instanceof BookingClosePrerequisiteError) {
@@ -169,6 +259,12 @@ export async function POST(req: Request): Promise<NextResponse> {
         code: error.code,
         missingPrerequisites: error.missingPrerequisites,
       }, { status: 400 });
+    }
+    if (message === 'booking_scope_mismatch' || message === 'reservation_account_not_found') {
+      return NextResponse.json({ ok: false, message: 'Нет доступа к бронированию.' }, { status: 403 });
+    }
+    if (message === 'booking_scope_unavailable') {
+      return NextResponse.json({ ok: false, message: 'Не удалось подтвердить область бронирования.' }, { status: 409 });
     }
     return NextResponse.json({ ok: false, message }, { status: statusForError(message) });
   }

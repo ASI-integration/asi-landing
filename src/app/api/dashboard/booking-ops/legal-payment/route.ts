@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { requireCrmOperatorSession, requireOpsAdminSession } from '@/lib/crm/api-auth';
-import { getBookingOpsRecord } from '@/lib/booking-ops/repository';
+import { resolveReservationAccess } from '@/lib/reservations/access';
+import { resolveResidentialBookingIdentity } from '@/lib/platform/residential-booking-scope';
 import {
   getLegalPaymentStatus,
   initializeLegalPaymentForBooking,
@@ -55,7 +56,7 @@ function parseStringList(value: unknown): string[] {
   return value.map((item) => text(item)).filter(Boolean);
 }
 
-async function requireBooking(bookingId: unknown): Promise<
+async function requireBooking(bookingId: unknown, accountId: string): Promise<
   | { ok: true; id: string }
   | { ok: false; response: NextResponse }
 > {
@@ -66,22 +67,54 @@ async function requireBooking(bookingId: unknown): Promise<
       response: NextResponse.json({ ok: false, message: 'Не указана бронь.' }, { status: 400 }),
     };
   }
-  const record = await getBookingOpsRecord(id);
-  if (!record) {
+  try {
+    const identity = await resolveResidentialBookingIdentity(id, accountId);
+    if (!identity.bookingId) {
+      return {
+        ok: false,
+        response: NextResponse.json(
+          { ok: false, message: 'Не удалось подтвердить область бронирования.' },
+          { status: 409 },
+        ),
+      };
+    }
+    return { ok: true, id: identity.bookingId };
+  } catch (error) {
+    const code = error instanceof Error ? error.message : '';
+    if (code === 'booking_not_found') {
+      return {
+        ok: false,
+        response: NextResponse.json({ ok: false, message: 'Запись не найдена.' }, { status: 404 }),
+      };
+    }
+    if (code === 'booking_scope_mismatch' || code === 'reservation_account_not_found') {
+      return {
+        ok: false,
+        response: NextResponse.json({ ok: false, message: 'Нет доступа к бронированию.' }, { status: 403 }),
+      };
+    }
     return {
       ok: false,
-      response: NextResponse.json({ ok: false, message: 'Запись не найдена.' }, { status: 404 }),
+      response: NextResponse.json(
+        { ok: false, message: 'Не удалось подтвердить область бронирования.' },
+        { status: 409 },
+      ),
     };
   }
-  return { ok: true, id: record.id };
 }
 
 export async function GET(req: Request): Promise<NextResponse> {
   const auth = await requireCrmOperatorSession();
   if ('error' in auth) return auth.error;
 
+  let accountId: string;
+  try {
+    accountId = (await resolveReservationAccess(auth.session)).accountId;
+  } catch {
+    return NextResponse.json({ ok: false, message: 'Нет доступа к бронированию.' }, { status: 403 });
+  }
   const bookingId = new URL(req.url).searchParams.get('bookingId');
-  const booking = await requireBooking(bookingId);
+  const booking = await requireBooking(bookingId, accountId);
   if (!booking.ok) return booking.response;
 
   const status = await getLegalPaymentStatus(booking.id);
@@ -99,7 +132,13 @@ export async function POST(req: Request): Promise<NextResponse> {
     return NextResponse.json({ ok: false, message: 'Некорректный JSON.' }, { status: 400 });
   }
 
-  const booking = await requireBooking(body.bookingId ?? body.booking_id);
+  let accountId: string;
+  try {
+    accountId = (await resolveReservationAccess(auth.session)).accountId;
+  } catch {
+    return NextResponse.json({ ok: false, message: 'Нет доступа к бронированию.' }, { status: 403 });
+  }
+  const booking = await requireBooking(body.bookingId ?? body.booking_id, accountId);
   if (!booking.ok) return booking.response;
 
   const action = body.action;

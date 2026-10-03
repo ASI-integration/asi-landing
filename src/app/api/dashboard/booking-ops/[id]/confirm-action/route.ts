@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server';
 import { requireOpsAdminSession } from '@/lib/crm/api-auth';
+import { resolveReservationAccess } from '@/lib/reservations/access';
+import { resolveResidentialBookingIdentity } from '@/lib/platform/residential-booking-scope';
 import { applyBookingOpsOperatorAction } from '@/lib/booking-ops/action-templates';
 
 export const runtime = 'nodejs';
@@ -21,6 +23,23 @@ export async function POST(req: Request, context: RouteContext): Promise<NextRes
   const actionId = String(body.actionId ?? body.action_id ?? '').trim();
   if (!actionId) {
     return NextResponse.json({ ok: false, message: 'Укажите действие (actionId).' }, { status: 400 });
+  }
+
+  try {
+    const access = await resolveReservationAccess(auth.session);
+    await resolveResidentialBookingIdentity(context.params.id, access.accountId);
+  } catch (error) {
+    const code = error instanceof Error ? error.message : '';
+    if (code === 'booking_not_found') {
+      return NextResponse.json({ ok: false, message: 'Запись не найдена.' }, { status: 404 });
+    }
+    if (code === 'booking_scope_mismatch' || code === 'reservation_account_not_found') {
+      return NextResponse.json({ ok: false, message: 'Нет доступа к бронированию.' }, { status: 403 });
+    }
+    return NextResponse.json(
+      { ok: false, message: 'Не удалось подтвердить область бронирования.' },
+      { status: 409 },
+    );
   }
 
   const result = await applyBookingOpsOperatorAction(context.params.id, actionId);

@@ -171,6 +171,10 @@ vi.mock('@/lib/booking-ops/checkin-execution-autopilot', () => {
     };
   };
   return {
+    CheckinReadinessPrerequisiteError: class CheckinReadinessPrerequisiteError extends Error {
+      code = 'checkin_readiness_prerequisites_incomplete';
+      missingPrerequisites: unknown[] = [];
+    },
     getCheckinExecutionStatus: vi.fn(async () => snapshot()),
     readCheckinExecutionStatus: vi.fn(async () => snapshot()),
     runCheckinExecutionAction: vi.fn(async () => ({ ...snapshot(), status: 'instructions_queued', instructionsStatus: 'queued' })),
@@ -196,6 +200,10 @@ vi.mock('@/lib/booking-ops/instay-checkout-autopilot', () => {
     updatedAt: new Date().toISOString(),
   });
   return {
+    BookingClosePrerequisiteError: class BookingClosePrerequisiteError extends Error {
+      code = 'booking_close_prerequisites_incomplete';
+      missingPrerequisites: unknown[] = [];
+    },
     getInStayCheckoutStatus: vi.fn(async () => snapshot()),
     readInStayCheckoutStatus: vi.fn(async () => snapshot()),
     readBookingClosePrerequisites: vi.fn(async () => ([
@@ -236,6 +244,37 @@ describe('Booking Ops dashboard routes', () => {
     expect(response.status).toBe(400);
   });
 
+  it('legal/payment reads reject foreign tenant before domain status read', async () => {
+    const scope = await import('@/lib/platform/residential-booking-scope');
+    const legal = await import('@/lib/booking-ops/legal-payment-autopilot');
+    vi.mocked(legal.getLegalPaymentStatus).mockClear();
+    vi.mocked(scope.resolveResidentialBookingIdentity)
+      .mockRejectedValueOnce(new Error('booking_scope_mismatch'));
+
+    const route = await import('../legal-payment/route');
+    const response = await route.GET(new Request('https://asi.test?bookingId=ops-route'));
+
+    expect(response.status).toBe(403);
+    expect(legal.getLegalPaymentStatus).not.toHaveBeenCalled();
+  });
+
+  it('legal/payment mutations reject foreign tenant before domain action', async () => {
+    const scope = await import('@/lib/platform/residential-booking-scope');
+    const legal = await import('@/lib/booking-ops/legal-payment-autopilot');
+    vi.mocked(legal.initializeLegalPaymentForBooking).mockClear();
+    vi.mocked(scope.resolveResidentialBookingIdentity)
+      .mockRejectedValueOnce(new Error('booking_scope_mismatch'));
+
+    const route = await import('../legal-payment/route');
+    const response = await route.POST(new Request('https://asi.test', {
+      method: 'POST',
+      body: JSON.stringify({ bookingId: 'ops-route', action: 'initialize' }),
+    }));
+
+    expect(response.status).toBe(403);
+    expect(legal.initializeLegalPaymentForBooking).not.toHaveBeenCalled();
+  });
+
   it('pre-checkin recompute endpoint returns readiness', async () => {
     const route = await import('../pre-checkin/recompute/route');
     const response = await route.POST(new Request('https://asi.test', {
@@ -245,6 +284,28 @@ describe('Booking Ops dashboard routes', () => {
     const payload = await response.json();
     expect(response.status).toBe(200);
     expect(payload.readiness.status).toBe('ready_for_checkin');
+    expect(payload.platformDecision).toMatchObject({
+      topic: 'pre_checkin',
+      identity: { accountId: 'account-1', propertyId: 'property-1', bookingId: 'ops-route' },
+      permission: { automaticActionAllowed: false, executionAuthority: 'domain_revalidation_required' },
+    });
+  });
+
+  it('pre-checkin mutation rejects foreign tenant before domain recompute', async () => {
+    const scope = await import('@/lib/platform/residential-booking-scope');
+    const preCheckin = await import('@/lib/booking-ops/pre-checkin-control-center');
+    vi.mocked(preCheckin.recomputeBookingCheckinReadiness).mockClear();
+    vi.mocked(scope.resolveResidentialBookingIdentity)
+      .mockRejectedValueOnce(new Error('booking_scope_mismatch'));
+
+    const route = await import('../pre-checkin/recompute/route');
+    const response = await route.POST(new Request('https://asi.test', {
+      method: 'POST',
+      body: JSON.stringify({ bookingId: 'ops-route' }),
+    }));
+
+    expect(response.status).toBe(403);
+    expect(preCheckin.recomputeBookingCheckinReadiness).not.toHaveBeenCalled();
   });
 
   it('pre-checkin API returns 401 when unauthenticated', async () => {
@@ -328,6 +389,100 @@ describe('Booking Ops dashboard routes', () => {
     });
     expect(payload.platformDecision.permission.allowedActions).not.toContain('release_instructions');
     expect(payload.platformDecision.permission.forbiddenActions).toContain('send_guest_automatically');
+  });
+
+  it('check-in mutation returns a post-action advisory decision', async () => {
+    const checkin = await import('@/lib/booking-ops/checkin-execution-autopilot');
+    vi.mocked(checkin.runCheckinExecutionAction).mockClear();
+    vi.mocked(checkin.readCheckinExecutionStatus).mockClear();
+
+    const route = await import('../checkin-execution/route');
+    const response = await route.POST(new Request('https://asi.test', {
+      method: 'POST',
+      body: JSON.stringify({ bookingId: 'ops-route', action: 'prepare_instructions' }),
+    }));
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(checkin.runCheckinExecutionAction).toHaveBeenCalled();
+    expect(checkin.readCheckinExecutionStatus).toHaveBeenCalledWith('ops-route');
+    expect(payload.platformDecision).toMatchObject({
+      topic: 'checkin',
+      identity: { accountId: 'account-1', propertyId: 'property-1', bookingId: 'ops-route' },
+      permission: { automaticActionAllowed: false, executionAuthority: 'domain_revalidation_required' },
+    });
+  });
+
+  it('check-in mutation rejects foreign tenant before domain action', async () => {
+    const scope = await import('@/lib/platform/residential-booking-scope');
+    const checkin = await import('@/lib/booking-ops/checkin-execution-autopilot');
+    vi.mocked(checkin.runCheckinExecutionAction).mockClear();
+    vi.mocked(scope.resolveResidentialBookingIdentity)
+      .mockRejectedValueOnce(new Error('booking_scope_mismatch'));
+
+    const route = await import('../checkin-execution/route');
+    const response = await route.POST(new Request('https://asi.test', {
+      method: 'POST',
+      body: JSON.stringify({ bookingId: 'ops-route', action: 'prepare_instructions' }),
+    }));
+
+    expect(response.status).toBe(403);
+    expect(checkin.runCheckinExecutionAction).not.toHaveBeenCalled();
+  });
+
+  it('check-in keeps a successful mutation successful when advisory projection fails', async () => {
+    const checkin = await import('@/lib/booking-ops/checkin-execution-autopilot');
+    vi.mocked(checkin.readCheckinExecutionStatus)
+      .mockRejectedValueOnce(new Error('injected_projection_failure'));
+
+    const route = await import('../checkin-execution/route');
+    const response = await route.POST(new Request('https://asi.test', {
+      method: 'POST',
+      body: JSON.stringify({ bookingId: 'ops-route', action: 'prepare_instructions' }),
+    }));
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(payload.ok).toBe(true);
+    expect(payload.platformDecision).toMatchObject({
+      topic: 'checkin',
+      status: 'unavailable',
+      permission: { automaticActionAllowed: false, executionAuthority: 'domain_revalidation_required' },
+    });
+  });
+
+  it('check-in returns state_changed after a successful action when booking ownership changes', async () => {
+    const scope = await import('@/lib/platform/residential-booking-scope');
+    const checkin = await import('@/lib/booking-ops/checkin-execution-autopilot');
+    vi.mocked(checkin.runCheckinExecutionAction).mockClear();
+    vi.mocked(scope.resolveResidentialBookingIdentity)
+      .mockResolvedValueOnce({
+        kind: 'identified',
+        accountId: 'account-1',
+        propertyId: 'property-1',
+        bookingId: 'ops-route',
+      })
+      .mockResolvedValueOnce({
+        kind: 'identified',
+        accountId: 'account-1',
+        propertyId: 'property-2',
+        bookingId: 'ops-route',
+      });
+
+    const route = await import('../checkin-execution/route');
+    const response = await route.POST(new Request('https://asi.test', {
+      method: 'POST',
+      body: JSON.stringify({ bookingId: 'ops-route', action: 'prepare_instructions' }),
+    }));
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(checkin.runCheckinExecutionAction).toHaveBeenCalled();
+    expect(payload.platformDecision).toMatchObject({
+      topic: 'checkin',
+      status: 'unavailable',
+      audit: { reasons: expect.arrayContaining(['state_changed']) },
+    });
   });
 
   it('check-in execution API rejects invalid action', async () => {
@@ -459,6 +614,48 @@ describe('Booking Ops dashboard routes', () => {
       .toEqual(expect.arrayContaining(['request_operator_review', 'remediate']));
     expect(payload.platformDecisions.incidents[0].permission.forbiddenActions)
       .toEqual(expect.arrayContaining(['resolve_incident', 'send_guest_automatically']));
+  });
+
+  it('instay-checkout mutation returns fresh post-action advisory decisions', async () => {
+    const instay = await import('@/lib/booking-ops/instay-checkout-autopilot');
+    vi.mocked(instay.runInStayCheckoutAction).mockClear();
+    vi.mocked(instay.readInStayCheckoutStatus).mockClear();
+
+    const route = await import('../instay-checkout/route');
+    const response = await route.POST(new Request('https://asi.test', {
+      method: 'POST',
+      body: JSON.stringify({ bookingId: 'ops-route', action: 'prepare_checkout_instructions' }),
+    }));
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(instay.runInStayCheckoutAction).toHaveBeenCalled();
+    expect(instay.readInStayCheckoutStatus).toHaveBeenCalledWith('ops-route');
+    expect(payload.platformDecisions.inStay).toMatchObject({
+      topic: 'in_stay',
+      identity: { accountId: 'account-1', propertyId: 'property-1', bookingId: 'ops-route' },
+      permission: { automaticActionAllowed: false, executionAuthority: 'domain_revalidation_required' },
+    });
+    expect(payload.platformDecisions.checkout.topic).toBe('checkout');
+    expect(payload.platformDecisions.deposit.topic).toBe('deposit');
+    expect(payload.platformDecisions.closeout.topic).toBe('closeout');
+  });
+
+  it('instay-checkout mutation rejects foreign tenant before domain action', async () => {
+    const scope = await import('@/lib/platform/residential-booking-scope');
+    const instay = await import('@/lib/booking-ops/instay-checkout-autopilot');
+    vi.mocked(instay.runInStayCheckoutAction).mockClear();
+    vi.mocked(scope.resolveResidentialBookingIdentity)
+      .mockRejectedValueOnce(new Error('booking_scope_mismatch'));
+
+    const route = await import('../instay-checkout/route');
+    const response = await route.POST(new Request('https://asi.test', {
+      method: 'POST',
+      body: JSON.stringify({ bookingId: 'ops-route', action: 'prepare_checkout_instructions' }),
+    }));
+
+    expect(response.status).toBe(403);
+    expect(instay.runInStayCheckoutAction).not.toHaveBeenCalled();
   });
 
   it('instay-checkout API returns 401 when unauthenticated', async () => {

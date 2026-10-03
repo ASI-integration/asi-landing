@@ -42,6 +42,25 @@ Scope: canonical property-bound residential location evidence and advisory Platf
 - `src/app/api/dashboard/booking-ops/__tests__/location-platform-route.test.ts`
 - `src/lib/platform/__tests__/adapters.test.ts`
 - `src/lib/communication/__tests__/guest-long-term-memory-v1.test.ts`
+- `src/app/api/dashboard/booking-ops/pre-checkin/recompute/route.ts`
+- `src/app/api/dashboard/booking-ops/checkin-execution/route.ts`
+- `src/app/api/dashboard/booking-ops/instay-checkout/route.ts`
+- `src/app/api/dashboard/booking-ops/legal-payment/route.ts`
+- `src/app/api/dashboard/booking-ops/[id]/confirm-action/route.ts`
+- `src/app/api/dashboard/booking-ops/__tests__/route.test.ts`
+- `src/app/api/dashboard/booking-ops/__tests__/confirm-action-scope.test.ts`
+
+## Runtime action boundary
+
+- Pre-check-in recompute/actions now resolve canonical account/property ownership before any domain mutation and return a post-action advisory `pre_checkin` decision.
+- Check-in actions now enforce account/property ownership before mutation and return a fresh advisory `checkin` decision after the domain action and lifecycle emission.
+- In-stay/checkout actions now enforce account/property ownership before mutation and return fresh advisory `in_stay`, `checkout`, `deposit`, `closeout`, and incident decisions after the domain action.
+- Legal/payment GET and POST paths are account-scoped before their domain reads/mutations. No artificial legal PlatformDecision topic was introduced.
+- The legacy `[id]/confirm-action` mutation route is now account/property-scoped before it can call the action-template update engine.
+- PlatformDecision remains a projection, not authorization. Existing domain guards/revalidation execute first.
+- A failure in post-action Decision projection never turns an already-successful mutation into an HTTP failure, avoiding unsafe client retries. Projection instead fails closed to `unavailable`.
+- If booking identity changes between mutation and projection, the successful command response carries a `state_changed` unavailable decision rather than stale permissions.
+- Runtime-focused contour: **202/202 PASS**.
 
 ## Verification
 

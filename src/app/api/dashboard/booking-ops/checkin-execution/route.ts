@@ -50,6 +50,51 @@ function normalizeChannel(value: unknown): BookingOpsCommunicationChannel | unde
     : undefined;
 }
 
+async function projectCheckinAfterAction(input: {
+  bookingId: string;
+  accountId: string;
+  identity: Awaited<ReturnType<typeof resolveResidentialBookingIdentity>>;
+  fallback: Awaited<ReturnType<typeof runCheckinExecutionAction>>;
+}) {
+  let checkin = input.fallback;
+  let platformDecision = adaptResidentialOpsDecision(
+    input.identity,
+    'checkin',
+    { available: false, reason: 'unavailable' },
+    Date.now(),
+  );
+  try {
+    const [current, legalGuard] = await Promise.all([
+      readCheckinExecutionStatus(input.bookingId),
+      readCheckinInstructionsGuard(input.bookingId),
+    ]);
+    const currentIdentity = await resolveResidentialBookingIdentity(input.bookingId, input.accountId);
+    if (!sameIdentity(input.identity, currentIdentity)) {
+      return {
+        checkin,
+        platformDecision: adaptResidentialOpsDecision(
+          input.identity,
+          'checkin',
+          { available: false, reason: 'state_changed' },
+          Date.now(),
+        ),
+      };
+    }
+    checkin = current;
+    platformDecision = legalGuard
+      ? adaptResidentialOpsDecision(input.identity, 'checkin', {
+          available: true,
+          identity: input.identity,
+          observedAt: checkin.updatedAt,
+          value: { kind: 'checkin', checkin, legalGuard },
+        }, Date.now())
+      : platformDecision;
+  } catch {
+    // The command already succeeded. Projection failure must not make the client retry the mutation.
+  }
+  return { checkin, platformDecision };
+}
+
 export async function GET(req: Request): Promise<NextResponse> {
   const auth = await requireCrmOperatorSession();
   if ('error' in auth) return auth.error;
@@ -123,7 +168,9 @@ export async function POST(req: Request): Promise<NextResponse> {
   }
 
   try {
-    const checkin = await runCheckinExecutionAction({
+    const access = await resolveReservationAccess(auth.session);
+    const identity = await resolveResidentialBookingIdentity(bookingId, access.accountId);
+    const actionResult = await runCheckinExecutionAction({
       bookingId,
       action,
       channel: normalizeChannel(body.channel),
@@ -132,8 +179,20 @@ export async function POST(req: Request): Promise<NextResponse> {
       arrivalTime: body.arrivalTime ?? body.arrival_time,
       metadata: typeof body.metadata === 'object' && body.metadata ? body.metadata as Record<string, unknown> : {},
     });
-    await emitLifecycleForAction({ bookingId, action, actorId: auth.session.email ?? auth.session.userId ?? null, source: 'checkin_execution', payload: { arrivalTime: body.arrivalTime ?? body.arrival_time ?? null } });
-    return NextResponse.json({ ok: true, checkin });
+    await emitLifecycleForAction({
+      bookingId,
+      action,
+      actorId: auth.session.email ?? auth.session.userId ?? null,
+      source: 'checkin_execution',
+      payload: { arrivalTime: body.arrivalTime ?? body.arrival_time ?? null },
+    });
+    const projected = await projectCheckinAfterAction({
+      bookingId,
+      accountId: access.accountId,
+      identity,
+      fallback: actionResult,
+    });
+    return NextResponse.json({ ok: true, ...projected });
   } catch (error) {
     if (error instanceof CheckinReadinessPrerequisiteError) {
       return NextResponse.json({
@@ -144,6 +203,12 @@ export async function POST(req: Request): Promise<NextResponse> {
       }, { status: 400 });
     }
     const message = error instanceof Error ? error.message : 'Не удалось обновить заселение.';
+    if (message === 'booking_scope_mismatch' || message === 'reservation_account_not_found') {
+      return NextResponse.json({ ok: false, message: 'Нет доступа к бронированию.' }, { status: 403 });
+    }
+    if (message === 'booking_scope_unavailable') {
+      return NextResponse.json({ ok: false, message: 'Не удалось подтвердить область бронирования.' }, { status: 409 });
+    }
     return NextResponse.json({ ok: false, message }, { status: statusForError(message) });
   }
 }
