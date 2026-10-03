@@ -25,9 +25,11 @@ export async function POST(req: Request, context: RouteContext): Promise<NextRes
     return NextResponse.json({ ok: false, message: 'Укажите действие (actionId).' }, { status: 400 });
   }
 
+  let expectedScope: { accountId: string; propertyId: string };
   try {
     const access = await resolveReservationAccess(auth.session);
-    await resolveResidentialBookingIdentity(context.params.id, access.accountId);
+    const identity = await resolveResidentialBookingIdentity(context.params.id, access.accountId);
+    expectedScope = { accountId: identity.accountId, propertyId: identity.propertyId };
   } catch (error) {
     const code = error instanceof Error ? error.message : '';
     if (code === 'booking_not_found') {
@@ -42,9 +44,13 @@ export async function POST(req: Request, context: RouteContext): Promise<NextRes
     );
   }
 
-  const result = await applyBookingOpsOperatorAction(context.params.id, actionId);
+  const result = await applyBookingOpsOperatorAction(
+    context.params.id,
+    actionId,
+    { expectedScope },
+  );
   if (!result.ok) {
-    const status = result.error === 'not_found' ? 404 : 400;
+    const status = result.error === 'not_found' ? 404 : result.error === 'scope_mismatch' ? 409 : 400;
     return NextResponse.json(
       { ok: false, message: result.error },
       { status },

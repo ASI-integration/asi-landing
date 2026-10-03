@@ -601,6 +601,7 @@ export function planBookingOpsOperatorActionConfirm(
 export async function applyBookingOpsOperatorAction(
   recordId: string,
   actionId: string,
+  options?: { expectedScope?: { accountId: string; propertyId: string } },
 ): Promise<{ ok: true; record: BookingOpsRecord } | { ok: false; error: string }> {
   const id = String(recordId ?? '').trim();
   if (!id) return { ok: false, error: 'id_required' };
@@ -613,6 +614,13 @@ export async function applyBookingOpsOperatorAction(
 
   const record = await getBookingOpsRecord(id);
   if (!record) return { ok: false, error: 'not_found' };
+  const expectedScope = options?.expectedScope;
+  if (expectedScope && (
+    record.accountId !== expectedScope.accountId
+    || record.propertyId !== expectedScope.propertyId
+  )) {
+    return { ok: false, error: 'scope_mismatch' };
+  }
 
   const built = buildConfirmUpdateInput(record, operatorActionId);
   if ('error' in built) return { ok: false, error: built.error };
@@ -641,7 +649,11 @@ export async function applyBookingOpsOperatorAction(
     finalInput.opsStatus = automationPatch.opsStatus;
   }
 
-  const result = await updateBookingOpsRecord(id, finalInput);
+  const result = await updateBookingOpsRecord(
+    id,
+    finalInput,
+    expectedScope ? { expectedScope } : undefined,
+  );
   if (!result.ok || !result.record) {
     return { ok: false, error: result.error ?? 'Не удалось сохранить изменения.' };
   }

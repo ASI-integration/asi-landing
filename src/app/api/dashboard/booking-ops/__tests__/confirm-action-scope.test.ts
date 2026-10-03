@@ -1,7 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
-  scope: vi.fn(),
   apply: vi.fn(),
 }));
 
@@ -21,16 +20,20 @@ vi.mock('@/lib/reservations/access', () => ({
 }));
 
 vi.mock('@/lib/platform/residential-booking-scope', () => ({
-  resolveResidentialBookingIdentity: mocks.scope,
+  resolveResidentialBookingIdentity: vi.fn(),
 }));
 
 vi.mock('@/lib/booking-ops/action-templates', () => ({
   applyBookingOpsOperatorAction: mocks.apply,
 }));
+
+import { resolveResidentialBookingIdentity } from '@/lib/platform/residential-booking-scope';
+
 describe('Booking Ops confirm-action tenant scope', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mocks.scope.mockResolvedValue({
+    vi.mocked(resolveResidentialBookingIdentity).mockReset();
+    vi.mocked(resolveResidentialBookingIdentity).mockResolvedValue({
       kind: 'identified',
       accountId: 'account-1',
       propertyId: 'property-1',
@@ -51,12 +54,14 @@ describe('Booking Ops confirm-action tenant scope', () => {
     const payload = await response.json();
 
     expect(response.status).toBe(200);
-    expect(mocks.scope).toHaveBeenCalledWith('ops-route', 'account-1');
-    expect(mocks.apply).toHaveBeenCalledWith('ops-route', 'request_guest_documents');
+    expect(resolveResidentialBookingIdentity).toHaveBeenCalledWith('ops-route', 'account-1');
+    expect(mocks.apply).toHaveBeenCalledWith('ops-route', 'request_guest_documents', {
+      expectedScope: { accountId: 'account-1', propertyId: 'property-1' },
+    });
     expect(payload.ok).toBe(true);
   });
   it('rejects a foreign tenant before the legacy action engine can mutate', async () => {
-    mocks.scope.mockRejectedValueOnce(new Error('booking_scope_mismatch'));
+    vi.mocked(resolveResidentialBookingIdentity).mockRejectedValueOnce(new Error('booking_scope_mismatch'));
 
     const route = await import('../[id]/confirm-action/route');
     const response = await route.POST(new Request('https://asi.test', {
@@ -70,8 +75,23 @@ describe('Booking Ops confirm-action tenant scope', () => {
     expect(mocks.apply).not.toHaveBeenCalled();
   });
 
+  it('fails closed if ownership changes between route authorization and domain mutation', async () => {
+    mocks.apply.mockResolvedValueOnce({ ok: false, error: 'scope_mismatch' });
+
+    const route = await import('../[id]/confirm-action/route');
+    const response = await route.POST(new Request('https://asi.test', {
+      method: 'POST',
+      body: JSON.stringify({ actionId: 'request_guest_documents' }),
+    }), { params: { id: 'ops-route' } });
+
+    expect(response.status).toBe(409);
+    expect(mocks.apply).toHaveBeenCalledWith('ops-route', 'request_guest_documents', {
+      expectedScope: { accountId: 'account-1', propertyId: 'property-1' },
+    });
+  });
+
   it('fails closed on unresolved booking scope before mutation', async () => {
-    mocks.scope.mockRejectedValueOnce(new Error('booking_scope_unavailable'));
+    vi.mocked(resolveResidentialBookingIdentity).mockRejectedValueOnce(new Error('booking_scope_unavailable'));
 
     const route = await import('../[id]/confirm-action/route');
     const response = await route.POST(new Request('https://asi.test', {

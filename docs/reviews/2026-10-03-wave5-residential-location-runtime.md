@@ -175,6 +175,15 @@ Scope: canonical property-bound residential location evidence and advisory Platf
 - Verification: focused pre-checkin route/read contour **40/40 PASS**; frozen Booking Ops + Channel Manager + reservation + owner-Telegram + pre-checkin regression **156/156 PASS**; TypeScript **PASS**; changed-file ESLint **PASS**; `git diff --check` **PASS**.
 - Next step: continue the remaining dashboard Booking Ops list/read route audit; do not add tenant authority where only payload/session labels exist.
 
+## Confirm-action mutation TOCTOU hardening
+
+- Baseline HEAD: `a499a5195bc40bb271612820b5dc218e0020225b`.
+- The confirm-action route now carries the canonical booking account/property identity into the domain action engine instead of using the route check as the sole mutation authorization.
+- `applyBookingOpsOperatorAction` verifies the loaded record against expected account/property and passes the same expected scope into `updateBookingOpsRecord`; the repository performs scoped SELECT and scoped UPDATE and returns `scope_mismatch` if ownership changes before mutation.
+- PlatformDecision is not involved in execution authorization; domain scope/revalidation remains authoritative.
+- Verification: focused route/action/repository scope contour **9/9 PASS**; route mock-isolation pair **31/31 PASS**; frozen Booking Ops + Channel Manager + reservation + pre-checkin/action regression **162/162 PASS**; TypeScript **PASS**; changed-file ESLint **PASS**; `git diff --check` **PASS**.
+- Next step: audit other dashboard mutation handlers for route-only ownership checks followed by unscoped domain updates, prioritizing check-in/in-stay/pre-checkin actions.
+
 ## Operational boundary
 
 Wave 5 migration files are prepared and contract-tested but were **not applied to any live/local database** in this pass. No push, merge, deploy, live database mutation, DNS, secret, or package-install action was performed.
