@@ -15,6 +15,7 @@ export async function readStableSnapshot<T>(identity: IdentifiedScope, deps: {
   readVersion: (identity: IdentifiedScope) => Promise<CanonicalVersion | null>;
   load: (identity: IdentifiedScope) => Promise<T>;
   now: () => number;
+  maxAgeMs?: number;
 }): Promise<ScopedSnapshot<T>> {
   if (!validIdentity(identity) || identity.kind !== 'identified') return { available: false, reason: 'scope_mismatch' };
   const scope = freezeDeep({ ...identity });
@@ -23,22 +24,27 @@ export async function readStableSnapshot<T>(identity: IdentifiedScope, deps: {
     if (!first || !sameIdentity(scope, first.identity)) return { available: false, reason: 'scope_mismatch' };
     const before = structuredClone(first);
     if (typeof before.revision !== 'string' || !before.revision.trim()) return { available: false, reason: 'malformed' };
-    if (!isFresh(before.observedAt, deps.now())) return { available: false, reason: 'stale' };
+    if (!isFresh(before.observedAt, deps.now(), deps.maxAgeMs)) return { available: false, reason: 'stale' };
     const value = freezeDeep(structuredClone(await readCommunicationDependency(() => deps.load(scope))));
     const after = await readCommunicationDependency(() => deps.readVersion(scope));
     if (!after || !sameIdentity(scope, after.identity) || before.revision !== after.revision
       || before.observedAt !== after.observedAt) return { available: false, reason: 'state_changed' };
-    if (!isFresh(before.observedAt, deps.now())) return { available: false, reason: 'stale' };
+    if (!isFresh(before.observedAt, deps.now(), deps.maxAgeMs)) return { available: false, reason: 'stale' };
     return freezeDeep({ available: true, identity: scope, observedAt: before.observedAt, value });
   } catch {
     return { available: false, reason: 'unavailable' };
   }
 }
-export function snapshotProblem<T>(identity: IdentifiedScope, snapshot: ScopedSnapshot<T>, now: number): DecisionReason | null {
+export function snapshotProblem<T>(
+  identity: IdentifiedScope,
+  snapshot: ScopedSnapshot<T>,
+  now: number,
+  maxAgeMs?: number,
+): DecisionReason | null {
   if (!validIdentity(identity) || identity.kind !== 'identified') return 'scope_mismatch';
   if (!snapshot || typeof snapshot !== 'object') return 'malformed';
   if (snapshot.available === false) return Object.hasOwn(REASONS, snapshot.reason) ? snapshot.reason : 'malformed';
   if (snapshot.available !== true) return 'malformed';
   if (!sameIdentity(identity, snapshot.identity)) return 'scope_mismatch';
-  return isFresh(snapshot.observedAt, now) ? null : 'stale';
+  return isFresh(snapshot.observedAt, now, maxAgeMs) ? null : 'stale';
 }

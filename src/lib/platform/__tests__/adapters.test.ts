@@ -180,6 +180,25 @@ function spatial() {
   return { request, location, batch };
 }
 describe('Residential Wave 1 output adapter', () => {
+  it('keeps residential spatial envelopes fresh for the Wave 1 24h evidence window', () => {
+    const f = spatial();
+    const validation = validateSpatialEvidence(f.request, f.location, [f.batch], new Date(now));
+    const snapshot: ScopedSnapshot<typeof validation> = {
+      available: true,
+      identity: { ...identity },
+      observedAt: at,
+      value: validation,
+    };
+    const fiveMinutesLater = adaptResidentialLocationDecision(identity, snapshot, now + 5 * 60_000);
+    safe(fiveMinutesLater);
+    expect(fiveMinutesLater.status).toBe('allowed');
+
+    const expired = adaptResidentialLocationDecision(identity, snapshot, now + 25 * 60 * 60_000);
+    safe(expired);
+    expect(expired.status).toBe('unavailable');
+    expect(expired.audit.reasons).toContain('stale');
+  });
+
   it.each(['valid', 'provider', 'manual', 'foreign', 'stale', 'commercial', 'international'] as const)('maps %s canonical spatial result', scenario => {
     const f = spatial();
     if (scenario === 'provider') f.batch.status = 'unavailable';

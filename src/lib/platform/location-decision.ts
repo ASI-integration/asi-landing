@@ -1,5 +1,5 @@
 import type { SpatialValidation } from '../location/spatial-validation-types';
-import { validateSpatialEvidence, sameSpatialScope } from '../location/spatial-validation';
+import { SPATIAL_MAX_AGE_MS, validateSpatialEvidence, sameSpatialScope } from '../location/spatial-validation';
 import { isFresh, makeDecision, type DecisionReason, type DecisionEvidence, type PlatformDecision } from './decision';
 import { snapshotProblem, type IdentifiedScope, type ScopedSnapshot } from './snapshot';
 
@@ -7,7 +7,7 @@ import { snapshotProblem, type IdentifiedScope, type ScopedSnapshot } from './sn
 export function adaptResidentialLocationDecision(identity: IdentifiedScope, snapshot: ScopedSnapshot<SpatialValidation>, now: number): PlatformDecision {
   const fail = (reason: DecisionReason, unavailable = false) => makeDecision({ identity, topic: 'location', now,
     status: unavailable ? 'unavailable' : 'review_required', reasons: [reason], blockers: [reason] });
-  const problem = snapshotProblem(identity, snapshot, now);
+  const problem = snapshotProblem(identity, snapshot, now, SPATIAL_MAX_AGE_MS);
   if (problem || !snapshot.available) return fail(problem ?? 'unavailable', true);
   const original = snapshot.value;
   if (!original || original.mode !== 'residential') return fail('residential_only');

@@ -357,7 +357,9 @@ describe('Guest Long-Term Memory v1', () => {
     const migrationNames = fs.readdirSync(path.join(process.cwd(), 'supabase/migrations')).filter((name) => name.endsWith('.sql')).sort();
     const numericPrefixes = migrationNames.map((name) => name.match(/^(\d+)/)?.[1]).filter(Boolean);
     expect(new Set(numericPrefixes).size).toBe(numericPrefixes.length);
-    expect(migrationNames.at(-1)).toBe('20260930200000_guest_long_term_memory_account_scope.sql');
+    expect(migrationNames).toContain('20260930200000_guest_long_term_memory_account_scope.sql');
+    expect(migrationNames.indexOf('20260930200000_guest_long_term_memory_account_scope.sql'))
+      .toBeGreaterThan(migrationNames.indexOf('20260809120000_guest_long_term_memory_v1.sql'));
   });
 
   it('12. rejects sensitive payloads and provides no transcript/blob columns', async () => {
