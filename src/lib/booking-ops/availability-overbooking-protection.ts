@@ -313,6 +313,8 @@ async function updateBookingRisk(
   const canonicalAccountId = text(accountId);
   if (canonicalAccountId) {
     query = query.eq('account_id', canonicalAccountId);
+    const canonicalPropertyId = text(result.propertyId);
+    if (canonicalPropertyId) query = query.eq('property_id', canonicalPropertyId);
     const { data, error } = await query.select('id').maybeSingle();
     if (error) throw new Error(error.message);
     if (!data) throw new Error('booking_scope_mismatch');

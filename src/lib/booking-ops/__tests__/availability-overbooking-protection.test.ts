@@ -7,6 +7,7 @@ const { supabaseFrom } = vi.hoisted(() => ({
 }));
 
 const tables: Record<string, Row[]> = {};
+let beforeBookingOpsUpdate: null | (() => void) = null;
 function rows(table: string): Row[] {
   return tables[table] ?? (tables[table] = []);
 }
@@ -171,6 +172,7 @@ function seedSelfBookingScenario(options?: {
 
 beforeEach(() => {
   for (const key of Object.keys(tables)) tables[key] = [];
+  beforeBookingOpsUpdate = null;
   supabaseFrom.mockReset();
   supabaseFrom.mockImplementation((table: string) => ({
     select: vi.fn((_columns = '*', options?: { count?: string; head?: boolean }) => (
@@ -183,7 +185,10 @@ beforeEach(() => {
       (query as any).filtered = incoming;
       return query;
     }),
-    update: vi.fn((patch: Row) => new Query(table, { patch })),
+    update: vi.fn((patch: Row) => {
+      if (table === 'booking_ops_records') beforeBookingOpsUpdate?.();
+      return new Query(table, { patch });
+    }),
   }));
 });
 
@@ -465,5 +470,37 @@ describe('availability canonical account scope', () => {
       status: 'failed',
       check: { safeSummary: 'booking_scope_mismatch' },
     });
+  });
+});
+
+describe('availability risk persistence canonical property scope', () => {
+  it('fails closed when booking property drifts before account-bound risk persistence', async () => {
+    rows('properties').push(
+      { id: 'prop-a', account_id: 'account-a' },
+      { id: 'prop-b', account_id: 'account-a' },
+    );
+    const booking: Row = {
+      id: BOOKING_OPS_ID,
+      account_id: 'account-a',
+      property_id: 'prop-a',
+      check_in_at: '2026-07-10T00:00:00.000Z',
+      check_out_at: '2026-07-12T00:00:00.000Z',
+    };
+    rows('booking_ops_records').push(booking);
+    beforeBookingOpsUpdate = () => {
+      booking.property_id = 'prop-b';
+      beforeBookingOpsUpdate = null;
+    };
+
+    await expect(checkAvailabilityConflict({
+      bookingId: BOOKING_OPS_ID,
+      propertyId: 'prop-a',
+      dateFrom: '2026-07-10',
+      dateTo: '2026-07-12',
+    }, { accountId: 'account-a', persist: false })).rejects.toThrow('booking_scope_mismatch');
+
+    expect(booking.property_id).toBe('prop-b');
+    expect(booking.availability_status).toBeUndefined();
+    expect(booking.overbooking_risk_status).toBeUndefined();
   });
 });
