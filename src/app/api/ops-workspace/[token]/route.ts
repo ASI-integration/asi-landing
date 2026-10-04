@@ -36,9 +36,42 @@ async function expectedTaskScope(task: Record<string, unknown>): Promise<Expecte
   return { accountId, propertyId };
 }
 
-async function markLinkUsed(linkId: string) {
-  const result = await supabase.from('booking_ops_secure_task_links').update({ last_used_at: new Date().toISOString() }).eq('id', linkId);
+async function requireCurrentTaskScope(taskId: string, bookingId: string, expectedScope: ExpectedScope) {
+  await requireBookingOpsRecordScope(bookingId, expectedScope);
+  const current = await supabase
+    .from('booking_ops_worker_tasks')
+    .select('id')
+    .eq('id', taskId)
+    .eq('booking_id', bookingId)
+    .eq('object_id', expectedScope.propertyId)
+    .maybeSingle();
+  if (current.error) throw new Error(current.error.message);
+  if (!current.data) throw new Error('worker_task_scope_mismatch');
+}
+
+async function markLinkUsed(linkId: string, taskId: string, bookingId: string, expectedScope?: ExpectedScope) {
+  if (expectedScope) await requireCurrentTaskScope(taskId, bookingId, expectedScope);
+  const result = await supabase
+    .from('booking_ops_secure_task_links')
+    .update({ last_used_at: new Date().toISOString() })
+    .eq('id', linkId)
+    .eq('task_id', taskId);
   if (result.error) throw new Error(result.error.message);
+  const matched = await supabase
+    .from('booking_ops_secure_task_links')
+    .select('id')
+    .eq('id', linkId)
+    .eq('task_id', taskId)
+    .maybeSingle();
+  if (matched.error) throw new Error(matched.error.message);
+  if (!matched.data) throw new Error('worker_link_scope_mismatch');
+  if (expectedScope) await requireCurrentTaskScope(taskId, bookingId, expectedScope);
+}
+
+async function auditScopedWorkerLink(input: { linkId: string; taskId: string; bookingId: string; action: 'opened' | 'started' | 'updated' | 'issue_reported' | 'completed'; actorType: string; actorId?: string | null }, expectedScope?: ExpectedScope) {
+  if (expectedScope) await requireCurrentTaskScope(input.taskId, input.bookingId, expectedScope);
+  await auditWorkerLinkAction(input);
+  if (expectedScope) await requireCurrentTaskScope(input.taskId, input.bookingId, expectedScope);
 }
 
 export async function GET(_request: NextRequest, context: { params: { token: string } }) {
@@ -47,9 +80,10 @@ export async function GET(_request: NextRequest, context: { params: { token: str
   const expectedScope = await expectedTaskScope(loaded.task as Record<string, unknown>);
   const bookingId = String(loaded.task.booking_id);
   if (expectedScope) await requireBookingOpsRecordScope(bookingId, expectedScope);
-  await markLinkUsed(String(loaded.link.id));
-  await auditWorkerLinkAction({ linkId: String(loaded.link.id), taskId: String(loaded.task.id), bookingId, action: 'opened', actorType: String(loaded.link.actor_type), actorId: String(loaded.task.id) });
-  if (expectedScope) await requireBookingOpsRecordScope(bookingId, expectedScope);
+  const taskId = String(loaded.task.id);
+  await markLinkUsed(String(loaded.link.id), taskId, bookingId, expectedScope);
+  await auditScopedWorkerLink({ linkId: String(loaded.link.id), taskId, bookingId, action: 'opened', actorType: String(loaded.link.actor_type), actorId: taskId }, expectedScope);
+  if (expectedScope) await requireCurrentTaskScope(taskId, bookingId, expectedScope);
   return NextResponse.json({ ok: true, actorType: loaded.link.actor_type, task: loaded.task });
 }
 
@@ -58,8 +92,9 @@ export async function PATCH(request: NextRequest, context: { params: { token: st
   if (!loaded) return NextResponse.json({ ok: false, error: 'Ссылка недействительна или срок её действия истёк.' }, { status: 410 });
   const expectedScope = await expectedTaskScope(loaded.task as Record<string, unknown>);
   const bookingId = String(loaded.task.booking_id);
+  const taskId = String(loaded.task.id);
   if (expectedScope) await requireBookingOpsRecordScope(bookingId, expectedScope);
-  await markLinkUsed(String(loaded.link.id));
+  await markLinkUsed(String(loaded.link.id), taskId, bookingId, expectedScope);
 
   const body = safeObject(await request.json().catch(() => ({})));
   const action = String(body.action ?? '');
@@ -97,7 +132,7 @@ export async function PATCH(request: NextRequest, context: { params: { token: st
     correlationId: durableEventId('worker_task', String(loaded.task.id)),
     payload: { taskId: loaded.task.id, taskKey: loaded.task.task_key, action },
   }, expectedScope);
-  if (expectedScope) await requireBookingOpsRecordScope(bookingId, expectedScope);
+  if (expectedScope) await requireCurrentTaskScope(taskId, bookingId, expectedScope);
   const auditAction = action === 'start'
     ? 'started'
     : action === 'report_issue'
@@ -105,14 +140,14 @@ export async function PATCH(request: NextRequest, context: { params: { token: st
       : action === 'complete'
         ? 'completed'
         : 'updated';
-  await auditWorkerLinkAction({
+  await auditScopedWorkerLink({
     linkId: String(loaded.link.id),
-    taskId: String(loaded.task.id),
+    taskId,
     bookingId,
     action: auditAction,
     actorType: String(loaded.link.actor_type),
-    actorId: String(loaded.task.id),
-  });
-  if (expectedScope) await requireBookingOpsRecordScope(bookingId, expectedScope);
+    actorId: taskId,
+  }, expectedScope);
+  if (expectedScope) await requireCurrentTaskScope(taskId, bookingId, expectedScope);
   return NextResponse.json({ ok: true, task: updated.data });
 }

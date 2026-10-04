@@ -130,6 +130,25 @@ describe('Operator Alert canonical actions', () => {
     expect(mocks.state.workerTasks[0]).toMatchObject({ id: 'task-1', assigned_person_id: 'person-1', status: 'assigned' });
   });
 
+  it('fails closed if a worker task drifts to another property before assignment persistence', async () => {
+    mocks.state.alert = alert({ sourceGate: 'inspection', metadata: { taskId: 'task-1' } });
+    mocks.state.workerTasks = [{ id: 'task-1', booking_id: 'booking-1', object_id: 'property-1', task_key: 'booking-1:inspector', assigned_role: 'inspector', assigned_person_id: null, status: 'pending' }];
+    const scopedRecord = { id: 'booking-1', bookingId: 'ASI-1', accountId: 'account-a', propertyId: 'property-1' };
+    mocks.requireScope
+      .mockImplementationOnce(async () => scopedRecord)
+      .mockImplementationOnce(async () => {
+        mocks.state.workerTasks[0].object_id = 'property-b';
+        return scopedRecord;
+      });
+
+    await expect(applyOperatorAlertAction({ accountId: 'account-a', alertId: 'alert-1', action: 'assign_executor', actorId: 'operator-1', canOverrideHighRisk: false, executorId: 'person-1' }))
+      .rejects.toThrow('worker_task_assignment_conflict');
+
+    expect(mocks.state.workerTasks[0]).toMatchObject({ object_id: 'property-b', assigned_person_id: null, status: 'pending' });
+    expect(mocks.recordAudit).not.toHaveBeenCalled();
+    expect(mocks.reconcile).not.toHaveBeenCalled();
+  });
+
   it('assigns cleaning through the existing cleaning transition service', async () => {
     mocks.state.cleaningTasks = [{ id: 'cleaning-1', booking_id: 'booking-1', property_id: 'property-1', status: 'pending' }];
     await applyOperatorAlertAction({ accountId: 'account-a', alertId: 'alert-1', action: 'assign_executor', actorId: 'operator-1', canOverrideHighRisk: false, assignedToName: 'Исполнитель' });

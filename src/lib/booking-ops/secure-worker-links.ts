@@ -58,15 +58,26 @@ export async function issueWorkerTaskLink(input: { bookingId: string; taskId: st
   if (input.expectedScope) await requireWorkerTaskScope(input.bookingId, input.taskId, input.expectedScope);
   let assignmentQuery = supabase.from('booking_ops_worker_tasks').update({ assigned_role: input.role, assigned_person_id: input.personId ?? null, status: 'assigned', updated_at: new Date().toISOString() }).eq('id', input.taskId).eq('booking_id', input.bookingId);
   if (input.expectedScope) assignmentQuery = assignmentQuery.eq('object_id', input.expectedScope.propertyId);
-  const assignment = await assignmentQuery;
+  const assignment = input.expectedScope
+    ? await assignmentQuery.select('id,booking_id,object_id').maybeSingle()
+    : await assignmentQuery;
   if (assignment.error) throw new Error(assignment.error.message);
+  if (input.expectedScope && !assignment.data) throw new Error('worker_task_scope_mismatch');
   if (input.expectedScope) await requireWorkerTaskScope(input.bookingId, input.taskId, input.expectedScope);
   const revoke = await supabase.from('booking_ops_secure_task_links').update({ revoked_at: new Date().toISOString() }).eq('task_id', input.taskId).is('revoked_at', null);
   if (revoke.error) throw new Error(revoke.error.message);
   if (input.expectedScope) await requireWorkerTaskScope(input.bookingId, input.taskId, input.expectedScope);
   const created = await supabase.from('booking_ops_secure_task_links').insert({ id: linkId, task_id: input.taskId, token_hash: hash(token), actor_type: input.role, expires_at: input.expiresAt });
   if (created.error) throw new Error(created.error.message);
-  if (input.expectedScope) await requireBookingOpsRecordScope(input.bookingId, input.expectedScope);
+  if (input.expectedScope) {
+    try {
+      await requireWorkerTaskScope(input.bookingId, input.taskId, input.expectedScope);
+    } catch (error) {
+      const cleanup = await supabase.from('booking_ops_secure_task_links').update({ revoked_at: new Date().toISOString() }).eq('id', linkId).eq('task_id', input.taskId);
+      if (cleanup.error) throw new Error(cleanup.error.message);
+      throw error;
+    }
+  }
   await audit({ linkId, taskId: input.taskId, bookingId: input.bookingId, action: 'issued', actorType: 'operator', actorId: input.actorId, metadata: { role: input.role, expiresAt: input.expiresAt, regenerated: true } });
   return { linkId, token, expiresAt: input.expiresAt };
 }
@@ -77,11 +88,15 @@ export async function revokeWorkerTaskLink(input: { bookingId: string; linkId: s
   const related = link.data?.booking_ops_worker_tasks as unknown as { booking_id?: string; object_id?: string | null } | undefined;
   if (link.error || !link.data || related?.booking_id !== input.bookingId) throw new Error('link_not_found');
   if (input.expectedScope && related?.object_id !== input.expectedScope.propertyId) throw new Error('worker_task_scope_mismatch');
-  if (input.expectedScope) await requireWorkerTaskScope(input.bookingId, String(link.data.task_id), input.expectedScope);
-  const result = await supabase.from('booking_ops_secure_task_links').update({ revoked_at: new Date().toISOString() }).eq('id', input.linkId);
+  const taskId = String(link.data.task_id);
+  if (input.expectedScope) await requireWorkerTaskScope(input.bookingId, taskId, input.expectedScope);
+  const result = await supabase.from('booking_ops_secure_task_links').update({ revoked_at: new Date().toISOString() }).eq('id', input.linkId).eq('task_id', taskId);
   if (result.error) throw new Error(result.error.message);
-  if (input.expectedScope) await requireBookingOpsRecordScope(input.bookingId, input.expectedScope);
-  await audit({ linkId: input.linkId, taskId: String(link.data.task_id), bookingId: input.bookingId, action: 'revoked', actorType: 'operator', actorId: input.actorId });
+  const matched = await supabase.from('booking_ops_secure_task_links').select('id').eq('id', input.linkId).eq('task_id', taskId).maybeSingle();
+  if (matched.error) throw new Error(matched.error.message);
+  if (!matched.data) throw new Error('worker_link_scope_mismatch');
+  if (input.expectedScope) await requireWorkerTaskScope(input.bookingId, taskId, input.expectedScope);
+  await audit({ linkId: input.linkId, taskId, bookingId: input.bookingId, action: 'revoked', actorType: 'operator', actorId: input.actorId });
 }
 
 export async function auditWorkerLinkAction(input: { linkId: string; taskId: string; bookingId: string; action: 'opened' | 'started' | 'updated' | 'issue_reported' | 'completed'; actorType: string; actorId?: string | null }) {

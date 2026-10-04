@@ -15,6 +15,7 @@ const database = vi.hoisted(() => {
     link: { id: 'link-1', task_id: 'task-1', actor_type: 'cleaner', expires_at: '2099-01-01T00:00:00.000Z', revoked_at: null } as Row,
     task: { id: 'task-1', booking_id: 'booking-1', object_id: 'property-1', task_key: 'booking-1:cleaner', assigned_role: 'cleaner', status: 'pending', checklist: [], notes: null, photo_attachments: [] } as Row,
     lastWorkerUpdateFilters: {} as Record<string, unknown>,
+    lastLinkUpdateFilters: {} as Record<string, unknown>,
   };
 
   class Query {
@@ -27,13 +28,19 @@ const database = vi.hoisted(() => {
     eq(key: string, value: unknown) { this.filters[key] = value; return this; }
     private result() {
       if (this.table === 'booking_ops_secure_task_links') {
-        return this.mode === 'update' ? { data: null, error: null } : { data: { ...state.link }, error: null };
+        const matches = Object.entries(this.filters).every(([key, value]) => key === 'token_hash' || state.link[key] === value);
+        if (this.mode === 'update') {
+          state.lastLinkUpdateFilters = { ...this.filters };
+          if (matches) Object.assign(state.link, this.patch);
+          return { data: null, error: null };
+        }
+        return { data: matches ? { ...state.link } : null, error: null };
       }
       if (this.table === 'booking_ops_records') return { data: state.record ? { ...state.record } : null, error: null };
       if (this.table === 'booking_ops_worker_tasks') {
-        if (this.mode === 'select') return { data: { ...state.task }, error: null };
-        state.lastWorkerUpdateFilters = { ...this.filters };
         const matches = Object.entries(this.filters).every(([key, value]) => state.task[key] === value);
+        if (this.mode === 'select') return { data: matches ? { ...state.task } : null, error: null };
+        state.lastWorkerUpdateFilters = { ...this.filters };
         if (!matches) return { data: null, error: null };
         Object.assign(state.task, this.patch);
         return { data: { ...state.task }, error: null };
@@ -66,6 +73,7 @@ describe('secure worker workspace completion events', () => {
     database.state.link = { id: 'link-1', task_id: 'task-1', actor_type: 'cleaner', expires_at: '2099-01-01T00:00:00.000Z', revoked_at: null };
     database.state.task = { id: 'task-1', booking_id: 'booking-1', object_id: 'property-1', task_key: 'booking-1:cleaner', assigned_role: 'cleaner', status: 'pending', checklist: [], notes: null, photo_attachments: [] };
     database.state.lastWorkerUpdateFilters = {};
+    database.state.lastLinkUpdateFilters = {};
     mocks.requireScope.mockResolvedValue({});
     mocks.event.mockResolvedValue({ processed: true, duplicate: false });
     mocks.audit.mockResolvedValue(undefined);
@@ -94,6 +102,8 @@ describe('secure worker workspace completion events', () => {
     expect(database.state.lastWorkerUpdateFilters).toMatchObject({
       id: 'task-1', booking_id: 'booking-1', object_id: 'property-1',
     });
+    expect(database.state.lastLinkUpdateFilters).toMatchObject({ id: 'link-1', task_id: 'task-1' });
+    expect(database.state.link.last_used_at).toEqual(expect.any(String));
     expect(mocks.event).toHaveBeenCalledWith(expect.objectContaining({
       bookingId: 'booking-1',
       objectId: 'property-1',
@@ -119,6 +129,50 @@ describe('secure worker workspace completion events', () => {
 
     expect(database.state.task.status).toBe('pending');
     expect(mocks.event).not.toHaveBeenCalled();
+    expect(mocks.audit).not.toHaveBeenCalled();
+  });
+
+  it('fails closed when the secure link drifts to another task before last-used persistence', async () => {
+    mocks.requireScope
+      .mockImplementationOnce(async () => {
+        database.state.link.task_id = 'task-2';
+        return {};
+      })
+      .mockResolvedValue({});
+
+    await expect(PATCH(
+      new NextRequest('https://example.test', {
+        method: 'PATCH',
+        body: JSON.stringify({ action: 'complete' }),
+        headers: { 'content-type': 'application/json' },
+      }),
+      { params: { token: 'worker-token' } },
+    )).rejects.toThrow('worker_link_scope_mismatch');
+
+    expect(database.state.lastLinkUpdateFilters).toMatchObject({ id: 'link-1', task_id: 'task-1' });
+    expect(database.state.link.last_used_at).toBeUndefined();
+    expect(database.state.task.status).toBe('pending');
+    expect(mocks.event).not.toHaveBeenCalled();
+    expect(mocks.audit).not.toHaveBeenCalled();
+  });
+
+  it('fails closed before worker-link audit when the task drifts after lifecycle processing', async () => {
+    mocks.event.mockImplementationOnce(async () => {
+      database.state.task.object_id = 'property-b';
+      return { processed: true, duplicate: false };
+    });
+
+    await expect(PATCH(
+      new NextRequest('https://example.test', {
+        method: 'PATCH',
+        body: JSON.stringify({ action: 'complete' }),
+        headers: { 'content-type': 'application/json' },
+      }),
+      { params: { token: 'worker-token' } },
+    )).rejects.toThrow('worker_task_scope_mismatch');
+
+    expect(database.state.task.status).toBe('completed');
+    expect(database.state.task.object_id).toBe('property-b');
     expect(mocks.audit).not.toHaveBeenCalled();
   });
 

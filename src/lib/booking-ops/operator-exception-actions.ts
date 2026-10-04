@@ -258,9 +258,10 @@ export async function applyOperatorAlertAction(input: {
       if (!ASSIGNABLE_WORKER_STATES.has(linked.status)) throw new Error(`worker_task_assignment_invalid:${linked.status}`);
       await requireBookingOpsRecordScope(alert.bookingId, expectedScope);
       const write = await supabase.from('booking_ops_worker_tasks').update({ assigned_person_id: executorId, status: 'assigned', updated_at: new Date().toISOString() })
-        .eq('id', linked.id).eq('booking_id', alert.bookingId).eq('assigned_role', linked.role!).in('status', [...ASSIGNABLE_WORKER_STATES]).select('id,status').maybeSingle();
+        .eq('id', linked.id).eq('booking_id', alert.bookingId).eq('object_id', expectedScope.propertyId).eq('assigned_role', linked.role!).in('status', [...ASSIGNABLE_WORKER_STATES]).select('id,status').maybeSingle();
       if (write.error) throw new Error(write.error.message);
       if (!write.data) throw new Error('worker_task_assignment_conflict');
+      await requireBookingOpsRecordScope(alert.bookingId, expectedScope);
       await auditAction({ alert, action: input.action, actorId: input.actorId, linked, previousState: linked.status, resultingState: 'assigned', idempotencyKey, expectedScope });
     } else {
       const assignedToName = text(input.assignedToName, 200);

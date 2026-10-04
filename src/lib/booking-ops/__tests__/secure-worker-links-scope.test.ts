@@ -28,14 +28,17 @@ const database = vi.hoisted(() => {
     secureUpdateCount: 0,
     insertedLinks: [] as Row[],
     auditRows: [] as Row[],
+    beforeWorkerUpdate: null as null | (() => void),
+    beforeSecureInsert: null as null | (() => void),
   };
 
   class Query {
     private mode: 'select' | 'update' | 'insert' = 'select';
     private patch: Row = {};
     private filters: Row = {};
+    private returning = false;
     constructor(private table: string) {}
-    select() { return this; }
+    select() { if (this.mode !== 'select') this.returning = true; return this; }
     update(patch: Row) { this.mode = 'update'; this.patch = patch; return this; }
     insert(row: Row) { this.mode = 'insert'; this.patch = row; return this; }
     eq(key: string, value: unknown) { this.filters[key] = value; return this; }
@@ -51,29 +54,32 @@ const database = vi.hoisted(() => {
         }
         state.lastWorkerUpdateFilters = { ...this.filters };
         state.workerUpdateCount += 1;
-        if (this.matches(state.task)) Object.assign(state.task, this.patch);
-        return { data: null, error: null };
+        state.beforeWorkerUpdate?.();
+        const matched = this.matches(state.task);
+        if (matched) Object.assign(state.task, this.patch);
+        return { data: this.returning && matched ? { ...state.task } : null, error: null };
       }
       if (this.table === 'booking_ops_secure_task_links') {
+        const rows = [state.link, ...state.insertedLinks];
         if (this.mode === 'select') {
+          const matched = rows.find((row) => this.matches(row));
           const related = {
             booking_id: state.task.booking_id,
             object_id: state.task.object_id,
           };
           return {
-            data: this.matches(state.link)
-              ? { ...state.link, booking_ops_worker_tasks: related }
-              : null,
+            data: matched ? { ...matched, booking_ops_worker_tasks: related } : null,
             error: null,
           };
         }
         if (this.mode === 'update') {
           state.secureUpdateCount += 1;
-          if (this.matches(state.link)) Object.assign(state.link, this.patch);
+          for (const row of rows) if (this.matches(row)) Object.assign(row, this.patch);
           return { data: null, error: null };
         }
+        state.beforeSecureInsert?.();
         state.insertedLinks.push({ ...this.patch });
-        return { data: null, error: null };
+        return { data: this.returning ? { ...this.patch } : null, error: null };
       }
       if (this.table === 'booking_ops_worker_link_audit') {
         if (this.mode === 'insert') state.auditRows.push({ ...this.patch });
@@ -132,6 +138,8 @@ describe('secure worker links canonical scope', () => {
     database.state.secureUpdateCount = 0;
     database.state.insertedLinks = [];
     database.state.auditRows = [];
+    database.state.beforeWorkerUpdate = null;
+    database.state.beforeSecureInsert = null;
     mocks.requireScope.mockResolvedValue({});
   });
 
@@ -185,6 +193,42 @@ describe('secure worker links canonical scope', () => {
     expect(database.state.auditRows).toHaveLength(0);
   });
 
+  it('fails closed when the guarded task assignment matches no canonical row', async () => {
+    database.state.beforeWorkerUpdate = () => {
+      database.state.task.object_id = 'property-b';
+    };
+
+    await expect(issueWorkerTaskLink({
+      bookingId: 'booking-1',
+      taskId: 'task-1',
+      role: 'inspector',
+      expiresAt: '2099-01-01T00:00:00.000Z',
+      expectedScope: scope,
+    })).rejects.toThrow('worker_task_scope_mismatch');
+
+    expect(database.state.secureUpdateCount).toBe(0);
+    expect(database.state.insertedLinks).toHaveLength(0);
+    expect(database.state.auditRows).toHaveLength(0);
+  });
+
+  it('revokes a newly created link if task scope drifts before issuance audit', async () => {
+    database.state.beforeSecureInsert = () => {
+      database.state.task.object_id = 'property-b';
+    };
+
+    await expect(issueWorkerTaskLink({
+      bookingId: 'booking-1',
+      taskId: 'task-1',
+      role: 'inspector',
+      expiresAt: '2099-01-01T00:00:00.000Z',
+      expectedScope: scope,
+    })).rejects.toThrow('worker_task_scope_mismatch');
+
+    expect(database.state.insertedLinks).toHaveLength(1);
+    expect(database.state.insertedLinks[0]?.revoked_at).toEqual(expect.any(String));
+    expect(database.state.auditRows).toHaveLength(0);
+  });
+
   it('rejects revocation when the linked task object drifts outside the property', async () => {
     database.state.task.object_id = 'property-b';
 
@@ -195,6 +239,25 @@ describe('secure worker links canonical scope', () => {
     })).rejects.toThrow('worker_task_scope_mismatch');
 
     expect(database.state.secureUpdateCount).toBe(0);
+    expect(database.state.auditRows).toHaveLength(0);
+  });
+
+  it('fails closed if a link retargets between revocation read and persistence', async () => {
+    mocks.requireScope
+      .mockResolvedValueOnce({})
+      .mockImplementationOnce(async () => {
+        database.state.link.task_id = 'task-2';
+        return {};
+      })
+      .mockResolvedValue({});
+
+    await expect(revokeWorkerTaskLink({
+      bookingId: 'booking-1',
+      linkId: 'link-1',
+      expectedScope: scope,
+    })).rejects.toThrow('worker_link_scope_mismatch');
+
+    expect(database.state.link.revoked_at).toBeNull();
     expect(database.state.auditRows).toHaveLength(0);
   });
 
