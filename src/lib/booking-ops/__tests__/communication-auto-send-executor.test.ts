@@ -61,6 +61,16 @@ vi.mock('@/lib/supabase', () => ({
   supabase: { from: (table: string) => new Query(table) },
 }));
 
+const requireBookingOpsRecordScope = vi.fn(async (..._args: unknown[]): Promise<any> => ({
+  id: '11111111-1111-4111-8111-111111111111',
+  bookingId: 'booking-1',
+  propertyId: 'property-1',
+  accountId: 'account-1',
+  guestTelegram: '123456',
+  guestEmail: 'guest@example.test',
+  guestIntake: null,
+}));
+
 vi.mock('@/lib/booking-ops/repository', () => ({
   getBookingOpsRecord: vi.fn(async () => ({
     id: '11111111-1111-4111-8111-111111111111',
@@ -71,6 +81,7 @@ vi.mock('@/lib/booking-ops/repository', () => ({
     guestEmail: 'guest@example.test',
     guestIntake: null,
   })),
+  requireBookingOpsRecordScope: (...args: unknown[]) => requireBookingOpsRecordScope(args[0], args[1]),
 }));
 
 const policyDecision = vi.fn();
@@ -168,6 +179,13 @@ beforeEach(() => {
   }];
   policyDecision.mockReset();
   policyDecision.mockResolvedValue({ ...allowedDecision });
+  requireBookingOpsRecordScope.mockReset();
+  requireBookingOpsRecordScope.mockResolvedValue({
+    id: '11111111-1111-4111-8111-111111111111',
+    bookingId: 'booking-1',
+    propertyId: 'property-1',
+    accountId: 'account-1',
+  });
   recordAttempt.mockClear();
   scopeDecision.mockReset();
   scopeDecision.mockResolvedValue({ enabled: true, scope: { ...enabledScope }, globalEmergencyStop: false });
@@ -189,12 +207,41 @@ describe('controlled actual auto-send executor', () => {
     expect(tables.booking_ops_communication_deliveries).toHaveLength(0);
   });
 
+  it('fails closed if canonical booking scope changes before delivery enqueue persistence', async () => {
+    const intent = seedIntent();
+    requireBookingOpsRecordScope.mockRejectedValueOnce(new Error('booking_scope_mismatch'));
+
+    const result = await enqueueAutoSendDelivery(intent.id);
+
+    expect(result).toMatchObject({ ok: false, error: 'booking_scope_mismatch' });
+    expect(requireBookingOpsRecordScope).toHaveBeenCalledWith(
+      intent.booking_ops_record_id,
+      { accountId: 'account-1', propertyId: 'property-1' },
+    );
+    expect(tables.booking_ops_communication_deliveries).toHaveLength(0);
+  });
+
   it('rechecks account ownership immediately before delivery execution', async () => {
     const intent = seedIntent({ actor_type: 'cleaner', purpose: 'cleaner_task_assignment', metadata: { recipient_ref: 'staff-123' } });
     const queued = await enqueueAutoSendDelivery(intent.id);
     const sender = vi.fn(async () => ({ ok: true }));
     const result = await executeAutoSendDelivery(queued.ok ? queued.delivery.id : '', { accountId: 'account-2', sender });
     expect(result).toMatchObject({ ok: false, error: 'booking_scope_mismatch' });
+    expect(sender).not.toHaveBeenCalled();
+  });
+
+  it('blocks send when canonical scope changes after delivery claim', async () => {
+    const intent = seedIntent({ actor_type: 'cleaner', purpose: 'cleaner_task_assignment', metadata: { recipient_ref: 'staff-123' } });
+    const queued = await enqueueAutoSendDelivery(intent.id);
+    requireBookingOpsRecordScope.mockReset();
+    requireBookingOpsRecordScope
+      .mockResolvedValueOnce({ id: intent.booking_ops_record_id, bookingId: 'booking-1', accountId: 'account-1', propertyId: 'property-1' })
+      .mockRejectedValueOnce(new Error('booking_scope_mismatch'));
+    const sender = vi.fn(async () => ({ ok: true }));
+
+    const result = await executeAutoSendDelivery(queued.ok ? queued.delivery.id : '', { sender });
+
+    expect(result).toMatchObject({ ok: false, error: 'booking_scope_mismatch', delivery: { status: 'blocked' } });
     expect(sender).not.toHaveBeenCalled();
   });
 

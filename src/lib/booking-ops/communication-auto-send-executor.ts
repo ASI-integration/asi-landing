@@ -6,7 +6,7 @@ import {
   sendGuestLifecycleVoiceCopy,
   type GuestLifecycleVoiceInput,
 } from '@/lib/communication/guest-lifecycle-voice';
-import { getBookingOpsRecord } from './repository';
+import { getBookingOpsRecord, requireBookingOpsRecordScope } from './repository';
 import {
   SUPPORTED_ACTUAL_AUTO_SEND_MESSAGE_TYPES,
   canAutoSendCommunicationIntent,
@@ -198,6 +198,32 @@ function safeText(value: unknown): string | null {
   return normalized ? normalized : null;
 }
 
+type CanonicalExpectedScope = { accountId: string; propertyId: string };
+
+function canonicalExpectedScope(
+  record: Awaited<ReturnType<typeof getBookingOpsRecord>>,
+): CanonicalExpectedScope | null {
+  const accountId = safeText(record?.accountId);
+  const propertyId = safeText(record?.propertyId);
+  if (!accountId || accountId === 'legacy' || !propertyId) return null;
+  return { accountId, propertyId };
+}
+
+async function revalidateCanonicalScope(
+  bookingOpsRecordId: string,
+  expectedScope: CanonicalExpectedScope | null,
+): Promise<string | null> {
+  if (!expectedScope) return null;
+  try {
+    await requireBookingOpsRecordScope(bookingOpsRecordId, expectedScope);
+    return null;
+  } catch (error) {
+    return error instanceof Error && error.message === 'booking_scope_unavailable'
+      ? 'booking_scope_unavailable'
+      : 'booking_scope_mismatch';
+  }
+}
+
 function deliveryKey(intent: BookingOpsCommunicationIntent): string {
   const lifecycleKey = safeText(intent.metadata.lifecycle_idempotency_key);
   if (lifecycleKey) {
@@ -357,6 +383,7 @@ export async function enqueueAutoSendDelivery(
   if (options.accountId && context.record?.accountId !== options.accountId) {
     return { ok: false as const, error: 'booking_scope_mismatch' };
   }
+  const expectedScope = canonicalExpectedScope(context.record);
   const availabilityGuard = await shouldBlockCommunicationIntent(intent, {
     accountId: context.record?.accountId ?? null,
   });
@@ -370,6 +397,8 @@ export async function enqueueAutoSendDelivery(
   const decision = persistedOperatorBlock(intent)
     ?? await canAutoSendCommunicationIntent(intent, context.policyContext);
   if (!decision.allowed) return { ok: false as const, error: decision.decision, decision };
+  const canonicalScopeError = await revalidateCanonicalScope(intent.bookingOpsRecordId, expectedScope);
+  if (canonicalScopeError) return { ok: false as const, error: canonicalScopeError };
 
   const key = deliveryKey(intent);
   const now = new Date().toISOString();
@@ -501,6 +530,7 @@ export async function executeAutoSendDelivery(
   if (options.accountId && executionContext.record?.accountId !== options.accountId) {
     return { ok: false as const, error: 'booking_scope_mismatch', delivery: null };
   }
+  const expectedScope = canonicalExpectedScope(executionContext.record);
   const availabilityGuard = await shouldBlockCommunicationIntent(intent, {
     accountId: executionContext.record?.accountId ?? null,
   });
@@ -550,6 +580,11 @@ export async function executeAutoSendDelivery(
     const blocked = await blockDelivery(delivery, decision, 'recipient_missing');
     return { ok: false as const, error: 'recipient_missing', delivery: blocked, decision };
   }
+  const canonicalScopeError = await revalidateCanonicalScope(intent.bookingOpsRecordId, expectedScope);
+  if (canonicalScopeError) {
+    const blocked = await blockDelivery(delivery, decision, canonicalScopeError);
+    return { ok: false as const, error: canonicalScopeError, delivery: blocked, decision };
+  }
 
   const now = new Date().toISOString();
   const { data: claimed, error: claimError } = await supabase
@@ -594,6 +629,11 @@ export async function executeAutoSendDelivery(
   if (String(intent.actorType) === 'guest') {
     const blocked = await blockDelivery(delivery, decision, 'knowledge_operator_review_required');
     return { ok: false as const, error: 'knowledge_operator_review_required', delivery: blocked };
+  }
+  const preSendScopeError = await revalidateCanonicalScope(intent.bookingOpsRecordId, expectedScope);
+  if (preSendScopeError) {
+    const blocked = await blockDelivery(delivery, decision, preSendScopeError);
+    return { ok: false as const, error: preSendScopeError, delivery: blocked, decision };
   }
   const sender = options.sender ?? defaultSender;
   try {
