@@ -60,7 +60,7 @@ vi.mock('../communication-auto-send-policy', () => ({
 vi.mock('../real-booking-intake-autopilot', () => ({ processInboundBookingRequest }));
 
 import {
-  CHANNEL_PROVIDER_ADAPTERS, createBookingFromImportedChannelBooking, findSecretPath, getChannelImportConflicts,
+  CHANNEL_PROVIDER_ADAPTERS, completeChannelImportRun, createBookingFromImportedChannelBooking, failChannelImportRun, findSecretPath, getChannelImportConflicts,
   importChannelBookings, importChannelCalendar, importChannelObjects, initializeChannelManagerConnection, markChannelManagerAccessReceived,
   performChannelManagerProviderOnboardingAction, reconcileImportedBookings, reconcileImportedObjects, registerManualChannelSnapshot,
   requestChannelManagerAccess, startChannelImportRun, updateChannelImportEntity,
@@ -244,6 +244,49 @@ describe('Channel Manager Access & Import v1', () => {
     const connection = await initializeChannelManagerConnection(PROPERTY_ID, 'travelline');
     expect(CHANNEL_PROVIDER_ADAPTERS.travelline.supports_real_api).toBe(false);
     await expect(startChannelImportRun(connection.id, 'full', { executeProvider: true })).rejects.toThrow(/не подключён/i);
+  });
+
+  it('captures canonical connection scope on import runs', async () => {
+    const connection = await initializeChannelManagerConnection(PROPERTY_ID, 'manual', { accountId: 'acct-access-import' });
+    const run = await startChannelImportRun(connection.id, 'manual_snapshot');
+
+    expect(run.metadata.canonicalConnectionScope).toMatchObject({
+      connectionId: connection.id,
+      ownerSetupId: OWNER_ID,
+      propertySetupId: PROPERTY_ID,
+      propertyId: 'prop-a',
+      accountId: 'acct-access-import',
+    });
+  });
+
+  it('fails closed when completing a run after the connection moves properties', async () => {
+    const connection = await initializeChannelManagerConnection(PROPERTY_ID, 'manual', { accountId: 'acct-access-import' });
+    const run = await startChannelImportRun(connection.id, 'manual_snapshot');
+    rows('booking_property_setup_profiles').push({
+      id: PROPERTY_B_ID, owner_setup_id: OWNER_ID, property_id: 'prop-b',
+      title: 'Другой дом', address_city: 'Псков', guest_capacity: 2,
+    });
+    const connectionRow = rows('booking_channel_manager_connections').find((row) => row.id === connection.id)!;
+    connectionRow.property_setup_id = PROPERTY_B_ID;
+
+    await expect(completeChannelImportRun(run.id, { objects: 1 })).rejects.toMatchObject({
+      code: 'account_scope_mismatch',
+    });
+
+    expect(rows('booking_channel_import_runs').find((row) => row.id === run.id)?.status).toBe('running');
+  });
+
+  it('fails closed when failing a run after the connection account changes', async () => {
+    const connection = await initializeChannelManagerConnection(PROPERTY_ID, 'manual', { accountId: 'acct-access-import' });
+    const run = await startChannelImportRun(connection.id, 'manual_snapshot');
+    const connectionRow = rows('booking_channel_manager_connections').find((row) => row.id === connection.id)!;
+    connectionRow.metadata = { ...connectionRow.metadata, accountId: 'acct-other' };
+
+    await expect(failChannelImportRun(run.id, 'provider timeout')).rejects.toMatchObject({
+      code: 'account_scope_mismatch',
+    });
+
+    expect(rows('booking_channel_import_runs').find((row) => row.id === run.id)?.status).toBe('running');
   });
 
   it('selects Bnovo, RealtyCalendar and TravelLine as provider-ready connections', async () => {

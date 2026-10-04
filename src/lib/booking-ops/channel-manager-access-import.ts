@@ -6,7 +6,11 @@ import {
   canAutoSendCommunicationIntent,
 } from './communication-auto-send-policy';
 import { processInboundBookingRequest } from './real-booking-intake-autopilot';
-import { assertChannelManagerConnectionScopeCurrent, resolveChannelManagerConnectionScope } from './channel-manager-scope';
+import {
+  assertChannelManagerConnectionScopeCurrent,
+  resolveChannelManagerConnectionScope,
+  type ChannelManagerCanonicalScope,
+} from './channel-manager-scope';
 
 export const CHANNEL_MANAGER_PROVIDERS = ['manual', 'bnovo', 'realtycalendar', 'travelline', 'other'] as const;
 export type ChannelManagerProvider = (typeof CHANNEL_MANAGER_PROVIDERS)[number];
@@ -203,6 +207,43 @@ function mapRun(row: Record<string, unknown>): ChannelImportRun {
   };
 }
 
+const IMPORT_RUN_SCOPE_KEY = 'canonicalConnectionScope';
+
+function serializeChannelManagerScope(scope: ChannelManagerCanonicalScope): Record<string, string | null> {
+  return {
+    connectionId: scope.connectionId,
+    ownerSetupId: scope.ownerSetupId,
+    propertySetupId: scope.propertySetupId,
+    propertyId: scope.propertyId,
+    accountId: scope.accountId,
+  };
+}
+
+function parseImportRunScope(run: ChannelImportRun): ChannelManagerCanonicalScope {
+  const raw = run.metadata?.[IMPORT_RUN_SCOPE_KEY];
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    throw Object.assign(new Error('У запуска импорта отсутствует канонический контур подключения.'), {
+      code: 'connection_scope_invalid',
+    });
+  }
+  const scope = raw as Record<string, unknown>;
+  const connectionId = text(scope.connectionId);
+  const ownerSetupId = text(scope.ownerSetupId);
+  const propertySetupId = text(scope.propertySetupId);
+  if (!connectionId || !ownerSetupId || !propertySetupId || connectionId !== run.connectionId) {
+    throw Object.assign(new Error('Канонический контур запуска импорта повреждён.'), {
+      code: 'connection_scope_invalid',
+    });
+  }
+  return {
+    connectionId,
+    ownerSetupId,
+    propertySetupId,
+    propertyId: nullableText(scope.propertyId),
+    accountId: nullableText(scope.accountId),
+  };
+}
+
 async function getConnection(connectionId: string): Promise<ChannelManagerConnection> {
   const id = assertUuid(connectionId, 'ID подключения');
   const { data, error } = await supabase.from('booking_channel_manager_connections').select('*').eq('id', id).maybeSingle();
@@ -334,47 +375,119 @@ export async function listChannelManagerConnections(propertySetupId?: string): P
 
 export async function startChannelImportRun(connectionId: string, importType: ChannelImportType, options?: { dryRun?: boolean; executeProvider?: boolean; metadata?: Record<string, unknown> }): Promise<ChannelImportRun> {
   const connection = await getConnection(connectionId);
+  const expectedScope = await resolveChannelManagerConnectionScope(connection);
   if (!(CHANNEL_IMPORT_TYPES as readonly string[]).includes(importType)) throw new Error('Недопустимый тип импорта.');
   if (options?.executeProvider && !CHANNEL_PROVIDER_ADAPTERS[connection.provider].supports_real_api) {
     throw new Error(`Реальный API ${connection.provider} в этой версии не подключён. Используйте ручной снимок JSON.`);
   }
   const now = new Date().toISOString();
+  await assertChannelManagerConnectionScopeCurrent(expectedScope);
+  const runMetadata = {
+    ...safeMetadata(options?.metadata),
+    [IMPORT_RUN_SCOPE_KEY]: serializeChannelManagerScope(expectedScope),
+  };
   const { data, error } = await supabase.from('booking_channel_import_runs').insert({
     id: randomUUID(), connection_id: connection.id, provider: connection.provider,
     status: options?.dryRun ? 'dry_run' : 'running', import_type: importType, started_at: now,
-    warnings: [], errors: [], metadata: safeMetadata(options?.metadata), created_at: now, updated_at: now,
+    warnings: [], errors: [], metadata: runMetadata, created_at: now, updated_at: now,
   }).select('*').single();
   if (error || !data) throw new Error(error?.message ?? 'Не удалось начать импорт.');
-  await supabase.from('booking_channel_manager_connections').update({ last_import_at: now, updated_at: now }).eq('id', connection.id);
+  await assertChannelManagerConnectionScopeCurrent(expectedScope);
+  const { data: updatedConnection, error: connectionError } = await supabase
+    .from('booking_channel_manager_connections')
+    .update({ last_import_at: now, updated_at: now })
+    .eq('id', connection.id)
+    .eq('owner_setup_id', expectedScope.ownerSetupId)
+    .eq('property_setup_id', expectedScope.propertySetupId)
+    .select('id')
+    .maybeSingle();
+  if (connectionError) throw new Error(connectionError.message);
+  if (!updatedConnection) throw Object.assign(new Error('Контур подключения изменился во время запуска импорта.'), { code: 'account_scope_mismatch' });
   return mapRun(data as Record<string, unknown>);
 }
 
 export async function completeChannelImportRun(importRunId: string, result: { objects?: number; bookings?: number; calendarDays?: number; prices?: number; warnings?: unknown[]; safeSummary?: string; dryRun?: boolean }, metadata?: Record<string, unknown>): Promise<ChannelImportRun> {
   const id = assertUuid(importRunId, 'ID запуска');
   assertNoSecrets(result);
+  const { data: currentRow, error: currentError } = await supabase
+    .from('booking_channel_import_runs')
+    .select('*')
+    .eq('id', id)
+    .maybeSingle();
+  if (currentError || !currentRow) throw new Error(currentError?.message ?? 'Запуск импорта не найден.');
+
+  const currentRun = mapRun(currentRow as Record<string, unknown>);
+  const expectedScope = parseImportRunScope(currentRun);
+  await assertChannelManagerConnectionScopeCurrent(expectedScope);
+
   const now = new Date().toISOString();
   const warnings = result.warnings ?? [];
+  const completionMetadata = {
+    ...currentRun.metadata,
+    ...safeMetadata(metadata),
+    [IMPORT_RUN_SCOPE_KEY]: serializeChannelManagerScope(expectedScope),
+  };
   const { data, error } = await supabase.from('booking_channel_import_runs').update({
     status: result.dryRun ? 'dry_run' : warnings.length ? 'completed_with_warnings' : 'completed', finished_at: now,
     imported_objects_count: result.objects ?? 0, imported_bookings_count: result.bookings ?? 0,
     imported_calendar_days_count: result.calendarDays ?? 0, imported_prices_count: result.prices ?? 0,
-    warnings, safe_summary: nullableText(result.safeSummary), metadata: safeMetadata(metadata), updated_at: now,
-  }).eq('id', id).select('*').single();
-  if (error || !data) throw new Error(error?.message ?? 'Не удалось завершить импорт.');
-  await supabase.from('booking_channel_manager_connections').update({ status: 'import_ready', last_success_at: now, failure_reason: null, updated_at: now }).eq('id', data.connection_id);
+    warnings, safe_summary: nullableText(result.safeSummary), metadata: completionMetadata, updated_at: now,
+  }).eq('id', id).eq('connection_id', expectedScope.connectionId).select('*').maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!data) throw Object.assign(new Error('Запуск импорта больше не принадлежит исходному подключению.'), { code: 'account_scope_mismatch' });
+
+  await assertChannelManagerConnectionScopeCurrent(expectedScope);
+  const { data: updatedConnection, error: connectionError } = await supabase
+    .from('booking_channel_manager_connections')
+    .update({ status: 'import_ready', last_success_at: now, failure_reason: null, updated_at: now })
+    .eq('id', expectedScope.connectionId)
+    .eq('owner_setup_id', expectedScope.ownerSetupId)
+    .eq('property_setup_id', expectedScope.propertySetupId)
+    .select('id')
+    .maybeSingle();
+  if (connectionError) throw new Error(connectionError.message);
+  if (!updatedConnection) throw Object.assign(new Error('Контур подключения изменился до завершения импорта.'), { code: 'account_scope_mismatch' });
   return mapRun(data as Record<string, unknown>);
 }
 
 export async function failChannelImportRun(importRunId: string, reason: string, metadata?: Record<string, unknown>): Promise<ChannelImportRun> {
   const id = assertUuid(importRunId, 'ID запуска');
   assertNoSecrets(reason);
+  const { data: currentRow, error: currentError } = await supabase
+    .from('booking_channel_import_runs')
+    .select('*')
+    .eq('id', id)
+    .maybeSingle();
+  if (currentError || !currentRow) throw new Error(currentError?.message ?? 'Запуск импорта не найден.');
+
+  const currentRun = mapRun(currentRow as Record<string, unknown>);
+  const expectedScope = parseImportRunScope(currentRun);
+  await assertChannelManagerConnectionScopeCurrent(expectedScope);
+
   const now = new Date().toISOString();
+  const failureMetadata = {
+    ...currentRun.metadata,
+    ...safeMetadata(metadata),
+    [IMPORT_RUN_SCOPE_KEY]: serializeChannelManagerScope(expectedScope),
+  };
   const { data, error } = await supabase.from('booking_channel_import_runs').update({
     status: 'failed', finished_at: now, errors: [text(reason).slice(0, 500)], safe_summary: 'Импорт не завершён.',
-    metadata: safeMetadata(metadata), updated_at: now,
-  }).eq('id', id).select('*').single();
-  if (error || !data) throw new Error(error?.message ?? 'Не удалось отметить ошибку импорта.');
-  await supabase.from('booking_channel_manager_connections').update({ status: 'import_failed', last_failure_at: now, failure_reason: text(reason).slice(0, 500), updated_at: now }).eq('id', data.connection_id);
+    metadata: failureMetadata, updated_at: now,
+  }).eq('id', id).eq('connection_id', expectedScope.connectionId).select('*').maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!data) throw Object.assign(new Error('Запуск импорта больше не принадлежит исходному подключению.'), { code: 'account_scope_mismatch' });
+
+  await assertChannelManagerConnectionScopeCurrent(expectedScope);
+  const { data: updatedConnection, error: connectionError } = await supabase
+    .from('booking_channel_manager_connections')
+    .update({ status: 'import_failed', last_failure_at: now, failure_reason: text(reason).slice(0, 500), updated_at: now })
+    .eq('id', expectedScope.connectionId)
+    .eq('owner_setup_id', expectedScope.ownerSetupId)
+    .eq('property_setup_id', expectedScope.propertySetupId)
+    .select('id')
+    .maybeSingle();
+  if (connectionError) throw new Error(connectionError.message);
+  if (!updatedConnection) throw Object.assign(new Error('Контур подключения изменился до фиксации ошибки импорта.'), { code: 'account_scope_mismatch' });
   return mapRun(data as Record<string, unknown>);
 }
 
