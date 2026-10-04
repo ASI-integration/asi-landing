@@ -56,6 +56,26 @@ describe('Booking Lifecycle Orchestrator protected API', () => {
     expect(orchestrator.getBookingLifecycleOrchestratorSnapshot).not.toHaveBeenCalled();
   });
 
+  it('passes canonical scope into single-booking reads and runs', async () => {
+    vi.mocked(orchestrator.getBookingLifecycleOrchestratorSnapshot).mockResolvedValue({} as never);
+    vi.mocked(orchestrator.orchestrateBookingLifecycle).mockResolvedValue({} as never);
+    const read = await GET(new Request('http://localhost/api/dashboard/booking-ops/lifecycle-orchestrator?bookingId=11111111-1111-4111-8111-111111111111'));
+    expect(read.status).toBe(200);
+    expect(orchestrator.getBookingLifecycleOrchestratorSnapshot).toHaveBeenCalledWith(
+      '11111111-1111-4111-8111-111111111111', true,
+      { accountId: 'account-1', propertyId: 'property-1' },
+    );
+    const run = await POST(new Request('http://localhost/api/dashboard/booking-ops/lifecycle-orchestrator', {
+      method: 'POST', body: JSON.stringify({ bookingId: '11111111-1111-4111-8111-111111111111' }),
+    }));
+    expect(run.status).toBe(200);
+    expect(orchestrator.orchestrateBookingLifecycle).toHaveBeenCalledWith({
+      bookingId: '11111111-1111-4111-8111-111111111111', now: undefined,
+      runType: 'manual_dashboard', actorId: 'ops@asi.test',
+      expectedScope: { accountId: 'account-1', propertyId: 'property-1' },
+    });
+  });
+
   it('scopes the due-booking batch to the authenticated account', async () => {
     vi.mocked(orchestrator.orchestrateDueBookingLifecycles).mockResolvedValue({ processed: 0, succeeded: 0, failed: 0, results: [] });
     const response = await POST_DUE(new Request('http://localhost/api/dashboard/booking-ops/lifecycle-orchestrator/due', {

@@ -135,6 +135,9 @@ import {
   enqueueAutoSendDelivery,
   executeAutoSendDelivery,
   getEligibleAutoSendIntents,
+  recordDeliveryFailure,
+  recordDeliverySuccess,
+  skipDelivery,
 } from '../communication-auto-send-executor';
 
 const allowedDecision = {
@@ -221,6 +224,30 @@ describe('controlled actual auto-send executor', () => {
     expect(tables.booking_ops_communication_deliveries).toHaveLength(0);
   });
 
+  it('guards exported delivery status mutations with canonical booking scope', async () => {
+    const intent = seedIntent({
+      actor_type: 'cleaner',
+      purpose: 'cleaner_task_assignment',
+      metadata: { recipient_ref: 'staff-123' },
+    });
+    const queued = await enqueueAutoSendDelivery(intent.id);
+    const deliveryId = queued.ok ? queued.delivery.id : '';
+    const deliveryRow = tables.booking_ops_communication_deliveries[0];
+    const expectedScope = { accountId: 'account-1', propertyId: 'property-1' };
+
+    for (const mutate of [
+      () => recordDeliverySuccess(deliveryId, 'provider-1', {}, expectedScope),
+      () => recordDeliveryFailure(deliveryId, 'provider_rejected', {}, expectedScope),
+      () => skipDelivery(deliveryId, 'manual_skip', {}, expectedScope),
+    ]) {
+      requireBookingOpsRecordScope.mockReset();
+      requireBookingOpsRecordScope.mockRejectedValueOnce(new Error('booking_scope_mismatch'));
+      const before = deliveryRow.status;
+      await expect(mutate()).resolves.toBeNull();
+      expect(deliveryRow.status).toBe(before);
+    }
+  });
+
   it('rechecks account ownership immediately before delivery execution', async () => {
     const intent = seedIntent({ actor_type: 'cleaner', purpose: 'cleaner_task_assignment', metadata: { recipient_ref: 'staff-123' } });
     const queued = await enqueueAutoSendDelivery(intent.id);
@@ -243,6 +270,28 @@ describe('controlled actual auto-send executor', () => {
 
     expect(result).toMatchObject({ ok: false, error: 'booking_scope_mismatch', delivery: { status: 'blocked' } });
     expect(sender).not.toHaveBeenCalled();
+  });
+
+  it('does not mutate delivery or intent state if scope changes after the provider call', async () => {
+    const intent = seedIntent({
+      actor_type: 'cleaner',
+      purpose: 'cleaner_task_assignment',
+      metadata: { recipient_ref: 'staff-123' },
+    });
+    const queued = await enqueueAutoSendDelivery(intent.id);
+    requireBookingOpsRecordScope.mockReset();
+    requireBookingOpsRecordScope
+      .mockResolvedValueOnce({ id: intent.booking_ops_record_id, bookingId: 'booking-1', accountId: 'account-1', propertyId: 'property-1' })
+      .mockResolvedValueOnce({ id: intent.booking_ops_record_id, bookingId: 'booking-1', accountId: 'account-1', propertyId: 'property-1' })
+      .mockRejectedValueOnce(new Error('booking_scope_mismatch'));
+    const sender = vi.fn(async () => ({ ok: true, providerMessageId: 'provider-1' }));
+
+    const result = await executeAutoSendDelivery(queued.ok ? queued.delivery.id : '', { sender });
+
+    expect(result).toMatchObject({ ok: true, delivery: null, deliveryStatusDeferred: true });
+    expect(sender).toHaveBeenCalledTimes(1);
+    expect(tables.booking_ops_communication_deliveries[0]?.status).toBe('sending');
+    expect(tables.booking_ops_communication_intents[0]?.status).toBe('draft_ready');
   });
 
   it('keeps guest auto-send disabled even with an enabled scope and eligible legacy metadata', async () => {

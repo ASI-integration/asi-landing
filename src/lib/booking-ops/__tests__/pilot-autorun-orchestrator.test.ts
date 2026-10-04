@@ -7,9 +7,12 @@ const mocks = vi.hoisted(() => ({
   getAudienceProfile: vi.fn(), inferPropertyAudience: vi.fn(), getMarketSignalBlockers: vi.fn(), initializeMarketSignalSource: vi.fn(),
   getChannelManagerConnectionStatus: vi.fn(), initializeChannelManagerConnection: vi.fn(),
   getPublicationReadinessStatus: vi.fn(), initializePublicationPackage: vi.fn(), buildPublicationPackage: vi.fn(),
-  getBookingOpsRecord: vi.fn(), listBookingOpsRecords: vi.fn(), syncBookingOpsTasksForRecordId: vi.fn(),
+  getBookingOpsRecord: vi.fn(), listBookingOpsRecords: vi.fn(), requireBookingOpsRecordScope: vi.fn(), syncBookingOpsTasksForRecordId: vi.fn(),
   initializeBookingOpsCoreLoop: vi.fn(), initializeCheckinExecutionBaseline: vi.fn(), initializeInStayCheckoutBaseline: vi.fn(),
   recomputeBookingCheckinReadiness: vi.fn(), listBookingOpsTasksForRecord: vi.fn(), syncBookingOpsCommunications: vi.fn(),
+  checkBookingOverbookingRisk: vi.fn(), getAvailabilityStatus: vi.fn(),
+  initializeGuestLegalExecution: vi.fn(), requestGuestDocumentsDraft: vi.fn(), createContractDraft: vi.fn(),
+  createDepositRequestDraft: vi.fn(), createMvdDraft: vi.fn(), recomputeGuestLegalReadiness: vi.fn(),
   marketSources: [] as Array<{ id: string }>, runs: new Map<string, Record<string, unknown>>(),
 }));
 
@@ -55,16 +58,28 @@ vi.mock('../property-audience-intelligence', () => ({ getAudienceProfile: mocks.
 vi.mock('../market-signals-ingestion', () => ({ getMarketSignalBlockers: mocks.getMarketSignalBlockers, initializeMarketSignalSource: mocks.initializeMarketSignalSource }));
 vi.mock('../channel-manager-access-import', () => ({ getChannelManagerConnectionStatus: mocks.getChannelManagerConnectionStatus, initializeChannelManagerConnection: mocks.initializeChannelManagerConnection }));
 vi.mock('../channel-publishing-preparation', () => ({ getPublicationReadinessStatus: mocks.getPublicationReadinessStatus, initializePublicationPackage: mocks.initializePublicationPackage, buildPublicationPackage: mocks.buildPublicationPackage }));
-vi.mock('../repository', () => ({ getBookingOpsRecord: mocks.getBookingOpsRecord, listBookingOpsRecords: mocks.listBookingOpsRecords, syncBookingOpsTasksForRecordId: mocks.syncBookingOpsTasksForRecordId }));
+vi.mock('../repository', () => ({ getBookingOpsRecord: mocks.getBookingOpsRecord, listBookingOpsRecords: mocks.listBookingOpsRecords, requireBookingOpsRecordScope: mocks.requireBookingOpsRecordScope, syncBookingOpsTasksForRecordId: mocks.syncBookingOpsTasksForRecordId }));
 vi.mock('../core-loop-initialization', () => ({ initializeBookingOpsCoreLoop: mocks.initializeBookingOpsCoreLoop }));
 vi.mock('../checkin-execution-autopilot', () => ({ initializeCheckinExecutionBaseline: mocks.initializeCheckinExecutionBaseline }));
 vi.mock('../instay-checkout-autopilot', () => ({ initializeInStayCheckoutBaseline: mocks.initializeInStayCheckoutBaseline }));
 vi.mock('../pre-checkin-control-center', () => ({ recomputeBookingCheckinReadiness: mocks.recomputeBookingCheckinReadiness }));
 vi.mock('../tasks', () => ({ listBookingOpsTasksForRecord: mocks.listBookingOpsTasksForRecord }));
 vi.mock('../communication-orchestrator', () => ({ syncBookingOpsCommunications: mocks.syncBookingOpsCommunications }));
+vi.mock('../availability-overbooking-protection', () => ({
+  checkBookingOverbookingRisk: mocks.checkBookingOverbookingRisk,
+  getAvailabilityStatus: mocks.getAvailabilityStatus,
+}));
+vi.mock('../guest-legal-deposit-mvd-execution', () => ({
+  initializeGuestLegalExecution: mocks.initializeGuestLegalExecution,
+  requestGuestDocumentsDraft: mocks.requestGuestDocumentsDraft,
+  createContractDraft: mocks.createContractDraft,
+  createDepositRequestDraft: mocks.createDepositRequestDraft,
+  createMvdDraft: mocks.createMvdDraft,
+  recomputeGuestLegalReadiness: mocks.recomputeGuestLegalReadiness,
+}));
 
 import {
-  createPilotAutorunFallbackIfNeeded, runPilotAutorunForBooking,
+  createPilotAutorunFallbackIfNeeded, runPilotAutorunBatch, runPilotAutorunForBooking,
   runPilotAutorunForLead, runPilotAutorunForPropertySetup,
 } from '../pilot-autorun-orchestrator';
 
@@ -87,6 +102,13 @@ describe('Pilot autorun orchestrator', () => {
     mocks.getChannelManagerConnectionStatus.mockResolvedValue(null); mocks.initializeChannelManagerConnection.mockResolvedValue({ id: 'connection-1' });
     mocks.getPublicationReadinessStatus.mockResolvedValue(null); mocks.initializePublicationPackage.mockResolvedValue(publication); mocks.buildPublicationPackage.mockResolvedValue(publication);
     mocks.requestMissingPropertySetupData.mockResolvedValue({}); mocks.requestPropertyPhotos.mockResolvedValue({});
+    mocks.listBookingOpsRecords.mockResolvedValue({ ok: true, records: [] });
+    mocks.getAvailabilityStatus.mockResolvedValue({ conflicts: [] });
+    mocks.checkBookingOverbookingRisk.mockResolvedValue({ status: 'no_conflict', safeSummary: 'Доступность подтверждена.', blockers: [] });
+    mocks.recomputeGuestLegalReadiness.mockResolvedValue({ status: 'ready_for_checkin', blockers: [], nextAction: null });
+    mocks.initializeGuestLegalExecution.mockResolvedValue({ status: 'ready_for_checkin', blockers: [], nextAction: null });
+    mocks.requestGuestDocumentsDraft.mockResolvedValue({}); mocks.createContractDraft.mockResolvedValue({});
+    mocks.createDepositRequestDraft.mockResolvedValue({}); mocks.createMvdDraft.mockResolvedValue({});
     mocks.syncBookingOpsTasksForRecordId.mockResolvedValue({ ok: true }); mocks.listBookingOpsTasksForRecord.mockResolvedValue({ ok: true, tasks: [] });
     mocks.syncBookingOpsCommunications.mockResolvedValue({ ok: true, communications: [], plan: {} });
   });
@@ -126,11 +148,33 @@ describe('Pilot autorun orchestrator', () => {
   });
 
   it('initializes lifecycle, legal/payment/MVD, check-in, checkout, tasks and safe communications for a booking', async () => {
-    mocks.getBookingOpsRecord.mockResolvedValue({ id: 'booking-1', propertyId: 'prop-1', checkInAt: '2026-07-10', checkOutAt: '2026-07-12', isBlocked: false });
+    const record = { id: 'booking-1', accountId: 'account-1', propertyId: 'prop-1', checkInAt: '2026-07-10', checkOutAt: '2026-07-12', isBlocked: false };
+    const expectedScope = { accountId: 'account-1', propertyId: 'prop-1' };
+    mocks.getBookingOpsRecord.mockResolvedValue(record);
+    mocks.requireBookingOpsRecordScope.mockResolvedValue(record);
     await runPilotAutorunForBooking('booking-1');
-    expect(mocks.initializeBookingOpsCoreLoop).toHaveBeenCalledOnce(); expect(mocks.initializeCheckinExecutionBaseline).toHaveBeenCalledOnce();
-    expect(mocks.initializeInStayCheckoutBaseline).toHaveBeenCalledOnce(); expect(mocks.syncBookingOpsTasksForRecordId).toHaveBeenCalledOnce();
-    expect(mocks.syncBookingOpsCommunications).toHaveBeenCalledOnce();
+    expect(mocks.requireBookingOpsRecordScope).toHaveBeenCalledWith('booking-1', expectedScope);
+    expect(mocks.initializeBookingOpsCoreLoop).toHaveBeenCalledWith('booking-1', expectedScope);
+    expect(mocks.initializeCheckinExecutionBaseline).toHaveBeenCalledWith('booking-1', expectedScope);
+    expect(mocks.initializeInStayCheckoutBaseline).toHaveBeenCalledWith('booking-1', expectedScope);
+    expect(mocks.syncBookingOpsTasksForRecordId).toHaveBeenCalledWith('booking-1', { expectedScope });
+    expect(mocks.syncBookingOpsCommunications).toHaveBeenCalledWith(expect.objectContaining({ record, expectedScope }));
+  });
+
+  it('rejects a booking from another authenticated account before creating an autorun record', async () => {
+    mocks.getBookingOpsRecord.mockResolvedValue({
+      id: 'booking-foreign', accountId: 'account-2', propertyId: 'prop-2',
+      checkInAt: '2026-07-10', checkOutAt: '2026-07-12', isBlocked: false,
+    });
+    await expect(runPilotAutorunForBooking('booking-foreign', { accountId: 'account-1' }))
+      .rejects.toThrow('booking_scope_mismatch');
+    expect(mocks.runs.size).toBe(0);
+  });
+
+  it('filters batch booking discovery to the authenticated account', async () => {
+    const result = await runPilotAutorunBatch({ accountId: 'account-1', scope: 'booking' });
+    expect(mocks.listBookingOpsRecords).toHaveBeenCalledWith({ limit: 25, accountId: 'account-1' });
+    expect(result.scope.scopeRef).toContain('batch:account-1:');
   });
 
   it('does not create task records when property or stay dates are absent', async () => {

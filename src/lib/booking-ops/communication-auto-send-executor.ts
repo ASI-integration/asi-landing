@@ -446,11 +446,26 @@ async function updateDelivery(deliveryId: string, patch: Record<string, unknown>
   return error || !data ? null : mapDelivery(data as DeliveryRow);
 }
 
+async function revalidateDeliveryMutationScope(
+  deliveryId: string,
+  expectedScope?: CanonicalExpectedScope,
+): Promise<string | null> {
+  if (!expectedScope) return null;
+  const delivery = await readDelivery(deliveryId);
+  if (!delivery) return 'delivery_not_found';
+  const intent = await readIntent(delivery.communicationIntentId);
+  if (!intent) return 'intent_not_found';
+  return revalidateCanonicalScope(intent.bookingOpsRecordId, expectedScope);
+}
+
 export async function recordDeliverySuccess(
   deliveryId: string,
   providerMessageId?: string,
   metadata: Record<string, unknown> = {},
+  expectedScope?: CanonicalExpectedScope,
 ) {
+  const scopeError = await revalidateDeliveryMutationScope(deliveryId, expectedScope);
+  if (scopeError) return null;
   return updateDelivery(deliveryId, {
     status: 'sent',
     provider_message_id: safeText(providerMessageId),
@@ -464,7 +479,10 @@ export async function recordDeliveryFailure(
   deliveryId: string,
   reason: string,
   metadata: Record<string, unknown> = {},
+  expectedScope?: CanonicalExpectedScope,
 ) {
+  const scopeError = await revalidateDeliveryMutationScope(deliveryId, expectedScope);
+  if (scopeError) return null;
   return updateDelivery(deliveryId, {
     status: 'failed',
     failure_reason: safeText(reason)?.slice(0, 160) ?? 'send_failed',
@@ -476,7 +494,10 @@ export async function skipDelivery(
   deliveryId: string,
   reason: string,
   metadata: Record<string, unknown> = {},
+  expectedScope?: CanonicalExpectedScope,
 ) {
+  const scopeError = await revalidateDeliveryMutationScope(deliveryId, expectedScope);
+  if (scopeError) return null;
   return updateDelivery(deliveryId, {
     status: 'skipped',
     failure_reason: safeText(reason)?.slice(0, 160) ?? 'skipped',
@@ -656,7 +677,12 @@ export async function executeAutoSendDelivery(
         guest_ref: intent.actorType === 'guest' ? executionContext.recipientRef : null,
         error_code: result.reason ?? 'provider_rejected',
       });
-      const failed = await recordDeliveryFailure(delivery.id, result.reason ?? 'provider_rejected');
+      const failed = await recordDeliveryFailure(
+        delivery.id,
+        result.reason ?? 'provider_rejected',
+        {},
+        expectedScope ?? undefined,
+      );
       return { ok: false as const, error: result.reason ?? 'provider_rejected', delivery: failed, decision };
     }
     const voiceAttempted = Boolean(
@@ -681,18 +707,37 @@ export async function executeAutoSendDelivery(
       delivery.id,
       'providerMessageId' in result ? result.providerMessageId : undefined,
       { source: channel, voice_attempted: voiceAttempted, voice_sent: voiceSent },
+      expectedScope ?? undefined,
     );
-    await supabase.from('booking_ops_communication_intents').update({
-      status: 'completed',
-      updated_at: new Date().toISOString(),
-    }).eq('id', intent.id);
-    return { ok: true as const, delivery: sent, decision, scope: safeScopeView(scope), voiceAttempted, voiceSent };
+    if (sent) {
+      const completionScopeError = await revalidateCanonicalScope(intent.bookingOpsRecordId, expectedScope);
+      if (!completionScopeError) {
+        await supabase.from('booking_ops_communication_intents').update({
+          status: 'completed',
+          updated_at: new Date().toISOString(),
+        }).eq('id', intent.id).eq('booking_ops_record_id', intent.bookingOpsRecordId);
+      }
+    }
+    return {
+      ok: true as const,
+      delivery: sent,
+      decision,
+      scope: safeScopeView(scope),
+      voiceAttempted,
+      voiceSent,
+      deliveryStatusDeferred: !sent,
+    };
   } catch {
     await recordAutoSendAttempt(intent.id, 'failed', {
       booking_id: delivery.bookingId,
       error_code: 'provider_exception',
     });
-    const failed = await recordDeliveryFailure(delivery.id, 'provider_exception');
+    const failed = await recordDeliveryFailure(
+      delivery.id,
+      'provider_exception',
+      {},
+      expectedScope ?? undefined,
+    );
     return { ok: false as const, error: 'provider_exception', delivery: failed, decision };
   }
 }

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { requireOpsAdminSession } from '@/lib/crm/api-auth';
+import { requireBookingOpsApiAccess, requireBookingOpsApiAccount } from '../../booking-ops/access';
 import {
   createPilotAutorunFallbackIfNeeded,
   runPilotAutorunBatch,
@@ -32,14 +33,30 @@ export async function POST(req: Request): Promise<NextResponse> {
     const body = await req.json() as Record<string, unknown>;
     const scope = parseScope(body.scope);
     const ref = parseRef(body.ref, scope);
+    let authorizedRef = ref;
+    let accountId: string | undefined;
+    if (scope === 'booking') {
+      const access = await requireBookingOpsApiAccess(auth.session, ref);
+      if (!access.ok) return access.response;
+      authorizedRef = access.bookingId;
+      accountId = access.accountId;
+    } else if (scope === 'batch') {
+      const access = await requireBookingOpsApiAccount(auth.session);
+      if (!access.ok) return access.response;
+      accountId = access.accountId;
+      if (body.action === 'fallback' && !ref.startsWith(`batch:${accountId}:`)) {
+        return NextResponse.json({ ok: false, message: 'Нет доступа к пакетному запуску.' }, { status: 403 });
+      }
+    }
     if (body.action === 'fallback') {
       const status = await createPilotAutorunFallbackIfNeeded(
-        { scopeType: scope, scopeRef: ref },
+        { scopeType: scope, scopeRef: authorizedRef },
         typeof body.reason === 'string' ? body.reason : 'Требуется ручная проверка.',
       );
       return NextResponse.json({ ok: true, result: status });
     }
     const options: PilotAutorunOptions = {
+      accountId,
       dryRun: body.dryRun === true,
       maxSteps: typeof body.maxSteps === 'number' ? body.maxSteps : undefined,
       allowSafeCommunicationQueue: body.allowSafeCommunicationQueue !== false,
@@ -48,11 +65,11 @@ export async function POST(req: Request): Promise<NextResponse> {
       scope: scope === 'property_setup' ? 'property' : scope === 'batch' ? 'all' : scope,
     };
     const result = scope === 'lead'
-      ? await runPilotAutorunForLead(ref, options)
+      ? await runPilotAutorunForLead(authorizedRef, options)
       : scope === 'property_setup'
-        ? await runPilotAutorunForPropertySetup(ref, options)
+        ? await runPilotAutorunForPropertySetup(authorizedRef, options)
         : scope === 'booking'
-          ? await runPilotAutorunForBooking(ref, options)
+          ? await runPilotAutorunForBooking(authorizedRef, options)
           : await runPilotAutorunBatch(options);
     return NextResponse.json({ ok: true, result });
   } catch (error) {

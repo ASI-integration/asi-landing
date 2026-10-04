@@ -1,4 +1,5 @@
 import { initializeLifecycleForBooking } from './lifecycle';
+import { requireBookingOpsRecordScope } from './repository';
 
 export type BookingOpsCoreLoopInitialization = {
   lifecycleInitialized: true;
@@ -13,19 +14,21 @@ export type BookingOpsCoreLoopInitialization = {
  */
 export async function initializeBookingOpsCoreLoop(
   bookingOpsRecordId: string,
+  expectedScope?: { accountId: string; propertyId: string },
 ): Promise<BookingOpsCoreLoopInitialization> {
-  const lifecycle = await initializeLifecycleForBooking(bookingOpsRecordId);
+  if (expectedScope) await requireBookingOpsRecordScope(bookingOpsRecordId, expectedScope);
+  const lifecycle = await initializeLifecycleForBooking(bookingOpsRecordId, expectedScope);
   if (!lifecycle.ok) {
     throw new Error(lifecycle.error ?? 'lifecycle_initialization_failed');
   }
 
   // Loaded lazily because the legal execution module reads the persisted record.
   const { initializeGuestLegalExecution } = await import('./guest-legal-deposit-mvd-execution');
-  await initializeGuestLegalExecution(bookingOpsRecordId);
+  await initializeGuestLegalExecution(bookingOpsRecordId, {}, expectedScope);
   const { ensurePhysicalTasks } = await import('./physical-readiness-execution');
-  await ensurePhysicalTasks(bookingOpsRecordId);
+  await ensurePhysicalTasks(bookingOpsRecordId, expectedScope);
   const { orchestrateBookingLifecycle } = await import('./lifecycle-orchestrator');
-  await orchestrateBookingLifecycle({ bookingId: bookingOpsRecordId, runType: 'single_booking' });
+  await orchestrateBookingLifecycle({ bookingId: bookingOpsRecordId, runType: 'single_booking', expectedScope });
 
   return {
     lifecycleInitialized: true,
