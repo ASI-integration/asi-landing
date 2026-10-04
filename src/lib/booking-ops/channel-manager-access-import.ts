@@ -661,6 +661,7 @@ export type ChannelImportConflict = { type: string; severity: 'warning' | 'block
 
 export async function getChannelImportConflicts(connectionId: string): Promise<ChannelImportConflict[]> {
   const connection = await getConnection(connectionId);
+  const scope = await resolveChannelManagerConnectionScope(connection);
   const [{ data: objects }, { data: bookings }, { data: calendar }] = await Promise.all([
     supabase.from('booking_channel_imported_objects').select('id,match_status').eq('connection_id', connection.id),
     supabase.from('booking_channel_imported_bookings').select('id,match_status,matched_booking_id').eq('connection_id', connection.id),
@@ -677,13 +678,12 @@ export async function getChannelImportConflicts(connectionId: string): Promise<C
     if (booking.status !== 'cancelled' && availableDay) conflicts.push({ type: 'availability_mismatch', severity: 'warning', entityId: booking.id, message: 'На дату существующей брони календарь показывает доступность.' });
   }
   if (!objects?.length) conflicts.push({ type: 'setup_object_not_present_in_cm', severity: 'warning', message: 'В импорте нет объектов для сверки.' });
-  if (connection.propertySetupId) {
-    const { data: setup } = await supabase.from('booking_property_setup_profiles').select('property_id').eq('id', connection.propertySetupId).maybeSingle();
-    if (setup?.property_id) {
-      const { data: asiBookings } = await supabase.from('booking_ops_records').select('id').eq('property_id', setup.property_id);
-      const importedIds = new Set(confirmedBookings.map((item) => text(item.matched_booking_id)).filter(Boolean));
-      for (const booking of asiBookings ?? []) if (!importedIds.has(text(booking.id))) conflicts.push({ type: 'booking_missing_in_cm', severity: 'warning', entityId: booking.id, message: 'Бронь есть в ASI, но отсутствует в снимке менеджера каналов.' });
-    }
+  if (scope.propertyId) {
+    let asiBookingsQuery = supabase.from('booking_ops_records').select('id').eq('property_id', scope.propertyId);
+    if (scope.accountId) asiBookingsQuery = asiBookingsQuery.eq('account_id', scope.accountId);
+    const { data: asiBookings } = await asiBookingsQuery;
+    const importedIds = new Set(confirmedBookings.map((item) => text(item.matched_booking_id)).filter(Boolean));
+    for (const booking of asiBookings ?? []) if (!importedIds.has(text(booking.id))) conflicts.push({ type: 'booking_missing_in_cm', severity: 'warning', entityId: booking.id, message: 'Бронь есть в ASI, но отсутствует в снимке менеджера каналов.' });
   }
   return conflicts;
 }
@@ -718,6 +718,7 @@ export async function createBookingFromImportedChannelBooking(
   options?: {
     force?: boolean;
     reservationMetadata?: Record<string, unknown> | null;
+    connectionId?: string | null;
     propertyId?: string | null;
     accountId?: string | null;
   },
@@ -725,6 +726,12 @@ export async function createBookingFromImportedChannelBooking(
   const id = assertUuid(importedBookingId, 'ID импортированной брони');
   const { data: imported, error } = await supabase.from('booking_channel_imported_bookings').select('*').eq('id', id).maybeSingle();
   if (error || !imported) throw new Error('Импортированная бронь не найдена.');
+  const expectedConnectionId = nullableText(options?.connectionId);
+  if (expectedConnectionId && expectedConnectionId !== text(imported.connection_id)) {
+    throw Object.assign(new Error('Импортированная бронь принадлежит другому подключению.'), {
+      code: 'account_scope_mismatch',
+    });
+  }
 
   const connection = await getConnection(text(imported.connection_id));
   const { data: object } = imported.external_object_id
@@ -859,8 +866,16 @@ export async function listChannelCalendarSnapshots(connectionId?: string): Promi
   const { data, error } = await query.limit(500); if (error) throw new Error(error.message); return (data ?? []) as Record<string, unknown>[];
 }
 
-export async function updateChannelImportEntity(table: 'booking_channel_imported_objects' | 'booking_channel_imported_bookings', id: string, patch: Record<string, unknown>): Promise<void> {
-  const { error } = await supabase.from(table).update({ ...patch, updated_at: new Date().toISOString() }).eq('id', assertUuid(id));
+export async function updateChannelImportEntity(table: 'booking_channel_imported_objects' | 'booking_channel_imported_bookings', id: string, patch: Record<string, unknown>, expectedConnectionId?: string | null): Promise<void> {
+  const entityId = assertUuid(id);
+  const connectionId = expectedConnectionId ? assertUuid(expectedConnectionId, 'ID подключения') : null;
+  let entityQuery = supabase.from(table).select('id,connection_id').eq('id', entityId);
+  if (connectionId) entityQuery = entityQuery.eq('connection_id', connectionId);
+  const { data: entity, error: entityError } = await entityQuery.maybeSingle();
+  if (entityError) throw new Error(entityError.message);
+  if (!entity) throw Object.assign(new Error('Импортированная запись не принадлежит указанному подключению.'), { code: 'account_scope_mismatch' });
+  const canonicalConnectionId = text(entity.connection_id);
+  const { error } = await supabase.from(table).update({ ...patch, updated_at: new Date().toISOString() }).eq('id', entityId).eq('connection_id', canonicalConnectionId);
   if (error) throw new Error(error.message);
 }
 

@@ -63,7 +63,7 @@ import {
   CHANNEL_PROVIDER_ADAPTERS, createBookingFromImportedChannelBooking, findSecretPath, getChannelImportConflicts,
   importChannelBookings, importChannelObjects, initializeChannelManagerConnection, markChannelManagerAccessReceived,
   performChannelManagerProviderOnboardingAction, reconcileImportedBookings, reconcileImportedObjects, registerManualChannelSnapshot,
-  requestChannelManagerAccess, startChannelImportRun,
+  requestChannelManagerAccess, startChannelImportRun, updateChannelImportEntity,
 } from '../channel-manager-access-import';
 
 const OWNER_ID = '10000000-0000-4000-8000-000000000001';
@@ -268,6 +268,38 @@ describe('Channel Manager Access & Import v1', () => {
       match_status: 'unmatched',
       matched_booking_id: null,
     });
+  });
+
+  it('rejects imported entity updates through another connection', async () => {
+    const connectionA = await initializeChannelManagerConnection(PROPERTY_ID, 'manual');
+    const connectionB = await initializeChannelManagerConnection(PROPERTY_ID, 'bnovo');
+    await importChannelObjects(connectionA.id, [{ external_object_id: 'ext-guarded', title: 'Лесной дом' }]);
+    const imported = rows('booking_channel_imported_objects')[0];
+
+    await expect(updateChannelImportEntity(
+      'booking_channel_imported_objects',
+      imported.id,
+      { match_status: 'ignored' },
+      connectionB.id,
+    )).rejects.toMatchObject({ code: 'account_scope_mismatch' });
+
+    expect(imported.match_status).not.toBe('ignored');
+  });
+
+  it('rejects booking creation through another connection', async () => {
+    const connectionA = await initializeChannelManagerConnection(PROPERTY_ID, 'manual', { accountId: 'acct-access-import' });
+    const connectionB = await initializeChannelManagerConnection(PROPERTY_ID, 'bnovo', { accountId: 'acct-access-import' });
+    await importChannelBookings(connectionA.id, [{ external_booking_id: 'book-guarded' }]);
+    const imported = rows('booking_channel_imported_bookings')[0];
+    const intakeCallsBefore = processInboundBookingRequest.mock.calls.length;
+
+    await expect(createBookingFromImportedChannelBooking(imported.id, {
+      connectionId: connectionB.id,
+      accountId: 'acct-access-import',
+      propertyId: 'prop-a',
+    })).rejects.toMatchObject({ code: 'account_scope_mismatch' });
+
+    expect(processInboundBookingRequest).toHaveBeenCalledTimes(intakeCallsBefore);
   });
 
   it('rejects secret fields in provider onboarding metadata', async () => {
