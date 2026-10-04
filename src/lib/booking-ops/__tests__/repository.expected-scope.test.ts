@@ -12,6 +12,7 @@ const {
   lookupPropertyKnowledge,
   fetchTelegramDraftStatusesForRecord,
   requireBookingOpsPropertyAccountScope,
+  initializeBookingOpsCoreLoop,
 } = vi.hoisted(() => ({
   supabaseFrom: vi.fn(),
   recordBookingOpsEvent: vi.fn(async () => undefined),
@@ -22,6 +23,7 @@ const {
   lookupPropertyKnowledge: vi.fn(async () => ({ knowledge: null, match: null })),
   fetchTelegramDraftStatusesForRecord: vi.fn(async () => []),
   requireBookingOpsPropertyAccountScope: vi.fn(async (accountId: string, propertyId: string) => ({ accountId, propertyId })),
+  initializeBookingOpsCoreLoop: vi.fn(async () => undefined),
 }));
 
 const tables: Record<string, Row[]> = {};
@@ -31,11 +33,12 @@ function rows(table: string): Row[] {
 
 class Query {
   private filtered: Row[];
+  private inserted = false;
   constructor(
     private table: string,
-    private options: { patch?: Row } = {},
+    private options: { patch?: Row; insert?: Row } = {},
   ) {
-    this.filtered = [...rows(table)];
+    this.filtered = options.insert ? [options.insert] : [...rows(table)];
   }
 
   eq(column: string, value: unknown) {
@@ -53,6 +56,10 @@ class Query {
   }
 
   private execute() {
+    if (this.options.insert && !this.inserted) {
+      rows(this.table).push(this.options.insert);
+      this.inserted = true;
+    }
     if (this.options.patch) {
       for (const row of this.filtered) Object.assign(row, this.options.patch);
     }
@@ -65,6 +72,11 @@ class Query {
   async maybeSingle() {
     const result = this.execute();
     return { data: result.data?.[0] ?? null, error: null };
+  }
+
+  async single() {
+    const result = this.execute();
+    return { data: result.data?.[0] ?? null, error: result.data?.[0] ? null : { message: 'not found' } };
   }
 
   then(resolve: (value: ReturnType<Query['execute']>) => void) {
@@ -96,9 +108,7 @@ vi.mock('../readiness', () => ({
 vi.mock('../alerts', () => ({
   attachBookingOpsAlerts: (record: Row) => record,
 }));
-vi.mock('../core-loop-initialization', () => ({
-  initializeBookingOpsCoreLoop: vi.fn(async () => undefined),
-}));
+vi.mock('../core-loop-initialization', () => ({ initializeBookingOpsCoreLoop }));
 vi.mock('../route-access', () => ({ requireBookingOpsPropertyAccountScope }));
 vi.mock('../channel-manager-live-core-acceptance-context', () => ({
   resolveAcceptanceReservationMetadataForCreate: vi.fn(() => ({})),
@@ -106,6 +116,7 @@ vi.mock('../channel-manager-live-core-acceptance-context', () => ({
 
 import {
   attachBookingOpsRecordProperty,
+  createBookingOpsRecord,
   updateBookingOpsRecord,
   updateUnboundBookingOpsReviewData,
 } from '../repository';
@@ -151,6 +162,7 @@ describe('updateBookingOpsRecord expectedScope', () => {
     syncGuestIntakeAutopilot.mockClear();
     syncLifecycleFromBookingOpsRecord.mockClear();
     requireBookingOpsPropertyAccountScope.mockClear();
+    initializeBookingOpsCoreLoop.mockClear();
     requireBookingOpsPropertyAccountScope.mockImplementation(async (accountId: string, propertyId: string) => ({
       accountId,
       propertyId,
@@ -158,7 +170,69 @@ describe('updateBookingOpsRecord expectedScope', () => {
     supabaseFrom.mockImplementation((table: string) => ({
       select: vi.fn(() => new Query(table)),
       update: vi.fn((patch: Row) => new Query(table, { patch })),
+      insert: vi.fn((row: Row) => new Query(table, { insert: row })),
     }));
+  });
+
+  it('validates canonical property ownership and propagates scope through create side effects', async () => {
+    const result = await createBookingOpsRecord({
+      accountId: ACCOUNT_A,
+      propertyId: PROPERTY_A,
+      bookingId: 'book-created',
+      guestName: 'Новая бронь',
+      checkInAt: '2026-10-10T00:00:00.000Z',
+      checkOutAt: '2026-10-12T00:00:00.000Z',
+    }, { actorType: 'admin' });
+
+    expect(result.ok).toBe(true);
+    expect(result.record).toEqual(expect.objectContaining({
+      accountId: ACCOUNT_A,
+      propertyId: PROPERTY_A,
+      bookingId: 'book-created',
+    }));
+    expect(requireBookingOpsPropertyAccountScope).toHaveBeenCalledWith(ACCOUNT_A, PROPERTY_A);
+    expect(initializeBookingOpsCoreLoop).toHaveBeenCalledWith(
+      expect.any(String),
+      { accountId: ACCOUNT_A, propertyId: PROPERTY_A },
+    );
+    expect(applyBookingOpsTaskSync).toHaveBeenCalledWith(
+      expect.objectContaining({ accountId: ACCOUNT_A, propertyId: PROPERTY_A }),
+      { accountId: ACCOUNT_A, propertyId: PROPERTY_A },
+    );
+  });
+
+  it('rejects canonical create before insert when property ownership does not match account', async () => {
+    requireBookingOpsPropertyAccountScope.mockRejectedValueOnce(new Error('property_scope_mismatch'));
+
+    const result = await createBookingOpsRecord({
+      accountId: ACCOUNT_A,
+      propertyId: 'foreign-property',
+      bookingId: 'book-foreign',
+    });
+
+    expect(result).toEqual({ ok: false, error: 'property_scope_mismatch' });
+    expect(rows('booking_ops_records')).toHaveLength(0);
+    expect(recordBookingOpsEvent).not.toHaveBeenCalled();
+    expect(initializeBookingOpsCoreLoop).not.toHaveBeenCalled();
+  });
+
+  it('stops post-create automation when the created booking leaves property scope after its event', async () => {
+    recordBookingOpsEvent.mockImplementationOnce(async () => {
+      const created = rows('booking_ops_records')[0];
+      created.property_id = 'prop-b';
+      return undefined;
+    });
+
+    const result = await createBookingOpsRecord({
+      accountId: ACCOUNT_A,
+      propertyId: PROPERTY_A,
+      bookingId: 'book-drift',
+    });
+
+    expect(result).toEqual({ ok: false, error: 'booking_scope_mismatch' });
+    expect(recordBookingOpsEvent).toHaveBeenCalledTimes(1);
+    expect(initializeBookingOpsCoreLoop).not.toHaveBeenCalled();
+    expect(applyBookingOpsTaskSync).not.toHaveBeenCalled();
   });
 
   it('updates when id + account + property match expectedScope', async () => {

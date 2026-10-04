@@ -417,6 +417,26 @@ export async function createBookingOpsRecord(
 }> {
   const now = new Date().toISOString();
   const id = randomUUID();
+  const accountId = text(input.accountId);
+  const propertyId = text(input.propertyId);
+  let expectedScope: { accountId: string; propertyId: string } | undefined;
+  if (accountId && accountId !== 'legacy' && propertyId) {
+    try {
+      expectedScope = await requireBookingOpsPropertyAccountScope(accountId, propertyId);
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : 'property_scope_unavailable' };
+    }
+  }
+  const revalidateCreatedScope = async (): Promise<string | null> => {
+    if (!expectedScope) return null;
+    try {
+      await requireBookingOpsPropertyAccountScope(expectedScope.accountId, expectedScope.propertyId);
+      await requireBookingOpsRecordScope(id, expectedScope);
+      return null;
+    } catch (scopeError) {
+      return scopeError instanceof Error ? scopeError.message : 'scope_mismatch';
+    }
+  };
   const acceptanceMetadata = resolveAcceptanceReservationMetadataForCreate({
     propertyId: input.propertyId,
     bookingId: input.bookingId,
@@ -433,11 +453,11 @@ export async function createBookingOpsRecord(
     guest_phone: text(input.guestPhone) || null,
     guest_email: text(input.guestEmail) || null,
     guest_telegram: text(input.guestTelegram) || null,
-    property_id: text(input.propertyId) || null,
+    property_id: propertyId || null,
     property_label: text(input.propertyLabel) || null,
     ota_source: text(input.otaSource) || null,
     // Server-only contour: written on INSERT before automation side effects.
-    ...(text(input.accountId) ? { account_id: text(input.accountId) } : {}),
+    ...(accountId ? { account_id: accountId } : {}),
     check_in_at: toIsoDate(input.checkInAt),
     check_out_at: toIsoDate(input.checkOutAt),
     ops_status: normalizeBookingOpsStatus(input.opsStatus ?? 'created'),
@@ -484,6 +504,8 @@ export async function createBookingOpsRecord(
     .single();
 
   if (error) return { ok: false, error: error.message };
+  const postInsertScopeError = await revalidateCreatedScope();
+  if (postInsertScopeError) return { ok: false, error: postInsertScopeError };
   await recordBookingOpsEvent({
     bookingOpsRecordId: id,
     eventType: 'booking_created',
@@ -493,8 +515,12 @@ export async function createBookingOpsRecord(
     metadata: { status: row.ops_status, source: row.ota_source ?? 'manual' },
     dedupeKey: `booking-created:${id}`,
   });
-  await initializeBookingOpsCoreLoop(id);
-  const record = await enrichRecordWithTaskSync(mapRow(data as BookingOpsRow));
+  const postEventScopeError = await revalidateCreatedScope();
+  if (postEventScopeError) return { ok: false, error: postEventScopeError };
+  await initializeBookingOpsCoreLoop(id, expectedScope);
+  const postCoreLoopScopeError = await revalidateCreatedScope();
+  if (postCoreLoopScopeError) return { ok: false, error: postCoreLoopScopeError };
+  const record = await enrichRecordWithTaskSync(mapRow(data as BookingOpsRow), expectedScope);
   return { ok: true, record };
 }
 
