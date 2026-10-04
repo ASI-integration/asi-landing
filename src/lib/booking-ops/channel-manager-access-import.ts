@@ -6,7 +6,7 @@ import {
   canAutoSendCommunicationIntent,
 } from './communication-auto-send-policy';
 import { processInboundBookingRequest } from './real-booking-intake-autopilot';
-import { resolveChannelManagerConnectionScope } from './channel-manager-scope';
+import { assertChannelManagerConnectionScopeCurrent, resolveChannelManagerConnectionScope } from './channel-manager-scope';
 
 export const CHANNEL_MANAGER_PROVIDERS = ['manual', 'bnovo', 'realtycalendar', 'travelline', 'other'] as const;
 export type ChannelManagerProvider = (typeof CHANNEL_MANAGER_PROVIDERS)[number];
@@ -380,6 +380,7 @@ export async function failChannelImportRun(importRunId: string, reason: string, 
 
 export async function importChannelObjects(connectionId: string, objects: Array<Record<string, unknown>>, options?: { importRunId?: string }): Promise<number> {
   const connection = await getConnection(connectionId);
+  const expectedScope = await resolveChannelManagerConnectionScope(connection);
   if (!Array.isArray(objects) || objects.length > MAX_SNAPSHOT_ROWS) throw new Error('Слишком много объектов в одном импорте.');
   assertNoSecrets(objects);
   const now = new Date().toISOString();
@@ -401,6 +402,7 @@ export async function importChannelObjects(connectionId: string, objects: Array<
     };
   });
   if (!rows.length) return 0;
+  await assertChannelManagerConnectionScopeCurrent(expectedScope);
   const { error } = await supabase.from('booking_channel_imported_objects').upsert(rows, { onConflict: 'connection_id,external_object_id' });
   if (error) throw new Error(error.message);
   return rows.length;
@@ -408,6 +410,7 @@ export async function importChannelObjects(connectionId: string, objects: Array<
 
 export async function importChannelBookings(connectionId: string, bookings: Array<Record<string, unknown>>, options?: { importRunId?: string }): Promise<number> {
   const connection = await getConnection(connectionId);
+  const expectedScope = await resolveChannelManagerConnectionScope(connection);
   if (!Array.isArray(bookings) || bookings.length > MAX_SNAPSHOT_ROWS) throw new Error('Слишком много броней в одном импорте.');
   assertNoSecrets(bookings);
   const now = new Date().toISOString();
@@ -429,6 +432,7 @@ export async function importChannelBookings(connectionId: string, bookings: Arra
     };
   });
   if (!rows.length) return 0;
+  await assertChannelManagerConnectionScopeCurrent(expectedScope);
   const { error } = await supabase.from('booking_channel_imported_bookings').upsert(rows, { onConflict: 'connection_id,external_booking_id' });
   if (error) throw new Error(error.message);
   return rows.length;
@@ -436,6 +440,7 @@ export async function importChannelBookings(connectionId: string, bookings: Arra
 
 export async function importChannelCalendar(connectionId: string, calendarRows: Array<Record<string, unknown>>, options?: { importRunId?: string; pricing?: boolean }): Promise<number> {
   const connection = await getConnection(connectionId);
+  const expectedScope = await resolveChannelManagerConnectionScope(connection);
   if (!Array.isArray(calendarRows) || calendarRows.length > MAX_SNAPSHOT_ROWS) throw new Error('Слишком много строк календаря в одном импорте.');
   assertNoSecrets(calendarRows);
   const now = new Date().toISOString();
@@ -457,6 +462,7 @@ export async function importChannelCalendar(connectionId: string, calendarRows: 
     };
   }));
   if (!rows.length) return 0;
+  await assertChannelManagerConnectionScopeCurrent(expectedScope);
   const { error } = await supabase.from('booking_channel_calendar_snapshots').upsert(rows, { onConflict: 'connection_id,external_object_id,date' });
   if (error) throw new Error(error.message);
   return rows.length;

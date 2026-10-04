@@ -64,3 +64,37 @@ export async function resolveChannelManagerConnectionScope(
     accountId: nullableText(connection.metadata?.accountId),
   };
 }
+
+export async function assertChannelManagerConnectionScopeCurrent(
+  expected: ChannelManagerCanonicalScope,
+): Promise<void> {
+  const { data: row, error } = await supabase
+    .from('booking_channel_manager_connections')
+    .select('id,owner_setup_id,property_setup_id,metadata')
+    .eq('id', expected.connectionId)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!row) {
+    throw Object.assign(new Error('Подключение больше не существует.'), {
+      code: 'account_scope_mismatch',
+    });
+  }
+
+  const current = await resolveChannelManagerConnectionScope({
+    id: text(row.id),
+    ownerSetupId: nullableText(row.owner_setup_id),
+    propertySetupId: nullableText(row.property_setup_id),
+    metadata: (row.metadata as Record<string, unknown>) ?? {},
+  });
+
+  if (
+    current.ownerSetupId !== expected.ownerSetupId
+    || current.propertySetupId !== expected.propertySetupId
+    || current.propertyId !== expected.propertyId
+    || current.accountId !== expected.accountId
+  ) {
+    throw Object.assign(new Error('Контур подключения изменился во время операции.'), {
+      code: 'account_scope_mismatch',
+    });
+  }
+}

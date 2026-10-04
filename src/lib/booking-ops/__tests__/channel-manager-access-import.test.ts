@@ -61,13 +61,14 @@ vi.mock('../real-booking-intake-autopilot', () => ({ processInboundBookingReques
 
 import {
   CHANNEL_PROVIDER_ADAPTERS, createBookingFromImportedChannelBooking, findSecretPath, getChannelImportConflicts,
-  importChannelBookings, importChannelObjects, initializeChannelManagerConnection, markChannelManagerAccessReceived,
+  importChannelBookings, importChannelCalendar, importChannelObjects, initializeChannelManagerConnection, markChannelManagerAccessReceived,
   performChannelManagerProviderOnboardingAction, reconcileImportedBookings, reconcileImportedObjects, registerManualChannelSnapshot,
   requestChannelManagerAccess, startChannelImportRun, updateChannelImportEntity,
 } from '../channel-manager-access-import';
 
 const OWNER_ID = '10000000-0000-4000-8000-000000000001';
 const PROPERTY_ID = '20000000-0000-4000-8000-000000000002';
+const PROPERTY_B_ID = '20000000-0000-4000-8000-000000000004';
 
 beforeEach(() => {
   for (const key of Object.keys(tables)) tables[key] = [];
@@ -133,6 +134,62 @@ describe('Channel Manager Access & Import v1', () => {
     expect(result.summary).toEqual({ objects: 1, bookings: 1, calendar: 1, prices: 1 });
     expect(rows('booking_channel_imported_objects')[0].match_status).toBe('matched');
     expect(rows('booking_channel_calendar_snapshots')).toHaveLength(2);
+  });
+
+  it('fails closed before object upsert if the connection moves to another property', async () => {
+    const connection = await initializeChannelManagerConnection(PROPERTY_ID, 'manual', { accountId: 'acct-access-import' });
+    rows('booking_property_setup_profiles').push({
+      id: PROPERTY_B_ID, owner_setup_id: OWNER_ID, property_id: 'prop-b',
+      title: 'Другой дом', address_city: 'Псков', guest_capacity: 2,
+    });
+    const connectionRow = rows('booking_channel_manager_connections').find((row) => row.id === connection.id)!;
+    let reads = 0;
+    Object.defineProperty(connectionRow, 'property_setup_id', {
+      configurable: true,
+      get: () => (reads++ === 0 ? PROPERTY_ID : PROPERTY_B_ID),
+    });
+
+    await expect(importChannelObjects(connection.id, [
+      { external_object_id: 'drift-object', title: 'Лесной дом' },
+    ])).rejects.toMatchObject({ code: 'account_scope_mismatch' });
+
+    expect(rows('booking_channel_imported_objects')).toHaveLength(0);
+  });
+
+  it('fails closed before booking upsert if the connection account changes', async () => {
+    const connection = await initializeChannelManagerConnection(PROPERTY_ID, 'manual', { accountId: 'acct-access-import' });
+    const connectionRow = rows('booking_channel_manager_connections').find((row) => row.id === connection.id)!;
+    let reads = 0;
+    Object.defineProperty(connectionRow, 'metadata', {
+      configurable: true,
+      get: () => ({ accountId: reads++ === 0 ? 'acct-access-import' : 'acct-other' }),
+    });
+
+    await expect(importChannelBookings(connection.id, [
+      { external_booking_id: 'drift-booking' },
+    ])).rejects.toMatchObject({ code: 'account_scope_mismatch' });
+
+    expect(rows('booking_channel_imported_bookings')).toHaveLength(0);
+  });
+
+  it('fails closed before calendar upsert if the connection moves to another property', async () => {
+    const connection = await initializeChannelManagerConnection(PROPERTY_ID, 'manual', { accountId: 'acct-access-import' });
+    rows('booking_property_setup_profiles').push({
+      id: PROPERTY_B_ID, owner_setup_id: OWNER_ID, property_id: 'prop-b',
+      title: 'Другой дом', address_city: 'Псков', guest_capacity: 2,
+    });
+    const connectionRow = rows('booking_channel_manager_connections').find((row) => row.id === connection.id)!;
+    let reads = 0;
+    Object.defineProperty(connectionRow, 'property_setup_id', {
+      configurable: true,
+      get: () => (reads++ === 0 ? PROPERTY_ID : PROPERTY_B_ID),
+    });
+
+    await expect(importChannelCalendar(connection.id, [
+      { external_object_id: 'drift-object', date: '2026-11-10', availability_status: 'booked' },
+    ])).rejects.toMatchObject({ code: 'account_scope_mismatch' });
+
+    expect(rows('booking_channel_calendar_snapshots')).toHaveLength(0);
   });
 
   it('marks a title and city only match as possible_match', async () => {
