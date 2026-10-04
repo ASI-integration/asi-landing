@@ -18,6 +18,17 @@ export function safeImportFingerprint(input: Pick<DirectReservationInput, 'accou
   return createHash('sha256').update([input.accountId,input.propertyId,input.unitId ?? '',input.checkIn,input.checkOut,contact].join('|')).digest('hex');
 }
 
+async function requireReservationPropertyScope(reservationId: string, accountId: string, propertyId: string) {
+  const identity = await resolveResidentialBookingIdentity(reservationId, accountId);
+  if (!identity.bookingId || !identity.propertyId) throw new Error('booking_scope_unavailable');
+  if (
+    identity.bookingId !== reservationId
+    || identity.accountId !== accountId
+    || identity.propertyId !== propertyId
+  ) throw new Error('booking_scope_mismatch');
+  return identity;
+}
+
 export async function getUnifiedAvailability(input: { accountId: string; propertyId: string; unitId?: string | null; checkIn: string; checkOut: string; excludeReservationId?: string }) {
   const range = validateStayRange(input.checkIn, input.checkOut); const now = new Date().toISOString();
   let reservations = supabase.from('booking_ops_records').select('id,asi_reference,check_in_at,check_out_at').eq('account_id', input.accountId).eq('property_id', input.propertyId).in('normalized_status', ['confirmed','checked_in']).lt('check_in_at', range.to).gt('check_out_at', range.from);
@@ -42,14 +53,22 @@ async function sourceLink(accountId: string, reservationId: string, provider: st
 export async function createDirectReservation(input: DirectReservationInput) {
   if (!input.accountId || !input.actorId || !input.idempotencyKey || !input.propertyId || !input.guestName || input.guestCount < 1) throw new Error('required_fields_missing');
   const range = validateStayRange(input.checkIn, input.checkOut);
-  if (input.externalReservationId) { const provider = input.sourceProvider ?? input.sourceType; const linked = await supabase.from('reservation_source_links').select('booking_ops_record_id').eq('account_id', input.accountId).eq('provider', provider).eq('external_reservation_id', input.externalReservationId).maybeSingle(); if (linked.error) throw new Error(linked.error.message); if (linked.data) { const linkedBooking = await supabase.from('booking_ops_records').select('id').eq('id', linked.data.booking_ops_record_id).eq('account_id', input.accountId).maybeSingle(); if (linkedBooking.error) throw new Error(linkedBooking.error.message); if (!linkedBooking.data) throw new Error('account_scope_mismatch'); await sourceLink(input.accountId, linked.data.booking_ops_record_id, provider, input.externalReservationId, input); return { created: false, reservationId: linked.data.booking_ops_record_id, duplicate: true }; } }
+  if (input.externalReservationId) {
+    const provider = input.sourceProvider ?? input.sourceType;
+    const linked = await supabase.from('reservation_source_links').select('booking_ops_record_id').eq('account_id', input.accountId).eq('provider', provider).eq('external_reservation_id', input.externalReservationId).maybeSingle();
+    if (linked.error) throw new Error(linked.error.message);
+    if (linked.data) {
+      await requireReservationPropertyScope(linked.data.booking_ops_record_id, input.accountId, input.propertyId);
+      await sourceLink(input.accountId, linked.data.booking_ops_record_id, provider, input.externalReservationId, input);
+      await requireReservationPropertyScope(linked.data.booking_ops_record_id, input.accountId, input.propertyId);
+      return { created: false, reservationId: linked.data.booking_ops_record_id, duplicate: true };
+    }
+  }
   if (!input.externalReservationId && !input.bookingReference) { const contactFilters = [input.guestPhone ? `guest_phone.eq.${input.guestPhone}` : null, input.guestEmail ? `guest_email.eq.${input.guestEmail}` : null, input.guestTelegram ? `guest_telegram.eq.${input.guestTelegram}` : null].filter(Boolean).join(','); if (contactFilters) { const candidates = await supabase.from('booking_ops_records').select('id,asi_reference').eq('account_id', input.accountId).eq('property_id', input.propertyId).eq('check_in_at', range.from).eq('check_out_at', range.to).or(contactFilters).limit(3); if (candidates.error) throw new Error(candidates.error.message); if ((candidates.data?.length ?? 0) > 1) { const item = await supabase.from('reservation_reconciliation_items').insert({ id: randomUUID(), account_id: input.accountId, kind: 'probable_duplicate', status: 'open', safe_summary: 'Several existing reservations match this request. Operator review is required.', evidence: { candidateReferences: candidates.data?.map((x) => x.asi_reference).filter(Boolean), propertyId: input.propertyId, unitId: input.unitId ?? null, checkIn: range.from, checkOut: range.to } }); if (item.error) throw new Error(item.error.message); return { created: false, needsReview: true, reconciliationKind: 'probable_duplicate' as const }; } } }
   const existingEvent = await supabase.from('booking_inbound_intake_events').select('booking_id,status').eq('account_id', input.accountId).eq('idempotency_key', `msg:admin:${input.idempotencyKey}`).maybeSingle();
   if (existingEvent.error) throw new Error(existingEvent.error.message);
   if (existingEvent.data?.booking_id) {
-    const existingBooking = await supabase.from('booking_ops_records').select('id').eq('id', existingEvent.data.booking_id).eq('account_id', input.accountId).maybeSingle();
-    if (existingBooking.error) throw new Error(existingBooking.error.message);
-    if (!existingBooking.data) throw new Error('account_scope_mismatch');
+    await requireReservationPropertyScope(existingEvent.data.booking_id, input.accountId, input.propertyId);
     return { created: false, reservationId: existingEvent.data.booking_id, duplicate: true };
   }
   const availability = input.confirmationMode === 'inquiry' ? await getUnifiedAvailability({ accountId: input.accountId, propertyId: input.propertyId, unitId: input.unitId, checkIn: range.from, checkOut: range.to }) : { available: true, conflicts: [] as SafeAvailabilityConflict[] };
@@ -60,10 +79,34 @@ export async function createDirectReservation(input: DirectReservationInput) {
   }
   const intake = await processInboundBookingRequest({ guestName: input.guestName, guestPhone: input.guestPhone, guestEmail: input.guestEmail, guestTelegram: input.guestTelegram, checkInAt: range.from, checkOutAt: range.to, guestCount: input.guestCount, propertyId: input.propertyId, bookingReference: input.bookingReference, sourceMessageId: input.idempotencyKey, rawMessageText: input.notes, metadata: { ...input.metadata, sourceType: input.sourceType, confirmationMode: input.confirmationMode } }, 'admin', { inputTrust: 'authenticated_internal', accountId: input.accountId });
   if (!intake.bookingId) throw new Error('canonical_intake_failed');
-  const patch = await supabase.from('booking_ops_records').update({ account_id: input.accountId, unit_id: input.unitId ?? null, source_type: input.sourceType, source_provider: input.sourceProvider ?? null, original_channel: input.originalChannel ?? null, normalized_status: input.confirmationMode, amount: input.amount ?? null, currency: input.currency ?? null, payment_status: input.paymentStatus ?? null, deposit_status: input.depositStatus ?? 'not_required', sync_status: input.externalReservationId ? 'imported' : 'local_only', source_created_at: new Date().toISOString(), created_by_actor: input.actorId, reservation_metadata: input.metadata ?? {}, availability_status: input.confirmationMode === 'confirmed' ? 'confirmed' : input.confirmationMode === 'temporary_hold' ? 'held' : 'unchecked' }).eq('id', intake.bookingId).eq('account_id', input.accountId).select('asi_reference').single();
+  await requireReservationPropertyScope(intake.bookingId, input.accountId, input.propertyId);
+  const patch = await supabase.from('booking_ops_records')
+    .update({ account_id: input.accountId, unit_id: input.unitId ?? null, source_type: input.sourceType, source_provider: input.sourceProvider ?? null, original_channel: input.originalChannel ?? null, normalized_status: input.confirmationMode, amount: input.amount ?? null, currency: input.currency ?? null, payment_status: input.paymentStatus ?? null, deposit_status: input.depositStatus ?? 'not_required', sync_status: input.externalReservationId ? 'imported' : 'local_only', source_created_at: new Date().toISOString(), created_by_actor: input.actorId, reservation_metadata: input.metadata ?? {}, availability_status: input.confirmationMode === 'confirmed' ? 'confirmed' : input.confirmationMode === 'temporary_hold' ? 'held' : 'unchecked' })
+    .eq('id', intake.bookingId)
+    .eq('account_id', input.accountId)
+    .eq('property_id', input.propertyId)
+    .select('asi_reference')
+    .maybeSingle();
   if (patch.error) throw new Error(patch.error.message);
-  if (input.externalReservationId) await sourceLink(input.accountId, intake.bookingId, input.sourceProvider ?? input.sourceType, input.externalReservationId, input);
-  if (atomicHoldId) { const hold = await supabase.from('booking_availability_holds').update({ booking_id: intake.bookingId, status: input.confirmationMode === 'confirmed' ? 'released' : 'active', updated_at: new Date().toISOString() }).eq('id', atomicHoldId).eq('account_id', input.accountId); if (hold.error) throw new Error(hold.error.message); }
+  if (!patch.data) throw new Error('booking_scope_mismatch');
+  await requireReservationPropertyScope(intake.bookingId, input.accountId, input.propertyId);
+  if (input.externalReservationId) {
+    await sourceLink(input.accountId, intake.bookingId, input.sourceProvider ?? input.sourceType, input.externalReservationId, input);
+    await requireReservationPropertyScope(intake.bookingId, input.accountId, input.propertyId);
+  }
+  if (atomicHoldId) {
+    const hold = await supabase.from('booking_availability_holds')
+      .update({ booking_id: intake.bookingId, status: input.confirmationMode === 'confirmed' ? 'released' : 'active', updated_at: new Date().toISOString() })
+      .eq('id', atomicHoldId)
+      .eq('account_id', input.accountId)
+      .eq('property_id', input.propertyId)
+      .select('id')
+      .maybeSingle();
+    if (hold.error) throw new Error(hold.error.message);
+    if (!hold.data) throw new Error('booking_scope_mismatch');
+    await requireReservationPropertyScope(intake.bookingId, input.accountId, input.propertyId);
+  }
+  await requireReservationPropertyScope(intake.bookingId, input.accountId, input.propertyId);
   await auditReservationMutation({ accountId: input.accountId, actorId: input.actorId, reservationId: intake.bookingId, action: 'reservation_created', after: { sourceType: input.sourceType, confirmationMode: input.confirmationMode, propertyId: input.propertyId, unitId: input.unitId ?? null, messagesSent: false } });
   return { created: true, reservationId: intake.bookingId, reference: patch.data.asi_reference, blocked: false, inquiryBlocker: input.confirmationMode === 'inquiry' ? availability.conflicts : [] };
 }

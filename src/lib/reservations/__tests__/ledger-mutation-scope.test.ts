@@ -21,7 +21,7 @@ vi.mock('@/lib/booking-ops/repository', () => ({ updateBookingOpsRecord }));
 vi.mock('@/lib/platform/residential-booking-scope', () => ({ resolveResidentialBookingIdentity }));
 vi.mock('@/lib/booking-ops/real-booking-intake-autopilot', () => ({ processInboundBookingRequest }));
 
-import { cancelReservation, restoreReservation } from '../ledger';
+import { cancelReservation, createDirectReservation, restoreReservation } from '../ledger';
 
 class Query {
   public readonly eq = vi.fn((_column: string, _value: unknown) => this);
@@ -74,6 +74,76 @@ beforeEach(() => {
 
 
 describe('reservation mutation canonical scope', () => {
+  const directInput = {
+    accountId: 'account-a',
+    actorId: 'operator-a',
+    idempotencyKey: 'create-a',
+    propertyId: 'prop-a',
+    checkIn: '2026-10-10',
+    checkOut: '2026-10-12',
+    guestName: 'Guest',
+    guestCount: 2,
+    sourceType: 'manual' as const,
+    bookingReference: 'REF-A',
+    confirmationMode: 'inquiry' as const,
+  };
+
+  it('keeps direct creation bound to the canonical account and property', async () => {
+    processInboundBookingRequest.mockResolvedValue({ bookingId: 'booking-a', intakeStatus: 'processed' });
+    enqueue('booking_inbound_intake_events', { data: null });
+    enqueue('booking_ops_records', { data: [] });
+    enqueue('booking_availability_holds', { data: [] });
+    enqueue('booking_availability_blocks', { data: [] });
+    const patch = enqueue('booking_ops_records', { data: { asi_reference: 'ASI-A' } });
+    enqueue('reservation_ledger_audit', { data: null });
+
+    const result = await createDirectReservation(directInput);
+
+    expect(result).toEqual(expect.objectContaining({
+      created: true,
+      reservationId: 'booking-a',
+      reference: 'ASI-A',
+    }));
+    expect(resolveResidentialBookingIdentity).toHaveBeenCalledWith('booking-a', 'account-a');
+    expect(patch.eq).toHaveBeenCalledWith('account_id', 'account-a');
+    expect(patch.eq).toHaveBeenCalledWith('property_id', 'prop-a');
+  });
+
+  it('fails direct creation closed when the intake booking resolves to another property', async () => {
+    processInboundBookingRequest.mockResolvedValue({ bookingId: 'booking-a', intakeStatus: 'processed' });
+    resolveResidentialBookingIdentity.mockResolvedValue({
+      kind: 'identified',
+      accountId: 'account-a',
+      propertyId: 'prop-b',
+      bookingId: 'booking-a',
+    });
+    enqueue('booking_inbound_intake_events', { data: null });
+    enqueue('booking_ops_records', { data: [] });
+    enqueue('booking_availability_holds', { data: [] });
+    enqueue('booking_availability_blocks', { data: [] });
+
+    await expect(createDirectReservation(directInput)).rejects.toThrow('booking_scope_mismatch');
+
+    expect(queues.get('reservation_ledger_audit')).toBeUndefined();
+    expect(supabaseFrom.mock.calls.filter(([table]) => table === 'booking_ops_records')).toHaveLength(1);
+  });
+
+  it('rejects an idempotent existing reservation from another property', async () => {
+    resolveResidentialBookingIdentity.mockResolvedValue({
+      kind: 'identified',
+      accountId: 'account-a',
+      propertyId: 'prop-b',
+      bookingId: 'booking-a',
+    });
+    enqueue('booking_inbound_intake_events', {
+      data: { booking_id: 'booking-a', status: 'processed' },
+    });
+
+    await expect(createDirectReservation(directInput)).rejects.toThrow('booking_scope_mismatch');
+
+    expect(processInboundBookingRequest).not.toHaveBeenCalled();
+  });
+
   it('keeps cancellation bound to the canonical account and property', async () => {
     const current = enqueue('booking_ops_records', {
       data: { normalized_status: 'confirmed', property_id: 'prop-a' },
