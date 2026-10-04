@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   requireCheckAccess: vi.fn(),
   requireHoldAccess: vi.fn(),
   requireBlockAccess: vi.fn(),
+  supabaseFrom: vi.fn(),
   checkAvailabilityConflict: vi.fn(),
   releaseAvailabilityHold: vi.fn(),
   confirmAvailabilityHold: vi.fn(),
@@ -36,7 +37,7 @@ vi.mock('@/lib/booking-ops/availability-overbooking-protection', () => ({
   getAvailabilityStatus: mocks.getAvailabilityStatus,
   explainAvailabilityConflict: mocks.explainAvailabilityConflict,
 }));
-vi.mock('@/lib/supabase', () => ({ supabase: { from: vi.fn() } }));
+vi.mock('@/lib/supabase', () => ({ supabase: { from: mocks.supabaseFrom } }));
 
 import { POST as actionPost } from '../action/route';
 import { GET as statusGet } from '../status/route';
@@ -155,6 +156,25 @@ describe('availability route canonical access', () => {
       access.accountId,
       { propertyId: access.propertyId, propertySetupId: access.propertySetupId },
     );
+  });
+
+  it('guards mark-needs-review writes with canonical property scope', async () => {
+    const query: Record<string, any> = {};
+    query.update = vi.fn(() => query);
+    query.eq = vi.fn(() => query);
+    query.select = vi.fn(() => query);
+    query.maybeSingle = vi.fn().mockResolvedValue({ data: { id: access.bookingId }, error: null });
+    mocks.supabaseFrom.mockReturnValue(query);
+
+    const res = await actionPost(new Request('http://localhost/api/dashboard/availability/action', {
+      method: 'POST',
+      body: JSON.stringify({ action: 'mark_needs_review', bookingId: access.bookingId }),
+    }));
+
+    expect(res.status).toBe(200);
+    expect(query.eq).toHaveBeenCalledWith('id', access.bookingId);
+    expect(query.eq).toHaveBeenCalledWith('account_id', access.accountId);
+    expect(query.eq).toHaveBeenCalledWith('property_id', access.propertyId);
   });
 
   it('derives release-block scope from the block before mutation', async () => {

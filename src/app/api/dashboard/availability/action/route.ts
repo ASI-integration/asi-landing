@@ -111,10 +111,12 @@ export async function POST(req: Request) {
     );
     else if (action === 'mark_needs_review') {
       const bookingId = canonicalScope.bookingId;
+      const propertyId = canonicalScope.propertyId;
       if (!bookingId) throw new Error('Укажите ID брони.');
+      if (!propertyId) throw new Error('property_scope_mismatch');
       const { data, error } = await supabase.from('booking_ops_records').update({
         overbooking_risk_status: 'needs_review', availability_status: 'blocked', updated_at: new Date().toISOString(),
-      }).eq('id', bookingId).eq('account_id', accountId).select('id').maybeSingle();
+      }).eq('id', bookingId).eq('account_id', accountId).eq('property_id', propertyId).select('id').maybeSingle();
       if (error) throw new Error(error.message);
       if (!data) throw new Error('Бронирование не найдено.');
       result = data;
