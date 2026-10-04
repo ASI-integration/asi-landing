@@ -988,22 +988,28 @@ export async function resolveGuestStayIssue(
 export async function prepareCheckoutInstructions(
   bookingId: string,
   metadata?: Record<string, unknown>,
+  expectedScope?: { accountId: string; propertyId: string },
 ): Promise<InStayCheckoutSnapshot> {
-  const record = await loadRecord(bookingId);
+  const record = expectedScope
+    ? await requireBookingOpsRecordScope(bookingId, expectedScope)
+    : await loadRecord(bookingId);
   await upsertExecution(record.id, {
     status: 'checkout_preparing',
     checkout_instructions_status: 'prepared',
     metadata: { source: 'instay_checkout_autopilot_v1', preparedAt: new Date().toISOString(), ...safeMetadata(metadata) },
-  });
-  return getInStayCheckoutStatus(record.id);
+  }, expectedScope);
+  return getInStayCheckoutStatus(record.id, expectedScope);
 }
 
 export async function queueCheckoutInstructions(
   bookingId: string,
   channel?: BookingOpsCommunicationChannel,
   metadata?: Record<string, unknown>,
+  expectedScope?: { accountId: string; propertyId: string },
 ): Promise<InStayCheckoutSnapshot> {
-  const record = await loadRecord(bookingId);
+  const record = expectedScope
+    ? await requireBookingOpsRecordScope(bookingId, expectedScope)
+    : await loadRecord(bookingId);
   await ensureCommunicationIntent({
     record,
     purpose: 'checkout_instructions',
@@ -1011,25 +1017,29 @@ export async function queueCheckoutInstructions(
     messageTemplateKey: 'guest.checkout.instructions.v1',
     messageText: `Здравствуйте. Инструкции по выезду для объекта ${record.propertyLabel ?? record.propertyId ?? 'вашей брони'} готовы к проверке оператором.`,
     metadata,
+    expectedScope,
   });
   await upsertExecution(record.id, {
     status: 'checkout_instructions_queued',
     checkout_instructions_status: 'queued',
     metadata: { source: 'instay_checkout_autopilot_v1', queuedAt: new Date().toISOString(), ...safeMetadata(metadata) },
-  });
-  return getInStayCheckoutStatus(record.id);
+  }, expectedScope);
+  return getInStayCheckoutStatus(record.id, expectedScope);
 }
 
 export async function markCheckoutInstructionsSent(
   bookingId: string,
   metadata?: Record<string, unknown>,
+  expectedScope?: { accountId: string; propertyId: string },
 ): Promise<InStayCheckoutSnapshot> {
-  const record = await loadRecord(bookingId);
+  const record = expectedScope
+    ? await requireBookingOpsRecordScope(bookingId, expectedScope)
+    : await loadRecord(bookingId);
   await upsertExecution(record.id, {
     status: 'checkout_pending',
     checkout_instructions_status: 'sent',
     metadata: { source: 'instay_checkout_autopilot_v1', sentAt: new Date().toISOString(), ...safeMetadata(metadata) },
-  });
+  }, expectedScope);
   const propertyLabel = record.propertyLabel ?? record.propertyId ?? 'вашей брони';
   const checkoutDateLabel = record.checkOutAt
     ? new Date(record.checkOutAt).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' })
@@ -1041,28 +1051,33 @@ export async function markCheckoutInstructionsSent(
     messageTemplateKey: 'guest.checkout.reminder.v1',
     messageText: `Здравствуйте. Напоминаем о выезде из объекта «${propertyLabel}»${dateHint}. Пожалуйста, следуйте инструкциям по выезду и подготовьтесь к сдаче объекта.`,
     metadata: safeMetadata(metadata),
+    expectedScope,
   });
-  return getInStayCheckoutStatus(record.id);
+  return getInStayCheckoutStatus(record.id, expectedScope);
 }
 
 export async function requestCheckoutConfirmation(
   bookingId: string,
   metadata?: Record<string, unknown>,
+  expectedScope?: { accountId: string; propertyId: string },
 ): Promise<InStayCheckoutSnapshot> {
-  const record = await loadRecord(bookingId);
+  const record = expectedScope
+    ? await requireBookingOpsRecordScope(bookingId, expectedScope)
+    : await loadRecord(bookingId);
   await ensureCommunicationIntent({
     record,
     purpose: 'checkout_confirmation_request',
     messageTemplateKey: 'guest.checkout.confirmation.v1',
     messageText: 'Здравствуйте. Подтвердите, пожалуйста, время выезда и что вы готовы сдать объект.',
     metadata,
+    expectedScope,
   });
   await upsertExecution(record.id, {
     status: 'checkout_pending',
     checkout_confirmation_status: 'requested',
     metadata: { source: 'instay_checkout_autopilot_v1', confirmationRequestedAt: new Date().toISOString(), ...safeMetadata(metadata) },
-  });
-  return getInStayCheckoutStatus(record.id);
+  }, expectedScope);
+  return getInStayCheckoutStatus(record.id, expectedScope);
 }
 
 export async function markGuestCheckedOut(
@@ -1071,23 +1086,25 @@ export async function markGuestCheckedOut(
   metadata?: Record<string, unknown>,
   expectedScope?: { accountId: string; propertyId: string },
 ): Promise<InStayCheckoutSnapshot> {
-  const record = await loadRecord(bookingId);
+  const record = expectedScope
+    ? await requireBookingOpsRecordScope(bookingId, expectedScope)
+    : await loadRecord(bookingId);
   const checkoutAt = actualCheckoutAt ? new Date(actualCheckoutAt).toISOString() : new Date().toISOString();
   await completeGate(record.id, 'guest_checked_out', {
     source: 'instay_checkout_autopilot_v1',
     ...safeMetadata(metadata),
-  });
+  }, expectedScope);
   await upsertExecution(record.id, {
     status: 'checked_out',
     checkout_confirmation_status: 'confirmed',
     actual_checkout_at: checkoutAt,
     metadata: { source: 'instay_checkout_autopilot_v1', checkedOutAt: checkoutAt, ...safeMetadata(metadata) },
-  });
+  }, expectedScope);
   const taskSync = expectedScope
     ? await syncBookingOpsTasksForRecordId(record.id, { expectedScope })
     : await syncBookingOpsTasksForRecordId(record.id);
   if (!taskSync.ok) throw new Error(taskSync.error ?? 'task_sync_failed');
-  return getInStayCheckoutStatus(record.id);
+  return getInStayCheckoutStatus(record.id, expectedScope);
 }
 
 export async function triggerPostCheckoutInspection(
@@ -1276,13 +1293,13 @@ export async function runInStayCheckoutAction(input: {
         input.expectedScope,
       );
     case 'prepare_checkout_instructions':
-      return prepareCheckoutInstructions(bookingId, input.metadata);
+      return prepareCheckoutInstructions(bookingId, input.metadata, input.expectedScope);
     case 'queue_checkout_instructions':
-      return queueCheckoutInstructions(bookingId, input.channel, input.metadata);
+      return queueCheckoutInstructions(bookingId, input.channel, input.metadata, input.expectedScope);
     case 'mark_checkout_instructions_sent':
-      return markCheckoutInstructionsSent(bookingId, input.metadata);
+      return markCheckoutInstructionsSent(bookingId, input.metadata, input.expectedScope);
     case 'request_checkout_confirmation':
-      return requestCheckoutConfirmation(bookingId, input.metadata);
+      return requestCheckoutConfirmation(bookingId, input.metadata, input.expectedScope);
     case 'mark_guest_checked_out':
       return markGuestCheckedOut(
         bookingId,

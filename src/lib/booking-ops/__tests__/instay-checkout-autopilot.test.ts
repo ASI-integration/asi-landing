@@ -489,6 +489,25 @@ describe('In-stay & Checkout Autopilot v1', () => {
     });
   });
 
+  it('fails closed before checkout communication persistence if canonical scope changes', async () => {
+    guestCheckedIn = true;
+    requireBookingOpsRecordScope
+      .mockResolvedValueOnce(currentRecord())
+      .mockResolvedValueOnce(currentRecord())
+      .mockResolvedValueOnce(currentRecord())
+      .mockRejectedValueOnce(new Error('booking_scope_mismatch'));
+    const { runInStayCheckoutAction } = await import('../instay-checkout-autopilot');
+
+    await expect(runInStayCheckoutAction({
+      bookingId: record.id,
+      action: 'queue_checkout_instructions',
+      expectedScope: { accountId: 'account-1', propertyId: record.propertyId },
+    })).rejects.toThrow('booking_scope_mismatch');
+
+    expect(tables.booking_ops_communication_intents).toHaveLength(0);
+    expect(tables.booking_instay_checkout).toHaveLength(0);
+  });
+
   it('does not duplicate an active checkout instruction intent', async () => {
     guestCheckedIn = true;
     const { queueCheckoutInstructions } = await import('../instay-checkout-autopilot');
@@ -535,6 +554,29 @@ describe('In-stay & Checkout Autopilot v1', () => {
     expect(status.status).toBe('checked_out');
     expect(lifecycle.completed.map((item) => item.gateKey)).toContain('guest_checked_out');
     expect(syncBookingOpsTasksForRecordId).toHaveBeenCalledWith(record.id);
+  });
+
+  it('carries canonical scope through checkout gate and execution writes', async () => {
+    guestCheckedIn = true;
+    const expectedScope = { accountId: 'account-1', propertyId: record.propertyId };
+    const lifecycleModule = await import('../lifecycle');
+    vi.mocked(lifecycleModule.completeGate).mockClear();
+    const { runInStayCheckoutAction } = await import('../instay-checkout-autopilot');
+
+    const status = await runInStayCheckoutAction({
+      bookingId: record.id,
+      action: 'mark_guest_checked_out',
+      expectedScope,
+    });
+
+    expect(status.status).toBe('checked_out');
+    expect(lifecycleModule.completeGate).toHaveBeenCalledWith(
+      record.id,
+      'guest_checked_out',
+      expect.any(Object),
+      expectedScope,
+    );
+    expect(syncBookingOpsTasksForRecordId).toHaveBeenCalledWith(record.id, { expectedScope });
   });
 
   it('fails closed before checkout mutation when canonical scope no longer matches', async () => {
