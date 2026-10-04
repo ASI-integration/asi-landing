@@ -1,6 +1,6 @@
 import { supabase } from '@/lib/supabase';
 import { durableEventId, getBookingLifecycleSummary, recordAndProcessBookingEvent } from './lifecycle-autopilot-service';
-import { getBookingOpsRecord } from './repository';
+import { requireBookingOpsRecordScope } from './repository';
 import { listBookingOpsTasksForRecord } from './tasks';
 import { syncBookingOpsCommunications } from './communication-orchestrator';
 
@@ -47,9 +47,11 @@ async function loadReservation(identifier: string, accountId: string): Promise<R
   return row;
 }
 
-async function taskCounts(bookingId: string) {
+async function taskCounts(bookingId: string, expectedScope: { accountId: string; propertyId: string }) {
+  await requireBookingOpsRecordScope(bookingId, expectedScope);
   const result = await supabase.from('booking_ops_worker_tasks').select('assigned_role,status').eq('booking_id', bookingId);
   if (result.error) throw new Error(result.error.message);
+  await requireBookingOpsRecordScope(bookingId, expectedScope);
   const counts: Record<string, Record<string, number>> = {};
   for (const row of result.data ?? []) {
     const role = String(row.assigned_role); const status = String(row.status);
@@ -58,9 +60,11 @@ async function taskCounts(bookingId: string) {
   return counts;
 }
 
-async function persistedLifecycle(bookingId: string) {
+async function persistedLifecycle(bookingId: string, expectedScope: { accountId: string; propertyId: string }) {
+  await requireBookingOpsRecordScope(bookingId, expectedScope);
   const result = await supabase.from('booking_ops_lifecycle_states').select('current_stage,status,blocker_reasons,property_id').eq('booking_id', bookingId).maybeSingle();
   if (result.error) throw new Error(result.error.message);
+  await requireBookingOpsRecordScope(bookingId, expectedScope);
   return { currentStage: result.data?.current_stage ?? null, status: result.data?.status ?? null, blockers: (result.data?.blocker_reasons ?? []) as string[], propertyId: result.data?.property_id ?? null };
 }
 
@@ -68,13 +72,19 @@ function requiredTasksCompleted(tasks: Record<string, Record<string, number>>) {
   return ['cleaner', 'linen_worker', 'consumables', 'inspector'].every((role) => (tasks[role]?.completed ?? 0) > 0 && Object.entries(tasks[role] ?? {}).every(([status, count]) => status === 'completed' || count === 0));
 }
 
-async function communicationCounts(recordId: string, sourceBookingId: string | null) {
+async function communicationCounts(
+  recordId: string,
+  sourceBookingId: string | null,
+  expectedScope: { accountId: string; propertyId: string },
+) {
+  await requireBookingOpsRecordScope(recordId, expectedScope);
   const [intents, drafts, deliveries] = await Promise.all([
     supabase.from('booking_ops_communication_intents').select('id', { count: 'exact', head: true }).eq('booking_ops_record_id', recordId),
     supabase.from('booking_ops_lifecycle_drafts').select('id', { count: 'exact', head: true }).eq('booking_id', recordId),
     supabase.from('booking_ops_communication_deliveries').select('id', { count: 'exact', head: true }).eq('booking_id', sourceBookingId ?? recordId).eq('status', 'sent'),
   ]);
   for (const result of [intents, drafts, deliveries]) if (result.error && result.error.code !== '42P01') throw new Error(result.error.message);
+  await requireBookingOpsRecordScope(recordId, expectedScope);
   return { intents: intents.count ?? 0, drafts: drafts.count ?? 0, realSends: deliveries.count ?? 0 };
 }
 
@@ -97,24 +107,34 @@ function plan(row: ReservationRow, stage: string | null, missing: string[]): Gol
 
 export async function runGoldenPathAcceptance(input: { identifier: string; accountId: string; actorId: string; dryRun?: boolean; confirm?: boolean; featureEnabled?: boolean }): Promise<GoldenPathReport> {
   const row = await loadReservation(input.identifier, input.accountId);
-  const before = await getBookingLifecycleSummary(row.id);
+  const expectedScope = row.property_id ? { accountId: input.accountId, propertyId: row.property_id } : null;
+  const before = await getBookingLifecycleSummary(row.id, expectedScope ?? undefined);
   const hardMissing = [!row.property_id ? 'property' : null, !isAcceptanceSafe(row.reservation_metadata) ? 'acceptance_safe_marker' : null].filter((x): x is string => Boolean(x));
   const missing = [...new Set([...before.blockers, ...hardMissing])];
   if (input.dryRun !== false) return plan(row, before.stage, missing);
   if (input.confirm !== true) throw new Error('explicit_confirmation_required');
   if (!input.featureEnabled) throw new Error('golden_path_feature_disabled');
-  if (hardMissing.length > 0) throw new Error(`golden_path_prerequisites_missing:${hardMissing.join(',')}`);
+  if (hardMissing.length > 0 || !expectedScope) throw new Error(`golden_path_prerequisites_missing:${hardMissing.join(',')}`);
 
+  await requireBookingOpsRecordScope(row.id, expectedScope);
   const steps: GoldenPathStep[] = [];
   let duplicateEvents = 0;
   const correlationId = durableEventId(SOURCE, row.id);
   if (row.normalized_status === 'inquiry' || row.normalized_status === 'temporary_hold') {
-    const updated = await supabase.from('booking_ops_records').update({ normalized_status: 'confirmed', updated_at: new Date().toISOString() }).eq('id', row.id).eq('account_id', input.accountId);
+    const updated = await supabase.from('booking_ops_records')
+      .update({ normalized_status: 'confirmed', updated_at: new Date().toISOString() })
+      .eq('id', row.id)
+      .eq('account_id', expectedScope.accountId)
+      .eq('property_id', expectedScope.propertyId)
+      .select('id')
+      .maybeSingle();
     if (updated.error) throw new Error(updated.error.message);
+    if (!updated.data) throw new Error('booking_scope_mismatch');
+    await requireBookingOpsRecordScope(row.id, expectedScope);
   }
   for (const [index, eventType] of EVENT_TYPES.entries()) {
     try {
-      const outcome = await recordAndProcessBookingEvent({ id: durableEventId(SOURCE, row.id, eventType), bookingId: row.id, objectId: row.property_id, type: eventType, actorType: 'system', actorId: input.actorId, source: SOURCE, correlationId, payload: { acceptance: true, step: index + 1, actual_send_enabled: false } });
+      const outcome = await recordAndProcessBookingEvent({ id: durableEventId(SOURCE, row.id, eventType), bookingId: row.id, objectId: expectedScope.propertyId, type: eventType, actorType: 'system', actorId: input.actorId, source: SOURCE, correlationId, payload: { acceptance: true, step: index + 1, actual_send_enabled: false } }, expectedScope);
       if (outcome.duplicate) duplicateEvents += 1;
       steps.push({ key: eventType, eventType, status: 'PASS', detail: outcome.duplicate ? 'Already applied; no change.' : 'Applied through OPS v16 lifecycle service.' });
     } catch (error) {
@@ -124,31 +144,42 @@ export async function runGoldenPathAcceptance(input: { identifier: string; accou
   }
   if (steps.every((step) => step.status === 'PASS')) {
     try {
-      const [record, tasksResult] = await Promise.all([getBookingOpsRecord(row.id), listBookingOpsTasksForRecord(row.id)]);
-      if (!record) throw new Error('booking_context_not_found');
+      const [record, tasksResult] = await Promise.all([
+        requireBookingOpsRecordScope(row.id, expectedScope),
+        listBookingOpsTasksForRecord(row.id, { expectedScope }),
+      ]);
       if (!tasksResult.ok) throw new Error(tasksResult.error);
-      const synced = await syncBookingOpsCommunications({ record, tasks: tasksResult.tasks });
+      const synced = await syncBookingOpsCommunications({ record, tasks: tasksResult.tasks, expectedScope });
       if (!synced.ok) throw new Error(synced.error ?? 'communication_draft_sync_failed');
       steps.push({ key: 'communication.drafts', eventType: 'communication.drafts', status: 'PASS', detail: 'Safe internal drafts synchronized; no delivery executor called.' });
     } catch (error) {
       steps.push({ key: 'communication.drafts', eventType: 'communication.drafts', status: 'FAIL', detail: error instanceof Error ? error.message : 'communication_draft_sync_failed' });
     }
   }
-  const after = await getBookingLifecycleSummary(row.id);
-  const communications = await communicationCounts(row.id, row.booking_id);
-  const [tasks, persisted] = await Promise.all([taskCounts(row.id), persistedLifecycle(row.id)]);
+  const after = await getBookingLifecycleSummary(row.id, expectedScope);
+  const communications = await communicationCounts(row.id, row.booking_id, expectedScope);
+  const [tasks, persisted] = await Promise.all([taskCounts(row.id, expectedScope), persistedLifecycle(row.id, expectedScope)]);
   const convergenceFailures = [
     after.stage !== 'closed' ? 'canonical_lifecycle_not_closed' : null,
     persisted.currentStage !== 'closed' ? 'persisted_lifecycle_not_closed' : null,
     persisted.blockers.length ? `persisted_blockers:${persisted.blockers.join(',')}` : null,
-    persisted.propertyId !== row.property_id ? 'persisted_property_mismatch' : null,
+    persisted.propertyId !== expectedScope.propertyId ? 'persisted_property_mismatch' : null,
     after.readiness !== 'ready' || after.blockers.length ? 'readiness_not_closed' : null,
     !requiredTasksCompleted(tasks) ? 'required_worker_tasks_incomplete' : null,
   ].filter((value): value is string => Boolean(value));
   const converged = convergenceFailures.length === 0 && after.processingErrors.length === 0 && communications.realSends === 0 && steps.every((step) => step.status === 'PASS');
   if (converged) {
-    const updated = await supabase.from('booking_ops_records').update({ normalized_status: 'checked_out', updated_at: new Date().toISOString() }).eq('id', row.id).eq('account_id', input.accountId);
+    await requireBookingOpsRecordScope(row.id, expectedScope);
+    const updated = await supabase.from('booking_ops_records')
+      .update({ normalized_status: 'checked_out', updated_at: new Date().toISOString() })
+      .eq('id', row.id)
+      .eq('account_id', expectedScope.accountId)
+      .eq('property_id', expectedScope.propertyId)
+      .select('id')
+      .maybeSingle();
     if (updated.error) throw new Error(updated.error.message);
+    if (!updated.data) throw new Error('booking_scope_mismatch');
+    await requireBookingOpsRecordScope(row.id, expectedScope);
   }
   return {
     ...plan(row, before.stage, missing), dryRun: false, finalReservationStatus: converged ? 'checked_out' : row.normalized_status,
