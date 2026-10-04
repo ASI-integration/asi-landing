@@ -595,6 +595,30 @@ describe('In-stay & Checkout Autopilot v1', () => {
     expect(tables.booking_instay_checkout).toHaveLength(0);
   });
 
+  it('carries canonical scope through post-checkout inspection scheduling', async () => {
+    guestCheckedIn = true;
+    guestCheckedOut = true;
+    const expectedScope = { accountId: 'account-1', propertyId: record.propertyId };
+    const lifecycleModule = await import('../lifecycle');
+    vi.mocked(lifecycleModule.markGateInProgress).mockClear();
+    const { runInStayCheckoutAction } = await import('../instay-checkout-autopilot');
+
+    const status = await runInStayCheckoutAction({
+      bookingId: record.id,
+      action: 'trigger_post_checkout_inspection',
+      expectedScope,
+    });
+
+    expect(status.status).toBe('inspection_pending');
+    expect(lifecycleModule.markGateInProgress).toHaveBeenCalledWith(
+      record.id,
+      'post_checkout_inspection_done',
+      expect.any(Object),
+      expectedScope,
+    );
+    expect(tables.booking_ops_communication_intents).toHaveLength(1);
+  });
+
   it('mark inspection done completes post_checkout_inspection_done gate', async () => {
     guestCheckedIn = true;
     guestCheckedOut = true;
@@ -604,6 +628,30 @@ describe('In-stay & Checkout Autopilot v1', () => {
 
     expect(status.inspectionStatus).toBe('done');
     expect(lifecycle.completed.map((item) => item.gateKey)).toContain('post_checkout_inspection_done');
+  });
+
+  it('carries canonical scope through deposit-return readiness', async () => {
+    guestCheckedIn = true;
+    guestCheckedOut = true;
+    inspectionDone = true;
+    const expectedScope = { accountId: 'account-1', propertyId: record.propertyId };
+    const lifecycleModule = await import('../lifecycle');
+    vi.mocked(lifecycleModule.completeGate).mockClear();
+    const { runInStayCheckoutAction } = await import('../instay-checkout-autopilot');
+
+    const status = await runInStayCheckoutAction({
+      bookingId: record.id,
+      action: 'mark_deposit_return_ready',
+      expectedScope,
+    });
+
+    expect(status.depositReturnStatus).toBe('ready');
+    expect(lifecycleModule.completeGate).toHaveBeenCalledWith(
+      record.id,
+      'deposit_return_ready',
+      expect.any(Object),
+      expectedScope,
+    );
   });
 
   it('mark deposit return ready completes deposit_return_ready gate', async () => {
@@ -631,6 +679,32 @@ describe('In-stay & Checkout Autopilot v1', () => {
       ]),
     });
     expect(lifecycle.completed.map((item) => item.gateKey)).not.toContain('booking_closed');
+  });
+
+  it('carries canonical scope through booking close guard and persistence', async () => {
+    guestCheckedIn = true;
+    guestCheckedOut = true;
+    inspectionDone = true;
+    depositReady = true;
+    recordOverrides = { depositIntakeStatus: 'returned' };
+    const expectedScope = { accountId: 'account-1', propertyId: record.propertyId };
+    const lifecycleModule = await import('../lifecycle');
+    vi.mocked(lifecycleModule.completeGate).mockClear();
+    const { runInStayCheckoutAction } = await import('../instay-checkout-autopilot');
+
+    const status = await runInStayCheckoutAction({
+      bookingId: record.id,
+      action: 'mark_booking_closed',
+      expectedScope,
+    });
+
+    expect(status.status).toBe('closed');
+    expect(lifecycleModule.completeGate).toHaveBeenCalledWith(
+      record.id,
+      'booking_closed',
+      expect.any(Object),
+      expectedScope,
+    );
   });
 
   it('mark booking closed completes booking_closed gate', async () => {

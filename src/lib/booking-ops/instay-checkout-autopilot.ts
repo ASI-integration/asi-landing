@@ -621,12 +621,14 @@ export async function readBookingClosePrerequisites(
 
 export async function validateBookingClosePrerequisites(
   record: BookingOpsRecord,
+  expectedScope?: { accountId: string; propertyId: string },
 ): Promise<BookingCloseMissingPrerequisite[]> {
+  if (expectedScope) await requireBookingOpsRecordScope(record.id, expectedScope);
   let legal: BookingCloseLegalState | null = null;
   let legalError: string | null = null;
   try {
     const { recomputeGuestLegalReadiness } = await import('./guest-legal-deposit-mvd-execution');
-    legal = await recomputeGuestLegalReadiness(record.id, { source: 'close_guard' });
+    legal = await recomputeGuestLegalReadiness(record.id, { source: 'close_guard' }, expectedScope);
   } catch (error) {
     legalError = error instanceof Error ? error.message : 'Legal readiness could not be checked.';
   }
@@ -635,6 +637,7 @@ export async function validateBookingClosePrerequisites(
     listIssueRows(record.id),
     getLifecycleStatus(record.id),
   ]);
+  if (expectedScope) await requireBookingOpsRecordScope(record.id, expectedScope);
   return computeBookingClosePrerequisites({
     record,
     legal,
@@ -1110,12 +1113,15 @@ export async function markGuestCheckedOut(
 export async function triggerPostCheckoutInspection(
   bookingId: string,
   metadata?: Record<string, unknown>,
+  expectedScope?: { accountId: string; propertyId: string },
 ): Promise<InStayCheckoutSnapshot> {
-  const record = await loadRecord(bookingId);
+  const record = expectedScope
+    ? await requireBookingOpsRecordScope(bookingId, expectedScope)
+    : await loadRecord(bookingId);
   await markGateInProgress(record.id, 'post_checkout_inspection_done', {
     source: 'instay_checkout_autopilot_v1',
     ...safeMetadata(metadata),
-  });
+  }, expectedScope);
   await ensureCommunicationIntent({
     record,
     purpose: 'inspection_request',
@@ -1123,21 +1129,25 @@ export async function triggerPostCheckoutInspection(
     messageTemplateKey: 'operator.checkout.inspection.v1',
     messageText: `Запрос осмотра после выезда: ${record.propertyLabel ?? record.propertyId ?? record.id}`,
     metadata,
+    expectedScope,
   });
   await upsertExecution(record.id, {
     status: 'inspection_pending',
     inspection_status: 'scheduled',
     metadata: { source: 'instay_checkout_autopilot_v1', inspectionTriggeredAt: new Date().toISOString(), ...safeMetadata(metadata) },
-  });
-  return getInStayCheckoutStatus(record.id);
+  }, expectedScope);
+  return getInStayCheckoutStatus(record.id, expectedScope);
 }
 
 export async function markPostCheckoutInspectionDone(
   bookingId: string,
   result: string,
   metadata?: Record<string, unknown>,
+  expectedScope?: { accountId: string; propertyId: string },
 ): Promise<InStayCheckoutSnapshot> {
-  const record = await loadRecord(bookingId);
+  const record = expectedScope
+    ? await requireBookingOpsRecordScope(bookingId, expectedScope)
+    : await loadRecord(bookingId);
   const cleanResult = text(result) || 'ok';
   const inspectionStatus: CheckoutInspectionStatus =
     cleanResult === 'issue_found' ? 'issue_found'
@@ -1149,13 +1159,13 @@ export async function markPostCheckoutInspectionDone(
       source: 'instay_checkout_autopilot_v1',
       result: cleanResult,
       ...safeMetadata(metadata),
-    });
+    }, expectedScope);
   } else {
     await blockGate(record.id, 'post_checkout_inspection_done', `Осмотр: ${cleanResult}`, {
       source: 'instay_checkout_autopilot_v1',
       result: cleanResult,
       ...safeMetadata(metadata),
-    });
+    }, expectedScope);
   }
 
   await upsertExecution(record.id, {
@@ -1163,55 +1173,62 @@ export async function markPostCheckoutInspectionDone(
     inspection_status: inspectionStatus,
     failure_reason: inspectionStatus === 'done' ? null : `Осмотр: ${cleanResult}`,
     metadata: { source: 'instay_checkout_autopilot_v1', inspectionDoneAt: new Date().toISOString(), result: cleanResult, ...safeMetadata(metadata) },
-  });
-  return getInStayCheckoutStatus(record.id);
+  }, expectedScope);
+  return getInStayCheckoutStatus(record.id, expectedScope);
 }
 
 export async function markDepositReturnReady(
   bookingId: string,
   metadata?: Record<string, unknown>,
+  expectedScope?: { accountId: string; propertyId: string },
 ): Promise<InStayCheckoutSnapshot> {
-  const record = await loadRecord(bookingId);
+  const record = expectedScope
+    ? await requireBookingOpsRecordScope(bookingId, expectedScope)
+    : await loadRecord(bookingId);
   await completeGate(record.id, 'deposit_return_ready', {
     source: 'instay_checkout_autopilot_v1',
     ...safeMetadata(metadata),
-  });
+  }, expectedScope);
   await ensureCommunicationIntent({
     record,
     purpose: 'deposit_return_readiness_notice',
     messageTemplateKey: 'guest.checkout.deposit_ready.v1',
     messageText: 'Здравствуйте. Возврат депозита подготовлен. Детали уточнит оператор.',
     metadata,
+    expectedScope,
   });
   await upsertExecution(record.id, {
     status: 'deposit_return_ready',
     deposit_return_status: 'ready',
     closure_status: 'ready_to_close',
     metadata: { source: 'instay_checkout_autopilot_v1', depositReadyAt: new Date().toISOString(), ...safeMetadata(metadata) },
-  });
-  return getInStayCheckoutStatus(record.id);
+  }, expectedScope);
+  return getInStayCheckoutStatus(record.id, expectedScope);
 }
 
 export async function markBookingClosed(
   bookingId: string,
   metadata?: Record<string, unknown>,
+  expectedScope?: { accountId: string; propertyId: string },
 ): Promise<InStayCheckoutSnapshot> {
-  const record = await loadRecord(bookingId);
-  const missingPrerequisites = await validateBookingClosePrerequisites(record);
+  const record = expectedScope
+    ? await requireBookingOpsRecordScope(bookingId, expectedScope)
+    : await loadRecord(bookingId);
+  const missingPrerequisites = await validateBookingClosePrerequisites(record, expectedScope);
   if (missingPrerequisites.length > 0) {
     throw new BookingClosePrerequisiteError(missingPrerequisites);
   }
   const gateResult = await completeGate(record.id, 'booking_closed', {
     source: 'instay_checkout_autopilot_v1',
     ...safeMetadata(metadata),
-  });
+  }, expectedScope);
   if (!gateResult.ok) throw new Error(gateResult.error ?? 'booking_close_gate_write_failed');
   await upsertExecution(record.id, {
     status: 'closed',
     closure_status: 'closed',
     metadata: { source: 'instay_checkout_autopilot_v1', closedAt: new Date().toISOString(), ...safeMetadata(metadata) },
-  });
-  return getInStayCheckoutStatus(record.id);
+  }, expectedScope);
+  return getInStayCheckoutStatus(record.id, expectedScope);
 }
 
 export async function getCheckoutBlockers(bookingId: string): Promise<InStayCheckoutBlocker[]> {
@@ -1222,8 +1239,9 @@ export async function createCheckoutFallbackIfNeeded(
   bookingId: string,
   reason: string,
   metadata?: Record<string, unknown>,
+  expectedScope?: { accountId: string; propertyId: string },
 ): Promise<{ ok: boolean; created: boolean; snapshot: InStayCheckoutSnapshot; error?: string }> {
-  const snapshot = await getInStayCheckoutStatus(bookingId);
+  const snapshot = await getInStayCheckoutStatus(bookingId, expectedScope);
   const blocker = snapshot.blockers.find((item) => item.fallbackEligible);
   if (!blocker) return { ok: true, created: false, snapshot };
   const cleanReason = text(reason) || blocker.reason;
@@ -1236,15 +1254,15 @@ export async function createCheckoutFallbackIfNeeded(
     source: 'instay_checkout_autopilot_v1',
     blocker: blocker.key,
     ...safeMetadata(metadata),
-  });
+  }, expectedScope);
   if (!result.ok) return { ok: false, created: false, snapshot, error: result.error };
   await upsertExecution(bookingId, {
     status: 'blocked',
     closure_status: 'blocked',
     failure_reason: cleanReason,
     metadata: { source: 'instay_checkout_autopilot_v1', fallbackAt: new Date().toISOString(), ...safeMetadata(metadata) },
-  });
-  return { ok: true, created: true, snapshot: await getInStayCheckoutStatus(bookingId) };
+  }, expectedScope);
+  return { ok: true, created: true, snapshot: await getInStayCheckoutStatus(bookingId, expectedScope) };
 }
 
 export async function runInStayCheckoutAction(input: {
@@ -1308,16 +1326,22 @@ export async function runInStayCheckoutAction(input: {
         input.expectedScope,
       );
     case 'trigger_post_checkout_inspection':
-      return triggerPostCheckoutInspection(bookingId, input.metadata);
+      return triggerPostCheckoutInspection(bookingId, input.metadata, input.expectedScope);
     case 'mark_post_checkout_inspection_done':
-      return markPostCheckoutInspectionDone(bookingId, text(input.result) || 'ok', input.metadata);
+      return markPostCheckoutInspectionDone(bookingId, text(input.result) || 'ok', input.metadata, input.expectedScope);
     case 'mark_deposit_return_ready':
-      return markDepositReturnReady(bookingId, input.metadata);
+      return markDepositReturnReady(bookingId, input.metadata, input.expectedScope);
     case 'mark_booking_closed':
-      return markBookingClosed(bookingId, input.metadata);
+      return markBookingClosed(bookingId, input.metadata, input.expectedScope);
     case 'create_fallback':
-      return (await createCheckoutFallbackIfNeeded(bookingId, reason || 'Нужен ручной план выезда', input.metadata)).snapshot;
+      return (await createCheckoutFallbackIfNeeded(
+        bookingId,
+        reason || 'Нужен ручной план выезда',
+        input.metadata,
+        input.expectedScope,
+      )).snapshot;
     case 'add_note': {
+      if (input.expectedScope) await requireBookingOpsRecordScope(bookingId, input.expectedScope);
       const current = await getExecutionRow(bookingId);
       const notes = Array.isArray(current?.metadata.notes) ? current.metadata.notes : [];
       await upsertExecution(bookingId, {
@@ -1325,8 +1349,8 @@ export async function runInStayCheckoutAction(input: {
           source: 'instay_checkout_autopilot_v1',
           notes: [...notes, { text: note || reason, createdAt: new Date().toISOString() }].filter((item) => text((item as { text?: unknown }).text)),
         },
-      });
-      return getInStayCheckoutStatus(bookingId);
+      }, input.expectedScope);
+      return getInStayCheckoutStatus(bookingId, input.expectedScope);
     }
     default:
       throw new Error('invalid_action');
