@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { supabase } from '@/lib/supabase';
 import { getPilotReadinessForProperty } from '@/lib/pilot-readiness/repository';
 import { connectionPropertyId } from '@/lib/rental-connect/identity';
+import { resolveResidentialBookingIdentity } from '@/lib/platform/residential-booking-scope';
 import { communicationPolicyDefaults, computeLaunchReadiness, computeOperationalReadiness, initializeModules, onboardingProgress, reportVerificationIssue } from './core';
 import type { ModuleState, OnboardingData, OnboardingStep } from './types';
 
@@ -167,10 +168,28 @@ export async function bootstrapPilot(input: { accountId: string; actorId: string
   const preview = { accountId: input.accountId, modules: workspace.modules.filter((m) => m.status !== 'initialized').map((m) => m.key), inspectedRecords: records.data?.length ?? 0, eligibleRecords: eligible.length, ambiguousRecords: ambiguous.map((r) => ({ id: r.id, reference: r.asi_reference ?? null, missing: [(!r.property_id || !ownedProperties.has(r.property_id)) && 'owned_property', !r.check_in_at && 'check_in', !r.check_out_at && 'check_out', !(r.guest_phone || r.guest_email || r.guest_telegram) && 'guest_contact'].filter(Boolean) })), messagesWillBeSent: false };
   if (!input.confirm) return { dryRun: true, preview };
   for (const record of eligible) {
-    const saved = await supabase.from('booking_ops_records').update({ source_type: record.source_type || 'manual', source_provider: record.ota_source || null, sync_status: record.booking_id ? 'imported' : 'local_only' }).eq('id', record.id).eq('account_id', input.accountId).select('id').maybeSingle();
+    const expectedPropertyId = String(record.property_id);
+    const identity = await resolveResidentialBookingIdentity(record.id, input.accountId);
+    if (
+      !identity.bookingId
+      || !identity.propertyId
+      || identity.propertyId !== expectedPropertyId
+    ) throw new Error('booking_property_scope_changed');
+    const saved = await supabase.from('booking_ops_records')
+      .update({ source_type: record.source_type || 'manual', source_provider: record.ota_source || null, sync_status: record.booking_id ? 'imported' : 'local_only' })
+      .eq('id', record.id)
+      .eq('account_id', input.accountId)
+      .eq('property_id', expectedPropertyId)
+      .select('id')
+      .maybeSingle();
     if (saved.error) throw new Error(saved.error.message);
-    if (!saved.data) throw new Error('booking_account_scope_changed');
-    if (record.booking_id) { const link = await supabase.from('reservation_source_links').upsert({ id: randomUUID(), account_id: input.accountId, booking_ops_record_id: record.id, provider: record.ota_source || 'legacy', external_reservation_id: record.booking_id, source_status: 'seen', metadata: { bootstrap: true }, last_seen_at: new Date().toISOString() }, { onConflict: 'account_id,provider,external_reservation_id' }); if (link.error) throw new Error(link.error.message); }
+    if (!saved.data) throw new Error('booking_property_scope_changed');
+    if (record.booking_id) {
+      const current = await resolveResidentialBookingIdentity(record.id, input.accountId);
+      if (!current.bookingId || current.propertyId !== expectedPropertyId) throw new Error('booking_property_scope_changed');
+      const link = await supabase.from('reservation_source_links').upsert({ id: randomUUID(), account_id: input.accountId, booking_ops_record_id: record.id, provider: record.ota_source || 'legacy', external_reservation_id: record.booking_id, source_status: 'seen', metadata: { bootstrap: true }, last_seen_at: new Date().toISOString() }, { onConflict: 'account_id,provider,external_reservation_id' });
+      if (link.error) throw new Error(link.error.message);
+    }
   }
   const modules = await synchronizeModules(workspace.onboarding.id, workspace.onboarding.data, input.actorId);
   await audit(workspace.onboarding.id, 'single_pilot_bootstrap', input.actorId, { preview, confirmed: true, messagesSent: false });
