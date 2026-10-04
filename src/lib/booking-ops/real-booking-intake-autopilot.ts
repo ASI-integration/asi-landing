@@ -952,7 +952,8 @@ export async function initializeBookingAutomationStack(
   const modules: string[] = ['lifecycle_gates', 'legal_payment_placeholders', 'guest_intake_autopilot'];
 
   if (expectedScope) await requireBookingOpsRecordScope(bookingOpsRecordId, expectedScope);
-  await initializeCheckinExecutionBaseline(bookingOpsRecordId);
+  if (expectedScope) await initializeCheckinExecutionBaseline(bookingOpsRecordId, expectedScope);
+  else await initializeCheckinExecutionBaseline(bookingOpsRecordId);
   modules.push('checkin_execution_baseline');
 
   if (expectedScope) await requireBookingOpsRecordScope(bookingOpsRecordId, expectedScope);

@@ -387,6 +387,23 @@ describe('Check-in Execution Autopilot v1', () => {
     expect(JSON.stringify(tables.booking_ops_communication_intents[0].metadata)).not.toContain('1234');
   });
 
+  it('fails closed when the access-issue lifecycle block cannot be persisted', async () => {
+    const lifecycleModule = await import('../lifecycle');
+    vi.mocked(lifecycleModule.blockGate).mockResolvedValueOnce({ ok: false, error: 'injected_gate_write_failure' });
+    const { reportAccessIssue } = await import('../checkin-execution-autopilot');
+
+    await expect(reportAccessIssue(
+      record.id,
+      'Гость не может открыть дверь',
+      undefined,
+      { accountId: 'account-1', propertyId: record.propertyId },
+    )).rejects.toThrow('injected_gate_write_failure');
+
+    expect(tables.booking_ops_communication_intents).toHaveLength(0);
+    expect(tables.booking_checkin_execution).toHaveLength(0);
+    expect(updateBookingOpsRecord).not.toHaveBeenCalled();
+  });
+
   it('does not create fallback for normal pending arrival', async () => {
     const { requestArrivalConfirmation, createCheckinFallbackIfNeeded } = await import('../checkin-execution-autopilot');
 
@@ -418,6 +435,94 @@ describe('Check-in Execution Autopilot v1', () => {
 
     expect(lifecycle.completed).toHaveLength(0);
     expect(updateBookingOpsRecord).not.toHaveBeenCalled();
+    expect(tables.booking_checkin_execution).toHaveLength(0);
+  });
+
+  it('keeps canonical scope through access resolution', async () => {
+    const lifecycleModule = await import('../lifecycle');
+    vi.mocked(lifecycleModule.adminUpdateLifecycleGate).mockClear();
+    const { runCheckinExecutionAction } = await import('../checkin-execution-autopilot');
+    const expectedScope = { accountId: 'account-1', propertyId: record.propertyId };
+
+    const status = await runCheckinExecutionAction({
+      bookingId: record.id,
+      action: 'resolve_access_issue',
+      reason: 'resolved',
+      expectedScope,
+    });
+
+    expect(status.accessStatus).toBe('resolved');
+    expect(lifecycleModule.adminUpdateLifecycleGate).toHaveBeenCalledWith(
+      expect.objectContaining({ bookingId: record.id, expectedScope }),
+    );
+    expect(requireBookingOpsRecordScope).toHaveBeenCalledWith(record.id, expectedScope);
+  });
+
+  it('fails closed when access-resolution lifecycle persistence fails', async () => {
+    const lifecycleModule = await import('../lifecycle');
+    vi.mocked(lifecycleModule.adminUpdateLifecycleGate).mockResolvedValueOnce({
+      ok: false,
+      error: 'injected_gate_write_failure',
+    });
+    const { runCheckinExecutionAction } = await import('../checkin-execution-autopilot');
+
+    await expect(runCheckinExecutionAction({
+      bookingId: record.id,
+      action: 'resolve_access_issue',
+      expectedScope: { accountId: 'account-1', propertyId: record.propertyId },
+    })).rejects.toThrow('injected_gate_write_failure');
+
+    expect(tables.booking_checkin_execution).toHaveLength(0);
+  });
+
+  it('keeps canonical scope through fallback creation', async () => {
+    preCheckinStatus = 'blocked';
+    preCheckinBlockers = [{
+      key: 'physical:cleaning_not_verified',
+      title: 'Cleaning',
+      reason: 'Not ready',
+      fallbackEligible: true,
+    }];
+    const lifecycleModule = await import('../lifecycle');
+    vi.mocked(lifecycleModule.blockGate).mockClear();
+    const { runCheckinExecutionAction } = await import('../checkin-execution-autopilot');
+    const expectedScope = { accountId: 'account-1', propertyId: record.propertyId };
+
+    await runCheckinExecutionAction({
+      bookingId: record.id,
+      action: 'create_fallback',
+      reason: 'manual plan',
+      expectedScope,
+    });
+
+    expect(vi.mocked(lifecycleModule.blockGate).mock.calls[0]?.[4]).toEqual(expectedScope);
+  });
+
+  it('fails closed before a scoped note write if ownership changes', async () => {
+    requireBookingOpsRecordScope
+      .mockResolvedValueOnce(record)
+      .mockRejectedValueOnce(new Error('booking_scope_mismatch'));
+    const { runCheckinExecutionAction } = await import('../checkin-execution-autopilot');
+
+    await expect(runCheckinExecutionAction({
+      bookingId: record.id,
+      action: 'add_note',
+      note: 'operator note',
+      expectedScope: { accountId: 'account-1', propertyId: record.propertyId },
+    })).rejects.toThrow('booking_scope_mismatch');
+
+    expect(tables.booking_checkin_execution).toHaveLength(0);
+  });
+
+  it('scopes baseline initialization before persistence', async () => {
+    requireBookingOpsRecordScope.mockRejectedValueOnce(new Error('booking_scope_mismatch'));
+    const { initializeCheckinExecutionBaseline } = await import('../checkin-execution-autopilot');
+
+    await expect(initializeCheckinExecutionBaseline(
+      record.id,
+      { accountId: 'account-1', propertyId: record.propertyId },
+    )).rejects.toThrow('booking_scope_mismatch');
+
     expect(tables.booking_checkin_execution).toHaveLength(0);
   });
 
