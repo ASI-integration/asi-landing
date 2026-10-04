@@ -421,6 +421,22 @@ describe('Check-in Execution Autopilot v1', () => {
     expect(tables.booking_checkin_execution).toHaveLength(0);
   });
 
+  it('revalidates canonical scope immediately before arrival execution persistence', async () => {
+    requireBookingOpsRecordScope
+      .mockResolvedValueOnce(record)
+      .mockRejectedValueOnce(new Error('booking_scope_mismatch'));
+    const { markArrivalConfirmed } = await import('../checkin-execution-autopilot');
+
+    await expect(markArrivalConfirmed(
+      record.id,
+      '2026-06-30T12:00:00.000Z',
+      undefined,
+      { accountId: 'account-1', propertyId: record.propertyId },
+    )).rejects.toThrow('booking_scope_mismatch');
+
+    expect(tables.booking_checkin_execution).toHaveLength(0);
+  });
+
   it.each(['markGuestCheckedIn', 'markAccessReady', 'markCheckinInstructionsSent'] as const)(
     '%s fails closed when the required lifecycle write fails',
     async (action) => {
