@@ -251,12 +251,18 @@ async function getConnection(connectionId: string): Promise<ChannelManagerConnec
   return mapConnection(data as Record<string, unknown>);
 }
 
-export async function queueChannelManagerCommunication(connection: ChannelManagerConnection, messageType: string, messageText: string): Promise<string | null> {
+export async function queueChannelManagerCommunication(
+  connection: ChannelManagerConnection,
+  messageType: string,
+  messageText: string,
+  expectedScope?: ChannelManagerCanonicalScope,
+): Promise<string | null> {
   if (!connection.ownerSetupId) return null;
   const decision = await canAutoSendCommunicationIntent({
     actorType: 'owner', purpose: 'internal_status_notice', channel: 'manual', messageText,
     metadata: { messageType, channelManagerAccessImport: true },
   }, { ownerId: connection.ownerId, propertyId: null });
+  if (expectedScope) await assertChannelManagerConnectionScopeCurrent(expectedScope);
   const id = randomUUID();
   const now = new Date().toISOString();
   const { error } = await supabase.from('booking_owner_setup_communication_intents').insert({
@@ -600,6 +606,7 @@ function validateSnapshot(snapshot: ManualChannelSnapshot): Required<ManualChann
 
 export async function registerManualChannelSnapshot(connectionId: string, snapshot: ManualChannelSnapshot, metadata?: Record<string, unknown>): Promise<{ run: ChannelImportRun; summary: Record<string, number>; conflicts: ChannelImportConflict[] }> {
   const connection = await getConnection(connectionId);
+  const expectedScope = await resolveChannelManagerConnectionScope(connection);
   if (connection.provider !== 'manual' && !CHANNEL_PROVIDER_ADAPTERS[connection.provider].supports_real_api) {
     // A provider-labelled connection may still use the honest manual fallback.
   }
@@ -626,22 +633,39 @@ export async function registerManualChannelSnapshot(connectionId: string, snapsh
       objects, bookings, calendarDays: calendar, prices, warnings: conflicts,
       safeSummary: `Импортировано: объектов ${objects}, броней ${bookings}, строк календаря ${calendar}, цен ${prices}.`,
     });
-    const { lastManualSnapshot: _omitFullSnapshot, ...safeConnectionMetadata } = connection.metadata;
-    await supabase.from('booking_channel_manager_connections').update({
-      metadata: {
-        ...safeConnectionMetadata,
-        liveCore: connection.metadata?.liveCore === true,
-        lastManualSnapshotReceipt: {
-          snapshotHash: createHash('sha256').update(JSON.stringify(normalized)).digest('hex'),
-          sourceImportRunId: completed.id,
-          rowCounts: { objects, bookings, calendar, pricing: prices },
-          receivedAt: new Date().toISOString(),
+    await assertChannelManagerConnectionScopeCurrent(expectedScope);
+    const currentConnection = await getConnection(connection.id);
+    await assertChannelManagerConnectionScopeCurrent(expectedScope);
+    const { lastManualSnapshot: _omitFullSnapshot, ...safeConnectionMetadata } = currentConnection.metadata;
+    const { data: updatedConnection, error: connectionError } = await supabase
+      .from('booking_channel_manager_connections')
+      .update({
+        metadata: {
+          ...safeConnectionMetadata,
+          liveCore: currentConnection.metadata?.liveCore === true,
+          lastManualSnapshotReceipt: {
+            snapshotHash: createHash('sha256').update(JSON.stringify(normalized)).digest('hex'),
+            sourceImportRunId: completed.id,
+            rowCounts: { objects, bookings, calendar, pricing: prices },
+            receivedAt: new Date().toISOString(),
+          },
         },
-      },
-      updated_at: new Date().toISOString(),
-    }).eq('id', connection.id);
-    await queueChannelManagerCommunication(connection, conflicts.length ? 'channel_import_needs_review_notice' : 'channel_import_completed_notice',
-      conflicts.length ? `Импорт менеджера каналов завершён. Нужна проверка: ${conflicts.length} несоответствий.` : 'Импорт менеджера каналов завершён без найденных несоответствий.');
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', connection.id)
+      .eq('owner_setup_id', expectedScope.ownerSetupId)
+      .eq('property_setup_id', expectedScope.propertySetupId)
+      .select('*')
+      .maybeSingle();
+    if (connectionError) throw new Error(connectionError.message);
+    if (!updatedConnection) throw Object.assign(new Error('Контур подключения изменился до фиксации snapshot receipt.'), { code: 'account_scope_mismatch' });
+    await assertChannelManagerConnectionScopeCurrent(expectedScope);
+    await queueChannelManagerCommunication(
+      mapConnection(updatedConnection as Record<string, unknown>),
+      conflicts.length ? 'channel_import_needs_review_notice' : 'channel_import_completed_notice',
+      conflicts.length ? `Импорт менеджера каналов завершён. Нужна проверка: ${conflicts.length} несоответствий.` : 'Импорт менеджера каналов завершён без найденных несоответствий.',
+      expectedScope,
+    );
     return { run: completed, summary: { objects, bookings, calendar, prices }, conflicts };
   } catch (error) {
     await failChannelImportRun(run.id, error instanceof Error ? error.message : 'Ошибка ручного импорта.');

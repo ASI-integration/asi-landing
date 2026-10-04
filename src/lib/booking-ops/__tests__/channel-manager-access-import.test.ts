@@ -62,7 +62,7 @@ vi.mock('../real-booking-intake-autopilot', () => ({ processInboundBookingReques
 import {
   CHANNEL_PROVIDER_ADAPTERS, completeChannelImportRun, createBookingFromImportedChannelBooking, failChannelImportRun, findSecretPath, getChannelImportConflicts,
   importChannelBookings, importChannelCalendar, importChannelObjects, initializeChannelManagerConnection, markChannelManagerAccessReceived,
-  performChannelManagerProviderOnboardingAction, reconcileImportedBookings, reconcileImportedObjects, registerManualChannelSnapshot,
+  performChannelManagerProviderOnboardingAction, queueChannelManagerCommunication, reconcileImportedBookings, reconcileImportedObjects, registerManualChannelSnapshot,
   requestChannelManagerAccess, startChannelImportRun, updateChannelImportEntity,
 } from '../channel-manager-access-import';
 
@@ -134,6 +134,11 @@ describe('Channel Manager Access & Import v1', () => {
     expect(result.summary).toEqual({ objects: 1, bookings: 1, calendar: 1, prices: 1 });
     expect(rows('booking_channel_imported_objects')[0].match_status).toBe('matched');
     expect(rows('booking_channel_calendar_snapshots')).toHaveLength(2);
+    expect(rows('booking_channel_manager_connections')[0].metadata.lastManualSnapshotReceipt).toMatchObject({
+      sourceImportRunId: result.run.id,
+      rowCounts: { objects: 1, bookings: 1, calendar: 1, pricing: 1 },
+    });
+    expect(rows('booking_owner_setup_communication_intents').at(-1)?.message_type).toBe('channel_import_needs_review_notice');
   });
 
   it('fails closed before object upsert if the connection moves to another property', async () => {
@@ -287,6 +292,30 @@ describe('Channel Manager Access & Import v1', () => {
     });
 
     expect(rows('booking_channel_import_runs').find((row) => row.id === run.id)?.status).toBe('running');
+  });
+
+  it('does not persist an owner notice if connection scope drifts during policy evaluation', async () => {
+    const connection = await initializeChannelManagerConnection(PROPERTY_ID, 'manual', { accountId: 'acct-access-import' });
+    const connectionRow = rows('booking_channel_manager_connections').find((row) => row.id === connection.id)!;
+    canAutoSendCommunicationIntent.mockImplementationOnce(async () => {
+      connectionRow.metadata = { ...connectionRow.metadata, accountId: 'acct-other' };
+      return { eligible: false, reason: 'global_off' };
+    });
+
+    await expect(queueChannelManagerCommunication(
+      connection,
+      'channel_import_completed_notice',
+      'Импорт завершён.',
+      {
+        connectionId: connection.id,
+        ownerSetupId: OWNER_ID,
+        propertySetupId: PROPERTY_ID,
+        propertyId: 'prop-a',
+        accountId: 'acct-access-import',
+      },
+    )).rejects.toMatchObject({ code: 'account_scope_mismatch' });
+
+    expect(rows('booking_owner_setup_communication_intents')).toHaveLength(0);
   });
 
   it('selects Bnovo, RealtyCalendar and TravelLine as provider-ready connections', async () => {
