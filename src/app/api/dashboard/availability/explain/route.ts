@@ -17,12 +17,14 @@ export async function GET(req: Request) {
     const checkId = params.get('check_id');
     const bookingId = params.get('booking_id');
     let accountId: string;
+    let propertyId: string;
     let input: { checkId?: string; bookingId?: string };
 
     if (checkId) {
       const access = await requireBookingOpsApiAvailabilityCheckAccess(auth.session, checkId);
       if (!access.ok) return access.response;
       accountId = access.accountId;
+      propertyId = access.propertyId;
       input = { checkId: access.checkId };
     } else {
       const access = await requireBookingOpsApiAvailabilityScopeAccess(auth.session, { bookingId });
@@ -31,10 +33,11 @@ export async function GET(req: Request) {
         return NextResponse.json({ ok: false, message: 'Укажите ID проверки или брони.' }, { status: 400 });
       }
       accountId = access.accountId;
+      propertyId = access.propertyId;
       input = { bookingId: access.bookingId };
     }
 
-    const explanation = await explainAvailabilityConflict(input, accountId);
+    const explanation = await explainAvailabilityConflict(input, accountId, { propertyId });
     if (!explanation) return NextResponse.json({ ok: false, message: 'Проверка не найдена.' }, { status: 404 });
     return NextResponse.json({ ok: true, explanation });
   } catch (error) {

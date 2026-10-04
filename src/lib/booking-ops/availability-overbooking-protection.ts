@@ -698,6 +698,7 @@ export async function getAvailabilityBlockers(
 export async function explainAvailabilityConflict(
   input: { checkId?: string; bookingId?: string },
   accountId?: string | null,
+  expectedScope?: Pick<AvailabilityScope, 'propertyId'>,
 ) {
   let query = supabase.from('booking_overbooking_conflict_checks').select('*');
   if (input.checkId) query = query.eq('id', input.checkId);
@@ -705,6 +706,8 @@ export async function explainAvailabilityConflict(
   else throw new Error('Укажите ID проверки или брони.');
   const canonicalAccountId = text(accountId);
   if (canonicalAccountId) query = query.eq('account_id', canonicalAccountId);
+  const expectedPropertyId = text(expectedScope?.propertyId);
+  if (expectedPropertyId) query = query.eq('property_id', expectedPropertyId);
   const { data, error } = await query.maybeSingle();
   if (error) throw new Error(error.message);
   if (!data) return null;

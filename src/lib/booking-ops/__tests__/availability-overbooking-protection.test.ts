@@ -94,6 +94,7 @@ import {
   classifyAvailabilityConflicts,
   confirmAvailabilityHold,
   collapseChannelCalendarConflicts,
+  explainAvailabilityConflict,
   isChannelCalendarDateCoveredByImportedBooking,
   isConfirmationLikeCommunication,
   normalizeAvailabilityDate,
@@ -543,6 +544,25 @@ describe('availability risk persistence canonical property scope', () => {
     expect(booking.property_id).toBe('prop-b');
     expect(booking.availability_status).toBeUndefined();
     expect(booking.overbooking_risk_status).toBeUndefined();
+  });
+
+  it('does not explain a conflict check outside the canonical property scope', async () => {
+    rows('booking_overbooking_conflict_checks').push({
+      id: 'check-a',
+      account_id: 'account-a',
+      property_id: 'prop-b',
+      status: 'confirmed_conflict',
+      safe_summary: 'stale property check',
+      blockers: [],
+      conflicts: [],
+      created_at: '2026-10-04T00:00:00.000Z',
+    });
+
+    await expect(explainAvailabilityConflict(
+      { checkId: 'check-a' },
+      'account-a',
+      { propertyId: 'prop-a' },
+    )).resolves.toBeNull();
   });
 
   it('fails closed before persisting a booking-bound check after canonical scope drift', async () => {

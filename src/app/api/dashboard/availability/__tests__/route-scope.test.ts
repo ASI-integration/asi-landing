@@ -133,6 +133,7 @@ describe('availability route canonical access', () => {
     expect(mocks.explainAvailabilityConflict).toHaveBeenCalledWith(
       { checkId: 'check-a' },
       access.accountId,
+      { propertyId: access.propertyId },
     );
   });
 
