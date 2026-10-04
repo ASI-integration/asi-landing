@@ -17,6 +17,14 @@ function publicRecordLabel(record: NonNullable<Awaited<ReturnType<typeof loadGue
   return record.propertyLabel?.trim() || 'вашему объекту';
 }
 
+function lifecycleExpectedScope(record: NonNullable<Awaited<ReturnType<typeof loadGuestIntakeByToken>>['record']>) {
+  const accountId = String(record.accountId ?? '').trim();
+  const propertyId = String(record.propertyId ?? '').trim();
+  if (!accountId || accountId === 'legacy') return undefined;
+  if (!propertyId) throw new Error('booking_scope_unavailable');
+  return { accountId, propertyId };
+}
+
 export async function GET(_req: Request, context: RouteContext): Promise<NextResponse> {
   const result = await recordGuestIntakeLinkOpened(context.params.token);
   if (!result.ok || !result.session || !result.record) {
@@ -58,15 +66,17 @@ export async function POST(req: Request, context: RouteContext): Promise<NextRes
     );
   }
 
+  const expectedScope = lifecycleExpectedScope(result.record);
+
   if (result.session.intakeStatus === 'completed') {
     await recordAndProcessBookingEvent({
       id: durableEventId('guest.data_submitted', result.record.id, result.session.id), bookingId: result.record.id,
       objectId: result.record.propertyId, type: 'guest.data_submitted', actorType: 'guest', actorId: result.session.id,
       source: 'guest_intake_web', correlationId: durableEventId('guest-intake', result.session.id), payload: { complete: true },
-    });
+    }, expectedScope);
   }
   if (result.record.documentVerificationStatus === 'uploaded') {
-    await recordAndProcessBookingEvent({ id: durableEventId('guest.documents_uploaded', result.record.id, result.session.id), bookingId: result.record.id, objectId: result.record.propertyId, type: 'guest.documents_uploaded', actorType: 'guest', actorId: result.session.id, source: 'guest_intake_web', correlationId: durableEventId('guest-intake', result.session.id), payload: { uploaded: true } });
+    await recordAndProcessBookingEvent({ id: durableEventId('guest.documents_uploaded', result.record.id, result.session.id), bookingId: result.record.id, objectId: result.record.propertyId, type: 'guest.documents_uploaded', actorType: 'guest', actorId: result.session.id, source: 'guest_intake_web', correlationId: durableEventId('guest-intake', result.session.id), payload: { uploaded: true } }, expectedScope);
   }
 
   return NextResponse.json({

@@ -53,7 +53,7 @@ export async function processBookingDomainEvent(eventId: string, expectedScope?:
   const stateWrite = await supabase.from('booking_ops_autopilot_states').upsert({ booking_id: event.bookingId, stage: decision.state.stage, state: decision.state, last_event_id: event.id, updated_at: now }, { onConflict: 'booking_id' });
   if (stateWrite.error) throw new Error(stateWrite.error.message);
   if (expectedScope) await requireBookingOpsRecordScope(event.bookingId, expectedScope);
-  await convergeLifecycleEvent(event, decision.state, now);
+  await convergeLifecycleEvent(event, decision.state, now, expectedScope);
   const audit = decision.state.audit.at(-1)?.decision ?? 'event processed';
   if (expectedScope) await requireBookingOpsRecordScope(event.bookingId, expectedScope);
   const auditWrite = await supabase.from('booking_ops_lifecycle_decisions').insert({ id: randomUUID(), booking_id: event.bookingId, event_id: event.id, previous_stage: previous.stage, next_stage: decision.state.stage, decision: audit, blockers: decision.state.blockers, actions: decision.eventsToEmit });
@@ -110,17 +110,35 @@ export async function recordProcessedBookingAuditEvent(input: RecordEventInput, 
 }
 
 export async function recoverUnprocessedBookingEvents(limit = 100) {
-  const result = await supabase.from('booking_ops_domain_events').select('id').is('processed_at', null).order('created_at').limit(limit);
+  const result = await supabase.from('booking_ops_domain_events').select('id,booking_id').is('processed_at', null).order('created_at').limit(limit);
   if (result.error) throw new Error(result.error.message);
   let processed = 0; const errors: string[] = [];
   for (const row of result.data ?? []) {
-    try { const outcome = await processBookingDomainEvent(String(row.id)); if (outcome.processed) processed += 1; }
+    try {
+      const bookingId = String(row.booking_id ?? '').trim();
+      let expectedScope: ExpectedScope | undefined;
+      if (bookingId) {
+        const scopeResult = await supabase.from('booking_ops_records').select('account_id,property_id').eq('id', bookingId).maybeSingle();
+        if (scopeResult.error) throw new Error(scopeResult.error.message);
+        const accountId = String(scopeResult.data?.account_id ?? '').trim();
+        const propertyId = String(scopeResult.data?.property_id ?? '').trim();
+        if (accountId && accountId !== 'legacy') {
+          if (!propertyId) throw new Error('booking_scope_unavailable');
+          expectedScope = { accountId, propertyId };
+        }
+      }
+      const outcome = await processBookingDomainEvent(String(row.id), expectedScope);
+      if (outcome.processed) processed += 1;
+    }
     catch (error) { errors.push(error instanceof Error ? error.message : 'event_processing_failed'); }
   }
   return { evaluated: result.data?.length ?? 0, processed, errors };
 }
 
-export async function bootstrapBookingLifecycle(input: { bookingId: string; objectId?: string | null; actorId?: string | null }) {
+export async function bootstrapBookingLifecycle(
+  input: { bookingId: string; objectId?: string | null; actorId?: string | null },
+  expectedScope?: ExpectedScope,
+) {
   const id = durableEventId('ops-v16-bootstrap', input.bookingId, 'booking.received');
   return recordAndProcessBookingEvent({
     id,
@@ -133,7 +151,7 @@ export async function bootstrapBookingLifecycle(input: { bookingId: string; obje
     correlationId: durableEventId('ops-v16-bootstrap', input.bookingId),
     causationId: null,
     payload: { bootstrap: true, messagingDisabled: true },
-  });
+  }, expectedScope);
 }
 
 export async function getBookingLifecycleSummary(bookingId: string, expectedScope?: ExpectedScope) {
