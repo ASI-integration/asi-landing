@@ -60,7 +60,7 @@ vi.mock('../communication-auto-send-policy', () => ({
 vi.mock('../real-booking-intake-autopilot', () => ({ processInboundBookingRequest }));
 
 import {
-  CHANNEL_PROVIDER_ADAPTERS, completeChannelImportRun, createBookingFromImportedChannelBooking, failChannelImportRun, findSecretPath, getChannelImportConflicts,
+  addChannelManagerNote, CHANNEL_PROVIDER_ADAPTERS, completeChannelImportRun, createBookingFromImportedChannelBooking, failChannelImportRun, findSecretPath, getChannelImportConflicts,
   importChannelBookings, importChannelCalendar, importChannelObjects, initializeChannelManagerConnection, markChannelManagerAccessReceived,
   performChannelManagerProviderOnboardingAction, queueChannelManagerCommunication, reconcileImportedBookings, reconcileImportedObjects, registerManualChannelSnapshot,
   requestChannelManagerAccess, startChannelImportRun, updateChannelImportEntity,
@@ -108,6 +108,19 @@ describe('Channel Manager Access & Import v1', () => {
     expect(rows('booking_channel_manager_connections')).toHaveLength(1);
   });
 
+  it('rejects initialization if the property owner changes', async () => {
+    const propertyRow = rows('booking_property_setup_profiles')[0];
+    let reads = 0;
+    Object.defineProperty(propertyRow, 'owner_setup_id', {
+      configurable: true,
+      get: () => (reads++ === 0 ? OWNER_ID : '10000000-0000-4000-8000-000000000099'),
+    });
+
+    await expect(initializeChannelManagerConnection(PROPERTY_ID, 'manual'))
+      .rejects.toMatchObject({ code: 'account_scope_mismatch' });
+    expect(rows('booking_channel_manager_connections')).toHaveLength(0);
+  });
+
   it('requests access and queues a policy-checked communication intent', async () => {
     const connection = await requestChannelManagerAccess(PROPERTY_ID, 'bnovo');
     expect(connection.accessStatus).toBe('requested');
@@ -121,6 +134,42 @@ describe('Channel Manager Access & Import v1', () => {
     expect(updated.safeAccessRef).toBe('vault:cm/prop-a');
     await expect(markChannelManagerAccessReceived(connection.id, 'token=super-secret-value')).rejects.toThrow(/безопасную ссылку/i);
     expect(findSecretPath({ nested: { api_token: 'x' } })).toBe('payload.nested.api_token');
+  });
+
+  it('fails closed before access mutation if the connection account drifts', async () => {
+    const connection = await initializeChannelManagerConnection(PROPERTY_ID, 'manual', { accountId: 'acct-access-import' });
+    const connectionRow = rows('booking_channel_manager_connections').find((row) => row.id === connection.id)!;
+    let reads = 0;
+    Object.defineProperty(connectionRow, 'metadata', {
+      configurable: true,
+      get: () => ({ accountId: reads++ === 0 ? 'acct-access-import' : 'acct-other' }),
+    });
+
+    await expect(markChannelManagerAccessReceived(
+      connection.id,
+      'operator:confirmed',
+    )).rejects.toMatchObject({ code: 'account_scope_mismatch' });
+
+    expect(connectionRow.status).toBe('not_started');
+    expect(rows('booking_property_setup_profiles')[0].channel_access_status).toBe('not_requested');
+    expect(rows('booking_owner_setup_communication_intents')).toHaveLength(0);
+  });
+
+  it('fails closed before onboarding status mutation if the connection scope drifts', async () => {
+    const connection = await initializeChannelManagerConnection(PROPERTY_ID, 'manual', { accountId: 'acct-access-import' });
+    const connectionRow = rows('booking_channel_manager_connections').find((row) => row.id === connection.id)!;
+    let reads = 0;
+    Object.defineProperty(connectionRow, 'metadata', {
+      configurable: true,
+      get: () => ({ accountId: reads++ === 0 ? 'acct-access-import' : 'acct-other' }),
+    });
+
+    await expect(performChannelManagerProviderOnboardingAction({
+      action: 'mark_account_created',
+      connectionId: connection.id,
+    })).rejects.toMatchObject({ code: 'account_scope_mismatch' });
+
+    expect(connectionRow.status).toBe('not_started');
   });
 
   it('imports objects, bookings, calendar and pricing from a manual snapshot', async () => {

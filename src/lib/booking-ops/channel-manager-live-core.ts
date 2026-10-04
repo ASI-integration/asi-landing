@@ -7,6 +7,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { supabase } from '@/lib/supabase';
 import { cancelReservation, getUnifiedAvailability, restoreReservation } from '@/lib/reservations/ledger';
 import {
+  assertChannelManagerConnectionScopeCurrent,
   resolveChannelManagerConnectionScope,
   type ChannelManagerCanonicalScope,
 } from './channel-manager-scope';
@@ -223,6 +224,8 @@ const LIVE_CORE_INCREMENTAL_MIGRATION_BLOCKER =
   'Миграция Channel Manager Live Incremental Sync ещё не применена. Incremental sync недоступен.';
 const LIVE_CORE_RECONCILIATION_MIGRATION_BLOCKER =
   'Миграция Channel Manager Reconciliation & Recovery ещё не применена. Сверка недоступна.';
+const LIVE_CORE_SCOPE_GUARD_MIGRATION_BLOCKER =
+  'Миграция Channel Manager canonical scope guard ещё не применена. Live sync недоступен.';
 
 const SECRET_VALUE_RE = /(?:bearer\s+[a-z0-9._~+/=-]{8,}|(?:password|пароль|token|api[_-]?key|secret)\s*[:=]\s*\S+)/iu;
 const UNIQUE_VIOLATION = '23505';
@@ -240,6 +243,7 @@ export type ChannelLiveCoreSchemaState = {
   cursorStorageReady: boolean;
   atomicCommitRpcReady: boolean;
   replayFinalizeRpcReady: boolean;
+  scopedConnectionWritesReady: boolean;
   /** Initial+Incremental ready. Must NOT require reconciliation migration. */
   ready: boolean;
   reconciliationTypeReady: boolean;
@@ -308,6 +312,7 @@ export function setChannelLiveCoreSchemaStateOverride(
       cursorStorageReady: state.cursorStorageReady === true,
       atomicCommitRpcReady: state.atomicCommitRpcReady === true,
       replayFinalizeRpcReady: state.replayFinalizeRpcReady === true,
+      scopedConnectionWritesReady: state.scopedConnectionWritesReady === true,
       ready: state.ready === true,
       reconciliationTypeReady,
       reconciliationTablesReady,
@@ -334,6 +339,7 @@ export function setChannelLiveCoreSchemaReadyOverride(value: boolean | null): vo
       cursorStorageReady: true,
       atomicCommitRpcReady: true,
       replayFinalizeRpcReady: true,
+      scopedConnectionWritesReady: true,
       ready: true,
       reconciliationTypeReady: true,
       reconciliationTablesReady: true,
@@ -352,6 +358,7 @@ export function setChannelLiveCoreSchemaReadyOverride(value: boolean | null): vo
       cursorStorageReady: false,
       atomicCommitRpcReady: false,
       replayFinalizeRpcReady: false,
+      scopedConnectionWritesReady: false,
       ready: false,
       ...emptyReconciliationFlags(),
       blocker: LIVE_CORE_MIGRATION_BLOCKER,
@@ -371,6 +378,7 @@ function schemaStateFromRpcPayload(data: unknown): ChannelLiveCoreSchemaState {
   const cursorStorageReady = row.cursorStorageReady === true;
   const atomicCommitRpcReady = row.atomicCommitRpcReady === true;
   const replayFinalizeRpcReady = row.replayFinalizeRpcReady === true;
+  const scopedConnectionWritesReady = row.scopedConnectionWritesReady === true;
   const reconciliationTypeReady = row.reconciliationTypeReady === true;
   const reconciliationTablesReady = row.reconciliationTablesReady === true;
   const reconciliationGuardReady = row.reconciliationGuardReady === true;
@@ -430,6 +438,7 @@ function schemaStateFromRpcPayload(data: unknown): ChannelLiveCoreSchemaState {
     cursorStorageReady,
     atomicCommitRpcReady,
     replayFinalizeRpcReady,
+    scopedConnectionWritesReady,
     ready,
     reconciliationTypeReady,
     reconciliationTablesReady,
@@ -1341,6 +1350,7 @@ export async function probeChannelLiveCoreSchema(_connectionId?: string): Promis
       cursorStorageReady: false,
       atomicCommitRpcReady: false,
       replayFinalizeRpcReady: false,
+      scopedConnectionWritesReady: false,
       ready: false,
       ...emptyReconciliationFlags(),
       blocker: LIVE_CORE_MIGRATION_BLOCKER,
@@ -1350,15 +1360,28 @@ export async function probeChannelLiveCoreSchema(_connectionId?: string): Promis
   }
 
   const state = schemaStateFromRpcPayload(data);
+  const { data: scopeGuardData, error: scopeGuardError } = await supabase.rpc(
+    'channel_manager_live_scope_guard_state_v1',
+  );
+  state.scopedConnectionWritesReady = (
+    !scopeGuardError
+    && scopeGuardData != null
+    && typeof scopeGuardData === 'object'
+    && (scopeGuardData as Record<string, unknown>).scopedConnectionWritesReady === true
+  );
+
   if (state.schemaVersion >= 2) {
     const complete = state.initialSyncTypeReady
       && state.incrementalSyncTypeReady
       && state.atomicLiveSyncGuardReady
       && state.cursorStorageReady
       && state.atomicCommitRpcReady
-      && state.replayFinalizeRpcReady;
+      && state.replayFinalizeRpcReady
+      && state.scopedConnectionWritesReady;
     state.ready = complete;
-    if (!complete && !state.blocker) {
+    if (!state.scopedConnectionWritesReady) {
+      state.blocker = LIVE_CORE_SCOPE_GUARD_MIGRATION_BLOCKER;
+    } else if (!complete && !state.blocker) {
       state.blocker = LIVE_CORE_INCREMENTAL_MIGRATION_BLOCKER;
     }
     if (complete) state.blocker = null;
@@ -1367,9 +1390,17 @@ export async function probeChannelLiveCoreSchema(_connectionId?: string): Promis
       && state.reconciliationTablesReady
       && state.reconciliationGuardReady
       && state.reconciliationFinalizeRpcReady;
-  } else if (!state.initialSyncTypeReady || !state.atomicRunningGuardReady) {
+  } else if (
+    !state.initialSyncTypeReady
+    || !state.atomicRunningGuardReady
+    || !state.scopedConnectionWritesReady
+  ) {
     state.ready = false;
-    if (!state.blocker) state.blocker = LIVE_CORE_MIGRATION_BLOCKER;
+    if (!state.scopedConnectionWritesReady) {
+      state.blocker = LIVE_CORE_SCOPE_GUARD_MIGRATION_BLOCKER;
+    } else if (!state.blocker) {
+      state.blocker = LIVE_CORE_MIGRATION_BLOCKER;
+    }
   } else {
     state.ready = true;
     state.blocker = null;
@@ -1389,8 +1420,16 @@ export async function recoverStaleInitialSyncRuns(
 export async function recoverStaleLiveSyncRuns(
   connectionId: string,
   nowMs: number = Date.now(),
+  expectedScope?: ChannelManagerCanonicalScope,
 ): Promise<string[]> {
   const connection = await getConnection(connectionId);
+  const scope = expectedScope ?? await resolveChannelManagerConnectionScope(connection);
+  if (scope.connectionId !== connection.id) {
+    throw Object.assign(new Error('Контур подключения не совпадает с подключением.'), {
+      code: 'account_scope_mismatch',
+    });
+  }
+  await assertChannelManagerConnectionScopeCurrent(scope);
   const { data: running, error } = await supabase
     .from('booking_channel_import_runs')
     .select('*')
@@ -1428,7 +1467,7 @@ export async function recoverStaleLiveSyncRuns(
       safe_summary: `${importType} прерван по stale timeout. Ранее сохранённые данные не удалены.`,
       metadata,
       updated_at: finishedAt,
-    }).eq('id', runId).eq('status', 'running');
+    }).eq('id', runId).eq('connection_id', connection.id).eq('status', 'running');
     if (updateError) throw new Error(updateError.message);
 
     // Release lease only when lease.runId equals the stale run being recovered.
@@ -1441,7 +1480,7 @@ export async function recoverStaleLiveSyncRuns(
           releasedAt: finishedAt,
           importType,
           staleRecovered: true,
-        }, { updatedAt: finishedAt });
+        }, { updatedAt: finishedAt, expectedScope: scope });
       } catch {
         // Best-effort lease release; running-row mark failed is authoritative.
       }
@@ -1459,13 +1498,27 @@ export async function recoverStaleLiveSyncRuns(
  */
 export async function acquireChannelLiveSyncGuard(
   connectionId: string,
-  options?: { importType?: ChannelLiveSyncImportType },
+  options?: { importType?: ChannelLiveSyncImportType; expectedScope?: ChannelManagerCanonicalScope },
 ): Promise<
   { ok: true; run: ChannelImportRun } | { ok: false; reason: string; code: 'execution_guard' | 'migration_missing' }
 > {
   const importType = options?.importType ?? 'initial_sync';
   const connection = await getConnection(connectionId);
+  const scope = options?.expectedScope ?? await resolveChannelManagerConnectionScope(connection);
+  if (scope.connectionId !== connection.id) {
+    throw Object.assign(new Error('Контур подключения не совпадает с подключением.'), {
+      code: 'account_scope_mismatch',
+    });
+  }
+  await assertChannelManagerConnectionScopeCurrent(scope);
   const schema = await probeChannelLiveCoreSchema(connection.id);
+  if (!schema.scopedConnectionWritesReady) {
+    return {
+      ok: false,
+      reason: schema.blocker ?? LIVE_CORE_SCOPE_GUARD_MIGRATION_BLOCKER,
+      code: 'migration_missing',
+    };
+  }
   if (importType === 'reconciliation_recovery') {
     if (!schema.reconciliationReady) {
       return {
@@ -1485,41 +1538,48 @@ export async function acquireChannelLiveSyncGuard(
       || !schema.cursorStorageReady
       || !schema.atomicCommitRpcReady
       || !schema.replayFinalizeRpcReady
+      || !schema.scopedConnectionWritesReady
     ) {
       return { ok: false, reason: schema.blocker ?? LIVE_CORE_INCREMENTAL_MIGRATION_BLOCKER, code: 'migration_missing' };
     }
-  } else if (!schema.ready && !(schema.initialSyncTypeReady && schema.atomicRunningGuardReady)) {
+  } else if (
+    !schema.ready
+    && !(
+      schema.initialSyncTypeReady
+      && schema.atomicRunningGuardReady
+      && schema.scopedConnectionWritesReady
+    )
+  ) {
     return { ok: false, reason: schema.blocker ?? 'Миграция Live Core не применена.', code: 'migration_missing' };
   }
 
-  await recoverStaleLiveSyncRuns(connection.id);
+  await recoverStaleLiveSyncRuns(connection.id, Date.now(), scope);
 
   const runId = randomUUID();
   const now = new Date().toISOString();
-  const { data, error } = await supabase.from('booking_channel_import_runs').insert({
-    id: runId,
-    connection_id: connection.id,
-    provider: connection.provider,
-    status: 'running',
-    import_type: importType,
-    started_at: now,
-    warnings: [],
-    errors: [],
-    metadata: {
+  const { data: acquireData, error } = await supabase.rpc('channel_manager_acquire_live_sync_guard_scoped_v1', {
+    p_connection_id: connection.id,
+    p_expected_scope: connectionScopeToRpc(scope),
+    p_run_id: runId,
+    p_provider: connection.provider,
+    p_import_type: importType,
+    p_started_at: now,
+    p_metadata: {
       liveCore: true,
       liveCoreStage: 'acquire_guard',
       liveCoreCounters: emptyCounters(),
       cursorPlaceholder: [],
+      canonicalConnectionScope: {
+        ownerSetupId: scope.ownerSetupId,
+        propertySetupId: scope.propertySetupId,
+        propertyId: scope.propertyId,
+        accountId: scope.accountId,
+      },
       ...(importType === 'reconciliation_recovery' ? { reconciliationRecovery: true } : {}),
     },
-    created_at: now,
-    updated_at: now,
-  }).select('*').single();
+  });
 
   if (error) {
-    if (isUniqueViolation(error)) {
-      return { ok: false, reason: 'Синхронизация уже выполняется для этого подключения.', code: 'execution_guard' };
-    }
     if (isInitialSyncTypeRejected(error)) {
       return {
         ok: false,
@@ -1534,6 +1594,17 @@ export async function acquireChannelLiveSyncGuard(
     throw new Error(error.message);
   }
 
+  const acquirePayload = acquireData && typeof acquireData === 'object'
+    ? acquireData as { success?: boolean; code?: string; message?: string; run?: unknown }
+    : null;
+  if (!acquirePayload || acquirePayload.success !== true || !acquirePayload.run || typeof acquirePayload.run !== 'object') {
+    if (acquirePayload?.code === 'execution_guard') {
+      return { ok: false, reason: 'Синхронизация уже выполняется для этого подключения.', code: 'execution_guard' };
+    }
+    throw scopedRpcError(acquirePayload, 'Не удалось атомарно создать Live Core run в canonical scope.');
+  }
+  const data = acquirePayload.run as Record<string, unknown>;
+
   // Diagnostic lease only — not the primary lock. Narrow write preserves concurrent cursor commits.
   // Lease write failure must not leave an unexplained orphan: the unique running row remains the
   // authoritative guard, and we record leaseWriteFailed on that same run when possible.
@@ -1544,10 +1615,37 @@ export async function acquireChannelLiveSyncGuard(
       status: 'held',
       acquiredAt: now,
       importType,
-    }, { lastImportAt: now, updatedAt: now });
-  } catch {
-    leaseWriteFailed = true;
+    }, { lastImportAt: now, updatedAt: now, expectedScope: scope });
+  } catch (leaseError) {
     const failedAt = new Date().toISOString();
+    const leaseErrorCode = (leaseError as { code?: string })?.code;
+    if (leaseErrorCode === 'account_scope_mismatch' || leaseErrorCode === 'connection_scope_invalid') {
+      const safeError = {
+        stage: 'acquire_guard',
+        code: leaseErrorCode,
+        message: redactLiveCoreErrorMessage(
+          leaseError instanceof Error ? leaseError.message : leaseError,
+        ),
+        retryable: true,
+      };
+      await supabase.from('booking_channel_import_runs').update({
+        status: 'failed',
+        finished_at: failedAt,
+        errors: [safeError],
+        safe_summary: 'Live sync остановлен: canonical connection scope изменился.',
+        metadata: {
+          ...(((data as Record<string, unknown>).metadata as Record<string, unknown>) ?? {}),
+          liveCore: true,
+          liveCoreStage: 'failed',
+          failedStage: 'acquire_guard',
+          safeError,
+        },
+        updated_at: failedAt,
+      }).eq('id', runId).eq('connection_id', connection.id).eq('status', 'running');
+      throw leaseError;
+    }
+
+    leaseWriteFailed = true;
     try {
       const runRow = data as Record<string, unknown>;
       const metadata = {
@@ -1567,7 +1665,7 @@ export async function acquireChannelLiveSyncGuard(
         ],
         metadata,
         updated_at: failedAt,
-      }).eq('id', runId).eq('status', 'running');
+      }).eq('id', runId).eq('connection_id', connection.id).eq('status', 'running');
     } catch {
       // Best-effort annotation only; running row is still the intentional primary lock.
     }
@@ -1594,22 +1692,83 @@ export async function acquireChannelLiveSyncGuard(
   return { ok: true, run };
 }
 
+function connectionScopeMismatchError(message = 'Контур подключения изменился во время операции.'): Error {
+  return Object.assign(new Error(message), {
+    code: 'account_scope_mismatch',
+  });
+}
+
+function connectionScopeToRpc(scope: ChannelManagerCanonicalScope): Record<string, unknown> {
+  return {
+    ownerSetupId: scope.ownerSetupId,
+    propertySetupId: scope.propertySetupId,
+    propertyId: scope.propertyId,
+    accountId: scope.accountId,
+  };
+}
+
+function scopedRpcError(
+  payload: { code?: string; message?: string } | null,
+  fallback: string,
+): Error {
+  const code = text(payload?.code) || 'scoped_connection_write_failed';
+  const message = text(payload?.message) || fallback;
+  return Object.assign(new Error(message), { code });
+}
+
+async function updateConnectionWithinCanonicalScope(
+  expectedScope: ChannelManagerCanonicalScope,
+  patch: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
+  const { data, error } = await supabase.rpc('channel_manager_update_live_connection_scoped_v1', {
+    p_connection_id: expectedScope.connectionId,
+    p_expected_scope: connectionScopeToRpc(expectedScope),
+    p_patch: patch,
+  });
+  const payload = data && typeof data === 'object'
+    ? data as { success?: boolean; code?: string; message?: string; connection?: unknown }
+    : null;
+  if (error) throw new Error(error.message);
+  if (!payload || payload.success !== true) {
+    throw scopedRpcError(payload, 'Не удалось атомарно обновить подключение в canonical scope.');
+  }
+  if (!payload.connection || typeof payload.connection !== 'object') {
+    throw Object.assign(new Error('Scoped connection update не вернул строку подключения.'), {
+      code: 'scoped_connection_write_failed',
+    });
+  }
+  return payload.connection as Record<string, unknown>;
+}
+
 async function writeLiveSyncLease(
   connectionId: string,
   lease: Record<string, unknown>,
-  options?: { lastImportAt?: string; updatedAt?: string },
+  options?: { lastImportAt?: string; updatedAt?: string; expectedScope?: ChannelManagerCanonicalScope },
 ): Promise<void> {
   const updatedAt = options?.updatedAt ?? new Date().toISOString();
-  const { data, error } = await supabase.rpc('channel_manager_set_live_sync_lease_v1', {
+  const expectedScope = options?.expectedScope;
+  if (!expectedScope || expectedScope.connectionId !== connectionId) {
+    throw Object.assign(new Error('Для liveSyncLease нужен canonical connection scope.'), {
+      code: 'connection_scope_invalid',
+    });
+  }
+
+  const { data, error } = await supabase.rpc('channel_manager_set_live_sync_lease_scoped_v1', {
     p_connection_id: connectionId,
+    p_expected_scope: connectionScopeToRpc(expectedScope),
     p_lease: lease,
     p_updated_at: updatedAt,
     p_last_import_at: options?.lastImportAt ?? null,
   });
-  const payload = data && typeof data === 'object' ? data as { success?: boolean } : null;
+  const payload = data && typeof data === 'object'
+    ? data as { success?: boolean; code?: string; message?: string }
+    : null;
   if (!error && payload?.success === true) return;
+  if (payload?.code === 'account_scope_mismatch' || payload?.code === 'connection_scope_invalid') {
+    throw scopedRpcError(payload, 'Контур подключения изменился во время lease write.');
+  }
 
-  // Fallback: reload fresh metadata and merge only the lease key (never reuse a pre-insert snapshot).
+  // Scoped fallback keeps metadata merge safe even if the dedicated lease wrapper fails.
   const fresh = await getConnection(connectionId);
   const patch: Record<string, unknown> = {
     metadata: {
@@ -1619,19 +1778,21 @@ async function writeLiveSyncLease(
     updated_at: updatedAt,
   };
   if (options?.lastImportAt) patch.last_import_at = options.lastImportAt;
-  const { error: updateError } = await supabase
-    .from('booking_channel_manager_connections')
-    .update(patch)
-    .eq('id', connectionId);
-  if (updateError) throw new Error(updateError.message);
+  await updateConnectionWithinCanonicalScope(expectedScope, patch);
 }
 
 export async function releaseChannelLiveSyncLease(connectionId: string, runId: string): Promise<void> {
   const connection = await getConnection(connectionId);
+  const scope = await resolveChannelManagerConnectionScope(connection);
+  await assertChannelManagerConnectionScopeCurrent(scope);
   const lease = connection.metadata?.liveSyncLease as Record<string, unknown> | undefined;
   if (lease && text(lease.runId) !== runId) return;
   const now = new Date().toISOString();
-  await writeLiveSyncLease(connectionId, { runId, status: 'released', releasedAt: now }, { updatedAt: now });
+  await writeLiveSyncLease(
+    connectionId,
+    { runId, status: 'released', releasedAt: now },
+    { updatedAt: now, expectedScope: scope },
+  );
 }
 
 async function updateRunProgress(
@@ -1653,16 +1814,39 @@ async function updateRunProgress(
 ): Promise<ChannelImportRun> {
   const { data: current, error: loadError } = await supabase.from('booking_channel_import_runs').select('*').eq('id', runId).maybeSingle();
   if (loadError || !current) throw new Error(loadError?.message ?? 'Запуск синхронизации не найден.');
+
+  const runMetadata = (current.metadata as Record<string, unknown>) ?? {};
+  const storedScope = runMetadata.canonicalConnectionScope;
+  if (!storedScope || typeof storedScope !== 'object') {
+    throw Object.assign(new Error('У Live Core run отсутствует canonical connection scope.'), {
+      code: 'connection_scope_invalid',
+    });
+  }
+  const scopeRow = storedScope as Record<string, unknown>;
+  const expectedScope: ChannelManagerCanonicalScope = {
+    connectionId: text(current.connection_id),
+    ownerSetupId: text(scopeRow.ownerSetupId),
+    propertySetupId: text(scopeRow.propertySetupId),
+    propertyId: nullableText(scopeRow.propertyId),
+    accountId: nullableText(scopeRow.accountId),
+  };
+  if (!expectedScope.connectionId || !expectedScope.ownerSetupId || !expectedScope.propertySetupId) {
+    throw Object.assign(new Error('Canonical connection scope run повреждён.'), {
+      code: 'connection_scope_invalid',
+    });
+  }
+
   const metadata = {
-    ...((current.metadata as Record<string, unknown>) ?? {}),
+    ...runMetadata,
     ...(patch.metadata ?? {}),
     liveCore: true,
     liveCoreStage: patch.stage,
-    liveCoreCounters: patch.counters ?? readCounters(current.metadata as Record<string, unknown>) ?? emptyCounters(),
+    liveCoreCounters: patch.counters ?? readCounters(runMetadata) ?? emptyCounters(),
   };
   if (findSecretPath(metadata)) throw new Error('Пароли, токены и другие секреты нельзя передавать или сохранять в импорте.');
+
   const now = new Date().toISOString();
-  const { data, error } = await supabase.from('booking_channel_import_runs').update({
+  const runPatch = {
     status: patch.status ?? current.status,
     finished_at: patch.finishedAt === undefined ? current.finished_at : patch.finishedAt,
     imported_objects_count: patch.objects ?? current.imported_objects_count,
@@ -1674,9 +1858,67 @@ async function updateRunProgress(
     safe_summary: patch.safeSummary === undefined ? current.safe_summary : patch.safeSummary,
     metadata,
     updated_at: now,
-  }).eq('id', runId).select('*').single();
-  if (error || !data) throw new Error(error?.message ?? 'Не удалось обновить запуск синхронизации.');
-  return mapRun(data as Record<string, unknown>);
+  };
+  const { data, error } = await supabase.rpc('channel_manager_update_import_run_scoped_v1', {
+    p_connection_id: expectedScope.connectionId,
+    p_expected_scope: connectionScopeToRpc(expectedScope),
+    p_run_id: runId,
+    p_patch: runPatch,
+  });
+  const payload = data && typeof data === 'object'
+    ? data as { success?: boolean; code?: string; message?: string; run?: unknown }
+    : null;
+  if (error) throw new Error(error.message);
+  if (!payload || payload.success !== true || !payload.run || typeof payload.run !== 'object') {
+    throw scopedRpcError(payload, 'Не удалось атомарно обновить Live Core run в canonical scope.');
+  }
+  return mapRun(payload.run as Record<string, unknown>);
+}
+
+async function markRunFailedEvidence(
+  runId: string,
+  connectionId: string,
+  input: {
+    stage: ChannelLiveSyncStage;
+    counters: ChannelLiveSyncCounters;
+    warnings: unknown[];
+    errors: unknown[];
+    finishedAt: string;
+    safeSummary: string;
+    metadata?: Record<string, unknown>;
+  },
+): Promise<void> {
+  const { data: current, error: loadError } = await supabase
+    .from('booking_channel_import_runs')
+    .select('*')
+    .eq('id', runId)
+    .eq('connection_id', connectionId)
+    .maybeSingle();
+  if (loadError) throw new Error(loadError.message);
+  if (!current || current.status !== 'running') return;
+
+  const metadata = {
+    ...((current.metadata as Record<string, unknown>) ?? {}),
+    ...(input.metadata ?? {}),
+    liveCore: true,
+    liveCoreStage: 'failed',
+    liveCoreCounters: input.counters,
+    failedStage: input.stage,
+  };
+  if (findSecretPath(metadata)) {
+    throw new Error('Пароли, токены и другие секреты нельзя передавать или сохранять в импорте.');
+  }
+
+  const { error } = await supabase.from('booking_channel_import_runs').update({
+    status: 'failed',
+    finished_at: input.finishedAt,
+    warnings: input.warnings,
+    errors: input.errors,
+    safe_summary: input.safeSummary,
+    metadata,
+    updated_at: input.finishedAt,
+  }).eq('id', runId).eq('connection_id', connectionId).eq('status', 'running');
+  if (error) throw new Error(error.message);
 }
 
 async function applyExternalCancellation(
@@ -2088,21 +2330,20 @@ async function finalizeFailedConnection(input: {
   warnings: ChannelImportConflict[];
   safeError: ChannelLiveSafeError;
   cursors: ChannelLiveProviderCursor[];
+  expectedScope: ChannelManagerCanonicalScope;
   snapshotReceipt?: Record<string, unknown> | null;
 }): Promise<ChannelManagerConnection> {
   const finishedAt = new Date().toISOString();
-  await updateRunProgress(input.runId, {
-    stage: 'failed',
-    status: 'failed',
-    finishedAt,
+  await markRunFailedEvidence(input.runId, input.expectedScope.connectionId, {
+    stage: input.stage,
     counters: input.counters,
     warnings: input.warnings,
     errors: [input.safeError],
+    finishedAt,
     safeSummary: `Live Core initial sync остановлен на этапе ${input.stage}.`,
     metadata: {
       cursorPlaceholder: input.cursors,
       liveCoreCounters: input.counters,
-      failedStage: input.stage,
       safeError: input.safeError,
     },
   }).catch(() => undefined);
@@ -2124,8 +2365,13 @@ async function finalizeFailedConnection(input: {
     updated_at: finishedAt,
   };
   // Do not touch last_success_at or clear prior failure semantics incorrectly.
-  const { data } = await supabase.from('booking_channel_manager_connections').update(patch).eq('id', input.connection.id).select('*').single();
-  if (!data) return input.connection;
+  let data: Record<string, unknown>;
+  try {
+    data = await updateConnectionWithinCanonicalScope(input.expectedScope, patch);
+  } catch (error) {
+    if ((error as { code?: string })?.code === 'account_scope_mismatch') return input.connection;
+    throw error;
+  }
   return {
     ...input.connection,
     status: text(data.status),
@@ -2158,11 +2404,14 @@ export async function runChannelManagerInitialSync(input: {
   let warnings: ChannelImportConflict[] = [];
   let cursors: ChannelLiveProviderCursor[] = [];
   let connection = await getConnection(input.connectionId);
+  let connectionScope: ChannelManagerCanonicalScope | null = null;
   let receipt: Record<string, unknown> | null = null;
   let bookingsImported = 0;
 
   try {
-    const guard = await acquireChannelLiveSyncGuard(connection.id);
+    connectionScope = await resolveChannelManagerConnectionScope(connection);
+    await assertChannelManagerConnectionScopeCurrent(connectionScope);
+    const guard = await acquireChannelLiveSyncGuard(connection.id, { expectedScope: connectionScope });
     if (!guard.ok) {
       throw Object.assign(new Error(guard.reason), { code: guard.code });
     }
@@ -2234,12 +2483,8 @@ export async function runChannelManagerInitialSync(input: {
       })
       : null;
     const processBookings = async () => {
-      let scope: IncrementalConnectionScope | null = null;
-      try {
-        scope = await resolveIncrementalConnectionScope(connection);
-      } catch {
-        scope = null;
-      }
+      if (!connectionScope) throw connectionScopeMismatchError();
+      await assertChannelManagerConnectionScopeCurrent(connectionScope);
       return processImportedBookingsForLiveSync(
         connection.id,
         counters,
@@ -2247,7 +2492,7 @@ export async function runChannelManagerInitialSync(input: {
         {
           reservationMetadata,
           injectFailureAfterBookingOpsCreate: input.injectFailureAfterBookingOpsCreate === true,
-          scope: scope ?? undefined,
+          scope: connectionScope,
         },
       );
     };
@@ -2263,13 +2508,16 @@ export async function runChannelManagerInitialSync(input: {
     }
 
     stage = 'persist_counters';
+    if (!connectionScope) throw connectionScopeMismatchError();
+    await assertChannelManagerConnectionScopeCurrent(connectionScope);
     const finishedAt = new Date().toISOString();
     const status = resolveChannelLiveSyncFinalStatus(counters, warnings);
 
     if (status === 'failed') {
       const safeError = toChannelLiveSafeError('process_bookings', 'Initial sync завершён с blocker/ошибками обработки.', 'sync_failed');
       connection = await finalizeFailedConnection({
-        connection, runId, stage: 'process_bookings', counters, warnings, safeError, cursors, snapshotReceipt: receipt,
+        connection, runId, stage: 'process_bookings', counters, warnings, safeError, cursors,
+        expectedScope: connectionScope, snapshotReceipt: receipt,
       });
       const runs = await listChannelImportRuns(connection.id);
       const run = runs.find((item) => item.id === runId)!;
@@ -2295,7 +2543,7 @@ export async function runChannelManagerInitialSync(input: {
       },
     });
 
-    const { data: connectionRow } = await supabase.from('booking_channel_manager_connections').update({
+    const connectionRow = await updateConnectionWithinCanonicalScope(connectionScope, {
       status: connection.status === 'blocked' ? connection.status : 'import_ready',
       last_success_at: finishedAt,
       failure_reason: null,
@@ -2309,17 +2557,15 @@ export async function runChannelManagerInitialSync(input: {
         ...(receipt ? { lastManualSnapshotReceipt: receipt } : {}),
       },
       updated_at: finishedAt,
-    }).eq('id', connection.id).select('*').single();
-    if (connectionRow) {
-      connection = {
-        ...connection,
-        status: text(connectionRow.status),
-        lastSuccessAt: nullableText(connectionRow.last_success_at),
-        failureReason: null,
-        metadata: (connectionRow.metadata as Record<string, unknown>) ?? connection.metadata,
-        updatedAt: text(connectionRow.updated_at),
-      };
-    }
+    });
+    connection = {
+      ...connection,
+      status: text(connectionRow.status),
+      lastSuccessAt: nullableText(connectionRow.last_success_at),
+      failureReason: null,
+      metadata: (connectionRow.metadata as Record<string, unknown>) ?? connection.metadata,
+      updatedAt: text(connectionRow.updated_at),
+    };
 
     return {
       run, connection, stage: 'completed', status, counters, warnings, safeError: null, cursors, retryable: true,
@@ -2329,11 +2575,17 @@ export async function runChannelManagerInitialSync(input: {
     const safeError = toChannelLiveSafeError(
       stage,
       error,
-      code === 'execution_guard' || code === 'migration_missing' ? code : 'sync_failed',
+      code === 'execution_guard'
+        || code === 'migration_missing'
+        || code === 'account_scope_mismatch'
+        || code === 'connection_scope_invalid'
+        ? code
+        : 'sync_failed',
     );
-    if (runId) {
+    if (runId && connectionScope) {
       connection = await finalizeFailedConnection({
-        connection, runId, stage, counters, warnings, safeError, cursors, snapshotReceipt: receipt,
+        connection, runId, stage, counters, warnings, safeError, cursors,
+        expectedScope: connectionScope, snapshotReceipt: receipt,
       });
     }
 
@@ -2402,13 +2654,16 @@ export async function getChannelLiveCoreStatus(connectionId: string): Promise<Ch
   const latestWarnings = Array.isArray(latest?.warnings) ? latest!.warnings as ChannelImportConflict[] : [];
   const blockerWarning = latestWarnings.find((item) => item && typeof item === 'object' && (item as ChannelImportConflict).severity === 'blocker') as ChannelImportConflict | undefined;
 
-  const initialSyncReady = schema.initialSyncTypeReady && schema.atomicRunningGuardReady;
+  const initialSyncReady = schema.initialSyncTypeReady
+    && schema.atomicRunningGuardReady
+    && schema.scopedConnectionWritesReady;
   const incrementalReady = schema.schemaVersion >= 2
     && schema.incrementalSyncTypeReady
     && schema.atomicLiveSyncGuardReady
     && schema.cursorStorageReady
     && schema.atomicCommitRpcReady
     && schema.replayFinalizeRpcReady
+    && schema.scopedConnectionWritesReady
     && Boolean(lastSuccessfulInitialSyncAt)
     && connection.status !== 'blocked';
 
@@ -2544,9 +2799,12 @@ export async function runChannelManagerIncrementalSync(input: {
   let connection = await getConnection(input.connectionId);
   let previousCursor = readCommittedIncrementalCursor(connection.metadata);
   let cursorCommitted = false;
+  let connectionScope: IncrementalConnectionScope | null = null;
 
   try {
-    const scope = await resolveIncrementalConnectionScope(connection);
+    connectionScope = await resolveIncrementalConnectionScope(connection);
+    const scope = connectionScope;
+    await assertChannelManagerConnectionScopeCurrent(scope);
 
     if (connection.status === 'blocked') {
       throw Object.assign(new Error(connection.failureReason ?? 'Подключение заблокировано.'), { code: 'connection_blocked' });
@@ -2560,6 +2818,7 @@ export async function runChannelManagerIncrementalSync(input: {
       || !schema.cursorStorageReady
       || !schema.atomicCommitRpcReady
       || !schema.replayFinalizeRpcReady
+      || !schema.scopedConnectionWritesReady
     ) {
       throw Object.assign(new Error(schema.blocker ?? LIVE_CORE_INCREMENTAL_MIGRATION_BLOCKER), { code: 'migration_missing' });
     }
@@ -2636,7 +2895,10 @@ export async function runChannelManagerIncrementalSync(input: {
     }
 
     stage = 'acquire_guard';
-    const guard = await acquireChannelLiveSyncGuard(connection.id, { importType: 'incremental_sync' });
+    const guard = await acquireChannelLiveSyncGuard(connection.id, {
+      importType: 'incremental_sync',
+      expectedScope: scope,
+    });
     if (!guard.ok) {
       throw Object.assign(new Error(guard.reason), { code: guard.code });
     }
@@ -2665,10 +2927,12 @@ export async function runChannelManagerIncrementalSync(input: {
             : null,
         }),
       };
+      await assertChannelManagerConnectionScopeCurrent(scope);
       const { data: replayData, error: replayError } = await supabase.rpc(
-        'channel_manager_complete_incremental_replay_v1',
+        'channel_manager_complete_incremental_replay_scoped_v1',
         {
           p_connection_id: connection.id,
+          p_expected_scope: connectionScopeToRpc(scope),
           p_run_id: runId,
           p_expected_checkpoint: previousCursor?.checkpoint ?? null,
           p_expected_batch_hash: previousCursor?.batchHash || null,
@@ -2687,6 +2951,7 @@ export async function runChannelManagerIncrementalSync(input: {
         throw Object.assign(new Error(message), { code });
       }
 
+      await assertChannelManagerConnectionScopeCurrent(scope);
       connection = await getConnection(connection.id);
       const preserved = readCommittedIncrementalCursor(connection.metadata);
       const runs = await listChannelImportRuns(connection.id);
@@ -2795,6 +3060,7 @@ export async function runChannelManagerIncrementalSync(input: {
       );
       connection = await finalizeFailedIncrementalConnection({
         connection, runId, stage: 'reconcile_bookings', counters, warnings, safeError, cursors, previousCursor,
+        expectedScope: scope,
       });
       const runs = await listChannelImportRuns(connection.id);
       const run = runs.find((item) => item.id === runId)!;
@@ -2836,6 +3102,7 @@ export async function runChannelManagerIncrementalSync(input: {
       const safeError = toChannelLiveSafeError('process_booking_changes', 'Incremental sync завершён с blocker/ошибками обработки.', 'sync_failed');
       connection = await finalizeFailedIncrementalConnection({
         connection, runId, stage: 'process_booking_changes', counters, warnings, safeError, cursors, previousCursor,
+        expectedScope: scope,
       });
       const runs = await listChannelImportRuns(connection.id);
       const run = runs.find((item) => item.id === runId)!;
@@ -2869,10 +3136,12 @@ export async function runChannelManagerIncrementalSync(input: {
       metadata: safeRunMetadata,
     });
 
+    await assertChannelManagerConnectionScopeCurrent(scope);
     const { data: commitData, error: commitError } = await supabase.rpc(
-      'channel_manager_commit_incremental_sync_v1',
+      'channel_manager_commit_incremental_sync_scoped_v1',
       {
         p_connection_id: connection.id,
+        p_expected_scope: connectionScopeToRpc(scope),
         p_run_id: runId,
         p_expected_previous_checkpoint: previousCursor?.checkpoint ?? null,
         p_expected_previous_batch_hash: previousCursor?.batchHash || null,
@@ -2901,6 +3170,7 @@ export async function runChannelManagerIncrementalSync(input: {
       throw Object.assign(new Error(message), { code });
     }
 
+    await assertChannelManagerConnectionScopeCurrent(scope);
     cursorCommitted = true;
     connection = await getConnection(connection.id);
     const committed = readCommittedIncrementalCursor(connection.metadata);
@@ -2940,9 +3210,10 @@ export async function runChannelManagerIncrementalSync(input: {
         ? code
         : 'sync_failed',
     );
-    if (runId) {
+    if (runId && connectionScope) {
       connection = await finalizeFailedIncrementalConnection({
         connection, runId, stage, counters, warnings, safeError, cursors, previousCursor,
+        expectedScope: connectionScope,
       });
     }
 
@@ -3006,19 +3277,18 @@ async function finalizeFailedIncrementalConnection(input: {
   safeError: ChannelLiveSafeError;
   cursors: ChannelLiveProviderCursor[];
   previousCursor: ChannelLiveCommittedCursor | null;
+  expectedScope: ChannelManagerCanonicalScope;
 }): Promise<ChannelManagerConnection> {
   const finishedAt = new Date().toISOString();
-  await updateRunProgress(input.runId, {
-    stage: 'failed',
-    status: 'failed',
-    finishedAt,
+  await markRunFailedEvidence(input.runId, input.expectedScope.connectionId, {
+    stage: input.stage,
     counters: input.counters,
     warnings: input.warnings,
     errors: [input.safeError],
+    finishedAt,
     safeSummary: `Live Core incremental sync остановлен на этапе ${input.stage}.`,
     metadata: {
       liveCoreCounters: input.counters,
-      failedStage: input.stage,
       safeError: input.safeError,
       cursorRetained: true,
       ...buildSafeIncrementalCursorMetadata({
@@ -3052,8 +3322,13 @@ async function finalizeFailedIncrementalConnection(input: {
     },
     updated_at: finishedAt,
   };
-  const { data } = await supabase.from('booking_channel_manager_connections').update(patch).eq('id', input.connection.id).select('*').single();
-  if (!data) return input.connection;
+  let data: Record<string, unknown>;
+  try {
+    data = await updateConnectionWithinCanonicalScope(input.expectedScope, patch);
+  } catch (error) {
+    if ((error as { code?: string })?.code === 'account_scope_mismatch') return input.connection;
+    throw error;
+  }
   return {
     ...input.connection,
     status: text(data.status),

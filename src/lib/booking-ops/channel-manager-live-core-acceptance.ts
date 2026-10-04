@@ -79,6 +79,8 @@ import {
   previewLiveCoreSyntheticRecovery,
 } from './channel-manager-live-core-recovery';
 
+const LIVE_CORE_ACCEPTANCE_ACCOUNT_ID = 'acceptance:channel_manager_live_core_v1';
+
 /**
  * Direct ON DELETE CASCADE children of harness parent tables.
  * Source of truth: supabase/migrations FK definitions.
@@ -670,13 +672,24 @@ export async function ensureLiveCoreAcceptanceConnection(
   let connection = await initializeChannelManagerConnection(
     propertySetupId,
     'manual',
-    harnessMetadata({ synthetic: true, kind: 'connection', liveCore: true }),
+    harnessMetadata({
+      synthetic: true,
+      kind: 'connection',
+      liveCore: true,
+      accountId: LIVE_CORE_ACCEPTANCE_ACCOUNT_ID,
+    }),
   );
 
   if (!hasHarnessMarker(connection.metadata)) {
     throw new LiveCoreAcceptanceHarnessError(
       HARNESS_IDENTITY_COLLISION,
       `${HARNESS_IDENTITY_COLLISION}: подключение МК без acceptanceHarness — изменение запрещено.`,
+    );
+  }
+  if (String(connection.metadata.accountId ?? '') !== LIVE_CORE_ACCEPTANCE_ACCOUNT_ID) {
+    throw new LiveCoreAcceptanceHarnessError(
+      HARNESS_SCOPE_COLLISION,
+      `${HARNESS_SCOPE_COLLISION}: acceptance-подключение не привязано к canonical synthetic account.`,
     );
   }
 

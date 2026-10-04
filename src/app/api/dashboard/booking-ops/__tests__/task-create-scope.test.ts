@@ -37,7 +37,7 @@ describe('manual task creation canonical scope', () => {
   });
   it('uses canonical ID for task listing', async () => {
     expect((await GET(new Request('http://localhost/tasks'), context)).status).toBe(200);
-    expect(mocks.list).toHaveBeenCalledWith(canonical.bookingId);
+    expect(mocks.list).toHaveBeenCalledWith(canonical.bookingId, { expectedScope: scope });
   });
   it.each([403, 409])('rejects denied or unbound access (%s) before any domain work', async status => {
     mocks.access.mockResolvedValue({ ok: false, response: NextResponse.json({ ok: false }, { status }) });
