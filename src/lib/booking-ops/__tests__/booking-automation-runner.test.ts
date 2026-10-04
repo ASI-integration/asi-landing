@@ -2,21 +2,41 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const state = vi.hoisted(() => ({
   rows: {} as Record<string, Array<Record<string, unknown>>>,
-  rpc: vi.fn(), from: vi.fn(), mutations: 0,
+  rpc: vi.fn(), from: vi.fn(), mutations: 0, scopeMismatchOnGuard: false,
 }));
 
 vi.mock('@/lib/supabase', () => {
   class Query implements PromiseLike<{ data: Array<Record<string, unknown>>; error: null }> {
     private filters: Array<[string, unknown]> = [];
+    private maxRows: number | null = null;
     constructor(private table: string) {}
     select() { return this; }
     eq(column: string, value: unknown) { this.filters.push([column, value]); return this; }
     in() { return this; }
+    order() { return this; }
+    limit(value: number) { this.maxRows = value; return this; }
     update() { state.mutations += 1; return this; }
     insert() { state.mutations += 1; return this; }
-    private data() { return (state.rows[this.table] ?? []).filter((row) => this.filters.every(([key, value]) => row[key] === value)); }
-    maybeSingle() { const data = this.data(); return Promise.resolve({ data: data[0] ?? null, error: null }); }
-    then<TResult1 = { data: Array<Record<string, unknown>>; error: null }, TResult2 = never>(onfulfilled?: ((value: { data: Array<Record<string, unknown>>; error: null }) => TResult1 | PromiseLike<TResult1>) | null, onrejected?: ((reason: unknown) => TResult2 | PromiseLike<TResult2>) | null) { return Promise.resolve({ data: this.data(), error: null }).then(onfulfilled, onrejected); }
+    private data() {
+      const rows = (state.rows[this.table] ?? []).filter((row) => this.filters.every(([key, value]) => row[key] === value));
+      return this.maxRows === null ? rows : rows.slice(0, this.maxRows);
+    }
+    maybeSingle() {
+      if (
+        this.table === 'booking_ops_records'
+        && state.scopeMismatchOnGuard
+        && this.filters.some(([key]) => key === 'property_id')
+      ) {
+        const row = state.rows.booking_ops_records?.[0];
+        if (row) row.property_id = 'property-2';
+      }
+      const data = this.data();
+      return Promise.resolve({ data: data[0] ?? null, error: null });
+    }
+    then<TResult1 = { data: Array<Record<string, unknown>>; error: null }, TResult2 = never>(
+      onfulfilled?: ((value: { data: Array<Record<string, unknown>>; error: null }) => TResult1 | PromiseLike<TResult1>) | null,
+      onrejected?: ((reason: unknown) => TResult2 | PromiseLike<TResult2>) | null,
+    ) { return Promise.resolve({ data: this.data(), error: null }).then(onfulfilled, onrejected); }
   }
   state.from.mockImplementation((table: string) => new Query(table));
   return { supabase: { from: state.from, rpc: state.rpc } };
@@ -39,11 +59,24 @@ function baseRows() {
 }
 
 describe('runBookingOpsAutomationForBooking boundaries', () => {
-  beforeEach(() => { vi.clearAllMocks(); state.mutations = 0; baseRows(); state.rpc.mockResolvedValue({ data: false, error: null }); });
+  beforeEach(() => {
+    vi.clearAllMocks();
+    state.mutations = 0;
+    state.scopeMismatchOnGuard = false;
+    baseRows();
+    state.rpc.mockResolvedValue({ data: false, error: null });
+  });
 
   it('rejects cross-account execution before acquiring a lock', async () => {
     await expect(runBookingOpsAutomationForBooking({ bookingId: ID, expectedAccountId: 'account-2', dryRun: true })).rejects.toThrow('booking_account_mismatch');
     expect(state.rpc).not.toHaveBeenCalled();
+  });
+
+  it('fails closed when canonical property scope changes during snapshot loading', async () => {
+    state.scopeMismatchOnGuard = true;
+    await expect(runBookingOpsAutomationForBooking({ bookingId: ID, expectedAccountId: 'account-1', dryRun: true })).rejects.toThrow('booking_scope_mismatch');
+    expect(state.rpc).not.toHaveBeenCalled();
+    expect(state.mutations).toBe(0);
   });
 
   it('dryRun performs zero writes and creates no lock, event, alert, draft, or task', async () => {
