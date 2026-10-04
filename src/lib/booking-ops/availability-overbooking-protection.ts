@@ -284,6 +284,19 @@ async function persistCheck(
   checkType: AvailabilityCheckType,
   accountId?: string | null,
 ): Promise<string | null> {
+  const canonicalAccountId = text(accountId);
+  const canonicalBookingId = text(result.bookingId);
+  const canonicalPropertyId = text(result.propertyId);
+  if (canonicalAccountId && canonicalAccountId !== 'legacy' && canonicalBookingId && canonicalPropertyId) {
+    const scopeCheck = await supabase.from('booking_ops_records')
+      .select('id')
+      .eq('id', canonicalBookingId)
+      .eq('account_id', canonicalAccountId)
+      .eq('property_id', canonicalPropertyId)
+      .maybeSingle();
+    if (scopeCheck.error) throw new Error(scopeCheck.error.message);
+    if (!scopeCheck.data) throw new Error('booking_scope_mismatch');
+  }
   const { data, error } = await supabase.from('booking_overbooking_conflict_checks').insert({
     id: randomUUID(), account_id: text(accountId) || null,
     property_setup_id: result.propertySetupId, property_id: result.propertyId,
