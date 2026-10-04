@@ -208,6 +208,7 @@ const SCHEMA_READY_PAYLOAD = {
   cursorStorageReady: true,
   atomicCommitRpcReady: true,
   replayFinalizeRpcReady: true,
+  scopedConnectionWritesReady: true,
   ready: true,
   reconciliationTypeReady: true,
   reconciliationTablesReady: true,
@@ -216,8 +217,98 @@ const SCHEMA_READY_PAYLOAD = {
   reconciliationReady: true,
 };
 
+function updateLiveConnectionScopedInMemory(args: Record<string, unknown> = {}) {
+  const connectionId = String(args.p_connection_id ?? '');
+  const scopeFailure = validateConnectionScopeInMemory(connectionId, args.p_expected_scope);
+  if (scopeFailure) return scopeFailure;
+  const connection = rows('booking_channel_manager_connections').find((row) => row.id === connectionId)!;
+  const patch = args.p_patch && typeof args.p_patch === 'object' ? args.p_patch as Row : {};
+  Object.assign(connection, patch);
+  return { data: { success: true, connection: { ...connection } }, error: null };
+}
+
+function updateImportRunScopedInMemory(args: Record<string, unknown> = {}) {
+  const connectionId = String(args.p_connection_id ?? '');
+  const scopeFailure = validateConnectionScopeInMemory(connectionId, args.p_expected_scope);
+  if (scopeFailure) return scopeFailure;
+  const runId = String(args.p_run_id ?? '');
+  const run = rows('booking_channel_import_runs').find(
+    (row) => row.id === runId && row.connection_id === connectionId,
+  );
+  if (!run) {
+    return { data: { success: false, code: 'import_run_not_found', message: 'import run not found in connection scope' }, error: null };
+  }
+  const patch = args.p_patch && typeof args.p_patch === 'object' ? args.p_patch as Row : {};
+  Object.assign(run, patch);
+  return { data: { success: true, run: { ...run } }, error: null };
+}
+
+function acquireLiveSyncGuardScopedInMemory(args: Record<string, unknown> = {}) {
+  const connectionId = String(args.p_connection_id ?? '');
+  const scopeFailure = validateConnectionScopeInMemory(connectionId, args.p_expected_scope);
+  if (scopeFailure) return scopeFailure;
+  const importType = String(args.p_import_type ?? '');
+  const liveTypes = ['initial_sync', 'incremental_sync', 'reconciliation_recovery'];
+  const exists = rows('booking_channel_import_runs').some((row) => (
+    row.connection_id === connectionId
+    && liveTypes.includes(String(row.import_type ?? ''))
+    && row.status === 'running'
+  ));
+  if (exists) {
+    return { data: { success: false, code: 'execution_guard', message: 'live sync already running for this connection' }, error: null };
+  }
+  const startedAt = String(args.p_started_at ?? new Date().toISOString());
+  const connection = rows('booking_channel_manager_connections').find((row) => row.id === connectionId);
+  const metadata = args.p_metadata && typeof args.p_metadata === 'object' ? { ...(args.p_metadata as Row) } : {};
+  const run = {
+    id: String(args.p_run_id ?? ''),
+    connection_id: connectionId,
+    provider: String(args.p_provider ?? connection?.provider ?? ''),
+    status: 'running',
+    import_type: importType,
+    started_at: startedAt,
+    finished_at: null,
+    imported_objects_count: 0,
+    imported_bookings_count: 0,
+    imported_calendar_days_count: 0,
+    imported_prices_count: 0,
+    warnings: [],
+    errors: [],
+    safe_summary: null,
+    metadata,
+    created_at: startedAt,
+    updated_at: startedAt,
+  };
+  rows('booking_channel_import_runs').push(run);
+  if (importType === 'reconciliation_recovery' && raceAfterGuardAcquire) raceAfterGuardAcquire();
+  return { data: { success: true, run: { ...run } }, error: null };
+}
+
 function hashCheckpoint(checkpoint: string): string {
   return createHash('sha256').update(checkpoint).digest('hex').slice(0, 16);
+}
+
+function validateConnectionScopeInMemory(connectionId: string, expectedScope: unknown) {
+  const expected = expectedScope && typeof expectedScope === 'object' ? expectedScope as Row : null;
+  const connection = rows('booking_channel_manager_connections').find((row) => row.id === connectionId);
+  if (!connection) {
+    return { data: { success: false, code: 'connection_not_found', message: 'connection not found' }, error: null };
+  }
+  if (!expected) {
+    return { data: { success: false, code: 'connection_scope_invalid', message: 'expected scope missing' }, error: null };
+  }
+  const property = rows('booking_property_setup_profiles').find((row) => row.id === connection.property_setup_id);
+  const accountId = String(connection.metadata?.accountId ?? '');
+  if (
+    String(connection.owner_setup_id ?? '') !== String(expected.ownerSetupId ?? '')
+    || String(connection.property_setup_id ?? '') !== String(expected.propertySetupId ?? '')
+    || String(property?.owner_setup_id ?? '') !== String(expected.ownerSetupId ?? '')
+    || String(property?.property_id ?? '') !== String(expected.propertyId ?? '')
+    || accountId !== String(expected.accountId ?? '')
+  ) {
+    return { data: { success: false, code: 'account_scope_mismatch', message: 'connection scope changed' }, error: null };
+  }
+  return null;
 }
 
 function setLiveSyncLeaseInMemory(args: Record<string, unknown> = {}) {
@@ -798,6 +889,23 @@ beforeEach(() => {
   supabaseRpc.mockImplementation(async (fnName: string, args?: Record<string, unknown>) => {
     if (fnName === 'channel_manager_live_core_schema_state') {
       return { data: { ...SCHEMA_READY_PAYLOAD }, error: null };
+    }
+    if (fnName === 'channel_manager_live_scope_guard_state_v1') {
+      return { data: { scopedConnectionWritesReady: true }, error: null };
+    }
+    if (fnName === 'channel_manager_set_live_sync_lease_scoped_v1') {
+      const scopeFailure = validateConnectionScopeInMemory(String(args?.p_connection_id ?? ''), args?.p_expected_scope);
+      if (scopeFailure) return scopeFailure;
+      return setLiveSyncLeaseInMemory(args ?? {});
+    }
+    if (fnName === 'channel_manager_update_live_connection_scoped_v1') {
+      return updateLiveConnectionScopedInMemory(args ?? {});
+    }
+    if (fnName === 'channel_manager_acquire_live_sync_guard_scoped_v1') {
+      return acquireLiveSyncGuardScopedInMemory(args ?? {});
+    }
+    if (fnName === 'channel_manager_update_import_run_scoped_v1') {
+      return updateImportRunScopedInMemory(args ?? {});
     }
     if (fnName === 'channel_manager_set_live_sync_lease_v1') {
       return setLiveSyncLeaseInMemory(args ?? {});

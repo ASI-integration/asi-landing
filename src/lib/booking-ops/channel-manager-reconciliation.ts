@@ -2614,7 +2614,7 @@ async function applyOneSafeItem(input: {
             safeError,
           },
           updated_at: finishedAt,
-        }).eq('id', runId).eq('status', 'running');
+        }).eq('id', runId).eq('connection_id', connection.id).eq('status', 'running');
 
         const fresh = await requireConnection(connection.id);
         const lease = fresh.metadata?.liveSyncLease as Record<string, unknown> | undefined;
@@ -2752,7 +2752,7 @@ async function abortReconciliationImportRunKeepPreview(input: {
         safeError,
       },
       updated_at: finishedAt,
-    }).eq('id', input.importRunId).eq('status', 'running');
+    }).eq('id', input.importRunId).eq('connection_id', input.connectionId).eq('status', 'running');
     if (error) throw new Error(error.message);
   }
   await releaseChannelLiveSyncLease(input.connectionId, input.importRunId);
