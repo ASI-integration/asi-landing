@@ -957,7 +957,8 @@ export async function initializeBookingAutomationStack(
   modules.push('checkin_execution_baseline');
 
   if (expectedScope) await requireBookingOpsRecordScope(bookingOpsRecordId, expectedScope);
-  await initializeInStayCheckoutBaseline(bookingOpsRecordId);
+  if (expectedScope) await initializeInStayCheckoutBaseline(bookingOpsRecordId, expectedScope);
+  else await initializeInStayCheckoutBaseline(bookingOpsRecordId);
   modules.push('instay_checkout_baseline');
 
   await recomputeBookingCheckinReadiness(bookingOpsRecordId, expectedScope ? { expectedScope } : undefined);

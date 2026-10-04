@@ -282,6 +282,31 @@ describe('In-stay & Checkout Autopilot v1', () => {
     requireBookingOpsRecordScope.mockImplementation(async () => currentRecord());
   });
 
+  it('revalidates canonical scope immediately before baseline persistence', async () => {
+    const { initializeInStayCheckoutBaseline } = await import('../instay-checkout-autopilot');
+    const expectedScope = { accountId: 'account-1', propertyId: record.propertyId };
+
+    const baseline = await initializeInStayCheckoutBaseline(record.id, expectedScope);
+
+    expect(baseline.bookingId).toBe(record.id);
+    expect(requireBookingOpsRecordScope).toHaveBeenCalledTimes(2);
+    expect(requireBookingOpsRecordScope).toHaveBeenNthCalledWith(1, record.id, expectedScope);
+    expect(requireBookingOpsRecordScope).toHaveBeenNthCalledWith(2, record.id, expectedScope);
+    expect(tables.booking_instay_checkout).toHaveLength(1);
+  });
+
+  it('fails closed if scope changes between baseline read and persistence', async () => {
+    const { initializeInStayCheckoutBaseline } = await import('../instay-checkout-autopilot');
+    const expectedScope = { accountId: 'account-1', propertyId: record.propertyId };
+    requireBookingOpsRecordScope
+      .mockResolvedValueOnce(currentRecord())
+      .mockRejectedValueOnce(new Error('booking_scope_mismatch'));
+
+    await expect(initializeInStayCheckoutBaseline(record.id, expectedScope)).rejects.toThrow('booking_scope_mismatch');
+
+    expect(tables.booking_instay_checkout).toHaveLength(0);
+  });
+
   it('pure in-stay and closeout reads do not initialize lifecycle or recompute legal readiness', async () => {
     guestCheckedIn = true;
     const lifecycleModule = await import('../lifecycle');

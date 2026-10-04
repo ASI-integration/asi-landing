@@ -274,7 +274,9 @@ async function upsertExecution(
     failure_reason: string | null;
     metadata: Record<string, unknown>;
   }>,
+  expectedScope?: { accountId: string; propertyId: string },
 ): Promise<InStayCheckoutRow> {
+  if (expectedScope) await requireBookingOpsRecordScope(bookingId, expectedScope);
   const existingRaw = await getExecutionDbRow(bookingId);
   const existing = existingRaw ? mapExecutionRow(existingRaw) : null;
   const now = new Date().toISOString();
@@ -297,6 +299,7 @@ async function upsertExecution(
     created_at: existing?.createdAt ?? now,
     updated_at: now,
   };
+  if (expectedScope) await requireBookingOpsRecordScope(bookingId, expectedScope);
   const { data, error } = await supabase
     .from('booking_instay_checkout')
     .upsert(row, { onConflict: 'booking_id' })
@@ -1281,8 +1284,11 @@ export async function runInStayCheckoutAction(input: {
 }
 
 /** Baseline row for inbound intake — checkout flow not started. */
-export async function initializeInStayCheckoutBaseline(bookingId: string): Promise<InStayCheckoutRow> {
+export async function initializeInStayCheckoutBaseline(
+  bookingId: string,
+  expectedScope?: { accountId: string; propertyId: string },
+): Promise<InStayCheckoutRow> {
   return upsertExecution(bookingId, {
     metadata: { source: 'inbound_intake_autopilot_v1', initializedAt: new Date().toISOString() },
-  });
+  }, expectedScope);
 }

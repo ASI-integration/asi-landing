@@ -312,6 +312,14 @@ describe('Real Booking Intake Autopilot v1', () => {
       expect.objectContaining({ type: 'guest.data_submitted', source: 'real_booking_intake' }),
       { accountId: 'account-a', propertyId: 'OBJ-1' },
     );
+    expect(initializeCheckinExecutionBaseline).toHaveBeenCalledWith(
+      incomplete.id,
+      { accountId: 'account-a', propertyId: 'OBJ-1' },
+    );
+    expect(initializeInStayCheckoutBaseline).toHaveBeenCalledWith(
+      incomplete.id,
+      { accountId: 'account-a', propertyId: 'OBJ-1' },
+    );
     expect(recordAndProcessBookingEvent).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'booking.received' }));
   });
 
