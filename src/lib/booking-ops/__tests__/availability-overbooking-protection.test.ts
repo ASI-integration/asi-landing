@@ -92,6 +92,7 @@ import {
   auditChannelImportAvailability,
   checkAvailabilityConflict,
   classifyAvailabilityConflicts,
+  confirmAvailabilityHold,
   collapseChannelCalendarConflicts,
   isChannelCalendarDateCoveredByImportedBooking,
   isConfirmationLikeCommunication,
@@ -476,6 +477,40 @@ describe('availability canonical account scope', () => {
       status: 'failed',
       check: { safeSummary: 'booking_scope_mismatch' },
     });
+  });
+});
+
+describe('availability hold confirmation canonical property scope', () => {
+  it('fails closed when an account-bound booking moved to another property before confirmation', async () => {
+    const holdId = '50000000-0000-4000-8000-000000000005';
+    const booking: Row = {
+      id: BOOKING_OPS_ID,
+      account_id: 'account-a',
+      property_id: 'prop-a',
+    };
+    rows('booking_ops_records').push(booking);
+    beforeBookingOpsScopeFilter = () => {
+      booking.property_id = 'prop-b';
+    };
+    const hold: Row = {
+      id: holdId,
+      account_id: 'account-a',
+      property_id: 'prop-a',
+      conflict_status: 'no_conflict',
+      status: 'active',
+    };
+    rows('booking_availability_holds').push(hold);
+
+    await expect(confirmAvailabilityHold(
+      holdId,
+      BOOKING_OPS_ID,
+      undefined,
+      'account-a',
+      { propertyId: 'prop-a' },
+    )).rejects.toThrow('booking_scope_mismatch');
+
+    expect(hold.status).toBe('active');
+    expect(hold.booking_id).toBeUndefined();
   });
 });
 

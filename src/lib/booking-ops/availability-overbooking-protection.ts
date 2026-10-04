@@ -542,9 +542,12 @@ export async function confirmAvailabilityHold(
 ) {
   if (!UUID_RE.test(text(holdId)) || (bookingId && !UUID_RE.test(text(bookingId)))) throw new Error('Некорректный ID.');
   const canonicalAccountId = text(accountId);
+  const expectedPropertyId = text(expectedScope?.propertyId);
   if (canonicalAccountId && bookingId) {
-    const booking = await supabase.from('booking_ops_records').select('id')
-      .eq('id', bookingId).eq('account_id', canonicalAccountId).maybeSingle();
+    let bookingQuery = supabase.from('booking_ops_records').select('id')
+      .eq('id', bookingId).eq('account_id', canonicalAccountId);
+    if (expectedPropertyId) bookingQuery = bookingQuery.eq('property_id', expectedPropertyId);
+    const booking = await bookingQuery.maybeSingle();
     if (booking.error) throw new Error(booking.error.message);
     if (!booking.data) throw new Error('booking_scope_mismatch');
   }
