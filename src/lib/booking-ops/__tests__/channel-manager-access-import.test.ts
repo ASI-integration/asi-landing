@@ -61,8 +61,8 @@ vi.mock('../real-booking-intake-autopilot', () => ({ processInboundBookingReques
 
 import {
   CHANNEL_PROVIDER_ADAPTERS, createBookingFromImportedChannelBooking, findSecretPath, getChannelImportConflicts,
-  importChannelObjects, initializeChannelManagerConnection, markChannelManagerAccessReceived,
-  performChannelManagerProviderOnboardingAction, reconcileImportedObjects, registerManualChannelSnapshot,
+  importChannelBookings, importChannelObjects, initializeChannelManagerConnection, markChannelManagerAccessReceived,
+  performChannelManagerProviderOnboardingAction, reconcileImportedBookings, reconcileImportedObjects, registerManualChannelSnapshot,
   requestChannelManagerAccess, startChannelImportRun,
 } from '../channel-manager-access-import';
 
@@ -222,6 +222,52 @@ describe('Channel Manager Access & Import v1', () => {
     expect(uploaded.importSummary?.objects).toBe(1);
     const reconciled = await performChannelManagerProviderOnboardingAction({ action: 'run_reconciliation', connectionId: selected.connection.id });
     expect(reconciled.connection.status).toBe('import_ready');
+  });
+
+  it('does not reconcile imported objects into another owner scope', async () => {
+    const connection = await initializeChannelManagerConnection(PROPERTY_ID, 'manual');
+    const otherOwnerId = '10000000-0000-4000-8000-000000000099';
+    const otherSetupId = '20000000-0000-4000-8000-000000000099';
+    rows('booking_property_setup_profiles').push({
+      id: otherSetupId, owner_setup_id: otherOwnerId, property_id: 'prop-other',
+      title: 'Чужой дом', address_city: 'Москва', guest_capacity: 6,
+    });
+    await importChannelObjects(connection.id, [{
+      external_object_id: 'ext-other', property_setup_id: otherSetupId,
+      title: 'Чужой дом', city: 'Москва', capacity: 6,
+    }]);
+
+    const result = await reconcileImportedObjects(connection.id);
+
+    expect(result).toMatchObject({ matched: 0, possible: 0, unmatched: 1 });
+    expect(rows('booking_channel_imported_objects')[0]).toMatchObject({
+      match_status: 'unmatched',
+      matched_property_setup_id: null,
+      matched_property_id: null,
+    });
+  });
+
+  it('keeps booking reconciliation inside the canonical property', async () => {
+    const connection = await initializeChannelManagerConnection(PROPERTY_ID, 'manual', { accountId: 'acct-access-import' });
+    rows('booking_ops_records').push({
+      id: '30000000-0000-4000-8000-000000000099',
+      booking_id: 'book-cross-property',
+      account_id: 'acct-access-import',
+      property_id: 'prop-b',
+    });
+    await importChannelBookings(connection.id, [{
+      external_booking_id: 'book-cross-property',
+      checkin_date: '2026-11-01',
+      checkout_date: '2026-11-03',
+    }]);
+
+    const result = await reconcileImportedBookings(connection.id);
+
+    expect(result).toMatchObject({ matched: 0, possibleDuplicates: 0, unmatched: 1 });
+    expect(rows('booking_channel_imported_bookings')[0]).toMatchObject({
+      match_status: 'unmatched',
+      matched_booking_id: null,
+    });
   });
 
   it('rejects secret fields in provider onboarding metadata', async () => {
