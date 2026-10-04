@@ -126,13 +126,17 @@ export async function POST(req: Request) {
       if (!checkId || !SAFE_ID.test(checkId) || !note) throw new Error('Укажите проверку и заметку.');
       const checkAccess = await requireBookingOpsApiAvailabilityCheckAccess(auth.session, checkId);
       if (!checkAccess.ok) return checkAccess.response;
+      const checkPropertyId = checkAccess.propertyId;
+      if (!checkPropertyId) throw new Error('property_scope_mismatch');
       const { data: existing, error: readError } = await supabase.from('booking_overbooking_conflict_checks')
-        .select('warnings').eq('id', checkAccess.checkId).eq('account_id', checkAccess.accountId).maybeSingle();
+        .select('warnings').eq('id', checkAccess.checkId).eq('account_id', checkAccess.accountId)
+        .eq('property_id', checkPropertyId).maybeSingle();
       if (readError || !existing) throw new Error(readError?.message ?? 'Проверка не найдена.');
       const warnings = Array.isArray(existing.warnings) ? existing.warnings.map(String) : [];
       const { data, error } = await supabase.from('booking_overbooking_conflict_checks')
         .update({ warnings: [...warnings, note], updated_at: new Date().toISOString() })
-        .eq('id', checkAccess.checkId).eq('account_id', checkAccess.accountId).select('id,warnings').single();
+        .eq('id', checkAccess.checkId).eq('account_id', checkAccess.accountId)
+        .eq('property_id', checkPropertyId).select('id,warnings').single();
       if (error) throw new Error(error.message);
       result = data;
     }

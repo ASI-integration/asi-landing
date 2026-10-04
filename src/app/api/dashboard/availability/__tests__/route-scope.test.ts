@@ -177,6 +177,32 @@ describe('availability route canonical access', () => {
     expect(query.eq).toHaveBeenCalledWith('property_id', access.propertyId);
   });
 
+  it('guards add-note reads and writes with canonical property scope', async () => {
+    const readQuery: Record<string, any> = {};
+    readQuery.eq = vi.fn(() => readQuery);
+    readQuery.maybeSingle = vi.fn().mockResolvedValue({ data: { warnings: ['existing'] }, error: null });
+    const readSource = { select: vi.fn(() => readQuery) };
+
+    const writeQuery: Record<string, any> = {};
+    writeQuery.eq = vi.fn(() => writeQuery);
+    writeQuery.select = vi.fn(() => writeQuery);
+    writeQuery.single = vi.fn().mockResolvedValue({ data: { id: 'check-a', warnings: ['existing', 'note'] }, error: null });
+    const writeSource = { update: vi.fn(() => writeQuery) };
+
+    mocks.supabaseFrom.mockReset();
+    mocks.supabaseFrom.mockReturnValueOnce(readSource).mockReturnValueOnce(writeSource);
+
+    const res = await actionPost(new Request('http://localhost/api/dashboard/availability/action', {
+      method: 'POST',
+      body: JSON.stringify({ action: 'add_note', checkId: 'check-a', note: 'note' }),
+    }));
+
+    expect(res.status).toBe(200);
+    expect(mocks.requireCheckAccess).toHaveBeenCalledWith(session, 'check-a');
+    expect(readQuery.eq).toHaveBeenCalledWith('property_id', access.propertyId);
+    expect(writeQuery.eq).toHaveBeenCalledWith('property_id', access.propertyId);
+  });
+
   it('derives release-block scope from the block before mutation', async () => {
     const blockId = '60000000-0000-4000-8000-000000000006';
     const res = await actionPost(new Request('http://localhost/api/dashboard/availability/action', {
