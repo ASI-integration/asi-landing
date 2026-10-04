@@ -399,6 +399,36 @@ describe('In-stay & Checkout Autopilot v1', () => {
     expect(status.openIssuesCount).toBe(1);
   });
 
+  it('carries canonical scope through support-window lifecycle and execution writes', async () => {
+    guestCheckedIn = true;
+    const expectedScope = { accountId: 'account-1', propertyId: record.propertyId };
+    const lifecycleModule = await import('../lifecycle');
+    vi.mocked(lifecycleModule.initializeLifecycleForBooking).mockClear();
+    const { runInStayCheckoutAction } = await import('../instay-checkout-autopilot');
+
+    const status = await runInStayCheckoutAction({ bookingId: record.id, action: 'open_support_window', expectedScope });
+
+    expect(status.status).toBe('in_stay');
+    expect(lifecycleModule.initializeLifecycleForBooking).toHaveBeenCalledWith(record.id, expectedScope);
+    expect(tables.booking_instay_checkout).toHaveLength(1);
+  });
+
+  it('fails closed before guest issue persistence if canonical scope changes', async () => {
+    guestCheckedIn = true;
+    const expectedScope = { accountId: 'account-1', propertyId: record.propertyId };
+    requireBookingOpsRecordScope
+      .mockResolvedValueOnce(currentRecord())
+      .mockResolvedValueOnce(currentRecord())
+      .mockRejectedValueOnce(new Error('booking_scope_mismatch'));
+    const { createGuestStayIssue } = await import('../instay-checkout-autopilot');
+
+    await expect(createGuestStayIssue(record.id, 'noise', 'medium', 'Шум', undefined, expectedScope))
+      .rejects.toThrow('booking_scope_mismatch');
+
+    expect(tables.booking_guest_stay_issues).toHaveLength(0);
+    expect(tables.booking_instay_checkout).toHaveLength(0);
+  });
+
   it('urgent guest issue is fallback eligible', async () => {
     guestCheckedIn = true;
     const { createGuestStayIssue, createCheckoutFallbackIfNeeded } = await import('../instay-checkout-autopilot');
@@ -408,6 +438,27 @@ describe('In-stay & Checkout Autopilot v1', () => {
 
     expect(result.created).toBe(true);
     expect(lifecycle.blocked.length).toBeGreaterThan(0);
+  });
+
+  it('fails closed before guest issue update if canonical scope changes', async () => {
+    guestCheckedIn = true;
+    const { createGuestStayIssue, resolveGuestStayIssue } = await import('../instay-checkout-autopilot');
+    const created = await createGuestStayIssue(record.id, 'wifi', 'low', 'Нет Wi-Fi');
+    const issueId = created.openIssues[0]!.id;
+    requireBookingOpsRecordScope.mockReset();
+    requireBookingOpsRecordScope
+      .mockResolvedValueOnce(currentRecord())
+      .mockRejectedValueOnce(new Error('booking_scope_mismatch'));
+
+    await expect(resolveGuestStayIssue(
+      record.id,
+      issueId,
+      'resolved',
+      undefined,
+      { accountId: 'account-1', propertyId: record.propertyId },
+    )).rejects.toThrow('booking_scope_mismatch');
+
+    expect(tables.booking_guest_stay_issues[0]?.status).toBe('open');
   });
 
   it('resolve guest issue removes blocker', async () => {

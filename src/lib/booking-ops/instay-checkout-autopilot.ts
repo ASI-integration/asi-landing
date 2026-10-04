@@ -318,6 +318,7 @@ async function insertIssue(
     description?: string | null;
     metadata?: Record<string, unknown>;
   },
+  expectedScope?: { accountId: string; propertyId: string },
 ): Promise<GuestStayIssueRow> {
   const now = new Date().toISOString();
   const row = {
@@ -337,6 +338,7 @@ async function insertIssue(
     created_at: now,
     updated_at: now,
   };
+  if (expectedScope) await requireBookingOpsRecordScope(bookingId, expectedScope);
   const { data, error } = await supabase
     .from('booking_guest_stay_issues')
     .insert(row)
@@ -357,6 +359,7 @@ async function updateIssue(
     resolved_at: string | null;
     metadata: Record<string, unknown>;
   }>,
+  expectedScope?: { accountId: string; propertyId: string },
 ): Promise<GuestStayIssueRow> {
   const existing = await getIssueRow(bookingId, issueId);
   if (!existing) throw new Error('issue_not_found');
@@ -373,6 +376,7 @@ async function updateIssue(
     },
     updated_at: now,
   };
+  if (expectedScope) await requireBookingOpsRecordScope(bookingId, expectedScope);
   const { data, error } = await supabase
     .from('booking_guest_stay_issues')
     .update(row)
@@ -693,7 +697,9 @@ async function ensureCommunicationIntent(input: {
   messageText: string;
   messageTemplateKey: string;
   metadata?: Record<string, unknown>;
+  expectedScope?: { accountId: string; propertyId: string };
 }): Promise<BookingOpsCommunicationIntent | null> {
+  if (input.expectedScope) await requireBookingOpsRecordScope(input.record.id, input.expectedScope);
   const existing = await listBookingOpsCommunicationsForRecord(input.record.id);
   if (existing.ok) {
     const active = existing.communications.find((item) =>
@@ -724,6 +730,7 @@ async function ensureCommunicationIntent(input: {
     unresolvedComplaint: input.purpose === 'guest_stay_issue_followup',
   });
   const knowledge = await guardBookingCommunicationDraft(input.record, input.purpose);
+  if (input.expectedScope) await requireBookingOpsRecordScope(input.record.id, input.expectedScope);
   const { data, error } = await supabase
     .from('booking_ops_communication_intents')
     .insert({
@@ -830,9 +837,14 @@ export async function readInStayCheckoutStatus(bookingId: string): Promise<InSta
   });
 }
 
-export async function getInStayCheckoutStatus(bookingId: string): Promise<InStayCheckoutSnapshot> {
-  const record = await loadRecord(bookingId);
-  await initializeLifecycleForBooking(record.id);
+export async function getInStayCheckoutStatus(
+  bookingId: string,
+  expectedScope?: { accountId: string; propertyId: string },
+): Promise<InStayCheckoutSnapshot> {
+  const record = expectedScope
+    ? await requireBookingOpsRecordScope(bookingId, expectedScope)
+    : await loadRecord(bookingId);
+  await initializeLifecycleForBooking(record.id, expectedScope);
   const [execution, issues, lifecycleResult, communicationResult] = await Promise.all([
     getExecutionRow(record.id),
     listIssueRows(record.id),
@@ -852,9 +864,12 @@ export async function getInStayCheckoutStatus(bookingId: string): Promise<InStay
 export async function openInStaySupportWindow(
   bookingId: string,
   metadata?: Record<string, unknown>,
+  expectedScope?: { accountId: string; propertyId: string },
 ): Promise<InStayCheckoutSnapshot> {
-  const record = await loadRecord(bookingId);
-  const snapshot = await getInStayCheckoutStatus(record.id);
+  const record = expectedScope
+    ? await requireBookingOpsRecordScope(bookingId, expectedScope)
+    : await loadRecord(bookingId);
+  const snapshot = await getInStayCheckoutStatus(record.id, expectedScope);
   if (snapshot.status === 'not_checked_in') {
     throw new Error('guest_not_checked_in');
   }
@@ -865,8 +880,8 @@ export async function openInStaySupportWindow(
       supportWindowOpenedAt: new Date().toISOString(),
       ...safeMetadata(metadata),
     },
-  });
-  return getInStayCheckoutStatus(record.id);
+  }, expectedScope);
+  return getInStayCheckoutStatus(record.id, expectedScope);
 }
 
 export async function createGuestStayIssue(
@@ -875,9 +890,12 @@ export async function createGuestStayIssue(
   severity: GuestStayIssueSeverity,
   description?: string,
   metadata?: Record<string, unknown>,
+  expectedScope?: { accountId: string; propertyId: string },
 ): Promise<InStayCheckoutSnapshot> {
-  const record = await loadRecord(bookingId);
-  const snapshot = await getInStayCheckoutStatus(record.id);
+  const record = expectedScope
+    ? await requireBookingOpsRecordScope(bookingId, expectedScope)
+    : await loadRecord(bookingId);
+  const snapshot = await getInStayCheckoutStatus(record.id, expectedScope);
   if (snapshot.status === 'not_checked_in') {
     throw new Error('guest_not_checked_in');
   }
@@ -886,7 +904,7 @@ export async function createGuestStayIssue(
     severity,
     description,
     metadata,
-  });
+  }, expectedScope);
   if (severity === 'urgent' || severity === 'high') {
     await ensureCommunicationIntent({
       record,
@@ -894,13 +912,14 @@ export async function createGuestStayIssue(
       messageTemplateKey: 'guest.stay.issue_ack.v1',
       messageText: 'Здравствуйте. Мы получили ваше обращение и уже разбираем ситуацию.',
       metadata: { issueId: issue.id, issueType },
+      expectedScope,
     });
   }
   await upsertExecution(record.id, {
     status: severity === 'urgent' ? 'guest_issue_open' : undefined,
     metadata: { source: 'instay_checkout_autopilot_v1', lastIssueId: issue.id, ...safeMetadata(metadata) },
-  });
-  return getInStayCheckoutStatus(record.id);
+  }, expectedScope);
+  return getInStayCheckoutStatus(record.id, expectedScope);
 }
 
 export async function triageGuestStayIssue(
@@ -908,8 +927,11 @@ export async function triageGuestStayIssue(
   issueId: string,
   action: string,
   metadata?: Record<string, unknown>,
+  expectedScope?: { accountId: string; propertyId: string },
 ): Promise<InStayCheckoutSnapshot> {
-  const record = await loadRecord(bookingId);
+  const record = expectedScope
+    ? await requireBookingOpsRecordScope(bookingId, expectedScope)
+    : await loadRecord(bookingId);
   const cleanAction = text(action);
   if (!cleanAction) throw new Error('issue_action_required');
   const issue = await getIssueRow(record.id, issueId);
@@ -925,7 +947,7 @@ export async function triageGuestStayIssue(
     assigned_to_type: text(metadata?.assignedToType) || text(metadata?.assigned_to_type) || issue.assignedToType,
     assigned_to_ref: text(metadata?.assignedToRef) || text(metadata?.assigned_to_ref) || issue.assignedToRef,
     metadata: { source: 'instay_checkout_autopilot_v1', triageAction: cleanAction, ...safeMetadata(metadata) },
-  });
+  }, expectedScope);
 
   if (cleanAction === 'acknowledge' || cleanAction === 'escalate') {
     await ensureCommunicationIntent({
@@ -934,10 +956,11 @@ export async function triageGuestStayIssue(
       messageTemplateKey: 'guest.stay.issue_followup.v1',
       messageText: 'Здравствуйте. Мы продолжаем разбирать ваше обращение и скоро вернёмся с ответом.',
       metadata: { issueId },
+      expectedScope,
     });
   }
 
-  return getInStayCheckoutStatus(record.id);
+  return getInStayCheckoutStatus(record.id, expectedScope);
 }
 
 export async function resolveGuestStayIssue(
@@ -945,8 +968,11 @@ export async function resolveGuestStayIssue(
   issueId: string,
   resolution: string,
   metadata?: Record<string, unknown>,
+  expectedScope?: { accountId: string; propertyId: string },
 ): Promise<InStayCheckoutSnapshot> {
-  const record = await loadRecord(bookingId);
+  const record = expectedScope
+    ? await requireBookingOpsRecordScope(bookingId, expectedScope)
+    : await loadRecord(bookingId);
   const issue = await getIssueRow(record.id, issueId);
   if (!issue) throw new Error('issue_not_found');
   const now = new Date().toISOString();
@@ -955,8 +981,8 @@ export async function resolveGuestStayIssue(
     resolution: text(resolution) || 'Закрыто оператором',
     resolved_at: now,
     metadata: { source: 'instay_checkout_autopilot_v1', resolvedAt: now, ...safeMetadata(metadata) },
-  });
-  return getInStayCheckoutStatus(record.id);
+  }, expectedScope);
+  return getInStayCheckoutStatus(record.id, expectedScope);
 }
 
 export async function prepareCheckoutInstructions(
@@ -1227,7 +1253,7 @@ export async function runInStayCheckoutAction(input: {
   const issueId = text(input.issueId);
   switch (input.action) {
     case 'open_support_window':
-      return openInStaySupportWindow(bookingId, input.metadata);
+      return openInStaySupportWindow(bookingId, input.metadata, input.expectedScope);
     case 'create_guest_issue':
       return createGuestStayIssue(
         bookingId,
@@ -1235,13 +1261,20 @@ export async function runInStayCheckoutAction(input: {
         (text(input.severity) || 'medium') as GuestStayIssueSeverity,
         text(input.description) || undefined,
         input.metadata,
+        input.expectedScope,
       );
     case 'triage_guest_issue':
       if (!issueId) throw new Error('issue_id_required');
-      return triageGuestStayIssue(bookingId, issueId, reason || 'triage', input.metadata);
+      return triageGuestStayIssue(bookingId, issueId, reason || 'triage', input.metadata, input.expectedScope);
     case 'resolve_guest_issue':
       if (!issueId) throw new Error('issue_id_required');
-      return resolveGuestStayIssue(bookingId, issueId, text(input.resolution) || reason || note || 'Закрыто', input.metadata);
+      return resolveGuestStayIssue(
+        bookingId,
+        issueId,
+        text(input.resolution) || reason || note || 'Закрыто',
+        input.metadata,
+        input.expectedScope,
+      );
     case 'prepare_checkout_instructions':
       return prepareCheckoutInstructions(bookingId, input.metadata);
     case 'queue_checkout_instructions':
