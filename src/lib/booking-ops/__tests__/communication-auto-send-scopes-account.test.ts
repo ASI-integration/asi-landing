@@ -276,4 +276,50 @@ describe('account-scoped auto-send scope resolution', () => {
     );
     await expect(isAutoSendOperationallyReadyForProperty('account-1', 'property-1')).resolves.toBe(false);
   });
+
+  it('discovers only live account-scoped scheduler candidates and skips failed accounts', async () => {
+    vi.stubEnv('TELEGRAM_BOT_TOKEN', 'configured');
+    vi.stubEnv('DRY_RUN_TELEGRAM_OUTBOUND', '0');
+    const accountA = '11111111-1111-4111-8111-111111111111';
+    const accountB = '22222222-2222-4222-8222-222222222222';
+
+    rows.push(
+      baseScope({
+        id: 'property-a',
+        account_id: accountA,
+        scope_type: 'property',
+        scope_ref: 'property-a',
+        actual_send_enabled: true,
+        allowed_channels: ['telegram'],
+        dry_run_only: false,
+      }),
+      baseScope({
+        id: 'property-b',
+        account_id: accountB,
+        scope_type: 'property',
+        scope_ref: 'property-b',
+        actual_send_enabled: true,
+        allowed_channels: ['telegram'],
+        dry_run_only: false,
+      }),
+      baseScope({
+        id: 'invalid-account',
+        account_id: 'account-not-uuid',
+        scope_type: 'property',
+        scope_ref: 'property-invalid',
+        actual_send_enabled: true,
+        allowed_channels: ['telegram'],
+        dry_run_only: false,
+      }),
+    );
+    runRows.push({
+      account_id: accountB,
+      status: 'completed',
+      failed_count: 1,
+      started_at: '2026-10-05T19:00:00.000Z',
+    });
+
+    const { listScheduledAutoSendAccountIds } = await import('../communication-auto-send-scopes');
+    await expect(listScheduledAutoSendAccountIds()).resolves.toEqual([accountA]);
+  });
 });

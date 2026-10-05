@@ -58,6 +58,7 @@ type ScopeRow = {
 
 const SAFE_TYPES = new Set<string>(SUPPORTED_ACTUAL_AUTO_SEND_MESSAGE_TYPES);
 const SAFE_CHANNELS = new Set<ActualAutoSendChannel>(['telegram', 'email']);
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 
 function strings(value: unknown): string[] {
   return Array.isArray(value) ? value.map((item) => String(item)).filter(Boolean) : [];
@@ -300,6 +301,43 @@ export async function isAutoSendOperationallyReadyForProperty(
   if (latestRun && (latestRun.status === 'failed' || Number(latestRun.failed_count ?? 0) > 0)) return false;
 
   return true;
+}
+
+export async function listScheduledAutoSendAccountIds(): Promise<string[]> {
+  const scopes = await readAllScopes();
+  const global = scopes.find((scope) => scope.scopeType === 'global') ?? null;
+  if (!global || global.actualSendEnabled || global.emergencyStop) return [];
+
+  const candidates = [...new Set(
+    scopes
+      .filter((scope) =>
+        scope.scopeType !== 'global'
+        && scope.accountId
+        && UUID_RE.test(scope.accountId)
+        && scope.actualSendEnabled
+        && !scope.dryRunOnly
+        && !scope.emergencyStop
+        && scope.allowedChannels.length > 0
+        && scope.allowedMessageTypes.length > 0
+        && scope.allowedChannels.every(isAutoSendChannelRuntimeReady),
+      )
+      .map((scope) => scope.accountId as string),
+  )].sort();
+
+  const ready: string[] = [];
+  for (const accountId of candidates) {
+    const { data: latestRun, error } = await supabase
+      .from('booking_ops_communication_auto_send_runs')
+      .select('status,failed_count')
+      .eq('account_id', accountId)
+      .order('started_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (error) continue;
+    if (latestRun && (latestRun.status === 'failed' || Number(latestRun.failed_count ?? 0) > 0)) continue;
+    ready.push(accountId);
+  }
+  return ready;
 }
 
 export async function getAutoSendOperationalStatus(accountId?: string | null) {
