@@ -6,6 +6,7 @@ import {
   setAutoSendScope,
   type AutoSendScopeType,
 } from '@/lib/booking-ops/communication-auto-send-scopes';
+import { syncActualAutoSendPoliciesForScope } from '@/lib/booking-ops/communication-auto-send-policy';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -39,5 +40,33 @@ export async function POST(req: Request) {
   if (!result.ok) {
     return NextResponse.json({ ok: false, message: 'Не удалось включить ограниченную автоотправку.', reason: result.error }, { status: 400 });
   }
+
+  if (scopeType === 'property' || scopeType === 'booking') {
+    const policySync = await syncActualAutoSendPoliciesForScope({
+      scope: scopeType,
+      scopeRef,
+      messageTypes: result.scope.allowedMessageTypes,
+      actualSendEnabled: !result.scope.dryRunOnly,
+    });
+    if (!policySync.ok) {
+      await setAutoSendScope({
+        accountId: access.accountId,
+        scopeType,
+        scopeRef,
+        enabled: false,
+        enabledBy: String(auth.session.email ?? auth.session.userId ?? 'ops-admin'),
+        reason: 'Policy sync failed; scope rolled back fail-closed.',
+        maxBatchSize: result.scope.maxBatchSize,
+        allowedChannels: result.scope.allowedChannels,
+        allowedMessageTypes: result.scope.allowedMessageTypes,
+        dryRunOnly: true,
+      });
+      return NextResponse.json(
+        { ok: false, message: 'Не удалось синхронизировать policy для автоотправки.', reason: policySync.error },
+        { status: 500 },
+      );
+    }
+  }
+
   return NextResponse.json({ ok: true, message: 'Ограниченная автоотправка включена.', scope: result.scope });
 }

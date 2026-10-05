@@ -4,6 +4,7 @@ const mocks = vi.hoisted(() => ({
   scopeAccess: vi.fn(),
   accountAccess: vi.fn(),
   setScope: vi.fn(),
+  syncPolicies: vi.fn(),
   status: vi.fn(),
 }));
 
@@ -22,6 +23,10 @@ vi.mock('@/lib/booking-ops/communication-auto-send-scopes', () => ({
   AUTO_SEND_SCOPE_TYPES: ['global', 'owner', 'property', 'booking', 'pilot'],
   setAutoSendScope: mocks.setScope,
   getAutoSendOperationalStatus: mocks.status,
+}));
+
+vi.mock('@/lib/booking-ops/communication-auto-send-policy', () => ({
+  syncActualAutoSendPoliciesForScope: mocks.syncPolicies,
 }));
 
 describe('account-scoped auto-send scope routes', () => {
@@ -45,8 +50,13 @@ describe('account-scoped auto-send scope routes', () => {
         accountId: 'account-1',
         scopeType: 'booking',
         scopeRef: 'booking-1',
+        allowedMessageTypes: ['request_arrival_time'],
+        allowedChannels: ['telegram'],
+        maxBatchSize: 10,
+        dryRunOnly: true,
       },
     });
+    mocks.syncPolicies.mockResolvedValue({ ok: true, count: 1 });
     mocks.status.mockResolvedValue({
       globalActualSendEnabled: false,
       emergencyStop: false,
@@ -81,6 +91,36 @@ describe('account-scoped auto-send scope routes', () => {
       scopeType: 'booking',
       scopeRef: 'booking-1',
       enabled: true,
+    }));
+    expect(mocks.syncPolicies).toHaveBeenCalledWith({
+      scope: 'booking',
+      scopeRef: 'booking-1',
+      messageTypes: ['request_arrival_time'],
+      actualSendEnabled: false,
+    });
+  });
+
+  it('rolls the scope back fail-closed when policy sync fails', async () => {
+    mocks.syncPolicies.mockResolvedValueOnce({ ok: false, error: 'policy_write_failed', count: 0 });
+    const route = await import('../communications/auto-send/scope/enable/route');
+    const response = await route.POST(new Request('https://asi.test', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        scopeType: 'booking',
+        scopeRef: 'booking-1',
+        dryRunOnly: false,
+      }),
+    }));
+
+    expect(response.status).toBe(500);
+    expect(mocks.setScope).toHaveBeenCalledTimes(2);
+    expect(mocks.setScope).toHaveBeenLastCalledWith(expect.objectContaining({
+      accountId: 'account-1',
+      scopeType: 'booking',
+      scopeRef: 'booking-1',
+      enabled: false,
+      dryRunOnly: true,
     }));
   });
 

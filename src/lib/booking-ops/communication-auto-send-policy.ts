@@ -607,8 +607,9 @@ export async function getAutoSendQueue(filters: {
   return error ? { ok: false, error: error.message, intents: [] } : { ok: true, intents: data ?? [] };
 }
 
-async function saveBookingPolicy(input: {
-  bookingId: string;
+async function saveScopedPolicy(input: {
+  scope: Extract<CommunicationPolicyScope, 'property' | 'booking'>;
+  scopeRef: string;
   messageType: string;
   channel?: CommunicationAutoSendPolicy['channel'];
   enabled: boolean;
@@ -620,15 +621,15 @@ async function saveBookingPolicy(input: {
   const { data: existing, error: readError } = await supabase
     .from('booking_ops_communication_policies')
     .select('id')
-    .eq('scope', 'booking')
-    .eq('scope_ref', input.bookingId)
+    .eq('scope', input.scope)
+    .eq('scope_ref', input.scopeRef)
     .eq('message_type', input.messageType)
     .eq('channel', channel)
     .maybeSingle();
   if (readError) return { ok: false, error: readError.message };
   const values = {
-    scope: 'booking',
-    scope_ref: input.bookingId,
+    scope: input.scope,
+    scope_ref: input.scopeRef,
     message_type: input.messageType,
     channel,
     auto_send_enabled: input.enabled,
@@ -663,8 +664,9 @@ export async function markBookingMessageTypeSafe(bookingId: string, messageType:
   if (!ACTUAL_AUTO_SEND_TYPES.has(messageType)) {
     return { ok: false, error: 'message_type_cannot_be_marked_safe' };
   }
-  return saveBookingPolicy({
-    bookingId,
+  return saveScopedPolicy({
+    scope: 'booking',
+    scopeRef: bookingId,
     messageType,
     enabled: true,
     actualSendEnabled: true,
@@ -674,13 +676,46 @@ export async function markBookingMessageTypeSafe(bookingId: string, messageType:
 }
 
 export async function disableAutoSendForBooking(bookingId: string) {
-  return saveBookingPolicy({
-    bookingId,
+  return saveScopedPolicy({
+    scope: 'booking',
+    scopeRef: bookingId,
     messageType: '*',
     enabled: false,
     actualSendEnabled: false,
     requiresReview: true,
   });
+}
+
+export async function syncActualAutoSendPoliciesForScope(input: {
+  scope: Extract<CommunicationPolicyScope, 'property' | 'booking'>;
+  scopeRef: string;
+  messageTypes: string[];
+  actualSendEnabled: boolean;
+}) {
+  const scopeRef = String(input.scopeRef ?? '').trim();
+  if (!scopeRef) return { ok: false as const, error: 'invalid_scope_ref', count: 0 };
+
+  const messageTypes = [...new Set(input.messageTypes)]
+    .filter((messageType) => ACTUAL_AUTO_SEND_TYPES.has(messageType));
+  if (messageTypes.length === 0) {
+    return { ok: false as const, error: 'empty_policy_allowlist', count: 0 };
+  }
+
+  let count = 0;
+  for (const messageType of messageTypes) {
+    const result = await saveScopedPolicy({
+      scope: input.scope,
+      scopeRef,
+      messageType,
+      enabled: true,
+      actualSendEnabled: input.actualSendEnabled,
+      requiresReview: false,
+      allowedRecipientRoles: ACTUAL_AUTO_SEND_ALLOWED_ROLES[messageType] ?? [],
+    });
+    if (!result.ok) return { ok: false as const, error: result.error, count };
+    count += 1;
+  }
+  return { ok: true as const, count };
 }
 
 export type AutoSendPolicyIntent = IntentLike & {
