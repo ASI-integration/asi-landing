@@ -38,6 +38,8 @@ END;
 $$;
 
 REVOKE ALL ON FUNCTION public.booking_ops_record_insert_scope_guard_v1() FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.booking_ops_record_insert_scope_guard_v1() FROM anon;
+REVOKE ALL ON FUNCTION public.booking_ops_record_insert_scope_guard_v1() FROM authenticated;
 GRANT EXECUTE ON FUNCTION public.booking_ops_record_insert_scope_guard_v1() TO service_role;
 
 DROP TRIGGER IF EXISTS booking_ops_record_insert_scope_guard_v1

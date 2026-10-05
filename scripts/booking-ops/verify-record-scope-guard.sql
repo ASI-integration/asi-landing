@@ -19,14 +19,19 @@ $$;
 
 BEGIN;
 
--- Supabase migrations grant trigger-function execution to service_role. A plain
--- disposable PostgreSQL cluster does not have that role, so create it only for
--- this transaction when absent.
+-- Supabase migrations reference service_role, anon, and authenticated.
+-- A plain disposable PostgreSQL cluster does not have those roles, so create
+-- them only inside this transaction when absent.
 DO $$
+DECLARE
+  role_name text;
 BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'service_role') THEN
-    EXECUTE 'CREATE ROLE service_role NOLOGIN';
-  END IF;
+  FOREACH role_name IN ARRAY ARRAY['service_role', 'anon', 'authenticated']
+  LOOP
+    IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = role_name) THEN
+      EXECUTE format('CREATE ROLE %I NOLOGIN', role_name);
+    END IF;
+  END LOOP;
 END;
 $$;
 
@@ -71,6 +76,10 @@ INSERT INTO public.booking_ops_records(id, account_id, property_id, notes) VALUE
 
 -- Retry/idempotency: applying the same migration a second time must succeed.
 \ir ../../supabase/migrations/20261005090000_booking_ops_record_scope_guard_v1.sql
+
+-- Apply the Supabase role-privilege follow-up twice as well.
+\ir ../../supabase/migrations/20261005095000_booking_ops_record_scope_guard_privileges_v1.sql
+\ir ../../supabase/migrations/20261005095000_booking_ops_record_scope_guard_privileges_v1.sql
 
 -- Canonical pair is accepted.
 INSERT INTO public.booking_ops_records(id, account_id, property_id, notes) VALUES (
@@ -144,6 +153,16 @@ BEGIN
     )
   ) THEN
     RAISE EXCEPTION 'rejected scope rows unexpectedly persisted';
+  END IF;
+
+  IF has_function_privilege('anon', 'public.booking_ops_record_insert_scope_guard_v1()', 'EXECUTE') THEN
+    RAISE EXCEPTION 'anon unexpectedly retains trigger-function execute';
+  END IF;
+  IF has_function_privilege('authenticated', 'public.booking_ops_record_insert_scope_guard_v1()', 'EXECUTE') THEN
+    RAISE EXCEPTION 'authenticated unexpectedly retains trigger-function execute';
+  END IF;
+  IF NOT has_function_privilege('service_role', 'public.booking_ops_record_insert_scope_guard_v1()', 'EXECUTE') THEN
+    RAISE EXCEPTION 'service_role lost required trigger-function execute';
   END IF;
 END;
 $$;

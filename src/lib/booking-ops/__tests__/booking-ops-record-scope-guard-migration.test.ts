@@ -6,6 +6,11 @@ const migration = readFileSync(
   'utf8',
 );
 
+const privilegeMigration = readFileSync(
+  new URL('../../../../supabase/migrations/20261005095000_booking_ops_record_scope_guard_privileges_v1.sql', import.meta.url),
+  'utf8',
+);
+
 const fixture = readFileSync(
   new URL('../../../../scripts/booking-ops/verify-record-scope-guard.sql', import.meta.url),
   'utf8',
@@ -36,7 +41,16 @@ describe('booking ops record scope guard migration', () => {
     expect(migration).toMatch(/SECURITY DEFINER/i);
     expect(migration).toMatch(/SET search_path = public/i);
     expect(migration).toMatch(/REVOKE ALL ON FUNCTION public\.booking_ops_record_insert_scope_guard_v1\(\) FROM PUBLIC/i);
+    expect(migration).toMatch(/REVOKE ALL ON FUNCTION public\.booking_ops_record_insert_scope_guard_v1\(\) FROM anon/i);
+    expect(migration).toMatch(/REVOKE ALL ON FUNCTION public\.booking_ops_record_insert_scope_guard_v1\(\) FROM authenticated/i);
     expect(migration).toMatch(/GRANT EXECUTE ON FUNCTION public\.booking_ops_record_insert_scope_guard_v1\(\) TO service_role/i);
+  });
+
+  it('keeps the Supabase RPC-role revoke as an idempotent follow-up migration', () => {
+    expect(privilegeMigration).toMatch(/REVOKE ALL ON FUNCTION public\.booking_ops_record_insert_scope_guard_v1\(\) FROM PUBLIC/i);
+    expect(privilegeMigration).toMatch(/REVOKE ALL ON FUNCTION public\.booking_ops_record_insert_scope_guard_v1\(\) FROM anon/i);
+    expect(privilegeMigration).toMatch(/REVOKE ALL ON FUNCTION public\.booking_ops_record_insert_scope_guard_v1\(\) FROM authenticated/i);
+    expect(privilegeMigration).toMatch(/GRANT EXECUTE ON FUNCTION public\.booking_ops_record_insert_scope_guard_v1\(\) TO service_role/i);
   });
 
   it('locks the disposable fixture to an exact throwaway database name before destructive setup', () => {
@@ -46,10 +60,18 @@ describe('booking ops record scope guard migration', () => {
     expect(firstDrop).toBeGreaterThan(guard);
   });
 
-  it('bootstraps the Supabase service role and applies the migration twice', () => {
-    expect(fixture).toMatch(/CREATE ROLE service_role NOLOGIN/i);
-    const includes = fixture.match(/\\ir \.\.\/\.\.\/supabase\/migrations\/20261005090000_booking_ops_record_scope_guard_v1\.sql/g) ?? [];
-    expect(includes).toHaveLength(2);
+  it('bootstraps Supabase roles and applies both migrations twice', () => {
+    expect(fixture).toContain("ARRAY['service_role', 'anon', 'authenticated']");
+    const guardIncludes = fixture.match(/\\ir \.\.\/\.\.\/supabase\/migrations\/20261005090000_booking_ops_record_scope_guard_v1\.sql/g) ?? [];
+    const privilegeIncludes = fixture.match(/\\ir \.\.\/\.\.\/supabase\/migrations\/20261005095000_booking_ops_record_scope_guard_privileges_v1\.sql/g) ?? [];
+    expect(guardIncludes).toHaveLength(2);
+    expect(privilegeIncludes).toHaveLength(2);
+  });
+
+  it('verifies anon/authenticated cannot execute while service_role can', () => {
+    expect(fixture).toContain("has_function_privilege('anon'");
+    expect(fixture).toContain("has_function_privilege('authenticated'");
+    expect(fixture).toContain("has_function_privilege('service_role'");
   });
 
   it('covers canonical, legacy, accountless, unbound and cross-property cases', () => {
