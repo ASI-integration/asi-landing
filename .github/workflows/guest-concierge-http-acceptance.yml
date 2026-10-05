@@ -20,7 +20,7 @@ jobs:
       ACCEPTANCE_BASE_URL: ${{ inputs.production_url }}
       INTERNAL_TEST_SECRET: ${{ secrets.INTERNAL_TEST_SECRET }}
       GUEST_CONCIERGE_LLM_ENABLED: "true"
-      GUEST_CONCIERGE_LLM_MODEL: gpt-4o-mini
+      GUEST_CONCIERGE_LLM_MODEL: deepseek-v4-flash
     steps:
       - name: Checkout acceptance script
         uses: actions/checkout@v4
