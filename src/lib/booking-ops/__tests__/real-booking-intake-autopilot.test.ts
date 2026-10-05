@@ -388,6 +388,47 @@ describe('Real Booking Intake Autopilot v1', () => {
     expect(updateBookingOpsRecord).not.toHaveBeenCalled();
   });
 
+  it('rejects a same-account booking reference when the requested property differs', async () => {
+    const existing = {
+      ...bookingRecord,
+      id: 'booking-prop-b',
+      bookingId: 'shared-ref',
+      accountId: 'account-a',
+      propertyId: 'prop-b',
+    };
+    tables.booking_ops_records.push({
+      id: existing.id,
+      booking_id: existing.bookingId,
+      account_id: existing.accountId,
+      property_id: existing.propertyId,
+      guest_phone: existing.guestPhone,
+      updated_at: '2026-10-04T12:00:00.000Z',
+    });
+    getBookingOpsRecord.mockResolvedValueOnce(existing);
+    requireBookingOpsRecordScope.mockRejectedValueOnce(new Error('scope_mismatch'));
+
+    const api = await import('../real-booking-intake-autopilot');
+    const normalized = api.normalizeInboundBookingRequest({
+      bookingReference: 'shared-ref',
+      propertyId: 'prop-a',
+    }, 'admin');
+
+    await expect(api.findOrCreateBookingFromInbound(
+      normalized,
+      'admin',
+      null,
+      true,
+      'account-a',
+    )).rejects.toMatchObject({ code: 'account_scope_mismatch' });
+
+    expect(requireBookingOpsRecordScope).toHaveBeenCalledWith(
+      existing.id,
+      { accountId: 'account-a', propertyId: 'prop-a' },
+    );
+    expect(createBookingOpsRecord).not.toHaveBeenCalled();
+    expect(updateBookingOpsRecord).not.toHaveBeenCalled();
+  });
+
   it('accountless telegram intake never matches a tenant-owned booking', async () => {
     const { processInboundBookingRequest: process } = await import('../real-booking-intake-autopilot');
     tables.booking_ops_records.push({

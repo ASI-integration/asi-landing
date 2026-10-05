@@ -466,6 +466,24 @@ function assertBookingWithinIntakeAccount(
   }
 }
 
+async function requireBookingWithinIntakeScope(
+  record: BookingOpsRecord | null | undefined,
+  accountId: string | null,
+  propertyId?: string | null,
+): Promise<void> {
+  assertBookingWithinIntakeAccount(record, accountId);
+  const property = text(propertyId) || null;
+  if (!accountId || !property) return;
+  try {
+    await requireBookingOpsRecordScope(record.id, { accountId, propertyId: property });
+  } catch {
+    throw Object.assign(
+      new Error('Связанная бронь находится вне canonical account/property контура intake.'),
+      { code: 'account_scope_mismatch' },
+    );
+  }
+}
+
 export async function findOrCreateGuestFromInbound(
   input: NormalizedInboundBookingRequest,
   options?: { allowExistingBookingMatch?: boolean; accountId?: string | null },
@@ -528,7 +546,8 @@ async function findMatchingBookingRecord(
         .maybeSingle();
       if (byIdData) {
         const record = await getBookingOpsRecord(text((byIdData as { id: string }).id));
-        if (record && text(record.accountId) === accountId) return record;
+        await requireBookingWithinIntakeScope(record, accountId, input.propertyId);
+        return record;
       }
       const { data } = await supabase
         .from('booking_ops_records')
@@ -540,7 +559,8 @@ async function findMatchingBookingRecord(
         .maybeSingle();
       if (data) {
         const record = await getBookingOpsRecord(text((data as { id: string }).id));
-        if (record && text(record.accountId) === accountId) return record;
+        await requireBookingWithinIntakeScope(record, accountId, input.propertyId);
+        return record;
       }
     } else {
       const byId = await getBookingOpsRecord(input.bookingReference);
@@ -586,7 +606,9 @@ async function findMatchingBookingRecord(
     if (sameDates && sameProperty) {
       const record = await getBookingOpsRecord(text(row.id));
       if (scope && !bookingBelongsToContour(record, scope)) continue;
-      if (accountId && text(record?.accountId) !== accountId) continue;
+      if (accountId) {
+        await requireBookingWithinIntakeScope(record, accountId, input.propertyId);
+      }
       return record;
     }
   }
