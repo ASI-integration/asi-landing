@@ -294,13 +294,39 @@ describe('controlled actual auto-send executor', () => {
     expect(tables.booking_ops_communication_intents[0]?.status).toBe('draft_ready');
   });
 
-  it('keeps guest auto-send disabled even with an enabled scope and eligible legacy metadata', async () => {
+  it('blocks real delivery when policy allows queueing but actual send is disabled', async () => {
     const intent = seedIntent();
     const queued = await enqueueAutoSendDelivery(intent.id);
+    policyDecision.mockResolvedValueOnce({ ...allowedDecision, actual_send_enabled: false });
     const sender = vi.fn();
+
     const result = await executeAutoSendDelivery(queued.ok ? queued.delivery.id : '', { sender });
-    expect(result).toMatchObject({ ok: false, error: 'knowledge_operator_review_required' });
+
+    expect(result).toMatchObject({
+      ok: false,
+      error: 'policy_actual_send_disabled',
+      delivery: { status: 'blocked' },
+    });
     expect(sender).not.toHaveBeenCalled();
+    expect(recordAttempt).toHaveBeenLastCalledWith(
+      intent.id,
+      'blocked',
+      expect.objectContaining({ error_code: 'policy_actual_send_disabled' }),
+    );
+  });
+
+  it('allows an explicitly policy-approved safe guest intent to reach the sender', async () => {
+    const intent = seedIntent();
+    const queued = await enqueueAutoSendDelivery(intent.id);
+    const sender = vi.fn(async () => ({ ok: true, providerMessageId: 'provider-guest-1' }));
+
+    const result = await executeAutoSendDelivery(queued.ok ? queued.delivery.id : '', { sender });
+
+    expect(result).toMatchObject({
+      ok: true,
+      delivery: { status: 'sent', providerMessageId: 'provider-guest-1' },
+    });
+    expect(sender).toHaveBeenCalledTimes(1);
   });
   it('creates one idempotent delivery for an eligible safe intent', async () => {
     const intent = seedIntent();
@@ -366,11 +392,14 @@ describe('controlled actual auto-send executor', () => {
     expect(sender).not.toHaveBeenCalled();
   });
 
-  it('records a dry-run without calling a provider', async () => {
+  it('allows a dry-run even when policy-level actual send is disabled', async () => {
     const intent = seedIntent();
     const queued = await enqueueAutoSendDelivery(intent.id);
+    policyDecision.mockResolvedValueOnce({ ...allowedDecision, actual_send_enabled: false });
     const sender = vi.fn();
+
     const result = await executeAutoSendDelivery(queued.ok ? queued.delivery.id : '', { dryRun: true, sender });
+
     expect(result).toMatchObject({ ok: true, dryRun: true, delivery: { status: 'dry_run', attemptCount: 1 } });
     expect(sender).not.toHaveBeenCalled();
   });
