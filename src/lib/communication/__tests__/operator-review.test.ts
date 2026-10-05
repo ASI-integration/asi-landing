@@ -100,6 +100,21 @@ describe('operator escalation review store', () => {
     expect(mockSendMessage).toHaveBeenCalledOnce();
   });
 
+  it('a failed outbound attempt cannot become a successful duplicate on retry', async () => {
+    const review = createOrUpdateEscalationReview({
+      accountId: 'A', sessionId: 'failed-send', channel: 'telegram', targetId: '42',
+      escalationReason: 'REQUIRES_OPERATOR',
+    });
+    mockSendMessage.mockResolvedValueOnce(false);
+    const input = { reviewId: review.reviewId, operatorId: 'op-A', replyText: 'Reply' };
+    expect((await sendOperatorReply(input)).ok).toBe(false);
+    const retry = await sendOperatorReply(input);
+    expect(retry).toMatchObject({ ok: false, error: 'operator_reply_delivery_unconfirmed' });
+    expect(getEscalationReview(review.reviewId)?.status).toBe('pending');
+    expect(getActiveEscalationReviewIdForSession('failed-send')).toBe(review.reviewId);
+    expect(mockSendMessage).toHaveBeenCalledOnce();
+  });
+
   it('approve marks review approved (without sending)', () => {
     const review = createOrUpdateEscalationReview({
       sessionId: 'sess_4',

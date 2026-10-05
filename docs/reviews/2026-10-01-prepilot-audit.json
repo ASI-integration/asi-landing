@@ -1,0 +1,93 @@
+{
+  "schemaVersion": "asi.agent-os.task-result.v1",
+  "taskId": "prepilot-p0-integration-adversarial-audit",
+  "status": "BLOCKED",
+  "branch": "dc/prepilot-p0-integration-20261001",
+  "commitSha": "17abc76146a1bf0d2805b5f19f7f48eb949a8a92",
+  "prUrl": null,
+  "changedFiles": [
+    "src/lib/accounts.ts",
+    "src/app/api/dashboard/ops-v17/route.ts",
+    "src/app/api/dashboard/ops-v17/action/route.ts",
+    "src/app/api/dashboard/ops-v17/__tests__/route.test.ts",
+    "src/app/api/dashboard/ops-v17/__tests__/owner-role-adversarial.test.ts",
+    "src/lib/ops-v17/service.ts",
+    "src/lib/ops-v17/__tests__/bootstrap-tenancy.test.ts",
+    "docs/reviews/2026-10-01-prepilot-audit.json"
+  ],
+  "checks": [
+    {
+      "name": "candidate",
+      "status": "PASS",
+      "evidence": "Reviewed 5cc9b00681c23042cbcdb14fd6492be234732570 against 577a3ffee5eae9351a1aa8d40b62d01f41e474fb. commitSha records the final code-fix commit, before this report-only commit."
+    },
+    {
+      "name": "P0 owner authorization",
+      "status": "PASS",
+      "evidence": "Before fix operator membership returned GET 200 instead of 403. Now GET/PATCH/activate deny operator-only membership before service calls; owner/manager use server-resolved account despite forged body account; revoked membership denied. Commit 52dbd24a4d2efd8e8f88dd5899c5f87d8368a4c8."
+    },
+    {
+      "name": "P0 bootstrap tenant ownership",
+      "status": "PASS",
+      "evidence": "Before fix preview included NULL-account records; confirmation adopted a NULL-account booking with foreign property into account A and created a source link. Now only account-bound bookings with account-owned properties qualify. Account is never reassigned; update rechecks account and rejects zero-row update before creating link. Commit 17abc76146a1bf0d2805b5f19f7f48eb949a8a92."
+    },
+    {
+      "name": "focused Vitest",
+      "status": "PASS",
+      "evidence": "35/35: owner-role-adversarial 4, ops-v17 route 5, bootstrap-tenancy 3, real-booking-intake-autopilot 15, turnover-cleaning-activation 8. Seven new adversarial cases. Mock/local fixtures only."
+    },
+    {
+      "name": "typecheck",
+      "status": "PASS",
+      "evidence": "npm.cmd run typecheck; exit 0 after final source/test changes."
+    },
+    {
+      "name": "ESLint touched files",
+      "status": "PASS",
+      "evidence": "Seven touched TypeScript files checked; no diagnostics."
+    },
+    {
+      "name": "git diff --check",
+      "status": "PASS",
+      "evidence": "Working diff before commits and 5cc9b006..17abc761 checked successfully."
+    },
+    {
+      "name": "P1 activation dependency proof",
+      "status": "FAIL",
+      "evidence": "Executed actual TypeScript-transpiled core/service locally with fake Supabase. Used complete fixture from ops-v17/core.test.ts plus reservations={choice:'skip',completed:true,directIntakeReady:true}; fake DB only provided onboarding, no module or runtime dependency rows. getWorkspace returned ready_for_pilot; activatePilot succeeded. Only ops_v17_onboardings, ops_v17_module_state, ops_v17_audit_log touched; canonicalDependencyTablesTouched=[]; sendingEnabled=false. service.ts:38-68; core.ts:56-75. UI workspace.tsx:28 renders verification as text only; required verification cannot be completed through that step."
+    },
+    {
+      "name": "accepted Wave 0 / PostgreSQL evidence",
+      "status": "SKIP",
+      "evidence": "User-provided integration, Wave 0 and disposable PostgreSQL 16 proof accepted; not rerun. No new migration changes. Previous migration uncertainty is not reported as a blocker."
+    },
+    {
+      "name": "live complete guest lifecycle",
+      "status": "SKIP",
+      "evidence": "No live adapter, scheduler/restart, real identity, payment, production or staging acceptance performed. Existing source/tests inspected for intake, guest gates, checkout, cleaning and operator boundaries; this is not full repository or live runtime acceptance."
+    },
+    {
+      "name": "acceptable operator controls",
+      "status": "PASS",
+      "evidence": "After activation blocker is resolved: operator verifies channel/property mapping, handles unmapped intake, sensitive legal/access/deposit/refund decisions and physical inspection. A ready-to-return deposit is not proof of an executed refund. Use existing operational UI; direct DB/shell repair is not an acceptable normal pilot step."
+    },
+    {
+      "name": "future non-blockers",
+      "status": "PASS",
+      "evidence": "Finance/Ledger v2, autonomous pricing, Commercial Location, advanced cross-module decisions and optional international workflows do not block this residential pilot."
+    }
+  ],
+  "sideEffects": {
+    "production": false,
+    "database": false,
+    "secrets": false,
+    "dns": false,
+    "payments": false,
+    "realMessages": false,
+    "approvedUx": false
+  },
+  "blockers": [
+    "P1: owner activation is form-state bookkeeping, not authoritative runtime readiness. Complete the verification UI and wire launch to canonical operational dependencies (or an explicit operator-verifiable activation gate), with replay/partial-failure tests. Do not start the first real pilot based on current ready_for_pilot/pilot_active labels. Left for next bounded engineering pass after two security fixes; no broader provisioning rewrite attempted."
+  ],
+  "ownerDecision": null
+}

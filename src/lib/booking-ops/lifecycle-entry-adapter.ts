@@ -1,5 +1,6 @@
 import { durableEventId, recordAndProcessBookingEvent } from './lifecycle-autopilot-service';
 import type { BookingEventActor } from './lifecycle-autopilot';
+import { requireBookingOpsRecordScope } from './repository';
 
 const ACTION_EVENTS: Record<string, string | null> = {
   documents_received: 'guest.documents_received', verify_documents: 'guest.documents_verified', prepare_contract: 'contract.generated',
@@ -14,18 +15,22 @@ const ACTION_EVENTS: Record<string, string | null> = {
   simulate_release: 'checkin.instructions_released',
 };
 
-export async function emitLifecycleForAction(input: { bookingId: string; action: string; actorType?: BookingEventActor; actorId?: string | null; source: string; payload?: Record<string, unknown>; occurrence?: string }) {
+export async function emitLifecycleForAction(input: { bookingId: string; action: string; actorType?: BookingEventActor; actorId?: string | null; source: string; payload?: Record<string, unknown>; occurrence?: string; expectedScope?: { accountId: string; propertyId: string } }) {
   const type = ACTION_EVENTS[input.action];
   if (!type) return null;
+  if (input.expectedScope) await requireBookingOpsRecordScope(input.bookingId, input.expectedScope);
   const occurrence = input.occurrence ?? JSON.stringify(input.payload ?? {});
-  return recordAndProcessBookingEvent({
+  const event = {
     id: durableEventId(input.source, input.bookingId, input.action, occurrence), bookingId: input.bookingId, type,
     actorType: input.actorType ?? 'operator', actorId: input.actorId ?? null, source: input.source,
     correlationId: durableEventId(input.source, input.bookingId, occurrence), payload: { action: input.action, ...(input.payload ?? {}) },
-  });
+  };
+  return input.expectedScope
+    ? recordAndProcessBookingEvent(event, input.expectedScope)
+    : recordAndProcessBookingEvent(event);
 }
 
-export async function emitPhysicalLifecycle(input: { bookingId: string; action: string; actorId?: string | null; body: Record<string, unknown> }) {
+export async function emitPhysicalLifecycle(input: { bookingId: string; action: string; actorId?: string | null; body: Record<string, unknown>; expectedScope?: { accountId: string; propertyId: string } }) {
   const status = String(input.body.status ?? '');
   let type: string | null = null;
   if (input.action === 'update_cleaning' && status === 'verified') type = 'cleaner.task_completed';
@@ -35,5 +40,9 @@ export async function emitPhysicalLifecycle(input: { bookingId: string; action: 
   if (input.action === 'update_maintenance' && ['completed', 'resolved'].includes(status)) type = 'maintenance.task_completed';
   if (input.action === 'final_approval') type = 'inspection.completed';
   if (!type) return null;
-  return recordAndProcessBookingEvent({ id: durableEventId('physical_readiness', input.bookingId, input.action, String(input.body.id ?? ''), status), bookingId: input.bookingId, type, actorType: 'operator', actorId: input.actorId, source: 'physical_readiness', correlationId: durableEventId('physical_readiness', input.bookingId, input.action), payload: { action: input.action, status } });
+  if (input.expectedScope) await requireBookingOpsRecordScope(input.bookingId, input.expectedScope);
+  const event = { id: durableEventId('physical_readiness', input.bookingId, input.action, String(input.body.id ?? ''), status), bookingId: input.bookingId, type, actorType: 'operator' as const, actorId: input.actorId, source: 'physical_readiness', correlationId: durableEventId('physical_readiness', input.bookingId, input.action), payload: { action: input.action, status } };
+  return input.expectedScope
+    ? recordAndProcessBookingEvent(event, input.expectedScope)
+    : recordAndProcessBookingEvent(event);
 }

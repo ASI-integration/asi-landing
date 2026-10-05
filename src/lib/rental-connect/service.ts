@@ -6,12 +6,8 @@ import { loadOnboarding, saveOnboardingStep } from '@/lib/ops-v17/service';
 import { getPilotReadinessForProperty, upsertPilotObjectKnowledge } from '@/lib/pilot-readiness/repository';
 import { beginSetup, createSupabaseRuCommercialPilotStore, getPilotLifecycle, supabaseOwnsProperty, supabaseReadinessProbe } from '@/lib/ru-commercial-pilot';
 import { BOOKING_SITES, EMPTY_CONNECTION, validateConnection, type RentalConnectionDraft } from './model';
-
-// Stable per-account test object: retries or simultaneous first submissions cannot create duplicates.
-export function connectionPropertyId(accountId: string): string {
-  const hash = createHash('sha256').update(`asi:ru-connect:v1:${accountId}`).digest('hex');
-  return `${hash.slice(0, 8)}-${hash.slice(8, 12)}-4${hash.slice(13, 16)}-a${hash.slice(17, 20)}-${hash.slice(20, 32)}`;
-}
+import { connectionPropertyId } from './identity';
+export { connectionPropertyId } from './identity';
 
 /** Server-derived task identity; existing UUID primary key arbitrates concurrent submissions. */
 export function connectionOperatorTaskId(accountId: string, propertyId: string): string {

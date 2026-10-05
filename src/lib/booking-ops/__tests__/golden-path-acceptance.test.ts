@@ -30,11 +30,19 @@ vi.mock('../lifecycle-autopilot-service', () => ({
     return { duplicate, processed: !duplicate };
   }),
 }));
-vi.mock('../repository', () => ({ getBookingOpsRecord: vi.fn(async () => ({ id: 'record-1' })) }));
+vi.mock('../repository', () => ({
+  requireBookingOpsRecordScope: vi.fn(async (_id: string, expectedScope: { accountId: string; propertyId: string }) => {
+    if (expectedScope.accountId !== 'account-1' || expectedScope.propertyId !== state.propertyId) {
+      throw new Error('booking_scope_mismatch');
+    }
+    return { id: 'record-1', accountId: 'account-1', propertyId: state.propertyId };
+  }),
+}));
 vi.mock('../tasks', () => ({ listBookingOpsTasksForRecord: vi.fn(async () => ({ ok: true, tasks: [] })) }));
 vi.mock('../communication-orchestrator', () => ({ syncBookingOpsCommunications: vi.fn(async () => ({ ok: true })) }));
 
 import { recordAndProcessBookingEvent } from '../lifecycle-autopilot-service';
+import { syncBookingOpsCommunications } from '../communication-orchestrator';
 import { runGoldenPathAcceptance } from '../golden-path-acceptance';
 
 const run = (overrides: Record<string, unknown> = {}) => runGoldenPathAcceptance({ identifier: 'ASI-100002', accountId: 'account-1', actorId: 'actor-1', dryRun: false, confirm: true, featureEnabled: true, ...overrides });
@@ -70,6 +78,17 @@ describe('OPS v17.2 golden path acceptance runner', () => {
     expect(report.readinessResult).toBe('ready'); expect(report.realMessagesSent).toBe(0); expect(report.externalCalls).toBe(0);
     expect(report.steps.find((x) => x.eventType === 'checkin.instructions_released')?.status).toBe('PASS');
     expect(state.tasks.every((task) => task.status === 'completed' && task.completion_event_id !== null)).toBe(true);
+  });
+
+  it('propagates canonical account/property scope through lifecycle and communication effects', async () => {
+    await run();
+    expect(recordAndProcessBookingEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ bookingId: 'record-1', objectId: 'property-1' }),
+      { accountId: 'account-1', propertyId: 'property-1' },
+    );
+    expect(syncBookingOpsCommunications).toHaveBeenCalledWith(expect.objectContaining({
+      expectedScope: { accountId: 'account-1', propertyId: 'property-1' },
+    }));
   });
 
   it('is idempotent on an identical second run', async () => {

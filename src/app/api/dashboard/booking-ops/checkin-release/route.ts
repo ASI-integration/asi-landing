@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { requireCrmOperatorSession, requireOpsAdminSession } from '@/lib/crm/api-auth';
+import { requireBookingOpsApiAccess } from '../access';
 import {
   getGuestIntakeReleaseSnapshot,
   prepareCheckinReleaseDraft,
@@ -14,8 +15,14 @@ export async function GET(req: Request): Promise<NextResponse> {
   const auth = await requireCrmOperatorSession();
   if ('error' in auth) return auth.error;
   const bookingId = new URL(req.url).searchParams.get('bookingId');
+  const access = await requireBookingOpsApiAccess(auth.session, String(bookingId ?? ''));
+  if (!access.ok) return access.response;
+  const expectedScope = { accountId: access.accountId, propertyId: access.propertyId };
   try {
-    return NextResponse.json({ ok: true, snapshot: await getGuestIntakeReleaseSnapshot(bookingId) });
+    return NextResponse.json({
+      ok: true,
+      snapshot: await getGuestIntakeReleaseSnapshot(access.bookingId, expectedScope),
+    });
   } catch (error) {
     return NextResponse.json({ ok: false, message: error instanceof Error ? error.message : 'Не удалось загрузить выдачу инструкций.' }, { status: 400 });
   }
@@ -28,14 +35,33 @@ export async function POST(req: Request): Promise<NextResponse> {
   try { body = await req.json() as Record<string, unknown>; }
   catch { return NextResponse.json({ ok: false, message: 'Некорректный JSON.' }, { status: 400 }); }
   const bookingId = body.bookingId ?? body.booking_id;
+  const access = await requireBookingOpsApiAccess(auth.session, String(bookingId ?? ''));
+  if (!access.ok) return access.response;
+  const expectedScope = { accountId: access.accountId, propertyId: access.propertyId };
   try {
-    if (body.action === 'prepare_draft') await prepareCheckinReleaseDraft(bookingId, auth.session.email ?? undefined);
+    if (body.action === 'prepare_draft') {
+      await prepareCheckinReleaseDraft(access.bookingId, auth.session.email ?? undefined, expectedScope);
+    }
     else if (body.action === 'simulate_release') {
-      await simulateCheckinRelease(bookingId, body.confirmSimulatedRelease, auth.session.email ?? undefined);
-      await emitLifecycleForAction({ bookingId: String(bookingId ?? ''), action: 'simulate_release', actorId: auth.session.email ?? auth.session.userId ?? null, source: 'checkin_release' });
+      await simulateCheckinRelease(
+        access.bookingId,
+        body.confirmSimulatedRelease,
+        auth.session.email ?? undefined,
+        expectedScope,
+      );
+      await emitLifecycleForAction({
+        bookingId: access.bookingId,
+        action: 'simulate_release',
+        actorId: auth.session.email ?? auth.session.userId ?? null,
+        source: 'checkin_release',
+        expectedScope,
+      });
     }
     else return NextResponse.json({ ok: false, message: 'Недопустимое действие.' }, { status: 400 });
-    return NextResponse.json({ ok: true, snapshot: await getGuestIntakeReleaseSnapshot(bookingId) });
+    return NextResponse.json({
+      ok: true,
+      snapshot: await getGuestIntakeReleaseSnapshot(access.bookingId, expectedScope),
+    });
   } catch (error) {
     return NextResponse.json({ ok: false, message: error instanceof Error ? error.message : 'Действие не выполнено.' }, { status: 400 });
   }

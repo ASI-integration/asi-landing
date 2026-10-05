@@ -17,7 +17,7 @@ import {
   getOrCreateConversationSession,
 } from './conversation-session-engine';
 import {
-  createOrUpdateEscalationReview,
+  createOrUpdateEscalationReviewBound,
   getActiveEscalationReviewIdForSession,
   getEscalationReview,
 } from './operator-review';
@@ -157,7 +157,7 @@ async function createPhoneOperatorReview(params: {
     existingReview?.suggestedReply ??
     (params.orchestrator?.reply ? params.orchestrator.reply : undefined);
 
-  return createOrUpdateEscalationReview({
+  return createOrUpdateEscalationReviewBound({
     sessionId: sessionForReview.sessionId,
     channel: 'phone',
     targetId,

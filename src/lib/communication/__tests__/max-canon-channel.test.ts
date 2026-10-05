@@ -175,6 +175,7 @@ vi.mock('@/lib/payments/factory', () => ({
 
 import { processMessage } from '../orchestrator';
 import { getCommunicationCanon, isCanonicalGuestCommunicationChannel } from '../communication-canon';
+import { KNOWLEDGE_REVIEW_REPLY_RU } from '../knowledge-boundary';
 import { _resetForTesting as resetIdempotency } from '../idempotency';
 import { __resetAutonomousSessionStoreForTests } from '../conversation-session-store';
 import { __resetConversationSessionEngineForTests } from '../conversation-session-engine';
@@ -281,21 +282,22 @@ describe('MAX canonical communication channel', () => {
     );
   });
 
-  it('routes MAX casual RU message through shared canon without Wi-Fi hallucination', async () => {
+  it('routes MAX fact-dependent RU message through fail-closed knowledge review without hallucination', async () => {
     const result = await processMessage(maxEnvelope('вафля?', 'max-wifi-1'));
 
     expect(result.outcome).toBe('replied');
-    expect(lastReplyText()).toMatch(/объект|брони/i);
+    expect(lastReplyText()).toBe(KNOWLEDGE_REVIEW_REPLY_RU);
     expect(lastReplyText()).not.toMatch(/пароль:\s*\S+|\b\d{4,}\b/i);
     expect(mockCallLLM).not.toHaveBeenCalled();
   });
 
-  it('escalates urgent access using canonical stronger wording', async () => {
+  it('escalates urgent access while keeping unsupported MAX knowledge fail-closed', async () => {
     const result = await processMessage(maxEnvelope('Срочно, я у двери, код не работает', 'max-access-urgent-1'));
 
     expect(result.outcome).toBe('replied');
     expect(result.escalation).toBeTruthy();
-    expect(lastReplyText()).toMatch(/Срочно передаю оператору, чтобы помочь с доступом/i);
+    expect(lastReplyText()).toBe(KNOWLEDGE_REVIEW_REPLY_RU);
+    expect(mockCallLLM).not.toHaveBeenCalled();
   });
 
   it('escalates refund and cancellation requests through canonical policy', async () => {
@@ -306,11 +308,11 @@ describe('MAX canonical communication channel', () => {
     expect(lastReplyText()).toMatch(/оператор|отмена\/возврат/i);
   });
 
-  it('asks for missing object or booking instead of inventing facts', async () => {
+  it('fails closed on unsupported MAX operational context instead of inventing facts', async () => {
     const result = await processMessage(maxEnvelope('same booking', 'max-same-booking-1'));
 
     expect(result.outcome).toBe('replied');
-    expect(lastReplyText()).toMatch(/property|booking|объект|брон/i);
+    expect(lastReplyText()).toBe('I cannot confirm these details. An operator needs to check them.');
     expect(mockCallLLM).not.toHaveBeenCalled();
   });
 

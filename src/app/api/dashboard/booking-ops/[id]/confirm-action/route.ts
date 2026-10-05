@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { requireOpsAdminSession } from '@/lib/crm/api-auth';
+import { requireBookingOpsApiAccess } from '../../access';
 import { applyBookingOpsOperatorAction } from '@/lib/booking-ops/action-templates';
 
 export const runtime = 'nodejs';
@@ -23,9 +24,17 @@ export async function POST(req: Request, context: RouteContext): Promise<NextRes
     return NextResponse.json({ ok: false, message: 'Укажите действие (actionId).' }, { status: 400 });
   }
 
-  const result = await applyBookingOpsOperatorAction(context.params.id, actionId);
+  const access = await requireBookingOpsApiAccess(auth.session, context.params.id);
+  if (!access.ok) return access.response;
+  const expectedScope = { accountId: access.accountId, propertyId: access.propertyId };
+
+  const result = await applyBookingOpsOperatorAction(
+    context.params.id,
+    actionId,
+    { expectedScope },
+  );
   if (!result.ok) {
-    const status = result.error === 'not_found' ? 404 : 400;
+    const status = result.error === 'not_found' ? 404 : result.error === 'scope_mismatch' ? 409 : 400;
     return NextResponse.json(
       { ok: false, message: result.error },
       { status },

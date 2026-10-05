@@ -11,10 +11,14 @@ import {
 const initializeLifecycleForBooking = vi.fn(async () => ({ ok: true, gates: [] }));
 const initializeGuestLegalExecution = vi.fn(async () => ({ bookingId: 'ASI_PILOT_CORE_LOOP_DEMO' }));
 const ensurePhysicalTasks = vi.fn(async () => ({ bookingId: 'ASI_PILOT_CORE_LOOP_DEMO' }));
+const orchestrateBookingLifecycle = vi.fn(async () => ({}));
+const requireBookingOpsRecordScope = vi.fn(async () => ({}));
 
 vi.mock('../lifecycle', () => ({ initializeLifecycleForBooking }));
 vi.mock('../guest-legal-deposit-mvd-execution', () => ({ initializeGuestLegalExecution }));
 vi.mock('../physical-readiness-execution', () => ({ ensurePhysicalTasks }));
+vi.mock('../lifecycle-orchestrator', () => ({ orchestrateBookingLifecycle }));
+vi.mock('../repository', () => ({ requireBookingOpsRecordScope }));
 
 describe('Pilot Core Loop Readiness v1', () => {
   beforeEach(() => {
@@ -29,9 +33,27 @@ describe('Pilot Core Loop Readiness v1', () => {
       legalPaymentInitialized: true,
       physicalReadinessInitialized: true,
     });
-    expect(initializeLifecycleForBooking).toHaveBeenCalledWith('ASI_PILOT_CORE_LOOP_DEMO');
-    expect(initializeGuestLegalExecution).toHaveBeenCalledWith('ASI_PILOT_CORE_LOOP_DEMO');
-    expect(ensurePhysicalTasks).toHaveBeenCalledWith('ASI_PILOT_CORE_LOOP_DEMO');
+    expect(initializeLifecycleForBooking).toHaveBeenCalledWith('ASI_PILOT_CORE_LOOP_DEMO', undefined);
+    expect(initializeGuestLegalExecution).toHaveBeenCalledWith('ASI_PILOT_CORE_LOOP_DEMO', {}, undefined);
+    expect(ensurePhysicalTasks).toHaveBeenCalledWith('ASI_PILOT_CORE_LOOP_DEMO', undefined);
+    expect(orchestrateBookingLifecycle).toHaveBeenCalledWith({
+      bookingId: 'ASI_PILOT_CORE_LOOP_DEMO', runType: 'single_booking', expectedScope: undefined,
+    });
+  });
+
+  it('propagates canonical scope through the booking core loop', async () => {
+    const { initializeBookingOpsCoreLoop } = await import('../core-loop-initialization');
+    const expectedScope = { accountId: 'account-a', propertyId: 'property-a' };
+
+    await initializeBookingOpsCoreLoop('ASI_PILOT_CORE_LOOP_DEMO', expectedScope);
+
+    expect(requireBookingOpsRecordScope).toHaveBeenCalledWith('ASI_PILOT_CORE_LOOP_DEMO', expectedScope);
+    expect(initializeLifecycleForBooking).toHaveBeenCalledWith('ASI_PILOT_CORE_LOOP_DEMO', expectedScope);
+    expect(initializeGuestLegalExecution).toHaveBeenCalledWith('ASI_PILOT_CORE_LOOP_DEMO', {}, expectedScope);
+    expect(ensurePhysicalTasks).toHaveBeenCalledWith('ASI_PILOT_CORE_LOOP_DEMO', expectedScope);
+    expect(orchestrateBookingLifecycle).toHaveBeenCalledWith({
+      bookingId: 'ASI_PILOT_CORE_LOOP_DEMO', runType: 'single_booking', expectedScope,
+    });
   });
 
   it('represents owner setup and manual OTA publication without a live OTA API', () => {

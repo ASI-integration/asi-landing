@@ -28,8 +28,8 @@ function ownedDeps(overrides?: Partial<RuCommercialPilotServiceDeps>): RuCommerc
   let now = new Date('2026-03-01T12:00:00.000Z');
   const base: RuCommercialPilotServiceDeps = {
     store: createMemoryRuCommercialPilotStore(),
-    isReadinessSatisfied: async (propertyId) =>
-      propertyId === 'prop-a' ? readiness : false,
+    isReadinessSatisfied: async (accountId, propertyId) =>
+      accountId === 'acct-a' && propertyId === 'prop-a' ? readiness : false,
     ownsProperty: async (accountId, propertyId) => owned.has(`${accountId}::${propertyId}`),
     now: () => now,
     claimPilotEntitlement: async () => ({ ok: true as const, reused: false as const }),
@@ -126,6 +126,46 @@ describe('P0-01 acceptance scenarios', () => {
     expect(started).toEqual({ ok: false, reason: 'standard_pilot_already_used' });
     const got = await getPilotLifecycle(harness, 'acct-a', 'prop-a');
     expect(got.ok && got.state?.status).toBe('ready');
+  });
+
+  it('3c. rechecks readiness at start and blocks a stale ready state', async () => {
+    const harness = ownedDeps() as ReturnType<typeof ownedDeps> & {
+      setReadiness: (v: boolean) => void;
+    };
+    await beginSetup(harness, 'acct-a', 'prop-a');
+    harness.setReadiness(true);
+    const ready = await deriveReady(harness, 'acct-a', 'prop-a');
+    expect(ready.ok && ready.state.status).toBe('ready');
+
+    harness.setReadiness(false);
+    const started = await startPilot(harness, 'acct-a', 'prop-a');
+    expect(started).toEqual({ ok: false, reason: 'readiness_not_satisfied' });
+
+    const got = await getPilotLifecycle(harness, 'acct-a', 'prop-a');
+    expect(got.ok && got.state?.status).toBe('ready');
+    expect(got.ok && got.state?.timestamps.pilotStartedAt).toBeFalsy();
+  });
+
+  it('3d. rechecks readiness after entitlement before committing the start transition', async () => {
+    let liveReadiness = true;
+    const harness = ownedDeps({
+      isReadinessSatisfied: async () => liveReadiness,
+      claimPilotEntitlement: async () => {
+        liveReadiness = false;
+        return { ok: true as const, reused: false as const };
+      },
+    });
+
+    await beginSetup(harness, 'acct-a', 'prop-a');
+    const ready = await deriveReady(harness, 'acct-a', 'prop-a');
+    expect(ready.ok && ready.state.status).toBe('ready');
+
+    const started = await startPilot(harness, 'acct-a', 'prop-a');
+    expect(started).toEqual({ ok: false, reason: 'readiness_not_satisfied' });
+
+    const got = await getPilotLifecycle(harness, 'acct-a', 'prop-a');
+    expect(got.ok && got.state?.status).toBe('ready');
+    expect(got.ok && got.state?.timestamps.pilotStartedAt).toBeFalsy();
   });
 
   it('4. retry does not restart clock', async () => {

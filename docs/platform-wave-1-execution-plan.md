@@ -66,3 +66,8 @@
 - Location Residential core: **+validation gate** → **~72–78%** стабильности процесса, не обязательно сдвиг модели.  
 - Communication: **+3–5 п.п.** к sellable/core за счёт provenance.  
 - Cross-module: задел **+5–8 п.п.** только при задаче 4.
+
+## 2026-10-01 implementation: shared location foundation
+The owner-approved task based on frozen pilot SHA `3a5ac390` is documented in [wave1-location-validation.md](wave1-location-validation.md).
+It reuses the existing barrier stub and scoring engine; adds shared identity, provenance, radius validation and the Residential/Commercial service; and integrates existing previews/reports.
+The current task does not implement the older plan's broader communications work or a new commercial scoring CLI. No production rollout or private Commercial CRUD is claimed.

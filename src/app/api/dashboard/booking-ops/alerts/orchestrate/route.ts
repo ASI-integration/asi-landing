@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { requireOpsAdminSession } from '@/lib/crm/api-auth';
 import { orchestrateAllRelevantOpsAlerts, orchestrateBookingAutomationAndAlertsForBooking, orchestrateOpsAlertsForProperty } from '@/lib/booking-ops/ops-alert-orchestrator';
-import { resolveReservationAccess } from '@/lib/reservations/access';
+import { requireBookingOpsApiAccess, requireBookingOpsApiAccount, requireBookingOpsApiPropertyAccess } from '../../access';
 import {
   isBookingAutomationExecutionAllowed,
   resolveBookingAutomationCanaryBookingIds,
@@ -14,13 +14,9 @@ export const dynamic = 'force-dynamic';
 export async function POST(request: Request) {
   const auth = await requireOpsAdminSession();
   if ('error' in auth) return auth.error;
-  let accountId: string;
-  try {
-    accountId = (await resolveReservationAccess(auth.session)).accountId;
-    if (accountId === 'legacy') throw new Error('account_workspace_unavailable');
-  } catch (error) {
-    return NextResponse.json({ ok: false, message: error instanceof Error ? error.message : 'account_workspace_unavailable' }, { status: 503 });
-  }
+  const accountAccess = await requireBookingOpsApiAccount(auth.session);
+  if (!accountAccess.ok) return accountAccess.response;
+  const accountId = accountAccess.accountId;
   const body = await request.json().catch(() => ({})) as { bookingId?: string; propertyId?: string; now?: string; dryRun?: boolean; maxActions?: number; executeAutomation?: boolean };
   const mode = resolveBookingAutomationRolloutMode();
   const canaryBookingIds = resolveBookingAutomationCanaryBookingIds();
@@ -33,13 +29,31 @@ export async function POST(request: Request) {
   if (executeAutomation && !executionAllowed) {
     return NextResponse.json({ ok: false, rollout, result: { errors: ['automation_execution_disabled'] } }, { status: 409 });
   }
-  const result = body.bookingId
-    ? await orchestrateBookingAutomationAndAlertsForBooking({
-      bookingId: body.bookingId, now: body.now, expectedAccountId: accountId, dryRun: body.dryRun === true,
-      executeAutomation, reconcileLegacyInPreview: body.dryRun !== true, maxActions: body.maxActions,
-    })
-    : body.propertyId
-      ? await orchestrateOpsAlertsForProperty(body.propertyId, body.now, accountId, { dryRun: body.dryRun === true, executeAutomation })
-      : await orchestrateAllRelevantOpsAlerts(body.now, 'manual', accountId, { dryRun: body.dryRun === true, executeAutomation });
+  let result;
+  if (body.bookingId) {
+    const bookingAccess = await requireBookingOpsApiAccess(auth.session, body.bookingId);
+    if (!bookingAccess.ok) return bookingAccess.response;
+    result = await orchestrateBookingAutomationAndAlertsForBooking({
+      bookingId: body.bookingId,
+      now: body.now,
+      expectedAccountId: bookingAccess.accountId,
+      expectedPropertyId: bookingAccess.propertyId,
+      dryRun: body.dryRun === true,
+      executeAutomation,
+      reconcileLegacyInPreview: body.dryRun !== true,
+      maxActions: body.maxActions,
+    });
+  } else if (body.propertyId) {
+    const propertyAccess = await requireBookingOpsApiPropertyAccess(auth.session, body.propertyId);
+    if (!propertyAccess.ok) return propertyAccess.response;
+    result = await orchestrateOpsAlertsForProperty(
+      propertyAccess.propertyId,
+      body.now,
+      propertyAccess.accountId,
+      { dryRun: body.dryRun === true, executeAutomation },
+    );
+  } else {
+    result = await orchestrateAllRelevantOpsAlerts(body.now, 'manual', accountId, { dryRun: body.dryRun === true, executeAutomation });
+  }
   return NextResponse.json({ ok: result.errors.length === 0, rollout, result }, { status: result.errors.length ? 400 : 200 });
 }

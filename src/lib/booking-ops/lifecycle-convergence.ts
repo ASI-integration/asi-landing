@@ -1,5 +1,6 @@
 import { supabase } from '@/lib/supabase';
 import type { LifecycleEvent, LifecycleState, WorkerTaskRole } from './lifecycle-autopilot';
+import { requireBookingOpsRecordScope } from './repository';
 
 export const COMPLETION_ROLE: Record<string, WorkerTaskRole | undefined> = {
   'cleaner.task_completed': 'cleaner',
@@ -44,10 +45,22 @@ export function lifecycleProjection(state: LifecycleState, propertyId: string | 
   };
 }
 
-export async function convergeLifecycleEvent(event: LifecycleEvent, state: LifecycleState, now: string) {
-  const record = await supabase.from('booking_ops_records').select('property_id').eq('id', event.bookingId).single();
-  if (record.error) throw new Error(record.error.message);
-  const projection = lifecycleProjection(state, record.data?.property_id ? String(record.data.property_id) : null);
+export async function convergeLifecycleEvent(
+  event: LifecycleEvent,
+  state: LifecycleState,
+  now: string,
+  expectedScope?: { accountId: string; propertyId: string },
+) {
+  let propertyId: string | null;
+  if (expectedScope) {
+    await requireBookingOpsRecordScope(event.bookingId, expectedScope);
+    propertyId = expectedScope.propertyId;
+  } else {
+    const record = await supabase.from('booking_ops_records').select('property_id').eq('id', event.bookingId).single();
+    if (record.error) throw new Error(record.error.message);
+    propertyId = record.data?.property_id ? String(record.data.property_id) : null;
+  }
+  const projection = lifecycleProjection(state, propertyId);
   const persisted = await supabase.from('booking_ops_lifecycle_states').upsert({
     booking_id: event.bookingId, ...projection, last_orchestrated_at: now, updated_at: now,
   }, { onConflict: 'booking_id' });
@@ -55,6 +68,7 @@ export async function convergeLifecycleEvent(event: LifecycleEvent, state: Lifec
 
   const target = taskCompletionTarget(event);
   if (!target) return;
+  if (expectedScope) await requireBookingOpsRecordScope(event.bookingId, expectedScope);
   let taskQuery = supabase.from('booking_ops_worker_tasks').update({
     status: 'completed', completed_at: now, completion_event_id: event.id, updated_at: now,
   }).eq('booking_id', event.bookingId).eq('assigned_role', target.role).neq('status', 'cancelled')

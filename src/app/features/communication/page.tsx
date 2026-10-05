@@ -10,7 +10,7 @@ import { getIsRuHost } from '@/lib/getIsRuHost';
 export const metadata: Metadata = {
   title: 'Communication Module — ASI',
   description:
-    'AI-powered guest communication for short-term rentals. Instant replies, 24/7 coverage, automatic escalation to a human only when genuinely needed.',
+    'AI-assisted guest communication for short-term rentals: grounded routine replies, booking context, and operator escalation for sensitive or uncertain cases.',
   alternates: { canonical: `${GUEST_AUTOPILOT_ORIGIN}/features/communication` },
 };
 
@@ -70,26 +70,26 @@ export default async function CommunicationModulePage() {
               Communication Module
             </h1>
             <p className="text-slate-400 text-lg leading-relaxed mb-6">
-              ASI handles all guest messaging end to end — check-in questions, issue reports,
-              late-checkout requests, upsells. Instant replies, any hour. A human is looped in
-              only for genuine edge cases, with full context already prepared.
+              ASI handles routine guest communication using property and booking context — check-in questions,
+              common requests, and operational updates. Sensitive, ambiguous, payment, legal, or unsupported
+              actions are routed to a human with the relevant context prepared.
             </p>
             <ul className="space-y-2 text-sm text-slate-400">
               <li className="flex items-start gap-2">
                 <span className="text-emerald-400 mt-0.5 shrink-0">✓</span>
-                Responds instantly — no queue, no delay, no missed messages
+                Responds automatically when the required data and policy allow it
               </li>
               <li className="flex items-start gap-2">
                 <span className="text-emerald-400 mt-0.5 shrink-0">✓</span>
-                Handles the full conversation lifecycle, not just the first reply
+                Keeps conversation and booking context across the supported workflow
               </li>
               <li className="flex items-start gap-2">
                 <span className="text-emerald-400 mt-0.5 shrink-0">✓</span>
-                Executes in-chat: upsells, payments, access codes, task dispatch
+                Prepares or executes configured actions; sensitive and unsupported external steps stay manual
               </li>
               <li className="flex items-start gap-2">
                 <span className="text-emerald-400 mt-0.5 shrink-0">✓</span>
-                Routes true edge cases to an operator with full context — nothing falls through
+                Routes sensitive or uncertain cases to an operator with the available context
               </li>
             </ul>
           </div>
@@ -112,7 +112,7 @@ export default async function CommunicationModulePage() {
                 {
                   step: '2',
                   title: 'Execute or compose',
-                  desc: 'Routine requests are executed automatically. Complex or sensitive cases get a composed AI reply.',
+                  desc: 'Routine requests can be answered or executed when policy, data, and the configured integration allow it. Otherwise ASI prepares the next step or routes the case.',
                 },
                 {
                   step: '3',
@@ -134,10 +134,10 @@ export default async function CommunicationModulePage() {
         <section className="py-16 sm:py-20 px-4 sm:px-6 border-t border-slate-800/60">
           <div className="max-w-2xl mx-auto text-center">
             <h2 className="text-2xl sm:text-3xl font-bold text-white mb-4">
-              Ready to hand off guest communications?
+              Ready to reduce manual guest communication?
             </h2>
             <p className="text-slate-400 mb-8">
-              Full access to the Communication Module and all other ASI capabilities.
+              Join the pilot to configure the Communication Module and the supported ASI workflows for your property.
               Create an account to get started — no charge today.
             </p>
             <div className="flex flex-col sm:flex-row gap-4 justify-center">

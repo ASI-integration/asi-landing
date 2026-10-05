@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { randomUUID } from 'crypto';
+import { resolveGuestMemoryAccountId } from './guest-long-term-memory';
 import { sha256Base64Url } from './reliability';
 import { checkAndMarkKey } from './idempotency';
 import { getChannelAdapter } from './channels';
@@ -18,6 +19,8 @@ export type EscalationReviewStatus =
 
 export type EscalationReview = {
   reviewId: string;
+  /** Canonical tenant owner. Null means legacy/unresolved and must never be exposed through operator APIs. */
+  accountId: string | null;
   sessionId: string;
   channel: CommunicationChannel;
   /**
@@ -44,6 +47,8 @@ export type EscalationReview = {
     createdAt: string;
   }>;
   suggestedReply?: string;
+  /** Proof of a completed adapter call, persisted before any automation release. */
+  lastSuccessfulReplyKey?: string;
   detail?: string;
   status: EscalationReviewStatus;
   resolution?: {
@@ -89,6 +94,21 @@ type StoreShape = {
 
 let loaded = false;
 let cache: StoreShape = { reviewsById: {}, activeReviewIdBySessionId: {} };
+let storeHealth: { healthy: boolean; error?: string } = { healthy: true };
+
+function markStoreUnhealthy(error: unknown): never {
+  const message = error instanceof Error ? error.message : String(error);
+  storeHealth = { healthy: false, error: message.slice(0, 240) };
+  throw new Error('operator_review_store_unhealthy');
+}
+
+function assertStoreHealthy(): void {
+  if (!storeHealth.healthy) throw new Error('operator_review_store_unhealthy');
+}
+
+export function isEscalationReviewStoreHealthy(): boolean {
+  return storeHealth.healthy;
+}
 
 function nowIso(): string {
   return new Date().toISOString();
@@ -105,30 +125,53 @@ function safeMkdirp(dir: string): void {
 function loadOnce(): void {
   if (loaded || isTest) {
     loaded = true;
+    assertStoreHealthy();
     return;
   }
   loaded = true;
   safeMkdirp(BASE_DIR);
   try {
-    if (!fs.existsSync(REVIEWS_PATH)) return;
+    // existsSync can hide permission errors as 'missing'; read directly instead.
     const raw = fs.readFileSync(REVIEWS_PATH, 'utf-8');
-    const parsed = JSON.parse(raw) as Partial<StoreShape>;
-    cache = {
-      reviewsById: parsed.reviewsById ?? {},
-      activeReviewIdBySessionId: parsed.activeReviewIdBySessionId ?? {},
-    };
-  } catch {
-    cache = { reviewsById: {}, activeReviewIdBySessionId: {} };
+    const parsed = JSON.parse(raw) as StoreShape;
+    const isRecord = (value: unknown): value is Record<string, unknown> =>
+      value !== null && typeof value === 'object' && !Array.isArray(value);
+    if (!isRecord(parsed) || !isRecord(parsed.reviewsById) || !isRecord(parsed.activeReviewIdBySessionId)) {
+      throw new Error('invalid_review_store');
+    }
+    for (const [id, review] of Object.entries(parsed.reviewsById)) {
+      if (!isRecord(review) || review.reviewId !== id || typeof review.sessionId !== 'string' ||
+          !['pending', 'acknowledged', 'approved', 'replied', 'closed'].includes(review.status) ||
+          typeof review.targetId !== 'string' ||
+          (review.accountId != null && (typeof review.accountId !== 'string' || !review.accountId.trim())) ||
+          (review.status !== 'closed' && parsed.activeReviewIdBySessionId[review.sessionId] !== id)) {
+        throw new Error('invalid_review_record');
+      }
+    }
+    for (const [sessionId, id] of Object.entries(parsed.activeReviewIdBySessionId)) {
+      const review = parsed.reviewsById[id];
+      if (typeof id !== 'string' || !review || review.sessionId !== sessionId || review.status === 'closed') {
+        throw new Error('invalid_active_review_index');
+      }
+    }
+    cache = parsed;
+    storeHealth = { healthy: true };
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException)?.code === 'ENOENT') return;
+    markStoreUnhealthy(error);
   }
 }
 
 function persist(): void {
+  assertStoreHealthy();
   if (isTest) return;
   safeMkdirp(BASE_DIR);
   try {
-    fs.writeFileSync(REVIEWS_PATH, JSON.stringify(cache), 'utf-8');
-  } catch {
-    // best-effort
+    const temporaryPath = REVIEWS_PATH + '.pending';
+    fs.writeFileSync(temporaryPath, JSON.stringify(cache), 'utf-8');
+    fs.renameSync(temporaryPath, REVIEWS_PATH);
+  } catch (error) {
+    markStoreUnhealthy(error);
   }
 }
 
@@ -168,6 +211,10 @@ export function getReviewsBySessionId(sessionId: string): EscalationReview[] {
   return Object.values(cache.reviewsById).filter(r => r.sessionId === sessionId);
 }
 
+export function getReviewsBySessionIdForAccount(sessionId: string, accountId: string): EscalationReview[] {
+  return getReviewsBySessionId(sessionId).filter((review) => review.accountId === accountId);
+}
+
 /**
  * Test/admin escape hatch: force-close the active review for a session (if any).
  *
@@ -179,9 +226,13 @@ export function forceCloseActiveReviewForSession(params: {
   operatorId: string;
   reason: string;
   approvedAnswer?: string;
+  expectedReviewId?: string;
 }): { closedReviewId: string | null } {
   loadOnce();
   const reviewId = cache.activeReviewIdBySessionId[params.sessionId] ?? null;
+  if (params.expectedReviewId && reviewId && reviewId !== params.expectedReviewId) {
+    throw new Error('review_session_mismatch');
+  }
   if (!reviewId) return { closedReviewId: null };
 
   try {
@@ -215,8 +266,8 @@ export function forceCloseActiveReviewForSession(params: {
       operatorId: params.operatorId,
       ts: nowIso(),
     });
-  } catch {
-    // best-effort
+  } catch (error) {
+    markStoreUnhealthy(error);
   }
 
   // Best-effort: let automation resume for next turn (same behavior as closeEscalationReview).
@@ -245,6 +296,12 @@ export function getEscalationReview(reviewId: string): EscalationReview | null {
   return cache.reviewsById[reviewId] ?? null;
 }
 
+export function getEscalationReviewForAccount(reviewId: string, accountId: string): EscalationReview | null {
+  const review = getEscalationReview(reviewId);
+  if (!review?.accountId || review.accountId !== accountId) return null;
+  return review;
+}
+
 export function listEscalationReviews(params?: {
   status?: EscalationReviewStatus;
   limit?: number;
@@ -256,7 +313,22 @@ export function listEscalationReviews(params?: {
   return filtered.slice(0, limit);
 }
 
+export function listEscalationReviewsForAccount(accountId: string, params?: {
+  status?: EscalationReviewStatus;
+  limit?: number;
+}): EscalationReview[] {
+  return listEscalationReviews(params).filter((review) => review.accountId === accountId);
+}
+
+export async function resolveEscalationReviewAccountId(input: {
+  propertyId?: string | null;
+  reservationId?: string | null;
+}): Promise<string | null> {
+  return resolveGuestMemoryAccountId(input);
+}
+
 export function createOrUpdateEscalationReview(input: {
+  accountId?: string | null;
   sessionId: string;
   channel: CommunicationChannel;
   targetId: string;
@@ -277,9 +349,15 @@ export function createOrUpdateEscalationReview(input: {
   const existing = existingId ? cache.reviewsById[existingId] : undefined;
 
   const ts = nowIso();
+  const requestedAccountId = typeof input.accountId === 'string' && input.accountId.trim() ? input.accountId.trim() : null;
+  if (existing && (existing.accountId ?? null) !== requestedAccountId) {
+    throw new Error('review_account_mismatch');
+  }
+  const accountId = existing?.accountId ?? requestedAccountId;
   const review: EscalationReview = existing
     ? {
         ...existing,
+        accountId,
         // Keep earliest createdAt; update evidence and reason
         escalationReason: input.escalationReason || existing.escalationReason,
         confidence: input.confidence ?? existing.confidence,
@@ -294,6 +372,7 @@ export function createOrUpdateEscalationReview(input: {
       }
     : {
         reviewId: randomUUID(),
+        accountId,
         sessionId: input.sessionId,
         channel: input.channel,
         targetId: input.targetId,
@@ -330,10 +409,27 @@ export function createOrUpdateEscalationReview(input: {
   return review;
 }
 
+export async function createOrUpdateEscalationReviewBound(
+  input: Parameters<typeof createOrUpdateEscalationReview>[0],
+): Promise<EscalationReview> {
+  const accountId = await resolveEscalationReviewAccountId({
+    propertyId: input.propertyId,
+    reservationId: input.reservationId,
+  });
+  return createOrUpdateEscalationReview({ ...input, accountId });
+}
+
+function assertActiveReviewMatches(review: EscalationReview): void {
+  const activeId = cache.activeReviewIdBySessionId[review.sessionId];
+  if (activeId && activeId !== review.reviewId) throw new Error('review_session_mismatch');
+}
+
 function updateStatus(reviewId: string, next: EscalationReviewStatus): EscalationReview {
   loadOnce();
   const cur = cache.reviewsById[reviewId];
   if (!cur) throw new Error('review_not_found');
+  assertActiveReviewMatches(cur);
+  if (cur.status === 'closed') return cur;
   const updated: EscalationReview = { ...cur, status: next, updatedAt: nowIso() };
   cache.reviewsById[reviewId] = updated;
   if (next === 'closed') {
@@ -393,6 +489,7 @@ export async function sendOperatorReply(input: {
   loadOnce();
   const review = cache.reviewsById[input.reviewId];
   if (!review) return { ok: false, review: null, error: 'review_not_found' };
+  assertActiveReviewMatches(review);
   if (!input.replyText || !String(input.replyText).trim()) return { ok: false, review, error: 'reply_required' };
 
   const adapter = getChannelAdapter(review.channel);
@@ -401,6 +498,9 @@ export async function sendOperatorReply(input: {
   );
 
   if (checkAndMarkKey({ scope: 'outbound', key: outboundKey, meta: { reviewId: review.reviewId, operatorId: input.operatorId } })) {
+    if (review.lastSuccessfulReplyKey !== outboundKey) {
+      return { ok: false, review, duplicatePrevented: true, error: 'operator_reply_delivery_unconfirmed' };
+    }
     const chatId = Number(review.targetId);
     if (Number.isFinite(chatId)) {
       auditDuplicateOutboundPrevented({
@@ -443,10 +543,14 @@ export async function sendOperatorReply(input: {
     return { ok: false, review, error: msg };
   }
 
+  // The adapter awaited external IO: recheck state before mutating/releasing it.
+  assertStoreHealthy();
+  assertActiveReviewMatches(review);
   // Update review status to replied and persist the reply draft as suggestedReply snapshot.
   const updated = {
     ...review,
     status: 'replied' as const,
+    lastSuccessfulReplyKey: outboundKey,
     suggestedReply: input.replyText,
     updatedAt: nowIso(),
   };
@@ -482,5 +586,11 @@ export async function sendOperatorReply(input: {
 export function __resetEscalationReviewStoreForTests(): void {
   loaded = true;
   cache = { reviewsById: {}, activeReviewIdBySessionId: {} };
+  storeHealth = { healthy: true };
+}
+
+/** @internal tests only */
+export function __setEscalationReviewStoreHealthForTests(healthy: boolean): void {
+  storeHealth = healthy ? { healthy: true } : { healthy: false, error: 'test_corruption' };
 }
 

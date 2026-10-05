@@ -28,6 +28,7 @@ vi.mock('../conversation-session-engine', () => ({
 
 vi.mock('../operator-review', () => ({
   createOrUpdateEscalationReview: (...args: unknown[]) => mockCreateReview(...args),
+  createOrUpdateEscalationReviewBound: (...args: unknown[]) => mockCreateReview(...args),
   getActiveEscalationReviewIdForSession: () => null,
   getEscalationReview: () => null,
 }));

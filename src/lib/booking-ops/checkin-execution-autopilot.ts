@@ -1,3 +1,4 @@
+import { guardBookingCommunicationDraft } from '@/lib/communication/booking-knowledge-boundary';
 import { randomUUID } from 'node:crypto';
 import { supabase } from '@/lib/supabase';
 import { buildAutoSendDecisionMetadata } from './communication-auto-send-policy';
@@ -8,10 +9,11 @@ import {
   completeGate,
   getLifecycleStatus,
   initializeLifecycleForBooking,
+  readLifecycleStatus,
   markGateInProgress,
 } from './lifecycle';
-import { getPreCheckinStatus, type PreCheckinReadinessSnapshot } from './pre-checkin-control-center';
-import { getBookingOpsRecord, updateBookingOpsRecord } from './repository';
+import { getPreCheckinStatus, readPreCheckinStatus, type PreCheckinReadinessSnapshot } from './pre-checkin-control-center';
+import { getBookingOpsRecord, requireBookingOpsRecordScope, updateBookingOpsRecord } from './repository';
 import { shouldBlockCheckinInstructions } from './guest-legal-deposit-mvd-execution';
 import type {
   BookingOpsCommunicationChannel,
@@ -117,6 +119,7 @@ type CheckinExecutionDbRow = {
 
 const ACTIVE_COMMUNICATION_STATUSES = new Set(['draft_ready', 'waiting_for_external_input']);
 const SECRET_KEY_PATTERN = /(secret|password|passcode|door.?code|intercom|код|парол|token|ключ)/i;
+type ExpectedScope = { accountId: string; propertyId: string };
 
 function text(value: unknown): string {
   return String(value ?? '').trim();
@@ -188,7 +191,9 @@ async function upsertExecution(
     failure_reason: string | null;
     metadata: Record<string, unknown>;
   }>,
+  expectedScope?: ExpectedScope,
 ): Promise<CheckinExecutionRow> {
+  if (expectedScope) await requireBookingOpsRecordScope(bookingId, expectedScope);
   const existingRaw = await getExecutionDbRow(bookingId);
   const existing = existingRaw ? mapRow(existingRaw) : null;
   const now = new Date().toISOString();
@@ -212,6 +217,7 @@ async function upsertExecution(
     created_at: existing?.createdAt ?? now,
     updated_at: now,
   };
+  if (expectedScope) await requireBookingOpsRecordScope(bookingId, expectedScope);
   const { data, error } = await supabase
     .from('booking_checkin_execution')
     .upsert(row, { onConflict: 'booking_id' })
@@ -287,8 +293,8 @@ function checkinMissingPrerequisites(snapshot: CheckinExecutionSnapshot): Checki
     }));
 }
 
-async function assertCheckinReadiness(bookingId: string): Promise<void> {
-  const snapshot = await getCheckinExecutionStatus(bookingId);
+async function assertCheckinReadiness(bookingId: string, expectedScope?: ExpectedScope): Promise<void> {
+  const snapshot = await getCheckinExecutionStatus(bookingId, expectedScope);
   const missing = checkinMissingPrerequisites(snapshot);
   if (missing.length > 0 || snapshot.preCheckin.status === 'blocked' || snapshot.preCheckin.status === 'overdue') {
     throw new CheckinReadinessPrerequisiteError(missing.length > 0
@@ -323,9 +329,10 @@ function nextAction(status: CheckinExecutionStatus): string | null {
   }
 }
 
-async function loadRecord(bookingId: string): Promise<BookingOpsRecord> {
+async function loadRecord(bookingId: string, expectedScope?: ExpectedScope): Promise<BookingOpsRecord> {
   const id = text(bookingId);
   if (!id) throw new Error('booking_id_required');
+  if (expectedScope) return requireBookingOpsRecordScope(id, expectedScope);
   const record = await getBookingOpsRecord(id);
   if (!record) throw new Error('booking_not_found');
   return record;
@@ -345,7 +352,9 @@ async function ensureCommunicationIntent(input: {
   messageText: string;
   messageTemplateKey: string;
   metadata?: Record<string, unknown>;
+  expectedScope?: ExpectedScope;
 }): Promise<BookingOpsCommunicationIntent | null> {
+  if (input.expectedScope) await requireBookingOpsRecordScope(input.record.id, input.expectedScope);
   const existing = await listBookingOpsCommunicationsForRecord(input.record.id);
   if (existing.ok) {
     const active = existing.communications.find((item) =>
@@ -374,6 +383,8 @@ async function ensureCommunicationIntent(input: {
     propertyId: input.record.propertyId,
     guestRef: input.record.guestTelegram ?? input.record.guestEmail ?? input.record.guestPhone,
   });
+  const knowledge = await guardBookingCommunicationDraft(input.record, input.purpose);
+  if (input.expectedScope) await requireBookingOpsRecordScope(input.record.id, input.expectedScope);
   const { data, error } = await supabase
     .from('booking_ops_communication_intents')
     .insert({
@@ -385,10 +396,10 @@ async function ensureCommunicationIntent(input: {
       actor_label: text(input.record.guestName) || 'Гость',
       purpose: input.purpose,
       channel,
-      status: 'draft_ready',
-      message_text: input.messageText,
+      message_text: knowledge.messageText,
       message_template_key: input.messageTemplateKey,
-      metadata,
+      status: knowledge.status,
+      metadata: { ...metadata, ...knowledge.metadata },
       created_at: now,
       updated_at: now,
       superseded_at: null,
@@ -400,70 +411,116 @@ async function ensureCommunicationIntent(input: {
   return refreshed.ok ? refreshed.communications.find((item) => item.id === String((data as { id: string }).id)) ?? null : null;
 }
 
-export async function getCheckinExecutionStatus(bookingId: string): Promise<CheckinExecutionSnapshot> {
+function buildCheckinExecutionSnapshot(input: {
+  record: BookingOpsRecord;
+  execution: CheckinExecutionRow | null;
+  preCheckin: PreCheckinReadinessSnapshot;
+  lifecycle: Awaited<ReturnType<typeof readLifecycleStatus>>['lifecycle'] | null;
+  communications: BookingOpsCommunicationIntent[];
+}): CheckinExecutionSnapshot {
+  const guestCheckedIn = input.lifecycle?.gates.some((gate) =>
+    gate.gateKey === 'guest_checked_in' && (gate.status === 'completed' || gate.status === 'skipped')) ?? false;
+  const status = resolveStatus({
+    execution: input.execution,
+    preCheckin: input.preCheckin,
+    lifecycleGuestCheckedIn: guestCheckedIn,
+  });
+  const updatedAt = [input.execution?.updatedAt, input.preCheckin.lastRecomputedAt]
+    .filter((value): value is string => typeof value === 'string' && Number.isFinite(Date.parse(value)))
+    .sort((a, b) => Date.parse(b) - Date.parse(a))[0] ?? input.preCheckin.lastRecomputedAt;
+  return {
+    bookingId: input.record.id,
+    status,
+    execution: input.execution,
+    instructionsStatus: input.execution?.instructionsStatus ?? 'not_prepared',
+    arrivalStatus: input.execution?.arrivalStatus ?? 'unknown',
+    accessStatus: input.execution?.accessStatus ?? 'unknown',
+    lifecycleReady: input.preCheckin.status === 'ready_for_checkin' || isInstructionsOnlyBlocker(input.preCheckin),
+    lifecycle: input.lifecycle,
+    preCheckin: input.preCheckin,
+    blockers: buildBlockers({ execution: input.execution, preCheckin: input.preCheckin }),
+    communications: input.communications,
+    nextAction: nextAction(status),
+    updatedAt,
+  };
+}
+
+export async function readCheckinExecutionStatus(bookingId: string): Promise<CheckinExecutionSnapshot> {
   const record = await loadRecord(bookingId);
-  await initializeLifecycleForBooking(record.id);
   const [execution, preCheckin, lifecycleResult, communicationResult] = await Promise.all([
     getExecutionRow(record.id),
-    getPreCheckinStatus(record.id),
-    getLifecycleStatus(record.id),
+    readPreCheckinStatus(record.id),
+    readLifecycleStatus(record.id),
     listBookingOpsCommunicationsForRecord(record.id),
   ]);
-  const lifecycle = lifecycleResult.lifecycle ?? null;
-  const guestCheckedIn = lifecycle?.gates.some((gate) =>
-    gate.gateKey === 'guest_checked_in' && (gate.status === 'completed' || gate.status === 'skipped')) ?? false;
-  const status = resolveStatus({ execution, preCheckin, lifecycleGuestCheckedIn: guestCheckedIn });
-  return {
-    bookingId: record.id,
-    status,
+  if (!lifecycleResult.ok || !lifecycleResult.lifecycle) {
+    throw new Error(lifecycleResult.error ?? 'lifecycle_unavailable');
+  }
+  return buildCheckinExecutionSnapshot({
+    record,
     execution,
-    instructionsStatus: execution?.instructionsStatus ?? 'not_prepared',
-    arrivalStatus: execution?.arrivalStatus ?? 'unknown',
-    accessStatus: execution?.accessStatus ?? 'unknown',
-    lifecycleReady: preCheckin.status === 'ready_for_checkin' || isInstructionsOnlyBlocker(preCheckin),
-    lifecycle,
     preCheckin,
-    blockers: buildBlockers({ execution, preCheckin }),
+    lifecycle: lifecycleResult.lifecycle,
     communications: communicationResult.ok ? communicationResult.communications : [],
-    nextAction: nextAction(status),
-    updatedAt: execution?.updatedAt ?? preCheckin.lastRecomputedAt,
-  };
+  });
+}
+
+export async function getCheckinExecutionStatus(bookingId: string, expectedScope?: ExpectedScope): Promise<CheckinExecutionSnapshot> {
+  const record = await loadRecord(bookingId, expectedScope);
+  await initializeLifecycleForBooking(record.id, expectedScope);
+  const [execution, preCheckin, lifecycleResult, communicationResult] = await Promise.all([
+    getExecutionRow(record.id),
+    getPreCheckinStatus(record.id, expectedScope),
+    getLifecycleStatus(record.id, expectedScope),
+    listBookingOpsCommunicationsForRecord(record.id),
+  ]);
+  if (expectedScope) await requireBookingOpsRecordScope(record.id, expectedScope);
+  return buildCheckinExecutionSnapshot({
+    record,
+    execution,
+    preCheckin,
+    lifecycle: lifecycleResult.lifecycle ?? null,
+    communications: communicationResult.ok ? communicationResult.communications : [],
+  });
 }
 
 export async function prepareCheckinInstructions(
   bookingId: string,
   metadata?: Record<string, unknown>,
+  expectedScope?: ExpectedScope,
 ): Promise<CheckinExecutionSnapshot> {
-  const record = await loadRecord(bookingId);
-  const legalGuard = await shouldBlockCheckinInstructions(record.id);
+  const record = await loadRecord(bookingId, expectedScope);
+  const legalGuard = await shouldBlockCheckinInstructions(record.id, expectedScope);
   if (legalGuard.block) throw new Error(legalGuard.reason ?? 'Инструкции заезда заблокированы до снятия юридических ограничений.');
-  await assertCheckinReadiness(record.id);
+  await assertCheckinReadiness(record.id, expectedScope);
   await markGateInProgress(record.id, 'checkin_instructions_sent', {
     source: 'checkin_execution_autopilot_v1',
     ...safeMetadata(metadata),
-  });
+  }, expectedScope);
   await upsertExecution(record.id, {
     status: 'ready_to_send_instructions',
     instructions_status: 'prepared',
     metadata: { source: 'checkin_execution_autopilot_v1', preparedAt: new Date().toISOString(), ...safeMetadata(metadata) },
-  });
-  return getCheckinExecutionStatus(record.id);
+  }, expectedScope);
+  return getCheckinExecutionStatus(record.id, expectedScope);
 }
 
 export async function queueCheckinInstructions(
   bookingId: string,
   channel?: BookingOpsCommunicationChannel,
   metadata?: Record<string, unknown>,
+  expectedScope?: ExpectedScope,
 ): Promise<CheckinExecutionSnapshot> {
-  const record = await loadRecord(bookingId);
-  const legalGuard = await shouldBlockCheckinInstructions(record.id);
+  const record = await loadRecord(bookingId, expectedScope);
+  const legalGuard = await shouldBlockCheckinInstructions(record.id, expectedScope);
   if (legalGuard.block) throw new Error(legalGuard.reason ?? 'Инструкции заезда заблокированы до снятия юридических ограничений.');
-  await assertCheckinReadiness(record.id);
+  await assertCheckinReadiness(record.id, expectedScope);
   await ensureCommunicationIntent({
     record,
     purpose: 'checkin_instructions',
     channel,
     messageTemplateKey: 'guest.checkin.instructions.v1',
+    expectedScope,
     messageText: `Здравствуйте. Инструкции по заезду для объекта ${record.propertyLabel ?? record.propertyId ?? 'вашей брони'} готовы к проверке оператором.`,
     metadata,
   });
@@ -471,40 +528,47 @@ export async function queueCheckinInstructions(
     status: 'instructions_queued',
     instructions_status: 'queued',
     metadata: { source: 'checkin_execution_autopilot_v1', queuedAt: new Date().toISOString(), ...safeMetadata(metadata) },
-  });
-  return getCheckinExecutionStatus(record.id);
+  }, expectedScope);
+  return getCheckinExecutionStatus(record.id, expectedScope);
 }
 
 export async function markCheckinInstructionsSent(
   bookingId: string,
   metadata?: Record<string, unknown>,
+  expectedScope?: ExpectedScope,
 ): Promise<CheckinExecutionSnapshot> {
-  const record = await loadRecord(bookingId);
-  const legalGuard = await shouldBlockCheckinInstructions(record.id);
+  const record = await loadRecord(bookingId, expectedScope);
+  const legalGuard = await shouldBlockCheckinInstructions(record.id, expectedScope);
   if (legalGuard.block) throw new Error(legalGuard.reason ?? 'Нельзя отметить инструкции отправленными: есть юридические ограничения.');
-  await assertCheckinReadiness(record.id);
-  await completeGate(record.id, 'checkin_instructions_sent', {
+  await assertCheckinReadiness(record.id, expectedScope);
+  const gateResult = await completeGate(record.id, 'checkin_instructions_sent', {
     source: 'checkin_execution_autopilot_v1',
     ...safeMetadata(metadata),
-  });
+  }, expectedScope);
+  if (!gateResult.ok) throw new Error(gateResult.error ?? 'checkin_gate_write_failed');
   await upsertExecution(record.id, {
     status: 'instructions_sent',
     instructions_status: 'sent',
     metadata: { source: 'checkin_execution_autopilot_v1', sentAt: new Date().toISOString(), ...safeMetadata(metadata) },
+  }, expectedScope);
+  await updateBookingOpsRecord(record.id, { checkinReadinessStatus: 'ready' }, {
+    actorType: 'system',
+    expectedScope,
   });
-  await updateBookingOpsRecord(record.id, { checkinReadinessStatus: 'ready' }, { actorType: 'system' });
-  return getCheckinExecutionStatus(record.id);
+  return getCheckinExecutionStatus(record.id, expectedScope);
 }
 
 export async function requestArrivalConfirmation(
   bookingId: string,
   metadata?: Record<string, unknown>,
+  expectedScope?: ExpectedScope,
 ): Promise<CheckinExecutionSnapshot> {
-  const record = await loadRecord(bookingId);
+  const record = await loadRecord(bookingId, expectedScope);
   await ensureCommunicationIntent({
     record,
     purpose: 'arrival_confirmation_request',
     messageTemplateKey: 'guest.checkin.arrival_confirmation.v1',
+    expectedScope,
     messageText: 'Здравствуйте. Подтвердите, пожалуйста, когда будете на месте и сможете зайти в объект.',
     metadata,
   });
@@ -513,16 +577,17 @@ export async function requestArrivalConfirmation(
     arrival_status: 'requested',
     last_guest_touch_at: new Date().toISOString(),
     metadata: { source: 'checkin_execution_autopilot_v1', arrivalRequestedAt: new Date().toISOString(), ...safeMetadata(metadata) },
-  });
-  return getCheckinExecutionStatus(record.id);
+  }, expectedScope);
+  return getCheckinExecutionStatus(record.id, expectedScope);
 }
 
 export async function markArrivalConfirmed(
   bookingId: string,
   arrivalTime?: string | Date | null,
   metadata?: Record<string, unknown>,
+  expectedScope?: ExpectedScope,
 ): Promise<CheckinExecutionSnapshot> {
-  const record = await loadRecord(bookingId);
+  const record = await loadRecord(bookingId, expectedScope);
   const arrivedAt = arrivalTime ? new Date(arrivalTime).toISOString() : new Date().toISOString();
   await upsertExecution(record.id, {
     status: 'arrival_confirmed',
@@ -530,41 +595,45 @@ export async function markArrivalConfirmed(
     planned_arrival_at: arrivedAt,
     last_guest_touch_at: new Date().toISOString(),
     metadata: { source: 'checkin_execution_autopilot_v1', arrivalConfirmedAt: arrivedAt, ...safeMetadata(metadata) },
-  });
-  return getCheckinExecutionStatus(record.id);
+  }, expectedScope);
+  return getCheckinExecutionStatus(record.id, expectedScope);
 }
 
 export async function markAccessReady(
   bookingId: string,
   metadata?: Record<string, unknown>,
+  expectedScope?: ExpectedScope,
 ): Promise<CheckinExecutionSnapshot> {
-  const record = await loadRecord(bookingId);
-  await assertCheckinReadiness(record.id);
-  await completeGate(record.id, 'property_ready', {
+  const record = await loadRecord(bookingId, expectedScope);
+  await assertCheckinReadiness(record.id, expectedScope);
+  const gateResult = await completeGate(record.id, 'property_ready', {
     source: 'checkin_execution_autopilot_v1',
     accessReady: true,
     ...safeMetadata(metadata),
-  });
+  }, expectedScope);
+  if (!gateResult.ok) throw new Error(gateResult.error ?? 'checkin_gate_write_failed');
   await upsertExecution(record.id, {
     status: 'access_ready',
     access_status: 'ready',
     failure_reason: null,
     metadata: { source: 'checkin_execution_autopilot_v1', accessReadyAt: new Date().toISOString(), ...safeMetadata(metadata) },
-  });
-  return getCheckinExecutionStatus(record.id);
+  }, expectedScope);
+  return getCheckinExecutionStatus(record.id, expectedScope);
 }
 
 export async function reportAccessIssue(
   bookingId: string,
   reason: string,
   metadata?: Record<string, unknown>,
+  expectedScope?: ExpectedScope,
 ): Promise<CheckinExecutionSnapshot> {
-  const record = await loadRecord(bookingId);
+  const record = await loadRecord(bookingId, expectedScope);
   const cleanReason = text(reason) || 'Проблема доступа при заезде';
-  await blockGate(record.id, 'property_ready', cleanReason, {
+  const gateResult = await blockGate(record.id, 'property_ready', cleanReason, {
     source: 'checkin_execution_autopilot_v1',
     ...safeMetadata(metadata),
-  });
+  }, expectedScope);
+  if (!gateResult.ok) throw new Error(gateResult.error ?? 'checkin_gate_write_failed');
   await ensureCommunicationIntent({
     record,
     purpose: 'access_issue_followup',
@@ -572,44 +641,47 @@ export async function reportAccessIssue(
     messageTemplateKey: 'operator.checkin.access_issue.v1',
     messageText: `Проблема доступа при заезде: ${cleanReason}`,
     metadata,
+    expectedScope,
   });
   await upsertExecution(record.id, {
     status: 'access_issue',
     access_status: 'issue',
     failure_reason: cleanReason,
     metadata: { source: 'checkin_execution_autopilot_v1', accessIssueAt: new Date().toISOString(), ...safeMetadata(metadata) },
-  });
+  }, expectedScope);
   await updateBookingOpsRecord(record.id, {
     opsStatus: 'problem_blocked',
     checkinReadinessStatus: 'problem',
     blockerReason: cleanReason,
-  }, { actorType: 'system' });
-  return getCheckinExecutionStatus(record.id);
+  }, { actorType: 'system', expectedScope });
+  return getCheckinExecutionStatus(record.id, expectedScope);
 }
 
 export async function markGuestCheckedIn(
   bookingId: string,
   metadata?: Record<string, unknown>,
+  expectedScope?: ExpectedScope,
 ): Promise<CheckinExecutionSnapshot> {
-  const record = await loadRecord(bookingId);
-  await assertCheckinReadiness(record.id);
+  const record = await loadRecord(bookingId, expectedScope);
+  await assertCheckinReadiness(record.id, expectedScope);
   const now = new Date().toISOString();
-  await completeGate(record.id, 'guest_checked_in', {
+  const gateResult = await completeGate(record.id, 'guest_checked_in', {
     source: 'checkin_execution_autopilot_v1',
     ...safeMetadata(metadata),
-  });
+  }, expectedScope);
+  if (!gateResult.ok) throw new Error(gateResult.error ?? 'checkin_gate_write_failed');
   await upsertExecution(record.id, {
     status: 'checked_in',
     arrival_status: 'confirmed',
     actual_checkin_at: now,
     last_guest_touch_at: now,
     metadata: { source: 'checkin_execution_autopilot_v1', checkedInAt: now, ...safeMetadata(metadata) },
-  });
+  }, expectedScope);
   await updateBookingOpsRecord(record.id, {
     opsStatus: 'ready_for_checkin',
     checkinReadinessStatus: 'ready',
-  }, { actorType: 'system' });
-  return getCheckinExecutionStatus(record.id);
+  }, { actorType: 'system', expectedScope });
+  return getCheckinExecutionStatus(record.id, expectedScope);
 }
 
 export async function getCheckinBlockers(bookingId: string): Promise<CheckinExecutionBlocker[]> {
@@ -620,8 +692,9 @@ export async function createCheckinFallbackIfNeeded(
   bookingId: string,
   reason: string,
   metadata?: Record<string, unknown>,
+  expectedScope?: ExpectedScope,
 ): Promise<{ ok: boolean; created: boolean; snapshot: CheckinExecutionSnapshot; error?: string }> {
-  const snapshot = await getCheckinExecutionStatus(bookingId);
+  const snapshot = await getCheckinExecutionStatus(bookingId, expectedScope);
   const blocker = snapshot.blockers.find((item) => item.fallbackEligible);
   if (!blocker) return { ok: true, created: false, snapshot };
   const cleanReason = text(reason) || blocker.reason;
@@ -630,9 +703,9 @@ export async function createCheckinFallbackIfNeeded(
     source: 'checkin_execution_autopilot_v1',
     blocker: blocker.key,
     ...safeMetadata(metadata),
-  });
+  }, expectedScope);
   if (!result.ok) return { ok: false, created: false, snapshot, error: result.error };
-  return { ok: true, created: true, snapshot: await getCheckinExecutionStatus(bookingId) };
+  return { ok: true, created: true, snapshot: await getCheckinExecutionStatus(bookingId, expectedScope) };
 }
 
 export async function runCheckinExecutionAction(input: {
@@ -643,46 +716,62 @@ export async function runCheckinExecutionAction(input: {
   note?: unknown;
   arrivalTime?: unknown;
   metadata?: Record<string, unknown>;
+  expectedScope?: { accountId: string; propertyId: string };
 }): Promise<CheckinExecutionSnapshot> {
   const bookingId = text(input.bookingId);
+  if (input.expectedScope) await requireBookingOpsRecordScope(bookingId, input.expectedScope);
   const reason = text(input.reason);
   const note = text(input.note);
   switch (input.action) {
     case 'prepare_instructions':
-      return prepareCheckinInstructions(bookingId, input.metadata);
+      return prepareCheckinInstructions(bookingId, input.metadata, input.expectedScope);
     case 'queue_instructions':
-      return queueCheckinInstructions(bookingId, input.channel, input.metadata);
+      return queueCheckinInstructions(bookingId, input.channel, input.metadata, input.expectedScope);
     case 'mark_instructions_sent':
-      return markCheckinInstructionsSent(bookingId, input.metadata);
+      return markCheckinInstructionsSent(bookingId, input.metadata, input.expectedScope);
     case 'request_arrival_confirmation':
-      return requestArrivalConfirmation(bookingId, input.metadata);
+      return requestArrivalConfirmation(bookingId, input.metadata, input.expectedScope);
     case 'mark_arrival_confirmed':
-      return markArrivalConfirmed(bookingId, text(input.arrivalTime) || null, input.metadata);
+      return markArrivalConfirmed(bookingId, text(input.arrivalTime) || null, input.metadata, input.expectedScope);
     case 'mark_access_ready':
-      return markAccessReady(bookingId, input.metadata);
+      return markAccessReady(bookingId, input.metadata, input.expectedScope);
     case 'report_access_issue':
-      return reportAccessIssue(bookingId, reason || 'Проблема доступа при заезде', input.metadata);
-    case 'resolve_access_issue':
-      await adminUpdateLifecycleGate({
+      return reportAccessIssue(
+        bookingId,
+        reason || 'Проблема доступа при заезде',
+        input.metadata,
+        input.expectedScope,
+      );
+    case 'resolve_access_issue': {
+      const gateResult = await adminUpdateLifecycleGate({
         bookingId,
         gateKey: 'property_ready',
         status: 'in_progress',
         reason: reason || 'Проблема доступа разобрана',
         note,
         metadata: { source: 'checkin_execution_autopilot_v1', ...safeMetadata(input.metadata) },
+        expectedScope: input.expectedScope,
       });
+      if (!gateResult.ok) throw new Error(gateResult.error ?? 'checkin_gate_write_failed');
       await upsertExecution(bookingId, {
         status: 'access_ready',
         access_status: 'resolved',
         failure_reason: null,
         metadata: { source: 'checkin_execution_autopilot_v1', accessIssueResolvedAt: new Date().toISOString(), note },
-      });
-      return getCheckinExecutionStatus(bookingId);
+      }, input.expectedScope);
+      return getCheckinExecutionStatus(bookingId, input.expectedScope);
+    }
     case 'mark_guest_checked_in':
-      return markGuestCheckedIn(bookingId, input.metadata);
+      return markGuestCheckedIn(bookingId, input.metadata, input.expectedScope);
     case 'create_fallback':
-      return (await createCheckinFallbackIfNeeded(bookingId, reason || 'Нужен ручной план заезда', input.metadata)).snapshot;
+      return (await createCheckinFallbackIfNeeded(
+        bookingId,
+        reason || 'Нужен ручной план заезда',
+        input.metadata,
+        input.expectedScope,
+      )).snapshot;
     case 'add_note': {
+      if (input.expectedScope) await requireBookingOpsRecordScope(bookingId, input.expectedScope);
       const current = await getExecutionRow(bookingId);
       const notes = Array.isArray(current?.metadata.notes) ? current?.metadata.notes : [];
       await upsertExecution(bookingId, {
@@ -690,8 +779,8 @@ export async function runCheckinExecutionAction(input: {
           source: 'checkin_execution_autopilot_v1',
           notes: [...notes, { text: note || reason, createdAt: new Date().toISOString() }].filter((item) => text((item as { text?: unknown }).text)),
         },
-      });
-      return getCheckinExecutionStatus(bookingId);
+      }, input.expectedScope);
+      return getCheckinExecutionStatus(bookingId, input.expectedScope);
     }
     default:
       throw new Error('invalid_action');
@@ -699,8 +788,11 @@ export async function runCheckinExecutionAction(input: {
 }
 
 /** Baseline row for inbound intake — no instructions sent, no secrets. */
-export async function initializeCheckinExecutionBaseline(bookingId: string): Promise<CheckinExecutionRow> {
+export async function initializeCheckinExecutionBaseline(
+  bookingId: string,
+  expectedScope?: ExpectedScope,
+): Promise<CheckinExecutionRow> {
   return upsertExecution(bookingId, {
     metadata: { source: 'inbound_intake_autopilot_v1', initializedAt: new Date().toISOString() },
-  });
+  }, expectedScope);
 }

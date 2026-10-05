@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { requireOpsAdminSession } from '@/lib/crm/api-auth';
+import { requireBookingOpsApiAccess, requireBookingOpsApiAccount } from '../../../access';
 import {
   getEligibleAutoSendIntents,
   getDeliveryStatus,
@@ -12,10 +13,18 @@ export const dynamic = 'force-dynamic';
 export async function GET(req: Request): Promise<NextResponse> {
   const auth = await requireOpsAdminSession();
   if ('error' in auth) return auth.error;
+  const account = await requireBookingOpsApiAccount(auth.session);
+  if (!account.ok) return account.response;
   const url = new URL(req.url);
+  const bookingOpsRecordId = url.searchParams.get('bookingOpsRecordId') || undefined;
+  if (bookingOpsRecordId) {
+    const access = await requireBookingOpsApiAccess(auth.session, bookingOpsRecordId);
+    if (!access.ok) return access.response;
+  }
   const max = Math.min(Math.max(Number(url.searchParams.get('limit') ?? 20) || 20, 1), 50);
   const result = await getEligibleAutoSendIntents({
-    bookingOpsRecordId: url.searchParams.get('bookingOpsRecordId') || undefined,
+    bookingOpsRecordId,
+    accountId: account.accountId,
     limit: max,
   });
   if (!result.ok) {

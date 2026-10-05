@@ -31,6 +31,7 @@ type PgClient = {
 const manifest = {
   token: '11111111-1111-4111-8111-111111111111',
   runId: 'glc-synthetic-11111111-1111-4111-8111-111111111111',
+  accountId: '88888888-8888-4888-8888-888888888888',
   bookingOpsRecordId: '22222222-2222-4222-8222-222222222222',
   reservationId: '22222222-2222-4222-8222-222222222222',
   propertyId: 'glc-synthetic-property-11111111-1111-4111-8111-111111111111',
@@ -172,6 +173,13 @@ async function callCleanup(client: PgClient, dryRun: boolean) {
 async function createExactSyntheticFixture(client: PgClient): Promise<void> {
   await client.query(
     `
+    INSERT INTO public.accounts (id, name)
+    VALUES ($1::uuid, 'Synthetic Guest Lifecycle Account')
+    `,
+    [manifest.accountId],
+  );
+  await client.query(
+    `
     INSERT INTO public.tg_property_knowledge
       (property_id, location, pilot_acceptance_marker)
     VALUES ($1, 'Synthetic acceptance property', $2)
@@ -196,11 +204,11 @@ async function createExactSyntheticFixture(client: PgClient): Promise<void> {
   await client.query(
     `
     INSERT INTO public.guest_memory_profiles
-      (guest_id, preferred_language, preferred_language_source,
+      (account_id, guest_id, preferred_language, preferred_language_source,
        preferred_communication_mode, preferred_communication_mode_source)
-    VALUES ($1, 'ru', 'deterministic_system', 'text', 'deterministic_system')
+    VALUES ($1::uuid, $2, 'ru', 'deterministic_system', 'text', 'deterministic_system')
     `,
-    [manifest.guestId],
+    [manifest.accountId, manifest.guestId],
   );
   await client.query(
     `
@@ -324,17 +332,17 @@ async function createExactSyntheticFixture(client: PgClient): Promise<void> {
   await client.query(
     `
     INSERT INTO public.booking_ops_communication_auto_send_scopes
-      (id, scope_type, scope_ref, actual_send_enabled, enabled_by, enabled_at,
+      (id, account_id, scope_type, scope_ref, actual_send_enabled, enabled_by, enabled_at,
        reason, max_batch_size, allowed_channels, allowed_message_types,
        dry_run_only, emergency_stop)
     VALUES (
-      $1::uuid, 'booking', $2, true, 'guest_lifecycle_communications_v1', now(),
-      'guest_lifecycle_communications_v1:' || $3, 20, '["email"]'::jsonb,
+      $1::uuid, $2::uuid, 'booking', $3, true, 'guest_lifecycle_communications_v1', now(),
+      'guest_lifecycle_communications_v1:' || $4, 20, '["email"]'::jsonb,
       '["neutral_booking_acknowledgement","neutral_status_update","send_checkin_instructions"]'::jsonb,
       true, false
     )
     `,
-    [manifest.scopeId, manifest.bookingOpsRecordId, manifest.runId],
+    [manifest.scopeId, manifest.accountId, manifest.bookingOpsRecordId, manifest.runId],
   );
   await client.query(
     `
@@ -369,15 +377,16 @@ async function createExactSyntheticFixture(client: PgClient): Promise<void> {
   await client.query(
     `
     INSERT INTO public.booking_ops_communication_deliveries
-      (id, communication_intent_id, recipient_role, recipient_ref,
+      (id, account_id, communication_intent_id, recipient_role, recipient_ref,
        channel, message_type, policy_decision_id, status, idempotency_key)
     VALUES (
-      $1::uuid, $2::uuid, 'guest', $3, 'email',
-      'send_checkin_instructions', $4::uuid, 'dry_run', $5 || ':delivery'
+      $1::uuid, $2::uuid, $3::uuid, 'guest', $4, 'email',
+      'send_checkin_instructions', $5::uuid, 'dry_run', $6 || ':delivery'
     )
     `,
     [
       '77777777-7777-4777-8777-777777777775',
+      manifest.accountId,
       '77777777-7777-4777-8777-777777777774',
       manifest.guestEmail,
       manifest.policyIds[2],
@@ -423,15 +432,16 @@ async function createExactSyntheticFixture(client: PgClient): Promise<void> {
   await client.query(
     `
     INSERT INTO public.guest_memory_events
-      (id, guest_id, event_type, summary, booking_reference, source_kind,
+      (id, account_id, guest_id, event_type, summary, booking_reference, source_kind,
        source_ref, occurred_at)
     VALUES (
-      $1::uuid, $2, 'completed_stay', 'Synthetic completed stay.', $3,
-      'deterministic_system', $4 || ':stay.completed', now()
+      $1::uuid, $2::uuid, $3, 'completed_stay', 'Synthetic completed stay.', $4,
+      'deterministic_system', $5 || ':stay.completed', now()
     )
     `,
     [
       '77777777-7777-4777-8777-777777777778',
+      manifest.accountId,
       manifest.guestId,
       manifest.bookingOpsRecordId,
       manifest.runId,

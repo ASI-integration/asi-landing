@@ -8,7 +8,7 @@ import {
 } from './guest-intake-checkin-release';
 import { initializeGuestLegalExecution } from './guest-legal-deposit-mvd-execution';
 import { ensurePhysicalTasks } from './physical-readiness-execution';
-import { getBookingOpsRecord } from './repository';
+import { getBookingOpsRecord, requireBookingOpsRecordScope } from './repository';
 import {
   BOOKING_LIFECYCLE_ORCHESTRATOR_STAGES,
   type BookingLifecycleOrchestratorSnapshot,
@@ -19,6 +19,7 @@ import {
 } from './lifecycle-orchestrator-types';
 
 export type BookingLifecycleRunType = 'single_booking' | 'batch_due' | 'manual_dashboard' | 'probe' | 'test';
+type ExpectedScope = { accountId: string; propertyId: string };
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 const HOUR = 60 * 60 * 1000;
@@ -203,13 +204,16 @@ async function countEnsuredRows(bookingId: string): Promise<number> {
   return counts.reduce((sum, count) => sum + count, 0);
 }
 
-async function persistSlaItems(items: BookingLifecycleSlaItem[]): Promise<void> {
+async function persistSlaItems(items: BookingLifecycleSlaItem[], expectedScope?: ExpectedScope): Promise<void> {
+  const bookingId = items[0]?.bookingId ?? '';
+  if (expectedScope && bookingId) await requireBookingOpsRecordScope(bookingId, expectedScope);
   const { data: existing, error: readError } = await supabase.from('booking_ops_sla_items')
     .select('stage,item_type,status').eq('booking_id', items[0]?.bookingId ?? '');
   if (readError) throw new Error(readError.message);
   const preserved = new Map((existing ?? []).map((row) => [`${row.stage}:${row.item_type}`, row.status]));
   const now = new Date().toISOString();
   for (const item of items) {
+    if (expectedScope) await requireBookingOpsRecordScope(item.bookingId, expectedScope);
     const previous = preserved.get(`${item.stage}:${item.itemType}`);
     const status = previous === 'waived' ? 'waived' : item.status;
     const { error } = await supabase.from('booking_ops_sla_items').upsert({
@@ -229,11 +233,12 @@ function lifecycleDraftText(title: string, bookingId: string, action: string): s
 }
 
 async function createDueDrafts(input: {
-  bookingId: string; propertyId: string | null; plan: BookingLifecyclePlan; runId: string;
+  bookingId: string; propertyId: string | null; plan: BookingLifecyclePlan; runId: string; expectedScope?: ExpectedScope;
 }): Promise<{ drafts: number; escalations: number }> {
   let drafts = 0;
   let escalations = 0;
   for (const item of input.plan.slaItems.filter((candidate) => candidate.overdue)) {
+    if (input.expectedScope) await requireBookingOpsRecordScope(input.bookingId, input.expectedScope);
     const window = item.dueAt.slice(0, 10);
     const target = item.itemType === 'guest_intake' ? 'guest' : item.itemType === 'cleaning' ? 'cleaner' : item.itemType === 'linen' ? 'linen' : item.itemType === 'maintenance' ? 'master' : 'operator';
     const draftType = item.itemType === 'guest_intake' ? 'guest_intake_reminder' : `${item.itemType}_reminder`;
@@ -243,7 +248,7 @@ async function createDueDrafts(input: {
         .eq('booking_ops_record_id', input.bookingId).eq('action_id', 'missing_guest_data').in('status', ['draft', 'copied']).limit(1).maybeSingle();
       if (guestDraftError) throw new Error(guestDraftError.message);
       if (!existingGuestDraft) {
-        await prepareGuestIntakeDraft(input.bookingId, 'reminder');
+        await prepareGuestIntakeDraft(input.bookingId, 'reminder', input.expectedScope);
         created = true;
       }
     } else {
@@ -255,9 +260,11 @@ async function createDueDrafts(input: {
     }
     if (created) {
       drafts += 1;
+      if (input.expectedScope) await requireBookingOpsRecordScope(input.bookingId, input.expectedScope);
       await insertEvent({ bookingId: input.bookingId, propertyId: input.propertyId, eventType: 'reminder_draft_created', eventPayload: { itemType: item.itemType, sent: false }, runId: input.runId, dedupeKey: `reminder:${item.itemType}:${window}` });
     }
     if (item.escalationNeeded) {
+      if (input.expectedScope) await requireBookingOpsRecordScope(input.bookingId, input.expectedScope);
       const escalationCreated = await ensureLifecycleDraft({
         bookingId: input.bookingId, propertyId: input.propertyId, draftType: `${item.itemType}_operator_escalation`, targetActor: 'operator',
         stage: item.stage, dueWindow: window, dedupeKey: `${item.itemType}:operator_escalation:${window}`,
@@ -265,6 +272,7 @@ async function createDueDrafts(input: {
       });
       if (escalationCreated) {
         drafts += 1; escalations += 1;
+        if (input.expectedScope) await requireBookingOpsRecordScope(input.bookingId, input.expectedScope);
         await supabase.from('booking_ops_sla_items').update({ status: 'escalated', updated_at: new Date().toISOString() })
           .eq('booking_id', input.bookingId).eq('stage', item.stage).eq('item_type', item.itemType).neq('status', 'waived');
         await insertEvent({ bookingId: input.bookingId, propertyId: input.propertyId, eventType: 'operator_escalation_created', eventPayload: { itemType: item.itemType, sent: false }, runId: input.runId, dedupeKey: `escalation:${item.itemType}:${window}` });
@@ -275,9 +283,10 @@ async function createDueDrafts(input: {
 }
 
 export async function orchestrateBookingLifecycle(input: {
-  bookingId: unknown; now?: string; runType?: BookingLifecycleRunType; actorId?: string | null;
+  bookingId: unknown; now?: string; runType?: BookingLifecycleRunType; actorId?: string | null; expectedScope?: ExpectedScope;
 }): Promise<BookingLifecycleOrchestratorSnapshot> {
   const bookingId = requireBookingId(input.bookingId);
+  if (input.expectedScope) await requireBookingOpsRecordScope(bookingId, input.expectedScope);
   const now = input.now && Number.isFinite(new Date(input.now).getTime()) ? new Date(input.now).toISOString() : new Date().toISOString();
   const runId = randomUUID();
   const runType = input.runType ?? 'single_booking';
@@ -287,17 +296,20 @@ export async function orchestrateBookingLifecycle(input: {
   if (runError) throw new Error(runError.message);
 
   try {
-    const record = await getBookingOpsRecord(bookingId);
+    const record = input.expectedScope
+      ? await requireBookingOpsRecordScope(bookingId, input.expectedScope)
+      : await getBookingOpsRecord(bookingId);
     if (!record) throw new Error('Бронь не найдена.');
+    if (input.expectedScope) await requireBookingOpsRecordScope(bookingId, input.expectedScope);
     await insertEvent({ bookingId, propertyId: record.propertyId, eventType: 'orchestrator_started', eventPayload: { runType }, runId, actorType: runType === 'batch_due' ? 'scheduler' : 'system' });
     const rowsBefore = await countEnsuredRows(bookingId);
-    await ensureGuestIntakeSession(bookingId);
-    await initializeGuestLegalExecution(bookingId, { source: 'lifecycle_orchestrator_v1' });
-    await ensurePhysicalTasks(bookingId);
+    await ensureGuestIntakeSession(bookingId, input.expectedScope);
+    await initializeGuestLegalExecution(bookingId, { source: 'lifecycle_orchestrator_v1' }, input.expectedScope);
+    await ensurePhysicalTasks(bookingId, input.expectedScope);
     const rowsAfter = await countEnsuredRows(bookingId);
     const createdTasks = Math.max(0, rowsAfter - rowsBefore);
 
-    const snapshot = await getGuestIntakeReleaseSnapshot(bookingId);
+    const snapshot = await getGuestIntakeReleaseSnapshot(bookingId, input.expectedScope);
     const { data: previousState } = await supabase.from('booking_ops_lifecycle_states')
       .select('current_stage,status').eq('booking_id', bookingId).maybeSingle();
     const cancelled = previousState?.current_stage === 'cancelled';
@@ -314,35 +326,39 @@ export async function orchestrateBookingLifecycle(input: {
       blockingMaintenanceOpen: snapshot.physical.maintenance.some((ticket) => ticket.isBlocking && ticket.status !== 'verified' && ticket.status !== 'cancelled'),
       finalDraftPrepared: snapshot.release?.status === 'draft_prepared' || snapshot.release?.status === 'released_simulated',
     });
-    await persistSlaItems(plan.slaItems);
+    await persistSlaItems(plan.slaItems, input.expectedScope);
 
     let createdDrafts = 0;
     let createdEscalations = 0;
     const { data: initialDraft } = await supabase.from('booking_ops_telegram_drafts').select('id')
       .eq('booking_ops_record_id', bookingId).eq('action_id', 'initial_guest_intake').in('status', ['draft', 'copied']).limit(1).maybeSingle();
     if (!initialDraft && !cancelled) {
-      await prepareGuestIntakeDraft(bookingId, 'initial');
+      await prepareGuestIntakeDraft(bookingId, 'initial', input.expectedScope);
       createdDrafts += 1;
+      if (input.expectedScope) await requireBookingOpsRecordScope(bookingId, input.expectedScope);
       await insertEvent({ bookingId, propertyId: record.propertyId, eventType: 'guest_intake_session_ensured', eventPayload: { initialDraftPrepared: true, sent: false }, runId, dedupeKey: 'initial-guest-intake-prepared' });
     }
-    const dueDrafts = await createDueDrafts({ bookingId, propertyId: record.propertyId, plan, runId });
+    const dueDrafts = await createDueDrafts({ bookingId, propertyId: record.propertyId, plan, runId, expectedScope: input.expectedScope });
     createdDrafts += dueDrafts.drafts;
     createdEscalations += dueDrafts.escalations;
 
     let finalDraftId = snapshot.release?.id ?? null;
     const finalDraftAlreadyPrepared = snapshot.release?.status === 'draft_prepared' || snapshot.release?.status === 'released_simulated';
     if (plan.finalCheckinDraftAllowed && !finalDraftAlreadyPrepared) {
-      const prepared = await prepareCheckinReleaseDraft(bookingId, input.actorId ?? undefined);
+      const prepared = await prepareCheckinReleaseDraft(bookingId, input.actorId ?? undefined, input.expectedScope);
       finalDraftId = prepared.release?.id ?? null;
       createdDrafts += 1;
       plan.currentStage = 'checkin_release_draft_prepared';
       plan.status = 'completed';
       plan.nextAction = null;
+      if (input.expectedScope) await requireBookingOpsRecordScope(bookingId, input.expectedScope);
       await insertEvent({ bookingId, propertyId: record.propertyId, eventType: 'checkin_release_draft_prepared', eventPayload: { draftId: finalDraftId, sent: false }, runId, dedupeKey: 'final-checkin-draft-prepared' });
     } else if (!plan.finalCheckinDraftAllowed) {
+      if (input.expectedScope) await requireBookingOpsRecordScope(bookingId, input.expectedScope);
       await insertEvent({ bookingId, propertyId: record.propertyId, eventType: 'checkin_release_blocked', eventPayload: { blockers: plan.blockers }, runId, dedupeKey: `checkin-blocked:${plan.blockers.sort().join('|')}` });
     }
 
+    if (input.expectedScope) await requireBookingOpsRecordScope(bookingId, input.expectedScope);
     const { error: stateError } = await supabase.from('booking_ops_lifecycle_states').upsert({
       booking_id: bookingId, property_id: record.propertyId, current_stage: plan.currentStage,
       status: plan.status, blocker_reasons: plan.blockers, next_action: plan.nextAction,
@@ -352,20 +368,24 @@ export async function orchestrateBookingLifecycle(input: {
     }, { onConflict: 'booking_id' });
     if (stateError) throw new Error(stateError.message);
     if (!previousState || previousState.current_stage !== plan.currentStage || previousState.status !== plan.status) {
+      if (input.expectedScope) await requireBookingOpsRecordScope(bookingId, input.expectedScope);
       await insertEvent({ bookingId, propertyId: record.propertyId, eventType: 'stage_changed', eventPayload: { from: previousState?.current_stage ?? null, to: plan.currentStage, status: plan.status }, runId, dedupeKey: `stage:${plan.currentStage}:${plan.status}` });
     }
     if (!createdTasks && !createdDrafts && previousState?.current_stage === plan.currentStage && previousState?.status === plan.status) {
+      if (input.expectedScope) await requireBookingOpsRecordScope(bookingId, input.expectedScope);
       await insertEvent({ bookingId, propertyId: record.propertyId, eventType: 'noop_idempotent_run', eventPayload: { noExternalSideEffects: true }, runId });
     }
+    if (input.expectedScope) await requireBookingOpsRecordScope(bookingId, input.expectedScope);
     await insertEvent({ bookingId, propertyId: record.propertyId, eventType: 'orchestrator_completed', eventPayload: { createdTasks, createdDrafts, createdEscalations, stage: plan.currentStage }, runId });
     const runStatus = createdTasks || createdDrafts || !previousState ? 'completed' : 'noop';
+    if (input.expectedScope) await requireBookingOpsRecordScope(bookingId, input.expectedScope);
     const { error: finishError } = await supabase.from('booking_ops_lifecycle_runs').update({
       status: runStatus, finished_at: new Date().toISOString(), created_tasks_count: createdTasks,
       created_drafts_count: createdDrafts, created_escalations_count: createdEscalations,
       blocker_reasons: plan.blockers, result_summary: { stage: plan.currentStage, status: plan.status, noExternalSend: true },
     }).eq('id', runId);
     if (finishError) throw new Error(finishError.message);
-    return getBookingLifecycleOrchestratorSnapshot(bookingId, false);
+    return getBookingLifecycleOrchestratorSnapshot(bookingId, false, input.expectedScope);
   } catch (error) {
     await supabase.from('booking_ops_lifecycle_runs').update({
       status: 'failed', finished_at: new Date().toISOString(), error_message: error instanceof Error ? error.message : 'orchestration_failed',
@@ -374,11 +394,16 @@ export async function orchestrateBookingLifecycle(input: {
   }
 }
 
-export async function getBookingLifecycleOrchestratorSnapshot(bookingIdValue: unknown, initialize = true): Promise<BookingLifecycleOrchestratorSnapshot> {
+export async function getBookingLifecycleOrchestratorSnapshot(
+  bookingIdValue: unknown,
+  initialize = true,
+  expectedScope?: ExpectedScope,
+): Promise<BookingLifecycleOrchestratorSnapshot> {
   const bookingId = requireBookingId(bookingIdValue);
+  if (expectedScope) await requireBookingOpsRecordScope(bookingId, expectedScope);
   const { data: state, error: stateError } = await supabase.from('booking_ops_lifecycle_states').select('*').eq('booking_id', bookingId).maybeSingle();
   if (stateError) throw new Error(stateError.message);
-  if (!state && initialize) return orchestrateBookingLifecycle({ bookingId, runType: 'single_booking' });
+  if (!state && initialize) return orchestrateBookingLifecycle({ bookingId, runType: 'single_booking', expectedScope });
   if (!state) throw new Error('Состояние оркестратора не найдено.');
   const [slaResult, eventsResult, draftsResult, runResult] = await Promise.all([
     supabase.from('booking_ops_sla_items').select('*').eq('booking_id', bookingId).order('due_at'),
@@ -387,6 +412,7 @@ export async function getBookingLifecycleOrchestratorSnapshot(bookingIdValue: un
     supabase.from('booking_ops_lifecycle_runs').select('*').eq('booking_id', bookingId).order('created_at', { ascending: false }).limit(1).maybeSingle(),
   ]);
   for (const result of [slaResult, eventsResult, draftsResult, runResult]) if (result.error) throw new Error(result.error.message);
+  if (expectedScope) await requireBookingOpsRecordScope(bookingId, expectedScope);
   return {
     state: {
       bookingId, propertyId: state.property_id, currentStage: state.current_stage, status: state.status,
@@ -413,14 +439,22 @@ export async function getBookingLifecycleOrchestratorSnapshot(bookingIdValue: un
   };
 }
 
-export async function orchestrateDueBookingLifecycles(input: { now?: string; limit?: number } = {}) {
+export async function orchestrateDueBookingLifecycles(input: { now?: string; limit?: number; accountId?: string } = {}) {
   const limit = Math.min(Math.max(input.limit ?? 50, 1), 100);
-  const { data, error } = await supabase.from('booking_ops_records').select('id').neq('ops_status', 'cancelled').order('updated_at').limit(limit);
+  let query = supabase.from('booking_ops_records').select('id,account_id,property_id').neq('ops_status', 'cancelled').order('updated_at').limit(limit);
+  if (input.accountId) query = query.eq('account_id', input.accountId);
+  const { data, error } = await query;
   if (error) throw new Error(error.message);
   const results: Array<{ bookingId: string; ok: boolean; error?: string }> = [];
   for (const row of data ?? []) {
     try {
-      await orchestrateBookingLifecycle({ bookingId: row.id, now: input.now, runType: 'batch_due' });
+      const accountId = text(row.account_id);
+      const propertyId = text(row.property_id);
+      const expectedScope = accountId && accountId !== 'legacy' && propertyId
+        ? { accountId, propertyId }
+        : undefined;
+      if (input.accountId && !expectedScope) throw new Error('booking_scope_unavailable');
+      await orchestrateBookingLifecycle({ bookingId: row.id, now: input.now, runType: 'batch_due', expectedScope });
       results.push({ bookingId: row.id, ok: true });
     } catch (runError) {
       results.push({ bookingId: row.id, ok: false, error: runError instanceof Error ? runError.message : 'run_failed' });
@@ -431,21 +465,27 @@ export async function orchestrateDueBookingLifecycles(input: { now?: string; lim
 
 export async function applyBookingLifecycleManualOverride(input: {
   bookingId: unknown; action: unknown; reason: unknown; actorId?: string | null; slaItemId?: unknown; stage?: unknown;
+  expectedScope?: ExpectedScope;
 }): Promise<BookingLifecycleOrchestratorSnapshot> {
   const bookingId = requireBookingId(input.bookingId);
+  if (input.expectedScope) await requireBookingOpsRecordScope(bookingId, input.expectedScope);
   const action = text(input.action, 80);
   const reason = text(input.reason, 500);
   if (!reason) throw new Error('Укажите причину ручного изменения.');
-  const current = await getBookingLifecycleOrchestratorSnapshot(bookingId);
+  const current = await getBookingLifecycleOrchestratorSnapshot(bookingId, true, input.expectedScope);
   if (action === 'waive_sla') {
     const itemId = requireBookingId(input.slaItemId);
+    if (input.expectedScope) await requireBookingOpsRecordScope(bookingId, input.expectedScope);
     const { data, error } = await supabase.from('booking_ops_sla_items').update({ status: 'waived', metadata: { overrideReason: reason }, updated_at: new Date().toISOString() }).eq('id', itemId).eq('booking_id', bookingId).select('id').maybeSingle();
     if (error) throw new Error(error.message);
     if (!data) throw new Error('SLA-задача не найдена.');
   } else if (action === 'force_escalation') {
+    if (input.expectedScope) await requireBookingOpsRecordScope(bookingId, input.expectedScope);
     await ensureLifecycleDraft({ bookingId, propertyId: current.state.propertyId, draftType: 'manual_operator_escalation', targetActor: 'operator', stage: current.state.currentStage, dueWindow: new Date().toISOString().slice(0, 10), dedupeKey: `manual-escalation:${new Date().toISOString().slice(0, 10)}:${reason}`, messageText: lifecycleDraftText('Оператор запросил ручную эскалацию.', bookingId, reason) });
   } else if (action === 'cancel') {
+    if (input.expectedScope) await requireBookingOpsRecordScope(bookingId, input.expectedScope);
     await supabase.from('booking_ops_lifecycle_states').update({ current_stage: 'cancelled', status: 'cancelled', next_action: null, sla_status: 'cancelled', metadata: { overrideReason: reason }, updated_at: new Date().toISOString() }).eq('booking_id', bookingId);
+    if (input.expectedScope) await requireBookingOpsRecordScope(bookingId, input.expectedScope);
     await supabase.from('booking_ops_sla_items').update({ status: 'cancelled', updated_at: new Date().toISOString() }).eq('booking_id', bookingId).neq('status', 'satisfied').neq('status', 'waived');
   } else if (action === 'change_stage') {
     const stage = text(input.stage, 80);
@@ -453,14 +493,21 @@ export async function applyBookingLifecycleManualOverride(input: {
     if (['checkin_release_ready', 'checkin_release_draft_prepared', 'in_stay', 'completed'].includes(stage) && !current.state.finalCheckinDraftAllowed) {
       throw new Error('Нельзя обойти блокеры гостя, юридической или физической готовности.');
     }
+    if (input.expectedScope) await requireBookingOpsRecordScope(bookingId, input.expectedScope);
     await supabase.from('booking_ops_lifecycle_states').update({ current_stage: stage, status: 'waiting_operator', metadata: { overrideReason: reason }, updated_at: new Date().toISOString() }).eq('booking_id', bookingId);
   } else {
     throw new Error('Недопустимое ручное изменение.');
   }
+  if (input.expectedScope) await requireBookingOpsRecordScope(bookingId, input.expectedScope);
   await insertEvent({ bookingId, propertyId: current.state.propertyId, eventType: 'manual_override_applied', eventPayload: { action, reason, stage: input.stage ?? null, slaItemId: input.slaItemId ?? null, gatesBypassed: false }, actorType: 'operator', actorId: input.actorId ?? null });
-  return getBookingLifecycleOrchestratorSnapshot(bookingId, false);
+  return getBookingLifecycleOrchestratorSnapshot(bookingId, false, input.expectedScope);
 }
 
-export async function forceBookingLifecycleEscalation(bookingId: unknown, reason: unknown, actorId?: string | null) {
-  return applyBookingLifecycleManualOverride({ bookingId, action: 'force_escalation', reason, actorId });
+export async function forceBookingLifecycleEscalation(
+  bookingId: unknown,
+  reason: unknown,
+  actorId?: string | null,
+  expectedScope?: ExpectedScope,
+) {
+  return applyBookingLifecycleManualOverride({ bookingId, action: 'force_escalation', reason, actorId, expectedScope });
 }

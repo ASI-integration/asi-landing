@@ -5,6 +5,11 @@ import { cancelReservation, createAvailabilityBlock, createDirectReservation, ge
 import { resolveReservationAccess } from '@/lib/reservations/access';
 import { belongsToReservationAccount, isReservationVisibleInView, type ReservationView } from '@/lib/reservations/views';
 import { reservationSourceTypes, type ConfirmationMode, type ReservationSourceType } from '@/lib/reservations/types';
+import {
+  requireBookingOpsApiAccess,
+  requireBookingOpsApiAccount,
+  requireBookingOpsApiPropertyAccess,
+} from '@/app/api/dashboard/booking-ops/access';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -51,14 +56,24 @@ export async function POST(req: Request) {
   const auth = await requireOpsAdminSession();
   if ('error' in auth) return auth.error;
   try {
-    const access = await resolveReservationAccess(auth.session);
+    const account = await requireBookingOpsApiAccount(auth.session);
+    if (!account.ok) return account.response;
+    const access = { accountId: account.accountId, actorId: account.actorId };
     const body = await req.json() as Record<string, unknown>;
     const action = String(body.action ?? 'create');
-    if (action === 'availability') return NextResponse.json({ ok: true, availability: await getUnifiedAvailability({ accountId: access.accountId, propertyId: String(body.propertyId ?? ''), unitId: body.unitId ? String(body.unitId) : null, checkIn: String(body.checkIn ?? ''), checkOut: String(body.checkOut ?? '') }) });
-    if (action === 'cancel') return NextResponse.json({ ok: true, result: await cancelReservation({ accountId: access.accountId, reservationId: String(body.reservationId ?? ''), actorId: access.actorId, reason: body.reason ? String(body.reason) : undefined }) });
-    if (action === 'block') return NextResponse.json({ ok: true, block: await createAvailabilityBlock({ accountId: access.accountId, actorId: access.actorId, propertyId: String(body.propertyId ?? ''), unitId: body.unitId ? String(body.unitId) : null, checkIn: String(body.checkIn ?? ''), checkOut: String(body.checkOut ?? ''), type: body.type === 'maintenance' ? 'maintenance' : 'owner', note: body.note ? String(body.note) : undefined, severity: body.severity ? String(body.severity) : undefined, issueTaskReference: body.issueTaskReference ? String(body.issueTaskReference) : undefined, expectedReopeningAt: body.expectedReopeningAt ? String(body.expectedReopeningAt) : undefined, reinspectionRequired: body.reinspectionRequired === true }) });
+    if (action === 'cancel') {
+      const reservationId = String(body.reservationId ?? '').trim();
+      const bookingAccess = await requireBookingOpsApiAccess(auth.session, reservationId);
+      if (!bookingAccess.ok) return bookingAccess.response;
+      return NextResponse.json({ ok: true, result: await cancelReservation({ accountId: access.accountId, reservationId, actorId: access.actorId, reason: body.reason ? String(body.reason) : undefined }) });
+    }
+    const propertyId = String(body.propertyId ?? '').trim();
+    const propertyAccess = await requireBookingOpsApiPropertyAccess(auth.session, propertyId);
+    if (!propertyAccess.ok) return propertyAccess.response;
+    if (action === 'availability') return NextResponse.json({ ok: true, availability: await getUnifiedAvailability({ accountId: access.accountId, propertyId, unitId: body.unitId ? String(body.unitId) : null, checkIn: String(body.checkIn ?? ''), checkOut: String(body.checkOut ?? '') }) });
+    if (action === 'block') return NextResponse.json({ ok: true, block: await createAvailabilityBlock({ accountId: access.accountId, actorId: access.actorId, propertyId, unitId: body.unitId ? String(body.unitId) : null, checkIn: String(body.checkIn ?? ''), checkOut: String(body.checkOut ?? ''), type: body.type === 'maintenance' ? 'maintenance' : 'owner', note: body.note ? String(body.note) : undefined, severity: body.severity ? String(body.severity) : undefined, issueTaskReference: body.issueTaskReference ? String(body.issueTaskReference) : undefined, expectedReopeningAt: body.expectedReopeningAt ? String(body.expectedReopeningAt) : undefined, reinspectionRequired: body.reinspectionRequired === true }) });
     const sourceType = reservationSourceTypes.includes(body.sourceType as ReservationSourceType) ? body.sourceType as ReservationSourceType : 'manual';
-    const reservation = await createDirectReservation({ accountId: access.accountId, actorId: access.actorId, idempotencyKey: String(body.idempotencyKey ?? ''), propertyId: String(body.propertyId ?? ''), unitId: body.unitId ? String(body.unitId) : null, checkIn: String(body.checkIn ?? ''), checkOut: String(body.checkOut ?? ''), guestName: String(body.guestName ?? ''), guestPhone: body.guestPhone ? String(body.guestPhone) : null, guestEmail: body.guestEmail ? String(body.guestEmail) : null, guestTelegram: body.guestTelegram ? String(body.guestTelegram) : null, guestCount: Number(body.guestCount ?? 1), sourceType, sourceProvider: body.sourceProvider ? String(body.sourceProvider) : null, bookingReference: body.bookingReference ? String(body.bookingReference) : null, amount: body.amount == null ? null : Number(body.amount), currency: body.currency ? String(body.currency) : null, paymentStatus: body.paymentStatus ? String(body.paymentStatus) : null, depositStatus: body.depositStatus ? String(body.depositStatus) : null, notes: body.notes ? String(body.notes) : null, confirmationMode: (['inquiry', 'temporary_hold', 'confirmed'].includes(String(body.confirmationMode)) ? body.confirmationMode : 'inquiry') as ConfirmationMode, holdExpiresAt: body.holdExpiresAt ? String(body.holdExpiresAt) : null });
+    const reservation = await createDirectReservation({ accountId: access.accountId, actorId: access.actorId, idempotencyKey: String(body.idempotencyKey ?? ''), propertyId, unitId: body.unitId ? String(body.unitId) : null, checkIn: String(body.checkIn ?? ''), checkOut: String(body.checkOut ?? ''), guestName: String(body.guestName ?? ''), guestPhone: body.guestPhone ? String(body.guestPhone) : null, guestEmail: body.guestEmail ? String(body.guestEmail) : null, guestTelegram: body.guestTelegram ? String(body.guestTelegram) : null, guestCount: Number(body.guestCount ?? 1), sourceType, sourceProvider: body.sourceProvider ? String(body.sourceProvider) : null, bookingReference: body.bookingReference ? String(body.bookingReference) : null, amount: body.amount == null ? null : Number(body.amount), currency: body.currency ? String(body.currency) : null, paymentStatus: body.paymentStatus ? String(body.paymentStatus) : null, depositStatus: body.depositStatus ? String(body.depositStatus) : null, notes: body.notes ? String(body.notes) : null, confirmationMode: (['inquiry', 'temporary_hold', 'confirmed'].includes(String(body.confirmationMode)) ? body.confirmationMode : 'inquiry') as ConfirmationMode, holdExpiresAt: body.holdExpiresAt ? String(body.holdExpiresAt) : null });
     return NextResponse.json({ ok: !reservation.blocked, reservation }, { status: reservation.blocked ? 409 : 200 });
   } catch (error) {
     return NextResponse.json({ ok: false, message: error instanceof Error ? error.message : 'reservation_action_failed' }, { status: 400 });

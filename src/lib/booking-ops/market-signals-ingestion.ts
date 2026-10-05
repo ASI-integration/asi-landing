@@ -3,6 +3,7 @@ import { supabase } from '@/lib/supabase';
 import { getPropertySetupById } from './owner-object-setup-autopilot';
 import { getAudienceProfile, type PrimaryAudience } from './property-audience-intelligence';
 import { getChannelManagerConnectionStatus } from './channel-manager-access-import';
+import { assertChannelManagerConnectionScopeCurrent, resolveChannelManagerConnectionScope } from './channel-manager-scope';
 
 export const MARKET_SIGNAL_RADII_KM = [1, 3, 7, 10] as const;
 export const MARKET_SIGNAL_TYPES = ['competitor_prices', 'available_supply', 'event_pressure', 'weather_pressure', 'channel_snapshot'] as const;
@@ -349,13 +350,25 @@ export async function importChannelPricingSignals(propertySetupId: string, conne
   const { setupId, setup } = await resolveSetup(propertySetupId);
   const connection = await getChannelManagerConnectionStatus(connectionId ? { connectionId } : { propertySetupId: setupId });
   if (!connection) throw new Error('Подключение менеджера каналов не найдено.');
+  const connectionScope = await resolveChannelManagerConnectionScope(connection);
+  if (
+    connectionScope.propertySetupId !== setupId
+    || connectionScope.propertyId !== setup.propertyId
+  ) {
+    throw Object.assign(new Error('Подключение менеджера каналов относится к другому объекту.'), {
+      code: 'account_scope_mismatch',
+    });
+  }
+  await assertChannelManagerConnectionScopeCurrent(connectionScope);
   let source: MarketSignalSource;
   const { data: existing } = await supabase.from('booking_market_signal_sources').select('*').eq('property_setup_id', setupId).eq('source_type', 'channel_import').limit(1).maybeSingle();
   source = existing ? mapSource(existing as Row) : await initializeMarketSignalSource(setupId, 'channel_import', 'channel_manager', { connection_id: connection.id });
+  await assertChannelManagerConnectionScopeCurrent(connectionScope);
   const { data, error } = await supabase.from('booking_channel_calendar_snapshots').select('date,price_amount,availability_status,updated_at').eq('connection_id', connection.id).order('date', { ascending: true }).limit(3660);
   if (error) throw new Error(error.message);
   const snapshots = (data ?? []) as Row[];
   const dates = [...new Set(snapshots.map((row) => text(row.date)).filter(Boolean))];
+  await assertChannelManagerConnectionScopeCurrent(connectionScope);
   const runId = await createRun(source, setupId, { types: ['channel_snapshot'], dates, radii: [3], metadata });
   const now = new Date().toISOString();
   const signalRows = dates.map((date) => {
@@ -372,10 +385,12 @@ export async function importChannelPricingSignals(propertySetupId: string, conne
   const warnings = signalRows.length ? [] : ['В импортированном календаре пока нет цен или доступности.'];
   let signals: NormalizedMarketSignal[] = [];
   if (signalRows.length) {
+    await assertChannelManagerConnectionScopeCurrent(connectionScope);
     const inserted = await supabase.from('booking_pricing_market_signals').insert(signalRows).select('*');
     if (inserted.error) throw new Error(inserted.error.message);
     signals = (inserted.data ?? []).map((row) => mapSignal(row as Row));
   }
+  await assertChannelManagerConnectionScopeCurrent(connectionScope);
   await finishRun(runId, source.id, signals.length, warnings);
   return { signals, runId, warnings };
 }

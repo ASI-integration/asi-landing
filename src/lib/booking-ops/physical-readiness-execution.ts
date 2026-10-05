@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { supabase } from '@/lib/supabase';
-import { getBookingOpsRecord } from './repository';
+import { getBookingOpsRecord, requireBookingOpsRecordScope } from './repository';
 import { blockGate, completeGate, markGateInProgress } from './lifecycle';
 import { createBookingOpsTask, updateBookingOpsTask } from './tasks';
 import { durableEventId, recordProcessedBookingAuditEvent } from './lifecycle-autopilot-service';
@@ -224,9 +224,13 @@ function mapDraft(row: Record<string, unknown>): PhysicalCoordinationDraft {
     createdBy: text(row.created_by) || null, createdAt: String(row.created_at),
   };
 }
-async function requireRecord(bookingId: unknown) {
+type ExpectedScope = { accountId: string; propertyId: string };
+
+async function requireRecord(bookingId: unknown, expectedScope?: ExpectedScope) {
   const id = requireUuid(bookingId);
-  const record = await getBookingOpsRecord(id);
+  const record = expectedScope
+    ? await requireBookingOpsRecordScope(id, expectedScope)
+    : await getBookingOpsRecord(id);
   if (!record) throw new Error('booking_not_found');
   return record;
 }
@@ -249,7 +253,88 @@ async function list(table: string, bookingId: string): Promise<Record<string, un
   return (data ?? []) as Record<string, unknown>[];
 }
 
-async function recordPhysicalEvent(input: { bookingId: string; propertyId: string | null; type: string; key: string; payload: Record<string, unknown> }) {
+type PhysicalReadRows = {
+  cleaningRow: Record<string, unknown> | null;
+  linenRow: Record<string, unknown> | null;
+  suppliesRow: Record<string, unknown> | null;
+  maintenanceRows: Record<string, unknown>[];
+  readinessRow: Record<string, unknown> | null;
+  draftRows: Record<string, unknown>[];
+};
+
+async function readPhysicalRows(bookingId: string): Promise<PhysicalReadRows> {
+  const [cleaningRow, linenRow, suppliesRow, maintenanceRows, readinessRow, draftRows] = await Promise.all([
+    singleton('booking_cleaning_tasks', bookingId),
+    singleton('booking_linen_tasks', bookingId),
+    singleton('booking_supplies_tasks', bookingId),
+    list('booking_maintenance_tickets', bookingId),
+    singleton('booking_physical_readiness', bookingId),
+    list('booking_physical_coordination_drafts', bookingId),
+  ]);
+  return { cleaningRow, linenRow, suppliesRow, maintenanceRows, readinessRow, draftRows };
+}
+
+function oldestPhysicalObservedAt(rows: PhysicalReadRows): string {
+  const values = [
+    rows.readinessRow?.updated_at,
+    rows.cleaningRow?.updated_at,
+    rows.linenRow?.updated_at,
+    rows.suppliesRow?.updated_at,
+    ...rows.maintenanceRows.map((row) => row.updated_at),
+  ].map((value) => text(value, 64)).filter(Boolean);
+  const valid = values.filter((value) => Number.isFinite(Date.parse(value)));
+  if (!valid.length || valid.length !== values.length) return new Date(0).toISOString();
+  return valid.sort((a, b) => Date.parse(a) - Date.parse(b))[0]!;
+}
+
+function physicalOperationalInput(rows: PhysicalReadRows): ComputeInput {
+  return {
+    cleaningStatus: text(rows.cleaningRow?.status),
+    linenStatus: text(rows.linenRow?.status),
+    suppliesStatus: text(rows.suppliesRow?.status),
+    suppliesWaiverReason: text(rows.suppliesRow?.waiver_reason),
+    maintenance: rows.maintenanceRows.map((row) => ({
+      status: text(row.status),
+      isBlocking: Boolean(row.is_blocking),
+      reason: text(row.blocker_reason) || text(row.notes),
+    })),
+  };
+}
+
+function buildPhysicalReadSnapshot(
+  record: Awaited<ReturnType<typeof requireRecord>>,
+  rows: PhysicalReadRows,
+): PhysicalReadiness | null {
+  if (!rows.readinessRow) return null;
+  const operationalInput = physicalOperationalInput(rows);
+  const beforeApproval = computePhysicalReadiness({ ...operationalInput, finalApproved: false });
+  const approvalStillValid = beforeApproval.operationalBlockers.length === 0 && Boolean(rows.readinessRow.approved_at);
+  const computed = computePhysicalReadiness({ ...operationalInput, finalApproved: approvalStillValid });
+  return {
+    bookingId: record.id,
+    propertyId: record.propertyId ?? null,
+    status: computed.status,
+    blockers: computed.blockers,
+    operationalBlockers: computed.operationalBlockers,
+    finalReady: computed.finalReady,
+    approvedAt: approvalStillValid ? text(rows.readinessRow.approved_at) || null : null,
+    approvedBy: approvalStillValid ? text(rows.readinessRow.approved_by) || null : null,
+    cleaning: rows.cleaningRow ? mapTask(rows.cleaningRow) : null,
+    linen: rows.linenRow ? mapTask(rows.linenRow) : null,
+    supplies: rows.suppliesRow ? mapTask(rows.suppliesRow) : null,
+    maintenance: rows.maintenanceRows.map(mapTask),
+    drafts: rows.draftRows.map(mapDraft),
+    updatedAt: oldestPhysicalObservedAt(rows),
+  };
+}
+
+export async function readPhysicalReadiness(bookingId: string, expectedScope?: ExpectedScope): Promise<PhysicalReadiness | null> {
+  const record = await requireRecord(bookingId, expectedScope);
+  return buildPhysicalReadSnapshot(record, await readPhysicalRows(record.id));
+}
+
+async function recordPhysicalEvent(input: { bookingId: string; propertyId: string | null; type: string; key: string; payload: Record<string, unknown>; expectedScope?: ExpectedScope }) {
+  if (input.expectedScope) await requireBookingOpsRecordScope(input.bookingId, input.expectedScope);
   return recordProcessedBookingAuditEvent({
     id: durableEventId('physical_readiness', input.bookingId, input.type, input.key),
     bookingId: input.bookingId, objectId: input.propertyId, type: input.type, actorType: 'system',
@@ -257,7 +342,7 @@ async function recordPhysicalEvent(input: { bookingId: string; propertyId: strin
   });
 }
 
-async function syncReadinessOperatorTask(record: Awaited<ReturnType<typeof requireRecord>>, finalReady: boolean, shouldEnsureOpen: boolean) {
+async function syncReadinessOperatorTask(record: Awaited<ReturnType<typeof requireRecord>>, finalReady: boolean, shouldEnsureOpen: boolean, expectedScope?: ExpectedScope) {
   const { data, error } = await supabase.from('booking_ops_tasks').select('*')
     .eq('booking_ops_record_id', record.id)
     .in('task_type', ['unit_ready_for_next_guest', 'unit_ready_confirmation'])
@@ -270,16 +355,16 @@ async function syncReadinessOperatorTask(record: Awaited<ReturnType<typeof requi
     if (!task) {
       const created = await createBookingOpsTask({ bookingOpsRecordId: record.id, bookingId: record.bookingId,
         taskType: 'unit_ready_confirmation', title: 'Подтвердить готовность объекта', priority: 'normal', source: 'system',
-        metadata: { source: 'physical_readiness', noExternalSend: true } });
+        metadata: { source: 'physical_readiness', noExternalSend: true } }, { expectedScope });
       if (!created.ok) throw new Error(created.error);
       task = created.task;
     }
-    const completed = await updateBookingOpsTask(record.id, task.id, { status: 'completed' });
+    const completed = await updateBookingOpsTask(record.id, task.id, { status: 'completed' }, { expectedScope });
     if (!completed.ok) throw new Error(completed.error);
   } else if (shouldEnsureOpen && !tasks.some((task) => ['open', 'in_progress', 'blocked'].includes(task.status))) {
     const created = await createBookingOpsTask({ bookingOpsRecordId: record.id, bookingId: record.bookingId,
       taskType: 'unit_ready_confirmation', title: 'Проверить готовность объекта', priority: 'normal', source: 'system',
-      metadata: { source: 'physical_readiness', noExternalSend: true } });
+      metadata: { source: 'physical_readiness', noExternalSend: true } }, { expectedScope });
     if (!created.ok) throw new Error(created.error);
   }
 }
@@ -289,32 +374,36 @@ async function syncPhysicalReadinessClosure(input: {
   previousStatus: string;
   previousApprovedAt: string | null;
   computed: ReturnType<typeof computePhysicalReadiness>;
+  expectedScope?: ExpectedScope;
 }) {
   const metadata = { source: 'physical_readiness', blockerKeys: input.computed.operationalBlockers.map((item) => item.key) };
   const wasApproved = Boolean(input.previousApprovedAt);
   const decision = physicalReadinessClosureDecision(input.computed, wasApproved);
-  await syncReadinessOperatorTask(input.record, input.computed.finalReady, decision.readinessTask === 'open');
+  await syncReadinessOperatorTask(input.record, input.computed.finalReady, decision.readinessTask === 'open', input.expectedScope);
   if (decision.gateStatus === 'blocked') {
-    await blockGate(input.record.id, 'property_ready', input.computed.operationalBlockers.map((item) => item.key).join(','), metadata);
+    if (input.expectedScope) await requireBookingOpsRecordScope(input.record.id, input.expectedScope);
+    await blockGate(input.record.id, 'property_ready', input.computed.operationalBlockers.map((item) => item.key).join(','), metadata, input.expectedScope);
   } else if (decision.gateStatus === 'completed') {
-    await completeGate(input.record.id, 'property_ready', metadata);
+    if (input.expectedScope) await requireBookingOpsRecordScope(input.record.id, input.expectedScope);
+    await completeGate(input.record.id, 'property_ready', metadata, input.expectedScope);
   } else {
-    await markGateInProgress(input.record.id, 'property_ready', metadata);
+    if (input.expectedScope) await requireBookingOpsRecordScope(input.record.id, input.expectedScope);
+    await markGateInProgress(input.record.id, 'property_ready', metadata, input.expectedScope);
   }
   if (input.computed.status === 'ready_for_review' && input.previousStatus !== 'ready_for_review') {
-    await recordPhysicalEvent({ bookingId: input.record.id, propertyId: input.record.propertyId ?? null,
+    await recordPhysicalEvent({ expectedScope: input.expectedScope, bookingId: input.record.id, propertyId: input.record.propertyId ?? null,
       type: 'property_ready_for_review', key: input.previousStatus,
       payload: { bookingId: input.record.id, propertyId: input.record.propertyId, finalReady: false } });
   }
   if (decision.invalidated) {
-    await recordPhysicalEvent({ bookingId: input.record.id, propertyId: input.record.propertyId ?? null,
+    await recordPhysicalEvent({ expectedScope: input.expectedScope, bookingId: input.record.id, propertyId: input.record.propertyId ?? null,
       type: 'property_readiness_invalidated', key: input.previousApprovedAt ?? '',
       payload: { bookingId: input.record.id, propertyId: input.record.propertyId, blockerKeys: metadata.blockerKeys } });
   }
 }
 
-export async function ensurePhysicalTasks(bookingId: string): Promise<PhysicalReadiness> {
-  const record = await requireRecord(bookingId);
+export async function ensurePhysicalTasks(bookingId: string, expectedScope?: ExpectedScope): Promise<PhysicalReadiness> {
+  const record = await requireRecord(bookingId, expectedScope);
   const now = new Date().toISOString();
   const dueAt = record.checkInAt ? new Date(record.checkInAt).toISOString() : null;
   const rows = [
@@ -323,32 +412,27 @@ export async function ensurePhysicalTasks(bookingId: string): Promise<PhysicalRe
     ['booking_supplies_tasks', { id: randomUUID(), booking_id: record.id, property_id: record.propertyId, status: 'pending', due_at: dueAt, critical_items: ['туалетная бумага', 'мыло', 'полотенца', 'базовые принадлежности'], report_payload: {}, created_at: now, updated_at: now }],
   ] as const;
   for (const [table, row] of rows) {
+    if (expectedScope) await requireBookingOpsRecordScope(record.id, expectedScope);
     const { error } = await supabase.from(table).upsert(row, { onConflict: 'booking_id', ignoreDuplicates: true });
     if (error) throw new Error(error.message);
   }
   const existing = await singleton('booking_physical_readiness', record.id);
   if (!existing) {
+    if (expectedScope) await requireBookingOpsRecordScope(record.id, expectedScope);
     const { error } = await supabase.from('booking_physical_readiness').insert({
       id: randomUUID(), booking_id: record.id, property_id: record.propertyId, status: 'not_ready',
       blockers: [], final_ready: false, metadata: {}, created_at: now, updated_at: now,
     });
     if (error) throw new Error(error.message);
   }
-  return recomputePhysicalReadiness(record.id);
+  return recomputePhysicalReadiness(record.id, expectedScope);
 }
 
-export async function recomputePhysicalReadiness(bookingId: string): Promise<PhysicalReadiness> {
-  const record = await requireRecord(bookingId);
-  const [cleaningRow, linenRow, suppliesRow, maintenanceRows, readinessRow, draftRows] = await Promise.all([
-    singleton('booking_cleaning_tasks', record.id), singleton('booking_linen_tasks', record.id),
-    singleton('booking_supplies_tasks', record.id), list('booking_maintenance_tickets', record.id),
-    singleton('booking_physical_readiness', record.id), list('booking_physical_coordination_drafts', record.id),
-  ]);
-  const operationalInput = {
-    cleaningStatus: text(cleaningRow?.status), linenStatus: text(linenRow?.status), suppliesStatus: text(suppliesRow?.status),
-    suppliesWaiverReason: text(suppliesRow?.waiver_reason),
-    maintenance: maintenanceRows.map((row) => ({ status: text(row.status), isBlocking: Boolean(row.is_blocking), reason: text(row.blocker_reason) || text(row.notes) })),
-  };
+export async function recomputePhysicalReadiness(bookingId: string, expectedScope?: ExpectedScope): Promise<PhysicalReadiness> {
+  const record = await requireRecord(bookingId, expectedScope);
+  const rows = await readPhysicalRows(record.id);
+  const { cleaningRow, linenRow, suppliesRow, maintenanceRows, readinessRow, draftRows } = rows;
+  const operationalInput = physicalOperationalInput(rows);
   const beforeApproval = computePhysicalReadiness({ ...operationalInput, finalApproved: false });
   const approvalStillValid = beforeApproval.operationalBlockers.length === 0 && Boolean(readinessRow?.approved_at);
   const computed = computePhysicalReadiness({ ...operationalInput, finalApproved: approvalStillValid });
@@ -360,10 +444,12 @@ export async function recomputePhysicalReadiness(bookingId: string): Promise<Phy
     approved_by: approvalStillValid ? readinessRow?.approved_by : null,
     metadata: object(readinessRow?.metadata), created_at: readinessRow?.created_at ?? now, updated_at: now,
   };
+  if (expectedScope) await requireBookingOpsRecordScope(record.id, expectedScope);
   const { data, error } = await supabase.from('booking_physical_readiness').upsert(payload, { onConflict: 'booking_id' }).select('*').single();
   if (error || !data) throw new Error(error?.message ?? 'physical_readiness_update_failed');
+  if (expectedScope) await requireBookingOpsRecordScope(record.id, expectedScope);
   await syncPhysicalReadinessClosure({
-    record, previousStatus: text(readinessRow?.status) || 'not_ready',
+    record, expectedScope, previousStatus: text(readinessRow?.status) || 'not_ready',
     previousApprovedAt: text(readinessRow?.approved_at) || null, computed,
   });
   return {
@@ -376,8 +462,8 @@ export async function recomputePhysicalReadiness(bookingId: string): Promise<Phy
   };
 }
 
-async function updateSingletonTask(table: string, bookingId: string, statuses: readonly string[], body: Record<string, unknown>): Promise<PhysicalReadiness> {
-  const record = await requireRecord(bookingId);
+async function updateSingletonTask(table: string, bookingId: string, statuses: readonly string[], body: Record<string, unknown>, expectedScope?: ExpectedScope): Promise<PhysicalReadiness> {
+  const record = await requireRecord(bookingId, expectedScope);
   const status = text(body.status, 40);
   if (!statuses.includes(status)) throw new Error('status_invalid');
   const current = await singleton(table, record.id);
@@ -389,7 +475,7 @@ async function updateSingletonTask(table: string, bookingId: string, statuses: r
       || text(body.assignedToTelegram ?? body.assigned_to_telegram) || text(current.assigned_to_telegram),
     );
     validateCleaningTransition({ currentStatus: text(current.status), nextStatus: status, hasExecutor });
-    if (status === current.status) return recomputePhysicalReadiness(record.id);
+    if (status === current.status) return recomputePhysicalReadiness(record.id, expectedScope);
   }
   if (table === 'booking_linen_tasks' && status === 'verified' && current.status !== 'delivered' && current.status !== 'verified') throw new Error('linen_must_be_delivered_first');
   if (table === 'booking_supplies_tasks' && status === 'waived' && !text(body.waiverReason ?? body.waiver_reason)) throw new Error('waiver_reason_required');
@@ -408,30 +494,32 @@ async function updateSingletonTask(table: string, bookingId: string, statuses: r
   if (table === 'booking_cleaning_tasks') { patch.completed_at = status === 'completed' || status === 'verified' ? current.completed_at ?? now : current.completed_at; patch.verified_at = status === 'verified' ? current.verified_at ?? now : current.verified_at; }
   if (table === 'booking_linen_tasks') { patch.delivered_at = status === 'delivered' || status === 'verified' ? current.delivered_at ?? now : current.delivered_at; patch.verified_at = status === 'verified' ? now : null; }
   if (table === 'booking_supplies_tasks') { patch.waiver_reason = status === 'waived' ? text(body.waiverReason ?? body.waiver_reason) : null; patch.verified_at = status === 'verified' ? now : null; }
+  if (expectedScope) await requireBookingOpsRecordScope(record.id, expectedScope);
   const { error } = await supabase.from(table).update(patch).eq('booking_id', record.id);
   if (error) throw new Error(error.message);
-  const readiness = await recomputePhysicalReadiness(record.id);
+  const readiness = await recomputePhysicalReadiness(record.id, expectedScope);
   if (table === 'booking_cleaning_tasks') {
     const eventTypes: Partial<Record<CleaningStatus, string>> = {
       assigned: 'cleaner_assigned', in_progress: 'cleaning_started', completed: 'cleaning_completed', verified: 'cleaning_verified',
     };
     const eventType = eventTypes[status as CleaningStatus];
-    if (eventType) await recordPhysicalEvent({ bookingId: record.id, propertyId: record.propertyId ?? null,
+    if (eventType) await recordPhysicalEvent({ expectedScope, bookingId: record.id, propertyId: record.propertyId ?? null,
       type: eventType, key: `${current.id}:${current.status}:${status}`,
       payload: { bookingId: record.id, propertyId: record.propertyId, cleaningTaskId: String(current.id), status } });
   }
   return readiness;
 }
 
-export const updateCleaningTask = (bookingId: string, body: Record<string, unknown>) => updateSingletonTask('booking_cleaning_tasks', bookingId, CLEANING_STATUSES, body);
-export const updateLinenTask = (bookingId: string, body: Record<string, unknown>) => updateSingletonTask('booking_linen_tasks', bookingId, LINEN_STATUSES, body);
-export const updateSuppliesTask = (bookingId: string, body: Record<string, unknown>) => updateSingletonTask('booking_supplies_tasks', bookingId, SUPPLIES_STATUSES, body);
+export const updateCleaningTask = (bookingId: string, body: Record<string, unknown>, expectedScope?: ExpectedScope) => updateSingletonTask('booking_cleaning_tasks', bookingId, CLEANING_STATUSES, body, expectedScope);
+export const updateLinenTask = (bookingId: string, body: Record<string, unknown>, expectedScope?: ExpectedScope) => updateSingletonTask('booking_linen_tasks', bookingId, LINEN_STATUSES, body, expectedScope);
+export const updateSuppliesTask = (bookingId: string, body: Record<string, unknown>, expectedScope?: ExpectedScope) => updateSingletonTask('booking_supplies_tasks', bookingId, SUPPLIES_STATUSES, body, expectedScope);
 
-export async function createMaintenanceTicket(bookingId: string, body: Record<string, unknown>): Promise<PhysicalReadiness> {
-  const record = await requireRecord(bookingId);
+export async function createMaintenanceTicket(bookingId: string, body: Record<string, unknown>, expectedScope?: ExpectedScope): Promise<PhysicalReadiness> {
+  const record = await requireRecord(bookingId, expectedScope);
   const title = text(body.title, 200);
   if (!title) throw new Error('maintenance_title_required');
   const now = new Date().toISOString();
+  if (expectedScope) await requireBookingOpsRecordScope(record.id, expectedScope);
   const { error } = await supabase.from('booking_maintenance_tickets').insert({
     id: randomUUID(), booking_id: record.id, property_id: record.propertyId, title,
     description: text(body.description) || null, priority: ['low', 'normal', 'high', 'critical'].includes(text(body.priority)) ? text(body.priority) : 'normal',
@@ -442,11 +530,11 @@ export async function createMaintenanceTicket(bookingId: string, body: Record<st
     created_at: now, updated_at: now,
   });
   if (error) throw new Error(error.message);
-  return recomputePhysicalReadiness(record.id);
+  return recomputePhysicalReadiness(record.id, expectedScope);
 }
 
-export async function updateMaintenanceTicket(bookingId: string, body: Record<string, unknown>): Promise<PhysicalReadiness> {
-  const record = await requireRecord(bookingId);
+export async function updateMaintenanceTicket(bookingId: string, body: Record<string, unknown>, expectedScope?: ExpectedScope): Promise<PhysicalReadiness> {
+  const record = await requireRecord(bookingId, expectedScope);
   const ticketId = requireUuid(body.ticketId ?? body.ticket_id, 'ticket_id');
   const status = text(body.status, 40);
   if (!(MAINTENANCE_STATUSES as readonly string[]).includes(status)) throw new Error('status_invalid');
@@ -457,6 +545,7 @@ export async function updateMaintenanceTicket(bookingId: string, body: Record<st
   const reason = text(body.blockerReason ?? body.reason ?? body.notes) || text(current.blocker_reason) || text(current.notes);
   if (status === 'deferred' && !reason) throw new Error('deferred_reason_required');
   const now = new Date().toISOString();
+  if (expectedScope) await requireBookingOpsRecordScope(record.id, expectedScope);
   const { error } = await supabase.from('booking_maintenance_tickets').update({
     status, is_blocking: body.isBlocking === undefined ? current.is_blocking : Boolean(body.isBlocking),
     blocker_reason: reason || null, notes: text(body.notes) || current.notes || null,
@@ -465,11 +554,11 @@ export async function updateMaintenanceTicket(bookingId: string, body: Record<st
     verified_at: status === 'verified' ? now : null, updated_at: now,
   }).eq('id', ticketId).eq('booking_id', record.id);
   if (error) throw new Error(error.message);
-  return recomputePhysicalReadiness(record.id);
+  return recomputePhysicalReadiness(record.id, expectedScope);
 }
 
-export async function createPhysicalCoordinationDraft(bookingId: string, body: Record<string, unknown>): Promise<PhysicalReadiness> {
-  const record = await requireRecord(bookingId);
+export async function createPhysicalCoordinationDraft(bookingId: string, body: Record<string, unknown>, expectedScope?: ExpectedScope): Promise<PhysicalReadiness> {
+  const record = await requireRecord(bookingId, expectedScope);
   const taskType = text(body.taskType ?? body.task_type) as PhysicalDraftType;
   if (!(PHYSICAL_DRAFT_TYPES as readonly string[]).includes(taskType)) throw new Error('draft_type_invalid');
   const taskId = text(body.taskId ?? body.task_id);
@@ -484,6 +573,7 @@ export async function createPhysicalCoordinationDraft(bookingId: string, body: R
     confirmationNeeded: text(body.confirmationNeeded),
   });
   const now = new Date().toISOString();
+  if (expectedScope) await requireBookingOpsRecordScope(record.id, expectedScope);
   const { error } = await supabase.from('booking_physical_coordination_drafts').insert({
     id: randomUUID(), booking_id: record.id, task_type: taskType, task_id: taskId || null,
     telegram_target: text(body.telegramTarget ?? body.telegram_target) || null, message_text: messageText,
@@ -491,30 +581,30 @@ export async function createPhysicalCoordinationDraft(bookingId: string, body: R
     metadata: { draftOnly: true, noExternalSend: true }, created_at: now, updated_at: now,
   });
   if (error) throw new Error(error.message);
-  return recomputePhysicalReadiness(record.id);
+  return recomputePhysicalReadiness(record.id, expectedScope);
 }
 
-export async function approveFinalPhysicalReadiness(bookingId: string, approvedBy: unknown): Promise<PhysicalReadiness> {
-  const record = await requireRecord(bookingId);
+export async function approveFinalPhysicalReadiness(bookingId: string, approvedBy: unknown, expectedScope?: ExpectedScope): Promise<PhysicalReadiness> {
+  const record = await requireRecord(bookingId, expectedScope);
   const operator = text(approvedBy, 200);
   if (!operator) throw new Error('approved_by_required');
-  const current = await recomputePhysicalReadiness(record.id);
+  const current = await recomputePhysicalReadiness(record.id, expectedScope);
   assertPhysicalApprovalAllowed(current.operationalBlockers);
   if (current.finalReady) return current;
   const now = new Date().toISOString();
+  if (expectedScope) await requireBookingOpsRecordScope(record.id, expectedScope);
   const { error } = await supabase.from('booking_physical_readiness').update({ approved_at: now, approved_by: operator, updated_at: now }).eq('booking_id', record.id);
   if (error) throw new Error(error.message);
-  const readiness = await recomputePhysicalReadiness(record.id);
-  await recordPhysicalEvent({ bookingId: record.id, propertyId: record.propertyId ?? null,
+  const readiness = await recomputePhysicalReadiness(record.id, expectedScope);
+  await recordPhysicalEvent({ expectedScope, bookingId: record.id, propertyId: record.propertyId ?? null,
     type: 'final_property_readiness_approved', key: String(readiness.approvedAt),
     payload: { bookingId: record.id, propertyId: record.propertyId, finalReady: true } });
   const { recomputeBookingCheckinReadiness } = await import('./pre-checkin-control-center');
-  await recomputeBookingCheckinReadiness(record.id);
+  if (expectedScope) await requireBookingOpsRecordScope(record.id, expectedScope);
+  await recomputeBookingCheckinReadiness(record.id, { expectedScope });
   return readiness;
 }
 
-export async function getPhysicalReadiness(bookingId: string): Promise<PhysicalReadiness | null> {
-  const id = requireUuid(bookingId);
-  const existing = await singleton('booking_physical_readiness', id);
-  return existing ? recomputePhysicalReadiness(id) : null;
+export async function getPhysicalReadiness(bookingId: string, expectedScope?: ExpectedScope): Promise<PhysicalReadiness | null> {
+  return readPhysicalReadiness(bookingId, expectedScope);
 }

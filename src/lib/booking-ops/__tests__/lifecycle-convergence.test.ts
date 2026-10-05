@@ -1,6 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { initialLifecycleState, reduceLifecycle, type LifecycleEvent } from '../lifecycle-autopilot';
 
+const scope = vi.hoisted(() => ({ requireScope: vi.fn() }));
+vi.mock('../repository', () => ({ requireBookingOpsRecordScope: scope.requireScope }));
+
 type Task = { id: string; booking_id: string; task_key: string; assigned_role: string; status: string; completed_at?: string; completion_event_id?: string | null };
 let tasks: Task[] = [];
 
@@ -40,6 +43,8 @@ const now = '2026-07-12T01:00:00.000Z';
 
 describe('OPS v17.3 lifecycle convergence', () => {
   beforeEach(() => {
+    vi.clearAllMocks();
+    scope.requireScope.mockResolvedValue({ id: 'booking-1', propertyId: 'property-1' });
     tasks = [
       { id: 'pre', booking_id: 'booking-1', task_key: 'booking-1:inspector', assigned_role: 'inspector', status: 'pending', completion_event_id: null },
       { id: 'checkout', booking_id: 'booking-1', task_key: 'booking-1:checkout:inspector', assigned_role: 'inspector', status: 'pending', completion_event_id: null },
@@ -61,6 +66,15 @@ describe('OPS v17.3 lifecycle convergence', () => {
   it('checkout inspection completes only the checkout task', async () => {
     await convergeLifecycleEvent(event('checkout.inspection_completed', 'checkout-event'), initialLifecycleState(), now);
     expect(tasks.map(({ id, status }) => ({ id, status }))).toEqual([{ id: 'pre', status: 'pending' }, { id: 'checkout', status: 'completed' }, { id: 'reinspect', status: 'pending' }]);
+  });
+
+  it('revalidates canonical scope before scoped projection and task mutations', async () => {
+    const expectedScope = { accountId: 'account-1', propertyId: 'property-1' };
+    await convergeLifecycleEvent(event('inspection.completed', 'scoped-event'), initialLifecycleState(), now, expectedScope);
+    expect(scope.requireScope).toHaveBeenCalledTimes(2);
+    expect(scope.requireScope).toHaveBeenNthCalledWith(1, 'booking-1', expectedScope);
+    expect(scope.requireScope).toHaveBeenNthCalledWith(2, 'booking-1', expectedScope);
+    expect(tasks[0]).toMatchObject({ status: 'completed', completion_event_id: 'scoped-event' });
   });
 
   it('backfills an event id on an already completed workspace task with a NULL event id', async () => {

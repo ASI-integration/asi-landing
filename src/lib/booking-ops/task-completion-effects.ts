@@ -1,6 +1,6 @@
 import { supabase } from '@/lib/supabase';
 import { recordBookingOpsEvent } from './events';
-import { getBookingOpsRecord, syncBookingOpsTasksForRecordId, updateBookingOpsRecord } from './repository';
+import { getBookingOpsRecord, requireBookingOpsRecordScope, syncBookingOpsTasksForRecordId, updateBookingOpsRecord } from './repository';
 import { getBookingOpsTask, updateBookingOpsTask } from './tasks';
 import type { BookingOpsTask, BookingOpsTaskStatus, UpdateBookingOpsTaskInput } from './task-types';
 import type {
@@ -12,6 +12,8 @@ import type {
   UpdateBookingOpsInput,
 } from './types';
 import type { TelegramDraftReadinessStatus } from './readiness';
+
+type ExpectedScope = { accountId: string; propertyId: string };
 
 export type BookingOpsTaskCompletionUpdates = Pick<
   UpdateBookingOpsInput,
@@ -205,7 +207,7 @@ export function applyBookingOpsTaskCompletionEffect(
 }
 
 type CompletionDependencies = {
-  getRecord: typeof getBookingOpsRecord;
+  getRecord: (id: string, expectedScope?: ExpectedScope) => ReturnType<typeof getBookingOpsRecord>;
   getTask: typeof getBookingOpsTask;
   updateRecord: typeof updateBookingOpsRecord;
   updateTask: typeof updateBookingOpsTask;
@@ -214,7 +216,9 @@ type CompletionDependencies = {
 };
 
 const DEFAULT_DEPENDENCIES: CompletionDependencies = {
-  getRecord: getBookingOpsRecord,
+  getRecord: (id, expectedScope) => expectedScope
+    ? requireBookingOpsRecordScope(id, expectedScope)
+    : getBookingOpsRecord(id),
   getTask: getBookingOpsTask,
   updateRecord: updateBookingOpsRecord,
   updateTask: updateBookingOpsTask,
@@ -225,7 +229,9 @@ const DEFAULT_DEPENDENCIES: CompletionDependencies = {
 async function applyTelegramDraftStatus(
   recordId: string,
   status: TelegramDraftReadinessStatus,
+  expectedScope?: ExpectedScope,
 ): Promise<{ ok: boolean; error?: string }> {
+  if (expectedScope) await requireBookingOpsRecordScope(recordId, expectedScope);
   const { data, error } = await supabase
     .from('booking_ops_telegram_drafts')
     .select('id, status')
@@ -243,9 +249,11 @@ async function applyTelegramDraftStatus(
     .map((draft) => draft.id);
   if (ids.length === 0) return { ok: true };
 
+  if (expectedScope) await requireBookingOpsRecordScope(recordId, expectedScope);
   const updated = await supabase
     .from('booking_ops_telegram_drafts')
     .update({ status: nextStatus, updated_at: new Date().toISOString() })
+    .eq('booking_ops_record_id', recordId)
     .in('id', ids);
   return updated.error ? { ok: false, error: updated.error.message } : { ok: true };
 }
@@ -255,29 +263,35 @@ export async function updateBookingOpsTaskWithCompletionEffects(
   taskId: string,
   input: UpdateBookingOpsTaskInput,
   dependencies: CompletionDependencies = DEFAULT_DEPENDENCIES,
+  expectedScope?: ExpectedScope,
 ): Promise<
   | { ok: true; task: BookingOpsTask; effectResult: BookingOpsTaskCompletionEffectResult | null }
   | { ok: false; error: string; message: string; effectResult?: BookingOpsTaskCompletionEffectResult }
 > {
   if (input.status !== 'completed') {
-    const updated = await dependencies.updateTask(recordId, taskId, input);
+    const updated = expectedScope
+      ? await dependencies.updateTask(recordId, taskId, input, { expectedScope })
+      : await dependencies.updateTask(recordId, taskId, input);
     return updated.ok
       ? { ok: true, task: updated.task, effectResult: null }
       : { ok: false, error: updated.error, message: 'Не удалось обновить задачу.' };
   }
 
   const [record, taskResult] = await Promise.all([
-    dependencies.getRecord(recordId),
+    dependencies.getRecord(recordId, expectedScope),
     dependencies.getTask(recordId, taskId),
   ]);
   if (!record) return { ok: false, error: 'not_found', message: 'Операционная запись не найдена.' };
   if (!taskResult.ok) return { ok: false, error: taskResult.error, message: 'Задача не найдена.' };
 
+  if (expectedScope) await requireBookingOpsRecordScope(recordId, expectedScope);
   const effectResult = applyBookingOpsTaskCompletionEffect(record, taskResult.task, 'completed');
   const { telegramDraftStatus, ...recordUpdates } = effectResult.appliedUpdates;
 
   if (Object.keys(recordUpdates).length > 0) {
-    const recordUpdate = await dependencies.updateRecord(recordId, recordUpdates);
+    const recordUpdate = expectedScope
+      ? await dependencies.updateRecord(recordId, recordUpdates, { expectedScope })
+      : await dependencies.updateRecord(recordId, recordUpdates);
     if (!recordUpdate.ok) {
       return {
         ok: false,
@@ -289,7 +303,9 @@ export async function updateBookingOpsTaskWithCompletionEffects(
   }
 
   if (telegramDraftStatus) {
-    const draftUpdate = await dependencies.applyTelegramDraftStatus(recordId, telegramDraftStatus);
+    const draftUpdate = expectedScope
+      ? await dependencies.applyTelegramDraftStatus(recordId, telegramDraftStatus, expectedScope)
+      : await dependencies.applyTelegramDraftStatus(recordId, telegramDraftStatus);
     if (!draftUpdate.ok) {
       const blocked: BookingOpsTaskCompletionEffectResult = {
         ...effectResult,
@@ -304,12 +320,16 @@ export async function updateBookingOpsTaskWithCompletionEffects(
     }
   }
 
-  const taskUpdate = await dependencies.updateTask(recordId, taskId, input);
+  const taskUpdate = expectedScope
+    ? await dependencies.updateTask(recordId, taskId, input, { expectedScope })
+    : await dependencies.updateTask(recordId, taskId, input);
   if (!taskUpdate.ok) {
     return { ok: false, error: taskUpdate.error, message: 'Не удалось обновить задачу.', effectResult };
   }
 
-  const sync = await dependencies.syncTasks(recordId);
+  const sync = expectedScope
+    ? await dependencies.syncTasks(recordId, { expectedScope })
+    : await dependencies.syncTasks(recordId);
   if (!sync.ok) {
     return {
       ok: false,
@@ -319,6 +339,7 @@ export async function updateBookingOpsTaskWithCompletionEffects(
     };
   }
 
+  if (expectedScope) await requireBookingOpsRecordScope(recordId, expectedScope);
   const appliedFields = Object.keys(effectResult.appliedUpdates).sort();
   const suggestedFields = Object.keys(effectResult.suggestedUpdates).sort();
   const applied = appliedFields.length > 0;

@@ -612,7 +612,7 @@ describe('telegram voice inbound session continuity', () => {
       },
     });
 
-    expect(replay.reply).toContain('кафе и рестораны');
+    expect(replay.reply).toBe('Не могу подтвердить эти сведения. Нужна проверка оператора.');
     expect(loadAutonomousSession(506)?.pending_identity_message).toBeNull();
   });
 });

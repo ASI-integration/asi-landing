@@ -1,3 +1,4 @@
+import { guardBookingCommunicationDraft } from '@/lib/communication/booking-knowledge-boundary';
 import { randomUUID } from 'node:crypto';
 import { supabase } from '@/lib/supabase';
 import { buildAutoSendDecisionMetadata } from './communication-auto-send-policy';
@@ -8,9 +9,10 @@ import {
   completeGate,
   getLifecycleStatus,
   initializeLifecycleForBooking,
+  readLifecycleStatus,
   markGateInProgress,
 } from './lifecycle';
-import { getBookingOpsRecord, syncBookingOpsTasksForRecordId } from './repository';
+import { getBookingOpsRecord, requireBookingOpsRecordScope, syncBookingOpsTasksForRecordId } from './repository';
 import type {
   BookingOpsCommunicationChannel,
   BookingOpsCommunicationIntent,
@@ -243,8 +245,8 @@ async function listIssueRows(bookingId: string): Promise<GuestStayIssueRow[]> {
     .select('*')
     .eq('booking_id', bookingId)
     .order('updated_at', { ascending: false });
-  if (error || !data) return [];
-  return (data as GuestStayIssueDbRow[]).map(mapIssueRow);
+  if (error) throw new Error(error.message || 'guest_stay_issues_unavailable');
+  return ((data ?? []) as GuestStayIssueDbRow[]).map(mapIssueRow);
 }
 
 async function getIssueRow(bookingId: string, issueId: string): Promise<GuestStayIssueRow | null> {
@@ -272,7 +274,9 @@ async function upsertExecution(
     failure_reason: string | null;
     metadata: Record<string, unknown>;
   }>,
+  expectedScope?: { accountId: string; propertyId: string },
 ): Promise<InStayCheckoutRow> {
+  if (expectedScope) await requireBookingOpsRecordScope(bookingId, expectedScope);
   const existingRaw = await getExecutionDbRow(bookingId);
   const existing = existingRaw ? mapExecutionRow(existingRaw) : null;
   const now = new Date().toISOString();
@@ -295,6 +299,7 @@ async function upsertExecution(
     created_at: existing?.createdAt ?? now,
     updated_at: now,
   };
+  if (expectedScope) await requireBookingOpsRecordScope(bookingId, expectedScope);
   const { data, error } = await supabase
     .from('booking_instay_checkout')
     .upsert(row, { onConflict: 'booking_id' })
@@ -313,6 +318,7 @@ async function insertIssue(
     description?: string | null;
     metadata?: Record<string, unknown>;
   },
+  expectedScope?: { accountId: string; propertyId: string },
 ): Promise<GuestStayIssueRow> {
   const now = new Date().toISOString();
   const row = {
@@ -332,6 +338,7 @@ async function insertIssue(
     created_at: now,
     updated_at: now,
   };
+  if (expectedScope) await requireBookingOpsRecordScope(bookingId, expectedScope);
   const { data, error } = await supabase
     .from('booking_guest_stay_issues')
     .insert(row)
@@ -352,6 +359,7 @@ async function updateIssue(
     resolved_at: string | null;
     metadata: Record<string, unknown>;
   }>,
+  expectedScope?: { accountId: string; propertyId: string },
 ): Promise<GuestStayIssueRow> {
   const existing = await getIssueRow(bookingId, issueId);
   if (!existing) throw new Error('issue_not_found');
@@ -368,6 +376,7 @@ async function updateIssue(
     },
     updated_at: now,
   };
+  if (expectedScope) await requireBookingOpsRecordScope(bookingId, expectedScope);
   const { data, error } = await supabase
     .from('booking_guest_stay_issues')
     .update(row)
@@ -487,14 +496,25 @@ function missingPrerequisite(
   return { key, category, message };
 }
 
-export async function validateBookingClosePrerequisites(
-  record: BookingOpsRecord,
-): Promise<BookingCloseMissingPrerequisite[]> {
+type BookingCloseLegalState = {
+  documentsStatus: string;
+  contractStatus: string;
+  depositStatus: string;
+  mvdStatus: string;
+};
+
+function computeBookingClosePrerequisites(input: {
+  record: BookingOpsRecord;
+  legal: BookingCloseLegalState | null;
+  legalError?: string | null;
+  execution: InStayCheckoutRow | null;
+  issues: GuestStayIssueRow[];
+  lifecycle: InStayCheckoutSnapshot['lifecycle'];
+}): BookingCloseMissingPrerequisite[] {
+  const { record, legal, execution, issues, lifecycle } = input;
   const missing: BookingCloseMissingPrerequisite[] = [];
 
-  if (!text(record.guestName)) {
-    missing.push(missingPrerequisite('guest_name_missing', 'guest_data', 'Guest name is missing.'));
-  }
+  if (!text(record.guestName)) missing.push(missingPrerequisite('guest_name_missing', 'guest_data', 'Guest name is missing.'));
   if (!text(record.guestPhone) && !text(record.guestEmail) && !text(record.guestTelegram)) {
     missing.push(missingPrerequisite('guest_contact_missing', 'guest_data', 'Guest contact is missing.'));
   }
@@ -508,44 +528,28 @@ export async function validateBookingClosePrerequisites(
     missing.push(missingPrerequisite('guest_count_missing', 'guest_data', 'Guest count is missing.'));
   }
 
-  try {
-    const { recomputeGuestLegalReadiness } = await import('./guest-legal-deposit-mvd-execution');
-    const legal = await recomputeGuestLegalReadiness(record.id, { source: 'close_guard' });
-    if (record.documentRequired !== false && legal.documentsStatus !== 'verified') {
-      missing.push(missingPrerequisite('documents_incomplete', 'documents', 'Required guest documents are not verified.'));
-    }
-    if (
-      record.contractRequired !== false
-      && !['signed_manual', 'signed_provider_placeholder'].includes(legal.contractStatus)
-    ) {
-      missing.push(missingPrerequisite('contract_incomplete', 'contract', 'Required contract is not signed.'));
-    }
-    if (
-      record.depositRequired !== false
-      && !['paid_manual', 'paid_provider_placeholder', 'waived_manual'].includes(legal.depositStatus)
-    ) {
-      missing.push(missingPrerequisite('deposit_incomplete', 'deposit', 'Required deposit is not collected or waived.'));
-    }
-    if (
-      record.mvdRequired !== false
-      && !['not_required', 'submitted_manual', 'submitted_provider_placeholder', 'accepted_manual'].includes(legal.mvdStatus)
-    ) {
-      missing.push(missingPrerequisite('mvd_incomplete', 'mvd', 'MVD/reporting preparation is incomplete.'));
-    }
-  } catch (error) {
+  if (!legal) {
     missing.push(missingPrerequisite(
       'legal_readiness_unavailable',
       'lifecycle',
-      error instanceof Error ? error.message : 'Legal readiness could not be checked.',
+      input.legalError ?? 'Legal readiness could not be checked.',
     ));
+  } else {
+    if (record.documentRequired !== false && legal.documentsStatus !== 'verified') {
+      missing.push(missingPrerequisite('documents_incomplete', 'documents', 'Required guest documents are not verified.'));
+    }
+    if (record.contractRequired !== false && !['signed_manual', 'signed_provider_placeholder'].includes(legal.contractStatus)) {
+      missing.push(missingPrerequisite('contract_incomplete', 'contract', 'Required contract is not signed.'));
+    }
+    if (record.depositRequired !== false
+      && !['paid_manual', 'paid_provider_placeholder', 'waived_manual'].includes(legal.depositStatus)) {
+      missing.push(missingPrerequisite('deposit_incomplete', 'deposit', 'Required deposit is not collected or waived.'));
+    }
+    if (record.mvdRequired !== false
+      && !['not_required', 'submitted_manual', 'submitted_provider_placeholder', 'accepted_manual'].includes(legal.mvdStatus)) {
+      missing.push(missingPrerequisite('mvd_incomplete', 'mvd', 'MVD/reporting preparation is incomplete.'));
+    }
   }
-
-  const [execution, issues, lifecycleResult] = await Promise.all([
-    getExecutionRow(record.id),
-    listIssueRows(record.id),
-    getLifecycleStatus(record.id),
-  ]);
-  const lifecycle = lifecycleResult.ok ? lifecycleResult.lifecycle : null;
 
   if (!gateCompleted(lifecycle, 'guest_checked_in')) {
     missing.push(missingPrerequisite('guest_not_checked_in', 'lifecycle', 'Guest check-in is not completed.'));
@@ -556,22 +560,92 @@ export async function validateBookingClosePrerequisites(
   if (!gateCompleted(lifecycle, 'post_checkout_inspection_done') && execution?.inspectionStatus !== 'done') {
     missing.push(missingPrerequisite('post_checkout_inspection_incomplete', 'lifecycle', 'Post-checkout inspection is not completed.'));
   }
-  if (
-    record.depositRequired !== false
-    && !gateCompleted(lifecycle, 'deposit_return_ready')
-    && execution?.depositReturnStatus !== 'ready'
+  if (record.depositRequired !== false
+    && record.depositIntakeStatus !== 'returned'
     && execution?.depositReturnStatus !== 'returned'
-    && execution?.depositReturnStatus !== 'waived'
-  ) {
-    missing.push(missingPrerequisite('deposit_return_not_ready', 'deposit', 'Deposit return or resolution is not ready.'));
+    && execution?.depositReturnStatus !== 'waived') {
+    missing.push(missingPrerequisite(
+      'deposit_return_incomplete',
+      'deposit',
+      'Deposit return is only prepared; confirm the actual return or explicit waiver before closing the booking.',
+    ));
   }
-
-  const openIssues = issues.filter((issue) => OPEN_ISSUE_STATUSES.has(issue.status));
-  if (openIssues.length > 0) {
+  if (issues.some((issue) => OPEN_ISSUE_STATUSES.has(issue.status))) {
     missing.push(missingPrerequisite('open_stay_issues', 'incident', 'There are unresolved guest stay issues.'));
   }
-
   return missing;
+}
+
+export async function readBookingClosePrerequisites(
+  bookingId: string,
+  snapshot?: InStayCheckoutSnapshot,
+): Promise<BookingCloseMissingPrerequisite[]> {
+  const record = await loadRecord(bookingId);
+  if (snapshot && snapshot.bookingId !== record.id) throw new Error('booking_scope_mismatch');
+
+  let legal: BookingCloseLegalState | null = null;
+  let legalError: string | null = null;
+  try {
+    const { getGuestLegalReadiness } = await import('./guest-legal-deposit-mvd-execution');
+    legal = await getGuestLegalReadiness(record.id);
+    if (!legal) legalError = 'legal_readiness_unavailable';
+  } catch (error) {
+    legalError = error instanceof Error ? error.message : 'Legal readiness could not be checked.';
+  }
+
+  if (snapshot) {
+    return computeBookingClosePrerequisites({
+      record,
+      legal,
+      legalError,
+      execution: snapshot.execution,
+      issues: snapshot.openIssues,
+      lifecycle: snapshot.lifecycle,
+    });
+  }
+
+  const [execution, issues, lifecycleResult] = await Promise.all([
+    getExecutionRow(record.id),
+    listIssueRows(record.id),
+    readLifecycleStatus(record.id),
+  ]);
+  return computeBookingClosePrerequisites({
+    record,
+    legal,
+    legalError,
+    execution,
+    issues,
+    lifecycle: lifecycleResult.ok ? lifecycleResult.lifecycle ?? null : null,
+  });
+}
+
+export async function validateBookingClosePrerequisites(
+  record: BookingOpsRecord,
+  expectedScope?: { accountId: string; propertyId: string },
+): Promise<BookingCloseMissingPrerequisite[]> {
+  if (expectedScope) await requireBookingOpsRecordScope(record.id, expectedScope);
+  let legal: BookingCloseLegalState | null = null;
+  let legalError: string | null = null;
+  try {
+    const { recomputeGuestLegalReadiness } = await import('./guest-legal-deposit-mvd-execution');
+    legal = await recomputeGuestLegalReadiness(record.id, { source: 'close_guard' }, expectedScope);
+  } catch (error) {
+    legalError = error instanceof Error ? error.message : 'Legal readiness could not be checked.';
+  }
+  const [execution, issues, lifecycleResult] = await Promise.all([
+    getExecutionRow(record.id),
+    listIssueRows(record.id),
+    getLifecycleStatus(record.id),
+  ]);
+  if (expectedScope) await requireBookingOpsRecordScope(record.id, expectedScope);
+  return computeBookingClosePrerequisites({
+    record,
+    legal,
+    legalError,
+    execution,
+    issues,
+    lifecycle: lifecycleResult.ok ? lifecycleResult.lifecycle ?? null : null,
+  });
 }
 
 function nextAction(status: InStayCheckoutStatus): string | null {
@@ -626,7 +700,9 @@ async function ensureCommunicationIntent(input: {
   messageText: string;
   messageTemplateKey: string;
   metadata?: Record<string, unknown>;
+  expectedScope?: { accountId: string; propertyId: string };
 }): Promise<BookingOpsCommunicationIntent | null> {
+  if (input.expectedScope) await requireBookingOpsRecordScope(input.record.id, input.expectedScope);
   const existing = await listBookingOpsCommunicationsForRecord(input.record.id);
   if (existing.ok) {
     const active = existing.communications.find((item) =>
@@ -656,6 +732,8 @@ async function ensureCommunicationIntent(input: {
     guestRef: input.record.guestTelegram ?? input.record.guestEmail ?? input.record.guestPhone,
     unresolvedComplaint: input.purpose === 'guest_stay_issue_followup',
   });
+  const knowledge = await guardBookingCommunicationDraft(input.record, input.purpose);
+  if (input.expectedScope) await requireBookingOpsRecordScope(input.record.id, input.expectedScope);
   const { data, error } = await supabase
     .from('booking_ops_communication_intents')
     .insert({
@@ -667,10 +745,10 @@ async function ensureCommunicationIntent(input: {
       actor_label: text(input.record.guestName) || 'Гость',
       purpose: input.purpose,
       channel,
-      status: 'draft_ready',
-      message_text: input.messageText,
+      message_text: knowledge.messageText,
       message_template_key: input.messageTemplateKey,
-      metadata,
+      status: knowledge.status,
+      metadata: { ...metadata, ...knowledge.metadata },
       created_at: now,
       updated_at: now,
       superseded_at: null,
@@ -682,51 +760,119 @@ async function ensureCommunicationIntent(input: {
   return refreshed.ok ? refreshed.communications.find((item) => item.id === String((data as { id: string }).id)) ?? null : null;
 }
 
-export async function getInStayCheckoutStatus(bookingId: string): Promise<InStayCheckoutSnapshot> {
+const INSTAY_LIFECYCLE_OBSERVED_GATES = new Set([
+  'guest_checked_in',
+  'guest_checked_out',
+  'post_checkout_inspection_done',
+  'deposit_return_ready',
+  'booking_closed',
+]);
+
+function pureInStayObservedAt(
+  execution: InStayCheckoutRow | null,
+  lifecycle: InStayCheckoutSnapshot['lifecycle'],
+): string {
+  const values = [
+    execution?.updatedAt,
+    ...(lifecycle?.gates
+      .filter((gate) => INSTAY_LIFECYCLE_OBSERVED_GATES.has(gate.gateKey))
+      .map((gate) => gate.updatedAt) ?? []),
+  ].filter((value): value is string => typeof value === 'string' && Number.isFinite(Date.parse(value)));
+  if (!values.length) return new Date(0).toISOString();
+  return values.sort((a, b) => Date.parse(a) - Date.parse(b))[0]!;
+}
+
+function buildInStayCheckoutSnapshot(input: {
+  record: BookingOpsRecord;
+  execution: InStayCheckoutRow | null;
+  issues: GuestStayIssueRow[];
+  lifecycle: InStayCheckoutSnapshot['lifecycle'];
+  communications: BookingOpsCommunicationIntent[];
+  updatedAt: string;
+}): InStayCheckoutSnapshot {
+  const openIssues = input.issues.filter((item) => OPEN_ISSUE_STATUSES.has(item.status));
+  const status = resolveStatus({
+    execution: input.execution,
+    openIssues,
+    lifecycleGuestCheckedIn: gateCompleted(input.lifecycle, 'guest_checked_in'),
+    lifecycleGuestCheckedOut: gateCompleted(input.lifecycle, 'guest_checked_out'),
+    lifecycleInspectionDone: gateCompleted(input.lifecycle, 'post_checkout_inspection_done'),
+    lifecycleDepositReady: gateCompleted(input.lifecycle, 'deposit_return_ready'),
+    lifecycleBookingClosed: gateCompleted(input.lifecycle, 'booking_closed'),
+  });
+  return {
+    bookingId: input.record.id,
+    status,
+    execution: input.execution,
+    checkoutInstructionsStatus: input.execution?.checkoutInstructionsStatus ?? 'not_prepared',
+    checkoutConfirmationStatus: input.execution?.checkoutConfirmationStatus ?? 'not_requested',
+    inspectionStatus: input.execution?.inspectionStatus ?? 'not_started',
+    depositReturnStatus: input.execution?.depositReturnStatus ?? 'not_ready',
+    closureStatus: input.execution?.closureStatus ?? 'open',
+    openIssuesCount: openIssues.length,
+    openIssues,
+    lifecycle: input.lifecycle,
+    blockers: buildBlockers({ execution: input.execution, openIssues: input.issues }),
+    communications: input.communications,
+    nextAction: nextAction(status),
+    updatedAt: input.updatedAt,
+  };
+}
+
+export async function readInStayCheckoutStatus(bookingId: string): Promise<InStayCheckoutSnapshot> {
   const record = await loadRecord(bookingId);
-  await initializeLifecycleForBooking(record.id);
+  const [execution, issues, lifecycleResult, communicationResult] = await Promise.all([
+    getExecutionRow(record.id),
+    listIssueRows(record.id),
+    readLifecycleStatus(record.id),
+    listBookingOpsCommunicationsForRecord(record.id),
+  ]);
+  if (!lifecycleResult.ok || !lifecycleResult.lifecycle) {
+    throw new Error(lifecycleResult.error ?? 'lifecycle_unavailable');
+  }
+  return buildInStayCheckoutSnapshot({
+    record,
+    execution,
+    issues,
+    lifecycle: lifecycleResult.lifecycle,
+    communications: communicationResult.ok ? communicationResult.communications : [],
+    updatedAt: pureInStayObservedAt(execution, lifecycleResult.lifecycle),
+  });
+}
+
+export async function getInStayCheckoutStatus(
+  bookingId: string,
+  expectedScope?: { accountId: string; propertyId: string },
+): Promise<InStayCheckoutSnapshot> {
+  const record = expectedScope
+    ? await requireBookingOpsRecordScope(bookingId, expectedScope)
+    : await loadRecord(bookingId);
+  await initializeLifecycleForBooking(record.id, expectedScope);
   const [execution, issues, lifecycleResult, communicationResult] = await Promise.all([
     getExecutionRow(record.id),
     listIssueRows(record.id),
     getLifecycleStatus(record.id),
     listBookingOpsCommunicationsForRecord(record.id),
   ]);
-  const lifecycle = lifecycleResult.lifecycle ?? null;
-  const openIssues = issues.filter((item) => OPEN_ISSUE_STATUSES.has(item.status));
-  const status = resolveStatus({
+  return buildInStayCheckoutSnapshot({
+    record,
     execution,
-    openIssues,
-    lifecycleGuestCheckedIn: gateCompleted(lifecycle, 'guest_checked_in'),
-    lifecycleGuestCheckedOut: gateCompleted(lifecycle, 'guest_checked_out'),
-    lifecycleInspectionDone: gateCompleted(lifecycle, 'post_checkout_inspection_done'),
-    lifecycleDepositReady: gateCompleted(lifecycle, 'deposit_return_ready'),
-    lifecycleBookingClosed: gateCompleted(lifecycle, 'booking_closed'),
-  });
-  return {
-    bookingId: record.id,
-    status,
-    execution,
-    checkoutInstructionsStatus: execution?.checkoutInstructionsStatus ?? 'not_prepared',
-    checkoutConfirmationStatus: execution?.checkoutConfirmationStatus ?? 'not_requested',
-    inspectionStatus: execution?.inspectionStatus ?? 'not_started',
-    depositReturnStatus: execution?.depositReturnStatus ?? 'not_ready',
-    closureStatus: execution?.closureStatus ?? 'open',
-    openIssuesCount: openIssues.length,
-    openIssues,
-    lifecycle,
-    blockers: buildBlockers({ execution, openIssues: issues }),
+    issues,
+    lifecycle: lifecycleResult.lifecycle ?? null,
     communications: communicationResult.ok ? communicationResult.communications : [],
-    nextAction: nextAction(status),
     updatedAt: execution?.updatedAt ?? new Date().toISOString(),
-  };
+  });
 }
 
 export async function openInStaySupportWindow(
   bookingId: string,
   metadata?: Record<string, unknown>,
+  expectedScope?: { accountId: string; propertyId: string },
 ): Promise<InStayCheckoutSnapshot> {
-  const record = await loadRecord(bookingId);
-  const snapshot = await getInStayCheckoutStatus(record.id);
+  const record = expectedScope
+    ? await requireBookingOpsRecordScope(bookingId, expectedScope)
+    : await loadRecord(bookingId);
+  const snapshot = await getInStayCheckoutStatus(record.id, expectedScope);
   if (snapshot.status === 'not_checked_in') {
     throw new Error('guest_not_checked_in');
   }
@@ -737,8 +883,8 @@ export async function openInStaySupportWindow(
       supportWindowOpenedAt: new Date().toISOString(),
       ...safeMetadata(metadata),
     },
-  });
-  return getInStayCheckoutStatus(record.id);
+  }, expectedScope);
+  return getInStayCheckoutStatus(record.id, expectedScope);
 }
 
 export async function createGuestStayIssue(
@@ -747,9 +893,12 @@ export async function createGuestStayIssue(
   severity: GuestStayIssueSeverity,
   description?: string,
   metadata?: Record<string, unknown>,
+  expectedScope?: { accountId: string; propertyId: string },
 ): Promise<InStayCheckoutSnapshot> {
-  const record = await loadRecord(bookingId);
-  const snapshot = await getInStayCheckoutStatus(record.id);
+  const record = expectedScope
+    ? await requireBookingOpsRecordScope(bookingId, expectedScope)
+    : await loadRecord(bookingId);
+  const snapshot = await getInStayCheckoutStatus(record.id, expectedScope);
   if (snapshot.status === 'not_checked_in') {
     throw new Error('guest_not_checked_in');
   }
@@ -758,7 +907,7 @@ export async function createGuestStayIssue(
     severity,
     description,
     metadata,
-  });
+  }, expectedScope);
   if (severity === 'urgent' || severity === 'high') {
     await ensureCommunicationIntent({
       record,
@@ -766,13 +915,14 @@ export async function createGuestStayIssue(
       messageTemplateKey: 'guest.stay.issue_ack.v1',
       messageText: 'Здравствуйте. Мы получили ваше обращение и уже разбираем ситуацию.',
       metadata: { issueId: issue.id, issueType },
+      expectedScope,
     });
   }
   await upsertExecution(record.id, {
     status: severity === 'urgent' ? 'guest_issue_open' : undefined,
     metadata: { source: 'instay_checkout_autopilot_v1', lastIssueId: issue.id, ...safeMetadata(metadata) },
-  });
-  return getInStayCheckoutStatus(record.id);
+  }, expectedScope);
+  return getInStayCheckoutStatus(record.id, expectedScope);
 }
 
 export async function triageGuestStayIssue(
@@ -780,8 +930,11 @@ export async function triageGuestStayIssue(
   issueId: string,
   action: string,
   metadata?: Record<string, unknown>,
+  expectedScope?: { accountId: string; propertyId: string },
 ): Promise<InStayCheckoutSnapshot> {
-  const record = await loadRecord(bookingId);
+  const record = expectedScope
+    ? await requireBookingOpsRecordScope(bookingId, expectedScope)
+    : await loadRecord(bookingId);
   const cleanAction = text(action);
   if (!cleanAction) throw new Error('issue_action_required');
   const issue = await getIssueRow(record.id, issueId);
@@ -797,7 +950,7 @@ export async function triageGuestStayIssue(
     assigned_to_type: text(metadata?.assignedToType) || text(metadata?.assigned_to_type) || issue.assignedToType,
     assigned_to_ref: text(metadata?.assignedToRef) || text(metadata?.assigned_to_ref) || issue.assignedToRef,
     metadata: { source: 'instay_checkout_autopilot_v1', triageAction: cleanAction, ...safeMetadata(metadata) },
-  });
+  }, expectedScope);
 
   if (cleanAction === 'acknowledge' || cleanAction === 'escalate') {
     await ensureCommunicationIntent({
@@ -806,10 +959,11 @@ export async function triageGuestStayIssue(
       messageTemplateKey: 'guest.stay.issue_followup.v1',
       messageText: 'Здравствуйте. Мы продолжаем разбирать ваше обращение и скоро вернёмся с ответом.',
       metadata: { issueId },
+      expectedScope,
     });
   }
 
-  return getInStayCheckoutStatus(record.id);
+  return getInStayCheckoutStatus(record.id, expectedScope);
 }
 
 export async function resolveGuestStayIssue(
@@ -817,8 +971,11 @@ export async function resolveGuestStayIssue(
   issueId: string,
   resolution: string,
   metadata?: Record<string, unknown>,
+  expectedScope?: { accountId: string; propertyId: string },
 ): Promise<InStayCheckoutSnapshot> {
-  const record = await loadRecord(bookingId);
+  const record = expectedScope
+    ? await requireBookingOpsRecordScope(bookingId, expectedScope)
+    : await loadRecord(bookingId);
   const issue = await getIssueRow(record.id, issueId);
   if (!issue) throw new Error('issue_not_found');
   const now = new Date().toISOString();
@@ -827,29 +984,35 @@ export async function resolveGuestStayIssue(
     resolution: text(resolution) || 'Закрыто оператором',
     resolved_at: now,
     metadata: { source: 'instay_checkout_autopilot_v1', resolvedAt: now, ...safeMetadata(metadata) },
-  });
-  return getInStayCheckoutStatus(record.id);
+  }, expectedScope);
+  return getInStayCheckoutStatus(record.id, expectedScope);
 }
 
 export async function prepareCheckoutInstructions(
   bookingId: string,
   metadata?: Record<string, unknown>,
+  expectedScope?: { accountId: string; propertyId: string },
 ): Promise<InStayCheckoutSnapshot> {
-  const record = await loadRecord(bookingId);
+  const record = expectedScope
+    ? await requireBookingOpsRecordScope(bookingId, expectedScope)
+    : await loadRecord(bookingId);
   await upsertExecution(record.id, {
     status: 'checkout_preparing',
     checkout_instructions_status: 'prepared',
     metadata: { source: 'instay_checkout_autopilot_v1', preparedAt: new Date().toISOString(), ...safeMetadata(metadata) },
-  });
-  return getInStayCheckoutStatus(record.id);
+  }, expectedScope);
+  return getInStayCheckoutStatus(record.id, expectedScope);
 }
 
 export async function queueCheckoutInstructions(
   bookingId: string,
   channel?: BookingOpsCommunicationChannel,
   metadata?: Record<string, unknown>,
+  expectedScope?: { accountId: string; propertyId: string },
 ): Promise<InStayCheckoutSnapshot> {
-  const record = await loadRecord(bookingId);
+  const record = expectedScope
+    ? await requireBookingOpsRecordScope(bookingId, expectedScope)
+    : await loadRecord(bookingId);
   await ensureCommunicationIntent({
     record,
     purpose: 'checkout_instructions',
@@ -857,25 +1020,29 @@ export async function queueCheckoutInstructions(
     messageTemplateKey: 'guest.checkout.instructions.v1',
     messageText: `Здравствуйте. Инструкции по выезду для объекта ${record.propertyLabel ?? record.propertyId ?? 'вашей брони'} готовы к проверке оператором.`,
     metadata,
+    expectedScope,
   });
   await upsertExecution(record.id, {
     status: 'checkout_instructions_queued',
     checkout_instructions_status: 'queued',
     metadata: { source: 'instay_checkout_autopilot_v1', queuedAt: new Date().toISOString(), ...safeMetadata(metadata) },
-  });
-  return getInStayCheckoutStatus(record.id);
+  }, expectedScope);
+  return getInStayCheckoutStatus(record.id, expectedScope);
 }
 
 export async function markCheckoutInstructionsSent(
   bookingId: string,
   metadata?: Record<string, unknown>,
+  expectedScope?: { accountId: string; propertyId: string },
 ): Promise<InStayCheckoutSnapshot> {
-  const record = await loadRecord(bookingId);
+  const record = expectedScope
+    ? await requireBookingOpsRecordScope(bookingId, expectedScope)
+    : await loadRecord(bookingId);
   await upsertExecution(record.id, {
     status: 'checkout_pending',
     checkout_instructions_status: 'sent',
     metadata: { source: 'instay_checkout_autopilot_v1', sentAt: new Date().toISOString(), ...safeMetadata(metadata) },
-  });
+  }, expectedScope);
   const propertyLabel = record.propertyLabel ?? record.propertyId ?? 'вашей брони';
   const checkoutDateLabel = record.checkOutAt
     ? new Date(record.checkOutAt).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' })
@@ -887,60 +1054,74 @@ export async function markCheckoutInstructionsSent(
     messageTemplateKey: 'guest.checkout.reminder.v1',
     messageText: `Здравствуйте. Напоминаем о выезде из объекта «${propertyLabel}»${dateHint}. Пожалуйста, следуйте инструкциям по выезду и подготовьтесь к сдаче объекта.`,
     metadata: safeMetadata(metadata),
+    expectedScope,
   });
-  return getInStayCheckoutStatus(record.id);
+  return getInStayCheckoutStatus(record.id, expectedScope);
 }
 
 export async function requestCheckoutConfirmation(
   bookingId: string,
   metadata?: Record<string, unknown>,
+  expectedScope?: { accountId: string; propertyId: string },
 ): Promise<InStayCheckoutSnapshot> {
-  const record = await loadRecord(bookingId);
+  const record = expectedScope
+    ? await requireBookingOpsRecordScope(bookingId, expectedScope)
+    : await loadRecord(bookingId);
   await ensureCommunicationIntent({
     record,
     purpose: 'checkout_confirmation_request',
     messageTemplateKey: 'guest.checkout.confirmation.v1',
     messageText: 'Здравствуйте. Подтвердите, пожалуйста, время выезда и что вы готовы сдать объект.',
     metadata,
+    expectedScope,
   });
   await upsertExecution(record.id, {
     status: 'checkout_pending',
     checkout_confirmation_status: 'requested',
     metadata: { source: 'instay_checkout_autopilot_v1', confirmationRequestedAt: new Date().toISOString(), ...safeMetadata(metadata) },
-  });
-  return getInStayCheckoutStatus(record.id);
+  }, expectedScope);
+  return getInStayCheckoutStatus(record.id, expectedScope);
 }
 
 export async function markGuestCheckedOut(
   bookingId: string,
   actualCheckoutAt?: string | Date | null,
   metadata?: Record<string, unknown>,
+  expectedScope?: { accountId: string; propertyId: string },
 ): Promise<InStayCheckoutSnapshot> {
-  const record = await loadRecord(bookingId);
+  const record = expectedScope
+    ? await requireBookingOpsRecordScope(bookingId, expectedScope)
+    : await loadRecord(bookingId);
   const checkoutAt = actualCheckoutAt ? new Date(actualCheckoutAt).toISOString() : new Date().toISOString();
   await completeGate(record.id, 'guest_checked_out', {
     source: 'instay_checkout_autopilot_v1',
     ...safeMetadata(metadata),
-  });
+  }, expectedScope);
   await upsertExecution(record.id, {
     status: 'checked_out',
     checkout_confirmation_status: 'confirmed',
     actual_checkout_at: checkoutAt,
     metadata: { source: 'instay_checkout_autopilot_v1', checkedOutAt: checkoutAt, ...safeMetadata(metadata) },
-  });
-  await syncBookingOpsTasksForRecordId(record.id);
-  return getInStayCheckoutStatus(record.id);
+  }, expectedScope);
+  const taskSync = expectedScope
+    ? await syncBookingOpsTasksForRecordId(record.id, { expectedScope })
+    : await syncBookingOpsTasksForRecordId(record.id);
+  if (!taskSync.ok) throw new Error(taskSync.error ?? 'task_sync_failed');
+  return getInStayCheckoutStatus(record.id, expectedScope);
 }
 
 export async function triggerPostCheckoutInspection(
   bookingId: string,
   metadata?: Record<string, unknown>,
+  expectedScope?: { accountId: string; propertyId: string },
 ): Promise<InStayCheckoutSnapshot> {
-  const record = await loadRecord(bookingId);
+  const record = expectedScope
+    ? await requireBookingOpsRecordScope(bookingId, expectedScope)
+    : await loadRecord(bookingId);
   await markGateInProgress(record.id, 'post_checkout_inspection_done', {
     source: 'instay_checkout_autopilot_v1',
     ...safeMetadata(metadata),
-  });
+  }, expectedScope);
   await ensureCommunicationIntent({
     record,
     purpose: 'inspection_request',
@@ -948,21 +1129,25 @@ export async function triggerPostCheckoutInspection(
     messageTemplateKey: 'operator.checkout.inspection.v1',
     messageText: `Запрос осмотра после выезда: ${record.propertyLabel ?? record.propertyId ?? record.id}`,
     metadata,
+    expectedScope,
   });
   await upsertExecution(record.id, {
     status: 'inspection_pending',
     inspection_status: 'scheduled',
     metadata: { source: 'instay_checkout_autopilot_v1', inspectionTriggeredAt: new Date().toISOString(), ...safeMetadata(metadata) },
-  });
-  return getInStayCheckoutStatus(record.id);
+  }, expectedScope);
+  return getInStayCheckoutStatus(record.id, expectedScope);
 }
 
 export async function markPostCheckoutInspectionDone(
   bookingId: string,
   result: string,
   metadata?: Record<string, unknown>,
+  expectedScope?: { accountId: string; propertyId: string },
 ): Promise<InStayCheckoutSnapshot> {
-  const record = await loadRecord(bookingId);
+  const record = expectedScope
+    ? await requireBookingOpsRecordScope(bookingId, expectedScope)
+    : await loadRecord(bookingId);
   const cleanResult = text(result) || 'ok';
   const inspectionStatus: CheckoutInspectionStatus =
     cleanResult === 'issue_found' ? 'issue_found'
@@ -974,13 +1159,13 @@ export async function markPostCheckoutInspectionDone(
       source: 'instay_checkout_autopilot_v1',
       result: cleanResult,
       ...safeMetadata(metadata),
-    });
+    }, expectedScope);
   } else {
     await blockGate(record.id, 'post_checkout_inspection_done', `Осмотр: ${cleanResult}`, {
       source: 'instay_checkout_autopilot_v1',
       result: cleanResult,
       ...safeMetadata(metadata),
-    });
+    }, expectedScope);
   }
 
   await upsertExecution(record.id, {
@@ -988,54 +1173,62 @@ export async function markPostCheckoutInspectionDone(
     inspection_status: inspectionStatus,
     failure_reason: inspectionStatus === 'done' ? null : `Осмотр: ${cleanResult}`,
     metadata: { source: 'instay_checkout_autopilot_v1', inspectionDoneAt: new Date().toISOString(), result: cleanResult, ...safeMetadata(metadata) },
-  });
-  return getInStayCheckoutStatus(record.id);
+  }, expectedScope);
+  return getInStayCheckoutStatus(record.id, expectedScope);
 }
 
 export async function markDepositReturnReady(
   bookingId: string,
   metadata?: Record<string, unknown>,
+  expectedScope?: { accountId: string; propertyId: string },
 ): Promise<InStayCheckoutSnapshot> {
-  const record = await loadRecord(bookingId);
+  const record = expectedScope
+    ? await requireBookingOpsRecordScope(bookingId, expectedScope)
+    : await loadRecord(bookingId);
   await completeGate(record.id, 'deposit_return_ready', {
     source: 'instay_checkout_autopilot_v1',
     ...safeMetadata(metadata),
-  });
+  }, expectedScope);
   await ensureCommunicationIntent({
     record,
     purpose: 'deposit_return_readiness_notice',
     messageTemplateKey: 'guest.checkout.deposit_ready.v1',
     messageText: 'Здравствуйте. Возврат депозита подготовлен. Детали уточнит оператор.',
     metadata,
+    expectedScope,
   });
   await upsertExecution(record.id, {
     status: 'deposit_return_ready',
     deposit_return_status: 'ready',
     closure_status: 'ready_to_close',
     metadata: { source: 'instay_checkout_autopilot_v1', depositReadyAt: new Date().toISOString(), ...safeMetadata(metadata) },
-  });
-  return getInStayCheckoutStatus(record.id);
+  }, expectedScope);
+  return getInStayCheckoutStatus(record.id, expectedScope);
 }
 
 export async function markBookingClosed(
   bookingId: string,
   metadata?: Record<string, unknown>,
+  expectedScope?: { accountId: string; propertyId: string },
 ): Promise<InStayCheckoutSnapshot> {
-  const record = await loadRecord(bookingId);
-  const missingPrerequisites = await validateBookingClosePrerequisites(record);
+  const record = expectedScope
+    ? await requireBookingOpsRecordScope(bookingId, expectedScope)
+    : await loadRecord(bookingId);
+  const missingPrerequisites = await validateBookingClosePrerequisites(record, expectedScope);
   if (missingPrerequisites.length > 0) {
     throw new BookingClosePrerequisiteError(missingPrerequisites);
   }
-  await completeGate(record.id, 'booking_closed', {
+  const gateResult = await completeGate(record.id, 'booking_closed', {
     source: 'instay_checkout_autopilot_v1',
     ...safeMetadata(metadata),
-  });
+  }, expectedScope);
+  if (!gateResult.ok) throw new Error(gateResult.error ?? 'booking_close_gate_write_failed');
   await upsertExecution(record.id, {
     status: 'closed',
     closure_status: 'closed',
     metadata: { source: 'instay_checkout_autopilot_v1', closedAt: new Date().toISOString(), ...safeMetadata(metadata) },
-  });
-  return getInStayCheckoutStatus(record.id);
+  }, expectedScope);
+  return getInStayCheckoutStatus(record.id, expectedScope);
 }
 
 export async function getCheckoutBlockers(bookingId: string): Promise<InStayCheckoutBlocker[]> {
@@ -1046,8 +1239,9 @@ export async function createCheckoutFallbackIfNeeded(
   bookingId: string,
   reason: string,
   metadata?: Record<string, unknown>,
+  expectedScope?: { accountId: string; propertyId: string },
 ): Promise<{ ok: boolean; created: boolean; snapshot: InStayCheckoutSnapshot; error?: string }> {
-  const snapshot = await getInStayCheckoutStatus(bookingId);
+  const snapshot = await getInStayCheckoutStatus(bookingId, expectedScope);
   const blocker = snapshot.blockers.find((item) => item.fallbackEligible);
   if (!blocker) return { ok: true, created: false, snapshot };
   const cleanReason = text(reason) || blocker.reason;
@@ -1060,15 +1254,15 @@ export async function createCheckoutFallbackIfNeeded(
     source: 'instay_checkout_autopilot_v1',
     blocker: blocker.key,
     ...safeMetadata(metadata),
-  });
+  }, expectedScope);
   if (!result.ok) return { ok: false, created: false, snapshot, error: result.error };
   await upsertExecution(bookingId, {
     status: 'blocked',
     closure_status: 'blocked',
     failure_reason: cleanReason,
     metadata: { source: 'instay_checkout_autopilot_v1', fallbackAt: new Date().toISOString(), ...safeMetadata(metadata) },
-  });
-  return { ok: true, created: true, snapshot: await getInStayCheckoutStatus(bookingId) };
+  }, expectedScope);
+  return { ok: true, created: true, snapshot: await getInStayCheckoutStatus(bookingId, expectedScope) };
 }
 
 export async function runInStayCheckoutAction(input: {
@@ -1085,14 +1279,16 @@ export async function runInStayCheckoutAction(input: {
   result?: unknown;
   actualCheckoutAt?: unknown;
   metadata?: Record<string, unknown>;
+  expectedScope?: { accountId: string; propertyId: string };
 }): Promise<InStayCheckoutSnapshot> {
   const bookingId = text(input.bookingId);
+  if (input.expectedScope) await requireBookingOpsRecordScope(bookingId, input.expectedScope);
   const reason = text(input.reason);
   const note = text(input.note);
   const issueId = text(input.issueId);
   switch (input.action) {
     case 'open_support_window':
-      return openInStaySupportWindow(bookingId, input.metadata);
+      return openInStaySupportWindow(bookingId, input.metadata, input.expectedScope);
     case 'create_guest_issue':
       return createGuestStayIssue(
         bookingId,
@@ -1100,34 +1296,52 @@ export async function runInStayCheckoutAction(input: {
         (text(input.severity) || 'medium') as GuestStayIssueSeverity,
         text(input.description) || undefined,
         input.metadata,
+        input.expectedScope,
       );
     case 'triage_guest_issue':
       if (!issueId) throw new Error('issue_id_required');
-      return triageGuestStayIssue(bookingId, issueId, reason || 'triage', input.metadata);
+      return triageGuestStayIssue(bookingId, issueId, reason || 'triage', input.metadata, input.expectedScope);
     case 'resolve_guest_issue':
       if (!issueId) throw new Error('issue_id_required');
-      return resolveGuestStayIssue(bookingId, issueId, text(input.resolution) || reason || note || 'Закрыто', input.metadata);
+      return resolveGuestStayIssue(
+        bookingId,
+        issueId,
+        text(input.resolution) || reason || note || 'Закрыто',
+        input.metadata,
+        input.expectedScope,
+      );
     case 'prepare_checkout_instructions':
-      return prepareCheckoutInstructions(bookingId, input.metadata);
+      return prepareCheckoutInstructions(bookingId, input.metadata, input.expectedScope);
     case 'queue_checkout_instructions':
-      return queueCheckoutInstructions(bookingId, input.channel, input.metadata);
+      return queueCheckoutInstructions(bookingId, input.channel, input.metadata, input.expectedScope);
     case 'mark_checkout_instructions_sent':
-      return markCheckoutInstructionsSent(bookingId, input.metadata);
+      return markCheckoutInstructionsSent(bookingId, input.metadata, input.expectedScope);
     case 'request_checkout_confirmation':
-      return requestCheckoutConfirmation(bookingId, input.metadata);
+      return requestCheckoutConfirmation(bookingId, input.metadata, input.expectedScope);
     case 'mark_guest_checked_out':
-      return markGuestCheckedOut(bookingId, text(input.actualCheckoutAt) || null, input.metadata);
+      return markGuestCheckedOut(
+        bookingId,
+        text(input.actualCheckoutAt) || null,
+        input.metadata,
+        input.expectedScope,
+      );
     case 'trigger_post_checkout_inspection':
-      return triggerPostCheckoutInspection(bookingId, input.metadata);
+      return triggerPostCheckoutInspection(bookingId, input.metadata, input.expectedScope);
     case 'mark_post_checkout_inspection_done':
-      return markPostCheckoutInspectionDone(bookingId, text(input.result) || 'ok', input.metadata);
+      return markPostCheckoutInspectionDone(bookingId, text(input.result) || 'ok', input.metadata, input.expectedScope);
     case 'mark_deposit_return_ready':
-      return markDepositReturnReady(bookingId, input.metadata);
+      return markDepositReturnReady(bookingId, input.metadata, input.expectedScope);
     case 'mark_booking_closed':
-      return markBookingClosed(bookingId, input.metadata);
+      return markBookingClosed(bookingId, input.metadata, input.expectedScope);
     case 'create_fallback':
-      return (await createCheckoutFallbackIfNeeded(bookingId, reason || 'Нужен ручной план выезда', input.metadata)).snapshot;
+      return (await createCheckoutFallbackIfNeeded(
+        bookingId,
+        reason || 'Нужен ручной план выезда',
+        input.metadata,
+        input.expectedScope,
+      )).snapshot;
     case 'add_note': {
+      if (input.expectedScope) await requireBookingOpsRecordScope(bookingId, input.expectedScope);
       const current = await getExecutionRow(bookingId);
       const notes = Array.isArray(current?.metadata.notes) ? current.metadata.notes : [];
       await upsertExecution(bookingId, {
@@ -1135,8 +1349,8 @@ export async function runInStayCheckoutAction(input: {
           source: 'instay_checkout_autopilot_v1',
           notes: [...notes, { text: note || reason, createdAt: new Date().toISOString() }].filter((item) => text((item as { text?: unknown }).text)),
         },
-      });
-      return getInStayCheckoutStatus(bookingId);
+      }, input.expectedScope);
+      return getInStayCheckoutStatus(bookingId, input.expectedScope);
     }
     default:
       throw new Error('invalid_action');
@@ -1144,8 +1358,11 @@ export async function runInStayCheckoutAction(input: {
 }
 
 /** Baseline row for inbound intake — checkout flow not started. */
-export async function initializeInStayCheckoutBaseline(bookingId: string): Promise<InStayCheckoutRow> {
+export async function initializeInStayCheckoutBaseline(
+  bookingId: string,
+  expectedScope?: { accountId: string; propertyId: string },
+): Promise<InStayCheckoutRow> {
   return upsertExecution(bookingId, {
     metadata: { source: 'inbound_intake_autopilot_v1', initializedAt: new Date().toISOString() },
-  });
+  }, expectedScope);
 }

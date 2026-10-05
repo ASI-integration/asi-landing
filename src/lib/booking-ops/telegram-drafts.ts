@@ -1,9 +1,10 @@
+import { guardBookingCommunicationDraft } from '@/lib/communication/booking-knowledge-boundary';
 import { randomUUID } from 'node:crypto';
 import { supabase } from '@/lib/supabase';
 import { getBookingOpsActionTemplateById } from './action-templates';
 import { recordBookingOpsEvent } from './events';
 import { canCreateTelegramDraftForAction, fetchTelegramDraftStatusesForRecord } from './readiness';
-import { syncBookingOpsTasksForRecordId, getBookingOpsRecord } from './repository';
+import { syncBookingOpsTasksForRecordId, getBookingOpsRecord, requireBookingOpsRecordScope } from './repository';
 import {
   BOOKING_OPS_OPERATOR_ACTIONS,
   BOOKING_OPS_TELEGRAM_DRAFT_ACTIONS,
@@ -13,6 +14,8 @@ import {
   type BookingOpsTelegramDraftActionId,
   type BookingOpsTelegramDraftStatus,
 } from './types';
+
+type ExpectedScope = { accountId: string; propertyId: string };
 
 type TelegramDraftRow = {
   id: string;
@@ -179,9 +182,11 @@ export async function insertBookingOpsTelegramDraft(
 
 export async function listBookingOpsTelegramDrafts(
   bookingOpsRecordId: string,
+  options?: { expectedScope?: ExpectedScope },
 ): Promise<{ ok: true; drafts: BookingOpsTelegramDraft[] } | { ok: false; error: string }> {
   const recordId = text(bookingOpsRecordId);
   if (!recordId) return { ok: false, error: 'id_required' };
+  if (options?.expectedScope) await requireBookingOpsRecordScope(recordId, options.expectedScope);
 
   const { data, error } = await supabase
     .from('booking_ops_telegram_drafts')
@@ -190,6 +195,7 @@ export async function listBookingOpsTelegramDrafts(
     .order('created_at', { ascending: false });
 
   if (error) return { ok: false, error: error.message };
+  if (options?.expectedScope) await requireBookingOpsRecordScope(recordId, options.expectedScope);
   return { ok: true, drafts: ((data ?? []) as TelegramDraftRow[]).map(mapRow) };
 }
 
@@ -197,6 +203,7 @@ export async function updateBookingOpsTelegramDraftStatus(
   bookingOpsRecordId: string,
   draftId: string,
   status: string,
+  options?: { expectedScope?: ExpectedScope },
 ): Promise<{ ok: true; draft: BookingOpsTelegramDraft } | { ok: false; error: string }> {
   const recordId = text(bookingOpsRecordId);
   const id = text(draftId);
@@ -205,6 +212,7 @@ export async function updateBookingOpsTelegramDraftStatus(
   if (!(BOOKING_OPS_TELEGRAM_DRAFT_STATUSES as readonly string[]).includes(nextStatus)) {
     return { ok: false, error: 'invalid_status' };
   }
+  if (options?.expectedScope) await requireBookingOpsRecordScope(recordId, options.expectedScope);
 
   const { data, error } = await supabase
     .from('booking_ops_telegram_drafts')
@@ -216,14 +224,16 @@ export async function updateBookingOpsTelegramDraftStatus(
 
   if (error) return { ok: false, error: error.message };
   if (!data) return { ok: false, error: 'not_found' };
-  await syncBookingOpsTasksForRecordId(recordId);
+  if (options?.expectedScope) await requireBookingOpsRecordScope(recordId, options.expectedScope);
+  const syncOptions = options?.expectedScope ? { expectedScope: options.expectedScope } : undefined;
+  await syncBookingOpsTasksForRecordId(recordId, syncOptions);
   return { ok: true, draft: mapRow(data as TelegramDraftRow) };
 }
 
 export async function createTelegramDraftFromBookingOpsAction(
   recordId: string,
   actionId: string,
-  options?: { createdBy?: string | null },
+  options?: { createdBy?: string | null; expectedScope?: ExpectedScope },
   dependencies: TelegramDraftDependencies = DEFAULT_DEPENDENCIES,
 ): Promise<
   | { ok: true; draft: BookingOpsTelegramDraft }
@@ -243,7 +253,9 @@ export async function createTelegramDraftFromBookingOpsAction(
     };
   }
 
-  const record = await dependencies.getRecord(id);
+  const record = options?.expectedScope
+    ? await requireBookingOpsRecordScope(id, options.expectedScope)
+    : await dependencies.getRecord(id);
   if (!record) return { ok: false, error: 'not_found', message: 'Операционная запись не найдена.' };
 
   const template = getBookingOpsActionTemplateById(record, action);
@@ -275,6 +287,11 @@ export async function createTelegramDraftFromBookingOpsAction(
   }
 
   const target = await dependencies.resolveTarget(record);
+  if (options?.expectedScope) await requireBookingOpsRecordScope(id, options.expectedScope);
+  let knowledge: Awaited<ReturnType<typeof guardBookingCommunicationDraft>>;
+  try { knowledge = await guardBookingCommunicationDraft(record, action); }
+  catch { return { ok: false, error: 'knowledge_unavailable', message: 'Не удалось проверить данные объекта и бронирования.' }; }
+  if (options?.expectedScope) await requireBookingOpsRecordScope(id, options.expectedScope);
   const inserted = await dependencies.insertDraft({
     id: randomUUID(),
     bookingOpsRecordId: record.id,
@@ -282,19 +299,21 @@ export async function createTelegramDraftFromBookingOpsAction(
     telegramChatId: target.chatId,
     telegramTarget: target.target,
     actionId: action,
-    messageText: template.messageTemplate,
+    messageText: knowledge.messageText,
     createdBy: text(options?.createdBy) || null,
-    warning: target.warning,
+    warning: target.warning ?? 'Проверьте факты и получателя перед ручной отправкой.',
     metadata: {
       property_id: record.propertyId,
       ota_source: record.otaSource,
       template_warnings: template.warnings,
+      ...knowledge.metadata,
     },
   });
 
   if (!inserted.ok) {
     return { ok: false, error: 'database_error', message: inserted.error };
   }
+  if (options?.expectedScope) await requireBookingOpsRecordScope(id, options.expectedScope);
   await recordBookingOpsEvent({
     bookingOpsRecordId: record.id,
     eventType: 'telegram_draft_created',
@@ -309,6 +328,6 @@ export async function createTelegramDraftFromBookingOpsAction(
     },
     dedupeKey: `telegram-draft-created:${inserted.draft.id}`,
   });
-  await (dependencies.syncTasks ?? syncBookingOpsTasksForRecordId)(record.id);
+  await (dependencies.syncTasks ?? syncBookingOpsTasksForRecordId)(record.id, { expectedScope: options?.expectedScope });
   return inserted;
 }

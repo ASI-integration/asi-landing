@@ -11,6 +11,10 @@ export type UnitDraft = { key: string; propertyKey: string; name?: string; capac
 export type StaffDraft = { key: string; name?: string; role?: StaffRole; preferredChannel?: 'phone' | 'telegram' | 'email'; contact?: string; propertyKeys?: string[]; schedule?: string; notifications?: string };
 export type VerificationItem = { key: string; propertyKey: string; status: 'pending' | 'passed' | 'issue'; blocking?: boolean; notes?: string; photoMetadata?: Record<string, unknown>[]; maintenanceTaskId?: string; reinspectionRequired?: boolean };
 
+export type PilotCommunicationMode = 'automatic' | 'operator_assisted';
+export type OperationalReadinessCheck = { key: string; label: string; status: 'ready' | 'manual' | 'blocked'; detail?: string };
+export type OperationalReadiness = { ready: boolean; blockers: string[]; manualControls: string[]; checks: OperationalReadinessCheck[] };
+
 export type OnboardingData = {
   /** Owner-facing intake; readiness and pilot activation remain in their canonical services. */
   rentalConnection?: RentalConnectionDraft;
@@ -21,7 +25,7 @@ export type OnboardingData = {
   operations?: { checkInTime?: string; checkOutTime?: string; cleaningRule?: string; linenRule?: string; inspectionRule?: string; maintenanceRule?: string };
   channelManager?: { provider?: string; credentialsRef?: string; snapshotReady?: boolean; status?: ChannelLaunchStatus };
   reservations?: { choice?: 'channel_manager' | 'csv' | 'manual' | 'skip'; completed?: boolean; skippedAt?: string; criticalConflicts?: number; mappingsComplete?: boolean; ledgerInitialized?: boolean; directIntakeReady?: boolean };
-  communications?: { guestChannel?: string; workerChannel?: string; scopedPilotSendingEnabled?: boolean };
+  communications?: { guestChannel?: string; workerChannel?: string; pilotMode?: PilotCommunicationMode; scopedPilotSendingEnabled?: boolean };
   legalPayments?: { legalMode?: string; depositMode?: string; mvdMode?: string };
   staff?: StaffDraft[];
   verification?: VerificationItem[];

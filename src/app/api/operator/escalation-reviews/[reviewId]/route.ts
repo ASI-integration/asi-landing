@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
+import { resolveAccountIdForUser } from '@/lib/accounts';
 import {
   approveEscalationReview,
   closeEscalationReview,
-  getEscalationReview,
-  getReviewsBySessionId,
+  getEscalationReviewForAccount,
+  getReviewsBySessionIdForAccount,
 } from '@/lib/communication/operator-review';
 import {
   lockSessionForOperator,
@@ -14,31 +15,48 @@ import {
 
 export const dynamic = 'force-dynamic';
 
-async function requireSession() {
+async function requireAccount() {
   const session = await getSession();
-  if (!session.userId) return null;
-  return session;
+  if (!session.userId) return { ok: false as const, response: NextResponse.json({ error: 'Unauthorized' }, { status: 401 }) };
+  const accountId = await resolveAccountIdForUser(session.userId);
+  if (!accountId || accountId === 'legacy') {
+    return { ok: false as const, response: NextResponse.json({ error: 'account_workspace_unavailable' }, { status: 403 }) };
+  }
+  return { ok: true as const, session, accountId };
+}
+
+function storeFailureResponse(error: unknown) {
+  if (error instanceof Error && error.message === 'operator_review_store_unhealthy') {
+    return NextResponse.json({ ok: false, error: 'operator_review_store_unhealthy' }, { status: 503 });
+  }
+  return null;
 }
 
 export async function GET(_req: NextRequest, ctx: { params: { reviewId: string } }) {
-  const session = await requireSession();
-  if (!session) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
+  const auth = await requireAccount();
+  if (!auth.ok) return auth.response;
 
-  const review = getEscalationReview(ctx.params.reviewId);
-  if (!review) {
-    return NextResponse.json({ ok: false, error: 'not_found' }, { status: 404 });
+  try {
+    const review = getEscalationReviewForAccount(ctx.params.reviewId, auth.accountId);
+    if (!review) return NextResponse.json({ ok: false, error: 'not_found' }, { status: 404 });
+    return NextResponse.json({ ok: true, review });
+  } catch (error) {
+    return storeFailureResponse(error) ?? NextResponse.json({ ok: false, error: 'review_read_failed' }, { status: 500 });
   }
-
-  return NextResponse.json({ ok: true, review });
 }
 
 export async function PATCH(req: NextRequest, ctx: { params: { reviewId: string } }) {
-  const session = await requireSession();
-  if (!session) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  const auth = await requireAccount();
+  if (!auth.ok) return auth.response;
+
+  const reviewId = ctx.params.reviewId;
+  let existing;
+  try {
+    existing = getEscalationReviewForAccount(reviewId, auth.accountId);
+  } catch (error) {
+    return storeFailureResponse(error) ?? NextResponse.json({ ok: false, error: 'review_read_failed' }, { status: 500 });
   }
+  if (!existing) return NextResponse.json({ ok: false, error: 'not_found' }, { status: 404 });
 
   let body: Record<string, unknown>;
   try {
@@ -48,13 +66,11 @@ export async function PATCH(req: NextRequest, ctx: { params: { reviewId: string 
   }
 
   const action = String(body.action ?? '');
-  const operatorId = session.userId;
-  const reviewId = ctx.params.reviewId;
+  const operatorId = auth.session.userId;
 
   try {
     if (action === 'acknowledge') {
-      const existing = getEscalationReview(reviewId);
-      const chatId = existing ? Number(existing.targetId) : NaN;
+      const chatId = Number(existing.targetId);
       const { review } = lockSessionForOperator({
         reviewId,
         operatorId,
@@ -84,18 +100,16 @@ export async function PATCH(req: NextRequest, ctx: { params: { reviewId: string 
       });
     }
     if (action === 'return_to_ai') {
-      const review = getEscalationReview(reviewId);
-      if (!review) {
-        return NextResponse.json({ ok: false, error: 'not_found' }, { status: 404 });
-      }
-      const chatId = Number(review.targetId);
+      const chatId = Number(existing.targetId);
       const release = releaseSessionToAi({
-        sessionId: review.sessionId,
+        expectedReviewId: existing.reviewId,
+        sessionId: existing.sessionId,
         operatorId,
         reason: 'manual_return_to_ai',
         chatId: Number.isFinite(chatId) ? chatId : undefined,
       });
-      const reviews = getReviewsBySessionId(review.sessionId).sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
+      const reviews = getReviewsBySessionIdForAccount(existing.sessionId, auth.accountId)
+        .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
       return NextResponse.json({
         ok: true,
         release,
@@ -104,9 +118,10 @@ export async function PATCH(req: NextRequest, ctx: { params: { reviewId: string 
     }
 
     return NextResponse.json({ ok: false, error: 'unknown_action' }, { status: 400 });
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    return NextResponse.json({ ok: false, error: msg }, { status: 500 });
+  } catch (error) {
+    const storeFailure = storeFailureResponse(error);
+    if (storeFailure) return storeFailure;
+    const message = error instanceof Error ? error.message : String(error);
+    return NextResponse.json({ ok: false, error: message }, { status: 500 });
   }
 }
-

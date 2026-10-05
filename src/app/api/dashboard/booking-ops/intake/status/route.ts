@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { requireCrmOperatorSession } from '@/lib/crm/api-auth';
+import { requireBookingOpsApiAccount } from '../../access';
 import { getInboundBookingIntakeStatus } from '@/lib/booking-ops/real-booking-intake-autopilot';
 
 export const runtime = 'nodejs';
@@ -8,6 +9,8 @@ export const dynamic = 'force-dynamic';
 export async function GET(req: Request): Promise<NextResponse> {
   const auth = await requireCrmOperatorSession();
   if ('error' in auth) return auth.error;
+  const account = await requireBookingOpsApiAccount(auth.session);
+  if (!account.ok) return account.response;
 
   const url = new URL(req.url);
   const bookingId = url.searchParams.get('bookingId')?.trim()
@@ -27,7 +30,7 @@ export async function GET(req: Request): Promise<NextResponse> {
   const result = await getInboundBookingIntakeStatus({
     bookingId: bookingId || undefined,
     intakeId: intakeId || undefined,
-  });
+  }, account.accountId);
 
   if (!result) {
     return NextResponse.json({ ok: false, message: 'Заявка не найдена.' }, { status: 404 });

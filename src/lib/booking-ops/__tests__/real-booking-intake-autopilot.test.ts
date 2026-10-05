@@ -1,9 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const {
+  attachBookingOpsRecordProperty,
   createBookingOpsRecord,
   getBookingOpsRecord,
+  requireBookingOpsRecordScope,
   updateBookingOpsRecord,
+  updateUnboundBookingOpsReviewData,
   initializeCheckinExecutionBaseline,
   initializeInStayCheckoutBaseline,
   recomputeBookingCheckinReadiness,
@@ -12,9 +15,12 @@ const {
   canAutoSendCommunicationIntent,
   recordAndProcessBookingEvent,
 } = vi.hoisted(() => ({
+  attachBookingOpsRecordProperty: vi.fn(),
   createBookingOpsRecord: vi.fn(),
   getBookingOpsRecord: vi.fn(),
+  requireBookingOpsRecordScope: vi.fn(),
   updateBookingOpsRecord: vi.fn(),
+  updateUnboundBookingOpsReviewData: vi.fn(),
   initializeCheckinExecutionBaseline: vi.fn(),
   initializeInStayCheckoutBaseline: vi.fn(),
   recomputeBookingCheckinReadiness: vi.fn(),
@@ -52,6 +58,10 @@ function makeSelect(table: keyof typeof tables) {
       result = result.filter((row) => row[column] === value);
       return query;
     },
+    is(column: string, value: unknown) {
+      result = result.filter((row) => row[column] === value);
+      return query;
+    },
     or() { return query; },
     in(column: string, values: unknown[]) {
       result = result.filter((row) => values.includes(row[column]));
@@ -86,13 +96,17 @@ vi.mock('@/lib/supabase', () => ({
         }),
       })),
       upsert: vi.fn((input: Row) => {
-        const existing = tableRows(table).find((row) => row.idempotency_key === input.idempotency_key);
+        const sameScope = (row: Row) => (
+          row.idempotency_key === input.idempotency_key
+          && (row.account_id ?? null) === (input.account_id ?? null)
+        );
+        const existing = tableRows(table).find(sameScope);
         if (existing) Object.assign(existing, input);
         else tableRows(table).push(input);
         return {
           select: vi.fn(() => ({
             single: vi.fn(async () => ({
-              data: tableRows(table).find((row) => row.idempotency_key === input.idempotency_key) ?? input,
+              data: tableRows(table).find(sameScope) ?? input,
               error: null,
             })),
           })),
@@ -103,9 +117,12 @@ vi.mock('@/lib/supabase', () => ({
 }));
 
 vi.mock('../repository', () => ({
+  attachBookingOpsRecordProperty,
   createBookingOpsRecord,
   getBookingOpsRecord,
+  requireBookingOpsRecordScope,
   updateBookingOpsRecord,
+  updateUnboundBookingOpsReviewData,
   syncBookingOpsTasksForRecordId,
 }));
 
@@ -155,9 +172,12 @@ describe('Real Booking Intake Autopilot v1', () => {
     tables.booking_checkin_execution = [];
     tables.booking_instay_checkout = [];
 
+    attachBookingOpsRecordProperty.mockResolvedValue({ ok: false, error: 'scope_mismatch' });
     createBookingOpsRecord.mockResolvedValue({ ok: true, record: bookingRecord });
     getBookingOpsRecord.mockResolvedValue(bookingRecord);
+    requireBookingOpsRecordScope.mockResolvedValue(bookingRecord);
     updateBookingOpsRecord.mockResolvedValue({ ok: true, record: bookingRecord });
+    updateUnboundBookingOpsReviewData.mockResolvedValue({ ok: true, record: bookingRecord });
     initializeCheckinExecutionBaseline.mockResolvedValue({ id: 'checkin-1' });
     initializeInStayCheckoutBaseline.mockResolvedValue({ id: 'instay-1' });
     recomputeBookingCheckinReadiness.mockResolvedValue({ status: 'needs_attention' });
@@ -282,14 +302,174 @@ describe('Real Booking Intake Autopilot v1', () => {
   });
 
   it('existing booking emits guest.data_submitted only on incomplete-to-complete transition', async () => {
-    const incomplete = { ...bookingRecord, guestName: 'Guest', guestPhone: null, guestEmail: null, guestTelegram: null };
+    const incomplete = { ...bookingRecord, accountId: 'account-a', guestName: 'Guest', guestPhone: null, guestEmail: null, guestTelegram: null };
     getBookingOpsRecord.mockResolvedValueOnce(incomplete);
-    updateBookingOpsRecord.mockResolvedValueOnce({ ok: true, record: { ...incomplete, guestPhone: '+79990000001' } });
-    tables.booking_ops_records.push({ id: incomplete.id, guest_name: incomplete.guestName, property_id: 'OBJ-1' });
+    updateBookingOpsRecord.mockResolvedValue({ ok: true, record: { ...incomplete, guestPhone: '+79990000001' } });
+    tables.booking_ops_records.push({ id: incomplete.id, account_id: 'account-a', guest_name: incomplete.guestName, property_id: 'OBJ-1' });
     const { processInboundBookingRequest: process } = await import('../real-booking-intake-autopilot');
-    await process({ guestName: 'Guest', guestPhone: '+79990000001', propertyId: 'OBJ-1', externalSourceId: 'sync-complete-1' }, 'admin');
-    expect(recordAndProcessBookingEvent).toHaveBeenCalledWith(expect.objectContaining({ type: 'guest.data_submitted', source: 'real_booking_intake' }));
+    await process({ guestName: 'Guest', guestPhone: '+79990000001', propertyId: 'OBJ-1', externalSourceId: 'sync-complete-1' }, 'admin', { accountId: 'account-a' });
+    expect(recordAndProcessBookingEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'guest.data_submitted', source: 'real_booking_intake' }),
+      { accountId: 'account-a', propertyId: 'OBJ-1' },
+    );
+    expect(initializeCheckinExecutionBaseline).toHaveBeenCalledWith(
+      incomplete.id,
+      { accountId: 'account-a', propertyId: 'OBJ-1' },
+    );
+    expect(initializeInStayCheckoutBaseline).toHaveBeenCalledWith(
+      incomplete.id,
+      { accountId: 'account-a', propertyId: 'OBJ-1' },
+    );
     expect(recordAndProcessBookingEvent).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'booking.received' }));
+  });
+
+  it('uses the account-bound unbound attach seam instead of a general record update', async () => {
+    const unbound = { ...bookingRecord, accountId: 'account-a', propertyId: null };
+    const bound = { ...unbound, propertyId: 'prop-a', propertyLabel: 'Unit A' };
+    attachBookingOpsRecordProperty.mockResolvedValueOnce({ ok: true, record: bound });
+
+    const { attachBookingToOwnerProperty } = await import('../real-booking-intake-autopilot');
+    const result = await attachBookingToOwnerProperty(
+      unbound.id,
+      { propertyId: 'prop-a', propertyLabel: 'Unit A' },
+      'account-a',
+    );
+
+    expect(result).toEqual(bound);
+    expect(attachBookingOpsRecordProperty).toHaveBeenCalledWith(
+      unbound.id,
+      { accountId: 'account-a', propertyId: 'prop-a', propertyLabel: 'Unit A' },
+      { actorType: 'admin' },
+    );
+    expect(updateBookingOpsRecord).not.toHaveBeenCalled();
+  });
+
+  it('binds a matched account-owned unbound record before applying scoped updates', async () => {
+    const unbound = {
+      ...bookingRecord,
+      id: 'unbound-booking',
+      bookingId: 'unbound-booking',
+      accountId: 'account-a',
+      propertyId: null,
+      propertyLabel: null,
+    };
+    const bound = { ...unbound, propertyId: 'prop-a', propertyLabel: 'Unit A' };
+    tables.booking_ops_records.push({
+      id: unbound.id,
+      booking_id: unbound.bookingId,
+      account_id: 'account-a',
+      property_id: null,
+      guest_phone: unbound.guestPhone,
+      updated_at: '2026-08-07T10:00:00.000Z',
+    });
+    getBookingOpsRecord.mockResolvedValueOnce(unbound);
+    attachBookingOpsRecordProperty.mockResolvedValueOnce({ ok: true, record: bound });
+
+    const api = await import('../real-booking-intake-autopilot');
+    const normalized = api.normalizeInboundBookingRequest({
+      bookingReference: unbound.id,
+      propertyId: 'prop-a',
+      propertyLabel: 'Unit A',
+    }, 'admin');
+    const result = await api.findOrCreateBookingFromInbound(
+      normalized,
+      'admin',
+      null,
+      true,
+      'account-a',
+    );
+
+    expect(result.record).toEqual(bound);
+    expect(attachBookingOpsRecordProperty).toHaveBeenCalledWith(
+      unbound.id,
+      { accountId: 'account-a', propertyId: 'prop-a', propertyLabel: 'Unit A' },
+      { actorType: 'system' },
+    );
+    expect(updateBookingOpsRecord).not.toHaveBeenCalled();
+  });
+
+  it('rejects a same-account booking reference when the requested property differs', async () => {
+    const existing = {
+      ...bookingRecord,
+      id: 'booking-prop-b',
+      bookingId: 'shared-ref',
+      accountId: 'account-a',
+      propertyId: 'prop-b',
+    };
+    tables.booking_ops_records.push({
+      id: existing.id,
+      booking_id: existing.bookingId,
+      account_id: existing.accountId,
+      property_id: existing.propertyId,
+      guest_phone: existing.guestPhone,
+      updated_at: '2026-10-04T12:00:00.000Z',
+    });
+    getBookingOpsRecord.mockResolvedValueOnce(existing);
+    requireBookingOpsRecordScope.mockRejectedValueOnce(new Error('scope_mismatch'));
+
+    const api = await import('../real-booking-intake-autopilot');
+    const normalized = api.normalizeInboundBookingRequest({
+      bookingReference: 'shared-ref',
+      propertyId: 'prop-a',
+    }, 'admin');
+
+    await expect(api.findOrCreateBookingFromInbound(
+      normalized,
+      'admin',
+      null,
+      true,
+      'account-a',
+    )).rejects.toMatchObject({ code: 'account_scope_mismatch' });
+
+    expect(requireBookingOpsRecordScope).toHaveBeenCalledWith(
+      existing.id,
+      { accountId: 'account-a', propertyId: 'prop-a' },
+    );
+    expect(createBookingOpsRecord).not.toHaveBeenCalled();
+    expect(updateBookingOpsRecord).not.toHaveBeenCalled();
+  });
+
+  it('accountless telegram intake never matches a tenant-owned booking', async () => {
+    const { processInboundBookingRequest: process } = await import('../real-booking-intake-autopilot');
+    tables.booking_ops_records.push({
+      id: 'foreign-booking',
+      account_id: 'account-b',
+      booking_id: 'shared-telegram-ref',
+      guest_phone: '+79990000009',
+    });
+    const result = await process({
+      guestName: 'Мария',
+      guestPhone: '+79990000009',
+      bookingReference: 'shared-telegram-ref',
+      sourceMessageId: 'telegram:message:tenant-boundary',
+    }, 'telegram');
+
+    expect(createBookingOpsRecord).toHaveBeenCalledTimes(1);
+    expect(result.bookingId).toBe('booking-ops-intake-1');
+  });
+
+  it('accountless intake rejects a stale event linked to a tenant-owned booking', async () => {
+    const api = await import('../real-booking-intake-autopilot');
+    const payload = {
+      guestName: 'Мария',
+      guestPhone: '+79990000008',
+      sourceMessageId: 'telegram:message:stale-cross-tenant',
+    };
+    const normalized = api.normalizeInboundBookingRequest(payload, 'telegram');
+    const key = api.computeInboundIdempotencyKey(normalized, 'telegram');
+    const now = new Date().toISOString();
+    tables.booking_inbound_intake_events.push({
+      id: 'stale-event', account_id: null, source: 'telegram', source_ref: payload.sourceMessageId,
+      idempotency_key: key, status: 'processed', booking_id: 'foreign-booking',
+      guest_id: null, owner_id: null, property_id: null, normalized_payload: {},
+      missing_fields: [], automation_result: {}, failure_reason: null,
+      duplicate_of_booking_id: null, created_at: now, updated_at: now,
+    });
+    getBookingOpsRecord.mockResolvedValueOnce({ ...bookingRecord, id: 'foreign-booking', accountId: 'account-b' });
+
+    await expect(api.processInboundBookingRequest(payload, 'telegram'))
+      .rejects.toMatchObject({ code: 'account_scope_mismatch' });
+    expect(createBookingOpsRecord).not.toHaveBeenCalled();
   });
 
   it('duplicate partial telegram request does not create duplicate booking', async () => {
@@ -491,6 +671,70 @@ describe('Real Booking Intake Autopilot v1', () => {
       expect.objectContaining({ bookingId: 'operator-ref-1', propertyId: 'OBJ-1', otaSource: 'web' }),
       expect.any(Object),
     );
+  });
+
+  it('rejects a foreign duplicate target before writing intake state', async () => {
+    const api = await import('../real-booking-intake-autopilot');
+    getBookingOpsRecord.mockResolvedValueOnce({ ...bookingRecord, id: 'foreign-booking', accountId: 'account-b' });
+
+    await expect(api.processInboundBookingRequest({
+      guestName: 'Guest', externalSourceId: 'duplicate-check',
+    }, 'admin', {
+      accountId: 'account-a', action: 'mark_duplicate', duplicateOfBookingId: 'foreign-booking',
+    })).rejects.toMatchObject({ code: 'account_scope_mismatch' });
+
+    expect(tables.booking_inbound_intake_events).toHaveLength(0);
+    expect(updateBookingOpsRecord).not.toHaveBeenCalled();
+  });
+
+  it('revalidates an intake-linked booking before attach mutation', async () => {
+    const api = await import('../real-booking-intake-autopilot');
+    const now = new Date().toISOString();
+    tables.booking_inbound_intake_events.push({
+      id: 'intake-a', account_id: 'account-a', source: 'admin', source_ref: null,
+      idempotency_key: 'event-a', status: 'needs_review', booking_id: 'foreign-booking',
+      guest_id: null, owner_id: null, property_id: null, normalized_payload: {},
+      missing_fields: [], automation_result: {}, failure_reason: null,
+      duplicate_of_booking_id: null, created_at: now, updated_at: now,
+    });
+    getBookingOpsRecord.mockResolvedValueOnce({ ...bookingRecord, id: 'foreign-booking', accountId: 'account-b' });
+
+    await expect(api.processInboundBookingRequest({
+      guestName: 'Guest', externalSourceId: 'attach-check',
+    }, 'admin', {
+      accountId: 'account-a', action: 'attach_guest', intakeEventId: 'intake-a', attachGuestName: 'Updated Guest',
+    })).rejects.toMatchObject({ code: 'account_scope_mismatch' });
+
+    expect(updateBookingOpsRecord).not.toHaveBeenCalled();
+  });
+
+  it('isolates identical intake keys by authenticated account', async () => {
+    const api = await import('../real-booking-intake-autopilot');
+    createBookingOpsRecord
+      .mockResolvedValueOnce({ ok: true, record: { ...bookingRecord, id: 'a-booking', accountId: 'account-a' } })
+      .mockResolvedValueOnce({ ok: true, record: { ...bookingRecord, id: 'b-booking', accountId: 'account-b' } });
+    const payload = { guestName: 'Guest', externalSourceId: 'shared-id', propertyLabel: 'Studio' };
+
+    await api.processInboundBookingRequest(payload, 'admin', { accountId: 'account-a' });
+    await api.processInboundBookingRequest(payload, 'admin', { accountId: 'account-b' });
+
+    expect(tables.booking_inbound_intake_events.map((row) => row.account_id).sort()).toEqual([
+      'account-a',
+      'account-b',
+    ]);
+    expect(createBookingOpsRecord).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ accountId: 'account-a' }),
+      expect.any(Object),
+    );
+    expect(createBookingOpsRecord).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ accountId: 'account-b' }),
+      expect.any(Object),
+    );
+    await expect(api.getInboundBookingIntakeStatus({
+      intakeId: String(tables.booking_inbound_intake_events[1]?.id),
+    }, 'account-a')).resolves.toBeNull();
   });
 
   it('admin-created request uses admin source', async () => {

@@ -1,6 +1,9 @@
 import { randomUUID } from 'node:crypto';
 import { supabase } from '@/lib/supabase';
-import { communicationPolicyDefaults, computeLaunchReadiness, initializeModules, onboardingProgress, reportVerificationIssue } from './core';
+import { getPilotReadinessForProperty } from '@/lib/pilot-readiness/repository';
+import { connectionPropertyId } from '@/lib/rental-connect/identity';
+import { resolveResidentialBookingIdentity } from '@/lib/platform/residential-booking-scope';
+import { communicationPolicyDefaults, computeLaunchReadiness, computeOperationalReadiness, initializeModules, onboardingProgress, reportVerificationIssue } from './core';
 import type { ModuleState, OnboardingData, OnboardingStep } from './types';
 
 export async function loadOnboarding(accountId: string) {
@@ -36,18 +39,92 @@ export async function synchronizeModules(onboardingId: string, data: OnboardingD
   return modules;
 }
 
-export async function getWorkspace(accountId: string) {
+function normalized(value: unknown): string {
+  return String(value ?? '').trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+function resolvePilotPropertyIds(
+  accountId: string,
+  data: OnboardingData,
+  owned: Array<{ id: unknown; name?: unknown; address_line?: unknown }>,
+): string[] {
+  const ownedIds = new Set(owned.map((row) => String(row.id)));
+  const canonicalFirstPilotPropertyId = data.rentalConnection?.step && data.rentalConnection.step >= 3
+    ? connectionPropertyId(accountId)
+    : null;
+  if (canonicalFirstPilotPropertyId) {
+    if (!ownedIds.has(canonicalFirstPilotPropertyId)) throw new Error('operational_readiness_unavailable');
+    return [canonicalFirstPilotPropertyId];
+  }
+
+  const configured = data.properties ?? [];
+  if (configured.length === 0) return [];
+  const resolved: string[] = [];
+  for (const property of configured) {
+    let id = ownedIds.has(property.key) ? property.key : null;
+    if (!id) {
+      const matches = owned.filter((row) =>
+        normalized(row.name) === normalized(property.name) &&
+        normalized(row.address_line) === normalized(property.address));
+      if (matches.length !== 1) throw new Error('operational_readiness_unavailable');
+      id = String(matches[0].id);
+    }
+    if (resolved.includes(id)) throw new Error('operational_readiness_unavailable');
+    resolved.push(id);
+  }
+  return resolved;
+}
+
+export async function getWorkspace(accountId: string, requiredPropertyId?: string) {
   const onboarding = await loadOnboarding(accountId);
   if (!onboarding) return null;
   const result = await supabase.from('ops_v17_module_state').select('module_key,status,idempotency_key,detail').eq('onboarding_id', onboarding.id);
   if (result.error) throw new Error(result.error.message);
+  const properties = await supabase.from('properties').select('id,name,address_line').eq('account_id', accountId);
+  if (properties.error) throw new Error('operational_readiness_unavailable');
+  const ownedProperties = (properties.data ?? []) as Array<{ id: unknown; name?: unknown; address_line?: unknown }>;
+  const readinessPropertyIds = resolvePilotPropertyIds(accountId, onboarding.data, ownedProperties);
+  if (requiredPropertyId && !readinessPropertyIds.includes(requiredPropertyId)) {
+    throw new Error('operational_readiness_unavailable');
+  }
+  let propertyReadiness;
+  try {
+    propertyReadiness = await Promise.all(readinessPropertyIds.map((propertyId) => getPilotReadinessForProperty(propertyId)));
+  } catch {
+    throw new Error('operational_readiness_unavailable');
+  }
+  const verified = propertyReadiness.filter((item) => item?.ready === true);
+  const operatorReady = propertyReadiness.length > 0 && propertyReadiness.every((item) => item?.checks.some((check) => check.id === 'operator' && check.ok));
+  const readinessDetails = propertyReadiness.flatMap((item, index) =>
+    item?.ready
+      ? []
+      : [`${readinessPropertyIds[index]}: ${item?.missingLabelsRu.join(', ') || 'рабочая проверка недоступна'}`]);
   const modules = (result.data ?? []).map((m) => ({ key: m.module_key, status: m.status, idempotencyKey: m.idempotency_key, detail: m.detail })) as ModuleState[];
-  return { onboarding, progress: onboardingProgress(onboarding.data), modules, readiness: computeLaunchReadiness(onboarding.data, modules, Boolean(onboarding.pilot_activated_at)), communicationDefaults: communicationPolicyDefaults };
+  const readiness = computeLaunchReadiness(onboarding.data, modules, Boolean(onboarding.pilot_activated_at));
+  // Automatic sending remains blocked until onboarding is wired to the canonical auto-send scope/runtime status.
+  const operationalReadiness = computeOperationalReadiness(onboarding.data, readiness, {
+    ownedPropertyCount: readinessPropertyIds.length,
+    verifiedPropertyCount: verified.length,
+    operatorReady,
+    readinessDetails,
+    automaticSendingReady: false,
+  });
+  return { onboarding, progress: onboardingProgress(onboarding.data), modules, readiness, operationalReadiness, communicationDefaults: communicationPolicyDefaults };
+}
+
+export async function isOperationallyReadyForPilotProperty(accountId: string, propertyId: string): Promise<boolean> {
+  try {
+    const workspace = await getWorkspace(accountId, propertyId);
+    return workspace?.operationalReadiness.ready === true;
+  } catch {
+    return false;
+  }
 }
 
 export async function createVerificationIssue(input: { accountId: string; actorId: string; itemKey: string; propertyKey: string; notes?: string; blocking?: boolean }) {
   const onboarding = await loadOnboarding(input.accountId);
   if (!onboarding) throw new Error('onboarding_not_found');
+  if (!(onboarding.data.properties ?? []).some((property) => property.key === input.propertyKey)) throw new Error('verification_property_not_found');
   const taskId = randomUUID();
   const task = await supabase.from('ops_v17_maintenance_tasks').insert({ id: taskId, onboarding_id: onboarding.id, property_key: input.propertyKey, verification_key: input.itemKey, status: 'open', notes: input.notes ?? null });
   if (task.error) throw new Error(task.error.message);
@@ -60,27 +137,59 @@ export async function createVerificationIssue(input: { accountId: string; actorI
 export async function activatePilot(accountId: string, actorId: string) {
   const workspace = await getWorkspace(accountId);
   if (!workspace) throw new Error('onboarding_not_found');
-  if (workspace.readiness.status !== 'ready_for_pilot') throw new Error('launch_blocked');
+  if (workspace.onboarding.pilot_activated_at) {
+    return { activatedAt: workspace.onboarding.pilot_activated_at, alreadyActive: true };
+  }
+  if (workspace.readiness.status !== 'ready_for_pilot' || !workspace.operationalReadiness.ready) {
+    throw new Error('launch_blocked');
+  }
   const activatedAt = new Date().toISOString();
-  const result = await supabase.from('ops_v17_onboardings').update({ pilot_activated_at: activatedAt, pilot_activated_by: actorId }).eq('id', workspace.onboarding.id);
+  const result = await supabase.from('ops_v17_onboardings').update({ pilot_activated_at: activatedAt, pilot_activated_by: actorId }).eq('id', workspace.onboarding.id).select('id').maybeSingle();
   if (result.error) throw new Error(result.error.message);
-  await audit(workspace.onboarding.id, 'pilot_activated', actorId, { activatedAt });
-  return { activatedAt };
+  if (!result.data) throw new Error('launch_state_changed');
+  await audit(workspace.onboarding.id, 'pilot_activated', actorId, {
+    activatedAt,
+    manualControls: workspace.operationalReadiness.manualControls,
+    checks: workspace.operationalReadiness.checks,
+  });
+  return { activatedAt, alreadyActive: false, manualControls: workspace.operationalReadiness.manualControls };
 }
 
 export async function bootstrapPilot(input: { accountId: string; actorId: string; confirm: boolean }) {
   const workspace = await getWorkspace(input.accountId);
   if (!workspace) throw new Error('onboarding_not_found');
-  const records = await supabase.from('booking_ops_records').select('id,account_id,booking_id,ota_source,property_id,check_in_at,check_out_at,guest_phone,guest_email,guest_telegram,source_type,asi_reference').or(`account_id.eq.${input.accountId},account_id.is.null`).limit(500);
+  const records = await supabase.from('booking_ops_records').select('id,account_id,booking_id,ota_source,property_id,check_in_at,check_out_at,guest_phone,guest_email,guest_telegram,source_type,asi_reference').eq('account_id', input.accountId).limit(500);
   if (records.error) throw new Error(records.error.message);
-  const ambiguous = (records.data ?? []).filter((r) => !r.property_id || !r.check_in_at || !r.check_out_at || !(r.guest_phone || r.guest_email || r.guest_telegram));
+  const properties = await supabase.from('properties').select('id').eq('account_id', input.accountId);
+  if (properties.error) throw new Error(properties.error.message);
+  const ownedProperties = new Set((properties.data ?? []).map((property) => property.id));
+  const ambiguous = (records.data ?? []).filter((r) => !r.property_id || !ownedProperties.has(r.property_id) || !r.check_in_at || !r.check_out_at || !(r.guest_phone || r.guest_email || r.guest_telegram));
   const eligible = (records.data ?? []).filter((r) => !ambiguous.some((a) => a.id === r.id));
-  const preview = { accountId: input.accountId, modules: workspace.modules.filter((m) => m.status !== 'initialized').map((m) => m.key), inspectedRecords: records.data?.length ?? 0, eligibleRecords: eligible.length, ambiguousRecords: ambiguous.map((r) => ({ id: r.id, reference: r.asi_reference ?? null, missing: [!r.property_id && 'property', !r.check_in_at && 'check_in', !r.check_out_at && 'check_out', !(r.guest_phone || r.guest_email || r.guest_telegram) && 'guest_contact'].filter(Boolean) })), messagesWillBeSent: false };
+  const preview = { accountId: input.accountId, modules: workspace.modules.filter((m) => m.status !== 'initialized').map((m) => m.key), inspectedRecords: records.data?.length ?? 0, eligibleRecords: eligible.length, ambiguousRecords: ambiguous.map((r) => ({ id: r.id, reference: r.asi_reference ?? null, missing: [(!r.property_id || !ownedProperties.has(r.property_id)) && 'owned_property', !r.check_in_at && 'check_in', !r.check_out_at && 'check_out', !(r.guest_phone || r.guest_email || r.guest_telegram) && 'guest_contact'].filter(Boolean) })), messagesWillBeSent: false };
   if (!input.confirm) return { dryRun: true, preview };
   for (const record of eligible) {
-    const saved = await supabase.from('booking_ops_records').update({ account_id: input.accountId, source_type: record.source_type || 'manual', source_provider: record.ota_source || null, sync_status: record.booking_id ? 'imported' : 'local_only', created_by_actor: record.account_id ? undefined : input.actorId }).eq('id', record.id).or(`account_id.eq.${input.accountId},account_id.is.null`);
+    const expectedPropertyId = String(record.property_id);
+    const identity = await resolveResidentialBookingIdentity(record.id, input.accountId);
+    if (
+      !identity.bookingId
+      || !identity.propertyId
+      || identity.propertyId !== expectedPropertyId
+    ) throw new Error('booking_property_scope_changed');
+    const saved = await supabase.from('booking_ops_records')
+      .update({ source_type: record.source_type || 'manual', source_provider: record.ota_source || null, sync_status: record.booking_id ? 'imported' : 'local_only' })
+      .eq('id', record.id)
+      .eq('account_id', input.accountId)
+      .eq('property_id', expectedPropertyId)
+      .select('id')
+      .maybeSingle();
     if (saved.error) throw new Error(saved.error.message);
-    if (record.booking_id) { const link = await supabase.from('reservation_source_links').upsert({ id: randomUUID(), account_id: input.accountId, booking_ops_record_id: record.id, provider: record.ota_source || 'legacy', external_reservation_id: record.booking_id, source_status: 'seen', metadata: { bootstrap: true }, last_seen_at: new Date().toISOString() }, { onConflict: 'account_id,provider,external_reservation_id' }); if (link.error) throw new Error(link.error.message); }
+    if (!saved.data) throw new Error('booking_property_scope_changed');
+    if (record.booking_id) {
+      const current = await resolveResidentialBookingIdentity(record.id, input.accountId);
+      if (!current.bookingId || current.propertyId !== expectedPropertyId) throw new Error('booking_property_scope_changed');
+      const link = await supabase.from('reservation_source_links').upsert({ id: randomUUID(), account_id: input.accountId, booking_ops_record_id: record.id, provider: record.ota_source || 'legacy', external_reservation_id: record.booking_id, source_status: 'seen', metadata: { bootstrap: true }, last_seen_at: new Date().toISOString() }, { onConflict: 'account_id,provider,external_reservation_id' });
+      if (link.error) throw new Error(link.error.message);
+    }
   }
   const modules = await synchronizeModules(workspace.onboarding.id, workspace.onboarding.data, input.actorId);
   await audit(workspace.onboarding.id, 'single_pilot_bootstrap', input.actorId, { preview, confirmed: true, messagesSent: false });

@@ -7,14 +7,13 @@ import {
   ensurePhysicalTasks,
   getPhysicalReadiness,
   recomputePhysicalReadiness,
-  requirePhysicalReadinessBookingAccount,
   updateCleaningTask,
   updateLinenTask,
   updateMaintenanceTicket,
   updateSuppliesTask,
 } from '@/lib/booking-ops/physical-readiness-execution';
 import { emitPhysicalLifecycle } from '@/lib/booking-ops/lifecycle-entry-adapter';
-import { resolveReservationAccess } from '@/lib/reservations/access';
+import { requireBookingOpsApiAccess } from '../access';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -29,10 +28,11 @@ export async function GET(req: Request): Promise<NextResponse> {
   const auth = await requireCrmOperatorSession();
   if ('error' in auth) return auth.error;
   const bookingId = text(new URL(req.url).searchParams.get('bookingId'));
+  const access = await requireBookingOpsApiAccess(auth.session, bookingId);
+  if (!access.ok) return access.response;
+  const expectedScope = { accountId: access.accountId, propertyId: access.propertyId };
   try {
-    const access = await resolveReservationAccess(auth.session);
-    await requirePhysicalReadinessBookingAccount(bookingId, access.accountId);
-    const readiness = await getPhysicalReadiness(bookingId);
+    const readiness = await getPhysicalReadiness(access.bookingId, expectedScope);
     return NextResponse.json({ ok: true, readiness });
   } catch (error) {
     return NextResponse.json({ ok: false, message: error instanceof Error ? error.message : 'Не удалось получить физическую готовность.' }, { status: 400 });
@@ -48,28 +48,29 @@ export async function POST(req: Request): Promise<NextResponse> {
   const bookingId = text(body.bookingId ?? body.booking_id);
   const action = text(body.action);
   if (!ACTIONS.has(action)) return NextResponse.json({ ok: false, message: 'Недопустимое действие.' }, { status: 400 });
+  const access = await requireBookingOpsApiAccess(auth.session, bookingId);
+  if (!access.ok) return access.response;
+  const expectedScope = { accountId: access.accountId, propertyId: access.propertyId };
   try {
-    const access = await resolveReservationAccess(auth.session);
-    await requirePhysicalReadinessBookingAccount(bookingId, access.accountId);
-    const readiness = await runAction(action, bookingId, body, auth.session.email ?? 'Оператор');
-    await emitPhysicalLifecycle({ bookingId, action, actorId: auth.session.email ?? auth.session.userId ?? null, body });
+    const readiness = await runAction(action, access.bookingId, body, auth.session.email ?? 'Оператор', expectedScope);
+    await emitPhysicalLifecycle({ bookingId: access.bookingId, expectedScope, action, actorId: auth.session.email ?? auth.session.userId ?? null, body });
     return NextResponse.json({ ok: true, readiness });
   } catch (error) {
     return NextResponse.json({ ok: false, message: error instanceof Error ? error.message : 'Действие не выполнено.' }, { status: 400 });
   }
 }
 
-function runAction(action: string, bookingId: string, body: Record<string, unknown>, operator: string) {
+function runAction(action: string, bookingId: string, body: Record<string, unknown>, operator: string, expectedScope: { accountId: string; propertyId: string }) {
   switch (action) {
-    case 'ensure_tasks': return ensurePhysicalTasks(bookingId);
-    case 'recompute': return recomputePhysicalReadiness(bookingId);
-    case 'update_cleaning': return updateCleaningTask(bookingId, body);
-    case 'update_linen': return updateLinenTask(bookingId, body);
-    case 'update_supplies': return updateSuppliesTask(bookingId, body);
-    case 'create_maintenance': return createMaintenanceTicket(bookingId, body);
-    case 'update_maintenance': return updateMaintenanceTicket(bookingId, body);
-    case 'create_draft': return createPhysicalCoordinationDraft(bookingId, { ...body, createdBy: operator });
-    case 'final_approval': return approveFinalPhysicalReadiness(bookingId, operator);
+    case 'ensure_tasks': return ensurePhysicalTasks(bookingId, expectedScope);
+    case 'recompute': return recomputePhysicalReadiness(bookingId, expectedScope);
+    case 'update_cleaning': return updateCleaningTask(bookingId, body, expectedScope);
+    case 'update_linen': return updateLinenTask(bookingId, body, expectedScope);
+    case 'update_supplies': return updateSuppliesTask(bookingId, body, expectedScope);
+    case 'create_maintenance': return createMaintenanceTicket(bookingId, body, expectedScope);
+    case 'update_maintenance': return updateMaintenanceTicket(bookingId, body, expectedScope);
+    case 'create_draft': return createPhysicalCoordinationDraft(bookingId, { ...body, createdBy: operator }, expectedScope);
+    case 'final_approval': return approveFinalPhysicalReadiness(bookingId, operator, expectedScope);
     default: return Promise.reject(new Error('action_invalid'));
   }
 }

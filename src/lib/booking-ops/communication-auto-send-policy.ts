@@ -553,8 +553,10 @@ export async function markIntentAutoSendEligible(intentId: string, reason: strin
 export async function evaluateAndPersistIntentAutoSendDecision(
   intent: BookingOpsCommunicationIntent,
   context: CommunicationAutoSendContext = {},
+  options?: { beforePersist?: () => Promise<unknown> },
 ) {
   const result = await canAutoSendCommunicationIntent(intent, context);
+  if (options?.beforePersist) await options.beforePersist();
   return updateIntentDecision(intent.id, result);
 }
 

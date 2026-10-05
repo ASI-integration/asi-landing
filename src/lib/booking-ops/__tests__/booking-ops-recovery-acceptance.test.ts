@@ -152,6 +152,34 @@ describe('Booking Ops retry and reconciliation acceptance', () => {
     expect(database.state.lifecycleStates[0]).toMatchObject({ current_stage: 'booking_received' });
   });
 
+  it('fails closed when recovery finds an account-bound event without a canonical property', async () => {
+    database.state.records[0].property_id = null;
+    database.state.events = [{
+      id: 'unbound-event', booking_id: 'booking-1', object_id: null, event_type: 'alert.acknowledged',
+      actor_type: 'system', actor_id: null, payload: {}, source: 'acceptance', correlation_id: 'unbound-run',
+      causation_id: null, created_at: '2026-07-13T08:00:00.000Z', processing_error: 'retry_me',
+    }];
+
+    const result = await recoverUnprocessedBookingEvents();
+    expect(result).toEqual({ evaluated: 1, processed: 0, errors: ['booking_scope_unavailable'] });
+    expect(database.state.events[0].processed_at).toBeUndefined();
+    expect(database.state.autopilotStates).toHaveLength(0);
+    expect(database.state.decisions).toHaveLength(0);
+  });
+
+  it('preserves legacy recovery fallback when no account scope exists', async () => {
+    database.state.records[0] = { id: 'booking-1', account_id: 'legacy', property_id: null, reservation_metadata: { acceptance_safe: true } };
+    database.state.events = [{
+      id: 'legacy-event', booking_id: 'booking-1', object_id: null, event_type: 'alert.acknowledged',
+      actor_type: 'system', actor_id: null, payload: {}, source: 'acceptance', correlation_id: 'legacy-run',
+      causation_id: null, created_at: '2026-07-13T08:00:00.000Z', processing_error: 'retry_me',
+    }];
+
+    const result = await recoverUnprocessedBookingEvents();
+    expect(result).toEqual({ evaluated: 1, processed: 1, errors: [] });
+    expect(database.state.events[0]).toMatchObject({ processed_at: expect.any(String), processing_error: null });
+  });
+
   it('reports stale projection and task repairs in dry-run without mutations or external actions', async () => {
     staleLifecycleFixture();
     const before = JSON.stringify(database.state);

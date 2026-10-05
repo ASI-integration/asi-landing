@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
+import { requireBookingOpsApiAccess } from '../access';
 import { requireOpsAdminSession } from '@/lib/crm/api-auth';
-import { getBookingOpsRecord, updateBookingOpsRecord } from '@/lib/booking-ops/repository';
+import { requireBookingOpsRecordScope, updateBookingOpsRecord } from '@/lib/booking-ops/repository';
 import { parseUpdateBookingOpsInput } from '@/lib/booking-ops/validation';
 
 export const runtime = 'nodejs';
@@ -11,17 +12,26 @@ type RouteContext = { params: { id: string } };
 export async function GET(_req: Request, context: RouteContext): Promise<NextResponse> {
   const auth = await requireOpsAdminSession();
   if ('error' in auth) return auth.error;
+  const access = await requireBookingOpsApiAccess(auth.session, context.params.id);
+  if (!access.ok) return access.response;
+  const expectedScope = { accountId: access.accountId, propertyId: access.propertyId };
 
-  const record = await getBookingOpsRecord(context.params.id);
-  if (!record) {
-    return NextResponse.json({ ok: false, message: 'Запись не найдена.' }, { status: 404 });
+  try {
+    const record = await requireBookingOpsRecordScope(access.bookingId, expectedScope);
+    return NextResponse.json({ ok: true, record });
+  } catch (error) {
+    const code = error instanceof Error ? error.message : '';
+    const status = code === 'booking_scope_mismatch' ? 403 : code === 'booking_not_found' ? 404 : 500;
+    return NextResponse.json({ ok: false, message: status === 403 ? 'Нет доступа к бронированию.' : 'Запись не найдена.' }, { status });
   }
-  return NextResponse.json({ ok: true, record });
 }
 
 export async function PATCH(req: Request, context: RouteContext): Promise<NextResponse> {
   const auth = await requireOpsAdminSession();
   if ('error' in auth) return auth.error;
+  const access = await requireBookingOpsApiAccess(auth.session, context.params.id);
+  if (!access.ok) return access.response;
+  const expectedScope = { accountId: access.accountId, propertyId: access.propertyId };
 
   let body: Record<string, unknown>;
   try {
@@ -35,13 +45,14 @@ export async function PATCH(req: Request, context: RouteContext): Promise<NextRe
     return NextResponse.json({ ok: false, message: parsed.error }, { status: 400 });
   }
 
-  const result = await updateBookingOpsRecord(context.params.id, parsed.input, {
+  const result = await updateBookingOpsRecord(access.bookingId, parsed.input, {
     actorType: 'admin',
+    expectedScope,
   });
   if (!result.ok || !result.record) {
-    const status = result.error === 'not_found' ? 404 : 500;
+    const status = result.error === 'scope_mismatch' ? 403 : result.error === 'not_found' ? 404 : 500;
     return NextResponse.json(
-      { ok: false, message: result.error ?? 'Не удалось сохранить изменения.' },
+      { ok: false, message: status === 403 ? 'Нет доступа к бронированию.' : result.error ?? 'Не удалось сохранить изменения.' },
       { status },
     );
   }

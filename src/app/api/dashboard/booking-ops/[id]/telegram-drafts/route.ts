@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { requireBookingOpsApiAccess } from '../../access';
 import { requireCrmOperatorSession, requireOpsAdminSession } from '@/lib/crm/api-auth';
 import {
   createTelegramDraftFromBookingOpsAction,
@@ -14,8 +15,19 @@ type RouteContext = { params: { id: string } };
 export async function GET(_req: Request, context: RouteContext): Promise<NextResponse> {
   const auth = await requireCrmOperatorSession();
   if ('error' in auth) return auth.error;
+  const access = await requireBookingOpsApiAccess(auth.session, context.params.id);
+  if (!access.ok) return access.response;
+  const expectedScope = { accountId: access.accountId, propertyId: access.propertyId };
 
-  const result = await listBookingOpsTelegramDrafts(context.params.id);
+  let result;
+  try {
+    result = await listBookingOpsTelegramDrafts(access.bookingId, { expectedScope });
+  } catch (error) {
+    if (error instanceof Error && error.message === 'booking_scope_mismatch') {
+      return NextResponse.json({ ok: false, message: 'Нет доступа к бронированию.' }, { status: 403 });
+    }
+    throw error;
+  }
   if (!result.ok) {
     return NextResponse.json(
       { ok: false, message: result.error || 'Не удалось загрузить черновики Telegram.' },
@@ -28,6 +40,9 @@ export async function GET(_req: Request, context: RouteContext): Promise<NextRes
 export async function POST(req: Request, context: RouteContext): Promise<NextResponse> {
   const auth = await requireOpsAdminSession();
   if ('error' in auth) return auth.error;
+  const access = await requireBookingOpsApiAccess(auth.session, context.params.id);
+  if (!access.ok) return access.response;
+  const expectedScope = { accountId: access.accountId, propertyId: access.propertyId };
 
   let body: Record<string, unknown>;
   try {
@@ -36,11 +51,19 @@ export async function POST(req: Request, context: RouteContext): Promise<NextRes
     return NextResponse.json({ ok: false, message: 'Некорректный JSON.' }, { status: 400 });
   }
 
-  const result = await createTelegramDraftFromBookingOpsAction(
-    context.params.id,
-    String(body.actionId ?? body.action_id ?? ''),
-    { createdBy: auth.session.email },
-  );
+  let result;
+  try {
+    result = await createTelegramDraftFromBookingOpsAction(
+      access.bookingId,
+      String(body.actionId ?? body.action_id ?? ''),
+      { createdBy: auth.session.email, expectedScope },
+    );
+  } catch (error) {
+    if (error instanceof Error && error.message === 'booking_scope_mismatch') {
+      return NextResponse.json({ ok: false, message: 'Нет доступа к бронированию.' }, { status: 403 });
+    }
+    throw error;
+  }
   if (!result.ok) {
     const status = result.error === 'not_found' ? 404 : result.error === 'database_error' ? 500 : 400;
     return NextResponse.json({ ok: false, message: result.message }, { status });
@@ -51,6 +74,9 @@ export async function POST(req: Request, context: RouteContext): Promise<NextRes
 export async function PATCH(req: Request, context: RouteContext): Promise<NextResponse> {
   const auth = await requireOpsAdminSession();
   if ('error' in auth) return auth.error;
+  const access = await requireBookingOpsApiAccess(auth.session, context.params.id);
+  if (!access.ok) return access.response;
+  const expectedScope = { accountId: access.accountId, propertyId: access.propertyId };
 
   let body: Record<string, unknown>;
   try {
@@ -59,11 +85,20 @@ export async function PATCH(req: Request, context: RouteContext): Promise<NextRe
     return NextResponse.json({ ok: false, message: 'Некорректный JSON.' }, { status: 400 });
   }
 
-  const result = await updateBookingOpsTelegramDraftStatus(
-    context.params.id,
-    String(body.draftId ?? body.draft_id ?? ''),
-    String(body.status ?? ''),
-  );
+  let result;
+  try {
+    result = await updateBookingOpsTelegramDraftStatus(
+      access.bookingId,
+      String(body.draftId ?? body.draft_id ?? ''),
+      String(body.status ?? ''),
+      { expectedScope },
+    );
+  } catch (error) {
+    if (error instanceof Error && error.message === 'booking_scope_mismatch') {
+      return NextResponse.json({ ok: false, message: 'Нет доступа к бронированию.' }, { status: 403 });
+    }
+    throw error;
+  }
   if (!result.ok) {
     const status = result.error === 'not_found' ? 404 : result.error === 'invalid_status' ? 400 : 500;
     return NextResponse.json(

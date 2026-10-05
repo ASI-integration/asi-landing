@@ -99,6 +99,129 @@ function insertWithGuard(table: string, input: Row | Row[]) {
   return query;
 }
 
+const SCHEMA_READY_PAYLOAD = {
+  schemaVersion: 2,
+  initialSyncTypeReady: true,
+  incrementalSyncTypeReady: true,
+  atomicRunningGuardReady: true,
+  atomicLiveSyncGuardReady: true,
+  cursorStorageReady: true,
+  atomicCommitRpcReady: true,
+  replayFinalizeRpcReady: true,
+  scopedConnectionWritesReady: true,
+  ready: true,
+};
+
+function validateConnectionScopeInMemory(connectionId: string, expectedScope: unknown) {
+  const expected = expectedScope && typeof expectedScope === 'object' ? expectedScope as Row : null;
+  const connection = rows('booking_channel_manager_connections').find((row) => row.id === connectionId);
+  if (!connection) {
+    return { data: { success: false, code: 'connection_not_found', message: 'connection not found' }, error: null };
+  }
+  if (!expected) {
+    return { data: { success: false, code: 'connection_scope_invalid', message: 'expected scope missing' }, error: null };
+  }
+  const property = rows('booking_property_setup_profiles').find((row) => row.id === connection.property_setup_id);
+  const accountId = String(connection.metadata?.accountId ?? '');
+  if (
+    String(connection.owner_setup_id ?? '') !== String(expected.ownerSetupId ?? '')
+    || String(connection.property_setup_id ?? '') !== String(expected.propertySetupId ?? '')
+    || String(property?.owner_setup_id ?? '') !== String(expected.ownerSetupId ?? '')
+    || String(property?.property_id ?? '') !== String(expected.propertyId ?? '')
+    || accountId !== String(expected.accountId ?? '')
+  ) {
+    return { data: { success: false, code: 'account_scope_mismatch', message: 'connection scope changed' }, error: null };
+  }
+  return null;
+}
+
+function setLiveSyncLeaseInMemory(args: Record<string, unknown> = {}) {
+  const connectionId = String(args.p_connection_id ?? '');
+  const scopeFailure = validateConnectionScopeInMemory(connectionId, args.p_expected_scope);
+  if (scopeFailure) return scopeFailure;
+  const connection = rows('booking_channel_manager_connections').find((row) => row.id === connectionId)!;
+  const lease = args.p_lease && typeof args.p_lease === 'object' ? args.p_lease as Row : {};
+  connection.metadata = { ...(connection.metadata ?? {}), liveSyncLease: lease };
+  if (args.p_updated_at) connection.updated_at = args.p_updated_at;
+  if (args.p_last_import_at) connection.last_import_at = args.p_last_import_at;
+  return { data: { success: true }, error: null };
+}
+
+function updateLiveConnectionScopedInMemory(args: Record<string, unknown> = {}) {
+  const connectionId = String(args.p_connection_id ?? '');
+  const scopeFailure = validateConnectionScopeInMemory(connectionId, args.p_expected_scope);
+  if (scopeFailure) return scopeFailure;
+  const connection = rows('booking_channel_manager_connections').find((row) => row.id === connectionId)!;
+  const patch = args.p_patch && typeof args.p_patch === 'object' ? args.p_patch as Row : {};
+  Object.assign(connection, patch);
+  return { data: { success: true, connection: { ...connection } }, error: null };
+}
+
+function updateImportRunScopedInMemory(args: Record<string, unknown> = {}) {
+  const connectionId = String(args.p_connection_id ?? '');
+  const scopeFailure = validateConnectionScopeInMemory(connectionId, args.p_expected_scope);
+  if (scopeFailure) return scopeFailure;
+  const runId = String(args.p_run_id ?? '');
+  const run = rows('booking_channel_import_runs').find(
+    (row) => row.id === runId && row.connection_id === connectionId,
+  );
+  if (!run) {
+    return { data: { success: false, code: 'import_run_not_found', message: 'import run not found in connection scope' }, error: null };
+  }
+  const patch = args.p_patch && typeof args.p_patch === 'object' ? args.p_patch as Row : {};
+  Object.assign(run, patch);
+  return { data: { success: true, run: { ...run } }, error: null };
+}
+
+function acquireLiveSyncGuardScopedInMemory(args: Record<string, unknown> = {}) {
+  const connectionId = String(args.p_connection_id ?? '');
+  const scopeFailure = validateConnectionScopeInMemory(connectionId, args.p_expected_scope);
+  if (scopeFailure) return scopeFailure;
+  const importType = String(args.p_import_type ?? '');
+  const liveTypes = ['initial_sync', 'incremental_sync', 'reconciliation_recovery'];
+  const exists = rows('booking_channel_import_runs').some((row) => (
+    row.connection_id === connectionId
+    && liveTypes.includes(String(row.import_type ?? ''))
+    && row.status === 'running'
+  ));
+  if (exists) {
+    return {
+      data: {
+        success: false,
+        code: 'execution_guard',
+        message: 'live sync already running for this connection',
+      },
+      error: null,
+    };
+  }
+  const startedAt = String(args.p_started_at ?? new Date().toISOString());
+  const connection = rows('booking_channel_manager_connections').find((row) => row.id === connectionId);
+  const metadata = args.p_metadata && typeof args.p_metadata === 'object'
+    ? { ...(args.p_metadata as Row) }
+    : {};
+  const run = {
+    id: String(args.p_run_id ?? ''),
+    connection_id: connectionId,
+    provider: String(args.p_provider ?? connection?.provider ?? ''),
+    status: 'running',
+    import_type: importType,
+    started_at: startedAt,
+    finished_at: null,
+    imported_objects_count: 0,
+    imported_bookings_count: 0,
+    imported_calendar_days_count: 0,
+    imported_prices_count: 0,
+    warnings: [],
+    errors: [],
+    safe_summary: null,
+    metadata,
+    created_at: startedAt,
+    updated_at: startedAt,
+  };
+  rows('booking_channel_import_runs').push(run);
+  return { data: { success: true, run: { ...run } }, error: null };
+}
+
 vi.mock('@/lib/supabase', () => ({
   supabase: {
     from: (...args: unknown[]) => supabaseFrom(...args),
@@ -212,19 +335,26 @@ beforeEach(() => {
     update: vi.fn((patch: Row) => new Query(table, { patch })),
     delete: vi.fn(() => new Query(table, { deleteMode: true })),
   }));
-  supabaseRpc.mockResolvedValue({
-    data: {
-      schemaVersion: 2,
-      initialSyncTypeReady: true,
-      incrementalSyncTypeReady: true,
-      atomicRunningGuardReady: true,
-      atomicLiveSyncGuardReady: true,
-      cursorStorageReady: true,
-      atomicCommitRpcReady: true,
-      replayFinalizeRpcReady: true,
-      ready: true,
-    },
-    error: null,
+  supabaseRpc.mockImplementation(async (fnName: string, args?: Record<string, unknown>) => {
+    if (fnName === 'channel_manager_live_core_schema_state') {
+      return { data: { ...SCHEMA_READY_PAYLOAD }, error: null };
+    }
+    if (fnName === 'channel_manager_live_scope_guard_state_v1') {
+      return { data: { scopedConnectionWritesReady: true }, error: null };
+    }
+    if (fnName === 'channel_manager_set_live_sync_lease_scoped_v1') {
+      return setLiveSyncLeaseInMemory(args ?? {});
+    }
+    if (fnName === 'channel_manager_update_live_connection_scoped_v1') {
+      return updateLiveConnectionScopedInMemory(args ?? {});
+    }
+    if (fnName === 'channel_manager_acquire_live_sync_guard_scoped_v1') {
+      return acquireLiveSyncGuardScopedInMemory(args ?? {});
+    }
+    if (fnName === 'channel_manager_update_import_run_scoped_v1') {
+      return updateImportRunScopedInMemory(args ?? {});
+    }
+    return { data: null, error: { message: `unexpected rpc ${fnName}` } };
   });
 
   canAutoSendCommunicationIntent.mockResolvedValue({ eligible: false, reason: 'global_off' });
@@ -309,6 +439,24 @@ describe('Channel Manager Live Core repairs', () => {
     expect(rows('booking_channel_import_runs').filter((row) => row.status === 'running')).toHaveLength(1);
   });
 
+  it('fails closed if canonical property scope drifts at live-run creation', async () => {
+    const connection = await initializeChannelManagerConnection(PROPERTY_ID, 'manual', { accountId: ACCOUNT_ID });
+    const baseRpc = supabaseRpc.getMockImplementation()!;
+    let drifted = false;
+    supabaseRpc.mockImplementation(async (fnName: string, args?: Record<string, unknown>) => {
+      if (fnName === 'channel_manager_acquire_live_sync_guard_scoped_v1' && !drifted) {
+        drifted = true;
+        rows('booking_property_setup_profiles')[0].property_id = 'prop-drifted';
+      }
+      return baseRpc(fnName, args);
+    });
+
+    await expect(acquireChannelLiveSyncGuard(connection.id)).rejects.toMatchObject({
+      code: 'account_scope_mismatch',
+    });
+    expect(rows('booking_channel_import_runs')).toHaveLength(0);
+  });
+
   it('recovers a stale running run before allowing a replacement', async () => {
     const connection = await initializeChannelManagerConnection(PROPERTY_ID, 'manual');
     const staleStarted = new Date(Date.now() - STALE_INITIAL_SYNC_TIMEOUT_MS - 1000).toISOString();
@@ -353,6 +501,55 @@ describe('Channel Manager Live Core repairs', () => {
     const status = await getChannelLiveCoreStatus(connection.id);
     expect(status.blocker).toBeTruthy();
     expect(status.warning).toBeNull();
+  });
+
+  it('fails closed when connection scope drifts before the final live-core write', async () => {
+    const connection = await initializeChannelManagerConnection(PROPERTY_ID, 'manual', { accountId: ACCOUNT_ID });
+    const baseRpc = supabaseRpc.getMockImplementation();
+    expect(baseRpc).toBeTruthy();
+    let drifted = false;
+    supabaseRpc.mockImplementation(async (fnName: string, args?: Record<string, unknown>) => {
+      if (fnName === 'channel_manager_update_live_connection_scoped_v1' && !drifted) {
+        drifted = true;
+        const property = rows('booking_property_setup_profiles').find((row) => row.id === PROPERTY_ID)!;
+        property.owner_setup_id = '10000000-0000-4000-8000-000000000099';
+      }
+      return baseRpc!(fnName, args);
+    });
+
+    const result = await runChannelManagerInitialSync({ connectionId: connection.id, snapshot: baseSnapshot() });
+
+    expect(result.status).toBe('failed');
+    expect(result.safeError?.code).toBe('account_scope_mismatch');
+    expect(rows('booking_channel_manager_connections')[0].last_success_at ?? null).toBeNull();
+    expect(rows('booking_channel_manager_connections')[0].metadata.lastSuccessfulInitialSyncAt).toBeUndefined();
+  });
+
+  it('fails closed when canonical scope drifts before run progress and still marks the run failed', async () => {
+    const connection = await initializeChannelManagerConnection(PROPERTY_ID, 'manual', { accountId: ACCOUNT_ID });
+    const baseRpc = supabaseRpc.getMockImplementation();
+    expect(baseRpc).toBeTruthy();
+    let drifted = false;
+
+    supabaseRpc.mockImplementation(async (fnName: string, args?: Record<string, unknown>) => {
+      if (fnName === 'channel_manager_update_import_run_scoped_v1' && !drifted) {
+        drifted = true;
+        const property = rows('booking_property_setup_profiles').find((row) => row.id === PROPERTY_ID)!;
+        property.owner_setup_id = '10000000-0000-4000-8000-000000000099';
+      }
+      return baseRpc!(fnName, args);
+    });
+
+    const result = await runChannelManagerInitialSync({ connectionId: connection.id, snapshot: baseSnapshot() });
+
+    expect(drifted).toBe(true);
+    expect(result.status).toBe('failed');
+    expect(result.safeError?.code).toBe('account_scope_mismatch');
+    const run = rows('booking_channel_import_runs').find((row) => row.connection_id === connection.id);
+    expect(run?.status).toBe('failed');
+    expect(run?.metadata?.liveCoreStage).toBe('failed');
+    expect(rows('booking_channel_manager_connections')[0].last_success_at ?? null).toBeNull();
+    expect(rows('booking_channel_manager_connections')[0].metadata.lastSuccessfulInitialSyncAt).toBeUndefined();
   });
 
   it('marks overall status failed when booking processing has counters.failed > 0', async () => {
@@ -504,6 +701,10 @@ describe('Channel Manager Live Core repairs', () => {
       data: { schemaVersion: 1, initialSyncTypeReady: true, atomicRunningGuardReady: true, ready: true },
       error: null,
     });
+    supabaseRpc.mockResolvedValueOnce({
+      data: { scopedConnectionWritesReady: true },
+      error: null,
+    });
     const before = rows('booking_channel_import_runs').length;
     const probe = await probeChannelLiveCoreSchema();
     expect(probe.ready).toBe(true);
@@ -560,6 +761,23 @@ describe('Channel Manager Live Core repairs', () => {
       atomicRunningGuardReady: true,
       blocker: null,
     });
+  });
+
+  it('is not ready when the canonical connection-scope guard migration is missing', async () => {
+    setChannelLiveCoreSchemaStateOverride(null);
+    clearChannelLiveCoreSchemaStateCache();
+    supabaseRpc.mockResolvedValueOnce({
+      data: { schemaVersion: 1, initialSyncTypeReady: true, atomicRunningGuardReady: true, ready: true },
+      error: null,
+    });
+    supabaseRpc.mockResolvedValueOnce({
+      data: { scopedConnectionWritesReady: false },
+      error: null,
+    });
+    const probe = await probeChannelLiveCoreSchema();
+    expect(probe.ready).toBe(false);
+    expect(probe.scopedConnectionWritesReady).toBe(false);
+    expect(probe.blocker).toMatch(/canonical scope guard/i);
   });
 
   it('fails closed when the schema RPC is missing or failing', async () => {

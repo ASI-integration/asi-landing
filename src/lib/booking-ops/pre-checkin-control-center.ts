@@ -1,13 +1,15 @@
+import { guardBookingCommunicationDraft } from '@/lib/communication/booking-knowledge-boundary';
 import { randomUUID } from 'node:crypto';
 import { supabase } from '@/lib/supabase';
 import { buildAutoSendDecisionMetadata } from './communication-auto-send-policy';
-import { getBookingOpsRecord, listBookingOpsRecords, updateBookingOpsRecord } from './repository';
+import { getBookingOpsRecord, listBookingOpsRecords, requireBookingOpsRecordScope, updateBookingOpsRecord } from './repository';
 import {
   adminUpdateLifecycleGate,
   blockGate,
   completeGate,
   getLifecycleStatus,
   initializeLifecycleForBooking,
+  readLifecycleStatus,
 } from './lifecycle';
 import {
   BOOKING_LIFECYCLE_GATE_LABELS_RU,
@@ -454,40 +456,45 @@ async function listCommunications(bookingId: string): Promise<BookingOpsCommunic
   }));
 }
 
-async function loadSnapshotInputs(bookingId: string) {
+type ExpectedScope = { accountId: string; propertyId: string };
+
+async function readSnapshotInputs(bookingId: string, expectedScope?: ExpectedScope) {
   const id = text(bookingId);
   if (!id) throw new Error('booking_id_required');
-  const record = await getBookingOpsRecord(id);
+  const record = expectedScope ? await requireBookingOpsRecordScope(id, expectedScope) : await getBookingOpsRecord(id);
   if (!record) throw new Error('booking_not_found');
-  await initializeLifecycleForBooking(record.id);
   const [lifecycleResult, tasksResult, communications] = await Promise.all([
-    getLifecycleStatus(record.id),
+    readLifecycleStatus(record.id),
     listBookingOpsTasksForRecord(record.id),
     listCommunications(record.id),
   ]);
+  if (!lifecycleResult.ok || !lifecycleResult.lifecycle) {
+    throw new Error(lifecycleResult.error ?? 'lifecycle_unavailable');
+  }
   return {
     record,
-    lifecycle: lifecycleResult.lifecycle ?? null,
+    lifecycle: lifecycleResult.lifecycle,
     tasks: tasksResult.ok ? tasksResult.tasks : [],
     communications,
   };
 }
 
-export async function getPreCheckinStatus(bookingId: string): Promise<PreCheckinReadinessSnapshot> {
-  const { recomputeGuestLegalReadiness } = await import('./guest-legal-deposit-mvd-execution');
-  const { ensurePhysicalTasks } = await import('./physical-readiness-execution');
-  const [legal, physical] = await Promise.all([
-    recomputeGuestLegalReadiness(bookingId, { source: 'pre_checkin' }),
-    ensurePhysicalTasks(bookingId),
-  ]);
-  const input = await loadSnapshotInputs(bookingId);
-  const snapshot = computePreCheckinReadinessSnapshot({
-    bookingId: input.record.id,
-    record: input.record,
-    lifecycle: input.lifecycle,
-    tasks: input.tasks,
-    communications: input.communications,
-  });
+async function loadSnapshotInputs(bookingId: string, expectedScope?: ExpectedScope) {
+  const id = text(bookingId);
+  if (!id) throw new Error('booking_id_required');
+  const record = expectedScope ? await requireBookingOpsRecordScope(id, expectedScope) : await getBookingOpsRecord(id);
+  if (!record) throw new Error('booking_not_found');
+  if (expectedScope) await requireBookingOpsRecordScope(record.id, expectedScope);
+  const initialized = await initializeLifecycleForBooking(record.id, expectedScope);
+  if (!initialized.ok) throw new Error(initialized.error ?? 'lifecycle_unavailable');
+  return readSnapshotInputs(record.id, expectedScope);
+}
+
+function mergeDomainReadiness(
+  snapshot: PreCheckinReadinessSnapshot,
+  legal: { status: string; blockers: Array<{ key: string; reason: string }> },
+  physical: { status: string; blockers: Array<{ key: string; reason: string }>; finalReady: boolean },
+): PreCheckinReadinessSnapshot {
   const legalBlockers = legal.blockers
     .filter((item) => item.key === 'availability' || item.key === 'legal_flow')
     .map((item) => ({
@@ -516,7 +523,13 @@ export async function getPreCheckinStatus(bookingId: string): Promise<PreCheckin
     fallbackEligible: true,
   }));
   const extra = [...legalBlockers, ...physicalBlockers];
-  if (!extra.length) return snapshot;
+  const metadata = {
+    ...snapshot.metadata,
+    legalReadinessStatus: legal.status,
+    physicalReadinessStatus: physical.status,
+    physicalFinalReady: physical.finalReady,
+  };
+  if (!extra.length) return { ...snapshot, metadata };
   const hardBlockers = dedupeItems([...extra, ...snapshot.hardBlockers]);
   return {
     ...snapshot,
@@ -527,13 +540,63 @@ export async function getPreCheckinStatus(bookingId: string): Promise<PreCheckin
       key: item.key, title: item.title, action: 'Разобрать блокер', gateKey: item.gateKey,
     })),
     topBlocker: hardBlockers[0] ?? null,
-    metadata: {
-      ...snapshot.metadata,
-      legalReadinessStatus: legal.status,
-      physicalReadinessStatus: physical.status,
-      physicalFinalReady: physical.finalReady,
-    },
+    metadata,
   };
+}
+
+function oldestRequiredObservedAt(values: Array<string | null | undefined>): string {
+  const valid = values
+    .map((value) => text(value))
+    .filter((value) => value && Number.isFinite(Date.parse(value)))
+    .sort((a, b) => Date.parse(a) - Date.parse(b));
+  return valid.length === values.length ? valid[0]! : new Date(0).toISOString();
+}
+
+export async function readPreCheckinStatus(bookingId: string): Promise<PreCheckinReadinessSnapshot> {
+  const [{ getGuestLegalReadiness }, { readPhysicalReadiness }] = await Promise.all([
+    import('./guest-legal-deposit-mvd-execution'),
+    import('./physical-readiness-execution'),
+  ]);
+  const [legal, physical, input] = await Promise.all([
+    getGuestLegalReadiness(bookingId),
+    readPhysicalReadiness(bookingId),
+    readSnapshotInputs(bookingId),
+  ]);
+  if (!legal || !physical) throw new Error('precheckin_readiness_unavailable');
+  const snapshot = mergeDomainReadiness(computePreCheckinReadinessSnapshot({
+    bookingId: input.record.id,
+    record: input.record,
+    lifecycle: input.lifecycle,
+    tasks: input.tasks,
+    communications: input.communications,
+  }), legal, physical);
+  return {
+    ...snapshot,
+    // A fresh booking/task touch must never mask stale legal or physical readiness.
+    lastRecomputedAt: oldestRequiredObservedAt([
+      legal.lastCheckedAt ?? legal.updatedAt,
+      physical.updatedAt,
+    ]),
+    metadata: { ...snapshot.metadata, readMode: 'persisted_current_state' },
+  };
+}
+
+export async function getPreCheckinStatus(bookingId: string, expectedScope?: ExpectedScope): Promise<PreCheckinReadinessSnapshot> {
+  const { recomputeGuestLegalReadiness } = await import('./guest-legal-deposit-mvd-execution');
+  const { ensurePhysicalTasks } = await import('./physical-readiness-execution');
+  const [legal, physical] = await Promise.all([
+    recomputeGuestLegalReadiness(bookingId, { source: 'pre_checkin' }, expectedScope),
+    ensurePhysicalTasks(bookingId, expectedScope),
+  ]);
+  const input = await loadSnapshotInputs(bookingId, expectedScope);
+  const snapshot = computePreCheckinReadinessSnapshot({
+    bookingId: input.record.id,
+    record: input.record,
+    lifecycle: input.lifecycle,
+    tasks: input.tasks,
+    communications: input.communications,
+  });
+  return mergeDomainReadiness(snapshot, legal, physical);
 }
 
 export async function getPreCheckinBlockers(bookingId: string): Promise<PreCheckinReadinessItem[]> {
@@ -552,7 +615,7 @@ export async function getPreCheckinRequiredActions(bookingId: string): Promise<P
   return (await getPreCheckinStatus(bookingId)).requiredActions;
 }
 
-async function ensureCheckinInstructionsDraft(record: BookingOpsRecord): Promise<void> {
+async function ensureCheckinInstructionsDraft(record: BookingOpsRecord, expectedScope?: ExpectedScope): Promise<void> {
   const communications = await listCommunications(record.id);
   const existing = communications.find((item) =>
     item.purpose === 'send_checkin_instructions'
@@ -572,6 +635,8 @@ async function ensureCheckinInstructionsDraft(record: BookingOpsRecord): Promise
     propertyId: record.propertyId,
     guestRef: record.guestTelegram ?? record.guestEmail ?? record.guestPhone,
   });
+  const knowledge = await guardBookingCommunicationDraft(record, 'send_checkin_instructions');
+  if (expectedScope) await requireBookingOpsRecordScope(record.id, expectedScope);
   await supabase.from('booking_ops_communication_intents').insert({
     id: randomUUID(),
     booking_ops_record_id: record.id,
@@ -581,30 +646,37 @@ async function ensureCheckinInstructionsDraft(record: BookingOpsRecord): Promise
     actor_label: text(record.guestName) || 'Гость',
     purpose: 'send_checkin_instructions',
     channel,
-    status: 'draft_ready',
-    message_text: messageText,
+    status: knowledge.status,
+    message_text: knowledge.messageText,
     message_template_key: 'guest.pre_checkin.instructions.v1',
-    metadata,
+    metadata: { ...metadata, ...knowledge.metadata },
     created_at: now,
     updated_at: now,
     superseded_at: null,
   });
 }
 
-export async function recomputeBookingCheckinReadiness(bookingId: string): Promise<PreCheckinReadinessSnapshot> {
-  const input = await loadSnapshotInputs(bookingId);
+export async function recomputeBookingCheckinReadiness(
+  bookingId: string,
+  options?: { expectedScope?: { accountId: string; propertyId: string } },
+): Promise<PreCheckinReadinessSnapshot> {
+  const expectedScope = options?.expectedScope;
+  if (expectedScope) await requireBookingOpsRecordScope(bookingId, expectedScope);
+  const input = await loadSnapshotInputs(bookingId, expectedScope);
   const prepGates = gateMap(input.lifecycle);
   const preparationDone = ['cleaning_scheduled', 'linen_scheduled', 'inspection_scheduled']
     .every((gateKey) => isDone(prepGates.get(gateKey as BookingLifecycleGateKey)));
   if (preparationDone && isDone(prepGates.get('maintenance_required')) && !isDone(prepGates.get('maintenance_resolved'))) {
+    if (expectedScope) await requireBookingOpsRecordScope(input.record.id, expectedScope);
     await blockGate(input.record.id, 'maintenance_resolved', 'Есть незакрытая задача по ремонту', {
       source: 'pre_checkin_control_center_v1',
-    });
+    }, expectedScope);
   } else if (preparationDone && !isDone(prepGates.get('property_ready'))) {
-    await completeGate(input.record.id, 'property_ready', { source: 'pre_checkin_control_center_v1' });
+    if (expectedScope) await requireBookingOpsRecordScope(input.record.id, expectedScope);
+    await completeGate(input.record.id, 'property_ready', { source: 'pre_checkin_control_center_v1' }, expectedScope);
   }
 
-  const refreshed = await loadSnapshotInputs(input.record.id);
+  const refreshed = await loadSnapshotInputs(input.record.id, expectedScope);
   let snapshot = computePreCheckinReadinessSnapshot({
     bookingId: refreshed.record.id,
     record: refreshed.record,
@@ -616,50 +688,65 @@ export async function recomputeBookingCheckinReadiness(bookingId: string): Promi
   const allExceptInstructions = snapshot.hardBlockers.every((item) =>
     item.gateKey === 'checkin_instructions_sent' && item.severity === 'missing');
   if (allExceptInstructions && snapshot.hardBlockers.length === 1) {
-    await ensureCheckinInstructionsDraft(refreshed.record);
-    snapshot = await getPreCheckinStatus(refreshed.record.id);
+    if (options?.expectedScope) {
+      await requireBookingOpsRecordScope(refreshed.record.id, options.expectedScope);
+    }
+    await ensureCheckinInstructionsDraft(refreshed.record, expectedScope);
+    snapshot = await getPreCheckinStatus(refreshed.record.id, expectedScope);
   }
 
   if (snapshot.status === 'ready_for_checkin') {
     await updateBookingOpsRecord(refreshed.record.id, {
       opsStatus: 'ready_for_checkin',
       checkinReadinessStatus: 'ready',
-    }, { actorType: 'system' });
+    }, { actorType: 'system', expectedScope: options?.expectedScope });
   } else if (snapshot.status === 'blocked' || snapshot.status === 'overdue') {
     await updateBookingOpsRecord(refreshed.record.id, {
       opsStatus: 'problem_blocked',
       checkinReadinessStatus: 'problem',
       blockerReason: snapshot.topBlocker?.reason ?? null,
-    }, { actorType: 'system' });
+    }, { actorType: 'system', expectedScope: options?.expectedScope });
   }
   return snapshot;
 }
 
-export async function listBookingsByReadinessStatus(filters?: {
+export async function listBookingsByReadinessStatus(filters: {
+  accountId: string;
   status?: PreCheckinReadinessStatus;
   limit?: number;
 }): Promise<PreCheckinReadinessSnapshot[]> {
-  const listed = await listBookingOpsRecords({ limit: filters?.limit ?? 100 });
+  const listed = await listBookingOpsRecords({
+    limit: filters.limit ?? 100,
+    accountId: filters.accountId,
+  });
   if (!listed.ok) throw new Error(listed.error ?? 'booking_list_failed');
-  const snapshots = await Promise.all(listed.records.map((record) => getPreCheckinStatus(record.id)));
-  return filters?.status ? snapshots.filter((item) => item.status === filters.status) : snapshots;
+  const snapshots = await Promise.all(listed.records.map((record) => {
+    const propertyId = text(record.propertyId);
+    if (!propertyId) throw new Error('booking_scope_unavailable');
+    return getPreCheckinStatus(record.id, {
+      accountId: filters.accountId,
+      propertyId,
+    });
+  }));
+  return filters.status ? snapshots.filter((item) => item.status === filters.status) : snapshots;
 }
 
 export async function createPreCheckinFallbackIfNeeded(
   bookingId: string,
   reason: string,
   metadata?: Record<string, unknown>,
+  expectedScope?: ExpectedScope,
 ): Promise<{ ok: boolean; created: boolean; snapshot: PreCheckinReadinessSnapshot; error?: string }> {
-  const snapshot = await getPreCheckinStatus(bookingId);
+  const snapshot = await getPreCheckinStatus(bookingId, expectedScope);
   const blocker = snapshot.hardBlockers.find((item) => item.fallbackEligible && item.gateKey);
   if (!blocker?.gateKey) return { ok: true, created: false, snapshot };
   const result = await blockGate(bookingId, blocker.gateKey, text(reason) || blocker.reason, {
     ...(metadata ?? {}),
     source: 'pre_checkin_control_center_v1',
     blocker: blocker.key,
-  });
+  }, expectedScope);
   if (!result.ok) return { ok: false, created: false, snapshot, error: result.error };
-  return { ok: true, created: true, snapshot: await getPreCheckinStatus(bookingId) };
+  return { ok: true, created: true, snapshot: await getPreCheckinStatus(bookingId, expectedScope) };
 }
 
 export async function runPreCheckinAction(input: {
@@ -669,15 +756,18 @@ export async function runPreCheckinAction(input: {
   reason?: unknown;
   note?: unknown;
   metadata?: Record<string, unknown>;
+  expectedScope?: { accountId: string; propertyId: string };
 }): Promise<PreCheckinReadinessSnapshot> {
   const bookingId = text(input.bookingId);
+  if (input.expectedScope) await requireBookingOpsRecordScope(bookingId, input.expectedScope);
   const reason = text(input.reason);
   const note = text(input.note);
   switch (input.action) {
     case 'recompute':
-      return recomputeBookingCheckinReadiness(bookingId);
+      return recomputeBookingCheckinReadiness(bookingId, { expectedScope: input.expectedScope });
     case 'mark_ready_override':
       await adminUpdateLifecycleGate({
+        expectedScope: input.expectedScope,
         bookingId,
         gateKey: 'property_ready',
         status: 'completed',
@@ -686,6 +776,7 @@ export async function runPreCheckinAction(input: {
         metadata: { manualOverride: true, ...(input.metadata ?? {}) },
       });
       await adminUpdateLifecycleGate({
+        expectedScope: input.expectedScope,
         bookingId,
         gateKey: 'checkin_instructions_sent',
         status: 'completed',
@@ -696,6 +787,7 @@ export async function runPreCheckinAction(input: {
       break;
     case 'clear_ready_override':
       await adminUpdateLifecycleGate({
+        expectedScope: input.expectedScope,
         bookingId,
         gateKey: 'property_ready',
         status: 'in_progress',
@@ -705,10 +797,11 @@ export async function runPreCheckinAction(input: {
       });
       break;
     case 'create_fallback':
-      await createPreCheckinFallbackIfNeeded(bookingId, reason || 'Создан ручной fallback', input.metadata);
+      await createPreCheckinFallbackIfNeeded(bookingId, reason || 'Создан ручной fallback', input.metadata, input.expectedScope);
       break;
     case 'resolve_fallback':
       await adminUpdateLifecycleGate({
+        expectedScope: input.expectedScope,
         bookingId,
         gateKey: input.gateKey,
         status: 'in_progress',
@@ -718,14 +811,17 @@ export async function runPreCheckinAction(input: {
       });
       break;
     case 'add_note': {
-      const record = await getBookingOpsRecord(bookingId);
+      const record = input.expectedScope
+        ? await requireBookingOpsRecordScope(bookingId, input.expectedScope)
+        : await getBookingOpsRecord(bookingId);
       await updateBookingOpsRecord(bookingId, {
         notes: [record?.notes, note || reason].filter(Boolean).join('\n'),
-      }, { actorType: 'admin' });
+      }, { actorType: 'admin', expectedScope: input.expectedScope });
       break;
     }
     case 'block_gate':
       await adminUpdateLifecycleGate({
+        expectedScope: input.expectedScope,
         bookingId,
         gateKey: input.gateKey,
         status: 'blocked',
@@ -736,6 +832,7 @@ export async function runPreCheckinAction(input: {
       break;
     case 'skip_gate':
       await adminUpdateLifecycleGate({
+        expectedScope: input.expectedScope,
         bookingId,
         gateKey: input.gateKey,
         status: 'skipped',
@@ -747,5 +844,5 @@ export async function runPreCheckinAction(input: {
     default:
       throw new Error('invalid_action');
   }
-  return getPreCheckinStatus(bookingId);
+  return getPreCheckinStatus(bookingId, input.expectedScope);
 }

@@ -19,7 +19,7 @@ async function getIsRuHost(): Promise<boolean> {
 export const metadata: Metadata = {
   title: 'Rental Autopilot — ASI',
   description:
-    'AI operational system for short-term rental owners: guest comms, bookings, pricing, and property access, automated end to end.',
+    'Operational coordination for short-term rentals: guest communication, booking workflows, readiness, pricing recommendations, and human-handled exceptions.',
   alternates: { canonical: `${GUEST_AUTOPILOT_ORIGIN}/rental-autopilot` },
 };
 
@@ -150,17 +150,17 @@ export default async function RentalAutopilot() {
         <HeroSection showEmail={isRuHost} showTelegram={isRuHost} content={{
           aboutLabel: 'About',
           aboutHeadline: 'AI Operational System for Short-Term Rentals',
-          aboutBody: 'ASI is not a dashboard or tool you manage. It replaces your ops team — handling guests, bookings, pricing, and property access automatically, around the clock.',
+          aboutBody: 'ASI coordinates routine rental operations and moves supported workflows automatically. Humans stay on exceptions, sensitive decisions, and external actions that are not yet integrated.',
           aboutPoints: [
             'Not a dashboard',
             'Not a tool you manage',
-            'Replaces your operational team',
+            'Humans focus on exceptions',
           ],
           detailsLabel: 'Contact',
           loginLabel: 'Log in',
           loginHref: '/login',
-          offerHeadline: <>Your rental property <span className="text-slate-300">runs itself.</span></>,
-          offerSub: <>AI operational system for short-term rental owners.<br className="hidden sm:block" /> No operations, no staff — just income.</>,
+          offerHeadline: <>Routine operations <span className="text-slate-300">on autopilot.</span></>,
+          offerSub: <>AI operational layer for short-term rental owners.<br className="hidden sm:block" /> Less manual coordination. Humans on exceptions.</>,
           ctaLabel: 'Get started',
           ctaHref: '/connect',
           ctaExternal: false,
@@ -202,7 +202,7 @@ export default async function RentalAutopilot() {
                 <div className="text-3xl mb-4">💬</div>
                 <h3 className="font-bold text-white text-lg mb-2">Communication Module</h3>
                 <p className="text-sm text-slate-400 leading-relaxed mb-6 flex-1">
-                  AI handles all guest messaging end to end — instant replies, in-chat execution, escalation only for true edge cases.
+                  ASI handles routine guest messages from grounded property and booking context, and routes sensitive, uncertain, or unsupported actions to an operator.
                 </p>
                 <span className="inline-flex items-center gap-1.5 text-sm font-semibold text-sky-400 group-hover:text-sky-300 transition-colors">
                   Open demo →
@@ -214,7 +214,7 @@ export default async function RentalAutopilot() {
                 <div className="text-3xl mb-4">🔄</div>
                 <h3 className="font-bold text-white text-lg mb-2">Full Platform</h3>
                 <p className="text-sm text-slate-300 leading-relaxed mb-6 flex-1">
-                  Operations autopilot: guest comms, bookings, pricing, access control, and task execution — no ops team required.
+                  One operational layer for guest communication, booking workflows, pricing recommendations, access readiness, tasks, and exceptions. External actions run automatically only where the required integration is enabled and accepted.
                 </p>
                 <Link
                   href="/connect"
@@ -277,7 +277,7 @@ export default async function RentalAutopilot() {
                 </Link>
               )}
             </div>
-            <p className="mt-4 text-sm text-slate-400">No charge today · Setup and integration are free · Cancel anytime before your trial converts</p>
+            <p className="mt-4 text-sm text-slate-400">No charge today · Setup and pilot start without payment · No paid plan is activated automatically</p>
 
             <div className="mt-10 pt-8 border-t border-slate-800/60">
               <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400 mb-5">

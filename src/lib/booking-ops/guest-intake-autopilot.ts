@@ -3,6 +3,7 @@ import { supabase } from '@/lib/supabase';
 import { recordBookingOpsEvent } from './events';
 import { createBookingOpsTask } from './tasks';
 import { syncLifecycleFromBookingOpsRecord } from './lifecycle';
+import { requireBookingOpsRecordScope } from './repository';
 import {
   evaluateGuestIntakeState,
   type GuestIntakeStatePlan,
@@ -12,6 +13,8 @@ import type {
   BookingOpsGuestIntakeStatus,
   BookingOpsRecord,
 } from './types';
+
+type ExpectedScope = { accountId: string; propertyId: string };
 
 type GuestIntakeRow = {
   id: string;
@@ -73,7 +76,9 @@ export function mapGuestIntakeSessionRow(row: GuestIntakeRow): BookingOpsGuestIn
 
 export async function ensureGuestIntakePublicToken(
   session: BookingOpsGuestIntakeSession,
+  expectedScope?: ExpectedScope,
 ): Promise<BookingOpsGuestIntakeSession> {
+  if (expectedScope) await requireBookingOpsRecordScope(session.bookingOpsRecordId, expectedScope);
   if (session.publicToken) return session;
   const token = randomUUID().replace(/-/g, '') + randomUUID().replace(/-/g, '').slice(0, 16);
   const now = new Date().toISOString();
@@ -81,18 +86,22 @@ export async function ensureGuestIntakePublicToken(
     .from('booking_ops_guest_intake_sessions')
     .update({ public_token: token, token_created_at: now, updated_at: now })
     .eq('id', session.id)
+    .eq('booking_ops_record_id', session.bookingOpsRecordId)
     .is('public_token', null)
     .select('*')
     .maybeSingle();
   if (error || !data) return session;
+  if (expectedScope) await requireBookingOpsRecordScope(session.bookingOpsRecordId, expectedScope);
   return mapRow(data as GuestIntakeRow);
 }
 
 export async function getGuestIntakeSessionForRecord(
   bookingOpsRecordId: string,
+  expectedScope?: ExpectedScope,
 ): Promise<BookingOpsGuestIntakeSession | null> {
   const recordId = text(bookingOpsRecordId);
   if (!recordId) return null;
+  if (expectedScope) await requireBookingOpsRecordScope(recordId, expectedScope);
   const { data, error } = await supabase
     .from('booking_ops_guest_intake_sessions')
     .select('*')
@@ -101,6 +110,7 @@ export async function getGuestIntakeSessionForRecord(
     .limit(1)
     .maybeSingle();
   if (error || !data) return null;
+  if (expectedScope) await requireBookingOpsRecordScope(recordId, expectedScope);
   return mapRow(data as GuestIntakeRow);
 }
 
@@ -150,7 +160,9 @@ async function recordIntakeEvent(input: {
   recordId: string;
   session: BookingOpsGuestIntakeSession;
   created: boolean;
+  expectedScope?: ExpectedScope;
 }): Promise<void> {
+  if (input.expectedScope) await requireBookingOpsRecordScope(input.recordId, input.expectedScope);
   const eventType = input.created ? 'guest_intake_started' : eventTypeForStatus(input.session.intakeStatus);
   const title =
     eventType === 'guest_intake_completed'
@@ -179,10 +191,13 @@ async function recordIntakeEvent(input: {
 async function ensureFallbackTask(
   record: BookingOpsRecord,
   session: BookingOpsGuestIntakeSession,
+  expectedScope?: ExpectedScope,
 ): Promise<void> {
+  if (expectedScope) await requireBookingOpsRecordScope(record.id, expectedScope);
   if (session.intakeStatus !== 'fallback_required' && session.intakeStatus !== 'validation_needed') {
     return;
   }
+  const taskOptions = expectedScope ? { expectedScope } : undefined;
   await createBookingOpsTask({
     bookingOpsRecordId: record.id,
     bookingId: record.bookingId,
@@ -196,26 +211,33 @@ async function ensureFallbackTask(
       guestIntakeStatus: session.intakeStatus,
       fallbackReason: session.fallbackReason,
     },
-  });
+  }, taskOptions);
 }
 
-export async function syncGuestIntakeAutopilot(record: BookingOpsRecord): Promise<{
+export async function syncGuestIntakeAutopilot(
+  record: BookingOpsRecord,
+  expectedScope?: ExpectedScope,
+): Promise<{
   ok: boolean;
   session?: BookingOpsGuestIntakeSession;
   plan: GuestIntakeStatePlan;
   error?: string;
 }> {
-  const existing = await getGuestIntakeSessionForRecord(record.id);
-  const plan = evaluateGuestIntakeState({ record, existingSession: existing });
+  const canonicalRecord = expectedScope
+    ? await requireBookingOpsRecordScope(record.id, expectedScope)
+    : record;
+  const existing = await getGuestIntakeSessionForRecord(canonicalRecord.id, expectedScope);
+  const plan = evaluateGuestIntakeState({ record: canonicalRecord, existingSession: existing });
   const now = new Date().toISOString();
   try {
     if (!existing) {
+      if (expectedScope) await requireBookingOpsRecordScope(canonicalRecord.id, expectedScope);
       const { data, error } = await supabase
         .from('booking_ops_guest_intake_sessions')
         .insert({
           id: randomUUID(),
-          booking_ops_record_id: record.id,
-          booking_id: record.bookingId,
+          booking_ops_record_id: canonicalRecord.id,
+          booking_id: canonicalRecord.bookingId,
           intake_status: plan.intakeStatus,
           missing_fields: plan.missingFields,
           collected_fields: plan.collectedFields,
@@ -230,21 +252,28 @@ export async function syncGuestIntakeAutopilot(record: BookingOpsRecord): Promis
         .select('*')
         .single();
       if (error || !data) return { ok: false, plan, error: error?.message ?? 'guest_intake_create_failed' };
+      if (expectedScope) await requireBookingOpsRecordScope(canonicalRecord.id, expectedScope);
       const session = mapRow(data as GuestIntakeRow);
-      const withToken = await ensureGuestIntakePublicToken(session);
-      await recordIntakeEvent({ recordId: record.id, session: withToken, created: true });
-      await ensureFallbackTask(record, withToken);
-      await syncLifecycleFromBookingOpsRecord({ ...record, guestIntake: withToken });
+      const withToken = await ensureGuestIntakePublicToken(session, expectedScope);
+      await recordIntakeEvent({
+        recordId: canonicalRecord.id,
+        session: withToken,
+        created: true,
+        expectedScope,
+      });
+      await ensureFallbackTask(canonicalRecord, withToken, expectedScope);
+      await syncLifecycleFromBookingOpsRecord({ ...canonicalRecord, guestIntake: withToken }, expectedScope);
       return { ok: true, session: withToken, plan };
     }
 
     if (!hasPlanChanged(existing, plan)) {
-      await ensureFallbackTask(record, existing);
-      const withToken = await ensureGuestIntakePublicToken(existing);
-      await syncLifecycleFromBookingOpsRecord({ ...record, guestIntake: withToken });
+      await ensureFallbackTask(canonicalRecord, existing, expectedScope);
+      const withToken = await ensureGuestIntakePublicToken(existing, expectedScope);
+      await syncLifecycleFromBookingOpsRecord({ ...canonicalRecord, guestIntake: withToken }, expectedScope);
       return { ok: true, session: withToken, plan };
     }
 
+    if (expectedScope) await requireBookingOpsRecordScope(canonicalRecord.id, expectedScope);
     const { data, error } = await supabase
       .from('booking_ops_guest_intake_sessions')
       .update({
@@ -259,16 +288,24 @@ export async function syncGuestIntakeAutopilot(record: BookingOpsRecord): Promis
         updated_at: now,
       })
       .eq('id', existing.id)
+      .eq('booking_ops_record_id', canonicalRecord.id)
       .select('*')
       .single();
     if (error || !data) return { ok: false, plan, error: error?.message ?? 'guest_intake_update_failed' };
+    if (expectedScope) await requireBookingOpsRecordScope(canonicalRecord.id, expectedScope);
     const session = mapRow(data as GuestIntakeRow);
-    const withToken = await ensureGuestIntakePublicToken(session);
-    await recordIntakeEvent({ recordId: record.id, session: withToken, created: false });
-    await ensureFallbackTask(record, withToken);
-    await syncLifecycleFromBookingOpsRecord({ ...record, guestIntake: withToken });
+    const withToken = await ensureGuestIntakePublicToken(session, expectedScope);
+    await recordIntakeEvent({
+      recordId: canonicalRecord.id,
+      session: withToken,
+      created: false,
+      expectedScope,
+    });
+    await ensureFallbackTask(canonicalRecord, withToken, expectedScope);
+    await syncLifecycleFromBookingOpsRecord({ ...canonicalRecord, guestIntake: withToken }, expectedScope);
     return { ok: true, session: withToken, plan };
   } catch (error) {
+    if (error instanceof Error && error.message === 'booking_scope_mismatch') throw error;
     return { ok: false, plan, error: error instanceof Error ? error.message : 'guest_intake_sync_failed' };
   }
 }

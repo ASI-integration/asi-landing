@@ -3,10 +3,10 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { buildAnalysis } from '../gravity-scoring';
 import {
+  ensurePaidLocationReportForRequest,
   fetchOsmDataForPaidReport,
   mapPaidReportProviderWarningsRu,
   PAID_REPORT_DEGRADED_MAP_DATA_WARNING,
-  PAID_REPORT_GEOCODE_UNAVAILABLE_WARNING,
   PAID_REPORT_MAP_UNAVAILABLE_WARNING_RU,
   resolvePaidReportCoordinates,
 } from '../location-report-engine';
@@ -21,6 +21,18 @@ import { PremiumLocationReportPdf } from '@/components/location/premium-pdf/Prem
 import { LocationStandaloneFullReport } from '@/components/location/LocationStandaloneFullReport';
 
 const mockGeocodePlainAddressForPaidReport = vi.fn();
+const { mockCreateReport, mockLinkReport } = vi.hoisted(() => ({
+  mockCreateReport: vi.fn(),
+  mockLinkReport: vi.fn(),
+}));
+vi.mock('../standalone-report-store', () => ({
+  createStandaloneReport: mockCreateReport,
+  getStandaloneReportById: vi.fn(),
+}));
+vi.mock('../report-request-store', () => ({
+  getLocationReportRequestById: vi.fn(),
+  linkLocationReportRequestReport: mockLinkReport,
+}));
 
 vi.mock('../address-providers/geocode-pipeline', () => ({
   geocodePlainAddressForMarket: (...args: unknown[]) => mockGeocodePlainAddressForPaidReport(...args),
@@ -57,6 +69,12 @@ function paidRequest(overrides: Partial<LocationReportRequestEntity> = {}): Loca
 }
 
 describe('paid report map independence', () => {
+  it.each(['residential', 'commercial'] as const)('%s provider failure cannot persist or link a successful paid report', async mode => {
+    const entity = paidRequest({ mode, lat: 59.93, lon: 30.33 });
+    await expect(ensurePaidLocationReportForRequest(entity.id, { entity })).rejects.toThrow('spatial_evidence_unavailable');
+    expect(mockCreateReport).not.toHaveBeenCalled();
+    expect(mockLinkReport).not.toHaveBeenCalled();
+  });
   it('resolves coordinates via OSM geocode fallback without Yandex env', async () => {
     mockGeocodePlainAddressForPaidReport.mockResolvedValue({
       result: { lat: 59.93, lon: 30.33, displayName: 'Санкт-Петербург' },
@@ -74,21 +92,15 @@ describe('paid report map independence', () => {
     });
   });
 
-  it('does not block when geocode fails but RU city center fallback is available', async () => {
-    mockGeocodePlainAddressForPaidReport.mockResolvedValue({
-      result: null,
-      winner: null,
-      attempts: [],
-    });
-
-    const resolved = await resolvePaidReportCoordinates(paidRequest());
-
-    expect(resolved.mapDisplay).toBe('unavailable');
-    expect(resolved.providerWarnings).toContain(PAID_REPORT_GEOCODE_UNAVAILABLE_WARNING);
-    expect(Number.isFinite(resolved.lat)).toBe(true);
-    expect(Number.isFinite(resolved.lon)).toBe(true);
+  it('fails closed instead of calculating a different city-centre location', async () => {
+    mockGeocodePlainAddressForPaidReport.mockResolvedValue({ result: null, winner: null, attempts: [] });
+    await expect(resolvePaidReportCoordinates(paidRequest())).rejects.toThrow('address_not_found');
   });
 
+  it('rejects malformed persisted coordinates before any provider lookup', async () => {
+    await expect(resolvePaidReportCoordinates(paidRequest({ lat: 999, lon: 30 }))).rejects.toThrow('invalid_coordinates');
+    expect(mockGeocodePlainAddressForPaidReport).not.toHaveBeenCalled();
+  });
   it('maps degraded map/geocode warnings to public RU copy', () => {
     expect(
       mapPaidReportProviderWarningsRu([PAID_REPORT_DEGRADED_MAP_DATA_WARNING], 'available'),

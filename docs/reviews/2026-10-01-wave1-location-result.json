@@ -1,0 +1,105 @@
+{
+  "schemaVersion": "asi.agent-os.task-result.v1",
+  "taskId": "wave1-location",
+  "status": "DONE",
+  "branch": "astra/wave1-commercial-location-20261001",
+  "commitSha": "24518c07ae6bfec3039d9b959a103bddca96478f",
+  "prUrl": null,
+  "changedFiles": [
+    "docs/platform-wave-1-execution-plan.md",
+    "docs/wave1-location-validation.md",
+    "docs/wave1-owner-authorization.json",
+    "src/app/api/location-demo-analyze/route.ts",
+    "src/lib/location/__tests__/paid-report-map-independence.test.tsx",
+    "src/lib/location/__tests__/spatial-validation-integration.test.ts",
+    "src/lib/location/__tests__/spatial-validation.test.ts",
+    "src/lib/location/geometry.ts",
+    "src/lib/location/gravity-scoring.ts",
+    "src/lib/location/location-report-engine.ts",
+    "src/lib/location/spatial-foundation.ts",
+    "src/lib/location/spatial-validation-osm.ts",
+    "src/lib/location/spatial-validation-types.ts",
+    "src/lib/location/spatial-validation.ts",
+    "src/lib/location/standalone-report.ts",
+    "src/lib/location/types.ts",
+    "docs/reviews/2026-10-01-wave1-location-result.json"
+  ],
+  "checks": [
+    {
+      "name": "baseline",
+      "status": "PASS",
+      "evidence": "New local branch from frozen 3a5ac390c2dc04ebf82815b813238044ec80515f; no first-pilot service changes."
+    },
+    {
+      "name": "shared validation",
+      "status": "PASS",
+      "evidence": "23 tests: both modes, tenancy/object mismatch, dependency failures, source freshness, synthetic/manual distinction, radius bounds, address mismatch, ownership freshness."
+    },
+    {
+      "name": "consumer integration",
+      "status": "PASS",
+      "evidence": "7 tests: both report builders preserve shared contract and score; source references, missing raw cache and failed/synthetic providers."
+    },
+    {
+      "name": "paid report map independence",
+      "status": "PASS",
+      "evidence": "10 tests: both runtime report creation paths fail before report persistence/link on provider failure; no city-centre substitution; map rendering remains independent."
+    },
+    {
+      "name": "existing spatial stub",
+      "status": "PASS",
+      "evidence": "6 tests."
+    },
+    {
+      "name": "RU location regressions",
+      "status": "PASS",
+      "evidence": "26 geocode-city-sanity + 16 residential golden matrix tests."
+    },
+    {
+      "name": "frozen first-pilot gate",
+      "status": "PASS",
+      "evidence": "11 files, 124 tests; total final focused evidence 17 files, 212 tests. Not full repository acceptance."
+    },
+    {
+      "name": "typecheck",
+      "status": "PASS",
+      "evidence": "npm.cmd run typecheck; exit 0."
+    },
+    {
+      "name": "changed-file ESLint",
+      "status": "PASS",
+      "evidence": "Installed ESLint run on all changed/new TS/TSX files; exit 0."
+    },
+    {
+      "name": "diff-check",
+      "status": "PASS",
+      "evidence": "git diff --cached --check before code commit; new-file EOF whitespace fixed."
+    },
+    {
+      "name": "authorization contract",
+      "status": "PASS",
+      "evidence": "validateOwnerGate with exact local branch/baseline/task/side-effect/verification contract. Explicit user task authorizes protected local Location work and regression gate."
+    },
+    {
+      "name": "live providers / DB",
+      "status": "SKIP",
+      "evidence": "Local fixtures/mocks only. No migration required; no live provider or DB claims."
+    },
+    {
+      "name": "publication",
+      "status": "SKIP",
+      "evidence": "Push, merge and deployment forbidden by user; local commits only."
+    }
+  ],
+  "sideEffects": {
+    "production": false,
+    "database": false,
+    "secrets": false,
+    "dns": false,
+    "payments": false,
+    "realMessages": false,
+    "approvedUx": false
+  },
+  "blockers": [],
+  "ownerDecision": null
+}

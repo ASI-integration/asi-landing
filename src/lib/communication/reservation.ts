@@ -1,35 +1,6 @@
 import { supabase } from '@/lib/supabase';
 import { ReservationMatchResult } from './types';
 
-/**
- * Legacy/mock reservation store. Kept so local/dev unit tests and offline
- * work still function if Supabase is unavailable.
- */
-const MOCK_DB = {
-  res_111: {
-    reservationId: 'res_111',
-    propertyId: 'prop_A',
-    listingId: 'list_1',
-    guestId: 'guest_alpha',
-    guestName: 'John Doe',
-    phone: '+1234567890',
-    checkIn: '2026-03-22',
-    checkOut: '2026-03-25',
-  },
-  res_222: {
-    reservationId: 'res_222',
-    propertyId: 'prop_B',
-    guestName: 'Jane Smith',
-    checkIn: '2026-03-23',
-  },
-  res_333: {
-    reservationId: 'res_333',
-    propertyId: 'prop_C',
-    guestName: 'Jane Smith',
-    checkIn: '2026-03-24',
-  },
-} as const;
-
 export interface MatchParams {
   chatId?: number;
   phone?: string;
@@ -344,95 +315,9 @@ export async function matchReservation(params: MatchParams): Promise<Reservation
       });
     }
   } catch {
-    // Fall back to mock db below.
+    // Unavailable canonical storage remains unresolved.
   }
 
-  // Legacy/mock behaviour (dev/offline).
-  if (bookingReference && (MOCK_DB as any)[bookingReference]) {
-    const res = (MOCK_DB as any)[bookingReference];
-    const out = { status: 'matched', confidence: 1.0, ...res } satisfies ReservationMatchResult;
-    if (debug) {
-      console.log('[ru:tg] reservation.match fallback', {
-        ...dbgBase,
-        source: 'mock',
-        status: out.status,
-        confidence: out.confidence,
-        reservation_id: (out as any).reservationId ?? null,
-        property_id: (out as any).propertyId ?? null,
-        latency_ms: Date.now() - startedAt,
-      });
-    }
-    return out;
-  }
-
-  let matches = Object.values(MOCK_DB) as any[];
-  if (phone) {
-    matches = matches.filter(r => 'phone' in r && r.phone === phone);
-  } else if (guestName) {
-    matches = matches.filter(r => r.guestName?.toLowerCase() === guestName.toLowerCase());
-  } else {
-    const out = { status: 'unmatched', confidence: 0 } satisfies ReservationMatchResult;
-    if (debug) {
-      console.log('[ru:tg] reservation.match none', {
-        ...dbgBase,
-        source: 'none',
-        status: out.status,
-        confidence: out.confidence,
-        latency_ms: Date.now() - startedAt,
-      });
-    }
-    return out;
-  }
-
-  if (matches.length === 1) {
-    const out = { status: 'matched', confidence: 0.9, ...matches[0] } satisfies ReservationMatchResult;
-    if (debug) {
-      console.log('[ru:tg] reservation.match fallback', {
-        ...dbgBase,
-        source: 'mock',
-        status: out.status,
-        confidence: out.confidence,
-        reservation_id: (out as any).reservationId ?? null,
-        property_id: (out as any).propertyId ?? null,
-        latency_ms: Date.now() - startedAt,
-      });
-    }
-    return out;
-  }
-
-  if (matches.length > 1) {
-    const out = {
-      status: 'ambiguous',
-      confidence: 0.5,
-      candidates: matches.map(m => ({
-        reservationId: m.reservationId,
-        guestName: m.guestName,
-        checkIn: 'checkIn' in m ? m.checkIn : undefined,
-        checkOut: 'checkOut' in m ? m.checkOut : undefined,
-      })),
-    } satisfies ReservationMatchResult;
-    if (debug) {
-      console.log('[ru:tg] reservation.match fallback', {
-        ...dbgBase,
-        source: 'mock',
-        status: out.status,
-        confidence: out.confidence,
-        candidates_count: out.candidates?.length ?? 0,
-        latency_ms: Date.now() - startedAt,
-      });
-    }
-    return out;
-  }
-
-  const out = { status: 'unmatched', confidence: 0 } satisfies ReservationMatchResult;
-  if (debug) {
-    console.log('[ru:tg] reservation.match none', {
-      ...dbgBase,
-      source: 'none',
-      status: out.status,
-      confidence: out.confidence,
-      latency_ms: Date.now() - startedAt,
-    });
-  }
-  return out;
+  // No runtime demo fallback: unresolved/failed lookup cannot invent a booking.
+  return { status: 'unmatched', confidence: 0 };
 }

@@ -1,5 +1,9 @@
 import { NextResponse } from 'next/server';
 import { requireCrmOperatorSession } from '@/lib/crm/api-auth';
+import { resolveReservationAccess } from '@/lib/reservations/access';
+import { sameIdentity } from '@/lib/platform/decision';
+import { adaptResidentialOpsDecision } from '@/lib/platform/ops-decision';
+import { resolveResidentialBookingIdentity } from '@/lib/platform/residential-booking-scope';
 import {
   getPreCheckinStatus,
   listBookingsByReadinessStatus,
@@ -29,12 +33,26 @@ export async function GET(req: Request): Promise<NextResponse> {
   const bookingId = text(params.get('bookingId'));
 
   try {
+    const access = await resolveReservationAccess(auth.session);
+    if (access.accountId === 'legacy') throw new Error('reservation_account_not_found');
     if (bookingId) {
+      const identity = await resolveResidentialBookingIdentity(bookingId, access.accountId);
       const readiness = await getPreCheckinStatus(bookingId);
-      return NextResponse.json({ ok: true, readiness });
+      const currentIdentity = await resolveResidentialBookingIdentity(bookingId, access.accountId);
+      if (!sameIdentity(identity, currentIdentity)) {
+        return NextResponse.json({ ok: false, message: 'Состояние бронирования изменилось. Повторите запрос.' }, { status: 409 });
+      }
+      const platformDecision = adaptResidentialOpsDecision(identity, 'pre_checkin', {
+        available: true,
+        identity,
+        observedAt: readiness.lastRecomputedAt,
+        value: { kind: 'pre_checkin', readiness },
+      }, Date.now());
+      return NextResponse.json({ ok: true, readiness, platformDecision });
     }
 
     const readiness = await listBookingsByReadinessStatus({
+      accountId: access.accountId,
       status: normalizeStatus(params.get('status')),
       limit: Number(params.get('limit')) || 100,
     });
@@ -44,8 +62,16 @@ export async function GET(req: Request): Promise<NextResponse> {
       refreshedAt: new Date().toISOString(),
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Не удалось загрузить контроль заезда.';
-    const status = message === 'booking_not_found' ? 404 : 500;
-    return NextResponse.json({ ok: false, message }, { status });
+    const code = error instanceof Error ? error.message : '';
+    if (code === 'booking_not_found') {
+      return NextResponse.json({ ok: false, message: 'Бронирование не найдено.' }, { status: 404 });
+    }
+    if (code === 'booking_scope_mismatch' || code === 'reservation_account_not_found') {
+      return NextResponse.json({ ok: false, message: 'Нет доступа к бронированию.' }, { status: 403 });
+    }
+    if (code === 'booking_scope_unavailable') {
+      return NextResponse.json({ ok: false, message: 'Не удалось подтвердить область бронирования.' }, { status: 409 });
+    }
+    return NextResponse.json({ ok: false, message: 'Не удалось загрузить контроль заезда.' }, { status: 500 });
   }
 }

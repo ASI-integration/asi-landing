@@ -1,10 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { recordAndProcessBookingEvent } = vi.hoisted(() => ({ recordAndProcessBookingEvent: vi.fn() }));
+const { recordAndProcessBookingEvent, requireBookingOpsRecordScope } = vi.hoisted(() => ({
+  recordAndProcessBookingEvent: vi.fn(),
+  requireBookingOpsRecordScope: vi.fn(),
+}));
 vi.mock('../lifecycle-autopilot-service', () => ({
   durableEventId: (...parts: string[]) => `id:${parts.join(':')}`,
   recordAndProcessBookingEvent,
 }));
+vi.mock('../repository', () => ({ requireBookingOpsRecordScope }));
 
 import { emitLifecycleForAction, emitPhysicalLifecycle } from '../lifecycle-entry-adapter';
 
@@ -12,6 +16,8 @@ describe('OPS v16 lifecycle entry adapters', () => {
   beforeEach(() => {
     recordAndProcessBookingEvent.mockReset();
     recordAndProcessBookingEvent.mockResolvedValue({ processed: true, duplicate: false });
+    requireBookingOpsRecordScope.mockReset();
+    requireBookingOpsRecordScope.mockResolvedValue({ id: 'booking-1' });
   });
 
   it.each([
@@ -32,6 +38,30 @@ describe('OPS v16 lifecycle entry adapters', () => {
     expect(recordAndProcessBookingEvent).toHaveBeenLastCalledWith(expect.objectContaining({ type, bookingId: 'booking-1' }));
   });
 
+  it('passes canonical scope into lifecycle persistence for execution-time revalidation', async () => {
+    const expectedScope = { accountId: 'account-a', propertyId: 'property-a' };
+    await emitLifecycleForAction({
+      bookingId: 'booking-1', action: 'mark_guest_checked_out', source: 'test', expectedScope,
+    });
+    expect(recordAndProcessBookingEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'checkout.started', bookingId: 'booking-1' }),
+      expectedScope,
+    );
+  });
+
+  it('revalidates canonical scope before emitting a mapped lifecycle event', async () => {
+    requireBookingOpsRecordScope.mockRejectedValueOnce(new Error('booking_scope_mismatch'));
+
+    await expect(emitLifecycleForAction({
+      bookingId: 'booking-1',
+      action: 'mark_guest_checked_out',
+      source: 'test',
+      expectedScope: { accountId: 'account-a', propertyId: 'property-a' },
+    })).rejects.toThrow('booking_scope_mismatch');
+
+    expect(recordAndProcessBookingEvent).not.toHaveBeenCalled();
+  });
+
   it.each([
     ['update_cleaning', 'verified', 'cleaner.task_completed'],
     ['update_linen', 'delivered', 'linen.task_completed'],
@@ -42,6 +72,19 @@ describe('OPS v16 lifecycle entry adapters', () => {
   ])('maps worker action %s to %s', async (action, status, type) => {
     await emitPhysicalLifecycle({ bookingId: 'booking-1', action, body: { id: 'work-1', status } });
     expect(recordAndProcessBookingEvent).toHaveBeenLastCalledWith(expect.objectContaining({ type, bookingId: 'booking-1' }));
+  });
+
+  it.each([
+    ['update_cleaning', 'verified'], ['update_linen', 'delivered'],
+    ['update_supplies', 'completed'], ['create_maintenance', ''],
+    ['update_maintenance', 'resolved'], ['final_approval', ''],
+  ])('rejects physical %s lifecycle emission after scope changes', async (action, status) => {
+    requireBookingOpsRecordScope.mockRejectedValueOnce(new Error('booking_scope_mismatch'));
+    await expect(emitPhysicalLifecycle({
+      bookingId: 'booking-1', action, body: { status },
+      expectedScope: { accountId: 'account-a', propertyId: 'property-a' },
+    })).rejects.toThrow('booking_scope_mismatch');
+    expect(recordAndProcessBookingEvent).not.toHaveBeenCalled();
   });
 
   it('does not map completed cleaning to cleaner.task_completed before verification', async () => {

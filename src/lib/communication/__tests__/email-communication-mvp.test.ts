@@ -26,6 +26,7 @@ vi.mock('../conversation-session-engine', () => ({
 
 vi.mock('../operator-review', () => ({
   createOrUpdateEscalationReview: (...args: unknown[]) => mockCreateReview(...args),
+  createOrUpdateEscalationReviewBound: (...args: unknown[]) => mockCreateReview(...args),
   getActiveEscalationReviewIdForSession: () => null,
   getEscalationReview: () => null,
 }));
@@ -218,13 +219,17 @@ describe('email communication MVP', () => {
       guest_email: 'unknown@example.com',
       text: 'Где Wi-Fi?',
       db: {
-        from: () => ({
-          select: () => ({
-            eq: () => ({
-              limit: () => ({ maybeSingle: async () => ({ data: null }) }),
-            }),
-          }),
-        }),
+        from: () => {
+          const q: any = {
+            select: () => q,
+            eq: () => q,
+            order: () => q,
+            limit: () => q,
+            maybeSingle: async () => ({ data: null }),
+            then: (resolve: (value: unknown) => void) => resolve({ data: [] }),
+          };
+          return q;
+        },
       } as any,
     });
 

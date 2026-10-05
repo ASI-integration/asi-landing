@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { requireOpsAdminSession } from '@/lib/crm/api-auth';
+import { requireBookingOpsApiAutoSendScopeAccess } from '../../../../access';
 import {
   AUTO_SEND_SCOPE_TYPES,
   setAutoSendScope,
@@ -20,9 +21,13 @@ export async function POST(req: Request) {
   if (!AUTO_SEND_SCOPE_TYPES.includes(scopeType) || scopeType === 'global') {
     return NextResponse.json({ ok: false, message: 'Укажите ограниченный уровень.' }, { status: 400 });
   }
+  const scopeRef = String(body.scopeRef ?? body.scope_ref ?? '').trim();
+  const access = await requireBookingOpsApiAutoSendScopeAccess(auth.session, scopeType, scopeRef);
+  if (!access.ok) return access.response;
   const result = await setAutoSendScope({
+    accountId: access.accountId,
     scopeType,
-    scopeRef: String(body.scopeRef ?? body.scope_ref ?? '').trim(),
+    scopeRef,
     enabled: false,
     enabledBy: String(auth.session.email ?? auth.session.userId ?? 'ops-admin'),
     reason: typeof body.reason === 'string' ? body.reason : 'Отключено оператором.',

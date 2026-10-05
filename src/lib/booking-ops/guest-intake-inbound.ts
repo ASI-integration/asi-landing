@@ -12,7 +12,7 @@ import {
   syncGuestIntakeAutopilot,
 } from './guest-intake-autopilot';
 import { syncBookingOpsCommunications } from './communication-orchestrator';
-import { getBookingOpsRecord, updateBookingOpsRecord } from './repository';
+import { getBookingOpsRecord, requireBookingOpsRecordScope, updateBookingOpsRecord } from './repository';
 import { listBookingOpsTasksForRecord } from './tasks';
 import type { BookingOpsGuestIntakeSession, BookingOpsRecord } from './types';
 
@@ -54,6 +54,23 @@ const SAFE_SUBMITTED_FIELD_KEYS = [
 
 function text(value: unknown, maxLength = 500): string {
   return String(value ?? '').trim().slice(0, maxLength);
+}
+
+type ExpectedScope = { accountId: string; propertyId: string };
+
+function guestIntakeExpectedScope(record: BookingOpsRecord): ExpectedScope | undefined {
+  const accountId = text(record.accountId, 160);
+  const propertyId = text(record.propertyId, 160);
+  if (!accountId || accountId === 'legacy') return undefined;
+  if (!propertyId) throw new Error('booking_scope_unavailable');
+  return { accountId, propertyId };
+}
+
+async function revalidateGuestIntakeScope(
+  recordId: string,
+  expectedScope?: ExpectedScope,
+): Promise<void> {
+  if (expectedScope) await requireBookingOpsRecordScope(recordId, expectedScope);
 }
 
 function normalizeToken(value: unknown): string {
@@ -151,7 +168,15 @@ export async function loadGuestIntakeByToken(token: string): Promise<{
   if (!session) return { ok: false, error: 'not_found' };
   const record = await getBookingOpsRecord(session.bookingOpsRecordId);
   if (!record) return { ok: false, error: 'record_not_found' };
-  return { ok: true, session: await ensureGuestIntakePublicToken(session), record };
+  try {
+    const expectedScope = guestIntakeExpectedScope(record);
+    await revalidateGuestIntakeScope(record.id, expectedScope);
+    const ensuredSession = await ensureGuestIntakePublicToken(session, expectedScope);
+    await revalidateGuestIntakeScope(record.id, expectedScope);
+    return { ok: true, session: ensuredSession, record };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : 'booking_scope_unavailable' };
+  }
 }
 
 export async function recordGuestIntakeLinkOpened(token: string): Promise<{
@@ -162,14 +187,25 @@ export async function recordGuestIntakeLinkOpened(token: string): Promise<{
 }> {
   const loaded = await loadGuestIntakeByToken(token);
   if (!loaded.ok || !loaded.session || !loaded.record) return loaded;
+  let expectedScope: ExpectedScope | undefined;
+  try {
+    expectedScope = guestIntakeExpectedScope(loaded.record);
+    await revalidateGuestIntakeScope(loaded.record.id, expectedScope);
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : 'booking_scope_unavailable' };
+  }
   const now = new Date().toISOString();
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from('booking_ops_guest_intake_sessions')
     .update({ token_opened_at: now, last_guest_activity_at: now, updated_at: now })
     .eq('id', loaded.session.id)
+    .eq('booking_ops_record_id', loaded.record.id)
     .select('*')
     .maybeSingle();
+  if (error) return { ok: false, error: error.message };
+  await revalidateGuestIntakeScope(loaded.record.id, expectedScope);
   const session = data ? mapGuestIntakeSessionRow(data as GuestIntakeRow) : loaded.session;
+  await revalidateGuestIntakeScope(loaded.record.id, expectedScope);
   await recordBookingOpsEvent({
     bookingOpsRecordId: loaded.record.id,
     eventType: 'guest_intake_link_opened',
@@ -182,6 +218,7 @@ export async function recordGuestIntakeLinkOpened(token: string): Promise<{
     },
     dedupeKey: `guest-intake-opened:${session.id}:${now.slice(0, 13)}`,
   });
+  await revalidateGuestIntakeScope(loaded.record.id, expectedScope);
   return { ok: true, session, record: loaded.record };
 }
 
@@ -192,8 +229,10 @@ async function recordSubmissionAudit(input: {
   submission: GuestIntakeSubmission;
   validationStatus: string;
   validationErrors: string[];
+  expectedScope?: ExpectedScope;
 }): Promise<void> {
-  await supabase.from('booking_ops_guest_intake_submissions').insert({
+  await revalidateGuestIntakeScope(input.recordId, input.expectedScope);
+  const result = await supabase.from('booking_ops_guest_intake_submissions').insert({
     id: randomUUID(),
     booking_ops_record_id: input.recordId,
     guest_intake_session_id: input.sessionId,
@@ -204,12 +243,19 @@ async function recordSubmissionAudit(input: {
     validation_errors: input.validationErrors,
     created_at: new Date().toISOString(),
   });
+  if (result.error) throw new Error(result.error.message);
+  await revalidateGuestIntakeScope(input.recordId, input.expectedScope);
 }
 
-async function syncDownstream(record: BookingOpsRecord): Promise<void> {
-  const tasks = await listBookingOpsTasksForRecord(record.id);
+async function syncDownstream(
+  record: BookingOpsRecord,
+  expectedScope?: ExpectedScope,
+): Promise<void> {
+  await revalidateGuestIntakeScope(record.id, expectedScope);
+  const tasks = await listBookingOpsTasksForRecord(record.id, { expectedScope });
   if (!tasks.ok) return;
-  await syncBookingOpsCommunications({ record, tasks: tasks.tasks });
+  await syncBookingOpsCommunications({ record, tasks: tasks.tasks, expectedScope });
+  await revalidateGuestIntakeScope(record.id, expectedScope);
 }
 
 export async function submitGuestIntake(input: {
@@ -229,6 +275,14 @@ export async function submitGuestIntake(input: {
     return { ok: false, error: loaded.error ?? 'not_found' };
   }
 
+  let expectedScope: ExpectedScope | undefined;
+  try {
+    expectedScope = guestIntakeExpectedScope(loaded.record);
+    await revalidateGuestIntakeScope(loaded.record.id, expectedScope);
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : 'booking_scope_unavailable' };
+  }
+
   const built = buildBookingOpsPatchFromGuestSubmission(input.submission);
   const now = new Date().toISOString();
   const forcedFallback = input.submission.guestCannotProceed === true;
@@ -242,10 +296,15 @@ export async function submitGuestIntake(input: {
   };
 
   const update = Object.keys(patch).length > 0
-    ? await updateBookingOpsRecord(loaded.record.id, patch, { actorType: 'system' })
+    ? await updateBookingOpsRecord(loaded.record.id, patch, { actorType: 'system', expectedScope })
     : { ok: true as const, record: loaded.record };
   if (!update.ok || !update.record) {
     return { ok: false, error: update.error ?? 'record_update_failed' };
+  }
+  try {
+    await revalidateGuestIntakeScope(update.record.id, expectedScope);
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : 'booking_scope_unavailable' };
   }
 
   const basePlan = evaluateGuestIntakeState({
@@ -266,6 +325,7 @@ export async function submitGuestIntake(input: {
     submission: input.submission,
     validationStatus,
     validationErrors,
+    expectedScope,
   });
 
   const fallbackReason = forcedFallback
@@ -277,7 +337,8 @@ export async function submitGuestIntake(input: {
       ? 'validation_needed'
       : basePlan.intakeStatus;
 
-  const { data } = await supabase
+  await revalidateGuestIntakeScope(update.record.id, expectedScope);
+  const { data, error } = await supabase
     .from('booking_ops_guest_intake_sessions')
     .update({
       intake_status: status,
@@ -292,8 +353,12 @@ export async function submitGuestIntake(input: {
       updated_at: now,
     })
     .eq('id', loaded.session.id)
+    .eq('booking_ops_record_id', update.record.id)
     .select('*')
     .maybeSingle();
+  if (error) return { ok: false, error: error.message };
+  if (expectedScope && !data) return { ok: false, error: 'booking_scope_mismatch' };
+  await revalidateGuestIntakeScope(update.record.id, expectedScope);
 
   const session = data
     ? mapGuestIntakeSessionRow(data as GuestIntakeRow)
@@ -306,6 +371,7 @@ export async function submitGuestIntake(input: {
         : status === 'validation_needed'
           ? 'guest_intake_validation_failed'
           : 'guest_intake_partially_completed';
+  await revalidateGuestIntakeScope(update.record.id, expectedScope);
   await recordBookingOpsEvent({
     bookingOpsRecordId: update.record.id,
     eventType: 'guest_intake_submission_received',
@@ -320,6 +386,7 @@ export async function submitGuestIntake(input: {
     },
     dedupeKey: `guest-intake-submission:${session.id}:${now}`,
   });
+  await revalidateGuestIntakeScope(update.record.id, expectedScope);
   await recordBookingOpsEvent({
     bookingOpsRecordId: update.record.id,
     eventType,
@@ -342,11 +409,16 @@ export async function submitGuestIntake(input: {
     },
     dedupeKey: `guest-intake-status:${session.id}:${status}:${now}`,
   });
+  await revalidateGuestIntakeScope(update.record.id, expectedScope);
 
-  const synced = await syncGuestIntakeAutopilot({ ...update.record, guestIntake: session });
+  const synced = await syncGuestIntakeAutopilot(
+    { ...update.record, guestIntake: session },
+    expectedScope,
+  );
+  await revalidateGuestIntakeScope(update.record.id, expectedScope);
   const finalSession = synced.session ?? session;
   const finalRecord = { ...update.record, guestIntake: finalSession };
-  await syncDownstream(finalRecord);
+  await syncDownstream(finalRecord, expectedScope);
 
   return {
     ok: true,

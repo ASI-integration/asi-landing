@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { supabase } from '@/lib/supabase';
 import { initializeLifecycleForBooking } from './lifecycle';
-import { getBookingOpsRecord } from './repository';
+import { requireBookingOpsRecordScope } from './repository';
 import { listBookingOpsTasksForRecord } from './tasks';
 import { syncGuestIntakeAutopilot } from './guest-intake-autopilot';
 import { syncBookingOpsCommunications } from './communication-orchestrator';
@@ -29,12 +29,15 @@ export type BookingAutomationRunSummary = {
 };
 
 export type RunBookingOpsAutomationInput = {
-  bookingId: string; expectedAccountId?: string; now?: string; dryRun?: boolean; maxActions?: number;
+  bookingId: string; expectedAccountId?: string; expectedPropertyId?: string; now?: string; dryRun?: boolean; maxActions?: number;
 };
 
 const text = (value: unknown) => String(value ?? '').trim();
 const object = (value: unknown): Row => value && typeof value === 'object' && !Array.isArray(value) ? value as Row : {};
 const latest = (items: Row[]) => [...items].sort((a, b) => text(b.updated_at).localeCompare(text(a.updated_at)))[0] ?? null;
+type ExpectedScope = { accountId: string; propertyId: string };
+const scopeOf = (snapshot: Pick<BookingAutomationSnapshot, 'accountId' | 'propertyId'>): ExpectedScope => ({ accountId: snapshot.accountId, propertyId: snapshot.propertyId });
+const requireCurrentScope = (snapshot: Pick<BookingAutomationSnapshot, 'bookingId' | 'accountId' | 'propertyId'>) => requireBookingOpsRecordScope(snapshot.bookingId, scopeOf(snapshot));
 
 async function selectRows(table: string, bookingId: string, column = 'booking_id'): Promise<Row[]> {
   const result = await supabase.from(table).select('*').eq(column, bookingId);
@@ -96,7 +99,7 @@ function retryFromGates(gates: Row[]) {
   };
 }
 
-export async function loadBookingAutomationSnapshot(bookingId: string, expectedAccountId?: string, now = new Date().toISOString()): Promise<BookingAutomationSnapshot> {
+export async function loadBookingAutomationSnapshot(bookingId: string, expectedAccountId?: string, now = new Date().toISOString(), expectedPropertyId?: string): Promise<BookingAutomationSnapshot> {
   const bookingResult = await supabase.from('booking_ops_records').select('*').eq('id', bookingId).maybeSingle();
   if (bookingResult.error) throw new Error(bookingResult.error.message);
   if (!bookingResult.data) throw new Error('booking_not_found');
@@ -106,6 +109,7 @@ export async function loadBookingAutomationSnapshot(bookingId: string, expectedA
   if (expectedAccountId && expectedAccountId !== accountId) throw new Error('booking_account_mismatch');
   const propertyId = text(booking.property_id);
   if (!propertyId) throw new Error('booking_property_missing');
+  if (expectedPropertyId && expectedPropertyId !== propertyId) throw new Error('booking_scope_mismatch');
   const [accountResult, propertyResult, knowledgeResult] = await Promise.all([
     supabase.from('accounts').select('id').eq('id', accountId).maybeSingle(),
     supabase.from('properties').select('id,account_id').eq('id', propertyId).eq('account_id', accountId).maybeSingle(),
@@ -115,6 +119,8 @@ export async function loadBookingAutomationSnapshot(bookingId: string, expectedA
   if (!accountResult.data) throw new Error('booking_account_not_found');
   if (propertyResult.error && knowledgeResult.error) throw new Error(propertyResult.error.message);
   if (!propertyResult.data && !knowledgeResult.data) throw new Error('booking_property_not_found');
+  const expectedScope = { accountId, propertyId };
+  await requireBookingOpsRecordScope(bookingId, expectedScope);
 
   const [gates, tasks, intakeRows, documents, contracts, deposits, mvdReports, communications, checkinRows, cleaningRows, linenRows, suppliesRows, maintenanceRows, readinessRows, alerts] = await Promise.all([
     selectRows('booking_lifecycle_gates', bookingId),
@@ -128,6 +134,7 @@ export async function loadBookingAutomationSnapshot(bookingId: string, expectedA
     selectRows('booking_maintenance_tickets', bookingId), selectRows('booking_physical_readiness', bookingId),
     selectRows('booking_ops_alerts', bookingId),
   ]);
+  await requireBookingOpsRecordScope(bookingId, expectedScope);
   void tasks; void linenRows; void suppliesRows; void maintenanceRows; void alerts;
   const intake = latest(intakeRows);
   const contract = latest(contracts);
@@ -188,52 +195,54 @@ export async function loadBookingAutomationSnapshot(bookingId: string, expectedA
   };
 }
 
-async function syncCommunications(bookingId: string) {
-  const record = await getBookingOpsRecord(bookingId);
-  if (!record) throw new Error('booking_not_found');
-  const taskResult = await listBookingOpsTasksForRecord(record.id);
+async function syncCommunications(bookingId: string, expectedScope: ExpectedScope) {
+  const record = await requireBookingOpsRecordScope(bookingId, expectedScope);
+  const taskResult = await listBookingOpsTasksForRecord(record.id, { expectedScope });
   if (!taskResult.ok) throw new Error(taskResult.error);
-  const result = await syncBookingOpsCommunications({ record, tasks: taskResult.tasks });
+  const result = await syncBookingOpsCommunications({ record, tasks: taskResult.tasks, expectedScope });
   if (!result.ok) throw new Error(result.error ?? 'communication_sync_failed');
 }
 
 async function executeStep(step: BookingAutomationStep, snapshot: BookingAutomationSnapshot): Promise<void> {
   const metadata = { source: 'booking_automation_runner_v1', actionCode: step.code };
+  const expectedScope = scopeOf(snapshot);
+  await requireCurrentScope(snapshot);
   switch (step.code) {
     case 'initialize_lifecycle': {
-      const result = await initializeLifecycleForBooking(snapshot.bookingId);
+      const result = await initializeLifecycleForBooking(snapshot.bookingId, expectedScope);
       if (!result.ok) throw new Error(result.error ?? 'lifecycle_initialization_failed');
       return;
     }
     case 'ensure_guest_intake':
     case 'prepare_guest_data_request': {
-      const record = await getBookingOpsRecord(snapshot.bookingId);
-      if (!record) throw new Error('booking_not_found');
-      const result = await syncGuestIntakeAutopilot(record);
+      const record = await requireBookingOpsRecordScope(snapshot.bookingId, expectedScope);
+      const result = await syncGuestIntakeAutopilot(record, expectedScope);
       if (!result.ok) throw new Error(result.error ?? 'guest_intake_sync_failed');
-      await syncCommunications(snapshot.bookingId);
+      await syncCommunications(snapshot.bookingId, expectedScope);
       return;
     }
-    case 'prepare_documents_request': await requestGuestDocuments(snapshot.bookingId, ['passport'], metadata); await syncCommunications(snapshot.bookingId); return;
-    case 'prepare_contract': await prepareContract(snapshot.bookingId, undefined, metadata); await syncCommunications(snapshot.bookingId); return;
+    case 'prepare_documents_request': await requestGuestDocuments(snapshot.bookingId, ['passport'], metadata, expectedScope); await syncCommunications(snapshot.bookingId, expectedScope); return;
+    case 'prepare_contract': await prepareContract(snapshot.bookingId, undefined, metadata, expectedScope); await syncCommunications(snapshot.bookingId, expectedScope); return;
     case 'prepare_deposit_request': {
-      const booking = await getBookingOpsRecord(snapshot.bookingId);
-      if (!booking?.depositAmount || booking.depositAmount <= 0) throw new Error('deposit_amount_missing');
-      await requestDeposit(snapshot.bookingId, booking.depositAmount, 'RUB', metadata); await syncCommunications(snapshot.bookingId); return;
+      const booking = await requireBookingOpsRecordScope(snapshot.bookingId, expectedScope);
+      if (!booking.depositAmount || booking.depositAmount <= 0) throw new Error('deposit_amount_missing');
+      await requestDeposit(snapshot.bookingId, booking.depositAmount, 'RUB', metadata, expectedScope); await syncCommunications(snapshot.bookingId, expectedScope); return;
     }
-    case 'prepare_mvd_draft': await prepareMvdReport(snapshot.bookingId, metadata); return;
-    case 'prepare_checkin_instructions': await prepareCheckinInstructions(snapshot.bookingId, metadata); return;
-    case 'queue_checkin_instructions': await queueCheckinInstructions(snapshot.bookingId, undefined, metadata); return;
-    case 'request_arrival_confirmation': await requestArrivalConfirmation(snapshot.bookingId, metadata); return;
-    case 'activate_turnover_cleaning': await ensurePhysicalTasks(snapshot.bookingId); return;
-    case 'assign_cleaner': await updateCleaningTask(snapshot.bookingId, { status: 'assigned', ...step.safeMetadata }); return;
-    case 'recompute_physical_readiness': await recomputePhysicalReadiness(snapshot.bookingId); return;
-    case 'approve_physical_readiness': await approveFinalPhysicalReadiness(snapshot.bookingId, 'automation_policy'); return;
+    case 'prepare_mvd_draft': await prepareMvdReport(snapshot.bookingId, metadata, expectedScope); return;
+    case 'prepare_checkin_instructions': await prepareCheckinInstructions(snapshot.bookingId, metadata, expectedScope); return;
+    case 'queue_checkin_instructions': await queueCheckinInstructions(snapshot.bookingId, undefined, metadata, expectedScope); return;
+    case 'request_arrival_confirmation': await requestArrivalConfirmation(snapshot.bookingId, metadata, expectedScope); return;
+    case 'activate_turnover_cleaning': await ensurePhysicalTasks(snapshot.bookingId, expectedScope); return;
+    case 'assign_cleaner': await updateCleaningTask(snapshot.bookingId, { status: 'assigned', ...step.safeMetadata }, expectedScope); return;
+    case 'recompute_physical_readiness': await recomputePhysicalReadiness(snapshot.bookingId, expectedScope); return;
+    case 'approve_physical_readiness': await approveFinalPhysicalReadiness(snapshot.bookingId, 'automation_policy', expectedScope); return;
     case 'reconcile_operator_alerts': return;
   }
 }
 
 async function audit(snapshot: Pick<BookingAutomationSnapshot, 'bookingId' | 'propertyId' | 'accountId'>, eventType: string, step: BookingAutomationStep | null, runId: string, suffix: string) {
+  const expectedScope = scopeOf(snapshot);
+  await requireCurrentScope(snapshot);
   await recordProcessedBookingAuditEvent({
     id: durableEventId('booking-automation', runId, step?.code ?? 'run', suffix),
     bookingId: snapshot.bookingId, objectId: snapshot.propertyId, type: eventType, actorType: 'system', source: 'booking_automation_runner_v1',
@@ -246,26 +255,30 @@ async function audit(snapshot: Pick<BookingAutomationSnapshot, 'bookingId' | 'pr
       retryAt: step?.retryAt, alertId: step?.safeMetadata.alertId,
       taskId: step?.safeMetadata.taskId, communicationIntentId: step?.safeMetadata.referenceId,
     },
-  });
+  }, expectedScope);
 }
 
 async function updateRetryMetadata(snapshot: BookingAutomationSnapshot, action: BookingAutomationActionCode, errorCode: string, now: string) {
+  await requireCurrentScope(snapshot);
   const gate = await supabase.from('booking_lifecycle_gates').select('id,metadata').eq('booking_id', snapshot.bookingId).eq('gate_key', 'booking_received').maybeSingle();
   if (gate.error || !gate.data) throw new Error(gate.error?.message ?? 'retry_gate_missing');
   const count = snapshot.retry.attemptCount + 1;
   const retryAt = count < DEFAULT_AUTOMATION_MAX_TECHNICAL_ATTEMPTS ? new Date(new Date(now).getTime() + Math.min(60, 5 * (2 ** (count - 1))) * 60_000).toISOString() : null;
   const metadata = { ...object(gate.data.metadata), automationStatus: retryAt ? 'retry_scheduled' : 'retry_exhausted', automationLastAction: action, automationAttemptCount: count, automationLastAttemptAt: now, automationNextRetryAt: retryAt, automationLastErrorCode: errorCode };
-  const result = await supabase.from('booking_lifecycle_gates').update({ metadata, updated_at: now }).eq('id', gate.data.id);
+  await requireCurrentScope(snapshot);
+  const result = await supabase.from('booking_lifecycle_gates').update({ metadata, updated_at: now }).eq('id', gate.data.id).eq('booking_id', snapshot.bookingId);
   if (result.error) throw new Error(result.error.message);
   return { count, retryAt };
 }
 
 async function clearRetryMetadata(snapshot: BookingAutomationSnapshot, now: string) {
   if (!snapshot.retry.lastAction && snapshot.retry.attemptCount === 0) return;
+  await requireCurrentScope(snapshot);
   const gate = await supabase.from('booking_lifecycle_gates').select('id,metadata').eq('booking_id', snapshot.bookingId).eq('gate_key', 'booking_received').maybeSingle();
   if (gate.error || !gate.data) return;
   const metadata = { ...object(gate.data.metadata), automationStatus: 'completed', automationLastAction: null, automationAttemptCount: 0, automationLastAttemptAt: now, automationNextRetryAt: null, automationLastErrorCode: null };
-  await supabase.from('booking_lifecycle_gates').update({ metadata, updated_at: now }).eq('id', gate.data.id);
+  await requireCurrentScope(snapshot);
+  await supabase.from('booking_lifecycle_gates').update({ metadata, updated_at: now }).eq('id', gate.data.id).eq('booking_id', snapshot.bookingId);
 }
 
 function handoffCondition(step: BookingAutomationStep): OperatorAlertCondition {
@@ -283,6 +296,7 @@ function handoffCondition(step: BookingAutomationStep): OperatorAlertCondition {
 }
 
 async function reconcileAutomationHandoffs(snapshot: BookingAutomationSnapshot, steps: BookingAutomationStep[], now: string) {
+  await requireCurrentScope(snapshot);
   return reconcileOperatorAlertConditions({
     accountId: snapshot.accountId, bookingId: snapshot.bookingId, propertyId: snapshot.propertyId,
     managedSourceDomains: ['automation'], now,
@@ -294,7 +308,7 @@ async function reconcileAutomationHandoffs(snapshot: BookingAutomationSnapshot, 
 export async function runBookingOpsAutomationForBooking(input: RunBookingOpsAutomationInput): Promise<BookingAutomationRunSummary> {
   const runId = randomUUID();
   const startedAt = input.now ? new Date(input.now).toISOString() : new Date().toISOString();
-  let snapshot = await loadBookingAutomationSnapshot(input.bookingId, input.expectedAccountId, startedAt);
+  let snapshot = await loadBookingAutomationSnapshot(input.bookingId, input.expectedAccountId, startedAt, input.expectedPropertyId);
   const maxActions = Math.max(0, Math.min(DEFAULT_AUTOMATION_MAX_ACTIONS, Math.floor(input.maxActions ?? DEFAULT_AUTOMATION_MAX_ACTIONS)));
   const summary: BookingAutomationRunSummary = { runId, bookingId: input.bookingId, accountId: snapshot.accountId, startedAt, completedAt: startedAt, lockAcquired: false, planned: [], executed: [], waiting: [], retriesScheduled: [], approvalsRequired: [], handoffsCreated: 0, alertsCreated: 0, alertsResolved: 0, errors: [] };
   if (input.dryRun) {
@@ -337,12 +351,12 @@ export async function runBookingOpsAutomationForBooking(input: RunBookingOpsAuto
         break;
       }
       remaining -= 1;
-      const reloaded = await loadBookingAutomationSnapshot(input.bookingId, input.expectedAccountId, new Date().toISOString());
+      const reloaded = await loadBookingAutomationSnapshot(input.bookingId, input.expectedAccountId, new Date().toISOString(), input.expectedPropertyId);
       const nextPlan = planBookingOpsAutomation(reloaded, remaining);
       if (nextPlan.some((candidate) => candidate.code === next.code && candidate.disposition === 'execute')) break;
       snapshot = reloaded;
     }
-    const finalPlan = planBookingOpsAutomation(await loadBookingAutomationSnapshot(input.bookingId, input.expectedAccountId, new Date().toISOString()), Math.max(0, remaining));
+    const finalPlan = planBookingOpsAutomation(await loadBookingAutomationSnapshot(input.bookingId, input.expectedAccountId, new Date().toISOString(), input.expectedPropertyId), Math.max(0, remaining));
     summary.planned.push(...finalPlan.filter((item) => !summary.planned.some((existing) => existing.code === item.code && existing.reasonCode === item.reasonCode && existing.disposition === item.disposition)));
     const terminalFailures = summary.planned.filter((item) => item.disposition === 'handoff_required' && item.reasonCode === 'retry_exhausted');
     const remainingSteps = [...finalPlan, ...terminalFailures.filter((failed) => !finalPlan.some((item) => item.code === failed.code && item.reasonCode === failed.reasonCode))];

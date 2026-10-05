@@ -1,3 +1,4 @@
+import { haversineMeters } from './geometry';
 /**
  * Commercial spatial foundation v1 — stub tier.
  * Barrier-aware attraction dampening + minimal corridor distance inflation.
@@ -7,17 +8,6 @@
 import type { OSMElement, MagnetItem, PermanenceType } from './types';
 import type { SpatialFoundationSnapshot, BarrierKind } from './types';
 import { GRAVITY_CONFIG, PERMANENCE_MULTIPLIER } from './config';
-
-function haversineMeters(lat1: number, lon1: number, lat2: number, lon2: number): number {
-  const R = 6371000;
-  const dLat = (lat2 - lat1) * Math.PI / 180;
-  const dLon = (lon2 - lon1) * Math.PI / 180;
-  const a =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-    Math.sin(dLon / 2) ** 2;
-  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-}
 
 function distanceDecaySmooth(meters: number): number {
   const { distanceDecayRefDist, distanceDecayPower } = GRAVITY_CONFIG;

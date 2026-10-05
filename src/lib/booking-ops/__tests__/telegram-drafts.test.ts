@@ -7,13 +7,18 @@ import type {
 } from '../types';
 
 vi.mock('@/lib/supabase', () => ({
-  supabase: {
-    from: vi.fn(() => ({
-      select: vi.fn(() => ({
-        eq: vi.fn(async () => ({ data: [], error: null })),
-      })),
-    })),
-  },
+  supabase: { from: vi.fn((table: string) => {
+    const data = table === 'booking_ops_records'
+      ? { id: 'ops-1', booking_id: 'reservation-1', property_id: 'OBJ-1', account_id: 'a',
+          ops_status: 'created', updated_at: new Date().toISOString() }
+      : { id: 'OBJ-1', account_id: 'a' };
+    const query = {
+      eq: () => query, in: () => query,
+      maybeSingle: async () => ({ data, error: null }),
+      then: (resolve: (value: unknown) => unknown) => Promise.resolve({ data: [], error: null }).then(resolve),
+    };
+    return { select: () => query };
+  }) },
 }));
 
 const sendMessage = vi.fn();
@@ -235,8 +240,9 @@ describe('Booking Ops Telegram Draft Handoff v1', () => {
 
     expect(result.ok).toBe(true);
     const message = insertDraft.mock.calls[0][0].messageText;
-    expect(message).toContain('Невский проспект, 10');
-    expect(message).toContain('ASI-Guest');
+    expect(message).not.toContain('Невский проспект, 10');
+    expect(message).not.toContain('ASI-Guest');
+    expect(message).toContain('оператора');
     expect(message).not.toContain('Секрет оператора');
     expect(sendMessage).not.toHaveBeenCalled();
   });

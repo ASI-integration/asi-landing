@@ -122,6 +122,7 @@ describe('Booking Ops Guest Intake Autopilot v1', () => {
         createdAt: '2026-06-29T08:00:00.000Z',
         updatedAt: '2026-06-29T08:00:00.000Z',
       },
+      now: new Date('2026-06-29T09:00:00.000Z'),
     });
     expect(state.intakeStatus).toBe('partially_completed');
     expect(state.missingFields).toContain('documents');
@@ -333,6 +334,18 @@ describe('Booking Ops Guest Intake Autopilot v1', () => {
     });
     expect(JSON.stringify(metadata)).not.toContain('123456789');
     expect(JSON.stringify(metadata)).not.toContain('raw-passport');
+  });
+
+  it('retains canonical scope through inbound guest-intake mutations', () => {
+    const inboundSource = readFileSync('src/lib/booking-ops/guest-intake-inbound.ts', 'utf8');
+    expect(inboundSource).toContain('requireBookingOpsRecordScope');
+    expect(inboundSource).toContain('ensureGuestIntakePublicToken(session, expectedScope)');
+    expect(inboundSource).toContain(".eq('booking_ops_record_id', loaded.record.id)");
+    expect(inboundSource).toContain(".eq('booking_ops_record_id', update.record.id)");
+    expect(inboundSource).toContain("updateBookingOpsRecord(loaded.record.id, patch, { actorType: 'system', expectedScope })");
+    expect(inboundSource).toContain('listBookingOpsTasksForRecord(record.id, { expectedScope })');
+    expect(inboundSource).toContain('syncBookingOpsCommunications({ record, tasks: tasks.tasks, expectedScope })');
+    expect(inboundSource).toContain('await syncDownstream(finalRecord, expectedScope)');
   });
 
   it('does not include uncontrolled Telegram or email send calls', () => {

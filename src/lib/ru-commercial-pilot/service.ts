@@ -24,7 +24,7 @@ export type RuCommercialPilotStore = {
   upsertIfAbsent(state: RuCommercialPilotState): Promise<RuCommercialPilotState>;
 };
 
-export type ReadinessProbe = (propertyId: string) => Promise<boolean>;
+export type ReadinessProbe = (accountId: string, propertyId: string) => Promise<boolean>;
 
 export type OwnershipProbe = (accountId: string, propertyId: string) => Promise<boolean>;
 
@@ -135,7 +135,7 @@ export async function deriveReady(
     if (!ensured.ok) return ensured;
     current = ensured.state;
   }
-  const readiness = await deps.isReadinessSatisfied(propertyId);
+  const readiness = await deps.isReadinessSatisfied(accountId, propertyId);
   const now = (deps.now ?? (() => new Date()))();
   const result = applyDeriveReady(current, readiness, now);
   return persistTransition(deps, current, result, (latest) =>
@@ -150,14 +150,25 @@ export async function startPilot(
 ): Promise<RuCommercialPilotTransitionResult> {
   const denied = requireOwned(await deps.ownsProperty(accountId, propertyId));
   if (denied) return denied;
-  const current = await deps.store.get(accountId, propertyId);
+  let current = await deps.store.get(accountId, propertyId);
   if (!current) return { ok: false, reason: 'lifecycle_not_found' };
-  const readiness = await deps.isReadinessSatisfied(propertyId);
+
+  let readiness = await deps.isReadinessSatisfied(accountId, propertyId);
   const now = (deps.now ?? (() => new Date()))();
   if (current.status === 'ready' && readiness) {
     const entitlement = await (deps.claimPilotEntitlement ?? claimStandardPilotEntitlement)({ accountId, propertyId, startedAt: now });
     if (!entitlement.ok) return { ok: false, reason: entitlement.reason };
+
+    const stillOwned = await deps.ownsProperty(accountId, propertyId);
+    if (!stillOwned) return { ok: false, reason: 'property_not_owned_by_account' };
+    readiness = await deps.isReadinessSatisfied(accountId, propertyId);
+    if (!readiness) return { ok: false, reason: 'readiness_not_satisfied' };
+
+    const latest = await deps.store.get(accountId, propertyId);
+    if (!latest) return { ok: false, reason: 'lifecycle_not_found' };
+    current = latest;
   }
+
   const result = applyStartPilot(current, readiness, now);
   return persistTransition(deps, current, result, (latest) =>
     applyStartPilot(latest, readiness, now),

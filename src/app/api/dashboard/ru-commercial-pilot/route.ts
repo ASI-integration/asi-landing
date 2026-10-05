@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server';
 import { requireCrmOperatorSession, requireOpsAdminSession } from '@/lib/crm/api-auth';
+import { isOpsAdminEmail } from '@/lib/crm/access';
+import { supabase } from '@/lib/supabase';
 import {
   beginSetup,
   completePilot,
@@ -26,6 +28,16 @@ function deps(): RuCommercialPilotServiceDeps {
   };
 }
 
+async function resolveCanonicalPilotAccount(propertyId: string): Promise<string | null> {
+  const { data, error } = await supabase
+    .from('properties')
+    .select('account_id')
+    .eq('id', propertyId)
+    .maybeSingle();
+  if (error || !data?.account_id) return null;
+  return String(data.account_id);
+}
+
 function serializeState(state: RuCommercialPilotState | null) {
   if (!state) return null;
   return {
@@ -49,20 +61,25 @@ export async function GET(req: Request): Promise<NextResponse> {
   if ('error' in auth) return auth.error;
 
   const url = new URL(req.url);
-  const accountId = url.searchParams.get('accountId')?.trim() ?? '';
   const propertyId = url.searchParams.get('propertyId')?.trim() ?? '';
-  if (!accountId || !propertyId) {
+  if (!propertyId) {
     return NextResponse.json(
-      { ok: false, message: 'accountId and propertyId are required.' },
+      { ok: false, message: 'propertyId is required.' },
       { status: 400 },
     );
   }
+  const accountId = await resolveCanonicalPilotAccount(propertyId);
+  if (!accountId) return NextResponse.json({ ok: false, message: 'Property not found.' }, { status: 404 });
 
   const result = await getPilotLifecycle(deps(), accountId, propertyId);
   if (!result.ok) {
     return NextResponse.json({ ok: false, reason: result.reason }, { status: 403 });
   }
-  return NextResponse.json({ ok: true, state: serializeState(result.state) });
+  return NextResponse.json({
+    ok: true,
+    state: serializeState(result.state),
+    canManage: isOpsAdminEmail(auth.session.email),
+  });
 }
 
 type Action =
@@ -84,13 +101,18 @@ export async function POST(req: Request): Promise<NextResponse> {
   }
 
   const action = String(body.action ?? '').trim() as Action;
-  const accountId = String(body.accountId ?? body.account_id ?? '').trim();
   const propertyId = String(body.propertyId ?? body.property_id ?? '').trim();
-  if (!accountId || !propertyId) {
+  if (!propertyId) {
     return NextResponse.json(
-      { ok: false, message: 'accountId and propertyId are required.' },
+      { ok: false, message: 'propertyId is required.' },
       { status: 400 },
     );
+  }
+  const accountId = await resolveCanonicalPilotAccount(propertyId);
+  if (!accountId) return NextResponse.json({ ok: false, message: 'Property not found.' }, { status: 404 });
+  const claimedAccountId = String(body.accountId ?? body.account_id ?? '').trim();
+  if (claimedAccountId && claimedAccountId !== accountId) {
+    return NextResponse.json({ ok: false, reason: 'account_property_mismatch' }, { status: 409 });
   }
 
   if (!(await hasCurrentRuLegalAcceptance(accountId))) {

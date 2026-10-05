@@ -29,7 +29,7 @@ import {
   getPublicationReadinessStatus,
   initializePublicationPackage,
 } from './channel-publishing-preparation';
-import { getBookingOpsRecord, listBookingOpsRecords, syncBookingOpsTasksForRecordId } from './repository';
+import { getBookingOpsRecord, listBookingOpsRecords, requireBookingOpsRecordScope, syncBookingOpsTasksForRecordId } from './repository';
 import { initializeBookingOpsCoreLoop } from './core-loop-initialization';
 import { initializeCheckinExecutionBaseline } from './checkin-execution-autopilot';
 import { initializeInStayCheckoutBaseline } from './instay-checkout-autopilot';
@@ -60,6 +60,7 @@ export type PilotAutorunScope = {
 };
 
 export type PilotAutorunOptions = {
+  accountId?: string;
   dryRun?: boolean;
   maxSteps?: number;
   scope?: 'lead' | 'property' | 'booking' | 'all';
@@ -404,13 +405,18 @@ export async function runPilotAutorunForBooking(
   options?: PilotAutorunOptions,
 ): Promise<PilotAutorunResult> {
   const scope = normalizeScope({ scopeType: 'booking', scopeRef: bookingId });
-  const run = await createRun(scope, options);
   const record = await getBookingOpsRecord(scope.scopeRef);
+  if (record && options?.accountId && record.accountId !== options.accountId) throw new Error('booking_scope_mismatch');
+  const expectedScope = record?.accountId && record.accountId !== 'legacy' && record.propertyId
+    ? { accountId: record.accountId, propertyId: record.propertyId }
+    : undefined;
+  if (record && expectedScope) await requireBookingOpsRecordScope(record.id, expectedScope);
+  const run = await createRun(scope, options);
   if (!record) {
     addBlocker(run, 'Операционная бронь не найдена.', 'Проверить ID операционной брони.');
     return finishRun(run);
   }
-  const availability = await checkBookingOverbookingRisk(record.id, { checkType: 'pre_autorun' });
+  const availability = await checkBookingOverbookingRisk(record.id, { checkType: 'pre_autorun', accountId: expectedScope?.accountId });
   await addEvent(run, {
     key: 'booking.check_availability',
     status: availability.status === 'no_conflict' ? 'completed' : 'blocked',
@@ -427,30 +433,30 @@ export async function runPilotAutorunForBooking(
   }
   run.stepsCompleted.push('booking.check_availability');
   await executeStep(run, 'booking.initialize_lifecycle_legal', 'Будут созданы lifecycle и безопасные юридические черновики.', async () => {
-    await initializeBookingOpsCoreLoop(record.id);
-    await initializeGuestLegalExecution(record.id, { source: 'pilot_autorun' });
-    await requestGuestDocumentsDraft(record.id, { source: 'pilot_autorun' });
-    await createContractDraft(record.id, { source: 'pilot_autorun' });
-    await createDepositRequestDraft(record.id, { source: 'pilot_autorun' });
-    await createMvdDraft(record.id, { source: 'pilot_autorun', enoughData: Boolean(record.guestName) });
-    const legal = await recomputeGuestLegalReadiness(record.id, { source: 'pilot_autorun' });
+    await initializeBookingOpsCoreLoop(record.id, expectedScope);
+    await initializeGuestLegalExecution(record.id, { source: 'pilot_autorun' }, expectedScope);
+    await requestGuestDocumentsDraft(record.id, { source: 'pilot_autorun' }, expectedScope);
+    await createContractDraft(record.id, { source: 'pilot_autorun' }, expectedScope);
+    await createDepositRequestDraft(record.id, { source: 'pilot_autorun' }, expectedScope);
+    await createMvdDraft(record.id, { source: 'pilot_autorun', enoughData: Boolean(record.guestName) }, expectedScope);
+    const legal = await recomputeGuestLegalReadiness(record.id, { source: 'pilot_autorun' }, expectedScope);
     if (legal.status !== 'ready_for_checkin') {
       addBlocker(run, legal.nextAction ?? 'Нужна ручная проверка юридического контура.', 'Проверить документы, договор, залог и МВД.');
     }
     return 'Юридический контур и черновики созданы; завершённые статусы не подставлялись.';
   });
   await executeStep(run, 'booking.initialize_checkin', 'Будет создан базовый контур заезда.', async () => {
-    await initializeCheckinExecutionBaseline(record.id); return 'Контур заезда инициализирован.';
+    await initializeCheckinExecutionBaseline(record.id, expectedScope); return 'Контур заезда инициализирован.';
   });
   await executeStep(run, 'booking.initialize_checkout', 'Будет создан базовый контур проживания и выезда.', async () => {
-    await initializeInStayCheckoutBaseline(record.id); return 'Контур проживания и выезда инициализирован.';
+    await initializeInStayCheckoutBaseline(record.id, expectedScope); return 'Контур проживания и выезда инициализирован.';
   });
   await executeStep(run, 'booking.recompute_precheckin', 'Будет пересчитана готовность к заезду.', async () => {
-    await recomputeBookingCheckinReadiness(record.id); return 'Готовность к заезду пересчитана.';
+    await recomputeBookingCheckinReadiness(record.id, expectedScope ? { expectedScope } : undefined); return 'Готовность к заезду пересчитана.';
   });
   if (record.propertyId && record.checkInAt && record.checkOutAt) {
     await executeStep(run, 'booking.sync_ops_tasks', 'Будут синхронизированы операционные задачи.', async () => {
-      const result = await syncBookingOpsTasksForRecordId(record.id);
+      const result = await syncBookingOpsTasksForRecordId(record.id, expectedScope ? { expectedScope } : undefined);
       if (!result.ok) throw new Error(result.error);
       return 'Операционные задачи синхронизированы без дублей.';
     });
@@ -458,9 +464,10 @@ export async function runPilotAutorunForBooking(
 
   if (options?.allowSafeCommunicationQueue !== false) {
     await executeStep(run, 'booking.queue_safe_communications', 'Будут созданы и классифицированы безопасные черновики.', async () => {
-      const tasks = await listBookingOpsTasksForRecord(record.id);
+      const currentRecord = expectedScope ? await requireBookingOpsRecordScope(record.id, expectedScope) : record;
+      const tasks = await listBookingOpsTasksForRecord(record.id, expectedScope ? { expectedScope } : undefined);
       if (!tasks.ok) throw new Error(tasks.error);
-      const result = await syncBookingOpsCommunications({ record, tasks: tasks.tasks });
+      const result = await syncBookingOpsCommunications({ record: currentRecord, tasks: tasks.tasks, expectedScope });
       if (!result.ok) throw new Error(result.error);
       return 'Коммуникации поставлены в очередь и проверены политикой; отправка не выполнялась.';
     });
@@ -471,11 +478,15 @@ export async function runPilotAutorunForBooking(
 }
 
 export async function runPilotAutorunBatch(options?: PilotAutorunOptions): Promise<PilotAutorunResult> {
-  const scope = normalizeScope({ scopeType: 'batch', scopeRef: `batch:${new Date().toISOString().slice(0, 10)}` });
+  const day = new Date().toISOString().slice(0, 10);
+  const scope = normalizeScope({
+    scopeType: 'batch',
+    scopeRef: options?.accountId ? `batch:${options.accountId}:${day}` : `batch:${day}`,
+  });
   const run = await createRun(scope, options);
   const requested = options?.scope ?? 'all';
   if (requested === 'booking' || requested === 'all') {
-    const records = await listBookingOpsRecords({ limit: MAX_BATCH_SIZE });
+    const records = await listBookingOpsRecords({ limit: MAX_BATCH_SIZE, accountId: options?.accountId });
     if (!records.ok) addBlocker(run, 'Не удалось загрузить операционные брони.', 'Повторить пакетный запуск.');
     for (const record of records.records.slice(0, MAX_BATCH_SIZE)) {
       const key = `batch.booking.${record.id}`;

@@ -8,17 +8,21 @@ import {
   HandoffLockState,
   requestOperatorHandoff,
 } from '@/lib/communication/handoff-lock';
-import { __resetEscalationReviewStoreForTests } from '@/lib/communication/operator-review';
+import { __resetEscalationReviewStoreForTests, __setEscalationReviewStoreHealthForTests } from '@/lib/communication/operator-review';
 import {
   getCommAgentSessionMemory,
   resetCommAgentSessionMemoryForTests,
   updateCommAgentSessionMemory,
 } from '@/lib/communication/comm-agent-session-memory';
 
-const mocks = vi.hoisted(() => ({ sendMessage: vi.fn(async () => true) }));
+const mocks = vi.hoisted(() => ({ sendMessage: vi.fn(async () => true), accountId: 'account-a' as string | null }));
 
 vi.mock('@/lib/auth', () => ({
   getSession: vi.fn(async () => ({ userId: 'op_route_1', email: 'op@example.com' })),
+}));
+
+vi.mock('@/lib/accounts', () => ({
+  resolveAccountIdForUser: vi.fn(async () => mocks.accountId),
 }));
 
 vi.mock('@/lib/supabase', () => ({
@@ -49,10 +53,12 @@ describe('PATCH /api/operator/escalation-reviews/[reviewId] acknowledge → lock
     __resetEscalationReviewStoreForTests();
     resetCommAgentSessionMemoryForTests();
     mocks.sendMessage.mockClear();
+    mocks.accountId = 'account-a';
   });
 
   it('acknowledge locks the session for the operator and blocks AI replies', async () => {
     const { reviewId } = requestOperatorHandoff({
+      accountId: 'account-a',
       sessionId: 'sess_route_ack',
       channel: 'telegram',
       targetId: '4242',
@@ -86,6 +92,7 @@ describe('PATCH /api/operator/escalation-reviews/[reviewId] acknowledge → lock
 
   it('repeated acknowledge stays operator_active (idempotent lock)', async () => {
     const { reviewId } = requestOperatorHandoff({
+      accountId: 'account-a',
       sessionId: 'sess_route_ack_idem',
       channel: 'telegram',
       targetId: '4243',
@@ -124,6 +131,7 @@ describe('PATCH /api/operator/escalation-reviews/[reviewId] acknowledge → lock
       language: 'ru',
     });
     const { reviewId } = requestOperatorHandoff({
+      accountId: 'account-a',
       sessionId: 'sess_route_resolve',
       channel: 'telegram',
       targetId: '4244',
@@ -164,5 +172,67 @@ describe('PATCH /api/operator/escalation-reviews/[reviewId] acknowledge → lock
       unresolved_action: null,
       last_safe_reply: 'Мастер придёт после 18:00.',
     });
+  });
+});
+
+describe('operator review tenant and store safety', () => {
+  beforeEach(() => {
+    _resetForTesting();
+    __resetEscalationReviewStoreForTests();
+    resetCommAgentSessionMemoryForTests();
+    mocks.sendMessage.mockClear();
+    mocks.accountId = 'account-a';
+  });
+
+  it('cross-account send_reply is hidden and makes zero adapter calls', async () => {
+    const { reviewId } = requestOperatorHandoff({
+      accountId: 'account-b',
+      sessionId: 'sess_cross_account',
+      channel: 'telegram',
+      targetId: '4999',
+      escalationReason: 'REQUIRES_OPERATOR',
+    });
+    const { PATCH } = await import('../route');
+    const req = new NextRequest('http://localhost/api/operator/escalation-reviews/' + reviewId, {
+      method: 'PATCH',
+      body: JSON.stringify({ action: 'send_reply', replyText: 'must not send' }),
+      headers: { 'content-type': 'application/json' },
+    });
+
+    const res = await PATCH(req, { params: { reviewId } });
+    expect(res.status).toBe(404);
+    expect(mocks.sendMessage).not.toHaveBeenCalled();
+  });
+
+  it('legacy unbound review is not readable from an authenticated account', async () => {
+    const { reviewId } = requestOperatorHandoff({
+      sessionId: 'sess_unbound',
+      channel: 'telegram',
+      targetId: '5000',
+      escalationReason: 'REQUIRES_OPERATOR',
+    });
+    const { GET } = await import('../route');
+    const res = await GET(new NextRequest('http://localhost/api/operator/escalation-reviews/' + reviewId), {
+      params: { reviewId },
+    });
+    expect(res.status).toBe(404);
+  });
+
+  it('unhealthy review store returns 503 and keeps AI fail-closed', async () => {
+    const { reviewId } = requestOperatorHandoff({
+      accountId: 'account-a',
+      sessionId: 'sess_unhealthy',
+      channel: 'telegram',
+      targetId: '5001',
+      escalationReason: 'REQUIRES_OPERATOR',
+    });
+    __setEscalationReviewStoreHealthForTests(false);
+    expect(canAiReply('sess_unhealthy')).toBe(false);
+
+    const { GET } = await import('../route');
+    const res = await GET(new NextRequest('http://localhost/api/operator/escalation-reviews/' + reviewId), {
+      params: { reviewId },
+    });
+    expect(res.status).toBe(503);
   });
 });

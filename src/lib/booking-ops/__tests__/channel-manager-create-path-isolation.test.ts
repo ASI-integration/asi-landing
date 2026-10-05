@@ -9,8 +9,10 @@ import { randomUUID } from 'node:crypto';
 type Row = Record<string, any>;
 
 const {
+  attachBookingOpsRecordProperty,
   createBookingOpsRecord,
   getBookingOpsRecord,
+  requireBookingOpsRecordScope,
   updateBookingOpsRecord,
   syncBookingOpsTasksForRecordId,
   initializeCheckinExecutionBaseline,
@@ -23,8 +25,10 @@ const {
   checkAvailabilityConflict,
   initializeBookingOpsCoreLoop,
 } = vi.hoisted(() => ({
+  attachBookingOpsRecordProperty: vi.fn(),
   createBookingOpsRecord: vi.fn(),
   getBookingOpsRecord: vi.fn(),
+  requireBookingOpsRecordScope: vi.fn(),
   updateBookingOpsRecord: vi.fn(),
   syncBookingOpsTasksForRecordId: vi.fn(),
   initializeCheckinExecutionBaseline: vi.fn(),
@@ -51,6 +55,10 @@ class Query {
     this.filtered = [...rows(table)];
   }
   eq(column: string, value: unknown) {
+    this.filtered = this.filtered.filter((row) => row[column] === value);
+    return this;
+  }
+  is(column: string, value: unknown) {
     this.filtered = this.filtered.filter((row) => row[column] === value);
     return this;
   }
@@ -133,8 +141,10 @@ vi.mock('@/lib/supabase', () => ({
 }));
 
 vi.mock('../repository', () => ({
+  attachBookingOpsRecordProperty,
   createBookingOpsRecord,
   getBookingOpsRecord,
+  requireBookingOpsRecordScope,
   updateBookingOpsRecord,
   syncBookingOpsTasksForRecordId,
 }));
@@ -156,6 +166,13 @@ vi.mock('../communication-auto-send-policy', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../communication-auto-send-policy')>();
   return { ...actual, canAutoSendCommunicationIntent };
 });
+vi.mock('@/lib/communication/booking-knowledge-boundary', () => ({
+  guardBookingCommunicationDraft: vi.fn(async () => ({
+    messageText: 'Требуется проверка оператора.',
+    metadata: { knowledgeDisposition: 'operator_review' },
+    status: 'waiting_for_external_input',
+  })),
+}));
 vi.mock('../availability-overbooking-protection', () => ({
   createAvailabilityHold,
   checkAvailabilityConflict,
@@ -246,8 +263,10 @@ function seedImported(id: string, connectionId: string, provider = 'manual') {
 beforeEach(() => {
   for (const key of Object.keys(tables)) tables[key] = [];
   callOrder.length = 0;
+  attachBookingOpsRecordProperty.mockReset();
   createBookingOpsRecord.mockReset();
   getBookingOpsRecord.mockReset();
+  requireBookingOpsRecordScope.mockReset();
   updateBookingOpsRecord.mockReset();
   syncBookingOpsTasksForRecordId.mockReset();
   initializeCheckinExecutionBaseline.mockReset();
@@ -317,6 +336,17 @@ beforeEach(() => {
   getBookingOpsRecord.mockImplementation(async (id: string) => {
     const row = rows('booking_ops_records').find((item) => item.id === id);
     return row ? mapRecord(row) : null;
+  });
+
+  requireBookingOpsRecordScope.mockImplementation(async (
+    id: string,
+    scope: { accountId: string; propertyId: string },
+  ) => {
+    const row = rows('booking_ops_records').find((item) => item.id === id);
+    if (!row || row.account_id !== scope.accountId || row.property_id !== scope.propertyId) {
+      throw new Error('booking_scope_mismatch');
+    }
+    return mapRecord(row);
   });
 
   updateBookingOpsRecord.mockImplementation(async (id: string, patch: Row) => {
@@ -490,6 +520,7 @@ describe('Channel Manager create-path isolation (real shared intake)', () => {
     const scopedKey = computeChannelManagerIdempotencyKey(CONNECTION_A, 'manual', EXTERNAL_ID);
     rows('booking_inbound_intake_events').push({
       id: randomUUID(),
+      account_id: ACCOUNT_A,
       source: 'channel_manager_placeholder',
       idempotency_key: scopedKey,
       status: 'processed',

@@ -680,7 +680,7 @@ export default function CommunicationPage() {
   return (
     <div className="space-y-5">
       <header className="space-y-2">
-        <h1 className="text-3xl font-bold tracking-tight text-slate-900">Коммуникация с гостями</h1>
+        <h1 className="text-3xl font-bold tracking-tight text-slate-900">Коммуникация с гостями</h1><a className="text-sm underline" href="/dashboard/communication/unidentified">Диалоги без подтверждённого объекта · операторы ASI</a>
         <p className="text-sm text-slate-600">
           Рабочий экран для сообщений гостей: Telegram уже основной, Email даёт базовый контур, телефон подключается следующим этапом.
         </p>

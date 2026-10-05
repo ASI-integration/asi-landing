@@ -13,7 +13,7 @@ describe('RU homepage metadata source', () => {
     expect(metadata).toBe(RU_HOME_METADATA);
     expect(await generateMetadata()).toMatchObject(RU_HOME_METADATA);
     expect(metadata.title).toBe('ASI сама ведёт рутину ваших объектов');
-    for (const term of ['Подключение бесплатно', '14 дней после готовности', 'только по вашему решению']) expect(metadata.description).toContain(term);
+    for (const term of ['Подключение и настройка', '0 ₽', '14 дней полноценной работы бесплатно', 'только по вашему решению']) expect(metadata.description).toContain(term);
     expect(metadata.description).not.toMatch(/1(?:[\s\u00a0])?000 ₽|12 месяцев|Стригунова/);
   });
   it('also selects RU copy with the explicit local RU configuration', async () => {
@@ -26,7 +26,8 @@ describe('RU homepage metadata source', () => {
     request.host = 'guestautopilot.com';
     const result = await generateMetadata();
     expect(result.title).toBe('ASI Global — Operations on autopilot. Humans on exceptions.');
-    expect(result.description).toContain('ASI handles the daily work of physical businesses');
+    expect(result.description).toContain('ASI coordinates routine operational workflows across physical businesses');
+    expect(result.description).toContain('people handle exceptions and unsupported external steps');
     expect(result.alternates).not.toHaveProperty('languages');
   });
 });

@@ -58,6 +58,7 @@ import {
 } from './conversation-session-store';
 import {
   recordGuestOperationalEvent,
+  resolveGuestMemoryAccountId,
   type GuestMemoryEventType,
 } from './guest-long-term-memory';
 
@@ -106,13 +107,19 @@ export function getHandoffLockState(sessionId: string): HandoffLockState {
  * Returns false while operator handoff is requested or active.
  */
 export function canAiReply(sessionId: string): boolean {
-  const state = getHandoffLockState(sessionId);
-  return state === HandoffLockState.AiActive || state === HandoffLockState.ReturnedToAi;
+  try {
+    const state = getHandoffLockState(sessionId);
+    return state === HandoffLockState.AiActive || state === HandoffLockState.ReturnedToAi;
+  } catch {
+    // Review-store ambiguity must never unlock AI replies.
+    return false;
+  }
 }
 
 // ─── Write API ───────────────────────────────────────────────────────────────
 
 export interface RequestOperatorHandoffInput {
+  accountId?: string | null;
   sessionId: string;
   channel: CommunicationChannel;
   /** Outbound routing target (e.g. Telegram chat id as string). */
@@ -155,6 +162,7 @@ export function requestOperatorHandoff(
   const alreadyLocked = Boolean(preExistingId);
 
   const review = createOrUpdateEscalationReview({
+    accountId:         input.accountId,
     sessionId:         input.sessionId,
     channel:           input.channel,
     targetId:          input.targetId,
@@ -227,6 +235,7 @@ export function lockSessionForOperator(
 }
 
 export interface ReleaseSessionToAiInput {
+  expectedReviewId?: string;
   sessionId: string;
   operatorId: string;
   reason: string;
@@ -250,6 +259,7 @@ export function releaseSessionToAi(
     operatorId: input.operatorId,
     reason: input.reason,
     approvedAnswer: input.approvedAnswer,
+    expectedReviewId: input.expectedReviewId,
   });
 
   if (!closedReviewId && typeof input.chatId === 'number' && Number.isFinite(input.chatId)) {
@@ -335,6 +345,7 @@ export async function resolveOperatorHandoffWithReply(input: {
     }
   }
   const released = releaseSessionToAi({
+    expectedReviewId: review.reviewId,
     sessionId: review.sessionId,
     operatorId: input.operatorId,
     reason: 'operator_reply_resolved',
@@ -344,6 +355,11 @@ export async function resolveOperatorHandoffWithReply(input: {
   const closed = getEscalationReview(review.reviewId) ?? review;
   const guestId = String(review.source?.guest_id ?? '').trim();
   if (guestId && !sent.duplicatePrevented) {
+    const accountId = await resolveGuestMemoryAccountId({
+      accountId: review.accountId,
+      propertyId: review.propertyId,
+      reservationId: review.reservationId,
+    });
     const reason = String(review.escalationReason ?? '').toLowerCase();
     const eventType: GuestMemoryEventType = reason.includes('maintenance')
       ? 'maintenance_resolution'
@@ -354,7 +370,8 @@ export async function resolveOperatorHandoffWithReply(input: {
           : reason.includes('late_checkout')
             ? 'late_checkout_history'
             : 'operator_confirmed_resolution';
-    await recordGuestOperationalEvent({
+    if (review.accountId && accountId === review.accountId) await recordGuestOperationalEvent({
+      accountId,
       guestId,
       type: eventType,
       summary: `Оператор подтвердил решение по событию: ${review.escalationReason}`,

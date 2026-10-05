@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { isOpsAdminEmail } from '@/lib/crm/access';
 import { requireCrmOperatorSession, requireOpsAdminSession } from '@/lib/crm/api-auth';
 import { createBookingOpsRecord, listBookingOpsRecords } from '@/lib/booking-ops/repository';
+import { requireBookingOpsPropertyAccess, resolveBookingOpsAccount } from '@/lib/booking-ops/route-access';
 import { parseCreateBookingOpsInput } from '@/lib/booking-ops/validation';
 
 export const runtime = 'nodejs';
@@ -11,7 +12,13 @@ export async function GET(): Promise<NextResponse> {
   const auth = await requireCrmOperatorSession();
   if ('error' in auth) return auth.error;
 
-  const result = await listBookingOpsRecords();
+  let accountId: string;
+  try {
+    accountId = (await resolveBookingOpsAccount(auth.session)).accountId;
+  } catch {
+    return NextResponse.json({ ok: false, message: 'account_workspace_unavailable' }, { status: 503 });
+  }
+  const result = await listBookingOpsRecords({ accountId });
   if (!result.ok) {
     return NextResponse.json(
       { ok: false, message: result.error ?? 'Не удалось загрузить операционные брони.' },
@@ -43,7 +50,22 @@ export async function POST(req: Request): Promise<NextResponse> {
     return NextResponse.json({ ok: false, message: parsed.error }, { status: 400 });
   }
 
-  const result = await createBookingOpsRecord(parsed.input, { actorType: 'admin' });
+  let accountId: string;
+  try {
+    accountId = (await resolveBookingOpsAccount(auth.session)).accountId;
+    if (parsed.input.propertyId) {
+      await requireBookingOpsPropertyAccess(auth.session, parsed.input.propertyId);
+    }
+  } catch (error) {
+    const code = error instanceof Error ? error.message : '';
+    const status = code === 'property_scope_mismatch' ? 403 : 503;
+    return NextResponse.json({ ok: false, message: code || 'account_workspace_unavailable' }, { status });
+  }
+
+  const result = await createBookingOpsRecord(
+    { ...parsed.input, accountId },
+    { actorType: 'admin' },
+  );
   if (!result.ok || !result.record) {
     return NextResponse.json(
       { ok: false, message: result.error ?? 'Не удалось создать операционную запись.' },

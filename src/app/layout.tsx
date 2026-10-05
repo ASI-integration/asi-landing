@@ -8,8 +8,8 @@ import { LocalePathSync } from '@/components/LocalePathSync';
 import { hostnameFromHostHeader, isRuRuntimeHost } from '@/lib/runtimeHost';
 
 const baseMetadata = {
-  title: 'ASI — Full operational automation',
-  description: 'Full operational automation for real estate and hospitality: guest comms, listings, pricing, bookings, and execution — replaces the ops layer, not another tool.',
+  title: 'ASI — Operational coordination for physical businesses',
+  description: 'Automation-first operating layer for real estate and hospitality: coordinates communication, bookings, tasks, readiness, and exceptions across supported workflows.',
   icons: {
     icon: '/brand/asi-global-mark.png',
   },
@@ -28,8 +28,8 @@ export async function generateMetadata(): Promise<Metadata> {
       ...baseMetadata,
       alternates: {
         languages: {
-          'x-default': 'https://asi-global.com',
-          en: 'https://asi-global.com',
+          'x-default': 'https://www.guestautopilot.com',
+          en: 'https://www.guestautopilot.com',
           ru: 'https://asi-global.ru/',
         },
       },

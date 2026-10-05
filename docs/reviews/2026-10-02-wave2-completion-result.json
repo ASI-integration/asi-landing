@@ -1,0 +1,64 @@
+{
+  "schemaVersion": "asi.agent-os.task-result.v1",
+  "taskId": "wave2-communication-provenance-completion",
+  "status": "DONE",
+  "branch": "astra/wave2-communication-provenance-20261001",
+  "baseSha": "8db402c8a87219056e155c6232b5663c0f670b8b",
+  "codeCommitSha": "40ec4951eafe429ee3ed16d075fa951614b67f1b",
+  "checks": [
+    {
+      "name": "wave2-completion-boundary",
+      "status": "PASS",
+      "evidence": "10 files / 207 tests PASS."
+    },
+    {
+      "name": "communication-safety-regression",
+      "status": "PASS",
+      "evidence": "9 files / 100 tests PASS."
+    },
+    {
+      "name": "first-pilot-frozen",
+      "status": "PASS",
+      "evidence": "11 files / 124 tests PASS."
+    },
+    {
+      "name": "wave1-location-frozen",
+      "status": "PASS",
+      "evidence": "8 files / 147 tests PASS."
+    },    {
+      "name": "legacy-orchestrator-comparison",
+      "status": "PASS",
+      "evidence": "Current 13 failures vs 14 on frozen 8db402c8 baseline; zero new failures and one prior failure now passes."
+    },
+    {
+      "name": "broader-changed-surface",
+      "status": "PASS_WITH_BASELINE_DEBT",
+      "evidence": "292 tests PASS; 13 failures in autopilot-intake and guest-lifecycle-production-acceptance-workflow reproduce identically on 8db402c8."
+    },
+    {
+      "name": "typecheck-eslint-diff-check",
+      "status": "PASS",
+      "evidence": "Typecheck, changed-surface ESLint and diff-check all exit 0."
+    }
+  ],
+  "manualBoundaries": [
+    "Automatic guest sending remains disabled.",
+    "Non-Telegram factual binding remains operator-review only until an authoritative binding adapter exists.",
+    "Unidentified conversations remain quarantined to explicit platform operators for identity clarification.",
+    "Legacy failing test assumptions remain baseline debt and are not full-repository acceptance."
+  ],
+  "sideEffects": {
+    "production": false,
+    "staging": false,
+    "database": false,
+    "providers": false,
+    "messages": false,
+    "payments": false,
+    "secrets": false,
+    "dns": false,
+    "push": false,
+    "merge": false,
+    "deploy": false
+  },
+  "blockers": []
+}

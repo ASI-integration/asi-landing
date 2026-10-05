@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { supabase } from '@/lib/supabase';
 import { initialLifecycleState, reduceLifecycle, type LifecycleEvent, type LifecycleState } from './lifecycle-autopilot';
 import { COMPLETION_ROLE, lifecycleProjection, taskCompletionTarget } from './lifecycle-convergence';
+import { requireBookingOpsRecordScope } from './repository';
 
 type Row = { id: string; account_id: string | null; property_id: string | null; reservation_metadata: Record<string, unknown> | null };
 const safe = (metadata: Record<string, unknown> | null) => metadata?.acceptance_safe === true || metadata?.test_reservation === true || metadata?.environment === 'test';
@@ -46,15 +47,20 @@ export async function reconcileBookingLifecycle(input: { bookingId: string; acco
   });
   const changed = projectionChanged || taskRepairs.length > 0;
   if (input.dryRun !== false || !changed) return { dryRun: input.dryRun !== false, changed, stage: state.stage, projectionChanged, taskRepairs: taskRepairs.length };
+  if (!record.property_id) throw new Error('booking_scope_unavailable');
+  const expectedScope = { accountId: input.accountId, propertyId: record.property_id };
   const now = new Date().toISOString();
   if (projectionChanged) {
+    await requireBookingOpsRecordScope(input.bookingId, expectedScope);
     const write = await supabase.from('booking_ops_lifecycle_states').upsert({ booking_id: input.bookingId, ...projection, last_orchestrated_at: now, updated_at: now }, { onConflict: 'booking_id' });
     if (write.error) throw new Error(write.error.message);
   }
   for (const { task, event } of taskRepairs) {
+    await requireBookingOpsRecordScope(input.bookingId, expectedScope);
     const write = await supabase.from('booking_ops_worker_tasks').update({ status: 'completed', completed_at: now, completion_event_id: event.id, updated_at: now }).eq('id', task.id).eq('booking_id', input.bookingId).eq('assigned_role', COMPLETION_ROLE[event.type]!).neq('status', 'cancelled');
     if (write.error) throw new Error(write.error.message);
   }
+  await requireBookingOpsRecordScope(input.bookingId, expectedScope);
   const audit = await supabase.from('booking_ops_lifecycle_events').insert({ id: randomUUID(), booking_id: input.bookingId, property_id: record.property_id, event_type: 'projection_reconciled', event_payload: { projectionChanged, taskRepairs: taskRepairs.length, noExternalActions: true }, actor_type: 'operator', actor_id: input.actorId, dedupe_key: `ops-v17.3-reconcile:${state.stage}:${taskRepairs.length}` });
   if (audit.error?.code !== '23505' && audit.error) throw new Error(audit.error.message);
   return { dryRun: false, changed: true, stage: state.stage, projectionChanged, taskRepairs: taskRepairs.length };

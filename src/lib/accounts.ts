@@ -154,3 +154,12 @@ export async function resolveAccountIdForUser(userId: string): Promise<string | 
   }
 }
 
+
+/** Owner setup must not inherit access from an operator-only membership. */
+export async function resolveOwnerAccountIdForUser(userId: string): Promise<string | null> {
+  const { data, error } = await supabase.from('account_members').select('account_id')
+    .eq('user_id', userId).in('role', ['owner', 'manager'])
+    .order('created_at', { ascending: true }).limit(1).maybeSingle();
+  if (error) throw error;
+  return typeof data?.account_id === 'string' && data.account_id !== 'legacy' ? data.account_id : null;
+}

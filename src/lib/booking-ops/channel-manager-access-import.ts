@@ -6,6 +6,11 @@ import {
   canAutoSendCommunicationIntent,
 } from './communication-auto-send-policy';
 import { processInboundBookingRequest } from './real-booking-intake-autopilot';
+import {
+  assertChannelManagerConnectionScopeCurrent,
+  resolveChannelManagerConnectionScope,
+  type ChannelManagerCanonicalScope,
+} from './channel-manager-scope';
 
 export const CHANNEL_MANAGER_PROVIDERS = ['manual', 'bnovo', 'realtycalendar', 'travelline', 'other'] as const;
 export type ChannelManagerProvider = (typeof CHANNEL_MANAGER_PROVIDERS)[number];
@@ -202,6 +207,43 @@ function mapRun(row: Record<string, unknown>): ChannelImportRun {
   };
 }
 
+const IMPORT_RUN_SCOPE_KEY = 'canonicalConnectionScope';
+
+function serializeChannelManagerScope(scope: ChannelManagerCanonicalScope): Record<string, string | null> {
+  return {
+    connectionId: scope.connectionId,
+    ownerSetupId: scope.ownerSetupId,
+    propertySetupId: scope.propertySetupId,
+    propertyId: scope.propertyId,
+    accountId: scope.accountId,
+  };
+}
+
+function parseImportRunScope(run: ChannelImportRun): ChannelManagerCanonicalScope {
+  const raw = run.metadata?.[IMPORT_RUN_SCOPE_KEY];
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    throw Object.assign(new Error('У запуска импорта отсутствует канонический контур подключения.'), {
+      code: 'connection_scope_invalid',
+    });
+  }
+  const scope = raw as Record<string, unknown>;
+  const connectionId = text(scope.connectionId);
+  const ownerSetupId = text(scope.ownerSetupId);
+  const propertySetupId = text(scope.propertySetupId);
+  if (!connectionId || !ownerSetupId || !propertySetupId || connectionId !== run.connectionId) {
+    throw Object.assign(new Error('Канонический контур запуска импорта повреждён.'), {
+      code: 'connection_scope_invalid',
+    });
+  }
+  return {
+    connectionId,
+    ownerSetupId,
+    propertySetupId,
+    propertyId: nullableText(scope.propertyId),
+    accountId: nullableText(scope.accountId),
+  };
+}
+
 async function getConnection(connectionId: string): Promise<ChannelManagerConnection> {
   const id = assertUuid(connectionId, 'ID подключения');
   const { data, error } = await supabase.from('booking_channel_manager_connections').select('*').eq('id', id).maybeSingle();
@@ -209,12 +251,116 @@ async function getConnection(connectionId: string): Promise<ChannelManagerConnec
   return mapConnection(data as Record<string, unknown>);
 }
 
-export async function queueChannelManagerCommunication(connection: ChannelManagerConnection, messageType: string, messageText: string): Promise<string | null> {
+function connectionScopeMismatch(message: string): Error {
+  return Object.assign(new Error(message), { code: 'account_scope_mismatch' });
+}
+
+async function assertPropertySetupInitializationScopeCurrent(
+  propertySetupId: string,
+  expectedOwnerSetupId: string,
+  expectedPropertyId: string | null,
+): Promise<void> {
+  const { data: property, error } = await supabase
+    .from('booking_property_setup_profiles')
+    .select('id,owner_setup_id,property_id')
+    .eq('id', propertySetupId)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!property) throw connectionScopeMismatch('Профиль объекта исчез до создания подключения.');
+  if (
+    text(property.owner_setup_id) !== expectedOwnerSetupId
+    || nullableText(property.property_id) !== expectedPropertyId
+  ) {
+    throw connectionScopeMismatch('Контур объекта изменился до создания подключения.');
+  }
+}
+
+async function assertInitializedConnectionScopeCurrent(
+  connection: ChannelManagerConnection,
+  expectedOwnerSetupId: string,
+  expectedPropertySetupId: string,
+  expectedPropertyId: string | null,
+): Promise<void> {
+  const current = await resolveChannelManagerConnectionScope(connection);
+  if (
+    current.ownerSetupId !== expectedOwnerSetupId
+    || current.propertySetupId !== expectedPropertySetupId
+    || current.propertyId !== expectedPropertyId
+  ) {
+    throw connectionScopeMismatch('Контур объекта изменился во время создания подключения.');
+  }
+}
+
+function assertConnectionMetadataKeepsScope(
+  metadata: Record<string, unknown>,
+  expectedScope: ChannelManagerCanonicalScope,
+): void {
+  if (nullableText(metadata.accountId) !== expectedScope.accountId) {
+    throw connectionScopeMismatch('Аккаунт подключения изменился во время операции.');
+  }
+}
+
+async function updateChannelManagerConnectionWithinScope(
+  connectionId: string,
+  expectedScope: ChannelManagerCanonicalScope,
+  buildPatch: (current: ChannelManagerConnection) => Record<string, unknown>,
+  errorMessage: string,
+): Promise<ChannelManagerConnection> {
+  if (connectionId !== expectedScope.connectionId) {
+    throw connectionScopeMismatch('Операция относится к другому подключению.');
+  }
+  await assertChannelManagerConnectionScopeCurrent(expectedScope);
+  const current = await getConnection(connectionId);
+  await assertChannelManagerConnectionScopeCurrent(expectedScope);
+  const patch = buildPatch(current);
+  if (patch.metadata && typeof patch.metadata === 'object' && !Array.isArray(patch.metadata)) {
+    assertConnectionMetadataKeepsScope(patch.metadata as Record<string, unknown>, expectedScope);
+  }
+  const { data, error } = await supabase
+    .from('booking_channel_manager_connections')
+    .update(patch)
+    .eq('id', connectionId)
+    .eq('owner_setup_id', expectedScope.ownerSetupId)
+    .eq('property_setup_id', expectedScope.propertySetupId)
+    .select('*')
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!data) throw connectionScopeMismatch(errorMessage);
+  const updated = mapConnection(data as Record<string, unknown>);
+  await assertChannelManagerConnectionScopeCurrent(expectedScope);
+  return updated;
+}
+
+async function updateChannelManagerPropertyAccessWithinScope(
+  expectedScope: ChannelManagerCanonicalScope,
+  channelAccessStatus: string,
+  updatedAt: string,
+): Promise<void> {
+  await assertChannelManagerConnectionScopeCurrent(expectedScope);
+  const { data, error } = await supabase
+    .from('booking_property_setup_profiles')
+    .update({ channel_access_status: channelAccessStatus, updated_at: updatedAt })
+    .eq('id', expectedScope.propertySetupId)
+    .eq('owner_setup_id', expectedScope.ownerSetupId)
+    .select('id')
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!data) throw connectionScopeMismatch('Профиль объекта изменился во время обновления доступа.');
+  await assertChannelManagerConnectionScopeCurrent(expectedScope);
+}
+
+export async function queueChannelManagerCommunication(
+  connection: ChannelManagerConnection,
+  messageType: string,
+  messageText: string,
+  expectedScope?: ChannelManagerCanonicalScope,
+): Promise<string | null> {
   if (!connection.ownerSetupId) return null;
   const decision = await canAutoSendCommunicationIntent({
     actorType: 'owner', purpose: 'internal_status_notice', channel: 'manual', messageText,
     metadata: { messageType, channelManagerAccessImport: true },
   }, { ownerId: connection.ownerId, propertyId: null });
+  if (expectedScope) await assertChannelManagerConnectionScopeCurrent(expectedScope);
   const id = randomUUID();
   const now = new Date().toISOString();
   const { error } = await supabase.from('booking_owner_setup_communication_intents').insert({
@@ -259,57 +405,116 @@ export async function initializeChannelManagerConnection(propertySetupId: string
   const normalizedProvider = normalizeProvider(provider);
   const { data: property, error: propertyError } = await supabase.from('booking_property_setup_profiles').select('*').eq('id', propertyId).maybeSingle();
   if (propertyError || !property) throw new Error('Профиль объекта не найден.');
+  const expectedOwnerSetupId = text(property.owner_setup_id);
+  if (!expectedOwnerSetupId) throw connectionScopeMismatch('У профиля объекта не указан владелец.');
+  const expectedPropertyId = nullableText(property.property_id);
+  await assertPropertySetupInitializationScopeCurrent(propertyId, expectedOwnerSetupId, expectedPropertyId);
   const now = new Date().toISOString();
   const row = {
-    id: randomUUID(), owner_setup_id: property.owner_setup_id ?? null, property_setup_id: propertyId,
+    id: randomUUID(), owner_setup_id: expectedOwnerSetupId, property_setup_id: propertyId,
     owner_id: null, provider: normalizedProvider, status: 'not_started', access_status: 'unknown',
     metadata: safeMetadata(metadata), created_at: now, updated_at: now,
   };
   const { data, error } = await supabase.from('booking_channel_manager_connections').upsert(row, { onConflict: 'property_setup_id,provider', ignoreDuplicates: true }).select('*').maybeSingle();
   if (error) throw new Error(error.message);
-  if (data) return mapConnection(data as Record<string, unknown>);
+  if (data) {
+    const connection = mapConnection(data as Record<string, unknown>);
+    await assertInitializedConnectionScopeCurrent(connection, expectedOwnerSetupId, propertyId, expectedPropertyId);
+    return connection;
+  }
   const { data: existing, error: existingError } = await supabase.from('booking_channel_manager_connections').select('*').eq('property_setup_id', propertyId).eq('provider', normalizedProvider).single();
   if (existingError || !existing) throw new Error(existingError?.message ?? 'Не удалось создать подключение.');
-  return mapConnection(existing as Record<string, unknown>);
+  const connection = mapConnection(existing as Record<string, unknown>);
+  await assertInitializedConnectionScopeCurrent(connection, expectedOwnerSetupId, propertyId, expectedPropertyId);
+  return connection;
 }
 
-export async function requestChannelManagerAccess(propertySetupId: string, provider: ChannelManagerProvider, metadata?: Record<string, unknown>): Promise<ChannelManagerConnection> {
+export async function requestChannelManagerAccess(
+  propertySetupId: string,
+  provider: ChannelManagerProvider,
+  metadata?: Record<string, unknown>,
+  expectedScope?: ChannelManagerCanonicalScope,
+): Promise<ChannelManagerConnection> {
   const connection = await initializeChannelManagerConnection(propertySetupId, provider, metadata);
+  const scope = expectedScope ?? await resolveChannelManagerConnectionScope(connection);
   const now = new Date().toISOString();
-  const { data, error } = await supabase.from('booking_channel_manager_connections').update({ status: 'requested', access_status: 'requested', updated_at: now }).eq('id', connection.id).select('*').single();
-  if (error || !data) throw new Error(error?.message ?? 'Не удалось запросить доступ.');
-  const updated = mapConnection(data as Record<string, unknown>);
-  await supabase.from('booking_property_setup_profiles').update({ channel_access_status: 'requested', updated_at: now }).eq('id', propertySetupId);
-  await queueChannelManagerCommunication(updated, 'request_channel_manager_access', 'Для подготовки импорта нужен доступ к менеджеру каналов. Передайте его безопасным способом — не отправляйте пароль или токен в сообщении.');
+  const updated = await updateChannelManagerConnectionWithinScope(
+    connection.id,
+    scope,
+    () => ({ status: 'requested', access_status: 'requested', updated_at: now }),
+    'Контур подключения изменился до запроса доступа.',
+  );
+  await updateChannelManagerPropertyAccessWithinScope(scope, 'requested', now);
+  await queueChannelManagerCommunication(
+    updated,
+    'request_channel_manager_access',
+    'Для подготовки импорта нужен доступ к менеджеру каналов. Передайте его безопасным способом — не отправляйте пароль или токен в сообщении.',
+    scope,
+  );
   return updated;
 }
 
-export async function markChannelManagerAccessReceived(connectionId: string, safeAccessRef?: string | null, metadata?: Record<string, unknown>): Promise<ChannelManagerConnection> {
+export async function markChannelManagerAccessReceived(
+  connectionId: string,
+  safeAccessRef?: string | null,
+  metadata?: Record<string, unknown>,
+  expectedScope?: ChannelManagerCanonicalScope,
+): Promise<ChannelManagerConnection> {
   const connection = await getConnection(connectionId);
+  const scope = expectedScope ?? await resolveChannelManagerConnectionScope(connection);
+  const incomingMetadata = safeMetadata(metadata);
   const ref = validateSafeAccessRef(safeAccessRef);
   const now = new Date().toISOString();
-  const { data, error } = await supabase.from('booking_channel_manager_connections').update({
-    status: ref ? 'access_received' : 'credential_ref_pending', access_status: 'received', safe_access_ref: ref,
-    metadata: { ...connection.metadata, ...safeMetadata(metadata) }, failure_reason: null, updated_at: now,
-  }).eq('id', connection.id).select('*').single();
-  if (error || !data) throw new Error(error?.message ?? 'Не удалось отметить получение доступа.');
-  if (connection.propertySetupId) await supabase.from('booking_property_setup_profiles').update({ channel_access_status: 'received', updated_at: now }).eq('id', connection.propertySetupId);
-  const updated = mapConnection(data as Record<string, unknown>);
-  await queueChannelManagerCommunication(updated, 'channel_access_received_acknowledgement', 'Доступ к менеджеру каналов отмечен как полученный. Пароли и токены в ASI не сохранены.');
+  const updated = await updateChannelManagerConnectionWithinScope(
+    connection.id,
+    scope,
+    (current) => ({
+      status: ref ? 'access_received' : 'credential_ref_pending',
+      access_status: 'received',
+      safe_access_ref: ref,
+      metadata: { ...current.metadata, ...incomingMetadata },
+      failure_reason: null,
+      updated_at: now,
+    }),
+    'Контур подключения изменился до фиксации полученного доступа.',
+  );
+  await updateChannelManagerPropertyAccessWithinScope(scope, 'received', now);
+  await queueChannelManagerCommunication(
+    updated,
+    'channel_access_received_acknowledgement',
+    'Доступ к менеджеру каналов отмечен как полученный. Пароли и токены в ASI не сохранены.',
+    scope,
+  );
   return updated;
 }
 
-export async function markChannelManagerAccessInvalid(connectionId: string, reason: string, metadata?: Record<string, unknown>): Promise<ChannelManagerConnection> {
+export async function markChannelManagerAccessInvalid(
+  connectionId: string,
+  reason: string,
+  metadata?: Record<string, unknown>,
+  expectedScope?: ChannelManagerCanonicalScope,
+): Promise<ChannelManagerConnection> {
   const connection = await getConnection(connectionId);
+  const scope = expectedScope ?? await resolveChannelManagerConnectionScope(connection);
+  const incomingMetadata = safeMetadata(metadata);
   assertNoSecrets(reason);
   const now = new Date().toISOString();
-  const { data, error } = await supabase.from('booking_channel_manager_connections').update({
-    status: 'blocked', access_status: 'invalid', safe_access_ref: null, failure_reason: text(reason).slice(0, 500),
-    metadata: { ...connection.metadata, ...safeMetadata(metadata) }, last_failure_at: now, updated_at: now,
-  }).eq('id', connection.id).select('*').single();
-  if (error || !data) throw new Error(error?.message ?? 'Не удалось обновить доступ.');
-  if (connection.propertySetupId) await supabase.from('booking_property_setup_profiles').update({ channel_access_status: 'invalid', updated_at: now }).eq('id', connection.propertySetupId);
-  return mapConnection(data as Record<string, unknown>);
+  const updated = await updateChannelManagerConnectionWithinScope(
+    connection.id,
+    scope,
+    (current) => ({
+      status: 'blocked',
+      access_status: 'invalid',
+      safe_access_ref: null,
+      failure_reason: text(reason).slice(0, 500),
+      metadata: { ...current.metadata, ...incomingMetadata },
+      last_failure_at: now,
+      updated_at: now,
+    }),
+    'Контур подключения изменился до фиксации недействительного доступа.',
+  );
+  await updateChannelManagerPropertyAccessWithinScope(scope, 'invalid', now);
+  return updated;
 }
 
 export async function getChannelManagerConnectionStatus(ref: string | { connectionId?: string; propertySetupId?: string }): Promise<ChannelManagerConnection | null> {
@@ -333,52 +538,125 @@ export async function listChannelManagerConnections(propertySetupId?: string): P
 
 export async function startChannelImportRun(connectionId: string, importType: ChannelImportType, options?: { dryRun?: boolean; executeProvider?: boolean; metadata?: Record<string, unknown> }): Promise<ChannelImportRun> {
   const connection = await getConnection(connectionId);
+  const expectedScope = await resolveChannelManagerConnectionScope(connection);
   if (!(CHANNEL_IMPORT_TYPES as readonly string[]).includes(importType)) throw new Error('Недопустимый тип импорта.');
   if (options?.executeProvider && !CHANNEL_PROVIDER_ADAPTERS[connection.provider].supports_real_api) {
     throw new Error(`Реальный API ${connection.provider} в этой версии не подключён. Используйте ручной снимок JSON.`);
   }
   const now = new Date().toISOString();
+  await assertChannelManagerConnectionScopeCurrent(expectedScope);
+  const runMetadata = {
+    ...safeMetadata(options?.metadata),
+    [IMPORT_RUN_SCOPE_KEY]: serializeChannelManagerScope(expectedScope),
+  };
   const { data, error } = await supabase.from('booking_channel_import_runs').insert({
     id: randomUUID(), connection_id: connection.id, provider: connection.provider,
     status: options?.dryRun ? 'dry_run' : 'running', import_type: importType, started_at: now,
-    warnings: [], errors: [], metadata: safeMetadata(options?.metadata), created_at: now, updated_at: now,
+    warnings: [], errors: [], metadata: runMetadata, created_at: now, updated_at: now,
   }).select('*').single();
   if (error || !data) throw new Error(error?.message ?? 'Не удалось начать импорт.');
-  await supabase.from('booking_channel_manager_connections').update({ last_import_at: now, updated_at: now }).eq('id', connection.id);
+  await assertChannelManagerConnectionScopeCurrent(expectedScope);
+  const { data: updatedConnection, error: connectionError } = await supabase
+    .from('booking_channel_manager_connections')
+    .update({ last_import_at: now, updated_at: now })
+    .eq('id', connection.id)
+    .eq('owner_setup_id', expectedScope.ownerSetupId)
+    .eq('property_setup_id', expectedScope.propertySetupId)
+    .select('id')
+    .maybeSingle();
+  if (connectionError) throw new Error(connectionError.message);
+  if (!updatedConnection) throw Object.assign(new Error('Контур подключения изменился во время запуска импорта.'), { code: 'account_scope_mismatch' });
   return mapRun(data as Record<string, unknown>);
 }
 
 export async function completeChannelImportRun(importRunId: string, result: { objects?: number; bookings?: number; calendarDays?: number; prices?: number; warnings?: unknown[]; safeSummary?: string; dryRun?: boolean }, metadata?: Record<string, unknown>): Promise<ChannelImportRun> {
   const id = assertUuid(importRunId, 'ID запуска');
   assertNoSecrets(result);
+  const { data: currentRow, error: currentError } = await supabase
+    .from('booking_channel_import_runs')
+    .select('*')
+    .eq('id', id)
+    .maybeSingle();
+  if (currentError || !currentRow) throw new Error(currentError?.message ?? 'Запуск импорта не найден.');
+
+  const currentRun = mapRun(currentRow as Record<string, unknown>);
+  const expectedScope = parseImportRunScope(currentRun);
+  await assertChannelManagerConnectionScopeCurrent(expectedScope);
+
   const now = new Date().toISOString();
   const warnings = result.warnings ?? [];
+  const completionMetadata = {
+    ...currentRun.metadata,
+    ...safeMetadata(metadata),
+    [IMPORT_RUN_SCOPE_KEY]: serializeChannelManagerScope(expectedScope),
+  };
   const { data, error } = await supabase.from('booking_channel_import_runs').update({
     status: result.dryRun ? 'dry_run' : warnings.length ? 'completed_with_warnings' : 'completed', finished_at: now,
     imported_objects_count: result.objects ?? 0, imported_bookings_count: result.bookings ?? 0,
     imported_calendar_days_count: result.calendarDays ?? 0, imported_prices_count: result.prices ?? 0,
-    warnings, safe_summary: nullableText(result.safeSummary), metadata: safeMetadata(metadata), updated_at: now,
-  }).eq('id', id).select('*').single();
-  if (error || !data) throw new Error(error?.message ?? 'Не удалось завершить импорт.');
-  await supabase.from('booking_channel_manager_connections').update({ status: 'import_ready', last_success_at: now, failure_reason: null, updated_at: now }).eq('id', data.connection_id);
+    warnings, safe_summary: nullableText(result.safeSummary), metadata: completionMetadata, updated_at: now,
+  }).eq('id', id).eq('connection_id', expectedScope.connectionId).select('*').maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!data) throw Object.assign(new Error('Запуск импорта больше не принадлежит исходному подключению.'), { code: 'account_scope_mismatch' });
+
+  await assertChannelManagerConnectionScopeCurrent(expectedScope);
+  const { data: updatedConnection, error: connectionError } = await supabase
+    .from('booking_channel_manager_connections')
+    .update({ status: 'import_ready', last_success_at: now, failure_reason: null, updated_at: now })
+    .eq('id', expectedScope.connectionId)
+    .eq('owner_setup_id', expectedScope.ownerSetupId)
+    .eq('property_setup_id', expectedScope.propertySetupId)
+    .select('id')
+    .maybeSingle();
+  if (connectionError) throw new Error(connectionError.message);
+  if (!updatedConnection) throw Object.assign(new Error('Контур подключения изменился до завершения импорта.'), { code: 'account_scope_mismatch' });
   return mapRun(data as Record<string, unknown>);
 }
 
 export async function failChannelImportRun(importRunId: string, reason: string, metadata?: Record<string, unknown>): Promise<ChannelImportRun> {
   const id = assertUuid(importRunId, 'ID запуска');
   assertNoSecrets(reason);
+  const { data: currentRow, error: currentError } = await supabase
+    .from('booking_channel_import_runs')
+    .select('*')
+    .eq('id', id)
+    .maybeSingle();
+  if (currentError || !currentRow) throw new Error(currentError?.message ?? 'Запуск импорта не найден.');
+
+  const currentRun = mapRun(currentRow as Record<string, unknown>);
+  const expectedScope = parseImportRunScope(currentRun);
+  await assertChannelManagerConnectionScopeCurrent(expectedScope);
+
   const now = new Date().toISOString();
+  const failureMetadata = {
+    ...currentRun.metadata,
+    ...safeMetadata(metadata),
+    [IMPORT_RUN_SCOPE_KEY]: serializeChannelManagerScope(expectedScope),
+  };
   const { data, error } = await supabase.from('booking_channel_import_runs').update({
     status: 'failed', finished_at: now, errors: [text(reason).slice(0, 500)], safe_summary: 'Импорт не завершён.',
-    metadata: safeMetadata(metadata), updated_at: now,
-  }).eq('id', id).select('*').single();
-  if (error || !data) throw new Error(error?.message ?? 'Не удалось отметить ошибку импорта.');
-  await supabase.from('booking_channel_manager_connections').update({ status: 'import_failed', last_failure_at: now, failure_reason: text(reason).slice(0, 500), updated_at: now }).eq('id', data.connection_id);
+    metadata: failureMetadata, updated_at: now,
+  }).eq('id', id).eq('connection_id', expectedScope.connectionId).select('*').maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!data) throw Object.assign(new Error('Запуск импорта больше не принадлежит исходному подключению.'), { code: 'account_scope_mismatch' });
+
+  await assertChannelManagerConnectionScopeCurrent(expectedScope);
+  const { data: updatedConnection, error: connectionError } = await supabase
+    .from('booking_channel_manager_connections')
+    .update({ status: 'import_failed', last_failure_at: now, failure_reason: text(reason).slice(0, 500), updated_at: now })
+    .eq('id', expectedScope.connectionId)
+    .eq('owner_setup_id', expectedScope.ownerSetupId)
+    .eq('property_setup_id', expectedScope.propertySetupId)
+    .select('id')
+    .maybeSingle();
+  if (connectionError) throw new Error(connectionError.message);
+  if (!updatedConnection) throw Object.assign(new Error('Контур подключения изменился до фиксации ошибки импорта.'), { code: 'account_scope_mismatch' });
   return mapRun(data as Record<string, unknown>);
 }
 
 export async function importChannelObjects(connectionId: string, objects: Array<Record<string, unknown>>, options?: { importRunId?: string }): Promise<number> {
   const connection = await getConnection(connectionId);
+  const expectedScope = await resolveChannelManagerConnectionScope(connection);
   if (!Array.isArray(objects) || objects.length > MAX_SNAPSHOT_ROWS) throw new Error('Слишком много объектов в одном импорте.');
   assertNoSecrets(objects);
   const now = new Date().toISOString();
@@ -400,6 +678,7 @@ export async function importChannelObjects(connectionId: string, objects: Array<
     };
   });
   if (!rows.length) return 0;
+  await assertChannelManagerConnectionScopeCurrent(expectedScope);
   const { error } = await supabase.from('booking_channel_imported_objects').upsert(rows, { onConflict: 'connection_id,external_object_id' });
   if (error) throw new Error(error.message);
   return rows.length;
@@ -407,6 +686,7 @@ export async function importChannelObjects(connectionId: string, objects: Array<
 
 export async function importChannelBookings(connectionId: string, bookings: Array<Record<string, unknown>>, options?: { importRunId?: string }): Promise<number> {
   const connection = await getConnection(connectionId);
+  const expectedScope = await resolveChannelManagerConnectionScope(connection);
   if (!Array.isArray(bookings) || bookings.length > MAX_SNAPSHOT_ROWS) throw new Error('Слишком много броней в одном импорте.');
   assertNoSecrets(bookings);
   const now = new Date().toISOString();
@@ -428,6 +708,7 @@ export async function importChannelBookings(connectionId: string, bookings: Arra
     };
   });
   if (!rows.length) return 0;
+  await assertChannelManagerConnectionScopeCurrent(expectedScope);
   const { error } = await supabase.from('booking_channel_imported_bookings').upsert(rows, { onConflict: 'connection_id,external_booking_id' });
   if (error) throw new Error(error.message);
   return rows.length;
@@ -435,6 +716,7 @@ export async function importChannelBookings(connectionId: string, bookings: Arra
 
 export async function importChannelCalendar(connectionId: string, calendarRows: Array<Record<string, unknown>>, options?: { importRunId?: string; pricing?: boolean }): Promise<number> {
   const connection = await getConnection(connectionId);
+  const expectedScope = await resolveChannelManagerConnectionScope(connection);
   if (!Array.isArray(calendarRows) || calendarRows.length > MAX_SNAPSHOT_ROWS) throw new Error('Слишком много строк календаря в одном импорте.');
   assertNoSecrets(calendarRows);
   const now = new Date().toISOString();
@@ -456,6 +738,7 @@ export async function importChannelCalendar(connectionId: string, calendarRows: 
     };
   }));
   if (!rows.length) return 0;
+  await assertChannelManagerConnectionScopeCurrent(expectedScope);
   const { error } = await supabase.from('booking_channel_calendar_snapshots').upsert(rows, { onConflict: 'connection_id,external_object_id,date' });
   if (error) throw new Error(error.message);
   return rows.length;
@@ -480,6 +763,7 @@ function validateSnapshot(snapshot: ManualChannelSnapshot): Required<ManualChann
 
 export async function registerManualChannelSnapshot(connectionId: string, snapshot: ManualChannelSnapshot, metadata?: Record<string, unknown>): Promise<{ run: ChannelImportRun; summary: Record<string, number>; conflicts: ChannelImportConflict[] }> {
   const connection = await getConnection(connectionId);
+  const expectedScope = await resolveChannelManagerConnectionScope(connection);
   if (connection.provider !== 'manual' && !CHANNEL_PROVIDER_ADAPTERS[connection.provider].supports_real_api) {
     // A provider-labelled connection may still use the honest manual fallback.
   }
@@ -506,22 +790,39 @@ export async function registerManualChannelSnapshot(connectionId: string, snapsh
       objects, bookings, calendarDays: calendar, prices, warnings: conflicts,
       safeSummary: `Импортировано: объектов ${objects}, броней ${bookings}, строк календаря ${calendar}, цен ${prices}.`,
     });
-    const { lastManualSnapshot: _omitFullSnapshot, ...safeConnectionMetadata } = connection.metadata;
-    await supabase.from('booking_channel_manager_connections').update({
-      metadata: {
-        ...safeConnectionMetadata,
-        liveCore: connection.metadata?.liveCore === true,
-        lastManualSnapshotReceipt: {
-          snapshotHash: createHash('sha256').update(JSON.stringify(normalized)).digest('hex'),
-          sourceImportRunId: completed.id,
-          rowCounts: { objects, bookings, calendar, pricing: prices },
-          receivedAt: new Date().toISOString(),
+    await assertChannelManagerConnectionScopeCurrent(expectedScope);
+    const currentConnection = await getConnection(connection.id);
+    await assertChannelManagerConnectionScopeCurrent(expectedScope);
+    const { lastManualSnapshot: _omitFullSnapshot, ...safeConnectionMetadata } = currentConnection.metadata;
+    const { data: updatedConnection, error: connectionError } = await supabase
+      .from('booking_channel_manager_connections')
+      .update({
+        metadata: {
+          ...safeConnectionMetadata,
+          liveCore: currentConnection.metadata?.liveCore === true,
+          lastManualSnapshotReceipt: {
+            snapshotHash: createHash('sha256').update(JSON.stringify(normalized)).digest('hex'),
+            sourceImportRunId: completed.id,
+            rowCounts: { objects, bookings, calendar, pricing: prices },
+            receivedAt: new Date().toISOString(),
+          },
         },
-      },
-      updated_at: new Date().toISOString(),
-    }).eq('id', connection.id);
-    await queueChannelManagerCommunication(connection, conflicts.length ? 'channel_import_needs_review_notice' : 'channel_import_completed_notice',
-      conflicts.length ? `Импорт менеджера каналов завершён. Нужна проверка: ${conflicts.length} несоответствий.` : 'Импорт менеджера каналов завершён без найденных несоответствий.');
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', connection.id)
+      .eq('owner_setup_id', expectedScope.ownerSetupId)
+      .eq('property_setup_id', expectedScope.propertySetupId)
+      .select('*')
+      .maybeSingle();
+    if (connectionError) throw new Error(connectionError.message);
+    if (!updatedConnection) throw Object.assign(new Error('Контур подключения изменился до фиксации snapshot receipt.'), { code: 'account_scope_mismatch' });
+    await assertChannelManagerConnectionScopeCurrent(expectedScope);
+    await queueChannelManagerCommunication(
+      mapConnection(updatedConnection as Record<string, unknown>),
+      conflicts.length ? 'channel_import_needs_review_notice' : 'channel_import_completed_notice',
+      conflicts.length ? `Импорт менеджера каналов завершён. Нужна проверка: ${conflicts.length} несоответствий.` : 'Импорт менеджера каналов завершён без найденных несоответствий.',
+      expectedScope,
+    );
     return { run: completed, summary: { objects, bookings, calendar, prices }, conflicts };
   } catch (error) {
     await failChannelImportRun(run.id, error instanceof Error ? error.message : 'Ошибка ручного импорта.');
@@ -531,9 +832,10 @@ export async function registerManualChannelSnapshot(connectionId: string, snapsh
 
 export async function reconcileImportedObjects(connectionId: string): Promise<{ matched: number; possible: number; unmatched: number }> {
   const connection = await getConnection(connectionId);
+  const scope = await resolveChannelManagerConnectionScope(connection);
   const [{ data: objects, error: objectsError }, { data: setups, error: setupsError }] = await Promise.all([
     supabase.from('booking_channel_imported_objects').select('*').eq('connection_id', connection.id).neq('match_status', 'ignored'),
-    supabase.from('booking_property_setup_profiles').select('*'),
+    supabase.from('booking_property_setup_profiles').select('*').eq('owner_setup_id', scope.ownerSetupId),
   ]);
   if (objectsError || setupsError) throw new Error(objectsError?.message ?? setupsError?.message ?? 'Не удалось сверить объекты.');
   let matched = 0; let possible = 0; let unmatched = 0;
@@ -550,7 +852,7 @@ export async function reconcileImportedObjects(connectionId: string): Promise<{ 
     await supabase.from('booking_channel_imported_objects').update({
       match_status: status, matched_property_setup_id: high?.id ?? tentative?.id ?? null,
       matched_property_id: high?.property_id ?? tentative?.property_id ?? null, updated_at: new Date().toISOString(),
-    }).eq('id', object.id);
+    }).eq('id', object.id).eq('connection_id', connection.id);
   }
   return { matched, possible, unmatched };
 }
@@ -565,6 +867,19 @@ export async function reconcileImportedBookings(
   },
 ): Promise<{ matched: number; possibleDuplicates: number; unmatched: number; blockers: ChannelImportConflict[] }> {
   const connection = await getConnection(connectionId);
+  const scope = await resolveChannelManagerConnectionScope(connection);
+  const requestedConnectionId = nullableText(options?.connectionId);
+  const requestedPropertyId = nullableText(options?.propertyId);
+  const requestedAccountId = nullableText(options?.accountId);
+  if (requestedConnectionId && requestedConnectionId !== connection.id) {
+    throw Object.assign(new Error('Подключение не совпадает с canonical контуром.'), { code: 'account_scope_mismatch' });
+  }
+  if (requestedPropertyId && scope.propertyId && requestedPropertyId !== scope.propertyId) {
+    throw Object.assign(new Error('Объект не совпадает с canonical контуром подключения.'), { code: 'account_scope_mismatch' });
+  }
+  if (requestedAccountId && scope.accountId && requestedAccountId !== scope.accountId) {
+    throw Object.assign(new Error('Аккаунт не совпадает с canonical контуром подключения.'), { code: 'account_scope_mismatch' });
+  }
   let query = supabase
     .from('booking_channel_imported_bookings')
     .select('*')
@@ -578,27 +893,31 @@ export async function reconcileImportedBookings(
   }
   const { data: bookings, error } = await query;
   if (error) throw new Error(error.message);
-  const propertyId = nullableText(options?.propertyId);
-  const accountId = nullableText(options?.accountId);
-  const scoped = Boolean(propertyId && accountId);
+  const propertyId = requestedPropertyId || scope.propertyId;
+  const accountId = requestedAccountId || scope.accountId;
   let matched = 0; let possibleDuplicates = 0; let unmatched = 0;
   const blockers: ChannelImportConflict[] = [];
   for (const booking of (bookings ?? []) as Record<string, unknown>[]) {
+    if (!propertyId) {
+      unmatched += 1;
+      blockers.push({ type: 'connection_scope_invalid', severity: 'blocker', entityId: text(booking.id), message: 'Нет canonical property для безопасной сверки.' });
+      continue;
+    }
     if (booking.matched_booking_id) {
-      if (scoped) {
-        const { data: existingMatch } = await supabase
+      if (propertyId) {
+        let existingMatchQuery = supabase
           .from('booking_ops_records')
           .select('id,account_id,property_id')
           .eq('id', text(booking.matched_booking_id))
-          .eq('property_id', propertyId!)
-          .eq('account_id', accountId!)
-          .maybeSingle();
+          .eq('property_id', propertyId);
+        if (accountId) existingMatchQuery = existingMatchQuery.eq('account_id', accountId);
+        const { data: existingMatch } = await existingMatchQuery.maybeSingle();
         if (!existingMatch) {
           await supabase.from('booking_channel_imported_bookings').update({
             match_status: 'unmatched',
             matched_booking_id: null,
             updated_at: new Date().toISOString(),
-          }).eq('id', booking.id);
+          }).eq('id', booking.id).eq('connection_id', connection.id);
           unmatched += 1;
           blockers.push({
             type: 'account_scope_mismatch',
@@ -615,10 +934,9 @@ export async function reconcileImportedBookings(
     let byReferenceQuery = supabase
       .from('booking_ops_records')
       .select('id')
-      .eq('booking_id', text(booking.external_booking_id));
-    if (scoped) {
-      byReferenceQuery = byReferenceQuery.eq('property_id', propertyId!).eq('account_id', accountId!);
-    }
+      .eq('booking_id', text(booking.external_booking_id))
+      .eq('property_id', propertyId);
+    if (accountId) byReferenceQuery = byReferenceQuery.eq('account_id', accountId);
     const { data: byReference } = await byReferenceQuery.limit(1).maybeSingle();
     let status = byReference ? 'matched' : 'unmatched'; let bookingId = byReference?.id ?? null;
     if (!byReference && booking.checkin_date && booking.checkout_date) {
@@ -634,7 +952,7 @@ export async function reconcileImportedBookings(
       if ((overlap ?? []).length) { status = 'possible_duplicate'; bookingId = overlap?.[0]?.id ?? null; }
     }
     if (status === 'matched') matched += 1; else if (status === 'possible_duplicate') possibleDuplicates += 1; else unmatched += 1;
-    await supabase.from('booking_channel_imported_bookings').update({ match_status: status, matched_booking_id: bookingId, updated_at: new Date().toISOString() }).eq('id', booking.id);
+    await supabase.from('booking_channel_imported_bookings').update({ match_status: status, matched_booking_id: bookingId, updated_at: new Date().toISOString() }).eq('id', booking.id).eq('connection_id', connection.id);
   }
   return { matched, possibleDuplicates, unmatched, blockers };
 }
@@ -643,6 +961,7 @@ export type ChannelImportConflict = { type: string; severity: 'warning' | 'block
 
 export async function getChannelImportConflicts(connectionId: string): Promise<ChannelImportConflict[]> {
   const connection = await getConnection(connectionId);
+  const scope = await resolveChannelManagerConnectionScope(connection);
   const [{ data: objects }, { data: bookings }, { data: calendar }] = await Promise.all([
     supabase.from('booking_channel_imported_objects').select('id,match_status').eq('connection_id', connection.id),
     supabase.from('booking_channel_imported_bookings').select('id,match_status,matched_booking_id').eq('connection_id', connection.id),
@@ -659,13 +978,12 @@ export async function getChannelImportConflicts(connectionId: string): Promise<C
     if (booking.status !== 'cancelled' && availableDay) conflicts.push({ type: 'availability_mismatch', severity: 'warning', entityId: booking.id, message: 'На дату существующей брони календарь показывает доступность.' });
   }
   if (!objects?.length) conflicts.push({ type: 'setup_object_not_present_in_cm', severity: 'warning', message: 'В импорте нет объектов для сверки.' });
-  if (connection.propertySetupId) {
-    const { data: setup } = await supabase.from('booking_property_setup_profiles').select('property_id').eq('id', connection.propertySetupId).maybeSingle();
-    if (setup?.property_id) {
-      const { data: asiBookings } = await supabase.from('booking_ops_records').select('id').eq('property_id', setup.property_id);
-      const importedIds = new Set(confirmedBookings.map((item) => text(item.matched_booking_id)).filter(Boolean));
-      for (const booking of asiBookings ?? []) if (!importedIds.has(text(booking.id))) conflicts.push({ type: 'booking_missing_in_cm', severity: 'warning', entityId: booking.id, message: 'Бронь есть в ASI, но отсутствует в снимке менеджера каналов.' });
-    }
+  if (scope.propertyId) {
+    let asiBookingsQuery = supabase.from('booking_ops_records').select('id').eq('property_id', scope.propertyId);
+    if (scope.accountId) asiBookingsQuery = asiBookingsQuery.eq('account_id', scope.accountId);
+    const { data: asiBookings } = await asiBookingsQuery;
+    const importedIds = new Set(confirmedBookings.map((item) => text(item.matched_booking_id)).filter(Boolean));
+    for (const booking of asiBookings ?? []) if (!importedIds.has(text(booking.id))) conflicts.push({ type: 'booking_missing_in_cm', severity: 'warning', entityId: booking.id, message: 'Бронь есть в ASI, но отсутствует в снимке менеджера каналов.' });
   }
   return conflicts;
 }
@@ -700,6 +1018,7 @@ export async function createBookingFromImportedChannelBooking(
   options?: {
     force?: boolean;
     reservationMetadata?: Record<string, unknown> | null;
+    connectionId?: string | null;
     propertyId?: string | null;
     accountId?: string | null;
   },
@@ -707,6 +1026,12 @@ export async function createBookingFromImportedChannelBooking(
   const id = assertUuid(importedBookingId, 'ID импортированной брони');
   const { data: imported, error } = await supabase.from('booking_channel_imported_bookings').select('*').eq('id', id).maybeSingle();
   if (error || !imported) throw new Error('Импортированная бронь не найдена.');
+  const expectedConnectionId = nullableText(options?.connectionId);
+  if (expectedConnectionId && expectedConnectionId !== text(imported.connection_id)) {
+    throw Object.assign(new Error('Импортированная бронь принадлежит другому подключению.'), {
+      code: 'account_scope_mismatch',
+    });
+  }
 
   const connection = await getConnection(text(imported.connection_id));
   const { data: object } = imported.external_object_id
@@ -841,22 +1166,52 @@ export async function listChannelCalendarSnapshots(connectionId?: string): Promi
   const { data, error } = await query.limit(500); if (error) throw new Error(error.message); return (data ?? []) as Record<string, unknown>[];
 }
 
-export async function updateChannelImportEntity(table: 'booking_channel_imported_objects' | 'booking_channel_imported_bookings', id: string, patch: Record<string, unknown>): Promise<void> {
-  const { error } = await supabase.from(table).update({ ...patch, updated_at: new Date().toISOString() }).eq('id', assertUuid(id));
+export async function updateChannelImportEntity(table: 'booking_channel_imported_objects' | 'booking_channel_imported_bookings', id: string, patch: Record<string, unknown>, expectedConnectionId?: string | null): Promise<void> {
+  const entityId = assertUuid(id);
+  const connectionId = expectedConnectionId ? assertUuid(expectedConnectionId, 'ID подключения') : null;
+  let entityQuery = supabase.from(table).select('id,connection_id').eq('id', entityId);
+  if (connectionId) entityQuery = entityQuery.eq('connection_id', connectionId);
+  const { data: entity, error: entityError } = await entityQuery.maybeSingle();
+  if (entityError) throw new Error(entityError.message);
+  if (!entity) throw Object.assign(new Error('Импортированная запись не принадлежит указанному подключению.'), { code: 'account_scope_mismatch' });
+  const canonicalConnectionId = text(entity.connection_id);
+  const { error } = await supabase.from(table).update({ ...patch, updated_at: new Date().toISOString() }).eq('id', entityId).eq('connection_id', canonicalConnectionId);
   if (error) throw new Error(error.message);
 }
 
-export async function blockChannelManagerConnection(connectionId: string, reason: string): Promise<ChannelManagerConnection> {
-  const connection = await getConnection(connectionId); assertNoSecrets(reason);
-  const { data, error } = await supabase.from('booking_channel_manager_connections').update({ status: 'blocked', access_status: 'blocked', failure_reason: text(reason).slice(0, 500), updated_at: new Date().toISOString() }).eq('id', connection.id).select('*').single();
+export async function blockChannelManagerConnection(connectionId: string, reason: string, expectedScope?: ChannelManagerCanonicalScope): Promise<ChannelManagerConnection> {
+  const connection = await getConnection(connectionId);
+  const scope = expectedScope ?? await resolveChannelManagerConnectionScope(connection);
+  assertNoSecrets(reason);
+  await assertChannelManagerConnectionScopeCurrent(scope);
+  const { data, error } = await supabase.from('booking_channel_manager_connections').update({ status: 'blocked', access_status: 'blocked', failure_reason: text(reason).slice(0, 500), updated_at: new Date().toISOString() }).eq('id', connection.id).eq('owner_setup_id', scope.ownerSetupId).eq('property_setup_id', scope.propertySetupId).select('*').single();
+  await assertChannelManagerConnectionScopeCurrent(scope);
   if (error || !data) throw new Error(error?.message ?? 'Не удалось заблокировать подключение.'); return mapConnection(data as Record<string, unknown>);
 }
 
-export async function addChannelManagerNote(connectionId: string, note: string): Promise<ChannelManagerConnection> {
-  const connection = await getConnection(connectionId); assertNoSecrets(note);
-  const notes = Array.isArray(connection.metadata.notes) ? connection.metadata.notes : [];
-  const { data, error } = await supabase.from('booking_channel_manager_connections').update({ metadata: { ...connection.metadata, notes: [...notes, { text: text(note).slice(0, 1000), createdAt: new Date().toISOString() }] }, updated_at: new Date().toISOString() }).eq('id', connection.id).select('*').single();
-  if (error || !data) throw new Error(error?.message ?? 'Не удалось добавить заметку.'); return mapConnection(data as Record<string, unknown>);
+export async function addChannelManagerNote(
+  connectionId: string,
+  note: string,
+  expectedScope?: ChannelManagerCanonicalScope,
+): Promise<ChannelManagerConnection> {
+  const connection = await getConnection(connectionId);
+  const scope = expectedScope ?? await resolveChannelManagerConnectionScope(connection);
+  assertNoSecrets(note);
+  return updateChannelManagerConnectionWithinScope(
+    connection.id,
+    scope,
+    (current) => {
+      const notes = Array.isArray(current.metadata.notes) ? current.metadata.notes : [];
+      return {
+        metadata: {
+          ...current.metadata,
+          notes: [...notes, { text: text(note).slice(0, 1000), createdAt: new Date().toISOString() }],
+        },
+        updated_at: new Date().toISOString(),
+      };
+    },
+    'Контур подключения изменился до добавления заметки.',
+  );
 }
 
 export type ChannelManagerProviderOnboardingAction =
@@ -875,17 +1230,33 @@ async function updateProviderOnboardingStatus(
   connectionId: string,
   status: ChannelManagerOnboardingStatus,
   metadata?: Record<string, unknown>,
+  expectedScope?: ChannelManagerCanonicalScope,
 ): Promise<ChannelManagerConnection> {
   const connection = await getConnection(connectionId);
+  const scope = expectedScope ?? await resolveChannelManagerConnectionScope(connection);
+  const incomingMetadata = safeMetadata(metadata);
+  await assertChannelManagerConnectionScopeCurrent(scope);
+  const current = await getConnection(connection.id);
+  await assertChannelManagerConnectionScopeCurrent(scope);
+  const nextMetadata = { ...current.metadata, ...incomingMetadata, realApiSyncEnabled: false };
+  assertConnectionMetadataKeepsScope(nextMetadata, scope);
   const now = new Date().toISOString();
   const { data, error } = await supabase.from('booking_channel_manager_connections').update({
     status,
-    metadata: { ...connection.metadata, ...safeMetadata(metadata), realApiSyncEnabled: false },
-    failure_reason: status === 'blocked' ? connection.failureReason : null,
+    metadata: nextMetadata,
+    failure_reason: status === 'blocked' ? current.failureReason : null,
     updated_at: now,
-  }).eq('id', connection.id).select('*').single();
-  if (error || !data) throw new Error(error?.message ?? 'Не удалось обновить этап подключения.');
-  return mapConnection(data as Record<string, unknown>);
+  })
+    .eq('id', connection.id)
+    .eq('owner_setup_id', scope.ownerSetupId)
+    .eq('property_setup_id', scope.propertySetupId)
+    .select('*')
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!data) throw connectionScopeMismatch('Контур подключения изменился до обновления этапа.');
+  const updated = mapConnection(data as Record<string, unknown>);
+  await assertChannelManagerConnectionScopeCurrent(scope);
+  return updated;
 }
 
 export async function performChannelManagerProviderOnboardingAction(input: {
@@ -906,50 +1277,66 @@ export async function performChannelManagerProviderOnboardingAction(input: {
   if (input.action === 'select_provider') {
     if (!provider) throw new Error('Выберите провайдера.');
     connection = await initializeChannelManagerConnection(input.propertySetupId ?? '', provider, input.metadata);
-    connection = await updateProviderOnboardingStatus(connection.id, 'provider_selected', { selectedAt: new Date().toISOString() });
-    await queueChannelManagerCommunication(connection, 'channel_provider_selected_notice', `Выбран менеджер каналов ${provider}. API-синхронизация пока не активна; доступен контролируемый этап подготовки.`);
+    const scope = await resolveChannelManagerConnectionScope(connection);
+    connection = await updateProviderOnboardingStatus(
+      connection.id,
+      'provider_selected',
+      { selectedAt: new Date().toISOString() },
+      scope,
+    );
+    await queueChannelManagerCommunication(
+      connection,
+      'channel_provider_selected_notice',
+      `Выбран менеджер каналов ${provider}. API-синхронизация пока не активна; доступен контролируемый этап подготовки.`,
+      scope,
+    );
     return { connection };
   }
 
   connection = await getConnection(input.connectionId ?? '');
+  const scope = await resolveChannelManagerConnectionScope(connection);
   if (input.action === 'request_account_creation') {
-    connection = await updateProviderOnboardingStatus(connection.id, 'account_required', { accountCreationRequestedAt: new Date().toISOString() });
-    await queueChannelManagerCommunication(connection, 'internal_status_notice', 'Для продолжения нужен аккаунт выбранного менеджера каналов.');
+    connection = await updateProviderOnboardingStatus(connection.id, 'account_required', { accountCreationRequestedAt: new Date().toISOString() }, scope);
+    await queueChannelManagerCommunication(connection, 'internal_status_notice', 'Для продолжения нужен аккаунт выбранного менеджера каналов.', scope);
   } else if (input.action === 'mark_account_created') {
-    connection = await updateProviderOnboardingStatus(connection.id, 'provider_selected', { accountCreatedAt: new Date().toISOString() });
+    connection = await updateProviderOnboardingStatus(connection.id, 'provider_selected', { accountCreatedAt: new Date().toISOString() }, scope);
   } else if (input.action === 'request_access') {
     if (!connection.propertySetupId) throw new Error('У подключения не указан профиль объекта.');
-    connection = await requestChannelManagerAccess(connection.propertySetupId, connection.provider, input.metadata);
-    connection = await updateProviderOnboardingStatus(connection.id, 'access_requested');
+    connection = await requestChannelManagerAccess(connection.propertySetupId, connection.provider, input.metadata, scope);
+    connection = await updateProviderOnboardingStatus(connection.id, 'access_requested', undefined, scope);
   } else if (input.action === 'mark_access_received') {
     if (!input.safeAccessRef) throw new Error('Укажите безопасную ссылку на доступ. Пароль или API-токен сюда вставлять нельзя.');
-    connection = await markChannelManagerAccessReceived(connection.id, input.safeAccessRef, input.metadata);
-    connection = await updateProviderOnboardingStatus(connection.id, 'access_received', { accessReceivedSafelyAt: new Date().toISOString() });
+    connection = await markChannelManagerAccessReceived(connection.id, input.safeAccessRef, input.metadata, scope);
+    connection = await updateProviderOnboardingStatus(connection.id, 'access_received', { accessReceivedSafelyAt: new Date().toISOString() }, scope);
   } else if (input.action === 'mark_operator_review') {
-    connection = await updateProviderOnboardingStatus(connection.id, 'operator_review', { operatorReviewAt: new Date().toISOString() });
-    await queueChannelManagerCommunication(connection, 'internal_status_notice', 'Подключение передано оператору на проверку.');
+    connection = await updateProviderOnboardingStatus(connection.id, 'operator_review', { operatorReviewAt: new Date().toISOString() }, scope);
+    await queueChannelManagerCommunication(connection, 'internal_status_notice', 'Подключение передано оператору на проверку.', scope);
   } else if (input.action === 'mark_import_ready') {
-    connection = await updateProviderOnboardingStatus(connection.id, 'import_ready');
-    await queueChannelManagerCommunication(connection, 'channel_snapshot_upload_request', 'Можно загрузить безопасный snapshot объектов, броней, календаря и цен.');
+    connection = await updateProviderOnboardingStatus(connection.id, 'import_ready', undefined, scope);
+    await queueChannelManagerCommunication(connection, 'channel_snapshot_upload_request', 'Можно загрузить безопасный snapshot объектов, броней, календаря и цен.', scope);
   } else if (input.action === 'upload_manual_snapshot') {
     const result = await registerManualChannelSnapshot(connection.id, input.snapshot ?? {}, input.metadata);
-    connection = await updateProviderOnboardingStatus(connection.id, 'manual_snapshot_available', { snapshotImportedAt: new Date().toISOString() });
+    await assertChannelManagerConnectionScopeCurrent(scope);
+    connection = await updateProviderOnboardingStatus(connection.id, 'manual_snapshot_available', { snapshotImportedAt: new Date().toISOString() }, scope);
     return { connection, importSummary: result.summary, conflicts: result.conflicts };
   } else if (input.action === 'run_reconciliation') {
     await reconcileImportedObjects(connection.id);
     await reconcileImportedBookings(connection.id);
+    await assertChannelManagerConnectionScopeCurrent(scope);
     const conflicts = await getChannelImportConflicts(connection.id);
-    connection = await updateProviderOnboardingStatus(connection.id, 'import_ready', { reconciledAt: new Date().toISOString(), conflictCount: conflicts.length });
+    connection = await updateProviderOnboardingStatus(connection.id, 'import_ready', { reconciledAt: new Date().toISOString(), conflictCount: conflicts.length }, scope);
     return { connection, conflicts };
   } else if (input.action === 'mark_pilot_activation_pending') {
-    connection = await updateProviderOnboardingStatus(connection.id, 'pilot_activation_pending');
-    await queueChannelManagerCommunication(connection, 'channel_pilot_activation_pending_notice', 'Подготовка завершена. API-синхронизация будет включена отдельно после настройки провайдера оператором.');
+    connection = await updateProviderOnboardingStatus(connection.id, 'pilot_activation_pending', undefined, scope);
+    await queueChannelManagerCommunication(connection, 'channel_pilot_activation_pending_notice', 'Подготовка завершена. API-синхронизация будет включена отдельно после настройки провайдера оператором.', scope);
   } else if (input.action === 'mark_connected_placeholder') {
-    connection = await updateProviderOnboardingStatus(connection.id, 'connected_placeholder', { onboardingCompletedAt: new Date().toISOString() });
+    connection = await updateProviderOnboardingStatus(connection.id, 'connected_placeholder', { onboardingCompletedAt: new Date().toISOString() }, scope);
   } else if (input.action === 'block_connection') {
-    connection = await blockChannelManagerConnection(connection.id, input.reason ?? 'Заблокировано оператором.');
+    await assertChannelManagerConnectionScopeCurrent(scope);
+    connection = await blockChannelManagerConnection(connection.id, input.reason ?? 'Заблокировано оператором.', scope);
+    await assertChannelManagerConnectionScopeCurrent(scope);
   } else if (input.action === 'add_note') {
-    connection = await addChannelManagerNote(connection.id, input.note ?? '');
+    connection = await addChannelManagerNote(connection.id, input.note ?? '', scope);
   } else {
     throw new Error('Недопустимое действие.');
   }

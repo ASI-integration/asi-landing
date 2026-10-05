@@ -890,6 +890,8 @@ export type FetchOsmDataOptions = {
   fastDemoFallbackTimeoutMs?: number;
   /** Disable rate limiting in tests. */
   disableRateLimit?: boolean;
+  /** Force a fresh provider read; do not read or populate the process-local 5-minute cache. */
+  bypassMemoryCache?: boolean;
   /** Disable strict partial-failure backfill query. */
   allowBackfill?: boolean;
   /**
@@ -981,10 +983,16 @@ function makeOsmFetchCacheKey(lat: number, lon: number, options?: FetchOsmDataOp
 
 export async function fetchOsmData(lat: number, lon: number, options?: FetchOsmDataOptions): Promise<OsmFetchResult> {
   const cacheKey = makeOsmFetchCacheKey(lat, lon, options);
-  const cached = osmFetchCache.get(cacheKey);
+  const cached = options?.bypassMemoryCache ? undefined : osmFetchCache.get(cacheKey);
   if (cached && cached.expiresAt > Date.now()) {
     return cached.value;
   }
+  const cacheResult = (value: OsmFetchResult) => {
+    if (!options?.bypassMemoryCache) {
+      osmFetchCache.set(cacheKey, { expiresAt: Date.now() + OSM_FETCH_CACHE_TTL_MS, value });
+    }
+    return value;
+  };
 
   // Under tight per-request budgets (e.g. harness), reduce round-trips by batching more clauses per call.
   // This is safer than blindly increasing timeouts: we try to get *some* data within the same budget.
@@ -1004,14 +1012,14 @@ export async function fetchOsmData(lat: number, lon: number, options?: FetchOsmD
         usedFallbackQuery: diskHit.usedFallbackQuery,
         fromDiskCache: true,
       };
-      osmFetchCache.set(cacheKey, { expiresAt: Date.now() + OSM_FETCH_CACHE_TTL_MS, value: out });
+      cacheResult(out);
       return out;
     }
   }
 
   if (options?.fastDemo) {
     const out = await fetchOsmDataFastDemo(lat, lon, options);
-    osmFetchCache.set(cacheKey, { expiresAt: Date.now() + OSM_FETCH_CACHE_TTL_MS, value: out });
+    cacheResult(out);
     saveToDiskCache(options?.diskCacheDir, diskFileName, lat, lon, diskProfile, out);
     return out;
   }
@@ -1065,7 +1073,7 @@ export async function fetchOsmData(lat: number, lon: number, options?: FetchOsmD
   // (missing entire selector batches). In that case, always run the broad pass to backfill.
   if (strictElements.length >= 12 && !strictHadProviderFailure) {
     const out: OsmFetchResult = { elements: strictElements, hadProviderFailure: strictHadProviderFailure };
-    osmFetchCache.set(cacheKey, { expiresAt: Date.now() + OSM_FETCH_CACHE_TTL_MS, value: out });
+    cacheResult(out);
     saveToDiskCache(options?.diskCacheDir, diskFileName, lat, lon, diskProfile, out);
     return out;
   }
@@ -1079,7 +1087,7 @@ export async function fetchOsmData(lat: number, lon: number, options?: FetchOsmD
     const hadProviderFailure = strictHadProviderFailure || backfillResult.hadProviderFailure;
     if (merged.length >= 12) {
       const out: OsmFetchResult = { elements: merged, hadProviderFailure, usedFallbackQuery: true };
-      osmFetchCache.set(cacheKey, { expiresAt: Date.now() + OSM_FETCH_CACHE_TTL_MS, value: out });
+      cacheResult(out);
       saveToDiskCache(options?.diskCacheDir, diskFileName, lat, lon, diskProfile, out);
       return out;
     }
@@ -1088,7 +1096,7 @@ export async function fetchOsmData(lat: number, lon: number, options?: FetchOsmD
 
   if (options?.allowBroadFallback === false) {
     const out: OsmFetchResult = { elements: strictElements, hadProviderFailure: strictHadProviderFailure, usedFallbackQuery: true };
-    osmFetchCache.set(cacheKey, { expiresAt: Date.now() + OSM_FETCH_CACHE_TTL_MS, value: out });
+    cacheResult(out);
     saveToDiskCache(options?.diskCacheDir, diskFileName, lat, lon, diskProfile, out);
     return out;
   }
@@ -1112,7 +1120,7 @@ export async function fetchOsmData(lat: number, lon: number, options?: FetchOsmD
         hadProviderFailure: minimal.hadProviderFailure,
         usedFallbackQuery: true,
       };
-      osmFetchCache.set(cacheKey, { expiresAt: Date.now() + OSM_FETCH_CACHE_TTL_MS, value: out });
+      cacheResult(out);
       saveToDiskCache(options?.diskCacheDir, diskFileName, lat, lon, diskProfile, out);
       return out;
     }
@@ -1120,7 +1128,7 @@ export async function fetchOsmData(lat: number, lon: number, options?: FetchOsmD
   }
 
   const out: OsmFetchResult = { elements: merged, hadProviderFailure };
-  osmFetchCache.set(cacheKey, { expiresAt: Date.now() + OSM_FETCH_CACHE_TTL_MS, value: out });
+  cacheResult(out);
   saveToDiskCache(options?.diskCacheDir, diskFileName, lat, lon, diskProfile, out);
   return out;
 }

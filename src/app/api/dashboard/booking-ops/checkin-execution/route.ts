@@ -1,8 +1,12 @@
 import { NextResponse } from 'next/server';
 import { requireCrmOperatorSession } from '@/lib/crm/api-auth';
+import { requireBookingOpsApiAccess } from '@/app/api/dashboard/booking-ops/access';
+import { sameIdentity } from '@/lib/platform/decision';
+import { adaptResidentialOpsDecision } from '@/lib/platform/ops-decision';
+import { resolveResidentialBookingIdentity } from '@/lib/platform/residential-booking-scope';
 import {
   CheckinReadinessPrerequisiteError,
-  getCheckinExecutionStatus,
+  readCheckinExecutionStatus,
   runCheckinExecutionAction,
 } from '@/lib/booking-ops/checkin-execution-autopilot';
 import {
@@ -10,6 +14,7 @@ import {
   type BookingOpsCommunicationChannel,
 } from '@/lib/booking-ops/types';
 import { emitLifecycleForAction } from '@/lib/booking-ops/lifecycle-entry-adapter';
+import { readCheckinInstructionsGuard } from '@/lib/booking-ops/guest-legal-deposit-mvd-execution';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -45,6 +50,51 @@ function normalizeChannel(value: unknown): BookingOpsCommunicationChannel | unde
     : undefined;
 }
 
+async function projectCheckinAfterAction(input: {
+  bookingId: string;
+  accountId: string;
+  identity: Awaited<ReturnType<typeof resolveResidentialBookingIdentity>>;
+  fallback: Awaited<ReturnType<typeof runCheckinExecutionAction>>;
+}) {
+  let checkin = input.fallback;
+  let platformDecision = adaptResidentialOpsDecision(
+    input.identity,
+    'checkin',
+    { available: false, reason: 'unavailable' },
+    Date.now(),
+  );
+  try {
+    const [current, legalGuard] = await Promise.all([
+      readCheckinExecutionStatus(input.bookingId),
+      readCheckinInstructionsGuard(input.bookingId),
+    ]);
+    const currentIdentity = await resolveResidentialBookingIdentity(input.bookingId, input.accountId);
+    if (!sameIdentity(input.identity, currentIdentity)) {
+      return {
+        checkin,
+        platformDecision: adaptResidentialOpsDecision(
+          input.identity,
+          'checkin',
+          { available: false, reason: 'state_changed' },
+          Date.now(),
+        ),
+      };
+    }
+    checkin = current;
+    platformDecision = legalGuard
+      ? adaptResidentialOpsDecision(input.identity, 'checkin', {
+          available: true,
+          identity: input.identity,
+          observedAt: checkin.updatedAt,
+          value: { kind: 'checkin', checkin, legalGuard },
+        }, Date.now())
+      : platformDecision;
+  } catch {
+    // The command already succeeded. Projection failure must not make the client retry the mutation.
+  }
+  return { checkin, platformDecision };
+}
+
 export async function GET(req: Request): Promise<NextResponse> {
   const auth = await requireCrmOperatorSession();
   if ('error' in auth) return auth.error;
@@ -55,8 +105,31 @@ export async function GET(req: Request): Promise<NextResponse> {
   }
 
   try {
-    const checkin = await getCheckinExecutionStatus(bookingId);
-    return NextResponse.json({ ok: true, checkin });
+    const access = await requireBookingOpsApiAccess(auth.session, bookingId);
+    if (!access.ok) return access.response;
+    const identity = {
+      kind: 'identified' as const,
+      accountId: access.accountId,
+      propertyId: access.propertyId,
+      bookingId: access.bookingId,
+    };
+    const [checkin, legalGuard] = await Promise.all([
+      readCheckinExecutionStatus(bookingId),
+      readCheckinInstructionsGuard(bookingId),
+    ]);
+    const currentIdentity = await resolveResidentialBookingIdentity(bookingId, access.accountId);
+    if (!sameIdentity(identity, currentIdentity)) {
+      return NextResponse.json({ ok: false, message: 'Состояние бронирования изменилось. Повторите запрос.' }, { status: 409 });
+    }
+    const platformDecision = legalGuard
+      ? adaptResidentialOpsDecision(identity, 'checkin', {
+          available: true,
+          identity,
+          observedAt: checkin.updatedAt,
+          value: { kind: 'checkin', checkin, legalGuard },
+        }, Date.now())
+      : adaptResidentialOpsDecision(identity, 'checkin', { available: false, reason: 'unavailable' }, Date.now());
+    return NextResponse.json({ ok: true, checkin, platformDecision });
   } catch (error) {
     if (error instanceof CheckinReadinessPrerequisiteError) {
       return NextResponse.json({
@@ -66,8 +139,17 @@ export async function GET(req: Request): Promise<NextResponse> {
         missingPrerequisites: error.missingPrerequisites,
       }, { status: 400 });
     }
-    const message = error instanceof Error ? error.message : 'Не удалось загрузить заселение.';
-    return NextResponse.json({ ok: false, message }, { status: statusForError(message) });
+    const code = error instanceof Error ? error.message : '';
+    if (code === 'booking_not_found') {
+      return NextResponse.json({ ok: false, message: 'Бронирование не найдено.' }, { status: 404 });
+    }
+    if (code === 'booking_scope_mismatch' || code === 'reservation_account_not_found') {
+      return NextResponse.json({ ok: false, message: 'Нет доступа к бронированию.' }, { status: 403 });
+    }
+    if (code === 'booking_scope_unavailable') {
+      return NextResponse.json({ ok: false, message: 'Не удалось подтвердить область бронирования.' }, { status: 409 });
+    }
+    return NextResponse.json({ ok: false, message: 'Не удалось загрузить заселение.' }, { status: statusForError(code) });
   }
 }
 
@@ -92,7 +174,15 @@ export async function POST(req: Request): Promise<NextResponse> {
   }
 
   try {
-    const checkin = await runCheckinExecutionAction({
+    const access = await requireBookingOpsApiAccess(auth.session, bookingId);
+    if (!access.ok) return access.response;
+    const identity = {
+      kind: 'identified' as const,
+      accountId: access.accountId,
+      propertyId: access.propertyId,
+      bookingId: access.bookingId,
+    };
+    const actionResult = await runCheckinExecutionAction({
       bookingId,
       action,
       channel: normalizeChannel(body.channel),
@@ -100,9 +190,23 @@ export async function POST(req: Request): Promise<NextResponse> {
       note: body.note,
       arrivalTime: body.arrivalTime ?? body.arrival_time,
       metadata: typeof body.metadata === 'object' && body.metadata ? body.metadata as Record<string, unknown> : {},
+      expectedScope: { accountId: identity.accountId, propertyId: identity.propertyId },
     });
-    await emitLifecycleForAction({ bookingId, action, actorId: auth.session.email ?? auth.session.userId ?? null, source: 'checkin_execution', payload: { arrivalTime: body.arrivalTime ?? body.arrival_time ?? null } });
-    return NextResponse.json({ ok: true, checkin });
+    await emitLifecycleForAction({
+      bookingId,
+      action,
+      actorId: auth.session.email ?? auth.session.userId ?? null,
+      source: 'checkin_execution',
+      payload: { arrivalTime: body.arrivalTime ?? body.arrival_time ?? null },
+      expectedScope: { accountId: access.accountId, propertyId: access.propertyId },
+    });
+    const projected = await projectCheckinAfterAction({
+      bookingId,
+      accountId: access.accountId,
+      identity,
+      fallback: actionResult,
+    });
+    return NextResponse.json({ ok: true, ...projected });
   } catch (error) {
     if (error instanceof CheckinReadinessPrerequisiteError) {
       return NextResponse.json({
@@ -113,6 +217,12 @@ export async function POST(req: Request): Promise<NextResponse> {
       }, { status: 400 });
     }
     const message = error instanceof Error ? error.message : 'Не удалось обновить заселение.';
+    if (message === 'booking_scope_mismatch' || message === 'reservation_account_not_found') {
+      return NextResponse.json({ ok: false, message: 'Нет доступа к бронированию.' }, { status: 403 });
+    }
+    if (message === 'booking_scope_unavailable') {
+      return NextResponse.json({ ok: false, message: 'Не удалось подтвердить область бронирования.' }, { status: 409 });
+    }
     return NextResponse.json({ ok: false, message }, { status: statusForError(message) });
   }
 }

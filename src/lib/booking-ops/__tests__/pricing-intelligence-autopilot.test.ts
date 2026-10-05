@@ -76,6 +76,7 @@ import { inferPropertyAudience, getAudiencePricingWeights } from '../property-au
 import {
   computeMarketPressureScore,
   getAudienceRadiusWeights,
+  importChannelPricingSignals,
   ingestManualMarketSnapshot,
   validateMarketSnapshot,
 } from '../market-signals-ingestion';
@@ -83,6 +84,7 @@ import { buildPublicationPackage, initializePublicationPackage, selectPublicatio
 
 const OWNER_ID = '10000000-0000-4000-8000-000000000001';
 const SETUP_ID = '20000000-0000-4000-8000-000000000002';
+const OTHER_SETUP_ID = '20000000-0000-4000-8000-000000000004';
 const CONNECTION_ID = '30000000-0000-4000-8000-000000000003';
 const NOW = '2026-07-01T12:00:00.000Z';
 
@@ -111,6 +113,7 @@ function seedSetup(overrides: Row = {}) {
   });
   rows('booking_channel_manager_connections').push({
     id: CONNECTION_ID,
+    owner_setup_id: OWNER_ID,
     property_setup_id: SETUP_ID,
     provider: 'bnovo',
     status: 'import_ready',
@@ -207,6 +210,23 @@ describe('Pricing Intelligence & Tariff Grid v1', () => {
     expect(() => validateMarketSnapshot({ radius_km: 3, date: '2026-07-10', competitor_prices: { count: -1 } })).toThrow(/конкурентов/iu);
     expect(() => validateMarketSnapshot({ radius_km: 3, date: '2026-07-10', available_supply: { available_count: 8, total_count: 4 } })).toThrow(/меньше доступного/iu);
     expect(() => validateMarketSnapshot({ radius_km: 3, date: '2026-07-10', events: [{ name: '<script>alert(1)</script>' }] })).toThrow(/недопустимые/iu);
+  });
+
+  it('rejects channel pricing import from another property connection', async () => {
+    const firstSetup = rows('booking_property_setup_profiles')[0];
+    rows('booking_property_setup_profiles').push({
+      ...firstSetup,
+      id: OTHER_SETUP_ID,
+      property_id: 'prop-b',
+      title: 'Другой объект',
+    });
+
+    await expect(importChannelPricingSignals(OTHER_SETUP_ID, CONNECTION_ID))
+      .rejects.toMatchObject({ code: 'account_scope_mismatch' });
+
+    expect(rows('booking_market_signal_sources')).toHaveLength(0);
+    expect(rows('booking_market_signal_ingestion_runs')).toHaveLength(0);
+    expect(rows('booking_pricing_market_signals')).toHaveLength(0);
   });
 
   it('combined manual snapshot records all normalized signal types and ingestion run', async () => {

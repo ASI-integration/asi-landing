@@ -7,6 +7,8 @@ const { supabaseFrom } = vi.hoisted(() => ({
 }));
 
 const tables: Record<string, Row[]> = {};
+let beforeBookingOpsUpdate: null | (() => void) = null;
+let beforeBookingOpsScopeFilter: null | (() => void) = null;
 function rows(table: string): Row[] {
   return tables[table] ?? (tables[table] = []);
 }
@@ -17,6 +19,10 @@ class Query {
     this.filtered = [...rows(table)];
   }
   eq(column: string, value: unknown) {
+    if (this.table === 'booking_ops_records' && !this.options.patch && column === 'property_id') {
+      beforeBookingOpsScopeFilter?.();
+      beforeBookingOpsScopeFilter = null;
+    }
     this.filtered = this.filtered.filter((row) => row[column] === value);
     return this;
   }
@@ -86,10 +92,13 @@ import {
   auditChannelImportAvailability,
   checkAvailabilityConflict,
   classifyAvailabilityConflicts,
+  confirmAvailabilityHold,
   collapseChannelCalendarConflicts,
+  explainAvailabilityConflict,
   isChannelCalendarDateCoveredByImportedBooking,
   isConfirmationLikeCommunication,
   normalizeAvailabilityDate,
+  shouldBlockCommunicationIntent,
   rangesOverlap,
   type AvailabilityConflict,
 } from '../availability-overbooking-protection';
@@ -112,6 +121,15 @@ function seedSelfBookingScenario(options?: {
   extraCalendar?: Row[];
   extraOpsBooking?: Row;
 }) {
+  rows('booking_channel_manager_connections').push({
+    id: CONNECTION_ID,
+    property_setup_id: PROPERTY_SETUP_ID,
+  });
+  rows('booking_property_setup_profiles').push({
+    id: PROPERTY_SETUP_ID,
+    property_id: 'prop-a',
+  });
+  rows('properties').push({ id: 'prop-a', account_id: 'account-a' });
   rows('booking_channel_imported_objects').push({
     id: 'obj-1',
     connection_id: CONNECTION_ID,
@@ -150,6 +168,7 @@ function seedSelfBookingScenario(options?: {
   );
   rows('booking_ops_records').push({
     id: BOOKING_OPS_ID,
+    account_id: 'account-a',
     property_id: 'prop-a',
     check_in_at: '2026-07-10T00:00:00.000Z',
     check_out_at: '2026-07-12T00:00:00.000Z',
@@ -160,6 +179,8 @@ function seedSelfBookingScenario(options?: {
 
 beforeEach(() => {
   for (const key of Object.keys(tables)) tables[key] = [];
+  beforeBookingOpsUpdate = null;
+  beforeBookingOpsScopeFilter = null;
   supabaseFrom.mockReset();
   supabaseFrom.mockImplementation((table: string) => ({
     select: vi.fn((_columns = '*', options?: { count?: string; head?: boolean }) => (
@@ -172,7 +193,10 @@ beforeEach(() => {
       (query as any).filtered = incoming;
       return query;
     }),
-    update: vi.fn((patch: Row) => new Query(table, { patch })),
+    update: vi.fn((patch: Row) => {
+      if (table === 'booking_ops_records') beforeBookingOpsUpdate?.();
+      return new Query(table, { patch });
+    }),
   }));
 });
 
@@ -334,6 +358,13 @@ describe('channel import availability self-conflicts', () => {
     expect(results[0]?.conflicts).toEqual([]);
   });
 
+  it('fails closed when an imported object points outside the canonical connection property', async () => {
+    seedSelfBookingScenario();
+    rows('booking_channel_imported_objects')[0]!.matched_property_id = 'prop-b';
+
+    await expect(auditChannelImportAvailability(CONNECTION_ID)).rejects.toThrow('property_scope_mismatch');
+  });
+
   it('still blocks when another overlapping booking_ops stay exists', async () => {
     seedSelfBookingScenario({
       extraOpsBooking: {
@@ -355,5 +386,208 @@ describe('channel import availability self-conflicts', () => {
 
     expect(result.status).toBe('confirmed_conflict');
     expect(result.conflicts.some((item) => item.type === 'booking' && item.id === OTHER_BOOKING_OPS_ID)).toBe(true);
+  });
+});
+
+describe('availability canonical account scope', () => {
+  it('ignores foreign-account holds, blocks, and bookings after canonical property revalidation', async () => {
+    rows('properties').push({ id: 'prop-a', account_id: 'account-a' });
+    rows('booking_ops_records').push(
+      {
+        id: BOOKING_OPS_ID,
+        account_id: 'account-a',
+        property_id: 'prop-a',
+        check_in_at: '2026-07-10T00:00:00.000Z',
+        check_out_at: '2026-07-12T00:00:00.000Z',
+      },
+      {
+        id: OTHER_BOOKING_OPS_ID,
+        account_id: 'account-b',
+        property_id: 'prop-a',
+        check_in_at: '2026-07-10T00:00:00.000Z',
+        check_out_at: '2026-07-12T00:00:00.000Z',
+      },
+    );
+    rows('booking_availability_holds').push({
+      id: '50000000-0000-4000-8000-000000000005',
+      account_id: 'account-b',
+      property_id: 'prop-a',
+      status: 'active',
+      date_from: '2026-07-10',
+      date_to: '2026-07-12',
+    });
+    rows('booking_availability_blocks').push({
+      id: '60000000-0000-4000-8000-000000000006',
+      account_id: 'account-b',
+      property_id: 'prop-a',
+      status: 'active',
+      date_from: '2026-07-10',
+      date_to: '2026-07-12',
+    });
+
+    const result = await checkAvailabilityConflict({
+      bookingId: BOOKING_OPS_ID,
+      propertyId: 'prop-a',
+      dateFrom: '2026-07-10',
+      dateTo: '2026-07-12',
+    }, { accountId: 'account-a', persist: false });
+
+    expect(result.status).toBe('no_conflict');
+    expect(result.conflicts).toEqual([]);
+  });
+
+  it('fails closed when the property is not owned by the expected account', async () => {
+    rows('properties').push({ id: 'prop-a', account_id: 'account-b' });
+    rows('booking_ops_records').push({
+      id: BOOKING_OPS_ID,
+      account_id: 'account-a',
+      property_id: 'prop-a',
+      check_in_at: '2026-07-10T00:00:00.000Z',
+      check_out_at: '2026-07-12T00:00:00.000Z',
+    });
+
+    const result = await checkAvailabilityConflict({
+      bookingId: BOOKING_OPS_ID,
+      propertyId: 'prop-a',
+      dateFrom: '2026-07-10',
+      dateTo: '2026-07-12',
+    }, { accountId: 'account-a', persist: false });
+
+    expect(result.status).toBe('failed');
+    expect(result.safeSummary).toBe('property_scope_mismatch');
+  });
+
+  it('fails closed confirmation communication when the booking is outside the expected account', async () => {
+    rows('properties').push({ id: 'prop-a', account_id: 'account-b' });
+    rows('booking_ops_records').push({
+      id: BOOKING_OPS_ID,
+      account_id: 'account-b',
+      property_id: 'prop-a',
+      check_in_at: '2026-07-10T00:00:00.000Z',
+      check_out_at: '2026-07-12T00:00:00.000Z',
+    });
+
+    const guard = await shouldBlockCommunicationIntent({
+      purpose: 'unit_ready_notice',
+      messageText: 'Объект готов к заезду.',
+      bookingOpsRecordId: BOOKING_OPS_ID,
+    }, { accountId: 'account-a' });
+
+    expect(guard).toMatchObject({
+      block: true,
+      status: 'failed',
+      check: { safeSummary: 'booking_scope_mismatch' },
+    });
+  });
+});
+
+describe('availability hold confirmation canonical property scope', () => {
+  it('fails closed when an account-bound booking moved to another property before confirmation', async () => {
+    const holdId = '50000000-0000-4000-8000-000000000005';
+    const booking: Row = {
+      id: BOOKING_OPS_ID,
+      account_id: 'account-a',
+      property_id: 'prop-a',
+    };
+    rows('booking_ops_records').push(booking);
+    beforeBookingOpsScopeFilter = () => {
+      booking.property_id = 'prop-b';
+    };
+    const hold: Row = {
+      id: holdId,
+      account_id: 'account-a',
+      property_id: 'prop-a',
+      conflict_status: 'no_conflict',
+      status: 'active',
+    };
+    rows('booking_availability_holds').push(hold);
+
+    await expect(confirmAvailabilityHold(
+      holdId,
+      BOOKING_OPS_ID,
+      undefined,
+      'account-a',
+      { propertyId: 'prop-a' },
+    )).rejects.toThrow('booking_scope_mismatch');
+
+    expect(hold.status).toBe('active');
+    expect(hold.booking_id).toBeUndefined();
+  });
+});
+
+describe('availability risk persistence canonical property scope', () => {
+  it('fails closed when booking property drifts before account-bound risk persistence', async () => {
+    rows('properties').push(
+      { id: 'prop-a', account_id: 'account-a' },
+      { id: 'prop-b', account_id: 'account-a' },
+    );
+    const booking: Row = {
+      id: BOOKING_OPS_ID,
+      account_id: 'account-a',
+      property_id: 'prop-a',
+      check_in_at: '2026-07-10T00:00:00.000Z',
+      check_out_at: '2026-07-12T00:00:00.000Z',
+    };
+    rows('booking_ops_records').push(booking);
+    beforeBookingOpsUpdate = () => {
+      booking.property_id = 'prop-b';
+      beforeBookingOpsUpdate = null;
+    };
+
+    await expect(checkAvailabilityConflict({
+      bookingId: BOOKING_OPS_ID,
+      propertyId: 'prop-a',
+      dateFrom: '2026-07-10',
+      dateTo: '2026-07-12',
+    }, { accountId: 'account-a', persist: false })).rejects.toThrow('booking_scope_mismatch');
+
+    expect(booking.property_id).toBe('prop-b');
+    expect(booking.availability_status).toBeUndefined();
+    expect(booking.overbooking_risk_status).toBeUndefined();
+  });
+
+  it('does not explain a conflict check outside the canonical property scope', async () => {
+    rows('booking_overbooking_conflict_checks').push({
+      id: 'check-a',
+      account_id: 'account-a',
+      property_id: 'prop-b',
+      status: 'confirmed_conflict',
+      safe_summary: 'stale property check',
+      blockers: [],
+      conflicts: [],
+      created_at: '2026-10-04T00:00:00.000Z',
+    });
+
+    await expect(explainAvailabilityConflict(
+      { checkId: 'check-a' },
+      'account-a',
+      { propertyId: 'prop-a' },
+    )).resolves.toBeNull();
+  });
+
+  it('fails closed before persisting a booking-bound check after canonical scope drift', async () => {
+    rows('properties').push(
+      { id: 'prop-a', account_id: 'account-a' },
+      { id: 'prop-b', account_id: 'account-a' },
+    );
+    const booking: Row = {
+      id: BOOKING_OPS_ID,
+      account_id: 'account-a',
+      property_id: 'prop-a',
+      check_in_at: null,
+      check_out_at: null,
+    };
+    rows('booking_ops_records').push(booking);
+    beforeBookingOpsScopeFilter = () => {
+      booking.property_id = 'prop-b';
+    };
+
+    await expect(checkAvailabilityConflict({
+      bookingId: BOOKING_OPS_ID,
+      propertyId: 'prop-a',
+    }, { accountId: 'account-a' })).rejects.toThrow('booking_scope_mismatch');
+
+    expect(booking.property_id).toBe('prop-b');
+    expect(rows('booking_overbooking_conflict_checks')).toHaveLength(0);
   });
 });

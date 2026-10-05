@@ -2,6 +2,9 @@ import { createHash, randomUUID } from 'node:crypto';
 import { supabase } from '@/lib/supabase';
 import { initialLifecycleState, reduceLifecycle, type BookingEventActor, type LifecycleEvent, type LifecycleState } from './lifecycle-autopilot';
 import { convergeLifecycleEvent } from './lifecycle-convergence';
+import { requireBookingOpsRecordScope } from './repository';
+
+type ExpectedScope = { accountId: string; propertyId: string };
 
 type RecordEventInput = {
   id?: string; bookingId: string; objectId?: string | null; type: string; actorType: BookingEventActor;
@@ -24,10 +27,11 @@ const rowToEvent = (row: Record<string, unknown>): LifecycleEvent => ({
   causationId: row.causation_id ? String(row.causation_id) : null, createdAt: String(row.created_at),
 });
 
-export async function processBookingDomainEvent(eventId: string) {
+export async function processBookingDomainEvent(eventId: string, expectedScope?: ExpectedScope) {
   const eventResult = await supabase.from('booking_ops_domain_events').select('*').eq('id', eventId).single();
   if (eventResult.error) throw new Error(eventResult.error.message);
   const event = rowToEvent(eventResult.data as Record<string, unknown>);
+  if (expectedScope) await requireBookingOpsRecordScope(event.bookingId, expectedScope);
   const existing = await supabase.from('booking_ops_lifecycle_decisions').select('id').eq('event_id', event.id).maybeSingle();
   if (existing.error) throw new Error(existing.error.message);
   if (existing.data) return { processed: false, duplicate: true };
@@ -37,6 +41,7 @@ export async function processBookingDomainEvent(eventId: string) {
   const decision = reduceLifecycle(previous, event);
   const now = new Date().toISOString();
   for (const task of decision.tasksToCreate) {
+    if (expectedScope) await requireBookingOpsRecordScope(event.bookingId, expectedScope);
     const result = await supabase.from('booking_ops_worker_tasks').upsert({
       id: randomUUID(), booking_id: event.bookingId, object_id: event.objectId ?? null, task_key: task.key,
       assigned_role: task.role, status: task.status, checklist: task.checklist, notes: task.notes ?? null,
@@ -44,25 +49,31 @@ export async function processBookingDomainEvent(eventId: string) {
     }, { onConflict: 'booking_id,task_key', ignoreDuplicates: true });
     if (result.error) throw new Error(result.error.message);
   }
+  if (expectedScope) await requireBookingOpsRecordScope(event.bookingId, expectedScope);
   const stateWrite = await supabase.from('booking_ops_autopilot_states').upsert({ booking_id: event.bookingId, stage: decision.state.stage, state: decision.state, last_event_id: event.id, updated_at: now }, { onConflict: 'booking_id' });
   if (stateWrite.error) throw new Error(stateWrite.error.message);
-  await convergeLifecycleEvent(event, decision.state, now);
+  if (expectedScope) await requireBookingOpsRecordScope(event.bookingId, expectedScope);
+  await convergeLifecycleEvent(event, decision.state, now, expectedScope);
   const audit = decision.state.audit.at(-1)?.decision ?? 'event processed';
+  if (expectedScope) await requireBookingOpsRecordScope(event.bookingId, expectedScope);
   const auditWrite = await supabase.from('booking_ops_lifecycle_decisions').insert({ id: randomUUID(), booking_id: event.bookingId, event_id: event.id, previous_stage: previous.stage, next_stage: decision.state.stage, decision: audit, blockers: decision.state.blockers, actions: decision.eventsToEmit });
   if (auditWrite.error?.code === '23505') return { processed: false, duplicate: true };
   if (auditWrite.error) throw new Error(auditWrite.error.message);
+  if (expectedScope) await requireBookingOpsRecordScope(event.bookingId, expectedScope);
   await supabase.from('booking_ops_domain_events').update({ processed_at: now, processing_error: null }).eq('id', event.id);
   for (const emittedType of decision.eventsToEmit) {
+    if (expectedScope) await requireBookingOpsRecordScope(event.bookingId, expectedScope);
     await recordAndProcessBookingEvent({
       id: durableEventId(event.id, emittedType), bookingId: event.bookingId, objectId: event.objectId,
       type: emittedType, actorType: 'system', source: 'lifecycle_orchestrator', correlationId: event.correlationId,
       causationId: event.id, payload: emittedType === 'property.ready' ? { ready: true } : {},
-    });
+    }, expectedScope);
   }
   return { processed: true, duplicate: false, decision };
 }
 
-export async function recordAndProcessBookingEvent(input: RecordEventInput) {
+export async function recordAndProcessBookingEvent(input: RecordEventInput, expectedScope?: ExpectedScope) {
+  if (expectedScope) await requireBookingOpsRecordScope(input.bookingId, expectedScope);
   const eventId = input.id ?? randomUUID();
   const insert = await supabase.from('booking_ops_domain_events').insert({
     id: eventId, booking_id: input.bookingId, object_id: input.objectId ?? null, event_type: input.type,
@@ -73,15 +84,18 @@ export async function recordAndProcessBookingEvent(input: RecordEventInput) {
   if (insert.error?.code === '23505') return { eventId, processed: false, duplicate: true };
   if (insert.error) throw new Error(insert.error.message);
   try {
-    return { eventId, ...(await processBookingDomainEvent(eventId)) };
+    return { eventId, ...(await processBookingDomainEvent(eventId, expectedScope)) };
   } catch (error) {
+    if (error instanceof Error && error.message === 'booking_scope_mismatch') throw error;
     const message = error instanceof Error ? error.message : 'event_processing_failed';
+    if (expectedScope) await requireBookingOpsRecordScope(input.bookingId, expectedScope);
     await supabase.from('booking_ops_domain_events').update({ processing_error: message }).eq('id', eventId);
     throw error;
   }
 }
 
-export async function recordProcessedBookingAuditEvent(input: RecordEventInput) {
+export async function recordProcessedBookingAuditEvent(input: RecordEventInput, expectedScope?: ExpectedScope) {
+  if (expectedScope) await requireBookingOpsRecordScope(input.bookingId, expectedScope);
   const eventId = input.id ?? randomUUID();
   const now = input.createdAt ?? new Date().toISOString();
   const insert = await supabase.from('booking_ops_domain_events').insert({
@@ -96,17 +110,35 @@ export async function recordProcessedBookingAuditEvent(input: RecordEventInput) 
 }
 
 export async function recoverUnprocessedBookingEvents(limit = 100) {
-  const result = await supabase.from('booking_ops_domain_events').select('id').is('processed_at', null).order('created_at').limit(limit);
+  const result = await supabase.from('booking_ops_domain_events').select('id,booking_id').is('processed_at', null).order('created_at').limit(limit);
   if (result.error) throw new Error(result.error.message);
   let processed = 0; const errors: string[] = [];
   for (const row of result.data ?? []) {
-    try { const outcome = await processBookingDomainEvent(String(row.id)); if (outcome.processed) processed += 1; }
+    try {
+      const bookingId = String(row.booking_id ?? '').trim();
+      let expectedScope: ExpectedScope | undefined;
+      if (bookingId) {
+        const scopeResult = await supabase.from('booking_ops_records').select('account_id,property_id').eq('id', bookingId).maybeSingle();
+        if (scopeResult.error) throw new Error(scopeResult.error.message);
+        const accountId = String(scopeResult.data?.account_id ?? '').trim();
+        const propertyId = String(scopeResult.data?.property_id ?? '').trim();
+        if (accountId && accountId !== 'legacy') {
+          if (!propertyId) throw new Error('booking_scope_unavailable');
+          expectedScope = { accountId, propertyId };
+        }
+      }
+      const outcome = await processBookingDomainEvent(String(row.id), expectedScope);
+      if (outcome.processed) processed += 1;
+    }
     catch (error) { errors.push(error instanceof Error ? error.message : 'event_processing_failed'); }
   }
   return { evaluated: result.data?.length ?? 0, processed, errors };
 }
 
-export async function bootstrapBookingLifecycle(input: { bookingId: string; objectId?: string | null; actorId?: string | null }) {
+export async function bootstrapBookingLifecycle(
+  input: { bookingId: string; objectId?: string | null; actorId?: string | null },
+  expectedScope?: ExpectedScope,
+) {
   const id = durableEventId('ops-v16-bootstrap', input.bookingId, 'booking.received');
   return recordAndProcessBookingEvent({
     id,
@@ -119,10 +151,11 @@ export async function bootstrapBookingLifecycle(input: { bookingId: string; obje
     correlationId: durableEventId('ops-v16-bootstrap', input.bookingId),
     causationId: null,
     payload: { bootstrap: true, messagingDisabled: true },
-  });
+  }, expectedScope);
 }
 
-export async function getBookingLifecycleSummary(bookingId: string) {
+export async function getBookingLifecycleSummary(bookingId: string, expectedScope?: ExpectedScope) {
+  if (expectedScope) await requireBookingOpsRecordScope(bookingId, expectedScope);
   const [events, state, tasks, errors] = await Promise.all([
     supabase.from('booking_ops_domain_events').select('id', { count: 'exact', head: true }).eq('booking_id', bookingId),
     supabase.from('booking_ops_autopilot_states').select('stage,state,last_event_id,updated_at').eq('booking_id', bookingId).maybeSingle(),
@@ -130,6 +163,7 @@ export async function getBookingLifecycleSummary(bookingId: string) {
     supabase.from('booking_ops_domain_events').select('id,event_type,processing_error,created_at').eq('booking_id', bookingId).not('processing_error', 'is', null).order('created_at', { ascending: false }).limit(20),
   ]);
   for (const result of [events, state, tasks, errors]) if (result.error) throw new Error(result.error.message);
+  if (expectedScope) await requireBookingOpsRecordScope(bookingId, expectedScope);
   const lifecycle = state.data?.state as LifecycleState | undefined;
   return {
     domainEventCount: events.count ?? 0,

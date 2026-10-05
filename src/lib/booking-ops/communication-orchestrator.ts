@@ -1,3 +1,4 @@
+import { guardBookingCommunicationDraft } from '@/lib/communication/booking-knowledge-boundary';
 import { randomUUID } from 'node:crypto';
 import { supabase } from '@/lib/supabase';
 import {
@@ -6,6 +7,7 @@ import {
   evaluateAndPersistIntentAutoSendDecision,
 } from './communication-auto-send-policy';
 import { recordBookingOpsEvent } from './events';
+import { requireBookingOpsRecordScope } from './repository';
 import { computeBookingReadiness } from './readiness';
 import {
   BOOKING_OPS_COMMUNICATION_ACTOR_TYPES,
@@ -20,6 +22,8 @@ import {
   type BookingOpsRecord,
 } from './types';
 import type { BookingOpsTask, BookingOpsTaskType } from './task-types';
+
+type ExpectedScope = { accountId: string; propertyId: string };
 
 export type PlannedBookingOpsCommunication = {
   actorType: BookingOpsCommunicationActorType;
@@ -470,8 +474,9 @@ export async function createOperatorMissingDataRequestDraft(input: {
   alertId: string;
   reason: OperatorMissingDataReason;
   actorId: string;
-}): Promise<{ communication: BookingOpsCommunicationIntent; created: boolean; actuallySent: false }> {
+}, expectedScope?: ExpectedScope): Promise<{ communication: BookingOpsCommunicationIntent; created: boolean; actuallySent: false }> {
   if (!OPERATOR_MISSING_DATA_REASONS.includes(input.reason)) throw new Error('missing_data_reason_unsupported');
+  if (expectedScope) await requireBookingOpsRecordScope(input.bookingOpsRecordId, expectedScope);
   const definition = OPERATOR_REQUEST_DEFINITION[input.reason];
   const active = await supabase
     .from('booking_ops_communication_intents')
@@ -481,8 +486,10 @@ export async function createOperatorMissingDataRequestDraft(input: {
     .in('status', ['draft_ready', 'waiting_for_external_input'])
     .maybeSingle();
   if (active.error) throw new Error(active.error.message);
+  if (expectedScope) await requireBookingOpsRecordScope(input.bookingOpsRecordId, expectedScope);
   if (active.data) return { communication: mapRow(active.data as CommunicationRow), created: false, actuallySent: false };
 
+  if (expectedScope) await requireBookingOpsRecordScope(input.bookingOpsRecordId, expectedScope);
   const now = new Date().toISOString();
   const inserted = await supabase.from('booking_ops_communication_intents').insert({
     id: randomUUID(),
@@ -508,12 +515,14 @@ export async function createOperatorMissingDataRequestDraft(input: {
     updated_at: now,
   }).select('*').single();
   if (inserted.error?.code === '23505') {
+    if (expectedScope) await requireBookingOpsRecordScope(input.bookingOpsRecordId, expectedScope);
     const raced = await supabase.from('booking_ops_communication_intents').select('*')
       .eq('booking_ops_record_id', input.bookingOpsRecordId)
       .eq('purpose', definition.purpose)
       .in('status', ['draft_ready', 'waiting_for_external_input'])
       .maybeSingle();
     if (raced.error) throw new Error(raced.error.message);
+    if (expectedScope) await requireBookingOpsRecordScope(input.bookingOpsRecordId, expectedScope);
     if (!raced.data) throw new Error('missing_data_request_duplicate_race');
     return { communication: mapRow(raced.data as CommunicationRow), created: false, actuallySent: false };
   }
@@ -545,7 +554,7 @@ async function recordCommunicationEvent(input: {
     bookingOpsRecordId: input.recordId,
     eventType,
     title,
-    description: input.communication.messageText,
+    description: 'Черновик сообщения: требуется проверка оператором.',
     actorType: 'system',
     metadata: {
       communicationId: input.communication.id,
@@ -561,12 +570,14 @@ async function recordCommunicationEvent(input: {
 export async function syncBookingOpsCommunications(input: {
   record: BookingOpsRecord;
   tasks: BookingOpsTask[];
+  expectedScope?: ExpectedScope;
 }): Promise<{
   ok: boolean;
   communications: BookingOpsCommunicationIntent[];
   plan: BookingOpsCommunicationPlan;
   error?: string;
 }> {
+  if (input.expectedScope) await requireBookingOpsRecordScope(input.record.id, input.expectedScope);
   const existingResult = await listBookingOpsCommunicationsForRecord(input.record.id);
   if (!existingResult.ok) {
     return {
@@ -584,13 +595,16 @@ export async function syncBookingOpsCommunications(input: {
   const now = new Date().toISOString();
 
   for (const item of plan.toSupersede) {
+    if (input.expectedScope) await requireBookingOpsRecordScope(input.record.id, input.expectedScope);
     const { data } = await supabase
       .from('booking_ops_communication_intents')
       .update({ status: 'superseded', superseded_at: now, updated_at: now })
       .eq('id', item.id)
+      .eq('booking_ops_record_id', input.record.id)
       .select('*')
       .maybeSingle();
     if (data) {
+      if (input.expectedScope) await requireBookingOpsRecordScope(input.record.id, input.expectedScope);
       await recordCommunicationEvent({
         recordId: input.record.id,
         type: 'superseded',
@@ -606,6 +620,13 @@ export async function syncBookingOpsCommunications(input: {
       guestRef: input.record.guestTelegram ?? input.record.guestEmail ?? input.record.guestPhone,
       unresolvedComplaint: input.record.guestIntake?.intakeStatus === 'fallback_required',
     });
+    if (item.desired.actorType === 'guest') {
+      const knowledge = await guardBookingCommunicationDraft(input.record, item.desired.purpose);
+      item.desired.messageText = knowledge.messageText;
+      item.desired.status = knowledge.status;
+      item.desired.metadata = { ...item.desired.metadata, ...knowledge.metadata };
+    }
+    if (input.expectedScope) await requireBookingOpsRecordScope(input.record.id, input.expectedScope);
     const { data } = await supabase
       .from('booking_ops_communication_intents')
       .update({
@@ -614,14 +635,17 @@ export async function syncBookingOpsCommunications(input: {
         status: item.desired.status,
         message_text: item.desired.messageText,
         message_template_key: item.desired.messageTemplateKey,
-        metadata: attachAutoSendDecisionMetadata(item.desired.metadata ?? {}, autoSendDecision),
+        metadata: { ...attachAutoSendDecisionMetadata(item.desired.metadata ?? {}, autoSendDecision),
+          ...(item.desired.actorType === 'guest' ? { actual_send_enabled: false, operator_review_required: true } : {}) },
         updated_at: now,
       })
       .eq('id', item.existing.id)
+      .eq('booking_ops_record_id', input.record.id)
       .select('*')
       .maybeSingle();
     if (data) {
       const communication = mapRow(data as CommunicationRow);
+      if (input.expectedScope) await requireBookingOpsRecordScope(input.record.id, input.expectedScope);
       await recordCommunicationEvent({
         recordId: input.record.id,
         type: communication.status === 'waiting_for_external_input' ? 'waiting' : 'updated',
@@ -637,6 +661,13 @@ export async function syncBookingOpsCommunications(input: {
       guestRef: input.record.guestTelegram ?? input.record.guestEmail ?? input.record.guestPhone,
       unresolvedComplaint: input.record.guestIntake?.intakeStatus === 'fallback_required',
     });
+    if (item.actorType === 'guest') {
+      const knowledge = await guardBookingCommunicationDraft(input.record, item.purpose);
+      item.messageText = knowledge.messageText;
+      item.status = knowledge.status;
+      item.metadata = { ...item.metadata, ...knowledge.metadata };
+    }
+    if (input.expectedScope) await requireBookingOpsRecordScope(input.record.id, input.expectedScope);
     const { data } = await supabase
       .from('booking_ops_communication_intents')
       .insert({
@@ -651,7 +682,8 @@ export async function syncBookingOpsCommunications(input: {
         status: item.status,
         message_text: item.messageText,
         message_template_key: item.messageTemplateKey,
-        metadata: attachAutoSendDecisionMetadata(item.metadata ?? {}, autoSendDecision),
+        metadata: { ...attachAutoSendDecisionMetadata(item.metadata ?? {}, autoSendDecision),
+          ...(item.actorType === 'guest' ? { actual_send_enabled: false, operator_review_required: true } : {}) },
         created_at: now,
         updated_at: now,
       })
@@ -659,12 +691,14 @@ export async function syncBookingOpsCommunications(input: {
       .single();
     if (data) {
       const communication = mapRow(data as CommunicationRow);
+      if (input.expectedScope) await requireBookingOpsRecordScope(input.record.id, input.expectedScope);
       await recordCommunicationEvent({
         recordId: input.record.id,
         type: 'created',
         communication,
       });
       if (communication.status === 'draft_ready') {
+        if (input.expectedScope) await requireBookingOpsRecordScope(input.record.id, input.expectedScope);
         await recordCommunicationEvent({
           recordId: input.record.id,
           type: 'updated',
@@ -681,9 +715,12 @@ export async function syncBookingOpsCommunications(input: {
       propertyId: input.record.propertyId,
       guestRef: input.record.guestTelegram ?? input.record.guestEmail ?? input.record.guestPhone,
       unresolvedComplaint: input.record.guestIntake?.intakeStatus === 'fallback_required',
-    });
+    }, input.expectedScope ? {
+      beforePersist: () => requireBookingOpsRecordScope(input.record.id, input.expectedScope as ExpectedScope),
+    } : undefined);
   }
 
+  if (input.expectedScope) await requireBookingOpsRecordScope(input.record.id, input.expectedScope);
   const finalResult = await listBookingOpsCommunicationsForRecord(input.record.id);
   return {
     ok: finalResult.ok,

@@ -39,7 +39,16 @@ export async function runBookingOpsAutomation(
   if (Object.keys(patch).length === 0) return withDecision(record, decision);
 
   try {
-    const result = await updateBookingOpsRecord(record.id, patch);
+    const accountId = String(record.accountId ?? '').trim();
+    const propertyId = String(record.propertyId ?? '').trim();
+    const expectedScope = accountId && accountId !== 'legacy' && propertyId
+      ? { accountId, propertyId }
+      : undefined;
+    const result = await updateBookingOpsRecord(
+      record.id,
+      patch,
+      expectedScope ? { actorType: 'system', expectedScope } : { actorType: 'system' },
+    );
     if (!result.ok || !result.record) {
       throw new Error(result.error || 'update_failed');
     }

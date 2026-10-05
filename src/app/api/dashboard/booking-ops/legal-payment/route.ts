@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { requireCrmOperatorSession, requireOpsAdminSession } from '@/lib/crm/api-auth';
-import { getBookingOpsRecord } from '@/lib/booking-ops/repository';
+import { requireBookingOpsApiAccess } from '../access';
 import {
   getLegalPaymentStatus,
   initializeLegalPaymentForBooking,
@@ -55,36 +55,17 @@ function parseStringList(value: unknown): string[] {
   return value.map((item) => text(item)).filter(Boolean);
 }
 
-async function requireBooking(bookingId: unknown): Promise<
-  | { ok: true; id: string }
-  | { ok: false; response: NextResponse }
-> {
-  const id = text(bookingId);
-  if (!id) {
-    return {
-      ok: false,
-      response: NextResponse.json({ ok: false, message: 'Не указана бронь.' }, { status: 400 }),
-    };
-  }
-  const record = await getBookingOpsRecord(id);
-  if (!record) {
-    return {
-      ok: false,
-      response: NextResponse.json({ ok: false, message: 'Запись не найдена.' }, { status: 404 }),
-    };
-  }
-  return { ok: true, id: record.id };
-}
+type ExpectedScope = { accountId: string; propertyId: string };
 
 export async function GET(req: Request): Promise<NextResponse> {
   const auth = await requireCrmOperatorSession();
   if ('error' in auth) return auth.error;
 
   const bookingId = new URL(req.url).searchParams.get('bookingId');
-  const booking = await requireBooking(bookingId);
-  if (!booking.ok) return booking.response;
-
-  const status = await getLegalPaymentStatus(booking.id);
+  const access = await requireBookingOpsApiAccess(auth.session, text(bookingId));
+  if (!access.ok) return access.response;
+  const expectedScope = { accountId: access.accountId, propertyId: access.propertyId };
+  const status = await getLegalPaymentStatus(access.bookingId, expectedScope);
   return NextResponse.json({ ok: true, status });
 }
 
@@ -99,8 +80,9 @@ export async function POST(req: Request): Promise<NextResponse> {
     return NextResponse.json({ ok: false, message: 'Некорректный JSON.' }, { status: 400 });
   }
 
-  const booking = await requireBooking(body.bookingId ?? body.booking_id);
-  if (!booking.ok) return booking.response;
+  const access = await requireBookingOpsApiAccess(auth.session, text(body.bookingId ?? body.booking_id));
+  if (!access.ok) return access.response;
+  const expectedScope = { accountId: access.accountId, propertyId: access.propertyId };
 
   const action = body.action;
   if (!isAction(action)) {
@@ -112,8 +94,8 @@ export async function POST(req: Request): Promise<NextResponse> {
     : {};
 
   try {
-    const status = await runAction(action, booking.id, body, metadata);
-    await emitLifecycleForAction({ bookingId: booking.id, action, actorId: auth.session.email ?? auth.session.userId ?? null, source: 'legal_payment', payload: metadata });
+    const status = await runAction(action, access.bookingId, body, metadata, expectedScope);
+    await emitLifecycleForAction({ bookingId: access.bookingId, expectedScope, action, actorId: auth.session.email ?? auth.session.userId ?? null, source: 'legal_payment', payload: metadata });
     return NextResponse.json({ ok: true, status });
   } catch (error) {
     return NextResponse.json(
@@ -128,35 +110,36 @@ async function runAction(
   bookingId: string,
   body: Record<string, unknown>,
   metadata: Record<string, unknown>,
+  expectedScope: ExpectedScope,
 ) {
   switch (action) {
     case 'initialize':
-      return initializeLegalPaymentForBooking(bookingId);
+      return initializeLegalPaymentForBooking(bookingId, expectedScope);
     case 'request_documents':
-      return requestGuestDocuments(bookingId, parseStringList(body.requiredDocuments), metadata);
+      return requestGuestDocuments(bookingId, parseStringList(body.requiredDocuments), metadata, expectedScope);
     case 'documents_received':
-      return markDocumentsReceived(bookingId, metadata);
+      return markDocumentsReceived(bookingId, metadata, expectedScope);
     case 'verify_documents':
-      return verifyGuestDocuments(bookingId, metadata);
+      return verifyGuestDocuments(bookingId, metadata, expectedScope);
     case 'reject_documents':
-      return rejectGuestDocuments(bookingId, text(body.reason), metadata);
+      return rejectGuestDocuments(bookingId, text(body.reason), metadata, expectedScope);
     case 'prepare_contract':
-      return prepareContract(bookingId, text(body.templateKey ?? body.template_key) || undefined, metadata);
+      return prepareContract(bookingId, text(body.templateKey ?? body.template_key) || undefined, metadata, expectedScope);
     case 'contract_sent':
-      return markContractSent(bookingId, metadata);
+      return markContractSent(bookingId, metadata, expectedScope);
     case 'contract_signed':
-      return markContractSigned(bookingId, metadata);
+      return markContractSigned(bookingId, metadata, expectedScope);
     case 'request_deposit':
-      return requestDeposit(bookingId, Number(body.amount), text(body.currency) || 'RUB', metadata);
+      return requestDeposit(bookingId, Number(body.amount), text(body.currency) || 'RUB', metadata, expectedScope);
     case 'deposit_received':
-      return markDepositReceived(bookingId, metadata);
+      return markDepositReceived(bookingId, metadata, expectedScope);
     case 'waive_deposit':
-      return waiveDeposit(bookingId, text(body.reason), metadata);
+      return waiveDeposit(bookingId, text(body.reason), metadata, expectedScope);
     case 'prepare_mvd_report':
-      return prepareMvdReport(bookingId, metadata);
+      return prepareMvdReport(bookingId, metadata, expectedScope);
     case 'mvd_report_submitted':
-      return markMvdReportSubmitted(bookingId, metadata);
+      return markMvdReportSubmitted(bookingId, metadata, expectedScope);
     case 'mvd_report_accepted':
-      return markMvdReportAccepted(bookingId, metadata);
+      return markMvdReportAccepted(bookingId, metadata, expectedScope);
   }
 }

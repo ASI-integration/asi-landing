@@ -6,7 +6,15 @@ import { ProcessOutcome, TelegramUpdate, IntentCategory, EscalationReason } from
 
 const knowledgeLoader = vi.hoisted(() => ({
   failed: false,
+  prepared: null as import("../knowledge-boundary").PreparedKnowledgeReply | null,
 }));
+
+vi.mock('../knowledge-boundary', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../knowledge-boundary')>();
+  return { ...actual, prepareRuntimeKnowledgeReply: (...args: Parameters<typeof actual.prepareRuntimeKnowledgeReply>) =>
+    knowledgeLoader.prepared ? Promise.resolve(structuredClone(knowledgeLoader.prepared))
+      : actual.prepareRuntimeKnowledgeReply(...args) };
+});
 
 // Mock Supabase persistence so tests don't need a real DB
 vi.mock('@/lib/supabase', () => ({
@@ -138,6 +146,7 @@ describe('processUpdate', () => {
     mockDetectIntent.mockResolvedValue({ intent: IntentCategory.GeneralQuestion, confidence: 0.9 });
     mockCreatePaymentRequest.mockClear();
     knowledgeLoader.failed = false;
+    knowledgeLoader.prepared = null;
   });
 
   it('replies to a valid message and returns Replied outcome', async () => {
@@ -215,6 +224,41 @@ describe('processUpdate', () => {
     ]);
   });
 
+  it.each(['Какой код от двери?', 'Какой пароль Wi-Fi?', 'Залог уже вернули?', 'Можно заехать сейчас?',
+    'Где ключи?', 'Уборка закончена?', 'Когда выезд?', 'Мой договор подписан?',
+    'А завтра?', 'А можно раньше?', 'Пришлите это ещё раз', 'Есть ли фен?'])(
+    'Wave 2: missing authoritative facts never become a guest assertion: %s', async (messageText) => {
+      const result = await processMessage({
+        channel: 'telegram', chatId: '93119812', externalUserId: '567508', messageText,
+        receivedAt: new Date(), update_id: nextUpdateId++,
+      });
+      expect(mockLLM).not.toHaveBeenCalled();
+      expect(result.reply).not.toMatch(/1234|GuestWifi|secret123|15:00 обычно/);
+      expect(result.reply).toMatch(/оператор|operator/i);
+      expect(listEscalationReviews().some((review) =>
+        review.escalationReason === 'communication_knowledge_review')).toBe(true);
+    },
+  );
+  it('Wave 2: verified knowledge is an account-scoped operator draft, not an auto-send permission', async () => {
+    const scope = { accountId: 'account-a', propertyId: 'property-a', bookingId: 'tg-booking-a',
+      guestId: 'guest-a', sessionId: 'telegram:93119812' };
+    knowledgeLoader.prepared = {
+      text: 'Выезд до 12:00.', reviewRequired: false, summary: 'checkout_time: verified',
+      result: { ready: true, scope, decisions: [{ key: 'checkout_time', use: 'automatic', reason: 'verified',
+        fact: { key: 'checkout_time', value: 'Выезд до 12:00.', scope, origin: 'manual',
+          source: 'object_knowledge_entries', reference: 'entry-a', observedAt: new Date().toISOString(),
+          verified: true, sensitivity: 'normal' },
+      }] },
+    };
+    await processMessage({ channel: 'telegram', chatId: '93119812', externalUserId: '567508',
+      messageText: 'Когда выезд?', receivedAt: new Date(), update_id: nextUpdateId++ });
+    expect(mockLLM).not.toHaveBeenCalled();
+    expect(mockSendMessage.mock.calls.at(-1)?.[1]).not.toContain('12:00');
+    expect(listEscalationReviews()).toEqual([expect.objectContaining({
+      accountId: 'account-a', propertyId: 'property-a', suggestedReply: 'Выезд до 12:00.',
+      escalationReason: 'communication_knowledge_review',
+    })]);
+  });
   it('injects session context into LLM prompt', async () => {
     mockLLM.mockResolvedValue('ok');
     await processUpdate(makeUpdate('need invoice for payment, 2 guests 2026-05-01'));

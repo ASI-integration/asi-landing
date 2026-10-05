@@ -6,7 +6,7 @@ import {
   sendGuestLifecycleVoiceCopy,
   type GuestLifecycleVoiceInput,
 } from '@/lib/communication/guest-lifecycle-voice';
-import { getBookingOpsRecord } from './repository';
+import { getBookingOpsRecord, requireBookingOpsRecordScope } from './repository';
 import {
   SUPPORTED_ACTUAL_AUTO_SEND_MESSAGE_TYPES,
   canAutoSendCommunicationIntent,
@@ -36,6 +36,7 @@ export type ActualAutoSendChannel = 'telegram' | 'email' | 'web' | 'sms';
 
 export type BookingOpsCommunicationDelivery = {
   id: string;
+  accountId: string | null;
   communicationIntentId: string;
   bookingId: string | null;
   recipientRole: string;
@@ -88,6 +89,7 @@ export type AutoSendSender = (input: {
 export type ExecuteAutoSendOptions = {
   dryRun?: boolean;
   maxBatchSize?: number;
+  accountId?: string;
   allowedChannels?: ActualAutoSendChannel[];
   allowedMessageTypes?: string[];
   forcePolicyRecheck?: boolean;
@@ -122,6 +124,7 @@ type IntentRow = {
 
 type DeliveryRow = {
   id: string;
+  account_id: string | null;
   communication_intent_id: string;
   booking_id: string | null;
   recipient_role: string;
@@ -168,6 +171,7 @@ function mapIntent(row: IntentRow): BookingOpsCommunicationIntent {
 function mapDelivery(row: DeliveryRow): BookingOpsCommunicationDelivery {
   return {
     id: row.id,
+    accountId: row.account_id ?? null,
     communicationIntentId: row.communication_intent_id,
     bookingId: row.booking_id,
     recipientRole: row.recipient_role,
@@ -192,6 +196,32 @@ function mapDelivery(row: DeliveryRow): BookingOpsCommunicationDelivery {
 function safeText(value: unknown): string | null {
   const normalized = String(value ?? '').trim();
   return normalized ? normalized : null;
+}
+
+type CanonicalExpectedScope = { accountId: string; propertyId: string };
+
+function canonicalExpectedScope(
+  record: Awaited<ReturnType<typeof getBookingOpsRecord>>,
+): CanonicalExpectedScope | null {
+  const accountId = safeText(record?.accountId);
+  const propertyId = safeText(record?.propertyId);
+  if (!accountId || accountId === 'legacy' || !propertyId) return null;
+  return { accountId, propertyId };
+}
+
+async function revalidateCanonicalScope(
+  bookingOpsRecordId: string,
+  expectedScope: CanonicalExpectedScope | null,
+): Promise<string | null> {
+  if (!expectedScope) return null;
+  try {
+    await requireBookingOpsRecordScope(bookingOpsRecordId, expectedScope);
+    return null;
+  } catch (error) {
+    return error instanceof Error && error.message === 'booking_scope_unavailable'
+      ? 'booking_scope_unavailable'
+      : 'booking_scope_mismatch';
+  }
 }
 
 function deliveryKey(intent: BookingOpsCommunicationIntent): string {
@@ -305,27 +335,44 @@ async function readDelivery(deliveryId: string): Promise<BookingOpsCommunication
 
 export async function getEligibleAutoSendIntents(filters: {
   bookingOpsRecordId?: string;
+  accountId?: string;
   channel?: BookingOpsCommunicationChannel;
   limit?: number;
 } = {}) {
+  const requestedLimit = Math.min(Math.max(filters.limit ?? 20, 1), 100);
+  const candidateLimit = filters.accountId ? Math.min(requestedLimit * 5, 500) : requestedLimit;
   let query = supabase
     .from('booking_ops_communication_intents')
     .select('*')
     .eq('metadata->>auto_send_eligible', 'true')
     .in('status', ['draft_ready', 'waiting_for_external_input'])
     .order('updated_at', { ascending: true })
-    .limit(Math.min(Math.max(filters.limit ?? 20, 1), 100));
+    .limit(candidateLimit);
   if (filters.bookingOpsRecordId) query = query.eq('booking_ops_record_id', filters.bookingOpsRecordId);
   if (filters.channel) query = query.eq('channel', filters.channel);
   const { data, error } = await query;
-  const intents = error ? [] : ((data ?? []) as IntentRow[]).map(mapIntent)
+  if (error) return { ok: false as const, error: error.message, intents: [] };
+
+  let intents = ((data ?? []) as IntentRow[]).map(mapIntent)
     .filter((intent) => SUPPORTED_TYPES.has(intent.purpose));
-  return error ? { ok: false as const, error: error.message, intents } : { ok: true as const, intents };
+  if (filters.accountId && intents.length) {
+    const recordIds = [...new Set(intents.map((intent) => intent.bookingOpsRecordId))];
+    const scoped = await supabase
+      .from('booking_ops_records')
+      .select('id')
+      .in('id', recordIds)
+      .eq('account_id', filters.accountId);
+    if (scoped.error) return { ok: false as const, error: scoped.error.message, intents: [] };
+    const allowed = new Set((scoped.data ?? []).map((row) => String(row.id)));
+    intents = intents.filter((intent) => allowed.has(intent.bookingOpsRecordId));
+  }
+  return { ok: true as const, intents: intents.slice(0, requestedLimit) };
 }
 
 export async function enqueueAutoSendDelivery(
   intentId: string,
   metadata: Record<string, unknown> = {},
+  options: { accountId?: string } = {},
 ) {
   const intent = await readIntent(intentId);
   if (!intent) return { ok: false as const, error: 'intent_not_found' };
@@ -333,7 +380,13 @@ export async function enqueueAutoSendDelivery(
   const channel = channelForIntent(intent);
   if (!channel) return { ok: false as const, error: 'unsupported_channel' };
   const context = await resolveExecutionContext(intent);
-  const availabilityGuard = await shouldBlockCommunicationIntent(intent);
+  if (options.accountId && context.record?.accountId !== options.accountId) {
+    return { ok: false as const, error: 'booking_scope_mismatch' };
+  }
+  const expectedScope = canonicalExpectedScope(context.record);
+  const availabilityGuard = await shouldBlockCommunicationIntent(intent, {
+    accountId: context.record?.accountId ?? null,
+  });
   if (availabilityGuard.block) {
     return {
       ok: false as const,
@@ -344,11 +397,14 @@ export async function enqueueAutoSendDelivery(
   const decision = persistedOperatorBlock(intent)
     ?? await canAutoSendCommunicationIntent(intent, context.policyContext);
   if (!decision.allowed) return { ok: false as const, error: decision.decision, decision };
+  const canonicalScopeError = await revalidateCanonicalScope(intent.bookingOpsRecordId, expectedScope);
+  if (canonicalScopeError) return { ok: false as const, error: canonicalScopeError };
 
   const key = deliveryKey(intent);
   const now = new Date().toISOString();
   const values = {
     id: randomUUID(),
+    account_id: context.record?.accountId ?? null,
     communication_intent_id: intent.id,
     booking_id: intent.bookingId ?? context.record?.bookingId ?? null,
     recipient_role: intent.actorType,
@@ -390,11 +446,26 @@ async function updateDelivery(deliveryId: string, patch: Record<string, unknown>
   return error || !data ? null : mapDelivery(data as DeliveryRow);
 }
 
+async function revalidateDeliveryMutationScope(
+  deliveryId: string,
+  expectedScope?: CanonicalExpectedScope,
+): Promise<string | null> {
+  if (!expectedScope) return null;
+  const delivery = await readDelivery(deliveryId);
+  if (!delivery) return 'delivery_not_found';
+  const intent = await readIntent(delivery.communicationIntentId);
+  if (!intent) return 'intent_not_found';
+  return revalidateCanonicalScope(intent.bookingOpsRecordId, expectedScope);
+}
+
 export async function recordDeliverySuccess(
   deliveryId: string,
   providerMessageId?: string,
   metadata: Record<string, unknown> = {},
+  expectedScope?: CanonicalExpectedScope,
 ) {
+  const scopeError = await revalidateDeliveryMutationScope(deliveryId, expectedScope);
+  if (scopeError) return null;
   return updateDelivery(deliveryId, {
     status: 'sent',
     provider_message_id: safeText(providerMessageId),
@@ -408,7 +479,10 @@ export async function recordDeliveryFailure(
   deliveryId: string,
   reason: string,
   metadata: Record<string, unknown> = {},
+  expectedScope?: CanonicalExpectedScope,
 ) {
+  const scopeError = await revalidateDeliveryMutationScope(deliveryId, expectedScope);
+  if (scopeError) return null;
   return updateDelivery(deliveryId, {
     status: 'failed',
     failure_reason: safeText(reason)?.slice(0, 160) ?? 'send_failed',
@@ -420,7 +494,10 @@ export async function skipDelivery(
   deliveryId: string,
   reason: string,
   metadata: Record<string, unknown> = {},
+  expectedScope?: CanonicalExpectedScope,
 ) {
+  const scopeError = await revalidateDeliveryMutationScope(deliveryId, expectedScope);
+  if (scopeError) return null;
   return updateDelivery(deliveryId, {
     status: 'skipped',
     failure_reason: safeText(reason)?.slice(0, 160) ?? 'skipped',
@@ -451,6 +528,9 @@ export async function executeAutoSendDelivery(
 ) {
   const delivery = await readDelivery(deliveryId);
   if (!delivery) return { ok: false as const, error: 'delivery_not_found' };
+  if (options.accountId && delivery.accountId !== options.accountId) {
+    return { ok: false as const, error: 'booking_scope_mismatch', delivery: null };
+  }
   if (delivery.status === 'sent') return { ok: true as const, delivery, duplicate: true };
 
   const intent = await readIntent(delivery.communicationIntentId);
@@ -468,7 +548,13 @@ export async function executeAutoSendDelivery(
   }
 
   const executionContext = await resolveExecutionContext(intent);
-  const availabilityGuard = await shouldBlockCommunicationIntent(intent);
+  if (options.accountId && executionContext.record?.accountId !== options.accountId) {
+    return { ok: false as const, error: 'booking_scope_mismatch', delivery: null };
+  }
+  const expectedScope = canonicalExpectedScope(executionContext.record);
+  const availabilityGuard = await shouldBlockCommunicationIntent(intent, {
+    accountId: executionContext.record?.accountId ?? null,
+  });
   if (availabilityGuard.block) {
     const blocked = await blockDelivery(delivery, null, 'availability_blocked');
     return { ok: false as const, error: 'availability_blocked', delivery: blocked, availabilityGuard };
@@ -480,6 +566,7 @@ export async function executeAutoSendDelivery(
     return { ok: false as const, error: decision.decision, delivery: blocked, decision };
   }
   const scopeResult = await (options.scopeResolver ?? resolveAutoSendScope)({
+    accountId: options.accountId ?? executionContext.record?.accountId ?? null,
     bookingId: executionContext.policyContext.bookingId,
     propertyId: executionContext.policyContext.propertyId,
     ownerId: executionContext.policyContext.ownerId,
@@ -493,6 +580,15 @@ export async function executeAutoSendDelivery(
     return { ok: false as const, error: reason, delivery: blocked, decision };
   }
   const scope = scopeResult.scope;
+  if (options.accountId && scope.scopeType !== 'booking' && scope.scopeType !== 'property') {
+    const blocked = await blockDelivery(delivery, decision, 'scope_not_account_bound');
+    return {
+      ok: false as const,
+      error: 'scope_not_account_bound',
+      delivery: blocked,
+      decision,
+    };
+  }
   const scopeKey = `${scope.scopeType}:${scope.scopeRef ?? ''}`;
   const scopeUsage = options.scopeUsage;
   const used = scopeUsage?.get(scopeKey) ?? 0;
@@ -504,6 +600,11 @@ export async function executeAutoSendDelivery(
   if (!executionContext.recipientRef) {
     const blocked = await blockDelivery(delivery, decision, 'recipient_missing');
     return { ok: false as const, error: 'recipient_missing', delivery: blocked, decision };
+  }
+  const canonicalScopeError = await revalidateCanonicalScope(intent.bookingOpsRecordId, expectedScope);
+  if (canonicalScopeError) {
+    const blocked = await blockDelivery(delivery, decision, canonicalScopeError);
+    return { ok: false as const, error: canonicalScopeError, delivery: blocked, decision };
   }
 
   const now = new Date().toISOString();
@@ -544,6 +645,17 @@ export async function executeAutoSendDelivery(
     return { ok: true as const, delivery: dryRunDelivery, dryRun: true, decision, scope: safeScopeView(scope) };
   }
 
+  // Wave 2 is operator-assisted. Stored metadata, old drafts, policy toggles
+  // and a verified fact never grant permission for an automatic guest send.
+  if (String(intent.actorType) === 'guest') {
+    const blocked = await blockDelivery(delivery, decision, 'knowledge_operator_review_required');
+    return { ok: false as const, error: 'knowledge_operator_review_required', delivery: blocked };
+  }
+  const preSendScopeError = await revalidateCanonicalScope(intent.bookingOpsRecordId, expectedScope);
+  if (preSendScopeError) {
+    const blocked = await blockDelivery(delivery, decision, preSendScopeError);
+    return { ok: false as const, error: preSendScopeError, delivery: blocked, decision };
+  }
   const sender = options.sender ?? defaultSender;
   try {
     const result = await sender({
@@ -565,7 +677,12 @@ export async function executeAutoSendDelivery(
         guest_ref: intent.actorType === 'guest' ? executionContext.recipientRef : null,
         error_code: result.reason ?? 'provider_rejected',
       });
-      const failed = await recordDeliveryFailure(delivery.id, result.reason ?? 'provider_rejected');
+      const failed = await recordDeliveryFailure(
+        delivery.id,
+        result.reason ?? 'provider_rejected',
+        {},
+        expectedScope ?? undefined,
+      );
       return { ok: false as const, error: result.reason ?? 'provider_rejected', delivery: failed, decision };
     }
     const voiceAttempted = Boolean(
@@ -590,26 +707,49 @@ export async function executeAutoSendDelivery(
       delivery.id,
       'providerMessageId' in result ? result.providerMessageId : undefined,
       { source: channel, voice_attempted: voiceAttempted, voice_sent: voiceSent },
+      expectedScope ?? undefined,
     );
-    await supabase.from('booking_ops_communication_intents').update({
-      status: 'completed',
-      updated_at: new Date().toISOString(),
-    }).eq('id', intent.id);
-    return { ok: true as const, delivery: sent, decision, scope: safeScopeView(scope), voiceAttempted, voiceSent };
+    if (sent) {
+      const completionScopeError = await revalidateCanonicalScope(intent.bookingOpsRecordId, expectedScope);
+      if (!completionScopeError) {
+        await supabase.from('booking_ops_communication_intents').update({
+          status: 'completed',
+          updated_at: new Date().toISOString(),
+        }).eq('id', intent.id).eq('booking_ops_record_id', intent.bookingOpsRecordId);
+      }
+    }
+    return {
+      ok: true as const,
+      delivery: sent,
+      decision,
+      scope: safeScopeView(scope),
+      voiceAttempted,
+      voiceSent,
+      deliveryStatusDeferred: !sent,
+    };
   } catch {
     await recordAutoSendAttempt(intent.id, 'failed', {
       booking_id: delivery.bookingId,
       error_code: 'provider_exception',
     });
-    const failed = await recordDeliveryFailure(delivery.id, 'provider_exception');
+    const failed = await recordDeliveryFailure(
+      delivery.id,
+      'provider_exception',
+      {},
+      expectedScope ?? undefined,
+    );
     return { ok: false as const, error: 'provider_exception', delivery: failed, decision };
   }
 }
 
 export async function executeEligibleAutoSendBatch(options: ExecuteAutoSendOptions = {}) {
   const maxBatchSize = Math.min(Math.max(options.maxBatchSize ?? 10, 1), 20);
-  const runId = await startAutoSendRun({ source: options.source ?? 'operator', dryRun: options.dryRun === true });
-  const eligible = await getEligibleAutoSendIntents({ limit: maxBatchSize });
+  const runId = await startAutoSendRun({
+    source: options.source ?? 'operator',
+    dryRun: options.dryRun === true,
+    accountId: options.accountId ?? null,
+  });
+  const eligible = await getEligibleAutoSendIntents({ limit: maxBatchSize, accountId: options.accountId });
   if (!eligible.ok) {
     await finishAutoSendRun(runId, {
       status: 'failed', processed: 0, sent: 0, failed: 1, blocked: 0,
@@ -620,7 +760,11 @@ export async function executeEligibleAutoSendBatch(options: ExecuteAutoSendOptio
   const results: unknown[] = [];
   const scopeUsage = new Map<string, number>();
   for (const intent of eligible.intents.slice(0, maxBatchSize)) {
-    const enqueued = await enqueueAutoSendDelivery(intent.id, { source: options.source === 'scheduled' ? 'scheduled_batch' : 'manual_batch' });
+    const enqueued = await enqueueAutoSendDelivery(
+      intent.id,
+      { source: options.source === 'scheduled' ? 'scheduled_batch' : 'manual_batch' },
+      { accountId: options.accountId },
+    );
     if (!enqueued.ok) {
       results.push(enqueued);
       continue;

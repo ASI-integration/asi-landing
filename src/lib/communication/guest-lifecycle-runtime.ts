@@ -1,19 +1,14 @@
+import { prepareBookingCommunication, bookingKnowledgeMetadata } from './booking-knowledge-boundary';
 import { randomUUID } from 'node:crypto';
 import { supabase } from '@/lib/supabase';
 import { getBookingOpsByBookingId, getBookingOpsRecord } from '@/lib/booking-ops/repository';
-import {
-  attachAutoSendDecisionMetadata,
-  canAutoSendCommunicationIntent,
-} from '@/lib/booking-ops/communication-auto-send-policy';
-import {
-  enqueueAutoSendDelivery,
-  executeAutoSendDelivery,
-  type ExecuteAutoSendOptions,
-} from '@/lib/booking-ops/communication-auto-send-executor';
+
+import type { ExecuteAutoSendOptions } from '@/lib/booking-ops/communication-auto-send-executor';
 import {
   buildRelevantGuestMemoryContext,
   loadGuestLongTermMemory,
   recordGuestOperationalEvent,
+  resolveGuestMemoryAccountId,
 } from './guest-long-term-memory';
 import { requestOperatorHandoff } from './handoff-lock';
 import { listEscalationReviews } from './operator-review';
@@ -147,16 +142,13 @@ async function exactReservationBinding(
     .eq('property_id', event.propertyId)
     .limit(20);
   const rows = response?.error || !Array.isArray(response?.data) ? [] : response.data;
-  const row = rows.find((candidate: any) =>
-    text(candidate.id, 160) === event.reservationId || text(candidate.booking_id, 160) === event.reservationId,
-  );
-  if (!row) return null;
-  const chatId = text(row.chat_id, 80);
-  if (chatId) return { chatId };
-  const identity = await maybeOne(
-    db.from('tg_guest_identities').select('telegram_chat_id').eq('guest_id', event.guestId).limit(1),
-  );
-  return { chatId: text(identity?.telegram_chat_id, 80) || null };
+  const matches = rows.filter((candidate: Record<string, unknown>) =>
+    text(candidate.property_id, 160) === event.propertyId
+    && text(candidate.guest_id, 160) === event.guestId
+    && (text(candidate.id, 160) === event.reservationId || text(candidate.booking_id, 160) === event.reservationId));
+  if (matches.length !== 1) return null;
+  // A global guest-id identity is not an account/property binding.
+  return { chatId: text(matches[0].chat_id, 80) || null };
 }
 
 async function reservationWasCancelled(event: GuestLifecycleEvent, db: SupabaseLike): Promise<boolean> {
@@ -181,12 +173,15 @@ async function resolveDefaultContext(
   if (!binding) return { ok: false, reason: 'reservation_guest_mismatch' };
   const targetId = binding.chatId || text(record.guestEmail, 240);
   if (!targetId) return { ok: false, reason: 'recipient_missing' };
+  const accountId = await resolveGuestMemoryAccountId({
+    accountId: record.accountId, propertyId: event.propertyId, reservationId: record.id, db,
+  });
+  if (!accountId) return { ok: false, reason: 'property_mismatch' };
   let guestMemory = null;
   try {
-    guestMemory = buildRelevantGuestMemoryContext(await loadGuestLongTermMemory(event.guestId, db), '');
-  } catch {
-    guestMemory = null;
-  }
+    guestMemory = buildRelevantGuestMemoryContext(
+      await loadGuestLongTermMemory({ accountId, guestId: event.guestId }, db), '');
+  } catch { guestMemory = null; }
   const channel = binding.chatId ? 'telegram' as const : 'email' as const;
   const activeHandoff = listEscalationReviews({ limit: 500 }).some((review) =>
     review.targetId === targetId && review.status !== 'closed',
@@ -194,6 +189,7 @@ async function resolveDefaultContext(
   return {
     ok: true,
     context: {
+      accountId,
       bookingOpsRecordId: record.id,
       reservationId: event.reservationId,
       propertyId: event.propertyId,
@@ -212,6 +208,11 @@ async function resolveDefaultContext(
       operatorHandoffActive: activeHandoff,
     },
   };
+}
+
+function sameLifecycleBinding(a: GuestLifecycleReservationContext, b: GuestLifecycleReservationContext): boolean {
+  return !!a.accountId && ['accountId', 'bookingOpsRecordId', 'propertyId', 'guestId', 'targetId', 'channel']
+    .every((key) => a[key as keyof GuestLifecycleReservationContext] === b[key as keyof GuestLifecycleReservationContext]);
 }
 
 function intentMetadata(input: {
@@ -248,26 +249,21 @@ async function createLifecycleIntent(input: {
   const existing = await maybeOne(
     input.db.from('booking_ops_communication_intents')
       .select('id')
+      .eq('booking_ops_record_id', input.context.bookingOpsRecordId)
       .eq('metadata->>lifecycle_idempotency_key', input.idempotencyKey)
       .limit(1),
   );
-  if (existing?.id) return { id: String(existing.id) };
+
   const metadata = intentMetadata(input);
-  const decision = await canAutoSendCommunicationIntent({
-    actorType: 'guest',
+  const freshContext = await resolveDefaultContext(input.event, input.db);
+  if (!freshContext.ok || !sameLifecycleBinding(input.context, freshContext.context)) return null;
+  const knowledge = await prepareBookingCommunication({
+    recordId: input.context.bookingOpsRecordId, accountId: input.context.accountId, propertyId: input.event.propertyId,
     purpose: input.plan.purpose,
-    channel: input.context.channel,
-    messageText: input.plan.text ?? '',
-    metadata,
-    bookingId: input.event.reservationId,
-    bookingOpsRecordId: input.context.bookingOpsRecordId,
-  }, {
-    bookingId: input.event.reservationId,
-    propertyId: input.event.propertyId,
-    guestRef: input.context.targetId,
-  });
+  }, input.db as typeof supabase);
+  if (!knowledge.result.scope) return null;
   const now = new Date().toISOString();
-  const response = await input.db.from('booking_ops_communication_intents').insert({
+  const payload = {
     id: randomUUID(),
     booking_ops_record_id: input.context.bookingOpsRecordId,
     booking_id: input.event.reservationId,
@@ -276,14 +272,29 @@ async function createLifecycleIntent(input: {
     actor_label: input.context.guestName,
     purpose: input.plan.purpose,
     channel: input.context.channel,
-    status: 'draft_ready',
-    message_text: input.plan.text,
+    status: knowledge.reviewRequired ? 'waiting_for_external_input' : 'draft_ready',
+    message_text: knowledge.text,
     message_template_key: `guest.lifecycle.${input.event.eventType}.v1`,
-    metadata: attachAutoSendDecisionMetadata(metadata, decision),
+    metadata: { ...metadata, ...bookingKnowledgeMetadata(knowledge) },
     created_at: now,
     updated_at: now,
-  }).select('id').maybeSingle();
-  return response?.error || !response?.data?.id ? null : { id: String(response.data.id) };
+  };
+  const response = existing?.id
+    ? await input.db.from('booking_ops_communication_intents').update({
+        message_text: knowledge.text, metadata: payload.metadata, status: payload.status, updated_at: now,
+      }).eq('id', existing.id).eq('booking_ops_record_id', input.context.bookingOpsRecordId).select('id').maybeSingle()
+    : await input.db.from('booking_ops_communication_intents').insert(payload).select('id').maybeSingle();
+  if (response?.error || !response?.data?.id) return null;
+  requestOperatorHandoff({
+    accountId: knowledge.result.scope.accountId, propertyId: knowledge.result.scope.propertyId,
+    sessionId: 'lifecycle:' + input.context.bookingOpsRecordId + ':' + input.event.eventType,
+    channel: input.context.channel, targetId: input.context.targetId, role: 'guest',
+    reservationId: input.context.bookingOpsRecordId, actorId: input.event.guestId,
+    escalationReason: 'communication_knowledge_review', detail: knowledge.summary,
+    suggestedReply: knowledge.reviewRequired ? undefined : knowledge.text,
+    source: { route: 'communication_knowledge', needs_operator: true },
+  });
+  return { id: String(response.data.id) };
 }
 
 async function deliverDefault(
@@ -294,52 +305,11 @@ async function deliverDefault(
     idempotencyKey: string;
   },
   db: SupabaseLike,
-  options: GuestLifecycleRuntimeOptions,
 ): Promise<GuestLifecycleDeliveryResult> {
   const intent = await createLifecycleIntent({ ...input, db });
   if (!intent) return { status: 'blocked', reason: 'lifecycle_intent_conflict' };
-  const enqueued = await enqueueAutoSendDelivery(intent.id, {
-    source: 'guest_lifecycle_v1',
-    lifecycle_idempotency_key: input.idempotencyKey,
-  });
-  if (!enqueued.ok) {
-    return { status: 'blocked', communicationIntentId: intent.id, reason: enqueued.error };
-  }
-  const executed = await executeAutoSendDelivery(enqueued.delivery.id, {
-    ...(options.autoSendOptions ?? {}),
-    dryRun: options.dryRun === true,
-  });
-  const deliveryStatus = executed.delivery?.status ?? null;
-  if (executed.ok && (deliveryStatus === 'sent' || deliveryStatus === 'dry_run')) {
-    if (deliveryStatus === 'dry_run') {
-      const completed = await db.from('booking_ops_communication_intents').update({
-        status: 'completed',
-        updated_at: new Date().toISOString(),
-      }).eq('id', intent.id);
-      if (completed?.error) {
-        return {
-          status: 'failed',
-          communicationIntentId: intent.id,
-          deliveryId: enqueued.delivery.id,
-          deliveryStatus,
-          reason: 'lifecycle_dry_run_intent_finalize_failed',
-        };
-      }
-    }
-    return {
-      status: deliveryStatus,
-      communicationIntentId: intent.id,
-      deliveryId: enqueued.delivery.id,
-      deliveryStatus,
-    };
-  }
-  return {
-    status: deliveryStatus === 'failed' ? 'failed' : 'blocked',
-    communicationIntentId: intent.id,
-    deliveryId: enqueued.delivery.id,
-    deliveryStatus,
-    reason: executed.error ?? 'lifecycle_delivery_blocked',
-  };
+  return { status: 'blocked', communicationIntentId: intent.id, reason: 'knowledge_operator_review_required' };
+
 }
 
 function memorySummary(input: { event: GuestLifecycleEvent; plan: GuestLifecyclePlan }): string {
@@ -400,16 +370,25 @@ export function createGuestLifecycleRuntimePort(options: GuestLifecycleRuntimeOp
       return mapRow(response.data as LifecycleRow);
     },
     resolveContext: (event) => resolveDefaultContext(event, db),
-    deliver: (input) => deliverDefault(input, db, options),
+    deliver: (input) => deliverDefault(input, db),
     async requestOperator(input) {
       const chatId = Number(input.context.targetId);
+      const fresh = await resolveDefaultContext(input.event, db);
+      if (!fresh.ok || !sameLifecycleBinding(input.context, fresh.context)) throw new Error('lifecycle_owner_unavailable');
+      const knowledge = await prepareBookingCommunication({
+        recordId: input.context.bookingOpsRecordId, accountId: input.context.accountId,
+        propertyId: input.event.propertyId, purpose: input.plan.purpose,
+      }, db as typeof supabase);
+      if (!knowledge.result.scope) throw new Error('lifecycle_owner_unavailable');
+      const accountId = knowledge.result.scope.accountId;
       const handoff = requestOperatorHandoff({
+        accountId,
         sessionId: `lifecycle:${input.event.reservationId}:${input.event.eventType}`,
         channel: input.context.channel,
         targetId: input.context.targetId,
         actorId: input.event.guestId,
         role: 'guest',
-        reservationId: input.event.reservationId,
+        reservationId: input.context.bookingOpsRecordId,
         propertyId: input.event.propertyId,
         escalationReason: input.plan.operatorReason ?? `lifecycle:${input.event.eventType}`,
         confidence: 1,
@@ -420,15 +399,25 @@ export function createGuestLifecycleRuntimePort(options: GuestLifecycleRuntimeOp
           guest_id: input.event.guestId,
           urgent: input.plan.urgent,
         },
-        suggestedReply: input.plan.text ?? undefined,
-        detail: input.plan.safeSummary,
+        suggestedReply: knowledge.reviewRequired ? undefined : knowledge.text,
+        detail: knowledge.summary,
         chatId: Number.isFinite(chatId) ? chatId : undefined,
       });
       return { reviewId: handoff.reviewId };
     },
     async recordMemory(input) {
-      if (!input.plan.memoryEvent) return;
+      if (!input.plan.memoryEvent || !input.context.accountId) return;
+      const fresh = await resolveDefaultContext(input.event, db);
+      if (!fresh.ok || !sameLifecycleBinding(input.context, fresh.context)) return;
+      const accountId = await resolveGuestMemoryAccountId({
+        accountId: input.context.accountId,
+        propertyId: input.event.propertyId,
+        reservationId: input.context.bookingOpsRecordId,
+        db,
+      });
+      if (!accountId) return;
       await recordGuestOperationalEvent({
+        accountId,
         guestId: input.event.guestId,
         type: input.plan.memoryEvent,
         summary: memorySummary(input),
@@ -467,7 +456,7 @@ export async function runDueGuestLifecycleEvents(options: GuestLifecycleRuntimeO
 }
 
 export async function listGuestLifecycleVisibility(
-  options: { limit?: number; db?: SupabaseLike } = {},
+  options: { limit?: number; db?: SupabaseLike; accountId?: string } = {},
 ): Promise<{ ok: true; items: GuestLifecycleVisibility[] } | { ok: false; error: string; items: [] }> {
   const db = options.db ?? (supabase as unknown as SupabaseLike);
   const response = await db.from('guest_lifecycle_events')
@@ -475,7 +464,18 @@ export async function listGuestLifecycleVisibility(
     .order('occurred_at', { ascending: false })
     .limit(Math.min(Math.max(options.limit ?? 500, 1), 1000));
   if (response?.error) return { ok: false, error: response.error.message, items: [] };
-  const rows = (response.data ?? []) as LifecycleRow[];
+  let rows = (response.data ?? []) as LifecycleRow[];
+  if (options.accountId) {
+    // Tenant API visibility needs both current property and record ownership.
+    const ownedProperties = await db.from('properties').select('id').eq('account_id', options.accountId);
+    const ownedRecords = await db.from('booking_ops_records').select('id,property_id').eq('account_id', options.accountId);
+    if (ownedProperties.error || ownedRecords.error || !Array.isArray(ownedProperties.data)
+      || !Array.isArray(ownedRecords.data)) return { ok: false, error: 'lifecycle_scope_unavailable', items: [] };
+    const properties = new Set(ownedProperties.data.map((row: { id: string }) => row.id));
+    const records = new Map(ownedRecords.data.map((row: { id: string; property_id: string }) => [row.id, row.property_id]));
+    rows = rows.filter((row) => properties.has(row.property_id)
+      && !!row.booking_ops_record_id && records.get(row.booking_ops_record_id) === row.property_id);
+  }
   const recordIds = [...new Set(rows.map((row) => row.booking_ops_record_id).filter(Boolean))] as string[];
   const names = new Map<string, string>();
   if (recordIds.length > 0) {

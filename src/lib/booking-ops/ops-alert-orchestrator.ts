@@ -15,6 +15,7 @@ import {
   type BookingAutomationRolloutMode,
 } from './booking-automation-rollout';
 import type { BookingAutomationStep } from './booking-automation-planner';
+import { requireBookingOpsRecordScope } from './repository';
 
 const FULL_RUN_LEASE_TTL_SECONDS = 900;
 const FULL_RUN_LEASE_RENEW_INTERVAL_MS = 60_000;
@@ -104,7 +105,12 @@ function taskState(row: Row | null, assignmentField = false) {
   return { status: text(row.status), assigned: assignmentField ? Boolean(text(row.assigned_to_name) || text(row.assigned_to_phone) || text(row.assigned_to_telegram)) : true };
 }
 
-export async function reconcileOperatorAlertsForBooking(bookingId: string, now = new Date().toISOString(), expectedAccountId?: string, automation?: BookingAutomationRunSummary): Promise<OpsAlertRunSummary> {
+export async function reconcileOperatorAlertsForBooking(
+  bookingId: string,
+  now = new Date().toISOString(),
+  expectedScope?: string | { accountId: string; propertyId: string },
+  automation?: BookingAutomationRunSummary,
+): Promise<OpsAlertRunSummary> {
   const summary: OpsAlertRunSummary = { evaluated: 0, alertsCreated: 0, alertsUpdated: 0, alertsEscalated: 0, alertsResolved: 0, skipped: 0, unchanged: 0, errors: [] };
   try {
     const bookingResult = await supabase.from('booking_ops_records').select('*').eq('id', bookingId).maybeSingle();
@@ -113,10 +119,21 @@ export async function reconcileOperatorAlertsForBooking(bookingId: string, now =
     if (!booking) throw new Error('booking_not_found');
     const accountId = text(booking.account_id);
     if (!accountId || accountId === 'legacy') throw new Error('booking_account_missing');
+    const expectedAccountId = typeof expectedScope === 'string' ? expectedScope : expectedScope?.accountId;
+    const expectedPropertyId = typeof expectedScope === 'string' ? undefined : expectedScope?.propertyId;
     if (expectedAccountId && expectedAccountId !== accountId) throw new Error('booking_account_mismatch');
-    if (!booking.property_id) { summary.skipped = 1; return summary; }
+    const propertyId = text(booking.property_id);
+    if (!propertyId) {
+      if (expectedPropertyId) throw new Error('booking_scope_mismatch');
+      summary.skipped = 1;
+      return summary;
+    }
+    if (expectedPropertyId && expectedPropertyId !== propertyId) throw new Error('booking_scope_mismatch');
+    const canonicalScope = { accountId, propertyId };
+    await requireBookingOpsRecordScope(bookingId, canonicalScope);
     const turnoverEligible = Boolean(booking.check_in_at) && !TERMINAL_BOOKING_STATUSES.includes(text(booking.ops_status));
     if (!turnoverEligible) {
+      await requireBookingOpsRecordScope(bookingId, canonicalScope);
       await reconcilePreCheckinAlerts(booking, now, summary, undefined, automation);
       summary.evaluated = 1;
       summary.skipped = 1;
@@ -127,9 +144,10 @@ export async function reconcileOperatorAlertsForBooking(bookingId: string, now =
     const [cleaningRows, linenRows, maintenanceRows, readinessRows, tasks] = await Promise.all([
       rows('booking_cleaning_tasks', bookingId), rows('booking_linen_tasks', bookingId), rows('booking_maintenance_tickets', bookingId), rows('booking_physical_readiness', bookingId), rows('booking_ops_tasks', bookingId, 'booking_ops_record_id'),
     ]);
+    await requireBookingOpsRecordScope(bookingId, canonicalScope);
     const inspection = latestTask(tasks, ['unit_inspection_needed', 'inspection_needed']);
     const evaluated = evaluateOpsTurnover({
-      turnoverId: bookingId, propertyId: text(booking.property_id), previousBookingId: text(previousResult.data?.id) || null, nextBookingId: bookingId,
+      turnoverId: bookingId, propertyId, previousBookingId: text(previousResult.data?.id) || null, nextBookingId: bookingId,
       checkoutAt: text(previousResult.data?.check_out_at) || null, nextCheckInAt: text(booking.check_in_at), now,
       cleaning: taskState(cleaningRows[0] ?? null, true), linen: taskState(linenRows[0] ?? null, true), inspection: taskState(inspection),
       maintenance: maintenanceRows.map((item) => ({ id: text(item.id), isBlocking: item.is_blocking === true, status: text(item.status) })),
@@ -137,6 +155,7 @@ export async function reconcileOperatorAlertsForBooking(bookingId: string, now =
     });
     summary.evaluated = 1;
     if (evaluated.deadlines) {
+      await requireBookingOpsRecordScope(bookingId, canonicalScope);
       await recordBookingOpsEvent({
         bookingOpsRecordId: bookingId,
         eventType: 'turnover_deadlines_recalculated',
@@ -150,10 +169,11 @@ export async function reconcileOperatorAlertsForBooking(bookingId: string, now =
     const atRiskConditions = evaluated.conditions.filter((condition) =>
       new Date(condition.deadlineAt).getTime() - new Date(now).getTime() <= 60 * 60_000,
     );
+    await requireBookingOpsRecordScope(bookingId, canonicalScope);
     const reconciled = await reconcileOperatorAlertConditions({
       accountId,
       bookingId,
-      propertyId: text(booking.property_id),
+      propertyId,
       managedSourceDomains: ['turnover'],
       previousBookingId: text(previousResult.data?.id) || null,
       nextCheckInAt: evaluated.deadlines?.nextCheckInAt ?? null,
@@ -172,13 +192,14 @@ export async function reconcileOperatorAlertsForBooking(bookingId: string, now =
       })),
     });
     addReconcileSummary(summary, reconciled);
+    await requireBookingOpsRecordScope(bookingId, canonicalScope);
     await reconcilePreCheckinAlerts(booking, now, summary, tasks, automation);
     return summary;
   } catch (error) { summary.errors.push(error instanceof Error ? error.message : 'orchestration_failed'); return summary; }
 }
 
 export async function orchestrateBookingAutomationAndAlertsForBooking(input: {
-  bookingId: string; now?: string; expectedAccountId?: string; dryRun?: boolean; maxActions?: number;
+  bookingId: string; now?: string; expectedAccountId?: string; expectedPropertyId?: string; dryRun?: boolean; maxActions?: number;
   executeAutomation?: boolean; reconcileLegacyInPreview?: boolean; rollout?: RolloutContext;
 }): Promise<OpsAlertRunSummary> {
   const now = input.now ?? new Date().toISOString();
@@ -187,7 +208,7 @@ export async function orchestrateBookingAutomationAndAlertsForBooking(input: {
   const executionAllowed = isBookingAutomationExecutionAllowed({ mode: rollout.mode, bookingId: input.bookingId, canaryBookingIds: rollout.canaryBookingIds });
   const executeAutomation = input.dryRun !== true && input.executeAutomation !== false && executionAllowed;
   const automation = await runBookingOpsAutomationForBooking({
-    bookingId: input.bookingId, expectedAccountId: input.expectedAccountId, now,
+    bookingId: input.bookingId, expectedAccountId: input.expectedAccountId, expectedPropertyId: input.expectedPropertyId, now,
     dryRun: !executeAutomation, maxActions: input.maxActions,
   });
   const preview = executeAutomation ? undefined : safeAutomationPreview(automation);
@@ -201,7 +222,10 @@ export async function orchestrateBookingAutomationAndAlertsForBooking(input: {
   if (input.dryRun || (!executeAutomation && input.reconcileLegacyInPreview !== true)) {
     return { ...rolloutSummary, automation: executeAutomation ? automation : undefined, automationPreview: preview, evaluated: 0, alertsCreated: 0, alertsUpdated: 0, alertsEscalated: 0, alertsResolved: 0, skipped: 1, unchanged: 0, errors: automation.errors };
   }
-  const alerts = await reconcileOperatorAlertsForBooking(input.bookingId, now, input.expectedAccountId, executeAutomation ? automation : undefined);
+  const alertScope = input.expectedAccountId && input.expectedPropertyId
+    ? { accountId: input.expectedAccountId, propertyId: input.expectedPropertyId }
+    : input.expectedAccountId;
+  const alerts = await reconcileOperatorAlertsForBooking(input.bookingId, now, alertScope, executeAutomation ? automation : undefined);
   return {
     ...alerts, ...rolloutSummary, automation: executeAutomation ? automation : undefined, automationPreview: preview,
     alertsCreated: alerts.alertsCreated + (executeAutomation ? automation.alertsCreated : 0),
@@ -281,7 +305,7 @@ export async function orchestrateOpsAlertsForProperty(propertyId: string, now = 
   if (result.error) { total.errors.push(result.error.message); return total; }
   for (const item of result.data ?? []) {
     const current = await orchestrateBookingAutomationAndAlertsForBooking({
-      bookingId: String(item.id), now, expectedAccountId: accountId, dryRun: options.dryRun,
+      bookingId: String(item.id), now, expectedAccountId: accountId, expectedPropertyId: propertyId, dryRun: options.dryRun,
       executeAutomation: options.executeAutomation, reconcileLegacyInPreview: options.dryRun !== true, rollout,
     });
     addSummary(total, current);

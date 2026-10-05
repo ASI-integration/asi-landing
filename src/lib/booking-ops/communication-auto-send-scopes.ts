@@ -8,6 +8,7 @@ export type AutoSendScopeType = (typeof AUTO_SEND_SCOPE_TYPES)[number];
 
 export type AutoSendScope = {
   id: string;
+  accountId: string | null;
   scopeType: AutoSendScopeType;
   scopeRef: string | null;
   actualSendEnabled: boolean;
@@ -25,6 +26,7 @@ export type AutoSendScope = {
 };
 
 export type AutoSendScopeContext = {
+  accountId?: string | null;
   bookingId?: string | null;
   propertyId?: string | null;
   ownerId?: string | null;
@@ -35,6 +37,7 @@ export type AutoSendScopeContext = {
 
 type ScopeRow = {
   id: string;
+  account_id: string | null;
   scope_type: AutoSendScopeType;
   scope_ref: string | null;
   actual_send_enabled: boolean;
@@ -61,6 +64,7 @@ function strings(value: unknown): string[] {
 function mapScope(row: ScopeRow): AutoSendScope {
   return {
     id: row.id,
+    accountId: row.account_id ?? null,
     scopeType: row.scope_type,
     scopeRef: row.scope_ref,
     actualSendEnabled: row.actual_send_enabled,
@@ -122,6 +126,7 @@ export async function listAutoSendScopes(filters: { scopeType?: AutoSendScopeTyp
 }
 
 export async function setAutoSendScope(input: {
+  accountId?: string | null;
   scopeType: AutoSendScopeType;
   scopeRef?: string | null;
   enabled: boolean;
@@ -137,6 +142,10 @@ export async function setAutoSendScope(input: {
   }
   const scopeRef = normalizeScopeRef(input.scopeType, input.scopeRef);
   if (input.scopeType !== 'global' && !scopeRef) return { ok: false as const, error: 'invalid_scope_ref' };
+  const accountId = String(input.accountId ?? '').trim() || null;
+  if (input.scopeType !== 'global' && !accountId) {
+    return { ok: false as const, error: 'account_scope_required' };
+  }
   const config = normalizeScopeConfig(input);
   if (config.allowedChannels.length === 0 || config.allowedMessageTypes.length === 0) {
     return { ok: false as const, error: 'empty_allowlist' };
@@ -144,6 +153,7 @@ export async function setAutoSendScope(input: {
   const now = new Date().toISOString();
   const values = {
     id: randomUUID(),
+    account_id: input.scopeType === 'global' ? null : accountId,
     scope_type: input.scopeType,
     scope_ref: scopeRef,
     actual_send_enabled: input.enabled,
@@ -159,7 +169,7 @@ export async function setAutoSendScope(input: {
   };
   const { data, error } = await supabase
     .from('booking_ops_communication_auto_send_scopes')
-    .upsert(values, { onConflict: 'scope_type,scope_ref_key', ignoreDuplicates: false })
+    .upsert(values, { onConflict: 'account_scope_key,scope_type,scope_ref_key', ignoreDuplicates: false })
     .select('*')
     .maybeSingle();
   return error || !data
@@ -177,6 +187,7 @@ export async function setGlobalAutoSendEmergencyStop(input: {
   const now = new Date().toISOString();
   const values = {
     id: global?.id ?? randomUUID(),
+    account_id: null,
     scope_type: 'global',
     scope_ref: null,
     actual_send_enabled: false,
@@ -193,7 +204,7 @@ export async function setGlobalAutoSendEmergencyStop(input: {
   };
   const { data, error } = await supabase
     .from('booking_ops_communication_auto_send_scopes')
-    .upsert(values, { onConflict: 'scope_type,scope_ref_key', ignoreDuplicates: false })
+    .upsert(values, { onConflict: 'account_scope_key,scope_type,scope_ref_key', ignoreDuplicates: false })
     .select('*')
     .maybeSingle();
   return error || !data
@@ -211,7 +222,10 @@ function scopeRank(scope: AutoSendScope, context: AutoSendScopeContext): number 
 
 export async function resolveAutoSendScope(context: AutoSendScopeContext) {
   const scopes = await readAllScopes();
-  const global = scopes.find((scope) => scope.scopeType === 'global');
+  const visibleScopes = context.accountId
+    ? scopes.filter((scope) => scope.scopeType === 'global' || scope.accountId === context.accountId)
+    : scopes;
+  const global = visibleScopes.find((scope) => scope.scopeType === 'global');
   if (!global || global.actualSendEnabled || global.emergencyStop) {
     return {
       enabled: false as const,
@@ -220,7 +234,7 @@ export async function resolveAutoSendScope(context: AutoSendScopeContext) {
       globalEmergencyStop: global?.emergencyStop === true,
     };
   }
-  const scope = scopes
+  const scope = visibleScopes
     .filter((item) => scopeRank(item, context) >= 0)
     .sort((left, right) => scopeRank(right, context) - scopeRank(left, context))[0] ?? null;
   if (!scope || !scope.actualSendEnabled || scope.emergencyStop) {
@@ -235,38 +249,53 @@ export async function resolveAutoSendScope(context: AutoSendScopeContext) {
   return { enabled: true as const, scope, globalEmergencyStop: false };
 }
 
-export async function getAutoSendOperationalStatus() {
+export async function getAutoSendOperationalStatus(accountId?: string | null) {
   const scopes = await readAllScopes();
-  const { data: latestRun } = await supabase
+  const visibleScopes = accountId
+    ? scopes.filter((scope) => scope.scopeType === 'global' || scope.accountId === accountId)
+    : scopes;
+
+  let runQuery = supabase
     .from('booking_ops_communication_auto_send_runs')
-    .select('id,source,dry_run,status,processed_count,sent_count,failed_count,blocked_count,started_at,finished_at,safe_summary')
+    .select('id,account_id,source,dry_run,status,processed_count,sent_count,failed_count,blocked_count,started_at,finished_at,safe_summary')
     .order('started_at', { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  const { data: deliveries } = await supabase
+    .limit(1);
+  if (accountId) runQuery = runQuery.eq('account_id', accountId);
+  const { data: latestRun } = await runQuery.maybeSingle();
+
+  let deliveryQuery = supabase
     .from('booking_ops_communication_deliveries')
     .select('status')
     .limit(1000);
+  if (accountId) deliveryQuery = deliveryQuery.eq('account_id', accountId);
+  const { data: deliveries } = await deliveryQuery;
+
   const counts = { queued: 0, sent: 0, failed: 0 };
   for (const row of (deliveries ?? []) as Array<{ status?: string }>) {
     if (row.status === 'queued') counts.queued += 1;
     if (row.status === 'sent') counts.sent += 1;
     if (row.status === 'failed') counts.failed += 1;
   }
-  const global = scopes.find((scope) => scope.scopeType === 'global') ?? null;
+  const global = visibleScopes.find((scope) => scope.scopeType === 'global') ?? null;
   return {
     globalActualSendEnabled: false,
     emergencyStop: global?.emergencyStop ?? true,
-    scopes: scopes.filter((scope) => scope.scopeType !== 'global'),
+    scopes: visibleScopes.filter((scope) => scope.scopeType !== 'global'),
     lastRun: latestRun ?? null,
     counts,
   };
 }
 
-export async function startAutoSendRun(input: { source: 'scheduled' | 'operator'; dryRun: boolean }) {
+export async function startAutoSendRun(input: {
+  source: 'scheduled' | 'operator';
+  dryRun: boolean;
+  accountId?: string | null;
+}) {
   const now = new Date().toISOString();
   const row = {
-    id: randomUUID(), source: input.source, dry_run: input.dryRun, status: 'running',
+    id: randomUUID(),
+    account_id: input.accountId ?? null,
+    source: input.source, dry_run: input.dryRun, status: 'running',
     processed_count: 0, sent_count: 0, failed_count: 0, blocked_count: 0,
     started_at: now, safe_summary: 'Запуск безопасной обработки.',
   };

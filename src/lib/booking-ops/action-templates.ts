@@ -9,7 +9,7 @@ import {
   opsStatusForNextAction,
 } from './decision-engine';
 import { wouldDowngradeOpsStatus } from './reservation-mapping';
-import { getBookingOpsRecord, updateBookingOpsRecord } from './repository';
+import { getBookingOpsRecord, requireBookingOpsRecordScope, updateBookingOpsRecord } from './repository';
 import type {
   BookingOpsActionFieldsOnConfirm,
   BookingOpsActionTemplate,
@@ -601,6 +601,7 @@ export function planBookingOpsOperatorActionConfirm(
 export async function applyBookingOpsOperatorAction(
   recordId: string,
   actionId: string,
+  options?: { expectedScope?: { accountId: string; propertyId: string } },
 ): Promise<{ ok: true; record: BookingOpsRecord } | { ok: false; error: string }> {
   const id = String(recordId ?? '').trim();
   if (!id) return { ok: false, error: 'id_required' };
@@ -611,7 +612,20 @@ export async function applyBookingOpsOperatorAction(
   }
   const operatorActionId = rawAction as BookingOpsOperatorActionId;
 
-  const record = await getBookingOpsRecord(id);
+  const expectedScope = options?.expectedScope;
+  let record: BookingOpsRecord | null;
+  try {
+    record = expectedScope
+      ? await requireBookingOpsRecordScope(id, expectedScope)
+      : await getBookingOpsRecord(id);
+  } catch (error) {
+    return {
+      ok: false,
+      error: error instanceof Error && error.message === 'booking_scope_mismatch'
+        ? 'scope_mismatch'
+        : 'scope_unavailable',
+    };
+  }
   if (!record) return { ok: false, error: 'not_found' };
 
   const built = buildConfirmUpdateInput(record, operatorActionId);
@@ -641,7 +655,11 @@ export async function applyBookingOpsOperatorAction(
     finalInput.opsStatus = automationPatch.opsStatus;
   }
 
-  const result = await updateBookingOpsRecord(id, finalInput);
+  const result = await updateBookingOpsRecord(
+    id,
+    finalInput,
+    expectedScope ? { expectedScope } : undefined,
+  );
   if (!result.ok || !result.record) {
     return { ok: false, error: result.error ?? 'Не удалось сохранить изменения.' };
   }
