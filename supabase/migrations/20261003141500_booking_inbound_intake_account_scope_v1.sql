@@ -7,9 +7,11 @@ ALTER TABLE public.booking_inbound_intake_events
   ADD COLUMN IF NOT EXISTS account_id UUID REFERENCES public.accounts(id) ON DELETE CASCADE;
 
 UPDATE public.booking_inbound_intake_events e
-SET account_id = b.account_id,
+SET account_id = a.id,
     updated_at = now()
 FROM public.booking_ops_records b
+JOIN public.accounts a
+  ON a.id::text = b.account_id
 WHERE e.account_id IS NULL
   AND e.booking_id = b.id
   AND b.account_id IS NOT NULL;

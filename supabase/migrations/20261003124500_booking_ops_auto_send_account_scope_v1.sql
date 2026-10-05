@@ -21,14 +21,16 @@ WHERE scope_type <> 'global';
 WITH booking_matches AS (
   SELECT
     s.id AS scope_id,
-    MIN(b.account_id::text)::uuid AS account_id
+    MIN(a.id::text)::uuid AS account_id
   FROM public.booking_ops_communication_auto_send_scopes s
   JOIN public.booking_ops_records b
     ON s.scope_type = 'booking'
    AND b.account_id IS NOT NULL
    AND (s.scope_ref = b.id::text OR s.scope_ref = b.booking_id)
+  JOIN public.accounts a
+    ON a.id::text = b.account_id
   GROUP BY s.id
-  HAVING COUNT(DISTINCT b.account_id) = 1
+  HAVING COUNT(DISTINCT a.id) = 1
 )
 UPDATE public.booking_ops_communication_auto_send_scopes s
 SET account_id = m.account_id,
@@ -55,11 +57,13 @@ FROM property_matches m
 WHERE s.id = m.scope_id
   AND s.account_id IS NULL;
 UPDATE public.booking_ops_communication_deliveries d
-SET account_id = b.account_id,
+SET account_id = a.id,
     updated_at = now()
 FROM public.booking_ops_communication_intents i
 JOIN public.booking_ops_records b
   ON b.id = i.booking_ops_record_id
+JOIN public.accounts a
+  ON a.id::text = b.account_id
 WHERE d.communication_intent_id = i.id
   AND d.account_id IS NULL
   AND b.account_id IS NOT NULL;

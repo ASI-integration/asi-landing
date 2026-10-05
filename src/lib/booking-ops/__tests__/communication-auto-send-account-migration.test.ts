@@ -36,7 +36,9 @@ describe('auto-send account scope migration contract', () => {
 
   it('backfills booking and property ownership only from canonical account sources', () => {
     expect(migration).toContain('JOIN public.booking_ops_records b');
-    expect(migration).toContain('COUNT(DISTINCT b.account_id) = 1');
+    expect(migration).toContain('JOIN public.accounts a');
+    expect(migration).toContain('a.id::text = b.account_id');
+    expect(migration).toContain('COUNT(DISTINCT a.id) = 1');
     expect(migration).toContain('JOIN public.properties p');
     expect(migration).toContain('COUNT(DISTINCT p.account_id) = 1');
   });
@@ -58,9 +60,12 @@ describe('auto-send account scope migration contract', () => {
     );
   });
 
-  it('backfills delivery account lineage through intent -> booking record', () => {
+  it('backfills delivery account lineage only through a canonical account match', () => {
     expect(migration).toContain('FROM public.booking_ops_communication_intents i');
     expect(migration).toContain('JOIN public.booking_ops_records b');
+    expect(migration).toContain('JOIN public.accounts a');
+    expect(migration).toContain('SET account_id = a.id');
+    expect(migration).toContain('a.id::text = b.account_id');
     expect(migration).toContain('d.communication_intent_id = i.id');
   });
 });
