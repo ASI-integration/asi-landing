@@ -287,8 +287,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          curl --fail --silent --show-error --max-time 20 https://guestautopilot.com/api/health >/tmp/health.json
-          curl --fail --silent --show-error --max-time 20 https://guestautopilot.com/api/version >/tmp/version.json
+          curl --fail --silent --show-error --max-time 20 https://asi-global.ru/api/health >/tmp/health.json
+          curl --fail --silent --show-error --max-time 20 https://asi-global.ru/api/version >/tmp/version.json
           node <<'NODE'
           const fs=require('fs');
           const health=JSON.parse(fs.readFileSync('/tmp/health.json','utf8'));
