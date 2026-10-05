@@ -3,11 +3,20 @@ name: Booking Ops safe auto-send runner
 on:
   workflow_dispatch:
     inputs:
+      account_id:
+        description: Canonical account UUID to process
+        required: true
+        type: string
       dry_run:
         description: Run without provider calls
         required: true
         default: true
         type: boolean
+      max_batch_size:
+        description: Maximum intents to process in this account-scoped batch
+        required: true
+        default: 10
+        type: number
 
 concurrency:
   group: booking-ops-safe-auto-send
@@ -24,16 +33,22 @@ jobs:
       - name: Call protected runner
         env:
           RUNNER_SECRET: ${{ secrets.BOOKING_OPS_AUTO_SEND_RUNNER_SECRET }}
+          ACCOUNT_ID: ${{ inputs.account_id }}
           MANUAL_DRY_RUN: ${{ inputs.dry_run }}
-          EVENT_NAME: ${{ github.event_name }}
+          MAX_BATCH_SIZE: ${{ inputs.max_batch_size }}
         shell: bash
         run: |
           set -euo pipefail
           test -n "${RUNNER_SECRET:-}"
-          BODY='{}'
-          if [ "$EVENT_NAME" = "workflow_dispatch" ] && [ "$MANUAL_DRY_RUN" = "true" ]; then
-            BODY='{"dryRun":true}'
+          if [[ ! "${ACCOUNT_ID:-}" =~ ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$ ]]; then
+            echo "::error::account_id must be a canonical UUID"
+            exit 1
           fi
+          if [[ ! "${MAX_BATCH_SIZE:-}" =~ ^[0-9]+$ ]] || (( MAX_BATCH_SIZE < 1 || MAX_BATCH_SIZE > 20 )); then
+            echo "::error::max_batch_size must be between 1 and 20"
+            exit 1
+          fi
+          BODY="{\"accountId\":\"${ACCOUNT_ID}\",\"dryRun\":${MANUAL_DRY_RUN},\"maxBatchSize\":${MAX_BATCH_SIZE}}"
           curl --fail-with-body --silent --show-error \
             --retry 2 --retry-all-errors --max-time 60 \
             -X POST 'https://asi-global.ru/api/internal/booking-ops/communications/auto-send/run' \
