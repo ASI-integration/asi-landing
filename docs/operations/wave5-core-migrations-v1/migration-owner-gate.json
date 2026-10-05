@@ -1,7 +1,7 @@
 {
   "schemaVersion": "asi.agent-os.owner-gate.v1",
   "taskId": "wave5-core-migrations-v1-production-rollout",
-  "status": "missing",
+  "status": "approved",
   "action": "production_migration",
   "target": "production Supabase project jwinifeienvzejofmbua through the GitHub production environment SUPABASE_DB_URL secret",
   "identity": {
@@ -17,7 +17,12 @@
     "Account-scoped availability function exists with service_role-only EXECUTE and existing unresolved legacy overbooking checks remain allowed to stay unbound.",
     "Production public health/version endpoints remain healthy after the database transaction."
   ],
-  "authorization": null,
+  "authorization": {
+    "source": "explicit_owner_message",
+    "owner": "Nikolay",
+    "scope": "Apply only the five checksum-pinned Wave 5 core migrations from docs/operations/wave5-core-migrations-v1/manifest.json to production Supabase project jwinifeienvzejofmbua, with the specified history registration and post-action verification; exclude Channel Manager migration and application deploy.",
+    "taskCycle": "2026-10-05-wave5-core-production-rollout"
+  },
   "typedConfirmation": {
     "present": true,
     "countsAsOwnerApproval": false
