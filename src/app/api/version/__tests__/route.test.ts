@@ -48,4 +48,51 @@ describe('/api/version', () => {
       resolvedReleasePath: '/var/www/asi/releases/abc1234',
     });
   });
+
+  it('falls back to Vercel commit metadata when release-meta.json is unavailable', async () => {
+    process.env = {
+      ...process.env,
+      ASI_DEPLOY_ENV: '',
+      VERCEL_ENV: 'production',
+      VERCEL_GIT_COMMIT_SHA: 'vercel-sha-123',
+      ASI_RELEASE_DEPLOYED_AT_ISO: '',
+      ASI_RELEASE_PATH: '',
+    };
+
+    vi.doMock('@/lib/runtimeRelease', () => ({
+      resolveRuntimeReleaseInfo: () => {
+        throw new Error('ENOENT release-meta.json');
+      },
+    }));
+
+    const mod = await import('../route');
+    const res = await mod.GET();
+    const json = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(json).toMatchObject({
+      environment: 'production',
+      sha: 'vercel-sha-123',
+      appRoot: null,
+      releaseMetaPath: null,
+      resolvedReleasePath: null,
+    });
+    expect(typeof json.processCwd).toBe('string');
+  });
+
+  it('keeps non-Vercel release metadata failures fail-closed', async () => {
+    process.env = {
+      ...process.env,
+      VERCEL_GIT_COMMIT_SHA: '',
+    };
+
+    vi.doMock('@/lib/runtimeRelease', () => ({
+      resolveRuntimeReleaseInfo: () => {
+        throw new Error('release metadata unavailable');
+      },
+    }));
+
+    const mod = await import('../route');
+    await expect(mod.GET()).rejects.toThrow('release metadata unavailable');
+  });
 });
