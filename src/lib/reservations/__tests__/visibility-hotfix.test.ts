@@ -38,18 +38,78 @@ describe('reservation dashboard views', () => {
   });
 });
 
-const state = vi.hoisted(() => ({ records: [
-  { id: 'legacy-1', account_id: null as string | null, asi_reference: 'ASI-100001', property_label: 'Тестовый объект', property_id: 'p1', check_in_at: '2026-08-01', check_out_at: '2026-08-03' },
-  { id: 'other-account', account_id: 'account-b', asi_reference: 'ASI-200001', property_label: 'Другой объект', property_id: 'p2', check_in_at: '2026-08-01', check_out_at: '2026-08-03' },
-], audits: [] as unknown[], messages: 0 }));
+const state = vi.hoisted(() => ({
+  records: [
+    { id: 'legacy-1', account_id: null as string | null, asi_reference: 'ASI-100001', property_label: 'Тестовый объект', property_id: 'p1', check_in_at: '2026-08-01', check_out_at: '2026-08-03' },
+    { id: 'other-account', account_id: 'account-b', asi_reference: 'ASI-200001', property_label: 'Другой объект', property_id: 'p2', check_in_at: '2026-08-01', check_out_at: '2026-08-03' },
+  ],
+  properties: [
+    { id: 'p1', account_id: 'account-a' },
+    { id: 'p2', account_id: 'account-b' },
+  ],
+  audits: [] as unknown[],
+  messages: 0,
+}));
 
 vi.mock('@/lib/reservations/ledger', () => ({ auditReservationMutation: vi.fn(async (entry) => { state.audits.push(entry); }) }));
 vi.mock('@/lib/supabase', () => ({ supabase: { from(table: string) {
-  if (table === 'accounts') return { select: () => ({ eq: (_key: string, id: string) => ({ maybeSingle: async () => ({ data: id === 'account-a' ? { id } : null, error: null }) }) }) };
+  if (table === 'accounts') {
+    return { select: () => ({ eq: (_key: string, id: string) => ({ maybeSingle: async () => ({ data: id === 'account-a' ? { id } : null, error: null }) }) }) };
+  }
+  if (table === 'properties') {
+    return {
+      select: () => {
+        let rows = [...state.properties];
+        const query = {
+          eq: (key: string, value: string) => {
+            rows = rows.filter((item) => item[key as keyof typeof item] === value);
+            return query;
+          },
+          maybeSingle: async () => ({ data: rows[0] ?? null, error: null }),
+          then: (resolve: (value: { data: typeof rows; error: null }) => unknown) => resolve({ data: rows, error: null }),
+        };
+        return query;
+      },
+    };
+  }
   if (table !== 'booking_ops_records') throw new Error(`unexpected table ${table}`);
   return {
-    select: () => ({ is: () => ({ order: async () => ({ data: state.records.filter((item) => item.account_id === null), error: null }) }) }),
-    update: (patch: { account_id: string }) => ({ eq: (_key: string, id: string) => ({ is: () => ({ select: () => ({ maybeSingle: async () => { const item = state.records.find((candidate) => candidate.id === id && candidate.account_id === null); if (!item) return { data: null, error: null }; item.account_id = patch.account_id; return { data: { id }, error: null }; } }) }) }) }),
+    select: () => {
+      let rows = [...state.records];
+      const query = {
+        is: (key: string, value: unknown) => {
+          rows = rows.filter((item) => item[key as keyof typeof item] === value);
+          return query;
+        },
+        in: (key: string, values: unknown[]) => {
+          rows = rows.filter((item) => values.includes(item[key as keyof typeof item]));
+          return query;
+        },
+        order: async () => ({ data: rows, error: null }),
+      };
+      return query;
+    },
+    update: (patch: { account_id: string }) => {
+      let rows = [...state.records];
+      const query = {
+        eq: (key: string, value: unknown) => {
+          rows = rows.filter((item) => item[key as keyof typeof item] === value);
+          return query;
+        },
+        is: (key: string, value: unknown) => {
+          rows = rows.filter((item) => item[key as keyof typeof item] === value);
+          return query;
+        },
+        select: () => query,
+        maybeSingle: async () => {
+          const item = rows[0];
+          if (!item) return { data: null, error: null };
+          item.account_id = patch.account_id;
+          return { data: { id: item.id }, error: null };
+        },
+      };
+      return query;
+    },
   };
 } } }));
 
@@ -59,7 +119,7 @@ describe('legacy reservation bootstrap', () => {
   it('dry-run returns only safe null-account rows and changes no data', async () => {
     const { previewLegacyReservations } = await import('../legacy-bootstrap');
     const preview = await previewLegacyReservations('account-a');
-    expect(preview).toEqual([{ id: 'legacy-1', asiReference: 'ASI-100001', propertyLabel: 'Тестовый объект', checkIn: '2026-08-01', checkOut: '2026-08-03' }]);
+    expect(preview).toEqual([{ id: 'legacy-1', asiReference: 'ASI-100001', propertyId: 'p1', propertyLabel: 'Тестовый объект', checkIn: '2026-08-01', checkOut: '2026-08-03' }]);
     expect(state.records[0].account_id).toBeNull();
     expect(JSON.stringify(preview)).not.toContain('guest');
   });
