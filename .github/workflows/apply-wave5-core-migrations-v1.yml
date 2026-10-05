@@ -1,0 +1,300 @@
+name: Wave 5 Core Migrations Production Rollout v1
+
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: Run non-mutating preflight or owner-approved apply
+        required: true
+        default: preflight
+        type: choice
+        options:
+          - preflight
+          - apply
+      rollout_sha:
+        description: Full 40-character main commit SHA to validate or apply
+        required: true
+        type: string
+      owner_confirmation:
+        description: Apply only — owner types APPLY_WAVE5_CORE_MIGRATIONS_<rollout_sha>
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: wave5-core-migrations-production-rollout-v1
+  cancel-in-progress: false
+
+jobs:
+  preflight:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require workflow source main and exact SHA input
+        shell: bash
+        env:
+          ROLLOUT_SHA: ${{ inputs.rollout_sha }}
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REPOSITORY" == "ASI-integration/asi-landing" ]]
+          [[ "$GITHUB_REF" == "refs/heads/main" ]]
+          [[ "$ROLLOUT_SHA" =~ ^[0-9a-f]{40}$ ]]
+
+      - name: Checkout exact rollout SHA
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: ${{ inputs.rollout_sha }}
+
+      - name: Verify main ancestry, manifest allowlist, order, and checksums
+        shell: bash
+        env:
+          ROLLOUT_SHA: ${{ inputs.rollout_sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$ROLLOUT_SHA"
+          git fetch origin main --quiet
+          git merge-base --is-ancestor "$ROLLOUT_SHA" origin/main
+          python3 - <<'PY'
+          import hashlib
+          import json
+          import os
+          import subprocess
+          from pathlib import Path
+
+          manifest_path = Path('docs/operations/wave5-core-migrations-v1/manifest.json')
+          gate_path = Path('docs/operations/wave5-core-migrations-v1/migration-owner-gate.json')
+          manifest = json.loads(manifest_path.read_text(encoding='utf-8'))
+          gate = json.loads(gate_path.read_text(encoding='utf-8'))
+
+          expected = [
+              'supabase/migrations/20260930200000_guest_long_term_memory_account_scope.sql',
+              'supabase/migrations/20261003093000_residential_property_spatial_snapshots_v1.sql',
+              'supabase/migrations/20261003124500_booking_ops_auto_send_account_scope_v1.sql',
+              'supabase/migrations/20261003141500_booking_inbound_intake_account_scope_v1.sql',
+              'supabase/migrations/20261003150000_booking_availability_account_scope_v1.sql',
+          ]
+          if manifest.get('schemaVersion') != 'asi.wave5-core-migrations.rollout.v1':
+              raise SystemExit('manifest schemaVersion mismatch')
+          if manifest.get('target', {}).get('supabaseProjectRef') != 'jwinifeienvzejofmbua':
+              raise SystemExit('manifest target mismatch')
+          if manifest.get('canonicalOrder') != expected:
+              raise SystemExit('manifest canonical order mismatch')
+          migrations = manifest.get('migrations') or []
+          if len(migrations) != 5 or [m.get('path') for m in migrations] != expected:
+              raise SystemExit('manifest migration allowlist mismatch')
+
+          verified = []
+          for item in migrations:
+              path = Path(item['path'])
+              if not path.is_file():
+                  raise SystemExit(f'missing migration: {path}')
+              blob = subprocess.check_output(['git', 'hash-object', str(path)], text=True).strip()
+              sha256 = hashlib.sha256(path.read_bytes()).hexdigest()
+              if blob != item.get('gitBlobSha'):
+                  raise SystemExit(f'git blob mismatch: {path}')
+              if sha256 != item.get('sha256'):
+                  raise SystemExit(f'sha256 mismatch: {path}')
+              verified.append({'path': str(path), 'gitBlobSha': blob, 'sha256': sha256})
+
+          if gate.get('schemaVersion') != 'asi.agent-os.owner-gate.v1':
+              raise SystemExit('owner gate schema mismatch')
+          if gate.get('action') != 'production_migration':
+              raise SystemExit('owner gate action mismatch')
+          if gate.get('identity', {}).get('ref') != 'refs/heads/main':
+              raise SystemExit('owner gate ref mismatch')
+          if gate.get('identity', {}).get('migration') != str(manifest_path):
+              raise SystemExit('owner gate manifest identity mismatch')
+          if gate.get('status') not in ('missing', 'approved'):
+              raise SystemExit('owner gate has unsupported state for rollout')
+
+          report = {
+              'schemaVersion': 'asi.wave5-core-migrations.preflight.v1',
+              'rolloutSha': os.environ['ROLLOUT_SHA'],
+              'targetProjectRef': 'jwinifeienvzejofmbua',
+              'migrationCount': 5,
+              'migrations': verified,
+              'ownerGateStatus': gate.get('status'),
+              'mutationAllowed': False,
+          }
+          Path('wave5-core-migrations-preflight.json').write_text(
+              json.dumps(report, indent=2) + '\n',
+              encoding='utf-8',
+          )
+          print('WAVE5_CORE_BUNDLE=verified')
+          print(f"OWNER_GATE_STATUS={gate.get('status')}")
+          PY
+
+      - name: Upload non-mutating preflight report
+        uses: actions/upload-artifact@v4
+        with:
+          name: wave5-core-migrations-preflight-${{ inputs.rollout_sha }}
+          path: wave5-core-migrations-preflight.json
+          if-no-files-found: error
+          retention-days: 14
+
+  owner_approval:
+    if: ${{ inputs.operation == 'apply' }}
+    needs: [preflight]
+    runs-on: ubuntu-latest
+    environment: production-migration-approval
+    timeout-minutes: 5
+    steps:
+      - name: Checkout exact rollout SHA
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+          ref: ${{ inputs.rollout_sha }}
+
+      - name: Require configured owner, approved gate, and SHA-bound confirmation
+        shell: bash
+        env:
+          EXPECTED_OWNER_LOGIN: ${{ vars.PRODUCTION_MIGRATION_OWNER_LOGIN }}
+          OWNER_CONFIRMATION: ${{ inputs.owner_confirmation }}
+          ROLLOUT_SHA: ${{ inputs.rollout_sha }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$EXPECTED_OWNER_LOGIN" ]]; then
+            echo "::error::PRODUCTION_MIGRATION_OWNER_LOGIN is not configured."
+            exit 1
+          fi
+          [[ "$GITHUB_ACTOR" == "$EXPECTED_OWNER_LOGIN" ]]
+          [[ "$GITHUB_TRIGGERING_ACTOR" == "$EXPECTED_OWNER_LOGIN" ]]
+          required="APPLY_WAVE5_CORE_MIGRATIONS_${ROLLOUT_SHA}"
+          if [[ "$OWNER_CONFIRMATION" != "$required" ]]; then
+            echo "::error::Owner confirmation does not match the rollout SHA."
+            exit 1
+          fi
+          node <<'NODE'
+          const fs = require('fs');
+          const gate = JSON.parse(fs.readFileSync('docs/operations/wave5-core-migrations-v1/migration-owner-gate.json', 'utf8'));
+          if (gate.schemaVersion !== 'asi.agent-os.owner-gate.v1') throw new Error('owner gate schema mismatch');
+          if (gate.status !== 'approved') throw new Error('owner gate is not approved');
+          if (gate.action !== 'production_migration') throw new Error('owner gate action mismatch');
+          if (gate.identity?.ref !== 'refs/heads/main') throw new Error('owner gate ref mismatch');
+          if (gate.identity?.migration !== 'docs/operations/wave5-core-migrations-v1/manifest.json') throw new Error('owner gate manifest mismatch');
+          if (gate.authorization?.source !== 'explicit_owner_message') throw new Error('owner gate source mismatch');
+          if (gate.authorization?.owner !== 'Nikolay') throw new Error('owner gate owner mismatch');
+          if (!gate.authorization?.scope || !gate.authorization?.taskCycle) throw new Error('owner gate authorization incomplete');
+          console.log('OWNER_GATE=approved_for_wave5_core_bundle');
+          NODE
+
+  apply_migrations:
+    if: ${{ inputs.operation == 'apply' }}
+    needs: [preflight, owner_approval]
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 20
+    env:
+      EXPECTED_SUPABASE_PROJECT_REF: jwinifeienvzejofmbua
+      PGCONNECT_TIMEOUT: "10"
+    steps:
+      - name: Checkout exact approved rollout SHA
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: ${{ inputs.rollout_sha }}
+
+      - name: Reverify exact bundle checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib, json, subprocess
+          from pathlib import Path
+          manifest=json.loads(Path('docs/operations/wave5-core-migrations-v1/manifest.json').read_text())
+          for item in manifest['migrations']:
+              p=Path(item['path'])
+              if subprocess.check_output(['git','hash-object',str(p)],text=True).strip()!=item['gitBlobSha']:
+                  raise SystemExit(f'git blob mismatch: {p}')
+              if hashlib.sha256(p.read_bytes()).hexdigest()!=item['sha256']:
+                  raise SystemExit(f'sha256 mismatch: {p}')
+          print('WAVE5_CORE_BUNDLE=reverified')
+          PY
+
+      - name: Validate database credential target without logging it
+        shell: bash
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${SUPABASE_DB_URL:-}" ]]; then
+            echo "::error::SUPABASE_DB_URL is not configured."
+            exit 1
+          fi
+          echo "::add-mask::${SUPABASE_DB_URL}"
+          python3 - <<'PY'
+          import os
+          from urllib.parse import unquote, urlparse
+          raw=(os.environ.get('SUPABASE_DB_URL') or '').strip()
+          expected=(os.environ.get('EXPECTED_SUPABASE_PROJECT_REF') or '').strip().lower()
+          if not raw or '\r' in raw or '\n' in raw:
+              raise SystemExit('SUPABASE_DB_URL is invalid.')
+          parsed=urlparse(raw)
+          hostname=(parsed.hostname or '').lower()
+          username=unquote(parsed.username or '').lower()
+          direct=f'db.{expected}.supabase.co'
+          pooler_user=f'postgres.{expected}'
+          if parsed.scheme not in ('postgres','postgresql'):
+              raise SystemExit('SUPABASE_DB_URL must use postgres/postgresql.')
+          if hostname != direct and not (hostname.endswith('.pooler.supabase.com') and username == pooler_user):
+              raise SystemExit('SUPABASE_DB_URL project identity mismatch.')
+          print('PRODUCTION_DATABASE_IDENTITY=verified')
+          PY
+
+      - name: Ensure PostgreSQL client is available
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! command -v psql >/dev/null 2>&1; then
+            sudo apt-get update -qq
+            sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq postgresql-client
+          fi
+          psql --version
+
+      - name: Run fail-closed production DB precheck read-only
+        shell: bash
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          PGOPTIONS: >-
+            -c default_transaction_read_only=on
+            -c statement_timeout=30000
+            -c lock_timeout=3000
+        run: |
+          set -euo pipefail
+          echo "::add-mask::${SUPABASE_DB_URL}"
+          psql -X "$SUPABASE_DB_URL"             --no-psqlrc             --set ON_ERROR_STOP=1             --file scripts/wave5-core-migrations-precheck.sql
+
+      - name: Apply five migrations, register history, and verify atomically
+        shell: bash
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          PGOPTIONS: >-
+            -c statement_timeout=600000
+            -c lock_timeout=5000
+        run: |
+          set -euo pipefail
+          echo "::add-mask::${SUPABASE_DB_URL}"
+          psql -X "$SUPABASE_DB_URL"             --no-psqlrc             --set ON_ERROR_STOP=1             --single-transaction             --file supabase/migrations/20260930200000_guest_long_term_memory_account_scope.sql             --file supabase/migrations/20261003093000_residential_property_spatial_snapshots_v1.sql             --file supabase/migrations/20261003124500_booking_ops_auto_send_account_scope_v1.sql             --file supabase/migrations/20261003141500_booking_inbound_intake_account_scope_v1.sql             --file supabase/migrations/20261003150000_booking_availability_account_scope_v1.sql             --file scripts/wave5-core-migrations-register-history.sql             --file scripts/wave5-core-migrations-verify.sql
+          echo "WAVE5_CORE_PRODUCTION_ROLLOUT=schema_and_history_applied_and_verified"
+
+      - name: Verify public production remains healthy
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --max-time 20 https://guestautopilot.com/api/health >/tmp/health.json
+          curl --fail --silent --show-error --max-time 20 https://guestautopilot.com/api/version >/tmp/version.json
+          node <<'NODE'
+          const fs=require('fs');
+          const health=JSON.parse(fs.readFileSync('/tmp/health.json','utf8'));
+          const version=JSON.parse(fs.readFileSync('/tmp/version.json','utf8'));
+          if (health.ok !== true) throw new Error('production health is not ok');
+          if (version.environment !== 'production' || !version.sha) throw new Error('production version identity is invalid');
+          console.log('POST_MIGRATION_PUBLIC_HEALTH=ok');
+          console.log('POST_MIGRATION_PUBLIC_VERSION=verified');
+          NODE
