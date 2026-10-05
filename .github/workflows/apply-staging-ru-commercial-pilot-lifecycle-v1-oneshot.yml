@@ -1,0 +1,443 @@
+# STAGING-ONLY one-shot: apply exact pinned SQL for public.ru_commercial_pilot_lifecycle.
+# Does NOT: CLI migration push, migration repair, schema_migrations invent, orphan edits,
+# production touch, or app deploy.
+name: Staging One-Shot RU Commercial Pilot Lifecycle v1
+
+on:
+  # Temporary push path so this one-shot can run before the workflow exists on main.
+  push:
+    branches:
+      - ops/staging-oneshot-ru-commercial-pilot-lifecycle-v1
+    paths:
+      - '.github/workflows/apply-staging-ru-commercial-pilot-lifecycle-v1-oneshot.yml'
+  workflow_dispatch:
+    inputs:
+      confirm_staging_oneshot:
+        description: Type APPLY_20260918120000_RU_COMMERCIAL_PILOT_LIFECYCLE_V1_TO_STAGING_ONCE
+        required: true
+        type: string
+
+concurrency:
+  group: staging-oneshot-ru-commercial-pilot-lifecycle-v1
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  AUTHORIZED_REPOSITORY: ASI-integration/asi-landing
+  AUTHORIZED_MIGRATION: supabase/migrations/20260918120000_ru_commercial_pilot_lifecycle_v1.sql
+  AUTHORIZED_MIGRATION_SHA256: 1313099cb86b85c494841b8e3240a11811a641c63498f5232e0fdf629ae83517
+  AUTHORIZED_MIGRATION_BLOB: b2fe7622327b0c77060dd643a42a49af180dde67
+  AUTHORIZED_MIGRATION_VERSION: '20260918120000'
+  ORPHAN_REMOTE_VERSIONS: '20260729040307,20260729040309,20260729040332,20260913120838,20260913120856,20260913120921,20260913120945'
+  TYPED_CONFIRMATION: APPLY_20260918120000_RU_COMMERCIAL_PILOT_LIFECYCLE_V1_TO_STAGING_ONCE
+
+jobs:
+  apply_staging_oneshot:
+    runs-on: ubuntu-latest
+    environment: staging
+    timeout-minutes: 15
+    steps:
+      - name: Require staging one-shot confirmation
+        if: ${{ github.event_name == 'workflow_dispatch' }}
+        shell: bash
+        env:
+          CONFIRM_STAGING_ONESHOT: ${{ inputs.confirm_staging_oneshot }}
+        run: |
+          set -euo pipefail
+          if [[ "$CONFIRM_STAGING_ONESHOT" != "$TYPED_CONFIRMATION" ]]; then
+            echo "::error::Staging one-shot confirmation phrase mismatch."
+            exit 1
+          fi
+          if [[ "$GITHUB_REPOSITORY" != "$AUTHORIZED_REPOSITORY" ]]; then
+            echo "Unexpected repository: $GITHUB_REPOSITORY"
+            exit 1
+          fi
+          echo "typed_confirmation_ok=yes"
+          echo "typed_confirmation_is_not_owner_approval=yes"
+
+      - name: Confirm temporary push-path one-shot
+        if: ${{ github.event_name == 'push' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_REPOSITORY" != "$AUTHORIZED_REPOSITORY" ]]; then
+            echo "Unexpected repository: $GITHUB_REPOSITORY"
+            exit 1
+          fi
+          echo "TEMPORARY_PUSH_PATH_STAGING_ONESHOT=true"
+          echo "branch=${GITHUB_REF_NAME}"
+          echo "sha=${GITHUB_SHA}"
+          echo "scope=staging_only_exact_sql_oneshot"
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Pin and verify exact migration bytes
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f "$AUTHORIZED_MIGRATION"
+          test "$(git hash-object "$AUTHORIZED_MIGRATION")" = "$AUTHORIZED_MIGRATION_BLOB"
+          ACTUAL_SHA256="$(sha256sum "$AUTHORIZED_MIGRATION" | awk '{print $1}')"
+          test "$ACTUAL_SHA256" = "$AUTHORIZED_MIGRATION_SHA256"
+          echo "migration_path=$AUTHORIZED_MIGRATION"
+          echo "migration_sha256=$ACTUAL_SHA256"
+          echo "migration_blob=$AUTHORIZED_MIGRATION_BLOB"
+          echo "MIGRATION_BYTES_PINNED=PASS"
+
+      - name: Require staging secrets and verify DB identity
+        shell: bash
+        env:
+          STAGING_DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
+          STAGING_SUPABASE_PROJECT_REF: ${{ secrets.STAGING_SUPABASE_PROJECT_REF }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${STAGING_DATABASE_URL:-}" ]]; then
+            echo "::error::STAGING_DATABASE_URL secret is missing."
+            exit 1
+          fi
+          if [[ -z "${STAGING_SUPABASE_PROJECT_REF:-}" ]]; then
+            echo "::error::STAGING_SUPABASE_PROJECT_REF secret is missing."
+            exit 1
+          fi
+          echo "::add-mask::${STAGING_DATABASE_URL}"
+
+          # Identity only: never print URL, password, or userinfo.
+          # Accept ONLY exact direct host db.<ref>.supabase.co OR
+          # hostname ending with .pooler.supabase.com AND username exactly postgres.<ref>.
+          STAGING_DATABASE_URL="$STAGING_DATABASE_URL" \
+          STAGING_SUPABASE_PROJECT_REF="$STAGING_SUPABASE_PROJECT_REF" \
+          python3 - <<'PY'
+          import os
+          import re
+          from urllib.parse import unquote, urlparse
+
+          raw = os.environ.get("STAGING_DATABASE_URL", "")
+          expected = (os.environ.get("STAGING_SUPABASE_PROJECT_REF") or "").strip().lower()
+
+          if not raw or not raw.strip():
+              raise SystemExit("STAGING_DATABASE_URL secret is missing.")
+          if not expected or not re.fullmatch(r"[a-z0-9]{20}", expected):
+              raise SystemExit("STAGING_SUPABASE_PROJECT_REF is missing or invalid.")
+
+          normalized = raw.strip()
+          if len(normalized) >= 2 and normalized[0] in ("'", '"', "`") and normalized[-1] == normalized[0]:
+              normalized = normalized[1:-1].strip()
+          if not normalized or ("\r" in normalized) or ("\n" in normalized):
+              raise SystemExit("STAGING_DATABASE_URL is invalid.")
+
+          parsed = urlparse(normalized)
+          scheme_ok = parsed.scheme in ("postgres", "postgresql")
+          hostname = (parsed.hostname or "").lower()
+          username = unquote(parsed.username or "").lower()
+          direct_host = f"db.{expected}.supabase.co"
+          pooler_user = f"postgres.{expected}"
+          host_has_ref = hostname == direct_host
+          user_has_ref = username == pooler_user
+          pooler_host_ok = hostname.endswith(".pooler.supabase.com")
+          identity_ok = host_has_ref or (pooler_host_ok and user_has_ref)
+
+          print("secret_present=true")
+          print(f"scheme_is_postgres={str(scheme_ok).lower()}")
+          print(f"hostname_has_expected_ref={str(host_has_ref).lower()}")
+          print(f"username_has_expected_ref={str(user_has_ref).lower()}")
+          print(f"expected_project_ref={expected}")
+
+          if not scheme_ok:
+              raise SystemExit("STAGING_DATABASE_URL must be a postgres/postgresql URL.")
+          if not identity_ok:
+              raise SystemExit("STAGING_DATABASE_URL project identity mismatch.")
+          print("STAGING_IDENTITY_CHECK=PASS")
+          PY
+
+      - name: Install PostgreSQL client
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! command -v psql >/dev/null 2>&1; then
+            sudo apt-get update -qq
+            sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq postgresql-client
+          fi
+          psql --version
+
+      - name: Preflight, apply (if needed), and verify
+        shell: bash
+        env:
+          STAGING_DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
+          STAGING_SUPABASE_PROJECT_REF: ${{ secrets.STAGING_SUPABASE_PROJECT_REF }}
+          PGCONNECT_TIMEOUT: '10'
+        run: |
+          set -euo pipefail
+          if [[ -z "${STAGING_DATABASE_URL:-}" || -z "${STAGING_SUPABASE_PROJECT_REF:-}" ]]; then
+            echo "::error::Staging secrets missing before SQL."
+            exit 1
+          fi
+          echo "::add-mask::${STAGING_DATABASE_URL}"
+
+          # Fail closed again immediately before any SQL.
+          STAGING_DATABASE_URL="$STAGING_DATABASE_URL" \
+          STAGING_SUPABASE_PROJECT_REF="$STAGING_SUPABASE_PROJECT_REF" \
+          python3 - <<'PY'
+          import os
+          import re
+          from urllib.parse import unquote, urlparse
+
+          raw = os.environ.get("STAGING_DATABASE_URL", "")
+          expected = (os.environ.get("STAGING_SUPABASE_PROJECT_REF") or "").strip().lower()
+          if not raw or not raw.strip():
+              raise SystemExit("STAGING_DATABASE_URL secret is missing.")
+          if not expected or not re.fullmatch(r"[a-z0-9]{20}", expected):
+              raise SystemExit("STAGING_SUPABASE_PROJECT_REF is missing or invalid.")
+          normalized = raw.strip()
+          if len(normalized) >= 2 and normalized[0] in ("'", '"', "`") and normalized[-1] == normalized[0]:
+              normalized = normalized[1:-1].strip()
+          if not normalized or ("\r" in normalized) or ("\n" in normalized):
+              raise SystemExit("STAGING_DATABASE_URL is invalid.")
+          parsed = urlparse(normalized)
+          hostname = (parsed.hostname or "").lower()
+          username = unquote(parsed.username or "").lower()
+          direct_host = f"db.{expected}.supabase.co"
+          pooler_user = f"postgres.{expected}"
+          if parsed.scheme not in ("postgres", "postgresql"):
+              raise SystemExit("STAGING_DATABASE_URL must be a postgres/postgresql URL.")
+          if hostname != direct_host and not (
+              hostname.endswith(".pooler.supabase.com") and username == pooler_user
+          ):
+              raise SystemExit("STAGING_DATABASE_URL project identity mismatch.")
+          print("pre_sql_identity_reverified=yes")
+          print("STAGING_IDENTITY_CHECK=PASS")
+          PY
+
+          if [[ ! "$AUTHORIZED_MIGRATION_VERSION" =~ ^[0-9]{14}$ ]]; then
+            echo "::error::Unexpected AUTHORIZED_MIGRATION_VERSION shape."
+            exit 1
+          fi
+          if [[ ! "$ORPHAN_REMOTE_VERSIONS" =~ ^[0-9]{14}(,[0-9]{14}){6}$ ]]; then
+            echo "::error::Unexpected ORPHAN_REMOTE_VERSIONS shape."
+            exit 1
+          fi
+
+          VERIFY_BLOCK="DO \$verify\$
+          DECLARE
+            v_col text;
+            v_constraint text;
+          BEGIN
+            IF to_regclass('public.ru_commercial_pilot_lifecycle') IS NULL THEN
+              RAISE EXCEPTION 'missing table public.ru_commercial_pilot_lifecycle';
+            END IF;
+
+            FOREACH v_col IN ARRAY ARRAY[
+              'account_id',
+              'property_id',
+              'status',
+              'setup_started_at',
+              'ready_at',
+              'pilot_started_at',
+              'pilot_ends_at',
+              'pilot_completed_at',
+              'report_ready_at',
+              'continuation_decided_at'
+            ] LOOP
+              IF NOT EXISTS (
+                SELECT 1
+                FROM information_schema.columns
+                WHERE table_schema = 'public'
+                  AND table_name = 'ru_commercial_pilot_lifecycle'
+                  AND column_name = v_col
+              ) THEN
+                RAISE EXCEPTION 'missing column public.ru_commercial_pilot_lifecycle.%', v_col;
+              END IF;
+            END LOOP;
+
+            IF NOT EXISTS (
+              SELECT 1
+              FROM pg_constraint
+              WHERE conrelid = 'public.ru_commercial_pilot_lifecycle'::regclass
+                AND contype = 'u'
+                AND conname = 'ru_commercial_pilot_lifecycle_account_property_key'
+            ) THEN
+              RAISE EXCEPTION 'missing unique constraint ru_commercial_pilot_lifecycle_account_property_key';
+            END IF;
+
+            FOREACH v_constraint IN ARRAY ARRAY[
+              'ru_commercial_pilot_lifecycle_pilot_after_ready_chk',
+              'ru_commercial_pilot_lifecycle_status_ready_at_chk',
+              'ru_commercial_pilot_lifecycle_status_pilot_window_chk',
+              'ru_commercial_pilot_lifecycle_status_completed_at_chk'
+            ] LOOP
+              IF NOT EXISTS (
+                SELECT 1
+                FROM pg_constraint
+                WHERE conrelid = 'public.ru_commercial_pilot_lifecycle'::regclass
+                  AND contype = 'c'
+                  AND conname = v_constraint
+              ) THEN
+                RAISE EXCEPTION 'missing check constraint %', v_constraint;
+              END IF;
+            END LOOP;
+
+            IF NOT EXISTS (
+              SELECT 1
+              FROM pg_class c
+              JOIN pg_namespace n ON n.oid = c.relnamespace
+              WHERE n.nspname = 'public'
+                AND c.relname = 'ru_commercial_pilot_lifecycle'
+                AND c.relrowsecurity
+            ) THEN
+              RAISE EXCEPTION 'RLS is not enabled on public.ru_commercial_pilot_lifecycle';
+            END IF;
+
+            IF NOT EXISTS (
+              SELECT 1
+              FROM pg_policies
+              WHERE schemaname = 'public'
+                AND tablename = 'ru_commercial_pilot_lifecycle'
+                AND policyname = 'ru_commercial_pilot_lifecycle_service_role_all'
+                AND roles @> ARRAY['service_role']::name[]
+            ) THEN
+              RAISE EXCEPTION 'missing service_role policy ru_commercial_pilot_lifecycle_service_role_all';
+            END IF;
+
+            IF NOT (
+              has_table_privilege('service_role', 'public.ru_commercial_pilot_lifecycle', 'SELECT')
+              AND has_table_privilege('service_role', 'public.ru_commercial_pilot_lifecycle', 'INSERT')
+              AND has_table_privilege('service_role', 'public.ru_commercial_pilot_lifecycle', 'UPDATE')
+              AND has_table_privilege('service_role', 'public.ru_commercial_pilot_lifecycle', 'DELETE')
+            ) THEN
+              RAISE EXCEPTION 'service_role must have SELECT/INSERT/UPDATE/DELETE on public.ru_commercial_pilot_lifecycle';
+            END IF;
+
+            IF has_table_privilege('anon', 'public.ru_commercial_pilot_lifecycle', 'SELECT')
+               OR has_table_privilege('anon', 'public.ru_commercial_pilot_lifecycle', 'INSERT')
+               OR has_table_privilege('anon', 'public.ru_commercial_pilot_lifecycle', 'UPDATE')
+               OR has_table_privilege('anon', 'public.ru_commercial_pilot_lifecycle', 'DELETE')
+               OR has_table_privilege('authenticated', 'public.ru_commercial_pilot_lifecycle', 'SELECT')
+               OR has_table_privilege('authenticated', 'public.ru_commercial_pilot_lifecycle', 'INSERT')
+               OR has_table_privilege('authenticated', 'public.ru_commercial_pilot_lifecycle', 'UPDATE')
+               OR has_table_privilege('authenticated', 'public.ru_commercial_pilot_lifecycle', 'DELETE') THEN
+              RAISE EXCEPTION 'anon/authenticated must not have SELECT/INSERT/UPDATE/DELETE on public.ru_commercial_pilot_lifecycle';
+            END IF;
+          END
+          \$verify\$;"
+
+          HISTORY_SNAPSHOT_SQL="
+          SELECT
+            (SELECT count(*)::bigint FROM supabase_migrations.schema_migrations) AS schema_migrations_count,
+            EXISTS (
+              SELECT 1
+              FROM supabase_migrations.schema_migrations
+              WHERE version = '${AUTHORIZED_MIGRATION_VERSION}'
+            ) AS target_version_recorded,
+            (
+              SELECT coalesce(string_agg(version, ',' ORDER BY version), '')
+              FROM supabase_migrations.schema_migrations
+              WHERE version = ANY (string_to_array('${ORPHAN_REMOTE_VERSIONS}', ','))
+            ) AS orphan_versions_present,
+            (to_regclass('public.ru_commercial_pilot_lifecycle') IS NOT NULL) AS table_exists;
+          "
+
+          snapshot_history() {
+            psql -X "$STAGING_DATABASE_URL" \
+              --no-psqlrc \
+              --set ON_ERROR_STOP=1 \
+              --tuples-only \
+              --no-align \
+              --field-separator='|' \
+              --command "$HISTORY_SNAPSHOT_SQL"
+          }
+
+          echo "=== PREFLIGHT_HISTORY_SNAPSHOT ==="
+          PREFLIGHT_OUT="$(snapshot_history)"
+          echo "preflight_raw=${PREFLIGHT_OUT}"
+          IFS='|' read -r PRE_COUNT PRE_RECORDED PRE_ORPHANS PRE_TABLE_EXISTS <<<"$PREFLIGHT_OUT"
+          PRE_COUNT="$(echo "$PRE_COUNT" | tr -d '[:space:]')"
+          PRE_RECORDED="$(echo "$PRE_RECORDED" | tr -d '[:space:]')"
+          PRE_ORPHANS="$(echo "$PRE_ORPHANS" | tr -d '[:space:]')"
+          PRE_TABLE_EXISTS="$(echo "$PRE_TABLE_EXISTS" | tr -d '[:space:]')"
+
+          echo "preflight_schema_migrations_count=${PRE_COUNT}"
+          echo "preflight_target_version_recorded=${PRE_RECORDED}"
+          echo "preflight_orphan_versions_present=${PRE_ORPHANS}"
+          echo "preflight_table_exists=${PRE_TABLE_EXISTS}"
+
+          if [[ "$PRE_ORPHANS" != "$ORPHAN_REMOTE_VERSIONS" ]]; then
+            echo "::error::Unexpected orphan migration set before apply (will not repair)."
+            echo "expected_orphans=${ORPHAN_REMOTE_VERSIONS}"
+            echo "observed_orphans=${PRE_ORPHANS}"
+            exit 1
+          fi
+          echo "ORPHAN_MIGRATION_IDS_PREFLIGHT_UNTOUCHED=PASS"
+
+          APPLY_MODE="apply"
+          if [[ "$PRE_TABLE_EXISTS" == "t" ]]; then
+            echo "Table already present; verifying schema and skipping reapply."
+            psql -X "$STAGING_DATABASE_URL" \
+              --no-psqlrc \
+              --set ON_ERROR_STOP=1 \
+              --command "$VERIFY_BLOCK"
+            APPLY_MODE="already_present"
+            echo "MIGRATION_STATUS=already_present_verified"
+          else
+            if [[ "$PRE_RECORDED" == "t" ]]; then
+              echo "::error::Migration ${AUTHORIZED_MIGRATION_VERSION} is recorded but table is missing; refusing invent/repair."
+              exit 1
+            fi
+            echo "Applying pinned SQL via psql single transaction."
+            psql -X "$STAGING_DATABASE_URL" \
+              --no-psqlrc \
+              --set ON_ERROR_STOP=1 \
+              --single-transaction \
+              --file "$AUTHORIZED_MIGRATION" \
+              --command "NOTIFY pgrst, 'reload schema';" \
+              --command "$VERIFY_BLOCK"
+            APPLY_MODE="applied"
+            echo "MIGRATION_STATUS=applied_and_verified"
+          fi
+
+          echo "=== POST_HISTORY_SNAPSHOT ==="
+          POST_OUT="$(snapshot_history)"
+          echo "post_raw=${POST_OUT}"
+          IFS='|' read -r POST_COUNT POST_RECORDED POST_ORPHANS POST_TABLE_EXISTS <<<"$POST_OUT"
+          POST_COUNT="$(echo "$POST_COUNT" | tr -d '[:space:]')"
+          POST_RECORDED="$(echo "$POST_RECORDED" | tr -d '[:space:]')"
+          POST_ORPHANS="$(echo "$POST_ORPHANS" | tr -d '[:space:]')"
+          POST_TABLE_EXISTS="$(echo "$POST_TABLE_EXISTS" | tr -d '[:space:]')"
+
+          echo "post_schema_migrations_count=${POST_COUNT}"
+          echo "post_target_version_recorded=${POST_RECORDED}"
+          echo "post_orphan_versions_present=${POST_ORPHANS}"
+          echo "post_table_exists=${POST_TABLE_EXISTS}"
+
+          if [[ "$POST_TABLE_EXISTS" != "t" ]]; then
+            echo "::error::Table missing after apply/verify path."
+            exit 1
+          fi
+          if [[ "$POST_ORPHANS" != "$PRE_ORPHANS" || "$POST_ORPHANS" != "$ORPHAN_REMOTE_VERSIONS" ]]; then
+            echo "::error::Orphan migration IDs changed; aborting report as failure."
+            exit 1
+          fi
+          echo "ORPHAN_MIGRATION_IDS_UNTOUCHED=PASS"
+
+          if [[ "$POST_COUNT" != "$PRE_COUNT" || "$POST_RECORDED" != "$PRE_RECORDED" ]]; then
+            echo "SCHEMA_MIGRATIONS_CHANGED=YES"
+            echo "::error::schema_migrations changed unexpectedly; this oneshot must not invent history."
+            exit 1
+          fi
+          echo "SCHEMA_MIGRATIONS_CHANGED=NO"
+          echo "schema_migrations_target_recorded=${POST_RECORDED}"
+          echo "schema_migrations_recording_status=unresolved_no_approved_mechanism"
+
+          echo "TABLE_VERIFICATION=PASS"
+          echo "GRANTS_RLS_VERIFICATION=PASS"
+          echo "PRODUCTION_UNTOUCHED=yes"
+          echo "APP_DEPLOY=no"
+          echo "CLI_MIGRATION_PUSH=no"
+          echo "MIGRATION_REPAIR_USED=no"
+          echo "apply_mode=${APPLY_MODE}"
+          echo "migration_sha256=${AUTHORIZED_MIGRATION_SHA256}"
+          echo "STAGING_IDENTITY_CHECK=PASS"
