@@ -5,7 +5,7 @@ import {
   decideCommunicationAutopilotResponseWithLlmRouter,
   type CommunicationAutopilotContext,
 } from '@/lib/communication/autopilot';
-import { createChatCompletionsLlmRouterProvider } from '@/lib/communication/llm-router/deepseek-provider';
+import { getConfiguredLlmRouterProvider } from '@/lib/communication/llm-router/provider';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -43,17 +43,8 @@ function buildAcceptanceContext(): CommunicationAutopilotContext {
 function buildGuestConciergeProvider() {
   if (!bool(process.env.GUEST_CONCIERGE_LLM_ENABLED)) return undefined;
 
-  const apiKey = process.env.OPENAI_API_KEY ?? process.env.LLM_API_KEY;
-  if (!apiKey) return undefined;
-
-  return createChatCompletionsLlmRouterProvider({
-    providerName: 'openai',
-    apiKey,
-    baseUrl: process.env.OPENAI_BASE_URL || process.env.LLM_BASE_URL || 'https://api.openai.com/v1',
-    model: process.env.GUEST_CONCIERGE_LLM_MODEL || 'gpt-4o-mini',
-    timeoutMs: Number(process.env.GUEST_CONCIERGE_LLM_TIMEOUT_MS || 8000),
-    maxRetries: Number(process.env.GUEST_CONCIERGE_LLM_MAX_RETRIES || 0),
-  });
+  const provider = getConfiguredLlmRouterProvider();
+  return provider.name === 'disabled' ? undefined : provider;
 }
 
 export async function POST(req: Request): Promise<Response> {
@@ -120,6 +111,8 @@ export async function POST(req: Request): Promise<Response> {
       guestConciergeLlmEnabled: bool(process.env.GUEST_CONCIERGE_LLM_ENABLED),
       guestConciergeLlmModel: process.env.GUEST_CONCIERGE_LLM_MODEL || null,
       guestConciergeProviderReady: Boolean(provider),
+      guestConciergeProvider: provider?.name ?? 'disabled',
+      guestConciergeProviderModel: provider?.modelName ?? null,
     },
   });
 }

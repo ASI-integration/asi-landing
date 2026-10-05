@@ -4,8 +4,8 @@ const DEFAULT_BASE_URL = 'https://asi-global.ru';
 const ENDPOINT_PATH = '/api/internal/guest-concierge-acceptance';
 
 const CASES = [
-  { id: 'food-breakfast', text: 'где позавтракать утром?', category: 'operating-domain' },
-  { id: 'food-restaurant-nearby', text: 'порекомендуйте ресторан рядом', category: 'operating-domain' },
+  { id: 'food-breakfast', text: 'где позавтракать утром?', category: 'operating-domain', expectLlmProvider: true },
+  { id: 'food-restaurant-nearby', text: 'порекомендуйте ресторан рядом', category: 'operating-domain', expectLlmProvider: true },
   { id: 'problem-wifi', text: 'не работает Wi-Fi', category: 'maintenance', expectProblem: true },
   { id: 'problem-door', text: 'не открывается дверь', category: 'access', expectEscalation: true },
   { id: 'problem-water-leak', text: 'потекла вода под раковиной', category: 'maintenance', expectEscalation: true },
@@ -162,7 +162,8 @@ async function getVersion(origin) {
 async function main() {
   const origin = baseUrl();
   const secret = requiredEnv('INTERNAL_TEST_SECRET');
-  const expectedModel = process.env.GUEST_CONCIERGE_LLM_MODEL || 'gpt-4o-mini';
+  const expectedModel = process.env.GUEST_CONCIERGE_LLM_MODEL || 'deepseek-v4-flash';
+  const expectedProvider = process.env.GUEST_CONCIERGE_LLM_PROVIDER || 'deepseek';
   const url = `${origin}${ENDPOINT_PATH}`;
   const version = await getVersion(origin);
   const rows = [];
@@ -179,6 +180,37 @@ async function main() {
       row.failures.push(
         `GUEST_CONCIERGE_LLM_MODEL mismatch: expected ${expectedModel}, got ${result.acceptanceEnv?.guestConciergeLlmModel}`,
       );
+    }
+    if (!result.acceptanceEnv?.guestConciergeProviderReady) {
+      row.pass = false;
+      row.failures.push('configured Guest Concierge provider is not ready on endpoint');
+    }
+    if (result.acceptanceEnv?.guestConciergeProvider !== expectedProvider) {
+      row.pass = false;
+      row.failures.push(
+        `Guest Concierge provider mismatch: expected ${expectedProvider}, got ${result.acceptanceEnv?.guestConciergeProvider}`,
+      );
+    }
+    if (result.acceptanceEnv?.guestConciergeProviderModel !== expectedModel) {
+      row.pass = false;
+      row.failures.push(
+        `Guest Concierge provider model mismatch: expected ${expectedModel}, got ${result.acceptanceEnv?.guestConciergeProviderModel}`,
+      );
+    }
+    if (testCase.expectLlmProvider) {
+      if (!row.llmUsed) {
+        row.pass = false;
+        row.failures.push('expected live LLM provider path was not used');
+      } else {
+        if (row.llmProvider !== expectedProvider) {
+          row.pass = false;
+          row.failures.push(`live LLM provider mismatch: expected ${expectedProvider}, got ${row.llmProvider}`);
+        }
+        if (row.llmModel !== expectedModel) {
+          row.pass = false;
+          row.failures.push(`live LLM model mismatch: expected ${expectedModel}, got ${row.llmModel}`);
+        }
+      }
     }
     rows.push(row);
   }
