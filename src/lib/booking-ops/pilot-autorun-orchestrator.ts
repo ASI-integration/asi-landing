@@ -37,6 +37,11 @@ import { recomputeBookingCheckinReadiness } from './pre-checkin-control-center';
 import { listBookingOpsTasksForRecord } from './tasks';
 import { syncBookingOpsCommunications } from './communication-orchestrator';
 import {
+  enqueueAutoSendDelivery,
+  executeAutoSendDelivery,
+  getEligibleAutoSendIntents,
+} from './communication-auto-send-executor';
+import {
   checkBookingOverbookingRisk,
   getAvailabilityStatus,
 } from './availability-overbooking-protection';
@@ -95,6 +100,7 @@ export type PilotAutorunStatus = PilotAutorunResult & { metadata: Record<string,
 type MutableRun = Omit<PilotAutorunResult, 'status' | 'safeSummary' | 'finishedAt'> & {
   events: PilotAutorunStep[];
   stepLimit: number;
+  realMessagesSent: number;
 };
 
 const DEFAULT_MAX_STEPS = 30;
@@ -134,7 +140,7 @@ async function createRun(scope: PilotAutorunScope, options?: PilotAutorunOptions
   const run: MutableRun = {
     runId: randomUUID(), scope, stepsAttempted: [], stepsCompleted: [], blockers: [], warnings: [],
     nextRequiredActions: [], dryRun: options?.dryRun === true, startedAt: now, events: [],
-    stepLimit: maxSteps(options),
+    stepLimit: maxSteps(options), realMessagesSent: 0,
   };
   const { error } = await supabase.from('booking_pilot_autorun_runs').insert({
     id: run.runId, scope_type: scope.scopeType, scope_ref: scope.scopeRef,
@@ -197,6 +203,52 @@ function addBlocker(run: MutableRun, blocker: string, nextAction?: string): void
   if (nextAction && !run.nextRequiredActions.includes(nextAction)) run.nextRequiredActions.push(nextAction);
 }
 
+async function executeScopedAutoSendForBooking(
+  run: MutableRun,
+  bookingOpsRecordId: string,
+  accountId: string,
+): Promise<string> {
+  const eligible = await getEligibleAutoSendIntents({
+    bookingOpsRecordId,
+    accountId,
+    limit: 20,
+  });
+  if (!eligible.ok) throw new Error(eligible.error);
+
+  let sent = 0;
+  let blocked = 0;
+  let failed = 0;
+  let dryRun = 0;
+  const scopeUsage = new Map<string, number>();
+
+  for (const intent of eligible.intents) {
+    const enqueued = await enqueueAutoSendDelivery(
+      intent.id,
+      { source: 'pilot_autorun' },
+      { accountId },
+    );
+    if (!enqueued.ok) {
+      failed += 1;
+      continue;
+    }
+
+    const result = await executeAutoSendDelivery(enqueued.delivery.id, {
+      accountId,
+      source: 'operator',
+      scopeUsage,
+    });
+    const status = result.delivery?.status;
+    if (status === 'sent') sent += 1;
+    else if (status === 'dry_run') dryRun += 1;
+    else if (status === 'blocked') blocked += 1;
+    else if (result.ok === false) failed += 1;
+  }
+
+  run.realMessagesSent += sent;
+  if (failed > 0) run.warnings.push('booking.scoped_auto_send: errors=' + failed);
+  return 'Scoped auto-send: sent=' + sent + ', dry-run=' + dryRun + ', blocked=' + blocked + ', errors=' + failed + '.';
+}
+
 function finalStatus(run: MutableRun): PilotAutorunStatusValue {
   if (run.dryRun) return 'dry_run';
   if (run.stepsCompleted.length === 0 && run.blockers.length > 0) return 'blocked';
@@ -218,9 +270,10 @@ async function finishRun(run: MutableRun): Promise<PilotAutorunResult> {
     metadata: {
       next_required_actions: run.nextRequiredActions,
       dry_run: run.dryRun,
-      external_api_calls: false,
+      external_api_calls: run.realMessagesSent > 0,
       ota_push: false,
-      real_messages_sent: false,
+      real_messages_sent: run.realMessagesSent > 0,
+      real_messages_sent_count: run.realMessagesSent,
     },
   }).eq('id', run.runId);
   if (error) throw new Error(error.message);
@@ -473,7 +526,18 @@ export async function runPilotAutorunForBooking(
     });
   }
   if (record.isBlocked) addBlocker(run, record.blockerReason || 'Бронь заблокирована.', 'Создать ручной fallback и снять реальный блокер.');
-  if (options?.allowScopedAutoSend) run.warnings.push('Даже при разрешённой области сообщения не отправлялись: нужен отдельный исполнитель с действующим policy scope.');
+  if (options?.allowScopedAutoSend) {
+    if (!expectedScope?.accountId) {
+      addBlocker(run, 'Scoped auto-send требует canonical account scope.', 'Проверить account/property scope брони.');
+    } else {
+      await executeStep(
+        run,
+        'booking.execute_scoped_auto_send',
+        'Будут обработаны только policy-approved сообщения этой брони в разрешённом account scope.',
+        () => executeScopedAutoSendForBooking(run, record.id, expectedScope.accountId),
+      );
+    }
+  }
   return finishRun(run);
 }
 
@@ -534,13 +598,23 @@ export async function getPilotAutorunBlockers(scope: PilotAutorunScope): Promise
 export async function explainPilotAutorun(scope: PilotAutorunScope): Promise<{
   status: PilotAutorunStatus | null;
   explanation: string;
-  safety: { externalApiCalls: false; otaPush: false; realMessagesSent: false; globalAutoSend: false };
+  safety: { externalApiCalls: boolean; otaPush: false; realMessagesSent: boolean; globalAutoSend: false };
 }> {
   const status = await getPilotAutorunStatus(scope);
   const explanation = status
     ? `${status.safeSummary} Следующее действие: ${status.nextRequiredActions[0] ?? 'проверить текущий статус.'}`
     : 'Автозапуск для этой области ещё не выполнялся.';
-  return { status, explanation, safety: { externalApiCalls: false, otaPush: false, realMessagesSent: false, globalAutoSend: false } };
+  const realMessagesSent = status?.metadata.real_messages_sent === true;
+  return {
+    status,
+    explanation,
+    safety: {
+      externalApiCalls: status?.metadata.external_api_calls === true,
+      otaPush: false,
+      realMessagesSent,
+      globalAutoSend: false,
+    },
+  };
 }
 
 export async function createPilotAutorunFallbackIfNeeded(
