@@ -159,6 +159,10 @@ async function recentHistory(alert: OperatorAlert): Promise<OperatorAlertActionH
 }
 
 export async function getOperatorAlertControl(alert: OperatorAlert, canOverrideHighRisk: boolean): Promise<OperatorAlertControl> {
+  await requireBookingOpsRecordScope(alert.bookingId, {
+    accountId: alert.accountId,
+    propertyId: alert.propertyId,
+  });
   const linked = await linkedObject(alert);
   return { linkedObject: linked, actions: actionOptions(alert, linked, canOverrideHighRisk), navigation: navigation(alert, linked), recentHistory: await recentHistory(alert) };
 }
@@ -205,7 +209,7 @@ async function auditAction(input: {
 
 async function reconcile(alert: OperatorAlert, expectedScope: { accountId: string; propertyId: string }) {
   await requireBookingOpsRecordScope(alert.bookingId, expectedScope);
-  const result = await reconcileOperatorAlertsForBooking(alert.bookingId, new Date().toISOString(), alert.accountId);
+  const result = await reconcileOperatorAlertsForBooking(alert.bookingId, new Date().toISOString(), expectedScope);
   await requireBookingOpsRecordScope(alert.bookingId, expectedScope);
   if (result.errors.length) throw new Error(`operator_alert_reconcile_failed:${result.errors.join(',')}`);
   return result;

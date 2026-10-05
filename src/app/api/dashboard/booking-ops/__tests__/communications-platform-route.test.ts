@@ -4,6 +4,7 @@ const mocks = vi.hoisted(() => ({
   list: vi.fn(),
   prepare: vi.fn(),
   scope: vi.fn(),
+  requireAccess: vi.fn(),
 }));
 
 vi.mock('@/lib/crm/api-auth', () => ({
@@ -15,13 +16,8 @@ vi.mock('@/lib/crm/api-auth', () => ({
   })),
 }));
 
-vi.mock('@/lib/reservations/access', () => ({
-  resolveReservationAccess: vi.fn(async () => ({
-    accountId: 'account-1',
-    actorId: 'user-1',
-    operatorRole: 'operator',
-    isOpsAdmin: true,
-  })),
+vi.mock('../access', () => ({
+  requireBookingOpsApiAccess: mocks.requireAccess,
 }));
 
 vi.mock('@/lib/platform/residential-booking-scope', () => ({
@@ -70,6 +66,12 @@ const intent = (actorType: 'guest' | 'admin', id: string) => ({
 describe('Booking Ops communications PlatformDecision GET', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.requireAccess.mockResolvedValue({
+      ok: true,
+      accountId: 'account-1',
+      propertyId: 'property-1',
+      bookingId: 'ops-route',
+    });
     mocks.scope.mockResolvedValue({
       kind: 'identified',
       accountId: 'account-1',
@@ -123,6 +125,7 @@ describe('Booking Ops communications PlatformDecision GET', () => {
     const payload = await response.json();
 
     expect(response.status).toBe(200);
+    expect(mocks.requireAccess).toHaveBeenCalledWith(expect.any(Object), 'ops-route');
     expect(mocks.scope).toHaveBeenCalledTimes(2);
     expect(mocks.list).toHaveBeenCalledWith('ops-route');
     expect(mocks.prepare).toHaveBeenCalledTimes(1);

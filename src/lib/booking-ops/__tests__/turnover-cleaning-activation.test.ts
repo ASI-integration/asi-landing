@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   ensurePhysicalTasks: vi.fn(),
   createBookingOpsTask: vi.fn(),
   recordProcessedBookingAuditEvent: vi.fn(),
+  requireBookingOpsRecordScope: vi.fn(),
 }));
 
 vi.mock('@/lib/supabase', () => ({
@@ -45,6 +46,7 @@ vi.mock('@/lib/supabase', () => ({
   },
 }));
 vi.mock('../physical-readiness-execution', () => ({ ensurePhysicalTasks: mocks.ensurePhysicalTasks }));
+vi.mock('../repository', () => ({ requireBookingOpsRecordScope: mocks.requireBookingOpsRecordScope }));
 vi.mock('../tasks', () => ({ createBookingOpsTask: mocks.createBookingOpsTask }));
 vi.mock('../lifecycle-autopilot-service', () => ({
   durableEventId: (...parts: string[]) => parts.join(':'),
@@ -60,6 +62,7 @@ const candidate = (id: string, checkIn: string, account = 'account-a', property 
 describe('checkout turnover cleaning activation', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.requireBookingOpsRecordScope.mockImplementation(async () => ({}));
     mocks.candidates = [];
     mocks.cleaning = { id: '00000000-0000-4000-8000-000000000099', booking_id: '00000000-0000-4000-8000-000000000002', status: 'pending', report_payload: {} };
     mocks.cleaningUpdates = [];
@@ -100,12 +103,27 @@ describe('checkout turnover cleaning activation', () => {
     expect(mocks.recordProcessedBookingAuditEvent).not.toHaveBeenCalled();
   });
 
+  it('fails closed before next-booking physical work when its canonical scope changed', async () => {
+    const nextId = '00000000-0000-4000-8000-000000000002';
+    mocks.candidates = [candidate(nextId, '2026-07-14T10:00:00Z')];
+    mocks.requireBookingOpsRecordScope.mockImplementation(async (bookingId: string) => {
+      if (bookingId === nextId) throw new Error('booking_scope_mismatch');
+      return {};
+    });
+
+    await expect(activateTurnoverCleaningAfterCheckout(String(mocks.previous.id))).rejects.toThrow('booking_scope_mismatch');
+    expect(mocks.ensurePhysicalTasks).not.toHaveBeenCalled();
+    expect(mocks.cleaningUpdates).toHaveLength(0);
+    expect(mocks.recordProcessedBookingAuditEvent).not.toHaveBeenCalled();
+  });
+
   it('ensures physical tasks and links exactly one cleaning row to the next booking', async () => {
     mocks.candidates = [candidate('00000000-0000-4000-8000-000000000002', '2026-07-14T10:00:00Z')];
     const result = await activateTurnoverCleaningAfterCheckout(String(mocks.previous.id));
     expect(result).toMatchObject({ kind: 'upcoming_booking', nextBookingId: mocks.candidates[0].id, cleaningTaskId: mocks.cleaning.id });
-    expect(mocks.ensurePhysicalTasks).toHaveBeenCalledOnce();
+    expect(mocks.ensurePhysicalTasks).toHaveBeenCalledWith(mocks.candidates[0].id, { accountId: 'account-a', propertyId: 'property-a' });
     expect(mocks.cleaningUpdates).toHaveLength(1);
+    expect(mocks.recordProcessedBookingAuditEvent).toHaveBeenCalledWith(expect.any(Object), { accountId: 'account-a', propertyId: 'property-a' });
   });
 
   it('repeated checkout processing creates no duplicate cleaning linkage or event id', async () => {

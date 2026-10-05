@@ -29,7 +29,7 @@ export type BookingAutomationRunSummary = {
 };
 
 export type RunBookingOpsAutomationInput = {
-  bookingId: string; expectedAccountId?: string; now?: string; dryRun?: boolean; maxActions?: number;
+  bookingId: string; expectedAccountId?: string; expectedPropertyId?: string; now?: string; dryRun?: boolean; maxActions?: number;
 };
 
 const text = (value: unknown) => String(value ?? '').trim();
@@ -99,7 +99,7 @@ function retryFromGates(gates: Row[]) {
   };
 }
 
-export async function loadBookingAutomationSnapshot(bookingId: string, expectedAccountId?: string, now = new Date().toISOString()): Promise<BookingAutomationSnapshot> {
+export async function loadBookingAutomationSnapshot(bookingId: string, expectedAccountId?: string, now = new Date().toISOString(), expectedPropertyId?: string): Promise<BookingAutomationSnapshot> {
   const bookingResult = await supabase.from('booking_ops_records').select('*').eq('id', bookingId).maybeSingle();
   if (bookingResult.error) throw new Error(bookingResult.error.message);
   if (!bookingResult.data) throw new Error('booking_not_found');
@@ -109,6 +109,7 @@ export async function loadBookingAutomationSnapshot(bookingId: string, expectedA
   if (expectedAccountId && expectedAccountId !== accountId) throw new Error('booking_account_mismatch');
   const propertyId = text(booking.property_id);
   if (!propertyId) throw new Error('booking_property_missing');
+  if (expectedPropertyId && expectedPropertyId !== propertyId) throw new Error('booking_scope_mismatch');
   const [accountResult, propertyResult, knowledgeResult] = await Promise.all([
     supabase.from('accounts').select('id').eq('id', accountId).maybeSingle(),
     supabase.from('properties').select('id,account_id').eq('id', propertyId).eq('account_id', accountId).maybeSingle(),
@@ -307,7 +308,7 @@ async function reconcileAutomationHandoffs(snapshot: BookingAutomationSnapshot, 
 export async function runBookingOpsAutomationForBooking(input: RunBookingOpsAutomationInput): Promise<BookingAutomationRunSummary> {
   const runId = randomUUID();
   const startedAt = input.now ? new Date(input.now).toISOString() : new Date().toISOString();
-  let snapshot = await loadBookingAutomationSnapshot(input.bookingId, input.expectedAccountId, startedAt);
+  let snapshot = await loadBookingAutomationSnapshot(input.bookingId, input.expectedAccountId, startedAt, input.expectedPropertyId);
   const maxActions = Math.max(0, Math.min(DEFAULT_AUTOMATION_MAX_ACTIONS, Math.floor(input.maxActions ?? DEFAULT_AUTOMATION_MAX_ACTIONS)));
   const summary: BookingAutomationRunSummary = { runId, bookingId: input.bookingId, accountId: snapshot.accountId, startedAt, completedAt: startedAt, lockAcquired: false, planned: [], executed: [], waiting: [], retriesScheduled: [], approvalsRequired: [], handoffsCreated: 0, alertsCreated: 0, alertsResolved: 0, errors: [] };
   if (input.dryRun) {
@@ -350,12 +351,12 @@ export async function runBookingOpsAutomationForBooking(input: RunBookingOpsAuto
         break;
       }
       remaining -= 1;
-      const reloaded = await loadBookingAutomationSnapshot(input.bookingId, input.expectedAccountId, new Date().toISOString());
+      const reloaded = await loadBookingAutomationSnapshot(input.bookingId, input.expectedAccountId, new Date().toISOString(), input.expectedPropertyId);
       const nextPlan = planBookingOpsAutomation(reloaded, remaining);
       if (nextPlan.some((candidate) => candidate.code === next.code && candidate.disposition === 'execute')) break;
       snapshot = reloaded;
     }
-    const finalPlan = planBookingOpsAutomation(await loadBookingAutomationSnapshot(input.bookingId, input.expectedAccountId, new Date().toISOString()), Math.max(0, remaining));
+    const finalPlan = planBookingOpsAutomation(await loadBookingAutomationSnapshot(input.bookingId, input.expectedAccountId, new Date().toISOString(), input.expectedPropertyId), Math.max(0, remaining));
     summary.planned.push(...finalPlan.filter((item) => !summary.planned.some((existing) => existing.code === item.code && existing.reasonCode === item.reasonCode && existing.disposition === item.disposition)));
     const terminalFailures = summary.planned.filter((item) => item.disposition === 'handoff_required' && item.reasonCode === 'retry_exhausted');
     const remainingSteps = [...finalPlan, ...terminalFailures.filter((failed) => !finalPlan.some((item) => item.code === failed.code && item.reasonCode === failed.reasonCode))];

@@ -72,6 +72,17 @@ describe('runBookingOpsAutomationForBooking boundaries', () => {
     expect(state.rpc).not.toHaveBeenCalled();
   });
 
+  it('rejects a booking that no longer belongs to the caller-authorized property', async () => {
+    await expect(runBookingOpsAutomationForBooking({
+      bookingId: ID,
+      expectedAccountId: 'account-1',
+      expectedPropertyId: 'property-2',
+      dryRun: true,
+    })).rejects.toThrow('booking_scope_mismatch');
+    expect(state.rpc).not.toHaveBeenCalled();
+    expect(state.mutations).toBe(0);
+  });
+
   it('fails closed when canonical property scope changes during snapshot loading', async () => {
     state.scopeMismatchOnGuard = true;
     await expect(runBookingOpsAutomationForBooking({ bookingId: ID, expectedAccountId: 'account-1', dryRun: true })).rejects.toThrow('booking_scope_mismatch');

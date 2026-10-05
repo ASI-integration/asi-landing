@@ -90,9 +90,10 @@ vi.mock('../operator-alerts', () => ({
   resolveOperatorAlertOccurrence: vi.fn(async (_accountId: string, _alertId: string, _actor: string, category: string, reason: string) => ({ ...mocks.state.alert, status: 'resolved', resolutionReason: `${category}:${reason}` })),
 }));
 
-import { applyOperatorAlertAction } from '../operator-exception-actions';
+import { applyOperatorAlertAction, getOperatorAlertControl } from '../operator-exception-actions';
+import type { OperatorAlert } from '../operator-alerts';
 
-function alert(overrides: Record<string, unknown> = {}) {
+function alert(overrides: Partial<OperatorAlert> = {}): OperatorAlert {
   return {
     id: 'alert-1', accountId: 'account-a', bookingId: 'booking-1', propertyId: 'property-1', alertCode: 'CLEANING_NOT_STARTED',
     incidentFamily: 'CLEANING_DELAY', sourceDomain: 'turnover', sourceGate: 'cleaning', severity: 'warning', status: 'open',
@@ -114,6 +115,12 @@ beforeEach(() => {
 });
 
 describe('Operator Alert canonical actions', () => {
+  it('fails closed before loading alert controls when canonical property scope drifts', async () => {
+    mocks.state.bookings[0].property_id = 'property-b';
+
+    await expect(getOperatorAlertControl(alert(), false)).rejects.toThrow('booking_scope_mismatch');
+  });
+
   it('acknowledges without resolving and records the operator audit', async () => {
     const result = await applyOperatorAlertAction({ accountId: 'account-a', alertId: 'alert-1', action: 'acknowledge', actorId: 'operator-1', canOverrideHighRisk: false });
     expect(result.alert).toMatchObject({ status: 'acknowledged', acknowledgedBy: 'operator-1' });

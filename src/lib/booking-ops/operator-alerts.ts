@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { supabase } from '@/lib/supabase';
 import { recordBookingOpsEvent, type BookingOpsEventType } from './events';
+import { requireBookingOpsRecordScope } from './repository';
 
 export type OperatorAlertSeverity = 'info' | 'warning' | 'critical';
 export type OperatorAlertStatus = 'open' | 'acknowledged' | 'resolved';
@@ -101,6 +102,13 @@ const nullableText = (value: unknown) => {
   const normalized = text(value);
   return normalized || null;
 };
+
+async function requireOperatorAlertBookingScope(input: ReconcileOperatorAlertConditionsInput) {
+  await requireBookingOpsRecordScope(input.bookingId, {
+    accountId: input.accountId,
+    propertyId: input.propertyId,
+  });
+}
 
 function safeMetadataValue(value: unknown): unknown {
   if (typeof value === 'boolean' || typeof value === 'number') return value;
@@ -230,6 +238,7 @@ async function updateExistingAlert(
 
   const previousSeverity = text(existing.severity) as OperatorAlertSeverity;
   const escalated = severityRank[condition.severity] > (severityRank[previousSeverity] ?? -1);
+  await requireOperatorAlertBookingScope(input);
   const result = await supabase
     .from('booking_ops_alerts')
     .update(patch)
@@ -240,6 +249,7 @@ async function updateExistingAlert(
     .maybeSingle();
   if (result.error) throw new Error(result.error.message);
   if (!result.data) throw new Error('operator_alert_update_conflict');
+  await requireOperatorAlertBookingScope(input);
 
   summary.alertsUpdated += 1;
   if (escalated) summary.alertsEscalated += 1;
@@ -277,6 +287,7 @@ export async function reconcileOperatorAlertConditions(
   if (!bookingResult.data) throw new Error('booking_not_found');
   if (text(bookingResult.data.account_id) !== input.accountId) throw new Error('booking_account_mismatch');
   if (text(bookingResult.data.property_id) !== input.propertyId) throw new Error('booking_property_mismatch');
+  await requireOperatorAlertBookingScope(input);
 
   const activeResult = await supabase
     .from('booking_ops_alerts')
@@ -297,6 +308,7 @@ export async function reconcileOperatorAlertConditions(
 
   for (const alert of active) {
     if (desired.has(text(alert.dedupe_key))) continue;
+    await requireOperatorAlertBookingScope(input);
     const result = await supabase
       .from('booking_ops_alerts')
       .update({
@@ -312,6 +324,7 @@ export async function reconcileOperatorAlertConditions(
       .maybeSingle();
     if (result.error) throw new Error(result.error.message);
     if (result.data) {
+      await requireOperatorAlertBookingScope(input);
       summary.alertsResolved += 1;
       await emitAlertEvent(input.bookingId, 'ops_alert_resolved', result.data as Row, `resolved:${input.now}`);
     }
@@ -337,6 +350,7 @@ export async function reconcileOperatorAlertConditions(
       detected_at: input.now,
       created_at: input.now,
     };
+    await requireOperatorAlertBookingScope(input);
     const result = await supabase.from('booking_ops_alerts').insert(insert).select('*').single();
     if (result.error?.code === '23505') {
       const raced = await supabase
@@ -354,6 +368,7 @@ export async function reconcileOperatorAlertConditions(
     }
     if (result.error) throw new Error(result.error.message);
     const row = result.data as Row;
+    await requireOperatorAlertBookingScope(input);
     summary.alertsCreated += 1;
     await emitAlertEvent(input.bookingId, 'ops_alert_created', row, 'created');
     await emitAlertEvent(

@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server';
 import { requireCrmOperatorSession, requireOpsAdminSession } from '@/lib/crm/api-auth';
-import { resolveReservationAccess } from '@/lib/reservations/access';
 import { sameIdentity } from '@/lib/platform/decision';
 import { adaptCommunicationDecision } from '@/lib/platform/communication-decision';
 import { resolveResidentialBookingIdentity } from '@/lib/platform/residential-booking-scope';
@@ -23,10 +22,12 @@ export async function GET(_req: Request, context: RouteContext): Promise<NextRes
   const auth = await requireCrmOperatorSession();
   if ('error' in auth) return auth.error;
 
+  const access = await requireBookingOpsApiAccess(auth.session, context.params.id);
+  if (!access.ok) return access.response;
+
   try {
-    const access = await resolveReservationAccess(auth.session);
-    const identity = await resolveResidentialBookingIdentity(context.params.id, access.accountId);
-    const result = await listBookingOpsCommunicationsForRecord(context.params.id);
+    const identity = await resolveResidentialBookingIdentity(access.bookingId, access.accountId);
+    const result = await listBookingOpsCommunicationsForRecord(access.bookingId);
     if (!result.ok) {
       return NextResponse.json(
         { ok: false, message: result.error ?? 'Не удалось загрузить коммуникации.' },
@@ -38,7 +39,7 @@ export async function GET(_req: Request, context: RouteContext): Promise<NextRes
       .filter((intent) => intent.actorType === 'guest')
       .map(async (intent) => {
         const prepared = await prepareBookingCommunication({
-          recordId: context.params.id,
+          recordId: access.bookingId,
           accountId: identity.accountId,
           propertyId: identity.propertyId,
           purpose: intent.purpose,
@@ -51,7 +52,7 @@ export async function GET(_req: Request, context: RouteContext): Promise<NextRes
         return { communicationId: intent.id, decision };
       }));
 
-    const currentIdentity = await resolveResidentialBookingIdentity(context.params.id, access.accountId);
+    const currentIdentity = await resolveResidentialBookingIdentity(access.bookingId, access.accountId);
     if (!sameIdentity(identity, currentIdentity)) {
       return NextResponse.json(
         { ok: false, message: 'Состояние бронирования изменилось. Повторите запрос.' },

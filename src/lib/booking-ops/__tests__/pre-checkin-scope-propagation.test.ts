@@ -1,12 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
-  scope: vi.fn(), get: vi.fn(), update: vi.fn(), initialize: vi.fn(),
+  scope: vi.fn(), get: vi.fn(), list: vi.fn(), update: vi.fn(), initialize: vi.fn(),
   lifecycle: vi.fn(), complete: vi.fn(), block: vi.fn(), admin: vi.fn(), tasks: vi.fn(),
   legal: vi.fn(), physical: vi.fn(), from: vi.fn(), insert: vi.fn(), knowledge: vi.fn(),
 }));
 vi.mock('../repository', () => ({
   getBookingOpsRecord: mocks.get, requireBookingOpsRecordScope: mocks.scope,
-  updateBookingOpsRecord: mocks.update, listBookingOpsRecords: vi.fn(),
+  updateBookingOpsRecord: mocks.update, listBookingOpsRecords: mocks.list,
 }));
 vi.mock('../lifecycle', () => ({
   initializeLifecycleForBooking: mocks.initialize, readLifecycleStatus: mocks.lifecycle,
@@ -18,7 +18,7 @@ vi.mock('../physical-readiness-execution', () => ({ ensurePhysicalTasks: mocks.p
 vi.mock('../communication-auto-send-policy', () => ({ buildAutoSendDecisionMetadata: vi.fn(async () => ({})) }));
 vi.mock('@/lib/communication/booking-knowledge-boundary', () => ({ guardBookingCommunicationDraft: mocks.knowledge }));
 vi.mock('@/lib/supabase', () => ({ supabase: { from: mocks.from } }));
-import { getPreCheckinStatus, recomputeBookingCheckinReadiness, runPreCheckinAction } from '../pre-checkin-control-center';
+import { getPreCheckinStatus, listBookingsByReadinessStatus, recomputeBookingCheckinReadiness, runPreCheckinAction } from '../pre-checkin-control-center';
 const id = 'ops-a', scope = { accountId: 'account-a', propertyId: 'property-a' };
 const required = [
   'guest_data_completed', 'documents_verified', 'contract_signed', 'deposit_received',
@@ -32,6 +32,7 @@ describe('physical approval nested pre-check-in scope', () => {
     for (const key of required) statuses[key] = 'completed';
     const record = { id, guestName: 'guest', ...scope };
     mocks.scope.mockResolvedValue(record); mocks.get.mockResolvedValue(record);
+    mocks.list.mockResolvedValue({ ok: true, records: [record] });
     mocks.update.mockResolvedValue({ ok: true }); mocks.initialize.mockResolvedValue({ ok: true });
     mocks.tasks.mockResolvedValue({ ok: true, tasks: [] });
     mocks.lifecycle.mockImplementation(async () => ({
@@ -54,6 +55,13 @@ describe('physical approval nested pre-check-in scope', () => {
     expect(mocks.physical).toHaveBeenCalledWith(id, scope);
     expect(mocks.initialize).toHaveBeenCalledWith(id, scope);
     expect(mocks.get).not.toHaveBeenCalled();
+  });
+  it('pins account list readiness recomputation to each listed canonical property', async () => {
+    await listBookingsByReadinessStatus({ accountId: scope.accountId, limit: 1 });
+    expect(mocks.list).toHaveBeenCalledWith({ limit: 1, accountId: scope.accountId });
+    expect(mocks.legal).toHaveBeenCalledWith(id, { source: 'pre_checkin' }, scope);
+    expect(mocks.physical).toHaveBeenCalledWith(id, scope);
+    expect(mocks.initialize).toHaveBeenCalledWith(id, scope);
   });
   it.each(['mark_ready_override', 'clear_ready_override', 'resolve_fallback', 'block_gate', 'skip_gate'])('retains canonical scope in %s lifecycle writes', async action => {
     await runPreCheckinAction({ bookingId: id, action, gateKey: 'property_ready',

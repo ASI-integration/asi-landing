@@ -71,7 +71,10 @@ const database = vi.hoisted(() => {
   };
 });
 
+const scopeMocks = vi.hoisted(() => ({ require: vi.fn() }));
+
 vi.mock('@/lib/supabase', () => ({ supabase: database.supabase }));
+vi.mock('../repository', () => ({ requireBookingOpsRecordScope: scopeMocks.require }));
 vi.mock('../events', () => ({ recordBookingOpsEvent: vi.fn(async () => ({ ok: true })) }));
 vi.mock('@/lib/crm/api-auth', () => ({
   requireCrmOperatorSession: vi.fn(async () => ({ session: { userId: 'operator-1', email: 'ops@example.test' } })),
@@ -133,6 +136,13 @@ beforeEach(() => {
   database.state.domainEvents = [];
   database.state.duplicateRaceRow = null;
   vi.clearAllMocks();
+  scopeMocks.require.mockImplementation(async (bookingId: string, expectedScope: { accountId: string; propertyId: string }) => {
+    const booking = database.state.bookings.find((row) => row.id === bookingId);
+    if (!booking || booking.account_id !== expectedScope.accountId || booking.property_id !== expectedScope.propertyId) {
+      throw new Error('booking_scope_mismatch');
+    }
+    return booking;
+  });
 });
 
 describe('canonical Operator Alert reconciliation', () => {
@@ -208,6 +218,17 @@ describe('canonical Operator Alert reconciliation', () => {
       accountId: 'account-b', bookingId: 'booking-1', propertyId: 'property-1', managedSourceDomains: ['turnover'], conditions: [condition], now,
     })).rejects.toThrow('booking_account_mismatch');
     expect(database.state.alerts).toEqual([]);
+  });
+
+  it('fails closed if booking scope drifts before an alert mutation', async () => {
+    database.state.alerts = [alertRow()];
+    scopeMocks.require
+      .mockResolvedValueOnce({})
+      .mockRejectedValueOnce(new Error('booking_scope_mismatch'));
+
+    await expect(reconcile([{ ...condition, description: 'Изменённое описание.' }]))
+      .rejects.toThrow('booking_scope_mismatch');
+    expect(database.state.alerts[0].description).toBe(condition.description);
   });
 
   it('does not resolve a pre-check-in alert during turnover reconciliation', async () => {

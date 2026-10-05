@@ -5,12 +5,14 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
   runAutomation: vi.fn(),
   reconcileAlerts: vi.fn(),
+  requireScope: vi.fn(),
   from: vi.fn(),
 }));
 
 vi.mock('../booking-automation-runner', () => ({ runBookingOpsAutomationForBooking: mocks.runAutomation }));
 vi.mock('../events', () => ({ recordBookingOpsEvent: vi.fn() }));
 vi.mock('../operator-alerts', () => ({ reconcileOperatorAlertConditions: mocks.reconcileAlerts }));
+vi.mock('../repository', () => ({ requireBookingOpsRecordScope: mocks.requireScope }));
 vi.mock('../pre-checkin-alert-engine', () => ({
   PRE_CHECKIN_ALERT_SOURCE_DOMAINS: ['pre_checkin'],
   evaluatePreCheckinAlerts: vi.fn(() => []),
@@ -22,7 +24,7 @@ import {
   resolveBookingAutomationCanaryBookingIds,
   resolveBookingAutomationRolloutMode,
 } from '../booking-automation-rollout';
-import { orchestrateBookingAutomationAndAlertsForBooking } from '../ops-alert-orchestrator';
+import { orchestrateBookingAutomationAndAlertsForBooking, orchestrateOpsAlertsForProperty, reconcileOperatorAlertsForBooking } from '../ops-alert-orchestrator';
 
 const BOOKING_ID = '11111111-1111-4111-8111-111111111111';
 const NOW = '2026-07-13T09:00:00.000Z';
@@ -56,9 +58,33 @@ describe('booking automation rollout guard', () => {
     vi.unstubAllEnvs();
     mocks.runAutomation.mockResolvedValue(automationSummary());
     mocks.reconcileAlerts.mockResolvedValue({ alertsCreated: 1, alertsUpdated: 0, alertsEscalated: 0, alertsResolved: 0, unchanged: 0 });
+    mocks.requireScope.mockResolvedValue({});
     mocks.from.mockImplementation((table: string) => query(table === 'booking_ops_records'
       ? [{ id: BOOKING_ID, account_id: 'account-1', property_id: 'property-1', ops_status: 'checked_in', check_in_at: NOW }]
       : []));
+  });
+
+  it('fails closed before alert reconciliation when canonical booking scope changes', async () => {
+    mocks.requireScope.mockRejectedValueOnce(new Error('booking_scope_mismatch'));
+
+    const result = await reconcileOperatorAlertsForBooking(
+      BOOKING_ID,
+      NOW,
+      { accountId: 'account-1', propertyId: 'property-1' },
+    );
+
+    expect(result.errors).toContain('booking_scope_mismatch');
+    expect(mocks.reconcileAlerts).not.toHaveBeenCalled();
+  });
+
+  it('keeps a property-targeted sweep pinned to that property during automation', async () => {
+    await orchestrateOpsAlertsForProperty('property-1', NOW, 'account-1', { dryRun: true });
+    expect(mocks.runAutomation).toHaveBeenCalledWith(expect.objectContaining({
+      bookingId: BOOKING_ID,
+      expectedAccountId: 'account-1',
+      expectedPropertyId: 'property-1',
+      dryRun: true,
+    }));
   });
 
   it('defaults missing mode to shadow', () => {

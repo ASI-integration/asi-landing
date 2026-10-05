@@ -3,7 +3,6 @@ import {
   requireCrmOperatorSession,
   requireOpsAdminSession,
 } from '@/lib/crm/api-auth';
-import { resolveReservationAccess } from '@/lib/reservations/access';
 import { sameIdentity } from '@/lib/platform/decision';
 import { adaptResidentialLocationDecision } from '@/lib/platform/location-decision';
 import { resolveResidentialBookingIdentity } from '@/lib/platform/residential-booking-scope';
@@ -11,6 +10,7 @@ import {
   readResidentialPropertySpatialSnapshot,
   refreshResidentialPropertySpatialSnapshot,
 } from '@/lib/location/residential-property-spatial-runtime';
+import { requireBookingOpsApiAccess } from '../../access';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -61,11 +61,13 @@ export async function GET(_req: Request, context: RouteContext): Promise<NextRes
   const auth = await requireCrmOperatorSession();
   if ('error' in auth) return auth.error;
 
+  const access = await requireBookingOpsApiAccess(auth.session, context.params.id);
+  if (!access.ok) return access.response;
+
   try {
-    const access = await resolveReservationAccess(auth.session);
-    const identity = await resolveResidentialBookingIdentity(context.params.id, access.accountId);
+    const identity = await resolveResidentialBookingIdentity(access.bookingId, access.accountId);
     const snapshot = await readResidentialPropertySpatialSnapshot(identity);
-    const currentIdentity = await resolveResidentialBookingIdentity(context.params.id, access.accountId);
+    const currentIdentity = await resolveResidentialBookingIdentity(access.bookingId, access.accountId);
     if (!sameIdentity(identity, currentIdentity)) {
       return NextResponse.json(
         { ok: false, message: 'Состояние бронирования изменилось. Повторите запрос.' },
@@ -89,11 +91,13 @@ export async function POST(_req: Request, context: RouteContext): Promise<NextRe
   const auth = await requireOpsAdminSession();
   if ('error' in auth) return auth.error;
 
+  const access = await requireBookingOpsApiAccess(auth.session, context.params.id);
+  if (!access.ok) return access.response;
+
   try {
-    const access = await resolveReservationAccess(auth.session);
-    const identity = await resolveResidentialBookingIdentity(context.params.id, access.accountId);
+    const identity = await resolveResidentialBookingIdentity(access.bookingId, access.accountId);
     const snapshot = await refreshResidentialPropertySpatialSnapshot(identity);
-    const currentIdentity = await resolveResidentialBookingIdentity(context.params.id, access.accountId);
+    const currentIdentity = await resolveResidentialBookingIdentity(access.bookingId, access.accountId);
     if (!sameIdentity(identity, currentIdentity)) {
       return NextResponse.json(
         { ok: false, message: 'Состояние бронирования изменилось. Повторите запрос.' },
