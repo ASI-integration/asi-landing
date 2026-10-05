@@ -175,7 +175,7 @@ export async function runPilotReadinessAcceptance(input?: {
     }
 
     const importResult = await importBookingFromText({
-      text: `Гость acceptance 2, +79001112233, Пилот acceptance, заезд ${localDatePlusDays(2)}, выезд ${localDatePlusDays(4)}, Авито`,
+      text: `Мария, +79001112233, объект: Пилот acceptance, заезд ${localDatePlusDays(2)}, выезд ${localDatePlusDays(4)}, Авито`,
       properties: [{ propertyId, label: 'Пилот acceptance' }],
       forceCreate: true,
     });
@@ -201,7 +201,7 @@ export async function runPilotReadinessAcceptance(input?: {
         channel: 'telegram',
         externalUserId: 'owner-acceptance',
         chatId: '999001122',
-        messageText: `Иван, +79005554433, Пилот acceptance, заезд ${localDatePlusDays(5)}, выезд ${localDatePlusDays(7)}`,
+        messageText: `Иван, +79005554433, объект: Пилот acceptance, заезд ${localDatePlusDays(5)}, выезд ${localDatePlusDays(7)}`,
         receivedAt: new Date(),
         metadata: {},
       },
