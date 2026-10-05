@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 const migration = readFileSync(
   resolve(process.cwd(), 'supabase/migrations/20261004123000_channel_manager_live_scope_guard_v1.sql'),
   'utf8',
-);
+).replace(/\r\n/gu, '\n');
 
 describe('Channel Manager live scope guard migration', () => {
   it('keeps acquire and run-update RPCs compatible with the existing readiness probe', () => {
