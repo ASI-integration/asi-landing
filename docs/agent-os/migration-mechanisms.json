@@ -177,6 +177,32 @@
       "notes": "Exact-SHA exact-blob production migration for RU commercial pilot lifecycle SSOT; does not supabase db push; does not deploy the application."
     },
     {
+      "id": "workflow-wave5-core-migrations-v1",
+      "kind": "github-workflow",
+      "role": "apply-backend",
+      "paths": [
+        ".github/workflows/apply-wave5-core-migrations-v1.yml",
+        "docs/operations/wave5-core-migrations-v1/README.md",
+        "docs/operations/wave5-core-migrations-v1/manifest.json",
+        "docs/operations/wave5-core-migrations-v1/migration-owner-gate.json",
+        "scripts/wave5-core-migrations-precheck.sql",
+        "scripts/wave5-core-migrations-register-history.sql",
+        "scripts/wave5-core-migrations-verify.sql"
+      ],
+      "environments": ["production"],
+      "ownerGateRequired": true,
+      "supportsDryRun": true,
+      "rollbackPolicy": "atomic-transaction",
+      "migrationPaths": [
+        "supabase/migrations/20260930200000_guest_long_term_memory_account_scope.sql",
+        "supabase/migrations/20261003093000_residential_property_spatial_snapshots_v1.sql",
+        "supabase/migrations/20261003124500_booking_ops_auto_send_account_scope_v1.sql",
+        "supabase/migrations/20261003141500_booking_inbound_intake_account_scope_v1.sql",
+        "supabase/migrations/20261003150000_booking_availability_account_scope_v1.sql"
+      ],
+      "notes": "Checksum-pinned five-file Wave 5 core production rollout with non-mutating preflight, explicit owner gate, read-only production DB guard, atomic schema+history transaction, and final verification. Channel Manager scope-guard migration is intentionally excluded."
+    },
+    {
       "id": "helper-booking-ops",
       "kind": "python-helper",
       "role": "apply-backend",

@@ -1,0 +1,25 @@
+{
+  "schemaVersion": "asi.agent-os.owner-gate.v1",
+  "taskId": "wave5-core-migrations-v1-production-rollout",
+  "status": "missing",
+  "action": "production_migration",
+  "target": "production Supabase project jwinifeienvzejofmbua through the GitHub production environment SUPABASE_DB_URL secret",
+  "identity": {
+    "ref": "refs/heads/main",
+    "migration": "docs/operations/wave5-core-migrations-v1/manifest.json"
+  },
+  "allowedSideEffect": "Apply only the five checksum-pinned Wave 5 core migrations listed in manifest.json, in manifest order, plus exact migration-history registration and verification in one PostgreSQL transaction. No Channel Manager migration, no application deploy, no DNS/secret change, and no unrelated production data mutation.",
+  "postActionVerification": [
+    "All five exact (version, name) rows exist in supabase_migrations.schema_migrations.",
+    "Guest-memory account scope columns and fail-closed NOT VALID account-required constraints exist while legacy NULL rows remain preserved.",
+    "Residential spatial snapshots table exists with RLS enabled.",
+    "Booking Ops auto-send and inbound-intake account-scope columns/constraints exist and unbound non-global send authorization remains fail-closed.",
+    "Account-scoped availability function exists with service_role-only EXECUTE and existing unresolved legacy overbooking checks remain allowed to stay unbound.",
+    "Production public health/version endpoints remain healthy after the database transaction."
+  ],
+  "authorization": null,
+  "typedConfirmation": {
+    "present": true,
+    "countsAsOwnerApproval": false
+  }
+}
