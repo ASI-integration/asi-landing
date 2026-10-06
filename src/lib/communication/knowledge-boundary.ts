@@ -18,6 +18,16 @@ const topicPatterns: Array<[string, RegExp]> = [
 export function requestedCommunicationFacts(message: string): string[] {
   return topicPatterns.filter(([, pattern]) => pattern.test(message)).map(([key]) => key);
 }
+
+/**
+ * Routing only: this does not authorize Wi-Fi disclosure. The Telegram booking/object
+ * autopilot still requires its own verified reservation before returning credentials.
+ */
+export function shouldDeferTelegramWifiToVerifiedAutopilot(message: string, channel: string): boolean {
+  if (channel !== 'telegram') return false;
+  const requested = requestedCommunicationFacts(message);
+  return requested.length === 1 && requested[0] === 'wifi';
+}
 export const KNOWLEDGE_REVIEW_REPLY_RU = 'Не могу подтвердить эти сведения. Нужна проверка оператора.';
 export type PreparedKnowledgeReply = {
   text: string; reviewRequired: boolean; result: CommunicationFactsResult; summary: string;
