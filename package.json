@@ -43,6 +43,8 @@
     "acceptance:owner-console-runtime": "node scripts/owner-console-runtime-acceptance.mjs",
     "acceptance:strigunov-pilot": "node scripts/strigunov-pilot-acceptance.mjs",
     "ops:sync": "node scripts/ops-sync.mjs",
+    "ops:continuation": "node scripts/production-continuation-runner.mjs --task telegram-text --repo ASI-integration/asi-landing",
+    "ops:continuation:status": "node scripts/production-continuation-runner.mjs --task telegram-text --status",
     "runtime-bridge:runner": "node scripts/asi-runtime-bridge-runner.mjs",
     "demo:apart-sharing": "node --conditions=react-server --import tsx scripts/apart-sharing-killer-demo.ts",
     "runtime-bridge:smoke": "vitest run src/lib/asi-runtime/__tests__/bridge.test.ts -t \"local smoke\""
