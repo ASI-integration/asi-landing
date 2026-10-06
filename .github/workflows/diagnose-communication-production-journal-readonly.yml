@@ -1,0 +1,103 @@
+# Read-only production communication diagnostic.
+# No deploy, restart, migration, secret values, or provider calls.
+name: Diagnose Communication Production Journal (Read-Only)
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm_read_only_diagnostic:
+        description: Type DIAGNOSE_COMMUNICATION_PRODUCTION_READ_ONLY to run
+        required: true
+        type: string
+      minutes:
+        description: Journal lookback window in minutes (5-60)
+        required: false
+        default: "20"
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: diagnose-communication-production-journal-readonly
+  cancel-in-progress: false
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 10
+    steps:
+      - name: Validate read-only diagnostic request
+        shell: bash
+        env:
+          CONFIRMATION: ${{ inputs.confirm_read_only_diagnostic }}
+          MINUTES: ${{ inputs.minutes }}
+        run: |
+          set -euo pipefail
+          if [[ "$CONFIRMATION" != "DIAGNOSE_COMMUNICATION_PRODUCTION_READ_ONLY" ]]; then
+            echo "::error::Confirmation phrase mismatch"
+            exit 1
+          fi
+          if ! [[ "$MINUTES" =~ ^[0-9]+$ ]] || (( MINUTES < 5 || MINUTES > 60 )); then
+            echo "::error::minutes must be an integer from 5 to 60"
+            exit 1
+          fi
+
+      - name: Start SSH agent with production key
+        uses: webfactory/ssh-agent@dc588b651fe13675774614f8e6a936a468676387 # v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.VPS_SSH_KEY }}
+          log-public-key: false
+
+      - name: Read sanitized communication journal
+        shell: bash
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_PORT: ${{ secrets.VPS_PORT }}
+          MINUTES: ${{ inputs.minutes }}
+        run: |
+          set -euo pipefail
+          test -n "${VPS_HOST:-}"
+          test -n "${SSH_AUTH_SOCK:-}"
+          ssh-add -l >/dev/null 2>&1
+
+          REMOTE_USER="project_ayfaar"
+          REMOTE_PORT="${VPS_PORT:-22}"
+          SSH_OPTS=(
+            -p "$REMOTE_PORT"
+            -o "IdentityAgent=${SSH_AUTH_SOCK}"
+            -o IdentitiesOnly=no
+            -o BatchMode=yes
+            -o StrictHostKeyChecking=accept-new
+            -o ConnectTimeout=20
+          )
+
+          ssh "${SSH_OPTS[@]}" "${REMOTE_USER}@${VPS_HOST}" "MINUTES='${MINUTES}' bash -s" <<'REMOTE'
+          set -euo pipefail
+          SERVICE="asi-landing.service"
+          MINUTES="${MINUTES:-20}"
+
+          echo "[section] service"
+          systemctl show "$SERVICE" -p ActiveState -p SubState -p MainPID -p WorkingDirectory 2>&1 || true
+
+          echo "[section] sanitized communication errors from last ${MINUTES} minutes"
+          JOURNAL="$(journalctl -u "$SERVICE" --since "-${MINUTES} min" -o cat 2>/dev/null || true)"
+          FILTERED="$(printf '%s\n' "$JOURNAL" | grep -E 'telegram-dry-run|\[tg:|\[comm:|processMessage|TypeError|ReferenceError|Error:|Supabase|guest|reservation' || true)"
+
+          if [[ -z "$FILTERED" ]]; then
+            echo "[journal] no matching communication/error lines"
+            exit 0
+          fi
+
+          printf '%s\n' "$FILTERED" \
+            | sed -E \
+                -e 's/(chat_id["=: ]+)-?[0-9]+/\1[REDACTED]/gI' \
+                -e 's/(externalUserId["=: ]+)-?[0-9]+/\1[REDACTED]/gI' \
+                -e 's/(telegram_chat_id["=: ]+)-?[0-9]+/\1[REDACTED]/gI' \
+                -e 's/("?[a-z_]*token[a-z_]*"?[[:space:]]*[:=][[:space:]]*)"[^" ]*"/\1"[REDACTED]"/gI' \
+                -e 's/("?[a-z_]*secret[a-z_]*"?[[:space:]]*[:=][[:space:]]*)"[^" ]*"/\1"[REDACTED]"/gI' \
+                -e 's/("?[a-z_]*key[a-z_]*"?[[:space:]]*[:=][[:space:]]*)"[^" ]*"/\1"[REDACTED]"/gI' \
+                -e 's/(postgres(ql)?:\/\/)[^[:space:]"]+/\1[REDACTED]/gI' \
+            | tail -n 240
+          REMOTE
