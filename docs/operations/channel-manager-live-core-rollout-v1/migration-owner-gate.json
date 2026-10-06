@@ -1,7 +1,7 @@
 {
   "schemaVersion": "asi.agent-os.owner-gate.v1",
   "taskId": "channel-manager-live-core-rollout-v1-production",
-  "status": "missing",
+  "status": "approved",
   "action": "production_migration",
   "target": "production Supabase project jwinifeienvzejofmbua through the GitHub production environment SUPABASE_DB_URL secret",
   "identity": {
@@ -17,9 +17,14 @@
     "Privileged Live Core RPCs are executable by service_role and not by anon/authenticated.",
     "Production public health/version endpoints remain healthy after the database transaction."
   ],
-  "authorization": null,
+  "authorization": {
+    "source": "explicit_owner_message",
+    "owner": "Nikolay",
+    "scope": "Apply only the seven checksum-pinned Channel Manager Live Core migrations from docs/operations/channel-manager-live-core-rollout-v1/manifest.json to production Supabase project jwinifeienvzejofmbua, in canonical order, with exact migration-history registration and post-action verification; no application deploy, DNS/secret change, real provider call, or unrelated production mutation.",
+    "taskCycle": "2026-10-06-channel-manager-live-core-production-rollout"
+  },
   "typedConfirmation": {
-    "present": false,
+    "present": true,
     "countsAsOwnerApproval": false
   }
 }
