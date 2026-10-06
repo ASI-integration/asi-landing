@@ -62,6 +62,12 @@ describe('production Telegram text readiness', () => {
     expect(workflow).toContain('readiness|text_acceptance|activate|acceptance|pronunciation_probe');
     expect(workflow).toContain('--require-text-active --probe-network');
     expect(workflow).toContain('run_acceptance_stage text_autopilot');
+    expect(workflow).toContain(
+      'if [[ "$MODE" == "acceptance" || "$MODE" == "pronunciation_probe" || -n "${INPUT_TEST_CHAT_ID:-}" ]]',
+    );
+    expect(workflow).not.toContain(
+      'if [[ "$MODE" == "text_acceptance" || "$MODE" == "acceptance"',
+    );
     const textBlock = workflow.slice(
       workflow.indexOf('            text_acceptance)'),
       workflow.indexOf('            activate)'),
