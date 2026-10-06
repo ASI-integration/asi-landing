@@ -205,9 +205,21 @@ async function main() {
   const link = await ensureLinkedReservation(sb, testChatId);
   const chatId = normalizeTelegramTestChatId(link.row.chat_id);
 
+  const bookingId = String(link.row.reservation_ref ?? link.row.booking_id ?? link.row.id ?? '').trim();
+
+  // Production acceptance reuses a dedicated Telegram test chat. Reset any prior
+  // conversation/escalation memory so a previous failed run cannot poison this one.
+  await postDryRun({
+    baseUrl,
+    secret,
+    chatId,
+    text: '/reset_identity',
+    objectName: PROPERTY_ID,
+    bookingId,
+  });
+
   const startedAt = new Date().toISOString();
   const rows = [];
-  const bookingId = String(link.row.reservation_ref ?? link.row.booking_id ?? link.row.id ?? '').trim();
 
   for (const testCase of ACCEPTANCE_CASES) {
     const dryRun = await postDryRun({
