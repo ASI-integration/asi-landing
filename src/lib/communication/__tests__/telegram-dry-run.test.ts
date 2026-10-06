@@ -130,4 +130,20 @@ describe('telegram dry-run', () => {
     expect(out.actions).toContain('clarify');
     expect(out.escalated).toBe(false);
   });
+
+  it('surfaces the process-message error detail to the protected route boundary', async () => {
+    mockProcessMessage.mockResolvedValueOnce({
+      outcome: 'error',
+      errorDetail: 'Adapter failed to send message',
+    });
+
+    await expect(
+      runTelegramDryRun({
+        text: 'Какой Wi-Fi?',
+        chatId: 'test-chat',
+        objectName: 'prop_A',
+        bookingId: 'test-booking',
+      }),
+    ).rejects.toThrow('Adapter failed to send message');
+  });
 });

@@ -4844,7 +4844,7 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
     const detail = err instanceof Error ? err.message : String(err);
     cp('processMessage.catch', { chat_id: chatId, error_detail: detail });
     auditError({ chat_id: chatId, update_id, detail });
-    return { outcome: ProcessOutcome.Error, update_id, chat_id: chatId };
+    return { outcome: ProcessOutcome.Error, update_id, chat_id: chatId, errorDetail: detail };
   }
 }
 
