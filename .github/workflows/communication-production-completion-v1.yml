@@ -4,12 +4,13 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: Readiness only, activate production flags, or run live acceptance
+        description: Readiness, text-only acceptance, full activation, or full voice acceptance
         required: true
         default: readiness
         type: choice
         options:
           - readiness
+          - text_acceptance
           - activate
           - acceptance
           - pronunciation_probe
@@ -46,7 +47,7 @@ jobs:
         run: |
           set -euo pipefail
           case "$MODE" in
-            readiness|activate|acceptance|pronunciation_probe) ;;
+            readiness|text_acceptance|activate|acceptance|pronunciation_probe) ;;
             *) echo "::error::Unsupported mode: $MODE"; exit 1 ;;
           esac
           if [[ "$SAFETY_ACKNOWLEDGEMENT" != "authorized_for_selected_mode" ]]; then
@@ -70,7 +71,7 @@ jobs:
           INPUT_STT_FILE_ID: ${{ inputs.stt_file_id }}
         run: |
           set -euo pipefail
-          if [[ "$MODE" == "acceptance" || "$MODE" == "pronunciation_probe" || -n "${INPUT_TEST_CHAT_ID:-}" ]]; then
+          if [[ "$MODE" == "text_acceptance" || "$MODE" == "acceptance" || "$MODE" == "pronunciation_probe" || -n "${INPUT_TEST_CHAT_ID:-}" ]]; then
             INPUT_TEST_CHAT_ID="$(node scripts/telegram-test-chat-id.mjs "$INPUT_TEST_CHAT_ID")"
           fi
           if [[ -z "${VPS_HOST:-}" || -z "${VPS_SSH_KEY:-}" ]]; then
@@ -174,6 +175,20 @@ jobs:
             readiness)
               echo "=== communication readiness ==="
               node "$REMOTE_TMP/communication-production-readiness-v1.mjs" --probe-network
+              ;;
+
+            text_acceptance)
+              run_acceptance_stage text_active_state \
+                node "$REMOTE_TMP/communication-production-readiness-v1.mjs" --require-text-active --probe-network
+
+              if [[ -z "${TELEGRAM_TEST_CHAT_ID:-}" ]]; then
+                echo "::error::Telegram text production acceptance requires a dedicated TELEGRAM_TEST_CHAT_ID or telegram_test_chat_id input"
+                exit 1
+              fi
+
+              cd "$APP_DIR"
+              run_acceptance_stage text_autopilot \
+                env ACCEPTANCE_BASE_URL="https://asi-global.ru" node "$REMOTE_TMP/telegram-autopilot-live-acceptance.mjs"
               ;;
 
             activate)
