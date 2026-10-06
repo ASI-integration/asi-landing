@@ -76,6 +76,13 @@ describe('production Telegram text readiness', () => {
     expect(textAcceptanceScript).toContain('objectName: PROPERTY_ID');
   });
 
+  it('resets the dedicated acceptance chat before evaluating text cases', () => {
+    expect(textAcceptanceScript).toContain("text: '/reset_identity'");
+    expect(textAcceptanceScript.indexOf("text: '/reset_identity'")).toBeLessThan(
+      textAcceptanceScript.indexOf('for (const testCase of ACCEPTANCE_CASES)'),
+    );
+  });
+
   it('provides a text-only production acceptance mode that does not require voice', () => {
     expect(workflow).toContain('- text_acceptance');
     expect(workflow).toContain('readiness|text_acceptance|activate|acceptance|pronunciation_probe');
