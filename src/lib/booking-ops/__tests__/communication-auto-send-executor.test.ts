@@ -294,12 +294,26 @@ describe('controlled actual auto-send executor', () => {
     expect(tables.booking_ops_communication_intents[0]?.status).toBe('draft_ready');
   });
 
-  it('keeps guest auto-send disabled even with an enabled scope and eligible legacy metadata', async () => {
+  it('sends an allowlisted guest message only with explicit actual-send policy permission', async () => {
     const intent = seedIntent();
     const queued = await enqueueAutoSendDelivery(intent.id);
-    const sender = vi.fn();
+    const sender = vi.fn(async () => ({ ok: true, providerMessageId: 'guest-provider-1' }));
     const result = await executeAutoSendDelivery(queued.ok ? queued.delivery.id : '', { sender });
-    expect(result).toMatchObject({ ok: false, error: 'knowledge_operator_review_required' });
+    expect(result).toMatchObject({ ok: true, delivery: { status: 'sent', providerMessageId: 'guest-provider-1' } });
+    expect(sender).toHaveBeenCalledTimes(1);
+  });
+
+  it('blocks actual delivery when policy allows queueing but actual send remains disabled', async () => {
+    policyDecision.mockResolvedValue({ ...allowedDecision, actual_send_enabled: false });
+    const intent = seedIntent();
+    const queued = await enqueueAutoSendDelivery(intent.id);
+    const sender = vi.fn(async () => ({ ok: true }));
+    const result = await executeAutoSendDelivery(queued.ok ? queued.delivery.id : '', { sender });
+    expect(result).toMatchObject({
+      ok: false,
+      error: 'policy_actual_send_disabled',
+      delivery: { status: 'blocked' },
+    });
     expect(sender).not.toHaveBeenCalled();
   });
   it('creates one idempotent delivery for an eligible safe intent', async () => {

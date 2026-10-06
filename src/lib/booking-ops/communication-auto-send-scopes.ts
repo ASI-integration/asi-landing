@@ -1,5 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { supabase } from '@/lib/supabase';
+import { isEmailAutoSendEnabled, isEmailDraftOnly } from '@/lib/communication/email-outbound-safe-mode';
+import { isTelegramOutboundDryRun } from '@/lib/communication/telegram-outbound-safe-mode';
 import { SUPPORTED_ACTUAL_AUTO_SEND_MESSAGE_TYPES } from './communication-auto-send-policy';
 import type { ActualAutoSendChannel } from './communication-auto-send-executor';
 
@@ -56,6 +58,7 @@ type ScopeRow = {
 
 const SAFE_TYPES = new Set<string>(SUPPORTED_ACTUAL_AUTO_SEND_MESSAGE_TYPES);
 const SAFE_CHANNELS = new Set<ActualAutoSendChannel>(['telegram', 'email']);
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 
 function strings(value: unknown): string[] {
   return Array.isArray(value) ? value.map((item) => String(item)).filter(Boolean) : [];
@@ -247,6 +250,94 @@ export async function resolveAutoSendScope(context: AutoSendScopeContext) {
     return { enabled: false as const, error: 'message_type_not_allowed', scope, globalEmergencyStop: false };
   }
   return { enabled: true as const, scope, globalEmergencyStop: false };
+}
+
+export function isAutoSendChannelRuntimeReady(channel: ActualAutoSendChannel): boolean {
+  if (channel === 'telegram') {
+    return Boolean(String(process.env.TELEGRAM_BOT_TOKEN ?? '').trim()) && !isTelegramOutboundDryRun();
+  }
+  if (channel === 'email') {
+    return (
+      isEmailAutoSendEnabled()
+      && !isEmailDraftOnly()
+      && Boolean(String(process.env.EMAIL_SMTP_HOST ?? '').trim())
+      && Boolean(String(process.env.EMAIL_FROM_ADDRESS ?? '').trim())
+    );
+  }
+  return false;
+}
+
+export async function isAutoSendOperationallyReadyForProperty(
+  accountId: string,
+  propertyId: string,
+): Promise<boolean> {
+  const canonicalAccountId = String(accountId ?? '').trim();
+  const canonicalPropertyId = String(propertyId ?? '').trim();
+  if (!canonicalAccountId || !canonicalPropertyId) return false;
+
+  const scopes = await readAllScopes();
+  const global = scopes.find((scope) => scope.scopeType === 'global') ?? null;
+  if (!global || global.actualSendEnabled || global.emergencyStop) return false;
+
+  const propertyScope = scopes.find(
+    (scope) =>
+      scope.accountId === canonicalAccountId
+      && scope.scopeType === 'property'
+      && scope.scopeRef === canonicalPropertyId,
+  ) ?? null;
+  if (!propertyScope) return false;
+  if (!propertyScope.actualSendEnabled || propertyScope.emergencyStop || propertyScope.dryRunOnly) return false;
+  if (propertyScope.allowedChannels.length === 0 || propertyScope.allowedMessageTypes.length === 0) return false;
+  if (!propertyScope.allowedChannels.every(isAutoSendChannelRuntimeReady)) return false;
+
+  const { data: latestRun, error: latestRunError } = await supabase
+    .from('booking_ops_communication_auto_send_runs')
+    .select('status,failed_count')
+    .eq('account_id', canonicalAccountId)
+    .order('started_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (latestRunError) return false;
+  if (latestRun && (latestRun.status === 'failed' || Number(latestRun.failed_count ?? 0) > 0)) return false;
+
+  return true;
+}
+
+export async function listScheduledAutoSendAccountIds(): Promise<string[]> {
+  const scopes = await readAllScopes();
+  const global = scopes.find((scope) => scope.scopeType === 'global') ?? null;
+  if (!global || global.actualSendEnabled || global.emergencyStop) return [];
+
+  const candidates = [...new Set(
+    scopes
+      .filter((scope) =>
+        scope.scopeType !== 'global'
+        && scope.accountId
+        && UUID_RE.test(scope.accountId)
+        && scope.actualSendEnabled
+        && !scope.dryRunOnly
+        && !scope.emergencyStop
+        && scope.allowedChannels.length > 0
+        && scope.allowedMessageTypes.length > 0
+        && scope.allowedChannels.every(isAutoSendChannelRuntimeReady),
+      )
+      .map((scope) => scope.accountId as string),
+  )].sort();
+
+  const ready: string[] = [];
+  for (const accountId of candidates) {
+    const { data: latestRun, error } = await supabase
+      .from('booking_ops_communication_auto_send_runs')
+      .select('status,failed_count')
+      .eq('account_id', accountId)
+      .order('started_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (error) continue;
+    if (latestRun && (latestRun.status === 'failed' || Number(latestRun.failed_count ?? 0) > 0)) continue;
+    ready.push(accountId);
+  }
+  return ready;
 }
 
 export async function getAutoSendOperationalStatus(accountId?: string | null) {

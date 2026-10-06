@@ -1,8 +1,14 @@
 name: Booking Ops safe auto-send runner
 
 on:
+  schedule:
+    - cron: '*/10 * * * *'
   workflow_dispatch:
     inputs:
+      account_id:
+        description: Canonical account UUID to process
+        required: true
+        type: string
       dry_run:
         description: Run without provider calls
         required: true
@@ -19,24 +25,62 @@ permissions:
 jobs:
   run-safe-batch:
     runs-on: ubuntu-latest
+    environment: production
     timeout-minutes: 5
+    env:
+      RUNNER_SECRET: ${{ secrets.BOOKING_OPS_AUTO_SEND_RUNNER_SECRET }}
+      MANUAL_ACCOUNT_ID: ${{ inputs.account_id }}
+      MANUAL_DRY_RUN: ${{ inputs.dry_run }}
+      EVENT_NAME: ${{ github.event_name }}
     steps:
-      - name: Call protected runner
-        env:
-          RUNNER_SECRET: ${{ secrets.BOOKING_OPS_AUTO_SEND_RUNNER_SECRET }}
-          MANUAL_DRY_RUN: ${{ inputs.dry_run }}
-          EVENT_NAME: ${{ github.event_name }}
+      - name: Call protected account-scoped runner
         shell: bash
         run: |
           set -euo pipefail
           test -n "${RUNNER_SECRET:-}"
-          BODY='{}'
-          if [ "$EVENT_NAME" = "workflow_dispatch" ] && [ "$MANUAL_DRY_RUN" = "true" ]; then
-            BODY='{"dryRun":true}'
+
+          RUNNER_URL='https://asi-global.ru/api/internal/booking-ops/communications/auto-send/run'
+          ACCOUNTS_URL='https://asi-global.ru/api/internal/booking-ops/communications/auto-send/accounts'
+          UUID_RE='^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$'
+
+          run_account() {
+            local account_id="$1"
+            local dry_run="$2"
+            if [[ ! "$account_id" =~ $UUID_RE ]]; then
+              echo "::error::Invalid canonical account UUID"
+              return 1
+            fi
+            local body
+            body="$(node -e "process.stdout.write(JSON.stringify({accountId:process.argv[1],dryRun:process.argv[2]==='true'}))" "$account_id" "$dry_run")"
+            curl --fail-with-body --silent --show-error \
+              --retry 2 --retry-all-errors --max-time 60 \
+              -X POST "$RUNNER_URL" \
+              -H "Authorization: Bearer ${RUNNER_SECRET}" \
+              -H 'Content-Type: application/json' \
+              --data "$body"
+            echo
+          }
+
+          if [[ "$EVENT_NAME" = "workflow_dispatch" ]]; then
+            run_account "${MANUAL_ACCOUNT_ID:-}" "${MANUAL_DRY_RUN:-true}"
+            exit 0
           fi
-          curl --fail-with-body --silent --show-error \
+
+          accounts_json="$(curl --fail-with-body --silent --show-error \
             --retry 2 --retry-all-errors --max-time 60 \
-            -X POST 'https://asi-global.ru/api/internal/booking-ops/communications/auto-send/run' \
             -H "Authorization: Bearer ${RUNNER_SECRET}" \
-            -H 'Content-Type: application/json' \
-            --data "$BODY"
+            "$ACCOUNTS_URL")"
+
+          mapfile -t account_ids < <(
+            printf '%s' "$accounts_json" |
+              node -e "let s='';process.stdin.on('data',c=>s+=c).on('end',()=>{const j=JSON.parse(s);for(const id of (j.accountIds||[])) console.log(id);})"
+          )
+
+          if [[ "${#account_ids[@]}" -eq 0 ]]; then
+            echo "No live account-scoped auto-send scopes are currently eligible."
+            exit 0
+          fi
+
+          for account_id in "${account_ids[@]}"; do
+            run_account "$account_id" "false"
+          done

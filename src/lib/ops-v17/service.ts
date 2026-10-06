@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { supabase } from '@/lib/supabase';
 import { getPilotReadinessForProperty } from '@/lib/pilot-readiness/repository';
+import { isAutoSendOperationallyReadyForProperty } from '@/lib/booking-ops/communication-auto-send-scopes';
 import { connectionPropertyId } from '@/lib/rental-connect/identity';
 import { resolveResidentialBookingIdentity } from '@/lib/platform/residential-booking-scope';
 import { communicationPolicyDefaults, computeLaunchReadiness, computeOperationalReadiness, initializeModules, onboardingProgress, reportVerificationIssue } from './core';
@@ -101,13 +102,22 @@ export async function getWorkspace(accountId: string, requiredPropertyId?: strin
       : [`${readinessPropertyIds[index]}: ${item?.missingLabelsRu.join(', ') || 'рабочая проверка недоступна'}`]);
   const modules = (result.data ?? []).map((m) => ({ key: m.module_key, status: m.status, idempotencyKey: m.idempotency_key, detail: m.detail })) as ModuleState[];
   const readiness = computeLaunchReadiness(onboarding.data, modules, Boolean(onboarding.pilot_activated_at));
-  // Automatic sending remains blocked until onboarding is wired to the canonical auto-send scope/runtime status.
+  let automaticSendingReady = false;
+  try {
+    const autoSendReadiness = await Promise.all(
+      readinessPropertyIds.map((propertyId) =>
+        isAutoSendOperationallyReadyForProperty(accountId, propertyId)),
+    );
+    automaticSendingReady = autoSendReadiness.length > 0 && autoSendReadiness.every(Boolean);
+  } catch {
+    automaticSendingReady = false;
+  }
   const operationalReadiness = computeOperationalReadiness(onboarding.data, readiness, {
     ownedPropertyCount: readinessPropertyIds.length,
     verifiedPropertyCount: verified.length,
     operatorReady,
     readinessDetails,
-    automaticSendingReady: false,
+    automaticSendingReady,
   });
   return { onboarding, progress: onboardingProgress(onboarding.data), modules, readiness, operationalReadiness, communicationDefaults: communicationPolicyDefaults };
 }

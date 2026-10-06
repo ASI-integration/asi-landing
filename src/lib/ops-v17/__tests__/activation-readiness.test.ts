@@ -6,10 +6,17 @@ const state = vi.hoisted(() => ({
   tables: {} as Record<string, Row[]>,
   errors: {} as Record<string, string>,
   readiness: {} as Record<string, { ready: boolean; checks: Array<{ id: string; ok: boolean }>; missingLabelsRu: string[] }>,
+  autoSendReady: {} as Record<string, boolean>,
 }));
 
 vi.mock('@/lib/pilot-readiness/repository', () => ({
   getPilotReadinessForProperty: vi.fn(async (propertyId: string) => state.readiness[propertyId] ?? null),
+}));
+
+vi.mock('@/lib/booking-ops/communication-auto-send-scopes', () => ({
+  isAutoSendOperationallyReadyForProperty: vi.fn(
+    async (_accountId: string, propertyId: string) => state.autoSendReady[propertyId] === true,
+  ),
 }));
 
 vi.mock('@/lib/supabase', () => ({ supabase: { from: (table: string) => {
@@ -53,6 +60,7 @@ const readyData: OnboardingData = {
 
 beforeEach(() => {
   state.errors = {};
+  state.autoSendReady = {};
   state.readiness = {
     'property-A': { ready: true, checks: [{ id: 'operator', ok: true }], missingLabelsRu: [] },
   };
@@ -79,6 +87,18 @@ describe('pilot activation operational readiness gate', () => {
     };
     await expect(activatePilot('A', 'owner-A')).rejects.toThrow('launch_blocked');
     expect(state.tables.ops_v17_onboardings[0].pilot_activated_at).toBeNull();
+  });
+
+  it('uses runtime auto-send readiness for automatic pilot activation', async () => {
+    state.tables.ops_v17_onboardings[0].data.communications = {
+      guestChannel: 'telegram',
+      workerChannel: 'phone',
+      pilotMode: 'automatic',
+      scopedPilotSendingEnabled: true,
+    };
+    await expect(activatePilot('A', 'owner-A')).rejects.toThrow('launch_blocked');
+    state.autoSendReady['property-A'] = true;
+    await expect(activatePilot('A', 'owner-A')).resolves.toMatchObject({ alreadyActive: false });
   });
 
   it('uses the same full operational contract for commercial property readiness', async () => {
