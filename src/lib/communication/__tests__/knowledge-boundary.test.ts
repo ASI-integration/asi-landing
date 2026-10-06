@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 vi.mock('@/lib/supabase', () => ({ supabase: { from: vi.fn(() => { throw new Error('No live DB'); }) } }));
 import { prepareRuntimeKnowledgeReply, requestedCommunicationFacts, prepareCommunicationFactReply,
-  objectKnowledgeFact, canDeliverPreparedFacts } from '../knowledge-boundary';
+  objectKnowledgeFact, canDeliverPreparedFacts, shouldDeferTelegramWifiToVerifiedAutopilot } from '../knowledge-boundary';
 const now = Date.parse('2026-10-01T12:00:00Z');
 const scope = { accountId: 'a', propertyId: 'p', bookingId: 'b', guestId: 'g', sessionId: 'telegram:123' };
 const entry = { entry_id: 'e', object_id: 'p', property_id: 'p', key: 'checkout_time',
@@ -30,6 +30,14 @@ describe('runtime knowledge preparation', () => {
   it.each(['Какой код от двери?', 'Какой пароль Wi-Fi?', 'Залог уже вернули?', 'Можно заехать сейчас?',
     'Где ключи?', 'Уборка закончена?', 'Когда выезд?', 'Мой договор подписан?'])('requires evidence: %s', (message) => {
     expect(requestedCommunicationFacts(message).length).toBeGreaterThan(0);
+  });
+  it('defers a Telegram-only Wi-Fi question to the verified booking autopilot path', () => {
+    expect(shouldDeferTelegramWifiToVerifiedAutopilot('Какой Wi-Fi?', 'telegram')).toBe(true);
+    expect(shouldDeferTelegramWifiToVerifiedAutopilot('Какой пароль Wi-Fi?', 'telegram')).toBe(true);
+  });
+  it('does not defer Wi-Fi outside Telegram or when another fact is requested too', () => {
+    expect(shouldDeferTelegramWifiToVerifiedAutopilot('Какой Wi-Fi?', 'email')).toBe(false);
+    expect(shouldDeferTelegramWifiToVerifiedAutopilot('Какой Wi-Fi и где парковка?', 'telegram')).toBe(false);
   });
   it('renders a verified normal fact from the actual adapter', async () => {
     const { db } = fixture();

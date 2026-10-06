@@ -1,4 +1,4 @@
-import { prepareRuntimeKnowledgeReply, prepareCommunicationFactReply, conversationalReply } from './knowledge-boundary';
+import { prepareRuntimeKnowledgeReply, prepareCommunicationFactReply, conversationalReply, shouldDeferTelegramWifiToVerifiedAutopilot } from './knowledge-boundary';
 import { getChannelAdapter } from './channels';
 import { bindIdentity } from './identity-binding';
 import { evictIdentityCacheForTelegramChatId } from './identity';
@@ -2142,12 +2142,23 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
       replyText = neutralKnowledgeReply;
       llmSucceeded = true;
     }
-    const preparedKnowledge = senderRoute.shouldRunGuestConcierge && !escalationSafetyGate && !neutralKnowledgeReply
-      ? await prepareRuntimeKnowledgeReply({
-          coverUnclassified: true, message: text, channel: envelope.channel, chatId, ru: classification.lang === 'ru',
-          propertyId: identity.propertyId, reservationId: identity.reservationId,
-        })
-      : null;
+    const deferVerifiedWifiToAutopilot =
+      shouldDeferTelegramWifiToVerifiedAutopilot(text, envelope.channel);
+    const preparedKnowledge =
+      senderRoute.shouldRunGuestConcierge &&
+      !escalationSafetyGate &&
+      !neutralKnowledgeReply &&
+      !deferVerifiedWifiToAutopilot
+        ? await prepareRuntimeKnowledgeReply({
+            coverUnclassified: true,
+            message: text,
+            channel: envelope.channel,
+            chatId,
+            ru: classification.lang === 'ru',
+            propertyId: identity.propertyId,
+            reservationId: identity.reservationId,
+          })
+        : null;
     // Fact validity is not transport permission. Wave 2 stays operator-assisted:
     // even verified public facts are drafts, never a new bypass around auto-send policy.
     const knowledgeReply = preparedKnowledge && !preparedKnowledge.reviewRequired
