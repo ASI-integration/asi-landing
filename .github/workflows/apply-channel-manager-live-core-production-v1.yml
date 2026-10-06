@@ -83,9 +83,11 @@ jobs:
             raise SystemExit('migration allowlist mismatch')
           for item in items:
             p=Path(item['path'])
-            if subprocess.check_output(['git','hash-object',str(p)],text=True).strip()!=item['gitBlobSha']:
+            blob=subprocess.check_output(['git','rev-parse',f'HEAD:{p}'],text=True).strip()
+            if blob!=item['gitBlobSha']:
               raise SystemExit(f'git blob mismatch: {p}')
-            if hashlib.sha256(p.read_bytes()).hexdigest()!=item['sha256']:
+            blob_bytes=subprocess.check_output(['git','cat-file','blob',f'HEAD:{p}'])
+            if hashlib.sha256(blob_bytes).hexdigest()!=item['sha256']:
               raise SystemExit(f'sha256 mismatch: {p}')
           if gate.get('schemaVersion')!='asi.agent-os.owner-gate.v1':
             raise SystemExit('owner gate schema mismatch')
@@ -164,8 +166,9 @@ jobs:
           m=json.loads(Path('docs/operations/channel-manager-live-core-rollout-v1/manifest.json').read_text(encoding='utf-8-sig'))
           for i in m['migrations']:
             p=Path(i['path'])
-            assert subprocess.check_output(['git','hash-object',str(p)],text=True).strip()==i['gitBlobSha']
-            assert hashlib.sha256(p.read_bytes()).hexdigest()==i['sha256']
+            assert subprocess.check_output(['git','rev-parse',f'HEAD:{p}'],text=True).strip()==i['gitBlobSha']
+            blob_bytes=subprocess.check_output(['git','cat-file','blob',f'HEAD:{p}'])
+            assert hashlib.sha256(blob_bytes).hexdigest()==i['sha256']
           print('CHANNEL_MANAGER_LIVE_CORE_BUNDLE=reverified')
           PY
 

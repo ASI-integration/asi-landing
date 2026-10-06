@@ -19,49 +19,49 @@
                            "version":  "20260804120000",
                            "name":  "channel_manager_live_core_initial_sync_v1",
                            "gitBlobSha":  "2dd6a08d637787d526b036009bff0ccfac0fc4f8",
-                           "sha256":  "169b58ad5d6881aed010132bfc737a0f812b28f00dd73e171a6257c8017c8c28"
+                           "sha256":  "c002d977f4e27ceb6809fe68d1701395222d8d65149f5f3b6ffe5298fa02d8c3"
                        },
                        {
                            "path":  "supabase/migrations/20260805120000_channel_manager_live_core_synthetic_recovery_v1.sql",
                            "version":  "20260805120000",
                            "name":  "channel_manager_live_core_synthetic_recovery_v1",
                            "gitBlobSha":  "f56db2124b2e91782fcf05be7fb37b51998808b3",
-                           "sha256":  "6fbc176b21006d258d4f0253d538c46b66862f0e7752137dda62bc8a88d811ba"
+                           "sha256":  "b87133906dea94b148b4778cd15006be9acec1e4cd995512ca975b12d8c69868"
                        },
                        {
                            "path":  "supabase/migrations/20260806170000_channel_manager_live_incremental_sync_v1.sql",
                            "version":  "20260806170000",
                            "name":  "channel_manager_live_incremental_sync_v1",
                            "gitBlobSha":  "3c5be73c76e6d53c85d28c6eeeb86500303d3a1d",
-                           "sha256":  "245d159d2640da38c6d492307d71e0b51c5c7390e2ce02de12ffbbf9d23a32ce"
+                           "sha256":  "e43b6b5b28eb3753a10e700c5e3779b994bc5e374eb39c9f4123f6f13367248a"
                        },
                        {
                            "path":  "supabase/migrations/20260807120000_channel_manager_reconciliation_recovery_v1.sql",
                            "version":  "20260807120000",
                            "name":  "channel_manager_reconciliation_recovery_v1",
                            "gitBlobSha":  "cee9a3cf7853b11a6ca2427fe5174701014ed432",
-                           "sha256":  "90f2b36399ae350c96cfe9a3a824772bb98d92b236f9b9198b731ace4bbe6b81"
+                           "sha256":  "0385f4698805f63ff82d0b2784a9ce37a4bff185e7a2ec33e1bb9f842cd9ccf0"
                        },
                        {
                            "path":  "supabase/migrations/20260808041000_channel_manager_live_core_recovery_fk_expectation_fix_v1.sql",
                            "version":  "20260808041000",
                            "name":  "channel_manager_live_core_recovery_fk_expectation_fix_v1",
                            "gitBlobSha":  "2212387f8bd605632ddd46ad7feed28240be9838",
-                           "sha256":  "3428ca2a68a020987b589a4bebb23c37a21e4ab45c85381927e029f2d9a16f35"
+                           "sha256":  "bcf5b11125984c337d63b57db96e1d8d0e5410157b0b2fb69777a5867c856579"
                        },
                        {
                            "path":  "supabase/migrations/20260808051000_channel_manager_live_core_acceptance_cleanup_v2.sql",
                            "version":  "20260808051000",
                            "name":  "channel_manager_live_core_acceptance_cleanup_v2",
                            "gitBlobSha":  "74e7779271bafe7986926787b63062c5696ae8e9",
-                           "sha256":  "d3eb4d2ec935f03a7f74292e54cc74d90e2ae616766fda3646c3667bf8f2da0e"
+                           "sha256":  "dc5ddbbb8ba6621fa3af5e8937a42c565000b09de72049bd531f73a351209e83"
                        },
                        {
                            "path":  "supabase/migrations/20261004123000_channel_manager_live_scope_guard_v1.sql",
                            "version":  "20261004123000",
                            "name":  "channel_manager_live_scope_guard_v1",
                            "gitBlobSha":  "dacea038ccb992ca84b2dbfb8cb409df0bd6d1a2",
-                           "sha256":  "3381c1f7b51b9a76126378d9016e125b02fac6a9a68ac422352b499be177e395"
+                           "sha256":  "dd7e511fbde61bbd7585c7095dea7578fbcc6c1bb58ac7d91bbeb397c5a6e051"
                        }
                    ]
 }
