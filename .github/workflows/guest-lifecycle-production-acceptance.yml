@@ -3,6 +3,10 @@ name: Guest Lifecycle Production Acceptance v1
 on:
   workflow_dispatch:
     inputs:
+      owner_gate_json:
+        description: Approved asi.agent-os.owner-gate.v1 JSON (required; typed confirmation is not approval)
+        required: true
+        type: string
       expected_production_sha:
         description: Exact 40-character SHA currently returned by production /api/version
         required: true
@@ -28,7 +32,14 @@ permissions:
   contents: read
 
 jobs:
+  production_owner_gate:
+    uses: ./.github/workflows/production-owner-gate.yml
+    with:
+      requested_action: production_data_mutation
+      environment_identity: production
+      owner_gate_json: ${{ inputs.owner_gate_json }}
   validate_request:
+    needs: [production_owner_gate]
     name: Validate owner-gated request
     runs-on: ubuntu-latest
     steps:
@@ -58,7 +69,7 @@ jobs:
   build_runner:
     name: Bundle exact deployed source
     runs-on: ubuntu-latest
-    needs: [validate_request]
+    needs: [production_owner_gate, validate_request]
     timeout-minutes: 15
     steps:
       - name: Checkout exact expected production revision
@@ -184,7 +195,7 @@ jobs:
   production_acceptance:
     name: Run isolated production acceptance
     runs-on: ubuntu-latest
-    needs: [validate_request, build_runner]
+    needs: [production_owner_gate, validate_request, build_runner]
     environment: production
     timeout-minutes: 20
     steps:

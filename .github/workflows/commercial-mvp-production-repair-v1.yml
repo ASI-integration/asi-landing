@@ -3,6 +3,10 @@ name: Commercial MVP Production Repair v1
 on:
   workflow_dispatch:
     inputs:
+      owner_gate_json:
+        description: Approved asi.agent-os.owner-gate.v1 JSON (required; typed confirmation is not approval)
+        required: true
+        type: string
       operation:
         description: Run read-only preflight or owner-approved repair
         required: true
@@ -28,7 +32,14 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  production_owner_gate:
+    uses: ./.github/workflows/production-owner-gate.yml
+    with:
+      requested_action: production_migration
+      environment_identity: production
+      owner_gate_json: ${{ inputs.owner_gate_json }}
   preflight:
+    needs: [production_owner_gate]
     name: Read-only production repair preflight
     runs-on: ubuntu-latest
     environment: production
@@ -126,7 +137,7 @@ jobs:
   owner_approval:
     name: Owner approval for production repair
     if: ${{ inputs.operation == 'apply' }}
-    needs: [preflight]
+    needs: [production_owner_gate, preflight]
     runs-on: ubuntu-latest
     environment: production-migration-approval
     timeout-minutes: 5
@@ -152,7 +163,7 @@ jobs:
   apply_repair:
     name: Apply schema and history repair atomically
     if: ${{ inputs.operation == 'apply' }}
-    needs: [preflight, owner_approval]
+    needs: [production_owner_gate, preflight, owner_approval]
     runs-on: ubuntu-latest
     environment: production
     timeout-minutes: 10

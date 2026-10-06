@@ -3,6 +3,10 @@ name: Telegram Guest Concierge Integration Smoke (not quality gate)
 on:
   workflow_dispatch:
     inputs:
+      owner_gate_json:
+        description: Approved asi.agent-os.owner-gate.v1 JSON (required; typed confirmation is not approval)
+        required: true
+        type: string
       sha:
         description: Optional production release SHA to verify on VPS (/api/version). Smoke assets always come from the workflow branch.
         required: false
@@ -12,7 +16,14 @@ permissions:
   contents: read
 
 jobs:
+  production_owner_gate:
+    uses: ./.github/workflows/production-owner-gate.yml
+    with:
+      requested_action: real_external_message_or_provider_call
+      environment_identity: production
+      owner_gate_json: ${{ inputs.owner_gate_json }}
   telegram_integration_smoke:
+    needs: [production_owner_gate]
     runs-on: ubuntu-latest
     environment: production
     steps:

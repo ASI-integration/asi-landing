@@ -6,6 +6,10 @@ on:
   # Staging deploy uses separate staging scripts/config, not this workflow.
   workflow_dispatch:
     inputs:
+      owner_gate_json:
+        description: Approved asi.agent-os.owner-gate.v1 JSON (required; typed confirmation is not approval)
+        required: true
+        type: string
       confirm_production_deploy:
         description: Type DEPLOY_PRODUCTION to deploy production
         required: true
@@ -23,7 +27,17 @@ permissions:
   contents: read
 
 jobs:
+  production_owner_gate:
+    uses: ./.github/workflows/production-owner-gate.yml
+    with:
+      requested_action: production_deploy
+      environment_identity: production
+      owner_gate_json: ${{ inputs.owner_gate_json }}
+      # When an exact SHA is supplied, it must match the approved gate identity.
+      # Typed confirm_production_deploy alone never authorizes mutation.
+      target_identity_json: ${{ inputs.sha != '' && format('{{"sha":"{0}"}}', inputs.sha) || '' }}
   confirm_production_deploy:
+    needs: [production_owner_gate]
     runs-on: ubuntu-latest
     steps:
       - name: Require explicit production confirmation
@@ -37,7 +51,7 @@ jobs:
 
   build_release:
     runs-on: ubuntu-latest
-    needs: [confirm_production_deploy]
+    needs: [production_owner_gate, confirm_production_deploy]
     outputs:
       sha: ${{ steps.build_meta.outputs.sha }}
       artifact_name: ${{ steps.build_meta.outputs.artifact_name }}
@@ -163,7 +177,7 @@ jobs:
 
   artifact_smoke:
     runs-on: ubuntu-latest
-    needs: [build_release]
+    needs: [production_owner_gate, build_release]
     steps:
       - name: Checkout (smoke script)
         uses: actions/checkout@v4
@@ -202,7 +216,7 @@ jobs:
 
   deploy:
     runs-on: ubuntu-latest
-    needs: [build_release, artifact_smoke]
+    needs: [production_owner_gate, build_release, artifact_smoke]
     environment: production
     env:
       TWOGIS_CATALOG_API_KEY: ${{ secrets.TWOGIS_CATALOG_API_KEY }}

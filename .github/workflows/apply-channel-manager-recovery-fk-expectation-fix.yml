@@ -3,6 +3,10 @@ name: Apply Channel Manager Recovery FK Expectation Fix v1
 on:
   workflow_dispatch:
     inputs:
+      owner_gate_json:
+        description: Approved asi.agent-os.owner-gate.v1 JSON (required; typed confirmation is not approval)
+        required: true
+        type: string
       confirm_production_migration:
         description: Type APPLY_20260808041000_RECOVERY_FK_EXPECTATION_FIX_V1_TO_PRODUCTION to run
         required: true
@@ -23,7 +27,14 @@ env:
   EXPECTED_PRODUCTION_SHA: 6b9f022e423e1032f66286b9348160c4dd59f45c
 
 jobs:
+  production_owner_gate:
+    uses: ./.github/workflows/production-owner-gate.yml
+    with:
+      requested_action: production_migration
+      environment_identity: production
+      owner_gate_json: ${{ inputs.owner_gate_json }}
   apply_exact_fix:
+    needs: [production_owner_gate]
     runs-on: ubuntu-latest
     environment: production
     timeout-minutes: 15

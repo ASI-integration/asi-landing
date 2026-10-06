@@ -186,12 +186,25 @@ test('preflight CLI returns a schema-valid BLOCKED artifact on validation failur
 test('change map selects contract checks and protected staging paths', () => {
   const map = loadChangeMap(repoRoot);
   const selected = selectChecks([
-    'docs/agent-os/OWNER_GATE.md',
+    'docs/agent-os/BLOCKERS.md',
     'scripts/rollback-artifact-staging.sh',
   ], map);
   assert(selected.checks.includes('agent-os-contract-validation'));
   assert(selected.checks.includes('fail-closed-guard'));
   assert.deepEqual(selected.protectedPaths, ['scripts/rollback-artifact-staging.sh']);
+});
+
+test('change map treats owner-gate and production workflows as protected AO-003 paths', () => {
+  const selected = selectChecks([
+    'docs/agent-os/OWNER_GATE.md',
+    '.github/workflows/deploy.yml',
+  ], loadChangeMap(repoRoot));
+  assert(selected.matchedRuleIds.includes('production-owner-gate'));
+  assert(selected.checks.includes('production-owner-gate-coverage'));
+  assert.deepEqual(selected.protectedPaths, [
+    'docs/agent-os/OWNER_GATE.md',
+    '.github/workflows/deploy.yml',
+  ]);
 });
 
 test('change map recognizes repository-local Skill paths', () => {

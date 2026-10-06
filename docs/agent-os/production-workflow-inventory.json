@@ -1,0 +1,61 @@
+{
+  "schemaVersion": "asi.agent-os.production-workflow-inventory.v1",
+  "generatedFor": "AO-003",
+  "notes": [
+    "Classification is based on YAML capability analysis, not workflow names alone.",
+    "No local workflow_call chains existed at inventory time; coverage still follows uses: chains.",
+    "Category A must invoke ./.github/workflows/production-owner-gate.yml before mutation jobs.",
+    "GitHub Environment reviewers are complementary and never substitute for the machine owner-gate."
+  ],
+  "sharedGate": {
+    "reusableWorkflow": ".github/workflows/production-owner-gate.yml",
+    "enforcer": "scripts/agent-os/enforce-production-owner-gate.mjs",
+    "coverageChecker": "scripts/agent-os/check-production-owner-gate-coverage.mjs"
+  },
+  "workflows": [
+    { "path": ".github/workflows/apply-asi-runtime-snapshot-migration.yml", "class": "A", "action": "production_migration", "reason": "Applies SQL migration on production VPS DB" },
+    { "path": ".github/workflows/apply-booking-instay-checkout-migration.yml", "class": "A", "action": "production_migration", "reason": "Applies production DDL via VPS" },
+    { "path": ".github/workflows/apply-booking-legal-payment-migration.yml", "class": "A", "action": "production_migration", "reason": "Applies production DDL via VPS" },
+    { "path": ".github/workflows/apply-booking-lifecycle-migration.yml", "class": "A", "action": "production_migration", "reason": "Applies production DDL via VPS" },
+    { "path": ".github/workflows/apply-channel-manager-live-core-acceptance-cleanup-v2.yml", "class": "A", "action": "production_migration", "reason": "Applies cleanup migration/RPC to production Supabase" },
+    { "path": ".github/workflows/apply-channel-manager-live-core-synthetic-recovery-migration.yml", "class": "A", "action": "production_migration", "reason": "Applies exact recovery DDL to production" },
+    { "path": ".github/workflows/apply-channel-manager-recovery-fk-expectation-fix.yml", "class": "A", "action": "production_migration", "reason": "Applies FK-expectation-fix migration to production" },
+    { "path": ".github/workflows/asi-brand-pronunciation-probe-v2.yml", "class": "A", "action": "real_external_message_or_provider_call", "reason": "Live TTS + Telegram delivery from production VPS" },
+    { "path": ".github/workflows/asi-rina-pronunciation-probe-v1.yml", "class": "A", "action": "real_external_message_or_provider_call", "reason": "Live TTS + Telegram delivery from production VPS" },
+    { "path": ".github/workflows/asi-voice-selection-probe-v1.yml", "class": "A", "action": "real_external_message_or_provider_call", "reason": "Live voice samples + Telegram delivery" },
+    { "path": ".github/workflows/booking-lifecycle-orchestrator-v1-acceptance.yml", "class": "A", "action": "production_data_mutation", "reason": "Creates/orchestrates/cleans synthetic booking rows on production" },
+    { "path": ".github/workflows/booking-ops-auto-send.yml", "class": "A", "action": "real_external_message_or_provider_call", "reason": "Can send real production auto-send messages" },
+    { "path": ".github/workflows/clean-exact-legacy-live-core-orphan-88-v1.yml", "class": "A", "action": "production_data_mutation", "reason": "Transactional DELETE cleanup against production DB" },
+    { "path": ".github/workflows/commercial-mvp-production-repair-v1.yml", "class": "A", "action": "production_migration", "reason": "Can apply schema/history repair on production" },
+    { "path": ".github/workflows/communication-production-completion-v1.yml", "class": "A", "action": "production_deploy", "reason": "Can activate flags, restart PM2, live Telegram/STT acceptance" },
+    { "path": ".github/workflows/configure-asi-runtime-env.yml", "class": "A", "action": "repository_or_environment_settings_change", "reason": "Writes production .env and restarts PM2" },
+    { "path": ".github/workflows/deploy.yml", "class": "A", "action": "production_deploy", "reason": "Builds and deploys production release to VPS" },
+    { "path": ".github/workflows/gemini-native-audio-probe-v1.yml", "class": "A", "action": "real_external_message_or_provider_call", "reason": "Live Gemini audio + Telegram deliveries" },
+    { "path": ".github/workflows/guest-concierge-http-acceptance.yml", "class": "A", "action": "production_data_mutation", "reason": "POSTs internal production test endpoints" },
+    { "path": ".github/workflows/guest-lifecycle-production-acceptance.yml", "class": "A", "action": "production_data_mutation", "reason": "Synthetic guest-lifecycle DB write + cleanup on production" },
+    { "path": ".github/workflows/ops-fix-telegram-token.yml", "class": "A", "action": "secret_value_access", "reason": "Rewrites production Telegram token and restarts PM2" },
+    { "path": ".github/workflows/ops-v12-live-acceptance.yml", "class": "A", "action": "production_data_mutation", "reason": "Creates production env symlink + live ops acceptance" },
+    { "path": ".github/workflows/partner-production-rollout-control-v1.yml", "class": "A", "action": "production_migration", "reason": "Can apply partner migrations on production" },
+    { "path": ".github/workflows/production-logical-backup.yml", "class": "A", "action": "production_backup_access", "reason": "Creates encrypted production DB dump artifact" },
+    { "path": ".github/workflows/telegram-autopilot-live-acceptance.yml", "class": "A", "action": "production_data_mutation", "reason": "Upserts identities/reservations on production" },
+    { "path": ".github/workflows/telegram-guest-concierge-smoke.yml", "class": "A", "action": "real_external_message_or_provider_call", "reason": "Live Telegram sendMessage smoke via production VPS" },
+    { "path": ".github/workflows/telegram-wizard-v2-acceptance.yml", "class": "A", "action": "production_data_mutation", "reason": "Production wizard acceptance with optional test-state reset" },
+
+    { "path": ".github/workflows/bootstrap-production-systemd-once.yml", "class": "B", "action": null, "reason": "SSH inspect of unit/env key presence only" },
+    { "path": ".github/workflows/commercial-mvp-production-completion-v1.yml", "class": "B", "action": null, "reason": "Explicit read-only acceptance with default_transaction_read_only" },
+    { "path": ".github/workflows/diagnose-initial-sync-recovery-production-env.yml", "class": "B", "action": null, "reason": "Read-only SSH/env/runtime diagnostics" },
+    { "path": ".github/workflows/inspect-channel-manager-live-core-recovery-descendants.yml", "class": "B", "action": null, "reason": "READ ONLY forensic SELECTs" },
+    { "path": ".github/workflows/production-partner-schema-readonly-audit.yml", "class": "B", "action": null, "reason": "Read-only partner schema audit" },
+    { "path": ".github/workflows/telegram-voice-stt-diagnostics.yml", "class": "B", "action": null, "reason": "STT dry-run + log/env inspect" },
+    { "path": ".github/workflows/test-production-supabase-db-connection.yml", "class": "B", "action": null, "reason": "Only SELECT 1 connectivity check" },
+
+    { "path": ".github/workflows/agent-intake-triage.yml", "class": "C", "action": null, "reason": "GitHub Issues triage only" },
+    { "path": ".github/workflows/communication-regression.yml", "class": "C", "action": null, "reason": "CI vitest on PR paths" },
+    { "path": ".github/workflows/deploy-staging.yml", "class": "C", "action": null, "reason": "Staging deploy" },
+    { "path": ".github/workflows/ops-inspect-staging-runtime-bridge-readiness.yml", "class": "C", "action": null, "reason": "Staging Runtime Bridge inspect" },
+    { "path": ".github/workflows/ops-probe-staging-runtime-bridge-storage.yml", "class": "C", "action": null, "reason": "Staging Supabase schema probe" },
+    { "path": ".github/workflows/ops-provision-staging-runtime-bridge-auth.yml", "class": "C", "action": null, "reason": "Staging Bridge auth provision" },
+    { "path": ".github/workflows/pr-validation.yml", "class": "C", "action": null, "reason": "PR/CI validation suite" },
+    { "path": ".github/workflows/production-owner-gate.yml", "class": "C", "action": null, "reason": "Reusable owner-gate workflow itself; not a mutator" }
+  ]
+}
