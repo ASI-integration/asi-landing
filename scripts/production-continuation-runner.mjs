@@ -76,6 +76,34 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function sleepSync(ms) {
+  const waitArray = new Int32Array(new SharedArrayBuffer(4));
+  Atomics.wait(waitArray, 0, 0, ms);
+}
+
+export function isTransientGhFailure(value) {
+  const text = String(value ?? '').toLowerCase();
+  return [
+    'tls handshake timeout',
+    'i/o timeout',
+    'context deadline exceeded',
+    'connection reset by peer',
+    'connection reset',
+    'connection refused',
+    'temporary failure in name resolution',
+    'could not resolve host',
+    'failed to connect',
+    'unexpected eof',
+    'stream error',
+    'http 502',
+    'http 503',
+    'http 504',
+    'bad gateway',
+    'service unavailable',
+    'gateway timeout',
+  ].some((needle) => text.includes(needle));
+}
+
 function safeJson(text, context) {
   try {
     return JSON.parse(text);
@@ -84,27 +112,56 @@ function safeJson(text, context) {
   }
 }
 
-function runGh(args, { input, allowFailure = false } = {}) {
-  const result = spawnSync('gh', args, {
-    encoding: 'utf8',
-    input,
-    windowsHide: true,
-    maxBuffer: 20 * 1024 * 1024,
-  });
-  if (result.error) throw result.error;
-  if (!allowFailure && result.status !== 0) {
-    const detail = String(result.stderr || result.stdout || '').trim().slice(-2000);
-    throw new Error(`gh ${args.join(' ')} failed (${result.status}): ${detail}`);
+function runGh(args, { input, allowFailure = false, transientRetries = 0 } = {}) {
+  const attempts = Math.max(1, Number(transientRetries) + 1);
+  let lastResult = null;
+  let lastError = null;
+
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    const result = spawnSync('gh', args, {
+      encoding: 'utf8',
+      input,
+      windowsHide: true,
+      maxBuffer: 20 * 1024 * 1024,
+    });
+    lastResult = result;
+
+    const stdout = String(result.stdout ?? '');
+    const stderr = String(result.stderr ?? '');
+    const detail = String(result.error?.message || stderr || stdout || '').trim().slice(-2000);
+    const transient = isTransientGhFailure(detail);
+
+    if (!result.error && result.status === 0) {
+      return {
+        status: 0,
+        stdout,
+        stderr,
+      };
+    }
+
+    if (transient && attempt < attempts) {
+      sleepSync(Math.min(8000, 500 * (2 ** (attempt - 1))));
+      continue;
+    }
+
+    lastError = result.error ?? null;
+    if (allowFailure && !result.error) {
+      return {
+        status: result.status ?? 1,
+        stdout,
+        stderr,
+      };
+    }
+    break;
   }
-  return {
-    status: result.status ?? 1,
-    stdout: String(result.stdout ?? ''),
-    stderr: String(result.stderr ?? ''),
-  };
+
+  if (lastError) throw lastError;
+  const detail = String(lastResult?.stderr || lastResult?.stdout || '').trim().slice(-2000);
+  throw new Error(`gh ${args.join(' ')} failed (${lastResult?.status ?? 1}): ${detail}`);
 }
 
 function ghJson(args) {
-  const result = runGh(args);
+  const result = runGh(args, { transientRetries: 4 });
   return safeJson(result.stdout, `gh ${args.join(' ')}`);
 }
 

@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 
 import {
   buildStatusPatch,
+  isTransientGhFailure,
   latestCheckRollupGreen,
   parseArgs,
 } from './production-continuation-runner.mjs';
@@ -73,6 +74,13 @@ test('latestCheckRollupGreen is false for pending or failed latest checks', () =
     ]),
     false,
   );
+});
+
+test('isTransientGhFailure recognizes retryable GitHub/network failures', () => {
+  assert.equal(isTransientGhFailure('net/http: TLS handshake timeout'), true);
+  assert.equal(isTransientGhFailure('Could not resolve host: api.github.com'), true);
+  assert.equal(isTransientGhFailure('HTTP 503 Service Unavailable'), true);
+  assert.equal(isTransientGhFailure('validation failed: bad workflow input'), false);
 });
 
 test('buildStatusPatch keeps prior fields and refreshes updatedAt', () => {
