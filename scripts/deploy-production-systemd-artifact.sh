@@ -28,6 +28,7 @@ done
 
 RELEASES_DIR="$BASE_DIR/releases"
 SHARED_DIR="$BASE_DIR/shared"
+COMM_STATE_DIR="$SHARED_DIR/communication-state"
 CURRENT_LINK="$BASE_DIR/current"
 RELEASE_DIR="$RELEASES_DIR/$SHA"
 STAGING_DIR="$RELEASE_DIR.tmp.$$"
@@ -42,9 +43,12 @@ cleanup_sensitive() {
 }
 trap cleanup_sensitive EXIT
 
-mkdir -p "$RELEASES_DIR" "$SHARED_DIR"
+mkdir -p "$RELEASES_DIR" "$SHARED_DIR" "$COMM_STATE_DIR"
 [[ -w "$RELEASES_DIR" ]] || die "Deploy user cannot write $RELEASES_DIR"
 [[ -w "$SHARED_DIR" ]] || die "Deploy user cannot write $SHARED_DIR"
+chgrp "$SERVICE_GROUP" "$COMM_STATE_DIR"
+chmod 2770 "$COMM_STATE_DIR"
+[[ -w "$COMM_STATE_DIR" ]] || die "Deploy user cannot write $COMM_STATE_DIR"
 
 CURRENT_TARGET="$(readlink -f "$CURRENT_LINK" 2>/dev/null || true)"
 echo "Disk before pre-deploy cleanup:"

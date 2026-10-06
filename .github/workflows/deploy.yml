@@ -288,6 +288,9 @@ jobs:
             printf 'COMMUNICATION_KILL_SWITCH=0\n'
             printf 'COMMUNICATION_AUTOPILOT_FORCE_DISABLED=0\n'
             printf 'COMMUNICATION_AUTOPILOT_FORCE_ENABLED=0\n'
+            printf 'COMM_STATE_DIR=/var/www/asi/shared/communication-state\n'
+            printf 'SESSION_STORE_DIR=/var/www/asi/shared/communication-state\n'
+            printf 'CONVERSATION_SESSION_DIR=/var/www/asi/shared/communication-state\n'
             if [ -n "${TELEGRAM_TEST_CHAT_ID:-}" ]; then
               printf 'TELEGRAM_TEST_CHAT_ID=%s\n' "$TELEGRAM_TEST_CHAT_ID"
               printf 'TELEGRAM_AUTOPILOT_TEST_CHAT_ID=%s\n' "$TELEGRAM_TEST_CHAT_ID"
