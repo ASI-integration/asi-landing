@@ -154,7 +154,7 @@ async function ensureLinkedReservation(sb, testChatId) {
   return { row: data, created: true, updated: false };
 }
 
-async function postDryRun({ baseUrl, secret, chatId, text }) {
+async function postDryRun({ baseUrl, secret, chatId, text, objectName, bookingId }) {
   const response = await fetch(`${baseUrl.replace(/\/$/, '')}/api/internal/telegram-dry-run`, {
     method: 'POST',
     headers: {
@@ -164,6 +164,8 @@ async function postDryRun({ baseUrl, secret, chatId, text }) {
     body: JSON.stringify({
       chatId: String(chatId),
       text,
+      objectName,
+      bookingId,
       senderIdentity: 'test_guest',
       guestTestMode: true,
     }),
@@ -205,9 +207,17 @@ async function main() {
 
   const startedAt = new Date().toISOString();
   const rows = [];
+  const bookingId = String(link.row.reservation_ref ?? link.row.booking_id ?? link.row.id ?? '').trim();
 
   for (const testCase of ACCEPTANCE_CASES) {
-    const dryRun = await postDryRun({ baseUrl, secret, chatId, text: testCase.text });
+    const dryRun = await postDryRun({
+      baseUrl,
+      secret,
+      chatId,
+      text: testCase.text,
+      objectName: PROPERTY_ID,
+      bookingId,
+    });
     const reply = String(dryRun.replyText ?? '');
     const events = await getRecentEvents(sb, startedAt, testCase.text);
     const eventTypes = new Set(events.map((event) => event.event_type));

@@ -70,6 +70,12 @@ describe('production Telegram text readiness', () => {
     );
   });
 
+  it('passes linked reservation context into the production Telegram dry-run', () => {
+    expect(textAcceptanceScript).toContain('objectName,');
+    expect(textAcceptanceScript).toContain('bookingId,');
+    expect(textAcceptanceScript).toContain('objectName: PROPERTY_ID');
+  });
+
   it('provides a text-only production acceptance mode that does not require voice', () => {
     expect(workflow).toContain('- text_acceptance');
     expect(workflow).toContain('readiness|text_acceptance|activate|acceptance|pronunciation_probe');
