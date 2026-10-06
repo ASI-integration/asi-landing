@@ -81,6 +81,92 @@ jobs:
           echo "[section] service"
           systemctl show "$SERVICE" -p ActiveState -p SubState -p MainPID -p WorkingDirectory 2>&1 || true
 
+          echo "[section] operator review store shape"
+          python3 - <<'PY'
+          from pathlib import Path
+          import json
+
+          env_file = Path('/var/www/asi/shared/.env.production.local')
+          values = {}
+          if env_file.exists():
+              for raw in env_file.read_text(encoding='utf-8').splitlines():
+                  line = raw.strip()
+                  if not line or line.startswith('#') or '=' not in line:
+                      continue
+                  key, value = line.split('=', 1)
+                  values[key.strip()] = value.strip().strip('"').strip("'")
+
+          state_dir = next(
+              (
+                  values.get(key, '').strip()
+                  for key in ('COMM_STATE_DIR', 'CONVERSATION_SESSION_DIR', 'SESSION_STORE_DIR', 'STATE_DIR')
+                  if values.get(key, '').strip()
+              ),
+              '/var/www/asi/current/.asi-comm-state',
+          )
+          store = Path(state_dir) / 'asi-comm-escalation-reviews.json'
+          print(f'STATE_DIR={state_dir}')
+          print(f'STORE_EXISTS={str(store.exists()).lower()}')
+          if not store.exists():
+              raise SystemExit(0)
+
+          print(f'STORE_SIZE={store.stat().st_size}')
+          try:
+              data = json.loads(store.read_text(encoding='utf-8'))
+          except Exception as error:
+              print('JSON_VALID=false')
+              print(f'JSON_ERROR={type(error).__name__}')
+              raise SystemExit(0)
+
+          print('JSON_VALID=true')
+          reviews = data.get('reviewsById') if isinstance(data, dict) else None
+          active = data.get('activeReviewIdBySessionId') if isinstance(data, dict) else None
+          print(f'REVIEWS_OBJECT={str(isinstance(reviews, dict)).lower()}')
+          print(f'ACTIVE_INDEX_OBJECT={str(isinstance(active, dict)).lower()}')
+          if not isinstance(reviews, dict) or not isinstance(active, dict):
+              raise SystemExit(0)
+
+          valid_status = {'pending', 'acknowledged', 'approved', 'replied', 'closed'}
+          bad_record = 0
+          missing_account_id = 0
+          missing_active_index = 0
+          active_mismatch = 0
+          closed_indexed = 0
+
+          for review_id, review in reviews.items():
+              if not isinstance(review, dict):
+                  bad_record += 1
+                  continue
+              session_id = review.get('sessionId')
+              status = review.get('status')
+              if (
+                  review.get('reviewId') != review_id
+                  or not isinstance(session_id, str)
+                  or status not in valid_status
+                  or not isinstance(review.get('targetId'), str)
+              ):
+                  bad_record += 1
+              if review.get('accountId') is None:
+                  missing_account_id += 1
+              if status != 'closed' and isinstance(session_id, str) and active.get(session_id) != review_id:
+                  missing_active_index += 1
+
+          for session_id, review_id in active.items():
+              review = reviews.get(review_id)
+              if not isinstance(review, dict) or review.get('sessionId') != session_id:
+                  active_mismatch += 1
+              elif review.get('status') == 'closed':
+                  closed_indexed += 1
+
+          print(f'REVIEWS_COUNT={len(reviews)}')
+          print(f'ACTIVE_INDEX_COUNT={len(active)}')
+          print(f'BAD_RECORD={bad_record}')
+          print(f'MISSING_ACCOUNT_ID={missing_account_id}')
+          print(f'MISSING_ACTIVE_INDEX={missing_active_index}')
+          print(f'ACTIVE_MISMATCH={active_mismatch}')
+          print(f'CLOSED_INDEXED={closed_indexed}')
+          PY
+
           echo "[section] sanitized communication errors from last ${MINUTES} minutes"
           JOURNAL="$(journalctl -u "$SERVICE" --since "-${MINUTES} min" -o cat 2>/dev/null || true)"
           FILTERED="$(printf '%s\n' "$JOURNAL" | grep -E 'telegram-dry-run|\[tg:|\[comm:|processMessage|TypeError|ReferenceError|Error:|Supabase|guest|reservation' || true)"
