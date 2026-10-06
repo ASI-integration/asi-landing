@@ -235,6 +235,10 @@ describe('voice TTS wrapper', () => {
     }
     expect(inboundInput).toContain('stage=inbound_stt_input');
     expect(workflow).toContain('telegram-voice-acceptance-input.mjs');
+    expect(workflow).toContain('ENV_FILE="/var/www/asi/shared/.env.production.local"');
+    expect(workflow).toContain('sudo systemctl restart "$SYSTEMD_SERVICE"');
+    expect(workflow).toContain('sudo systemctl is-active --quiet "$SYSTEMD_SERVICE"');
+    expect(workflow).not.toContain('pm2 restart "$PM2_APP" --update-env');
     expect(workflow).not.toContain('pm2 logs "$PM2_APP" --lines 1500');
   });
 });
