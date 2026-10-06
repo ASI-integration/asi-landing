@@ -56,4 +56,31 @@ describe('POST /api/internal/telegram-dry-run', () => {
       replyText: 'ok',
     });
   });
+
+  it('returns a sanitized structured 500 when the dry-run throws', async () => {
+    mockRunTelegramDryRun.mockRejectedValueOnce(
+      new Error('db failed postgresql://user:password@example.test/db token=abc123'),
+    );
+    const req = new Request('https://example.test/api/internal/telegram-dry-run', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-internal-test-secret': 'secret',
+      },
+      body: JSON.stringify({ text: 'hello', chatId: 'test-chat' }),
+    });
+
+    const res = await POST(req);
+    const body = await res.json();
+
+    expect(res.status).toBe(500);
+    expect(body).toMatchObject({
+      ok: false,
+      error: 'telegram_dry_run_failed',
+    });
+    expect(body.detail).toContain('postgresql://[REDACTED]');
+    expect(body.detail).toContain('token=[REDACTED]');
+    expect(body.detail).not.toContain('password');
+    expect(body.detail).not.toContain('abc123');
+  });
 });
