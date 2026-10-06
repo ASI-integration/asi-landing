@@ -27,11 +27,12 @@ if (!Array.isArray(manifest.migrations) || manifest.migrations.length !== expect
 
 for (const [index, item] of manifest.migrations.entries()) {
   if (item.path !== expected[index]) throw new Error('manifest_allowlist_mismatch');
-  const bytes = readFileSync(item.path);
-  const sha256 = createHash('sha256').update(bytes).digest('hex');
-  if (sha256 !== item.sha256) throw new Error(`sha256_mismatch:${item.path}`);
-  const blob = spawnSync('git', ['hash-object', item.path], { encoding: 'utf8' });
+  const blob = spawnSync('git', ['rev-parse', `HEAD:${item.path}`], { encoding: 'utf8' });
   if (blob.status !== 0 || blob.stdout.trim() !== item.gitBlobSha) throw new Error(`git_blob_mismatch:${item.path}`);
+  const bytes = spawnSync('git', ['cat-file', 'blob', `HEAD:${item.path}`]);
+  if (bytes.status !== 0) throw new Error(`git_blob_read_failed:${item.path}`);
+  const sha256 = createHash('sha256').update(bytes.stdout).digest('hex');
+  if (sha256 !== item.sha256) throw new Error(`sha256_mismatch:${item.path}`);
 }
 
 if (gate.schemaVersion !== 'asi.agent-os.owner-gate.v1') throw new Error('gate_schema_mismatch');
