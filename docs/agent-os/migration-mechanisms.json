@@ -203,6 +203,35 @@
       "notes": "Checksum-pinned five-file Wave 5 core production rollout with non-mutating preflight, explicit owner gate, read-only production DB guard, atomic schema+history transaction, and final verification. Channel Manager scope-guard migration is intentionally excluded."
     },
     {
+      "id": "workflow-channel-manager-live-core-production-v1",
+      "kind": "github-workflow",
+      "role": "apply-backend",
+      "paths": [
+        ".github/workflows/apply-channel-manager-live-core-production-v1.yml",
+        "docs/operations/channel-manager-live-core-rollout-v1/README.md",
+        "docs/operations/channel-manager-live-core-rollout-v1/manifest.json",
+        "docs/operations/channel-manager-live-core-rollout-v1/migration-owner-gate.json",
+        "scripts/channel-manager-live-core-production-precheck.sql",
+        "scripts/channel-manager-live-core-register-history.sql",
+        "scripts/channel-manager-live-core-production-verify.sql",
+        "scripts/channel-manager-live-core-rollout-selfcheck.mjs"
+      ],
+      "environments": ["production"],
+      "ownerGateRequired": true,
+      "supportsDryRun": true,
+      "rollbackPolicy": "atomic-transaction",
+      "migrationPaths": [
+        "supabase/migrations/20260804120000_channel_manager_live_core_initial_sync_v1.sql",
+        "supabase/migrations/20260805120000_channel_manager_live_core_synthetic_recovery_v1.sql",
+        "supabase/migrations/20260806170000_channel_manager_live_incremental_sync_v1.sql",
+        "supabase/migrations/20260807120000_channel_manager_reconciliation_recovery_v1.sql",
+        "supabase/migrations/20260808041000_channel_manager_live_core_recovery_fk_expectation_fix_v1.sql",
+        "supabase/migrations/20260808051000_channel_manager_live_core_acceptance_cleanup_v2.sql",
+        "supabase/migrations/20261004123000_channel_manager_live_scope_guard_v1.sql"
+      ],
+      "notes": "Checksum-pinned seven-migration Channel Manager Live Core production rollout with read-only preflight, explicit owner gate, exact history registration, atomic apply+verify, and public health verification."
+    },
+    {
       "id": "helper-booking-ops",
       "kind": "python-helper",
       "role": "apply-backend",

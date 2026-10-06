@@ -1,0 +1,253 @@
+name: Channel Manager Live Core Production Rollout v1
+
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: Run non-mutating preflight or owner-approved apply
+        required: true
+        default: preflight
+        type: choice
+        options: [preflight, apply]
+      rollout_sha:
+        description: Full 40-character main commit SHA to validate or apply
+        required: true
+        type: string
+      owner_confirmation:
+        description: Apply only — owner types APPLY_CHANNEL_MANAGER_LIVE_CORE_<rollout_sha>
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: channel-manager-live-core-production-rollout-v1
+  cancel-in-progress: false
+
+jobs:
+  preflight:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require workflow source main and exact SHA
+        shell: bash
+        env:
+          ROLLOUT_SHA: ${{ inputs.rollout_sha }}
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REPOSITORY" == "ASI-integration/asi-landing" ]]
+          [[ "$GITHUB_REF" == "refs/heads/main" ]]
+          [[ "$ROLLOUT_SHA" =~ ^[0-9a-f]{40}$ ]]
+
+      - name: Checkout exact rollout SHA
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: ${{ inputs.rollout_sha }}
+
+      - name: Verify main ancestry, manifest, order, and checksums
+        shell: bash
+        env:
+          ROLLOUT_SHA: ${{ inputs.rollout_sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$ROLLOUT_SHA"
+          git fetch origin main --quiet
+          git merge-base --is-ancestor "$ROLLOUT_SHA" origin/main
+          python3 - <<'PY'
+          import hashlib, json, subprocess
+          from pathlib import Path
+          manifest_path=Path('docs/operations/channel-manager-live-core-rollout-v1/manifest.json')
+          gate_path=Path('docs/operations/channel-manager-live-core-rollout-v1/migration-owner-gate.json')
+          manifest=json.loads(manifest_path.read_text(encoding='utf-8-sig'))
+          gate=json.loads(gate_path.read_text(encoding='utf-8-sig'))
+          expected=[
+            'supabase/migrations/20260804120000_channel_manager_live_core_initial_sync_v1.sql',
+            'supabase/migrations/20260805120000_channel_manager_live_core_synthetic_recovery_v1.sql',
+            'supabase/migrations/20260806170000_channel_manager_live_incremental_sync_v1.sql',
+            'supabase/migrations/20260807120000_channel_manager_reconciliation_recovery_v1.sql',
+            'supabase/migrations/20260808041000_channel_manager_live_core_recovery_fk_expectation_fix_v1.sql',
+            'supabase/migrations/20260808051000_channel_manager_live_core_acceptance_cleanup_v2.sql',
+            'supabase/migrations/20261004123000_channel_manager_live_scope_guard_v1.sql',
+          ]
+          if manifest.get('schemaVersion')!='asi.channel-manager-live-core-rollout.v1':
+            raise SystemExit('manifest schema mismatch')
+          if manifest.get('target',{}).get('supabaseProjectRef')!='jwinifeienvzejofmbua':
+            raise SystemExit('target mismatch')
+          if manifest.get('canonicalOrder')!=expected:
+            raise SystemExit('canonical order mismatch')
+          items=manifest.get('migrations') or []
+          if [x.get('path') for x in items]!=expected or len(items)!=7:
+            raise SystemExit('migration allowlist mismatch')
+          for item in items:
+            p=Path(item['path'])
+            if subprocess.check_output(['git','hash-object',str(p)],text=True).strip()!=item['gitBlobSha']:
+              raise SystemExit(f'git blob mismatch: {p}')
+            if hashlib.sha256(p.read_bytes()).hexdigest()!=item['sha256']:
+              raise SystemExit(f'sha256 mismatch: {p}')
+          if gate.get('schemaVersion')!='asi.agent-os.owner-gate.v1':
+            raise SystemExit('owner gate schema mismatch')
+          if gate.get('action')!='production_migration':
+            raise SystemExit('owner gate action mismatch')
+          if gate.get('identity',{}).get('ref')!='refs/heads/main':
+            raise SystemExit('owner gate ref mismatch')
+          if gate.get('identity',{}).get('migration')!=str(manifest_path):
+            raise SystemExit('owner gate manifest mismatch')
+          if gate.get('status') not in ('missing','approved'):
+            raise SystemExit('unsupported owner gate status')
+          print('CHANNEL_MANAGER_LIVE_CORE_BUNDLE=verified')
+          print('OWNER_GATE_STATUS='+gate.get('status',''))
+          PY
+
+  owner_approval:
+    if: ${{ inputs.operation == 'apply' }}
+    needs: [preflight]
+    runs-on: ubuntu-latest
+    environment: production-migration-approval
+    timeout-minutes: 5
+    steps:
+      - name: Checkout exact rollout SHA
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+          ref: ${{ inputs.rollout_sha }}
+
+      - name: Require explicit owner gate and SHA-bound confirmation
+        shell: bash
+        env:
+          EXPECTED_OWNER_LOGIN: ${{ vars.PRODUCTION_MIGRATION_OWNER_LOGIN }}
+          OWNER_CONFIRMATION: ${{ inputs.owner_confirmation }}
+          ROLLOUT_SHA: ${{ inputs.rollout_sha }}
+        run: |
+          set -euo pipefail
+          test -n "$EXPECTED_OWNER_LOGIN"
+          [[ "$GITHUB_ACTOR" == "$EXPECTED_OWNER_LOGIN" ]]
+          [[ "$GITHUB_TRIGGERING_ACTOR" == "$EXPECTED_OWNER_LOGIN" ]]
+          [[ "$OWNER_CONFIRMATION" == "APPLY_CHANNEL_MANAGER_LIVE_CORE_${ROLLOUT_SHA}" ]]
+          node <<'NODE'
+          const fs=require('fs');
+          const gate=JSON.parse(fs.readFileSync('docs/operations/channel-manager-live-core-rollout-v1/migration-owner-gate.json','utf8'));
+          if(gate.status!=='approved') throw new Error('owner gate is not approved');
+          if(gate.authorization?.source!=='explicit_owner_message') throw new Error('explicit owner authorization missing');
+          if(gate.authorization?.owner!=='Nikolay') throw new Error('owner identity mismatch');
+          if(!gate.authorization?.scope || !gate.authorization?.taskCycle) throw new Error('owner authorization incomplete');
+          console.log('OWNER_GATE=approved_for_channel_manager_live_core_bundle');
+          NODE
+
+  apply_migrations:
+    if: ${{ inputs.operation == 'apply' }}
+    needs: [preflight, owner_approval]
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 20
+    env:
+      EXPECTED_SUPABASE_PROJECT_REF: jwinifeienvzejofmbua
+      PGCONNECT_TIMEOUT: "10"
+    steps:
+      - name: Checkout exact approved rollout SHA
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: ${{ inputs.rollout_sha }}
+
+      - name: Reverify checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib,json,subprocess
+          from pathlib import Path
+          m=json.loads(Path('docs/operations/channel-manager-live-core-rollout-v1/manifest.json').read_text(encoding='utf-8-sig'))
+          for i in m['migrations']:
+            p=Path(i['path'])
+            assert subprocess.check_output(['git','hash-object',str(p)],text=True).strip()==i['gitBlobSha']
+            assert hashlib.sha256(p.read_bytes()).hexdigest()==i['sha256']
+          print('CHANNEL_MANAGER_LIVE_CORE_BUNDLE=reverified')
+          PY
+
+      - name: Validate production database identity
+        shell: bash
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          set -euo pipefail
+          test -n "${SUPABASE_DB_URL:-}"
+          echo "::add-mask::${SUPABASE_DB_URL}"
+          python3 - <<'PY'
+          import os
+          from urllib.parse import unquote,urlparse
+          raw=os.environ['SUPABASE_DB_URL'].strip()
+          expected=os.environ['EXPECTED_SUPABASE_PROJECT_REF'].lower()
+          p=urlparse(raw)
+          host=(p.hostname or '').lower()
+          user=unquote(p.username or '').lower()
+          if p.scheme not in ('postgres','postgresql'): raise SystemExit('invalid DB URL scheme')
+          if host!=f'db.{expected}.supabase.co' and not(host.endswith('.pooler.supabase.com') and user==f'postgres.{expected}'):
+            raise SystemExit('database project identity mismatch')
+          print('PRODUCTION_DATABASE_IDENTITY=verified')
+          PY
+
+      - name: Ensure PostgreSQL client
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! command -v psql >/dev/null 2>&1; then
+            sudo apt-get update -qq
+            sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq postgresql-client
+          fi
+
+      - name: Run read-only production precheck
+        shell: bash
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          PGOPTIONS: >-
+            -c default_transaction_read_only=on
+            -c statement_timeout=30000
+            -c lock_timeout=3000
+        run: |
+          set -euo pipefail
+          echo "::add-mask::${SUPABASE_DB_URL}"
+          psql -X "$SUPABASE_DB_URL" --no-psqlrc --set ON_ERROR_STOP=1 \
+            --file scripts/channel-manager-live-core-production-precheck.sql
+
+      - name: Apply seven migrations and verify atomically
+        shell: bash
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          PGOPTIONS: >-
+            -c statement_timeout=600000
+            -c lock_timeout=5000
+        run: |
+          set -euo pipefail
+          echo "::add-mask::${SUPABASE_DB_URL}"
+          psql -X "$SUPABASE_DB_URL" --no-psqlrc --set ON_ERROR_STOP=1 --single-transaction \
+            --file supabase/migrations/20260804120000_channel_manager_live_core_initial_sync_v1.sql \
+            --file supabase/migrations/20260805120000_channel_manager_live_core_synthetic_recovery_v1.sql \
+            --file supabase/migrations/20260806170000_channel_manager_live_incremental_sync_v1.sql \
+            --file supabase/migrations/20260807120000_channel_manager_reconciliation_recovery_v1.sql \
+            --file supabase/migrations/20260808041000_channel_manager_live_core_recovery_fk_expectation_fix_v1.sql \
+            --file supabase/migrations/20260808051000_channel_manager_live_core_acceptance_cleanup_v2.sql \
+            --file supabase/migrations/20261004123000_channel_manager_live_scope_guard_v1.sql \
+            --file scripts/channel-manager-live-core-register-history.sql \
+            --file scripts/channel-manager-live-core-production-verify.sql
+          echo 'CHANNEL_MANAGER_LIVE_CORE_PRODUCTION_ROLLOUT=applied_and_verified'
+
+      - name: Verify public production remains healthy
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --max-time 20 https://asi-global.ru/api/health >/tmp/health.json
+          curl --fail --silent --show-error --max-time 20 https://asi-global.ru/api/version >/tmp/version.json
+          node <<'NODE'
+          const fs=require('fs');
+          const health=JSON.parse(fs.readFileSync('/tmp/health.json','utf8'));
+          const version=JSON.parse(fs.readFileSync('/tmp/version.json','utf8'));
+          if(health.ok!==true) throw new Error('production health is not ok');
+          if(version.environment!=='production'||!version.sha) throw new Error('production version identity invalid');
+          console.log('POST_MIGRATION_PUBLIC_HEALTH=ok');
+          console.log('POST_MIGRATION_PUBLIC_VERSION=verified');
+          NODE

@@ -1,0 +1,25 @@
+{
+  "schemaVersion": "asi.agent-os.owner-gate.v1",
+  "taskId": "channel-manager-live-core-rollout-v1-production",
+  "status": "missing",
+  "action": "production_migration",
+  "target": "production Supabase project jwinifeienvzejofmbua through the GitHub production environment SUPABASE_DB_URL secret",
+  "identity": {
+    "ref": "refs/heads/main",
+    "migration": "docs/operations/channel-manager-live-core-rollout-v1/manifest.json"
+  },
+  "allowedSideEffect": "Apply only the seven checksum-pinned Channel Manager Live Core migrations listed in manifest.json, in canonical order, plus exact migration-history registration and verification in one PostgreSQL transaction. No application deploy, no DNS/secret change, no real provider call, and no unrelated production data mutation.",
+  "postActionVerification": [
+    "All seven exact (version, name) rows exist in supabase_migrations.schema_migrations.",
+    "Live Core schema state reports ready after the canonical migration chain.",
+    "Incremental sync, replay, reconciliation, and scoped connection/import-run RPCs exist.",
+    "Live scope guard reports scopedConnectionWritesReady=true.",
+    "Privileged Live Core RPCs are executable by service_role and not by anon/authenticated.",
+    "Production public health/version endpoints remain healthy after the database transaction."
+  ],
+  "authorization": null,
+  "typedConfirmation": {
+    "present": false,
+    "countsAsOwnerApproval": false
+  }
+}
