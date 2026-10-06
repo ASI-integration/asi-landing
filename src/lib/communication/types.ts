@@ -608,6 +608,8 @@ export interface ProcessResult {
    * In production replies are still sent via the channel adapter.
    */
   reply?: string;
+  /** Internal diagnostic detail; never expose without sanitizing at an authenticated boundary. */
+  errorDetail?: string;
 }
 
 // ─── Phase 2 ──────────────────────────────────────────────────────────────────

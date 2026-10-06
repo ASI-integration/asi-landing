@@ -91,6 +91,9 @@ export async function runTelegramDryRun(input: TelegramDryRunInput): Promise<Tel
   };
 
   const result: ProcessResult = await withTemporaryDryRun(() => processMessage(envelope));
+  if (result.outcome === 'error') {
+    throw new Error(result.errorDetail || 'process_message_error');
+  }
   const replyText = result.reply ?? '';
   const escalatedByPolicy = actions.includes('escalate_operator') || actions.includes('escalate_urgent');
   const hasFinalPolicyAction = actions.some((action) => action === 'reply' || action === 'clarify' || action.startsWith('escalate'));
