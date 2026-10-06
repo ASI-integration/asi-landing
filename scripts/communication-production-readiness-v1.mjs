@@ -137,16 +137,24 @@ async function main() {
     stateDirPresent: present('SESSION_STORE_DIR') || present('COMM_STATE_DIR') || present('CONVERSATION_SESSION_DIR') || present('STATE_DIR'),
   };
 
-  const activationPrerequisitesMet = Boolean(
+  const textActivationPrerequisitesMet = Boolean(
     telegram.tokenPresent &&
-    llm.hasKey &&
+    llm.configured
+  );
+  const textActive = Boolean(
+    textActivationPrerequisitesMet &&
+    !autopilot.killSwitch &&
+    !autopilot.forceDisabled &&
+    !telegram.outboundDryRun
+  );
+  const activationPrerequisitesMet = Boolean(
+    textActivationPrerequisitesMet &&
     stt.configured &&
     tts.configured &&
     voice.ffmpegPresent
   );
   const active = Boolean(
     activationPrerequisitesMet &&
-    llm.enabled &&
     voice.replyEnabled &&
     !autopilot.killSwitch &&
     !autopilot.forceDisabled &&
@@ -155,6 +163,8 @@ async function main() {
 
   const report = {
     schemaVersion: 1,
+    textActivationPrerequisitesMet,
+    textActive,
     activationPrerequisitesMet,
     active,
     llm,
@@ -170,6 +180,8 @@ async function main() {
 
   if (args.has('--require-prereqs') && !activationPrerequisitesMet) process.exitCode = 2;
   if (args.has('--require-active') && !active) process.exitCode = 3;
+  if (args.has('--require-text-prereqs') && !textActivationPrerequisitesMet) process.exitCode = 5;
+  if (args.has('--require-text-active') && !textActive) process.exitCode = 6;
   if (args.has('--probe-network') && report.network.telegram.attempted && !report.network.telegram.ok) process.exitCode = 4;
 }
 
