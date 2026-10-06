@@ -70,10 +70,15 @@ describe('production Telegram text readiness', () => {
     );
   });
 
-  it('passes linked reservation context into the production Telegram dry-run', () => {
+  it('passes canonical linked reservation context into the production Telegram dry-run', () => {
     expect(textAcceptanceScript).toContain('objectName,');
     expect(textAcceptanceScript).toContain('bookingId,');
     expect(textAcceptanceScript).toContain('objectName: PROPERTY_ID');
+    expect(textAcceptanceScript).toContain("const bookingId = String(link.row.id ?? '').trim()");
+    expect(textAcceptanceScript).toContain("linked reservation is missing canonical id");
+    expect(textAcceptanceScript).not.toContain(
+      'link.row.reservation_ref ?? link.row.booking_id ?? link.row.id',
+    );
   });
 
   it('resets the dedicated acceptance chat before evaluating text cases', () => {
