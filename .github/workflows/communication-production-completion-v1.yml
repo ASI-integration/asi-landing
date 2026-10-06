@@ -119,8 +119,8 @@ jobs:
             "MODE='${MODE}' INPUT_TEST_CHAT_ID='${INPUT_TEST_CHAT_ID}' INPUT_STT_FILE_ID='${INPUT_STT_FILE_ID}' REMOTE_TMP='${REMOTE_TMP}' bash -s" <<'REMOTE'
           set -euo pipefail
           APP_DIR="/var/www/asi/current"
-          ENV_FILE="/var/www/asi/shared/.env.production.live"
-          PM2_APP="asi-landing"
+          ENV_FILE="/var/www/asi/shared/.env.production.local"
+          SYSTEMD_SERVICE="asi-landing.service"
           trap 'rm -rf "${REMOTE_TMP}"' EXIT
 
           if [[ ! -f "$ENV_FILE" ]]; then
@@ -142,8 +142,8 @@ jobs:
 
           restart_with_current_env() {
             load_env
-            pm2 restart "$PM2_APP" --update-env
-            pm2 save
+            sudo systemctl restart "$SYSTEMD_SERVICE"
+            sudo systemctl is-active --quiet "$SYSTEMD_SERVICE"
           }
 
           run_acceptance_stage() {
