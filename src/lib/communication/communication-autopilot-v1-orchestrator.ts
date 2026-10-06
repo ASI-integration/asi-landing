@@ -1,4 +1,4 @@
-import { prepareRuntimeKnowledgeReply, KNOWLEDGE_REVIEW_REPLY_RU } from './knowledge-boundary';
+import { prepareRuntimeKnowledgeReply, KNOWLEDGE_REVIEW_REPLY_RU, shouldDeferTelegramWifiToVerifiedAutopilot } from './knowledge-boundary';
 import { requestOperatorHandoff } from './handoff-lock';
 import type { ChannelAdapter } from './channels/base';
 import { recordCommunicationAutopilotTurn } from './communication-autopilot-crm';
@@ -115,6 +115,10 @@ function voiceIntentForAutopilot(topic: string): string {
   return 'guest_property_question';
 }
 
+export function shouldSkipAutopilotV1KnowledgeBoundary(message: string, channel: string): boolean {
+  return shouldDeferTelegramWifiToVerifiedAutopilot(message, channel);
+}
+
 export async function tryCommunicationAutopilotV1OrchestratorTurn(
   input: AutopilotV1OrchestratorInput,
 ): Promise<ProcessResult | null> {
@@ -124,11 +128,17 @@ export async function tryCommunicationAutopilotV1OrchestratorTurn(
 
   // This entrypoint can also be called independently of the main orchestrator.
   // Legacy session/passport/template strings are not evidence, including follow-ups.
-  const prepared = await prepareRuntimeKnowledgeReply({
-    message: input.text, coverUnclassified: true, channel: input.envelope.channel,
-    chatId: input.chatId, ru: true,
-    propertyId: input.identity.propertyId, reservationId: input.identity.reservationId,
-  });
+  // A Telegram-only Wi-Fi request must reach the verified booking/object path below;
+  // disclosure still stays fail-closed because that path checks booking verification.
+  const deferVerifiedWifiToAutopilot =
+    shouldSkipAutopilotV1KnowledgeBoundary(input.text, input.envelope.channel);
+  const prepared = deferVerifiedWifiToAutopilot
+    ? null
+    : await prepareRuntimeKnowledgeReply({
+        message: input.text, coverUnclassified: true, channel: input.envelope.channel,
+        chatId: input.chatId, ru: true,
+        propertyId: input.identity.propertyId, reservationId: input.identity.reservationId,
+      });
   if (prepared) {
     const target = input.resolveOutboundTargetId(input.envelope, input.identity.guestId);
     if (!target) return { outcome: ProcessOutcome.Error, update_id: input.update_id, chat_id: input.chatId };

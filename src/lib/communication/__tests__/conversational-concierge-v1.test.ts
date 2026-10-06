@@ -7,7 +7,10 @@ import {
   runLlmSafeDomainLayer,
   type LlmSafeDomainProvider,
 } from '../llm-safe-domain-layer';
-import { shouldPreferCommunicationAutopilotV1 } from '../communication-autopilot-v1-orchestrator';
+import {
+  shouldPreferCommunicationAutopilotV1,
+  shouldSkipAutopilotV1KnowledgeBoundary,
+} from '../communication-autopilot-v1-orchestrator';
 import { classifyGuestCommunicationIntent } from '../guest-intent-router';
 import { classifyGuestTestQuestion } from '../guest-test-answers';
 
@@ -207,6 +210,14 @@ describe('Conversational Concierge v1 dialogue pack', () => {
       expect(decision.responseMode).toBe('operator_escalation');
     });
   }
+
+  it('skips the V1 pre-knowledge boundary only for Telegram-only Wi-Fi requests', () => {
+    expect(shouldSkipAutopilotV1KnowledgeBoundary('Какой Wi-Fi?', 'telegram')).toBe(true);
+    expect(shouldSkipAutopilotV1KnowledgeBoundary('Какой Wi-Fi?', 'email')).toBe(false);
+    expect(
+      shouldSkipAutopilotV1KnowledgeBoundary('Какой Wi-Fi и где парковка?', 'telegram'),
+    ).toBe(false);
+  });
 
   for (const messageText of DETERMINISTIC_OPERATIONAL_TURNS) {
     it(`keeps deterministic V1 first for operational/sensitive turn: ${messageText}`, () => {
