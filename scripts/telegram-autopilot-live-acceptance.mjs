@@ -81,7 +81,9 @@ function includesCi(text, needle) {
 
 function supabaseClient() {
   loadEnvFile(path.join(process.cwd(), '.env.local'));
-  const url = normalizeSupabaseUrl(requiredEnv('NEXT_PUBLIC_SUPABASE_URL'));
+  const rawUrl = optionalEnv('NEXT_PUBLIC_SUPABASE_URL') ?? optionalEnv('SUPABASE_URL');
+  if (!rawUrl) throw new Error('Missing required env NEXT_PUBLIC_SUPABASE_URL or SUPABASE_URL');
+  const url = normalizeSupabaseUrl(rawUrl);
   return createClient(url, requiredEnv('SUPABASE_SERVICE_ROLE_KEY'), { auth: { persistSession: false } });
 }
 

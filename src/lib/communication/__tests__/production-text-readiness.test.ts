@@ -9,6 +9,10 @@ const workflow = readFileSync(
   resolve(root, '.github/workflows/communication-production-completion-v1.yml'),
   'utf8',
 );
+const textAcceptanceScript = readFileSync(
+  resolve(root, 'scripts/telegram-autopilot-live-acceptance.mjs'),
+  'utf8',
+);
 
 function runReadiness(extraEnv: Record<string, string>, args: string[] = []) {
   const env = {
@@ -55,6 +59,15 @@ describe('production Telegram text readiness', () => {
     );
     expect(result.status).toBe(6);
     expect(result.report.textActive).toBe(false);
+  });
+
+  it('accepts the production-only SUPABASE_URL used by the VPS runtime', () => {
+    expect(textAcceptanceScript).toContain(
+      "optionalEnv('NEXT_PUBLIC_SUPABASE_URL') ?? optionalEnv('SUPABASE_URL')",
+    );
+    expect(textAcceptanceScript).toContain(
+      'Missing required env NEXT_PUBLIC_SUPABASE_URL or SUPABASE_URL',
+    );
   });
 
   it('provides a text-only production acceptance mode that does not require voice', () => {
