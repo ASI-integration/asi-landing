@@ -7,6 +7,10 @@ describe('deploy workflow: required production runtime secrets', () => {
     path.join(process.cwd(), '.github', 'workflows', 'deploy.yml'),
     'utf8',
   );
+  const deployScript = readFileSync(
+    path.join(process.cwd(), 'scripts', 'deploy-production-systemd-artifact.sh'),
+    'utf8',
+  );
 
   it('wires SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, and SESSION_SECRET from the production environment', () => {
     expect(deployYml).toContain('SUPABASE_URL: ${{ secrets.SUPABASE_URL }}');
@@ -64,6 +68,17 @@ describe('deploy workflow: required production runtime secrets', () => {
     );
     expect(deployYml).toContain('TWOGIS_CATALOG_API_KEY');
     expect(deployYml).toContain('GOOGLE_MAPS_SERVER_API_KEY');
+  });
+
+  it('pins communication state to the shared persistent production directory', () => {
+    expect(deployYml).toContain("printf 'COMM_STATE_DIR=/var/www/asi/shared/communication-state\\n'");
+    expect(deployYml).toContain("printf 'SESSION_STORE_DIR=/var/www/asi/shared/communication-state\\n'");
+    expect(deployYml).toContain("printf 'CONVERSATION_SESSION_DIR=/var/www/asi/shared/communication-state\\n'");
+    expect(deployScript).toContain('COMM_STATE_DIR="$SHARED_DIR/communication-state"');
+    expect(deployScript).toContain('mkdir -p "$RELEASES_DIR" "$SHARED_DIR" "$COMM_STATE_DIR"');
+    expect(deployScript).toContain('chgrp "$SERVICE_GROUP" "$COMM_STATE_DIR"');
+    expect(deployScript).toContain('chmod 2770 "$COMM_STATE_DIR"');
+    expect(deployScript).toContain('Deploy user cannot write $COMM_STATE_DIR');
   });
 
   it('wires Telegram production credentials and fail-closes when the bot token is missing', () => {
