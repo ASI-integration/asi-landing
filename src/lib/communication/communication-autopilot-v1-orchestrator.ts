@@ -1,4 +1,4 @@
-import { prepareRuntimeKnowledgeReply, KNOWLEDGE_REVIEW_REPLY_RU, shouldDeferTelegramWifiToVerifiedAutopilot } from './knowledge-boundary';
+import { prepareRuntimeKnowledgeReply, KNOWLEDGE_REVIEW_REPLY_RU, requestedCommunicationFacts, shouldDeferTelegramWifiToVerifiedAutopilot } from './knowledge-boundary';
 import { requestOperatorHandoff } from './handoff-lock';
 import type { ChannelAdapter } from './channels/base';
 import { recordCommunicationAutopilotTurn } from './communication-autopilot-crm';
@@ -116,7 +116,10 @@ function voiceIntentForAutopilot(topic: string): string {
 }
 
 export function shouldSkipAutopilotV1KnowledgeBoundary(message: string, channel: string): boolean {
-  return shouldDeferTelegramWifiToVerifiedAutopilot(message, channel);
+  if (shouldDeferTelegramWifiToVerifiedAutopilot(message, channel)) return true;
+  if (channel !== 'telegram') return false;
+  const requested = requestedCommunicationFacts(message);
+  return requested.length === 1 && requested[0] === 'parking';
 }
 
 export async function tryCommunicationAutopilotV1OrchestratorTurn(
@@ -128,11 +131,11 @@ export async function tryCommunicationAutopilotV1OrchestratorTurn(
 
   // This entrypoint can also be called independently of the main orchestrator.
   // Legacy session/passport/template strings are not evidence, including follow-ups.
-  // A Telegram-only Wi-Fi request must reach the verified booking/object path below;
-  // disclosure still stays fail-closed because that path checks booking verification.
-  const deferVerifiedWifiToAutopilot =
+  // Telegram-only Wi-Fi and parking requests must reach the booking/object path below.
+  // Wi-Fi disclosure still stays fail-closed because that path checks booking verification.
+  const deferVerifiedPropertyFactToAutopilot =
     shouldSkipAutopilotV1KnowledgeBoundary(input.text, input.envelope.channel);
-  const prepared = deferVerifiedWifiToAutopilot
+  const prepared = deferVerifiedPropertyFactToAutopilot
     ? null
     : await prepareRuntimeKnowledgeReply({
         message: input.text, coverUnclassified: true, channel: input.envelope.channel,
