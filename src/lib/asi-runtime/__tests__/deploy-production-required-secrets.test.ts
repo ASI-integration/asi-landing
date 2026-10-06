@@ -66,6 +66,25 @@ describe('deploy workflow: required production runtime secrets', () => {
     expect(deployYml).toContain('GOOGLE_MAPS_SERVER_API_KEY');
   });
 
+  it('wires Telegram production credentials and fail-closes when the bot token is missing', () => {
+    expect(deployYml).toContain('TELEGRAM_CORE_BOT_TOKEN: ${{ secrets.TELEGRAM_CORE_BOT_TOKEN }}');
+    expect(deployYml).toContain('TELEGRAM_TEST_CHAT_ID: ${{ secrets.TELEGRAM_TEST_CHAT_ID }}');
+    expect(deployYml).toContain('Missing required secret: TELEGRAM_CORE_BOT_TOKEN');
+    expect(deployYml).not.toContain('secrets.TELEGRAM_WEBHOOK_SECRET');
+  });
+
+  it('writes the Telegram text-autopilot runtime contract and verifies the webhook after deploy', () => {
+    expect(deployYml).toContain("printf 'TELEGRAM_BOT_TOKEN=%s\\n' \"$TELEGRAM_CORE_BOT_TOKEN\"");
+    expect(deployYml).toContain("printf 'TELEGRAM_WEBHOOK_SECRET=%s\\n' \"$TELEGRAM_WEBHOOK_SECRET_DERIVED\"");
+    expect(deployYml).toContain("asi-telegram-webhook-v1\\0");
+    expect(deployYml).toContain("printf 'LLM_SAFE_DOMAIN_ENABLED=1\\n'");
+    expect(deployYml).toContain("printf 'DRY_RUN_TELEGRAM_OUTBOUND=0\\n'");
+    expect(deployYml).toContain("printf 'COMMUNICATION_AUTOPILOT_FORCE_ENABLED=0\\n'");
+    expect(deployYml).toContain('Ensure Telegram production webhook');
+    expect(deployYml).toContain('TELEGRAM_WEBHOOK_SET=ok');
+    expect(deployYml).toContain('TELEGRAM_WEBHOOK_VERIFIED=ok');
+  });
+
   it('does not introduce HOST_VARIANT=ru', () => {
     expect(deployYml).not.toContain('HOST_VARIANT=ru');
     expect(deployYml).not.toMatch(/HOST_VARIANT:\s*['"]?ru['"]?/);
