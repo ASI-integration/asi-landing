@@ -205,7 +205,8 @@ async function main() {
   const link = await ensureLinkedReservation(sb, testChatId);
   const chatId = normalizeTelegramTestChatId(link.row.chat_id);
 
-  const bookingId = String(link.row.reservation_ref ?? link.row.booking_id ?? link.row.id ?? '').trim();
+  const bookingId = String(link.row.id ?? '').trim();
+  if (!bookingId) throw new Error('linked reservation is missing canonical id');
 
   // Production acceptance reuses a dedicated Telegram test chat. Reset any prior
   // conversation/escalation memory so a previous failed run cannot poison this one.
