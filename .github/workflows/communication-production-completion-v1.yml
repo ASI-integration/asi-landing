@@ -166,14 +166,14 @@ jobs:
               raise SystemExit(f'unsupported guest agent mode: {target}')
           text = path.read_text(encoding='utf-8')
           key = 'TELEGRAM_GUEST_AGENT_MODE'
-          pattern = re.compile(rf'(?m)^\\s*{re.escape(key)}\\s*=.*$')
+          pattern = re.compile(rf'(?m)^\s*{re.escape(key)}\s*=.*$')
           replacement = f'{key}={target}'
           if pattern.search(text):
               text = pattern.sub(replacement, text)
           else:
-              if text and not text.endswith('\\n'):
-                  text += '\\n'
-              text += replacement + '\\n'
+              if text and not text.endswith('\n'):
+                  text += '\n'
+              text += replacement + '\n'
           path.write_text(text, encoding='utf-8')
           PY
 
