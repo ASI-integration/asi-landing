@@ -11,6 +11,7 @@ on:
         options:
           - readiness
           - text_acceptance
+          - pilot_acceptance
           - guest_agent_shadow
           - guest_agent_primary
           - guest_agent_off
@@ -50,7 +51,7 @@ jobs:
         run: |
           set -euo pipefail
           case "$MODE" in
-            readiness|text_acceptance|guest_agent_shadow|guest_agent_primary|guest_agent_off|activate|acceptance|pronunciation_probe) ;;
+            readiness|text_acceptance|pilot_acceptance|guest_agent_shadow|guest_agent_primary|guest_agent_off|activate|acceptance|pronunciation_probe) ;;
             *) echo "::error::Unsupported mode: $MODE"; exit 1 ;;
           esac
           if [[ "$SAFETY_ACKNOWLEDGEMENT" != "authorized_for_selected_mode" ]]; then
@@ -113,6 +114,7 @@ jobs:
             scripts/communication-production-readiness-v1.mjs \
             scripts/communication-voice-live-probe-v1.mjs \
             scripts/telegram-autopilot-live-acceptance.mjs \
+            scripts/telegram-pilot-live-acceptance.mjs \
             scripts/telegram-autopilot-reservation.mjs \
             scripts/telegram-test-chat-id.mjs \
             scripts/telegram-voice-acceptance-input.mjs \
@@ -249,6 +251,30 @@ jobs:
               cd "$APP_DIR"
               run_acceptance_stage text_autopilot \
                 env ACCEPTANCE_BASE_URL="https://asi-global.ru" node "$REMOTE_TMP/telegram-autopilot-live-acceptance.mjs"
+              ;;
+
+            pilot_acceptance)
+              run_acceptance_stage pilot_text_active_state \
+                node "$REMOTE_TMP/communication-production-readiness-v1.mjs" --require-text-active --probe-network
+
+              REPORT="$(node "$REMOTE_TMP/communication-production-readiness-v1.mjs" --require-text-active)"
+              printf '%s\n' "$REPORT"
+              REPORT="$REPORT" node <<'NODE'
+          const report = JSON.parse(process.env.REPORT || '{}');
+          if (report.guestAgent?.mode !== 'primary') {
+            throw new Error(`Pilot acceptance requires Telegram Guest Agent primary mode; got ${report.guestAgent?.mode ?? 'missing'}`);
+          }
+          console.log('PILOT_GUEST_AGENT_MODE_VERIFIED=primary');
+          NODE
+
+              if [[ -z "${TELEGRAM_TEST_CHAT_ID:-}" ]]; then
+                echo "::error::Telegram pilot acceptance requires a dedicated TELEGRAM_TEST_CHAT_ID or telegram_test_chat_id input"
+                exit 1
+              fi
+
+              cd "$APP_DIR"
+              run_acceptance_stage pilot_guest_agent \
+                env ACCEPTANCE_BASE_URL="https://asi-global.ru" node "$REMOTE_TMP/telegram-pilot-live-acceptance.mjs"
               ;;
 
             guest_agent_shadow)
