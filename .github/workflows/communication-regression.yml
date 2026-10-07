@@ -10,6 +10,7 @@ on:
       - 'src/app/api/email/**'
       - 'src/app/api/internal/telegram-dry-run/**'
       - 'scripts/telegram-autopilot-live-acceptance.mjs'
+      - 'scripts/telegram-pilot-live-acceptance.mjs'
       - 'scripts/telegram-autopilot-reservation.mjs'
       - 'scripts/telegram-test-chat-id.mjs'
       - '.github/workflows/communication-production-completion-v1.yml'
@@ -40,6 +41,7 @@ jobs:
         run: |
           npx vitest run \
             src/lib/communication/__tests__/telegram-guest-agent-acceptance.test.ts \
+            src/lib/communication/__tests__/production-pilot-acceptance-contract.test.ts \
             --reporter=verbose
 
       - name: Conversational concierge regression
