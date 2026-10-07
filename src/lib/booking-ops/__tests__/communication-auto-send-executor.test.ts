@@ -315,6 +315,11 @@ describe('controlled actual auto-send executor', () => {
       delivery: { status: 'blocked' },
     });
     expect(sender).not.toHaveBeenCalled();
+    expect(recordAttempt).toHaveBeenLastCalledWith(
+      intent.id,
+      'blocked',
+      expect.objectContaining({ error_code: 'policy_actual_send_disabled' }),
+    );
   });
   it('creates one idempotent delivery for an eligible safe intent', async () => {
     const intent = seedIntent();

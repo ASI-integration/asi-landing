@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   getBookingOpsRecord: vi.fn(), listBookingOpsRecords: vi.fn(), requireBookingOpsRecordScope: vi.fn(), syncBookingOpsTasksForRecordId: vi.fn(),
   initializeBookingOpsCoreLoop: vi.fn(), initializeCheckinExecutionBaseline: vi.fn(), initializeInStayCheckoutBaseline: vi.fn(),
   recomputeBookingCheckinReadiness: vi.fn(), listBookingOpsTasksForRecord: vi.fn(), syncBookingOpsCommunications: vi.fn(),
+  getEligibleAutoSendIntents: vi.fn(), enqueueAutoSendDelivery: vi.fn(), executeAutoSendDelivery: vi.fn(),
   checkBookingOverbookingRisk: vi.fn(), getAvailabilityStatus: vi.fn(),
   initializeGuestLegalExecution: vi.fn(), requestGuestDocumentsDraft: vi.fn(), createContractDraft: vi.fn(),
   createDepositRequestDraft: vi.fn(), createMvdDraft: vi.fn(), recomputeGuestLegalReadiness: vi.fn(),
@@ -65,6 +66,11 @@ vi.mock('../instay-checkout-autopilot', () => ({ initializeInStayCheckoutBaselin
 vi.mock('../pre-checkin-control-center', () => ({ recomputeBookingCheckinReadiness: mocks.recomputeBookingCheckinReadiness }));
 vi.mock('../tasks', () => ({ listBookingOpsTasksForRecord: mocks.listBookingOpsTasksForRecord }));
 vi.mock('../communication-orchestrator', () => ({ syncBookingOpsCommunications: mocks.syncBookingOpsCommunications }));
+vi.mock('../communication-auto-send-executor', () => ({
+  getEligibleAutoSendIntents: mocks.getEligibleAutoSendIntents,
+  enqueueAutoSendDelivery: mocks.enqueueAutoSendDelivery,
+  executeAutoSendDelivery: mocks.executeAutoSendDelivery,
+}));
 vi.mock('../availability-overbooking-protection', () => ({
   checkBookingOverbookingRisk: mocks.checkBookingOverbookingRisk,
   getAvailabilityStatus: mocks.getAvailabilityStatus,
@@ -111,6 +117,9 @@ describe('Pilot autorun orchestrator', () => {
     mocks.createDepositRequestDraft.mockResolvedValue({}); mocks.createMvdDraft.mockResolvedValue({});
     mocks.syncBookingOpsTasksForRecordId.mockResolvedValue({ ok: true }); mocks.listBookingOpsTasksForRecord.mockResolvedValue({ ok: true, tasks: [] });
     mocks.syncBookingOpsCommunications.mockResolvedValue({ ok: true, communications: [], plan: {} });
+    mocks.getEligibleAutoSendIntents.mockResolvedValue({ ok: true, intents: [] });
+    mocks.enqueueAutoSendDelivery.mockResolvedValue({ ok: true, delivery: { id: 'delivery-1' } });
+    mocks.executeAutoSendDelivery.mockResolvedValue({ ok: true, delivery: { status: 'sent' } });
   });
 
   it('initializes owner setup from a lead and keeps a real property as the next explicit action', async () => {
@@ -159,6 +168,42 @@ describe('Pilot autorun orchestrator', () => {
     expect(mocks.initializeInStayCheckoutBaseline).toHaveBeenCalledWith('booking-1', expectedScope);
     expect(mocks.syncBookingOpsTasksForRecordId).toHaveBeenCalledWith('booking-1', { expectedScope });
     expect(mocks.syncBookingOpsCommunications).toHaveBeenCalledWith(expect.objectContaining({ record, expectedScope }));
+  });
+
+  it('executes scoped auto-send only for the current booking when explicitly enabled', async () => {
+    const record = { id: 'booking-1', accountId: 'account-1', propertyId: 'prop-1', checkInAt: '2026-07-10', checkOutAt: '2026-07-12', isBlocked: false };
+    mocks.getBookingOpsRecord.mockResolvedValue(record);
+    mocks.requireBookingOpsRecordScope.mockResolvedValue(record);
+    mocks.getEligibleAutoSendIntents.mockResolvedValue({
+      ok: true,
+      intents: [{ id: 'intent-1' }, { id: 'intent-2' }],
+    });
+    mocks.enqueueAutoSendDelivery
+      .mockResolvedValueOnce({ ok: true, delivery: { id: 'delivery-1' } })
+      .mockResolvedValueOnce({ ok: true, delivery: { id: 'delivery-2' } });
+    mocks.executeAutoSendDelivery
+      .mockResolvedValueOnce({ ok: true, delivery: { status: 'sent' } })
+      .mockResolvedValueOnce({ ok: false, delivery: { status: 'blocked' } });
+
+    await runPilotAutorunForBooking('booking-1', { accountId: 'account-1', allowScopedAutoSend: true });
+
+    expect(mocks.getEligibleAutoSendIntents).toHaveBeenCalledWith({
+      bookingOpsRecordId: 'booking-1',
+      accountId: 'account-1',
+      limit: 20,
+    });
+    expect(mocks.enqueueAutoSendDelivery).toHaveBeenCalledTimes(2);
+    expect(mocks.executeAutoSendDelivery).toHaveBeenCalledTimes(2);
+    expect(mocks.executeAutoSendDelivery).toHaveBeenCalledWith(
+      'delivery-1',
+      expect.objectContaining({ accountId: 'account-1', source: 'operator' }),
+    );
+    const persisted = [...mocks.runs.values()].at(-1);
+    expect(persisted?.metadata).toMatchObject({
+      real_messages_sent: true,
+      real_messages_sent_count: 1,
+      external_api_calls: true,
+    });
   });
 
   it('rejects a booking from another authenticated account before creating an autorun record', async () => {

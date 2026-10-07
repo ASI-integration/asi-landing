@@ -510,10 +510,14 @@ async function blockDelivery(
   decision: CommunicationAutoSendDecision | null,
   reason: string,
 ) {
-  await recordAutoSendAttempt(delivery.communicationIntentId, decision?.decision ?? 'blocked', {
-    booking_id: delivery.bookingId,
-    error_code: reason,
-  });
+  await recordAutoSendAttempt(
+    delivery.communicationIntentId,
+    decision && !decision.allowed ? decision.decision : 'blocked',
+    {
+      booking_id: delivery.bookingId,
+      error_code: reason,
+    },
+  );
   return updateDelivery(delivery.id, {
     status: 'blocked',
     failure_reason: reason,
