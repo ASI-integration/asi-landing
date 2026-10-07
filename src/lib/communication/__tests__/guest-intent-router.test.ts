@@ -21,12 +21,20 @@ describe('guest communication intent router', () => {
     ['можно скидку?', 'money_sensitive'],
     ['верните деньги', 'money_sensitive'],
     ['сломался замок', 'emergency_or_damage'],
+    ['мой ИНН 1234567890', 'personal_data_sensitive'],
   ] as const)('escalates sensitive intent: %s', (messageText, expectedIntent) => {
     const result = classifyGuestCommunicationIntent({ messageText, currentIdentity: 'guest' });
 
     expect(result.detectedIntent).toBe(expectedIntent);
     expect(result.shouldEscalate).toBe(true);
     expect(result.suggestedRoute).toBe('operator_review');
+  });
+
+  it('does not mistake ordinary words containing short sensitive-data substrings for personal data', () => {
+    const result = classifyGuestCommunicationIntent({ messageText: 'Какой длинный был день.' });
+
+    expect(result.detectedIntent).toBe('unclear_role');
+    expect(result.shouldEscalate).toBe(false);
   });
 
   it('asks confirmation when saved owner sends a guest stay question', () => {
