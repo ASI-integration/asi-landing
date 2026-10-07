@@ -8,6 +8,11 @@ on:
       - 'src/lib/communication/**'
       - 'src/app/api/max/webhook/**'
       - 'src/app/api/email/**'
+      - 'src/app/api/internal/telegram-dry-run/**'
+      - 'scripts/telegram-autopilot-live-acceptance.mjs'
+      - 'scripts/telegram-autopilot-reservation.mjs'
+      - 'scripts/telegram-test-chat-id.mjs'
+      - '.github/workflows/communication-production-completion-v1.yml'
       - '.github/workflows/communication-regression.yml'
   workflow_dispatch:
 
@@ -30,6 +35,27 @@ jobs:
 
       - name: Install deps
         run: npm ci
+
+      - name: Telegram pilot acceptance regression
+        run: |
+          npx vitest run \
+            src/lib/communication/__tests__/telegram-guest-agent-acceptance.test.ts \
+            --reporter=verbose
+
+      - name: Conversational concierge regression
+        run: |
+          npx vitest run \
+            src/lib/communication/__tests__/conversational-concierge-v1.test.ts \
+            --reporter=verbose
+
+      - name: Production text acceptance contract regression
+        run: |
+          npx vitest run \
+            src/lib/communication/__tests__/communication-autopilot-v1.test.ts \
+            src/lib/communication/__tests__/production-text-readiness.test.ts \
+            src/lib/communication/__tests__/telegram-live-acceptance-chat-id.test.ts \
+            src/app/api/internal/telegram-dry-run/__tests__/route.test.ts \
+            --reporter=verbose
 
       - name: Guest communication, Telegram voice, MAX voice, Email and pending identity regression
         run: |

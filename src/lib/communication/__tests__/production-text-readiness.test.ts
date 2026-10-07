@@ -52,6 +52,17 @@ describe('production Telegram text readiness', () => {
     expect(result.report.active).toBe(false);
   });
 
+  it('reports the Telegram Guest Agent rollout mode without changing text readiness', () => {
+    const result = runReadiness({ TELEGRAM_GUEST_AGENT_MODE: 'primary' }, ['--require-text-active']);
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.report.textActive).toBe(true);
+    expect(result.report.guestAgent).toEqual({
+      mode: 'primary',
+      primary: true,
+      shadow: false,
+    });
+  });
+
   it('fails closed when Telegram outbound is dry-run suppressed', () => {
     const result = runReadiness(
       { DRY_RUN_TELEGRAM_OUTBOUND: '1' },
