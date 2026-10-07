@@ -189,6 +189,24 @@ describe('Guest Communication Operational Completion v1', () => {
     expect(result.replyText).not.toMatch(/вернул|возврат оформлен|refund issued/i);
   });
 
+  it('routes explicit operator, failed payment, booking change, lost item and luggage storage to review', () => {
+    for (const [messageText, intent] of [
+      ['Позовите живого оператора', 'operator_request'],
+      ['Оплата не прошла, что делать?', 'payment_issue'],
+      ['Хочу перенести дату заезда', 'booking_change'],
+      ['Я забыл вещь в квартире после выезда', 'lost_item'],
+      ['Можно оставить чемоданы до заезда?', 'luggage_storage_request'],
+    ] as const) {
+      const result = runCommunicationAutopilotV1({ messageText, property, bookingVerified: true });
+      expect(result).toMatchObject({
+        action: 'operator_handoff',
+        intent,
+        needsOperator: true,
+        safetyBlockedAction: true,
+      });
+    }
+  });
+
   it('7. does not hallucinate a missing property fact', () => {
     const result = runCommunicationAutopilotV1({
       messageText: 'Где парковка?', property: { ...property, parking_text: null }, bookingVerified: true,

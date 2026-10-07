@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 vi.mock('@/lib/supabase', () => ({ supabase: { from: vi.fn(() => { throw new Error('No live DB'); }) } }));
 import { prepareRuntimeKnowledgeReply, requestedCommunicationFacts, prepareCommunicationFactReply,
-  objectKnowledgeFact, canDeliverPreparedFacts, shouldDeferTelegramWifiToVerifiedAutopilot } from '../knowledge-boundary';
+  objectKnowledgeFact, canDeliverPreparedFacts, shouldDeferTelegramWifiToVerifiedAutopilot, conversationalReply } from '../knowledge-boundary';
 const now = Date.parse('2026-10-01T12:00:00Z');
 const scope = { accountId: 'a', propertyId: 'p', bookingId: 'b', guestId: 'g', sessionId: 'telegram:123' };
 const entry = { entry_id: 'e', object_id: 'p', property_id: 'p', key: 'checkout_time',
@@ -76,6 +76,10 @@ describe('runtime knowledge preparation', () => {
     const { db, from } = fixture();
     expect((await prepareRuntimeKnowledgeReply({ ...input, channel: 'email' }, db, () => now))?.reviewRequired).toBe(true);
     expect(from).not.toHaveBeenCalled();
+  });
+  it('answers a vague help request without inventing a property fact', () => {
+    expect(conversationalReply('Мне нужна помощь', true)).toMatch(/помогу|засел|бронир/i);
+    expect(conversationalReply('Мне нужна помощь, не работает душ', true)).toBeNull();
   });
   it('safe non-fact message does not perform retrieval', async () => {
     const { db, from } = fixture();

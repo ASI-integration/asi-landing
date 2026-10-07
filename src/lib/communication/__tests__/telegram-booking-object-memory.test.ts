@@ -394,8 +394,11 @@ describe('telegram booking/object memory layer', () => {
     expect(byPhone?.guest_name).toBe('Тестовый Гость');
   });
 
-  it('returns checkout time from property context', () => {
+  it('returns checkout time from property context without duplicating the preposition', () => {
     const reply = composeGuestCheckoutReplyRu(TEST_PROPERTY);
     expect(reply).toMatch(/12:00/);
+    expect(composeGuestCheckoutReplyRu({ ...TEST_PROPERTY, checkout_time: 'до 12:00' })).toBe(
+      'Выезд до 12:00. Ключи оставьте по инструкции из заселения.',
+    );
   });
 });

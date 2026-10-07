@@ -530,7 +530,9 @@ export function composeGuestBabyCribReplyRu(property: TelegramPropertyObjectV1 |
 
 export function composeGuestCheckoutReplyRu(property: TelegramPropertyObjectV1 | null | undefined): string | null {
   if (!property?.checkout_time) return null;
-  return `Выезд до ${property.checkout_time}. Ключи оставьте по инструкции из заселения.`;
+  const checkout = String(property.checkout_time).trim();
+  const normalized = /^до\s+/iu.test(checkout) ? checkout : `до ${checkout}`;
+  return `Выезд ${normalized}. Ключи оставьте по инструкции из заселения.`;
 }
 
 export async function resolveTelegramGuestBookingObjectContext(params: {
