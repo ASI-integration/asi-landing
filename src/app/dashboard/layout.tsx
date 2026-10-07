@@ -25,6 +25,7 @@ type DashboardNavItem = {
     | 'settings'
     | 'onboarding'
     | 'roadmap'
+    | 'missionControl'
     | 'development';
   label?: string;
 };
@@ -44,6 +45,7 @@ const navItems: DashboardNavItem[] = [
   { href: '/dashboard/property-knowledge', key: 'propertyKnowledge', label: 'Данные объектов' },
   { href: '/dashboard/automations', key: 'automations', label: 'Автоматизация' },
   { href: '/dashboard/roadmap', key: 'roadmap', label: 'План ASI' },
+  { href: '/dashboard/control-center', key: 'missionControl', label: 'Центр управления' },
   { href: '/dashboard/development', key: 'development', label: 'Разработка ASI' },
   { href: '/dashboard/settings', key: 'settings', label: 'Настройки' },
 ] as const;
@@ -60,7 +62,7 @@ function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
     if (item.key === 'automations') {
       return session?.isCrmOperator === true;
     }
-    if (item.key === 'development' || item.key === 'roadmap') {
+    if (item.key === 'development' || item.key === 'roadmap' || item.key === 'missionControl') {
       return session?.isDevelopmentOwner === true;
     }
     return true;
