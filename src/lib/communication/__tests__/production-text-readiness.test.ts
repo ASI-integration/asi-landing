@@ -99,9 +99,21 @@ describe('production Telegram text readiness', () => {
     );
   });
 
+  it('provides rollback-safe Guest Agent shadow/primary/off production controls', () => {
+    expect(workflow).toContain('- guest_agent_shadow');
+    expect(workflow).toContain('- guest_agent_primary');
+    expect(workflow).toContain('- guest_agent_off');
+    expect(workflow).toContain('set_guest_agent_mode shadow');
+    expect(workflow).toContain('set_guest_agent_mode primary');
+    expect(workflow).toContain('set_guest_agent_mode off');
+    expect(workflow).toContain('TELEGRAM_GUEST_AGENT_MODE');
+    expect(workflow).toContain('GUEST_AGENT_MODE_VERIFIED=');
+    expect(workflow).toContain('restoring previous production env');
+  });
+
   it('provides a text-only production acceptance mode that does not require voice', () => {
     expect(workflow).toContain('- text_acceptance');
-    expect(workflow).toContain('readiness|text_acceptance|activate|acceptance|pronunciation_probe');
+    expect(workflow).toContain('readiness|text_acceptance|guest_agent_shadow|guest_agent_primary|guest_agent_off|activate|acceptance|pronunciation_probe');
     expect(workflow).toContain('--require-text-active --probe-network');
     expect(workflow).toContain('run_acceptance_stage text_autopilot');
     expect(workflow).toContain(
