@@ -5,7 +5,7 @@ import {
   guestAcceptanceMatrixCount,
   type GuestAcceptanceMatrixEntry,
 } from '../guest-acceptance-matrix';
-import { decideCommunicationAutopilotResponseWithLlmRouter } from '../autopilot';
+import { composeCommunicationAutopilotContextReply, decideCommunicationAutopilotResponseWithLlmRouter } from '../autopilot';
 import type { LlmRouterDecision, LlmRouterProvider } from '../llm-router/types';
 
 const context = {
@@ -66,7 +66,7 @@ describe('Guest acceptance matrix v1 (100 phrases)', () => {
       expect(p.classifyGuestMessage).not.toHaveBeenCalled();
     }
 
-    const reply = autopilot.replyText ?? '';
+    const reply = composeCommunicationAutopilotContextReply({ decision: autopilot, lang: 'ru' });
     expect(reply.length).toBeGreaterThan(0);
 
     for (const forbidden of entry.forbidden_claims) {
@@ -118,7 +118,7 @@ export async function buildAcceptanceReport(): Promise<
       entry,
       actualIntent: autopilot.metadata.intent,
       actualAction: autopilot.action,
-      replyText: autopilot.replyText ?? '',
+      replyText: composeCommunicationAutopilotContextReply({ decision: autopilot, lang: 'ru' }),
       agent: deriveAgentFieldsFromAutopilot(autopilot),
     });
     const pass = isStrictEntry(entry) ? evalResult.pass : evalResult.failures.filter((f) => f.startsWith('forbidden')).length === 0;
