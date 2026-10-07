@@ -177,11 +177,28 @@ function ensureDir(dir) {
   mkdirSync(dir, { recursive: true });
 }
 
+export function isRetryableStatusWriteError(error) {
+  return ['EPERM', 'EBUSY', 'EACCES'].includes(String(error?.code ?? ''));
+}
+
 function atomicWriteJson(filePath, value) {
   ensureDir(path.dirname(filePath));
   const tmp = `${filePath}.tmp-${process.pid}`;
   writeFileSync(tmp, JSON.stringify(value, null, 2) + '\n', 'utf8');
-  renameSync(tmp, filePath);
+
+  const attempts = 8;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      renameSync(tmp, filePath);
+      return;
+    } catch (error) {
+      if (!isRetryableStatusWriteError(error) || attempt >= attempts) {
+        rmSync(tmp, { force: true });
+        throw error;
+      }
+      sleepSync(Math.min(1000, 25 * (2 ** (attempt - 1))));
+    }
+  }
 }
 
 function processAlive(pid) {

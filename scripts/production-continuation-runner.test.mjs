@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 
 import {
   buildStatusPatch,
+  isRetryableStatusWriteError,
   isTransientGhFailure,
   latestCheckRollupGreen,
   parseArgs,
@@ -81,6 +82,13 @@ test('isTransientGhFailure recognizes retryable GitHub/network failures', () => 
   assert.equal(isTransientGhFailure('Could not resolve host: api.github.com'), true);
   assert.equal(isTransientGhFailure('HTTP 503 Service Unavailable'), true);
   assert.equal(isTransientGhFailure('validation failed: bad workflow input'), false);
+});
+
+test('isRetryableStatusWriteError recognizes transient Windows file-lock errors', () => {
+  assert.equal(isRetryableStatusWriteError({ code: 'EPERM' }), true);
+  assert.equal(isRetryableStatusWriteError({ code: 'EBUSY' }), true);
+  assert.equal(isRetryableStatusWriteError({ code: 'EACCES' }), true);
+  assert.equal(isRetryableStatusWriteError({ code: 'ENOENT' }), false);
 });
 
 test('buildStatusPatch keeps prior fields and refreshes updatedAt', () => {
