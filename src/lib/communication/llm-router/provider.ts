@@ -84,6 +84,22 @@ function providerFromName(name: LlmRouterProviderName, role: ProviderRole): LlmR
     });
   }
 
+  if (name === 'doubao') {
+    const apiKey = process.env.DOUBAO_API_KEY ?? process.env.ARK_API_KEY;
+    if (!apiKey) return createDisabledLlmRouterProvider();
+    return createChatCompletionsLlmRouterProvider({
+      providerName: 'doubao',
+      apiKey,
+      baseUrl: process.env.DOUBAO_BASE_URL || 'https://ark.cn-beijing.volces.com/api/v3',
+      model: process.env.DOUBAO_MODEL || 'doubao-seed-2-1-pro-260915',
+      timeoutMs: num(
+        role === 'primary' ? process.env.LLM_ROUTER_PRIMARY_TIMEOUT_MS : process.env.LLM_ROUTER_SECONDARY_TIMEOUT_MS,
+        role === 'primary' ? 5000 : 6000,
+      ),
+      maxRetries: nonNegativeNum(process.env.LLM_ROUTER_MAX_RETRIES, 1),
+    });
+  }
+
   if (name === 'openai' || name === 'openai-premium') {
     const apiKey = process.env.OPENAI_API_KEY ?? process.env.LLM_API_KEY;
     if (!apiKey) return createDisabledLlmRouterProvider();

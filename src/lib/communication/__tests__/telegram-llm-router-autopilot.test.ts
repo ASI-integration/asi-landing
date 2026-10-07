@@ -322,6 +322,37 @@ describe('Telegram LLM router autopilot fallback', () => {
     expect(result.metadata.operationsAction?.category).toBe('operator_access_support');
   });
 
+  it('supports Doubao as an OpenAI-compatible secondary router with thinking disabled', async () => {
+    vi.stubEnv('LLM_ROUTER_MODE', 'auto');
+    vi.stubEnv('LLM_ROUTER_AUTO_FALLBACK_ENABLED', 'true');
+    vi.stubEnv('LLM_ROUTER_PRIMARY_PROVIDER', 'deepseek');
+    vi.stubEnv('LLM_ROUTER_SECONDARY_PROVIDER', 'doubao');
+    vi.stubEnv('LLM_ROUTER_MAX_RETRIES', '0');
+    vi.stubEnv('DEEPSEEK_API_KEY', 'test-deepseek');
+    vi.stubEnv('DOUBAO_API_KEY', 'test-doubao');
+    vi.stubEnv('DOUBAO_MODEL', 'doubao-seed-2-1-pro-260915');
+
+    const fetchMock = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(chatResponse('{bad json'))
+      .mockResolvedValueOnce(chatResponse(validDecision));
+
+    const result = await decideCommunicationAutopilotResponseWithLlmRouter({
+      channel: 'telegram',
+      messageText: 'подскажите пожалуйста по моему вопросу',
+      context,
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const secondCall = fetchMock.mock.calls[1];
+    expect(String(secondCall?.[0])).toContain('ark.cn-beijing.volces.com/api/v3/chat/completions');
+    const body = JSON.parse(String((secondCall?.[1] as RequestInit)?.body));
+    expect(body.model).toBe('doubao-seed-2-1-pro-260915');
+    expect(body.thinking).toEqual({ type: 'disabled' });
+    expect(body.response_format).toEqual({ type: 'json_object' });
+    expect(result.metadata.llmRouter?.provider).toBe('doubao');
+  });
+
   it('auto-fails over from invalid DeepSeek JSON to OpenAI nano', async () => {
     vi.stubEnv('LLM_ROUTER_MODE', 'auto');
     vi.stubEnv('LLM_ROUTER_AUTO_FALLBACK_ENABLED', 'true');
