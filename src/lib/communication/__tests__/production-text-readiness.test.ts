@@ -109,6 +109,12 @@ describe('production Telegram text readiness', () => {
     expect(workflow).toContain('TELEGRAM_GUEST_AGENT_MODE');
     expect(workflow).toContain('GUEST_AGENT_MODE_VERIFIED=');
     expect(workflow).toContain('restoring previous production env');
+    const guestAgentBlock = workflow.slice(
+      workflow.indexOf('          set_guest_agent_mode() {'),
+      workflow.indexOf('          run_acceptance_stage() {'),
+    );
+    expect(guestAgentBlock).toContain("text.endswith('\\n')");
+    expect(guestAgentBlock).not.toContain("text.endswith('\\\\n')");
   });
 
   it('provides a text-only production acceptance mode that does not require voice', () => {
