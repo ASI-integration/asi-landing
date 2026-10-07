@@ -161,6 +161,11 @@ export function conversationalReply(message: string, ru = true): string | null {
   if (/^(?:спасибо|благодарю|thanks|thank you)$/u.test(text)) {
     return ru ? 'Пожалуйста!' : 'You are welcome!';
   }
+  if (/^(?:мне нужна помощь|нужна помощь|помогите(?: пожалуйста)?|у меня вопрос|подскажите(?: пожалуйста)?)$/u.test(text)) {
+    return ru
+      ? 'Конечно. Напишите, пожалуйста, что именно нужно — помогу с заселением, проживанием, оплатой или бронированием.'
+      : 'Of course. Tell me what you need help with — check-in, your stay, payment, or the booking.';
+  }
   if (/^(?:как дела|как ты|how are you|я устал|устал с дороги|хочу отдохнуть|i am tired|i'm tired)$/u.test(text)) {
     return ru ? 'Я здесь, если понадобится помощь. Желаю хорошего отдыха!' : 'I am here if you need help. Have a good rest!';
   }

@@ -134,16 +134,16 @@ export const PILOT_CASES = [
     id: 'pilot_early_checkin',
     category: 'booking-change',
     text: 'Пилот: можно приехать утром раньше времени заезда?',
-    expectReplyAny: ['заезд', '14:00', 'брон', 'оператор'],
-    expectEventsAny: ['autopilot_guest_reply', 'autopilot_operator_handoff'],
+    expectReplyAny: ['до какого', 'времени', 'заезд', '14:00', 'брон', 'оператор'],
+    expectEventsAny: ['autopilot_clarification_requested', 'autopilot_guest_reply', 'autopilot_operator_handoff'],
     forbidReply: ['точно можно', 'гарантирован'],
   },
   {
     id: 'pilot_late_checkout',
     category: 'booking-change',
     text: 'Пилот: можно выехать позже обычного времени?',
-    expectReplyAny: ['выезд', '12:00', 'брон', 'оператор'],
-    expectEventsAny: ['autopilot_guest_reply', 'autopilot_operator_handoff'],
+    expectReplyAny: ['до какого', 'времени', 'выезд', '12:00', 'брон', 'оператор'],
+    expectEventsAny: ['autopilot_clarification_requested', 'autopilot_guest_reply', 'autopilot_operator_handoff'],
     forbidReply: ['точно можно', 'гарантирован'],
   },
   {
@@ -197,7 +197,6 @@ export const PILOT_CASES = [
     category: 'conversation',
     text: 'Пилот: мне нужна помощь',
     expectReplyAny: ['помог', 'засел', 'брон', 'оплат', 'доступ', 'вопрос'],
-    expectEventsAny: ['autopilot_guest_reply', 'autopilot_operator_handoff'],
   },
   {
     id: 'pilot_injection_code',

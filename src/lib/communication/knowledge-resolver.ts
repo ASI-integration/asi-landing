@@ -356,9 +356,13 @@ export function requiresAutopilotOperatorEscalation(messageText: string): string
   const lower = messageText.toLowerCase();
   if (/пожар|дым|газ|угроз.*жизн|emergency|fire|smoke|gas leak|medical emergency/i.test(lower)) return 'critical_safety';
   if (/не могу (?:войти|попасть)|застрял.*снаруж|код.*не работ|потерял.*ключ|(?:замок|дверь).{0,40}(?:слом(?:ан|ана|ано|аны|ался|алась|алось|ались)|не\s+работ|не\s+откры)|lockout|locked out|cannot (?:enter|get in)|access code.*not work|lost key|(?:lock|door).{0,40}(?:broken|not working|will not open|won't open)/i.test(lower)) return 'urgent_access_problem';
+  if (/(?:позов|подключ|нужен|нужна|хочу|дайте|перевед).{0,32}(?:жив(?:ого|ой)\s+)?(?:оператор|менеджер|человек)|(?:оператор|менеджер).{0,24}(?:позов|подключ|нужен|нужна|хочу)|(?:live|human)\s+(?:agent|operator)|speak\s+to\s+(?:a\s+)?(?:human|agent|operator)/i.test(lower)) return 'operator_request';
+  if (/(?:оплат|платеж|платёж|карт).{0,40}(?:не\s+прош|ошиб|отклон|не\s+получ|не\s+спис)|(?:payment|card).{0,40}(?:failed|declined|not\s+go\s+through)/i.test(lower)) return 'payment_issue';
   if (/возврат|верн(?:уть|ите) деньги|компенсац|refund|money back|compensation|chargeback|payment dispute|disput(?:e|ing|ed).{0,32}payment|payment.{0,32}disput(?:e|ing|ed)/i.test(lower)) return 'refund_request';
   if (/отмен.*брон|cancel.*(?:booking|reservation)/i.test(lower)) return 'cancellation';
-  if (/измен.*(?:дат|брон)|перенест.*брон|change.*(?:booking|reservation|dates?)|move my booking|extend (?:my )?stay|продл.*прожив/i.test(lower)) return 'booking_change';
+  if (/измен.*(?:дат|брон)|перенест.*(?:брон|дат|заезд|выезд)|(?:дат|заезд|выезд).{0,32}перенест|change.*(?:booking|reservation|dates?)|move my booking|extend (?:my )?stay|продл.*прожив/i.test(lower)) return 'booking_change';
+  if (/(?:забыл|забыла|забыли|оставил|оставила|оставили).{0,40}(?:вещ|телефон|ноутбук|зарядк|кошел|паспорт).{0,80}(?:квартир|номер|апартамент|после\s+выезд|после\s+отъезд)?|(?:lost|left).{0,32}(?:item|phone|laptop|wallet|passport).{0,48}(?:apartment|room|property|after\s+checkout)?/i.test(lower)) return 'lost_item';
+  if (/(?:оставить|оставим|оставлю|хранить|хранение).{0,40}(?:чемодан|багаж).{0,40}(?:до|после).{0,20}(?:заезд|выезд)|(?:чемодан|багаж).{0,40}(?:оставить|хранить|хранение)|(?:luggage|bags).{0,40}(?:before\s+check-?in|after\s+check-?out|storage|leave)/i.test(lower)) return 'luggage_storage_request';
   if (/нет горячей воды|нет отоплен|нет электрич|света нет|интернет не работ|no hot water|no heating|no electricity|power outage|internet (?:is )?(?:down|not working)/i.test(lower)) return 'maintenance_issue';
   if (/не работ|сломал|сломан|протека|поломк|maintenance|broken|leaking|does not work|doesn't work/i.test(lower)) return 'maintenance_issue';
   if (/уборк|грязн|нет бель|нет полотен|cleaning|dirty|missing linen|missing towels|supplies/i.test(lower)) return 'cleaning_issue';
