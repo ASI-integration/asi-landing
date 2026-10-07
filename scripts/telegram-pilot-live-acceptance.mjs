@@ -195,7 +195,7 @@ export const PILOT_CASES = [
   {
     id: 'pilot_vague',
     category: 'conversation',
-    text: 'Пилот: мне нужна помощь',
+    text: 'Мне нужна помощь',
     expectReplyAny: ['помог', 'засел', 'брон', 'оплат', 'доступ', 'вопрос'],
   },
   {
