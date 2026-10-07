@@ -4,13 +4,16 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: Readiness, text-only acceptance, full activation, or full voice acceptance
+        description: Readiness, text-only acceptance, Guest Agent rollout control, full activation, or full voice acceptance
         required: true
         default: readiness
         type: choice
         options:
           - readiness
           - text_acceptance
+          - guest_agent_shadow
+          - guest_agent_primary
+          - guest_agent_off
           - activate
           - acceptance
           - pronunciation_probe
@@ -47,7 +50,7 @@ jobs:
         run: |
           set -euo pipefail
           case "$MODE" in
-            readiness|text_acceptance|activate|acceptance|pronunciation_probe) ;;
+            readiness|text_acceptance|guest_agent_shadow|guest_agent_primary|guest_agent_off|activate|acceptance|pronunciation_probe) ;;
             *) echo "::error::Unsupported mode: $MODE"; exit 1 ;;
           esac
           if [[ "$SAFETY_ACKNOWLEDGEMENT" != "authorized_for_selected_mode" ]]; then
@@ -147,6 +150,63 @@ jobs:
             sudo systemctl is-active --quiet "$SYSTEMD_SERVICE"
           }
 
+          set_guest_agent_mode() {
+            local target_mode="$1"
+            local backup_file="${ENV_FILE}.bak.guest-agent-${target_mode}.$(date -u +%Y%m%dT%H%M%SZ)"
+            cp "$ENV_FILE" "$backup_file"
+            echo "Created timestamped Guest Agent env backup."
+
+            TARGET_MODE="$target_mode" ENV_FILE="$ENV_FILE" python3 - <<'PY'
+          import os, re
+          from pathlib import Path
+
+          path = Path(os.environ['ENV_FILE'])
+          target = os.environ['TARGET_MODE']
+          if target not in {'off', 'shadow', 'primary'}:
+              raise SystemExit(f'unsupported guest agent mode: {target}')
+          text = path.read_text(encoding='utf-8')
+          key = 'TELEGRAM_GUEST_AGENT_MODE'
+          pattern = re.compile(rf'(?m)^\\s*{re.escape(key)}\\s*=.*$')
+          replacement = f'{key}={target}'
+          if pattern.search(text):
+              text = pattern.sub(replacement, text)
+          else:
+              if text and not text.endswith('\\n'):
+                  text += '\\n'
+              text += replacement + '\\n'
+          path.write_text(text, encoding='utf-8')
+          PY
+
+            echo "=== Guest Agent mode: ${target_mode} ==="
+            if ! (
+              restart_with_current_env
+              sleep 4
+              curl -fsS http://127.0.0.1:3000/api/health
+              echo
+              REPORT="$(node "$REMOTE_TMP/communication-production-readiness-v1.mjs" --require-text-active --probe-network)"
+              printf '%s\\n' "$REPORT"
+              REPORT="$REPORT" EXPECTED_GUEST_AGENT_MODE="$target_mode" node <<'NODE'
+          const report = JSON.parse(process.env.REPORT || '{}');
+          const expected = process.env.EXPECTED_GUEST_AGENT_MODE;
+          if (report.textActive !== true) throw new Error('production text readiness is not active');
+          if (report.guestAgent?.mode !== expected) {
+            throw new Error(`Guest Agent mode mismatch: expected ${expected}, got ${report.guestAgent?.mode ?? 'missing'}`);
+          }
+          console.log(`GUEST_AGENT_MODE_VERIFIED=${expected}`);
+          NODE
+            ); then
+              echo "::error::Guest Agent rollout verification failed; restoring previous production env."
+              cp "$backup_file" "$ENV_FILE"
+              restart_with_current_env
+              sleep 3
+              curl -fsS http://127.0.0.1:3000/api/health || true
+              echo
+              echo "Previous production env restored."
+              exit 1
+            fi
+            echo "Guest Agent mode verified; rollback backup preserved at a timestamped path."
+          }
+
           run_acceptance_stage() {
             local stage="$1"
             shift
@@ -189,6 +249,18 @@ jobs:
               cd "$APP_DIR"
               run_acceptance_stage text_autopilot \
                 env ACCEPTANCE_BASE_URL="https://asi-global.ru" node "$REMOTE_TMP/telegram-autopilot-live-acceptance.mjs"
+              ;;
+
+            guest_agent_shadow)
+              set_guest_agent_mode shadow
+              ;;
+
+            guest_agent_primary)
+              set_guest_agent_mode primary
+              ;;
+
+            guest_agent_off)
+              set_guest_agent_mode off
               ;;
 
             activate)
