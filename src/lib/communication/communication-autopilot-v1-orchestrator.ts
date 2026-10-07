@@ -118,6 +118,7 @@ function voiceIntentForAutopilot(topic: string): string {
 export function shouldSkipAutopilotV1KnowledgeBoundary(message: string, channel: string): boolean {
   if (shouldDeferTelegramWifiToVerifiedAutopilot(message, channel)) return true;
   if (channel !== 'telegram') return false;
+  if (requiresAutopilotOperatorEscalation(message) === 'refund_request') return true;
   if (classifyKnowledgeTopic(message) === 'checkin_time') return true;
   const requested = requestedCommunicationFacts(message);
   return requested.length === 1 && requested[0] === 'parking';
