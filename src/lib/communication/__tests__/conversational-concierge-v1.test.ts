@@ -215,9 +215,11 @@ describe('Conversational Concierge v1 dialogue pack', () => {
     expect(shouldSkipAutopilotV1KnowledgeBoundary('Какой Wi-Fi?', 'telegram')).toBe(true);
     expect(shouldSkipAutopilotV1KnowledgeBoundary('Есть парковка?', 'telegram')).toBe(true);
     expect(shouldSkipAutopilotV1KnowledgeBoundary('Во сколько заезд?', 'telegram')).toBe(true);
+    expect(shouldSkipAutopilotV1KnowledgeBoundary('Хочу вернуть деньги', 'telegram')).toBe(true);
     expect(shouldSkipAutopilotV1KnowledgeBoundary('Какой Wi-Fi?', 'email')).toBe(false);
     expect(shouldSkipAutopilotV1KnowledgeBoundary('Есть парковка?', 'email')).toBe(false);
     expect(shouldSkipAutopilotV1KnowledgeBoundary('Во сколько заезд?', 'email')).toBe(false);
+    expect(shouldSkipAutopilotV1KnowledgeBoundary('Хочу вернуть деньги', 'email')).toBe(false);
     expect(
       shouldSkipAutopilotV1KnowledgeBoundary('Какой Wi-Fi и где парковка?', 'telegram'),
     ).toBe(false);
