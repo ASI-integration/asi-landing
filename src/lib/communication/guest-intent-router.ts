@@ -68,7 +68,7 @@ function has(text: string, ...patterns: RegExp[]): boolean {
 function isPersonalDataSensitive(text: string): boolean {
   return has(
     text,
-    /персональн|личн(ые|ых)\s+данн|паспорт|банковск.*карт|cvv|cvc|снилс|инн/,
+    /персональн|личн(ые|ых)\s+данн|паспорт|банковск.*карт|cvv|cvc|(?:^|[^а-яa-z0-9])(?:снилс|инн)(?:$|[^а-яa-z0-9])/,
   );
 }
 
