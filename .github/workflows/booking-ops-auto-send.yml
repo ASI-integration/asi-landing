@@ -21,8 +21,8 @@ on:
         type: number
 
 concurrency:
-  group: booking-ops-safe-auto-send
-  cancel-in-progress: false
+  group: booking-ops-safe-auto-send-${{ github.event_name }}
+  cancel-in-progress: ${{ github.event_name == 'schedule' }}
 
 permissions:
   contents: read
@@ -53,6 +53,7 @@ jobs:
             local account_id="$1"
             local dry_run="$2"
             local max_batch_size="$3"
+            local source="$4"
             if [[ ! "$account_id" =~ $UUID_RE ]]; then
               echo "::error::Invalid canonical account UUID"
               return 1
@@ -62,7 +63,7 @@ jobs:
               return 1
             fi
             local body
-            body="$(node -e "process.stdout.write(JSON.stringify({accountId:process.argv[1],dryRun:process.argv[2]==='true',maxBatchSize:Number(process.argv[3])}))" "$account_id" "$dry_run" "$max_batch_size")"
+            body="$(node -e "process.stdout.write(JSON.stringify({accountId:process.argv[1],dryRun:process.argv[2]==='true',maxBatchSize:Number(process.argv[3]),source:process.argv[4]}))" "$account_id" "$dry_run" "$max_batch_size" "$source")"
             curl --fail-with-body --silent --show-error \
               --retry 2 --retry-all-errors --max-time 60 \
               -X POST "$RUNNER_URL" \
@@ -73,7 +74,7 @@ jobs:
           }
 
           if [[ "$EVENT_NAME" = "workflow_dispatch" ]]; then
-            run_account "${MANUAL_ACCOUNT_ID:-}" "${MANUAL_DRY_RUN:-true}" "${MANUAL_MAX_BATCH_SIZE:-10}"
+            run_account "${MANUAL_ACCOUNT_ID:-}" "${MANUAL_DRY_RUN:-true}" "${MANUAL_MAX_BATCH_SIZE:-10}" "manual"
             exit 0
           fi
 
@@ -93,5 +94,5 @@ jobs:
           fi
 
           for account_id in "${account_ids[@]}"; do
-            run_account "$account_id" "false" "10"
+            run_account "$account_id" "false" "10" "scheduled"
           done

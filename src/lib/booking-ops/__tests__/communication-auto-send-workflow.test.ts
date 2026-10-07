@@ -16,10 +16,17 @@ describe('Booking Ops safe auto-send workflow', () => {
     expect(workflow).toContain('Invalid canonical account UUID');
   });
 
+  it('separates manual and scheduled concurrency so approval backlog cannot block operator dry-runs', () => {
+    expect(workflow).toContain('group: booking-ops-safe-auto-send-${{ github.event_name }}');
+    expect(workflow).toContain("cancel-in-progress: ${{ github.event_name == 'schedule' }}");
+  });
+
   it('sends accountId, dryRun and bounded batch size to the protected runner', () => {
     expect(workflow).toContain('MANUAL_MAX_BATCH_SIZE: ${{ inputs.max_batch_size }}');
     expect(workflow).toContain('max_batch_size must be between 1 and 20');
-    expect(workflow).toContain('maxBatchSize:Number(process.argv[3])');
+    expect(workflow).toContain('maxBatchSize:Number(process.argv[3]),source:process.argv[4]');
+    expect(workflow).toContain('"manual"');
+    expect(workflow).toContain('"scheduled"');
     expect(workflow).toContain('/api/internal/booking-ops/communications/auto-send/run');
   });
 

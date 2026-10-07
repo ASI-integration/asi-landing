@@ -41,6 +41,7 @@ describe('Booking Ops account-scoped auto-send scheduler', () => {
     expect(workflow).toContain('/auto-send/accounts');
     expect(workflow).toContain('accountId:process.argv[1]');
     expect(workflow).toContain('for account_id in');
-    expect(workflow).toContain('run_account "$account_id" "false"');
+    expect(workflow).toContain('run_account "$account_id" "false" "10" "scheduled"');
+    expect(workflow).toContain('run_account "${MANUAL_ACCOUNT_ID:-}" "${MANUAL_DRY_RUN:-true}" "${MANUAL_MAX_BATCH_SIZE:-10}" "manual"');
   });
 });
