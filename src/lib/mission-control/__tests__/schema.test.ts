@@ -28,11 +28,13 @@ describe('mission control status schema', () => {
     });
   });
 
-  it('accepts a missing per-stage progress value', () => {
+  it('accepts unknown overall or per-stage progress without inventing a percentage', () => {
     const parsed = parseMissionControlStatusPayload({
       ...validPayload(),
+      progressPercent: null,
       stageProgressPercent: null,
     });
+    expect(parsed?.progressPercent).toBeNull();
     expect(parsed?.stageProgressPercent).toBeNull();
   });
 
@@ -51,12 +53,17 @@ describe('mission control status schema', () => {
   it('rejects invalid progress values instead of silently treating them as missing', () => {
     expect(parseMissionControlStatusPayload({
       ...validPayload(),
+      progressPercent: 120,
+    })).toBeNull();
+
+    expect(parseMissionControlStatusPayload({
+      ...validPayload(),
       stageProgressPercent: 120,
     })).toBeNull();
 
     expect(parseMissionControlStatusPayload({
       ...validPayload(),
-      stageProgressPercent: '42',
+      progressPercent: '42',
     })).toBeNull();
   });
 

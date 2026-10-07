@@ -8,7 +8,7 @@ export type MissionControlStatusPayload = {
   projectId: MissionControlProjectId;
   status: MissionControlStatusKind;
   stage: string;
-  progressPercent: number;
+  progressPercent: number | null;
   stageProgressPercent: number | null;
   completedItems: number;
   totalItems: number;

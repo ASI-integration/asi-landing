@@ -80,8 +80,15 @@ export function parseMissionControlStatusPayload(body: unknown): MissionControlS
     ? body.status as MissionControlStatusKind
     : null;
   const stage = readSafeString(body.stage, 120, false);
-  const progressPercent = readPercent(body.progressPercent);
+  const progressPercent = readPercent(body.progressPercent, true);
   const stageProgressPercent = readPercent(body.stageProgressPercent, true);
+  if (
+    body.progressPercent !== undefined
+    && body.progressPercent !== null
+    && progressPercent === null
+  ) {
+    return null;
+  }
   if (
     body.stageProgressPercent !== undefined
     && body.stageProgressPercent !== null
@@ -101,7 +108,6 @@ export function parseMissionControlStatusPayload(body: unknown): MissionControlS
     !projectId
     || !status
     || !stage
-    || progressPercent === null
     || completedItems === null
     || totalItems === null
     || currentItem === null

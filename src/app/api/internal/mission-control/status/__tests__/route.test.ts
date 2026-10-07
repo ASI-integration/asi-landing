@@ -84,6 +84,17 @@ describe('POST /api/internal/mission-control/status', () => {
     expect(saveMissionControlStatus).not.toHaveBeenCalled();
   });
 
+  it('accepts an explicitly unknown overall progress value', async () => {
+    const { POST } = await import('../route');
+    const response = await POST(request({ ...validPayload, progressPercent: null }, INGEST_TOKEN));
+
+    expect(response.status).toBe(200);
+    expect(saveMissionControlStatus).toHaveBeenCalledWith(expect.objectContaining({
+      projectId: 'kim',
+      progressPercent: null,
+    }));
+  });
+
   it('stores only the bounded validated status payload', async () => {
     const { POST } = await import('../route');
     const response = await POST(request(validPayload, INGEST_TOKEN));

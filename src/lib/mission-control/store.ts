@@ -60,7 +60,7 @@ function idleProject(projectId: MissionControlProjectId, nowIso: string): Missio
     name: MISSION_CONTROL_PROJECT_NAMES[projectId],
     status: 'idle',
     stage: 'Нет данных',
-    progressPercent: 0,
+    progressPercent: null,
     stageProgressPercent: null,
     completedItems: 0,
     totalItems: 0,

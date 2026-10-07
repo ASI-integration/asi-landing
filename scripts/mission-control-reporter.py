@@ -191,12 +191,10 @@ def asi_payload() -> dict:
         kind = "idle"
         stage = phase.replace("_", " ").upper() or "НЕТ ДАННЫХ"
 
-    if task == "telegram-text" and blocker.startswith("acceptance_failed"):
-        completed_items, total_items, progress = 3, 4, 75.0
-    elif run_conclusion == "success":
-        completed_items, total_items, progress = 4, 4, 100.0
+    if run_conclusion == "success":
+        completed_items, total_items, progress = 1, 1, 100.0
     else:
-        completed_items, total_items, progress = 0, 0, 0.0
+        completed_items, total_items, progress = 0, 0, None
 
     event = ""
     if blocker:
@@ -238,7 +236,7 @@ def oris_payload() -> dict:
         "projectId": "oris",
         "status": "waiting",
         "stage": "ОЧЕРЕДЬ НЕ ЗАПУЩЕНА",
-        "progressPercent": 0.0,
+        "progressPercent": None,
         "stageProgressPercent": None,
         "completedItems": 0,
         "totalItems": 0,

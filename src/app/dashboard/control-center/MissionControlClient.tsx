@@ -100,7 +100,7 @@ function ProjectCard({ project }: { project: MissionControlDashboardProject }) {
   const badgeLabel = project.stale && project.status !== 'done'
     ? 'ДАННЫЕ УСТАРЕЛИ'
     : STATUS_LABELS[effectiveStatus];
-  const progress = clampPercent(project.progressPercent);
+  const progress = project.progressPercent === null ? null : clampPercent(project.progressPercent);
   const stageProgress = project.stageProgressPercent === null
     ? null
     : clampPercent(project.stageProgressPercent);
@@ -132,7 +132,7 @@ function ProjectCard({ project }: { project: MissionControlDashboardProject }) {
               ОБЩИЙ ПРОГРЕСС
             </div>
             <div className="mt-1 text-6xl font-black tracking-[-0.05em] text-slate-950 md:text-7xl">
-              {formatPercent(progress)}
+              {progress === null ? '—' : formatPercent(progress)}
             </div>
           </div>
           <div className="pb-2 text-right">
@@ -146,10 +146,12 @@ function ProjectCard({ project }: { project: MissionControlDashboardProject }) {
         </div>
 
         <div className="mt-5 h-4 overflow-hidden rounded-full bg-slate-100">
-          <div
-            className={`h-full rounded-full transition-[width] duration-500 ${STATUS_BAR[effectiveStatus]}`}
-            style={{ width: `${progress}%` }}
-          />
+          {progress !== null ? (
+            <div
+              className={`h-full rounded-full transition-[width] duration-500 ${STATUS_BAR[effectiveStatus]}`}
+              style={{ width: `${progress}%` }}
+            />
+          ) : null}
         </div>
       </div>
 
