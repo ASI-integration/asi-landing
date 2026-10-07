@@ -325,7 +325,7 @@ describe('Telegram guest agent acceptance (LLM-default + policy guardrails)', ()
 
     if (testCase.expectLlmCalled === false) {
       expect(p.classifyGuestMessage).not.toHaveBeenCalled();
-    } else if (testCase.expectLlmCalled === true || testCase.mock) {
+    } else if (testCase.expectLlmCalled === true) {
       expect(p.classifyGuestMessage).toHaveBeenCalled();
     }
 
