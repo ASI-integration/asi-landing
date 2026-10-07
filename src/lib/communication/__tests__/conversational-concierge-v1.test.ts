@@ -216,6 +216,18 @@ describe('Conversational Concierge v1 dialogue pack', () => {
     expect(shouldSkipAutopilotV1KnowledgeBoundary('Есть парковка?', 'telegram')).toBe(true);
     expect(shouldSkipAutopilotV1KnowledgeBoundary('Во сколько заезд?', 'telegram')).toBe(true);
     expect(shouldSkipAutopilotV1KnowledgeBoundary('Хочу вернуть деньги', 'telegram')).toBe(true);
+    expect(shouldSkipAutopilotV1KnowledgeBoundary('Во сколько выезд?', 'telegram')).toBe(true);
+    expect(shouldSkipAutopilotV1KnowledgeBoundary('Как найти адрес квартиры?', 'telegram')).toBe(true);
+    expect(shouldSkipAutopilotV1KnowledgeBoundary('Срочно, код двери не работает', 'telegram')).toBe(true);
+    expect(shouldSkipAutopilotV1KnowledgeBoundary('Хочу отменить бронь', 'telegram')).toBe(true);
+    expect(shouldSkipAutopilotV1KnowledgeBoundary('Хочу перенести дату брони', 'telegram')).toBe(true);
+    expect(shouldSkipAutopilotV1KnowledgeBoundary('В ванной грязно, нет полотенец', 'telegram')).toBe(true);
+    expect(shouldSkipAutopilotV1KnowledgeBoundary('Не работает душ', 'telegram')).toBe(true);
+    expect(shouldSkipAutopilotV1KnowledgeBoundary('Куда выбросить мусор?', 'telegram')).toBe(true);
+    expect(shouldSkipAutopilotV1KnowledgeBoundary('Есть детская кроватка?', 'telegram')).toBe(true);
+    expect(shouldSkipAutopilotV1KnowledgeBoundary('Позовите живого оператора', 'telegram')).toBe(true);
+    expect(shouldSkipAutopilotV1KnowledgeBoundary('Оплата не прошла, что делать?', 'telegram')).toBe(true);
+    expect(shouldSkipAutopilotV1KnowledgeBoundary('Мне нужна помощь', 'telegram')).toBe(false);
     expect(shouldSkipAutopilotV1KnowledgeBoundary('Какой Wi-Fi?', 'email')).toBe(false);
     expect(shouldSkipAutopilotV1KnowledgeBoundary('Есть парковка?', 'email')).toBe(false);
     expect(shouldSkipAutopilotV1KnowledgeBoundary('Во сколько заезд?', 'email')).toBe(false);

@@ -118,10 +118,26 @@ function voiceIntentForAutopilot(topic: string): string {
 export function shouldSkipAutopilotV1KnowledgeBoundary(message: string, channel: string): boolean {
   if (shouldDeferTelegramWifiToVerifiedAutopilot(message, channel)) return true;
   if (channel !== 'telegram') return false;
-  if (requiresAutopilotOperatorEscalation(message) === 'refund_request') return true;
-  if (classifyKnowledgeTopic(message) === 'checkin_time') return true;
+
+  // Mixed fact requests still stay behind the provenance boundary; V1 only owns
+  // a single operational/fact turn at a time here.
   const requested = requestedCommunicationFacts(message);
-  return requested.length === 1 && requested[0] === 'parking';
+  if (requested.length > 1) return false;
+
+  // Telegram operational turns that V1 can classify safely must reach the verified
+  // booking/object path instead of being swallowed by the legacy generic knowledge
+  // review. V1 remains fail-closed: access secrets require booking verification,
+  // missing property facts ask one clarification, and sensitive actions hand off.
+  if (shouldPreferCommunicationAutopilotV1(message)) return true;
+
+  const normalized = String(message ?? '').toLowerCase().replace(/ё/g, 'е');
+  const explicitOperatorRequest =
+    /(?:позов|подключ|нужен|нужна|хочу|дайте|перевед).{0,32}(?:жив(?:ого|ой)\s+)?(?:оператор|менеджер|человек)|(?:оператор|менеджер).{0,24}(?:позов|подключ|нужен|нужна|хочу)/i.test(normalized);
+  if (explicitOperatorRequest) return true;
+
+  // Payment failure is an operational policy turn, not a request for a factual
+  // deposit/payment value. Let the canonical guest path clarify or hand off.
+  return /(?:оплат|платеж|платёж).{0,32}(?:не\s+прош|ошиб|отклон|не\s+получ)|(?:payment|card).{0,32}(?:failed|declined|not\s+go\s+through)/i.test(normalized);
 }
 
 export async function tryCommunicationAutopilotV1OrchestratorTurn(
