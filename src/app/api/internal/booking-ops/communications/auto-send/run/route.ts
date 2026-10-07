@@ -26,8 +26,9 @@ export async function POST(req: Request) {
       { status: 400 },
     );
   }
+  const source = body.source === 'manual' ? 'operator' : 'scheduled';
   const result = await executeEligibleAutoSendBatch({
-    source: 'scheduled',
+    source,
     accountId,
     dryRun: body.dryRun === true || body.dry_run === true,
     maxBatchSize: Math.min(Math.max(Number(body.maxBatchSize ?? body.max_batch_size ?? 10) || 10, 1), 20),
