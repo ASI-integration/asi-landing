@@ -131,6 +131,14 @@ async function main() {
     forceDisabled: truthy(process.env.COMMUNICATION_AUTOPILOT_FORCE_DISABLED),
     forceEnabled: truthy(process.env.COMMUNICATION_AUTOPILOT_FORCE_ENABLED),
   };
+  const guestAgentMode = String(process.env.TELEGRAM_GUEST_AGENT_MODE ?? 'off').trim().toLowerCase();
+  const guestAgent = {
+    mode: ['off', 'shadow', 'assist', 'controlled_override', 'controlled-override', 'primary'].includes(guestAgentMode)
+      ? guestAgentMode
+      : 'off',
+    primary: guestAgentMode === 'primary',
+    shadow: guestAgentMode === 'shadow',
+  };
   const voice = {
     replyEnabled: truthy(process.env.VOICE_REPLY_ENABLED),
     ffmpegPresent: hasFfmpeg(),
@@ -172,6 +180,7 @@ async function main() {
     tts,
     telegram,
     autopilot,
+    guestAgent,
     voice,
     network: args.has('--probe-network') ? { telegram: await telegramProbe() } : { telegram: { attempted: false } },
   };
