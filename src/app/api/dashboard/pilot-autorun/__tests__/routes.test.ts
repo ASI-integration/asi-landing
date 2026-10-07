@@ -49,7 +49,31 @@ describe('pilot autorun protected API', () => {
       expect.objectContaining({ userId: 'user-1' }), '11111111-1111-4111-8111-111111111111',
     );
     expect(pilot.runPilotAutorunForBooking).toHaveBeenCalledWith(
-      '11111111-1111-4111-8111-111111111111', expect.objectContaining({ accountId: 'account-1' }),
+      '11111111-1111-4111-8111-111111111111',
+      expect.objectContaining({ accountId: 'account-1', allowScopedAutoSend: false }),
+    );
+  });
+
+  it('passes scoped auto-send only after an explicit admin request', async () => {
+    auth.requireOpsAdminSession.mockResolvedValue({ session: { userId: 'user-1', email: 'ops@asi.test' } });
+    access.requireBookingOpsApiAccess.mockResolvedValue({
+      ok: true, accountId: 'account-1', actorId: 'user-1',
+      bookingId: '11111111-1111-4111-8111-111111111111', propertyId: 'property-1',
+    });
+    pilot.runPilotAutorunForBooking.mockResolvedValue({});
+    const { POST } = await import('../run/route');
+    const response = await POST(new Request('http://localhost/api/dashboard/pilot-autorun/run', {
+      method: 'POST',
+      body: JSON.stringify({
+        scope: 'booking',
+        ref: '11111111-1111-4111-8111-111111111111',
+        allowScopedAutoSend: true,
+      }),
+    }));
+    expect(response.status).toBe(200);
+    expect(pilot.runPilotAutorunForBooking).toHaveBeenCalledWith(
+      '11111111-1111-4111-8111-111111111111',
+      expect.objectContaining({ accountId: 'account-1', allowScopedAutoSend: true }),
     );
   });
 

@@ -60,7 +60,7 @@ export async function POST(req: Request): Promise<NextResponse> {
       dryRun: body.dryRun === true,
       maxSteps: typeof body.maxSteps === 'number' ? body.maxSteps : undefined,
       allowSafeCommunicationQueue: body.allowSafeCommunicationQueue !== false,
-      allowScopedAutoSend: false,
+      allowScopedAutoSend: body.allowScopedAutoSend === true,
       forceRecompute: body.forceRecompute === true,
       scope: scope === 'property_setup' ? 'property' : scope === 'batch' ? 'all' : scope,
     };
