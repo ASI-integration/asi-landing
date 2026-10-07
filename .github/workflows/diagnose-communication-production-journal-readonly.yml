@@ -169,7 +169,7 @@ jobs:
 
           echo "[section] sanitized communication errors from last ${MINUTES} minutes"
           JOURNAL="$(journalctl -u "$SERVICE" --since "-${MINUTES} min" -o cat 2>/dev/null || true)"
-          FILTERED="$(printf '%s\n' "$JOURNAL" | grep -E 'telegram-dry-run|\[tg:|\[comm:|processMessage|TypeError|ReferenceError|Error:|Supabase|guest|reservation' || true)"
+          FILTERED="$(printf '%s\n' "$JOURNAL" | grep -Ei 'telegram-dry-run|\[tg:|\[comm:|processMessage|TypeError|ReferenceError|Error:|Supabase|guest|reservation' || true)"
 
           if [[ -z "$FILTERED" ]]; then
             echo "[journal] no matching communication/error lines"
