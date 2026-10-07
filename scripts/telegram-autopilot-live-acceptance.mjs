@@ -16,24 +16,32 @@ const { createClient } = requireFromApp('@supabase/supabase-js');
 
 const DEFAULT_BASE_URL = 'https://asi-global.ru';
 const PROPERTY_ID = process.env.TELEGRAM_AUTOPILOT_PROPERTY_ID?.trim() || 'prop_A';
-const ACCEPTANCE_CASES = [
+const ACCEPTANCE_SUITE = process.env.TELEGRAM_AUTOPILOT_ACCEPTANCE_SUITE?.trim().toLowerCase() || 'core';
+
+const CORE_ACCEPTANCE_CASES = [
   {
     id: 'wifi',
     text: 'Какой Wi-Fi?',
     expectReply: ['ASI-Test-WiFi', 'test12345'],
     expectEvents: ['autopilot_guest_reply', 'conversation_resolved'],
+    expectEscalated: false,
+    expectFinalReplied: true,
   },
   {
     id: 'parking',
     text: 'Есть парковка?',
     expectReply: ['парковка во дворе по возможности, место не гарантируется'],
     expectEvents: ['autopilot_guest_reply', 'conversation_resolved'],
+    expectEscalated: false,
+    expectFinalReplied: true,
   },
   {
     id: 'checkin',
     text: 'Во сколько заезд?',
     expectReply: ['после 14:00'],
     expectEvents: ['autopilot_guest_reply', 'conversation_resolved'],
+    expectEscalated: false,
+    expectFinalReplied: true,
   },
   {
     id: 'refund',
@@ -41,6 +49,66 @@ const ACCEPTANCE_CASES = [
     expectReply: ['оператор'],
     expectEvents: ['autopilot_operator_handoff', 'operator_followup_required'],
     expectNeedsOperator: true,
+    expectEscalated: true,
+    expectFinalReplied: true,
+  },
+];
+
+const PRIMARY_ACCEPTANCE_CASES = [
+  {
+    id: 'checkout',
+    text: 'До скольки выезд?',
+    expectPropertyReply: ['check_out_time'],
+    expectEscalated: false,
+    expectFinalReplied: true,
+  },
+  {
+    id: 'address',
+    text: 'Какой адрес?',
+    expectPropertyReply: ['address'],
+    expectEscalated: false,
+    expectFinalReplied: true,
+  },
+  {
+    id: 'house_rules',
+    text: 'Какие правила проживания?',
+    expectPropertyReply: ['house_rules_text'],
+    expectEscalated: false,
+    expectFinalReplied: true,
+  },
+  {
+    id: 'late_checkout',
+    text: 'Можно выехать попозже завтра?',
+    forbidReply: ['гарантируем', 'точно можно'],
+    expectFinalReplied: true,
+  },
+  {
+    id: 'urgent_access',
+    text: 'Не могу попасть в квартиру, код не работает',
+    expectReply: ['оператор'],
+    expectEscalated: true,
+    expectFinalReplied: true,
+  },
+  {
+    id: 'complaint',
+    text: 'У вас ужасный сервис, требую менеджера',
+    expectReply: ['оператор'],
+    expectEscalated: true,
+    expectFinalReplied: true,
+  },
+  {
+    id: 'operator_request',
+    text: 'Позовите живого человека',
+    expectReply: ['оператор'],
+    expectEscalated: true,
+    expectFinalReplied: true,
+  },
+  {
+    id: 'cancellation',
+    text: 'Хочу отменить бронирование',
+    forbidReply: ['вернём 100', 'гарантируем возврат'],
+    expectEscalated: true,
+    expectFinalReplied: true,
   },
 ];
 
@@ -90,7 +158,7 @@ function supabaseClient() {
 async function getProperty(sb) {
   const { data, error } = await sb
     .from('tg_property_knowledge')
-    .select('property_id,wifi_name,wifi_password,parking_text,check_in_text,communication_autopilot')
+    .select('property_id,address,wifi_name,wifi_password,parking_text,check_in_text,check_out_time,house_rules_text,communication_autopilot')
     .eq('property_id', PROPERTY_ID)
     .maybeSingle();
   if (error) throw new Error(`property lookup failed: ${error.message}`);
@@ -208,21 +276,29 @@ async function main() {
   const bookingId = String(link.row.id ?? '').trim();
   if (!bookingId) throw new Error('linked reservation is missing canonical id');
 
-  // Production acceptance reuses a dedicated Telegram test chat. Reset any prior
-  // conversation/escalation memory so a previous failed run cannot poison this one.
-  await postDryRun({
-    baseUrl,
-    secret,
-    chatId,
-    text: '/reset_identity',
-    objectName: PROPERTY_ID,
-    bookingId,
-  });
+  if (!['core', 'primary'].includes(ACCEPTANCE_SUITE)) {
+    throw new Error(`Unsupported TELEGRAM_AUTOPILOT_ACCEPTANCE_SUITE=${ACCEPTANCE_SUITE}`);
+  }
+  const acceptanceCases =
+    ACCEPTANCE_SUITE === 'primary'
+      ? [...CORE_ACCEPTANCE_CASES, ...PRIMARY_ACCEPTANCE_CASES]
+      : CORE_ACCEPTANCE_CASES;
 
   const startedAt = new Date().toISOString();
   const rows = [];
 
-  for (const testCase of ACCEPTANCE_CASES) {
+  for (const testCase of acceptanceCases) {
+    // Isolate each case from prior escalation/session state.
+    await postDryRun({
+      baseUrl,
+      secret,
+      chatId,
+      text: '/reset_identity',
+      objectName: PROPERTY_ID,
+      bookingId,
+    });
+    const caseStartedAt = new Date().toISOString();
+
     const dryRun = await postDryRun({
       baseUrl,
       secret,
@@ -232,19 +308,39 @@ async function main() {
       bookingId,
     });
     const reply = String(dryRun.replyText ?? '');
-    const events = await getRecentEvents(sb, startedAt, testCase.text);
+    const events = await getRecentEvents(sb, caseStartedAt, testCase.text);
     const eventTypes = new Set(events.map((event) => event.event_type));
     const failures = [];
 
-    for (const needle of testCase.expectReply) {
+    for (const needle of testCase.expectReply ?? []) {
       if (!includesCi(reply, needle)) failures.push(`reply missing "${needle}"`);
     }
-    for (const eventType of testCase.expectEvents) {
+    for (const field of testCase.expectPropertyReply ?? []) {
+      const value = property[field];
+      if (!value) failures.push(`property field ${field} is missing`);
+      else if (!includesCi(reply, value)) failures.push(`reply missing property.${field}`);
+    }
+    for (const needle of testCase.forbidReply ?? []) {
+      if (includesCi(reply, needle)) failures.push(`reply contains forbidden "${needle}"`);
+    }
+    for (const eventType of testCase.expectEvents ?? []) {
       if (!eventTypes.has(eventType)) failures.push(`missing CRM event ${eventType}`);
     }
     if (testCase.expectNeedsOperator) {
       const handoff = events.find((event) => event.event_type === 'autopilot_operator_handoff');
       if (handoff?.metadata?.needs_operator !== true) failures.push('handoff metadata needs_operator is not true');
+    }
+    if (
+      typeof testCase.expectEscalated === 'boolean' &&
+      Boolean(dryRun.escalated) !== testCase.expectEscalated
+    ) {
+      failures.push(`escalated expected ${testCase.expectEscalated} got ${Boolean(dryRun.escalated)}`);
+    }
+    if (
+      typeof testCase.expectFinalReplied === 'boolean' &&
+      Boolean(dryRun.finalReplied) !== testCase.expectFinalReplied
+    ) {
+      failures.push(`finalReplied expected ${testCase.expectFinalReplied} got ${Boolean(dryRun.finalReplied)}`);
     }
 
     rows.push({
@@ -253,6 +349,9 @@ async function main() {
       pass: failures.length === 0,
       failures,
       reply,
+      escalated: Boolean(dryRun.escalated),
+      finalReplied: Boolean(dryRun.finalReplied),
+      actions: dryRun.actions ?? [],
       events: [...eventTypes],
     });
   }
@@ -261,6 +360,7 @@ async function main() {
   const summary = {
     pass: failed.length === 0,
     baseUrl,
+    acceptanceSuite: ACCEPTANCE_SUITE,
     propertyId: PROPERTY_ID,
     chatId,
     reservationId: link.row.id ?? null,
@@ -274,6 +374,9 @@ async function main() {
       wifi_password: property.wifi_password ?? null,
       parking_text: property.parking_text ?? null,
       check_in_text: property.check_in_text ?? null,
+      check_out_time: property.check_out_time ?? null,
+      address: property.address ?? null,
+      house_rules_text: property.house_rules_text ?? null,
     },
     startedAt,
     total: rows.length,
