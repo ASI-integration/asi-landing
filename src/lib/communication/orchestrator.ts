@@ -1,4 +1,4 @@
-import { prepareRuntimeKnowledgeReply, prepareCommunicationFactReply, conversationalReply, shouldDeferTelegramWifiToVerifiedAutopilot } from './knowledge-boundary';
+import { prepareRuntimeKnowledgeReply, prepareCommunicationFactReply, conversationalReply } from './knowledge-boundary';
 import { getChannelAdapter } from './channels';
 import { bindIdentity } from './identity-binding';
 import { evictIdentityCacheForTelegramChatId } from './identity';
@@ -170,6 +170,7 @@ import {
 } from './communication-autopilot-v1';
 import {
   shouldPreferCommunicationAutopilotV1,
+  shouldSkipAutopilotV1KnowledgeBoundary,
   tryCommunicationAutopilotV1OrchestratorTurn,
 } from './communication-autopilot-v1-orchestrator';
 import { recordCommunicationAutopilotTurn } from './communication-autopilot-crm';
@@ -2142,13 +2143,13 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
       replyText = neutralKnowledgeReply;
       llmSucceeded = true;
     }
-    const deferVerifiedWifiToAutopilot =
-      shouldDeferTelegramWifiToVerifiedAutopilot(text, envelope.channel);
+    const deferVerifiedPropertyFactToAutopilot =
+      shouldSkipAutopilotV1KnowledgeBoundary(text, envelope.channel);
     const preparedKnowledge =
       senderRoute.shouldRunGuestConcierge &&
       !escalationSafetyGate &&
       !neutralKnowledgeReply &&
-      !deferVerifiedWifiToAutopilot
+      !deferVerifiedPropertyFactToAutopilot
         ? await prepareRuntimeKnowledgeReply({
             coverUnclassified: true,
             message: text,
