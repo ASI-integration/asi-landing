@@ -1,6 +1,7 @@
 import { processMessage } from './orchestrator';
 import { executeTelegramOperationalPolicyMultiIntent } from './telegram-operational-policy-executor';
 import { resolveTelegramTextMeta } from './telegram-text-meta-handler';
+import { detectTelegramPromptInjection, TELEGRAM_PROMPT_INJECTION_FIRST_REPLY } from './telegram-prompt-injection-guard';
 import type { InboundMessageEnvelope, ProcessResult } from './types';
 
 export type TelegramDryRunInput = {
@@ -48,6 +49,21 @@ export async function runTelegramDryRun(input: TelegramDryRunInput): Promise<Tel
   const bookingId = String(input.bookingId ?? '').trim();
   const senderIdentity = String(input.senderIdentity ?? '').trim();
   const guestTestMode = Boolean(input.guestTestMode);
+
+  // The protected production dry-run bypasses the outer Telegram update handler.
+  // In guest test mode, mirror the live ingress prompt-injection guard before
+  // processMessage so production acceptance exercises the same safety boundary.
+  if (guestTestMode && detectTelegramPromptInjection(text).detected) {
+    return {
+      detectedIntents: [],
+      replyText: TELEGRAM_PROMPT_INJECTION_FIRST_REPLY,
+      actions: [],
+      escalated: false,
+      slowAckSent: false,
+      finalReplied: true,
+    };
+  }
+
   const meta = resolveTelegramTextMeta({ baseText: text, telegramLangCode: 'ru' });
 
   const policyInput = {
