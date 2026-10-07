@@ -60,7 +60,7 @@ export type LlmRouterInput = {
   forceStrongerProvider?: boolean;
 };
 
-export type LlmRouterProviderName = 'deepseek' | 'openai' | 'openai-premium' | 'disabled';
+export type LlmRouterProviderName = 'deepseek' | 'doubao' | 'openai' | 'openai-premium' | 'disabled';
 
 export type LlmRouterProvider = {
   readonly name: LlmRouterProviderName;
