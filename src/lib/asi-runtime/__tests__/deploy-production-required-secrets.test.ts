@@ -16,6 +16,7 @@ describe('deploy workflow: required production runtime secrets', () => {
     expect(deployYml).toContain('SUPABASE_URL: ${{ secrets.SUPABASE_URL }}');
     expect(deployYml).toContain('SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}');
     expect(deployYml).toContain('SESSION_SECRET: ${{ secrets.SESSION_SECRET }}');
+    expect(deployYml).toContain('ASI_RUNTIME_INGEST_TOKEN: ${{ secrets.ASI_RUNTIME_INGEST_TOKEN }}');
   });
 
   it('fails closed before deploy when SUPABASE_URL is missing', () => {
@@ -30,6 +31,12 @@ describe('deploy workflow: required production runtime secrets', () => {
     expect(deployYml).toMatch(/Missing required secret: SESSION_SECRET/);
   });
 
+  it('fails closed before deploy when ASI_RUNTIME_INGEST_TOKEN is missing or too short', () => {
+    expect(deployYml).toMatch(/Missing required secret: ASI_RUNTIME_INGEST_TOKEN/);
+    expect(deployYml).toMatch(/\$\{#ASI_RUNTIME_INGEST_TOKEN\}.*-lt 32/);
+    expect(deployYml).toMatch(/ASI_RUNTIME_INGEST_TOKEN does not meet the minimum length of 32 characters/);
+  });
+
   it('rejects a SESSION_SECRET shorter than 32 characters', () => {
     expect(deployYml).toMatch(/\$\{#SESSION_SECRET\}.*-lt 32/);
     expect(deployYml).toMatch(/does not meet the minimum length of 32 characters/);
@@ -41,6 +48,7 @@ describe('deploy workflow: required production runtime secrets', () => {
     // or `echo "$SESSION_SECRET` that would print the value to the log.
     expect(deployYml).not.toMatch(/echo\s+["'].*\$\{?SUPABASE_SERVICE_ROLE_KEY/);
     expect(deployYml).not.toMatch(/echo\s+["'].*\$\{?SESSION_SECRET/);
+    expect(deployYml).not.toMatch(/echo\s+["'].*\$\{?ASI_RUNTIME_INGEST_TOKEN/);
   });
 
   it('places the required-secret checks in the "Prepare production environment" step, before the SSH deploy step', () => {
@@ -58,6 +66,7 @@ describe('deploy workflow: required production runtime secrets', () => {
       "printf 'SUPABASE_SERVICE_ROLE_KEY=%s\\n' \"$SUPABASE_SERVICE_ROLE_KEY\"",
     );
     expect(deployYml).toContain("printf 'SESSION_SECRET=%s\\n' \"$SESSION_SECRET\"");
+    expect(deployYml).toContain("printf 'ASI_RUNTIME_INGEST_TOKEN=%s\\n' \"$ASI_RUNTIME_INGEST_TOKEN\"");
   });
 
   it('preserves existing production.env entries (NODE_ENV, PORT, BOOKING_OPS_AUTO_SEND_RUNNER_SECRET, optional map keys)', () => {

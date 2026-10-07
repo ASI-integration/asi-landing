@@ -212,6 +212,7 @@ jobs:
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
       SESSION_SECRET: ${{ secrets.SESSION_SECRET }}
       INTERNAL_TEST_SECRET: ${{ secrets.INTERNAL_TEST_SECRET }}
+      ASI_RUNTIME_INGEST_TOKEN: ${{ secrets.ASI_RUNTIME_INGEST_TOKEN }}
       DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
       TELEGRAM_CORE_BOT_TOKEN: ${{ secrets.TELEGRAM_CORE_BOT_TOKEN }}
       TELEGRAM_TEST_CHAT_ID: ${{ secrets.TELEGRAM_TEST_CHAT_ID }}
@@ -251,6 +252,14 @@ jobs:
             echo "Missing required secret: INTERNAL_TEST_SECRET"
             exit 1
           fi
+          if [ -z "${ASI_RUNTIME_INGEST_TOKEN:-}" ]; then
+            echo "Missing required secret: ASI_RUNTIME_INGEST_TOKEN"
+            exit 1
+          fi
+          if [ "${#ASI_RUNTIME_INGEST_TOKEN}" -lt 32 ]; then
+            echo "ASI_RUNTIME_INGEST_TOKEN does not meet the minimum length of 32 characters"
+            exit 1
+          fi
           if [ -z "${DEEPSEEK_API_KEY:-}" ]; then
             echo "Missing required secret: DEEPSEEK_API_KEY"
             exit 1
@@ -274,6 +283,7 @@ jobs:
             printf 'SUPABASE_SERVICE_ROLE_KEY=%s\n' "$SUPABASE_SERVICE_ROLE_KEY"
             printf 'SESSION_SECRET=%s\n' "$SESSION_SECRET"
             printf 'INTERNAL_TEST_SECRET=%s\n' "$INTERNAL_TEST_SECRET"
+            printf 'ASI_RUNTIME_INGEST_TOKEN=%s\n' "$ASI_RUNTIME_INGEST_TOKEN"
             printf 'DEEPSEEK_API_KEY=%s\n' "$DEEPSEEK_API_KEY"
             printf 'GUEST_CONCIERGE_LLM_ENABLED=true\n'
             printf 'GUEST_CONCIERGE_LLM_MODEL=deepseek-v4-flash\n'
