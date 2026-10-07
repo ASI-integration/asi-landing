@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { decideCommunicationAutopilotResponseWithLlmRouter } from '../autopilot';
+import { composeCommunicationAutopilotContextReply, decideCommunicationAutopilotResponseWithLlmRouter } from '../autopilot';
 import type { LlmRouterDecision, LlmRouterProvider } from '../llm-router/types';
 import { decideTelegramGuestAgentTurn } from '../telegram-guest-agent';
 
@@ -335,7 +335,7 @@ describe('Telegram guest agent acceptance (LLM-default + policy guardrails)', ()
     if (testCase.expectAction) {
       expect(result.action).toBe(testCase.expectAction);
     }
-    const reply = result.replyText ?? '';
+    const reply = composeCommunicationAutopilotContextReply({ decision: result, lang: 'ru' });
     expect(reply.length).toBeGreaterThan(0);
     for (const fragment of testCase.expectReplyContains ?? []) {
       expect(reply.toLocaleLowerCase('ru-RU')).toContain(fragment.toLocaleLowerCase('ru-RU'));
