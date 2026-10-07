@@ -3,7 +3,7 @@ import { parseLlmRouterJson, validateLlmRouterDecision } from './validate-llm-ro
 import type { LlmRouterDecision, LlmRouterInput, LlmRouterProvider } from './types';
 
 type ChatCompletionsProviderConfig = {
-  providerName?: 'deepseek' | 'openai' | 'openai-premium';
+  providerName?: 'deepseek' | 'doubao' | 'openai' | 'openai-premium';
   apiKey: string;
   baseUrl?: string;
   model?: string;
@@ -57,7 +57,7 @@ export function createChatCompletionsLlmRouterProvider(config: ChatCompletionsPr
                   { role: 'user', content: buildLlmRouterPrompt(input) },
                 ],
                 response_format:
-                  (config.providerName ?? 'deepseek') === 'deepseek'
+                  ['deepseek', 'doubao'].includes(config.providerName ?? 'deepseek')
                     ? { type: 'json_object' }
                     : {
                         type: 'json_schema',
@@ -126,6 +126,7 @@ export function createChatCompletionsLlmRouterProvider(config: ChatCompletionsPr
                         },
                       },
                 temperature: 0,
+                ...((config.providerName ?? 'deepseek') === 'doubao' ? { thinking: { type: 'disabled' } } : {}),
               }),
             },
             timeoutMs,
