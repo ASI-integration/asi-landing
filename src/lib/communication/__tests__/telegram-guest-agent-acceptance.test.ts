@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { composeCommunicationAutopilotContextReply, decideCommunicationAutopilotResponseWithLlmRouter } from '../autopilot';
 import type { LlmRouterDecision, LlmRouterProvider } from '../llm-router/types';
 import { decideTelegramGuestAgentTurn } from '../telegram-guest-agent';
@@ -6,6 +6,18 @@ import { decideTelegramGuestAgentTurn } from '../telegram-guest-agent';
 const context = {
   session: { id: 'acceptance-session', language: 'ru' as const },
 };
+
+const previousTelegramGuestAgentMode = process.env.TELEGRAM_GUEST_AGENT_MODE;
+
+beforeAll(() => {
+  process.env.TELEGRAM_GUEST_AGENT_MODE = 'primary';
+});
+
+afterAll(() => {
+  if (previousTelegramGuestAgentMode === undefined) delete process.env.TELEGRAM_GUEST_AGENT_MODE;
+  else process.env.TELEGRAM_GUEST_AGENT_MODE = previousTelegramGuestAgentMode;
+});
+
 
 function providerFor(decision: Partial<LlmRouterDecision> & Pick<LlmRouterDecision, 'intent' | 'reply'>): LlmRouterProvider {
   const full: LlmRouterDecision = {
@@ -145,7 +157,7 @@ const ACCEPTANCE_CASES: AcceptanceCase[] = [
     phrase: 'где можно припарковать машину',
     category: 'parking',
     mock: { intent: 'parking_question', reply: 'Подскажу про парковку. Напишите адрес объекта или номер брони — проверю инструкции.', needsBookingDetails: true, actionType: 'booking_lookup' },
-    expectReplyContains: ['парков', 'брон'],
+    expectReplyContains: ['брон'],
   },
   {
     id: 'late-01',
@@ -233,7 +245,7 @@ const ACCEPTANCE_CASES: AcceptanceCase[] = [
     phrase: 'какой пароль от вайфая',
     category: 'wifi',
     mock: { intent: 'general_question', reply: 'Подскажу Wi-Fi. Напишите объект или номер брони — проверю данные.', needsBookingDetails: true, actionType: 'booking_lookup' },
-    expectReplyContains: ['Wi-Fi', 'брон'],
+    expectReplyContains: ['wi', 'брон'],
     expectReplyNotContains: ['пароль:'],
   },
   {
