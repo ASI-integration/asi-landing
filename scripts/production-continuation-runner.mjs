@@ -213,10 +213,27 @@ function acquireLock(lockPath) {
 }
 
 async function fetchJson(url) {
-  const response = await fetch(url, { signal: AbortSignal.timeout(15000) });
-  const text = await response.text();
-  if (!response.ok) throw new Error(`HTTP ${response.status} for ${url}`);
-  return safeJson(text, url);
+  const attempts = 5;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    let response;
+    try {
+      response = await fetch(url, { signal: AbortSignal.timeout(15000) });
+    } catch (error) {
+      if (attempt >= attempts) throw error;
+      await sleep(Math.min(8000, 500 * (2 ** (attempt - 1))));
+      continue;
+    }
+
+    const text = await response.text();
+    if (response.ok) return safeJson(text, url);
+
+    const retryableStatus = [408, 425, 429, 500, 502, 503, 504].includes(response.status);
+    if (!retryableStatus || attempt >= attempts) {
+      throw new Error(`HTTP ${response.status} for ${url}`);
+    }
+    await sleep(Math.min(8000, 500 * (2 ** (attempt - 1))));
+  }
+  throw new Error(`Unable to fetch ${url}`);
 }
 
 async function readProduction(productionUrl) {
