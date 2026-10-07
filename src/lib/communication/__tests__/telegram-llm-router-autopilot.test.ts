@@ -134,6 +134,122 @@ describe('Telegram LLM router autopilot fallback', () => {
     );
   });
 
+  it.each([
+    {
+      intent: 'property_directions',
+      actionType: 'booking_lookup',
+      shouldEscalate: false,
+      expectedIntent: 'address_instruction',
+      expectedAction: 'needs_context',
+    },
+    {
+      intent: 'parking_question',
+      actionType: 'booking_lookup',
+      shouldEscalate: false,
+      expectedIntent: 'parking',
+      expectedAction: 'needs_context',
+    },
+    {
+      intent: 'late_checkout',
+      actionType: 'booking_lookup',
+      shouldEscalate: false,
+      expectedIntent: 'early_checkin_late_checkout',
+      expectedAction: 'needs_context',
+    },
+    {
+      intent: 'maintenance_issue',
+      actionType: 'booking_lookup',
+      shouldEscalate: false,
+      expectedIntent: 'maintenance_issue',
+      expectedAction: 'needs_context',
+    },
+    {
+      intent: 'booking_change',
+      actionType: 'booking_lookup',
+      shouldEscalate: false,
+      expectedIntent: 'booking_payment_support',
+      expectedAction: 'needs_context',
+    },
+  ] as const)('maps accepted $intent router decisions into canonical guest actions', async (testCase) => {
+    const decision: LlmRouterDecision = {
+      ...validDecision,
+      intent: testCase.intent,
+      actionType: testCase.actionType,
+      shouldEscalate: testCase.shouldEscalate,
+      reply: 'Напишите номер брони или адрес объекта, и я помогу с этим вопросом.',
+    };
+    const result = await decideCommunicationAutopilotResponseWithLlmRouter({
+      channel: 'telegram',
+      messageText: 'подскажите пожалуйста по моему вопросу',
+      context,
+      llmRouterProvider: provider(decision),
+    });
+
+    expect(result.metadata.intent).toBe(testCase.expectedIntent);
+    expect(result.action).toBe(testCase.expectedAction);
+    expect(result.replyText).toBeTruthy();
+  });
+
+  it.each(['payment_refund', 'cancellation'] as const)(
+    'keeps %s LLM router decisions on operator handoff',
+    async (intent) => {
+      const result = await decideCommunicationAutopilotResponseWithLlmRouter({
+        channel: 'telegram',
+        messageText: 'подскажите пожалуйста по моему вопросу',
+        context,
+        llmRouterProvider: provider({
+          ...validDecision,
+          intent,
+          actionType: 'operator_escalation',
+          shouldEscalate: true,
+          reply: 'Передаю оператору для проверки.',
+        }),
+      });
+
+      expect(result.metadata.intent).toBe('booking_payment_support');
+      expect(result.action).toBe('escalate');
+      expect(result.replyText).toMatch(/оператор|отмен|возврат/i);
+    },
+  );
+
+  it('honors an explicit operator escalation from a safe general-question router decision', async () => {
+    const result = await decideCommunicationAutopilotResponseWithLlmRouter({
+      channel: 'telegram',
+      messageText: 'позовите человека пожалуйста',
+      context,
+      llmRouterProvider: provider({
+        ...validDecision,
+        intent: 'general_question',
+        actionType: 'operator_escalation',
+        shouldEscalate: true,
+        reply: 'Передаю оператору. Кратко опишите вопрос.',
+      }),
+    });
+
+    expect(result.action).toBe('escalate');
+    expect(result.escalationReason).toBe('operator_requested');
+    expect(result.replyText).toContain('оператор');
+  });
+
+  it('uses a validated safe general-question reply instead of replacing it with generic clarification', async () => {
+    const result = await decideCommunicationAutopilotResponseWithLlmRouter({
+      channel: 'telegram',
+      messageText: 'мне нужна небольшая помощь',
+      context,
+      llmRouterProvider: provider({
+        ...validDecision,
+        intent: 'general_question',
+        actionType: 'guest_reply_only',
+        needsBookingDetails: false,
+        shouldEscalate: false,
+        reply: 'Конечно, помогу. Напишите, пожалуйста, что именно нужно.',
+      }),
+    });
+
+    expect(result.action).toBe('auto_reply');
+    expect(result.replyText).toContain('помогу');
+  });
+
   it('falls back safely when provider cannot parse invalid JSON', async () => {
     const result = await decideCommunicationAutopilotResponseWithLlmRouter({
       channel: 'telegram',

@@ -1570,6 +1570,180 @@ function mapLlmRouterDecisionToAutopilotDecision(
     );
   }
 
+  if (decision.intent === 'maintenance_issue') {
+    return withLlmRouterMetadata(
+      {
+        ...base,
+        action: 'needs_context',
+        confidence: decision.confidence,
+        replyText: 'Принял, поломку зарегистрировал. Напишите, пожалуйста, объект или номер брони.',
+        escalationReason: undefined,
+        metadata: {
+          ...base.metadata,
+          intent: 'maintenance_issue',
+          matchedSignals: ['llm_router', decision.intent],
+          missingContext: base.metadata.missingContext,
+          urgent: false,
+          operationsAction: {
+            category: 'maintenance',
+            priority: 'normal',
+            title: 'Communication autopilot: maintenance issue',
+            shortReason: 'maintenance_issue',
+          },
+        },
+      },
+      marker,
+    );
+  }
+
+  if (decision.intent === 'property_directions') {
+    return withLlmRouterMetadata(
+      {
+        ...base,
+        action: 'needs_context',
+        confidence: decision.confidence,
+        replyText: decision.reply,
+        escalationReason: undefined,
+        metadata: {
+          ...base.metadata,
+          intent: 'address_instruction',
+          matchedSignals: ['llm_router', decision.intent],
+          missingContext: ['object.address'],
+          urgent: false,
+          operationsAction: undefined,
+        },
+      },
+      marker,
+    );
+  }
+
+  if (decision.intent === 'parking_question') {
+    return withLlmRouterMetadata(
+      {
+        ...base,
+        action: 'needs_context',
+        confidence: decision.confidence,
+        replyText: decision.reply,
+        escalationReason: undefined,
+        metadata: {
+          ...base.metadata,
+          intent: 'parking',
+          matchedSignals: ['llm_router', decision.intent],
+          missingContext: ['object.parkingText'],
+          urgent: false,
+          operationsAction: undefined,
+        },
+      },
+      marker,
+    );
+  }
+
+  if (decision.intent === 'late_checkout') {
+    return withLlmRouterMetadata(
+      {
+        ...base,
+        action: 'needs_context',
+        confidence: decision.confidence,
+        replyText: decision.reply,
+        escalationReason: undefined,
+        metadata: {
+          ...base.metadata,
+          intent: 'early_checkin_late_checkout',
+          matchedSignals: ['llm_router', decision.intent],
+          missingContext: ['booking.lateCheckoutAvailable'],
+          urgent: false,
+          operationsAction: undefined,
+        },
+      },
+      marker,
+    );
+  }
+
+  if (decision.intent === 'payment_refund' || decision.intent === 'cancellation') {
+    return withLlmRouterMetadata(
+      {
+        ...base,
+        action: 'escalate',
+        confidence: decision.confidence,
+        replyText:
+          'Поняла запрос по отмене/возврату. Передаю оператору — сверим бронь и оплату без автоматических обещаний.',
+        escalationReason: 'booking_payment_support',
+        metadata: {
+          ...base.metadata,
+          intent: 'booking_payment_support',
+          matchedSignals: ['llm_router', decision.intent],
+          missingContext: ['booking.lookup_details'],
+          urgent: false,
+          operationsAction: undefined,
+        },
+      },
+      marker,
+    );
+  }
+
+  if (decision.intent === 'booking_change') {
+    return withLlmRouterMetadata(
+      {
+        ...base,
+        action: 'needs_context',
+        confidence: decision.confidence,
+        replyText: decision.reply,
+        escalationReason: undefined,
+        metadata: {
+          ...base.metadata,
+          intent: 'booking_payment_support',
+          matchedSignals: ['llm_router', decision.intent],
+          missingContext: ['booking.lookup_details'],
+          urgent: false,
+          operationsAction: undefined,
+        },
+      },
+      marker,
+    );
+  }
+
+  if (decision.intent === 'general_question' && decision.shouldEscalate && decision.actionType === 'operator_escalation') {
+    return withLlmRouterMetadata(
+      {
+        ...base,
+        action: 'escalate',
+        confidence: decision.confidence,
+        replyText: decision.reply,
+        escalationReason: 'operator_requested',
+        metadata: {
+          ...base.metadata,
+          intent: 'unknown',
+          matchedSignals: ['llm_router', 'operator_requested'],
+          missingContext: [],
+          urgent: false,
+          operationsAction: undefined,
+        },
+      },
+      marker,
+    );
+  }
+
+  if (decision.intent === 'general_question' && decision.actionType === 'guest_reply_only') {
+    return withLlmRouterMetadata(
+      {
+        ...base,
+        action: 'auto_reply',
+        confidence: decision.confidence,
+        replyText: decision.reply,
+        escalationReason: undefined,
+        metadata: {
+          ...base.metadata,
+          intent: 'unknown',
+          matchedSignals: ['llm_router', decision.intent],
+          missingContext: [],
+          urgent: false,
+          operationsAction: undefined,
+        },
+      },
+      marker,
+    );
+  }
+
   return withLlmRouterMetadata(buildSafeClarificationDecision(base), marker);
 }
 
