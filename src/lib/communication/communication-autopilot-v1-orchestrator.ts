@@ -118,6 +118,7 @@ function voiceIntentForAutopilot(topic: string): string {
 export function shouldSkipAutopilotV1KnowledgeBoundary(message: string, channel: string): boolean {
   if (shouldDeferTelegramWifiToVerifiedAutopilot(message, channel)) return true;
   if (channel !== 'telegram') return false;
+  if (classifyKnowledgeTopic(message) === 'checkin_time') return true;
   const requested = requestedCommunicationFacts(message);
   return requested.length === 1 && requested[0] === 'parking';
 }
@@ -131,7 +132,7 @@ export async function tryCommunicationAutopilotV1OrchestratorTurn(
 
   // This entrypoint can also be called independently of the main orchestrator.
   // Legacy session/passport/template strings are not evidence, including follow-ups.
-  // Telegram-only Wi-Fi and parking requests must reach the booking/object path below.
+  // Telegram-only Wi-Fi, parking, and check-in-time requests must reach the booking/object path below.
   // Wi-Fi disclosure still stays fail-closed because that path checks booking verification.
   const deferVerifiedPropertyFactToAutopilot =
     shouldSkipAutopilotV1KnowledgeBoundary(input.text, input.envelope.channel);

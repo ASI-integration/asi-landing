@@ -211,11 +211,13 @@ describe('Conversational Concierge v1 dialogue pack', () => {
     });
   }
 
-  it('skips the V1 pre-knowledge boundary only for Telegram single-fact Wi-Fi or parking requests', () => {
+  it('skips the V1 pre-knowledge boundary only for supported Telegram property facts', () => {
     expect(shouldSkipAutopilotV1KnowledgeBoundary('Какой Wi-Fi?', 'telegram')).toBe(true);
     expect(shouldSkipAutopilotV1KnowledgeBoundary('Есть парковка?', 'telegram')).toBe(true);
+    expect(shouldSkipAutopilotV1KnowledgeBoundary('Во сколько заезд?', 'telegram')).toBe(true);
     expect(shouldSkipAutopilotV1KnowledgeBoundary('Какой Wi-Fi?', 'email')).toBe(false);
     expect(shouldSkipAutopilotV1KnowledgeBoundary('Есть парковка?', 'email')).toBe(false);
+    expect(shouldSkipAutopilotV1KnowledgeBoundary('Во сколько заезд?', 'email')).toBe(false);
     expect(
       shouldSkipAutopilotV1KnowledgeBoundary('Какой Wi-Fi и где парковка?', 'telegram'),
     ).toBe(false);
