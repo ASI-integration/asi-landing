@@ -109,6 +109,35 @@ describe('production Telegram text readiness', () => {
     expect(workflow).toContain('TELEGRAM_GUEST_AGENT_MODE');
     expect(workflow).toContain('GUEST_AGENT_MODE_VERIFIED=');
     expect(workflow).toContain('restoring previous production env');
+    const guestAgentBlock = workflow.slice(
+      workflow.indexOf('          set_guest_agent_mode() {'),
+      workflow.indexOf('          run_acceptance_stage() {'),
+    );
+    expect(guestAgentBlock).toContain("pattern = re.compile(rf'(?m)^\\s*{re.escape(key)}\\s*=.*  });
+
+  it('provides a text-only production acceptance mode that does not require voice', () => {
+    expect(workflow).toContain('- text_acceptance');
+    expect(workflow).toContain('readiness|text_acceptance|guest_agent_shadow|guest_agent_primary|guest_agent_off|activate|acceptance|pronunciation_probe');
+    expect(workflow).toContain('--require-text-active --probe-network');
+    expect(workflow).toContain('run_acceptance_stage text_autopilot');
+    expect(workflow).toContain(
+      'if [[ "$MODE" == "acceptance" || "$MODE" == "pronunciation_probe" || -n "${INPUT_TEST_CHAT_ID:-}" ]]',
+    );
+    expect(workflow).not.toContain(
+      'if [[ "$MODE" == "text_acceptance" || "$MODE" == "acceptance"',
+    );
+    const textBlock = workflow.slice(
+      workflow.indexOf('            text_acceptance)'),
+      workflow.indexOf('            activate)'),
+    );
+    expect(textBlock).toContain('telegram-autopilot-live-acceptance.mjs');
+    expect(textBlock).not.toContain('communication-voice-live-probe-v1.mjs');
+    expect(textBlock).not.toContain('telegram-voice-stt-dry-run.mjs');
+  });
+});
+)");
+    expect(guestAgentBlock).toContain("text.endswith('\\n')");
+    expect(guestAgentBlock).not.toContain("text.endswith('\\\\n')");
   });
 
   it('provides a text-only production acceptance mode that does not require voice', () => {
