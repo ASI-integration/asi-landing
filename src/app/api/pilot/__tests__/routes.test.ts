@@ -30,10 +30,12 @@ vi.mock('@/lib/pilot/errors', () => ({
 }));
 
 const submitPilotTask = vi.fn();
+const submitPilotOwnerDecision = vi.fn();
 const getPilotReadiness = vi.fn();
 
 vi.mock('@/lib/pilot/task-service', () => ({
   submitPilotTask,
+  submitPilotOwnerDecision,
 }));
 
 vi.mock('@/lib/pilot/readiness', () => ({
@@ -80,11 +82,12 @@ beforeEach(() => {
   getPilotTaskForUser.mockReset();
   getPilotTaskDetailForUser.mockReset();
   submitPilotTask.mockReset();
+  submitPilotOwnerDecision.mockReset();
   getPilotReadiness.mockReset();
   getPilotReadiness.mockResolvedValue({
     state: 'ready',
     canSubmit: true,
-    messageRu: 'Система готова к запуску задач пилота.',
+    messageRu: 'Готово к работе',
     checkedAt: '2026-09-08T00:00:00.000Z',
   });
 });
@@ -199,6 +202,7 @@ describe('SP-02 pilot tasks API ownership', () => {
         commitSha: null,
         blockers: [],
       },
+      hitl: null,
     });
     const { GET } = await import('@/app/api/pilot/tasks/[taskId]/route');
     const res = await GET(new Request(`http://localhost/api/pilot/tasks/${taskId}`), {
@@ -244,6 +248,7 @@ describe('SP-04 Pilot Console API contract', () => {
         commitSha: 'a'.repeat(40),
         blockers: [],
       },
+      hitl: null,
     });
     const { GET } = await import('@/app/api/pilot/tasks/[taskId]/route');
     const res = await GET(new Request(`http://localhost/api/pilot/tasks/${taskId}`), {
@@ -255,6 +260,56 @@ describe('SP-04 Pilot Console API contract', () => {
     expect(json.result.outcome).toBe('succeeded');
     expect(json.result.changedFiles).toEqual(['docs/pilot/proof.md']);
     expect(JSON.stringify(json)).not.toMatch(/schemaVersion|leaseToken|SERVICE_ROLE|provider/i);
+    expect(json.hitl).toBeNull();
+  });
+
+  it('owner HITL continue returns the same taskId', async () => {
+    getSession.mockResolvedValue(pilotSession());
+    const taskId = randomUUID();
+    submitPilotOwnerDecision.mockResolvedValue({
+      deduplicated: false,
+      hitl: null,
+      task: {
+        taskId,
+        title: 'Same task',
+        status: 'queued',
+        consoleStatus: 'queued',
+        repository: 'ASI-integration/asi-landing',
+        conversationId: createPilotConversationId('pilot-1'),
+        createdAt: '2026-09-08T00:00:00.000Z',
+        updatedAt: '2026-09-08T00:05:00.000Z',
+      },
+      result: {
+        outcome: null,
+        summary: null,
+        changedFiles: [],
+        pullRequestUrl: null,
+        commitSha: null,
+        blockers: [],
+      },
+    });
+    const { POST } = await import('@/app/api/pilot/tasks/[taskId]/route');
+    const res = await POST(new Request(`http://localhost/api/pilot/tasks/${taskId}`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        decision: 'continue',
+        gateId: randomUUID(),
+        taskCycle: 'cycle-1',
+      }),
+    }), { params: { taskId } });
+    const json = await res.json();
+    expect(res.status).toBe(200);
+    expect(json.ok).toBe(true);
+    expect(json.taskId).toBe(taskId);
+    expect(json.task.taskId).toBe(taskId);
+    expect(json.task.consoleStatus).toBe('queued');
+    expect(submitPilotOwnerDecision).toHaveBeenCalledWith({
+      pilotUserId: 'pilot-1',
+      taskId,
+      body: expect.objectContaining({ decision: 'continue' }),
+    });
+    expect(submitPilotTask).not.toHaveBeenCalled();
   });
 
   it('maps create response consoleStatus for Pilot Console', async () => {
@@ -387,7 +442,7 @@ describe('SP-02 — POST /api/pilot/tasks green create', () => {
       new PilotAccessError(
         'readiness_blocked',
         503,
-        'Сейчас нельзя создать новую задачу. Runtime ещё не готов — попробуйте позже.',
+        'Временно недоступно',
       ),
     );
     const { POST } = await import('@/app/api/pilot/tasks/route');
@@ -405,6 +460,34 @@ describe('SP-02 — POST /api/pilot/tasks green create', () => {
     expect(json.code).toBe('readiness_blocked');
     expect(json.taskId).toBeUndefined();
   });
+
+  it('returns 503 Временно недоступно when admission is busy', async () => {
+    getSession.mockResolvedValue(pilotSession());
+    submitPilotTask.mockRejectedValue(
+      new PilotAccessError(
+        'admission_busy',
+        503,
+        'Временно недоступно',
+      ),
+    );
+    const { POST } = await import('@/app/api/pilot/tasks/route');
+    const res = await POST(new Request('http://localhost/api/pilot/tasks', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        goal: 'Add a proof markdown under docs/pilot/.',
+        idempotencyKey: 'pilot-beta-idem-admission-busy',
+      }),
+    }));
+    const json = await res.json();
+    expect(res.status).toBe(503);
+    expect(json).toEqual({
+      ok: false,
+      code: 'admission_busy',
+      message: 'Временно недоступно',
+    });
+    expect(JSON.stringify(json)).not.toMatch(/runtime|bridge|runner|lease|lane|executor/i);
+  });
 });
 
 describe('SP-08 GET /api/pilot/readiness', () => {
@@ -419,7 +502,7 @@ describe('SP-08 GET /api/pilot/readiness', () => {
       readiness: {
         state: 'ready',
         canSubmit: true,
-        messageRu: 'Система готова к запуску задач пилота.',
+        messageRu: 'Готово к работе',
         checkedAt: '2026-09-08T00:00:00.000Z',
       },
     });

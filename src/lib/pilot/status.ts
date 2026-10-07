@@ -14,7 +14,7 @@ export type PilotConsoleStatus =
 
 /**
  * Map Bridge task status → Pilot Console status.
- * `awaiting_owner` becomes `blocked` for pilots (they cannot approve owner gates).
+ * `awaiting_owner` becomes `blocked` (HITL: Нужен ваш ответ).
  */
 export function normalizePilotConsoleStatus(
   bridgeStatus: RuntimeBridgeTaskStatus,
@@ -38,5 +38,5 @@ export function normalizePilotConsoleStatus(
 }
 
 export function isTerminalPilotConsoleStatus(status: PilotConsoleStatus): boolean {
-  return status === 'succeeded' || status === 'failed' || status === 'blocked';
+  return status === 'succeeded' || status === 'failed';
 }

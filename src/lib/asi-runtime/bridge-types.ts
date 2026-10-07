@@ -24,6 +24,11 @@ export type RuntimeBridgeTaskRequest = {
   baselineSha: string;
 };
 
+export type RuntimeOwnerGateClassification =
+  | 'pilot_docs_green'
+  | 'privileged'
+  | 'unclassified';
+
 export type RuntimeBridgeOwnerGateRequest = {
   schemaVersion: 'asi.runtime.owner-gate.v1';
   action: string;
@@ -36,6 +41,8 @@ export type RuntimeBridgeOwnerGateRequest = {
   postActionVerification: string[];
   taskCycle: string;
   expiresAt: string;
+  /** Optional Runtime classification. Missing/unknown is fail-closed for /pilot continue. */
+  classification?: RuntimeOwnerGateClassification | string;
 };
 
 export type RuntimeBridgeSafeResult = {
@@ -63,6 +70,39 @@ export type RuntimeBridgeOwnerGateView = RuntimeBridgeOwnerGateRequest & {
   taskId: string;
   status: 'pending' | 'approved' | 'rejected' | 'consumed' | 'expired';
   createdAt: string;
+};
+
+/**
+ * Bounded, restart-reconcilable status for runner_reconcile_owner_gate.
+ * See docs/asi-chat-runtime-bridge-v1.md "Owner gate crash recovery".
+ */
+export type RuntimeOwnerGateReconcileStatus =
+  | 'COMMITTED'
+  | 'COMMITTED_DEDUPLICATED'
+  | 'RECOVERED_AND_COMMITTED'
+  | 'TERMINAL'
+  | 'SUPERSEDED'
+  | 'CONFLICT';
+
+export type RuntimeBridgeOwnerGateReconcileTaskView = {
+  taskId: string;
+  status: RuntimeBridgeTaskStatus;
+  attemptCount: number;
+  updatedAt: string;
+};
+
+export type RuntimeBridgeOwnerGateReconcileGateView = {
+  gateId: string;
+  taskId: string;
+  status: RuntimeBridgeOwnerGateView['status'];
+  taskCycle: string;
+  createdAt: string;
+};
+
+export type RuntimeBridgeOwnerGateReconcileResult = {
+  status: RuntimeOwnerGateReconcileStatus;
+  task: RuntimeBridgeOwnerGateReconcileTaskView | null;
+  gate: RuntimeBridgeOwnerGateReconcileGateView | null;
 };
 
 export type RuntimeRunnerCapabilityState = 'ready' | 'blocked' | 'degraded';
@@ -156,4 +196,14 @@ export type RuntimeBridgeRunnerInput =
   | {
       operation: 'runner_fail_task';
       input: { runnerId: string; taskId: string; leaseToken: string; retryable: boolean; errorCode: string };
+    }
+  | {
+      operation: 'runner_reconcile_owner_gate';
+      input: {
+        runnerId: string;
+        taskId: string;
+        attemptCount: number;
+        originalLeaseToken?: string;
+        gate: RuntimeBridgeOwnerGateRequest;
+      };
     };

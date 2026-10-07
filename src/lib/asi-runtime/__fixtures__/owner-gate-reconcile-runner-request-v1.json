@@ -1,0 +1,22 @@
+{
+  "operation": "runner_reconcile_owner_gate",
+  "input": {
+    "runnerId": "runner-host-01",
+    "taskId": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+    "attemptCount": 2,
+    "originalLeaseToken": "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+    "gate": {
+      "schemaVersion": "asi.runtime.owner-gate.v1",
+      "action": "production_deploy",
+      "exactTarget": "production",
+      "identity": "commit SHA",
+      "reason": "Owner approval required",
+      "evidence": [],
+      "allowedSideEffect": "Deploy exact SHA",
+      "rollback": "Use approved rollback runbook",
+      "postActionVerification": ["Verify health/version SHA"],
+      "taskCycle": "cycle-1",
+      "expiresAt": "2026-09-13T12:00:00.000Z"
+    }
+  }
+}

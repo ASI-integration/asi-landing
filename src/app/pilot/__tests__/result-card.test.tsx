@@ -93,7 +93,7 @@ describe('SP-07 buildPilotResultCardModel', () => {
     });
     expect(card.kind).toBe('blocked');
     expect(card.userActionRequired).toBe(false);
-    expect(card.nextActionRu).toMatch(/ничего делать не нужно/i);
+    expect(card.nextActionRu).toMatch(/Нужен ваш ответ/i);
     expect(card.blockers).toEqual(['Owner merge gate']);
   });
 
@@ -134,7 +134,7 @@ describe('SP-07 Pilot result card UI', () => {
     );
     expect(html).toContain('data-pilot-result-card="succeeded"');
     expect(html).toContain('data-pilot-user-action-required="false"');
-    expect(html).toContain('Успешно');
+    expect(html).toContain('Готово');
     expect(html).toContain('Proof markdown added');
     expect(html).toContain('docs/pilot/proof.md');
     expect(html).toContain('data-pilot-result-pr="true"');
@@ -163,7 +163,7 @@ describe('SP-07 Pilot result card UI', () => {
       }),
     );
     expect(blocked).toContain('data-pilot-result-card="blocked"');
-    expect(blocked).toContain('Нужно внимание владельца');
+    expect(blocked).toContain('Нужен ваш ответ');
     expect(blocked).toContain('Policy blocker');
 
     const failed = renderToStaticMarkup(
