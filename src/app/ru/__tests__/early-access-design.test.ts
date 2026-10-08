@@ -78,17 +78,19 @@ describe('RU-DESIGN-03 early-access visual migration', () => {
   it('keeps application form contract without public community entitlement fields', () => {
     const form = readSrc('src/components/early-access/EarlyAccessObjectForm.tsx');
     const early = readSrc('src/app/ru/early-access/page.tsx');
-    expect(form).toContain("fetch('/api/early-access/objects'");
+    expect(form).toContain("fetch('/api/early-access/leads'");
     expect(form).toContain("id=\"pilot-form\"");
     expect(form).not.toContain("'community_member'");
     expect(form).not.toContain("'standard_terms'");
     expect(form).not.toContain("'community_info'");
     expect(form).not.toContain('Стригунова');
-    expect(form).toContain('ownerContact');
-    expect(form).toContain('additionalFeatures');
+    expect(form).toContain('contact: form.contact');
+    expect(form).toContain('consent');
+    expect(form).toContain('/ru/privacy');
+    expect(form).toContain('referral');
     expect(form).toContain('bg-asi-paper');
     expect(form).not.toContain('rounded-lg');
-    expect(form).toContain("variant === 'compact'");
+    expect(form).toContain('data-form-variant={variant}');
     expect(form).toContain('Источник заявки: главная страница ASI.');
     // /ru/early-access keeps the full community selector (default variant).
     expect(early).toContain('<EarlyAccessObjectForm />');

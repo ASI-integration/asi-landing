@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { requireCrmOperatorSession } from '@/lib/crm/api-auth';
 import {
   getPilotObjectSummary,
   normalizePilotObjectInput,
@@ -12,6 +13,8 @@ function clientError(message: string, status = 400): NextResponse {
 }
 
 export async function POST(req: Request): Promise<NextResponse> {
+  const auth = await requireCrmOperatorSession();
+  if ('error' in auth) return auth.error;
   let body: unknown;
   try {
     body = await req.json();
@@ -38,6 +41,8 @@ export async function POST(req: Request): Promise<NextResponse> {
 }
 
 export async function GET(req: Request): Promise<NextResponse> {
+  const auth = await requireCrmOperatorSession();
+  if ('error' in auth) return auth.error;
   const objectId = new URL(req.url).searchParams.get('objectId') ?? '';
   if (!objectId.trim()) return clientError('Укажите идентификатор объекта.');
 

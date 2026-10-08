@@ -213,8 +213,8 @@ export default function RuEarlyAccessPage() {
                 Настройка и подключение — 0&nbsp;₽ · 14 дней после готовности — 0&nbsp;₽ · дальше только по вашему решению
               </p>
               <div className="mt-9 flex flex-wrap gap-4">
-                <BrandPrimaryCta href="/ru/early-access#pilot-form">{PRIMARY_CTA_LABEL}</BrandPrimaryCta>
-                <BrandSecondaryCta href="/ru/early-access#pilot-path">Как устроен пилот</BrandSecondaryCta>
+                <BrandPrimaryCta href="#pilot-form">{PRIMARY_CTA_LABEL}</BrandPrimaryCta>
+                <BrandSecondaryCta href="#pilot-path">Как устроен пилот</BrandSecondaryCta>
               </div>
               <p className="mt-5 max-w-md text-sm text-asi-navy/55 leading-relaxed">
                 Оставьте заявку на бесплатную настройку. Оплата не требуется, чтобы начать пилот.
@@ -313,7 +313,7 @@ export default function RuEarlyAccessPage() {
                 подтверждения показанной цены.
               </p>
               <div className="mt-8">
-                <BrandPrimaryCta href="/ru/early-access#pilot-form">{PRIMARY_CTA_LABEL}</BrandPrimaryCta>
+                <BrandPrimaryCta href="#pilot-form">{PRIMARY_CTA_LABEL}</BrandPrimaryCta>
               </div>
             </div>
           </div>
