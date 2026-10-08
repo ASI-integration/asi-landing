@@ -27,8 +27,10 @@ export async function POST(req: Request) {
     );
   }
   const source = body.source === 'manual' ? 'operator' : 'scheduled';
-  const explicitDryRun = body.dryRun ?? body.dry_run;
-  const dryRun = explicitDryRun !== false;
+  // Only explicit false on every supplied alias may authorize real sends.
+  // Missing, malformed or contradictory flags fail closed to dry-run.
+  const dryRunFlags = [body.dryRun, body.dry_run].filter((value) => value !== undefined);
+  const dryRun = dryRunFlags.length === 0 || !dryRunFlags.every((value) => value === false);
   const result = await executeEligibleAutoSendBatch({
     source,
     accountId,

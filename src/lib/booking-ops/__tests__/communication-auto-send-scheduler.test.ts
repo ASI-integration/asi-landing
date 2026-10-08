@@ -77,6 +77,40 @@ describe('Booking Ops account-scoped auto-send scheduler', () => {
     expect(executeBatch).toHaveBeenLastCalledWith(expect.objectContaining({ dryRun: false }));
   });
 
+  it('fails closed for conflicting, malformed and implicit live-send flags', async () => {
+    const route = await import('@/app/api/internal/booking-ops/communications/auto-send/run/route');
+    const accountId = '11111111-1111-4111-8111-111111111111';
+    const cases: Array<Record<string, unknown>> = [
+      { dryRun: false, dry_run: true },
+      { dryRun: true, dry_run: false },
+      { dryRun: 'false' },
+      { dry_run: 0 },
+      { dryRun: null },
+      { dryRun: false, dry_run: null },
+      { dryRun: false, dry_run: 'false' },
+    ];
+    for (const flags of cases) {
+      const response = await route.POST(new Request(
+        'https://asi.test/api/internal/booking-ops/communications/auto-send/run',
+        { method: 'POST', headers: {
+          Authorization: 'Bearer scheduler-test-secret',
+          'Content-Type': 'application/json',
+        }, body: JSON.stringify({ accountId, ...flags }) },
+      ));
+      expect(response.status).toBe(200);
+      expect(executeBatch).toHaveBeenLastCalledWith(expect.objectContaining({ dryRun: true }));
+    }
+    const bothExplicitlyFalse = await route.POST(new Request(
+      'https://asi.test/api/internal/booking-ops/communications/auto-send/run',
+      { method: 'POST', headers: {
+        Authorization: 'Bearer scheduler-test-secret',
+        'Content-Type': 'application/json',
+      }, body: JSON.stringify({ accountId, dryRun: false, dry_run: false }) },
+    ));
+    expect(bothExplicitlyFalse.status).toBe(200);
+    expect(executeBatch).toHaveBeenLastCalledWith(expect.objectContaining({ dryRun: false }));
+  });
+
   it('runs every ten minutes and dispatches one explicit account at a time', () => {
     const workflow = readFileSync(resolve(process.cwd(), '.github/workflows/booking-ops-auto-send.yml'), 'utf8');
     expect(workflow).toContain("cron: '*/10 * * * *'");
