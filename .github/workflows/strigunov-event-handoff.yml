@@ -1,0 +1,50 @@
+name: Strigunov Event Handoff
+
+on:
+  pull_request:
+    types: [closed]
+  workflow_run:
+    workflows: ["PR Validation"]
+    types: [completed]
+  issues:
+    types: [edited, reopened, labeled, unlabeled]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: read
+  issues: write
+
+concurrency:
+  group: strigunov-event-handoff
+  cancel-in-progress: false
+
+jobs:
+  handoff:
+    # Restrict costly runs to relevant events; untrusted PR content never executes.
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'issues' && github.event.issue.number == 416) ||
+      (github.event_name == 'pull_request' && github.event.pull_request.merged == true &&
+        github.event.pull_request.head.repo.fork == false &&
+        (contains(github.event.pull_request.head.ref, 'strigunov') ||
+         contains(github.event.pull_request.title, 'strigunov'))) ||
+      (github.event_name == 'workflow_run' &&
+        (contains(github.event.workflow_run.head_branch, 'strigunov') ||
+         contains(github.event.workflow_run.head_branch, 'early-access')))
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Test deterministic fail-closed handoff
+        run: node --test scripts/__tests__/strigunov-launch-controller.test.mjs
+      - name: Reconcile tracking issue only on relevant events
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node scripts/strigunov-launch-controller.mjs
