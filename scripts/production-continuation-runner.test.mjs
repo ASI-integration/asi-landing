@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 
 import {
   buildStatusPatch,
+  hasExactProductionApproval,
   isRetryableStatusWriteError,
   isTransientGhFailure,
   latestCheckRollupGreen,
@@ -104,4 +105,33 @@ test('buildStatusPatch keeps prior fields and refreshes updatedAt', () => {
   assert.equal(after.phase, 'acceptance_wait');
   assert.notEqual(after.updatedAt, 'old');
   assert.ok(Number.isFinite(Date.parse(after.updatedAt)));
+});
+
+test('production authorization requires exact SHA, independent live-outbound acknowledgement and opt-in', () => {
+  const sha = 'c'.repeat(40);
+  const authorized = {
+    'allow-production': true,
+    'approved-sha': sha,
+    'confirm-live-guest-messaging': 'ENABLE_LIVE_GUEST_MESSAGING',
+  };
+  assert.equal(hasExactProductionApproval({}, sha), false);
+  assert.equal(hasExactProductionApproval({ 'allow-production': true }, sha), false);
+  assert.equal(hasExactProductionApproval({ ...authorized, 'approved-sha': 'd'.repeat(40) }, sha), false);
+  assert.equal(hasExactProductionApproval({ ...authorized, 'approved-sha': undefined }, sha), false);
+  assert.equal(hasExactProductionApproval({ ...authorized, 'confirm-live-guest-messaging': 'not_authorized' }, sha), false);
+  assert.equal(hasExactProductionApproval({ ...authorized, 'allow-production': 'true' }, sha), false);
+  assert.equal(hasExactProductionApproval(authorized, 'not-a-sha'), false);
+  assert.equal(hasExactProductionApproval(authorized, sha), true);
+  // Approval is intentionally bound to a single commit, not a moving branch.
+  assert.equal(hasExactProductionApproval(authorized, 'e'.repeat(40)), false);
+});
+
+test('continuation runner does not silently approve GitHub production environments', async () => {
+  const { readFileSync } = await import('node:fs');
+  const source = readFileSync(new URL('./production-continuation-runner.mjs', import.meta.url), 'utf8');
+  assert.doesNotMatch(source, /pending_deployments|approvePendingDeployments/);
+  assert.match(source, /phase: 'awaiting_production_approval'/);
+  assert.match(source, /phase: 'awaiting_exact_production_approval'/);
+  assert.match(source, /confirm_live_guest_messaging: 'ENABLE_LIVE_GUEST_MESSAGING'/);
+  assert.match(source, /Workflow run SHA mismatch/);
 });

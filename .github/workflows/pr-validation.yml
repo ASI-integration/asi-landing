@@ -208,6 +208,9 @@ jobs:
             src/lib/booking-ops/__tests__/instay-checkout-autopilot.test.ts \
             --reporter=verbose
 
+      - name: Production continuation owner-gate regression
+        run: node --test scripts/production-continuation-runner.test.mjs
+
       - name: Syntax check ops-alert-scheduler.mjs
         run: node --check scripts/ops-alert-scheduler.mjs
 
