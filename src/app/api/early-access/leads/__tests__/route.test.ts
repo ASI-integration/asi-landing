@@ -51,6 +51,7 @@ describe('Strigunov public pilot lead intake', () => {
     { ...valid, contact: 'bad' },
     { ...valid, contact: 'not@valid' },
     { ...valid, objectsCount: '999 объектов' },
+    { ...valid, objectsCount: 'toString' },
     { ...valid, name: '' },
     { ...valid, website: 'spam.example' },
   ])('rejects malformed/unsafe anonymous submissions without touching CRM', async (body) => {

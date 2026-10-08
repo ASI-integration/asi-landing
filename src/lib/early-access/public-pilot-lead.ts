@@ -37,7 +37,7 @@ export function normalizePublicPilotLead(body: PublicPilotLeadInput): PublicPilo
   if (!contact || contact.length > 100 || /[\r\n\x00-\x1f]/.test(contact)) {
     return { ok: false, message: 'Укажите телефон, Telegram или электронную почту.' };
   }
-  if (!(count in OBJECT_COUNT)) {
+  if (!Object.prototype.hasOwnProperty.call(OBJECT_COUNT, count)) {
     return { ok: false, message: 'Выберите количество объектов.' };
   }
   if (body.consent !== true) {
