@@ -1,5 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { belongsToReservationAccount, isReservationVisibleInView, reservationEmptyMessages, type ReservationViewRow } from '../views';
+import {
+  belongsToReservationAccount,
+  formatReservationStatusLabelRu,
+  isReservationVisibleInView,
+  reservationEmptyMessages,
+  RESERVATION_STATUS_LABELS_RU,
+  type ReservationViewRow,
+} from '../views';
 
 const now = new Date('2026-07-12T12:00:00.000Z');
 const row = (status: string, id = status): ReservationViewRow => ({ id, normalized_status: status, check_in_at: '2026-07-11T12:00:00.000Z', check_out_at: '2026-07-14T12:00:00.000Z' });
@@ -35,6 +42,25 @@ describe('reservation dashboard views', () => {
 
   it('provides the contextual empty state for every tab', () => {
     expect(reservationEmptyMessages).toEqual({ upcoming: 'Нет предстоящих броней', active: 'Сейчас никто не проживает', inquiries: 'Нет запросов или удержаний', conflicts: 'Нет нерешённых конфликтов', cancelled: 'Нет отменённых броней', all: 'Броней пока нет' });
+  });
+
+  it('maps existing reservation lifecycle statuses to owner-facing Russian labels', () => {
+    expect(formatReservationStatusLabelRu('inquiry')).toBe('Запрос');
+    expect(formatReservationStatusLabelRu('temporary_hold')).toBe('Временное удержание');
+    expect(formatReservationStatusLabelRu('confirmed')).toBe('Подтверждено');
+    expect(formatReservationStatusLabelRu('checked_in')).toBe('Гость заехал');
+    expect(formatReservationStatusLabelRu('checked_out')).toBe('Гость выехал');
+    expect(formatReservationStatusLabelRu('cancelled')).toBe('Отменено');
+    expect(formatReservationStatusLabelRu('')).toBe('—');
+    expect(formatReservationStatusLabelRu('unknown_future_status')).toBe('unknown_future_status');
+    expect(Object.keys(RESERVATION_STATUS_LABELS_RU).sort()).toEqual([
+      'cancelled',
+      'checked_in',
+      'checked_out',
+      'confirmed',
+      'inquiry',
+      'temporary_hold',
+    ]);
   });
 });
 

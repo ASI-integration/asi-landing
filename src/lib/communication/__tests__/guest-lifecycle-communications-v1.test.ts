@@ -3,6 +3,10 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   executeGuestLifecycleEvent,
+  formatGuestLifecycleEventLabelRu,
+  formatGuestLifecycleExecutionStatusLabelRu,
+  formatGuestLifecycleStageLabelRu,
+  GUEST_LIFECYCLE_EVENT_TYPES,
   guestLifecycleIdempotencyKey,
   normalizeGuestLifecycleEvent,
   planGuestLifecycleCommunication,
@@ -272,5 +276,18 @@ describe('Guest Lifecycle Communications v1', () => {
     expect(cleanupMigration).toContain('synthetic_memory_ownership_mismatch');
     expect(cleanupMigration).toContain("source_event_id LIKE p_run_id || ':%'");
     expect(cleanupMigration).toContain("'zeroResidue', v_residue_count = 0");
+  });
+
+  it('maps existing Guest Lifecycle statuses to owner-facing Russian labels', () => {
+    expect(formatGuestLifecycleEventLabelRu('reservation.created')).toBe('Бронь создана');
+    expect(formatGuestLifecycleEventLabelRu('guest.checked_in')).toBe('Гость заехал');
+    expect(formatGuestLifecycleEventLabelRu('reservation.cancelled')).toBe('Бронь отменена');
+    expect(formatGuestLifecycleStageLabelRu('arrival')).toBe('Подготовка к заезду');
+    expect(formatGuestLifecycleExecutionStatusLabelRu('operator_required')).toBe('Нужен оператор');
+    expect(formatGuestLifecycleEventLabelRu('')).toBe('—');
+    expect(formatGuestLifecycleEventLabelRu('future.unknown')).toBe('future.unknown');
+    for (const eventType of GUEST_LIFECYCLE_EVENT_TYPES) {
+      expect(formatGuestLifecycleEventLabelRu(eventType)).not.toBe(eventType);
+    }
   });
 });

@@ -5,6 +5,11 @@ import {
   COMMUNICATION_CHANNEL_FOUNDATION,
   getCommunicationChannelFoundation,
 } from '@/lib/communication/channel-foundation';
+import {
+  formatGuestLifecycleEventLabelRu,
+  formatGuestLifecycleExecutionStatusLabelRu,
+  formatGuestLifecycleStageLabelRu,
+} from '@/lib/communication/guest-lifecycle';
 
 type ReviewStatus = 'pending' | 'acknowledged' | 'approved' | 'replied' | 'closed';
 type Channel = 'telegram' | 'vk' | 'email' | 'max' | 'phone' | string;
@@ -182,36 +187,6 @@ function memoryEventLabel(type: string): string {
     late_checkout_history: 'История позднего выезда',
   };
   return labels[type] ?? 'Важное событие';
-}
-
-function lifecycleStageLabel(stage: string): string {
-  const labels: Record<string, string> = {
-    reservation: 'Бронирование',
-    arrival: 'Подготовка к заезду',
-    checkin: 'Заезд',
-    stay: 'Проживание',
-    checkout: 'Выезд',
-    completed: 'Завершено',
-    cancelled: 'Отменено',
-    incident: 'Обращение',
-  };
-  return labels[stage] ?? stage;
-}
-
-function lifecycleDeliveryLabel(status: string): string {
-  const labels: Record<string, string> = {
-    received: 'Получено',
-    scheduled: 'Запланировано',
-    processing: 'Обрабатывается',
-    sent: 'Отправлено',
-    dry_run: 'Без отправки',
-    completed: 'Завершено',
-    skipped: 'Пропущено',
-    blocked: 'Заблокировано',
-    operator_required: 'Нужен оператор',
-    failed: 'Ошибка',
-  };
-  return labels[status] ?? status;
 }
 
 function isReturningGuestProfile(profile: GuestMemoryView['profile']): boolean {
@@ -795,22 +770,22 @@ export default function CommunicationPage() {
                     <div className="font-medium text-slate-900">{item.reservationId}</div>
                     <div className="mt-0.5 text-xs text-slate-500">{item.guest}</div>
                   </td>
-                  <td className="px-3 py-3">{lifecycleStageLabel(item.currentStage)}</td>
+                  <td className="px-3 py-3">{formatGuestLifecycleStageLabelRu(item.currentStage)}</td>
                   <td className="px-3 py-3">
-                    <div className="font-medium text-slate-800">{item.mostRecentEvent}</div>
+                    <div className="font-medium text-slate-800">{formatGuestLifecycleEventLabelRu(item.mostRecentEvent)}</div>
                     <div className="mt-0.5 text-xs text-slate-500">{shortTs(item.mostRecentEventAt)}</div>
                   </td>
                   <td className="max-w-xs px-3 py-3 text-slate-600">{item.mostRecentCommunication ?? 'Сообщения не было'}</td>
                   <td className="px-3 py-3 text-slate-600">
                     {item.pendingScheduledCommunication
-                      ? `${item.pendingScheduledCommunication.eventType} — ${shortTs(item.pendingScheduledCommunication.scheduledFor)}`
+                      ? `${formatGuestLifecycleEventLabelRu(item.pendingScheduledCommunication.eventType)} — ${shortTs(item.pendingScheduledCommunication.scheduledFor)}`
                       : 'Нет запланированных'}
                   </td>
                   <td className="px-3 py-3">
                     <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
                       item.operatorActionRequired ? 'bg-amber-100 text-amber-800' : 'bg-slate-100 text-slate-700'
                     }`}>
-                      {item.operatorActionRequired ? 'Нужен оператор' : lifecycleDeliveryLabel(item.deliveryStatus)}
+                      {item.operatorActionRequired ? 'Нужен оператор' : formatGuestLifecycleExecutionStatusLabelRu(item.deliveryStatus)}
                     </span>
                   </td>
                 </tr>
