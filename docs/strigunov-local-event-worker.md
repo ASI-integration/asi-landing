@@ -19,6 +19,9 @@ It does NOT manage Booking Ops, Kim, payments, or the general ASI engine.
 - Notebook remains powered on and connected to GitHub.
 - gh auth status and codex login status succeed.
 - git, node, gh, and codex are available on PATH.
+- On Windows, the Codex child PATH excludes WindowsApps PowerShell aliases to
+  allow fallback to the already-installed machine-wide PowerShell. No host
+  PATH modification, PowerShell installation, or sandbox bypass is performed.
 - GitHub Actions handoff must be merged and passing CI.
 
 ## Commands
