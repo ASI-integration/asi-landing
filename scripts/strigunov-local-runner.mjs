@@ -88,6 +88,26 @@ function otherAgentActive() {
   return Number(output.trim()) > 0 || !/^\d+$/.test(output.trim());
 }
 
+/** Windows Store pwsh.exe aliases cannot reliably spawn inside Codex sandbox tokens.
+ * Remove only WindowsApps directories in the Codex child environment; NEVER
+ * change machine/user PATH or disable sandbox restrictions.
+ */
+export function stripWindowsAppsFromPath(raw) {
+  return String(raw ?? '').split(';').filter((part) =>
+    part.trim() && !/(?:^|[\\/])WindowsApps(?:[\\/]|$)/i.test(
+      part.trim().replace(/^"|"$/g, ''),
+    ),
+  ).join(';');
+}
+
+export function codexSandboxEnvironment(env = process.env, platform = process.platform) {
+  if (platform !== 'win32') return { ...env };
+  const result = { ...env };
+  for (const key of Object.keys(result)) {
+    if (key.toLowerCase() === 'path') result[key] = stripWindowsAppsFromPath(result[key]);
+  }
+  return result;
+}
 function rootPaths() {
   const home = homedir();
   return {
@@ -140,6 +160,7 @@ async function tick({ execute, paths, client = { api, git, otherAgentActive } })
     const proc = spawn('codex', ['exec', '-s', 'workspace-write', '-C', worktree,
       '--output-last-message', resultPath, prompt], {
       cwd: worktree, windowsHide: true,
+      env: codexSandboxEnvironment(),
       stdio: ['ignore', stream.fd, stream.fd],
     });
     state[key] = { status: 'started', pid: proc.pid, startedAt: new Date().toISOString() };

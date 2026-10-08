@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   chooseTask, taskKey, branchFor, instructionFor, MARKER, ISSUE, REPO,
+  stripWindowsAppsFromPath, codexSandboxEnvironment,
 } from '../strigunov-local-runner.mjs';
 
 const issue = {
@@ -69,4 +70,32 @@ test('static instructions prohibit production or PR publication actions', () => 
   assert.match(prompt, /DO NOT.*push/);
   assert.match(prompt, /operator queue/);
   assert.throws(() => instructionFor({ id: 'arbitrary-task' }, 'a'.repeat(40)));
+});
+
+test('Windows Codex child PATH excludes Store aliases but retains real tools', () => {
+  const value = [
+    'C:\\Program Files\\nodejs',
+    'C:\\Users\\Admin\\AppData\\Local\\Microsoft\\WindowsApps',
+    'C:\\Windows\\System32',
+    'C:\\Program Files\\WindowsApps\\Microsoft.PowerShell_7.6.0',
+    'C:\\Program Files\\Git\\cmd',
+  ].join(';');
+  const result = stripWindowsAppsFromPath(value);
+  assert.equal(result.includes('WindowsApps'), false);
+  assert.ok(result.includes('C:\\Windows\\System32'));
+  assert.ok(result.includes('C:\\Program Files\\Git\\cmd'));
+  const original = { Path: value, OTHER: 'same' };
+  const sanitized = codexSandboxEnvironment(original, 'win32');
+  assert.equal(original.Path, value);
+  assert.equal(sanitized.OTHER, 'same');
+  assert.equal(sanitized.Path, result);
+  assert.equal(codexSandboxEnvironment(original, 'linux').Path, value);
+});
+
+test('only windows app alias segment is removed from mixed-case environment keys', () => {
+  const original = { PATH: 'C:\\Tools;C:\\users\\admin\\appdata\\local\\microsoft\\windowsapps;C:\\Windows',
+    Path: 'C:\\users\\admin\\AppData\\Local\\Microsoft\\WindowsApps;C:\\Windows' };
+  const env = codexSandboxEnvironment(original, 'win32');
+  assert.equal(env.PATH, 'C:\\Tools;C:\\Windows');
+  assert.equal(env.Path, 'C:\\Windows');
 });
