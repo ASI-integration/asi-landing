@@ -13,6 +13,7 @@ const TASKS = {
     deployWorkflow: '258346411',
     deployInputs: (sha) => ({
       confirm_production_deploy: 'DEPLOY_PRODUCTION',
+      confirm_live_guest_messaging: 'ENABLE_LIVE_GUEST_MESSAGING',
       sha,
     }),
     acceptanceWorkflow: '329907340',
@@ -30,11 +31,26 @@ const EXIT = {
   INTERNAL: 4,
 };
 
+// An old --allow-production flag alone cannot authorize a new live release.
+// Approval is bound to one exact SHA and independently acknowledges live outbound.
+export function hasExactProductionApproval(args, targetSha) {
+  const sha = String(targetSha ?? '').trim();
+  return args?.['allow-production'] === true &&
+    /^[0-9a-f]{40}$/i.test(sha) &&
+    String(args?.['approved-sha'] ?? '').trim().toLowerCase() === sha.toLowerCase() &&
+    args?.['confirm-live-guest-messaging'] === 'ENABLE_LIVE_GUEST_MESSAGING';
+}
+
 export function parseArgs(argv) {
   const out = {};
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
     if (!arg.startsWith('--')) continue;
+    const equalsAt = arg.indexOf('=');
+    if (equalsAt > 2) {
+      out[arg.slice(2, equalsAt)] = arg.slice(equalsAt + 1);
+      continue;
+    }
     const key = arg.slice(2);
     const next = argv[i + 1];
     if (!next || next.startsWith('--')) {
@@ -300,9 +316,7 @@ async function dispatchWorkflow({ repo, workflow, ref = 'main', inputs, targetSh
     });
     if (candidate) {
       if (targetSha && candidate.headSha !== targetSha) {
-        log(
-          `workflow run resolved on different SHA workflow=${workflow} expected=${targetSha} actual=${candidate.headSha}`,
-        );
+        throw new Error(`Workflow run SHA mismatch workflow=${workflow} expected=${targetSha} actual=${candidate.headSha}`);
       }
       return candidate;
     }
@@ -311,31 +325,7 @@ async function dispatchWorkflow({ repo, workflow, ref = 'main', inputs, targetSh
   throw new Error(`Unable to resolve dispatched workflow run for workflow=${workflow}`);
 }
 
-function pendingDeployments(repo, runId) {
-  return ghJson(['api', `repos/${repo}/actions/runs/${runId}/pending_deployments`]);
-}
-
-function approvePendingDeployments(repo, runId, log) {
-  const pending = pendingDeployments(repo, runId);
-  if (!Array.isArray(pending) || pending.length === 0) return false;
-  const environmentIds = pending
-    .map((entry) => Number(entry?.environment?.id))
-    .filter((id) => Number.isInteger(id) && id > 0);
-  if (environmentIds.length === 0) return false;
-  const body = JSON.stringify({
-    environment_ids: [...new Set(environmentIds)],
-    state: 'approved',
-    comment: 'Owner-authorized ASI production continuation runner.',
-  });
-  runGh(
-    ['api', '--method', 'POST', `repos/${repo}/actions/runs/${runId}/pending_deployments`, '--input', '-'],
-    { input: body },
-  );
-  log(`approved production gate run=${runId} environments=${environmentIds.join(',')}`);
-  return true;
-}
-
-async function waitForRun({ repo, runId, approveProduction, pollMs, status, setStatus, log }) {
+async function waitForRun({ repo, runId, pollMs, status, setStatus, log }) {
   let lastSignature = '';
   while (true) {
     const run = ghJson([
@@ -359,19 +349,11 @@ async function waitForRun({ repo, runId, approveProduction, pollMs, status, setS
     });
 
     if (run.status === 'waiting') {
-      if (approveProduction) {
-        try {
-          approvePendingDeployments(repo, runId, log);
-        } catch (error) {
-          log(`production approval check failed run=${runId}: ${error.message}`);
-        }
-      } else {
-        setStatus({
-          ...status(),
-          phase: 'awaiting_production_approval',
-          heartbeatAt: new Date().toISOString(),
-        });
-      }
+      setStatus({
+        ...status(),
+        phase: 'awaiting_production_approval',
+        heartbeatAt: new Date().toISOString(),
+      });
     }
 
     if (run.status === 'completed') return run;
@@ -417,7 +399,8 @@ async function main() {
   const pollMs = pollSeconds * 1000;
   const maxHours = Math.max(0.25, Number(args['max-hours'] ?? 8));
   const watchMain = Boolean(args['watch-main']);
-  const allowProduction = Boolean(args['allow-production']);
+  const allowProduction = args['allow-production'] === true;
+  // Approval of GitHub's protected Production environment is always manual.
   const stateDir = path.resolve(
     String(args['state-dir'] ?? path.join(homedir(), '.asi', 'continuation', taskName)),
   );
@@ -515,12 +498,12 @@ async function main() {
       });
 
       if (!production.healthOk || production.sha !== targetSha) {
-        if (!allowProduction) {
-          log('production change required, but --allow-production was not supplied');
+        if (!hasExactProductionApproval(args, targetSha)) {
+          log(`production release requires explicit owner approval for exact sha=${targetSha}; no workflow dispatched`);
           setStatus({
             status: 'waiting',
-            phase: 'awaiting_production_permission',
-            blocker: 'production_change_requires_allow_production',
+            phase: 'awaiting_exact_production_approval',
+            blocker: 'production_requires_approved_sha_and_live_messaging_ack',
           });
           await sleep(pollMs);
           targetSha = currentMainSha(repo);
@@ -544,7 +527,6 @@ async function main() {
         const deployResult = await waitForRun({
           repo,
           runId: deployRun.databaseId,
-          approveProduction: true,
           pollMs,
           status,
           setStatus,
@@ -591,11 +573,11 @@ async function main() {
         }
       }
 
-      if (!allowProduction) {
+      if (!hasExactProductionApproval(args, targetSha)) {
         setStatus({
           status: 'waiting',
-          phase: 'awaiting_acceptance_permission',
-          blocker: 'production_acceptance_requires_allow_production',
+          phase: 'awaiting_exact_acceptance_approval',
+          blocker: 'acceptance_requires_approved_sha_and_live_messaging_ack',
         });
         await sleep(pollMs);
         targetSha = currentMainSha(repo);
@@ -619,7 +601,6 @@ async function main() {
       const acceptanceResult = await waitForRun({
         repo,
         runId: acceptanceRun.databaseId,
-        approveProduction: true,
         pollMs,
         status,
         setStatus,
