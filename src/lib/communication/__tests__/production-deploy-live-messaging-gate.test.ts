@@ -13,8 +13,18 @@ describe('production deploy live messaging owner gate', () => {
     expect(workflow).toContain('required: true');
     expect(workflow).toContain('ENABLE_LIVE_GUEST_MESSAGING');
     expect(workflow).toContain(
-      'if [ "${{ inputs.confirm_live_guest_messaging }}" != "ENABLE_LIVE_GUEST_MESSAGING" ]; then',
+      'if [ "${OWNER_LIVE_MESSAGING_CONFIRMATION}" != "ENABLE_LIVE_GUEST_MESSAGING" ]; then',
     );
+  });
+
+  it('passes user-controlled inputs as environment values, never inline shell code', () => {
+    expect(workflow).toContain('OWNER_DEPLOY_CONFIRMATION: ${{ inputs.confirm_production_deploy }}');
+    expect(workflow).toContain('OWNER_LIVE_MESSAGING_CONFIRMATION: ${{ inputs.confirm_live_guest_messaging }}');
+    expect(workflow).toContain('REQUESTED_RELEASE_REF: ${{ inputs.sha }}');
+    expect(workflow).toContain('REF_INPUT="${REQUESTED_RELEASE_REF}"');
+    expect(workflow).not.toContain('if [ "${{ inputs.confirm_production_deploy }}"');
+    expect(workflow).not.toContain('if [ "${{ inputs.confirm_live_guest_messaging }}"');
+    expect(workflow).not.toContain('REF_INPUT="${{ inputs.sha }}"');
   });
 
   it('keeps the risky production flags behind the confirmation job', () => {
