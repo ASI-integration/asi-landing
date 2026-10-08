@@ -15,7 +15,6 @@ type FormState = {
 type SaveResponse = {
   ok?: boolean;
   message?: string;
-  leadId?: string;
 };
 
 const initialState: FormState = {
@@ -77,7 +76,7 @@ export function EarlyAccessObjectForm({
         }),
       });
       const data = await readResponseJson<SaveResponse>(res, {});
-      if (!res.ok || !data.ok || !data.leadId) {
+      if (!res.ok || !data.ok) {
         setStatus(data.message || 'Не удалось отправить заявку.');
         return;
       }
