@@ -135,3 +135,16 @@ test('continuation runner does not silently approve GitHub production environmen
   assert.match(source, /confirm_live_guest_messaging: 'ENABLE_LIVE_GUEST_MESSAGING'/);
   assert.match(source, /Workflow run SHA mismatch/);
 });
+
+test('parseArgs accepts documented exact-SHA equals syntax', () => {
+  const sha = '1'.repeat(40);
+  const args = parseArgs([
+    '--allow-production',
+    `--approved-sha=${sha}`,
+    '--confirm-live-guest-messaging=ENABLE_LIVE_GUEST_MESSAGING',
+  ]);
+  assert.equal(args['approved-sha'], sha);
+  assert.equal(args['allow-production'], true);
+  assert.equal(hasExactProductionApproval(args, sha), true);
+  assert.equal(hasExactProductionApproval(args, '2'.repeat(40)), false);
+});
