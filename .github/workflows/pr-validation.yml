@@ -208,6 +208,14 @@ jobs:
             src/lib/booking-ops/__tests__/instay-checkout-autopilot.test.ts \
             --reporter=verbose
 
+      - name: RU Strigunov lead intake and privacy regression
+        run: |
+          npx vitest run \
+            src/app/api/early-access/leads/__tests__/route.test.ts \
+            src/app/api/early-access/objects/__tests__/route.test.ts \
+            src/app/ru/__tests__/early-access-design.test.ts \
+            --reporter=verbose
+
       - name: Production continuation owner-gate regression
         run: node --test scripts/production-continuation-runner.test.mjs
 

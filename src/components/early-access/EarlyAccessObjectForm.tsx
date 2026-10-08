@@ -3,24 +3,27 @@
 import type { FormEvent } from 'react';
 import { useState } from 'react';
 import { readResponseJson } from '@/lib/safeResponseJson';
-import type { PilotObjectSummary } from '@/lib/communication/pilot-object-intake';
 
 type FormState = {
   name: string;
   contact: string;
   objectsCount: string;
+  consent: boolean;
+  website: string;
 };
 
 type SaveResponse = {
   ok?: boolean;
   message?: string;
-  object?: PilotObjectSummary;
+  leadId?: string;
 };
 
 const initialState: FormState = {
   name: '',
   contact: '',
   objectsCount: '',
+  consent: false,
+  website: '',
 };
 
 const objectCountOptions = [
@@ -33,7 +36,6 @@ const objectCountOptions = [
 
 /** Neutral source marker for homepage compact mode — never a community membership claim. */
 export const HOMEPAGE_LEAD_SOURCE_MARKER = 'Источник заявки: главная страница ASI.';
-const PILOT_PAGE_LEAD_SOURCE_MARKER = 'Источник заявки: страница пилота ASI.';
 
 const fieldClass =
   'mt-2 w-full border border-asi-border bg-asi-paper px-4 py-3.5 text-sm font-sans text-asi-navy rounded-sm outline-none transition focus:border-asi-gold focus:ring-1 focus:ring-asi-gold/40';
@@ -59,30 +61,23 @@ export function EarlyAccessObjectForm({
     setSaving(true);
     setStatus('');
 
-    const sourceMarker = variant === 'compact' ? HOMEPAGE_LEAD_SOURCE_MARKER : PILOT_PAGE_LEAD_SOURCE_MARKER;
-    const details = [`Количество объектов: ${form.objectsCount}`, sourceMarker].join('\n');
-
     try {
-      const res = await fetch('/api/early-access/objects', {
+      const referral = new URLSearchParams(window.location.search).get('ref') === 'strigunov'
+        ? 'strigunov' : 'site';
+      const res = await fetch('/api/early-access/leads', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          city: 'Заявка пилота ASI',
-          objectName: form.name,
-          addressOrArea: '',
-          wifiName: '',
-          wifiPassword: '',
-          accessInstructions: '',
-          trashBinsLocation: '',
-          parkingText: '',
-          checkoutTime: '',
-          houseRules: '',
-          additionalFeatures: details,
-          ownerContact: form.contact,
+          name: form.name,
+          contact: form.contact,
+          objectsCount: form.objectsCount,
+          referral,
+          consent: form.consent,
+          website: form.website,
         }),
       });
       const data = await readResponseJson<SaveResponse>(res, {});
-      if (!res.ok || !data.object) {
+      if (!res.ok || !data.ok || !data.leadId) {
         setStatus(data.message || 'Не удалось отправить заявку.');
         return;
       }
@@ -145,6 +140,32 @@ export function EarlyAccessObjectForm({
           </select>
         </label>
 
+        <div className="absolute -left-[9999px]" aria-hidden="true">
+          <label htmlFor="lead-website">Оставьте это поле пустым</label>
+          <input
+            id="lead-website"
+            name="website"
+            autoComplete="off"
+            tabIndex={-1}
+            value={form.website}
+            onChange={(event) => updateField('website', event.target.value)}
+          />
+        </div>
+        <label className="flex items-start gap-3 text-sm text-asi-navy/75 leading-relaxed">
+          <input
+            type="checkbox"
+            className="mt-1 size-4 accent-asi-navy"
+            checked={form.consent}
+            onChange={(event) => updateField('consent', event.target.checked)}
+            required
+          />
+          <span>
+            Согласен на обработку контактных данных для ответа по заявке согласно{' '}
+            <a className="underline underline-offset-2" href="/ru/privacy" target="_blank" rel="noopener noreferrer">
+              политике конфиденциальности
+            </a>.
+          </span>
+        </label>
         <button
           type="submit"
           disabled={saving}
