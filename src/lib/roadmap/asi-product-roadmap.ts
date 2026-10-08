@@ -1,7 +1,7 @@
 import type { RoadmapDepartment, RoadmapStage } from './types';
 
 /** Last limited audit of main evidence for this roadmap snapshot. */
-export const ROADMAP_LAST_AUDITED_AT = '2026-08-04';
+export const ROADMAP_LAST_AUDITED_AT = '2026-08-11';
 
 const reviewed = ROADMAP_LAST_AUDITED_AT;
 
@@ -231,7 +231,7 @@ export const ASI_PRODUCT_ROADMAP: RoadmapDepartment[] = [
         title: 'Channel Manager Live Core',
         status: 'in_progress',
         currentState:
-          'Code for provider-independent Live Core and one-shot initial sync is complete (manual reference adapter, atomic run guard). Owner-only Dashboard acceptance harness is available for a synthetic Live Core initial-sync check. Channel Manager Live Core remains in progress until the harness is run successfully in production. Not production-accepted.',
+          'Code for provider-independent Live Core and one-shot initial sync is complete (manual reference adapter, atomic run guard). Owner-only Dashboard acceptance harness is available for a synthetic Live Core initial-sync check; DB-side acceptance cleanup/recovery packages are also on main. Channel Manager Live Core remains in progress until the harness is run successfully in production. Not production-accepted.',
         nextStep:
           'Apply Live Core migration if needed, run the Dashboard acceptance harness successfully in production, then keep the engine stable while adding incremental sync and reconciliation.',
         priority: 1,
@@ -243,6 +243,11 @@ export const ASI_PRODUCT_ROADMAP: RoadmapDepartment[] = [
           { kind: 'code', path: 'src/lib/booking-ops/channel-manager-access-import.ts', note: 'manual snapshot reuse' },
           { kind: 'ui', path: 'src/components/booking-ops/ChannelManagerImportPanel.tsx', note: 'live-core status + acceptance block' },
           { kind: 'code', path: 'supabase/migrations/20260804120000_channel_manager_live_core_initial_sync_v1.sql', note: 'initial_sync type + atomic running index' },
+          {
+            kind: 'docs',
+            path: 'docs/operations/initial-sync-recovery-v1/README.md',
+            note: 'recovery/acceptance package; not a production PASS record',
+          },
         ],
       }),
       stage({
@@ -495,14 +500,20 @@ export const ASI_PRODUCT_ROADMAP: RoadmapDepartment[] = [
         id: 'comm-production-llm',
         title: 'Production LLM activation',
         status: 'in_progress',
-        currentState: 'Код готов; env-gates по умолчанию выключены — live activation не подтверждена.',
-        nextStep: 'Включать только с evidence live-прогона и allowlist.',
+        currentState:
+          'Safe-domain LLM и voice/TTS path реализованы; owner-gated Communication Production Completion workflow есть. Live activation PASS в репозитории не зафиксирован — env-gates и kill-switch остаются owner-controlled.',
+        nextStep: 'Запускать production completion workflow только с отдельным owner approval и сохранять PASS evidence.',
         priority: 2,
         criticalForPilot: true,
         blocker: 'Без подтверждённого production evidence нельзя считать LLM activated.',
         evidence: [
           { kind: 'code', path: 'src/lib/communication/llm-safe-domain-layer.ts', note: 'LLM_SAFE_DOMAIN_ENABLED default off' },
           { kind: 'docs', path: 'docs/telegram-llm-router.md', note: 'LLM env-gated; production activation not proven' },
+          {
+            kind: 'docs',
+            path: 'docs/operations/communication-production-completion-v1.md',
+            note: 'readiness/activate/acceptance workflow; PASS not recorded in repo',
+          },
         ],
       }),
       stage({
@@ -557,14 +568,85 @@ export const ASI_PRODUCT_ROADMAP: RoadmapDepartment[] = [
         ],
       }),
       stage({
+        id: 'comm-guest-operational',
+        title: 'Guest Communication Operational v1',
+        status: 'done',
+        currentState:
+          'Операционный контур гостя закрыт в коде: ответы из verified property knowledge, booking follow-up, handoff/resume, idempotent operator reply и session continuity. Focused contract tests зелёные. Это не заменяет production LLM/voice activation.',
+        nextStep: 'Держать operational regression в CI; live LLM/voice — только через отдельный production completion gate.',
+        priority: 2,
+        dashboardHref: '/dashboard/communication',
+        evidence: [
+          { kind: 'code', path: 'src/lib/communication/communication-autopilot-v1.ts' },
+          { kind: 'code', path: 'src/lib/communication/handoff-lock.ts' },
+          {
+            kind: 'test',
+            path: 'src/lib/communication/__tests__/guest-communication-operational-v1.test.ts',
+          },
+          { kind: 'ui', path: 'src/app/dashboard/communication/page.tsx' },
+        ],
+      }),
+      stage({
         id: 'comm-dialog-memory',
         title: 'Память диалога',
         status: 'done',
-        currentState: 'Telegram session memory и comm-agent session memory есть.',
+        currentState:
+          'Короткая session memory (Telegram + comm-agent) реализована. Долговременная память гостя вынесена в отдельный этап и не заменяет 24h session.',
         nextStep: 'Проверять контекст на длинных пилотных диалогах.',
         priority: 4,
         evidence: [
           { kind: 'code', path: 'src/lib/communication/telegram-session-memory.ts' },
+          { kind: 'code', path: 'src/lib/communication/comm-agent-session-memory.ts' },
+        ],
+      }),
+      stage({
+        id: 'comm-guest-long-term-memory',
+        title: 'Guest Long-Term Memory v1',
+        status: 'in_progress',
+        currentState:
+          'Код, migration, operator UI (коррекция/удаление/forget) и docs есть. Application deploy не применяет migration. Production apply + controlled operator verification в репозитории не зафиксированы. Not production-accepted.',
+        nextStep:
+          'Отдельным owner gate применить 20260809120000_guest_long_term_memory_v1.sql, проверить RLS/grants, затем controlled operator verification без реального исходящего сообщения гостю.',
+        priority: 3,
+        dashboardHref: '/dashboard/communication',
+        evidence: [
+          { kind: 'code', path: 'src/lib/communication/guest-long-term-memory.ts' },
+          {
+            kind: 'code',
+            path: 'supabase/migrations/20260809120000_guest_long_term_memory_v1.sql',
+          },
+          {
+            kind: 'test',
+            path: 'src/lib/communication/__tests__/guest-long-term-memory-v1.test.ts',
+          },
+          { kind: 'docs', path: 'docs/GUEST_LONG_TERM_MEMORY_V1.md' },
+          { kind: 'ui', path: 'src/app/dashboard/communication/page.tsx', note: 'guest memory operator controls' },
+        ],
+      }),
+      stage({
+        id: 'comm-guest-lifecycle',
+        title: 'Guest Lifecycle Communications v1',
+        status: 'in_progress',
+        currentState:
+          'Planner/runtime, durable ledger, dashboard projection и synthetic/DB acceptance runners реализованы. Actual-send scopes по умолчанию выключены. Production DB acceptance и live sends требуют отдельных owner approvals. Not production-accepted.',
+        nextStep:
+          'После owner-approved migration/deploy прогнать isolated synthetic DB acceptance с no-external-actions; узкий send scope включать только отдельным approval.',
+        priority: 2,
+        criticalForPilot: true,
+        dashboardHref: '/dashboard/communication',
+        evidence: [
+          { kind: 'code', path: 'src/lib/communication/guest-lifecycle.ts' },
+          { kind: 'code', path: 'src/lib/communication/guest-lifecycle-runtime.ts' },
+          {
+            kind: 'code',
+            path: 'supabase/migrations/20260809160000_guest_lifecycle_communications_v1.sql',
+          },
+          {
+            kind: 'test',
+            path: 'src/lib/communication/__tests__/guest-lifecycle-communications-v1.test.ts',
+          },
+          { kind: 'docs', path: 'docs/GUEST_LIFECYCLE_COMMUNICATIONS_V1.md' },
+          { kind: 'ui', path: 'src/app/dashboard/communication/page.tsx', note: 'lifecycle projection' },
         ],
       }),
     ],
@@ -1001,15 +1083,38 @@ export const ASI_PRODUCT_ROADMAP: RoadmapDepartment[] = [
     description: 'ASI Runtime Bridge, owner console и будущая multi-executor фабрика.',
     stages: [
       stage({
+        id: 'rt-owner-console',
+        title: 'Owner Development Console',
+        status: 'done',
+        currentState:
+          'Owner-only `/dashboard/development`: readiness (ready/degraded/blocked + canLaunch), запуск задач, компактный статус/итог/PR, owner decisions и merge gate. Autonomous Runtime pipeline описан и используется для task execution.',
+        nextStep: 'Держать readiness и launchable-degraded контракт стабильными; merge/deploy только через owner gate.',
+        priority: 2,
+        dashboardHref: '/dashboard/development',
+        evidence: [
+          { kind: 'ui', path: 'src/app/dashboard/development/page.tsx' },
+          { kind: 'code', path: 'src/lib/development/readiness.ts' },
+          { kind: 'code', path: 'src/lib/development/task-status-ui.tsx' },
+          { kind: 'docs', path: 'docs/operations/asi-owner-development-console-v1.md' },
+          { kind: 'docs', path: 'docs/operations/automation-pipeline.md' },
+          {
+            kind: 'test',
+            path: 'src/app/api/dashboard/development/__tests__/routes.test.ts',
+            note: 'launchable degraded readiness acceptance',
+          },
+        ],
+      }),
+      stage({
         id: 'rt-single-executor',
         title: 'Одиночный executor',
         status: 'done',
-        currentState: 'Runtime Bridge — single runner FIFO с advisory lock.',
+        currentState: 'Runtime Bridge — single runner FIFO с advisory lock; autonomous pipeline подтверждён docs + console contour.',
         nextStep: 'Держать один running task; не параллелить без pool.',
         priority: 3,
         dashboardHref: '/dashboard/development',
         evidence: [
           { kind: 'docs', path: 'docs/asi-chat-runtime-bridge-v1.md' },
+          { kind: 'docs', path: 'docs/operations/automation-pipeline.md' },
           { kind: 'code', path: 'src/lib/asi-runtime' },
         ],
       }),
@@ -1017,38 +1122,43 @@ export const ASI_PRODUCT_ROADMAP: RoadmapDepartment[] = [
         id: 'rt-terminal-reconciliation',
         title: 'Terminal-state reconciliation',
         status: 'done',
-        currentState: 'Terminal result schema и reconciliation одиночной задачи есть.',
-        nextStep: 'Проверять terminal status в owner console.',
+        currentState: 'Terminal result schema и reconciliation одиночной задачи есть; owner console показывает terminal status.',
+        nextStep: 'Проверять terminal status в owner console после каждого autonomous run.',
         priority: 3,
         dashboardHref: '/dashboard/development',
         evidence: [
           { kind: 'code', path: 'src/lib/asi-runtime' },
           { kind: 'test', path: 'src/lib/asi-runtime/__tests__/bridge.test.ts' },
+          { kind: 'ui', path: 'src/app/dashboard/development/page.tsx' },
         ],
       }),
       stage({
         id: 'rt-failure-evidence',
         title: 'Понятные failure evidence',
         status: 'in_progress',
-        currentState: 'Safe failure/result schemas есть; полнота operator-facing evidence ещё дорабатывается.',
+        currentState:
+          'Safe failure/result schemas и компактный task-status UI есть; технические детали убраны в «Подробнее». Полнота operator-facing failure evidence ещё дорабатывается.',
         nextStep: 'Усилить человекочитаемые failure evidence без сырых логов в чат.',
         priority: 2,
         dashboardHref: '/dashboard/development',
         evidence: [
           { kind: 'docs', path: 'docs/asi-chat-runtime-bridge-v1.md' },
           { kind: 'code', path: 'src/lib/asi-runtime' },
+          { kind: 'code', path: 'src/lib/development/task-status-ui.tsx' },
         ],
       }),
       stage({
         id: 'rt-partial-result',
         title: 'Сохранение partial result',
         status: 'in_progress',
-        currentState: 'Частичные результаты предусматриваются bridge-схемами; полный UX не закрыт.',
+        currentState:
+          'Bridge-схемы допускают partial/safe result; console показывает короткий итог. Полный interrupted-run partial-result UX ещё не закрыт.',
         nextStep: 'Зафиксировать partial result в owner console при interrupted runs.',
         priority: 3,
         dashboardHref: '/dashboard/development',
         evidence: [
           { kind: 'code', path: 'src/lib/asi-runtime' },
+          { kind: 'code', path: 'src/lib/development/task-status-ui.tsx' },
         ],
       }),
       stage({
