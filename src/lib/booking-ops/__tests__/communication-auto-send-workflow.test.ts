@@ -24,7 +24,8 @@ describe('Booking Ops safe auto-send workflow', () => {
   it('sends accountId, dryRun and bounded batch size to the protected runner', () => {
     expect(workflow).toContain('MANUAL_MAX_BATCH_SIZE: ${{ inputs.max_batch_size }}');
     expect(workflow).toContain('max_batch_size must be between 1 and 20');
-    expect(workflow).toContain('maxBatchSize:Number(process.argv[3]),source:process.argv[4]');
+    expect(workflow).toContain('maxBatchSize: Number(maxBatch)');
+    expect(workflow).toContain('decideBookingOpsSchedulerExecution');
     expect(workflow).toContain('"manual"');
     expect(workflow).toContain('"scheduled"');
     expect(workflow).toContain('/api/internal/booking-ops/communications/auto-send/run');
@@ -32,7 +33,7 @@ describe('Booking Ops safe auto-send workflow', () => {
 
   it('keeps scheduled account discovery scoped and bounded', () => {
     expect(workflow).toContain('/api/internal/booking-ops/communications/auto-send/accounts');
-    expect(workflow).toContain('run_account "$account_id" "false" "10"');
+    expect(workflow).toContain("run_account \"$account_id\" 'false' '10' 'scheduled'");
     expect(workflow).not.toContain("BODY='{}'");
   });
 });

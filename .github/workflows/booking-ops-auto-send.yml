@@ -19,6 +19,11 @@ on:
         required: true
         default: 10
         type: number
+      confirm_live_send:
+        description: For manual live sends only, type SEND_FOR_THIS_ACCOUNT
+        required: false
+        default: not_authorized
+        type: string
 
 concurrency:
   group: booking-ops-safe-auto-send-${{ github.event_name }}
@@ -28,22 +33,64 @@ permissions:
   contents: read
 
 jobs:
-  run-safe-batch:
+  preflight:
     runs-on: ubuntu-latest
-    environment: production
+    outputs:
+      ready: ${{ steps.gate.outputs.ready }}
+    env:
+      EVENT_NAME: ${{ github.event_name }}
+      SCHEDULER_ENABLED: ${{ vars.BOOKING_OPS_SCHEDULER_ENABLED }}
+    steps:
+      - name: Fail closed on unactivated unattended scheduling
+        id: gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$EVENT_NAME" == "schedule" && "$SCHEDULER_ENABLED" != "true" ]]; then
+            echo 'ready=false' >> "$GITHUB_OUTPUT"
+            echo '::notice::Scheduled Booking Ops is not activated; account processing skipped.'
+            echo 'SCHEDULED SKIP — BOOKING_OPS_SCHEDULER_ENABLED is not true.' >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo 'ready=true' >> "$GITHUB_OUTPUT"
+          fi
+
+  run-safe-batch:
+    needs: [preflight]
+    if: needs.preflight.outputs.ready == 'true'
+    runs-on: ubuntu-latest
+    # Separate service environment. Never use the reviewed Production deploy environment.
+    environment: booking-ops-scheduler
     timeout-minutes: 5
     env:
+      # Already scoped as a repository Actions secret; never use deploy credentials.
       RUNNER_SECRET: ${{ secrets.BOOKING_OPS_AUTO_SEND_RUNNER_SECRET }}
       MANUAL_ACCOUNT_ID: ${{ inputs.account_id }}
       MANUAL_DRY_RUN: ${{ inputs.dry_run }}
       MANUAL_MAX_BATCH_SIZE: ${{ inputs.max_batch_size }}
+      MANUAL_LIVE_CONFIRMATION: ${{ inputs.confirm_live_send }}
       EVENT_NAME: ${{ github.event_name }}
+      SCHEDULER_ENABLED: ${{ vars.BOOKING_OPS_SCHEDULER_ENABLED }}
+      SCHEDULE_LIVE_ENABLED: ${{ vars.BOOKING_OPS_SCHEDULER_LIVE_ENABLED }}
+      SCHEDULE_ACCOUNT_ALLOWLIST: ${{ vars.BOOKING_OPS_SCHEDULER_ACCOUNT_IDS }}
     steps:
-      - name: Call protected account-scoped runner
+      - name: Checkout policy source
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Process only protected account-scoped batches
         shell: bash
         run: |
           set -euo pipefail
-          test -n "${RUNNER_SECRET:-}"
+          if [[ -z "${RUNNER_SECRET:-}" ]]; then
+            echo '::error::Missing dedicated Booking Ops runner secret'
+            exit 1
+          fi
 
           RUNNER_URL='https://asi-global.ru/api/internal/booking-ops/communications/auto-send/run'
           ACCOUNTS_URL='https://asi-global.ru/api/internal/booking-ops/communications/auto-send/accounts'
@@ -55,15 +102,34 @@ jobs:
             local max_batch_size="$3"
             local source="$4"
             if [[ ! "$account_id" =~ $UUID_RE ]]; then
-              echo "::error::Invalid canonical account UUID"
+              echo '::error::Invalid canonical account UUID'
               return 1
             fi
             if [[ ! "$max_batch_size" =~ ^[0-9]+$ ]] || (( max_batch_size < 1 || max_batch_size > 20 )); then
-              echo "::error::max_batch_size must be between 1 and 20"
+              echo '::error::max_batch_size must be between 1 and 20'
               return 1
             fi
+
             local body
-            body="$(node -e "process.stdout.write(JSON.stringify({accountId:process.argv[1],dryRun:process.argv[2]==='true',maxBatchSize:Number(process.argv[3]),source:process.argv[4]}))" "$account_id" "$dry_run" "$max_batch_size" "$source")"
+            body="$(node --input-type=module -e '
+              import { decideBookingOpsSchedulerExecution } from "./scripts/booking-ops-scheduler-policy.mjs";
+              const [eventName, accountId, manualDryRun, manualAck, enabled, liveEnabled, allowlist, maxBatch] = process.argv.slice(1);
+              const decision = decideBookingOpsSchedulerExecution({
+                eventName, accountId, manualDryRun, manualLiveConfirmation: manualAck,
+                schedulerEnabled: enabled, scheduledLiveEnabled: liveEnabled,
+                scheduledAccountAllowlist: allowlist,
+              });
+              if (!decision.execute) {
+                console.error("Fail-closed scheduler policy: " + decision.reason);
+                process.exit(2);
+              }
+              console.error("Account-scoped run: mode=" + (decision.dryRun ? "DRY_RUN" : "LIVE") + " reason=" + decision.reason);
+              process.stdout.write(JSON.stringify({
+                accountId, dryRun: decision.dryRun, maxBatchSize: Number(maxBatch),
+                source: eventName === "schedule" ? "scheduled" : "manual",
+              }));
+            ' "$EVENT_NAME" "$account_id" "$dry_run" "$MANUAL_LIVE_CONFIRMATION" "$SCHEDULER_ENABLED" "$SCHEDULE_LIVE_ENABLED" "$SCHEDULE_ACCOUNT_ALLOWLIST" "$max_batch_size")"
+
             curl --fail-with-body --silent --show-error \
               --retry 2 --retry-all-errors --max-time 60 \
               -X POST "$RUNNER_URL" \
@@ -73,26 +139,40 @@ jobs:
             echo
           }
 
-          if [[ "$EVENT_NAME" = "workflow_dispatch" ]]; then
-            run_account "${MANUAL_ACCOUNT_ID:-}" "${MANUAL_DRY_RUN:-true}" "${MANUAL_MAX_BATCH_SIZE:-10}" "manual"
+          if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
+            run_account "${MANUAL_ACCOUNT_ID:-}" "${MANUAL_DRY_RUN:-true}" "${MANUAL_MAX_BATCH_SIZE:-10}" 'manual'
             exit 0
           fi
 
           accounts_json="$(curl --fail-with-body --silent --show-error \
-            --retry 2 --retry-all-errors --max-time 60 \
+            --retry 2 --max-time 60 \
             -H "Authorization: Bearer ${RUNNER_SECRET}" \
             "$ACCOUNTS_URL")"
 
-          mapfile -t account_ids < <(
-            printf '%s' "$accounts_json" |
-              node -e "let s='';process.stdin.on('data',c=>s+=c).on('end',()=>{const j=JSON.parse(s);for(const id of (j.accountIds||[])) console.log(id);})"
-          )
+          # Reject malformed and oversized responses; never silently truncate accounts.
+          accounts_lines="$(printf '%s' "$accounts_json" | node -e '
+            let s = "";
+            process.stdin.on("data", (chunk) => { s += chunk; });
+            process.stdin.on("end", () => {
+              const value = JSON.parse(s);
+              const ids = value.accountIds;
+              const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+              if (!value.ok || !Array.isArray(ids) || ids.length > 20 ||
+                  ids.some((id) => typeof id !== "string" || !uuid.test(id)) ||
+                  new Set(ids.map((id) => id.toLowerCase())).size !== ids.length) {
+                console.error("Invalid or oversized account discovery response");
+                process.exitCode = 2;
+                return;
+              }
+              process.stdout.write(ids.join("\n"));
+            });
+          ')"
 
-          if [[ "${#account_ids[@]}" -eq 0 ]]; then
-            echo "No live account-scoped auto-send scopes are currently eligible."
+          if [[ -z "$accounts_lines" ]]; then
+            echo 'No eligible account-scoped auto-send scopes; zero outbound messages.'
             exit 0
           fi
-
+          mapfile -t account_ids <<< "$accounts_lines"
           for account_id in "${account_ids[@]}"; do
-            run_account "$account_id" "false" "10" "scheduled"
+            run_account "$account_id" 'false' '10' 'scheduled'
           done

@@ -111,14 +111,42 @@ describe('Booking Ops account-scoped auto-send scheduler', () => {
     expect(executeBatch).toHaveBeenLastCalledWith(expect.objectContaining({ dryRun: false }));
   });
 
+  it('rejects generic CRON_SECRET for both protected runner routes', async () => {
+    vi.stubEnv('BOOKING_OPS_AUTO_SEND_RUNNER_SECRET', '');
+    vi.stubEnv('CRON_SECRET', 'unscoped-cron-token');
+    const accounts = await import('@/app/api/internal/booking-ops/communications/auto-send/accounts/route');
+    const run = await import('@/app/api/internal/booking-ops/communications/auto-send/run/route');
+    const url = 'https://asi.test/api/internal/booking-ops/communications/auto-send';
+    const headers = {
+      Authorization: 'Bearer unscoped-cron-token',
+      'Content-Type': 'application/json',
+    };
+    const discovered = await accounts.GET(new Request(url + '/accounts', { headers }));
+    expect(discovered.status).toBe(401);
+    const dispatched = await run.POST(new Request(url + '/run', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        accountId: '11111111-1111-4111-8111-111111111111',
+        dryRun: false,
+      }),
+    }));
+    expect(dispatched.status).toBe(401);
+    expect(executeBatch).not.toHaveBeenCalled();
+  });
+
   it('runs every ten minutes and dispatches one explicit account at a time', () => {
     const workflow = readFileSync(resolve(process.cwd(), '.github/workflows/booking-ops-auto-send.yml'), 'utf8');
     expect(workflow).toContain("cron: '*/10 * * * *'");
-    expect(workflow).toContain('environment: production');
+    expect(workflow).toContain('environment: booking-ops-scheduler');
+    expect(workflow).not.toContain('environment: production');
+    expect(workflow).toContain('BOOKING_OPS_SCHEDULER_ENABLED');
+    expect(workflow).toContain('BOOKING_OPS_SCHEDULER_LIVE_ENABLED');
+    expect(workflow).toContain('BOOKING_OPS_SCHEDULER_ACCOUNT_IDS');
     expect(workflow).toContain('/auto-send/accounts');
-    expect(workflow).toContain('accountId:process.argv[1]');
+    expect(workflow).toContain('accountId, dryRun: decision.dryRun');
     expect(workflow).toContain('for account_id in');
-    expect(workflow).toContain('run_account "$account_id" "false" "10" "scheduled"');
-    expect(workflow).toContain('run_account "${MANUAL_ACCOUNT_ID:-}" "${MANUAL_DRY_RUN:-true}" "${MANUAL_MAX_BATCH_SIZE:-10}" "manual"');
+    expect(workflow).toContain("run_account \"$account_id\" 'false' '10' 'scheduled'");
+    expect(workflow).toContain("run_account \"${MANUAL_ACCOUNT_ID:-}\" \"${MANUAL_DRY_RUN:-true}\" \"${MANUAL_MAX_BATCH_SIZE:-10}\" 'manual'");
   });
 });
