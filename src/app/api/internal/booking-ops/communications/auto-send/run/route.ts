@@ -27,10 +27,12 @@ export async function POST(req: Request) {
     );
   }
   const source = body.source === 'manual' ? 'operator' : 'scheduled';
+  const explicitDryRun = body.dryRun ?? body.dry_run;
+  const dryRun = explicitDryRun !== false;
   const result = await executeEligibleAutoSendBatch({
     source,
     accountId,
-    dryRun: body.dryRun === true || body.dry_run === true,
+    dryRun,
     maxBatchSize: Math.min(Math.max(Number(body.maxBatchSize ?? body.max_batch_size ?? 10) || 10, 1), 20),
   });
   return NextResponse.json({
