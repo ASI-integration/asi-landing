@@ -10,6 +10,10 @@ on:
         description: Type DEPLOY_PRODUCTION to deploy production
         required: true
         type: string
+      confirm_live_guest_messaging:
+        description: Type ENABLE_LIVE_GUEST_MESSAGING to allow deploy to enable Telegram live outbound and clear communication stops
+        required: true
+        type: string
       sha:
         description: Commit SHA or ref to build+deploy (defaults to the triggering SHA)
         required: false
@@ -28,10 +32,17 @@ jobs:
     steps:
       - name: Require explicit production confirmation
         shell: bash
+        env:
+          OWNER_DEPLOY_CONFIRMATION: ${{ inputs.confirm_production_deploy }}
+          OWNER_LIVE_MESSAGING_CONFIRMATION: ${{ inputs.confirm_live_guest_messaging }}
         run: |
           set -euo pipefail
-          if [ "${{ inputs.confirm_production_deploy }}" != "DEPLOY_PRODUCTION" ]; then
+          if [ "${OWNER_DEPLOY_CONFIRMATION}" != "DEPLOY_PRODUCTION" ]; then
             echo "Production deploy is manual only. Set confirm_production_deploy to DEPLOY_PRODUCTION."
+            exit 1
+          fi
+          if [ "${OWNER_LIVE_MESSAGING_CONFIRMATION}" != "ENABLE_LIVE_GUEST_MESSAGING" ]; then
+            echo "This deploy enables live Telegram outbound and clears communication stops. Set confirm_live_guest_messaging to ENABLE_LIVE_GUEST_MESSAGING."
             exit 1
           fi
 
@@ -46,9 +57,11 @@ jobs:
       - name: Resolve checkout ref
         id: checkout_ref
         shell: bash
+        env:
+          REQUESTED_RELEASE_REF: ${{ inputs.sha }}
         run: |
           set -euo pipefail
-          REF_INPUT="${{ inputs.sha }}"
+          REF_INPUT="${REQUESTED_RELEASE_REF}"
           if [ -n "${REF_INPUT:-}" ]; then
             echo "ref=${REF_INPUT}" >> "$GITHUB_OUTPUT"
           else
