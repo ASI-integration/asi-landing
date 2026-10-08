@@ -211,6 +211,9 @@ jobs:
       - name: Production continuation owner-gate regression
         run: node --test scripts/production-continuation-runner.test.mjs
 
+      - name: Booking Ops scheduler read-only diagnostic regression
+        run: node --test scripts/booking-ops-scheduler-diagnostic.test.mjs
+
       - name: Syntax check ops-alert-scheduler.mjs
         run: node --check scripts/ops-alert-scheduler.mjs
 
