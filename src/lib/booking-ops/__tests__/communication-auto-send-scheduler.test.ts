@@ -5,15 +5,29 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const scheduledAccounts = vi.hoisted(() =>
   vi.fn(async () => ['11111111-1111-4111-8111-111111111111']),
 );
+const executeBatch = vi.hoisted(() => vi.fn(async (input: Record<string, unknown>) => ({
+  ok: true,
+  processed: 0,
+  sent: 0,
+  dryRun: input.dryRun === true ? 1 : 0,
+  failed: 0,
+  blocked: 0,
+  safeSummary: 'ok',
+})));
 
 vi.mock('@/lib/booking-ops/communication-auto-send-scopes', () => ({
   listScheduledAutoSendAccountIds: scheduledAccounts,
+}));
+
+vi.mock('@/lib/booking-ops/communication-auto-send-executor', () => ({
+  executeEligibleAutoSendBatch: executeBatch,
 }));
 
 describe('Booking Ops account-scoped auto-send scheduler', () => {
   beforeEach(() => {
     vi.unstubAllEnvs();
     scheduledAccounts.mockClear();
+    executeBatch.mockClear();
     vi.stubEnv('BOOKING_OPS_AUTO_SEND_RUNNER_SECRET', 'scheduler-test-secret');
   });
 
@@ -32,6 +46,35 @@ describe('Booking Ops account-scoped auto-send scheduler', () => {
       accountIds: ['11111111-1111-4111-8111-111111111111'],
       count: 1,
     });
+  });
+
+
+  it('fails closed to dry-run unless live execution is explicitly requested', async () => {
+    const route = await import('@/app/api/internal/booking-ops/communications/auto-send/run/route');
+    const base = {
+      headers: {
+        Authorization: 'Bearer scheduler-test-secret',
+        'Content-Type': 'application/json',
+      },
+      method: 'POST',
+    };
+
+    const missingFlag = await route.POST(new Request(
+      'https://asi.test/api/internal/booking-ops/communications/auto-send/run',
+      { ...base, body: JSON.stringify({ accountId: '11111111-1111-4111-8111-111111111111' }) },
+    ));
+    expect(missingFlag.status).toBe(200);
+    expect(executeBatch).toHaveBeenLastCalledWith(expect.objectContaining({ dryRun: true }));
+
+    const explicitLive = await route.POST(new Request(
+      'https://asi.test/api/internal/booking-ops/communications/auto-send/run',
+      { ...base, body: JSON.stringify({
+        accountId: '11111111-1111-4111-8111-111111111111',
+        dryRun: false,
+      }) },
+    ));
+    expect(explicitLive.status).toBe(200);
+    expect(executeBatch).toHaveBeenLastCalledWith(expect.objectContaining({ dryRun: false }));
   });
 
   it('runs every ten minutes and dispatches one explicit account at a time', () => {
