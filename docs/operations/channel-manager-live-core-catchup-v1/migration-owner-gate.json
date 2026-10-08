@@ -1,0 +1,20 @@
+{
+  "schemaVersion": "asi.agent-os.owner-gate.v1",
+  "taskId": "channel-manager-live-core-catchup-v1-production-rollout",
+  "status": "missing",
+  "action": "production_migration",
+  "target": "production Supabase project jwinifeienvzejofmbua through the GitHub production environment SUPABASE_DB_URL secret",
+  "identity": {"ref":"refs/heads/main","migration":"docs/operations/channel-manager-live-core-catchup-v1/manifest.json"},
+  "allowedSideEffect": "After explicit owner approval only: verify the existing unregistered Channel Manager v1/recovery/cleanup schema, apply only the four checksum-pinned missing migrations from the manifest, register all seven historical versions atomically, and verify v3 reconciliation plus scoped live-write readiness. No application deploy, no DNS/secret change, no real provider message, and no unrelated production data mutation.",
+  "postActionVerification": [
+    "All seven exact Channel Manager migration versions and names exist in supabase_migrations.schema_migrations.",
+    "Existing initial-sync data is preserved and there are no running import runs at the migration boundary.",
+    "channel_manager_live_core_schema_state reports schemaVersion >= 3, ready=true, reconciliationReady=true.",
+    "channel_manager_live_scope_guard_state_v1 reports scopedConnectionWritesReady=true.",
+    "Required Live Core and scope-guard RPCs are executable by service_role and not by anon/authenticated.",
+    "The corrected recovery FK expectation set excludes booking_lifecycle_gates and booking_lifecycle_exceptions.",
+    "Production public health/version endpoints remain healthy after the database transaction."
+  ],
+  "authorization": {"source":null,"owner":"Nikolay","scope":null,"taskCycle":"2026-10-05-channel-manager-live-core-catchup"},
+  "typedConfirmation": {"present":false,"countsAsOwnerApproval":false}
+}
