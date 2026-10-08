@@ -1,4 +1,4 @@
-import { timingSafeEqual } from 'node:crypto';
+import { isAuthorizedBookingOpsRunner } from '@/lib/booking-ops/communication-auto-send-runner-auth';
 import { NextResponse } from 'next/server';
 import { executeEligibleAutoSendBatch } from '@/lib/booking-ops/communication-auto-send-executor';
 
@@ -6,15 +6,8 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
-function authorized(req: Request): boolean {
-  const expected = process.env.BOOKING_OPS_AUTO_SEND_RUNNER_SECRET?.trim() || process.env.CRON_SECRET?.trim();
-  const supplied = req.headers.get('authorization')?.replace(/^Bearer\s+/i, '').trim() ?? '';
-  if (!expected || !supplied || expected.length !== supplied.length) return false;
-  return timingSafeEqual(Buffer.from(expected), Buffer.from(supplied));
-}
-
 export async function POST(req: Request) {
-  if (!authorized(req)) {
+  if (!isAuthorizedBookingOpsRunner(req)) {
     return NextResponse.json({ ok: false, message: 'Нет доступа.' }, { status: 401 });
   }
   let body: Record<string, unknown> = {};
