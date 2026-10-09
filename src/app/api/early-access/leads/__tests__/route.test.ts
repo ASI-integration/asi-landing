@@ -3,7 +3,13 @@ import { normalizePublicPilotLead } from '@/lib/early-access/public-pilot-lead';
 import { resetPublicPilotLeadRateLimitForTests } from '@/lib/early-access/public-lead-rate-limit';
 
 const createCrmContact = vi.hoisted(() => vi.fn());
+const normalizePublicPilotLeadSpy = vi.hoisted(() => vi.fn());
 vi.mock('@/lib/crm/repository', () => ({ createCrmContact }));
+vi.mock('@/lib/early-access/public-pilot-lead', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/early-access/public-pilot-lead')>();
+  normalizePublicPilotLeadSpy.mockImplementation(actual.normalizePublicPilotLead);
+  return { ...actual, normalizePublicPilotLead: normalizePublicPilotLeadSpy };
+});
 
 const valid = {
   name: 'Тестовый владелец',
@@ -14,8 +20,47 @@ const valid = {
   website: '',
 };
 
+const encoder = new TextEncoder();
+
+function validBodyAtByteLength(byteLength: number, unicode = false): string {
+  const emptyPadding = JSON.stringify({ ...valid, padding: '' });
+  const remaining = byteLength - encoder.encode(emptyPadding).byteLength;
+  if (remaining < (unicode ? 3 : 0)) throw new Error('Requested body is too small');
+  const padding = unicode ? `${'a'.repeat(remaining - 3)}€` : 'a'.repeat(remaining);
+  const body = JSON.stringify({ ...valid, padding });
+  if (encoder.encode(body).byteLength !== byteLength) throw new Error('Unexpected body byte length');
+  return body;
+}
+
+function streamedRequest(
+  chunks: Uint8Array[],
+  options: { headers?: HeadersInit; onCancel?: () => void } = {},
+): Request {
+  let index = 0;
+  const body = new ReadableStream<Uint8Array>({
+    pull(controller) {
+      if (index < chunks.length) {
+        controller.enqueue(chunks[index]);
+        index += 1;
+      } else {
+        return new Promise<void>(() => undefined);
+      }
+    },
+    cancel() {
+      options.onCancel?.();
+    },
+  });
+  return new Request('https://asi.test/api/early-access/leads', {
+    method: 'POST',
+    headers: options.headers,
+    body,
+    duplex: 'half',
+  } as RequestInit & { duplex: 'half' });
+}
+
 beforeEach(() => {
   createCrmContact.mockReset();
+  normalizePublicPilotLeadSpy.mockClear();
   resetPublicPilotLeadRateLimitForTests();
 });
 
@@ -83,6 +128,12 @@ describe('Strigunov public pilot lead intake', () => {
     expect(createCrmContact).toHaveBeenCalledWith(expect.objectContaining({
       source: 'form',
       communicationStatus: 'needs_manual_reaction',
+      note: expect.stringContaining('Источник заявки: Стригунов'),
+      nextStep: 'Связаться с заявителем, уточнить объект и согласовать подключение.',
+    }));
+    expect(normalizePublicPilotLeadSpy).toHaveBeenCalledWith(expect.objectContaining({
+      consent: true,
+      referral: 'strigunov',
     }));
   });
 
@@ -116,6 +167,71 @@ describe('Strigunov public pilot lead intake', () => {
       method: 'POST', headers: { 'content-length': '5000' }, body: JSON.stringify(valid),
     }));
     expect(res.status).toBe(413);
+    expect(normalizePublicPilotLeadSpy).not.toHaveBeenCalled();
+    expect(createCrmContact).not.toHaveBeenCalled();
+  });
+
+  it('accepts a valid JSON object at the exact 4096-byte boundary', async () => {
+    createCrmContact.mockResolvedValueOnce({ id: 'crm-at-boundary' });
+    const { POST } = await import('../route');
+    const body = validBodyAtByteLength(4096);
+    const res = await POST(new Request('https://asi.test/api/early-access/leads', {
+      method: 'POST', body,
+    }));
+    expect(encoder.encode(body)).toHaveLength(4096);
+    expect(res.status).toBe(201);
+    expect(createCrmContact).toHaveBeenCalledOnce();
+  });
+
+  it('rejects 4097 actual bytes with no Content-Length before normalization or CRM', async () => {
+    const { POST } = await import('../route');
+    const body = validBodyAtByteLength(4097);
+    const res = await POST(new Request('https://asi.test/api/early-access/leads', {
+      method: 'POST', body,
+    }));
+    expect(encoder.encode(body)).toHaveLength(4097);
+    expect(res.status).toBe(413);
+    expect(normalizePublicPilotLeadSpy).not.toHaveBeenCalled();
+    expect(createCrmContact).not.toHaveBeenCalled();
+  });
+
+  it('does not trust a false-low Content-Length for an oversized body', async () => {
+    const { POST } = await import('../route');
+    const res = await POST(new Request('https://asi.test/api/early-access/leads', {
+      method: 'POST',
+      headers: { 'content-length': '10' },
+      body: validBodyAtByteLength(4097),
+    }));
+    expect(res.status).toBe(413);
+    expect(normalizePublicPilotLeadSpy).not.toHaveBeenCalled();
+    expect(createCrmContact).not.toHaveBeenCalled();
+  });
+
+  it('does not trust malformed Content-Length for an oversized body', async () => {
+    const { POST } = await import('../route');
+    const res = await POST(new Request('https://asi.test/api/early-access/leads', {
+      method: 'POST',
+      headers: { 'content-length': 'not-a-number' },
+      body: validBodyAtByteLength(4097),
+    }));
+    expect(res.status).toBe(413);
+    expect(normalizePublicPilotLeadSpy).not.toHaveBeenCalled();
+    expect(createCrmContact).not.toHaveBeenCalled();
+  });
+
+  it('rejects and cancels a chunked 4097-byte body containing multibyte UTF-8', async () => {
+    const { POST } = await import('../route');
+    const bytes = encoder.encode(validBodyAtByteLength(4097, true));
+    const onCancel = vi.fn();
+    const res = await POST(streamedRequest([
+      bytes.slice(0, 2048),
+      bytes.slice(2048, 4096),
+      bytes.slice(4096),
+    ], { onCancel }));
+    expect(bytes).toHaveLength(4097);
+    expect(res.status).toBe(413);
+    expect(onCancel).toHaveBeenCalledOnce();
+    expect(normalizePublicPilotLeadSpy).not.toHaveBeenCalled();
     expect(createCrmContact).not.toHaveBeenCalled();
   });
 
@@ -125,6 +241,98 @@ describe('Strigunov public pilot lead intake', () => {
       method: 'POST', body: '{bad',
     }));
     expect(res.status).toBe(400);
+    expect(normalizePublicPilotLeadSpy).not.toHaveBeenCalled();
+    expect(createCrmContact).not.toHaveBeenCalled();
+  });
+
+  it('rejects empty, whitespace, arrays and JSON primitives before normalization', async () => {
+    const { POST } = await import('../route');
+    for (const body of ['', '   ', '[]', 'null', 'true', '1', '"text"']) {
+      const res = await POST(new Request('https://asi.test/api/early-access/leads', {
+        method: 'POST', body,
+      }));
+      expect(res.status).toBe(400);
+    }
+    expect(normalizePublicPilotLeadSpy).not.toHaveBeenCalled();
+    expect(createCrmContact).not.toHaveBeenCalled();
+  });
+
+  it('turns a stream read failure into a controlled 400 without CRM work', async () => {
+    const { POST } = await import('../route');
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.error(new Error('synthetic read failure'));
+      },
+    });
+    const res = await POST(new Request('https://asi.test/api/early-access/leads', {
+      method: 'POST', body, duplex: 'half',
+    } as RequestInit & { duplex: 'half' }));
+    expect(res.status).toBe(400);
+    expect(normalizePublicPilotLeadSpy).not.toHaveBeenCalled();
+    expect(createCrmContact).not.toHaveBeenCalled();
+  });
+
+  it('turns a locked request stream into a controlled 400 without CRM work', async () => {
+    const { POST } = await import('../route');
+    const request = new Request('https://asi.test/api/early-access/leads', {
+      method: 'POST', body: JSON.stringify(valid),
+    });
+    const reader = request.body?.getReader();
+    expect(reader).toBeDefined();
+    try {
+      const res = await POST(request);
+      expect(res.status).toBe(400);
+    } finally {
+      await reader?.cancel();
+      reader?.releaseLock();
+    }
+    expect(normalizePublicPilotLeadSpy).not.toHaveBeenCalled();
+    expect(createCrmContact).not.toHaveBeenCalled();
+  });
+
+  it('rejects malformed UTF-8 instead of replacing bytes before JSON parsing', async () => {
+    const { POST } = await import('../route');
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new Uint8Array([0x7b, 0x22, 0x78, 0x22, 0x3a, 0x22, 0xc3, 0x28, 0x22, 0x7d]));
+        controller.close();
+      },
+    });
+    const res = await POST(new Request('https://asi.test/api/early-access/leads', {
+      method: 'POST', body, duplex: 'half',
+    } as RequestInit & { duplex: 'half' }));
+    expect(res.status).toBe(400);
+    expect(normalizePublicPilotLeadSpy).not.toHaveBeenCalled();
+    expect(createCrmContact).not.toHaveBeenCalled();
+  });
+
+  it('fails closed when an otherwise unending request is aborted', async () => {
+    const { POST } = await import('../route');
+    const abortController = new AbortController();
+    let markReadStarted: (() => void) | undefined;
+    const readStarted = new Promise<void>((resolve) => {
+      markReadStarted = resolve;
+    });
+    const onCancel = vi.fn();
+    const body = new ReadableStream<Uint8Array>({
+      pull() {
+        markReadStarted?.();
+        return new Promise<void>(() => undefined);
+      },
+      cancel() {
+        onCancel();
+      },
+    });
+    const response = POST(new Request('https://asi.test/api/early-access/leads', {
+      method: 'POST', body, duplex: 'half', signal: abortController.signal,
+    } as RequestInit & { duplex: 'half' }));
+    await readStarted;
+    abortController.abort();
+
+    expect((await response).status).toBe(400);
+    expect(onCancel).toHaveBeenCalledOnce();
+    expect(normalizePublicPilotLeadSpy).not.toHaveBeenCalled();
+    expect(createCrmContact).not.toHaveBeenCalled();
   });
 
   it('coalesces immediate repeated submissions without another CRM write', async () => {
