@@ -1,4 +1,25 @@
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+const mocks = vi.hoisted(() => ({
+  quotaQuery: vi.fn(),
+}));
+
+vi.mock('@/lib/supabase', () => ({
+  supabase: {
+    from: vi.fn(() => {
+      const query = {
+        select: vi.fn(),
+        eq: vi.fn(),
+        gte: vi.fn(),
+      };
+      query.select.mockReturnValue(query);
+      query.eq.mockReturnValue(query);
+      query.gte.mockImplementation(() => mocks.quotaQuery());
+      return query;
+    }),
+  },
+}));
+
 import {
   canAutoSendCommunicationIntent,
   classifyMessageForAutoSend,
@@ -44,6 +65,11 @@ function intent(overrides: Partial<BookingOpsCommunicationIntent> = {}): Booking
     ...overrides,
   };
 }
+
+beforeEach(() => {
+  mocks.quotaQuery.mockReset();
+  mocks.quotaQuery.mockResolvedValue({ count: 0, error: null });
+});
 
 describe('communication auto-send guardrails', () => {
   it('allows a configured safe message type', async () => {
@@ -151,8 +177,171 @@ describe('communication auto-send guardrails', () => {
     const result = await canAutoSendCommunicationIntent(intent(), {
       policy: allowedPolicy,
       bookingAutoSendsToday: 3,
+      guestAutoSendsToday: 0,
     });
     expect(result).toMatchObject({ decision: 'rate_limited', rule_key: 'rate.booking_daily' });
+  });
+
+  it('allows authoritative zero and known below-limit prefilled counts', async () => {
+    const zero = await canAutoSendCommunicationIntent(intent(), {
+      policy: allowedPolicy,
+      bookingAutoSendsToday: 0,
+      guestAutoSendsToday: 0,
+    });
+    const belowLimit = await canAutoSendCommunicationIntent(intent(), {
+      policy: allowedPolicy,
+      bookingAutoSendsToday: 2,
+      guestAutoSendsToday: 2,
+    });
+
+    expect(zero).toMatchObject({ decision: 'allowed', allowed: true });
+    expect(belowLimit).toMatchObject({ decision: 'allowed', allowed: true });
+  });
+
+  it('rate limits at the exact guest quota', async () => {
+    const result = await canAutoSendCommunicationIntent(intent(), {
+      policy: { ...allowedPolicy, maxAutoSendsPerBookingPerDay: null },
+      guestRef: 'guest-1',
+      guestAutoSendsToday: 3,
+    });
+
+    expect(result).toMatchObject({ decision: 'rate_limited', rule_key: 'rate.guest_daily' });
+  });
+
+  it('fails closed when booking or guest quota queries return a database error', async () => {
+    mocks.quotaQuery
+      .mockResolvedValueOnce({ count: null, error: { message: 'booking_count_failed' } })
+      .mockResolvedValueOnce({ count: null, error: { message: 'guest_count_failed' } });
+
+    const bookingResult = await canAutoSendCommunicationIntent(intent(), {
+      policy: { ...allowedPolicy, maxAutoSendsPerGuestPerDay: null },
+    });
+    const guestResult = await canAutoSendCommunicationIntent(intent(), {
+      policy: { ...allowedPolicy, maxAutoSendsPerBookingPerDay: null },
+      guestRef: 'guest-1',
+    });
+
+    expect(bookingResult).toMatchObject({
+      decision: 'review_required',
+      allowed: false,
+      rule_key: 'rate.booking_daily_unavailable',
+    });
+    expect(guestResult).toMatchObject({
+      decision: 'review_required',
+      allowed: false,
+      rule_key: 'rate.guest_daily_unavailable',
+    });
+  });
+
+  it('fails closed when the booking quota query returns null or no count', async () => {
+    mocks.quotaQuery
+      .mockResolvedValueOnce({ count: null, error: null })
+      .mockResolvedValueOnce({ error: null });
+
+    const nullResult = await canAutoSendCommunicationIntent(intent(), {
+      policy: { ...allowedPolicy, maxAutoSendsPerGuestPerDay: null },
+    });
+    const undefinedResult = await canAutoSendCommunicationIntent(intent(), {
+      policy: { ...allowedPolicy, maxAutoSendsPerGuestPerDay: null },
+    });
+
+    expect(nullResult).toMatchObject({
+      decision: 'review_required',
+      allowed: false,
+      rule_key: 'rate.booking_daily_unavailable',
+    });
+    expect(undefinedResult).toMatchObject({
+      decision: 'review_required',
+      allowed: false,
+      rule_key: 'rate.booking_daily_unavailable',
+    });
+  });
+
+  it('fails closed when the booking quota query rejects', async () => {
+    mocks.quotaQuery.mockRejectedValueOnce(new Error('count_rejected'));
+
+    const result = await canAutoSendCommunicationIntent(intent(), {
+      policy: { ...allowedPolicy, maxAutoSendsPerGuestPerDay: null },
+    });
+
+    expect(result).toMatchObject({
+      decision: 'review_required',
+      allowed: false,
+      rule_key: 'rate.booking_daily_unavailable',
+    });
+  });
+
+  it.each([undefined, null, Number.NaN, -1, 1.5])('fails closed for malformed prefilled quota count %s', async (count) => {
+    const result = await canAutoSendCommunicationIntent(intent(), {
+      policy: { ...allowedPolicy, maxAutoSendsPerGuestPerDay: null },
+      bookingAutoSendsToday: count,
+    });
+
+    expect(result).toMatchObject({
+      decision: 'review_required',
+      allowed: false,
+      rule_key: 'rate.booking_daily_unavailable',
+    });
+    expect(mocks.quotaQuery).not.toHaveBeenCalled();
+  });
+
+  it('fails closed when a quota has no booking identity', async () => {
+    const result = await canAutoSendCommunicationIntent(intent({ bookingId: null }), {
+      policy: { ...allowedPolicy, maxAutoSendsPerGuestPerDay: null },
+    });
+
+    expect(result).toMatchObject({
+      decision: 'review_required',
+      allowed: false,
+      rule_key: 'rate.booking_daily_unavailable',
+    });
+    expect(mocks.quotaQuery).not.toHaveBeenCalled();
+  });
+
+  it('fails closed when a quota has no guest identity', async () => {
+    const result = await canAutoSendCommunicationIntent(intent(), {
+      policy: { ...allowedPolicy, maxAutoSendsPerBookingPerDay: null },
+    });
+
+    expect(result).toMatchObject({
+      decision: 'review_required',
+      allowed: false,
+      rule_key: 'rate.guest_daily_unavailable',
+    });
+    expect(mocks.quotaQuery).not.toHaveBeenCalled();
+  });
+
+  it('does not require counts or identities for null policy limits', async () => {
+    const result = await canAutoSendCommunicationIntent(intent({ bookingId: null }), {
+      policy: {
+        ...allowedPolicy,
+        maxAutoSendsPerBookingPerDay: null,
+        maxAutoSendsPerGuestPerDay: null,
+      },
+    });
+
+    expect(result).toMatchObject({ decision: 'allowed', allowed: true });
+    expect(mocks.quotaQuery).not.toHaveBeenCalled();
+  });
+
+  it('rechecks a failed quota query and allows only after an authoritative retry succeeds', async () => {
+    mocks.quotaQuery
+      .mockRejectedValueOnce(new Error('temporary_count_failure'))
+      .mockResolvedValueOnce({ count: 0, error: null });
+    const context = {
+      policy: { ...allowedPolicy, maxAutoSendsPerGuestPerDay: null },
+    };
+
+    const failed = await canAutoSendCommunicationIntent(intent(), context);
+    const recovered = await canAutoSendCommunicationIntent(intent(), context);
+
+    expect(failed).toMatchObject({
+      decision: 'review_required',
+      allowed: false,
+      rule_key: 'rate.booking_daily_unavailable',
+    });
+    expect(recovered).toMatchObject({ decision: 'allowed', allowed: true });
+    expect(mocks.quotaQuery).toHaveBeenCalledTimes(2);
   });
 
   it('never includes a detected secret in the decision explanation', async () => {
