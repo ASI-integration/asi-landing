@@ -3,7 +3,6 @@ import { supabase } from '@/lib/supabase';
 import { EmailAdapter } from '@/lib/communication/channels/email';
 import { TelegramAdapter } from '@/lib/communication/channels/telegram';
 import {
-  sendGuestLifecycleVoiceCopy,
   type GuestLifecycleVoiceInput,
 } from '@/lib/communication/guest-lifecycle-voice';
 import { getBookingOpsRecord, requireBookingOpsRecordScope } from './repository';
@@ -300,7 +299,7 @@ async function resolveExecutionContext(intent: BookingOpsCommunicationIntent) {
   };
 }
 
-async function defaultSender(input: Parameters<AutoSendSender>[0]) {
+async function defaultSender(input: Parameters<AutoSendSender>[0]): ReturnType<AutoSendSender> {
   if (input.channel === 'telegram') {
     const ok = await new TelegramAdapter().sendMessage(input.recipientRef, input.messageText, {
       reply_handler: 'booking_ops_controlled_auto_send',
@@ -518,24 +517,79 @@ async function blockDelivery(
       error_code: reason,
     },
   );
-  return updateDelivery(delivery.id, {
-    status: 'blocked',
-    failure_reason: reason,
-    policy_decision_id: decision?.policy_decision_id ?? delivery.policyDecisionId,
-    safe_summary: decision?.safe_to_display_summary ?? 'Отправка заблокирована правилом безопасности.',
-  });
+  // A stale worker must not overwrite another worker's durable sending claim.
+  const { data, error } = await supabase.from('booking_ops_communication_deliveries')
+    .update({
+      status: 'blocked', failure_reason: reason,
+      policy_decision_id: decision?.policy_decision_id ?? delivery.policyDecisionId,
+      safe_summary: decision?.safe_to_display_summary ?? 'Отправка заблокирована правилом безопасности.',
+      updated_at: new Date().toISOString(),
+    }).eq('id', delivery.id).in('status', ['queued', 'dry_run', 'blocked'])
+    .select('*').maybeSingle();
+  return error || !data ? null : mapDelivery(data as DeliveryRow);
+}
+
+type QuotaPhase = 'reserve' | 'dispatch' | 'sent' | 'uncertain';
+const QUOTA_RECEIPT_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu;
+
+// Only a successful persisted RPC response may admit a provider call. No injected
+// reservation seam, caller count or environment flag can substitute for this RPC.
+async function atomicQuota(
+  phase: QuotaPhase,
+  delivery: BookingOpsCommunicationDelivery,
+  policyId: string | null,
+  scopeId: string,
+  recipient: string,
+  payloadHash: string,
+  reservationId?: string,
+  providerMessageId?: string,
+): Promise<{ allowed: true; reservationId: string } | { allowed: false }> {
+  if (!delivery.accountId || !QUOTA_RECEIPT_ID.test(delivery.accountId)
+    || !policyId || !QUOTA_RECEIPT_ID.test(policyId) || !QUOTA_RECEIPT_ID.test(scopeId)) {
+    return { allowed: false };
+  }
+  try {
+    const { data, error } = await supabase.rpc('booking_ops_atomic_quota_v1', {
+      p_phase: phase, p_delivery_id: delivery.id, p_account_id: delivery.accountId,
+      p_policy_id: policyId, p_scope_id: scopeId, p_recipient: recipient,
+      p_payload_hash: payloadHash, p_reservation_id: reservationId ?? null,
+      p_provider_message_id: providerMessageId ?? null,
+    });
+    if (error || !data || data.allowed !== true || data.phase !== phase
+      || data.delivery_id !== delivery.id || typeof data.reservation_id !== 'string'
+      || !QUOTA_RECEIPT_ID.test(data.reservation_id)
+      || (reservationId && data.reservation_id !== reservationId)) return { allowed: false };
+    return { allowed: true, reservationId: data.reservation_id };
+  } catch {
+    // RPC absent, timeout or unknown commit outcome: zero provider calls.
+    return { allowed: false };
+  }
+}
+
+async function holdDelivery(deliveryId: string, expectedScope: CanonicalExpectedScope) {
+  // Keep sending non-retryable even when this annotation cannot be persisted.
+  try {
+    if (await revalidateDeliveryMutationScope(deliveryId, expectedScope)) return null;
+    return await updateDelivery(deliveryId, { failure_reason: 'quota_review_required' });
+  } catch { return null; }
 }
 
 export async function executeAutoSendDelivery(
   deliveryId: string,
   options: ExecuteAutoSendOptions = {},
 ) {
+  if (process.env.NODE_ENV !== 'test' && (options.sender || options.scopeResolver || options.voiceSender)) {
+    return { ok: false as const, error: 'test_seam_forbidden' };
+  }
   const delivery = await readDelivery(deliveryId);
   if (!delivery) return { ok: false as const, error: 'delivery_not_found' };
   if (options.accountId && delivery.accountId !== options.accountId) {
     return { ok: false as const, error: 'booking_scope_mismatch', delivery: null };
   }
   if (delivery.status === 'sent') return { ok: true as const, delivery, duplicate: true };
+  if (delivery.status === 'sending' || delivery.status === 'failed' || delivery.status === 'skipped') {
+    return { ok: false as const, error: 'quota_review_required', delivery };
+  }
 
   const intent = await readIntent(delivery.communicationIntentId);
   if (!intent) return { ok: false as const, error: 'intent_not_found' };
@@ -611,42 +665,21 @@ export async function executeAutoSendDelivery(
     return { ok: false as const, error: canonicalScopeError, delivery: blocked, decision };
   }
 
-  const now = new Date().toISOString();
-  const { data: claimed, error: claimError } = await supabase
-    .from('booking_ops_communication_deliveries')
-    .update({
-      status: 'sending',
-      attempt_count: delivery.attemptCount + 1,
-      last_attempt_at: now,
-      failure_reason: null,
-      policy_decision_id: decision.policy_decision_id,
-      safe_summary: decision.safe_to_display_summary,
-      updated_at: now,
-    })
-    .eq('id', delivery.id)
-    .in('status', ['queued', 'failed', 'dry_run', 'blocked'])
-    .select('*')
-    .maybeSingle();
-  if (claimError || !claimed) {
-    const latest = await readDelivery(delivery.id);
-    return latest?.status === 'sent'
-      ? { ok: true as const, delivery: latest, duplicate: true }
-      : { ok: false as const, error: 'delivery_already_running', delivery: latest };
-  }
-
   const effectiveDryRun = options.dryRun === true || scope.dryRunOnly;
   if (effectiveDryRun) {
+    // No reservation or sending claim in dry run. Audit writes are unchanged.
+    const { data: dryRow, error: dryError } = await supabase
+      .from('booking_ops_communication_deliveries')
+      .update({ status: 'dry_run', attempt_count: delivery.attemptCount + 1,
+        updated_at: new Date().toISOString(), metadata: safeMetadata({ dry_run: true }) })
+      .eq('id', delivery.id).in('status', ['queued', 'dry_run', 'blocked'])
+      .select('*').maybeSingle();
+    if (dryError || !dryRow) return { ok: false as const, error: 'delivery_already_running' };
     await recordAutoSendAttempt(intent.id, 'dry_run', {
-      booking_id: delivery.bookingId,
-      guest_ref: intent.actorType === 'guest' ? executionContext.recipientRef : null,
-      dry_run: true,
+      booking_id: delivery.bookingId, dry_run: true,
     });
-    const dryRunDelivery = await updateDelivery(delivery.id, {
-      status: 'dry_run',
-      failure_reason: null,
-      metadata: safeMetadata({ dry_run: true }),
-    });
-    return { ok: true as const, delivery: dryRunDelivery, dryRun: true, decision, scope: safeScopeView(scope) };
+    return { ok: true as const, delivery: mapDelivery(dryRow as DeliveryRow),
+      dryRun: true, decision, scope: safeScopeView(scope) };
   }
 
   if (decision.actual_send_enabled !== true) {
@@ -655,93 +688,88 @@ export async function executeAutoSendDelivery(
   }
 
   const preSendScopeError = await revalidateCanonicalScope(intent.bookingOpsRecordId, expectedScope);
-  if (preSendScopeError) {
-    const blocked = await blockDelivery(delivery, decision, preSendScopeError);
-    return { ok: false as const, error: preSendScopeError, delivery: blocked, decision };
+  if (preSendScopeError || !expectedScope || delivery.accountId !== expectedScope.accountId
+    || delivery.bookingId !== executionContext.record?.bookingId
+    || delivery.channel !== channel || delivery.recipientRef !== executionContext.recipientRef) {
+    const reason = preSendScopeError ?? 'quota_scope_mismatch';
+    const blocked = await blockDelivery(delivery, decision, reason);
+    return { ok: false as const, error: reason, delivery: blocked, decision };
   }
-  const sender = options.sender ?? defaultSender;
+  const payloadHash = createHash('sha256').update(intent.messageText).digest('hex');
+  const quotaArgs = [delivery, decision.policy_decision_id, scope.id,
+    executionContext.recipientRef, payloadHash] as const;
+  const reserved = await atomicQuota('reserve', ...quotaArgs);
+  if (!reserved.allowed) {
+    // The RPC may have committed before a lost response. Never undo its claim.
+    const latest = await readDelivery(delivery.id);
+    if (latest?.status === 'sending') {
+      return { ok: false as const, error: 'quota_review_required', delivery: latest };
+    }
+    const blocked = await blockDelivery(delivery, decision, 'quota_review_required');
+    return { ok: false as const, error: 'quota_review_required', delivery: blocked, decision };
+  }
+
+  const held = async () => ({
+    ok: false as const, error: 'quota_review_required',
+    delivery: await holdDelivery(delivery.id, expectedScope), decision,
+  });
   try {
-    const result = await sender({
-      channel,
-      recipientRef: executionContext.recipientRef,
-      messageText: intent.messageText,
-      metadata: {
-        source: 'booking_ops_controlled_auto_send',
-        intent_id: intent.id,
+    // Re-evaluate current content/legal/physical/quiet-hours and revocation after
+    // admission. SQL dispatch also checks persisted identity/scope/policy again.
+    const currentIntent = await readIntent(intent.id);
+    if (!currentIntent || currentIntent.updatedAt !== intent.updatedAt
+      || currentIntent.messageText !== intent.messageText) return held();
+    const currentContext = await resolveExecutionContext(currentIntent);
+    const currentDecision = persistedOperatorBlock(currentIntent)
+      ?? await canAutoSendCommunicationIntent(currentIntent, currentContext.policyContext);
+    const currentScope = await (options.scopeResolver ?? resolveAutoSendScope)({
+      accountId: expectedScope.accountId, bookingId: currentContext.policyContext.bookingId,
+      propertyId: expectedScope.propertyId, channel, messageType: intent.purpose,
+    });
+    const availability = await shouldBlockCommunicationIntent(currentIntent, { accountId: expectedScope.accountId });
+    if (!currentDecision.allowed || !currentDecision.actual_send_enabled
+      || currentDecision.policy_decision_id !== decision.policy_decision_id
+      || !currentScope.enabled || currentScope.scope?.id !== scope.id
+      || currentScope.scope.dryRunOnly || availability.block
+      || currentContext.recipientRef !== executionContext.recipientRef) return held();
+    const dispatch = await atomicQuota('dispatch', ...quotaArgs, reserved.reservationId);
+    if (!dispatch.allowed) return held();
+    // From this durable transition onward even a crash BEFORE the provider call
+    // is uncertain to another worker. No automatic release/retry exists.
+    const result = await (options.sender ?? defaultSender)({
+      channel, recipientRef: executionContext.recipientRef, messageText: intent.messageText,
+      metadata: { source: 'booking_ops_controlled_auto_send', intent_id: intent.id,
         lifecycle_event_type: intent.metadata.lifecycle_event_type,
         communication_mode: intent.metadata.communication_mode,
-        language: intent.metadata.language,
-        urgent: intent.metadata.urgent === true,
-      },
+        language: intent.metadata.language, urgent: intent.metadata.urgent === true },
     });
     if (!result.ok) {
-      await recordAutoSendAttempt(intent.id, 'failed', {
-        booking_id: delivery.bookingId,
-        guest_ref: intent.actorType === 'guest' ? executionContext.recipientRef : null,
-        error_code: result.reason ?? 'provider_rejected',
-      });
-      const failed = await recordDeliveryFailure(
-        delivery.id,
-        result.reason ?? 'provider_rejected',
-        {},
-        expectedScope ?? undefined,
-      );
-      return { ok: false as const, error: result.reason ?? 'provider_rejected', delivery: failed, decision };
+      // Adapter Boolean false does not prove provider non-acceptance.
+      await atomicQuota('uncertain', ...quotaArgs, reserved.reservationId);
+      return held();
     }
-    const voiceAttempted = Boolean(
-      intent.metadata.lifecycle_event_type
-      && intent.metadata.communication_mode === 'voice'
-      && channel === 'telegram',
-    );
-    const voiceSent = voiceAttempted
-      ? await (options.voiceSender ?? sendGuestLifecycleVoiceCopy)({
-          channel,
-          targetId: executionContext.recipientRef,
-          text: intent.messageText,
-          communicationMode: intent.metadata.communication_mode,
-        }).catch(() => false)
-      : false;
+    const completed = await atomicQuota('sent', ...quotaArgs, reserved.reservationId, result.providerMessageId);
+    if (!completed.allowed) return held();
+    // Voice is a second external delivery: disabled until independently reserved.
+    const voiceAttempted = false;
+    const voiceSent = false;
     await recordAutoSendAttempt(intent.id, 'sent', {
       booking_id: delivery.bookingId,
       guest_ref: intent.actorType === 'guest' ? executionContext.recipientRef : null,
       provider: channel,
     });
-    const sent = await recordDeliverySuccess(
-      delivery.id,
-      'providerMessageId' in result ? result.providerMessageId : undefined,
-      { source: channel, voice_attempted: voiceAttempted, voice_sent: voiceSent },
-      expectedScope ?? undefined,
-    );
-    if (sent) {
-      const completionScopeError = await revalidateCanonicalScope(intent.bookingOpsRecordId, expectedScope);
-      if (!completionScopeError) {
-        await supabase.from('booking_ops_communication_intents').update({
-          status: 'completed',
-          updated_at: new Date().toISOString(),
-        }).eq('id', intent.id).eq('booking_ops_record_id', intent.bookingOpsRecordId);
-      }
+    const sent = await recordDeliverySuccess(delivery.id, result.providerMessageId,
+      { source: channel, voice_attempted: false, voice_sent: false }, expectedScope);
+    if (sent && !(await revalidateCanonicalScope(intent.bookingOpsRecordId, expectedScope))) {
+      await supabase.from('booking_ops_communication_intents').update({
+        status: 'completed', updated_at: new Date().toISOString(),
+      }).eq('id', intent.id).eq('booking_ops_record_id', intent.bookingOpsRecordId);
     }
-    return {
-      ok: true as const,
-      delivery: sent,
-      decision,
-      scope: safeScopeView(scope),
-      voiceAttempted,
-      voiceSent,
-      deliveryStatusDeferred: !sent,
-    };
+    return { ok: true as const, delivery: sent, decision, scope: safeScopeView(scope),
+      voiceAttempted, voiceSent, deliveryStatusDeferred: !sent };
   } catch {
-    await recordAutoSendAttempt(intent.id, 'failed', {
-      booking_id: delivery.bookingId,
-      error_code: 'provider_exception',
-    });
-    const failed = await recordDeliveryFailure(
-      delivery.id,
-      'provider_exception',
-      {},
-      expectedScope ?? undefined,
-    );
-    return { ok: false as const, error: 'provider_exception', delivery: failed, decision };
+    await atomicQuota('uncertain', ...quotaArgs, reserved.reservationId);
+    return held();
   }
 }
 
