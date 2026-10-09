@@ -1,120 +1,79 @@
-import { createHash, randomBytes } from 'node:crypto';
-import type { NormalizedCrmContactInput } from '@/lib/crm/normalize';
+import 'server-only';
+import { createHash, createHmac } from 'node:crypto';
+import { supabase } from '@/lib/supabase';
+import type { PublicPilotLeadResult } from './public-pilot-lead';
+import { publicLeadConsentPolicy } from './public-lead-consent';
 
-const salt = randomBytes(16).toString('hex');
-const CONTACT_WINDOW_MS = 60 * 60 * 1000;
-const GLOBAL_WINDOW_MS = 60 * 1000;
-const IDEMPOTENCY_WINDOW_MS = 10 * 60 * 1000;
-const MAX_PER_CONTACT = 3;
-const MAX_GLOBAL = 150;
-
-type Counter = { count: number; expiresAt: number };
+type EligibleLead = Extract<PublicPilotLeadResult, { ok: true }>;
 type ProcessResult =
   | { allowed: false; retryAfterSeconds: number }
   | { allowed: true; replayed: boolean };
 
-// Defense in depth only: these hashes and counters are process-local and disappear on restart.
-// Request IP headers are deliberately ignored because this route cannot prove that a trusted
-// reverse proxy overwrote them. See docs/PUBLIC_LEAD_ANTI_ABUSE.md.
-const counts = new Map<string, Counter>();
-const inFlight = new Map<string, Promise<Exclude<ProcessResult, { allowed: false }>>>();
-const completed = new Map<string, number>();
-
-function fingerprint(namespace: string, raw: string): string {
-  return createHash('sha256').update([salt, namespace, raw.toLowerCase()].join('|')).digest('hex');
+function unavailable(): never {
+  // Never attach raw RPC errors, contact identifiers or fingerprints.
+  throw new Error('Public lead admission unavailable');
 }
 
-function cleanup(now: number): void {
-  for (const [key, state] of counts) if (state.expiresAt <= now) counts.delete(key);
-  for (const [key, expiresAt] of completed) if (expiresAt <= now) completed.delete(key);
-}
-
-function reserve(key: string, max: number, windowMs: number, now: number): Counter | null {
-  const previous = counts.get(key);
-  if (!previous || previous.expiresAt <= now) {
-    const counter = { count: 1, expiresAt: now + windowMs };
-    counts.set(key, counter);
-    return counter;
-  }
-  if (previous.count >= max) return null;
-  previous.count += 1;
-  return previous;
-}
-
-function reserveAttempt(contact: string, now: number): { allowed: true } | {
-  allowed: false;
-  retryAfterSeconds: number;
-} {
-  cleanup(now);
-  const buckets = [
-    { key: 'global', max: MAX_GLOBAL, windowMs: GLOBAL_WINDOW_MS },
-    {
-      key: 'contact:' + fingerprint('contact', contact.trim()),
-      max: MAX_PER_CONTACT,
-      windowMs: CONTACT_WINDOW_MS,
-    },
-  ];
-  const blockedUntil = buckets.reduce((latest, { key, max }) => {
-    const item = counts.get(key);
-    return item && item.expiresAt > now && item.count >= max
-      ? Math.max(latest, item.expiresAt)
-      : latest;
-  }, 0);
-  if (blockedUntil) {
-    return { allowed: false, retryAfterSeconds: Math.max(1, Math.ceil((blockedUntil - now) / 1000)) };
-  }
-
-  for (const bucket of buckets) {
-    const counter = reserve(bucket.key, bucket.max, bucket.windowMs, now);
-    if (!counter) throw new Error('Public lead reservation changed unexpectedly');
-  }
-  return { allowed: true };
-}
-
-function submissionFingerprint(input: NormalizedCrmContactInput): string {
-  return fingerprint('submission', JSON.stringify(input));
-}
-
-function contactIdentity(input: NormalizedCrmContactInput): string {
-  if (input.telegramUsername) return `telegram:${input.telegramUsername.toLowerCase()}`;
-  if (input.email) return `email:${input.email.toLowerCase()}`;
-  return `phone:${input.phone.replace(/\D/g, '')}`;
-}
-
-export async function processPublicPilotLead(
-  input: NormalizedCrmContactInput,
-  persist: () => Promise<void>,
-  now = Date.now(),
-): Promise<ProcessResult> {
-  cleanup(now);
-  const key = submissionFingerprint(input);
-  const completedUntil = completed.get(key);
-  if (completedUntil && completedUntil > now) return { allowed: true, replayed: true };
-
-  const running = inFlight.get(key);
-  if (running) {
-    await running;
-    return { allowed: true, replayed: true };
-  }
-
-  const reservation = reserveAttempt(contactIdentity(input), now);
-  if (!reservation.allowed) return reservation;
-
-  const operation = (async (): Promise<{ allowed: true; replayed: false }> => {
-    await persist();
-    completed.set(key, now + IDEMPOTENCY_WINDOW_MS);
-    return { allowed: true, replayed: false };
-  })();
-  inFlight.set(key, operation);
+export async function processPublicPilotLead(lead: EligibleLead): Promise<ProcessResult> {
+  if (lead.ok !== true || lead.consent !== true ||
+      !['site', 'strigunov'].includes(lead.referral)) unavailable();
+  // Provision one independently generated 32-byte secret across ALL workers.
+  // Never generate a per-process fallback or silently change digest namespaces.
+  const configured = process.env.PUBLIC_LEAD_HMAC_KEY;
+  if (!configured || !/^[0-9a-fA-F]{64}$/.test(configured)) unavailable();
+  const key = Buffer.from(configured, 'hex');
+  const hmac = (domain: string, value: string) =>
+    createHmac('sha256', key).update(JSON.stringify(['public-lead-v1', domain, value])).digest('hex');
+  const input = lead.input;
+  const kind = input.telegramUsername ? 'telegram' : input.email ? 'email' : 'phone';
+  const contact = kind === 'telegram' ? input.telegramUsername.toLowerCase()
+    : kind === 'email' ? input.email!.toLowerCase() : input.phone.replace(/\D/g, '');
+  if (!contact) unavailable();
+  const policy = publicLeadConsentPolicy();
+  // Explicit canonical allowlist: client IDs, hash/version/time fields and IP
+  // headers have no authority. Contact formatting/case variants converge.
+  const payload = {
+    name: input.name,
+    contact_kind: kind,
+    contact_value: contact,
+    objects_count: input.objectsCount,
+    note: input.note,
+    next_step: input.nextStep,
+    referral: lead.referral,
+    consent: true,
+    policy_id: policy.policyId,
+    policy_version: policy.policyVersion,
+    policy_source_sha256: policy.sourceSha256,
+    policy_content_sha256: policy.contentSha256,
+  };
+  const submission = hmac('submission', JSON.stringify(payload));
   try {
-    return await operation;
-  } finally {
-    if (inFlight.get(key) === operation) inFlight.delete(key);
+    // Lazy proxy: no DB construction or I/O at module import. This RPC alone
+    // owns admission + CRM insert + consent receipt in one transaction.
+    const { data, error } = await supabase.rpc('admit_public_pilot_lead_v1', {
+      p_key_commitment: createHash('sha256').update(key).digest('hex'),
+      p_contact_digest: hmac('contact', JSON.stringify([kind, contact])),
+      p_submission_digest: submission,
+      p_payload: payload,
+    });
+    if (error || !data || typeof data !== 'object' || Array.isArray(data)) unavailable();
+    const receipt = data as Record<string, unknown>;
+    if (receipt.protocol !== 'public-lead-v1') unavailable();
+    if (receipt.status === 'rate_limited') {
+      const retry = receipt.retry_after_seconds;
+      if (typeof retry !== 'number' || !Number.isInteger(retry) || retry < 1 || retry > 3600) unavailable();
+      return { allowed: false, retryAfterSeconds: retry };
+    }
+    if ((receipt.status !== 'created' && receipt.status !== 'replayed') ||
+        receipt.persisted !== true || receipt.submission_digest !== submission ||
+        typeof receipt.crm_id !== 'string' ||
+        !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(receipt.crm_id)) {
+      unavailable();
+    }
+    // No automatic retry of an unknown commit result. A subsequent identical
+    // request reconciles through the canonical receipt, even after restart.
+    return { allowed: true, replayed: receipt.status === 'replayed' };
+  } catch {
+    unavailable();
   }
-}
-
-export function resetPublicPilotLeadRateLimitForTests(): void {
-  counts.clear();
-  inFlight.clear();
-  completed.clear();
 }

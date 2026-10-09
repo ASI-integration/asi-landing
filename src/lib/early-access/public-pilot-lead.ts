@@ -18,7 +18,7 @@ export type PublicPilotLeadInput = {
 };
 
 export type PublicPilotLeadResult =
-  | { ok: true; input: NormalizedCrmContactInput }
+  | { ok: true; input: NormalizedCrmContactInput; consent: true; referral: 'strigunov' | 'site' }
   | { ok: false; message: string };
 
 export function normalizePublicPilotLead(body: PublicPilotLeadInput): PublicPilotLeadResult {
@@ -73,5 +73,5 @@ export function normalizePublicPilotLead(body: PublicPilotLeadInput): PublicPilo
     communicationStatus: 'needs_manual_reaction',
     nextStep: 'Связаться с заявителем, уточнить объект и согласовать подключение.',
   });
-  return { ok: true, input };
+  return { ok: true, input, consent: true, referral: strigunov ? 'strigunov' : 'site' };
 }
