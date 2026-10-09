@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { readRequestJson } from '@/lib/safeRequestJson';
+import { readBoundedRequestJson } from '@/lib/safeRequestJson';
 import { createCrmContact } from '@/lib/crm/repository';
 import { normalizePublicPilotLead } from '@/lib/early-access/public-pilot-lead';
 import { processPublicPilotLead } from '@/lib/early-access/public-lead-rate-limit';
@@ -7,13 +7,13 @@ import { processPublicPilotLead } from '@/lib/early-access/public-lead-rate-limi
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
+const MAX_PUBLIC_LEAD_BODY_BYTES = 4096;
+
 export async function POST(req: Request): Promise<NextResponse> {
-  // Reject extremely large anonymous submissions before parsing (not a substitute for edge rate limiting).
-  const contentLength = Number(req.headers.get('content-length'));
-  if (Number.isFinite(contentLength) && contentLength > 4096) {
+  const parsed = await readBoundedRequestJson(req, MAX_PUBLIC_LEAD_BODY_BYTES);
+  if (!parsed.ok && parsed.reason === 'too_large') {
     return NextResponse.json({ ok: false, message: 'Слишком большая заявка.' }, { status: 413 });
   }
-  const parsed = await readRequestJson(req);
   if (!parsed.ok) {
     return NextResponse.json({ ok: false, message: 'Проверьте форму заявки.' }, { status: 400 });
   }
