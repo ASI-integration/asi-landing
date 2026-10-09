@@ -1,3 +1,5 @@
+import { loadOperatorHandoffs } from '@/lib/crm/operator-handoff-server';
+import { withOperatorHandoffs } from '@/lib/crm/operator-handoff';
 import { NextResponse } from 'next/server';
 import { buildActivityFeed, buildCardActivities } from '@/lib/crm/activity-feed';
 import { demoCrmEventsForFeed, shouldUseDemoActivityEvents } from '@/lib/crm/demo-activity-data';
@@ -88,12 +90,14 @@ export async function GET(req: Request): Promise<NextResponse> {
       }),
     );
 
-    const [items, bookingSignals] = await Promise.all([
+    const [baseItems, bookingSignals, handoffs] = await Promise.all([
       Promise.resolve(
         buildQueueItems(contacts, messagesByContact, activitiesByContact, opsSummaryByContact),
       ),
       loadCrmBookingSignalsForQueue(contacts),
+      loadOperatorHandoffs(contactIds),
     ]);
+    const items = withOperatorHandoffs(baseItems, handoffs);
     const filtered = filterQueueItems(items, filter);
     const activityFeed = buildActivityFeed(contacts, feedEvents);
     const pilot = computePilotRolloutMetrics(contacts);
