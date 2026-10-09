@@ -4,14 +4,14 @@ import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 import acceptanceContract from '../strigunov-crm-local-acceptance.ts';
+import queueModule from '../../src/lib/crm/queue.ts';
 
 const {
   buildFixtureIdentity,
   runAcceptanceContract,
-  validateAuthenticatedQueueProof,
-  validateDisposableStoreIdentity,
-  validateServiceCredentialProof,
+  runUnitAcceptanceModel,
 } = acceptanceContract;
+const { buildQueueItem, resolveCrmQueueReferral } = queueModule;
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const runner = fileURLToPath(new URL('../strigunov-crm-local-acceptance.ts', import.meta.url));
@@ -23,7 +23,7 @@ function attempt(args, override = {}) {
     NODE_ENV: 'test',
     ASI_LOCAL_CRM_ACCEPTANCE: '1',
     SUPABASE_URL: 'http://127.0.0.1:54321',
-    SUPABASE_SERVICE_ROLE_KEY: 'test-placeholder-not-a-real-key',
+    SUPABASE_SERVICE_ROLE_KEY: 'fabricated-key-that-must-never-be-read',
     ...override,
   };
   const result = spawnSync(process.execPath, ['--import', 'tsx', runner, ...args], {
@@ -36,239 +36,255 @@ function attempt(args, override = {}) {
   return { ...result, json: result.stdout.trim() ? JSON.parse(result.stdout) : null };
 }
 
-function authoritativeIdentity(runId = RUN_ID) {
-  return {
-    authority: 'trusted_local_runtime_probe',
-    proofKind: 'docker_daemon_socket_owner_and_database_identity',
-    runId,
-    instanceId: `local-${runId}`,
-    apiOrigin: 'http://127.0.0.1:54321',
-    apiBindingHost: '127.0.0.1',
-    databaseBindingHost: '127.0.0.1',
-    apiContainerId: 'a'.repeat(64),
-    databaseContainerId: 'b'.repeat(64),
-    disposable: true,
-    harnessOwned: true,
-    remoteEgressDenied: true,
-    tunnelDetected: false,
-    proxyDetected: false,
-  };
+function unitInput(scenario = 'success') {
+  return { evidenceKind: 'unit_model', runId: RUN_ID, scenario };
 }
 
-function credentialProof(identity = authoritativeIdentity()) {
-  return {
-    authority: 'identified_local_auth_api',
-    accepted: true,
-    instanceId: identity.instanceId,
-    runId: identity.runId,
-  };
+function assertNoExternalSideEffects(result) {
+  assert.equal(result.sideEffects.databaseWrites, false);
+  assert.equal(result.sideEffects.networkRequests, false);
+  assert.equal(result.sideEffects.secretsRead, false);
+  assert.equal(result.sideEffects.cleanupDeletes, false);
 }
 
-function queueProof(fixture, overrides = {}) {
-  return {
-    route: '/api/dashboard/crm/queue?includeTest=1',
-    unauthenticatedStatus: 401,
-    forbiddenStatus: 403,
-    operatorStatus: 200,
-    item: {
-      id: 'row-owned-1',
-      referral: 'strigunov',
-      nextAction: fixture.nextAction,
-    },
-    ...overrides,
-  };
-}
+const baseContact = {
+  id: 'contact-1',
+  name: 'Test Owner',
+  phone: '',
+  telegramUsername: 'test_owner',
+  email: null,
+  role: 'owner',
+  source: 'form',
+  objectsCount: 2,
+  city: '',
+  note: '',
+  status: 'new',
+  communicationStatus: 'needs_manual_reaction',
+  lastContactAt: null,
+  nextStep: '',
+  nextActionAt: null,
+  createdAt: '2026-10-09T10:00:00.000Z',
+  updatedAt: '2026-10-09T10:00:00.000Z',
+};
 
-function memoryAdapter(options = {}) {
-  const rows = new Map();
-  const deletedIds = [];
-  let reads = 0;
-  return {
-    rows,
-    deletedIds,
-    async insertFixture(fixture) {
-      if (options.insertError) throw options.insertError;
-      const row = { id: options.id ?? 'row-owned-1', ...fixture };
-      rows.set(row.id, options.persistedRow ? { ...row, ...options.persistedRow } : row);
-      return { id: row.id };
-    },
-    async readFixtureByIdStrict(id) {
-      reads += 1;
-      if (options.readErrorAt === reads) throw new Error('strict read failed');
-      return rows.get(id) ?? null;
-    },
-    async deleteOwnedFixture(id, fixture) {
-      if (options.cleanupError) throw new Error('cleanup failed');
-      const row = rows.get(id);
-      if (!row || row.runId !== fixture.runId || row.name !== fixture.name || row.telegramUsername !== fixture.telegramUsername) {
-        return { deleted: false, ownershipMatched: false, deletedId: null };
-      }
-      rows.delete(id);
-      deletedIds.push(id);
-      return { deleted: true, ownershipMatched: true, deletedId: id };
-    },
-  };
-}
-
-test('plan is machine-readable, read-only, and never reports a security pass', () => {
+test('plan is machine-readable and never reports acceptance', () => {
   const result = attempt(['--plan'], {
     NODE_ENV: 'production',
-    SUPABASE_URL: 'https://invalid.example',
-    SUPABASE_SERVICE_ROLE_KEY: '',
+    SUPABASE_URL: 'https://remote.example',
   });
   assert.equal(result.status, 0, result.stderr);
   assert.equal(result.json.mode, 'plan');
   assert.equal(result.json.verdict, 'PLAN_ONLY');
   assert.equal(result.json.safeToExecute, false);
   assert.equal(result.json.evidence.realIsolatedPersistence, 'NOT_RUN');
-  assert.deepEqual(result.json.sideEffects, {
-    databaseWrites: false,
-    networkRequests: false,
-    secretsRead: false,
-    cleanupDeletes: false,
-  });
+  assertNoExternalSideEffects(result.json);
 });
 
-test('dry-run policy blocks execution without treating local flags, URL, or a key string as proof', () => {
+test('dry-run remains hard-blocked despite fabricated local flags and credentials', () => {
   const result = attempt(['--dry-run']);
   assert.equal(result.status, 2, result.stderr);
   assert.equal(result.json.mode, 'dry-run');
   assert.equal(result.json.verdict, 'BLOCKED');
   assert.equal(result.json.safeToExecute, false);
-  assert.match(result.json.blockers.join(' '), /authoritative_disposable_store_identity_unavailable/);
-  assert.match(result.json.blockers.join(' '), /service_key_not_verified/);
-  assert.match(result.json.blockers.join(' '), /authenticated_operator_http_proof_unavailable/);
-  assert.equal(result.json.evidence.unitContracts, 'NOT_RUN');
-  assert.equal(result.json.evidence.realIsolatedPersistence, 'BLOCKED');
+  assert.match(result.json.blockers.join(' '), /runtime_execution_hard_blocked/);
+  assert.equal(result.json.evidence.realIsolatedPersistence, 'NOT_RUN');
+  assertNoExternalSideEffects(result.json);
 });
 
-test('execute mode is prohibited until real identity, HTTP attribution, and cleanup adapters exist', () => {
+test('execute remains hard-blocked with no real adapter path', () => {
   const result = attempt(['--execute']);
   assert.equal(result.status, 2, result.stderr);
   assert.equal(result.json.mode, 'execute');
   assert.equal(result.json.verdict, 'BLOCKED');
-  assert.equal(result.json.safeToExecute, false);
-  assert.equal(result.json.gates.disposableStoreIdentity.status, 'BLOCKED');
+  assert.equal(result.json.gates.realIsolatedPersistence.status, 'BLOCKED');
   assert.equal(result.json.gates.authenticatedOperatorHttp.status, 'BLOCKED');
   assert.equal(result.json.gates.cleanup.status, 'BLOCKED');
-  assert.deepEqual(result.json.sideEffects, {
-    databaseWrites: false,
-    networkRequests: false,
-    secretsRead: false,
-    cleanupDeletes: false,
-  });
+  assertNoExternalSideEffects(result.json);
 });
 
-test('disposable identity rejects missing, self-attested, remote, tunnel, proxy, ambiguous, and cross-run evidence', () => {
-  const cases = [
-    null,
-    { ...authoritativeIdentity(), authority: 'caller_self_attestation' },
-    { ...authoritativeIdentity(), apiOrigin: 'https://remote.example' },
-    { ...authoritativeIdentity(), tunnelDetected: true },
-    { ...authoritativeIdentity(), proxyDetected: true },
-    { ...authoritativeIdentity(), apiBindingHost: '0.0.0.0' },
-    { ...authoritativeIdentity(), runId: 'ffffffffffff' },
-  ];
-  for (const evidence of cases) {
-    assert.equal(validateDisposableStoreIdentity(evidence, RUN_ID).status, 'BLOCKED');
-  }
-  assert.equal(validateDisposableStoreIdentity(authoritativeIdentity(), RUN_ID).status, 'PASS');
+test('invalid CLI modes fail with a stable bounded code', () => {
+  const result = attempt(['--execute', '--dry-run']);
+  assert.equal(result.status, 2, result.stderr);
+  assert.deepEqual(result.json.blockers, ['exactly_one_mode_required:--plan|--dry-run|--execute']);
 });
 
-test('a nonempty or fake service key is not credential proof', () => {
-  const identity = authoritativeIdentity();
-  assert.equal(validateServiceCredentialProof('fake-key', null, identity).status, 'BLOCKED');
-  assert.equal(validateServiceCredentialProof('', credentialProof(identity), identity).status, 'BLOCKED');
-  assert.equal(validateServiceCredentialProof('present-but-never-logged', {
-    ...credentialProof(identity),
-    instanceId: 'different-instance',
-  }, identity).status, 'BLOCKED');
-  assert.equal(validateServiceCredentialProof('present-but-never-logged', credentialProof(identity), identity).status, 'PASS');
-});
-
-test('authenticated queue proof requires genuine 401, 403, 200 and owner-visible attribution', () => {
-  const fixture = buildFixtureIdentity(RUN_ID);
-  assert.equal(validateAuthenticatedQueueProof(null, 'row-owned-1', fixture).status, 'BLOCKED');
-  assert.equal(validateAuthenticatedQueueProof(queueProof(fixture, { unauthenticatedStatus: 200 }), 'row-owned-1', fixture).status, 'BLOCKED');
-  assert.equal(validateAuthenticatedQueueProof(queueProof(fixture, { forbiddenStatus: 200 }), 'row-owned-1', fixture).status, 'BLOCKED');
-  assert.equal(validateAuthenticatedQueueProof(queueProof(fixture, { operatorStatus: 401 }), 'row-owned-1', fixture).status, 'BLOCKED');
-  assert.equal(validateAuthenticatedQueueProof(queueProof(fixture, { item: { id: 'row-owned-1' } }), 'row-owned-1', fixture).status, 'BLOCKED');
-  assert.equal(validateAuthenticatedQueueProof(queueProof(fixture), 'row-owned-1', fixture).status, 'PASS');
-});
-
-test('unit contract tracks the inserted ID, uses strict readback, and passes only after exact cleanup', async () => {
-  const identity = authoritativeIdentity();
-  const fixture = buildFixtureIdentity(RUN_ID);
-  const adapter = memoryAdapter();
+test('the former fabricated authority shape cannot invoke injected callbacks', async () => {
+  let calls = 0;
+  const callback = async () => {
+    calls += 1;
+    throw new Error('must never execute');
+  };
   const result = await runAcceptanceContract({
     evidenceKind: 'unit_contract',
     runId: RUN_ID,
-    identityEvidence: identity,
-    serviceKey: 'present-but-never-logged',
-    credentialEvidence: credentialProof(identity),
-    adapter,
-    getQueueProof: async () => queueProof(fixture),
+    identityEvidence: {
+      authority: 'trusted_local_runtime_probe',
+      proofKind: 'docker_daemon_socket_owner_and_database_identity',
+    },
+    serviceKey: 'fabricated',
+    credentialEvidence: { authority: 'identified_local_auth_api', accepted: true },
+    adapter: {
+      insertFixture: callback,
+      readFixtureByIdStrict: callback,
+      deleteOwnedFixture: callback,
+    },
+    getQueueProof: callback,
+  });
+  assert.equal(result.verdict, 'BLOCKED');
+  assert.deepEqual(result.blockers, ['unit_model_evidence_kind_required']);
+  assert.equal(calls, 0);
+  assertNoExternalSideEffects(result);
+});
+
+test('extra executable properties are ignored by the closed unit model', async () => {
+  let calls = 0;
+  const callback = () => { calls += 1; };
+  const result = await runUnitAcceptanceModel({
+    ...unitInput(),
+    insertFixture: callback,
+    readFixtureByIdStrict: callback,
+    deleteOwnedFixture: callback,
+    getQueueProof: callback,
+    networkRequest: callback,
+  });
+  assert.equal(result.verdict, 'CONTRACT_PASS');
+  assert.equal(calls, 0);
+  assertNoExternalSideEffects(result);
+});
+
+test('unit contract passes only after exact in-memory cleanup', async () => {
+  const result = await runUnitAcceptanceModel(unitInput());
+  assert.equal(result.verdict, 'CONTRACT_PASS');
+  assert.equal(result.mode, 'unit-model');
+  assert.equal(result.evidence.unitContracts, 'PASS');
+  assert.equal(result.evidence.realIsolatedPersistence, 'NOT_RUN');
+  assert.equal(result.evidence.authenticatedOperatorHttp, 'NOT_RUN');
+  assert.equal(result.cleanup.status, 'PASS');
+  assert.equal(result.model.rowsRemaining, 0);
+  assert.equal(result.sideEffects.inMemoryRowsCreated, 1);
+  assert.equal(result.sideEffects.inMemoryRowsDeleted, 1);
+});
+
+test('fabricated 401, 403, and 200 claims remain ignored UNIT_ONLY data', async () => {
+  const result = await runUnitAcceptanceModel({
+    ...unitInput(),
+    unauthenticatedStatus: 401,
+    forbiddenStatus: 403,
+    operatorStatus: 200,
   });
   assert.equal(result.verdict, 'CONTRACT_PASS');
   assert.equal(result.evidence.unitContracts, 'PASS');
+  assert.equal(result.evidence.authenticatedOperatorHttp, 'NOT_RUN');
   assert.equal(result.evidence.realIsolatedPersistence, 'NOT_RUN');
-  assert.deepEqual(adapter.deletedIds, ['row-owned-1']);
-  assert.equal(adapter.rows.size, 0);
-  assert.equal(result.cleanup.status, 'PASS');
 });
 
-test('partial write without an owned ID fails closed and never broad-deletes', async () => {
-  const identity = authoritativeIdentity();
-  const adapter = memoryAdapter({ insertError: new Error('write outcome unknown') });
-  const result = await runAcceptanceContract({
-    evidenceKind: 'unit_contract', runId: RUN_ID, identityEvidence: identity,
-    serviceKey: 'present', credentialEvidence: credentialProof(identity), adapter,
-    getQueueProof: async () => { throw new Error('must not run'); },
-  });
-  assert.equal(result.verdict, 'BLOCKED');
-  assert.match(result.blockers.join(' '), /write_outcome_missing_owned_id/);
-  assert.deepEqual(adapter.deletedIds, []);
+test('preexisting same-run and foreign rows remain untouched and blocked', async () => {
+  for (const scenario of ['preexisting_same_run', 'preexisting_other_run']) {
+    const result = await runUnitAcceptanceModel(unitInput(scenario));
+    assert.equal(result.verdict, 'BLOCKED');
+    assert.equal(result.ownership.createdThisInvocation, false);
+    assert.equal(result.ownership.preexistingRowsUntouched, true);
+    assert.equal(result.cleanup.status, 'BLOCKED');
+    assert.equal(result.model.rowsRemaining, 1);
+    assert.equal(result.sideEffects.inMemoryRowsDeleted, 0);
+  }
 });
 
-test('failure after an insert receipt cleans only the immediately tracked ID', async () => {
-  const identity = authoritativeIdentity();
-  const adapter = memoryAdapter({ readErrorAt: 1 });
-  const result = await runAcceptanceContract({
-    evidenceKind: 'unit_contract', runId: RUN_ID, identityEvidence: identity,
-    serviceKey: 'present', credentialEvidence: credentialProof(identity), adapter,
-    getQueueProof: async () => { throw new Error('must not run'); },
-  });
+test('concurrent logical ownership conflicts fail closed without cleanup', async () => {
+  const result = await runUnitAcceptanceModel(unitInput('concurrent_attempt'));
   assert.equal(result.verdict, 'BLOCKED');
-  assert.deepEqual(adapter.deletedIds, ['row-owned-1']);
-  assert.equal(adapter.rows.size, 0);
+  assert.match(result.blockers.join(' '), /unit_concurrent_ownership_conflict/);
+  assert.equal(result.ownership.preexistingRowsUntouched, true);
+  assert.equal(result.sideEffects.inMemoryRowsDeleted, 0);
 });
 
-test('cleanup failure prevents every success verdict', async () => {
-  const identity = authoritativeIdentity();
-  const fixture = buildFixtureIdentity(RUN_ID);
-  const adapter = memoryAdapter({ cleanupError: true });
-  const result = await runAcceptanceContract({
-    evidenceKind: 'unit_contract', runId: RUN_ID, identityEvidence: identity,
-    serviceKey: 'present', credentialEvidence: credentialProof(identity), adapter,
-    getQueueProof: async () => queueProof(fixture),
-  });
+test('insert-before-lost-response records an unknown write and never broad-deletes', async () => {
+  const result = await runUnitAcceptanceModel(unitInput('insert_before_lost_response'));
   assert.equal(result.verdict, 'BLOCKED');
-  assert.equal(result.cleanup.status, 'BLOCKED');
-  assert.match(result.blockers.join(' '), /cleanup_failed/);
+  assert.equal(result.fixtureId, null);
+  assert.equal(result.ownership.unknownWrite, true);
+  assert.match(result.blockers.join(' '), /unit_cleanup_unproven_without_owned_id/);
+  assert.equal(result.model.rowsRemaining, 1);
+  assert.equal(result.sideEffects.inMemoryRowsDeleted, 0);
 });
 
-test('fixture mismatch and concurrent-run identity mismatch do not delete another run row', async () => {
-  const identity = authoritativeIdentity();
-  const other = buildFixtureIdentity('ffffffffffff');
-  const adapter = memoryAdapter({ persistedRow: other });
-  const result = await runAcceptanceContract({
-    evidenceKind: 'unit_contract', runId: RUN_ID, identityEvidence: identity,
-    serviceKey: 'present', credentialEvidence: credentialProof(identity), adapter,
-    getQueueProof: async () => { throw new Error('must not run'); },
-  });
+test('readback mismatch cannot authorize destructive cleanup', async () => {
+  const result = await runUnitAcceptanceModel(unitInput('readback_mismatch'));
   assert.equal(result.verdict, 'BLOCKED');
-  assert.match(result.blockers.join(' '), /fixture_ownership_mismatch/);
-  assert.deepEqual(adapter.deletedIds, []);
-  assert.equal(adapter.rows.size, 1);
-  assert.equal(adapter.rows.get('row-owned-1').runId, 'ffffffffffff');
+  assert.equal(result.ownership.unknownWrite, true);
+  assert.equal(result.gates.strictPersistenceModel.status, 'BLOCKED');
+  assert.match(result.blockers.join(' '), /unit_cleanup_not_authorized_after_readback_mismatch/);
+  assert.equal(result.model.rowsRemaining, 1);
+  assert.equal(result.sideEffects.inMemoryRowsDeleted, 0);
+});
+
+test('delete failure and zero deleted rows prevent contract success', async () => {
+  for (const scenario of ['delete_failure', 'delete_zero_count']) {
+    const result = await runUnitAcceptanceModel(unitInput(scenario));
+    assert.equal(result.verdict, 'BLOCKED');
+    assert.equal(result.cleanup.status, 'BLOCKED');
+    assert.equal(result.model.rowsRemaining, 1);
+    assert.equal(result.sideEffects.inMemoryRowsDeleted, 0);
+  }
+});
+
+test('unknown absence read prevents success even after modeled deletion', async () => {
+  const result = await runUnitAcceptanceModel(unitInput('absence_read_failure'));
+  assert.equal(result.verdict, 'BLOCKED');
+  assert.deepEqual(result.cleanup.reasons, ['unit_cleanup_absence_read_failed']);
+  assert.equal(result.model.rowsRemaining, 0);
+  assert.equal(result.sideEffects.inMemoryRowsDeleted, 1);
+});
+
+test('malformed unit inputs return stable codes without exception text', async () => {
+  const badRun = await runUnitAcceptanceModel({ evidenceKind: 'unit_model', runId: 'not-valid' });
+  const badScenario = await runUnitAcceptanceModel({
+    evidenceKind: 'unit_model',
+    runId: RUN_ID,
+    scenario: 'unknown-and-very-long-arbitrary-caller-text',
+  });
+  assert.deepEqual(badRun.blockers, ['unit_run_id_invalid']);
+  assert.deepEqual(badScenario.blockers, ['unit_scenario_unknown']);
+  assert.throws(
+    () => buildFixtureIdentity('not-valid'),
+    /acceptance_run_id_must_be_12_lowercase_hex_characters/,
+  );
+});
+
+test('queue referral projection is exact, conservative, and neutral for history', () => {
+  assert.equal(
+    resolveCrmQueueReferral('Заявка\nИсточник заявки: Стригунов (переход по ссылке).\nДалее'),
+    'strigunov',
+  );
+  assert.equal(resolveCrmQueueReferral('Источник заявки: сайт ASI.'), 'site');
+  assert.equal(resolveCrmQueueReferral('Источник заявки: главная страница ASI.'), 'site');
+  assert.equal(resolveCrmQueueReferral('Историческая заявка от Стригунова'), 'unknown');
+  assert.equal(resolveCrmQueueReferral('prefix Источник заявки: Стригунов (переход по ссылке).'), 'unknown');
+  assert.equal(resolveCrmQueueReferral(''), 'unknown');
+});
+
+test('guarded queue item serializes sanitized referral and next action without raw notes', () => {
+  const rawNote = [
+    'private-note-sentinel',
+    'Источник заявки: Стригунов (переход по ссылке).',
+  ].join('\n');
+  const item = buildQueueItem({
+    ...baseContact,
+    note: rawNote,
+    nextStep: '  [photo] Связаться   с заявителем  ',
+  });
+  assert.equal(item.referral, 'strigunov');
+  assert.equal(item.nextAction, 'Связаться с заявителем');
+  assert.equal(item.lastMessagePreview, 'Связаться с заявителем');
+  assert.equal(item.nextBestStep, item.channelManagerNextStep);
+  assert.doesNotMatch(JSON.stringify(item), /private-note-sentinel/);
+  assert.equal(Object.hasOwn(item, 'assignedOperator'), false);
+});
+
+test('empty stored next action remains explicitly null and does not alter compatibility fields', () => {
+  const item = buildQueueItem({ ...baseContact, note: 'Источник заявки: сайт ASI.' });
+  assert.equal(item.referral, 'site');
+  assert.equal(item.nextAction, null);
+  assert.equal(item.lastMessagePreview, null);
+  assert.equal(Object.hasOwn(item, 'nextBestStep'), true);
 });

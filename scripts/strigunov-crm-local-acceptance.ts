@@ -2,29 +2,27 @@ import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
-const SCHEMA_VERSION = 'asi.strigunov-crm-local-acceptance.v2';
+const SCHEMA_VERSION = 'asi.strigunov-crm-local-acceptance.v3';
 const NEXT_ACTION = 'Связаться с заявителем, уточнить объект и согласовать подключение.';
-const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '[::1]']);
 
 type GateStatus = 'PASS' | 'BLOCKED' | 'NOT_RUN';
 
-type GateResult = {
-  status: GateStatus;
-  reasons: string[];
-};
+type GateResult = { status: GateStatus; reasons: string[] };
 
 type EvidenceState = {
   unitContracts: GateStatus;
-  realIsolatedPersistence: GateStatus;
-  authenticatedOperatorHttp: GateStatus;
+  realIsolatedPersistence: 'NOT_RUN';
+  authenticatedOperatorHttp: 'NOT_RUN';
   cleanup: GateStatus;
 };
 
 type SideEffects = {
-  databaseWrites: boolean;
-  networkRequests: boolean;
-  secretsRead: boolean;
-  cleanupDeletes: boolean;
+  databaseWrites: false;
+  networkRequests: false;
+  secretsRead: false;
+  cleanupDeletes: false;
+  inMemoryRowsCreated: number;
+  inMemoryRowsDeleted: number;
 };
 
 export type FixtureIdentity = {
@@ -39,69 +37,56 @@ export type FixtureIdentity = {
   objectsCount: 2;
 };
 
-type StoredFixture = FixtureIdentity & { id: string };
-
-type StoreAdapter = {
-  insertFixture(fixture: FixtureIdentity): Promise<{ id: string }>;
-  readFixtureByIdStrict(id: string): Promise<StoredFixture | null>;
-  deleteOwnedFixture(
-    id: string,
-    fixture: FixtureIdentity,
-  ): Promise<{ deleted: boolean; ownershipMatched: boolean; deletedId: string | null }>;
+type MemoryRow = FixtureIdentity & {
+  id: string;
+  ownerInvocationId: string;
 };
 
-type AcceptanceContractInput = {
-  evidenceKind: 'unit_contract';
-  runId: string;
-  identityEvidence: unknown;
-  serviceKey: string | undefined;
-  credentialEvidence: unknown;
-  adapter: StoreAdapter;
-  getQueueProof(fixtureId: string, fixture: FixtureIdentity): Promise<unknown>;
+export const UNIT_SCENARIOS = [
+  'success',
+  'preexisting_same_run',
+  'preexisting_other_run',
+  'concurrent_attempt',
+  'insert_before_lost_response',
+  'readback_mismatch',
+  'delete_failure',
+  'delete_zero_count',
+  'absence_read_failure',
+] as const;
+
+export type UnitScenario = (typeof UNIT_SCENARIOS)[number];
+
+type UnitAcceptanceInput = {
+  evidenceKind?: unknown;
+  runId?: unknown;
+  scenario?: unknown;
+  [key: string]: unknown;
 };
 
-type AcceptanceContractResult = {
+type UnitAcceptanceResult = {
   schemaVersion: typeof SCHEMA_VERSION;
-  mode: 'contract-test';
+  mode: 'unit-model';
   verdict: 'CONTRACT_PASS' | 'BLOCKED';
   safeToExecute: false;
-  runId: string;
+  runId: string | null;
   fixtureId: string | null;
+  scenario: UnitScenario | null;
   gates: {
-    disposableStoreIdentity: GateResult;
-    serviceCredential: GateResult;
-    strictPersistence: GateResult;
-    authenticatedOperatorHttp: GateResult;
+    unitOnlyBoundary: GateResult;
+    fixtureOwnership: GateResult;
+    strictPersistenceModel: GateResult;
+    queueProjection: GateResult;
+  };
+  ownership: {
+    createdThisInvocation: boolean;
+    preexistingRowsUntouched: boolean;
+    unknownWrite: boolean;
   };
   cleanup: GateResult;
   evidence: EvidenceState;
   blockers: string[];
+  model: { rowsRemaining: number };
   sideEffects: SideEffects;
-};
-
-type IdentityEvidence = {
-  authority?: unknown;
-  proofKind?: unknown;
-  runId?: unknown;
-  instanceId?: unknown;
-  apiOrigin?: unknown;
-  apiBindingHost?: unknown;
-  databaseBindingHost?: unknown;
-  apiContainerId?: unknown;
-  databaseContainerId?: unknown;
-  disposable?: unknown;
-  harnessOwned?: unknown;
-  remoteEgressDenied?: unknown;
-  tunnelDetected?: unknown;
-  proxyDetected?: unknown;
-};
-
-type QueueProof = {
-  route?: unknown;
-  unauthenticatedStatus?: unknown;
-  forbiddenStatus?: unknown;
-  operatorStatus?: unknown;
-  item?: unknown;
 };
 
 function blocked(...reasons: string[]): GateResult {
@@ -116,36 +101,22 @@ function notRun(reason: string): GateResult {
   return { status: 'NOT_RUN', reasons: [reason] };
 }
 
-function record(value: unknown): Record<string, unknown> | null {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
-  return value as Record<string, unknown>;
-}
-
-function safeErrorCode(error: unknown): string {
-  const raw = error instanceof Error ? error.message : String(error ?? 'unknown');
-  return raw.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 80) || 'unknown';
-}
-
 function unique(values: string[]): string[] {
   return [...new Set(values)];
 }
 
-function isLoopbackHttpOrigin(value: unknown): boolean {
-  if (typeof value !== 'string') return false;
-  try {
-    const url = new URL(value);
-    return url.protocol === 'http:' && LOOPBACK_HOSTS.has(url.hostname) && url.port === '54321';
-  } catch {
-    return false;
-  }
+function isRunId(value: unknown): value is string {
+  return typeof value === 'string' && /^[0-9a-f]{12}$/.test(value);
 }
 
-function hasContainerId(value: unknown): boolean {
-  return typeof value === 'string' && /^[0-9a-f]{64}$/i.test(value);
+function isUnitScenario(value: unknown): value is UnitScenario {
+  return typeof value === 'string' && UNIT_SCENARIOS.includes(value as UnitScenario);
 }
 
-export function buildFixtureIdentity(runId = randomUUID().replaceAll('-', '').slice(0, 12)): FixtureIdentity {
-  if (!/^[0-9a-f]{12}$/.test(runId)) {
+export function buildFixtureIdentity(
+  runId = randomUUID().replaceAll('-', '').slice(0, 12),
+): FixtureIdentity {
+  if (!isRunId(runId)) {
     throw new Error('acceptance_run_id_must_be_12_lowercase_hex_characters');
   }
   return {
@@ -161,208 +132,240 @@ export function buildFixtureIdentity(runId = randomUUID().replaceAll('-', '').sl
   };
 }
 
-export function validateDisposableStoreIdentity(
-  rawEvidence: unknown,
-  expectedRunId: string,
-): GateResult {
-  const evidence = record(rawEvidence) as IdentityEvidence | null;
-  if (!evidence) return blocked('authoritative_disposable_store_identity_missing');
-
-  const reasons: string[] = [];
-  if (evidence.authority !== 'trusted_local_runtime_probe') {
-    reasons.push('caller_self_attestation_is_not_identity_proof');
-  }
-  if (evidence.proofKind !== 'docker_daemon_socket_owner_and_database_identity') {
-    reasons.push('runtime_socket_and_database_identity_proof_missing');
-  }
-  if (evidence.runId !== expectedRunId) reasons.push('store_identity_run_mismatch');
-  if (typeof evidence.instanceId !== 'string' || !evidence.instanceId) {
-    reasons.push('store_instance_id_missing');
-  }
-  if (!isLoopbackHttpOrigin(evidence.apiOrigin)) reasons.push('store_api_origin_not_exact_loopback');
-  if (evidence.apiBindingHost !== '127.0.0.1') reasons.push('store_api_binding_ambiguous_or_nonloopback');
-  if (evidence.databaseBindingHost !== '127.0.0.1') reasons.push('store_database_binding_ambiguous_or_nonloopback');
-  if (!hasContainerId(evidence.apiContainerId)) reasons.push('store_api_socket_owner_unproven');
-  if (!hasContainerId(evidence.databaseContainerId)) reasons.push('store_database_instance_unproven');
-  if (evidence.disposable !== true || evidence.harnessOwned !== true) {
-    reasons.push('store_disposable_ownership_unproven');
-  }
-  if (evidence.remoteEgressDenied !== true) reasons.push('store_remote_egress_not_denied');
-  if (evidence.tunnelDetected !== false) reasons.push('store_tunnel_absence_unproven');
-  if (evidence.proxyDetected !== false) reasons.push('store_proxy_absence_unproven');
-  return reasons.length > 0 ? blocked(...reasons) : passed();
-}
-
-export function validateServiceCredentialProof(
-  serviceKey: string | undefined,
-  rawProof: unknown,
-  rawIdentity: unknown,
-): GateResult {
-  if (!serviceKey) return blocked('service_key_missing');
-  const proof = record(rawProof);
-  const identity = record(rawIdentity);
-  if (!proof || !identity) return blocked('service_key_not_verified_by_identified_local_store');
-
-  const reasons: string[] = [];
-  if (proof.authority !== 'identified_local_auth_api' || proof.accepted !== true) {
-    reasons.push('service_key_not_verified_by_identified_local_store');
-  }
-  if (proof.instanceId !== identity.instanceId) reasons.push('service_key_store_identity_mismatch');
-  if (proof.runId !== identity.runId) reasons.push('service_key_run_identity_mismatch');
-  return reasons.length > 0 ? blocked(...reasons) : passed();
-}
-
-export function validateAuthenticatedQueueProof(
-  rawProof: unknown,
+function validateMemoryReadback(
+  row: MemoryRow | null,
   fixtureId: string,
   fixture: FixtureIdentity,
+  invocationId: string,
 ): GateResult {
-  const proof = record(rawProof) as QueueProof | null;
-  if (!proof) return blocked('authenticated_operator_http_proof_missing');
-  const item = record(proof.item);
-  const reasons: string[] = [];
-  if (proof.route !== '/api/dashboard/crm/queue?includeTest=1') {
-    reasons.push('operator_http_route_mismatch');
+  if (!row) return blocked('unit_readback_missing');
+  if (row.ownerInvocationId !== invocationId) return blocked('unit_fixture_not_owned_by_invocation');
+  if (
+    row.id !== fixtureId
+    || row.runId !== fixture.runId
+    || row.name !== fixture.name
+    || row.telegramUsername !== fixture.telegramUsername
+  ) {
+    return blocked('unit_readback_ownership_mismatch');
   }
-  if (proof.unauthenticatedStatus !== 401) reasons.push('operator_http_401_not_proven');
-  if (proof.forbiddenStatus !== 403) reasons.push('operator_http_403_not_proven');
-  if (proof.operatorStatus !== 200) reasons.push('operator_http_200_not_proven');
-  if (!item || item.id !== fixtureId) reasons.push('operator_http_fixture_visibility_not_proven');
-  if (!item || item.referral !== fixture.referral) reasons.push('operator_http_referral_visibility_not_proven');
-  if (!item || item.nextAction !== fixture.nextAction) reasons.push('operator_http_next_action_visibility_not_proven');
-  return reasons.length > 0 ? blocked(...reasons) : passed();
-}
-
-function validateStrictReadback(
-  row: StoredFixture | null,
-  fixtureId: string,
-  fixture: FixtureIdentity,
-): GateResult {
-  if (!row) return blocked('strict_repository_readback_missing');
-  const ownershipMatches = row.id === fixtureId
-    && row.runId === fixture.runId
-    && row.name === fixture.name
-    && row.telegramUsername === fixture.telegramUsername;
-  if (!ownershipMatches) return blocked('fixture_ownership_mismatch');
-  const contractMatches = row.referral === fixture.referral
-    && row.nextAction === fixture.nextAction
-    && row.source === fixture.source
-    && row.status === fixture.status
-    && row.communicationStatus === fixture.communicationStatus
-    && row.objectsCount === fixture.objectsCount;
-  return contractMatches ? passed() : blocked('strict_repository_readback_contract_mismatch');
-}
-
-function contractEvidence(status: GateStatus): EvidenceState {
-  return {
-    unitContracts: status,
-    realIsolatedPersistence: 'NOT_RUN',
-    authenticatedOperatorHttp: 'NOT_RUN',
-    cleanup: 'NOT_RUN',
-  };
-}
-
-export async function runAcceptanceContract(
-  input: AcceptanceContractInput,
-): Promise<AcceptanceContractResult> {
-  const fixture = buildFixtureIdentity(input.runId);
-  const identityGate = validateDisposableStoreIdentity(input.identityEvidence, input.runId);
-  const credentialGate = validateServiceCredentialProof(
-    input.serviceKey,
-    input.credentialEvidence,
-    input.identityEvidence,
-  );
-  let strictPersistence = notRun('write_not_started');
-  let authenticatedOperatorHttp = notRun('strict_persistence_not_proven');
-  let cleanup = notRun('no_owned_fixture_id');
-  let fixtureId: string | null = null;
-  const blockers = [...identityGate.reasons, ...credentialGate.reasons];
-
-  if (identityGate.status === 'PASS' && credentialGate.status === 'PASS') {
-    try {
-      const receipt = await input.adapter.insertFixture(fixture);
-      if (!receipt || typeof receipt.id !== 'string' || !receipt.id.trim()) {
-        throw new Error('write_receipt_missing_owned_id');
-      }
-      fixtureId = receipt.id;
-      const persisted = await input.adapter.readFixtureByIdStrict(fixtureId);
-      strictPersistence = validateStrictReadback(persisted, fixtureId, fixture);
-      blockers.push(...strictPersistence.reasons);
-      if (strictPersistence.status === 'PASS') {
-        try {
-          const queueProof = await input.getQueueProof(fixtureId, fixture);
-          authenticatedOperatorHttp = validateAuthenticatedQueueProof(queueProof, fixtureId, fixture);
-        } catch (error) {
-          authenticatedOperatorHttp = blocked(`authenticated_operator_http_failed:${safeErrorCode(error)}`);
-        }
-        blockers.push(...authenticatedOperatorHttp.reasons);
-      }
-    } catch (error) {
-      if (!fixtureId) {
-        blockers.push(`write_outcome_missing_owned_id:${safeErrorCode(error)}`);
-        cleanup = blocked('cleanup_unproven_without_owned_id');
-      } else {
-        blockers.push(`acceptance_flow_failed:${safeErrorCode(error)}`);
-      }
-    } finally {
-      if (fixtureId) {
-        try {
-          const receipt = await input.adapter.deleteOwnedFixture(fixtureId, fixture);
-          if (!receipt.deleted || !receipt.ownershipMatched || receipt.deletedId !== fixtureId) {
-            cleanup = blocked('cleanup_refused_fixture_ownership_mismatch');
-          } else {
-            const remaining = await input.adapter.readFixtureByIdStrict(fixtureId);
-            cleanup = remaining === null
-              ? passed()
-              : blocked('cleanup_readback_still_present');
-          }
-        } catch (error) {
-          cleanup = blocked(`cleanup_failed:${safeErrorCode(error)}`);
-        }
-      }
-      blockers.push(...cleanup.reasons);
-    }
+  if (
+    row.referral !== fixture.referral
+    || row.nextAction !== fixture.nextAction
+    || row.source !== fixture.source
+    || row.status !== fixture.status
+    || row.communicationStatus !== fixture.communicationStatus
+    || row.objectsCount !== fixture.objectsCount
+  ) {
+    return blocked('unit_readback_contract_mismatch');
   }
-
-  const finalBlockers = unique(blockers);
-  const contractPassed = finalBlockers.length === 0
-    && strictPersistence.status === 'PASS'
-    && authenticatedOperatorHttp.status === 'PASS'
-    && cleanup.status === 'PASS';
-
-  return {
-    schemaVersion: SCHEMA_VERSION,
-    mode: 'contract-test',
-    verdict: contractPassed ? 'CONTRACT_PASS' : 'BLOCKED',
-    safeToExecute: false,
-    runId: input.runId,
-    fixtureId,
-    gates: {
-      disposableStoreIdentity: identityGate,
-      serviceCredential: credentialGate,
-      strictPersistence,
-      authenticatedOperatorHttp,
-    },
-    cleanup,
-    evidence: contractEvidence(contractPassed ? 'PASS' : 'BLOCKED'),
-    blockers: finalBlockers,
-    sideEffects: {
-      databaseWrites: false,
-      networkRequests: false,
-      secretsRead: false,
-      cleanupDeletes: false,
-    },
-  };
+  return passed();
 }
 
-function zeroSideEffects(): SideEffects {
+function validateUnitQueueProjection(row: MemoryRow | null, fixture: FixtureIdentity): GateResult {
+  if (!row) return blocked('unit_queue_projection_missing');
+  const projection = { id: row.id, referral: row.referral, nextAction: row.nextAction };
+  return projection.referral === fixture.referral && projection.nextAction === fixture.nextAction
+    ? passed()
+    : blocked('unit_queue_projection_mismatch');
+}
+
+function externalSideEffects(inMemoryRowsCreated = 0, inMemoryRowsDeleted = 0): SideEffects {
   return {
     databaseWrites: false,
     networkRequests: false,
     secretsRead: false,
     cleanupDeletes: false,
+    inMemoryRowsCreated,
+    inMemoryRowsDeleted,
   };
 }
+
+function invalidUnitResult(reason: string, runId: string | null): UnitAcceptanceResult {
+  const inputGate = blocked(reason);
+  const cleanup = notRun('unit_write_not_started');
+  return {
+    schemaVersion: SCHEMA_VERSION,
+    mode: 'unit-model',
+    verdict: 'BLOCKED',
+    safeToExecute: false,
+    runId,
+    fixtureId: null,
+    scenario: null,
+    gates: {
+      unitOnlyBoundary: inputGate,
+      fixtureOwnership: notRun('unit_input_rejected'),
+      strictPersistenceModel: notRun('unit_input_rejected'),
+      queueProjection: notRun('unit_input_rejected'),
+    },
+    ownership: {
+      createdThisInvocation: false,
+      preexistingRowsUntouched: true,
+      unknownWrite: false,
+    },
+    cleanup,
+    evidence: {
+      unitContracts: 'BLOCKED',
+      realIsolatedPersistence: 'NOT_RUN',
+      authenticatedOperatorHttp: 'NOT_RUN',
+      cleanup: cleanup.status,
+    },
+    blockers: inputGate.reasons,
+    model: { rowsRemaining: 0 },
+    sideEffects: externalSideEffects(),
+  };
+}
+
+/**
+ * Executes a closed deterministic model. Extra caller properties are ignored and never invoked.
+ * It cannot establish real target, credential, database, authentication, or HTTP evidence.
+ */
+export async function runUnitAcceptanceModel(
+  input: UnitAcceptanceInput,
+): Promise<UnitAcceptanceResult> {
+  const runId = isRunId(input.runId) ? input.runId : null;
+  if (input.evidenceKind !== 'unit_model') {
+    return invalidUnitResult('unit_model_evidence_kind_required', runId);
+  }
+  if (!runId) return invalidUnitResult('unit_run_id_invalid', null);
+  const scenario = input.scenario ?? 'success';
+  if (!isUnitScenario(scenario)) return invalidUnitResult('unit_scenario_unknown', runId);
+
+  const fixture = buildFixtureIdentity(runId);
+  const fixtureId = `unit-row-${runId}`;
+  const invocationId = `unit-invocation-${runId}`;
+  const rows = new Map<string, MemoryRow>();
+  let inMemoryRowsCreated = 0;
+  let inMemoryRowsDeleted = 0;
+  let createdThisInvocation = false;
+  let unknownWrite = false;
+  let reportedFixtureId: string | null = fixtureId;
+  let ownership = passed();
+  let strictPersistenceModel = notRun('unit_write_not_started');
+  let queueProjection = notRun('unit_persistence_not_proven');
+  let cleanup = notRun('unit_write_not_started');
+
+  if (scenario === 'preexisting_same_run' || scenario === 'concurrent_attempt') {
+    rows.set(fixtureId, {
+      id: fixtureId,
+      ...fixture,
+      ownerInvocationId: scenario === 'concurrent_attempt'
+        ? 'concurrent-unit-invocation'
+        : 'prior-unit-invocation',
+    });
+    ownership = blocked(
+      scenario === 'concurrent_attempt'
+        ? 'unit_concurrent_ownership_conflict'
+        : 'unit_preexisting_same_run_row',
+    );
+    cleanup = blocked('unit_cleanup_not_authorized_for_preexisting_row');
+  } else if (scenario === 'preexisting_other_run') {
+    const otherFixture = buildFixtureIdentity('ffffffffffff');
+    rows.set(fixtureId, {
+      id: fixtureId,
+      ...otherFixture,
+      ownerInvocationId: 'foreign-unit-invocation',
+    });
+    ownership = blocked('unit_preexisting_foreign_row');
+    cleanup = blocked('unit_cleanup_not_authorized_for_preexisting_row');
+  } else {
+    const row: MemoryRow = { id: fixtureId, ...fixture, ownerInvocationId: invocationId };
+    rows.set(fixtureId, row);
+    inMemoryRowsCreated += 1;
+    createdThisInvocation = true;
+
+    if (scenario === 'insert_before_lost_response') {
+      reportedFixtureId = null;
+      unknownWrite = true;
+      ownership = blocked('unit_insert_response_lost');
+      strictPersistenceModel = blocked('unit_insert_receipt_missing_owned_id');
+      cleanup = blocked('unit_cleanup_unproven_without_owned_id');
+    } else {
+      if (scenario === 'readback_mismatch') {
+        rows.set(fixtureId, { ...row, telegramUsername: 'mismatched_owner' });
+      }
+      strictPersistenceModel = validateMemoryReadback(
+        rows.get(fixtureId) ?? null,
+        fixtureId,
+        fixture,
+        invocationId,
+      );
+      if (strictPersistenceModel.status === 'PASS') {
+        queueProjection = validateUnitQueueProjection(rows.get(fixtureId) ?? null, fixture);
+      }
+
+      if (strictPersistenceModel.status !== 'PASS') {
+        unknownWrite = true;
+        cleanup = blocked('unit_cleanup_not_authorized_after_readback_mismatch');
+      } else if (scenario === 'delete_failure') {
+        cleanup = blocked('unit_cleanup_delete_failed');
+      } else if (scenario === 'delete_zero_count') {
+        cleanup = blocked('unit_cleanup_deleted_zero_rows');
+      } else {
+        const deleted = rows.delete(fixtureId);
+        if (deleted) inMemoryRowsDeleted += 1;
+        if (!deleted) {
+          cleanup = blocked('unit_cleanup_deleted_zero_rows');
+        } else if (scenario === 'absence_read_failure') {
+          cleanup = blocked('unit_cleanup_absence_read_failed');
+        } else {
+          cleanup = rows.has(fixtureId)
+            ? blocked('unit_cleanup_readback_still_present')
+            : passed();
+        }
+      }
+    }
+  }
+
+  const unitOnlyBoundary = passed();
+  const blockers = unique([
+    ...unitOnlyBoundary.reasons,
+    ...ownership.reasons,
+    ...strictPersistenceModel.reasons,
+    ...queueProjection.reasons,
+    ...cleanup.reasons,
+  ]);
+  const contractPassed = blockers.length === 0
+    && createdThisInvocation
+    && ownership.status === 'PASS'
+    && strictPersistenceModel.status === 'PASS'
+    && queueProjection.status === 'PASS'
+    && cleanup.status === 'PASS'
+    && rows.size === 0;
+
+  return {
+    schemaVersion: SCHEMA_VERSION,
+    mode: 'unit-model',
+    verdict: contractPassed ? 'CONTRACT_PASS' : 'BLOCKED',
+    safeToExecute: false,
+    runId,
+    fixtureId: reportedFixtureId,
+    scenario,
+    gates: {
+      unitOnlyBoundary,
+      fixtureOwnership: ownership,
+      strictPersistenceModel,
+      queueProjection,
+    },
+    ownership: {
+      createdThisInvocation,
+      preexistingRowsUntouched: !createdThisInvocation && rows.size > 0,
+      unknownWrite,
+    },
+    cleanup,
+    evidence: {
+      unitContracts: contractPassed ? 'PASS' : 'BLOCKED',
+      realIsolatedPersistence: 'NOT_RUN',
+      authenticatedOperatorHttp: 'NOT_RUN',
+      cleanup: cleanup.status,
+    },
+    blockers,
+    model: { rowsRemaining: rows.size },
+    sideEffects: externalSideEffects(inMemoryRowsCreated, inMemoryRowsDeleted),
+  };
+}
+
+// Compatibility export: the former callback-based input shape is rejected by the evidenceKind gate.
+export const runAcceptanceContract = runUnitAcceptanceModel;
 
 function buildPlanReport() {
   return {
@@ -371,10 +374,8 @@ function buildPlanReport() {
     verdict: 'PLAN_ONLY',
     safeToExecute: false,
     gates: {
-      staticPolicy: notRun('plan_does_not_evaluate_runtime_policy'),
-      disposableStoreIdentity: notRun('authoritative_runtime_probe_not_run'),
-      serviceCredential: notRun('credential_not_verified'),
-      strictPersistence: notRun('real_store_not_accessed'),
+      unitOnlyBoundary: notRun('unit_model_not_run'),
+      realIsolatedPersistence: notRun('real_store_not_accessed'),
       authenticatedOperatorHttp: notRun('real_http_route_not_accessed'),
       cleanup: notRun('no_fixture_created'),
     },
@@ -386,57 +387,38 @@ function buildPlanReport() {
     } satisfies EvidenceState,
     blockers: [
       'plan_only_is_not_security_or_acceptance_evidence',
-      'execute_requires_authoritative_disposable_store_identity',
-      'execute_requires_real_authenticated_operator_http_401_403_200_with_attribution',
+      'real_adapter_is_not_implemented',
+      'real_database_auth_http_and_cleanup_require_separate_owner_approval',
     ],
-    sideEffects: zeroSideEffects(),
+    sideEffects: externalSideEffects(),
   };
 }
 
-function staticPolicyReasons(env: NodeJS.ProcessEnv): string[] {
-  const reasons: string[] = [];
-  if (env.NODE_ENV !== 'test') reasons.push('node_env_test_required');
-  if (env.ASI_LOCAL_CRM_ACCEPTANCE !== '1') reasons.push('explicit_local_acceptance_opt_in_required');
-  if (!isLoopbackHttpOrigin(env.SUPABASE_URL)) reasons.push('exact_loopback_supabase_url_required');
-  return reasons;
-}
-
-function buildBlockedRuntimeReport(mode: 'dry-run' | 'execute', env: NodeJS.ProcessEnv) {
-  const policyReasons = staticPolicyReasons(env);
-  const blockers = unique([
-    ...policyReasons,
-    'authoritative_disposable_store_identity_unavailable',
-    'local_url_opt_in_and_key_string_are_not_identity_proof',
-    'service_key_not_verified_by_identified_local_store',
-    'strict_repository_readback_without_demo_fallback_unavailable',
-    'authenticated_operator_http_proof_unavailable',
-    'queue_route_does_not_expose_referral_and_stored_next_action',
-    'owned_id_cleanup_proof_unavailable',
-  ]);
+function buildBlockedRuntimeReport(mode: 'dry-run' | 'execute') {
   return {
     schemaVersion: SCHEMA_VERSION,
     mode,
     verdict: 'BLOCKED',
     safeToExecute: false,
     gates: {
-      staticPolicy: policyReasons.length === 0 ? passed() : blocked(...policyReasons),
-      disposableStoreIdentity: blocked('authoritative_disposable_store_identity_unavailable'),
-      serviceCredential: blocked('service_key_not_verified_by_identified_local_store'),
-      strictPersistence: blocked('strict_repository_readback_without_demo_fallback_unavailable'),
-      authenticatedOperatorHttp: blocked(
-        'authenticated_operator_http_proof_unavailable',
-        'queue_route_does_not_expose_referral_and_stored_next_action',
-      ),
-      cleanup: blocked('owned_id_cleanup_proof_unavailable'),
+      unitOnlyBoundary: passed(),
+      realIsolatedPersistence: blocked('runtime_execution_hard_blocked'),
+      authenticatedOperatorHttp: blocked('runtime_execution_hard_blocked'),
+      cleanup: blocked('runtime_execution_hard_blocked'),
     },
     evidence: {
       unitContracts: 'NOT_RUN',
-      realIsolatedPersistence: 'BLOCKED',
-      authenticatedOperatorHttp: 'BLOCKED',
-      cleanup: 'BLOCKED',
+      realIsolatedPersistence: 'NOT_RUN',
+      authenticatedOperatorHttp: 'NOT_RUN',
+      cleanup: 'NOT_RUN',
     } satisfies EvidenceState,
-    blockers,
-    sideEffects: zeroSideEffects(),
+    blockers: [
+      'runtime_execution_hard_blocked',
+      'unit_model_has_no_real_adapter',
+      'caller_claims_cannot_authorize_persistence_or_http',
+      'real_database_auth_http_and_cleanup_not_run',
+    ],
+    sideEffects: externalSideEffects(),
   };
 }
 
@@ -458,7 +440,7 @@ function main(): void {
       verdict: 'BLOCKED',
       safeToExecute: false,
       blockers: ['exactly_one_mode_required:--plan|--dry-run|--execute'],
-      sideEffects: zeroSideEffects(),
+      sideEffects: externalSideEffects(),
     });
     process.exitCode = 2;
     return;
@@ -468,7 +450,7 @@ function main(): void {
     return;
   }
   const mode = modes[0] === '--execute' ? 'execute' : 'dry-run';
-  printReport(buildBlockedRuntimeReport(mode, process.env));
+  printReport(buildBlockedRuntimeReport(mode));
   process.exitCode = 2;
 }
 
