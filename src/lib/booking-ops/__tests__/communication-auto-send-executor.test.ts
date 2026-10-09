@@ -57,15 +57,46 @@ class Query {
   }
 }
 
+// Unit-only RPC simulator: synchronous admission models serialization, NOT a
+// PostgreSQL transaction/concurrency receipt. SQL acceptance stays BLOCK.
+const quotaRows = new Map<string, { id: string; state: string; account: string; booking: string; guest: string }>();
+let bookingCap: number | null = null;
+let guestCap: number | null = null;
+const quotaRpc = vi.fn(async (_name: string, args: Row): Promise<any> => {
+  const delivery = tables.booking_ops_communication_deliveries.find(row => row.id === args.p_delivery_id);
+  const denied = { data: { allowed: false }, error: null };
+  if (!delivery || delivery.account_id !== args.p_account_id) return denied;
+  let row = quotaRows.get(delivery.id);
+  if (args.p_phase === 'reserve') {
+    if (row) return denied;
+    const own = [...quotaRows.values()].filter(q => q.account === delivery.account_id);
+    if ((bookingCap !== null && own.filter(q => q.booking === delivery.booking_id).length >= bookingCap)
+      || (guestCap !== null && own.filter(q => q.guest === delivery.recipient_ref).length >= guestCap)) return denied;
+    row = { id: delivery.id, state: 'held', account: delivery.account_id,
+      booking: delivery.booking_id, guest: delivery.recipient_ref };
+    quotaRows.set(delivery.id, row);
+    delivery.status = 'sending';
+    delivery.attempt_count += 1;
+  } else if (!row || row.id !== args.p_reservation_id) return denied;
+  else if (args.p_phase === 'dispatch') {
+    if (row.state !== 'held') return denied;
+    row.state = 'dispatching';
+  } else {
+    if (row.state !== 'dispatching') return denied;
+    row.state = args.p_phase;
+  }
+  return { data: { allowed: true, phase: args.p_phase, reservation_id: row.id, delivery_id: delivery.id }, error: null };
+});
+
 vi.mock('@/lib/supabase', () => ({
-  supabase: { from: (table: string) => new Query(table) },
+  supabase: { from: (table: string) => new Query(table), rpc: (...args: [string, Row]) => quotaRpc(...args) },
 }));
 
 const requireBookingOpsRecordScope = vi.fn(async (..._args: unknown[]): Promise<any> => ({
   id: '11111111-1111-4111-8111-111111111111',
   bookingId: 'booking-1',
   propertyId: 'property-1',
-  accountId: 'account-1',
+  accountId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
   guestTelegram: '123456',
   guestEmail: 'guest@example.test',
   guestIntake: null,
@@ -76,7 +107,7 @@ vi.mock('@/lib/booking-ops/repository', () => ({
     id: '11111111-1111-4111-8111-111111111111',
     bookingId: 'booking-1',
     propertyId: 'property-1',
-    accountId: 'account-1',
+    accountId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
     guestTelegram: '123456',
     guestEmail: 'guest@example.test',
     guestIntake: null,
@@ -174,11 +205,15 @@ function seedIntent(overrides: Row = {}) {
 }
 
 beforeEach(() => {
+  quotaRows.clear();
+  bookingCap = null;
+  guestCap = null;
+  quotaRpc.mockClear();
   tables.booking_ops_communication_intents = [];
   tables.booking_ops_communication_deliveries = [];
   tables.booking_ops_records = [{
     id: '11111111-1111-4111-8111-111111111111',
-    account_id: 'account-1',
+    account_id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
   }];
   policyDecision.mockReset();
   policyDecision.mockResolvedValue({ ...allowedDecision });
@@ -187,7 +222,7 @@ beforeEach(() => {
     id: '11111111-1111-4111-8111-111111111111',
     bookingId: 'booking-1',
     propertyId: 'property-1',
-    accountId: 'account-1',
+    accountId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
   });
   recordAttempt.mockClear();
   scopeDecision.mockReset();
@@ -197,15 +232,15 @@ beforeEach(() => {
 describe('controlled actual auto-send executor', () => {
   it('filters eligible queue candidates by canonical account ownership', async () => {
     seedIntent();
-    const own = await getEligibleAutoSendIntents({ accountId: 'account-1' });
-    const foreign = await getEligibleAutoSendIntents({ accountId: 'account-2' });
+    const own = await getEligibleAutoSendIntents({ accountId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' });
+    const foreign = await getEligibleAutoSendIntents({ accountId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb' });
     expect(own.ok && own.intents).toHaveLength(1);
     expect(foreign.ok && foreign.intents).toHaveLength(0);
   });
 
   it('rejects enqueue when the canonical booking belongs to another account', async () => {
     const intent = seedIntent();
-    const result = await enqueueAutoSendDelivery(intent.id, {}, { accountId: 'account-2' });
+    const result = await enqueueAutoSendDelivery(intent.id, {}, { accountId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb' });
     expect(result).toMatchObject({ ok: false, error: 'booking_scope_mismatch' });
     expect(tables.booking_ops_communication_deliveries).toHaveLength(0);
   });
@@ -219,7 +254,7 @@ describe('controlled actual auto-send executor', () => {
     expect(result).toMatchObject({ ok: false, error: 'booking_scope_mismatch' });
     expect(requireBookingOpsRecordScope).toHaveBeenCalledWith(
       intent.booking_ops_record_id,
-      { accountId: 'account-1', propertyId: 'property-1' },
+      { accountId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', propertyId: 'property-1' },
     );
     expect(tables.booking_ops_communication_deliveries).toHaveLength(0);
   });
@@ -233,7 +268,7 @@ describe('controlled actual auto-send executor', () => {
     const queued = await enqueueAutoSendDelivery(intent.id);
     const deliveryId = queued.ok ? queued.delivery.id : '';
     const deliveryRow = tables.booking_ops_communication_deliveries[0];
-    const expectedScope = { accountId: 'account-1', propertyId: 'property-1' };
+    const expectedScope = { accountId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', propertyId: 'property-1' };
 
     for (const mutate of [
       () => recordDeliverySuccess(deliveryId, 'provider-1', {}, expectedScope),
@@ -252,17 +287,17 @@ describe('controlled actual auto-send executor', () => {
     const intent = seedIntent({ actor_type: 'cleaner', purpose: 'cleaner_task_assignment', metadata: { recipient_ref: 'staff-123' } });
     const queued = await enqueueAutoSendDelivery(intent.id);
     const sender = vi.fn(async () => ({ ok: true }));
-    const result = await executeAutoSendDelivery(queued.ok ? queued.delivery.id : '', { accountId: 'account-2', sender });
+    const result = await executeAutoSendDelivery(queued.ok ? queued.delivery.id : '', { accountId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', sender });
     expect(result).toMatchObject({ ok: false, error: 'booking_scope_mismatch' });
     expect(sender).not.toHaveBeenCalled();
   });
 
-  it('blocks send when canonical scope changes after delivery claim', async () => {
+  it('blocks send when canonical scope changes before quota admission', async () => {
     const intent = seedIntent({ actor_type: 'cleaner', purpose: 'cleaner_task_assignment', metadata: { recipient_ref: 'staff-123' } });
     const queued = await enqueueAutoSendDelivery(intent.id);
     requireBookingOpsRecordScope.mockReset();
     requireBookingOpsRecordScope
-      .mockResolvedValueOnce({ id: intent.booking_ops_record_id, bookingId: 'booking-1', accountId: 'account-1', propertyId: 'property-1' })
+      .mockResolvedValueOnce({ id: intent.booking_ops_record_id, bookingId: 'booking-1', accountId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', propertyId: 'property-1' })
       .mockRejectedValueOnce(new Error('booking_scope_mismatch'));
     const sender = vi.fn(async () => ({ ok: true }));
 
@@ -281,8 +316,8 @@ describe('controlled actual auto-send executor', () => {
     const queued = await enqueueAutoSendDelivery(intent.id);
     requireBookingOpsRecordScope.mockReset();
     requireBookingOpsRecordScope
-      .mockResolvedValueOnce({ id: intent.booking_ops_record_id, bookingId: 'booking-1', accountId: 'account-1', propertyId: 'property-1' })
-      .mockResolvedValueOnce({ id: intent.booking_ops_record_id, bookingId: 'booking-1', accountId: 'account-1', propertyId: 'property-1' })
+      .mockResolvedValueOnce({ id: intent.booking_ops_record_id, bookingId: 'booking-1', accountId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', propertyId: 'property-1' })
+      .mockResolvedValueOnce({ id: intent.booking_ops_record_id, bookingId: 'booking-1', accountId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', propertyId: 'property-1' })
       .mockRejectedValueOnce(new Error('booking_scope_mismatch'));
     const sender = vi.fn(async () => ({ ok: true, providerMessageId: 'provider-1' }));
 
@@ -351,11 +386,11 @@ describe('controlled actual auto-send executor', () => {
       scope: { ...enabledScope, scopeType: 'owner', scopeRef: 'owner-legacy' },
       globalEmergencyStop: false,
     });
-    const queued = await enqueueAutoSendDelivery(intent.id, {}, { accountId: 'account-1' });
+    const queued = await enqueueAutoSendDelivery(intent.id, {}, { accountId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' });
     const sender = vi.fn(async () => ({ ok: true }));
     const result = await executeAutoSendDelivery(
       queued.ok ? queued.delivery.id : '',
-      { accountId: 'account-1', sender },
+      { accountId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', sender },
     );
     expect(result).toMatchObject({ ok: false, error: 'scope_not_account_bound' });
     expect(sender).not.toHaveBeenCalled();
@@ -489,7 +524,7 @@ describe('controlled actual auto-send executor', () => {
     expect(sender).toHaveBeenCalledTimes(1);
   });
 
-  it('records failure and retries the same safe delivery', async () => {
+  it('holds an ambiguous provider failure and never automatically retries', async () => {
     const intent = seedIntent({ actor_type: 'cleaner', purpose: 'cleaner_task_assignment', metadata: { recipient_ref: 'staff-123' } });
     const queued = await enqueueAutoSendDelivery(intent.id);
     const id = queued.ok ? queued.delivery.id : '';
@@ -498,8 +533,192 @@ describe('controlled actual auto-send executor', () => {
       .mockResolvedValueOnce({ ok: true });
     const failed = await executeAutoSendDelivery(id, { sender });
     const retried = await executeAutoSendDelivery(id, { sender });
-    expect(failed).toMatchObject({ ok: false, delivery: { status: 'failed', attemptCount: 1 } });
-    expect(retried).toMatchObject({ ok: true, delivery: { status: 'sent', attemptCount: 2 } });
+    expect(failed).toMatchObject({ ok: false, error: 'quota_review_required', delivery: { status: 'sending', attemptCount: 1 } });
+    expect(retried).toMatchObject({ ok: false, error: 'quota_review_required' });
+    expect(sender).toHaveBeenCalledTimes(1);
+    expect(quotaRows.get(id)?.state).toBe('uncertain');
+  });
+
+  it.each([
+    ['booking', 1, null],
+    ['guest', null, 1],
+    ['both', 1, 1],
+    ['zero', 0, 0],
+  ])('two executor invocations respect last-slot %s in the RPC MODEL only', async (_kind, bookingLimit, guestLimit) => {
+    bookingCap = bookingLimit;
+    guestCap = guestLimit;
+    const first = seedIntent();
+    const second = seedIntent({ id: '55555555-5555-4555-8555-555555555555' });
+    const a = await enqueueAutoSendDelivery(first.id);
+    const b = await enqueueAutoSendDelivery(second.id);
+    const sender = vi.fn(async () => ({ ok: true }));
+    await Promise.all([
+      executeAutoSendDelivery(a.ok ? a.delivery.id : '', { sender }),
+      executeAutoSendDelivery(b.ok ? b.delivery.id : '', { sender }),
+    ]);
+    expect(sender).toHaveBeenCalledTimes(bookingLimit === 0 ? 0 : 1);
+    expect(quotaRows.size).toBe(bookingLimit === 0 ? 0 : 1);
+  });
+
+  it('same-delivery race has one provider call and one durable claim in the RPC MODEL', async () => {
+    const intent = seedIntent();
+    const queued = await enqueueAutoSendDelivery(intent.id);
+    const id = queued.ok ? queued.delivery.id : '';
+    const sender = vi.fn(async () => ({ ok: true }));
+    await Promise.all([executeAutoSendDelivery(id, { sender }), executeAutoSendDelivery(id, { sender })]);
+    expect(sender).toHaveBeenCalledTimes(1);
+    expect(quotaRows.size).toBe(1);
+  });
+
+  it.each(['missing-rpc', 'timeout', 'forged-receipt'])('fails closed before sender on %s', async kind => {
+    const intent = seedIntent();
+    const queued = await enqueueAutoSendDelivery(intent.id);
+    if (kind === 'timeout') quotaRpc.mockRejectedValueOnce(new Error('timeout'));
+    else quotaRpc.mockResolvedValueOnce(kind === 'missing-rpc'
+      ? { data: null, error: { code: 'PGRST202' } }
+      : { data: { allowed: true, phase: 'reserve', reservation_id: 'caller-proof' }, error: null });
+    const sender = vi.fn();
+    const result = await executeAutoSendDelivery(queued.ok ? queued.delivery.id : '', { sender });
+    expect(result).toMatchObject({ ok: false, error: 'quota_review_required' });
+    expect(sender).not.toHaveBeenCalled();
+  });
+
+  it('denies malformed tenant before RPC despite allowed policy', async () => {
+    const intent = seedIntent();
+    const queued = await enqueueAutoSendDelivery(intent.id);
+    tables.booking_ops_communication_deliveries[0].account_id = 'caller-account';
+    const sender = vi.fn();
+    await executeAutoSendDelivery(queued.ok ? queued.delivery.id : '', { sender });
+    expect(sender).not.toHaveBeenCalled();
+    expect(quotaRpc).not.toHaveBeenCalled();
+  });
+
+  it('dry run makes zero quota calls and zero sends', async () => {
+    const intent = seedIntent();
+    const queued = await enqueueAutoSendDelivery(intent.id);
+    const sender = vi.fn();
+    await executeAutoSendDelivery(queued.ok ? queued.delivery.id : '', { dryRun: true, sender });
+    expect(quotaRpc).not.toHaveBeenCalled();
+    expect(sender).not.toHaveBeenCalled();
+  });
+
+  it('revocation after reserve holds capacity before any provider call', async () => {
+    const intent = seedIntent();
+    const queued = await enqueueAutoSendDelivery(intent.id);
+    scopeDecision.mockResolvedValueOnce({ enabled: true, scope: { ...enabledScope } })
+      .mockResolvedValueOnce({ enabled: false, error: 'emergency_stop', scope: null });
+    const sender = vi.fn();
+    const id = queued.ok ? queued.delivery.id : '';
+    await executeAutoSendDelivery(id, { sender });
+    expect(sender).not.toHaveBeenCalled();
+    expect(quotaRows.get(id)?.state).toBe('held');
+  });
+
+  it('lost dispatch response never sends or recycles held capacity', async () => {
+    const intent = seedIntent();
+    const queued = await enqueueAutoSendDelivery(intent.id);
+    const id = queued.ok ? queued.delivery.id : '';
+    const original = quotaRpc.getMockImplementation()!;
+    quotaRpc.mockImplementationOnce(original).mockImplementationOnce(async (_name, args) => {
+      await original(_name, args);
+      throw new Error('dispatch response lost');
+    });
+    const sender = vi.fn();
+    await executeAutoSendDelivery(id, { sender });
+    await executeAutoSendDelivery(id, { sender });
+    expect(sender).not.toHaveBeenCalled();
+    expect(quotaRows.get(id)?.state).toBe('dispatching');
+  });
+
+  it('provider acceptance followed by persistence loss is held and not resent', async () => {
+    const intent = seedIntent();
+    const queued = await enqueueAutoSendDelivery(intent.id);
+    const id = queued.ok ? queued.delivery.id : '';
+    const original = quotaRpc.getMockImplementation()!;
+    quotaRpc.mockImplementationOnce(original).mockImplementationOnce(original)
+      .mockRejectedValueOnce(new Error('persistence unavailable'));
+    const sender = vi.fn(async () => ({ ok: true, providerMessageId: 'synthetic-message' }));
+    await executeAutoSendDelivery(id, { sender });
+    await executeAutoSendDelivery(id, { sender });
+    expect(sender).toHaveBeenCalledTimes(1);
+    expect(quotaRows.get(id)?.state).toBe('dispatching');
+  });
+
+  it('provider timeout remains uncertain and disables voice follow-up', async () => {
+    const intent = seedIntent({ metadata: { lifecycle_event_type: 'arrival', communication_mode: 'voice' } });
+    const queued = await enqueueAutoSendDelivery(intent.id);
+    const id = queued.ok ? queued.delivery.id : '';
+    const sender = vi.fn(async () => { throw new Error('timeout'); });
+    const voiceSender = vi.fn();
+    await executeAutoSendDelivery(id, { sender, voiceSender });
+    await executeAutoSendDelivery(id, { sender, voiceSender });
+    expect(sender).toHaveBeenCalledTimes(1);
+    expect(voiceSender).not.toHaveBeenCalled();
+    expect(quotaRows.get(id)?.state).toBe('uncertain');
+  });
+
+  it('successful text cannot bypass quota with an unreserved voice copy', async () => {
+    const intent = seedIntent({ metadata: { lifecycle_event_type: 'arrival', communication_mode: 'voice' } });
+    const queued = await enqueueAutoSendDelivery(intent.id);
+    const sender = vi.fn(async () => ({ ok: true }));
+    const voiceSender = vi.fn();
+    await executeAutoSendDelivery(queued.ok ? queued.delivery.id : '', { sender, voiceSender });
+    expect(sender).toHaveBeenCalledTimes(1);
+    expect(voiceSender).not.toHaveBeenCalled();
+  });
+
+  it('rejects production caller injected send/scope seams', async () => {
+    vi.stubEnv('NODE_ENV', 'production');
+    const sender = vi.fn();
+    try {
+      expect(await executeAutoSendDelivery('not-read', { sender }))
+        .toMatchObject({ ok: false, error: 'test_seam_forbidden' });
+      expect(sender).not.toHaveBeenCalled();
+    } finally { vi.unstubAllEnvs(); }
+  });
+
+  it.each([[2, 2], [null, null]])('admits exact cap or unlimited (%s/%s) in RPC MODEL', async (bookingLimit, guestLimit) => {
+    bookingCap = bookingLimit;
+    guestCap = guestLimit;
+    const sender = vi.fn(async () => ({ ok: true }));
+    for (const id of ['55555555-5555-4555-8555-555555555555', '66666666-6666-4666-8666-666666666666']) {
+      const intent = seedIntent({ id });
+      const queued = await enqueueAutoSendDelivery(intent.id);
+      await executeAutoSendDelivery(queued.ok ? queued.delivery.id : '', { sender });
+    }
+    expect(sender).toHaveBeenCalledTimes(2);
+  });
+
+  it('lost reserve response retains the committed claim without sending', async () => {
+    const intent = seedIntent();
+    const queued = await enqueueAutoSendDelivery(intent.id);
+    const id = queued.ok ? queued.delivery.id : '';
+    const original = quotaRpc.getMockImplementation()!;
+    quotaRpc.mockImplementationOnce(async (name, args) => {
+      await original(name, args);
+      throw new Error('response lost after reserve commit');
+    });
+    const sender = vi.fn();
+    await executeAutoSendDelivery(id, { sender });
+    await executeAutoSendDelivery(id, { sender });
+    expect(sender).not.toHaveBeenCalled();
+    expect(quotaRows.get(id)?.state).toBe('held');
+    expect(tables.booking_ops_communication_deliveries[0].status).toBe('sending');
+  });
+
+  it('rejects a changed recipient and never supplies claimed counts to RPC', async () => {
+    const intent = seedIntent();
+    const queued = await enqueueAutoSendDelivery(intent.id);
+    tables.booking_ops_communication_deliveries[0].recipient_ref = 'different-recipient';
+    const sender = vi.fn();
+    await executeAutoSendDelivery(queued.ok ? queued.delivery.id : '', { sender });
+    expect(sender).not.toHaveBeenCalled();
+    expect(quotaRpc).not.toHaveBeenCalled();
+    tables.booking_ops_communication_deliveries[0].recipient_ref = '123456';
+    await executeAutoSendDelivery(queued.ok ? queued.delivery.id : '', { sender: vi.fn(async () => ({ ok: true })) });
+    for (const [, args] of quotaRpc.mock.calls) {
+      expect(Object.keys(args).some(key => /(?:count|limit|cap)$/.test(key))).toBe(false);
+    }
   });
 
   it('keeps all new API surfaces protected', async () => {
