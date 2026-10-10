@@ -37,6 +37,7 @@ jobs:
         id: identity
         shell: bash
         env:
+          GH_TOKEN: ${{ github.token }}
           APPROVED: ${{ inputs.confirm_owner_ui_deploy }}
           REQUESTED_SHA: ${{ inputs.sha }}
         run: |
@@ -44,7 +45,7 @@ jobs:
           [[ "$APPROVED" == 'DEPLOY_OWNER_UI_ONLY' ]] || { echo 'Owner dashboard-only confirmation required'; exit 1; }
           [[ "$REQUESTED_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo 'Exact lowercase commit SHA required'; exit 1; }
           CURRENT="$(git rev-parse HEAD)"
-          REMOTE="$(git ls-remote origin refs/heads/main | awk '{print $1}')"
+          REMOTE="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq '.object.sha')"
           [[ "$CURRENT" == "$REQUESTED_SHA" && "$REMOTE" == "$REQUESTED_SHA" ]] || {
             echo 'Requested commit is not the exact current main head'; exit 1;
           }
@@ -126,10 +127,11 @@ jobs:
       - name: Recheck exact main identity before any production mutation
         shell: bash
         env:
+          GH_TOKEN: ${{ github.token }}
           REQUESTED_SHA: ${{ needs.build.outputs.sha }}
         run: |
           set -euo pipefail
-          REMOTE="$(git ls-remote origin refs/heads/main | awk '{print $1}')"
+          REMOTE="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq '.object.sha')"
           [[ "$REMOTE" == "$REQUESTED_SHA" ]] || {
             echo 'Main moved since the approved release build; stop'; exit 1;
           }
