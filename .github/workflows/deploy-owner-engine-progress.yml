@@ -1,0 +1,200 @@
+name: Deploy Owner Engine Progress (no messaging changes)
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm_owner_ui_deploy:
+        description: "Type DEPLOY_OWNER_UI_ONLY to publish only the owner dashboard release without changing Telegram settings"
+        required: true
+        type: string
+      sha:
+        description: "Exact current main SHA (40 lowercase hex)"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-main
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Verify and build owner-only release
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    outputs:
+      sha: ${{ steps.identity.outputs.sha }}
+      artifact: ${{ steps.identity.outputs.artifact }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Exact main and dedicated owner confirmation
+        id: identity
+        shell: bash
+        env:
+          APPROVED: ${{ inputs.confirm_owner_ui_deploy }}
+          REQUESTED_SHA: ${{ inputs.sha }}
+        run: |
+          set -euo pipefail
+          [[ "$APPROVED" == 'DEPLOY_OWNER_UI_ONLY' ]] || { echo 'Owner dashboard-only confirmation required'; exit 1; }
+          [[ "$REQUESTED_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo 'Exact lowercase commit SHA required'; exit 1; }
+          CURRENT="$(git rev-parse HEAD)"
+          REMOTE="$(git ls-remote origin refs/heads/main | awk '{print $1}')"
+          [[ "$CURRENT" == "$REQUESTED_SHA" && "$REMOTE" == "$REQUESTED_SHA" ]] || {
+            echo 'Requested commit is not the exact current main head'; exit 1;
+          }
+          echo "sha=$CURRENT" >> "$GITHUB_OUTPUT"
+          echo "artifact=asi-owner-progress-$CURRENT" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Validate owner dashboard source
+        run: |
+          npm run lint
+          npm run typecheck
+          npx vitest run src/lib/engine-progress/__tests__/roadmap.test.ts src/app/api/dashboard/engine-progress/__tests__/route.test.ts
+          npm run build
+      - name: Prune nonproduction dependencies
+        run: npm prune --omit=dev
+      - name: Assemble existing production-compatible Next.js artifact
+        shell: bash
+        env:
+          RELEASE_SHA: ${{ steps.identity.outputs.sha }}
+        run: |
+          set -euo pipefail
+          mkdir -p release/scripts release/tests
+          cp package.json package-lock.json next.config.js ecosystem.config.cjs tsconfig.json release/
+          cp -R src .next release/
+          cp -a node_modules release/
+          if [[ -d public ]]; then cp -R public release/; fi
+          cp scripts/telegram-live-acceptance.mjs scripts/check-location-pdf-chromium.mjs \
+            scripts/verify-location-report-pdf-production.mjs \
+            scripts/communication-ops-live-acceptance.mjs scripts/communication-ops-live-acceptance.runner.ts \
+            scripts/telegram-ops-live-acceptance.mjs \
+            scripts/pilot-readiness-live-acceptance.mjs scripts/pilot-readiness-live-acceptance.runner.ts \
+            scripts/ops-sync.mjs scripts/ops-sync.runner.ts scripts/support-bot-live-acceptance.mjs \
+            scripts/support-bot-live-acceptance.runner.ts scripts/ops-alert-scheduler.mjs \
+            scripts/pm2-sync-ops-alert-scheduler.sh release/scripts/
+          cp tests/telegram-live-cases.ru.json tests/location-report-production-cases.json release/tests/
+          node - <<'NODE'
+          const fs = require('node:fs');
+          const sha = process.env.RELEASE_SHA;
+          fs.writeFileSync('release/release-meta.json', JSON.stringify({
+            gitSha: sha, builtAt: new Date().toISOString(),
+            workflowRunId: process.env.GITHUB_RUN_ID || null,
+            github: { workflow: process.env.GITHUB_WORKFLOW, repository: process.env.GITHUB_REPOSITORY },
+            node: process.version,
+          }, null, 2) + '\n');
+          NODE
+          tar -czf "asi-release-$RELEASE_SHA.tgz" -C release .
+      - name: Read-only isolated release smoke
+        shell: bash
+        env:
+          RELEASE_SHA: ${{ steps.identity.outputs.sha }}
+        run: |
+          set -euo pipefail
+          bash scripts/ci-artifact-smoke.sh "asi-release-$RELEASE_SHA.tgz" 13079
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.identity.outputs.artifact }}
+          path: asi-release-*.tgz
+          if-no-files-found: error
+          retention-days: 3
+
+  deploy:
+    name: Protected existing-environment owner dashboard deploy
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.build.outputs.artifact }}
+          path: release-artifact
+      - name: Recheck exact main identity before any production mutation
+        shell: bash
+        env:
+          REQUESTED_SHA: ${{ needs.build.outputs.sha }}
+        run: |
+          set -euo pipefail
+          REMOTE="$(git ls-remote origin refs/heads/main | awk '{print $1}')"
+          [[ "$REMOTE" == "$REQUESTED_SHA" ]] || {
+            echo 'Main moved since the approved release build; stop'; exit 1;
+          }
+      - name: Preflight production owner access; preserve Telegram env
+        shell: bash
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_PORT: ${{ secrets.VPS_PORT }}
+        run: |
+          set -euo pipefail
+          [[ -n "${VPS_HOST:-}" && -n "${VPS_SSH_KEY:-}" ]] || {
+            echo 'Production SSH configuration missing'; exit 1;
+          }
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          PORT="${VPS_PORT:-22}"
+          SSH_OPTS=(-i ~/.ssh/id_ed25519 -p "$PORT" -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=20)
+          ssh "${SSH_OPTS[@]}" "project_ayfaar@$VPS_HOST" 'set -eu
+            test "$(id -un)" = project_ayfaar
+            test -L /var/www/asi/current
+            test -f /var/www/asi/shared/.env.production.local
+            test -r /var/www/asi/shared/.env.production.local
+            grep -Eq "^SESSION_SECRET=.+" /var/www/asi/shared/.env.production.local
+            grep -Eq "^ASI_DEVELOPMENT_OWNER_EMAILS=.+" /var/www/asi/shared/.env.production.local
+            grep -Eq "^GITHUB_TOKEN=.+" /var/www/asi/shared/.env.production.local
+            /usr/bin/systemctl is-active --quiet asi-landing.service
+            echo "Owner-only deployment preflight PASS; existing server environment retained"
+          '
+      - name: Deploy exact artifact without provider activation or webhook operations
+        shell: bash
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_PORT: ${{ secrets.VPS_PORT }}
+          RELEASE_SHA: ${{ needs.build.outputs.sha }}
+        run: |
+          set -euo pipefail
+          PORT="${VPS_PORT:-22}"
+          SSH_OPTS=(-i ~/.ssh/id_ed25519 -p "$PORT" -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=20)
+          SCP_OPTS=(-i ~/.ssh/id_ed25519 -P "$PORT" -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=20)
+          ARTIFACT="release-artifact/asi-release-$RELEASE_SHA.tgz"
+          test -f "$ARTIFACT"
+          # Empty overlay by design: deploy script preserves existing production keys.
+          printf '# Retain existing server configuration without setting or clearing Telegram switches.\n' > owner-progress-preserve.env
+          REMOTE_TMP="/home/project_ayfaar/asi-deploy-tmp/owner-progress-${{ github.run_id }}"
+          ssh "${SSH_OPTS[@]}" "project_ayfaar@$VPS_HOST" "mkdir -p '$REMOTE_TMP' && chmod 700 '$REMOTE_TMP'"
+          scp "${SCP_OPTS[@]}" scripts/deploy-production-systemd-artifact.sh \
+            owner-progress-preserve.env "$ARTIFACT" "project_ayfaar@$VPS_HOST:$REMOTE_TMP/"
+          ssh "${SSH_OPTS[@]}" "project_ayfaar@$VPS_HOST" \
+            "ASI_BASE_DIR='/var/www/asi' APP_PORT='3000' bash '$REMOTE_TMP/deploy-production-systemd-artifact.sh' '$RELEASE_SHA' '$REMOTE_TMP/asi-release-$RELEASE_SHA.tgz' '$REMOTE_TMP/owner-progress-preserve.env'"
+          ssh "${SSH_OPTS[@]}" "project_ayfaar@$VPS_HOST" \
+            "rm -f '$REMOTE_TMP/deploy-production-systemd-artifact.sh' '$REMOTE_TMP/asi-release-$RELEASE_SHA.tgz' '$REMOTE_TMP/owner-progress-preserve.env'"
+          node - <<'NODE'
+          const expected = process.env.RELEASE_SHA;
+          (async () => {
+            const version = await (await fetch('https://asi-global.ru/api/version', {
+              signal: AbortSignal.timeout(10000), cache: 'no-store',
+            })).json();
+            if (version.sha !== expected) throw new Error('Production SHA mismatch after deploy');
+            const route = await fetch('https://asi-global.ru/api/dashboard/engine-progress', {
+              signal: AbortSignal.timeout(10000), cache: 'no-store',
+            });
+            if (route.status !== 401) throw new Error('Anonymous owner endpoint was not denied');
+            console.log('OWNER_DASHBOARD_RELEASE_VERIFIED ' + expected);
+          })().catch(e => { console.error(e.message); process.exitCode = 1; });
+          NODE
