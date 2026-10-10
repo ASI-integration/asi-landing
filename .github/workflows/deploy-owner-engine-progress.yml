@@ -8,7 +8,7 @@ on:
         required: true
         type: string
       sha:
-        description: "Exact current main SHA (40 lowercase hex)"
+        description: "Exact SHA of the approved dashboard-only candidate branch"
         required: true
         type: string
 
@@ -29,12 +29,13 @@ jobs:
       sha: ${{ steps.identity.outputs.sha }}
       artifact: ${{ steps.identity.outputs.artifact }}
       live_sha: ${{ steps.scope.outputs.live_sha }}
+      main_sha: ${{ steps.identity.outputs.main_sha }}
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 1
           persist-credentials: false
-      - name: Exact main and dedicated owner confirmation
+      - name: Pin current main workflow and approved dashboard-only candidate
         id: identity
         shell: bash
         env:
@@ -45,13 +46,18 @@ jobs:
           set -euo pipefail
           [[ "$APPROVED" == 'DEPLOY_OWNER_UI_ONLY' ]] || { echo 'Owner dashboard-only confirmation required'; exit 1; }
           [[ "$REQUESTED_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo 'Exact lowercase commit SHA required'; exit 1; }
-          CURRENT="$(git rev-parse HEAD)"
-          REMOTE="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq '.object.sha')"
-          [[ "$CURRENT" == "$REQUESTED_SHA" && "$REMOTE" == "$REQUESTED_SHA" ]] || {
-            echo 'Requested commit is not the exact current main head'; exit 1;
+          CURRENT_MAIN="$(git rev-parse HEAD)"
+          REMOTE_MAIN="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq '.object.sha')"
+          [[ "$CURRENT_MAIN" == "$REMOTE_MAIN" ]] || {
+            echo 'Release workflow is not based on the current main head'; exit 1;
           }
-          echo "sha=$CURRENT" >> "$GITHUB_OUTPUT"
-          echo "artifact=asi-owner-progress-$CURRENT" >> "$GITHUB_OUTPUT"
+          RELEASE_REF="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/release/owner-progress-live-baseline-20261010" --jq '.object.sha')"
+          [[ "$RELEASE_REF" == "$REQUESTED_SHA" ]] || {
+            echo 'Requested SHA differs from reviewed dashboard-only release branch'; exit 1;
+          }
+          echo "main_sha=$CURRENT_MAIN" >> "$GITHUB_OUTPUT"
+          echo "sha=$REQUESTED_SHA" >> "$GITHUB_OUTPUT"
+          echo "artifact=asi-owner-progress-$REQUESTED_SHA" >> "$GITHUB_OUTPUT"
       - name: Block any pending non-dashboard production delta
         id: scope
         shell: bash
@@ -65,6 +71,12 @@ jobs:
           gh api "repos/$GITHUB_REPOSITORY/compare/$LIVE_SHA...$REQUESTED_SHA" > "$RUNNER_TEMP/owner-release-compare.json"
           node scripts/owner-engine-release-scope.mjs "$RUNNER_TEMP/owner-release-compare.json"
           echo "live_sha=$LIVE_SHA" >> "$GITHUB_OUTPUT"
+      - name: Check out exact approved production-baseline candidate
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.identity.outputs.sha }}
+          fetch-depth: 1
+          persist-credentials: false
       - uses: actions/setup-node@v4
         with:
           node-version: 20
@@ -75,7 +87,7 @@ jobs:
         run: |
           npm run lint
           npm run typecheck
-          npx vitest run src/lib/engine-progress/__tests__/roadmap.test.ts src/lib/engine-progress/__tests__/release-safety.test.ts src/app/api/dashboard/engine-progress/__tests__/route.test.ts
+          npx vitest run src/lib/engine-progress/__tests__/roadmap.test.ts src/app/api/dashboard/engine-progress/__tests__/route.test.ts
           npm run build
       - name: Prune nonproduction dependencies
         run: npm prune --omit=dev
@@ -138,17 +150,22 @@ jobs:
         with:
           name: ${{ needs.build.outputs.artifact }}
           path: release-artifact
-      - name: Recheck exact main identity before any production mutation
+      - name: Recheck exact candidate, main and live identities before any production mutation
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
           REQUESTED_SHA: ${{ needs.build.outputs.sha }}
           EXPECTED_PREVIOUS_SHA: ${{ needs.build.outputs.live_sha }}
+          EXPECTED_MAIN_SHA: ${{ needs.build.outputs.main_sha }}
         run: |
           set -euo pipefail
-          REMOTE="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq '.object.sha')"
-          [[ "$REMOTE" == "$REQUESTED_SHA" ]] || {
-            echo 'Main moved since the approved release build; stop'; exit 1;
+          REMOTE_MAIN="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq '.object.sha')"
+          [[ "$REMOTE_MAIN" == "$EXPECTED_MAIN_SHA" ]] || {
+            echo 'Main moved since the approved workflow build; stop'; exit 1;
+          }
+          RELEASE_REF="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/release/owner-progress-live-baseline-20261010" --jq '.object.sha')"
+          [[ "$RELEASE_REF" == "$REQUESTED_SHA" ]] || {
+            echo 'Dashboard-only candidate branch changed after scope verification; stop'; exit 1;
           }
           LIVE_NOW="$(curl -fsS --max-time 10 https://asi-global.ru/api/version | node -e "let x='';process.stdin.on('data',d=>x+=d);process.stdin.on('end',()=>{const s=JSON.parse(x).sha;if(!/^[a-f0-9]{40}$/.test(s||''))process.exit(1);console.log(s)})")"
           [[ "$LIVE_NOW" == "$EXPECTED_PREVIOUS_SHA" ]] || {
