@@ -346,6 +346,7 @@ jobs:
           VPS_HOST: ${{ secrets.VPS_HOST }}
           VPS_PORT: ${{ secrets.VPS_PORT }}
           VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          OWNER_LIVE_MESSAGING_CONFIRMATION: ${{ inputs.confirm_live_guest_messaging }}
         run: |
           set -euo pipefail
           SHA="${{ needs.build_release.outputs.sha }}"
@@ -385,7 +386,7 @@ jobs:
 
           echo "SSH preflight: ${REMOTE_USER}@${VPS_HOST}:${REMOTE_PORT}"
           ssh "${SSH_OPTS[@]}" "$REMOTE_USER@$VPS_HOST" 'test "$(id -un)" = project_ayfaar && hostname && echo SSH_OK'
-          if [ "${{ inputs.confirm_live_guest_messaging }}" = "PRESERVE_EXISTING_MESSAGING" ]; then
+          if [ "${OWNER_LIVE_MESSAGING_CONFIRMATION}" = "PRESERVE_EXISTING_MESSAGING" ]; then
             # Fail closed; never fall back to a default env or silently enable messaging.
             ssh "${SSH_OPTS[@]}" "$REMOTE_USER@$VPS_HOST" 'test -s /var/www/asi/shared/.env.production.local && echo EXISTING_ENV_PRESENT'
           fi
