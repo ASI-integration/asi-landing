@@ -126,6 +126,7 @@ jobs:
         shell: bash
         env:
           RELEASE_SHA: ${{ steps.identity.outputs.sha }}
+          EXPECT_SHA: ${{ steps.identity.outputs.sha }}
         run: |
           set -euo pipefail
           bash scripts/ci-artifact-smoke.sh "asi-release-$RELEASE_SHA.tgz" 13079
