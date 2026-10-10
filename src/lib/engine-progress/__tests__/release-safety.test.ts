@@ -13,6 +13,11 @@ describe('owner dashboard-only deploy safety', () => {
     expect(workflow).toContain("github.ref == 'refs/heads/main'");
     expect(workflow).toContain("^[0-9a-f]{40}$");
     expect(workflow).toContain('gh api');
+    expect(workflow).toContain('release/owner-progress-live-baseline-20261010');
+    expect(workflow).toContain("ref: ${{ steps.identity.outputs.sha }}");
+    expect(workflow).toContain("main_sha: ${{ steps.identity.outputs.main_sha }}");
+    expect(workflow).toContain("EXPECTED_PREVIOUS_SHA: ${{ needs.build.outputs.live_sha }}");
+    expect(workflow).toContain('Dashboard-only candidate branch changed after scope verification');
     expect(workflow).toContain('environment: production');
     expect(workflow).toContain('cancel-in-progress: false');
     expect(workflow).toContain('permissions:\n  contents: read');
