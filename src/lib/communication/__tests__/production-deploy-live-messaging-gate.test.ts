@@ -12,9 +12,11 @@ describe('production deploy live messaging owner gate', () => {
     expect(workflow).toContain('confirm_live_guest_messaging:');
     expect(workflow).toContain('required: true');
     expect(workflow).toContain('ENABLE_LIVE_GUEST_MESSAGING');
-    expect(workflow).toContain(
-      'if [ "${OWNER_LIVE_MESSAGING_CONFIRMATION}" != "ENABLE_LIVE_GUEST_MESSAGING" ]; then',
-    );
+    expect(workflow).toContain('PRESERVE_EXISTING_MESSAGING');
+    expect(workflow).toContain('case "${OWNER_LIVE_MESSAGING_CONFIRMATION}" in');
+    expect(workflow).toContain('ENABLE_LIVE_GUEST_MESSAGING|PRESERVE_EXISTING_MESSAGING');
+    expect(workflow).toContain("if: inputs.confirm_live_guest_messaging == 'ENABLE_LIVE_GUEST_MESSAGING'");
+    expect(workflow).toContain("if: inputs.confirm_live_guest_messaging == 'PRESERVE_EXISTING_MESSAGING'");
   });
 
   it('passes user-controlled inputs as environment values, never inline shell code', () => {
@@ -37,5 +39,21 @@ describe('production deploy live messaging owner gate', () => {
     expect(liveOutboundIndex).toBeGreaterThan(confirmationIndex);
     expect(telegramDryRunIndex).toBeGreaterThan(confirmationIndex);
     expect(killSwitchIndex).toBeGreaterThan(confirmationIndex);
+  });
+});
+
+describe('preserve existing messaging deployment mode', () => {
+  it('preserves stored Telegram settings and never updates the live webhook', () => {
+    const safeMode = workflow.slice(
+      workflow.indexOf('      - name: Prepare production environment (preserve existing messaging)'),
+      workflow.indexOf('      - name: Deploy systemd release over SSH'),
+    );
+    expect(safeMode).toContain("printf 'NODE_ENV=production\\nPORT=3000\\n' > production.env");
+    expect(safeMode).not.toMatch(/TELEGRAM|COMMUNICATION_|WEBHOOK|AUTO_SEND_RUNNER_SECRET/);
+    expect(workflow).toContain('test -s /var/www/asi/shared/.env.production.local');
+    expect(workflow).toContain("if: inputs.confirm_live_guest_messaging == 'ENABLE_LIVE_GUEST_MESSAGING'");
+    expect(workflow).toContain("OWNER_LIVE_MESSAGING_CONFIRMATION: ${{ inputs.confirm_live_guest_messaging }}");
+    const webhookSection = workflow.slice(workflow.indexOf('      - name: Ensure Telegram production webhook'));
+    expect(webhookSection).toMatch(/if: inputs\.confirm_live_guest_messaging == 'ENABLE_LIVE_GUEST_MESSAGING'/);
   });
 });
