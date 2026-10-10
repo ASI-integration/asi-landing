@@ -11,7 +11,7 @@ on:
         required: true
         type: string
       confirm_live_guest_messaging:
-        description: Type ENABLE_LIVE_GUEST_MESSAGING to allow deploy to enable Telegram live outbound and clear communication stops
+        description: For messaging activation type ENABLE_LIVE_GUEST_MESSAGING; for safe UI release type PRESERVE_EXISTING_MESSAGING
         required: true
         type: string
       sha:
@@ -41,10 +41,13 @@ jobs:
             echo "Production deploy is manual only. Set confirm_production_deploy to DEPLOY_PRODUCTION."
             exit 1
           fi
-          if [ "${OWNER_LIVE_MESSAGING_CONFIRMATION}" != "ENABLE_LIVE_GUEST_MESSAGING" ]; then
-            echo "This deploy enables live Telegram outbound and clears communication stops. Set confirm_live_guest_messaging to ENABLE_LIVE_GUEST_MESSAGING."
-            exit 1
-          fi
+          case "${OWNER_LIVE_MESSAGING_CONFIRMATION}" in
+            ENABLE_LIVE_GUEST_MESSAGING|PRESERVE_EXISTING_MESSAGING) ;;
+            *)
+              echo "Explicitly select ENABLE_LIVE_GUEST_MESSAGING or PRESERVE_EXISTING_MESSAGING."
+              exit 1
+              ;;
+          esac
 
   build_release:
     runs-on: ubuntu-latest
@@ -241,7 +244,8 @@ jobs:
           name: ${{ needs.build_release.outputs.artifact_name }}
           path: release-artifact
 
-      - name: Prepare production environment
+      - name: Prepare production environment (existing live messaging mode)
+        if: inputs.confirm_live_guest_messaging == 'ENABLE_LIVE_GUEST_MESSAGING'
         shell: bash
         run: |
           set -euo pipefail
@@ -326,6 +330,16 @@ jobs:
             fi
           } > production.env
 
+      - name: Prepare production environment (preserve existing messaging)
+        if: inputs.confirm_live_guest_messaging == 'PRESERVE_EXISTING_MESSAGING'
+        shell: bash
+        run: |
+          set -euo pipefail
+          # No Telegram/communication vars or credentials are placed in this overlay.
+          # The deployment script preserves existing server-local settings.
+          umask 077
+          printf 'NODE_ENV=production\nPORT=3000\n' > production.env
+
       - name: Deploy systemd release over SSH
         shell: bash
         env:
@@ -371,6 +385,10 @@ jobs:
 
           echo "SSH preflight: ${REMOTE_USER}@${VPS_HOST}:${REMOTE_PORT}"
           ssh "${SSH_OPTS[@]}" "$REMOTE_USER@$VPS_HOST" 'test "$(id -un)" = project_ayfaar && hostname && echo SSH_OK'
+          if [ "${{ inputs.confirm_live_guest_messaging }}" = "PRESERVE_EXISTING_MESSAGING" ]; then
+            # Fail closed; never fall back to a default env or silently enable messaging.
+            ssh "${SSH_OPTS[@]}" "$REMOTE_USER@$VPS_HOST" 'test -s /var/www/asi/shared/.env.production.local && echo EXISTING_ENV_PRESENT'
+          fi
           ssh "${SSH_OPTS[@]}" "$REMOTE_USER@$VPS_HOST" "mkdir -p '$REMOTE_TMP' && chmod 700 '$REMOTE_TMP'"
 
           echo "Pre-deploy disk cleanup"
@@ -408,6 +426,7 @@ jobs:
           curl -fsS --max-time 10 https://asi-global.ru/api/version
 
       - name: Ensure Telegram production webhook
+        if: inputs.confirm_live_guest_messaging == 'ENABLE_LIVE_GUEST_MESSAGING'
         shell: bash
         run: |
           set -euo pipefail
