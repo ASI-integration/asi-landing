@@ -1,4 +1,6 @@
 import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 export const OWNER_RELEASE_FILES = Object.freeze([
   '.github/workflows/deploy-owner-engine-progress.yml',
@@ -42,7 +44,7 @@ export function verifyOwnerReleaseScope(compare) {
   return { ok: true, count: visited.size };
 }
 
-if (process.argv[1] && import.meta.url === new URL('file://' + process.argv[1].replaceAll('\\','/')).href) {
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   try {
     const source = process.argv[2];
     if (!source || process.argv.length !== 3) throw new Error('Usage: node owner-engine-release-scope.mjs COMPARE_JSON');
