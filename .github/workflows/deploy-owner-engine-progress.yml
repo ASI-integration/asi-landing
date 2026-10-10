@@ -28,6 +28,7 @@ jobs:
     outputs:
       sha: ${{ steps.identity.outputs.sha }}
       artifact: ${{ steps.identity.outputs.artifact }}
+      live_sha: ${{ steps.scope.outputs.live_sha }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -51,6 +52,19 @@ jobs:
           }
           echo "sha=$CURRENT" >> "$GITHUB_OUTPUT"
           echo "artifact=asi-owner-progress-$CURRENT" >> "$GITHUB_OUTPUT"
+      - name: Block any pending non-dashboard production delta
+        id: scope
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REQUESTED_SHA: ${{ steps.identity.outputs.sha }}
+        run: |
+          set -euo pipefail
+          LIVE_SHA="$(curl -fsS --max-time 10 https://asi-global.ru/api/version | node -e "let x='';process.stdin.on('data',d=>x+=d);process.stdin.on('end',()=>{const s=JSON.parse(x).sha;if(!/^[a-f0-9]{40}$/.test(s||''))process.exit(1);console.log(s)})")"
+          [[ "$LIVE_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo 'Unverifiable live source SHA'; exit 1; }
+          gh api "repos/$GITHUB_REPOSITORY/compare/$LIVE_SHA...$REQUESTED_SHA" > "$RUNNER_TEMP/owner-release-compare.json"
+          node scripts/owner-engine-release-scope.mjs "$RUNNER_TEMP/owner-release-compare.json"
+          echo "live_sha=$LIVE_SHA" >> "$GITHUB_OUTPUT"
       - uses: actions/setup-node@v4
         with:
           node-version: 20
@@ -61,7 +75,7 @@ jobs:
         run: |
           npm run lint
           npm run typecheck
-          npx vitest run src/lib/engine-progress/__tests__/roadmap.test.ts src/app/api/dashboard/engine-progress/__tests__/route.test.ts
+          npx vitest run src/lib/engine-progress/__tests__/roadmap.test.ts src/lib/engine-progress/__tests__/release-safety.test.ts src/app/api/dashboard/engine-progress/__tests__/route.test.ts
           npm run build
       - name: Prune nonproduction dependencies
         run: npm prune --omit=dev
@@ -129,11 +143,16 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           REQUESTED_SHA: ${{ needs.build.outputs.sha }}
+          EXPECTED_PREVIOUS_SHA: ${{ needs.build.outputs.live_sha }}
         run: |
           set -euo pipefail
           REMOTE="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq '.object.sha')"
           [[ "$REMOTE" == "$REQUESTED_SHA" ]] || {
             echo 'Main moved since the approved release build; stop'; exit 1;
+          }
+          LIVE_NOW="$(curl -fsS --max-time 10 https://asi-global.ru/api/version | node -e "let x='';process.stdin.on('data',d=>x+=d);process.stdin.on('end',()=>{const s=JSON.parse(x).sha;if(!/^[a-f0-9]{40}$/.test(s||''))process.exit(1);console.log(s)})")"
+          [[ "$LIVE_NOW" == "$EXPECTED_PREVIOUS_SHA" ]] || {
+            echo 'Production source changed after approved owner dashboard scope check; stop'; exit 1;
           }
       - name: Preflight production owner access; preserve Telegram env
         shell: bash
