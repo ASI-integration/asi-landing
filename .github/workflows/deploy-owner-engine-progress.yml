@@ -189,17 +189,12 @@ jobs:
           chmod 600 ~/.ssh/id_ed25519
           PORT="${VPS_PORT:-22}"
           SSH_OPTS=(-i ~/.ssh/id_ed25519 -p "$PORT" -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=20)
-          ssh "${SSH_OPTS[@]}" "project_ayfaar@$VPS_HOST" 'set -eu
-            test "$(id -un)" = project_ayfaar
-            test -L /var/www/asi/current
-            test -f /var/www/asi/shared/.env.production.local
-            test -r /var/www/asi/shared/.env.production.local
-            grep -Eq "^SESSION_SECRET=.+" /var/www/asi/shared/.env.production.local
-            grep -Eq "^ASI_DEVELOPMENT_OWNER_EMAILS=.+" /var/www/asi/shared/.env.production.local
-            grep -Eq "^GITHUB_TOKEN=.+" /var/www/asi/shared/.env.production.local
-            /usr/bin/systemctl is-active --quiet asi-landing.service
-            echo "Owner-only deployment preflight PASS; existing server environment retained"
-          '
+          if ssh "${SSH_OPTS[@]}" "project_ayfaar@$VPS_HOST" 'bash -s' < scripts/owner-dashboard-preflight.sh; then
+            echo 'OWNER_PREFLIGHT=PASS'
+          else
+            echo 'OWNER_PREFLIGHT=FAIL: see predicate label; if absent, SSH transport did not complete'
+            exit 1
+          fi
       - name: Deploy exact artifact without provider activation or webhook operations
         shell: bash
         env:
