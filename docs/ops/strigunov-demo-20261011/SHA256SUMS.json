@@ -1,0 +1,106 @@
+{
+  "baseline": "f42cd99f57bafa681def155a676619a1d80504fe",
+  "scope": "Tasks02-04 synthetic demonstration; physical bytes; manifest excludes itself",
+  "files": [
+    {
+      "path": "docs/ops/strigunov-demo-20261011/README.md",
+      "bytes": 3153,
+      "sha256": "acec28140bd6a9cc919704a6308968616c30c2f7910e05c6538972e95589f8bb"
+    },
+    {
+      "path": "docs/ops/strigunov-demo-20261011/reports/task-02.md",
+      "bytes": 17673,
+      "sha256": "feecbd9a2c28c6a94a29893e1bf901ae1a664049c0172161e9137b8c40d5f912"
+    },
+    {
+      "path": "docs/ops/strigunov-demo-20261011/reports/task-03.md",
+      "bytes": 9702,
+      "sha256": "890766473a233a8ca83d48fe495559b0924bc510f8210c85a55e6e280aec6160"
+    },
+    {
+      "path": "docs/ops/strigunov-demo-20261011/reports/task-04.md",
+      "bytes": 13949,
+      "sha256": "8880cdbce25aca3146f7af3299eced533f76d2b0f7363ba269aa814159175fb6"
+    },
+    {
+      "path": "docs/ops/strigunov-demo-20261011/strigunov-demo-03-20261011/build-viewer.cjs",
+      "bytes": 18732,
+      "sha256": "e8545f8b71ffe50968ce22acc35d3142f930097f176896ac9300a9f17c7d5a5c"
+    },
+    {
+      "path": "docs/ops/strigunov-demo-20261011/strigunov-demo-03-20261011/evidence-manifest.json",
+      "bytes": 1210,
+      "sha256": "1a268b21003b46c04e56885869f0dc54758d9ff748aff3ad5e4525dbc78798d1"
+    },
+    {
+      "path": "docs/ops/strigunov-demo-20261011/strigunov-demo-03-20261011/index.html",
+      "bytes": 40586,
+      "sha256": "dfbef4a056146f10a88410d6b4d1dec6f2d96f516e4d3a8a3142aaed6e277af0"
+    },
+    {
+      "path": "docs/ops/strigunov-demo-20261011/strigunov-demo-03-20261011/render-check.cjs",
+      "bytes": 8065,
+      "sha256": "aaa5ab3049fbcc09ef301d8ad75f815ac82a168688a00c0e7af1d4674704557b"
+    },
+    {
+      "path": "docs/ops/strigunov-demo-20261011/strigunov-demo-03-20261011/render-evidence/desktop.png",
+      "bytes": 451168,
+      "sha256": "75b574e56286c3391c93650a5bcb0134501391078bf8a03dc61c06508bb34741"
+    },
+    {
+      "path": "docs/ops/strigunov-demo-20261011/strigunov-demo-03-20261011/render-evidence/mobile.png",
+      "bytes": 523562,
+      "sha256": "a6d4caaab86564a1c4aa2d0518f3231d50185088e0780943d389df76e97ff0f8"
+    },
+    {
+      "path": "docs/ops/strigunov-demo-20261011/strigunov-demo-03-20261011/render-evidence/render-results.json",
+      "bytes": 1612,
+      "sha256": "e4565bace539a3207d6c8c4f26b9e9bfa8e8301733e2efc2c2e639f8ae76dfa3"
+    },
+    {
+      "path": "docs/ops/strigunov-demo-20261011/strigunov-demo-03-20261011/test-results.json",
+      "bytes": 7927,
+      "sha256": "dc0e4401e62a676a6fde74c55225424ddcf8d5d7c8379cbec9ecce4b704c47ef"
+    },
+    {
+      "path": "docs/ops/strigunov-demo-20261011/strigunov-demo-03-20261011/timeline.json",
+      "bytes": 12273,
+      "sha256": "d5e330e401468cd978a3b363f285ee35e227e477ada3706dbfaea8a4f833e6c3"
+    },
+    {
+      "path": "docs/ops/strigunov-demo-20261011/task02-evidence-20261011/eslint.json",
+      "bytes": 405,
+      "sha256": "b11caf50b4147d709e091f962d487740beb1ca3f346839a1207361ef946b1806"
+    },
+    {
+      "path": "docs/ops/strigunov-demo-20261011/task02-evidence-20261011/test-results.json",
+      "bytes": 7927,
+      "sha256": "dc0e4401e62a676a6fde74c55225424ddcf8d5d7c8379cbec9ecce4b704c47ef"
+    },
+    {
+      "path": "docs/ops/strigunov-demo-20261011/task02-evidence-20261011/timeline.json",
+      "bytes": 12273,
+      "sha256": "d5e330e401468cd978a3b363f285ee35e227e477ada3706dbfaea8a4f833e6c3"
+    },
+    {
+      "path": "docs/ops/strigunov-demo-20261011/task02-evidence-20261011/typecheck.json",
+      "bytes": 184,
+      "sha256": "c276868d4962ca9ab38d3fabacc6bd507dcce0cfbe50af98d6027a7e3487ad70"
+    },
+    {
+      "path": "docs/ops/strigunov-demo-early-arrival.md",
+      "bytes": 6693,
+      "sha256": "6c4b35e5c35e37146160fce6756ae70b335aec7f7cd078be0bc4d98a090d1e36"
+    },
+    {
+      "path": "src/lib/booking-ops/__tests__/strigunov-early-arrival-demo.test.ts",
+      "bytes": 11945,
+      "sha256": "0c46dc67d32252ac9861949895343c351dd6ae2369b8530397f7e6a6f08eeae1"
+    },
+    {
+      "path": "src/lib/booking-ops/strigunov-early-arrival-demo.ts",
+      "bytes": 12945,
+      "sha256": "8148a0a8105c7afcc7d79452300d032034ebd1c94d3e5204f29054be6db4da6e"
+    }
+  ]
+}

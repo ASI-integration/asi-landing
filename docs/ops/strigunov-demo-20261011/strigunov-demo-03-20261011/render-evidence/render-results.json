@@ -1,0 +1,59 @@
+{
+  "scope": "Task03/04 presentation only; Task02 not rerun",
+  "passed": 12,
+  "failed": 0,
+  "results": [
+    {
+      "name": "01 verified artifact bytes before render",
+      "status": "PASS"
+    },
+    {
+      "name": "02 synthetic banner and historical status visible",
+      "status": "PASS"
+    },
+    {
+      "name": "03 every card is exact corresponding event JSON",
+      "status": "PASS"
+    },
+    {
+      "name": "04 one identity and one reply remain bound to approval",
+      "status": "PASS"
+    },
+    {
+      "name": "05 18 historical cases faithfully labeled and not extra events",
+      "status": "PASS"
+    },
+    {
+      "name": "06 policy change and live integration limitations remain visible",
+      "status": "PASS"
+    },
+    {
+      "name": "07 evidence links stay local and source hash matches",
+      "status": "PASS"
+    },
+    {
+      "name": "08 desktop layout has no horizontal overflow",
+      "status": "PASS"
+    },
+    {
+      "name": "09 native details expose exact evidence without page JavaScript",
+      "status": "PASS"
+    },
+    {
+      "name": "10 mobile layout and anchor navigation remain usable",
+      "status": "PASS"
+    },
+    {
+      "name": "11 no active controls or page scripts",
+      "status": "PASS"
+    },
+    {
+      "name": "12 zero external page requests and unchanged artifact hashes",
+      "status": "PASS"
+    }
+  ],
+  "externalPageRequests": [],
+  "pageErrors": [],
+  "sourceHtmlSha256": "dfbef4a056146f10a88410d6b4d1dec6f2d96f516e4d3a8a3142aaed6e277af0",
+  "checkerSha256": "aaa5ab3049fbcc09ef301d8ad75f815ac82a168688a00c0e7af1d4674704557b"
+}

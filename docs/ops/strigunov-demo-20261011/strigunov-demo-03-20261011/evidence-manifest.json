@@ -1,0 +1,43 @@
+{
+  "synthetic": true,
+  "mode": "historical-read-only",
+  "sourceCommit": "f42cd99f57bafa681def155a676619a1d80504fe",
+  "externalIntegration": "not_integrated",
+  "files": {
+    "index.html": {
+      "bytes": 40586,
+      "sha256": "dfbef4a056146f10a88410d6b4d1dec6f2d96f516e4d3a8a3142aaed6e277af0"
+    },
+    "timeline.json": {
+      "bytes": 12273,
+      "sha256": "d5e330e401468cd978a3b363f285ee35e227e477ada3706dbfaea8a4f833e6c3"
+    },
+    "test-results.json": {
+      "bytes": 7927,
+      "sha256": "dc0e4401e62a676a6fde74c55225424ddcf8d5d7c8379cbec9ecce4b704c47ef"
+    },
+    "build-viewer.cjs": {
+      "bytes": 18732,
+      "sha256": "e8545f8b71ffe50968ce22acc35d3142f930097f176896ac9300a9f17c7d5a5c"
+    }
+  },
+  "events": 14,
+  "task02Tests": {
+    "passed": 18,
+    "total": 18,
+    "rerun": false
+  },
+  "scope": {
+    "accountId": "synthetic-strigunov-account",
+    "bookingId": "11111111-1111-4111-8111-111111111111",
+    "propertyId": "synthetic-strigunov-apartment",
+    "requestId": "synthetic-early-arrival-1200"
+  },
+  "limitations": [
+    "policy_change_not_modeled",
+    "in_memory_dedup_only",
+    "no_real_messages",
+    "no_external_integration",
+    "not_production_readiness"
+  ]
+}
