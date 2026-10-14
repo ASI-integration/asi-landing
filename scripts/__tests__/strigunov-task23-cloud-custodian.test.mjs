@@ -90,6 +90,20 @@ const negatives=[
 for(const [name,mutate] of negatives)test('reject '+name,()=>{
  const p=complete();mutate(p);guard(p);
 });
+test('missing forbidden-live flags cannot sneak through as false',()=>{
+ for(const field of ['customerDataPresent','productionDeploy','realGuestConsentClaimed',
+  'phase2Enabled','guestSendEnabled','localWindowsInstallerExecuted']){
+  const p=complete();delete p[field];guard(p);
+ }
+});
+test('non-boolean live-scope values are denied',()=>{
+ for(const field of ['customerDataPresent','productionDeploy','realGuestConsentClaimed',
+  'phase2Enabled','guestSendEnabled','localWindowsInstallerExecuted']){
+  for(const forged of [null,'false','true',0,1,{}]){
+   const p=complete();p[field]=forged;guard(p);
+  }
+ }
+});
 test('source-only code contains no provider or side-effect capability',()=>{
  const src=readFileSync('scripts/acceptance/strigunov-task23-cloud-custodian.mjs','utf8');
  assert.doesNotMatch(src,/\bimport\s|process\.env|fetch\s*\(|execFileSync|spawn\s*\(|\.query\s*\(|require\s*\(/);
