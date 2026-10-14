@@ -18,7 +18,7 @@ export async function startTask25FixtureIpc(root){
  if(observeTask25(root).status!=='READBACK')throw Error('FIXTURE_NOT_READY');
  const socketPath=join(root,'broker-test.sock');
  if(existsSync(socketPath))throw Error('SOCKET_NOT_FRESH');
- const server=createServer(socket=>{
+ const server=createServer({allowHalfOpen:true},socket=>{
   let bytes=Buffer.alloc(0),handled=false;
   socket.setTimeout(3000,()=>{if(!handled){handled=true;socket.end(denied('IPC_TIMEOUT'));}});
   socket.on('error',()=>{});
@@ -27,14 +27,22 @@ export async function startTask25FixtureIpc(root){
    bytes=Buffer.concat([bytes,chunk]);
    if(bytes.length>MAX){handled=true;socket.end(denied('IPC_SIZE'));return;}
    const end=bytes.indexOf(10);
-   if(end===-1)return;
+   if(end!==-1&&end!==bytes.length-1){
+    handled=true;socket.end(denied('IPC_MULTIPLE_OR_TRAILING'));
+   }
+  });
+  // Wait for peer half-close. A complete first data event is NOT proof the
+  // peer cannot append another frame in a later data event.
+  socket.on('end',()=>{
+   if(handled)return;
    handled=true;
+   const end=bytes.indexOf(10);
+   if(end===-1){socket.end(denied('IPC_NO_FRAME'));return;}
    if(end!==bytes.length-1){socket.end(denied('IPC_MULTIPLE_OR_TRAILING'));return;}
    const raw=bytes.subarray(0,end).toString('utf8');
    const reply=recordTask25(root,raw);
    socket.end(result(reply));
   });
-  socket.on('end',()=>{if(!handled){handled=true;socket.end(denied('IPC_NO_FRAME'));}});
  });
  await new Promise((resolve,reject)=>{
   server.once('error',reject);
@@ -60,7 +68,7 @@ export function sendTask25FixtureRequest(socketPath,raw){
   const socket=createConnection(socketPath);
   let bytes=Buffer.alloc(0);
   socket.setTimeout(3000,()=>{socket.destroy();reject(Error('IPC_CLIENT_TIMEOUT'));});
-  socket.on('connect',()=>socket.write(raw+'\n'));
+  socket.on('connect',()=>socket.end(raw+'\n'));
   socket.on('data',chunk=>{bytes=Buffer.concat([bytes,chunk]);});
   socket.on('end',()=>{
    try{resolve(JSON.parse(bytes.toString('utf8').trim()));}
