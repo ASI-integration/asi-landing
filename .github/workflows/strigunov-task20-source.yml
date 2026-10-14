@@ -1,0 +1,30 @@
+name: Strigunov Task20 source-only safety gates
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/strigunov-task20-source.yml'
+      - 'scripts/acceptance/strigunov-task20-boundaries.mjs'
+      - 'scripts/__tests__/strigunov-task20-boundaries.test.mjs'
+      - 'docs/ops/strigunov-task20-phase2-p13-contract.md'
+permissions:
+  contents: read
+jobs:
+  source-only:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Checkout unprivileged PR merge candidate
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+          fetch-depth: 2
+      - name: Check runtime and syntax
+        run: |
+          set -euo pipefail
+          node --version
+          node --check scripts/acceptance/strigunov-task20-boundaries.mjs
+          node --check scripts/__tests__/strigunov-task20-boundaries.test.mjs
+      - name: Exercise denied Phase2 and P13 replay paths
+        run: node --test scripts/__tests__/strigunov-task20-boundaries.test.mjs
+      - name: Require clean review diff
+        run: git diff --check HEAD^1 HEAD
