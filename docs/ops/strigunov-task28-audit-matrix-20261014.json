@@ -67,8 +67,27 @@
       "skip": 3,
       "fail": 0
     },
-    "combined_linux_all_six": "NOT_RUN",
-    "end_to_end_host_custodian": "NOT_RUN"
+    "combined_linux_all_six": "PASS_149_OF_149_ZERO_SKIPS",
+    "end_to_end_host_custodian": "NOT_RUN",
+    "combined_linux_run_id": 38611862046,
+    "combined_linux_node": {
+      "total": 98,
+      "pass": 98,
+      "skip": 0,
+      "fail": 0
+    },
+    "combined_linux_python26": {
+      "total": 23,
+      "pass": 23,
+      "skip": 0,
+      "fail": 0
+    },
+    "combined_linux_python27": {
+      "total": 28,
+      "pass": 28,
+      "skip": 0,
+      "fail": 0
+    }
   },
   "blockers": [
     {
@@ -105,5 +124,5 @@
     "canSend": false,
     "pilot": "NOT_LIVE"
   },
-  "next": "FULL_COMPOSITE_LINUX_ACCEPTANCE_THEN_OWNER_AUTHORIZED_CODE_CONSOLIDATION_THEN_INDEPENDENT_HOST_PHASE2"
+  "next": "OWNER_AUTHORIZED_CODE_CONSOLIDATION_AND_TRUE_INTEGRATION_THEN_INDEPENDENT_HOST_PHASE2"
 }
