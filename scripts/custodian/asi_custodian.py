@@ -42,8 +42,8 @@ class Unsafe(Exception):
 def response(status: str, reason: str, **extra: object) -> dict:
     """All API replies are non-authorizing, including technical success."""
     return {"status": status, "reason": reason, "scope": SCOPE,
-            "authorized": False, "canIssueReceipt": False, "canApprove": False,
-            "canSend": False, "phase2": "BLOCK", **extra}
+            "authorized": False, "canInstall": False, "canIssueReceipt": False,
+            "canApprove": False, "canSend": False, "phase2": "BLOCK", **extra}
 
 
 def require_private_regular(path: Path) -> None:
