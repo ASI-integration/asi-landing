@@ -162,6 +162,27 @@ test('a future fake caller grant flag is forbidden',()=>{
  const l=make(),r=JSON.parse(request(PREVIEW_COMMANDS[0],1));
  r.ownerApproved=true;blocked(stepPreviewLedger(l,JSON.stringify(r),NOW));
 });
+test('array-wrapped replay IDs never pass checkpoint restore',()=>{
+ const l=step(make(),PREVIEW_COMMANDS[0],1).ledger;
+ const tampered={...l,processed:[[l.processed[0]]]};
+ const v=restorePreviewCheckpoint(JSON.stringify(tampered));
+ blocked(v);assert.equal(v.ledger,null);
+ assert.equal(inspectPreviewCheckpoint(tampered).status,'HOLD');
+});
+test('array-wrapped run, request, or digest cannot impersonate a string',()=>{
+ const l=make();
+ for(const [key,value] of [
+  ['runId',[RUN]],['requestId',['1'.padStart(32,'0')]],
+  ['manifestSha256',[HASH]]
+ ]){
+  const obj=JSON.parse(request(PREVIEW_COMMANDS[0],1));
+  obj[key]=value;blocked(stepPreviewLedger(l,JSON.stringify(obj),NOW));
+ }
+ assert.throws(()=>newPreviewLedger({runId:[RUN],manifestSha256:HASH}));
+ assert.throws(()=>newPreviewLedger({runId:RUN,manifestSha256:[HASH]}));
+ const malformed={...make(),manifestSha256:[HASH]};
+ assert.equal(inspectPreviewCheckpoint(malformed).status,'HOLD');
+});
 test('no cloud, network, filesystem, SQL, secret or sending capabilities',()=>{
  const src=readFileSync('scripts/acceptance/strigunov-task24-offline-broker.mjs','utf8');
  assert.doesNotMatch(src,/\bimport\s|require\s*\(|process\.env|fetch\s*\(|execFileSync|spawn\s*\(|\.query\s*\(|createServer|\.writeFile/);
