@@ -74,8 +74,8 @@ test('live scopes never pass a source-only readiness inspection',()=>{
  ]){const p=plan();edit(p);checkBlocked(p);}
 });
 const rev=()=>({
- beforeEpoch:'1',afterEpoch:'2',beforeActor:sid(1002),afterActor:sid(1002),
- beforeAccount:'synthetic',afterAccount:'synthetic',revoked:true,
+ beforeEpoch:'1',afterEpoch:'2',beforeActor:'12000000-0000-4000-8000-000000001403',afterActor:'12000000-0000-4000-8000-000000001403',
+ beforeAccount:'12000000-0000-4000-8000-000000001401',afterAccount:'12000000-0000-4000-8000-000000001401',revoked:true,
  oldSessionAccepted:false,newRequestAccepted:false,canSend:false,
  authoritativePostgresReadback:true,operatorCredentialExposed:false,
  ownerControlledSourceVerified:true
