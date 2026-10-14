@@ -1,0 +1,27 @@
+name: ASI Task29D technical custodian lost acknowledgement recovery
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/asi-custodian-task29d-lost-ack.yml'
+      - 'scripts/__tests__/asi_custodian_lost_ack.test.py'
+      - 'scripts/custodian/asi_custodian.py'
+permissions:
+  contents: read
+jobs:
+  native-lost-ack:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 7
+    steps:
+      - name: Read-only source checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+          fetch-depth: 2
+      - name: Physical nonroot Unix socket lost-ACK regression
+        env:
+          PYTHONDONTWRITEBYTECODE: '1'
+        run: |
+          set -euo pipefail
+          test "$(id -u)" -ne 0
+          python3 scripts/__tests__/asi_custodian_lost_ack.test.py
+          git diff --check HEAD^1 HEAD
