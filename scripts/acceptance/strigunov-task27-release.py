@@ -51,7 +51,15 @@ def denied(reason: str, **extra: object) -> dict:
 
 def own_fixture_dir() -> Path:
     """Make exactly one new private directory, owned by this test process."""
-    return Path(tempfile.mkdtemp(prefix="asi-task27-"))
+    root = Path(tempfile.gettempdir()).resolve()
+    for _ in range(8):
+        new = root / ("asi-task27-" + os.urandom(6).hex())
+        try:
+            new.mkdir(mode=0o700)
+            return new
+        except FileExistsError:
+            continue
+    raise RuntimeError("UNIQUE_FIXTURE_ROOT_NOT_CREATED")
 
 
 def assert_test_root(root: Path) -> Path:
