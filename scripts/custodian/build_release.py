@@ -19,7 +19,7 @@ FILES = (
     ("asi-custodian/README.md", HERE / "README.md", 0o600),
 )
 PACKAGE = "asi-custodian-technical-v0.tar"
-AUTH = {"authorized": False, "canInstall": False, "canSend": False, "phase2": "BLOCK"}
+AUTH = {"authorized": False, "canInstall": False, "canIssueReceipt": False, "canApprove": False, "canSend": False, "phase2": "BLOCK"}
 MAX_ARCHIVE = 128 * 1024
 
 
