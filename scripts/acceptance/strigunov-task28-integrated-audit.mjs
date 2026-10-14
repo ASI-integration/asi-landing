@@ -3,7 +3,7 @@
 // It does not authenticate an operator, grant permission, contact production,
 // install a service, or write outside a sanitized local audit report.
 import {execFileSync} from 'node:child_process';
-import {writeFileSync,statSync} from 'node:fs';
+import {writeFileSync,lstatSync} from 'node:fs';
 
 export const BASE_MAIN='9bc8175aa772e92366c7a2363e26900a042fc3ce';
 export const PULLS=Object.freeze([
@@ -120,7 +120,9 @@ export function inspectCombinedTree(){
   for(const path of entry.files){
    if(!files.includes(path))problems.push('MISSING_PR_SOURCE');
    try{
-    if(!statSync(path).isFile())problems.push('NOT_REGULAR_SOURCE');
+    const physical=lstatSync(path);
+    if(physical.isSymbolicLink())problems.push('SYMLINK_PATH_PR'+entry.pr);
+    if(!physical.isFile())problems.push('NOT_REGULAR_SOURCE');
     // Names alone are insufficient: cross-check Git index *and* worktree bytes
     // and executable modes against the reviewed source commit for each PR.
     const pinnedBlob=git('rev-parse',entry.head+':'+path);
@@ -131,6 +133,11 @@ export function inspectCombinedTree(){
     const pinnedMode=git('ls-tree',entry.head,'--',path).split(' ')[0];
     const stagedMode=git('ls-files','--stage','--',path).split(' ')[0];
     if(pinnedMode!==stagedMode)problems.push('FILE_MODE_DRIFT_PR'+entry.pr);
+    // On actual Linux runner, check the checked-out inode, not just Git index.
+    if(process.platform!=='win32'&&physical.isFile()){
+     const physicalMode=(physical.mode&0o111)!==0?'100755':'100644';
+     if(physicalMode!==pinnedMode)problems.push('WORKTREE_MODE_DRIFT_PR'+entry.pr);
+    }
    }catch{problems.push('PINNED_BLOB_OR_MODE_UNVERIFIED_PR'+entry.pr);}
   }
  }
