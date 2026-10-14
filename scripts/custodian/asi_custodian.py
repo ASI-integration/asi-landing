@@ -91,6 +91,25 @@ def canonical(obj: dict) -> bytes:
     return json.dumps(obj, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode("ascii")
 
 
+def reject_duplicate_json_keys(pairs: list[tuple[str, object]]) -> dict:
+    """Untrusted protocol/config/journal JSON must never silently overwrite keys."""
+    output = {}
+    for name, value in pairs:
+        if name in output:
+            raise Unsafe("DUPLICATE_JSON_KEY")
+        output[name] = value
+    return output
+
+
+def reject_nonfinite_json(_value: str) -> None:
+    raise Unsafe("NONFINITE_JSON_NUMBER")
+
+
+def strict_json_loads(raw: bytes | str) -> object:
+    return json.loads(raw, object_pairs_hook=reject_duplicate_json_keys,
+                      parse_constant=reject_nonfinite_json)
+
+
 def initialize(raw: str, run_id: str, peer_uid: int, peer_gid: int) -> dict:
     if sys.platform != "linux" or os.getuid() == 0:
         raise Unsafe("LINUX_NONROOT_ONLY")
@@ -125,7 +144,7 @@ def read_config(root: Path) -> dict:
     if file.stat().st_size > 1500:
         raise Unsafe("CONFIG_SIZE")
     try:
-        config = json.loads(file.read_bytes())
+        config = strict_json_loads(file.read_bytes())
     except (ValueError, UnicodeError):
         raise Unsafe("CONFIG_CORRUPT") from None
     if (type(config) is not dict or frozenset(config) != CONFIG_KEYS or
@@ -155,7 +174,7 @@ def inspect_journal(root: Path, config: dict) -> tuple[int, str, set[str], str]:
     status = "OPEN"
     for index, line in enumerate(lines, start=1):
         try:
-            ev = json.loads(line)
+            ev = strict_json_loads(line)
         except (ValueError, UnicodeError):
             raise Unsafe("JOURNAL_CORRUPT") from None
         if (type(ev) is not dict or frozenset(ev) != EVENT_KEYS or
@@ -180,7 +199,7 @@ def parse_request(raw: bytes, config: dict) -> dict:
     if not raw or len(raw) > MAX_REQUEST or raw.count(b"\n") != 1 or not raw.endswith(b"\n"):
         raise Unsafe("REQUEST_FRAME")
     try:
-        value = json.loads(raw[:-1].decode("utf-8", errors="strict"))
+        value = strict_json_loads(raw[:-1].decode("utf-8", errors="strict"))
     except (ValueError, UnicodeError):
         raise Unsafe("REQUEST_JSON") from None
     if (type(value) is not dict or frozenset(value) != REQ_KEYS or
@@ -323,7 +342,7 @@ def request_client(root: str, operation: str, seq: int, request_id: str, result:
             output.extend(part)
     if len(output) > 2048:
         raise Unsafe("RESPONSE_SIZE")
-    return json.loads(output)
+    return strict_json_loads(bytes(output))
 
 
 def main() -> int:
