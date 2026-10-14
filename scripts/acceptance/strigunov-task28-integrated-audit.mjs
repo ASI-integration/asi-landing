@@ -128,8 +128,8 @@ export function inspectCombinedTree(){
     const worktreeBlob=git('hash-object','--',path);
     if(stagedBlob!==pinnedBlob)problems.push('STAGED_BLOB_DRIFT_PR'+entry.pr);
     if(worktreeBlob!==pinnedBlob)problems.push('WORKTREE_BLOB_DRIFT_PR'+entry.pr);
-    const pinnedMode=git('ls-tree',entry.head,'--',path).split(/\\s+/)[0];
-    const stagedMode=git('ls-files','--stage','--',path).split(/\\s+/)[0];
+    const pinnedMode=git('ls-tree',entry.head,'--',path).split(' ')[0];
+    const stagedMode=git('ls-files','--stage','--',path).split(' ')[0];
     if(pinnedMode!==stagedMode)problems.push('FILE_MODE_DRIFT_PR'+entry.pr);
    }catch{problems.push('PINNED_BLOB_OR_MODE_UNVERIFIED_PR'+entry.pr);}
   }
