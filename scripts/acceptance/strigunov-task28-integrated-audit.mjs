@@ -116,11 +116,23 @@ export function inspectCombinedTree(){
  const problems=[];
  if(files.length!==27||new Set(files).size!==27)problems.push('ADDED_FILE_COUNT');
  for(const f of files)if(!expectedSet.has(f))problems.push('UNREVIEWED_PATH');
- for(const path of expectedPaths){
-  if(!files.includes(path))problems.push('MISSING_PR_SOURCE');
-  try{
-   if(!statSync(path).isFile())problems.push('NOT_REGULAR_SOURCE');
-  }catch{problems.push('SOURCE_ABSENT');}
+ for(const entry of PULLS){
+  for(const path of entry.files){
+   if(!files.includes(path))problems.push('MISSING_PR_SOURCE');
+   try{
+    if(!statSync(path).isFile())problems.push('NOT_REGULAR_SOURCE');
+    // Names alone are insufficient: cross-check Git index *and* worktree bytes
+    // and executable modes against the reviewed source commit for each PR.
+    const pinnedBlob=git('rev-parse',entry.head+':'+path);
+    const stagedBlob=git('rev-parse',':'+path);
+    const worktreeBlob=git('hash-object','--',path);
+    if(stagedBlob!==pinnedBlob)problems.push('STAGED_BLOB_DRIFT_PR'+entry.pr);
+    if(worktreeBlob!==pinnedBlob)problems.push('WORKTREE_BLOB_DRIFT_PR'+entry.pr);
+    const pinnedMode=git('ls-tree',entry.head,'--',path).split(/\\s+/)[0];
+    const stagedMode=git('ls-files','--stage','--',path).split(/\\s+/)[0];
+    if(pinnedMode!==stagedMode)problems.push('FILE_MODE_DRIFT_PR'+entry.pr);
+   }catch{problems.push('PINNED_BLOB_OR_MODE_UNVERIFIED_PR'+entry.pr);}
+  }
  }
  const changedProductPaths=files.filter(x=>!(
   x.startsWith('scripts/acceptance/')||
