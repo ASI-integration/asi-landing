@@ -24,7 +24,8 @@ const verdict=(status,reason,ledger)=>Object.freeze({
 });
 const error=code=>{throw Object.assign(new Error(code),{code});};
 export function newPreviewLedger({runId,manifestSha256,sourceSha=SOURCE_SHA}={}){
- if(!RUN.test(runId||'')||!HEX64.test(manifestSha256||'')||
+ if((typeof runId!=='string'||!RUN.test(runId))||
+    (typeof manifestSha256!=='string'||!HEX64.test(manifestSha256))||
     sourceSha!==SOURCE_SHA)error('PREVIEW_SCOPE');
  return freezeLedger({schema:1,runId,sourceSha,manifestSha256,
   sequence:0,index:0,state:'OPEN',processed:[]});
@@ -33,13 +34,13 @@ export function newPreviewLedger({runId,manifestSha256,sourceSha=SOURCE_SHA}={})
 // is never trusted or usable to authorize host access, receipts or real sends.
 export function inspectPreviewCheckpoint(x){
  const required=['schema','runId','sourceSha','manifestSha256','sequence','index','state','processed'];
- if(!keysMatch(x,required)||x.schema!==1||!RUN.test(x.runId||'')||
-    x.sourceSha!==SOURCE_SHA||!HEX64.test(x.manifestSha256||'')||
+ if(!keysMatch(x,required)||x.schema!==1||(typeof x.runId!=='string'||!RUN.test(x.runId))||
+    x.sourceSha!==SOURCE_SHA||(typeof x.manifestSha256!=='string'||!HEX64.test(x.manifestSha256))||
     !Number.isSafeInteger(x.sequence)||x.sequence<0||x.sequence>8||
     !Number.isSafeInteger(x.index)||x.index<0||x.index>PREVIEW_COMMANDS.length||
     !['OPEN','HOLD','CLOSED'].includes(x.state)||
     !Array.isArray(x.processed)||x.processed.length!==x.sequence||
-    x.processed.length>8||x.processed.some(id=>!REQUEST.test(id))||
+    x.processed.length>8||x.processed.some(id=>typeof id!=='string'||!REQUEST.test(id))||
     new Set(x.processed).size!==x.processed.length||
     (x.state==='CLOSED'&&x.index!==PREVIEW_COMMANDS.length)||
     (x.state==='OPEN'&&x.index===PREVIEW_COMMANDS.length))
@@ -50,10 +51,10 @@ function parseEnvelope(raw){
  if(typeof raw!=='string'||Buffer.byteLength(raw,'utf8')>2048||raw.length<2)error('REQUEST_BYTES');
  let x;try{x=JSON.parse(raw);}catch{error('REQUEST_JSON');}
  if(!keysMatch(x,FIELDS))error('REQUEST_FIELDS');
- if(x.kind!=='ASI_TASK24_PREVIEW_V1'||!RUN.test(x.runId||'')||
-    x.sourceSha!==SOURCE_SHA||!HEX64.test(x.manifestSha256||'')||
+ if(x.kind!=='ASI_TASK24_PREVIEW_V1'||(typeof x.runId!=='string'||!RUN.test(x.runId))||
+    x.sourceSha!==SOURCE_SHA||(typeof x.manifestSha256!=='string'||!HEX64.test(x.manifestSha256))||
     !Number.isSafeInteger(x.sequence)||x.sequence<1||x.sequence>8||
-    !REQUEST.test(x.requestId||'')||!PREVIEW_COMMANDS.includes(x.command)||
+    (typeof x.requestId!=='string'||!REQUEST.test(x.requestId))||!PREVIEW_COMMANDS.includes(x.command)||
     x.scope!=='SYNTHETIC_ONLY'||!['OBSERVED','DENIED','COMMIT_UNCERTAIN'].includes(x.observation)||
     !Number.isSafeInteger(x.issuedAtMs)||!Number.isSafeInteger(x.expiresAtMs)||
     x.issuedAtMs<=0||x.expiresAtMs<=x.issuedAtMs||
