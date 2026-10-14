@@ -60,7 +60,7 @@ export function sendTask25FixtureRequest(socketPath,raw){
   const socket=createConnection(socketPath);
   let bytes=Buffer.alloc(0);
   socket.setTimeout(3000,()=>{socket.destroy();reject(Error('IPC_CLIENT_TIMEOUT'));});
-  socket.on('connect',()=>socket.end(raw+'\n'));
+  socket.on('connect',()=>socket.write(raw+'\n'));
   socket.on('data',chunk=>{bytes=Buffer.concat([bytes,chunk]);});
   socket.on('end',()=>{
    try{resolve(JSON.parse(bytes.toString('utf8').trim()));}
