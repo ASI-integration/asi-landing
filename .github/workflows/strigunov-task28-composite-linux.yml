@@ -1,0 +1,116 @@
+name: Strigunov Task28 six-PR composite Linux source acceptance
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/strigunov-task28-composite-linux.yml'
+      - 'docs/ops/strigunov-task28-cross-pr-audit-20261014.md'
+      - 'docs/ops/strigunov-task28-audit-matrix-20261014.json'
+permissions:
+  contents: read
+jobs:
+  composite-source-only:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - name: Checkout audit PR and report manifest
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+          fetch-depth: 2
+      - name: Checkout immutable main baseline as disposable combined source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: 9bc8175aa772e92366c7a2363e26900a042fc3ce
+          path: composite
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Checkout Task22 exact reviewed PR head
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: 6752def66167f7940b0746cfc08447e02955a33e
+          path: snapshot440
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Checkout Task23 exact reviewed PR head
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: 0a8c5003bb687729ea7a93c8f15a92a8138bbc4b
+          path: snapshot441
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Checkout Task24 exact reviewed PR head
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: 7b6282f3106a534afc536f266b488232ab687e30
+          path: snapshot442
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Checkout Task25 exact reviewed PR head
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: 79fae4e4db8cd76bf0783bb33f6a579034d8a87d
+          path: snapshot443
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Checkout Task26 exact reviewed PR head
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: 822faea19477801987695a5c47d99e666ac2886c
+          path: snapshot444
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Checkout Task27 exact reviewed PR head
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: 2dbce088ad8f8298a5c349224e10b19741610a00
+          path: snapshot445
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Construct exact source overlay without merge or any production paths
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C composite rev-parse HEAD)" = "9bc8175aa772e92366c7a2363e26900a042fc3ce"
+          sha=(6752def66167f7940b0746cfc08447e02955a33e 0a8c5003bb687729ea7a93c8f15a92a8138bbc4b 7b6282f3106a534afc536f266b488232ab687e30 79fae4e4db8cd76bf0783bb33f6a579034d8a87d 822faea19477801987695a5c47d99e666ac2886c 2dbce088ad8f8298a5c349224e10b19741610a00)
+          expected=(4 4 5 6 4 4)
+          i=0
+          total=0
+          for n in 440 441 442 443 444 445; do
+            task=$((n-418))
+            test "$(git -C snapshot$n rev-parse HEAD)" = "${sha[$i]}"
+            mapfile -t paths < <(git -C snapshot$n ls-tree -r --name-only HEAD | grep "strigunov-task${task}")
+            test "${#paths[@]}" -eq "${expected[$i]}"
+            for p in "${paths[@]}"; do
+              test ! -e "composite/$p"
+              test -f "snapshot$n/$p"
+              mkdir -p "composite/$(dirname "$p")"
+              cp -- "snapshot$n/$p" "composite/$p"
+              git -C composite add -- "$p"
+              total=$((total+1))
+            done
+            printf 'TASK%s_HEAD=%s FILES=%s\n' "$task" "${sha[$i]}" "${#paths[@]}"
+            i=$((i+1))
+          done
+          test "$total" -eq 27
+          test "$(git -C composite diff --cached --name-only | wc -l)" -eq 27
+          git -C composite diff --cached --check
+          echo "COMPOSITE_PATHS=27 OVERLAP=0 DIFF=PASS"
+      - name: Run combined Node offline source and filesystem+IPC tests
+        working-directory: composite
+        run: |
+          set -euo pipefail
+          node --test scripts/__tests__/strigunov-task22-custodian-review.test.mjs scripts/__tests__/strigunov-task23-cloud-custodian.test.mjs scripts/__tests__/strigunov-task24-offline-broker.test.mjs scripts/__tests__/strigunov-task25-local-ledger.test.mjs
+      - name: Run combined Linux SO_PEERCRED and deterministic release tests
+        working-directory: composite
+        env:
+          PYTHONDONTWRITEBYTECODE: '1'
+        run: |
+          set -euo pipefail
+          test "$(id -u)" -ne 0
+          python3 scripts/__tests__/strigunov-task26-peer-gate.test.py
+          python3 scripts/__tests__/strigunov-task27-release.test.py
+      - name: Audit PR report diff and no privilege grants
+        run: |
+          set -euo pipefail
+          git diff --check HEAD^1 HEAD
+          node -e "const m=require('./docs/ops/strigunov-task28-audit-matrix-20261014.json');if(m.deployment.production_touched!==false||m.deployment.canSend!==false||m.deployment.phase2!=='BLOCK'||m.audited.length!==6)process.exit(1)"
