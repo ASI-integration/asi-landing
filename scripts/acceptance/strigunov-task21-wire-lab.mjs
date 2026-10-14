@@ -63,6 +63,7 @@ async function withDeadline(p,ms,code){
 async function makeProxy(){
  let socketCount=0,done=false,settle;
  const evidence=new Promise((resolve,reject)=>{settle={resolve,reject};});
+ evidence.catch(()=>{}); // Handle early proxy abort; the original evidence promise still rejects when later awaited.
  const sockets=new Set();
  const server=createServer(client=>{
   socketCount++;
@@ -174,6 +175,7 @@ export async function run(){
   await abortClient.query('BEGIN');
   await abortClient.query('INSERT INTO public.task21_wire_events VALUES($1,1)',[abortKey]);
   await abortClient.end(); // clean client disconnection rolls back the uncommitted transaction
+  clients=clients.filter(c=>c!==abortClient); // already physically closed; do not re-end it in finally
   if(await readCount(reader,abortKey)!==0)die('EARLY_DISCONNECT_COMMITTED');
   result.cases.push({case:'disconnect_before_commit_rollback',status:'PASS',commitSubmitted:false,readback:0});
   stage='lost-commit-server-confirmed';
