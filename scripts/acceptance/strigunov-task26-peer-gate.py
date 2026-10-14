@@ -156,31 +156,36 @@ class DisposablePeerGate:
                 break
             with conn:
                 conn.settimeout(1.5)
+                # Capture peer identity before handling bytes. Even a rejected
+                # peer's stream is drained (bounded) before replying, otherwise
+                # closing with unread data may RST the socket and hide the deny.
                 peer = inspect_peer(conn, self.expected_uid, self.expected_gid)
+                data = b""
+                read_error = None
+                try:
+                    while len(data) <= MAX_REQUEST_BYTES:
+                        chunk = conn.recv(512)
+                        if not chunk:
+                            break
+                        data += chunk
+                except socket.timeout:
+                    read_error = "FRAME_TIMEOUT"
+                except OSError:
+                    read_error = "TRANSPORT_FAILED"
                 if peer["status"] != "KERNEL_PEER_MATCH_OBSERVED":
                     answer = peer
+                elif read_error is not None:
+                    answer = denied(read_error)
                 else:
-                    data = b""
-                    try:
-                        while len(data) <= MAX_REQUEST_BYTES:
-                            chunk = conn.recv(512)
-                            if not chunk:
-                                break
-                            data += chunk
-                    except socket.timeout:
-                        answer = denied("FRAME_TIMEOUT")
-                    except OSError:
-                        answer = denied("TRANSPORT_FAILED")
+                    operation, reason = parse_request(data, self.manifest_sha256)
+                    if operation is None:
+                        answer = denied(reason)
                     else:
-                        operation, reason = parse_request(data, self.manifest_sha256)
-                        if operation is None:
-                            answer = denied(reason)
-                        else:
-                            answer = {
-                                **peer,
-                                "operation": operation,
-                                "reason": "KERNEL_IDENTITY_MATCHED_NOT_OWNER_AUTHORIZED",
-                            }
+                        answer = {
+                            **peer,
+                            "operation": operation,
+                            "reason": "KERNEL_IDENTITY_MATCHED_NOT_OWNER_AUTHORIZED",
+                        }
                 try:
                     conn.sendall((json.dumps(answer, sort_keys=True) + "\n").encode("utf-8"))
                 except OSError:
