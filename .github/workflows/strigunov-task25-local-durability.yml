@@ -1,0 +1,34 @@
+name: Strigunov Task25 disposable journal and Unix IPC
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/strigunov-task25-local-durability.yml'
+      - 'scripts/acceptance/strigunov-task25-local-ledger.mjs'
+      - 'scripts/acceptance/strigunov-task25-local-ipc.mjs'
+      - 'scripts/__tests__/strigunov-task25-local-ledger.test.mjs'
+      - 'docs/ops/strigunov-task25-host-boundary.json'
+      - 'docs/ops/strigunov-task25-local-contract.md'
+permissions:
+  contents: read
+jobs:
+  disposable-local:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - name: Checkout untrusted PR without retained credentials
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+          fetch-depth: 2
+      - name: Verify Node syntax and blocked live capability
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check scripts/acceptance/strigunov-task25-local-ledger.mjs
+          node --check scripts/acceptance/strigunov-task25-local-ipc.mjs
+          node --check scripts/__tests__/strigunov-task25-local-ledger.test.mjs
+          node -e "const x=require('./docs/ops/strigunov-task25-host-boundary.json');if(x.fixtureOnly!==true||x.guestSend!==false||x.phase2!=='BLOCK'||x.ownerServiceInstalled!==false)process.exit(1)"
+      - name: Actual POSIX temp journal fsync, child-crash, race and Unix socket tests
+        run: node --test scripts/__tests__/strigunov-task25-local-ledger.test.mjs
+      - name: Full PR whitespace check
+        run: git diff --check HEAD^1 HEAD
