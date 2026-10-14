@@ -182,6 +182,27 @@ class PeerGateTests(unittest.TestCase):
             ans = gate.send_observation_request(other.path, packet())
             self.assertEqual(ans["reason"], "UNSAFE_EXPECTED_IDENTITY")
 
+    def test_fixture_shutdown_interrupts_a_peer_with_incomplete_stream(self):
+        import time
+        other = gate.DisposablePeerGate(
+            expected_uid=os.getuid(), expected_gid=os.getgid(), manifest_sha256=MANIFEST
+        )
+        other.__enter__()
+        path = other.path
+        try:
+            with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
+                client.settimeout(2)
+                client.connect(str(path))
+                client.sendall(b"{")
+                time.sleep(0.1)
+                start = time.monotonic()
+                other.__exit__(None, None, None)
+                self.assertLess(time.monotonic() - start, 3.0)
+                self.assertFalse(path.exists())
+        finally:
+            # Idempotent cleanup if an assertion fails; only the task-owned path.
+            other.__exit__(None, None, None)
+
     def test_no_arbitrary_network_or_privileged_operations(self):
         source = MODULE_PATH.read_text(encoding="utf-8")
         self.assertNotIn("subprocess.run(", source)
