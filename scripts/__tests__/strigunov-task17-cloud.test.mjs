@@ -1,0 +1,17 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {admission,ownerGate,peers,owned,commitOutcome,CONFIRM,ORDER} from '../acceptance/strigunov-task17-contract.mjs';
+const env={GITHUB_ACTOR:'ASI-integration',GITHUB_ACTOR_ID:'207600140',GITHUB_TRIGGERING_ACTOR:'ASI-integration',GITHUB_ACTIONS:'true',RUNNER_ENVIRONMENT:'github-hosted',RUNNER_OS:'Linux',GITHUB_REPOSITORY:'ASI-integration/asi-landing',GITHUB_EVENT_NAME:'workflow_dispatch',GITHUB_REF:'refs/heads/main',CONFIRM,REVIEWED_SHA:'a'.repeat(40),GITHUB_SHA:'a'.repeat(40),GITHUB_WORKFLOW_SHA:'a'.repeat(40),PG_IMAGE:'postgres:17@sha256:2d2b8998d31037bf721cfdf764d76ba74171b4fab3431b7f72c27c56ddbdf9e3',GITHUB_RUN_ID:'123',GITHUB_RUN_ATTEMPT:'1'};
+test('approved synthetic job namespace',()=>assert.equal(admission(env,'linux'),'strig-t17-123-1'));
+for(const [k,v] of Object.entries({GITHUB_ACTIONS:'false',RUNNER_ENVIRONMENT:'self-hosted',RUNNER_OS:'Windows',GITHUB_REPOSITORY:'fork/repo',GITHUB_EVENT_NAME:'pull_request',GITHUB_REF:'refs/heads/dev',CONFIRM:'yes',REVIEWED_SHA:'main',GITHUB_SHA:'c'.repeat(40),GITHUB_WORKFLOW_SHA:'d'.repeat(40),PG_IMAGE:'postgres:17',GITHUB_RUN_ID:'../oops',GITHUB_RUN_ATTEMPT:'0'}))test('reject '+k,()=>assert.throws(()=>admission({...env,[k]:v},'linux')));
+test('reject laptop',()=>assert.throws(()=>admission(env,'win32')));
+const gate={GITHUB_ACTOR:'ASI-integration',GITHUB_ACTOR_ID:'207600140',GITHUB_TRIGGERING_ACTOR:'ASI-integration',GITHUB_RUN_ATTEMPT:'1'};
+test('review gate',()=>assert.equal(ownerGate(gate),true));
+for(const v of [null,{...gate,GITHUB_ACTOR:'other'},{...gate,GITHUB_ACTOR_ID:'1'},{...gate,GITHUB_RUN_ATTEMPT:'2'}])test('reject incomplete environment '+JSON.stringify(v),()=>assert.throws(()=>ownerGate(v)));
+const a={session_user:'task12_login_a',current_user:'task12_login_a',pid:1,database:'strigunov_task11_isolated_lab',host:'172.18.0.2',port:55442,isolation:'serializable',privileged:false},b={...a,session_user:'task12_login_b',current_user:'task12_login_b',pid:2};
+test('two independent peers',()=>assert.equal(peers(a,b,a.host),true));
+for(const patch of [{pid:1},{current_user:'postgres'},{privileged:true},{port:5432},{isolation:'read committed'}])test('reject peer '+JSON.stringify(patch),()=>assert.throws(()=>peers(a,{...b,...patch},a.host)));
+test('DDL order has no authority overlay',()=>assert.deepEqual(ORDER.map(x=>x.match(/task\d+/)[0]),['task12','task08','task11','task13']));
+test('unknown commit never retries',()=>assert.deepEqual(commitOutcome(undefined),{status:'HOLD',retry:false}));
+test('cleanup refuses foreign container',()=>assert.throws(()=>owned({id:'a',name:'x',label:'x',image:'i'},{id:'b',name:'x',label:'x',image:'i'})));
+test('cleanup permits exact owned identity',()=>{const c={id:'a',name:'x',label:'x',image:'i'};assert.equal(owned(c,c),true);});

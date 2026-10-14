@@ -1,0 +1,71 @@
+name: Strigunov synthetic PG17 lab (manual)
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: 'Type SYNTHETIC_PG17_ONLY_NO_GUEST_SEND'
+        required: true
+        type: string
+      reviewed_sha:
+        description: 'Reviewed 40-character default-branch commit containing ALL sources'
+        required: true
+        type: string
+      postgres_image:
+        description: 'Owner-reviewed postgres:17@sha256:<64 lowercase hex digest>'
+        required: true
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: strigunov-pg-lab
+  cancel-in-progress: false
+jobs:
+  synthetic:
+    if: github.actor == 'ASI-integration' && github.repository == 'ASI-integration/asi-landing' && github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      CONFIRM: ${{ inputs.confirmation }}
+      REVIEWED_SHA: ${{ inputs.reviewed_sha }}
+      PG_IMAGE: ${{ inputs.postgres_image }}
+    steps:
+      - name: Trusted admission before any checkout
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_ACTOR" == "ASI-integration" && "$GITHUB_ACTOR_ID" == "207600140" ]]
+          [[ "$GITHUB_TRIGGERING_ACTOR" == "ASI-integration" && "$GITHUB_RUN_ATTEMPT" == "1" ]]
+          [[ "$REVIEWED_SHA" =~ ^[a-f0-9]{40}$ ]]
+          [[ "$REVIEWED_SHA" == "$GITHUB_SHA" && "$REVIEWED_SHA" == "$GITHUB_WORKFLOW_SHA" ]]
+          [[ "$CONFIRM" == "SYNTHETIC_PG17_ONLY_NO_GUEST_SEND" ]]
+          [[ "$PG_IMAGE" == "postgres:17@sha256:2d2b8998d31037bf721cfdf764d76ba74171b4fab3431b7f72c27c56ddbdf9e3" ]]
+          [[ "$RUNNER_ENVIRONMENT" == "github-hosted" && "$RUNNER_OS" == "Linux" ]]
+      - name: Checkout reviewed source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Verify owner manual dispatch and source before dependencies or SQL
+        run: node scripts/acceptance/strigunov-task17-lab.mjs --preflight
+      - name: Focused source regression
+        run: node --test scripts/__tests__/strigunov-task17-cloud.test.mjs scripts/__tests__/strigunov-task17-wiring.test.mjs
+      - name: Install locked dependencies without lifecycle scripts
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Run synthetic phase 1 only
+        run: node scripts/acceptance/strigunov-task17-lab.mjs
+      - name: Cancellation cleanup of exact run-owned container
+        if: always()
+        run: |
+          name="strig-t17-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          if [ -n "$(docker ps -aq --filter "name=^/${name}$")" ]; then
+            node scripts/acceptance/strigunov-task17-lab.mjs --cleanup
+          fi
+      - name: Upload sanitized technical evidence only
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: strigunov-task17-${{ github.run_id }}-${{ github.run_attempt }}
+          path: strigunov-task17-result.json
+          if-no-files-found: warn
+          retention-days: 7
