@@ -1,0 +1,109 @@
+{
+  "schema": 1,
+  "task": 28,
+  "asOf": "2026-10-14",
+  "repository": "ASI-integration/asi-landing",
+  "baseline": "9bc8175aa772e92366c7a2363e26900a042fc3ce",
+  "audited": [
+    {
+      "task": 22,
+      "pr": 440,
+      "sha": "6752def66167f7940b0746cfc08447e02955a33e",
+      "files": 4
+    },
+    {
+      "task": 23,
+      "pr": 441,
+      "sha": "0a8c5003bb687729ea7a93c8f15a92a8138bbc4b",
+      "files": 4
+    },
+    {
+      "task": 24,
+      "pr": 442,
+      "sha": "7b6282f3106a534afc536f266b488232ab687e30",
+      "files": 5
+    },
+    {
+      "task": 25,
+      "pr": 443,
+      "sha": "79fae4e4db8cd76bf0783bb33f6a579034d8a87d",
+      "files": 6
+    },
+    {
+      "task": 26,
+      "pr": 444,
+      "sha": "822faea19477801987695a5c47d99e666ac2886c",
+      "files": 4
+    },
+    {
+      "task": 27,
+      "pr": 445,
+      "sha": "2dbce088ad8f8298a5c349224e10b19741610a00",
+      "files": 4
+    }
+  ],
+  "checks": {
+    "six_pr_focused_ci": "PASS",
+    "six_pr_required_validate": "PASS",
+    "six_pr_coderabbit": "SUCCESS_OR_ISSUES_RESOLVED",
+    "all_unmerged": true,
+    "overlapping_paths": 0,
+    "total_paths": 27,
+    "combined_windows_node": {
+      "total": 98,
+      "pass": 92,
+      "skip": 6,
+      "fail": 0
+    },
+    "combined_windows_python26": {
+      "total": 23,
+      "pass": 3,
+      "skip": 20,
+      "fail": 0
+    },
+    "combined_windows_python27": {
+      "total": 28,
+      "pass": 25,
+      "skip": 3,
+      "fail": 0
+    },
+    "combined_linux_all_six": "NOT_RUN",
+    "end_to_end_host_custodian": "NOT_RUN"
+  },
+  "blockers": [
+    {
+      "code": "P0_NO_OWNER_INSTALLED_CUSTODIAN",
+      "severity": "P0"
+    },
+    {
+      "code": "P0_NO_REAL_IPC_LEDGER_ISSUER_CHAIN",
+      "severity": "P0"
+    },
+    {
+      "code": "P1_INTERFACE_SCHEMA_AND_SOURCE_PIN_MISMATCH",
+      "severity": "P1"
+    },
+    {
+      "code": "P1_DISTINCT_UID_PHYSICAL_DENIAL_NOT_RUN",
+      "severity": "P1"
+    },
+    {
+      "code": "P1_NATIVE_PHASE2_PROTECTED_RECEIPT_NOT_RUN",
+      "severity": "P1"
+    },
+    {
+      "code": "P2_RELEASE_NONEXECUTABLE_AND_UNSIGNED",
+      "severity": "P2"
+    }
+  ],
+  "deployment": {
+    "merges_performed": false,
+    "production_touched": false,
+    "new_cloud_server": false,
+    "protected_service_installed": false,
+    "phase2": "BLOCK",
+    "canSend": false,
+    "pilot": "NOT_LIVE"
+  },
+  "next": "FULL_COMPOSITE_LINUX_ACCEPTANCE_THEN_OWNER_AUTHORIZED_CODE_CONSOLIDATION_THEN_INDEPENDENT_HOST_PHASE2"
+}
