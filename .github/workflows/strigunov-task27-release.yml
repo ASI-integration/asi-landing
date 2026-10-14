@@ -1,0 +1,40 @@
+name: Strigunov Task27 owner bundle source acceptance
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/strigunov-task27-release.yml'
+      - 'scripts/acceptance/strigunov-task27-release.py'
+      - 'scripts/__tests__/strigunov-task27-release.test.py'
+      - 'docs/ops/strigunov-task27-release-contract.md'
+permissions:
+  contents: read
+jobs:
+  synthetic-bundle:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 6
+    steps:
+      - name: Checkout PR merge candidate without credentials
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+          fetch-depth: 2
+      - name: Refuse privileged checkout and validate source
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(id -u)" -ne 0
+          python3 --version
+          PYTHONDONTWRITEBYTECODE=1 python3 - <<'PY'
+          from pathlib import Path
+          for path in [
+              'scripts/acceptance/strigunov-task27-release.py',
+              'scripts/__tests__/strigunov-task27-release.test.py',
+          ]:
+              compile(Path(path).read_bytes(), path, 'exec')
+          PY
+      - name: Verify deterministic offline fixture and all negative archive cases
+        env:
+          PYTHONDONTWRITEBYTECODE: '1'
+        run: python3 scripts/__tests__/strigunov-task27-release.test.py
+      - name: Enforce clean PR whitespace diff
+        run: git diff --check HEAD^1 HEAD
