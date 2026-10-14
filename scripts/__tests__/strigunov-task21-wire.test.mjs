@@ -124,3 +124,12 @@ test('wire lab has exact source checks, owned cleanup, no live sends',()=>{
  assert.match(lab,/canSend:false/);
  assert.doesNotMatch(lab,/https?:\/\/|sendGuest|sendTelegram|guestEmail|productionDb/);
 });
+
+test('early proxy rejection is handled before the later wire-evidence await',()=>{
+ const lab=readFileSync('scripts/acceptance/strigunov-task21-wire-lab.mjs','utf8');
+ const created=lab.indexOf('const evidence=new Promise(');
+ const handler=lab.indexOf('evidence.catch(()=>{})');
+ const later=lab.indexOf('withDeadline(proxy.evidence,');
+ assert.ok(created>=0 && handler>created && later>handler);
+ assert.match(lab,/clients=clients\.filter\(c=>c!==abortClient\)/);
+});
