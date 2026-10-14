@@ -86,6 +86,20 @@ jobs:
           fi
           grep -q 'FILE_MODE_DRIFT_PR442' "$RUNNER_TEMP/task28-tampered-mode.log"
           git update-index --chmod=-x "$file"
+          chmod +x "$file"
+          if node scripts/acceptance/strigunov-task28-integrated-audit.mjs --combined > "$RUNNER_TEMP/task28-tampered-physical-mode.log"; then
+            echo 'ERROR: worktree chmod wrongly passed' >&2; exit 1
+          fi
+          grep -q 'WORKTREE_MODE_DRIFT_PR442' "$RUNNER_TEMP/task28-tampered-physical-mode.log"
+          chmod -x "$file"
+          mv "$file" "$RUNNER_TEMP/task28-reviewed-source.mjs"
+          ln -s "$RUNNER_TEMP/task28-reviewed-source.mjs" "$file"
+          if node scripts/acceptance/strigunov-task28-integrated-audit.mjs --combined > "$RUNNER_TEMP/task28-tampered-symlink.log"; then
+            echo 'ERROR: symlink substitution wrongly passed' >&2; exit 1
+          fi
+          grep -q 'SYMLINK_PATH_PR442' "$RUNNER_TEMP/task28-tampered-symlink.log"
+          rm -- "$file"
+          mv "$RUNNER_TEMP/task28-reviewed-source.mjs" "$file"
           node scripts/acceptance/strigunov-task28-integrated-audit.mjs --combined
       - name: Preserve short-lived sanitized exact-source audit result
         if: always()
