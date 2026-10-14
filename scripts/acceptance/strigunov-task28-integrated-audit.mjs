@@ -112,7 +112,7 @@ export function inspectPinnedRefs(){
 export function inspectCombinedTree(){
  const pre=inspectPinnedRefs();
  if(pre.status!=='HEADS_PINNED_ONLY')return receipt('BLOCK',{problems:pre.problems});
- const files=git('diff','--cached','--name-only',BASE_MAIN).split('\n').filter(Boolean);
+ const files=git('diff','--cached','--name-only','HEAD').split('\n').filter(Boolean);
  const problems=[];
  if(files.length!==27||new Set(files).size!==27)problems.push('ADDED_FILE_COUNT');
  for(const f of files)if(!expectedSet.has(f))problems.push('UNREVIEWED_PATH');
