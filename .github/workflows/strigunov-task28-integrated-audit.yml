@@ -61,6 +61,32 @@ jobs:
           python3 scripts/__tests__/strigunov-task27-release.test.py 2>&1 | tee "$RUNNER_TEMP/task28-py27.log"
           grep -q 'Ran 28 tests' "$RUNNER_TEMP/task28-py27.log"
           grep -q '^OK$' "$RUNNER_TEMP/task28-py27.log"
+      - name: Negative proof — reject staged tampering, worktree tampering and mode drift
+        shell: bash
+        run: |
+          set -euo pipefail
+          file='scripts/acceptance/strigunov-task24-offline-broker.mjs'
+          reviewed='7b6282f3106a534afc536f266b488232ab687e30'
+          printf '\n# staged fake mutation\n' >> "$file"
+          git add -- "$file"
+          if node scripts/acceptance/strigunov-task28-integrated-audit.mjs --combined > "$RUNNER_TEMP/task28-tampered-index.log"; then
+            echo 'ERROR: staged mutated file wrongly passed' >&2; exit 1
+          fi
+          grep -q 'STAGED_BLOB_DRIFT_PR442' "$RUNNER_TEMP/task28-tampered-index.log"
+          git restore --source="$reviewed" --staged --worktree -- "$file"
+          printf '\n# unstaged fake mutation\n' >> "$file"
+          if node scripts/acceptance/strigunov-task28-integrated-audit.mjs --combined > "$RUNNER_TEMP/task28-tampered-worktree.log"; then
+            echo 'ERROR: modified worktree wrongly passed' >&2; exit 1
+          fi
+          grep -q 'WORKTREE_BLOB_DRIFT_PR442' "$RUNNER_TEMP/task28-tampered-worktree.log"
+          git restore --source="$reviewed" --worktree -- "$file"
+          git update-index --chmod=+x "$file"
+          if node scripts/acceptance/strigunov-task28-integrated-audit.mjs --combined > "$RUNNER_TEMP/task28-tampered-mode.log"; then
+            echo 'ERROR: changed file mode wrongly passed' >&2; exit 1
+          fi
+          grep -q 'FILE_MODE_DRIFT_PR442' "$RUNNER_TEMP/task28-tampered-mode.log"
+          git update-index --chmod=-x "$file"
+          node scripts/acceptance/strigunov-task28-integrated-audit.mjs --combined
       - name: Preserve short-lived sanitized exact-source audit result
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
