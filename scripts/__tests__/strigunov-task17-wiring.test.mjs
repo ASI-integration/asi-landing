@@ -19,10 +19,31 @@ test('TCP readiness and positive role separation are executable',()=>{assert.mat
 test('synthetic approval has no environment API or secrets',()=>{assert.doesNotMatch(workflow,/environment:|GH_TOKEN|secrets\./);assert.doesNotMatch(lab,/fetch\(|environmentGate/);assert.match(workflow,/GITHUB_ACTOR_ID/);});
 
 test('jsonb snapshot equality ignores object key order but preserves values, types and arrays',async()=>{
- const {snapshotEqual}=await import('../acceptance/strigunov-task13-scenarios.mjs');
+ const {snapshotEqual,assertProof}=await import('../acceptance/strigunov-task13-scenarios.mjs');
  const expected={requests:0,bindings:0,decisions:0,sessions:0};
  assert.equal(snapshotEqual({bindings:0,requests:0,sessions:0,decisions:0},expected),true);
  assert.equal(snapshotEqual({...expected,sessions:1},expected),false);
  assert.equal(snapshotEqual({...expected,sessions:'0'},expected),false);
  assert.equal(snapshotEqual(['1','2'],['2','1']),false);
+ // Exercise the actual Task13 proof path, not only its exported comparator.
+ const uuid='00000000-0000-0000-0000-000000000000';
+ const base={
+  slot:1,source:'fixture',account:uuid,property:uuid,actor:uuid,booking:uuid,
+  predecessor:uuid,request:uuid,decision:uuid,session:null,canApprove:false,
+  canSend:false,vector:['1','1','1','1','1','1'],memberEpoch:'1',
+  nativeMarker:false,foreignCount:1,foreignHash:'a'.repeat(64),
+  requestStatus:null,requestVersion:null
+ };
+ const proof=assertProof({
+  id:'stale_actor',phase:1,
+  before:{...base,totals:{requests:0,bindings:0,decisions:0,sessions:0}},
+  after:{...base,totals:{bindings:0,requests:0,sessions:0,decisions:0}},
+  denial:{ok:false,uncertain:false,code:'P0001',message:'task11_actor_mismatch'}
+ });
+ assert.deepEqual(proof,{status:'SOURCE_OBSERVATIONS_MATCH',authorized:false,canSend:false});
+});
+
+test('CodeRabbit reviews remain enabled but Autofix cannot modify branches',()=>{
+ const config=read('.coderabbit.yaml');
+ assert.match(config,/^reviews:\r?\n  finishing_touches:\r?\n    autofix:\r?\n      enabled: false\r?\n?$/);
 });
