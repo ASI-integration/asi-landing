@@ -111,8 +111,15 @@ test('P13 rejects unlimited or malformed traces',()=>{
 });
 test('Task20 source cannot import connectors or issue SQL',()=>{
  const src=readFileSync('scripts/acceptance/strigunov-task20-boundaries.mjs','utf8');
- assert.doesNotMatch(src,/\b(?:import\s|require\s*\(|fetch\s*\(|process\.env|\.query\s*\(|execFileSync|spawn\s*\()/);
- assert.doesNotMatch(src,/\b(?:INSERT|UPDATE|DELETE|CREATE\s+ROLE|COMMIT\s*;|GH_TOKEN|secrets\.)\b/);
+ const ioPattern=/\b(?:import\s|require\s*\(|fetch\s*\(|process\.env|execFileSync|spawn\s*\()|\.query\s*\(/;
+ const sqlPattern=/\b(?:INSERT|UPDATE|DELETE|CREATE\s+ROLE|GH_TOKEN)\b|\bCOMMIT\s*;|secrets\./;
+ assert.doesNotMatch(src,ioPattern);
+ assert.doesNotMatch(src,sqlPattern);
+ // Protect the guards themselves against optional chaining and punctuation blind spots.
+ assert.match("e.client?.query('COMMIT;')",ioPattern);
+ assert.match("e.client?.query('COMMIT;')",sqlPattern);
+ assert.match('process.env.TOKEN',ioPattern);
+ assert.match('secrets.TOKEN',sqlPattern);
 });
 test('Task17 native driver still excludes Phase2 and does not retry unknown commit',()=>{
  const lab=readFileSync('scripts/acceptance/strigunov-task17-lab.mjs','utf8');
