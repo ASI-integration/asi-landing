@@ -39,6 +39,7 @@ jobs:
           set -euo pipefail
           python3 scripts/__tests__/asi_custodian_service.test.py
           python3 scripts/__tests__/asi_custodian_release.test.py
+          python3 scripts/__tests__/asi_custodian_strict_json.test.py
       - name: Build reproducible executable technical service archive
         shell: bash
         run: |
