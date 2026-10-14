@@ -1,0 +1,38 @@
+name: ASI Task29B distinct UID physical denial (isolated)
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/asi-custodian-task29b-principal-denial.yml'
+      - 'scripts/__tests__/asi_custodian_principal_denial.test.py'
+      - 'scripts/custodian/asi_custodian.py'
+permissions:
+  contents: read
+jobs:
+  real-distinct-uid-linux-denial:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 7
+    steps:
+      - name: Read-only checkout of reviewed PR candidate
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+          fetch-depth: 2
+      - name: Require unprivileged ephemeral runner and distinct OS identities
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(id -u)" -ne 0
+          test "$(id -u)" -ne "$(id -u nobody)"
+          sudo -n -u nobody id -u
+          test -f scripts/custodian/asi_custodian.py
+          test -f scripts/__tests__/asi_custodian_principal_denial.test.py
+      - name: Real separate-UID filesystem and SO_PEERCRED denial
+        env:
+          PYTHONDONTWRITEBYTECODE: '1'
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/__tests__/asi_custodian_principal_denial.test.py
+      - name: Verify PR patch hygiene
+        shell: bash
+        run: git diff --check HEAD^1 HEAD
