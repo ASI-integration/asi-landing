@@ -1,0 +1,30 @@
+name: Strigunov Task23 cloud custodian source-only
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/strigunov-task23-cloud-custodian.yml'
+      - 'scripts/acceptance/strigunov-task23-cloud-custodian.mjs'
+      - 'scripts/__tests__/strigunov-task23-cloud-custodian.test.mjs'
+      - 'docs/ops/strigunov-task23-cloud-custodian.md'
+permissions:
+  contents: read
+jobs:
+  cloud-contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Checkout unprivileged PR merge candidate
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+          fetch-depth: 2
+      - name: Verify no outside credentials or source syntax failure
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check scripts/acceptance/strigunov-task23-cloud-custodian.mjs
+          node --check scripts/__tests__/strigunov-task23-cloud-custodian.test.mjs
+      - name: Test owner-controlled cloud isolation and deny rules
+        run: node --test scripts/__tests__/strigunov-task23-cloud-custodian.test.mjs
+      - name: Fail on whitespace errors in full PR diff
+        run: git diff --check HEAD^1 HEAD
