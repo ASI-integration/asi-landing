@@ -17,7 +17,7 @@ jobs:
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           persist-credentials: false
-          fetch-depth: 1
+          fetch-depth: 2
       - name: Check runtime and syntax
         run: |
           set -euo pipefail
@@ -27,4 +27,4 @@ jobs:
       - name: Exercise denied Phase2 and P13 replay paths
         run: node --test scripts/__tests__/strigunov-task20-boundaries.test.mjs
       - name: Require clean review diff
-        run: git diff --check HEAD^ HEAD || git diff --check
+        run: git diff --check HEAD^1 HEAD
