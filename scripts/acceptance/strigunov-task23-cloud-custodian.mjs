@@ -67,10 +67,10 @@ export function inspectCloudCandidate(x,{reviewedSha=TASK23_BASE_SHA,nowMs}={}){
     ['phase1','p13'].some(key=>Object.entries(HISTORICAL_PROOFS[key])
       .some(([field,value])=>history[key][field]!==value)))
   problems.push('NATIVE_HISTORICAL_EVIDENCE');
- if(x.syntheticOnly!==true||x.customerDataPresent===true||
-    x.productionDeploy===true||x.realGuestConsentClaimed===true||
-    x.phase2Enabled===true||x.guestSendEnabled===true||
-    x.localWindowsInstallerExecuted===true)
+ if(x.syntheticOnly!==true||x.customerDataPresent!==false||
+    x.productionDeploy!==false||x.realGuestConsentClaimed!==false||
+    x.phase2Enabled!==false||x.guestSendEnabled!==false||
+    x.localWindowsInstallerExecuted!==false)
   problems.push('FORBIDDEN_LIVE_SCOPE');
  return emit(problems.length?'HOLD':'PLAN_SHAPE_ONLY',problems);
 }
