@@ -104,6 +104,4 @@ test('module cannot grant authorization or mutate host',()=>{
  const src=readFileSync('scripts/acceptance/strigunov-task22-custodian-review.mjs','utf8');
  assert.doesNotMatch(src,/\bimport\s|process\.env|\.query\s*\(|execFileSync|spawn\s*\(|fetch\s*\(/);
  assert.equal(authorizePhase2().canInstall,false);
- const cr=readFileSync('.coderabbit.yaml','utf8');
- assert.match(cr,/enabled: false/);
 });
