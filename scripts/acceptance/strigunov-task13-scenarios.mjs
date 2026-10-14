@@ -1,4 +1,5 @@
 // Task13 fixed SQL scenario engine. No socket, secrets, pg, env or provider imports.
+import {isDeepStrictEqual} from 'node:util';
 import {SQL as LEGACY_SQL,MUTATIONS} from './strigunov-task12-runner.mjs';
 import {DOMAINS} from './strigunov-task12-contract.mjs';
 export const IDS=Object.freeze(['trigger_disabled','trigger_missing','trigger_args','policy_release','guest_consent','principal_aba','ambiguous_predecessor','stale_actor','deadlock','cleaning_aba','member_aba','rls','cascade']);
@@ -20,7 +21,9 @@ export const TAMPER=Object.freeze({
 export const RESTORE=Object.freeze(["DROP TRIGGER IF EXISTS task11_capture ON public.booking_cleaning_tasks","CREATE TRIGGER task11_capture BEFORE INSERT OR UPDATE OR DELETE ON public.booking_cleaning_tasks FOR EACH ROW EXECUTE FUNCTION asi_task11_private.capture_change('booking_ref','cleaning,physical')","ALTER TABLE public.booking_cleaning_tasks ENABLE ALWAYS TRIGGER task11_capture"]);
 const fail=code=>{throw Object.assign(Error(code),{code});};
 const CHILDREN=["booking_cleaning_tasks","booking_linen_tasks","booking_supplies_tasks","booking_maintenance_tickets","booking_physical_readiness","booking_guest_documents","booking_contracts","booking_deposits","booking_mvd_reports","booking_guest_legal_readiness","booking_instay_checkout","booking_guest_stay_issues"];
-const equal=(a,b)=>JSON.stringify(a)===JSON.stringify(b);
+// Task17: PostgreSQL jsonb object-key order is not snapshot identity.
+export const snapshotEqual=isDeepStrictEqual;
+const equal=snapshotEqual;
 const safeError=e=>({code:/^[0-9A-Z]{5}$/.test(e?.code||'')?e.code:null,message:/^task(?:11|13)_[a-z_]+$/.test(e?.message||'')?e.message:null});
 async function ack(c,sql,command){const r=await c.query(sql);if(r.command!==command)fail('TX_ACK');return r;}
 export async function transaction(c,body){

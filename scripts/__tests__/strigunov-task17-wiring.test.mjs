@@ -17,3 +17,12 @@ test('trusted SHA check precedes checkout of event SHA',()=>{assert.ok(workflow.
 test('TCP readiness and positive role separation are executable',()=>{assert.match(lab,/'pg_isready','-h','127.0.0.1'/);assert.match(lab,/a=await connect\('task12_login_a'\),b=await connect\('task12_login_b'\)/);assert.match(lab,/denied=e.code==='28P01'/);assert.match(lab,/relforcerowsecurity/);});
 
 test('synthetic approval has no environment API or secrets',()=>{assert.doesNotMatch(workflow,/environment:|GH_TOKEN|secrets\./);assert.doesNotMatch(lab,/fetch\(|environmentGate/);assert.match(workflow,/GITHUB_ACTOR_ID/);});
+
+test('jsonb snapshot equality ignores object key order but preserves values, types and arrays',async()=>{
+ const {snapshotEqual}=await import('../acceptance/strigunov-task13-scenarios.mjs');
+ const expected={requests:0,bindings:0,decisions:0,sessions:0};
+ assert.equal(snapshotEqual({bindings:0,requests:0,sessions:0,decisions:0},expected),true);
+ assert.equal(snapshotEqual({...expected,sessions:1},expected),false);
+ assert.equal(snapshotEqual({...expected,sessions:'0'},expected),false);
+ assert.equal(snapshotEqual(['1','2'],['2','1']),false);
+});

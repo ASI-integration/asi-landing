@@ -1,7 +1,7 @@
 export const PINS={
     "package.json":  "a5a8b9bf13184fbb3cf51d9aa4a2ae208c930bb51a20fef9aaae7b3d52fb574f",
     "package-lock.json":  "9fb7cfba1ec8b0c0151a81a3447555c94130e65e732fdda8f1659785603018ae",
-    "scripts/acceptance/strigunov-task13-scenarios.mjs":  "882815e0fc29512a55370fe117a2b646ebbf3a4f7d09951acee8cc0c2d1a0015",
+    "scripts/acceptance/strigunov-task13-scenarios.mjs":  "b49d1a06f5e622eb141f97e17c48df2b08867b5fe3c40151ceb735f0f218d085",
     "scripts/acceptance/strigunov-task12-runner.mjs":  "21f20c2d57fb921f39651256ee69273510eab0a03dd5954cfdbb5fd597872b3c",
     "scripts/acceptance/strigunov-task12-contract.mjs":  "026defda7e1209e40758fc97e60df2066cf77d1e31dbb012dcdb35f7065b43f9",
     "docs/ops/strigunov-task12-fixture.sql":  "31ce5aa8009aedc807c07062eb404337594276caa34eb183a2fa67806d9a02c8",
