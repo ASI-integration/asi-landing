@@ -1,0 +1,318 @@
+{
+  "synthetic": true,
+  "externalIntegration": "not_integrated",
+  "scope": {
+    "accountId": "synthetic-strigunov-account",
+    "bookingId": "11111111-1111-4111-8111-111111111111",
+    "propertyId": "synthetic-strigunov-apartment",
+    "requestId": "synthetic-early-arrival-1200"
+  },
+  "requestedTime": "12:00",
+  "policy": {
+    "bucket": "conditional_early_checkin",
+    "isEarlyCheckinByTime": true,
+    "requiresCleaningAvailability": true,
+    "requiresPreviousNightAvailability": false,
+    "policy": "11:00-13:59_conditional_depends_on_cleaning_and_previous_checkout",
+    "scenarioFamily": "CHECK_IN_EARLY"
+  },
+  "outcome": "approved",
+  "reason": "fresh_gates_and_operator_approved",
+  "guestResponse": "Готовность квартиры проверена. Оператор подтвердил заезд в 12:00.",
+  "task": {
+    "id": "synthetic-cleaning-task-1",
+    "assignedTo": "synthetic-cleaner-1",
+    "acknowledged": true,
+    "cleaningStatus": "verified"
+  },
+  "decision": {
+    "id": "synthetic-script-48",
+    "revision": "synthetic-script-47",
+    "approved": true
+  },
+  "handoff": {
+    "session_id": "synthetic-early-arrival-1200",
+    "guest_identity": "synthetic-guest",
+    "reason": "early_checkin_requires_operator",
+    "urgency": "low",
+    "guest_channel": "telegram",
+    "guest_transport": "synthetic-sink",
+    "guest_message": "Приедем в 12:00, можно заселиться раньше?",
+    "conversation_summary": "Приедем в 12:00, можно заселиться раньше?",
+    "detected_intent": "early_checkin_late_checkout",
+    "resolved_booking_id": "11111111-1111-4111-8111-111111111111",
+    "resolved_property_id": "synthetic-strigunov-apartment",
+    "suggested_reply": null,
+    "guest_acknowledgement": "Уточняем готовность квартиры. Ранний заезд пока не подтверждён.",
+    "next_action": "operator_review_and_reply",
+    "safe_to_auto_send": false
+  },
+  "timeline": [
+    {
+      "id": "synthetic-event-1",
+      "actionId": "synthetic-script-40",
+      "at": "2026-10-11T08:40:00.000Z",
+      "actor": "synthetic-guest",
+      "evidence": "synthetic-fixture-only",
+      "scope": {
+        "accountId": "synthetic-strigunov-account",
+        "bookingId": "11111111-1111-4111-8111-111111111111",
+        "propertyId": "synthetic-strigunov-apartment",
+        "requestId": "synthetic-early-arrival-1200"
+      },
+      "taskId": "synthetic-cleaning-task-1",
+      "decisionId": null,
+      "kind": "guest_request_and_policy",
+      "outcome": "pending",
+      "detail": "Поняла. 12:00 — это ранний заезд с условным подтверждением: зависит от уборки, предыдущего выезда и готовности объекта."
+    },
+    {
+      "id": "synthetic-event-2",
+      "actionId": "synthetic-script-40",
+      "at": "2026-10-11T08:40:00.000Z",
+      "actor": "synthetic-guest",
+      "evidence": "synthetic-fixture-only",
+      "scope": {
+        "accountId": "synthetic-strigunov-account",
+        "bookingId": "11111111-1111-4111-8111-111111111111",
+        "propertyId": "synthetic-strigunov-apartment",
+        "requestId": "synthetic-early-arrival-1200"
+      },
+      "taskId": "synthetic-cleaning-task-1",
+      "decisionId": null,
+      "kind": "operator_handoff_and_assignment",
+      "outcome": "pending",
+      "detail": "Запрос передан оператору; назначена одна синтетическая задача уборки."
+    },
+    {
+      "id": "synthetic-event-3",
+      "actionId": "synthetic-script-41",
+      "at": "2026-10-11T08:41:00.000Z",
+      "actor": "synthetic-system",
+      "evidence": "synthetic-fixture-only",
+      "scope": {
+        "accountId": "synthetic-strigunov-account",
+        "bookingId": "11111111-1111-4111-8111-111111111111",
+        "propertyId": "synthetic-strigunov-apartment",
+        "requestId": "synthetic-early-arrival-1200"
+      },
+      "taskId": "synthetic-cleaning-task-1",
+      "decisionId": null,
+      "kind": "guest_response_held",
+      "outcome": "hold",
+      "detail": "Уточняем готовность квартиры. Ранний заезд пока не подтверждён. Причина: readiness_missing"
+    },
+    {
+      "id": "synthetic-event-4",
+      "actionId": "synthetic-script-42",
+      "at": "2026-10-11T08:42:00.000Z",
+      "actor": "synthetic-operator-1",
+      "evidence": "synthetic-fixture-only",
+      "scope": {
+        "accountId": "synthetic-strigunov-account",
+        "bookingId": "11111111-1111-4111-8111-111111111111",
+        "propertyId": "synthetic-strigunov-apartment",
+        "requestId": "synthetic-early-arrival-1200"
+      },
+      "taskId": "synthetic-cleaning-task-1",
+      "decisionId": null,
+      "kind": "operator_acknowledged",
+      "outcome": "hold",
+      "detail": "Оператор принял запрос и подтвердил ответственного за уборку."
+    },
+    {
+      "id": "synthetic-event-5",
+      "actionId": "synthetic-script-43",
+      "at": "2026-10-11T08:43:00.000Z",
+      "actor": "synthetic-cleaner-1",
+      "evidence": "synthetic-fixture-only",
+      "scope": {
+        "accountId": "synthetic-strigunov-account",
+        "bookingId": "11111111-1111-4111-8111-111111111111",
+        "propertyId": "synthetic-strigunov-apartment",
+        "requestId": "synthetic-early-arrival-1200"
+      },
+      "taskId": "synthetic-cleaning-task-1",
+      "decisionId": null,
+      "kind": "cleaning_assigned",
+      "outcome": "hold",
+      "detail": "Состояние уборки: assigned"
+    },
+    {
+      "id": "synthetic-event-6",
+      "actionId": "synthetic-script-44",
+      "at": "2026-10-11T08:44:00.000Z",
+      "actor": "synthetic-cleaner-1",
+      "evidence": "synthetic-fixture-only",
+      "scope": {
+        "accountId": "synthetic-strigunov-account",
+        "bookingId": "11111111-1111-4111-8111-111111111111",
+        "propertyId": "synthetic-strigunov-apartment",
+        "requestId": "synthetic-early-arrival-1200"
+      },
+      "taskId": "synthetic-cleaning-task-1",
+      "decisionId": null,
+      "kind": "cleaning_in_progress",
+      "outcome": "hold",
+      "detail": "Состояние уборки: in_progress"
+    },
+    {
+      "id": "synthetic-event-7",
+      "actionId": "synthetic-script-45",
+      "at": "2026-10-11T08:45:00.000Z",
+      "actor": "synthetic-cleaner-1",
+      "evidence": "synthetic-fixture-only",
+      "scope": {
+        "accountId": "synthetic-strigunov-account",
+        "bookingId": "11111111-1111-4111-8111-111111111111",
+        "propertyId": "synthetic-strigunov-apartment",
+        "requestId": "synthetic-early-arrival-1200"
+      },
+      "taskId": "synthetic-cleaning-task-1",
+      "decisionId": null,
+      "kind": "cleaning_completed",
+      "outcome": "hold",
+      "detail": "Состояние уборки: completed"
+    },
+    {
+      "id": "synthetic-event-8",
+      "actionId": "synthetic-script-46",
+      "at": "2026-10-11T08:46:00.000Z",
+      "actor": "synthetic-operator-1",
+      "evidence": "synthetic-fixture-only",
+      "scope": {
+        "accountId": "synthetic-strigunov-account",
+        "bookingId": "11111111-1111-4111-8111-111111111111",
+        "propertyId": "synthetic-strigunov-apartment",
+        "requestId": "synthetic-early-arrival-1200"
+      },
+      "taskId": "synthetic-cleaning-task-1",
+      "decisionId": null,
+      "kind": "cleaning_verified",
+      "outcome": "hold",
+      "detail": "Состояние уборки: verified"
+    },
+    {
+      "id": "synthetic-event-9",
+      "actionId": "synthetic-script-47",
+      "at": "2026-10-11T08:47:00.000Z",
+      "actor": "synthetic-operator-1",
+      "evidence": "synthetic-fixture-only",
+      "scope": {
+        "accountId": "synthetic-strigunov-account",
+        "bookingId": "11111111-1111-4111-8111-111111111111",
+        "propertyId": "synthetic-strigunov-apartment",
+        "requestId": "synthetic-early-arrival-1200"
+      },
+      "taskId": "synthetic-cleaning-task-1",
+      "decisionId": null,
+      "kind": "readiness_observed",
+      "outcome": "hold",
+      "detail": "operator_decision_required"
+    },
+    {
+      "id": "synthetic-event-10",
+      "actionId": "synthetic-script-48",
+      "at": "2026-10-11T08:48:00.000Z",
+      "actor": "synthetic-operator-1",
+      "evidence": "synthetic-fixture-only",
+      "scope": {
+        "accountId": "synthetic-strigunov-account",
+        "bookingId": "11111111-1111-4111-8111-111111111111",
+        "propertyId": "synthetic-strigunov-apartment",
+        "requestId": "synthetic-early-arrival-1200"
+      },
+      "taskId": "synthetic-cleaning-task-1",
+      "decisionId": "synthetic-script-48",
+      "kind": "operator_approved",
+      "outcome": "approved",
+      "detail": "scoped_operator_approved"
+    },
+    {
+      "id": "synthetic-event-11",
+      "actionId": "synthetic-script-49",
+      "at": "2026-10-11T08:49:00.000Z",
+      "actor": "synthetic-system",
+      "evidence": "synthetic-fixture-only",
+      "scope": {
+        "accountId": "synthetic-strigunov-account",
+        "bookingId": "11111111-1111-4111-8111-111111111111",
+        "propertyId": "synthetic-strigunov-apartment",
+        "requestId": "synthetic-early-arrival-1200"
+      },
+      "taskId": "synthetic-cleaning-task-1",
+      "decisionId": "synthetic-script-48",
+      "kind": "readiness_rechecked_before_reply",
+      "outcome": "approved",
+      "detail": "fresh_gates_and_operator_approved"
+    },
+    {
+      "id": "synthetic-event-12",
+      "actionId": "synthetic-script-49",
+      "at": "2026-10-11T08:49:00.000Z",
+      "actor": "synthetic-system",
+      "evidence": "synthetic-fixture-only",
+      "scope": {
+        "accountId": "synthetic-strigunov-account",
+        "bookingId": "11111111-1111-4111-8111-111111111111",
+        "propertyId": "synthetic-strigunov-apartment",
+        "requestId": "synthetic-early-arrival-1200"
+      },
+      "taskId": "synthetic-cleaning-task-1",
+      "decisionId": "synthetic-script-48",
+      "kind": "synthetic_reply_recorded",
+      "outcome": "approved",
+      "detail": "Готовность квартиры проверена. Оператор подтвердил заезд в 12:00."
+    },
+    {
+      "id": "synthetic-event-13",
+      "actionId": "synthetic-script-50",
+      "at": "2026-10-11T08:50:00.000Z",
+      "actor": "synthetic-system",
+      "evidence": "synthetic-fixture-only",
+      "scope": {
+        "accountId": "synthetic-strigunov-account",
+        "bookingId": "11111111-1111-4111-8111-111111111111",
+        "propertyId": "synthetic-strigunov-apartment",
+        "requestId": "synthetic-early-arrival-1200"
+      },
+      "taskId": "synthetic-cleaning-task-1",
+      "decisionId": "synthetic-script-48",
+      "kind": "readiness_rechecked_before_reply",
+      "outcome": "approved",
+      "detail": "fresh_gates_and_operator_approved"
+    },
+    {
+      "id": "synthetic-event-14",
+      "actionId": "synthetic-script-50",
+      "at": "2026-10-11T08:50:00.000Z",
+      "actor": "synthetic-system",
+      "evidence": "synthetic-fixture-only",
+      "scope": {
+        "accountId": "synthetic-strigunov-account",
+        "bookingId": "11111111-1111-4111-8111-111111111111",
+        "propertyId": "synthetic-strigunov-apartment",
+        "requestId": "synthetic-early-arrival-1200"
+      },
+      "taskId": "synthetic-cleaning-task-1",
+      "decisionId": "synthetic-script-48",
+      "kind": "duplicate_reply_suppressed",
+      "outcome": "approved",
+      "detail": "Ответ уже записан; повторная доставка запрещена."
+    }
+  ],
+  "replies": [
+    {
+      "id": "synthetic-reply-1",
+      "text": "Готовность квартиры проверена. Оператор подтвердил заезд в 12:00.",
+      "scope": {
+        "accountId": "synthetic-strigunov-account",
+        "bookingId": "11111111-1111-4111-8111-111111111111",
+        "propertyId": "synthetic-strigunov-apartment",
+        "requestId": "synthetic-early-arrival-1200"
+      },
+      "decisionId": "synthetic-script-48"
+    }
+  ],
+  "duplicateCount": 0
+}

@@ -1,0 +1,7 @@
+{
+  "mode": "focused-semantic-typecheck-with-existing-readonly-dependencies",
+  "sourceFiles": 368,
+  "totalDiagnostics": 0,
+  "targetDiagnostics": [],
+  "dependencyDiagnostics": []
+}

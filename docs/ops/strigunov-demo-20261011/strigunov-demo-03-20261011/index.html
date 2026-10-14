@@ -1,0 +1,433 @@
+<!doctype html>
+<html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'none'; connect-src 'none'; style-src 'unsafe-inline'; img-src 'none'; font-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'">
+<title>ASI — ранний заезд в 12:00 · синтетическое демо</title>
+<style>
+:root{color-scheme:light;--ink:#182f34;--muted:#4b6469;--line:#c6d6d4;--paper:#f4f7f3;--teal:#096657;--amber:#805313}
+*{box-sizing:border-box}html{scroll-behavior:auto}body{margin:0;background:var(--paper);color:var(--ink);font:19px/1.55 "Segoe UI",Arial,sans-serif}
+header{background:#153a3b;color:white;padding:16px 5vw}.brand{font-weight:800;letter-spacing:.12em;font-size:23px}.banner{background:#ffe2a6;color:#422900;padding:13px 5vw;font-weight:800;line-height:1.4}
+main{max-width:1160px;margin:auto;padding:32px 28px 70px}h1{font-size:clamp(32px,4.5vw,52px);line-height:1.12;letter-spacing:-.035em;max-width:860px;margin:15px 0 20px}h2{font-size:30px;line-height:1.2;margin:0 0 16px}h3{font-size:23px;line-height:1.3;margin:12px 0 8px}p{margin:8px 0 16px}.eyebrow{font-size:15px;font-weight:800;letter-spacing:.09em;color:var(--teal)}
+.lead{max-width:880px;color:var(--muted);font-size:21px}nav{display:flex;gap:12px;flex-wrap:wrap;margin:24px 0 32px}a{color:#065c73;text-underline-offset:4px;overflow-wrap:anywhere}nav a{padding:10px 17px;border:1px solid var(--line);border-radius:8px;background:white;text-decoration:none;font-weight:650}
+a:focus-visible,summary:focus-visible{outline:3px solid #087ea4;outline-offset:4px}.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}.stat{padding:19px;border:1px solid var(--line);border-radius:12px;background:white}.stat strong{display:block;font-size:35px;line-height:1.2}.stat span{color:var(--muted);font-size:16px}
+section{margin-top:42px;scroll-margin-top:20px}.note{border-left:5px solid var(--amber);background:#fff3da;padding:18px 22px;border-radius:0 12px 12px 0}.gate-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:18px}.panel{background:white;border:1px solid var(--line);border-radius:12px;padding:22px}.panel h3{margin-top:0}.small{font-size:16px;color:var(--muted)}
+.timeline{list-style:none;padding:0;margin:24px 0;display:grid;grid-template-columns:1fr 1fr;gap:18px;align-items:start}
+.event{background:white;border:1px solid var(--line);border-top:5px solid #799da1;border-radius:12px;padding:22px;min-width:0}.event.hold{border-top-color:#ae741d}.event.approved{border-top-color:var(--teal)}.event-top{display:flex;justify-content:space-between;gap:12px;font-size:15px;font-weight:700;color:var(--muted)}.role{font-size:16px;color:var(--muted)}.detail{font-size:18px;overflow-wrap:anywhere}.badge{display:inline-block;padding:4px 10px;background:#e8eff0;border-radius:6px;font-size:14px;font-weight:750}.hold .badge{background:#fff0d0;color:#684207}.approved .badge{background:#def0e6;color:#105542}
+details{margin-top:16px}summary{cursor:pointer;font-size:16px;color:#075e72;font-weight:650}.raw,code{font:14px/1.55 Consolas,monospace;overflow-wrap:anywhere;white-space:pre-wrap}.raw{background:#eef3f2;padding:14px;border-radius:7px}.cases{list-style:none;padding:0;display:grid;grid-template-columns:1fr 1fr;gap:12px}.case{display:flex;gap:14px;background:white;border:1px solid var(--line);border-radius:10px;padding:17px}.case strong{font-size:17px}.check{font-size:13px;font-weight:800;color:#105542;padding-top:4px}.hash{display:block;margin:12px 0;background:#e7efed;padding:14px;border-radius:7px}.links{display:flex;gap:20px;flex-wrap:wrap}.limits li{margin-bottom:10px}footer{margin-top:38px;padding-top:22px;border-top:1px solid var(--line);color:var(--muted);font-size:16px}
+@media(max-width:700px){main{padding:24px 18px 45px}.timeline,.cases,.gate-grid{grid-template-columns:1fr}.stats{grid-template-columns:1fr 1fr}.event{padding:18px}h2{font-size:27px}nav a{font-size:16px}.lead{font-size:19px}.banner{font-size:15px}}
+@media print{body{font-size:13px}main{padding:10px}.timeline{grid-template-columns:1fr}.event{break-inside:avoid}nav,details{display:none}}
+</style></head><body>
+<header><span class="brand">ASI</span> <span> / Booking Ops · просмотр результата</span></header>
+<div class="banner" role="note">СИНТЕТИЧЕСКОЕ ДЕМО — НЕ PRODUCTION</div>
+<main><p class="eyebrow">СТРИГУНОВ · ОДНА БРОНЬ · ОДНА КВАРТИРА</p>
+<h1>Ранний заезд: от запроса в 12:00 до безопасного ответа</h1>
+<p class="lead">Гость хочет заехать раньше. ASI проверяет правила, ждёт готовности квартиры и решения оператора — затем записывает один ответ в тестовый приёмник.</p>
+<p class="small">Сохранённый результат проверки 11 октября 2026 года. Это историческая запись: страница не запускает работу и не показывает живой прогресс.</p>
+<nav aria-label="Разделы"><a href="#timeline">14 событий</a><a href="#negative">Когда нельзя подтверждать</a><a href="#evidence">Доказательства</a><a href="#limits">Границы демо</a></nav>
+<div class="stats"><div class="stat"><strong>1</strong><span>синтетическая бронь</span></div><div class="stat"><strong>14</strong><span>событий в журнале</span></div><div class="stat"><strong>18 / 18</strong><span>ранее пройденных тестов</span></div><div class="stat"><strong>1</strong><span>ответ в fake sink</span></div></div>
+<section aria-labelledby="gates-title"><h2 id="gates-title">Разрешение — ещё не отправка</h2>
+<div class="note">В 11:48 оператор разрешил ранний заезд. Ответ появился только в 11:49, после повторной проверки. Реальных сообщений гостям: <strong>0</strong>.</div>
+<div class="gate-grid"><div class="panel"><h3>Квартира действительно готова?</h3><p>В сценарии проверены уборка, бельё, расходники, отсутствие блокирующего ремонта и предыдущий выезд.</p><p class="small">Это синтетические входы Task02. «Уборка завершена» не означает «уборка проверена».</p></div>
+<div class="panel"><h3>Документы и решение человека</h3><p>Проверяется правовой допуск и решение оператора для этой брони. При запрете подтверждение не записывается.</p><p class="small">Ручной legal fixture, без реальных документов и подписи. В журнале нет исходного документа. Оки-Доки не подключён.</p></div></div></section>
+<section id="timeline"><p class="eyebrow">СИНТЕТИЧЕСКАЯ ХРОНОЛОГИЯ · НЕ ЖИВОЙ СТАТУС</p><h2>Что произошло по шагам</h2><p>Время сценария — московское. Каждая карточка соответствует одной исходной записи; её можно раскрыть.</p><ol class="timeline"><li class="event pending" data-event-id="synthetic-event-1" data-event-kind="guest_request_and_policy">
+  <div class="event-top"><span class="step">Шаг 1 / 14</span><time datetime="2026-10-11T08:40:00.000Z">11:40 МСК</time></div>
+  <h3>Гость просит ранний заезд</h3>
+  <p class="role">Гость · имитация</p>
+  <p class="detail">Поняла. 12:00 — это ранний заезд с условным подтверждением: зависит от уборки, предыдущего выезда и готовности объекта.</p>
+  <span class="badge">Ожидание</span>
+  <details><summary>Исходная запись и доказательство</summary>
+  <pre class="raw">{
+  &quot;id&quot;: &quot;synthetic-event-1&quot;,
+  &quot;actionId&quot;: &quot;synthetic-script-40&quot;,
+  &quot;at&quot;: &quot;2026-10-11T08:40:00.000Z&quot;,
+  &quot;actor&quot;: &quot;synthetic-guest&quot;,
+  &quot;evidence&quot;: &quot;synthetic-fixture-only&quot;,
+  &quot;scope&quot;: {
+    &quot;accountId&quot;: &quot;synthetic-strigunov-account&quot;,
+    &quot;bookingId&quot;: &quot;11111111-1111-4111-8111-111111111111&quot;,
+    &quot;propertyId&quot;: &quot;synthetic-strigunov-apartment&quot;,
+    &quot;requestId&quot;: &quot;synthetic-early-arrival-1200&quot;
+  },
+  &quot;taskId&quot;: &quot;synthetic-cleaning-task-1&quot;,
+  &quot;decisionId&quot;: null,
+  &quot;kind&quot;: &quot;guest_request_and_policy&quot;,
+  &quot;outcome&quot;: &quot;pending&quot;,
+  &quot;detail&quot;: &quot;Поняла. 12:00 — это ранний заезд с условным подтверждением: зависит от уборки, предыдущего выезда и готовности объекта.&quot;
+}</pre></details></li>
+<li class="event pending" data-event-id="synthetic-event-2" data-event-kind="operator_handoff_and_assignment">
+  <div class="event-top"><span class="step">Шаг 2 / 14</span><time datetime="2026-10-11T08:40:00.000Z">11:40 МСК</time></div>
+  <h3>Запрос передан ответственному</h3>
+  <p class="role">Гость · имитация</p>
+  <p class="detail">Запрос передан оператору; назначена одна синтетическая задача уборки.</p>
+  <span class="badge">Ожидание</span>
+  <details><summary>Исходная запись и доказательство</summary>
+  <pre class="raw">{
+  &quot;id&quot;: &quot;synthetic-event-2&quot;,
+  &quot;actionId&quot;: &quot;synthetic-script-40&quot;,
+  &quot;at&quot;: &quot;2026-10-11T08:40:00.000Z&quot;,
+  &quot;actor&quot;: &quot;synthetic-guest&quot;,
+  &quot;evidence&quot;: &quot;synthetic-fixture-only&quot;,
+  &quot;scope&quot;: {
+    &quot;accountId&quot;: &quot;synthetic-strigunov-account&quot;,
+    &quot;bookingId&quot;: &quot;11111111-1111-4111-8111-111111111111&quot;,
+    &quot;propertyId&quot;: &quot;synthetic-strigunov-apartment&quot;,
+    &quot;requestId&quot;: &quot;synthetic-early-arrival-1200&quot;
+  },
+  &quot;taskId&quot;: &quot;synthetic-cleaning-task-1&quot;,
+  &quot;decisionId&quot;: null,
+  &quot;kind&quot;: &quot;operator_handoff_and_assignment&quot;,
+  &quot;outcome&quot;: &quot;pending&quot;,
+  &quot;detail&quot;: &quot;Запрос передан оператору; назначена одна синтетическая задача уборки.&quot;
+}</pre></details></li>
+<li class="event hold" data-event-id="synthetic-event-3" data-event-kind="guest_response_held">
+  <div class="event-top"><span class="step">Шаг 3 / 14</span><time datetime="2026-10-11T08:41:00.000Z">11:41 МСК</time></div>
+  <h3>Подтверждение пока запрещено</h3>
+  <p class="role">ASI · тестовый сценарий</p>
+  <p class="detail">Уточняем готовность квартиры. Ранний заезд пока не подтверждён. Причина: readiness_missing</p>
+  <span class="badge">Подтверждать нельзя</span>
+  <details><summary>Исходная запись и доказательство</summary>
+  <pre class="raw">{
+  &quot;id&quot;: &quot;synthetic-event-3&quot;,
+  &quot;actionId&quot;: &quot;synthetic-script-41&quot;,
+  &quot;at&quot;: &quot;2026-10-11T08:41:00.000Z&quot;,
+  &quot;actor&quot;: &quot;synthetic-system&quot;,
+  &quot;evidence&quot;: &quot;synthetic-fixture-only&quot;,
+  &quot;scope&quot;: {
+    &quot;accountId&quot;: &quot;synthetic-strigunov-account&quot;,
+    &quot;bookingId&quot;: &quot;11111111-1111-4111-8111-111111111111&quot;,
+    &quot;propertyId&quot;: &quot;synthetic-strigunov-apartment&quot;,
+    &quot;requestId&quot;: &quot;synthetic-early-arrival-1200&quot;
+  },
+  &quot;taskId&quot;: &quot;synthetic-cleaning-task-1&quot;,
+  &quot;decisionId&quot;: null,
+  &quot;kind&quot;: &quot;guest_response_held&quot;,
+  &quot;outcome&quot;: &quot;hold&quot;,
+  &quot;detail&quot;: &quot;Уточняем готовность квартиры. Ранний заезд пока не подтверждён. Причина: readiness_missing&quot;
+}</pre></details></li>
+<li class="event hold" data-event-id="synthetic-event-4" data-event-kind="operator_acknowledged">
+  <div class="event-top"><span class="step">Шаг 4 / 14</span><time datetime="2026-10-11T08:42:00.000Z">11:42 МСК</time></div>
+  <h3>Оператор принял запрос</h3>
+  <p class="role">Оператор · имитация</p>
+  <p class="detail">Оператор принял запрос и подтвердил ответственного за уборку.</p>
+  <span class="badge">Подтверждать нельзя</span>
+  <details><summary>Исходная запись и доказательство</summary>
+  <pre class="raw">{
+  &quot;id&quot;: &quot;synthetic-event-4&quot;,
+  &quot;actionId&quot;: &quot;synthetic-script-42&quot;,
+  &quot;at&quot;: &quot;2026-10-11T08:42:00.000Z&quot;,
+  &quot;actor&quot;: &quot;synthetic-operator-1&quot;,
+  &quot;evidence&quot;: &quot;synthetic-fixture-only&quot;,
+  &quot;scope&quot;: {
+    &quot;accountId&quot;: &quot;synthetic-strigunov-account&quot;,
+    &quot;bookingId&quot;: &quot;11111111-1111-4111-8111-111111111111&quot;,
+    &quot;propertyId&quot;: &quot;synthetic-strigunov-apartment&quot;,
+    &quot;requestId&quot;: &quot;synthetic-early-arrival-1200&quot;
+  },
+  &quot;taskId&quot;: &quot;synthetic-cleaning-task-1&quot;,
+  &quot;decisionId&quot;: null,
+  &quot;kind&quot;: &quot;operator_acknowledged&quot;,
+  &quot;outcome&quot;: &quot;hold&quot;,
+  &quot;detail&quot;: &quot;Оператор принял запрос и подтвердил ответственного за уборку.&quot;
+}</pre></details></li>
+<li class="event hold" data-event-id="synthetic-event-5" data-event-kind="cleaning_assigned">
+  <div class="event-top"><span class="step">Шаг 5 / 14</span><time datetime="2026-10-11T08:43:00.000Z">11:43 МСК</time></div>
+  <h3>Уборка назначена</h3>
+  <p class="role">Исполнитель уборки · имитация</p>
+  <p class="detail">Состояние уборки: assigned</p>
+  <span class="badge">Подтверждать нельзя</span>
+  <details><summary>Исходная запись и доказательство</summary>
+  <pre class="raw">{
+  &quot;id&quot;: &quot;synthetic-event-5&quot;,
+  &quot;actionId&quot;: &quot;synthetic-script-43&quot;,
+  &quot;at&quot;: &quot;2026-10-11T08:43:00.000Z&quot;,
+  &quot;actor&quot;: &quot;synthetic-cleaner-1&quot;,
+  &quot;evidence&quot;: &quot;synthetic-fixture-only&quot;,
+  &quot;scope&quot;: {
+    &quot;accountId&quot;: &quot;synthetic-strigunov-account&quot;,
+    &quot;bookingId&quot;: &quot;11111111-1111-4111-8111-111111111111&quot;,
+    &quot;propertyId&quot;: &quot;synthetic-strigunov-apartment&quot;,
+    &quot;requestId&quot;: &quot;synthetic-early-arrival-1200&quot;
+  },
+  &quot;taskId&quot;: &quot;synthetic-cleaning-task-1&quot;,
+  &quot;decisionId&quot;: null,
+  &quot;kind&quot;: &quot;cleaning_assigned&quot;,
+  &quot;outcome&quot;: &quot;hold&quot;,
+  &quot;detail&quot;: &quot;Состояние уборки: assigned&quot;
+}</pre></details></li>
+<li class="event hold" data-event-id="synthetic-event-6" data-event-kind="cleaning_in_progress">
+  <div class="event-top"><span class="step">Шаг 6 / 14</span><time datetime="2026-10-11T08:44:00.000Z">11:44 МСК</time></div>
+  <h3>Уборка началась</h3>
+  <p class="role">Исполнитель уборки · имитация</p>
+  <p class="detail">Состояние уборки: in_progress</p>
+  <span class="badge">Подтверждать нельзя</span>
+  <details><summary>Исходная запись и доказательство</summary>
+  <pre class="raw">{
+  &quot;id&quot;: &quot;synthetic-event-6&quot;,
+  &quot;actionId&quot;: &quot;synthetic-script-44&quot;,
+  &quot;at&quot;: &quot;2026-10-11T08:44:00.000Z&quot;,
+  &quot;actor&quot;: &quot;synthetic-cleaner-1&quot;,
+  &quot;evidence&quot;: &quot;synthetic-fixture-only&quot;,
+  &quot;scope&quot;: {
+    &quot;accountId&quot;: &quot;synthetic-strigunov-account&quot;,
+    &quot;bookingId&quot;: &quot;11111111-1111-4111-8111-111111111111&quot;,
+    &quot;propertyId&quot;: &quot;synthetic-strigunov-apartment&quot;,
+    &quot;requestId&quot;: &quot;synthetic-early-arrival-1200&quot;
+  },
+  &quot;taskId&quot;: &quot;synthetic-cleaning-task-1&quot;,
+  &quot;decisionId&quot;: null,
+  &quot;kind&quot;: &quot;cleaning_in_progress&quot;,
+  &quot;outcome&quot;: &quot;hold&quot;,
+  &quot;detail&quot;: &quot;Состояние уборки: in_progress&quot;
+}</pre></details></li>
+<li class="event hold" data-event-id="synthetic-event-7" data-event-kind="cleaning_completed">
+  <div class="event-top"><span class="step">Шаг 7 / 14</span><time datetime="2026-10-11T08:45:00.000Z">11:45 МСК</time></div>
+  <h3>Уборка завершена — нужна проверка</h3>
+  <p class="role">Исполнитель уборки · имитация</p>
+  <p class="detail">Состояние уборки: completed</p>
+  <span class="badge">Подтверждать нельзя</span>
+  <details><summary>Исходная запись и доказательство</summary>
+  <pre class="raw">{
+  &quot;id&quot;: &quot;synthetic-event-7&quot;,
+  &quot;actionId&quot;: &quot;synthetic-script-45&quot;,
+  &quot;at&quot;: &quot;2026-10-11T08:45:00.000Z&quot;,
+  &quot;actor&quot;: &quot;synthetic-cleaner-1&quot;,
+  &quot;evidence&quot;: &quot;synthetic-fixture-only&quot;,
+  &quot;scope&quot;: {
+    &quot;accountId&quot;: &quot;synthetic-strigunov-account&quot;,
+    &quot;bookingId&quot;: &quot;11111111-1111-4111-8111-111111111111&quot;,
+    &quot;propertyId&quot;: &quot;synthetic-strigunov-apartment&quot;,
+    &quot;requestId&quot;: &quot;synthetic-early-arrival-1200&quot;
+  },
+  &quot;taskId&quot;: &quot;synthetic-cleaning-task-1&quot;,
+  &quot;decisionId&quot;: null,
+  &quot;kind&quot;: &quot;cleaning_completed&quot;,
+  &quot;outcome&quot;: &quot;hold&quot;,
+  &quot;detail&quot;: &quot;Состояние уборки: completed&quot;
+}</pre></details></li>
+<li class="event hold" data-event-id="synthetic-event-8" data-event-kind="cleaning_verified">
+  <div class="event-top"><span class="step">Шаг 8 / 14</span><time datetime="2026-10-11T08:46:00.000Z">11:46 МСК</time></div>
+  <h3>Оператор проверил уборку</h3>
+  <p class="role">Оператор · имитация</p>
+  <p class="detail">Состояние уборки: verified</p>
+  <span class="badge">Подтверждать нельзя</span>
+  <details><summary>Исходная запись и доказательство</summary>
+  <pre class="raw">{
+  &quot;id&quot;: &quot;synthetic-event-8&quot;,
+  &quot;actionId&quot;: &quot;synthetic-script-46&quot;,
+  &quot;at&quot;: &quot;2026-10-11T08:46:00.000Z&quot;,
+  &quot;actor&quot;: &quot;synthetic-operator-1&quot;,
+  &quot;evidence&quot;: &quot;synthetic-fixture-only&quot;,
+  &quot;scope&quot;: {
+    &quot;accountId&quot;: &quot;synthetic-strigunov-account&quot;,
+    &quot;bookingId&quot;: &quot;11111111-1111-4111-8111-111111111111&quot;,
+    &quot;propertyId&quot;: &quot;synthetic-strigunov-apartment&quot;,
+    &quot;requestId&quot;: &quot;synthetic-early-arrival-1200&quot;
+  },
+  &quot;taskId&quot;: &quot;synthetic-cleaning-task-1&quot;,
+  &quot;decisionId&quot;: null,
+  &quot;kind&quot;: &quot;cleaning_verified&quot;,
+  &quot;outcome&quot;: &quot;hold&quot;,
+  &quot;detail&quot;: &quot;Состояние уборки: verified&quot;
+}</pre></details></li>
+<li class="event hold" data-event-id="synthetic-event-9" data-event-kind="readiness_observed">
+  <div class="event-top"><span class="step">Шаг 9 / 14</span><time datetime="2026-10-11T08:47:00.000Z">11:47 МСК</time></div>
+  <h3>Получено свежее наблюдение</h3>
+  <p class="role">Оператор · имитация</p>
+  <p class="detail">operator_decision_required</p>
+  <span class="badge">Подтверждать нельзя</span>
+  <details><summary>Исходная запись и доказательство</summary>
+  <pre class="raw">{
+  &quot;id&quot;: &quot;synthetic-event-9&quot;,
+  &quot;actionId&quot;: &quot;synthetic-script-47&quot;,
+  &quot;at&quot;: &quot;2026-10-11T08:47:00.000Z&quot;,
+  &quot;actor&quot;: &quot;synthetic-operator-1&quot;,
+  &quot;evidence&quot;: &quot;synthetic-fixture-only&quot;,
+  &quot;scope&quot;: {
+    &quot;accountId&quot;: &quot;synthetic-strigunov-account&quot;,
+    &quot;bookingId&quot;: &quot;11111111-1111-4111-8111-111111111111&quot;,
+    &quot;propertyId&quot;: &quot;synthetic-strigunov-apartment&quot;,
+    &quot;requestId&quot;: &quot;synthetic-early-arrival-1200&quot;
+  },
+  &quot;taskId&quot;: &quot;synthetic-cleaning-task-1&quot;,
+  &quot;decisionId&quot;: null,
+  &quot;kind&quot;: &quot;readiness_observed&quot;,
+  &quot;outcome&quot;: &quot;hold&quot;,
+  &quot;detail&quot;: &quot;operator_decision_required&quot;
+}</pre></details></li>
+<li class="event approved" data-event-id="synthetic-event-10" data-event-kind="operator_approved">
+  <div class="event-top"><span class="step">Шаг 10 / 14</span><time datetime="2026-10-11T08:48:00.000Z">11:48 МСК</time></div>
+  <h3>Оператор разрешил ранний заезд</h3>
+  <p class="role">Оператор · имитация</p>
+  <p class="detail">scoped_operator_approved</p>
+  <span class="badge">Разрешено в сценарии</span>
+  <details><summary>Исходная запись и доказательство</summary>
+  <pre class="raw">{
+  &quot;id&quot;: &quot;synthetic-event-10&quot;,
+  &quot;actionId&quot;: &quot;synthetic-script-48&quot;,
+  &quot;at&quot;: &quot;2026-10-11T08:48:00.000Z&quot;,
+  &quot;actor&quot;: &quot;synthetic-operator-1&quot;,
+  &quot;evidence&quot;: &quot;synthetic-fixture-only&quot;,
+  &quot;scope&quot;: {
+    &quot;accountId&quot;: &quot;synthetic-strigunov-account&quot;,
+    &quot;bookingId&quot;: &quot;11111111-1111-4111-8111-111111111111&quot;,
+    &quot;propertyId&quot;: &quot;synthetic-strigunov-apartment&quot;,
+    &quot;requestId&quot;: &quot;synthetic-early-arrival-1200&quot;
+  },
+  &quot;taskId&quot;: &quot;synthetic-cleaning-task-1&quot;,
+  &quot;decisionId&quot;: &quot;synthetic-script-48&quot;,
+  &quot;kind&quot;: &quot;operator_approved&quot;,
+  &quot;outcome&quot;: &quot;approved&quot;,
+  &quot;detail&quot;: &quot;scoped_operator_approved&quot;
+}</pre></details></li>
+<li class="event approved" data-event-id="synthetic-event-11" data-event-kind="readiness_rechecked_before_reply">
+  <div class="event-top"><span class="step">Шаг 11 / 14</span><time datetime="2026-10-11T08:49:00.000Z">11:49 МСК</time></div>
+  <h3>Готовность проверена ещё раз</h3>
+  <p class="role">ASI · тестовый сценарий</p>
+  <p class="detail">fresh_gates_and_operator_approved</p>
+  <span class="badge">Разрешено в сценарии</span>
+  <details><summary>Исходная запись и доказательство</summary>
+  <pre class="raw">{
+  &quot;id&quot;: &quot;synthetic-event-11&quot;,
+  &quot;actionId&quot;: &quot;synthetic-script-49&quot;,
+  &quot;at&quot;: &quot;2026-10-11T08:49:00.000Z&quot;,
+  &quot;actor&quot;: &quot;synthetic-system&quot;,
+  &quot;evidence&quot;: &quot;synthetic-fixture-only&quot;,
+  &quot;scope&quot;: {
+    &quot;accountId&quot;: &quot;synthetic-strigunov-account&quot;,
+    &quot;bookingId&quot;: &quot;11111111-1111-4111-8111-111111111111&quot;,
+    &quot;propertyId&quot;: &quot;synthetic-strigunov-apartment&quot;,
+    &quot;requestId&quot;: &quot;synthetic-early-arrival-1200&quot;
+  },
+  &quot;taskId&quot;: &quot;synthetic-cleaning-task-1&quot;,
+  &quot;decisionId&quot;: &quot;synthetic-script-48&quot;,
+  &quot;kind&quot;: &quot;readiness_rechecked_before_reply&quot;,
+  &quot;outcome&quot;: &quot;approved&quot;,
+  &quot;detail&quot;: &quot;fresh_gates_and_operator_approved&quot;
+}</pre></details></li>
+<li class="event approved" data-event-id="synthetic-event-12" data-event-kind="synthetic_reply_recorded">
+  <div class="event-top"><span class="step">Шаг 12 / 14</span><time datetime="2026-10-11T08:49:00.000Z">11:49 МСК</time></div>
+  <h3>Один ответ записан в тестовый приёмник</h3>
+  <p class="role">ASI · тестовый сценарий</p>
+  <p class="detail">Готовность квартиры проверена. Оператор подтвердил заезд в 12:00.</p>
+  <span class="badge">Разрешено в сценарии</span>
+  <details><summary>Исходная запись и доказательство</summary>
+  <pre class="raw">{
+  &quot;id&quot;: &quot;synthetic-event-12&quot;,
+  &quot;actionId&quot;: &quot;synthetic-script-49&quot;,
+  &quot;at&quot;: &quot;2026-10-11T08:49:00.000Z&quot;,
+  &quot;actor&quot;: &quot;synthetic-system&quot;,
+  &quot;evidence&quot;: &quot;synthetic-fixture-only&quot;,
+  &quot;scope&quot;: {
+    &quot;accountId&quot;: &quot;synthetic-strigunov-account&quot;,
+    &quot;bookingId&quot;: &quot;11111111-1111-4111-8111-111111111111&quot;,
+    &quot;propertyId&quot;: &quot;synthetic-strigunov-apartment&quot;,
+    &quot;requestId&quot;: &quot;synthetic-early-arrival-1200&quot;
+  },
+  &quot;taskId&quot;: &quot;synthetic-cleaning-task-1&quot;,
+  &quot;decisionId&quot;: &quot;synthetic-script-48&quot;,
+  &quot;kind&quot;: &quot;synthetic_reply_recorded&quot;,
+  &quot;outcome&quot;: &quot;approved&quot;,
+  &quot;detail&quot;: &quot;Готовность квартиры проверена. Оператор подтвердил заезд в 12:00.&quot;
+}</pre></details></li>
+<li class="event approved" data-event-id="synthetic-event-13" data-event-kind="readiness_rechecked_before_reply">
+  <div class="event-top"><span class="step">Шаг 13 / 14</span><time datetime="2026-10-11T08:50:00.000Z">11:50 МСК</time></div>
+  <h3>Готовность проверена ещё раз</h3>
+  <p class="role">ASI · тестовый сценарий</p>
+  <p class="detail">fresh_gates_and_operator_approved</p>
+  <span class="badge">Разрешено в сценарии</span>
+  <details><summary>Исходная запись и доказательство</summary>
+  <pre class="raw">{
+  &quot;id&quot;: &quot;synthetic-event-13&quot;,
+  &quot;actionId&quot;: &quot;synthetic-script-50&quot;,
+  &quot;at&quot;: &quot;2026-10-11T08:50:00.000Z&quot;,
+  &quot;actor&quot;: &quot;synthetic-system&quot;,
+  &quot;evidence&quot;: &quot;synthetic-fixture-only&quot;,
+  &quot;scope&quot;: {
+    &quot;accountId&quot;: &quot;synthetic-strigunov-account&quot;,
+    &quot;bookingId&quot;: &quot;11111111-1111-4111-8111-111111111111&quot;,
+    &quot;propertyId&quot;: &quot;synthetic-strigunov-apartment&quot;,
+    &quot;requestId&quot;: &quot;synthetic-early-arrival-1200&quot;
+  },
+  &quot;taskId&quot;: &quot;synthetic-cleaning-task-1&quot;,
+  &quot;decisionId&quot;: &quot;synthetic-script-48&quot;,
+  &quot;kind&quot;: &quot;readiness_rechecked_before_reply&quot;,
+  &quot;outcome&quot;: &quot;approved&quot;,
+  &quot;detail&quot;: &quot;fresh_gates_and_operator_approved&quot;
+}</pre></details></li>
+<li class="event approved" data-event-id="synthetic-event-14" data-event-kind="duplicate_reply_suppressed">
+  <div class="event-top"><span class="step">Шаг 14 / 14</span><time datetime="2026-10-11T08:50:00.000Z">11:50 МСК</time></div>
+  <h3>Повторный ответ подавлен</h3>
+  <p class="role">ASI · тестовый сценарий</p>
+  <p class="detail">Ответ уже записан; повторная доставка запрещена.</p>
+  <span class="badge">Разрешено в сценарии</span>
+  <details><summary>Исходная запись и доказательство</summary>
+  <pre class="raw">{
+  &quot;id&quot;: &quot;synthetic-event-14&quot;,
+  &quot;actionId&quot;: &quot;synthetic-script-50&quot;,
+  &quot;at&quot;: &quot;2026-10-11T08:50:00.000Z&quot;,
+  &quot;actor&quot;: &quot;synthetic-system&quot;,
+  &quot;evidence&quot;: &quot;synthetic-fixture-only&quot;,
+  &quot;scope&quot;: {
+    &quot;accountId&quot;: &quot;synthetic-strigunov-account&quot;,
+    &quot;bookingId&quot;: &quot;11111111-1111-4111-8111-111111111111&quot;,
+    &quot;propertyId&quot;: &quot;synthetic-strigunov-apartment&quot;,
+    &quot;requestId&quot;: &quot;synthetic-early-arrival-1200&quot;
+  },
+  &quot;taskId&quot;: &quot;synthetic-cleaning-task-1&quot;,
+  &quot;decisionId&quot;: &quot;synthetic-script-48&quot;,
+  &quot;kind&quot;: &quot;duplicate_reply_suppressed&quot;,
+  &quot;outcome&quot;: &quot;approved&quot;,
+  &quot;detail&quot;: &quot;Ответ уже записан; повторная доставка запрещена.&quot;
+}</pre></details></li></ol></section>
+<section id="negative"><p class="eyebrow">ПРОВЕРКИ TASK02 · НЕ ДОПОЛНИТЕЛЬНЫЕ СОБЫТИЯ</p><h2>Когда ASI должна остановиться</h2><p>Ниже — фактические результаты ранее выполненных тестов. Отдельных журналов отрицательных сценариев в evidence нет; дополнительные события здесь не придуманы.</p>
+<div class="note"><strong>Смена политики заезда: НЕ ПРОВЕРЕНА.</strong> Правило 12:00 фиксировано для этой версии. Тест устаревшей готовности не доказывает отзыв разрешения после изменения самой политики.</div><ul class="cases"><li class="case" data-case-number="1"><span class="check">PASS</span><div><strong>Полный сценарий и единый журнал</strong>
+  <details><summary>Название фактической проверки</summary><p class="raw">Strigunov 12:00 synthetic early-arrival positive allow-list 01 completes real policy/readiness/operator composition and one correlated chronological journal</p></details></div></li>
+<li class="case" data-case-number="2"><span class="check">PASS</span><div><strong>12:00 требует отдельного подтверждения</strong>
+  <details><summary>Название фактической проверки</summary><p class="raw">Strigunov 12:00 synthetic early-arrival positive allow-list 02 classifies 12:00 as conditional and produces a genuine conservative operator handoff</p></details></div></li>
+<li class="case" data-case-number="3"><span class="check">PASS</span><div><strong>Завершённая уборка ещё не проверена</strong>
+  <details><summary>Название фактической проверки</summary><p class="raw">Strigunov 12:00 synthetic early-arrival positive allow-list 03 completed cleaning cannot stand in for verified cleaning</p></details></div></li>
+<li class="case" data-case-number="4"><span class="check">PASS</span><div><strong>Готовность неизвестна</strong>
+  <details><summary>Название фактической проверки</summary><p class="raw">Strigunov 12:00 synthetic early-arrival positive allow-list 04 absent readiness cannot approve or deliver</p></details></div></li>
+<li class="case" data-case-number="5"><span class="check">PASS</span><div><strong>Готовность устарела до ответа</strong>
+  <details><summary>Название фактической проверки</summary><p class="raw">Strigunov 12:00 synthetic early-arrival positive allow-list 05 readiness becomes stale between approval and response and invalidates that approval</p></details></div></li>
+<li class="case" data-case-number="6"><span class="check">PASS</span><div><strong>Будущее или неверное время наблюдения</strong>
+  <details><summary>Название фактической проверки</summary><p class="raw">Strigunov 12:00 synthetic early-arrival positive allow-list 06 future and invalid readiness timestamps both fail closed</p></details></div></li>
+<li class="case" data-case-number="7"><span class="check">PASS</span><div><strong>Чужой аккаунт</strong>
+  <details><summary>Название фактической проверки</summary><p class="raw">Strigunov 12:00 synthetic early-arrival positive allow-list 07 cross-account request, decision and observation cannot mutate canonical booking state</p></details></div></li>
+<li class="case" data-case-number="8"><span class="check">PASS</span><div><strong>Нет решения оператора</strong>
+  <details><summary>Название фактической проверки</summary><p class="raw">Strigunov 12:00 synthetic early-arrival positive allow-list 08 fresh physical/legal readiness alone cannot replace an operator decision</p></details></div></li>
+<li class="case" data-case-number="9"><span class="check">PASS</span><div><strong>Документы не разрешают заселение</strong>
+  <details><summary>Название фактической проверки</summary><p class="raw">Strigunov 12:00 synthetic early-arrival positive allow-list 09 a legal hold blocks otherwise verified physical readiness</p></details></div></li>
+<li class="case" data-case-number="10"><span class="check">PASS</span><div><strong>Предыдущий гость ещё не выехал</strong>
+  <details><summary>Название фактической проверки</summary><p class="raw">Strigunov 12:00 synthetic early-arrival positive allow-list 10 previous checkout must be confirmed for conditional early arrival</p></details></div></li>
+<li class="case" data-case-number="11"><span class="check">PASS</span><div><strong>Повтор запроса или действия</strong>
+  <details><summary>Название фактической проверки</summary><p class="raw">Strigunov 12:00 synthetic early-arrival positive allow-list 11 repeated inbound and actions create neither a second task nor a second reply</p></details></div></li>
+<li class="case" data-case-number="12"><span class="check">PASS</span><div><strong>Один номер действия с разными данными</strong>
+  <details><summary>Название фактической проверки</summary><p class="raw">Strigunov 12:00 synthetic early-arrival positive allow-list 12 reused action identity with changed payload is rejected</p></details></div></li>
+<li class="case" data-case-number="13"><span class="check">PASS</span><div><strong>Новый блокер после разрешения</strong>
+  <details><summary>Название фактической проверки</summary><p class="raw">Strigunov 12:00 synthetic early-arrival positive allow-list 13 a new maintenance blocker revokes a previous approval before delivery</p></details></div></li>
+<li class="case" data-case-number="14"><span class="check">PASS</span><div><strong>Оператор отказал</strong>
+  <details><summary>Название фактической проверки</summary><p class="raw">Strigunov 12:00 synthetic early-arrival positive allow-list 14 an explicit negative operator decision produces a clear safe response</p></details></div></li>
+<li class="case" data-case-number="15"><span class="check">PASS</span><div><strong>Исполнитель сообщил о препятствии</strong>
+  <details><summary>Название фактической проверки</summary><p class="raw">Strigunov 12:00 synthetic early-arrival positive allow-list 15 executor refusal holds the request and is visible in the same timeline</p></details></div></li>
+<li class="case" data-case-number="16"><span class="check">PASS</span><div><strong>Неверный участник или порядок уборки</strong>
+  <details><summary>Название фактической проверки</summary><p class="raw">Strigunov 12:00 synthetic early-arrival positive allow-list 16 wrong actors and skipped cleaning transitions cannot grant readiness</p></details></div></li>
+<li class="case" data-case-number="17"><span class="check">PASS</span><div><strong>Оператор ещё не принял запрос</strong>
+  <details><summary>Название фактической проверки</summary><p class="raw">Strigunov 12:00 synthetic early-arrival positive allow-list 17 acknowledgment is mandatory before cleaning and operator approval</p></details></div></li>
+<li class="case" data-case-number="18"><span class="check">PASS</span><div><strong>Попытка изменить копию результата или время</strong>
+  <details><summary>Название фактической проверки</summary><p class="raw">Strigunov 12:00 synthetic early-arrival positive allow-list 18 snapshot mutation cannot forge approval; invalid event time cannot alter history</p></details></div></li></ul></section>
+<section id="evidence"><p class="eyebrow">ПРОВЕРЯЕМЫЙ ИСТОЧНИК</p><h2>Доказательства и версия</h2>
+<p>Хронология загружена при сборке из сохранённого Task02 JSON. Копия ниже побайтово совпадает с исходником. Страница ничего не запрашивает из сети.</p>
+<p class="links"><a href="./timeline.json">14 исходных событий · JSON</a><a href="./test-results.json">18 результатов тестов · JSON</a><a href="./evidence-manifest.json">Файлы и контрольные суммы</a></p>
+<p>SHA256 исходной хронологии:</p><code class="hash">d5e330e401468cd978a3b363f285ee35e227e477ada3706dbfaea8a4f833e6c3</code>
+<p>Базовый commit:</p><code class="hash">f42cd99f57bafa681def155a676619a1d80504fe</code>
+<details><summary>Идентификаторы синтетической брони</summary><pre class="raw">{
+  &quot;accountId&quot;: &quot;synthetic-strigunov-account&quot;,
+  &quot;bookingId&quot;: &quot;11111111-1111-4111-8111-111111111111&quot;,
+  &quot;propertyId&quot;: &quot;synthetic-strigunov-apartment&quot;,
+  &quot;requestId&quot;: &quot;synthetic-early-arrival-1200&quot;
+}</pre></details>
+<p class="small">Task02 и этот viewer ещё не опубликованы в Git. Commit выше обозначает исходную версию, а не наличие новых файлов в GitHub.</p></section>
+<section id="limits"><p class="eyebrow">ГРАНИЦЫ СИНТЕТИЧЕСКОГО ДЕМО</p><h2>Что этот показ не доказывает</h2>
+<ul class="limits"><li>Готовность production-пилота: privacy-релиз, доступ владельца, CRM и надёжная отправка требуют отдельной приёмки.</li><li>Реальную личность оператора, состояние квартиры и юридическую подпись.</li><li>Дедупликацию между worker-процессами или восстановление после рестарта: здесь память одного fixture.</li><li>Интеграции RentHouse / CleanControl / Оки-Доки: они <strong>не подключены</strong>.</li><li>Отзыв разрешения при изменении политики заезда: этот вход не моделируется.</li></ul></section>
+<footer>ASI · синтетический показ автоматизации поверх внешней системы. Без подключения внешней системы, реальных данных и отправок.</footer>
+</main></body></html>
