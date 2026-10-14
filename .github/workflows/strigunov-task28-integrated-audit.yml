@@ -1,0 +1,71 @@
+name: Strigunov Task28 six-PR integrated source audit
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/strigunov-task28-integrated-audit.yml'
+      - 'scripts/acceptance/strigunov-task28-integrated-audit.mjs'
+      - 'docs/ops/strigunov-task28-cross-pr-audit.md'
+permissions:
+  contents: read
+jobs:
+  exact-head-union:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - name: Checkout PR audit candidate and all remote refs without stored credentials
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Verify pinned protected main and six unchanged PR branch heads
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check scripts/acceptance/strigunov-task28-integrated-audit.mjs
+          node scripts/acceptance/strigunov-task28-integrated-audit.mjs --preflight
+      - name: Simulate six-way source merge in disposable runner, never push or commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          git -c user.name='Task28 isolated audit' -c user.email='task28@invalid.example' merge --no-commit --no-ff --no-edit \
+            refs/remotes/origin/asi/task22-custodian-boundary-preflight-20261014 \
+            refs/remotes/origin/asi/task23-hetzner-cloud-custodian-preflight-20261014 \
+            refs/remotes/origin/asi/task24-offline-cloud-broker-protocol-20261014 \
+            refs/remotes/origin/asi/task25-disposable-durable-ledger-ipc-20261014 \
+            refs/remotes/origin/asi/task26-kernel-peer-ipc-proof-20261014 \
+            refs/remotes/origin/asi/task27-owner-release-bundle-offline-20261014
+          git diff --cached --check
+          node scripts/acceptance/strigunov-task28-integrated-audit.mjs --combined
+      - name: Run all four focused Node suites together on the integrated staged tree
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --test --test-reporter=tap \
+            scripts/__tests__/strigunov-task22-custodian-review.test.mjs \
+            scripts/__tests__/strigunov-task23-cloud-custodian.test.mjs \
+            scripts/__tests__/strigunov-task24-offline-broker.test.mjs \
+            scripts/__tests__/strigunov-task25-local-ledger.test.mjs | tee "$RUNNER_TEMP/task28-node.tap"
+          grep -q '^# tests 98$' "$RUNNER_TEMP/task28-node.tap"
+          grep -q '^# pass 98$' "$RUNNER_TEMP/task28-node.tap"
+          grep -q '^# fail 0$' "$RUNNER_TEMP/task28-node.tap"
+          grep -q '^# skipped 0$' "$RUNNER_TEMP/task28-node.tap"
+      - name: Run both focused Python native Linux suites on the same combined staged tree
+        shell: bash
+        env:
+          PYTHONDONTWRITEBYTECODE: '1'
+        run: |
+          set -euo pipefail
+          python3 scripts/__tests__/strigunov-task26-peer-gate.test.py 2>&1 | tee "$RUNNER_TEMP/task28-py26.log"
+          grep -q 'Ran 23 tests' "$RUNNER_TEMP/task28-py26.log"
+          grep -q '^OK$' "$RUNNER_TEMP/task28-py26.log"
+          python3 scripts/__tests__/strigunov-task27-release.test.py 2>&1 | tee "$RUNNER_TEMP/task28-py27.log"
+          grep -q 'Ran 28 tests' "$RUNNER_TEMP/task28-py27.log"
+          grep -q '^OK$' "$RUNNER_TEMP/task28-py27.log"
+      - name: Preserve short-lived sanitized exact-source audit result
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: strigunov-task28-audit-${{ github.run_id }}
+          path: strigunov-task28-audit-result.json
+          if-no-files-found: warn
+          retention-days: 7
