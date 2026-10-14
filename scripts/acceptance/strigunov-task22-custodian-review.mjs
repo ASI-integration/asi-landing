@@ -13,6 +13,7 @@ export const REQUIRED_OPERATIONS=Object.freeze([
 const isObj=x=>x!==null&&typeof x==='object'&&!Array.isArray(x);
 const SHA40=/^[a-f0-9]{40}$/,SHA64=/^[a-f0-9]{64}$/;
 const sid=x=>typeof x==='string'&&/^S-1-5-21-(?:[0-9]+-){3}[0-9]+$/.test(x);
+const uuid=x=>typeof x==='string'&&/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(x);
 const result=(stage,reasons,more={})=>Object.freeze({
  status:stage,scope:'SOURCE_ONLY_UNTRUSTED_OBSERVATION',authorized:false,
  canApprove:false,canSend:false,canIssueReceipt:false,canInstall:false,
@@ -81,8 +82,8 @@ export function inspectRevocationProof(p){
  if(!integer(p.beforeEpoch)||!integer(p.afterEpoch)||
     (integer(p.beforeEpoch)&&integer(p.afterEpoch)&&BigInt(p.afterEpoch)<=BigInt(p.beforeEpoch)))
   errors.push('REVOCATION_EPOCH_NOT_ADVANCED');
- if(p.beforeActor!==p.afterActor||!sid(p.beforeActor)||p.beforeAccount!==p.afterAccount||
-    typeof p.beforeAccount!=='string'||p.beforeAccount.length===0)
+ if(p.beforeActor!==p.afterActor||!uuid(p.beforeActor)||p.beforeAccount!==p.afterAccount||
+    !uuid(p.beforeAccount))
   errors.push('REVOCATION_SCOPE_CHANGED');
  if(p.revoked!==true||p.oldSessionAccepted!==false||
     p.newRequestAccepted!==false||p.canSend!==false)
