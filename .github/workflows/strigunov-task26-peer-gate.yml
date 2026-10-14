@@ -1,0 +1,32 @@
+name: Strigunov Task26 isolated Linux peer-credential check
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/strigunov-task26-peer-gate.yml'
+      - 'scripts/acceptance/strigunov-task26-peer-gate.py'
+      - 'scripts/__tests__/strigunov-task26-peer-gate.test.py'
+      - 'docs/ops/strigunov-task26-peer-boundary.md'
+permissions:
+  contents: read
+jobs:
+  peer-fixture:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 6
+    steps:
+      - name: Checkout unprivileged PR merge candidate
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+          fetch-depth: 2
+      - name: Verify unprivileged hosted Linux and syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(id -u)" -ne 0
+          test "$(id -g)" -ne 0
+          python3 --version
+          python3 -m py_compile scripts/acceptance/strigunov-task26-peer-gate.py scripts/__tests__/strigunov-task26-peer-gate.test.py
+      - name: Kernel SO_PEERCRED negative and legitimate peer observations
+        run: python3 scripts/__tests__/strigunov-task26-peer-gate.test.py
+      - name: Fail on review diff whitespace errors
+        run: git diff --check HEAD^1 HEAD
