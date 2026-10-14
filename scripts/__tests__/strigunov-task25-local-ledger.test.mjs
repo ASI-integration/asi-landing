@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync,writeFileSync,appendFileSync,statSync,mkdirSync,rmSync,renameSync,symlinkSync} from 'node:fs';
 import {spawnSync,spawn} from 'node:child_process';
+import {createConnection} from 'node:net';
 import {join,resolve} from 'node:path';
 import {pathToFileURL} from 'node:url';
 import {createTask25Root,initializeTask25,observeTask25,recordTask25,
@@ -160,6 +161,40 @@ test('Unix IPC refuses an uninitialized fixture', {skip:process.platform!=='linu
  const root=createTask25Root();
  try{await assert.rejects(()=>startTask25FixtureIpc(root),/FIXTURE_NOT_READY/);}
  finally{clean(root);}
+});
+test('Unix server waits for peer half-close before persisting first frame',
+ {skip:process.platform!=='linux'},async()=>{
+ const root=fixture();let server=null;
+ try{
+  server=await startTask25FixtureIpc(root);
+  const response=await new Promise((resolveResponse,reject)=>{
+   const socket=createConnection(server.path);let output='';
+   socket.on('error',reject);socket.on('data',b=>output+=b.toString());
+   socket.on('connect',async()=>{
+    socket.write(request(1)+'\n');
+    // Deliberately keep the stream open after a syntactically complete frame.
+    await new Promise(resolveDelay=>setTimeout(resolveDelay,50));
+    try{assert.equal(observeTask25(root).sequence,0);}
+    catch(e){socket.destroy();reject(e);return;}
+    socket.end(request(1)+'\n');
+   });
+   socket.on('end',()=>{
+    try{resolveResponse(JSON.parse(output.trim()));}catch(e){reject(e);}
+   });
+  });
+  assert.equal(response.status,'HOLD');
+  assert.equal(observeTask25(root).sequence,0);
+ }finally{if(server)await server.close();clean(root);}
+});
+test('Unix server handles one fully half-closed valid message',
+ {skip:process.platform!=='linux'},async()=>{
+ const root=fixture();let server=null;
+ try{
+  server=await startTask25FixtureIpc(root);
+  const accepted=await sendTask25FixtureRequest(server.path,request(1));
+  assert.equal(accepted.status,'RECORDED_LOCAL_ONLY');
+  assert.equal(observeTask25(root).sequence,1);
+ }finally{if(server)await server.close();clean(root);}
 });
 test('no production credentials, host authority or guest-sending functions',()=>{
  for(const file of ['scripts/acceptance/strigunov-task25-local-ledger.mjs',
