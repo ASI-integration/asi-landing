@@ -25,7 +25,7 @@ Ran focused tests from all six candidate sources in the same combined tree, on W
 - Python 26: **3 PASS / 20 Linux-only SKIP / 0 FAIL** (23 total).
 - Python 27: **25 PASS / 3 POSIX-only SKIP / 0 FAIL** (28 total).
 - **Total available combined Windows cases: 120 PASS / 29 expected platform skips / 0 FAIL**, out of 149.
-- Previously executed **individual** PR Linux jobs passed with all their Linux-native cases; **one Linux runner checking the assembled six-PR candidate has NOT_RUN**, so no claim of combined Linux acceptance is made.
+- **Composite Linux acceptance independently executed and PASS:** [GitHub Actions run 38611862046](https://github.com/ASI-integration/asi-landing/actions/runs/38611862046), single unprivileged GitHub-hosted Ubuntu runner and exact six pinned heads. All **149/149 focused cases PASS, 0 skipped, 0 failed**: Node Tasks22–25 98/98; Python Task26 23/23; Python Task27 28/28. Combined checkout yielded exactly 27 disjoint paths and clean diff. This proves the test sources coexist, NOT a running unified custodian.
 - No new network/service/host operations and no real PostgreSQL replay occurred in Task28.
 
 ## Integration findings, prioritized
@@ -46,10 +46,10 @@ Ran focused tests from all six candidate sources in the same combined tree, on W
 
 1. **Keep production and live guest sends closed.** `CLOUD_CUSTODIAN_INSTALLED=NO`, `OWNER_AUTHORITY=BLOCK`, `PHASE2_NATIVE=NOT_RUN`, `canSend=false`, `PILOT=NOT_LIVE`. Hetzner project `Default` contains the existing ASI runtime and landing servers; do not repurpose them as test hosts. `ASI-Lab` was empty in the user's screenshot.
 2. Existing PRs #440–445 are **individually source/fixture CI green and file-disjoint**; they are **not** a complete custodian. They may be proposed for ordered code-only consolidation, but only after a separate exact owner grant for merge per `docs/agent-os/AUTONOMY_POLICY.md`. No permission is implied from this audit, from GitHub checkmarks, or from the user's request to audit.
-3. Before *any* merge proposal, prepare a **fresh full composite Linux acceptance** on a disposable GitHub runner using the six exact heads, validate the final combined tree and agree on the module/interface gap and source SHA after consolidation. Avoid automatic merging of six source candidates into a live release.
+3. **Composite Linux source acceptance now PASS** at run 38611862046. Before *any* merge proposal, agree on the real module/interface integration gap, review the final source SHA after any consolidation and run tests again on that reviewed head. Avoid automatically merging six unrelated source candidates into a live release.
 4. Next engineering deliverable is a single restricted, review-pinned service architecture that integrates Linux peer credentials, bounded IPC, owner-protected durable one-use ledger and held authority, with separate failure/rollback proofs. Do not connect an agent-controlled artifact to operator credentials.
 5. **Gate29, separately:** on an independently controlled, owner-approved and cost-approved isolated cloud host, test real separate UID/GID unauthorized clients, protected binary/config/vault and durable restart, one-use Phase2 synthetic PostgreSQL receipt, revocation, and cleanup. Only then consider separately gated real pilot consent/send readiness.
 
 ## Final Task28 outcome
 
-**Audit result:** 6 PRs / 27 disjoint paths / 120 Windows-applicable tests passed / all six exact-head individual GitHub CI success. **Composite runnable custodian = BLOCK**. Task27 is not the finishing line; additional integration and physical acceptance work is materially required. **No merges, production modifications or live messages.**
+**Audit result:** 6 PRs / 27 disjoint paths / 120 Windows-applicable tests passed plus **149/149 Linux composite source tests PASS** / all six exact-head individual GitHub CI success. **Composite runnable custodian = BLOCK**. Task27 is not the finishing line; additional integration and physical acceptance work is materially required. **No merges, production modifications or live messages.**
