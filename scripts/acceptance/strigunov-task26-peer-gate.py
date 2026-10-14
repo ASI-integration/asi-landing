@@ -163,7 +163,7 @@ class DisposablePeerGate:
                 data = b""
                 read_error = None
                 try:
-                    while len(data) <= MAX_REQUEST_BYTES:
+                    while not self._stop.is_set() and len(data) <= MAX_REQUEST_BYTES:
                         chunk = conn.recv(512)
                         if not chunk:
                             break
