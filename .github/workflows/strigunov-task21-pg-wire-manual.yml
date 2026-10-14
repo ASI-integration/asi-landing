@@ -1,0 +1,72 @@
+name: Strigunov Task21 synthetic P13 lost COMMIT (manual)
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: 'Type TASK21_SYNTHETIC_LOST_COMMIT_NO_GUEST_SEND'
+        required: true
+        type: string
+      reviewed_sha:
+        description: 'Exact reviewed and protected main SHA containing all Task21 sources'
+        required: true
+        type: string
+      postgres_image:
+        description: 'Exact pinned official postgres17 image digest'
+        required: true
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: strigunov-task21-p13-lab
+  cancel-in-progress: false
+jobs:
+  native-wire:
+    if: github.actor == 'ASI-integration' && github.repository == 'ASI-integration/asi-landing' && github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      CONFIRM: ${{ inputs.confirmation }}
+      REVIEWED_SHA: ${{ inputs.reviewed_sha }}
+      PG_IMAGE: ${{ inputs.postgres_image }}
+    steps:
+      - name: Trusted actor and source admission before checkout
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_ACTOR" == "ASI-integration" && "$GITHUB_ACTOR_ID" == "207600140" ]]
+          [[ "$GITHUB_TRIGGERING_ACTOR" == "ASI-integration" && "$GITHUB_RUN_ATTEMPT" == "1" ]]
+          [[ "$REVIEWED_SHA" =~ ^[a-f0-9]{40}$ ]]
+          [[ "$REVIEWED_SHA" == "$GITHUB_SHA" && "$REVIEWED_SHA" == "$GITHUB_WORKFLOW_SHA" ]]
+          [[ "$CONFIRM" == "TASK21_SYNTHETIC_LOST_COMMIT_NO_GUEST_SEND" ]]
+          [[ "$PG_IMAGE" == "postgres:17@sha256:2d2b8998d31037bf721cfdf764d76ba74171b4fab3431b7f72c27c56ddbdf9e3" ]]
+          [[ "$RUNNER_ENVIRONMENT" == "github-hosted" && "$RUNNER_OS" == "Linux" ]]
+      - name: Checkout reviewed sources
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Require exact owner-approved source bytes
+        run: node scripts/acceptance/strigunov-task21-wire-lab.mjs --preflight
+      - name: Unit wire framing and non-replay contract
+        run: node --test scripts/__tests__/strigunov-task21-wire.test.mjs
+      - name: Install exact locked dependencies without lifecycle scripts
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: One native PostgreSQL17 disposable wire fault
+        run: node scripts/acceptance/strigunov-task21-wire-lab.mjs
+      - name: Cancelled job owned-container cleanup only
+        if: always()
+        run: |
+          set -euo pipefail
+          name="strig-t21-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          if [ -n "$(docker ps -aq --filter "name=^/${name}$")" ]; then
+            node scripts/acceptance/strigunov-task21-wire-lab.mjs --cleanup
+          fi
+      - name: Upload redacted synthetic-only result
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: strigunov-task21-${{ github.run_id }}-${{ github.run_attempt }}
+          path: strigunov-task21-result.json
+          if-no-files-found: warn
+          retention-days: 7
