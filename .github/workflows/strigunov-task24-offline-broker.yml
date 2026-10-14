@@ -1,0 +1,32 @@
+name: Strigunov Task24 offline custodian protocol
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/strigunov-task24-offline-broker.yml'
+      - 'scripts/acceptance/strigunov-task24-offline-broker.mjs'
+      - 'scripts/__tests__/strigunov-task24-offline-broker.test.mjs'
+      - 'docs/ops/strigunov-task24-cloud-handoff.json'
+      - 'docs/ops/strigunov-task24-offline-broker-contract.md'
+permissions:
+  contents: read
+jobs:
+  offline-protocol:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Checkout untrusted PR merge candidate without persisted credentials
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+          fetch-depth: 2
+      - name: Source syntax and non-executable deployment manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check scripts/acceptance/strigunov-task24-offline-broker.mjs
+          node --check scripts/__tests__/strigunov-task24-offline-broker.test.mjs
+          node -e "const m=require('./docs/ops/strigunov-task24-cloud-handoff.json'); if(m.kind!=='TASK24_NON_EXECUTABLE_CLOUD_HANDOFF'||m.projectProvisioned!==false||m.dedicatedServerProvisioned!==false||m.guestMessagesPermitted!==false||m.phase2!=='BLOCK')process.exit(1)"
+      - name: Focused replay and unknown-COMMIT denial tests only
+        run: node --test scripts/__tests__/strigunov-task24-offline-broker.test.mjs
+      - name: Verify full PR diff
+        run: git diff --check HEAD^1 HEAD
