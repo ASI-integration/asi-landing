@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto';
 import { describe, it, expect } from 'vitest';
 import { haversineMeters } from '../geometry';
 const root=path.resolve('docs/location/evidence/2026-10-15');
-const manifest=JSON.parse(fs.readFileSync(path.join(root,'manifest.json'),'utf8'));
+const manifest: { file: string; sha256: string }[]=JSON.parse(fs.readFileSync(path.join(root,'manifest.json'),'utf8'));
 const matrix=JSON.parse(fs.readFileSync(path.join(root,'evidence-matrix.json'),'utf8'));
 describe('Pinned real-world geographic observations (not demand acceptance)',()=>{
  it.each(manifest)('source bytes match SHA256: $file',(entry:{file:string;sha256:string})=>{
