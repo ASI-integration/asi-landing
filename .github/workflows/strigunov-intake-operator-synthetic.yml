@@ -1,0 +1,40 @@
+name: Strigunov isolated lead-to-operator synthetic E2E
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/strigunov-intake-operator-synthetic.yml'
+      - 'src/app/api/early-access/leads/__tests__/strigunov-synthetic-e2e.test.ts'
+      - 'docs/ops/strigunov-protected-custodian-and-booking-ops-gates-20261015.md'
+permissions:
+  contents: read
+jobs:
+  local-durable-surrogate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - name: Checkout PR source without persistent GitHub auth
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+          fetch-depth: 2
+      - name: Setup Node for focused single-file acceptance
+        uses: actions/setup-node@1d0ff0b0385f72a1ca05478113f0e8a8c580d5f
+        with:
+          node-version: 20
+          cache: npm
+      - name: Install exact locked project dependencies
+        run: npm ci
+      - name: Actual public POST to authorized operator GET with temporary fsync CRM
+        env:
+          NODE_ENV: test
+          DRY_RUN_TELEGRAM_OUTBOUND: 'true'
+          ALLOW_REAL_TELEGRAM_SYNTHETIC: 'false'
+          EMAIL_AUTO_SEND: 'false'
+          EMAIL_DRAFT_ONLY: 'true'
+          LLM_ENABLED: 'false'
+          YOOKASSA_ENABLED: 'false'
+        run: npx vitest run src/app/api/early-access/leads/__tests__/strigunov-synthetic-e2e.test.ts --reporter=verbose
+      - name: Lint only new scenario file
+        run: npx eslint src/app/api/early-access/leads/__tests__/strigunov-synthetic-e2e.test.ts
+      - name: Verify diff and avoid secret or real guest side-effects
+        run: git diff --check HEAD^1 HEAD
