@@ -2,6 +2,19 @@
 
 **Verdict: SOURCE-COMPOSITE TEST PASS / REAL CUSTODIAN INTEGRATION BLOCK.** This is a read-only code/evidence audit. No PR merge, owner grant, production deployment, Hetzner project/server mutation, new secret, real guest send or SQL execution was performed.
 
+## Task28 continuation — October 15, 2026 (supersedes original six-PR scope)
+
+The October 14 audit below records the correct historical **six-PR** source result. On October 15, the user requested continuing Task28 after a real technical Linux service was developed and separately reviewed.
+
+**Seventh pinned PR:**
+- [#448 — executable technical Linux custodian](https://github.com/ASI-integration/asi-landing/pull/448), exact head `313d00dc92014fb10866cca3c8e7fec0c2269598`, 7 added files; actual nonroot Linux `init / serve / client` process, kernel-peer-credential checks, bounded Unix IPC, persistent journal/failure handling and deterministic executable Python release tar.
+- Individual [Linux service acceptance run 38690604351](https://github.com/ASI-integration/asi-landing/actions/runs/38690604351) **27/27 focused cases PASS**, plus exact-head PR Validation PASS. Independent CodeRabbit final status SUCCESS; both identified issues (journal upper bound and sparse/oversize archive) fixed and resolved.
+- A real executable technical service is now present in PR448 **but is not installed, independently owned, signed or authorized**. Its CLI merely records synthetic technical events, does not issue real operator receipts, cannot approve or send guest messages and does not connect to Booking Ops/CRM/production.
+
+**New Task28 composite CI:** `.github/workflows/strigunov-task28-composite-linux.yml` pins PR heads #440–445 **and #448**, with `34` disjoint added paths (27+7), and runs four Node source suites, two earlier Python fixtures and two real executable-service/release suites on one disposable Linux runner. The expected test count is **176** (98 + 23 + 28 + 17 + 10). This additional seven-PR combined acceptance must pass before being called complete; individual green CI is not a substitute.
+
+**Revised P0 no-go verdict:** owner-controlled custody, physical distinct-UID access separation, owner-signed immutable release, real one-use native Phase2 receipt, and operational Booking Ops/CRM/guest-communication end-to-end connectivity are NOT implemented or attested. Do **not** mistake a real technical process for production authorization or pilot readiness. No merge to `main`, no installation on existing Hetzner Default servers, no cloud provisioning or live guest sends.
+
 ## Immutable audit reference
 - Protected `main`: `9bc8175aa772e92366c7a2363e26900a042fc3ce` (Task21 technical lost-COMMIT baseline).
 - Tasks 19 and 21 already had actual isolated native PostgreSQL technical acceptance: [Task19, 30/30 Phase1](https://github.com/ASI-integration/asi-landing/actions/runs/38573727019), [Task21, 3/3 actual P13 wire fault](https://github.com/ASI-integration/asi-landing/actions/runs/38582427316). Neither grants real operator authority.
