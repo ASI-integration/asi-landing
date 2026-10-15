@@ -4,7 +4,10 @@ on:
     paths:
       - 'scripts/acceptance/strigunov-task29-30*'
       - 'src/lib/booking-ops/__tests__/strigunov-task30-cycle.test.ts'
-      - 'src/lib/early-access/public-pilot-lead.ts'
+      - 'src/lib/early-access/*.ts'
+      - 'src/lib/crm/repository.ts'
+      - 'src/app/api/early-access/leads/route.ts'
+      - 'supabase/migrations/20261015000001_public_pilot_lead_receipts.sql'
       - '.github/workflows/strigunov-task29-30.yml'
   workflow_dispatch:
 permissions:
@@ -55,7 +58,7 @@ jobs:
       - name: Focused component scenarios
         run: |
           mkdir -p task2930-results
-          node node_modules/vitest/vitest.mjs run src/lib/booking-ops/__tests__/strigunov-task30-cycle.test.ts --reporter=json --outputFile=task2930-results/components.json
+          node node_modules/vitest/vitest.mjs run src/lib/booking-ops/__tests__/strigunov-task30-cycle.test.ts src/app/api/early-access/leads/__tests__/route.test.ts --reporter=json --outputFile=task2930-results/components.json
       - run: npm run typecheck
       - name: Build real Next production application without service credentials
         run: npm run build
