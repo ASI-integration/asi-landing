@@ -1,0 +1,74 @@
+name: Task29B PostgREST real HTTP CRM gate
+on:
+  pull_request:
+    paths:
+      - 'scripts/acceptance/strigunov-task29b-postgrest.mjs'
+      - '.github/workflows/strigunov-task29b-postgrest.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  postgrest-native-http:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:17@sha256:2d2b8998d31037bf721cfdf764d76ba74171b4fab3431b7f72c27c56ddbdf9e3
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: task29b_ephemeral_password
+          POSTGRES_DB: task29b
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d task29b"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      CI: 'true'
+      STRIGUNOV_SYNTHETIC_ONLY: 'YES'
+      TASK29B_DATABASE_URL: postgres://postgres:task29b_ephemeral_password@127.0.0.1:5432/task29b
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Bootstrap isolated roles and real source schema
+        run: |
+          node - <<'NODE'
+          const pg=require('pg');
+          (async()=>{
+            const c=new pg.Client({connectionString:process.env.TASK29B_DATABASE_URL});
+            await c.connect();
+            try {
+              await c.query("CREATE SCHEMA auth");
+              await c.query("CREATE FUNCTION auth.role() RETURNS text LANGUAGE sql STABLE AS $$ SELECT current_setting('request.jwt.claim.role',true) $$");
+              const {readFileSync}=require('node:fs');
+              await c.query(readFileSync('supabase/migrations/20260619000001_crm_early_access_v1.sql','utf8'));
+              await c.query("CREATE ROLE service_role NOLOGIN");
+              await c.query("CREATE ROLE task29b_authenticator LOGIN NOINHERIT PASSWORD 'task29b_ci_only'");
+              await c.query("GRANT service_role TO task29b_authenticator");
+              await c.query("GRANT USAGE ON SCHEMA public TO service_role");
+              await c.query("GRANT SELECT,INSERT,UPDATE,DELETE ON public.crm_contacts TO service_role");
+            } finally { await c.end(); }
+          })().catch(e=>{console.error(e);process.exitCode=1});
+          NODE
+      - name: Run isolated PostgREST container
+        run: |
+          docker run -d --name task29b-postgrest --network host \
+            -e PGRST_DB_URI='postgres://task29b_authenticator:task29b_ci_only@127.0.0.1:5432/task29b' \
+            -e PGRST_DB_SCHEMAS=public \
+            -e PGRST_DB_ANON_ROLE=task29b_authenticator \
+            -e PGRST_JWT_SECRET='task29b-ephemeral-jwt-only-123456789012345678901234' \
+            -e PGRST_SERVER_PORT=33000 \
+            postgrest/postgrest:v12.2.8
+      - name: Real PostgREST HTTP insert and operator-like readback
+        run: node scripts/acceptance/strigunov-task29b-postgrest.mjs
+      - name: Stop isolated PostgREST
+        if: always()
+        run: docker rm -f task29b-postgrest 2>/dev/null || true
