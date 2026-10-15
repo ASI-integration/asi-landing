@@ -377,6 +377,7 @@ export function normalizeInboundBookingRequest(
 }
 
 function publicWebValidationError(body: Record<string, unknown>): string | null {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return PUBLIC_WEB_FORBIDDEN_MESSAGE;
   return Object.keys(body).some((field) => !PUBLIC_WEB_ALLOWED_FIELDS.has(field))
     ? PUBLIC_WEB_FORBIDDEN_MESSAGE
     : null;
