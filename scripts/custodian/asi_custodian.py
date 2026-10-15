@@ -206,6 +206,8 @@ def apply(root: Path, config: dict, request: dict) -> dict:
         return response("TECHNICAL_READBACK", "NOT_OWNER_ATTESTED", seq=seq, state=state, lastHash=prev)
     if state != "OPEN":
         return response("HOLD", "UNKNOWN_COMMIT_OR_CORRUPTION", seq=seq, state=state)
+    if seq >= MAX_EVENTS:
+        return response("HOLD", "JOURNAL_FULL", seq=seq, state=state)
     if request["seq"] != seq + 1 or request["requestId"] in seen:
         return response("HOLD", "REPLAY_OR_GAP", seq=seq)
     event = {"v": 1, "runId": config["runId"], "seq": request["seq"],
