@@ -22,6 +22,9 @@ export type PublicPilotLeadResult =
   | { ok: false; message: string };
 
 export function normalizePublicPilotLead(body: PublicPilotLeadInput): PublicPilotLeadResult {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    return { ok: false, message: 'Не удалось проверить заявку.' };
+  }
   if (typeof body.website !== 'string' && body.website !== undefined) {
     return { ok: false, message: 'Не удалось проверить заявку.' };
   }

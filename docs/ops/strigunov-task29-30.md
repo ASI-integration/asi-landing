@@ -1,0 +1,12 @@
+# Task29–30 isolated acceptance
+This draft extends PR453; no merge or production deployment is authorized.
+Task29 uses the real production Next HTTP routes, real iron-session sealed test cookies, a transparent Supabase REST-prefix adapter, actual PostgREST and PostgreSQL. All execution containers share a job-owned INTERNAL Docker network with no published ports. Images/actions are immutable pins; credentials are fresh in-memory fixtures only, never repository secrets or GITHUB_ENV exports. The Next child inherits only an explicit environment allowlist. The harness is independently reviewed before publication; exact commit and byte pins live in the owner evidence folder.
+
+The earlier rejection wording is unavailable. This is the explicitly allowed independently reviewed test-only alternative, not permission to bypass any renewed denial. Stop on a renewed policy rejection.
+
+Production-equivalent NODE_ENV and explicit operator allowlist are required. Fixture cookies prove cryptographic decoding/authorization, not login/OAuth issuance, browser Secure-cookie behavior or durable revocation. Queue optional dependency errors are enumerated; they must not be interpreted as full Booking Ops success. NOLOGIN plus terminating only the lab authenticator's sessions tests database connection unavailability, not a server crash.
+Restart replay currently exposes process-local dedup: report BLOCK if a second row is inserted. No successful CI claim closes that product blocker. Null anonymous JSON is rejected with the existing generic message (focused RED then GREEN).
+
+Task30 currently adds 29 real-component scenarios for intake validation, lifecycle, alerts, drafts, physical readiness, quota, clock boundaries and failure handling. S25/S26 use explicit persistence callbacks as stubs; serialized replay is not database recovery. No mock database/auth adapter is used to claim native success. A durable Booking Ops extension is being investigated separately. Full E2E remains incomplete until real operator actions, communication persistence, physical services and durable closeout are jointly proven.
+
+Run locally only the focused component file, typecheck, touched-file lint and lab --plan. Native harness is GitHub-hosted CI only, attempt1, exact reviewed head, owner actor/ID/triggerer and PR453 provenance. No automatic retry. Cleanup removes exact owned container IDs and private network; fallback runs always. Upload only sanitized JSON.
