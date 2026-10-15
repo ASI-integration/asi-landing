@@ -1,0 +1,584 @@
+{
+  "schema": "asi.private-course-coverage.v1",
+  "archiveSHA256": "cbc550bb2fd6ca8d12fe5cc1de39871b06c89954fd44c98247c92215b77361ca",
+  "reviewDate": "2026-10-15",
+  "pdfFiles": 58,
+  "docFiles": 5,
+  "pdfPages": 580,
+  "uniquePdfPages": 565,
+  "wordComputedPages": 21,
+  "files": [
+    {
+      "id": "C00",
+      "extension": ".doc",
+      "sha256": "b08dd358fc6edd8125ea1bde96da0f5e65be11ea1e998d6dab6d186c16ddac2d",
+      "pages": 2,
+      "duplicateOf": null,
+      "reviewer": "root",
+      "reviewStatus": "FULL_DOC_TEXT_TABLE_REVIEW"
+    },
+    {
+      "id": "C01",
+      "extension": ".doc",
+      "sha256": "f6206a7b119b87e7fd07dd5d5490c690b08ea946013168bf5811e1f754f69e7c",
+      "pages": 2,
+      "duplicateOf": null,
+      "reviewer": "root",
+      "reviewStatus": "FULL_DOC_TEXT_TABLE_REVIEW"
+    },
+    {
+      "id": "C02",
+      "extension": ".doc",
+      "sha256": "5500cd0b19be75f47a7bb3fe1dc6da319598a19f809e6beaf110e60d992f6df8",
+      "pages": 8,
+      "duplicateOf": null,
+      "reviewer": "root",
+      "reviewStatus": "FULL_DOC_TEXT_TABLE_REVIEW"
+    },
+    {
+      "id": "C03",
+      "extension": ".doc",
+      "sha256": "442433963c65fa936c1b3347a4cd52ef9aea85afdd4a2d848626844770809135",
+      "pages": 7,
+      "duplicateOf": null,
+      "reviewer": "root",
+      "reviewStatus": "FULL_DOC_TEXT_TABLE_REVIEW"
+    },
+    {
+      "id": "C04",
+      "extension": ".pdf",
+      "sha256": "1f85cf8a928f2f4b47a60db6737eeb3cdd037e21bbd053eb2788bf7d6a4c5ea1",
+      "pages": 1,
+      "duplicateOf": null,
+      "reviewer": "sensitive-course",
+      "reviewStatus": "FULL_PAGE_VISUAL_REVIEW"
+    },
+    {
+      "id": "C05",
+      "extension": ".doc",
+      "sha256": "dafc49b44713a59ea2cf46cd89c829e4c4004a6303e67d2bbc29aea0dc673aa8",
+      "pages": 2,
+      "duplicateOf": null,
+      "reviewer": "root",
+      "reviewStatus": "FULL_DOC_TEXT_TABLE_REVIEW"
+    },
+    {
+      "id": "C06",
+      "extension": ".pdf",
+      "sha256": "d51c81b3b096fda6aada1a862bc87bca1ecb79fe846319ca5c2a26484dd374c7",
+      "pages": 4,
+      "duplicateOf": null,
+      "reviewer": "course-C06-C38",
+      "reviewStatus": "FULL_TEXT_AND_PAGE_VISUAL_REVIEW"
+    },
+    {
+      "id": "C07",
+      "extension": ".pdf",
+      "sha256": "073d2b14cd20cd463277e3df60d636d309092cc5a8160c03066b8bc1049440d4",
+      "pages": 1,
+      "duplicateOf": null,
+      "reviewer": "sensitive-course",
+      "reviewStatus": "FULL_PAGE_VISUAL_REVIEW"
+    },
+    {
+      "id": "C08",
+      "extension": ".pdf",
+      "sha256": "c6a33c108903b087ba1d95a04690125cad75280a92c4cd3798af536c33a3112a",
+      "pages": 5,
+      "duplicateOf": null,
+      "reviewer": "course-C06-C38",
+      "reviewStatus": "FULL_TEXT_AND_PAGE_VISUAL_REVIEW"
+    },
+    {
+      "id": "C09",
+      "extension": ".pdf",
+      "sha256": "a1ea699820f1790433ec7ad27d613f8fbb02762a975a755d994f1dfbbf363e6f",
+      "pages": 4,
+      "duplicateOf": null,
+      "reviewer": "course-C06-C38",
+      "reviewStatus": "FULL_TEXT_AND_PAGE_VISUAL_REVIEW"
+    },
+    {
+      "id": "C10",
+      "extension": ".pdf",
+      "sha256": "56733430b302f8c1cc969c7c59545e034ff0f67cbc420e6b018c400fb4a45849",
+      "pages": 4,
+      "duplicateOf": null,
+      "reviewer": "course-C06-C38",
+      "reviewStatus": "FULL_TEXT_AND_PAGE_VISUAL_REVIEW"
+    },
+    {
+      "id": "C11",
+      "extension": ".pdf",
+      "sha256": "fcff9f04023f2f0cdf1f55dde755bbef76ac21641acac34118dd88cfb20ff693",
+      "pages": 10,
+      "duplicateOf": null,
+      "reviewer": "sensitive-course",
+      "reviewStatus": "FULL_PAGE_VISUAL_REVIEW"
+    },
+    {
+      "id": "C12",
+      "extension": ".pdf",
+      "sha256": "a99b0d2ccbfa36748a7a6fcf93cb8542b1731f181d02ed4ab0af29b2af5754fd",
+      "pages": 1,
+      "duplicateOf": null,
+      "reviewer": "sensitive-course",
+      "reviewStatus": "FULL_PAGE_VISUAL_REVIEW"
+    },
+    {
+      "id": "C13",
+      "extension": ".pdf",
+      "sha256": "dbc099e22e625f92c1c27d0166ecb9e81cadee356353ddbe000f0cd815d27c05",
+      "pages": 2,
+      "duplicateOf": null,
+      "reviewer": "course-C06-C38",
+      "reviewStatus": "FULL_TEXT_AND_PAGE_VISUAL_REVIEW"
+    },
+    {
+      "id": "C14",
+      "extension": ".pdf",
+      "sha256": "f7461d0b66afe7c587e07e2c324983f80d0367b5c858cfd5f941c531aa8c636c",
+      "pages": 4,
+      "duplicateOf": null,
+      "reviewer": "course-C06-C38",
+      "reviewStatus": "FULL_TEXT_AND_PAGE_VISUAL_REVIEW"
+    },
+    {
+      "id": "C15",
+      "extension": ".pdf",
+      "sha256": "f9ffef0bf148b41b22ab9f10184b91697dfd7f57705385e12bf39dd58fbd3f7d",
+      "pages": 9,
+      "duplicateOf": null,
+      "reviewer": "course-C06-C38",
+      "reviewStatus": "FULL_TEXT_AND_PAGE_VISUAL_REVIEW"
+    },
+    {
+      "id": "C16",
+      "extension": ".pdf",
+      "sha256": "42fe9a84dc3292f2eebb55b66d435deec310bbc4f259d9d5caebb0a997c01c4d",
+      "pages": 1,
+      "duplicateOf": null,
+      "reviewer": "sensitive-course",
+      "reviewStatus": "FULL_PAGE_VISUAL_REVIEW"
+    },
+    {
+      "id": "C17",
+      "extension": ".pdf",
+      "sha256": "0142792b0291412921cba43f704cf9265467ec879ffb0a12aaf4a615ce8b177d",
+      "pages": 7,
+      "duplicateOf": null,
+      "reviewer": "course-C06-C38",
+      "reviewStatus": "FULL_TEXT_AND_PAGE_VISUAL_REVIEW"
+    },
+    {
+      "id": "C18",
+      "extension": ".pdf",
+      "sha256": "57c07ccfc4e1fcde68b06cb8906a7252feb50da0c35c277bb9eca51c5433f95c",
+      "pages": 6,
+      "duplicateOf": null,
+      "reviewer": "course-C06-C38",
+      "reviewStatus": "FULL_TEXT_AND_PAGE_VISUAL_REVIEW"
+    },
+    {
+      "id": "C19",
+      "extension": ".pdf",
+      "sha256": "5ecadecce66662b6fbaccf1bfd76a530142af37d5dd5ef6c5aa08e1b4172f9f0",
+      "pages": 1,
+      "duplicateOf": null,
+      "reviewer": "sensitive-course",
+      "reviewStatus": "FULL_PAGE_VISUAL_REVIEW"
+    },
+    {
+      "id": "C20",
+      "extension": ".pdf",
+      "sha256": "57e3c241c8e56129857debd7ddc95603279774b5f8b544dcb0ce3e218303b9fb",
+      "pages": 5,
+      "duplicateOf": null,
+      "reviewer": "course-C06-C38",
+      "reviewStatus": "FULL_TEXT_AND_PAGE_VISUAL_REVIEW"
+    },
+    {
+      "id": "C21",
+      "extension": ".pdf",
+      "sha256": "896455d723829546f6ad6eb7180408c75645eac03693debc070a596e26a56b78",
+      "pages": 1,
+      "duplicateOf": null,
+      "reviewer": "sensitive-course",
+      "reviewStatus": "FULL_PAGE_VISUAL_REVIEW"
+    },
+    {
+      "id": "C22",
+      "extension": ".pdf",
+      "sha256": "329705e5e0b1371cfe58fe1961e0cb4ef9d5ac390cd41d6f39694ab78974c432",
+      "pages": 4,
+      "duplicateOf": null,
+      "reviewer": "course-C06-C38",
+      "reviewStatus": "FULL_TEXT_AND_PAGE_VISUAL_REVIEW"
+    },
+    {
+      "id": "C23",
+      "extension": ".pdf",
+      "sha256": "448aebb0e7349037d6f9ae81bd3325929626251bb6f53f7d94f71804cad5a74e",
+      "pages": 3,
+      "duplicateOf": null,
+      "reviewer": "course-C06-C38",
+      "reviewStatus": "FULL_TEXT_AND_PAGE_VISUAL_REVIEW"
+    },
+    {
+      "id": "C24",
+      "extension": ".pdf",
+      "sha256": "64c5ff8f3c169f26b2c7d1b2b99a349aad2ee17c5e0b3ef12a349862a33e8b57",
+      "pages": 5,
+      "duplicateOf": null,
+      "reviewer": "course-C06-C38",
+      "reviewStatus": "FULL_TEXT_AND_PAGE_VISUAL_REVIEW"
+    },
+    {
+      "id": "C25",
+      "extension": ".pdf",
+      "sha256": "7ece4606b7cd98116dcd5f88e43987e4c96b8116fb30edae7e750ac07674f9b5",
+      "pages": 12,
+      "duplicateOf": null,
+      "reviewer": "course-C06-C38",
+      "reviewStatus": "FULL_TEXT_AND_PAGE_VISUAL_REVIEW"
+    },
+    {
+      "id": "C26",
+      "extension": ".pdf",
+      "sha256": "f871ec45027a5c698e73b5c2378c3fc187d109d7dec89b3627a5685cd18bc6f6",
+      "pages": 4,
+      "duplicateOf": null,
+      "reviewer": "course-C06-C38",
+      "reviewStatus": "FULL_TEXT_AND_PAGE_VISUAL_REVIEW"
+    },
+    {
+      "id": "C27",
+      "extension": ".pdf",
+      "sha256": "874620296b7467fc06ffa459f80cae90f78322cb21be1912e31fd8e57a7ff0ed",
+      "pages": 6,
+      "duplicateOf": null,
+      "reviewer": "course-C06-C38",
+      "reviewStatus": "FULL_TEXT_AND_PAGE_VISUAL_REVIEW"
+    },
+    {
+      "id": "C28",
+      "extension": ".pdf",
+      "sha256": "dff43a5727ba63c947ea46935fb3cc30a8406ec858838c96358d3cb4b1a4f517",
+      "pages": 4,
+      "duplicateOf": null,
+      "reviewer": "course-C06-C38",
+      "reviewStatus": "FULL_TEXT_AND_PAGE_VISUAL_REVIEW"
+    },
+    {
+      "id": "C29",
+      "extension": ".pdf",
+      "sha256": "78d0ea122bf7c15f000afb1b48cbc966710dff37f24c4183d029efec92e6b050",
+      "pages": 6,
+      "duplicateOf": null,
+      "reviewer": "course-C06-C38",
+      "reviewStatus": "FULL_TEXT_AND_PAGE_VISUAL_REVIEW"
+    },
+    {
+      "id": "C30",
+      "extension": ".pdf",
+      "sha256": "c4959ed0f61979bcdff56b30e27d749434aa3c521ef8d5d2290f5c20ff8e2bf3",
+      "pages": 5,
+      "duplicateOf": null,
+      "reviewer": "course-C06-C38",
+      "reviewStatus": "FULL_TEXT_AND_PAGE_VISUAL_REVIEW"
+    },
+    {
+      "id": "C31",
+      "extension": ".pdf",
+      "sha256": "a820a184738c6eff206ce509b1a632f5498e3451515f06f626173551aeb878e8",
+      "pages": 5,
+      "duplicateOf": null,
+      "reviewer": "course-C06-C38",
+      "reviewStatus": "FULL_TEXT_AND_PAGE_VISUAL_REVIEW"
+    },
+    {
+      "id": "C32",
+      "extension": ".pdf",
+      "sha256": "14e3a5ad4dfa9d10b98f28087ef3310af922d3f12212069133c204676c1d6a62",
+      "pages": 8,
+      "duplicateOf": null,
+      "reviewer": "course-C06-C38",
+      "reviewStatus": "FULL_TEXT_AND_PAGE_VISUAL_REVIEW"
+    },
+    {
+      "id": "C33",
+      "extension": ".pdf",
+      "sha256": "386c09f9bb84265beb15c7e746e32fa90441d324c8299f756f5be154ce383443",
+      "pages": 5,
+      "duplicateOf": null,
+      "reviewer": "course-C06-C38",
+      "reviewStatus": "FULL_TEXT_AND_PAGE_VISUAL_REVIEW"
+    },
+    {
+      "id": "C34",
+      "extension": ".pdf",
+      "sha256": "b90e1d1ae5de94795b64ae9f9c53aa626403c5c770b4567b79c1e082b55071da",
+      "pages": 5,
+      "duplicateOf": null,
+      "reviewer": "course-C06-C38",
+      "reviewStatus": "FULL_TEXT_AND_PAGE_VISUAL_REVIEW"
+    },
+    {
+      "id": "C35",
+      "extension": ".pdf",
+      "sha256": "49c5f2163f12a410deaca38db17b7ff5d055252fc5aec045756bfda963c89a1d",
+      "pages": 7,
+      "duplicateOf": null,
+      "reviewer": "course-C06-C38",
+      "reviewStatus": "FULL_TEXT_AND_PAGE_VISUAL_REVIEW"
+    },
+    {
+      "id": "C36",
+      "extension": ".pdf",
+      "sha256": "ae60764a814e270aa3efb4b3c730e71f1ff8fa28012286bad99bfbbc04c42eb8",
+      "pages": 5,
+      "duplicateOf": null,
+      "reviewer": "course-C06-C38",
+      "reviewStatus": "FULL_TEXT_AND_PAGE_VISUAL_REVIEW"
+    },
+    {
+      "id": "C37",
+      "extension": ".pdf",
+      "sha256": "12f768b40d2c6d472da6254fd4909231723199e097d22c6ab7fd2c824e6bd667",
+      "pages": 4,
+      "duplicateOf": null,
+      "reviewer": "course-C06-C38",
+      "reviewStatus": "FULL_TEXT_AND_PAGE_VISUAL_REVIEW"
+    },
+    {
+      "id": "C38",
+      "extension": ".pdf",
+      "sha256": "740262b45dfa0a9c0527071e5afbc45759d07c59400788e794b8efcf197dfd8e",
+      "pages": 5,
+      "duplicateOf": null,
+      "reviewer": "course-C06-C38",
+      "reviewStatus": "FULL_TEXT_AND_PAGE_VISUAL_REVIEW"
+    },
+    {
+      "id": "C39",
+      "extension": ".pdf",
+      "sha256": "789b43ae6676a6cbd8dfe754f850886def9b00f3a2d6de7a004e80278c42fd22",
+      "pages": 12,
+      "duplicateOf": null,
+      "reviewer": "course-later",
+      "reviewStatus": "FULL_TEXT_AND_PAGE_VISUAL_REVIEW"
+    },
+    {
+      "id": "C40",
+      "extension": ".pdf",
+      "sha256": "325d5fab8fc8446b93fe3e20c46b02c14c2fdfa792976f4d068bf4f3a490c942",
+      "pages": 25,
+      "duplicateOf": null,
+      "reviewer": "course-later",
+      "reviewStatus": "FULL_TEXT_AND_PAGE_VISUAL_REVIEW"
+    },
+    {
+      "id": "C41",
+      "extension": ".pdf",
+      "sha256": "1f5da7ffd3a5785e6915ed167c37aec1ae2d6e4a143766c6e418e8fa090b32ec",
+      "pages": 45,
+      "duplicateOf": null,
+      "reviewer": "course-later",
+      "reviewStatus": "FULL_TEXT_AND_PAGE_VISUAL_REVIEW"
+    },
+    {
+      "id": "C42",
+      "extension": ".pdf",
+      "sha256": "9f3cfc164cd8fa2249160856dbc517c16c5f64cd05a333fddabb81ae028fbcdc",
+      "pages": 10,
+      "duplicateOf": null,
+      "reviewer": "course-later",
+      "reviewStatus": "FULL_TEXT_AND_PAGE_VISUAL_REVIEW"
+    },
+    {
+      "id": "C43",
+      "extension": ".pdf",
+      "sha256": "ec84ee60dc24384181113c7c35b86d29bf66f03258c12f263a9ac2e4e7b5f995",
+      "pages": 11,
+      "duplicateOf": null,
+      "reviewer": "course-later",
+      "reviewStatus": "FULL_TEXT_AND_PAGE_VISUAL_REVIEW"
+    },
+    {
+      "id": "C44",
+      "extension": ".pdf",
+      "sha256": "cdfb3ba2ddaf2b25dc3db0ba1a4e56d81cebed722ea770dc6e7a1a50ae884b2e",
+      "pages": 5,
+      "duplicateOf": null,
+      "reviewer": "course-later",
+      "reviewStatus": "FULL_TEXT_AND_PAGE_VISUAL_REVIEW"
+    },
+    {
+      "id": "C45",
+      "extension": ".pdf",
+      "sha256": "7fc98e391da10171e3eca9537673586600ea45c01defe55f34569f7bffea8c67",
+      "pages": 19,
+      "duplicateOf": null,
+      "reviewer": "course-later",
+      "reviewStatus": "FULL_TEXT_AND_PAGE_VISUAL_REVIEW"
+    },
+    {
+      "id": "C46",
+      "extension": ".pdf",
+      "sha256": "788f919d4654442497eb0a37439365e035ad1d30881a98f59322bd9f3c1f57d8",
+      "pages": 12,
+      "duplicateOf": null,
+      "reviewer": "root",
+      "reviewStatus": "FULL_TEXT_AND_PAGE_VISUAL_REVIEW"
+    },
+    {
+      "id": "C47",
+      "extension": ".pdf",
+      "sha256": "4ef9405718f4c3989aceff13e0d146f1b1277023e0743a4994624608b1a182ba",
+      "pages": 7,
+      "duplicateOf": null,
+      "reviewer": "root",
+      "reviewStatus": "FULL_TEXT_AND_PAGE_VISUAL_REVIEW"
+    },
+    {
+      "id": "C48",
+      "extension": ".pdf",
+      "sha256": "a5ede028b194862d2e3af8f9e3c55fc04a79a6112635b4908f290f9847b8d092",
+      "pages": 30,
+      "duplicateOf": null,
+      "reviewer": "course-later",
+      "reviewStatus": "FULL_TEXT_AND_PAGE_VISUAL_REVIEW"
+    },
+    {
+      "id": "C49",
+      "extension": ".pdf",
+      "sha256": "79d15d35b2aaec9b6afb1a7c7b7c53b505c8dda89158b420cd50659c2c35d5b4",
+      "pages": 10,
+      "duplicateOf": null,
+      "reviewer": "root",
+      "reviewStatus": "FULL_TEXT_AND_PAGE_VISUAL_REVIEW"
+    },
+    {
+      "id": "C50",
+      "extension": ".pdf",
+      "sha256": "477d31a3c819f87132e43d3eb16790c32d6a3e2469e3bcc34865142ca8e56fec",
+      "pages": 16,
+      "duplicateOf": null,
+      "reviewer": "root",
+      "reviewStatus": "FULL_TEXT_AND_PAGE_VISUAL_REVIEW"
+    },
+    {
+      "id": "C51",
+      "extension": ".pdf",
+      "sha256": "1ec57917c2f73e7a021f6ac22cecc991b45ed78f3bafbbefd273bb0d5b8ef423",
+      "pages": 5,
+      "duplicateOf": null,
+      "reviewer": "course-later",
+      "reviewStatus": "FULL_TEXT_AND_PAGE_VISUAL_REVIEW"
+    },
+    {
+      "id": "C52",
+      "extension": ".pdf",
+      "sha256": "ca88eb029e5513cf9a0150dcf7cc5f0e255d5b49dd7994cc9730f5af2f617805",
+      "pages": 15,
+      "duplicateOf": null,
+      "reviewer": "course-later",
+      "reviewStatus": "FULL_TEXT_AND_PAGE_VISUAL_REVIEW"
+    },
+    {
+      "id": "C53",
+      "extension": ".pdf",
+      "sha256": "64d1eb770d69da2e9a2fff081934a6b2a8e5c136a2ad4da3d393d6a2b66e9b85",
+      "pages": 13,
+      "duplicateOf": null,
+      "reviewer": "root",
+      "reviewStatus": "FULL_TEXT_AND_PAGE_VISUAL_REVIEW"
+    },
+    {
+      "id": "C54",
+      "extension": ".pdf",
+      "sha256": "0d80b542d23fc29699b6958bbba79cb098885dfda18167357687c4c3c709e33d",
+      "pages": 12,
+      "duplicateOf": null,
+      "reviewer": "course-later",
+      "reviewStatus": "FULL_TEXT_AND_PAGE_VISUAL_REVIEW"
+    },
+    {
+      "id": "C55",
+      "extension": ".pdf",
+      "sha256": "ca88eb029e5513cf9a0150dcf7cc5f0e255d5b49dd7994cc9730f5af2f617805",
+      "pages": 15,
+      "duplicateOf": "C52",
+      "reviewer": "course-later",
+      "reviewStatus": "DUPLICATE_SHA_VERIFIED"
+    },
+    {
+      "id": "C56",
+      "extension": ".pdf",
+      "sha256": "4cd4b208d236666f93438bf3f9c37e5665b3bb950293647b004cb09243905eba",
+      "pages": 14,
+      "duplicateOf": null,
+      "reviewer": "course-later",
+      "reviewStatus": "FULL_TEXT_AND_PAGE_VISUAL_REVIEW"
+    },
+    {
+      "id": "C57",
+      "extension": ".pdf",
+      "sha256": "6cd310e3586f49534bf7a2c14c7d3b7d8f57806e3578261f14ba6cd67e3ad892",
+      "pages": 12,
+      "duplicateOf": null,
+      "reviewer": "course-later",
+      "reviewStatus": "FULL_TEXT_AND_PAGE_VISUAL_REVIEW"
+    },
+    {
+      "id": "C58",
+      "extension": ".pdf",
+      "sha256": "21e246ccce342aad38ffa3522fab5b4c8942205e8d82513493b676b698d87025",
+      "pages": 14,
+      "duplicateOf": null,
+      "reviewer": "root",
+      "reviewStatus": "FULL_TEXT_AND_PAGE_VISUAL_REVIEW"
+    },
+    {
+      "id": "C59",
+      "extension": ".pdf",
+      "sha256": "5692c452c68cbef482d349890383132cb56dbf1ed1a4114acd49f31fffb14c8d",
+      "pages": 32,
+      "duplicateOf": null,
+      "reviewer": "course-later",
+      "reviewStatus": "FULL_TEXT_AND_PAGE_VISUAL_REVIEW"
+    },
+    {
+      "id": "C60",
+      "extension": ".pdf",
+      "sha256": "25c701014d77cac2f69ad44bf7bbf36d3db7c719fa818a058faa89162a9a3e14",
+      "pages": 24,
+      "duplicateOf": null,
+      "reviewer": "course-later",
+      "reviewStatus": "FULL_TEXT_AND_PAGE_VISUAL_REVIEW"
+    },
+    {
+      "id": "C61",
+      "extension": ".pdf",
+      "sha256": "c8b59c01fa78c2f5a617a252db3a042823a0c3c9eb383a6c22535c313367e83d",
+      "pages": 29,
+      "duplicateOf": null,
+      "reviewer": "course-later",
+      "reviewStatus": "FULL_TEXT_AND_PAGE_VISUAL_REVIEW"
+    },
+    {
+      "id": "C62",
+      "extension": ".pdf",
+      "sha256": "07c96c97ba33371da9d6c40dbef9c39690a47b0f3315e04459174f7b786a81bc",
+      "pages": 34,
+      "duplicateOf": null,
+      "reviewer": "course-later",
+      "reviewStatus": "FULL_TEXT_AND_PAGE_VISUAL_REVIEW"
+    }
+  ],
+  "limitations": [
+    "No authenticity or current-law certification",
+    "Selected tiny embedded screenshots not independently verifiable",
+    "Linked material absent from ZIP not included"
+  ]
+}
