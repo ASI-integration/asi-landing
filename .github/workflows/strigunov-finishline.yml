@@ -4,6 +4,7 @@ on:
     paths:
       - 'scripts/acceptance/strigunov-finishline*'
       - 'scripts/custodian/**'
+      - 'src/app/api/auth/session/**'
       - 'scripts/__tests__/asi*test.py'
       - 'src/lib/booking-ops/**'
       - 'supabase/migrations/20261015103000_booking_knowledge_read_contract.sql'
@@ -68,7 +69,7 @@ jobs:
           python3 scripts/__tests__/asi_finishline_process.test.py > finishline-results/custodian-process.txt 2>&1
           python3 scripts/custodian/build_release.py --out finishline-results/asi-custodian-technical-v0.tar > finishline-results/archive.json
       - name: Focused intake validation
-        run: node node_modules/vitest/vitest.mjs run src/lib/booking-ops/__tests__/strigunov-finishline.test.ts --reporter=json --outputFile=finishline-results/components.json
+        run: node node_modules/vitest/vitest.mjs run src/lib/booking-ops/__tests__/strigunov-finishline.test.ts src/app/api/auth/session/__tests__/optional-subscription.test.ts --reporter=json --outputFile=finishline-results/components.json
       - run: npm run typecheck
       - name: Build real Next production application without service credentials
         run: npm run build

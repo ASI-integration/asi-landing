@@ -41,9 +41,10 @@ try {
     assert.equal(r.status, 200); assert.equal(r.body.result.intakeStatus, 'processed'); id = r.body.result.bookingId; assert.ok(id);
   });
   await check('browser-operator-refresh-and-select', async () => {
-    const refreshed = page.waitForResponse(r => r.url() === origin + '/api/dashboard/booking-ops' && r.request().method() === 'GET');
-    await page.getByRole('button', { name: 'Обновить', exact: true }).click();
-    const response = await refreshed; assert.equal(response.status(), 200);
+    const [response] = await Promise.all([
+      page.waitForResponse(r => r.url() === origin + '/api/dashboard/booking-ops' && r.request().method() === 'GET'),
+      page.getByRole('button', { name: 'Обновить', exact: true }).first().click(),
+    ]); assert.equal(response.status(), 200);
     const body = await response.json(); assert.ok(body.records.some(r => r.id === id && r.guestName === 'ASI Browser Synthetic'));
     await page.getByText('ASI Browser Synthetic', { exact: true }).first().waitFor();
     await page.getByText('ASI Browser Synthetic', { exact: true }).first().click();
@@ -60,6 +61,6 @@ try {
   status = 'PASS';
 } catch (error) { results.push({ id: stage, status: 'FAIL', errorType: error?.name, diagnostic: String(error?.message || '').replaceAll(process.env.LAB_SESSION_SECRET || 'NO_SECRET', '[REDACTED]').slice(0,1200) }); if(page) await page.screenshot({path:'finishline-results/browser-failure.png'}).catch(()=>{}); process.exitCode = 1; }
 finally {
-  if (browser) await browser.close();
   writeFileSync('finishline-results/browser.json', JSON.stringify({ source, status, results, noExternalSend: true, limits: ['intake submitted through real browser fetch, not a public intake form', 'operator UI rendered/refreshed/selected; session sealed by fixture, no login issuance', 'browser reload is not physical host reboot'] }, null, 2));
+  if (browser) await Promise.race([browser.close(), delay(5000).then(() => { throw Error('BROWSER_CLOSE_TIMEOUT'); })]);
 }
