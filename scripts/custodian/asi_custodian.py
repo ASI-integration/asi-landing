@@ -244,7 +244,26 @@ def kernel_peer(conn: socket.socket, config: dict) -> bool:
     return pid > 0 and uid > 0 and gid > 0 and uid == config["peerUid"] and gid == config["peerGid"]
 
 
-def serve(raw: str, enable_technical_append: bool = False) -> None:
+def safe_ipc_dir(raw: str, state: Path, peer_gid: int) -> Path:
+    """Separately provisioned socket namespace, never the private state tree.
+
+    setgid preserves the approved client group on the socket without granting
+    that group access to config/journal or permission to replace socket paths.
+    This group is local technical configuration, not owner attestation.
+    """
+    path = Path(raw).absolute()
+    if path == state or state in path.parents or path in state.parents:
+        raise Unsafe("IPC_STATE_OVERLAP")
+    if path.is_symlink() or path.resolve() != path:
+        raise Unsafe("IPC_NOT_REAL_DIR")
+    info = path.lstat()
+    if (not stat.S_ISDIR(info.st_mode) or info.st_uid != os.getuid()
+            or info.st_gid != peer_gid or stat.S_IMODE(info.st_mode) != 0o2710):
+        raise Unsafe("IPC_PERMISSIONS")
+    return path
+
+
+def serve(raw: str, enable_technical_append: bool = False, ipc_dir: str | None = None) -> None:
     if sys.platform != "linux" or os.getuid() == 0:
         raise Unsafe("LINUX_NONROOT_ONLY")
     root = safe_dir(raw)
@@ -256,18 +275,21 @@ def serve(raw: str, enable_technical_append: bool = False) -> None:
         if (info.st_dev, info.st_ino) != (lock_path.stat().st_dev, lock_path.stat().st_ino):
             raise Unsafe("LOCK_REPLACED")
         fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        _serve_locked(raw, enable_technical_append, fd, root.stat())
+        _serve_locked(raw, enable_technical_append, fd, root.stat(), ipc_dir)
     finally:
         os.close(fd)
 
 
-def _serve_locked(raw: str, enable_technical_append: bool, lock_fd: int, root_info) -> None:
+def _serve_locked(raw: str, enable_technical_append: bool, lock_fd: int, root_info,
+                  ipc_dir: str | None = None) -> None:
     if sys.platform != "linux" or os.getuid() == 0 or not hasattr(socket, "SO_PEERCRED"):
         raise Unsafe("LINUX_NONROOT_ONLY")
     root = safe_dir(raw)
     config = read_config(root)
     inspect_journal(root, config)
-    sock_path = root / "custodian.sock"
+    ipc_root = safe_ipc_dir(ipc_dir, root, config["peerGid"]) if ipc_dir else root
+    ipc_identity = ipc_root.stat()
+    sock_path = ipc_root / "custodian.sock"
     if sock_path.exists() or sock_path.is_symlink():
         raise Unsafe("STALE_SOCKET_MANUAL_REVIEW")
     halt = False
@@ -283,7 +305,9 @@ def _serve_locked(raw: str, enable_technical_append: bool, lock_fd: int, root_in
     try:
         listener.bind(str(sock_path))
         owned_socket = sock_path.lstat()
-        os.chmod(sock_path, 0o600)
+        os.chmod(sock_path, 0o660 if ipc_dir else 0o600)
+        if ipc_dir and sock_path.stat().st_gid != config["peerGid"]:
+            raise Unsafe("SOCKET_GROUP")
         listener.listen(8)
         listener.settimeout(0.2)
         while not halt:
@@ -319,6 +343,15 @@ def _serve_locked(raw: str, enable_technical_append: bool, lock_fd: int, root_in
                 else:
                     try:
                         current_root = safe_dir(raw).stat()
+                        # Config changes invalidate the running instance, including
+                        # UID/GID changes. Restart is explicit; never silently reload.
+                        if read_config(root) != config:
+                            raise Unsafe("CONFIG_CHANGED_RESTART_REQUIRED")
+                        if ipc_dir:
+                            current_ipc = safe_ipc_dir(ipc_dir, root, config["peerGid"]).stat()
+                            if ((current_ipc.st_dev, current_ipc.st_ino) !=
+                                    (ipc_identity.st_dev, ipc_identity.st_ino)):
+                                raise Unsafe("IPC_REPLACED")
                         lock_path = root / "serve.lock"
                         require_private_regular(lock_path)
                         lock_info = os.fstat(lock_fd)
@@ -375,6 +408,7 @@ def main() -> int:
     daemon = sub.add_parser("serve")
     daemon.add_argument("--state-dir", required=True)
     daemon.add_argument("--enable-technical-append", action="store_true")
+    daemon.add_argument("--ipc-dir", help="Explicit separate pre-provisioned technical socket directory")
     call = sub.add_parser("client")
     call.add_argument("--state-dir", required=True)
     call.add_argument("--op", choices=("status", "append"), required=True)
@@ -386,7 +420,7 @@ def main() -> int:
         if args.command == "init":
             value = initialize(args.state_dir, args.run_id, args.peer_uid, args.peer_gid)
         elif args.command == "serve":
-            serve(args.state_dir, args.enable_technical_append)
+            serve(args.state_dir, args.enable_technical_append, args.ipc_dir)
             return 0
         else:
             value = request_client(args.state_dir, args.op, args.seq, args.id, args.result)
