@@ -8,6 +8,7 @@ The operator-supplied peer UID is *not* independent owner attestation.
 from __future__ import annotations
 
 import argparse
+import fcntl
 from hashlib import sha256
 import json
 import os
@@ -201,6 +202,7 @@ def parse_request(raw: bytes, config: dict) -> dict:
 def apply(root: Path, config: dict, request: dict) -> dict:
     # One process intentionally handles only ONE connection at a time;
     # journal is fsync'ed before reporting success. No auto-reconciliation.
+    journal_identity = (root / "events.ndjson").lstat()
     seq, prev, seen, state = inspect_journal(root, config)
     if request["op"] == "status":
         return response("TECHNICAL_READBACK", "NOT_OWNER_ATTESTED", seq=seq, state=state, lastHash=prev)
@@ -219,6 +221,9 @@ def apply(root: Path, config: dict, request: dict) -> dict:
     try:
         info = os.fstat(fd)
         if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1 or info.st_uid != os.getuid():
+            raise Unsafe("JOURNAL_REPLACED")
+        if (stat.S_IMODE(info.st_mode) & 0o077 or
+                (info.st_dev, info.st_ino) != (journal_identity.st_dev, journal_identity.st_ino)):
             raise Unsafe("JOURNAL_REPLACED")
         body = canonical(event) + b"\n"
         if os.write(fd, body) != len(body):
@@ -239,7 +244,24 @@ def kernel_peer(conn: socket.socket, config: dict) -> bool:
     return pid > 0 and uid > 0 and gid > 0 and uid == config["peerUid"] and gid == config["peerGid"]
 
 
-def serve(raw: str) -> None:
+def serve(raw: str, enable_technical_append: bool = False) -> None:
+    if sys.platform != "linux" or os.getuid() == 0:
+        raise Unsafe("LINUX_NONROOT_ONLY")
+    root = safe_dir(raw)
+    lock_path = root / "serve.lock"
+    fd = os.open(lock_path, os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
+    try:
+        info = os.fstat(fd)
+        require_private_regular(lock_path)
+        if (info.st_dev, info.st_ino) != (lock_path.stat().st_dev, lock_path.stat().st_ino):
+            raise Unsafe("LOCK_REPLACED")
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        _serve_locked(raw, enable_technical_append, fd, root.stat())
+    finally:
+        os.close(fd)
+
+
+def _serve_locked(raw: str, enable_technical_append: bool, lock_fd: int, root_info) -> None:
     if sys.platform != "linux" or os.getuid() == 0 or not hasattr(socket, "SO_PEERCRED"):
         raise Unsafe("LINUX_NONROOT_ONLY")
     root = safe_dir(raw)
@@ -257,8 +279,10 @@ def serve(raw: str) -> None:
     signal.signal(signal.SIGTERM, stop)
     signal.signal(signal.SIGINT, stop)
     listener = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    owned_socket = None
     try:
         listener.bind(str(sock_path))
+        owned_socket = sock_path.lstat()
         os.chmod(sock_path, 0o600)
         listener.listen(8)
         listener.settimeout(0.2)
@@ -294,7 +318,17 @@ def serve(raw: str) -> None:
                     answer = response("HOLD", "KERNEL_PEER_DENIED")
                 else:
                     try:
-                        answer = apply(root, config, parse_request(collected, config))
+                        current_root = safe_dir(raw).stat()
+                        lock_path = root / "serve.lock"
+                        require_private_regular(lock_path)
+                        lock_info = os.fstat(lock_fd)
+                        if ((current_root.st_dev, current_root.st_ino) != (root_info.st_dev, root_info.st_ino) or
+                            (lock_path.stat().st_dev, lock_path.stat().st_ino) != (lock_info.st_dev, lock_info.st_ino)):
+                            raise Unsafe("STATE_REPLACED")
+                        request = parse_request(collected, config)
+                        answer = (response("HOLD", "APPEND_DISABLED")
+                                  if request["op"] == "append" and not enable_technical_append
+                                  else apply(root, config, request))
                     except (Unsafe, OSError):
                         answer = response("HOLD", "INVALID_REQUEST_OR_JOURNAL")
                 try:
@@ -303,8 +337,10 @@ def serve(raw: str) -> None:
                     pass
     finally:
         listener.close()
-        if sock_path.is_socket():
-            sock_path.unlink()
+        if owned_socket is not None and sock_path.is_socket():
+            current = sock_path.lstat()
+            if (current.st_dev, current.st_ino) == (owned_socket.st_dev, owned_socket.st_ino):
+                sock_path.unlink()
 
 
 def request_client(root: str, operation: str, seq: int, request_id: str, result: str) -> dict:
@@ -338,6 +374,7 @@ def main() -> int:
     init.add_argument("--peer-gid", type=int, required=True)
     daemon = sub.add_parser("serve")
     daemon.add_argument("--state-dir", required=True)
+    daemon.add_argument("--enable-technical-append", action="store_true")
     call = sub.add_parser("client")
     call.add_argument("--state-dir", required=True)
     call.add_argument("--op", choices=("status", "append"), required=True)
@@ -349,7 +386,7 @@ def main() -> int:
         if args.command == "init":
             value = initialize(args.state_dir, args.run_id, args.peer_uid, args.peer_gid)
         elif args.command == "serve":
-            serve(args.state_dir)
+            serve(args.state_dir, args.enable_technical_append)
             return 0
         else:
             value = request_client(args.state_dir, args.op, args.seq, args.id, args.result)

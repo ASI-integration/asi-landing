@@ -126,6 +126,8 @@ export async function lookupPropertyKnowledge(
       .maybeSingle();
     if (error) return { knowledge: null, match: 'error', error: error.message };
     if (data) return { knowledge: mapPropertyKnowledgeRow(data), match: 'property_id' };
+    // An authoritative ID must never resolve another property's access details by name.
+    return { knowledge: null, match: 'none' };
   }
 
   const propertyLabel = text(input.propertyLabel);
@@ -166,7 +168,7 @@ export async function lookupPropertyKnowledgeBatch(
     }
   }
 
-  const unresolved = inputs.filter((item) => !byId.has(text(item.propertyId) ?? ''));
+  const unresolved = inputs.filter((item) => !text(item.propertyId));
   const labels = [...new Set(unresolved.map((item) => text(item.propertyLabel)).filter(Boolean))] as string[];
   const byLabel = new Map<string, BookingOpsPropertyKnowledge[]>();
   if (labels.length > 0) {
@@ -193,6 +195,10 @@ export async function lookupPropertyKnowledgeBatch(
       continue;
     }
     if (result.has(item.key)) continue;
+    if (text(item.propertyId)) {
+      result.set(item.key, { knowledge: null, match: 'none' });
+      continue;
+    }
     const candidates = byLabel.get(text(item.propertyLabel) ?? '') ?? [];
     if (candidates.length === 1) {
       result.set(item.key, { knowledge: candidates[0], match: 'property_label' });

@@ -19,7 +19,7 @@ import time
 import build_release
 
 SCOPE = "ASI_STRIGUNOV_SYNTHETIC_ONLY_V1"
-SOURCE = "313d00dc92014fb10866cca3c8e7fec0c2269598"
+SOURCE = hashlib.sha256((Path(__file__).parent / "asi_custodian.py").read_bytes()).hexdigest()
 HEX = re.compile(r"^[0-9a-f]{64}$")
 
 
@@ -62,14 +62,33 @@ def sync_dir(path):
         os.close(fd)
 
 
+def bounded_bytes(path, limit):
+    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    try:
+        info = os.fstat(fd)
+        if not stat.S_ISREG(info.st_mode) or info.st_size > limit:
+            raise Denied("INPUT_SIZE_OR_TYPE")
+        with os.fdopen(fd, "rb", closefd=False) as source:
+            data = source.read(limit + 1)
+        if len(data) > limit:
+            raise Denied("INPUT_SIZE")
+        return data
+    finally:
+        os.close(fd)
+
+
 def verify_signature(public_key, data, signature):
-    # Private key is never accepted by this verifier.
+    # Capture bounded key bytes before invoking the verifier.
+    key = bounded_bytes(public_key, 4096)
+    if len(signature) != 64:
+        raise Denied("ED25519_SIGNATURE_SIZE")
     with tempfile.TemporaryDirectory(prefix="asi-verify-") as temp:
         d = Path(temp)
+        write_new(d / "public.pem", key)
         write_new(d / "payload", data)
         write_new(d / "signature", signature)
         result = subprocess.run(["openssl", "pkeyutl", "-verify", "-pubin",
-                                 "-inkey", str(public_key), "-rawin",
+                                 "-inkey", str(d / "public.pem"), "-rawin",
                                  "-in", str(d / "payload"), "-sigfile", str(d / "signature")],
                                 capture_output=True, timeout=10)
         if result.returncode:
@@ -98,15 +117,15 @@ def prepare(archive, manifest_path, signature_path, public_key, target, host, sa
     private(target.parent, directory=True)
     if target.exists() or target.is_symlink():
         raise Denied("REPEATED_INSTALL_REFUSED")
-    data = Path(archive).read_bytes()
+    data = bounded_bytes(archive, build_release.MAX_ARCHIVE)
     provenance = build_release.validate_bytes(data)
-    raw = Path(manifest_path).read_bytes()
+    raw = bounded_bytes(manifest_path, 4096)
     if len(raw) > 4096:
         raise Denied("MANIFEST_SIZE")
     manifest = json.loads(raw)
     if canonical(manifest) != raw:
         raise Denied("NONCANONICAL_MANIFEST")
-    signature = Path(signature_path).read_bytes()
+    signature = bounded_bytes(signature_path, 64)
     verify_signature(public_key, raw, signature)
     validate_manifest(manifest, hashlib.sha256(data).hexdigest(), host, int(time.time()))
     # No tar extraction: allowlisted source payloads only after exact-byte validation.
@@ -172,7 +191,7 @@ class SyntheticGate:
             previous = "0" * 64
             if journal.exists():
                 private(journal)
-                raw = journal.read_bytes()
+                raw = bounded_bytes(journal, 1024 * 1024)
                 if len(raw) > 1024 * 1024 or not raw.endswith(b"\n"):
                     raise Denied("JOURNAL_HOLD")
                 for line in raw.splitlines():

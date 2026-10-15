@@ -10,7 +10,7 @@ After extracting the archive safely (using your own trusted extraction procedure
 
 ```bash
 python3 asi_custodian.py init --state-dir /path/to/private-new-state --run-id strig-cust-123456789abc --peer-uid 1001 --peer-gid 1001
-python3 asi_custodian.py serve --state-dir /path/to/private-new-state
+python3 asi_custodian.py serve --state-dir /path/to/private-new-state --enable-technical-append
 # from a separate terminal under the approved test client user:
 python3 asi_custodian.py client --state-dir /path/to/private-new-state --op status --seq 0 --id aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa --result NONE
 python3 asi_custodian.py client --state-dir /path/to/private-new-state --op append --seq 1 --id bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb --result OBSERVED
@@ -33,3 +33,8 @@ This is **not an owner-installed protected custodian**. Caller-provided expected
 No real Phase2, revocation, restricted owner-issued receipt, separate-UID unauthorized-client physical acceptance, live guest consent or production readiness is claimed. The archive is a Python source executable, not a static native binary or an installer; its SHA256 only checks bytes and does not confer approval or trust.
 
 **Do not install on `asi-runtime-hetzner` or `asi-landing-hetzner`.** Use a separately owner-approved isolated nonproduction host only after independent identity, price and deployment review.
+
+
+## Finishline hardening (successor to PR448)
+
+This source is a hardened successor, not byte-identical PR448. CI records its exact commit and newly rebuilt archive SHA256. The protected synthetic preparation manifest `source` now binds SHA256 of the daemon source bytes, not the historical PR448 commit; old manifests are rejected. The daemon defaults to status-only; synthetic journal appends require `serve --enable-technical-append`. This flag grants no owner authority. A lifetime exclusive lock prevents concurrent daemons; socket cleanup is restricted to the bound inode. SIGKILL retains a stale socket for manual review; never delete it automatically. The sourceBase config field is historical protocol compatibility, not the current release SHA.

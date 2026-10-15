@@ -35,7 +35,7 @@ export async function GET() {
     .from('subscriptions')
     .select('status, trial_end, current_period_end')
     .eq('user_id', session.userId)
-    .single();
+    .maybeSingle();
 
   let account: unknown = null;
   let accountId: string | null = null;
