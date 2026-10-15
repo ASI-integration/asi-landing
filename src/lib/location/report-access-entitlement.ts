@@ -121,7 +121,7 @@ export function normalizeReportAccessLevel(
 
 export function normalizeReportAccessEntitlementStatus(
   value: unknown,
-  fallback: ReportAccessEntitlementStatus = REPORT_ACCESS_ENTITLEMENT_STATUS.active,
+  fallback: ReportAccessEntitlementStatus = REPORT_ACCESS_ENTITLEMENT_STATUS.revoked,
 ): ReportAccessEntitlementStatus {
   return isReportAccessEntitlementStatus(value) ? value : fallback;
 }

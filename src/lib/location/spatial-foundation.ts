@@ -70,7 +70,9 @@ function corridorHighway(tags: Record<string, string> | undefined): boolean {
 
 function toPlanarMeters(originLat: number, originLon: number, lat: number, lon: number): { x: number; y: number } {
   const cosLat = Math.cos((originLat * Math.PI) / 180);
-  const x = (lon - originLon) * 111320 * cosLat;
+  // Shortest signed longitude delta keeps local segments continuous across the antimeridian.
+  const deltaLon = ((lon - originLon + 540) % 360) - 180;
+  const x = deltaLon * 111320 * cosLat;
   const y = (lat - originLat) * 110540;
   return { x, y };
 }
