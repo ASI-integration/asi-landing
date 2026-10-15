@@ -718,7 +718,10 @@ export function buildAnalysis(
     });
   }
 
-  const foodItems = byCategory.food;
+  // Duplicate observations are not distinct venues. Deduplicate before any
+  // cluster-dependent weight mutation, not only when projecting the result.
+  const foodItems = dedupeMagnets(byCategory.food ?? []);
+  byCategory.food = foodItems;
   if (foodItems && foodItems.length > 0) {
     const clusteredCount = foodItems.filter(
       f => f.distance <= GRAVITY_CONFIG.foodClusterRadius,
