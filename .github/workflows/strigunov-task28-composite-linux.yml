@@ -66,7 +66,7 @@ jobs:
           path: snapshot445
           persist-credentials: false
           fetch-depth: 1
-      - name: Checkout runnable custodian PR448 exact reviewed head
+      - name: Checkout PR448 runnable custodian exact reviewed head
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           ref: 313d00dc92014fb10866cca3c8e7fec0c2269598
@@ -87,7 +87,10 @@ jobs:
             test "$(git -C snapshot$n rev-parse HEAD)" = "${sha[$i]}"
             if [ "$n" = "448" ]; then
               task=29A
-              mapfile -t paths < <(git -C snapshot448 ls-tree -r --name-only HEAD | grep -E '^(.github/workflows/asi-custodian-executable.yml|docs/ops/asi-custodian-executable-boundary.md|scripts/custodian/|scripts/__tests__/asi_custodian_(release|service).test.py)
+              mapfile -t paths < <(git -C snapshot448 ls-tree -r --name-only HEAD | grep -E '^(\.github/workflows/asi-custodian-executable\.yml|docs/ops/asi-custodian-executable-boundary\.md|scripts/custodian/|scripts/__tests__/asi_custodian_(release|service)\.test\.py)')
+            else
+              mapfile -t paths < <(git -C snapshot$n ls-tree -r --name-only HEAD | grep "strigunov-task${task}")
+            fi
             test "${#paths[@]}" -eq "${expected[$i]}"
             for p in "${paths[@]}"; do
               test ! -e "composite/$p"
@@ -118,7 +121,7 @@ jobs:
           test "$(id -u)" -ne 0
           python3 scripts/__tests__/strigunov-task26-peer-gate.test.py
           python3 scripts/__tests__/strigunov-task27-release.test.py
-      - name: Run executable custodian process and artifact tests inside combined snapshot
+      - name: Run real custodian and archive tests within seven-PR snapshot
         working-directory: composite
         env:
           PYTHONDONTWRITEBYTECODE: '1'
@@ -127,50 +130,11 @@ jobs:
           test "$(id -u)" -ne 0
           python3 scripts/__tests__/asi_custodian_service.test.py
           python3 scripts/__tests__/asi_custodian_release.test.py
-          python3 scripts/custodian/build_release.py --out "$RUNNER_TEMP/asi-custodian-combined.tar"
-          python3 scripts/custodian/build_release.py --verify --out "$RUNNER_TEMP/asi-custodian-combined.tar"
-          sha256sum "$RUNNER_TEMP/asi-custodian-combined.tar"
+          python3 scripts/custodian/build_release.py --out "$RUNNER_TEMP/asi-custodian-technical-combined.tar"
+          python3 scripts/custodian/build_release.py --verify --out "$RUNNER_TEMP/asi-custodian-technical-combined.tar"
+          sha256sum "$RUNNER_TEMP/asi-custodian-technical-combined.tar"
       - name: Audit PR report diff and no privilege grants
         run: |
           set -euo pipefail
           git diff --check HEAD^1 HEAD
           node -e "const m=require('./docs/ops/strigunov-task28-audit-matrix-20261014.json');if(m.deployment.production_touched!==false||m.deployment.canSend!==false||m.deployment.phase2!=='BLOCK'||m.audited.length!==7)process.exit(1)"
-)
-            else
-              mapfile -t paths < <(git -C snapshot$n ls-tree -r --name-only HEAD | grep "strigunov-task${task}")
-            fi
-            test "${#paths[@]}" -eq "${expected[$i]}"
-            for p in "${paths[@]}"; do
-              test ! -e "composite/$p"
-              test -f "snapshot$n/$p"
-              mkdir -p "composite/$(dirname "$p")"
-              cp -- "snapshot$n/$p" "composite/$p"
-              git -C composite add -- "$p"
-              total=$((total+1))
-            done
-            printf 'TASK%s_HEAD=%s FILES=%s\n' "$task" "${sha[$i]}" "${#paths[@]}"
-            i=$((i+1))
-          done
-          test "$total" -eq 27
-          test "$(git -C composite diff --cached --name-only | wc -l)" -eq 27
-          git -C composite diff --cached --check
-          echo "COMPOSITE_PATHS=27 OVERLAP=0 DIFF=PASS"
-      - name: Run combined Node offline source and filesystem+IPC tests
-        working-directory: composite
-        run: |
-          set -euo pipefail
-          node --test scripts/__tests__/strigunov-task22-custodian-review.test.mjs scripts/__tests__/strigunov-task23-cloud-custodian.test.mjs scripts/__tests__/strigunov-task24-offline-broker.test.mjs scripts/__tests__/strigunov-task25-local-ledger.test.mjs
-      - name: Run combined Linux SO_PEERCRED and deterministic release tests
-        working-directory: composite
-        env:
-          PYTHONDONTWRITEBYTECODE: '1'
-        run: |
-          set -euo pipefail
-          test "$(id -u)" -ne 0
-          python3 scripts/__tests__/strigunov-task26-peer-gate.test.py
-          python3 scripts/__tests__/strigunov-task27-release.test.py
-      - name: Audit PR report diff and no privilege grants
-        run: |
-          set -euo pipefail
-          git diff --check HEAD^1 HEAD
-          node -e "const m=require('./docs/ops/strigunov-task28-audit-matrix-20261014.json');if(m.deployment.production_touched!==false||m.deployment.canSend!==false||m.deployment.phase2!=='BLOCK'||m.audited.length!==6)process.exit(1)"
