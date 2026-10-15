@@ -1,0 +1,24 @@
+{
+  "id": "sochi-hotel",
+  "url": "https://magnoliahotel.sochi-magnolia.ru/contacts/",
+  "tier": "primary_operator",
+  "observedAt": "2026-10-15T17:52:33.543Z",
+  "facts": [
+    "Magnolia hotel names Kurortny50.",
+    "Published pin latitude43.576735955407 longitude39.730436034391.",
+    "Arrival directions mention underground road crossing; no subject-to-magnet network route was computed."
+  ],
+  "quality": "reviewed factual annotation",
+  "rawReceipt": {
+    "httpStatus": 200,
+    "sha256": "9c6552309397263ebff7103ad2ca62d1b521e0458531f63358a5ce9c093e7e3d",
+    "bytes": 47296,
+    "error": null,
+    "archiveScope": "Owner report folder only; raw copyrighted pages not republished"
+  },
+  "pointEvidence": {
+    "lat": 43.576735955407,
+    "lon": 39.730436034391,
+    "method": "literal operator contact-page map pin"
+  }
+}

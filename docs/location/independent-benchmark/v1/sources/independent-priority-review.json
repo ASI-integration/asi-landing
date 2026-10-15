@@ -1,0 +1,122 @@
+{
+  "evaluator": "geo_identity_review (independent delegated Codex reviewer)",
+  "reviewDate": "2026-10-15",
+  "beforeModelOutputs": true,
+  "method": "Web research completed before viewing ASI output, scoring code, or golden expectations; no OSM/Nominatim/Overpass requests. No scores assigned.",
+  "distinctions": [
+    "Occupant is not proof of whole-building use",
+    "Geographic audience plausibility is not measured accommodation demand",
+    "Absence of residential/STR evidence is not negative evidence",
+    "No legal STR suitability or profitability inference"
+  ],
+  "addresses": [
+    {
+      "address": "Москва, Большая Пироговская улица, 2",
+      "verdict": "Incomplete compound address. Sechenov lists buildings 1,2,3,4,9; rectorate at str4; Fronshtein urology clinic at str1.",
+      "confidence": {
+        "identity": "high at complex level; low for unique building",
+        "use": "high for named occupants"
+      },
+      "audience": "Medical patients/companions and university visitors plausible, not quantified.",
+      "missingEvidence": "Building suffix, cadastral/unit identity, residential/accommodation status, measured demand.",
+      "sources": [
+        {
+          "url": "https://www.sechenov.ru/contacts/contacts_maps/",
+          "type": "primary institutional",
+          "fact": "Lists No2 buildings and rectorate str4",
+          "retrievedDate": "2026-10-15"
+        },
+        {
+          "url": "https://urologia.ru/",
+          "type": "clinic operator",
+          "fact": "Urology clinic at No2 str1",
+          "retrievedDate": "2026-10-15"
+        }
+      ]
+    },
+    {
+      "address": "Нижний Новгород, Большая Покровская улица, 2",
+      "verdict": "Regional tourism portal identifies Dom-sunduk, former Upper Posad trading premises/public library, now coffee cluster. Secondary 2/1 alias needs confirmation.",
+      "confidence": {
+        "identity": "high",
+        "wholeBuildingUse": "medium"
+      },
+      "audience": "Pedestrian cultural sightseeing and cafe visitors supported by regional tourist route; rental demand unmeasured.",
+      "missingEvidence": "Authoritative 2 vs 2/1 equivalence, complete current uses, cadastral/unit identity and residential/accommodation status.",
+      "sources": [
+        {
+          "url": "https://nn-tourist.ru/stati/marshrut-po-pokrovke",
+          "type": "primary regional tourism",
+          "fact": "No2 landmark, current coffee cluster, main pedestrian street",
+          "retrievedDate": "2026-10-15"
+        }
+      ]
+    },
+    {
+      "address": "Геленджик, набережная, 1",
+      "verdict": "Exact address unresolved. TVIL capsule-hotel candidate and Tonky Mys directory lead are weak. Same street/number exists in Teshebs within Gelendzhik municipal district. Do not silently replace with central waterfront, Chernomorskaya1/1 or Revolyutsionnaya1.",
+      "confidence": {
+        "ambiguity": "high",
+        "uniqueIdentityAndUse": "low"
+      },
+      "audience": "No defensible property-specific audience, beach distance, centrality or sea view until exact resolution.",
+      "missingEvidence": "Official street/settlement identity, coordinates, cadastral/building identity, current operator confirmation.",
+      "sources": [
+        {
+          "url": "https://tvil.ru/city/gelendzhik/hotels/1007377/",
+          "type": "booking intermediary",
+          "fact": "Search listing advertises capsule hotel at Naberezhnaya1; open returned no text",
+          "retrievedDate": "2026-10-15"
+        },
+        {
+          "url": "https://gelendzhik.spravmer.ru/pansionat-tonkij-mys-gelendzhik/",
+          "type": "secondary directory",
+          "fact": "Tonky Mys pension candidate",
+          "retrievedDate": "2026-10-15"
+        },
+        {
+          "url": "https://2gis.ru/novorossiysk/geo/10415209793523361",
+          "type": "secondary map directory",
+          "fact": "Naberezhnaya1 in Teshebs, Gelendzhik municipal district, listed private one-storey house",
+          "retrievedDate": "2026-10-15"
+        }
+      ]
+    },
+    {
+      "address": "Светлогорск, улица Ленина, 8",
+      "verdict": "Assuming Kaliningrad Oblast, Papasha Beppe operator confirms restaurant at exact address. Directory floors1-3 are not proof of exclusive whole-building use. Do not merge 8/9 automatically. Region needed because same-name Russian settlement exists.",
+      "confidence": {
+        "restaurantOccupant": "high",
+        "wholeBuildingUse": "medium"
+      },
+      "audience": "Dining/visitor activity supported; accommodation demand unestablished.",
+      "missingEvidence": "Region if unspecified, full building/unit use, residential status, exact beach distance and measured accommodation demand.",
+      "sources": [
+        {
+          "url": "https://pabeppe.ru/contacts",
+          "type": "primary operator",
+          "fact": "Svetlogorsk Lenina8 restaurant contact",
+          "retrievedDate": "2026-10-15"
+        },
+        {
+          "url": "https://svetlogorsk.pabeppe.ru/",
+          "type": "primary operator",
+          "fact": "Restaurant at Lenina8",
+          "retrievedDate": "2026-10-15"
+        },
+        {
+          "url": "https://2gis.ru/svetlogorsk/firm/70000001019205243",
+          "type": "secondary directory",
+          "fact": "Restaurant floors1-3",
+          "retrievedDate": "2026-10-15"
+        },
+        {
+          "url": "https://dom.mingkh.ru/nizhegorodskaya-oblast/svetlogorsk/367043",
+          "type": "secondary housing directory",
+          "fact": "Same address spelling in Nizhny Novgorod Oblast",
+          "retrievedDate": "2026-10-15"
+        }
+      ]
+    }
+  ]
+}

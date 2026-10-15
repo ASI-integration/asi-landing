@@ -1,0 +1,12 @@
+{
+  "id": "gelendzhik-candidate",
+  "url": "https://tvil.ru/city/gelendzhik/hotels/1007377/",
+  "tier": "secondary_booking_index",
+  "observedAt": "2026-10-15",
+  "facts": [
+    "Indexed capsule-hotel candidate at Naberezhnaya1; no reliable exact-subject confirmation.",
+    "TonkiyMys, generic waterfront spelling and same municipal-area street name require disambiguation."
+  ],
+  "quality": "reviewed factual annotation",
+  "rawReceipt": null
+}

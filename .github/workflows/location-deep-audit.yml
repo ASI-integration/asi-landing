@@ -4,6 +4,9 @@ on:
     paths:
       - 'src/lib/location/**'
       - 'docs/location/evidence/**'
+      - 'docs/location/independent-benchmark/**'
+      - 'scripts/acceptance/independent-geo-benchmark.cjs'
+      - 'scripts/acceptance/geo-source-acquisition.cjs'
       - 'src/app/api/location*/**'
       - 'scripts/acceptance/location-audit-offline.cjs'
       - '.github/workflows/location-deep-audit.yml'
@@ -15,7 +18,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   offline:
-    if: github.repository == 'ASI-integration/asi-landing' && (github.event_name == 'workflow_dispatch' || ((github.event.pull_request.head.ref == 'asi/location-deep-audit-20261015' || github.event.pull_request.head.ref == 'asi/location-calibration-finishline-20261015' || github.event.pull_request.head.ref == 'asi/location-realworld-20261015') && github.event.pull_request.head.repo.full_name == github.repository))
+    if: github.repository == 'ASI-integration/asi-landing' && (github.event_name == 'workflow_dispatch' || ((github.event.pull_request.head.ref == 'asi/location-deep-audit-20261015' || github.event.pull_request.head.ref == 'asi/location-calibration-finishline-20261015' || github.event.pull_request.head.ref == 'asi/location-realworld-20261015' || github.event.pull_request.head.ref == 'asi/location-independent-geo-20261015') && github.event.pull_request.head.repo.full_name == github.repository))
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     strategy:
@@ -50,6 +53,9 @@ jobs:
           mkdir -p audit-results
           test "$(git rev-parse HEAD)" = "$REVIEWED_SOURCE_SHA"
           node -e 'require("fs").writeFileSync("audit-results/source.json",JSON.stringify({head:process.env.REVIEWED_SOURCE_SHA,run:process.env.GITHUB_RUN_ID,suite:"${{ matrix.suite }}",syntheticOnly:true,productionTouched:false}))'
+      - name: Independent geographic evidence integrity (not release acceptance)
+        if: matrix.suite == 'regression'
+        run: node scripts/acceptance/independent-geo-benchmark.cjs > audit-results/independent-geography.json
       - name: Regression and security integration
         if: matrix.suite == 'regression'
         env:

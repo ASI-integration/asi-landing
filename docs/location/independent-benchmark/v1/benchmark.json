@@ -1,0 +1,2370 @@
+{
+  "schemaVersion": "asi.independent-geo.v1",
+  "version": "1.0.0",
+  "asOf": "2026-10-15",
+  "baseline": "350602c409a87dea9144de48527bf14a6adf056d",
+  "purpose": "Independent evidence adjudication; not scoring calibration truth",
+  "providerPolicy": "No new OSM/Nominatim/Overpass calls after prior429; cached exports only. Public page research, bounded requests, no paid/private sources.",
+  "sources": [
+    {
+      "id": "moscow-directory",
+      "url": "https://www.sechenov.ru/contacts/contacts_maps/",
+      "tier": "primary_institution",
+      "observedAt": "2026-10-15T17:52:07.768Z",
+      "artifact": "docs/location/independent-benchmark/v1/sources/moscow-directory.json",
+      "sha256": "cf5610324fe9ee81346796c65aa803c68623eb06f7cd1e0d304b70d7d4f9569e",
+      "rights": "Factual paraphrases and attribution only; original page copyright retained. Digest authenticates this annotation, not truth of publisher claims."
+    },
+    {
+      "id": "moscow-urology",
+      "url": "https://urologia.ru/",
+      "tier": "primary_operator",
+      "observedAt": "2026-10-15T17:52:17.324Z",
+      "artifact": "docs/location/independent-benchmark/v1/sources/moscow-urology.json",
+      "sha256": "b51688bda1af8ae3f082521bfa9ed20518be4fbc31035ab866c8953573c4792a",
+      "rights": "Factual paraphrases and attribution only; original page copyright retained. Digest authenticates this annotation, not truth of publisher claims."
+    },
+    {
+      "id": "nizhny-tourism",
+      "url": "https://nn-tourist.ru/stati/marshrut-po-pokrovke",
+      "tier": "primary_regional_tourism",
+      "observedAt": "2026-10-15T17:52:21.897Z",
+      "artifact": "docs/location/independent-benchmark/v1/sources/nizhny-tourism.json",
+      "sha256": "484ad0743b18d5617be1ecc45234fe11d516ea24186ad4a052ce483393ab4734",
+      "rights": "Factual paraphrases and attribution only; original page copyright retained. Digest authenticates this annotation, not truth of publisher claims."
+    },
+    {
+      "id": "svetlogorsk-restaurant",
+      "url": "https://pabeppe.ru/contacts",
+      "tier": "primary_operator",
+      "observedAt": "2026-10-15T17:52:28.686Z",
+      "artifact": "docs/location/independent-benchmark/v1/sources/svetlogorsk-restaurant.json",
+      "sha256": "b2761356be49e8d628f4504d130ea03f29ab559e8207013b3e902a426aad0a3d",
+      "rights": "Factual paraphrases and attribution only; original page copyright retained. Digest authenticates this annotation, not truth of publisher claims."
+    },
+    {
+      "id": "sochi-hotel",
+      "url": "https://magnoliahotel.sochi-magnolia.ru/contacts/",
+      "tier": "primary_operator",
+      "observedAt": "2026-10-15T17:52:33.543Z",
+      "artifact": "docs/location/independent-benchmark/v1/sources/sochi-hotel.json",
+      "sha256": "7b647ad332f5d4e81e371a6717383a3166a70b7b37fb8dc1cc325af7f8d9be9b",
+      "rights": "Factual paraphrases and attribution only; original page copyright retained. Digest authenticates this annotation, not truth of publisher claims."
+    },
+    {
+      "id": "sheregesh-utility",
+      "url": "https://mef.ru/press-centre/news.php?item=7145",
+      "tier": "primary_utility",
+      "observedAt": "2026-10-15T17:52:37.303Z",
+      "artifact": "docs/location/independent-benchmark/v1/sources/sheregesh-utility.json",
+      "sha256": "afcd8654caf360b68e37b51b0892f09a6173039c3c12239743420f30b15a272f",
+      "rights": "Factual paraphrases and attribution only; original page copyright retained. Digest authenticates this annotation, not truth of publisher claims."
+    },
+    {
+      "id": "anapa-operator",
+      "url": "https://ross-anapa.ru/",
+      "tier": "primary_operator",
+      "observedAt": "2026-10-15T17:55:52.777Z",
+      "artifact": "docs/location/independent-benchmark/v1/sources/anapa-operator.json",
+      "sha256": "ce0f5c28e4b728ef520282dd471f21940d2d4a901bcff1ee71c77d430a4b9b4b",
+      "rights": "Factual paraphrases and attribution only; original page copyright retained. Digest authenticates this annotation, not truth of publisher claims."
+    },
+    {
+      "id": "anapa-operator-legal",
+      "url": "https://ross-anapa.ru/requisites",
+      "tier": "primary_operator",
+      "observedAt": "2026-10-15T17:55:58.898Z",
+      "artifact": "docs/location/independent-benchmark/v1/sources/anapa-operator-legal.json",
+      "sha256": "2e6d37a758fd9da43b23923a18d48dba0c3ac9ace0e61d65df045824f8e2c95b",
+      "rights": "Factual paraphrases and attribution only; original page copyright retained. Digest authenticates this annotation, not truth of publisher claims."
+    },
+    {
+      "id": "anapa-secondary",
+      "url": "https://more-letoanapa.ru/contacts/",
+      "tier": "secondary_booking",
+      "observedAt": "2026-10-15T17:52:48.105Z",
+      "artifact": "docs/location/independent-benchmark/v1/sources/anapa-secondary.json",
+      "sha256": "2c7dc0005d2e4237ad70dd7d4eaea43e96f819caf7ed1ed8470fffadee558709",
+      "rights": "Factual paraphrases and attribution only; original page copyright retained. Digest authenticates this annotation, not truth of publisher claims."
+    },
+    {
+      "id": "samara-act-mirror",
+      "url": "https://samara-gov.ru/doc/86091",
+      "tier": "secondary_reproduction_of_regional_act",
+      "observedAt": "2026-10-15T17:57:14.963Z",
+      "artifact": "docs/location/independent-benchmark/v1/sources/samara-act-mirror.json",
+      "sha256": "4c85538d7f7a15a6f3fc3d0dc36f492595bc211abeb9d3116225c7aa4ade08bf",
+      "rights": "Factual paraphrases and attribution only; original page copyright retained. Digest authenticates this annotation, not truth of publisher claims."
+    },
+    {
+      "id": "samara-heritage",
+      "url": "https://base.garant.ru/407515261/f7ee959fd36b5699076b35abf4f52c5c/",
+      "tier": "excluded_unreadable_snapshot",
+      "observedAt": "2026-10-15T17:52:55.052Z",
+      "artifact": "docs/location/independent-benchmark/v1/sources/samara-heritage.json",
+      "sha256": "77d6023111c3610b5d4e90c34c61be49d5fd344b37449e9853e958ba9c9b552f",
+      "rights": "Factual paraphrases and attribution only; original page copyright retained. Digest authenticates this annotation, not truth of publisher claims."
+    },
+    {
+      "id": "estosadok-municipal",
+      "url": "https://sochi.ru/press-sluzhba/novosti/13/229754/",
+      "tier": "primary_city",
+      "observedAt": "2026-10-15T17:53:00.478Z",
+      "artifact": "docs/location/independent-benchmark/v1/sources/estosadok-municipal.json",
+      "sha256": "11b4c36609f3dff7add8dd04a01b0606829908d1204d9a9214cc47ce90d60ebb",
+      "rights": "Factual paraphrases and attribution only; original page copyright retained. Digest authenticates this annotation, not truth of publisher claims."
+    },
+    {
+      "id": "zelenogradsk-newspaper",
+      "url": "https://volnanews.ru/ot-kjonigsbergershtrasse-do-kurortnogo-prospekta",
+      "tier": "secondary_local_history",
+      "observedAt": "2026-10-15T17:57:21.079Z",
+      "artifact": "docs/location/independent-benchmark/v1/sources/zelenogradsk-newspaper.json",
+      "sha256": "74c57e3f0cbb6262cb19394db72830fb7d03b87f5bfecee45194488599843610",
+      "rights": "Factual paraphrases and attribution only; original page copyright retained. Digest authenticates this annotation, not truth of publisher claims."
+    },
+    {
+      "id": "palace-museum",
+      "url": "https://www.hermitagemuseum.org/",
+      "tier": "primary_index_only",
+      "observedAt": "2026-10-15T17:53:09.551Z",
+      "artifact": "docs/location/independent-benchmark/v1/sources/palace-museum.json",
+      "sha256": "b39b791f4f7fd9f91df13f612fb8141a53e4aaff3323ea9329526fee99791790",
+      "rights": "Factual paraphrases and attribution only; original page copyright retained. Digest authenticates this annotation, not truth of publisher claims."
+    },
+    {
+      "id": "gelendzhik-candidate",
+      "url": "https://tvil.ru/city/gelendzhik/hotels/1007377/",
+      "tier": "secondary_booking_index",
+      "observedAt": "2026-10-15",
+      "artifact": "docs/location/independent-benchmark/v1/sources/gelendzhik-candidate.json",
+      "sha256": "50618be110c680e0e32533f66c86416b15fa1f4ef426b6f3253efd4ee0927430",
+      "rights": "Factual paraphrases and attribution only; original page copyright retained. Digest authenticates this annotation, not truth of publisher claims."
+    },
+    {
+      "id": "review-priority",
+      "url": "https://github.com/ASI-integration/asi-landing/tree/asi/location-independent-geo-20261015/docs/location/independent-benchmark/v1/sources/independent-priority-review.json",
+      "tier": "independent_blind_review",
+      "observedAt": "2026-10-15",
+      "artifact": "docs/location/independent-benchmark/v1/sources/independent-priority-review.json",
+      "sha256": "263b0a9e68238f150ee8aa2e9d7fbcc13b514509886a9db241d85f9ea78cf590",
+      "rights": "Project-authored independent factual review; source rights retained."
+    },
+    {
+      "id": "review-other",
+      "url": "https://github.com/ASI-integration/asi-landing/tree/asi/location-independent-geo-20261015/docs/location/independent-benchmark/v1/sources/independent-other-review.json",
+      "tier": "independent_blind_review",
+      "observedAt": "2026-10-15",
+      "artifact": "docs/location/independent-benchmark/v1/sources/independent-other-review.json",
+      "sha256": "df415d206a9232fe148227e423baad98ad361bf0c450d2e9cae264dac3796b6e",
+      "rights": "Project-authored independent factual review; source rights retained."
+    },
+    {
+      "id": "cached-sochi-nominatim",
+      "url": "https://nominatim.openstreetmap.org/search?q=%D0%A1%D0%BE%D1%87%D0%B8%2C+%D0%9A%D1%83%D1%80%D0%BE%D1%80%D1%82%D0%BD%D1%8B%D0%B9+%D0%BF%D1%80%D0%BE%D1%81%D0%BF%D0%B5%D0%BA%D1%82%2C+50&format=jsonv2&addressdetails=1&limit=3&countrycodes=ru",
+      "tier": "cached_osm",
+      "observedAt": "2026-10-15T17:18:07.522Z",
+      "artifact": "docs/location/evidence/2026-10-15/sochi-nominatim.json",
+      "sha256": "90b97c985532d9d9d0e33f64841593f7aab613f75423de27e8312624f34c3039",
+      "rights": "OpenStreetMap contributors; ODbL-1.0; https://www.openstreetmap.org/copyright"
+    },
+    {
+      "id": "cached-anapa-nominatim",
+      "url": "https://nominatim.openstreetmap.org/search?q=%D0%90%D0%BD%D0%B0%D0%BF%D0%B0%2C+%D0%9F%D0%B8%D0%BE%D0%BD%D0%B5%D1%80%D1%81%D0%BA%D0%B8%D0%B9+%D0%BF%D1%80%D0%BE%D1%81%D0%BF%D0%B5%D0%BA%D1%82%2C+20&format=jsonv2&addressdetails=1&limit=3&countrycodes=ru",
+      "tier": "cached_osm",
+      "observedAt": "2026-10-15T17:18:10.267Z",
+      "artifact": "docs/location/evidence/2026-10-15/anapa-nominatim.json",
+      "sha256": "de6e5950ca400dd2959bed286fce70c42a24f1ab6b3cc47903a696788738fdc7",
+      "rights": "OpenStreetMap contributors; ODbL-1.0; https://www.openstreetmap.org/copyright"
+    },
+    {
+      "id": "cached-sheregesh-nominatim",
+      "url": "https://nominatim.openstreetmap.org/search?q=%D0%A8%D0%B5%D1%80%D0%B5%D0%B3%D0%B5%D1%88%2C+%D1%83%D0%BB%D0%B8%D1%86%D0%B0+%D0%93%D0%B0%D0%B3%D0%B0%D1%80%D0%B8%D0%BD%D0%B0%2C+12&format=jsonv2&addressdetails=1&limit=3&countrycodes=ru",
+      "tier": "cached_osm",
+      "observedAt": "2026-10-15T17:18:13.414Z",
+      "artifact": "docs/location/evidence/2026-10-15/sheregesh-nominatim.json",
+      "sha256": "bac11515bd2447c63c864baa23c54435f898edc6a8b2680b7630fbbb1eb2decf",
+      "rights": "OpenStreetMap contributors; ODbL-1.0; https://www.openstreetmap.org/copyright"
+    },
+    {
+      "id": "cached-palace-nominatim",
+      "url": "https://nominatim.openstreetmap.org/search?q=%D0%A1%D0%B0%D0%BD%D0%BA%D1%82-%D0%9F%D0%B5%D1%82%D0%B5%D1%80%D0%B1%D1%83%D1%80%D0%B3%2C+%D0%94%D0%B2%D0%BE%D1%80%D1%86%D0%BE%D0%B2%D0%B0%D1%8F+%D0%BF%D0%BB%D0%BE%D1%89%D0%B0%D0%B4%D1%8C%2C+2&format=jsonv2&addressdetails=1&limit=3&countrycodes=ru",
+      "tier": "cached_osm",
+      "observedAt": "2026-10-15T17:18:15.563Z",
+      "artifact": "docs/location/evidence/2026-10-15/palace-nominatim.json",
+      "sha256": "ed470dea3bd3b5a0083732cfb19e2022a751bf7206a45c9f821beb7aa103ccdc",
+      "rights": "OpenStreetMap contributors; ODbL-1.0; https://www.openstreetmap.org/copyright"
+    },
+    {
+      "id": "cached-nizhny-nominatim",
+      "url": "https://nominatim.openstreetmap.org/search?q=%D0%9D%D0%B8%D0%B6%D0%BD%D0%B8%D0%B9+%D0%9D%D0%BE%D0%B2%D0%B3%D0%BE%D1%80%D0%BE%D0%B4%2C+%D0%91%D0%BE%D0%BB%D1%8C%D1%88%D0%B0%D1%8F+%D0%9F%D0%BE%D0%BA%D1%80%D0%BE%D0%B2%D1%81%D0%BA%D0%B0%D1%8F+%D1%83%D0%BB%D0%B8%D1%86%D0%B0%2C+2&format=jsonv2&addressdetails=1&limit=3&countrycodes=ru",
+      "tier": "cached_osm",
+      "observedAt": "2026-10-15T17:18:17.811Z",
+      "artifact": "docs/location/evidence/2026-10-15/nizhny-nominatim.json",
+      "sha256": "beb86e2f91d9347005fa8a68f797600933df9c85cc3fa4ee9dc67591cc2d010a",
+      "rights": "OpenStreetMap contributors; ODbL-1.0; https://www.openstreetmap.org/copyright"
+    },
+    {
+      "id": "cached-samara-nominatim",
+      "url": "https://nominatim.openstreetmap.org/search?q=%D0%A1%D0%B0%D0%BC%D0%B0%D1%80%D0%B0%2C+%D0%9B%D0%B5%D0%BD%D0%B8%D0%BD%D0%B3%D1%80%D0%B0%D0%B4%D1%81%D0%BA%D0%B0%D1%8F+%D1%83%D0%BB%D0%B8%D1%86%D0%B0%2C+25&format=jsonv2&addressdetails=1&limit=3&countrycodes=ru",
+      "tier": "cached_osm",
+      "observedAt": "2026-10-15T17:18:20.470Z",
+      "artifact": "docs/location/evidence/2026-10-15/samara-nominatim.json",
+      "sha256": "30701881d0a41ed0d064dd62d47cbb7d0e3956d272bdba55c383d8274c2c2bb4",
+      "rights": "OpenStreetMap contributors; ODbL-1.0; https://www.openstreetmap.org/copyright"
+    },
+    {
+      "id": "cached-pirogovskaya-nominatim",
+      "url": "https://nominatim.openstreetmap.org/search?q=%D0%9C%D0%BE%D1%81%D0%BA%D0%B2%D0%B0%2C+%D0%91%D0%BE%D0%BB%D1%8C%D1%88%D0%B0%D1%8F+%D0%9F%D0%B8%D1%80%D0%BE%D0%B3%D0%BE%D0%B2%D1%81%D0%BA%D0%B0%D1%8F+%D1%83%D0%BB%D0%B8%D1%86%D0%B0%2C+2&format=jsonv2&addressdetails=1&limit=3&countrycodes=ru",
+      "tier": "cached_osm",
+      "observedAt": "2026-10-15T17:18:22.868Z",
+      "artifact": "docs/location/evidence/2026-10-15/pirogovskaya-nominatim.json",
+      "sha256": "4109500fc6ec71c98b3cf8130b9adb11e96389c57373348e2557b6a238dcdb20",
+      "rights": "OpenStreetMap contributors; ODbL-1.0; https://www.openstreetmap.org/copyright"
+    },
+    {
+      "id": "cached-zelenogradsk-nominatim",
+      "url": "https://nominatim.openstreetmap.org/search?q=%D0%97%D0%B5%D0%BB%D0%B5%D0%BD%D0%BE%D0%B3%D1%80%D0%B0%D0%B4%D1%81%D0%BA%2C+%D0%9A%D1%83%D1%80%D0%BE%D1%80%D1%82%D0%BD%D1%8B%D0%B9+%D0%BF%D1%80%D0%BE%D1%81%D0%BF%D0%B5%D0%BA%D1%82%2C+1&format=jsonv2&addressdetails=1&limit=3&countrycodes=ru",
+      "tier": "cached_osm",
+      "observedAt": "2026-10-15T17:18:24.830Z",
+      "artifact": "docs/location/evidence/2026-10-15/zelenogradsk-nominatim.json",
+      "sha256": "a12accde780be219a39e2799959fed93a80afe87d0a68063b2b43d70e1b2060d",
+      "rights": "OpenStreetMap contributors; ODbL-1.0; https://www.openstreetmap.org/copyright"
+    },
+    {
+      "id": "cached-svetlogorsk-nominatim",
+      "url": "https://nominatim.openstreetmap.org/search?q=%D0%A1%D0%B2%D0%B5%D1%82%D0%BB%D0%BE%D0%B3%D0%BE%D1%80%D1%81%D0%BA%2C+%D1%83%D0%BB%D0%B8%D1%86%D0%B0+%D0%9B%D0%B5%D0%BD%D0%B8%D0%BD%D0%B0%2C+8&format=jsonv2&addressdetails=1&limit=3&countrycodes=ru",
+      "tier": "cached_osm",
+      "observedAt": "2026-10-15T17:18:26.688Z",
+      "artifact": "docs/location/evidence/2026-10-15/svetlogorsk-nominatim.json",
+      "sha256": "b5d8bceba445a8bbf83caa0d9dd6234976166be5581018627d217487cecbdfa0",
+      "rights": "OpenStreetMap contributors; ODbL-1.0; https://www.openstreetmap.org/copyright"
+    },
+    {
+      "id": "cached-gelendzhik-nominatim",
+      "url": "https://nominatim.openstreetmap.org/search?q=%D0%93%D0%B5%D0%BB%D0%B5%D0%BD%D0%B4%D0%B6%D0%B8%D0%BA%2C+%D0%BD%D0%B0%D0%B1%D0%B5%D1%80%D0%B5%D0%B6%D0%BD%D0%B0%D1%8F%2C+1&format=jsonv2&addressdetails=1&limit=3&countrycodes=ru",
+      "tier": "cached_osm",
+      "observedAt": "2026-10-15T17:18:29.010Z",
+      "artifact": "docs/location/evidence/2026-10-15/gelendzhik-nominatim.json",
+      "sha256": "3b75a81651ff8c20d85721d0a876392b60b2a827416783f539d43fa025396653",
+      "rights": "OpenStreetMap contributors; ODbL-1.0; https://www.openstreetmap.org/copyright"
+    },
+    {
+      "id": "cached-estosadok-nominatim",
+      "url": "https://nominatim.openstreetmap.org/search?q=%D0%AD%D1%81%D1%82%D0%BE-%D0%A1%D0%B0%D0%B4%D0%BE%D0%BA%2C+%D1%83%D0%BB%D0%B8%D1%86%D0%B0+%D0%AD%D1%81%D1%82%D0%BE%D0%BD%D1%81%D0%BA%D0%B0%D1%8F%2C+37&format=jsonv2&addressdetails=1&limit=3&countrycodes=ru",
+      "tier": "cached_osm",
+      "observedAt": "2026-10-15T17:18:31.337Z",
+      "artifact": "docs/location/evidence/2026-10-15/estosadok-nominatim.json",
+      "sha256": "96af077e51d127a2003cab937b1d137176067d66c00b71c0945370a33fc0257f",
+      "rights": "OpenStreetMap contributors; ODbL-1.0; https://www.openstreetmap.org/copyright"
+    },
+    {
+      "id": "cached-residential-nominatim",
+      "url": "https://nominatim.openstreetmap.org/search?q=%D0%A1%D0%B0%D0%BD%D0%BA%D1%82-%D0%9F%D0%B5%D1%82%D0%B5%D1%80%D0%B1%D1%83%D1%80%D0%B3%2C+%D0%9A%D0%BE%D0%BC%D0%B5%D0%BD%D0%B4%D0%B0%D0%BD%D1%82%D1%81%D0%BA%D0%B8%D0%B9+%D0%BF%D1%80%D0%BE%D1%81%D0%BF%D0%B5%D0%BA%D1%82%2C+23%D0%BA1&format=jsonv2&addressdetails=1&limit=3&countrycodes=ru",
+      "tier": "cached_osm",
+      "observedAt": "2026-10-15T17:18:33.661Z",
+      "artifact": "docs/location/evidence/2026-10-15/residential-nominatim.json",
+      "sha256": "3a1cf3e8b8cedb9653a23427e42324e4ce7bf4a48d98d362c462ab91b498781d",
+      "rights": "OpenStreetMap contributors; ODbL-1.0; https://www.openstreetmap.org/copyright"
+    },
+    {
+      "id": "cached-sochi-art-landmark",
+      "url": "https://nominatim.openstreetmap.org/search?q=%D0%A1%D0%BE%D1%87%D0%B8%D0%BD%D1%81%D0%BA%D0%B8%D0%B9+%D1%85%D1%83%D0%B4%D0%BE%D0%B6%D0%B5%D1%81%D1%82%D0%B2%D0%B5%D0%BD%D0%BD%D1%8B%D0%B9+%D0%BC%D1%83%D0%B7%D0%B5%D0%B9&format=jsonv2&addressdetails=1&limit=3&countrycodes=ru",
+      "tier": "cached_osm",
+      "observedAt": "2026-10-15T17:27:19.296Z",
+      "artifact": "docs/location/evidence/2026-10-15/sochi-art-landmark.json",
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "rights": "OpenStreetMap contributors; ODbL-1.0; https://www.openstreetmap.org/copyright"
+    },
+    {
+      "id": "cached-sochi-theatre-landmark",
+      "url": "https://nominatim.openstreetmap.org/search?q=%D0%97%D0%B8%D0%BC%D0%BD%D0%B8%D0%B9+%D1%82%D0%B5%D0%B0%D1%82%D1%80+%D0%A1%D0%BE%D1%87%D0%B8&format=jsonv2&addressdetails=1&limit=3&countrycodes=ru",
+      "tier": "cached_osm",
+      "observedAt": "2026-10-15T17:27:21.948Z",
+      "artifact": "docs/location/evidence/2026-10-15/sochi-theatre-landmark.json",
+      "sha256": "f85323b6e629122130905eadf673718e779b1cafd7038b0e7f89dfb346f12a90",
+      "rights": "OpenStreetMap contributors; ODbL-1.0; https://www.openstreetmap.org/copyright"
+    },
+    {
+      "id": "cached-palace-building-landmark",
+      "url": "https://nominatim.openstreetmap.org/search?q=%D0%97%D0%B8%D0%BC%D0%BD%D0%B8%D0%B9+%D0%B4%D0%B2%D0%BE%D1%80%D0%B5%D1%86+%D0%A1%D0%B0%D0%BD%D0%BA%D1%82-%D0%9F%D0%B5%D1%82%D0%B5%D1%80%D0%B1%D1%83%D1%80%D0%B3&format=jsonv2&addressdetails=1&limit=3&countrycodes=ru",
+      "tier": "cached_osm",
+      "observedAt": "2026-10-15T17:27:23.851Z",
+      "artifact": "docs/location/evidence/2026-10-15/palace-building-landmark.json",
+      "sha256": "34cc1436292c717bc343dd3e83b2a3076c60a2abc390a611179a94ffc5c0bb57",
+      "rights": "OpenStreetMap contributors; ODbL-1.0; https://www.openstreetmap.org/copyright"
+    },
+    {
+      "id": "cached-sheregesh-mountain-landmark",
+      "url": "https://nominatim.openstreetmap.org/search?q=%D0%B3%D0%BE%D1%80%D0%B0+%D0%97%D0%B5%D0%BB%D1%91%D0%BD%D0%B0%D1%8F+%D0%A8%D0%B5%D1%80%D0%B5%D0%B3%D0%B5%D1%88&format=jsonv2&addressdetails=1&limit=3&countrycodes=ru",
+      "tier": "cached_osm",
+      "observedAt": "2026-10-15T17:27:26.235Z",
+      "artifact": "docs/location/evidence/2026-10-15/sheregesh-mountain-landmark.json",
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "rights": "OpenStreetMap contributors; ODbL-1.0; https://www.openstreetmap.org/copyright"
+    },
+    {
+      "id": "cached-zelenogradsk-museum-landmark",
+      "url": "https://nominatim.openstreetmap.org/search?q=%D0%9C%D1%83%D1%80%D0%B0%D1%80%D0%B8%D1%83%D0%BC+%D0%97%D0%B5%D0%BB%D0%B5%D0%BD%D0%BE%D0%B3%D1%80%D0%B0%D0%B4%D1%81%D0%BA&format=jsonv2&addressdetails=1&limit=3&countrycodes=ru",
+      "tier": "cached_osm",
+      "observedAt": "2026-10-15T17:27:28.360Z",
+      "artifact": "docs/location/evidence/2026-10-15/zelenogradsk-museum-landmark.json",
+      "sha256": "f8e986ac48247a7b4478cbaefbb16ec439bc330f6b30688c1cba70bb066628ca",
+      "rights": "OpenStreetMap contributors; ODbL-1.0; https://www.openstreetmap.org/copyright"
+    },
+    {
+      "id": "cached-svetlogorsk-hall-landmark",
+      "url": "https://nominatim.openstreetmap.org/search?q=%D0%AF%D0%BD%D1%82%D0%B0%D1%80%D1%8C+%D1%85%D0%BE%D0%BB%D0%BB+%D0%A1%D0%B2%D0%B5%D1%82%D0%BB%D0%BE%D0%B3%D0%BE%D1%80%D1%81%D0%BA&format=jsonv2&addressdetails=1&limit=3&countrycodes=ru",
+      "tier": "cached_osm",
+      "observedAt": "2026-10-15T17:27:30.655Z",
+      "artifact": "docs/location/evidence/2026-10-15/svetlogorsk-hall-landmark.json",
+      "sha256": "bf479ec2d0d55739c2c4bacd680b3dd5e6afaa01f35fb377bcd8a843a8a6e226",
+      "rights": "OpenStreetMap contributors; ODbL-1.0; https://www.openstreetmap.org/copyright"
+    },
+    {
+      "id": "cached-nizhny-theatre-landmark",
+      "url": "https://nominatim.openstreetmap.org/search?q=%D0%9D%D0%B8%D0%B6%D0%B5%D0%B3%D0%BE%D1%80%D0%BE%D0%B4%D1%81%D0%BA%D0%B8%D0%B9+%D1%82%D0%B5%D0%B0%D1%82%D1%80+%D0%B4%D1%80%D0%B0%D0%BC%D1%8B&format=jsonv2&addressdetails=1&limit=3&countrycodes=ru",
+      "tier": "cached_osm",
+      "observedAt": "2026-10-15T17:27:32.690Z",
+      "artifact": "docs/location/evidence/2026-10-15/nizhny-theatre-landmark.json",
+      "sha256": "fdc46e97862d41dec4817f4a89f42be3973bf2ded301997deedfcda6acd1469e",
+      "rights": "OpenStreetMap contributors; ODbL-1.0; https://www.openstreetmap.org/copyright"
+    },
+    {
+      "id": "cached-samara-museum-landmark",
+      "url": "https://nominatim.openstreetmap.org/search?q=%D0%A1%D0%B0%D0%BC%D0%B0%D1%80%D1%81%D0%BA%D0%B8%D0%B9+%D1%85%D1%83%D0%B4%D0%BE%D0%B6%D0%B5%D1%81%D1%82%D0%B2%D0%B5%D0%BD%D0%BD%D1%8B%D0%B9+%D0%BC%D1%83%D0%B7%D0%B5%D0%B9&format=jsonv2&addressdetails=1&limit=3&countrycodes=ru",
+      "tier": "cached_osm",
+      "observedAt": "2026-10-15T17:27:34.673Z",
+      "artifact": "docs/location/evidence/2026-10-15/samara-museum-landmark.json",
+      "sha256": "0c9d21cac69c543cd87f74fafe22e1d752b9295d14d7990ddd473e9058b9de41",
+      "rights": "OpenStreetMap contributors; ODbL-1.0; https://www.openstreetmap.org/copyright"
+    },
+    {
+      "id": "cached-moscow-hospital-landmark",
+      "url": "https://nominatim.openstreetmap.org/search?q=%D0%9C%D0%BE%D1%81%D0%BA%D0%B2%D0%B0+%D0%91%D0%BE%D0%BB%D1%8C%D1%88%D0%B0%D1%8F+%D0%9F%D0%B8%D1%80%D0%BE%D0%B3%D0%BE%D0%B2%D1%81%D0%BA%D0%B0%D1%8F+6+%D1%81%D1%82%D1%80%D0%BE%D0%B5%D0%BD%D0%B8%D0%B5+1&format=jsonv2&addressdetails=1&limit=3&countrycodes=ru",
+      "tier": "cached_osm",
+      "observedAt": "2026-10-15T17:27:36.600Z",
+      "artifact": "docs/location/evidence/2026-10-15/moscow-hospital-landmark.json",
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "rights": "OpenStreetMap contributors; ODbL-1.0; https://www.openstreetmap.org/copyright"
+    },
+    {
+      "id": "cached-estosadok-resort-landmark",
+      "url": "https://nominatim.openstreetmap.org/search?q=%D0%93%D0%BE%D1%80%D0%BD%D0%B0%D1%8F+%D0%9A%D0%B0%D1%80%D1%83%D1%81%D0%B5%D0%BB%D1%8C+%D0%AD%D1%81%D1%82%D0%BE%D1%81%D0%B0%D0%B4%D0%BE%D0%BA&format=jsonv2&addressdetails=1&limit=3&countrycodes=ru",
+      "tier": "cached_osm",
+      "observedAt": "2026-10-15T17:27:38.673Z",
+      "artifact": "docs/location/evidence/2026-10-15/estosadok-resort-landmark.json",
+      "sha256": "2a711d99a96e2e3b248d64191ab5b946868c2b7b6cf90fa1c7df9a1d44d96c55",
+      "rights": "OpenStreetMap contributors; ODbL-1.0; https://www.openstreetmap.org/copyright"
+    },
+    {
+      "id": "cached-anapa-museum-landmark",
+      "url": "https://nominatim.openstreetmap.org/search?q=%D0%90%D1%80%D1%85%D0%B5%D0%BE%D0%BB%D0%BE%D0%B3%D0%B8%D1%87%D0%B5%D1%81%D0%BA%D0%B8%D0%B9+%D0%BC%D1%83%D0%B7%D0%B5%D0%B9+%D0%93%D0%BE%D1%80%D0%B3%D0%B8%D0%BF%D0%BF%D0%B8%D1%8F+%D0%90%D0%BD%D0%B0%D0%BF%D0%B0&format=jsonv2&addressdetails=1&limit=3&countrycodes=ru",
+      "tier": "cached_osm",
+      "observedAt": "2026-10-15T17:27:40.562Z",
+      "artifact": "docs/location/evidence/2026-10-15/anapa-museum-landmark.json",
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "rights": "OpenStreetMap contributors; ODbL-1.0; https://www.openstreetmap.org/copyright"
+    },
+    {
+      "id": "cached-gelendzhik-museum-landmark",
+      "url": "https://nominatim.openstreetmap.org/search?q=%D0%93%D0%B5%D0%BB%D0%B5%D0%BD%D0%B4%D0%B6%D0%B8%D0%BA%D1%81%D0%BA%D0%B8%D0%B9+%D0%B8%D1%81%D1%82%D0%BE%D1%80%D0%B8%D0%BA%D0%BE+%D0%BA%D1%80%D0%B0%D0%B5%D0%B2%D0%B5%D0%B4%D1%87%D0%B5%D1%81%D0%BA%D0%B8%D0%B9+%D0%BC%D1%83%D0%B7%D0%B5%D0%B9&format=jsonv2&addressdetails=1&limit=3&countrycodes=ru",
+      "tier": "cached_osm",
+      "observedAt": "2026-10-15T17:27:42.631Z",
+      "artifact": "docs/location/evidence/2026-10-15/gelendzhik-museum-landmark.json",
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "rights": "OpenStreetMap contributors; ODbL-1.0; https://www.openstreetmap.org/copyright"
+    },
+    {
+      "id": "cached-osm-subject",
+      "url": "https://api.openstreetmap.org/api/0.6/way/133143136/full.json",
+      "tier": "cached_osm",
+      "observedAt": "2026-10-15T17:23:54.810Z",
+      "artifact": "docs/location/evidence/2026-10-15/osm-subject.json",
+      "sha256": "4bb01fe8da8627e077aa08765fde2b0a212b0bece552c166753d7af6e54a51d4",
+      "rights": "OpenStreetMap contributors; ODbL-1.0; https://www.openstreetmap.org/copyright"
+    },
+    {
+      "id": "canonical-fixture",
+      "url": "https://github.com/ASI-integration/asi-landing/blob/350602c409a87dea9144de48527bf14a6adf056d/src/lib/location/tests/ru-residential-calibration-matrix.test.ts",
+      "tier": "model_fixture_not_ground_truth",
+      "observedAt": "2026-10-15",
+      "artifact": "src/lib/location/tests/ru-residential-calibration-matrix.test.ts",
+      "digestMode": "lf-normalized-utf8",
+      "sha256": "1ed1ed552255dd3e6d234cd8a981abfe467fe95b9a74257f474ea0be449e6412",
+      "rights": "Existing repository source; golden fixture retained unchanged."
+    }
+  ],
+  "subjects": [
+    {
+      "id": "sochi",
+      "canonicalAddress": "Сочи, Курортный проспект, 50",
+      "canonicalRegion": "Краснодарский край",
+      "sourceRefs": [
+        "sochi-hotel",
+        "cached-sochi-nominatim",
+        "review-other"
+      ],
+      "identity": {
+        "status": "SUPPORTED",
+        "scope": "hotel_site",
+        "confidence": "high",
+        "adjudication": "Отель «Магнолия» по точному адресу; гостиничный объект подтверждён оператором."
+      },
+      "geometry": {
+        "crs": "EPSG:4326",
+        "status": "CORROBORATED_POINT",
+        "candidates": [
+          {
+            "lat": 43.5767046,
+            "lon": 39.73059,
+            "osm": {
+              "type": "way",
+              "id": 717752694
+            },
+            "role": "cached-geocoder-candidate",
+            "sourceRefs": [
+              "cached-sochi-nominatim"
+            ],
+            "candidateAddress": {
+              "house_number": "50",
+              "road": "Курортный проспект",
+              "neighbourhood": "Гостиница Сочи",
+              "suburb": "Театральная",
+              "city": "Сочи",
+              "county": "городской округ Сочи",
+              "state": "Краснодарский край",
+              "ISO3166-2-lvl4": "RU-KDA",
+              "region": "Южный федеральный округ",
+              "postcode": "354009",
+              "country": "Россия",
+              "country_code": "ru"
+            }
+          },
+          {
+            "lat": 43.5766893,
+            "lon": 39.7299394,
+            "osm": {
+              "type": "node",
+              "id": 12541096601
+            },
+            "role": "cached-geocoder-candidate",
+            "sourceRefs": [
+              "cached-sochi-nominatim"
+            ],
+            "candidateAddress": {
+              "shop": "Оптика Юг",
+              "house_number": "50",
+              "road": "Курортный проспект",
+              "neighbourhood": "Гостиница Сочи",
+              "suburb": "Театральная",
+              "city": "Сочи",
+              "county": "городской округ Сочи",
+              "state": "Краснодарский край",
+              "ISO3166-2-lvl4": "RU-KDA",
+              "region": "Южный федеральный округ",
+              "postcode": "354009",
+              "country": "Россия",
+              "country_code": "ru"
+            }
+          },
+          {
+            "lat": 43.5766485,
+            "lon": 39.7298938,
+            "osm": {
+              "type": "node",
+              "id": 12032893452
+            },
+            "role": "cached-geocoder-candidate",
+            "sourceRefs": [
+              "cached-sochi-nominatim"
+            ],
+            "candidateAddress": {
+              "shop": "Maybe nail",
+              "house_number": "50",
+              "road": "Курортный проспект",
+              "neighbourhood": "Гостиница Сочи",
+              "suburb": "Театральная",
+              "city": "Сочи",
+              "county": "городской округ Сочи",
+              "state": "Краснодарский край",
+              "ISO3166-2-lvl4": "RU-KDA",
+              "region": "Южный федеральный округ",
+              "postcode": "354009",
+              "country": "Россия",
+              "country_code": "ru"
+            }
+          },
+          {
+            "lat": 43.576735955407,
+            "lon": 39.730436034391,
+            "role": "primary-source-pin",
+            "sourceRefs": [
+              "sochi-hotel"
+            ]
+          }
+        ],
+        "pinComparisons": [
+          {
+            "osm": {
+              "type": "way",
+              "id": 717752694
+            },
+            "metres": 13,
+            "interpretation": "Geometric separation only; corroboration/contradiction adjudicated from identity sources"
+          },
+          {
+            "osm": {
+              "type": "node",
+              "id": 12541096601
+            },
+            "metres": 40,
+            "interpretation": "Geometric separation only; corroboration/contradiction adjudicated from identity sources"
+          },
+          {
+            "osm": {
+              "type": "node",
+              "id": 12032893452
+            },
+            "metres": 45,
+            "interpretation": "Geometric separation only; corroboration/contradiction adjudicated from identity sources"
+          }
+        ],
+        "polygon": null
+      },
+      "observedUse": {
+        "description": "hotel_site",
+        "wholeBuildingExclusiveUse": "UNVERIFIED",
+        "legalUnitUse": "UNVERIFIED"
+      },
+      "audience": {
+        "basis": "independent_evidence",
+        "description": "Hotel visitors / central urban leisure context",
+        "numericScore": null,
+        "accommodationDemand": "UNVERIFIED"
+      },
+      "magnets": [
+        {
+          "name": "Зимний театр",
+          "category": "theatre",
+          "point": {
+            "lat": 43.5723561,
+            "lon": 39.730585
+          },
+          "osm": {
+            "type": "relation",
+            "id": 9353455
+          },
+          "sourceRefs": [
+            "cached-sochi-theatre-landmark"
+          ],
+          "permanence": "Mapped physical object; current operation unverified",
+          "scale": "UNVERIFIED beyond mapped category",
+          "observedMonthlyDemand": false,
+          "role": "candidate_nearby_anchor"
+        }
+      ],
+      "distances": [
+        {
+          "toName": "Зимний театр",
+          "from": {
+            "lat": 43.576735955407,
+            "lon": 39.730436034391
+          },
+          "to": {
+            "lat": 43.5723561,
+            "lon": 39.730585
+          },
+          "metres": 487,
+          "method": "unit-vector-mean-earth-sphere",
+          "walking": false,
+          "sourceRefs": [
+            "sochi-hotel",
+            "cached-sochi-theatre-landmark"
+          ],
+          "interpretation": "Candidate pin/centroid distance; not entrance or walkability"
+        }
+      ],
+      "walking": {
+        "status": "UNVERIFIED",
+        "metres": null,
+        "minutes": null,
+        "barriers": "Operator describes underground road crossing on arrival route",
+        "routeGraph": null
+      },
+      "legalPropertyUse": "UNVERIFIED",
+      "monthlyDemand": "UNVERIFIED",
+      "profitability": "UNVERIFIED",
+      "evaluator": {
+        "id": "independent-other-geo-reviewer-20261015",
+        "beforeModelOutputs": true,
+        "sourceRefs": [
+          "review-other"
+        ]
+      },
+      "gaps": [
+        "Operator identity; parcel/entrance boundaries unverified",
+        "No observed monthly occupancy, audited revenue/costs or independently routed walking graph"
+      ],
+      "fixtureAudit": {
+        "zeroZeroAnchors": true,
+        "distances": [
+          "distance: 650",
+          "distance: 720"
+        ],
+        "numericScoreInjected": true,
+        "categoryEvidence": "synthetic fixture, not real inventory"
+      }
+    },
+    {
+      "id": "anapa",
+      "canonicalAddress": "Анапа, Пионерский проспект, 20",
+      "canonicalRegion": "Краснодарский край",
+      "sourceRefs": [
+        "anapa-operator",
+        "anapa-operator-legal",
+        "anapa-secondary",
+        "cached-anapa-nominatim",
+        "review-other"
+      ],
+      "identity": {
+        "status": "SUPPORTED",
+        "scope": "hotel_site",
+        "confidence": "high",
+        "adjudication": "Действующее веб-предложение курортного отеля «Россиянка» по точному дому 20; не подменять домом 20А или историческим брендом."
+      },
+      "geometry": {
+        "crs": "EPSG:4326",
+        "status": "CANDIDATES_ONLY",
+        "candidates": [
+          {
+            "lat": 44.9275893,
+            "lon": 37.32093,
+            "osm": {
+              "type": "relation",
+              "id": 2991308
+            },
+            "role": "cached-geocoder-candidate",
+            "sourceRefs": [
+              "cached-anapa-nominatim"
+            ],
+            "candidateAddress": {
+              "house_number": "20",
+              "road": "Пионерский проспект",
+              "town": "Анапа",
+              "county": "муниципальный округ Анапа",
+              "state": "Краснодарский край",
+              "ISO3166-2-lvl4": "RU-KDA",
+              "region": "Южный федеральный округ",
+              "postcode": "353450",
+              "country": "Россия",
+              "country_code": "ru"
+            }
+          }
+        ],
+        "pinComparisons": [],
+        "polygon": null
+      },
+      "observedUse": {
+        "description": "hotel_site",
+        "wholeBuildingExclusiveUse": "UNVERIFIED",
+        "legalUnitUse": "UNVERIFIED"
+      },
+      "audience": {
+        "basis": "independent_evidence",
+        "description": "Family resort offering; business share unmeasured",
+        "numericScore": null,
+        "accommodationDemand": "UNVERIFIED"
+      },
+      "magnets": [
+        {
+          "name": "Rossiyanka advertised beach",
+          "category": "beach",
+          "point": null,
+          "osm": null,
+          "sourceRefs": [
+            "anapa-operator"
+          ],
+          "permanence": "Seasonal/access/current usability unverified",
+          "scale": "Operator hotel amenity; not independently measured",
+          "observedMonthlyDemand": false,
+          "role": "operator_claim_only",
+          "advertisedDistanceMetres": 500,
+          "distanceMethod": "UNSPECIFIED_OPERATOR_CLAIM"
+        }
+      ],
+      "distances": [],
+      "walking": {
+        "status": "UNVERIFIED",
+        "metres": null,
+        "minutes": null,
+        "barriers": "No complete pedestrian barrier/entrance survey",
+        "routeGraph": null
+      },
+      "legalPropertyUse": "UNVERIFIED",
+      "monthlyDemand": "UNVERIFIED",
+      "profitability": "UNVERIFIED",
+      "evaluator": {
+        "id": "independent-other-geo-reviewer-20261015",
+        "beforeModelOutputs": true,
+        "sourceRefs": [
+          "review-other"
+        ]
+      },
+      "gaps": [
+        "Complex/premise identity and actual beach access unverified",
+        "No observed monthly occupancy, audited revenue/costs or independently routed walking graph"
+      ],
+      "fixtureAudit": {
+        "zeroZeroAnchors": true,
+        "distances": [
+          "distance: 420",
+          "distance: 550"
+        ],
+        "numericScoreInjected": true,
+        "categoryEvidence": "synthetic fixture, not real inventory"
+      }
+    },
+    {
+      "id": "sheregesh",
+      "canonicalAddress": "Шерегеш, улица Гагарина, 12",
+      "canonicalRegion": "Кемеровская область",
+      "sourceRefs": [
+        "sheregesh-utility",
+        "cached-sheregesh-nominatim",
+        "review-other"
+      ],
+      "identity": {
+        "status": "SUPPORTED",
+        "scope": "apartment_building_as_of_2024",
+        "confidence": "high",
+        "adjudication": "Многоквартирный жилой дом; институциональное свидетельство не даёт основания называть весь дом гостиницей."
+      },
+      "geometry": {
+        "crs": "EPSG:4326",
+        "status": "CANDIDATES_ONLY",
+        "candidates": [
+          {
+            "lat": 52.9271189,
+            "lon": 87.9772229,
+            "osm": {
+              "type": "way",
+              "id": 133143136
+            },
+            "role": "cached-geocoder-candidate",
+            "sourceRefs": [
+              "cached-sheregesh-nominatim"
+            ],
+            "candidateAddress": {
+              "house_number": "12",
+              "road": "улица Гагарина",
+              "town": "Шерегеш",
+              "county": "Таштагольский муниципальный округ",
+              "state": "Кемеровская область",
+              "ISO3166-2-lvl4": "RU-KEM",
+              "region": "Сибирский федеральный округ",
+              "postcode": "652971",
+              "country": "Россия",
+              "country_code": "ru"
+            }
+          }
+        ],
+        "pinComparisons": [],
+        "polygon": {
+          "type": "Polygon",
+          "coordinates": [
+            [
+              [
+                87.9768137,
+                52.9274004
+              ],
+              [
+                87.9769728,
+                52.9274615
+              ],
+              [
+                87.9777467,
+                52.9267288
+              ],
+              [
+                87.9775875,
+                52.9266677
+              ],
+              [
+                87.9775002,
+                52.9267503
+              ],
+              [
+                87.9773873,
+                52.9268572
+              ],
+              [
+                87.977277,
+                52.9269617
+              ],
+              [
+                87.9771796,
+                52.9270539
+              ],
+              [
+                87.9770425,
+                52.9271838
+              ],
+              [
+                87.9769201,
+                52.9272996
+              ],
+              [
+                87.9768137,
+                52.9274004
+              ]
+            ]
+          ],
+          "sourceRefs": [
+            "cached-osm-subject"
+          ],
+          "scope": "cached OSM footprint, not cadastral/legal boundary"
+        }
+      },
+      "observedUse": {
+        "description": "apartment_building_as_of_2024",
+        "wholeBuildingExclusiveUse": "UNVERIFIED",
+        "legalUnitUse": "UNVERIFIED"
+      },
+      "audience": {
+        "basis": "independent_evidence",
+        "description": "Residential building in mountain-resort town; tourist bookings unmeasured",
+        "numericScore": null,
+        "accommodationDemand": "UNVERIFIED"
+      },
+      "magnets": [],
+      "distances": [],
+      "walking": {
+        "status": "UNVERIFIED",
+        "metres": null,
+        "minutes": null,
+        "barriers": "No complete pedestrian barrier/entrance survey",
+        "routeGraph": null
+      },
+      "legalPropertyUse": "UNVERIFIED",
+      "monthlyDemand": "UNVERIFIED",
+      "profitability": "UNVERIFIED",
+      "evaluator": {
+        "id": "independent-other-geo-reviewer-20261015",
+        "beforeModelOutputs": true,
+        "sourceRefs": [
+          "review-other"
+        ]
+      },
+      "gaps": [
+        "No identified nearby ski lift or route supporting650m",
+        "No observed monthly occupancy, audited revenue/costs or independently routed walking graph"
+      ],
+      "fixtureAudit": {
+        "zeroZeroAnchors": true,
+        "distances": [
+          "distance: 650",
+          "distance: 520"
+        ],
+        "numericScoreInjected": true,
+        "categoryEvidence": "synthetic fixture, not real inventory"
+      }
+    },
+    {
+      "id": "palace",
+      "canonicalAddress": "Санкт-Петербург, Дворцовая площадь, 2",
+      "canonicalRegion": "Санкт‑Петербург",
+      "sourceRefs": [
+        "palace-museum",
+        "cached-palace-nominatim",
+        "review-other"
+      ],
+      "identity": {
+        "status": "SUPPORTED",
+        "scope": "museum_complex_postal_address",
+        "confidence": "medium",
+        "adjudication": "Официальный адрес Главного музейного комплекса Государственного Эрмитажа; культурно-туристический объект, не подтверждённое жильё."
+      },
+      "geometry": {
+        "crs": "EPSG:4326",
+        "status": "CANDIDATES_ONLY",
+        "candidates": [
+          {
+            "lat": 59.9390434,
+            "lon": 30.3153537,
+            "osm": {
+              "type": "relation",
+              "id": 1947508
+            },
+            "role": "cached-geocoder-candidate",
+            "sourceRefs": [
+              "cached-palace-nominatim"
+            ],
+            "candidateAddress": {
+              "square": "Дворцовая площадь",
+              "city_district": "Дворцовый округ",
+              "city": "Санкт-Петербург",
+              "state": "Санкт-Петербург",
+              "ISO3166-2-lvl4": "RU-SPE",
+              "region": "Северо-Западный федеральный округ",
+              "country": "Россия",
+              "country_code": "ru"
+            }
+          },
+          {
+            "lat": 59.9391464,
+            "lon": 30.3157574,
+            "osm": {
+              "type": "way",
+              "id": 217399816
+            },
+            "role": "cached-geocoder-candidate",
+            "sourceRefs": [
+              "cached-palace-nominatim"
+            ],
+            "candidateAddress": {
+              "road": "Дворцовая площадь",
+              "city_district": "Дворцовый округ",
+              "city": "Санкт-Петербург",
+              "state": "Санкт-Петербург",
+              "ISO3166-2-lvl4": "RU-SPE",
+              "region": "Северо-Западный федеральный округ",
+              "postcode": "191186",
+              "country": "Россия",
+              "country_code": "ru"
+            }
+          },
+          {
+            "lat": 59.8837605,
+            "lon": 29.9125463,
+            "osm": {
+              "type": "way",
+              "id": 637304529
+            },
+            "role": "cached-geocoder-candidate",
+            "sourceRefs": [
+              "cached-palace-nominatim"
+            ],
+            "candidateAddress": {
+              "square": "Дворцовая площадь",
+              "suburb": "Заячий Ремиз",
+              "town": "Петергоф",
+              "state": "Санкт-Петербург",
+              "ISO3166-2-lvl4": "RU-SPE",
+              "region": "Северо-Западный федеральный округ",
+              "country": "Россия",
+              "country_code": "ru"
+            }
+          },
+          {
+            "lat": 59.9404625,
+            "lon": 30.3151887,
+            "osm": {
+              "type": "relation",
+              "id": 69424
+            },
+            "role": "named-palace-candidate",
+            "sourceRefs": [
+              "cached-palace-building-landmark"
+            ]
+          }
+        ],
+        "pinComparisons": [],
+        "polygon": null
+      },
+      "observedUse": {
+        "description": "museum_complex_postal_address",
+        "wholeBuildingExclusiveUse": "UNVERIFIED",
+        "legalUnitUse": "UNVERIFIED"
+      },
+      "audience": {
+        "basis": "independent_evidence",
+        "description": "Museum/cultural visitors; not established accommodation subject",
+        "numericScore": null,
+        "accommodationDemand": "UNVERIFIED"
+      },
+      "magnets": [
+        {
+          "name": "Зимний дворец",
+          "category": "castle",
+          "point": {
+            "lat": 59.9404625,
+            "lon": 30.3151887
+          },
+          "osm": {
+            "type": "relation",
+            "id": 69424
+          },
+          "sourceRefs": [
+            "cached-palace-building-landmark"
+          ],
+          "permanence": "Mapped physical object; current operation unverified",
+          "scale": "UNVERIFIED beyond mapped category",
+          "observedMonthlyDemand": false,
+          "role": "SUBJECT_IDENTITY_NOT_SEPARATE_MAGNET"
+        }
+      ],
+      "distances": [
+        {
+          "toName": "Зимний дворец",
+          "from": {
+            "lat": 59.9390434,
+            "lon": 30.3153537
+          },
+          "to": {
+            "lat": 59.9404625,
+            "lon": 30.3151887
+          },
+          "metres": 158,
+          "method": "unit-vector-mean-earth-sphere",
+          "walking": false,
+          "sourceRefs": [
+            "cached-palace-nominatim",
+            "cached-palace-building-landmark"
+          ],
+          "interpretation": "Candidate pin/centroid distance; not entrance or walkability"
+        }
+      ],
+      "walking": {
+        "status": "UNVERIFIED",
+        "metres": null,
+        "minutes": null,
+        "barriers": "No complete pedestrian barrier/entrance survey",
+        "routeGraph": null
+      },
+      "legalPropertyUse": "UNVERIFIED",
+      "monthlyDemand": "UNVERIFIED",
+      "profitability": "UNVERIFIED",
+      "evaluator": {
+        "id": "independent-other-geo-reviewer-20261015",
+        "beforeModelOutputs": true,
+        "sourceRefs": [
+          "review-other"
+        ]
+      },
+      "gaps": [
+        "Museum complex vs precise building/entrance; direct source unavailable",
+        "No observed monthly occupancy, audited revenue/costs or independently routed walking graph"
+      ],
+      "fixtureAudit": {
+        "zeroZeroAnchors": true,
+        "distances": [
+          "distance: 650",
+          "distance: 260"
+        ],
+        "numericScoreInjected": true,
+        "categoryEvidence": "synthetic fixture, not real inventory"
+      }
+    },
+    {
+      "id": "nizhny",
+      "canonicalAddress": "Нижний Новгород, Большая Покровская улица, 2",
+      "canonicalRegion": "Нижегородская область",
+      "sourceRefs": [
+        "nizhny-tourism",
+        "cached-nizhny-nominatim",
+        "review-priority"
+      ],
+      "identity": {
+        "status": "SUPPORTED",
+        "scope": "historic_building_with_cafes",
+        "confidence": "high",
+        "adjudication": "Regional tourism portal identifies Dom-sunduk, former Upper Posad trading premises/public library, now coffee cluster. Secondary 2/1 alias needs confirmation."
+      },
+      "geometry": {
+        "crs": "EPSG:4326",
+        "status": "CORROBORATED_POINT",
+        "candidates": [
+          {
+            "lat": 56.3253652,
+            "lon": 44.0041993,
+            "osm": {
+              "type": "way",
+              "id": 1047123841
+            },
+            "role": "cached-geocoder-candidate",
+            "sourceRefs": [
+              "cached-nizhny-nominatim"
+            ],
+            "candidateAddress": {
+              "house_number": "2",
+              "road": "Большая Покровская улица",
+              "neighbourhood": "Кремль",
+              "city_district": "Нижегородский район",
+              "city": "Нижний Новгород",
+              "county": "городской округ Нижний Новгород",
+              "state": "Нижегородская область",
+              "ISO3166-2-lvl4": "RU-NIZ",
+              "region": "Приволжский федеральный округ",
+              "postcode": "603005",
+              "country": "Россия",
+              "country_code": "ru"
+            }
+          },
+          {
+            "lat": 56.3162036,
+            "lon": 43.9934878,
+            "osm": {
+              "type": "node",
+              "id": 7208263065
+            },
+            "role": "cached-geocoder-candidate",
+            "sourceRefs": [
+              "cached-nizhny-nominatim"
+            ],
+            "candidateAddress": {
+              "house_number": "2",
+              "road": "Большая Покровская улица",
+              "city_district": "Нижегородский район",
+              "city": "Нижний Новгород",
+              "county": "городской округ Нижний Новгород",
+              "state": "Нижегородская область",
+              "ISO3166-2-lvl4": "RU-NIZ",
+              "region": "Приволжский федеральный округ",
+              "postcode": "603000",
+              "country": "Россия",
+              "country_code": "ru"
+            }
+          },
+          {
+            "lat": 56.3255891,
+            "lon": 44.0043546,
+            "osm": {
+              "type": "node",
+              "id": 3302933082
+            },
+            "role": "cached-geocoder-candidate",
+            "sourceRefs": [
+              "cached-nizhny-nominatim"
+            ],
+            "candidateAddress": {
+              "amenity": "Coffee Cake",
+              "house_number": "2",
+              "road": "Большая Покровская улица",
+              "neighbourhood": "Кремль",
+              "city_district": "Нижегородский район",
+              "city": "Нижний Новгород",
+              "county": "городской округ Нижний Новгород",
+              "state": "Нижегородская область",
+              "ISO3166-2-lvl4": "RU-NIZ",
+              "region": "Приволжский федеральный округ",
+              "postcode": "603005",
+              "country": "Россия",
+              "country_code": "ru"
+            }
+          },
+          {
+            "lat": 56.325452774238,
+            "lon": 44.004203935829,
+            "role": "primary-source-pin",
+            "sourceRefs": [
+              "nizhny-tourism"
+            ]
+          }
+        ],
+        "pinComparisons": [
+          {
+            "osm": {
+              "type": "way",
+              "id": 1047123841
+            },
+            "metres": 10,
+            "interpretation": "Geometric separation only; corroboration/contradiction adjudicated from identity sources"
+          },
+          {
+            "osm": {
+              "type": "node",
+              "id": 7208263065
+            },
+            "metres": 1222,
+            "interpretation": "Geometric separation only; corroboration/contradiction adjudicated from identity sources"
+          },
+          {
+            "osm": {
+              "type": "node",
+              "id": 3302933082
+            },
+            "metres": 18,
+            "interpretation": "Geometric separation only; corroboration/contradiction adjudicated from identity sources"
+          }
+        ],
+        "polygon": null
+      },
+      "observedUse": {
+        "description": "historic_building_with_cafes",
+        "wholeBuildingExclusiveUse": "UNVERIFIED",
+        "legalUnitUse": "UNVERIFIED"
+      },
+      "audience": {
+        "basis": "independent_evidence",
+        "description": "Pedestrian sightseeing/cafe context",
+        "numericScore": null,
+        "accommodationDemand": "UNVERIFIED"
+      },
+      "magnets": [
+        {
+          "name": "Нижегородский государственный академический театр драмы им. М. Горького",
+          "category": "theatre",
+          "point": {
+            "lat": 56.3241681,
+            "lon": 44.0013353
+          },
+          "osm": {
+            "type": "relation",
+            "id": 4238217
+          },
+          "sourceRefs": [
+            "cached-nizhny-theatre-landmark"
+          ],
+          "permanence": "Mapped physical object; current operation unverified",
+          "scale": "UNVERIFIED beyond mapped category",
+          "observedMonthlyDemand": false,
+          "role": "candidate_nearby_anchor"
+        }
+      ],
+      "distances": [
+        {
+          "toName": "Нижегородский государственный академический театр драмы им. М. Горького",
+          "from": {
+            "lat": 56.325452774238,
+            "lon": 44.004203935829
+          },
+          "to": {
+            "lat": 56.3241681,
+            "lon": 44.0013353
+          },
+          "metres": 227,
+          "method": "unit-vector-mean-earth-sphere",
+          "walking": false,
+          "sourceRefs": [
+            "nizhny-tourism",
+            "cached-nizhny-theatre-landmark"
+          ],
+          "interpretation": "Candidate pin/centroid distance; not entrance or walkability"
+        }
+      ],
+      "walking": {
+        "status": "UNVERIFIED",
+        "metres": null,
+        "minutes": null,
+        "barriers": "No complete pedestrian barrier/entrance survey",
+        "routeGraph": null
+      },
+      "legalPropertyUse": "UNVERIFIED",
+      "monthlyDemand": "UNVERIFIED",
+      "profitability": "UNVERIFIED",
+      "evaluator": {
+        "id": "geo_identity_review (independent delegated Codex reviewer)",
+        "beforeModelOutputs": true,
+        "sourceRefs": [
+          "review-priority"
+        ]
+      },
+      "gaps": [
+        "2/1 corner alias and residential/legal unit use unresolved",
+        "No observed monthly occupancy, audited revenue/costs or independently routed walking graph"
+      ],
+      "fixtureAudit": {
+        "zeroZeroAnchors": true,
+        "distances": [
+          "distance: 650",
+          "distance: 900"
+        ],
+        "numericScoreInjected": true,
+        "categoryEvidence": "synthetic fixture, not real inventory"
+      }
+    },
+    {
+      "id": "samara",
+      "canonicalAddress": "Самара, Ленинградская улица, 25",
+      "canonicalRegion": "Самарская область",
+      "sourceRefs": [
+        "samara-act-mirror",
+        "cached-samara-nominatim",
+        "review-other"
+      ],
+      "identity": {
+        "status": "SUPPORTED",
+        "scope": "historic_corner_property",
+        "confidence": "medium",
+        "adjudication": "Исторический дом Т. С. Докучаевой с аркой ворот, также Куйбышева, 80; современная функция всего комплекса недостаточно установлена."
+      },
+      "geometry": {
+        "crs": "EPSG:4326",
+        "status": "CANDIDATES_ONLY",
+        "candidates": [
+          {
+            "lat": 53.1880224,
+            "lon": 50.0885213,
+            "osm": {
+              "type": "node",
+              "id": 4235122213
+            },
+            "role": "cached-geocoder-candidate",
+            "sourceRefs": [
+              "cached-samara-nominatim"
+            ],
+            "candidateAddress": {
+              "house_number": "25",
+              "road": "Ленинградская улица",
+              "suburb": "Проран",
+              "city": "Самара",
+              "county": "городской округ Самара",
+              "state": "Самарская область",
+              "ISO3166-2-lvl4": "RU-SAM",
+              "region": "Приволжский федеральный округ",
+              "postcode": "443028",
+              "country": "Россия",
+              "country_code": "ru"
+            }
+          }
+        ],
+        "pinComparisons": [],
+        "polygon": null
+      },
+      "observedUse": {
+        "description": "historic_corner_property",
+        "wholeBuildingExclusiveUse": "UNVERIFIED",
+        "legalUnitUse": "UNVERIFIED"
+      },
+      "audience": {
+        "basis": "independent_evidence",
+        "description": "Historic urban mixed activity; no measured visitor mix",
+        "numericScore": null,
+        "accommodationDemand": "UNVERIFIED"
+      },
+      "magnets": [
+        {
+          "name": "Самарский областной художественный музей",
+          "category": "museum",
+          "point": {
+            "lat": 53.1894953,
+            "lon": 50.089675
+          },
+          "osm": {
+            "type": "relation",
+            "id": 2082311
+          },
+          "sourceRefs": [
+            "cached-samara-museum-landmark"
+          ],
+          "permanence": "Mapped physical object; current operation unverified",
+          "scale": "UNVERIFIED beyond mapped category",
+          "observedMonthlyDemand": false,
+          "role": "candidate_nearby_anchor"
+        }
+      ],
+      "distances": [
+        {
+          "toName": "Самарский областной художественный музей",
+          "from": {
+            "lat": 53.1880224,
+            "lon": 50.0885213
+          },
+          "to": {
+            "lat": 53.1894953,
+            "lon": 50.089675
+          },
+          "metres": 181,
+          "method": "unit-vector-mean-earth-sphere",
+          "walking": false,
+          "sourceRefs": [
+            "cached-samara-nominatim",
+            "cached-samara-museum-landmark"
+          ],
+          "interpretation": "Candidate pin/centroid distance; not entrance or walkability"
+        }
+      ],
+      "walking": {
+        "status": "UNVERIFIED",
+        "metres": null,
+        "minutes": null,
+        "barriers": "No complete pedestrian barrier/entrance survey",
+        "routeGraph": null
+      },
+      "legalPropertyUse": "UNVERIFIED",
+      "monthlyDemand": "UNVERIFIED",
+      "profitability": "UNVERIFIED",
+      "evaluator": {
+        "id": "independent-other-geo-reviewer-20261015",
+        "beforeModelOutputs": true,
+        "sourceRefs": [
+          "review-other"
+        ]
+      },
+      "gaps": [
+        "Current full-building use and property letters unverified",
+        "No observed monthly occupancy, audited revenue/costs or independently routed walking graph"
+      ],
+      "fixtureAudit": {
+        "zeroZeroAnchors": true,
+        "distances": [
+          "distance: 650",
+          "distance: 850"
+        ],
+        "numericScoreInjected": true,
+        "categoryEvidence": "synthetic fixture, not real inventory"
+      }
+    },
+    {
+      "id": "pirogovskaya",
+      "canonicalAddress": "Москва, Большая Пироговская улица, 2",
+      "canonicalRegion": "Москва",
+      "sourceRefs": [
+        "moscow-directory",
+        "moscow-urology",
+        "cached-pirogovskaya-nominatim",
+        "review-priority"
+      ],
+      "identity": {
+        "status": "AMBIGUOUS",
+        "scope": "institutional_multi_building_complex",
+        "confidence": "high",
+        "adjudication": "Incomplete compound address. Sechenov lists buildings 1,2,3,4,9; rectorate at str4; Fronshtein urology clinic at str1."
+      },
+      "geometry": {
+        "crs": "EPSG:4326",
+        "status": "CANDIDATES_ONLY",
+        "candidates": [
+          {
+            "lat": 55.7312084,
+            "lon": 37.5678286,
+            "osm": {
+              "type": "way",
+              "id": 51545016
+            },
+            "role": "cached-geocoder-candidate",
+            "sourceRefs": [
+              "cached-pirogovskaya-nominatim"
+            ],
+            "candidateAddress": {
+              "house_number": "2 с4",
+              "road": "Большая Пироговская улица",
+              "quarter": "квартал 538",
+              "suburb": "район Хамовники",
+              "city": "Москва",
+              "state": "Москва",
+              "ISO3166-2-lvl4": "RU-MOW",
+              "region": "Центральный федеральный округ",
+              "postcode": "119435",
+              "country": "Россия",
+              "country_code": "ru"
+            }
+          },
+          {
+            "lat": 55.7324265,
+            "lon": 37.5710643,
+            "osm": {
+              "type": "way",
+              "id": 51549223
+            },
+            "role": "cached-geocoder-candidate",
+            "sourceRefs": [
+              "cached-pirogovskaya-nominatim"
+            ],
+            "candidateAddress": {
+              "amenity": "Первый Московский государственный медицинский университет имени И. М. Сеченова",
+              "house_number": "2 с1",
+              "road": "Большая Пироговская улица",
+              "quarter": "квартал 538",
+              "suburb": "район Хамовники",
+              "city": "Москва",
+              "state": "Москва",
+              "ISO3166-2-lvl4": "RU-MOW",
+              "region": "Центральный федеральный округ",
+              "postcode": "119435",
+              "country": "Россия",
+              "country_code": "ru"
+            }
+          },
+          {
+            "lat": 55.731697,
+            "lon": 37.567095,
+            "osm": {
+              "type": "way",
+              "id": 51545014
+            },
+            "role": "cached-geocoder-candidate",
+            "sourceRefs": [
+              "cached-pirogovskaya-nominatim"
+            ],
+            "candidateAddress": {
+              "house_number": "2 с9",
+              "road": "Большая Пироговская улица",
+              "quarter": "квартал 538",
+              "suburb": "район Хамовники",
+              "city": "Москва",
+              "state": "Москва",
+              "ISO3166-2-lvl4": "RU-MOW",
+              "region": "Центральный федеральный округ",
+              "postcode": "119435",
+              "country": "Россия",
+              "country_code": "ru"
+            }
+          }
+        ],
+        "pinComparisons": [],
+        "polygon": null
+      },
+      "observedUse": {
+        "description": "institutional_multi_building_complex",
+        "wholeBuildingExclusiveUse": "UNVERIFIED",
+        "legalUnitUse": "UNVERIFIED"
+      },
+      "audience": {
+        "basis": "independent_evidence",
+        "description": "Medical/university visitors plausible; not automatically corporate demand",
+        "numericScore": null,
+        "accommodationDemand": "UNVERIFIED"
+      },
+      "magnets": [
+        {
+          "name": "Fronshtein urology clinic2str1",
+          "category": "medical",
+          "point": null,
+          "osm": null,
+          "sourceRefs": [
+            "moscow-urology"
+          ],
+          "permanence": "Operator lists clinic; live visit not verified",
+          "scale": "Specialized clinic; no quantitative demand",
+          "observedMonthlyDemand": false,
+          "role": "institutional_anchor_coordinate_unverified"
+        }
+      ],
+      "distances": [],
+      "walking": {
+        "status": "UNVERIFIED",
+        "metres": null,
+        "minutes": null,
+        "barriers": "No complete pedestrian barrier/entrance survey",
+        "routeGraph": null
+      },
+      "legalPropertyUse": "UNVERIFIED",
+      "monthlyDemand": "UNVERIFIED",
+      "profitability": "UNVERIFIED",
+      "evaluator": {
+        "id": "geo_identity_review (independent delegated Codex reviewer)",
+        "beforeModelOutputs": true,
+        "sourceRefs": [
+          "review-priority"
+        ]
+      },
+      "gaps": [
+        "Building suffix1/2/3/4/9 required; do not silently choose rectorate",
+        "No observed monthly occupancy, audited revenue/costs or independently routed walking graph"
+      ],
+      "fixtureAudit": {
+        "zeroZeroAnchors": true,
+        "distances": [
+          "distance: 650",
+          "distance: 900"
+        ],
+        "numericScoreInjected": true,
+        "categoryEvidence": "synthetic fixture, not real inventory"
+      }
+    },
+    {
+      "id": "zelenogradsk",
+      "canonicalAddress": "Зеленоградск, Курортный проспект, 1",
+      "canonicalRegion": "Калининградская область",
+      "sourceRefs": [
+        "zelenogradsk-newspaper",
+        "cached-zelenogradsk-nominatim",
+        "review-other"
+      ],
+      "identity": {
+        "status": "SUPPORTED",
+        "scope": "residential_replacement_secondary_evidence",
+        "confidence": "medium",
+        "adjudication": "Современный жилой дом на месте не сохранившегося отеля «Юст»; отдельная краткосрочная квартира не делает весь дом отелем."
+      },
+      "geometry": {
+        "crs": "EPSG:4326",
+        "status": "CANDIDATES_ONLY",
+        "candidates": [
+          {
+            "lat": 54.9615878,
+            "lon": 20.4818697,
+            "osm": {
+              "type": "way",
+              "id": 694099812
+            },
+            "role": "cached-geocoder-candidate",
+            "sourceRefs": [
+              "cached-zelenogradsk-nominatim"
+            ],
+            "candidateAddress": {
+              "house_number": "1",
+              "road": "Курортный проспект",
+              "suburb": "Вишнёвое",
+              "town": "Зеленоградск",
+              "county": "Зеленоградский муниципальный округ",
+              "state": "Калининградская область",
+              "ISO3166-2-lvl4": "RU-KGD",
+              "region": "Северо-Западный федеральный округ",
+              "postcode": "238530",
+              "country": "Россия",
+              "country_code": "ru"
+            }
+          },
+          {
+            "lat": 54.9616193,
+            "lon": 20.4818382,
+            "osm": {
+              "type": "node",
+              "id": 4434466092
+            },
+            "role": "cached-geocoder-candidate",
+            "sourceRefs": [
+              "cached-zelenogradsk-nominatim"
+            ],
+            "candidateAddress": {
+              "amenity": "Целитель",
+              "house_number": "1",
+              "road": "Курортный проспект",
+              "suburb": "Вишнёвое",
+              "town": "Зеленоградск",
+              "county": "Зеленоградский муниципальный округ",
+              "state": "Калининградская область",
+              "ISO3166-2-lvl4": "RU-KGD",
+              "region": "Северо-Западный федеральный округ",
+              "postcode": "238530",
+              "country": "Россия",
+              "country_code": "ru"
+            }
+          },
+          {
+            "lat": 54.9589872,
+            "lon": 20.4778712,
+            "osm": {
+              "type": "node",
+              "id": 13929154001
+            },
+            "role": "cached-geocoder-candidate",
+            "sourceRefs": [
+              "cached-zelenogradsk-nominatim"
+            ],
+            "candidateAddress": {
+              "shop": "WildBerries",
+              "house_number": "1",
+              "road": "Курортный проспект",
+              "suburb": "Вишнёвое",
+              "town": "Зеленоградск",
+              "county": "Зеленоградский муниципальный округ",
+              "state": "Калининградская область",
+              "ISO3166-2-lvl4": "RU-KGD",
+              "region": "Северо-Западный федеральный округ",
+              "postcode": "238530",
+              "country": "Россия",
+              "country_code": "ru"
+            }
+          }
+        ],
+        "pinComparisons": [],
+        "polygon": null
+      },
+      "observedUse": {
+        "description": "residential_replacement_secondary_evidence",
+        "wholeBuildingExclusiveUse": "UNVERIFIED",
+        "legalUnitUse": "UNVERIFIED"
+      },
+      "audience": {
+        "basis": "independent_evidence",
+        "description": "Residents and potential individual apartment guests",
+        "numericScore": null,
+        "accommodationDemand": "UNVERIFIED"
+      },
+      "magnets": [
+        {
+          "name": "Мурариум",
+          "category": "museum",
+          "point": {
+            "lat": 54.9597881,
+            "lon": 20.4825365
+          },
+          "osm": {
+            "type": "way",
+            "id": 133724496
+          },
+          "sourceRefs": [
+            "cached-zelenogradsk-museum-landmark"
+          ],
+          "permanence": "Mapped physical object; current operation unverified",
+          "scale": "UNVERIFIED beyond mapped category",
+          "observedMonthlyDemand": false,
+          "role": "candidate_nearby_anchor"
+        }
+      ],
+      "distances": [
+        {
+          "toName": "Мурариум",
+          "from": {
+            "lat": 54.9615878,
+            "lon": 20.4818697
+          },
+          "to": {
+            "lat": 54.9597881,
+            "lon": 20.4825365
+          },
+          "metres": 205,
+          "method": "unit-vector-mean-earth-sphere",
+          "walking": false,
+          "sourceRefs": [
+            "cached-zelenogradsk-nominatim",
+            "cached-zelenogradsk-museum-landmark"
+          ],
+          "interpretation": "Candidate pin/centroid distance; not entrance or walkability"
+        }
+      ],
+      "walking": {
+        "status": "UNVERIFIED",
+        "metres": null,
+        "minutes": null,
+        "barriers": "No complete pedestrian barrier/entrance survey",
+        "routeGraph": null
+      },
+      "legalPropertyUse": "UNVERIFIED",
+      "monthlyDemand": "UNVERIFIED",
+      "profitability": "UNVERIFIED",
+      "evaluator": {
+        "id": "independent-other-geo-reviewer-20261015",
+        "beforeModelOutputs": true,
+        "sourceRefs": [
+          "review-other"
+        ]
+      },
+      "gaps": [
+        "No current cadastral proof; demolished historic hotel not present hotel",
+        "No observed monthly occupancy, audited revenue/costs or independently routed walking graph"
+      ],
+      "fixtureAudit": {
+        "zeroZeroAnchors": true,
+        "distances": [
+          "distance: 650",
+          "distance: 650"
+        ],
+        "numericScoreInjected": true,
+        "categoryEvidence": "synthetic fixture, not real inventory"
+      }
+    },
+    {
+      "id": "svetlogorsk",
+      "canonicalAddress": "Светлогорск, улица Ленина, 8",
+      "canonicalRegion": "Калининградская область",
+      "sourceRefs": [
+        "svetlogorsk-restaurant",
+        "cached-svetlogorsk-nominatim",
+        "review-priority"
+      ],
+      "identity": {
+        "status": "SUPPORTED",
+        "scope": "restaurant_occupant",
+        "confidence": "high",
+        "adjudication": "Assuming Kaliningrad Oblast, Papasha Beppe operator confirms restaurant at exact address. Directory floors1-3 are not proof of exclusive whole-building use. Do not merge 8/9 automatically. Region needed because same-name Russian settlement exists."
+      },
+      "geometry": {
+        "crs": "EPSG:4326",
+        "status": "CANDIDATES_ONLY",
+        "candidates": [
+          {
+            "lat": 54.9433311,
+            "lon": 20.1631689,
+            "osm": {
+              "type": "way",
+              "id": 627839551
+            },
+            "role": "cached-geocoder-candidate",
+            "sourceRefs": [
+              "cached-svetlogorsk-nominatim"
+            ],
+            "candidateAddress": {
+              "house_number": "8",
+              "road": "улица Ленина",
+              "suburb": "Заречный",
+              "town": "Светлогорск",
+              "county": "Светлогорский городской округ",
+              "state": "Калининградская область",
+              "ISO3166-2-lvl4": "RU-KGD",
+              "region": "Северо-Западный федеральный округ",
+              "postcode": "238560",
+              "country": "Россия",
+              "country_code": "ru"
+            }
+          },
+          {
+            "lat": 54.94331,
+            "lon": 20.1632217,
+            "osm": {
+              "type": "node",
+              "id": 4327752120
+            },
+            "role": "cached-geocoder-candidate",
+            "sourceRefs": [
+              "cached-svetlogorsk-nominatim"
+            ],
+            "candidateAddress": {
+              "amenity": "Папаша Беппе",
+              "house_number": "8",
+              "road": "улица Ленина",
+              "suburb": "Заречный",
+              "town": "Светлогорск",
+              "county": "Светлогорский городской округ",
+              "state": "Калининградская область",
+              "ISO3166-2-lvl4": "RU-KGD",
+              "region": "Северо-Западный федеральный округ",
+              "postcode": "238560",
+              "country": "Россия",
+              "country_code": "ru"
+            }
+          }
+        ],
+        "pinComparisons": [],
+        "polygon": null
+      },
+      "observedUse": {
+        "description": "restaurant_occupant",
+        "wholeBuildingExclusiveUse": "UNVERIFIED",
+        "legalUnitUse": "UNVERIFIED"
+      },
+      "audience": {
+        "basis": "independent_evidence",
+        "description": "Dining/visitor activity supported; not rental demand",
+        "numericScore": null,
+        "accommodationDemand": "UNVERIFIED"
+      },
+      "magnets": [
+        {
+          "name": "\"Янтарь - холл\"",
+          "category": "theatre",
+          "point": {
+            "lat": 54.9454715,
+            "lon": 20.1595031
+          },
+          "osm": {
+            "type": "way",
+            "id": 350404478
+          },
+          "sourceRefs": [
+            "cached-svetlogorsk-hall-landmark"
+          ],
+          "permanence": "Mapped physical object; current operation unverified",
+          "scale": "UNVERIFIED beyond mapped category",
+          "observedMonthlyDemand": false,
+          "role": "candidate_nearby_anchor"
+        }
+      ],
+      "distances": [
+        {
+          "toName": "\"Янтарь - холл\"",
+          "from": {
+            "lat": 54.9433311,
+            "lon": 20.1631689
+          },
+          "to": {
+            "lat": 54.9454715,
+            "lon": 20.1595031
+          },
+          "metres": 334,
+          "method": "unit-vector-mean-earth-sphere",
+          "walking": false,
+          "sourceRefs": [
+            "cached-svetlogorsk-nominatim",
+            "cached-svetlogorsk-hall-landmark"
+          ],
+          "interpretation": "Candidate pin/centroid distance; not entrance or walkability"
+        }
+      ],
+      "walking": {
+        "status": "UNVERIFIED",
+        "metres": null,
+        "minutes": null,
+        "barriers": "No complete pedestrian barrier/entrance survey",
+        "routeGraph": null
+      },
+      "legalPropertyUse": "UNVERIFIED",
+      "monthlyDemand": "UNVERIFIED",
+      "profitability": "UNVERIFIED",
+      "evaluator": {
+        "id": "geo_identity_review (independent delegated Codex reviewer)",
+        "beforeModelOutputs": true,
+        "sourceRefs": [
+          "review-priority"
+        ]
+      },
+      "gaps": [
+        "Kaliningrad region from canonical fixture; full-building use and unit suitability unverified",
+        "No observed monthly occupancy, audited revenue/costs or independently routed walking graph"
+      ],
+      "fixtureAudit": {
+        "zeroZeroAnchors": true,
+        "distances": [
+          "distance: 650",
+          "distance: 650"
+        ],
+        "numericScoreInjected": true,
+        "categoryEvidence": "synthetic fixture, not real inventory"
+      }
+    },
+    {
+      "id": "gelendzhik",
+      "canonicalAddress": "Геленджик, набережная, 1",
+      "canonicalRegion": "Краснодарский край",
+      "sourceRefs": [
+        "gelendzhik-candidate",
+        "cached-gelendzhik-nominatim",
+        "review-priority"
+      ],
+      "identity": {
+        "status": "AMBIGUOUS",
+        "scope": "unresolved_street_or_waterfront",
+        "confidence": "low",
+        "adjudication": "Exact address unresolved. TVIL capsule-hotel candidate and Tonky Mys directory lead are weak. Same street/number exists in Teshebs within Gelendzhik municipal district. Do not silently replace with central waterfront, Chernomorskaya1/1 or Revolyutsionnaya1."
+      },
+      "geometry": {
+        "crs": "EPSG:4326",
+        "status": "CANDIDATES_ONLY",
+        "candidates": [
+          {
+            "lat": 44.5645987,
+            "lon": 38.0284899,
+            "osm": {
+              "type": "way",
+              "id": 105833679
+            },
+            "role": "cached-geocoder-candidate",
+            "sourceRefs": [
+              "cached-gelendzhik-nominatim"
+            ],
+            "candidateAddress": {
+              "house_number": "1",
+              "road": "Набережная улица",
+              "suburb": "Тонкий мыс",
+              "town": "Геленджик",
+              "county": "городской округ Геленджик",
+              "state": "Краснодарский край",
+              "ISO3166-2-lvl4": "RU-KDA",
+              "region": "Южный федеральный округ",
+              "postcode": "353466",
+              "country": "Россия",
+              "country_code": "ru"
+            }
+          },
+          {
+            "lat": 44.5837278,
+            "lon": 38.0274178,
+            "osm": {
+              "type": "way",
+              "id": 105799270
+            },
+            "role": "cached-geocoder-candidate",
+            "sourceRefs": [
+              "cached-gelendzhik-nominatim"
+            ],
+            "candidateAddress": {
+              "road": "Набережная",
+              "suburb": "Тонкий мыс",
+              "town": "Геленджик",
+              "county": "городской округ Геленджик",
+              "state": "Краснодарский край",
+              "ISO3166-2-lvl4": "RU-KDA",
+              "region": "Южный федеральный округ",
+              "postcode": "353468",
+              "country": "Россия",
+              "country_code": "ru"
+            }
+          }
+        ],
+        "pinComparisons": [],
+        "polygon": null
+      },
+      "observedUse": {
+        "description": "unresolved_street_or_waterfront",
+        "wholeBuildingExclusiveUse": "UNVERIFIED",
+        "legalUnitUse": "UNVERIFIED"
+      },
+      "audience": {
+        "basis": "independent_evidence",
+        "description": "UNVERIFIED at property level",
+        "numericScore": null,
+        "accommodationDemand": "UNVERIFIED"
+      },
+      "magnets": [],
+      "distances": [],
+      "walking": {
+        "status": "UNVERIFIED",
+        "metres": null,
+        "minutes": null,
+        "barriers": "No complete pedestrian barrier/entrance survey",
+        "routeGraph": null
+      },
+      "legalPropertyUse": "UNVERIFIED",
+      "monthlyDemand": "UNVERIFIED",
+      "profitability": "UNVERIFIED",
+      "evaluator": {
+        "id": "geo_identity_review (independent delegated Codex reviewer)",
+        "beforeModelOutputs": true,
+        "sourceRefs": [
+          "review-priority"
+        ]
+      },
+      "gaps": [
+        "Official settlement/street/building identity; not automatic central promenade",
+        "No observed monthly occupancy, audited revenue/costs or independently routed walking graph"
+      ],
+      "fixtureAudit": {
+        "zeroZeroAnchors": true,
+        "distances": [
+          "distance: 650",
+          "distance: 650"
+        ],
+        "numericScoreInjected": true,
+        "categoryEvidence": "synthetic fixture, not real inventory"
+      }
+    },
+    {
+      "id": "estosadok",
+      "canonicalAddress": "Сочи, Эсто‑Садок, улица Эстонская, 37",
+      "canonicalRegion": "Краснодарский край",
+      "sourceRefs": [
+        "estosadok-municipal",
+        "cached-estosadok-nominatim",
+        "review-other"
+      ],
+      "identity": {
+        "status": "AMBIGUOUS",
+        "scope": "multi_building_residential_complex",
+        "confidence": "medium",
+        "adjudication": "Жилой комплекс с несколькими корпусами и предложениями отдельных апартаментов; без корпуса адрес недостаточно точен для одного здания."
+      },
+      "geometry": {
+        "crs": "EPSG:4326",
+        "status": "CANDIDATES_ONLY",
+        "candidates": [
+          {
+            "lat": 43.6857766,
+            "lon": 40.2559506,
+            "osm": {
+              "type": "way",
+              "id": 249781179
+            },
+            "role": "cached-geocoder-candidate",
+            "sourceRefs": [
+              "cached-estosadok-nominatim"
+            ],
+            "candidateAddress": {
+              "house_number": "37",
+              "road": "Эстонская улица",
+              "quarter": "Курорт Красная Поляна",
+              "village": "Эстосадок",
+              "city_district": "Адлерский внутригородской район",
+              "county": "городской округ Сочи",
+              "state": "Краснодарский край",
+              "ISO3166-2-lvl4": "RU-KDA",
+              "region": "Южный федеральный округ",
+              "postcode": "354392",
+              "country": "Россия",
+              "country_code": "ru"
+            }
+          }
+        ],
+        "pinComparisons": [],
+        "polygon": null
+      },
+      "observedUse": {
+        "description": "multi_building_residential_complex",
+        "wholeBuildingExclusiveUse": "UNVERIFIED",
+        "legalUnitUse": "UNVERIFIED"
+      },
+      "audience": {
+        "basis": "independent_evidence",
+        "description": "Residents and advertised apartments; resort proximity alone is not demand",
+        "numericScore": null,
+        "accommodationDemand": "UNVERIFIED"
+      },
+      "magnets": [
+        {
+          "name": "Горная карусель",
+          "category": "bus_stop",
+          "point": {
+            "lat": 43.6833333,
+            "lon": 40.2693103
+          },
+          "osm": {
+            "type": "node",
+            "id": 5902844074
+          },
+          "sourceRefs": [
+            "cached-estosadok-resort-landmark"
+          ],
+          "permanence": "Mapped physical object; current operation unverified",
+          "scale": "UNVERIFIED beyond mapped category",
+          "observedMonthlyDemand": false,
+          "role": "TRANSIT_NOT_SKI_MAGNET"
+        },
+        {
+          "name": "Горная карусель",
+          "category": "bus_stop",
+          "point": {
+            "lat": 43.6835661,
+            "lon": 40.2670115
+          },
+          "osm": {
+            "type": "node",
+            "id": 1672950995
+          },
+          "sourceRefs": [
+            "cached-estosadok-resort-landmark"
+          ],
+          "permanence": "Mapped physical object; current operation unverified",
+          "scale": "UNVERIFIED beyond mapped category",
+          "observedMonthlyDemand": false,
+          "role": "TRANSIT_NOT_SKI_MAGNET"
+        },
+        {
+          "name": "Горная карусель",
+          "category": "bicycle_rental",
+          "point": {
+            "lat": 43.6835115,
+            "lon": 40.2670056
+          },
+          "osm": {
+            "type": "node",
+            "id": 3046969578
+          },
+          "sourceRefs": [
+            "cached-estosadok-resort-landmark"
+          ],
+          "permanence": "Mapped physical object; current operation unverified",
+          "scale": "UNVERIFIED beyond mapped category",
+          "observedMonthlyDemand": false,
+          "role": "TRANSIT_NOT_SKI_MAGNET"
+        }
+      ],
+      "distances": [
+        {
+          "toName": "Горная карусель",
+          "from": {
+            "lat": 43.6857766,
+            "lon": 40.2559506
+          },
+          "to": {
+            "lat": 43.6833333,
+            "lon": 40.2693103
+          },
+          "metres": 1108,
+          "method": "unit-vector-mean-earth-sphere",
+          "walking": false,
+          "sourceRefs": [
+            "cached-estosadok-nominatim",
+            "cached-estosadok-resort-landmark"
+          ],
+          "interpretation": "Candidate pin/centroid distance; not entrance or walkability"
+        },
+        {
+          "toName": "Горная карусель",
+          "from": {
+            "lat": 43.6857766,
+            "lon": 40.2559506
+          },
+          "to": {
+            "lat": 43.6835661,
+            "lon": 40.2670115
+          },
+          "metres": 923,
+          "method": "unit-vector-mean-earth-sphere",
+          "walking": false,
+          "sourceRefs": [
+            "cached-estosadok-nominatim",
+            "cached-estosadok-resort-landmark"
+          ],
+          "interpretation": "Candidate pin/centroid distance; not entrance or walkability"
+        },
+        {
+          "toName": "Горная карусель",
+          "from": {
+            "lat": 43.6857766,
+            "lon": 40.2559506
+          },
+          "to": {
+            "lat": 43.6835115,
+            "lon": 40.2670056
+          },
+          "metres": 924,
+          "method": "unit-vector-mean-earth-sphere",
+          "walking": false,
+          "sourceRefs": [
+            "cached-estosadok-nominatim",
+            "cached-estosadok-resort-landmark"
+          ],
+          "interpretation": "Candidate pin/centroid distance; not entrance or walkability"
+        }
+      ],
+      "walking": {
+        "status": "UNVERIFIED",
+        "metres": null,
+        "minutes": null,
+        "barriers": "No complete pedestrian barrier/entrance survey",
+        "routeGraph": null
+      },
+      "legalPropertyUse": "UNVERIFIED",
+      "monthlyDemand": "UNVERIFIED",
+      "profitability": "UNVERIFIED",
+      "evaluator": {
+        "id": "independent-other-geo-reviewer-20261015",
+        "beforeModelOutputs": true,
+        "sourceRefs": [
+          "review-other"
+        ]
+      },
+      "gaps": [
+        "Corpus/entrance required; resort-named bus stop is not ski lift",
+        "No observed monthly occupancy, audited revenue/costs or independently routed walking graph"
+      ],
+      "fixtureAudit": {
+        "zeroZeroAnchors": true,
+        "distances": [
+          "distance: 650",
+          "distance: 650"
+        ],
+        "numericScoreInjected": true,
+        "categoryEvidence": "synthetic fixture, not real inventory"
+      }
+    }
+  ],
+  "reconciliation": [
+    {
+      "caseId": "cal-3e69f4e9857e",
+      "subjectId": "sochi",
+      "displayAssertion": "RU residential canonical calibration matrix (deterministic harness) 'Сочи, Курортный проспект, 50'",
+      "calibrationStatus": "FAIL",
+      "numericExpectation": "NOT_GROUNDED",
+      "sourceIssue": "No complete independent property/magnet/routes inventory",
+      "modelError": "NOT_PROVEN",
+      "expectationIssue": "Injected 0,0 magnets, distances, score and audience are not geographic ground truth",
+      "action": "Keep assertion fatal; do not retune numeric safeguards from incomplete evidence"
+    },
+    {
+      "caseId": "cal-f09818cdf97e",
+      "subjectId": "anapa",
+      "displayAssertion": "RU residential canonical calibration matrix (deterministic harness) 'Анапа, Пионерский проспект, 20'",
+      "calibrationStatus": "FAIL",
+      "numericExpectation": "NOT_GROUNDED",
+      "sourceIssue": "No complete independent property/magnet/routes inventory",
+      "modelError": "NOT_PROVEN",
+      "expectationIssue": "Injected 0,0 magnets, distances, score and audience are not geographic ground truth",
+      "action": "Keep assertion fatal; do not retune numeric safeguards from incomplete evidence"
+    },
+    {
+      "caseId": "cal-2a1204f978d7",
+      "subjectId": "sheregesh",
+      "displayAssertion": "RU residential canonical calibration matrix (deterministic harness) 'Шерегеш, улица Гагарина, 12'",
+      "calibrationStatus": "FAIL",
+      "numericExpectation": "NOT_GROUNDED",
+      "sourceIssue": "No complete independent property/magnet/routes inventory",
+      "modelError": "NOT_PROVEN",
+      "expectationIssue": "Injected 0,0 magnets, distances, score and audience are not geographic ground truth",
+      "action": "Keep assertion fatal; do not retune numeric safeguards from incomplete evidence"
+    },
+    {
+      "caseId": "cal-5051eebf9c5d",
+      "subjectId": "palace",
+      "displayAssertion": "RU residential canonical calibration matrix (deterministic harness) 'Санкт-Петербург, Дворцовая площадь, 2'",
+      "calibrationStatus": "FAIL",
+      "numericExpectation": "NOT_GROUNDED",
+      "sourceIssue": "No complete independent property/magnet/routes inventory",
+      "modelError": "NOT_PROVEN",
+      "expectationIssue": "Injected 0,0 magnets, distances, score and audience are not geographic ground truth",
+      "action": "Keep assertion fatal; do not retune numeric safeguards from incomplete evidence"
+    },
+    {
+      "caseId": "cal-21b79044304c",
+      "subjectId": "nizhny",
+      "displayAssertion": "RU residential canonical calibration matrix (deterministic harness) 'Нижний Новгород, Большая Покровская у…'",
+      "calibrationStatus": "FAIL",
+      "numericExpectation": "NOT_GROUNDED",
+      "sourceIssue": "Conflicting cached address node; primary pin corroborates different building candidate",
+      "modelError": "NOT_PROVEN",
+      "expectationIssue": "Injected 0,0 magnets, distances, score and audience are not geographic ground truth",
+      "action": "Keep assertion fatal; do not retune numeric safeguards from incomplete evidence"
+    },
+    {
+      "caseId": "cal-3eec192323dc",
+      "subjectId": "samara",
+      "displayAssertion": "RU residential canonical calibration matrix (deterministic harness) 'Самара, Ленинградская улица, 25'",
+      "calibrationStatus": "FAIL",
+      "numericExpectation": "NOT_GROUNDED",
+      "sourceIssue": "No complete independent property/magnet/routes inventory",
+      "modelError": "NOT_PROVEN",
+      "expectationIssue": "Injected 0,0 magnets, distances, score and audience are not geographic ground truth",
+      "action": "Keep assertion fatal; do not retune numeric safeguards from incomplete evidence"
+    },
+    {
+      "caseId": "cal-4df66a1f45d4",
+      "subjectId": "pirogovskaya",
+      "displayAssertion": "RU residential canonical calibration matrix (deterministic harness) 'Москва, Большая Пироговская улица, 2'",
+      "calibrationStatus": "FAIL",
+      "numericExpectation": "NOT_GROUNDED",
+      "sourceIssue": "Missingbuilding suffix; firstresult cannot resolve institution type",
+      "modelError": "NOT_PROVEN",
+      "expectationIssue": "Injected 0,0 magnets, distances, score and audience are not geographic ground truth",
+      "action": "Keep assertion fatal; do not retune numeric safeguards from incomplete evidence"
+    },
+    {
+      "caseId": "cal-a4414b3dc2dd",
+      "subjectId": "zelenogradsk",
+      "displayAssertion": "RU residential canonical calibration matrix (deterministic harness) 'Зеленоградск, Курортный проспект, 1'",
+      "calibrationStatus": "FAIL",
+      "numericExpectation": "NOT_GROUNDED",
+      "sourceIssue": "No complete independent property/magnet/routes inventory",
+      "modelError": "NOT_PROVEN",
+      "expectationIssue": "Injected 0,0 magnets, distances, score and audience are not geographic ground truth",
+      "action": "Keep assertion fatal; do not retune numeric safeguards from incomplete evidence"
+    },
+    {
+      "caseId": "cal-d3ca82279172",
+      "subjectId": "svetlogorsk",
+      "displayAssertion": "RU residential canonical calibration matrix (deterministic harness) 'Светлогорск, улица Ленина, 8'",
+      "calibrationStatus": "FAIL",
+      "numericExpectation": "NOT_GROUNDED",
+      "sourceIssue": "Restaurant occupant does not prove residential property",
+      "modelError": "NOT_PROVEN",
+      "expectationIssue": "Injected 0,0 magnets, distances, score and audience are not geographic ground truth",
+      "action": "Keep assertion fatal; do not retune numeric safeguards from incomplete evidence"
+    },
+    {
+      "caseId": "cal-e23c8c6104cc",
+      "subjectId": "gelendzhik",
+      "displayAssertion": "RU residential canonical calibration matrix (deterministic harness) 'Геленджик, набережная, 1'",
+      "calibrationStatus": "FAIL",
+      "numericExpectation": "NOT_GROUNDED",
+      "sourceIssue": "Unresolved waterfront/street identity",
+      "modelError": "NOT_PROVEN",
+      "expectationIssue": "Injected 0,0 magnets, distances, score and audience are not geographic ground truth",
+      "action": "Keep assertion fatal; do not retune numeric safeguards from incomplete evidence"
+    },
+    {
+      "caseId": "cal-393738047b4e",
+      "subjectId": "estosadok",
+      "displayAssertion": "RU residential canonical calibration matrix (deterministic harness) 'Сочи, Эсто‑Садок, улица Эстонская, 37'",
+      "calibrationStatus": "FAIL",
+      "numericExpectation": "NOT_GROUNDED",
+      "sourceIssue": "Missingcorpus and busstop/resort name collision",
+      "modelError": "NOT_PROVEN",
+      "expectationIssue": "Injected 0,0 magnets, distances, score and audience are not geographic ground truth",
+      "action": "Keep assertion fatal; do not retune numeric safeguards from incomplete evidence"
+    },
+    {
+      "caseId": "cal-bf942e6368fa",
+      "subjectId": null,
+      "displayAssertion": "RU residential canonical calibration matrix (deterministic harness) explicit regressions: tier-1 business/tourist can still be strong",
+      "calibrationStatus": "FAIL",
+      "numericExpectation": "NOT_GROUNDED",
+      "sourceIssue": "No complete independent property/magnet/routes inventory",
+      "modelError": "NOT_PROVEN",
+      "expectationIssue": "Injected 0,0 magnets, distances, score and audience are not geographic ground truth",
+      "action": "Keep assertion fatal; do not retune numeric safeguards from incomplete evidence"
+    }
+  ],
+  "commercialRelease": "HOLD"
+}
