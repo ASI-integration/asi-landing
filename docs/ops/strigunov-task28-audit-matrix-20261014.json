@@ -97,13 +97,19 @@
     "seven_pr_focused_ci": "PASS_INDIVIDUAL_HEADS",
     "seven_pr_required_validate": "PASS_INDIVIDUAL_HEADS",
     "seven_pr_coderabbit": "SUCCESS_REVIEWED_HEAD_448",
-    "combined_linux_all_seven": "PENDING",
-    "combined_linux_seven_run_id": null,
+    "combined_linux_all_seven": "PASS_176_OF_176_ZERO_SKIPS",
+    "combined_linux_seven_run_id": 38693037157,
     "combined_linux_service": {
       "total": 27,
-      "pass": null,
-      "skip": null,
-      "fail": null
+      "pass": 27,
+      "skip": 0,
+      "fail": 0
+    },
+    "combined_linux_all_seven_total": {
+      "total": 176,
+      "pass": 176,
+      "skip": 0,
+      "fail": 0
     }
   },
   "blockers": [
@@ -141,7 +147,7 @@
     "canSend": false,
     "pilot": "NOT_LIVE"
   },
-  "next": "COMPOSITE_SEVEN_HEAD_LINUX_TEST_THEN_SAFE_CONSOLIDATION_PLUS_REAL_OWNER_CUSTODY_AND_BOOKING_OPS_END_TO_END",
+  "next": "OWNER_REVIEWED_CODE_CONSOLIDATION_AND_HOST_CUSTODY_THEN_PHASE2_PLUS_BOOKING_OPS_FULL_CYCLE",
   "technical_service": {
     "pr": 448,
     "source_sha": "313d00dc92014fb10866cca3c8e7fec0c2269598",
