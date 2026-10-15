@@ -9,6 +9,7 @@ on:
       - 'src/app/api/early-access/leads/route.ts'
       - 'supabase/migrations/20261015000001_public_pilot_lead_receipts.sql'
       - '.github/workflows/strigunov-task29-30.yml'
+      - 'docs/agent-os/generated/release-manifest.json'
   workflow_dispatch:
 permissions:
   contents: read
