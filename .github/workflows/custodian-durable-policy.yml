@@ -1,0 +1,69 @@
+name: Custodian durable synthetic policy
+on:
+  pull_request:
+    paths:
+      - 'scripts/custodian/**'
+      - 'scripts/__tests__/asi_task32.test.py'
+      - 'scripts/__tests__/asi_finishline_process.test.py'
+      - '.github/workflows/custodian-durable-policy.yml'
+permissions:
+  contents: read
+concurrency:
+  group: custodian-durable-policy-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  synthetic:
+    if: github.repository == 'ASI-integration/asi-landing' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'asi/custodian-durable-policy-20261015'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      CI: 'true'
+      STRIGUNOV_SYNTHETIC_ONLY: 'YES'
+      REVIEWED_SOURCE_SHA: ${{ github.event.pull_request.head.sha }}
+    steps:
+      - name: Owner and source gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_ACTOR" = ASI-integration
+          test "$GITHUB_ACTOR_ID" = 207600140
+          test "$GITHUB_TRIGGERING_ACTOR" = ASI-integration
+          test "$GITHUB_RUN_ATTEMPT" = 1
+          test "$RUNNER_ENVIRONMENT" = github-hosted
+          [[ "$REVIEWED_SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - name: Exact source and syntax
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$REVIEWED_SOURCE_SHA"
+          mkdir -p policy-results
+          git rev-parse HEAD > policy-results/source-sha.txt
+          python3 -m py_compile scripts/custodian/asi_custodian.py scripts/custodian/cross_uid_acceptance.py scripts/custodian/durable_policy.py scripts/custodian/durable_policy_test.py scripts/custodian/durable_policy_cross_uid_test.py
+      - name: New durable policy acceptance
+        run: python3 scripts/custodian/durable_policy_test.py > policy-results/durable-policy.txt 2>&1
+      - name: New boundary with actual distinct kernel peers
+        if: success() || failure()
+        run: sudo --preserve-env=CI,RUNNER_ENVIRONMENT,STRIGUNOV_SYNTHETIC_ONLY python3 scripts/custodian/durable_policy_cross_uid_test.py > policy-results/durable-cross-uid.txt 2>&1
+      - name: Existing nonroot security and restart regression
+        if: success() || failure()
+        run: |
+          set -euo pipefail
+          python3 scripts/__tests__/asi_task32.test.py > policy-results/protected-security.txt 2>&1
+          python3 scripts/__tests__/asi_finishline_process.test.py > policy-results/process-recovery.txt 2>&1
+      - name: Actual kernel UID and GID isolation in disposable runner
+        if: success() || failure()
+        run: |
+          set -euo pipefail
+          sudo --preserve-env=CI,RUNNER_ENVIRONMENT,STRIGUNOV_SYNTHETIC_ONLY python3 scripts/custodian/cross_uid_acceptance.py > policy-results/cross-uid.txt 2>&1
+      - name: Build and validate technical archive (not installation)
+        run: python3 scripts/custodian/build_release.py --out policy-results/asi-custodian-technical-v0.tar > policy-results/archive.json
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: custodian-durable-policy-${{ github.run_id }}
+          path: policy-results/*
+          retention-days: 7
+          if-no-files-found: error
