@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "task": 28,
-  "asOf": "2026-10-14",
+  "asOf": "2026-10-15",
   "repository": "ASI-integration/asi-landing",
   "baseline": "9bc8175aa772e92366c7a2363e26900a042fc3ce",
   "audited": [
@@ -40,6 +40,12 @@
       "pr": 445,
       "sha": "2dbce088ad8f8298a5c349224e10b19741610a00",
       "files": 4
+    },
+    {
+      "task": "29A",
+      "pr": 448,
+      "sha": "313d00dc92014fb10866cca3c8e7fec0c2269598",
+      "files": 7
     }
   ],
   "checks": {
@@ -48,7 +54,7 @@
     "six_pr_coderabbit": "SUCCESS_OR_ISSUES_RESOLVED",
     "all_unmerged": true,
     "overlapping_paths": 0,
-    "total_paths": 27,
+    "total_paths": 34,
     "combined_windows_node": {
       "total": 98,
       "pass": 92,
@@ -68,7 +74,7 @@
       "fail": 0
     },
     "combined_linux_all_six": "PASS_149_OF_149_ZERO_SKIPS",
-    "end_to_end_host_custodian": "NOT_RUN",
+    "end_to_end_host_custodian": "NOT_RUN_OWNER_CUSTODY",
     "combined_linux_run_id": 38611862046,
     "combined_linux_node": {
       "total": 98,
@@ -87,31 +93,42 @@
       "pass": 28,
       "skip": 0,
       "fail": 0
+    },
+    "seven_pr_focused_ci": "PASS_INDIVIDUAL_HEADS",
+    "seven_pr_required_validate": "PASS_INDIVIDUAL_HEADS",
+    "seven_pr_coderabbit": "SUCCESS_REVIEWED_HEAD_448",
+    "combined_linux_all_seven": "PENDING",
+    "combined_linux_seven_run_id": null,
+    "combined_linux_service": {
+      "total": 27,
+      "pass": null,
+      "skip": null,
+      "fail": null
     }
   },
   "blockers": [
     {
-      "code": "P0_NO_OWNER_INSTALLED_CUSTODIAN",
+      "code": "P0_NO_OWNER_CUSTODIED_SERVICE_OR_IMMUTABLE_RELEASE",
       "severity": "P0"
     },
     {
-      "code": "P0_NO_REAL_IPC_LEDGER_ISSUER_CHAIN",
+      "code": "P0_NO_OPERATOR_ISSUER_OR_BOOKING_OPS_FULL_CYCLE_WIRING",
       "severity": "P0"
     },
     {
-      "code": "P1_INTERFACE_SCHEMA_AND_SOURCE_PIN_MISMATCH",
+      "code": "P1_NO_PHYSICAL_DISTINCT_UID_DENIAL_ON_OWNER_HOST",
       "severity": "P1"
     },
     {
-      "code": "P1_DISTINCT_UID_PHYSICAL_DENIAL_NOT_RUN",
+      "code": "P1_NO_NATIVE_PHASE2_SINGLE_USE_OWNER_RECEIPT",
       "severity": "P1"
     },
     {
-      "code": "P1_NATIVE_PHASE2_PROTECTED_RECEIPT_NOT_RUN",
+      "code": "P1_NO_REAL_GUEST_CONSENT_OR_SEND_GATE",
       "severity": "P1"
     },
     {
-      "code": "P2_RELEASE_NONEXECUTABLE_AND_UNSIGNED",
+      "code": "P2_EXECUTABLE_TAR_EXISTS_BUT_UNSIGNED_NO_INSTALLER",
       "severity": "P2"
     }
   ],
@@ -124,5 +141,15 @@
     "canSend": false,
     "pilot": "NOT_LIVE"
   },
-  "next": "OWNER_AUTHORIZED_CODE_CONSOLIDATION_AND_TRUE_INTEGRATION_THEN_INDEPENDENT_HOST_PHASE2"
+  "next": "COMPOSITE_SEVEN_HEAD_LINUX_TEST_THEN_SAFE_CONSOLIDATION_PLUS_REAL_OWNER_CUSTODY_AND_BOOKING_OPS_END_TO_END",
+  "technical_service": {
+    "pr": 448,
+    "source_sha": "313d00dc92014fb10866cca3c8e7fec0c2269598",
+    "real_linux_process_ci": "PASS_27_OF_27",
+    "runner_run_id": 38690604351,
+    "owner_installed": false,
+    "signed": false,
+    "operator_authorized": false,
+    "guest_send": false
+  }
 }
