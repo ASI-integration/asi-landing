@@ -14,11 +14,42 @@ export type SafeJsonResult<T> =
  * as `invalid` to keep destructuring at call sites safe.
  */
 export async function readRequestJson<T extends object = Record<string, unknown>>(
-  req: Request
+  req: Request,
+  options: { maxBytes?: number } = {},
 ): Promise<SafeJsonResult<T>> {
   let text: string;
   try {
-    text = await req.text();
+    if (options.maxBytes === undefined) {
+      text = await req.text();
+    } else {
+      const limit = options.maxBytes;
+      if (!Number.isSafeInteger(limit) || limit < 1) return { ok: false, reason: 'invalid' };
+      const reader = req.body?.getReader();
+      if (!reader) return { ok: false, reason: 'empty' };
+      const chunks: Uint8Array[] = [];
+      let size = 0;
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          size += value.byteLength;
+          if (size > limit) {
+            await reader.cancel();
+            return { ok: false, reason: 'invalid' };
+          }
+          chunks.push(value);
+        }
+      } finally {
+        reader.releaseLock();
+      }
+      const bytes = new Uint8Array(size);
+      let offset = 0;
+      for (const chunk of chunks) {
+        bytes.set(chunk, offset);
+        offset += chunk.byteLength;
+      }
+      text = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+    }
   } catch {
     return { ok: false, reason: 'invalid' };
   }
