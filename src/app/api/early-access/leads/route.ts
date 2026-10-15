@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { readRequestJson } from '@/lib/safeRequestJson';
-import { createCrmContact } from '@/lib/crm/repository';
+import { persistPublicPilotLead } from '@/lib/crm/repository';
 import { normalizePublicPilotLead } from '@/lib/early-access/public-pilot-lead';
 import { processPublicPilotLead } from '@/lib/early-access/public-lead-rate-limit';
 
@@ -24,8 +24,9 @@ export async function POST(req: Request): Promise<NextResponse> {
   try {
     const result = await processPublicPilotLead(normalized.input, async () => {
       // A successful response requires a persisted, operator-visible CRM record.
-      const lead = await createCrmContact(normalized.input);
+      const lead = await persistPublicPilotLead(normalized.input);
       if (!lead.id) throw new Error('CRM write did not return a lead id');
+      return { replayed: lead.replayed, expiresAt: lead.expiresAt };
     });
     if (!result.allowed) {
       return NextResponse.json({ ok: false, message: 'Слишком много заявок. Попробуйте позже.' }, {

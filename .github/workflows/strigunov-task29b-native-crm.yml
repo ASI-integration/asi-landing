@@ -1,0 +1,43 @@
+name: Task29B isolated native CRM schema smoke
+on:
+  pull_request:
+    paths:
+      - 'scripts/acceptance/strigunov-task29b-native-crm.mjs'
+      - '.github/workflows/strigunov-task29b-native-crm.yml'
+      - 'supabase/migrations/20260619000001_crm_early_access_v1.sql'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  native-crm-schema:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    services:
+      postgres:
+        image: postgres:17@sha256:2d2b8998d31037bf721cfdf764d76ba74171b4fab3431b7f72c27c56ddbdf9e3
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: task29b_ephemeral_password
+          POSTGRES_DB: task29b
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d task29b"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      CI: 'true'
+      STRIGUNOV_SYNTHETIC_ONLY: 'YES'
+      TASK29B_DATABASE_URL: postgres://postgres:task29b_ephemeral_password@127.0.0.1:5432/task29b
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Native schema migration and cross-connection readback
+        run: node scripts/acceptance/strigunov-task29b-native-crm.mjs
