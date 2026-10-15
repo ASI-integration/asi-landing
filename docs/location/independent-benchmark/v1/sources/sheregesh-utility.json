@@ -1,0 +1,18 @@
+{
+  "id": "sheregesh-utility",
+  "url": "https://mef.ru/press-centre/news.php?item=7145",
+  "tier": "primary_utility",
+  "observedAt": "2026-10-15T17:52:37.303Z",
+  "facts": [
+    "2024-04-23 notice lists Gagarina12 among apartment buildings.",
+    "Historical residential classification, not proof of current management or ski-lift proximity."
+  ],
+  "quality": "reviewed factual annotation",
+  "rawReceipt": {
+    "httpStatus": 200,
+    "sha256": "db00978fc5e6b3959dd88c8ad2af6269cfa19930bf3f4fa44481c90672a767f7",
+    "bytes": 31658,
+    "error": null,
+    "archiveScope": "Owner report folder only; raw copyrighted pages not republished"
+  }
+}

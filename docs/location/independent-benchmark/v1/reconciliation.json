@@ -1,0 +1,134 @@
+[
+  {
+    "caseId": "cal-3e69f4e9857e",
+    "subjectId": "sochi",
+    "displayAssertion": "RU residential canonical calibration matrix (deterministic harness) 'Сочи, Курортный проспект, 50'",
+    "calibrationStatus": "FAIL",
+    "numericExpectation": "NOT_GROUNDED",
+    "sourceIssue": "No complete independent property/magnet/routes inventory",
+    "modelError": "NOT_PROVEN",
+    "expectationIssue": "Injected 0,0 magnets, distances, score and audience are not geographic ground truth",
+    "action": "Keep assertion fatal; do not retune numeric safeguards from incomplete evidence"
+  },
+  {
+    "caseId": "cal-f09818cdf97e",
+    "subjectId": "anapa",
+    "displayAssertion": "RU residential canonical calibration matrix (deterministic harness) 'Анапа, Пионерский проспект, 20'",
+    "calibrationStatus": "FAIL",
+    "numericExpectation": "NOT_GROUNDED",
+    "sourceIssue": "No complete independent property/magnet/routes inventory",
+    "modelError": "NOT_PROVEN",
+    "expectationIssue": "Injected 0,0 magnets, distances, score and audience are not geographic ground truth",
+    "action": "Keep assertion fatal; do not retune numeric safeguards from incomplete evidence"
+  },
+  {
+    "caseId": "cal-2a1204f978d7",
+    "subjectId": "sheregesh",
+    "displayAssertion": "RU residential canonical calibration matrix (deterministic harness) 'Шерегеш, улица Гагарина, 12'",
+    "calibrationStatus": "FAIL",
+    "numericExpectation": "NOT_GROUNDED",
+    "sourceIssue": "No complete independent property/magnet/routes inventory",
+    "modelError": "NOT_PROVEN",
+    "expectationIssue": "Injected 0,0 magnets, distances, score and audience are not geographic ground truth",
+    "action": "Keep assertion fatal; do not retune numeric safeguards from incomplete evidence"
+  },
+  {
+    "caseId": "cal-5051eebf9c5d",
+    "subjectId": "palace",
+    "displayAssertion": "RU residential canonical calibration matrix (deterministic harness) 'Санкт-Петербург, Дворцовая площадь, 2'",
+    "calibrationStatus": "FAIL",
+    "numericExpectation": "NOT_GROUNDED",
+    "sourceIssue": "No complete independent property/magnet/routes inventory",
+    "modelError": "NOT_PROVEN",
+    "expectationIssue": "Injected 0,0 magnets, distances, score and audience are not geographic ground truth",
+    "action": "Keep assertion fatal; do not retune numeric safeguards from incomplete evidence"
+  },
+  {
+    "caseId": "cal-21b79044304c",
+    "subjectId": "nizhny",
+    "displayAssertion": "RU residential canonical calibration matrix (deterministic harness) 'Нижний Новгород, Большая Покровская у…'",
+    "calibrationStatus": "FAIL",
+    "numericExpectation": "NOT_GROUNDED",
+    "sourceIssue": "Conflicting cached address node; primary pin corroborates different building candidate",
+    "modelError": "NOT_PROVEN",
+    "expectationIssue": "Injected 0,0 magnets, distances, score and audience are not geographic ground truth",
+    "action": "Keep assertion fatal; do not retune numeric safeguards from incomplete evidence"
+  },
+  {
+    "caseId": "cal-3eec192323dc",
+    "subjectId": "samara",
+    "displayAssertion": "RU residential canonical calibration matrix (deterministic harness) 'Самара, Ленинградская улица, 25'",
+    "calibrationStatus": "FAIL",
+    "numericExpectation": "NOT_GROUNDED",
+    "sourceIssue": "No complete independent property/magnet/routes inventory",
+    "modelError": "NOT_PROVEN",
+    "expectationIssue": "Injected 0,0 magnets, distances, score and audience are not geographic ground truth",
+    "action": "Keep assertion fatal; do not retune numeric safeguards from incomplete evidence"
+  },
+  {
+    "caseId": "cal-4df66a1f45d4",
+    "subjectId": "pirogovskaya",
+    "displayAssertion": "RU residential canonical calibration matrix (deterministic harness) 'Москва, Большая Пироговская улица, 2'",
+    "calibrationStatus": "FAIL",
+    "numericExpectation": "NOT_GROUNDED",
+    "sourceIssue": "Missingbuilding suffix; firstresult cannot resolve institution type",
+    "modelError": "NOT_PROVEN",
+    "expectationIssue": "Injected 0,0 magnets, distances, score and audience are not geographic ground truth",
+    "action": "Keep assertion fatal; do not retune numeric safeguards from incomplete evidence"
+  },
+  {
+    "caseId": "cal-a4414b3dc2dd",
+    "subjectId": "zelenogradsk",
+    "displayAssertion": "RU residential canonical calibration matrix (deterministic harness) 'Зеленоградск, Курортный проспект, 1'",
+    "calibrationStatus": "FAIL",
+    "numericExpectation": "NOT_GROUNDED",
+    "sourceIssue": "No complete independent property/magnet/routes inventory",
+    "modelError": "NOT_PROVEN",
+    "expectationIssue": "Injected 0,0 magnets, distances, score and audience are not geographic ground truth",
+    "action": "Keep assertion fatal; do not retune numeric safeguards from incomplete evidence"
+  },
+  {
+    "caseId": "cal-d3ca82279172",
+    "subjectId": "svetlogorsk",
+    "displayAssertion": "RU residential canonical calibration matrix (deterministic harness) 'Светлогорск, улица Ленина, 8'",
+    "calibrationStatus": "FAIL",
+    "numericExpectation": "NOT_GROUNDED",
+    "sourceIssue": "Restaurant occupant does not prove residential property",
+    "modelError": "NOT_PROVEN",
+    "expectationIssue": "Injected 0,0 magnets, distances, score and audience are not geographic ground truth",
+    "action": "Keep assertion fatal; do not retune numeric safeguards from incomplete evidence"
+  },
+  {
+    "caseId": "cal-e23c8c6104cc",
+    "subjectId": "gelendzhik",
+    "displayAssertion": "RU residential canonical calibration matrix (deterministic harness) 'Геленджик, набережная, 1'",
+    "calibrationStatus": "FAIL",
+    "numericExpectation": "NOT_GROUNDED",
+    "sourceIssue": "Unresolved waterfront/street identity",
+    "modelError": "NOT_PROVEN",
+    "expectationIssue": "Injected 0,0 magnets, distances, score and audience are not geographic ground truth",
+    "action": "Keep assertion fatal; do not retune numeric safeguards from incomplete evidence"
+  },
+  {
+    "caseId": "cal-393738047b4e",
+    "subjectId": "estosadok",
+    "displayAssertion": "RU residential canonical calibration matrix (deterministic harness) 'Сочи, Эсто‑Садок, улица Эстонская, 37'",
+    "calibrationStatus": "FAIL",
+    "numericExpectation": "NOT_GROUNDED",
+    "sourceIssue": "Missingcorpus and busstop/resort name collision",
+    "modelError": "NOT_PROVEN",
+    "expectationIssue": "Injected 0,0 magnets, distances, score and audience are not geographic ground truth",
+    "action": "Keep assertion fatal; do not retune numeric safeguards from incomplete evidence"
+  },
+  {
+    "caseId": "cal-bf942e6368fa",
+    "subjectId": null,
+    "displayAssertion": "RU residential canonical calibration matrix (deterministic harness) explicit regressions: tier-1 business/tourist can still be strong",
+    "calibrationStatus": "FAIL",
+    "numericExpectation": "NOT_GROUNDED",
+    "sourceIssue": "No complete independent property/magnet/routes inventory",
+    "modelError": "NOT_PROVEN",
+    "expectationIssue": "Injected 0,0 magnets, distances, score and audience are not geographic ground truth",
+    "action": "Keep assertion fatal; do not retune numeric safeguards from incomplete evidence"
+  }
+]
