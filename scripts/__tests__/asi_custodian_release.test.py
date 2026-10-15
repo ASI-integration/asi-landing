@@ -7,6 +7,7 @@ from pathlib import Path
 import tarfile
 import tempfile
 import unittest
+from unittest.mock import patch
 
 FILE = Path(__file__).resolve().parents[1] / "custodian" / "build_release.py"
 spec = importlib.util.spec_from_file_location("asi_build_release", FILE)
@@ -33,6 +34,29 @@ class ReleaseTests(unittest.TestCase):
             self.assertIn(b"SO_PEERCRED", code)
             self.assertIn(b"os.fsync(fd)", code)
             self.assertEqual(tar.getmember("asi-custodian/asi_custodian.py").mode, 0o755)
+
+    def test_sparse_member_is_rejected_before_extractfile(self):
+        body, _ = m.make_bytes()
+        # Simulates tarfile reporting a GNU sparse logical file that expands
+        # beyond the small archive: never read or expand its contents.
+        with patch.object(tarfile.TarInfo, "issparse", return_value=True):
+            with patch.object(tarfile.TarFile, "extractfile", side_effect=AssertionError("READ_FORBIDDEN")):
+                with self.assertRaisesRegex(ValueError, "FILE_SIZE"):
+                    m.validate_bytes(body)
+
+    def test_oversized_logical_member_is_rejected_before_extractfile(self):
+        body, _ = m.make_bytes()
+        getmembers = tarfile.TarFile.getmembers
+
+        def fake_members(archive):
+            members = getmembers(archive)
+            members[0].size = m.MAX_ARCHIVE + 1
+            return members
+
+        with patch.object(tarfile.TarFile, "getmembers", fake_members):
+            with patch.object(tarfile.TarFile, "extractfile", side_effect=AssertionError("READ_FORBIDDEN")):
+                with self.assertRaisesRegex(ValueError, "FILE_SIZE"):
+                    m.validate_bytes(body)
 
     def test_build_twice_same_hash_and_bytes(self):
         a, _ = m.make_bytes()
