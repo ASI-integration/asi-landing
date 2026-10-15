@@ -101,8 +101,8 @@ function isMajorTouristAttraction(
   if (isStrongTier1BusinessByName(magnet.name)) return false; // defensive: business word in attraction name shouldn't promote it
   if (raw && looksLikeWeakLocalAttractionPoi(raw)) return false;
 
-  const mentionsMuseum = /\bмузей\b|museum/i.test(magnet.name);
-  if (mentionsMuseum && !hasTouristAnchorCluster(allMagnets)) return false;
+  const mentionsMuseum = /(?:^|[^\p{L}\p{N}_])(?:музей|museum)(?=$|[^\p{L}\p{N}_])/iu.test(magnet.name);
+  if (mentionsMuseum) return hasTouristAnchorCluster(allMagnets);
 
   if (MAJOR_TOURIST_ATTRACTION_NAME_RE.test(magnet.name)) return true;
 
@@ -483,6 +483,11 @@ export function computeResidentialDemoPresentation(
   // business audience is allowed only when there's at least one real business Tier-1
   // OR a strong medical/rail/airport/CBD-transit demand anchor.
   // "shopping_major" itself must not be sufficient.
+  // Industrial employment is mixed context, not independent corroboration
+  // for a single transit anchor's residential guest audience.
+  const mixedIndustrialContext = analysis.magnets.some(m =>
+    m.categoryId === 'business' && ['factory', 'industrial'].includes(m.subType ?? '') && m.distance <= 1000,
+  );
   let displayAudience: ResidentialDemoAudience = 'RESIDENTIAL';
 
   if (weakClusterOnly) {
@@ -497,8 +502,15 @@ export function computeResidentialDemoPresentation(
     } else {
       displayAudience = 'MIXED';
     }
-  } else if (tier1Count === 1 && aa && aa.primaryAudience === 'TOURIST' && !aa.fallbackMode) {
-    displayAudience = 'TOURIST';
+  } else if (tier1Count === 1 && aa && !aa.fallbackMode) {
+    // Audience describes the demand type, not its strength. The independent
+    // two-anchor cap and strong-verdict gate above remain unchanged.
+    if (aa.primaryAudience === 'TOURIST') {
+      displayAudience = 'TOURIST';
+    } else if (aa.primaryAudience === 'BUSINESS' && audienceFit >= 35) {
+      displayAudience = (hasTier1BusinessMagnet || hasTrueBusinessContextAnchor)
+        ? 'BUSINESS' : mixedIndustrialContext ? 'RESIDENTIAL' : 'MIXED';
+    }
   } else {
     displayAudience = 'RESIDENTIAL';
   }
