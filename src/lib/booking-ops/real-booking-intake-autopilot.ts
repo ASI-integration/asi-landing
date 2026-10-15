@@ -35,6 +35,8 @@ import {
 } from './availability-overbooking-protection';
 import { durableEventId, recordAndProcessBookingEvent } from './lifecycle-autopilot-service';
 
+import { isCanonicalBookingId } from './booking-reference';
+
 type ExpectedScope = { accountId: string; propertyId: string };
 
 export const INBOUND_BOOKING_SOURCES = [
@@ -539,12 +541,12 @@ async function findMatchingBookingRecord(
         if (record && bookingBelongsToContour(record, scope)) return record;
       }
     } else if (accountId) {
-      const { data: byIdData } = await supabase
+      const { data: byIdData } = isCanonicalBookingId(input.bookingReference) ? await supabase
         .from('booking_ops_records')
         .select('id')
         .eq('id', input.bookingReference)
         .eq('account_id', accountId)
-        .maybeSingle();
+        .maybeSingle() : { data: null };
       if (byIdData) {
         const record = await getBookingOpsRecord(text((byIdData as { id: string }).id));
         await requireBookingWithinIntakeScope(record, accountId, input.propertyId);
@@ -564,7 +566,7 @@ async function findMatchingBookingRecord(
         return record;
       }
     } else {
-      const byId = await getBookingOpsRecord(input.bookingReference);
+      const byId = isCanonicalBookingId(input.bookingReference) ? await getBookingOpsRecord(input.bookingReference) : null;
       if (byId) return byId;
       const { data } = await supabase
         .from('booking_ops_records')
