@@ -18,7 +18,7 @@ jobs:
           persist-credentials: false
           fetch-depth: 2
       - name: Setup Node for focused single-file acceptance
-        uses: actions/setup-node@1d0ff0b0385f72a1ca05478113f0e8a8c580d5f
+        uses: actions/setup-node@v4
         with:
           node-version: 20
           cache: npm
