@@ -1,0 +1,161 @@
+{
+  "schema": 1,
+  "task": 28,
+  "asOf": "2026-10-15",
+  "repository": "ASI-integration/asi-landing",
+  "baseline": "9bc8175aa772e92366c7a2363e26900a042fc3ce",
+  "audited": [
+    {
+      "task": 22,
+      "pr": 440,
+      "sha": "6752def66167f7940b0746cfc08447e02955a33e",
+      "files": 4
+    },
+    {
+      "task": 23,
+      "pr": 441,
+      "sha": "0a8c5003bb687729ea7a93c8f15a92a8138bbc4b",
+      "files": 4
+    },
+    {
+      "task": 24,
+      "pr": 442,
+      "sha": "7b6282f3106a534afc536f266b488232ab687e30",
+      "files": 5
+    },
+    {
+      "task": 25,
+      "pr": 443,
+      "sha": "79fae4e4db8cd76bf0783bb33f6a579034d8a87d",
+      "files": 6
+    },
+    {
+      "task": 26,
+      "pr": 444,
+      "sha": "822faea19477801987695a5c47d99e666ac2886c",
+      "files": 4
+    },
+    {
+      "task": 27,
+      "pr": 445,
+      "sha": "2dbce088ad8f8298a5c349224e10b19741610a00",
+      "files": 4
+    },
+    {
+      "task": "29A",
+      "pr": 448,
+      "sha": "313d00dc92014fb10866cca3c8e7fec0c2269598",
+      "files": 7
+    }
+  ],
+  "checks": {
+    "six_pr_focused_ci": "PASS",
+    "six_pr_required_validate": "PASS",
+    "six_pr_coderabbit": "SUCCESS_OR_ISSUES_RESOLVED",
+    "all_unmerged": true,
+    "overlapping_paths": 0,
+    "total_paths": 34,
+    "combined_windows_node": {
+      "total": 98,
+      "pass": 92,
+      "skip": 6,
+      "fail": 0
+    },
+    "combined_windows_python26": {
+      "total": 23,
+      "pass": 3,
+      "skip": 20,
+      "fail": 0
+    },
+    "combined_windows_python27": {
+      "total": 28,
+      "pass": 25,
+      "skip": 3,
+      "fail": 0
+    },
+    "combined_linux_all_six": "PASS_149_OF_149_ZERO_SKIPS",
+    "end_to_end_host_custodian": "NOT_RUN_OWNER_CUSTODY",
+    "combined_linux_run_id": 38611862046,
+    "combined_linux_node": {
+      "total": 98,
+      "pass": 98,
+      "skip": 0,
+      "fail": 0
+    },
+    "combined_linux_python26": {
+      "total": 23,
+      "pass": 23,
+      "skip": 0,
+      "fail": 0
+    },
+    "combined_linux_python27": {
+      "total": 28,
+      "pass": 28,
+      "skip": 0,
+      "fail": 0
+    },
+    "seven_pr_focused_ci": "PASS_INDIVIDUAL_HEADS",
+    "seven_pr_required_validate": "PASS_INDIVIDUAL_HEADS",
+    "seven_pr_coderabbit": "SUCCESS_REVIEWED_HEAD_448",
+    "combined_linux_all_seven": "PASS_176_OF_176_ZERO_SKIPS",
+    "combined_linux_seven_run_id": 38693037157,
+    "combined_linux_service": {
+      "total": 27,
+      "pass": 27,
+      "skip": 0,
+      "fail": 0
+    },
+    "combined_linux_all_seven_total": {
+      "total": 176,
+      "pass": 176,
+      "skip": 0,
+      "fail": 0
+    }
+  },
+  "blockers": [
+    {
+      "code": "P0_NO_OWNER_CUSTODIED_SERVICE_OR_IMMUTABLE_RELEASE",
+      "severity": "P0"
+    },
+    {
+      "code": "P0_NO_OPERATOR_ISSUER_OR_BOOKING_OPS_FULL_CYCLE_WIRING",
+      "severity": "P0"
+    },
+    {
+      "code": "P1_NO_PHYSICAL_DISTINCT_UID_DENIAL_ON_OWNER_HOST",
+      "severity": "P1"
+    },
+    {
+      "code": "P1_NO_NATIVE_PHASE2_SINGLE_USE_OWNER_RECEIPT",
+      "severity": "P1"
+    },
+    {
+      "code": "P1_NO_REAL_GUEST_CONSENT_OR_SEND_GATE",
+      "severity": "P1"
+    },
+    {
+      "code": "P2_EXECUTABLE_TAR_EXISTS_BUT_UNSIGNED_NO_INSTALLER",
+      "severity": "P2"
+    }
+  ],
+  "deployment": {
+    "merges_performed": false,
+    "production_touched": false,
+    "new_cloud_server": false,
+    "protected_service_installed": false,
+    "phase2": "BLOCK",
+    "canSend": false,
+    "pilot": "NOT_LIVE"
+  },
+  "next": "OWNER_REVIEWED_CODE_CONSOLIDATION_AND_HOST_CUSTODY_THEN_PHASE2_PLUS_BOOKING_OPS_FULL_CYCLE",
+  "technical_service": {
+    "pr": 448,
+    "source_sha": "313d00dc92014fb10866cca3c8e7fec0c2269598",
+    "real_linux_process_ci": "PASS_27_OF_27",
+    "runner_run_id": 38690604351,
+    "owner_installed": false,
+    "signed": false,
+    "operator_authorized": false,
+    "guest_send": false
+  }
+}
