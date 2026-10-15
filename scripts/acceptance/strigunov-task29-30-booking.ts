@@ -52,7 +52,7 @@ async function main() {
       for(let index=0;index<variants.length;index++){
         const v=variants[index],vid='29300000-0000-4000-8000-'+String(index+100).padStart(12,'0');
         await check(v.name,async()=>{
-          const inserted=await supabase.from('booking_ops_records').insert({id:vid,booking_id:v.name,guest_name:'Synthetic variant guest',guest_email:'guest@example.invalid',property_id:scope.propertyId,property_label:'Synthetic object',account_id:scope.accountId,notes:'SYNTHETIC ONLY'});assert.equal(inserted.error,null);
+          const inserted=await supabase.from('booking_ops_records').insert({id:vid,booking_id:v.name,guest_name:'Synthetic variant guest',guest_email:'guest@example.invalid',property_id:scope.propertyId,property_label:'Synthetic object',account_id:scope.accountId,notes:'SYNTHETIC ONLY',guest_count:1,check_in_at:'2026-10-16T14:00:00Z',check_out_at:'2026-10-18T11:00:00Z'});assert.equal(inserted.error,null);
           const event=(type:string)=>({...input(type),id:durableEventId(vid,type),bookingId:vid,correlationId:vid,createdAt:'2026-10-15T12:00:00+03:00',payload:{reason:'synthetic operator decision'}});
           for(const type of v.types)await recordAndProcessBookingEvent(event(type),scope);
           const rows=async(table:string)=>{const r=await supabase.from(table).select('*').eq(table==='booking_ops_communication_intents'?'booking_ops_record_id':'booking_id',vid);assert.equal(r.error,null);return r.data??[];};
@@ -70,8 +70,9 @@ async function main() {
       await check('foreign-property-denied',async()=>{await assert.rejects(()=>recordAndProcessBookingEvent(input('manual.override'),{...scope,propertyId:'foreign-object'}),/scope/);assert.equal((await query('booking_ops_domain_events')).length,0);});
       await check('actual-communication-service-draft-only',async()=>{
         const record=await requireBookingOpsRecordScope(id,scope);
-        const r=await syncBookingOpsCommunications({record,tasks:[],expectedScope:scope});assert.equal(r.ok,true);
-        const drafts=await query('booking_ops_communication_intents');assert.ok(drafts.length>0);
+        assert.equal(record.readiness?.status,'missing_documents');
+        stage='communication-service-result';const r=await syncBookingOpsCommunications({record,tasks:[],expectedScope:scope});assert.equal(r.ok,true);
+        stage='communication-persisted-drafts';const drafts=await query('booking_ops_communication_intents');assert.ok(drafts.length>0);
         for(const draft of drafts){assert.ok(!['sent','sending'].includes(draft.status));assert.equal(draft.metadata.actual_send_enabled,false);}
       });
       const types=['booking.received','guest.contacted','guest.data_submitted','guest.documents_uploaded','guest.documents_verified','contract.generated','deposit.confirmed','mvd.completed','cleaner.task_completed','linen.task_completed','consumables.task_completed','inspection.completed','property.ready','checkin.instructions_released','guest.checked_in','stay.started','checkout.started','checkout.inspection_completed','deposit.return_completed'];
