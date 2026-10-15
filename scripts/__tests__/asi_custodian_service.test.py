@@ -11,6 +11,7 @@ import sys
 import tempfile
 import time
 import unittest
+from unittest.mock import patch
 
 SERVICE = Path(__file__).resolve().parents[1] / "custodian" / "asi_custodian.py"
 spec = importlib.util.spec_from_file_location("asi_real_custodian", SERVICE)
@@ -87,6 +88,29 @@ class ServiceTests(unittest.TestCase):
         self.assertFalse(x["canApprove"])
         self.assertFalse(x["canIssueReceipt"])
         self.assertEqual(x["phase2"], "BLOCK")
+
+    def test_at_capacity_append_is_refused_without_poisoning_restart(self):
+        self.assertEqual(
+            self.raw(make("append", 1, ONE, "OBSERVED"))["status"],
+            "TECHNICAL_RECORDED",
+        )
+        before = (self.root / "events.ndjson").read_bytes()
+        config = m.read_config(self.root)
+        next_request = m.parse_request(make("append", 2, TWO, "OBSERVED"), config)
+        # Use a tiny limit to exercise the *real* persisted journal at its
+        # exact boundary without making CI perform 1000 slow IPC round trips.
+        with patch.object(m, "MAX_EVENTS", 1):
+            result = m.apply(self.root, config, next_request)
+        self.assertEqual(result["status"], "HOLD")
+        self.assertEqual(result["reason"], "JOURNAL_FULL")
+        self.assertEqual(result["seq"], 1)
+        self.assertEqual((self.root / "events.ndjson").read_bytes(), before)
+        self.stop()
+        self.start()
+        state = self.raw(make("status", 0, THREE))
+        self.assertEqual(state["status"], "TECHNICAL_READBACK")
+        self.assertEqual(state["seq"], 1)
+        self.assertEqual(state["state"], "OPEN")
 
     def test_actual_process_and_socket_mode(self):
         self.assertEqual(stat.S_IMODE(self.root.stat().st_mode), 0o700)
