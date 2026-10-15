@@ -1,0 +1,1245 @@
+{
+  "schemaVersion": 1,
+  "asOf": "2026-10-15",
+  "baseline": "70f1ab9be0e82a99c0814ff5d766a0cfbdc2cfbd",
+  "license": "OpenStreetMap contributors, ODbL-1.0; https://www.openstreetmap.org/copyright",
+  "limitations": [
+    "Candidate centroid distances are straight line, not entrances or walking routes",
+    "No POI inventory completeness from failed Overpass",
+    "OSM API subsequent429 rate limit: acquisition stopped; no bypass",
+    "No monthly occupancy, legal property eligibility, revenue/cost or net profit evidence",
+    "Synthetic score88 has no identified real subject"
+  ],
+  "failures": [
+    {
+      "caseId": "cal-3e69f4e9857e",
+      "assertion": "RU residential canonical calibration matrix (deterministic harness) 'Сочи, Курортный проспект, 50'",
+      "baselineFailure": [
+        "AssertionError: expected [ 'TOURIST' ] to include 'RESIDENTIAL'\n    at Proxy.<anonymous> (file:///C:/Users/Admin/asi-location-calibration-isolated-20261015/node_modules/@vitest/expect/dist/index.js:1314:15)\n    at Proxy.<anonymous> (file:///C:/Users/Admin/asi-location-calibration-isolated-20261015/node_modules/@vitest/expect/dist/index.js:1151:15)\n    at Proxy.methodWrapper (file:///C:/Users/Admin/asi-location-calibration-isolated-20261015/node_modules/chai/index.js:1700:25)\n    at C:/Users/Admin/asi-location-realworld-isolated-20261015/src/lib/location/tests/ru-residential-calibration-matrix.test.ts:1083:21\n    at file:///C:/Users/Admin/asi-location-calibration-isolated-20261015/node_modules/@vitest/runner/dist/index.js:1382:60\n    at file:///C:/Users/Admin/asi-location-calibration-isolated-20261015/node_modules/@vitest/runner/dist/index.js:296:11\n    at file:///C:/Users/Admin/asi-location-calibration-isolated-20261015/node_modules/@vitest/runner/dist/index.js:1258:26\n    at file:///C:/Users/Admin/asi-location-calibration-isolated-20261015/node_modules/@vitest/runner/dist/index.js:1681:20\n    at new Promise (<anonymous>)\n    at runWithCancel (file:///C:/Users/Admin/asi-location-calibration-isolated-20261015/node_modules/@vitest/runner/dist/index.js:1678:10)"
+      ],
+      "afterStatus": "failed",
+      "groundTruth": "HOLD; synthetic fixture is not independent ground truth",
+      "locationId": "sochi",
+      "expectedAssertion": "TOURIST",
+      "remainingBlocker": "Hotel address independently corroborated; official directions mention underground road crossing. Theatre point supports cultural proximity, not a validated walking route."
+    },
+    {
+      "caseId": "cal-f09818cdf97e",
+      "assertion": "RU residential canonical calibration matrix (deterministic harness) 'Анапа, Пионерский проспект, 20'",
+      "baselineFailure": [
+        "AssertionError: expected [ 'TOURIST' ] to include 'RESIDENTIAL'\n    at Proxy.<anonymous> (file:///C:/Users/Admin/asi-location-calibration-isolated-20261015/node_modules/@vitest/expect/dist/index.js:1314:15)\n    at Proxy.<anonymous> (file:///C:/Users/Admin/asi-location-calibration-isolated-20261015/node_modules/@vitest/expect/dist/index.js:1151:15)\n    at Proxy.methodWrapper (file:///C:/Users/Admin/asi-location-calibration-isolated-20261015/node_modules/chai/index.js:1700:25)\n    at C:/Users/Admin/asi-location-realworld-isolated-20261015/src/lib/location/tests/ru-residential-calibration-matrix.test.ts:1083:21\n    at file:///C:/Users/Admin/asi-location-calibration-isolated-20261015/node_modules/@vitest/runner/dist/index.js:1382:60\n    at file:///C:/Users/Admin/asi-location-calibration-isolated-20261015/node_modules/@vitest/runner/dist/index.js:296:11\n    at file:///C:/Users/Admin/asi-location-calibration-isolated-20261015/node_modules/@vitest/runner/dist/index.js:1258:26\n    at file:///C:/Users/Admin/asi-location-calibration-isolated-20261015/node_modules/@vitest/runner/dist/index.js:1681:20\n    at new Promise (<anonymous>)\n    at runWithCancel (file:///C:/Users/Admin/asi-location-calibration-isolated-20261015/node_modules/@vitest/runner/dist/index.js:1678:10)"
+      ],
+      "afterStatus": "failed",
+      "groundTruth": "HOLD; synthetic fixture is not independent ground truth",
+      "locationId": "anapa",
+      "expectedAssertion": "TOURIST",
+      "remainingBlocker": "Building candidate only. Beach accessibility, current bathing restrictions and measured seasonal demand unavailable."
+    },
+    {
+      "caseId": "cal-2a1204f978d7",
+      "assertion": "RU residential canonical calibration matrix (deterministic harness) 'Шерегеш, улица Гагарина, 12'",
+      "baselineFailure": [
+        "AssertionError: expected [ 'TOURIST' ] to include 'RESIDENTIAL'\n    at Proxy.<anonymous> (file:///C:/Users/Admin/asi-location-calibration-isolated-20261015/node_modules/@vitest/expect/dist/index.js:1314:15)\n    at Proxy.<anonymous> (file:///C:/Users/Admin/asi-location-calibration-isolated-20261015/node_modules/@vitest/expect/dist/index.js:1151:15)\n    at Proxy.methodWrapper (file:///C:/Users/Admin/asi-location-calibration-isolated-20261015/node_modules/chai/index.js:1700:25)\n    at C:/Users/Admin/asi-location-realworld-isolated-20261015/src/lib/location/tests/ru-residential-calibration-matrix.test.ts:1083:21\n    at file:///C:/Users/Admin/asi-location-calibration-isolated-20261015/node_modules/@vitest/runner/dist/index.js:1382:60\n    at file:///C:/Users/Admin/asi-location-calibration-isolated-20261015/node_modules/@vitest/runner/dist/index.js:296:11\n    at file:///C:/Users/Admin/asi-location-calibration-isolated-20261015/node_modules/@vitest/runner/dist/index.js:1258:26\n    at file:///C:/Users/Admin/asi-location-calibration-isolated-20261015/node_modules/@vitest/runner/dist/index.js:1681:20\n    at new Promise (<anonymous>)\n    at runWithCancel (file:///C:/Users/Admin/asi-location-calibration-isolated-20261015/node_modules/@vitest/runner/dist/index.js:1678:10)"
+      ],
+      "afterStatus": "failed",
+      "groundTruth": "HOLD; synthetic fixture is not independent ground truth",
+      "locationId": "sheregesh",
+      "expectedAssertion": "TOURIST",
+      "remainingBlocker": "Actual apartment building at Gagarina 12; cached OSM full way confirms geometry. Ski-lift proximity asserted in synthetic fixture is not verified. Mountain query returned no match."
+    },
+    {
+      "caseId": "cal-5051eebf9c5d",
+      "assertion": "RU residential canonical calibration matrix (deterministic harness) 'Санкт-Петербург, Дворцовая площадь, 2'",
+      "baselineFailure": [
+        "AssertionError: expected 80 to be greater than or equal to 85\n    at C:/Users/Admin/asi-location-realworld-isolated-20261015/src/lib/location/tests/ru-residential-calibration-matrix.test.ts:1079:28\n    at file:///C:/Users/Admin/asi-location-calibration-isolated-20261015/node_modules/@vitest/runner/dist/index.js:1382:60\n    at file:///C:/Users/Admin/asi-location-calibration-isolated-20261015/node_modules/@vitest/runner/dist/index.js:296:11\n    at file:///C:/Users/Admin/asi-location-calibration-isolated-20261015/node_modules/@vitest/runner/dist/index.js:1258:26\n    at file:///C:/Users/Admin/asi-location-calibration-isolated-20261015/node_modules/@vitest/runner/dist/index.js:1681:20\n    at new Promise (<anonymous>)\n    at runWithCancel (file:///C:/Users/Admin/asi-location-calibration-isolated-20261015/node_modules/@vitest/runner/dist/index.js:1678:10)\n    at file:///C:/Users/Admin/asi-location-calibration-isolated-20261015/node_modules/@vitest/runner/dist/index.js:1660:20\n    at new Promise (<anonymous>)\n    at runWithTimeout (file:///C:/Users/Admin/asi-location-calibration-isolated-20261015/node_modules/@vitest/runner/dist/index.js:1627:10)"
+      ],
+      "afterStatus": "failed",
+      "groundTruth": "HOLD; synthetic fixture is not independent ground truth",
+      "locationId": "palace",
+      "expectedAssertion": "headline >=85",
+      "remainingBlocker": "Initial geocode is the square, not building. Named Winter Palace query resolves relation69424; official museum address corroborates Palace Square2. Neither supports score85 as measured demand."
+    },
+    {
+      "caseId": "cal-21b79044304c",
+      "assertion": "RU residential canonical calibration matrix (deterministic harness) 'Нижний Новгород, Большая Покровская у…'",
+      "baselineFailure": [
+        "AssertionError: expected [ 'TOURIST' ] to include 'RESIDENTIAL'\n    at Proxy.<anonymous> (file:///C:/Users/Admin/asi-location-calibration-isolated-20261015/node_modules/@vitest/expect/dist/index.js:1314:15)\n    at Proxy.<anonymous> (file:///C:/Users/Admin/asi-location-calibration-isolated-20261015/node_modules/@vitest/expect/dist/index.js:1151:15)\n    at Proxy.methodWrapper (file:///C:/Users/Admin/asi-location-calibration-isolated-20261015/node_modules/chai/index.js:1700:25)\n    at C:/Users/Admin/asi-location-realworld-isolated-20261015/src/lib/location/tests/ru-residential-calibration-matrix.test.ts:1083:21\n    at file:///C:/Users/Admin/asi-location-calibration-isolated-20261015/node_modules/@vitest/runner/dist/index.js:1382:60\n    at file:///C:/Users/Admin/asi-location-calibration-isolated-20261015/node_modules/@vitest/runner/dist/index.js:296:11\n    at file:///C:/Users/Admin/asi-location-calibration-isolated-20261015/node_modules/@vitest/runner/dist/index.js:1258:26\n    at file:///C:/Users/Admin/asi-location-calibration-isolated-20261015/node_modules/@vitest/runner/dist/index.js:1681:20\n    at new Promise (<anonymous>)\n    at runWithCancel (file:///C:/Users/Admin/asi-location-calibration-isolated-20261015/node_modules/@vitest/runner/dist/index.js:1678:10)"
+      ],
+      "afterStatus": "failed",
+      "groundTruth": "HOLD; synthetic fixture is not independent ground truth",
+      "locationId": "nizhny",
+      "expectedAssertion": "TOURIST",
+      "remainingBlocker": "House2 building and same-number address node disagree by about1km; subject identity unresolved. Theatre official address is13."
+    },
+    {
+      "caseId": "cal-3eec192323dc",
+      "assertion": "RU residential canonical calibration matrix (deterministic harness) 'Самара, Ленинградская улица, 25'",
+      "baselineFailure": [
+        "AssertionError: expected [ 'MIXED', 'TOURIST' ] to include 'RESIDENTIAL'\n    at Proxy.<anonymous> (file:///C:/Users/Admin/asi-location-calibration-isolated-20261015/node_modules/@vitest/expect/dist/index.js:1314:15)\n    at Proxy.<anonymous> (file:///C:/Users/Admin/asi-location-calibration-isolated-20261015/node_modules/@vitest/expect/dist/index.js:1151:15)\n    at Proxy.methodWrapper (file:///C:/Users/Admin/asi-location-calibration-isolated-20261015/node_modules/chai/index.js:1700:25)\n    at C:/Users/Admin/asi-location-realworld-isolated-20261015/src/lib/location/tests/ru-residential-calibration-matrix.test.ts:1083:21\n    at file:///C:/Users/Admin/asi-location-calibration-isolated-20261015/node_modules/@vitest/runner/dist/index.js:1382:60\n    at file:///C:/Users/Admin/asi-location-calibration-isolated-20261015/node_modules/@vitest/runner/dist/index.js:296:11\n    at file:///C:/Users/Admin/asi-location-calibration-isolated-20261015/node_modules/@vitest/runner/dist/index.js:1258:26\n    at file:///C:/Users/Admin/asi-location-calibration-isolated-20261015/node_modules/@vitest/runner/dist/index.js:1681:20\n    at new Promise (<anonymous>)\n    at runWithCancel (file:///C:/Users/Admin/asi-location-calibration-isolated-20261015/node_modules/@vitest/runner/dist/index.js:1678:10)"
+      ],
+      "afterStatus": "failed",
+      "groundTruth": "HOLD; synthetic fixture is not independent ground truth",
+      "locationId": "samara",
+      "expectedAssertion": "MIXED or TOURIST",
+      "remainingBlocker": "Subject is an address node, not confirmed building. Nearby museum does not independently establish whole-neighborhood demand profile."
+    },
+    {
+      "caseId": "cal-4df66a1f45d4",
+      "assertion": "RU residential canonical calibration matrix (deterministic harness) 'Москва, Большая Пироговская улица, 2'",
+      "baselineFailure": [
+        "AssertionError: expected [ 'BUSINESS' ] to include 'MIXED'\n    at Proxy.<anonymous> (file:///C:/Users/Admin/asi-location-calibration-isolated-20261015/node_modules/@vitest/expect/dist/index.js:1314:15)\n    at Proxy.<anonymous> (file:///C:/Users/Admin/asi-location-calibration-isolated-20261015/node_modules/@vitest/expect/dist/index.js:1151:15)\n    at Proxy.methodWrapper (file:///C:/Users/Admin/asi-location-calibration-isolated-20261015/node_modules/chai/index.js:1700:25)\n    at C:/Users/Admin/asi-location-realworld-isolated-20261015/src/lib/location/tests/ru-residential-calibration-matrix.test.ts:1083:21\n    at file:///C:/Users/Admin/asi-location-calibration-isolated-20261015/node_modules/@vitest/runner/dist/index.js:1382:60\n    at file:///C:/Users/Admin/asi-location-calibration-isolated-20261015/node_modules/@vitest/runner/dist/index.js:296:11\n    at file:///C:/Users/Admin/asi-location-calibration-isolated-20261015/node_modules/@vitest/runner/dist/index.js:1258:26\n    at file:///C:/Users/Admin/asi-location-calibration-isolated-20261015/node_modules/@vitest/runner/dist/index.js:1681:20\n    at new Promise (<anonymous>)\n    at runWithCancel (file:///C:/Users/Admin/asi-location-calibration-isolated-20261015/node_modules/@vitest/runner/dist/index.js:1678:10)"
+      ],
+      "afterStatus": "failed",
+      "groundTruth": "HOLD; synthetic fixture is not independent ground truth",
+      "locationId": "pirogovskaya",
+      "expectedAssertion": "BUSINESS",
+      "remainingBlocker": "First result is2s4 hospital-tagged building, not unsuffixed2. Official university rectorate is2s4; clinical hospital1 is6s1. Hospital is not automatically corporate business demand."
+    },
+    {
+      "caseId": "cal-a4414b3dc2dd",
+      "assertion": "RU residential canonical calibration matrix (deterministic harness) 'Зеленоградск, Курортный проспект, 1'",
+      "baselineFailure": [
+        "AssertionError: expected [ 'TOURIST' ] to include 'RESIDENTIAL'\n    at Proxy.<anonymous> (file:///C:/Users/Admin/asi-location-calibration-isolated-20261015/node_modules/@vitest/expect/dist/index.js:1314:15)\n    at Proxy.<anonymous> (file:///C:/Users/Admin/asi-location-calibration-isolated-20261015/node_modules/@vitest/expect/dist/index.js:1151:15)\n    at Proxy.methodWrapper (file:///C:/Users/Admin/asi-location-calibration-isolated-20261015/node_modules/chai/index.js:1700:25)\n    at C:/Users/Admin/asi-location-realworld-isolated-20261015/src/lib/location/tests/ru-residential-calibration-matrix.test.ts:1083:21\n    at file:///C:/Users/Admin/asi-location-calibration-isolated-20261015/node_modules/@vitest/runner/dist/index.js:1382:60\n    at file:///C:/Users/Admin/asi-location-calibration-isolated-20261015/node_modules/@vitest/runner/dist/index.js:296:11\n    at file:///C:/Users/Admin/asi-location-calibration-isolated-20261015/node_modules/@vitest/runner/dist/index.js:1258:26\n    at file:///C:/Users/Admin/asi-location-calibration-isolated-20261015/node_modules/@vitest/runner/dist/index.js:1681:20\n    at new Promise (<anonymous>)\n    at runWithCancel (file:///C:/Users/Admin/asi-location-calibration-isolated-20261015/node_modules/@vitest/runner/dist/index.js:1678:10)"
+      ],
+      "afterStatus": "failed",
+      "groundTruth": "HOLD; synthetic fixture is not independent ground truth",
+      "locationId": "zelenogradsk",
+      "expectedAssertion": "TOURIST",
+      "remainingBlocker": "Apartment building candidate and nearby specialty museum; museum scale and destination draw remain unverified. Seasonal resort presence is not year-round occupancy."
+    },
+    {
+      "caseId": "cal-d3ca82279172",
+      "assertion": "RU residential canonical calibration matrix (deterministic harness) 'Светлогорск, улица Ленина, 8'",
+      "baselineFailure": [
+        "AssertionError: expected [ 'TOURIST' ] to include 'RESIDENTIAL'\n    at Proxy.<anonymous> (file:///C:/Users/Admin/asi-location-calibration-isolated-20261015/node_modules/@vitest/expect/dist/index.js:1314:15)\n    at Proxy.<anonymous> (file:///C:/Users/Admin/asi-location-calibration-isolated-20261015/node_modules/@vitest/expect/dist/index.js:1151:15)\n    at Proxy.methodWrapper (file:///C:/Users/Admin/asi-location-calibration-isolated-20261015/node_modules/chai/index.js:1700:25)\n    at C:/Users/Admin/asi-location-realworld-isolated-20261015/src/lib/location/tests/ru-residential-calibration-matrix.test.ts:1083:21\n    at file:///C:/Users/Admin/asi-location-calibration-isolated-20261015/node_modules/@vitest/runner/dist/index.js:1382:60\n    at file:///C:/Users/Admin/asi-location-calibration-isolated-20261015/node_modules/@vitest/runner/dist/index.js:296:11\n    at file:///C:/Users/Admin/asi-location-calibration-isolated-20261015/node_modules/@vitest/runner/dist/index.js:1258:26\n    at file:///C:/Users/Admin/asi-location-calibration-isolated-20261015/node_modules/@vitest/runner/dist/index.js:1681:20\n    at new Promise (<anonymous>)\n    at runWithCancel (file:///C:/Users/Admin/asi-location-calibration-isolated-20261015/node_modules/@vitest/runner/dist/index.js:1678:10)"
+      ],
+      "afterStatus": "failed",
+      "groundTruth": "HOLD; synthetic fixture is not independent ground truth",
+      "locationId": "svetlogorsk",
+      "expectedAssertion": "TOURIST",
+      "remainingBlocker": "Subject OSM building is retail. Nearby Yantar Hall supports cultural anchor, not residential STR suitability or net profit."
+    },
+    {
+      "caseId": "cal-e23c8c6104cc",
+      "assertion": "RU residential canonical calibration matrix (deterministic harness) 'Геленджик, набережная, 1'",
+      "baselineFailure": [
+        "AssertionError: expected [ 'TOURIST' ] to include 'RESIDENTIAL'\n    at Proxy.<anonymous> (file:///C:/Users/Admin/asi-location-calibration-isolated-20261015/node_modules/@vitest/expect/dist/index.js:1314:15)\n    at Proxy.<anonymous> (file:///C:/Users/Admin/asi-location-calibration-isolated-20261015/node_modules/@vitest/expect/dist/index.js:1151:15)\n    at Proxy.methodWrapper (file:///C:/Users/Admin/asi-location-calibration-isolated-20261015/node_modules/chai/index.js:1700:25)\n    at C:/Users/Admin/asi-location-realworld-isolated-20261015/src/lib/location/tests/ru-residential-calibration-matrix.test.ts:1083:21\n    at file:///C:/Users/Admin/asi-location-calibration-isolated-20261015/node_modules/@vitest/runner/dist/index.js:1382:60\n    at file:///C:/Users/Admin/asi-location-calibration-isolated-20261015/node_modules/@vitest/runner/dist/index.js:296:11\n    at file:///C:/Users/Admin/asi-location-calibration-isolated-20261015/node_modules/@vitest/runner/dist/index.js:1258:26\n    at file:///C:/Users/Admin/asi-location-calibration-isolated-20261015/node_modules/@vitest/runner/dist/index.js:1681:20\n    at new Promise (<anonymous>)\n    at runWithCancel (file:///C:/Users/Admin/asi-location-calibration-isolated-20261015/node_modules/@vitest/runner/dist/index.js:1678:10)"
+      ],
+      "afterStatus": "failed",
+      "groundTruth": "HOLD; synthetic fixture is not independent ground truth",
+      "locationId": "gelendzhik",
+      "expectedAssertion": "TOURIST",
+      "remainingBlocker": "First result is Naberezhnaya street1 at Tonkiy Mys, not verified central embankment. Ambiguous subject must block acceptance."
+    },
+    {
+      "caseId": "cal-393738047b4e",
+      "assertion": "RU residential canonical calibration matrix (deterministic harness) 'Сочи, Эсто‑Садок, улица Эстонская, 37'",
+      "baselineFailure": [
+        "AssertionError: expected [ 'TOURIST' ] to include 'RESIDENTIAL'\n    at Proxy.<anonymous> (file:///C:/Users/Admin/asi-location-calibration-isolated-20261015/node_modules/@vitest/expect/dist/index.js:1314:15)\n    at Proxy.<anonymous> (file:///C:/Users/Admin/asi-location-calibration-isolated-20261015/node_modules/@vitest/expect/dist/index.js:1151:15)\n    at Proxy.methodWrapper (file:///C:/Users/Admin/asi-location-calibration-isolated-20261015/node_modules/chai/index.js:1700:25)\n    at C:/Users/Admin/asi-location-realworld-isolated-20261015/src/lib/location/tests/ru-residential-calibration-matrix.test.ts:1083:21\n    at file:///C:/Users/Admin/asi-location-calibration-isolated-20261015/node_modules/@vitest/runner/dist/index.js:1382:60\n    at file:///C:/Users/Admin/asi-location-calibration-isolated-20261015/node_modules/@vitest/runner/dist/index.js:296:11\n    at file:///C:/Users/Admin/asi-location-calibration-isolated-20261015/node_modules/@vitest/runner/dist/index.js:1258:26\n    at file:///C:/Users/Admin/asi-location-calibration-isolated-20261015/node_modules/@vitest/runner/dist/index.js:1681:20\n    at new Promise (<anonymous>)\n    at runWithCancel (file:///C:/Users/Admin/asi-location-calibration-isolated-20261015/node_modules/@vitest/runner/dist/index.js:1678:10)"
+      ],
+      "afterStatus": "failed",
+      "groundTruth": "HOLD; synthetic fixture is not independent ground truth",
+      "locationId": "estosadok",
+      "expectedAssertion": "TOURIST",
+      "remainingBlocker": "Named resort query first result is bus_stop, not lift/resort anchor. Reject category substitution; do not promote this transit result to tourism magnet."
+    },
+    {
+      "caseId": "cal-bf942e6368fa",
+      "assertion": "RU residential canonical calibration matrix (deterministic harness) explicit regressions: tier-1 business/tourist can still be strong",
+      "baselineFailure": [
+        "AssertionError: expected 70 to be 88 // Object.is equality\n    at C:/Users/Admin/asi-location-realworld-isolated-20261015/src/lib/location/tests/ru-residential-calibration-matrix.test.ts:1178:36\n    at file:///C:/Users/Admin/asi-location-calibration-isolated-20261015/node_modules/@vitest/runner/dist/index.js:296:11\n    at file:///C:/Users/Admin/asi-location-calibration-isolated-20261015/node_modules/@vitest/runner/dist/index.js:1258:26\n    at file:///C:/Users/Admin/asi-location-calibration-isolated-20261015/node_modules/@vitest/runner/dist/index.js:1681:20\n    at new Promise (<anonymous>)\n    at runWithCancel (file:///C:/Users/Admin/asi-location-calibration-isolated-20261015/node_modules/@vitest/runner/dist/index.js:1678:10)\n    at file:///C:/Users/Admin/asi-location-calibration-isolated-20261015/node_modules/@vitest/runner/dist/index.js:1660:20\n    at new Promise (<anonymous>)\n    at runWithTimeout (file:///C:/Users/Admin/asi-location-calibration-isolated-20261015/node_modules/@vitest/runner/dist/index.js:1627:10)\n    at file:///C:/Users/Admin/asi-location-calibration-isolated-20261015/node_modules/@vitest/runner/dist/index.js:2309:64"
+      ],
+      "afterStatus": "failed",
+      "groundTruth": "HOLD; synthetic fixture is not independent ground truth",
+      "locationId": "synthetic-88",
+      "expectedAssertion": "headline88",
+      "remainingBlocker": "No real subject;88 cannot be independently validated"
+    }
+  ],
+  "observations": [
+    {
+      "id": "sochi",
+      "subjectCandidates": [
+        {
+          "osmType": "way",
+          "osmId": 717752694,
+          "lat": 43.5767046,
+          "lon": 39.73059,
+          "name": "",
+          "type": "yes",
+          "address": {
+            "house_number": "50",
+            "road": "Курортный проспект",
+            "neighbourhood": "Гостиница Сочи",
+            "suburb": "Театральная",
+            "city": "Сочи",
+            "county": "городской округ Сочи",
+            "state": "Краснодарский край",
+            "ISO3166-2-lvl4": "RU-KDA",
+            "region": "Южный федеральный округ",
+            "postcode": "354009",
+            "country": "Россия",
+            "country_code": "ru"
+          }
+        },
+        {
+          "osmType": "node",
+          "osmId": 12541096601,
+          "lat": 43.5766893,
+          "lon": 39.7299394,
+          "name": "Оптика Юг",
+          "type": "optician",
+          "address": {
+            "shop": "Оптика Юг",
+            "house_number": "50",
+            "road": "Курортный проспект",
+            "neighbourhood": "Гостиница Сочи",
+            "suburb": "Театральная",
+            "city": "Сочи",
+            "county": "городской округ Сочи",
+            "state": "Краснодарский край",
+            "ISO3166-2-lvl4": "RU-KDA",
+            "region": "Южный федеральный округ",
+            "postcode": "354009",
+            "country": "Россия",
+            "country_code": "ru"
+          }
+        },
+        {
+          "osmType": "node",
+          "osmId": 12032893452,
+          "lat": 43.5766485,
+          "lon": 39.7298938,
+          "name": "Maybe nail",
+          "type": "beauty",
+          "address": {
+            "shop": "Maybe nail",
+            "house_number": "50",
+            "road": "Курортный проспект",
+            "neighbourhood": "Гостиница Сочи",
+            "suburb": "Театральная",
+            "city": "Сочи",
+            "county": "городской округ Сочи",
+            "state": "Краснодарский край",
+            "ISO3166-2-lvl4": "RU-KDA",
+            "region": "Южный федеральный округ",
+            "postcode": "354009",
+            "country": "Россия",
+            "country_code": "ru"
+          }
+        }
+      ],
+      "poiCandidates": [
+        {
+          "osmType": "relation",
+          "osmId": 9353455,
+          "lat": 43.5723561,
+          "lon": 39.730585,
+          "name": "Зимний театр",
+          "type": "theatre",
+          "address": {
+            "amenity": "Зимний театр",
+            "house_number": "2",
+            "road": "Театральная улица",
+            "suburb": "Театральная",
+            "city": "Сочи",
+            "county": "городской округ Сочи",
+            "state": "Краснодарский край",
+            "ISO3166-2-lvl4": "RU-KDA",
+            "region": "Южный федеральный округ",
+            "postcode": "354000",
+            "country": "Россия",
+            "country_code": "ru"
+          }
+        }
+      ],
+      "source": {
+        "url": "https://nominatim.openstreetmap.org/search?q=%D0%A1%D0%BE%D1%87%D0%B8%2C+%D0%9A%D1%83%D1%80%D0%BE%D1%80%D1%82%D0%BD%D1%8B%D0%B9+%D0%BF%D1%80%D0%BE%D1%81%D0%BF%D0%B5%D0%BA%D1%82%2C+50&format=jsonv2&addressdetails=1&limit=3&countrycodes=ru",
+        "retrievedAt": "2026-10-15T17:18:07.522Z",
+        "sha256": "90b97c985532d9d9d0e33f64841593f7aab613f75423de27e8312624f34c3039",
+        "license": "ODbL-1.0; OpenStreetMap contributors"
+      },
+      "poiSource": {
+        "id": "sochi-theatre",
+        "q": "Зимний театр Сочи",
+        "url": "https://nominatim.openstreetmap.org/search?q=%D0%97%D0%B8%D0%BC%D0%BD%D0%B8%D0%B9+%D1%82%D0%B5%D0%B0%D1%82%D1%80+%D0%A1%D0%BE%D1%87%D0%B8&format=jsonv2&addressdetails=1&limit=3&countrycodes=ru",
+        "retrievedAt": "2026-10-15T17:27:21.948Z",
+        "httpStatus": 200,
+        "file": "C:/Users/Admin/asi-strigunov-2x/location-realworld-20261015/raw/sochi-theatre-landmark.json",
+        "sha256": "f85323b6e629122130905eadf673718e779b1cafd7038b0e7f89dfb346f12a90",
+        "license": "ODbL-1.0; OpenStreetMap contributors"
+      },
+      "straightLineCandidateMetres": 484,
+      "walkingMetres": null,
+      "walkingStatus": "UNVERIFIED",
+      "permanence": "Physical object mapped; operating continuity unverified",
+      "seasonality": "UNVERIFIED: no observed monthly demand series",
+      "propertyType": "UNVERIFIED for intended use",
+      "status": "HOLD",
+      "notes": "Hotel address independently corroborated; official directions mention underground road crossing. Theatre point supports cultural proximity, not a validated walking route."
+    },
+    {
+      "id": "anapa",
+      "subjectCandidates": [
+        {
+          "osmType": "relation",
+          "osmId": 2991308,
+          "lat": 44.9275893,
+          "lon": 37.32093,
+          "name": "",
+          "type": "yes",
+          "address": {
+            "house_number": "20",
+            "road": "Пионерский проспект",
+            "town": "Анапа",
+            "county": "муниципальный округ Анапа",
+            "state": "Краснодарский край",
+            "ISO3166-2-lvl4": "RU-KDA",
+            "region": "Южный федеральный округ",
+            "postcode": "353450",
+            "country": "Россия",
+            "country_code": "ru"
+          }
+        }
+      ],
+      "poiCandidates": [],
+      "source": {
+        "url": "https://nominatim.openstreetmap.org/search?q=%D0%90%D0%BD%D0%B0%D0%BF%D0%B0%2C+%D0%9F%D0%B8%D0%BE%D0%BD%D0%B5%D1%80%D1%81%D0%BA%D0%B8%D0%B9+%D0%BF%D1%80%D0%BE%D1%81%D0%BF%D0%B5%D0%BA%D1%82%2C+20&format=jsonv2&addressdetails=1&limit=3&countrycodes=ru",
+        "retrievedAt": "2026-10-15T17:18:10.267Z",
+        "sha256": "de6e5950ca400dd2959bed286fce70c42a24f1ab6b3cc47903a696788738fdc7",
+        "license": "ODbL-1.0; OpenStreetMap contributors"
+      },
+      "poiSource": null,
+      "straightLineCandidateMetres": null,
+      "walkingMetres": null,
+      "walkingStatus": "UNVERIFIED",
+      "permanence": "Physical object mapped; operating continuity unverified",
+      "seasonality": "UNVERIFIED: no observed monthly demand series",
+      "propertyType": "UNVERIFIED for intended use",
+      "status": "HOLD",
+      "notes": "Building candidate only. Beach accessibility, current bathing restrictions and measured seasonal demand unavailable."
+    },
+    {
+      "id": "sheregesh",
+      "subjectCandidates": [
+        {
+          "osmType": "way",
+          "osmId": 133143136,
+          "lat": 52.9271189,
+          "lon": 87.9772229,
+          "name": "",
+          "type": "apartments",
+          "address": {
+            "house_number": "12",
+            "road": "улица Гагарина",
+            "town": "Шерегеш",
+            "county": "Таштагольский муниципальный округ",
+            "state": "Кемеровская область",
+            "ISO3166-2-lvl4": "RU-KEM",
+            "region": "Сибирский федеральный округ",
+            "postcode": "652971",
+            "country": "Россия",
+            "country_code": "ru"
+          }
+        }
+      ],
+      "poiCandidates": [],
+      "source": {
+        "url": "https://nominatim.openstreetmap.org/search?q=%D0%A8%D0%B5%D1%80%D0%B5%D0%B3%D0%B5%D1%88%2C+%D1%83%D0%BB%D0%B8%D1%86%D0%B0+%D0%93%D0%B0%D0%B3%D0%B0%D1%80%D0%B8%D0%BD%D0%B0%2C+12&format=jsonv2&addressdetails=1&limit=3&countrycodes=ru",
+        "retrievedAt": "2026-10-15T17:18:13.414Z",
+        "sha256": "bac11515bd2447c63c864baa23c54435f898edc6a8b2680b7630fbbb1eb2decf",
+        "license": "ODbL-1.0; OpenStreetMap contributors"
+      },
+      "poiSource": null,
+      "straightLineCandidateMetres": null,
+      "walkingMetres": null,
+      "walkingStatus": "UNVERIFIED",
+      "permanence": "Physical object mapped; operating continuity unverified",
+      "seasonality": "UNVERIFIED: no observed monthly demand series",
+      "propertyType": "UNVERIFIED for intended use",
+      "status": "HOLD",
+      "notes": "Actual apartment building at Gagarina 12; cached OSM full way confirms geometry. Ski-lift proximity asserted in synthetic fixture is not verified. Mountain query returned no match."
+    },
+    {
+      "id": "palace",
+      "subjectCandidates": [
+        {
+          "osmType": "relation",
+          "osmId": 1947508,
+          "lat": 59.9390434,
+          "lon": 30.3153537,
+          "name": "Дворцовая площадь",
+          "type": "square",
+          "address": {
+            "square": "Дворцовая площадь",
+            "city_district": "Дворцовый округ",
+            "city": "Санкт-Петербург",
+            "state": "Санкт-Петербург",
+            "ISO3166-2-lvl4": "RU-SPE",
+            "region": "Северо-Западный федеральный округ",
+            "country": "Россия",
+            "country_code": "ru"
+          }
+        },
+        {
+          "osmType": "way",
+          "osmId": 217399816,
+          "lat": 59.9391464,
+          "lon": 30.3157574,
+          "name": "Дворцовая площадь",
+          "type": "living_street",
+          "address": {
+            "road": "Дворцовая площадь",
+            "city_district": "Дворцовый округ",
+            "city": "Санкт-Петербург",
+            "state": "Санкт-Петербург",
+            "ISO3166-2-lvl4": "RU-SPE",
+            "region": "Северо-Западный федеральный округ",
+            "postcode": "191186",
+            "country": "Россия",
+            "country_code": "ru"
+          }
+        },
+        {
+          "osmType": "way",
+          "osmId": 637304529,
+          "lat": 59.8837605,
+          "lon": 29.9125463,
+          "name": "Дворцовая площадь",
+          "type": "square",
+          "address": {
+            "square": "Дворцовая площадь",
+            "suburb": "Заячий Ремиз",
+            "town": "Петергоф",
+            "state": "Санкт-Петербург",
+            "ISO3166-2-lvl4": "RU-SPE",
+            "region": "Северо-Западный федеральный округ",
+            "country": "Россия",
+            "country_code": "ru"
+          }
+        }
+      ],
+      "poiCandidates": [
+        {
+          "osmType": "relation",
+          "osmId": 69424,
+          "lat": 59.9404625,
+          "lon": 30.3151887,
+          "name": "Зимний дворец",
+          "type": "castle",
+          "address": {
+            "historic": "Зимний дворец",
+            "house_number": "38 литА",
+            "road": "Дворцовая набережная",
+            "city_district": "Дворцовый округ",
+            "city": "Санкт-Петербург",
+            "state": "Санкт-Петербург",
+            "ISO3166-2-lvl4": "RU-SPE",
+            "region": "Северо-Западный федеральный округ",
+            "postcode": "190000",
+            "country": "Россия",
+            "country_code": "ru"
+          }
+        }
+      ],
+      "source": {
+        "url": "https://nominatim.openstreetmap.org/search?q=%D0%A1%D0%B0%D0%BD%D0%BA%D1%82-%D0%9F%D0%B5%D1%82%D0%B5%D1%80%D0%B1%D1%83%D1%80%D0%B3%2C+%D0%94%D0%B2%D0%BE%D1%80%D1%86%D0%BE%D0%B2%D0%B0%D1%8F+%D0%BF%D0%BB%D0%BE%D1%89%D0%B0%D0%B4%D1%8C%2C+2&format=jsonv2&addressdetails=1&limit=3&countrycodes=ru",
+        "retrievedAt": "2026-10-15T17:18:15.563Z",
+        "sha256": "ed470dea3bd3b5a0083732cfb19e2022a751bf7206a45c9f821beb7aa103ccdc",
+        "license": "ODbL-1.0; OpenStreetMap contributors"
+      },
+      "poiSource": {
+        "id": "palace-building",
+        "q": "Зимний дворец Санкт-Петербург",
+        "url": "https://nominatim.openstreetmap.org/search?q=%D0%97%D0%B8%D0%BC%D0%BD%D0%B8%D0%B9+%D0%B4%D0%B2%D0%BE%D1%80%D0%B5%D1%86+%D0%A1%D0%B0%D0%BD%D0%BA%D1%82-%D0%9F%D0%B5%D1%82%D0%B5%D1%80%D0%B1%D1%83%D1%80%D0%B3&format=jsonv2&addressdetails=1&limit=3&countrycodes=ru",
+        "retrievedAt": "2026-10-15T17:27:23.851Z",
+        "httpStatus": 200,
+        "file": "C:/Users/Admin/asi-strigunov-2x/location-realworld-20261015/raw/palace-building-landmark.json",
+        "sha256": "34cc1436292c717bc343dd3e83b2a3076c60a2abc390a611179a94ffc5c0bb57",
+        "license": "ODbL-1.0; OpenStreetMap contributors"
+      },
+      "straightLineCandidateMetres": 158,
+      "walkingMetres": null,
+      "walkingStatus": "UNVERIFIED",
+      "permanence": "Physical object mapped; operating continuity unverified",
+      "seasonality": "UNVERIFIED: no observed monthly demand series",
+      "propertyType": "UNVERIFIED for intended use",
+      "status": "HOLD",
+      "notes": "Initial geocode is the square, not building. Named Winter Palace query resolves relation69424; official museum address corroborates Palace Square2. Neither supports score85 as measured demand."
+    },
+    {
+      "id": "nizhny",
+      "subjectCandidates": [
+        {
+          "osmType": "way",
+          "osmId": 1047123841,
+          "lat": 56.3253652,
+          "lon": 44.0041993,
+          "name": "",
+          "type": "yes",
+          "address": {
+            "house_number": "2",
+            "road": "Большая Покровская улица",
+            "neighbourhood": "Кремль",
+            "city_district": "Нижегородский район",
+            "city": "Нижний Новгород",
+            "county": "городской округ Нижний Новгород",
+            "state": "Нижегородская область",
+            "ISO3166-2-lvl4": "RU-NIZ",
+            "region": "Приволжский федеральный округ",
+            "postcode": "603005",
+            "country": "Россия",
+            "country_code": "ru"
+          }
+        },
+        {
+          "osmType": "node",
+          "osmId": 7208263065,
+          "lat": 56.3162036,
+          "lon": 43.9934878,
+          "name": "",
+          "type": "house",
+          "address": {
+            "house_number": "2",
+            "road": "Большая Покровская улица",
+            "city_district": "Нижегородский район",
+            "city": "Нижний Новгород",
+            "county": "городской округ Нижний Новгород",
+            "state": "Нижегородская область",
+            "ISO3166-2-lvl4": "RU-NIZ",
+            "region": "Приволжский федеральный округ",
+            "postcode": "603000",
+            "country": "Россия",
+            "country_code": "ru"
+          }
+        },
+        {
+          "osmType": "node",
+          "osmId": 3302933082,
+          "lat": 56.3255891,
+          "lon": 44.0043546,
+          "name": "Coffee Cake",
+          "type": "cafe",
+          "address": {
+            "amenity": "Coffee Cake",
+            "house_number": "2",
+            "road": "Большая Покровская улица",
+            "neighbourhood": "Кремль",
+            "city_district": "Нижегородский район",
+            "city": "Нижний Новгород",
+            "county": "городской округ Нижний Новгород",
+            "state": "Нижегородская область",
+            "ISO3166-2-lvl4": "RU-NIZ",
+            "region": "Приволжский федеральный округ",
+            "postcode": "603005",
+            "country": "Россия",
+            "country_code": "ru"
+          }
+        }
+      ],
+      "poiCandidates": [
+        {
+          "osmType": "relation",
+          "osmId": 4238217,
+          "lat": 56.3241681,
+          "lon": 44.0013353,
+          "name": "Нижегородский государственный академический театр драмы им. М. Горького",
+          "type": "theatre",
+          "address": {
+            "amenity": "Нижегородский государственный академический театр драмы им. М. Горького",
+            "house_number": "13",
+            "road": "Большая Покровская улица",
+            "neighbourhood": "Кремль",
+            "city_district": "Нижегородский район",
+            "city": "Нижний Новгород",
+            "county": "городской округ Нижний Новгород",
+            "state": "Нижегородская область",
+            "ISO3166-2-lvl4": "RU-NIZ",
+            "region": "Приволжский федеральный округ",
+            "postcode": "603005",
+            "country": "Россия",
+            "country_code": "ru"
+          }
+        }
+      ],
+      "source": {
+        "url": "https://nominatim.openstreetmap.org/search?q=%D0%9D%D0%B8%D0%B6%D0%BD%D0%B8%D0%B9+%D0%9D%D0%BE%D0%B2%D0%B3%D0%BE%D1%80%D0%BE%D0%B4%2C+%D0%91%D0%BE%D0%BB%D1%8C%D1%88%D0%B0%D1%8F+%D0%9F%D0%BE%D0%BA%D1%80%D0%BE%D0%B2%D1%81%D0%BA%D0%B0%D1%8F+%D1%83%D0%BB%D0%B8%D1%86%D0%B0%2C+2&format=jsonv2&addressdetails=1&limit=3&countrycodes=ru",
+        "retrievedAt": "2026-10-15T17:18:17.811Z",
+        "sha256": "beb86e2f91d9347005fa8a68f797600933df9c85cc3fa4ee9dc67591cc2d010a",
+        "license": "ODbL-1.0; OpenStreetMap contributors"
+      },
+      "poiSource": {
+        "id": "nizhny-theatre",
+        "q": "Нижегородский театр драмы",
+        "url": "https://nominatim.openstreetmap.org/search?q=%D0%9D%D0%B8%D0%B6%D0%B5%D0%B3%D0%BE%D1%80%D0%BE%D0%B4%D1%81%D0%BA%D0%B8%D0%B9+%D1%82%D0%B5%D0%B0%D1%82%D1%80+%D0%B4%D1%80%D0%B0%D0%BC%D1%8B&format=jsonv2&addressdetails=1&limit=3&countrycodes=ru",
+        "retrievedAt": "2026-10-15T17:27:32.690Z",
+        "httpStatus": 200,
+        "file": "C:/Users/Admin/asi-strigunov-2x/location-realworld-20261015/raw/nizhny-theatre-landmark.json",
+        "sha256": "fdc46e97862d41dec4817f4a89f42be3973bf2ded301997deedfcda6acd1469e",
+        "license": "ODbL-1.0; OpenStreetMap contributors"
+      },
+      "straightLineCandidateMetres": 221,
+      "walkingMetres": null,
+      "walkingStatus": "UNVERIFIED",
+      "permanence": "Physical object mapped; operating continuity unverified",
+      "seasonality": "UNVERIFIED: no observed monthly demand series",
+      "propertyType": "UNVERIFIED for intended use",
+      "status": "HOLD",
+      "notes": "House2 building and same-number address node disagree by about1km; subject identity unresolved. Theatre official address is13."
+    },
+    {
+      "id": "samara",
+      "subjectCandidates": [
+        {
+          "osmType": "node",
+          "osmId": 4235122213,
+          "lat": 53.1880224,
+          "lon": 50.0885213,
+          "name": "",
+          "type": "house",
+          "address": {
+            "house_number": "25",
+            "road": "Ленинградская улица",
+            "suburb": "Проран",
+            "city": "Самара",
+            "county": "городской округ Самара",
+            "state": "Самарская область",
+            "ISO3166-2-lvl4": "RU-SAM",
+            "region": "Приволжский федеральный округ",
+            "postcode": "443028",
+            "country": "Россия",
+            "country_code": "ru"
+          }
+        }
+      ],
+      "poiCandidates": [
+        {
+          "osmType": "relation",
+          "osmId": 2082311,
+          "lat": 53.1894953,
+          "lon": 50.089675,
+          "name": "Самарский областной художественный музей",
+          "type": "museum",
+          "address": {
+            "tourism": "Самарский областной художественный музей",
+            "house_number": "92",
+            "road": "улица Куйбышева",
+            "suburb": "Проран",
+            "city": "Самара",
+            "county": "городской округ Самара",
+            "state": "Самарская область",
+            "ISO3166-2-lvl4": "RU-SAM",
+            "region": "Приволжский федеральный округ",
+            "postcode": "443099",
+            "country": "Россия",
+            "country_code": "ru"
+          }
+        }
+      ],
+      "source": {
+        "url": "https://nominatim.openstreetmap.org/search?q=%D0%A1%D0%B0%D0%BC%D0%B0%D1%80%D0%B0%2C+%D0%9B%D0%B5%D0%BD%D0%B8%D0%BD%D0%B3%D1%80%D0%B0%D0%B4%D1%81%D0%BA%D0%B0%D1%8F+%D1%83%D0%BB%D0%B8%D1%86%D0%B0%2C+25&format=jsonv2&addressdetails=1&limit=3&countrycodes=ru",
+        "retrievedAt": "2026-10-15T17:18:20.470Z",
+        "sha256": "30701881d0a41ed0d064dd62d47cbb7d0e3956d272bdba55c383d8274c2c2bb4",
+        "license": "ODbL-1.0; OpenStreetMap contributors"
+      },
+      "poiSource": {
+        "id": "samara-museum",
+        "q": "Самарский художественный музей",
+        "url": "https://nominatim.openstreetmap.org/search?q=%D0%A1%D0%B0%D0%BC%D0%B0%D1%80%D1%81%D0%BA%D0%B8%D0%B9+%D1%85%D1%83%D0%B4%D0%BE%D0%B6%D0%B5%D1%81%D1%82%D0%B2%D0%B5%D0%BD%D0%BD%D1%8B%D0%B9+%D0%BC%D1%83%D0%B7%D0%B5%D0%B9&format=jsonv2&addressdetails=1&limit=3&countrycodes=ru",
+        "retrievedAt": "2026-10-15T17:27:34.673Z",
+        "httpStatus": 200,
+        "file": "C:/Users/Admin/asi-strigunov-2x/location-realworld-20261015/raw/samara-museum-landmark.json",
+        "sha256": "0c9d21cac69c543cd87f74fafe22e1d752b9295d14d7990ddd473e9058b9de41",
+        "license": "ODbL-1.0; OpenStreetMap contributors"
+      },
+      "straightLineCandidateMetres": 181,
+      "walkingMetres": null,
+      "walkingStatus": "UNVERIFIED",
+      "permanence": "Physical object mapped; operating continuity unverified",
+      "seasonality": "UNVERIFIED: no observed monthly demand series",
+      "propertyType": "UNVERIFIED for intended use",
+      "status": "HOLD",
+      "notes": "Subject is an address node, not confirmed building. Nearby museum does not independently establish whole-neighborhood demand profile."
+    },
+    {
+      "id": "pirogovskaya",
+      "subjectCandidates": [
+        {
+          "osmType": "way",
+          "osmId": 51545016,
+          "lat": 55.7312084,
+          "lon": 37.5678286,
+          "name": "",
+          "type": "hospital",
+          "address": {
+            "house_number": "2 с4",
+            "road": "Большая Пироговская улица",
+            "quarter": "квартал 538",
+            "suburb": "район Хамовники",
+            "city": "Москва",
+            "state": "Москва",
+            "ISO3166-2-lvl4": "RU-MOW",
+            "region": "Центральный федеральный округ",
+            "postcode": "119435",
+            "country": "Россия",
+            "country_code": "ru"
+          }
+        },
+        {
+          "osmType": "way",
+          "osmId": 51549223,
+          "lat": 55.7324265,
+          "lon": 37.5710643,
+          "name": "Первый Московский государственный медицинский университет имени И. М. Сеченова",
+          "type": "clinic",
+          "address": {
+            "amenity": "Первый Московский государственный медицинский университет имени И. М. Сеченова",
+            "house_number": "2 с1",
+            "road": "Большая Пироговская улица",
+            "quarter": "квартал 538",
+            "suburb": "район Хамовники",
+            "city": "Москва",
+            "state": "Москва",
+            "ISO3166-2-lvl4": "RU-MOW",
+            "region": "Центральный федеральный округ",
+            "postcode": "119435",
+            "country": "Россия",
+            "country_code": "ru"
+          }
+        },
+        {
+          "osmType": "way",
+          "osmId": 51545014,
+          "lat": 55.731697,
+          "lon": 37.567095,
+          "name": "",
+          "type": "hospital",
+          "address": {
+            "house_number": "2 с9",
+            "road": "Большая Пироговская улица",
+            "quarter": "квартал 538",
+            "suburb": "район Хамовники",
+            "city": "Москва",
+            "state": "Москва",
+            "ISO3166-2-lvl4": "RU-MOW",
+            "region": "Центральный федеральный округ",
+            "postcode": "119435",
+            "country": "Россия",
+            "country_code": "ru"
+          }
+        }
+      ],
+      "poiCandidates": [],
+      "source": {
+        "url": "https://nominatim.openstreetmap.org/search?q=%D0%9C%D0%BE%D1%81%D0%BA%D0%B2%D0%B0%2C+%D0%91%D0%BE%D0%BB%D1%8C%D1%88%D0%B0%D1%8F+%D0%9F%D0%B8%D1%80%D0%BE%D0%B3%D0%BE%D0%B2%D1%81%D0%BA%D0%B0%D1%8F+%D1%83%D0%BB%D0%B8%D1%86%D0%B0%2C+2&format=jsonv2&addressdetails=1&limit=3&countrycodes=ru",
+        "retrievedAt": "2026-10-15T17:18:22.868Z",
+        "sha256": "4109500fc6ec71c98b3cf8130b9adb11e96389c57373348e2557b6a238dcdb20",
+        "license": "ODbL-1.0; OpenStreetMap contributors"
+      },
+      "poiSource": null,
+      "straightLineCandidateMetres": null,
+      "walkingMetres": null,
+      "walkingStatus": "UNVERIFIED",
+      "permanence": "Physical object mapped; operating continuity unverified",
+      "seasonality": "UNVERIFIED: no observed monthly demand series",
+      "propertyType": "UNVERIFIED for intended use",
+      "status": "HOLD",
+      "notes": "First result is2s4 hospital-tagged building, not unsuffixed2. Official university rectorate is2s4; clinical hospital1 is6s1. Hospital is not automatically corporate business demand."
+    },
+    {
+      "id": "zelenogradsk",
+      "subjectCandidates": [
+        {
+          "osmType": "way",
+          "osmId": 694099812,
+          "lat": 54.9615878,
+          "lon": 20.4818697,
+          "name": "",
+          "type": "apartments",
+          "address": {
+            "house_number": "1",
+            "road": "Курортный проспект",
+            "suburb": "Вишнёвое",
+            "town": "Зеленоградск",
+            "county": "Зеленоградский муниципальный округ",
+            "state": "Калининградская область",
+            "ISO3166-2-lvl4": "RU-KGD",
+            "region": "Северо-Западный федеральный округ",
+            "postcode": "238530",
+            "country": "Россия",
+            "country_code": "ru"
+          }
+        },
+        {
+          "osmType": "node",
+          "osmId": 4434466092,
+          "lat": 54.9616193,
+          "lon": 20.4818382,
+          "name": "Целитель",
+          "type": "pharmacy",
+          "address": {
+            "amenity": "Целитель",
+            "house_number": "1",
+            "road": "Курортный проспект",
+            "suburb": "Вишнёвое",
+            "town": "Зеленоградск",
+            "county": "Зеленоградский муниципальный округ",
+            "state": "Калининградская область",
+            "ISO3166-2-lvl4": "RU-KGD",
+            "region": "Северо-Западный федеральный округ",
+            "postcode": "238530",
+            "country": "Россия",
+            "country_code": "ru"
+          }
+        },
+        {
+          "osmType": "node",
+          "osmId": 13929154001,
+          "lat": 54.9589872,
+          "lon": 20.4778712,
+          "name": "WildBerries",
+          "type": "outpost",
+          "address": {
+            "shop": "WildBerries",
+            "house_number": "1",
+            "road": "Курортный проспект",
+            "suburb": "Вишнёвое",
+            "town": "Зеленоградск",
+            "county": "Зеленоградский муниципальный округ",
+            "state": "Калининградская область",
+            "ISO3166-2-lvl4": "RU-KGD",
+            "region": "Северо-Западный федеральный округ",
+            "postcode": "238530",
+            "country": "Россия",
+            "country_code": "ru"
+          }
+        }
+      ],
+      "poiCandidates": [
+        {
+          "osmType": "way",
+          "osmId": 133724496,
+          "lat": 54.9597881,
+          "lon": 20.4825365,
+          "name": "Мурариум",
+          "type": "museum",
+          "address": {
+            "tourism": "Мурариум",
+            "house_number": "2А",
+            "road": "Саратовская улица",
+            "suburb": "Вишнёвое",
+            "town": "Зеленоградск",
+            "county": "Зеленоградский муниципальный округ",
+            "state": "Калининградская область",
+            "ISO3166-2-lvl4": "RU-KGD",
+            "region": "Северо-Западный федеральный округ",
+            "postcode": "238530",
+            "country": "Россия",
+            "country_code": "ru"
+          }
+        }
+      ],
+      "source": {
+        "url": "https://nominatim.openstreetmap.org/search?q=%D0%97%D0%B5%D0%BB%D0%B5%D0%BD%D0%BE%D0%B3%D1%80%D0%B0%D0%B4%D1%81%D0%BA%2C+%D0%9A%D1%83%D1%80%D0%BE%D1%80%D1%82%D0%BD%D1%8B%D0%B9+%D0%BF%D1%80%D0%BE%D1%81%D0%BF%D0%B5%D0%BA%D1%82%2C+1&format=jsonv2&addressdetails=1&limit=3&countrycodes=ru",
+        "retrievedAt": "2026-10-15T17:18:24.830Z",
+        "sha256": "a12accde780be219a39e2799959fed93a80afe87d0a68063b2b43d70e1b2060d",
+        "license": "ODbL-1.0; OpenStreetMap contributors"
+      },
+      "poiSource": {
+        "id": "zelenogradsk-museum",
+        "q": "Мурариум Зеленоградск",
+        "url": "https://nominatim.openstreetmap.org/search?q=%D0%9C%D1%83%D1%80%D0%B0%D1%80%D0%B8%D1%83%D0%BC+%D0%97%D0%B5%D0%BB%D0%B5%D0%BD%D0%BE%D0%B3%D1%80%D0%B0%D0%B4%D1%81%D0%BA&format=jsonv2&addressdetails=1&limit=3&countrycodes=ru",
+        "retrievedAt": "2026-10-15T17:27:28.360Z",
+        "httpStatus": 200,
+        "file": "C:/Users/Admin/asi-strigunov-2x/location-realworld-20261015/raw/zelenogradsk-museum-landmark.json",
+        "sha256": "f8e986ac48247a7b4478cbaefbb16ec439bc330f6b30688c1cba70bb066628ca",
+        "license": "ODbL-1.0; OpenStreetMap contributors"
+      },
+      "straightLineCandidateMetres": 205,
+      "walkingMetres": null,
+      "walkingStatus": "UNVERIFIED",
+      "permanence": "Physical object mapped; operating continuity unverified",
+      "seasonality": "UNVERIFIED: no observed monthly demand series",
+      "propertyType": "UNVERIFIED for intended use",
+      "status": "HOLD",
+      "notes": "Apartment building candidate and nearby specialty museum; museum scale and destination draw remain unverified. Seasonal resort presence is not year-round occupancy."
+    },
+    {
+      "id": "svetlogorsk",
+      "subjectCandidates": [
+        {
+          "osmType": "way",
+          "osmId": 627839551,
+          "lat": 54.9433311,
+          "lon": 20.1631689,
+          "name": "",
+          "type": "retail",
+          "address": {
+            "house_number": "8",
+            "road": "улица Ленина",
+            "suburb": "Заречный",
+            "town": "Светлогорск",
+            "county": "Светлогорский городской округ",
+            "state": "Калининградская область",
+            "ISO3166-2-lvl4": "RU-KGD",
+            "region": "Северо-Западный федеральный округ",
+            "postcode": "238560",
+            "country": "Россия",
+            "country_code": "ru"
+          }
+        },
+        {
+          "osmType": "node",
+          "osmId": 4327752120,
+          "lat": 54.94331,
+          "lon": 20.1632217,
+          "name": "Папаша Беппе",
+          "type": "restaurant",
+          "address": {
+            "amenity": "Папаша Беппе",
+            "house_number": "8",
+            "road": "улица Ленина",
+            "suburb": "Заречный",
+            "town": "Светлогорск",
+            "county": "Светлогорский городской округ",
+            "state": "Калининградская область",
+            "ISO3166-2-lvl4": "RU-KGD",
+            "region": "Северо-Западный федеральный округ",
+            "postcode": "238560",
+            "country": "Россия",
+            "country_code": "ru"
+          }
+        }
+      ],
+      "poiCandidates": [
+        {
+          "osmType": "way",
+          "osmId": 350404478,
+          "lat": 54.9454715,
+          "lon": 20.1595031,
+          "name": "\"Янтарь - холл\"",
+          "type": "theatre",
+          "address": {
+            "amenity": "\"Янтарь - холл\"",
+            "house_number": "11",
+            "road": "улица Ленина",
+            "suburb": "Пригородный",
+            "town": "Светлогорск",
+            "county": "Светлогорский городской округ",
+            "state": "Калининградская область",
+            "ISO3166-2-lvl4": "RU-KGD",
+            "region": "Северо-Западный федеральный округ",
+            "postcode": "238560",
+            "country": "Россия",
+            "country_code": "ru"
+          }
+        }
+      ],
+      "source": {
+        "url": "https://nominatim.openstreetmap.org/search?q=%D0%A1%D0%B2%D0%B5%D1%82%D0%BB%D0%BE%D0%B3%D0%BE%D1%80%D1%81%D0%BA%2C+%D1%83%D0%BB%D0%B8%D1%86%D0%B0+%D0%9B%D0%B5%D0%BD%D0%B8%D0%BD%D0%B0%2C+8&format=jsonv2&addressdetails=1&limit=3&countrycodes=ru",
+        "retrievedAt": "2026-10-15T17:18:26.688Z",
+        "sha256": "b5d8bceba445a8bbf83caa0d9dd6234976166be5581018627d217487cecbdfa0",
+        "license": "ODbL-1.0; OpenStreetMap contributors"
+      },
+      "poiSource": {
+        "id": "svetlogorsk-hall",
+        "q": "Янтарь холл Светлогорск",
+        "url": "https://nominatim.openstreetmap.org/search?q=%D0%AF%D0%BD%D1%82%D0%B0%D1%80%D1%8C+%D1%85%D0%BE%D0%BB%D0%BB+%D0%A1%D0%B2%D0%B5%D1%82%D0%BB%D0%BE%D0%B3%D0%BE%D1%80%D1%81%D0%BA&format=jsonv2&addressdetails=1&limit=3&countrycodes=ru",
+        "retrievedAt": "2026-10-15T17:27:30.655Z",
+        "httpStatus": 200,
+        "file": "C:/Users/Admin/asi-strigunov-2x/location-realworld-20261015/raw/svetlogorsk-hall-landmark.json",
+        "sha256": "bf479ec2d0d55739c2c4bacd680b3dd5e6afaa01f35fb377bcd8a843a8a6e226",
+        "license": "ODbL-1.0; OpenStreetMap contributors"
+      },
+      "straightLineCandidateMetres": 334,
+      "walkingMetres": null,
+      "walkingStatus": "UNVERIFIED",
+      "permanence": "Physical object mapped; operating continuity unverified",
+      "seasonality": "UNVERIFIED: no observed monthly demand series",
+      "propertyType": "UNVERIFIED for intended use",
+      "status": "HOLD",
+      "notes": "Subject OSM building is retail. Nearby Yantar Hall supports cultural anchor, not residential STR suitability or net profit."
+    },
+    {
+      "id": "gelendzhik",
+      "subjectCandidates": [
+        {
+          "osmType": "way",
+          "osmId": 105833679,
+          "lat": 44.5645987,
+          "lon": 38.0284899,
+          "name": "",
+          "type": "yes",
+          "address": {
+            "house_number": "1",
+            "road": "Набережная улица",
+            "suburb": "Тонкий мыс",
+            "town": "Геленджик",
+            "county": "городской округ Геленджик",
+            "state": "Краснодарский край",
+            "ISO3166-2-lvl4": "RU-KDA",
+            "region": "Южный федеральный округ",
+            "postcode": "353466",
+            "country": "Россия",
+            "country_code": "ru"
+          }
+        },
+        {
+          "osmType": "way",
+          "osmId": 105799270,
+          "lat": 44.5837278,
+          "lon": 38.0274178,
+          "name": "Набережная",
+          "type": "pedestrian",
+          "address": {
+            "road": "Набережная",
+            "suburb": "Тонкий мыс",
+            "town": "Геленджик",
+            "county": "городской округ Геленджик",
+            "state": "Краснодарский край",
+            "ISO3166-2-lvl4": "RU-KDA",
+            "region": "Южный федеральный округ",
+            "postcode": "353468",
+            "country": "Россия",
+            "country_code": "ru"
+          }
+        }
+      ],
+      "poiCandidates": [],
+      "source": {
+        "url": "https://nominatim.openstreetmap.org/search?q=%D0%93%D0%B5%D0%BB%D0%B5%D0%BD%D0%B4%D0%B6%D0%B8%D0%BA%2C+%D0%BD%D0%B0%D0%B1%D0%B5%D1%80%D0%B5%D0%B6%D0%BD%D0%B0%D1%8F%2C+1&format=jsonv2&addressdetails=1&limit=3&countrycodes=ru",
+        "retrievedAt": "2026-10-15T17:18:29.010Z",
+        "sha256": "3b75a81651ff8c20d85721d0a876392b60b2a827416783f539d43fa025396653",
+        "license": "ODbL-1.0; OpenStreetMap contributors"
+      },
+      "poiSource": null,
+      "straightLineCandidateMetres": null,
+      "walkingMetres": null,
+      "walkingStatus": "UNVERIFIED",
+      "permanence": "Physical object mapped; operating continuity unverified",
+      "seasonality": "UNVERIFIED: no observed monthly demand series",
+      "propertyType": "UNVERIFIED for intended use",
+      "status": "HOLD",
+      "notes": "First result is Naberezhnaya street1 at Tonkiy Mys, not verified central embankment. Ambiguous subject must block acceptance."
+    },
+    {
+      "id": "estosadok",
+      "subjectCandidates": [
+        {
+          "osmType": "way",
+          "osmId": 249781179,
+          "lat": 43.6857766,
+          "lon": 40.2559506,
+          "name": "",
+          "type": "yes",
+          "address": {
+            "house_number": "37",
+            "road": "Эстонская улица",
+            "quarter": "Курорт Красная Поляна",
+            "village": "Эстосадок",
+            "city_district": "Адлерский внутригородской район",
+            "county": "городской округ Сочи",
+            "state": "Краснодарский край",
+            "ISO3166-2-lvl4": "RU-KDA",
+            "region": "Южный федеральный округ",
+            "postcode": "354392",
+            "country": "Россия",
+            "country_code": "ru"
+          }
+        }
+      ],
+      "poiCandidates": [
+        {
+          "osmType": "node",
+          "osmId": 5902844074,
+          "lat": 43.6833333,
+          "lon": 40.2693103,
+          "name": "Горная карусель",
+          "type": "bus_stop",
+          "address": {
+            "highway": "Горная карусель",
+            "road": "Эстонская улица",
+            "quarter": "Курорт Красная Поляна",
+            "village": "Эстосадок",
+            "city_district": "Адлерский внутригородской район",
+            "county": "городской округ Сочи",
+            "state": "Краснодарский край",
+            "ISO3166-2-lvl4": "RU-KDA",
+            "region": "Южный федеральный округ",
+            "postcode": "354392",
+            "country": "Россия",
+            "country_code": "ru"
+          }
+        },
+        {
+          "osmType": "node",
+          "osmId": 1672950995,
+          "lat": 43.6835661,
+          "lon": 40.2670115,
+          "name": "Горная карусель",
+          "type": "bus_stop",
+          "address": {
+            "highway": "Горная карусель",
+            "road": "улица Горная Карусель",
+            "quarter": "Курорт Красная Поляна",
+            "village": "Эстосадок",
+            "city_district": "Адлерский внутригородской район",
+            "county": "городской округ Сочи",
+            "state": "Краснодарский край",
+            "ISO3166-2-lvl4": "RU-KDA",
+            "region": "Южный федеральный округ",
+            "postcode": "354392",
+            "country": "Россия",
+            "country_code": "ru"
+          }
+        },
+        {
+          "osmType": "node",
+          "osmId": 3046969578,
+          "lat": 43.6835115,
+          "lon": 40.2670056,
+          "name": "Горная карусель",
+          "type": "bicycle_rental",
+          "address": {
+            "amenity": "Горная карусель",
+            "road": "улица Горная Карусель",
+            "quarter": "Курорт Красная Поляна",
+            "village": "Эстосадок",
+            "city_district": "Адлерский внутригородской район",
+            "county": "городской округ Сочи",
+            "state": "Краснодарский край",
+            "ISO3166-2-lvl4": "RU-KDA",
+            "region": "Южный федеральный округ",
+            "postcode": "354392",
+            "country": "Россия",
+            "country_code": "ru"
+          }
+        }
+      ],
+      "source": {
+        "url": "https://nominatim.openstreetmap.org/search?q=%D0%AD%D1%81%D1%82%D0%BE-%D0%A1%D0%B0%D0%B4%D0%BE%D0%BA%2C+%D1%83%D0%BB%D0%B8%D1%86%D0%B0+%D0%AD%D1%81%D1%82%D0%BE%D0%BD%D1%81%D0%BA%D0%B0%D1%8F%2C+37&format=jsonv2&addressdetails=1&limit=3&countrycodes=ru",
+        "retrievedAt": "2026-10-15T17:18:31.337Z",
+        "sha256": "96af077e51d127a2003cab937b1d137176067d66c00b71c0945370a33fc0257f",
+        "license": "ODbL-1.0; OpenStreetMap contributors"
+      },
+      "poiSource": {
+        "id": "estosadok-resort",
+        "q": "Горная Карусель Эстосадок",
+        "url": "https://nominatim.openstreetmap.org/search?q=%D0%93%D0%BE%D1%80%D0%BD%D0%B0%D1%8F+%D0%9A%D0%B0%D1%80%D1%83%D1%81%D0%B5%D0%BB%D1%8C+%D0%AD%D1%81%D1%82%D0%BE%D1%81%D0%B0%D0%B4%D0%BE%D0%BA&format=jsonv2&addressdetails=1&limit=3&countrycodes=ru",
+        "retrievedAt": "2026-10-15T17:27:38.673Z",
+        "httpStatus": 200,
+        "file": "C:/Users/Admin/asi-strigunov-2x/location-realworld-20261015/raw/estosadok-resort-landmark.json",
+        "sha256": "2a711d99a96e2e3b248d64191ab5b946868c2b7b6cf90fa1c7df9a1d44d96c55",
+        "license": "ODbL-1.0; OpenStreetMap contributors"
+      },
+      "straightLineCandidateMetres": 1108,
+      "walkingMetres": null,
+      "walkingStatus": "UNVERIFIED",
+      "permanence": "Physical object mapped; operating continuity unverified",
+      "seasonality": "UNVERIFIED: no observed monthly demand series",
+      "propertyType": "UNVERIFIED for intended use",
+      "status": "HOLD",
+      "notes": "Named resort query first result is bus_stop, not lift/resort anchor. Reject category substitution; do not promote this transit result to tourism magnet."
+    },
+    {
+      "id": "residential",
+      "subjectCandidates": [
+        {
+          "osmType": "way",
+          "osmId": 128061388,
+          "lat": 60.0143153,
+          "lon": 30.253487,
+          "name": "",
+          "type": "apartments",
+          "address": {
+            "house_number": "23 к1",
+            "road": "Комендантский проспект",
+            "suburb": "Озеро Долгое",
+            "city_district": "округ Озеро Долгое",
+            "city": "Санкт-Петербург",
+            "state": "Санкт-Петербург",
+            "ISO3166-2-lvl4": "RU-SPE",
+            "region": "Северо-Западный федеральный округ",
+            "postcode": "197371",
+            "country": "Россия",
+            "country_code": "ru"
+          }
+        }
+      ],
+      "poiCandidates": [],
+      "source": {
+        "url": "https://nominatim.openstreetmap.org/search?q=%D0%A1%D0%B0%D0%BD%D0%BA%D1%82-%D0%9F%D0%B5%D1%82%D0%B5%D1%80%D0%B1%D1%83%D1%80%D0%B3%2C+%D0%9A%D0%BE%D0%BC%D0%B5%D0%BD%D0%B4%D0%B0%D0%BD%D1%82%D1%81%D0%BA%D0%B8%D0%B9+%D0%BF%D1%80%D0%BE%D1%81%D0%BF%D0%B5%D0%BA%D1%82%2C+23%D0%BA1&format=jsonv2&addressdetails=1&limit=3&countrycodes=ru",
+        "retrievedAt": "2026-10-15T17:18:33.661Z",
+        "sha256": "3a1cf3e8b8cedb9653a23427e42324e4ce7bf4a48d98d362c462ab91b498781d",
+        "license": "ODbL-1.0; OpenStreetMap contributors"
+      },
+      "poiSource": null,
+      "straightLineCandidateMetres": null,
+      "walkingMetres": null,
+      "walkingStatus": "UNVERIFIED",
+      "permanence": "Physical object mapped; operating continuity unverified",
+      "seasonality": "UNVERIFIED: no observed monthly demand series",
+      "propertyType": "UNVERIFIED for intended use",
+      "status": "HOLD",
+      "notes": "Residential control candidate only; no contrary tourist evidence establishes a tourist profile."
+    }
+  ],
+  "official": [
+    {
+      "id": "sochi",
+      "url": "https://magnoliahotel.sochi-magnolia.ru/contacts/",
+      "fact": "Hotel Kurortny50; directions identify underground crossing",
+      "retrievedDate": "2026-10-15",
+      "method": "Web search primary-source excerpts; not archived full-page snapshot"
+    },
+    {
+      "id": "palace",
+      "url": "https://hermitagemuseum.org/",
+      "fact": "Museum Palace Square2",
+      "retrievedDate": "2026-10-15",
+      "method": "Web search primary-source excerpts; not archived full-page snapshot"
+    },
+    {
+      "id": "pirogovskaya",
+      "url": "https://www.sechenov.ru/contacts/",
+      "fact": "University rectorate2s4",
+      "retrievedDate": "2026-10-15",
+      "method": "Web search primary-source excerpts; not archived full-page snapshot"
+    },
+    {
+      "id": "pirogovskaya",
+      "url": "https://sechenovclinic.ru/hospitals/ukb1/",
+      "fact": "Clinical hospital1 at6s1",
+      "retrievedDate": "2026-10-15",
+      "method": "Web search primary-source excerpts; not archived full-page snapshot"
+    },
+    {
+      "id": "svetlogorsk",
+      "url": "https://www.svetlogorsk-tourism.ru/activities/concert-venues/teatr-estrady-yantar-kholl/",
+      "fact": "Hall at Lenina11",
+      "retrievedDate": "2026-10-15",
+      "method": "Web search primary-source excerpts; not archived full-page snapshot"
+    },
+    {
+      "id": "nizhny",
+      "url": "https://drama.nnov.ru/about/kontakty",
+      "fact": "Theatre BolshayaPokrovskaya13",
+      "retrievedDate": "2026-10-15",
+      "method": "Web search primary-source excerpts; not archived full-page snapshot"
+    },
+    {
+      "id": "samara",
+      "url": "https://artmus.ru/information/contacts/",
+      "fact": "Art museum Kuibysheva92",
+      "retrievedDate": "2026-10-15",
+      "method": "Web search primary-source excerpts; not archived full-page snapshot"
+    },
+    {
+      "id": "sheregesh",
+      "url": "https://dirsheregesh.ru/",
+      "fact": "Resort directory; summer and winter activities do not establish property occupancy",
+      "retrievedDate": "2026-10-15",
+      "method": "Web search primary-source excerpts; not archived full-page snapshot"
+    }
+  ]
+}

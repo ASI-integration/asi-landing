@@ -1,0 +1,181 @@
+[
+  {
+    "file": "sochi-nominatim.json",
+    "sha256": "90b97c985532d9d9d0e33f64841593f7aab613f75423de27e8312624f34c3039",
+    "url": "https://nominatim.openstreetmap.org/search?q=%D0%A1%D0%BE%D1%87%D0%B8%2C+%D0%9A%D1%83%D1%80%D0%BE%D1%80%D1%82%D0%BD%D1%8B%D0%B9+%D0%BF%D1%80%D0%BE%D1%81%D0%BF%D0%B5%D0%BA%D1%82%2C+50&format=jsonv2&addressdetails=1&limit=3&countrycodes=ru",
+    "retrievedAt": "2026-10-15T17:18:07.522Z",
+    "httpStatus": 200
+  },
+  {
+    "file": "anapa-nominatim.json",
+    "sha256": "de6e5950ca400dd2959bed286fce70c42a24f1ab6b3cc47903a696788738fdc7",
+    "url": "https://nominatim.openstreetmap.org/search?q=%D0%90%D0%BD%D0%B0%D0%BF%D0%B0%2C+%D0%9F%D0%B8%D0%BE%D0%BD%D0%B5%D1%80%D1%81%D0%BA%D0%B8%D0%B9+%D0%BF%D1%80%D0%BE%D1%81%D0%BF%D0%B5%D0%BA%D1%82%2C+20&format=jsonv2&addressdetails=1&limit=3&countrycodes=ru",
+    "retrievedAt": "2026-10-15T17:18:10.267Z",
+    "httpStatus": 200
+  },
+  {
+    "file": "sheregesh-nominatim.json",
+    "sha256": "bac11515bd2447c63c864baa23c54435f898edc6a8b2680b7630fbbb1eb2decf",
+    "url": "https://nominatim.openstreetmap.org/search?q=%D0%A8%D0%B5%D1%80%D0%B5%D0%B3%D0%B5%D1%88%2C+%D1%83%D0%BB%D0%B8%D1%86%D0%B0+%D0%93%D0%B0%D0%B3%D0%B0%D1%80%D0%B8%D0%BD%D0%B0%2C+12&format=jsonv2&addressdetails=1&limit=3&countrycodes=ru",
+    "retrievedAt": "2026-10-15T17:18:13.414Z",
+    "httpStatus": 200
+  },
+  {
+    "file": "palace-nominatim.json",
+    "sha256": "ed470dea3bd3b5a0083732cfb19e2022a751bf7206a45c9f821beb7aa103ccdc",
+    "url": "https://nominatim.openstreetmap.org/search?q=%D0%A1%D0%B0%D0%BD%D0%BA%D1%82-%D0%9F%D0%B5%D1%82%D0%B5%D1%80%D0%B1%D1%83%D1%80%D0%B3%2C+%D0%94%D0%B2%D0%BE%D1%80%D1%86%D0%BE%D0%B2%D0%B0%D1%8F+%D0%BF%D0%BB%D0%BE%D1%89%D0%B0%D0%B4%D1%8C%2C+2&format=jsonv2&addressdetails=1&limit=3&countrycodes=ru",
+    "retrievedAt": "2026-10-15T17:18:15.563Z",
+    "httpStatus": 200
+  },
+  {
+    "file": "nizhny-nominatim.json",
+    "sha256": "beb86e2f91d9347005fa8a68f797600933df9c85cc3fa4ee9dc67591cc2d010a",
+    "url": "https://nominatim.openstreetmap.org/search?q=%D0%9D%D0%B8%D0%B6%D0%BD%D0%B8%D0%B9+%D0%9D%D0%BE%D0%B2%D0%B3%D0%BE%D1%80%D0%BE%D0%B4%2C+%D0%91%D0%BE%D0%BB%D1%8C%D1%88%D0%B0%D1%8F+%D0%9F%D0%BE%D0%BA%D1%80%D0%BE%D0%B2%D1%81%D0%BA%D0%B0%D1%8F+%D1%83%D0%BB%D0%B8%D1%86%D0%B0%2C+2&format=jsonv2&addressdetails=1&limit=3&countrycodes=ru",
+    "retrievedAt": "2026-10-15T17:18:17.811Z",
+    "httpStatus": 200
+  },
+  {
+    "file": "samara-nominatim.json",
+    "sha256": "30701881d0a41ed0d064dd62d47cbb7d0e3956d272bdba55c383d8274c2c2bb4",
+    "url": "https://nominatim.openstreetmap.org/search?q=%D0%A1%D0%B0%D0%BC%D0%B0%D1%80%D0%B0%2C+%D0%9B%D0%B5%D0%BD%D0%B8%D0%BD%D0%B3%D1%80%D0%B0%D0%B4%D1%81%D0%BA%D0%B0%D1%8F+%D1%83%D0%BB%D0%B8%D1%86%D0%B0%2C+25&format=jsonv2&addressdetails=1&limit=3&countrycodes=ru",
+    "retrievedAt": "2026-10-15T17:18:20.470Z",
+    "httpStatus": 200
+  },
+  {
+    "file": "pirogovskaya-nominatim.json",
+    "sha256": "4109500fc6ec71c98b3cf8130b9adb11e96389c57373348e2557b6a238dcdb20",
+    "url": "https://nominatim.openstreetmap.org/search?q=%D0%9C%D0%BE%D1%81%D0%BA%D0%B2%D0%B0%2C+%D0%91%D0%BE%D0%BB%D1%8C%D1%88%D0%B0%D1%8F+%D0%9F%D0%B8%D1%80%D0%BE%D0%B3%D0%BE%D0%B2%D1%81%D0%BA%D0%B0%D1%8F+%D1%83%D0%BB%D0%B8%D1%86%D0%B0%2C+2&format=jsonv2&addressdetails=1&limit=3&countrycodes=ru",
+    "retrievedAt": "2026-10-15T17:18:22.868Z",
+    "httpStatus": 200
+  },
+  {
+    "file": "zelenogradsk-nominatim.json",
+    "sha256": "a12accde780be219a39e2799959fed93a80afe87d0a68063b2b43d70e1b2060d",
+    "url": "https://nominatim.openstreetmap.org/search?q=%D0%97%D0%B5%D0%BB%D0%B5%D0%BD%D0%BE%D0%B3%D1%80%D0%B0%D0%B4%D1%81%D0%BA%2C+%D0%9A%D1%83%D1%80%D0%BE%D1%80%D1%82%D0%BD%D1%8B%D0%B9+%D0%BF%D1%80%D0%BE%D1%81%D0%BF%D0%B5%D0%BA%D1%82%2C+1&format=jsonv2&addressdetails=1&limit=3&countrycodes=ru",
+    "retrievedAt": "2026-10-15T17:18:24.830Z",
+    "httpStatus": 200
+  },
+  {
+    "file": "svetlogorsk-nominatim.json",
+    "sha256": "b5d8bceba445a8bbf83caa0d9dd6234976166be5581018627d217487cecbdfa0",
+    "url": "https://nominatim.openstreetmap.org/search?q=%D0%A1%D0%B2%D0%B5%D1%82%D0%BB%D0%BE%D0%B3%D0%BE%D1%80%D1%81%D0%BA%2C+%D1%83%D0%BB%D0%B8%D1%86%D0%B0+%D0%9B%D0%B5%D0%BD%D0%B8%D0%BD%D0%B0%2C+8&format=jsonv2&addressdetails=1&limit=3&countrycodes=ru",
+    "retrievedAt": "2026-10-15T17:18:26.688Z",
+    "httpStatus": 200
+  },
+  {
+    "file": "gelendzhik-nominatim.json",
+    "sha256": "3b75a81651ff8c20d85721d0a876392b60b2a827416783f539d43fa025396653",
+    "url": "https://nominatim.openstreetmap.org/search?q=%D0%93%D0%B5%D0%BB%D0%B5%D0%BD%D0%B4%D0%B6%D0%B8%D0%BA%2C+%D0%BD%D0%B0%D0%B1%D0%B5%D1%80%D0%B5%D0%B6%D0%BD%D0%B0%D1%8F%2C+1&format=jsonv2&addressdetails=1&limit=3&countrycodes=ru",
+    "retrievedAt": "2026-10-15T17:18:29.010Z",
+    "httpStatus": 200
+  },
+  {
+    "file": "estosadok-nominatim.json",
+    "sha256": "96af077e51d127a2003cab937b1d137176067d66c00b71c0945370a33fc0257f",
+    "url": "https://nominatim.openstreetmap.org/search?q=%D0%AD%D1%81%D1%82%D0%BE-%D0%A1%D0%B0%D0%B4%D0%BE%D0%BA%2C+%D1%83%D0%BB%D0%B8%D1%86%D0%B0+%D0%AD%D1%81%D1%82%D0%BE%D0%BD%D1%81%D0%BA%D0%B0%D1%8F%2C+37&format=jsonv2&addressdetails=1&limit=3&countrycodes=ru",
+    "retrievedAt": "2026-10-15T17:18:31.337Z",
+    "httpStatus": 200
+  },
+  {
+    "file": "residential-nominatim.json",
+    "sha256": "3a1cf3e8b8cedb9653a23427e42324e4ce7bf4a48d98d362c462ab91b498781d",
+    "url": "https://nominatim.openstreetmap.org/search?q=%D0%A1%D0%B0%D0%BD%D0%BA%D1%82-%D0%9F%D0%B5%D1%82%D0%B5%D1%80%D0%B1%D1%83%D1%80%D0%B3%2C+%D0%9A%D0%BE%D0%BC%D0%B5%D0%BD%D0%B4%D0%B0%D0%BD%D1%82%D1%81%D0%BA%D0%B8%D0%B9+%D0%BF%D1%80%D0%BE%D1%81%D0%BF%D0%B5%D0%BA%D1%82%2C+23%D0%BA1&format=jsonv2&addressdetails=1&limit=3&countrycodes=ru",
+    "retrievedAt": "2026-10-15T17:18:33.661Z",
+    "httpStatus": 200
+  },
+  {
+    "file": "sochi-art-landmark.json",
+    "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+    "url": "https://nominatim.openstreetmap.org/search?q=%D0%A1%D0%BE%D1%87%D0%B8%D0%BD%D1%81%D0%BA%D0%B8%D0%B9+%D1%85%D1%83%D0%B4%D0%BE%D0%B6%D0%B5%D1%81%D1%82%D0%B2%D0%B5%D0%BD%D0%BD%D1%8B%D0%B9+%D0%BC%D1%83%D0%B7%D0%B5%D0%B9&format=jsonv2&addressdetails=1&limit=3&countrycodes=ru",
+    "retrievedAt": "2026-10-15T17:27:19.296Z",
+    "httpStatus": 200
+  },
+  {
+    "file": "sochi-theatre-landmark.json",
+    "sha256": "f85323b6e629122130905eadf673718e779b1cafd7038b0e7f89dfb346f12a90",
+    "url": "https://nominatim.openstreetmap.org/search?q=%D0%97%D0%B8%D0%BC%D0%BD%D0%B8%D0%B9+%D1%82%D0%B5%D0%B0%D1%82%D1%80+%D0%A1%D0%BE%D1%87%D0%B8&format=jsonv2&addressdetails=1&limit=3&countrycodes=ru",
+    "retrievedAt": "2026-10-15T17:27:21.948Z",
+    "httpStatus": 200
+  },
+  {
+    "file": "palace-building-landmark.json",
+    "sha256": "34cc1436292c717bc343dd3e83b2a3076c60a2abc390a611179a94ffc5c0bb57",
+    "url": "https://nominatim.openstreetmap.org/search?q=%D0%97%D0%B8%D0%BC%D0%BD%D0%B8%D0%B9+%D0%B4%D0%B2%D0%BE%D1%80%D0%B5%D1%86+%D0%A1%D0%B0%D0%BD%D0%BA%D1%82-%D0%9F%D0%B5%D1%82%D0%B5%D1%80%D0%B1%D1%83%D1%80%D0%B3&format=jsonv2&addressdetails=1&limit=3&countrycodes=ru",
+    "retrievedAt": "2026-10-15T17:27:23.851Z",
+    "httpStatus": 200
+  },
+  {
+    "file": "sheregesh-mountain-landmark.json",
+    "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+    "url": "https://nominatim.openstreetmap.org/search?q=%D0%B3%D0%BE%D1%80%D0%B0+%D0%97%D0%B5%D0%BB%D1%91%D0%BD%D0%B0%D1%8F+%D0%A8%D0%B5%D1%80%D0%B5%D0%B3%D0%B5%D1%88&format=jsonv2&addressdetails=1&limit=3&countrycodes=ru",
+    "retrievedAt": "2026-10-15T17:27:26.235Z",
+    "httpStatus": 200
+  },
+  {
+    "file": "zelenogradsk-museum-landmark.json",
+    "sha256": "f8e986ac48247a7b4478cbaefbb16ec439bc330f6b30688c1cba70bb066628ca",
+    "url": "https://nominatim.openstreetmap.org/search?q=%D0%9C%D1%83%D1%80%D0%B0%D1%80%D0%B8%D1%83%D0%BC+%D0%97%D0%B5%D0%BB%D0%B5%D0%BD%D0%BE%D0%B3%D1%80%D0%B0%D0%B4%D1%81%D0%BA&format=jsonv2&addressdetails=1&limit=3&countrycodes=ru",
+    "retrievedAt": "2026-10-15T17:27:28.360Z",
+    "httpStatus": 200
+  },
+  {
+    "file": "svetlogorsk-hall-landmark.json",
+    "sha256": "bf479ec2d0d55739c2c4bacd680b3dd5e6afaa01f35fb377bcd8a843a8a6e226",
+    "url": "https://nominatim.openstreetmap.org/search?q=%D0%AF%D0%BD%D1%82%D0%B0%D1%80%D1%8C+%D1%85%D0%BE%D0%BB%D0%BB+%D0%A1%D0%B2%D0%B5%D1%82%D0%BB%D0%BE%D0%B3%D0%BE%D1%80%D1%81%D0%BA&format=jsonv2&addressdetails=1&limit=3&countrycodes=ru",
+    "retrievedAt": "2026-10-15T17:27:30.655Z",
+    "httpStatus": 200
+  },
+  {
+    "file": "nizhny-theatre-landmark.json",
+    "sha256": "fdc46e97862d41dec4817f4a89f42be3973bf2ded301997deedfcda6acd1469e",
+    "url": "https://nominatim.openstreetmap.org/search?q=%D0%9D%D0%B8%D0%B6%D0%B5%D0%B3%D0%BE%D1%80%D0%BE%D0%B4%D1%81%D0%BA%D0%B8%D0%B9+%D1%82%D0%B5%D0%B0%D1%82%D1%80+%D0%B4%D1%80%D0%B0%D0%BC%D1%8B&format=jsonv2&addressdetails=1&limit=3&countrycodes=ru",
+    "retrievedAt": "2026-10-15T17:27:32.690Z",
+    "httpStatus": 200
+  },
+  {
+    "file": "samara-museum-landmark.json",
+    "sha256": "0c9d21cac69c543cd87f74fafe22e1d752b9295d14d7990ddd473e9058b9de41",
+    "url": "https://nominatim.openstreetmap.org/search?q=%D0%A1%D0%B0%D0%BC%D0%B0%D1%80%D1%81%D0%BA%D0%B8%D0%B9+%D1%85%D1%83%D0%B4%D0%BE%D0%B6%D0%B5%D1%81%D1%82%D0%B2%D0%B5%D0%BD%D0%BD%D1%8B%D0%B9+%D0%BC%D1%83%D0%B7%D0%B5%D0%B9&format=jsonv2&addressdetails=1&limit=3&countrycodes=ru",
+    "retrievedAt": "2026-10-15T17:27:34.673Z",
+    "httpStatus": 200
+  },
+  {
+    "file": "moscow-hospital-landmark.json",
+    "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+    "url": "https://nominatim.openstreetmap.org/search?q=%D0%9C%D0%BE%D1%81%D0%BA%D0%B2%D0%B0+%D0%91%D0%BE%D0%BB%D1%8C%D1%88%D0%B0%D1%8F+%D0%9F%D0%B8%D1%80%D0%BE%D0%B3%D0%BE%D0%B2%D1%81%D0%BA%D0%B0%D1%8F+6+%D1%81%D1%82%D1%80%D0%BE%D0%B5%D0%BD%D0%B8%D0%B5+1&format=jsonv2&addressdetails=1&limit=3&countrycodes=ru",
+    "retrievedAt": "2026-10-15T17:27:36.600Z",
+    "httpStatus": 200
+  },
+  {
+    "file": "estosadok-resort-landmark.json",
+    "sha256": "2a711d99a96e2e3b248d64191ab5b946868c2b7b6cf90fa1c7df9a1d44d96c55",
+    "url": "https://nominatim.openstreetmap.org/search?q=%D0%93%D0%BE%D1%80%D0%BD%D0%B0%D1%8F+%D0%9A%D0%B0%D1%80%D1%83%D1%81%D0%B5%D0%BB%D1%8C+%D0%AD%D1%81%D1%82%D0%BE%D1%81%D0%B0%D0%B4%D0%BE%D0%BA&format=jsonv2&addressdetails=1&limit=3&countrycodes=ru",
+    "retrievedAt": "2026-10-15T17:27:38.673Z",
+    "httpStatus": 200
+  },
+  {
+    "file": "anapa-museum-landmark.json",
+    "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+    "url": "https://nominatim.openstreetmap.org/search?q=%D0%90%D1%80%D1%85%D0%B5%D0%BE%D0%BB%D0%BE%D0%B3%D0%B8%D1%87%D0%B5%D1%81%D0%BA%D0%B8%D0%B9+%D0%BC%D1%83%D0%B7%D0%B5%D0%B9+%D0%93%D0%BE%D1%80%D0%B3%D0%B8%D0%BF%D0%BF%D0%B8%D1%8F+%D0%90%D0%BD%D0%B0%D0%BF%D0%B0&format=jsonv2&addressdetails=1&limit=3&countrycodes=ru",
+    "retrievedAt": "2026-10-15T17:27:40.562Z",
+    "httpStatus": 200
+  },
+  {
+    "file": "gelendzhik-museum-landmark.json",
+    "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+    "url": "https://nominatim.openstreetmap.org/search?q=%D0%93%D0%B5%D0%BB%D0%B5%D0%BD%D0%B4%D0%B6%D0%B8%D0%BA%D1%81%D0%BA%D0%B8%D0%B9+%D0%B8%D1%81%D1%82%D0%BE%D1%80%D0%B8%D0%BA%D0%BE+%D0%BA%D1%80%D0%B0%D0%B5%D0%B2%D0%B5%D0%B4%D1%87%D0%B5%D1%81%D0%BA%D0%B8%D0%B9+%D0%BC%D1%83%D0%B7%D0%B5%D0%B9&format=jsonv2&addressdetails=1&limit=3&countrycodes=ru",
+    "retrievedAt": "2026-10-15T17:27:42.631Z",
+    "httpStatus": 200
+  },
+  {
+    "file": "osm-subject.json",
+    "sha256": "4bb01fe8da8627e077aa08765fde2b0a212b0bece552c166753d7af6e54a51d4",
+    "url": "https://api.openstreetmap.org/api/0.6/way/133143136/full.json",
+    "retrievedAt": "2026-10-15T17:23:54.810Z",
+    "httpStatus": 200
+  },
+  {
+    "file": "evidence-matrix.json",
+    "sha256": "176804b723693da5b144f4525a14c690f0eeb529feb86643a613baada05eff1d"
+  }
+]

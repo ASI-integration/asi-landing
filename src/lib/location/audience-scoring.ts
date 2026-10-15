@@ -417,6 +417,7 @@ export function buildAudienceAnalysis(magnets: MagnetItem[]): AudienceAnalysis {
 
   const businessMagnets   = allPrimary.filter(m => m.type === 'business');
   const hasViableBusiness = hasCredibleBusinessAnchors(magnets);
+  const hasViableTourist = magnets.some(isTouristMagnet);
 
   // ── Mode lock ────────────────────────────────────────────────────────────────
   let primaryAudience: TargetAudience;
@@ -429,11 +430,11 @@ export function buildAudienceAnalysis(magnets: MagnetItem[]): AudienceAnalysis {
     lockedMode      = true;
   } else if (audienceSharePct <= 35) {
     primaryAudience = 'TOURIST';
-    fallbackMode    = !hasViableBusiness;
+    fallbackMode    = !hasViableTourist;
     lockedMode      = true;
   } else {
     primaryAudience = hasViableBusiness ? 'BUSINESS' : 'TOURIST';
-    fallbackMode    = !hasViableBusiness;
+    fallbackMode    = primaryAudience === 'TOURIST' && !hasViableTourist;
     lockedMode      = false;
   }
 
