@@ -71,6 +71,8 @@ def validate_bytes(data: bytes) -> dict:
                     or entry.mtime != 0 or entry.uname or entry.gname
                     or entry.mode != (0o755 if entry.name.endswith(".py") else 0o600)):
                 raise ValueError("FILE_METADATA")
+            if entry.issparse() or entry.size > MAX_ARCHIVE:
+                raise ValueError("FILE_SIZE")
             payload = archive.extractfile(entry)
             if payload is None:
                 raise ValueError("NO_PAYLOAD")
