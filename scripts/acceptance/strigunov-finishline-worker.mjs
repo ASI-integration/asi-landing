@@ -103,6 +103,9 @@ try{
     const count=await client.query("SELECT count(*) FROM public.booking_ops_lifecycle_decisions WHERE booking_id=$1",[originalId]);assert.ok(Number(count.rows[0].count)>=20);
   });
 
+  await check('AUX-no-unscoped-availability-audit',async()=>{
+    assert.equal(Number((await client.query('SELECT count(*) FROM booking_overbooking_conflict_checks WHERE account_id IS NULL')).rows[0].count),0);
+  });
   await check('AUX-no-unexpected-rest-errors',async()=>{
     const duplicateConstraints={'/booking_ops_events':'idx_booking_ops_events_dedupe','/booking_ops_domain_events':'booking_ops_domain_events_pkey'};
     const expected=restErrors.filter(e=>e.status===409&&e.code==='23505'&&e.identifiers?.includes(duplicateConstraints[e.resource]));
