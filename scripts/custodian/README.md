@@ -38,3 +38,28 @@ No real Phase2, revocation, restricted owner-issued receipt, separate-UID unauth
 ## Finishline hardening (successor to PR448)
 
 This source is a hardened successor, not byte-identical PR448. CI records its exact commit and newly rebuilt archive SHA256. The protected synthetic preparation manifest `source` now binds SHA256 of the daemon source bytes, not the historical PR448 commit; old manifests are rejected. The daemon defaults to status-only; synthetic journal appends require `serve --enable-technical-append`. This flag grants no owner authority. A lifetime exclusive lock prevents concurrent daemons; socket cleanup is restricted to the bound inode. SIGKILL retains a stale socket for manual review; never delete it automatically. The sourceBase config field is historical protocol compatibility, not the current release SHA.
+
+
+# Synthetic cross-UID IPC candidate
+
+This directory is an isolated review candidate. No existing worktree or host installation is changed. `asi_custodian.py` preserves default private same-UID operation and adds opt-in `serve --ipc-dir`.
+
+The separate IPC directory must already be owned by the service UID, have the configured client primary GID and exact mode `2710`. Its setgid bit gives the socket that group; the socket is `0660`. Clients cannot replace entries because they have no directory write permission. State remains service-owned `0700`, files `0600`; neither state nor IPC directory may contain the other. Directory identity is rechecked per accepted request. Configuration changes cause live requests to HOLD; an explicit restart applies the changed peer configuration.
+
+The existing CLI `client` remains a private-state same-UID diagnostic. Cross-UID callers use the bounded documented JSON wire protocol with an explicit synthetic run ID; the tests do not read service configuration as the client.
+
+## Isolated GitHub-hosted Linux command
+
+After source review, run from scripts/custodian on an explicitly approved disposable GitHub-hosted Linux runner with its existing nonroot runner account and existing `nobody` account:
+
+```sh
+sudo --preserve-env=CI,RUNNER_ENVIRONMENT,STRIGUNOV_SYNTHETIC_ONLY python3 cross_uid_acceptance.py
+```
+
+The job must set `CI=true`, `RUNNER_ENVIRONMENT=github-hosted`, and `STRIGUNOV_SYNTHETIC_ONLY=YES`. The test verifies these, requires `SUDO_UID`/`SUDO_GID`, and uses only existing identities. Root supervises bounded subprocess identity changes and a fresh temporary directory; the actual daemon and IPC clients run nonroot. No accounts, groups, packages, services, network interfaces or persistent host settings are created. Do not run on the physical owner host or production.
+
+Seven tests cover a real distinct-UID positive read, default-off append, denied private-state reads, wrong primary GID despite supplementary socket-group membership, wrong UID, live configuration change HOLD and restart denial, persisted replay denial, stale socket refusal after SIGKILL, and unsafe writable IPC permissions. These are seven test methods with multiple assertions, not separate claimed test counts for every assertion.
+
+Configuration-change tests prove local fail-closed configuration continuity, **not** signed issuer revocation, durable epoch enforcement or independent owner authority. Same-UID/root rollback, physical reboot/power-loss durability, host attestation and owner-key custody remain unproven. SyntheticGate is not integrated into this IPC service. All replies remain non-authorizing with Phase2 BLOCK.
+
+Runtime results are recorded separately against the exact commit SHA; these instructions do not claim installation or authority.
