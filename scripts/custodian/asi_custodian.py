@@ -21,6 +21,8 @@ import struct
 import sys
 import time
 
+POLICY_PROTOCOL = "ASI_CUSTODIAN_POLICY_CONSULT_V1"
+
 SOURCE_BASE = "9bc8175aa772e92366c7a2363e26900a042fc3ce"
 SCOPE = "ASI_CUSTODIAN_TECHNICAL_NO_AUTHORITY_V0"
 PROTOCOL = "ASI_CUSTODIAN_TECHNICAL_V0"
@@ -44,7 +46,9 @@ def response(status: str, reason: str, **extra: object) -> dict:
     """All API replies are non-authorizing, including technical success."""
     return {"status": status, "reason": reason, "scope": SCOPE,
             "authorized": False, "canInstall": False, "canIssueReceipt": False,
-            "canApprove": False, "canSend": False, "phase2": "BLOCK", **extra}
+            "canApprove": False, "canSend": False, "phase2": "BLOCK",
+            "ownerAuthority": "UNAVAILABLE", "rollbackProtection": "NOT_ACCEPTED",
+            "trustedTime": "NOT_ACCEPTED", **extra}
 
 
 def require_private_regular(path: Path) -> None:
@@ -263,7 +267,8 @@ def safe_ipc_dir(raw: str, state: Path, peer_gid: int) -> Path:
     return path
 
 
-def serve(raw: str, enable_technical_append: bool = False, ipc_dir: str | None = None) -> None:
+def serve(raw: str, enable_technical_append: bool = False, ipc_dir: str | None = None,
+          enable_synthetic_policy_consult: bool = False) -> None:
     if sys.platform != "linux" or os.getuid() == 0:
         raise Unsafe("LINUX_NONROOT_ONLY")
     root = safe_dir(raw)
@@ -275,18 +280,33 @@ def serve(raw: str, enable_technical_append: bool = False, ipc_dir: str | None =
         if (info.st_dev, info.st_ino) != (lock_path.stat().st_dev, lock_path.stat().st_ino):
             raise Unsafe("LOCK_REPLACED")
         fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        _serve_locked(raw, enable_technical_append, fd, root.stat(), ipc_dir)
+        _serve_locked(raw, enable_technical_append, fd, root.stat(), ipc_dir, enable_synthetic_policy_consult)
     finally:
         os.close(fd)
 
 
 def _serve_locked(raw: str, enable_technical_append: bool, lock_fd: int, root_info,
-                  ipc_dir: str | None = None) -> None:
+                  ipc_dir: str | None = None, enable_synthetic_policy_consult: bool = False) -> None:
     if sys.platform != "linux" or os.getuid() == 0 or not hasattr(socket, "SO_PEERCRED"):
         raise Unsafe("LINUX_NONROOT_ONLY")
     root = safe_dir(raw)
     config = read_config(root)
     inspect_journal(root, config)
+    consultation = None
+    policy_errors = ()
+    frame_limit = MAX_REQUEST
+    if enable_synthetic_policy_consult:
+        try:
+            import durable_policy
+            from policy_ipc import Consultation, MAX_FRAME
+        except ImportError:
+            raise Unsafe("POLICY_MODULE_UNAVAILABLE") from None
+        policy_errors = (durable_policy.Hold,)
+        try:
+            consultation = Consultation(root)
+        except (durable_policy.Hold, OSError, ValueError, TypeError):
+            raise Unsafe("POLICY_CONFIG_UNAVAILABLE") from None
+        frame_limit = MAX_FRAME
     ipc_root = safe_ipc_dir(ipc_dir, root, config["peerGid"]) if ipc_dir else root
     ipc_identity = ipc_root.stat()
     sock_path = ipc_root / "custodian.sock"
@@ -321,7 +341,7 @@ def _serve_locked(raw: str, enable_technical_append: bool, lock_fd: int, root_in
                 collected = b""
                 deadline = time.monotonic() + 2.0
                 failure = None
-                while not halt and time.monotonic() < deadline and len(collected) <= MAX_REQUEST:
+                while not halt and time.monotonic() < deadline and len(collected) <= frame_limit:
                     try:
                         chunk = conn.recv(512)
                     except socket.timeout:
@@ -336,7 +356,7 @@ def _serve_locked(raw: str, enable_technical_append: bool, lock_fd: int, root_in
                     continue
                 if failure:
                     answer = response("HOLD", failure)
-                elif len(collected) > MAX_REQUEST or time.monotonic() >= deadline:
+                elif len(collected) > frame_limit or time.monotonic() >= deadline:
                     answer = response("HOLD", "FRAME_SIZE_OR_TIMEOUT")
                 elif not peer_ok:
                     answer = response("HOLD", "KERNEL_PEER_DENIED")
@@ -358,11 +378,21 @@ def _serve_locked(raw: str, enable_technical_append: bool, lock_fd: int, root_in
                         if ((current_root.st_dev, current_root.st_ino) != (root_info.st_dev, root_info.st_ino) or
                             (lock_path.stat().st_dev, lock_path.stat().st_ino) != (lock_info.st_dev, lock_info.st_ino)):
                             raise Unsafe("STATE_REPLACED")
-                        request = parse_request(collected, config)
-                        answer = (response("HOLD", "APPEND_DISABLED")
-                                  if request["op"] == "append" and not enable_technical_append
-                                  else apply(root, config, request))
-                    except (Unsafe, OSError):
+                        # Routing only; each protocol then validates its own exact schema.
+                        envelope = json.loads(collected)
+                        if isinstance(envelope, dict) and envelope.get("kind") == POLICY_PROTOCOL:
+                            if consultation is None:
+                                answer = response("HOLD", "POLICY_CONSULT_DISABLED")
+                            else:
+                                result = consultation.consume(conn, collected, config["runId"])
+                                # Deliberately do not forward arbitrary boundary fields.
+                                answer = response(result["status"], "SYNTHETIC_CONSULTATION_ONLY", seq=result["seq"])
+                        else:
+                            request = parse_request(collected, config)
+                            answer = (response("HOLD", "APPEND_DISABLED")
+                                      if request["op"] == "append" and not enable_technical_append
+                                      else apply(root, config, request))
+                    except (Unsafe, OSError, ValueError, TypeError, RecursionError) + policy_errors:
                         answer = response("HOLD", "INVALID_REQUEST_OR_JOURNAL")
                 try:
                     conn.sendall(canonical(answer) + b"\n")
@@ -409,6 +439,8 @@ def main() -> int:
     daemon.add_argument("--state-dir", required=True)
     daemon.add_argument("--enable-technical-append", action="store_true")
     daemon.add_argument("--ipc-dir", help="Explicit separate pre-provisioned technical socket directory")
+    daemon.add_argument("--enable-synthetic-policy-consult", action="store_true",
+                        help="Default-off signed synthetic receipt consultation; never real authority")
     call = sub.add_parser("client")
     call.add_argument("--state-dir", required=True)
     call.add_argument("--op", choices=("status", "append"), required=True)
@@ -420,11 +452,11 @@ def main() -> int:
         if args.command == "init":
             value = initialize(args.state_dir, args.run_id, args.peer_uid, args.peer_gid)
         elif args.command == "serve":
-            serve(args.state_dir, args.enable_technical_append, args.ipc_dir)
+            serve(args.state_dir, args.enable_technical_append, args.ipc_dir, args.enable_synthetic_policy_consult)
             return 0
         else:
             value = request_client(args.state_dir, args.op, args.seq, args.id, args.result)
-    except (Unsafe, OSError, ValueError):
+    except (Unsafe, OSError, ValueError, TypeError):
         value = response("HOLD", "LOCAL_TECHNICAL_ERROR")
     print(json.dumps(value, sort_keys=True))
     return 0 if value["status"] in ("INITIALIZED", "TECHNICAL_READBACK", "TECHNICAL_RECORDED") else 1

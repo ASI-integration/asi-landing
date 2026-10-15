@@ -15,6 +15,7 @@ import tarfile
 
 HERE = Path(__file__).resolve().parent
 FILES = (
+    ("asi-custodian/policy_ipc.py", HERE / "policy_ipc.py", 0o755),
     ("asi-custodian/durable_policy.py", HERE / "durable_policy.py", 0o755),
     ("asi-custodian/asi_custodian.py", HERE / "asi_custodian.py", 0o755),
     ("asi-custodian/README.md", HERE / "README.md", 0o600),
