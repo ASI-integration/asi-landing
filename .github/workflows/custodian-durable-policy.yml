@@ -36,6 +36,7 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha }}
           persist-credentials: false
       - name: Exact source and syntax
+        id: verified_source
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$REVIEWED_SOURCE_SHA"
@@ -45,16 +46,16 @@ jobs:
       - name: New durable policy acceptance
         run: python3 scripts/custodian/durable_policy_test.py > policy-results/durable-policy.txt 2>&1
       - name: New boundary with actual distinct kernel peers
-        if: success() || failure()
+        if: (success() || failure()) && steps.verified_source.outcome == 'success'
         run: sudo --preserve-env=CI,RUNNER_ENVIRONMENT,STRIGUNOV_SYNTHETIC_ONLY python3 scripts/custodian/durable_policy_cross_uid_test.py > policy-results/durable-cross-uid.txt 2>&1
       - name: Existing nonroot security and restart regression
-        if: success() || failure()
+        if: (success() || failure()) && steps.verified_source.outcome == 'success'
         run: |
           set -euo pipefail
           python3 scripts/__tests__/asi_task32.test.py > policy-results/protected-security.txt 2>&1
           python3 scripts/__tests__/asi_finishline_process.test.py > policy-results/process-recovery.txt 2>&1
       - name: Actual kernel UID and GID isolation in disposable runner
-        if: success() || failure()
+        if: (success() || failure()) && steps.verified_source.outcome == 'success'
         run: |
           set -euo pipefail
           sudo --preserve-env=CI,RUNNER_ENVIRONMENT,STRIGUNOV_SYNTHETIC_ONLY python3 scripts/custodian/cross_uid_acceptance.py > policy-results/cross-uid.txt 2>&1
