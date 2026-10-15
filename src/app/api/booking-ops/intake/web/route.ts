@@ -25,7 +25,7 @@ export async function POST(req: Request): Promise<NextResponse> {
 
   let body: Record<string, unknown>;
   try {
-    const parsed = await readRequestJson(req);
+    const parsed = await readRequestJson(req, { maxBytes: 16 * 1024 });
     if (!parsed.ok) throw new Error('invalid_json_object');
     body = parsed.data;
   } catch {
