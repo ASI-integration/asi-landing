@@ -14,7 +14,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   offline:
-    if: github.repository == 'ASI-integration/asi-landing' && (github.event_name == 'workflow_dispatch' || (github.event.pull_request.head.ref == 'asi/location-deep-audit-20261015' && github.event.pull_request.head.repo.full_name == github.repository))
+    if: github.repository == 'ASI-integration/asi-landing' && (github.event_name == 'workflow_dispatch' || ((github.event.pull_request.head.ref == 'asi/location-deep-audit-20261015' || github.event.pull_request.head.ref == 'asi/location-calibration-finishline-20261015') && github.event.pull_request.head.repo.full_name == github.repository))
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     strategy:
