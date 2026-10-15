@@ -38,13 +38,11 @@ export async function POST(req: NextRequest) {
       ? { channel: deliveryChannel as any, target: deliveryTarget.trim() }
       : null;
 
-  // Monetization hook: for now we don’t enforce here; callers can show paywall based on their auth/subscription.
-  const accessTier =
-    body?.access_tier === 'included' || body?.access_tier === 'paid_required'
-      ? body.access_tier
-      : 'unknown';
+  // Public input cannot assert subscription/payment authority. Server verification
+  // of included entitlements is not implemented here: every request starts locked.
+  const accessTier = 'paid_required' as const;
 
-  if (accessTier === 'paid_required') {
+  {
     const redirect = '/dashboard/reports';
     if (!isSessionSecretConfigured()) {
       return NextResponse.json(
@@ -75,11 +73,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       requestId,
       status: 'queued',
-      paymentStatus: accessTier === 'paid_required'
-        ? 'pending_payment'
-        : accessTier === 'included'
-          ? 'paid_unlocked'
-          : 'created',
+      paymentStatus: 'pending_payment',
       note: locale === 'ru'
         ? 'Полный отчёт рассчитывается асинхронно. В плотных городских локациях расчёт может занять до ~1 минуты.'
         : 'The full report runs asynchronously. Dense urban areas may take up to ~1 minute.',

@@ -1,3 +1,4 @@
+import { validCoordinates } from '@/lib/location/spatial-validation';
 import { validatePublicOsmLocation } from '@/lib/location/spatial-validation-osm';
 import { NextRequest, NextResponse } from 'next/server';
 import {
@@ -357,14 +358,17 @@ async function fetchAndCache(lat: number, lon: number): Promise<void> {
 
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json() as {
+    const body = await req.json().catch(() => null) as {
       lat?: unknown;
       lon?: unknown;
       spatialFoundation?: unknown;
       locale?: unknown;
       inputAddress?: unknown;
       geocodeResult?: unknown;
-    };
+    } | null;
+    if (!body || typeof body !== 'object' || Array.isArray(body)) {
+      return NextResponse.json({ error: 'invalid JSON object' }, { status: 400 });
+    }
     const lat = typeof body.lat === 'number' ? body.lat : null;
     const lon = typeof body.lon === 'number' ? body.lon : null;
     const wantSpatial = body.spatialFoundation === true;
@@ -372,7 +376,7 @@ export async function POST(req: NextRequest) {
     const inputAddress = parseOptionalInputAddress(body.inputAddress);
     const geocodeResult = parseOptionalGeocodeResult(body.geocodeResult);
 
-    if (lat === null || lon === null || !Number.isFinite(lat) || !Number.isFinite(lon)) {
+    if (lat === null || lon === null || !validCoordinates({ lat, lon })) {
       return NextResponse.json({ error: 'lat/lon required' }, { status: 400 });
     }
 
