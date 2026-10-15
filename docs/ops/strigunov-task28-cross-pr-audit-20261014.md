@@ -38,7 +38,7 @@ Ran focused tests from all six candidate sources in the same combined tree, on W
 - Python 26: **3 PASS / 20 Linux-only SKIP / 0 FAIL** (23 total).
 - Python 27: **25 PASS / 3 POSIX-only SKIP / 0 FAIL** (28 total).
 - **Total available combined Windows cases: 120 PASS / 29 expected platform skips / 0 FAIL**, out of 149.
-- **Composite Linux acceptance independently executed and PASS:** [GitHub Actions run 38611862046](https://github.com/ASI-integration/asi-landing/actions/runs/38611862046), single unprivileged GitHub-hosted Ubuntu runner and exact six pinned heads. All **149/149 focused cases PASS, 0 skipped, 0 failed**: Node Tasks22–25 98/98; Python Task26 23/23; Python Task27 28/28. Combined checkout yielded exactly 27 disjoint paths and clean diff. This proves the test sources coexist, NOT a running unified custodian.
+- **Composite Linux acceptance executed by the Task28 GitHub audit workflow and PASS:** [GitHub Actions run 38611862046](https://github.com/ASI-integration/asi-landing/actions/runs/38611862046), single unprivileged GitHub-hosted Ubuntu runner and exact six pinned heads. All **149/149 focused cases PASS, 0 skipped, 0 failed**: Node Tasks22–25 98/98; Python Task26 23/23; Python Task27 28/28. Combined checkout yielded exactly 27 disjoint paths and clean diff. This proves the test sources coexist, NOT a running unified custodian.
 - No new network/service/host operations and no real PostgreSQL replay occurred in Task28.
 
 ## Integration findings, prioritized
