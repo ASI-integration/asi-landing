@@ -47,7 +47,7 @@ jobs:
             await c.connect();
             try {
               await c.query("CREATE SCHEMA auth");
-              await c.query("CREATE FUNCTION auth.role() RETURNS text LANGUAGE sql STABLE AS $$ SELECT current_setting('request.jwt.claim.role',true) $$");
+              await c.query("CREATE FUNCTION auth.role() RETURNS text LANGUAGE sql STABLE AS $$ SELECT current_user::text $$");
               const {readFileSync}=require('node:fs');
               await c.query(readFileSync('supabase/migrations/20260619000001_crm_early_access_v1.sql','utf8'));
               await c.query("CREATE ROLE service_role NOLOGIN");

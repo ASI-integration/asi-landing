@@ -1,4 +1,4 @@
-﻿import assert from 'node:assert/strict';
+import assert from 'node:assert/strict';
 import { createHmac } from 'node:crypto';
 import pg from 'pg';
 const dbUrl = new URL(process.env.TASK29B_DATABASE_URL || '');
@@ -17,7 +17,7 @@ try {
   // The existing migration explicitly creates service_role_full_access policy via auth.role().
   await client.query("DO $$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname='task29b_authenticator') THEN CREATE ROLE task29b_authenticator LOGIN NOINHERIT PASSWORD 'task29b_ci_only'; END IF; IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname='service_role') THEN CREATE ROLE service_role NOLOGIN; END IF; END $$");
   await client.query('GRANT service_role TO task29b_authenticator');
-  await client.query("CREATE OR REPLACE FUNCTION auth.role() RETURNS text LANGUAGE sql STABLE AS $$ SELECT current_setting('request.jwt.claim.role', true) $$");
+  await client.query("CREATE OR REPLACE FUNCTION auth.role() RETURNS text LANGUAGE sql STABLE AS $$ SELECT current_user::text $$");
   await client.query('GRANT USAGE ON SCHEMA public TO service_role');
   await client.query('GRANT SELECT, INSERT, UPDATE, DELETE ON public.crm_contacts TO service_role');
   await client.query('GRANT USAGE ON SCHEMA auth TO service_role');
@@ -51,4 +51,3 @@ try {
   if(contactId) await client.query('DELETE FROM public.crm_contacts WHERE id=$1',[contactId]).catch(()=>{});
   await client.end();
 }
-
