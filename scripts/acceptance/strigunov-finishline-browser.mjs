@@ -8,7 +8,7 @@ assert.equal(process.env.STRIGUNOV_SYNTHETIC_ONLY, 'YES');
 const origin = process.env.LAB_BROWSER_ORIGIN;
 assert.match(origin || '', /^http:\/\/172\.[0-9]+\.[0-9]+\.[0-9]+:33100$/);
 const source = process.env.REVIEWED_SOURCE_SHA;
-const results = []; let browser; let stage = 'ready'; let status = 'FAIL';
+const results = []; let page; let browser; let stage = 'ready'; let status = 'FAIL';
 const delay = ms => new Promise(r => setTimeout(r, ms));
 const check = async (id, fn) => { stage = id; await fn(); results.push({ id, status: 'PASS' }); };
 try {
@@ -23,7 +23,7 @@ try {
     blockedExternal++; return route.abort();
   });
   await context.routeWebSocket('**/*', socket => socket.close());
-  const page = await context.newPage(); page.setDefaultTimeout(20000);
+  page = await context.newPage(); page.setDefaultTimeout(20000);
   await check('browser-no-session-401', async () => assert.equal((await page.goto(origin + '/api/dashboard/booking-ops')).status(), 401));
   const cookie = await sealData({ userId: '32000000-0000-4000-8000-000000000001', email: 'operator@example.invalid' }, { password: process.env.LAB_SESSION_SECRET, ttl: 600 });
   await context.addCookies([{ name: 'asi_session', value: cookie, url: origin, httpOnly: true, sameSite: 'Lax' }]);
@@ -41,7 +41,10 @@ try {
     assert.equal(r.status, 200); assert.equal(r.body.result.intakeStatus, 'processed'); id = r.body.result.bookingId; assert.ok(id);
   });
   await check('browser-operator-refresh-and-select', async () => {
+    const refreshed = page.waitForResponse(r => r.url() === origin + '/api/dashboard/booking-ops' && r.request().method() === 'GET');
     await page.getByRole('button', { name: 'Обновить', exact: true }).click();
+    const response = await refreshed; assert.equal(response.status(), 200);
+    const body = await response.json(); assert.ok(body.records.some(r => r.id === id && r.guestName === 'ASI Browser Synthetic'));
     await page.getByText('ASI Browser Synthetic', { exact: true }).first().waitFor();
     await page.getByText('ASI Browser Synthetic', { exact: true }).first().click();
   });
@@ -55,7 +58,7 @@ try {
   await page.screenshot({ path: 'finishline-results/browser.png', fullPage: false });
   writeFileSync('finishline-results/browser-boundary.json', JSON.stringify({ source, chromium: browser.version(), outboundPolicy: 'browser HTTP routing only exact application origin; WebSockets blocked; host Chrome background networking not OS-isolated', blockedExternal, loginIssuance: 'NOT_RUN: synthetic sealed session', provider: 'NOT_RUN', actualUi: true }));
   status = 'PASS';
-} catch { results.push({ id: stage, status: 'FAIL' }); process.exitCode = 1; }
+} catch (error) { results.push({ id: stage, status: 'FAIL', errorType: error?.name, diagnostic: String(error?.message || '').replaceAll(process.env.LAB_SESSION_SECRET || 'NO_SECRET', '[REDACTED]').slice(0,1200) }); if(page) await page.screenshot({path:'finishline-results/browser-failure.png'}).catch(()=>{}); process.exitCode = 1; }
 finally {
   if (browser) await browser.close();
   writeFileSync('finishline-results/browser.json', JSON.stringify({ source, status, results, noExternalSend: true, limits: ['intake submitted through real browser fetch, not a public intake form', 'operator UI rendered/refreshed/selected; session sealed by fixture, no login issuance', 'browser reload is not physical host reboot'] }, null, 2));
