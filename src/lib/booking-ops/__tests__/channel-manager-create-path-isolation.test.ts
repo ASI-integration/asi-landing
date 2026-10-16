@@ -142,7 +142,7 @@ vi.mock('@/lib/supabase', () => ({
         record.automation_token = args.p_token;
         return { data: true, error: null };
       }
-      if (name === 'g0_end_automation' && record?.automation_token === args.p_token) {
+      if (name === 'g0_end_automation' && record && record.automation_token === args.p_token) {
         record.automation_token = null;
         return { data: true, error: null };
       }
