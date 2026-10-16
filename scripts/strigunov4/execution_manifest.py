@@ -5,8 +5,10 @@ No network, database, SSH, subprocess, extraction, activation or authority adapt
 import argparse
 import hashlib
 import json
+import os
 from pathlib import Path
 import re
+import stat
 from typing import BinaryIO, Mapping
 
 REPOSITORY = 'ASI-integration/asi-landing'
@@ -143,6 +145,14 @@ def sql_file(root, relative):
     return path
 
 
+def read_regular_json(path, code):
+    """Check the opened descriptor; a FIFO must never block before validation."""
+    descriptor = os.open(path, os.O_RDONLY | os.O_NONBLOCK)
+    with os.fdopen(descriptor, 'rb') as stream:
+        require(stat.S_ISREG(os.fstat(stream.fileno()).st_mode), code)
+        return load_json(stream.read())
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--manifest', type=Path, required=True)
@@ -152,9 +162,9 @@ def main():
     parser.add_argument('--archive', type=Path, required=True)
     args = parser.parse_args()
     try:
-        manifest = load_json(args.manifest.read_bytes())
-        expected = load_json(args.expected_binding.read_bytes())
-        package = load_json(args.package_manifest.read_bytes())
+        manifest = read_regular_json(args.manifest, 'MANIFEST_FILE')
+        expected = read_regular_json(args.expected_binding, 'EXPECTED_BINDING_FILE')
+        package = read_regular_json(args.package_manifest, 'PACKAGE_FILE')
         validate_shape(manifest)
         root = args.sql_root.resolve(strict=True)
         sql = {m['path']: sql_file(root, m['path']).read_bytes() for m in manifest['migrations']}

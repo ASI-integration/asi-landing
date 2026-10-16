@@ -1,6 +1,7 @@
 import copy
 import hashlib
 import io
+import os
 from pathlib import Path
 import tempfile
 import unittest
@@ -131,6 +132,18 @@ class BindingTests(unittest.TestCase):
             with self.subTest(kind='nested' if raw[0] == '[' else 'integer'):
                 with self.assertRaisesRegex(verifier.BindingError, '^INVALID_JSON$'):
                     verifier.load_json(raw)
+
+    def test_json_file_descriptor_rejects_fifo(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / 'input.json'
+            path.write_text('{"fixture":true}')
+            self.assertEqual(verifier.read_regular_json(path, 'MANIFEST_FILE'), {'fixture': True})
+            path.unlink()
+            os.mkfifo(path)
+            for code in ('MANIFEST_FILE', 'EXPECTED_BINDING_FILE', 'PACKAGE_FILE'):
+                with self.subTest(code=code):
+                    with self.assertRaisesRegex(verifier.BindingError, '^' + code + '$'):
+                        verifier.read_regular_json(path, code)
 
     def test_unknown_fields_and_nonmain_provenance_rejected(self):
         self.package['protected_environment_approved'] = True

@@ -10,7 +10,7 @@ This is a prerequisite for a future protected staging backend, not that backend.
 validate_manifest(manifest, expected_binding, package_manifest, sql_bytes, archive_stream)
 ```
 
-`expected_binding` is explicit caller-owned reviewed context, independently selected by the calling process. Supplying a second matching JSON document is not an independent review or authorization. The CLI accepts `--manifest`, `--expected-binding`, `--package-manifest`, `--sql-root`, and `--archive`. It reads local files only. There is no execution option.
+`expected_binding` is explicit caller-owned reviewed context, independently selected by the calling process. Supplying a second matching JSON document is not an independent review or authorization. The CLI accepts `--manifest`, `--expected-binding`, `--package-manifest`, `--sql-root`, and `--archive`. It reads local files only. The CLI targets POSIX/Linux: JSON inputs are opened nonblocking and their actual file descriptors must identify regular files before reading, so a FIFO cannot stall validation. There is no execution option.
 
 Manifest schema `asi.strigunov4.execution-binding.v1` contains exactly:
 
@@ -34,4 +34,4 @@ That backend must separately implement reviewed selective schema/history applica
 
 Run `python -m unittest discover -s scripts/strigunov4 -p test_execution_manifest.py -v`.
 
-Thirteen offline cases cover valid non-authorizing binding, forged receipt flags, repository/target mismatch, release/package mismatch, provenance changes and boolean IDs, SQL reorder, duplicate versions, unsafe paths/symlinks, SQL corruption/missing bytes, archive corruption, duplicate JSON keys, parser limits (excessive nesting and integer digits), and unknown/non-main provenance. No network or database fixtures are needed.
+Fourteen offline cases cover valid non-authorizing binding, forged receipt flags, repository/target mismatch, release/package mismatch, provenance changes and boolean IDs, SQL reorder, duplicate versions, unsafe paths/symlinks, SQL corruption/missing bytes, archive corruption, duplicate JSON keys, parser limits (excessive nesting and integer digits), FIFO rejection, and unknown/non-main provenance. No network or database fixtures are needed.
