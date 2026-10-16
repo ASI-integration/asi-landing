@@ -24,6 +24,7 @@ jobs:
           python3 -m unittest discover -s scripts/strigunov4 -p 'test_preflight.py' -v
           python3 -m unittest discover -s scripts/strigunov4 -p 'test_audit.py' -v
           python3 -m unittest discover -s scripts/strigunov4 -p 'test_tls.py' -v
+          python3 -m unittest discover -s scripts/strigunov4 -p 'test_backup_export.py' -v
           bash -n scripts/staging-booking-ops-schema-smoke.sh
   catalog-contract:
     runs-on: ubuntu-latest
