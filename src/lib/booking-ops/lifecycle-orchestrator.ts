@@ -1,3 +1,4 @@
+import { requireBookingAutomationRunning, withBookingAutomationLease } from './automation-pause';
 import { randomUUID } from 'node:crypto';
 import { supabase } from '@/lib/supabase';
 import {
@@ -282,11 +283,12 @@ async function createDueDrafts(input: {
   return { drafts, escalations };
 }
 
-export async function orchestrateBookingLifecycle(input: {
+async function orchestrateBookingLifecycleRunning(input: {
   bookingId: unknown; now?: string; runType?: BookingLifecycleRunType; actorId?: string | null; expectedScope?: ExpectedScope;
 }): Promise<BookingLifecycleOrchestratorSnapshot> {
   const bookingId = requireBookingId(input.bookingId);
   if (input.expectedScope) await requireBookingOpsRecordScope(bookingId, input.expectedScope);
+  await requireBookingAutomationRunning(bookingId);
   const now = input.now && Number.isFinite(new Date(input.now).getTime()) ? new Date(input.now).toISOString() : new Date().toISOString();
   const runId = randomUUID();
   const runType = input.runType ?? 'single_booking';
@@ -510,4 +512,8 @@ export async function forceBookingLifecycleEscalation(
   expectedScope?: ExpectedScope,
 ) {
   return applyBookingLifecycleManualOverride({ bookingId, action: 'force_escalation', reason, actorId, expectedScope });
+}
+
+export function orchestrateBookingLifecycle(...args: Parameters<typeof orchestrateBookingLifecycleRunning>): ReturnType<typeof orchestrateBookingLifecycleRunning> {
+  return withBookingAutomationLease(String(args[0].bookingId), () => orchestrateBookingLifecycleRunning(...args));
 }

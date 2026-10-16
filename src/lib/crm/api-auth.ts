@@ -25,6 +25,7 @@ export async function requireCrmOperatorSession(): Promise<
     };
   }
 
+  console.info(JSON.stringify({ event: 'staff_access_authorized', actorId: session.userId, at: new Date().toISOString() }));
   return { session };
 }
 

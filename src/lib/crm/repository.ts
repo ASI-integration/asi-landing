@@ -345,6 +345,17 @@ export async function getCrmContactById(id: string): Promise<CrmContact | null> 
   }
 }
 
+/** Atomic server-only public intake; missing migration must fail closed. */
+export async function persistPublicPilotLead(input: NormalizedCrmContactInput): Promise<{id: string; replayed: boolean; expiresAt: number}> {
+  const { data, error } = await supabase.rpc('persist_public_pilot_lead', { p_lead: toRow(input) }).single();
+  if (error) throw error;
+  const receipt = data as {contact_id?: unknown; replayed?: unknown; expires_at?: unknown} | null;
+  if (!receipt || typeof receipt.contact_id !== 'string' || typeof receipt.replayed !== 'boolean' || typeof receipt.expires_at !== 'string' || !Number.isFinite(Date.parse(receipt.expires_at))) {
+    throw new Error('Invalid public lead receipt');
+  }
+  return { id: receipt.contact_id, replayed: receipt.replayed, expiresAt: Date.parse(receipt.expires_at as string) };
+}
+
 export async function createCrmContact(input: NormalizedCrmContactInput): Promise<CrmContact> {
   const { data, error } = await supabase
     .from('crm_contacts')

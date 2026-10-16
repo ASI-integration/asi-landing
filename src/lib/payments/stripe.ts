@@ -1,3 +1,4 @@
+import { guardExternalEffect } from '@/lib/safety/no-external-effects';
 import Stripe from 'stripe';
 import { PaymentProvider, PaymentRequest, PaymentStatus } from './types';
 
@@ -11,6 +12,7 @@ export class StripeProvider implements PaymentProvider {
   async createPaymentLink(
     params: Omit<PaymentRequest, 'provider' | 'providerTransactionId' | 'status' | 'createdAt' | 'updatedAt' | 'paymentUrl'>
   ): Promise<{ paymentUrl: string; transactionId: string }> {
+    guardExternalEffect('stripe.createPaymentLink');
     const description = [
       params.description,
       params.reservationId ? `Reservation: ${params.reservationId}` : null,

@@ -126,6 +126,8 @@ export async function lookupPropertyKnowledge(
       .maybeSingle();
     if (error) return { knowledge: null, match: 'error', error: error.message };
     if (data) return { knowledge: mapPropertyKnowledgeRow(data), match: 'property_id' };
+    // An authoritative ID must never resolve another property's access details by name.
+    return { knowledge: null, match: 'none' };
   }
 
   const propertyLabel = text(input.propertyLabel);
@@ -166,7 +168,7 @@ export async function lookupPropertyKnowledgeBatch(
     }
   }
 
-  const unresolved = inputs.filter((item) => !byId.has(text(item.propertyId) ?? ''));
+  const unresolved = inputs.filter((item) => !text(item.propertyId));
   const labels = [...new Set(unresolved.map((item) => text(item.propertyLabel)).filter(Boolean))] as string[];
   const byLabel = new Map<string, BookingOpsPropertyKnowledge[]>();
   if (labels.length > 0) {
@@ -193,6 +195,10 @@ export async function lookupPropertyKnowledgeBatch(
       continue;
     }
     if (result.has(item.key)) continue;
+    if (text(item.propertyId)) {
+      result.set(item.key, { knowledge: null, match: 'none' });
+      continue;
+    }
     const candidates = byLabel.get(text(item.propertyLabel) ?? '') ?? [];
     if (candidates.length === 1) {
       result.set(item.key, { knowledge: candidates[0], match: 'property_label' });
@@ -207,12 +213,12 @@ export async function lookupPropertyKnowledgeBatch(
 
 export async function listPropertyKnowledge(
   db: SupabaseLike = supabase,
+  propertyIds?: string[],
 ): Promise<{ ok: true; records: BookingOpsPropertyKnowledge[] } | { ok: false; error: string }> {
-  const { data, error } = await db
-    .from('tg_property_knowledge')
-    .select(PROPERTY_KNOWLEDGE_SELECT)
-    .order('updated_at', { ascending: false })
-    .limit(300);
+  if (propertyIds && propertyIds.length === 0) return { ok: true, records: [] };
+  let query = db.from('tg_property_knowledge').select(PROPERTY_KNOWLEDGE_SELECT);
+  if (propertyIds) query = query.in('property_id', propertyIds);
+  const { data, error } = await query.order('updated_at', { ascending: false }).limit(300);
   if (error) return { ok: false, error: error.message };
   return { ok: true, records: ((data ?? []) as PropertyKnowledgeRow[]).map(mapPropertyKnowledgeRow) };
 }

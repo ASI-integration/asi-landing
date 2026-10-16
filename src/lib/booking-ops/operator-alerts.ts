@@ -30,6 +30,7 @@ export type OperatorAlert = {
   recommendedAction: string;
   dedupeKey: string;
   detectedAt: string;
+  revision?: number;
   deadlineAt: string | null;
   nextCheckInAt: string | null;
   acknowledgedAt: string | null;
@@ -165,6 +166,7 @@ export function mapOperatorAlertRow(row: Row): OperatorAlert {
     recommendedAction: text(row.recommended_action),
     dedupeKey: text(row.dedupe_key),
     detectedAt: text(row.detected_at),
+    revision: Number(row.revision ?? 0),
     deadlineAt: nullableText(row.deadline_at),
     nextCheckInAt: nullableText(row.next_check_in_at),
     acknowledgedAt: nullableText(row.acknowledged_at),
@@ -393,27 +395,16 @@ export async function getOperatorAlert(accountId: string, alertId: string): Prom
   return result.data ? mapOperatorAlertRow(result.data as Row) : null;
 }
 
-export async function acknowledgeOperatorAlert(accountId: string, alertId: string, actor: string) {
-  const now = new Date().toISOString();
-  const result = await supabase
-    .from('booking_ops_alerts')
-    .update({ status: 'acknowledged', acknowledged_at: now, acknowledged_by: actor, updated_at: now })
-    .eq('id', alertId)
-    .eq('account_id', accountId)
-    .eq('status', 'open')
-    .select('*')
-    .maybeSingle();
+export async function acknowledgeOperatorAlert(accountId: string, alertId: string, actor: string, expectedRevision?: number) {
+  if (!Number.isSafeInteger(expectedRevision) || Number(expectedRevision) < 1) throw new Error('alert_revision_required');
+  const result = await supabase.rpc('g0_acknowledge_operator_alert', {
+    p_account: accountId, p_alert: alertId, p_actor: actor, p_revision: expectedRevision,
+  });
   if (result.error) throw new Error(result.error.message);
-  if (!result.data) {
-    const existing = await supabase.from('booking_ops_alerts').select('*')
-      .eq('id', alertId).eq('account_id', accountId).maybeSingle();
-    if (existing.error) throw new Error(existing.error.message);
-    if (!existing.data) throw new Error('alert_not_found_or_not_open');
-    if (existing.data.status === 'acknowledged') return mapOperatorAlertRow(existing.data as Row);
-    throw new Error('alert_not_found_or_not_open');
-  }
-  await emitAlertEvent(String(result.data.booking_id), 'ops_alert_acknowledged', result.data as Row, `ack:${now}`);
-  return mapOperatorAlertRow(result.data as Row);
+  if (!result.data) throw new Error('alert_revision_conflict');
+  const row = result.data as Row;
+  await emitAlertEvent(String(row.booking_id), 'ops_alert_acknowledged', row, `ack:${row.revision}`);
+  return mapOperatorAlertRow(row);
 }
 
 export async function resolveOperatorAlertOccurrence(accountId: string, alertId: string, _actor: string, category: OperatorAlertResolutionCategory, reason: string) {
