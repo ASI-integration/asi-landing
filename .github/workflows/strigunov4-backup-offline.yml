@@ -1,0 +1,23 @@
+name: Strigunov4 backup offline checks
+on:
+  pull_request:
+    paths:
+      - 'scripts/strigunov4/**'
+      - '.github/workflows/strigunov4-*backup*.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  offline:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Verify offline backup contract without secrets or network
+        run: |
+          python3 -m py_compile scripts/strigunov4/*.py
+          python3 -m unittest discover -s scripts/strigunov4 -p 'test_backup_export.py' -v
+          PYTHONPATH=scripts/strigunov4 python3 -c 'from pathlib import Path; from backup_export import fingerprint_recipient; from tls_guard import ca_bytes; ca_bytes(); fingerprint_recipient(Path("scripts/strigunov4/backup-recipient.crt"))'
+          git diff --check
