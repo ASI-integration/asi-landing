@@ -1,3 +1,4 @@
+import contextlib
 import copy
 import importlib.util
 from pathlib import Path
@@ -7,6 +8,10 @@ import preflight as p
 import audit
 
 class SafetyTests(unittest.TestCase):
+    def setUp(self):
+        # TLS has dedicated real trust/hostname tests; these cases isolate SQL guards.
+        for name,value in [('tls_guard.bundle',contextlib.nullcontext('/tmp/test-trusted-roots.pem')),('tls_guard.diagnose',{'status':'PASS'})]:
+            mocked=patch(name,return_value=value);mocked.start();self.addCleanup(mocked.stop)
     def fixture(self):
         return {'project_ref': p.PROJECT, 'workflow_ref': 'refs/heads/main',
                 'reviewer_approval': True,

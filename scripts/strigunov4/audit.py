@@ -7,6 +7,7 @@ import subprocess
 import sys
 from urllib.parse import urlparse, unquote
 from preflight import PROJECT, target_valid
+import tls_guard
 
 WORKFLOW = 'ASI-integration/asi-landing/.github/workflows/deploy-staging.yml@refs/heads/main'
 
@@ -78,16 +79,26 @@ def main():
         print('BLOCK: protected staging identity check failed')
         return 97
     env = connection_env(source,url)
-    probe = query(env,"SELECT jsonb_build_object('server_version',current_setting('server_version'),'read_only',current_setting('transaction_read_only'));")
-    print(json.dumps({'section':'connection',**probe}))
-    if probe['status']=='PASS' and probe['data'].get('read_only')=='on' and probe['data'].get('server_version','').startswith('17.'):
-        try:
-            for name, sql in sections().items():
-                print(json.dumps({'section':name,**query(env,sql)}))
-        except ValueError:
-            print('BLOCK: catalog section contract invalid')
-    else:
-        print('BLOCK: connection/read-only/server-version gate')
+    try:
+        with tls_guard.bundle() as cafile:
+            env['PGSSLROOTCERT']=cafile
+            evidence=tls_guard.diagnose(env,cafile)
+            print(json.dumps({'section':'tls',**evidence}))
+            if evidence['status'] != 'PASS':
+                print('BLOCK: authenticated TLS prerequisite')
+                return 97
+            probe = query(env,"SELECT jsonb_build_object('server_version',current_setting('server_version'),'read_only',current_setting('transaction_read_only'));")
+            print(json.dumps({'section':'connection',**probe}))
+            if probe['status']=='PASS' and probe['data'].get('read_only')=='on' and probe['data'].get('server_version','').startswith('17.'):
+                try:
+                    for name, sql in sections().items():
+                        print(json.dumps({'section':name,**query(env,sql)}))
+                except ValueError:
+                    print('BLOCK: catalog section contract invalid')
+            else:
+                print('BLOCK: connection/read-only/server-version gate')
+    except (OSError,ValueError):
+        print('BLOCK: trusted CA bundle unavailable or invalid')
     print('AUDIT ONLY: intentional exit 97; deployment steps must remain skipped')
     return 97
 
