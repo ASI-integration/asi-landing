@@ -1,0 +1,18 @@
+{
+  "README.md": "c53d3eae4388fa6cca8540226101f205c10fe7c72ae5311f42d363d522a88b60",
+  "build_candidate.py": "a97045f4a1ce65529c52cdec376382f9becda6c406d1535b3b649e1a8d6c3012",
+  "catalog-baseline.json": "c261400bd629aedbc54f05340879a2611a2e42d8ff03bdc0673e443a68792ee1",
+  "data_preflight.sql": "5f3c655b832d357cc49cbae674c2fa1239f0d74901d0a88656e46937bc78b493",
+  "plan.json": "50954cff06c9f4718bc51230a8038b790fdbe23fd1d686b1313c040b1f625eda",
+  "rehearse.sql": "9746958c643f0a29a384cfcce7fbeac5db067a26cdc16e12ec98319b48f747f4",
+  "sql/20260810280000_booking_ops_communication_purpose_constraint_repair.sql": "9e2c2516d07041fa29feab60abb010443d66bf7c0337bb89ab73c191e0d69f7f",
+  "sql/20261003124500_booking_ops_auto_send_account_scope_v1.sql": "fb874f776a01b14fec70314d2c76a9358d7c362d6b6f9d16a4ca4dc2c8148c32",
+  "sql/20261003141500_booking_inbound_intake_account_scope_v1.sql": "05df3a611da0eb52da11331c41b6cb96b79139ac4be34c6983527a200d5d4474",
+  "sql/20261003150000_booking_availability_account_scope_v1.sql": "ba52c412da61cf7912a4c101267ff5110a75778a7a55f43dffa6679e332c00e7",
+  "sql/20261005090000_booking_ops_record_scope_guard_v1.sql": "21c0421d214d34450076bfe271b56fc609f57ab69b041b1a792e1c4e7fbdb9c4",
+  "sql/20261005095000_booking_ops_record_scope_guard_privileges_v1.sql": "9b9fecbf6602817f9856233f663339f3d61e577dfad7542a7add5a166d27e399",
+  "sql/20261015103000_booking_knowledge_read_contract.sql": "8e41fda68656ab0b551f79e5a968ebd4ef7f7e42d4c521b3c896ac6532411d30",
+  "sql/20261016090000_g0_operator_revision_takeover.sql": "eb91b48dfb4df3ae8bd63118f678573028b4fd53f5f3eeaa916adaf25d1fc3bd",
+  "systemd_candidate.py": "62de49225452dd9229e4d6a920f42e39932f51f9eff76abf077b7ab86a6c58a1",
+  "test_candidate_safety.py": "7f42b150e296bd8b074104236ec6d7d78aa04c9f9417ad6ae1ef0f8e6b033400"
+}
