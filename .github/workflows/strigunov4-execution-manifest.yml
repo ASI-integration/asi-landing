@@ -1,0 +1,27 @@
+name: Strigunov4 execution manifest offline checks
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/strigunov4/execution_manifest.py'
+      - 'scripts/strigunov4/test_execution_manifest.py'
+      - 'docs/strigunov4/EXECUTION-MANIFEST.md'
+      - '.github/workflows/strigunov4-execution-manifest.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  offline:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Verify binding rules without execution authority
+        run: |
+          python3 -m py_compile scripts/strigunov4/execution_manifest.py scripts/strigunov4/test_execution_manifest.py
+          python3 -m unittest discover -s scripts/strigunov4 -p 'test_execution_manifest.py' -v
+          git diff --check
