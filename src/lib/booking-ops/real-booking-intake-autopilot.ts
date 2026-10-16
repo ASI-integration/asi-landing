@@ -137,6 +137,8 @@ export type InboundBookingIntakeResult = {
 };
 
 export type ProcessInboundBookingOptions = {
+  /** Server-owned identity for the intake route audit; never read from guest payload. */
+  operatorActorId?: string | null;
   force?: boolean;
   action?:
     | 'process'
@@ -1053,7 +1055,8 @@ async function getIntakeEventByKey(
     ? query.eq('account_id', accountId)
     : query.is('account_id', null);
   const { data, error } = await query.maybeSingle();
-  if (error || !data) return null;
+  if (error) throw new Error('intake_receipt_read_unavailable');
+  if (!data) return null;
   return mapEventRow(data as IntakeEventRow);
 }
 
@@ -1246,7 +1249,12 @@ export async function processInboundBookingRequest(
     // never proof that an internal property has been selected.
     missingFields.push('property');
   }
+  const requestFingerprint = createHash('sha256').update(JSON.stringify(normalized, (_key, value: unknown) => {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return value;
+    return Object.fromEntries(Object.entries(value).sort(([a], [b]) => a.localeCompare(b)));
+  })).digest('hex');
   const safePayload = {
+    requestFingerprint,
     guestName: normalized.guestName,
     hasPhone: Boolean(normalized.guestPhone),
     hasEmail: Boolean(normalized.guestEmail),
@@ -1264,7 +1272,37 @@ export async function processInboundBookingRequest(
     ...(accountId ? { accountId } : {}),
   };
 
-  const existingEvent = await getIntakeEventByKey(idempotencyKey, accountId);
+  const held = (event?: InboundBookingIntakeEvent | null): InboundBookingIntakeResult => ({
+    intakeId: event?.id ?? '', bookingId: event?.bookingId ?? null, guestId: event?.guestId ?? null,
+    intakeStatus: 'failed', initializedModules: [], createdCommunicationIntents: [],
+    missingRequiredFields: missingFields, nextRequiredActions: ['manual_reconciliation'],
+    fallbackCreated: false, duplicateOfBookingId: null,
+    safeSummary: 'Intake HOLD: требуется ручная сверка; автоматический повтор запрещён.',
+  });
+  let existingEvent: InboundBookingIntakeEvent | null;
+  try { existingEvent = await getIntakeEventByKey(idempotencyKey, accountId); }
+  catch { return held(); }
+  if (accountId) {
+    // The existing account/key UNIQUE index is the cross-process admission fence.
+    // There is deliberately no lease expiry, force takeover or automatic retry.
+    if (options?.force || (options?.action && options.action !== 'process')) return held(existingEvent);
+    if (existingEvent) {
+      if (existingEvent.normalizedPayload.requestFingerprint !== requestFingerprint
+        || existingEvent.automationResult.executionState !== 'completed'
+        || !existingEvent.bookingId) return held(existingEvent);
+    } else {
+      const claim = await supabase.from('booking_inbound_intake_events').insert({
+        id: randomUUID(), account_id: accountId, source,
+        source_ref: normalized.sourceMessageId ?? normalized.externalSourceId,
+        idempotency_key: idempotencyKey, status: 'new', property_id: normalized.propertyId,
+        normalized_payload: safePayload, missing_fields: missingFields,
+        automation_result: { executionState: 'running', recovery: 'manual_reconciliation' },
+      }).select('*').single();
+      // Both a unique conflict and an unknown commit acknowledgement are HOLD.
+      if (claim.error || !claim.data) return held();
+      existingEvent = mapEventRow(claim.data as IntakeEventRow);
+    }
+  }
   if (
     existingEvent?.bookingId
     && !options?.force
@@ -1272,6 +1310,8 @@ export async function processInboundBookingRequest(
   ) {
     const existingBooking = await getBookingOpsRecord(existingEvent.bookingId);
     assertBookingWithinIntakeAccount(existingBooking, accountId);
+    if (accountId && (text(existingBooking?.propertyId) !== text(existingEvent.propertyId)
+      || text(existingBooking?.propertyId) !== text(normalized.propertyId))) return held(existingEvent);
     if (scope && !bookingBelongsToContour(existingBooking, scope)) {
       throw Object.assign(
         new Error('Существующее intake-событие указывает на бронь вне canonical контура.'),
@@ -1410,6 +1450,14 @@ export async function processInboundBookingRequest(
       );
     }
 
+    if (accountId && existingEvent) {
+      const linked = await supabase.from('booking_inbound_intake_events')
+        .update({ booking_id: record.id }).eq('id', existingEvent.id).eq('account_id', accountId)
+        .select('id').single();
+      if (linked.error || !linked.data) return held(existingEvent);
+      existingEvent.bookingId = record.id;
+    }
+
     const canonicalPropertyId = text(record.propertyId) || null;
     const expectedScope: ExpectedScope | undefined = accountId && canonicalPropertyId
       ? { accountId, propertyId: canonicalPropertyId }
@@ -1478,6 +1526,7 @@ export async function processInboundBookingRequest(
       normalizedPayload: safePayload,
       missingFields: effectiveMissingFields,
       automationResult: {
+        ...(accountId ? { executionState: 'running', recovery: 'manual_reconciliation' } : {}),
         initializedModules,
         createdCommunicationIntents,
         nextRequiredActions,
@@ -1519,6 +1568,22 @@ export async function processInboundBookingRequest(
       else await recordAndProcessBookingEvent(lifecycleInput);
     }
 
+    // Complete the route's required audit before making the receipt replayable.
+    if (options?.inputTrust === 'authenticated_internal' && expectedScope) {
+      await recordAndProcessBookingEvent({
+        id: event.id, bookingId: record.id, objectId: record.propertyId,
+        type: 'booking.received', actorType: 'operator', actorId: options.operatorActorId ?? null,
+        source: `booking_intake:${source}`, correlationId: event.id,
+        payload: { intakeStatus },
+      }, expectedScope);
+    }
+    if (accountId) {
+      const completed = await supabase.from('booking_inbound_intake_events')
+        .update({ automation_result: { ...event.automationResult, executionState: 'completed' } })
+        .eq('id', event.id).eq('account_id', accountId).select('id').single();
+      if (completed.error || !completed.data) return held(event);
+    }
+
     return {
       intakeId: event.id,
       bookingId: record.id,
@@ -1537,6 +1602,8 @@ export async function processInboundBookingRequest(
     if (code === 'account_scope_mismatch' || code === 'connection_scope_invalid') {
       throw error;
     }
+    // Never erase lineage or downgrade a possibly committed completion on ACK loss.
+    if (accountId) return held(existingEvent);
     const message = error instanceof Error ? error.message : 'intake_failed';
     const event = await upsertIntakeEvent({
       id: existingEvent?.id,

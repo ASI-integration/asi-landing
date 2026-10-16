@@ -1,4 +1,6 @@
 import { NextResponse } from 'next/server';
+import { supabase } from '@/lib/supabase';
+import { requireBookingOpsApiAccount, requireBookingOpsApiPropertyAccess } from '../booking-ops/access';
 import { requireCrmOperatorSession, requireOpsAdminSession } from '@/lib/crm/api-auth';
 import {
   listPropertyKnowledge,
@@ -150,12 +152,29 @@ async function saveIntake(body: Record<string, unknown>): Promise<NextResponse> 
   return NextResponse.json({ ok: true, record: result.record, changedFields: merge.changedFields });
 }
 
+async function ownedPropertyIds(session: Parameters<typeof requireBookingOpsApiAccount>[0]) {
+  const access = await requireBookingOpsApiAccount(session);
+  if (!access.ok) return access;
+  const result = await supabase.from('properties').select('id').eq('account_id', access.accountId).limit(301);
+  if (result.error || !result.data || result.data.length > 300) {
+    return { ok: false as const, response: NextResponse.json({ ok: false, message: 'property_scope_unavailable' }, { status: 503 }) };
+  }
+  return { ok: true as const, ids: result.data.map(row => String(row.id)), accountId: access.accountId };
+}
+
+async function scopedResponse(session: Parameters<typeof requireBookingOpsApiPropertyAccess>[0], propertyId: string, response: NextResponse) {
+  const current = await requireBookingOpsApiPropertyAccess(session, propertyId);
+  return current.ok ? response : current.response;
+}
+
 export async function GET(req: Request): Promise<NextResponse> {
   const auth = await requireCrmOperatorSession();
   if ('error' in auth) return auth.error;
 
   const propertyId = new URL(req.url).searchParams.get('property_id')?.trim();
   if (propertyId) {
+    const access = await requireBookingOpsApiPropertyAccess(auth.session, propertyId);
+    if (!access.ok) return access.response;
     const lookup = await lookupPropertyKnowledge({ propertyId });
     if (lookup.match === 'error') {
       return NextResponse.json({ ok: false, message: lookup.error }, { status: 500 });
@@ -163,14 +182,20 @@ export async function GET(req: Request): Promise<NextResponse> {
     if (!lookup.knowledge) {
       return NextResponse.json({ ok: false, message: 'Карточка объекта не найдена.' }, { status: 404 });
     }
-    return NextResponse.json({ ok: true, record: lookup.knowledge });
+    return scopedResponse(auth.session, propertyId, NextResponse.json({ ok: true, record: lookup.knowledge }));
   }
 
-  const result = await listPropertyKnowledge();
+  const owned = await ownedPropertyIds(auth.session);
+  if (!owned.ok) return owned.response;
+  const result = await listPropertyKnowledge(supabase, owned.ids);
   if (!result.ok) {
     return NextResponse.json({ ok: false, message: result.error }, { status: 500 });
   }
-  return NextResponse.json({ ok: true, records: result.records });
+  const current = await ownedPropertyIds(auth.session);
+  if (!current.ok) return current.response;
+  if (current.accountId !== owned.accountId) return NextResponse.json({ ok: false, message: 'property_scope_changed' }, { status: 409 });
+  const visible = new Set(current.ids);
+  return NextResponse.json({ ok: true, records: result.records.filter(record => visible.has(record.propertyId)) });
 }
 
 export async function POST(req: Request): Promise<NextResponse> {
@@ -184,8 +209,13 @@ export async function POST(req: Request): Promise<NextResponse> {
     return NextResponse.json({ ok: false, message: 'Некорректный JSON.' }, { status: 400 });
   }
 
-  if (body.action === 'parse_intake') return parseIntake(body);
-  if (body.action === 'save_intake') return saveIntake(body);
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return NextResponse.json({ ok: false, message: 'Invalid request body' }, { status: 400 });
+  const scopedPropertyId = readPropertyId(body);
+  if (!scopedPropertyId) return NextResponse.json({ ok: false, message: 'property_id_required' }, { status: 400 });
+  const access = await requireBookingOpsApiPropertyAccess(auth.session, scopedPropertyId);
+  if (!access.ok) return access.response;
+  if (body.action === 'parse_intake') return scopedResponse(auth.session, scopedPropertyId, await parseIntake(body));
+  if (body.action === 'save_intake') return scopedResponse(auth.session, scopedPropertyId, await saveIntake(body));
 
   const propertyId = String(body.propertyId ?? body.property_id ?? '').trim();
   if (!propertyId || propertyId.length > 200) {
@@ -214,5 +244,5 @@ export async function POST(req: Request): Promise<NextResponse> {
   if (!result.ok) {
     return NextResponse.json({ ok: false, message: result.error }, { status: 500 });
   }
-  return NextResponse.json({ ok: true, record: result.record });
+  return scopedResponse(auth.session, propertyId, NextResponse.json({ ok: true, record: result.record }));
 }
