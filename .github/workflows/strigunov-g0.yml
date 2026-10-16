@@ -1,0 +1,91 @@
+name: Strigunov G0 four safety gates
+on:
+  pull_request:
+    paths:
+      - 'scripts/acceptance/strigunov-g0*'
+      - '.github/workflows/strigunov-g0.yml'
+      - 'scripts/custodian/**'
+      - 'src/app/api/auth/session/**'
+      - 'src/app/api/dashboard/booking-ops/pre-checkin/**'
+      - 'scripts/__tests__/asi*test.py'
+      - 'src/lib/booking-ops/**'
+      - 'supabase/migrations/20261015103000_booking_knowledge_read_contract.sql'
+      - 'src/app/api/**/intake/**'
+      - 'src/lib/booking-ops/real-booking-intake-autopilot.ts'
+      - 'src/lib/early-access/*.ts'
+      - 'src/lib/crm/repository.ts'
+      - 'src/app/api/early-access/leads/route.ts'
+      - 'supabase/migrations/20261015000001_public_pilot_lead_receipts.sql'
+      - '.github/workflows/strigunov-finishline.yml'
+      - 'docs/agent-os/generated/release-manifest.json'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: strigunov-g0
+  cancel-in-progress: false
+jobs:
+  isolated-api-operator:
+    if: github.repository == 'ASI-integration/asi-landing' && (github.event_name == 'workflow_dispatch' || (github.event.pull_request.head.ref == 'asi/strigunov-g0-four-gates-20261016' && github.event.pull_request.head.repo.full_name == github.repository))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      CI: 'true'
+      STRIGUNOV_SYNTHETIC_ONLY: 'YES'
+      NEXT_TELEMETRY_DISABLED: '1'
+      REVIEWED_SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - name: Owner and event gate before source execution
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          HEAD_BRANCH: ${{ github.event.pull_request.head.ref }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = ASI-integration/asi-landing
+          test "$GITHUB_ACTOR" = ASI-integration
+          test "$GITHUB_ACTOR_ID" = 207600140
+          test "$GITHUB_TRIGGERING_ACTOR" = ASI-integration
+          test "$GITHUB_RUN_ATTEMPT" = 1
+          [[ "$REVIEWED_SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          if [ "$EVENT_NAME" = pull_request ]; then
+            test "$HEAD_BRANCH" = asi/strigunov-g0-four-gates-20261016
+            test "$HEAD_REPO" = ASI-integration/asi-landing
+          else
+            test "$EVENT_NAME" = workflow_dispatch
+          fi
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - run: mkdir -p finishline-results
+      - run: npm run typecheck
+      - name: Build real Next production application without service credentials
+        run: npm run build
+      - name: Reviewed isolated native harness
+        run: node scripts/acceptance/strigunov-g0-lab.mjs
+      - name: Exact job-owned cleanup fallback
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          label="asi.g0=strigfin-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          ids=$(docker ps -aq --filter "label=$label")
+          if [ -n "$ids" ]; then docker rm -f $ids >/dev/null; fi
+          ids=$(docker network ls -q --filter "label=$label")
+          if [ -n "$ids" ]; then docker network rm $ids >/dev/null; fi
+          test -z "$(docker ps -aq --filter "label=$label")"
+          test -z "$(docker network ls -q --filter "label=$label")"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: strigunov-g0-${{ github.run_id }}
+          path: finishline-results/*
+          retention-days: 7
+          if-no-files-found: error
