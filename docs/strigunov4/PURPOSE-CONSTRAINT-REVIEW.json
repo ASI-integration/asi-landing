@@ -1,0 +1,28 @@
+{
+  "canonical_source_ref": "334d93fc39d2ea51ba283dd0314bbc239ff49707",
+  "canonical_source_path": "src/lib/booking-ops/types.ts",
+  "canonical_constant": "BOOKING_OPS_COMMUNICATION_PURPOSES",
+  "canonical_count": 42,
+  "restored_count": 29,
+  "repair_matches_canonical_order_and_set": true,
+  "removed_literals": [],
+  "added_literals": [
+    "cleaner_task_assignment",
+    "cleaner_task_reminder",
+    "fallback_created_notice",
+    "inspection_task_assignment",
+    "internal_status_notice",
+    "linen_task_assignment",
+    "master_task_assignment",
+    "master_task_reminder",
+    "neutral_booking_acknowledgement",
+    "neutral_status_update",
+    "request_arrival_time",
+    "request_missing_guest_data",
+    "task_overdue_notice"
+  ],
+  "canonical_excerpt_sha256": "4f762246d54f3e1d6cd9a4a6e90737e34661dd05b5e7884912e96a3dbb616232",
+  "repair_file_sha256": "9e2c2516d07041fa29feab60abb010443d66bf7c0337bb89ab73c191e0d69f7f",
+  "repair_executed": false,
+  "recommendation": "Narrow compatibility repair justified by exact canonical mismatch; rehearse separately and assert all42accepted and an unknownliteral rejected, then rollback. No live changes."
+}

@@ -1,0 +1,97 @@
+{
+  "source_run": 38933240140,
+  "source_job": 117082215804,
+  "full_catalog_sha256": "67252dba8e0513485b3c98495f25dba60e24175970eabd2610248b41acb58e01",
+  "section_status": {
+    "tls": "PASS",
+    "connection": "PASS",
+    "server_version": "PASS",
+    "read_only": "PASS",
+    "schemas": "PASS",
+    "roles": "PASS",
+    "role_membership": "PASS",
+    "default_acl": "PASS",
+    "column_acl": "PASS",
+    "extensions": "PASS",
+    "columns": "PASS",
+    "constraints": "PASS",
+    "indexes": "PASS",
+    "tables": "PASS",
+    "policies": "PASS",
+    "functions": "PASS",
+    "triggers": "PASS",
+    "migration_history": "PASS"
+  },
+  "required_column_membership": [
+    {
+      "table": "booking_inbound_intake_events",
+      "column": "account_id",
+      "present": false
+    },
+    {
+      "table": "booking_inbound_intake_events",
+      "column": "account_scope_key",
+      "present": false
+    },
+    {
+      "table": "booking_ops_communication_auto_send_scopes",
+      "column": "account_id",
+      "present": false
+    },
+    {
+      "table": "booking_ops_communication_auto_send_scopes",
+      "column": "account_scope_key",
+      "present": false
+    },
+    {
+      "table": "booking_ops_communication_auto_send_runs",
+      "column": "account_id",
+      "present": false
+    },
+    {
+      "table": "booking_ops_communication_deliveries",
+      "column": "account_id",
+      "present": false
+    },
+    {
+      "table": "booking_overbooking_conflict_checks",
+      "column": "account_id",
+      "present": false
+    },
+    {
+      "table": "booking_ops_records",
+      "column": "automation_paused",
+      "present": false
+    },
+    {
+      "table": "booking_ops_alerts",
+      "column": "revision",
+      "present": false
+    },
+    {
+      "table": "tg_property_knowledge",
+      "column": "check_in_instructions",
+      "present": false
+    },
+    {
+      "table": "tg_property_knowledge",
+      "column": "key_instructions",
+      "present": false
+    },
+    {
+      "table": "tg_property_knowledge",
+      "column": "parking_instructions",
+      "present": false
+    },
+    {
+      "table": "tg_property_knowledge",
+      "column": "check_out_instructions",
+      "present": false
+    },
+    {
+      "table": "tg_property_knowledge",
+      "column": "emergency_contacts",
+      "present": false
+    }
+  ]
+}

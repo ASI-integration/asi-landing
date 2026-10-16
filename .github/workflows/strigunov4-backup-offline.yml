@@ -17,7 +17,13 @@ jobs:
           persist-credentials: false
       - name: Verify offline backup contract without secrets or network
         run: |
-          python3 -m py_compile scripts/strigunov4/*.py
+          python3 -m py_compile scripts/strigunov4/*.py scripts/strigunov4/candidates/*.py
           python3 -m unittest discover -s scripts/strigunov4 -p 'test_backup_export.py' -v
           PYTHONPATH=scripts/strigunov4 python3 -c 'from pathlib import Path; from backup_export import fingerprint_recipient; from tls_guard import ca_bytes; ca_bytes(); fingerprint_recipient(Path("scripts/strigunov4/backup-recipient.crt"))'
+          python3 -m unittest discover -s scripts/strigunov4 -p 'test_inspect_restore_archive.py' -v
+          python3 -m unittest discover -s scripts/strigunov4 -p 'test_restore_container_preflight.py' -v
+          python3 -m unittest discover -s scripts/strigunov4/candidates -p 'test_candidate_safety.py' -v
+          python3 -m unittest discover -s scripts/strigunov4/candidates -p 'test_systemd.py' -v
+          python3 -m unittest discover -s scripts/strigunov4/audit/20261016 -p 'test_lab_login_receiver.py' -v
+          git diff --exit-code -- scripts/strigunov4/candidates/plan.json scripts/strigunov4/candidates/rehearse.sql
           git diff --check
