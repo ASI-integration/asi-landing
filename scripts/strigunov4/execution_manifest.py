@@ -48,7 +48,9 @@ def load_json(raw):
     try:
         return json.loads(raw, object_pairs_hook=unique,
                           parse_constant=lambda _: (_ for _ in ()).throw(BindingError('JSON_CONSTANT')))
-    except (UnicodeError, json.JSONDecodeError):
+    except BindingError:
+        raise
+    except (ValueError, RecursionError):
         raise BindingError('INVALID_JSON') from None
 
 

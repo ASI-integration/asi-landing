@@ -126,6 +126,12 @@ class BindingTests(unittest.TestCase):
         with self.assertRaisesRegex(verifier.BindingError, 'DUPLICATE_JSON_KEY'):
             verifier.load_json('{"provenance":{"runId":1,"runId":2}}')
 
+    def test_parser_resource_limits_rejected_with_fixed_error(self):
+        for raw in ('[' * 10000 + '0' + ']' * 10000, '1' * 10000):
+            with self.subTest(kind='nested' if raw[0] == '[' else 'integer'):
+                with self.assertRaisesRegex(verifier.BindingError, '^INVALID_JSON$'):
+                    verifier.load_json(raw)
+
     def test_unknown_fields_and_nonmain_provenance_rejected(self):
         self.package['protected_environment_approved'] = True
         with self.assertRaisesRegex(verifier.BindingError, 'PACKAGE_FIELDS'):

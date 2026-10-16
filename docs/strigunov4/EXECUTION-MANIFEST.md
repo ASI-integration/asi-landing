@@ -34,4 +34,4 @@ That backend must separately implement reviewed selective schema/history applica
 
 Run `python -m unittest discover -s scripts/strigunov4 -p test_execution_manifest.py -v`.
 
-Twelve offline cases cover valid non-authorizing binding, forged receipt flags, repository/target mismatch, release/package mismatch, provenance changes and boolean IDs, SQL reorder, duplicate versions, unsafe paths/symlinks, SQL corruption/missing bytes, archive corruption, duplicate JSON keys, and unknown/non-main provenance. No network or database fixtures are needed.
+Thirteen offline cases cover valid non-authorizing binding, forged receipt flags, repository/target mismatch, release/package mismatch, provenance changes and boolean IDs, SQL reorder, duplicate versions, unsafe paths/symlinks, SQL corruption/missing bytes, archive corruption, duplicate JSON keys, parser limits (excessive nesting and integer digits), and unknown/non-main provenance. No network or database fixtures are needed.
