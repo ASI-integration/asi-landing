@@ -506,6 +506,9 @@ export async function skipDelivery(
   });
 }
 
+// Object identity proves this invocation positively persisted the denial, never a stale reread.
+const completedPolicyDenials = new WeakSet<object>();
+
 async function blockDelivery(
   delivery: BookingOpsCommunicationDelivery,
   decision: CommunicationAutoSendDecision | null,
@@ -520,12 +523,14 @@ async function blockDelivery(
     },
   );
   if (!attempt.ok) throw new Error('auto_send_block_audit_uncertain');
-  return updateDelivery(delivery.id, {
+  const blocked = await updateDelivery(delivery.id, {
     status: 'blocked',
     failure_reason: reason,
     policy_decision_id: decision?.policy_decision_id ?? delivery.policyDecisionId,
     safe_summary: decision?.safe_to_display_summary ?? 'Отправка заблокирована правилом безопасности.',
   });
+  if (blocked) completedPolicyDenials.add(blocked);
+  return blocked;
 }
 
 async function executeAutoSendDeliveryRunning(
@@ -844,7 +849,7 @@ export async function executeAutoSendDelivery(deliveryId: string, options: Execu
     const result = await executeAutoSendDeliveryRunning(deliveryId, options);
     // A positively persisted policy denial is completed work, not an uncertain failure.
     if (result.ok && !result.delivery) throw new Error('auto_send_completion_uncertain');
-    return { ok: result.ok || result.delivery?.status === 'blocked', value: result };
+    return { ok: result.ok || Boolean(result.delivery && completedPolicyDenials.has(result.delivery)), value: result };
   });
   return completed.value;
 }
