@@ -1,3 +1,4 @@
+import { guardExternalEffect } from '@/lib/safety/no-external-effects';
 import { prepareTelegramVoiceAudio } from './voice-audio';
 import { isVoiceReplyGloballyEnabled, sendTelegramVoice } from './voice-reply';
 import { generateSpeech } from './voice-tts';
@@ -15,6 +16,7 @@ export type GuestLifecycleVoiceInput = {
  * retains the configured ElevenLabs -> OpenAI fallback chain.
  */
 export async function sendGuestLifecycleVoiceCopy(input: GuestLifecycleVoiceInput): Promise<boolean> {
+    guardExternalEffect('voice.sendGuestLifecycleVoiceCopy');
   if (input.channel !== 'telegram' || input.communicationMode !== 'voice') return false;
   if (!isVoiceReplyGloballyEnabled()) return false;
   try {

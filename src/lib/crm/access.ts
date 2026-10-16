@@ -20,16 +20,12 @@ export function isCrmOperatorEmail(email: string | null | undefined): boolean {
   const normalized = String(email ?? '').trim().toLowerCase();
   if (!normalized) return false;
 
-  if (process.env.NODE_ENV !== 'production') {
-    return true;
-  }
-
   const allowlist = crmOperatorAllowlist();
   if (allowlist.size > 0) {
     return allowlist.has(normalized);
   }
 
-  return normalized.endsWith('@asi-global.ru');
+  return false;
 }
 
 export function opsAdminAllowlist(): Set<string> {
@@ -44,10 +40,6 @@ export function opsAdminAllowlist(): Set<string> {
 export function isOpsAdminEmail(email: string | null | undefined): boolean {
   const normalized = String(email ?? '').trim().toLowerCase();
   if (!normalized) return false;
-
-  if (process.env.NODE_ENV !== 'production') {
-    return isCrmOperatorEmail(normalized);
-  }
 
   const adminList = opsAdminAllowlist();
   if (adminList.size > 0) {

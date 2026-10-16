@@ -1,3 +1,4 @@
+import { guardExternalEffect } from '@/lib/safety/no-external-effects';
 import { StripeProvider } from './stripe';
 import { YookassaProvider } from './yookassa';
 import { PaymentProvider, PaymentProviderType, PaymentRequest } from './types';
@@ -50,6 +51,7 @@ export interface CreatePaymentParams {
  * the same guest context.
  */
 export async function createPaymentRequest(params: CreatePaymentParams): Promise<PaymentRequest> {
+    guardExternalEffect('payments.createPaymentRequest');
   // Deduplicate: reuse active unpaid session for the same chat
   if (params.chatId) {
     const active = await getActivePaymentForContext(params.chatId);

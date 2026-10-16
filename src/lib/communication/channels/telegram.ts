@@ -1,3 +1,4 @@
+import { guardExternalEffect } from '@/lib/safety/no-external-effects';
 import { ChannelAdapter } from './base';
 import { CommunicationChannel } from '../types';
 import { replyToTelegram } from '../../telegram';
@@ -24,6 +25,7 @@ export class TelegramAdapter implements ChannelAdapter {
   channel: CommunicationChannel = 'telegram';
 
   async sendMessage(to: string, content: string, metadata?: Record<string, unknown>): Promise<boolean> {
+    guardExternalEffect('telegram.sendMessage');
     const chatId = parseInt(to, 10);
     if (isNaN(chatId)) return false;
 

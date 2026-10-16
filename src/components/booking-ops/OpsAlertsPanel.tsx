@@ -95,7 +95,7 @@ export function OpsAlertsPanel() {
     const idempotencyKey = `${alert.id}:${action}:${JSON.stringify(extra)}`;
     setUpdating(alert.id); setError('');
     try {
-      const response = await fetch(`/api/dashboard/booking-ops/alerts/${alert.id}`, { method: 'PATCH', credentials: 'include', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action, idempotencyKey, ...extra }) });
+      const response = await fetch(`/api/dashboard/booking-ops/alerts/${alert.id}`, { method: 'PATCH', credentials: 'include', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action, idempotencyKey, expectedRevision: alert.revision, ...extra }) });
       const body = await response.json() as Response;
       if (!response.ok || !body.ok) throw new Error(body.message || 'Не удалось выполнить действие.');
       if (action === 'request_missing_data' && body.actuallySent === false) window.alert('Черновик создан. Сообщение не отправлено.');

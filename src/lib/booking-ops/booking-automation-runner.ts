@@ -1,3 +1,4 @@
+import { requireBookingAutomationRunning, withBookingAutomationLease } from './automation-pause';
 import { randomUUID } from 'node:crypto';
 import { supabase } from '@/lib/supabase';
 import { initializeLifecycleForBooking } from './lifecycle';
@@ -305,7 +306,8 @@ async function reconcileAutomationHandoffs(snapshot: BookingAutomationSnapshot, 
   });
 }
 
-export async function runBookingOpsAutomationForBooking(input: RunBookingOpsAutomationInput): Promise<BookingAutomationRunSummary> {
+async function runBookingOpsAutomationForBookingRunning(input: RunBookingOpsAutomationInput): Promise<BookingAutomationRunSummary> {
+  await requireBookingAutomationRunning(input.bookingId);
   const runId = randomUUID();
   const startedAt = input.now ? new Date(input.now).toISOString() : new Date().toISOString();
   let snapshot = await loadBookingAutomationSnapshot(input.bookingId, input.expectedAccountId, startedAt, input.expectedPropertyId);
@@ -328,6 +330,7 @@ export async function runBookingOpsAutomationForBooking(input: RunBookingOpsAuto
     await audit(snapshot, 'booking_automation_run_started', null, runId, 'started');
     let remaining = maxActions;
     while (remaining > 0) {
+      await requireBookingAutomationRunning(input.bookingId);
       const plan = planBookingOpsAutomation(snapshot, remaining);
       summary.planned.push(...plan);
       for (const [index, item] of plan.entries()) await audit(snapshot, 'booking_automation_step_planned', item, runId, `planned:${summary.planned.length - plan.length + index}`);
@@ -382,4 +385,8 @@ export async function runBookingOpsAutomationForBooking(input: RunBookingOpsAuto
 
 export function isActiveOperatorAlertStatus(status: unknown): boolean {
   return ACTIVE_ALERT_STATUSES.includes(text(status));
+}
+
+export function runBookingOpsAutomationForBooking(...args: Parameters<typeof runBookingOpsAutomationForBookingRunning>): ReturnType<typeof runBookingOpsAutomationForBookingRunning> {
+  return withBookingAutomationLease(args[0].bookingId, () => runBookingOpsAutomationForBookingRunning(...args));
 }

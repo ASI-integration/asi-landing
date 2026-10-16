@@ -1,3 +1,4 @@
+import { withBookingAutomationLease } from './automation-pause';
 import { randomUUID } from 'node:crypto';
 import { supabase } from '@/lib/supabase';
 import { text as cleanText } from '@/lib/pilot-data/test-markers';
@@ -409,14 +410,14 @@ export async function getBookingOpsByBookingId(bookingId: string): Promise<Booki
 
 export async function createBookingOpsRecord(
   input: CreateBookingOpsInput,
-  options?: { actorType?: BookingOpsEventActorType },
+  options?: { actorType?: BookingOpsEventActorType; reservedRecordId?: string },
 ): Promise<{
   ok: boolean;
   record?: BookingOpsRecord;
   error?: string;
 }> {
   const now = new Date().toISOString();
-  const id = randomUUID();
+  const id = options?.reservedRecordId ?? randomUUID();
   const accountId = text(input.accountId);
   const propertyId = text(input.propertyId);
   let expectedScope: { accountId: string; propertyId: string } | undefined;
@@ -504,6 +505,7 @@ export async function createBookingOpsRecord(
     .single();
 
   if (error) return { ok: false, error: error.message };
+  return withBookingAutomationLease(id, async () => {
   const postInsertScopeError = await revalidateCreatedScope();
   if (postInsertScopeError) return { ok: false, error: postInsertScopeError };
   await recordBookingOpsEvent({
@@ -522,6 +524,7 @@ export async function createBookingOpsRecord(
   if (postCoreLoopScopeError) return { ok: false, error: postCoreLoopScopeError };
   const record = await enrichRecordWithTaskSync(mapRow(data as BookingOpsRow), expectedScope);
   return { ok: true, record };
+  });
 }
 
 export async function syncBookingOpsTasksForRecordId(
