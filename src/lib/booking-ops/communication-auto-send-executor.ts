@@ -511,7 +511,7 @@ async function blockDelivery(
   decision: CommunicationAutoSendDecision | null,
   reason: string,
 ) {
-  await recordAutoSendAttempt(
+  const attempt = await recordAutoSendAttempt(
     delivery.communicationIntentId,
     decision && !decision.allowed ? decision.decision : 'blocked',
     {
@@ -519,6 +519,7 @@ async function blockDelivery(
       error_code: reason,
     },
   );
+  if (!attempt.ok) throw new Error('auto_send_block_audit_uncertain');
   return updateDelivery(delivery.id, {
     status: 'blocked',
     failure_reason: reason,
@@ -638,11 +639,12 @@ async function executeAutoSendDeliveryRunning(
 
   const effectiveDryRun = options.dryRun === true || scope.dryRunOnly;
   if (effectiveDryRun) {
-    await recordAutoSendAttempt(intent.id, 'dry_run', {
+    const attempt = await recordAutoSendAttempt(intent.id, 'dry_run', {
       booking_id: delivery.bookingId,
       guest_ref: intent.actorType === 'guest' ? executionContext.recipientRef : null,
       dry_run: true,
     });
+    if (!attempt.ok) throw new Error('auto_send_dry_run_audit_uncertain');
     const dryRunDelivery = await updateDelivery(delivery.id, {
       status: 'dry_run',
       failure_reason: null,
@@ -838,5 +840,11 @@ export async function executeAutoSendDelivery(deliveryId: string, options: Execu
   if (options.accountId && delivery.accountId !== options.accountId) return { ok: false as const, error: 'booking_scope_mismatch', delivery: null };
   const intent = await readIntent(delivery.communicationIntentId);
   if (!intent) return { ok: false as const, error: 'intent_not_found', delivery: null };
-  return withBookingAutomationLease(intent.bookingOpsRecordId, () => executeAutoSendDeliveryRunning(deliveryId, options));
+  const completed = await withBookingAutomationLease(intent.bookingOpsRecordId, async () => {
+    const result = await executeAutoSendDeliveryRunning(deliveryId, options);
+    // A positively persisted policy denial is completed work, not an uncertain failure.
+    if (result.ok && !result.delivery) throw new Error('auto_send_completion_uncertain');
+    return { ok: result.ok || result.delivery?.status === 'blocked', value: result };
+  });
+  return completed.value;
 }

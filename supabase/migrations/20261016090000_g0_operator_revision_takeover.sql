@@ -1,5 +1,9 @@
 -- Candidate only. Acceptance applies solely inside a disposable PostgreSQL17 database.
 BEGIN;
+-- PostgreSQL row locks require UPDATE privilege on at least one column.
+-- Trusted server role only; no owner/authenticated role gains mutation rights.
+GRANT UPDATE (user_id) ON public.account_members TO service_role;
+GRANT UPDATE (id) ON public.properties TO service_role;
 ALTER TABLE public.booking_ops_alerts ADD COLUMN revision bigint NOT NULL DEFAULT 1 CHECK (revision > 0);
 ALTER TABLE public.booking_ops_records ADD COLUMN automation_paused boolean NOT NULL DEFAULT false;
 CREATE TABLE public.booking_ops_automation_executions (
