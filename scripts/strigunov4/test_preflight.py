@@ -61,8 +61,10 @@ class SafetyTests(unittest.TestCase):
             run.return_value.returncode=0; run.return_value.stdout='{}'
             self.assertEqual(audit.main(),97)
             self.assertNotIn('secret',' '.join(run.call_args.args[0]))
-            for key in ('PGHOSTADDR','PGSERVICE','PGSERVICEFILE','PGUSER'):
+            for key in ('PGHOSTADDR','PGSERVICE','PGSERVICEFILE'):
                 self.assertNotIn(key,run.call_args.kwargs['env'])
+            self.assertEqual(run.call_args.kwargs['env']['PGUSER'],'postgres')
+            self.assertEqual(run.call_args.kwargs['env']['PGDATABASE'],'postgres')
             self.assertIn('default_transaction_read_only=on',run.call_args.kwargs['env']['PGOPTIONS'])
             self.assertEqual(run.call_args.kwargs['env']['PGSSLMODE'],'verify-full')
     def test_audit_errors_suppressed_and_fail_closed(self):

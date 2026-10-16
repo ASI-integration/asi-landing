@@ -1,6 +1,7 @@
 """Synthetic PG17 contract check. Requires an isolated disposable CI service."""
 import json
 import os
+import audit
 from pathlib import Path
 import subprocess
 
@@ -35,6 +36,17 @@ def main():
     assert payload['migration_history'][0]['version']=='20260729040307'
     assert 'statements' not in payload['migration_history'][0]
     assert sql('SELECT count(*) FROM public.synthetic_secret').strip()=='1'
+    for name,query in audit.sections().items():
+        output=sql('BEGIN READ ONLY;'+query+'ROLLBACK;')
+        part=json.loads(next(x for x in output.splitlines() if x.startswith('{')))
+        assert name in part
+        assert 'MUST_NOT_APPEAR_IN_CATALOG' not in output
+    # Controlled experiment for legacy PGDATABASE URI handling, no staging data.
+    legacy_env={k:os.environ[k] for k in ('PATH',) if k in os.environ}
+    legacy_env.update(PGDATABASE='postgresql://postgres:synthetic-only@127.0.0.1:5432/synthetic',PGSSLMODE='disable',PGPASSFILE='/dev/null',PGCONNECT_TIMEOUT='5')
+    legacy=subprocess.run(['psql','-X','-A','-t','-c',"SELECT current_setting('server_version')"],env=legacy_env,capture_output=True,text=True,timeout=10)
+    print(json.dumps({'synthetic_legacy_uri_probe': 'PASS' if legacy.returncode==0 else 'BLOCK', 'error': audit.error_code(legacy.stderr) if legacy.returncode else None}))
+    print('PASS: all16 independent read-only catalog sections')
     print('PASS: PG17 catalog contract, metadata coverage, read-only transaction, user data excluded')
 
 if __name__ == '__main__':
