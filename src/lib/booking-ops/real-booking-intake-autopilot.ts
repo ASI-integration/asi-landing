@@ -472,6 +472,23 @@ function assertBookingWithinIntakeAccount(
   }
 }
 
+// Receipt linkage is not authorization, including failed/incomplete receipts.
+async function verifiedReceiptBooking(
+  bookingId: string | null, accountId: string | null, propertyId: string | null,
+): Promise<BookingOpsRecord | null> {
+  if (!bookingId) return null;
+  let record: BookingOpsRecord | null;
+  try { record = await getBookingOpsRecord(bookingId); }
+  catch { return null; } // Read uncertainty cannot authorize response identities.
+  if (!record) return null; // Unknown commit stays redacted HOLD; never retry.
+  assertBookingWithinIntakeAccount(record, accountId);
+  if (accountId && text(record.propertyId) !== text(propertyId)) {
+    throw Object.assign(new Error('Связанная бронь находится вне canonical property контура intake.'),
+      { code: 'account_scope_mismatch' });
+  }
+  return record;
+}
+
 async function requireBookingWithinIntakeScope(
   record: BookingOpsRecord | null | undefined,
   accountId: string | null,
@@ -1146,18 +1163,16 @@ export async function getInboundBookingIntakeStatus(
   if (!event) return null;
 
   const automation = event.automationResult;
-  if (accountId && automation.executionState !== 'completed') {
+  const linkedBooking = await verifiedReceiptBooking(event.bookingId, accountId ?? null, event.propertyId);
+  if (accountId && (automation.executionState !== 'completed' || !linkedBooking)) {
     // Read-only reconciliation: a reserved identity is not proof of a committed booking.
     const reserved = text(automation.reservedBookingId);
     const candidate = event.bookingId || reserved;
-    let confirmedBookingId: string | null = null;
-    if (candidate) {
-      const result = await supabase.from('booking_ops_records').select('id,account_id,property_id')
-        .eq('id', candidate).eq('account_id', accountId).maybeSingle();
-      if (!result.error && result.data && result.data.property_id === event.propertyId) confirmedBookingId = result.data.id;
-    }
+    const confirmed = candidate === event.bookingId ? linkedBooking : candidate
+      ? await verifiedReceiptBooking(candidate, accountId, event.propertyId) : null;
+    const confirmedBookingId = confirmed?.id ?? null;
     return {
-      intakeId: event.id, bookingId: confirmedBookingId, guestId: event.guestId,
+      intakeId: event.id, bookingId: confirmedBookingId, guestId: null,
       intakeStatus: 'failed', initializedModules: [], createdCommunicationIntents: [],
       missingRequiredFields: event.missingFields, nextRequiredActions: ['manual_reconciliation'],
       fallbackCreated: false, duplicateOfBookingId: null,
@@ -1166,8 +1181,8 @@ export async function getInboundBookingIntakeStatus(
   }
   return {
     intakeId: event.id,
-    bookingId: event.bookingId,
-    guestId: event.guestId,
+    bookingId: linkedBooking?.id ?? null,
+    guestId: null,
     intakeStatus: event.status,
     initializedModules: Array.isArray(automation.initializedModules)
       ? automation.initializedModules.map(String)
@@ -1180,7 +1195,7 @@ export async function getInboundBookingIntakeStatus(
       ? automation.nextRequiredActions.map(String)
       : [],
     fallbackCreated: automation.fallbackCreated === true,
-    duplicateOfBookingId: event.duplicateOfBookingId,
+    duplicateOfBookingId: event.duplicateOfBookingId === linkedBooking?.id ? linkedBooking.id : null,
     safeSummary: text(automation.safeSummary) || 'Статус входящей заявки доступен.',
   };
 }
@@ -1299,7 +1314,7 @@ export async function processInboundBookingRequest(
   };
 
   const held = (event?: InboundBookingIntakeEvent | null): InboundBookingIntakeResult => ({
-    intakeId: event?.id ?? '', bookingId: event?.bookingId ?? null, guestId: event?.guestId ?? null,
+    intakeId: event?.id ?? '', bookingId: null, guestId: null,
     intakeStatus: 'failed', initializedModules: [], createdCommunicationIntents: [],
     missingRequiredFields: missingFields, nextRequiredActions: ['manual_reconciliation'],
     fallbackCreated: false, duplicateOfBookingId: null,
@@ -1308,6 +1323,14 @@ export async function processInboundBookingRequest(
   let existingEvent: InboundBookingIntakeEvent | null;
   try { existingEvent = await getIntakeEventByKey(idempotencyKey, accountId); }
   catch { return held(); }
+  const linkedBooking = existingEvent?.bookingId
+    ? await verifiedReceiptBooking(existingEvent.bookingId, accountId, existingEvent.propertyId)
+    : null;
+  if (linkedBooking && accountId && text(linkedBooking.propertyId) !== text(normalized.propertyId)) {
+    throw Object.assign(new Error('Связанная бронь находится вне запрошенного property контура.'),
+      { code: 'account_scope_mismatch' });
+  }
+  if (existingEvent?.bookingId && !linkedBooking) return held(existingEvent);
   if (accountId) {
     // The existing account/key UNIQUE index is the cross-process admission fence.
     // There is deliberately no lease expiry, force takeover or automatic retry.
@@ -1334,7 +1357,7 @@ export async function processInboundBookingRequest(
     && !options?.force
     && (!options?.action || options.action === 'process')
   ) {
-    const existingBooking = await getBookingOpsRecord(existingEvent.bookingId);
+    const existingBooking = linkedBooking;
     assertBookingWithinIntakeAccount(existingBooking, accountId);
     if (accountId && (text(existingBooking?.propertyId) !== text(existingEvent.propertyId)
       || text(existingBooking?.propertyId) !== text(normalized.propertyId))) return held(existingEvent);
@@ -1347,7 +1370,7 @@ export async function processInboundBookingRequest(
     return {
       intakeId: existingEvent.id,
       bookingId: existingEvent.bookingId,
-      guestId: existingEvent.guestId,
+      guestId: null,
       intakeStatus: 'duplicate',
       initializedModules: [],
       createdCommunicationIntents: [],
