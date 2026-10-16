@@ -87,6 +87,18 @@ class Query {
 vi.mock('@/lib/supabase', () => ({
   supabase: {
     from: (...args: unknown[]) => supabaseFrom(...args),
+    rpc: vi.fn(async (name: string, args: Row) => {
+      const record = rows('booking_ops_records').find((row) => row.id === args.p_booking);
+      if (name === 'g0_begin_automation' && record?.automation_paused === false && !record.automation_token) {
+        record.automation_token = args.p_token;
+        return { data: true, error: null };
+      }
+      if (name === 'g0_end_automation' && record && record.automation_token === args.p_token) {
+        record.automation_token = null;
+        return { data: true, error: null };
+      }
+      return { data: false, error: { message: 'unexpected or rejected rpc' } };
+    }),
   },
 }));
 vi.mock('../events', () => ({ recordBookingOpsEvent }));
@@ -170,7 +182,7 @@ describe('updateBookingOpsRecord expectedScope', () => {
     supabaseFrom.mockImplementation((table: string) => ({
       select: vi.fn(() => new Query(table)),
       update: vi.fn((patch: Row) => new Query(table, { patch })),
-      insert: vi.fn((row: Row) => new Query(table, { insert: row })),
+      insert: vi.fn((row: Row) => new Query(table, { insert: { automation_paused: false, ...row } })),
     }));
   });
 
@@ -492,3 +504,4 @@ describe('updateBookingOpsRecord expectedScope', () => {
     expect(syncLifecycleFromBookingOpsRecord).not.toHaveBeenCalled();
   });
 });
+
