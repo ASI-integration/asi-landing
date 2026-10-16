@@ -1,6 +1,6 @@
 # Strigunov4: full restore execution candidate
 
-Execution update: the new archive has been imported successfully into the isolated WSL lab, including globals, database creation and the complete transactional object/data restore. Full security acceptance remains pending.
+Execution update: the new archive has been imported successfully into the isolated WSL lab, including globals, database creation and the complete transactional object/data restore. Final independent review now records RESTORE_PASS within the approved logical archive scope; see INDEPENDENT-ACCEPTANCE-REVIEW.md. This does not authorize a live deployment.
 Archive-derived comparison confirms 182 COPY tables, all 873 row values and four sequence values. Role attributes and memberships match. All 51 extension-member ownership mismatches were reconciled against the archive; bounded semantic schema/ACL comparison passed. Genuine fresh LOGIN verification passed for 9 recovery-issued lab credentials, and all 9 wrong-password attempts were denied. See RESTORE-EXECUTION-RESULT.md and LOGIN-RECOVERY-ISSUED-PLAN.md for executed evidence and remaining limitations. Earlier phase-specific NOT_RUN statements below record their historical stage, not the current import status.
 Reviewed source: `88f5c353719db6a59c266a44ed4f1be80270103b`.
 Export run `38942690625`: SUCCESS (job `117114029654`, independently checked by parent agent).

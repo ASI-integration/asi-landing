@@ -2,6 +2,8 @@
 
 Scope: recovery-issued lab credentials. These are newly generated recovery passwords for the isolated restored database. They do NOT prove recovery of original source passwords or external application credentials. No source connection or mutation is permitted.
 
+Final independent review subsequently accepted these recovery-issued credentials as satisfying the merged policy. Historical per-phase NOT_PROVEN fields below are preserved; original source password recovery is an exclusion, not an additional archive gate. See INDEPENDENT-ACCEPTANCE-REVIEW.md.
+
 ## Actual result
 
 Root approved scope; Astra explicitly completed parity and handed off container ID `ae57f850c5e4354753fe517f32629b4b8d97e1928f87e7dc8601dc626df80d09`. Process10272 exited0: all9LOGIN roles authenticated in fresh connections with recovery-issued passwords; all9wrong-password connections were rejected specifically as authentication failures. A fresh wrong-admin denial proved active SCRAM BEFORE positive checks. Role attributes/config/memberships remained unchanged; only passwords changed. HBA parse errors0; local SCRAM/hostreject now active in the isolated container.

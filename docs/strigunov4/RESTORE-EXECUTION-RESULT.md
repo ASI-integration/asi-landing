@@ -1,6 +1,6 @@
 # Strigunov4 actual archive restoration and verification
 
-2026-10-16. This records executed results, not a proposal. The archived database was restored successfully into a new isolated local target. **Full security RESTORE_PASS remains false.** Original source LOGIN credentials and the complete tenant authorization suite have not been proven by this work.
+2026-10-16. This records executed results, not a proposal. The archived database was restored successfully into an isolated local target. Subsequent LOGIN, tenant, role-chain and preservation checks support independently reviewed **RESTORE_PASS within the approved logical archive scope**. See INDEPENDENT-ACCEPTANCE-REVIEW.md for the final judgment. Phase-specific pending/false statements below describe the earlier handoff, not the final acceptance. Original source passwords were intentionally excluded; recoverable lab-issued credentials satisfy the approved LOGIN requirement.
 
 ## Archive and target identity
 
@@ -46,7 +46,7 @@ Databasepostgres ownerpostgres, UTF8/provideri, en_US.UTF-8/en-US,5databaseACL e
 
 Read-only inspection of the already-private archive COPY map found storage.objects0rows, storage.buckets0rows and vault.secrets0rows. Thus this archive contains no Storage object/bucket metadata requiring external object recovery. This does not assert anything about unreferenced external objects. Exactly five source extensions were confirmed; pgsodium is not installed. A bounded scan of visible archive schema SQL found no qualified pgsodium dependency, and Vault references only in the Vault extension's own ACL entries. Arbitrary application ciphertext or dynamically constructed dependencies are not ruled out; no blanket encryption N/A is claimed.
 
-Original archive data-only render and restored database data-only export were handled privately. All182COPY table/column headers matched exactly. Every table's row count matched, and per-table sorted COPY row UTF8 bytes matched for all873rows. Only physical row order was ignored; values were not normalized or exposed. All4sequence SETVAL statements matched exactly. The catalogue reports183tables while the archive contains182COPY blocks; these are different measures. Data equality claim covers every182archiveCOPY block, with no invented explanation for the extra catalogue relation.
+Original archive data-only render and restored database data-only export were handled privately. All182COPY table/column headers matched exactly. Every table's row count matched, and per-table sorted COPY row UTF8 bytes matched for all873rows. Only physical row order was ignored; values were not normalized or exposed. All4sequence SETVAL statements matched exactly. The catalogue reports183tables while the archive contains182COPY blocks; these are different measures. Data equality covers every182archiveCOPY block. Subsequent observed metadata resolves the extra relation: realtime.messages is an empty partitioned parent with zero children and zero rows (RESTORE-COVERAGE-38942690625.json).
 
 The first data render command omitted an explicit output file and failed; corrected read-only render used --file=-. Failed attempt recorded, no database mutation.
 
