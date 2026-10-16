@@ -1,6 +1,18 @@
-# Isolated actual LOGIN verification — awaiting root's execution signal
+# Isolated actual LOGIN verification — executed after parity handoff
 
-Scope: recovery-issued lab credentials. These are newly generated recovery passwords for the isolated restored database. They do NOT prove recovery of original source passwords or external application credentials. No source connection or mutation is permitted. No password/HBA change has been executed by this plan.
+Scope: recovery-issued lab credentials. These are newly generated recovery passwords for the isolated restored database. They do NOT prove recovery of original source passwords or external application credentials. No source connection or mutation is permitted.
+
+## Actual result
+
+Root approved scope; Astra explicitly completed parity and handed off container ID `ae57f850c5e4354753fe517f32629b4b8d97e1928f87e7dc8601dc626df80d09`. Process10272 exited0: all9LOGIN roles authenticated in fresh connections with recovery-issued passwords; all9wrong-password connections were rejected specifically as authentication failures. A fresh wrong-admin denial proved active SCRAM BEFORE positive checks. Role attributes/config/memberships remained unchanged; only passwords changed. HBA parse errors0; local SCRAM/hostreject now active in the isolated container.
+
+Windows owner-only CMS bundle persisted and existing owner-key roundtrip verified before any password mutation. Cipher2681bytes, SHA256 `bfad7d4b33a26310fd1f9977ab919550174bfaa5da7f4d3b44212061871eb712`. No plaintext credential file created. Bundle path: `C:\Users\Admin\.asi\strigunov4-backup\login-credentials-2a7f58e4a68d4732816d4809b4207294-0e6c3636da75ba57\recovery-issued-lab-credentials.cms`.
+
+Sanitized report: `C:\Users\Admin\.asi\strigunov4-backup\strigunov4-recovery-issued-login-38942690625.json`. HBA original SHA256 `056ad9accf7e1961052e549db6b4b03fc8480f12d358da0b4b221880e8e6fcec`; final SHA256 `739dbd6c909d7268b2d4721c0cbe305ae3910835195d3df4f860d7fc51829469`.
+
+Roles: authenticator, pgbouncer, postgres, supabase_admin, supabase_auth_admin, supabase_etl_admin, supabase_read_only_user, supabase_replication_admin, supabase_storage_admin. Source original password recovery and external application credential recovery remain NOT_PROVEN; full restore acceptance remains NOT_PROVEN. Further maintenance must use the encrypted bundle through a private in-memory bridge; old trust access no longer works.
+
+Implementation note: empty PGSERVICE causes libpq service lookup failure; the initial read-only inventory stopped without mutations. Corrected fixed shell launcher unsets PG overrides, keeping passwords only in subprocess environment and SQL only stdin. Four focused secret-channel/target/input tests passed. Password transaction disables pg_stat_statements tracking and statement/duration/sample/parameter/error-statement logging in the maintenance session. No values were printed into tool context or command argv.
 
 ## Fixed target / coordination
 
@@ -37,7 +49,7 @@ Verify logging settings before any password statement: log_statement=none, log_m
 3. Begin one maintenance transaction. Set password_encryption=scram-sha-256 and audited no-statement-logging session settings. Send generated ALTER ROLE statements only via psql stdin, never argv. Quote role identifiers with doubled double quotes; values are generated urlsafe strings, not user-supplied SQL. ON_ERROR_STOP=1; capture output privately, return only success/fixed error category. Only PASSWORD is changed. Preserve all original flags/expiry/config/memberships. Commit only if all statements succeed; otherwise rollback.
 4. Compare non-password role metadata and memberships with baseline. Any change aborts progression and is reported. Password rotation already committed cannot be claimed rolled back; keep durable recovery bundle and report actual state.
 5. Save original lab HBA bytes in a private root-owned file (HBA is not a credential file); verify exact original digest and that no symlink is involved. Atomically replace only the admitted cluster's HBA with local SCRAM authentication and host reject rules. Preserve original file permissions/owner. No trust/peer exception for maintenance after the change. Reload only this container's postgres with exact pg_ctl path. Never restart another process or cluster.
-6. Check pg_hba_file_rules for parse errors and verify active rules; no interpretation of a successful reload exit as sufficient proof. Keep existing maintenance session until a new successful supabase_admin SCRAM connection is confirmed, to permit local recovery of this own HBA if parsing/authentication setup failed.
+6. Reload is asynchronous: poll bounded NEW wrong-password supabase_admin connections until narrowly recognized authentication rejection proves the old trust rule is no longer active; only then require a NEW correct-password admin connection and inspect pg_hba_file_rules. File parser checks and a successful reload exit alone are insufficient. The implemented recovery uses root's exact owned HBA backup plus pg_ctl reload inside this isolated container; it does not retain a maintenance connection. If recovery is requested, report active state as unproven until observed rather than claiming rollback succeeded merely because reload was invoked.
 
 ## Real connections and negative verification
 
@@ -47,7 +59,7 @@ Use a clean whitelisted environment; no inherited PGHOST/PGSERVICE/PGPASSFILE/PG
 
 For each role create a NEW connection with a different high-entropy password and require actual authentication rejection (SQLSTATE28P01 if accessible; otherwise narrowly recognized libpq authentication failure plus correct target/HBA evidence). A generic nonzero return, missing executable, missing database, exhausted connection or timeout is NOT a successful negative test. Never echo bad password or full stderr. Ensure no .pgpass fallback by clean environment and nonexistent PGPASSFILE path/no-password prompting disabled.
 
-After tests recheck exact role metadata/memberships and HBA digest/rules. End maintenance session. Leave only this isolated cluster with the approved SCRAM configuration for independent review; no source credentials or key were changed. Root coordinates final lab cleanup and retention of the encrypted credential bundle.
+After tests recheck exact role metadata/memberships and HBA digest/rules. Leave only this isolated cluster with the approved SCRAM configuration for independent review; no source credentials or key were changed. Root coordinates final lab cleanup and retention of the encrypted credential bundle.
 
 ## Evidence contract
 
