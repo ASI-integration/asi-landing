@@ -1,5 +1,5 @@
 {
-  "README.md": "10c3458cdb5f842a6fd4a28973fc6aa7befddddc56070471de0c9df09503f983",
+  "README.md": "7a2d307f5c025149894221431dff31e22335742edd982b4ef685911fb58e2aa6",
   "build_candidate.py": "a97045f4a1ce65529c52cdec376382f9becda6c406d1535b3b649e1a8d6c3012",
   "catalog-baseline.json": "c261400bd629aedbc54f05340879a2611a2e42d8ff03bdc0673e443a68792ee1",
   "data_preflight.sql": "5f3c655b832d357cc49cbae674c2fa1239f0d74901d0a88656e46937bc78b493",
@@ -13,7 +13,7 @@
   "sql/20261005095000_booking_ops_record_scope_guard_privileges_v1.sql": "9b9fecbf6602817f9856233f663339f3d61e577dfad7542a7add5a166d27e399",
   "sql/20261015103000_booking_knowledge_read_contract.sql": "8e41fda68656ab0b551f79e5a968ebd4ef7f7e42d4c521b3c896ac6532411d30",
   "sql/20261016090000_g0_operator_revision_takeover.sql": "eb91b48dfb4df3ae8bd63118f678573028b4fd53f5f3eeaa916adaf25d1fc3bd",
-  "systemd_candidate.py": "f9a682e46ef8ee01ddaf2a4f66d0ce908d17dc2ef6c44a57213014f2a4840d79",
+  "systemd_candidate.py": "986a0a0d794af465c7763d6ae1de0b6b2f142e427d225cceda4d666803c80d05",
   "test_candidate_safety.py": "7f42b150e296bd8b074104236ec6d7d78aa04c9f9417ad6ae1ef0f8e6b033400",
-  "test_systemd.py": "67d258ec3765d4813a9769944f866ae80ff45a7204450a7690f7915cda6e26d3"
+  "test_systemd.py": "91848fa4d9e212188d58327ad0d9cfc33a97d85f574caddeab1cf3a3077f3b59"
 }

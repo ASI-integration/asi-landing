@@ -10,6 +10,10 @@ class CandidateTests(unittest.TestCase):
   raw=b'\0'.join((k+'='+v).encode() for k,v in s.FLAGS.items() if k!='ASI_SYNTHETIC_NO_SEND')
   with patch.object(s.Path,'read_bytes',return_value=raw):
    with self.assertRaisesRegex(RuntimeError,'unsafe_effective_flags'):s.effective_flags('123')
+ def test_production_default_root_rejected(self):
+  raw=b'\0'.join((k+'='+v).encode() for k,v in s.FLAGS.items() if k!='ASI_APP_ROOT')
+  with patch.object(s.Path,'read_bytes',return_value=raw):
+   with self.assertRaisesRegex(RuntimeError,'unsafe_effective_flags'):s.effective_flags('123')
  def test_effective_no_send_pass(self):
   raw=b'\0'.join((k+'='+v).encode() for k,v in s.FLAGS.items())
   with patch.object(s.Path,'read_bytes',return_value=raw):s.effective_flags('123')

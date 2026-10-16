@@ -8,7 +8,7 @@ BASE=Path('/var/www/asi-staging')
 SERVICE='asi-landing-staging'
 OLD='5c91b27bcde395f01cc078d1fbe454dd7436e1c6'
 NEW='334d93fc39d2ea51ba283dd0314bbc239ff49707'
-FLAGS={'EMAIL_AUTO_SEND':'false','EMAIL_DRAFT_ONLY':'true','DRY_RUN_TELEGRAM_OUTBOUND':'true','ALLOW_REAL_TELEGRAM_SYNTHETIC':'false','YOOKASSA_ENABLED':'false','ASI_SYNTHETIC_NO_SEND':'YES'}
+FLAGS={'EMAIL_AUTO_SEND':'false','EMAIL_DRAFT_ONLY':'true','DRY_RUN_TELEGRAM_OUTBOUND':'true','ALLOW_REAL_TELEGRAM_SYNTHETIC':'false','YOOKASSA_ENABLED':'false','ASI_SYNTHETIC_NO_SEND':'YES','ASI_APP_ROOT':'/var/www/asi-staging/current'}
 UNIT_DIGEST='9072dd1a276c7bea2bb7d17031a51b250177e2806cd632e26728028c0a8a01d9'
 def run(*args):return subprocess.check_output(args,text=True,stderr=subprocess.DEVNULL).strip()
 def check(ok,code):
