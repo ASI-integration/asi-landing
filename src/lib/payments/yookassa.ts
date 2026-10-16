@@ -1,3 +1,4 @@
+import { guardExternalEffect } from '@/lib/safety/no-external-effects';
 import { PaymentProvider, PaymentRequest, PaymentStatus } from './types';
 import {
   COMMUNICATION_PILOT_PAYMENT_DESCRIPTION,
@@ -52,6 +53,7 @@ export class YooKassaDisabledError extends Error {
 
 export class YookassaProvider implements PaymentProvider, YooKassaProviderSkeleton {
   async createPayment(_params: YooKassaPaymentInput): Promise<YooKassaDisabledPayment> {
+    guardExternalEffect('yookassa.createPayment');
     return {
       provider: 'yookassa',
       status: 'disabled',
@@ -94,6 +96,7 @@ export class YookassaProvider implements PaymentProvider, YooKassaProviderSkelet
   }
 
   async createPaymentLink(params: YooKassaPaymentInput): Promise<{ paymentUrl: string; transactionId: string }> {
+    guardExternalEffect('yookassa.createPaymentLink');
     const credentials = getYooKassaCredentials();
     if (!credentials) {
       await this.createPayment(params);

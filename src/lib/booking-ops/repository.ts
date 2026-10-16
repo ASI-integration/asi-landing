@@ -409,14 +409,14 @@ export async function getBookingOpsByBookingId(bookingId: string): Promise<Booki
 
 export async function createBookingOpsRecord(
   input: CreateBookingOpsInput,
-  options?: { actorType?: BookingOpsEventActorType },
+  options?: { actorType?: BookingOpsEventActorType; reservedRecordId?: string },
 ): Promise<{
   ok: boolean;
   record?: BookingOpsRecord;
   error?: string;
 }> {
   const now = new Date().toISOString();
-  const id = randomUUID();
+  const id = options?.reservedRecordId ?? randomUUID();
   const accountId = text(input.accountId);
   const propertyId = text(input.propertyId);
   let expectedScope: { accountId: string; propertyId: string } | undefined;

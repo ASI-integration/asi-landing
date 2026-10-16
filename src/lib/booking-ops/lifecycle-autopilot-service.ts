@@ -1,3 +1,4 @@
+import { requireBookingAutomationRunning } from './automation-pause';
 import { createHash, randomUUID } from 'node:crypto';
 import { supabase } from '@/lib/supabase';
 import { initialLifecycleState, reduceLifecycle, type BookingEventActor, type LifecycleEvent, type LifecycleState } from './lifecycle-autopilot';
@@ -32,6 +33,7 @@ export async function processBookingDomainEvent(eventId: string, expectedScope?:
   if (eventResult.error) throw new Error(eventResult.error.message);
   const event = rowToEvent(eventResult.data as Record<string, unknown>);
   if (expectedScope) await requireBookingOpsRecordScope(event.bookingId, expectedScope);
+  if (event.actorType !== 'operator') await requireBookingAutomationRunning(event.bookingId);
   const existing = await supabase.from('booking_ops_lifecycle_decisions').select('id').eq('event_id', event.id).maybeSingle();
   if (existing.error) throw new Error(existing.error.message);
   if (existing.data) return { processed: false, duplicate: true };

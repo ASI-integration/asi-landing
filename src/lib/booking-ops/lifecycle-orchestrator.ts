@@ -1,3 +1,4 @@
+import { requireBookingAutomationRunning } from './automation-pause';
 import { randomUUID } from 'node:crypto';
 import { supabase } from '@/lib/supabase';
 import {
@@ -287,6 +288,7 @@ export async function orchestrateBookingLifecycle(input: {
 }): Promise<BookingLifecycleOrchestratorSnapshot> {
   const bookingId = requireBookingId(input.bookingId);
   if (input.expectedScope) await requireBookingOpsRecordScope(bookingId, input.expectedScope);
+  await requireBookingAutomationRunning(bookingId);
   const now = input.now && Number.isFinite(new Date(input.now).getTime()) ? new Date(input.now).toISOString() : new Date().toISOString();
   const runId = randomUUID();
   const runType = input.runType ?? 'single_booking';

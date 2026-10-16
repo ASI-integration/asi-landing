@@ -28,7 +28,7 @@ export async function PATCH(request: Request, context: { params: { id: string } 
   const auth = await requireCrmOperatorSession();
   if ('error' in auth) return auth.error;
   const body = await request.json().catch(() => ({})) as {
-    action?: string; reason?: string; resolutionCategory?: string; missingDataReason?: string; idempotencyKey?: string;
+    expectedRevision?: number; action?: string; reason?: string; resolutionCategory?: string; missingDataReason?: string; idempotencyKey?: string;
     executorId?: string; assignedToName?: string; assignedToPhone?: string; assignedToTelegram?: string;
   };
   if (!OPERATOR_ALERT_ACTIONS.includes(body.action as OperatorAlertAction)) {
@@ -40,7 +40,7 @@ export async function PATCH(request: Request, context: { params: { id: string } 
     const actorId = auth.session.userId ?? auth.session.email ?? 'operator';
     const result = await applyOperatorAlertAction({
       accountId: access.accountId, alertId: context.params.id, action: body.action as OperatorAlertAction,
-      actorId, canOverrideHighRisk: access.isOpsAdmin, idempotencyKey: body.idempotencyKey,
+      actorId, expectedRevision: body.expectedRevision, canOverrideHighRisk: access.isOpsAdmin, idempotencyKey: body.idempotencyKey,
       executorId: body.executorId, assignedToName: body.assignedToName, assignedToPhone: body.assignedToPhone,
       assignedToTelegram: body.assignedToTelegram, missingDataReason: body.missingDataReason,
       resolutionCategory: body.resolutionCategory, reason: body.reason,
@@ -50,7 +50,7 @@ export async function PATCH(request: Request, context: { params: { id: string } 
     const message = error instanceof Error ? error.message : 'Не удалось подтвердить уведомление.';
     return NextResponse.json(
       { ok: false, message },
-      { status: message === 'alert_not_found_or_not_open' || message === 'alert_not_found' ? 404 : message === 'high_risk_alert_override_forbidden' ? 403 : 400 },
+      { status: message.startsWith('alert_revision_') ? 409 : message === 'alert_not_found_or_not_open' || message === 'alert_not_found' ? 404 : message === 'high_risk_alert_override_forbidden' ? 403 : 400 },
     );
   }
 }

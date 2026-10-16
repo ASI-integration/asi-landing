@@ -1,3 +1,4 @@
+import { requireBookingAutomationRunning } from './automation-pause';
 import { createHash, randomUUID } from 'node:crypto';
 import { supabase } from '@/lib/supabase';
 import { EmailAdapter } from '@/lib/communication/channels/email';
@@ -555,6 +556,7 @@ export async function executeAutoSendDelivery(
   if (options.accountId && executionContext.record?.accountId !== options.accountId) {
     return { ok: false as const, error: 'booking_scope_mismatch', delivery: null };
   }
+  if (executionContext.record) await requireBookingAutomationRunning(executionContext.record.id);
   const expectedScope = canonicalExpectedScope(executionContext.record);
   const availabilityGuard = await shouldBlockCommunicationIntent(intent, {
     accountId: executionContext.record?.accountId ?? null,

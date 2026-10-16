@@ -1,3 +1,4 @@
+import { requireBookingAutomationRunning } from './automation-pause';
 import { initializeLifecycleForBooking } from './lifecycle';
 import { requireBookingOpsRecordScope } from './repository';
 
@@ -17,6 +18,7 @@ export async function initializeBookingOpsCoreLoop(
   expectedScope?: { accountId: string; propertyId: string },
 ): Promise<BookingOpsCoreLoopInitialization> {
   if (expectedScope) await requireBookingOpsRecordScope(bookingOpsRecordId, expectedScope);
+  await requireBookingAutomationRunning(bookingOpsRecordId);
   const lifecycle = await initializeLifecycleForBooking(bookingOpsRecordId, expectedScope);
   if (!lifecycle.ok) {
     throw new Error(lifecycle.error ?? 'lifecycle_initialization_failed');

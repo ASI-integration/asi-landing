@@ -1,3 +1,4 @@
+import { requireBookingAutomationRunning } from './automation-pause';
 import type { BookingOpsAutomationDecision, BookingOpsRecord } from './types';
 import { buildBookingOpsAutomationPatch, evaluateBookingOpsAutomation } from './decision-engine';
 import { updateBookingOpsRecord } from './repository';
@@ -20,6 +21,7 @@ export async function runBookingOpsAutomation(
   record: BookingOpsRecord,
   evaluatedAt = new Date().toISOString(),
 ): Promise<BookingOpsRecord> {
+  await requireBookingAutomationRunning(record.id);
   const decision = evaluateBookingOpsAutomation(record, evaluatedAt);
   const patch = buildBookingOpsAutomationPatch(record, evaluatedAt);
 

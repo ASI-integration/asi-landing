@@ -18,7 +18,7 @@ assert.equal(execFileSync('docker',['context','show'],{encoding:'utf8'}).trim(),
 assert.ok(['pull_request','workflow_dispatch'].includes(process.env.GITHUB_EVENT_NAME));
 if(process.env.GITHUB_EVENT_NAME==='pull_request'){
  const event=JSON.parse(readFileSync(process.env.GITHUB_EVENT_PATH,'utf8'));
- assert.equal(event.pull_request.head.repo.full_name,'ASI-integration/asi-landing');assert.equal(event.pull_request.head.ref,'asi/strigunov-g0-four-gates-20261016');assert.equal(event.pull_request.head.sha,sha);
+ assert.equal(event.pull_request.head.repo.full_name,'ASI-integration/asi-landing');assert.equal(event.pull_request.head.ref,'asi/strigunov-g0-remediation-20261016');assert.equal(event.pull_request.head.sha,sha);
 }
 for(const p of ['.env','.env.local','.env.production','.env.production.local'])assert.equal(existsSync(p),false);
 const id='strigfin-'+process.env.GITHUB_RUN_ID+'-'+process.env.GITHUB_RUN_ATTEMPT;

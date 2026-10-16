@@ -27,7 +27,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   isolated-api-operator:
-    if: github.repository == 'ASI-integration/asi-landing' && (github.event_name == 'workflow_dispatch' || (github.event.pull_request.head.ref == 'asi/strigunov-g0-four-gates-20261016' && github.event.pull_request.head.repo.full_name == github.repository))
+    if: github.repository == 'ASI-integration/asi-landing' && (github.event_name == 'workflow_dispatch' || (github.event.pull_request.head.ref == 'asi/strigunov-g0-remediation-20261016' && github.event.pull_request.head.repo.full_name == github.repository))
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     env:
@@ -51,7 +51,7 @@ jobs:
           test "$GITHUB_RUN_ATTEMPT" = 1
           [[ "$REVIEWED_SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
           if [ "$EVENT_NAME" = pull_request ]; then
-            test "$HEAD_BRANCH" = asi/strigunov-g0-four-gates-20261016
+            test "$HEAD_BRANCH" = asi/strigunov-g0-remediation-20261016
             test "$HEAD_REPO" = ASI-integration/asi-landing
           else
             test "$EVENT_NAME" = workflow_dispatch
@@ -67,7 +67,7 @@ jobs:
       - run: npm ci --ignore-scripts --no-audit --no-fund
       - run: mkdir -p finishline-results
       - run: npm run typecheck
-      - run: node node_modules/eslint/bin/eslint.js src/lib/booking-ops/real-booking-intake-autopilot.ts src/app/api/dashboard/booking-ops/intake/process/route.ts scripts/acceptance/strigunov-g0-service.ts src/app/api/dashboard/property-knowledge/route.ts src/lib/booking-ops/property-knowledge.ts
+      - run: node node_modules/eslint/bin/eslint.js 'src/lib/crm/access.ts' 'src/lib/crm/api-auth.ts' 'src/lib/booking-ops/repository.ts' 'src/lib/booking-ops/real-booking-intake-autopilot.ts' 'src/lib/booking-ops/operator-alerts.ts' 'src/lib/booking-ops/operator-exception-actions.ts' 'src/app/api/dashboard/booking-ops/alerts/[id]/route.ts' 'src/components/booking-ops/OpsAlertsPanel.tsx' 'src/lib/booking-ops/automation-pause.ts' 'src/lib/booking-ops/automation-service.ts' 'src/lib/booking-ops/booking-automation-runner.ts' 'src/lib/booking-ops/lifecycle-autopilot-service.ts' 'src/lib/booking-ops/lifecycle-orchestrator.ts' 'src/lib/booking-ops/core-loop-initialization.ts' 'src/lib/booking-ops/communication-auto-send-executor.ts' 'src/lib/safety/no-external-effects.ts' 'src/lib/communication/channels/email.ts' 'src/lib/communication/channels/telegram.ts' 'src/lib/communication/guest-lifecycle-voice.ts' 'src/lib/payments/factory.ts' 'src/lib/payments/stripe.ts' 'src/lib/payments/yookassa.ts' 'scripts/acceptance/strigunov-g0-service.ts'
       - run: git diff --check
       - name: Build real Next production application without service credentials
         run: npm run build
