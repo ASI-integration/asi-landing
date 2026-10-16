@@ -74,13 +74,13 @@ Two rollback-only cases, SELECTconstant from auth.users and vault.secrets after 
 
 Read-only archive parity work completed before handoff to restore_preparation for separately authorized recovery-issued SCRAM credentials. Actual container identity/settings were supplied. No passwords/HBA changed by this agent. At handoff, socket authentication was still private lab trust; pg_stat_statements.tracktop and log_min_error_statementerror were explicitly reported for suppression before credential operations.
 
-## Remaining limitations
+## Historical handoff and continuing limitations
 
-- Source-original LOGIN credential recovery not proven; recovery-issued credential checks are separate work.
-- Full tenant A/B, ownership-reassignment, RPC and revoked-session negative cases remain separate.
+- At this phase handoff, recovery-issued LOGIN and tenant checks were pending. Subsequent actual LOGIN, tenant A/B, ownership-reassignment, RPC, revoked-membership and fresh role-chain checks passed; see LOGIN-RECOVERY-ISSUED-PLAN.md, TENANT-REHEARSAL-RESULT.md and INDEPENDENT-ACCEPTANCE-REVIEW.md.
+- Source-original passwords were intentionally excluded and are not claimed recovered; independently recoverable lab-issued credentials satisfy the approved LOGIN requirement.
 - Built-in plpgsql and extension-level ownership not established by absent source archive metadata must not be invented.
 - Earlier live source catalogue is auxiliary evidence, not silently substituted for dump-time evidence.
 - Archive and globals were exported separately; exact equality to both restored artifacts does not prove they came from one atomic source snapshot.
-- No migrations/G0 execution or production change occurred. Full security RESTORE_PASS remains false.
+- At this phase handoff, full security RESTORE_PASS had not yet been established. Subsequent checks support the final bounded RESTORE_PASS in INDEPENDENT-ACCEPTANCE-REVIEW.md. Later migration rehearsals were rollback-only; no staging migration apply, G0 deployment or production change is claimed.
 
 Sanitized local reports and private logs reside under the owned nonce-specific restore directory. Scripts for review: execute_private_restore.py, verify_private_restore.py, compare_private_archive.py, reconcile_extension_owners.py, verify_acl_representation.py.
