@@ -136,6 +136,19 @@ describe('pre-check-in pure read', () => {
     expect(writes.delete).not.toHaveBeenCalled();
   });
 
+  it('propagates canonical account and property to every persisted readiness domain', async () => {
+    const scope = { accountId: 'account-a', propertyId: 'property-a' };
+    const { getGuestLegalReadiness } = await import('../guest-legal-deposit-mvd-execution');
+    const { readPhysicalReadiness } = await import('../physical-readiness-execution');
+    const { readPreCheckinStatus } = await import('../pre-checkin-control-center');
+    await readPreCheckinStatus(BOOKING_ID, scope);
+    expect(getGuestLegalReadiness).toHaveBeenCalledWith(BOOKING_ID, scope);
+    expect(readPhysicalReadiness).toHaveBeenCalledWith(BOOKING_ID, scope);
+    expect(requireBookingOpsRecordScope).toHaveBeenCalledWith(BOOKING_ID, scope);
+    expect(writes.insert).not.toHaveBeenCalled();
+    expect(writes.update).not.toHaveBeenCalled();
+  });
+
   it('passes canonical account scope into the readiness list repository query', async () => {
     const repository = await import('../repository');
     const { listBookingsByReadinessStatus } = await import('../pre-checkin-control-center');

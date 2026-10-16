@@ -1,0 +1,25 @@
+{
+  "container_id": "40f46d2b8a513fcca3637883f187662ad961498bc3b08213185299fe780323a1",
+  "container_removed": true,
+  "existing_restore_access": "NONE",
+  "fixed": {
+    "first": "active",
+    "second_after_first_commit": "conflict",
+    "second_waited_on_advisory": true
+  },
+  "input_hashes": {
+    "forward": "782c83e99c20ef8882f7b6e428ad9287fd5b5d417f92697d98ef79c0da1f878c",
+    "old": "3cfe8b6a5c47996f8159739b4efb2e22dd9be150fc1f63613b067302676c551c",
+    "schema": "c1dc98a1a3fb8d8421059b3e4a57b2274b456db1244dcc3a0663dee992aa17a1"
+  },
+  "old": {
+    "first": "active",
+    "overlap_reproduced": true,
+    "second_before_first_commit": "active"
+  },
+  "owner_acl_unchanged": true,
+  "source_access": "NONE",
+  "status": "TWO_SESSION_REGRESSION_PASS",
+  "target": "asi-strigunov4-lock-regression-4b8d67e12a03",
+  "volume_removed": true
+}
