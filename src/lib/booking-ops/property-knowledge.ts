@@ -213,12 +213,12 @@ export async function lookupPropertyKnowledgeBatch(
 
 export async function listPropertyKnowledge(
   db: SupabaseLike = supabase,
+  propertyIds?: string[],
 ): Promise<{ ok: true; records: BookingOpsPropertyKnowledge[] } | { ok: false; error: string }> {
-  const { data, error } = await db
-    .from('tg_property_knowledge')
-    .select(PROPERTY_KNOWLEDGE_SELECT)
-    .order('updated_at', { ascending: false })
-    .limit(300);
+  if (propertyIds && propertyIds.length === 0) return { ok: true, records: [] };
+  let query = db.from('tg_property_knowledge').select(PROPERTY_KNOWLEDGE_SELECT);
+  if (propertyIds) query = query.in('property_id', propertyIds);
+  const { data, error } = await query.order('updated_at', { ascending: false }).limit(300);
   if (error) return { ok: false, error: error.message };
   return { ok: true, records: ((data ?? []) as PropertyKnowledgeRow[]).map(mapPropertyKnowledgeRow) };
 }

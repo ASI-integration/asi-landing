@@ -9,6 +9,7 @@ on:
       - 'src/app/api/dashboard/booking-ops/pre-checkin/**'
       - 'scripts/__tests__/asi*test.py'
       - 'src/lib/booking-ops/**'
+      - 'src/app/api/dashboard/property-knowledge/**'
       - 'supabase/migrations/20261015103000_booking_knowledge_read_contract.sql'
       - 'src/app/api/**/intake/**'
       - 'src/lib/booking-ops/real-booking-intake-autopilot.ts'
@@ -66,7 +67,7 @@ jobs:
       - run: npm ci --ignore-scripts --no-audit --no-fund
       - run: mkdir -p finishline-results
       - run: npm run typecheck
-      - run: node node_modules/eslint/bin/eslint.js src/lib/booking-ops/real-booking-intake-autopilot.ts src/app/api/dashboard/booking-ops/intake/process/route.ts scripts/acceptance/strigunov-g0-service.ts
+      - run: node node_modules/eslint/bin/eslint.js src/lib/booking-ops/real-booking-intake-autopilot.ts src/app/api/dashboard/booking-ops/intake/process/route.ts scripts/acceptance/strigunov-g0-service.ts src/app/api/dashboard/property-knowledge/route.ts src/lib/booking-ops/property-knowledge.ts
       - run: git diff --check
       - name: Build real Next production application without service credentials
         run: npm run build
