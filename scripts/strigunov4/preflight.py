@@ -50,7 +50,8 @@ def assess(e):
     b = e.get('backup', {})
     for key in ('cipher_sha256_verified', 'durable_private_copy', 'key_recoverable',
                 'pg_restore_list_pass', 'full_restore_pass', 'roles_restored',
-                'acl_verified', 'owners_verified', 'extensions_verified'):
+                'acl_verified', 'owners_verified', 'extensions_verified',
+                'login_credentials_verified', 'vault_decryption_verified'):
         need(b.get(key) is True, 'backup: ' + key)
     need(b.get('project_ref') == PROJECT, 'backup target mismatch')
     need(b.get('postgres_major') == 17, 'restore must use PostgreSQL17')

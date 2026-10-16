@@ -20,10 +20,10 @@ WORKFLOW = "ASI-integration/asi-landing/.github/workflows/strigunov4-staging-sec
 class GateError(Exception):
     pass
 
-def checked(argv, *, env=None, input_data=None, category="COMMAND"):
+def checked(argv, *, env=None, input_data=None, category="COMMAND", timeout=240):
     try:
         p = subprocess.run(argv, env=env, input=input_data,
-                           text=True, capture_output=True, timeout=240)
+                           text=True, capture_output=True, timeout=timeout)
     except (OSError, subprocess.TimeoutExpired):
         raise GateError(category + "_UNAVAILABLE") from None
     if p.returncode:
@@ -130,8 +130,10 @@ def export(source):
                          + b"\n" + ca_bytes())
         root.chmod(0o600)
         env = build_pg_env(source, url, root)
+        clean = {k: env[k] for k in ("PATH", "HOME", "LANG", "LC_ALL") if k in env}
+        checked(["docker", "pull", PG_IMAGE], env=clean, category="CLIENT_IMAGE_PULL")
         docker = [
-            "docker", "run", "--rm", "--network", "host",
+            "docker", "run", "--rm", "--pull=never", "--network", "host",
             "--user", "{}:{}".format(os.getuid(), os.getgid()),
             "--mount", "type=bind,src={},dst=/work".format(tmp),
         ]
@@ -142,9 +144,9 @@ def export(source):
         docker.append(PG_IMAGE)
         checked(docker + ["sh", "-ec",
                 "umask 077; pg_dump --format=custom --file=/work/db.dump;"
-                " pg_dumpall --globals-only --file=/work/globals.sql;"
+                " pg_dumpall --globals-only --no-role-passwords --file=/work/globals.sql;"
                 " pg_restore --list /work/db.dump > /work/toc.txt"],
-                env=env, category="STAGING_EXPORT")
+                env=env, category="STAGING_EXPORT", timeout=900)
         for fn in ("db.dump", "globals.sql", "toc.txt"):
             if not (tmp / fn).is_file() or (tmp / fn).stat().st_size < 50:
                 raise GateError("EXPORT_INCOMPLETE")
@@ -197,6 +199,7 @@ def export(source):
         print("ENCRYPTED_BYTES=" + str(archive.stat().st_size))
         print("PRIVATE_STORAGE=REMOTE_STAGING_SSH_HOME")
         print("ROLE_SQL_ENCRYPTED=YES")
+        print("ROLE_PASSWORDS=NOT_EXPORTED_RESTORE_REQUIRES_SEPARATE_CREDENTIALS")
         print("ACL_ENTRIES_PRESENT=YES")
         print("SECURITY_COMPLETE_RESTORE=NOT_RUN")
         print("MIGRATIONS_OR_DEPLOY=NOT_RUN")

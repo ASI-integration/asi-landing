@@ -104,10 +104,23 @@ class AdmissionTests(unittest.TestCase):
         self.assertNotIn("PGSERVICEFILE",env)
         self.assertNotIn("STAGING_SSH_PRIVATE_KEY",env)
 
+    def test_checked_timeout_and_safe_error(self):
+        with patch.object(b.subprocess, 'run') as run:
+            run.return_value.returncode = 0
+            run.return_value.stdout = 'ok'
+            self.assertEqual(b.checked(['synthetic'], timeout=900), 'ok')
+            self.assertEqual(run.call_args.kwargs['timeout'], 900)
+            b.checked(['synthetic'])
+            self.assertEqual(run.call_args.kwargs['timeout'], 240)
+            run.side_effect = subprocess.TimeoutExpired('synthetic-secret', 900)
+            with self.assertRaisesRegex(b.GateError, '^EXPORT_UNAVAILABLE$'):
+                b.checked(['synthetic'], category='EXPORT', timeout=900)
+
     def test_image_pinned_and_role_acl_kept(self):
         self.assertIn("sha256:",b.PG_IMAGE)
         source=Path(__file__).with_name("backup_export.py").read_text()
-        self.assertIn("pg_dumpall --globals-only",source)
+        self.assertIn("pg_dumpall --globals-only --no-role-passwords",source)
+        self.assertIn("ROLE_PASSWORDS=NOT_EXPORTED_RESTORE_REQUIRES_SEPARATE_CREDENTIALS",source)
         self.assertNotIn("--no-owner",source)
         self.assertNotIn("--no-acl",source)
 
