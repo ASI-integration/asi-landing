@@ -1,0 +1,737 @@
+{
+  "after": {
+    "data": {
+      "copy_tables": 182,
+      "data_sha256": "3ce98579e43f06a0b2dbf5d974e515e1ec82469231babf0bb76b8569c31f480d",
+      "rows": 873,
+      "sequence_count": 4,
+      "sequences_sha256": "f878966fb013026a43dd8fd44c6e93e1e9ad09859d7ba8c2e9e6d744dc205444"
+    },
+    "history": "651f56bd3f996817b26cbf7757983bed7c3e42c35e1bc55e624d7c9db580adad",
+    "schema": "a94722adc53dd49460f74856895df4d199e98d9d5bb5acb51fee99b1e741d1b1"
+  },
+  "before": {
+    "data": {
+      "copy_tables": 182,
+      "data_sha256": "3ce98579e43f06a0b2dbf5d974e515e1ec82469231babf0bb76b8569c31f480d",
+      "rows": 873,
+      "sequence_count": 4,
+      "sequences_sha256": "f878966fb013026a43dd8fd44c6e93e1e9ad09859d7ba8c2e9e6d744dc205444"
+    },
+    "history": "651f56bd3f996817b26cbf7757983bed7c3e42c35e1bc55e624d7c9db580adad",
+    "schema": "a94722adc53dd49460f74856895df4d199e98d9d5bb5acb51fee99b1e741d1b1"
+  },
+  "cases": [
+    {
+      "account_scope": "A",
+      "denied": true,
+      "fresh_login_identity_verified": true,
+      "operation": "SELECT",
+      "role": "anon",
+      "sqlstates": [
+        "42501"
+      ],
+      "table": "account_members"
+    },
+    {
+      "account_scope": "A",
+      "denied": true,
+      "fresh_login_identity_verified": true,
+      "operation": "INSERT",
+      "role": "anon",
+      "sqlstates": [
+        "42501"
+      ],
+      "table": "account_members"
+    },
+    {
+      "account_scope": "A",
+      "denied": true,
+      "fresh_login_identity_verified": true,
+      "operation": "UPDATE",
+      "role": "anon",
+      "sqlstates": [
+        "42501"
+      ],
+      "table": "account_members"
+    },
+    {
+      "account_scope": "A",
+      "denied": true,
+      "fresh_login_identity_verified": true,
+      "operation": "DELETE",
+      "role": "anon",
+      "sqlstates": [
+        "42501"
+      ],
+      "table": "account_members"
+    },
+    {
+      "account_scope": "B",
+      "denied": true,
+      "fresh_login_identity_verified": true,
+      "operation": "SELECT",
+      "role": "anon",
+      "sqlstates": [
+        "42501"
+      ],
+      "table": "account_members"
+    },
+    {
+      "account_scope": "B",
+      "denied": true,
+      "fresh_login_identity_verified": true,
+      "operation": "INSERT",
+      "role": "anon",
+      "sqlstates": [
+        "42501"
+      ],
+      "table": "account_members"
+    },
+    {
+      "account_scope": "B",
+      "denied": true,
+      "fresh_login_identity_verified": true,
+      "operation": "UPDATE",
+      "role": "anon",
+      "sqlstates": [
+        "42501"
+      ],
+      "table": "account_members"
+    },
+    {
+      "account_scope": "B",
+      "denied": true,
+      "fresh_login_identity_verified": true,
+      "operation": "DELETE",
+      "role": "anon",
+      "sqlstates": [
+        "42501"
+      ],
+      "table": "account_members"
+    },
+    {
+      "account_scope": "A",
+      "denied": true,
+      "fresh_login_identity_verified": true,
+      "operation": "SELECT",
+      "role": "anon",
+      "sqlstates": [
+        "42501"
+      ],
+      "table": "properties"
+    },
+    {
+      "account_scope": "A",
+      "denied": true,
+      "fresh_login_identity_verified": true,
+      "operation": "INSERT",
+      "role": "anon",
+      "sqlstates": [
+        "42501"
+      ],
+      "table": "properties"
+    },
+    {
+      "account_scope": "A",
+      "denied": true,
+      "fresh_login_identity_verified": true,
+      "operation": "UPDATE",
+      "role": "anon",
+      "sqlstates": [
+        "42501"
+      ],
+      "table": "properties"
+    },
+    {
+      "account_scope": "A",
+      "denied": true,
+      "fresh_login_identity_verified": true,
+      "operation": "DELETE",
+      "role": "anon",
+      "sqlstates": [
+        "42501"
+      ],
+      "table": "properties"
+    },
+    {
+      "account_scope": "B",
+      "denied": true,
+      "fresh_login_identity_verified": true,
+      "operation": "SELECT",
+      "role": "anon",
+      "sqlstates": [
+        "42501"
+      ],
+      "table": "properties"
+    },
+    {
+      "account_scope": "B",
+      "denied": true,
+      "fresh_login_identity_verified": true,
+      "operation": "INSERT",
+      "role": "anon",
+      "sqlstates": [
+        "42501"
+      ],
+      "table": "properties"
+    },
+    {
+      "account_scope": "B",
+      "denied": true,
+      "fresh_login_identity_verified": true,
+      "operation": "UPDATE",
+      "role": "anon",
+      "sqlstates": [
+        "42501"
+      ],
+      "table": "properties"
+    },
+    {
+      "account_scope": "B",
+      "denied": true,
+      "fresh_login_identity_verified": true,
+      "operation": "DELETE",
+      "role": "anon",
+      "sqlstates": [
+        "42501"
+      ],
+      "table": "properties"
+    },
+    {
+      "account_scope": "A",
+      "denied": true,
+      "fresh_login_identity_verified": true,
+      "operation": "SELECT",
+      "role": "anon",
+      "sqlstates": [
+        "42501"
+      ],
+      "table": "booking_ops_records"
+    },
+    {
+      "account_scope": "A",
+      "denied": true,
+      "fresh_login_identity_verified": true,
+      "operation": "INSERT",
+      "role": "anon",
+      "sqlstates": [
+        "42501"
+      ],
+      "table": "booking_ops_records"
+    },
+    {
+      "account_scope": "A",
+      "denied": true,
+      "fresh_login_identity_verified": true,
+      "operation": "UPDATE",
+      "role": "anon",
+      "sqlstates": [
+        "42501"
+      ],
+      "table": "booking_ops_records"
+    },
+    {
+      "account_scope": "A",
+      "denied": true,
+      "fresh_login_identity_verified": true,
+      "operation": "DELETE",
+      "role": "anon",
+      "sqlstates": [
+        "42501"
+      ],
+      "table": "booking_ops_records"
+    },
+    {
+      "account_scope": "B",
+      "denied": true,
+      "fresh_login_identity_verified": true,
+      "operation": "SELECT",
+      "role": "anon",
+      "sqlstates": [
+        "42501"
+      ],
+      "table": "booking_ops_records"
+    },
+    {
+      "account_scope": "B",
+      "denied": true,
+      "fresh_login_identity_verified": true,
+      "operation": "INSERT",
+      "role": "anon",
+      "sqlstates": [
+        "42501"
+      ],
+      "table": "booking_ops_records"
+    },
+    {
+      "account_scope": "B",
+      "denied": true,
+      "fresh_login_identity_verified": true,
+      "operation": "UPDATE",
+      "role": "anon",
+      "sqlstates": [
+        "42501"
+      ],
+      "table": "booking_ops_records"
+    },
+    {
+      "account_scope": "B",
+      "denied": true,
+      "fresh_login_identity_verified": true,
+      "operation": "DELETE",
+      "role": "anon",
+      "sqlstates": [
+        "42501"
+      ],
+      "table": "booking_ops_records"
+    },
+    {
+      "account_scope": "A",
+      "denied": true,
+      "fresh_login_identity_verified": true,
+      "operation": "SELECT",
+      "role": "anon",
+      "sqlstates": [
+        "42501"
+      ],
+      "table": "booking_ops_alerts"
+    },
+    {
+      "account_scope": "A",
+      "denied": true,
+      "fresh_login_identity_verified": true,
+      "operation": "INSERT",
+      "role": "anon",
+      "sqlstates": [
+        "42501"
+      ],
+      "table": "booking_ops_alerts"
+    },
+    {
+      "account_scope": "A",
+      "denied": true,
+      "fresh_login_identity_verified": true,
+      "operation": "UPDATE",
+      "role": "anon",
+      "sqlstates": [
+        "42501"
+      ],
+      "table": "booking_ops_alerts"
+    },
+    {
+      "account_scope": "A",
+      "denied": true,
+      "fresh_login_identity_verified": true,
+      "operation": "DELETE",
+      "role": "anon",
+      "sqlstates": [
+        "42501"
+      ],
+      "table": "booking_ops_alerts"
+    },
+    {
+      "account_scope": "B",
+      "denied": true,
+      "fresh_login_identity_verified": true,
+      "operation": "SELECT",
+      "role": "anon",
+      "sqlstates": [
+        "42501"
+      ],
+      "table": "booking_ops_alerts"
+    },
+    {
+      "account_scope": "B",
+      "denied": true,
+      "fresh_login_identity_verified": true,
+      "operation": "INSERT",
+      "role": "anon",
+      "sqlstates": [
+        "42501"
+      ],
+      "table": "booking_ops_alerts"
+    },
+    {
+      "account_scope": "B",
+      "denied": true,
+      "fresh_login_identity_verified": true,
+      "operation": "UPDATE",
+      "role": "anon",
+      "sqlstates": [
+        "42501"
+      ],
+      "table": "booking_ops_alerts"
+    },
+    {
+      "account_scope": "B",
+      "denied": true,
+      "fresh_login_identity_verified": true,
+      "operation": "DELETE",
+      "role": "anon",
+      "sqlstates": [
+        "42501"
+      ],
+      "table": "booking_ops_alerts"
+    },
+    {
+      "account_scope": "A",
+      "denied": true,
+      "fresh_login_identity_verified": true,
+      "operation": "SELECT",
+      "role": "authenticated",
+      "sqlstates": [
+        "42501"
+      ],
+      "table": "account_members"
+    },
+    {
+      "account_scope": "A",
+      "denied": true,
+      "fresh_login_identity_verified": true,
+      "operation": "INSERT",
+      "role": "authenticated",
+      "sqlstates": [
+        "42501"
+      ],
+      "table": "account_members"
+    },
+    {
+      "account_scope": "A",
+      "denied": true,
+      "fresh_login_identity_verified": true,
+      "operation": "UPDATE",
+      "role": "authenticated",
+      "sqlstates": [
+        "42501"
+      ],
+      "table": "account_members"
+    },
+    {
+      "account_scope": "A",
+      "denied": true,
+      "fresh_login_identity_verified": true,
+      "operation": "DELETE",
+      "role": "authenticated",
+      "sqlstates": [
+        "42501"
+      ],
+      "table": "account_members"
+    },
+    {
+      "account_scope": "B",
+      "denied": true,
+      "fresh_login_identity_verified": true,
+      "operation": "SELECT",
+      "role": "authenticated",
+      "sqlstates": [
+        "42501"
+      ],
+      "table": "account_members"
+    },
+    {
+      "account_scope": "B",
+      "denied": true,
+      "fresh_login_identity_verified": true,
+      "operation": "INSERT",
+      "role": "authenticated",
+      "sqlstates": [
+        "42501"
+      ],
+      "table": "account_members"
+    },
+    {
+      "account_scope": "B",
+      "denied": true,
+      "fresh_login_identity_verified": true,
+      "operation": "UPDATE",
+      "role": "authenticated",
+      "sqlstates": [
+        "42501"
+      ],
+      "table": "account_members"
+    },
+    {
+      "account_scope": "B",
+      "denied": true,
+      "fresh_login_identity_verified": true,
+      "operation": "DELETE",
+      "role": "authenticated",
+      "sqlstates": [
+        "42501"
+      ],
+      "table": "account_members"
+    },
+    {
+      "account_scope": "A",
+      "denied": true,
+      "fresh_login_identity_verified": true,
+      "operation": "SELECT",
+      "role": "authenticated",
+      "sqlstates": [
+        "42501"
+      ],
+      "table": "properties"
+    },
+    {
+      "account_scope": "A",
+      "denied": true,
+      "fresh_login_identity_verified": true,
+      "operation": "INSERT",
+      "role": "authenticated",
+      "sqlstates": [
+        "42501"
+      ],
+      "table": "properties"
+    },
+    {
+      "account_scope": "A",
+      "denied": true,
+      "fresh_login_identity_verified": true,
+      "operation": "UPDATE",
+      "role": "authenticated",
+      "sqlstates": [
+        "42501"
+      ],
+      "table": "properties"
+    },
+    {
+      "account_scope": "A",
+      "denied": true,
+      "fresh_login_identity_verified": true,
+      "operation": "DELETE",
+      "role": "authenticated",
+      "sqlstates": [
+        "42501"
+      ],
+      "table": "properties"
+    },
+    {
+      "account_scope": "B",
+      "denied": true,
+      "fresh_login_identity_verified": true,
+      "operation": "SELECT",
+      "role": "authenticated",
+      "sqlstates": [
+        "42501"
+      ],
+      "table": "properties"
+    },
+    {
+      "account_scope": "B",
+      "denied": true,
+      "fresh_login_identity_verified": true,
+      "operation": "INSERT",
+      "role": "authenticated",
+      "sqlstates": [
+        "42501"
+      ],
+      "table": "properties"
+    },
+    {
+      "account_scope": "B",
+      "denied": true,
+      "fresh_login_identity_verified": true,
+      "operation": "UPDATE",
+      "role": "authenticated",
+      "sqlstates": [
+        "42501"
+      ],
+      "table": "properties"
+    },
+    {
+      "account_scope": "B",
+      "denied": true,
+      "fresh_login_identity_verified": true,
+      "operation": "DELETE",
+      "role": "authenticated",
+      "sqlstates": [
+        "42501"
+      ],
+      "table": "properties"
+    },
+    {
+      "account_scope": "A",
+      "denied": true,
+      "fresh_login_identity_verified": true,
+      "operation": "SELECT",
+      "role": "authenticated",
+      "sqlstates": [
+        "42501"
+      ],
+      "table": "booking_ops_records"
+    },
+    {
+      "account_scope": "A",
+      "denied": true,
+      "fresh_login_identity_verified": true,
+      "operation": "INSERT",
+      "role": "authenticated",
+      "sqlstates": [
+        "42501"
+      ],
+      "table": "booking_ops_records"
+    },
+    {
+      "account_scope": "A",
+      "denied": true,
+      "fresh_login_identity_verified": true,
+      "operation": "UPDATE",
+      "role": "authenticated",
+      "sqlstates": [
+        "42501"
+      ],
+      "table": "booking_ops_records"
+    },
+    {
+      "account_scope": "A",
+      "denied": true,
+      "fresh_login_identity_verified": true,
+      "operation": "DELETE",
+      "role": "authenticated",
+      "sqlstates": [
+        "42501"
+      ],
+      "table": "booking_ops_records"
+    },
+    {
+      "account_scope": "B",
+      "denied": true,
+      "fresh_login_identity_verified": true,
+      "operation": "SELECT",
+      "role": "authenticated",
+      "sqlstates": [
+        "42501"
+      ],
+      "table": "booking_ops_records"
+    },
+    {
+      "account_scope": "B",
+      "denied": true,
+      "fresh_login_identity_verified": true,
+      "operation": "INSERT",
+      "role": "authenticated",
+      "sqlstates": [
+        "42501"
+      ],
+      "table": "booking_ops_records"
+    },
+    {
+      "account_scope": "B",
+      "denied": true,
+      "fresh_login_identity_verified": true,
+      "operation": "UPDATE",
+      "role": "authenticated",
+      "sqlstates": [
+        "42501"
+      ],
+      "table": "booking_ops_records"
+    },
+    {
+      "account_scope": "B",
+      "denied": true,
+      "fresh_login_identity_verified": true,
+      "operation": "DELETE",
+      "role": "authenticated",
+      "sqlstates": [
+        "42501"
+      ],
+      "table": "booking_ops_records"
+    },
+    {
+      "account_scope": "A",
+      "denied": true,
+      "fresh_login_identity_verified": true,
+      "operation": "SELECT",
+      "role": "authenticated",
+      "sqlstates": [
+        "42501"
+      ],
+      "table": "booking_ops_alerts"
+    },
+    {
+      "account_scope": "A",
+      "denied": true,
+      "fresh_login_identity_verified": true,
+      "operation": "INSERT",
+      "role": "authenticated",
+      "sqlstates": [
+        "42501"
+      ],
+      "table": "booking_ops_alerts"
+    },
+    {
+      "account_scope": "A",
+      "denied": true,
+      "fresh_login_identity_verified": true,
+      "operation": "UPDATE",
+      "role": "authenticated",
+      "sqlstates": [
+        "42501"
+      ],
+      "table": "booking_ops_alerts"
+    },
+    {
+      "account_scope": "A",
+      "denied": true,
+      "fresh_login_identity_verified": true,
+      "operation": "DELETE",
+      "role": "authenticated",
+      "sqlstates": [
+        "42501"
+      ],
+      "table": "booking_ops_alerts"
+    },
+    {
+      "account_scope": "B",
+      "denied": true,
+      "fresh_login_identity_verified": true,
+      "operation": "SELECT",
+      "role": "authenticated",
+      "sqlstates": [
+        "42501"
+      ],
+      "table": "booking_ops_alerts"
+    },
+    {
+      "account_scope": "B",
+      "denied": true,
+      "fresh_login_identity_verified": true,
+      "operation": "INSERT",
+      "role": "authenticated",
+      "sqlstates": [
+        "42501"
+      ],
+      "table": "booking_ops_alerts"
+    },
+    {
+      "account_scope": "B",
+      "denied": true,
+      "fresh_login_identity_verified": true,
+      "operation": "UPDATE",
+      "role": "authenticated",
+      "sqlstates": [
+        "42501"
+      ],
+      "table": "booking_ops_alerts"
+    },
+    {
+      "account_scope": "B",
+      "denied": true,
+      "fresh_login_identity_verified": true,
+      "operation": "DELETE",
+      "role": "authenticated",
+      "sqlstates": [
+        "42501"
+      ],
+      "table": "booking_ops_alerts"
+    }
+  ],
+  "committed_migrations": false,
+  "connection_method": "64 separate recovered authenticator LOGIN sessions; SET LOCAL ROLE anon/authenticated; each transaction ends rollback or connection-close rollback",
+  "optional_repair_history_present": false,
+  "original_password_recovery": "NOT_PROVEN",
+  "source_access": "NONE",
+  "state_unchanged": true,
+  "status": "ROLECHAIN_DENIALS_PASS"
+}
