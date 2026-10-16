@@ -23,5 +23,7 @@ jobs:
           python3 -m unittest discover -s scripts/strigunov4 -p 'test_inspect_restore_archive.py' -v
           python3 -m unittest discover -s scripts/strigunov4 -p 'test_restore_container_preflight.py' -v
           python3 -m unittest discover -s scripts/strigunov4/candidates -p 'test_candidate_safety.py' -v
+          python3 -m unittest discover -s scripts/strigunov4/candidates -p 'test_systemd.py' -v
+          python3 -m unittest discover -s scripts/strigunov4/audit/20261016 -p 'test_lab_login_receiver.py' -v
           git diff --exit-code -- scripts/strigunov4/candidates/plan.json scripts/strigunov4/candidates/rehearse.sql
           git diff --check

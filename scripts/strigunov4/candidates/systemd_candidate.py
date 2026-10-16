@@ -8,7 +8,7 @@ BASE=Path('/var/www/asi-staging')
 SERVICE='asi-landing-staging'
 OLD='5c91b27bcde395f01cc078d1fbe454dd7436e1c6'
 NEW='334d93fc39d2ea51ba283dd0314bbc239ff49707'
-FLAGS={'EMAIL_AUTO_SEND':'false','EMAIL_DRAFT_ONLY':'true','DRY_RUN_TELEGRAM_OUTBOUND':'true','ALLOW_REAL_TELEGRAM_SYNTHETIC':'false','YOOKASSA_ENABLED':'false'}
+FLAGS={'EMAIL_AUTO_SEND':'false','EMAIL_DRAFT_ONLY':'true','DRY_RUN_TELEGRAM_OUTBOUND':'true','ALLOW_REAL_TELEGRAM_SYNTHETIC':'false','YOOKASSA_ENABLED':'false','ASI_SYNTHETIC_NO_SEND':'YES'}
 UNIT_DIGEST='9072dd1a276c7bea2bb7d17031a51b250177e2806cd632e26728028c0a8a01d9'
 def run(*args):return subprocess.check_output(args,text=True,stderr=subprocess.DEVNULL).strip()
 def check(ok,code):
@@ -46,6 +46,8 @@ def ready(sha):
   try:preflight(sha);return
   except (OSError,RuntimeError,ValueError):time.sleep(1)
  raise RuntimeError('post_switch_verification_failed')
+def validate_release_metadata(metadata):
+ check(metadata.get('gitSha')==NEW,'artifact_sha_mismatch')
 def main():
  p=argparse.ArgumentParser();p.add_argument('--execute',action='store_true');p.add_argument('--receipt',type=Path);a=p.parse_args()
  if a.execute:
@@ -54,7 +56,7 @@ def main():
  release=BASE/'releases'/NEW
  check(release.is_dir() and not release.is_symlink(),'prepared_release_missing')
  check((release/'release-meta.json').is_file(),'release_meta_missing')
- check(json.loads((release/'release-meta.json').read_text()).get('sha')==NEW,'artifact_sha_mismatch')
+ validate_release_metadata(json.loads((release/'release-meta.json').read_text()))
  check((release/'.next/BUILD_ID').is_file() and (release/'node_modules/next/dist/bin/next').is_file(),'build_missing')
  if not a.execute:print('PREFLIGHT_PASS; no activation performed');return
  check(a.receipt is not None,'protected_execution_receipt_required')
