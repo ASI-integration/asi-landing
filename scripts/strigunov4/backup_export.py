@@ -64,7 +64,8 @@ def guard(source):
 
 def build_pg_env(source, url, ca_file):
     parsed = urlparse(url)
-    e = os.environ.copy()
+    # Pass only the CLI essentials, never inherited staging SSH secrets or hostile libpq defaults.
+    e = {k: os.environ[k] for k in ('PATH', 'HOME', 'LANG', 'LC_ALL') if k in os.environ}
     e.update(
         PGHOST=parsed.hostname,
         PGPORT=str(parsed.port or 5432),

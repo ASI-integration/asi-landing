@@ -61,13 +61,14 @@ class AdmissionTests(unittest.TestCase):
 
     def test_forbid_libpq_override(self):
         e=self.good()
-        with patch.dict(os.environ, {"PGHOSTADDR":"127.0.0.1","PGSERVICE":"hostile","PGSERVICEFILE":"hostile"}):
+        with patch.dict(os.environ, {"PGHOSTADDR":"127.0.0.1","PGSERVICE":"hostile","PGSERVICEFILE":"hostile","STAGING_SSH_PRIVATE_KEY":"synthetic-ssh-secret"}):
             env=b.build_pg_env(e,e["STAGING_DATABASE_URL"],Path("roots.pem"))
         self.assertEqual(env["PGSSLMODE"],"verify-full")
         self.assertEqual(env["PGDATABASE"],"postgres")
         self.assertNotIn("PGHOSTADDR",env)
         self.assertNotIn("PGSERVICE",env)
         self.assertNotIn("PGSERVICEFILE",env)
+        self.assertNotIn("STAGING_SSH_PRIVATE_KEY",env)
 
     def test_image_pinned_and_role_acl_kept(self):
         self.assertIn("sha256:",b.PG_IMAGE)
