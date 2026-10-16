@@ -7,6 +7,10 @@ from unittest.mock import patch
 import audit
 
 class AuditRegression(unittest.TestCase):
+    def setUp(self):
+        # TLS has dedicated real trust/hostname tests; these cases isolate SQL guards.
+        for name,value in [('tls_guard.bundle',contextlib.nullcontext('/tmp/test-trusted-roots.pem')),('tls_guard.diagnose',{'status':'PASS'})]:
+            mocked=patch(name,return_value=value);mocked.start();self.addCleanup(mocked.stop)
     def env(self):
         return {'PATH':'/usr/bin','GITHUB_REF':'refs/heads/main','GITHUB_WORKFLOW_REF':audit.WORKFLOW,'STAGING_SUPABASE_PROJECT_REF':audit.PROJECT,'STAGING_DATABASE_URL':f'postgres://postgres:PRIVATE_PASSWORD@db.{audit.PROJECT}.supabase.co:5432/postgres','PGHOSTADDR':'evil','PGSERVICE':'evil'}
     def test_explicit_libpq_components(self):
