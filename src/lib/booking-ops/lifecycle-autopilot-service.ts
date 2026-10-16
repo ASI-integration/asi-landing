@@ -1,4 +1,4 @@
-import { requireBookingAutomationRunning } from './automation-pause';
+import { requireBookingAutomationRunning, withBookingAutomationLease } from './automation-pause';
 import { createHash, randomUUID } from 'node:crypto';
 import { supabase } from '@/lib/supabase';
 import { initialLifecycleState, reduceLifecycle, type BookingEventActor, type LifecycleEvent, type LifecycleState } from './lifecycle-autopilot';
@@ -28,7 +28,7 @@ const rowToEvent = (row: Record<string, unknown>): LifecycleEvent => ({
   causationId: row.causation_id ? String(row.causation_id) : null, createdAt: String(row.created_at),
 });
 
-export async function processBookingDomainEvent(eventId: string, expectedScope?: ExpectedScope) {
+async function processBookingDomainEventRunning(eventId: string, expectedScope?: ExpectedScope) {
   const eventResult = await supabase.from('booking_ops_domain_events').select('*').eq('id', eventId).single();
   if (eventResult.error) throw new Error(eventResult.error.message);
   const event = rowToEvent(eventResult.data as Record<string, unknown>);
@@ -74,7 +74,7 @@ export async function processBookingDomainEvent(eventId: string, expectedScope?:
   return { processed: true, duplicate: false, decision };
 }
 
-export async function recordAndProcessBookingEvent(input: RecordEventInput, expectedScope?: ExpectedScope) {
+async function recordAndProcessBookingEventRunning(input: RecordEventInput, expectedScope?: ExpectedScope) {
   if (expectedScope) await requireBookingOpsRecordScope(input.bookingId, expectedScope);
   const eventId = input.id ?? randomUUID();
   const insert = await supabase.from('booking_ops_domain_events').insert({
@@ -177,4 +177,15 @@ export async function getBookingLifecycleSummary(bookingId: string, expectedScop
     processingErrors: (errors.data ?? []).map((row) => ({ id: row.id, type: row.event_type, error: row.processing_error, createdAt: row.created_at })),
     updatedAt: state.data?.updated_at ?? null,
   };
+}
+
+export async function processBookingDomainEvent(eventId: string, expectedScope?: ExpectedScope) {
+  const result = await supabase.from('booking_ops_domain_events').select('booking_id,actor_type').eq('id', eventId).single();
+  if (result.error || !result.data) throw new Error('booking_event_unavailable');
+  if (result.data.actor_type === 'operator') return processBookingDomainEventRunning(eventId, expectedScope);
+  return withBookingAutomationLease(String(result.data.booking_id), () => processBookingDomainEventRunning(eventId, expectedScope));
+}
+export function recordAndProcessBookingEvent(input: RecordEventInput, expectedScope?: ExpectedScope) {
+  if (input.actorType === 'operator') return recordAndProcessBookingEventRunning(input, expectedScope);
+  return withBookingAutomationLease(input.bookingId, () => recordAndProcessBookingEventRunning(input, expectedScope));
 }

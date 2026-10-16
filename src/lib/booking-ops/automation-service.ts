@@ -1,4 +1,4 @@
-import { requireBookingAutomationRunning } from './automation-pause';
+import { requireBookingAutomationRunning, withBookingAutomationLease } from './automation-pause';
 import type { BookingOpsAutomationDecision, BookingOpsRecord } from './types';
 import { buildBookingOpsAutomationPatch, evaluateBookingOpsAutomation } from './decision-engine';
 import { updateBookingOpsRecord } from './repository';
@@ -17,7 +17,7 @@ export function attachBookingOpsAutomation(
   return withDecision(record, evaluateBookingOpsAutomation(record, evaluatedAt));
 }
 
-export async function runBookingOpsAutomation(
+async function runBookingOpsAutomationRunning(
   record: BookingOpsRecord,
   evaluatedAt = new Date().toISOString(),
 ): Promise<BookingOpsRecord> {
@@ -63,14 +63,8 @@ export async function runBookingOpsAutomation(
       timestamp: evaluatedAt,
       error,
     });
-    return withDecision(record, {
-      ...decision,
-      automationState: 'needs_operator_attention',
-      needsOperatorAction: true,
-      canAutoPerform: false,
-      recommendedOpsStatus: null,
-      reason: 'Автоматический шаг не сохранён; оператору нужно проверить бронь.',
-    });
+    // A failed acknowledgement cannot prove the remote write stopped. Retain the lease.
+    throw error;
   }
 }
 
@@ -79,4 +73,8 @@ export async function runBookingOpsAutomationBatch(
 ): Promise<BookingOpsRecord[]> {
   const evaluatedAt = new Date().toISOString();
   return Promise.all(records.map((record) => runBookingOpsAutomation(record, evaluatedAt)));
+}
+
+export function runBookingOpsAutomation(...args: Parameters<typeof runBookingOpsAutomationRunning>): ReturnType<typeof runBookingOpsAutomationRunning> {
+  return withBookingAutomationLease(args[0].id, () => runBookingOpsAutomationRunning(...args));
 }

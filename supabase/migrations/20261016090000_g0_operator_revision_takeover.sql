@@ -2,6 +2,32 @@
 BEGIN;
 ALTER TABLE public.booking_ops_alerts ADD COLUMN revision bigint NOT NULL DEFAULT 1 CHECK (revision > 0);
 ALTER TABLE public.booking_ops_records ADD COLUMN automation_paused boolean NOT NULL DEFAULT false;
+CREATE TABLE public.booking_ops_automation_executions (
+  token uuid PRIMARY KEY, booking_id uuid NOT NULL REFERENCES public.booking_ops_records(id),
+  started_at timestamptz NOT NULL DEFAULT clock_timestamp()
+);
+CREATE INDEX ON public.booking_ops_automation_executions(booking_id);
+ALTER TABLE public.booking_ops_automation_executions ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON public.booking_ops_automation_executions FROM PUBLIC, anon, authenticated;
+GRANT SELECT, INSERT, DELETE ON public.booking_ops_automation_executions TO service_role;
+CREATE FUNCTION public.g0_begin_automation(p_booking uuid, p_token uuid) RETURNS boolean
+LANGUAGE plpgsql SECURITY INVOKER SET search_path=pg_catalog,public AS $$
+DECLARE paused boolean;
+BEGIN
+  SELECT automation_paused INTO paused FROM public.booking_ops_records WHERE id=p_booking FOR UPDATE;
+  IF NOT FOUND THEN RAISE EXCEPTION 'booking_not_found'; END IF;
+  IF paused THEN RAISE EXCEPTION 'booking_automation_manually_paused'; END IF;
+  INSERT INTO public.booking_ops_automation_executions(token,booking_id) VALUES(p_token,p_booking);
+  RETURN true;
+END $$;
+CREATE FUNCTION public.g0_end_automation(p_booking uuid, p_token uuid) RETURNS boolean
+LANGUAGE plpgsql SECURITY INVOKER SET search_path=pg_catalog,public AS $$
+BEGIN
+  DELETE FROM public.booking_ops_automation_executions WHERE booking_id=p_booking AND token=p_token;
+  RETURN FOUND;
+END $$;
+REVOKE ALL ON FUNCTION public.g0_begin_automation(uuid,uuid), public.g0_end_automation(uuid,uuid) FROM PUBLIC,anon,authenticated;
+GRANT EXECUTE ON FUNCTION public.g0_begin_automation(uuid,uuid), public.g0_end_automation(uuid,uuid) TO service_role;
 CREATE FUNCTION public.g0_alert_revision() RETURNS trigger
 LANGUAGE plpgsql SET search_path = pg_catalog, public AS $$
 BEGIN
@@ -23,11 +49,12 @@ BEGIN
   -- Serialize membership deletion against the actual acknowledgement transaction.
   PERFORM 1 FROM public.account_members WHERE account_id=p_account AND user_id=p_actor FOR SHARE;
   IF NOT FOUND THEN RAISE EXCEPTION 'operator_membership_revoked'; END IF;
-  SELECT * INTO a FROM public.booking_ops_alerts WHERE id=p_alert AND account_id=p_account FOR UPDATE;
+  SELECT * INTO a FROM public.booking_ops_alerts WHERE id=p_alert AND account_id::text=p_account::text FOR UPDATE;
   IF NOT FOUND THEN RAISE EXCEPTION 'alert_not_found'; END IF;
-  SELECT * INTO b FROM public.booking_ops_records WHERE id=a.booking_id AND account_id=p_account AND property_id=a.property_id FOR UPDATE;
+  SELECT * INTO b FROM public.booking_ops_records WHERE id=a.booking_id AND account_id::text=p_account::text AND property_id=a.property_id FOR UPDATE;
   IF NOT FOUND THEN RAISE EXCEPTION 'booking_scope_mismatch'; END IF;
-  PERFORM 1 FROM public.properties WHERE id=a.property_id AND account_id=p_account FOR SHARE;
+  IF EXISTS (SELECT 1 FROM public.booking_ops_automation_executions WHERE booking_id=b.id) THEN RAISE EXCEPTION 'booking_automation_inflight_hold'; END IF;
+  PERFORM 1 FROM public.properties WHERE id::text=a.property_id AND account_id=p_account FOR SHARE;
   IF NOT FOUND THEN RAISE EXCEPTION 'booking_scope_mismatch'; END IF;
   IF p_revision IS NULL OR p_revision <> a.revision OR a.status <> 'open' THEN RAISE EXCEPTION 'alert_revision_conflict'; END IF;
   UPDATE public.booking_ops_records SET automation_paused=true WHERE id=b.id;

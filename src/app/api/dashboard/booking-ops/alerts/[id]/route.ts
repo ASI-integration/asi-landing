@@ -50,7 +50,7 @@ export async function PATCH(request: Request, context: { params: { id: string } 
     const message = error instanceof Error ? error.message : 'Не удалось подтвердить уведомление.';
     return NextResponse.json(
       { ok: false, message },
-      { status: message.startsWith('alert_revision_') ? 409 : message === 'alert_not_found_or_not_open' || message === 'alert_not_found' ? 404 : message === 'high_risk_alert_override_forbidden' ? 403 : 400 },
+      { status: (message.startsWith('alert_revision_') || message === 'booking_automation_inflight_hold') ? 409 : message === 'alert_not_found_or_not_open' || message === 'alert_not_found' ? 404 : message === 'high_risk_alert_override_forbidden' ? 403 : 400 },
     );
   }
 }

@@ -1,4 +1,4 @@
-import { requireBookingAutomationRunning } from './automation-pause';
+import { requireBookingAutomationRunning, withBookingAutomationLease } from './automation-pause';
 import { randomUUID } from 'node:crypto';
 import { supabase } from '@/lib/supabase';
 import { initializeLifecycleForBooking } from './lifecycle';
@@ -306,7 +306,7 @@ async function reconcileAutomationHandoffs(snapshot: BookingAutomationSnapshot, 
   });
 }
 
-export async function runBookingOpsAutomationForBooking(input: RunBookingOpsAutomationInput): Promise<BookingAutomationRunSummary> {
+async function runBookingOpsAutomationForBookingRunning(input: RunBookingOpsAutomationInput): Promise<BookingAutomationRunSummary> {
   await requireBookingAutomationRunning(input.bookingId);
   const runId = randomUUID();
   const startedAt = input.now ? new Date(input.now).toISOString() : new Date().toISOString();
@@ -385,4 +385,8 @@ export async function runBookingOpsAutomationForBooking(input: RunBookingOpsAuto
 
 export function isActiveOperatorAlertStatus(status: unknown): boolean {
   return ACTIVE_ALERT_STATUSES.includes(text(status));
+}
+
+export function runBookingOpsAutomationForBooking(...args: Parameters<typeof runBookingOpsAutomationForBookingRunning>): ReturnType<typeof runBookingOpsAutomationForBookingRunning> {
+  return withBookingAutomationLease(args[0].bookingId, () => runBookingOpsAutomationForBookingRunning(...args));
 }

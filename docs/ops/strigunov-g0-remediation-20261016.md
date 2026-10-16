@@ -14,7 +14,7 @@ The existing unique account/key receipt still owns first-write admission. Before
 
 New append-only SQL migration adds monotonic alert revision and durable booking automation_paused. ACK checks membership, booking/property ownership, current revision and open state inside one transaction; membership revocation serializes against ACK. ACK atomically pauses automation. Changed acknowledged incidents reopen and invalidate old revisions. Old clients without a revision fail closed. No automatic resume or timeout clears takeover.
 
-New worker starts and each booking-automation loop iteration consult pause; system lifecycle events also consult it. Explicit operator events retain mandatory prerequisite handling. Already executing operations are NOT transactionally cancelled by this change: supervised operation must drain in-flight workers before takeover is considered quiescent. No claim of global atomic cancellation, automatic owner workflow or live scheduler readiness.
+New worker starts and each booking-automation loop iteration consult pause; system lifecycle events also consult it. Explicit operator events retain mandatory prerequisite handling. Automatic entrypoints acquire durable execution leases before effects. Begin and ACK serialize on the same booking row; ACK rejects while any lease remains. Only positively completed operations release exact-token leases. Crashes/errors/uncertain commits retain manual HOLD, without TTL or automatic clearing. This establishes quiescence rather than cancelling work already underway. Explicit operator operations remain outside this automatic-worker guarantee. No automatic owner workflow or live scheduler readiness is claimed.
 
 ## External effects
 
@@ -26,4 +26,6 @@ The updated harness uses real password sessions, Next production build, PostgRES
 
 Migration is applied only inside the disposable database. No local/shared/production migration, deployment, merge or external messages. Rollback before deployment is discard this unmerged draft; no production rollback was needed. For future rollout, backup and compatibility review are required; reverting application code alone does not undo database columns/functions.
 
-All gate statuses remain provisional until exact-head CI and independent acceptance. A passing delta suite does not remove the documented in-flight takeover limitation or establish deployed readiness.
+All gate statuses remain provisional until exact-head CI and independent acceptance. A passing delta suite certifies only the listed automatic entrypoints, not arbitrary legacy workers or deployed readiness. Error-held leases require read-only reconciliation and separately reviewed exact recovery; no automatic recovery/delete endpoint is added.
+
+Retained execution leases prevent operator ACK; they are not a global admission lock for other automation attempts. The intake receipt separately prevents replay of the interrupted intake. Generic schedulers and manual recovery remain outside this limited pilot acceptance. Live-send executor error recovery is not certified by this no-send acceptance.

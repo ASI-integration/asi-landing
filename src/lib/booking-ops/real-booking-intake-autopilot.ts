@@ -1,3 +1,4 @@
+import { withBookingAutomationLease } from './automation-pause';
 import { guardBookingCommunicationDraft } from '@/lib/communication/booking-knowledge-boundary';
 import { createHash, randomUUID } from 'node:crypto';
 import { supabase } from '@/lib/supabase';
@@ -688,6 +689,7 @@ export async function findOrCreateBookingFromInbound(
       );
     }
     if (reserveIdentity) await reserveIdentity(existing.id);
+    return withBookingAutomationLease(existing.id, async () => {
     const wasGuestDataComplete = hasCompleteGuestData(existing);
     let current = existing;
 
@@ -736,13 +738,15 @@ export async function findOrCreateBookingFromInbound(
           actorType: 'system',
           ...(expectedScope ? { expectedScope } : {}),
         });
-      if (updated.ok && updated.record) return {
+      if (!updated.ok || !updated.record) throw new Error(updated.error ?? 'booking_update_uncertain');
+      return {
         record: updated.record,
         created: false,
         guestDataBecameComplete: !wasGuestDataComplete && hasCompleteGuestData(updated.record),
       };
     }
     return { record: current, created: false, guestDataBecameComplete: false };
+    });
   }
 
   const reservedRecordId = randomUUID();
@@ -1479,6 +1483,7 @@ export async function processInboundBookingRequest(
       );
     }
 
+    return await withBookingAutomationLease(record.id, async (): Promise<InboundBookingIntakeResult> => {
     if (accountId && existingEvent) {
       const linked = await supabase.from('booking_inbound_intake_events')
         .update({ booking_id: record.id }).eq('id', existingEvent.id).eq('account_id', accountId)
@@ -1505,9 +1510,11 @@ export async function processInboundBookingRequest(
       const availability = await initializeBookingAvailability(record);
       availabilityStatus = availability.status;
       if (availability.initialized) initializedModules.push('availability_hold');
-    } catch {
+    } catch (error) {
+      if (accountId) throw error;
       availabilityStatus = 'failed';
     }
+    if (accountId && availabilityStatus === 'failed') throw new Error('booking_availability_uncertain');
 
     if (!authenticatedUnboundReview && (
       created || options?.force || options?.action === 'process' || options?.action === 'attach_property' || !options?.action
@@ -1626,6 +1633,7 @@ export async function processInboundBookingRequest(
       duplicateOfBookingId: null,
       safeSummary,
     };
+    });
   } catch (error) {
     const code = (error as { code?: string })?.code;
     if (code === 'account_scope_mismatch' || code === 'connection_scope_invalid') {

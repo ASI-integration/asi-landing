@@ -13,6 +13,11 @@ async function main() {
     try { await fn(); results.push({ gate, id: name, status: 'PASS' }); }
     catch (e) { results.push({ gate, id: name, status: 'FAIL', error: String(e).slice(0, 250) }); }
   };
+  if (process.argv.includes('--inflight')) {
+    const { recordAndProcessBookingEvent, durableEventId } = await import('../../src/lib/booking-ops/lifecycle-autopilot-service');
+    await recordAndProcessBookingEvent({ id: durableEventId(id, 'g0-inflight', process.argv.at(-1)), bookingId: id, objectId: scope.propertyId, type: 'alert.acknowledged', actorType: 'system', source: 'g0-inflight' }, scope);
+    return;
+  }
   if (process.argv.includes('--paused')) {
     const { runBookingOpsAutomationForBooking } = await import('../../src/lib/booking-ops/booking-automation-runner');
     const { orchestrateBookingLifecycle } = await import('../../src/lib/booking-ops/lifecycle-orchestrator');

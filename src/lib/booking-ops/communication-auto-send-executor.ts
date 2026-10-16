@@ -1,4 +1,4 @@
-import { requireBookingAutomationRunning } from './automation-pause';
+import { requireBookingAutomationRunning, withBookingAutomationLease } from './automation-pause';
 import { createHash, randomUUID } from 'node:crypto';
 import { supabase } from '@/lib/supabase';
 import { EmailAdapter } from '@/lib/communication/channels/email';
@@ -527,7 +527,7 @@ async function blockDelivery(
   });
 }
 
-export async function executeAutoSendDelivery(
+async function executeAutoSendDeliveryRunning(
   deliveryId: string,
   options: ExecuteAutoSendOptions = {},
 ) {
@@ -830,4 +830,13 @@ export async function explainDeliveryDecision(intentId: string) {
   const context = await resolveExecutionContext(intent);
   const decision = await canAutoSendCommunicationIntent(intent, context.policyContext);
   return { ok: true as const, decision, recipientValid: Boolean(context.recipientRef) };
+}
+
+export async function executeAutoSendDelivery(deliveryId: string, options: ExecuteAutoSendOptions = {}) {
+  const delivery = await readDelivery(deliveryId);
+  if (!delivery) return { ok: false as const, error: 'delivery_not_found', delivery: null };
+  if (options.accountId && delivery.accountId !== options.accountId) return { ok: false as const, error: 'booking_scope_mismatch', delivery: null };
+  const intent = await readIntent(delivery.communicationIntentId);
+  if (!intent) return { ok: false as const, error: 'intent_not_found', delivery: null };
+  return withBookingAutomationLease(intent.bookingOpsRecordId, () => executeAutoSendDeliveryRunning(deliveryId, options));
 }

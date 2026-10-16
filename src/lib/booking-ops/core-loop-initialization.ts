@@ -1,4 +1,4 @@
-import { requireBookingAutomationRunning } from './automation-pause';
+import { requireBookingAutomationRunning, withBookingAutomationLease } from './automation-pause';
 import { initializeLifecycleForBooking } from './lifecycle';
 import { requireBookingOpsRecordScope } from './repository';
 
@@ -13,7 +13,7 @@ export type BookingOpsCoreLoopInitialization = {
  * Check-in and checkout readiness are derived from the lifecycle gates and do
  * not need separate placeholder rows until an operator starts those stages.
  */
-export async function initializeBookingOpsCoreLoop(
+async function initializeBookingOpsCoreLoopRunning(
   bookingOpsRecordId: string,
   expectedScope?: { accountId: string; propertyId: string },
 ): Promise<BookingOpsCoreLoopInitialization> {
@@ -37,4 +37,8 @@ export async function initializeBookingOpsCoreLoop(
     legalPaymentInitialized: true,
     physicalReadinessInitialized: true,
   };
+}
+
+export function initializeBookingOpsCoreLoop(...args: Parameters<typeof initializeBookingOpsCoreLoopRunning>): ReturnType<typeof initializeBookingOpsCoreLoopRunning> {
+  return withBookingAutomationLease(args[0], () => initializeBookingOpsCoreLoopRunning(...args));
 }
