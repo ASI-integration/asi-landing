@@ -1,0 +1,64 @@
+name: Strigunov4 Staging Secure Backup (never deploy)
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: Type STAGING_BACKUP_NO_MIGRATIONS
+        required: true
+        type: string
+      reviewed_sha:
+        description: Exact 40-character main SHA reviewed for this backup
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: strigunov4-staging-backup
+  cancel-in-progress: false
+
+jobs:
+  backup_only:
+    if: ${{ github.repository == 'ASI-integration/asi-landing' && github.ref == 'refs/heads/main' && github.actor == 'ASI-integration' }}
+    runs-on: ubuntu-24.04
+    environment: staging
+    timeout-minutes: 25
+    steps:
+      - name: Fail closed unless exact reviewed main SHA and confirmation
+        env:
+          CONFIRM: ${{ inputs.confirm }}
+          REVIEWED_SHA: ${{ inputs.reviewed_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$CONFIRM" == "STAGING_BACKUP_NO_MIGRATIONS" ]]
+          [[ "$REVIEWED_SHA" =~ ^[a-f0-9]{40}$ ]]
+          [[ "$REVIEWED_SHA" == "$GITHUB_SHA" ]]
+          [[ "$GITHUB_RUN_ATTEMPT" == 1 ]]
+      - name: Checkout exact protected source without credentials
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Strict offline code gate before staging export
+        run: |
+          python3 -m py_compile scripts/strigunov4/backup_export.py
+          python3 -m unittest discover -s scripts/strigunov4 -p 'test_backup_export.py' -v
+      - name: Backup staging encrypted to isolated SSH home (no deployment)
+        env:
+          STAGING_DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
+          STAGING_SUPABASE_PROJECT_REF: ${{ secrets.STAGING_SUPABASE_PROJECT_REF }}
+          STAGING_SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+          STAGING_SSH_USER: ${{ secrets.STAGING_SSH_USER }}
+          STAGING_SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+          STAGING_SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
+          STAGING_APP_PATH: ${{ secrets.STAGING_APP_PATH }}
+          STAGING_PORT: ${{ secrets.STAGING_PORT }}
+        run: python3 scripts/strigunov4/backup_export.py
+      - name: State remaining gate
+        if: success()
+        run: |
+          echo 'Encrypted export saved outside GitHub artifacts/logs.'
+          echo 'FULL_RESTORE_NOT_PROVEN: DO NOT APPLY STAGING MIGRATIONS OR DEPLOY G0.'
