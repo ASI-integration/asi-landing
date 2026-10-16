@@ -668,6 +668,24 @@ jobs:
           console.log('AVAILABILITY_CANONICAL_LOCK_PG_PASS');
           NODE
 
+      - name: Availability shared writers PostgreSQL concurrency regression
+        env:
+          ASI_DISPOSABLE_POSTGRES_URL: postgresql://postgres:postgres@localhost:5433/asi_availability_test
+        run: |
+          set -euo pipefail
+          npx vitest run \
+            src/lib/booking-ops/__tests__/availability-shared-writers.pg.integration.test.ts \
+            --reporter=verbose --reporter=json --outputFile=availability-shared-writers-pg.json
+          node - <<'NODE'
+          const fs = require('fs');
+          const result = JSON.parse(fs.readFileSync('availability-shared-writers-pg.json', 'utf8'));
+          if (result.success !== true || result.numPassedTests !== 2
+            || result.numPendingTests !== 0 || result.numFailedTests !== 0) {
+            throw new Error('Availability shared writers PostgreSQL regression must pass both tests without skips');
+          }
+          console.log('AVAILABILITY_SHARED_WRITERS_PG_PASS');
+          NODE
+
       - name: Guest Lifecycle synthetic cleanup PostgreSQL integration
         id: guest_lifecycle_cleanup_pg_integration
         run: |
@@ -867,4 +885,5 @@ jobs:
           }
           console.log('partner_revenue_proof_ok', JSON.stringify(proof));
           NODE
+
 
