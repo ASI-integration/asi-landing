@@ -3,6 +3,7 @@ on:
   pull_request:
     paths:
       - 'scripts/acceptance/strigunov-g0*'
+      - 'src/lib/communication/__tests__/guest-lifecycle-synthetic-cleanup.pg.integration.test.ts'
       - 'scripts/strigunov4/package_g0.py'
       - 'scripts/strigunov4/test_package_g0.py'
       - '.github/workflows/strigunov-g0.yml'
