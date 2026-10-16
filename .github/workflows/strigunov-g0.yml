@@ -66,6 +66,8 @@ jobs:
       - run: npm ci --ignore-scripts --no-audit --no-fund
       - run: mkdir -p finishline-results
       - run: npm run typecheck
+      - run: node node_modules/eslint/bin/eslint.js src/lib/booking-ops/real-booking-intake-autopilot.ts src/app/api/dashboard/booking-ops/intake/process/route.ts scripts/acceptance/strigunov-g0-service.ts
+      - run: git diff --check
       - name: Build real Next production application without service credentials
         run: npm run build
       - name: Reviewed isolated native harness
