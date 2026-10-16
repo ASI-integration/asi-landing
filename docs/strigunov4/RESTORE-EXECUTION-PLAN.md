@@ -13,7 +13,18 @@ VPS ciphertext retained. Subsequent owner-key decryption was executed successful
 Sanitized evidence: `C:\Users\Admin\.asi\strigunov4-backup\strigunov4-archive-verification-38942690625.json`.
 Remote Desktop Commander process 11420 completed with key_decryption=PASS, archive_structure=PASS, plaintext_cleanup=true, restore=NOT_RUN, authorization=false.
 
-## Verified runtime discovery (16 October 2026)
+Corrected private archive inventory (process 11160, supersedes 16416): pg_restore 17.11 --list PASS.
+Archive has exactly **4** EXTENSION entries: pg_stat_statements, pgcrypto, supabase_vault, uuid-ossp.
+The first parser incorrectly rejected hyphens and omitted uuid-ossp. Parser now accepts hyphens and fails closed unless the number of parsed names equals the number of EXTENSION entries; the archive was privately rechecked and sanitized report replaced.
+Source catalogue has 5 extensions because plpgsql is also present there (1.0). The archive has no plpgsql EXTENSION entry. PostgreSQL installs plpgsql by default; this is not evidence of missing source data, but target plpgsql presence/version still must be checked after bootstrap. Do not treat the TOC's four entries as the complete source pg_extension catalogue.
+TABLE DATA vault.secrets entry exists; extracting only vault data to a private temporary SQL file found exactly one COPY vault.secrets section with **0 rows**. No database connection or restore occurred. Other encrypted-column dependencies remain unverified: vault_n_a=false and vault_decryption=NOT_RUN. All plaintext removed, cleanup=true.
+Sanitized evidence: `C:\Users\Admin\.asi\strigunov4-backup\strigunov4-archive-inventory-38942690625.json`.
+
+## Runtime progress (16 October 2026)
+
+After the initial discovery below, the dedicated owner-local `ASI-Strigunov4-Restore` WSL2 Ubuntu 24.04 distribution was installed successfully. The compatible database image and full restore are still pending. See RUNTIME-CANDIDATE.md and WSL-NEXT-ACTION.md for the installation evidence and remaining runtime work.
+
+### Initial discovery before provisioning
 
 - Windows device DESKTOP-I29K350: `wsl.exe --list --verbose` reports **no installed distributions**. The command existing does not establish a Linux runtime.
 - Existing Windows Task12 test target is PostgreSQL 17 at loopback 55442; it is not a Supabase-compatible restore target (Vault unavailable per existing investigation).
