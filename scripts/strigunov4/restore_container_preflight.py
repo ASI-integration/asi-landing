@@ -59,6 +59,17 @@ def build_plan(manifest, parent, ciphertext):
         raise Block("BACKGROUND_SERVICES_UNREVIEWED")
     if manifest.get("blank_cluster_bootstrap_reviewed") is not True:
         raise Block("BLANK_CLUSTER_BOOTSTRAP_UNREVIEWED")
+    reconciliation = manifest.get("bootstrap_reconciliation", {})
+    if not isinstance(reconciliation, dict) or reconciliation.get("source_bootstrap_role") != "supabase_admin" or reconciliation.get("source_bootstrap_oid") != 10:
+        raise Block("SOURCE_BOOTSTRAP_IDENTITY_REQUIRED")
+    if reconciliation.get("reviewed") is not True or reconciliation.get("create_role_replacement_count") != 1:
+        raise Block("BOOTSTRAP_RECONCILIATION_REVIEW_REQUIRED")
+    if reconciliation.get("original_globals_sha256") != "f708fb1cdccf47d0675e80b8b550edebb32b41ecad1a51337b4b8c5a9948b27c":
+        raise Block("ORIGINAL_GLOBALS_HASH_REQUIRED")
+    if not re.fullmatch(r"[0-9a-f]{64}", reconciliation.get("execution_globals_sha256", "")) or not re.fullmatch(r"[0-9a-f]{64}", reconciliation.get("exact_diff_sha256", "")):
+        raise Block("BOOTSTRAP_DERIVED_COPY_EVIDENCE_REQUIRED")
+    if reconciliation.get("all_other_statements_unchanged") is not True or reconciliation.get("oid10_assertion_replaces_create") is not True:
+        raise Block("BOOTSTRAP_DIFF_CONTRACT_REQUIRED")
     if manifest.get("vault_binary_root_key_behavior_reviewed") is not True:
         raise Block("VAULT_BOOTSTRAP_UNREVIEWED")
     # The caller must point at a dedicated private directory, never root/home.
@@ -83,7 +94,7 @@ def build_plan(manifest, parent, ciphertext):
     if work.exists() or work.is_symlink():
         raise Block("TARGET_ALREADY_EXISTS")
     name = "asi-restore-" + RUN + "-" + nonce
-    bootstrap = "asi_restore_" + nonce
+    bootstrap = "supabase_admin"
     # No shell, no arbitrary supplied SQL and no host networking. A future
     # executor creates work exclusively, verifies Docker name absence and mounts
     # only that directory. Secrets/owner key never enter the container mount.
@@ -104,7 +115,7 @@ def build_plan(manifest, parent, ciphertext):
         "initdb_argv": docker,
         "globals_restore_argv": [bins["psql"], "-X", "-h", "/restore/socket",
             "-U", bootstrap, "-d", "postgres", "--set", "ON_ERROR_STOP=1",
-            "--single-transaction", "--file", "/restore/globals.sql"],
+            "--single-transaction", "--file", "/restore/globals.bootstrap.sql"],
         "database_restore_argv": [bins["pg_restore"], "-h", "/restore/socket",
             "-U", bootstrap, "-d", "postgres", "--exit-on-error",
             "--single-transaction", "/restore/db.dump"],
@@ -114,11 +125,12 @@ def build_plan(manifest, parent, ciphertext):
             "verify image postgres UID/GID against image metadata; never run initdb as root",
             "verify ciphertext; decrypt owner key outside mount; strict archive inspection",
             "extract only db.dump and untouched globals.sql into private mount; delete plaintext tar",
+            "retain immutable original globals.sql; derive globals.bootstrap.sql by exactly one reviewed CREATE ROLE supabase_admin replacement with supabase_admin OID10 assertion; hash original execution copy and exact diff; preserve every ALTER ROLE membership and GRANTED BY statement",
             "chown only newly created exact work directory and its own extracted files to verified image postgres UID/GID; keep private parent owner-only and unchanged; never recursive-chown existing paths",
             "run initdb command; inspect stopped container labels/mounts before any reuse",
             "start separate database-only container with network none and exact same identity guards",
             "disable all background outbound workers; unix socket only; reviewed extension bootstrap",
-            "restore untouched globals and archive with captured private stdout/stderr; reject any error",
+            "restore reviewed globals.bootstrap.sql execution copy and untouched archive with captured private stdout/stderr; reject any error; preserve immutable original globals.sql",
             "run independent owners ACL RLS data credentials Vault checks; never infer PASS from exit0",
             "finally stop/remove only containers with exact labels and owned work directory; preserve encrypted backup"
         ],

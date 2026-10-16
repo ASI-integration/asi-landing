@@ -15,6 +15,11 @@ class PreflightTests(unittest.TestCase):
             postgres_major=17, extensions=EXTENSIONS.copy(),
             binaries={n: "/reviewed/bin/"+n for n in ("initdb", "pg_ctl", "psql", "pg_restore")},
             database_services_disabled=True, blank_cluster_bootstrap_reviewed=True,
+            bootstrap_reconciliation=dict(source_bootstrap_role="supabase_admin",source_bootstrap_oid=10,
+                reviewed=True,create_role_replacement_count=1,
+                original_globals_sha256="f708fb1cdccf47d0675e80b8b550edebb32b41ecad1a51337b4b8c5a9948b27c",
+                execution_globals_sha256="d"*64,exact_diff_sha256="e"*64,
+                all_other_statements_unchanged=True,oid10_assertion_replaces_create=True),
             vault_binary_root_key_behavior_reviewed=True, nonce="b"*32)
 
     def blocked(self, m, reason):
@@ -80,6 +85,18 @@ class PreflightTests(unittest.TestCase):
             with patch("os.getuid", return_value=os.getuid()+1):
                 with self.assertRaisesRegex(Block,"OWNER_OR_MODE"):
                     build_plan(self.manifest(),parent,"/nonexistent")
+
+    def test_missing_bootstrap_reconciliation(self):
+        m=self.manifest(); del m["bootstrap_reconciliation"]
+        self.blocked(m,"SOURCE_BOOTSTRAP")
+
+    def test_unexpected_source_bootstrap(self):
+        m=self.manifest(); m["bootstrap_reconciliation"]["source_bootstrap_role"]="unique_admin"
+        self.blocked(m,"SOURCE_BOOTSTRAP")
+
+    def test_multiple_globals_edits(self):
+        m=self.manifest(); m["bootstrap_reconciliation"]["create_role_replacement_count"]=2
+        self.blocked(m,"RECONCILIATION_REVIEW")
 
 
 if __name__ == "__main__":
