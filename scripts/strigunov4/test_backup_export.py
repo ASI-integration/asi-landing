@@ -2,6 +2,8 @@
 import os
 from pathlib import Path
 import sys
+import subprocess
+import tempfile
 import unittest
 from unittest.mock import patch
 
@@ -54,6 +56,38 @@ class AdmissionTests(unittest.TestCase):
         e.pop("STAGING_SSH_PRIVATE_KEY")
         with self.assertRaises(b.GateError): b.guard(e)
 
+    def test_ssh_option_host_rejected(self):
+        e = self.good()
+        e['STAGING_SSH_HOST'] = '-example.org'
+        with self.assertRaises(b.GateError): b.guard(e)
+
+    def test_remote_setup_shell_guards(self):
+        name = 'strigunov4-staging-123-1.tar.gz.cms'
+        for case in ('fresh', 'directory_link', 'file_link', 'part_link', 'existing_part'):
+            with self.subTest(case=case), tempfile.TemporaryDirectory() as td:
+                home = Path(td)
+                outside = home / 'unrelated'
+                outside.mkdir(mode=0o755)
+                folder = home / '.strigunov4-staging-backups'
+                if case == 'directory_link':
+                    folder.symlink_to(outside, target_is_directory=True)
+                else:
+                    folder.mkdir()
+                    if case in ('file_link', 'part_link'):
+                        target = folder / (name if case == 'file_link' else '.' + name + '.part')
+                        target.symlink_to(home / 'absent')
+                    elif case == 'existing_part':
+                        (folder / ('.' + name + '.part')).write_text('keep')
+                result = subprocess.run(['sh', '-c', b.remote_setup_command(name)],
+                                        env={'PATH': os.environ['PATH'], 'HOME': td},
+                                        capture_output=True)
+                self.assertEqual(result.returncode == 0, case == 'fresh')
+                self.assertEqual(outside.stat().st_mode & 0o777, 0o755)
+                if case == 'fresh':
+                    self.assertEqual(folder.stat().st_mode & 0o777, 0o700)
+                if case == 'existing_part':
+                    self.assertEqual((folder / ('.' + name + '.part')).read_text(), 'keep')
+
     def test_valid_target(self):
         url, host, user, port=b.guard(self.good())
         self.assertEqual((host,user,port),("example.org","tester",22))
@@ -79,3 +113,4 @@ class AdmissionTests(unittest.TestCase):
 
 if __name__=="__main__":
     unittest.main()
+

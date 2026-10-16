@@ -50,7 +50,7 @@ def guard(source):
             raise GateError("MISSING_" + key)
     host = source["STAGING_SSH_HOST"]
     user = source["STAGING_SSH_USER"]
-    if not re.fullmatch(r"[A-Za-z0-9.-]{1,253}", host):
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9.-]{0,252}", host):
         raise GateError("INVALID_SSH_HOST")
     if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_-]{0,31}", user):
         raise GateError("INVALID_SSH_USER")
@@ -101,6 +101,17 @@ def ssh_identity(tmp, host, port):
     if EXPECTED_HOST_FP not in fingerprint:
         raise GateError("SSH_HOSTKEY_MISMATCH")
     return keyfile
+
+def remote_setup_command(name):
+    if not re.fullmatch(r"strigunov4-staging-[0-9]+-[0-9]+\.tar\.gz\.cms", name):
+        raise GateError("INVALID_BACKUP_NAME")
+    return ('set -eu; umask 077; test ! -L "$HOME/.strigunov4-staging-backups"; '
+                     'mkdir -p "$HOME/.strigunov4-staging-backups"; '
+                     'chmod 700 "$HOME/.strigunov4-staging-backups"; '
+                     'test ! -L "$HOME/.strigunov4-staging-backups/{0}"; '
+                     'test ! -e "$HOME/.strigunov4-staging-backups/{0}"; '
+                     'test ! -L "$HOME/.strigunov4-staging-backups/.{0}.part"; '
+                     'test ! -e "$HOME/.strigunov4-staging-backups/.{0}.part"').format(name)
 
 def export(source):
     url, host, user, port = guard(source)
@@ -165,10 +176,7 @@ def export(source):
                   "-o", "ConnectTimeout=20"]
         remote = user + "@" + host
         folder = ".strigunov4-staging-backups"
-        cmd_setup = ('umask 077; test ! -L "$HOME/.strigunov4-staging-backups"; '
-                     'mkdir -p "$HOME/.strigunov4-staging-backups"; '
-                     'chmod 700 "$HOME/.strigunov4-staging-backups"; '
-                     'test ! -e "$HOME/.strigunov4-staging-backups/{}"').format(name)
+        cmd_setup = remote_setup_command(name)
         checked(["ssh"] + common + [remote, cmd_setup], category="REMOTE_STORAGE_PREP")
         # SCP uses -P for port, not SSH's lowercase -p.
         scp = [("-P" if v == "-p" else v) for v in common]
@@ -203,3 +211,4 @@ if __name__ == "__main__":
         # Do not print environment, secrets, URLs, SQL or table data.
         print("BLOCK: UNCLASSIFIED_BACKUP_ERROR")
         sys.exit(97)
+
