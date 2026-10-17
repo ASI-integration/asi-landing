@@ -92,6 +92,24 @@ async function cleanupOwned() {
   // Never delete by prefix, time range or global customer contact.
   const bookings = await ownedBookingIds();
   fixture.bookingIds = [...new Set([...fixture.bookingIds, ...bookings])];
+  // Intake event rows may retain a booking FK and must be deleted first.
+  // Discover only this newly generated account's receipts, then verify exact
+  // ownership and booking linkage before any deletion.
+  const ownedEvents = await result(await sb.from('booking_inbound_intake_events')
+    .select('id,account_id,booking_id').eq('account_id', fixture.accountId),
+    'READ_OWNED_INTAKE');
+  if (ownedEvents.length > 2 || ownedEvents.some(e =>
+      e.account_id !== fixture.accountId ||
+      (e.booking_id !== null && !bookings.includes(e.booking_id))))
+    throw Error('INTAKE_SCOPE_UNCERTAIN');
+  fixture.intakeIds = [...new Set([...fixture.intakeIds, ...ownedEvents.map(e => e.id)])];
+  for (const id of fixture.intakeIds) {
+    const event = ownedEvents.find(e => e.id === id);
+    if (!event) throw Error('INTAKE_ID_NOT_OWNED');
+    await deleteExact('booking_inbound_intake_events', {
+      id, account_id: fixture.accountId,
+    });
+  }
   for (const id of fixture.bookingIds) {
     if (!bookings.includes(id)) throw Error('BOOKING_SCOPE_MISMATCH');
     const row = await sb.from('booking_ops_records').select('account_id,property_id')
