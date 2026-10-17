@@ -27,8 +27,9 @@ on:
 permissions:
   contents: read
 
+# Reserve the shared mutex for protected dispatches; PR checks never hold it.
 concurrency:
-  group: strigunov4-staging-nine-sql-apply
+  group: ${{ github.event_name == 'workflow_dispatch' && 'strigunov4-staging-nine-sql-apply' || format('strigunov4-sql-pr-{0}', github.ref) }}
   cancel-in-progress: false
 
 jobs:
