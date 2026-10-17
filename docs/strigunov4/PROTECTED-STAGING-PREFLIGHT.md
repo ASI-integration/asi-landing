@@ -20,7 +20,7 @@ The quarantine contains the verified `asi-staging-d912aec6663de90e5ca4293cc5a69e
 
 A *separate, reviewed* protected deployment procedure must still authenticate the actual GitHub reviewer/owner, preserve the required environment gates, ensure one-time execution/replay resistance and independent rollback readiness, verify the latest database catalog/history, commit selectively only the nine independently accepted SQL changes with history in one controlled transaction, preserve all seven staging-only migrations, and safely activate the immutable systemd release with tested application rollback. Database recovery is not equivalent to application rollback. No generic `db push`, PM2 deployment, real guest messages, OTA writes or payments.
 
-**Environment policy caveat:** At inspection, the GitHub `staging` environment had required reviewers but did not enforce a protected-branch policy itself. This preflight explicitly refuses anything except main at multiple points; before ANY future database write/deployment, harden environment branch policy and independently review the final mutating workflow. Do not rely exclusively on a workflow's own editable conditions for credential protection.
+**Verified environment protection:** GitHub `staging` requires approval from its designated reviewer and has `custom_branch_policies=true` with the exact allowed branch pattern `main`. The repository's `main` is independently branch-protected with required reviews and the `validate` status check. This preflight redundantly refuses anything except exact `refs/heads/main`, workflow SHA, owner identity and first run attempt. Keep all these existing protections; do not reconfigure the environment or use an unreviewed branch.
 
 ## Source-only test
 
