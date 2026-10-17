@@ -150,6 +150,29 @@ class DeepReadOnlyTests(unittest.TestCase):
         self.assertEqual(deep.safe_sqlstate(None),"DEEP_CENSUS_SQLSTATE_UNKNOWN")
         self.assertNotIn("password",deep.safe_sqlstate(leaked))
 
+    def test_nonzero_census_blocks_with_sqlstate_only(self):
+        """The full run must classify stderr and never expose secrets or stdout."""
+        leaked=b"psql: ERROR:  42P01\\nsecret-password-do-not-print\\n"
+        def checked(cmd,**kwargs):
+            if cmd[0]=="git":
+                return types.SimpleNamespace(stdout=(SHA+"\\n").encode())
+            self.assertTrue(kwargs.get("allow_nonzero"))
+            self.assertIn("VERBOSITY=sqlstate",cmd)
+            return types.SimpleNamespace(
+                stdout=b"secret-stdout-not-to-print",
+                stderr=leaked,returncode=1)
+        with patch.object(deep.g0,"checked",side_effect=checked), \\
+             patch.object(deep.g0,"exact_sql_history",return_value=True), \\
+             patch.object(deep.pg,"db_environment",
+                          return_value={"PGOPTIONS":"-c default_transaction_read_only=on"}), \\
+             patch.object(deep.pg,"postgres_client_command",
+                          return_value=["docker","psql","-c","QUERY"]), \\
+             patch.object(deep.g0.tls_guard,"ca_bytes",return_value=b"FAKE_CA"):
+            with self.assertRaises(deep.Block) as ctx:
+                deep.run(valid())
+        self.assertEqual(str(ctx.exception),"DEEP_CENSUS_SQLSTATE_42P01")
+        self.assertNotIn("secret",str(ctx.exception))
+
     def test_invalid_receipts_fail_closed(self):
         buf=io.StringIO()
         with patch.object(deep,"run",side_effect=deep.Block("HISTORY_COMMAND_FAILURE")), \
