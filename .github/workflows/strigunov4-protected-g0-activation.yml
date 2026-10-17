@@ -28,9 +28,10 @@ on:
 permissions:
   contents: read
 
-# One repository-wide mutex with the protected nine-migration apply workflow.
+# Share the staging mutex with SQL only for protected owner dispatches;
+# PR checks use a separate per-ref group and cannot cancel pending owner approvals.
 concurrency:
-  group: strigunov4-staging-nine-sql-apply
+  group: ${{ github.event_name == 'workflow_dispatch' && 'strigunov4-staging-nine-sql-apply' || format('strigunov4-g0-pr-{0}', github.ref) }}
   cancel-in-progress: false
 
 jobs:
