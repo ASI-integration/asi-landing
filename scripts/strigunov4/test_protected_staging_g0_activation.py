@@ -129,6 +129,31 @@ class OwnerProtectedTests(unittest.TestCase):
         self.assertIn("postgres|17|99|7|9",source)
         self.assertNotIn('"apply"',source)
 
+    def test_remote_failure_statuses_stay_visible_without_secrets(self):
+        import contextlib
+        for status in (
+            "BLOCK_BEFORE_ACTIVATION",
+            "ACTIVATION_FAILED_APP_ROLLBACK_PASS",
+            "ACTIVATION_FAILED_MANUAL_RECOVERY",
+        ):
+            with self.subTest(status=status), \
+                 patch.object(gate,"source_payload",return_value=b"fixed"), \
+                 patch.object(gate.backup_export,"ssh_identity",return_value=Path("known_hosts")), \
+                 patch.object(gate.subprocess,"run") as run:
+                run.return_value.returncode=2
+                run.return_value.stdout=json.dumps({
+                    "status":status,"secret":"private-canary-never-display"
+                }).encode()
+                run.return_value.stderr=b"other sensitive canary"
+                sink=io.StringIO()
+                with contextlib.redirect_stderr(sink), self.assertRaises(gate.Block):
+                    gate.remote_activate(synthetic_env(),"host.example.invalid",22,
+                                         "39031172658","a"*40,gate.SOURCE_ROOT)
+                notice=json.loads(sink.getvalue())
+                self.assertEqual(notice, {"remoteStatus":status})
+                self.assertNotIn("canary",sink.getvalue())
+                self.assertNotIn("other sensitive",sink.getvalue())
+
     def test_disallow_unsafe_status_from_remote(self):
         # The remote result must never count as a pass without verified bits.
         with patch.object(gate, "source_payload", return_value=b"fixed"), \

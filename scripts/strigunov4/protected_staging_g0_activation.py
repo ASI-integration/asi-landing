@@ -172,8 +172,15 @@ def remote_activate(env, host, port, run_id, source_sha, root):
         raise Block("REMOTE_ACTIVATION_RESULT_UNREADABLE") from None
     if type(report) is not dict:
         raise Block("REMOTE_ACTIVATION_RESULT_SHAPE")
+    status = report.get("status")
+    if status in ("ACTIVATION_FAILED_APP_ROLLBACK_PASS",
+                  "ACTIVATION_FAILED_MANUAL_RECOVERY",
+                  "BLOCK_BEFORE_ACTIVATION"):
+        # Only the allowlisted status goes to stderr. Never echo remote stderr
+        # or untrusted host fields, which may contain secrets.
+        print(json.dumps({"remoteStatus": status}), file=sys.stderr)
     require(result.returncode == 0
-            and report.get("status") == "G0_STAGING_ACTIVATION_PASS"
+            and status == "G0_STAGING_ACTIVATION_PASS"
             and report.get("release") == RELEASE
             and report.get("oldReleasePreserved") is True
             and report.get("noSendFlags") == 7
