@@ -1,5 +1,8 @@
 """No-credential source and fail-closed admission tests for physical C4."""
 import pathlib
+import json
+import io
+import contextlib
 import types
 import unittest
 from unittest.mock import patch
@@ -111,6 +114,52 @@ class PhysicalGateTests(unittest.TestCase):
         for forbidden in (".like(", ".ilike(", "TRUNCATE", "DELETE FROM",
                           "systemctl restart", "https://api.stripe.com"):
             self.assertNotIn(forbidden,source)
+
+    def test_preserves_only_generated_ownership_on_invalid_child_receipt(self):
+        owned = {"userId":"48d6eb17-8f2a-4d76-8812-e3d6762282a4",
+                 "accountId":"377268d5-f4d5-4078-8e3e-ae76778ae07c",
+                 "propertyId":"555300da-a457-4a59-9e29-95c5a5923722",
+                 "runId":"39040347972"}
+        report = {"owned":{**owned,
+                    "bookingIds":["15e11da2-3b0f-49e8-84ac-ce4cd8366bdf"],
+                    "intakeIds":["malicious secret string"]},
+                  "reason":"DB_ERROR", "cleanup":"BLOCK",
+                  "cleanupReason":"FAIL_CLEANUP", "secret":"NEVER_LOG"}
+        safe = gate.safe_receipt(report, owned)
+        self.assertEqual(safe["owned"]["accountId"],owned["accountId"])
+        self.assertEqual(len(safe["owned"]["bookingIds"]),1)
+        self.assertEqual(safe["owned"]["intakeIds"],[])
+        self.assertEqual(safe["cleanup"],"BLOCK")
+        self.assertEqual(safe["reason"],"DB_ERROR")
+        self.assertNotIn("secret",safe)
+        report["owned"]["accountId"]="wrong"
+        self.assertEqual(gate.safe_receipt(report,owned)["reason"],
+                         "OWNERSHIP_RECEIPT_MISMATCH")
+
+    def test_block_prints_only_one_sanitized_receipt(self):
+        error = gate.Gate("C4_CHILD_TIMEOUT", {
+            "owned":{"userId":"48d6eb17-8f2a-4d76-8812-e3d6762282a4"},
+            "cleanup":"UNKNOWN"})
+        buffer = io.StringIO()
+        with patch.object(gate,"run",side_effect=error),              contextlib.redirect_stdout(buffer):
+            self.assertEqual(gate.main(),2)
+        lines=buffer.getvalue().splitlines()
+        self.assertEqual(len(lines),1)
+        payload=json.loads(lines[0])
+        self.assertEqual(payload["reason"],"C4_CHILD_TIMEOUT")
+        self.assertEqual(payload["lifecycleReceipt"]["cleanup"],"UNKNOWN")
+
+    def test_source_enforces_durable_handoff_availability_and_postflight(self):
+        source=(pathlib.Path(__file__).parent/"c4_physical_staging_lifecycle.mjs").read_text()
+        for item in ("C4_OWNED_USER_ID","C4_OWNED_ACCOUNT_ID",
+                     "C4_OWNED_PROPERTY_ID","booking_availability_holds",
+                     "booking_overbooking_conflict_checks","AVAILABILITY_RESIDUE_"):
+            self.assertIn(item,source)
+        gate_src=(pathlib.Path(__file__).parent/"c4_physical_approved_gate.py").read_text()
+        for item in ("uuid.uuid4()", "C4_CHILD_TIMEOUT", "safe_receipt",
+                     'post.get("status") == "C4_READONLY_PREFLIGHT_PASS"',
+                     '"STAGE_POSTFLIGHT"'):
+            self.assertIn(item,gate_src)
 
     def test_workflow_must_not_include_public_or_production_secrets(self):
         path=pathlib.Path(__file__).parents[2]/".github/workflows/strigunov4-c4-physical-core.yml"
