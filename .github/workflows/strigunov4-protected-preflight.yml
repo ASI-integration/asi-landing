@@ -6,6 +6,8 @@ on:
       - 'scripts/strigunov4/protected_staging_admission.py'
       - 'scripts/strigunov4/protected_staging_host_probe.py'
       - 'scripts/strigunov4/test_protected_staging_preflight.py'
+      - 'scripts/strigunov4/staging_nine_sql_candidate.py'
+      - 'scripts/strigunov4/test_staging_nine_sql_candidate.py'
       - 'docs/strigunov4/PROTECTED-STAGING-PREFLIGHT.md'
       - '.github/workflows/strigunov4-protected-preflight.yml'
   workflow_dispatch:
@@ -40,6 +42,8 @@ jobs:
           set -euo pipefail
           python3 -m py_compile scripts/strigunov4/protected_staging_admission.py scripts/strigunov4/protected_staging_host_probe.py
           python3 -m unittest discover -s scripts/strigunov4 -p test_protected_staging_preflight.py -v
+          python3 -m unittest discover -s scripts/strigunov4 -p test_staging_nine_sql_candidate.py -v
+          python3 scripts/strigunov4/staging_nine_sql_candidate.py
           git diff --check
 
   owner_approved_read_only:
@@ -79,6 +83,8 @@ jobs:
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
           python3 -m unittest discover -s scripts/strigunov4 -p test_protected_staging_preflight.py -v
+          python3 -m unittest discover -s scripts/strigunov4 -p test_staging_nine_sql_candidate.py -v
+          python3 scripts/strigunov4/staging_nine_sql_candidate.py
       - name: Read-only staging archive/service/no-send check
         env:
           STRIGUNOV_REVIEWED_MAIN_SHA: ${{ inputs.reviewed_main_sha }}

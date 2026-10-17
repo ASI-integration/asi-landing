@@ -27,3 +27,13 @@ A *separate, reviewed* protected deployment procedure must still authenticate th
 `python3 -m unittest discover -s scripts/strigunov4 -p test_protected_staging_preflight.py -v`
 
 The `pull_request` workflow runs these tests on Linux without secrets. The `workflow_dispatch` job may become runnable only once its exact source has undergone normal required reviews and is included on protected main; it then requires GitHub's staging reviewer approval. No branch rename, old workflow alteration, main merge, server configuration change or SQL apply is part of this PR.
+
+## Exact nine-SQL transactional candidate (source-only)
+
+`scripts/strigunov4/staging_nine_sql_candidate.py` deterministically renders the **nine exact source files** in the reviewed order, recording their pinned byte digests. The original G0 migration's one inner `BEGIN` / `COMMIT` pair is removed for assembly inside a **single surrounding transaction**; unexpected embedded transaction markers and psql meta commands cause BLOCK. There is no SQL execution function. The generator's success output states `NINE_STAGING_SQL_CANDIDATE_NOT_AUTHORIZED`, includes its SHA256 fingerprint and does not create a database connection.
+
+Before any change in that candidate, the SQL itself checks PostgreSQL17, compatible history table columns/primary key, all nine versions unregistered, seven protected historical versions present, no partial G0 execution, the expected existing purpose constraint, and the reviewed **14 missing staging columns** still absent. On any source schema drift it raises an error rather than guessing an upgrade path.
+
+After the exact nine SQL payloads, within the **same transaction** it checks all 14 required columns, runtime_bridge definitions, non-global communication sending disabled, negative anon/authenticated privileges, and preserved staging-only history. Only then are the nine selected `supabase_migrations.schema_migrations` rows registered, and the final history checked, before `COMMIT`. Other repo-only missing history is never marked applied. A proper protected caller must still independently verify live staging identity, TLS, user-controlled reviewer authorisation, replay resistance, backup and rollback before ever executing this candidate. This PR **does not implement that caller**.
+
+Offline validation: `python3 -m unittest discover -s scripts/strigunov4 -p test_staging_nine_sql_candidate.py -v`. The Linux workflow additionally runs the generator against the pinned real repository bytes. This is source verification only — **not** evidence that the SQL has been applied, or that a current schema can run it.
