@@ -82,8 +82,7 @@ WITH RECURSIVE fk_edges AS (
     WHERE con.contype='f' AND child_ns.nspname='public'
       AND parent_ns.nspname='public'
 ), fk_closure AS (
-    SELECT e.parent_oid, e.child_oid, e.relname, e.action, 1 AS depth,
-           ARRAY[e.parent_oid,e.child_oid] AS visited
+    SELECT e.parent_oid, e.child_oid, e.relname, e.action, 1 AS depth
     FROM fk_edges e
     JOIN pg_catalog.pg_class root ON root.oid=e.parent_oid
     JOIN pg_catalog.pg_namespace root_ns ON root_ns.oid=root.relnamespace
@@ -92,12 +91,11 @@ WITH RECURSIVE fk_edges AS (
           'booking_ops_communication_intents','booking_ops_tasks')
     UNION ALL
     SELECT edge.parent_oid, edge.child_oid, edge.relname, edge.action,
-           f.depth+1, f.visited || edge.child_oid
+           f.depth+1
     FROM fk_closure f
     JOIN fk_edges edge ON edge.parent_oid=f.child_oid
     WHERE f.action='c' AND f.depth<10
-      AND NOT (edge.child_oid=ANY(f.visited))
-)
+) CYCLE child_oid SET is_cycle USING cycle_path
 SELECT jsonb_build_object(
   'incidentRun','{INCIDENT}',
   'bookingOpsEvents',(SELECT count(*) FROM public.booking_ops_events WHERE booking_ops_record_id::text='{b}'),
