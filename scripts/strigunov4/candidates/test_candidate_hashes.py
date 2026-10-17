@@ -53,6 +53,32 @@ class CandidateDigestTests(unittest.TestCase):
         with self.assertRaisesRegex(v.IntegrityBlock, "MANIFEST_FILE_SET"):
             v.verify(self.root)
 
+    def test_unlisted_sql_file_rejected_even_when_manifest_unchanged(self):
+        # A second matching prefix must never be admitted to the candidate tree.
+        extra = self.root / "sql" / "20261003124500_UNREVIEWED.sql"
+        extra.write_bytes(b"SELECT 1;")
+        with self.assertRaisesRegex(v.IntegrityBlock, "UNLISTED_SQL_FILE"):
+            v.verify(self.root)
+
+    def test_unlisted_sql_directory_rejected(self):
+        (self.root / "sql" / "unexpected").mkdir()
+        with self.assertRaisesRegex(v.IntegrityBlock, "UNLISTED_SQL_FILE"):
+            v.verify(self.root)
+
+    def test_renderer_uses_exact_reviewed_names_not_glob(self):
+        import build_candidate as builder
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            directory = root / "sql"
+            directory.mkdir()
+            for name in builder.SQL_NAMES.values():
+                (directory / name).write_bytes(b"synthetic")
+            # The extra prefix would have been accepted nondeterministically by glob.
+            (directory / "20261003124500_UNREVIEWED.sql").write_bytes(b"malicious")
+            selected = builder.source_files(builder.ORDER, root)
+            self.assertEqual([p.name for p in selected],
+                             [builder.SQL_NAMES[version] for version in builder.ORDER])
+
     def test_forged_approval_bool_rejected(self):
         self.hashes["plan.json"] = True
         self._dump()

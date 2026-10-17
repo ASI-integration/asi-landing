@@ -5,6 +5,27 @@ ROOT=Path(__file__).resolve().parent
 G0='334d93fc39d2ea51ba283dd0314bbc239ff49707'
 PRESERVE=['20260729040307','20260729040309','20260729040332','20260913120838','20260913120856','20260913120921','20260913120945']
 ORDER=['20261003124500','20261003141500','20261003150000','20261005090000','20261015103000','20261016090000']
+SQL_NAMES={
+ '20260810280000':'20260810280000_booking_ops_communication_purpose_constraint_repair.sql',
+ '20261003124500':'20261003124500_booking_ops_auto_send_account_scope_v1.sql',
+ '20261003141500':'20261003141500_booking_inbound_intake_account_scope_v1.sql',
+ '20261003150000':'20261003150000_booking_availability_account_scope_v1.sql',
+ '20261005090000':'20261005090000_booking_ops_record_scope_guard_v1.sql',
+ '20261015103000':'20261015103000_booking_knowledge_read_contract.sql',
+ '20261016090000':'20261016090000_g0_operator_revision_takeover.sql',
+}
+def source_files(order, root=None):
+ root=ROOT if root is None else Path(root)
+ folder=root/'sql'
+ if folder.is_symlink() or not folder.is_dir(): raise ValueError('Untrusted SQL source directory')
+ files=[]
+ for version in order:
+  name=SQL_NAMES.get(version)
+  if name is None: raise ValueError('Unreviewed migration version')
+  candidate=folder/name
+  if candidate.is_symlink() or not candidate.is_file(): raise ValueError('Reviewed SQL source absent or unsafe')
+  files.append(candidate)
+ return files
 REQ={'booking_inbound_intake_events':['account_id','account_scope_key'],'booking_ops_communication_auto_send_scopes':['account_id','account_scope_key'],'booking_ops_communication_auto_send_runs':['account_id'],'booking_ops_communication_deliveries':['account_id'],'booking_overbooking_conflict_checks':['account_id'],'booking_ops_records':['automation_paused'],'booking_ops_alerts':['revision'],'tg_property_knowledge':['check_in_instructions','key_instructions','parking_instructions','check_out_instructions','emergency_contacts']}
 def build(include_purpose_repair=False, purpose_rationale=None):
  if include_purpose_repair and not (purpose_rationale and purpose_rationale.strip()):
@@ -21,7 +42,7 @@ def build(include_purpose_repair=False, purpose_rationale=None):
  missing=[f'{t}.{c}' for t,cs in REQ.items() for c in cs if (t,c) not in columns]
  assert len(missing)==14, 'Catalog does not match reviewed missing-column baseline'
  order=(["20260810280000"] if include_purpose_repair else [])+ORDER
- files=[next((ROOT/'sql').glob(p+'_*')) for p in order]
+ files=source_files(order)
  values=','.join("('"+v+"')" for v in PRESERVE)
  sql="""-- CANDIDATE FOR DISPOSABLE RESTORE REHEARSAL; NOT LIVE AUTHORIZATION.
 -- Entire rehearsal rolls back. Do not change final ROLLBACK without reviewed apply backend.
