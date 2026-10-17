@@ -146,6 +146,7 @@ def run_preflight(env, root=SOURCE_ROOT):
                           "-o", "BatchMode=yes", "-o", "IdentitiesOnly=yes",
                           "-o", "StrictHostKeyChecking=yes",
                           "-o", "UserKnownHostsFile=" + str(known_hosts),
+                          "-o", "GlobalKnownHostsFile=none",
                           "-o", "ConnectTimeout=20",
                           "project_ayfaar@" + host, "python3", "-"],
                          input_data=script.read_bytes(), timeout=180)

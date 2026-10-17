@@ -123,6 +123,34 @@ class ProtectedAdmissionTests(unittest.TestCase):
             command.assert_not_called()
             source.assert_not_called()
 
+    def test_ssh_uses_only_pinned_user_hostkeys_not_global_trust(self):
+        import json as json_module
+        expected = {
+            "status": "BLOCK", "reason_codes": ["MISSING_OR_MISMATCH_ASI_SYNTHETIC_NO_SEND"],
+            "archive_verified": True, "staging_active": True,
+            "original_release": "5c91b27bcde395f01cc078d1fbe454dd7436e1c6",
+            "checked_flags": 7, "no_send_ready": False,
+        }
+        ssh_calls = []
+        def stub(args, **kwargs):
+            if args[0] == "git":
+                return ("a" * 40 + "\n").encode()
+            if args[0] == "ssh-keyscan":
+                return b"staging.example.invalid ssh-ed25519 TEST_PUBLIC_KEY\n"
+            if args[0] == "ssh-keygen":
+                return (a.HOST_FP + "\n").encode()
+            if args[0] == "ssh":
+                ssh_calls.append(args)
+                return json_module.dumps(expected).encode()
+            raise AssertionError("unexpected command")
+        with patch.object(a, "verify_sql", return_value=True), patch.object(a, "checked", side_effect=stub):
+            result = a.run_preflight(good())
+        self.assertEqual(result["status"], "BLOCK")
+        self.assertEqual(len(ssh_calls), 1)
+        self.assertIn("GlobalKnownHostsFile=none", ssh_calls[0])
+        self.assertIn("StrictHostKeyChecking=yes", ssh_calls[0])
+        self.assertTrue(any(arg.startswith("UserKnownHostsFile=") for arg in ssh_calls[0]))
+
     def test_host_reports_missing_no_send_as_block_not_pass(self):
         with patch.object(host, "archive_verified", return_value=True), \
              patch.object(host, "stage_state", return_value=["MISSING_OR_MISMATCH_ASI_SYNTHETIC_NO_SEND"]):
