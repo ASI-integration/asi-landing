@@ -104,6 +104,87 @@ class ProtectedStagingNoSendTests(unittest.TestCase):
         self.assertEqual(len(host.EXPECTED),6)
         self.assertEqual(host.TARGET,"ASI_SYNTHETIC_NO_SEND")
 
+    def test_remote_failure_status_survives_nonzero_exit(self):
+        for status in sorted(gate.REMOTE_BLOCK_CODES):
+            with self.subTest(status=status):
+                with self.assertRaises(gate.RemoteOutcome) as err:
+                    gate.decode_remote_result(json.dumps({"status": status}).encode(), 2)
+                self.assertEqual(err.exception.status, status)
+
+    def test_success_requires_exact_fixed_receipt(self):
+        expected = {"status": "NO_SEND_EFFECTIVE_PASS", "effectiveFlags": 7,
+                    "databaseChanged": False, "releaseSwitched": False}
+        self.assertEqual(gate.decode_remote_result(json.dumps(expected).encode(), 0), expected)
+        forged = dict(expected, databaseChanged=True)
+        with self.assertRaises(gate.Block):
+            gate.decode_remote_result(json.dumps(forged).encode(), 0)
+        with self.assertRaises(gate.RemoteOutcome):
+            gate.decode_remote_result(json.dumps(expected).encode(), 2)
+
+    def test_untrusted_worker_receipt_never_becomes_approval(self):
+        for raw in (b"", b"not-json", b'{"status":"READY_TO_DEPLOY"}'):
+            with self.subTest(raw=raw[:20]):
+                with self.assertRaises((gate.Block, gate.RemoteOutcome)):
+                    gate.decode_remote_result(raw, 2)
+
+    def test_main_preserves_manual_recovery_status(self):
+        with patch.object(gate, "execute", side_effect=gate.RemoteOutcome(
+                "BLOCK_MANUAL_RECOVERY_REQUIRED")):
+            out = io.StringIO()
+            with patch("sys.stdout", out):
+                self.assertEqual(gate.main(), 2)
+            self.assertEqual(json.loads(out.getvalue())["status"],
+                             "BLOCK_MANUAL_RECOVERY_REQUIRED")
+
+    def test_worker_deadline_blocks_expired_subprocess(self):
+        import time
+        with patch.object(host.subprocess, "run") as sp:
+            with self.assertRaisesRegex(host.Block, "WORKER_DEADLINE_EXCEEDED"):
+                host.checked("systemctl", "show", deadline=time.monotonic() - 1)
+            sp.assert_not_called()
+        self.assertLess(host.WORKER_LIMIT_SECONDS, gate.REMOTE_TOTAL_TIMEOUT)
+        self.assertLess(gate.REMOTE_TOTAL_TIMEOUT, 600)
+        self.assertGreater(host.ROLLBACK_RESERVE_SECONDS, 100)
+
+    def test_worker_retries_transient_http_and_attribute_errors(self):
+        import time
+        import http.client
+        with patch.object(host, "checked") as command, \
+             patch.object(host, "live_status",
+                          side_effect=[AttributeError("temporary"),
+                                       http.client.IncompleteRead(b""),
+                                       None]) as live, \
+             patch.object(host.time, "sleep"):
+            host.verified_restart(True, time.monotonic() + 20)
+            self.assertEqual(live.call_count, 3)
+            command.assert_called_once()
+
+    def test_unexpected_exception_after_change_enters_rollback(self):
+        from unittest.mock import MagicMock
+        import tempfile
+        import os
+        original = (b"EMAIL_AUTO_SEND=false\n")
+        patched = original + host.plan(original)["output"][len(original):]
+        stat_info = MagicMock(st_uid=1001, st_gid=1000)
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp) / "evidence"
+            with patch.object(host, "EVIDENCE_ROOT", root), \
+                 patch.object(host, "live_status"), \
+                 patch.object(host, "read_env",
+                              side_effect=[(original, stat_info),
+                                           (patched, stat_info),
+                                           (patched, stat_info)]), \
+                 patch.object(host, "write_private"), \
+                 patch.object(host, "atomic_env") as atomic, \
+                 patch.object(host, "verified_restart",
+                              side_effect=[AttributeError("unexpected"),
+                                           None]) as restart:
+                outcome = host.perform("12345", "a"*40)
+                self.assertEqual(outcome["status"],
+                                 "ROLLBACK_PASS_NO_SEND_NOT_ACTIVATED")
+                self.assertEqual(atomic.call_count, 2)
+                self.assertEqual(restart.call_count, 2)
+
     def test_no_os_mutation_import_execution(self):
         # Importing workers only creates definitions; no implicit main action.
         self.assertTrue(callable(host.perform))

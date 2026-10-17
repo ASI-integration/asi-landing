@@ -28,6 +28,41 @@ class Block(ValueError):
     pass
 
 
+class RemoteOutcome(Block):
+    """One of only the predeclared nonsecret results from the root worker."""
+    def __init__(self, status):
+        super().__init__(status)
+        self.status = status
+
+
+REMOTE_TOTAL_TIMEOUT = 465
+REMOTE_BLOCK_CODES = frozenset({
+    "BLOCK", "BLOCK_BEFORE_ACTIVATION",
+    "ROLLBACK_PASS_NO_SEND_NOT_ACTIVATED", "BLOCK_MANUAL_RECOVERY_REQUIRED",
+})
+
+
+def decode_remote_result(raw, returncode):
+    """Never treat a nonzero remote worker as success or echo its raw stdout."""
+    require(type(raw) is bytes and len(raw) <= 4096, "REMOTE_RECEIPT_SIZE")
+    try:
+        receipt = json.loads(raw)
+    except (ValueError, UnicodeError):
+        raise RemoteOutcome("BLOCK_MANUAL_RECOVERY_REQUIRED") from None
+    require(type(receipt) is dict, "REMOTE_RECEIPT_SHAPE")
+    expected_success = {"status": "NO_SEND_EFFECTIVE_PASS", "effectiveFlags": 7,
+                        "databaseChanged": False, "releaseSwitched": False}
+    if returncode == 0:
+        require(receipt == expected_success, "REMOTE_NO_SEND_NOT_VERIFIED")
+        return receipt
+    status = receipt.get("status")
+    # Ignore all remote-provided fields except a fixed status label. Unknown
+    # statuses and receipt structures are never elevated to an approval.
+    if status in REMOTE_BLOCK_CODES:
+        raise RemoteOutcome(status)
+    raise RemoteOutcome("BLOCK_MANUAL_RECOVERY_REQUIRED")
+
+
 def require(ok, code):
     if not ok:
         raise Block(code)
@@ -115,28 +150,24 @@ def execute(env, root=SOURCE):
         key = td / "ssh_key"
         key.write_text(env["STAGING_SSH_PRIVATE_KEY"].rstrip("\n") + "\n", encoding="utf-8")
         key.chmod(0o600)
-        stdout = checked(
-            ["ssh", "-T", "-i", str(key), "-p", str(port),
-             "-o", "BatchMode=yes", "-o", "IdentitiesOnly=yes",
-             "-o", "StrictHostKeyChecking=yes",
-             "-o", "GlobalKnownHostsFile=none",
-             "-o", "UserKnownHostsFile=" + str(known),
-             "-o", "ConnectTimeout=20",
-             "project_ayfaar@" + host,
-             "sudo", "-n", "python3", "-", rid, sha],
-            input_bytes=program, env=clean, timeout=150,
-        )
-    try:
-        report = json.loads(stdout)
-    except (ValueError, UnicodeError):
-        raise Block("REMOTE_RECEIPT_FORMAT") from None
-    require(type(report) is dict
-            and report == {"status": "NO_SEND_EFFECTIVE_PASS",
-                           "effectiveFlags": 7,
-                           "databaseChanged": False,
-                           "releaseSwitched": False},
-            "REMOTE_NO_SEND_NOT_VERIFIED")
-    return report
+        try:
+            remote = subprocess.run(
+                ["ssh", "-T", "-i", str(key), "-p", str(port),
+                 "-o", "BatchMode=yes", "-o", "IdentitiesOnly=yes",
+                 "-o", "StrictHostKeyChecking=yes",
+                 "-o", "GlobalKnownHostsFile=none",
+                 "-o", "UserKnownHostsFile=" + str(known),
+                 "-o", "ConnectTimeout=20",
+                 "project_ayfaar@" + host,
+                 "sudo", "-n", "python3", "-", rid, sha],
+                input=program, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                env=clean, timeout=REMOTE_TOTAL_TIMEOUT,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            # After a lost SSH connection we cannot prove whether the stage
+            # already changed. Refuse retries and surface manual recovery.
+            raise RemoteOutcome("BLOCK_MANUAL_RECOVERY_REQUIRED") from None
+    return decode_remote_result(remote.stdout, remote.returncode)
 
 
 def main():
@@ -144,8 +175,11 @@ def main():
         report = execute(os.environ)
         print(json.dumps(report, sort_keys=True))
         return 0
+    except RemoteOutcome as failure:
+        print(json.dumps({"status": failure.status}, sort_keys=True))
+        return 2
     except (Block, OSError, ValueError):
-        print('{"status":"BLOCK","message":"No-send gate or post-restart verification did not pass"}')
+        print('{"status":"BLOCK","message":"Owner or execution admission did not pass"}')
         return 2
 
 

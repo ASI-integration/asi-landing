@@ -6,6 +6,7 @@ expected service identity are constants; no user-controlled target paths.
 No SQL, archive extraction, external provider calls or production operations.
 """
 import hashlib
+import http.client
 import json
 import os
 from pathlib import Path
@@ -38,6 +39,17 @@ TARGET = "ASI_SYNTHETIC_NO_SEND"
 EVIDENCE_ROOT = Path("/root/.asi-strigunov4-nosend")
 SHA_RE = re.compile(r"[a-f0-9]{40}\Z")
 ID_RE = re.compile(r"[1-9][0-9]{0,19}\Z")
+# The GitHub job has 600 s total. Leave time for SSH admission and cleanup.
+WORKER_LIMIT_SECONDS = 385
+ROLLBACK_RESERVE_SECONDS = 155
+
+
+def remaining(deadline):
+    value = deadline - time.monotonic()
+    if value <= 0.05:
+        raise Block("WORKER_DEADLINE_EXCEEDED")
+    return value
+
 
 
 def require(ok, code):
@@ -45,19 +57,21 @@ def require(ok, code):
         raise Block(code)
 
 
-def checked(*args, timeout=20):
+def checked(*args, timeout=20, deadline=None):
+    budget = min(timeout, remaining(deadline)) if deadline is not None else timeout
     try:
         result = subprocess.run(args, stdout=subprocess.PIPE,
-                                stderr=subprocess.PIPE, timeout=timeout)
+                                stderr=subprocess.PIPE, timeout=budget)
     except (OSError, subprocess.TimeoutExpired):
         raise Block("COMMAND_UNAVAILABLE") from None
     require(result.returncode == 0, "COMMAND_FAILED")
     return result.stdout
 
 
-def props():
+def props(deadline=None):
     raw = checked("systemctl", "show", SERVICE,
-                  "--property=MainPID,User,Group,WorkingDirectory,EnvironmentFiles,DropInPaths,ActiveState")
+                  "--property=MainPID,User,Group,WorkingDirectory,EnvironmentFiles,DropInPaths,ActiveState",
+                  deadline=deadline)
     return dict(line.split("=", 1) for line in raw.decode().splitlines() if "=" in line)
 
 
@@ -75,11 +89,13 @@ def process_flags(pid, with_new_flag):
         require(TARGET not in observed, "UNEXPECTED_FLAG_BASELINE")
 
 
-def live_status(with_new_flag):
+def live_status(with_new_flag, deadline=None):
+    if deadline is not None:
+        remaining(deadline)
     require(os.geteuid() == 0 and os.uname().nodename == HOST, "TARGET_HOST_AND_UID")
     unit = Path("/etc/systemd/system/asi-landing-staging.service")
     require(hashlib.sha256(unit.read_bytes()).hexdigest() == UNIT_HASH, "SYSTEMD_UNIT_DRIFT")
-    p = props()
+    p = props(deadline)
     require(p.get("ActiveState") == "active"
             and p.get("User") == "asi-runtime" and p.get("Group") == "asi-runtime"
             and p.get("WorkingDirectory") == str(CURRENT)
@@ -88,13 +104,16 @@ def live_status(with_new_flag):
     require(CURRENT.is_symlink() and CURRENT.resolve() == ROOT / "releases" / OLD,
             "STAGING_RELEASE_DRIFT")
     for kind in ("health", "version"):
-        with urllib.request.urlopen("http://127.0.0.1:3001/api/" + kind, timeout=5) as reply:
+        wait = min(5, remaining(deadline)) if deadline is not None else 5
+        with urllib.request.urlopen("http://127.0.0.1:3001/api/" + kind, timeout=wait) as reply:
             require(reply.status == 200, "HTTP_STATUS")
             raw = reply.read(65537)
             require(len(raw) <= 65536, "HTTP_OVERSIZE")
             result = json.loads(raw)
             require((result.get("ok") is True if kind == "health" else
                      result.get("sha") == OLD), "HTTP_RESULT")
+    if deadline is not None:
+        remaining(deadline)
     process_flags(p.get("MainPID", ""), with_new_flag)
 
 
@@ -156,15 +175,18 @@ def atomic_env(content, orig, expected_old_bytes):
             os.unlink(name)
 
 
-def verified_restart(expect_new):
-    checked("systemctl", "restart", SERVICE, timeout=50)
-    for attempt in range(40):
+def verified_restart(expect_new, deadline):
+    # Every subprocess/HTTP wait is capped by the same monotonic deadline.
+    checked("systemctl", "restart", SERVICE, timeout=50, deadline=deadline)
+    while time.monotonic() < deadline:
         try:
-            live_status(expect_new)
+            live_status(expect_new, deadline=deadline)
             return
-        except (Block, OSError, ValueError, json.JSONDecodeError):
-            time.sleep(1)
-    raise Block("EFFECTIVE_PROCESS_VERIFICATION_FAILED")
+        except (Block, OSError, ValueError, AttributeError, http.client.HTTPException):
+            seconds = deadline - time.monotonic()
+            if seconds > 0.05:
+                time.sleep(min(1.0, seconds))
+    raise Block("EFFECTIVE_PROCESS_VERIFICATION_DEADLINE")
 
 
 def perform(run_id, source_sha):
@@ -172,7 +194,9 @@ def perform(run_id, source_sha):
             and SHA_RE.fullmatch(source_sha) is not None, "RUN_BINDING")
     # The protected main-only GitHub Actions environment approved the workflow.
     # These identifiers are for replay journaling, not an attestation themselves.
-    live_status(False)
+    hard_deadline = time.monotonic() + WORKER_LIMIT_SECONDS
+    activation_deadline = hard_deadline - ROLLBACK_RESERVE_SECONDS
+    live_status(False, deadline=activation_deadline)
     original, metadata = read_env()
     result = plan(original)
     require(result["changed"], "FLAG_ALREADY_PRESENT_OR_NOT_EXPECTED")
@@ -195,7 +219,8 @@ def perform(run_id, source_sha):
         require(after == result["output"]
                 and meta_after.st_uid == metadata.st_uid
                 and meta_after.st_gid == metadata.st_gid, "POSTWRITE_ENV_FILE")
-        verified_restart(True)
+        verified_restart(True, deadline=activation_deadline)
+        remaining(activation_deadline)
         evidence = {"status":"NO_SEND_EFFECTIVE_PASS", "sourceSha":source_sha,
                     "runId":run_id, "beforeSha256":result["input_sha256"],
                     "afterSha256":result["output_sha256"], "effectiveFlags":7,
@@ -203,16 +228,18 @@ def perform(run_id, source_sha):
         write_private(record / "result.json", json.dumps(evidence, sort_keys=True).encode())
         return {"status":"NO_SEND_EFFECTIVE_PASS","effectiveFlags":7,
                 "databaseChanged":False, "releaseSwitched":False}
-    except (OSError, Block, ValueError, subprocess.TimeoutExpired):
+    except Exception:
+        # All errors after the first possible write enter the rollback path,
+        # including malformed startup JSON and HTTPException/AttributeError.
         if changed:
             try:
                 current_bytes, current_meta = read_env()
                 if current_bytes == original:
-                    live_status(False)
+                    live_status(False, deadline=hard_deadline)
                     return {"status":"BLOCK_BEFORE_ACTIVATION"}
                 require(current_bytes == result["output"], "UNKNOWN_CONCURRENT_ENV_CHANGE")
                 atomic_env(original, current_meta, result["output"])
-                verified_restart(False)
+                verified_restart(False, deadline=hard_deadline)
                 return {"status":"ROLLBACK_PASS_NO_SEND_NOT_ACTIVATED"}
             except Exception:
                 return {"status":"BLOCK_MANUAL_RECOVERY_REQUIRED"}
@@ -252,7 +279,7 @@ def main():
         report = run_locked(sys.argv[1], sys.argv[2])
         print(json.dumps(report, sort_keys=True))
         return 0 if report.get("status") == "NO_SEND_EFFECTIVE_PASS" else 2
-    except (Block, OSError, ValueError):
+    except Exception:
         print('{"status":"BLOCK","releaseSwitched":false,"databaseChanged":false}')
         return 2
 
