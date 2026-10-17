@@ -97,6 +97,12 @@ class PhysicalGateTests(unittest.TestCase):
         self.assertIn("NO_SENT_INTENT_FOR_FIXTURE",source)
         self.assertIn("INTAKE_OWNERSHIP",source)
         self.assertIn("INTAKE_RECEIPT_REMAINS",source)
+        self.assertIn("INTAKE_SCOPE_UNCERTAIN",source)
+        self.assertIn("INTAKE_ID_NOT_OWNED",source)
+        self.assertIn("id,account_id,booking_id",source)
+        self.assertIn("await deleteExact('booking_inbound_intake_events', {",source)
+        self.assertLess(source.index("await deleteExact('booking_inbound_intake_events', {"),
+                        source.index("await deleteExact('booking_ops_records', {"))
         self.assertIn("127.0.0.1:3001",source)
         self.assertIn("realExternalEffectsIndependentProof: 'NOT_ESTABLISHED'",source)
         self.assertIn("booking_ops_records",source)
