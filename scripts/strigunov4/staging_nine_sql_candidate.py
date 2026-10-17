@@ -41,6 +41,108 @@ def require(check, code):
     if not check:
         raise gate.Block(code)
 
+TXN_CONTROL = re.compile(
+    r"^(?:BEGIN(?:\s+(?:WORK|TRANSACTION))?|START\s+TRANSACTION|"
+    r"COMMIT(?:\s+(?:WORK|TRANSACTION))?(?:\s+AND\s+(?:NO\s+)?CHAIN)?|"
+    r"END(?:\s+(?:WORK|TRANSACTION))?|"
+    r"ROLLBACK(?:\s+(?:WORK|TRANSACTION))?(?:\s+AND\s+(?:NO\s+)?CHAIN)?|"
+    r"ABORT(?:\s+(?:WORK|TRANSACTION))?)\s*;$", re.I
+)
+
+def top_level_transaction_statements(source):
+    """Read only semicolon-delimited top-level commands; mask quoted/comment bodies.
+
+    Fail closed for unterminated quoting. No general SQL parsing or execution.
+    """
+    masked = []
+    state = "plain"
+    dollar = None
+    i = 0
+    depth = 0
+    while i < len(source):
+        ch = source[i]
+        nxt = source[i:i + 2]
+        if state == "line":
+            if ch == "\n":
+                state = "plain"
+                masked.append("\n")
+            else:
+                masked.append(" ")
+            i += 1
+            continue
+        if state == "block":
+            if nxt == "/*":
+                depth += 1
+                masked.extend("  ")
+                i += 2
+            elif nxt == "*/":
+                depth -= 1
+                masked.extend("  ")
+                i += 2
+                if depth == 0:
+                    state = "plain"
+            else:
+                masked.append("\n" if ch == "\n" else " ")
+                i += 1
+            continue
+        if state in ("single", "double"):
+            quote = "'" if state == "single" else '"'
+            if ch == quote and source[i:i + 2] == quote * 2:
+                masked.extend("  ")
+                i += 2
+            elif ch == quote:
+                masked.append(" ")
+                state = "plain"
+                i += 1
+            else:
+                masked.append("\n" if ch == "\n" else " ")
+                i += 1
+            continue
+        if state == "dollar":
+            if source.startswith(dollar, i):
+                masked.extend(" " * len(dollar))
+                i += len(dollar)
+                state = "plain"
+            else:
+                masked.append("\n" if ch == "\n" else " ")
+                i += 1
+            continue
+        if nxt == "--":
+            state = "line"
+            masked.extend("  ")
+            i += 2
+        elif nxt == "/*":
+            state = "block"
+            depth = 1
+            masked.extend("  ")
+            i += 2
+        elif ch == "'":
+            state = "single"
+            masked.append(" ")
+            i += 1
+        elif ch == '"':
+            state = "double"
+            masked.append(" ")
+            i += 1
+        elif ch == "$" and (m := re.match(r"\$[A-Za-z_0-9]*\$", source[i:])):
+            dollar = m.group()
+            state = "dollar"
+            masked.extend(" " * len(dollar))
+            i += len(dollar)
+        else:
+            masked.append(ch)
+            i += 1
+    require(state in ("plain", "line") and depth == 0, "SQL_UNTERMINATED_LITERAL")
+    statements = []
+    start = 0
+    clean = "".join(masked)
+    for match in re.finditer(";", clean):
+        raw = clean[start:match.end()].strip()
+        if TXN_CONTROL.fullmatch(raw):
+            statements.append((raw.upper(), start, match.end()))
+        start = match.end()
+    return statements
+
 def read_sources(root, files=None):
     files = gate.SQL_FILES if files is None else tuple(files)
     require(len(files) == len(VERSIONS) == 9, "FILE_COUNT")
@@ -53,18 +155,17 @@ def read_sources(root, files=None):
         text = (Path(root) / name).read_bytes().decode("utf-8")
         require("\r" not in text, "NOT_GIT_LF")
         require(not re.search(r"(?m)^\s*\\", text), "PSQL_META_IN_SOURCE")
-        txn_begins = re.findall(r"(?m)^BEGIN;[ \t]*$", text)
-        txn_commits = re.findall(r"(?m)^COMMIT;[ \t]*$", text)
-        txn_rollbacks = re.findall(r"(?m)^ROLLBACK;[ \t]*$", text)
-        require(not txn_rollbacks, "EMBEDDED_ROLLBACK")
+        commands = top_level_transaction_statements(text)
+        require(not any(c[0].startswith(("ROLLBACK", "ABORT")) for c in commands), "EMBEDDED_ROLLBACK")
         if i == 6:
-            require(len(txn_begins) == len(txn_commits) == 1, "G0_TRANSACTION_SHAPE")
+            require([item[0] for item in commands] == ["BEGIN;", "COMMIT;"],
+                    "G0_TRANSACTION_SHAPE")
+            # Only remove the exact reviewed pair, not a quoted procedural body.
             text = re.sub(r"(?m)^BEGIN;[ \t]*\n", "", text, count=1)
             text = re.sub(r"(?m)^COMMIT;[ \t]*(\n|$)", "", text, count=1)
         else:
-            require(not txn_begins and not txn_commits, "EMBEDDED_TRANSACTION")
-        require(not re.search(r"(?m)^(BEGIN|COMMIT|ROLLBACK);[ \t]*$", text),
-                "LEFTOVER_TRANSACTION_MARKER")
+            require(not commands, "EMBEDDED_TRANSACTION")
+        require(not top_level_transaction_statements(text), "LEFTOVER_TRANSACTION_MARKER")
         logical = basename[len(version) + 1 : -4]
         require(re.fullmatch("[a-z0-9_]+", logical) is not None, "MIGRATION_NAME")
         sources.append((version, logical, expected, text))
@@ -209,6 +310,8 @@ def render(root=gate.SOURCE_ROOT, files=None):
     require(len(re.findall(r"(?m)^BEGIN;$", candidate)) == 1, "OUTER_BEGIN")
     require(len(re.findall(r"(?m)^COMMIT;$", candidate)) == 1, "OUTER_COMMIT")
     require(not re.search(r"(?m)^ROLLBACK;$", candidate), "ROLLBACK_IN_APPLY")
+    safe_scan = candidate.replace(chr(92) + "set ON_ERROR_STOP on", "", 1)
+    require([c[0] for c in top_level_transaction_statements(safe_scan)] == ["BEGIN;", "COMMIT;"], "FINAL_TRANSACTION_CONTROLS")
     return candidate
 
 def main():

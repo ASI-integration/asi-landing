@@ -101,6 +101,33 @@ class NineSqlCandidateTests(unittest.TestCase):
         with self.assertRaisesRegex(gate.Block, "EMBEDDED_ROLLBACK"):
             self.render()
 
+    def test_transaction_spelling_variants_are_blocked(self):
+        variants = (
+            "commit;", "START TRANSACTION;", "ABORT;",
+            "COMMIT AND CHAIN;", "END;", "ROLLBACK AND NO CHAIN;",
+        )
+        for statement in variants:
+            with self.subTest(statement=statement):
+                path, _ = self.sources[0]
+                body = ("SELECT 1;\n" + statement + "\n").encode()
+                (self.root / path).write_bytes(body)
+                self.sources[0] = (path, hashlib.sha256(body).hexdigest())
+                with self.assertRaises(gate.Block):
+                    self.render()
+
+    def test_procedural_and_commented_keywords_not_top_level(self):
+        body = (
+            "-- COMMIT;\n"
+            "/* ABORT; */\n"
+            "DO $block$ BEGIN PERFORM 1; END $block$;\n"
+            "SELECT 'ROLLBACK;';\n"
+        )
+        self.assertEqual(s.top_level_transaction_statements(body), [])
+
+    def test_unterminated_literal_fails_closed(self):
+        with self.assertRaisesRegex(gate.Block, "SQL_UNTERMINATED_LITERAL"):
+            s.top_level_transaction_statements("SELECT $x$BEGIN;")
+
     def test_no_database_io_by_candidate(self):
         text = Path(s.__file__).read_text()
         self.assertNotIn("import psycopg", text)
