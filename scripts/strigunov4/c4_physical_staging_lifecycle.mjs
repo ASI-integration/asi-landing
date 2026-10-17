@@ -81,7 +81,7 @@ async function post(pathname, data, cookie) {
 async function ownedBookingIds() {
   const response = await sb.from('booking_ops_records')
     .select('id,account_id,property_id')
-    .eq('account_id', fixture.accountId).eq('property_id', fixture.propertyId);
+    .eq('property_id', fixture.propertyId);
   const rows = await result(response, 'LOOKUP_BOOKINGS');
   if (rows.length > 2 || rows.some(r => r.account_id !== fixture.accountId ||
       r.property_id !== fixture.propertyId)) throw Error('OWNERSHIP_UNCERTAIN');
@@ -97,7 +97,7 @@ async function cleanupOwned() {
   const bookings = await ownedBookingIds();
   fixture.bookingIds = [...new Set([...fixture.bookingIds, ...bookings])];
   for (const id of fixture.bookingIds) {
-    if (!bookings.includes(id)) continue;
+    if (!bookings.includes(id)) throw Error('BOOKING_SCOPE_MISMATCH');
     const row = await sb.from('booking_ops_records').select('account_id,property_id')
       .eq('id', id).maybeSingle();
     const item = await result(row, 'BOOKING_SCOPE');
