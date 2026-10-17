@@ -95,6 +95,8 @@ class PhysicalGateTests(unittest.TestCase):
         self.assertIn("C4_PHYSICAL_APPROVED",source)
         self.assertIn("C4_PHYSICAL_CORE_PASS",source)
         self.assertIn("NO_SENT_INTENT_FOR_FIXTURE",source)
+        self.assertIn("INTAKE_OWNERSHIP",source)
+        self.assertIn("INTAKE_RECEIPT_REMAINS",source)
         self.assertIn("127.0.0.1:3001",source)
         self.assertIn("realExternalEffectsIndependentProof: 'NOT_ESTABLISHED'",source)
         self.assertIn("booking_ops_records",source)
