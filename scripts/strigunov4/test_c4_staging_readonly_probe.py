@@ -92,6 +92,8 @@ class ProtectedC4ReadOnlyTests(unittest.TestCase):
                          "urllib.error.HTTPError","STAGING_G0","401"):
             if fragment=="STAGING_G0": continue
             self.assertIn(fragment,source)
+        self.assertIn('data=b"[" if method=="POST" else None',source)
+        self.assertNotIn('data=b"{}"',source)
         self.assertNotIn("DELETE FROM",source)
         self.assertNotIn("db push",source)
         self.assertNotIn("systemctl restart",source)
