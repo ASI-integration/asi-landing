@@ -1,0 +1,30 @@
+name: Strigunov4 G0 release archive offline contract
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/strigunov4-g0-release-archive.yml'
+      - 'scripts/strigunov4/g0_release_archive.py'
+      - 'scripts/strigunov4/test_g0_release_archive.py'
+      - 'docs/strigunov4/G0-RELEASE-ARCHIVE-CONTRACT.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  source_only_archive_validation:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Check safe archive manifest contract and negative cases
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile scripts/strigunov4/g0_release_archive.py scripts/strigunov4/test_g0_release_archive.py
+          python3 -m unittest discover -s scripts/strigunov4 -p test_g0_release_archive.py -v
+          git diff --check
