@@ -120,8 +120,10 @@ def run_preflight(env, root=SOURCE_ROOT):
     verify_sql(root)
     observed_sha = checked(["git", "-C", str(root), "rev-parse", "HEAD"]).decode().strip()
     require(observed_sha == env["GITHUB_SHA"], "CHECKOUT_HEAD_MISMATCH")
-    # The old release SHA is a reviewed ancestor, not the new workflow SHA.
-    checked(["git", "-C", str(root), "merge-base", "--is-ancestor", RELEASE_SHA, "HEAD"])
+    # GitHub can squash-merge the reviewed PR: ancestry is NOT evidence of
+    # the release's bytes. The archived G0 SHA/tree/digest are verified by
+    # the independent fixed remote quarantine probe, and every current SQL
+    # source byte is verified above. No unreviewed ref is checked out.
     script = Path(__file__).with_name("protected_staging_host_probe.py")
     require(_file_digest(script.parent, script.name) != "", "HOST_PROBE_MISSING")
     with tempfile.TemporaryDirectory(prefix="strigunov4-staging-preflight-") as tmp:

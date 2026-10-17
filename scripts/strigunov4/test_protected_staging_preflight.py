@@ -158,6 +158,7 @@ class ProtectedAdmissionTests(unittest.TestCase):
         paths = [Path(a.__file__), Path(host.__file__)]
         for path in paths:
             text = path.read_text()
+            self.assertNotIn("merge-base", text)
             self.assertNotIn("systemctl stop", text)
             self.assertNotIn("systemctl restart", text)
             self.assertNotIn("pg_restore", text)
