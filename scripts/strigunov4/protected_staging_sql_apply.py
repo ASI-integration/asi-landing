@@ -182,6 +182,21 @@ def postgres_client_command(work, operation, sqlfile=None):
         cmd+=["-c",query]
     return cmd
 
+def verified_postcommit_readback(readback):
+    """After SQL started, any unreadable or unexpected history is ambiguous.
+
+    Even an EXIT_ZERO from the apply command cannot be called successful if
+    read-only postflight could not prove the exact history after COMMIT.
+    """
+    try:
+        actual=readback()
+        if type(actual) is not bytes or actual.decode("utf-8","strict").strip()!="postgres|17|99|7|9":
+            raise ValueError("HISTORY_DRIFT")
+        return True
+    except Exception:
+        raise Gate("POST_APPLY_HISTORY_REQUIRES_REVIEW") from None
+
+
 def postgres_stage(e,url,source):
     # Source must be pinned before *any* DB connection.
     require(len(source)==SQL_BYTES and hashlib.sha256(source).hexdigest()==SQL_SHA256,
@@ -207,8 +222,9 @@ def postgres_stage(e,url,source):
                  env=write_env,timeout=700)
         except Gate:
             raise Gate("SQL_APPLY_RESULT_UNKNOWN_OR_REJECTED") from None
-        after=call(postgres_client_command(work,"postcheck"),env=read_env,timeout=75)
-        require(after.decode().strip()=="postgres|17|99|7|9","POST_APPLY_HISTORY_REQUIRES_REVIEW")
+        verified_postcommit_readback(
+            lambda: call(postgres_client_command(work,"postcheck"),
+                         env=read_env,timeout=75))
     return {"status":"STAGING_NINE_SQL_APPLIED","registered":9,
             "sourceSha256":SQL_SHA256,"backupRun":LATEST_BACKUP_RUN,
             "hostNoSendVerified":True,"applicationDeployed":False}
@@ -226,7 +242,11 @@ def main():
         print(json.dumps(result,sort_keys=True))
         return 0
     except Gate as error:
-        print(json.dumps({"status":"BLOCK","reason":str(error),
+        reason=str(error)
+        status=("SQL_STATE_REQUIRES_RECONCILIATION" if reason in (
+            "SQL_APPLY_RESULT_UNKNOWN_OR_REJECTED",
+            "POST_APPLY_HISTORY_REQUIRES_REVIEW") else "BLOCK")
+        print(json.dumps({"status":status,"reason":reason,
                           "applicationDeployed":False},sort_keys=True))
         return 2
     except Exception:

@@ -190,6 +190,51 @@ class ProtectedStagingSqlTests(unittest.TestCase):
                 self.assertEqual(m.main(),2)
             apply.assert_not_called()
 
+    def test_exact_postcommit_readback_pass(self):
+        self.assertTrue(m.verified_postcommit_readback(
+            lambda: b"postgres|17|99|7|9\n"))
+
+    def test_postcommit_failures_require_manual_reconciliation(self):
+        failures = (
+            lambda: b"postgres|17|90|7|0\n",
+            lambda: b"postgres|17|99|7|8\n",
+            lambda: b"\xff",
+            lambda: None,
+            lambda: (_ for _ in ()).throw(m.Gate("COMMAND_FAILED")),
+            lambda: (_ for _ in ()).throw(TimeoutError("synthetic timeout")),
+            lambda: (_ for _ in ()).throw(RuntimeError("bad parse")),
+        )
+        for read in failures:
+            with self.subTest(kind=str(read)):
+                with self.assertRaisesRegex(
+                        m.Gate,"POST_APPLY_HISTORY_REQUIRES_REVIEW"):
+                    m.verified_postcommit_readback(read)
+
+    def test_main_distinguishes_started_sql_from_preflight_failure(self):
+        for reason, expect in (
+            ("SQL_APPLY_RESULT_UNKNOWN_OR_REJECTED",
+             "SQL_STATE_REQUIRES_RECONCILIATION"),
+            ("POST_APPLY_HISTORY_REQUIRES_REVIEW",
+             "SQL_STATE_REQUIRES_RECONCILIATION"),
+            ("HOST_BACKUP_OR_NO_SEND_BLOCK","BLOCK"),
+        ):
+            with self.subTest(reason=reason), \
+                 patch.object(m,"validate_context",return_value=(
+                     SHA,"1",sample()["STAGING_DATABASE_URL"],
+                     "stage.example.invalid",22)), \
+                 patch.object(m,"call",return_value=(SHA+"\n").encode()), \
+                 patch.object(m,"build_candidate",return_value=b"synthetic"), \
+                 patch.object(m,"check_host",return_value=True), \
+                 patch.object(m,"postgres_stage",side_effect=m.Gate(reason)), \
+                 patch.dict(m.os.environ,{},clear=True):
+                out=io.StringIO()
+                with contextlib.redirect_stdout(out):
+                    status=m.main()
+                self.assertEqual(status,2)
+                result=json.loads(out.getvalue())
+                self.assertEqual(result["status"],expect)
+                self.assertEqual(result["reason"],reason)
+
     def test_no_credentials_echoed_by_source(self):
         source=Path(m.__file__).read_text(encoding="utf-8")
         self.assertNotIn("print(url)",source)
