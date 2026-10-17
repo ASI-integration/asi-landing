@@ -1,0 +1,102 @@
+name: Strigunov4 protected G0 systemd activation
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/strigunov4-protected-g0-activation.yml'
+      - '.github/workflows/strigunov4-g0-release-archive.yml'
+      - 'scripts/strigunov4/protected_staging_g0_activation.py'
+      - 'scripts/strigunov4/g0_activation_host.py'
+      - 'scripts/strigunov4/test_protected_g0_activation.py'
+      - 'scripts/strigunov4/g0_release_archive.py'
+      - 'scripts/strigunov4/protected_staging_sql_apply.py'
+      - 'scripts/strigunov4/protected_staging_host_probe.py'
+      - 'docs/strigunov4/PROTECTED-G0-ACTIVATION.md'
+      - 'supabase/migrations/20261016203000_booking_availability_canonical_lock.sql'
+      - 'supabase/migrations/20261016213000_booking_availability_shared_writer_lock.sql'
+  workflow_dispatch:
+    inputs:
+      reviewed_main_sha:
+        description: Exact reviewed current main SHA
+        required: true
+        type: string
+      confirm:
+        description: ACTIVATE_STRIGUNOV4_G0_<full main SHA>
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+# One repository-wide mutex with the protected nine-migration apply workflow.
+concurrency:
+  group: strigunov4-staging-nine-sql-apply
+  cancel-in-progress: false
+
+jobs:
+  offline_source_tests:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Check immutable archive and owner-stage admission without credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile scripts/strigunov4/protected_staging_g0_activation.py scripts/strigunov4/g0_activation_host.py
+          python3 -m unittest discover -s scripts/strigunov4 -p 'test_protected_g0_activation.py' -v
+          python3 -m unittest discover -s scripts/strigunov4 -p 'test_g0_release_archive.py' -v
+          git diff --check
+
+  protected_owner_activate:
+    if: github.event_name == 'workflow_dispatch' && github.repository == 'ASI-integration/asi-landing'
+    runs-on: ubuntu-24.04
+    environment: staging
+    timeout-minutes: 25
+    steps:
+      - name: Require protected main, exact owner and one approved run
+        shell: bash
+        env:
+          REVIEWED_SHA: ${{ inputs.reviewed_main_sha }}
+          CONFIRM: ${{ inputs.confirm }}
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = ASI-integration/asi-landing
+          test "$GITHUB_REF" = refs/heads/main
+          test "$GITHUB_EVENT_NAME" = workflow_dispatch
+          test "$GITHUB_ACTOR" = ASI-integration
+          test "$GITHUB_ACTOR_ID" = 207600140
+          test "$GITHUB_TRIGGERING_ACTOR" = ASI-integration
+          test "$GITHUB_RUN_ATTEMPT" = 1
+          test "$GITHUB_WORKFLOW_REF" = 'ASI-integration/asi-landing/.github/workflows/strigunov4-protected-g0-activation.yml@refs/heads/main'
+          test "$GITHUB_WORKFLOW_SHA" = "$GITHUB_SHA"
+          [[ "$REVIEWED_SHA" =~ ^[0-9a-f]{40}$ ]]
+          test "$REVIEWED_SHA" = "$GITHUB_SHA"
+          test "$CONFIRM" = "ACTIVATE_STRIGUNOV4_G0_$REVIEWED_SHA"
+      - name: Checkout exact protected source without persisted GitHub credentials
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Reverify exact checkout and fail-closed offline tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          python3 -m unittest discover -s scripts/strigunov4 -p 'test_protected_g0_activation.py' -v
+          python3 -m unittest discover -s scripts/strigunov4 -p 'test_g0_release_archive.py' -v
+      - name: Prove staging database 99/7/9, activate immutable G0 and verify process
+        env:
+          STAGING_REVIEWED_MAIN_SHA: ${{ inputs.reviewed_main_sha }}
+          G0_ACTIVATION_CONFIRM: ${{ inputs.confirm }}
+          STAGING_SUPABASE_PROJECT_REF: ${{ secrets.STAGING_SUPABASE_PROJECT_REF }}
+          STAGING_DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
+          STAGING_SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+          STAGING_SSH_USER: ${{ secrets.STAGING_SSH_USER }}
+          STAGING_SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
+          STAGING_SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+        run: python3 scripts/strigunov4/protected_staging_g0_activation.py
