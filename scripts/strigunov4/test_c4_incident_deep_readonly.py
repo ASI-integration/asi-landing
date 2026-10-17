@@ -120,6 +120,8 @@ class DeepReadOnlyTests(unittest.TestCase):
             self.assertIn("--set",cmd)
             self.assertIn("VERBOSITY=sqlstate",cmd)
             self.assertTrue(kwargs.get("allow_nonzero"))
+            if "to_regclass(name)" in cmd[-1]:
+                return types.SimpleNamespace(stdout=b"[]\n",stderr=b"",returncode=0)
             self.assertIn("READ ONLY",cmd[-1])
             return types.SimpleNamespace(stdout=("BEGIN\n"+json.dumps(obj)+"\nCOMMIT\n").encode(),
                                          stderr=b"",returncode=0)
@@ -158,6 +160,8 @@ class DeepReadOnlyTests(unittest.TestCase):
                 return types.SimpleNamespace(stdout=(SHA+"\n").encode())
             self.assertTrue(kwargs.get("allow_nonzero"))
             self.assertIn("VERBOSITY=sqlstate",cmd)
+            if "to_regclass(name)" in cmd[-1]:
+                return types.SimpleNamespace(stdout=b"[]\n",stderr=b"",returncode=0)
             return types.SimpleNamespace(
                 stdout=b"secret-stdout-not-to-print",
                 stderr=leaked,returncode=1)
@@ -172,6 +176,25 @@ class DeepReadOnlyTests(unittest.TestCase):
                 deep.run(valid())
         self.assertEqual(str(ctx.exception),"DEEP_CENSUS_SQLSTATE_42P01")
         self.assertNotIn("secret",str(ctx.exception))
+
+    def test_schema_preflight_blocks_missing_table_without_row_reads(self):
+        """Missing fixed schema objects must block before deep-census counts."""
+        def checked(cmd,**kwargs):
+            if cmd[0]=="git":
+                return types.SimpleNamespace(stdout=(SHA+"\n").encode())
+            self.assertIn("to_regclass(name)",cmd[-1])
+            return types.SimpleNamespace(
+                stdout=b'["public.booking_ops_events"]\n',stderr=b"",returncode=0)
+        with patch.object(deep.g0,"checked",side_effect=checked), \
+             patch.object(deep.g0,"exact_sql_history",return_value=True), \
+             patch.object(deep.pg,"db_environment",
+                          return_value={"PGOPTIONS":"-c default_transaction_read_only=on"}), \
+             patch.object(deep.pg,"postgres_client_command",
+                          return_value=["docker","psql","-c","QUERY"]), \
+             patch.object(deep.g0.tls_guard,"ca_bytes",return_value=b"FAKE_CA"):
+            with self.assertRaises(deep.Block) as error:
+                deep.run(valid())
+        self.assertEqual(str(error.exception),"MISSING_RELATION_BOOKING_OPS_EVENTS")
 
     def test_invalid_receipts_fail_closed(self):
         buf=io.StringIO()
