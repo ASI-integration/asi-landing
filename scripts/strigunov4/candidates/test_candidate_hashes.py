@@ -111,7 +111,7 @@ class CandidateDigestTests(unittest.TestCase):
                 sql_dir.symlink_to(target, target_is_directory=True)
             except (OSError, NotImplementedError):
                 self.skipTest("symlinks unavailable on this runner")
-            with self.assertRaisesRegex(v.IntegrityBlock, "SYMLINK_COMPONENT"):
+            with self.assertRaisesRegex(v.IntegrityBlock, "SQL_DIRECTORY_INVALID"):
                 v.verify(self.root)
 
     def test_symlinked_manifest_rejected(self):
