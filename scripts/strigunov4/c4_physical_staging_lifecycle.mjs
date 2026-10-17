@@ -3,12 +3,8 @@
 // Never start this with laptop credentials or on a public endpoint.
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { createRequire } from 'node:module';
-import path from 'node:path';
-
-const fromRelease = createRequire(path.join(process.cwd(), 'package.json'));
-const { sealData } = fromRelease('iron-session');
-const { createClient } = fromRelease('@supabase/supabase-js');
+import { sealData } from 'iron-session';
+import { createClient } from '@supabase/supabase-js';
 const STAGE = 'http://127.0.0.1:3001';
 const G0 = 'd912aec6663de90e5ca4293cc5a69e2e0ed9ff94';
 const EMAIL = 'staging-acceptance@asi.local';
