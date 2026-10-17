@@ -73,7 +73,7 @@ try:
         ("POST","/api/dashboard/booking-ops"),
     )
     for method,path in routes:
-        data=b"{}" if method=="POST" else None
+        data=b"[" if method=="POST" else None
         req=urllib.request.Request(base+path,data=data,method=method,
                                    headers={"Content-Type":"application/json"} if data else {})
         try:
