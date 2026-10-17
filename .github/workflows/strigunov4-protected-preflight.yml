@@ -1,0 +1,93 @@
+name: Strigunov4 protected staging read-only preflight
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/strigunov4/protected_staging_admission.py'
+      - 'scripts/strigunov4/protected_staging_host_probe.py'
+      - 'scripts/strigunov4/test_protected_staging_preflight.py'
+      - 'docs/strigunov4/PROTECTED-STAGING-PREFLIGHT.md'
+      - '.github/workflows/strigunov4-protected-preflight.yml'
+  workflow_dispatch:
+    inputs:
+      reviewed_main_sha:
+        description: Exact current protected main SHA being independently reviewed
+        required: true
+        type: string
+      confirm:
+        description: Type VERIFY_STRIGUNOV4_STAGING_ONLY (no apply or deploy)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: strigunov4-protected-preflight
+  cancel-in-progress: false
+
+jobs:
+  source_only_linux_tests:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Verify fail-closed staging-source checks without credentials
+        run: |
+          set -euo pipefail
+          python3 -m py_compile scripts/strigunov4/protected_staging_admission.py scripts/strigunov4/protected_staging_host_probe.py
+          python3 -m unittest discover -s scripts/strigunov4 -p test_protected_staging_preflight.py -v
+          git diff --check
+
+  owner_approved_read_only:
+    if: github.event_name == 'workflow_dispatch' && github.repository == 'ASI-integration/asi-landing'
+    runs-on: ubuntu-24.04
+    environment: staging
+    timeout-minutes: 10
+    steps:
+      - name: Require exact main, owner and single run before checkout
+        shell: bash
+        env:
+          REVIEWED_SHA: ${{ inputs.reviewed_main_sha }}
+          CONFIRM: ${{ inputs.confirm }}
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = ASI-integration/asi-landing
+          test "$GITHUB_REF" = refs/heads/main
+          test "$GITHUB_EVENT_NAME" = workflow_dispatch
+          test "$GITHUB_ACTOR" = ASI-integration
+          test "$GITHUB_ACTOR_ID" = 207600140
+          test "$GITHUB_TRIGGERING_ACTOR" = ASI-integration
+          test "$GITHUB_RUN_ATTEMPT" = 1
+          test "$GITHUB_WORKFLOW_REF" = 'ASI-integration/asi-landing/.github/workflows/strigunov4-protected-preflight.yml@refs/heads/main'
+          test "$GITHUB_WORKFLOW_SHA" = "$GITHUB_SHA"
+          [[ "$REVIEWED_SHA" =~ ^[0-9a-f]{40}$ ]]
+          test "$REVIEWED_SHA" = "$GITHUB_SHA"
+          test "$CONFIRM" = VERIFY_STRIGUNOV4_STAGING_ONLY
+      - name: Checkout exact GitHub-owned main SHA without persisting credentials
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Recheck exact reviewed checkout and safe code
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          python3 -m unittest discover -s scripts/strigunov4 -p test_protected_staging_preflight.py -v
+      - name: Read-only staging archive/service/no-send check
+        env:
+          STRIGUNOV_REVIEWED_MAIN_SHA: ${{ inputs.reviewed_main_sha }}
+          STRIGUNOV_CONFIRM: ${{ inputs.confirm }}
+          STAGING_SUPABASE_PROJECT_REF: ${{ secrets.STAGING_SUPABASE_PROJECT_REF }}
+          STAGING_APP_PATH: /var/www/asi-staging
+          STAGING_PORT: '3001'
+          STAGING_SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+          STAGING_SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
+          STAGING_SSH_USER: ${{ secrets.STAGING_SSH_USER }}
+          STAGING_SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+        run: python3 scripts/strigunov4/protected_staging_admission.py
