@@ -113,6 +113,37 @@ class C4IncidentReadOnlyTests(unittest.TestCase):
         self.assertEqual(x["recordCounts"],
                          {key:value for key,value in record.items() if key!="incidentRun"})
 
+    def test_history_and_census_failures_have_distinct_safe_reasons(self):
+        for stage in ("CHECKOUT","HISTORY","CENSUS"):
+            with self.subTest(stage=stage):
+                with self.assertRaises(audit.Block) as ctx:
+                    audit.stage_gate(stage,lambda: (_ for _ in ()).throw(
+                        audit.g0.Gate("COMMAND_FAILURE")))
+                self.assertEqual(str(ctx.exception),stage+"_COMMAND_FAILURE")
+
+    def test_untrusted_error_text_is_not_exposed(self):
+        with self.assertRaises(audit.Block) as ctx:
+            audit.stage_gate("CENSUS",lambda: (_ for _ in ()).throw(
+                audit.g0.Gate("password=never_show_this")))
+        self.assertEqual(str(ctx.exception),"CENSUS_FAILED")
+        output=io.StringIO()
+        with patch.object(audit,"reconcile",
+                          side_effect=audit.Block("TABLE bad; password=secret")), \\
+             contextlib.redirect_stdout(output):
+            self.assertEqual(audit.main(),2)
+        self.assertEqual(json.loads(output.getvalue())["reason"],"UNKNOWN_BLOCK")
+        self.assertNotIn("password",output.getvalue())
+
+    def test_stage_error_code_appears_in_single_block_receipt(self):
+        output=io.StringIO()
+        with patch.object(audit,"reconcile",
+                          side_effect=audit.Block("HISTORY_COMMAND_FAILURE")), \\
+             contextlib.redirect_stdout(output):
+            self.assertEqual(audit.main(),2)
+        self.assertEqual(json.loads(output.getvalue())["reason"],
+                         "HISTORY_COMMAND_FAILURE")
+        self.assertEqual(len(output.getvalue().splitlines()),1)
+
     def test_block_one_sanitized_line(self):
         output=io.StringIO()
         with patch.object(audit,"reconcile",side_effect=audit.Block("NOT_AUTHORIZED")), \
