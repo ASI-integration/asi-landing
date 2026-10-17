@@ -28,6 +28,7 @@ EXPECTED={
 COUNTS=set(EXPECTED)
 OUTPUT={"incidentRun":INCIDENT,"stagingWrites":False,
         "physicalReplayAuthorized":False,"externalEffectsIndependentlyProven":False}
+STATE={"writeAttempted":False}
 
 class Block(ValueError):
     pass
@@ -122,9 +123,26 @@ BEGIN
   SELECT count(*) INTO n FROM public.booking_ops_communication_intents
     WHERE booking_ops_record_id::text='{b}';
   IF n<>6 THEN RAISE EXCEPTION 'C4_PRE_INTENTS_CHANGED'; END IF;
-  SELECT count(*) INTO n FROM public.booking_ops_communication_intents
-    WHERE booking_ops_record_id::text='{b}' AND status IN ('sent','sending');
-  IF n<>0 THEN RAISE EXCEPTION 'C4_SENT_INTENT_WITNESS'; END IF;
+  -- The intent status never contains 'sent' or 'sending'. Actual outbound
+  -- delivery receipts live in the dependent delivery/attempt tables and
+  -- must NEVER be silently cascaded away with their parent intents.
+  SELECT count(*) INTO n
+    FROM public.booking_ops_communication_deliveries d
+    JOIN public.booking_ops_communication_intents i
+      ON i.id=d.communication_intent_id
+    WHERE i.booking_ops_record_id::text='{b}';
+  IF n<>0 THEN RAISE EXCEPTION 'C4_DELIVERY_WITNESS'; END IF;
+  SELECT count(*) INTO n
+    FROM public.booking_ops_communication_auto_send_attempts a
+    JOIN public.booking_ops_communication_intents i
+      ON i.id=a.communication_intent_id
+    WHERE i.booking_ops_record_id::text='{b}';
+  IF n<>0 THEN RAISE EXCEPTION 'C4_SEND_ATTEMPT_WITNESS'; END IF;
+  SELECT count(*) INTO n FROM public.booking_ops_telegram_drafts
+    WHERE booking_ops_record_id::text='{b}'
+      AND status='draft' AND telegram_chat_id IS NULL
+      AND nullif(btrim(telegram_target),'') IS NULL;
+  IF n<>1 THEN RAISE EXCEPTION 'C4_DRAFT_NOT_PRISTINE'; END IF;
   SELECT count(*) INTO n FROM public.booking_ops_telegram_drafts
     WHERE booking_ops_record_id::text='{b}';
   IF n<>1 THEN RAISE EXCEPTION 'C4_PRE_DRAFT_CHANGED'; END IF;
@@ -266,7 +284,9 @@ def run(env):
         cmd=pg.postgres_client_command(folder,"postcheck")
         require(cmd[-2]=="-c","CLIENT_COMMAND")
         cmd[-2:]=["--file","/work/incident.sql"]
-        # On failure, fail closed; DO block raises and transaction rolls back.
+        # Once the writer is invoked, COMMIT outcome can be unknown on failure.
+        # Record attempt *before* the external command and never claim no writes.
+        STATE["writeAttempted"]=True
         try:
             g0.checked(cmd,env=db_env,timeout=90)
         except Exception:
@@ -292,10 +312,16 @@ def main():
     try:
         print(json.dumps(run(os.environ),sort_keys=True))
         return 0
-    except Exception:
+    except Exception as exc:
+        candidate=exc.args[0] if isinstance(exc,Block) and exc.args else ""
+        block_code=(candidate if type(candidate) is str
+                    and re.fullmatch(r"[A-Z][A-Z0-9_]{0,90}",candidate)
+                    else "UNEXPECTED_ERROR")
         print(json.dumps({**OUTPUT,"status":"BLOCK",
-            "reason":"NO_AUTORETRY_INSPECT_PROTECTED_LOGS",
-            "knownFixtureCountsZero":"NOT_PROVEN"},sort_keys=True))
+            "blockCode":block_code,
+            "stagingWrites":"UNKNOWN" if STATE["writeAttempted"] else False,
+            "knownFixtureCountsZero":"NOT_PROVEN",
+            "physicalReplayAuthorized":False},sort_keys=True))
         return 2
 
 if __name__=="__main__":
