@@ -69,6 +69,35 @@ def read_query():
     b,a,p,u=(ids[n] for n in ("booking","account","property","user"))
     return f"""
 BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY;
+-- Schema-only inventory. Walk ON DELETE CASCADE paths, but report NO ACTION
+-- and RESTRICT dependencies encountered at any reached parent.
+WITH RECURSIVE fk_edges AS (
+    SELECT con.confrelid AS parent_oid, con.conrelid AS child_oid,
+           child.relname AS relname, con.confdeltype AS action
+    FROM pg_catalog.pg_constraint con
+    JOIN pg_catalog.pg_class child ON child.oid=con.conrelid
+    JOIN pg_catalog.pg_class parent ON parent.oid=con.confrelid
+    JOIN pg_catalog.pg_namespace child_ns ON child_ns.oid=child.relnamespace
+    JOIN pg_catalog.pg_namespace parent_ns ON parent_ns.oid=parent.relnamespace
+    WHERE con.contype='f' AND child_ns.nspname='public'
+      AND parent_ns.nspname='public'
+), fk_closure AS (
+    SELECT e.parent_oid, e.child_oid, e.relname, e.action, 1 AS depth,
+           ARRAY[e.parent_oid,e.child_oid] AS visited
+    FROM fk_edges e
+    JOIN pg_catalog.pg_class root ON root.oid=e.parent_oid
+    JOIN pg_catalog.pg_namespace root_ns ON root_ns.oid=root.relnamespace
+    WHERE root_ns.nspname='public'
+      AND root.relname IN ('users','accounts','properties','booking_ops_records',
+          'booking_ops_communication_intents','booking_ops_tasks')
+    UNION ALL
+    SELECT edge.parent_oid, edge.child_oid, edge.relname, edge.action,
+           f.depth+1, f.visited || edge.child_oid
+    FROM fk_closure f
+    JOIN fk_edges edge ON edge.parent_oid=f.child_oid
+    WHERE f.action='c' AND f.depth<10
+      AND NOT (edge.child_oid=ANY(f.visited))
+)
 SELECT jsonb_build_object(
   'incidentRun','{INCIDENT}',
   'bookingOpsEvents',(SELECT count(*) FROM public.booking_ops_events WHERE booking_ops_record_id::text='{b}'),
@@ -97,16 +126,18 @@ SELECT jsonb_build_object(
   'syntheticPropertyIdentity',(SELECT count(*) FROM public.properties WHERE id::text='{p}' AND account_id::text='{a}' AND name='C4 isolated property {INCIDENT}'),
   'syntheticBookingIdentity',(SELECT count(*) FROM public.booking_ops_records WHERE id::text='{b}' AND account_id::text='{a}' AND property_id::text='{p}' AND guest_name='C4 synthetic guest {INCIDENT}'),
   'cascadeChildTables',(
-      SELECT coalesce(jsonb_agg(DISTINCT child.relname), '[]'::jsonb)
-      FROM pg_catalog.pg_constraint con
-      JOIN pg_catalog.pg_class child ON child.oid=con.conrelid
-      JOIN pg_catalog.pg_class parent ON parent.oid=con.confrelid
-      JOIN pg_catalog.pg_namespace ns ON ns.oid=child.relnamespace
-      JOIN pg_catalog.pg_namespace parent_ns ON parent_ns.oid=parent.relnamespace
-      WHERE con.contype='f' AND con.confdeltype='c' AND ns.nspname='public'
-        AND parent_ns.nspname='public'
-        AND parent.relname IN ('users','accounts','properties','booking_ops_records',
-          'booking_ops_communication_intents','booking_ops_tasks')
+      SELECT coalesce(jsonb_agg(DISTINCT relname) FILTER (WHERE action='c'),
+                      '[]'::jsonb) FROM fk_closure
+  ),
+  'blockingFkChildTables',(
+      SELECT coalesce(jsonb_agg(DISTINCT relname)
+                      FILTER (WHERE action IN ('a','r')),
+                      '[]'::jsonb) FROM fk_closure
+  ),
+  'setNullOrDefaultChildTables',(
+      SELECT coalesce(jsonb_agg(DISTINCT relname)
+                      FILTER (WHERE action IN ('n','d')),
+                      '[]'::jsonb) FROM fk_closure
   )
 )::text;
 COMMIT;"""
@@ -149,15 +180,19 @@ def run(env):
             "RECEIPT_IDENTITY")
     require(all(type(obj.get(key)) is int and 0<=obj[key]<=10000
                 for key in COUNT_KEYS),"RECEIPT_COUNTS")
-    descendants=obj.get("cascadeChildTables")
-    require(type(descendants) is list and len(descendants)<=150 and
-            all(type(t) is str and re.fullmatch(r"[a-z0-9_]{1,75}",t)
-                for t in descendants),"CASCADE_SCHEMA_SHAPE")
+    for key in ("cascadeChildTables","blockingFkChildTables",
+                "setNullOrDefaultChildTables"):
+        items=obj.get(key)
+        require(type(items) is list and len(items)<=150 and
+                all(type(t) is str and re.fullmatch(r"[a-z0-9_]{1,75}",t)
+                    for t in items),"FK_SCHEMA_SHAPE_"+key.upper())
     return {
         "status":"C4_DEEP_READONLY_DIAG_PASS",
         "incidentRun":INCIDENT,
         "counts":{key:obj[key] for key in COUNT_KEYS},
-        "cascadeChildTables":sorted(set(descendants)),
+        "cascadeChildTables":sorted(set(obj["cascadeChildTables"])),
+        "blockingFkChildTables":sorted(set(obj["blockingFkChildTables"])),
+        "setNullOrDefaultChildTables":sorted(set(obj["setNullOrDefaultChildTables"])),
         "stagingWrites":False,
         "cleanupAttempted":False,
         "externalEffectsIndependentlyProven":False,
