@@ -22,7 +22,7 @@ Adds a separate GitHub `staging`-protected, main-only workflow:
 - previously reviewed PostgreSQL17/TLS verify-full connection and exact 99/7/9 schema history;
 - single `REPEATABLE READ READ ONLY` transaction plus PostgreSQL `default_transaction_read_only=on`;
 - numeric counts for 25 fixed categories, including booking audit events, physical-readiness rows, guest lifecycle, deliveries and send attempts, pristine versus non-pristine Telegram drafts and direct partner descendants;
-- PostgreSQL catalog's **schema-only table names** of `ON DELETE CASCADE` relations referencing users/accounts/properties/bookings/intents/tasks, so additional unmapped dependencies can be detected without revealing row content.
+- PostgreSQL catalog's **schema-only names** from a depth-limited recursive foreign-key dependency map rooted at users/accounts/properties/bookings/intents/tasks. It follows cascade relationships to indirect descendants and separately lists `NO ACTION`/`RESTRICT` blockers and `SET NULL`/`SET DEFAULT` side-effect relationships. This is a diagnostic map, not proof that rows exist in every listed table or that the dependency inventory is exhaustive for every possible schema path.
 
 The output excludes guest names/emails, passwords, message bodies, booking content and connection details. It does not delete, attempt cleanup, send anything, migrate or deploy. If the query fails due to missing tables/columns, it prints a sanitized BLOCK stage code instead of SQL stderr.
 
