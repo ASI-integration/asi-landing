@@ -174,6 +174,40 @@ def run(env):
                 "READ_ONLY_REQUIRED")
         cmd=pg.postgres_client_command(temp,"postcheck")
         require(cmd[-2]=="-c","PSQL_COMMAND_SHAPE")
+        # Fixed names only; schema preflight does not read any booking rows.
+        required_tables=(
+            "booking_ops_events","booking_cleaning_tasks","booking_linen_tasks",
+            "booking_supplies_tasks","booking_maintenance_tickets",
+            "booking_physical_readiness","booking_physical_coordination_drafts",
+            "guest_lifecycle_events","booking_ops_communication_deliveries",
+            "booking_ops_communication_auto_send_attempts","booking_ops_telegram_drafts",
+            "partner_account_bindings","partner_property_bindings","partner_booking_bindings",
+            "partner_communication_inbox","partner_communication_sessions",
+            "partner_communication_turns","partner_communication_handoffs",
+            "partner_communication_actions","partner_communication_decisions",
+            "users","accounts","properties","booking_ops_records",
+            "booking_ops_communication_intents"
+        )
+        quoted=",".join("'public."+table+"'" for table in required_tables)
+        cmd[-1]=("SELECT coalesce(jsonb_agg(name ORDER BY name),'[]'::jsonb)"
+                 " FROM (SELECT unnest(ARRAY["+quoted+"]) AS name) fixed"
+                 " WHERE to_regclass(name) IS NULL;")
+        cmd[-2:-2]=["--set","VERBOSITY=sqlstate"]
+        inventory=gated("DEEP_CENSUS",lambda:g0.checked(
+            cmd,env=db_env,timeout=90,allow_nonzero=True))
+        if inventory.returncode:
+            raise Block(safe_sqlstate(inventory.stderr))
+        try:
+            missing=json.loads(inventory.stdout.decode("ascii","strict").strip())
+        except (ValueError,UnicodeError):
+            raise Block("SCHEMA_RECEIPT_INVALID") from None
+        require(type(missing) is list and len(missing)<=len(required_tables)
+                and all(type(name) is str and name in
+                        {"public."+item for item in required_tables} for name in missing),
+                "SCHEMA_RECEIPT_INVALID")
+        if missing:
+            # Only names from the fixed, reviewed schema allowlist may be emitted.
+            raise Block("MISSING_RELATION_"+missing[0].split(".",1)[1].upper())
         cmd[-1]=read_query()
         # psql prints SQLSTATE only; never emit unredacted database stderr.
         cmd[-2:-2]=["--set","VERBOSITY=sqlstate"]
