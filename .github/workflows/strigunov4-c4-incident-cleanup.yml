@@ -1,0 +1,90 @@
+name: Strigunov4 C4 protected exact-ID failed-fixture cleanup
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/strigunov4-c4-incident-cleanup.yml'
+      - 'scripts/strigunov4/c4_incident_exact_cleanup.py'
+      - 'scripts/strigunov4/test_c4_incident_exact_cleanup.py'
+      - 'docs/strigunov4/C4-INCIDENT-39047710115-CLEANUP.md'
+  workflow_dispatch:
+    inputs:
+      reviewed_main_sha:
+        description: Exact reviewed current protected main SHA
+        required: true
+        type: string
+      confirm:
+        description: CLEAN_C4_INCIDENT_<full reviewed SHA>
+        required: true
+        type: string
+      incident_run:
+        description: Exact failed C4 incident run, 39047710115
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.event_name == 'workflow_dispatch' && 'strigunov4-staging-nine-sql-apply' || format('strigunov4-c4-cleanup-pr-{0}', github.ref) }}
+  cancel-in-progress: false
+
+jobs:
+  offline_source_checks:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Confirm incident-only source contract and failure protections
+        run: |
+          set -euo pipefail
+          python3 -m py_compile scripts/strigunov4/c4_incident_exact_cleanup.py
+          python3 -m unittest discover -s scripts/strigunov4 -p 'test_c4_incident_exact_cleanup.py' -v
+          git diff --check
+
+  protected_exact_cleanup:
+    if: github.event_name == 'workflow_dispatch' && github.repository == 'ASI-integration/asi-landing'
+    needs: offline_source_checks
+    runs-on: ubuntu-24.04
+    environment: staging
+    timeout-minutes: 13
+    steps:
+      - name: Require exact owner, protected SHA and specific incident
+        shell: bash
+        env:
+          REVIEWED_SHA: ${{ inputs.reviewed_main_sha }}
+          CONFIRM: ${{ inputs.confirm }}
+          INCIDENT: ${{ inputs.incident_run }}
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = "ASI-integration/asi-landing"
+          test "$GITHUB_EVENT_NAME" = "workflow_dispatch"
+          test "$GITHUB_REF" = "refs/heads/main"
+          test "$GITHUB_ACTOR" = "ASI-integration"
+          test "$GITHUB_ACTOR_ID" = "207600140"
+          test "$GITHUB_TRIGGERING_ACTOR" = "ASI-integration"
+          test "$GITHUB_RUN_ATTEMPT" = "1"
+          test "$GITHUB_WORKFLOW_REF" = 'ASI-integration/asi-landing/.github/workflows/strigunov4-c4-incident-cleanup.yml@refs/heads/main'
+          test "$GITHUB_WORKFLOW_SHA" = "$GITHUB_SHA"
+          test "$REVIEWED_SHA" = "$GITHUB_SHA"
+          test "$CONFIRM" = "CLEAN_C4_INCIDENT_$GITHUB_SHA"
+          test "$INCIDENT" = "39047710115"
+          test "$(git ls-remote https://github.com/ASI-integration/asi-landing.git refs/heads/main | cut -f1)" = "$GITHUB_SHA"
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Atomic exact-owned PostgreSQL17 cleanup and independent read-back
+        env:
+          C4_REVIEWED_MAIN_SHA: ${{ inputs.reviewed_main_sha }}
+          C4_CONFIRM: ${{ inputs.confirm }}
+          C4_INCIDENT_RUN: ${{ inputs.incident_run }}
+          STAGING_SUPABASE_PROJECT_REF: ${{ secrets.STAGING_SUPABASE_PROJECT_REF }}
+          STAGING_DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
+          STAGING_SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+          STAGING_SSH_USER: ${{ secrets.STAGING_SSH_USER }}
+          STAGING_SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
+          STAGING_SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+        run: python3 scripts/strigunov4/c4_incident_exact_cleanup.py
