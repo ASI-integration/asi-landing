@@ -44,16 +44,19 @@ REMOTE_BLOCK_CODES = frozenset({
 
 def decode_remote_result(raw, returncode):
     """Never treat a nonzero remote worker as success or echo its raw stdout."""
-    require(type(raw) is bytes and len(raw) <= 4096, "REMOTE_RECEIPT_SIZE")
+    if type(raw) is not bytes or len(raw) > 4096:
+        raise RemoteOutcome("BLOCK_MANUAL_RECOVERY_REQUIRED")
     try:
         receipt = json.loads(raw)
     except (ValueError, UnicodeError):
         raise RemoteOutcome("BLOCK_MANUAL_RECOVERY_REQUIRED") from None
-    require(type(receipt) is dict, "REMOTE_RECEIPT_SHAPE")
+    if type(receipt) is not dict:
+        raise RemoteOutcome("BLOCK_MANUAL_RECOVERY_REQUIRED")
     expected_success = {"status": "NO_SEND_EFFECTIVE_PASS", "effectiveFlags": 7,
                         "databaseChanged": False, "releaseSwitched": False}
     if returncode == 0:
-        require(receipt == expected_success, "REMOTE_NO_SEND_NOT_VERIFIED")
+        if receipt != expected_success:
+            raise RemoteOutcome("BLOCK_MANUAL_RECOVERY_REQUIRED")
         return receipt
     status = receipt.get("status")
     # Ignore all remote-provided fields except a fixed status label. Unknown

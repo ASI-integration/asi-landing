@@ -116,8 +116,9 @@ class ProtectedStagingNoSendTests(unittest.TestCase):
                     "databaseChanged": False, "releaseSwitched": False}
         self.assertEqual(gate.decode_remote_result(json.dumps(expected).encode(), 0), expected)
         forged = dict(expected, databaseChanged=True)
-        with self.assertRaises(gate.Block):
+        with self.assertRaises(gate.RemoteOutcome) as result:
             gate.decode_remote_result(json.dumps(forged).encode(), 0)
+        self.assertEqual(result.exception.status, "BLOCK_MANUAL_RECOVERY_REQUIRED")
         with self.assertRaises(gate.RemoteOutcome):
             gate.decode_remote_result(json.dumps(expected).encode(), 2)
 
@@ -126,6 +127,22 @@ class ProtectedStagingNoSendTests(unittest.TestCase):
             with self.subTest(raw=raw[:20]):
                 with self.assertRaises((gate.Block, gate.RemoteOutcome)):
                     gate.decode_remote_result(raw, 2)
+
+    def test_malformed_or_oversized_remote_result_requires_recovery(self):
+        invalid = (
+            b"",
+            b"not-json",
+            b"null",
+            b"[]",
+            b"{" + b"x" * 5000 + b"}",
+            b'{"status":"NO_SEND_EFFECTIVE_PASS"}',
+        )
+        for raw in invalid:
+            with self.subTest(length=len(raw)):
+                with self.assertRaises(gate.RemoteOutcome) as result:
+                    gate.decode_remote_result(raw, 0)
+                self.assertEqual(result.exception.status,
+                                 "BLOCK_MANUAL_RECOVERY_REQUIRED")
 
     def test_main_preserves_manual_recovery_status(self):
         with patch.object(gate, "execute", side_effect=gate.RemoteOutcome(
