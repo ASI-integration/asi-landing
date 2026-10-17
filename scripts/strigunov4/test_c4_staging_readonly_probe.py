@@ -27,7 +27,7 @@ def good():
         "C4_REVIEWED_MAIN_SHA":SHA,
         "C4_CONFIRM":"RUN_STRIGUNOV4_C4_PREFLIGHT_"+SHA,
         "STAGING_SUPABASE_PROJECT_REF":c4.pg.PROJECT,
-        "STAGING_DATABASE_URL":"postgresql://postgres.meeravcldnmocjtlqoeu:FAKE_NOT_SECRET@aws-0-eu-central-1.pooler.supabase.com:5432/postgres?sslmode=verify-full",
+        "STAGING_DATABASE_URL":"postgresql://postgres.meeravcldnmocjtlqoeu:FAKE_NOT_SECRET@aws-0-eu-central-1.pooler.supabase.com:5432/postgres",
         "STAGING_SSH_HOST":"stage.example.invalid",
         "STAGING_SSH_USER":"project_ayfaar",
         "STAGING_SSH_PORT":"22",
