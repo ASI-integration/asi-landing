@@ -157,9 +157,9 @@ class IncidentCleanupTests(unittest.TestCase):
         c.STATE["writeAttempted"]=True
         try:
             output=io.StringIO()
-            with patch.object(c,"run",
-                              side_effect=c.Block("POSTCOMMIT_COUNTS_UNKNOWN")), \\
-                 contextlib.redirect_stdout(output):
+            with (patch.object(c,"run",
+                               side_effect=c.Block("POSTCOMMIT_COUNTS_UNKNOWN")),
+                  contextlib.redirect_stdout(output)):
                 self.assertEqual(c.main(),2)
             receipt=json.loads(output.getvalue())
             self.assertEqual(receipt["stagingWrites"],"UNKNOWN")
@@ -171,9 +171,9 @@ class IncidentCleanupTests(unittest.TestCase):
 
     def test_generic_error_never_leaks_database_details(self):
         buffer=io.StringIO()
-        with patch.object(c,"run",
-                          side_effect=RuntimeError("postgres secret password")), \\
-             contextlib.redirect_stdout(buffer):
+        with (patch.object(c,"run",
+                           side_effect=RuntimeError("postgres secret password")),
+              contextlib.redirect_stdout(buffer)):
             self.assertEqual(c.main(),2)
         data=json.loads(buffer.getvalue())
         self.assertEqual(data["blockCode"],"UNEXPECTED_ERROR")
