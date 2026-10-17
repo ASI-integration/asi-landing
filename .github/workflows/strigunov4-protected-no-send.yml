@@ -1,0 +1,94 @@
+name: Strigunov4 protected staging no-send configuration
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/strigunov4-protected-no-send.yml'
+      - 'scripts/strigunov4/staging_no_send_patch.py'
+      - 'scripts/strigunov4/staging_no_send_host.py'
+      - 'scripts/strigunov4/protected_staging_no_send.py'
+      - 'scripts/strigunov4/test_staging_no_send_patch.py'
+      - 'scripts/strigunov4/test_protected_staging_no_send.py'
+      - 'docs/strigunov4/STAGING-NO-SEND-GATE.md'
+  workflow_dispatch:
+    inputs:
+      reviewed_main_sha:
+        description: Exact reviewed protected main SHA
+        required: true
+        type: string
+      confirm:
+        description: CONFIGURE_STRIGUNOV4_NO_SEND_<full reviewed SHA>
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: strigunov4-staging-no-send
+  cancel-in-progress: false
+
+jobs:
+  offline_source_tests:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Test strict staging-only flag addition without secrets
+        run: |
+          set -euo pipefail
+          python3 -m py_compile scripts/strigunov4/staging_no_send_patch.py scripts/strigunov4/staging_no_send_host.py scripts/strigunov4/protected_staging_no_send.py
+          python3 -m unittest discover -s scripts/strigunov4 -p 'test_staging_no_send_patch.py' -v
+          python3 -m unittest discover -s scripts/strigunov4 -p 'test_protected_staging_no_send.py' -v
+          git diff --check
+
+  protected_owner_configure:
+    if: github.event_name == 'workflow_dispatch' && github.repository == 'ASI-integration/asi-landing'
+    runs-on: ubuntu-24.04
+    environment: staging
+    timeout-minutes: 10
+    steps:
+      - name: Require reviewed main, owner, exact workflow and single attempt
+        shell: bash
+        env:
+          REVIEWED_SHA: ${{ inputs.reviewed_main_sha }}
+          CONFIRM: ${{ inputs.confirm }}
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = ASI-integration/asi-landing
+          test "$GITHUB_REF" = refs/heads/main
+          test "$GITHUB_EVENT_NAME" = workflow_dispatch
+          test "$GITHUB_ACTOR" = ASI-integration
+          test "$GITHUB_ACTOR_ID" = 207600140
+          test "$GITHUB_TRIGGERING_ACTOR" = ASI-integration
+          test "$GITHUB_RUN_ATTEMPT" = 1
+          test "$GITHUB_WORKFLOW_REF" = 'ASI-integration/asi-landing/.github/workflows/strigunov4-protected-no-send.yml@refs/heads/main'
+          test "$GITHUB_WORKFLOW_SHA" = "$GITHUB_SHA"
+          [[ "$REVIEWED_SHA" =~ ^[0-9a-f]{40}$ ]]
+          test "$REVIEWED_SHA" = "$GITHUB_SHA"
+          test "$CONFIRM" = "CONFIGURE_STRIGUNOV4_NO_SEND_$REVIEWED_SHA"
+      - name: Checkout exact approved main SHA, without persisted credentials
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Offline regression and exact checkout at execution boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          python3 -m unittest discover -s scripts/strigunov4 -p 'test_staging_no_send_patch.py' -v
+          python3 -m unittest discover -s scripts/strigunov4 -p 'test_protected_staging_no_send.py' -v
+      - name: Set only ASI_SYNTHETIC_NO_SEND and verify effective staging process
+        env:
+          STAGING_REVIEWED_MAIN_SHA: ${{ inputs.reviewed_main_sha }}
+          STAGING_NO_SEND_CONFIRM: ${{ inputs.confirm }}
+          STAGING_SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+          STAGING_SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
+          STAGING_SSH_USER: ${{ secrets.STAGING_SSH_USER }}
+          STAGING_SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+        run: python3 scripts/strigunov4/protected_staging_no_send.py
