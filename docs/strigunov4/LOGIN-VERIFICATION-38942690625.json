@@ -1,0 +1,90 @@
+{
+  "credential_purpose": "recovery-issued lab credentials",
+  "source_original_password_recovery": "NOT_PROVEN",
+  "external_application_credential_recovery": "NOT_PROVEN",
+  "full_restore_acceptance": "NOT_PROVEN",
+  "status": "LOGIN_CHECKS_RECORDED",
+  "phase": "VALIDATION_RETURNED",
+  "login_roles": [
+    "authenticator",
+    "pgbouncer",
+    "postgres",
+    "supabase_admin",
+    "supabase_auth_admin",
+    "supabase_etl_admin",
+    "supabase_read_only_user",
+    "supabase_replication_admin",
+    "supabase_storage_admin"
+  ],
+  "role_count": 9,
+  "container_id": "ae57f850c5e4354753fe517f32629b4b8d97e1928f87e7dc8601dc626df80d09",
+  "nonce": "2a7f58e4a68d4732816d4809b4207294",
+  "run_id": "38942690625",
+  "encrypted_bundle_sha256": "bfad7d4b33a26310fd1f9977ab919550174bfaa5da7f4d3b44212061871eb712",
+  "encrypted_bundle_bytes": 2681,
+  "owner_only_bundle_directory": true,
+  "encrypted_bundle_recovery_verified": true,
+  "plaintext_credential_files": 0,
+  "outcome": {
+    "active_scram_wrong_admin_denial_before_positive_checks": true,
+    "all_logins_pass": true,
+    "credential_purpose": "recovery-issued lab credentials",
+    "full_restore_acceptance": "NOT_PROVEN",
+    "hba_original_sha256": "056ad9accf7e1961052e549db6b4b03fc8480f12d358da0b4b221880e8e6fcec",
+    "hba_parse_errors": 0,
+    "hba_sha256": "739dbd6c909d7268b2d4721c0cbe305ae3910835195d3df4f860d7fc51829469",
+    "passwords_changed": true,
+    "role_metadata_memberships_unchanged": true,
+    "roles": [
+      {
+        "correct_login": true,
+        "role": "authenticator",
+        "wrong_password_rejected": true
+      },
+      {
+        "correct_login": true,
+        "role": "pgbouncer",
+        "wrong_password_rejected": true
+      },
+      {
+        "correct_login": true,
+        "role": "postgres",
+        "wrong_password_rejected": true
+      },
+      {
+        "correct_login": true,
+        "role": "supabase_admin",
+        "wrong_password_rejected": true
+      },
+      {
+        "correct_login": true,
+        "role": "supabase_auth_admin",
+        "wrong_password_rejected": true
+      },
+      {
+        "correct_login": true,
+        "role": "supabase_etl_admin",
+        "wrong_password_rejected": true
+      },
+      {
+        "correct_login": true,
+        "role": "supabase_read_only_user",
+        "wrong_password_rejected": true
+      },
+      {
+        "correct_login": true,
+        "role": "supabase_replication_admin",
+        "wrong_password_rejected": true
+      },
+      {
+        "correct_login": true,
+        "role": "supabase_storage_admin",
+        "wrong_password_rejected": true
+      }
+    ],
+    "source_original_password_recovery": "NOT_PROVEN",
+    "status": "LOGIN_CHECKS_RECORDED"
+  },
+  "owner_only_bundle_file_verified": true,
+  "encrypted_bundle_location": "Owner-only Windows recovery storage; exact path retained in private local report"
+}

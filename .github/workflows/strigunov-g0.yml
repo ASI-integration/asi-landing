@@ -1,0 +1,125 @@
+name: Strigunov G0 four safety gates
+on:
+  pull_request:
+    paths:
+      - 'scripts/acceptance/strigunov-g0*'
+      - 'src/lib/communication/__tests__/guest-lifecycle-synthetic-cleanup.pg.integration.test.ts'
+      - 'scripts/strigunov4/package_g0.py'
+      - 'scripts/strigunov4/test_package_g0.py'
+      - 'scripts/strigunov4/candidates/**'
+      - '.github/workflows/strigunov-g0.yml'
+      - 'scripts/custodian/**'
+      - 'src/app/api/auth/session/**'
+      - 'src/app/api/dashboard/booking-ops/pre-checkin/**'
+      - 'scripts/__tests__/asi*test.py'
+      - 'src/lib/booking-ops/**'
+      - 'src/app/api/dashboard/property-knowledge/**'
+      - 'supabase/migrations/20261015103000_booking_knowledge_read_contract.sql'
+      - 'supabase/migrations/20261016090000_g0_operator_revision_takeover.sql'
+      - 'src/lib/safety/no-external-effects.ts'
+      - 'src/lib/communication/channels/email.ts'
+      - 'src/lib/communication/channels/telegram.ts'
+      - 'src/lib/communication/guest-lifecycle-voice.ts'
+      - 'src/lib/payments/factory.ts'
+      - 'src/lib/payments/stripe.ts'
+      - 'src/lib/payments/yookassa.ts'
+      - 'src/lib/crm/access.ts'
+      - 'src/lib/crm/api-auth.ts'
+      - 'src/app/api/dashboard/booking-ops/alerts/**'
+      - 'src/components/booking-ops/OpsAlertsPanel.tsx'
+      - 'src/app/api/**/intake/**'
+      - 'src/lib/booking-ops/real-booking-intake-autopilot.ts'
+      - 'src/lib/early-access/*.ts'
+      - 'src/lib/crm/repository.ts'
+      - 'src/app/api/early-access/leads/route.ts'
+      - 'supabase/migrations/20261015000001_public_pilot_lead_receipts.sql'
+      - '.github/workflows/strigunov-finishline.yml'
+      - 'docs/agent-os/generated/release-manifest.json'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: strigunov-g0
+  cancel-in-progress: false
+jobs:
+  isolated-api-operator:
+    if: github.repository == 'ASI-integration/asi-landing' && (github.event_name == 'workflow_dispatch' || (github.event.pull_request.head.ref == 'asi/strigunov4-g0-integration-20261016' && github.event.pull_request.head.repo.full_name == github.repository))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      CI: 'true'
+      STRIGUNOV_SYNTHETIC_ONLY: 'YES'
+      NEXT_TELEMETRY_DISABLED: '1'
+      REVIEWED_SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - name: Owner and event gate before source execution
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          HEAD_BRANCH: ${{ github.event.pull_request.head.ref }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = ASI-integration/asi-landing
+          test "$GITHUB_ACTOR" = ASI-integration
+          test "$GITHUB_ACTOR_ID" = 207600140
+          test "$GITHUB_TRIGGERING_ACTOR" = ASI-integration
+          test "$GITHUB_RUN_ATTEMPT" = 1
+          [[ "$REVIEWED_SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          if [ "$EVENT_NAME" = pull_request ]; then
+            test "$HEAD_BRANCH" = asi/strigunov4-g0-integration-20261016
+            test "$HEAD_REPO" = ASI-integration/asi-landing
+          else
+            test "$EVENT_NAME" = workflow_dispatch
+          fi
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Verify exact reviewed staging-candidate digests (no SQL execution)
+        run: |
+          python3 scripts/strigunov4/candidates/verify_candidate_hashes.py
+          python3 -m unittest discover -s scripts/strigunov4/candidates -p 'test_candidate_hashes.py' -v
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - run: mkdir -p finishline-results
+      - run: npm run typecheck
+      - run: node node_modules/eslint/bin/eslint.js 'src/lib/crm/access.ts' 'src/lib/crm/api-auth.ts' 'src/lib/booking-ops/repository.ts' 'src/lib/booking-ops/real-booking-intake-autopilot.ts' 'src/lib/booking-ops/operator-alerts.ts' 'src/lib/booking-ops/operator-exception-actions.ts' 'src/app/api/dashboard/booking-ops/alerts/[id]/route.ts' 'src/components/booking-ops/OpsAlertsPanel.tsx' 'src/lib/booking-ops/automation-pause.ts' 'src/lib/booking-ops/automation-service.ts' 'src/lib/booking-ops/booking-automation-runner.ts' 'src/lib/booking-ops/lifecycle-autopilot-service.ts' 'src/lib/booking-ops/lifecycle-orchestrator.ts' 'src/lib/booking-ops/core-loop-initialization.ts' 'src/lib/booking-ops/communication-auto-send-executor.ts' 'src/lib/safety/no-external-effects.ts' 'src/lib/communication/channels/email.ts' 'src/lib/communication/channels/telegram.ts' 'src/lib/communication/guest-lifecycle-voice.ts' 'src/lib/payments/factory.ts' 'src/lib/payments/stripe.ts' 'src/lib/payments/yookassa.ts' 'scripts/acceptance/strigunov-g0-service.ts'
+      - run: git diff --check
+      - name: Build real Next production application without service credentials
+        run: npm run build
+      - name: Reviewed isolated native harness
+        run: node scripts/acceptance/strigunov-g0-lab.mjs
+      - name: Test credential-free artifact packaging
+        run: python3 -m unittest discover -s scripts/strigunov4 -p test_package_g0.py -v
+      - name: Package accepted G0 build without activation
+        run: python3 scripts/strigunov4/package_g0.py
+      - name: Upload deployable build separately from acceptance receipts
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: strigunov-g0-release-${{ github.event.pull_request.head.sha || github.sha }}
+          path: g0-release-artifact/*
+          retention-days: 7
+          if-no-files-found: error
+      - name: Exact job-owned cleanup fallback
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          label="asi.g0=strigfin-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          ids=$(docker ps -aq --filter "label=$label")
+          if [ -n "$ids" ]; then docker rm -f $ids >/dev/null; fi
+          ids=$(docker network ls -q --filter "label=$label")
+          if [ -n "$ids" ]; then docker network rm $ids >/dev/null; fi
+          test -z "$(docker ps -aq --filter "label=$label")"
+          test -z "$(docker network ls -q --filter "label=$label")"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: strigunov-g0-${{ github.run_id }}
+          path: finishline-results/*
+          retention-days: 7
+          if-no-files-found: error

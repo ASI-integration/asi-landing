@@ -552,15 +552,15 @@ function oldestRequiredObservedAt(values: Array<string | null | undefined>): str
   return valid.length === values.length ? valid[0]! : new Date(0).toISOString();
 }
 
-export async function readPreCheckinStatus(bookingId: string): Promise<PreCheckinReadinessSnapshot> {
+export async function readPreCheckinStatus(bookingId: string, expectedScope?: ExpectedScope): Promise<PreCheckinReadinessSnapshot> {
   const [{ getGuestLegalReadiness }, { readPhysicalReadiness }] = await Promise.all([
     import('./guest-legal-deposit-mvd-execution'),
     import('./physical-readiness-execution'),
   ]);
   const [legal, physical, input] = await Promise.all([
-    getGuestLegalReadiness(bookingId),
-    readPhysicalReadiness(bookingId),
-    readSnapshotInputs(bookingId),
+    getGuestLegalReadiness(bookingId, expectedScope),
+    readPhysicalReadiness(bookingId, expectedScope),
+    readSnapshotInputs(bookingId, expectedScope),
   ]);
   if (!legal || !physical) throw new Error('precheckin_readiness_unavailable');
   const snapshot = mergeDomainReadiness(computePreCheckinReadinessSnapshot({

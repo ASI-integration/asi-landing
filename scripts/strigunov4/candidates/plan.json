@@ -1,0 +1,72 @@
+{
+  "status": "CANDIDATE_NOT_APPROVED",
+  "source_sha": "334d93fc39d2ea51ba283dd0314bbc239ff49707",
+  "catalog_run": 38933240140,
+  "target": "meeravcldnmocjtlqoeu",
+  "missing_columns": [
+    "booking_inbound_intake_events.account_id",
+    "booking_inbound_intake_events.account_scope_key",
+    "booking_ops_communication_auto_send_scopes.account_id",
+    "booking_ops_communication_auto_send_scopes.account_scope_key",
+    "booking_ops_communication_auto_send_runs.account_id",
+    "booking_ops_communication_deliveries.account_id",
+    "booking_overbooking_conflict_checks.account_id",
+    "booking_ops_records.automation_paused",
+    "booking_ops_alerts.revision",
+    "tg_property_knowledge.check_in_instructions",
+    "tg_property_knowledge.key_instructions",
+    "tg_property_knowledge.parking_instructions",
+    "tg_property_knowledge.check_out_instructions",
+    "tg_property_knowledge.emergency_contacts"
+  ],
+  "preserve_history": [
+    "20260729040307",
+    "20260729040309",
+    "20260729040332",
+    "20260913120838",
+    "20260913120856",
+    "20260913120921",
+    "20260913120945"
+  ],
+  "sql_sha256": "9746958c643f0a29a384cfcce7fbeac5db067a26cdc16e12ec98319b48f747f4",
+  "files": [
+    {
+      "file": "20261003124500_booking_ops_auto_send_account_scope_v1.sql",
+      "sha256": "fb874f776a01b14fec70314d2c76a9358d7c362d6b6f9d16a4ca4dc2c8148c32"
+    },
+    {
+      "file": "20261003141500_booking_inbound_intake_account_scope_v1.sql",
+      "sha256": "05df3a611da0eb52da11331c41b6cb96b79139ac4be34c6983527a200d5d4474"
+    },
+    {
+      "file": "20261003150000_booking_availability_account_scope_v1.sql",
+      "sha256": "ba52c412da61cf7912a4c101267ff5110a75778a7a55f43dffa6679e332c00e7"
+    },
+    {
+      "file": "20261005090000_booking_ops_record_scope_guard_v1.sql",
+      "sha256": "21c0421d214d34450076bfe271b56fc609f57ab69b041b1a792e1c4e7fbdb9c4"
+    },
+    {
+      "file": "20261015103000_booking_knowledge_read_contract.sql",
+      "sha256": "8e41fda68656ab0b551f79e5a968ebd4ef7f7e42d4c521b3c896ac6532411d30"
+    },
+    {
+      "file": "20261016090000_g0_operator_revision_takeover.sql",
+      "sha256": "eb91b48dfb4df3ae8bd63118f678573028b4fd53f5f3eeaa916adaf25d1fc3bd"
+    }
+  ],
+  "live_execution_allowed": false,
+  "purpose_repair_included": false,
+  "purpose_repair_rationale": null,
+  "unresolved": [
+    "RESTORE_PASS with security/owner/extension parity required",
+    "Data backfill and scope disable counts must be obtained on restored database",
+    "Purpose constraint body unavailable: catalog supplies hash only; compare on restore before deciding replacement",
+    "Verify SQL rehearsal under restored real schema and real row counts",
+    "Independent SQL approval and protected staging backend integration required",
+    "Effective process safety flags were previously unreadable",
+    "Migration history recording for selectively applied files needs reviewed backend; do not mark all 49 applied"
+  ],
+  "redundant_file": "20261005095000 revocations already included byte-for-byte in 20261005090000",
+  "excluded": "No blanket db push, no unknown migration deletion, no optional provider/billing/channel migrations"
+}

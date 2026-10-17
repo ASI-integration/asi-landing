@@ -1,3 +1,4 @@
+import { guardExternalEffect } from '@/lib/safety/no-external-effects';
 /**
  * Email guest communication adapter.
  *
@@ -172,6 +173,7 @@ export class EmailAdapter implements ChannelAdapter {
   }
 
   async sendMessage(to: string, content: string, metadata?: Record<string, unknown>): Promise<boolean> {
+    guardExternalEffect('email.sendMessage');
     // Defense-in-depth: draft-only / auto-send-off must block even if a caller
     // bypasses the orchestrator dry-run path.
     // Returns false: boolean success must not mean confirmed SMTP delivery.

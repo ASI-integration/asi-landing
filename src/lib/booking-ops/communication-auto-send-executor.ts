@@ -1,3 +1,4 @@
+import { requireBookingAutomationRunning, withBookingAutomationLease } from './automation-pause';
 import { createHash, randomUUID } from 'node:crypto';
 import { supabase } from '@/lib/supabase';
 import { EmailAdapter } from '@/lib/communication/channels/email';
@@ -505,12 +506,15 @@ export async function skipDelivery(
   });
 }
 
+// Object identity proves this invocation positively persisted the denial, never a stale reread.
+const completedPolicyDenials = new WeakSet<object>();
+
 async function blockDelivery(
   delivery: BookingOpsCommunicationDelivery,
   decision: CommunicationAutoSendDecision | null,
   reason: string,
 ) {
-  await recordAutoSendAttempt(
+  const attempt = await recordAutoSendAttempt(
     delivery.communicationIntentId,
     decision && !decision.allowed ? decision.decision : 'blocked',
     {
@@ -518,15 +522,18 @@ async function blockDelivery(
       error_code: reason,
     },
   );
-  return updateDelivery(delivery.id, {
+  if (!attempt.ok) throw new Error('auto_send_block_audit_uncertain');
+  const blocked = await updateDelivery(delivery.id, {
     status: 'blocked',
     failure_reason: reason,
     policy_decision_id: decision?.policy_decision_id ?? delivery.policyDecisionId,
     safe_summary: decision?.safe_to_display_summary ?? 'Отправка заблокирована правилом безопасности.',
   });
+  if (blocked) completedPolicyDenials.add(blocked);
+  return blocked;
 }
 
-export async function executeAutoSendDelivery(
+async function executeAutoSendDeliveryRunning(
   deliveryId: string,
   options: ExecuteAutoSendOptions = {},
 ) {
@@ -555,6 +562,7 @@ export async function executeAutoSendDelivery(
   if (options.accountId && executionContext.record?.accountId !== options.accountId) {
     return { ok: false as const, error: 'booking_scope_mismatch', delivery: null };
   }
+  if (executionContext.record) await requireBookingAutomationRunning(executionContext.record.id);
   const expectedScope = canonicalExpectedScope(executionContext.record);
   const availabilityGuard = await shouldBlockCommunicationIntent(intent, {
     accountId: executionContext.record?.accountId ?? null,
@@ -636,11 +644,12 @@ export async function executeAutoSendDelivery(
 
   const effectiveDryRun = options.dryRun === true || scope.dryRunOnly;
   if (effectiveDryRun) {
-    await recordAutoSendAttempt(intent.id, 'dry_run', {
+    const attempt = await recordAutoSendAttempt(intent.id, 'dry_run', {
       booking_id: delivery.bookingId,
       guest_ref: intent.actorType === 'guest' ? executionContext.recipientRef : null,
       dry_run: true,
     });
+    if (!attempt.ok) throw new Error('auto_send_dry_run_audit_uncertain');
     const dryRunDelivery = await updateDelivery(delivery.id, {
       status: 'dry_run',
       failure_reason: null,
@@ -828,4 +837,19 @@ export async function explainDeliveryDecision(intentId: string) {
   const context = await resolveExecutionContext(intent);
   const decision = await canAutoSendCommunicationIntent(intent, context.policyContext);
   return { ok: true as const, decision, recipientValid: Boolean(context.recipientRef) };
+}
+
+export async function executeAutoSendDelivery(deliveryId: string, options: ExecuteAutoSendOptions = {}) {
+  const delivery = await readDelivery(deliveryId);
+  if (!delivery) return { ok: false as const, error: 'delivery_not_found', delivery: null };
+  if (options.accountId && delivery.accountId !== options.accountId) return { ok: false as const, error: 'booking_scope_mismatch', delivery: null };
+  const intent = await readIntent(delivery.communicationIntentId);
+  if (!intent) return { ok: false as const, error: 'intent_not_found', delivery: null };
+  const completed = await withBookingAutomationLease(intent.bookingOpsRecordId, async () => {
+    const result = await executeAutoSendDeliveryRunning(deliveryId, options);
+    // A positively persisted policy denial is completed work, not an uncertain failure.
+    if (result.ok && !result.delivery) throw new Error('auto_send_completion_uncertain');
+    return { ok: result.ok || Boolean(result.delivery && completedPolicyDenials.has(result.delivery)), value: result };
+  });
+  return completed.value;
 }

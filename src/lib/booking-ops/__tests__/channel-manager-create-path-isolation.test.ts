@@ -111,7 +111,7 @@ vi.mock('@/lib/supabase', () => ({
       select: vi.fn((_columns = '*', options?: { count?: string; head?: boolean }) =>
         new Query(table, { count: Boolean(options?.count), head: options?.head })),
       insert: vi.fn((input: Row | Row[]) => {
-        const inserted = (Array.isArray(input) ? input : [input]).map((row) => ({ ...row }));
+        const inserted = (Array.isArray(input) ? input : [input]).map((row) => ({ booking_id: null, guest_id: null, ...row }));
         rows(table).push(...inserted);
         return new Query(table).eq('id', inserted[0]?.id).select();
       }),
@@ -136,7 +136,18 @@ vi.mock('@/lib/supabase', () => ({
         return query;
       }),
     })),
-    rpc: vi.fn(async () => ({ data: null, error: { message: 'unexpected rpc' } })),
+    rpc: vi.fn(async (name: string, args: Row) => {
+      const record = rows('booking_ops_records').find((row) => row.id === args.p_booking);
+      if (name === 'g0_begin_automation' && record?.automation_paused === false && !record.automation_token) {
+        record.automation_token = args.p_token;
+        return { data: true, error: null };
+      }
+      if (name === 'g0_end_automation' && record && record.automation_token === args.p_token) {
+        record.automation_token = null;
+        return { data: true, error: null };
+      }
+      return { data: false, error: { message: 'unexpected or rejected rpc' } };
+    }),
   },
 }));
 
@@ -179,6 +190,7 @@ vi.mock('../availability-overbooking-protection', () => ({
 }));
 
 import {
+  getInboundBookingIntakeStatus,
   computeChannelManagerIdempotencyKey,
   processInboundBookingRequest,
 } from '../real-booking-intake-autopilot';
@@ -302,11 +314,12 @@ beforeEach(() => {
     callOrder.push(`core-loop:${bookingOpsId}`);
   });
 
-  createBookingOpsRecord.mockImplementation(async (input: Row) => {
+  createBookingOpsRecord.mockImplementation(async (input: Row, options?: { reservedRecordId?: string }) => {
     callOrder.push(`create:${input.accountId ?? 'null'}:${input.propertyId ?? 'null'}`);
-    const id = randomUUID();
+    const id = options?.reservedRecordId ?? randomUUID();
     const row = {
       id,
+      automation_paused: false,
       booking_id: input.bookingId ?? null,
       account_id: input.accountId ?? null,
       property_id: input.propertyId ?? null,
@@ -565,6 +578,52 @@ describe('Channel Manager create-path isolation (real shared intake)', () => {
     expect(createBookingOpsRecord).not.toHaveBeenCalled();
   });
 
+  it.each([
+    ['running', false, ACCOUNT_B, PROPERTY_A],
+    ['completed', false, ACCOUNT_B, PROPERTY_A],
+    ['running', true, ACCOUNT_B, PROPERTY_A],
+    ['completed', false, ACCOUNT_A, PROPERTY_B],
+  ])('checks receipt scope before HOLD: %s force=%s account=%s property=%s', async (state, force, account, property) => {
+    const id = randomUUID();
+    rows('booking_inbound_intake_events').push({
+      id, account_id: ACCOUNT_A, source: 'channel_manager_placeholder',
+      idempotency_key: computeChannelManagerIdempotencyKey(CONNECTION_A, 'manual', EXTERNAL_ID),
+      status: 'failed', booking_id: FOREIGN_BOOKING_ID, guest_id: 'foreign-guest',
+      property_id: PROPERTY_A, normalized_payload: {}, missing_fields: [],
+      automation_result: { executionState: state },
+    });
+    rows('booking_ops_records').push({ id: FOREIGN_BOOKING_ID, account_id: account, property_id: property });
+    await expect(processInboundBookingRequest({ propertyId: PROPERTY_A, externalSourceId: EXTERNAL_ID },
+      'channel_manager_placeholder', { force: Boolean(force), channelManagerScope: {
+        connectionId: CONNECTION_A, provider: 'manual', accountId: ACCOUNT_A, propertyId: PROPERTY_A,
+      } })).rejects.toMatchObject({ code: 'account_scope_mismatch' });
+    await expect(getInboundBookingIntakeStatus({ intakeId: id }, ACCOUNT_A))
+      .rejects.toMatchObject({ code: 'account_scope_mismatch' });
+    expect(createBookingOpsRecord).not.toHaveBeenCalled();
+    expect(updateBookingOpsRecord).not.toHaveBeenCalled();
+    expect(initializeCheckinExecutionBaseline).not.toHaveBeenCalled();
+  });
+
+  it.each([false, true])('unconfirmed receipt stays redacted HOLD without a retry (read fails=%s)', async (readFails) => {
+    if (readFails) getBookingOpsRecord.mockRejectedValue(new Error('read unavailable'));
+    const id = randomUUID();
+    rows('booking_inbound_intake_events').push({
+      id, account_id: ACCOUNT_A, source: 'channel_manager_placeholder',
+      idempotency_key: computeChannelManagerIdempotencyKey(CONNECTION_A, 'manual', EXTERNAL_ID),
+      status: 'failed', booking_id: FOREIGN_BOOKING_ID, guest_id: 'unverified-guest',
+      property_id: PROPERTY_A, normalized_payload: {}, missing_fields: [],
+      automation_result: { executionState: 'completed' },
+    });
+    const result = await processInboundBookingRequest({ propertyId: PROPERTY_A, externalSourceId: EXTERNAL_ID },
+      'channel_manager_placeholder', { channelManagerScope: {
+        connectionId: CONNECTION_A, provider: 'manual', accountId: ACCOUNT_A, propertyId: PROPERTY_A,
+      } });
+    expect(result).toMatchObject({ intakeStatus: 'failed', bookingId: null, guestId: null });
+    expect(await getInboundBookingIntakeStatus({ intakeId: id }, ACCOUNT_A))
+      .toMatchObject({ intakeStatus: 'failed', bookingId: null, guestId: null, duplicateOfBookingId: null });
+    expect(createBookingOpsRecord).not.toHaveBeenCalled();
+  });
+
   it('canonical account_id/property_id exist before automation/holds/tasks/communications init', async () => {
     seedConnection(CONNECTION_A, ACCOUNT_A, PROPERTY_SETUP_A);
     seedImported(IMPORTED_A, CONNECTION_A);
@@ -610,3 +669,4 @@ describe('Channel Manager create-path isolation (real shared intake)', () => {
     );
   });
 });
+

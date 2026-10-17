@@ -2,7 +2,8 @@
  * Disposable PostgreSQL contract for Guest Lifecycle synthetic cleanup.
  *
  * CI supplies ASI_DISPOSABLE_POSTGRES_URL. The suite applies every repository
- * migration in order and rolls the whole database change back. It never uses
+ * migration in order in an owned disposable database. Fixture writes roll back;
+ * the owned database is dropped even when a migration contains COMMIT. It never uses
  * production or staging targets and performs no external actions.
  */
 
@@ -108,12 +109,12 @@ const cleanupColumnContract: ReadonlyArray<readonly [string, string]> = [
   ['booking_ops_communication_policies', 'max_auto_sends_per_guest_per_day'],
 ];
 
-async function connectPg(): Promise<PgClient> {
+async function connectPg(connectionString = PG_URL): Promise<PgClient> {
   const mod = await import('pg').catch(() => null) as {
     Client: new (config: { connectionString: string }) => PgClient & { connect: () => Promise<void> };
   } | null;
   if (!mod?.Client) throw new Error('Package "pg" is required for disposable PostgreSQL integration.');
-  const client = new mod.Client({ connectionString: PG_URL });
+  const client = new mod.Client({ connectionString });
   await client.connect();
   return client;
 }
@@ -458,11 +459,24 @@ describe('Guest Lifecycle synthetic cleanup PostgreSQL availability', () => {
 
 describe.skipIf(!hasDisposablePg)('Guest Lifecycle synthetic cleanup PostgreSQL integration', () => {
   it('applies all migrations, validates the RPC schema, previews empty, and cleans exact lifecycle residue', async () => {
-    const client = await connectPg();
+    const database = `guest_cleanup_${randomUUID().replaceAll('-', '')}`;
+    const isolatedUrl = new URL(PG_URL);
+    expect(['localhost', '127.0.0.1', '[::1]']).toContain(isolatedUrl.hostname);
+    expect(database).toMatch(/^guest_cleanup_[a-f0-9]{32}$/u);
+    isolatedUrl.pathname = `/${database}`;
+    const admin = await connectPg();
+    let client: PgClient | null = null;
+    let created = false;
+    let proof: Record<string, unknown> | null = null;
     try {
-      await client.query('BEGIN');
+      await admin.query(`CREATE DATABASE "${database}"`);
+      created = true;
+      client = await connectPg(isolatedUrl.toString());
       await bootstrapSupabasePrimitives(client);
       const migrationNames = await applyAllMigrations(client);
+      // Migration files may own transactions. Start the fixture transaction only afterward.
+      await client.query('BEGIN');
+      await client.query('CREATE TABLE public.guest_cleanup_rollback_probe (id integer)');
       expect(migrationNames).toContain('20260810190000_guest_lifecycle_synthetic_cleanup_schema_fix.sql');
 
       const expectedValues = cleanupColumnContract
@@ -554,7 +568,10 @@ describe.skipIf(!hasDisposablePg)('Guest Lifecycle synthetic cleanup PostgreSQL 
         authenticated_execute: false,
       });
 
-      const proof = {
+      await client.query('ROLLBACK');
+      const rollbackProbe = await client.query("SELECT to_regclass('public.guest_cleanup_rollback_probe') AS relation");
+      expect(rollbackProbe.rows[0]?.relation).toBeNull();
+      proof = {
         allMigrationsApplied: migrationNames.length,
         schemaContractColumns: cleanupColumnContract.length,
         emptyPreviewPassed: true,
@@ -567,13 +584,24 @@ describe.skipIf(!hasDisposablePg)('Guest Lifecycle synthetic cleanup PostgreSQL 
         stagingTouched: false,
         runNonce: randomUUID(),
       };
-      // CI-grepable proof. The nonce proves execution without identifying any external target.
-      // eslint-disable-next-line no-console
-      console.log(`GUEST_LIFECYCLE_CLEANUP_PG_PROOF ${JSON.stringify(proof)}`);
-
-      await client.query('ROLLBACK');
     } finally {
-      await client.end().catch(() => undefined);
+      try {
+        if (client) await client.end();
+      } finally {
+        try {
+          if (created) {
+            await admin.query(`DROP DATABASE "${database}" WITH (FORCE)`);
+            const remaining = await admin.query('SELECT 1 FROM pg_database WHERE datname = $1', [database]);
+            expect(remaining.rows).toEqual([]);
+          }
+        } finally {
+          await admin.end();
+        }
+      }
     }
+    expect(proof).not.toBeNull();
+    // Emit success only after both fixture rollback and owned-database removal succeed.
+    // eslint-disable-next-line no-console
+    console.log(`GUEST_LIFECYCLE_CLEANUP_PG_PROOF ${JSON.stringify({ ...proof, disposableDatabaseDropped: true })}`);
   }, 180_000);
 });

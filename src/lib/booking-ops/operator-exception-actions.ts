@@ -222,6 +222,7 @@ export async function applyOperatorAlertAction(input: {
   actorId: string;
   canOverrideHighRisk: boolean;
   idempotencyKey?: unknown;
+  expectedRevision?: number;
   executorId?: unknown;
   assignedToName?: unknown;
   assignedToPhone?: unknown;
@@ -232,6 +233,7 @@ export async function applyOperatorAlertAction(input: {
 }) {
   const alert = await getOperatorAlert(input.accountId, input.alertId);
   if (!alert) throw new Error('alert_not_found');
+  if (input.action === 'acknowledge' && (!Number.isSafeInteger(input.expectedRevision) || input.expectedRevision !== alert.revision)) throw new Error('alert_revision_conflict');
   const expectedScope = { accountId: input.accountId, propertyId: alert.propertyId };
   const booking = await requireOwnedBooking(alert, input.accountId);
   const linked = await linkedObject(alert);
@@ -243,11 +245,11 @@ export async function applyOperatorAlertAction(input: {
     .eq('id', durableEventId('operator_alert_action', alert.id, idempotencyKey))
     .eq('booking_id', alert.bookingId).eq('source', 'operator_alert_actions').maybeSingle();
   if (previousAttempt.error) throw new Error(previousAttempt.error.message);
-  if (previousAttempt.data) return { alert, idempotent: true, control: await getOperatorAlertControl(alert, input.canOverrideHighRisk) };
+  if (previousAttempt.data && input.action !== 'acknowledge') return { alert, idempotent: true, control: await getOperatorAlertControl(alert, input.canOverrideHighRisk) };
 
   if (input.action === 'acknowledge') {
     await requireBookingOpsRecordScope(alert.bookingId, expectedScope);
-    const updated = await acknowledgeOperatorAlert(input.accountId, alert.id, input.actorId);
+    const updated = await acknowledgeOperatorAlert(input.accountId, alert.id, input.actorId, input.expectedRevision);
     await auditAction({ alert, action: input.action, actorId: input.actorId, linked, previousState: alert.status, resultingState: updated.status, idempotencyKey, expectedScope });
     return { alert: updated, control: await getOperatorAlertControl(updated, input.canOverrideHighRisk) };
   }

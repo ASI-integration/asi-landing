@@ -1,3 +1,4 @@
+import { readRequestJson } from '@/lib/safeRequestJson';
 import { NextResponse } from 'next/server';
 import {
   checkWebIntakeRateLimit,
@@ -24,7 +25,9 @@ export async function POST(req: Request): Promise<NextResponse> {
 
   let body: Record<string, unknown>;
   try {
-    body = (await req.json()) as Record<string, unknown>;
+    const parsed = await readRequestJson(req, { maxBytes: 16 * 1024 });
+    if (!parsed.ok) throw new Error('invalid_json_object');
+    body = parsed.data;
   } catch {
     return NextResponse.json({ ok: false, message: 'Некорректный JSON.' }, { status: 400 });
   }

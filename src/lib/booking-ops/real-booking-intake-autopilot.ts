@@ -1,3 +1,4 @@
+import { withBookingAutomationLease } from './automation-pause';
 import { guardBookingCommunicationDraft } from '@/lib/communication/booking-knowledge-boundary';
 import { createHash, randomUUID } from 'node:crypto';
 import { supabase } from '@/lib/supabase';
@@ -34,6 +35,8 @@ import {
   type AvailabilityConflictStatus,
 } from './availability-overbooking-protection';
 import { durableEventId, recordAndProcessBookingEvent } from './lifecycle-autopilot-service';
+
+import { isCanonicalBookingId } from './booking-reference';
 
 type ExpectedScope = { accountId: string; propertyId: string };
 
@@ -135,6 +138,8 @@ export type InboundBookingIntakeResult = {
 };
 
 export type ProcessInboundBookingOptions = {
+  /** Server-owned identity for the intake route audit; never read from guest payload. */
+  operatorActorId?: string | null;
   force?: boolean;
   action?:
     | 'process'
@@ -377,6 +382,7 @@ export function normalizeInboundBookingRequest(
 }
 
 function publicWebValidationError(body: Record<string, unknown>): string | null {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return PUBLIC_WEB_FORBIDDEN_MESSAGE;
   return Object.keys(body).some((field) => !PUBLIC_WEB_ALLOWED_FIELDS.has(field))
     ? PUBLIC_WEB_FORBIDDEN_MESSAGE
     : null;
@@ -466,6 +472,23 @@ function assertBookingWithinIntakeAccount(
   }
 }
 
+// Receipt linkage is not authorization, including failed/incomplete receipts.
+async function verifiedReceiptBooking(
+  bookingId: string | null, accountId: string | null, propertyId: string | null,
+): Promise<BookingOpsRecord | null> {
+  if (!bookingId) return null;
+  let record: BookingOpsRecord | null;
+  try { record = await getBookingOpsRecord(bookingId); }
+  catch { return null; } // Read uncertainty cannot authorize response identities.
+  if (!record) return null; // Unknown commit stays redacted HOLD; never retry.
+  assertBookingWithinIntakeAccount(record, accountId);
+  if (accountId && text(record.propertyId) !== text(propertyId)) {
+    throw Object.assign(new Error('Связанная бронь находится вне canonical property контура intake.'),
+      { code: 'account_scope_mismatch' });
+  }
+  return record;
+}
+
 async function requireBookingWithinIntakeScope(
   record: BookingOpsRecord | null | undefined,
   accountId: string | null,
@@ -538,12 +561,12 @@ async function findMatchingBookingRecord(
         if (record && bookingBelongsToContour(record, scope)) return record;
       }
     } else if (accountId) {
-      const { data: byIdData } = await supabase
+      const { data: byIdData } = isCanonicalBookingId(input.bookingReference) ? await supabase
         .from('booking_ops_records')
         .select('id')
         .eq('id', input.bookingReference)
         .eq('account_id', accountId)
-        .maybeSingle();
+        .maybeSingle() : { data: null };
       if (byIdData) {
         const record = await getBookingOpsRecord(text((byIdData as { id: string }).id));
         await requireBookingWithinIntakeScope(record, accountId, input.propertyId);
@@ -563,7 +586,7 @@ async function findMatchingBookingRecord(
         return record;
       }
     } else {
-      const byId = await getBookingOpsRecord(input.bookingReference);
+      const byId = isCanonicalBookingId(input.bookingReference) ? await getBookingOpsRecord(input.bookingReference) : null;
       if (byId) return byId;
       const { data } = await supabase
         .from('booking_ops_records')
@@ -661,6 +684,7 @@ export async function findOrCreateBookingFromInbound(
   scope?: ChannelManagerIntakeScope | null,
   allowUnscopedMatching = true,
   accountId?: string | null,
+  reserveIdentity?: (id: string) => Promise<void>,
 ): Promise<{ record: BookingOpsRecord; created: boolean; guestDataBecameComplete: boolean }> {
   const existing = await findMatchingBookingRecord(
     input,
@@ -681,6 +705,8 @@ export async function findOrCreateBookingFromInbound(
         { code: 'account_scope_mismatch' },
       );
     }
+    if (reserveIdentity) await reserveIdentity(existing.id);
+    return withBookingAutomationLease(existing.id, async () => {
     const wasGuestDataComplete = hasCompleteGuestData(existing);
     let current = existing;
 
@@ -729,18 +755,22 @@ export async function findOrCreateBookingFromInbound(
           actorType: 'system',
           ...(expectedScope ? { expectedScope } : {}),
         });
-      if (updated.ok && updated.record) return {
+      if (!updated.ok || !updated.record) throw new Error(updated.error ?? 'booking_update_uncertain');
+      return {
         record: updated.record,
         created: false,
         guestDataBecameComplete: !wasGuestDataComplete && hasCompleteGuestData(updated.record),
       };
     }
     return { record: current, created: false, guestDataBecameComplete: false };
+    });
   }
 
+  const reservedRecordId = randomUUID();
+  if (reserveIdentity) await reserveIdentity(reservedRecordId);
   const result = await createBookingOpsRecord(
     toCreateInput(input, source, scope, accountId),
-    { actorType: 'system' },
+    { actorType: 'system', reservedRecordId },
   );
   if (!result.ok || !result.record) {
     throw new Error(result.error ?? 'booking_create_failed');
@@ -1050,7 +1080,8 @@ async function getIntakeEventByKey(
     ? query.eq('account_id', accountId)
     : query.is('account_id', null);
   const { data, error } = await query.maybeSingle();
-  if (error || !data) return null;
+  if (error) throw new Error('intake_receipt_read_unavailable');
+  if (!data) return null;
   return mapEventRow(data as IntakeEventRow);
 }
 
@@ -1132,10 +1163,26 @@ export async function getInboundBookingIntakeStatus(
   if (!event) return null;
 
   const automation = event.automationResult;
+  const linkedBooking = await verifiedReceiptBooking(event.bookingId, accountId ?? null, event.propertyId);
+  if (accountId && (automation.executionState !== 'completed' || !linkedBooking)) {
+    // Read-only reconciliation: a reserved identity is not proof of a committed booking.
+    const reserved = text(automation.reservedBookingId);
+    const candidate = event.bookingId || reserved;
+    const confirmed = candidate === event.bookingId ? linkedBooking : candidate
+      ? await verifiedReceiptBooking(candidate, accountId, event.propertyId) : null;
+    const confirmedBookingId = confirmed?.id ?? null;
+    return {
+      intakeId: event.id, bookingId: confirmedBookingId, guestId: null,
+      intakeStatus: 'failed', initializedModules: [], createdCommunicationIntents: [],
+      missingRequiredFields: event.missingFields, nextRequiredActions: ['manual_reconciliation'],
+      fallbackCreated: false, duplicateOfBookingId: null,
+      safeSummary: confirmedBookingId ? 'Intake HOLD: бронь найдена; продолжение только после ручной сверки.' : 'Intake HOLD: запись брони не подтверждена; автоматический повтор запрещён.',
+    };
+  }
   return {
     intakeId: event.id,
-    bookingId: event.bookingId,
-    guestId: event.guestId,
+    bookingId: linkedBooking?.id ?? null,
+    guestId: null,
     intakeStatus: event.status,
     initializedModules: Array.isArray(automation.initializedModules)
       ? automation.initializedModules.map(String)
@@ -1148,7 +1195,7 @@ export async function getInboundBookingIntakeStatus(
       ? automation.nextRequiredActions.map(String)
       : [],
     fallbackCreated: automation.fallbackCreated === true,
-    duplicateOfBookingId: event.duplicateOfBookingId,
+    duplicateOfBookingId: event.duplicateOfBookingId === linkedBooking?.id ? linkedBooking.id : null,
     safeSummary: text(automation.safeSummary) || 'Статус входящей заявки доступен.',
   };
 }
@@ -1243,7 +1290,12 @@ export async function processInboundBookingRequest(
     // never proof that an internal property has been selected.
     missingFields.push('property');
   }
+  const requestFingerprint = createHash('sha256').update(JSON.stringify(normalized, (_key, value: unknown) => {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return value;
+    return Object.fromEntries(Object.entries(value).sort(([a], [b]) => a.localeCompare(b)));
+  })).digest('hex');
   const safePayload = {
+    requestFingerprint,
     guestName: normalized.guestName,
     hasPhone: Boolean(normalized.guestPhone),
     hasEmail: Boolean(normalized.guestEmail),
@@ -1261,14 +1313,54 @@ export async function processInboundBookingRequest(
     ...(accountId ? { accountId } : {}),
   };
 
-  const existingEvent = await getIntakeEventByKey(idempotencyKey, accountId);
+  const held = (event?: InboundBookingIntakeEvent | null): InboundBookingIntakeResult => ({
+    intakeId: event?.id ?? '', bookingId: null, guestId: null,
+    intakeStatus: 'failed', initializedModules: [], createdCommunicationIntents: [],
+    missingRequiredFields: missingFields, nextRequiredActions: ['manual_reconciliation'],
+    fallbackCreated: false, duplicateOfBookingId: null,
+    safeSummary: 'Intake HOLD: требуется ручная сверка; автоматический повтор запрещён.',
+  });
+  let existingEvent: InboundBookingIntakeEvent | null;
+  try { existingEvent = await getIntakeEventByKey(idempotencyKey, accountId); }
+  catch { return held(); }
+  const linkedBooking = existingEvent?.bookingId
+    ? await verifiedReceiptBooking(existingEvent.bookingId, accountId, existingEvent.propertyId)
+    : null;
+  if (linkedBooking && accountId && text(linkedBooking.propertyId) !== text(normalized.propertyId)) {
+    throw Object.assign(new Error('Связанная бронь находится вне запрошенного property контура.'),
+      { code: 'account_scope_mismatch' });
+  }
+  if (existingEvent?.bookingId && !linkedBooking) return held(existingEvent);
+  if (accountId) {
+    // The existing account/key UNIQUE index is the cross-process admission fence.
+    // There is deliberately no lease expiry, force takeover or automatic retry.
+    if (options?.force || (options?.action && options.action !== 'process')) return held(existingEvent);
+    if (existingEvent) {
+      if (existingEvent.normalizedPayload.requestFingerprint !== requestFingerprint
+        || existingEvent.automationResult.executionState !== 'completed'
+        || !existingEvent.bookingId) return held(existingEvent);
+    } else {
+      const claim = await supabase.from('booking_inbound_intake_events').insert({
+        id: randomUUID(), account_id: accountId, source,
+        source_ref: normalized.sourceMessageId ?? normalized.externalSourceId,
+        idempotency_key: idempotencyKey, status: 'new', property_id: normalized.propertyId,
+        normalized_payload: safePayload, missing_fields: missingFields,
+        automation_result: { executionState: 'running', recovery: 'manual_reconciliation' },
+      }).select('*').single();
+      // Both a unique conflict and an unknown commit acknowledgement are HOLD.
+      if (claim.error || !claim.data) return held();
+      existingEvent = mapEventRow(claim.data as IntakeEventRow);
+    }
+  }
   if (
     existingEvent?.bookingId
     && !options?.force
     && (!options?.action || options.action === 'process')
   ) {
-    const existingBooking = await getBookingOpsRecord(existingEvent.bookingId);
+    const existingBooking = linkedBooking;
     assertBookingWithinIntakeAccount(existingBooking, accountId);
+    if (accountId && (text(existingBooking?.propertyId) !== text(existingEvent.propertyId)
+      || text(existingBooking?.propertyId) !== text(normalized.propertyId))) return held(existingEvent);
     if (scope && !bookingBelongsToContour(existingBooking, scope)) {
       throw Object.assign(
         new Error('Существующее intake-событие указывает на бронь вне canonical контура.'),
@@ -1278,7 +1370,7 @@ export async function processInboundBookingRequest(
     return {
       intakeId: existingEvent.id,
       bookingId: existingEvent.bookingId,
-      guestId: existingEvent.guestId,
+      guestId: null,
       intakeStatus: 'duplicate',
       initializedModules: [],
       createdCommunicationIntents: [],
@@ -1379,6 +1471,13 @@ export async function processInboundBookingRequest(
         scope,
         tenantBoundMatchingAllowed,
         accountId,
+        accountId && existingEvent ? async (id) => {
+          const result = await supabase.from('booking_inbound_intake_events').update({
+            automation_result: { executionState: 'running', recovery: 'manual_reconciliation', reservedBookingId: id },
+          }).eq('id', existingEvent!.id).eq('account_id', accountId).is('booking_id', null).select('id').single();
+          if (result.error || !result.data) throw new Error('intake_identity_reservation_uncertain');
+          existingEvent!.automationResult.reservedBookingId = id;
+        } : undefined,
       );
       record = bookingResult.record;
       created = bookingResult.created;
@@ -1407,6 +1506,15 @@ export async function processInboundBookingRequest(
       );
     }
 
+    return await withBookingAutomationLease(record.id, async (): Promise<InboundBookingIntakeResult> => {
+    if (accountId && existingEvent) {
+      const linked = await supabase.from('booking_inbound_intake_events')
+        .update({ booking_id: record.id }).eq('id', existingEvent.id).eq('account_id', accountId)
+        .select('id').single();
+      if (linked.error || !linked.data) return held(existingEvent);
+      existingEvent.bookingId = record.id;
+    }
+
     const canonicalPropertyId = text(record.propertyId) || null;
     const expectedScope: ExpectedScope | undefined = accountId && canonicalPropertyId
       ? { accountId, propertyId: canonicalPropertyId }
@@ -1425,9 +1533,11 @@ export async function processInboundBookingRequest(
       const availability = await initializeBookingAvailability(record);
       availabilityStatus = availability.status;
       if (availability.initialized) initializedModules.push('availability_hold');
-    } catch {
+    } catch (error) {
+      if (accountId) throw error;
       availabilityStatus = 'failed';
     }
+    if (accountId && availabilityStatus === 'failed') throw new Error('booking_availability_uncertain');
 
     if (!authenticatedUnboundReview && (
       created || options?.force || options?.action === 'process' || options?.action === 'attach_property' || !options?.action
@@ -1475,6 +1585,7 @@ export async function processInboundBookingRequest(
       normalizedPayload: safePayload,
       missingFields: effectiveMissingFields,
       automationResult: {
+        ...(accountId ? { executionState: 'running', recovery: 'manual_reconciliation', reservedBookingId: record.id } : {}),
         initializedModules,
         createdCommunicationIntents,
         nextRequiredActions,
@@ -1516,6 +1627,22 @@ export async function processInboundBookingRequest(
       else await recordAndProcessBookingEvent(lifecycleInput);
     }
 
+    // Complete the route's required audit before making the receipt replayable.
+    if (options?.inputTrust === 'authenticated_internal' && expectedScope) {
+      await recordAndProcessBookingEvent({
+        id: event.id, bookingId: record.id, objectId: record.propertyId,
+        type: 'booking.received', actorType: 'operator', actorId: options.operatorActorId ?? null,
+        source: `booking_intake:${source}`, correlationId: event.id,
+        payload: { intakeStatus },
+      }, expectedScope);
+    }
+    if (accountId) {
+      const completed = await supabase.from('booking_inbound_intake_events')
+        .update({ automation_result: { ...event.automationResult, executionState: 'completed' } })
+        .eq('id', event.id).eq('account_id', accountId).select('id').single();
+      if (completed.error || !completed.data) return held(event);
+    }
+
     return {
       intakeId: event.id,
       bookingId: record.id,
@@ -1529,11 +1656,14 @@ export async function processInboundBookingRequest(
       duplicateOfBookingId: null,
       safeSummary,
     };
+    });
   } catch (error) {
     const code = (error as { code?: string })?.code;
     if (code === 'account_scope_mismatch' || code === 'connection_scope_invalid') {
       throw error;
     }
+    // Never erase lineage or downgrade a possibly committed completion on ACK loss.
+    if (accountId) return held(existingEvent);
     const message = error instanceof Error ? error.message : 'intake_failed';
     const event = await upsertIntakeEvent({
       id: existingEvent?.id,

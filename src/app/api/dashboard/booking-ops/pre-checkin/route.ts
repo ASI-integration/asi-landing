@@ -1,11 +1,12 @@
 import { NextResponse } from 'next/server';
+import { requireBookingOpsApiAccess } from '../access';
 import { requireCrmOperatorSession } from '@/lib/crm/api-auth';
 import { resolveReservationAccess } from '@/lib/reservations/access';
 import { sameIdentity } from '@/lib/platform/decision';
 import { adaptResidentialOpsDecision } from '@/lib/platform/ops-decision';
 import { resolveResidentialBookingIdentity } from '@/lib/platform/residential-booking-scope';
 import {
-  getPreCheckinStatus,
+  readPreCheckinStatus,
   listBookingsByReadinessStatus,
   PRE_CHECKIN_READINESS_STATUSES,
   type PreCheckinReadinessStatus,
@@ -36,9 +37,12 @@ export async function GET(req: Request): Promise<NextResponse> {
     const access = await resolveReservationAccess(auth.session);
     if (access.accountId === 'legacy') throw new Error('reservation_account_not_found');
     if (bookingId) {
-      const identity = await resolveResidentialBookingIdentity(bookingId, access.accountId);
-      const readiness = await getPreCheckinStatus(bookingId);
-      const currentIdentity = await resolveResidentialBookingIdentity(bookingId, access.accountId);
+      const bookingAccess = await requireBookingOpsApiAccess(auth.session, bookingId);
+      if (!bookingAccess.ok) return bookingAccess.response;
+      const expectedScope = { accountId: bookingAccess.accountId, propertyId: bookingAccess.propertyId };
+      const identity = await resolveResidentialBookingIdentity(bookingAccess.bookingId, bookingAccess.accountId);
+      const readiness = await readPreCheckinStatus(bookingAccess.bookingId, expectedScope);
+      const currentIdentity = await resolveResidentialBookingIdentity(bookingAccess.bookingId, bookingAccess.accountId);
       if (!sameIdentity(identity, currentIdentity)) {
         return NextResponse.json({ ok: false, message: 'Состояние бронирования изменилось. Повторите запрос.' }, { status: 409 });
       }
@@ -63,6 +67,9 @@ export async function GET(req: Request): Promise<NextResponse> {
     });
   } catch (error) {
     const code = error instanceof Error ? error.message : '';
+    if (code === 'precheckin_readiness_unavailable') {
+      return NextResponse.json({ ok: false, message: code }, { status: 503 });
+    }
     if (code === 'booking_not_found') {
       return NextResponse.json({ ok: false, message: 'Бронирование не найдено.' }, { status: 404 });
     }

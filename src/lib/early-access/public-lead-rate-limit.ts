@@ -83,7 +83,7 @@ function contactIdentity(input: NormalizedCrmContactInput): string {
 
 export async function processPublicPilotLead(
   input: NormalizedCrmContactInput,
-  persist: () => Promise<void>,
+  persist: () => Promise<void | { replayed: boolean; expiresAt?: number }>,
   now = Date.now(),
 ): Promise<ProcessResult> {
   cleanup(now);
@@ -100,10 +100,10 @@ export async function processPublicPilotLead(
   const reservation = reserveAttempt(contactIdentity(input), now);
   if (!reservation.allowed) return reservation;
 
-  const operation = (async (): Promise<{ allowed: true; replayed: false }> => {
-    await persist();
-    completed.set(key, now + IDEMPOTENCY_WINDOW_MS);
-    return { allowed: true, replayed: false };
+  const operation = (async (): Promise<{ allowed: true; replayed: boolean }> => {
+    const persisted = await persist();
+    completed.set(key, Math.min(now + IDEMPOTENCY_WINDOW_MS, persisted?.expiresAt ?? Infinity));
+    return { allowed: true, replayed: persisted?.replayed ?? false };
   })();
   inFlight.set(key, operation);
   try {

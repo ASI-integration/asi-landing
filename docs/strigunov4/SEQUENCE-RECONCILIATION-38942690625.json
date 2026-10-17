@@ -1,0 +1,58 @@
+{
+  "all_four_sequences_match_prefixture": true,
+  "correction": "only public.asi_reservation_reference_seq setval(100007,true); explicit local reconciliation, not transactional rollback",
+  "fixture_trigger_metadata": [
+    {
+      "function": "set_booking_ops_alert_account_id()",
+      "insert_targets": [],
+      "nextval_references": [],
+      "table": "booking_ops_alerts",
+      "trigger": "booking_ops_alerts_set_account_id"
+    }
+  ],
+  "missing_copy_metadata": {
+    "children": 0,
+    "is_partition": false,
+    "relkind": "p",
+    "row_count": 0
+  },
+  "post_sequences_sha256": "f878966fb013026a43dd8fd44c6e93e1e9ad09859d7ba8c2e9e6d744dc205444",
+  "sequence_defaults": [
+    {
+      "column": "asi_reference",
+      "expression": "('ASI-'::text || (nextval('asi_reservation_reference_seq'::regclass))::text)",
+      "table": "booking_ops_records"
+    }
+  ],
+  "sequences": [
+    {
+      "current_is_called": false,
+      "current_value": 1,
+      "name": "auth.refresh_tokens_id_seq",
+      "source_is_called": false,
+      "source_value": 1
+    },
+    {
+      "current_is_called": true,
+      "current_value": 100010,
+      "name": "public.asi_reservation_reference_seq",
+      "source_is_called": true,
+      "source_value": 100007
+    },
+    {
+      "current_is_called": true,
+      "current_value": 2,
+      "name": "public.tg_suspicious_users_id_seq",
+      "source_is_called": true,
+      "source_value": 2
+    },
+    {
+      "current_is_called": false,
+      "current_value": 1,
+      "name": "realtime.subscription_id_seq",
+      "source_is_called": false,
+      "source_value": 1
+    }
+  ],
+  "status": "SEQUENCE_RECONCILIATION_PASS"
+}

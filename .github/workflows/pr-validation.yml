@@ -177,6 +177,16 @@ jobs:
             exit 1
           fi
 
+      - name: Automation batch partial failure regression
+        run: npx vitest run src/lib/booking-ops/__tests__/automation-service.batch.test.ts --reporter=verbose
+
+      - name: Pre-check-in scoped read regression
+        run: |
+          npx vitest run \
+            src/lib/booking-ops/__tests__/pre-checkin-pure-read.test.ts \
+            src/app/api/dashboard/booking-ops/__tests__/pre-checkin-route-scope.test.ts \
+            --reporter=verbose
+
       - name: Tests (Booking Ops focused regression coverage)
         run: |
           npx vitest run \
@@ -427,6 +437,19 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
+      postgres_availability:
+        image: postgres:17@sha256:2d2b8998d31037bf721cfdf764d76ba74171b4fab3431b7f72c27c56ddbdf9e3
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: asi_availability_test
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d asi_availability_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     env:
       ASI_DISPOSABLE_POSTGRES_URL: postgresql://postgres:postgres@localhost:5432/asi_recovery_test
       ASI_REQUIRE_DISPOSABLE_PG: "1"
@@ -627,6 +650,42 @@ jobs:
             exit 1
           fi
 
+      - name: Availability canonical lock PostgreSQL concurrency regression
+        env:
+          ASI_DISPOSABLE_POSTGRES_URL: postgresql://postgres:postgres@localhost:5433/asi_availability_test
+        run: |
+          set -euo pipefail
+          npx vitest run \
+            src/lib/booking-ops/__tests__/availability-canonical-lock.pg.integration.test.ts \
+            --reporter=verbose --reporter=json --outputFile=availability-lock-pg.json
+          node - <<'NODE'
+          const fs = require('fs');
+          const result = JSON.parse(fs.readFileSync('availability-lock-pg.json', 'utf8'));
+          if (result.success !== true || result.numPassedTests !== 2
+            || result.numPendingTests !== 0 || result.numFailedTests !== 0) {
+            throw new Error('Availability lock PostgreSQL regression must pass both tests without skips');
+          }
+          console.log('AVAILABILITY_CANONICAL_LOCK_PG_PASS');
+          NODE
+
+      - name: Availability shared writers PostgreSQL concurrency regression
+        env:
+          ASI_DISPOSABLE_POSTGRES_URL: postgresql://postgres:postgres@localhost:5433/asi_availability_test
+        run: |
+          set -euo pipefail
+          npx vitest run \
+            src/lib/booking-ops/__tests__/availability-shared-writers.pg.integration.test.ts \
+            --reporter=verbose --reporter=json --outputFile=availability-shared-writers-pg.json
+          node - <<'NODE'
+          const fs = require('fs');
+          const result = JSON.parse(fs.readFileSync('availability-shared-writers-pg.json', 'utf8'));
+          if (result.success !== true || result.numPassedTests !== 2
+            || result.numPendingTests !== 0 || result.numFailedTests !== 0) {
+            throw new Error('Availability shared writers PostgreSQL regression must pass both tests without skips');
+          }
+          console.log('AVAILABILITY_SHARED_WRITERS_PG_PASS');
+          NODE
+
       - name: Guest Lifecycle synthetic cleanup PostgreSQL integration
         id: guest_lifecycle_cleanup_pg_integration
         run: |
@@ -826,3 +885,5 @@ jobs:
           }
           console.log('partner_revenue_proof_ok', JSON.stringify(proof));
           NODE
+
+

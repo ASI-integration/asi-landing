@@ -1,3 +1,4 @@
+import { readRequestJson } from '@/lib/safeRequestJson';
 import { NextResponse } from 'next/server';
 import { requireOpsAdminSession } from '@/lib/crm/api-auth';
 import {
@@ -6,7 +7,6 @@ import {
   requireBookingOpsApiPropertyAccess,
 } from '../../access';
 import { processInboundBookingRequest } from '@/lib/booking-ops/real-booking-intake-autopilot';
-import { recordAndProcessBookingEvent } from '@/lib/booking-ops/lifecycle-autopilot-service';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -19,9 +19,16 @@ export async function POST(req: Request): Promise<NextResponse> {
 
   let body: Record<string, unknown>;
   try {
-    body = (await req.json()) as Record<string, unknown>;
+    const parsed = await readRequestJson(req, { maxBytes: 16 * 1024 });
+    if (!parsed.ok) throw new Error('invalid_json_object');
+    body = parsed.data;
   } catch {
     return NextResponse.json({ ok: false, message: 'Некорректный JSON.' }, { status: 400 });
+  }
+
+  const allowedActions = new Set(['process', 'mark_duplicate', 'attach_property', 'attach_guest', 'request_missing_data', 'create_fallback']);
+  if (body.action !== undefined && (typeof body.action !== 'string' || !allowedActions.has(body.action))) {
+    return NextResponse.json({ ok: false, message: 'invalid_intake_action' }, { status: 400 });
   }
 
   const source = String(body.source ?? 'admin').trim() as 'admin' | 'web' | 'telegram';
@@ -54,6 +61,7 @@ export async function POST(req: Request): Promise<NextResponse> {
 
   const result = await processInboundBookingRequest(body, source, {
     inputTrust: 'authenticated_internal',
+    operatorActorId: auth.session.email ?? auth.session.userId ?? null,
     accountId: account.accountId,
     force: body.force === true,
     action: typeof body.action === 'string'
@@ -69,24 +77,13 @@ export async function POST(req: Request): Promise<NextResponse> {
     intakeEventId: typeof body.intakeEventId === 'string' ? body.intakeEventId : undefined,
   });
 
-  if (result.bookingId && result.intakeStatus !== 'duplicate' && !result.missingRequiredFields.includes('property')) {
+  if (result.intakeStatus === 'failed') {
+    return NextResponse.json({ ok: false, message: 'intake_processing_failed' }, { status: 503 });
+  }
+
+  if (result.bookingId && !result.missingRequiredFields.includes('property')) {
     const bookingAccess = await requireBookingOpsApiAccess(auth.session, result.bookingId);
     if (!bookingAccess.ok) return bookingAccess.response;
-    const expectedScope = {
-      accountId: bookingAccess.accountId,
-      propertyId: bookingAccess.propertyId,
-    };
-    await recordAndProcessBookingEvent({
-      id: result.intakeId,
-      bookingId: bookingAccess.bookingId,
-      objectId: bookingAccess.propertyId,
-      type: 'booking.received',
-      actorType: 'operator',
-      actorId: auth.session.email ?? auth.session.userId ?? null,
-      source: `booking_intake:${source}`,
-      correlationId: result.intakeId,
-      payload: { intakeStatus: result.intakeStatus },
-    }, expectedScope);
   }
 
   return NextResponse.json({ ok: true, result }, { status: 200 });
