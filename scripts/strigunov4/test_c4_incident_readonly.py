@@ -127,18 +127,18 @@ class C4IncidentReadOnlyTests(unittest.TestCase):
                 audit.g0.Gate("password=never_show_this")))
         self.assertEqual(str(ctx.exception),"CENSUS_FAILED")
         output=io.StringIO()
-        with patch.object(audit,"reconcile",
-                          side_effect=audit.Block("TABLE bad; password=secret")), \\
-             contextlib.redirect_stdout(output):
+        with (patch.object(audit,"reconcile",
+                          side_effect=audit.Block("TABLE bad; password=secret")),
+              contextlib.redirect_stdout(output)):
             self.assertEqual(audit.main(),2)
         self.assertEqual(json.loads(output.getvalue())["reason"],"UNKNOWN_BLOCK")
         self.assertNotIn("password",output.getvalue())
 
     def test_stage_error_code_appears_in_single_block_receipt(self):
         output=io.StringIO()
-        with patch.object(audit,"reconcile",
-                          side_effect=audit.Block("HISTORY_COMMAND_FAILURE")), \\
-             contextlib.redirect_stdout(output):
+        with (patch.object(audit,"reconcile",
+                          side_effect=audit.Block("HISTORY_COMMAND_FAILURE")),
+              contextlib.redirect_stdout(output)):
             self.assertEqual(audit.main(),2)
         self.assertEqual(json.loads(output.getvalue())["reason"],
                          "HISTORY_COMMAND_FAILURE")
