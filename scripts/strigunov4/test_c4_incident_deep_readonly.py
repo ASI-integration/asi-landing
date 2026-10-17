@@ -92,7 +92,14 @@ class DeepReadOnlyTests(unittest.TestCase):
         ]:
             self.assertIn("public."+table,sql)
         self.assertIn("pg_catalog.pg_constraint",sql)
-        self.assertIn("con.confdeltype='c'",sql)
+        self.assertIn("WITH RECURSIVE fk_edges",sql)
+        self.assertIn("fk_closure AS",sql)
+        self.assertIn("f.action='c' AND f.depth<10",sql)
+        self.assertIn("NOT (edge.child_oid=ANY(f.visited))",sql)
+        self.assertIn("action IN ('a','r')",sql)
+        self.assertIn("action IN ('n','d')",sql)
+        self.assertIn("blockingFkChildTables",sql)
+        self.assertIn("setNullOrDefaultChildTables",sql)
         for prohibited in (r"\bDELETE\b",r"\bINSERT\b",r"\bUPDATE\b",
                            r"\bTRUNCATE\b",r"\bALTER\b",r"\bDROP\b",
                            r"\bCREATE\b",r"\bGRANT\b",r"\bCALL\b"):
@@ -101,7 +108,9 @@ class DeepReadOnlyTests(unittest.TestCase):
     def test_counts_and_schema_only_in_receipt(self):
         obj={k:0 for k in deep.COUNT_KEYS}
         obj.update({"incidentRun":deep.INCIDENT,
-                    "cascadeChildTables":["booking_ops_events","partner_booking_bindings"]})
+                    "cascadeChildTables":["booking_ops_events","partner_booking_bindings"],
+                    "blockingFkChildTables":["other_booking_fk"],
+                    "setNullOrDefaultChildTables":["booking_availability_holds"]})
         def checked(cmd,**kwargs):
             if cmd[0]=="git":
                 return types.SimpleNamespace(stdout=(SHA+"\n").encode())
@@ -121,6 +130,9 @@ class DeepReadOnlyTests(unittest.TestCase):
         self.assertEqual(report["counts"]["bookingOpsEvents"],0)
         self.assertEqual(len(report["counts"]),len(deep.COUNT_KEYS))
         self.assertEqual(report["cascadeChildTables"],obj["cascadeChildTables"])
+        self.assertEqual(report["blockingFkChildTables"],obj["blockingFkChildTables"])
+        self.assertEqual(report["setNullOrDefaultChildTables"],
+                         obj["setNullOrDefaultChildTables"])
         self.assertIs(report["stagingWrites"],False)
         self.assertIs(report["cleanupAttempted"],False)
         self.assertIs(report["physicalReplayAuthorized"],False)
