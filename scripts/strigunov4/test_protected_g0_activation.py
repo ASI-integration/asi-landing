@@ -201,6 +201,35 @@ class ActivationTests(unittest.TestCase):
             self.assertTrue(dest.is_dir())
             self.assertFalse(candidate.exists())
 
+    def test_host_failure_status_is_retained_but_untrusted_output_is_hidden(self):
+        known=("APPLICATION_ROLLBACK_PASS","BLOCK_MANUAL_RECOVERY_REQUIRED","BLOCK")
+        for host_status in (*known,"secret:unsafe"):
+            with self.subTest(host_status=host_status), \
+                 patch.object(gate,"host_source",return_value=b"pass"), \
+                 patch.object(gate.backup_export,"ssh_identity",return_value=Path("/tmp/known_hosts")), \
+                 patch.object(gate,"checked",return_value=types.SimpleNamespace(
+                     returncode=2,stdout=json.dumps({"status":host_status}).encode("utf-8"))):
+                safe=host_status if host_status in known else "UNKNOWN"
+                with self.assertRaisesRegex(gate.Gate,"G0_ACTIVATION_NOT_PROVEN_"+safe):
+                    gate.activate_host(good(),SHA,"123","stage.example.invalid",22)
+
+    def test_main_reports_sanitized_gate_reason(self):
+        for error,expected in (
+            ("G0_ACTIVATION_NOT_PROVEN_BLOCK_MANUAL_RECOVERY_REQUIRED",
+             "G0_ACTIVATION_NOT_PROVEN_BLOCK_MANUAL_RECOVERY_REQUIRED"),
+            ("secret:unsafe","UNKNOWN")
+        ):
+            with self.subTest(error=error), \
+                 patch.object(gate,"run",side_effect=gate.Gate(error)):
+                stream=io.StringIO()
+                with contextlib.redirect_stdout(stream):
+                    self.assertEqual(gate.main(),2)
+                result=json.loads(stream.getvalue())
+                self.assertEqual(result["status"],"BLOCK")
+                self.assertEqual(result["reason"],expected)
+                self.assertIs(result["databaseMutation"],False)
+                self.assertIs(result["productionTouched"],False)
+
     def test_no_production_or_sentinel_mutations_in_source(self):
         root=Path(host.__file__).read_text(encoding="utf-8")
         self.assertNotIn("systemctl restart asi-landing-production",root)
