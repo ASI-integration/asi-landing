@@ -140,6 +140,12 @@ SELECT jsonb_build_object(
 )::text;
 COMMIT;"""
 
+def safe_sqlstate(stderr):
+    """Expose only a five-character SQLSTATE, never unredacted database output."""
+    source=stderr.decode("ascii","ignore") if isinstance(stderr,bytes) else ""
+    found=re.search(r"(?m)\b(?:ERROR|FATAL):\s*([0-9A-Z]{5})\b",source)
+    return "DEEP_CENSUS_SQLSTATE_"+(found.group(1) if found else "UNKNOWN")
+
 def gated(stage,fn):
     require(stage in ("CHECKOUT","HISTORY","DEEP_CENSUS"),"STAGE")
     try:
@@ -169,8 +175,13 @@ def run(env):
         cmd=pg.postgres_client_command(temp,"postcheck")
         require(cmd[-2]=="-c","PSQL_COMMAND_SHAPE")
         cmd[-1]=read_query()
-        raw=gated("DEEP_CENSUS",lambda:g0.checked(
-            cmd,env=db_env,timeout=90)).stdout.decode("utf8","strict")
+        # psql prints SQLSTATE only; never emit unredacted database stderr.
+        cmd[-2:-2]=["--set","VERBOSITY=sqlstate"]
+        census=gated("DEEP_CENSUS",lambda:g0.checked(
+            cmd,env=db_env,timeout=90,allow_nonzero=True))
+        if census.returncode:
+            raise Block(safe_sqlstate(census.stderr))
+        raw=census.stdout.decode("utf8","strict")
     rows=[line.strip() for line in raw.splitlines() if line.lstrip().startswith("{")]
     require(len(rows)==1,"RECEIPT_FORMAT")
     obj=json.loads(rows[0])
