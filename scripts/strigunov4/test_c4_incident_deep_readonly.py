@@ -75,8 +75,9 @@ class DeepReadOnlyTests(unittest.TestCase):
         sql=deep.read_query()
         self.assertIn("BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY",sql)
         self.assertIn("COMMIT;",sql)
-        for ident in deep.prior.OWNED.values():
-            self.assertIn(ident,sql)
+        for key in ("booking","account","property","user"):
+            self.assertIn(deep.prior.OWNED[key],sql)
+        self.assertEqual(deep.INCIDENT,deep.prior.INCIDENT_RUN)
         for table in [
             "booking_ops_events","booking_cleaning_tasks","booking_linen_tasks",
             "booking_supplies_tasks","booking_maintenance_tickets",
