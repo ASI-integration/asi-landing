@@ -110,7 +110,7 @@ class C4IncidentReadOnlyTests(unittest.TestCase):
         self.assertEqual(x["status"],"C4_INCIDENT_READONLY_AUDIT")
         self.assertFalse(x["stagingWrites"])
         self.assertFalse(x["physicalReplayAuthorized"])
-        self.assertEqual(x["recordCounts"],record|{} if False else
+        self.assertEqual(x["recordCounts"],
                          {key:value for key,value in record.items() if key!="incidentRun"})
 
     def test_block_one_sanitized_line(self):
