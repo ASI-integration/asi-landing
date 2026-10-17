@@ -151,7 +151,7 @@ def run(env):
                 for key in COUNT_KEYS),"RECEIPT_COUNTS")
     descendants=obj.get("cascadeChildTables")
     require(type(descendants) is list and len(descendants)<=150 and
-            all(type(t) is str and re.fullmatch(r"[a-z_]{1,75}",t)
+            all(type(t) is str and re.fullmatch(r"[a-z0-9_]{1,75}",t)
                 for t in descendants),"CASCADE_SCHEMA_SHAPE")
     return {
         "status":"C4_DEEP_READONLY_DIAG_PASS",
