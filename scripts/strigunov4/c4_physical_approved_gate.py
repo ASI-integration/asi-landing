@@ -38,14 +38,8 @@ class Gate(ValueError):
 def safe_receipt(data, owned):
     """Only generated UUIDs and fixed result codes may enter CI logs."""
     uuid_pattern = re.compile(
-        r"[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\\Z"
+        r"[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\Z"
     )
-    def owned_ids(name):
-        rows = data.get(name, []) if type(data) is dict else []
-        if type(rows) is not list or len(rows) > 2:
-            return []
-        return [row for row in rows if type(row) is str and
-                uuid_pattern.fullmatch(row)]
     record = data if type(data) is dict else {}
     child = record.get("owned")
     if type(child) is dict:
@@ -54,10 +48,11 @@ def safe_receipt(data, owned):
                 return {"owned": owned, "reason": "OWNERSHIP_RECEIPT_MISMATCH",
                         "cleanup": "UNKNOWN"}
     ids = dict(owned)
-    ids["bookingIds"] = owned_ids("bookingIds") if type(child) is not dict else (
+    ids["bookingIds"] = (
         [v for v in child.get("bookingIds", []) if type(v) is str and
          uuid_pattern.fullmatch(v)]
-        if type(child.get("bookingIds")) is list and len(child["bookingIds"]) <= 2 else [])
+        if type(child) is dict and type(child.get("bookingIds")) is list
+        and len(child["bookingIds"]) <= 2 else [])
     ids["intakeIds"] = (
         [v for v in child.get("intakeIds", []) if type(v) is str and
          uuid_pattern.fullmatch(v)]
@@ -194,6 +189,10 @@ def run(e):
                     "owned": owned, "reason": "TIMEOUT_REQUIRES_READONLY_RECONCILIATION",
                     "cleanup": "UNKNOWN",
                 }) from None
+            except OSError:
+                raise Gate("C4_CHILD_UNAVAILABLE", lifecycle_receipt={
+                    "owned": owned, "cleanup": "UNKNOWN",
+                }) from None
             if len(result.stdout) >= 16384:
                 raise Gate("RECEIPT_SIZE", lifecycle_receipt={
                     "owned": owned, "cleanup": "UNKNOWN",
@@ -223,7 +222,11 @@ def run(e):
                 try: tunnel.wait(timeout=6)
                 except subprocess.TimeoutExpired: tunnel.kill();tunnel.wait(timeout=3)
     # Safety re-admission after physical activity.
-    post = verified.probe(e,host,port)
+    try:
+        post = verified.probe(e,host,port)
+    except Exception:
+        raise Gate("STAGE_POSTFLIGHT_BLOCK",
+                   lifecycle_receipt=lifecycle_receipt) from None
     if not (type(post) is dict
             and post.get("status") == "C4_READONLY_PREFLIGHT_PASS"
             and post.get("fullE2E") == "NOT_RUN"):
