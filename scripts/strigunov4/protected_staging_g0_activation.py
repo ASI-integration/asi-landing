@@ -149,7 +149,13 @@ def activate_host(source,sha,rid,host,port,root=ROOT):
         "databaseMutation":False,
         "productionTouched":False,
     }
-    require(r.returncode==0 and status==required,"G0_ACTIVATION_NOT_PROVEN")
+    if r.returncode != 0 or status != required:
+        remote_status = status.get("status") if type(status) is dict else None
+        # Only known fixed host statuses enter public CI logs; never echo stderr.
+        known = ("APPLICATION_ROLLBACK_PASS",
+                 "BLOCK_MANUAL_RECOVERY_REQUIRED", "BLOCK")
+        safe_status = remote_status if remote_status in known else "UNKNOWN"
+        raise Gate("G0_ACTIVATION_NOT_PROVEN_" + safe_status)
     return status
 
 
@@ -170,8 +176,13 @@ def main():
         report=run(os.environ)
         print(json.dumps(report,sort_keys=True))
         return 0
-    except (Gate,pg.Gate,backup_export.GateError,OSError,ValueError):
-        print('{"status":"BLOCK","databaseMutation":false,"productionTouched":false}')
+    except (Gate,pg.Gate,backup_export.GateError,OSError,ValueError) as exc:
+        # Only stable uppercase error codes can be shown; external errors stay hidden.
+        code = str(exc) if type(exc) is Gate else type(exc).__name__
+        reason = code if re.fullmatch(r"[A-Z0-9_]{1,120}",code) else "UNKNOWN"
+        print(json.dumps({"status":"BLOCK","reason":reason,
+                          "databaseMutation":False,"productionTouched":False},
+                         sort_keys=True))
         return 2
 
 
