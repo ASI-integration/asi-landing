@@ -130,6 +130,30 @@ class IncidentCleanupTests(unittest.TestCase):
                         sql.index("DELETE FROM public.booking_ops_records"))
         self.assertEqual(sql.count("GET DIAGNOSTICS n = ROW_COUNT"),len(actual))
 
+    def test_unknown_cascade_descendants_are_blocked_before_parent_deletes(self):
+        sql=c.cleanup_sql()
+        tables={
+            "booking_cleaning_tasks","booking_linen_tasks","booking_supplies_tasks",
+            "booking_maintenance_tickets","booking_physical_readiness",
+            "booking_physical_coordination_drafts","guest_lifecycle_events",
+            "partner_property_bindings","partner_booking_bindings",
+            "partner_communication_inbox","partner_communication_decisions",
+        }
+        for table in tables:
+            with self.subTest(table=table):
+                self.assertIn("public."+table,sql)
+        for marker in (
+            "C4_UNAPPROVED_BOOKING_DESCENDANTS",
+            "C4_PARTNER_PROPERTY_BINDING_WITNESS",
+            "C4_PARTNER_BOOKING_BINDING_WITNESS",
+            "C4_PARTNER_INBOX_WITNESS",
+            "C4_PARTNER_DECISION_WITNESS",
+        ):
+            self.assertLess(sql.index(marker),
+                            sql.index("DELETE FROM public.booking_ops_records"))
+        self.assertNotIn("DELETE FROM public.partner_",sql)
+        self.assertNotIn("DELETE FROM public.booking_cleaning_tasks",sql)
+
     def test_witness_counts_exact_from_prior_live_readonly_census(self):
         self.assertEqual(c.EXPECTED,{
             "users":1,"accounts":1,"properties":1,"accountMembers":1,
