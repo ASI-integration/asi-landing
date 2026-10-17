@@ -1,0 +1,103 @@
+name: Strigunov4 C4 protected physical staging core
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/strigunov4-c4-physical-core.yml'
+      - 'scripts/strigunov4/c4_physical_approved_gate.py'
+      - 'scripts/strigunov4/c4_physical_staging_lifecycle.mjs'
+      - 'scripts/strigunov4/test_c4_physical_approved_gate.py'
+      - 'docs/strigunov4/C4-PHYSICAL-CORE.md'
+  workflow_dispatch:
+    inputs:
+      reviewed_main_sha:
+        description: Exact current reviewed protected main commit SHA
+        required: true
+        type: string
+      confirm:
+        description: RUN_STRIGUNOV4_C4_PHYSICAL_<full reviewed SHA>
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+# Mutating owner dispatch uses the same staging mutex as protected SQL/G0.
+concurrency:
+  group: ${{ github.event_name == 'workflow_dispatch' && 'strigunov4-staging-nine-sql-apply' || format('strigunov4-c4-physical-pr-{0}', github.ref) }}
+  cancel-in-progress: false
+
+jobs:
+  offline_source_checks:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Code syntax and deny-by-default source-only security tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile scripts/strigunov4/c4_physical_approved_gate.py
+          python3 -m unittest discover -s scripts/strigunov4 -p 'test_c4_physical_approved_gate.py' -v
+          node --check scripts/strigunov4/c4_physical_staging_lifecycle.mjs
+          git diff --check
+
+  protected_physical_core:
+    if: github.event_name == 'workflow_dispatch' && github.repository == 'ASI-integration/asi-landing'
+    needs: offline_source_checks
+    runs-on: ubuntu-24.04
+    environment: staging
+    timeout-minutes: 18
+    steps:
+      - name: Exact protected owner, workflow, fresh dispatch and current main
+        shell: bash
+        env:
+          REVIEWED_SHA: ${{ inputs.reviewed_main_sha }}
+          CONFIRM: ${{ inputs.confirm }}
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = ASI-integration/asi-landing
+          test "$GITHUB_REF" = refs/heads/main
+          test "$GITHUB_EVENT_NAME" = workflow_dispatch
+          test "$GITHUB_ACTOR" = ASI-integration
+          test "$GITHUB_ACTOR_ID" = 207600140
+          test "$GITHUB_TRIGGERING_ACTOR" = ASI-integration
+          test "$GITHUB_RUN_ATTEMPT" = 1
+          test "$GITHUB_WORKFLOW_REF" = 'ASI-integration/asi-landing/.github/workflows/strigunov4-c4-physical-core.yml@refs/heads/main'
+          test "$GITHUB_WORKFLOW_SHA" = "$GITHUB_SHA"
+          [[ "$REVIEWED_SHA" =~ ^[0-9a-f]{40}$ ]]
+          test "$REVIEWED_SHA" = "$GITHUB_SHA"
+          test "$CONFIRM" = "RUN_STRIGUNOV4_C4_PHYSICAL_$GITHUB_SHA"
+          test "$(git ls-remote https://github.com/ASI-integration/asi-landing.git refs/heads/main | cut -f1)" = "$GITHUB_SHA"
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Stage-only offline tests and source lock
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          python3 -m unittest discover -s scripts/strigunov4 -p 'test_c4_physical_approved_gate.py' -v
+          node --check scripts/strigunov4/c4_physical_staging_lifecycle.mjs
+          npm ci --ignore-scripts --no-audit --no-fund
+      - name: Approved real staging booking, exact-ID cleanup and postflight
+        env:
+          C4_REVIEWED_MAIN_SHA: ${{ inputs.reviewed_main_sha }}
+          C4_CONFIRM: ${{ inputs.confirm }}
+          STAGING_SUPABASE_PROJECT_REF: ${{ secrets.STAGING_SUPABASE_PROJECT_REF }}
+          STAGING_DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
+          STAGING_SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+          STAGING_SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
+          STAGING_SSH_USER: ${{ secrets.STAGING_SSH_USER }}
+          STAGING_SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+          STAGING_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
+          STAGING_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.STAGING_SUPABASE_SERVICE_ROLE_KEY }}
+          STAGING_SESSION_SECRET: ${{ secrets.STAGING_SESSION_SECRET }}
+        run: python3 scripts/strigunov4/c4_physical_approved_gate.py
