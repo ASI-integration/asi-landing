@@ -160,6 +160,31 @@ BEGIN
       AND (account_id::text IS DISTINCT FROM '{a}'
        OR property_id::text IS DISTINCT FROM '{p}');
   IF n<>0 THEN RAISE EXCEPTION 'C4_CONFLICT_FOREIGN_SCOPE'; END IF;
+  -- Rows beyond the 13-category census can be removed by ON DELETE CASCADE.
+  -- Reject the entire transaction rather than silently erase those records.
+  SELECT count(*) INTO n FROM (
+    SELECT 1 FROM public.booking_cleaning_tasks WHERE booking_id::text='{b}'
+    UNION ALL SELECT 1 FROM public.booking_linen_tasks WHERE booking_id::text='{b}'
+    UNION ALL SELECT 1 FROM public.booking_supplies_tasks WHERE booking_id::text='{b}'
+    UNION ALL SELECT 1 FROM public.booking_maintenance_tickets WHERE booking_id::text='{b}'
+    UNION ALL SELECT 1 FROM public.booking_physical_readiness WHERE booking_id::text='{b}'
+    UNION ALL SELECT 1 FROM public.booking_physical_coordination_drafts WHERE booking_id::text='{b}'
+    UNION ALL SELECT 1 FROM public.guest_lifecycle_events WHERE booking_ops_record_id::text='{b}'
+  ) AS unapproved_booking_descendants;
+  IF n<>0 THEN RAISE EXCEPTION 'C4_UNAPPROVED_BOOKING_DESCENDANTS'; END IF;
+  -- Preserve partner account, property, booking, inbox and decision evidence.
+  SELECT count(*) INTO n FROM public.partner_property_bindings
+    WHERE account_id::text='{a}';
+  IF n<>0 THEN RAISE EXCEPTION 'C4_PARTNER_PROPERTY_BINDING_WITNESS'; END IF;
+  SELECT count(*) INTO n FROM public.partner_booking_bindings
+    WHERE account_id::text='{a}' OR booking_ops_record_id::text='{b}';
+  IF n<>0 THEN RAISE EXCEPTION 'C4_PARTNER_BOOKING_BINDING_WITNESS'; END IF;
+  SELECT count(*) INTO n FROM public.partner_communication_inbox
+    WHERE account_id::text='{a}';
+  IF n<>0 THEN RAISE EXCEPTION 'C4_PARTNER_INBOX_WITNESS'; END IF;
+  SELECT count(*) INTO n FROM public.partner_communication_decisions
+    WHERE account_id::text='{a}';
+  IF n<>0 THEN RAISE EXCEPTION 'C4_PARTNER_DECISION_WITNESS'; END IF;
 END $c4pre$;
 
 DO $c4cleanup$
