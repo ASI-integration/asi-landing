@@ -1,6 +1,6 @@
 {
   "README.md": "7a2d307f5c025149894221431dff31e22335742edd982b4ef685911fb58e2aa6",
-  "build_candidate.py": "a97045f4a1ce65529c52cdec376382f9becda6c406d1535b3b649e1a8d6c3012",
+  "build_candidate.py": "7162e8a0bc3dd11c8fffd83daabcba31bc5f8bb9e67cc940c177249dca69edde",
   "catalog-baseline.json": "c261400bd629aedbc54f05340879a2611a2e42d8ff03bdc0673e443a68792ee1",
   "data_preflight.sql": "5f3c655b832d357cc49cbae674c2fa1239f0d74901d0a88656e46937bc78b493",
   "plan.json": "50954cff06c9f4718bc51230a8038b790fdbe23fd1d686b1313c040b1f625eda",
@@ -14,6 +14,6 @@
   "sql/20261015103000_booking_knowledge_read_contract.sql": "8e41fda68656ab0b551f79e5a968ebd4ef7f7e42d4c521b3c896ac6532411d30",
   "sql/20261016090000_g0_operator_revision_takeover.sql": "eb91b48dfb4df3ae8bd63118f678573028b4fd53f5f3eeaa916adaf25d1fc3bd",
   "systemd_candidate.py": "986a0a0d794af465c7763d6ae1de0b6b2f142e427d225cceda4d666803c80d05",
-  "test_candidate_safety.py": "7f42b150e296bd8b074104236ec6d7d78aa04c9f9417ad6ae1ef0f8e6b033400",
+  "test_candidate_safety.py": "67bf649d190594b6347c35e1832255c55eebae607c312d9026a014bbc642e299",
   "test_systemd.py": "91848fa4d9e212188d58327ad0d9cfc33a97d85f574caddeab1cf3a3077f3b59"
 }

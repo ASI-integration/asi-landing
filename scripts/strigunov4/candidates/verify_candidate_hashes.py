@@ -63,6 +63,15 @@ def verify(root=ROOT):
         raise IntegrityBlock("MANIFEST_PARSE") from e
     if type(pairs) is not dict or set(pairs) != EXPECTED:
         raise IntegrityBlock("MANIFEST_FILE_SET")
+    # An unlisted SQL file can affect legacy prefix-based candidate selection.
+    # Reject unknown files AND directories, including symlinks, before any hashes.
+    sql_dir = root / "sql"
+    if sql_dir.is_symlink() or not sql_dir.is_dir():
+        raise IntegrityBlock("SQL_DIRECTORY_INVALID")
+    permitted = {PurePosixPath(entry).name for entry in EXPECTED if entry.startswith("sql/")}
+    observed = {entry.name for entry in sql_dir.iterdir()}
+    if observed != permitted:
+        raise IntegrityBlock("UNLISTED_SQL_FILE")
     for relative, expected in pairs.items():
         # Rooted in a literal source allowlist, but still verify the path form.
         if (type(relative) is not str or "\\" in relative or
