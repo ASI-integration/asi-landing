@@ -1,0 +1,135 @@
+name: Strigunov4 C4 isolated booking E2E and staging preflight
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/strigunov4-c4-e2e-acceptance.yml'
+      - 'scripts/strigunov4/c4_staging_readonly_probe.py'
+      - 'scripts/strigunov4/test_c4_staging_readonly_probe.py'
+      - 'docs/strigunov4/C4-ACCEPTANCE.md'
+  workflow_dispatch:
+    inputs:
+      reviewed_main_sha:
+        description: Exact reviewed protected main commit SHA
+        required: true
+        type: string
+      confirm:
+        description: RUN_STRIGUNOV4_C4_PREFLIGHT_<full main SHA>
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.event_name == 'workflow_dispatch' && 'strigunov4-staging-nine-sql-apply' || format('strigunov4-c4-pr-{0}', github.ref) }}
+  cancel-in-progress: false
+
+jobs:
+  offline_source_tests:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Verify source-only read-only gate and negative security cases
+        run: |
+          set -euo pipefail
+          python3 -m py_compile scripts/strigunov4/c4_staging_readonly_probe.py
+          python3 -m unittest discover -s scripts/strigunov4 -p 'test_c4_staging_readonly_probe.py' -v
+          git diff --check
+
+  isolated_full_e2e:
+    if: github.event_name == 'workflow_dispatch' && github.repository == 'ASI-integration/asi-landing'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      CI: 'true'
+      STRIGUNOV_SYNTHETIC_ONLY: 'YES'
+      RUNNER_ENVIRONMENT: 'github-hosted'
+      REVIEWED_SOURCE_SHA: ${{ github.sha }}
+      NEXT_TELEMETRY_DISABLED: '1'
+    steps:
+      - name: Require owner first attempt and exact protected main
+        shell: bash
+        env:
+          REVIEWED_SHA: ${{ inputs.reviewed_main_sha }}
+          CONFIRM: ${{ inputs.confirm }}
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = "ASI-integration/asi-landing"
+          test "$GITHUB_REF" = "refs/heads/main"
+          test "$GITHUB_ACTOR" = "ASI-integration"
+          test "$GITHUB_ACTOR_ID" = "207600140"
+          test "$GITHUB_TRIGGERING_ACTOR" = "ASI-integration"
+          test "$GITHUB_RUN_ATTEMPT" = "1"
+          test "$REVIEWED_SHA" = "$GITHUB_SHA"
+          test "$CONFIRM" = "RUN_STRIGUNOV4_C4_PREFLIGHT_$GITHUB_SHA"
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Prepare isolated G0 native scenario (no stage DB or provider credentials)
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          npm ci --ignore-scripts --no-audit --no-fund
+          npm run build
+      - name: Full isolated G0 booking, concurrency, operator and zero-egress gates
+        run: node scripts/acceptance/strigunov-g0-lab.mjs
+      - name: Upload isolated evidence only (never credentials)
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: strigunov4-c4-isolated-${{ github.run_id }}
+          path: finishline-results/*.json
+          if-no-files-found: ignore
+          retention-days: 7
+
+  protected_c4_readonly:
+    if: github.event_name == 'workflow_dispatch' && github.repository == 'ASI-integration/asi-landing'
+    needs: [offline_source_tests, isolated_full_e2e]
+    runs-on: ubuntu-24.04
+    environment: staging
+    timeout-minutes: 18
+    steps:
+      - name: Require reviewed main and first owner attempt
+        shell: bash
+        env:
+          REVIEWED_SHA: ${{ inputs.reviewed_main_sha }}
+          CONFIRM: ${{ inputs.confirm }}
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = "ASI-integration/asi-landing"
+          test "$GITHUB_EVENT_NAME" = "workflow_dispatch"
+          test "$GITHUB_REF" = "refs/heads/main"
+          test "$GITHUB_ACTOR" = "ASI-integration"
+          test "$GITHUB_ACTOR_ID" = "207600140"
+          test "$GITHUB_TRIGGERING_ACTOR" = "ASI-integration"
+          test "$GITHUB_RUN_ATTEMPT" = "1"
+          test "$GITHUB_WORKFLOW_REF" = 'ASI-integration/asi-landing/.github/workflows/strigunov4-c4-e2e-acceptance.yml@refs/heads/main'
+          test "$GITHUB_WORKFLOW_SHA" = "$GITHUB_SHA"
+          test "$REVIEWED_SHA" = "$GITHUB_SHA"
+          test "$CONFIRM" = "RUN_STRIGUNOV4_C4_PREFLIGHT_$GITHUB_SHA"
+          test "$(git ls-remote https://github.com/ASI-integration/asi-landing.git refs/heads/main | cut -f1)" = "$GITHUB_SHA"
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Read-only PG17 history, live G0 and effective no-send preflight
+        env:
+          C4_REVIEWED_MAIN_SHA: ${{ inputs.reviewed_main_sha }}
+          C4_CONFIRM: ${{ inputs.confirm }}
+          STAGING_SUPABASE_PROJECT_REF: ${{ secrets.STAGING_SUPABASE_PROJECT_REF }}
+          STAGING_DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
+          STAGING_SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+          STAGING_SSH_USER: ${{ secrets.STAGING_SSH_USER }}
+          STAGING_SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
+          STAGING_SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+        run: python3 scripts/strigunov4/c4_staging_readonly_probe.py
