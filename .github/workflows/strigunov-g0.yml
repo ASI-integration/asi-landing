@@ -6,6 +6,7 @@ on:
       - 'src/lib/communication/__tests__/guest-lifecycle-synthetic-cleanup.pg.integration.test.ts'
       - 'scripts/strigunov4/package_g0.py'
       - 'scripts/strigunov4/test_package_g0.py'
+      - 'scripts/strigunov4/candidates/**'
       - '.github/workflows/strigunov-g0.yml'
       - 'scripts/custodian/**'
       - 'src/app/api/auth/session/**'
@@ -79,6 +80,10 @@ jobs:
         with:
           node-version: '22'
           cache: npm
+      - name: Verify exact reviewed staging-candidate digests (no SQL execution)
+        run: |
+          python3 scripts/strigunov4/candidates/verify_candidate_hashes.py
+          python3 -m unittest discover -s scripts/strigunov4/candidates -p 'test_candidate_hashes.py' -v
       - run: npm ci --ignore-scripts --no-audit --no-fund
       - run: mkdir -p finishline-results
       - run: npm run typecheck
