@@ -85,12 +85,27 @@ SELECT jsonb_build_object(
 )::text;
 COMMIT;"""
 
+def stage_gate(stage, operation):
+    """Only fixed stage labels and verified exception codes enter logs."""
+    require(stage in ("CHECKOUT", "HISTORY", "CENSUS"), "INVALID_STAGE")
+    try:
+        return operation()
+    except (g0.Gate, pg.Gate) as error:
+        candidate=error.args[0] if error.args else ""
+        code=(candidate if type(candidate) is str
+              and re.fullmatch(r"[A-Z][A-Z0-9_]{0,59}",candidate)
+              else "FAILED")
+        raise Block(stage+"_"+code) from None
+
+
 def reconcile(env):
     url=validate(env)
-    checkout=g0.checked(["git","-C",str(g0.ROOT),"rev-parse","HEAD"]).stdout.decode("ascii").strip()
+    checkout=stage_gate("CHECKOUT",lambda: g0.checked(
+        ["git","-C",str(g0.ROOT),"rev-parse","HEAD"]
+    )).stdout.decode("ascii").strip()
     require(checkout==env["GITHUB_SHA"],"CHECKOUT")
     # Existing strict Supabase PG17, TLS verify-full, nine-migration check.
-    g0.exact_sql_history(url)
+    stage_gate("HISTORY",lambda: g0.exact_sql_history(url))
     with tempfile.TemporaryDirectory(prefix="c4-incident-readonly-") as dirname:
         folder=Path(dirname)
         folder.chmod(0o700)
@@ -105,7 +120,9 @@ def reconcile(env):
         cmd=pg.postgres_client_command(folder,"postcheck")
         require(cmd[-2]=="-c","EXPECTED_SELECT_ONLY_COMMAND")
         cmd[-1]=sql_query()
-        output=g0.checked(cmd,env=db_env,timeout=90).stdout.decode("utf-8","strict")
+        output=stage_gate("CENSUS",lambda: g0.checked(
+            cmd,env=db_env,timeout=90
+        )).stdout.decode("utf-8","strict")
     lines=[l.strip() for l in output.splitlines() if l.strip().startswith("{")]
     require(len(lines)==1,"READ_RECEIPT_SHAPE")
     data=json.loads(lines[0])
@@ -128,8 +145,18 @@ def main():
     try:
         print(json.dumps(reconcile(os.environ),sort_keys=True))
         return 0
+    except Block as error:
+        code=str(error)
+        if not re.fullmatch(r"[A-Z][A-Z0-9_]{0,90}",code):
+            code="UNKNOWN_BLOCK"
+        print(json.dumps({"status":"BLOCK","reason":code,
+                          "stagingWrites":False,
+                          "physicalReplayAuthorized":False},sort_keys=True))
+        return 2
     except Exception:
-        print('{"status":"BLOCK","stagingWrites":false,"physicalReplayAuthorized":false}')
+        # Never expose SQL, connection errors, stderr, credentials or row data.
+        print('{"status":"BLOCK","reason":"UNEXPECTED_FAILURE",'
+              '"stagingWrites":false,"physicalReplayAuthorized":false}')
         return 2
 
 if __name__=="__main__":
