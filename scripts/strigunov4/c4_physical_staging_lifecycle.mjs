@@ -37,7 +37,7 @@ const sb = createClient(url.toString(), serviceKey, {
   auth: { persistSession: false, autoRefreshToken: false },
 });
 const fixture = { userId: randomUUID(), accountId: randomUUID(),
-  propertyId: randomUUID(), bookingIds: [], runId: token };
+  propertyId: randomUUID(), bookingIds: [], intakeIds: [], runId: token };
 const receipt = { status: 'BLOCK', reason: 'NOT_STARTED',
   owned: fixture, checks: [], cleanup: 'NOT_RUN',
   realExternalEffectsIndependentProof: 'NOT_ESTABLISHED' };
@@ -120,7 +120,12 @@ async function cleanupOwned() {
     ['properties', { id: fixture.propertyId }],
     ['account_members', { user_id: fixture.userId, account_id: fixture.accountId }],
     ['booking_ops_records', { account_id: fixture.accountId, property_id: fixture.propertyId }],
+    ['booking_inbound_intake_events', { account_id: fixture.accountId }],
   ]) if (await count(table, filters) !== 0) throw Error('RESIDUE_' + table);
+  for (const id of fixture.intakeIds) {
+    if (await count('booking_inbound_intake_events', { id }) !== 0)
+      throw Error('INTAKE_RECEIPT_REMAINS');
+  }
   receipt.cleanup = 'PASS';
 }
 
@@ -162,6 +167,15 @@ try {
   check(typeof bookingId === 'string' && /^[0-9a-f-]{36}$/.test(bookingId),
     'BOOKING_CREATED');
   fixture.bookingIds.push(bookingId);
+  const intakeId = first.body.result?.intakeId;
+  check(typeof intakeId === 'string' && /^[0-9a-f-]{36}$/.test(intakeId),
+    'INTAKE_RECEIPT_CREATED');
+  fixture.intakeIds.push(intakeId);
+  const intake = await sb.from('booking_inbound_intake_events')
+    .select('id,account_id,booking_id').eq('id',intakeId).single();
+  const intakeRow = await result(intake, 'READ_INTAKE_EVENT');
+  check(intakeRow.account_id === fixture.accountId &&
+    intakeRow.booking_id === bookingId, 'INTAKE_OWNERSHIP');
   const book = await sb.from('booking_ops_records')
     .select('id,account_id,property_id,guest_name').eq('id',bookingId).single();
   const actual = await result(book, 'BOOKING_READ');
