@@ -69,8 +69,8 @@ def read_query():
     b,a,p,u=(ids[n] for n in ("booking","account","property","user"))
     return f"""
 BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY;
--- Schema-only inventory. Walk ON DELETE CASCADE paths, but report NO ACTION
--- and RESTRICT dependencies encountered at any reached parent.
+-- Schema-only inventory. Traverse cascading foreign-key paths and report
+-- non-cascading restrictions encountered at each reachable parent.
 WITH RECURSIVE fk_edges AS (
     SELECT con.confrelid AS parent_oid, con.conrelid AS child_oid,
            child.relname AS relname, con.confdeltype AS action
