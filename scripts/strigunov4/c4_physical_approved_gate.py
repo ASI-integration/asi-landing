@@ -12,6 +12,7 @@ import socket
 import subprocess
 import tempfile
 import time
+import uuid
 
 import backup_export
 import c4_staging_readonly_probe as verified
@@ -30,7 +31,46 @@ REQUIRED = (
 )
 
 class Gate(ValueError):
-    pass
+    def __init__(self, reason, lifecycle_receipt=None):
+        super().__init__(reason)
+        self.lifecycle_receipt = lifecycle_receipt
+
+def safe_receipt(data, owned):
+    """Only generated UUIDs and fixed result codes may enter CI logs."""
+    uuid_pattern = re.compile(
+        r"[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\\Z"
+    )
+    def owned_ids(name):
+        rows = data.get(name, []) if type(data) is dict else []
+        if type(rows) is not list or len(rows) > 2:
+            return []
+        return [row for row in rows if type(row) is str and
+                uuid_pattern.fullmatch(row)]
+    record = data if type(data) is dict else {}
+    child = record.get("owned")
+    if type(child) is dict:
+        for key in ("userId", "accountId", "propertyId"):
+            if child.get(key) != owned[key]:
+                return {"owned": owned, "reason": "OWNERSHIP_RECEIPT_MISMATCH",
+                        "cleanup": "UNKNOWN"}
+    ids = dict(owned)
+    ids["bookingIds"] = owned_ids("bookingIds") if type(child) is not dict else (
+        [v for v in child.get("bookingIds", []) if type(v) is str and
+         uuid_pattern.fullmatch(v)]
+        if type(child.get("bookingIds")) is list and len(child["bookingIds"]) <= 2 else [])
+    ids["intakeIds"] = (
+        [v for v in child.get("intakeIds", []) if type(v) is str and
+         uuid_pattern.fullmatch(v)]
+        if type(child) is dict and type(child.get("intakeIds")) is list
+        and len(child["intakeIds"]) <= 2 else [])
+    def fixed(name):
+        value = record.get(name, "")
+        return value if type(value) is str and re.fullmatch(
+            r"[A-Z][A-Z0-9_]{0,94}", value) else "UNKNOWN"
+    status = record.get("cleanup")
+    return {"owned": ids, "reason": fixed("reason"),
+            "cleanup": status if status in ("PASS","BLOCK","NOT_RUN") else "UNKNOWN",
+            "cleanupReason": fixed("cleanupReason")}
 
 def require(condition, reason):
     if not condition:
@@ -94,7 +134,13 @@ def run(e):
             "C4_SOURCE_CONTRACT")
     env = {key:os.environ[key] for key in ("PATH","HOME","LANG","LC_ALL")
            if key in os.environ}
+    # Durable handoff: these exact identities exist before any stage write.
+    owned = {"userId": str(uuid.uuid4()), "accountId": str(uuid.uuid4()),
+             "propertyId": str(uuid.uuid4()), "runId": run_id}
     env.update({
+        "C4_OWNED_USER_ID": owned["userId"],
+        "C4_OWNED_ACCOUNT_ID": owned["accountId"],
+        "C4_OWNED_PROPERTY_ID": owned["propertyId"],
         "CI": "true", "C4_PHYSICAL_APPROVED": "YES",
         "C4_RUN_ID":run_id, "C4_REVIEWED_MAIN_SHA":sha,
         "ASI_DEPLOY_ENV":"staging", "ASI_SYNTHETIC_NO_SEND":"YES",
@@ -139,27 +185,50 @@ def run(e):
                 except OSError:
                     time.sleep(.3)
             require(connected,"STAGE_TUNNEL_UNAVAILABLE")
-            result = subprocess.run(["node",str(source)],cwd=str(g0.ROOT),
-                        env=env,stdout=subprocess.PIPE,stderr=subprocess.DEVNULL,
-                        timeout=390)
-            require(len(result.stdout) < 16384,"RECEIPT_SIZE")
-            try: data = json.loads(result.stdout.decode("utf8","strict"))
+            try:
+                result = subprocess.run(["node",str(source)],cwd=str(g0.ROOT),
+                            env=env,stdout=subprocess.PIPE,stderr=subprocess.DEVNULL,
+                            timeout=390)
+            except subprocess.TimeoutExpired:
+                raise Gate("C4_CHILD_TIMEOUT", lifecycle_receipt={
+                    "owned": owned, "reason": "TIMEOUT_REQUIRES_READONLY_RECONCILIATION",
+                    "cleanup": "UNKNOWN",
+                }) from None
+            if len(result.stdout) >= 16384:
+                raise Gate("RECEIPT_SIZE", lifecycle_receipt={
+                    "owned": owned, "cleanup": "UNKNOWN",
+                })
+            try:
+                data = json.loads(result.stdout.decode("utf8","strict"))
             except (ValueError, UnicodeError):
-                raise Gate("RESULT_UNREADABLE") from None
-            require(type(data) is dict and
-                    result.returncode == 0 and
-                    data.get("status") == "C4_PHYSICAL_CORE_PASS"
+                raise Gate("RESULT_UNREADABLE", lifecycle_receipt={
+                    "owned": owned, "cleanup": "UNKNOWN",
+                }) from None
+            lifecycle_receipt = safe_receipt(data, owned)
+            if not (type(data) is dict
+                    and type(data.get("owned")) is dict
+                    and all(data["owned"].get(key) == owned[key] for key in
+                            ("userId","accountId","propertyId","runId"))
+                    and result.returncode == 0
+                    and data.get("status") == "C4_PHYSICAL_CORE_PASS"
                     and data.get("cleanup") == "PASS"
                     and data.get("realExternalEffectsIndependentProof") == "NOT_ESTABLISHED"
-                    and len(data.get("checks",[])) >= 8,
-                    "C4_PHYSICAL_CORE_NOT_PROVEN")
+                    and type(data.get("checks")) is list
+                    and len(data["checks"]) >= 8):
+                raise Gate("C4_PHYSICAL_CORE_NOT_PROVEN",
+                           lifecycle_receipt=lifecycle_receipt)
         finally:
             if tunnel is not None:
                 tunnel.terminate()
                 try: tunnel.wait(timeout=6)
                 except subprocess.TimeoutExpired: tunnel.kill();tunnel.wait(timeout=3)
     # Safety re-admission after physical activity.
-    verified.probe(e,host,port)
+    post = verified.probe(e,host,port)
+    if not (type(post) is dict
+            and post.get("status") == "C4_READONLY_PREFLIGHT_PASS"
+            and post.get("fullE2E") == "NOT_RUN"):
+        raise Gate("STAGE_POSTFLIGHT",
+                   lifecycle_receipt=lifecycle_receipt)
     return {"status":"C4_PHYSICAL_CORE_PASS",
             "reviewedSha":sha,"releaseSha":G0,
             "fixtureCleanup":"PASS","stagingTouched":True,
@@ -170,6 +239,12 @@ def main():
     try:
         print(json.dumps(run(os.environ),sort_keys=True))
         return 0
+    except Gate as error:
+        # One sanitized JSON line only, preserving IDs for manual reconciliation.
+        print(json.dumps({"status":"BLOCK","reason":str(error),
+                          "lifecycleReceipt":error.lifecycle_receipt,
+                          "fullPhysicalE2E":"NOT_YET_PROVEN"},sort_keys=True))
+        return 2
     except Exception:
         # Never print environment, SSH details, guest contents or raw DB errors.
         print('{"status":"BLOCK","fullPhysicalE2E":"NOT_YET_PROVEN"}')
