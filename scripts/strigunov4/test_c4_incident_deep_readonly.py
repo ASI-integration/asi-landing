@@ -117,8 +117,12 @@ class DeepReadOnlyTests(unittest.TestCase):
                 return types.SimpleNamespace(stdout=(SHA+"\n").encode())
             self.assertIn("default_transaction_read_only=on",kwargs["env"]["PGOPTIONS"])
             self.assertEqual(cmd[-2],"-c")
+            self.assertIn("--set",cmd)
+            self.assertIn("VERBOSITY=sqlstate",cmd)
+            self.assertTrue(kwargs.get("allow_nonzero"))
             self.assertIn("READ ONLY",cmd[-1])
-            return types.SimpleNamespace(stdout=("BEGIN\n"+json.dumps(obj)+"\nCOMMIT\n").encode())
+            return types.SimpleNamespace(stdout=("BEGIN\n"+json.dumps(obj)+"\nCOMMIT\n").encode(),
+                                         stderr=b"",returncode=0)
         with patch.object(deep.g0,"checked",side_effect=checked), \
              patch.object(deep.g0,"exact_sql_history",return_value=True), \
              patch.object(deep.pg,"db_environment",
@@ -137,6 +141,37 @@ class DeepReadOnlyTests(unittest.TestCase):
         self.assertIs(report["stagingWrites"],False)
         self.assertIs(report["cleanupAttempted"],False)
         self.assertIs(report["physicalReplayAuthorized"],False)
+
+    def test_sqlstate_only_diagnostic_never_exposes_secret_stderr(self):
+        leaked=b"psql: ERROR:  42P01\nsecret-password-do-not-print\n"
+        self.assertEqual(deep.safe_sqlstate(leaked),"DEEP_CENSUS_SQLSTATE_42P01")
+        self.assertEqual(deep.safe_sqlstate(b"unsafe-secret-without-code"),
+                         "DEEP_CENSUS_SQLSTATE_UNKNOWN")
+        self.assertEqual(deep.safe_sqlstate(None),"DEEP_CENSUS_SQLSTATE_UNKNOWN")
+        self.assertNotIn("password",deep.safe_sqlstate(leaked))
+
+    def test_nonzero_census_blocks_with_sqlstate_only(self):
+        """The full run must classify stderr and never expose secrets or stdout."""
+        leaked=b"psql: ERROR:  42P01\nsecret-password-do-not-print\n"
+        def checked(cmd,**kwargs):
+            if cmd[0]=="git":
+                return types.SimpleNamespace(stdout=(SHA+"\n").encode())
+            self.assertTrue(kwargs.get("allow_nonzero"))
+            self.assertIn("VERBOSITY=sqlstate",cmd)
+            return types.SimpleNamespace(
+                stdout=b"secret-stdout-not-to-print",
+                stderr=leaked,returncode=1)
+        with patch.object(deep.g0,"checked",side_effect=checked), \
+             patch.object(deep.g0,"exact_sql_history",return_value=True), \
+             patch.object(deep.pg,"db_environment",
+                          return_value={"PGOPTIONS":"-c default_transaction_read_only=on"}), \
+             patch.object(deep.pg,"postgres_client_command",
+                          return_value=["docker","psql","-c","QUERY"]), \
+             patch.object(deep.g0.tls_guard,"ca_bytes",return_value=b"FAKE_CA"):
+            with self.assertRaises(deep.Block) as ctx:
+                deep.run(valid())
+        self.assertEqual(str(ctx.exception),"DEEP_CENSUS_SQLSTATE_42P01")
+        self.assertNotIn("secret",str(ctx.exception))
 
     def test_invalid_receipts_fail_closed(self):
         buf=io.StringIO()

@@ -1,11 +1,12 @@
 # Strigunov4 C4 — targeted read-only deep diagnosis
 
-**Status: SOURCE-ONLY. NO STAGING QUERY HAS BEEN EXECUTED BY THIS PR.**
+**Status: protected read-only deep diagnosis #39061146150 returned DEEP_CENSUS_COMMAND_FAILURE, without mutation. This revision is SOURCE-ONLY until independently reviewed and separately dispatched.**
 
 Prior attempts:
 - Physical booking run [39047710115](https://github.com/ASI-integration/asi-landing/actions/runs/39047710115): booking created; cleanup BLOCK.
 - First atomic cleanup run [39056059835](https://github.com/ASI-integration/asi-landing/actions/runs/39056059835): `WRITE_UNCERTAIN_RECONCILE_BEFORE_RETRY`.
 - Protected read-only census [39056502660](https://github.com/ASI-integration/asi-landing/actions/runs/39056502660): all original 13 fixture counters unchanged. No partial deletion detected across those categories.
+- Protected deep read-only run [39061146150](https://github.com/ASI-integration/asi-landing/actions/runs/39061146150): main/owner and SQL-history gates passed, census command blocked. No new counts were obtained; stderr deliberately hidden. No staging mutation.
 
 ## Concrete source evidence
 
@@ -24,7 +25,7 @@ Adds a separate GitHub `staging`-protected, main-only workflow:
 - numeric counts for 25 fixed categories, including booking audit events, physical-readiness rows, guest lifecycle, deliveries and send attempts, pristine versus non-pristine Telegram drafts and direct partner descendants;
 - PostgreSQL catalog's **schema-only names** from a depth-limited recursive foreign-key dependency map rooted at users/accounts/properties/bookings/intents/tasks. It follows cascade relationships to indirect descendants and separately lists `NO ACTION`/`RESTRICT` blockers and `SET NULL`/`SET DEFAULT` side-effect relationships. This is a diagnostic map, not proof that rows exist in every listed table or that the dependency inventory is exhaustive for every possible schema path.
 
-The output excludes guest names/emails, passwords, message bodies, booking content and connection details. It does not delete, attempt cleanup, send anything, migrate or deploy. If the query fails due to missing tables/columns, it prints a sanitized BLOCK stage code instead of SQL stderr.
+On command failure, the proposed revision sets PostgreSQL psql `VERBOSITY=sqlstate` and emits only a five-character SQLSTATE or UNKNOWN; raw stderr remains suppressed. The output excludes guest names/emails, passwords, message bodies, booking content and connection details. It does not delete, attempt cleanup, send anything, migrate or deploy. If the query fails due to missing tables/columns, it prints a sanitized BLOCK stage code instead of SQL stderr.
 
 ## What happens after review
 
