@@ -41,18 +41,23 @@ def require(check, code):
     if not check:
         raise gate.Block(code)
 
+# Fail closed on ANY top-level transaction command, not just known spellings.
+# PREPARE without TRANSACTION is a distinct SQL prepared-statement command.
 TXN_CONTROL = re.compile(
-    r"^(?:BEGIN(?:\s+(?:WORK|TRANSACTION))?|START\s+TRANSACTION|"
-    r"COMMIT(?:\s+(?:WORK|TRANSACTION))?(?:\s+AND\s+(?:NO\s+)?CHAIN)?|"
-    r"END(?:\s+(?:WORK|TRANSACTION))?|"
-    r"ROLLBACK(?:\s+(?:WORK|TRANSACTION))?(?:\s+AND\s+(?:NO\s+)?CHAIN)?|"
-    r"ABORT(?:\s+(?:WORK|TRANSACTION))?)\s*;$", re.I
+    r"^(?:(?:BEGIN|COMMIT|ROLLBACK|ABORT|END)\b|"
+    r"START\s+TRANSACTION\b|PREPARE\s+TRANSACTION\b)", re.I
 )
 
-def top_level_transaction_statements(source):
-    """Read only semicolon-delimited top-level commands; mask quoted/comment bodies.
+IDENT_CHAR = re.compile(r"[A-Za-z0-9_$]")
 
-    Fail closed for unterminated quoting. No general SQL parsing or execution.
+
+def masked_sql(source):
+    """Mask quoted strings, identifiers, dollar-bodies, and nested comments.
+
+    Preserve length and line breaks, so semicolon statement boundaries are
+    retained. PostgreSQL E'…' escape strings consume backslash-escaped quotes.
+    An identifier's internal '$' is never treated as a dollar-quote opener.
+    Unterminated or ambiguous states fail closed.
     """
     masked = []
     state = "plain"
@@ -85,9 +90,13 @@ def top_level_transaction_statements(source):
                 masked.append("\n" if ch == "\n" else " ")
                 i += 1
             continue
-        if state in ("single", "double"):
-            quote = "'" if state == "single" else '"'
-            if ch == quote and source[i:i + 2] == quote * 2:
+        if state in ("single", "escape", "double"):
+            quote = '"' if state == "double" else "'"
+            if state == "escape" and ch == "\\":
+                require(i + 1 < len(source), "SQL_UNTERMINATED_LITERAL")
+                masked.extend(" " if c != "\n" else "\n" for c in source[i:i + 2])
+                i += 2
+            elif ch == quote and source[i:i + 2] == quote * 2:
                 masked.extend("  ")
                 i += 2
             elif ch == quote:
@@ -107,6 +116,8 @@ def top_level_transaction_statements(source):
                 masked.append("\n" if ch == "\n" else " ")
                 i += 1
             continue
+
+        # Only the plain state reaches this point.
         if nxt == "--":
             state = "line"
             masked.extend("  ")
@@ -114,6 +125,11 @@ def top_level_transaction_statements(source):
         elif nxt == "/*":
             state = "block"
             depth = 1
+            masked.extend("  ")
+            i += 2
+        elif (ch in "eE" and source[i + 1:i + 2] == "'"
+              and (i == 0 or IDENT_CHAR.fullmatch(source[i - 1]) is None)):
+            state = "escape"
             masked.extend("  ")
             i += 2
         elif ch == "'":
@@ -124,7 +140,17 @@ def top_level_transaction_statements(source):
             state = "double"
             masked.append(" ")
             i += 1
-        elif ch == "$" and (m := re.match(r"\$[A-Za-z_0-9]*\$", source[i:])):
+        elif ch.isalpha() or ch == "_":
+            # Consume the entire PostgreSQL unquoted identifier. In particular,
+            # foo$tag$ remains an identifier, not a dollar-quoted literal.
+            j = i + 1
+            while j < len(source) and (
+                source[j].isalnum() or source[j] in "_$"
+            ):
+                j += 1
+            masked.extend(source[i:j])
+            i = j
+        elif ch == "$" and (m := re.match(r"\$(?:[A-Za-z_][A-Za-z_0-9]*)?\$", source[i:])):
             dollar = m.group()
             state = "dollar"
             masked.extend(" " * len(dollar))
@@ -132,16 +158,24 @@ def top_level_transaction_statements(source):
         else:
             masked.append(ch)
             i += 1
+
     require(state in ("plain", "line") and depth == 0, "SQL_UNTERMINATED_LITERAL")
+    require(len(masked) == len(source), "SQL_MASK_LENGTH")
+    return "".join(masked)
+
+
+def top_level_transaction_statements(source):
+    """Identify top-level transaction commands after quote/comment masking."""
     statements = []
     start = 0
-    clean = "".join(masked)
+    clean = masked_sql(source)
     for match in re.finditer(";", clean):
         raw = clean[start:match.end()].strip()
-        if TXN_CONTROL.fullmatch(raw):
+        if TXN_CONTROL.match(raw):
             statements.append((raw.upper(), start, match.end()))
         start = match.end()
     return statements
+
 
 def read_sources(root, files=None):
     files = gate.SQL_FILES if files is None else tuple(files)
@@ -154,7 +188,7 @@ def read_sources(root, files=None):
         require(gate._file_digest(root, name) == expected, "SOURCE_DIGEST")
         text = (Path(root) / name).read_bytes().decode("utf-8")
         require("\r" not in text, "NOT_GIT_LF")
-        require(not re.search(r"(?m)^\s*\\", text), "PSQL_META_IN_SOURCE")
+        require("\\" not in masked_sql(text), "PSQL_META_IN_SOURCE")
         commands = top_level_transaction_statements(text)
         require(not any(c[0].startswith(("ROLLBACK", "ABORT")) for c in commands), "EMBEDDED_ROLLBACK")
         if i == 6:

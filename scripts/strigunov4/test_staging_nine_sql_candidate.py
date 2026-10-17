@@ -124,6 +124,48 @@ class NineSqlCandidateTests(unittest.TestCase):
         )
         self.assertEqual(s.top_level_transaction_statements(body), [])
 
+    def test_two_phase_transactions_rejected(self):
+        commands = (
+            "PREPARE TRANSACTION 'sample';",
+            "COMMIT PREPARED 'sample';",
+            "ROLLBACK PREPARED 'sample';",
+        )
+        for command in commands:
+            with self.subTest(command=command):
+                file, _ = self.sources[0]
+                raw = ("SELECT 1;\n" + command + "\n").encode()
+                (self.root / file).write_bytes(raw)
+                self.sources[0] = (file, hashlib.sha256(raw).hexdigest())
+                with self.assertRaises(gate.Block):
+                    self.render()
+
+    def test_midline_psql_command_rejected(self):
+        file, _ = self.sources[0]
+        raw = b"SELECT 1; \\set test_value yes\n"
+        (self.root / file).write_bytes(raw)
+        self.sources[0] = (file, hashlib.sha256(raw).hexdigest())
+        with self.assertRaisesRegex(gate.Block, "PSQL_META_IN_SOURCE"):
+            self.render()
+
+    def test_quoted_backslashes_not_misclassified(self):
+        sql = "SELECT '\\source';\n-- \\set harmless\nDO $body$ BEGIN PERFORM '\\source'; END $body$;\n"
+        self.assertNotIn("\\", s.masked_sql(sql))
+        self.assertEqual(s.top_level_transaction_statements(sql), [])
+
+    def test_escaped_quote_keeps_following_commit_visible(self):
+        sql = "SELECT E'escaped \\' quote';\nCOMMIT;\n"
+        self.assertEqual(
+            [item[0] for item in s.top_level_transaction_statements(sql)],
+            ["COMMIT;"],
+        )
+
+    def test_dollar_in_unquoted_identifier_is_not_a_literal(self):
+        sql = "SELECT example$variable$ FROM table_name;\nCOMMIT;\n"
+        self.assertEqual(
+            [item[0] for item in s.top_level_transaction_statements(sql)],
+            ["COMMIT;"],
+        )
+
     def test_unterminated_literal_fails_closed(self):
         with self.assertRaisesRegex(gate.Block, "SQL_UNTERMINATED_LITERAL"):
             s.top_level_transaction_statements("SELECT $x$BEGIN;")
