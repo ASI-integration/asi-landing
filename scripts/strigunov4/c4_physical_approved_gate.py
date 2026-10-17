@@ -61,7 +61,8 @@ def context(e):
     run_id = e.get("GITHUB_RUN_ID", "")
     require(type(run_id) is str and RUN_ID.fullmatch(run_id) is not None, "RUN_ID")
     for key in REQUIRED:
-        require(type(e.get(key)) is str and len(e[key]) > 20, "MISSING_" + key)
+        min_length = 100 if key == "STAGING_SSH_PRIVATE_KEY" else 20 if key != "STAGING_SSH_HOST" else 0
+        require(type(e.get(key)) is str and len(e[key]) > min_length, "MISSING_" + key)
     require(e["STAGING_SUPABASE_URL"].rstrip("/") ==
             "https://" + PROJECT + ".supabase.co", "STAGE_URL")
     require(g0.pg.preflight.target_valid(e["STAGING_DATABASE_URL"]), "STAGE_PG")
