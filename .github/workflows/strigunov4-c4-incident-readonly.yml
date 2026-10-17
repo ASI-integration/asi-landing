@@ -1,0 +1,86 @@
+name: Strigunov4 C4 incident exact-ID read-only staging audit
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/strigunov4-c4-incident-readonly.yml'
+      - 'scripts/strigunov4/c4_incident_readonly.py'
+      - 'scripts/strigunov4/test_c4_incident_readonly.py'
+      - 'docs/strigunov4/C4-INCIDENT-39047710115.md'
+  workflow_dispatch:
+    inputs:
+      reviewed_main_sha:
+        description: Exact independently reviewed protected main SHA
+        required: true
+        type: string
+      confirm:
+        description: READONLY_C4_INCIDENT_<full reviewed SHA>
+        required: true
+        type: string
+      incident_run:
+        description: Fixed failed run ID (39047710115)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.event_name == 'workflow_dispatch' && 'strigunov4-staging-nine-sql-apply' || format('strigunov4-c4-incident-pr-{0}', github.ref) }}
+  cancel-in-progress: false
+
+jobs:
+  offline_source_checks:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Read-only exact-ID source policy and tests
+        run: |
+          set -euo pipefail
+          python3 -m py_compile scripts/strigunov4/c4_incident_readonly.py
+          python3 -m unittest discover -s scripts/strigunov4 -p 'test_c4_incident_readonly.py' -v
+          git diff --check
+
+  protected_readonly_reconciliation:
+    if: github.event_name == 'workflow_dispatch' && github.repository == 'ASI-integration/asi-landing'
+    needs: offline_source_checks
+    runs-on: ubuntu-24.04
+    environment: staging
+    timeout-minutes: 11
+    steps:
+      - name: Require exact owner, protected main, single attempt, approved incident
+        shell: bash
+        env:
+          REVIEWED_SHA: ${{ inputs.reviewed_main_sha }}
+          CONFIRM: ${{ inputs.confirm }}
+          INCIDENT: ${{ inputs.incident_run }}
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = 'ASI-integration/asi-landing'
+          test "$GITHUB_EVENT_NAME" = 'workflow_dispatch'
+          test "$GITHUB_REF" = 'refs/heads/main'
+          test "$GITHUB_ACTOR" = 'ASI-integration'
+          test "$GITHUB_ACTOR_ID" = '207600140'
+          test "$GITHUB_TRIGGERING_ACTOR" = 'ASI-integration'
+          test "$GITHUB_RUN_ATTEMPT" = '1'
+          test "$GITHUB_WORKFLOW_REF" = 'ASI-integration/asi-landing/.github/workflows/strigunov4-c4-incident-readonly.yml@refs/heads/main'
+          test "$GITHUB_WORKFLOW_SHA" = "$GITHUB_SHA"
+          test "$REVIEWED_SHA" = "$GITHUB_SHA"
+          test "$CONFIRM" = "READONLY_C4_INCIDENT_$GITHUB_SHA"
+          test "$INCIDENT" = '39047710115'
+          test "$(git ls-remote https://github.com/ASI-integration/asi-landing.git refs/heads/main | cut -f1)" = "$GITHUB_SHA"
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Read-only PostgreSQL17 fixture census over pinned TLS verify-full
+        env:
+          C4_REVIEWED_MAIN_SHA: ${{ inputs.reviewed_main_sha }}
+          C4_CONFIRM: ${{ inputs.confirm }}
+          C4_INCIDENT_RUN: ${{ inputs.incident_run }}
+          STAGING_SUPABASE_PROJECT_REF: ${{ secrets.STAGING_SUPABASE_PROJECT_REF }}
+          STAGING_DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
+        run: python3 scripts/strigunov4/c4_incident_readonly.py
