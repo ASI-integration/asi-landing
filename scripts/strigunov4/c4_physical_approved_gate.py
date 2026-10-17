@@ -170,8 +170,7 @@ def main():
     try:
         print(json.dumps(run(os.environ),sort_keys=True))
         return 0
-    except (Gate,g0.Gate,g0.pg.Gate,backup_export.GateError,
-            OSError,ValueError,subprocess.TimeoutExpired):
+    except Exception:
         # Never print environment, SSH details, guest contents or raw DB errors.
         print('{"status":"BLOCK","fullPhysicalE2E":"NOT_YET_PROVEN"}')
         return 2
