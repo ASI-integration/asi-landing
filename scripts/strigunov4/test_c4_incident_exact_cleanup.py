@@ -88,7 +88,18 @@ class IncidentCleanupTests(unittest.TestCase):
         self.assertEqual(sql.count("SET LOCAL statement_timeout"),1)
         self.assertIn("SERIALIZABLE READ WRITE",sql)
         self.assertIn("C4_BOOKING_SCOPE_DRIFT",sql)
-        self.assertIn("C4_SENT_INTENT_WITNESS",sql)
+        self.assertIn("C4_DELIVERY_WITNESS",sql)
+        self.assertIn("C4_SEND_ATTEMPT_WITNESS",sql)
+        self.assertIn("C4_DRAFT_NOT_PRISTINE",sql)
+        self.assertIn("booking_ops_communication_deliveries d",sql)
+        self.assertIn("booking_ops_communication_auto_send_attempts a",sql)
+        self.assertIn("status='draft' AND telegram_chat_id IS NULL",sql)
+        self.assertIn("nullif(btrim(telegram_target),'') IS NULL",sql)
+        self.assertLess(sql.index("C4_DELIVERY_WITNESS"),
+                        sql.index("DELETE FROM public.booking_ops_communication_intents"))
+        self.assertLess(sql.index("C4_SEND_ATTEMPT_WITNESS"),
+                        sql.index("DELETE FROM public.booking_ops_communication_intents"))
+        self.assertNotIn("status IN ('sent','sending')",sql)
         self.assertIn("C4_CONFLICT_FOREIGN_SCOPE",sql)
         self.assertIn("C4_RESIDUE_ROLLBACK",sql)
         for ident in c.audit.OWNED.values():
@@ -138,6 +149,35 @@ class IncidentCleanupTests(unittest.TestCase):
         self.assertEqual(record["status"],"BLOCK")
         self.assertEqual(record["knownFixtureCountsZero"],"NOT_PROVEN")
         self.assertEqual(record["physicalReplayAuthorized"],False)
+        self.assertEqual(record["blockCode"],"C4_PRE_TASKS_CHANGED")
+        self.assertEqual(record["stagingWrites"],False)
+
+
+    def test_post_writer_failure_never_claims_zero_staging_writes(self):
+        c.STATE["writeAttempted"]=True
+        try:
+            output=io.StringIO()
+            with patch.object(c,"run",
+                              side_effect=c.Block("POSTCOMMIT_COUNTS_UNKNOWN")), \\
+                 contextlib.redirect_stdout(output):
+                self.assertEqual(c.main(),2)
+            receipt=json.loads(output.getvalue())
+            self.assertEqual(receipt["stagingWrites"],"UNKNOWN")
+            self.assertEqual(receipt["blockCode"],"POSTCOMMIT_COUNTS_UNKNOWN")
+            self.assertEqual(receipt["knownFixtureCountsZero"],"NOT_PROVEN")
+            self.assertFalse(receipt["physicalReplayAuthorized"])
+        finally:
+            c.STATE["writeAttempted"]=False
+
+    def test_generic_error_never_leaks_database_details(self):
+        buffer=io.StringIO()
+        with patch.object(c,"run",
+                          side_effect=RuntimeError("postgres secret password")), \\
+             contextlib.redirect_stdout(buffer):
+            self.assertEqual(c.main(),2)
+        data=json.loads(buffer.getvalue())
+        self.assertEqual(data["blockCode"],"UNEXPECTED_ERROR")
+        self.assertNotIn("password",buffer.getvalue())
 
 if __name__=="__main__":
     unittest.main()
