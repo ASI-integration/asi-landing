@@ -10,6 +10,8 @@ on:
       - 'scripts/strigunov4/test_staging_nine_sql_candidate.py'
       - 'docs/strigunov4/PROTECTED-STAGING-PREFLIGHT.md'
       - '.github/workflows/strigunov4-protected-preflight.yml'
+      - 'supabase/migrations/20261016203000_booking_availability_canonical_lock.sql'
+      - 'supabase/migrations/20261016213000_booking_availability_shared_writer_lock.sql'
   workflow_dispatch:
     inputs:
       reviewed_main_sha:
