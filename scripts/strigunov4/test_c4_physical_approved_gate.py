@@ -197,6 +197,55 @@ class PhysicalGateTests(unittest.TestCase):
             with self.assertRaisesRegex(gate.Gate,'OLD_EVIDENCE_POSTCHECK_BLOCK_RECONCILE'):
                 gate.run(valid())
 
+    def test_old_postcheck_failure_preserves_sanitized_booking_and_intake_ids(self):
+        """A failed old-evidence invariant still supplies exact IDs for reconciliation."""
+        owned={k:gate.retention.PLAN[k] for k in ("userId","accountId","propertyId")}
+        owned["runId"]="39040347972"
+        booking="15e11da2-3b0f-49e8-84ac-ce4cd8366bdf"
+        intake="13131313-1313-4313-8313-131313131313"
+        lifecycle={"owned":{**owned,"bookingIds":[booking],"intakeIds":[intake]},
+                   "cleanup":"NOT_RUN","reason":"C4_PHYSICAL_CORE_PASS",
+                   "secret":"DO_NOT_LEAK"}
+        outcome={"status":"C4_PHYSICAL_CORE_PASS","lifecycleReceipt":lifecycle}
+        with patch.object(gate.g0,"checked",return_value=types.SimpleNamespace(stdout=SHA.encode())), \
+             patch.object(gate.g0,"exact_sql_history"), \
+             patch.object(gate.retention,"capture",side_effect=[
+                 {"digest":"old"},{"counts":{},"notDeployed":[]},{"digest":"changed"}]), \
+             patch.object(gate,"execute_lifecycle",return_value=outcome), \
+             contextlib.redirect_stdout(io.StringIO()):
+            with self.assertRaisesRegex(gate.Gate,"OLD_EVIDENCE_POSTCHECK_BLOCK_RECONCILE") as error:
+                gate.run(valid())
+        receipt=error.exception.lifecycle_receipt
+        self.assertEqual(receipt["owned"]["bookingIds"],[booking])
+        self.assertEqual(receipt["owned"]["intakeIds"],[intake])
+        self.assertEqual(receipt["owned"]["userId"],owned["userId"])
+        self.assertEqual(receipt["cleanup"],"NOT_RUN")
+        self.assertNotIn("secret",receipt)
+        self.assertNotIn("DO_NOT_LEAK",json.dumps(receipt))
+
+    def test_old_postcheck_failure_retains_child_error_receipt(self):
+        """A child failure with a safe receipt retains IDs if final old check also fails."""
+        owned={k:gate.retention.PLAN[k] for k in ("userId","accountId","propertyId")}
+        owned["runId"]="39040347972"
+        booking="15e11da2-3b0f-49e8-84ac-ce4cd8366bdf"
+        intake="13131313-1313-4313-8313-131313131313"
+        error=gate.Gate("C4_PHYSICAL_CORE_NOT_PROVEN",
+             {"owned":{**owned,"bookingIds":[booking],"intakeIds":[intake]},
+              "cleanup":"UNKNOWN","secret":"DO_NOT_LEAK"})
+        with patch.object(gate.g0,"checked",return_value=types.SimpleNamespace(stdout=SHA.encode())), \
+             patch.object(gate.g0,"exact_sql_history"), \
+             patch.object(gate.retention,"capture",side_effect=[
+                 {"digest":"old"},{"digest":"changed"}]), \
+             patch.object(gate,"execute_lifecycle",side_effect=error), \
+             contextlib.redirect_stdout(io.StringIO()):
+            with self.assertRaisesRegex(gate.Gate,"OLD_EVIDENCE_POSTCHECK_BLOCK_RECONCILE") as caught:
+                gate.run(valid())
+        safe=caught.exception.lifecycle_receipt
+        self.assertEqual(safe["owned"]["bookingIds"],[booking])
+        self.assertEqual(safe["owned"]["intakeIds"],[intake])
+        self.assertEqual(safe["cleanup"],"UNKNOWN")
+        self.assertNotIn("DO_NOT_LEAK",json.dumps(safe))
+
     def test_plan_unique_and_separate_from_old(self):
         from uuid import UUID
         plan=gate.retention.PLAN
