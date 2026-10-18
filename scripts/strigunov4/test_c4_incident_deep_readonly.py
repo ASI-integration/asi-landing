@@ -237,23 +237,23 @@ class DeepReadOnlyTests(unittest.TestCase):
                          "setNullOrDefaultChildTables":[]})
         def checked(cmd,**kwargs):
             if cmd[0]=="git":
-                return types.SimpleNamespace(stdout=(SHA+"\\n").encode())
+                return types.SimpleNamespace(stdout=(SHA+"\n").encode())
             self.assertIn("default_transaction_read_only=on",kwargs["env"]["PGOPTIONS"])
             if "to_regclass(name)" in cmd[-1]:
                 return types.SimpleNamespace(
-                    stdout=(json.dumps(list(absent))+"\\n").encode(),
+                    stdout=(json.dumps(list(absent))+"\n").encode(),
                     stderr=b"",returncode=0)
             self.assertIn("READ ONLY",cmd[-1])
             self.assertNotIn("FROM public.guest_lifecycle_events ",cmd[-1])
             return types.SimpleNamespace(
-                stdout=("BEGIN\\n"+json.dumps(expected)+"\\nCOMMIT\\n").encode(),
+                stdout=("BEGIN\n"+json.dumps(expected)+"\nCOMMIT\n").encode(),
                 stderr=b"",returncode=0)
-        with patch.object(deep.g0,"checked",side_effect=checked), \\
-             patch.object(deep.g0,"exact_sql_history",return_value=True), \\
+        with patch.object(deep.g0,"checked",side_effect=checked), \
+             patch.object(deep.g0,"exact_sql_history",return_value=True), \
              patch.object(deep.pg,"db_environment",
-                          return_value={"PGOPTIONS":"-c default_transaction_read_only=on"}), \\
+                          return_value={"PGOPTIONS":"-c default_transaction_read_only=on"}), \
              patch.object(deep.pg,"postgres_client_command",
-                          return_value=["docker","psql","-c","QUERY"]), \\
+                          return_value=["docker","psql","-c","QUERY"]), \
              patch.object(deep.g0.tls_guard,"ca_bytes",return_value=b"FAKE_CA"):
             report=deep.run(valid())
         self.assertEqual(report["status"],"C4_DEEP_READONLY_SCHEMA_SCOPED_PASS")
