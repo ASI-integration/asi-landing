@@ -49,6 +49,10 @@ CREATE TABLE booking_ops_worker_tasks(id uuid PRIMARY KEY,booking_id uuid REFERE
 CREATE TABLE booking_ops_secure_task_links(id uuid PRIMARY KEY,task_id uuid REFERENCES booking_ops_worker_tasks(id) ON DELETE CASCADE);
 CREATE TABLE booking_ops_worker_link_audit(id uuid PRIMARY KEY,booking_id uuid REFERENCES booking_ops_records(id) ON DELETE CASCADE,task_id uuid REFERENCES booking_ops_worker_tasks(id) ON DELETE CASCADE,link_id uuid REFERENCES booking_ops_secure_task_links(id) ON DELETE SET NULL);
 CREATE ROLE c4_dependency_denied NOLOGIN;
+CREATE SCHEMA supabase_migrations;
+CREATE TABLE supabase_migrations.schema_migrations(version text PRIMARY KEY);
+GRANT USAGE ON SCHEMA supabase_migrations TO c4_dependency_denied;
+GRANT SELECT ON supabase_migrations.schema_migrations TO c4_dependency_denied;
 """)
         for t in PHYSICAL:
             cls.sql(f"CREATE TABLE {t}(id uuid PRIMARY KEY,booking_id uuid REFERENCES booking_ops_records(id) ON DELETE CASCADE,property_id text);")
@@ -206,10 +210,75 @@ INSERT INTO booking_ops_worker_link_audit VALUES ('{AUDIT}','{B}','{TASK}','{LIN
         finally:
             self.sql(f"ALTER TABLE booking_ops_events DISABLE ROW LEVEL SECURITY; REVOKE SELECT ON {names} FROM c4_dependency_denied; REVOKE USAGE ON SCHEMA public FROM c4_dependency_denied;")
 
+    def optional_fixture(self, version, function, trigger, hardened=False):
+        """Independent synthetic DDL; never apply the live UPDATE-bearing migration."""
+        self.sql("CREATE TABLE booking_ops_communication_auto_send_scopes(id uuid PRIMARY KEY,account_id uuid REFERENCES accounts(id) ON DELETE CASCADE,allowed_message_types jsonb,enabled_by text,dry_run_only boolean,actual_send_enabled boolean);")
+        if version:self.sql("INSERT INTO supabase_migrations.schema_migrations VALUES ('20260810290000');")
+        if function:
+            self.sql("CREATE FUNCTION public.normalize_guest_lifecycle_synthetic_scope_allowlist() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RETURN NEW; END $$;")
+        if trigger:
+            self.sql("CREATE TRIGGER trg_guest_lifecycle_synthetic_scope_allowlist BEFORE INSERT OR UPDATE OF allowed_message_types,enabled_by,dry_run_only,actual_send_enabled ON booking_ops_communication_auto_send_scopes FOR EACH ROW EXECUTE FUNCTION normalize_guest_lifecycle_synthetic_scope_allowlist();")
+        if hardened:
+            self.sql("INSERT INTO supabase_migrations.schema_migrations VALUES ('20261006101500'); ALTER FUNCTION normalize_guest_lifecycle_synthetic_scope_allowlist() SET search_path TO '';")
+
+    def optional_drop(self):
+        """Dispose only this test's optional synthetic objects/history."""
+        self.sql("DROP TABLE booking_ops_communication_auto_send_scopes; DROP FUNCTION IF EXISTS normalize_guest_lifecycle_synthetic_scope_allowlist(); DELETE FROM supabase_migrations.schema_migrations;")
+
+    def test_optional_real_history_and_object_matrix(self):
+        """Both histories pass only with matching real PG objects; evidence is unchanged."""
+        before=self.snapshot()
+        for version,function,trigger,hardened in ((0,0,0,0),(1,1,1,0),(1,1,1,1),
+                (1,0,0,0),(1,1,0,0),(0,1,0,0),(0,1,1,0),(0,1,1,1)):
+            with self.subTest(version=version,function=function,trigger=trigger,hardened=hardened):
+                self.optional_fixture(version,function,trigger,hardened)
+                try:
+                    if version == function == trigger and (version or not hardened):
+                        self.assertEqual(self.witness()["status"],"C4_DEPENDENCY_READONLY_SCOPED_PASS")
+                        self.assertEqual(c.optional_module_witness(self.catalog()["optionalModule"])["state"],
+                                         "DEPLOYED" if version else "NOT_DEPLOYED")
+                    else:
+                        with self.assertRaises(c.Block):self.witness()
+                finally:self.optional_drop()
+        self.assertEqual(before,self.snapshot())
+
+    def test_optional_unknown_overload_disabled_trigger_and_history_race(self):
+        """Wrong optional objects and changed history cannot cross the snapshot guard."""
+        self.optional_fixture(1,1,1)
+        try:
+            self.sql("CREATE FUNCTION normalize_guest_lifecycle_synthetic_scope_allowlist(integer) RETURNS integer LANGUAGE sql AS 'SELECT 1';")
+            with self.assertRaises(c.Block):self.witness()
+            self.sql("DROP FUNCTION normalize_guest_lifecycle_synthetic_scope_allowlist(integer); ALTER TABLE booking_ops_communication_auto_send_scopes DISABLE TRIGGER trg_guest_lifecycle_synthetic_scope_allowlist;")
+            with self.assertRaises(c.Block):self.witness()
+            self.sql("ALTER TABLE booking_ops_communication_auto_send_scopes ENABLE TRIGGER trg_guest_lifecycle_synthetic_scope_allowlist;")
+            self.sql("CREATE TRIGGER private_unknown BEFORE INSERT ON booking_ops_communication_auto_send_scopes FOR EACH ROW EXECUTE FUNCTION normalize_guest_lifecycle_synthetic_scope_allowlist();")
+            with self.assertRaises(c.TriggerMismatch):self.witness()
+            self.sql("DROP TRIGGER private_unknown ON booking_ops_communication_auto_send_scopes;")
+            cat=self.catalog();query=c.guarded_sql(cat,c.schema_check(cat))
+            self.sql("DELETE FROM supabase_migrations.schema_migrations;")
+            result=self.sql(query,ok=False);self.assertNotEqual(result.returncode,0)
+            self.assertIn(b"C4_SCHEMA_RACE",result.stderr)
+        finally:self.optional_drop()
+
+    def test_optional_history_rls_and_missing_relation_never_mean_absent(self):
+        """Unreadable history cannot be converted into the all-absent branch."""
+        before=self.snapshot()
+        self.sql("ALTER TABLE supabase_migrations.schema_migrations ENABLE ROW LEVEL SECURITY;")
+        try:
+            result=self.sql("BEGIN READ ONLY; SET LOCAL row_security=off; SET LOCAL ROLE c4_dependency_denied;"+c.catalog_sql()+";ROLLBACK;",ok=False)
+            self.assertNotEqual(result.returncode,0)
+            self.assertIn(b"row-level security",result.stderr)
+        finally:self.sql("ALTER TABLE supabase_migrations.schema_migrations DISABLE ROW LEVEL SECURITY;")
+        self.sql("ALTER TABLE supabase_migrations.schema_migrations RENAME TO hidden_history;")
+        try:self.assertNotEqual(self.sql(c.catalog_sql(),ok=False).returncode,0)
+        finally:self.sql("ALTER TABLE supabase_migrations.hidden_history RENAME TO schema_migrations;")
+        self.assertEqual(before,self.snapshot())
+
     @classmethod
     def tearDownClass(cls):
         """Remove only synthetic objects created by this suite."""
         cls.sql("DROP TABLE "+",".join(sorted(ACTIVE))+";")
+        cls.sql("DROP TABLE supabase_migrations.schema_migrations; DROP SCHEMA supabase_migrations;")
         cls.sql("DROP FUNCTION booking_ops_record_insert_scope_guard_v1(); DROP ROLE c4_dependency_denied;")
 
 

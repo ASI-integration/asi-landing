@@ -61,9 +61,16 @@ acceptance; the hash is not a license to mutate the old graph.
 
 ## Prepared red execution envelope; NOT authorized here
 
-First unblock schema diagnosis via #494. Current protected main was verified as
-375569af41080c50fc7d8516531b79deadedcefa on 2026-10-18. It is not a future pin.
-After separately authorized merges, obtain the actual current main SHA `M`.
+As of 2026-10-18, #494 and #495 are merged; observed protected main is
+beff46e55b73293774d210354d8276bea4812b2b. The single authorized read-only run
+[39118692946](https://github.com/ASI-integration/asi-landing/actions/runs/39118692946)
+completed after staging review with TRIGGER_DRIFT. It has not established a live
+schema PASS. The [fixed history/object matrix](C4-DEPENDENCY-PROOF.md#root-fix-after-protected-run-39118692946-2026-10-18)
+is being reviewed source-only; no new protected run is authorized.
+Historical pre-merge main was 375569af41080c50fc7d8516531b79deadedcefa; neither
+observation is an automatic future write pin. Obtain actual current main `M`
+for any separately approved physical run. Current evidence and completed bounded
+final-fix review are recorded in [final acceptance](STRIGUNOV4-FINAL-ACCEPTANCE.md).
 Workflow: `.github/workflows/strigunov4-c4-physical-core.yml`, ref main.
 Inputs: `reviewed_main_sha=M`, `confirm=RUN_STRIGUNOV4_C4_PHYSICAL_M`,
 `retention_confirm=RETAIN_C4_PILOT_M` (substitute the complete M in both phrases).

@@ -19,11 +19,88 @@ REQUIRED = set(ROOTS) | {"booking_ops_events", "booking_cleaning_tasks",
 WORKFLOW = prior.REPO + "/.github/workflows/strigunov4-c4-dependency-readonly.yml@refs/heads/main"
 Block = prior.Block
 require = prior.require
+OPTIONAL_TABLE = "booking_ops_communication_auto_send_scopes"
+OPTIONAL_VERSION = "20260810290000"
+HARDENING_VERSION = "20261006101500"
+OPTIONAL_TRIGGER = ["trg_guest_lifecycle_synthetic_scope_allowlist", 23,
+                    "public", "normalize_guest_lifecycle_synthetic_scope_allowlist"]
+
+
+class OptionalModuleMismatch(Block):
+    """Only validated aggregate facts for one fixed source module may escape."""
+    def __init__(self, witness):
+        self.witness = witness
+        super().__init__("OPTIONAL_MODULE_HISTORY_OBJECT_DRIFT")
+
+
+def optional_module_witness(data):
+    """Validate exact history/object agreement without an input-controlled skip."""
+    counts = {"versionRows", "hardeningRows", "functionCount", "functionMatches",
+              "defaultConfigCount", "hardenedConfigCount", "triggerShapeMatches"}
+    require(type(data) is dict and set(data) == counts | {"historyContract"},
+            "OPTIONAL_MODULE_WITNESS_SHAPE")
+    require(type(data["historyContract"]) is bool and all(
+        type(data[k]) is int and 0 <= data[k] <= 1000 for k in counts),
+        "OPTIONAL_MODULE_WITNESS_SHAPE")
+    safe = dict(data, version=OPTIONAL_VERSION, hardeningVersion=HARDENING_VERSION,
+                table=OPTIONAL_TABLE)
+    absent = (data["versionRows"] == 0 and data["hardeningRows"] == 0
+              and all(data[k] == 0 for k in counts - {"versionRows", "hardeningRows"}))
+    deployed = (data["versionRows"] == 1 and data["hardeningRows"] in (0, 1)
+                and data["functionCount"] == data["functionMatches"] == 1
+                and data["triggerShapeMatches"] == 1
+                and data["hardenedConfigCount"] == data["hardeningRows"]
+                and data["defaultConfigCount"] == 1 - data["hardeningRows"])
+    if not data["historyContract"] or not (absent or deployed):
+        raise OptionalModuleMismatch(safe)
+    safe["state"] = "NOT_DEPLOYED" if absent else "DEPLOYED"
+    return safe
+
+
+def optional_module_sql():
+    """Read fixed history rows and catalog aggregates; never execute the function."""
+    return """(SELECT jsonb_build_object(
+ 'historyContract',EXISTS(SELECT 1 FROM pg_catalog.pg_class c
+   JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace
+   WHERE n.nspname='supabase_migrations' AND c.relname='schema_migrations'
+   AND c.relkind='r'
+   AND NOT EXISTS(SELECT 1 FROM pg_catalog.pg_inherits i WHERE i.inhrelid=c.oid OR i.inhparent=c.oid)
+   AND NOT EXISTS(SELECT 1 FROM pg_catalog.pg_rewrite r WHERE r.ev_class=c.oid)
+   AND EXISTS(SELECT 1 FROM pg_catalog.pg_attribute a
+     JOIN pg_catalog.pg_constraint k ON k.conrelid=c.oid AND k.contype='p'
+     WHERE a.attrelid=c.oid AND a.attname='version' AND a.attnotnull
+     AND a.atttypid='pg_catalog.text'::regtype AND k.conkey=ARRAY[a.attnum])),
+ 'versionRows',(SELECT count(*) FROM supabase_migrations.schema_migrations WHERE version='20260810290000'),
+ 'hardeningRows',(SELECT count(*) FROM supabase_migrations.schema_migrations WHERE version='20261006101500'),
+ 'functionCount',count(*),
+ 'functionMatches',count(*) FILTER (WHERE p.pronargs=0 AND p.prokind='f'
+   AND p.prorettype='pg_catalog.trigger'::regtype AND NOT p.proretset
+   AND NOT p.prosecdef AND l.lanname='plpgsql'),
+ 'defaultConfigCount',count(*) FILTER (WHERE p.proconfig IS NULL),
+ 'hardenedConfigCount',count(*) FILTER (WHERE p.proconfig=ARRAY['search_path=""']::text[]),
+ 'triggerShapeMatches',(SELECT count(*) FROM pg_catalog.pg_trigger t
+   JOIN pg_catalog.pg_class c ON c.oid=t.tgrelid
+   JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace
+   JOIN pg_catalog.pg_proc f ON f.oid=t.tgfoid
+   JOIN pg_catalog.pg_namespace fn ON fn.oid=f.pronamespace
+   WHERE n.nspname='public' AND c.relname='booking_ops_communication_auto_send_scopes'
+   AND t.tgname='trg_guest_lifecycle_synthetic_scope_allowlist'
+   AND NOT t.tgisinternal AND t.tgenabled='O' AND t.tgtype=23
+   AND t.tgqual IS NULL AND t.tgnargs=0 AND t.tgconstraint=0
+   AND fn.nspname='public' AND f.proname='normalize_guest_lifecycle_synthetic_scope_allowlist'
+   AND f.pronargs=0
+   AND (SELECT array_agg(a.attname::text ORDER BY a.attname)
+        FROM unnest(t.tgattr::smallint[]) k(num)
+        JOIN pg_catalog.pg_attribute a ON a.attrelid=c.oid AND a.attnum=k.num)
+       =ARRAY['actual_send_enabled','allowed_message_types','dry_run_only','enabled_by']::text[])
+ ) FROM pg_catalog.pg_proc p JOIN pg_catalog.pg_namespace n ON n.oid=p.pronamespace
+ JOIN pg_catalog.pg_language l ON l.oid=p.prolang
+ WHERE n.nspname='public' AND p.proname='normalize_guest_lifecycle_synthetic_scope_allowlist')"""
 
 
 class TriggerMismatch(Block):
     """Allowlisted table names and source-known expected trigger names only."""
-    def __init__(self, details):
+    def __init__(self, details, module_witness=None):
         require(type(details) is list and 1 <= len(details) <= len(TABLES),
                 "TRIGGER_DRIFT_SHAPE")
         for item in details:
@@ -38,6 +115,7 @@ class TriggerMismatch(Block):
                     and type(item.get("unexpectedOrChangedCountTruncated")) is bool,
                     "TRIGGER_DRIFT_SHAPE")
         self.details=sorted(details,key=lambda x:x["table"])
+        self.module_witness=module_witness
         super().__init__("TRIGGER_DRIFT")
 
 
@@ -76,6 +154,7 @@ rels AS (
  LEFT JOIN pg_catalog.pg_class c ON c.relnamespace=n.oid AND c.relname=f.name
 )
 SELECT jsonb_build_object(
+ 'optionalModule', {optional_module_sql()},
  'tables',(SELECT jsonb_object_agg(r.name,
    CASE WHEN r.oid IS NULL THEN 'null'::jsonb ELSE jsonb_build_object(
     'kind',r.relkind,'inherited',r.inherited,
@@ -116,11 +195,14 @@ def edge_signature(e):
 
 def schema_check(data):
     """Fail closed before row access on unknown or changed schema."""
-    require(type(data) is dict and set(data) == {"tables", "edges"}, "CATALOG_SHAPE")
+    require(type(data) is dict and set(data) == {"tables", "edges", "optionalModule"}, "CATALOG_SHAPE")
+    module = optional_module_witness(data["optionalModule"])
     got = data["tables"]
     require(type(got) is dict and set(got) == set(TABLES), "CATALOG_RELATIONS")
     missing = {t for t in TABLES if got[t] is None}
     require(not (missing & REQUIRED), "MISSING_REQUIRED_RELATION")
+    require(module["state"] == "NOT_DEPLOYED" or OPTIONAL_TABLE not in missing,
+            "OPTIONAL_MODULE_RELATION_MISSING")
     aliases = {"bigint": "int8", "integer": "int4", "int": "int4", "boolean": "bool"}
     mismatched_triggers = []
     for t in sorted(set(TABLES)-missing):
@@ -130,11 +212,15 @@ def schema_check(data):
         require(actual["pk"] == spec["pk"], "PRIMARY_KEY_DRIFT")
         require(all(actual["columns"].get(c) == aliases.get(typ, typ)
                     for c, typ in spec["columns"].items()), "COLUMN_TYPE_DRIFT")
-        if sorted(actual["triggers"]) != sorted(spec["triggers"]):
+        expected_triggers = spec["triggers"]
+        if t == OPTIONAL_TABLE and module["state"] == "NOT_DEPLOYED":
+            require(OPTIONAL_TRIGGER in expected_triggers, "OPTIONAL_MODULE_SOURCE_CONTRACT")
+            expected_triggers = [sig for sig in expected_triggers if sig != OPTIONAL_TRIGGER]
+        if sorted(actual["triggers"]) != sorted(expected_triggers):
             missing_expected=sorted(
-                sig[0] for sig in spec["triggers"] if sig not in actual["triggers"])
+                sig[0] for sig in expected_triggers if sig not in actual["triggers"])
             unexpected=sum(
-                1 for sig in actual["triggers"] if sig not in spec["triggers"])
+                1 for sig in actual["triggers"] if sig not in expected_triggers)
             mismatched_triggers.append({
                 "table":t,
                 "missingExpectedTriggers":missing_expected,
@@ -142,7 +228,7 @@ def schema_check(data):
                 "unexpectedOrChangedCountTruncated":unexpected>1000
             })
     if mismatched_triggers:
-        raise TriggerMismatch(mismatched_triggers)
+        raise TriggerMismatch(mismatched_triggers, module)
     actual_edges = data["edges"]
     require(type(actual_edges) is list and len(actual_edges) <= 1000, "FK_SHAPE")
     require(all(e["childSchema"] == "public" and e["child"] in TABLES
@@ -260,7 +346,7 @@ def guarded_sql(catalog, missing):
     return ("BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY;\n"
             "SET LOCAL row_security=off;\nSET LOCAL statement_timeout='45s';\n"
             "SET LOCAL lock_timeout='5s';\nSET LOCAL search_path=pg_catalog,public;\n"
-            f"LOCK TABLE {locks} IN ACCESS SHARE MODE;\n"
+            f"LOCK TABLE supabase_migrations.schema_migrations,{locks} IN ACCESS SHARE MODE;\n"
             "DO $guard$ BEGIN IF (" + catalog_sql() + ")::jsonb IS DISTINCT FROM "
             + expected + "::jsonb THEN RAISE EXCEPTION 'C4_SCHEMA_RACE'; END IF; END $guard$;\n"
             + census_sql(missing) + ";\nROLLBACK;")
@@ -343,7 +429,9 @@ def run(env):
         catalog = execute(cmd, db_env)
         missing = schema_check(catalog)
         query.write_text(guarded_sql(catalog, missing), encoding="utf-8")
-        return receipt(execute(cmd, db_env), missing)
+        result = receipt(execute(cmd, db_env), missing)
+        result["optionalModule"] = optional_module_witness(catalog["optionalModule"])
+        return result
 
 
 def main():
@@ -353,7 +441,7 @@ def main():
         print(json.dumps(result, sort_keys=True))
         return 2 if result["status"] == "BLOCK" else 0
     except Exception as error:
-        code = str(error) if type(error) in (Block, TriggerMismatch) else "UNEXPECTED_FAILURE"
+        code = str(error) if type(error) in (Block, TriggerMismatch, OptionalModuleMismatch) else "UNEXPECTED_FAILURE"
         if not re.fullmatch(r"[A-Z][A-Z0-9_]{0,90}", code):
             code = "UNEXPECTED_FAILURE"
         report={"status":"BLOCK","blockCode":code,
@@ -362,6 +450,10 @@ def main():
         if type(error) is TriggerMismatch:
             report["triggerDriftCount"]=len(error.details)
             report["triggerDriftDetails"]=error.details
+            if error.module_witness is not None:
+                report["optionalModule"] = error.module_witness
+        if type(error) is OptionalModuleMismatch:
+            report["optionalModule"] = error.witness
         print(json.dumps(report,sort_keys=True))
         return 2
 
