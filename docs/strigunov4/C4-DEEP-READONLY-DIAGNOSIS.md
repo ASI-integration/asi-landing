@@ -1,6 +1,15 @@
 # Strigunov4 C4 — targeted read-only deep diagnosis
 
-**Status: protected read-only deep diagnosis #39061146150 returned DEEP_CENSUS_COMMAND_FAILURE, without mutation. This revision is SOURCE-ONLY until independently reviewed and separately dispatched.**
+## 18 October 2026: confirmed schema mismatch, not permission for migration
+
+Approved GitHub staging-only read-only run [39103410182](https://github.com/ASI-integration/asi-landing/actions/runs/39103410182) passed source and owner gates, then failed closed with `MISSING_RELATION_GUEST_LIFECYCLE_EVENTS`. The schema object `public.guest_lifecycle_events` is absent in this staging database. No writes or cleanup occurred.
+
+That table is created by the separate historical migration `supabase/migrations/20260809160000_guest_lifecycle_communications_v1.sql`, **not** one of the nine specifically approved Strigunov4 staging migrations. The evidence does not establish whether its absence is expected by the staging scope or an unaddressed migration; **do not apply an unrelated migration without first deciding scope**.
+
+The C4 cleanup source also refers directly to this table, so cleanup must remain blocked. Prior schema preflight returned only the first missing relation; this source-only revision reports a sorted bounded list of **all** absent, fixed-allowlist relation names in one protected read-only run and stops before all row counts. No table creation, cleanup, booked fixture replay, or environment changes. A fresh owner-authorized, protected-main SHA bound workflow run is required to learn the actual full set.
+
+
+**Status: protected read-only deep diagnosis #39103410182 returned MISSING_RELATION_GUEST_LIFECYCLE_EVENTS, without mutation. This revision is SOURCE-ONLY until independently reviewed and separately dispatched.**
 
 Prior attempts:
 - Physical booking run [39047710115](https://github.com/ASI-integration/asi-landing/actions/runs/39047710115): booking created; cleanup BLOCK.
