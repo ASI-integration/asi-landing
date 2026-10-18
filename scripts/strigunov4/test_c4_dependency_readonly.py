@@ -95,6 +95,8 @@ class DependencyUnitTests(unittest.TestCase):
         details=ctx.exception.details
         self.assertEqual([x["table"] for x in details],["accounts","users"])
         self.assertEqual([x["unexpectedOrChangedCount"] for x in details],[1,1])
+        self.assertEqual([x["unexpectedOrChangedCountTruncated"] for x in details],
+                         [False,False])
         output=io.StringIO()
         with patch.object(c,"run",side_effect=ctx.exception), contextlib.redirect_stdout(output):
             self.assertEqual(c.main(),2)
@@ -109,6 +111,38 @@ class DependencyUnitTests(unittest.TestCase):
         self.assertNotIn("db_private_name",output.getvalue())
         self.assertNotIn("db_function",output.getvalue())
         self.assertEqual(len(output.getvalue().splitlines()),1)
+
+    def test_over_limit_trigger_drift_retains_manifest_only_diagnostics(self):
+        """Over 1000 live trigger signatures still return TRIGGER_DRIFT, no leaked names."""
+        changed=catalog()
+        changed["tables"]["users"]["triggers"]=[
+            [f"secret_live_trigger_{index:04d}",7,"public","private_function"]
+            for index in range(1001)]
+        changed["tables"]["accounts"]["triggers"]=[
+            ["secret_live_trigger_other",7,"public","private_function"]]
+        with self.assertRaises(c.TriggerMismatch) as caught:
+            c.schema_check(changed)
+        self.assertEqual([item["table"] for item in caught.exception.details],
+                         ["accounts","users"])
+        self.assertEqual(
+            [item["unexpectedOrChangedCount"] for item in caught.exception.details],
+            [1,1000])
+        self.assertEqual(
+            [item["unexpectedOrChangedCountTruncated"]
+             for item in caught.exception.details],[False,True])
+        output=io.StringIO()
+        with patch.object(c,"run",side_effect=caught.exception), contextlib.redirect_stdout(output):
+            self.assertEqual(c.main(),2)
+        receipt=json.loads(output.getvalue())
+        self.assertEqual(receipt["blockCode"],"TRIGGER_DRIFT")
+        self.assertEqual(receipt["triggerDriftCount"],2)
+        self.assertTrue(receipt["triggerDriftDetails"][1]["unexpectedOrChangedCountTruncated"])
+        self.assertEqual(receipt["triggerDriftDetails"][1]["unexpectedOrChangedCount"],1000)
+        self.assertFalse(receipt["stagingWrites"])
+        self.assertFalse(receipt["cleanupAuthorized"])
+        self.assertFalse(receipt["physicalReplayAuthorized"])
+        self.assertNotIn("secret_live_trigger",output.getvalue())
+        self.assertNotIn("private_function",output.getvalue())
 
     def test_static_identifiers_and_missing_set(self):
         """No workflow input or arbitrary catalog identifier can choose row SQL."""
