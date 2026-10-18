@@ -263,20 +263,29 @@ def run(e):
     # Persist only generated identities before any write; hard cancellation still
     # leaves an exact reconciliation target. No automatic retry or cleanup.
     print(json.dumps({"status":"OWNERSHIP_HANDOFF","owned":owned}),flush=True)
+    # The final old-evidence guard must not erase exact reconciliation IDs
+    # already received from the child. Always use sanitized, fixture-scoped IDs.
+    lifecycle_receipt={"owned":owned,"cleanup":"NOT_RUN"}
     try:
-        result=execute_lifecycle(e)
+        try:
+            result=execute_lifecycle(e)
+        except Gate as error:
+            if error.lifecycle_receipt is not None:
+                lifecycle_receipt=safe_receipt(error.lifecycle_receipt,owned)
+            raise
+        lifecycle_receipt=safe_receipt(result.get("lifecycleReceipt"),owned)
         try:
             new=retention.capture(e["STAGING_DATABASE_URL"],result["lifecycleReceipt"]["owned"])
             result["newFixtureCounts"]=new["counts"]
             result["newFixtureNotDeployed"]=new["notDeployed"]
         except Exception:
-            raise Gate("NEW_DEPENDENCY_POSTCHECK_BLOCK_RECONCILE",result["lifecycleReceipt"]) from None
+            raise Gate("NEW_DEPENDENCY_POSTCHECK_BLOCK_RECONCILE",lifecycle_receipt) from None
     finally:
         try:
             retention.unchanged(before,retention.capture(e["STAGING_DATABASE_URL"]))
         except Exception:
-            raise Gate("OLD_EVIDENCE_POSTCHECK_BLOCK_RECONCILE", {
-                "owned":owned,"cleanup":"NOT_RUN"}) from None
+            raise Gate("OLD_EVIDENCE_POSTCHECK_BLOCK_RECONCILE",
+                       lifecycle_receipt=lifecycle_receipt) from None
     result["oldEvidenceInvariant"]="PASS"
     return result
 
