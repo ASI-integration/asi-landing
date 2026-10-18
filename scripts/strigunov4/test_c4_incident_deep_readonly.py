@@ -184,7 +184,8 @@ class DeepReadOnlyTests(unittest.TestCase):
                 return types.SimpleNamespace(stdout=(SHA+"\n").encode())
             self.assertIn("to_regclass(name)",cmd[-1])
             return types.SimpleNamespace(
-                stdout=b'["public.booking_ops_events"]\n',stderr=b"",returncode=0)
+                stdout=b'["public.guest_lifecycle_events","public.booking_ops_events"]\n',
+                stderr=b"",returncode=0)
         with patch.object(deep.g0,"checked",side_effect=checked), \
              patch.object(deep.g0,"exact_sql_history",return_value=True), \
              patch.object(deep.pg,"db_environment",
@@ -194,7 +195,28 @@ class DeepReadOnlyTests(unittest.TestCase):
              patch.object(deep.g0.tls_guard,"ca_bytes",return_value=b"FAKE_CA"):
             with self.assertRaises(deep.Block) as error:
                 deep.run(valid())
-        self.assertEqual(str(error.exception),"MISSING_RELATION_BOOKING_OPS_EVENTS")
+        self.assertIsInstance(error.exception,deep.MissingSchema)
+        self.assertEqual(str(error.exception),"SCHEMA_RELATIONS_MISSING")
+        self.assertEqual(error.exception.names,
+                         ("public.booking_ops_events","public.guest_lifecycle_events"))
+
+    def test_missing_schema_receipt_exposes_only_allowlisted_names(self):
+        """No table rows, credentials, or raw SQL errors may escape."""
+        output=io.StringIO()
+        names=["public.guest_lifecycle_events","public.booking_ops_events"]
+        with patch.object(deep,"run",side_effect=deep.MissingSchema(names)), \
+             contextlib.redirect_stdout(output):
+            self.assertEqual(deep.main(),2)
+        receipt=json.loads(output.getvalue())
+        self.assertEqual(receipt["status"],"BLOCK")
+        self.assertEqual(receipt["blockCode"],"SCHEMA_RELATIONS_MISSING")
+        self.assertEqual(receipt["missingRelationCount"],2)
+        self.assertEqual(receipt["missingRelations"],
+                         ["public.booking_ops_events","public.guest_lifecycle_events"])
+        self.assertIs(receipt["stagingWrites"],False)
+        self.assertIs(receipt["cleanupAttempted"],False)
+        self.assertIs(receipt["physicalReplayAuthorized"],False)
+        self.assertEqual(len(output.getvalue().splitlines()),1)
 
     def test_invalid_receipts_fail_closed(self):
         buf=io.StringIO()
