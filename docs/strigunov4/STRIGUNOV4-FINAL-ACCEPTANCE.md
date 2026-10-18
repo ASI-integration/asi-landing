@@ -1,3 +1,119 @@
+# Strigunov 4: acceptance after physical run 39127850376
+
+Observation: 2026-10-18, after protected job completion at 12:44:52 UTC.
+Decision: **PILOT NOT_READY; STOP_AND_RETAIN; NO_RERUN**.
+This register supersedes the historical status retained below. The owner-approved
+single writer has been consumed. No fresh staging access or write was performed
+while investigating its logs and source. Production and Sentinel are untouched.
+
+## Five final gates
+
+| Gate | Status | Actual evidence / missing criterion |
+| --- | --- | --- |
+| DEPENDENCY_READONLY | PASS | [39127024136](https://github.com/ASI-integration/asi-landing/actions/runs/39127024136), job 117674414794: C4_DEPENDENCY_READONLY_SCOPED_PASS on exact main below. |
+| RETENTION_POLICY_A | ADOPTED; physical invariant not explicitly receipted | Owner `granted` at 15:34 Moscow adopted A and review 2026-11-17. Historical counts are proven by the reader. No explicit physical final old-equality receipt was emitted. |
+| PHYSICAL_CORE | BLOCK; write outcome UNKNOWN | [39127850376/job/117676993521](https://github.com/ASI-integration/asi-landing/actions/runs/39127850376/job/117676993521) emitted ownership handoff then generic BLOCK. No booking/intake IDs or final census. |
+| FULL_PHYSICAL_E2E | NOT_PROVEN | No core PASS, full human-observed journey or independent external-effects proof. |
+| READY_FOR_DEMO | NOT_READY | A usable human session, fixture-correlated CRM view and physical readiness are not observed. |
+
+## Exact run and receipt
+
+Approved main/workflow SHA: `d46986fe7fa6b3a68a0490bf9be32f34206c7e06`.
+Run 39127850376: workflow_dispatch, ASI-integration, attempt 1.
+Protected job ran after staging review, from 12:44:06 to 12:44:52 UTC.
+Exact-main gate, checkout, setup and offline source lock succeeded. The retained
+booking step failed with exit 2. No rerun, duplicate dispatch or cleanup was made.
+
+At 12:44:41.6672103 UTC:
+
+```json
+{"status":"OWNERSHIP_HANDOFF","owned":{"userId":"dc194ac7-e586-4f7a-bd27-52fe743a89b7","accountId":"1ed26348-32e1-4e19-ae0d-07d3658f42ab","propertyId":"ac431190-8cdb-4dfe-be89-3f3f83e258fc","runId":"39127850376"}}
+```
+
+At 12:44:50.4746199 UTC:
+
+```json
+{"status":"BLOCK","fullPhysicalE2E":"NOT_YET_PROVEN"}
+```
+
+The full protected job log was retrieved (251 lines). It contains no fixed cause,
+child-start witness, returned booking/intake IDs, new counts or postflight result.
+Handoff is emitted before execution and is not proof that rows were inserted.
+Conversely, missing child IDs do not prove that no write happened. Reserve these
+roots for reconciliation; never recycle them or dispatch the fixture again.
+
+Source inference: handoff follows initial history and old snapshot checks. The
+parent finally checks the old snapshot; its failure normally emits a specific Gate
+receipt. The generic result cannot be promoted to explicit full-row preservation
+PASS or an exact child phase. Report old physical invariant UNKNOWN pending evidence.
+
+## Dependency evidence retained
+
+[#499](https://github.com/ASI-integration/asi-landing/pull/499) merged reviewed HEAD
+074bcff9df754accd424ae4dc2d271e617b9679a into the approved main above.
+[CodeRabbit review](https://github.com/ASI-integration/asi-landing/pull/499#issuecomment-6249762635)
+and final-head CI completed successfully.
+The protected read-only JSON has stagingWrites=false, cleanupAuthorized=false,
+physicalReplayAuthorized=false, blockCode=null. It proves strict historical roots
+[1,1,1,1,0], 24 audit events, four physical rows and one Telegram draft. All reported
+scopeConflicts are zero. Thirty-one optional relations are NOT_DEPLOYED/null.
+Compatibility migration/function/trigger absence is consistent, not a drift bypass.
+The new fixture must still satisfy strict [1,1,1,1,1] and exactly one intake/booking.
+
+These are bounded source-scoped observations, not arbitrary JSON/trigger-body or
+network proofs. Old cleanup 39056059835 remains WRITE_UNCERTAIN; never retry it.
+
+## Confirmed reporting defect and narrow source correction
+
+The deployed host probe discarded every exception cause. Its caller collapsed
+remote failures, and the physical parent's generic exception handler discarded the
+durable roots and cause. This reproduces the information loss in the actual receipt;
+the particular live root cause remains unknown. Operator absence is only a candidate.
+
+The proposed correction changes no admission or write operation:
+- Host check failures expose only a closed set of fixed codes from a typed check
+  exception. Arbitrary exception messages, environment and host output stay private.
+- The SSH reader accepts that exact BLOCK shape only on exit 2, never as PASS.
+- The parent preserves fixed preflight causes and roots with CHILD_NOT_STARTED only
+  when the failure occurs at the proven boundary before tunnel/child creation.
+- Unexpected lifecycle failures preserve roots as UNKNOWN and still run the old
+  invariant. No retry, cleanup, identity reuse or inference of no writes is added.
+
+Twenty-five focused physical-gate tests PASS locally, including hostile/unknown
+remote codes, wrong operator, no child on preflight failure, generic crash and
+old-invariant failure. Existing six real isolated PG17 retention tests in
+[39126266336](https://github.com/ASI-integration/asi-landing/actions/runs/39126266336)
+and the same prerequisites in the physical run PASS; no SQL changed in this fix.
+Exact-head CI and independent review of this new package must complete before merge.
+A future source merge does not authorize a new protected run on its resulting SHA.
+
+## Concrete continuation and independent demonstration
+
+Do not approve or restart the completed writer. First review the narrow source fix;
+then use a separately authorized read-only reconciliation to establish whether the
+reserved roots exist, discover only their scoped booking/intake IDs, and compare old
+evidence. A fresh access must have its own exact source/scope and staging reviewer.
+The existing dependency reader is old-incident scoped: rerunning it alone cannot
+prove the new fixture's absence or recover new IDs. No new reconciliation run is
+claimed to be available or authorized by this documentation.
+
+Inspect only already-authorized evidence until that gate. If the live cause is an
+operator/no-send/service mismatch, prepare a specific configuration decision after
+it is actually established; do not alter the host on speculation.
+
+The [retained pilot checklist](C4-RETAINED-PILOT.md#independent-observation-checklist-after-the-existing-run)
+records exact screens, IDs and required observations. The fixture password is
+intentionally unusable and API sealing is not a human login. Login may initialize
+account records; it is not automatically a read-only check. CRM HTTP 200 is not
+fixture correlation. No independently retained network observation was established
+for this interval. Flags and DB counts cannot substitute for it. Do not fabricate
+FULL_PHYSICAL_E2E_PASS or READY_FOR_DEMO.
+
+## Historical evidence preserved
+
+<details>
+<summary>Previous register: historical statuses and permissions superseded above</summary>
+
 # Strigunov 4: acceptance after #495
 
 Decision: **NO-GO / NOT_READY**. Observation: 2026-10-18; refreshed after protected diagnostic completion at 10:34 UTC.
@@ -270,5 +386,7 @@ protection: strict required `validate`, admins enforced, force push and deletion
 disabled. Staging has a required reviewer and `can_admins_bypass=false`.
 No settings were changed. Owner authorization and environment review remain
 separate prerequisites despite the configured workflow confirmation strings.
+
+</details>
 
 </details>

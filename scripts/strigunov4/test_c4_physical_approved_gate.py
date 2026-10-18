@@ -282,5 +282,104 @@ class PhysicalGateTests(unittest.TestCase):
              patch.object(gate.verified.g0,'checked',side_effect=checked):
             self.assertEqual(gate.verified.probe(valid(),'unused',22,operator_email=gate.retention.PLAN['email']),expected)
 
+    def test_host_script_reports_only_typed_fixed_codes(self):
+        import sys
+        for failure, expected in [(None, "SOURCE"),
+                                  (RuntimeError("SECRET_HOST_VALUE"), "UNEXPECTED_FAILURE")]:
+            out=io.StringIO()
+            argv=["probe", gate.G0 if failure else "invalid"]
+            with patch.object(sys,"argv",argv), \
+                 patch.object(gate.verified.os,"geteuid",create=True,
+                              side_effect=failure,return_value=0), \
+                 contextlib.redirect_stdout(out):
+                with self.assertRaises(SystemExit) as stopped:
+                    exec(compile(gate.verified.HOST_SCRIPT,"probe","exec"),{})
+                self.assertEqual(stopped.exception.code,2)
+            payload=json.loads(out.getvalue())
+            self.assertEqual(payload,{"status":"BLOCK","fullE2E":"NOT_RUN",
+                                      "blockCode":expected})
+            self.assertNotIn("SECRET_HOST_VALUE",out.getvalue())
+
+    def test_remote_block_code_is_closed_and_never_accepted_as_pass(self):
+        cases=[({"status":"BLOCK","fullE2E":"NOT_RUN",
+                 "blockCode":"FRESH_OPERATOR_NOT_CONFIGURED"},2,"HOST_FRESH_OPERATOR_NOT_CONFIGURED"),
+               ({"status":"BLOCK","fullE2E":"NOT_RUN","blockCode":"SECRET_HOST_VALUE"},2,"REMOTE_NOT_PROVEN"),
+               ({"status":"BLOCK","fullE2E":"NOT_RUN","blockCode":["HOST"]},2,"REMOTE_NOT_PROVEN"),
+               ({"status":"BLOCK","fullE2E":"NOT_RUN","blockCode":"HOST","secret":"SECRET_HOST_VALUE"},2,"REMOTE_NOT_PROVEN"),
+               ({"status":"BLOCK","fullE2E":"NOT_RUN","blockCode":"HOST"},0,"REMOTE_NOT_PROVEN")]
+        for report,rc,expected in cases:
+            with self.subTest(expected=expected,rc=rc), \
+                 patch.object(gate.verified.backup_export,'ssh_identity',return_value=pathlib.Path('unused')), \
+                 patch.object(gate.verified.g0,'checked',return_value=types.SimpleNamespace(
+                     returncode=rc,stdout=json.dumps(report).encode())):
+                with self.assertRaises(gate.verified.Block) as error:
+                    gate.verified.probe(valid(),'unused',22,operator_email=gate.retention.PLAN['email'])
+                self.assertEqual(str(error.exception),expected)
+                self.assertNotIn("SECRET_HOST_VALUE",str(error.exception))
+
+    def test_preflight_block_never_starts_child_and_keeps_roots(self):
+        cases=[(gate.verified.Block("HOST_FRESH_OPERATOR_NOT_CONFIGURED"),"HOST_FRESH_OPERATOR_NOT_CONFIGURED"),
+               (gate.verified.Block("SECRET_HOST_VALUE"),"STAGE_PREFLIGHT_UNPROVEN"),
+               (RuntimeError("SECRET_HOST_VALUE"),"STAGE_PREFLIGHT_UNPROVEN")]
+        for failure,expected in cases:
+            with patch.object(gate.g0,"checked",return_value=types.SimpleNamespace(stdout=SHA.encode())), \
+                 patch.object(gate.g0,"exact_sql_history"), \
+                 patch.object(gate.verified,"probe",side_effect=failure), \
+                 patch.object(gate.subprocess,"Popen") as tunnel, \
+                 patch.object(gate.subprocess,"run") as child:
+                with self.assertRaises(gate.Gate) as error:gate.execute_lifecycle(valid())
+                self.assertEqual(str(error.exception),expected)
+                self.assertEqual(error.exception.lifecycle_receipt["reason"],"CHILD_NOT_STARTED")
+                self.assertEqual(error.exception.lifecycle_receipt["owned"]["userId"],gate.retention.PLAN["userId"])
+                self.assertEqual(error.exception.lifecycle_receipt["cleanup"],"NOT_RUN")
+                tunnel.assert_not_called();child.assert_not_called()
+
+    def test_unexpected_lifecycle_error_keeps_roots_and_checks_old(self):
+        out=io.StringIO()
+        with patch.dict(gate.os.environ,valid(),clear=True), \
+             patch.object(gate.g0,"checked",return_value=types.SimpleNamespace(stdout=SHA.encode())), \
+             patch.object(gate.g0,"exact_sql_history"), \
+             patch.object(gate.retention,"capture",side_effect=[{'digest':'old'},{'digest':'old'}]) as capture, \
+             patch.object(gate,"execute_lifecycle",side_effect=RuntimeError("SECRET_HOST_VALUE")), \
+             contextlib.redirect_stdout(out):
+            self.assertEqual(gate.main(),2)
+        self.assertEqual(capture.call_count,2)
+        result=json.loads(out.getvalue().splitlines()[-1])
+        self.assertEqual(result['reason'],'LIFECYCLE_UNEXPECTED_RECONCILE')
+        self.assertEqual(result['lifecycleReceipt']['cleanup'],'UNKNOWN')
+        self.assertEqual(result['lifecycleReceipt']['owned']['accountId'],gate.retention.PLAN['accountId'])
+        self.assertNotIn('SECRET_HOST_VALUE',out.getvalue())
+
+    def test_preflight_failure_still_checks_old_preservation(self):
+        out=io.StringIO()
+        with patch.object(gate.g0,"checked",return_value=types.SimpleNamespace(stdout=SHA.encode())), \
+             patch.object(gate.g0,"exact_sql_history"), \
+             patch.object(gate.retention,"capture",side_effect=[{'digest':'old'},{'digest':'old'}]) as capture, \
+             patch.object(gate.verified,"probe",side_effect=gate.verified.Block("HOST_EFFECTIVE_NO_SEND")), \
+             patch.object(gate.subprocess,"Popen") as child, contextlib.redirect_stdout(out):
+            with self.assertRaisesRegex(gate.Gate,"HOST_EFFECTIVE_NO_SEND"):gate.run(valid())
+        self.assertEqual(capture.call_count,2);child.assert_not_called()
+
+    def test_unexpected_error_then_old_drift_remains_unknown(self):
+        with patch.object(gate.g0,"checked",return_value=types.SimpleNamespace(stdout=SHA.encode())), \
+             patch.object(gate.g0,"exact_sql_history"), \
+             patch.object(gate.retention,"capture",side_effect=[{'digest':'old'},{'digest':'changed'}]), \
+             patch.object(gate,"execute_lifecycle",side_effect=RuntimeError("SECRET_HOST_VALUE")), \
+             contextlib.redirect_stdout(io.StringIO()):
+            with self.assertRaisesRegex(gate.Gate,"OLD_EVIDENCE_POSTCHECK_BLOCK_RECONCILE") as error:gate.run(valid())
+        self.assertEqual(error.exception.lifecycle_receipt['cleanup'],'UNKNOWN')
+        self.assertNotIn('SECRET_HOST_VALUE',json.dumps(error.exception.lifecycle_receipt))
+
+    def test_standalone_probe_preserves_only_allowlisted_reason(self):
+        for error,code in [(gate.verified.Block("HOST_EFFECTIVE_NO_SEND"),"HOST_EFFECTIVE_NO_SEND"),
+                           (gate.verified.Block("SECRET_VALUE"),"READONLY_PREFLIGHT_UNPROVEN"),
+                           (ValueError("SECRET_VALUE"),"READONLY_PREFLIGHT_UNPROVEN")]:
+            out=io.StringIO()
+            with patch.object(gate.verified,"run",side_effect=error), contextlib.redirect_stdout(out):
+                self.assertEqual(gate.verified.main(),2)
+            self.assertEqual(json.loads(out.getvalue()),
+                             {"status":"BLOCK","fullE2E":"NOT_RUN","blockCode":code})
+            self.assertNotIn("SECRET_VALUE",out.getvalue())
+
 if __name__ == "__main__":
     unittest.main()

@@ -120,7 +120,19 @@ def execute_lifecycle(e):
     g0.exact_sql_history(e["STAGING_DATABASE_URL"])
     # Exact current live staging service, effective no-send + 5 unauthenticated
     # negative routes, via the already-reviewed fingerprint-pinned probe.
-    report = verified.probe(e, host, port, operator_email=retention.PLAN["email"])
+    try:
+        report = verified.probe(e, host, port, operator_email=retention.PLAN["email"])
+    except Exception as error:
+        # This boundary precedes tunnel/child creation. Only trusted fixed probe
+        # codes are public; raw SSH/host/exception output remains suppressed.
+        allowed = {"HOST_" + code for code in verified.HOST_BLOCK_CODES}
+        allowed.update({"REMOTE_JSON", "REMOTE_NOT_PROVEN", "OPERATOR_IDENTITY"})
+        reason = (str(error) if type(error) is verified.Block
+                  and str(error) in allowed else "STAGE_PREFLIGHT_UNPROVEN")
+        roots = {k: retention.PLAN[k] for k in ("userId", "accountId", "propertyId")}
+        roots["runId"] = run_id
+        raise Gate(reason, {"owned": roots, "cleanup": "NOT_RUN",
+                            "reason": "CHILD_NOT_STARTED"}) from None
     require(report["status"] == "C4_READONLY_PREFLIGHT_PASS" and
             report["fullE2E"] == "NOT_RUN", "STAGE_PREFLIGHT")
     source = Path(g0.ROOT) / "scripts/strigunov4/c4_physical_staging_lifecycle.mjs"
@@ -273,6 +285,12 @@ def run(e):
             if error.lifecycle_receipt is not None:
                 lifecycle_receipt=safe_receipt(error.lifecycle_receipt,owned)
             raise
+        except Exception:
+            # Preserve the durable roots on unexpected failures after handoff.
+            # No reliable child phase/commit knowledge: never claim no writes.
+            lifecycle_receipt={"owned":owned,"cleanup":"UNKNOWN",
+                               "reason":"UNEXPECTED_REQUIRES_READONLY_RECONCILIATION"}
+            raise Gate("LIFECYCLE_UNEXPECTED_RECONCILE",lifecycle_receipt) from None
         lifecycle_receipt=safe_receipt(result.get("lifecycleReceipt"),owned)
         try:
             new=retention.capture(e["STAGING_DATABASE_URL"],result["lifecycleReceipt"]["owned"])
@@ -302,7 +320,7 @@ def main():
         return 2
     except Exception:
         # Never print environment, SSH details, guest contents or raw DB errors.
-        print('{"status":"BLOCK","fullPhysicalE2E":"NOT_YET_PROVEN"}')
+        print('{"status":"BLOCK","reason":"UNEXPECTED_FAILURE","fullPhysicalE2E":"NOT_YET_PROVEN"}')
         return 2
 
 if __name__ == "__main__":
