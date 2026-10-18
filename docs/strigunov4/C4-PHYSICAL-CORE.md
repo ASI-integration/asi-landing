@@ -1,6 +1,6 @@
 # Strigunov4 C4 physical staging core — protected execution contract
 
-**Source-only until approved. Never treat this package as full C4 acceptance by itself.**
+**Historical core contract below. The current runner is superseded by [C4-RETAINED-PILOT.md](C4-RETAINED-PILOT.md): no automatic cleanup, one-use fresh identities, strict old/new graph witnesses and explicit retention approval. Source-only until separately approved.**
 
 ## Already proven
 - G0 live on `asi-landing-staging`, localhost:3001: source `d912aec6663de90e5ca4293cc5a69e2e0ed9ff94`, protected activation [39036303529](https://github.com/ASI-integration/asi-landing/actions/runs/39036303529).

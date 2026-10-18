@@ -128,7 +128,16 @@ def validate(source):
     require(type(key) is str and len(key)>100,"KEY")
     return sha,host,port
 
-def probe(source,host,port):
+def probe(source,host,port,operator_email=None):
+    script=HOST_SCRIPT
+    if operator_email is not None:
+        require(type(operator_email) is str and re.fullmatch(
+            r"c4-pilot-[0-9a-f]{32}@asi\.local",operator_email),"OPERATOR_IDENTITY")
+        extra = "    operator="+repr(operator_email)+"\n"
+        extra += "    for setting in ('CRM_OPERATOR_EMAILS','OPS_ADMIN_EMAILS'):\n"
+        extra += "        allowed=settings.get(setting,b'').decode('utf8','strict').lower()\n"
+        extra += "        check(operator in __import__('re').split(r'[,;\\s]+',allowed),'FRESH_OPERATOR_NOT_CONFIGURED')\n"
+        script=script.replace('    base="http://127.0.0.1:3001"',extra+'    base="http://127.0.0.1:3001"')
     with tempfile.TemporaryDirectory(prefix="c4-stage-readonly-") as dir_name:
         folder=Path(dir_name);folder.chmod(0o700)
         known=backup_export.ssh_identity(folder,host,port)
@@ -141,7 +150,7 @@ def probe(source,host,port):
               "-o","StrictHostKeyChecking=yes","-o","GlobalKnownHostsFile=none",
               "-o","UserKnownHostsFile="+str(known),"-o","ConnectTimeout=20",
               "project_ayfaar@"+host,"sudo","-n","python3","-",RELEASE]
-        result=g0.checked(args,env=env,stdin=HOST_SCRIPT.encode(),timeout=130,allow_nonzero=True)
+        result=g0.checked(args,env=env,stdin=script.encode(),timeout=130,allow_nonzero=True)
     try: report=json.loads(result.stdout)
     except (ValueError,UnicodeError): raise Block("REMOTE_JSON") from None
     required={"status":"C4_READONLY_PREFLIGHT_PASS","releaseSha":RELEASE,
