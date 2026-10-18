@@ -6,7 +6,9 @@ import { sealData } from 'iron-session';
 import { createClient } from '@supabase/supabase-js';
 const STAGE = 'http://127.0.0.1:3001';
 const G0 = 'd912aec6663de90e5ca4293cc5a69e2e0ed9ff94';
-const EMAIL = 'staging-acceptance@asi.local';
+const EMAIL = String(process.env.C4_OPERATOR_EMAIL ?? '');
+assert.match(EMAIL, /^c4-pilot-[0-9a-f]{32}@asi\.local$/);
+assert.equal(process.env.C4_RETENTION_POLICY, 'RETAIN_OLD_AND_NEW_EVIDENCE_V1');
 const PROJECT = 'meeravcldnmocjtlqoeu';
 const env = process.env;
 
@@ -88,83 +90,44 @@ async function ownedBookingIds() {
       r.property_id !== fixture.propertyId)) throw Error('OWNERSHIP_UNCERTAIN');
   return rows.map(r => r.id);
 }
-async function deleteExact(table, filter) {
-  let q = sb.from(table).delete();
-  for (const [key, value] of Object.entries(filter)) q = q.eq(key, value);
-  await result(await q, 'DELETE_' + table);
-}
-async function cleanupOwned() {
-  // Never delete by prefix, time range or global customer contact.
+async function verifyRetained() {
+  // Preserve all evidence on both success and uncertain writes. Never delete.
   const bookings = await ownedBookingIds();
   fixture.bookingIds = [...new Set([...fixture.bookingIds, ...bookings])];
-  // Intake event rows may retain a booking FK and must be deleted first.
-  // Discover only this newly generated account's receipts, then verify exact
-  // ownership and booking linkage before any deletion.
-  const ownedEvents = await result(await sb.from('booking_inbound_intake_events')
-    .select('id,account_id,booking_id').eq('account_id', fixture.accountId),
-    'READ_OWNED_INTAKE');
-  if (ownedEvents.length > 2 || ownedEvents.some(e =>
-      e.account_id !== fixture.accountId ||
-      (e.booking_id !== null && !bookings.includes(e.booking_id))))
-    throw Error('INTAKE_SCOPE_UNCERTAIN');
-  fixture.intakeIds = [...new Set([...fixture.intakeIds, ...ownedEvents.map(e => e.id)])];
-  for (const id of fixture.intakeIds) {
-    const event = ownedEvents.find(e => e.id === id);
-    if (!event) throw Error('INTAKE_ID_NOT_OWNED');
-    await deleteExact('booking_inbound_intake_events', {
-      id, account_id: fixture.accountId,
-    });
-  }
-  for (const id of fixture.bookingIds) {
-    if (!bookings.includes(id)) throw Error('BOOKING_SCOPE_MISMATCH');
-    const row = await sb.from('booking_ops_records').select('account_id,property_id')
-      .eq('id', id).maybeSingle();
-    const item = await result(row, 'BOOKING_SCOPE');
-    assert.equal(item?.account_id, fixture.accountId);
-    assert.equal(item?.property_id, fixture.propertyId);
-    for (const [table, fk] of [
-      ['booking_ops_telegram_drafts', 'booking_ops_record_id'],
-      ['booking_ops_tasks', 'booking_ops_record_id'],
-      ['booking_ops_communication_intents', 'booking_ops_record_id'],
-    ]) await deleteExact(table, { [fk]: id });
-    // Availability records survive booking deletion via ON DELETE SET NULL.
-    // Clear only records scoped to this generated booking/account/property.
-    for (const table of ['booking_overbooking_conflict_checks', 'booking_availability_holds']) {
-      await deleteExact(table, {
-        booking_id: id, account_id: fixture.accountId, property_id: fixture.propertyId,
-      });
-      if (await count(table, {
-        booking_id: id, account_id: fixture.accountId, property_id: fixture.propertyId,
-      }) !== 0) throw Error('AVAILABILITY_RESIDUE_' + table);
-    }
-    await deleteExact('booking_ops_records', {
-      id, account_id: fixture.accountId, property_id: fixture.propertyId,
-    });
-  }
-  if (await count('booking_ops_records', { account_id: fixture.accountId,
-      property_id: fixture.propertyId }) !== 0) throw Error('BOOKING_REMAINS');
-  for (const table of ['booking_availability_holds', 'booking_overbooking_conflict_checks']) {
-    if (await count(table, {
-      account_id: fixture.accountId, property_id: fixture.propertyId,
-    }) !== 0) throw Error('PROPERTY_AVAILABILITY_RESIDUE_' + table);
-  }
-  await deleteExact('properties', { id: fixture.propertyId, account_id: fixture.accountId });
-  await deleteExact('account_members', { user_id: fixture.userId, account_id: fixture.accountId });
-  await deleteExact('accounts', { id: fixture.accountId });
-  await deleteExact('users', { id: fixture.userId, email: EMAIL });
+  const events = await result(await sb.from('booking_inbound_intake_events')
+    .select('id,account_id,booking_id').eq('account_id', fixture.accountId), 'READ_OWNED_INTAKE');
+  if (events.length !== 1 || events.some(e => e.account_id !== fixture.accountId ||
+      !bookings.includes(e.booking_id))) throw Error('INTAKE_SCOPE_UNCERTAIN');
+  fixture.intakeIds = [...new Set([...fixture.intakeIds, ...events.map(e => e.id)])];
+  check(bookings.length === 1 && fixture.bookingIds.length === 1 && fixture.intakeIds.length === 1,
+    'RETAINED_IDENTITIES_EXACT');
   for (const [table, filters] of [
-    ['users', { id: fixture.userId }],
+    ['users', { id: fixture.userId, email: EMAIL }],
     ['accounts', { id: fixture.accountId }],
-    ['properties', { id: fixture.propertyId }],
+    ['properties', { id: fixture.propertyId, account_id: fixture.accountId }],
     ['account_members', { user_id: fixture.userId, account_id: fixture.accountId }],
-    ['booking_ops_records', { account_id: fixture.accountId, property_id: fixture.propertyId }],
-    ['booking_inbound_intake_events', { account_id: fixture.accountId }],
-  ]) if (await count(table, filters) !== 0) throw Error('RESIDUE_' + table);
-  for (const id of fixture.intakeIds) {
-    if (await count('booking_inbound_intake_events', { id }) !== 0)
-      throw Error('INTAKE_RECEIPT_REMAINS');
+  ]) check(await count(table, filters) === 1, 'RETAINED_ROOT_' + table);
+  for (const table of ['booking_cleaning_tasks','booking_linen_tasks',
+    'booking_supplies_tasks','booking_physical_readiness']) {
+    check(await count(table, { booking_id: bookings[0], property_id: fixture.propertyId }) === 1,
+      'RETAINED_PHYSICAL_' + table);
   }
-  receipt.cleanup = 'PASS';
+  for (const table of ['booking_availability_holds', 'booking_overbooking_conflict_checks']) {
+    const rows = await result(await sb.from(table).select('id,account_id,property_id,booking_id')
+      .eq('account_id', fixture.accountId), 'READ_RETAINED_AVAILABILITY');
+    check(rows.every(r => r.property_id === fixture.propertyId && r.booking_id === bookings[0]),
+      'RETAINED_AVAILABILITY_SCOPE_' + table);
+  }
+  check(true, 'NEW_FIXTURE_RETAINED_VERIFIED');
+  receipt.retention = 'RETAINED_VERIFIED';
+}
+
+async function physical(bookingId, action, cookie, extra = {}) {
+  const r = await post('/api/dashboard/booking-ops/physical-readiness',
+    { bookingId, action, ...extra }, cookie);
+  check(r.code === 200 && r.body.ok === true && r.body.readiness,
+    'PHYSICAL_' + action.toUpperCase());
+  return r.body.readiness;
 }
 
 try {
@@ -231,20 +194,52 @@ try {
     ops.body.records?.some(x => x.id === bookingId), 'OPERATOR_BOOKING_QUEUE');
   const crm = await get('/api/dashboard/crm/queue', cookie);
   check(crm.code === 200 && crm.body.ok === true, 'CRM_ROUTE_AUTHORIZED');
+  const physicalPath = '/api/dashboard/booking-ops/physical-readiness?bookingId=';
+  check((await get(physicalPath + bookingId)).code === 401, 'UNAUTHENTICATED_PHYSICAL_DENIED');
+  // GET scope rejection only: never send any mutation targeting the old incident.
+  check((await get(physicalPath + 'c771e4f0-95d0-4c36-a3fc-ea8bbf7a49c1', cookie)).code === 403,
+    'OLD_BOOKING_SCOPE_DENIED');
+  const initial = await physical(bookingId, 'ensure_tasks', cookie);
+  const again = await physical(bookingId, 'ensure_tasks', cookie);
+  check(['cleaning','linen','supplies'].every(k => initial[k]?.id && initial[k].id === again[k]?.id),
+    'PHYSICAL_TASKS_IDEMPOTENT');
+  for (const status of ['assigned','in_progress','completed','verified']) {
+    await physical(bookingId, 'update_cleaning', cookie, {
+      status, assignedToName: 'C4 synthetic cleaner', reportPayload: { photoReportConfirmed: true },
+    });
+  }
+  for (const status of ['delivered','verified']) {
+    await physical(bookingId, 'update_linen', cookie, {
+      status, assignedToName: 'C4 synthetic linen worker', reportPayload: { deliveryReportConfirmed: true },
+    });
+  }
+  await physical(bookingId, 'update_supplies', cookie, {
+    status: 'verified', reportPayload: { checklistConfirmed: true },
+  });
+  const approved = await physical(bookingId, 'final_approval', cookie);
+  const readBack = await get(physicalPath + bookingId, cookie);
+  check(approved.finalReady === true && approved.status === 'approved' &&
+    readBack.code === 200 && readBack.body.readiness?.finalReady === true,
+    'PHYSICAL_FINAL_APPROVAL');
+  for (const table of ['booking_cleaning_tasks','booking_linen_tasks',
+    'booking_supplies_tasks','booking_physical_readiness']) {
+    const rows = await result(await sb.from(table).select('id,booking_id,property_id')
+      .eq('booking_id',bookingId), 'READ_PHYSICAL_SCOPE');
+    check(rows.length === 1 && rows[0].property_id === fixture.propertyId, 'PHYSICAL_SCOPE');
+  }
   const outbound = await sb.from('booking_ops_communication_intents')
     .select('id', { count: 'exact', head: true })
     .eq('booking_ops_record_id', bookingId).in('status', ['sent', 'sending']);
   check(!outbound.error && outbound.count === 0, 'NO_SENT_INTENT_FOR_FIXTURE');
   receipt.status = 'CORE_PASS';
-  receipt.reason = 'AWAIT_CLEANUP';
+  receipt.reason = 'AWAIT_RETENTION_WITNESS';
 } catch (error) {
   receipt.reason = String(error?.message ?? 'FAILED').replace(/[^A-Za-z0-9_]/g,'_').slice(0,95);
 } finally {
-  try { await cleanupOwned(); }
-  catch (err) { receipt.cleanup = 'BLOCK'; receipt.cleanupReason =
-    String(err?.message ?? 'UNKNOWN').replace(/[^A-Za-z0-9_]/g,'_').slice(0,95); }
+  try { await verifyRetained(); }
+  catch { receipt.retention = 'UNKNOWN_RECONCILE_BEFORE_RETRY'; }
 }
-if (receipt.status !== 'CORE_PASS' || receipt.cleanup !== 'PASS') {
+if (receipt.status !== 'CORE_PASS' || receipt.retention !== 'RETAINED_VERIFIED') {
   receipt.status = 'BLOCK';
   process.stdout.write(JSON.stringify(receipt) + '\n');
   process.exitCode = 2;

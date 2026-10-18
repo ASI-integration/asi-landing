@@ -25,6 +25,7 @@ def valid():
         "GITHUB_WORKFLOW_SHA":SHA,
         "C4_REVIEWED_MAIN_SHA":SHA,
         "C4_CONFIRM":"RUN_STRIGUNOV4_C4_PHYSICAL_"+SHA,
+        "C4_RETENTION_CONFIRM":"RETAIN_C4_PILOT_"+SHA,
         "GITHUB_RUN_ID":"39040347972",
         "STAGING_SUPABASE_PROJECT_REF":gate.PROJECT,
         "STAGING_SSH_USER":"project_ayfaar",
@@ -57,6 +58,7 @@ class PhysicalGateTests(unittest.TestCase):
             "GITHUB_WORKFLOW_SHA":"b"*40,
             "C4_REVIEWED_MAIN_SHA":"b"*40,
             "C4_CONFIRM":"RUN_ANY",
+            "C4_RETENTION_CONFIRM":"RETAIN_ANY",
             "GITHUB_RUN_ID":"0",
             "STAGING_SUPABASE_PROJECT_REF":"jwinifeienvzejofmbua",
             "STAGING_SSH_USER":"root",
@@ -99,18 +101,16 @@ class PhysicalGateTests(unittest.TestCase):
         self.assertIn("C4_PHYSICAL_CORE_PASS",source)
         self.assertIn("NO_SENT_INTENT_FOR_FIXTURE",source)
         self.assertIn("INTAKE_OWNERSHIP",source)
-        self.assertIn("INTAKE_RECEIPT_REMAINS",source)
         self.assertIn("INTAKE_SCOPE_UNCERTAIN",source)
-        self.assertIn("INTAKE_ID_NOT_OWNED",source)
-        self.assertIn("id,account_id,booking_id",source)
-        self.assertIn("await deleteExact('booking_inbound_intake_events', {",source)
-        self.assertLess(source.index("await deleteExact('booking_inbound_intake_events', {"),
-                        source.index("await deleteExact('booking_ops_records', {"))
+        self.assertIn("RETAINED_PHYSICAL_",source)
+        self.assertIn("PHYSICAL_FINAL_APPROVAL",source)
+        self.assertIn("OLD_BOOKING_SCOPE_DENIED",source)
+        self.assertNotIn(".delete()",source)
         self.assertIn("127.0.0.1:3001",source)
         self.assertIn("realExternalEffectsIndependentProof: 'NOT_ESTABLISHED'",source)
         self.assertIn("booking_ops_records",source)
         self.assertIn("fixture.propertyId",source)
-        self.assertIn("cleanupOwned()",source)
+        self.assertIn("verifyRetained()",source)
         for forbidden in (".like(", ".ilike(", "TRUNCATE", "DELETE FROM",
                           "systemctl restart", "https://api.stripe.com"):
             self.assertNotIn(forbidden,source)
@@ -153,10 +153,10 @@ class PhysicalGateTests(unittest.TestCase):
         source=(pathlib.Path(__file__).parent/"c4_physical_staging_lifecycle.mjs").read_text()
         for item in ("C4_OWNED_USER_ID","C4_OWNED_ACCOUNT_ID",
                      "C4_OWNED_PROPERTY_ID","booking_availability_holds",
-                     "booking_overbooking_conflict_checks","AVAILABILITY_RESIDUE_"):
+                     "booking_overbooking_conflict_checks","RETAINED_AVAILABILITY_SCOPE_"):
             self.assertIn(item,source)
         gate_src=(pathlib.Path(__file__).parent/"c4_physical_approved_gate.py").read_text()
-        for item in ("uuid.uuid4()", "C4_CHILD_TIMEOUT", "safe_receipt",
+        for item in ("retention.PLAN", "C4_CHILD_TIMEOUT", "safe_receipt",
                      'post.get("status") == "C4_READONLY_PREFLIGHT_PASS"',
                      '"STAGE_POSTFLIGHT"'):
             self.assertIn(item,gate_src)
@@ -171,6 +171,116 @@ class PhysicalGateTests(unittest.TestCase):
             self.assertIn(expected,source)
         self.assertNotIn("secrets.PRODUCTION",source)
         self.assertNotIn("environment: production",source)
+
+    def test_old_drift_blocks_before_child(self):
+        with patch.object(gate.g0,"checked",return_value=types.SimpleNamespace(stdout=SHA.encode())), \
+             patch.object(gate.g0,"exact_sql_history"), \
+             patch.object(gate.retention,"capture",side_effect=ValueError('TRIGGER_DRIFT')), \
+             patch.object(gate,"execute_lifecycle") as child:
+            with self.assertRaises(ValueError): gate.run(valid())
+            child.assert_not_called()
+
+    def test_error_and_timeout_still_check_old_evidence(self):
+        for error in [gate.Gate('C4_CHILD_TIMEOUT'),gate.Gate('WRITE_UNCERTAIN')]:
+            with patch.object(gate.g0,"checked",return_value=types.SimpleNamespace(stdout=SHA.encode())), \
+                 patch.object(gate.g0,"exact_sql_history"), \
+                 patch.object(gate.retention,"capture",side_effect=[{'digest':'old'},{'digest':'old'}]) as capture, \
+                 patch.object(gate,"execute_lifecycle",side_effect=error), contextlib.redirect_stdout(io.StringIO()):
+                with self.assertRaisesRegex(gate.Gate,str(error)): gate.run(valid())
+                self.assertEqual(capture.call_count,2)
+
+    def test_changed_old_evidence_blocks_success(self):
+        with patch.object(gate.g0,"checked",return_value=types.SimpleNamespace(stdout=SHA.encode())), \
+             patch.object(gate.g0,"exact_sql_history"), \
+             patch.object(gate.retention,"capture",side_effect=[{'digest':'old'},{'counts':{},'notDeployed':[]},{'digest':'changed'}]), \
+             patch.object(gate,"execute_lifecycle",return_value={'status':'C4_PHYSICAL_CORE_PASS','lifecycleReceipt':{'owned':{}}}), contextlib.redirect_stdout(io.StringIO()):
+            with self.assertRaisesRegex(gate.Gate,'OLD_EVIDENCE_POSTCHECK_BLOCK_RECONCILE'):
+                gate.run(valid())
+
+    def test_old_postcheck_failure_preserves_sanitized_booking_and_intake_ids(self):
+        """A failed old-evidence invariant still supplies exact IDs for reconciliation."""
+        owned={k:gate.retention.PLAN[k] for k in ("userId","accountId","propertyId")}
+        owned["runId"]="39040347972"
+        booking="15e11da2-3b0f-49e8-84ac-ce4cd8366bdf"
+        intake="13131313-1313-4313-8313-131313131313"
+        lifecycle={"owned":{**owned,"bookingIds":[booking],"intakeIds":[intake]},
+                   "cleanup":"NOT_RUN","reason":"C4_PHYSICAL_CORE_PASS",
+                   "secret":"DO_NOT_LEAK"}
+        outcome={"status":"C4_PHYSICAL_CORE_PASS","lifecycleReceipt":lifecycle}
+        with patch.object(gate.g0,"checked",return_value=types.SimpleNamespace(stdout=SHA.encode())), \
+             patch.object(gate.g0,"exact_sql_history"), \
+             patch.object(gate.retention,"capture",side_effect=[
+                 {"digest":"old"},{"counts":{},"notDeployed":[]},{"digest":"changed"}]), \
+             patch.object(gate,"execute_lifecycle",return_value=outcome), \
+             contextlib.redirect_stdout(io.StringIO()):
+            with self.assertRaisesRegex(gate.Gate,"OLD_EVIDENCE_POSTCHECK_BLOCK_RECONCILE") as error:
+                gate.run(valid())
+        receipt=error.exception.lifecycle_receipt
+        self.assertEqual(receipt["owned"]["bookingIds"],[booking])
+        self.assertEqual(receipt["owned"]["intakeIds"],[intake])
+        self.assertEqual(receipt["owned"]["userId"],owned["userId"])
+        self.assertEqual(receipt["cleanup"],"NOT_RUN")
+        self.assertNotIn("secret",receipt)
+        self.assertNotIn("DO_NOT_LEAK",json.dumps(receipt))
+
+    def test_old_postcheck_failure_retains_child_error_receipt(self):
+        """A child failure with a safe receipt retains IDs if final old check also fails."""
+        owned={k:gate.retention.PLAN[k] for k in ("userId","accountId","propertyId")}
+        owned["runId"]="39040347972"
+        booking="15e11da2-3b0f-49e8-84ac-ce4cd8366bdf"
+        intake="13131313-1313-4313-8313-131313131313"
+        error=gate.Gate("C4_PHYSICAL_CORE_NOT_PROVEN",
+             {"owned":{**owned,"bookingIds":[booking],"intakeIds":[intake]},
+              "cleanup":"UNKNOWN","secret":"DO_NOT_LEAK"})
+        with patch.object(gate.g0,"checked",return_value=types.SimpleNamespace(stdout=SHA.encode())), \
+             patch.object(gate.g0,"exact_sql_history"), \
+             patch.object(gate.retention,"capture",side_effect=[
+                 {"digest":"old"},{"digest":"changed"}]), \
+             patch.object(gate,"execute_lifecycle",side_effect=error), \
+             contextlib.redirect_stdout(io.StringIO()):
+            with self.assertRaisesRegex(gate.Gate,"OLD_EVIDENCE_POSTCHECK_BLOCK_RECONCILE") as caught:
+                gate.run(valid())
+        safe=caught.exception.lifecycle_receipt
+        self.assertEqual(safe["owned"]["bookingIds"],[booking])
+        self.assertEqual(safe["owned"]["intakeIds"],[intake])
+        self.assertEqual(safe["cleanup"],"UNKNOWN")
+        self.assertNotIn("DO_NOT_LEAK",json.dumps(safe))
+
+    def test_plan_unique_and_separate_from_old(self):
+        from uuid import UUID
+        plan=gate.retention.PLAN
+        ids=[plan[k] for k in ('userId','accountId','propertyId')]
+        self.assertEqual(len(set(ids)),3)
+        self.assertTrue(all(UUID(i).version==4 for i in ids))
+        self.assertFalse(set(ids)&set(gate.retention.dep.prior.OWNED.values()))
+        self.assertEqual(plan['email'],'c4-pilot-'+plan['userId'].replace('-','')+'@asi.local')
+
+    def test_fresh_operator_check_precedes_any_child(self):
+        src=pathlib.Path(gate.__file__).read_text()
+        self.assertLess(src.index('operator_email=retention.PLAN'),src.index('subprocess.Popen'))
+        with self.assertRaises(gate.verified.Block):
+            gate.verified.probe({},'unused',22,operator_email="x'; exit()")
+
+    def test_new_scope_rejects_malformed_and_foreign_ids(self):
+        owned={k:gate.retention.PLAN[k] for k in ('userId','accountId','propertyId')}
+        owned.update(runId='12345',bookingIds=['12121212-1212-4212-8212-121212121212'],intakeIds=['13131313-1313-4313-8313-131313131313'])
+        for key,value in [('userId','bad'),('bookingIds',["';DELETE"]),('intakeIds',[]),('runId','1;DROP')]:
+            with self.assertRaises(gate.retention.dep.Block):
+                gate.retention.scope_new_query('SELECT 1',dict(owned,**{key:value}))
+
+    def test_host_operator_check_is_valid_python_and_exact(self):
+        expected={'status':'C4_READONLY_PREFLIGHT_PASS','releaseSha':gate.G0,
+                  'noSendFlags':7,'unauthorizedRoutes':5,'stagingWrites':False,'fullE2E':'NOT_RUN'}
+        def checked(*args,**kwargs):
+            script=kwargs['stdin'].decode()
+            compile(script,'remote-probe','exec')
+            self.assertIn(repr(gate.retention.PLAN['email']),script)
+            self.assertIn('FRESH_OPERATOR_NOT_CONFIGURED',script)
+            self.assertIn("r'[,;\\s]+'",script)
+            return types.SimpleNamespace(returncode=0,stdout=json.dumps(expected).encode())
+        with patch.object(gate.verified.backup_export,'ssh_identity',return_value=pathlib.Path('unused')), \
+             patch.object(gate.verified.g0,'checked',side_effect=checked):
+            self.assertEqual(gate.verified.probe(valid(),'unused',22,operator_email=gate.retention.PLAN['email']),expected)
 
 if __name__ == "__main__":
     unittest.main()

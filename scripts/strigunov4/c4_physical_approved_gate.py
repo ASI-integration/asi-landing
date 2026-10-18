@@ -12,7 +12,7 @@ import socket
 import subprocess
 import tempfile
 import time
-import uuid
+import c4_retention_evidence as retention
 
 import backup_export
 import c4_staging_readonly_probe as verified
@@ -93,6 +93,7 @@ def context(e):
             and e.get("C4_REVIEWED_MAIN_SHA") == sha, "REVIEWED_SHA")
     require(e.get("C4_CONFIRM") == "RUN_STRIGUNOV4_C4_PHYSICAL_" + sha,
             "OWNER_CONFIRM")
+    require(e.get("C4_RETENTION_CONFIRM") == "RETAIN_C4_PILOT_" + sha, "RETENTION_APPROVAL")
     run_id = e.get("GITHUB_RUN_ID", "")
     require(type(run_id) is str and RUN_ID.fullmatch(run_id) is not None, "RUN_ID")
     for key in REQUIRED:
@@ -111,7 +112,7 @@ def context(e):
     require(1 <= port <= 65535, "STAGE_PORT")
     return sha, run_id, host, port
 
-def run(e):
+def execute_lifecycle(e):
     sha, run_id, host, port = context(e)
     actual = g0.checked(["git","-C",str(g0.ROOT),"rev-parse","HEAD"]).stdout.decode().strip()
     require(actual == sha, "CHECKOUT_DRIFT")
@@ -119,7 +120,7 @@ def run(e):
     g0.exact_sql_history(e["STAGING_DATABASE_URL"])
     # Exact current live staging service, effective no-send + 5 unauthenticated
     # negative routes, via the already-reviewed fingerprint-pinned probe.
-    report = verified.probe(e, host, port)
+    report = verified.probe(e, host, port, operator_email=retention.PLAN["email"])
     require(report["status"] == "C4_READONLY_PREFLIGHT_PASS" and
             report["fullE2E"] == "NOT_RUN", "STAGE_PREFLIGHT")
     source = Path(g0.ROOT) / "scripts/strigunov4/c4_physical_staging_lifecycle.mjs"
@@ -130,20 +131,22 @@ def run(e):
     env = {key:os.environ[key] for key in ("PATH","HOME","LANG","LC_ALL")
            if key in os.environ}
     # Durable handoff: these exact identities exist before any stage write.
-    owned = {"userId": str(uuid.uuid4()), "accountId": str(uuid.uuid4()),
-             "propertyId": str(uuid.uuid4()), "runId": run_id}
+    owned = {k: retention.PLAN[k] for k in ("userId", "accountId", "propertyId")}
+    owned["runId"] = run_id
     env.update({
         "C4_OWNED_USER_ID": owned["userId"],
         "C4_OWNED_ACCOUNT_ID": owned["accountId"],
         "C4_OWNED_PROPERTY_ID": owned["propertyId"],
+        "C4_RETENTION_POLICY": retention.PLAN["policy"],
+        "C4_OPERATOR_EMAIL": retention.PLAN["email"],
         "CI": "true", "C4_PHYSICAL_APPROVED": "YES",
         "C4_RUN_ID":run_id, "C4_REVIEWED_MAIN_SHA":sha,
         "ASI_DEPLOY_ENV":"staging", "ASI_SYNTHETIC_NO_SEND":"YES",
         "NEXT_PUBLIC_SUPABASE_URL":e["STAGING_SUPABASE_URL"],
         "SUPABASE_SERVICE_ROLE_KEY":e["STAGING_SUPABASE_SERVICE_ROLE_KEY"],
         "SESSION_SECRET":e["STAGING_SESSION_SECRET"],
-        "OPS_ADMIN_EMAILS":"staging-acceptance@asi.local",
-        "CRM_OPERATOR_EMAILS":"staging-acceptance@asi.local",
+        "OPS_ADMIN_EMAILS":retention.PLAN["email"],
+        "CRM_OPERATOR_EMAILS":retention.PLAN["email"],
         "EMAIL_AUTO_SEND":"false", "EMAIL_DRAFT_ONLY":"true",
         "DRY_RUN_TELEGRAM_OUTBOUND":"true",
         "ALLOW_REAL_TELEGRAM_SYNTHETIC":"false",
@@ -210,10 +213,11 @@ def run(e):
                             ("userId","accountId","propertyId","runId"))
                     and result.returncode == 0
                     and data.get("status") == "C4_PHYSICAL_CORE_PASS"
-                    and data.get("cleanup") == "PASS"
+                    and data.get("cleanup") == "NOT_RUN"
+                    and data.get("retention") == "RETAINED_VERIFIED"
                     and data.get("realExternalEffectsIndependentProof") == "NOT_ESTABLISHED"
                     and type(data.get("checks")) is list
-                    and len(data["checks"]) >= 8):
+                    and REQUIRED_CHECKS <= set(data["checks"])):
                 raise Gate("C4_PHYSICAL_CORE_NOT_PROVEN",
                            lifecycle_receipt=lifecycle_receipt)
         finally:
@@ -223,7 +227,7 @@ def run(e):
                 except subprocess.TimeoutExpired: tunnel.kill();tunnel.wait(timeout=3)
     # Safety re-admission after physical activity.
     try:
-        post = verified.probe(e,host,port)
+        post = verified.probe(e,host,port,operator_email=retention.PLAN["email"])
     except Exception:
         raise Gate("STAGE_POSTFLIGHT_BLOCK",
                    lifecycle_receipt=lifecycle_receipt) from None
@@ -234,9 +238,57 @@ def run(e):
                    lifecycle_receipt=lifecycle_receipt)
     return {"status":"C4_PHYSICAL_CORE_PASS",
             "reviewedSha":sha,"releaseSha":G0,
-            "fixtureCleanup":"PASS","stagingTouched":True,
+            "fixtureCleanup":"NOT_RUN","retention":"RETAINED_VERIFIED","stagingTouched":True,
+            "lifecycleReceipt":lifecycle_receipt,
             "externalEffectsObserved":"NOT_INDEPENDENTLY_PROVEN",
             "fullPhysicalE2E":"NOT_YET_PROVEN"}
+
+REQUIRED_CHECKS = frozenset({"EXACT_LIVE_RELEASE", "NO_EXISTING_TEST_IDENTITY",
+    "REAL_HTTP_INTAKE", "BOOKING_CREATED", "INTAKE_OWNERSHIP", "BOOKING_BOUND_TO_FIXTURE",
+    "NO_DUPLICATE_BOOKING", "OPERATOR_BOOKING_QUEUE", "CRM_ROUTE_AUTHORIZED",
+    "PHYSICAL_TASKS_IDEMPOTENT", "PHYSICAL_SCOPE", "PHYSICAL_FINAL_APPROVAL",
+    "UNAUTHENTICATED_PHYSICAL_DENIED", "OLD_BOOKING_SCOPE_DENIED",
+    "NO_SENT_INTENT_FOR_FIXTURE", "NEW_FIXTURE_RETAINED_VERIFIED"})
+
+
+def run(e):
+    """Always compare old full rows after a launched child, including timeout paths."""
+    sha, run_id, _, _ = context(e)
+    actual=g0.checked(["git","-C",str(g0.ROOT),"rev-parse","HEAD"]).stdout.decode().strip()
+    require(actual==sha,"CHECKOUT_DRIFT")
+    g0.exact_sql_history(e["STAGING_DATABASE_URL"])
+    before=retention.capture(e["STAGING_DATABASE_URL"])
+    owned={k:retention.PLAN[k] for k in ("userId","accountId","propertyId")}
+    owned["runId"]=run_id
+    # Persist only generated identities before any write; hard cancellation still
+    # leaves an exact reconciliation target. No automatic retry or cleanup.
+    print(json.dumps({"status":"OWNERSHIP_HANDOFF","owned":owned}),flush=True)
+    # The final old-evidence guard must not erase exact reconciliation IDs
+    # already received from the child. Always use sanitized, fixture-scoped IDs.
+    lifecycle_receipt={"owned":owned,"cleanup":"NOT_RUN"}
+    try:
+        try:
+            result=execute_lifecycle(e)
+        except Gate as error:
+            if error.lifecycle_receipt is not None:
+                lifecycle_receipt=safe_receipt(error.lifecycle_receipt,owned)
+            raise
+        lifecycle_receipt=safe_receipt(result.get("lifecycleReceipt"),owned)
+        try:
+            new=retention.capture(e["STAGING_DATABASE_URL"],result["lifecycleReceipt"]["owned"])
+            result["newFixtureCounts"]=new["counts"]
+            result["newFixtureNotDeployed"]=new["notDeployed"]
+        except Exception:
+            raise Gate("NEW_DEPENDENCY_POSTCHECK_BLOCK_RECONCILE",lifecycle_receipt) from None
+    finally:
+        try:
+            retention.unchanged(before,retention.capture(e["STAGING_DATABASE_URL"]))
+        except Exception:
+            raise Gate("OLD_EVIDENCE_POSTCHECK_BLOCK_RECONCILE",
+                       lifecycle_receipt=lifecycle_receipt) from None
+    result["oldEvidenceInvariant"]="PASS"
+    return result
+
 
 def main():
     try:

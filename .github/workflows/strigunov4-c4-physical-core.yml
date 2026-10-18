@@ -8,6 +8,12 @@ on:
       - 'scripts/strigunov4/c4_physical_staging_lifecycle.mjs'
       - 'scripts/strigunov4/test_c4_physical_approved_gate.py'
       - 'docs/strigunov4/C4-PHYSICAL-CORE.md'
+      - 'docs/strigunov4/C4-RETAINED-PILOT.md'
+      - 'scripts/strigunov4/c4_retention_evidence.py'
+      - 'scripts/strigunov4/c4_retained_fixture.json'
+      - 'scripts/strigunov4/test_c4_retained_postgres.py'
+      - 'scripts/strigunov4/c4_staging_readonly_probe.py'
+      - 'scripts/strigunov4/c4_dependency_readonly.py'
   workflow_dispatch:
     inputs:
       reviewed_main_sha:
@@ -16,6 +22,11 @@ on:
         type: string
       confirm:
         description: RUN_STRIGUNOV4_C4_PHYSICAL_<full reviewed SHA>
+        required: true
+        type: string
+
+      retention_confirm:
+        description: RETAIN_C4_PILOT_<full reviewed SHA>; separate owner retention decision required
         required: true
         type: string
 
@@ -44,9 +55,33 @@ jobs:
           node --check scripts/strigunov4/c4_physical_staging_lifecycle.mjs
           git diff --check
 
+  isolated_retention_postgres:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    services:
+      postgres:
+        image: postgres:17@sha256:2d2b8998d31037bf721cfdf764d76ba74171b4fab3431b7f72c27c56ddbdf9e3
+        env:
+          POSTGRES_USER: c4_dependency
+          POSTGRES_DB: c4_dependency
+          POSTGRES_PASSWORD: isolated_fixture_only
+        ports:
+          - 127.0.0.1:55481:5432
+        options: >-
+          --health-cmd "pg_isready -U c4_dependency -d c4_dependency"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Actual isolated PostgreSQL dependency and rollback scenarios
+        env:
+          C4_DEPENDENCY_ISOLATED_PG: '1'
+        run: python3 -m unittest discover -s scripts/strigunov4 -p 'test_c4_retained_postgres.py' -v
+
   protected_physical_core:
     if: github.event_name == 'workflow_dispatch' && github.repository == 'ASI-integration/asi-landing'
-    needs: offline_source_checks
+    needs: [offline_source_checks, isolated_retention_postgres]
     runs-on: ubuntu-24.04
     environment: staging
     timeout-minutes: 18
@@ -87,10 +122,11 @@ jobs:
           python3 -m unittest discover -s scripts/strigunov4 -p 'test_c4_physical_approved_gate.py' -v
           node --check scripts/strigunov4/c4_physical_staging_lifecycle.mjs
           npm ci --ignore-scripts --no-audit --no-fund
-      - name: Approved real staging booking, exact-ID cleanup and postflight
+      - name: Approved retained staging booking and old-evidence invariant
         env:
           C4_REVIEWED_MAIN_SHA: ${{ inputs.reviewed_main_sha }}
           C4_CONFIRM: ${{ inputs.confirm }}
+          C4_RETENTION_CONFIRM: ${{ inputs.retention_confirm }}
           STAGING_SUPABASE_PROJECT_REF: ${{ secrets.STAGING_SUPABASE_PROJECT_REF }}
           STAGING_DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
           STAGING_SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
