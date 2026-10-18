@@ -6,6 +6,7 @@ on:
       - '.github/workflows/strigunov4-c4-incident-cleanup.yml'
       - 'scripts/strigunov4/c4_incident_exact_cleanup.py'
       - 'scripts/strigunov4/test_c4_incident_exact_cleanup.py'
+      - 'scripts/strigunov4/test_c4_cleanup_preservation_postgres.py'
       - 'docs/strigunov4/C4-INCIDENT-39047710115-CLEANUP.md'
   workflow_dispatch:
     inputs:
@@ -44,9 +45,37 @@ jobs:
           python3 -m unittest discover -s scripts/strigunov4 -p 'test_c4_incident_exact_cleanup.py' -v
           git diff --check
 
+
+  isolated_preservation_postgres:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 6
+    services:
+      postgres:
+        image: postgres:17@sha256:2d2b8998d31037bf721cfdf764d76ba74171b4fab3431b7f72c27c56ddbdf9e3
+        env:
+          POSTGRES_USER: c4_isolated
+          POSTGRES_PASSWORD: c4_fixture_only
+          POSTGRES_DB: c4_isolated
+        ports:
+          - 127.0.0.1:55479:5432
+        options: >-
+          --health-cmd "pg_isready -U c4_isolated -d c4_isolated"
+          --health-interval 5s --health-timeout 5s --health-retries 12
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Real isolated PG17 preservation and rollback tests
+        env:
+          C4_ISOLATED_PG: '1'
+        run: |
+          set -euo pipefail
+          command -v psql
+          python3 -m unittest discover -s scripts/strigunov4 -p 'test_c4_cleanup_preservation_postgres.py' -v
+
   protected_exact_cleanup:
     if: github.event_name == 'workflow_dispatch' && github.repository == 'ASI-integration/asi-landing'
-    needs: offline_source_checks
+    needs: [offline_source_checks, isolated_preservation_postgres]
     runs-on: ubuntu-24.04
     environment: staging
     timeout-minutes: 13
