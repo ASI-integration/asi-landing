@@ -34,7 +34,8 @@ class TriggerMismatch(Block):
                             {s[0] for s in TABLES[name]["triggers"]}
                             for n in item["missingExpectedTriggers"])
                     and type(item.get("unexpectedOrChangedCount")) is int
-                    and 0 <= item["unexpectedOrChangedCount"] <= 1000,
+                    and 0 <= item["unexpectedOrChangedCount"] <= 1000
+                    and type(item.get("unexpectedOrChangedCountTruncated")) is bool,
                     "TRIGGER_DRIFT_SHAPE")
         self.details=sorted(details,key=lambda x:x["table"])
         super().__init__("TRIGGER_DRIFT")
@@ -137,7 +138,8 @@ def schema_check(data):
             mismatched_triggers.append({
                 "table":t,
                 "missingExpectedTriggers":missing_expected,
-                "unexpectedOrChangedCount":unexpected
+                "unexpectedOrChangedCount":min(unexpected,1000),
+                "unexpectedOrChangedCountTruncated":unexpected>1000
             })
     if mismatched_triggers:
         raise TriggerMismatch(mismatched_triggers)
