@@ -82,7 +82,7 @@ keys, guest/message contents, contact details and credentials never enter it.
 
 ## Retention decision
 
-Recommendation: **A вЂ” retain the entire old incident graph in place**.
+Recommendation: **A: retain the entire old incident graph in place**.
 It preserves the original journals and relationships, needs no irreversible
 evidence deletion or archive-restoration infrastructure, and is the shorter path
 to a separately approved new isolated synthetic test. It requires an explicit
@@ -90,7 +90,7 @@ owner decision accepting the old fixture as retained evidence, a new unique
 namespace, revised residual-data criteria and independent isolation/no-send
 checks before any new booking. This PR does not choose A on the owner's behalf.
 
-B вЂ” a private complete archive plus verified restoration вЂ” is appropriate if
+B: a private complete archive plus verified restoration is appropriate if
 the old fixture must ultimately be removed. It requires a complete approved
 scope, private storage/retention/access policy, content/ownership/hash checks,
 restoration rehearsal and an explicit decision allowing removal of live audit
