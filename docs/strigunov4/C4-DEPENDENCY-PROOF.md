@@ -1,5 +1,11 @@
 # C4 incident 39047710115: bounded read-only dependency proof
 
+## Protected C4 witness 39123643816: evidence identity BLOCK
+
+After #497 the owner-approved protected read-only [run 39123643816](https://github.com/ASI-integration/asi-landing/actions/runs/39123643816) at protected main `a6d7f35a40aa7ff0fbb5f7c16ec783f73779831a` passed the schema and optional-module gates, then failed `INCIDENT_IDENTITY` on one or more fixed old synthetic identities. It never performed cleanup, migration, booking replay or staging writes. An older witness had confirmed the user, account, property and booking identities, but did not confirm this same five-part check on the intake account scope.
+
+This source-only diagnostic preserves BLOCK and adds five static exact-vs-present-by-ID counts to the same READ ONLY locked snapshot. Public error details contain only five fixed labels and binary counts, never the sensitive rows, IDs, contacts or function definitions. A mismatch means audit/reconciliation is required, not that data may be deleted or altered. Repeat of the protected read-only workflow needs new exact SHA-bound owner permission and independent staging approval; run 39123643816 must not be blindly retried.
+
 ## Evidence, not cleanup authorization
 
 Baseline: protected main 7bf3e1267beb71aed75ffede32f5c781ed95c075 after #492.
