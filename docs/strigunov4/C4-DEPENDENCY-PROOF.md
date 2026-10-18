@@ -58,6 +58,12 @@ NULL account ownership is unproven and blocks. incidentLinked is a count of
 linked candidates, **not** a claim every candidate is owned or disposable.
 Foreign rows unrelated to any fixed incident link are not included.
 
+## 18 October: protected staging stopped safely at TRIGGER_DRIFT
+
+Approved read-only staging run [39111579833](https://github.com/ASI-integration/asi-landing/actions/runs/39111579833) on `375569af41080c50fc7d8516531b79deadedcefa` returned `TRIGGER_DRIFT` at source-expected-vs-actual trigger schema comparison. It did not proceed to row dependency queries: stagingWrites=false, cleanupAuthorized=false, physicalReplayAuthorized=false.
+
+This **source-only** change preserves the exact trigger-signature gate and reports all mismatching **source-allowlisted** table names, names of expected (source-known) but absent or changed triggers, and bounded counts of unexpected/changed trigger signatures. Actual unknown trigger/function names, their definitions, raw PostgreSQL errors and row data remain suppressed. `TRIGGER_DRIFT` is still BLOCK; never disable, drop, create or reinstall triggers just to make the report green. A separately owner-approved protected staging read-only run on the next reviewed main SHA is required before concluding what differs.
+
 ## Schema and privacy gates
 
 Before row queries: fixed catalog census, required core relations, ordinary

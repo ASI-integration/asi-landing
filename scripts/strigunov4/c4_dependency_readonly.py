@@ -21,6 +21,26 @@ Block = prior.Block
 require = prior.require
 
 
+class TriggerMismatch(Block):
+    """Allowlisted table names and source-known expected trigger names only."""
+    def __init__(self, details):
+        require(type(details) is list and 1 <= len(details) <= len(TABLES),
+                "TRIGGER_DRIFT_SHAPE")
+        for item in details:
+            name=item.get("table")
+            require(type(name) is str and name in TABLES
+                    and type(item.get("missingExpectedTriggers")) is list
+                    and all(type(n) is str and n in
+                            {s[0] for s in TABLES[name]["triggers"]}
+                            for n in item["missingExpectedTriggers"])
+                    and type(item.get("unexpectedOrChangedCount")) is int
+                    and 0 <= item["unexpectedOrChangedCount"] <= 1000
+                    and type(item.get("unexpectedOrChangedCountTruncated")) is bool,
+                    "TRIGGER_DRIFT_SHAPE")
+        self.details=sorted(details,key=lambda x:x["table"])
+        super().__init__("TRIGGER_DRIFT")
+
+
 def ident(value):
     """Only reviewed source identifiers can be used in SQL."""
     require(type(value) is str and re.fullmatch(r"[a-z_][a-z0-9_]{0,62}", value),
@@ -102,6 +122,7 @@ def schema_check(data):
     missing = {t for t in TABLES if got[t] is None}
     require(not (missing & REQUIRED), "MISSING_REQUIRED_RELATION")
     aliases = {"bigint": "int8", "integer": "int4", "int": "int4", "boolean": "bool"}
+    mismatched_triggers = []
     for t in sorted(set(TABLES)-missing):
         spec, actual = TABLES[t], got[t]
         require(actual["kind"] == "r" and not actual["inherited"] and actual["rules"] == 0,
@@ -109,7 +130,19 @@ def schema_check(data):
         require(actual["pk"] == spec["pk"], "PRIMARY_KEY_DRIFT")
         require(all(actual["columns"].get(c) == aliases.get(typ, typ)
                     for c, typ in spec["columns"].items()), "COLUMN_TYPE_DRIFT")
-        require(sorted(actual["triggers"]) == sorted(spec["triggers"]), "TRIGGER_DRIFT")
+        if sorted(actual["triggers"]) != sorted(spec["triggers"]):
+            missing_expected=sorted(
+                sig[0] for sig in spec["triggers"] if sig not in actual["triggers"])
+            unexpected=sum(
+                1 for sig in actual["triggers"] if sig not in spec["triggers"])
+            mismatched_triggers.append({
+                "table":t,
+                "missingExpectedTriggers":missing_expected,
+                "unexpectedOrChangedCount":min(unexpected,1000),
+                "unexpectedOrChangedCountTruncated":unexpected>1000
+            })
+    if mismatched_triggers:
+        raise TriggerMismatch(mismatched_triggers)
     actual_edges = data["edges"]
     require(type(actual_edges) is list and len(actual_edges) <= 1000, "FK_SHAPE")
     require(all(e["childSchema"] == "public" and e["child"] in TABLES
@@ -320,12 +353,16 @@ def main():
         print(json.dumps(result, sort_keys=True))
         return 2 if result["status"] == "BLOCK" else 0
     except Exception as error:
-        code = str(error) if type(error) is Block else "UNEXPECTED_FAILURE"
+        code = str(error) if type(error) in (Block, TriggerMismatch) else "UNEXPECTED_FAILURE"
         if not re.fullmatch(r"[A-Z][A-Z0-9_]{0,90}", code):
             code = "UNEXPECTED_FAILURE"
-        print(json.dumps({"status": "BLOCK", "blockCode": code,
-                          "stagingWrites": False, "cleanupAuthorized": False,
-                          "physicalReplayAuthorized": False}))
+        report={"status":"BLOCK","blockCode":code,
+                "stagingWrites":False,"cleanupAuthorized":False,
+                "physicalReplayAuthorized":False}
+        if type(error) is TriggerMismatch:
+            report["triggerDriftCount"]=len(error.details)
+            report["triggerDriftDetails"]=error.details
+        print(json.dumps(report,sort_keys=True))
         return 2
 
 
