@@ -84,6 +84,32 @@ class DependencyUnitTests(unittest.TestCase):
             with self.assertRaises(c.Block):
                 c.schema_check(changed)
 
+    def test_trigger_drift_reports_all_tables_without_db_trigger_names(self):
+        """All trigger drift names originate only in reviewed manifest."""
+        changed = catalog()
+        changed["tables"]["users"]["triggers"] = [["db_private_name",7,"public","db_function"]]
+        changed["tables"]["accounts"]["triggers"] = [["other_db_name",19,"public","function"]]
+        with self.assertRaises(c.TriggerMismatch) as ctx:
+            c.schema_check(changed)
+        self.assertEqual(str(ctx.exception),"TRIGGER_DRIFT")
+        details=ctx.exception.details
+        self.assertEqual([x["table"] for x in details],["accounts","users"])
+        self.assertEqual([x["unexpectedOrChangedCount"] for x in details],[1,1])
+        output=io.StringIO()
+        with patch.object(c,"run",side_effect=ctx.exception), contextlib.redirect_stdout(output):
+            self.assertEqual(c.main(),2)
+        receipt=json.loads(output.getvalue())
+        self.assertEqual(receipt["blockCode"],"TRIGGER_DRIFT")
+        self.assertEqual(receipt["triggerDriftCount"],2)
+        self.assertEqual([x["table"] for x in receipt["triggerDriftDetails"]],
+                         ["accounts","users"])
+        self.assertFalse(receipt["cleanupAuthorized"])
+        self.assertFalse(receipt["stagingWrites"])
+        self.assertFalse(receipt["physicalReplayAuthorized"])
+        self.assertNotIn("db_private_name",output.getvalue())
+        self.assertNotIn("db_function",output.getvalue())
+        self.assertEqual(len(output.getvalue().splitlines()),1)
+
     def test_static_identifiers_and_missing_set(self):
         """No workflow input or arbitrary catalog identifier can choose row SQL."""
         for value in ("users; DELETE FROM users", "private.users", "x' OR true", ""):
