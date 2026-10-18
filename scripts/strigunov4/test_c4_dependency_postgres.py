@@ -74,7 +74,6 @@ INSERT INTO users VALUES ('{U}','staging-acceptance@asi.local'),('{FOREIGN}','se
 INSERT INTO accounts VALUES ('{A}','C4 staging isolated account 39047710115'),('{FOREIGN}','private foreign account');
 INSERT INTO properties VALUES ('{P}','{A}','C4 isolated property 39047710115'),('{FOREIGN}','{FOREIGN}','foreign property');
 INSERT INTO booking_ops_records VALUES ('{B}','{A}','{P}','C4-external','C4 synthetic guest 39047710115',NULL),('{FOREIGN}','{FOREIGN}','{FOREIGN}','foreign-external','sensitive guest',NULL);
-INSERT INTO booking_inbound_intake_events VALUES ('{I}','{A}','{P}','{B}');
 INSERT INTO booking_ops_events SELECT md5(i::text)::uuid,'{B}','PRIVATE MESSAGE CONTENT' FROM generate_series(1,24) i;
 INSERT INTO booking_ops_events VALUES ('{FOREIGN}','{FOREIGN}','foreign secret');
 INSERT INTO booking_ops_domain_events VALUES ('{EVENT}','{B}',NULL);
@@ -189,7 +188,7 @@ INSERT INTO booking_ops_worker_link_audit VALUES ('{AUDIT}','{B}','{TASK}','{LIN
 
     def test_scoped_identity_drift_is_readonly_and_reports_no_user_data(self):
         """An intake row remains by ID but carries the wrong synthetic account."""
-        self.sql(f"UPDATE booking_inbound_intake_events SET account_id='{FOREIGN}' WHERE id='{I}';")
+        self.sql(f"INSERT INTO booking_inbound_intake_events VALUES ('{I}','{FOREIGN}','{P}','{B}');")
         before=self.snapshot()
         catalog=self.catalog()
         missing=c.schema_check(catalog)
@@ -199,6 +198,23 @@ INSERT INTO booking_ops_worker_link_audit VALUES ('{AUDIT}','{B}','{TASK}','{LIN
         self.assertEqual(err.exception.details[-1],
                          {"category":"intake","exact":0,"presentById":1})
         self.assertEqual(before,self.snapshot())
+
+    def test_historical_missing_intake_and_fresh_required_intake_profiles(self):
+        """Actual PG17 counts match protected history, but differ for a new test."""
+        before=self.snapshot()
+        cat=self.catalog()
+        missing=c.schema_check(cat)
+        self.assertEqual(c.receipt(json.loads(self.sql(c.guarded_sql(cat,missing)).stdout),
+                                   missing)["status"],"C4_DEPENDENCY_READONLY_SCOPED_PASS")
+        self.assertEqual(before,self.snapshot())
+        self.sql(f"INSERT INTO booking_inbound_intake_events VALUES ('{I}','{A}','{P}','{B}');")
+        with_intake=self.snapshot()
+        census=json.loads(self.sql(c.guarded_sql(cat,missing)).stdout)
+        with self.assertRaises(c.IncidentIdentityMismatch):
+            c.receipt(census,missing)
+        self.assertEqual(c.receipt(census,missing,new_fixture=True)["status"],
+                         "C4_DEPENDENCY_READONLY_SCOPED_PASS")
+        self.assertEqual(with_intake,self.snapshot())
 
     def test_composite_keys_and_foreign_module_rows(self):
         """Composite identities preserve distinct modules without including other tenants."""
