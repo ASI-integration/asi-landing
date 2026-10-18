@@ -244,9 +244,19 @@ class RetainedReadonlyTests(unittest.TestCase):
         self.assertIn("persist-credentials: false",protected)
         self.assertNotIn("secrets.",text.split("  protected_retained_readonly:",1)[0])
         self.assertNotIn("upload-artifact",text)
-        self.assertEqual(text.count("environment: staging"),2)
-        self.assertEqual(text.count('test "$GITHUB_RUN_ATTEMPT" = "1"'),2)
+        self.assertEqual(text.count("environment: staging"),3)
+        self.assertEqual(text.count('test "$GITHUB_RUN_ATTEMPT" = "1"'),3)
         self.assertIn("c4_retained_readonly.py --host-only",text)
+        self.assertEqual(text.count("inputs.diagnostic_scope == 'retained'"), 2)
+        observer = text.split("  protected_operator_observer:", 1)[1]
+        self.assertIn("inputs.diagnostic_scope == 'operator-39145734946'", observer)
+        self.assertIn("needs: [isolated_operator_observer]", observer)
+        self.assertIn("environment: staging", observer)
+        self.assertIn('test "$CONFIRM" = "READONLY_C4_OPERATOR_$GITHUB_SHA"', observer)
+        self.assertIn('test "$INCIDENT" = "39145734946"', observer)
+        self.assertNotIn("STAGING_DATABASE_URL", observer)
+        self.assertNotIn("SUPABASE", observer)
+        self.assertIn("protected_c4_operator_observer.py", observer)
         for forbidden in ("SERVICE_ROLE_KEY", "SESSION_SECRET", "physical_approved_gate.py"):
             self.assertNotIn(forbidden,text)
 
