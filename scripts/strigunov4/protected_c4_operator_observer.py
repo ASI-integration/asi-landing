@@ -52,7 +52,7 @@ def decode(raw, returncode):
     fixed = {"status": "C4_OPERATOR_OBSERVED", "incidentRun": observer.FAILED_RUN,
              "snapshot": "NON_ATOMIC_CURRENT_ONLY", "historicalWrite": "UNKNOWN",
              "replayAllowed": False, "databaseState": "NOT_OBSERVED"}
-    allowed = {k: observer.MARKER_STATES for k in observer.FIELDS}
+    allowed = dict(observer.FIELD_STATES, lock=observer.LOCK_STATES)
     allowed.update(environmentFiles={"NOT_OBSERVED", "EXACT_EXPECTED", "EXPECTED_PATH_OTHER_FORMAT", "OTHER"} | host.BLOCKS,
                    live={"NOT_OBSERVED", "PASS"} | host.BLOCKS,
                    envPlan={"NOT_OBSERVED", "CHANGE_NEEDED", "ALREADY_CONFIGURED"} | host.BLOCKS,

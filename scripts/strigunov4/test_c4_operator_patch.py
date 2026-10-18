@@ -169,7 +169,7 @@ class GateTests(unittest.TestCase):
             self.assertEqual(host.failure_code(error), "BLOCK_REASON_UNKNOWN")
         self.assertEqual(host.failure_code(Block("ENVIRONMENT_FILES")), "BLOCK_REASON_ENVIRONMENT_FILES")
         with patch.object(observer, "identity"), patch.object(observer, "claim_snapshot",
-                return_value=dict.fromkeys(observer.FIELDS, "ABSENT")), \
+                return_value=dict.fromkeys(observer.FIELDS, "ABSENT") | {"lock": "ABSENT"}), \
                 patch.object(host.io, "props", return_value={"EnvironmentFiles": str(host.io.ENV)}), \
                 patch.object(host, "live", side_effect=Block("ENVIRONMENT_FILES")), \
                 patch.object(host.io, "read_env", return_value=(env_bytes(), None)):

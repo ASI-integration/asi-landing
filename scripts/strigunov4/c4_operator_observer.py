@@ -1,7 +1,9 @@
 """Fixed incident observer: no mutation, restart, SQL, login or claim creation."""
 import hashlib
+import errno
 import json
 import os
+import re
 import stat
 import time
 from pathlib import Path
@@ -13,6 +15,16 @@ FAILED_RUN = "39145734946"
 FAILED_SHA = "c3d02873c4810e4d2f585292db80b1a9ef9c04a6"
 FIELDS = ("claim", "backup", "prepared", "success", "recovery")
 MARKER_STATES = frozenset(("NOT_OBSERVED", "ABSENT", "PRESENT", "INVALID", "BOUND_TO_FAILED_RUN", "OTHER_BINDING", "RECORDED_SUCCESS", "RECORDED_ROLLBACK", "RECORDED_BEFORE_APPLY"))
+FIELD_STATES = {
+    "claim": {"NOT_OBSERVED", "ABSENT", "PRESENT", "INVALID"},
+    "backup": {"NOT_OBSERVED", "ABSENT", "PRESENT", "INVALID"},
+    "prepared": {"NOT_OBSERVED", "ABSENT", "INVALID", "BOUND_TO_FAILED_RUN", "OTHER_BINDING"},
+    "success": {"NOT_OBSERVED", "ABSENT", "INVALID", "RECORDED_SUCCESS"},
+    "recovery": {"NOT_OBSERVED", "ABSENT", "INVALID", "RECORDED_ROLLBACK", "RECORDED_BEFORE_APPLY"},
+}
+LOCK_STATES = frozenset(("NOT_OBSERVED", "ABSENT", "INVALID", "UNKNOWN", "HELD",
+                         "VALID_METADATA_NO_HOLDER_OBSERVED"))
+LOCKS_LIMIT = 262144
 
 
 
@@ -67,11 +79,15 @@ def marker(fd, name, kind):
         if kind == "prepared":
             if (set(data) != {"runId", "sourceSha", "status", "changedLists"}
                     or data.get("status") != "PREPARED" or type(data.get("changedLists")) is not int
-                    or data["changedLists"] not in (1, 2)):
+                    or data["changedLists"] not in (1, 2)
+                    or type(data.get("runId")) is not str or not host.io.ID_RE.fullmatch(data["runId"])
+                    or type(data.get("sourceSha")) is not str or not host.io.SHA_RE.fullmatch(data["sourceSha"])):
                 return "INVALID"
             return "BOUND_TO_FAILED_RUN" if data.get("runId") == FAILED_RUN and data.get("sourceSha") == FAILED_SHA else "OTHER_BINDING"
         if kind == "success":
-            return "RECORDED_SUCCESS" if data == host.SUCCESS else "INVALID"
+            exact = (data == host.SUCCESS and
+                     all(type(data[k]) is type(v) for k, v in host.SUCCESS.items()))
+            return "RECORDED_SUCCESS" if exact else "INVALID"
         if data == {"status": "ROLLBACK_PASS"}:
             return "RECORDED_ROLLBACK"
         if data == {"status": "BLOCK_BEFORE_APPLY"}:
@@ -83,18 +99,107 @@ def marker(fd, name, kind):
         os.close(child)
 
 
+def lock_records(raw, info):
+    """Classify a bounded current PID-namespace snapshot, never lock availability."""
+    if len(raw) > LOCKS_LIMIT or (raw and not raw.endswith(b"\n")):
+        return "UNKNOWN"
+    held, uncertain = False, False
+    for line in raw.decode("ascii", "strict").splitlines():
+        fields = line.split()
+        waiting = len(fields) > 1 and fields[1] == "->"
+        if waiting:
+            del fields[1]
+        # Reject truncated, unfamiliar or malformed records, even for another
+        # inode: silently dropping one must not manufacture a no-holder result.
+        if (len(line) > 512 or len(fields) != 8
+                or not re.fullmatch(r"[0-9]+:", fields[0])
+                or fields[1] not in {"FLOCK", "POSIX", "OFDLCK", "LEASE"}
+                or fields[2] not in {"ADVISORY", "MANDATORY", "ACTIVE", "BREAKING"}
+                or fields[3] not in {"READ", "WRITE", "UNLCK"}
+                or not re.fullmatch(r"-?[0-9]+", fields[4])
+                or not re.fullmatch(r"[0-9a-fA-F]+:[0-9a-fA-F]+:[0-9]+", fields[5])
+                or not re.fullmatch(r"[0-9]+", fields[6])
+                or not re.fullmatch(r"(?:[0-9]+|EOF)", fields[7])):
+            return "UNKNOWN"
+        kinds = {"FLOCK": {"ADVISORY"}, "POSIX": {"ADVISORY", "MANDATORY"},
+                 "OFDLCK": {"ADVISORY"}, "LEASE": {"ACTIVE", "BREAKING"}}
+        if (fields[2] not in kinds[fields[1]]
+                or (fields[3] == "UNLCK" and fields[1] != "LEASE")
+                or (int(fields[4]) != -1 if fields[1] == "OFDLCK" else int(fields[4]) <= 0)
+                or (fields[7] != "EOF" and int(fields[6]) > int(fields[7]))
+                or (fields[1] in {"FLOCK", "LEASE"} and fields[6:] != ["0", "EOF"])):
+            return "UNKNOWN"
+        major, minor, inode = fields[5].split(":")
+        if (int(major, 16), int(minor, 16), int(inode)) != (
+                os.major(info.st_dev), os.minor(info.st_dev), info.st_ino):
+            continue
+        if (fields[1:3] == ["FLOCK", "ADVISORY"] and fields[3] in {"READ", "WRITE"}
+                and fields[6:] == ["0", "EOF"] and not waiting):
+            held = True
+        else:
+            uncertain = True
+    # Other lock classes/waiters on this inode may have filesystem-specific
+    # interactions. We neither acquire flock nor infer future availability.
+    return "HELD" if held else "UNKNOWN" if uncertain else "VALID_METADATA_NO_HOLDER_OBSERVED"
+
+
+def lock_identity(info):
+    """Compare the opened inode with the fixed pathname before reporting it."""
+    return tuple(getattr(info, name) for name in (
+        "st_dev", "st_ino", "st_mode", "st_uid", "st_gid", "st_nlink",
+        "st_size", "st_mtime_ns", "st_ctime_ns"))
+
+
+def lock_snapshot(root):
+    """Inspect the existing lock only; never create, write, read contents or flock."""
+    try:
+        child = os.open("active.lock", os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK,
+                        dir_fd=root)
+    except FileNotFoundError:
+        return "ABSENT"
+    except OSError as error:
+        return "INVALID" if error.errno == errno.ELOOP else "UNKNOWN"
+    result = "UNKNOWN"
+    try:
+        info = os.fstat(child)
+        if (not stat.S_ISREG(info.st_mode) or info.st_uid != 0
+                or stat.S_IMODE(info.st_mode) != 0o600 or info.st_nlink != 1):
+            result = "INVALID"
+        else:
+            # No PID, path, lock contents or unrelated record leaves this worker.
+            with open("/proc/locks", "rb") as stream:
+                raw = stream.read(LOCKS_LIMIT + 1)
+            result = lock_records(raw, info)
+            after = os.fstat(child)
+            named = os.stat("active.lock", dir_fd=root, follow_symlinks=False)
+            if lock_identity(info) != lock_identity(after) or lock_identity(info) != lock_identity(named):
+                result = "UNKNOWN"
+    except (OSError, ValueError, UnicodeError):
+        result = "UNKNOWN"
+    finally:
+        try:
+            os.close(child)
+        except OSError:
+            # Do not retry close (the fd may have been released and reused).
+            result = "UNKNOWN"
+    return result
+
+
 def claim_snapshot():
     """Observe only the fixed claim; absence never authorizes another attempt."""
     out = dict.fromkeys(FIELDS, "NOT_OBSERVED")
+    out["lock"] = "NOT_OBSERVED"
     try:
         root = safe_directory(host.EVIDENCE)
     except FileNotFoundError:
         out["claim"] = "ABSENT"
+        out["lock"] = "ABSENT"
         return out
     except (OSError, Block):
         out["claim"] = "INVALID"
         return out
     try:
+        out["lock"] = lock_snapshot(root)
         try:
             record = safe_directory(name=host.CLAIM, parent=root)
         except FileNotFoundError:

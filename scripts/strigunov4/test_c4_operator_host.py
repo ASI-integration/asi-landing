@@ -144,7 +144,7 @@ class FileRecoveryTests(unittest.TestCase):
             (record / name).chmod(0o600)
         out = snapshot()
         self.assertEqual(out, dict(claim="PRESENT", backup="PRESENT", prepared="BOUND_TO_FAILED_RUN",
-                                  success="RECORDED_SUCCESS", recovery="RECORDED_ROLLBACK"))
+                                  success="RECORDED_SUCCESS", recovery="RECORDED_ROLLBACK", lock="ABSENT"))
         self.assertNotIn("never-print", json.dumps(out))
         for name, value in files.items():
             self.assertEqual((record / name).read_bytes(), value)
@@ -253,6 +253,13 @@ class LiveContractTests(unittest.TestCase):
         self.props.side_effect = [dict(self.meta), dict(self.meta, MainPID="43")]
         with self.assertRaises(Block):
             self.live()
+
+
+def load_tests(loader, tests, pattern):
+    """Keep observer hardening regressions in the existing focused CI command."""
+    from test_c4_operator_observer_hardening import ObserverHardeningTests
+    tests.addTests(loader.loadTestsFromTestCase(ObserverHardeningTests))
+    return tests
 
 
 if __name__ == "__main__":
