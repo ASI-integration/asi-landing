@@ -1,12 +1,17 @@
 """Credential-free parser and protected transport regression tests."""
 import json
+import io
+from contextlib import redirect_stdout
 from pathlib import Path
 import unittest
 from unittest.mock import patch
 
 import c4_operator_patch as p
+from c4_operator_patch import Block
 import c4_operator_host as host
 import protected_c4_operator_repair as gate
+import c4_operator_observer as observer
+import protected_c4_operator_observer as reader
 
 
 def env_bytes(extra=b""):
@@ -136,6 +141,57 @@ class GateTests(unittest.TestCase):
             with self.assertRaises(gate.Block):
                 gate.execute(self.context())
             payload.assert_not_called()
+
+
+    def test_observer_admission_never_accepts_writer_permission(self):
+        env = self.context()
+        with self.assertRaises(gate.Block):
+            reader.validate(env)
+        env.update(GITHUB_WORKFLOW_REF=reader.WORKFLOW,
+                   C4_OPERATOR_CONFIRM="READONLY_C4_OPERATOR_" + "a" * 40,
+                   C4_OPERATOR_INCIDENT=observer.FAILED_RUN,
+                   C4_DIAGNOSTIC_SCOPE="operator-39145734946")
+        self.assertEqual(reader.validate(env)[:2], ("a" * 40, "123"))
+        for key in env:
+            bad = dict(env, **{key: "" if key == "STAGING_SSH_HOST" else "wrong"})
+            with self.subTest(key=key), self.assertRaises(gate.Block):
+                reader.validate(bad)
+        with self.assertRaises(gate.Block):
+            gate.validate(env)
+        compile(reader.payload(), "fixed-observer", "exec")
+
+    def test_private_unknown_exceptions_and_observer_receipts(self):
+        class Hostile(Block):
+            def __str__(self):
+                raise RuntimeError("must not stringify")
+        for error in (Block("SECRET=x"), ValueError("private"), Hostile("HOST"),
+                      Block(["unhashable"]), KeyboardInterrupt()):
+            self.assertEqual(host.failure_code(error), "BLOCK_REASON_UNKNOWN")
+        self.assertEqual(host.failure_code(Block("ENVIRONMENT_FILES")), "BLOCK_REASON_ENVIRONMENT_FILES")
+        with patch.object(observer, "identity"), patch.object(observer, "claim_snapshot",
+                return_value=dict.fromkeys(observer.FIELDS, "ABSENT")), \
+                patch.object(host.io, "props", return_value={"EnvironmentFiles": str(host.io.ENV)}), \
+                patch.object(host, "live", side_effect=Block("ENVIRONMENT_FILES")), \
+                patch.object(host.io, "read_env", return_value=(env_bytes(), None)):
+            result = observer.observe()
+        self.assertEqual(result["live"], "BLOCK_REASON_ENVIRONMENT_FILES")
+        self.assertEqual(result["environmentFiles"], "EXPECTED_PATH_OTHER_FORMAT")
+        self.assertEqual(result["historicalWrite"], "UNKNOWN")
+        self.assertFalse(result["replayAllowed"])
+        self.assertEqual(reader.decode(json.dumps(result).encode(), 0), result)
+        for altered in (dict(result, extra="secret"), dict(result, claim="secret"),
+                        dict(result, replayAllowed=0), {"status": ["hostile"]}):
+            with self.assertRaises(gate.RemoteOutcome):
+                reader.decode(json.dumps(altered).encode(), 0)
+        for raw in (b'not-json', b'x' * 4097, b'[]', b'{"status":[]}', b'{"status":"BLOCK","status":"BLOCK"}'):
+            with self.assertRaises(gate.RemoteOutcome):
+                reader.decode(raw, 2)
+        with patch.object(host, "run_locked", side_effect=Block("HOST")), \
+                patch.object(host.sys, "argv", ["worker", "123", "a" * 40]):
+            output = io.StringIO()
+            with redirect_stdout(output):
+                self.assertEqual(host.main(), 2)
+            self.assertEqual(json.loads(output.getvalue()), {"status": "BLOCK_REASON_HOST"})
 
 
 if __name__ == "__main__":

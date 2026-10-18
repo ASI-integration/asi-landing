@@ -52,7 +52,7 @@ def decode_remote_result(raw, returncode):
         raise RemoteOutcome("BLOCK_MANUAL_RECOVERY_REQUIRED") from None
     if type(receipt) is not dict:
         raise RemoteOutcome("BLOCK_MANUAL_RECOVERY_REQUIRED")
-    from c4_operator_host import SUCCESS
+    from c4_operator_host import SUCCESS, BLOCKS
     expected_success = SUCCESS
     if returncode == 0:
         if receipt != expected_success:
@@ -61,7 +61,7 @@ def decode_remote_result(raw, returncode):
     status = receipt.get("status")
     # Ignore all remote-provided fields except a fixed status label. Unknown
     # statuses and receipt structures are never elevated to an approval.
-    if status in REMOTE_BLOCK_CODES:
+    if type(status) is str and status in BLOCKS:
         raise RemoteOutcome(status)
     raise RemoteOutcome("BLOCK_MANUAL_RECOVERY_REQUIRED")
 
@@ -71,13 +71,14 @@ def require(ok, code):
         raise Block(code)
 
 
-def validate(env):
+def validate(env, *, workflow=WORKFLOW, confirmation="CONFIGURE_C4_OPERATOR_",
+             incident="39140030546"):
     exact = {
         "GITHUB_ACTIONS": "true",
         "GITHUB_REPOSITORY": REPO,
         "GITHUB_REF": "refs/heads/main",
         "GITHUB_EVENT_NAME": "workflow_dispatch",
-        "GITHUB_WORKFLOW_REF": WORKFLOW,
+        "GITHUB_WORKFLOW_REF": workflow,
         "GITHUB_ACTOR": OWNER,
         "GITHUB_TRIGGERING_ACTOR": OWNER,
         "GITHUB_ACTOR_ID": OWNER_ID,
@@ -90,9 +91,9 @@ def validate(env):
     require(MAIN_SHA.fullmatch(sha) is not None
             and sha == env.get("GITHUB_WORKFLOW_SHA")
             and sha == env.get("STAGING_REVIEWED_MAIN_SHA"), "EXACT_MAIN_SHA")
-    require(env.get("C4_OPERATOR_CONFIRM") == "CONFIGURE_C4_OPERATOR_" + sha,
+    require(env.get("C4_OPERATOR_CONFIRM") == confirmation + sha,
             "OWNER_CONFIRMATION")
-    require(env.get("C4_OPERATOR_INCIDENT") == "39140030546", "INCIDENT")
+    require(env.get("C4_OPERATOR_INCIDENT") == incident, "INCIDENT")
     rid = env.get("GITHUB_RUN_ID", "")
     require(RUN_ID.fullmatch(rid) is not None, "RUN_ID")
     host = env.get("STAGING_SSH_HOST", "")
@@ -133,12 +134,13 @@ def payload(root=SOURCE):
     return ("".join(parts) + worker).encode("utf-8")
 
 
-def execute(env, root=SOURCE):
-    sha, rid, host, port = validate(env)
+def execute(env, root=SOURCE, *, admit=None, build=None, decode=None):
+    # Callbacks are source-owned, never chosen by workflow inputs.
+    sha, rid, host, port = (admit or validate)(env)
     head = checked(["git", "-C", str(root), "rev-parse", "HEAD"]).decode().strip()
     require(head == sha, "CHECKOUT_SHA")
     # No executable data is taken from untrusted PR refs or user-supplied files.
-    program = payload(root)
+    program = (build or payload)(root)
     with tempfile.TemporaryDirectory(prefix="asi-stage-nosend-gh-") as temp:
         td = Path(temp)
         td.chmod(0o700)
@@ -172,7 +174,7 @@ def execute(env, root=SOURCE):
             # After a lost SSH connection we cannot prove whether the stage
             # already changed. Refuse retries and surface manual recovery.
             raise RemoteOutcome("BLOCK_MANUAL_RECOVERY_REQUIRED") from None
-    return decode_remote_result(remote.stdout, remote.returncode)
+    return (decode or decode_remote_result)(remote.stdout, remote.returncode)
 
 
 def main():

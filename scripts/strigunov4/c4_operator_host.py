@@ -23,6 +23,29 @@ BLOCKS = frozenset(("BLOCK", "BLOCK_BEFORE_APPLY", "ROLLBACK_PASS",
                     "BLOCK_MANUAL_RECOVERY_REQUIRED"))
 
 
+# Only these source-owned labels may cross the SSH/log boundary. Never str(exc).
+REASONS = frozenset((
+    "ARGS RUN_BINDING HOST PARENT_IDENTITY UNIT SERVICE_IDENTITY ENVIRONMENT_FILES "
+    "RELEASE PID DUPLICATE_EFFECTIVE_KEY EFFECTIVE_NO_SEND EFFECTIVE_MEMBERSHIP "
+    "HEALTH_HTTP HEALTH_SIZE HEALTH_JSON HEALTH VERSION PID_CHANGED ALREADY_CONFIGURED "
+    "CLAIM_EXISTS EVIDENCE LOCK ENV_SYMLINK ENV_IDENTITY ENV_SIZE ENV_READ_RACE "
+    "ENV_FORMAT ENV_ENCODING ENV_CONTROL ENV_LINES ENV_ASSIGNMENT ENV_ESCAPE ENV_QUOTING "
+    "DUPLICATE_TARGET_OR_SAFETY FILE_NO_SEND MEMBERSHIP_DELTA ALLOWLIST_SIZE "
+    "ALLOWLIST_FORMAT COMMAND_UNAVAILABLE COMMAND_FAILED WORKER_DEADLINE_EXCEEDED"
+).split())
+
+
+def failure_code(error):
+    """Return a bounded label; hostile messages and exception classes stay private."""
+    if type(error) is Block and len(error.args) == 1 and type(error.args[0]) is str:
+        if error.args[0] in REASONS:
+            return "BLOCK_REASON_" + error.args[0]
+    return "BLOCK_REASON_UNKNOWN"
+
+
+BLOCKS = BLOCKS | {"BLOCK_REASON_" + code for code in REASONS} | {"BLOCK_REASON_UNKNOWN"}
+
+
 def live(expected_members=None, deadline=None):
     """Pin the existing G0 process and only GET loopback health/version."""
     io.remaining(deadline)
@@ -36,9 +59,10 @@ def live(expected_members=None, deadline=None):
     require(meta.get("ActiveState") == "active"
             and meta.get("User") == meta.get("Group") == "asi-runtime"
             and meta.get("WorkingDirectory") == str(io.CURRENT)
-            and not meta.get("DropInPaths")
-            and meta.get("EnvironmentFiles") == str(io.ENV) + " (ignore_errors=no)",
+            and not meta.get("DropInPaths"),
             "SERVICE_IDENTITY")
+    require(meta.get("EnvironmentFiles") == str(io.ENV) + " (ignore_errors=no)",
+            "ENVIRONMENT_FILES")
     require(io.CURRENT.is_symlink()
             and io.CURRENT.resolve() == io.ROOT / "releases" / G0, "RELEASE")
     pid = meta.get("MainPID", "")
@@ -120,7 +144,10 @@ def perform(run_id, sha):
     # A fixed incident claim blocks a second invocation even with another run ID
     # or another main SHA. A crash leaves backup + claim for separate recovery.
     record = EVIDENCE / CLAIM
-    record.mkdir(mode=0o700)
+    try:
+        record.mkdir(mode=0o700)
+    except FileExistsError:
+        raise Block("CLAIM_EXISTS") from None
     sync_directory(EVIDENCE)
     io.write_private(record / "original.env.private", original)
     journal(record, "prepared.json", {"runId": run_id, "sourceSha": sha,
@@ -182,8 +209,8 @@ def main():
     try:
         require(len(sys.argv) == 3, "ARGS")
         report = run_locked(sys.argv[1], sys.argv[2])
-    except BaseException:
-        report = {"status": "BLOCK"}
+    except BaseException as error:
+        report = {"status": failure_code(error)}
     print(json.dumps(report, sort_keys=True))
     return 0 if report == SUCCESS else 2
 
