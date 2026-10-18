@@ -5,6 +5,7 @@ import {
   ensureGuestIntakeSession,
   escalateGuestIntake,
   getGuestIntakeReleaseSnapshot,
+  readGuestIntakeReleaseSnapshot,
   prepareGuestIntakeDraft,
   submitGuestIntakeSimulated,
 } from '@/lib/booking-ops/guest-intake-checkin-release';
@@ -22,7 +23,7 @@ export async function GET(req: Request): Promise<NextResponse> {
   try {
     return NextResponse.json({
       ok: true,
-      snapshot: await getGuestIntakeReleaseSnapshot(access.bookingId, expectedScope),
+      snapshot: await readGuestIntakeReleaseSnapshot(access.bookingId, expectedScope),
     });
   } catch (error) {
     return NextResponse.json({ ok: false, message: error instanceof Error ? error.message : 'Не удалось загрузить данные гостя.' }, { status: 400 });

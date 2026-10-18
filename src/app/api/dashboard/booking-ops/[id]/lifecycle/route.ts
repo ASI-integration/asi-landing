@@ -5,7 +5,7 @@ import { requireBookingOpsRecordScope } from '@/lib/booking-ops/repository';
 import {
   adminUpdateLifecycleGate,
   getLifecycleStatus,
-  syncLifecycleFromBookingOpsRecord,
+  readLifecycleStatus,
 } from '@/lib/booking-ops/lifecycle';
 import { recordAndProcessBookingEvent } from '@/lib/booking-ops/lifecycle-autopilot-service';
 
@@ -23,8 +23,8 @@ export async function GET(_req: Request, context: RouteContext): Promise<NextRes
 
   try {
     const record = await requireBookingOpsRecordScope(access.bookingId, expectedScope);
-    await syncLifecycleFromBookingOpsRecord(record, expectedScope);
-    const result = await getLifecycleStatus(record.id, expectedScope);
+    const result = await readLifecycleStatus(record.id);
+    await requireBookingOpsRecordScope(record.id, expectedScope);
     if (!result.ok || !result.lifecycle) {
       return NextResponse.json(
         { ok: false, message: result.error ?? 'Не удалось загрузить готовность брони.' },

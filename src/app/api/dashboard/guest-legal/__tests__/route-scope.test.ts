@@ -4,6 +4,7 @@ const mocks = vi.hoisted(() => ({
   auth: vi.fn(), access: vi.fn(), lifecycle: vi.fn(),
   flow: Object.fromEntries(["initializeGuestLegalExecution","recomputeGuestLegalReadiness","requestGuestDocumentsDraft","recordGuestDocumentsReceived","markGuestDocumentsNeedsReview","markGuestDocumentsVerifiedManual","createContractDraft","markContractSignedManual","createDepositRequestDraft","markDepositPaidManual","markDepositWaivedManual","createMvdDraft","markMvdNotRequired","markMvdSubmittedManual","markMvdAcceptedManual","blockGuestLegalFlow","addGuestLegalNote","getGuestLegalReadiness","buildLegalSummaryForBookingOps","explainGuestLegalReadiness","listGuestLegalEvents"].map(name => [name, vi.fn()])),
 }));
+vi.mock('@/lib/booking-ops/repository', () => ({ requireBookingOpsRecordScope: vi.fn(async () => ({})) }));
 vi.mock('@/lib/crm/api-auth', () => ({
   requireCrmOperatorSession: mocks.auth, requireOpsAdminSession: mocks.auth,
 }));
@@ -31,6 +32,7 @@ describe('guest-legal canonical route scope', () => {
     mocks.auth.mockResolvedValue({ session: { userId: 'operator' } });
     mocks.access.mockResolvedValue(canonical);
     mocks.flow.getGuestLegalReadiness.mockResolvedValue({});
+    mocks.flow.listGuestLegalEvents.mockResolvedValue([]);
   });
   it.each(cases)('binds %s and lifecycle emission to canonical scope', async (action, fn) => {
     expect((await POST(request(action))).status).toBe(200);
@@ -41,7 +43,7 @@ describe('guest-legal canonical route scope', () => {
     }));
   });
   it.each([
-    ['status', status, 'buildLegalSummaryForBookingOps'],
+    ['status', status, 'listGuestLegalEvents'],
     ['explain', explain, 'explainGuestLegalReadiness'],
     ['events', events, 'listGuestLegalEvents'],
   ])('binds %s reads/recompute to canonical scope', async (_name, call, fn) => {

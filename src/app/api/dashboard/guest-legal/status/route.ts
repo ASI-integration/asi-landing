@@ -1,7 +1,8 @@
+import { requireBookingOpsRecordScope } from '@/lib/booking-ops/repository';
 import { NextResponse } from 'next/server';
 import { requireCrmOperatorSession } from '@/lib/crm/api-auth';
 import { requireBookingOpsApiAccess } from '../../booking-ops/access';
-import { buildLegalSummaryForBookingOps, getGuestLegalReadiness } from '@/lib/booking-ops/guest-legal-deposit-mvd-execution';
+import { listGuestLegalEvents, getGuestLegalReadiness } from '@/lib/booking-ops/guest-legal-deposit-mvd-execution';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -14,7 +15,8 @@ export async function GET(req: Request): Promise<NextResponse> {
   const expectedScope = { accountId: access.accountId, propertyId: access.propertyId };
   try {
     const existing = await getGuestLegalReadiness(access.bookingId, expectedScope);
-    const status = existing ? await buildLegalSummaryForBookingOps(access.bookingId, expectedScope) : { readiness: null, nextAction: 'Инициализировать юридический контур.', lastEvent: null };
+    const status = existing ? { readiness: existing, nextAction: existing.nextAction, lastEvent: (await listGuestLegalEvents(access.bookingId, expectedScope))[0] ?? null } : { readiness: null, nextAction: 'Инициализировать юридический контур.', lastEvent: null };
+    await requireBookingOpsRecordScope(access.bookingId, expectedScope);
     return NextResponse.json({ ok: true, status });
   } catch (error) {
     return NextResponse.json({ ok: false, message: error instanceof Error ? error.message : 'Не удалось получить статус.' }, { status: 400 });

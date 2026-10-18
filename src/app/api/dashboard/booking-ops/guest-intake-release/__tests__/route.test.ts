@@ -8,7 +8,7 @@ import * as lifecycle from '@/lib/booking-ops/lifecycle-entry-adapter';
 vi.mock('@/lib/crm/api-auth', () => ({ requireCrmOperatorSession: vi.fn(), requireOpsAdminSession: vi.fn() }));
 vi.mock('../../access', () => ({ requireBookingOpsApiAccess: vi.fn() }));
 vi.mock('@/lib/booking-ops/guest-intake-checkin-release', () => ({
-  ensureGuestIntakeSession: vi.fn(), escalateGuestIntake: vi.fn(), getGuestIntakeReleaseSnapshot: vi.fn(),
+  ensureGuestIntakeSession: vi.fn(), escalateGuestIntake: vi.fn(), getGuestIntakeReleaseSnapshot: vi.fn(), readGuestIntakeReleaseSnapshot: vi.fn(),
   prepareGuestIntakeDraft: vi.fn(), submitGuestIntakeSimulated: vi.fn(), prepareCheckinReleaseDraft: vi.fn(),
   simulateCheckinRelease: vi.fn(),
 }));
@@ -34,6 +34,7 @@ describe('guest intake and check-in release protected APIs', () => {
     vi.mocked(auth.requireOpsAdminSession).mockResolvedValue({ session } as never);
     vi.mocked(access.requireBookingOpsApiAccess).mockResolvedValue(canonical);
     vi.mocked(flow.getGuestIntakeReleaseSnapshot).mockResolvedValue({} as never);
+    vi.mocked(flow.readGuestIntakeReleaseSnapshot).mockResolvedValue({} as never);
   });
 
   it.each([
@@ -58,7 +59,7 @@ describe('guest intake and check-in release protected APIs', () => {
   ])('binds %s reads to canonical booking/account/property scope', async (_name, call) => {
     const response = await call();
     expect(response.status).toBe(200);
-    expect(flow.getGuestIntakeReleaseSnapshot).toHaveBeenCalledWith(
+    expect(flow.readGuestIntakeReleaseSnapshot).toHaveBeenCalledWith(
       canonical.bookingId,
       { accountId: canonical.accountId, propertyId: canonical.propertyId },
     );
