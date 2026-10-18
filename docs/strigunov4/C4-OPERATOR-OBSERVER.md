@@ -2,14 +2,14 @@
 
 ## Retained incident evidence
 
-[Run39145734946](https://github.com/ASI-integration/asi-landing/actions/runs/39145734946),
-attempt1, exact source `c3d02873c4810e4d2f585292db80b1a9ef9c04a6`.
-[Job117729096239](https://github.com/ASI-integration/asi-landing/actions/runs/39145734946/job/117729096239):
-owner/current-main admission succeeded. Worker step began16:37:55UTC and
-returned only `{"status":"BLOCK"}` at16:37:59UTC on2026-10-18.
+[Run 39145734946](https://github.com/ASI-integration/asi-landing/actions/runs/39145734946),
+attempt 1, exact source `c3d02873c4810e4d2f585292db80b1a9ef9c04a6`.
+[Job 117729096239](https://github.com/ASI-integration/asi-landing/actions/runs/39145734946/job/117729096239):
+owner/current-main admission succeeded. Worker step began 16:37:55 UTC and
+returned only `{"status":"BLOCK"}` at 16:37:59 UTC on 2026-10-18.
 No CONFIG_PASS, ROLLBACK_PASS or manual-recovery receipt was emitted.
 
-The complete downloaded job log has175 split lines (one additional blank line
+The complete downloaded job log has 175 split lines (one additional blank line
 may be counted by viewers). Its masked output is retained outside the PR;
 no raw environment, key material or host secret is included here.
 
@@ -46,7 +46,7 @@ Unknown errors remain UNKNOWN rather than claiming a safe pre-write outcome.
 
 Only `/root/.asi-strigunov4-operator/incident-39140030546` is inspected.
 Directory/file descriptors reject symlinks, unexpected root ownership/modes and
-nonregular/multiply-linked marker files. Marker JSON is bounded to4096bytes.
+nonregular/multiply-linked marker files. Marker JSON is bounded to 4096 bytes.
 Only four fixed filenames are opened. The original private env backup content
 is never read: only its regular-file metadata/presence is checked.
 No directory enumeration, creation, lock-file creation, backup copying, command
@@ -85,19 +85,22 @@ confirm=READONLY_C4_OPERATOR_M
 M is deliberately not replaced by a guessed future merge SHA. Recheck current
 main and all required exact-head evidence before proposing that permission.
 No dispatch is authorized by this document or the previous permissions.
-Never replay39145734946,39140030546 or39127850376, even if no claim is observed.
+Never replay 39145734946, 39140030546 or 39127850376, even if no claim is observed.
 Any future change needs a wholly new specifically scoped procedure/permission;
 this observer cannot authorize or perform it.
 
-PR502 remains independent and unmerged pending its exact owner gate. Its source
+PR #502 remains independent and unmerged pending its exact owner gate. Its source
 checks do not prove an installed release, usable human session, physical booking,
 cleaning/linen/consumables/readiness, or independent egress acceptance.
 
 ## Validation boundaries
 
 Two focused test files retain prior parsing, crash, atomic write and rollback
-regressions and add fixed observer/receipt/admission/refusal scenarios (34cases).
+regressions and add fixed observer/receipt/admission/refusal scenarios (34 cases).
 Eleven real temporary-file cases run on isolated Linux CI; Windows skips them.
 Ownership is simulated for the non-root CI user; service/network calls are mocked.
 These are source proofs, not staging observation. No host operation is executed
 by PR checks. Existing incident evidence and prior approvals are preserved.
+
+The existing workflow safety regression also verifies the third protected job,
+its separate scope, confirmation and absence of database credentials.
