@@ -99,7 +99,7 @@ reports no replay/cleanup authority, FULL_PHYSICAL_E2E not proven and external
 effects not independently proven. Counts in delivery/payment relations are evidence
 about those deployed relations only, not network egress proof.
 
-## Exact future execution plan вЂ” not executed
+## Exact future execution plan — not executed
 
 After independent review, protected merge and a separate owner decision, record
 the full resulting current main SHA as M. The reviewed PR HEAD and M may differ;
@@ -157,7 +157,7 @@ ends and no cleanup is required. Keep all historical and retained pilot evidence
    HOST_FRESH_OPERATOR_NOT_CONFIGURED or another fixed BLOCK code identifies a
    current failure only. Current host state does not prove the cause at 12:44 UTC.
    No server configuration repair is authorized by a read-only result.
-6. Obtain existing independent egress evidence for 12:44:06вЂ“12:44:52 UTC and the
+6. Obtain existing independent egress evidence for 12:44:06–12:44:52 UTC and the
    relevant worker interval. Coverage must include the relevant host/processes and
    external providers. Do not send a real test message/payment to create evidence.
    If no independent observation exists, keep NOT_INDEPENDENTLY_PROVEN.
