@@ -60,6 +60,15 @@ branch/worktree is untouched. The new technical PR carries that documentation
 forward plus the root fix, so do not merge the old snapshot independently.
 Protected main remains beff46e55b73293774d210354d8276bea4812b2b at inspection.
 
+The complete root-fix package is [PR #497](https://github.com/ASI-integration/asi-landing/pull/497),
+with [current-head CI](https://github.com/ASI-integration/asi-landing/pull/497/checks)
+and independent review recorded there. Runtime change commit:
+`bbf023ec7eeefd6d6beabfc57aad2f0a56df0491`.
+Local 16 unit + 12 actual isolated PG17 tests and typecheck PASS. Source review
+and CI for the final PR head must complete before a protected merge is proposed;
+this register does not predeclare their outcome. The subsequent documentation
+commit adds evidence links only. No new staging run was dispatched.
+
 Next protected operations are separately gated, in this order:
 
 1. Owner approval for ordinary protected merge of the new technical PR's exact
