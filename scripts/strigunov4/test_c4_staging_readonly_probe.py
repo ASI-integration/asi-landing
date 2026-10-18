@@ -122,7 +122,8 @@ class ProtectedC4ReadOnlyTests(unittest.TestCase):
              contextlib.redirect_stdout(output):
             self.assertEqual(c4.main(),2)
         self.assertEqual(json.loads(output.getvalue()),
-                         {"status":"BLOCK","fullE2E":"NOT_RUN"})
+                         {"status":"BLOCK","fullE2E":"NOT_RUN",
+                          "blockCode":"READONLY_PREFLIGHT_UNPROVEN"})
 
 if __name__=="__main__":
     unittest.main()
