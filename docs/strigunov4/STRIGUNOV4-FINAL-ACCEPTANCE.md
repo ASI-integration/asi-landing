@@ -53,3 +53,20 @@ new-main authorization and staging environment review, as required by the task.
 The retained execution envelope, policy proposal, one-use identities, expected
 side effects, rollback/reconciliation and stop conditions are in
 [C4-RETAINED-PILOT.md](C4-RETAINED-PILOT.md).
+
+## Retained package verification
+
+Source package: [PR #495](https://github.com/ASI-integration/asi-landing/pull/495).
+Runtime-code commit: 43880c8c307b968823a00b5b6bf4ef672ed70230.
+Local 16 focused gate tests and 6 actual isolated PostgreSQL17 tests PASS;
+typecheck, touched-file ESLint, syntax, YAML and diff checks PASS. The temporary
+cluster was stopped and removed. [Physical source/PG CI](https://github.com/ASI-integration/asi-landing/actions/runs/39114465226)
+and [PR validation](https://github.com/ASI-integration/asi-landing/actions/runs/39114465195)
+are the initial runtime-code checks; consult the PR checks and CodeRabbit
+coverage for the latest exact HEAD. A green source check is not stage acceptance.
+
+Read-only GitHub settings verification in this task confirms classic main
+protection: strict required `validate`, admins enforced, force push and deletion
+disabled. Staging has a required reviewer and `can_admins_bypass=false`.
+No settings were changed. Owner authorization and environment review remain
+separate prerequisites despite the configured workflow confirmation strings.
