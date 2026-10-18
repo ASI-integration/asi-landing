@@ -35,6 +35,12 @@ COUNT_KEYS = (
 class Block(ValueError):
     pass
 
+class MissingSchema(Block):
+    """Carries only allowlisted schema names, never database rows or stderr."""
+    def __init__(self, names):
+        super().__init__("SCHEMA_RELATIONS_MISSING")
+        self.names=tuple(sorted(set(names)))
+
 def require(condition, reason):
     if not condition:
         raise Block(reason)
@@ -206,8 +212,9 @@ def run(env):
                         {"public."+item for item in required_tables} for name in missing),
                 "SCHEMA_RECEIPT_INVALID")
         if missing:
-            # Only names from the fixed, reviewed schema allowlist may be emitted.
-            raise Block("MISSING_RELATION_"+missing[0].split(".",1)[1].upper())
+            # Enumerate ALL missing allowlisted names in one safe receipt.
+            # Never run the deeper SELECT while any referenced table is absent.
+            raise MissingSchema(missing)
         cmd[-1]=read_query()
         # psql prints SQLSTATE only; never emit unredacted database stderr.
         cmd[-2:-2]=["--set","VERBOSITY=sqlstate"]
@@ -249,9 +256,13 @@ def main():
     except Exception as error:
         c=str(error) if type(error) is Block else "UNEXPECTED_ERROR"
         c=c if re.fullmatch(r"[A-Z][A-Z0-9_]{0,95}",c) else "UNKNOWN_ERROR"
-        print(json.dumps({"status":"BLOCK","blockCode":c,
-                         "stagingWrites":False,"cleanupAttempted":False,
-                         "physicalReplayAuthorized":False},sort_keys=True))
+        receipt={"status":"BLOCK","blockCode":c,
+                 "stagingWrites":False,"cleanupAttempted":False,
+                 "physicalReplayAuthorized":False}
+        if type(error) is MissingSchema:
+            receipt["missingRelations"]=list(error.names)
+            receipt["missingRelationCount"]=len(error.names)
+        print(json.dumps(receipt,sort_keys=True))
         return 2
 
 if __name__=="__main__":
