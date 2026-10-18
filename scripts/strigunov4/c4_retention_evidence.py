@@ -28,7 +28,7 @@ def validate_snapshot(data, missing, new_fixture=False):
     """Known audit/physical evidence is mandatory; optional absence stays explicit."""
     dep.require(type(data) is dict and set(data)=={"census","digest"},"SNAPSHOT_SHAPE")
     dep.require(type(data['digest']) is str and re.fullmatch(r'[0-9a-f]{64}',data['digest']),"SNAPSHOT_DIGEST")
-    receipt = dep.receipt(data['census'], missing)
+    receipt = dep.receipt(data['census'], missing, new_fixture=new_fixture)
     dep.require(receipt['status']=='C4_DEPENDENCY_READONLY_SCOPED_PASS','OLD_SCOPE_BLOCK')
     expected = {'booking_ops_events':24,'booking_cleaning_tasks':1,'booking_linen_tasks':1,
                 'booking_supplies_tasks':1,'booking_physical_readiness':1}

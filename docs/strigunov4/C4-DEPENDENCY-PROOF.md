@@ -1,5 +1,13 @@
 # C4 incident 39047710115: bounded read-only dependency proof
 
+## Historical intake baseline correction after 39125804010
+
+Protected read-only [run 39125804010](https://github.com/ASI-integration/asi-landing/actions/runs/39125804010) on `19dc0a38ba50c1156a34fd689128f1424bb21795` proved `user/account/property/booking` exact/by-ID counts of 1 and `intake` counts of 0/0, without any staging writes. This is **not** new evidence of a deleted row: a separate earlier protected read-only [run 39051076374](https://github.com/ASI-integration/asi-landing/actions/runs/39051076374), dated 2026-10-17 16:50 UTC, already returned `intakeExact=0` and `intakeOwnedScope=0`, before the uncertain cleanup run 39056059835. The strict source cleanup contract itself recorded the expected historical intake count as zero. The physical runner had reported an intake identifier, which alone did not prove the table still had that row by the earlier census.
+
+The previous universal five-present identity requirement was therefore incorrectly applied to the old incident. This source-only correction uses the **evidenced old** five-count contract `[1,1,1,1,0]` and the **new separately approved retained fixture** contract `[1,1,1,1,1]`. The historical intake MUST remain absent: its exact and by-ID counts are both zero, and source-scoped linked intake count must remain zero. Any unexpected intake row, missing other root, cross-tenant graph edge, schema/FK/trigger drift, or permission failure continues to BLOCK. The new physical fixture still requires an exact owned intake row and one linked intake; there is no universal relaxed intake policy. In particular, `c4_retention_evidence.validate_snapshot` explicitly selects the fresh profile only for that fixture.
+
+Nothing has been deleted, restored, inserted or replayed in staging. One new protected read-only dependent-row census is needed after a separately approved merge, exact-main-SHA owner consent and staging reviewer gate. A PASS would not itself authorize cleanup or physical booking.
+
 ## Protected C4 witness 39123643816: evidence identity BLOCK
 
 After #497 the owner-approved protected read-only [run 39123643816](https://github.com/ASI-integration/asi-landing/actions/runs/39123643816) at protected main `a6d7f35a40aa7ff0fbb5f7c16ec783f73779831a` passed the schema and optional-module gates, then failed `INCIDENT_IDENTITY` on one or more fixed old synthetic identities. It never performed cleanup, migration, booking replay or staging writes. An older witness had confirmed the user, account, property and booking identities, but did not confirm this same five-part check on the intake account scope.
