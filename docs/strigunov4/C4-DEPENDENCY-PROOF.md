@@ -134,3 +134,93 @@ cross-schema FKs/triggers, catalog drift, permission denial, RLS, read-only writ
 refusal and full synthetic-row equality. Typecheck, YAML parse and diff checks
 PASS. The dedicated temporary local cluster was stopped and removed.
 No broad local suite was run; normal mandatory PR CI remains authoritative.
+
+
+## Root fix after protected run 39118692946 (2026-10-18)
+
+The approved [run](https://github.com/ASI-integration/asi-landing/actions/runs/39118692946),
+[job 117649791595](https://github.com/ASI-integration/asi-landing/actions/runs/39118692946/job/117649791595),
+on main `beff46e55b73293774d210354d8276bea4812b2b` completed with BLOCK:
+
+```json
+{"blockCode":"TRIGGER_DRIFT","cleanupAuthorized":false,"physicalReplayAuthorized":false,"stagingWrites":false,"status":"BLOCK","triggerDriftCount":1,"triggerDriftDetails":[{"missingExpectedTriggers":["trg_guest_lifecycle_synthetic_scope_allowlist"],"table":"booking_ops_communication_auto_send_scopes","unexpectedOrChangedCount":0,"unexpectedOrChangedCountTruncated":false}]}
+```
+
+This proves a missing expected signature, not the historical absence of migration
+20260810290000. No dependent row census followed the schema gate. The old
+24 audit + four physical row witness was not refreshed. The aggregate history
+postcheck postgres|17|99|7|9 cannot answer whether this particular version exists.
+
+Source cause: the manifest combined source migrations into an unconditional
+trigger expectation. The approved nine-version G0 candidate does not include
+20260810290000. That version creates the compatibility function and trigger,
+but also UPDATEs existing scope rows; replaying it is not a harmless catalog fix.
+20261006101500 changes the function's search_path and must not be replayed either.
+Neither migration, the G0 candidate nor the manifest's expected trigger is changed.
+
+### Fixed version/object matrix
+
+The reader now reads only aggregate facts about the exact history versions
+20260810290000 and 20261006101500, the fixed public function
+normalize_guest_lifecycle_synthetic_scope_allowlist, and the existing fixed table.
+It requires ordinary non-inherited history storage with a text NOT NULL version
+primary key and no rewrite rules. Missing/unreadable history is BLOCK, never absent.
+RLS remains fail-closed with row_security=off; no migration names/statements or
+other history versions are returned.
+
+| Compatibility history | Hardening history | Function / trigger | Result before scoped census |
+| --- | --- | --- | --- |
+| Absent | Absent | No overload of the fixed public function; no compatibility trigger | NOT_DEPLOYED optional compatibility module; all other table/FK/trigger checks still required |
+| Exactly one row | Absent | Exactly one zero-argument plpgsql trigger-returning function, no security-definer/set-returning mode, default configuration; exact enabled trigger | DEPLOYED metadata; all other checks still required |
+| Exactly one row | Exactly one row | Same exact function, sole configuration search_path empty; exact enabled trigger | DEPLOYED with matching hardening metadata |
+| Applied | Any | Function or trigger missing/wrong | BLOCK |
+| Absent | Any | Function or compatibility trigger installed | BLOCK |
+| Absent | Applied | Even if function/trigger absent | BLOCK: contradictory history |
+| Any | Any | Extra overload, unknown trigger, disabled/wrong trigger, duplicate/inaccessible history, mismatched function configuration | BLOCK |
+
+For this one optional trigger, shape includes enabled origin mode, BEFORE
+INSERT/UPDATE row timing, the exact four UPDATE columns, no WHEN condition or
+trigger arguments/constraint, and the fixed zero-argument function identity.
+The complete table trigger list is still compared to reviewed source. An unknown
+trigger cannot masquerade as an absent optional module. There is no skip flag,
+caller-selected module/version, or runtime modification of the manifest.
+
+The same witness is repeated inside the locked REPEATABLE READ READ ONLY census.
+The history relation now participates in ACCESS SHARE locking. Any change between
+initial admission and the second snapshot blocks; these locks do not claim to
+prevent arbitrary concurrent DML for the entire lifecycle. Rollback, deadlines,
+PG17/TLS/owner/environment gates and #492 preservation holds are unchanged.
+The retained-pilot reader reuses this same schema checker and repeated witness.
+A source-reviewed NOT_DEPLOYED module admits only this scoped schema audit; it
+never supplies owner write permission, proves operator access, or authorizes
+replay, deletion, real sending or a migration.
+
+The optionalModule receipt contains fixed version/table labels, booleans and
+counts only. On inconsistent known facts, OPTIONAL_MODULE_HISTORY_OBJECT_DRIFT
+reports those safe facts. Unknown database object names, function bodies,
+row contents, raw errors and credentials are suppressed. Function identity,
+configuration and trigger shape are checked; arbitrary function-body provenance
+and opaque JSON/polymorphic references remain outside this bounded proof.
+
+### Regression and next gate
+
+The two focused files cover both histories and hardening, missing function/trigger,
+unregistered objects, overloads, disabled and unknown triggers, history races,
+missing history and history RLS. Existing incident ownership, FK, rollback,
+read-only rejection and whole-fixture non-mutation checks remain in place.
+Independent CodeRabbit review of the final PR head is required before adopting
+the new optional-module admission branch. Tests use disposable local/CI PG17;
+no staging SQL or configuration is executed by this source package.
+
+After an explicitly approved protected merge, record actual resulting main M.
+Obtain a new owner authorization for only dependency-readonly.yml, ref main,
+reviewed_main_sha=M, confirm=PROVE_C4_DEPENDENCIES_M, incident_run=39047710115.
+Then the staging reviewer separately approves that exact run. Neither a prior go
+nor the previous failed run authorizes a rerun or a new SHA. First reuse any
+matching already-created run. Preserve all safe receipts, including BLOCK.
+Only a real result can establish which matrix row staging occupies.
+
+Local final source validation: 16 unit tests and 12 actual isolated PostgreSQL17
+tests PASS, plus typecheck. The disposable cluster was stopped and removed.
+Existing broad checks were not restarted locally. CI and the independent review
+are recorded against the new PR head in its verification record.

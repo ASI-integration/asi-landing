@@ -27,7 +27,9 @@ def environment():
 def catalog():
     """Construct metadata for pure validation tests; real SQL is tested separately."""
     aliases = {"bigint":"int8", "integer":"int4", "int":"int4", "boolean":"bool"}
-    return {"tables":{t:{"kind":"r", "inherited":False,
+    return {"optionalModule":{"historyContract":True,"versionRows":1,"hardeningRows":0,
+             "functionCount":1,"functionMatches":1,"defaultConfigCount":1,
+             "hardenedConfigCount":0,"triggerShapeMatches":1},"tables":{t:{"kind":"r", "inherited":False,
                          "columns":{k:aliases.get(v,v) for k,v in d["columns"].items()},
                          "pk":d["pk"], "triggers":d["triggers"], "rules":0}
                       for t,d in c.TABLES.items()},
@@ -36,6 +38,61 @@ def catalog():
 
 
 class DependencyUnitTests(unittest.TestCase):
+    def test_optional_version_function_trigger_matrix(self):
+        """Only all-absent or all-present state admits the fixed optional module."""
+        import itertools
+        for version, function, trigger in itertools.product((0,1), repeat=3):
+            with self.subTest(version=version,function=function,trigger=trigger):
+                cat=copy.deepcopy(catalog())
+                fact=cat["optionalModule"]
+                fact.update(versionRows=version,functionCount=function,functionMatches=function,
+                            defaultConfigCount=function,triggerShapeMatches=trigger)
+                cat["tables"][c.OPTIONAL_TABLE]["triggers"] = [c.OPTIONAL_TRIGGER] if trigger else []
+                if version == function == trigger:
+                    self.assertEqual(c.schema_check(cat),set())
+                    self.assertEqual(c.optional_module_witness(fact)["state"],
+                                     "DEPLOYED" if version else "NOT_DEPLOYED")
+                else:
+                    with self.assertRaises(c.Block):c.schema_check(cat)
+        cat=catalog();cat["optionalModule"].update(hardeningRows=1,defaultConfigCount=0,hardenedConfigCount=1)
+        self.assertEqual(c.schema_check(cat),set())
+
+    def test_optional_unknown_function_config_history_and_trigger_fail_closed(self):
+        """Overloads, missing metadata, false absence and unknown triggers never pass."""
+        for change in ({"functionCount":2},{"functionMatches":0},{"triggerShapeMatches":0},
+                       {"hardeningRows":1},{"hardenedConfigCount":1},{"historyContract":False},
+                       {"versionRows":2},{"versionRows":True},{"private":"secret"}):
+            cat=copy.deepcopy(catalog());cat["optionalModule"].update(change)
+            with self.subTest(change=change),self.assertRaises(c.Block):c.schema_check(cat)
+        cat=copy.deepcopy(catalog());del cat["optionalModule"]
+        with self.assertRaises(c.Block):c.schema_check(cat)
+        cat=copy.deepcopy(catalog());cat["tables"][c.OPTIONAL_TABLE]["triggers"].append(
+            ["private_database_trigger",7,"private","private_function"])
+        with self.assertRaises(c.TriggerMismatch) as error:c.schema_check(cat)
+        output=io.StringIO()
+        with patch.object(c,"run",side_effect=error.exception),contextlib.redirect_stdout(output):
+            self.assertEqual(c.main(),2)
+        report=json.loads(output.getvalue());self.assertEqual(report["optionalModule"]["versionRows"],1)
+        self.assertNotIn("private_database",output.getvalue())
+
+    def test_optional_safe_failure_receipt_and_guarded_history(self):
+        """The new witness never bypasses protected transport or authorizes mutation."""
+        cat=catalog();cat["optionalModule"]=dict(cat["optionalModule"],functionCount=0)
+        with self.assertRaises(c.OptionalModuleMismatch) as error:c.schema_check(cat)
+        output=io.StringIO()
+        with patch.object(c,"run",side_effect=error.exception),contextlib.redirect_stdout(output):
+            self.assertEqual(c.main(),2)
+        data=json.loads(output.getvalue())
+        for k in ("cleanupAuthorized","physicalReplayAuthorized","stagingWrites"):
+            self.assertIs(data[k],False)
+        self.assertEqual(data["optionalModule"]["version"],"20260810290000")
+        self.assertIn("supabase_migrations.schema_migrations,",c.guarded_sql(catalog(),set()))
+        self.assertIn("'optionalModule'",c.catalog_sql())
+        workflow=(Path(__file__).parents[2]/".github/workflows/strigunov4-c4-dependency-readonly.yml").read_text()
+        for guard in ("environment: staging","needs: [offline_source_tests, isolated_dependency_postgres]",
+                      'test "$GITHUB_ACTOR_ID" = "207600140"'):
+            self.assertIn(guard,workflow)
+
     def test_context_each_guard(self):
         """Wrong owner, workflow, attempt, SHA or target must stop before subprocess."""
         env = environment()
