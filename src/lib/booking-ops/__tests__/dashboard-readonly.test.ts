@@ -5,7 +5,7 @@ type Row = Record<string, unknown>;
 const mocks = vi.hoisted(() => ({
   tables: {} as Record<string, Row[]>,
   writes: vi.fn(() => { throw new Error('unexpected_write'); }),
-  scope: vi.fn(), auth: vi.fn(), access: vi.fn(),
+  list: vi.fn(), tasks: vi.fn(), scope: vi.fn(), auth: vi.fn(), access: vi.fn(),
   legal: vi.fn(), physical: vi.fn(), lifecycle: vi.fn(), events: vi.fn(),
   recompute: vi.fn(), ensurePhysical: vi.fn(), initializeLifecycle: vi.fn(),
   mutableLifecycle: vi.fn(), orchestrator: vi.fn(),
@@ -28,7 +28,7 @@ vi.mock('@/lib/supabase', () => ({
 }));
 vi.mock('@/lib/booking-ops/repository', () => ({
   requireBookingOpsRecordScope: mocks.scope, getBookingOpsRecord: mocks.scope,
-  updateBookingOpsRecord: mocks.writes,
+  updateBookingOpsRecord: mocks.writes, listBookingOpsRecords: mocks.list,
 }));
 vi.mock('@/lib/booking-ops/guest-legal-deposit-mvd-execution', () => ({
   getGuestLegalReadiness: mocks.legal, recomputeGuestLegalReadiness: mocks.recompute,
@@ -42,6 +42,7 @@ vi.mock('@/lib/booking-ops/lifecycle', () => ({
   initializeLifecycleForBooking: mocks.initializeLifecycle,
   blockGate: mocks.writes, completeGate: mocks.writes, markGateInProgress: mocks.writes,
 }));
+vi.mock('@/lib/booking-ops/tasks', () => ({ listBookingOpsTasksForRecord: mocks.tasks }));
 vi.mock('@/lib/crm/api-auth', () => ({
   requireCrmOperatorSession: mocks.auth, requireOpsAdminSession: mocks.auth,
 }));
@@ -105,10 +106,14 @@ describe('dashboard GET reads persisted state without creating evidence', () => 
     noWrites();
   });
 
-  it.each(['legal', 'physical'] as const)('does not create missing %s prerequisites', async key => {
-    mocks[key].mockResolvedValue(null);
-    await expect(readGuestIntakeReleaseSnapshot(id, scope)).rejects.toThrow('guest_intake_prerequisites_not_initialized');
-    noWrites();
+  it('does not create missing legal or physical prerequisites', async () => {
+    for (const key of ['legal', 'physical'] as const) {
+      mocks.legal.mockResolvedValue({ status: 'incomplete' });
+      mocks.physical.mockResolvedValue({ finalReady: false });
+      mocks[key].mockResolvedValue(null);
+      await expect(readGuestIntakeReleaseSnapshot(id, scope)).rejects.toThrow('guest_intake_prerequisites_not_initialized');
+      noWrites();
+    }
   });
 
   it('rejects ownership drift before returning the intake snapshot', async () => {
@@ -184,4 +189,36 @@ describe('dashboard GET reads persisted state without creating evidence', () => 
     expect(mocks.orchestrator).not.toHaveBeenCalled();
     noWrites();
   });
+  it('legal explanation reads persisted readiness, rejects missing state and ownership drift', async () => {
+    const actual = await vi.importActual<typeof import('../guest-legal-deposit-mvd-execution')>('../guest-legal-deposit-mvd-execution');
+    await expect(actual.explainGuestLegalReadiness(id, scope)).rejects.toThrow('guest_legal_not_initialized');
+    mocks.tables.booking_guest_legal_readiness = [{
+      id: 'readiness-a', booking_id: id, status: 'blocked', safe_summary: 'persisted summary',
+      blocker_reasons: [], warnings: [], next_action: 'persisted action',
+    }];
+    const result = await actual.explainGuestLegalReadiness(id, scope);
+    expect(result.status).toBe('blocked');
+    expect(result.safeSummary).toBe('persisted summary');
+    mocks.scope.mockResolvedValueOnce({ id }).mockRejectedValueOnce(new Error('booking_scope_changed'));
+    await expect(actual.explainGuestLegalReadiness(id, scope)).rejects.toThrow('booking_scope_changed');
+    noWrites();
+  });
+
+  it('pre-check-in list reads scoped state and rechecks ownership without initialization', async () => {
+    const { listBookingsByReadinessStatus } = await import('../pre-checkin-control-center');
+    mocks.list.mockResolvedValue({ ok: true, records: [{ id, propertyId: scope.propertyId }] });
+    mocks.tasks.mockResolvedValue({ ok: true, tasks: [] });
+    mocks.lifecycle.mockResolvedValue({ ok: true, lifecycle: { bookingId: id, gates: [] } });
+    mocks.legal.mockResolvedValue({ status: 'incomplete', blockers: [] });
+    mocks.physical.mockResolvedValue({ status: 'not_ready', blockers: [], finalReady: false });
+    const result = await listBookingsByReadinessStatus({ accountId: scope.accountId });
+    expect(result).toHaveLength(1);
+    expect(result[0].metadata.readMode).toBe('persisted_current_state');
+    expect(mocks.legal).toHaveBeenCalledWith(id, scope);
+    expect(mocks.scope).toHaveBeenLastCalledWith(id, scope);
+    mocks.scope.mockResolvedValueOnce({ id, propertyId: scope.propertyId }).mockRejectedValueOnce(new Error('booking_scope_changed'));
+    await expect(listBookingsByReadinessStatus({ accountId: scope.accountId })).rejects.toThrow('booking_scope_changed');
+    noWrites();
+  });
+
 });

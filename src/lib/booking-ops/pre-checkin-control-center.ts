@@ -720,13 +720,13 @@ export async function listBookingsByReadinessStatus(filters: {
     accountId: filters.accountId,
   });
   if (!listed.ok) throw new Error(listed.error ?? 'booking_list_failed');
-  const snapshots = await Promise.all(listed.records.map((record) => {
+  const snapshots = await Promise.all(listed.records.map(async (record) => {
     const propertyId = text(record.propertyId);
     if (!propertyId) throw new Error('booking_scope_unavailable');
-    return getPreCheckinStatus(record.id, {
-      accountId: filters.accountId,
-      propertyId,
-    });
+    const expectedScope = { accountId: filters.accountId, propertyId };
+    const snapshot = await readPreCheckinStatus(record.id, expectedScope);
+    await requireBookingOpsRecordScope(record.id, expectedScope);
+    return snapshot;
   }));
   return filters.status ? snapshots.filter((item) => item.status === filters.status) : snapshots;
 }

@@ -650,7 +650,9 @@ export async function buildLegalSummaryForBookingOps(bookingId: string, expected
 }
 
 export async function explainGuestLegalReadiness(bookingId: string, expectedScope?: ExpectedScope) {
-  const readiness = await recomputeGuestLegalReadiness(bookingId, {}, expectedScope);
+  const readiness = await getGuestLegalReadiness(bookingId, expectedScope);
+  if (expectedScope) await requireBookingOpsRecordScope(bookingId, expectedScope);
+  if (!readiness) throw new Error('guest_legal_not_initialized');
   return {
     bookingId: readiness.bookingId, status: readiness.status, safeSummary: readiness.safeSummary,
     blockers: readiness.blockers, warnings: readiness.warnings, nextAction: readiness.nextAction,

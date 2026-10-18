@@ -15,6 +15,8 @@ operator action. Existing POST/PATCH actions and their authorization remain inta
 | booking-ops/guest-intake-release | create session, legal and physical prerequisites | readGuestIntakeReleaseSnapshot |
 | booking-ops/checkin-release | same snapshot initialization | same pure reader |
 | booking-ops/legal-payment | initialize lifecycle twice | readLegalPaymentStatus |
+| booking-ops/pre-checkin (list) | recompute legal/physical state for each booking | existing readPreCheckinStatus, scope recheck |
+| guest-legal/explain | recompute persisted legal readiness | existing readiness with scope recheck |
 | guest-legal/status | recompute persisted legal readiness | existing readiness plus event list, scope recheck |
 | booking-ops/lifecycle-orchestrator | initialize absent orchestrator | existing snapshot with initialize=false |
 
