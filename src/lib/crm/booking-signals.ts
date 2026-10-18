@@ -492,7 +492,7 @@ export function buildCrmBookingSignals(
 
 export async function loadCrmBookingSignalsForQueue(contacts: CrmContact[]): Promise<CrmBookingSignal[]> {
   const { listBookingOpsRecords } = await import('@/lib/booking-ops/repository');
-  const { getInStayCheckoutStatus } = await import('@/lib/booking-ops/instay-checkout-autopilot');
+  const { readInStayCheckoutStatus } = await import('@/lib/booking-ops/instay-checkout-autopilot');
 
   const listed = await listBookingOpsRecords({ limit: 100 });
   if (!listed.ok) return [];
@@ -508,7 +508,7 @@ export async function loadCrmBookingSignalsForQueue(contacts: CrmContact[]): Pro
   await Promise.all(
     instayCandidates.slice(0, 40).map(async (record) => {
       try {
-        const snapshot = await getInStayCheckoutStatus(record.id);
+        const snapshot = await readInStayCheckoutStatus(record.id);
         if (snapshot.status !== 'closed' && snapshot.closureStatus !== 'closed') {
           instayByBookingId.set(record.id, snapshot);
         }

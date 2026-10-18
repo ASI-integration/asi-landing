@@ -5,7 +5,7 @@ type Row = Record<string, unknown>;
 const mocks = vi.hoisted(() => ({
   tables: {} as Record<string, Row[]>,
   writes: vi.fn(() => { throw new Error('unexpected_write'); }),
-  list: vi.fn(), tasks: vi.fn(), scope: vi.fn(), auth: vi.fn(), access: vi.fn(),
+  instay: vi.fn(), list: vi.fn(), tasks: vi.fn(), scope: vi.fn(), auth: vi.fn(), access: vi.fn(),
   legal: vi.fn(), physical: vi.fn(), lifecycle: vi.fn(), events: vi.fn(),
   recompute: vi.fn(), ensurePhysical: vi.fn(), initializeLifecycle: vi.fn(),
   mutableLifecycle: vi.fn(), orchestrator: vi.fn(),
@@ -43,6 +43,7 @@ vi.mock('@/lib/booking-ops/lifecycle', () => ({
   blockGate: mocks.writes, completeGate: mocks.writes, markGateInProgress: mocks.writes,
 }));
 vi.mock('@/lib/booking-ops/tasks', () => ({ listBookingOpsTasksForRecord: mocks.tasks }));
+vi.mock('@/lib/booking-ops/instay-checkout-autopilot', () => ({ readInStayCheckoutStatus: mocks.instay, getInStayCheckoutStatus: mocks.writes }));
 vi.mock('@/lib/crm/api-auth', () => ({
   requireCrmOperatorSession: mocks.auth, requireOpsAdminSession: mocks.auth,
 }));
@@ -138,14 +139,14 @@ describe('dashboard GET reads persisted state without creating evidence', () => 
     noWrites();
   });
 
-  it.each([['intake', intakeGET], ['release', releaseGET], ['payment', paymentGET]] as const)(
-    '%s GET uses the real pure reader with canonical scope', async (_name, call) => {
+  it('intake, release and payment GETs use real pure readers with canonical scope', async () => {
+    for (const call of [intakeGET, releaseGET, paymentGET]) {
       const response = await call(request());
       expect(response.status).toBe(200);
       expect(mocks.scope).toHaveBeenCalledWith(id, scope);
       noWrites();
-    },
-  );
+    }
+  });
 
   it('guest legal GET returns persisted readiness and the latest event', async () => {
     const response = await legalGET(request());
@@ -218,6 +219,19 @@ describe('dashboard GET reads persisted state without creating evidence', () => 
     expect(mocks.scope).toHaveBeenLastCalledWith(id, scope);
     mocks.scope.mockResolvedValueOnce({ id, propertyId: scope.propertyId }).mockRejectedValueOnce(new Error('booking_scope_changed'));
     await expect(listBookingsByReadinessStatus({ accountId: scope.accountId })).rejects.toThrow('booking_scope_changed');
+    noWrites();
+  });
+
+  it('CRM queue reads in-stay state without initializing lifecycle', async () => {
+    const { loadCrmBookingSignalsForQueue } = await import('@/lib/crm/booking-signals');
+    mocks.list.mockResolvedValue({ ok: true, records: [{
+      id, checkInAt: '2020-01-01T00:00:00Z', alerts: { alerts: [] }, readiness: { status: 'completed' },
+    }] });
+    mocks.instay.mockResolvedValue({ status: 'closed', closureStatus: 'closed' });
+    expect(await loadCrmBookingSignalsForQueue([])).toEqual([]);
+    expect(mocks.instay).toHaveBeenCalledWith(id);
+    mocks.instay.mockRejectedValue(new Error('lifecycle_not_initialized'));
+    expect(await loadCrmBookingSignalsForQueue([])).toEqual([]);
     noWrites();
   });
 

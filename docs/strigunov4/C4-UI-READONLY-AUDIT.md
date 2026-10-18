@@ -16,6 +16,7 @@ operator action. Existing POST/PATCH actions and their authorization remain inta
 | booking-ops/checkin-release | same snapshot initialization | same pure reader |
 | booking-ops/legal-payment | initialize lifecycle twice | readLegalPaymentStatus |
 | booking-ops/pre-checkin (list) | recompute legal/physical state for each booking | existing readPreCheckinStatus, scope recheck |
+| crm/queue (booking signals) | initialize lifecycle for past check-ins | existing readInStayCheckoutStatus |
 | guest-legal/explain | recompute persisted legal readiness | existing readiness with scope recheck |
 | guest-legal/status | recompute persisted legal readiness | existing readiness plus event list, scope recheck |
 | booking-ops/lifecycle-orchestrator | initialize absent orchestrator | existing snapshot with initialize=false |
@@ -47,3 +48,13 @@ lifecycle mutation path. Existing route mocks are updated to the new read export
 Typecheck, touched-file ESLint, diff checks and exact-head CI/CodeRabbit are required.
 No external database, SSH, message provider, payment or live UI request is part of
 these local tests.
+
+## CRM interpretation
+
+The CRM queue can display fixture/demo contacts and demo activity on documented
+fallback paths. Such display is not evidence for the retained physical run.
+Acceptance must correlate bookingOpsId and bookingOpsHref with reconciled IDs;
+a contact match or HTTP 200 alone is insufficient. Its booking-signal loader now
+uses the existing pure in-stay reader, without lifecycle initialization.
+The explicit POST/PATCH bodies of the five changed action-bearing route files
+remain identical to the source baseline (line endings normalized).
