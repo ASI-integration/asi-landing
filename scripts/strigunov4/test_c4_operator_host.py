@@ -11,6 +11,7 @@ import unittest
 from unittest.mock import patch, MagicMock
 
 import c4_operator_host as h
+import c4_operator_observer as observer
 from c4_operator_patch import plan, SAFETY, KEYS, OPERATOR, Block
 from test_c4_operator_patch import env_bytes
 
@@ -56,7 +57,7 @@ class FileRecoveryTests(unittest.TestCase):
     def test_replay_other_run_blocked(self):
         self.perform()
         self.env.write_bytes(self.original)
-        with self.assertRaises(FileExistsError):
+        with self.assertRaisesRegex(Block, "CLAIM_EXISTS"):
             h.perform("124", "b" * 40)
 
     def test_restart_failure_restores_original(self):
@@ -86,7 +87,7 @@ class FileRecoveryTests(unittest.TestCase):
 
     def test_crash_claim_without_apply_cannot_replay(self):
         (self.evidence / h.CLAIM).mkdir()
-        with self.assertRaises(FileExistsError):
+        with self.assertRaisesRegex(Block, "CLAIM_EXISTS"):
             self.perform()
         self.assertEqual(self.env.read_bytes(), self.original)
         self.restart.assert_not_called()
@@ -102,6 +103,58 @@ class FileRecoveryTests(unittest.TestCase):
         with self.assertRaises(Block):
             self.perform()
         self.assertFalse((self.evidence / h.CLAIM).exists())
+        self.restart.assert_not_called()
+
+
+    def test_preflight_refusal_preserves_bytes_and_has_no_claim(self):
+        for error in (Block("ENVIRONMENT_FILES"), Block("HEALTH"), OSError("private")):
+            self.live.side_effect = error
+            with self.subTest(error=type(error)), self.assertRaises(type(error)):
+                self.perform()
+            self.assertEqual(self.env.read_bytes(), self.original)
+            self.assertFalse((self.evidence / h.CLAIM).exists())
+            self.restart.assert_not_called()
+
+    def test_observer_claim_markers_are_read_only_and_private(self):
+        # File ownership alone is simulated for the non-root CI user; real
+        # Linux paths, symlinks, modes, bounded reads and open flags are exercised.
+        native_fstat, native_open = os.fstat, os.open
+        def root_owned(fd):
+            st = native_fstat(fd)
+            return SimpleNamespace(**{name: (0 if name == "st_uid" else getattr(st, name))
+                for name in ("st_uid", "st_mode", "st_size", "st_nlink", "st_mtime_ns", "st_ctime_ns")})
+        def readonly_open(path, flags, *args, **kwargs):
+            self.assertFalse(flags & (os.O_CREAT | os.O_TRUNC | os.O_WRONLY | os.O_RDWR))
+            return native_open(path, flags, *args, **kwargs)
+        def snapshot():
+            with patch.object(os, "fstat", side_effect=root_owned), \
+                    patch.object(os, "open", side_effect=readonly_open):
+                return observer.claim_snapshot()
+        self.assertEqual(snapshot()["claim"], "ABSENT")
+        record = self.evidence / h.CLAIM
+        record.mkdir(mode=0o700)
+        self.assertEqual(snapshot()["prepared"], "ABSENT")
+        files = {"original.env.private": self.original,
+                 "prepared.json": json.dumps({"runId": observer.FAILED_RUN,
+                    "sourceSha": observer.FAILED_SHA, "status": "PREPARED", "changedLists": 2}).encode(),
+                 "success.json": json.dumps(h.SUCCESS).encode(),
+                 "recovery.json": b'{"status":"ROLLBACK_PASS"}'}
+        for name, value in files.items():
+            (record / name).write_bytes(value)
+            (record / name).chmod(0o600)
+        out = snapshot()
+        self.assertEqual(out, dict(claim="PRESENT", backup="PRESENT", prepared="BOUND_TO_FAILED_RUN",
+                                  success="RECORDED_SUCCESS", recovery="RECORDED_ROLLBACK", lock="ABSENT"))
+        self.assertNotIn("never-print", json.dumps(out))
+        for name, value in files.items():
+            self.assertEqual((record / name).read_bytes(), value)
+        for value in (b'{"status":"secret-hostile"}', b'x' * 4097, b'[]'):
+            (record / "prepared.json").write_bytes(value)
+            self.assertEqual(snapshot()["prepared"], "INVALID")
+        (record / "prepared.json").unlink()  # disposable test fixture only
+        (record / "prepared.json").symlink_to(self.env)
+        self.assertEqual(snapshot()["prepared"], "INVALID")
+        self.assertEqual(self.env.read_bytes(), self.original)
         self.restart.assert_not_called()
 
 
@@ -184,9 +237,12 @@ class LiveContractTests(unittest.TestCase):
         with self.assertRaises(Block):
             self.live()
         self.unit.read_bytes.return_value = b"synthetic-unit"
-        self.meta["EnvironmentFiles"] += " /unapproved/env"
-        with self.assertRaises(Block):
-            self.live()
+        for value in (str(self.env), str(self.env) + " (ignore_errors=yes)",
+                      str(self.env) + " (ignore_errors=no) /unapproved/env", ""):
+            self.meta["EnvironmentFiles"] = value
+            with self.subTest(value=value), self.assertRaisesRegex(Block, "ENVIRONMENT_FILES"):
+                self.live()
+        self.conn.assert_not_called()
 
     def test_redirect_rejected(self):
         self.conn.return_value.getresponse.return_value.status = 302
@@ -197,6 +253,13 @@ class LiveContractTests(unittest.TestCase):
         self.props.side_effect = [dict(self.meta), dict(self.meta, MainPID="43")]
         with self.assertRaises(Block):
             self.live()
+
+
+def load_tests(loader, tests, pattern):
+    """Keep observer hardening regressions in the existing focused CI command."""
+    from test_c4_operator_observer_hardening import ObserverHardeningTests
+    tests.addTests(loader.loadTestsFromTestCase(ObserverHardeningTests))
+    return tests
 
 
 if __name__ == "__main__":

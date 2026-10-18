@@ -72,7 +72,13 @@ def props(deadline=None):
     raw = checked("systemctl", "show", SERVICE,
                   "--property=MainPID,User,Group,WorkingDirectory,EnvironmentFiles,DropInPaths,ActiveState",
                   deadline=deadline)
-    return dict(line.split("=", 1) for line in raw.decode().splitlines() if "=" in line)
+    values = {}
+    for line in raw.decode().splitlines():
+        if "=" in line:
+            key, value = line.split("=", 1)
+            require(key not in values, "DUPLICATE_SYSTEMD_PROPERTY")
+            values[key] = value
+    return values
 
 
 def process_flags(pid, with_new_flag):
