@@ -134,8 +134,17 @@ def validate(source):
     require(type(key) is str and len(key)>100,"KEY")
     return sha,host,port
 
-def probe(source,host,port,operator_email=None):
+def probe(source,host,port,operator_email=None,config_only=False):
+    """Reuse pinned SSH checks; explicit config-only mode omits all route probes."""
+    require(type(config_only) is bool,"PROBE_MODE")
     script=HOST_SCRIPT
+    if config_only:
+        start='    routes=(\n'
+        end='    print(json.dumps({"status":"C4_READONLY_PREFLIGHT_PASS"'
+        require(script.count(start)==script.count(end)==1,"CONFIG_SOURCE_DRIFT")
+        prefix,route_block=script.split(start,1)
+        require(end in route_block,"CONFIG_SOURCE_DRIFT")
+        script=prefix+'    routes=()\n'+end+route_block.split(end,1)[1]
     if operator_email is not None:
         require(type(operator_email) is str and re.fullmatch(
             r"c4-pilot-[0-9a-f]{32}@asi\.local",operator_email),"OPERATOR_IDENTITY")
@@ -166,7 +175,7 @@ def probe(source,host,port,operator_email=None):
             and report["blockCode"] in HOST_BLOCK_CODES):
         raise Block("HOST_" + report["blockCode"])
     required={"status":"C4_READONLY_PREFLIGHT_PASS","releaseSha":RELEASE,
-              "noSendFlags":7,"unauthorizedRoutes":5,
+              "noSendFlags":7,"unauthorizedRoutes":0 if config_only else 5,
               "stagingWrites":False,"fullE2E":"NOT_RUN"}
     require(result.returncode==0 and report==required,"REMOTE_NOT_PROVEN")
     return report
