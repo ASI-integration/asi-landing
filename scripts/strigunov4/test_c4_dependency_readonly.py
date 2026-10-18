@@ -231,19 +231,46 @@ class DependencyUnitTests(unittest.TestCase):
 
     def test_receipt_privacy_limit_identity_and_extra_keys(self):
         """Reject raw data, booleans-as-counts, partial graphs and unknown output."""
-        base = {"identities":[1]*5, "nodeLimitExceeded":False,
+        base = {"identities":[1]*5, "identityRoots":[1]*5, "nodeLimitExceeded":False,
                 "counts":{t:{"incidentLinked":0,"scopeConflicts":0} for t in c.TABLES}}
         result = c.receipt(base,set())
         self.assertFalse(result["cleanupAuthorized"])
         self.assertFalse(result["physicalReplayAuthorized"])
-        for change in ({"identities":[True]*5}, {"nodeLimitExceeded":True},
+        for change in ({"identities":[True]*5}, {"identityRoots":[True]*5},
+                       {"identityRoots":[0]*5}, {"nodeLimitExceeded":True},
                        {"payload":"private"}, {"counts":{"users":{"incidentLinked":True,"scopeConflicts":0}}}):
             with self.assertRaises(c.Block):
                 c.receipt(dict(base,**change),set())
 
+    def test_identity_failure_fixed_label_count_and_privacy(self):
+        """Missing vs mismatched evidence is explicit but never disables BLOCK."""
+        data={"identities":[1,1,1,1,0],"identityRoots":[1]*5,
+              "nodeLimitExceeded":False,
+              "counts":{t:{"incidentLinked":0,"scopeConflicts":0} for t in c.TABLES}}
+        with self.assertRaises(c.IncidentIdentityMismatch) as err:
+            c.receipt(data,set())
+        self.assertEqual(err.exception.details[-1],
+                         {"category":"intake","exact":0,"presentById":1})
+        output=io.StringIO()
+        with patch.object(c,"run",side_effect=err.exception),contextlib.redirect_stdout(output):
+            self.assertEqual(c.main(),2)
+        report=json.loads(output.getvalue())
+        self.assertEqual(report["status"],"BLOCK")
+        self.assertEqual(report["blockCode"],"INCIDENT_IDENTITY")
+        self.assertFalse(report["cleanupAuthorized"])
+        self.assertFalse(report["physicalReplayAuthorized"])
+        self.assertFalse(report["stagingWrites"])
+        self.assertEqual(report["identityChecks"][-1]["presentById"],1)
+        self.assertNotIn(c.prior.OWNED["intake"],output.getvalue())
+        self.assertNotIn("staging-acceptance@asi.local",output.getvalue())
+        for wrong in ({"identityRoots":[False]*5},{"identityRoots":[0]*5},
+                      {"identities":[2]*5}):
+            with self.assertRaisesRegex(c.Block,"IDENTITY_RECEIPT_SHAPE"):
+                c.receipt(dict(data,**wrong),set())
+
     def test_foreign_conflicts_keep_block(self):
         """Any cross-scope row preserves the unconditional cleanup hold."""
-        data = {"identities":[1]*5, "nodeLimitExceeded":False,
+        data = {"identities":[1]*5, "identityRoots":[1]*5, "nodeLimitExceeded":False,
                 "counts":{t:{"incidentLinked":0,"scopeConflicts":0} for t in c.TABLES}}
         data["counts"]["booking_ops_worker_tasks"] = {"incidentLinked":1,"scopeConflicts":1}
         result = c.receipt(data,set())
@@ -265,7 +292,7 @@ class DependencyUnitTests(unittest.TestCase):
         """Large fixed SQL goes through the read-only bind mount, never a writer."""
         env = environment()
         cat = catalog()
-        data = {"identities":[1]*5,"nodeLimitExceeded":False,
+        data = {"identities":[1]*5,"identityRoots":[1]*5, "nodeLimitExceeded":False,
                 "counts":{t:{"incidentLinked":0,"scopeConflicts":0} for t in c.TABLES}}
         calls = []
         def execute(cmd, db_env):
