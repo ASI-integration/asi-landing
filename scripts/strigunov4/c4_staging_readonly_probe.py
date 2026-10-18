@@ -19,11 +19,15 @@ WORKFLOW = REPO + "/.github/workflows/strigunov4-c4-e2e-acceptance.yml@refs/head
 OWNER = "ASI-integration"
 RELEASE = "d912aec6663de90e5ca4293cc5a69e2e0ed9ff94"
 SOURCE_SHA = re.compile(r"[0-9a-f]{40}\Z")
+HOST_BLOCK_CODES = frozenset(('SOURCE', 'HOST', 'RELEASE_LINK', 'UNIT', 'SERVICE_READ', 'SERVICE_IDENTITY', 'ENV_PERMISSIONS', 'PID', 'EFFECTIVE_NO_SEND', 'HEALTH_HTTP', 'HEALTH_SIZE', 'HEALTH', 'VERSION', 'UNAUTHENTICATED_ROUTE', 'FRESH_OPERATOR_NOT_CONFIGURED', 'UNEXPECTED_FAILURE'))
 HOST_SCRIPT = r"""
 import hashlib,json,os,stat,subprocess,sys,urllib.request,urllib.error
 from pathlib import Path
+class ProbeCheck(Exception):
+    def __init__(self, code):
+        self.code = code
 def check(ok,why):
-    if not ok: raise RuntimeError(why)
+    if not ok: raise ProbeCheck(why)
 def cmd(*a):
     r=subprocess.run(a,capture_output=True,timeout=12)
     check(r.returncode==0,"SERVICE_READ")
@@ -84,8 +88,10 @@ try:
                       "noSendFlags":7,"unauthorizedRoutes":len(routes),
                       "stagingWrites":False,"fullE2E":"NOT_RUN"},sort_keys=True))
 except (Exception,) as e:
-    # Only report a fixed status; suppress untrusted data and host secrets.
-    print('{"status":"BLOCK","fullE2E":"NOT_RUN"}')
+    # A closed code set only; exception messages and host values never leave here.
+    codes = ('SOURCE', 'HOST', 'RELEASE_LINK', 'UNIT', 'SERVICE_READ', 'SERVICE_IDENTITY', 'ENV_PERMISSIONS', 'PID', 'EFFECTIVE_NO_SEND', 'HEALTH_HTTP', 'HEALTH_SIZE', 'HEALTH', 'VERSION', 'UNAUTHENTICATED_ROUTE', 'FRESH_OPERATOR_NOT_CONFIGURED', 'UNEXPECTED_FAILURE')
+    code = e.code if type(e) is ProbeCheck and e.code in codes else "UNEXPECTED_FAILURE"
+    print(json.dumps({"status":"BLOCK","fullE2E":"NOT_RUN","blockCode":code},sort_keys=True))
     sys.exit(2)
 """
 
@@ -153,6 +159,12 @@ def probe(source,host,port,operator_email=None):
         result=g0.checked(args,env=env,stdin=script.encode(),timeout=130,allow_nonzero=True)
     try: report=json.loads(result.stdout)
     except (ValueError,UnicodeError): raise Block("REMOTE_JSON") from None
+    if (result.returncode == 2 and type(report) is dict
+            and set(report) == {"status", "fullE2E", "blockCode"}
+            and report.get("status") == "BLOCK" and report.get("fullE2E") == "NOT_RUN"
+            and type(report.get("blockCode")) is str
+            and report["blockCode"] in HOST_BLOCK_CODES):
+        raise Block("HOST_" + report["blockCode"])
     required={"status":"C4_READONLY_PREFLIGHT_PASS","releaseSha":RELEASE,
               "noSendFlags":7,"unauthorizedRoutes":5,
               "stagingWrites":False,"fullE2E":"NOT_RUN"}
@@ -171,8 +183,12 @@ def main():
     try:
         print(json.dumps(run(os.environ),sort_keys=True))
         return 0
-    except (Block,pg.Gate,g0.Gate,backup_export.GateError,ValueError,OSError):
-        print('{"status":"BLOCK","fullE2E":"NOT_RUN"}')
+    except (Block,pg.Gate,g0.Gate,backup_export.GateError,ValueError,OSError) as error:
+        allowed = {"HOST_" + code for code in HOST_BLOCK_CODES}
+        allowed.update({"REMOTE_JSON", "REMOTE_NOT_PROVEN", "OPERATOR_IDENTITY"})
+        code = (str(error) if type(error) is Block and str(error) in allowed
+                else "READONLY_PREFLIGHT_UNPROVEN")
+        print(json.dumps({"status":"BLOCK","fullE2E":"NOT_RUN","blockCode":code},sort_keys=True))
         return 2
 
 if __name__=="__main__":
