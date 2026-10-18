@@ -119,6 +119,20 @@ class TriggerMismatch(Block):
         super().__init__("TRIGGER_DRIFT")
 
 
+class IncidentIdentityMismatch(Block):
+    """Fixed synthetic roots only, never live row values in diagnostics."""
+    CATEGORIES=("user","account","property","booking","intake")
+    def __init__(self,exact,present):
+        require(type(exact) is list and type(present) is list
+                and len(exact)==len(present)==5
+                and all(type(v) is int and v in (0,1) for v in exact+present)
+                and all(x<=y for x,y in zip(exact,present)),
+                "IDENTITY_RECEIPT_SHAPE")
+        self.details=[{"category":n,"exact":x,"presentById":y}
+                      for n,x,y in zip(self.CATEGORIES,exact,present)]
+        super().__init__("INCIDENT_IDENTITY")
+
+
 def ident(value):
     """Only reviewed source identifiers can be used in SQL."""
     require(type(value) is str and re.fullmatch(r"[a-z_][a-z0-9_]{0,62}", value),
@@ -334,7 +348,13 @@ SELECT jsonb_build_object(
  (SELECT count(*) FROM public.accounts WHERE id::text=""" + literal(prior.OWNED["account"]) + """ AND name='C4 staging isolated account 39047710115'),
  (SELECT count(*) FROM public.properties WHERE id::text=""" + literal(prior.OWNED["property"]) + """ AND account_id::text=""" + literal(prior.OWNED["account"]) + """ AND name='C4 isolated property 39047710115'),
  (SELECT count(*) FROM public.booking_ops_records WHERE id::text=""" + literal(prior.OWNED["booking"]) + """ AND account_id::text=""" + literal(prior.OWNED["account"]) + """ AND property_id::text=""" + literal(prior.OWNED["property"]) + """ AND guest_name='C4 synthetic guest 39047710115'),
- (SELECT count(*) FROM public.booking_inbound_intake_events WHERE id::text=""" + literal(prior.OWNED["intake"]) + """ AND account_id::text=""" + literal(prior.OWNED["account"]) + """))
+ (SELECT count(*) FROM public.booking_inbound_intake_events WHERE id::text=""" + literal(prior.OWNED["intake"]) + """ AND account_id::text=""" + literal(prior.OWNED["account"]) + """)),
+ 'identityRoots',jsonb_build_array(
+ (SELECT count(*) FROM public.users WHERE id::text=""" + literal(prior.OWNED["user"]) + """),
+ (SELECT count(*) FROM public.accounts WHERE id::text=""" + literal(prior.OWNED["account"]) + """),
+ (SELECT count(*) FROM public.properties WHERE id::text=""" + literal(prior.OWNED["property"]) + """),
+ (SELECT count(*) FROM public.booking_ops_records WHERE id::text=""" + literal(prior.OWNED["booking"]) + """),
+ (SELECT count(*) FROM public.booking_inbound_intake_events WHERE id::text=""" + literal(prior.OWNED["intake"]) + """))
 )::text"""
 
 
@@ -354,10 +374,17 @@ def guarded_sql(catalog, missing):
 
 def receipt(data, missing):
     """Return only validated aggregate counts and static catalog identifiers."""
-    require(type(data) is dict and set(data) == {"counts", "identities", "nodeLimitExceeded"},
+    require(type(data) is dict and set(data) == {"counts", "identities", "identityRoots",
+                                                  "nodeLimitExceeded"},
             "RECEIPT_SHAPE")
-    require(data["identities"] == [1]*5 and all(type(x) is int for x in data["identities"]),
-            "INCIDENT_IDENTITY")
+    exact,present=data["identities"],data["identityRoots"]
+    require(type(exact) is list and type(present) is list
+            and len(exact)==len(present)==5
+            and all(type(v) is int and v in (0,1) for v in exact+present)
+            and all(x<=y for x,y in zip(exact,present)),
+            "IDENTITY_RECEIPT_SHAPE")
+    if exact != [1]*5:
+        raise IncidentIdentityMismatch(exact,present)
     require(data["nodeLimitExceeded"] is False, "GRAPH_LIMIT")
     counts = data["counts"]
     require(type(counts) is dict and set(counts) == set(TABLES)-missing, "COUNT_RELATIONS")
@@ -441,7 +468,7 @@ def main():
         print(json.dumps(result, sort_keys=True))
         return 2 if result["status"] == "BLOCK" else 0
     except Exception as error:
-        code = str(error) if type(error) in (Block, TriggerMismatch, OptionalModuleMismatch) else "UNEXPECTED_FAILURE"
+        code = str(error) if type(error) in (Block, TriggerMismatch, OptionalModuleMismatch, IncidentIdentityMismatch) else "UNEXPECTED_FAILURE"
         if not re.fullmatch(r"[A-Z][A-Z0-9_]{0,90}", code):
             code = "UNEXPECTED_FAILURE"
         report={"status":"BLOCK","blockCode":code,
@@ -454,6 +481,8 @@ def main():
                 report["optionalModule"] = error.module_witness
         if type(error) is OptionalModuleMismatch:
             report["optionalModule"] = error.witness
+        if type(error) is IncidentIdentityMismatch:
+            report["identityChecks"] = error.details
         print(json.dumps(report,sort_keys=True))
         return 2
 
