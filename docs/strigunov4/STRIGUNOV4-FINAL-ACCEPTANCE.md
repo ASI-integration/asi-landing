@@ -397,3 +397,32 @@ separate prerequisites despite the configured workflow confirmation strings.
 </details>
 
 </details>
+
+## Approved reconciliation 39140030546 — 18 October 2026, 15:34 UTC
+
+The [fixed-scope read](https://github.com/ASI-integration/asi-landing/actions/runs/39140030546)
+on exact main `06cd7690665470d521abcea729391241acf98174` is consumed, not repeatable.
+DB job117712839070 returned C4_RETAINED_READONLY_OBSERVED / NO_ROWS_OBSERVED:
+no current new booking/intake candidates, no scope block codes; old roots
+[1,1,1,1,0] and known evidence counts match. These are current counts only.
+Historical write outcome and old full-row preservation remain UNKNOWN.
+
+Host job117712838905 returned HOST_FRESH_OPERATOR_NOT_CONFIGURED after passing
+host/G0/unit/process/env-mode and seven effective no-send checks.
+Health/version were not reached. This is a proven current admission failure,
+not proof of the historical writer's cause.
+
+| Gate | Evidence status |
+| --- | --- |
+| DEPENDENCY_READONLY | Historical PASS run39127024136 |
+| RETENTION_A | Adopted; old and possible new evidence retained, no automatic deletion |
+| RECONCILIATION | DB snapshot observed; host admission BLOCK |
+| PHYSICAL_CORE | Writer39127850376 BLOCK, historical write outcome UNKNOWN |
+| FULL_PHYSICAL_E2E | NOT_PROVEN |
+| REAL_OPERATOR_UI | NOT_PROVEN; PR502 not deployed |
+| INDEPENDENT_EGRESS | NOT_INDEPENDENTLY_PROVEN |
+| READY_FOR_DEMO | NOT_READY |
+
+[Operator repair candidate](C4-OPERATOR-REPAIR.md) prepares only a separately
+approved protected configuration operation. No server change, restart,
+new booking or repeated reader is authorized by this preparation.
