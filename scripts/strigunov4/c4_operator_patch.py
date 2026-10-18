@@ -40,6 +40,8 @@ def decode(raw):
         text = raw.decode("utf-8", "strict")
     except UnicodeError:
         raise Block("ENV_ENCODING") from None
+    require(all(b >= 32 or b in (9, 10) for b in raw)
+            and not any(c in text for c in ("\x85", "\u2028", "\u2029")), "ENV_CONTROL")
     values, positions = {}, {}
     lines = text.splitlines(keepends=True)
     require(len(lines) <= 2500, "ENV_LINES")

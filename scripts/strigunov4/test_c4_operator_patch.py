@@ -41,7 +41,8 @@ class PatchTests(unittest.TestCase):
                 p.plan(raw)
 
     def test_malformed_or_multiline_rejected(self):
-        cases = [b"\0", b"\r\n", b"KEY=x\\\n", b'KEY="unfinished\n',
+        cases = [b"\0", b"\r\n", b"KEY=a\vCRM_OPERATOR_EMAILS=b@c.test\n",
+                 "KEY=a\u2028CRM_OPERATOR_EMAILS=b@c.test\n".encode(), b"KEY=x\\\n", b'KEY="unfinished\n',
                  b"export CRM_OPERATOR_EMAILS=a@b.test\n",
                  b'KEY="multiline\nCRM_OPERATOR_EMAILS=x@y.test\n"\n']
         for extra in cases:
