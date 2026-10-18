@@ -1,5 +1,11 @@
 # Strigunov4 C4 — targeted read-only deep diagnosis
 
+## 18 October 2026: complete staging schema results and conservative read-only follow-up
+
+Approved read-only run [39104867696](https://github.com/ASI-integration/asi-landing/actions/runs/39104867696) confirms **10 absent optional feature tables**: `public.guest_lifecycle_events`, the three partner binding tables, and the six partner communication tables (`actions`, `decisions`, `handoffs`, `inbox`, `sessions`, `turns`). The other 15 relations in the fixed schema allowlist exist. This DOES NOT prove any columns, rows, or foreign-key restrictions are safe to delete.
+
+The 10 absent tables belong to separate August guest-lifecycle/partner migrations, outside the nine C4 staging SQL changes. No migration is automatically justified. This revision of the read-only witness treats absent optional modules as **null/NOT_DEPLOYED**, while preserving row counts for present tables, FAIL-CLOSED rejection of missing core tables, exact incident identity, read-only connection and all protected GitHub gates. There is NO authority to clean test records or replay physical booking. The existing C4 cleanup contains direct references to missing optional tables and remains BLOCKED until separately reviewed and fixed.
+
 ## 18 October 2026: confirmed schema mismatch, not permission for migration
 
 Approved GitHub staging-only read-only run [39103410182](https://github.com/ASI-integration/asi-landing/actions/runs/39103410182) passed source and owner gates, then failed closed with `MISSING_RELATION_GUEST_LIFECYCLE_EVENTS`. The schema object `public.guest_lifecycle_events` is absent in this staging database. No writes or cleanup occurred.
