@@ -372,8 +372,13 @@ def guarded_sql(catalog, missing):
             + census_sql(missing) + ";\nROLLBACK;")
 
 
-def receipt(data, missing):
-    """Return only validated aggregate counts and static catalog identifiers."""
+OLD_IDENTITY_BASELINE=(1,1,1,1,0)  # protected 39051076374: intakeExact=0, intakeOwnedScope=0
+NEW_IDENTITY_BASELINE=(1,1,1,1,1)  # separately approved fresh retained fixture
+
+
+def receipt(data, missing, *, new_fixture=False):
+    """Fail closed using separate proven old-vs-new synthetic identity contracts."""
+    require(type(new_fixture) is bool,"IDENTITY_PROFILE")
     require(type(data) is dict and set(data) == {"counts", "identities", "identityRoots",
                                                   "nodeLimitExceeded"},
             "RECEIPT_SHAPE")
@@ -383,7 +388,8 @@ def receipt(data, missing):
             and all(type(v) is int and v in (0,1) for v in exact+present)
             and all(x<=y for x,y in zip(exact,present)),
             "IDENTITY_RECEIPT_SHAPE")
-    if exact != [1]*5:
+    expected=list(NEW_IDENTITY_BASELINE if new_fixture else OLD_IDENTITY_BASELINE)
+    if exact != expected or present != expected:
         raise IncidentIdentityMismatch(exact,present)
     require(data["nodeLimitExceeded"] is False, "GRAPH_LIMIT")
     counts = data["counts"]
@@ -392,6 +398,8 @@ def receipt(data, missing):
         require(type(value) is dict and set(value) == {"incidentLinked", "scopeConflicts"}
                 and all(type(n) is int and 0 <= n <= 10000 for n in value.values())
                 and value["scopeConflicts"] <= value["incidentLinked"], "COUNT_SHAPE")
+    require(counts["booking_inbound_intake_events"]["incidentLinked"] ==
+            (1 if new_fixture else 0),"C4_INTAKE_SCOPE_DRIFT")
     conflict = any(v["scopeConflicts"] for v in counts.values())
     return {"status": "BLOCK" if conflict else "C4_DEPENDENCY_READONLY_SCOPED_PASS",
             "blockCode": "CROSS_SCOPE_ROWS" if conflict else None,
