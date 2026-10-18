@@ -1,3 +1,169 @@
+# Strigunov 4: acceptance after #495
+
+Decision: **NO-GO / NOT_READY**. Observation: 2026-10-18, 10:20 UTC.
+No new booking, physical acceptance or independent egress proof is claimed.
+This register supersedes the historical register retained below.
+
+## Current five-stage evidence
+
+| Stage | Status | Verified result / remaining condition |
+| --- | --- | --- |
+| 1. Protected dependency diagnostic | BLOCK: staging reviewer | Owner-authorized run [39118692946](https://github.com/ASI-integration/asi-landing/actions/runs/39118692946) exists once on exact main below. Both prerequisite jobs PASS; protected job 117649791595 is waiting for staging review. No live JSON receipt exists yet. |
+| 2. Retention A | BLOCK: owner adoption | Full old graph preservation and stop-and-retain behavior are implemented. The proposal below is not adopted; the fresh complete live census remains blocked at stage 1. Historical 24 audit + four physical rows remain the last row evidence. |
+| 3. New isolated E2E admission | BLOCK | Merged source and exact-head CI PASS. Fresh effective server operator/admin membership, independent review of the final receipt fix and usable human demo login are not yet proved. No host configuration was changed or inspected through an alternate credential path. |
+| 4. Physical staging E2E | NOT_RUN | No writer dispatch. Exact-SHA owner write approval, adopted retention policy, successful preflights and separate staging approval are required. |
+| 5. Independent acceptance/demo | NOT_RUN | Full observed journey, usable operator UI and independent absence of external effects are still missing. READY_FOR_DEMO and FULL_PHYSICAL_E2E_PASS are not established. |
+
+## Exact source and protected diagnostic
+
+Observed protected main: `beff46e55b73293774d210354d8276bea4812b2b`.
+Both [#494](https://github.com/ASI-integration/asi-landing/pull/494) and
+[#495](https://github.com/ASI-integration/asi-landing/pull/495) are MERGED.
+Final #495 head: `f44a8dd8ae31dc9c7360b5bf59abc34167db056c`;
+its merge commit is the observed main above. Branches were not renamed.
+
+The owner authorized exactly one dependency read-only diagnostic on that main.
+Existing runs were checked before dispatch; no matching dispatch existed.
+Actor identity, current main, read-only workflow/source, required prerequisite
+jobs and staging environment protection were checked before dispatch.
+The workflow uses protected secrets only after the environment gate and
+read-only PostgreSQL transactions; it does not run the physical lifecycle.
+
+Exact inputs of run 39118692946:
+
+```text
+workflow=.github/workflows/strigunov4-c4-dependency-readonly.yml
+ref=main
+reviewed_main_sha=beff46e55b73293774d210354d8276bea4812b2b
+confirm=PROVE_C4_DEPENDENCIES_beff46e55b73293774d210354d8276bea4812b2b
+incident_run=39047710115
+```
+
+| Job | Result at observation | Evidence |
+| --- | --- | --- |
+| offline_source_tests | PASS | [117649660517](https://github.com/ASI-integration/asi-landing/actions/runs/39118692946/job/117649660517) |
+| isolated_dependency_postgres | PASS | [117649660371](https://github.com/ASI-integration/asi-landing/actions/runs/39118692946/job/117649660371) |
+| protected_dependency_readonly | WAITING; no database receipt | [117649791595](https://github.com/ASI-integration/asi-landing/actions/runs/39118692946/job/117649791595) |
+
+The next action is the designated reviewer's normal **Review deployments ->
+staging -> Approve and deploy** on this existing run. The agent does not approve
+it on the reviewer's behalf. Do not dispatch a duplicate or rerun an uncertain
+attempt. Recheck main immediately before approval; stop on SHA drift. The job
+also checks current main after approval. A different SHA needs fresh owner scope.
+
+If the job returns TRIGGER_DRIFT, record only its source-allowlisted table names,
+missing source-known trigger names, bounded unexpected counts and truncation
+flags. No actual staging trigger identity is currently known. Do not change the
+manifest speculatively. If schema admission succeeds, record scoped counts and
+scope conflicts, preserving NOT_DEPLOYED/null rather than replacing them with 0.
+No schema, trigger, FK, RLS or preservation guard may be relaxed to obtain PASS.
+
+## Verification of the merged source
+
+Exact final #495 CI: [PR validation](https://github.com/ASI-integration/asi-landing/actions/runs/39116663712)
+(validate and isolated recovery PostgreSQL PASS),
+[physical gate unit and isolated retention PG17](https://github.com/ASI-integration/asi-landing/actions/runs/39116663719)
+PASS, [C4 source tests](https://github.com/ASI-integration/asi-landing/actions/runs/39116663663)
+PASS, [backup offline checks](https://github.com/ASI-integration/asi-landing/actions/runs/39116663701)
+PASS. Protected writer and isolated_full_e2e were SKIPPED; these are not live PASS.
+Previous unchanged runtime checks are reused rather than repeating broad suites.
+
+The final two-file fix retains sanitized booking/intake IDs when the old-evidence
+postcheck fails, both after child success and after a child Gate error.
+Source inspection confirms the final guard receives the saved safe receipt;
+two regression tests cover those cases and reject a secret field. This removes
+the confirmed loss of returned IDs. It does not recover IDs that a killed or
+unreadable child never returned: reconcile by durable root IDs and do not retry.
+The old snapshot comparison still executes in finally; hard cancellation can
+prevent finally. Read locks do not provide a write fence throughout the run.
+
+Independent source review remains a separate evidence gap for the final fix.
+The [CodeRabbit summary](https://github.com/ASI-integration/asi-landing/pull/495#issuecomment-6248100452)
+still says it is processing the final two files. Its later green status alone
+is not completed exact-head coverage. Subsequent commands reported
+[base/head changed](https://github.com/ASI-integration/asi-landing/pull/495#issuecomment-6248406309)
+and [PR closed](https://github.com/ASI-integration/asi-landing/pull/495#issuecomment-6248513480).
+An independent reviewer must review `4233a811de9c792d36eac9f972c84eedde379510..f44a8dd8ae31dc9c7360b5bf59abc34167db056c`
+and record exact coverage before physical acceptance. Review of this documentation
+PR alone does not certify that runtime diff or a live pilot.
+
+## Proposed owner retention decision; not a write authorization
+
+Adopt A: leave incident 39047710115 and its complete source-scoped graph in place,
+including all parents, 24 audit events, four physical rows and the pristine
+Telegram draft. Do not modify, detach or delete any old evidence. Never retry
+cleanup 39056059835, whose outcome remains WRITE_UNCERTAIN_RECONCILE_BEFORE_RETRY.
+
+For the separate one-use fixture in `scripts/strigunov4/c4_retained_fixture.json`,
+retain one synthetic user/account/membership/property, one deduplicated booking
+and intake, and all generated audit, task, draft, readiness and availability
+rows as restricted test evidence. Root user/account/property IDs are respectively
+`dc194ac7-e586-4f7a-bd27-52fe743a89b7`,
+`1ed26348-32e1-4e19-ae0d-07d3658f42ab`,
+`ac431190-8cdb-4dfe-be89-3f3f83e258fc`.
+No actual total row count is asserted before execution. No real guest contacts,
+provider messages or payments are allowed. Review retention on **2026-11-17**;
+that date never triggers deletion. Continuation or a later archive/deletion plan
+requires a separate decision. This operational proposal does not cover real data.
+
+Stop on approval/SHA/schema/operator/no-send/identity mismatch before writes.
+After any failure, timeout, unknown COMMIT or evidence discrepancy: stop and
+retain, preserve run/SHA/root and returned child IDs, then separately authorize
+read-only reconciliation. No automatic cleanup or reuse of the one-use fixture.
+Opaque JSON/polymorphic links and trigger function bodies remain proof limits.
+
+Owner adoption of this proposal alone does not authorize host changes or writes.
+A future write decision must specify actual current main M, this fixture and
+permitted INSERT/UPDATE effects. See [the execution envelope](C4-RETAINED-PILOT.md).
+The narrow dependency diagnostic authorization does not cover a separate host
+probe, server allowlist changes, migrations, deployment or a writer dispatch.
+
+## Human demonstration and independent acceptance
+
+After all gates pass, demonstrate only the retained synthetic staging fixture:
+
+1. Open the approved staging operator UI using a genuinely tested human login.
+   No session material is included in evidence; a sealed API session is not a
+   demonstrated human login. The existing synthetic password hash is not proof
+   of usable interactive credentials.
+2. Show synthetic intake and its repeated identical request resolving to one
+   booking; show the operator queue and authorized CRM booking details.
+3. Show cleaning assignment, completion and verification; linen delivery and
+   verification; supplies verification; final readiness approval and readback.
+4. Show denial for an unauthenticated visitor and a read-only cross-account
+   request. Do not POST against the old booking.
+5. Match retained new IDs and old before/after equality to the exact run, main,
+   G0 release and staging database. An independent reviewer records results.
+
+G0 remains a source pin `d912aec6663de90e5ca4293cc5a69e2e0ed9ff94`, not a new
+live observation. The new operator email must be present in both effective
+server allowlists; child environment variables do not configure that server.
+The current authorization has not established that fact.
+
+The reviewer must separately establish no external Telegram/email/OTA delivery
+or payment attempt over the run interval using authorized independent runtime/
+egress evidence. Effective flags and zero database delivery rows alone are
+insufficient. No monitoring configuration is changed under this task.
+Until that evidence and the full human-observed journey exist,
+C4_PHYSICAL_CORE_PASS cannot be promoted to FULL_PHYSICAL_E2E_PASS.
+READY_FOR_DEMO would only cover this synthetic demonstration, not commercial
+production readiness. Production and Sentinel remain untouched.
+
+## Protection observation
+
+Classic main protection: strict required validate (app 15368), admins enforced,
+force push/deletion disabled. Staging: required reviewer ASI-integration,
+can_admins_bypass=false, custom branch policy main only. No protection or secret
+setting changed. A token's ability to approve does not authorize self-approval.
+
+## Historical register preserved verbatim
+
+The following pre-merge snapshot is historical. Its main SHA, merge requests,
+review coverage and stage statuses are superseded by the dated evidence above.
+
+<details>
+<summary>Pre-merge acceptance register (historical, not current instructions)</summary>
+
 # Strigunov 4 final acceptance
 
 Decision: **NO-GO / NOT_READY**. No physical five-stage completion is claimed.
@@ -70,3 +236,5 @@ protection: strict required `validate`, admins enforced, force push and deletion
 disabled. Staging has a required reviewer and `can_admins_bypass=false`.
 No settings were changed. Owner authorization and environment review remain
 separate prerequisites despite the configured workflow confirmation strings.
+
+</details>
