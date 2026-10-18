@@ -1,5 +1,11 @@
 # Strigunov4 C4 — targeted read-only deep diagnosis
 
+## 18 October 2026: complete staging schema results and conservative read-only follow-up
+
+Approved read-only run [39104867696](https://github.com/ASI-integration/asi-landing/actions/runs/39104867696) confirms **10 absent optional feature tables**: `public.guest_lifecycle_events`, the three partner binding tables, and the six partner communication tables (`actions`, `decisions`, `handoffs`, `inbox`, `sessions`, `turns`). The other 15 relations in the fixed schema allowlist exist. This DOES NOT prove any columns, rows, or foreign-key restrictions are safe to delete.
+
+The 10 absent tables belong to separate August guest-lifecycle/partner migrations, outside the nine C4 staging SQL changes. No migration is automatically justified. This revision of the read-only witness treats absent optional modules as **null/NOT_DEPLOYED**, while preserving row counts for present tables, FAIL-CLOSED rejection of missing core tables, exact incident identity, read-only connection and all protected GitHub gates. There is NO authority to clean test records or replay physical booking. The existing C4 cleanup contains direct references to missing optional tables and remains BLOCKED until separately reviewed and fixed.
+
 ## 18 October 2026: confirmed schema mismatch, not permission for migration
 
 Approved GitHub staging-only read-only run [39103410182](https://github.com/ASI-integration/asi-landing/actions/runs/39103410182) passed source and owner gates, then failed closed with `MISSING_RELATION_GUEST_LIFECYCLE_EVENTS`. The schema object `public.guest_lifecycle_events` is absent in this staging database. No writes or cleanup occurred.
@@ -31,7 +37,7 @@ Adds a separate GitHub `staging`-protected, main-only workflow:
 - owner SHA-bound confirmation, current main, first attempt, fixed prior incident;
 - previously reviewed PostgreSQL17/TLS verify-full connection and exact 99/7/9 schema history;
 - single `REPEATABLE READ READ ONLY` transaction plus PostgreSQL `default_transaction_read_only=on`;
-- numeric counts for 25 fixed categories, including booking audit events, physical-readiness rows, guest lifecycle, deliveries and send attempts, pristine versus non-pristine Telegram drafts and direct partner descendants;
+- 25 fixed category count keys: numeric values for installed tables and JSON `null` (explicit `NOT_DEPLOYED`) for absent optional feature tables; examples include booking audit events, physical readiness, guest lifecycle, deliveries, pristine/non-pristine Telegram drafts and direct partner descendants;
 - PostgreSQL catalog's **schema-only names** from a depth-limited recursive foreign-key dependency map rooted at users/accounts/properties/bookings/intents/tasks. It follows cascade relationships to indirect descendants and separately lists `NO ACTION`/`RESTRICT` blockers and `SET NULL`/`SET DEFAULT` side-effect relationships. This is a diagnostic map, not proof that rows exist in every listed table or that the dependency inventory is exhaustive for every possible schema path.
 
 On command failure, the proposed revision sets PostgreSQL psql `VERBOSITY=sqlstate` and emits only a five-character SQLSTATE or UNKNOWN; raw stderr remains suppressed. The output excludes guest names/emails, passwords, message bodies, booking content and connection details. It does not delete, attempt cleanup, send anything, migrate or deploy. If the query fails due to missing tables/columns, it prints a sanitized BLOCK stage code instead of SQL stderr.
