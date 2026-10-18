@@ -254,7 +254,7 @@ def main():
         print(json.dumps(run(os.environ),sort_keys=True))
         return 0
     except Exception as error:
-        c=str(error) if type(error) is Block else "UNEXPECTED_ERROR"
+        c=str(error) if type(error) in (Block,MissingSchema) else "UNEXPECTED_ERROR"
         c=c if re.fullmatch(r"[A-Z][A-Z0-9_]{0,95}",c) else "UNKNOWN_ERROR"
         receipt={"status":"BLOCK","blockCode":c,
                  "stagingWrites":False,"cleanupAttempted":False,
