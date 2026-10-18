@@ -187,6 +187,19 @@ INSERT INTO booking_ops_worker_link_audit VALUES ('{AUDIT}','{B}','{TASK}','{LIN
         self.assertEqual(before, self.snapshot())
         self.assertEqual(self.witness()["status"], "C4_DEPENDENCY_READONLY_SCOPED_PASS")
 
+    def test_scoped_identity_drift_is_readonly_and_reports_no_user_data(self):
+        """An intake row remains by ID but carries the wrong synthetic account."""
+        self.sql(f"UPDATE booking_inbound_intake_events SET account_id='{FOREIGN}' WHERE id='{I}';")
+        before=self.snapshot()
+        catalog=self.catalog()
+        missing=c.schema_check(catalog)
+        data=json.loads(self.sql(c.guarded_sql(catalog,missing)).stdout)
+        with self.assertRaises(c.IncidentIdentityMismatch) as err:
+            c.receipt(data,missing)
+        self.assertEqual(err.exception.details[-1],
+                         {"category":"intake","exact":0,"presentById":1})
+        self.assertEqual(before,self.snapshot())
+
     def test_composite_keys_and_foreign_module_rows(self):
         """Composite identities preserve distinct modules without including other tenants."""
         self.sql("CREATE TABLE ops_v17_onboardings(id uuid PRIMARY KEY,account_id text); CREATE TABLE ops_v17_module_state(onboarding_id uuid REFERENCES ops_v17_onboardings(id) ON DELETE CASCADE,module_key text,PRIMARY KEY(onboarding_id,module_key));")
