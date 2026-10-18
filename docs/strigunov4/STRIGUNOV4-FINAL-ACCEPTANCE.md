@@ -70,7 +70,9 @@ remote failures, and the physical parent's generic exception handler discarded t
 durable roots and cause. This reproduces the information loss in the actual receipt;
 the particular live root cause remains unknown. Operator absence is only a candidate.
 
-The proposed correction changes no admission or write operation:
+The correction merged in [#500](https://github.com/ASI-integration/asi-landing/pull/500),
+reviewed HEAD `d5c69e870375ed82f54ecd47c03bb0336255e88c`, merge
+`1b874a5aef2f299b03a8525a8879843df83c5ba5`. It changes no admission or write operation:
 - Host check failures expose only a closed set of fixed codes from a typed check
   exception. Arbitrary exception messages, environment and host output stay private.
 - The SSH reader accepts that exact BLOCK shape only on exit 2, never as PASS.
@@ -84,7 +86,8 @@ remote codes, wrong operator, no child on preflight failure, generic crash and
 old-invariant failure. Existing six real isolated PG17 retention tests in
 [39126266336](https://github.com/ASI-integration/asi-landing/actions/runs/39126266336)
 and the same prerequisites in the physical run PASS; no SQL changed in this fix.
-Exact-head CI and independent review of this new package must complete before merge.
+Exact-head CI and CodeRabbit completed successfully for #500 with no actionable
+comments; the nonblocking docstring warning is retained in its review.
 A future source merge does not authorize a new protected run on its resulting SHA.
 
 ## Concrete continuation and independent demonstration
@@ -94,8 +97,12 @@ then use a separately authorized read-only reconciliation to establish whether t
 reserved roots exist, discover only their scoped booking/intake IDs, and compare old
 evidence. A fresh access must have its own exact source/scope and staging reviewer.
 The existing dependency reader is old-incident scoped: rerunning it alone cannot
-prove the new fixture's absence or recover new IDs. No new reconciliation run is
-claimed to be available or authorized by this documentation.
+prove the new fixture's absence or recover new IDs. A [fixed retained read-only package](C4-RETAINED-READONLY.md) is now prepared with
+partial-state discovery, scoped dependency counts and bounded physical-state counters.
+It observes old and new graphs in one read-only snapshot and separately prepares
+the fixed operator/G0 configuration probe without POST requests. This source package has
+not been dispatched; protected merge and a separate exact-SHA read approval remain
+required. No current snapshot can retrospectively prove old full-row equality.
 
 Inspect only already-authorized evidence until that gate. If the live cause is an
 operator/no-send/service mismatch, prepare a specific configuration decision after
