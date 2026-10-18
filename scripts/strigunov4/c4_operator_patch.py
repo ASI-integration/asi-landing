@@ -47,7 +47,10 @@ def decode(raw):
     require(len(lines) <= 2500, "ENV_LINES")
     for index, line in enumerate(lines):
         stripped = line.strip()
-        if not stripped or stripped.startswith(("#", ";")):
+        if not stripped:
+            continue
+        if stripped.startswith(("#", ";")):
+            require(not stripped.endswith("\\"), "ENV_ESCAPE")
             continue
         match = ASSIGNMENT.fullmatch(stripped)
         require(match is not None, "ENV_ASSIGNMENT")

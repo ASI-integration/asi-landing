@@ -45,6 +45,8 @@ class PatchTests(unittest.TestCase):
                  "KEY=a\u2028CRM_OPERATOR_EMAILS=b@c.test\n".encode(), b"KEY=x\\\n", b'KEY="unfinished\n',
                  b"export CRM_OPERATOR_EMAILS=a@b.test\n",
                  b'KEY="multiline\nCRM_OPERATOR_EMAILS=x@y.test\n"\n']
+        cases.extend(prefix + b" note " + bytes([92, 10]) + b"CRM_OPERATOR_EMAILS=\n"
+                     for prefix in (b"#", b";"))
         for extra in cases:
             with self.subTest(extra=extra), self.assertRaises(p.Block):
                 p.plan(env_bytes(extra))
@@ -72,6 +74,7 @@ class PatchTests(unittest.TestCase):
 
     def test_unrelated_bytes_preserved(self):
         raw = env_bytes(b'# comment\n; comment\nSECRET="a b = # not printed"\n\n')
+        raw += b"# path " + bytes([92]) + b" retained\n; normal comment\n"
         self.assertTrue(p.plan(raw)["output"].startswith(raw))
 
 
