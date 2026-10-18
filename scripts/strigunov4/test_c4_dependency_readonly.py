@@ -231,7 +231,7 @@ class DependencyUnitTests(unittest.TestCase):
 
     def test_receipt_privacy_limit_identity_and_extra_keys(self):
         """Reject raw data, booleans-as-counts, partial graphs and unknown output."""
-        base = {"identities":[1]*5, "identityRoots":[1]*5, "nodeLimitExceeded":False,
+        base = {"identities":list(c.OLD_IDENTITY_BASELINE), "identityRoots":list(c.OLD_IDENTITY_BASELINE), "nodeLimitExceeded":False,
                 "counts":{t:{"incidentLinked":0,"scopeConflicts":0} for t in c.TABLES}}
         result = c.receipt(base,set())
         self.assertFalse(result["cleanupAuthorized"])
@@ -268,9 +268,30 @@ class DependencyUnitTests(unittest.TestCase):
             with self.assertRaisesRegex(c.Block,"IDENTITY_RECEIPT_SHAPE"):
                 c.receipt(dict(data,**wrong),set())
 
+    def test_historical_intake_absence_is_not_new_fixture_absence(self):
+        """Old proven zero intake is mandatory; the new fixture must have one."""
+        def census(n):
+            counts={t:{"incidentLinked":0,"scopeConflicts":0} for t in c.TABLES}
+            counts["booking_inbound_intake_events"]["incidentLinked"]=n
+            return {"identities":[1,1,1,1,n],"identityRoots":[1,1,1,1,n],
+                    "nodeLimitExceeded":False,"counts":counts}
+        self.assertEqual(c.receipt(census(0),set())["status"],
+                         "C4_DEPENDENCY_READONLY_SCOPED_PASS")
+        self.assertEqual(c.receipt(census(1),set(),new_fixture=True)["status"],
+                         "C4_DEPENDENCY_READONLY_SCOPED_PASS")
+        for data,fresh in ((census(1),False),(census(0),True)):
+            with self.assertRaises(c.IncidentIdentityMismatch):
+                c.receipt(data,set(),new_fixture=fresh)
+        with self.assertRaisesRegex(c.Block,"IDENTITY_PROFILE"):
+            c.receipt(census(0),set(),new_fixture="unchecked")
+        unexpected=census(0)
+        unexpected["counts"]["booking_inbound_intake_events"]["incidentLinked"]=1
+        with self.assertRaisesRegex(c.Block,"C4_INTAKE_SCOPE_DRIFT"):
+            c.receipt(unexpected,set())
+
     def test_foreign_conflicts_keep_block(self):
         """Any cross-scope row preserves the unconditional cleanup hold."""
-        data = {"identities":[1]*5, "identityRoots":[1]*5, "nodeLimitExceeded":False,
+        data = {"identities":list(c.OLD_IDENTITY_BASELINE), "identityRoots":list(c.OLD_IDENTITY_BASELINE), "nodeLimitExceeded":False,
                 "counts":{t:{"incidentLinked":0,"scopeConflicts":0} for t in c.TABLES}}
         data["counts"]["booking_ops_worker_tasks"] = {"incidentLinked":1,"scopeConflicts":1}
         result = c.receipt(data,set())
@@ -292,7 +313,7 @@ class DependencyUnitTests(unittest.TestCase):
         """Large fixed SQL goes through the read-only bind mount, never a writer."""
         env = environment()
         cat = catalog()
-        data = {"identities":[1]*5,"identityRoots":[1]*5, "nodeLimitExceeded":False,
+        data = {"identities":list(c.OLD_IDENTITY_BASELINE),"identityRoots":list(c.OLD_IDENTITY_BASELINE), "nodeLimitExceeded":False,
                 "counts":{t:{"incidentLinked":0,"scopeConflicts":0} for t in c.TABLES}}
         calls = []
         def execute(cmd, db_env):
