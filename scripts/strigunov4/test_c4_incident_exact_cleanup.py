@@ -203,5 +203,104 @@ class IncidentCleanupTests(unittest.TestCase):
         self.assertEqual(data["blockCode"],"UNEXPECTED_ERROR")
         self.assertNotIn("password",buffer.getvalue())
 
+
+class PreservationTests(unittest.TestCase):
+    def receipt(self, audit=24, physical=4):
+        return {"incidentRun":c.INCIDENT,"auditEvents":audit,"physicalRows":physical,
+                "missingOptionalRelations":["public.guest_lifecycle_events"]}
+
+    def test_audit_physical_and_empty_graph_all_stop(self):
+        for a,p,code in ((24,4,"C4_AUDIT_PRESERVATION_REQUIRED"),
+                         (0,4,"C4_PHYSICAL_PRESERVATION_REQUIRED"),
+                         (0,0,"C4_DEPENDENCY_POLICY_REQUIRED")):
+            with self.subTest(audit=a,physical=p), self.assertRaisesRegex(c.Block,code):
+                c.require_preservation(self.receipt(a,p))
+
+    def test_malformed_counts_identity_and_optional_catalog_stop(self):
+        for key,value in (("auditEvents",True),("physicalRows",-1),
+                          ("physicalRows",None),("incidentRun","other"),
+                          ("missingOptionalRelations",["public.users"]),
+                          ("missingOptionalRelations",["public.guest_lifecycle_events"]*2)):
+            d=self.receipt();d[key]=value
+            with self.subTest(key=key,value=value), self.assertRaises(c.Block):
+                c.require_preservation(d)
+
+    def test_optional_absence_is_catalog_evidence_not_zero_count(self):
+        sql=c.preservation_query()
+        self.assertIn("SERIALIZABLE READ ONLY",sql)
+        self.assertIn("to_regclass(name) IS NULL",sql)
+        self.assertNotIn("FROM public.guest_lifecycle_events",sql)
+        self.assertNotIn("FROM public.partner_",sql)
+        self.assertNotRegex(sql,r"\b(DELETE|INSERT|UPDATE|ALTER|DROP)\b")
+
+    def test_transaction_barrier_precedes_every_delete_and_optional_reference(self):
+        sql=c.cleanup_sql()
+        barrier=sql.index("DO $c4preserve$")
+        self.assertLess(sql.index("pg_advisory_xact_lock"),barrier)
+        self.assertLess(sql.index("C4_DEPENDENCY_POLICY_REQUIRED"),
+                        sql.index("DO $c4pre$"))
+        for match in re.finditer(r"DELETE FROM",sql):
+            self.assertLess(barrier,match.start())
+        self.assertLess(sql.index("C4_AUDIT_PRESERVATION_REQUIRED"),
+                        sql.index("FROM public.guest_lifecycle_events"))
+
+    def test_actual_run_never_opens_writer_when_preservation_blocks(self):
+        import types
+        c.STATE["writeAttempted"]=False
+        calls=[]
+        def checked(cmd,**kwargs):
+            calls.append(cmd)
+            if cmd[0]=="git":
+                return types.SimpleNamespace(stdout=(SHA+"\n").encode())
+            if cmd[:2]==["docker","pull"]:
+                return types.SimpleNamespace(stdout=b"")
+            self.assertIn("READ ONLY",cmd[-1])
+            self.assertIn("VERBOSITY=sqlstate",cmd)
+            return types.SimpleNamespace(returncode=0,stderr=b"",
+                stdout=(json.dumps(self.receipt())+"\n").encode())
+        with (patch.object(c.g0,"checked",side_effect=checked),
+              patch.object(c.g0,"exact_sql_history"),
+              patch.object(c.stage,"probe",return_value={
+                  "status":"C4_READONLY_PREFLIGHT_PASS","fullE2E":"NOT_RUN"}),
+              patch.object(c.Path,"read_bytes",return_value=b"FAKE_CA"),
+              patch.object(c.g0.tls_guard,"ca_bytes",return_value=b"FAKE_CA"),
+              patch.object(c,"query_counts",return_value=c.EXPECTED),
+              patch.object(c.pg,"db_environment",return_value={
+                  "PGOPTIONS":"-c default_transaction_read_only=on"}) as dbenv,
+              patch.object(c.pg,"postgres_client_command",return_value=["psql","-c","QUERY"])):
+            with self.assertRaisesRegex(c.Block,"C4_AUDIT_PRESERVATION_REQUIRED"):
+                c.run(valid())
+        self.assertFalse(c.STATE["writeAttempted"])
+        self.assertTrue(all(call.args[-1] is True for call in dbenv.call_args_list))
+        self.assertTrue(all("--file" not in cmd for cmd in calls))
+
+    def test_permission_failure_is_safe_and_never_enters_writer(self):
+        import types
+        with (patch.object(c.pg,"db_environment",return_value={
+                  "PGOPTIONS":"-c default_transaction_read_only=on"}),
+              patch.object(c.pg,"postgres_client_command",return_value=["psql","-c","QUERY"]),
+              patch.object(c.g0,"checked",return_value=types.SimpleNamespace(
+                  returncode=1,stdout=b"",stderr=b"42501 secret must not leak"))):
+            with self.assertRaisesRegex(c.Block,"^PRESERVATION_QUERY_FAILED$"):
+                c.check_preservation("fake",None,None)
+
+    def test_census_drift_and_unsafe_host_stop_before_preservation(self):
+        import types
+        for report,counts,code in (
+            ({"status":"C4_READONLY_PREFLIGHT_PASS","fullE2E":"NOT_RUN"},
+             {**c.EXPECTED,"bookingTasks":7},"FIXTURE_CENSUS_DRIFT"),
+            ({"status":"BLOCK","fullE2E":"NOT_RUN"},c.EXPECTED,"STAGE_PREFLIGHT")):
+            with (patch.object(c.g0,"checked",return_value=types.SimpleNamespace(
+                      stdout=(SHA+"\n").encode())),
+                  patch.object(c.g0,"exact_sql_history"),
+                  patch.object(c.stage,"probe",return_value=report),
+                  patch.object(c.Path,"read_bytes",return_value=b"FAKE_CA"),
+                  patch.object(c.g0.tls_guard,"ca_bytes",return_value=b"FAKE_CA"),
+                  patch.object(c,"query_counts",return_value=counts),
+                  patch.object(c,"check_preservation") as guard):
+                with self.assertRaisesRegex(c.Block,code):
+                    c.run(valid())
+                guard.assert_not_called()
+
 if __name__=="__main__":
     unittest.main()

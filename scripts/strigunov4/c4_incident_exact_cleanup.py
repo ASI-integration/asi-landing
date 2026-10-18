@@ -71,6 +71,95 @@ def validate(env):
     require(type(key) is str and len(key)>100,"SSH_SECRET")
     return url,host,port
 
+
+def preservation_query():
+    """Fixed-source census: missing optional modules are names, never zero rows."""
+    b=audit.OWNED["booking"]
+    optional=(
+        "guest_lifecycle_events","partner_account_bindings",
+        "partner_property_bindings","partner_booking_bindings",
+        "partner_communication_inbox","partner_communication_sessions",
+        "partner_communication_turns","partner_communication_handoffs",
+        "partner_communication_actions","partner_communication_decisions",
+    )
+    names=",".join("'public."+name+"'" for name in optional)
+    return f"""
+BEGIN TRANSACTION ISOLATION LEVEL SERIALIZABLE READ ONLY;
+SELECT jsonb_build_object(
+  'incidentRun','{INCIDENT}',
+  'auditEvents',(SELECT count(*) FROM public.booking_ops_events
+                WHERE booking_ops_record_id::text='{b}'),
+  'physicalRows',({physical_count_sql()}),
+  'missingOptionalRelations',(SELECT coalesce(jsonb_agg(name ORDER BY name),'[]'::jsonb)
+    FROM unnest(ARRAY[{names}]) AS fixed(name) WHERE to_regclass(name) IS NULL)
+)::text;
+COMMIT;
+"""
+
+def physical_count_sql():
+    """Count all six fixed physical evidence categories for the exact booking."""
+    b=audit.OWNED["booking"]
+    tables=("booking_cleaning_tasks","booking_linen_tasks","booking_supplies_tasks",
+            "booking_maintenance_tickets","booking_physical_readiness",
+            "booking_physical_coordination_drafts")
+    return " + ".join(
+        f"(SELECT count(*) FROM public.{table} WHERE booking_id::text='{b}')"
+        for table in tables)
+
+def preservation_barrier_sql():
+    """Defense in depth: no deletion even if the Python preflight is bypassed."""
+    b=audit.OWNED["booking"]
+    return f"""
+DO $c4preserve$
+DECLARE n bigint;
+BEGIN
+  SELECT count(*) INTO n FROM public.booking_ops_events
+    WHERE booking_ops_record_id::text='{b}';
+  IF n<>0 THEN RAISE EXCEPTION 'C4_AUDIT_PRESERVATION_REQUIRED'; END IF;
+  SELECT ({physical_count_sql()}) INTO n;
+  IF n<>0 THEN RAISE EXCEPTION 'C4_PHYSICAL_PRESERVATION_REQUIRED'; END IF;
+  -- Zero here is NOT approval: the complete FK graph and preservation policy
+  -- have not been independently accepted. No environment switch bypasses this.
+  RAISE EXCEPTION 'C4_DEPENDENCY_POLICY_REQUIRED';
+END $c4preserve$;
+"""
+
+def require_preservation(data):
+    """Always fail closed until a separately reviewed preservation policy exists."""
+    require(type(data) is dict and data.get("incidentRun")==INCIDENT,
+            "PRESERVATION_RECEIPT_IDENTITY")
+    require(all(type(data.get(k)) is int and 0<=data[k]<=10000
+                for k in ("auditEvents","physicalRows")),"PRESERVATION_RECEIPT_COUNTS")
+    # Catalog names come from a fixed SQL list; never interpolate them into SQL.
+    optional={"public."+name for name in (
+        "guest_lifecycle_events","partner_account_bindings","partner_property_bindings",
+        "partner_booking_bindings","partner_communication_inbox",
+        "partner_communication_sessions","partner_communication_turns",
+        "partner_communication_handoffs","partner_communication_actions",
+        "partner_communication_decisions")}
+    missing=data.get("missingOptionalRelations")
+    require(type(missing) is list and all(type(x) is str and x in optional for x in missing)
+            and missing==sorted(set(missing)),"PRESERVATION_RECEIPT_SCHEMA")
+    require(data["auditEvents"]==0,"C4_AUDIT_PRESERVATION_REQUIRED")
+    require(data["physicalRows"]==0,"C4_PHYSICAL_PRESERVATION_REQUIRED")
+    raise Block("C4_DEPENDENCY_POLICY_REQUIRED")
+
+def check_preservation(db_url,cert,folder):
+    """Read fresh counts only; abort before constructing any writer environment."""
+    db_env=pg.db_environment(db_url,cert,True)
+    require("default_transaction_read_only=on" in db_env.get("PGOPTIONS",""),
+            "READONLY_REQUIRED")
+    cmd=pg.postgres_client_command(folder,"postcheck")
+    require(cmd[-2]=="-c","PSQL_COMMAND_SHAPE")
+    cmd[-1]=preservation_query()
+    cmd[-2:-2]=["--set","VERBOSITY=sqlstate"]
+    result=g0.checked(cmd,env=db_env,timeout=90,allow_nonzero=True)
+    require(result.returncode==0,"PRESERVATION_QUERY_FAILED")
+    lines=[line.strip() for line in result.stdout.decode("utf8","strict").splitlines()
+           if line.lstrip().startswith("{")]
+    require(len(lines)==1,"PRESERVATION_RECEIPT_SHAPE")
+    require_preservation(json.loads(lines[0]))
+
 def cleanup_sql():
     u= audit.OWNED["user"]
     a= audit.OWNED["account"]
@@ -86,6 +175,7 @@ BEGIN TRANSACTION ISOLATION LEVEL SERIALIZABLE READ WRITE;
 SET LOCAL statement_timeout='65000ms';
 SET LOCAL lock_timeout='5000ms';
 SELECT pg_advisory_xact_lock(hashtextextended('ASI-C4-INCIDENT-{INCIDENT}',7411));
+{preservation_barrier_sql()}
 DO $c4pre$
 DECLARE n bigint;
 BEGIN
@@ -299,6 +389,7 @@ def run(env):
         g0.checked(["docker","pull",pg.PG_IMAGE],env=env_clean,timeout=180)
         before=query_counts(url,cert,folder)
         require(before==EXPECTED,"FIXTURE_CENSUS_DRIFT")
+        check_preservation(url,cert,folder)
         sql=cleanup_sql()
         require(sql.count("BEGIN TRANSACTION")==1 and sql.count("COMMIT;")==1,
                 "TRANSACTION_SOURCE")
