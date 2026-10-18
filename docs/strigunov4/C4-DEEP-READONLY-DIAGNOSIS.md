@@ -9,7 +9,7 @@ That table is created by the separate historical migration `supabase/migrations/
 The C4 cleanup source also refers directly to this table, so cleanup must remain blocked. Prior schema preflight returned only the first missing relation; this source-only revision reports a sorted bounded list of **all** absent, fixed-allowlist relation names in one protected read-only run and stops before all row counts. No table creation, cleanup, booked fixture replay, or environment changes. A fresh owner-authorized, protected-main SHA bound workflow run is required to learn the actual full set.
 
 
-**Status: protected read-only deep diagnosis #39061146150 returned DEEP_CENSUS_COMMAND_FAILURE, without mutation. This revision is SOURCE-ONLY until independently reviewed and separately dispatched.**
+**Status: protected read-only deep diagnosis #39103410182 returned MISSING_RELATION_GUEST_LIFECYCLE_EVENTS, without mutation. This revision is SOURCE-ONLY until independently reviewed and separately dispatched.**
 
 Prior attempts:
 - Physical booking run [39047710115](https://github.com/ASI-integration/asi-landing/actions/runs/39047710115): booking created; cleanup BLOCK.
