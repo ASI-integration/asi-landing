@@ -32,6 +32,20 @@ COUNT_KEYS = (
     "syntheticPropertyIdentity", "syntheticBookingIdentity"
 )
 
+OPTIONAL_COUNT_TABLES = {
+    "guest_lifecycle_events": "guestLifecycleEvents",
+    "partner_account_bindings": "partnerAccountBindings",
+    "partner_property_bindings": "partnerPropertyBindings",
+    "partner_booking_bindings": "partnerBookingBindings",
+    "partner_communication_inbox": "partnerCommunicationInbox",
+    "partner_communication_sessions": "partnerCommunicationSessions",
+    "partner_communication_turns": "partnerCommunicationTurns",
+    "partner_communication_handoffs": "partnerCommunicationHandoffs",
+    "partner_communication_actions": "partnerCommunicationActions",
+    "partner_communication_decisions": "partnerCommunicationDecisions",
+}
+OPTIONAL_RELATIONS = frozenset("public."+name for name in OPTIONAL_COUNT_TABLES)
+
 class Block(ValueError):
     pass
 
@@ -70,7 +84,14 @@ def validate(env):
     require(type(url) is str and pg.preflight.target_valid(url),"STAGING_DB")
     return url
 
-def read_query():
+def optional_count(table,sql,missing):
+    require(table in OPTIONAL_COUNT_TABLES,"OPTIONAL_SCHEMA_SCOPE")
+    return "NULL::bigint" if "public."+table in missing else sql
+
+def read_query(missing=()):
+    require(type(missing) in (tuple,list,frozenset,set) and
+            all(type(name) is str and name in OPTIONAL_RELATIONS for name in missing),
+            "OPTIONAL_SCHEMA_SCOPE")
     ids=prior.OWNED
     b,a,p,u=(ids[n] for n in ("booking","account","property","user"))
     return f"""
@@ -111,20 +132,20 @@ SELECT jsonb_build_object(
   'maintenanceTickets',(SELECT count(*) FROM public.booking_maintenance_tickets WHERE booking_id::text='{b}'),
   'physicalReadiness',(SELECT count(*) FROM public.booking_physical_readiness WHERE booking_id::text='{b}'),
   'physicalCoordinationDrafts',(SELECT count(*) FROM public.booking_physical_coordination_drafts WHERE booking_id::text='{b}'),
-  'guestLifecycleEvents',(SELECT count(*) FROM public.guest_lifecycle_events WHERE booking_ops_record_id::text='{b}'),
+  'guestLifecycleEvents',{optional_count("guest_lifecycle_events", f"(SELECT count(*) FROM public.guest_lifecycle_events WHERE booking_ops_record_id::text='{b}')", missing)},
   'communicationDeliveries',(SELECT count(*) FROM public.booking_ops_communication_deliveries d JOIN public.booking_ops_communication_intents i ON i.id=d.communication_intent_id WHERE i.booking_ops_record_id::text='{b}'),
   'autoSendAttempts',(SELECT count(*) FROM public.booking_ops_communication_auto_send_attempts s JOIN public.booking_ops_communication_intents i ON i.id=s.communication_intent_id WHERE i.booking_ops_record_id::text='{b}'),
   'pristineTelegramDrafts',(SELECT count(*) FROM public.booking_ops_telegram_drafts WHERE booking_ops_record_id::text='{b}' AND status='draft' AND telegram_chat_id IS NULL AND nullif(btrim(telegram_target),'') IS NULL),
   'nonPristineTelegramDrafts',(SELECT count(*) FROM public.booking_ops_telegram_drafts WHERE booking_ops_record_id::text='{b}' AND NOT (status='draft' AND telegram_chat_id IS NULL AND nullif(btrim(telegram_target),'') IS NULL)),
-  'partnerAccountBindings',(SELECT count(*) FROM public.partner_account_bindings WHERE account_id::text='{a}'),
-  'partnerPropertyBindings',(SELECT count(*) FROM public.partner_property_bindings WHERE account_id::text='{a}' OR property_id::text='{p}'),
-  'partnerBookingBindings',(SELECT count(*) FROM public.partner_booking_bindings WHERE account_id::text='{a}' OR booking_ops_record_id::text='{b}'),
-  'partnerCommunicationInbox',(SELECT count(*) FROM public.partner_communication_inbox WHERE account_id::text='{a}'),
-  'partnerCommunicationSessions',(SELECT count(*) FROM public.partner_communication_sessions WHERE account_id::text='{a}'),
-  'partnerCommunicationTurns',(SELECT count(*) FROM public.partner_communication_turns WHERE account_id::text='{a}'),
-  'partnerCommunicationHandoffs',(SELECT count(*) FROM public.partner_communication_handoffs WHERE account_id::text='{a}'),
-  'partnerCommunicationActions',(SELECT count(*) FROM public.partner_communication_actions WHERE account_id::text='{a}'),
-  'partnerCommunicationDecisions',(SELECT count(*) FROM public.partner_communication_decisions WHERE account_id::text='{a}'),
+  'partnerAccountBindings',{optional_count("partner_account_bindings", f"(SELECT count(*) FROM public.partner_account_bindings WHERE account_id::text='{a}')", missing)},
+  'partnerPropertyBindings',{optional_count("partner_property_bindings", f"(SELECT count(*) FROM public.partner_property_bindings WHERE account_id::text='{a}' OR property_id::text='{p}')", missing)},
+  'partnerBookingBindings',{optional_count("partner_booking_bindings", f"(SELECT count(*) FROM public.partner_booking_bindings WHERE account_id::text='{a}' OR booking_ops_record_id::text='{b}')", missing)},
+  'partnerCommunicationInbox',{optional_count("partner_communication_inbox", f"(SELECT count(*) FROM public.partner_communication_inbox WHERE account_id::text='{a}')", missing)},
+  'partnerCommunicationSessions',{optional_count("partner_communication_sessions", f"(SELECT count(*) FROM public.partner_communication_sessions WHERE account_id::text='{a}')", missing)},
+  'partnerCommunicationTurns',{optional_count("partner_communication_turns", f"(SELECT count(*) FROM public.partner_communication_turns WHERE account_id::text='{a}')", missing)},
+  'partnerCommunicationHandoffs',{optional_count("partner_communication_handoffs", f"(SELECT count(*) FROM public.partner_communication_handoffs WHERE account_id::text='{a}')", missing)},
+  'partnerCommunicationActions',{optional_count("partner_communication_actions", f"(SELECT count(*) FROM public.partner_communication_actions WHERE account_id::text='{a}')", missing)},
+  'partnerCommunicationDecisions',{optional_count("partner_communication_decisions", f"(SELECT count(*) FROM public.partner_communication_decisions WHERE account_id::text='{a}')", missing)},
   'syntheticUserIdentity',(SELECT count(*) FROM public.users WHERE id::text='{u}' AND email='staging-acceptance@asi.local'),
   'syntheticAccountIdentity',(SELECT count(*) FROM public.accounts WHERE id::text='{a}' AND name='C4 staging isolated account {INCIDENT}'),
   'syntheticPropertyIdentity',(SELECT count(*) FROM public.properties WHERE id::text='{p}' AND account_id::text='{a}' AND name='C4 isolated property {INCIDENT}'),
@@ -211,11 +232,13 @@ def run(env):
                 and all(type(name) is str and name in
                         {"public."+item for item in required_tables} for name in missing),
                 "SCHEMA_RECEIPT_INVALID")
-        if missing:
-            # Enumerate ALL missing allowlisted names in one safe receipt.
-            # Never run the deeper SELECT while any referenced table is absent.
-            raise MissingSchema(missing)
-        cmd[-1]=read_query()
+        missing_required=sorted(set(missing)-OPTIONAL_RELATIONS)
+        if missing_required:
+            # Unexpected missing core tables are never silently treated as zero.
+            raise MissingSchema(missing_required)
+        missing_optional=tuple(sorted(set(missing)))
+        # Optional modules are explicitly NOT_DEPLOYED, not fabricated zero counts.
+        cmd[-1]=read_query(missing_optional)
         # psql prints SQLSTATE only; never emit unredacted database stderr.
         cmd[-2:-2]=["--set","VERBOSITY=sqlstate"]
         census=gated("DEEP_CENSUS",lambda:g0.checked(
@@ -228,8 +251,12 @@ def run(env):
     obj=json.loads(rows[0])
     require(type(obj) is dict and obj.get("incidentRun")==INCIDENT,
             "RECEIPT_IDENTITY")
-    require(all(type(obj.get(key)) is int and 0<=obj[key]<=10000
-                for key in COUNT_KEYS),"RECEIPT_COUNTS")
+    nullable_keys={OPTIONAL_COUNT_TABLES[name.removeprefix("public.")]
+                   for name in missing_optional}
+    require(all(
+        (obj.get(key) is None if key in nullable_keys
+         else type(obj.get(key)) is int and 0<=obj[key]<=10000)
+        for key in COUNT_KEYS),"RECEIPT_COUNTS")
     for key in ("cascadeChildTables","blockingFkChildTables",
                 "setNullOrDefaultChildTables"):
         items=obj.get(key)
@@ -237,8 +264,10 @@ def run(env):
                 all(type(t) is str and re.fullmatch(r"[a-z0-9_]{1,75}",t)
                     for t in items),"FK_SCHEMA_SHAPE_"+key.upper())
     return {
-        "status":"C4_DEEP_READONLY_DIAG_PASS",
+        "status":("C4_DEEP_READONLY_SCHEMA_SCOPED_PASS"
+                  if missing_optional else "C4_DEEP_READONLY_DIAG_PASS"),
         "incidentRun":INCIDENT,
+        "missingOptionalRelations":list(missing_optional),
         "counts":{key:obj[key] for key in COUNT_KEYS},
         "cascadeChildTables":sorted(set(obj["cascadeChildTables"])),
         "blockingFkChildTables":sorted(set(obj["blockingFkChildTables"])),
