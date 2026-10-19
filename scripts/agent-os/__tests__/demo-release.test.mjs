@@ -78,6 +78,10 @@ test('08 only first release bootstrap may contain limited governance paths', () 
 test('09 stage files, order and active stage cannot be fabricated', () => {
   const planned = 'scripts/strigunov4/protected_c4_unit_apply.py';
   assert.equal(check({ changed: [planned] }).status, 'CURRENT_MILESTONE_SCOPED');
+  // A planned file is permitted both before its first merge and after
+  // it becomes tracked by main; otherwise the release gate deadlocks itself.
+  assert.equal(validateContract(copy(), new Set([...known, planned])).nextStage,
+    'S4-G1');
   const missing = copy(); missing.stages[0].plannedFiles.push('src/unrelated-feature.ts');
   assert.throws(() => validateContract(missing, known), /STAGE_PLANNED_FILES/);
   const duplicate = copy(); duplicate.stages[0].plannedFiles.push(planned);
