@@ -166,7 +166,7 @@ def execute(env, root=SOURCE, *, admit=None, build=None, decode=None):
                  "-o", "UserKnownHostsFile=" + str(known),
                  "-o", "ConnectTimeout=20",
                  "project_ayfaar@" + host,
-                 "sudo", "-n", "python3", "-", rid, sha],
+                 "sudo", "-n", "python3", "-B", "-", rid, sha],
                 input=program, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                 env=clean, timeout=REMOTE_TOTAL_TIMEOUT,
             )
