@@ -69,7 +69,12 @@ def main():
         transport.require(admit(os.environ) == (sha, rid), "ADMISSION_CHANGED")
         value = transport.execute(os.environ, admit=validate, build=reader.payload,
                                   decode=lambda raw, code: reader.decode(raw, code, sha, rid))
-        envelope.save(value, sha, rid, cert, folder)
+        cipher_digest = envelope.save(value, sha, rid, cert, folder)
+        c.require(type(cipher_digest) is str and c.HEX.fullmatch(cipher_digest), "CIPHERTEXT_DIGEST")
+        # This hashes randomized ciphertext, never unit/receipt plaintext.
+        # Only emit after the exclusive durable write; any failure stays BLOCK.
+        with open(os.environ["GITHUB_OUTPUT"], "a", encoding="ascii") as output:
+            output.write("ciphertext_sha256=" + cipher_digest + "\n")
         print('{"status":"C4_UNIT_RECEIPT_ENCRYPTED_SAVED"}')
         return 0
     except transport.RemoteOutcome as error:

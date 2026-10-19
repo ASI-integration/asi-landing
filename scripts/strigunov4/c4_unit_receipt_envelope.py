@@ -140,21 +140,27 @@ def write_new(path, raw):
 
 
 def save(value, sha, rid, cert, folder):
-    """Validate and encrypt the receipt, then require exact ciphertext readback."""
+    """Durably save validated ciphertext and return its in-memory digest for readback."""
     cipher = encrypt(canonical(value, sha, rid), cert)
     path = folder / NAME
     write_new(path, cipher)
-    c.require(regular(path, MAX_CIPHER) == cipher, "READBACK")
+    # Upload must precede readback: a late local read failure must not discard
+    # the one permitted observation. The final check uses this in-memory pin.
+    return c.digest(cipher)
 
 
 def verify_download(env):
-    """Require one regular ciphertext file and identical uploaded/downloaded bytes."""
+    """Require both ciphertext copies to match the original in-memory encryption digest."""
+    expected = env.get("C4_RECEIPT_CIPHER_SHA256", "")
+    c.require(type(expected) is str and c.HEX.fullmatch(expected), "CIPHERTEXT_DIGEST")
     original = output_dir(env)
     downloaded = original.with_name(original.name + "-download")
     for folder in (original, downloaded):
         c.require(folder == folder.resolve() and folder.is_dir()
                   and {x.name for x in folder.iterdir()} == {NAME}, "ARTIFACT_FILES")
-    c.require(regular(original / NAME, MAX_CIPHER) == regular(downloaded / NAME, MAX_CIPHER), "READBACK")
+    before = regular(original / NAME, MAX_CIPHER)
+    after = regular(downloaded / NAME, MAX_CIPHER)
+    c.require(before == after and c.digest(before) == expected, "READBACK")
 
 
 def open_offline(cipher_path, key_path, cert_path, sha, rid, output):

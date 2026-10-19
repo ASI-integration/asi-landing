@@ -77,8 +77,9 @@ class EncryptedReceiptTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             folder = Path(td)
             expected = e.canonical(receipt(), SHA, RID)
-            e.save(receipt(), SHA, RID, self.cert, folder)
+            digest = e.save(receipt(), SHA, RID, self.cert, folder)
             cipher = (folder / e.NAME).read_bytes()
+            self.assertEqual(digest, c.digest(cipher))
             self.assertEqual(self.decrypt(cipher), expected)
             self.assertNotIn(receipt()["afterSha256"].encode(), cipher)
             structure = e.command(["cms", "-cmsout", "-print", "-inform", "DER"], cipher)
@@ -132,14 +133,20 @@ class EncryptedReceiptTests(unittest.TestCase):
                 c.strict_json(raw)
 
     def test_05_logs_contain_only_closed_statuses(self):
-        """Ensure success and storage failures never print receipt contents or raw errors."""
+        """Expose only the ciphertext digest as output; keep receipt and raw errors private."""
         for failure in (None, RuntimeError("SECRET-NEVER-LOG")):
             out = io.StringIO()
-            with patch.object(gate, "admit", return_value=(SHA, RID)), \
+            with tempfile.TemporaryDirectory() as td, \
+                    patch.dict(os.environ, {"GITHUB_OUTPUT": str(Path(td) / "outputs")}), \
+                    patch.object(gate, "admit", return_value=(SHA, RID)), \
                     patch.object(e, "prepare", return_value=(self.cert, self.root)), \
                     patch.object(transport, "execute", return_value=receipt()), \
-                    patch.object(e, "save", side_effect=failure), redirect_stdout(out):
+                    patch.object(e, "save", side_effect=failure, return_value="a" * 64), redirect_stdout(out):
                 self.assertEqual(gate.main(), 2 if failure else 0)
+                output = Path(td) / "outputs"
+                self.assertEqual(output.exists(), failure is None)
+                if failure is None:
+                    self.assertEqual(output.read_text(), "ciphertext_sha256=" + "a" * 64 + "\n")
             result = c.strict_json(out.getvalue())
             self.assertEqual(set(result), {"status"})
             self.assertNotIn(receipt()["afterSha256"], out.getvalue())
@@ -153,7 +160,7 @@ class EncryptedReceiptTests(unittest.TestCase):
             e.write_new(binary_path, binary)
             self.assertEqual(binary_path.read_bytes(), binary)
             self.assertEqual(e.regular(binary_path, 4096), binary)
-            env = dict(context(), RUNNER_TEMP=td)
+            env = dict(context(), RUNNER_TEMP=td, C4_RECEIPT_CIPHER_SHA256=c.digest(b"x" * 512))
             with patch.object(e, "encrypt", return_value=b"x" * 512):
                 _, original = e.prepare(env)
                 with self.assertRaises(FileExistsError): e.prepare(env)
@@ -165,6 +172,12 @@ class EncryptedReceiptTests(unittest.TestCase):
             (download / e.NAME).write_bytes(data); e.verify_download(env)
             (download / e.NAME).write_bytes(b"y" * 512)
             with self.assertRaises(c.Block): e.verify_download(env)
+            # Matching corrupted copies must still fail the original encryption pin.
+            (original / e.NAME).write_bytes(b"y" * 512)
+            with self.assertRaises(c.Block): e.verify_download(env)
+            for missing in ("", "abc", "f" * 64):
+                with self.assertRaises(c.Block):
+                    e.verify_download(dict(env, C4_RECEIPT_CIPHER_SHA256=missing))
             (download / e.NAME).unlink(); (download / e.NAME).symlink_to(original / e.NAME)
             with self.assertRaises(c.Block): e.verify_download(env)
             (download / e.NAME).unlink(); os.link(original / e.NAME, download / e.NAME)
@@ -258,6 +271,22 @@ class EncryptedReceiptTests(unittest.TestCase):
             with patch.object(e.os, "write", side_effect=OSError("interrupted")), self.assertRaises(OSError):
                 e.write_new(path, b"x" * 512)
             with self.assertRaises(FileExistsError): e.write_new(path, b"x" * 512)
+        # A late local read failure occurs only after the upload boundary.
+        with tempfile.TemporaryDirectory() as td:
+            env = dict(context(), RUNNER_TEMP=td)
+            original = e.output_dir(env); original.mkdir()
+            with patch.object(e, "regular", side_effect=OSError("LATE_READ_ERROR")):
+                digest = e.save(receipt(), SHA, RID, self.cert, original)
+            cipher = (original / e.NAME).read_bytes()
+            self.assertEqual(self.decrypt(cipher), e.canonical(receipt(), SHA, RID))
+            download = original.with_name(original.name + "-download"); download.mkdir()
+            (download / e.NAME).write_bytes(cipher)  # isolated artifact upload/download
+            env["C4_RECEIPT_CIPHER_SHA256"] = digest
+            with patch.object(e, "regular", side_effect=OSError("LATE_READ_ERROR")), \
+                    self.assertRaises(OSError):
+                e.verify_download(env)
+            self.assertEqual((download / e.NAME).read_bytes(), cipher)
+            e.verify_download(env)
 
     def test_15_workflow_exact_cipher_only_and_unchanged_reader_payload(self):
         """Verify workflow protections, ciphertext-only upload and unchanged reader bytes."""
@@ -267,6 +296,8 @@ class EncryptedReceiptTests(unittest.TestCase):
                          "strigunov4-staging-nine-sql-apply", "if-no-files-found: error", "overwrite: false",
                          "unit-receipt.cms", "verify-download", "include-hidden-files: false"):
             self.assertIn(required, workflow)
+        self.assertIn("C4_RECEIPT_CIPHER_SHA256: ${{ steps.receipt.outputs.ciphertext_sha256 }}", workflow)
+        self.assertLess(workflow.index("Preserve only encrypted receipt"), workflow.index("Require exact encrypted readback"))
         for denied in ("contents: write", "actions: write", "continue-on-error", "PRIVATE_RECIPIENT_KEY",
                        "daemon-reload", "STAGING_DATABASE_URL", "c4_unit_transaction.py", "always()"):
             self.assertNotIn(denied, workflow)

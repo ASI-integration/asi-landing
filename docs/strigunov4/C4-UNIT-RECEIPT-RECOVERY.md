@@ -94,8 +94,17 @@ The workflow uploads exactly one file, `unit-receipt.cms`, under artifact name
 plaintext is uploaded. Upload fails on missing files and never overwrites.
 Pinned upload/download actions are used. The workflow downloads the artifact
 and requires exactly one regular file with byte-for-byte equality to the
-locally encrypted file before SUCCESS. A false success after lost log output
-therefore cannot recur through the same storage defect.
+locally encrypted file before SUCCESS. Both copies must also match the SHA256
+computed from the original ciphertext in memory and passed as a step output.
+That digest covers randomized ciphertext, not the unit or plaintext receipt.
+
+Upload occurs after the exclusive durable write but before local/downloaded
+readback. A late read error therefore leaves an uploaded ciphertext artifact
+while the workflow remains failed. No `always()` upload, ignored failure or
+second server observation is introduced. A failed/partial write, lost runner,
+cancellation or upload failure can still prevent artifact retention; these
+states never authorize replay or count as SUCCESS. A retained artifact from a
+failed readback requires the same provenance and offline validation below.
 
 Artifacts still expire under repository retention. After the authorized run:
 
