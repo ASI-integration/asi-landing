@@ -72,14 +72,18 @@ class ManagerSurveyTests(unittest.TestCase):
         self.assertFalse(report["daemonReloadAuthorized"])
         self.assertEqual(report["snapshot"], "NON_ATOMIC_CURRENT_ONLY")
 
-    def test_08_any_unsafe_observation_blocks_survey(self):
-        for jobs, services in ((None, GOOD), ("", BAD)):
+    def test_08_unsafe_observation_is_preserved_as_a_risk(self):
+        for jobs, services in (("PENDING", GOOD), ("", BAD)):
             with patch.object(s.preflight, "host_identity"), \
                  patch.object(s.preflight, "fixed_observation", return_value={}), \
-                 patch.object(s, "run_fixed", side_effect=[jobs or "PENDING" if jobs is None else jobs, services]), \
-                 patch.object(s, "generator_inventory", return_value="NONE_OBSERVED"), \
-                 self.assertRaises(c.Block):
-                s.survey()
+                 patch.object(s, "run_fixed", side_effect=[jobs, services]), \
+                 patch.object(s, "generator_inventory", return_value="NONE_OBSERVED"):
+                receipt = s.survey()
+            self.assertFalse(receipt["daemonReloadAuthorized"])
+            self.assertEqual(receipt["jobs"], "PRESENT" if jobs else "NONE_OBSERVED")
+            self.assertEqual(receipt["services"],
+                             "NO_FORBIDDEN_SERVICE_OBSERVED" if services == GOOD
+                             else "CONFLICT_OR_UNKNOWN")
 
 
 if __name__ == "__main__":

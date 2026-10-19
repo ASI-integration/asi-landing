@@ -114,16 +114,26 @@ def survey():
     preflight.host_identity()
     preflight.fixed_observation("OLD")
     deadline = time.monotonic() + 30
-    jobs_quiet(run_fixed(("systemctl", "list-jobs", "--no-legend", "--plain",
-                          "--no-pager"), deadline, 16384))
-    count = service_inventory(run_fixed(("systemctl", "list-units", "--all",
-                                         "--type=service", "--no-legend", "--plain",
-                                         "--no-pager"), deadline))
+    jobs_raw = run_fixed(("systemctl", "list-jobs", "--no-legend", "--plain",
+                          "--no-pager"), deadline, 16384)
+    jobs_state = "NONE_OBSERVED" if not jobs_raw.strip() else "PRESENT"
+    service_raw = run_fixed(("systemctl", "list-units", "--all",
+                             "--type=service", "--no-legend", "--plain",
+                             "--no-pager"), deadline)
+    try:
+        count = service_inventory(service_raw)
+        service_state = "NO_FORBIDDEN_SERVICE_OBSERVED"
+    except c.Block:
+        # Still preserve the one-shot diagnostic artifact, never promote a
+        # malformed/unsafe service list to a safe result.
+        count, service_state = 0, "CONFLICT_OR_UNKNOWN"
     generators = generator_inventory()
     return {
         "status": "READONLY_MANAGER_SURVEY",
+        "unit": "OLD_OPTIONAL_PREFLIGHT_PASS",
         "servicesSeen": count,
-        "jobs": "NONE_OBSERVED",
+        "services": service_state,
+        "jobs": jobs_state,
         "generators": generators,
         "isolation": "MANAGER_WIDE_NOT_PROVEN",
         "daemonReloadAuthorized": False,
