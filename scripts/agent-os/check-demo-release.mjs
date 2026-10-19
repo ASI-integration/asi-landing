@@ -135,11 +135,14 @@ export function checkPr({ contract, changed, prNumber, prBody, headSha,
     return { status: 'BOOTSTRAP_REQUIRES_OWNER_MERGE', stage: null };
   }
   if (prNumber <= contract.transition.legacyPrMax) {
-    if (contract.transition.legacyHeads[String(prNumber)] === headSha) {
-      return { status: 'EXISTING_PR_GRANDFATHERED', stage: null };
+    // Preserve only the three already-active demo repairs. Unrelated historical
+    // PRs remain open, but may not quietly enter a frozen demonstration release.
+    const scopedLegacy = [502, 508, 509].includes(prNumber);
+    if (scopedLegacy && contract.transition.legacyHeads[String(prNumber)] === headSha) {
+      return { status: 'EXISTING_DEMO_PR_GRANDFATHERED', stage: null };
     }
-    must(ownerApproval, 'LEGACY_HEAD_CHANGED_REQUIRES_OWNER_ATTESTATION');
-    return { status: 'OWNER_ATTESTED_LEGACY_CHANGE', stage: null };
+    must(ownerApproval, 'LEGACY_OR_OFF_SCOPE_PR_REQUIRES_OWNER_ATTESTATION');
+    return { status: 'OWNER_ATTESTED_LEGACY_EXCEPTION', stage: null };
   }
   if (governanceChanged) {
     must(ownerApproval, 'GOVERNANCE_CHANGE_NEEDS_VERIFIED_OWNER_ATTESTATION');
