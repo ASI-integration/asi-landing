@@ -53,7 +53,7 @@ def decode(raw, returncode):
              "snapshot": "NON_ATOMIC_CURRENT_ONLY", "historicalWrite": "UNKNOWN",
              "replayAllowed": False, "databaseState": "NOT_OBSERVED"}
     allowed = dict(observer.FIELD_STATES, lock=observer.LOCK_STATES)
-    allowed.update(environmentFiles={"NOT_OBSERVED", "EXACT_EXPECTED", "EXPECTED_PATH_OTHER_FORMAT", "OTHER"} | host.BLOCKS,
+    allowed.update(environmentFiles={"NOT_OBSERVED", "EXACT_EXPECTED", "EXACT_EXPECTED_OPTIONAL", "EXPECTED_PATH_ONLY", "EXPECTED_PATH_OTHER_FORMAT", "OTHER"} | host.BLOCKS,
                    live={"NOT_OBSERVED", "PASS"} | host.BLOCKS,
                    envPlan={"NOT_OBSERVED", "CHANGE_NEEDED", "ALREADY_CONFIGURED"} | host.BLOCKS,
                    membership={"NOT_OBSERVED", "PROCESS_FILE_MISMATCH", "FIXED_OPERATOR_PRESENT", "FIXED_OPERATOR_MISSING"})
