@@ -101,7 +101,8 @@ the carried value, not a mutable digest sidecar beside the ciphertext.
 That digest covers randomized ciphertext, not the unit or plaintext receipt.
 There is no post-save step-output or log write; only final verification after
 upload emits success. Failure to write or close the step output prevents
-ciphertext creation. A missing or masked output fails final verification while
+`unit-receipt.cms` from being created, although encryption has already produced
+the ciphertext in memory. A missing or masked output fails final verification while
 retaining any uploaded artifact; it never authorizes replay or a success claim.
 
 Upload occurs after the exclusive durable write but before local/downloaded
