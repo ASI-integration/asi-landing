@@ -1,0 +1,106 @@
+name: Strigunov4 C4 one encrypted unit receipt recovery
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/strigunov4-c4-unit-receipt-once.yml'
+      - '.github/workflows/strigunov4-c4-unit-readonly.yml'
+      - 'scripts/strigunov4/*unit*.py'
+      - 'scripts/strigunov4/protected_c4_operator_repair.py'
+      - 'scripts/strigunov4/backup-recipient.crt'
+      - 'scripts/strigunov4/candidates/c4_unit_*.py'
+      - 'scripts/strigunov4/staging_no_send_host.py'
+      - 'scripts/strigunov4/c4_staging_readonly_probe.py'
+      - 'scripts/strigunov4/protected_staging_host_probe.py'
+      - 'scripts/strigunov4/g0_activation_host.py'
+      - 'scripts/strigunov4/candidates/systemd_candidate.py'
+      - 'docs/strigunov4/C4-UNIT-RECEIPT-RECOVERY.md'
+  workflow_dispatch:
+    inputs:
+      reviewed_main_sha:
+        description: Exact reviewed protected main SHA containing this procedure
+        required: true
+        type: string
+      confirm:
+        description: Separate owner permission, READONLY_C4_UNIT_RECEIPT_<SHA>
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: ${{ github.event_name == 'workflow_dispatch' && 'strigunov4-staging-nine-sql-apply' || format('strigunov4-c4-unit-receipt-pr-{0}', github.ref) }}
+  cancel-in-progress: false
+
+jobs:
+  isolated_unit_tests:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Bounded offline reader and encrypted receipt tests
+        run: |
+          set -euo pipefail
+          cd scripts/strigunov4
+          sudo python3 -B -m unittest test_c4_unit_readonly test_c4_unit_receipt -v
+          git diff --check
+
+  protected_unit_receipt:
+    if: github.event_name == 'workflow_dispatch' && github.repository == 'ASI-integration/asi-landing'
+    needs: [isolated_unit_tests]
+    environment: staging
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Exact owner and main source, no rerun
+        env:
+          REVIEWED_SHA: ${{ inputs.reviewed_main_sha }}
+          CONFIRM: ${{ inputs.confirm }}
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = 'ASI-integration/asi-landing'
+          test "$GITHUB_EVENT_NAME" = 'workflow_dispatch'
+          test "$GITHUB_REF" = 'refs/heads/main'
+          test "$GITHUB_ACTOR" = 'ASI-integration'
+          test "$GITHUB_ACTOR_ID" = '207600140'
+          test "$GITHUB_TRIGGERING_ACTOR" = 'ASI-integration'
+          test "$GITHUB_RUN_ATTEMPT" = '1'
+          test "$GITHUB_WORKFLOW_REF" = 'ASI-integration/asi-landing/.github/workflows/strigunov4-c4-unit-receipt-once.yml@refs/heads/main'
+          test "$GITHUB_WORKFLOW_SHA" = "$GITHUB_SHA"
+          test "$REVIEWED_SHA" = "$GITHUB_SHA"
+          test "$CONFIRM" = "READONLY_C4_UNIT_RECEIPT_$GITHUB_SHA"
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: One fixed read, validated receipt encrypted in runner memory
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          STAGING_REVIEWED_MAIN_SHA: ${{ inputs.reviewed_main_sha }}
+          C4_OPERATOR_CONFIRM: ${{ inputs.confirm }}
+          C4_OPERATOR_INCIDENT: '39213017307'
+          STAGING_SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+          STAGING_SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
+          STAGING_SSH_USER: ${{ secrets.STAGING_SSH_USER }}
+          STAGING_SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+        run: python3 -B scripts/strigunov4/protected_c4_unit_receipt.py
+      - name: Preserve only encrypted receipt
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: c4-unit-receipt-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/c4-unit-receipt-${{ github.run_id }}-${{ github.run_attempt }}/unit-receipt.cms
+          if-no-files-found: error
+          compression-level: 0
+          overwrite: false
+          include-hidden-files: false
+      - name: Read back saved encrypted artifact
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: c4-unit-receipt-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/c4-unit-receipt-${{ github.run_id }}-${{ github.run_attempt }}-download
+      - name: Require exact encrypted readback
+        run: python3 -B scripts/strigunov4/c4_unit_receipt_envelope.py verify-download
