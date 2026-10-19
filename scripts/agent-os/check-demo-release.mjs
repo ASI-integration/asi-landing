@@ -238,7 +238,8 @@ export async function main(options = {}) {
   if (baseHasContract) {
     const gov = changed.some(p => GOVERNANCE.has(p));
     const legacyChanged = pr.number <= release.transition.legacyPrMax &&
-      release.transition.legacyHeads[String(pr.number)] !== pr.head.sha;
+      (![502, 508, 509].includes(pr.number) ||
+       release.transition.legacyHeads[String(pr.number)] !== pr.head.sha);
     const stage = fields(pr.body || '').stage;
     const milestone = release.stages.find(s => s.id === stage);
     const needException = !gov && (!milestone || milestone.id !== status.nextStage ||
