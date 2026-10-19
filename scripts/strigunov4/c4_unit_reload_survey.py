@@ -34,6 +34,7 @@ UNIT_TYPES = frozenset(("service", "socket", "target", "device", "mount",
 JOBS_COMMAND = ("systemctl", "list-jobs", "--no-legend", "--plain", "--no-pager")
 UNITS_COMMAND = ("systemctl", "list-units", "--all", "--no-legend",
                  "--plain", "--no-pager", "--full")
+UNIT_OUTPUT_MAX_BYTES = 1048576  # Up to 1000 loaded units including descriptions
 
 
 def run_fixed(argv, deadline, max_bytes=65536):
@@ -65,7 +66,7 @@ def unit_inventory(raw):
     Return only an internal canonical snapshot; never publish names. Absence
     of a forbidden name does not establish absence of a protected workload.
     """
-    c.require(type(raw) is str and len(raw) <= 65536, "SIZE")
+    c.require(type(raw) is str and len(raw.encode("utf-8")) <= UNIT_OUTPUT_MAX_BYTES, "SIZE")
     names, states = [], []
     for line in raw.splitlines():
         parts = line.split()
@@ -131,9 +132,9 @@ def survey():
     before = preflight.fixed_observation("OLD")
     deadline = time.monotonic() + 30
     jobs_before = run_fixed(JOBS_COMMAND, deadline, 16384)
-    units_before = run_fixed(UNITS_COMMAND, deadline)
+    units_before = run_fixed(UNITS_COMMAND, deadline, UNIT_OUTPUT_MAX_BYTES)
     generators = generator_inventory()
-    units_after = run_fixed(UNITS_COMMAND, deadline)
+    units_after = run_fixed(UNITS_COMMAND, deadline, UNIT_OUTPUT_MAX_BYTES)
     jobs_after = run_fixed(JOBS_COMMAND, deadline, 16384)
     jobs_state = "PRESENT" if jobs_before.strip() or jobs_after.strip() else "NONE_OBSERVED"
     try:

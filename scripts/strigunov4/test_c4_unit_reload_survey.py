@@ -135,6 +135,35 @@ class ManagerSurveyTests(unittest.TestCase):
              self.assertRaises(c.Block):
             s.survey()
 
+    def test_13_full_inventory_uses_same_bounded_limit_twice(self):
+        # A 1,000-unit output can exceed the old 64 KiB systemctl default.
+        raw = "asi-landing-staging.service loaded active running C4\n"
+        raw += "".join(
+            f"unit-{i:04d}.service loaded inactive dead " + "x" * 170 + "\n"
+            for i in range(999)
+        )
+        self.assertGreater(len(raw.encode("utf-8")), 65536)
+        self.assertEqual(len(s.unit_inventory(raw)), 1000)
+        with patch.object(s.preflight, "host_identity"), \
+             patch.object(s.preflight, "fixed_observation", return_value={}), \
+             patch.object(s, "run_fixed", side_effect=["", raw, raw, ""]) as fixed, \
+             patch.object(s, "generator_inventory", return_value="UNKNOWN"):
+            report = s.survey()
+        self.assertEqual(report["unitsSeen"], 1000)
+        self.assertEqual(report["unitStability"], "SAME_LOADED_UNIT_STATES")
+        self.assertFalse(report["daemonReloadAuthorized"])
+        self.assertEqual(fixed.call_args_list[1].args[2], s.UNIT_OUTPUT_MAX_BYTES)
+        self.assertEqual(fixed.call_args_list[2].args[2], s.UNIT_OUTPUT_MAX_BYTES)
+
+    def test_14_inventory_rejects_oversized_or_overcount(self):
+        with self.assertRaisesRegex(c.Block, "SIZE"):
+            s.unit_inventory(GOOD + "x" * s.UNIT_OUTPUT_MAX_BYTES)
+        extra = GOOD + "".join(
+            f"unit-{i:04d}.service loaded inactive dead Long\n" for i in range(999)
+        )
+        with self.assertRaisesRegex(c.Block, "SIZE"):
+            s.unit_inventory(extra)
+
 
 if __name__ == "__main__":
     unittest.main()
