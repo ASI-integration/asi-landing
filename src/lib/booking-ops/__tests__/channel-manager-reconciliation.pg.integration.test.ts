@@ -29,6 +29,10 @@ const RECONCILIATION_MIGRATION = resolve(
   process.cwd(),
   'supabase/migrations/20260807120000_channel_manager_reconciliation_recovery_v1.sql',
 );
+const SCOPE_GUARD_MIGRATION = resolve(
+  process.cwd(),
+  'supabase/migrations/20261004123000_channel_manager_live_scope_guard_v1.sql',
+);
 
 const MINIMAL_DDL = `
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
@@ -165,6 +169,7 @@ describe.skipIf(!hasDisposablePg)('Channel Manager Reconciliation PostgreSQL sch
       await client.query(readFileSync(INITIAL_SYNC_MIGRATION, 'utf8'));
       await client.query(readFileSync(INCREMENTAL_SYNC_MIGRATION, 'utf8'));
       await client.query(readFileSync(RECONCILIATION_MIGRATION, 'utf8'));
+      await client.query(readFileSync(SCOPE_GUARD_MIGRATION, 'utf8'));
 
       await client.query(
         `INSERT INTO public.booking_owner_setup_profiles (id, lead_id, metadata)
@@ -351,6 +356,34 @@ describe.skipIf(!hasDisposablePg)('Channel Manager Reconciliation PostgreSQL sch
       expect(payload.reconciliationGuardReady).toBe(true);
       expect(payload.reconciliationFinalizeRpcReady).toBe(true);
       expect(payload.reconciliationReady).toBe(true);
+
+      const scopeGuard = await client.query(
+        `SELECT public.channel_manager_live_scope_guard_state_v1() AS payload`,
+      );
+      const scopeGuardPayload = scopeGuard.rows[0]?.payload as Record<string, unknown>;
+      expect(scopeGuardPayload.scopedConnectionWritesReady).toBe(true);
+
+      const scopeGuardGrants = await client.query(`
+        SELECT
+          has_function_privilege(
+            'service_role',
+            'public.channel_manager_live_scope_guard_state_v1()',
+            'EXECUTE'
+          ) AS service_ok,
+          has_function_privilege(
+            'anon',
+            'public.channel_manager_live_scope_guard_state_v1()',
+            'EXECUTE'
+          ) AS anon_ok,
+          has_function_privilege(
+            'authenticated',
+            'public.channel_manager_live_scope_guard_state_v1()',
+            'EXECUTE'
+          ) AS auth_ok
+      `);
+      expect(scopeGuardGrants.rows[0]?.service_ok).toBe(true);
+      expect(scopeGuardGrants.rows[0]?.anon_ok).toBe(false);
+      expect(scopeGuardGrants.rows[0]?.auth_ok).toBe(false);
 
       // Compensation RPC: exact run fail-closed, cursor unchanged, matching lease only.
       const compensImportRunId = randomUUID();
