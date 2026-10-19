@@ -1,3 +1,12 @@
+## Release milestone (new PRs)
+
+<!-- Fill exact values for current release from scripts/agent-os/check-demo-release.mjs. -->
+Release-Stage: REPLACE_WITH_CURRENT_STAGE
+Release-Mode: REPLACE_WITH_implementation_OR_diagnostic_OR_acceptance
+Release-Diagnostic-Iteration: REPLACE_IF_DIAGNOSTIC
+
+<!-- Off-stage work or governance change requires exact-GitHub-SHA owner approval, not this text. -->
+
 ## Результат
 
 <!-- Что изменилось и какой проверяемый outcome получен? -->

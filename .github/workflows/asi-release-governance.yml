@@ -1,0 +1,46 @@
+name: ASI trusted release governance
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened, edited, ready_for_review]
+    branches: [main]
+
+permissions:
+  contents: read
+  issues: read
+  pull-requests: read
+
+concurrency:
+  group: release-governance-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  release_governance:
+    if: github.repository == 'ASI-integration/asi-landing'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      # Crucial: NEVER checkout PR source or execute PR scripts here.
+      # On pull_request_target this workflow runs from protected main.
+      - name: Checkout protected base only
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Fetch PR commit as Git DATA only, never execute PR code
+        env:
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          [[ "$PR_HEAD_SHA" =~ ^[0-9a-f]{40}$ ]]
+          git fetch --no-tags origin "$PR_HEAD_SHA"
+          git cat-file -e "$PR_HEAD_SHA^{commit}"
+      - name: Setup Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 20
+      - name: Verify current milestone, changed paths and owner exceptions
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/agent-os/check-demo-release.mjs --ci
