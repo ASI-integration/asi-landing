@@ -25,13 +25,21 @@ test('01 seeded contract selects exact first incomplete stage', () => {
   assert.equal(v.remainingStages, 6);
   assert.ok(Object.keys(v.fileCounts).length >= 30);
 });
-test('02 current-stage constrained PR accepted; prior PR grandfathered', () => {
+test('02 only exact-head demo PRs are grandfathered; other legacy PRs require owner decision', () => {
   assert.equal(check().status, 'CURRENT_MILESTONE_SCOPED');
   assert.equal(check({ prNumber: 509,
     headSha: '5ba61e734a1f9a56cd807eee91b4e217bf6ee040',
-    changed: ['outside/old-pr-only.ts'] }).status, 'EXISTING_PR_GRANDFATHERED');
+    changed: ['outside/old-pr-only.ts'] }).status, 'EXISTING_DEMO_PR_GRANDFATHERED');
   assert.throws(() => check({ prNumber: 509, changed: ['outside/old-pr-only.ts'] }),
-    /LEGACY_HEAD_CHANGED_REQUIRES_OWNER_ATTESTATION/);
+    /LEGACY_OR_OFF_SCOPE_PR_REQUIRES_OWNER_ATTESTATION/);
+  assert.throws(() => check({ prNumber: 4,
+    headSha: 'f7e21327304b3fd1d0f69db04d9cfff35c81ae39',
+    changed: ['src/location/unrelated.ts'] }),
+    /LEGACY_OR_OFF_SCOPE_PR_REQUIRES_OWNER_ATTESTATION/);
+  assert.equal(check({ prNumber: 4,
+    headSha: 'f7e21327304b3fd1d0f69db04d9cfff35c81ae39',
+    ownerApproval: true, changed: ['src/location/unrelated.ts'] }).status,
+    'OWNER_ATTESTED_LEGACY_EXCEPTION');
 });
 test('03 no unrelated files and no bypass by PR body', () => {
   assert.throws(() => check({ changed: ['src/new-unused-feature.ts'],
