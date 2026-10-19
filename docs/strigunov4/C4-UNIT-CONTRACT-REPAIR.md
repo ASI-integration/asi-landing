@@ -194,6 +194,13 @@ SIGKILL, потеря питания/host и обрыв SSH не гаранти�
 одноразовой записью; старый apply не запускается снова. Неполная/испорченная
 backup/metadata или конкурентные bytes означают ручное восстановление.
 
+Если процесс погиб внутри первого rollback, существующий rollback-intent
+принимается только при точном совпадении приватного содержимого. Intent
+сохраняется до создания временного файла. При перехваченной ошибке удаляется
+только новый временный файл этого вызова с подтверждёнными inode/metadata;
+остатки после SIGKILL и старые свидетельства сохраняются. Наличие recovery.json
+запрещает повторный recovery до новой записи запроса или manager action.
+
 Даже видимый `success.json` не является единственным критерием: ошибка fsync
 могла произойти после появления файла. Recovery evidence и текущие проверки
 имеют приоритет. Откат возвращает исходный **BLOCKED baseline**, а не strict
@@ -208,11 +215,13 @@ cd scripts/strigunov4
 python3 -B -m unittest test_c4_unit_readonly test_c4_unit_transaction -v
 ```
 
-30 focused tests / 2 files: exact byte delta и newline preservation, строгий
+32 focused tests / 2 files: exact byte delta и newline preservation, строгий
 parser/decoder, symlink/hardlink/FIFO/race/metadata отказы, admission/source/
 replay/concurrency, все четыре pins, независимый читатель во время atomic
 replace, настоящие flock/SIGTERM/SIGKILL, durable backup, отдельный recovery,
 резерв времени, неизвестный reload, PID drift и конфликт success/recovery.
+Дополнительно проверены SIGKILL внутри rollback, повтор уже завершённого
+recovery, несовпадающий rollback-intent и очистка собственного нового temp.
 Ранее полученные восемь тестов OLD→UNIT BLOCK→NEW/mandatory→PASS используются
 как сохранённое доказательство; runtime `c4_operator_host.py` не изменён.
 

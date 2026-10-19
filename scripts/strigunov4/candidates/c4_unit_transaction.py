@@ -158,10 +158,19 @@ def create_candidate(parent_fd, data, meta):
         s = os.fstat(fd)
         attrs = {k: os.getxattr(fd, k) for k in os.listxattr(fd)}
         c.require(same_metadata(s, attrs, meta), "METADATA")
+        os.fsync(parent_fd)
+        return name, s
+    except BaseException:
+        try:
+            current = os.stat(name, dir_fd=parent_fd, follow_symlinks=False)
+            c.require(c.signature(current) == c.signature(os.fstat(fd)), "READ_RACE")
+            os.unlink(name, dir_fd=parent_fd)
+            os.fsync(parent_fd)
+        except FileNotFoundError:
+            pass
+        raise
     finally:
         os.close(fd)
-    os.fsync(parent_fd)
-    return name, s
 
 
 def replace_exact(parent_fd, leaf, expected, expected_sig, candidate, candidate_stat):
@@ -199,9 +208,25 @@ def rollback(parent_fd, leaf, record_fd, original, output, meta, owned_inode, ba
     current, info, _ = c.read_regular(parent_fd, leaf)
     if current != original:
         c.require(current == output and owned_inode == (info.st_dev, info.st_ino), "READ_RACE")
+        intent = json_bytes({"targetSha256": c.digest(original)})
+        try:
+            durable_new(record_fd, "rollback-intent.json", intent)
+        except FileExistsError:
+            c.require(read_private(record_fd, "rollback-intent.json") == intent, "IDENTITY")
         name, temp_info = create_candidate(parent_fd, original, meta)
-        durable_new(record_fd, "rollback-intent.json", json_bytes({"targetSha256": c.digest(original)}))
-        replace_exact(parent_fd, leaf, output, c.signature(info), name, temp_info)
+        try:
+            replace_exact(parent_fd, leaf, output, c.signature(info), name, temp_info)
+        except BaseException:
+            # Remove only this call's still-owned temporary file. Never sweep
+            # candidates retained by a killed process or other evidence.
+            try:
+                candidate_now = os.stat(name, dir_fd=parent_fd, follow_symlinks=False)
+                c.require(c.signature(candidate_now) == c.signature(temp_info), "READ_RACE")
+                os.unlink(name, dir_fd=parent_fd)
+                os.fsync(parent_fd)
+            except FileNotFoundError:
+                pass  # Replacement may already have completed before failure.
+            raise
     time_left(hard_deadline, clock)
     # Reload outcome may be uncertain after interruption; recovery never assumes
     # the manager has the same state as the restored disk file.
@@ -345,6 +370,12 @@ def recover_explicit(unit, record, lock_paths, binding, recovery_run, observe, r
             baseline = require_snapshot(prepared["baseline"], binding["oldSha256"], "optional")
             meta = validate_metadata(c.strict_json(read_private(rfd, "metadata.private.json")))
             # A completed success is not an abandoned transaction.
+            try:
+                os.stat("recovery.json", dir_fd=rfd, follow_symlinks=False)
+            except FileNotFoundError:
+                pass
+            else:
+                raise c.Block("IDENTITY") from None
             try:
                 os.stat("success.json", dir_fd=rfd, follow_symlinks=False)
                 os.stat("recovery-started.json", dir_fd=rfd, follow_symlinks=False)

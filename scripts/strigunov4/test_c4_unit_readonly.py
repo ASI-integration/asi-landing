@@ -222,6 +222,9 @@ class UnitReadonlyTests(unittest.TestCase):
         self.assertNotIn("STAGING_DATABASE_URL", source)
         self.assertNotIn("c4_unit_transaction.py", source)
         self.assertNotIn("contents: write", source)
+        paths_filter = source.split("workflow_dispatch:", 1)[0]
+        for consumer in (*pins.ACTIVE, pins.HISTORICAL):
+            self.assertIn("      - '" + consumer + "'", paths_filter)
 
     def test_all_four_current_pins_updated_in_memory_history_unchanged(self):
         root = Path(__file__).resolve().parents[2]

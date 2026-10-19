@@ -94,12 +94,18 @@ class UnitTransactionTests(unittest.TestCase):
             f.apply()
             with self.assertRaises(c.Block):f.apply()
             with self.assertRaises(c.Block):f.recover()
-        with fixture() as f:
-            def stop(stage):
-                if stage == "PREPARED":raise RuntimeError("simulated")
-            self.assertEqual(f.apply(hook=stop), "ORIGINAL_BLOCKED_BASELINE_RESTORED")
-            with self.assertRaises(FileExistsError):f.apply()
-            self.assertEqual(f.calls, [])
+        for phase in ("PREPARED", "RELOADED"):
+            with self.subTest(phase=phase), fixture() as f:
+                def stop(stage):
+                    if stage == phase:raise RuntimeError("simulated")
+                self.assertEqual(f.apply(hook=stop), "ORIGINAL_BLOCKED_BASELINE_RESTORED")
+                with self.assertRaises(FileExistsError):f.apply()
+                before = {p.name: p.read_bytes() for p in f.record.iterdir()}
+                calls = list(f.calls)
+                with self.assertRaises(c.Block):f.recover()
+                self.assertEqual(f.calls, calls)
+                self.assertEqual({p.name: p.read_bytes() for p in f.record.iterdir()}, before)
+                self.assertFalse((f.record / "explicit-recovery-request.json").exists())
 
     def test_kernel_lock_and_invalid_lock_metadata_block(self):
         with fixture() as f:
@@ -217,7 +223,85 @@ class UnitTransactionTests(unittest.TestCase):
                 self.assertEqual(f.recover(), "ORIGINAL_BLOCKED_BASELINE_RESTORED")
                 self.assertEqual(f.unit.read_bytes(), RAW)
                 self.assertEqual(f.manager.read_text(), "optional")
-                with self.assertRaises(FileExistsError):f.recover()
+                with self.assertRaises(c.Block):f.recover()
+
+    def test_real_sigkill_inside_rollback_allows_separate_recovery(self):
+        for cut in ("INTENT", "REPLACE"):
+            with self.subTest(cut=cut), fixture() as f:
+                ctx = multiprocessing.get_context("fork")
+                parent, child = ctx.Pipe(duplex=False)
+                def run():
+                    parent.close()
+                    write, replace = tx.durable_new, tx.replace_exact
+                    def pause():
+                        child.send(cut); signal.pause()
+                    def write_hook(fd, name, data):
+                        write(fd, name, data)
+                        if cut == "INTENT" and name == "rollback-intent.json":pause()
+                    def replace_hook(*args):
+                        if cut == "REPLACE" and args[2] == f.new:pause()
+                        return replace(*args)
+                    def fail(stage):
+                        if stage == "RELOADED":raise RuntimeError("start rollback")
+                    with patch.object(tx, "durable_new", side_effect=write_hook), \
+                            patch.object(tx, "replace_exact", side_effect=replace_hook):
+                        f.apply(hook=fail)
+                process = ctx.Process(target=run); process.start(); child.close()
+                try:
+                    self.assertTrue(parent.poll(5), "rollback did not reach cut")
+                    self.assertEqual(parent.recv(), cut)
+                    os.kill(process.pid, signal.SIGKILL); process.join(5)
+                    self.assertFalse(process.is_alive())
+                    self.assertEqual(process.exitcode, -signal.SIGKILL)
+                finally:
+                    if process.is_alive():os.kill(process.pid, signal.SIGKILL); process.join(2)
+                    parent.close()
+                intent = (f.record / "rollback-intent.json").read_bytes()
+                existing_candidates = {p.name: p.read_bytes() for p in f.units.glob(".c4-unit-candidate-*")}
+                self.assertEqual(f.unit.read_bytes(), f.new)
+                self.assertEqual(f.recover(), "ORIGINAL_BLOCKED_BASELINE_RESTORED")
+                self.assertEqual(f.unit.read_bytes(), RAW)
+                self.assertEqual(f.manager.read_text(), "optional")
+                self.assertEqual((f.record / "rollback-intent.json").read_bytes(), intent)
+                self.assertEqual({p.name: p.read_bytes() for p in f.units.glob(".c4-unit-candidate-*")}, existing_candidates)
+                if cut == "INTENT":self.assertEqual(existing_candidates, {})
+                with self.assertRaises(c.Block):f.recover()
+
+    def test_rollback_intent_mismatch_and_replace_failure_leave_no_new_candidate(self):
+        for mode in ("MISMATCH", "REPLACE_FAILURE", "CANDIDATE_FAILURE", "FOREIGN_CANDIDATE"):
+            with self.subTest(mode=mode), fixture() as f:
+                replace = tx.replace_exact
+                utime = tx.os.utime
+                rolling_back = [False]
+                def fail(stage):
+                    if stage == "RELOADED":
+                        rolling_back[0] = True
+                        if mode == "MISMATCH":
+                            p = f.record / "rollback-intent.json"
+                            p.write_bytes(b'{"targetSha256":"wrong"}\n'); p.chmod(0o600)
+                        raise RuntimeError("start rollback")
+                def refuse(*args):
+                    if mode == "REPLACE_FAILURE" and args[2] == f.new:raise OSError("before replacement")
+                    return replace(*args)
+                def fail_candidate(*args, **kwargs):
+                    if mode == "FOREIGN_CANDIDATE" and rolling_back[0]:
+                        candidate, = f.units.glob(".c4-unit-candidate-*")
+                        foreign = f.root / "foreign-unit-fixture"
+                        foreign.write_bytes(b"concurrent candidate bytes")
+                        os.replace(foreign, candidate)
+                        raise OSError("candidate replaced by another writer")
+                    if mode == "CANDIDATE_FAILURE" and rolling_back[0]:raise OSError("candidate metadata failure")
+                    return utime(*args, **kwargs)
+                with patch.object(tx, "replace_exact", side_effect=refuse), \
+                        patch.object(tx.os, "utime", side_effect=fail_candidate):
+                    self.assertEqual(f.apply(hook=fail), "MANUAL_RECOVERY_REQUIRED")
+                self.assertEqual(f.unit.read_bytes(), f.new)
+                if mode == "FOREIGN_CANDIDATE":
+                    candidate, = f.units.glob(".c4-unit-candidate-*")
+                    self.assertEqual(candidate.read_bytes(), b"concurrent candidate bytes")
+                else:
+                    self.assertEqual(list(f.units.glob(".c4-unit-candidate-*")), [])
+                self.assertFalse((f.record / "recovery.json").exists())
 
     def test_atomic_visibility_to_independent_reader(self):
         with fixture() as f:

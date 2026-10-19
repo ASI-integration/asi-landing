@@ -7,6 +7,11 @@ on:
       - 'scripts/strigunov4/*unit*.py'
       - 'scripts/strigunov4/protected_c4_operator_repair.py'
       - 'scripts/strigunov4/candidates/c4_unit_*.py'
+      - 'scripts/strigunov4/staging_no_send_host.py'
+      - 'scripts/strigunov4/c4_staging_readonly_probe.py'
+      - 'scripts/strigunov4/protected_staging_host_probe.py'
+      - 'scripts/strigunov4/g0_activation_host.py'
+      - 'scripts/strigunov4/candidates/systemd_candidate.py'
       - 'docs/strigunov4/C4-UNIT-CONTRACT-REPAIR.md'
   workflow_dispatch:
     inputs:
