@@ -107,17 +107,22 @@ def decode(raw, returncode):
         "isolation": "MANAGER_WIDE_NOT_PROVEN",
         "daemonReloadAuthorized": False,
         "snapshot": "NON_ATOMIC_CURRENT_ONLY",
+        "unitCoverage": "LOADED_ALL_TYPES_ONLY",
+        "generatorCoverage": "FIXED_SYSTEM_AND_ENVIRONMENT_DIRS_ONLY",
     }
-    allowed = {"services": {"NO_FORBIDDEN_SERVICE_OBSERVED", "CONFLICT_OR_UNKNOWN"},
+    allowed = {"units": {"NO_FORBIDDEN_UNIT_NAME_OBSERVED", "CONFLICT_OR_UNKNOWN"},
+               "unitStability": {"SAME_LOADED_UNIT_STATES", "DRIFT_OR_UNKNOWN"},
                "jobs": {"NONE_OBSERVED", "PRESENT"},
                "generators": {"NONE_OBSERVED", "PRESENT", "UNKNOWN"}}
-    transport.require(set(value) == set(fixed) | set(allowed) | {"servicesSeen"}, "SCHEMA")
+    transport.require(set(value) == set(fixed) | set(allowed) | {"unitsSeen"}, "SCHEMA")
     transport.require(all(type(value[k]) is type(v) and value[k] == v for k, v in fixed.items()), "SCHEMA")
-    transport.require(type(value["servicesSeen"]) is int and 0 <= value["servicesSeen"] <= 1000, "SCHEMA")
+    transport.require(type(value["unitsSeen"]) is int and 0 <= value["unitsSeen"] <= 1000, "SCHEMA")
     transport.require(all(type(value[k]) is str and value[k] in vals
                           for k, vals in allowed.items()), "SCHEMA")
-    transport.require((value["services"] == "CONFLICT_OR_UNKNOWN") ==
-                      (value["servicesSeen"] == 0), "SCHEMA")
+    transport.require((value["units"] == "CONFLICT_OR_UNKNOWN") ==
+                      (value["unitsSeen"] == 0), "SCHEMA")
+    transport.require(value["units"] != "CONFLICT_OR_UNKNOWN" or
+                      value["unitStability"] == "DRIFT_OR_UNKNOWN", "SCHEMA")
     return value
 
 

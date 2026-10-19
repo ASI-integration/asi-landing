@@ -21,20 +21,26 @@ GENERATOR_DIRS = (
     "/usr/local/lib/systemd/system-generators",
     "/usr/lib/systemd/system-generators",
     "/lib/systemd/system-generators",
+    "/etc/systemd/system-environment-generators",
+    "/run/systemd/system-environment-generators",
+    "/usr/local/lib/systemd/system-environment-generators",
+    "/usr/lib/systemd/system-environment-generators",
+    "/lib/systemd/system-environment-generators",
 )
 SERVICE = "asi-landing-staging.service"
 FORBIDDEN_SERVICE = re.compile(r"(?:^|[-_.@])(?:sentinel|production|prod)(?:[-_.@]|$)", re.I)
+UNIT_TYPES = frozenset(("service", "socket", "target", "device", "mount",
+                        "automount", "swap", "timer", "path", "slice", "scope"))
+JOBS_COMMAND = ("systemctl", "list-jobs", "--no-legend", "--plain", "--no-pager")
+UNITS_COMMAND = ("systemctl", "list-units", "--all", "--no-legend",
+                 "--plain", "--no-pager", "--full")
 
 
 def run_fixed(argv, deadline, max_bytes=65536):
     """Bound an exact read-only systemctl call with no inherited config."""
     remaining = deadline - time.monotonic()
     c.require(remaining > 0.05, "DEADLINE")
-    c.require(argv in (
-        ("systemctl", "list-jobs", "--no-legend", "--plain", "--no-pager"),
-        ("systemctl", "list-units", "--all", "--type=service", "--no-legend",
-         "--plain", "--no-pager"),
-    ), "ARGS")
+    c.require(argv in (JOBS_COMMAND, UNITS_COMMAND), "ARGS")
     try:
         result = subprocess.run(argv, capture_output=True,
                                 timeout=min(8, remaining),
@@ -53,21 +59,31 @@ def jobs_quiet(raw):
     return True
 
 
-def service_inventory(raw):
-    """Count services without exporting names; reject forbidden colocations."""
+def unit_inventory(raw):
+    """Inspect all loaded unit types, not installed/unloaded units or topology.
+
+    Return only an internal canonical snapshot; never publish names. Absence
+    of a forbidden name does not establish absence of a protected workload.
+    """
     c.require(type(raw) is str and len(raw) <= 65536, "SIZE")
-    names = []
+    names, states = [], []
     for line in raw.splitlines():
         parts = line.split()
         if parts and parts[0] == "●":
             parts = parts[1:]
-        c.require(len(parts) >= 4 and parts[0].endswith(".service"), "FORMAT")
+        c.require(len(parts) >= 4 and parts[0].rsplit(".", 1)[-1] in UNIT_TYPES,
+                  "FORMAT")
+        c.require(parts[1] in ("loaded", "not-found", "bad-setting", "error", "masked")
+                  and parts[2] in ("active", "inactive", "failed", "activating",
+                                   "deactivating", "maintenance", "reloading", "refreshing"),
+                  "FORMAT")
         names.append(parts[0])
+        states.append(tuple(parts[:4]))
         c.require(len(names) <= 1000, "SIZE")
     c.require(len(names) == len(set(names)) and SERVICE in names, "IDENTITY")
     c.require(not any(name == "asi-landing.service" or
                       FORBIDDEN_SERVICE.search(name) for name in names), "IDENTITY")
-    return len(names)
+    return tuple(sorted(states))
 
 
 def generator_inventory(roots=GENERATOR_DIRS):
@@ -112,27 +128,32 @@ def generator_inventory(roots=GENERATOR_DIRS):
 def survey():
     """Fixed read-only snapshot; always refuse to issue mutation authority."""
     preflight.host_identity()
-    preflight.fixed_observation("OLD")
+    before = preflight.fixed_observation("OLD")
     deadline = time.monotonic() + 30
-    jobs_raw = run_fixed(("systemctl", "list-jobs", "--no-legend", "--plain",
-                          "--no-pager"), deadline, 16384)
-    jobs_state = "NONE_OBSERVED" if not jobs_raw.strip() else "PRESENT"
-    service_raw = run_fixed(("systemctl", "list-units", "--all",
-                             "--type=service", "--no-legend", "--plain",
-                             "--no-pager"), deadline)
-    try:
-        count = service_inventory(service_raw)
-        service_state = "NO_FORBIDDEN_SERVICE_OBSERVED"
-    except c.Block:
-        # Still preserve the one-shot diagnostic artifact, never promote a
-        # malformed/unsafe service list to a safe result.
-        count, service_state = 0, "CONFLICT_OR_UNKNOWN"
+    jobs_before = run_fixed(JOBS_COMMAND, deadline, 16384)
+    units_before = run_fixed(UNITS_COMMAND, deadline)
     generators = generator_inventory()
+    units_after = run_fixed(UNITS_COMMAND, deadline)
+    jobs_after = run_fixed(JOBS_COMMAND, deadline, 16384)
+    jobs_state = "PRESENT" if jobs_before.strip() or jobs_after.strip() else "NONE_OBSERVED"
+    try:
+        first, second = unit_inventory(units_before), unit_inventory(units_after)
+        count = len(second)
+        unit_state = "NO_FORBIDDEN_UNIT_NAME_OBSERVED"
+        stability = "SAME_LOADED_UNIT_STATES" if first == second else "DRIFT_OR_UNKNOWN"
+    except c.Block:
+        count, unit_state, stability = 0, "CONFLICT_OR_UNKNOWN", "DRIFT_OR_UNKNOWN"
+    # A completed survey is only two observations. No lock on all writers,
+    # generator inputs, unloaded units or the manager configuration is proven.
+    c.require(before == preflight.fixed_observation("OLD"), "PROCESS_CHANGED")
     return {
         "status": "READONLY_MANAGER_SURVEY",
         "unit": "OLD_OPTIONAL_PREFLIGHT_PASS",
-        "servicesSeen": count,
-        "services": service_state,
+        "unitsSeen": count,
+        "units": unit_state,
+        "unitCoverage": "LOADED_ALL_TYPES_ONLY",
+        "unitStability": stability,
+        "generatorCoverage": "FIXED_SYSTEM_AND_ENVIRONMENT_DIRS_ONLY",
         "jobs": jobs_state,
         "generators": generators,
         "isolation": "MANAGER_WIDE_NOT_PROVEN",

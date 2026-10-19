@@ -50,8 +50,11 @@ def api(endpoint, token):
 
 def receipt():
     return {"status": "READONLY_MANAGER_SURVEY", "unit": "OLD_OPTIONAL_PREFLIGHT_PASS",
-            "servicesSeen": 3, "services": "NO_FORBIDDEN_SERVICE_OBSERVED",
+            "unitsSeen": 3, "units": "NO_FORBIDDEN_UNIT_NAME_OBSERVED",
             "jobs": "NONE_OBSERVED", "generators": "PRESENT",
+            "unitCoverage": "LOADED_ALL_TYPES_ONLY",
+            "unitStability": "SAME_LOADED_UNIT_STATES",
+            "generatorCoverage": "FIXED_SYSTEM_AND_ENVIRONMENT_DIRS_ONLY",
             "isolation": "MANAGER_WIDE_NOT_PROVEN",
             "daemonReloadAuthorized": False, "snapshot": "NON_ATOMIC_CURRENT_ONLY"}
 
@@ -116,7 +119,9 @@ class ProtectedSurveyTests(unittest.TestCase):
         self.assertEqual(g.decode(json.dumps(receipt()).encode(), 0), receipt())
         for field, value in (("jobs", "UNKNOWN"), ("generators", "CONFIRMED_SAFE"),
                              ("daemonReloadAuthorized", True), ("isolation", "PASS"),
-                             ("servicesSeen", -1), ("rawUnit", "SECRET")):
+                             ("unitsSeen", -1), ("unitCoverage", "ALL_INSTALLED_UNITS"),
+                             ("unitStability", "SAFE"), ("generatorCoverage", "ALL_PROVEN"),
+                             ("rawUnit", "SECRET")):
             invalid = dict(receipt(), **{field: value})
             with self.subTest(field=field), self.assertRaises((c.Block, transport.Block)):
                 g.decode(json.dumps(invalid).encode(), 0)
@@ -149,7 +154,8 @@ class ProtectedSurveyTests(unittest.TestCase):
         data = (root / ".github/workflows" / g.WORKFLOW_FILE).read_text()
         for required in ("environment: staging", "cancel-in-progress: false",
                          "GITHUB_RUN_ATTEMPT", "READONLY_C4_RELOAD_SURVEY_",
-                         "needs: [isolated_reload_tests]", "persist-credentials: false"):
+                         "needs: [isolated_reload_tests]", "persist-credentials: false",
+                         "test_protected_c4_unit_reload_survey.py"):
             self.assertIn(required, data)
         for forbidden in ("contents: write", "actions: write", "continue-on-error",
                           "STAGING_DATABASE_URL", "systemctl daemon-reload", "systemctl restart",

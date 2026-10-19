@@ -8,6 +8,7 @@ on:
       - 'scripts/strigunov4/protected_c4_unit_reload_survey.py'
       - 'scripts/strigunov4/c4_unit_repair_*.py'
       - 'scripts/strigunov4/test_c4_unit_reload_survey.py'
+      - 'scripts/strigunov4/test_protected_c4_unit_reload_survey.py'
       - 'scripts/strigunov4/test_c4_unit_repair_*.py'
       - 'scripts/strigunov4/c4_operator_patch.py'
       - 'scripts/strigunov4/c4_unit_contract.py'
