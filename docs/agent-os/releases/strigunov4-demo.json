@@ -15,6 +15,7 @@
     "legacyPrMax": 509,
     "maxConsecutiveDiagnostics": 2,
     "legacyHeads": {
+      "4": "f7e21327304b3fd1d0f69db04d9cfff35c81ae39",
       "24": "dbe1e5de2464489d2a56a3f5254c2ac29e8ad461",
       "25": "7ac2e755ae17c25b525a0d7b83cc99f99de272fd",
       "42": "e24c58de3d4e32a5a5c19feced69b25e46bf3efd",
@@ -165,6 +166,11 @@
     {
       "id": "S4-G1",
       "title": "Safely repair staging EnvironmentFiles contract",
+      "plannedFiles": [
+        "scripts/strigunov4/protected_c4_unit_apply.py",
+        ".github/workflows/strigunov4-c4-unit-apply.yml",
+        "scripts/strigunov4/test_protected_c4_unit_apply.py"
+      ],
       "status": "IN_PROGRESS",
       "proof": [],
       "acceptance": [

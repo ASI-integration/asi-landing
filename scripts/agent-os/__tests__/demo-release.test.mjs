@@ -76,6 +76,12 @@ test('08 only first release bootstrap may contain limited governance paths', () 
     /BOOTSTRAP_MUST_ONLY_TOUCH_GOVERNANCE/);
 });
 test('09 stage files, order and active stage cannot be fabricated', () => {
+  const planned = 'scripts/strigunov4/protected_c4_unit_apply.py';
+  assert.equal(check({ changed: [planned] }).status, 'CURRENT_MILESTONE_SCOPED');
+  const missing = copy(); missing.stages[0].plannedFiles.push('src/unrelated-feature.ts');
+  assert.throws(() => validateContract(missing, known), /STAGE_PLANNED_FILES/);
+  const duplicate = copy(); duplicate.stages[0].plannedFiles.push(planned);
+  assert.throws(() => validateContract(duplicate, known), /STAGE_PLANNED_FILES/);
   const a = copy(); a.stages[0].files.push('src/not-tracked.ts');
   assert.throws(() => validateContract(a, known), /STAGE_FILE_NOT_TRACKED_OR_PINNED/);
   const b = copy(); b.stages[1].status = 'IN_PROGRESS';

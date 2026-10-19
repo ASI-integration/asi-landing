@@ -72,6 +72,15 @@ export function validateContract(contract, knownPaths) {
          'STAGE_ACCEPTANCE');
     must(Array.isArray(stage.files) && stage.files.length >= 2 &&
          stage.files.length === new Set(stage.files).size, 'STAGE_FILES');
+    const proposed = stage.plannedFiles || [];
+    must(Array.isArray(proposed) && proposed.length === new Set(proposed).size &&
+         proposed.every(p => typeof p === 'string' &&
+           (p.startsWith('scripts/strigunov4/') || p.startsWith('.github/workflows/strigunov4-c4-'))),
+         'STAGE_PLANNED_FILES');
+    for (const p of proposed) {
+      must(!p.includes('..') && !p.includes('\\') && !p.startsWith('/') && !available.has(p),
+           'PLANNED_FILE_ALREADY_PRESENT_OR_UNSAFE:' + p);
+    }
     for (const p of stage.files) {
       must(typeof p === 'string' && !p.includes('..') && !p.startsWith('/') &&
            available.has(p), 'STAGE_FILE_NOT_TRACKED_OR_PINNED:' + p);
@@ -149,7 +158,7 @@ export function checkPr({ contract, changed, prNumber, prBody, headSha,
          f.iteration === String(priorDiagnosticCount + 1),
          'DIAGNOSTIC_LIMIT_REQUIRES_DECISION');
   }
-  const allowed = new Set(stage.files);
+  const allowed = new Set([...stage.files, ...(stage.plannedFiles || [])]);
   if (!changed.every(p => allowed.has(p))) {
     must(ownerApproval, 'PR_HAS_OUT_OF_STAGE_FILES');
     return { status: 'OWNER_ATTESTED_RELEASE_EXCEPTION', stage: f.stage };
@@ -229,7 +238,7 @@ export async function main(options = {}) {
     const stage = fields(pr.body || '').stage;
     const milestone = release.stages.find(s => s.id === stage);
     const needException = !gov && (!milestone || milestone.id !== status.nextStage ||
-      changed.some(p => !milestone.files.includes(p)));
+      changed.some(p => ![...milestone.files, ...(milestone.plannedFiles || [])].includes(p)));
     if (gov || legacyChanged || (pr.number > release.transition.legacyPrMax && needException)) {
       ownerApproval = await verifiedOwnerComment(
         pr.number, pr.head.sha, gov ? 'CONTRACT-CHANGE' : 'RELEASE-EXCEPTION', process.env.GITHUB_TOKEN,
