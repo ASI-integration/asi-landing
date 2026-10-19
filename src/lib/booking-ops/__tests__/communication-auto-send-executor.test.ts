@@ -420,6 +420,43 @@ describe('controlled actual auto-send executor', () => {
     expect(sender).not.toHaveBeenCalled();
   });
 
+  it('keeps quota-unavailable retries blocked without calling a provider', async () => {
+    const intent = seedIntent();
+    const queued = await enqueueAutoSendDelivery(intent.id);
+    policyDecision.mockResolvedValue({
+      ...allowedDecision,
+      decision: 'review_required',
+      allowed: false,
+      actual_send_enabled: false,
+      rule_key: 'rate.booking_daily_unavailable',
+    });
+    const sender = vi.fn(async () => ({ ok: true }));
+    const deliveryId = queued.ok ? queued.delivery.id : '';
+
+    const first = await executeAutoSendDelivery(deliveryId, { sender });
+    const retry = await executeAutoSendDelivery(deliveryId, { sender });
+
+    expect(first).toMatchObject({
+      ok: false,
+      error: 'review_required',
+      delivery: { status: 'blocked' },
+      decision: { rule_key: 'rate.booking_daily_unavailable' },
+    });
+    expect(retry).toMatchObject({
+      ok: false,
+      error: 'review_required',
+      delivery: { status: 'blocked' },
+      decision: { rule_key: 'rate.booking_daily_unavailable' },
+    });
+    expect(sender).not.toHaveBeenCalled();
+    expect(recordAttempt).toHaveBeenCalledTimes(2);
+    expect(recordAttempt).toHaveBeenLastCalledWith(
+      intent.id,
+      'review_required',
+      expect.objectContaining({ error_code: 'review_required' }),
+    );
+  });
+
   it('does not send an unsupported access-instruction type', async () => {
     const intent = seedIntent({ purpose: 'checkin_instructions' });
     const result = await enqueueAutoSendDelivery(intent.id);

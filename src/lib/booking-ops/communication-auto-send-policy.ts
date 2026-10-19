@@ -56,8 +56,8 @@ export type CommunicationAutoSendContext = {
   ownerId?: string | null;
   guestRef?: string | null;
   unresolvedComplaint?: boolean;
-  bookingAutoSendsToday?: number;
-  guestAutoSendsToday?: number;
+  bookingAutoSendsToday?: number | null;
+  guestAutoSendsToday?: number | null;
   now?: Date;
   policy?: CommunicationAutoSendPolicy;
   emergencyAllowedDuringQuietHours?: boolean;
@@ -336,17 +336,47 @@ function isQuietHours(now: Date, start: string | null, end: string | null): bool
   return from <= to ? current >= from && current < to : current >= from || current < to;
 }
 
-async function successfulAttemptsToday(field: 'booking_id' | 'guest_ref', value: string | null | undefined) {
-  if (!value) return 0;
+type SuccessfulAttemptCount =
+  | { available: true; count: number }
+  | { available: false };
+
+function knownSuccessfulAttemptCount(value: unknown): SuccessfulAttemptCount {
+  return Number.isSafeInteger(value) && Number(value) >= 0
+    ? { available: true, count: Number(value) }
+    : { available: false };
+}
+
+async function successfulAttemptsToday(
+  field: 'booking_id' | 'guest_ref',
+  value: string | null | undefined,
+): Promise<SuccessfulAttemptCount> {
+  if (typeof value !== 'string' || value.trim().length === 0) return { available: false };
   const since = new Date();
   since.setHours(0, 0, 0, 0);
-  const { count, error } = await supabase
-    .from('booking_ops_communication_auto_send_attempts')
-    .select('id', { count: 'exact', head: true })
-    .eq(field, value)
-    .eq('result', 'sent')
-    .gte('created_at', since.toISOString());
-  return error ? 0 : count ?? 0;
+  try {
+    const { count, error } = await supabase
+      .from('booking_ops_communication_auto_send_attempts')
+      .select('id', { count: 'exact', head: true })
+      .eq(field, value)
+      .eq('result', 'sent')
+      .gte('created_at', since.toISOString());
+    return error ? { available: false } : knownSuccessfulAttemptCount(count);
+  } catch {
+    return { available: false };
+  }
+}
+
+async function resolveSuccessfulAttemptsToday(
+  limit: number | null,
+  suppliedCount: number | null | undefined,
+  suppliedCountProvided: boolean,
+  field: 'booking_id' | 'guest_ref',
+  value: string | null | undefined,
+): Promise<SuccessfulAttemptCount> {
+  if (limit === null) return { available: true, count: 0 };
+  return suppliedCountProvided
+    ? knownSuccessfulAttemptCount(suppliedCount)
+    : successfulAttemptsToday(field, value);
 }
 
 export async function canAutoSendCommunicationIntent(
@@ -424,14 +454,38 @@ async function continueAutoSendPolicy(
   ) {
     return decision('quiet_hours', 'policy.quiet_hours', 'Сейчас действуют тихие часы.', 'Отправка отложена до окончания тихих часов.');
   }
-  const [bookingAutoSendsToday, guestAutoSendsToday] = await Promise.all([
-    context.bookingAutoSendsToday === undefined
-      ? successfulAttemptsToday('booking_id', context.bookingId ?? intent.bookingId)
-      : context.bookingAutoSendsToday,
-    context.guestAutoSendsToday === undefined
-      ? successfulAttemptsToday('guest_ref', context.guestRef)
-      : context.guestAutoSendsToday,
-  ]);
+  const bookingAttempts = await resolveSuccessfulAttemptsToday(
+    policy.maxAutoSendsPerBookingPerDay,
+    context.bookingAutoSendsToday,
+    Object.prototype.hasOwnProperty.call(context, 'bookingAutoSendsToday'),
+    'booking_id',
+    context.bookingId ?? intent.bookingId,
+  );
+  if (!bookingAttempts.available) {
+    return decision(
+      'review_required',
+      'rate.booking_daily_unavailable',
+      'Дневной счётчик отправок по брони недоступен.',
+      'Автоотправка приостановлена: не удалось проверить дневной лимит по брони.',
+    );
+  }
+  const guestAttempts = await resolveSuccessfulAttemptsToday(
+    policy.maxAutoSendsPerGuestPerDay,
+    context.guestAutoSendsToday,
+    Object.prototype.hasOwnProperty.call(context, 'guestAutoSendsToday'),
+    'guest_ref',
+    context.guestRef,
+  );
+  if (!guestAttempts.available) {
+    return decision(
+      'review_required',
+      'rate.guest_daily_unavailable',
+      'Дневной счётчик отправок гостю недоступен.',
+      'Автоотправка приостановлена: не удалось проверить дневной лимит по гостю.',
+    );
+  }
+  const bookingAutoSendsToday = bookingAttempts.count;
+  const guestAutoSendsToday = guestAttempts.count;
   if (
     policy.maxAutoSendsPerBookingPerDay !== null
     && bookingAutoSendsToday >= policy.maxAutoSendsPerBookingPerDay
