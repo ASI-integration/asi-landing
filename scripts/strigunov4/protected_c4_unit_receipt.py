@@ -15,10 +15,12 @@ PREVIOUS_WORKFLOW = 389172998
 
 
 def validate(env):
+    """Apply existing owner, source, attempt and staging transport admission checks."""
     return transport.validate(env, workflow=WORKFLOW, confirmation=PREFIX, incident=c.INCIDENT)
 
 
 def one_run(value):
+    """Require exactly one visible dispatch without hidden or additional history."""
     transport.require(type(value.get("total_count")) is int and value["total_count"] == 1
                       and type(value.get("workflow_runs")) is list
                       and len(value["workflow_runs"]) == 1, "PRIOR_OR_COMPETING_DISPATCH")
@@ -26,6 +28,7 @@ def one_run(value):
 
 
 def admit(env, fetch=reader.get_json):
+    """Verify protected main, both dispatch histories and a quiet Actions window."""
     sha, rid, _, _ = validate(env)
     token = env.get("GITHUB_TOKEN", "")
     transport.require(type(token) is str and len(token) > 20, "GITHUB_TOKEN")
@@ -58,6 +61,7 @@ def admit(env, fetch=reader.get_json):
 
 
 def main():
+    """Admit one fixed observation and save only its validated encrypted receipt."""
     try:
         sha, rid = admit(os.environ)
         cert, folder = envelope.prepare(os.environ)

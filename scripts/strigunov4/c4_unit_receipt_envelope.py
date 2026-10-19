@@ -19,6 +19,7 @@ MAX_CIPHER = 16384
 
 def command(args, raw=None):
     # No inherited OpenSSL configuration, credentials, debug flags or raw errors.
+    """Run bounded OpenSSL with a minimal environment and suppress raw failures."""
     try:
         executable = shutil.which("openssl")
         c.require(executable is not None, "CRYPTO")
@@ -38,6 +39,7 @@ def command(args, raw=None):
 
 
 def regular(path, limit):
+    """Read one bounded regular file, rejecting links and observed identity changes."""
     path = Path(path)
     c.require(path.absolute() == path.resolve(), "PATH")
     named_before = path.lstat()
@@ -64,6 +66,7 @@ def regular(path, limit):
 
 
 def recipient(raw, expected=RECIPIENT):
+    """Require the pinned public certificate and at least one remaining validity day."""
     c.require(type(raw) is bytes and 0 < len(raw) <= 8192, "CERTIFICATE")
     der = command(["x509", "-outform", "DER"], raw)
     c.require(hashlib.sha256(der).hexdigest() == expected, "RECIPIENT")
@@ -72,6 +75,7 @@ def recipient(raw, expected=RECIPIENT):
 
 
 def encrypt(raw, cert):
+    """Encrypt in-memory receipt bytes using authenticated CMS for this certificate."""
     c.require(type(raw) is bytes and 0 < len(raw) <= 4096, "SIZE")
     # Temporary file contains ONLY the pinned public certificate. Receipt stays
     # in pipes/memory; private recipient key is never available to this runner.
@@ -86,6 +90,7 @@ def encrypt(raw, cert):
 
 
 def canonical(value, sha, rid):
+    """Validate the exact receipt binding and serialize its closed schema deterministically."""
     c.validate_receipt(value, sha, rid)
     # This recovery is bound to the observed 454-byte source and one-byte plan.
     c.require(value["unitBytes"] == 454 and value["removedBytes"] == 1
@@ -96,6 +101,7 @@ def canonical(value, sha, rid):
 
 
 def output_dir(env):
+    """Derive the attempt-one ciphertext directory beneath the real runner temp root."""
     rid = env.get("GITHUB_RUN_ID", "")
     c.require(c.RUN.fullmatch(rid) and env.get("GITHUB_RUN_ATTEMPT") == "1", "RUN")
     root = Path(env.get("RUNNER_TEMP", ""))
@@ -104,6 +110,7 @@ def output_dir(env):
 
 
 def prepare(env):
+    """Verify recipient and crypto support before creating a fresh output directory."""
     cert = recipient(regular(CERT, 8192))
     encrypt(b'{"preflight":"synthetic-no-server-data"}', cert)
     folder = output_dir(env)
@@ -112,6 +119,7 @@ def prepare(env):
 
 
 def write_new(path, raw):
+    """Create and durably write a private binary file without replacing existing paths."""
     fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0)
                  | getattr(os, "O_NOFOLLOW", 0), 0o600)
     try:
@@ -132,6 +140,7 @@ def write_new(path, raw):
 
 
 def save(value, sha, rid, cert, folder):
+    """Validate and encrypt the receipt, then require exact ciphertext readback."""
     cipher = encrypt(canonical(value, sha, rid), cert)
     path = folder / NAME
     write_new(path, cipher)
@@ -139,6 +148,7 @@ def save(value, sha, rid, cert, folder):
 
 
 def verify_download(env):
+    """Require one regular ciphertext file and identical uploaded/downloaded bytes."""
     original = output_dir(env)
     downloaded = original.with_name(original.name + "-download")
     for folder in (original, downloaded):
@@ -148,6 +158,7 @@ def verify_download(env):
 
 
 def open_offline(cipher_path, key_path, cert_path, sha, rid, output):
+    """Decrypt outside Actions after caller-verified provenance and save a bound receipt."""
     c.require(os.environ.get("GITHUB_ACTIONS") != "true", "OFFLINE_ONLY")
     recipient(regular(cert_path, 8192))
     # Caller first verifies API artifact provenance/digest as documented. CMS
@@ -163,6 +174,7 @@ def open_offline(cipher_path, key_path, cert_path, sha, rid, output):
 
 
 def main():
+    """Dispatch local receipt operations while emitting only fixed non-sensitive statuses."""
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="operation", required=True)
     sub.add_parser("verify-download")
