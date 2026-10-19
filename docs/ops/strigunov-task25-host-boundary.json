@@ -1,0 +1,40 @@
+{
+  "schema": 1,
+  "task": "25",
+  "kind": "DISPOSABLE_LOCAL_FIXTURE_HANDOFF",
+  "baseSha": "9bc8175aa772e92366c7a2363e26900a042fc3ce",
+  "fixtureOnly": true,
+  "ownerServiceInstalled": false,
+  "externalCustodianInstalled": false,
+  "independentOwnerControlProven": false,
+  "verifiedOSClientIdentity": false,
+  "persistentReplayLedgerInstalledOnHost": false,
+  "cloudProjectCreated": false,
+  "productionAccess": false,
+  "guestSend": false,
+  "realOperatorAuthority": false,
+  "phase2": "BLOCK",
+  "pilot": "NOT_LIVE",
+  "validationScope": {
+    "fsyncJournal": "PHYSICAL_LOCAL_TEST_ONLY",
+    "directoryFsync": "POSIX_CI_ONLY",
+    "race": "EXCLUSIVE_MKDIR_SINGLE_WRITER",
+    "crash": "TEST_PROCESS_EXIT_AFTER_FSYNC",
+    "transport": "UNIX_SOCKET_LOCAL_LINUX_TEST_ONLY",
+    "ipcPeerAuth": "NOT_PROVEN",
+    "tamperResistance": "NOT_PROVEN_FOR_OWNER_UID_OR_ROOT",
+    "unknownCommit": "HOLD_NO_REPLAY"
+  },
+  "futureRealHostGates": [
+    "owner-verified host identity and process UID",
+    "binary and manifest immutability external to agent",
+    "secret vault and independent restricted IPC authentication",
+    "test-owned durable persistent journal and recovery state",
+    "crash after journal fsync before reply and torn journal denial",
+    "non-agent-writable directory permissions and no shadow ledger",
+    "no auto-unlock of stale writer locks without external owner review",
+    "restricted issued operations and one-use receipts physically verified",
+    "new synthetic PostgreSQL Phase2 and revocation acceptance",
+    "explicit real guest consent and production send owner gate"
+  ]
+}
