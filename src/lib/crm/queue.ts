@@ -85,6 +85,8 @@ export type CrmQueueMessage = {
   asiReply?: string | null;
 };
 
+export type CrmQueueReferral = 'strigunov' | 'site' | 'unknown';
+
 export type CrmQueueItem = {
   id: string;
   objectTitle: string;
@@ -101,6 +103,8 @@ export type CrmQueueItem = {
   missingOptionalFields: string[];
   readinessPercent: number | null;
   readinessStatusLabel: string | null;
+  referral: CrmQueueReferral;
+  nextAction: string | null;
   nextBestStep: string | null;
   readyForChannelManager: boolean;
   needsOperator: boolean;
@@ -143,6 +147,19 @@ function objectTitleFor(contact: CrmContact): string {
   if (contact.city.trim()) return `Объект в ${contact.city.trim()}`;
   if (contact.objectsCount > 0) return `Объект (${contact.objectsCount})`;
   return contact.name.trim() || 'Новый объект';
+}
+
+const STRIGUNOV_REFERRAL_MARKER = 'Источник заявки: Стригунов (переход по ссылке).';
+const SITE_REFERRAL_MARKERS = new Set([
+  'Источник заявки: сайт ASI.',
+  'Источник заявки: главная страница ASI.',
+]);
+
+export function resolveCrmQueueReferral(note: string): CrmQueueReferral {
+  const lines = note.split(/\r?\n/).map((line) => line.trim());
+  if (lines.includes(STRIGUNOV_REFERRAL_MARKER)) return 'strigunov';
+  if (lines.some((line) => SITE_REFERRAL_MARKERS.has(line))) return 'site';
+  return 'unknown';
 }
 
 function channelManagerFieldsFor(contact: CrmContact): {
@@ -406,6 +423,8 @@ export function buildQueueItem(
     readinessPercent: onboarding?.readinessPercent ?? readiness?.readiness_percent ?? null,
     readinessStatusLabel:
       onboarding?.readinessStatusLabel ?? readiness?.readiness_status_label_ru ?? null,
+    referral: resolveCrmQueueReferral(contact.note),
+    nextAction: sanitizeCrmMessageTextForDisplay(contact.nextStep)?.slice(0, 500) ?? null,
     nextBestStep: channelManager.nextStep ?? onboarding?.nextBestStep ?? readiness?.next_best_step_ru ?? null,
     readyForChannelManager: flags.readyForChannelManager,
     needsOperator: flags.needsOperator,
