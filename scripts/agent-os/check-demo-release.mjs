@@ -78,8 +78,9 @@ export function validateContract(contract, knownPaths) {
            (p.startsWith('scripts/strigunov4/') || p.startsWith('.github/workflows/strigunov4-c4-'))),
          'STAGE_PLANNED_FILES');
     for (const p of proposed) {
-      must(!p.includes('..') && !p.includes('\\') && !p.startsWith('/') && !available.has(p),
-           'PLANNED_FILE_ALREADY_PRESENT_OR_UNSAFE:' + p);
+      must(!p.includes('..') && !p.includes('\\') && !p.startsWith('/') &&
+           !stage.files.includes(p),
+           'PLANNED_FILE_UNSAFE_OR_ALREADY_LISTED:' + p);
     }
     for (const p of stage.files) {
       must(typeof p === 'string' && !p.includes('..') && !p.startsWith('/') &&
