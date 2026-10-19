@@ -1,0 +1,29 @@
+name: Strigunov Task22 custodian source review
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/strigunov-task22-custodian-review.yml'
+      - 'scripts/acceptance/strigunov-task22-custodian-review.mjs'
+      - 'scripts/__tests__/strigunov-task22-custodian-review.test.mjs'
+      - 'docs/ops/strigunov-task22-custodian-boundary.md'
+permissions:
+  contents: read
+jobs:
+  review-only:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Checkout reviewed PR merge candidate
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+          fetch-depth: 2
+      - name: Check source is syntactically valid
+        run: |
+          set -euo pipefail
+          node --check scripts/acceptance/strigunov-task22-custodian-review.mjs
+          node --check scripts/__tests__/strigunov-task22-custodian-review.test.mjs
+      - name: Fail-closed custody and revocation guards
+        run: node --test scripts/__tests__/strigunov-task22-custodian-review.test.mjs
+      - name: Review exact PR diff whitespace
+        run: git diff --check HEAD^1 HEAD
