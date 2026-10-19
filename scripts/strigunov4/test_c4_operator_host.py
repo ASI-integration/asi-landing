@@ -258,7 +258,9 @@ class LiveContractTests(unittest.TestCase):
 def load_tests(loader, tests, pattern):
     """Keep observer hardening regressions in the existing focused CI command."""
     from test_c4_operator_observer_hardening import ObserverHardeningTests
+    from test_c4_operator_environment_contract import EnvironmentContractTests
     tests.addTests(loader.loadTestsFromTestCase(ObserverHardeningTests))
+    tests.addTests(loader.loadTestsFromTestCase(EnvironmentContractTests))
     return tests
 
 

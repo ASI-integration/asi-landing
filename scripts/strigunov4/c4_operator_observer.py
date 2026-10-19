@@ -247,6 +247,8 @@ def observe():
         value = host.io.props(deadline).get("EnvironmentFiles", "")
         expected = str(host.io.ENV)
         out["environmentFiles"] = ("EXACT_EXPECTED" if value == expected + " (ignore_errors=no)"
+                                   else "EXACT_EXPECTED_OPTIONAL" if value == expected + " (ignore_errors=yes)"
+                                   else "EXPECTED_PATH_ONLY" if value == expected
                                    else "EXPECTED_PATH_OTHER_FORMAT" if expected in value else "OTHER")
     except BaseException as error:
         out["environmentFiles"] = host.failure_code(error)

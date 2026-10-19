@@ -175,7 +175,7 @@ class GateTests(unittest.TestCase):
                 patch.object(host.io, "read_env", return_value=(env_bytes(), None)):
             result = observer.observe()
         self.assertEqual(result["live"], "BLOCK_REASON_ENVIRONMENT_FILES")
-        self.assertEqual(result["environmentFiles"], "EXPECTED_PATH_OTHER_FORMAT")
+        self.assertEqual(result["environmentFiles"], "EXPECTED_PATH_ONLY")
         self.assertEqual(result["historicalWrite"], "UNKNOWN")
         self.assertFalse(result["replayAllowed"])
         self.assertEqual(reader.decode(json.dumps(result).encode(), 0), result)
