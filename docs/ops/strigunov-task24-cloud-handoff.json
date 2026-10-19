@@ -1,0 +1,53 @@
+{
+  "schema": 1,
+  "kind": "TASK24_NON_EXECUTABLE_CLOUD_HANDOFF",
+  "sourceBaselineSha": "9bc8175aa772e92366c7a2363e26900a042fc3ce",
+  "relatedPullRequests": [
+    440,
+    441
+  ],
+  "provider": "hetzner-cloud",
+  "proposedOwnerProject": "ASI Strigunov Custodian Lab",
+  "projectId": null,
+  "serverId": null,
+  "cloudLoginAvailable": false,
+  "projectProvisioned": false,
+  "dedicatedServerProvisioned": false,
+  "serviceInstalled": false,
+  "protectedServiceIdentityVerified": false,
+  "ownerControlledDurableLedgerInstalled": false,
+  "ownerAttestedBinary": false,
+  "scopedOperatorVerified": false,
+  "guestConsentVerified": false,
+  "guestMessagesPermitted": false,
+  "productionAccessPermitted": false,
+  "phase2": "BLOCK",
+  "pilot": "NOT_LIVE",
+  "brokerPreview": {
+    "status": "UNTRUSTED_SOURCE_ONLY",
+    "authorized": false,
+    "canIssueReceipt": false,
+    "canSend": false,
+    "commands": [
+      "inspect-owned-host",
+      "verify-immutable-release",
+      "read-technical-phase1",
+      "verify-operator-revocation",
+      "readonly-reconcile",
+      "stop-owned-lab"
+    ]
+  },
+  "preinstallOwnerProofRequirements": [
+    "separate-cloud-project-and-server-id",
+    "reviewed-billing-and-charge-approval",
+    "owner-retained-cloud-api-and-root-access",
+    "owner-controlled-tailscale-identity-and-firewall",
+    "external-service-binary-and-config-hash",
+    "non-root-service-and-protected-state-directory",
+    "persistent-single-use-ledger-with-crash-recovery",
+    "unauthorized-client-denial-verified",
+    "independent-host-network-and-secret-scope-attestation",
+    "physical-role-retirement-and-new-synthetic-phase2-evidence"
+  ],
+  "ownerActionDeferred": "Restore access to the Hetzner console when convenient; do not purchase or configure anything in Task24."
+}
