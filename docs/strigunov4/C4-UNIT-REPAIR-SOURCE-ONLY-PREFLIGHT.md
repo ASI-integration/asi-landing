@@ -14,7 +14,8 @@
 
 - `c4_unit_repair_phase_contract.py`: независимый фазовый допуск OLD+optional; NEW+mandatory после; защита от подмены квитанции, processToken и otherStateToken.
 - `c4_unit_repair_host_preflight.py`: фиксированная staging-идентичность; чтение unit с контролем inode, metadata и перечитыванием пути; точное соответствие OLD/NEW; проверка systemd и PID/InvocationID/start, root/host/release; два ограниченных чтения /proc/*/environ с проверкой семи no-send; только два localhost GET, bounded timeout; отказ при дрейфе.
-- Два автономных набора unit-тестов подтверждают 24/24 PASS на Windows с mocked внешним I/O, включая сквозную композицию читающего preflight. Никакой тест не обращается к действующему серверу.
+- `c4_unit_reload_survey.py`: ограниченное чтение очереди systemd, перечня служб и метаданных генераторов без запуска generator, без вывода имён и секретов; подозрительные сервисы/очередь блокируются; UNKNOWN не означает разрешения.
+- Три автономных набора unit-тестов подтверждают 33/33 PASS на Windows с mocked внешним I/O, включая сквозную композицию preflight и проверку классификации manager-wide рисков. Никакой тест не обращается к действующему серверу.
 
 ## Важная граница
 
