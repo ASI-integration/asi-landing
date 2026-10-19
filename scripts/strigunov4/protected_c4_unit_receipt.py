@@ -69,13 +69,9 @@ def main():
         transport.require(admit(os.environ) == (sha, rid), "ADMISSION_CHANGED")
         value = transport.execute(os.environ, admit=validate, build=reader.payload,
                                   decode=lambda raw, code: reader.decode(raw, code, sha, rid))
-        cipher_digest = envelope.save(value, sha, rid, cert, folder)
-        c.require(type(cipher_digest) is str and c.HEX.fullmatch(cipher_digest), "CIPHERTEXT_DIGEST")
-        # This hashes randomized ciphertext, never unit/receipt plaintext.
-        # Only emit after the exclusive durable write; any failure stays BLOCK.
-        with open(os.environ["GITHUB_OUTPUT"], "a", encoding="ascii") as output:
-            output.write("ciphertext_sha256=" + cipher_digest + "\n")
-        print('{"status":"C4_UNIT_RECEIPT_ENCRYPTED_SAVED"}')
+        envelope.save(value, sha, rid, cert, folder)
+        # No post-save file/output/log write can prevent upload. The final
+        # verify-download step, after upload, emits the success status.
         return 0
     except transport.RemoteOutcome as error:
         code = error.status if error.status in {"C4_UNIT_BLOCK_" + r for r in c.REASONS} else "C4_UNIT_BLOCK_UNKNOWN"

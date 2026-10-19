@@ -14,6 +14,7 @@ import c4_unit_contract as c
 RECIPIENT = "6afa982f3e0737e1567e13bfdb858d9eef00ede86b481a69d758a7f3e107a733"
 CERT = Path(__file__).resolve().parent / "backup-recipient.crt"
 NAME = "unit-receipt.cms"
+DIGEST_NAME = "ciphertext.sha256"
 MAX_CIPHER = 16384
 
 
@@ -140,24 +141,25 @@ def write_new(path, raw):
 
 
 def save(value, sha, rid, cert, folder):
-    """Durably save validated ciphertext and return its in-memory digest for readback."""
+    """Persist the in-memory digest before ciphertext, with no post-save output dependency."""
     cipher = encrypt(canonical(value, sha, rid), cert)
     path = folder / NAME
+    write_new(folder / DIGEST_NAME, c.digest(cipher).encode("ascii"))
     write_new(path, cipher)
     # Upload must precede readback: a late local read failure must not discard
     # the one permitted observation. The final check uses this in-memory pin.
-    return c.digest(cipher)
 
 
 def verify_download(env):
     """Require both ciphertext copies to match the original in-memory encryption digest."""
-    expected = env.get("C4_RECEIPT_CIPHER_SHA256", "")
-    c.require(type(expected) is str and c.HEX.fullmatch(expected), "CIPHERTEXT_DIGEST")
     original = output_dir(env)
     downloaded = original.with_name(original.name + "-download")
     for folder in (original, downloaded):
+        expected_files = {NAME, DIGEST_NAME} if folder == original else {NAME}
         c.require(folder == folder.resolve() and folder.is_dir()
-                  and {x.name for x in folder.iterdir()} == {NAME}, "ARTIFACT_FILES")
+                  and {x.name for x in folder.iterdir()} == expected_files, "ARTIFACT_FILES")
+    expected = regular(original / DIGEST_NAME, 64).decode("ascii")
+    c.require(c.HEX.fullmatch(expected), "CIPHERTEXT_DIGEST")
     before = regular(original / NAME, MAX_CIPHER)
     after = regular(downloaded / NAME, MAX_CIPHER)
     c.require(before == after and c.digest(before) == expected, "READBACK")

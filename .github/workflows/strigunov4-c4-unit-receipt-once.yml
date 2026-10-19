@@ -78,7 +78,6 @@ jobs:
           ref: ${{ github.sha }}
           persist-credentials: false
       - name: One fixed read, validated receipt encrypted in runner memory
-        id: receipt
         env:
           GITHUB_TOKEN: ${{ github.token }}
           STAGING_REVIEWED_MAIN_SHA: ${{ inputs.reviewed_main_sha }}
@@ -104,6 +103,4 @@ jobs:
           name: c4-unit-receipt-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/c4-unit-receipt-${{ github.run_id }}-${{ github.run_attempt }}-download
       - name: Require exact encrypted readback
-        env:
-          C4_RECEIPT_CIPHER_SHA256: ${{ steps.receipt.outputs.ciphertext_sha256 }}
         run: python3 -B scripts/strigunov4/c4_unit_receipt_envelope.py verify-download

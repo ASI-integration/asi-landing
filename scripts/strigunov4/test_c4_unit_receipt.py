@@ -77,15 +77,15 @@ class EncryptedReceiptTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             folder = Path(td)
             expected = e.canonical(receipt(), SHA, RID)
-            digest = e.save(receipt(), SHA, RID, self.cert, folder)
+            e.save(receipt(), SHA, RID, self.cert, folder)
             cipher = (folder / e.NAME).read_bytes()
-            self.assertEqual(digest, c.digest(cipher))
+            self.assertEqual((folder / e.DIGEST_NAME).read_text(), c.digest(cipher))
             self.assertEqual(self.decrypt(cipher), expected)
             self.assertNotIn(receipt()["afterSha256"].encode(), cipher)
             structure = e.command(["cms", "-cmsout", "-print", "-inform", "DER"], cipher)
             for algorithm in (b"id-smime-ct-authEnvelopedData", b"aes-256-gcm", b"rsaesOaep", b"sha256"):
                 self.assertIn(algorithm, structure)
-            self.assertEqual([p.name for p in folder.iterdir()], [e.NAME])
+            self.assertEqual({p.name for p in folder.iterdir()}, {e.NAME, e.DIGEST_NAME})
             self.assertEqual((folder / e.NAME).stat().st_mode & 0o777, 0o600)
 
     def test_02_tamper_truncation_wrong_key_rejected(self):
@@ -133,22 +133,20 @@ class EncryptedReceiptTests(unittest.TestCase):
                 c.strict_json(raw)
 
     def test_05_logs_contain_only_closed_statuses(self):
-        """Expose only the ciphertext digest as output; keep receipt and raw errors private."""
+        """Do not depend on step outputs or logging after save; never expose receipt bytes."""
         for failure in (None, RuntimeError("SECRET-NEVER-LOG")):
             out = io.StringIO()
             with tempfile.TemporaryDirectory() as td, \
-                    patch.dict(os.environ, {"GITHUB_OUTPUT": str(Path(td) / "outputs")}), \
+                    patch.dict(os.environ, {"GITHUB_OUTPUT": td}), \
                     patch.object(gate, "admit", return_value=(SHA, RID)), \
                     patch.object(e, "prepare", return_value=(self.cert, self.root)), \
                     patch.object(transport, "execute", return_value=receipt()), \
-                    patch.object(e, "save", side_effect=failure, return_value="a" * 64), redirect_stdout(out):
+                    patch.object(e, "save", side_effect=failure), redirect_stdout(out):
                 self.assertEqual(gate.main(), 2 if failure else 0)
-                output = Path(td) / "outputs"
-                self.assertEqual(output.exists(), failure is None)
-                if failure is None:
-                    self.assertEqual(output.read_text(), "ciphertext_sha256=" + "a" * 64 + "\n")
-            result = c.strict_json(out.getvalue())
-            self.assertEqual(set(result), {"status"})
+            if failure:
+                self.assertEqual(set(c.strict_json(out.getvalue())), {"status"})
+            else:
+                self.assertEqual(out.getvalue(), "")
             self.assertNotIn(receipt()["afterSha256"], out.getvalue())
             self.assertNotIn("SECRET", out.getvalue())
 
@@ -160,11 +158,12 @@ class EncryptedReceiptTests(unittest.TestCase):
             e.write_new(binary_path, binary)
             self.assertEqual(binary_path.read_bytes(), binary)
             self.assertEqual(e.regular(binary_path, 4096), binary)
-            env = dict(context(), RUNNER_TEMP=td, C4_RECEIPT_CIPHER_SHA256=c.digest(b"x" * 512))
+            env = dict(context(), RUNNER_TEMP=td)
             with patch.object(e, "encrypt", return_value=b"x" * 512):
                 _, original = e.prepare(env)
                 with self.assertRaises(FileExistsError): e.prepare(env)
             data = b"x" * 512
+            e.write_new(original / e.DIGEST_NAME, c.digest(data).encode())
             e.write_new(original / e.NAME, data)
             with self.assertRaises(FileExistsError): e.write_new(original / e.NAME, data)
             download = original.with_name(original.name + "-download"); download.mkdir()
@@ -176,8 +175,10 @@ class EncryptedReceiptTests(unittest.TestCase):
             (original / e.NAME).write_bytes(b"y" * 512)
             with self.assertRaises(c.Block): e.verify_download(env)
             for missing in ("", "abc", "f" * 64):
+                (original / e.DIGEST_NAME).write_text(missing)
                 with self.assertRaises(c.Block):
-                    e.verify_download(dict(env, C4_RECEIPT_CIPHER_SHA256=missing))
+                    e.verify_download(env)
+            (original / e.DIGEST_NAME).write_text(c.digest(data))
             (download / e.NAME).unlink(); (download / e.NAME).symlink_to(original / e.NAME)
             with self.assertRaises(c.Block): e.verify_download(env)
             (download / e.NAME).unlink(); os.link(original / e.NAME, download / e.NAME)
@@ -271,17 +272,28 @@ class EncryptedReceiptTests(unittest.TestCase):
             with patch.object(e.os, "write", side_effect=OSError("interrupted")), self.assertRaises(OSError):
                 e.write_new(path, b"x" * 512)
             with self.assertRaises(FileExistsError): e.write_new(path, b"x" * 512)
+        with tempfile.TemporaryDirectory() as td:
+            folder = Path(td)
+            cipher = e.encrypt(e.canonical(receipt(), SHA, RID), self.cert)
+            with patch.object(e, "encrypt", return_value=cipher), \
+                    patch.object(e.os, "write", side_effect=OSError("DIGEST_WRITE_ERROR")), self.assertRaises(OSError):
+                e.save(receipt(), SHA, RID, self.cert, folder)
+            self.assertFalse((folder / e.NAME).exists())
         # A late local read failure occurs only after the upload boundary.
         with tempfile.TemporaryDirectory() as td:
             env = dict(context(), RUNNER_TEMP=td)
             original = e.output_dir(env); original.mkdir()
-            with patch.object(e, "regular", side_effect=OSError("LATE_READ_ERROR")):
-                digest = e.save(receipt(), SHA, RID, self.cert, original)
+            with patch.object(e, "regular", side_effect=OSError("LATE_READ_ERROR")), \
+                    patch.object(gate, "admit", return_value=(SHA, RID)), \
+                    patch.object(e, "prepare", return_value=(self.cert, original)), \
+                    patch.object(transport, "execute", return_value=receipt()), \
+                    patch.dict(os.environ, {"GITHUB_OUTPUT": td}), \
+                    patch("builtins.print", side_effect=BrokenPipeError("LOG_WRITE_ERROR")):
+                self.assertEqual(gate.main(), 0)
             cipher = (original / e.NAME).read_bytes()
             self.assertEqual(self.decrypt(cipher), e.canonical(receipt(), SHA, RID))
             download = original.with_name(original.name + "-download"); download.mkdir()
             (download / e.NAME).write_bytes(cipher)  # isolated artifact upload/download
-            env["C4_RECEIPT_CIPHER_SHA256"] = digest
             with patch.object(e, "regular", side_effect=OSError("LATE_READ_ERROR")), \
                     self.assertRaises(OSError):
                 e.verify_download(env)
@@ -296,7 +308,7 @@ class EncryptedReceiptTests(unittest.TestCase):
                          "strigunov4-staging-nine-sql-apply", "if-no-files-found: error", "overwrite: false",
                          "unit-receipt.cms", "verify-download", "include-hidden-files: false"):
             self.assertIn(required, workflow)
-        self.assertIn("C4_RECEIPT_CIPHER_SHA256: ${{ steps.receipt.outputs.ciphertext_sha256 }}", workflow)
+        self.assertNotIn("GITHUB_OUTPUT", Path(gate.__file__).read_text())
         self.assertLess(workflow.index("Preserve only encrypted receipt"), workflow.index("Require exact encrypted readback"))
         for denied in ("contents: write", "actions: write", "continue-on-error", "PRIVATE_RECIPIENT_KEY",
                        "daemon-reload", "STAGING_DATABASE_URL", "c4_unit_transaction.py", "always()"):
