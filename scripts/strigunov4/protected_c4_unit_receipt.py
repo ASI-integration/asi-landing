@@ -69,7 +69,7 @@ def main():
         transport.require(admit(os.environ) == (sha, rid), "ADMISSION_CHANGED")
         value = transport.execute(os.environ, admit=validate, build=reader.payload,
                                   decode=lambda raw, code: reader.decode(raw, code, sha, rid))
-        envelope.save(value, sha, rid, cert, folder)
+        envelope.save(value, sha, rid, cert, folder, os.environ["GITHUB_OUTPUT"])
         # No post-save file/output/log write can prevent upload. The final
         # verify-download step, after upload, emits the success status.
         return 0

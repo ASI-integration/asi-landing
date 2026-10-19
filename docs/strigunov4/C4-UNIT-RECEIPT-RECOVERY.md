@@ -95,11 +95,14 @@ plaintext is uploaded. Upload fails on missing files and never overwrites.
 Pinned upload/download actions are used. The workflow downloads the artifact
 and requires exactly one regular file with byte-for-byte equality to the
 locally encrypted file before SUCCESS. Both copies must also match the SHA256
-computed from the original ciphertext in memory. The private local sidecar
-`ciphertext.sha256` is written before the ciphertext file and is never uploaded.
+computed from the original ciphertext in memory. That digest is passed through
+the Actions step output before the ciphertext file is written; readback uses
+the carried value, not a mutable digest sidecar beside the ciphertext.
 That digest covers randomized ciphertext, not the unit or plaintext receipt.
 There is no post-save step-output or log write; only final verification after
-upload emits success. Failure to write the digest prevents ciphertext creation.
+upload emits success. Failure to write or close the step output prevents
+ciphertext creation. A missing or masked output fails final verification while
+retaining any uploaded artifact; it never authorizes replay or a success claim.
 
 Upload occurs after the exclusive durable write but before local/downloaded
 readback. A late read error therefore leaves an uploaded ciphertext artifact
