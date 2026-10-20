@@ -29,6 +29,17 @@ test('05 unavailable projects fail closed',async()=>{
  await assert.rejects(fetchVerifiedSnapshot({api:mock(),readProjects:async()=>({items:[]})}),/PROJECT_GATES_UNVERIFIED/);
 });
 
+test('07 full CodeRabbit comment page is blocked instead of trusting stale review',async()=>{
+ const api=async route=>{
+  if(route.startsWith('issues/')&&route.endsWith('/comments?per_page=100')){
+   return Array.from({length:100},(_,i)=>({user:{login:'coderabbitai[bot]'},
+    body:head+' No actionable comments were generated in the recent review',
+    created_at:new Date(Date.UTC(2026,9,20,12,0,i)).toISOString()}));
+  }
+  return mock()(route);
+ };
+ await assert.rejects(fetchVerifiedSnapshot({api,readProjects:projects}),/COMMENTS_PAGINATION_UNTRUSTED/);
+});
 test('06 closed historical issue is readable but cannot authorize execution',async()=>{
  const api=async route=>{if(route==='issues/511')return {number:511,state:'closed',labels:[]};return mock()(route);};
  const s=await fetchVerifiedSnapshot({api,readProjects:projects});
