@@ -3,6 +3,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import test from 'node:test';
+import os from 'node:os';
+import { execFileSync } from 'node:child_process';
 import { checkPr, validateContract, CONTRACT, GOVERNANCE, verifiedOwnerComment, previousDiagnostics, requiredApproval, verifyStageRuns, prChanges } from '../check-demo-release.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
@@ -205,5 +207,43 @@ test('17 protected staging approval, stage workflow and exact SHA are required',
     await assert.rejects(verifyStageRuns(c,'token'),/ACCEPTANCE_NO_PROTECTED_STAGING_APPROVAL/);
     auth=approvals;jobs={total_count:1,jobs:[{name:'unrelated_job',status:'completed',conclusion:'success'}]};
     await assert.rejects(verifyStageRuns(c,'token'),/ACCEPTANCE_NO_REQUIRED_JOB/);
+    jobs={total_count:2,jobs:[{name:'protected_c4_unit_apply',status:'completed',conclusion:'success'}]};
+    await assert.rejects(verifyStageRuns(c,'token'),/ACCEPTANCE_NO_REQUIRED_JOB/);
   } finally {globalThis.fetch=old;}
+});
+
+test('18 merge-base paths exclude changes made only on the base branch', () => {
+  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'asi-merge-base-'));
+  const git=(...args)=>execFileSync('git',args,{cwd:dir,encoding:'utf8'}).trim();
+  try {
+    git('init','-q');git('config','user.name','Offline test');git('config','user.email','offline@example.invalid');
+    fs.writeFileSync(path.join(dir,'common.txt'),'base\n');git('add','.');git('commit','-qm','base');
+    const base=git('rev-parse','HEAD');
+    fs.writeFileSync(path.join(dir,'base-only.txt'),'unrelated\n');git('add','.');git('commit','-qm','base advance');
+    const tip=git('rev-parse','HEAD');
+    git('checkout','-q','--detach',base);
+    fs.writeFileSync(path.join(dir,'pr-only.txt'),'change\n');git('add','.');git('commit','-qm','PR');
+    assert.deepEqual(prChanges(tip,git('rev-parse','HEAD'),dir),['pr-only.txt']);
+  } finally {fs.rmSync(dir,{recursive:true,force:true});}
+});
+
+test('19 rename cannot hide governance or out-of-stage source paths', () => {
+  for(const source of ['AGENTS.md','unrelated.txt']) {
+    const dir=fs.mkdtempSync(path.join(os.tmpdir(),'asi-rename-scope-'));
+    const git=(...args)=>execFileSync('git',args,{cwd:dir,encoding:'utf8'}).trim();
+    try {
+      git('init','-q');git('config','user.name','Offline test');git('config','user.email','offline@example.invalid');
+      git('config','diff.renames','true');
+      fs.writeFileSync(path.join(dir,source),'unchanged content\n');git('add','.');git('commit','-qm','base');
+      const base=git('rev-parse','HEAD');
+      const target='scripts/strigunov4/protected_c4_unit_apply.py';
+      fs.mkdirSync(path.dirname(path.join(dir,target)),{recursive:true});git('mv',source,target);git('commit','-qm','rename');
+      const changed=prChanges(base,git('rev-parse','HEAD'),dir);
+      assert.deepEqual(new Set(changed),new Set([source,target]));
+      assert.throws(()=>check({changed}),source==='AGENTS.md'
+        ? /GOVERNANCE_CHANGE_NEEDS_VERIFIED_OWNER_ATTESTATION/ : /PR_HAS_OUT_OF_STAGE_FILES/);
+      assert.equal(requiredApproval({contract:seed,changed,prNumber:520,prBody:body(),headSha:sha}),
+        source==='AGENTS.md'?'CONTRACT-CHANGE':'RELEASE-EXCEPTION');
+    } finally {fs.rmSync(dir,{recursive:true,force:true});}
+  }
 });

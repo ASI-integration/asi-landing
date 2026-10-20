@@ -107,7 +107,9 @@ export function validateContract(contract, knownPaths, verifiedRuns = new Set())
 }
 export function prChanges(baseSha, headSha, repoRoot = ROOT) {
   must(SHA.test(baseSha) && SHA.test(headSha), 'PR_SHA');
-  const raw = execFileSync('git', ['diff', '--name-only', '-z', baseSha + '...' + headSha], {
+  // Authorize both paths of a rename; --name-only with rename detection hides
+  // the source path and could conceal deletion of a governed file.
+  const raw = execFileSync('git', ['diff', '--no-renames', '--name-only', '-z', baseSha + '...' + headSha], {
     cwd: repoRoot, encoding: 'utf8', maxBuffer: 4 * 1024 * 1024,
   });
   return raw.split('\0').filter(Boolean);
@@ -266,7 +268,8 @@ export async function verifyStageRuns(contract, token) {
         a.environments?.some(env => env.name === 'staging' &&
           env.can_admins_bypass === false)), 'ACCEPTANCE_NO_PROTECTED_STAGING_APPROVAL');
       const jobs = await get(uri+'/jobs?per_page=100','ACCEPTANCE_JOBS_UNAVAILABLE');
-      must(Array.isArray(jobs.jobs) && jobs.total_count <= 100 &&
+      must(Array.isArray(jobs.jobs) && Number.isSafeInteger(jobs.total_count) &&
+        jobs.total_count === jobs.jobs.length && jobs.total_count <= 100 &&
         jobs.jobs.some(j => j.name === expected.job &&
           j.status === 'completed' && j.conclusion === 'success'),
         'ACCEPTANCE_NO_REQUIRED_JOB');
