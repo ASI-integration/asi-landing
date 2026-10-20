@@ -45,12 +45,16 @@ export function calculate(s) {
     } else if(s.threads.some(t=>t.isResolved!==true)) {
       const count=s.threads.filter(t=>t.isResolved!==true).length;
       next='Исправить '+count+' незакрытых замечаний в PR #510; повторить CI и обзор. Без merge.';
-    } else if(!Array.isArray(s.checks)) {
+    } else if(!Array.isArray(s.checks) || s.checksComplete!==true) {
       gate='BLOCKED'; next='Недоступны точные результаты CI.';
     } else {
-      const missing=REQUIRED.filter(name=>!s.checks.some(c=>c.name===name &&
-        c.head_sha===s.pr.head_sha && c.status==='completed' &&
-        c.conclusion==='success' && c.app?.slug==='github-actions'));
+      const missing=REQUIRED.filter(name=>{
+        const matching=s.checks.filter(c=>c.name===name &&
+          c.head_sha===s.pr.head_sha && c.app?.slug==='github-actions');
+        if(!matching.length || matching.some(c=>!Number.isSafeInteger(c.id) || c.id<=0)) return true;
+        const latest=matching.reduce((a,b)=>a.id>b.id?a:b);
+        return latest.status!=='completed' || latest.conclusion!=='success';
+      });
       if(missing.length) next='Дождаться/исправить CI на HEAD '+s.pr.head_sha.slice(0,12)+': '+missing.join(', ');
       else { gate='OWNER_APPROVAL';
         next='Только отдельное решение владельца на merge #510 HEAD '+s.pr.head_sha.slice(0,12)+'.'; }
@@ -73,18 +77,42 @@ async function request(url,token,body) {
   if(x.errors?.length) throw new Error('GRAPHQL_FAILED');
   return x;
 }
+/** Read every check attempt on one SHA; inconsistent or truncated pages block. */
+export async function readChecks(sha,token,read=request) {
+  if(!SHA.test(sha)) throw new Error('INVALID_CHECK_SHA');
+  const checks=[], ids=new Set();
+  let total;
+  for(let page=1;page<=10;page++) {
+    const data=await read('https://api.github.com/repos/'+REPO+'/commits/'+sha+
+      '/check-runs?filter=all&per_page=100&page='+page,token);
+    if(!Number.isSafeInteger(data.total_count) || data.total_count<0 ||
+       data.total_count>1000 || !Array.isArray(data.check_runs) ||
+       (total!==undefined && total!==data.total_count))
+      throw new Error('INCOMPLETE_CHECK_RUNS');
+    total=data.total_count;
+    if(data.check_runs.length!==Math.min(100,total-checks.length))
+      throw new Error('INCOMPLETE_CHECK_RUNS');
+    for(const check of data.check_runs) {
+      if(!Number.isSafeInteger(check?.id) || check.id<=0 || ids.has(check.id) ||
+         check.head_sha!==sha) throw new Error('INCOMPLETE_CHECK_RUNS');
+      ids.add(check.id);checks.push(check);
+    }
+    if(checks.length===total) return checks;
+  }
+  throw new Error('INCOMPLETE_CHECK_RUNS');
+}
 async function snapshot(token) {
   let contract=null;
   try { contract=JSON.parse(await fs.readFile('docs/agent-os/releases/strigunov4-demo.json','utf8')); }
   catch(e) { if(e.code!=='ENOENT') throw e; }
   const pr=await request('https://api.github.com/repos/'+REPO+'/pulls/510',token);
-  const checks=await request('https://api.github.com/repos/'+REPO+'/commits/'+pr.head.sha+'/check-runs?per_page=100',token);
+  const checks=await readChecks(pr.head.sha,token);
   const result=await request('https://api.github.com/graphql',token,{query:
     'query { repository(owner:"ASI-integration",name:"asi-landing") { pullRequest(number:510) { reviewThreads(first:100) { pageInfo {hasNextPage} nodes {isResolved} } } } }'});
   const th=result.data?.repository?.pullRequest?.reviewThreads;
   if(!th || th.pageInfo.hasNextPage) throw new Error('INCOMPLETE_REVIEW_THREADS');
   return {contract,pr:{number:pr.number,state:pr.state,merged:pr.merged===true,head_sha:pr.head.sha},
-    checks:checks.check_runs,threads:th.nodes};
+    checks,checksComplete:true,threads:th.nodes};
 }
 async function update(rows,token) {
   if(!token) return 'NO_PROJECTS_TOKEN: read-only Actions summary only';
