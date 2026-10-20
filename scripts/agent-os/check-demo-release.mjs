@@ -31,7 +31,7 @@ function trackedFiles(repoRoot) {
   const raw = execFileSync('git', ['ls-files', '-z'], { cwd: repoRoot, encoding: 'utf8' });
   return new Set(raw.split('\0').filter(Boolean));
 }
-export function validateContract(contract, knownPaths) {
+export function validateContract(contract, knownPaths, verifiedRuns = new Set()) {
   must(contract?.schemaVersion === 'asi.demo-release.v1', 'RELEASE_SCHEMA');
   must(contract.releaseId === 'STRIGUNOV4-READY-FOR-DEMO', 'RELEASE_ID');
   must(contract.state === 'FROZEN_ON_OWNER_MERGE', 'RELEASE_NOT_FROZEN');
@@ -90,7 +90,7 @@ export function validateContract(contract, knownPaths) {
     must(Array.isArray(stage.proof), 'STAGE_PROOF');
     if (stage.status === 'ACCEPTED') {
       must(!openSeen && stage.proof.length >= 1 &&
-           stage.proof.every(p => typeof p === 'string' && /^https:\/\/github\.com\/ASI-integration\/asi-landing\/actions\/runs\/[0-9]+/.test(p)),
+           stage.proof.every(p => typeof p === 'string' && /^https:\/\/github\.com\/ASI-integration\/asi-landing\/actions\/runs\/[0-9]+$/.test(p) && verifiedRuns.has(p)),
            'ACCEPTED_REQUIRES_INDEPENDENT_RUN_EVIDENCE');
     } else {
       must(stage.proof.length === 0, 'OPEN_STAGE_CANNOT_CLAIM_PROOF');
@@ -105,7 +105,7 @@ export function validateContract(contract, knownPaths) {
 }
 export function prChanges(baseSha, headSha, repoRoot = ROOT) {
   must(SHA.test(baseSha) && SHA.test(headSha), 'PR_SHA');
-  const raw = execFileSync('git', ['diff', '--name-only', '-z', baseSha, headSha], {
+  const raw = execFileSync('git', ['diff', '--name-only', '-z', baseSha + '...' + headSha], {
     cwd: repoRoot, encoding: 'utf8', maxBuffer: 4 * 1024 * 1024,
   });
   return raw.split('\0').filter(Boolean);
@@ -123,7 +123,7 @@ function fields(body) {
   };
 }
 export function checkPr({ contract, changed, prNumber, prBody, headSha,
-                          baseHasContract, ownerApproval = false, priorDiagnosticCount = 0 }) {
+                          baseHasContract, ownerApproval = false, priorDiagnosticCount = 0, verifiedRuns = new Set() }) {
   must(Number.isSafeInteger(prNumber) && prNumber > 0 && SHA.test(headSha), 'PR_ID');
   must(Array.isArray(changed) && changed.length > 0 &&
        changed.every(p => typeof p === 'string' && !p.startsWith('/') && !p.includes('..')),
@@ -149,7 +149,7 @@ export function checkPr({ contract, changed, prNumber, prBody, headSha,
     return { status: 'OWNER_ATTESTED_GOVERNANCE_CHANGE', stage: null };
   }
   const f = fields(prBody);
-  const next = validateContract(contract, new Set(contract.stages.flatMap(s => s.files))).nextStage;
+  const next = validateContract(contract, new Set(contract.stages.flatMap(s => s.files)), verifiedRuns).nextStage;
   const stage = contract.stages.find(s => s.id === f.stage);
   if (!stage || f.stage !== next ||
       !['implementation', 'diagnostic', 'acceptance'].includes(f.mode)) {
@@ -184,9 +184,10 @@ export async function previousDiagnostics(stage, number, token) {
     const prs = await response.json();
     must(Array.isArray(prs), 'DIAGNOSTIC_HISTORY_INVALID');
     for (const pr of prs) {
-      if (pr.number < number && pr.number > 509 &&
-          fields(pr.body || '').stage === stage &&
-          fields(pr.body || '').mode === 'diagnostic') count++;
+      if (pr.number < number && pr.number > 509 && fields(pr.body || '').stage === stage) {
+        if (fields(pr.body || '').mode !== 'diagnostic') return count;
+        count++;
+      }
     }
     if (prs.some(x => x.number <= 509) || prs.length < 100) return count;
   }
@@ -211,10 +212,58 @@ export async function verifiedOwnerComment(number, sha, kind, token) {
   }
   throw new Error('OWNER_ATTESTATION_PAGINATION_BLOCK');
 }
+export function requiredApproval({contract, changed, prNumber, prBody, headSha}) {
+  if (changed.some(p => GOVERNANCE.has(p))) return 'CONTRACT-CHANGE';
+  if (prNumber <= contract.transition.legacyPrMax) {
+    return [502, 508, 509].includes(prNumber) &&
+      contract.transition.legacyHeads[String(prNumber)] === headSha
+      ? null : 'RELEASE-EXCEPTION';
+  }
+  const next = contract.stages.find(s => s.status !== 'ACCEPTED')?.id;
+  const f = fields(prBody || '');
+  const stage = contract.stages.find(s => s.id === f.stage);
+  return !stage || stage.id !== next ||
+    !['implementation', 'diagnostic', 'acceptance'].includes(f.mode) ||
+    changed.some(p => ![...stage.files, ...(stage.plannedFiles || [])].includes(p))
+    ? 'RELEASE-EXCEPTION' : null;
+}
+export async function verifyStageRuns(contract, token) {
+  const verified = new Set();
+  for (const stage of contract.stages) {
+    if (stage.status !== 'ACCEPTED') continue;
+    must(token, 'ACCEPTANCE_TOKEN_REQUIRED');
+    for (const proof of stage.proof) {
+      const match = typeof proof === 'string' &&
+        /^https:\/\/github\.com\/ASI-integration\/asi-landing\/actions\/runs\/([0-9]+)$/.exec(proof);
+      must(match, 'ACCEPTANCE_INVALID_PROOF');
+      const headers = {Accept:'application/vnd.github+json', Authorization:'Bearer '+token,
+        'X-GitHub-Api-Version':'2022-11-28'};
+      const uri = 'https://api.github.com/repos/'+REPO+'/actions/runs/'+match[1];
+      const response = await fetch(uri, {headers});
+      must(response.ok, 'ACCEPTANCE_RUN_UNAVAILABLE');
+      const run = await response.json();
+      must(run.repository?.full_name === REPO && run.status === 'completed' &&
+        run.conclusion === 'success' && SHA.test(run.head_sha) &&
+        run.event === 'workflow_dispatch', 'ACCEPTANCE_UNVERIFIED_RUN');
+      const jobsResponse = await fetch(uri+'/jobs?per_page=100', {headers});
+      must(jobsResponse.ok, 'ACCEPTANCE_JOBS_UNAVAILABLE');
+      const jobs = await jobsResponse.json();
+      must(Array.isArray(jobs.jobs) && jobs.total_count <= 100 &&
+        jobs.jobs.some(j => j.environment === 'staging' &&
+          j.status === 'completed' && j.conclusion === 'success'),
+        'ACCEPTANCE_NO_PROTECTED_STAGING_JOB');
+      verified.add(proof);
+    }
+  }
+  return verified;
+}
+
 export async function main(options = {}) {
   const repoRoot = options.repoRoot || ROOT;
   const release = JSON.parse(fs.readFileSync(path.join(repoRoot, CONTRACT), 'utf8'));
-  const status = validateContract(release, trackedFiles(repoRoot));
+  const verifiedRuns = options.ci && process.env.GITHUB_TOKEN ?
+    await verifyStageRuns(release, process.env.GITHUB_TOKEN) : new Set();
+  const status = validateContract(release, trackedFiles(repoRoot), verifiedRuns);
   if (!options.ci) {
     return { status: 'LOCAL_RELEASE_CONTRACT_VALID', ...status };
   }
@@ -233,30 +282,17 @@ export async function main(options = {}) {
       return true;
     } catch { return false; }
   })();
-  let ownerApproval = false;
-  // No PR self-asserted approval. Verify an exact HEAD-bound owner GitHub comment.
-  if (baseHasContract) {
-    const gov = changed.some(p => GOVERNANCE.has(p));
-    const legacyChanged = pr.number <= release.transition.legacyPrMax &&
-      (![502, 508, 509].includes(pr.number) ||
-       release.transition.legacyHeads[String(pr.number)] !== pr.head.sha);
-    const stage = fields(pr.body || '').stage;
-    const milestone = release.stages.find(s => s.id === stage);
-    const needException = !gov && (!milestone || milestone.id !== status.nextStage ||
-      changed.some(p => ![...milestone.files, ...(milestone.plannedFiles || [])].includes(p)));
-    if (gov || legacyChanged || (pr.number > release.transition.legacyPrMax && needException)) {
-      ownerApproval = await verifiedOwnerComment(
-        pr.number, pr.head.sha, gov ? 'CONTRACT-CHANGE' : 'RELEASE-EXCEPTION', process.env.GITHUB_TOKEN,
-      );
-    }
-  }
+  const approvalKind = baseHasContract ? requiredApproval({contract:release,
+    changed, prNumber:pr.number, prBody:pr.body || '', headSha:pr.head.sha}) : null;
+  const ownerApproval = approvalKind ? await verifiedOwnerComment(
+    pr.number, pr.head.sha, approvalKind, process.env.GITHUB_TOKEN) : false;
   const parsed = fields(pr.body || '');
   const priorDiagnosticCount = baseHasContract && parsed.mode === 'diagnostic' &&
     parsed.stage === status.nextStage && pr.number > release.transition.legacyPrMax
     ? await previousDiagnostics(parsed.stage, pr.number, process.env.GITHUB_TOKEN) : 0;
   return { ...checkPr({ contract: release, changed, prNumber: pr.number,
     prBody: pr.body || '', headSha: pr.head.sha, baseHasContract, ownerApproval,
-    priorDiagnosticCount }),
+    priorDiagnosticCount, verifiedRuns }),
     nextStage: status.nextStage, changedFiles: changed.length };
 }
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
