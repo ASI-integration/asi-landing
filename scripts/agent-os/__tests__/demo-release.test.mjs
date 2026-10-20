@@ -171,10 +171,22 @@ test('16 earlier implementation resets consecutive diagnostic sequence', async (
   try {
     globalThis.fetch=async()=>({ok:true,json:async()=>[
       {number:519,body:body('S4-G1','diagnostic','1')},
-      {number:518,body:body('S4-G1','implementation')},
+      {number:518,merged_at:'2026-10-20T00:00:00Z',body:body('S4-G1','implementation')},
       {number:517,body:body('S4-G1','diagnostic','1')},
     ]});
     assert.equal(await previousDiagnostics('S4-G1',520,'token'),1);
+    for (const state of ['open', 'closed']) {
+      globalThis.fetch=async()=>({ok:true,json:async()=>[
+        {number:519,state:'closed',merged_at:null,body:body('S4-G1','diagnostic','2')},
+        {number:518,state,merged_at:null,body:body('S4-G1','implementation')},
+        {number:517,state:'open',merged_at:null,body:body('S4-G1','diagnostic','1')},
+        {number:516,merged_at:'2026-10-20T00:00:00Z',body:body('S4-G1','garbage')},
+      ]});
+      const count=await previousDiagnostics('S4-G1',520,'token');
+      assert.equal(count,2);
+      assert.throws(()=>check({prNumber:520,prBody:body('S4-G1','diagnostic','3'),
+        priorDiagnosticCount:count}),/DIAGNOSTIC_LIMIT_REQUIRES_DECISION/);
+    }
   } finally {globalThis.fetch=old;}
 });
 test('17 protected staging approval, stage workflow and exact SHA are required', async () => {

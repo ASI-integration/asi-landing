@@ -189,8 +189,11 @@ export async function previousDiagnostics(stage, number, token) {
     must(Array.isArray(prs), 'DIAGNOSTIC_HISTORY_INVALID');
     for (const pr of prs) {
       if (pr.number < number && pr.number > 509 && fields(pr.body || '').stage === stage) {
-        if (fields(pr.body || '').mode !== 'diagnostic') return count;
-        count++;
+        const mode = fields(pr.body || '').mode;
+        // Count every diagnostic attempt, including open/closed unmerged PRs.
+        // Only landed implementation/acceptance work can reset the sequence.
+        if (mode === 'diagnostic') count++;
+        else if (pr.merged_at && ['implementation', 'acceptance'].includes(mode)) return count;
       }
     }
     if (prs.some(x => x.number <= 509) || prs.length < 100) return count;
