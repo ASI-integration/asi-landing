@@ -86,6 +86,14 @@ test('uncertain historical job is not replayed',()=>{
  s.ledger['g1-unit-apply-source']={status:'UNKNOWN'};
  assert.equal(decideQueue(s).jobs[3].status,'BLOCKED');
 });
+test('failed ledger record without trusted PR blocks replay',()=>{
+ const s=snapshot();goodReview(s,509);
+ s.ledger['g1-unit-apply-source']={status:'FAILED'};
+ const decision=decideQueue(s);
+ assert.equal(decision.jobs[3].status,'BLOCKED');
+ assert.equal(decision.jobs[3].reason,'JOB_LEDGER_RECONCILIATION');
+ assert.ok(!decision.actions.some(x=>x.job==='g1-unit-apply-source'));
+});
 test('already-published work is observed, not reissued',()=>{
  const s=snapshot();goodReview(s,509);
  s.ledger['g1-unit-apply-source']={publishedPr:521,head:SHA};
