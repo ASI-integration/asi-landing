@@ -15,7 +15,7 @@ type Milestone = {
 };
 type Ci = {
   available: boolean; reason: string | null; sha: string | null;
-  prUrl: string; runUrl: string | null; runId: number | null; checkedAt: string;
+  prUrl: string; runUrl: string | null; runId: number | null; checkedAt: string; sourceEventAt: string | null;
   jobs: { ubuntu: string; windows: string; artifact: string };
 };
 type Activity = {
@@ -28,11 +28,11 @@ type Snapshot = {
 };
 const POLL_MS = 15000;
 const STATUS: Record<EngineProgressStatus, { label: string; dot: string; badge: string }> = {
-  done: { label: 'ГОТОВО', dot: 'bg-emerald-500', badge: 'bg-emerald-50 text-emerald-700' },
+  done: { label: 'PASS', dot: 'bg-emerald-500', badge: 'bg-emerald-50 text-emerald-700' },
   in_progress: { label: 'В РАБОТЕ', dot: 'bg-amber-500', badge: 'bg-amber-50 text-amber-800' },
-  blocked: { label: 'БЛОК', dot: 'bg-rose-500', badge: 'bg-rose-50 text-rose-700' },
+  blocked: { label: 'BLOCK', dot: 'bg-rose-500', badge: 'bg-rose-50 text-rose-700' },
   not_started: { label: 'НЕ НАЧАТО', dot: 'bg-slate-300', badge: 'bg-slate-100 text-slate-600' },
-  unknown: { label: 'НЕТ ДАННЫХ', dot: 'bg-slate-500', badge: 'bg-slate-200 text-slate-700' },
+  unknown: { label: 'NOT_RUN', dot: 'bg-slate-500', badge: 'bg-slate-200 text-slate-700' },
 };
 const CI_LABELS = [
   ['ubuntu', 'Ubuntu'],
@@ -92,7 +92,7 @@ function MilestoneCard({ milestone, steps, initiallyOpen }: { milestone: Milesto
           {step.source === 'github' && <span title="Статус из GitHub CI на текущем SHA"
             className="text-[11px] font-medium text-teal-700">● GitHub</span>}
           {step.source === 'snapshot' && <span title="Плановый снимок, не живое подтверждение"
-            className="text-[11px] text-slate-400">Снимок</span>}
+            className="text-[11px] text-slate-400">Ручной план · не проверено</span>}
           <StatusPill value={step.status} />
           {step.evidenceUrl && <a href={step.evidenceUrl} target="_blank" rel="noopener noreferrer"
             className="text-xs font-semibold text-blue-700 hover:underline">Проверить ↗</a>}
@@ -121,7 +121,8 @@ export default function EngineProgressClient() {
       setSnapshot(payload);
       setError(null);
     } catch {
-      setError('Не удалось обновить вехи. Последние данные могут быть устаревшими.');
+      setSnapshot(null);
+      setError('Не удалось обновить вехи. Статусы не подтверждены; прошлый PASS скрыт.');
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -187,6 +188,31 @@ export default function EngineProgressClient() {
         <div className="mt-3"><ProgressBar done={Number(done)} total={Number(size)} small /></div>
       </div>)}
     </div>
+
+    <section aria-label="Статусы проектов" className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+      {[
+        ['Диспетчер', 'CI опубликованного кода', true],
+        ['Движок', 'Очередь и цикл разработки', false],
+        ['Booking Ops', 'Приём гостя и передача оператору', false],
+        ['Ким', 'Отдельная очередь материалов', false],
+        ['Орис', 'Отдельная очередь материалов', false],
+      ].map(([name, milestone, connected]) => {
+        const ci = snapshot?.ci;
+        const verified = connected && ci?.available && ci.runId;
+        const states = verified && ci ? Object.values(ci.jobs) : [];
+        const verdict = error ? 'NOT_RUN' : states.length && states.every(x => x === 'success') ? 'PASS'
+          : states.includes('failed') ? 'BLOCK' : 'NOT_RUN';
+        return <article key={String(name)} className="rounded-2xl border border-slate-200 bg-white p-4">
+          <h2 className="font-black text-slate-900">{name}</h2>
+          <p className="mt-1 text-sm text-slate-600">{milestone}</p>
+          <p className="mt-2 font-bold">{verdict}</p>
+          <p className="mt-1 text-xs text-slate-500">{connected ? 'Источник: GitHub CI; это не готовность к живому запуску.' : 'Источник не подключён. Ручной план, выполнение не подтверждено.'}</p>
+          <p className="mt-1 text-xs text-slate-500">Последнее событие: {connected && ci?.sourceEventAt ? new Date(ci.sourceEventAt).toLocaleString('ru-RU') : 'нет подтверждённого события'}</p>
+          {connected && ci?.runUrl && <a className="text-sm text-blue-700" href={ci.runUrl} target="_blank" rel="noopener noreferrer">Открыть подтверждение ↗</a>}
+          <p className="mt-2 text-xs text-slate-700">Далее: {connected ? 'Проверить все обязательные CI и независимый аудит точного SHA.' : 'Подключить проверяемые события и ссылки на результаты.'}</p>
+        </article>;
+      })}
+    </section>
 
     {snapshot?.ci && <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
       <div className="flex flex-wrap items-center justify-between gap-2">
