@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import test from 'node:test';
-import { checkPr, validateContract, CONTRACT, GOVERNANCE, verifiedOwnerComment, previousDiagnostics } from '../check-demo-release.mjs';
+import { checkPr, validateContract, CONTRACT, GOVERNANCE, verifiedOwnerComment, previousDiagnostics, requiredApproval, verifyStageRuns, prChanges } from '../check-demo-release.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 const seed = JSON.parse(fs.readFileSync(path.join(root, CONTRACT), 'utf8'));
@@ -107,10 +107,12 @@ test('10 acceptance only moves next after sequential physical proof', () => {
   next.stages[0].status = 'ACCEPTED';
   next.stages[0].proof = ['https://github.com/ASI-integration/asi-landing/actions/runs/39261951787'];
   next.stages[1].status = 'IN_PROGRESS';
-  const status = validateContract(next, known);
+  assert.throws(() => validateContract(next, known), /ACCEPTED_REQUIRES_INDEPENDENT_RUN_EVIDENCE/);
+  const verified = new Set(next.stages[0].proof);
+  const status = validateContract(next, known, verified);
   assert.equal(status.nextStage, 'S4-G2');
   assert.equal(check({ contract: next, prBody: body('S4-G2'),
-    changed: ['scripts/strigunov4/c4_operator_host.py'] }).status, 'CURRENT_MILESTONE_SCOPED');
+    changed: ['scripts/strigunov4/c4_operator_host.py'], verifiedRuns: verified }).status, 'CURRENT_MILESTONE_SCOPED');
 });
 test('11 a finished release cannot quietly reopen without new owner scope', () => {
   const a = copy();
@@ -152,4 +154,39 @@ test('14 counts only prior diagnostic PRs of this exact release stage', async ()
     assert.equal(await previousDiagnostics('S4-G1', 520, 'token'), 1);
     assert.equal(await previousDiagnostics('S4-G2', 520, 'token'), 1);
   } finally { globalThis.fetch = previous; }
+});
+
+test('15 invalid release mode is independently detected as an owner exception', () => {
+  assert.equal(requiredApproval({contract:seed,changed:['scripts/strigunov4/c4_unit_contract.py'],
+    prNumber:520,prBody:body('S4-G1','garbage'),headSha:sha}), 'RELEASE-EXCEPTION');
+  assert.equal(requiredApproval({contract:seed,changed:['scripts/strigunov4/c4_unit_contract.py'],
+    prNumber:520,prBody:body(),headSha:sha}), null);
+});
+test('16 earlier implementation resets consecutive diagnostic sequence', async () => {
+  const old=globalThis.fetch;
+  try {
+    globalThis.fetch=async()=>({ok:true,json:async()=>[
+      {number:519,body:body('S4-G1','diagnostic','1')},
+      {number:518,body:body('S4-G1','implementation')},
+      {number:517,body:body('S4-G1','diagnostic','1')},
+    ]});
+    assert.equal(await previousDiagnostics('S4-G1',520,'token'),1);
+  } finally {globalThis.fetch=old;}
+});
+test('17 protected staging run and exact success required for proof', async () => {
+  const c=copy();c.stages[0].status='ACCEPTED';
+  c.stages[0].proof=['https://github.com/ASI-integration/asi-landing/actions/runs/123'];
+  c.stages[1].status='IN_PROGRESS';
+  const old=globalThis.fetch;
+  try {
+    globalThis.fetch=async url=>({ok:true,json:async()=>url.endsWith('/jobs')?
+      {total_count:1,jobs:[{environment:'staging',status:'completed',conclusion:'success'}]}:
+      {repository:{full_name:'ASI-integration/asi-landing'},head_sha:sha,event:'workflow_dispatch',
+       status:'completed',conclusion:'success'}});
+    const verified=await verifyStageRuns(c,'token');
+    assert.equal(validateContract(c,known,verified).nextStage,'S4-G2');
+    globalThis.fetch=async()=>({ok:true,json:async()=>({repository:{full_name:'wrong'},
+      head_sha:sha,status:'completed',conclusion:'success',event:'workflow_dispatch'})});
+    await assert.rejects(verifyStageRuns(c,'token'),/ACCEPTANCE_UNVERIFIED_RUN/);
+  } finally {globalThis.fetch=old;}
 });
