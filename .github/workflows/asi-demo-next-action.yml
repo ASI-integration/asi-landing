@@ -1,0 +1,41 @@
+name: ASI demo next safe action (advisory)
+
+on:
+  schedule:
+    - cron: '27 * * * *'
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'docs/agent-os/releases/strigunov4-demo.json'
+      - 'scripts/agent-os/roadmap-next-action.mjs'
+
+permissions:
+  contents: read
+  checks: read
+  actions: read
+  pull-requests: read
+
+concurrency:
+  group: asi-demo-roadmap-projection
+  cancel-in-progress: false
+
+jobs:
+  project_projection:
+    if: github.repository == 'ASI-integration/asi-landing' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Read trusted main only
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Setup Node 20
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 20
+      - name: Check current stage and update project when explicitly enabled
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          ASI_ROADMAP_PROJECTS_TOKEN: ${{ secrets.ASI_ROADMAP_PROJECTS_TOKEN }}
+        run: node scripts/agent-os/roadmap-next-action.mjs
