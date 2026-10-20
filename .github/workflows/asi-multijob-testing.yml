@@ -1,0 +1,34 @@
+name: Strigunov 4 multi-job source-only tests
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'scripts/strigunov4/ASI-STRIGUNOV4-MULTIJOB-20261020.mjs'
+      - 'scripts/strigunov4/ASI-STRIGUNOV4-MULTIJOB-20261020.test.mjs'
+      - '.github/workflows/asi-multijob-testing.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  multi_job_unit:
+    if: github.repository == 'ASI-integration/asi-landing'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Checkout unprivileged PR test source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Use Node 20
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '20'
+      - name: Verify dispatcher and test syntax
+        run: |
+          node --check scripts/strigunov4/ASI-STRIGUNOV4-MULTIJOB-20261020.mjs
+          node --check scripts/strigunov4/ASI-STRIGUNOV4-MULTIJOB-20261020.test.mjs
+      - name: Run exactly 16 bounded multi-job tests
+        run: node --test scripts/strigunov4/ASI-STRIGUNOV4-MULTIJOB-20261020.test.mjs
