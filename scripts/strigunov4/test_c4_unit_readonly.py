@@ -155,6 +155,18 @@ class UnitReadonlyTests(unittest.TestCase):
             with self.assertRaisesRegex(c.Block, "PROPERTIES"):
                 worker.properties(time.monotonic() + 10)
 
+    def test_validate_receipt_rejects_invalid_fields(self):
+        c.validate_receipt(receipt(), SHA, RID)
+        for key, value in (("needDaemonReload", "invalid"),
+                           ("environmentFiles", "INVALID"),
+                           ("planState", "INVALID"),
+                           ("removedBytes", True),
+                           ("unknown", "INVALID")):
+            bad = receipt()
+            bad[key] = value
+            with self.subTest(key=key), self.assertRaises(c.Block):
+                c.validate_receipt(bad, SHA, RID)
+
     def test_wire_rejects_secrets_duplicates_coercions_and_wrong_binding(self):
         expected = receipt()
         self.assertEqual(gate.decode(json.dumps(expected).encode(), 0, SHA, RID), expected)
