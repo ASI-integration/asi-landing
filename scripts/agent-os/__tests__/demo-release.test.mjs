@@ -123,7 +123,7 @@ test('11 a finished release cannot quietly reopen without new owner scope', () =
     stage.proof = ['https://github.com/ASI-integration/asi-landing/actions/runs/39261951787'];
   }
   assert.throws(() => validateContract(a, known, new Set(a.stages[0].proof)),
-    /ACCEPTED_REQUIRES_INDEPENDENT_RUN_EVIDENCE|FULL_RELEASE_CLOSURE_REQUIRES_SEPARATE_OWNER_GATE/);
+    /FULL_RELEASE_CLOSURE_REQUIRES_SEPARATE_OWNER_GATE/);
 });
 test('12 metadata drift and pinned branch evidence are rejected', () => {
   const a = copy(); a.pendingPrPaths[0].headSha = sha;
@@ -190,15 +190,11 @@ test('17 protected staging approval, stage workflow and exact SHA are required',
     status:'completed',conclusion:'success'}]};
   let run = {...evidence};
   let auth=approvals;
+  globalThis.fetch=async url=>({ok:true,json:async()=>
+    url.endsWith('/approvals')?auth:url.includes('/jobs?')?jobs:run});
   try {
-    globalThis.fetch=async url=>({ok:true,json:async()=>
-      url.endsWith('/approvals')?auth:url.includes('/jobs?')?jobs:run});
     assert.throws(() => validateContract(c,known,new Set()),
       /ACCEPTED_REQUIRES_INDEPENDENT_RUN_EVIDENCE/);
-  } catch (error) {
-    throw error;
-  }
-  try {
     const verified=await verifyStageRuns(c,'token');
     assert.equal(validateContract(c,known,verified).nextStage,'S4-G2');
     run={...evidence,head_sha:'a'.repeat(40)};
