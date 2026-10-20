@@ -67,7 +67,7 @@ export async function fetchVerifiedSnapshot({api,readProjects}={}){
     must(Number.isInteger(c?.total_count)&&Array.isArray(c.check_runs)&&
       c.total_count===c.check_runs.length&&c.total_count<=100,
       'CHECKS_PAGINATION_UNTRUSTED');
-    must(Array.isArray(notes)&&notes.length<=100,'COMMENTS_PAGINATION_UNTRUSTED');
+    must(Array.isArray(notes)&&notes.length<100,'COMMENTS_PAGINATION_UNTRUSTED');
     prs[number]={number,head,state:pr.state,merged:pr.merged===true};
     checks[number]={head,validate:lastCheck(c.check_runs,head,'validate'),
       release_governance:lastCheck(c.check_runs,head,'release_governance')};
