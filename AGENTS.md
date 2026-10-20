@@ -35,6 +35,14 @@ Task instructions override this file when they are more specific.
 - Avoid technical words like "якорь", "kernel", "trace", and "permalink" in public UI.
 - Internal docs may use technical terms.
 
+## Active release compass (mandatory for new PRs)
+- Current milestone source: `docs/agent-os/releases/strigunov4-demo.json`.
+- Before beginning any task, run `node scripts/agent-os/check-demo-release.mjs` and select its first unaccepted stage.
+- New PRs must declare `Release-Stage` and `Release-Mode`. The required `validate` job checks actual paths against that stage.
+- Do not create side tasks, unrelated features or new diagnostics without a stage criterion. After two consecutive diagnostic PRs for one stage, request a bounded decision instead of starting a third.
+- Moving a milestone to ACCEPTED requires real run-bound evidence and separate owner authorization; tests/CI/PRs are not physical acceptance.
+- An owner approval comment for scope change does not grant merge, protected dispatch, SSH, production, SQL or server mutation.
+
 ## Current Priorities
 - RU market first.
 - OTA reduction and property automation are core positioning.
