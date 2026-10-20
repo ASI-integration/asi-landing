@@ -105,6 +105,7 @@ test('09 stage files, order and active stage cannot be fabricated', () => {
 test('10 acceptance only moves next after sequential physical proof', () => {
   const next = copy();
   next.stages[0].status = 'ACCEPTED';
+  next.stages[0].acceptanceSha = sha;
   next.stages[0].proof = ['https://github.com/ASI-integration/asi-landing/actions/runs/39261951787'];
   next.stages[1].status = 'IN_PROGRESS';
   assert.throws(() => validateContract(next, known), /ACCEPTED_REQUIRES_INDEPENDENT_RUN_EVIDENCE/);
@@ -118,10 +119,11 @@ test('11 a finished release cannot quietly reopen without new owner scope', () =
   const a = copy();
   for (const stage of a.stages) {
     stage.status = 'ACCEPTED';
+    stage.acceptanceSha = sha;
     stage.proof = ['https://github.com/ASI-integration/asi-landing/actions/runs/39261951787'];
   }
-  assert.throws(() => validateContract(a, known),
-    /FULL_RELEASE_CLOSURE_REQUIRES_SEPARATE_OWNER_GATE/);
+  assert.throws(() => validateContract(a, known, new Set(a.stages[0].proof)),
+    /ACCEPTED_REQUIRES_INDEPENDENT_RUN_EVIDENCE|FULL_RELEASE_CLOSURE_REQUIRES_SEPARATE_OWNER_GATE/);
 });
 test('12 metadata drift and pinned branch evidence are rejected', () => {
   const a = copy(); a.pendingPrPaths[0].headSha = sha;
@@ -173,20 +175,39 @@ test('16 earlier implementation resets consecutive diagnostic sequence', async (
     assert.equal(await previousDiagnostics('S4-G1',520,'token'),1);
   } finally {globalThis.fetch=old;}
 });
-test('17 protected staging run and exact success required for proof', async () => {
-  const c=copy();c.stages[0].status='ACCEPTED';
+test('17 protected staging approval, stage workflow and exact SHA are required', async () => {
+  const c=copy();c.stages[0].status='ACCEPTED';c.stages[0].acceptanceSha=sha;
   c.stages[0].proof=['https://github.com/ASI-integration/asi-landing/actions/runs/123'];
   c.stages[1].status='IN_PROGRESS';
   const old=globalThis.fetch;
+  const evidence = {repository:{full_name:'ASI-integration/asi-landing'},
+    head_sha:sha,head_branch:'main',run_attempt:1,
+    path:'.github/workflows/strigunov4-c4-unit-apply.yml',
+    status:'completed',conclusion:'success',event:'workflow_dispatch'};
+  const approvals=[{user:{id:207600140},state:'approved',
+    environments:[{name:'staging',can_admins_bypass:false}]}];
+  let jobs={total_count:1,jobs:[{name:'protected_c4_unit_apply',
+    status:'completed',conclusion:'success'}]};
+  let run = {...evidence};
+  let auth=approvals;
   try {
-    globalThis.fetch=async url=>({ok:true,json:async()=>url.endsWith('/jobs')?
-      {total_count:1,jobs:[{environment:'staging',status:'completed',conclusion:'success'}]}:
-      {repository:{full_name:'ASI-integration/asi-landing'},head_sha:sha,event:'workflow_dispatch',
-       status:'completed',conclusion:'success'}});
+    globalThis.fetch=async url=>({ok:true,json:async()=>
+      url.endsWith('/approvals')?auth:url.includes('/jobs?')?jobs:run});
+    assert.throws(() => validateContract(c,known,new Set()),
+      /ACCEPTED_REQUIRES_INDEPENDENT_RUN_EVIDENCE/);
+  } catch (error) {
+    throw error;
+  }
+  try {
     const verified=await verifyStageRuns(c,'token');
     assert.equal(validateContract(c,known,verified).nextStage,'S4-G2');
-    globalThis.fetch=async()=>({ok:true,json:async()=>({repository:{full_name:'wrong'},
-      head_sha:sha,status:'completed',conclusion:'success',event:'workflow_dispatch'})});
+    run={...evidence,head_sha:'a'.repeat(40)};
     await assert.rejects(verifyStageRuns(c,'token'),/ACCEPTANCE_UNVERIFIED_RUN/);
+    run={...evidence,path:'.github/workflows/other.yml'};
+    await assert.rejects(verifyStageRuns(c,'token'),/ACCEPTANCE_UNVERIFIED_RUN/);
+    run={...evidence};auth=[];
+    await assert.rejects(verifyStageRuns(c,'token'),/ACCEPTANCE_NO_PROTECTED_STAGING_APPROVAL/);
+    auth=approvals;jobs={total_count:1,jobs:[{name:'unrelated_job',status:'completed',conclusion:'success'}]};
+    await assert.rejects(verifyStageRuns(c,'token'),/ACCEPTANCE_NO_REQUIRED_JOB/);
   } finally {globalThis.fetch=old;}
 });

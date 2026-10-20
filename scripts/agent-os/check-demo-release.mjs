@@ -90,7 +90,9 @@ export function validateContract(contract, knownPaths, verifiedRuns = new Set())
     must(Array.isArray(stage.proof), 'STAGE_PROOF');
     if (stage.status === 'ACCEPTED') {
       must(!openSeen && stage.proof.length >= 1 &&
-           stage.proof.every(p => typeof p === 'string' && /^https:\/\/github\.com\/ASI-integration\/asi-landing\/actions\/runs\/[0-9]+$/.test(p) && verifiedRuns.has(p)),
+           stage.proof.every(p => typeof p === 'string' &&
+             /^https:\/\/github\.com\/ASI-integration\/asi-landing\/actions\/runs\/[0-9]+$/.test(p) &&
+             SHA.test(stage.acceptanceSha) && verifiedRuns.has(p)),
            'ACCEPTED_REQUIRES_INDEPENDENT_RUN_EVIDENCE');
     } else {
       must(stage.proof.length === 0, 'OPEN_STAGE_CANNOT_CLAIM_PROOF');
@@ -229,9 +231,17 @@ export function requiredApproval({contract, changed, prNumber, prBody, headSha})
 }
 export async function verifyStageRuns(contract, token) {
   const verified = new Set();
+  // Only the independently approved, protected physical repair path is accepted
+  // at this stage. Other stage workflows require a separately reviewed contract.
+  const allowed = new Map([['S4-G1', {
+    workflow: '.github/workflows/strigunov4-c4-unit-apply.yml',
+    job: 'protected_c4_unit_apply',
+  }]]);
   for (const stage of contract.stages) {
     if (stage.status !== 'ACCEPTED') continue;
-    must(token, 'ACCEPTANCE_TOKEN_REQUIRED');
+    must(token && SHA.test(stage.acceptanceSha), 'ACCEPTANCE_SHA_REQUIRED');
+    const expected = allowed.get(stage.id);
+    must(expected, 'STAGE_ACCEPTANCE_WORKFLOW_NOT_APPROVED');
     for (const proof of stage.proof) {
       const match = typeof proof === 'string' &&
         /^https:\/\/github\.com\/ASI-integration\/asi-landing\/actions\/runs\/([0-9]+)$/.exec(proof);
@@ -239,19 +249,27 @@ export async function verifyStageRuns(contract, token) {
       const headers = {Accept:'application/vnd.github+json', Authorization:'Bearer '+token,
         'X-GitHub-Api-Version':'2022-11-28'};
       const uri = 'https://api.github.com/repos/'+REPO+'/actions/runs/'+match[1];
-      const response = await fetch(uri, {headers});
-      must(response.ok, 'ACCEPTANCE_RUN_UNAVAILABLE');
-      const run = await response.json();
+      const get = async (url, label) => {
+        const response = await fetch(url, {headers});
+        must(response.ok, label);
+        return response.json();
+      };
+      const run = await get(uri,'ACCEPTANCE_RUN_UNAVAILABLE');
       must(run.repository?.full_name === REPO && run.status === 'completed' &&
-        run.conclusion === 'success' && SHA.test(run.head_sha) &&
-        run.event === 'workflow_dispatch', 'ACCEPTANCE_UNVERIFIED_RUN');
-      const jobsResponse = await fetch(uri+'/jobs?per_page=100', {headers});
-      must(jobsResponse.ok, 'ACCEPTANCE_JOBS_UNAVAILABLE');
-      const jobs = await jobsResponse.json();
+        run.conclusion === 'success' && run.head_sha === stage.acceptanceSha &&
+        run.head_branch === 'main' && run.path === expected.workflow &&
+        run.event === 'workflow_dispatch' && run.run_attempt === 1,
+        'ACCEPTANCE_UNVERIFIED_RUN');
+      const approvals = await get(uri+'/approvals','ACCEPTANCE_APPROVALS_UNAVAILABLE');
+      must(Array.isArray(approvals) && approvals.some(a =>
+        a.user?.id === OWNER_ID && a.state === 'approved' &&
+        a.environments?.some(env => env.name === 'staging' &&
+          env.can_admins_bypass === false)), 'ACCEPTANCE_NO_PROTECTED_STAGING_APPROVAL');
+      const jobs = await get(uri+'/jobs?per_page=100','ACCEPTANCE_JOBS_UNAVAILABLE');
       must(Array.isArray(jobs.jobs) && jobs.total_count <= 100 &&
-        jobs.jobs.some(j => j.environment === 'staging' &&
+        jobs.jobs.some(j => j.name === expected.job &&
           j.status === 'completed' && j.conclusion === 'success'),
-        'ACCEPTANCE_NO_PROTECTED_STAGING_JOB');
+        'ACCEPTANCE_NO_REQUIRED_JOB');
       verified.add(proof);
     }
   }
