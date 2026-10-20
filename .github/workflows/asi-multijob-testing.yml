@@ -30,5 +30,5 @@ jobs:
         run: |
           node --check scripts/strigunov4/ASI-STRIGUNOV4-MULTIJOB-20261020.mjs
           node --check scripts/strigunov4/ASI-STRIGUNOV4-MULTIJOB-20261020.test.mjs
-      - name: Run exactly 15 bounded multi-job tests
+      - name: Run exactly 16 bounded multi-job tests
         run: node --test scripts/strigunov4/ASI-STRIGUNOV4-MULTIJOB-20261020.test.mjs
