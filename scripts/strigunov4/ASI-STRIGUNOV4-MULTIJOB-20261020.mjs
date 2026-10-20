@@ -88,7 +88,7 @@ function sourceState(ticket,record,prstates,projectGate){
       return {status:'BLOCKED',reason:'EXISTING_JOB_LEDGER_UNTRUSTED'};
     return {status:'EXISTING_PR',reason:'SOURCE_ALREADY_PUBLISHED',pr:record.publishedPr,head:record.head};
   }
-  if(record?.status==='UNKNOWN'||record?.status==='RUNNING'||record?.status==='FAILED_LOCKED')
+  if(record!==undefined)
     return {status:'BLOCKED',reason:'JOB_LEDGER_RECONCILIATION'};
   if(ticket.dependsOn?.some(id=>!['MERGED','WAIT_OWNER_MERGE'].includes(prstates[id]?.status)))
     return {status:'WAIT_DEPENDENCY',reason:'SOURCE_REVIEW_DEPENDENCY'};
