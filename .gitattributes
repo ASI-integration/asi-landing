@@ -1,3 +1,5 @@
 # Preserve reviewed byte pins and recognize CRLF on these acceptance inputs only.
 docs/ops/strigunov-task12-fixture.sql -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
 scripts/acceptance/strigunov-task17-manifest.mjs -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+
+.github/workflows/*.lock.yml linguist-generated=true
