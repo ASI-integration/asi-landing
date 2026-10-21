@@ -24,7 +24,26 @@ export async function inspectCodeRabbit(github, task) {
   if (!s || s.state === 'pending') return { status:'WAITING',head:task.sha,completed:false,actionable:null };
   // skipped/paused/ambiguous success is NOT completed review.
   if (s.state !== 'success' || s.description !== 'Review completed') return { status:'FAILED',head:task.sha,completed:false,actionable:null };
-  if (!r || r.commit_id !== task.sha || !['APPROVED','COMMENTED'].includes(r.state))
+  // Some CodeRabbit installations only publish a status plus an issue summary.
+  // Never promote a missing review without independent, exact-head bot evidence.
+  if (!r) {
+    const c = summaries[0];
+    const when = Date.parse(c?.updated_at);
+    const finished = Date.parse(s.created_at);
+    const shaMatch = typeof task.sha === 'string' && /^[a-f0-9]{40}$/.test(task.sha) &&
+      typeof c?.body === 'string' &&
+      c.body.split(/\r?\n/).some(line => line.trim() === 'Head: ' + task.sha);
+    const explicitClean = typeof c?.body === 'string' &&
+      /^No actionable comments were generated in the recent review\.\s*$/im.test(c.body);
+    const outside = typeof c?.body === 'string' &&
+      /Outside diff range comments[^\n(]*\([1-9][0-9]*\)/i.test(c.body);
+    if (!c || summaries.length !== 1 || !shaMatch || !explicitClean || outside ||
+      !Number.isFinite(when) || !Number.isFinite(finished) || when <= finished)
+      return { status:'FAILED',head:task.sha,completed:false,actionable:null };
+    return { status:'PASS', head:task.sha, completed:true, actionable:false,
+      evidence:{ statusId:s.id,summaryId:c.id,reviewId:null,unresolvedThreads:0 } };
+  }
+  if (r.commit_id !== task.sha || !['APPROVED','COMMENTED'].includes(r.state))
     return { status:'FAILED',head:task.sha,completed:false,actionable:null };
   const body = String(r.body ?? '');
   const count = body.match(/^(?:\*\*)?Actionable comments posted:[ \t]*(\d+)(?:\*\*)?[ \t]*$/im);

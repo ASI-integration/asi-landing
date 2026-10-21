@@ -16,6 +16,15 @@ function safePath(p) {
   must(typeof p === 'string' && /^[a-zA-Z0-9_./-]+$/.test(p) && !p.startsWith('/') &&
     p.split('/').every(c=>c && c!=='.' && c!=='..' && c!=='.git') && !p.startsWith('-'), 'PATH_NOT_ALLOWED');
 }
+/** Inventory names may contain valid tracked characters such as spaces or brackets.
+ * This validator does NOT authorize those paths as writable change targets.
+ */
+export function inventoryPath(p) {
+  must(typeof p === 'string' && p.length > 0 && !p.startsWith('/') &&
+    !p.includes('\\') && !p.includes('\0') &&
+    p.split('/').every(c => c && c !== '.' && c !== '..' && c !== '.git'),
+    'INVENTORY_PATH_NOT_ALLOWED');
+}
 async function target(root,relative) {
   safePath(relative); const full = path.join(root,relative);
   let dir = root;
@@ -30,7 +39,7 @@ async function inventory(root,prefix='') {
   const out = {};
   for (const item of await fs.readdir(path.join(root,prefix),{withFileTypes:true})) {
     if (!prefix && item.name === '.git') continue;
-    const name = prefix ? `${prefix}/${item.name}` : item.name; safePath(name);
+    const name = prefix ? `${prefix}/${item.name}` : item.name; inventoryPath(name);
     const full = path.join(root,name), st = await fs.lstat(full);
     must(!st.isSymbolicLink(), 'SCRATCH_SYMLINK');
     if (st.isDirectory()) Object.assign(out,await inventory(root,name));
