@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
-import { inventoryPath } from './change-preparer.mjs';
+import { inventoryPath, normalizeProposedContent } from './change-preparer.mjs';
 import { inspectCodeRabbit } from './coderabbit-analyzer.mjs';
 import { BOT_ID } from './github-readonly.mjs';
 import { initializeState } from './state.mjs';
@@ -129,4 +129,16 @@ test('state adapter creates private directories and receipt artifacts', {skip:pr
       assert.equal(artifact.mode & 0o022,0,`${relative} must not be group/other writable`);
     }
   }finally{await fs.rm(root,{recursive:true,force:true});}
+});
+
+test('source proposals keep .json round-trip and reject invalid JSON',()=>{
+  assert.equal(normalizeProposedContent('config.json','{"safe":true}'),'{\n  "safe": true\n}\n');
+  assert.throws(()=>normalizeProposedContent('config.json','safe: true'),SyntaxError);
+  assert.equal(normalizeProposedContent('handler.py','print("safe")\n'),'print("safe")\n');
+});
+test('source proposals reject YAML before any write, even JSON-shaped YAML',()=>{
+  for(const extension of ['yml','yaml']) {
+    for(const proposal of ['name: test\n','{"name":"test"}'])
+      assert.throws(()=>normalizeProposedContent('workflow.'+extension,proposal),/NO_APPROVED_SYNTAX_CHECKER/);
+  }
 });

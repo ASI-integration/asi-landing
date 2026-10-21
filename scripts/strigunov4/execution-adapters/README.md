@@ -56,8 +56,11 @@ Use private local Linux storage supporting file and directory fsync. Windows,
 NFS durability and malicious concurrent access under the same OS identity are
 not established by this acceptance. Candidate Git copies must be independent,
 private, detached and clean. The preparer handles existing admitted files only;
-YAML proposals must be valid JSON (a YAML subset). No packages, hooks, repository
-scripts, commits or pushes are executed by the preparer.
+YAML source proposals are rejected with `NO_APPROVED_SYNTAX_CHECKER` before
+any mutation, even if JSON-shaped. An approved, pinned YAML syntax checker is
+required before preparing any `.yml` or `.yaml` source. JSON proposals alone
+receive JSON normalization. No packages, hooks, repository scripts, commits or
+pushes are executed by the preparer.
 
 ## Read ports and scope of proof
 

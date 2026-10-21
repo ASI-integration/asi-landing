@@ -51,10 +51,18 @@ async function inventory(root,prefix='') {
   }
   return out;
 }
+// Only JSON is eligible for JSON normalization. JSON is not a trusted YAML
+// syntax check, even when a particular YAML document happens to be JSON-shaped.
+// Until a pinned/approved YAML parser exists, reject YAML before any writes.
+export function normalizeProposedContent(file,content) {
+  if (/\.(yml|yaml)$/.test(file)) throw Error('NO_APPROVED_SYNTAX_CHECKER');
+  if (file.endsWith('.json')) return JSON.stringify(JSON.parse(content),null,2)+'\n';
+  return content;
+}
 async function syntax(file,content,cwd) {
   if (/\.(mjs|js)$/.test(file)) await command(process.execPath,['--input-type=module','--check'],cwd,content);
   else if (file.endsWith('.py')) await command('/usr/bin/python3',['-I','-S','-c','import ast,sys; ast.parse(sys.stdin.read())'],cwd,content);
-  else if (/\.(json|ya?ml)$/.test(file)) JSON.parse(content);
+  else if (file.endsWith('.json')) JSON.parse(content);
   else throw Error('NO_APPROVED_SYNTAX_CHECKER');
 }
 
@@ -101,7 +109,7 @@ export async function prepareDelta(store,task,{ admission, changes }) {
     const file = await target(cwd,change.path);
     const source = await fs.readFile(file,'utf8');
     must(digest(source)===change.beforeSha256 && baseline[change.path].hash===change.beforeSha256, 'PRECONDITION_CHANGED');
-    const content = /\.(json|ya?ml)$/.test(change.path) ? JSON.stringify(JSON.parse(change.content),null,2)+'\n' : change.content;
+    const content = normalizeProposedContent(change.path,change.content);
     must(content!==source, 'EMPTY_CHANGE');
     await syntax(change.path,content,cwd);
     prepared.push({file,path:change.path,content,beforeSha256:change.beforeSha256,afterSha256:digest(content)});
