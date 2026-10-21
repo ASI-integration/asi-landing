@@ -66,6 +66,43 @@ async function syntax(file,content,cwd) {
   else throw Error('NO_APPROVED_SYNTAX_CHECKER');
 }
 
+// Git clone may retain a local branch stanza even after checkout --detach.
+// A branch stanza is data, not an admission to use a remote or run commands.
+function safeBranchName(name) {
+  return typeof name === 'string' && /^[a-zA-Z0-9][a-zA-Z0-9_.\/-]{0,150}$/.test(name) &&
+    name.split('/').every(part=>part!=='' && part!=='.' && part!=='..' &&
+      !part.startsWith('.') && !part.endsWith('.') && !part.endsWith('.lock')) &&
+    !name.includes('..');
+}
+export function validateScratchGitConfig(config) {
+  must(typeof config === 'string' && config.length < 100000, 'UNTRUSTED_GIT_CONFIG');
+  let section = '';
+  for (const raw of config.split(/\r?\n/)) {
+    const line = raw.trim();
+    if (!line || /^[#;]/.test(line)) continue;
+    if (line.startsWith('[')) {
+      const branch=/^\[branch "([^"]+)"\]$/.exec(line);
+      if (branch && safeBranchName(branch[1])) { section='branch'; continue; }
+      must(/^\[(?:core|remote "origin")\]$/.test(line),'UNTRUSTED_GIT_CONFIG');
+      section=line; continue;
+    }
+    const separator=line.indexOf('=');
+    must(separator>0,'UNTRUSTED_GIT_CONFIG');
+    const key=line.slice(0,separator).trim().toLowerCase();
+    const value=line.slice(separator+1).trim();
+    const allowed=section==='[core]'?
+      ['repositoryformatversion','filemode','bare','logallrefupdates','ignorecase','precomposeunicode'].includes(key):
+      section==='[remote "origin"]'?['url','fetch'].includes(key):
+      section==='branch'?['remote','merge'].includes(key):false;
+    must(allowed,'UNTRUSTED_GIT_CONFIG');
+    if (section==='branch') {
+      must(key==='remote'?value==='origin':
+        value.startsWith('refs/heads/') && safeBranchName(value.slice('refs/heads/'.length)),
+        'UNTRUSTED_GIT_CONFIG');
+    }
+  }
+}
+
 /** Existing files only, explicit before-hashes, no patch commands or repository scripts.
  * Admission must come from the trusted host, never from the queue decision or an issue body.
  * Scratch must be a private independent detached clone; caller creates it without executing hooks.
@@ -86,16 +123,7 @@ export async function prepareDelta(store,task,{ admission, changes }) {
   // before invoking git, in addition to disabling hooks, fsmonitor, textconv and ext-diff.
   const configFile = path.join(cwd,'.git','config'); await regular(configFile);
   const config = await fs.readFile(configFile,'utf8');
-  let section = '';
-  for (const raw of config.split(/\r?\n/)) {
-    const line = raw.trim(); if (!line || /^[#;]/.test(line)) continue;
-    if (line.startsWith('[')) {
-      must(/^\[(?:core|remote "origin")\]$/.test(line), 'UNTRUSTED_GIT_CONFIG'); section=line; continue;
-    }
-    const key = line.split('=')[0].trim().toLowerCase();
-    must((section==='[core]' ? ['repositoryformatversion','filemode','bare','logallrefupdates','ignorecase','precomposeunicode'] :
-      section==='[remote "origin"]' ? ['url','fetch'] : []).includes(key), 'UNTRUSTED_GIT_CONFIG');
-  }
+  validateScratchGitConfig(config);
   must((await git(cwd,['rev-parse','--show-toplevel'])).trim() === cwd, 'WRONG_WORKTREE');
   must((await git(cwd,['rev-parse','--git-dir'])).trim() === '.git', 'FOREIGN_GIT_DIR');
   must((await git(cwd,['rev-parse','HEAD'])).trim() === task.sha, 'WRONG_BASE_SHA');

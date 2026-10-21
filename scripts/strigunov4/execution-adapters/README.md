@@ -55,7 +55,12 @@ Local completion does not grant merge or physical execution permission.
 Use private local Linux storage supporting file and directory fsync. Windows,
 NFS durability and malicious concurrent access under the same OS identity are
 not established by this acceptance. Candidate Git copies must be independent,
-private, detached and clean. The preparer handles existing admitted files only;
+private, detached and clean. The preparer handles existing admitted files only; the read-only GitHub
+reader can verify both open/unmerged and closed/merged PRs at the exact pinned SHA,
+and includes lifecycle in its identity to detect changes. It never merges or
+reopens a PR. Scratch Git configuration accepts only safe clone-created branch
+metadata (remote=origin, merge=refs/heads/...), with no hooks, includes or
+other executable configuration.\nThe preparer handles existing admitted files only;
 YAML source proposals are rejected with `NO_APPROVED_SYNTAX_CHECKER` before
 any mutation, even if JSON-shaped. An approved, pinned YAML syntax checker is
 required before preparing any `.yml` or `.yaml` source. JSON proposals alone

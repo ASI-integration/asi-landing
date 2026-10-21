@@ -9,6 +9,21 @@ reviewThreads(first:100,after:$cursor){pageInfo{hasNextPage endCursor}
 nodes{id isResolved isOutdated comments(first:100){pageInfo{hasNextPage}
 nodes{databaseId author{login} body commit{oid}}}}}}}}`;
 
+/** Allow a completed, exact-SHA merged dependency to be *observed*, never
+ * reopened or executed. Include lifecycle in both pre/post read identities.
+ */
+export function verifyPinnedReviewPr(p,task) {
+  validateTask(task);
+  must(task.pr !== null,'EXISTING_PR_REQUIRED');
+  const lifecycle=(p?.state==='open' && p?.merged===false) ||
+    (p?.state==='closed' && p?.merged===true);
+  must(p?.number===task.pr && p.head?.sha===task.sha && p.head?.ref===task.branch &&
+    p.head?.repo?.full_name===REPO && p.base?.repo?.full_name===REPO &&
+    p.base?.ref==='main' && lifecycle, 'PR_SHA_OR_LIFECYCLE_CHANGED');
+  return {number:p.number,head:p.head.sha,branch:p.head.ref,base:p.base.sha,
+    state:p.state,merged:p.merged};
+}
+
 /** Fixed GitHub origin; GET REST + one fixed GraphQL QUERY, never a mutation.
  * Token is supplied by the host, never serialized. No retries or redirects.
  */
@@ -67,11 +82,7 @@ export function createGitHubReader({ token, timeoutMs = 10000 }) {
       return { number:null, head:task.sha, branch:task.branch, state:'PERMITTED_LOCAL_PREPARATION' };
     }
     const p = await get(`pulls/${task.pr}`);
-    must(p.number === task.pr && p.head?.sha === task.sha && p.head?.ref === task.branch &&
-      p.head?.repo?.full_name === REPO && p.base?.repo?.full_name === REPO && p.base?.ref === 'main' &&
-      p.state === 'open' && p.merged === false, 'PR_SHA_OR_LIFECYCLE_CHANGED');
-    // The caller pins an existing PR explicitly. Closed/merged PRs need reconciliation, not execution.
-    return { number: p.number, head: p.head.sha, branch: p.head.ref, base: p.base.sha, state: p.state };
+    return verifyPinnedReviewPr(p,task);
   }
   async function threads(task) {
     const all = [], ids = new Set(); let cursor = null;

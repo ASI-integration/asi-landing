@@ -3,9 +3,9 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
-import { inventoryPath, normalizeProposedContent } from './change-preparer.mjs';
+import { inventoryPath, normalizeProposedContent, validateScratchGitConfig } from './change-preparer.mjs';
 import { inspectCodeRabbit } from './coderabbit-analyzer.mjs';
-import { BOT_ID } from './github-readonly.mjs';
+import { BOT_ID, verifyPinnedReviewPr } from './github-readonly.mjs';
 import { initializeState } from './state.mjs';
 
 const SHA='a'.repeat(40);
@@ -141,4 +141,36 @@ test('source proposals reject YAML before any write, even JSON-shaped YAML',()=>
     for(const proposal of ['name: test\n','{"name":"test"}'])
       assert.throws(()=>normalizeProposedContent('workflow.'+extension,proposal),/NO_APPROVED_SYNTAX_CHECKER/);
   }
+});
+
+test('detached clone may retain safe branch metadata with only remote and merge keys',()=>{
+  const config='[core]\n\trepositoryformatversion = 0\n\tbare = false\n' +
+    '[remote "origin"]\n\turl = https://example.invalid/repo.git\n\tfetch = +refs/heads/*:refs/remotes/origin/*\n' +
+    '[branch "feature/source-v1"]\n\tremote = origin\n\tmerge = refs/heads/feature/source-v1\n';
+  assert.doesNotThrow(()=>validateScratchGitConfig(config));
+  for(const bad of [
+    config+'[branch "bad..ref"]\nremote = origin\n',
+    config+'[branch "feature/source-v1"]\nrebase = true\n',
+    config+'[branch "feature/source-v1"]\nremote = attacker\n',
+    config+'[branch "feature/source-v1"]\nmerge = refs/tags/v1\n',
+    config+'[include]\npath = /tmp/evil\n',
+    config+'[core]\nhooksPath = /tmp/hooks\n'
+  ]) assert.throws(()=>validateScratchGitConfig(bad),/UNTRUSTED_GIT_CONFIG/);
+});
+test('exact-SHA read-only review accepts merged dependency but rejects lifecycle ambiguity',()=>{
+  const pinned={repo:'ASI-integration/asi-landing',stage:'S4-G1',id:'g1-pr509-reload-preflight',
+    sha:SHA,pr:509,branch:'asi/review-509'};
+  const p={number:509,head:{sha:SHA,ref:pinned.branch,repo:{full_name:pinned.repo}},
+    base:{sha:'b'.repeat(40),ref:'main',repo:{full_name:pinned.repo}},
+    state:'closed',merged:true};
+  assert.deepEqual(verifyPinnedReviewPr(p,pinned),{
+    number:509,head:SHA,branch:pinned.branch,base:p.base.sha,state:'closed',merged:true
+  });
+  assert.equal(verifyPinnedReviewPr({...p,state:'open',merged:false},pinned).merged,false);
+  for(const invalid of [
+    {...p,state:'closed',merged:false},
+    {...p,state:'open',merged:true},
+    {...p,head:{...p.head,sha:'f'.repeat(40)}},
+    {...p,base:{...p.base,ref:'staging'}}
+  ]) assert.throws(()=>verifyPinnedReviewPr(invalid,pinned),/PR_SHA_OR_LIFECYCLE_CHANGED/);
 });
