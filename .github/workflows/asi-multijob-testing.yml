@@ -50,7 +50,8 @@ jobs:
             scripts/strigunov4/ASI-STRIGUNOV4-ORCHESTRATOR-CANDIDATE-20261020.test.mjs \
             scripts/strigunov4/ASI-STRIGUNOV4-RUNNER-BRIDGE-20261020.test.mjs \
             scripts/strigunov4/ASI-STRIGUNOV4-GITHUB-SNAPSHOT-20261020.test.mjs
-      - name: Verify isolated adapter syntax and acceptance
+      - name: Verify isolated adapter syntax, acceptance and security regressions
         run: |
           for source in scripts/strigunov4/execution-adapters/*.mjs; do node --check "$source"; done
-          node --test scripts/strigunov4/execution-adapters/isolated-loop.test.mjs
+          node --test scripts/strigunov4/execution-adapters/isolated-loop.test.mjs \
+            scripts/strigunov4/execution-adapters/security-review.test.mjs
