@@ -43,7 +43,8 @@ export async function inspectCI(github, task, policies) {
   const again = await github.pages(`actions/runs?head_sha=${task.sha}&event=pull_request`, 'workflow_runs');
    const signature = list => JSON.stringify(list.map(r => [r.id,r.workflow_id,r.head_sha,
      r.head_branch,r.repository?.full_name,r.head_repository?.full_name,
-     r.pull_requests?.map(p=>p.number),r.run_attempt,r.status,r.conclusion]).sort((a,b)=>a[0]-b[0]));
+     Array.isArray(r.pull_requests)?r.pull_requests.map(p=>p.number):null,
+     r.run_attempt,r.status,r.conclusion]).sort((a,b)=>a[0]-b[0]));
   must(signature(runs) === signature(again), 'CI_CHANGED_DURING_READ');
   return { status: failed ? 'FAILED' : waiting ? 'WAITING' : 'PASS', head: task.sha,
     checks: Object.fromEntries(evidence.map(e => [e.name,e.state])), evidence };

@@ -34,7 +34,12 @@ async function fixture(t){
   snapshot.reviews[j.pr]={head:j.head,completed:true,actionable:false};
  }
  const knobs={ci:'success',review:'clear',verifyCalls:0,admissions:0,reads:0};
- const runs=jobs.filter(j=>j.pr).flatMap((j,k)=>policy.map((p,i)=>({id:100+k*10+i,workflow_id:p.workflowId,head_sha:j.head,event:'pull_request',pull_requests:[{number:j.pr}],run_attempt:1,status:'completed',conclusion:'success'})));
+ const runs=jobs.filter(j=>j.pr).flatMap((j,k)=>policy.map((p,i)=>({
+  id:100+k*10+i,workflow_id:p.workflowId,head_sha:j.head,
+  head_branch:'asi/review-'+j.pr,head_repository:{full_name:'ASI-integration/asi-landing'},
+  repository:{full_name:'ASI-integration/asi-landing'},event:'pull_request',
+  pull_requests:[{number:j.pr}],run_attempt:1,status:'completed',conclusion:'success'
+ })));
  const github={
   verifyTask:async task=>{knobs.verifyCalls++;if(knobs.hold)await knobs.hold();if(knobs.throwVerify)throw Error('PRIVATE_ERROR');return {head:knobs.changedHead?'f'.repeat(40):task.sha,pr:task.pr};},
   pages:async p=>{
