@@ -47,7 +47,8 @@ export async function createIsolatedAcceptanceLoop({root,legacyStateDir,fetchSna
         snapshot=await fetchSnapshot();
         const queue=decideQueue(snapshot);
         must(queue.stage==='S4-G1'&&queue.decision!=='BLOCKED_NEEDS_RECONCILIATION','QUEUE_BLOCKED');
-        const jobs=WORK_ORDERS.filter(j=>j.stage==='S4-G1'&&j.kind!=='physical-gate');
+        // Optional receipts are advisory and must not block mandatory serial progress.
+        const jobs=WORK_ORDERS.filter(j=>j.stage==='S4-G1'&&j.kind!=='physical-gate'&&!j.optional);
         for(const job of jobs){
           const pin=job.kind==='review-pr'?job.head:snapshot.mainSha;
           const prior=receipts.completed.filter(r=>r.id===job.id);

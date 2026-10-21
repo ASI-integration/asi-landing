@@ -9,7 +9,7 @@ import {independentCodeRabbit} from '../ASI-STRIGUNOV4-GITHUB-SNAPSHOT-20261020.
 import {atomicWriteJson,createOrchestrator} from '../ASI-STRIGUNOV4-ORCHESTRATOR-CANDIDATE-20261020.mjs';
 import {WORK_ORDERS} from '../ASI-STRIGUNOV4-MULTIJOB-20261020.mjs';
 import {initializeState,existingState,atomicJson,digest} from './state.mjs';
-const jobs=WORK_ORDERS.filter(j=>j.stage==='S4-G1'&&j.kind!=='physical-gate');
+const jobs=WORK_ORDERS.filter(j=>j.stage==='S4-G1'&&j.kind!=='physical-gate'&&!j.optional);
 const source=jobs.at(-1), file=source.paths[0], initial='VALUE = 1\n', next='VALUE = 2\n';
 const policy=[{name:'validate',workflowId:10},{name:'release_governance',workflowId:20}];
 const read=async p=>JSON.parse(await fs.readFile(p,'utf8'));
@@ -60,22 +60,33 @@ async function fixture(t){
   authorizePreparation:async task=>{knobs.admissions++;if(knobs.denyAdmission)throw Error('DENIED');return {taskId:task.id,head,stage:'S4-G1',mode:'ISOLATED_PREPARE_ONLY',paths:source.paths};}};
  return {base,root,legacy,store,cwd,git,head,snapshot,github,knobs,options,loop:await createIsolatedAcceptanceLoop(options)};
 }
-const advanceReviews=async f=>{for(let n=0;n<3;n++)assert.equal((await f.loop.poll()).mode,'REPORT_READY');};
+const advanceReviews=async f=>{for(let n=0;n<jobs.filter(j=>j.kind==='review-pr').length;n++)assert.equal((await f.loop.poll()).mode,'REPORT_READY');};
 
 test('automatic tick sequence: CI -> review -> prepare -> receipts -> next; restart never reexecutes',async t=>{
  const f=await fixture(t),old=await fs.readFile(path.join(f.legacy,'receipts.json'));
  const observed=[];
- for(let n=0;n<5;n++)observed.push(await f.loop.poll({execute:false}));
- assert.deepEqual(observed.map(r=>r.mode),['REPORT_READY','REPORT_READY','REPORT_READY','REPORT_READY','WAITING']);
+ for(let n=0;n<jobs.length+1;n++)observed.push(await f.loop.poll({execute:false}));
+ assert.deepEqual(observed.map(r=>r.mode),[...jobs.map(()=>'REPORT_READY'),'WAITING']);
  const receipts=(await read(f.store.file('receipts.json'))).completed;
  assert.deepEqual(receipts.map(r=>r.id),jobs.map(j=>j.id));assert.ok(receipts.every(r=>r.status==='PASS'));
- assert.equal(f.knobs.admissions,1);assert.equal(observed[3].prepared.preparedOnly,true);assert.equal(observed[3].physicalAcceptance,false);
+ assert.equal(f.knobs.admissions,1);assert.equal(observed[jobs.length-1].prepared.preparedOnly,true);assert.equal(observed[jobs.length-1].physicalAcceptance,false);
  assert.equal(await fs.readFile(path.join(f.cwd,file),'utf8'),next);assert.equal(f.git(['rev-parse','HEAD']),f.head);assert.equal(f.git(['diff','--cached','--name-only']),'');
  assert.deepEqual(await fs.readFile(path.join(f.legacy,'receipts.json')),old);
  for(const r of receipts)assert.equal(digest(await fs.readFile(path.join(f.root,'reports',r.report))),r.reportSha256);
  const before=f.knobs.verifyCalls;f.loop=await createIsolatedAcceptanceLoop(f.options);
  assert.equal((await f.loop.poll()).reason,'NO_NEXT_ISOLATED_JOB');assert.equal(f.knobs.verifyCalls,before);
  assert.equal((await read(f.store.file('autopilot-ledger.json'))).jobs[source.id].publishedPr,undefined);
+});
+test('optional PR 520 is never required for mandatory S4-G1 source-only completion',async t=>{
+ const f=await fixture(t);
+ assert.ok(WORK_ORDERS.some(j=>j.pr===520&&j.optional===true));
+ assert.ok(!jobs.some(j=>j.pr===520));
+ const observed=[];
+ for(let n=0;n<jobs.length+1;n++)observed.push((await f.loop.poll()).mode);
+ assert.deepEqual(observed,[...jobs.map(()=>'REPORT_READY'),'WAITING']);
+ const receipts=(await read(f.store.file('receipts.json'))).completed;
+ assert.equal(receipts.length,jobs.length);
+ assert.ok(!receipts.some(r=>r.pr===520));
 });
 test('concurrent loop instances share a single select/action/receipt lock',async t=>{
  const f=await fixture(t);let release,started;
@@ -153,7 +164,7 @@ test('orphan ledger, standalone adapter receipt or altered report cannot skip a 
 });
 test('changed pinned PR or main SHA cannot reuse completed work',async t=>{
  for(const change of ['pr','main']){
-  const f=await fixture(t);if(change==='main')for(let n=0;n<4;n++)await f.loop.poll();else await f.loop.poll();
+  const f=await fixture(t);if(change==='main')for(let n=0;n<jobs.length;n++)await f.loop.poll();else await f.loop.poll();
   if(change==='pr')f.snapshot.prs[509].head='f'.repeat(40);else f.snapshot.mainSha='f'.repeat(40);
   assert.equal((await f.loop.poll()).mode,'FAILED_LOCKED');
  }
