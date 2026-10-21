@@ -16,7 +16,7 @@ function snapshot(){
  return {contract:contract(),issues:Object.fromEntries([1,2,3,4,5,6].map(i=>
   [510+i,{number:510+i,state:'open',labels:i===1?['agent-source-ready']:[]}])),
   project:{511:'PREPARATION_ONLY'},prs:{
-   509:{number:509,head:'5ba61e734a1f9a56cd807eee91b4e217bf6ee040',state:'open',merged:false},
+   509:{number:509,head:'b3c8ff2e4904b0b503197d29aa217773918831bc',state:'open',merged:false},
    508:{number:508,head:'8ac8e8ac11e39ac070ccc058218e3b73190cb43f',state:'open',merged:false},
    520:{number:520,head:'6693312b0a94b8afcee3a34907055ce301a5fb3e',state:'open',merged:false}
   },checks:{},reviews:{},ledger:{}};
@@ -60,6 +60,16 @@ test('PR must have CI and CodeRabbit for exact head',()=>{
  assert.equal(decideQueue(s).jobs[0].status,'WAIT_CI');
  goodReview(s,509);s.reviews[509].head=SHA;
  assert.equal(decideQueue(s).jobs[0].status,'WAIT_REVIEW');
+});
+test('merged PR 509 with reviewed exact updated head unlocks only source preparation',()=>{
+ const s=snapshot();
+ s.prs[509]={number:509,head:'b3c8ff2e4904b0b503197d29aa217773918831bc',state:'closed',merged:true};
+ const r=decideQueue(s);
+ assert.equal(WORK_ORDERS.find(x=>x.pr===509).head,s.prs[509].head);
+ assert.equal(r.jobs[0].status,'MERGED');
+ assert.equal(r.jobs[3].status,'SOURCE_PREPARATION_READY');
+ assert.equal(r.jobs[4].status,'WAIT_PROTECTED_APPROVAL');
+ assert.ok(!r.jobs.some(x=>x.status==='MERGE'||x.status==='EXECUTE'));
 });
 test('stale or replaced PR 509 blocks source preparation',()=>{
  const s=snapshot();s.prs[509].head=SHA;

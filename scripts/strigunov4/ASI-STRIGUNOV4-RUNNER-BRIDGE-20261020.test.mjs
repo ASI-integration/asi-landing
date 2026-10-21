@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import {createReadOnlyRunnerBridge,selectRoute} from './ASI-STRIGUNOV4-RUNNER-BRIDGE-20261020.mjs';
 const SHA='a'.repeat(40);
-const X='5ba61e734a1f9a56cd807eee91b4e217bf6ee040';
+const X='b3c8ff2e4904b0b503197d29aa217773918831bc';
 const Y='8ac8e8ac11e39ac070ccc058218e3b73190cb43f';
 const Z='6693312b0a94b8afcee3a34907055ce301a5fb3e';
 const paths=['scripts/strigunov4/protected_c4_unit_apply.py','.github/workflows/strigunov4-c4-unit-apply.yml','scripts/strigunov4/test_protected_c4_unit_apply.py'];

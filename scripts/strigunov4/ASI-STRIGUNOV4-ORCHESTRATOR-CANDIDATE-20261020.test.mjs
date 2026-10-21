@@ -14,7 +14,7 @@ function fixture(){
     stages:[1,2,3,4,5,6].map(i=>({id:`S4-G${i}`,status:i===1?'IN_PROGRESS':'NOT_STARTED',proof:[],
       files:i===1?['scripts/strigunov4/protected_c4_unit_apply.py']:[],
       plannedFiles:i===1?['scripts/strigunov4/protected_c4_unit_apply.py','.github/workflows/strigunov4-c4-unit-apply.yml','scripts/strigunov4/test_protected_c4_unit_apply.py']:[]}))};
-  const prs=Object.fromEntries([[509,'5ba61e734a1f9a56cd807eee91b4e217bf6ee040'],[508,'8ac8e8ac11e39ac070ccc058218e3b73190cb43f'],[520,'6693312b0a94b8afcee3a34907055ce301a5fb3e']].map(([n,head])=>[n,{number:n,head,state:'open',merged:false}]));
+  const prs=Object.fromEntries([[509,'b3c8ff2e4904b0b503197d29aa217773918831bc'],[508,'8ac8e8ac11e39ac070ccc058218e3b73190cb43f'],[520,'6693312b0a94b8afcee3a34907055ce301a5fb3e']].map(([n,head])=>[n,{number:n,head,state:'open',merged:false}]));
   return {mainSha:SHA,contract,issues:{511:{number:511,state:'open',labels:['agent-source-ready']}},project:{511:'PREPARATION_ONLY'},prs,
     checks:{509:{head:prs[509].head,validate:'success',release_governance:'success'}},
     reviews:{509:{head:prs[509].head,completed:true,actionable:false}},ledger:{}};

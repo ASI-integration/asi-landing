@@ -6,7 +6,7 @@ const SHA=/^[0-9a-f]{40}$/;
 const stageId=n=>'S4-G'+n;
 const safe=(x,msg)=>{if(!x)throw Error(msg);};
 const work=Object.freeze([
-  {id:'g1-pr509-reload-preflight',stage:'S4-G1',kind:'review-pr',pr:509,head:'5ba61e734a1f9a56cd807eee91b4e217bf6ee040'},
+  {id:'g1-pr509-reload-preflight',stage:'S4-G1',kind:'review-pr',pr:509,head:'b3c8ff2e4904b0b503197d29aa217773918831bc'},
   {id:'g1-pr508-runtime-pins',stage:'S4-G1',kind:'review-pr',pr:508,head:'8ac8e8ac11e39ac070ccc058218e3b73190cb43f'},
   {id:'g1-pr520-receipt-test',stage:'S4-G1',kind:'review-pr',pr:520,head:'6693312b0a94b8afcee3a34907055ce301a5fb3e',optional:true},
   {id:'g1-unit-apply-source',stage:'S4-G1',kind:'prepare-source',
