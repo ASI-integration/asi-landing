@@ -60,8 +60,7 @@ reader can verify both open/unmerged and closed/merged PRs at the exact pinned S
 and includes lifecycle in its identity to detect changes. It never merges or
 reopens a PR. Scratch Git configuration accepts only safe clone-created branch
 metadata (remote=origin, merge=refs/heads/...), with no hooks, includes or
-other executable configuration.\nThe preparer handles existing admitted files only;
-YAML source proposals are rejected with `NO_APPROVED_SYNTAX_CHECKER` before
+other executable configuration. YAML source proposals are rejected with `NO_APPROVED_SYNTAX_CHECKER` before
 any mutation, even if JSON-shaped. An approved, pinned YAML syntax checker is
 required before preparing any `.yml` or `.yaml` source. JSON proposals alone
 receive JSON normalization. No packages, hooks, repository scripts, commits or

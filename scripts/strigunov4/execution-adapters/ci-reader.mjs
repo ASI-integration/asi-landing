@@ -12,8 +12,13 @@ export async function inspectCI(github, task, policies) {
   must(runs.every(r => r.head_sha === task.sha && r.event === 'pull_request'), 'RUN_SHA_MISMATCH');
   const evidence = []; let waiting = false, failed = false;
   for (const policy of policies) {
+    // GitHub may return an empty pull_requests array for a verified PR run.
+    // Require trusted workflow, branch and origin even without that association.
     const candidates = runs.filter(r => r.workflow_id === policy.workflowId &&
-      r.pull_requests?.some(p => p.number === task.pr));
+      r.head_branch === task.branch && r.repository?.full_name === task.repo &&
+      r.head_repository?.full_name === task.repo &&
+      (r.pull_requests == null || Array.isArray(r.pull_requests) &&
+        (r.pull_requests.length === 0 || r.pull_requests.some(p => p.number === task.pr))));
     const run = candidates.sort((a,b) => b.id - a.id)[0];
     if (!run) { waiting = true; evidence.push({ name: policy.name, state: 'missing' }); continue; }
     must(Number.isSafeInteger(run.run_attempt) && run.run_attempt > 0, 'ATTEMPT_REQUIRED');
@@ -36,7 +41,9 @@ export async function inspectCI(github, task, policies) {
   }
   // Re-read list to detect a newer run while its predecessor was being examined.
   const again = await github.pages(`actions/runs?head_sha=${task.sha}&event=pull_request`, 'workflow_runs');
-  const signature = list => JSON.stringify(list.map(r => [r.id,r.workflow_id,r.head_sha,r.run_attempt,r.status,r.conclusion]).sort((a,b)=>a[0]-b[0]));
+   const signature = list => JSON.stringify(list.map(r => [r.id,r.workflow_id,r.head_sha,
+     r.head_branch,r.repository?.full_name,r.head_repository?.full_name,
+     r.pull_requests?.map(p=>p.number),r.run_attempt,r.status,r.conclusion]).sort((a,b)=>a[0]-b[0]));
   must(signature(runs) === signature(again), 'CI_CHANGED_DURING_READ');
   return { status: failed ? 'FAILED' : waiting ? 'WAITING' : 'PASS', head: task.sha,
     checks: Object.fromEntries(evidence.map(e => [e.name,e.state])), evidence };

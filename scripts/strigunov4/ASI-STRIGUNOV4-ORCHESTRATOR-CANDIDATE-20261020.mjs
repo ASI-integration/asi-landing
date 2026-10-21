@@ -193,8 +193,24 @@ export function createOrchestrator({stateDir,fetchSnapshot,authorize,dispatch,ve
         }
       }finally{
         if(lock){
-          if(releaseAllowed)await release(lock);
-          else await lock.handle.close(); // Preserve stop marker without leaking the descriptor.
+          try{
+            if(releaseAllowed)await release(lock);
+            else await lock.handle.close(); // Keep the stop marker on uncertain write.
+          }catch{
+            // Cleanup failure must not replace the already computed result.
+            // Recreate a stop marker if unlink happened before cleanup failed.
+            await lock.handle.close().catch(()=>{});
+            try{
+              const marker=await fs.open(lock.filename,'wx',0o600);
+              try{
+                await marker.writeFile('LOCK_RELEASE_FAILED\n');
+                await marker.sync();
+              }finally{await marker.close().catch(()=>{});}
+            }catch{
+              // EEXIST means an existing lock already blocks replay; for other
+              // failures the persistent operation journal remains authoritative.
+            }
+          }
         }
       }
     }

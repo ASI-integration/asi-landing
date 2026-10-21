@@ -7,6 +7,8 @@ import { inventoryPath, normalizeProposedContent, validateScratchGitConfig } fro
 import { inspectCodeRabbit } from './coderabbit-analyzer.mjs';
 import { BOT_ID, verifyPinnedReviewPr } from './github-readonly.mjs';
 import { initializeState } from './state.mjs';
+import { inspectCI } from './ci-reader.mjs';
+import { createOrchestrator } from '../ASI-STRIGUNOV4-ORCHESTRATOR-CANDIDATE-20261020.mjs';
 
 const SHA='a'.repeat(40);
 const task={sha:SHA,pr:522};
@@ -173,4 +175,46 @@ test('exact-SHA read-only review accepts merged dependency but rejects lifecycle
     {...p,head:{...p.head,sha:'f'.repeat(40)}},
     {...p,base:{...p.base,ref:'staging'}}
   ]) assert.throws(()=>verifyPinnedReviewPr(invalid,pinned),/PR_SHA_OR_LIFECYCLE_CHANGED/);
+});
+
+test('CI evidence accepts empty GitHub PR list only for exact workflow, branch and origin',async()=>{
+  const task={id:'g1-pr509-reload-preflight',sha:SHA,pr:509,
+    branch:'asi/review-509',repo:'ASI-integration/asi-landing',stage:'S4-G1'};
+  const base={id:91,workflow_id:15,head_sha:SHA,head_branch:task.branch,
+    repository:{full_name:task.repo},head_repository:{full_name:task.repo},
+    event:'pull_request',pull_requests:[],run_attempt:1,status:'completed',conclusion:'success'};
+  const policy=[{name:'validate',workflowId:15}];
+  const port=run=>({
+    pages:async route=>route.startsWith('actions/runs?')?[structuredClone(run)]:
+      [{id:92,run_id:91,head_sha:SHA,name:'validate',status:'completed',conclusion:'success',
+        steps:[{number:1,status:'completed',conclusion:'success'}]}],
+    get:async()=>structuredClone(run)
+  });
+  assert.equal((await inspectCI(port(base),task,policy)).status,'PASS');
+  assert.equal((await inspectCI(port({...base,pull_requests:[{number:509}]}),task,policy)).status,'PASS');
+  for(const bad of [
+    {...base,head_branch:'asi/another'},
+    {...base,repository:{full_name:'foreign/repo'}},
+    {...base,head_repository:{full_name:'foreign/repo'}},
+    {...base,pull_requests:[{number:522}]},
+    {...base,pull_requests:'not array'}
+  ])assert.equal((await inspectCI(port(bad),task,policy)).status,'WAITING');
+});
+test('orchestrator cleanup failure preserves original read-only decision and lock',async t=>{
+  const dir=await fs.mkdtemp(path.join(os.tmpdir(),'asi-orch-cleanup-'));
+  t.after(()=>fs.rm(dir,{recursive:true,force:true}));
+  const lock=path.join(dir,'orchestrator-iteration.lock');
+  await fs.writeFile(path.join(dir,'heartbeat.json'),JSON.stringify({mode:'BLOCKED'}));
+  const orig=fs.unlink;
+  fs.unlink=async (...args)=>args[0]===lock?
+    Promise.reject(Object.assign(Error('injected cleanup failure'),{code:'EIO'})):orig(...args);
+  try{
+    const x=createOrchestrator({stateDir:dir,fetchSnapshot:async()=>{throw Error('unreachable');},
+      authorize:async()=>({approved:false}),dispatch:async()=>{throw Error('forbidden');},
+      verifyPublication:async()=>false});
+    const result=await x.iteration({execute:true});
+    assert.equal(result.mode,'WAIT_RECONCILIATION');
+    assert.equal(result.reason,'HEARTBEAT_RECONCILIATION');
+    assert.ok((await fs.stat(lock)).isFile());
+  }finally{fs.unlink=orig;}
 });

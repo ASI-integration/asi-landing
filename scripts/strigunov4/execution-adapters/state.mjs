@@ -117,7 +117,10 @@ function stateAt(root) {
       terminal = true;
       return { mode: 'FAILED_LOCKED', reason };
     };
-    try {
+    // Compute the transaction outcome separately from lock-release durability.
+    let outcome, releaseFailed = false;
+    const perform = async () => {
+      try {
       // Read/validate before replacing anything. Corrupt/legacy state is retained; lock remains.
       ledger = await json(file('autopilot-ledger.json'));
       must(ledger.schemaVersion === 'asi.execution-adapters.v1' && ledger.jobs &&
@@ -189,20 +192,24 @@ function stateAt(root) {
       if (armed) return await fail('UNHANDLED_OR_UNKNOWN_RESULT');
       // No destructive repair of unreadable state. Lock itself is a durable stop marker.
       return { mode: 'FAILED_LOCKED', reason: 'STATE_UNREADABLE_MANUAL_RECONCILIATION' };
-    } finally {
+      }
+    };
+    try { outcome = await perform(); }
+    finally {
       if (terminal) {
         try {
           await fs.rmdir(lock);
           await syncDir(path.dirname(lock));
         } catch {
-          // Release durability is uncertain: restore a stop marker if removal
-          // already occurred, without clearing or replaying any operation.
+          // A released-but-unsynced lock is not safely cleared: restore marker.
           await fs.mkdir(lock, { mode: 0o700 }).catch(()=>{});
           await syncDir(path.dirname(lock)).catch(()=>{});
-          return { mode: 'FAILED_LOCKED', reason: 'LOCK_RELEASE_FAILED' };
+          releaseFailed = true;
         }
       }
-      // If storage failed or process crashed, NEVER remove/steal the lock automatically.
+      // No automatic lock removal after a storage error or crash.
     }
+    if (releaseFailed)return { mode: 'FAILED_LOCKED', reason: 'LOCK_RELEASE_FAILED' };
+    return outcome;
   } };
 }
