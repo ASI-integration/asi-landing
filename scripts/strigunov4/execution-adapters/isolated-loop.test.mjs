@@ -186,3 +186,29 @@ test('unknown result and concurrent atomic writes fail closed or retain complete
  assert.equal((await f.store.execute('unknown',task,f.github,async()=>({ok:true}))).mode,'FAILED_LOCKED');
  assert.equal((await f.loop.poll()).mode,'FAILED_LOCKED');
 });
+
+
+test('legacy root symlink alias cannot bypass isolated-root separation',async t=>{
+  const f=await fixture(t);
+  const alias=path.join(f.base,'root-alias');
+  await fs.symlink(f.root,alias,'dir');
+  await assert.rejects(
+    createIsolatedAcceptanceLoop({...f.options,legacyStateDir:alias}),
+    /LEGACY_MUST_BE_SEPARATE/
+  );
+});
+
+test('terminal lock release failure yields structured FAILED_LOCKED and retains stop marker',async t=>{
+  const f=await fixture(t);
+  const lock=f.store.file('execution.lock');
+  const original=fs.rmdir;
+  fs.rmdir=async (...args)=>{
+    if(args[0]===lock)throw Object.assign(new Error('injected release error'),{code:'EIO'});
+    return original(...args);
+  };
+  try{
+    const result=await f.store.execute('isolated-pipeline',null,f.github,async()=>({status:'PASS'}));
+    assert.deepEqual(result,{mode:'FAILED_LOCKED',reason:'LOCK_RELEASE_FAILED'});
+    assert.equal((await fs.stat(lock)).isDirectory(),true);
+  }finally{fs.rmdir=original;}
+});

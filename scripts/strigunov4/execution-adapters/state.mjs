@@ -190,7 +190,18 @@ function stateAt(root) {
       // No destructive repair of unreadable state. Lock itself is a durable stop marker.
       return { mode: 'FAILED_LOCKED', reason: 'STATE_UNREADABLE_MANUAL_RECONCILIATION' };
     } finally {
-      if (terminal) { await fs.rmdir(lock); await syncDir(path.dirname(lock)); }
+      if (terminal) {
+        try {
+          await fs.rmdir(lock);
+          await syncDir(path.dirname(lock));
+        } catch {
+          // Release durability is uncertain: restore a stop marker if removal
+          // already occurred, without clearing or replaying any operation.
+          await fs.mkdir(lock, { mode: 0o700 }).catch(()=>{});
+          await syncDir(path.dirname(lock)).catch(()=>{});
+          return { mode: 'FAILED_LOCKED', reason: 'LOCK_RELEASE_FAILED' };
+        }
+      }
       // If storage failed or process crashed, NEVER remove/steal the lock automatically.
     }
   } };

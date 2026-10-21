@@ -26,7 +26,7 @@ export async function inspectCodeRabbit(github, task) {
   if (s.state !== 'success' || s.description !== 'Review completed') return { status:'FAILED',head:task.sha,completed:false,actionable:null };
   // Some CodeRabbit installations only publish a status plus an issue summary.
   // Never promote a missing review without independent, exact-head bot evidence.
-  if (!r) {
+  if (!r || r.commit_id !== task.sha) {
     // A bot acknowledgement without review markers is not a review summary.
     // Multiple marked summaries remain ambiguous and fail closed.
     const marked = summaries.filter(x => typeof x?.body === 'string' &&

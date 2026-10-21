@@ -102,8 +102,21 @@ test('existing formal review keeps exact-SHA PASS logic',async()=>{
     body:'**Actionable comments posted: 0**'}]});
   assert.equal((await inspectCodeRabbit(h,task)).status,'PASS');
 });
-test('wrong-head formal review blocks even if a clean summary exists',async()=>{
+test('outdated formal review requires current-head summary instead',async()=>{
   const h=github({reviews:[{id:88,user:{id:BOT_ID},commit_id:'b'.repeat(40),state:'COMMENTED',
+    body:'**Actionable comments posted: 0**'}]});
+  const r=await inspectCodeRabbit(h,task);
+  assert.equal(r.status,'PASS');
+  assert.equal(r.evidence.summaryId,80);
+});
+test('outdated formal review plus wrong-head summary stays blocked',async()=>{
+  const h=github({comments:[clean({body:recent('b'.repeat(40))})],
+    reviews:[{id:88,user:{id:BOT_ID},commit_id:'b'.repeat(40),state:'COMMENTED',
+      body:'**Actionable comments posted: 0**'}]});
+  assert.equal((await inspectCodeRabbit(h,task)).status,'FAILED');
+});
+test('outdated CHANGES_REQUESTED review remains a hard block',async()=>{
+  const h=github({reviews:[{id:88,user:{id:BOT_ID},commit_id:'b'.repeat(40),state:'CHANGES_REQUESTED',
     body:'**Actionable comments posted: 0**'}]});
   assert.equal((await inspectCodeRabbit(h,task)).status,'FAILED');
 });

@@ -32,8 +32,10 @@ export async function createIsolatedAcceptanceLoop({root,legacyStateDir,fetchSna
   must(isolated===true&&typeof fetchSnapshot==='function'&&typeof authorizePreparation==='function',
     'ISOLATED_PORTS_REQUIRED');
   const store=await existingState(root);
+  const isolatedRoot=await fs.realpath(store.root);
   const legacyDir=await fs.realpath(legacyStateDir);
-  must(legacyDir!==path.join(store.root,'state')&&!legacyDir.startsWith(store.root+path.sep),
+  // Canonical paths prevent symbolic-link aliases bypassing separation.
+  must(legacyDir!==isolatedRoot&&!legacyDir.startsWith(isolatedRoot+path.sep),
     'LEGACY_MUST_BE_SEPARATE');
   must(legacyDir!=='/home/project_ayfaar/asi-strigunov-agent'&&!legacyDir.startsWith('/home/project_ayfaar/asi-strigunov-agent/'),'LIVE_LEGACY_FORBIDDEN');
   return Object.freeze({
