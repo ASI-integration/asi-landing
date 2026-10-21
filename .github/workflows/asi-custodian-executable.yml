@@ -1,0 +1,59 @@
+name: ASI executable technical custodian integration (no authority)
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/asi-custodian-executable.yml'
+      - 'scripts/custodian/**'
+      - 'scripts/__tests__/asi_custodian_*.test.py'
+      - 'docs/ops/asi-custodian-executable-boundary.md'
+permissions:
+  contents: read
+jobs:
+  executable-linux:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 9
+    steps:
+      - name: Checkout untrusted PR without retained credential
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+          fetch-depth: 2
+      - name: Require nonroot Linux and check scripts
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(id -u)" -ne 0
+          test "$(id -g)" -ne 0
+          export PYTHONDONTWRITEBYTECODE=1
+          python3 - <<'PY'
+          from pathlib import Path
+          for p in ('scripts/custodian/asi_custodian.py','scripts/custodian/build_release.py',
+                    'scripts/__tests__/asi_custodian_service.test.py',
+                    'scripts/__tests__/asi_custodian_release.test.py'):
+              compile(Path(p).read_bytes(),p,'exec')
+          PY
+      - name: Execute actual nonroot Unix socket server, fsync/restart and deny tests
+        env:
+          PYTHONDONTWRITEBYTECODE: '1'
+        run: |
+          set -euo pipefail
+          python3 scripts/__tests__/asi_custodian_service.test.py
+          python3 scripts/__tests__/asi_custodian_release.test.py
+      - name: Build reproducible executable technical service archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          PYTHONDONTWRITEBYTECODE=1 python3 scripts/custodian/build_release.py --out dist/asi-custodian-technical-v0.tar
+          PYTHONDONTWRITEBYTECODE=1 python3 scripts/custodian/build_release.py --verify --out dist/asi-custodian-technical-v0.tar
+          sha256sum dist/asi-custodian-technical-v0.tar
+          test -s dist/asi-custodian-technical-v0.tar
+      - name: Review complete source diff
+        run: git diff --check HEAD^1 HEAD
+      - name: Preserve actual downloadable Linux service archive
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: asi-custodian-executable-technical-${{ github.sha }}
+          path: dist/asi-custodian-technical-v0.tar
+          retention-days: 14
+          if-no-files-found: error
