@@ -6,9 +6,15 @@ import { BOT_ID } from './github-readonly.mjs';
 
 const SHA='a'.repeat(40);
 const task={sha:SHA,pr:522};
+const recent=(head=SHA,append='')=>
+  '<!-- recent_review_start -->\n' +
+  'No actionable comments were generated in the recent review. 🎉\n' +
+  'Reviewing files that changed from the base of the PR and between ' +
+  'b'.repeat(40) + ' and ' + head + '.\n' + append +
+  '<!-- recent_review_end -->';
 const clean=(change={})=>({
-  id:80,user:{id:BOT_ID},updated_at:'2026-10-21T06:00:05Z',
-  body:'Head: '+SHA+'\nNo actionable comments were generated in the recent review.',
+  id:80,user:{id:BOT_ID},updated_at:'2026-10-21T06:00:00Z',
+  body:recent(),
   ...change
 });
 function github({comments=[clean()],reviews=[],threads=[],status={}}={}) {
@@ -37,7 +43,7 @@ test('strict current-head clean CodeRabbit summary can replace absent PR review'
   assert.equal(x.evidence.summaryId,80);
 });
 test('no review + clean summary with different SHA blocks',async()=>{
-  assert.equal((await inspectCodeRabbit(github({comments:[clean({body:'Head: '+ 'b'.repeat(40)+'\nNo actionable comments were generated in the recent review.'})]}),task)).status,'FAILED');
+  assert.equal((await inspectCodeRabbit(github({comments:[clean({body:recent('b'.repeat(40))})]}),task)).status,'FAILED');
 });
 test('no review + ambiguous equal timestamp blocks',async()=>{
   assert.equal((await inspectCodeRabbit(github({comments:[clean({updated_at:'2026-10-21T06:00:01Z'})]}),task)).status,'FAILED');
@@ -52,7 +58,26 @@ test('no review + ambiguous second bot comment blocks',async()=>{
   assert.equal((await inspectCodeRabbit(github({comments:[clean(),clean({id:81,updated_at:'2026-10-21T06:00:06Z'})]}),task)).status,'FAILED');
 });
 test('no review + outside-diff actionable issue blocks',async()=>{
-  assert.equal((await inspectCodeRabbit(github({comments:[clean({body:'Head: '+SHA+'\nNo actionable comments were generated in the recent review.\nOutside diff range comments (3)'})]}),task)).status,'FAILED');
+  assert.equal((await inspectCodeRabbit(github({comments:[clean({body:recent(SHA,'Outside diff range comments (3)\n')})]}),task)).status,'FAILED');
+});
+test('no review + review range missing but SHA elsewhere blocks',async()=>{
+  assert.equal((await inspectCodeRabbit(github({comments:[clean({
+    body:'<!-- recent_review_start -->\nNo actionable comments were generated in the recent review. 🎉\nHead: '+SHA+'\n<!-- recent_review_end -->'
+  })]}),task)).status,'FAILED');
+});
+test('no review + actionable count blocks even if clean text exists',async()=>{
+  assert.equal((await inspectCodeRabbit(github({comments:[clean({
+    body:recent(SHA,'Actionable comments posted: 1\n')
+  })]}),task)).status,'FAILED');
+});
+test('no review + status and clean summary within 5 minutes, either ordering allowed',async()=>{
+  const x=await inspectCodeRabbit(github({comments:[clean({updated_at:'2026-10-21T06:00:02Z'})]}),task);
+  assert.equal(x.status,'PASS');
+});
+test('no review + summary outside 5-minute window blocks',async()=>{
+  assert.equal((await inspectCodeRabbit(github({comments:[clean({
+    updated_at:'2026-10-21T06:08:00Z'
+  })]}),task)).status,'FAILED');
 });
 test('no review + unresolved thread blocks',async()=>{
   const r=await inspectCodeRabbit(github({threads:[{isResolved:false}]}),task);

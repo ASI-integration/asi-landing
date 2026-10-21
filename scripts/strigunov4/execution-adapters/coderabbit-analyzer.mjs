@@ -30,15 +30,27 @@ export async function inspectCodeRabbit(github, task) {
     const c = summaries[0];
     const when = Date.parse(c?.updated_at);
     const finished = Date.parse(s.created_at);
+    // The bot's actual summary identifies its reviewed HEAD as the *end* of the
+    // commit range inside the bounded recent-review block (not as "Head: SHA").
+    const block = typeof c?.body === 'string' ?
+      /<!-- recent_review_start -->([\s\S]*?)<!-- recent_review_end -->/.exec(c.body)?.[1] : null;
+    const ranges = block ? [...block.matchAll(
+      /Reviewing files that changed from the base of the PR and between ([a-f0-9]{40}) and ([a-f0-9]{40})\./g
+    )] : [];
     const shaMatch = typeof task.sha === 'string' && /^[a-f0-9]{40}$/.test(task.sha) &&
-      typeof c?.body === 'string' &&
-      c.body.split(/\r?\n/).some(line => line.trim() === 'Head: ' + task.sha);
-    const explicitClean = typeof c?.body === 'string' &&
-      /^No actionable comments were generated in the recent review\.\s*$/im.test(c.body);
-    const outside = typeof c?.body === 'string' &&
-      /Outside diff range comments[^\n(]*\([1-9][0-9]*\)/i.test(c.body);
+      ranges.length === 1 && ranges[0][2] === task.sha;
+    const explicitClean = typeof block === 'string' &&
+      /(?:^|\r?\n)[ \t]*No actionable comments were generated in the recent review\.[ \t]*(?:🎉)?[ \t]*(?=\r?\n|$)/.test(block);
+    const outside = typeof block === 'string' &&
+      /Outside diff range comments[^\n(]*\([1-9][0-9]*\)/i.test(block);
+    const actionable = typeof block === 'string' &&
+      /Actionable comments posted:[ \t]*[1-9][0-9]*/i.test(block);
+    // In GitHub, the bot may update its summary a few seconds BEFORE it posts
+    // the completed status. Require contemporaneous, nonidentical timestamps.
+    const contemporaneous = Number.isFinite(when) && Number.isFinite(finished) &&
+      when !== finished && Math.abs(when - finished) <= 300000;
     if (!c || summaries.length !== 1 || !shaMatch || !explicitClean || outside ||
-      !Number.isFinite(when) || !Number.isFinite(finished) || when <= finished)
+      actionable || !contemporaneous)
       return { status:'FAILED',head:task.sha,completed:false,actionable:null };
     return { status:'PASS', head:task.sha, completed:true, actionable:false,
       evidence:{ statusId:s.id,summaryId:c.id,reviewId:null,unresolvedThreads:0 } };
