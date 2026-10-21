@@ -17,6 +17,8 @@ concurrency:
 
 permissions:
   contents: read
+  pull-requests: read
+  issues: read
 
 jobs:
   validate:
@@ -35,6 +37,13 @@ jobs:
         with:
           node-version: 20
           cache: npm
+
+      - name: Validate demo release milestones and PR scope
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          node scripts/agent-os/check-demo-release.mjs --ci
+          node --test scripts/agent-os/__tests__/demo-release.test.mjs
 
       - name: Install deps
         run: npm ci
