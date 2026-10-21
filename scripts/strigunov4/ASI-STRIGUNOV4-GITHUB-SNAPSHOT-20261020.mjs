@@ -20,9 +20,10 @@ export function independentCodeRabbit(comments,head){
   // malformed or ambiguous bodies must be treated as unreviewed.
   const sorted=comments.filter(x=>BOT.has(x?.user?.login)&&typeof x.body==='string')
     .sort((x,y)=>trustTime(y.updated_at||y.created_at)-trustTime(x.updated_at||x.created_at));
-  const current=sorted.find(x=>x.body.includes(head)&&
-    (/No actionable comments were generated in the recent review/i.test(x.body)||
-     /Actionable comments posted:\s*[1-9]/i.test(x.body)));
+  const latest=sorted[0];
+  const current=latest?.body.includes(head)&&
+    (/No actionable comments were generated in the recent review/i.test(latest.body)||
+     /Actionable comments posted:\s*[1-9]/i.test(latest.body))?latest:null;
   return {head,completed:!!current,actionable:current?
     !/No actionable comments were generated in the recent review/i.test(current.body):null};
 }
@@ -68,7 +69,7 @@ export async function fetchVerifiedSnapshot({api,readProjects}={}){
       c.total_count===c.check_runs.length&&c.total_count<=100,
       'CHECKS_PAGINATION_UNTRUSTED');
     must(Array.isArray(notes)&&notes.length<100,'COMMENTS_PAGINATION_UNTRUSTED');
-    prs[number]={number,head,state:pr.state,merged:pr.merged===true};
+    prs[number]={number,head,branch:pr.head.ref,state:pr.state,merged:pr.merged===true};
     checks[number]={head,validate:lastCheck(c.check_runs,head,'validate'),
       release_governance:lastCheck(c.check_runs,head,'release_governance')};
     reviews[number]=independentCodeRabbit(notes,head);

@@ -51,7 +51,13 @@ export function createReadOnlyRunnerBridge({stateDir,fetchSnapshot,clock=()=>Dat
         }catch(e){
           previous={mode:'WAIT_RECONCILIATION',reason:'READ_ONLY_BRIDGE_ERROR'};
         }finally{
-          lastAt=clock();inFlight=null;
+          lastAt=now;
+          try{
+            const finalNow=clock();
+            if(Number.isFinite(finalNow)&&finalNow>=now)lastAt=finalNow;
+            else previous={mode:'WAIT_RECONCILIATION',reason:'CLOCK_INVALID'};
+          }catch{previous={mode:'WAIT_RECONCILIATION',reason:'CLOCK_INVALID'};}
+          finally{inFlight=null;}
         }
         return previous;
       })();
@@ -62,3 +68,7 @@ export function createReadOnlyRunnerBridge({stateDir,fetchSnapshot,clock=()=>Dat
     status(){return previous??{mode:'WAIT',reason:'FIRST_POLL_NOT_COMPLETED'};}
   };
 }
+
+
+// Explicit isolated acceptance seam; the observing bridge above remains read-only.
+export {createIsolatedAcceptanceLoop} from './execution-adapters/isolated-loop.mjs';

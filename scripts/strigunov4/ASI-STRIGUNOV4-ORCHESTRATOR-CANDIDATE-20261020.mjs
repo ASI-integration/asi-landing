@@ -25,11 +25,9 @@ export async function atomicWriteJson(filename,value){
     await fd.writeFile(JSON.stringify(value,null,2)+'\n','utf8');
     await fd.sync();await fd.close();fd=null;
     await fs.rename(temp,filename);created=false;
-    // Directory fsync is supported on the target Linux host. Some local
-    // test platforms cannot open a directory handle; they remain best-effort.
+    // Durability is mandatory; a directory open/sync error is a write failure.
     let d;
     try{d=await fs.open(parent,'r');await d.sync();}
-    catch(e){if(!['EINVAL','EBADF','EPERM','EISDIR','ENOTSUP'].includes(errCode(e)))throw e;}
     finally{if(d)await d.close();}
   }catch(e){
     if(fd)await fd.close().catch(()=>{});
@@ -133,6 +131,7 @@ export function createOrchestrator({stateDir,fetchSnapshot,authorize,dispatch,ve
       // Do not hide unknown results as an ordinary empty-queue event.
       const lock=execute?await acquire(stateDir):null;
       if(execute&&!lock)return {mode:'WAIT_LOCKED',reason:'ANOTHER_ITERATION_OR_STALE_LOCK'};
+      let releaseAllowed=true;
       try{
         const legacy=await readLegacyFiles(stateDir);
         const verified=inspectLegacy(legacy);
@@ -159,7 +158,9 @@ export function createOrchestrator({stateDir,fetchSnapshot,authorize,dispatch,ve
         const start={version:1,operation:{id:operationId,status:'STARTED',
           job:ticket.job,stage:queue.stage,mainSha:snapshot.mainSha,
           createdAt:new Date().toISOString()}};
+        releaseAllowed=false;
         await atomicWriteJson(path.join(stateDir,journalName),start);
+        releaseAllowed=true;
         try{
           const outcome=await dispatch(Object.freeze(envelope));
           must(outcome&&Number.isSafeInteger(outcome.publishedPr)&&outcome.publishedPr>0&&
@@ -167,19 +168,26 @@ export function createOrchestrator({stateDir,fetchSnapshot,authorize,dispatch,ve
           const verified=await verifyPublication({job:ticket.job,pr:outcome.publishedPr,
             head:outcome.head,mainSha:snapshot.mainSha});
           must(verified===true,'PUBLISHED_PR_NOT_INDEPENDENTLY_VERIFIED');
+          releaseAllowed=false;
           await atomicWriteJson(path.join(stateDir,journalName),{
             version:1,operation:{...start.operation,status:'PUBLISHED',
               publishedPr:outcome.publishedPr,head:outcome.head,finishedAt:new Date().toISOString()}});
+          releaseAllowed=true;
           return {mode:'PUBLISHED',job:ticket.job,prNumber:outcome.publishedPr,head:outcome.head};
         }catch(e){
           // If this persistence fails, STARTED remains durable and blocks replay.
+          releaseAllowed=false;
           await atomicWriteJson(path.join(stateDir,journalName),{
             version:1,operation:{...start.operation,status:'FAILED_LOCKED',
               error:safeError(e),finishedAt:new Date().toISOString()}});
+          releaseAllowed=true;
           return {mode:'FAILED_LOCKED',job:ticket.job,reason:'RECONCILIATION_REQUIRED'};
         }
       }finally{
-        if(lock)await release(lock);
+        if(lock){
+          if(releaseAllowed)await release(lock);
+          else await lock.handle.close(); // Preserve stop marker without leaking the descriptor.
+        }
       }
     }
   };
