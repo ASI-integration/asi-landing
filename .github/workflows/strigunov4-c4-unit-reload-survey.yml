@@ -1,0 +1,91 @@
+name: Strigunov4 C4 one manager-wide read-only survey
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/strigunov4-c4-unit-reload-survey.yml'
+      - 'scripts/strigunov4/c4_unit_reload_survey.py'
+      - 'scripts/strigunov4/protected_c4_unit_reload_survey.py'
+      - 'scripts/strigunov4/c4_unit_repair_*.py'
+      - 'scripts/strigunov4/test_c4_unit_reload_survey.py'
+      - 'scripts/strigunov4/test_protected_c4_unit_reload_survey.py'
+      - 'scripts/strigunov4/test_c4_unit_repair_*.py'
+      - 'scripts/strigunov4/c4_operator_patch.py'
+      - 'scripts/strigunov4/c4_unit_contract.py'
+      - 'scripts/strigunov4/c4_unit_readonly.py'
+      - 'scripts/strigunov4/staging_no_send_host.py'
+      - 'docs/strigunov4/C4-UNIT-REPAIR-SOURCE-ONLY-PREFLIGHT.md'
+  workflow_dispatch:
+    inputs:
+      reviewed_main_sha:
+        description: Owner-reviewed current protected main SHA
+        type: string
+        required: true
+      confirm:
+        description: Separate permission READONLY_C4_RELOAD_SURVEY_<SHA>
+        type: string
+        required: true
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: ${{ github.event_name == 'workflow_dispatch' && 'strigunov4-staging-nine-sql-apply' || format('strigunov4-c4-reload-survey-pr-{0}', github.ref) }}
+  cancel-in-progress: false
+
+jobs:
+  isolated_reload_tests:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Independent phase, host preflight and manager survey offline tests
+        run: |
+          set -euo pipefail
+          cd scripts/strigunov4
+          python3 -B -m unittest test_c4_unit_repair_phase_contract test_c4_unit_repair_host_preflight test_c4_unit_reload_survey test_protected_c4_unit_reload_survey -v
+          git diff --check
+
+  protected_manager_survey:
+    if: github.event_name == 'workflow_dispatch' && github.repository == 'ASI-integration/asi-landing'
+    needs: [isolated_reload_tests]
+    environment: staging
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Exact owner and main source, one attempt and separate confirmation
+        env:
+          REVIEWED_SHA: ${{ inputs.reviewed_main_sha }}
+          CONFIRM: ${{ inputs.confirm }}
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = 'ASI-integration/asi-landing'
+          test "$GITHUB_EVENT_NAME" = 'workflow_dispatch'
+          test "$GITHUB_REF" = 'refs/heads/main'
+          test "$GITHUB_ACTOR" = 'ASI-integration'
+          test "$GITHUB_ACTOR_ID" = '207600140'
+          test "$GITHUB_TRIGGERING_ACTOR" = 'ASI-integration'
+          test "$GITHUB_RUN_ATTEMPT" = '1'
+          test "$GITHUB_WORKFLOW_REF" = 'ASI-integration/asi-landing/.github/workflows/strigunov4-c4-unit-reload-survey.yml@refs/heads/main'
+          test "$GITHUB_WORKFLOW_SHA" = "$GITHUB_SHA"
+          test "$REVIEWED_SHA" = "$GITHUB_SHA"
+          test "$CONFIRM" = "READONLY_C4_RELOAD_SURVEY_$GITHUB_SHA"
+          test "$(git ls-remote https://github.com/ASI-integration/asi-landing.git refs/heads/main | cut -f1)" = "$GITHUB_SHA"
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Fixed unit and manager metadata only, no service control
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          STAGING_REVIEWED_MAIN_SHA: ${{ inputs.reviewed_main_sha }}
+          C4_OPERATOR_CONFIRM: ${{ inputs.confirm }}
+          C4_OPERATOR_INCIDENT: '39213017307'
+          STAGING_SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+          STAGING_SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
+          STAGING_SSH_USER: ${{ secrets.STAGING_SSH_USER }}
+          STAGING_SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+        run: python3 -B scripts/strigunov4/protected_c4_unit_reload_survey.py
