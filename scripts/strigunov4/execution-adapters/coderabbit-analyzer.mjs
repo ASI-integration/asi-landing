@@ -27,7 +27,12 @@ export async function inspectCodeRabbit(github, task) {
   // Some CodeRabbit installations only publish a status plus an issue summary.
   // Never promote a missing review without independent, exact-head bot evidence.
   if (!r) {
-    const c = summaries[0];
+    // A bot acknowledgement without review markers is not a review summary.
+    // Multiple marked summaries remain ambiguous and fail closed.
+    const marked = summaries.filter(x => typeof x?.body === 'string' &&
+      x.body.includes('<!-- recent_review_start -->') &&
+      x.body.includes('<!-- recent_review_end -->'));
+    const c = marked[0];
     const when = Date.parse(c?.updated_at);
     const finished = Date.parse(s.created_at);
     // The bot's actual summary identifies its reviewed HEAD as the *end* of the
@@ -49,7 +54,7 @@ export async function inspectCodeRabbit(github, task) {
     // the completed status. Require contemporaneous, nonidentical timestamps.
     const contemporaneous = Number.isFinite(when) && Number.isFinite(finished) &&
       when !== finished && Math.abs(when - finished) <= 300000;
-    if (!c || summaries.length !== 1 || !shaMatch || !explicitClean || outside ||
+    if (!c || marked.length !== 1 || !shaMatch || !explicitClean || outside ||
       actionable || !contemporaneous)
       return { status:'FAILED',head:task.sha,completed:false,actionable:null };
     return { status:'PASS', head:task.sha, completed:true, actionable:false,

@@ -43,7 +43,7 @@ jobs:
           node --check scripts/strigunov4/ASI-STRIGUNOV4-RUNNER-BRIDGE-20261020.test.mjs
           node --check scripts/strigunov4/ASI-STRIGUNOV4-GITHUB-SNAPSHOT-20261020.mjs
           node --check scripts/strigunov4/ASI-STRIGUNOV4-GITHUB-SNAPSHOT-20261020.test.mjs
-      - name: Run 52 focused dispatcher and bridge regression tests
+      - name: Run focused dispatcher and bridge regression tests
         run: |
           node --test \
             scripts/strigunov4/ASI-STRIGUNOV4-MULTIJOB-20261020.test.mjs \

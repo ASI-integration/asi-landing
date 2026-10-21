@@ -38,8 +38,9 @@ export function createReadOnlyRunnerBridge({stateDir,fetchSnapshot,clock=()=>Dat
   return {
     async poll(){
       if(inFlight)return inFlight;
-      const now=clock();
-      must(Number.isFinite(now),'CLOCK_INVALID');
+      let now;
+      try{now=clock();}catch{return {mode:'WAIT_RECONCILIATION',reason:'CLOCK_INVALID'};}
+      if(!Number.isFinite(now))return {mode:'WAIT_RECONCILIATION',reason:'CLOCK_INVALID'};
       if(lastAt!==null&&now>=lastAt&&now-lastAt<intervalMs)return previous;
       // If wall-clock moves backwards, fail closed until human reconciliation.
       if(lastAt!==null&&now<lastAt)return {mode:'WAIT',reason:'CLOCK_MOVED_BACKWARDS'};

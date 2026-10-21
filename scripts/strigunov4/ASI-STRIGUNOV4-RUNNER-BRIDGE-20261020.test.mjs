@@ -45,3 +45,18 @@ test('09 unacceptable poll interval is rejected',async()=>{
 test('10 backwards clock does not cause an unbounded loop',async()=>{
  const p=await dir();let t=180000;try{const b=createReadOnlyRunnerBridge({stateDir:p,fetchSnapshot:async()=>snapshot(),clock:()=>t});await b.poll();t-=1;assert.equal((await b.poll()).reason,'CLOCK_MOVED_BACKWARDS');}finally{await clean(p);}
 });
+
+test('11 throwing or non-finite clocks fail closed without reading sources',async()=>{
+ const p=await dir();let reads=0;
+ try{
+  let value=()=>{throw Error('clock source failed');};
+  const b=createReadOnlyRunnerBridge({stateDir:p,fetchSnapshot:async()=>{reads++;return snapshot();},clock:()=>value()});
+  assert.deepEqual(await b.poll(),{mode:'WAIT_RECONCILIATION',reason:'CLOCK_INVALID'});
+  value=()=>NaN;
+  assert.deepEqual(await b.poll(),{mode:'WAIT_RECONCILIATION',reason:'CLOCK_INVALID'});
+  value=()=>Infinity;
+  assert.deepEqual(await b.poll(),{mode:'WAIT_RECONCILIATION',reason:'CLOCK_INVALID'});
+  assert.equal(reads,0);
+  assert.deepEqual(await fs.readdir(p),[]);
+ }finally{await clean(p);}
+});

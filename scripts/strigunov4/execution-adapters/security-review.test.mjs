@@ -1,8 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import os from 'node:os';
 import { inventoryPath } from './change-preparer.mjs';
 import { inspectCodeRabbit } from './coderabbit-analyzer.mjs';
 import { BOT_ID } from './github-readonly.mjs';
+import { initializeState } from './state.mjs';
 
 const SHA='a'.repeat(40);
 const task={sha:SHA,pr:522};
@@ -54,8 +58,15 @@ test('no review + stale summary blocks',async()=>{
 test('no review + missing timestamp blocks',async()=>{
   assert.equal((await inspectCodeRabbit(github({comments:[clean({updated_at:undefined})]}),task)).status,'FAILED');
 });
-test('no review + ambiguous second bot comment blocks',async()=>{
-  assert.equal((await inspectCodeRabbit(github({comments:[clean(),clean({id:81,updated_at:'2026-10-21T06:00:06Z'})]}),task)).status,'FAILED');
+test('one marked review plus an unmarked bot acknowledgement may pass',async()=>{
+  const unmarked=clean({id:81,updated_at:'2026-10-21T06:00:06Z',body:'Full review finished.'});
+  const result=await inspectCodeRabbit(github({comments:[clean(),unmarked]}),task);
+  assert.equal(result.status,'PASS');
+  assert.equal(result.evidence.summaryId,80);
+});
+test('two marked CodeRabbit summaries remain ambiguous and blocked',async()=>{
+  const result=await inspectCodeRabbit(github({comments:[clean(),clean({id:81,updated_at:'2026-10-21T06:00:06Z'})]}),task);
+  assert.equal(result.status,'FAILED');
 });
 test('no review + outside-diff actionable issue blocks',async()=>{
   assert.equal((await inspectCodeRabbit(github({comments:[clean({body:recent(SHA,'Outside diff range comments (3)\n')})]}),task)).status,'FAILED');
@@ -96,7 +107,13 @@ test('wrong-head formal review blocks even if a clean summary exists',async()=>{
     body:'**Actionable comments posted: 0**'}]});
   assert.equal((await inspectCodeRabbit(h,task)).status,'FAILED');
 });
-test('0755 is non-writable for group/other; no recursive chmod needed',()=>{
-  assert.equal(0o755 & 0o022,0);
-  assert.notEqual(0o777 & 0o022,0);
+test('state adapter creates private directories and receipt artifacts', {skip:process.platform!=='linux'},async()=>{
+  const root=await fs.mkdtemp(path.join(os.tmpdir(),'asi-adapter-mode-'));
+  try{
+    await initializeState(root);
+    for(const relative of ['state','reports','scratchpads','state/receipts.json','state/autopilot-ledger.json']){
+      const artifact=await fs.stat(path.join(root,relative));
+      assert.equal(artifact.mode & 0o022,0,`${relative} must not be group/other writable`);
+    }
+  }finally{await fs.rm(root,{recursive:true,force:true});}
 });

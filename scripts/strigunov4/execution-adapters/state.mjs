@@ -89,8 +89,18 @@ function stateAt(root) {
   const file = name => path.join(root, 'state', name);
   return { root, file, async execute(kind, task, github, action) {
     const lock = file('execution.lock');
-    try { await fs.mkdir(lock, { mode: 0o700 }); await syncDir(path.dirname(lock)); }
-    catch (e) { if (e.code === 'EEXIST') return { mode: 'BLOCKED', reason: 'LOCK_HELD_OR_CRASHED_REQUIRES_REVIEW' }; throw e; }
+    let lockCreated = false;
+    try {
+      await fs.mkdir(lock, { mode: 0o700 }); lockCreated = true;
+      await syncDir(path.dirname(lock));
+    } catch (e) {
+      if (!lockCreated && e.code === 'EEXIST')
+        return { mode: 'BLOCKED', reason: 'LOCK_HELD_OR_CRASHED_REQUIRES_REVIEW' };
+      // If the directory was created but fsync failed, its durability is
+      // unverified. Keep the lock in place and require manual reconciliation.
+      if (lockCreated)return { mode: 'FAILED_LOCKED', reason: 'LOCK_DIRECTORY_DURABILITY_UNVERIFIED' };
+      throw e;
+    }
     let ledger, receipts, armed = false, terminal = false;
     const fail = async reason => {
       // Never serialize error messages from subprocess/API: they may contain secrets.
@@ -174,6 +184,8 @@ function stateAt(root) {
       await atomicJson(file('autopilot-ledger.json'), ledger); terminal = true;
       return { mode: 'REPORT_READY', ...result, report: reportName };
     } catch {
+      // Deliberately do not persist raw exception text; external messages can
+      // contain secrets. The fixed reason plus retained lock requires review.
       if (armed) return await fail('UNHANDLED_OR_UNKNOWN_RESULT');
       // No destructive repair of unreadable state. Lock itself is a durable stop marker.
       return { mode: 'FAILED_LOCKED', reason: 'STATE_UNREADABLE_MANUAL_RECONCILIATION' };

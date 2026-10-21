@@ -25,6 +25,8 @@ export async function atomicWriteJson(filename,value){
     await fd.writeFile(JSON.stringify(value,null,2)+'\n','utf8');
     await fd.sync();await fd.close();fd=null;
     await fs.rename(temp,filename);created=false;
+    // After rename the new file may be visible even if directory fsync fails.
+    // Treat that as uncertain/FAILED_LOCKED; never infer publication or retry.
     // Durability is mandatory; a directory open/sync error is a write failure.
     let d;
     try{d=await fs.open(parent,'r');await d.sync();}
@@ -94,7 +96,13 @@ async function acquire(directory){
   }
   try{await handle.writeFile(JSON.stringify({pid:process.pid,createdAt:new Date().toISOString()})+'\n');
     await handle.sync();}
-  catch(e){await handle.close().catch(()=>{});throw e;}
+  catch(e){
+    await handle.close().catch(()=>{});
+    // No operation has begun: discard a partially written fresh lock. If unlink
+    // fails, the remaining lock still blocks later execution (fail closed).
+    await fs.unlink(filename).catch(()=>{});
+    throw e;
+  }
   return {filename,handle};
 }
 async function release(lock){
