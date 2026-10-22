@@ -86,7 +86,11 @@ test('14 exception after STARTED locks job rather than retrying',async()=>{
 });
 test('15 publication without verified PR stays FAILED_LOCKED',async()=>{
   const {x,calls}=await make({authorize:env=>({approved:true,job:env.job,mainSha:env.mainSha,paths:env.paths}),verifyPublication:async()=>false});
-  try{assert.equal((await x.iteration({execute:true})).mode,'FAILED_LOCKED');assert.equal(calls.dispatch,1);}finally{await cleanup();}
+  try{assert.equal((await x.iteration({execute:true})).mode,'FAILED_LOCKED');assert.equal(calls.dispatch,1);
+    const journal=JSON.parse(await fs.readFile(path.join(dir,'orchestrator-state.json'),'utf8'));
+    assert.equal(journal.operation.publishedPr,521);assert.equal(journal.operation.head,HEAD);
+    assert.equal(journal.operation.status,'FAILED_LOCKED');
+  }finally{await cleanup();}
 });
 test('16 crash-simulated STARTED state is never resumed blindly',async()=>{
   const {x,calls}=await make({authorize:env=>({approved:true,job:env.job,mainSha:env.mainSha,paths:env.paths})});

@@ -36,9 +36,12 @@ The catalog and all capability/test/review ports are trusted host configuration;
 they must never be constructed from Issue/PR/comment text or unchecked model output.
 
 `authorize` must independently validate the actual owner/capability artifact.
-It returns an exact request binding, a one-use operation id, expiry and explicit
+It returns an exact request binding, a task-unique operation id, expiry and explicit
 automatic-CI/review side-effect permissions. A boolean copied from an issue is
 not authorization. The complete task binding includes its source bytes and paths.
+The operation id is stable for this same task across every WAITING tick, and
+cannot be reused by another task. The grant must remain unexpired through the
+final VERIFIED save; expiry locks the queue rather than permitting an automatic renewal.
 The implementation binds and checks the returned capability; it does not issue
 owner grants, provision credentials or implement the installed host's signer.
 
@@ -58,7 +61,8 @@ A review finding locks the task: automatically broadening a grant or updating an
 already-published branch is deliberately unsupported. A correction needs a fresh
 exact delta/review/capability and separately reviewed recovery; no duplicate PR.
 
-Before each mutation: capability expiry, protected main SHA, task-branch refs
+Before each mutation: capability expiry, unchanged dispatcher admission snapshot,
+protected main SHA, task-branch refs
 and all-state PR history are checked, followed by a durable intent. Tree leaves,
 modes, one-parent commit, branch SHA, PR identity/body, exact paths and blob hashes
 are verified independently through reads. GitHub has no cross-resource atomic
@@ -87,6 +91,10 @@ SIGKILL leaves the lock/armed ledger and subordinate intent. Restart never retri
 an uncertain mutation, even when a PR might already exist. No automatic lock
 clearing, state rollback, receipt deletion or compensating GitHub action exists.
 Reconciliation is a separate physical/owner-controlled operation.
+Individual remote calls retain the configured deadline (10 seconds default).
+Composite CI/review reads use three times that budget, capped at 30 seconds;
+both the first and final fresh reads are bounded. Null/array/scalar journal roots
+are corruption, never interpreted as absent state.
 
 ## Minimum deployment permissions and remaining gates
 

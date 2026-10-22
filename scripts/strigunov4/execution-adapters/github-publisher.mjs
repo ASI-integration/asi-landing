@@ -11,18 +11,20 @@ const hashBlob=content=>createHash('sha1').update(`blob ${Buffer.byteLength(cont
 const equal=(a,b)=>JSON.stringify(a)===JSON.stringify(b);
 const freeze=x=>{if(x&&typeof x==='object'){Object.values(x).forEach(freeze);Object.freeze(x);}return x;};
 export const bindTask=t=>digest(JSON.stringify(t));
-async function load(file){try{must((await regular(file)).size<500000,'PUBLICATION_JOURNAL_SIZE');return JSON.parse(await fs.readFile(file,'utf8'));}
-  catch(e){if(e.code==='ENOENT')return null;throw e;}}
+async function load(file){let value;try{must((await regular(file)).size<500000,'PUBLICATION_JOURNAL_SIZE');value=JSON.parse(await fs.readFile(file,'utf8'));}
+  catch(e){if(e.code==='ENOENT')return null;throw e;}
+  must(value!==null&&typeof value==='object'&&!Array.isArray(value),'PUBLICATION_JOURNAL_INVALID');return value;}
 
 /** Called ONLY inside the existing store.execute shared lock. Not a second state
  * engine: the existing ledger is the durable brake and final receipt authority.
  * This subordinate journal records remote intent/readback across WAITING ticks.
  */
-export function createGitHubPublisher({store,remote,reader,authorize,runChecks,independentReview,ciPolicies,clock=Date.now,timeoutMs=10000}={}){
-  must([authorize,runChecks,independentReview,clock].every(x=>typeof x==='function'),'HOST_PORTS_REQUIRED');
+export function createGitHubPublisher({store,remote,reader,authorize,runChecks,independentReview,verifyAdmission,ciPolicies,clock=Date.now,timeoutMs=10000}={}){
+  must([authorize,runChecks,independentReview,verifyAdmission,clock].every(x=>typeof x==='function'),'HOST_PORTS_REQUIRED');
   must(ciPolicies?.some(p=>p.name==='validate')&&ciPolicies.some(p=>p.name==='release_governance'),'REQUIRED_CI_MISSING');
   const policies=freeze(structuredClone(ciPolicies));
   const call=f=>bounded(f,timeoutMs);
+  const evidence=f=>bounded(f,Math.min(30000,timeoutMs*3));
   return Object.freeze({async run(input,{execute=false}={}){
     must(execute===true,'PUBLISH_NOT_AUTHORIZED');
     const task=freeze(structuredClone(input));
@@ -40,7 +42,7 @@ export function createGitHubPublisher({store,remote,reader,authorize,runChecks,i
       grant.automaticReviewApproved===true&&typeof grant.operationId==='string'&&/^[a-z0-9-]{1,96}$/.test(grant.operationId)&&
       Number.isSafeInteger(grant.expiresAt)&&grant.expiresAt>clock(),'PUBLICATION_CAPABILITY_DENIED');
     const assertGrant=()=>must(grant.expiresAt>clock(),'CAPABILITY_EXPIRED');
-    async function main(){assertGrant();const m=await call(()=>remote.get('branches/main'));
+    async function main(){assertGrant();await call(signal=>verifyAdmission({signal}));const m=await call(()=>remote.get('branches/main'));
       must(m.protected===true&&m.commit?.sha===task.sha,'MAIN_CHANGED');}
     async function history(){const list=await call(()=>remote.get(`pulls?state=all&head=ASI-integration:${encodeURIComponent(task.branch)}&per_page=100`));
       must(Array.isArray(list)&&list.length<100&&list.every(p=>Number.isSafeInteger(p.number)&&p.head?.ref===task.branch&&
@@ -128,15 +130,15 @@ export function createGitHubPublisher({store,remote,reader,authorize,runChecks,i
     }
     await verifyRemote();
     const pin={id:task.id,repo:task.repo,stage:task.stage,sha:record.head,pr:record.pr,branch:task.branch,baseSha:task.sha};
-    const ci=await call(()=>inspectCI(reader,pin,policies));
+    const ci=await evidence(()=>inspectCI(reader,pin,policies));
     if(ci.status==='FAILED')return {status:'FAILED',phase:'REMOTE_CI'};
     if(ci.status!=='PASS')return {status:'WAITING',phase:'REMOTE_CI',head:record.head,pr:record.pr};
-    const review=await call(()=>inspectCodeRabbit(reader,pin));
+    const review=await evidence(()=>inspectCodeRabbit(reader,pin));
     if(review.status==='FAILED')return {status:'FAILED',phase:'REMOTE_REVIEW'};
     if(review.status!=='PASS')return {status:'WAITING',phase:'REMOTE_REVIEW',head:record.head,pr:record.pr};
     await verifyRemote();
-    const freshCI=await call(()=>inspectCI(reader,pin,policies));
-    const freshReview=await call(()=>inspectCodeRabbit(reader,pin));
+    const freshCI=await evidence(()=>inspectCI(reader,pin,policies));
+    const freshReview=await evidence(()=>inspectCodeRabbit(reader,pin));
     must(equal(ci,freshCI)&&equal(review,freshReview),'PROMOTION_EVIDENCE_CHANGED');
     await verifyRemote();await save('VERIFIED');
     return {status:'PASS',artifactType:'GITHUB_PR_VERIFIED',head:record.head,pr:record.pr,

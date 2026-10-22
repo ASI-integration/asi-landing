@@ -168,10 +168,12 @@ export function createOrchestrator({stateDir,fetchSnapshot,authorize,dispatch,ve
         releaseAllowed=false;
         await atomicWriteJson(path.join(stateDir,journalName),start);
         releaseAllowed=true;
+        let publicationIdentity={};
         try{
           const outcome=await dispatch(Object.freeze(envelope));
           must(outcome&&Number.isSafeInteger(outcome.publishedPr)&&outcome.publishedPr>0&&
                SHA.test(outcome.head||''),'PUBLISHED_RESULT_INVALID');
+          publicationIdentity={publishedPr:outcome.publishedPr,head:outcome.head};
           const verified=await verifyPublication({job:ticket.job,pr:outcome.publishedPr,
             head:outcome.head,mainSha:snapshot.mainSha});
           must(verified===true,'PUBLISHED_PR_NOT_INDEPENDENTLY_VERIFIED');
@@ -185,7 +187,7 @@ export function createOrchestrator({stateDir,fetchSnapshot,authorize,dispatch,ve
           // If this persistence fails, STARTED remains durable and blocks replay.
           releaseAllowed=false;
           await atomicWriteJson(path.join(stateDir,journalName),{
-            version:1,operation:{...start.operation,status:'FAILED_LOCKED',
+            version:1,operation:{...start.operation,...publicationIdentity,status:'FAILED_LOCKED',
               error:'DISPATCH_OR_VERIFICATION_FAILED',finishedAt:new Date().toISOString()}});
           releaseAllowed=true;
           return {mode:'FAILED_LOCKED',job:ticket.job,reason:'RECONCILIATION_REQUIRED'};

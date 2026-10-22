@@ -20,7 +20,9 @@ export async function createPublicationLoop({root,legacyStateDir,catalog,fetchSn
   const legacy=await fs.realpath(legacyStateDir);
   must(legacy!==store.root&&!legacy.startsWith(store.root+path.sep)&&!store.root.startsWith(legacy+path.sep)&&
     legacy!==LIVE_ROOT&&!legacy.startsWith(LIVE_ROOT+'/'),'LEGACY_NOT_ISOLATED');
-  const publisher=createGitHubPublisher({store,remote,reader,authorize,runChecks,independentReview,ciPolicies,clock,timeoutMs});
+  let activeSnapshot;
+  const verifyAdmission=async({signal})=>must(JSON.stringify(await fetchSnapshot({signal}))===activeSnapshot,'QUEUE_ADMISSION_CHANGED');
+  const publisher=createGitHubPublisher({store,remote,reader,authorize,runChecks,independentReview,verifyAdmission,ciPolicies,clock,timeoutMs});
   async function witness(){const state=await readLegacyFiles(legacy);must(inspectLegacy(state).safe,'LEGACY_BLOCKED');const hashes={};
     for(const n of ['receipts.json','heartbeat.json','autopilot-ledger.json','orchestrator-state.json']){
       try{const f=path.join(legacy,n);await regular(f);hashes[n]=digest(await fs.readFile(f));}
@@ -32,13 +34,15 @@ export async function createPublicationLoop({root,legacyStateDir,catalog,fetchSn
     const result=await store.execute('github-publisher',async({ledger,receipts})=>{
       const now=clock();must(Number.isSafeInteger(now)&&now>=0,'CLOCK_INVALID');
       let last=null;const pollFile=store.file('publisher-poll.json');
-      try{await regular(pollFile);last=JSON.parse(await fs.readFile(pollFile,'utf8'));}
+      try{must((await regular(pollFile)).size<1000,'POLL_STATE_SIZE');last=JSON.parse(await fs.readFile(pollFile,'utf8'));
+        must(last!==null&&typeof last==='object'&&!Array.isArray(last)&&Number.isSafeInteger(last.at),'POLL_STATE_INVALID');}
       catch(e){if(e.code!=='ENOENT')throw e;}
       if(last){must(Number.isSafeInteger(last.at)&&now>=last.at,'CLOCK_REGRESSION');
         if(now-last.at<intervalMs){reason='POLL_RATE_LIMITED';return null;}}
       await atomicJson(pollFile,{at:now});
       priorWitness=await witness();
       const snapshot=await bounded(signal=>fetchSnapshot({signal}),timeoutMs),queue=decideQueue(snapshot);
+      activeSnapshot=JSON.stringify(snapshot);
       must(queue.stage==='S4-G1'&&queue.decision!=='BLOCKED_NEEDS_RECONCILIATION','RELEASE_STAGE_BLOCKED');
       for(const t of tasks){
         must(t.kind==='github-publisher'&&t.stage==='S4-G1'&&t.sha===snapshot.mainSha,'TASK_STAGE_OR_SHA_CHANGED');

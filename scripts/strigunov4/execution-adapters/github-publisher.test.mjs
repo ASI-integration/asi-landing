@@ -155,3 +155,24 @@ test('26 CI changes while review is read: no final receipt or next task',async t
  assert.equal((await tick(loop)).mode,'FAILED_LOCKED');assert.equal(f.pulls.size,1);
  assert.equal((await read(f.root,'receipts.json')).completed.some(r=>r.status==='PASS'),false);
 });
+test('27 changed dispatcher dependency prevents the next mutation',async t=>{
+ const f=await fixture(t),loop=await makeLoop(f,{runChecks:async e=>{
+  f.snapshot.reviews[509].completed=false;return {...e,status:'PASS'};}});
+ assert.equal((await tick(loop)).mode,'FAILED_LOCKED');assert.equal(f.writes.length,0);
+});
+test('28 present malformed publication journal cannot be treated as absent',async t=>{
+ for(const value of [null,[],0,'invalid']){
+  const f=await fixture(t);await fs.writeFile(path.join(f.root,'state','publication-fixture-a.json'),JSON.stringify(value));
+  const loop=await makeLoop(f);assert.equal((await tick(loop)).mode,'FAILED_LOCKED');assert.equal(f.writes.length,0);
+ }
+});
+test('29 present malformed poll state blocks rather than resetting cadence',async t=>{
+ for(const value of [null,[],0,{}, {at:'1000000'}]){
+  const f=await fixture(t);await fs.writeFile(path.join(f.root,'state','publisher-poll.json'),JSON.stringify(value));
+  const loop=await makeLoop(f);assert.equal((await tick(loop)).mode,'FAILED_LOCKED');assert.equal(f.requests.length,0);
+ }
+});
+test('30 composite evidence budget covers multiple bounded HTTP calls',async t=>{
+ const f=await fixture(t,{delay:25}),loop=await makeLoop(f,{timeoutMs:120});
+ assert.equal((await tick(loop)).mode,'REPORT_READY');assert.equal(f.pulls.size,1);
+});
