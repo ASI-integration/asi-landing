@@ -88,6 +88,34 @@ test('optional PR 520 is never required for mandatory S4-G1 source-only completi
  assert.equal(receipts.length,jobs.length);
  assert.ok(!receipts.some(r=>r.pr===520));
 });
+test('distinct task IDs on the same SHA receive distinct receipts without replay',async t=>{
+ const f=await fixture(t),base={stage:'S4-G1',repo:'ASI-integration/asi-landing',sha:f.head,pr:null,branch:'asi/isolated'};
+ let actions=0;
+ const run=id=>f.store.execute('ci-reader',{...base,id},f.github,async()=>{actions++;return {status:'PASS'};});
+ assert.equal((await run('same-sha-first')).mode,'REPORT_READY');
+ assert.equal((await run('same-sha-second')).mode,'REPORT_READY');
+ assert.equal((await run('same-sha-first')).reason,'ALREADY_RECORDED_NOT_FRESH_EVIDENCE');
+ assert.equal(actions,2);
+ const receipts=(await read(f.store.file('receipts.json'))).completed;
+ assert.deepEqual(receipts.map(r=>r.id),['same-sha-first','same-sha-second']);
+ assert.ok(receipts.every(r=>r.sha===f.head&&r.status==='PASS'));
+ assert.notEqual(receipts[0].report,receipts[1].report);
+});
+test('reused task ID with another adapter locks durably without action or foreign PASS',async t=>{
+ const f=await fixture(t),task={id:'cross-adapter-id',stage:'S4-G1',repo:'ASI-integration/asi-landing',sha:f.head,pr:null,branch:'asi/isolated'};
+ let actions=0;
+ const action=async()=>{actions++;return {status:'PASS'};};
+ assert.equal((await f.store.execute('ci-reader',task,f.github,action)).mode,'REPORT_READY');
+ const original=(await read(f.store.file('receipts.json'))).completed[0];
+ assert.deepEqual(await f.store.execute('coderabbit-analyzer',task,f.github,action),{mode:'FAILED_LOCKED',reason:'DUPLICATE_REQUIRES_VERIFICATION'});
+ assert.equal(actions,1);
+ const receipts=(await read(f.store.file('receipts.json'))).completed;
+ assert.deepEqual(receipts[0],original);assert.equal(receipts[1].status,'FAILED');
+ assert.equal(receipts[1].kind,'coderabbit-analyzer');
+ const reopened=await existingState(f.root);
+ assert.equal((await reopened.execute('ci-reader',{...task,id:'later-task'},f.github,action)).mode,'FAILED_LOCKED');
+ assert.equal(actions,1);assert.equal((await read(f.store.file('heartbeat.json'))).mode,'BLOCKED');
+});
 test('concurrent loop instances share a single select/action/receipt lock',async t=>{
  const f=await fixture(t);let release,started;
  const gate=new Promise(r=>release=r),ready=new Promise(r=>started=r);

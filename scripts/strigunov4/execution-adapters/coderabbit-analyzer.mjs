@@ -27,14 +27,16 @@ export async function inspectCodeRabbit(github, task) {
   // Some CodeRabbit installations only publish a status plus an issue summary.
   // Never promote a missing review without independent, exact-head bot evidence.
   if (!r || r.commit_id !== task.sha) {
-    // A bot acknowledgement without review markers is not a review summary.
-    // Multiple marked summaries remain ambiguous and fail closed.
+    // Match the snapshot reader: a newer or ambiguously dated bot update
+    // cannot be ignored in favor of an older marked summary.
     const marked = summaries.filter(x => typeof x?.body === 'string' &&
       x.body.includes('<!-- recent_review_start -->') &&
       x.body.includes('<!-- recent_review_end -->'));
     const c = marked[0];
     const when = Date.parse(c?.updated_at);
     const finished = Date.parse(s.created_at);
+    const superseded = summaries.some(x => x !== c &&
+      (!Number.isFinite(Date.parse(x.updated_at)) || Date.parse(x.updated_at) >= when));
     // The bot's actual summary identifies its reviewed HEAD as the *end* of the
     // commit range inside the bounded recent-review block (not as "Head: SHA").
     const block = typeof c?.body === 'string' ?
@@ -55,7 +57,7 @@ export async function inspectCodeRabbit(github, task) {
     const contemporaneous = Number.isFinite(when) && Number.isFinite(finished) &&
       when !== finished && Math.abs(when - finished) <= 300000;
     if (!c || marked.length !== 1 || !shaMatch || !explicitClean || outside ||
-      actionable || !contemporaneous)
+      actionable || !contemporaneous || superseded)
       return { status:'FAILED',head:task.sha,completed:false,actionable:null };
     return { status:'PASS', head:task.sha, completed:true, actionable:false,
       evidence:{ statusId:s.id,summaryId:c.id,reviewId:null,unresolvedThreads:0 } };

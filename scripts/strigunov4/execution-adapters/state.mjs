@@ -146,8 +146,8 @@ function stateAt(root) {
       const old = receipts.completed.filter(r => r.id === task.id);
       if (old.length || ledger.jobs[task.id]) {
         const entry = ledger.jobs[task.id];
-        if (old.length === 1 && old[0].status === 'PASS' && old[0].sha === task.sha && old[0].pr === task.pr &&
-          entry?.mode === 'PUBLISHED' && entry.sha === task.sha && entry.pr === task.pr) {
+        if (old.length === 1 && old[0].status === 'PASS' && old[0].sha === task.sha && old[0].pr === task.pr && old[0].kind === kind &&
+          entry?.mode === 'PUBLISHED' && entry.sha === task.sha && entry.pr === task.pr && entry.kind === kind) {
           // Do not turn a historical PASS into fresh CI/review evidence.
           ledger.mode = 'IDLE'; delete ledger.reason;
           await atomicJson(file('heartbeat.json'), { mode: 'WAITING', reason: 'ALREADY_RECORDED_NOT_FRESH_EVIDENCE', at: stamp() });

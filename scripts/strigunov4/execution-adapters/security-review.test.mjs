@@ -60,11 +60,22 @@ test('no review + stale summary blocks',async()=>{
 test('no review + missing timestamp blocks',async()=>{
   assert.equal((await inspectCodeRabbit(github({comments:[clean({updated_at:undefined})]}),task)).status,'FAILED');
 });
-test('one marked review plus an unmarked bot acknowledgement may pass',async()=>{
+test('newer unmarked bot acknowledgement cannot reuse an older clean review',async()=>{
   const unmarked=clean({id:81,updated_at:'2026-10-21T06:00:06Z',body:'Full review finished.'});
   const result=await inspectCodeRabbit(github({comments:[clean(),unmarked]}),task);
-  assert.equal(result.status,'PASS');
-  assert.equal(result.evidence.summaryId,80);
+  assert.equal(result.status,'FAILED');
+  assert.equal(result.completed,false);
+});
+test('newer bot concern, ambiguous timestamp or missing timestamp blocks summary fallback',async()=>{
+  for(const change of [
+    {updated_at:'2026-10-21T06:00:06Z',body:'Actionable comments posted: 1'},
+    {updated_at:'2026-10-21T06:00:00Z',body:'Review in progress'},
+    {updated_at:undefined,body:'Review in progress'}
+  ])assert.equal((await inspectCodeRabbit(github({comments:[clean(),clean({id:81,...change})]}),task)).status,'FAILED');
+});
+test('older unmarked acknowledgement does not supersede a newer exact-head summary',async()=>{
+  const old=clean({id:79,updated_at:'2026-10-21T05:59:59Z',body:'Review requested'});
+  assert.equal((await inspectCodeRabbit(github({comments:[old,clean()]}),task)).status,'PASS');
 });
 test('two marked CodeRabbit summaries remain ambiguous and blocked',async()=>{
   const result=await inspectCodeRabbit(github({comments:[clean(),clean({id:81,updated_at:'2026-10-21T06:00:06Z'})]}),task);
