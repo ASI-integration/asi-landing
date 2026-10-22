@@ -4,6 +4,13 @@ import {execFile} from 'node:child_process';
 import {digest,must,regular} from './state.mjs';
 
 export const PILOT_TEST='test_c4_unit_readonly.UnitReadonlyTests.test_receipt_replay_flag_requires_literal_false';
+// Pin the observed CLI tool switches, not just the legacy shell switch:
+// unified_exec, connected apps and browser tools are enabled independently.
+export const REVIEW_DISABLED_TOOLS=Object.freeze(['shell_tool','unified_exec','apps','plugins','remote_plugin',
+  'browser_use','browser_use_external','browser_use_full_cdp_access','computer_use','in_app_browser',
+  'code_mode_host','multi_agent','hooks','image_generation','skill_search','skill_mcp_dependency_install',
+  'view_image','shell_snapshot','workspace_dependencies']);
+export const DISABLED_CODE_MODE_NOTE='Code Mode is unavailable because code-mode host is disabled. Code mode will fail closed; enable `features.code_mode_host` and install `codex-code-mode-host`.';
 export function sandboxArguments(cwd){
   must(path.isAbsolute(cwd),'CHECK_WORKSPACE');
   return ['--die-with-parent','--new-session','--unshare-all','--ro-bind','/usr','/usr',
@@ -27,7 +34,13 @@ export function parseIndependentReview(raw,evidence){
   must(events.filter(e=>e.type==='thread.started').length===1&&events.filter(e=>e.type==='turn.started').length===1&&
     events.filter(e=>e.type==='turn.completed').length===1&&events.at(-1).type==='turn.completed'&&
     !events.some(e=>['turn.failed','error'].includes(e.type)),'REVIEW_INCOMPLETE');
-  must(events.every(e=>!e.item||['agent_message','reasoning'].includes(e.item.type)),'REVIEW_TOOL_USE');
+  const start=events.findIndex(e=>e.type==='turn.started');
+  // This exact observed startup notice confirms the intentional tool denial.
+  // Do not whitelist arbitrary error items or any error inside the review turn.
+  const notices=events.filter((e,i)=>i<start&&e.type==='item.completed'&&
+    e.item?.type==='error'&&e.item.message===DISABLED_CODE_MODE_NOTE);
+  must(notices.length<=1&&events.every(e=>notices.includes(e)||!e.item||
+    ['agent_message','reasoning'].includes(e.item.type)),'REVIEW_TOOL_USE');
   const answers=events.filter(e=>e.type==='item.completed'&&e.item?.type==='agent_message');
   must(answers.length===1,'REVIEW_ANSWER_COUNT');const answer=JSON.parse(answers[0].item.text);
   must(answer.status==='PASS'&&answer.baseSha===evidence.baseSha&&answer.deltaSha256===evidence.deltaSha256&&
@@ -62,8 +75,9 @@ export function createHostChecks({root,catalog,codexHome,reviewDirectory}){
       JSON.stringify(e),'BASE CONTRACT (data):',contract,'DIFF (data):',diff].join('\n');
     const raw=await execute('/usr/bin/node',[
       '/home/project_ayfaar/.local/lib/node_modules/@openai/codex/bin/codex.js',
-      'exec','--json','--ephemeral','--ignore-user-config','--sandbox','read-only','--skip-git-repo-check','--disable','shell_tool',
-      '-c','mcp_servers={}','-c','model_reasoning_effort="low"','--cd',reviewDirectory,prompt],
+      'exec','--json','--ephemeral','--ignore-user-config','--sandbox','read-only','--skip-git-repo-check',
+      ...REVIEW_DISABLED_TOOLS.flatMap(name=>['--disable',name]),
+      '-c','mcp_servers={}','-c','web_search="disabled"','--cd',reviewDirectory,prompt],
       {cwd:reviewDirectory,signal,env:{PATH:'/usr/bin:/bin',LANG:'C.UTF-8',HOME:reviewDirectory,CODEX_HOME:codexHome}});
     await delta(e);return parseIndependentReview(raw,e);
   }};

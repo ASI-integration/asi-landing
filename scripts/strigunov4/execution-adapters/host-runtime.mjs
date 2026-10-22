@@ -1,6 +1,7 @@
 // Imported only by the existing runner hook. No timer, second daemon or import I/O.
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import os from 'node:os';
 import {execFile} from 'node:child_process';
 import {promisify} from 'node:util';
 import {loadHostAuthority,ENGINE_ROOT,LEGACY_STATE} from './host-authority.mjs';
@@ -41,6 +42,7 @@ export function createHostSnapshot({reader,contract,readProjectGates,baseSha}){
 let active;
 async function construct({readProjectGates}){
   const authority=await loadHostAuthority(),{payload,catalog}=authority;
+  must(os.hostname()===payload.host,'HOST_NOT_ADMITTED');
   const task=catalog[0];
   must(task.workOrderId===ENGINE_PILOT.id&&task.changes.length===1&&task.changes[0].path===ENGINE_PILOT.paths[0],'PILOT_SCOPE');
   const runner='/home/project_ayfaar/asi-strigunov-agent/bin/runner.mjs';await regular(runner);

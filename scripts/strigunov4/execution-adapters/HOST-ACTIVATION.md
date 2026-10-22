@@ -37,7 +37,7 @@ restart. No unsigned template is treated as owner approval.
 The signed payload must contain:
 
 - `schema: asi.engine-activation.v1`, repository `ASI-integration/asi-landing`;
-- service `asi-strigunov-agent.service`, stage `S4-G1`;
+- host `asi-agent-runner`, service `asi-strigunov-agent.service`, stage `S4-G1`;
 - root `/home/project_ayfaar/asi-strigunov-agent/engine`;
 - legacy directory `/home/project_ayfaar/asi-strigunov-agent/state`;
 - exact `baseSha`, generated `runnerSha256` and byte-exact `catalogSha256`;
@@ -120,8 +120,22 @@ its permissions, triggers and protected-environment behavior are unchanged.
 GitHub protocol integration uses a loopback fixture, explicitly not a real PR.
 The current local runtime cannot execute bubblewrap network namespaces; the
 target host has no bubblewrap binary yet. Therefore live sandbox acceptance,
-App identity/revocation, genuine runtime independent review and actual GitHub
-publication remain UNVERIFIED. Existing 83 Publisher tests were not repeated.
+App identity/revocation, installed service integration and actual GitHub
+publication remain UNVERIFIED. Existing 83 Publisher tests were not repeated locally.
+
+The actual ephemeral Codex reviewer was exercised on Hetzner, with the tool
+features disabled and no inherited GitHub credentials. Its 7.2-second review
+returned PASS/no findings for base b27b07bfffb317ec9a93caf6361d54956a7f12ae and
+delta `19158171dc757db19156d0e73049772a494f5962afb997fba15b027eea8c6599`.
+The captured event stream passed the production parser with evidence ID
+`codex-38d6462ff3c1cb6f01a70b08d18d168049c1d1137ad2babe`.
+The parser tolerates only the exact observed pre-turn notice confirming that
+Code Mode is disabled; unknown errors, in-turn errors, duplicate notices and
+tool execution still fail closed. Review must run afresh on the post-merge base.
+
+The three initial CodeRabbit findings are addressed: signed App/CI policy
+validation, immutable full-checkout test base with history available in CI,
+and actual seeded-existing-YAML rejection with the exact expected error.
 
 An actual separate ephemeral Codex review of this package found one installation
 ordering defect (scratchpads before initializeState). It is corrected above by

@@ -35,7 +35,14 @@ export function verifySignedArtifact(envelope,publicKey,now=Date.now()){
   const p=JSON.parse(envelope.payload);
   must(p?.schema==='asi.engine-activation.v1'&&p.repo==='ASI-integration/asi-landing'&&
     p.root===ENGINE_ROOT&&p.legacyStateDir===LEGACY_STATE&&p.stage==='S4-G1'&&
-    p.service==='asi-strigunov-agent.service'&&p.ownerApprovalId&&
+    p.host==='asi-agent-runner'&&p.service==='asi-strigunov-agent.service'&&
+    typeof p.ownerApprovalId==='string'&&p.ownerApprovalId.length>0&&p.ownerApprovalId.length<=500&&
+    p.githubApp&&Number.isSafeInteger(p.githubApp.appId)&&p.githubApp.appId>0&&
+    Number.isSafeInteger(p.githubApp.installationId)&&p.githubApp.installationId>0&&
+    Array.isArray(p.ciPolicies)&&p.ciPolicies.length===2&&
+    p.ciPolicies.filter(q=>q?.name==='validate'&&q.workflowId===311380800&&
+      (q.event===undefined||q.event==='pull_request')).length===1&&
+    p.ciPolicies.filter(q=>q?.name==='release_governance'&&q.workflowId===390653294&&q.event==='pull_request_target').length===1&&
     Number.isSafeInteger(p.notBefore)&&Number.isSafeInteger(p.expiresAt)&&p.notBefore<=now&&p.expiresAt>now&&
     /^[a-f0-9]{64}$/.test(p.runnerSha256)&&/^[a-f0-9]{64}$/.test(p.catalogSha256)&&
     /^[a-f0-9]{40}$/.test(p.baseSha)&&p.automaticCiApproved===true&&p.automaticReviewApproved===true,
