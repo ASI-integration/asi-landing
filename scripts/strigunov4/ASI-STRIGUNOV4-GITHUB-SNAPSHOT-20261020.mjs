@@ -18,10 +18,18 @@ export function independentCodeRabbit(comments,head){
   must(Array.isArray(comments)&&comments.length<=100&&SHA.test(head),'REVIEWS_UNTRUSTED');
   // Do not allow an unmarked comment or a stray HEAD mention to grant review.
   // Follow the exact end-of-range evidence required by the strict analyzer.
-  const marked=comments.filter(x=>BOT.has(x?.user?.login)&&typeof x.body==='string'&&
-    x.body.includes('<!-- recent_review_start -->')&&
+  const botComments=comments.filter(x=>BOT.has(x?.user?.login)&&typeof x.body==='string')
+    .sort((a,b)=>trustTime(b.updated_at||b.created_at)-trustTime(a.updated_at||a.created_at));
+  const marked=botComments.filter(x=>x.body.includes('<!-- recent_review_start -->')&&
     x.body.includes('<!-- recent_review_end -->'));
-  if(marked.length!==1)return {head,completed:false,actionable:null};
+  // A newer unmarked/ambiguous bot message supersedes an earlier clean summary.
+  // Do not silently substitute an old review for latest unknown review state.
+  const newest=botComments[0],runnerUp=botComments[1];
+  if(marked.length!==1||newest!==marked[0]||
+    !trustTime(newest?.updated_at||newest?.created_at)||
+    (runnerUp&&trustTime(runnerUp.updated_at||runnerUp.created_at)===
+      trustTime(newest.updated_at||newest.created_at)))
+    return {head,completed:false,actionable:null};
   const block=/<!-- recent_review_start -->([\s\S]*?)<!-- recent_review_end -->/.exec(marked[0].body)?.[1];
   const ranges=block?[...block.matchAll(
     /Reviewing files that changed from the base of the PR and between ([a-f0-9]{40}) and ([a-f0-9]{40})\./g

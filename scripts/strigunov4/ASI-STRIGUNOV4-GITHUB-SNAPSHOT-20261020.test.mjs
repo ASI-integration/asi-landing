@@ -73,3 +73,9 @@ test('12 duplicate marked bot summaries are ambiguous, even if clean',()=>{
  const entry={user:{login:'coderabbitai[bot]'},body:recent(head)};
  assert.equal(independentCodeRabbit([entry,entry],head).completed,false);
 });
+
+test('13 newer ambiguous bot comment supersedes previous marked clean summary',()=>{
+ const recentHead={user:{login:'coderabbitai[bot]'},body:recent(head),updated_at:'2026-10-20T11:00:00Z'};
+ const newUnknown={user:{login:'coderabbitai[bot]'},body:'review started',updated_at:'2026-10-20T12:00:00Z'};
+ assert.equal(independentCodeRabbit([recentHead,newUnknown],head).completed,false);
+});
