@@ -1,0 +1,105 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+import {createReadOnlyRunnerBridge,selectRoute} from './ASI-STRIGUNOV4-RUNNER-BRIDGE-20261020.mjs';
+const SHA='a'.repeat(40);
+const X='b3c8ff2e4904b0b503197d29aa217773918831bc';
+const Y='8ac8e8ac11e39ac070ccc058218e3b73190cb43f';
+const Z='6693312b0a94b8afcee3a34907055ce301a5fb3e';
+const paths=['scripts/strigunov4/protected_c4_unit_apply.py','.github/workflows/strigunov4-c4-unit-apply.yml','scripts/strigunov4/test_protected_c4_unit_apply.py'];
+function snapshot(){
+ const prs={509:{number:509,head:X,state:'open',merged:false},508:{number:508,head:Y,state:'open',merged:false},520:{number:520,head:Z,state:'open',merged:false}};
+ return {mainSha:SHA,contract:{schemaVersion:'asi.demo-release.v1',releaseId:'STRIGUNOV4-READY-FOR-DEMO',state:'FROZEN_ON_OWNER_MERGE',stages:[1,2,3,4,5,6].map(i=>({id:'S4-G'+i,status:i===1?'IN_PROGRESS':'NOT_STARTED',proof:[],files:[],plannedFiles:i===1?paths:[]}))},issues:{511:{number:511,state:'open',labels:['agent-source-ready']}},project:{511:'PREPARATION_ONLY'},prs,checks:{509:{head:X,validate:'success',release_governance:'success'}},reviews:{509:{head:X,completed:true,actionable:false}},ledger:{}};
+}
+const dir=async()=>await fs.mkdtemp(path.join(os.tmpdir(),'asi-runner-bridge-'));
+const clean=async p=>fs.rm(p,{recursive:true,force:true});
+test('01 initial status is a safe WAIT',async()=>{
+ const p=await dir();try{const b=createReadOnlyRunnerBridge({stateDir:p,fetchSnapshot:async()=>snapshot()});assert.equal(b.status().mode,'WAIT');assert.equal(typeof b.execute,'undefined');}finally{await clean(p);}
+});
+test('02 polling is read-only even for admitted source ticket',async()=>{
+ const p=await dir();try{const b=createReadOnlyRunnerBridge({stateDir:p,fetchSnapshot:async()=>snapshot()});const r=await b.poll();assert.equal(r.mode,'SOURCE_PLAN_AVAILABLE');assert.equal((await fs.readdir(p)).length,0);}finally{await clean(p);}
+});
+test('03 180-second polling budget suppresses repeated source reads',async()=>{
+ const p=await dir();let t=10000,n=0;try{const b=createReadOnlyRunnerBridge({stateDir:p,fetchSnapshot:async()=>{n++;return snapshot()},clock:()=>t});await b.poll();t+=30000;await b.poll();t+=149999;await b.poll();assert.equal(n,1);t++;await b.poll();assert.equal(n,2);}finally{await clean(p);}
+});
+test('04 concurrent ticks are single-flight',async()=>{
+ const p=await dir();let n=0;try{const b=createReadOnlyRunnerBridge({stateDir:p,fetchSnapshot:async()=>{n++;await new Promise(r=>setTimeout(r,25));return snapshot();}});const rs=await Promise.all([b.poll(),b.poll(),b.poll()]);assert.equal(n,1);assert.ok(rs.every(x=>x.mode==='SOURCE_PLAN_AVAILABLE'));}finally{await clean(p);}
+});
+test('05 existing legacy autopilot ledger blocks execution instead of replay',async()=>{
+ const p=await dir();try{await fs.writeFile(path.join(p,'autopilot-ledger.json'),JSON.stringify({mode:'PUBLISHED',job:'S4-G1',pr:520}));const b=createReadOnlyRunnerBridge({stateDir:p,fetchSnapshot:async()=>snapshot()});assert.equal((await b.poll()).mode,'WAIT_RECONCILIATION');assert.equal((await fs.readdir(p)).length,1);}finally{await clean(p);}
+});
+test('06 failures remain fail-closed',async()=>{
+ const p=await dir();try{const b=createReadOnlyRunnerBridge({stateDir:p,fetchSnapshot:async()=>{throw Error('API not available');}});assert.equal((await b.poll()).mode,'WAIT_RECONCILIATION');}finally{await clean(p);}
+});
+test('07 next stage can be selected without S4-G1 hardcode',()=>{
+ const s=snapshot();s.contract.stages[0].status='ACCEPTED';s.contract.stages[1].status='IN_PROGRESS';assert.deepEqual(selectRoute(s.contract,{number:512,state:'open',title:'[S4-G2] operator'}),{stage:'S4-G2',issue:512,mode:'ACTIVE'});
+});
+test('08 stage cannot be skipped using an arbitrary issue number',()=>{
+ assert.throws(()=>selectRoute(snapshot().contract,{number:513,state:'open',title:'[S4-G3] spoofed'}),/ACTIVE_ISSUE_NOT_VERIFIED/);
+});
+test('09 unacceptable poll interval is rejected',async()=>{
+ const p=await dir();try{assert.throws(()=>createReadOnlyRunnerBridge({stateDir:p,fetchSnapshot:async()=>snapshot(),intervalMs:1000}),/INVALID_POLL_INTERVAL/);}finally{await clean(p);}
+});
+test('10 backwards clock does not cause an unbounded loop',async()=>{
+ const p=await dir();let t=180000;try{const b=createReadOnlyRunnerBridge({stateDir:p,fetchSnapshot:async()=>snapshot(),clock:()=>t});await b.poll();t-=1;assert.equal((await b.poll()).reason,'CLOCK_MOVED_BACKWARDS');}finally{await clean(p);}
+});
+
+test('11 throwing or non-finite clocks fail closed without reading sources',async()=>{
+ const p=await dir();let reads=0;
+ try{
+  let value=()=>{throw Error('clock source failed');};
+  const b=createReadOnlyRunnerBridge({stateDir:p,fetchSnapshot:async()=>{reads++;return snapshot();},clock:()=>value()});
+  assert.deepEqual(await b.poll(),{mode:'WAIT_RECONCILIATION',reason:'CLOCK_INVALID'});
+  value=()=>NaN;
+  assert.deepEqual(await b.poll(),{mode:'WAIT_RECONCILIATION',reason:'CLOCK_INVALID'});
+  value=()=>Infinity;
+  assert.deepEqual(await b.poll(),{mode:'WAIT_RECONCILIATION',reason:'CLOCK_INVALID'});
+  assert.equal(reads,0);
+  assert.deepEqual(await fs.readdir(p),[]);
+ }finally{await clean(p);}
+});
+
+test('12 hung snapshot is bounded, aborted and cannot overlap a later tick',async t=>{
+ const p=await dir();t.after(()=>clean(p));let settle,signal,reads=0,now=1000;
+ const held=new Promise(r=>settle=r);t.after(()=>settle(snapshot()));
+ const b=createReadOnlyRunnerBridge({stateDir:p,snapshotTimeoutMs:30,clock:()=>now,
+  fetchSnapshot:async context=>{reads++;signal=context?.signal;return held;}});
+ const result=await Promise.race([b.poll(),new Promise(r=>{const timer=setTimeout(()=>r({reason:'TEST_DEADLINE_EXCEEDED'}),300);t.after(()=>clearTimeout(timer));})]);
+ assert.equal(result.reason,'READ_ONLY_SNAPSHOT_TIMEOUT');assert.equal(signal.aborted,true);
+ now+=180000;assert.equal((await b.poll()).reason,'READ_ONLY_SNAPSHOT_TIMEOUT');
+ assert.equal(reads,1);assert.deepEqual(await fs.readdir(p),[]);
+});
+
+test('13 late snapshot is discarded; fresh read resumes only after settlement and cadence',async t=>{
+ const p=await dir();t.after(()=>clean(p));let settle,reads=0,now=1000;
+ const held=new Promise(r=>settle=r);t.after(()=>settle({mainSha:'invalid-late-result'}));
+ const b=createReadOnlyRunnerBridge({stateDir:p,snapshotTimeoutMs:30,clock:()=>now,
+  fetchSnapshot:async()=>++reads===1?held:snapshot()});
+ const first=await Promise.race([b.poll(),new Promise(r=>{const timer=setTimeout(()=>r({reason:'TEST_DEADLINE_EXCEEDED'}),300);t.after(()=>clearTimeout(timer));})]);
+ assert.equal(first.reason,'READ_ONLY_SNAPSHOT_TIMEOUT');
+ settle({mainSha:'invalid-late-result'});await new Promise(r=>setImmediate(r));
+ assert.equal(b.status().reason,'READ_ONLY_SNAPSHOT_TIMEOUT');
+ now+=30000;assert.equal((await b.poll()).reason,'READ_ONLY_SNAPSHOT_TIMEOUT');assert.equal(reads,1);
+ now+=150000;assert.equal((await b.poll()).mode,'SOURCE_PLAN_AVAILABLE');assert.equal(reads,2);
+ assert.deepEqual(await fs.readdir(p),[]);
+});
+
+test('14 connection loss does not leak errors or bypass cadence; restart only observes',async t=>{
+ const p=await dir();t.after(()=>clean(p));let reads=0,now=1000;
+ const b=createReadOnlyRunnerBridge({stateDir:p,snapshotTimeoutMs:30,clock:()=>now,
+  fetchSnapshot:async()=>{reads++;if(reads===1)throw Error('PRIVATE_NETWORK_DETAIL');return snapshot();}});
+ assert.equal((await b.poll()).reason,'READ_ONLY_BRIDGE_ERROR');
+ now+=30000;await b.poll();assert.equal(reads,1);
+ now+=150000;assert.equal((await b.poll()).mode,'SOURCE_PLAN_AVAILABLE');assert.equal(reads,2);
+ const restarted=createReadOnlyRunnerBridge({stateDir:p,fetchSnapshot:async()=>snapshot()});
+ assert.equal((await restarted.poll()).mode,'SOURCE_PLAN_AVAILABLE');
+ assert.equal(typeof restarted.execute,'undefined');assert.deepEqual(await fs.readdir(p),[]);
+});
+
+test('15 invalid snapshot deadlines cannot disable the bound',async t=>{
+ const p=await dir();t.after(()=>clean(p));
+ for(const snapshotTimeoutMs of [0,-1,NaN,Infinity,30001,'1000'])
+  assert.throws(()=>createReadOnlyRunnerBridge({stateDir:p,fetchSnapshot:async()=>snapshot(),snapshotTimeoutMs}),/INVALID_SNAPSHOT_TIMEOUT/);
+});
