@@ -55,13 +55,19 @@ export async function fixture(t,options={}){
   else if(/^pulls\/\d+\/files$/.test(route)){const p=pulls.get(Number(route.split('/')[1])),commit=commits.get(p.head.sha);result=trees.get(commit.tree.sha).tree.map(e=>({filename:e.path,status:'modified',sha:e.sha}));}
   else if(/^pulls\/\d+$/.test(route))result=pulls.get(Number(route.split('/')[1]));
   else if(route==='actions/runs'){
-   const head=url.searchParams.get('head_sha'),pr=[...pulls.values()].find(p=>p.head.sha===head);
-   const event=url.searchParams.get('event'),ids=state.targetGovernance?(event==='pull_request'?[10]:[390653294]):[10,20];
-   result={total_count:ids.length,workflow_runs:ids.map((workflow_id,i)=>({id:workflow_id,workflow_id,head_sha:state.staleCi?'f'.repeat(40):head,event,head_branch:pr.head.ref,
-    repository:{full_name:repo},head_repository:{full_name:repo},pull_requests:[{number:pr.number,head:{sha:state.wrongAssociation?'f'.repeat(40):head,ref:pr.head.ref},base:{sha,ref:'main'}}],run_attempt:1,status:state.ci==='pending'?'in_progress':'completed',conclusion:state.ci==='pending'?null:state.ci,index:i}))};
+   const head=url.searchParams.get('head_sha'),event=url.searchParams.get('event');
+   const pr=[...pulls.values()].find(p=>event==='pull_request_target'?p.base.sha===head:p.head.sha===head);
+   const ids=state.targetGovernance?(event==='pull_request'?[10]:[390653294]):[10,20];
+   result={total_count:ids.length,workflow_runs:ids.map((workflow_id,i)=>({id:workflow_id,workflow_id,head_sha:state.staleCi?'f'.repeat(40):head,event,
+    head_branch:state.wrongTargetRunBranch&&event==='pull_request_target'?pr.head.ref:event==='pull_request_target'?'main':pr.head.ref,
+    repository:{full_name:repo},head_repository:{full_name:repo},pull_requests:[{number:pr.number,head:{sha:state.wrongAssociation?'f'.repeat(40):pr.head.sha,ref:pr.head.ref},
+      base:{sha:state.wrongTargetBaseAssoc&&event==='pull_request_target'?'f'.repeat(40):pr.base.sha,ref:'main'}}],run_attempt:1,status:state.ci==='pending'?'in_progress':'completed',conclusion:state.ci==='pending'?null:state.ci,index:i}))};
   }else if(/^actions\/runs\/\d+\/attempts\/1\/jobs$/.test(route)){const id=Number(route.split('/')[2]),pr=[...pulls.values()].at(-1);
-   result={total_count:1,jobs:[{id:id+100,run_id:id,head_sha:pr.head.sha,name:id===10?'validate':'release_governance',status:'completed',conclusion:state.ci,steps:[{number:1,status:'completed',conclusion:'success'}]}]};
-  }else if(/^actions\/runs\/\d+$/.test(route)){const pr=[...pulls.values()].at(-1);result={head_sha:pr.head.sha,run_attempt:1,status:'completed',conclusion:state.ci};}
+   result={total_count:1,jobs:[{id:id+100,run_id:id,
+    head_sha:state.wrongTargetJobSha&&id===390653294?pr.head.sha:id===390653294?state.main:pr.head.sha,
+    name:id===10?'validate':'release_governance',status:'completed',conclusion:state.ci,steps:[{number:1,status:'completed',conclusion:'success'}]}]};
+  }else if(/^actions\/runs\/\d+$/.test(route)){const pr=[...pulls.values()].at(-1);result={head_sha:Number(route.split('/')[2])===390653294?state.main:pr.head.sha,
+    run_attempt:1,status:'completed',conclusion:state.ci};}
   else if(/^commits\/[a-f0-9]+\/statuses$/.test(route)){result=[{id:1,context:'CodeRabbit',creator:{id:BOT_ID},state:state.review==='pending'?'pending':'success',description:state.review,created_at:'2026-10-22T10:00:00Z'}];if(state.failDuringReview)state.ci='failure';}
   else if(/^pulls\/\d+\/reviews$/.test(route)){const pr=pulls.get(Number(route.split('/')[1]));result=[{id:2,user:{id:BOT_ID},state:'COMMENTED',commit_id:pr.head.sha,body:'**Actionable comments posted: 0**'}];}
   else if(/^issues\/\d+\/comments$/.test(route))result=[];

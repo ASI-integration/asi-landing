@@ -22,8 +22,9 @@ export async function inspectCI(github, task, policies) {
   const readRuns=async()=>{
     const out=[];
     for(const event of events){
-      const list=await github.pages(`actions/runs?head_sha=${task.sha}&event=${event}`,'workflow_runs');
-      must(list.every(r=>r.head_sha===task.sha&&r.event===event),'RUN_SHA_MISMATCH');out.push(...list);
+      const expectedSha=event==='pull_request_target'?task.baseSha:task.sha;
+      const list=await github.pages(`actions/runs?head_sha=${expectedSha}&event=${event}`,'workflow_runs');
+      must(list.every(r=>r.head_sha===expectedSha&&r.event===event),'RUN_SHA_MISMATCH');out.push(...list);
     }
     must(new Set(out.map(r=>r.id)).size===out.length,'CROSS_EVENT_RUN_DUPLICATE');return out;
   };
@@ -33,7 +34,7 @@ export async function inspectCI(github, task, policies) {
     // GitHub may return an empty pull_requests array for a verified PR run.
     // Require trusted workflow, branch and origin even without that association.
     const candidates = runs.filter(r => r.workflow_id === policy.workflowId && r.event===eventFor(policy) &&
-      r.head_branch === task.branch && r.repository?.full_name === task.repo &&
+      r.head_branch === (eventFor(policy)==='pull_request_target'?'main':task.branch) && r.repository?.full_name === task.repo &&
       r.head_repository?.full_name === task.repo &&
       (r.pull_requests == null || Array.isArray(r.pull_requests) &&
         (r.pull_requests.length === 0 || r.pull_requests.some(p => p.number === task.pr))) &&
@@ -45,7 +46,8 @@ export async function inspectCI(github, task, policies) {
     must(Number.isSafeInteger(run.run_attempt) && run.run_attempt > 0, 'ATTEMPT_REQUIRED');
     if (run.status !== 'completed') { waiting = true; evidence.push({ name: policy.name, state: 'pending', run: run.id }); continue; }
     const jobs = await github.pages(`actions/runs/${run.id}/attempts/${run.run_attempt}/jobs`, 'jobs');
-    must(jobs.every(j => j.run_id === run.id && j.head_sha === task.sha), 'JOB_SHA_MISMATCH');
+    const expectedSha=eventFor(policy)==='pull_request_target'?task.baseSha:task.sha;
+    must(jobs.every(j => j.run_id === run.id && j.head_sha === expectedSha), 'JOB_SHA_MISMATCH');
     const named = jobs.filter(j => j.name === policy.name);
     must(named.length === 1, 'JOB_MISSING_OR_AMBIGUOUS');
     const job = named[0];
@@ -57,7 +59,7 @@ export async function inspectCI(github, task, policies) {
     evidence.push({ name: policy.name, state: success ? 'success' : 'failure', run: run.id,
       attempt: run.run_attempt, job: job.id, steps: job.steps.map(s => ({ number:s.number, conclusion:s.conclusion })) });
     const current = await github.get(`actions/runs/${run.id}`);
-    must(current.head_sha === task.sha && current.run_attempt === run.run_attempt &&
+    must(current.head_sha === expectedSha && current.run_attempt === run.run_attempt &&
       current.status === run.status && current.conclusion === run.conclusion, 'RUN_CHANGED_DURING_READ');
   }
   // Re-read list to detect a newer run while its predecessor was being examined.

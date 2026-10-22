@@ -136,7 +136,9 @@ test('24 real ASI governance event requires exact approved workflow and head/bas
  const policies=[{name:'validate',workflowId:10},{name:'release_governance',workflowId:390653294,event:'pull_request_target'}];
  const f=await fixture(t,{targetGovernance:true}),loop=await makeLoop(f,{ciPolicies:policies});
  assert.equal((await tick(loop)).mode,'REPORT_READY');
- for(const options of [{wrongAssociation:true},{staleCi:true}]){
+ assert.ok(f.requests.some(x=>x.url.includes(`actions/runs?head_sha=${f.sha}&event=pull_request_target`)));
+ for(const options of [{wrongAssociation:true},{staleCi:true},{wrongTargetBaseAssoc:true},
+   {wrongTargetJobSha:true},{wrongTargetRunBranch:true}]){
   const g=await fixture(t,{targetGovernance:true,...options}),other=await makeLoop(g,{ciPolicies:policies});
   assert.notEqual((await tick(other)).mode,'REPORT_READY');assert.equal((await read(g.root,'receipts.json')).completed.some(x=>x.status==='PASS'),false);
  }
