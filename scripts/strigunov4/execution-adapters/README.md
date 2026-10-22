@@ -78,8 +78,10 @@ pushes are executed by the preparer.
 `createGitHubReader()` performs bounded REST GETs and one fixed GraphQL query.
 It cannot perform a GitHub mutation. Tokens stay host-side and are not logged.
 CI policies must supply trusted workflow IDs, not names obtained from issue
-text. This adapter currently admits exact-SHA pull_request workflow records;
-other event/head conventions are blocked rather than inferred as success.
+text. This adapter admits exact-SHA pull_request workflow records. The explicit
+pull_request_target exception is only release_governance, workflow ID 390653294,
+with pinned baseSha and exact PR head/base association. Other event/head
+conventions are blocked rather than inferred as success.
 CodeRabbit must be completed on the exact SHA with no unresolved or explicit
 outside-diff findings. Skipped reviews cannot pass.
 
