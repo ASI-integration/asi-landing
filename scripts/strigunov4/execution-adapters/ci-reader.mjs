@@ -19,34 +19,53 @@ export async function inspectCI(github, task, policies) {
   must(Number.isSafeInteger(task.pr) && task.pr > 0, 'CI_REQUIRES_PR');
   const eventFor=validateCiPolicy(task,policies);
   const events=[...new Set(policies.map(eventFor))];
+  // A target workflow may be exposed in base or PR-head context. For an empty
+  // pull_requests list, require a separate fresh pinned PR identity readback.
+  const verifyTargetPr=async()=>{
+    const p=await github.get(`pulls/${task.pr}`);
+    must(p?.number===task.pr&&p.state==='open'&&p.merged===false&&
+      p.head?.sha===task.sha&&p.head.ref===task.branch&&p.head.repo?.full_name===task.repo&&
+      p.base?.sha===task.baseSha&&p.base.ref==='main'&&p.base.repo?.full_name===task.repo,
+      'TARGET_PR_IDENTITY_CHANGED');
+  };
+  if(events.includes('pull_request_target'))await verifyTargetPr();
   const readRuns=async()=>{
     const out=[];
     for(const event of events){
-      const expectedSha=event==='pull_request_target'?task.baseSha:task.sha;
-      const list=await github.pages(`actions/runs?head_sha=${expectedSha}&event=${event}`,'workflow_runs');
-      must(list.every(r=>r.head_sha===expectedSha&&r.event===event),'RUN_SHA_MISMATCH');out.push(...list);
+      const shas=event==='pull_request_target'?[...new Set([task.baseSha,task.sha])]:[task.sha];
+      for(const expectedSha of shas){
+        const list=await github.pages(`actions/runs?head_sha=${expectedSha}&event=${event}`,'workflow_runs');
+        must(list.every(r=>r.head_sha===expectedSha&&r.event===event),'RUN_SHA_MISMATCH');out.push(...list);
+      }
     }
     must(new Set(out.map(r=>r.id)).size===out.length,'CROSS_EVENT_RUN_DUPLICATE');return out;
   };
   const runs = await readRuns();
+  const targetAssociation=r=>{
+    const onHead=r.head_sha===task.sha&&r.head_branch===task.branch;
+    const onBase=r.head_sha===task.baseSha&&r.head_branch==='main';
+    const link=Array.isArray(r.pull_requests)&&r.pull_requests.length===1&&
+      r.pull_requests[0].number===task.pr&&r.pull_requests[0].head?.sha===task.sha&&
+      r.pull_requests[0].head.ref===task.branch&&r.pull_requests[0].base?.sha===task.baseSha&&
+      r.pull_requests[0].base.ref==='main';
+    return onBase?link:onHead&&(link||Array.isArray(r.pull_requests)&&r.pull_requests.length===0);
+  };
   const evidence = []; let waiting = false, failed = false;
   for (const policy of policies) {
     // GitHub may return an empty pull_requests array for a verified PR run.
     // Require trusted workflow, branch and origin even without that association.
     const candidates = runs.filter(r => r.workflow_id === policy.workflowId && r.event===eventFor(policy) &&
-      r.head_branch === (eventFor(policy)==='pull_request_target'?'main':task.branch) && r.repository?.full_name === task.repo &&
-      r.head_repository?.full_name === task.repo &&
-      (r.pull_requests == null || Array.isArray(r.pull_requests) &&
-        (r.pull_requests.length === 0 || r.pull_requests.some(p => p.number === task.pr))) &&
-      (r.event!=='pull_request_target'||Array.isArray(r.pull_requests)&&r.pull_requests.length===1&&
-        r.pull_requests[0].number===task.pr&&r.pull_requests[0].head?.sha===task.sha&&
-        r.pull_requests[0].head.ref===task.branch&&r.pull_requests[0].base?.sha===task.baseSha&&r.pull_requests[0].base.ref==='main'));
+      r.repository?.full_name===task.repo&&r.head_repository?.full_name===task.repo&&
+      (eventFor(policy)==='pull_request_target'?targetAssociation(r):
+        r.head_branch===task.branch&&
+        (r.pull_requests==null||Array.isArray(r.pull_requests)&&
+          (r.pull_requests.length===0||r.pull_requests.some(p=>p.number===task.pr)))));
     const run = candidates.sort((a,b) => b.id - a.id)[0];
     if (!run) { waiting = true; evidence.push({ name: policy.name, state: 'missing' }); continue; }
     must(Number.isSafeInteger(run.run_attempt) && run.run_attempt > 0, 'ATTEMPT_REQUIRED');
     if (run.status !== 'completed') { waiting = true; evidence.push({ name: policy.name, state: 'pending', run: run.id }); continue; }
     const jobs = await github.pages(`actions/runs/${run.id}/attempts/${run.run_attempt}/jobs`, 'jobs');
-    const expectedSha=eventFor(policy)==='pull_request_target'?task.baseSha:task.sha;
+    const expectedSha=run.head_sha;
     must(jobs.every(j => j.run_id === run.id && j.head_sha === expectedSha), 'JOB_SHA_MISMATCH');
     const named = jobs.filter(j => j.name === policy.name);
     must(named.length === 1, 'JOB_MISSING_OR_AMBIGUOUS');
@@ -69,6 +88,7 @@ export async function inspectCI(github, task, policies) {
      Array.isArray(r.pull_requests)?r.pull_requests.map(p=>[p.number,p.head?.sha,p.head?.ref,p.base?.sha,p.base?.ref]):null,
      r.run_attempt,r.status,r.conclusion]).sort((a,b)=>a[0]-b[0]));
   must(signature(runs) === signature(again), 'CI_CHANGED_DURING_READ');
+  if(events.includes('pull_request_target'))await verifyTargetPr();
   return { status: failed ? 'FAILED' : waiting ? 'WAITING' : 'PASS', head: task.sha,
     checks: Object.fromEntries(evidence.map(e => [e.name,e.state])), evidence };
 }

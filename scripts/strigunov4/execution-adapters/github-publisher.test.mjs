@@ -137,8 +137,13 @@ test('24 real ASI governance event requires exact approved workflow and head/bas
  const f=await fixture(t,{targetGovernance:true}),loop=await makeLoop(f,{ciPolicies:policies});
  assert.equal((await tick(loop)).mode,'REPORT_READY');
  assert.ok(f.requests.some(x=>x.url.includes(`actions/runs?head_sha=${f.sha}&event=pull_request_target`)));
+ // Observed live GitHub target runs have PR HEAD SHA/branch and an empty PR list.
+ const live=await fixture(t,{targetGovernance:true,targetContext:'head'}),actual=await makeLoop(live,{ciPolicies:policies});
+ assert.equal((await tick(actual)).mode,'REPORT_READY');
+ assert.equal(live.pulls.size,1);
  for(const options of [{wrongAssociation:true},{staleCi:true},{wrongTargetBaseAssoc:true},
-   {wrongTargetJobSha:true},{wrongTargetRunBranch:true}]){
+   {wrongTargetJobSha:true},{wrongTargetRunBranch:true},
+   {targetContext:'head',wrongTargetRunBranch:true},{targetContext:'head',wrongTargetJobSha:true}]){
   const g=await fixture(t,{targetGovernance:true,...options}),other=await makeLoop(g,{ciPolicies:policies});
   assert.notEqual((await tick(other)).mode,'REPORT_READY');assert.equal((await read(g.root,'receipts.json')).completed.some(x=>x.status==='PASS'),false);
  }
