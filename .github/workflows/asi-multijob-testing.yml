@@ -54,4 +54,5 @@ jobs:
         run: |
           for source in scripts/strigunov4/execution-adapters/*.mjs; do node --check "$source"; done
           node --test scripts/strigunov4/execution-adapters/isolated-loop.test.mjs \
-            scripts/strigunov4/execution-adapters/security-review.test.mjs
+            scripts/strigunov4/execution-adapters/security-review.test.mjs \
+            scripts/strigunov4/execution-adapters/github-publisher.test.mjs
