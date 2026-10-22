@@ -174,9 +174,9 @@
       "status": "IN_PROGRESS",
       "proof": [],
       "acceptance": [
-        "OLD+optional witnessed; repair adapter independently reviewed",
+        "OLD+optional witnessed on original staging; independently reviewed isolated-rehost adapter and mandatory EnvironmentFile unit",
         "Separate owner/staging approval and trusted backup/rollback",
-        "Actual NEW SHA256 + mandatory EnvironmentFiles + no reload drift, preserving existing staging process",
+        "Independent ASI-Lab PID1: reviewed pinned release, mandatory EnvironmentFile with verified new-host unit hash, stable new-host process and NeedDaemonReload=no, health/version 200, seven effective no-send flags, old staging process unchanged until separately approved cutover",
         "Production/Sentinel unaffected"
       ],
       "files": [
