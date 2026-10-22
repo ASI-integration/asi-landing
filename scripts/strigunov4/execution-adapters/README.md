@@ -82,10 +82,11 @@ checks and a killed child process. They do **not** prove current remote PRs
 are green, perform a live GitHub adapter run, reconcile actual old state, or
 repair a server. All production capabilities remain disabled.
 
-Focused acceptance (28 tests across two files):
+Focused acceptance (isolated loop, runner bridge, and adapter security regressions):
 
 ```sh
 node --test scripts/strigunov4/execution-adapters/isolated-loop.test.mjs \
+  scripts/strigunov4/execution-adapters/security-review.test.mjs \
   scripts/strigunov4/ASI-STRIGUNOV4-RUNNER-BRIDGE-20261020.test.mjs
 ```
 

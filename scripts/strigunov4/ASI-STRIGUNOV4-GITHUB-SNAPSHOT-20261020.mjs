@@ -16,16 +16,24 @@ export function lastCheck(checks,head,name){
 }
 export function independentCodeRabbit(comments,head){
   must(Array.isArray(comments)&&comments.length<=100&&SHA.test(head),'REVIEWS_UNTRUSTED');
-  // Review text is advisory. Only current-HEAD clean summary can be used;
-  // malformed or ambiguous bodies must be treated as unreviewed.
-  const sorted=comments.filter(x=>BOT.has(x?.user?.login)&&typeof x.body==='string')
-    .sort((x,y)=>trustTime(y.updated_at||y.created_at)-trustTime(x.updated_at||x.created_at));
-  const latest=sorted[0];
-  const current=latest?.body.includes(head)&&
-    (/No actionable comments were generated in the recent review/i.test(latest.body)||
-     /Actionable comments posted:\s*[1-9]/i.test(latest.body))?latest:null;
-  return {head,completed:!!current,actionable:current?
-    !/No actionable comments were generated in the recent review/i.test(current.body):null};
+  // Do not allow an unmarked comment or a stray HEAD mention to grant review.
+  // Follow the exact end-of-range evidence required by the strict analyzer.
+  const marked=comments.filter(x=>BOT.has(x?.user?.login)&&typeof x.body==='string'&&
+    x.body.includes('<!-- recent_review_start -->')&&
+    x.body.includes('<!-- recent_review_end -->'));
+  if(marked.length!==1)return {head,completed:false,actionable:null};
+  const block=/<!-- recent_review_start -->([\s\S]*?)<!-- recent_review_end -->/.exec(marked[0].body)?.[1];
+  const ranges=block?[...block.matchAll(
+    /Reviewing files that changed from the base of the PR and between ([a-f0-9]{40}) and ([a-f0-9]{40})\./g
+  )]:[];
+  if(ranges.length!==1||ranges[0][2]!==head)
+    return {head,completed:false,actionable:null};
+  const clean=/(?:^|\r?\n)[ \t]*No actionable comments were generated in the recent review\.[ \t]*(?:🎉)?[ \t]*(?=\r?\n|$)/.test(block);
+  const actionable=/Actionable comments posted:[ \t]*[1-9][0-9]*/i.test(block)||
+    /Outside diff range comments[^\n(]*\([1-9][0-9]*\)/i.test(block);
+  if(clean&&actionable)return {head,completed:false,actionable:true};
+  if(actionable)return {head,completed:true,actionable:true};
+  return {head,completed:clean,actionable:clean?false:null};
 }
 export async function fetchVerifiedSnapshot({api,readProjects}={}){
   must(typeof api==='function'&&typeof readProjects==='function','READ_PORTS_REQUIRED');

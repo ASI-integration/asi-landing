@@ -180,8 +180,8 @@ test('throwing or non-finite final clock clears single-flight without bypassing 
  }
 });
 test('newest ambiguous or wrong-SHA bot comment overrides an old clean summary',()=>{
- const head='a'.repeat(40),old={user:{login:'coderabbitai[bot]'},body:head+' No actionable comments were generated in the recent review',updated_at:'2026-10-20T01:00:00Z'};
- for(const body of ['running','b'.repeat(40)+' No actionable comments were generated in the recent review']){
+ const head='a'.repeat(40),old={user:{login:'coderabbitai[bot]'},body:'<!-- recent_review_start -->\nNo actionable comments were generated in the recent review. 🎉\nReviewing files that changed from the base of the PR and between '+('c'.repeat(40))+' and '+head+'.\n<!-- recent_review_end -->',updated_at:'2026-10-20T01:00:00Z'};
+ for(const body of ['running','<!-- recent_review_start -->\nNo actionable comments were generated in the recent review. 🎉\nReviewing files that changed from the base of the PR and between '+('c'.repeat(40))+' and '+('b'.repeat(40))+'.\n<!-- recent_review_end -->']){
   assert.equal(independentCodeRabbit([old,{...old,body,updated_at:'2026-10-20T02:00:00Z'}],head).completed,false);
  }
 });
@@ -227,4 +227,15 @@ test('terminal lock release failure yields structured FAILED_LOCKED and retains 
     assert.deepEqual(result,{mode:'FAILED_LOCKED',reason:'LOCK_RELEASE_FAILED'});
     assert.equal((await fs.stat(lock)).isDirectory(),true);
   }finally{fs.rmdir=original;}
+});
+test('a scratch-clone nested directory with 0755 is secured before atomicWrite',async t=>{
+ const f=await fixture(t);
+ const dir=path.dirname(path.join(f.cwd,file));
+ await fs.chmod(dir,0o755); // Normal git clone umask can cause this mode.
+ assert.ok((await fs.stat(dir)).mode & 0o077);
+ for(let n=0;n<jobs.length;n++){
+  assert.equal((await f.loop.poll({execute:false})).mode,'REPORT_READY');
+ }
+ assert.equal((await fs.stat(dir)).mode & 0o077,0);
+ assert.equal(await fs.readFile(path.join(f.cwd,file),'utf8'),next);
 });

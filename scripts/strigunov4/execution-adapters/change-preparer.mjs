@@ -1,4 +1,5 @@
 import fs from 'node:fs/promises';
+import { constants as fsConstants } from 'node:fs';
 import path from 'node:path';
 import { execFile } from 'node:child_process';
 import { atomicWrite, digest, must, regular } from './state.mjs';
@@ -34,6 +35,30 @@ async function target(root,relative) {
     must(st.isDirectory() && !st.isSymbolicLink(), 'ANCESTOR_NOT_DIRECTORY');
   }
   await regular(full); return full;
+}
+// A trusted scratch clone may be created with ordinary 0755 nested directories.
+// Revoke group/other access on its directories using no-follow file descriptors
+// BEFORE atomicWrite, without weakening the directory() durability guard.
+// The enclosing isolated root and detached clone identity have already been verified.
+async function privatizeScratchAncestors(root,relative) {
+  safePath(relative);
+  let dir=root;
+  for (const segment of relative.split('/').slice(0,-1)) {
+    dir=path.join(dir,segment);
+    const st=await fs.lstat(dir);
+    must(st.isDirectory()&&!st.isSymbolicLink()&&st.uid===process.getuid(),
+      'SCRATCH_ANCESTOR_UNTRUSTED');
+    const handle=await fs.open(dir, fsConstants.O_RDONLY | fsConstants.O_DIRECTORY | fsConstants.O_NOFOLLOW);
+    try {
+      const opened=await handle.stat();
+      must(opened.isDirectory()&&opened.dev===st.dev&&opened.ino===st.ino&&
+        opened.uid===process.getuid(),'SCRATCH_ANCESTOR_CHANGED');
+      if(opened.mode & 0o077) await handle.chmod(0o700);
+      const secured=await handle.stat();
+      must(secured.isDirectory()&&!(secured.mode & 0o077)&&
+        secured.ino===opened.ino,'SCRATCH_PRIVACY_FAILED');
+    }finally{await handle.close();}
+  }
 }
 async function inventory(root,prefix='') {
   const out = {};
@@ -144,6 +169,7 @@ export async function prepareDelta(store,task,{ admission, changes }) {
   }
   // Validate all proposals before the first write; partial mutation on I/O error is quarantined by ledger.
   for (const p of prepared) {
+    await privatizeScratchAncestors(cwd,p.path);
     await target(cwd,p.path);
     must(digest(await fs.readFile(p.file))===p.beforeSha256, 'CONCURRENT_CHANGE');
     await atomicWrite(p.file,p.content,{mode:baseline[p.path].mode});
