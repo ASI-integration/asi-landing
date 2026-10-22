@@ -69,8 +69,13 @@ async function inventory(root,prefix='') {
     must(!st.isSymbolicLink(), 'SCRATCH_SYMLINK');
     if (st.isDirectory()) Object.assign(out,await inventory(root,name));
     else {
-      must(st.isFile() && st.nlink===1 && st.size <= 2_000_000, 'SCRATCH_ENTRY_UNSAFE');
-      out[name] = {hash:digest(await fs.readFile(full)),mode:st.mode & 0o777};
+      // Exact existing read-only asset in the full ASI checkout. Never omit it,
+      // grant writes to it, or raise the general inventory/change size limits.
+      const pinnedAsset=name==='design-reference/asi-global-osaka-reference.png'&&st.size===2563251;
+      must(st.isFile() && st.nlink===1 && (st.size <= 2_000_000||pinnedAsset), 'SCRATCH_ENTRY_UNSAFE');
+      const hash=digest(await fs.readFile(full));
+      must(!pinnedAsset||hash==='9148e7aff7cffc9535e1cba15ee8099adaec42005936d2aae83c2f9d1ddb2916','READONLY_ASSET_CHANGED');
+      out[name] = {hash,mode:st.mode & 0o777};
     }
     must(Object.keys(out).length <= 10000, 'SCRATCH_TOO_LARGE');
   }

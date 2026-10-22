@@ -1,6 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import {decideQueue,WORK_ORDERS} from '../ASI-STRIGUNOV4-MULTIJOB-20261020.mjs';
+import {decideQueue,WORK_ORDERS,ENGINE_PILOT} from '../ASI-STRIGUNOV4-MULTIJOB-20261020.mjs';
+import {assertLiveAdmission} from './host-authority.mjs';
 import {inspectLegacy,readLegacyFiles} from '../ASI-STRIGUNOV4-ORCHESTRATOR-CANDIDATE-20261020.mjs';
 import {existingState,atomicJson,regular,digest,must,LIVE_ROOT} from './state.mjs';
 import {createGitHubPublisher,bindTask} from './github-publisher.mjs';
@@ -13,13 +14,14 @@ import {bounded} from './publisher-transport.mjs';
  * caller and migration/admission policy are independently accepted.
  */
 export async function createPublicationLoop({root,legacyStateDir,catalog,fetchSnapshot,remote,reader,
-  authorize,runChecks,independentReview,ciPolicies,clock=Date.now,timeoutMs=10000,intervalMs=180000}={}){
+  authorize,runChecks,independentReview,ciPolicies,clock=Date.now,timeoutMs=10000,intervalMs=180000,
+  liveAdmission,enginePilot=false}={}){
   must(intervalMs>=180000&&Number.isSafeInteger(intervalMs)&&Array.isArray(catalog)&&catalog.length>0&&catalog.length<=20&&
     new Set(catalog.map(t=>t.id)).size===catalog.length&&new Set(catalog.map(t=>t.branch)).size===catalog.length,'CATALOG_OR_INTERVAL_INVALID');
-  const tasks=structuredClone(catalog),store=await existingState(root);
+  const tasks=structuredClone(catalog),store=await existingState(root,{liveAdmission});
   const legacy=await fs.realpath(legacyStateDir);
-  must(legacy!==store.root&&!legacy.startsWith(store.root+path.sep)&&!store.root.startsWith(legacy+path.sep)&&
-    legacy!==LIVE_ROOT&&!legacy.startsWith(LIVE_ROOT+'/'),'LEGACY_NOT_ISOLATED');
+  must(legacy!==store.root&&!legacy.startsWith(store.root+path.sep)&&!store.root.startsWith(legacy+path.sep),'LEGACY_NOT_ISOLATED');
+  if(legacy===LIVE_ROOT||legacy.startsWith(LIVE_ROOT+'/'))assertLiveAdmission(liveAdmission,store.root,legacy);
   let activeSnapshot;
   const verifyAdmission=async({signal})=>must(JSON.stringify(await fetchSnapshot({signal}))===activeSnapshot,'QUEUE_ADMISSION_CHANGED');
   const publisher=createGitHubPublisher({store,remote,reader,authorize,runChecks,independentReview,verifyAdmission,ciPolicies,clock,timeoutMs});
@@ -41,12 +43,12 @@ export async function createPublicationLoop({root,legacyStateDir,catalog,fetchSn
         if(now-last.at<intervalMs){reason='POLL_RATE_LIMITED';return null;}}
       await atomicJson(pollFile,{at:now});
       priorWitness=await witness();
-      const snapshot=await bounded(signal=>fetchSnapshot({signal}),timeoutMs),queue=decideQueue(snapshot);
+      const snapshot=await bounded(signal=>fetchSnapshot({signal}),timeoutMs),queue=decideQueue(snapshot,{enginePilot});
       activeSnapshot=JSON.stringify(snapshot);
       must(queue.stage==='S4-G1'&&queue.decision!=='BLOCKED_NEEDS_RECONCILIATION','RELEASE_STAGE_BLOCKED');
       for(const t of tasks){
         must(t.kind==='github-publisher'&&t.stage==='S4-G1'&&t.sha===snapshot.mainSha,'TASK_STAGE_OR_SHA_CHANGED');
-        const work=WORK_ORDERS.find(w=>w.id===t.workOrderId),decision=queue.jobs.find(w=>w.job===t.workOrderId);
+        const work=[...WORK_ORDERS,...(enginePilot?[ENGINE_PILOT]:[])].find(w=>w.id===t.workOrderId),decision=queue.jobs.find(w=>w.job===t.workOrderId);
         must(work?.kind==='prepare-source'&&work.stage==='S4-G1'&&t.changes?.every(c=>work.paths.includes(c.path)),'WORK_ORDER_SCOPE');
         const old=receipts.completed.filter(r=>r.id===t.id),entry=ledger.jobs[t.id];
         if(old.length||entry){

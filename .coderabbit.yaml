@@ -1,4 +1,6 @@
 reviews:
+  auto_review:
+    drafts: true
   finishing_touches:
     autofix:
       enabled: false

@@ -40,13 +40,15 @@ export async function bounded(operation,timeoutMs=10000){
  * Hosts must not construct a replacement to replay an uncertain mutation.
  */
 export function createPublisherTransport({token,timeoutMs=10000}={}){
-  must(typeof token==='string'&&token.trim().length>0,'HOST_TOKEN_REQUIRED');
+  must(typeof token==='function'||typeof token==='string'&&token.trim().length>0,'HOST_TOKEN_REQUIRED');
   let poisoned=false,busy=false;
   async function request(method,route,body){
     must(!poisoned&&!busy,'TRANSPORT_LOCKED');busy=true;
     try{return await bounded(async signal=>{
+      const credential=typeof token==='function'?await token():token;
+      must(typeof credential==='string'&&credential.trim().length>0,'HOST_TOKEN_REQUIRED');
       const response=await fetch(`https://api.github.com/repos/${REPOSITORY}/${route}`,{
-        method,redirect:'error',signal,headers:{Authorization:`Bearer ${token}`,
+        method,redirect:'error',signal,headers:{Authorization:`Bearer ${credential}`,
           Accept:'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28',
           ...(body?{'Content-Type':'application/json'}:{})},...(body?{body:JSON.stringify(body)}:{})});
       must(response.ok,'REMOTE_RESULT_UNKNOWN');

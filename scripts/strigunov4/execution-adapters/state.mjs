@@ -1,6 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { randomUUID, createHash } from 'node:crypto';
+import {assertLiveAdmission} from './host-authority.mjs';
 
 export const LIVE_ROOT = '/home/project_ayfaar/asi-strigunov-agent';
 export const must = (ok, code) => { if (!ok) throw new Error(code); };
@@ -59,19 +60,21 @@ export function validateTask(t) {
 }
 
 /** No import-time I/O, no default live root and no automatic state migration. */
-export async function openState({ root, isolated = false }) {
+export async function openState({ root, isolated = false, liveAdmission }) {
   must(isolated === true && path.isAbsolute(root), 'ISOLATED_ROOT_REQUIRED');
   root = path.resolve(root);
-  must(root !== LIVE_ROOT && !root.startsWith(LIVE_ROOT + '/'), 'LIVE_ROOT_FORBIDDEN');
+  if(root === LIVE_ROOT || root.startsWith(LIVE_ROOT + '/')){
+    must(liveAdmission,'LIVE_ROOT_FORBIDDEN');assertLiveAdmission(liveAdmission,root);
+  }
   await directory(root);
   for (const name of ['state', 'reports', 'scratchpads']) {
     await fs.mkdir(path.join(root, name), { mode: 0o700 });
   }
   // Creation is intentionally separate from opening existing state. Use initializeState once.
-  return stateAt(root);
+  return stateAt(root,liveAdmission);
 }
-export async function initializeState(root) {
-  const store = await openState({ root, isolated: true });
+export async function initializeState(root,{liveAdmission}={}) {
+  const store = await openState({ root, isolated: true,liveAdmission });
   await atomicJson(store.file('receipts.json'), { version: 1, completed: [] });
   await atomicJson(store.file('autopilot-ledger.json'), {
     schemaVersion: 'asi.execution-adapters.v1', mode: 'IDLE', jobs: {},
@@ -79,15 +82,18 @@ export async function initializeState(root) {
   await atomicJson(store.file('heartbeat.json'), { mode: 'WAITING', at: stamp() });
   return store;
 }
-export async function existingState(root) {
+export async function existingState(root,{liveAdmission}={}) {
   root = path.resolve(root);
-  must(root !== LIVE_ROOT && !root.startsWith(LIVE_ROOT + '/'), 'LIVE_ROOT_FORBIDDEN');
+  if(root === LIVE_ROOT || root.startsWith(LIVE_ROOT + '/')){
+    must(liveAdmission,'LIVE_ROOT_FORBIDDEN');assertLiveAdmission(liveAdmission,root);
+  }
   for (const dir of [root, ...['state', 'reports', 'scratchpads'].map(p => path.join(root, p))]) await directory(dir);
-  return stateAt(root);
+  return stateAt(root,liveAdmission);
 }
-function stateAt(root) {
+function stateAt(root,liveAdmission) {
   const file = name => path.join(root, 'state', name);
   return { root, file, async execute(kind, task, github, action) {
+    if(root === LIVE_ROOT || root.startsWith(LIVE_ROOT + '/'))assertLiveAdmission(liveAdmission,root);
     const lock = file('execution.lock');
     let lockCreated = false;
     try {

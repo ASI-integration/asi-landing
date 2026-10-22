@@ -28,11 +28,13 @@ export function verifyPinnedReviewPr(p,task) {
  * Token is supplied by the host, never serialized. No retries or redirects.
  */
 export function createGitHubReader({ token, timeoutMs = 10000 }) {
-  must(typeof token === 'string' && token.trim().length > 0, 'TOKEN_REQUIRED');
+  must(typeof token==='function'||typeof token === 'string' && token.trim().length > 0, 'TOKEN_REQUIRED');
   async function request(url, body) {
+    const credential=typeof token==='function'?await token():token;
+    must(typeof credential==='string'&&credential.trim().length>0,'TOKEN_REQUIRED');
     const response = await fetch(url, { method: body ? 'POST' : 'GET', redirect: 'error',
       signal: AbortSignal.timeout(timeoutMs), headers: {
-        Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json',
+        Authorization: `Bearer ${credential}`, Accept: 'application/vnd.github+json',
         'X-GitHub-Api-Version': '2022-11-28', ...(body ? { 'Content-Type': 'application/json' } : {}),
       }, ...(body ? { body: JSON.stringify(body) } : {}) });
     must(response.ok, 'GITHUB_READ_FAILED');
