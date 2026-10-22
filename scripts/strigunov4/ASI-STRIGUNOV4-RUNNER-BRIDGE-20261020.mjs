@@ -24,12 +24,29 @@ export function selectRoute(contract,issue){
 // read-only orchestration occurs no faster than the retained 180s cadence.
 // No ability to change execute from false is exposed in this bridge.
 export function createReadOnlyRunnerBridge({stateDir,fetchSnapshot,clock=()=>Date.now(),
-  intervalMs=DEFAULT_INTERVAL_MS}={}){
+  intervalMs=DEFAULT_INTERVAL_MS,snapshotTimeoutMs=10_000}={}){
   must(typeof fetchSnapshot==='function','LIVE_SNAPSHOT_READER_REQUIRED');
   must(typeof clock==='function'&&Number.isSafeInteger(intervalMs)&&intervalMs>=180_000,
     'INVALID_POLL_INTERVAL');
+  must(Number.isSafeInteger(snapshotTimeoutMs)&&snapshotTimeoutMs>0&&snapshotTimeoutMs<=30_000,
+    'INVALID_SNAPSHOT_TIMEOUT');
+  let snapshotPending=false;
+  const timeoutError=new Error('READ_ONLY_SNAPSHOT_TIMEOUT');
+  const boundedSnapshot=async()=>{
+    const controller=new AbortController();let timer;
+    snapshotPending=true;
+    const reading=Promise.resolve().then(()=>fetchSnapshot({signal:controller.signal}));
+    // Even an abort-ignoring read owns the slot until it actually settles.
+    // Its late result is never returned to the orchestrator after the deadline.
+    const settled=reading.finally(()=>{snapshotPending=false;});
+    const timeout=new Promise((_,reject)=>{
+      timer=setTimeout(()=>{reject(timeoutError);controller.abort(timeoutError);},snapshotTimeoutMs);
+    });
+    try{return await Promise.race([settled,timeout]);}
+    finally{clearTimeout(timer);}
+  };
   const orchestrator=createOrchestrator({
-    stateDir,fetchSnapshot,
+    stateDir,fetchSnapshot:boundedSnapshot,
     authorize:async()=>({approved:false}),
     dispatch:async()=>{throw Error('DISPATCH_NOT_AUTHORIZED');},
     verifyPublication:async()=>false
@@ -38,6 +55,7 @@ export function createReadOnlyRunnerBridge({stateDir,fetchSnapshot,clock=()=>Dat
   return {
     async poll(){
       if(inFlight)return inFlight;
+      if(snapshotPending)return previous;
       let now;
       try{now=clock();}catch{return {mode:'WAIT_RECONCILIATION',reason:'CLOCK_INVALID'};}
       if(!Number.isFinite(now))return {mode:'WAIT_RECONCILIATION',reason:'CLOCK_INVALID'};
@@ -50,7 +68,8 @@ export function createReadOnlyRunnerBridge({stateDir,fetchSnapshot,clock=()=>Dat
           previous={mode:result.mode,reason:result.reason??null,
             stage:result.stage??null,job:result.job??null};
         }catch(e){
-          previous={mode:'WAIT_RECONCILIATION',reason:'READ_ONLY_BRIDGE_ERROR'};
+          previous={mode:'WAIT_RECONCILIATION',reason:e===timeoutError?
+            'READ_ONLY_SNAPSHOT_TIMEOUT':'READ_ONLY_BRIDGE_ERROR'};
         }finally{
           lastAt=now;
           try{

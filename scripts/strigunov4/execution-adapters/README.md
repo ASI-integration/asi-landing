@@ -9,6 +9,13 @@ physical pilot acceptance.
 
 `createReadOnlyRunnerBridge()` remains observation-only and always supplies
 `execute:false`. Its cadence and status interface are unchanged.
+Snapshot reads have a 10-second deadline (`snapshotTimeoutMs`, positive integer,
+maximum 30 seconds). The host receives `fetchSnapshot({signal})` and should
+forward cancellation to its read requests. A timeout returns
+`WAIT_RECONCILIATION / READ_ONLY_SNAPSHOT_TIMEOUT`; a late response is discarded.
+An abort-ignoring read retains the read slot until it settles, so later ticks
+cannot overlap it. A fresh read still respects the 180-second cadence.
+This observer does not write execution receipts or clear execution stop locks.
 `createIsolatedAcceptanceLoop()` is explicitly exported from that same bridge
 for acceptance in a separate private Linux directory. It accepts only
 `poll({execute:false})`; `execute:true` fails closed before any adapter action.

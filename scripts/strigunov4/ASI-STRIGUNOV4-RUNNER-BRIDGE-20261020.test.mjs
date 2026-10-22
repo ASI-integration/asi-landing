@@ -60,3 +60,46 @@ test('11 throwing or non-finite clocks fail closed without reading sources',asyn
   assert.deepEqual(await fs.readdir(p),[]);
  }finally{await clean(p);}
 });
+
+test('12 hung snapshot is bounded, aborted and cannot overlap a later tick',async t=>{
+ const p=await dir();t.after(()=>clean(p));let settle,signal,reads=0,now=1000;
+ const held=new Promise(r=>settle=r);t.after(()=>settle(snapshot()));
+ const b=createReadOnlyRunnerBridge({stateDir:p,snapshotTimeoutMs:30,clock:()=>now,
+  fetchSnapshot:async context=>{reads++;signal=context?.signal;return held;}});
+ const result=await Promise.race([b.poll(),new Promise(r=>{const timer=setTimeout(()=>r({reason:'TEST_DEADLINE_EXCEEDED'}),300);t.after(()=>clearTimeout(timer));})]);
+ assert.equal(result.reason,'READ_ONLY_SNAPSHOT_TIMEOUT');assert.equal(signal.aborted,true);
+ now+=180000;assert.equal((await b.poll()).reason,'READ_ONLY_SNAPSHOT_TIMEOUT');
+ assert.equal(reads,1);assert.deepEqual(await fs.readdir(p),[]);
+});
+
+test('13 late snapshot is discarded; fresh read resumes only after settlement and cadence',async t=>{
+ const p=await dir();t.after(()=>clean(p));let settle,reads=0,now=1000;
+ const held=new Promise(r=>settle=r);t.after(()=>settle({mainSha:'invalid-late-result'}));
+ const b=createReadOnlyRunnerBridge({stateDir:p,snapshotTimeoutMs:30,clock:()=>now,
+  fetchSnapshot:async()=>++reads===1?held:snapshot()});
+ const first=await Promise.race([b.poll(),new Promise(r=>{const timer=setTimeout(()=>r({reason:'TEST_DEADLINE_EXCEEDED'}),300);t.after(()=>clearTimeout(timer));})]);
+ assert.equal(first.reason,'READ_ONLY_SNAPSHOT_TIMEOUT');
+ settle({mainSha:'invalid-late-result'});await new Promise(r=>setImmediate(r));
+ assert.equal(b.status().reason,'READ_ONLY_SNAPSHOT_TIMEOUT');
+ now+=30000;assert.equal((await b.poll()).reason,'READ_ONLY_SNAPSHOT_TIMEOUT');assert.equal(reads,1);
+ now+=150000;assert.equal((await b.poll()).mode,'SOURCE_PLAN_AVAILABLE');assert.equal(reads,2);
+ assert.deepEqual(await fs.readdir(p),[]);
+});
+
+test('14 connection loss does not leak errors or bypass cadence; restart only observes',async t=>{
+ const p=await dir();t.after(()=>clean(p));let reads=0,now=1000;
+ const b=createReadOnlyRunnerBridge({stateDir:p,snapshotTimeoutMs:30,clock:()=>now,
+  fetchSnapshot:async()=>{reads++;if(reads===1)throw Error('PRIVATE_NETWORK_DETAIL');return snapshot();}});
+ assert.equal((await b.poll()).reason,'READ_ONLY_BRIDGE_ERROR');
+ now+=30000;await b.poll();assert.equal(reads,1);
+ now+=150000;assert.equal((await b.poll()).mode,'SOURCE_PLAN_AVAILABLE');assert.equal(reads,2);
+ const restarted=createReadOnlyRunnerBridge({stateDir:p,fetchSnapshot:async()=>snapshot()});
+ assert.equal((await restarted.poll()).mode,'SOURCE_PLAN_AVAILABLE');
+ assert.equal(typeof restarted.execute,'undefined');assert.deepEqual(await fs.readdir(p),[]);
+});
+
+test('15 invalid snapshot deadlines cannot disable the bound',async t=>{
+ const p=await dir();t.after(()=>clean(p));
+ for(const snapshotTimeoutMs of [0,-1,NaN,Infinity,30001,'1000'])
+  assert.throws(()=>createReadOnlyRunnerBridge({stateDir:p,fetchSnapshot:async()=>snapshot(),snapshotTimeoutMs}),/INVALID_SNAPSHOT_TIMEOUT/);
+});
