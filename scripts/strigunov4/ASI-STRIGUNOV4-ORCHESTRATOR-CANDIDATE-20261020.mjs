@@ -127,7 +127,6 @@ function validCap(grant,envelope){
     Array.isArray(grant.paths)&&grant.paths.length===envelope.paths.length&&
     grant.paths.every((x,i)=>x===envelope.paths[i]);
 }
-function safeError(e){return String(e?.message||e).slice(0,160);}
 
 export function createOrchestrator({stateDir,fetchSnapshot,authorize,dispatch,verifyPublication,
                                   choose=decideQueue}={}){
@@ -182,12 +181,12 @@ export function createOrchestrator({stateDir,fetchSnapshot,authorize,dispatch,ve
               publishedPr:outcome.publishedPr,head:outcome.head,finishedAt:new Date().toISOString()}});
           releaseAllowed=true;
           return {mode:'PUBLISHED',job:ticket.job,prNumber:outcome.publishedPr,head:outcome.head};
-        }catch(e){
+        }catch{
           // If this persistence fails, STARTED remains durable and blocks replay.
           releaseAllowed=false;
           await atomicWriteJson(path.join(stateDir,journalName),{
             version:1,operation:{...start.operation,status:'FAILED_LOCKED',
-              error:safeError(e),finishedAt:new Date().toISOString()}});
+              error:'DISPATCH_OR_VERIFICATION_FAILED',finishedAt:new Date().toISOString()}});
           releaseAllowed=true;
           return {mode:'FAILED_LOCKED',job:ticket.job,reason:'RECONCILIATION_REQUIRED'};
         }

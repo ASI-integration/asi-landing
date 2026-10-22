@@ -13,7 +13,7 @@ function mock(){return async route=>{
  if(route.startsWith('issues/')&&route.includes('comments'))return [{user:{login:'coderabbitai[bot]'},body:recent(head),created_at:'2026-10-20T12:00:00Z'}];
  if(route.startsWith('issues/'))return {number:Number(route.split('/').at(-1)),state:'open',labels:[]};
  if(route.startsWith('pulls/'))return {number:Number(route.split('/').at(-1)),head:{sha:head,repo:{full_name:'ASI-integration/asi-landing'}},state:'open',merged:false};
- if(route.startsWith('commits/'))return {total_count:2,check_runs:['validate','release_governance'].map(name=>({name,head_sha:head,status:'completed',conclusion:'success',completed_at:'2026-10-20T15:00:00Z'}))};
+ if(route.startsWith('commits/'))return {total_count:2,check_runs:['validate','release_governance'].map((name,i)=>({id:i+1,name,head_sha:head,status:'completed',conclusion:'success',completed_at:'2026-10-20T15:00:00Z'}))};
  throw Error('unexpected route '+route);
 };}
 const projects=async()=>({items:[1,2,3,4,5,6].map(n=>({issue:510+n,stage:'S4-G'+n,gate:n===1?'PREPARATION_ONLY':'BLOCKED'}))});
@@ -21,7 +21,7 @@ test('01 snapshot preserves SHA and authorized Projects gate',async()=>{
  const s=await fetchVerifiedSnapshot({api:mock(),readProjects:projects});assert.equal(s.mainSha,sha);assert.equal(s.prs[509].head,head);assert.equal(s.project[511],'PREPARATION_ONLY');
 });
 test('02 newer failed required check cannot be replaced with stale success',()=>{
- const checks=[{name:'validate',head_sha:head,status:'completed',conclusion:'success',completed_at:'2026-10-20T10:00:00Z'},{name:'validate',head_sha:head,status:'completed',conclusion:'failure',completed_at:'2026-10-20T11:00:00Z'}];assert.equal(lastCheck(checks,head,'validate'),'unknown');
+ const checks=[{id:1,name:'validate',head_sha:head,status:'completed',conclusion:'success',completed_at:'2026-10-20T10:00:00Z'},{id:2,name:'validate',head_sha:head,status:'completed',conclusion:'failure',completed_at:'2026-10-20T11:00:00Z'}];assert.equal(lastCheck(checks,head,'validate'),'unknown');
 });
 test('03 cross-head clean review is not accepted',()=>{
  const list=[{user:{login:'coderabbitai[bot]'},body:recent(sha),created_at:'2026-10-20T11:00:00Z'}];assert.equal(independentCodeRabbit(list,head).completed,false);
@@ -78,4 +78,16 @@ test('13 newer ambiguous bot comment supersedes previous marked clean summary',(
  const recentHead={user:{login:'coderabbitai[bot]'},body:recent(head),updated_at:'2026-10-20T11:00:00Z'};
  const newUnknown={user:{login:'coderabbitai[bot]'},body:'review started',updated_at:'2026-10-20T12:00:00Z'};
  assert.equal(independentCodeRabbit([recentHead,newUnknown],head).completed,false);
+});
+
+test('14 creation identity wins when older successful check finishes later',()=>{
+ const a={id:1,name:'validate',head_sha:head,status:'completed',conclusion:'success',completed_at:'2026-10-22T10:05:00Z'};
+ const b={...a,id:2,conclusion:'failure',completed_at:'2026-10-22T10:02:00Z'};
+ for(const checks of [[a,b],[b,a]])assert.equal(lastCheck(checks,head,'validate'),'unknown');
+ assert.equal(lastCheck([a,{...b,conclusion:'success'}],head,'validate'),'success');
+});
+test('15 missing invalid or duplicate check identities cannot authorize',()=>{
+ const good={id:2,name:'validate',head_sha:head,status:'completed',conclusion:'success'};
+ for(const id of [undefined,0,-1,NaN,Infinity,2,'3'])assert.equal(lastCheck([good,{...good,id}],head,'validate'),'unknown');
+ assert.equal(lastCheck([{...good,id:undefined,head_sha:sha},good],head,'validate'),'success');
 });

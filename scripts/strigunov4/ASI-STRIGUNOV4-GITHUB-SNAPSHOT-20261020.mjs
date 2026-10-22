@@ -10,8 +10,10 @@ function must(v,reason){if(!v)throw Error(reason)}
 function trustTime(s){const t=Date.parse(s||'');return Number.isFinite(t)?t:0;}
 export function lastCheck(checks,head,name){
   must(Array.isArray(checks)&&checks.length<=100&&SHA.test(head),'CHECKS_UNTRUSTED');
-  const a=checks.filter(x=>x?.name===name&&x.head_sha===head)
-    .sort((x,y)=>trustTime(y.completed_at||y.started_at)-trustTime(x.completed_at||x.started_at));
+  const a=checks.filter(x=>x?.name===name&&x.head_sha===head);
+  if(!a.every(x=>Number.isSafeInteger(x.id)&&x.id>0)||new Set(a.map(x=>x.id)).size!==a.length)
+    return 'unknown';
+  a.sort((x,y)=>y.id-x.id);
   return a[0]?.status==='completed'&&a[0].conclusion==='success'?'success':'unknown';
 }
 export function independentCodeRabbit(comments,head){

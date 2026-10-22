@@ -114,3 +114,18 @@ test('20 atomic writer leaves valid JSON and no temporary files',async()=>{
     assert.equal((await fs.readdir(dir)).filter(x=>x.endsWith('.tmp')).length,0);
   }finally{await cleanup();}
 });
+
+test('21 exception text never reaches durable journals',async()=>{
+ for(const port of ['dispatch','verifyPublication']){
+  const secret='GH_TOKEN_CANARY_DO_NOT_STORE';
+  const options={authorize:env=>({approved:true,job:env.job,mainSha:env.mainSha,paths:env.paths}),[port]:async()=>{throw Error(secret);}};
+  const {x}=await make(options);
+  try{
+   assert.equal((await x.iteration({execute:true})).mode,'FAILED_LOCKED');
+   const raw=await fs.readFile(path.join(dir,'orchestrator-state.json'),'utf8');
+   assert.equal(raw.includes(secret),false);
+   assert.equal(JSON.parse(raw).operation.error,'DISPATCH_OR_VERIFICATION_FAILED');
+   assert.equal((await x.iteration({execute:true})).mode,'WAIT_RECONCILIATION');
+  }finally{await cleanup();}
+ }
+});
