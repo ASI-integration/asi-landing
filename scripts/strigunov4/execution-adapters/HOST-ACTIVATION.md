@@ -110,11 +110,13 @@ present yet. A change in base SHA requires a freshly built and approved catalog.
 
 ## Verification and honest limits
 
-21 dispatcher tests and 11 focused host integration tests pass, plus the pilot's
+21 dispatcher tests and 12 focused host integration tests pass, plus the pilot's
 one real Python unittest on the full pinned checkout. The tests include signed
 scope/tamper/expiry denial, fake live admission denial, excessive App permissions,
 review stream/tool-use rejection, new-file/YAML denial, actual process SIGKILL,
-lost-response freeze, restart/no duplicate and terminal idle.
+lost-response freeze, orphaned legacy-lock denial, restart/no duplicate and terminal idle.
+The existing unprivileged multi-job CI also runs the host integration file;
+its permissions, triggers and protected-environment behavior are unchanged.
 GitHub protocol integration uses a loopback fixture, explicitly not a real PR.
 The current local runtime cannot execute bubblewrap network namespaces; the
 target host has no bubblewrap binary yet. Therefore live sandbox acceptance,

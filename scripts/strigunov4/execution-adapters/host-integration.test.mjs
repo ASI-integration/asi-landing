@@ -64,7 +64,7 @@ test('live snapshot rejects stale projects and an advanced stage',async()=>{
 test('actual complete ASI clone prepares existing-file pilot without skipping the large asset',async t=>{
  const dir=await fs.mkdtemp(path.join(os.tmpdir(),'asi-host-full-'));t.after(()=>fs.rm(dir,{recursive:true,force:true}));
  const store=await initializeState(dir),repo=fileURLToPath(new URL('../../..',import.meta.url));
- const sha=execFileSync('git',['rev-parse','origin/main'],{cwd:repo,encoding:'utf8'}).trim();
+ const sha=execFileSync('git',['rev-parse','HEAD'],{cwd:repo,encoding:'utf8'}).trim();
  const source=execFileSync('git',['show',sha+':scripts/strigunov4/test_c4_unit_readonly.py'],{cwd:repo,encoding:'utf8'});
  const task=pilotTask(source,sha),cwd=path.join(dir,'scratchpads',task.id);
  execFileSync('git',['clone','-q','--no-hardlinks',repo,cwd]);execFileSync('git',['checkout','-q','--detach',sha],{cwd});await fs.chmod(cwd,0o700);
@@ -95,6 +95,12 @@ test('lost network response freezes publication and restart cannot repeat it',as
  assert.equal((await (await makeLoop(f,{now,timeoutMs:100})).poll({execute:true})).mode,'FAILED_LOCKED');
  const writes=f.writes.length;now.value+=180001;
  assert.equal((await (await makeLoop(f,{now})).poll({execute:true})).mode,'FAILED_LOCKED');assert.equal(f.writes.length,writes);
+});
+test('orphaned legacy lock blocks publication without deleting evidence',async t=>{
+ const f=await fixture(t);const lock=path.join(f.legacy,'orchestrator-iteration.lock');
+ await fs.writeFile(lock,'uncertain old operation');
+ assert.equal((await (await makeLoop(f)).poll({execute:true})).mode,'FAILED_LOCKED');
+ assert.equal(f.writes.length,0);assert.equal(await fs.readFile(lock,'utf8'),'uncertain old operation');
 });
 test('SIGKILL leaves durable stop marker across a real process restart',async t=>{
  const dir=await fs.mkdtemp(path.join(os.tmpdir(),'asi-host-kill-'));t.after(()=>fs.rm(dir,{recursive:true,force:true}));await initializeState(dir);

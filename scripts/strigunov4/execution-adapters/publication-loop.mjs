@@ -25,7 +25,10 @@ export async function createPublicationLoop({root,legacyStateDir,catalog,fetchSn
   let activeSnapshot;
   const verifyAdmission=async({signal})=>must(JSON.stringify(await fetchSnapshot({signal}))===activeSnapshot,'QUEUE_ADMISSION_CHANGED');
   const publisher=createGitHubPublisher({store,remote,reader,authorize,runChecks,independentReview,verifyAdmission,ciPolicies,clock,timeoutMs});
-  async function witness(){const state=await readLegacyFiles(legacy);must(inspectLegacy(state).safe,'LEGACY_BLOCKED');const hashes={};
+  async function witness(){
+    try{await fs.lstat(path.join(legacy,'orchestrator-iteration.lock'));throw Error('LEGACY_LOCK_PENDING');}
+    catch(e){if(e.code!=='ENOENT')throw e;}
+    const state=await readLegacyFiles(legacy);must(inspectLegacy(state).safe,'LEGACY_BLOCKED');const hashes={};
     for(const n of ['receipts.json','heartbeat.json','autopilot-ledger.json','orchestrator-state.json']){
       try{const f=path.join(legacy,n);await regular(f);hashes[n]=digest(await fs.readFile(f));}
       catch(e){if(e.code==='ENOENT')hashes[n]=null;else throw e;}}
