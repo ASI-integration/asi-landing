@@ -22,6 +22,11 @@ const work=Object.freeze([
   {id:'g6-acceptance',stage:'S4-G6',kind:'physical-gate',needs:'Independent physical acceptance and explicit owner READY_FOR_DEMO'}
 ]);
 export const WORK_ORDERS=work;
+// Host opt-in only. This test-only pilot does not unlock physical G1/G2 or
+// require creating the protected unit-apply workflow.
+export const ENGINE_PILOT=Object.freeze({id:'g1-engine-receipt-replay-test',stage:'S4-G1',kind:'prepare-source',
+  paths:Object.freeze(['scripts/strigunov4/test_c4_unit_readonly.py']),
+  dependsOn:Object.freeze(['g1-pr509-reload-preflight'])});
 export function verifyRelease(contract){
   safe(contract?.schemaVersion==='asi.demo-release.v1'&&contract.releaseId===RELEASE,
     'RELEASE_NOT_TRUSTED');
@@ -96,15 +101,16 @@ function sourceState(ticket,record,prstates,projectGate){
     return {status:'WAIT_PROJECT',reason:'PROJECT_SOURCE_GATE_NOT_GRANTED'};
   return {status:'SOURCE_PREPARATION_READY',reason:'PINNED_PATHS_ONLY',paths:ticket.paths};
 }
-export function decideQueue(snapshot){
+export function decideQueue(snapshot,{enginePilot=false}={}){
   const {contract,issues,prs={},checks={},reviews={},ledger={},project={}}=snapshot||{};
-  const index=verifyRelease(contract);validateWorkOrders(work,contract);
+  const orders=enginePilot?[...work.slice(0,3),ENGINE_PILOT,...work.slice(3)]:work;
+  const index=verifyRelease(contract);validateWorkOrders(orders,contract);
   if(index===6)return {release:RELEASE,stage:null,decision:'AWAIT_FINAL_OWNER_ACCEPTANCE',
     jobs:[],actions:[],stop:'No subsequent release scope authorized'};
   const stage=stageId(index+1),issueNum=511+index,issue=issues?.[issueNum];
   safe(issue?.number===issueNum&&issue.state==='open'&&Array.isArray(issue.labels),
     'ACTIVE_ISSUE_UNVERIFIED');
-  const candidates=work.filter(x=>x.stage===stage),decisions=[],statuses={};
+  const candidates=orders.filter(x=>x.stage===stage),decisions=[],statuses={};
   const sourceEnabled=issue.labels.includes('agent-source-ready')&&
     !issue.labels.includes('agent-intake-blocked');
   for(const ticket of candidates){
@@ -121,7 +127,7 @@ export function decideQueue(snapshot){
   const actions=decisions.filter(x=>['SOURCE_PREPARATION_READY','WAIT_CI',
     'WAIT_REVIEW','WAIT_PR_READ','WAIT_OWNER_MERGE'].includes(x.status));
   return {release:RELEASE,stage,issue:issueNum,decision:
-    decisions.some(x=>x.status==='BLOCKED')?'BLOCKED_NEEDS_RECONCILIATION':
+    decisions.some(x=>!x.optional&&x.status==='BLOCKED')?'BLOCKED_NEEDS_RECONCILIATION':
     actions.some(x=>x.status==='SOURCE_PREPARATION_READY')?'SOURCE_PLAN_AVAILABLE':
     actions.some(x=>x.status==='WAIT_OWNER_MERGE')?'OWNER_DECISION_REQUIRED':
     'MONITOR_OR_WAIT',jobs:decisions,actions,stop:

@@ -136,3 +136,29 @@ test('blocked intake must not give source permission',()=>{
  s.issues[511].labels.push('agent-intake-blocked');
  assert.equal(decideQueue(s).jobs[3].status,'WAIT_INTAKE');
 });
+test('optional failed PR remains visible without blocking a mandatory source job',()=>{
+ const s=snapshot();goodReview(s,509);s.prs[520].state='closed';
+ const q=decideQueue(s);
+ assert.equal(q.jobs.find(j=>j.job==='g1-pr520-receipt-test').status,'BLOCKED');
+ assert.equal(q.decision,'SOURCE_PLAN_AVAILABLE');
+});
+test('mandatory failed dependency still blocks despite optional PR being ignorable',()=>{
+ const s=snapshot();s.prs[509].state='closed';s.prs[520].state='closed';
+ const q=decideQueue(s);
+ assert.equal(q.decision,'BLOCKED_NEEDS_RECONCILIATION');
+ assert.equal(q.jobs.find(j=>j.job==='g1-unit-apply-source').status,'WAIT_DEPENDENCY');
+});
+test('restart does not forget an uncertain source record',()=>{
+ const s=snapshot();goodReview(s,509);s.ledger['g1-unit-apply-source']={status:'FAILED'};
+ assert.deepEqual(decideQueue(JSON.parse(JSON.stringify(s))),decideQueue(s));
+ assert.equal(decideQueue(s).decision,'BLOCKED_NEEDS_RECONCILIATION');
+});
+test('pilot requires host opt-in and does not open G2',()=>{
+ const s=snapshot();goodReview(s,509);
+ s.contract.stages[0].files=[...stageFiles,'scripts/strigunov4/test_c4_unit_readonly.py'];
+ assert.ok(!decideQueue(s).jobs.some(j=>j.job==='g1-engine-receipt-replay-test'));
+ const q=decideQueue(s,{enginePilot:true});assert.equal(q.stage,'S4-G1');
+ assert.equal(q.jobs.find(j=>j.job==='g1-engine-receipt-replay-test').status,'SOURCE_PREPARATION_READY');
+ s.contract.stages[1].status='IN_PROGRESS';
+ assert.throws(()=>decideQueue(s,{enginePilot:true}),/RELEASE_SKIP_STAGE/);
+});

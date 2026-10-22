@@ -29,6 +29,7 @@ jobs:
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           persist-credentials: false
+          fetch-depth: 0 # The full-checkout host test uses the immutable b27b07b base.
       - name: Use Node 20
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
@@ -55,4 +56,5 @@ jobs:
           for source in scripts/strigunov4/execution-adapters/*.mjs; do node --check "$source"; done
           node --test scripts/strigunov4/execution-adapters/isolated-loop.test.mjs \
             scripts/strigunov4/execution-adapters/security-review.test.mjs \
-            scripts/strigunov4/execution-adapters/github-publisher.test.mjs
+            scripts/strigunov4/execution-adapters/github-publisher.test.mjs \
+            scripts/strigunov4/execution-adapters/host-integration.test.mjs
