@@ -66,6 +66,13 @@ class UnitReadonlyTests(unittest.TestCase):
             self.assertEqual(p["afterSha256"], c.digest(p["output"]))
             self.assertEqual(p["removedBytes"], 1)
 
+    def test_receipt_replay_flag_requires_literal_false(self):
+        expected = receipt()
+        self.assertEqual(c.validate_receipt(expected, SHA, RID), expected)
+        for replay in (True, 0, 1, None, "false", [], {}):
+            with self.subTest(replay=replay), self.assertRaises(c.Block):
+                c.validate_receipt(dict(expected, replayAllowed=replay), SHA, RID)
+
     def test_real_old_pin_rejects_synthetic_and_ambiguous_content(self):
         with self.assertRaisesRegex(c.Block, "OLD_HASH"):
             c.plan(RAW)
