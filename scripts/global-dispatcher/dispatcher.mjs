@@ -70,9 +70,14 @@ export function createGlobalDispatcher({stateDir, adapters} = {}) {
   must(typeof stateDir === 'string' && Array.isArray(adapters) && adapters.length > 0 && adapters.length <= 30,
     'ROUTING_CONFIGURATION');
   must(adapters.every(a => /^[a-z][a-z0-9-]{0,79}$/.test(a.id) &&
-    /^[a-f0-9]{64}$/.test(a.contractHash) && a.contract?.execution === 'disabled' && typeof a.evaluate === 'function') &&
+    /^[a-f0-9]{64}$/.test(a.contractHash) && a.contract?.execution === 'disabled' &&
+    a.contract.maxAttemptsPerTask === 1 && Number.isSafeInteger(a.contract.maxPlansPerStage) &&
+    a.contract.maxPlansPerStage >= 1 && a.contract.maxPlansPerStage <= 10 && typeof a.evaluate === 'function') &&
     new Set(adapters.map(a => a.id)).size === adapters.length, 'UNIQUE_DISABLED_ADAPTERS_REQUIRED');
-  const routes = [...adapters];
+  // Capture admission limits; callers cannot expand them by later mutating a
+  // contract object that was already registered against a persistent hash.
+  const routes = adapters.map(a => ({id: a.id, contractHash: a.contractHash,
+    evaluate: a.evaluate.bind(a), maxPlansPerStage: a.contract.maxPlansPerStage}));
   return Object.freeze({async plan(snapshots) {
     let lock;
     const lockPath = path.join(stateDir, 'routing.lock');
@@ -111,8 +116,8 @@ export function createGlobalDispatcher({stateDir, adapters} = {}) {
           }
           must(!product.terminal.some(t => t.status === 'FAILED_LOCKED'), 'FAILED_TASK_REQUIRES_RECONCILIATION');
           const eligible = result.candidates.filter(c => !product.terminal.some(t => t.id === c.id));
-          const repeated = eligible.some(c => product.planned.filter(p => p.id === c.id).length >= adapter.contract.maxAttemptsPerTask);
-          const exhausted = eligible.length > 0 && product.planned.filter(p => p.stage === result.stage).length >= adapter.contract.maxPlansPerStage;
+          const repeated = eligible.some(c => product.planned.some(p => p.id === c.id));
+          const exhausted = eligible.length > 0 && product.planned.filter(p => p.stage === result.stage).length >= adapter.maxPlansPerStage;
           // The same job is never automatically reissued, even on a new SHA or
           // after a cosmetic change. Explicit evidence reconciliation is a later gate.
           result.candidates = eligible.filter(c => !product.planned.some(p => p.id === c.id));

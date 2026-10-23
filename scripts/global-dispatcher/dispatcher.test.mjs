@@ -206,6 +206,7 @@ test('published and accepted task tombstones prevent duplicate PR planning after
 });
 test('bounded stage budget stops new-name cosmetic activity without acceptance', async t => {
   const a = adapter(), {dispatcher} = await setup(t, [a]);
+  a.contract.maxPlansPerStage = 1000; // A post-registration mutation cannot raise admission limits.
   for (let i = 0; i < 3; i++) assert.ok((await dispatcher.plan({atlas: snapshot(a, [`fix-${i}`])})).selected);
   const result = await dispatcher.plan({atlas: snapshot(a, ['fix-again'])});
   assert.equal(result.status, 'BLOCKED'); assert.equal(result.selected, null);
@@ -254,7 +255,8 @@ test('real SIGKILL during evaluation preserves lock and never returns a replay p
   const moduleUrl = new URL('./dispatcher.mjs', import.meta.url).href;
   const childFile = path.join(stateDir, 'crash-child.mjs');
   await fs.writeFile(childFile, `import {createGlobalDispatcher} from ${JSON.stringify(moduleUrl)};
-    const adapter = {id:'atlas', contractHash:'a'.repeat(64), contract:{execution:'disabled'},
+    const adapter = {id:'atlas', contractHash:'a'.repeat(64),
+      contract:{execution:'disabled',maxAttemptsPerTask:1,maxPlansPerStage:3},
       evaluate(){ process.send('locked'); for(;;){} }};
     await createGlobalDispatcher({stateDir:process.argv[2],adapters:[adapter]}).plan({atlas:{}});`);
   const child = fork(childFile, [stateDir], {stdio: ['ignore', 'ignore', 'pipe', 'ipc']});
@@ -268,6 +270,8 @@ test('real SIGKILL during evaluation preserves lock and never returns a replay p
 test('private state directory and duplicate registrations are mandatory', async t => {
   const a = adapter(), {stateDir} = await setup(t, [a]);
   assert.throws(() => createGlobalDispatcher({stateDir, adapters: [a, a]}), /UNIQUE/);
+  assert.throws(() => createGlobalDispatcher({stateDir, adapters: [{...a,
+    contract: {execution: 'disabled'}}]}), /UNIQUE/);
   await fs.chmod(stateDir, 0o755);
   assert.equal((await createGlobalDispatcher({stateDir, adapters: [a]}).plan({atlas: snapshot(a)})).status, 'FAILED_LOCKED');
 });
