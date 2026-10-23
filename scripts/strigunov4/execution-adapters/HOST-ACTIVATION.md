@@ -161,7 +161,7 @@ live state and legacy witnesses must remain byte-for-byte intact.
 
 The installed `host-checks.mjs` SHA256 is
 `c42956e7c0a8c39f2f4373433886dae479913bd9c9631cdba1599712bad49e24`.
-Its `sandboxArguments()` line 19 requests `--proc /proc`. With the service's
+Its `sandboxArguments()` line 17 requests `--proc /proc`. With the service's
 `ProtectKernelTunables=yes`, the parent procfs contains protected mounts, and
 the nested unprivileged bubblewrap procfs mount fails:
 
@@ -229,7 +229,10 @@ rollback/replay. The installed runner itself does not change for this module fix
 Nevertheless the manifest and executable module change; old signatures cannot
 authorize the replacement. The old switch helper is not a recovery command.
 
-1. Bind a new recovery approval to the reviewed repair commit, rebuilt manifest,
+1. Require completed independent review and successful required checks at the
+   exact repair HEAD. If release scope blocks CI, obtain the existing exact-HEAD
+   owner exception and rerun CI; never treat a blocked check as PASS. Bind a new
+   recovery approval to that reviewed repair commit, rebuilt manifest,
    old/new module hashes, current runner/unit/autopilot hashes, all retained state
    hashes, unchanged pilot base/catalog/branch/path, and a new activation payload
    with a distinct ownerApprovalId (hence distinct operationId). Sign the actual
