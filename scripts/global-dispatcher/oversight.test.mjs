@@ -167,3 +167,41 @@ test('existing generic adapter and dispatcher retain advice and failure across r
   const saved = JSON.parse(await fs.readFile(path.join(stateDir, 'routing.json')));
   assert.equal(saved.state.products[0].terminal[0].status, 'FAILED_LOCKED');
 });
+
+test('malformed adapter output cannot poison the durable journal or block another product', async t => {
+  for (const mutate of [r => { delete r.head; }, r => { r.stage = null; },
+    r => { r.candidates[0].id = '../bad'; }, r => { r.candidates[0].paths = null; },
+    r => { r.acceptedStages = ['g0', 'g0']; }, r => { r.acceptedStages = [1]; },
+    r => { r.terminal = [{id: '../bad', status: 'PUBLISHED'}]; },
+    r => { r.terminal = [{id: 'first', status: 'INVALID'}]; }]) {
+    const a = createProductAdapter(product('atlas'), {verifyEvidence: () => false});
+    const b = createProductAdapter(product('location'), {verifyEvidence: () => false});
+    const broken = {...a, evaluate(s) { const r = a.evaluate(s); mutate(r); return r; }};
+    const stateDir = await fs.mkdtemp(path.join(os.tmpdir(), 'asi-output-validation-'));
+    t.after(() => fs.rm(stateDir, {recursive: true, force: true}));
+    await initializeRoutingState(stateDir);
+    const run = () => createGlobalDispatcher({stateDir, adapters: [broken, b]}).plan({atlas: input(a), location: input(b)});
+    const first = await run(); assert.equal(first.products[0].reason, 'ADAPTER_RESULT_INVALID');
+    assert.equal(first.selected.product, 'location');
+    const second = await run(); assert.equal(second.products[0].reason, 'ADAPTER_RESULT_INVALID');
+    assert.notEqual(second.reason, 'ROUTING_STATE_RECONCILIATION_REQUIRED');
+    const saved = JSON.parse(await fs.readFile(path.join(stateDir, 'routing.json')));
+    assert.deepEqual(saved.state.products[0].acceptedStages, []);
+    assert.deepEqual(saved.state.products[0].terminal, []);
+  }
+});
+
+test('journal limit measures serialized UTF-8 bytes and preserves the previous readable journal', async t => {
+  const a = createProductAdapter(product('atlas'), {verifyEvidence: () => false});
+  // Compact character count passes the former guard while UTF-8 bytes exceed
+  // the on-disk reader limit. No external state or executable task is involved.
+  const oversized = {...a, evaluate() { return {status: 'WAITING', candidates: [], terminal: [],
+    acceptedStages: ['界'.repeat(350000)], nextAction: 'Wait'}; }};
+  const stateDir = await fs.mkdtemp(path.join(os.tmpdir(), 'asi-journal-limit-'));
+  t.after(() => fs.rm(stateDir, {recursive: true, force: true}));
+  await initializeRoutingState(stateDir);
+  const before = await fs.readFile(path.join(stateDir, 'routing.json'));
+  const r = await createGlobalDispatcher({stateDir, adapters: [oversized]}).plan({atlas: {}});
+  assert.equal(r.status, 'FAILED_LOCKED'); assert.equal(r.selected, null);
+  assert.deepEqual(await fs.readFile(path.join(stateDir, 'routing.json')), before);
+});

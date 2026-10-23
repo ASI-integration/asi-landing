@@ -108,12 +108,23 @@ export function createGlobalDispatcher({stateDir, adapters} = {}) {
           must(['READY', 'WAITING', 'BLOCKED', 'FAILED_LOCKED', 'ACCEPTED'].includes(result.status) &&
             typeof result.nextAction === 'string' && Array.isArray(result.candidates) &&
             Array.isArray(result.acceptedStages) && Array.isArray(result.terminal), 'ADAPTER_RESULT_INVALID');
+          const validId = value => typeof value === 'string' && /^[a-z][a-z0-9-]{0,79}$/.test(value);
+          must(result.acceptedStages.every(s => typeof s === 'string') &&
+            new Set(result.acceptedStages).size === result.acceptedStages.length &&
+            result.terminal.every(t => validId(t?.id) && ['ACCEPTED', 'PUBLISHED', 'FAILED_LOCKED'].includes(t.status)) &&
+            new Set(result.terminal.map(t => t.id)).size === result.terminal.length &&
+            (result.status !== 'READY' || (typeof result.stage === 'string' &&
+              typeof result.head === 'string' && /^[a-f0-9]{40}$/.test(result.head) &&
+              result.candidates.every(c => validId(c?.id) && typeof c.operation === 'string' &&
+                typeof c.tool === 'string' && Number.isSafeInteger(c.priority) &&
+                Array.isArray(c.paths) && c.paths.every(p => typeof p === 'string')))), 'ADAPTER_RESULT_INVALID');
           must(product.acceptedStages.every((s, i) => result.acceptedStages[i] === s), 'ACCEPTED_STAGE_REGRESSION');
+          must(!result.terminal.some(t => t.status !== 'FAILED_LOCKED' &&
+            product.terminal.some(p => p.id === t.id && p.status === 'FAILED_LOCKED')),
+          'HISTORICAL_FAILED_REWRITE_FORBIDDEN');
           product.acceptedStages = result.acceptedStages;
           for (const terminal of result.terminal) {
             const previous = product.terminal.find(t => t.id === terminal.id);
-            must(!(previous?.status === 'FAILED_LOCKED' && terminal.status !== 'FAILED_LOCKED'),
-              'HISTORICAL_FAILED_REWRITE_FORBIDDEN');
             if (!previous) product.terminal.push(terminal);
             else if (terminal.status === 'FAILED_LOCKED') previous.status = 'FAILED_LOCKED';
           }
@@ -165,7 +176,8 @@ export function createGlobalDispatcher({stateDir, adapters} = {}) {
           repository: winner.repository, head: winner.head, task,
           executable: false, authority: null};
       }
-      must(JSON.stringify(state).length < 500_000, 'ROUTING_JOURNAL_FULL');
+      must(Buffer.byteLength(JSON.stringify({state, checksum: hash(state)}, null, 2) + '\n') < 900_000,
+        'ROUTING_JOURNAL_FULL');
       await writeState(filename, state); durable = true;
       const status = selected ? 'READY' : results.some(r => r.status === 'FAILED_LOCKED') ? 'FAILED_LOCKED' :
         results.some(r => r.status === 'BLOCKED') ? 'BLOCKED' :
