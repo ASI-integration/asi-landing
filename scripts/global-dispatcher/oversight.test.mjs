@@ -255,3 +255,33 @@ test('rejected historical FAILED rewrite cannot partially advance stages or term
   assert.equal(result.products[0].reason, 'HISTORICAL_FAILED_REWRITE_FORBIDDEN');
   assert.deepEqual(JSON.parse(await fs.readFile(path.join(stateDir, 'routing.json'))), before);
 });
+
+test('terminal extras cannot poison persistence or lock other products across restart', async t => {
+  const a = createProductAdapter(product('atlas'), {verifyEvidence: () => false});
+  const b = createProductAdapter(product('location'), {verifyEvidence: () => false});
+  const circular = {}; circular.self = circular;
+  const terminal = [
+    {id: 'bigint', status: 'PUBLISHED', extra: 1n},
+    {id: 'circular', status: 'PUBLISHED', extra: circular},
+    {id: 'large', status: 'PUBLISHED', extra: 'x'.repeat(1_000_001)},
+  ];
+  const custom = {...a, evaluate() { return {status: 'WAITING', candidates: [],
+    acceptedStages: [], terminal, nextAction: 'Wait'}; }};
+  const stateDir = await fs.mkdtemp(path.join(os.tmpdir(), 'asi-terminal-fields-'));
+  t.after(() => fs.rm(stateDir, {recursive: true, force: true}));
+  await initializeRoutingState(stateDir);
+  const run = () => createGlobalDispatcher({stateDir, adapters: [custom, b]})
+    .plan({atlas: {}, location: input(b)});
+  const first = await run();
+  assert.equal(first.status, 'READY'); assert.equal(first.selected.product, 'location');
+  const expected = terminal.map(({id, status}) => ({id, status}));
+  assert.deepEqual(first.products[0].terminal, expected);
+  const before = JSON.parse(await fs.readFile(path.join(stateDir, 'routing.json')));
+  assert.deepEqual(before.state.products[0].terminal, expected);
+  assert.equal(before.checksum, hash(before.state));
+  await assert.rejects(fs.access(path.join(stateDir, 'routing.lock')), {code: 'ENOENT'});
+  const restarted = await run();
+  assert.equal(restarted.selected, null); assert.equal(restarted.products[0].status, 'WAITING');
+  assert.deepEqual(JSON.parse(await fs.readFile(path.join(stateDir, 'routing.json'))), before);
+  await assert.rejects(fs.access(path.join(stateDir, 'routing.lock')), {code: 'ENOENT'});
+});

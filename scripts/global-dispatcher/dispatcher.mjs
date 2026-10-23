@@ -118,6 +118,7 @@ export function createGlobalDispatcher({stateDir, adapters} = {}) {
               result.candidates.every(c => validId(c?.id) && typeof c.operation === 'string' &&
                 typeof c.tool === 'string' && Number.isSafeInteger(c.priority) &&
                 Array.isArray(c.paths) && c.paths.every(p => typeof p === 'string')))), 'ADAPTER_RESULT_INVALID');
+          result.terminal = result.terminal.map(({id, status}) => ({id, status}));
           must(product.acceptedStages.every((s, i) => result.acceptedStages[i] === s), 'ACCEPTED_STAGE_REGRESSION');
           must(!result.terminal.some(t => t.status !== 'FAILED_LOCKED' &&
             product.terminal.some(p => p.id === t.id && p.status === 'FAILED_LOCKED')),
