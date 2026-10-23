@@ -271,3 +271,21 @@ test('private state directory and duplicate registrations are mandatory', async 
   await fs.chmod(stateDir, 0o755);
   assert.equal((await createGlobalDispatcher({stateDir, adapters: [a]}).plan({atlas: snapshot(a)})).status, 'FAILED_LOCKED');
 });
+test('initializer preserves state that appears between empty-directory check and lock acquisition', async t => {
+  const stateDir = await fs.mkdtemp(path.join(os.tmpdir(), 'asi-global-init-race-'));
+  t.after(() => fs.rm(stateDir, {recursive: true, force: true}));
+  const originalOpen = fs.open;
+  fs.open = async (filename, ...args) => {
+    const handle = await originalOpen(filename, ...args);
+    if (filename === path.join(stateDir, 'routing.lock')) {
+      // Deterministically simulate another initializer committing and releasing
+      // immediately before this initializer acquires the same lock.
+      await fs.writeFile(path.join(stateDir, 'routing.json'), 'concurrent state; preserve me', {mode: 0o600});
+    }
+    return handle;
+  };
+  try { await assert.rejects(initializeRoutingState(stateDir), /STATE_APPEARED/); }
+  finally { fs.open = originalOpen; }
+  assert.equal(await fs.readFile(path.join(stateDir, 'routing.json'), 'utf8'), 'concurrent state; preserve me');
+  assert.ok((await fs.stat(path.join(stateDir, 'routing.lock'))).isFile());
+});

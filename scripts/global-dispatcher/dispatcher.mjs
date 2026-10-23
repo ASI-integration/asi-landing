@@ -53,6 +53,10 @@ export async function initializeRoutingState(stateDir) {
   try {
     await lock.sync();
     await syncDirectory(stateDir);
+    // Recheck under the lock: another initializer may have committed after our
+    // first directory read and released its lock before this one was acquired.
+    must((await fs.readdir(stateDir)).every(name => name === 'routing.lock'),
+      'STATE_APPEARED_DURING_INITIALIZATION');
     await writeState(path.join(stateDir, 'routing.json'), {schema, tick: 0, products: []});
     await fs.unlink(path.join(stateDir, 'routing.lock'));
     await syncDirectory(stateDir);
