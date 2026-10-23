@@ -221,9 +221,10 @@ export function createProductAdapter(input, {verifyEvidence} = {}) {
         must(task && task.stage === contract.stages[active]?.id, 'OVERSIGHT_WORK_ORDER_OUTSIDE_QUEUE');
         const oversight = publicationOversight({product: contract.id, repository: contract.repository,
           contractHash, milestone: task.stage, workOrderId}, snapshot.oversight, verifyEvidence);
-        return {status: oversight.EngineState === 'FAILED_LOCKED' ? 'FAILED_LOCKED' : 'BLOCKED',
+        const failedLocked = oversight.ConfirmedAchievements.includes('ENGINE_FAILED_LOCKED');
+        return {status: failedLocked ? 'FAILED_LOCKED' : 'BLOCKED',
           repository: contract.repository, head: snapshot.head, stage: task.stage, candidates: [],
-          acceptedStages, terminal: oversight.EngineState === 'FAILED_LOCKED' ?
+          acceptedStages, terminal: failedLocked ?
             [...terminal.filter(t => t.id !== workOrderId), {id: workOrderId, status: 'FAILED_LOCKED'}] : terminal,
           oversight, nextAction: oversight.NextAction};
       }
@@ -264,10 +265,11 @@ export function createStrigunovAdapter({enginePilot = false, verifyEvidence} = {
         must(queue.jobs.some(j => j.job === workOrderId), 'OVERSIGHT_WORK_ORDER_OUTSIDE_QUEUE');
         const oversight = publicationOversight({product: 'strigunov4', contractHash,
           repository: 'ASI-integration/asi-landing', milestone: queue.stage, workOrderId}, snapshot.oversight, verifyEvidence);
-        return {status: oversight.EngineState === 'FAILED_LOCKED' ? 'FAILED_LOCKED' : 'BLOCKED',
+        const failedLocked = oversight.ConfirmedAchievements.includes('ENGINE_FAILED_LOCKED');
+        return {status: failedLocked ? 'FAILED_LOCKED' : 'BLOCKED',
           repository: 'ASI-integration/asi-landing', head: snapshot.mainSha, stage: queue.stage,
           candidates: [], nativeQueue: queue, oversight,
-          terminal: oversight.EngineState === 'FAILED_LOCKED' ? [{id: workOrderId, status: 'FAILED_LOCKED'}] : [],
+          terminal: failedLocked ? [{id: workOrderId, status: 'FAILED_LOCKED'}] : [],
           acceptedStages: snapshot.contract.stages.filter(s => s.status === 'ACCEPTED').map(s => s.id),
           nextAction: oversight.NextAction};
       }

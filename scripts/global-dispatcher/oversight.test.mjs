@@ -3,8 +3,9 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import {hash, publicationOversight, createProductAdapter} from './product-adapters.mjs';
+import {hash, publicationOversight, createProductAdapter, createStrigunovAdapter} from './product-adapters.mjs';
 import {createGlobalDispatcher, initializeRoutingState} from './dispatcher.mjs';
+import {WORK_ORDERS, ENGINE_PILOT, RELEASE} from '../strigunov4/ASI-STRIGUNOV4-MULTIJOB-20261020.mjs';
 
 const head = 'a'.repeat(40), base = 'b'.repeat(40), receiptHash = 'c'.repeat(64);
 const next = 'PREPARE_AUTHORIZED_RECONCILIATION_EXISTING_PR';
@@ -204,4 +205,53 @@ test('journal limit measures serialized UTF-8 bytes and preserves the previous r
   const r = await createGlobalDispatcher({stateDir, adapters: [oversized]}).plan({atlas: {}});
   assert.equal(r.status, 'FAILED_LOCKED'); assert.equal(r.selected, null);
   assert.deepEqual(await fs.readFile(path.join(stateDir, 'routing.json')), before);
+});
+
+test('both adapters require job failure before persisting a FAILED tombstone', () => {
+  for (const native of [false, true]) {
+    const a = native ? createStrigunovAdapter({enginePilot: true, verifyEvidence: () => true}) :
+      createProductAdapter(product('atlas'), {verifyEvidence: () => true});
+    const {evidence: e} = fixture(a.id);
+    e.contractHash = a.contractHash;
+    if (native) {
+      e.repository = e.task.repo = 'ASI-integration/asi-landing';
+      e.milestone = e.task.stage = 'S4-G1'; e.task.workOrderId = ENGINE_PILOT.id;
+      e.github.publications[0].repository = e.github.publications[0].headRepository = e.repository;
+    }
+    e.publication.taskBinding = hash(e.task);
+    const s = native ? {mainSha: base,
+      contract: {schemaVersion: 'asi.demo-release.v1', releaseId: RELEASE, state: 'FROZEN_ON_OWNER_MERGE',
+        stages: [1, 2, 3, 4, 5, 6].map(i => ({id: `S4-G${i}`, status: i === 1 ? 'IN_PROGRESS' : 'NOT_STARTED',
+          files: i === 1 ? [...WORK_ORDERS.find(w => w.kind === 'prepare-source').paths, ...ENGINE_PILOT.paths] : []}))},
+      issues: {511: {number: 511, state: 'open', labels: ['agent-source-ready']}}, project: {511: 'PREPARATION_ONLY'},
+      prs: Object.fromEntries(WORK_ORDERS.filter(w => w.pr).map(w => [w.pr,
+        {number: w.pr, head: w.head, state: 'closed', merged: true}])), ledger: {}, oversight: e} : input(a, e);
+    for (const mode of ['STARTED', 'PUBLISHED']) {
+      e.ledger.jobs[e.task.id].mode = mode;
+      const result = a.evaluate(s);
+      assert.equal(result.oversight.EngineState, 'FAILED_LOCKED');
+      assert.equal(result.oversight.Blocker, 'STATE_OUTSIDE_RECONCILIATION_CASE');
+      assert.equal(result.status, 'BLOCKED'); assert.deepEqual(result.terminal, []);
+    }
+    e.ledger.jobs[e.task.id].mode = 'FAILED_LOCKED';
+    assert.deepEqual(a.evaluate(s).terminal, [{id: e.task.workOrderId, status: 'FAILED_LOCKED'}]);
+  }
+});
+
+test('rejected historical FAILED rewrite cannot partially advance stages or terminal entries', async t => {
+  const a = createProductAdapter(product('atlas'), {verifyEvidence: () => false});
+  let response = {status: 'FAILED_LOCKED', candidates: [], acceptedStages: [],
+    terminal: [{id: 'second', status: 'FAILED_LOCKED'}], nextAction: 'Reconcile'};
+  const custom = {...a, evaluate() { return structuredClone(response); }};
+  const stateDir = await fs.mkdtemp(path.join(os.tmpdir(), 'asi-rejected-transaction-'));
+  t.after(() => fs.rm(stateDir, {recursive: true, force: true}));
+  await initializeRoutingState(stateDir);
+  const dispatcher = createGlobalDispatcher({stateDir, adapters: [custom]});
+  await dispatcher.plan({atlas: {}});
+  const before = JSON.parse(await fs.readFile(path.join(stateDir, 'routing.json')));
+  response = {status: 'ACCEPTED', candidates: [], acceptedStages: ['g1'],
+    terminal: [{id: 'first', status: 'ACCEPTED'}, {id: 'second', status: 'ACCEPTED'}], nextAction: 'Rejected'};
+  const result = await dispatcher.plan({atlas: {}});
+  assert.equal(result.products[0].reason, 'HISTORICAL_FAILED_REWRITE_FORBIDDEN');
+  assert.deepEqual(JSON.parse(await fs.readFile(path.join(stateDir, 'routing.json'))), before);
 });
