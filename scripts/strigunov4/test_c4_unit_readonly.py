@@ -226,16 +226,29 @@ class UnitReadonlyTests(unittest.TestCase):
         for consumer in (*pins.ACTIVE, pins.HISTORICAL):
             self.assertIn("      - '" + consumer + "'", paths_filter)
 
-    def test_all_four_current_pins_updated_in_memory_history_unchanged(self):
+    def test_all_four_current_pins_match_verified_receipt_history_unchanged(self):
         root = Path(__file__).resolve().parents[2]
-        files = {name: (root / name).read_bytes() for name in (*pins.ACTIVE, pins.HISTORICAL)}
-        new = pins.plan(files, receipt(), SHA, RID)
-        self.assertEqual(new[pins.HISTORICAL], files[pins.HISTORICAL])
-        for name in pins.ACTIVE:
-            self.assertEqual(new[name], files[name].replace(c.OLD_UNIT_SHA256.encode(), receipt()["afterSha256"].encode(), 1))
-        changed = dict(files); name = next(iter(pins.ACTIVE)); changed[name] += b"# concurrent\n"
+        current = {name: (root / name).read_bytes() for name in (*pins.ACTIVE, pins.HISTORICAL)}
+        # Verified receipt run 39261951787, attempt 1. This is the planned
+        # post-repair hash; the test makes no claim that staging was repaired.
+        expected_new = "6e0ce12922e015738368c89deeef154c195f19b2a0678d72d27d58e5414bf62c"
+        old, new = c.OLD_UNIT_SHA256.encode(), expected_new.encode()
+        original = dict(current)
+        for name, expected_source_hash in pins.ACTIVE.items():
+            self.assertEqual(current[name].count(new), 1)
+            self.assertNotIn(old, current[name])
+            original[name] = current[name].replace(new, old, 1)
+            self.assertEqual(c.digest(original[name]), expected_source_hash)
+        self.assertEqual(c.digest(current[pins.HISTORICAL]), pins.HISTORICAL_SHA256)
+        # Reconstruct only the checksum-verified pre-transition source in memory.
+        # Keep the historical planner's one-shot OLD precondition unchanged.
+        planned_receipt = dict(receipt(), afterSha256=expected_new)
+        self.assertEqual(pins.plan(original, planned_receipt, SHA, RID), current)
         with self.assertRaisesRegex(c.Block, "OLD_HASH"):
-            pins.plan(changed, receipt(), SHA, RID)
+            pins.plan(current, planned_receipt, SHA, RID)
+        changed = dict(original); name = next(iter(pins.ACTIVE)); changed[name] += b"# concurrent\n"
+        with self.assertRaisesRegex(c.Block, "OLD_HASH"):
+            pins.plan(changed, planned_receipt, SHA, RID)
 
     def test_reused_transport_disables_bytecode_and_rejects_checkout_drift(self):
         env = context()

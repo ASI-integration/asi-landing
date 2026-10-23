@@ -41,7 +41,7 @@ try:
     current=root/"releases"/sha
     check(link.is_symlink() and link.resolve()==current,"RELEASE_LINK")
     unit=Path("/etc/systemd/system/asi-landing-staging.service")
-    check(hashlib.sha256(unit.read_bytes()).hexdigest()=="9072dd1a276c7bea2bb7d17031a51b250177e2806cd632e26728028c0a8a01d9","UNIT")
+    check(hashlib.sha256(unit.read_bytes()).hexdigest()=="6e0ce12922e015738368c89deeef154c195f19b2a0678d72d27d58e5414bf62c","UNIT")
     meta=dict(x.split("=",1) for x in cmd("systemctl","show","asi-landing-staging","--property=MainPID,User,Group,WorkingDirectory,EnvironmentFiles,DropInPaths,ActiveState").splitlines() if "=" in x)
     envfile=root/"shared"/".env.staging.local"
     check(meta.get("ActiveState")=="active" and meta.get("User")=="asi-runtime" and meta.get("Group")=="asi-runtime" and meta.get("WorkingDirectory")==str(link) and not meta.get("DropInPaths") and str(envfile) in meta.get("EnvironmentFiles",""),"SERVICE_IDENTITY")
