@@ -112,9 +112,20 @@ export function createGlobalDispatcher({stateDir, adapters} = {}) {
           product.acceptedStages = result.acceptedStages;
           for (const terminal of result.terminal) {
             const previous = product.terminal.find(t => t.id === terminal.id);
+            must(!(previous?.status === 'FAILED_LOCKED' && terminal.status !== 'FAILED_LOCKED'),
+              'HISTORICAL_FAILED_REWRITE_FORBIDDEN');
             if (!previous) product.terminal.push(terminal);
+            else if (terminal.status === 'FAILED_LOCKED') previous.status = 'FAILED_LOCKED';
           }
-          must(!product.terminal.some(t => t.status === 'FAILED_LOCKED'), 'FAILED_TASK_REQUIRES_RECONCILIATION');
+          if (product.terminal.some(t => t.status === 'FAILED_LOCKED')) {
+            // Keep an observed failure durable, without throwing away the
+            // product's concrete read-only reconciliation recommendation.
+            if (result.status !== 'FAILED_LOCKED') {
+              result.nextAction = 'Reconcile the preserved failed task; automatic retry is disabled.';
+            }
+            result.status = 'FAILED_LOCKED';
+            result.candidates = [];
+          }
           const eligible = result.candidates.filter(c => !product.terminal.some(t => t.id === c.id));
           const repeated = eligible.some(c => product.planned.some(p => p.id === c.id));
           const exhausted = eligible.length > 0 && product.planned.filter(p => p.stage === result.stage).length >= adapter.maxPlansPerStage;

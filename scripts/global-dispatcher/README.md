@@ -120,10 +120,10 @@ live crash recovery or a successful autonomous GitHub E2E claim.
 
 ## Validation and physical integration gates
 
-Run only the focused test file:
+Run the focused routing and oversight tests:
 
 ```sh
-node --test scripts/global-dispatcher/dispatcher.test.mjs
+node --test scripts/global-dispatcher/dispatcher.test.mjs scripts/global-dispatcher/oversight.test.mjs
 ```
 
 The existing unprivileged source-test workflow now runs it as well. It covers
@@ -148,3 +148,61 @@ Before any physical product integration:
 6. Prove one actual product cycle, current-HEAD CI and independent review,
    durable receipt, duplicate prevention and crash reconciliation before enabling
    more products. Physical G2 stays closed until independent G1 acceptance #511.
+
+## Read-only publication oversight
+
+Both existing adapters accept an optional `snapshot.oversight` envelope and the
+existing synchronous `verifyEvidence` reader port. `publicationOversight()` in
+`product-adapters.mjs` is a pure decision matrix, with no network or execution
+interface. The reader verifies source provenance, capture time, completeness,
+original task/catalog binding, required CI policy and immutable retained bytes.
+It must attest the input facts, never a desired decision. A payload's own
+"verified" flag, absent verifier, Promise or reader exception cannot pass.
+
+Envelope fields are product, repository, contractHash, milestone, original task,
+publication journal, ledger, service properties, serverAvailable, receiptProof
+(historical/current digests and completed records), GitHub availability and complete
+publication history, CI/review evidence bound to exact PR/HEAD, rootCause, patches
+and timestamped references. GitHub history is scoped to the bound operation/branch
+and includes open and closed publications. Unknown completeness cannot mean one PR.
+Patch status is derived from installed/admitted/candidate file hashes. It grants
+no installation authority. Raw source bodies are not forwarded in the decision.
+
+| Verified observation | Advisory result |
+| --- | --- |
+| One exact publication, CI/review pass, stopped FAILED_LOCKED, preserved FAILED, unknown cause | PREPARE_AUTHORIZED_RECONCILIATION_EXISTING_PR |
+| Missing source, incomplete publication history or unverifiable provenance | UNKNOWN / BLOCKED |
+| Explicit PR/HEAD/ledger contradiction, duplicate publication or changed historical receipt | EVIDENCE_CONFLICT / BLOCKED |
+| CI/review incomplete or unsuccessful | BLOCKED; await that specific result |
+
+The structured result names Product, Milestone, ConfirmedAchievements, Blocker,
+RootCauseConfidence, NextAction, ExecutionAllowed, OwnerApprovalRequired,
+AcceptanceCriteria and EvidenceReferences. Target is derived from the original
+operation, including the historical receipt digest. The matrix never infers a
+crash phase from a missing PR field or an unhandled exception. Failure tombstones
+remain durable even if the next snapshot removes oversight or claims acceptance.
+The native Strigunov queue and canonical milestone acceptance remain unchanged.
+
+All oversight decisions have `ExecutionAllowed:false`, `REPUBLISH_FORBIDDEN:true`
+and `ENGINE_E2E:INCOMPLETE`. `OwnerApprovalRequired:true` applies to subsequent
+physical reconciliation, not to observation or preparation. The recorded times
+describe a snapshot; they do not assert continuously monitored current state.
+
+### Single next task: prepare reconciliation in the existing Engine
+
+Prepare a bounded procedure against the returned Target and evidence digests.
+Keep the existing PR/branch/HEAD, old FAILED receipt, generations, local operator
+commit and stop locks. The spent publication admission cannot be replayed.
+The procedure must exclude Publisher/create-PR paths and old-operation resume;
+record any authorized reconciliation as a distinct linked result without changing
+historical FAILED to PASS. Bind any diagnostic patch installation separately to
+its actual candidate and installed hashes. Define stop conditions for missing or
+conflicting evidence and retain locks on uncertainty, without automatic retries.
+
+Before physical execution, that concrete procedure must have V1 admission and
+an exact owner authorization. Any future handoff uses the existing Engine and
+authority chain; this observer's recommendation is never an execution token.
+Require a verified reconciliation terminal receipt and IDLE before the single
+control restart authorized by that procedure. Acceptance must distinguish
+reconciled completion from the failed original autonomous cycle. There is no
+state-clearing, finalization or restart API in this change.
