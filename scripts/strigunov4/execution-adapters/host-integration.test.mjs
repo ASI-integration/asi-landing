@@ -66,6 +66,87 @@ test('fixed sandbox exposes neither host home nor network or caller command',()=
  for(const feature of ['shell_tool','unified_exec','apps','plugins','browser_use','computer_use','multi_agent','hooks'])
   assert.ok(REVIEW_DISABLED_TOOLS.includes(feature));
 });
+test('pilot sandbox needs no procfs mount under ProtectKernelTunables',()=>{
+ const args=sandboxArguments('/isolated/scratch');
+ // A masked parent /proc rejects a new proc mount in bwrap's user namespace.
+ // The fixed Python unittest needs no procfs; neither mount nor expose it.
+ assert.ok(!args.includes('--proc'));
+ assert.ok(!args.includes('/proc'));
+ assert.ok(args.includes('--unshare-all'));
+ assert.ok(args.includes('--clearenv'));
+ assert.deepEqual(args.slice(args.indexOf('/usr/bin/python3'),-1),['/usr/bin/python3','-I','-S','-B','-c']);
+});
+test('host snapshot ignores fresh checkedAt drift but retains all admission changes',async t=>{
+ const f=await fixture(t),repo='ASI-integration/asi-landing';
+ let now=1792751800000,age=0,gate='PREPARATION_ONLY',main=f.sha,issueState='open';
+ t.mock.method(Date,'now',()=>now);
+ const reader={get:async r=>r==='branches/main'?{protected:true,commit:{sha:main}}:
+ r==='issues/511'?{number:511,state:issueState,title:'[S4-G1] test',labels:[]}:
+ {...f.snapshot.prs[Number(r.split('/')[1])],head:{sha:f.snapshot.prs[Number(r.split('/')[1])].head,repo:{full_name:repo}},base:{ref:'main',repo:{full_name:repo}}}};
+ const fetch=createHostSnapshot({reader,contract:f.snapshot.contract,baseSha:f.sha,
+  readProjectGates:async()=>({source:'github-projects-v2',checkedAt:new Date(now-age).toISOString(),items:[{issue:511,stage:'S4-G1',gate}]})});
+ const original=JSON.stringify(await fetch());now+=1000;
+ assert.equal(JSON.stringify(await fetch()),original);
+ gate='BLOCKED';assert.notEqual(JSON.stringify(await fetch()),original);gate='PREPARATION_ONLY';
+ f.snapshot.prs[509].head='c'.repeat(40);assert.notEqual(JSON.stringify(await fetch()),original);
+ age=30000;await assert.rejects(fetch(),/PROJECT_SNAPSHOT_STALE/);
+ age=-1;await assert.rejects(fetch(),/PROJECT_SNAPSHOT_STALE/);age=0;
+ main='d'.repeat(40);await assert.rejects(fetch(),/MAIN_CHANGED/);main=f.sha;
+ issueState='closed';await assert.rejects(fetch(),/ISSUE_UNVERIFIED/);issueState='open';
+ f.snapshot.contract.stages[0].status='ACCEPTED';f.snapshot.contract.stages[1].status='IN_PROGRESS';
+ await assert.rejects(fetch(),/ACTIVE_ISSUE_NOT_VERIFIED/);
+});
+test('subprocess failure after prepare remains locked without another check or publication',async t=>{
+ const f=await fixture(t),now={value:1000000};let checks=0,reviews=0;
+ const options={now,runChecks:async()=>{checks++;throw Error('HOST_PROCESS_FAILED');},
+  independentReview:async()=>{reviews++;throw Error('MUST_NOT_REVIEW');}};
+ const result=await (await makeLoop(f,options)).poll({execute:true});
+ assert.equal(result.mode,'FAILED_LOCKED');assert.equal(result.reason,'UNHANDLED_OR_UNKNOWN_RESULT');
+ const stateDir=path.join(f.root,'state'),names=await fs.readdir(stateDir);
+ assert.ok(!names.some(n=>n.startsWith('publication-')));
+ const before=await Promise.all(names.map(n=>fs.readFile(path.join(stateDir,n))));
+ now.value+=180001;
+ assert.equal((await (await makeLoop(f,options)).poll({execute:true})).reason,'PHYSICAL_REVIEW_REQUIRED');
+ assert.deepEqual(await Promise.all(names.map(n=>fs.readFile(path.join(stateDir,n)))),before);
+ assert.equal(checks,1);assert.equal(reviews,0);assert.equal(f.writes.length,0);
+});
+test('publication still denies changed authority, main and product gate',async t=>{
+ for(const changed of ['authority','main','gate'])await t.test(changed,async t=>{
+  const f=await fixture(t);
+  const options=changed==='authority'?{authorize:async()=>({approved:false})}:{
+   runChecks:async e=>{
+    if(changed==='main')f.state.main='e'.repeat(40);
+    else f.snapshot.project[511]='BLOCKED';
+    return {...e,status:'PASS'};
+   }};
+  assert.equal((await (await makeLoop(f,options)).poll({execute:true})).mode,'FAILED_LOCKED');
+  assert.equal(f.writes.length,0);
+ });
+});
+test('isolated recovery rehearsal preserves failed generation and publishes only once',async t=>{
+ // Model of a separately owner-approved recovery, NOT an automatic reset API.
+ const f=await fixture(t);f.catalog=f.catalog.slice(0,1);const now={value:1000000};
+ assert.equal((await (await makeLoop(f,{now,runChecks:async()=>{throw Error('HOST_PROCESS_FAILED');}})).poll({execute:true})).mode,'FAILED_LOCKED');
+ assert.equal(f.writes.length,0);assert.equal(f.refs.size,0);assert.equal(f.pulls.size,0);
+ async function hashes(dir){
+  const result={};for(const name of (await fs.readdir(dir)).sort()){
+   const p=path.join(dir,name),st=await fs.lstat(p);
+   result[name]=st.isDirectory()?await hashes(p):{sha256:digest(await fs.readFile(p)),mode:st.mode};
+  }return result;
+ }
+ const before=await hashes(f.root),archive=f.root+'.failed';await fs.rename(f.root,archive);
+ await fs.mkdir(f.root,{mode:0o700});await initializeState(f.root);
+ const task=f.catalog[0],cwd=path.join(f.root,'scratchpads',task.id);
+ execFileSync('/usr/bin/git',['clone','-q','--no-hardlinks',path.join(f.base,'seed'),cwd]);
+ execFileSync('/usr/bin/git',['-c','core.hooksPath=/dev/null','checkout','-q','--detach',task.sha],{cwd});await fs.chmod(cwd,0o700);
+ const options={now,authorize:async request=>({approved:true,request,automaticCiApproved:true,
+  automaticReviewApproved:true,operationId:'separately-approved-recovery-model',expiresAt:999999999})};
+ assert.equal((await (await makeLoop(f,options)).poll({execute:true})).mode,'REPORT_READY');
+ const writes=f.writes.length;assert.equal(f.writes.filter(p=>p==='pulls').length,1);
+ now.value+=180001;
+ assert.equal((await (await makeLoop(f,options)).poll({execute:true})).reason,'NO_APPROVED_PUBLICATION_TASK');
+ assert.equal(f.writes.length,writes);assert.deepEqual(await hashes(archive),before);
+});
 test('live snapshot rejects stale projects and an advanced stage',async()=>{
  const f={schemaVersion:'asi.demo-release.v1',releaseId:'STRIGUNOV4-READY-FOR-DEMO',state:'FROZEN_ON_OWNER_MERGE',
  stages:[1,2,3,4,5,6].map(i=>({id:'S4-G'+i,status:i===1?'IN_PROGRESS':'NOT_STARTED'}))};

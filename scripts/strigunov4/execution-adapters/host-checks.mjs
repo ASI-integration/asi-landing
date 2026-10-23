@@ -13,8 +13,10 @@ export const REVIEW_DISABLED_TOOLS=Object.freeze(['shell_tool','unified_exec','a
 export const DISABLED_CODE_MODE_NOTE='Code Mode is unavailable because code-mode host is disabled. Code mode will fail closed; enable `features.code_mode_host` and install `codex-code-mode-host`.';
 export function sandboxArguments(cwd){
   must(path.isAbsolute(cwd),'CHECK_WORKSPACE');
+  // ProtectKernelTunables masks the parent's /proc: mounting another procfs
+  // inside bwrap's user namespace is denied. This fixed test needs no /proc.
   return ['--die-with-parent','--new-session','--unshare-all','--ro-bind','/usr','/usr',
-    '--ro-bind','/lib','/lib','--ro-bind-try','/lib64','/lib64','--proc','/proc','--dev','/dev',
+    '--ro-bind','/lib','/lib','--ro-bind-try','/lib64','/lib64','--dev','/dev',
     '--tmpfs','/tmp','--ro-bind',cwd,'/work','--chdir','/work/scripts/strigunov4','--clearenv',
     '--setenv','PATH','/usr/bin:/bin','--setenv','LANG','C.UTF-8',
     '/usr/bin/python3','-I','-S','-B','-c',
