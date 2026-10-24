@@ -56,8 +56,7 @@ export async function loadHostAuthority(){
   const payload=verifySignedArtifact(JSON.parse(raw),key);
   const catalogRaw=await rootOwned(path.join(AUTHORITY_DIR,'catalog.json'));
   must(hash(catalogRaw)===payload.catalogSha256,'CATALOG_NOT_SIGNED');
-  const catalog=freeze(JSON.parse(catalogRaw));
-  must(Array.isArray(catalog)&&catalog.length===1&&catalog[0].sha===payload.baseSha,'PILOT_CATALOG');
+  const catalog=verifyBoundedStageCatalog(catalogRaw,payload);
   const admission=Object.freeze({root:payload.root,legacyStateDir:payload.legacyStateDir});
   admitted.set(admission,payload);
   async function revalidate(){
@@ -80,4 +79,40 @@ export async function loadHostAuthority(){
 export function assertLiveAdmission(admission,root,legacy){
   const p=admitted.get(admission);
   must(p&&p.expiresAt>Date.now()&&p.root===root&&(!legacy||p.legacyStateDir===legacy),'LIVE_ADMISSION_REQUIRED');
+}
+
+/** Existing single-task authorities remain valid. Multi-task execution is
+ * opt-in ONLY via a new signed activation with an exact stageDelegation scope.
+ * One signed bounded catalog can cover ordinary task cycles without any more
+ * owner-key/password prompts. This grants NO additional GitHub permissions.
+ */
+export function verifyBoundedStageCatalog(catalogRaw,payload) {
+  must(typeof catalogRaw==='string'&&hash(catalogRaw)===payload.catalogSha256,
+    'CATALOG_NOT_SIGNED');
+  const catalog=JSON.parse(catalogRaw);
+  must(Array.isArray(catalog)&&catalog.length>=1&&catalog.length<=8,'STAGE_CATALOG_SIZE');
+  if(catalog.length>1) {
+    const d=payload.stageDelegation;
+    must(d?.schema==='asi.engine-stage-catalog.v1'&&d.stage==='S4-G1'&&
+      d.maximumTasks===catalog.length&&Array.isArray(d.workOrderIds)&&
+      JSON.stringify(d.workOrderIds)===JSON.stringify(catalog.map(t=>t.workOrderId))&&
+      d.noWorkflowWrite===true&&d.noMerge===true,'STAGE_DELEGATION_NOT_SIGNED');
+  }
+  must(new Set(catalog.map(t=>t.id)).size===catalog.length&&
+    new Set(catalog.map(t=>t.branch)).size===catalog.length&&
+    new Set(catalog.map(t=>t.workOrderId)).size===catalog.length,'STAGE_CATALOG_DUPLICATE');
+  for(const t of catalog){
+    must(typeof t?.id==='string'&&/^[a-z0-9][a-z0-9-]{3,79}$/.test(t.id)&&
+      t.kind==='github-publisher'&&t.stage==='S4-G1'&&t.repo===payload.repo&&
+      t.pr===null&&t.sha===payload.baseSha&&
+      typeof t.branch==='string'&&/^asi\/engine-task\/[a-z0-9][a-z0-9-]{3,79}$/.test(t.branch)&&
+      Array.isArray(t.changes)&&t.changes.length>=1&&t.changes.length<=3&&
+      new Set(t.changes.map(c=>c.path)).size===t.changes.length&&
+      t.changes.every(c=>typeof c?.path==='string'&&
+        /^scripts\/strigunov4\/[a-zA-Z0-9][a-zA-Z0-9_./-]*\.py$/.test(c.path)&&
+        !c.path.includes('..')&&!c.path.includes('//')&&
+        /^[a-f0-9]{64}$/.test(c.beforeSha256)&&typeof c.content==='string'),
+      'STAGE_CATALOG_TASK_SCOPE');
+  }
+  return freeze(catalog);
 }
