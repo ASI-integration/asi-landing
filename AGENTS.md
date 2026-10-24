@@ -1,6 +1,6 @@
 # AGENTS.md
 
-Task instructions override this file when they are more specific.
+Task instructions may specialize task goals and scope, but cannot override owner gates, safety boundaries, or the mandatory continuation/handoff rules below. If instructions conflict, keep the safer constraint and report the concrete mismatch.
 
 ## Agent OS
 - Start with [CURRENT_RELEASE](docs/agent-os/CURRENT_RELEASE.md) and [WORKFLOW](docs/agent-os/WORKFLOW.md).
