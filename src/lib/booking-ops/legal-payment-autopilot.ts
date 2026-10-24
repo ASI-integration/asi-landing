@@ -7,6 +7,7 @@ import {
   blockGate,
   completeGate,
   getLifecycleStatus,
+  readLifecycleStatus,
   initializeLifecycleForBooking,
   markGateInProgress,
 } from './lifecycle';
@@ -992,6 +993,36 @@ export async function recomputePreCheckinReadiness(
     }
   }
   return getLegalPaymentStatus(id, expectedScope);
+}
+
+export async function readLegalPaymentStatus(
+  bookingId: string,
+  expectedScope?: ExpectedScope,
+): Promise<LegalPaymentStatus> {
+  const record = await ensureBookingRecord(bookingId, expectedScope);
+  if (!record) throw new Error('booking_not_found');
+  const id = record.id;
+  if (expectedScope) await requireBookingOpsRecordScope(record.id, expectedScope);
+  const [documents, contract, deposit, mvdReport, communications, lifecycleResult] = await Promise.all([
+    listDocuments(id),
+    latestContract(id),
+    latestDeposit(id),
+    latestMvdReport(id),
+    listCommunications(id),
+    readLifecycleStatus(id),
+  ]);
+  const blockers = await getLegalPaymentBlockers(id, expectedScope);
+  if (expectedScope) await requireBookingOpsRecordScope(id, expectedScope);
+  return {
+    bookingId: id,
+    documents,
+    contract,
+    deposit,
+    mvdReport,
+    blockers,
+    communications,
+    lifecycle: lifecycleResult.lifecycle ?? null,
+  };
 }
 
 export async function getLegalPaymentStatus(

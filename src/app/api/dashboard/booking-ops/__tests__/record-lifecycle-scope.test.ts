@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   listTasks: vi.fn(),
   syncLifecycle: vi.fn(),
   lifecycleStatus: vi.fn(),
+  readLifecycleStatus: vi.fn(),
   adminGate: vi.fn(),
   recordEvent: vi.fn(),
   lifecycleSummary: vi.fn(),
@@ -32,6 +33,7 @@ vi.mock('@/lib/booking-ops/task-types', () => ({ BOOKING_OPS_TASK_TYPE_LABELS_RU
 vi.mock('@/lib/booking-ops/lifecycle', () => ({
   syncLifecycleFromBookingOpsRecord: mocks.syncLifecycle,
   getLifecycleStatus: mocks.lifecycleStatus,
+  readLifecycleStatus: mocks.readLifecycleStatus,
   adminUpdateLifecycleGate: mocks.adminGate,
 }));
 vi.mock('@/lib/booking-ops/lifecycle-autopilot-service', () => ({
@@ -60,6 +62,7 @@ describe('Booking Ops canonical record/lifecycle route scope', () => {
     mocks.listTasks.mockResolvedValue({ ok: true, tasks: [] });
     mocks.syncLifecycle.mockResolvedValue(undefined);
     mocks.lifecycleStatus.mockResolvedValue({ ok: true, lifecycle: { bookingId: record.id, gates: [] } });
+    mocks.readLifecycleStatus.mockResolvedValue({ ok: true, lifecycle: { bookingId: record.id, gates: [] } });
     mocks.adminGate.mockResolvedValue({ ok: true, gate: { gateKey: 'documents_verified', status: 'completed' } });
     mocks.recordEvent.mockResolvedValue({ processed: true });
     mocks.lifecycleSummary.mockResolvedValue({ stage: 'guest_intake' });
@@ -89,12 +92,48 @@ describe('Booking Ops canonical record/lifecycle route scope', () => {
     expect(mocks.listTasks).toHaveBeenCalledWith(access.bookingId, { expectedScope });
   });
 
-  it('lifecycle GET retains scope through synchronization and status read', async () => {
+  it('lifecycle GET only reads persisted state inside canonical scope', async () => {
     const response = await lifecycleGET(new Request('http://localhost/lifecycle'), context);
     expect(response.status).toBe(200);
     expect(mocks.scope).toHaveBeenCalledWith(access.bookingId, expectedScope);
-    expect(mocks.syncLifecycle).toHaveBeenCalledWith(record, expectedScope);
-    expect(mocks.lifecycleStatus).toHaveBeenCalledWith(record.id, expectedScope);
+    expect(mocks.scope).toHaveBeenCalledTimes(2);
+    expect(mocks.readLifecycleStatus).toHaveBeenCalledWith(record.id);
+    expect(mocks.syncLifecycle).not.toHaveBeenCalled();
+    expect(mocks.lifecycleStatus).not.toHaveBeenCalled();
+    expect(mocks.adminGate).not.toHaveBeenCalled();
+    expect(mocks.recordEvent).not.toHaveBeenCalled();
+  });
+
+  it('lifecycle GET does not initialize missing state as a side effect', async () => {
+    mocks.readLifecycleStatus.mockResolvedValueOnce({ ok: false, error: 'lifecycle_not_initialized' });
+    const response = await lifecycleGET(new Request('http://localhost/lifecycle'), context);
+    expect(response.status).toBe(500);
+    expect(await response.json()).toEqual({ ok: false, message: 'lifecycle_not_initialized' });
+    expect(mocks.syncLifecycle).not.toHaveBeenCalled();
+    expect(mocks.lifecycleStatus).not.toHaveBeenCalled();
+    expect(mocks.recordEvent).not.toHaveBeenCalled();
+  });
+
+  it('lifecycle GET withholds state if ownership changes during the read', async () => {
+    mocks.readLifecycleStatus.mockImplementationOnce(async () => {
+      mocks.scope.mockRejectedValueOnce(new Error('booking_scope_mismatch'));
+      return { ok: true, lifecycle: { private: 'must not escape' } };
+    });
+    const response = await lifecycleGET(new Request('http://localhost/lifecycle'), context);
+    expect(response.status).toBe(403);
+    expect(JSON.stringify(await response.json())).not.toContain('must not escape');
+    expect(mocks.syncLifecycle).not.toHaveBeenCalled();
+    expect(mocks.lifecycleStatus).not.toHaveBeenCalled();
+  });
+
+  it('lifecycle GET rejects unauthenticated access before reading or writing', async () => {
+    mocks.operatorAuth.mockResolvedValueOnce({ error: new Response(null, { status: 401 }) });
+    const response = await lifecycleGET(new Request('http://localhost/lifecycle'), context);
+    expect(response.status).toBe(401);
+    expect(mocks.scope).not.toHaveBeenCalled();
+    expect(mocks.readLifecycleStatus).not.toHaveBeenCalled();
+    expect(mocks.syncLifecycle).not.toHaveBeenCalled();
+    expect(mocks.lifecycleStatus).not.toHaveBeenCalled();
   });
 
   it('lifecycle PATCH revalidates scope through gate, event, and final status', async () => {

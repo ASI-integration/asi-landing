@@ -55,6 +55,7 @@ vi.mock('@/lib/booking-ops/lifecycle', () => ({
 }));
 
 vi.mock('@/lib/booking-ops/legal-payment-autopilot', () => ({
+  readLegalPaymentStatus: vi.fn(async () => ({})),
   getLegalPaymentStatus: vi.fn(async () => ({
     bookingId: 'ops-route',
     documents: [],

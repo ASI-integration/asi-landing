@@ -62,7 +62,7 @@ describe('Booking Lifecycle Orchestrator protected API', () => {
     const read = await GET(new Request('http://localhost/api/dashboard/booking-ops/lifecycle-orchestrator?bookingId=11111111-1111-4111-8111-111111111111'));
     expect(read.status).toBe(200);
     expect(orchestrator.getBookingLifecycleOrchestratorSnapshot).toHaveBeenCalledWith(
-      '11111111-1111-4111-8111-111111111111', true,
+      '11111111-1111-4111-8111-111111111111', false,
       { accountId: 'account-1', propertyId: 'property-1' },
     );
     const run = await POST(new Request('http://localhost/api/dashboard/booking-ops/lifecycle-orchestrator', {

@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { requireCrmOperatorSession, requireOpsAdminSession } from '@/lib/crm/api-auth';
 import { requireBookingOpsApiAccess } from '../access';
 import {
-  getLegalPaymentStatus,
+  readLegalPaymentStatus,
   initializeLegalPaymentForBooking,
   markContractSent,
   markContractSigned,
@@ -65,7 +65,7 @@ export async function GET(req: Request): Promise<NextResponse> {
   const access = await requireBookingOpsApiAccess(auth.session, text(bookingId));
   if (!access.ok) return access.response;
   const expectedScope = { accountId: access.accountId, propertyId: access.propertyId };
-  const status = await getLegalPaymentStatus(access.bookingId, expectedScope);
+  const status = await readLegalPaymentStatus(access.bookingId, expectedScope);
   return NextResponse.json({ ok: true, status });
 }
 

@@ -1,8 +1,8 @@
 import { guardBookingCommunicationDraft } from '@/lib/communication/booking-knowledge-boundary';
 import { randomUUID } from 'node:crypto';
 import { supabase } from '@/lib/supabase';
-import { recomputeGuestLegalReadiness, type GuestLegalReadiness } from './guest-legal-deposit-mvd-execution';
-import { ensurePhysicalTasks, type PhysicalReadiness } from './physical-readiness-execution';
+import { getGuestLegalReadiness, recomputeGuestLegalReadiness, type GuestLegalReadiness } from './guest-legal-deposit-mvd-execution';
+import { readPhysicalReadiness, ensurePhysicalTasks, type PhysicalReadiness } from './physical-readiness-execution';
 import { getBookingOpsRecord, requireBookingOpsRecordScope } from './repository';
 import type { BookingOpsRecord } from './types';
 
@@ -371,6 +371,35 @@ async function releaseRow(recordId: string): Promise<ReleaseRow | null> {
   const { data, error } = await supabase.from('booking_ops_checkin_release_drafts').select('*').eq('booking_id', recordId).maybeSingle();
   if (error) throw new Error(error.message);
   return data as ReleaseRow | null;
+}
+
+export async function readGuestIntakeReleaseSnapshot(bookingId: unknown, expectedScope?: ExpectedScope) {
+  const record = await requireRecord(bookingId, expectedScope);
+  const session = await getSession(record.id);
+  if (!session) throw new Error('guest_intake_not_initialized');
+  const validation = validateGuestIntakeFields(session.submitted_fields);
+  if (expectedScope) await requireBookingOpsRecordScope(record.id, expectedScope);
+  const [legal, physical, release, eventResult, draftResult] = await Promise.all([
+    getGuestLegalReadiness(record.id, expectedScope),
+    readPhysicalReadiness(record.id, expectedScope),
+    releaseRow(record.id),
+    supabase.from('booking_ops_guest_intake_events').select('*').eq('session_id', session.id).order('created_at', { ascending: false }).limit(20),
+    supabase.from('booking_ops_telegram_drafts').select('*').eq('booking_ops_record_id', record.id)
+      .in('action_id', ['initial_guest_intake', 'missing_guest_data', 'operator_guest_intake', 'final_checkin_instructions'])
+      .order('created_at', { ascending: false }).limit(20),
+  ]);
+  if (eventResult.error) throw new Error(eventResult.error.message);
+  if (draftResult.error) throw new Error(draftResult.error.message);
+  if (expectedScope) await requireBookingOpsRecordScope(record.id, expectedScope);
+  if (!legal || !physical) throw new Error('guest_intake_prerequisites_not_initialized');
+  const gate = computeCheckinReleaseGate({
+    validation, intakeStatus: session.intake_status, legalStatus: legal.status, physicalReady: physical.finalReady,
+  });
+  return {
+    session, validation, legal, physical, blockers: gate.blockerReasons,
+    canPrepareCheckinReleaseDraft: gate.canPrepareCheckinReleaseDraft,
+    release: mapRelease(release), events: (eventResult.data ?? []) as EventRow[], drafts: draftResult.data ?? [],
+  };
 }
 
 export async function getGuestIntakeReleaseSnapshot(bookingId: unknown, expectedScope?: ExpectedScope) {

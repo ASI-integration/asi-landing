@@ -19,7 +19,7 @@ vi.mock('@/lib/booking-ops/legal-payment-autopilot', () => ({
   markContractSent: mocks.sent, markContractSigned: mocks.signed,
   requestDeposit: mocks.deposit, markDepositReceived: mocks.paid, waiveDeposit: mocks.waive,
   prepareMvdReport: mocks.mvd, markMvdReportSubmitted: mocks.submitted,
-  markMvdReportAccepted: mocks.accepted, getLegalPaymentStatus: mocks.status,
+  markMvdReportAccepted: mocks.accepted, getLegalPaymentStatus: mocks.status, readLegalPaymentStatus: mocks.status,
 }));
 import { GET, POST } from '../route';
 const canonical = { ok: true, bookingId: 'canonical-booking', accountId: 'account-a', propertyId: 'property-a' };
@@ -56,7 +56,7 @@ describe('legal-payment shared canonical route access', () => {
       bookingId: canonical.bookingId, expectedScope: scope,
     }));
   });
-  it('scopes the status read that can initialize lifecycle', async () => {
+  it('scopes the persisted status read', async () => {
     expect((await GET(new Request('http://localhost/?bookingId=requested-booking'))).status).toBe(200);
     expect(mocks.status).toHaveBeenCalledWith(canonical.bookingId, scope);
   });

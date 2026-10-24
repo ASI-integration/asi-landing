@@ -13,8 +13,8 @@ vi.mock('../lifecycle', () => ({
   completeGate: mocks.complete, blockGate: mocks.block, adminUpdateLifecycleGate: mocks.admin,
 }));
 vi.mock('../tasks', () => ({ listBookingOpsTasksForRecord: mocks.tasks }));
-vi.mock('../guest-legal-deposit-mvd-execution', () => ({ recomputeGuestLegalReadiness: mocks.legal }));
-vi.mock('../physical-readiness-execution', () => ({ ensurePhysicalTasks: mocks.physical }));
+vi.mock('../guest-legal-deposit-mvd-execution', () => ({ recomputeGuestLegalReadiness: mocks.legal, getGuestLegalReadiness: mocks.legal }));
+vi.mock('../physical-readiness-execution', () => ({ ensurePhysicalTasks: mocks.physical, readPhysicalReadiness: mocks.physical }));
 vi.mock('../communication-auto-send-policy', () => ({ buildAutoSendDecisionMetadata: vi.fn(async () => ({})) }));
 vi.mock('@/lib/communication/booking-knowledge-boundary', () => ({ guardBookingCommunicationDraft: mocks.knowledge }));
 vi.mock('@/lib/supabase', () => ({ supabase: { from: mocks.from } }));
@@ -56,12 +56,12 @@ describe('physical approval nested pre-check-in scope', () => {
     expect(mocks.initialize).toHaveBeenCalledWith(id, scope);
     expect(mocks.get).not.toHaveBeenCalled();
   });
-  it('pins account list readiness recomputation to each listed canonical property', async () => {
+  it('pins account list persisted readiness to each listed canonical property', async () => {
     await listBookingsByReadinessStatus({ accountId: scope.accountId, limit: 1 });
     expect(mocks.list).toHaveBeenCalledWith({ limit: 1, accountId: scope.accountId });
-    expect(mocks.legal).toHaveBeenCalledWith(id, { source: 'pre_checkin' }, scope);
+    expect(mocks.legal).toHaveBeenCalledWith(id, scope);
     expect(mocks.physical).toHaveBeenCalledWith(id, scope);
-    expect(mocks.initialize).toHaveBeenCalledWith(id, scope);
+    expect(mocks.initialize).not.toHaveBeenCalled();
   });
   it.each(['mark_ready_override', 'clear_ready_override', 'resolve_fallback', 'block_gate', 'skip_gate'])('retains canonical scope in %s lifecycle writes', async action => {
     await runPreCheckinAction({ bookingId: id, action, gateKey: 'property_ready',

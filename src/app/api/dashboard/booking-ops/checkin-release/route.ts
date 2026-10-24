@@ -3,6 +3,7 @@ import { requireCrmOperatorSession, requireOpsAdminSession } from '@/lib/crm/api
 import { requireBookingOpsApiAccess } from '../access';
 import {
   getGuestIntakeReleaseSnapshot,
+  readGuestIntakeReleaseSnapshot,
   prepareCheckinReleaseDraft,
   simulateCheckinRelease,
 } from '@/lib/booking-ops/guest-intake-checkin-release';
@@ -21,7 +22,7 @@ export async function GET(req: Request): Promise<NextResponse> {
   try {
     return NextResponse.json({
       ok: true,
-      snapshot: await getGuestIntakeReleaseSnapshot(access.bookingId, expectedScope),
+      snapshot: await readGuestIntakeReleaseSnapshot(access.bookingId, expectedScope),
     });
   } catch (error) {
     return NextResponse.json({ ok: false, message: error instanceof Error ? error.message : 'Не удалось загрузить выдачу инструкций.' }, { status: 400 });

@@ -24,7 +24,7 @@ export async function GET(req: Request): Promise<NextResponse> {
   try {
     const orchestration = await getBookingLifecycleOrchestratorSnapshot(
       access.bookingId,
-      true,
+      false,
       { accountId: access.accountId, propertyId: access.propertyId },
     );
     return NextResponse.json({ ok: true, orchestration });
