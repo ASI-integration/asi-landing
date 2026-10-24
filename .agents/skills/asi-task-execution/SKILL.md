@@ -35,7 +35,7 @@ Execute one task to a verifiable result while preserving product contracts and s
 1. Read root `AGENTS.md`, `docs/agent-os/CURRENT_RELEASE.md`, `WORKFLOW.md`, `PRODUCT_CONTRACT.md`, `AUTONOMY_POLICY.md`, `DEFINITION_OF_DONE.md`, and `BLOCKERS.md`.
 2. Translate the Issue into `task`, scope, acceptance criteria, classification, red actions, and explicit side-effect boundaries.
 3. Read [references/change-to-test-map.md](references/change-to-test-map.md), then prepare a task input JSON and run `scripts/preflight.mjs --task <path> --base <ref>` from the repository root.
-4. Stop with `AWAITING_OWNER` when classification is red or target/identity/scope cannot be proven. A typed confirmation is never owner approval.
+4. Pause only the protected red action when a valid owner gate or provable target/identity is missing. Continue independent authorized work, preserve the same task checkpoint, and prepare exactly one owner decision; resume after the correct owner grant rather than restarting intake. A typed confirmation is never owner approval.
 5. Create a task branch from the recorded baseline. Preserve unrelated tracked and untracked files.
 6. Trace the existing seam, implement the smallest patch, and do not create a parallel flow.
 7. Run only the checks selected by the change map within the `AGENTS.md` budget. Never run a broad suite without its red gate.
