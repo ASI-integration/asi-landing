@@ -21,6 +21,15 @@ Execute one task to a verifiable result while preserving product contracts and s
 - Capturing unrelated dirty-tree files or writing under `tmp/`.
 - Treating typed confirmation as owner approval.
 
+## Non-terminal blockers and automatic resumption (mandatory)
+- The task ends with the **requested verified artifact or milestone**, not a successful preflight or a readiness-only report. Keep one stable task ID, original goal, stage and checkpoint through ordinary failures.
+- For every obstacle: (1) classify technical vs authorization vs uncertain side effect, (2) independently verify the root cause, (3) attempt the smallest authorized fix and focused regression, (4) resume the **same** task without asking again. Use existing tools and paths; never introduce dummy work, a duplicate PR or an uncontrolled retry.
+- Reuse an existing matching owner grant only if its action, target, SHA, window and unused status are independently verified. Required red actions with no qualifying grant remain stopped. Prepare one exact owner-gate request with all other authorized preparatory steps completed; **continue from the checkpoint once the owner provides it**, without a new intake or duplicate confirmation.
+- At a pause report exactly: BLOCKER_CODE, evidence, why unresolvable within admitted scope, work completed, checkpoint, one required owner action (or external dependency), and the next executable step. BLOCKED, AWAITING_OWNER, PARTIAL are **not** product completion.
+- Before selecting the next product task, check whether it is genuinely unfinished in the canonical release; prefer the least complex useful in-scope work. Never substitute fixture tests for real acceptance or create extra diagnostics solely to satisfy an E2E badge.
+- If an approved operation temporarily weakens a tool setting, preserve prior values, restore and read back after success or failure. Do not bypass platform, owner, signed-claim, incident or tool security boundaries.
+- Apply **least friction to legitimate owners/customers, evidence-based strictness to suspicious operations**. Reduce repeated credential entry and false blocks without weakening the underlying security guarantees. Do not infer fraud from unsupported characteristics.
+
 ## Workflow
 
 1. Read root `AGENTS.md`, `docs/agent-os/CURRENT_RELEASE.md`, `WORKFLOW.md`, `PRODUCT_CONTRACT.md`, `AUTONOMY_POLICY.md`, `DEFINITION_OF_DONE.md`, and `BLOCKERS.md`.
