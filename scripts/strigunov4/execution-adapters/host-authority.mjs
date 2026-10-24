@@ -105,11 +105,11 @@ export function verifyBoundedStageCatalog(catalogRaw,payload) {
     must(typeof t?.id==='string'&&/^[a-z0-9][a-z0-9-]{3,79}$/.test(t.id)&&
       t.kind==='github-publisher'&&t.stage==='S4-G1'&&t.repo===payload.repo&&
       t.pr===null&&t.sha===payload.baseSha&&
-      typeof t.branch==='string'&&/^asi\\/engine-task\\/[a-z0-9][a-z0-9-]{3,79}$/.test(t.branch)&&
+      typeof t.branch==='string'&&/^asi\/engine-task\/[a-z0-9][a-z0-9-]{3,79}$/.test(t.branch)&&
       Array.isArray(t.changes)&&t.changes.length>=1&&t.changes.length<=3&&
       new Set(t.changes.map(c=>c.path)).size===t.changes.length&&
       t.changes.every(c=>typeof c?.path==='string'&&
-        /^scripts\\/strigunov4\\/[a-zA-Z0-9][a-zA-Z0-9_./-]*\\.py$/.test(c.path)&&
+        /^scripts\/strigunov4\/[a-zA-Z0-9][a-zA-Z0-9_./-]*\\.py$/.test(c.path)&&
         !c.path.includes('..')&&!c.path.includes('//')&&
         /^[a-f0-9]{64}$/.test(c.beforeSha256)&&typeof c.content==='string'),
       'STAGE_CATALOG_TASK_SCOPE');
