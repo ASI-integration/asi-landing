@@ -106,7 +106,7 @@ export async function getLocationReportRequestById(
 export async function markLocationReportRequestPaymentUnlocked(requestId: string): Promise<void> {
   const { error } = await supabase
     .from('location_report_requests')
-    .update({ payment_status: 'paid_unlocked', error: null })
+    .update({ access_tier: 'paid_required', payment_status: 'paid_unlocked', error: null })
     .eq('id', requestId);
   if (error) throw new Error(error.message);
 }

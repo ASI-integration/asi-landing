@@ -33,10 +33,11 @@ export async function POST(req: NextRequest) {
   const entity = await getLocationReportRequestById(requestId);
   if (!entity) return NextResponse.json({ error: 'not_found' }, { status: 404 });
 
-  const paymentUnlocked = entity.payment_status === 'paid_unlocked';
+  // Historical included/unknown rows could have been created by untrusted callers.
+  const paymentUnlocked = entity.access_tier === 'paid_required' && entity.payment_status === 'paid_unlocked';
   const manuallyConfirmed = hasManualConfirmation(req);
 
-  if (entity.access_tier === 'paid_required' && !paymentUnlocked && !manuallyConfirmed) {
+  if (!paymentUnlocked && !manuallyConfirmed) {
     return NextResponse.json(
       {
         status: entity.status,
@@ -50,7 +51,7 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  if (entity.access_tier === 'paid_required' && manuallyConfirmed && !paymentUnlocked) {
+  if (manuallyConfirmed && !paymentUnlocked) {
     await markLocationReportRequestPaymentUnlocked(requestId);
   }
 

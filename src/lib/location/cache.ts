@@ -13,6 +13,7 @@
 import type { LocationAnalysis, AnalysisFreshness } from './types';
 import { supabase } from '@/lib/supabase';
 import { patchLegacyLocationAnalysis } from './foot-traffic';
+import { validCoordinates } from './spatial-validation';
 
 /** 10 minutes: results within this window are considered fresh */
 const FRESH_TTL_MS = 10 * 60 * 1000;
@@ -61,7 +62,8 @@ export function normalizeAddress(address: string): string {
 function rowToResult(row: CacheRow): CacheResult | null {
   const updatedAt = new Date(row.updated_at).getTime();
   const age = Date.now() - updatedAt;
-  if (age > MAX_STALE_MS) return null;
+  // Corrupt/future provenance must not become indefinitely fresh evidence.
+  if (!Number.isFinite(updatedAt) || age < 0 || age > MAX_STALE_MS || !validCoordinates(row)) return null;
   const freshness: AnalysisFreshness = age < FRESH_TTL_MS ? 'fresh' : 'stale';
   const analysis = patchLegacyLocationAnalysis({
     ...row.analysis,

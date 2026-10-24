@@ -75,7 +75,7 @@ export async function processPaidReportRequest(
 ): Promise<ReportArtifact> {
   const entity = await getLocationReportRequestById(requestId);
   if (!entity) throw new Error('request_not_found');
-  if (entity.access_tier === 'paid_required' && entity.payment_status !== 'paid_unlocked') {
+  if (entity.access_tier !== 'paid_required' || entity.payment_status !== 'paid_unlocked') {
     throw new Error('paid_unlock_required');
   }
 

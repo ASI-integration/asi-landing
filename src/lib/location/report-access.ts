@@ -30,7 +30,8 @@ export function locationReportAccessStatusForPersistence(
   const explicit = normalizeLocationReportAccessStatus((report as any).accessStatus);
   if (explicit) return explicit;
   if (report.version === 'v1' && report.reportMode === 'free') return 'created';
-  return LOCATION_REPORT_UNLOCKED_STATUS;
+  // Missing/unknown payment provenance is not authorization, including legacy rows.
+  return 'created';
 }
 
 export function canExposePaidLocationReport(report: PersistableLocationReport): boolean {

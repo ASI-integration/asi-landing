@@ -14,12 +14,16 @@ const basePaid: LocationStandaloneReport = {
 };
 
 describe('report-access', () => {
-  it('unlocks legacy paid rows without explicit accessStatus', () => {
+  it('keeps legacy paid rows locked without explicit accessStatus', () => {
     const legacy = { ...basePaid, reportMode: undefined as unknown as 'paid' };
     delete (legacy as { accessStatus?: string }).accessStatus;
 
-    expect(locationReportAccessStatusForPersistence(legacy)).toBe('paid_unlocked');
-    expect(canExposePaidLocationReport(legacy)).toBe(true);
+    expect(locationReportAccessStatusForPersistence(legacy)).toBe('created');
+    expect(canExposePaidLocationReport(legacy)).toBe(false);
+  });
+
+  it('exposes explicitly unlocked paid rows', () => {
+    expect(canExposePaidLocationReport({ ...basePaid, accessStatus: 'paid_unlocked' })).toBe(true);
   });
 
   it('keeps pending_payment rows locked', () => {
