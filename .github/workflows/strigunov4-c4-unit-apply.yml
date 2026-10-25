@@ -1,0 +1,128 @@
+name: Strigunov4 C4 protected G1 physical acceptance
+on:
+  workflow_dispatch:
+    inputs:
+      reviewed_main_sha:
+        description: Exact approved main HEAD SHA
+        type: string
+        required: true
+      physical_witness_sha256:
+        description: Lab physical witness SHA256 pinned by independent owner review
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: strigunov4-staging-nine-sql-apply
+  cancel-in-progress: false
+
+jobs:
+  protected_c4_unit_apply:
+    name: Independently verify completed lab unit apply (read-only)
+    runs-on: ubuntu-24.04
+    environment: staging
+    timeout-minutes: 12
+    steps:
+      - name: Exact owner, main SHA, protected stage and one run attempt
+        env:
+          REVIEWED_SHA: ${{ inputs.reviewed_main_sha }}
+          WITNESS_SHA: ${{ inputs.physical_witness_sha256 }}
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = 'ASI-integration/asi-landing'
+          test "$GITHUB_EVENT_NAME" = 'workflow_dispatch'
+          test "$GITHUB_REF" = 'refs/heads/main'
+          test "$GITHUB_ACTOR" = 'ASI-integration'
+          test "$GITHUB_ACTOR_ID" = '207600140'
+          test "$GITHUB_TRIGGERING_ACTOR" = 'ASI-integration'
+          test "$GITHUB_RUN_ATTEMPT" = '1'
+          test "$GITHUB_WORKFLOW_SHA" = "$GITHUB_SHA"
+          test "$REVIEWED_SHA" = "$GITHUB_SHA"
+          test "$WITNESS_SHA" = '4effee726a0ce0a380d547ba9566f8e3007445f9aad9861a5bd4bb4ad59f0124'
+
+      - name: Read fixed pinned lab over verified SSH (no writes)
+        env:
+          LAB_READONLY_KEY: ${{ secrets.G1_LAB_READONLY_SSH_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          test -n "$LAB_READONLY_KEY"
+          umask 077
+          key="$RUNNER_TEMP/g1-lab-ssh-key"
+          hosts="$RUNNER_TEMP/g1-lab-known-hosts"
+          trap 'rm -f "$key" "$hosts"' EXIT
+          printf '%s\n' "$LAB_READONLY_KEY" > "$key"
+          chmod 0600 "$key"
+          ssh-keygen -yf "$key" >/dev/null
+          ssh-keyscan -T 10 -t ed25519 65.21.249.108 > "$hosts"
+          test -s "$hosts"
+          ssh-keygen -lf "$hosts" | grep -Fq 'SHA256:RhokUXt4QbZYl0TYsdH4Q2n5hU6uVsB8O3m4ORtO45A'
+          ssh -T -i "$key" -o IdentitiesOnly=yes -o BatchMode=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$hosts" \
+            -o ConnectTimeout=10 -o ServerAliveInterval=5 -o ServerAliveCountMax=1 \
+            root@65.21.249.108 'python3 -' <<'PY'
+          import os, json, hashlib, pathlib, pwd, subprocess, urllib.request, sys
+          HOST='asi-pilot-lab-01'
+          REL='d912aec6663de90e5ca4293cc5a69e2e0ed9ff94'
+          UNIT_SHA='6e0ce12922e015738368c89deeef154c195f19b2a0678d72d27d58e5414bf62c'
+          WITNESS_SHA='4effee726a0ce0a380d547ba9566f8e3007445f9aad9861a5bd4bb4ad59f0124'
+          UNIT='/etc/systemd/system/asi-landing-staging.service'
+          ENV='/var/www/asi-staging/shared/.env.staging.local'
+          REPORT='/root/asi-s4-g1-physical-witness-20261025.json'
+          FLAGS={'EMAIL_AUTO_SEND':'false','EMAIL_DRAFT_ONLY':'true',
+                 'DRY_RUN_TELEGRAM_OUTBOUND':'true','ALLOW_REAL_TELEGRAM_SYNTHETIC':'false',
+                 'YOOKASSA_ENABLED':'false','ASI_SYNTHETIC_NO_SEND':'YES',
+                 'ASI_APP_ROOT':'/var/www/asi-staging/current'}
+          def check(ok,reason):
+              if not ok: raise ValueError(reason)
+          def show(field):
+              return subprocess.check_output(['systemctl','show','asi-landing-staging.service',
+                                              '-p',field,'--value'],text=True,timeout=8).strip()
+          check(os.uname().nodename == HOST and os.geteuid() == 0,'HOST_OR_USER')
+          raw=pathlib.Path(REPORT).read_bytes()
+          check(hashlib.sha256(raw).hexdigest() == WITNESS_SHA,'RECEIPT_HASH')
+          receipt=json.loads(raw)
+          check(receipt.get('host') == HOST and receipt.get('ownerAcceptance') is False
+                and receipt.get('nextStageReleased') is False
+                and receipt.get('status') == 'G1_LAB_PHYSICAL_PROOF_PASS_NOT_ACCEPTED',
+                'RECEIPT_STATE')
+          check(show('ActiveState') == 'active' and show('NeedDaemonReload') == 'no'
+                and show('NRestarts') == '0' and show('UnitFileState') == 'disabled',
+                'SYSTEMD_STATE')
+          pid=int(show('MainPID'))
+          check(pid == receipt['first']['pid'] == receipt['second']['pid'],'BOUND_PID')
+          check(show('InvocationID') == receipt['first']['invocationID']
+                == receipt['second']['invocationID'],'BOUND_INVOCATION')
+          check(show('ExecMainStartTimestampMonotonic') == receipt['first']['startToken']
+                == receipt['second']['startToken'],'BOUND_PROCESS_START')
+          check(ENV in show('EnvironmentFiles') and 'ignore_errors=yes' not in show('EnvironmentFiles'),
+                'MANDATORY_ENV')
+          check(hashlib.sha256(pathlib.Path(UNIT).read_bytes()).hexdigest() == UNIT_SHA,
+                'UNIT_SHA')
+          check(str(pathlib.Path('/var/www/asi-staging/current').resolve()) ==
+                '/var/www/asi-staging/releases/'+REL,'RELEASE_PATH')
+          check(pwd.getpwuid(pathlib.Path('/proc/'+str(pid)).stat().st_uid).pw_name == 'asi-runtime',
+                'SERVICE_USER')
+          effective={}
+          for part in (pathlib.Path('/proc')/str(pid)/'environ').read_bytes().split(b'\0'):
+              if b'=' not in part: continue
+              key,value=part.split(b'=',1)
+              key=key.decode('ascii','replace')
+              if key in FLAGS: effective[key]=value.decode('utf-8','replace')
+          check(effective == FLAGS,'EFFECTIVE_NO_SEND')
+          for cmd in (['iptables','-C','OUTPUT','-m','owner','--uid-owner','asi-runtime',
+                       '!','-d','127.0.0.0/8','-j','REJECT'],
+                      ['ip6tables','-C','OUTPUT','-m','owner','--uid-owner','asi-runtime',
+                       '!','-d','::1/128','-j','REJECT']):
+              subprocess.check_call(cmd,stdout=subprocess.DEVNULL,
+                                    stderr=subprocess.DEVNULL,timeout=6)
+          with urllib.request.urlopen('http://127.0.0.1:3001/api/health',timeout=5) as r:
+              check(r.status == 200 and json.load(r).get('ok') is True,'HEALTH')
+          with urllib.request.urlopen('http://127.0.0.1:3001/api/version',timeout=5) as r:
+              v=json.load(r)
+              check(r.status == 200 and v.get('sha') == REL and v.get('environment') == 'staging'
+                    and v.get('resolvedReleasePath') ==
+                        '/var/www/asi-staging/releases/'+REL,'VERSION')
+          print('PROTECTED_G1_LAB_LIVE_EVIDENCE_PASS; no server writes; no stage mutation')
+          PY
