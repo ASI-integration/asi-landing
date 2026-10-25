@@ -43,8 +43,16 @@ let active;
 async function construct({readProjectGates}){
   const authority=await loadHostAuthority(),{payload,catalog}=authority;
   must(os.hostname()===payload.host,'HOST_NOT_ADMITTED');
+  // A fresh, explicitly signed bounded stage catalog may contain several
+  // already-approved product work orders. Native Publisher's single shared lock
+  // and durable receipts still enforce one task at a time and prohibit replay.
+  // No workflow rights, arbitrary paths, or unknown work orders are granted.
+  for(const t of catalog){
+    const work=[...WORK_ORDERS,ENGINE_PILOT].find(w=>w.id===t.workOrderId);
+    must(work?.kind==='prepare-source'&&work.stage==='S4-G1'&&
+      t.changes.every(c=>work.paths.includes(c.path)), 'SIGNED_WORK_ORDER_SCOPE');
+  }
   const task=catalog[0];
-  must(task.workOrderId===ENGINE_PILOT.id&&task.changes.length===1&&task.changes[0].path===ENGINE_PILOT.paths[0],'PILOT_SCOPE');
   const runner='/home/project_ayfaar/asi-strigunov-agent/bin/runner.mjs';await regular(runner);
   must(digest(await fs.readFile(runner))===payload.runnerSha256,'RUNNER_NOT_ADMITTED');
   const seed=path.join(ENGINE_ROOT,'scratchpads',task.id);
