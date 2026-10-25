@@ -33,7 +33,7 @@ async function github<T>(url: string, token: string | null): Promise<T> {
   } finally { clearTimeout(timer); }
 }
 /** Only the existing owner-approved physical host workflow can unlock G1. */
-async function verifyPhysicalG1(stage: ReleaseStage, token: string): Promise<boolean> {
+async function verifyPhysicalG1(stage: ReleaseStage, token: string | null): Promise<boolean> {
   if (stage.id !== 'S4-G1' || stage.status !== 'ACCEPTED' || !stage.proof.length)
     return false;
   try {
