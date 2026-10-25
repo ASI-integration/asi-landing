@@ -16,7 +16,7 @@ type Workflow = { id: number; name: string; status: string; conclusion: string |
 type ReleaseStage = { id: string; title: string; status: string; proof: unknown[]; acceptance: string[]; acceptanceSha?: string };
 let memo: { at: number; value: unknown } | null = null;
 
-async function github<T>(url: string, token: string): Promise<T> {
+async function github<T>(url: string, token: string | null): Promise<T> {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), 8000);
   try {
@@ -24,7 +24,7 @@ async function github<T>(url: string, token: string): Promise<T> {
       method: 'GET', cache: 'no-store', signal: ctrl.signal,
       headers: {
         Accept: 'application/vnd.github+json',
-        Authorization: 'Bearer ' + token,
+        ...(token ? { Authorization: 'Bearer ' + token } : {}),
         'X-GitHub-Api-Version': '2022-11-28',
       },
     });
@@ -57,10 +57,12 @@ const noStore = { 'cache-control': 'private, no-store, max-age=0', 'x-content-ty
 export async function GET() {
   const auth = await requireDevelopmentOwnerSession();
   if ('error' in auth) return auth.error;
-  if (memo && Date.now() - memo.at < 20000)
+  const token = process.env.GITHUB_TOKEN?.trim() || null;
+  // GitHub public REST is limited to 60 requests/hour per IP without a token.
+  // One owner snapshot makes up to eight requests: cap public polls at 10 min.
+  const ttl = token ? 20000 : 600000;
+  if (memo && Date.now() - memo.at < ttl)
     return NextResponse.json(memo.value, { headers: noStore });
-  const token = process.env.GITHUB_TOKEN?.trim();
-  if (!token) return NextResponse.json({ok: false, reason: 'Нет серверного доступа к GitHub'}, {status: 503, headers: noStore});
   try {
     const [file, issue, ...prList] = await Promise.all([
       github<{ content: string; encoding: string; sha: string }>(BASE + '/contents/' + RELEASE_PATH + '?ref=main', token),
