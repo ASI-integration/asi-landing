@@ -26,6 +26,7 @@ type DashboardNavItem = {
     | 'onboarding'
     | 'roadmap'
     | 'engineProgress'
+    | 'strigunovGps'
     | 'missionControl'
     | 'development';
   label?: string;
@@ -47,6 +48,7 @@ const navItems: DashboardNavItem[] = [
   { href: '/dashboard/automations', key: 'automations', label: 'Автоматизация' },
   { href: '/dashboard/roadmap', key: 'roadmap', label: 'План ASI' },
   { href: '/dashboard/engine-progress', key: 'engineProgress', label: 'Вехи движка' },
+  { href: '/dashboard/strigunov-gps', key: 'strigunovGps', label: 'GPS · Стригунов 4' },
   { href: '/dashboard/control-center', key: 'missionControl', label: 'Центр управления' },
   { href: '/dashboard/development', key: 'development', label: 'Разработка ASI' },
   { href: '/dashboard/settings', key: 'settings', label: 'Настройки' },
@@ -64,7 +66,7 @@ function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
     if (item.key === 'automations') {
       return session?.isCrmOperator === true;
     }
-    if (item.key === 'development' || item.key === 'roadmap' || item.key === 'engineProgress' || item.key === 'missionControl') {
+    if (item.key === 'development' || item.key === 'roadmap' || item.key === 'engineProgress' || item.key === 'strigunovGps' || item.key === 'missionControl') {
       return session?.isDevelopmentOwner === true;
     }
     return true;
