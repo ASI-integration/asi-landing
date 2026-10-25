@@ -1,6 +1,7 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
+import { acceptedPrefix, physicallyAccepted } from '@/lib/strigunov-gps/acceptance';
 
 type Stage = {
   id: string; title: string; status: string; proofCount: number; acceptance: string[];
@@ -25,10 +26,7 @@ const fallbackTitles = [
   'Согласование тестовых данных', 'Тестовая бронь целиком',
   'Операторский экран и защита отправок', 'Независимая приёмка демонстрации',
 ];
-function isAccepted(s: Stage, verified: string[]) {
-  return s.status === 'ACCEPTED' && s.proofCount > 0 && verified.includes(s.id);
-}
-function A({href, children}: {href: string; children: React.ReactNode}) {
+function A({href, children}: {href: string; children: ReactNode}) {
   return <a href={href} target="_blank" rel="noopener noreferrer"
     className="font-semibold text-blue-700 underline underline-offset-2 hover:text-blue-900">{children}</a>;
 }
@@ -67,8 +65,8 @@ export default function StrigunovGpsClient() {
   const stages: Stage[] = data?.stages ?? ids.map((id, i) =>
     ({id, title: fallbackTitles[i], status: 'UNKNOWN', proofCount: 0, acceptance: []}));
   const trusted = data?.serverEvidence?.verifiedStages ?? [];
-  const count = stages.filter(s => isAccepted(s, trusted)).length;
-  const current = data ? stages.find(s => !isAccepted(s, trusted)) : null;
+  const count = acceptedPrefix(stages, trusted);
+  const current = data ? stages.find(s => !physicallyAccepted(s, trusted)) : null;
   const chosen = stages.find(s => s.id === selected) ?? stages[0];
   const currentIndex = current ? stages.indexOf(current) : -1;
   const ci = data?.prs.flatMap(p => p.ci) ?? [];
@@ -175,7 +173,7 @@ export default function StrigunovGpsClient() {
                 fill="none" stroke="#64748b" strokeWidth="8" strokeDasharray="13 11" strokeLinecap="round"/>
             </svg>
             {stages.map((stage, index) => {
-              const done = isAccepted(stage, trusted);
+              const done = physicallyAccepted(stage, trusted);
               const active = stage.id === current?.id;
               const [x, y] = positions[index];
               return <button type="button" key={stage.id}
@@ -209,7 +207,7 @@ export default function StrigunovGpsClient() {
           <h2 className="mt-1 text-lg font-black">{chosen.title}</h2>
           <p className="mt-1 text-xs text-slate-600">
             Статус: {chosen.status} · доказательств в карте: {chosen.proofCount} ·
-            физическая приёмка: {isAccepted(chosen, trusted) ? 'подтверждена' : 'не подтверждена'}
+            физическая приёмка: {physicallyAccepted(chosen, trusted) ? 'подтверждена' : 'не подтверждена'}
           </p>
           <details className="mt-3 rounded-xl bg-slate-50 p-3" open={selected === 'S4-G1'}>
             <summary className="cursor-pointer text-sm font-bold">Условия завершения ({chosen.acceptance.length})</summary>
