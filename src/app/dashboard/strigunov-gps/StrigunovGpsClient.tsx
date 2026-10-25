@@ -33,7 +33,7 @@ function A({href, children}: {href: string; children: ReactNode}) {
 export default function StrigunovGpsClient() {
   const [data, setData] = useState<Snapshot | null>(null);
   const [error, setError] = useState('');
-  const [selected, setSelected] = useState('S4-G1');
+  const [selected, setSelected] = useState('S4-G2');
   const [zoom, setZoom] = useState(1);
   const [busy, setBusy] = useState(false);
   const seq = useRef(0);
@@ -99,7 +99,11 @@ export default function StrigunovGpsClient() {
         <div className="rounded-2xl border bg-white p-4 shadow-sm">
           <p className="text-xs font-semibold text-slate-500">Вы здесь</p>
           <p className="mt-1 text-3xl font-black text-blue-700">{current?.id ?? 'Нет данных'}</p>
-          <p className="mt-1 text-xs text-slate-500">{current ? 'Первый непринятый этап' : 'Положение не проверено'}</p>
+          <p className="mt-1 text-xs text-slate-500">{current ? 'Первый непринятый этап — не текущая разработка' : 'Положение не проверено'}</p>
+          <div className="mt-3 rounded-xl border border-blue-200 bg-blue-50 p-3">
+            <p className="text-xs font-semibold text-blue-800">Текущая локальная работа · G2</p>
+            <p className="mt-1 text-xs text-blue-900">Права оператора и вход. Последнее локальное свидетельство: 96/96 Linux-тестов PASS, 25.10.2026. Это сохранённый результат, не живой сигнал с D: и не приёмка этапа.</p>
+          </div>
         </div>
         <div className="rounded-2xl border bg-white p-4 shadow-sm">
           <p className="text-xs font-semibold text-slate-500">Физически приняты этапы</p>
@@ -188,7 +192,7 @@ export default function StrigunovGpsClient() {
                     active ? 'border-blue-800 bg-blue-600 text-white' :
                     'border-slate-400 bg-white text-slate-700')}>
                 {done ? '✓ ' : active ? '◎ ' : '🔒 '}{stage.id}
-                {active && <span className="block text-[10px]">ТЫ ЗДЕСЬ</span>}
+                {active && <span className="block text-[10px]">ПРИЁМКА</span>}
               </button>;
             })}
             {currentIndex >= 0 && <span className="absolute z-10 rounded-xl bg-rose-600 px-3 py-2 text-xs font-bold text-white shadow"
@@ -201,7 +205,7 @@ export default function StrigunovGpsClient() {
             </div>
           </div>
           <div className="absolute bottom-3 left-3 rounded-lg bg-white/95 p-2 text-xs text-slate-600 shadow">
-            Карта зависимостей · не географическое расстояние
+            Карта приёмки · локальная разработка G2 отображается отдельно
           </div>
         </div>
         <div className="border-t p-4">
@@ -260,7 +264,7 @@ export default function StrigunovGpsClient() {
       </aside>
     </div>
     <p className="mt-3 text-xs text-slate-500">
-      Автоматическое чтение каждые 30 секунд. Только чтение; без PR, merge, запуска Engine и изменений серверов.
+      Автоматическое чтение серверной карты каждые 30 секунд. Локальные тесты G2 показаны как датированный снимок и пока не синхронизируются с D:. Только чтение; без PR, merge, запуска Engine и изменений серверов.
       CI и статус Dispatcher не заменяют проверку физической приёмки.
     </p>
   </main>;
