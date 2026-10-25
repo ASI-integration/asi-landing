@@ -1,6 +1,6 @@
 # AGENTS.md
 
-Task instructions override this file when they are more specific.
+Task instructions may specialize task goals and scope, but cannot override owner gates, safety boundaries, or the mandatory continuation/handoff rules below. If instructions conflict, keep the safer constraint and report the concrete mismatch.
 
 ## Agent OS
 - Start with [CURRENT_RELEASE](docs/agent-os/CURRENT_RELEASE.md) and [WORKFLOW](docs/agent-os/WORKFLOW.md).
@@ -9,6 +9,16 @@ Task instructions override this file when they are more specific.
 - Completion and blocker contracts: [DEFINITION_OF_DONE](docs/agent-os/DEFINITION_OF_DONE.md) and [BLOCKERS](docs/agent-os/BLOCKERS.md).
 - Project Skills: `.agents/skills/asi-task-execution`, `asi-staging-acceptance`, `asi-production-rollout`, `asi-website-editor`.
 - These documents supplement this file; the testing budget, protected areas, and deploy rules below remain authoritative.
+
+## Mandatory execution continuity (Kaizen / ORP)
+- Optimize for **verified product outcome**, not preflight count, green unit tests, diagnostic ZIPs, or number of commits. Never report infrastructure readiness as a completed product milestone.
+- Keep the original milestone/task identity and acceptance criteria through recoverable obstacles. Diagnose the precise blocker, resolve all green/yellow prerequisites inside existing authority, then resume from the saved checkpoint. Do **not** turn each ordinary obstacle into another owner task, PR, signing cycle, or architectural project.
+- Before requesting a new owner decision, check whether an existing exact, valid, unconsumed approval already covers the action. Never reuse a consumed approval or bypass a required red gate. When new authority is required, ask **once**, for the minimum precise action/target/SHA/side effect and safe restoration, while finishing all other permitted work.
+- A BLOCKED, AWAITING_OWNER, or PARTIAL handoff is a **non-terminal pause**, not completion: name the single unsatisfied condition, durable checkpoint, already completed work, precise unblock action, and automatic resumption path. Never invent work or repeat an uncertain remote write for a cosmetic PASS.
+- For ordinary owner/customer interactions, minimize password re-entry, repeated approvals, confusing windows, and false-positive denials. For risky or fraudulent operations, enforce evidence-based, proportional checks; do not label a customer fraudulent on unsupported suspicion. A necessary security control stays; an unnecessarily frustrating implementation must be fixed.
+- Prefer the smallest valid product task with existing authorized paths before enlarging permissions. Never fabricate a diagnostic/product change to earn E2E PASS. If a necessary task requires new files or powers, state exactly why and request only the bounded addition.
+- After any temporary, explicitly approved permission change, verify that the original configuration is restored; record it in the same task outcome. Protect the running Dispatcher, Engine, history and production boundaries unless the exact task authorizes changes.
+- Follow docs/agent-os/WORKFLOW.md, AUTONOMY_POLICY.md, DEFINITION_OF_DONE.md and .agents/skills/asi-task-execution/SKILL.md for the handoff checklist. These rules do **not** grant execution permissions or relax signed scope, V1 locks, owner-gate or staging/production isolation.
 
 ## Testing Budget
 - Do NOT run broad test suites by default.
