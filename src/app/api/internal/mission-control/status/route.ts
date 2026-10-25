@@ -1,4 +1,6 @@
 import { NextResponse } from 'next/server';
+import { OPERATIONS_SCHEMA, parseOperationsPayload } from '@/lib/mission-control/operations';
+import { saveOperations } from '@/lib/mission-control/operations-store';
 import { isRuntimeIngestAuthorized } from '@/lib/asi-runtime/ingest-auth';
 import {
   parseMissionControlStatusPayload,
@@ -26,6 +28,12 @@ export async function POST(request: Request): Promise<NextResponse> {
   }
 
   const body = await readMissionControlStatusBody(request);
+  if (body && typeof body === 'object' && 'schemaVersion' in body && body.schemaVersion === OPERATIONS_SCHEMA) {
+    const operations = parseOperationsPayload(body);
+    if (!operations) return NextResponse.json({ok:false,message:'Некорректный статус процессов.'},{status:400,headers:NO_STORE});
+    try { await saveOperations(operations); return NextResponse.json({ok:true},{headers:NO_STORE}); }
+    catch { return NextResponse.json({ok:false,message:'Статус не принят. Сохранён предыдущий отчёт.'},{status:409,headers:NO_STORE}); }
+  }
   const payload = parseMissionControlStatusPayload(body);
   if (!payload) {
     return NextResponse.json(
