@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { requireDevelopmentOwnerSession } from '@/lib/development/api-auth';
 import { getMissionControlDashboard } from '@/lib/mission-control/store';
+import { verifiedG1Run } from '@/lib/strigunov-gps/proof';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -12,7 +13,7 @@ const PR_NUMBERS = [529, 532, 533];
 const STAGE_IDS = [1, 2, 3, 4, 5, 6].map(n => 'S4-G' + n);
 type GitHubPR = { number: number; state: string; draft: boolean; merged: boolean; updated_at: string; head: { sha: string } };
 type Workflow = { id: number; name: string; status: string; conclusion: string | null; head_sha: string; html_url: string };
-type ReleaseStage = { id: string; title: string; status: string; proof: unknown[]; acceptance: string[] };
+type ReleaseStage = { id: string; title: string; status: string; proof: unknown[]; acceptance: string[]; acceptanceSha?: string };
 let memo: { at: number; value: unknown } | null = null;
 
 async function github<T>(url: string, token: string): Promise<T> {
@@ -30,6 +31,26 @@ async function github<T>(url: string, token: string): Promise<T> {
     if (!res.ok) throw new Error('GitHub read failed: ' + res.status);
     return await res.json() as T;
   } finally { clearTimeout(timer); }
+}
+/** Only the existing owner-approved physical host workflow can unlock G1. */
+async function verifyPhysicalG1(stage: ReleaseStage, token: string): Promise<boolean> {
+  if (stage.id !== 'S4-G1' || stage.status !== 'ACCEPTED' || !stage.proof.length)
+    return false;
+  try {
+    const verified = await Promise.all(stage.proof.map(async proof => {
+      if (typeof proof !== 'string') return false;
+      const match = /^https:\/\/github\.com\/ASI-integration\/asi-landing\/actions\/runs\/([1-9][0-9]*)$/.exec(proof);
+      if (!match) return false;
+      const uri = BASE + '/actions/runs/' + match[1];
+      const [run, approvals, jobs] = await Promise.all([
+        github<Parameters<typeof verifiedG1Run>[2]>(uri, token),
+        github<Parameters<typeof verifiedG1Run>[3]>(uri + '/approvals', token),
+        github<Parameters<typeof verifiedG1Run>[4]>(uri + '/jobs?per_page=100', token),
+      ]);
+      return verifiedG1Run(stage, proof, run, approvals, jobs);
+    }));
+    return verified.length > 0 && verified.every(Boolean);
+  } catch { return false; }
 }
 const noStore = { 'cache-control': 'private, no-store, max-age=0', 'x-content-type-options': 'nosniff' };
 
@@ -90,6 +111,7 @@ export async function GET() {
         physicalProof: false,
       } : {available: false, stale: true, status: 'UNKNOWN', stage: null, updatedAt: null, physicalProof: false};
     }, () => ({available: false, stale: true, status: 'UNKNOWN', stage: null, updatedAt: null, physicalProof: false}));
+    const g1Accepted = await verifyPhysicalG1(release.stages[0], token);
     const payload = {
       ok: true, observedAt: new Date().toISOString(), mapSha: file.sha,
       mapUrl: 'https://github.com/' + REPO + '/blob/main/' + RELEASE_PATH,
@@ -100,12 +122,14 @@ export async function GET() {
         acceptance: s.acceptance,
       })),
       prs, telemetry,
-      // A live status record, PR, and CI are NOT physical acceptance.
-      // Verified stages can be set only after a separate, authenticated
-      // and release/run-bound server evidence adapter is reviewed.
+      // Only the protected, owner-approved, exact-SHA run can unlock G1.
+      // Other stages require separate, reviewed proof validators.
       serverEvidence: {
-        available: false, verifiedStages: [] as string[],
-        reason: 'Независимые доказательства физической приёмки не подключены.',
+        available: g1Accepted,
+        verifiedStages: g1Accepted ? ['S4-G1'] : [] as string[],
+        reason: g1Accepted
+          ? 'Подтверждён защищённый физический запуск и приёмка S4-G1.'
+          : 'Физическая приёмка пока не доказана. GitHub PR/CI и Mission Control её не заменяют.',
       },
     };
     memo = { at: Date.now(), value: payload };

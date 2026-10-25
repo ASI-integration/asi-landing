@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { acceptedPrefix, physicallyAccepted } from '@/lib/strigunov-gps/acceptance';
 
 type Stage = {
@@ -36,7 +36,9 @@ export default function StrigunovGpsClient() {
   const [selected, setSelected] = useState('S4-G1');
   const [zoom, setZoom] = useState(1);
   const [busy, setBusy] = useState(false);
+  const seq = useRef(0);
   const load = useCallback(async () => {
+    const ticket = ++seq.current;
     setBusy(true);
     try {
       const res = await fetch('/api/dashboard/strigunov-gps',
@@ -44,11 +46,11 @@ export default function StrigunovGpsClient() {
       if (!res.ok) throw new Error('Источник недоступен');
       const json = await res.json() as Snapshot;
       if (!json.ok || json.stages?.length !== 6) throw new Error('Неожиданный ответ');
-      setData(json);
-      setError('');
+      if (ticket === seq.current) { setData(json); setError(''); }
     } catch {
-      setError('Источник недоступен. Последний снимок может быть устаревшим; новых подтверждений нет.');
-    } finally { setBusy(false); }
+      if (ticket === seq.current)
+        setError('Источник недоступен. Последний снимок может быть устаревшим; новых подтверждений нет.');
+    } finally { if (ticket === seq.current) setBusy(false); }
   }, []);
   useEffect(() => {
     void load();
