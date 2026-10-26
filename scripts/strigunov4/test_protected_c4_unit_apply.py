@@ -87,14 +87,14 @@ class BegetProtectedWitnessTests(unittest.TestCase):
   good="LISTEN 0 511 127.0.0.1:3001 0.0.0.0:*"
   ssh="LISTEN 0 4096 0.0.0.0:22 0.0.0.0:*"
   self.assertTrue(parse(good))
-  self.assertTrue(parse(ssh+"\\n"+good))
+  self.assertTrue(parse(ssh+"\n"+good))
   for case in ("",ssh, "LISTEN 0 511 *:3001 *:*",
                "LISTEN 0 511 [::]:3001 [::]:*",
                "LISTEN 0 511 31.129.96.181:3001 0.0.0.0:*",
                "LISTEN 0 511 127.0.0.1:30010 0.0.0.0:*",
-               good+"\\n"+good,
-               good+"\\n"+"LISTEN 0 511 *:3001 *:*",
-               good+"\\n"+"LISTEN malformed"):
+               good+"\n"+good,
+               good+"\n"+"LISTEN 0 511 *:3001 *:*",
+               good+"\n"+"LISTEN malformed"):
    with self.subTest(case=case):
     self.assertFalse(parse(case))
  def test_fixed_host_and_not_legacy_report(self):
