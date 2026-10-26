@@ -1,61 +1,82 @@
-"""Offline negative tests for run-bound protected G1 witness; no network/actions."""
+"""Offline fail-closed checks: Beget G1 only; never makes SSH/network calls."""
 import copy
 import importlib.util
-import pathlib
+from pathlib import Path
 import unittest
-
-SCRIPT = pathlib.Path(__file__).with_name("protected_c4_unit_apply.py")
-spec = importlib.util.spec_from_file_location("protected_c4_unit_apply",SCRIPT)
+from unittest.mock import patch
+SCRIPT=Path(__file__).with_name("protected_c4_unit_apply.py")
+spec=importlib.util.spec_from_file_location("protected_c4_unit_apply", SCRIPT)
 m=importlib.util.module_from_spec(spec)
 spec.loader.exec_module(m)
 
-LAB = {
- "hostname":"asi-pilot-lab-01","pid":250151,
- "invocationId":"f9713b4e2fcd46d2967b8cdf7c9678db",
- "unitHash":m.UNIT_SHA,"witnessHash":m.WITNESS_SHA,"releaseSha":m.EXPECTED_RELEASE,
- "noSendEffective":True,"egressBlocked":True,"health":200,"version":200,"reload":"no","enabledAtBoot":False
+GOOD={
+ "status":"BEGET_G1_ISOLATED_PROCESS_OBSERVED","hostname":m.HOST,
+ "pid":m.PID,"invocationId":m.INVOCATION,"unitHash":m.UNIT_SHA,
+ "releaseSha":m.RELEASE,"noSendEffective":True,
+ "health":200,"version":200,"reload":"no","nRestarts":0,
+ "environmentMandatory":True,"loopbackOnly":True,"networkDeny":True,
+ "kernelIngressAttached":True,"kernelEgressAttached":True,
+ "bootDisabled":True,"actualEgressAttempted":False
 }
-OLD = {
- "hostname":"asi-agent-runner","pid":m.OLD_PID,"unitHash":m.OLD_UNIT_SHA,
- "health":200,"reload":"no","environmentOptional":True
+CONTEXT={
+ "GITHUB_REPOSITORY":"ASI-integration/asi-landing",
+ "GITHUB_EVENT_NAME":"workflow_dispatch",
+ "GITHUB_REF":"refs/heads/main","GITHUB_ACTOR_ID":"207600140",
+ "GITHUB_TRIGGERING_ACTOR":"ASI-integration","GITHUB_RUN_ATTEMPT":"1",
+ "GITHUB_WORKFLOW_REF":"ASI-integration/asi-landing/.github/workflows/strigunov4-c4-unit-apply.yml@refs/heads/main",
+ "GITHUB_SHA":"a"*40,"GITHUB_WORKFLOW_SHA":"a"*40,
+ "G1_PHYSICAL_TARGET":"beget-g1-readonly","BEGET_SSH_HOST":m.IP,
+ "BEGET_SSH_PORT":"22","BEGET_SSH_USER":"root",
+ "BEGET_SSH_PRIVATE_KEY":"-----BEGIN OPENSSH PRIVATE KEY-----\nSYNTHETIC\n-----END OPENSSH PRIVATE KEY-----\n"
 }
 
-class PhysicalG1ProofTests(unittest.TestCase):
- def test_valid_lab_and_unchanged_old(self):
-  self.assertTrue(m.validate_lab_report(LAB))
-  self.assertTrue(m.validate_old_report(OLD))
- def test_lab_fail_closed(self):
-  cases=[
-    ("hostname","asi-pilot-lab-02"),("pid",250152),
-    ("invocationId","deadbeef"),("unitHash","0"*64),("witnessHash","0"*64),
-    ("releaseSha","0"*40),("noSendEffective",False),("egressBlocked",False),
-    ("health",503),("version",503),("reload","yes"),("enabledAtBoot",True)
-  ]
-  for key,value in cases:
-   with self.subTest(key=key):
-    data=copy.deepcopy(LAB);data[key]=value
-    with self.assertRaises(ValueError):m.validate_lab_report(data)
- def test_reject_missing_or_extra_report_fields(self):
-  for data in ({k:v for k,v in LAB.items() if k!="witnessHash"},{**LAB,"approvalClaim":True}):
-   with self.assertRaises(ValueError):m.validate_lab_report(data)
- def test_old_staging_must_remain_unchanged(self):
-  cases=[("hostname","other"),("pid",12),("unitHash","f"*64),
-         ("health",500),("reload","yes"),("environmentOptional",False)]
-  for key,value in cases:
-   with self.subTest(key=key):
-    data=dict(OLD);data[key]=value
-    with self.assertRaises(ValueError):m.validate_old_report(data)
- def test_no_write_or_send_paths_in_reviewed_scripts(self):
-  for code in (m.REMOTE_LAB,m.REMOTE_OLD):
-   self.assertNotIn("systemctl start",code)
-   self.assertNotIn("systemctl restart",code)
-   self.assertNotIn("iptables -I",code)
-   self.assertNotIn("requests.post",code)
- def test_pins(self):
+class BegetProtectedWitnessTests(unittest.TestCase):
+ def test_exact_beget_report(self):
+  self.assertTrue(m.validate_report(GOOD))
+ def test_each_identity_or_safety_drift_blocked(self):
+  cases={
+   "status":"PASS","hostname":"asi-pilot-lab-01","pid":250151,
+   "invocationId":"foreign","unitHash":"0"*64,"releaseSha":"0"*40,
+   "noSendEffective":False,"health":500,"version":500,"reload":"yes",
+   "nRestarts":1,"environmentMandatory":False,"loopbackOnly":False,
+   "networkDeny":False,"kernelIngressAttached":False,"kernelEgressAttached":False,
+   "bootDisabled":False,"actualEgressAttempted":True}
+  for name,value in cases.items():
+   with self.subTest(name=name):
+    report=copy.deepcopy(GOOD);report[name]=value
+    with self.assertRaises(ValueError):m.validate_report(report)
+ def test_missing_extra_and_wrong_type_rejected(self):
+  for report in ({k:v for k,v in GOOD.items() if k!="kernelEgressAttached"},
+                 dict(GOOD,secret="never"),dict(GOOD,pid=True),
+                 dict(GOOD,noSendEffective=1)):
+   with self.assertRaises(ValueError):m.validate_report(report)
+ def test_exact_owner_target_and_checkout_binding(self):
+  with patch.object(m.subprocess,"check_output",return_value="a"*40+"\n"):
+   self.assertTrue(m.protected_context(CONTEXT).startswith("-----BEGIN"))
+   for name in CONTEXT:
+    value=CONTEXT[name]
+    bad=dict(CONTEXT)
+    bad[name]="0" if name!="BEGET_SSH_PRIVATE_KEY" else ""
+    with self.subTest(name=name),self.assertRaises(ValueError):m.protected_context(bad)
+    self.assertEqual(CONTEXT[name],value)
+  with patch.object(m.subprocess,"check_output",return_value="b"*40+"\n"):
+   with self.assertRaisesRegex(ValueError,"SOURCE_MISMATCH"):m.protected_context(CONTEXT)
+ def test_read_only_fixed_remote_protocol(self):
+  self.assertIn("bpftool",m.REMOTE)
+  self.assertIn("cgroup_inet_egress",m.REMOTE)
+  self.assertIn("127.0.0.1:3001",m.REMOTE)
+  self.assertIn("MainPID",m.REMOTE)
+  self.assertIn("actualEgressAttempted",m.REMOTE)
+  self.assertIn("loopbackOnly",m.FIELDS)
+  for forbidden in ("systemctl start","systemctl restart","requests.post","urllib.request.Request(method='POST'",
+                    "git push","socket.connect(","os.environ[" ):
+   self.assertNotIn(forbidden,m.REMOTE)
+ def test_fixed_host_and_not_legacy_report(self):
+  self.assertEqual(m.IP,"31.129.96.181")
+  self.assertNotEqual(m.HOST,"asi-pilot-lab-01")
   self.assertEqual(len(m.UNIT_SHA),64)
-  self.assertEqual(len(m.WITNESS_SHA),64)
-  self.assertEqual(len(m.EXPECTED_RELEASE),40)
-  self.assertTrue(m.REMOTE_LAB.strip().startswith("import "))
+  self.assertEqual(len(m.RELEASE),40)
+  self.assertNotIn("65.21.249.108",m.REMOTE)
 
 if __name__=="__main__":
  unittest.main()
