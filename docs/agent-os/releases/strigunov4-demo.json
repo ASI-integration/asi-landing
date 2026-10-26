@@ -120,20 +120,20 @@
   },
   "pendingPrPaths": [
     {
-    "pr": 509,
-    "headSha": "5ba61e734a1f9a56cd807eee91b4e217bf6ee040",
-    "paths": [
-      ".github/workflows/strigunov4-c4-unit-reload-survey.yml",
-      "docs/strigunov4/C4-UNIT-REPAIR-SOURCE-ONLY-PREFLIGHT.md",
-      "scripts/strigunov4/c4_unit_reload_survey.py",
-      "scripts/strigunov4/c4_unit_repair_host_preflight.py",
-      "scripts/strigunov4/c4_unit_repair_phase_contract.py",
-      "scripts/strigunov4/protected_c4_unit_reload_survey.py",
-      "scripts/strigunov4/test_c4_unit_reload_survey.py",
-      "scripts/strigunov4/test_c4_unit_repair_host_preflight.py",
-      "scripts/strigunov4/test_c4_unit_repair_phase_contract.py",
-      "scripts/strigunov4/test_protected_c4_unit_reload_survey.py"
-    ]
+      "pr": 509,
+      "headSha": "5ba61e734a1f9a56cd807eee91b4e217bf6ee040",
+      "paths": [
+        ".github/workflows/strigunov4-c4-unit-reload-survey.yml",
+        "docs/strigunov4/C4-UNIT-REPAIR-SOURCE-ONLY-PREFLIGHT.md",
+        "scripts/strigunov4/c4_unit_reload_survey.py",
+        "scripts/strigunov4/c4_unit_repair_host_preflight.py",
+        "scripts/strigunov4/c4_unit_repair_phase_contract.py",
+        "scripts/strigunov4/protected_c4_unit_reload_survey.py",
+        "scripts/strigunov4/test_c4_unit_reload_survey.py",
+        "scripts/strigunov4/test_c4_unit_repair_host_preflight.py",
+        "scripts/strigunov4/test_c4_unit_repair_phase_contract.py",
+        "scripts/strigunov4/test_protected_c4_unit_reload_survey.py"
+      ]
     },
     {
       "pr": 502,
@@ -171,9 +171,9 @@
         ".github/workflows/strigunov4-c4-unit-apply.yml",
         "scripts/strigunov4/test_protected_c4_unit_apply.py"
       ],
-      "status": "IN_PROGRESS",
+      "status": "ACCEPTED",
       "proof": [
-        "2026-10-26 protected Beget G1 read-only physical witness PASS: https://github.com/ASI-integration/asi-landing/actions/runs/40363912437 ; merge #540 a3c38333efe53b0e42b1121e0a41026fb90f296b ; pinned host/process, seven effective no-send flags and attached network protections. No live egress attempt. This evidence alone does not certify independent backup/rollback or release G2."
+        "https://github.com/ASI-integration/asi-landing/actions/runs/40363912437"
       ],
       "acceptance": [
         "OLD+optional witnessed on original staging; independently reviewed isolated-rehost adapter and mandatory EnvironmentFile unit",
@@ -202,12 +202,13 @@
         "scripts/strigunov4/candidates/c4_unit_pin_plan.py",
         ".github/workflows/strigunov4-c4-unit-readonly.yml",
         ".github/workflows/strigunov4-c4-unit-receipt-once.yml"
-      ]
+      ],
+      "acceptanceSha": "a3c38333efe53b0e42b1121e0a41026fb90f296b"
     },
     {
       "id": "S4-G2",
       "title": "Effective operator permissions and human login",
-      "status": "NOT_STARTED",
+      "status": "IN_PROGRESS",
       "proof": [],
       "acceptance": [
         "Both effective allowlists and seven no-send flags witnessed",
