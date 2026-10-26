@@ -1,4 +1,5 @@
 """Offline fail-closed checks: Beget G1 only; never makes SSH/network calls."""
+import ast
 import copy
 import importlib.util
 from pathlib import Path
@@ -71,6 +72,31 @@ class BegetProtectedWitnessTests(unittest.TestCase):
   for forbidden in ("systemctl start","systemctl restart","requests.post","urllib.request.Request(method='POST'",
                     "git push","socket.connect(","os.environ[" ):
    self.assertNotIn(forbidden,m.REMOTE)
+ def test_proxy_and_python_isolation_are_mandatory(self):
+  self.assertIn("urllib.request.ProxyHandler({})",m.REMOTE)
+  self.assertIn('run("ss","-Hltn")',m.REMOTE)
+  source=Path(m.__file__).read_text()
+  self.assertIn('"python3","-I","-B","-"',source)
+ def test_listener_parser_adversarial(self):
+  tree=ast.parse(m.REMOTE)
+  func=next(n for n in tree.body if isinstance(n,ast.FunctionDef)
+            and n.name=="loopback_listener_only")
+  ns={}
+  exec(compile(ast.Module(body=[func],type_ignores=[]),"<synthetic-listener-test>","exec"),ns)
+  parse=ns["loopback_listener_only"]
+  good="LISTEN 0 511 127.0.0.1:3001 0.0.0.0:*"
+  ssh="LISTEN 0 4096 0.0.0.0:22 0.0.0.0:*"
+  self.assertTrue(parse(good))
+  self.assertTrue(parse(ssh+"\\n"+good))
+  for case in ("",ssh, "LISTEN 0 511 *:3001 *:*",
+               "LISTEN 0 511 [::]:3001 [::]:*",
+               "LISTEN 0 511 31.129.96.181:3001 0.0.0.0:*",
+               "LISTEN 0 511 127.0.0.1:30010 0.0.0.0:*",
+               good+"\\n"+good,
+               good+"\\n"+"LISTEN 0 511 *:3001 *:*",
+               good+"\\n"+"LISTEN malformed"):
+   with self.subTest(case=case):
+    self.assertFalse(parse(case))
  def test_fixed_host_and_not_legacy_report(self):
   self.assertEqual(m.IP,"31.129.96.181")
   self.assertNotEqual(m.HOST,"asi-pilot-lab-01")
