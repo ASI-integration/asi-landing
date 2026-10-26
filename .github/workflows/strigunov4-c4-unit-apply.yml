@@ -7,6 +7,13 @@ on:
       - 'scripts/strigunov4/protected_c4_unit_apply.py'
       - 'scripts/strigunov4/test_protected_c4_unit_apply.py'
   workflow_dispatch:
+    inputs:
+      target:
+        description: Exact new physically reviewed target
+        type: choice
+        required: true
+        options:
+          - beget-g1-readonly
 
 permissions:
   contents: read
@@ -41,12 +48,13 @@ jobs:
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
-      - name: Protected and run-bound read-only G1 acceptance witness
+      - name: Protected and run-bound Beget read-only G1 acceptance witness
         env:
-          STAGING_SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
-          STAGING_SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
-          STAGING_SSH_USER: ${{ secrets.STAGING_SSH_USER }}
-          STAGING_SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+          G1_PHYSICAL_TARGET: ${{ inputs.target }}
+          BEGET_SSH_HOST: '31.129.96.181'
+          BEGET_SSH_PORT: '22'
+          BEGET_SSH_USER: 'root'
+          BEGET_SSH_PRIVATE_KEY: ${{ secrets.BEGET_SSH_PRIVATE_KEY }}
         run: |
           set -euo pipefail
           python3 -B -m unittest discover -s scripts/strigunov4 -p 'test_protected_c4_unit_apply.py' -v
