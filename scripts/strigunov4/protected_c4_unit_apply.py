@@ -20,6 +20,8 @@ UNIT_SHA = "4945ca55cef36015efbaad4d83235add1e01d3a3442f3ee5cd0b0b9dca3fe624"
 PID = 1234
 INVOCATION = "81d61359c00a47a998117ee2a0bfb052"
 ROOT = "/var/www/asi-staging"
+WITNESS_USER = "asi-g1-witness"
+WITNESS_SHA256 = "9a2b24c37db978130391a35bdf9aaa2b9138f8cbf29ac1c3bd56955bb831c6eb"
 NO_SEND = {
     "EMAIL_AUTO_SEND": "false",
     "EMAIL_DRAFT_ONLY": "true",
@@ -158,7 +160,7 @@ def protected_context(env):
     require(subprocess.check_output(["git","rev-parse","HEAD"],text=True,timeout=7).strip() == sha,
             "SOURCE_MISMATCH")
     require(env.get("G1_PHYSICAL_TARGET") == "beget-g1-readonly", "TARGET_INVALID")
-    require(env.get("BEGET_SSH_HOST") == IP and env.get("BEGET_SSH_USER") == "root"
+    require(env.get("BEGET_SSH_HOST") == IP and env.get("BEGET_SSH_USER") == WITNESS_USER
             and env.get("BEGET_SSH_PORT") == "22", "BEGET_SSH_TARGET")
     key = env.get("BEGET_SSH_PRIVATE_KEY", "")
     require(key.startswith("-----BEGIN OPENSSH PRIVATE KEY-----") and len(key) < 16000,
@@ -168,6 +170,8 @@ def protected_context(env):
 
 def execute():
     key = protected_context(os.environ)
+    require(hashlib.sha256(REMOTE.encode("utf8")).hexdigest() == WITNESS_SHA256,
+            "WITNESS_SOURCE_DRIFT")
     with tempfile.TemporaryDirectory() as folder:
         base = Path(folder)
         private, known = base/"access", base/"known_hosts"
@@ -178,9 +182,12 @@ def execute():
         command=["ssh","-F","/dev/null","-o","BatchMode=yes","-o","IdentitiesOnly=yes",
                  "-o","StrictHostKeyChecking=yes","-o","GlobalKnownHostsFile=/dev/null",
                  "-o","UserKnownHostsFile="+str(known),"-o","ConnectTimeout=12",
-                 "-o","ProxyCommand=none","-i",str(private),"-p","22",
-                 "root@"+IP,"python3","-I","-B","-"]
-        result=subprocess.run(command,input=REMOTE,text=True,capture_output=True,timeout=65)
+                 "-o","ProxyCommand=none","-o","ClearAllForwardings=yes",
+                 "-i",str(private),"-p","22",WITNESS_USER+"@"+IP]
+        # The server key has restrict+forced-command; no remote command or
+        # code passes through SSH, only the installed root-owned witness runs.
+        result=subprocess.run(command,stdin=subprocess.DEVNULL,text=True,
+                              capture_output=True,timeout=65)
         require(result.returncode==0 and 10<len(result.stdout)<4096,"BEGET_SSH_READ_FAILED")
         try:
             data=json.loads(result.stdout.strip())
