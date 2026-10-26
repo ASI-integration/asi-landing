@@ -77,7 +77,8 @@ class BegetProtectedWitnessTests(unittest.TestCase):
   self.assertIn("urllib.request.ProxyHandler({})",m.REMOTE)
   self.assertIn('run("ss","-Hltn")',m.REMOTE)
   source=Path(m.__file__).read_text()
-  self.assertIn('"python3","-I","-B","-"',source)
+  self.assertIn('WITNESS_USER+"@"+IP',source)
+  self.assertIn("stdin=subprocess.DEVNULL",source)
  def test_listener_parser_adversarial(self):
   tree=ast.parse(m.REMOTE)
   func=next(n for n in tree.body if isinstance(n,ast.FunctionDef)
