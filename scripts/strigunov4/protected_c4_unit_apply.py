@@ -111,7 +111,7 @@ assert re.search(r"cgroup_inet_egress\s+multi\s+sd_fw_egress",programs)
 # HTTP only localhost, no redirects, bounded JSON body, no credentials.
 class NoRedirect(urllib.request.HTTPRedirectHandler):
  def redirect_request(self,*args):raise ValueError("REDIRECT")
-opener=urllib.request.build_opener(NoRedirect())
+opener=urllib.request.build_opener(urllib.request.ProxyHandler({}),NoRedirect())
 results={}
 for name in ("health","version"):
  with opener.open("http://127.0.0.1:3001/api/"+name,timeout=5) as f:
@@ -123,8 +123,14 @@ assert results["health"]["ok"] is True
 v=results["version"]
 assert v["environment"]=="staging" and v["sha"]==release
 assert v["resolvedReleasePath"]==str(root/"releases"/release)
-listen=run("ss","-ltn")
-assert "127.0.0.1:3001" in listen and "0.0.0.0:3001" not in listen and "[::]:3001" not in listen
+def loopback_listener_only(text):
+ rows=[line.split() for line in text.splitlines() if line.strip()]
+ if not rows or any(len(row)<5 or row[0]!="LISTEN" for row in rows):
+  return False
+ port3001=[row[3] for row in rows if row[3].rsplit(":",1)[-1]=="3001"]
+ return port3001==["127.0.0.1:3001"]
+listen=run("ss","-Hltn")
+assert loopback_listener_only(listen)
 assert show()["MainPID"]==str(pid) and show()["InvocationID"]==m["InvocationID"]
 print(json.dumps({"status":"BEGET_G1_ISOLATED_PROCESS_OBSERVED",
  "hostname":os.uname().nodename,"pid":pid,"invocationId":m["InvocationID"],
@@ -173,7 +179,7 @@ def execute():
                  "-o","StrictHostKeyChecking=yes","-o","GlobalKnownHostsFile=/dev/null",
                  "-o","UserKnownHostsFile="+str(known),"-o","ConnectTimeout=12",
                  "-o","ProxyCommand=none","-i",str(private),"-p","22",
-                 "root@"+IP,"python3","-B","-"]
+                 "root@"+IP,"python3","-I","-B","-"]
         result=subprocess.run(command,input=REMOTE,text=True,capture_output=True,timeout=65)
         require(result.returncode==0 and 10<len(result.stdout)<4096,"BEGET_SSH_READ_FAILED")
         try:
