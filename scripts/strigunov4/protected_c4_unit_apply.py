@@ -169,20 +169,26 @@ Host asi-lab
         os.chmod(conf,0o600)
         def inspect(alias, script, checker):
             result=subprocess.run(["ssh","-F",str(conf),"-T",alias,"python3","-B","-"],input=script,text=True,capture_output=True,timeout=42)
-            require(result.returncode == 0 and len(result.stdout)<4096 and len(result.stdout)>10,"PROTECTED_SSH_READ_FAILED:"+alias)
-            checker(json.loads(result.stdout.strip()))
+            require(result.returncode == 0 and len(result.stdout)<4096 and len(result.stdout)>10,"PROTECTED_SSH_READ_FAILED:"+alias.upper())
+            try:
+                report=json.loads(result.stdout.strip())
+            except ValueError:
+                raise ValueError("PROTECTED_SSH_INVALID_JSON:"+alias.upper()) from None
+            checker(report)
         inspect("asi-lab",REMOTE_LAB,validate_lab_report)
         inspect("asi-hop",REMOTE_OLD,validate_old_report)
     print("S4_G1_PROTECTED_PHYSICAL_WITNESS_PASS; SHA_BOUND; LAB_AND_OLD_STAGING_INDEPENDENT; NO_SERVER_WRITES")
+
+
+def safe_failure_reason(error):
+    """Return only fixed-shape diagnostics; never expose remote output or secrets."""
+    reason=str(error)
+    return reason if re.fullmatch(r"[A-Z0-9_:-]{1,128}",reason) else "UNTRUSTED_OR_INVALID_PHYSICAL_EVIDENCE"
 
 
 if __name__ == "__main__":
     try:
         execute()
     except Exception as exc:
-        # No provider response, environment or private key contents in errors.
-        reason=str(exc)
-        if not re.fullmatch(r"[A-Z0-9_:-]{1,128}",reason):
-            reason="UNTRUSTED_OR_INVALID_PHYSICAL_EVIDENCE"
-        print("S4_G1_PROTECTED_PHYSICAL_WITNESS_BLOCKED:"+reason,file=sys.stderr)
+        print("S4_G1_PROTECTED_PHYSICAL_WITNESS_BLOCKED:"+safe_failure_reason(exc),file=sys.stderr)
         sys.exit(1)
