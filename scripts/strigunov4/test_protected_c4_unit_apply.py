@@ -1,6 +1,7 @@
 """Offline fail-closed checks: Beget G1 only; never makes SSH/network calls."""
 import ast
 import copy
+import hashlib
 import importlib.util
 from pathlib import Path
 import unittest
@@ -27,7 +28,7 @@ CONTEXT={
  "GITHUB_WORKFLOW_REF":"ASI-integration/asi-landing/.github/workflows/strigunov4-c4-unit-apply.yml@refs/heads/main",
  "GITHUB_SHA":"a"*40,"GITHUB_WORKFLOW_SHA":"a"*40,
  "G1_PHYSICAL_TARGET":"beget-g1-readonly","BEGET_SSH_HOST":m.IP,
- "BEGET_SSH_PORT":"22","BEGET_SSH_USER":"root",
+ "BEGET_SSH_PORT":"22","BEGET_SSH_USER":"asi-g1-witness",
  "BEGET_SSH_PRIVATE_KEY":"-----BEGIN OPENSSH PRIVATE KEY-----\nSYNTHETIC\n-----END OPENSSH PRIVATE KEY-----\n"
 }
 
@@ -97,6 +98,16 @@ class BegetProtectedWitnessTests(unittest.TestCase):
                good+"\n"+"LISTEN malformed"):
    with self.subTest(case=case):
     self.assertFalse(parse(case))
+ def test_installed_witness_pinning_and_no_ssh_script_transmission(self):
+  self.assertEqual(hashlib.sha256(m.REMOTE.encode("utf8")).hexdigest(),m.WITNESS_SHA256)
+  self.assertEqual(m.WITNESS_USER,"asi-g1-witness")
+  source=Path(m.__file__).read_text()
+  self.assertIn('stdin=subprocess.DEVNULL',source)
+  self.assertIn('WITNESS_USER+"@"+IP',source)
+  self.assertIn('ClearAllForwardings=yes',source)
+  self.assertNotIn('"root@"+IP',source)
+  self.assertNotIn('input=REMOTE',source)
+  self.assertNotIn('"StrictHostKeyChecking=no"',source)
  def test_fixed_host_and_not_legacy_report(self):
   self.assertEqual(m.IP,"31.129.96.181")
   self.assertNotEqual(m.HOST,"asi-pilot-lab-01")
