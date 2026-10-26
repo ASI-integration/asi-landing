@@ -172,7 +172,9 @@
         "scripts/strigunov4/test_protected_c4_unit_apply.py"
       ],
       "status": "IN_PROGRESS",
-      "proof": [],
+      "proof": [
+        "2026-10-26 protected Beget G1 read-only physical witness PASS: https://github.com/ASI-integration/asi-landing/actions/runs/40363912437 ; merge #540 a3c38333efe53b0e42b1121e0a41026fb90f296b ; pinned host/process, seven effective no-send flags and attached network protections. No live egress attempt. This evidence alone does not certify independent backup/rollback or release G2."
+      ],
       "acceptance": [
         "OLD+optional witnessed on original staging; independently reviewed isolated-rehost adapter and mandatory EnvironmentFile unit",
         "Separate owner/staging approval and trusted backup/rollback",
