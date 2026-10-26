@@ -32,6 +32,9 @@ export default function OnboardingPageContent({ rental = false }: { rental?: boo
   const [error, setError] = useState('');
   const [googleStatus, setGoogleStatus] = useState<string>('');
   const searchParams = useSearchParams();
+  useEffect(() => {
+    if (searchParams.get('auth') === 'login') setMode('login');
+  }, [searchParams]);
   const isMountedRef = useRef(true);
 
   // OAuth redirect flow depends on SERVER env (client id + secret), not on build-time NEXT_PUBLIC_*.
