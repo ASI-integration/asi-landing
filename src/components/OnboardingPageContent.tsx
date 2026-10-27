@@ -44,6 +44,7 @@ export default function OnboardingPageContent({ rental = false }: { rental?: boo
   // Kept only for GIS fallback/debug; not used for enablement.
   const [googleClientId, setGoogleClientId] = useState<string>(() => (process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || '').trim());
   const gsiButtonHostRef = useRef<HTMLDivElement | null>(null);
+  const gisRequestPendingRef = useRef(false);
   const debugGoogle = useMemo(() => searchParams.get('debugGoogle') === '1', [searchParams]);
   const afterAuthRedirect = useMemo(
     () => safeAuthRedirectPath(searchParams.get('redirect') || (rental ? RU_LEGAL_ONBOARDING_PATH : null)),
@@ -111,9 +112,7 @@ export default function OnboardingPageContent({ rental = false }: { rental?: boo
           setGoogleOAuthMode('disabled');
         }
       } finally {
-        // Always clear the loading flag once the request settles.
-        // Guard only against true unmount, not effect re-runs.
-        if (isMountedRef.current) setGoogleConfigLoading(false);
+        if (!cancelled && isMountedRef.current) setGoogleConfigLoading(false);
       }
     })();
     return () => {
@@ -169,33 +168,47 @@ export default function OnboardingPageContent({ rental = false }: { rental?: boo
   // GIS requires a visible Google-rendered button and a real user click.
   // Programmatically clicking a hidden iframe is unreliable and may be blocked.
   useEffect(() => {
+    // A replaced GIS generation must not leave the new view in a loading state.
+    if (gisRequestPendingRef.current) {
+      gisRequestPendingRef.current = false;
+      setLoading(false);
+      setGoogleStatus('');
+    }
     if (!googleReady || googleOAuthMode !== 'gis' || !googleClientId) return;
     const host = gsiButtonHostRef.current;
     if (!host) return;
 
     let cancelled = false;
+    let requestPending = false;
+    let controller: AbortController | undefined;
+    const isCurrent = () => !cancelled && isMountedRef.current;
     setGoogleStatus('Загружаем кнопку Google…');
     (async () => {
       try {
         await loadGoogleIdentityServices();
-        if (cancelled || !isMountedRef.current) return;
+        if (!isCurrent()) return;
         const googleId = window.google?.accounts?.id;
         if (!googleId) throw new Error('google_identity_unavailable');
         googleId.initialize({
           client_id: googleClientId,
           callback: async (resp) => {
-            if (cancelled || !isMountedRef.current) return;
+            // Single flight: repeated GIS delivery must not create concurrent sessions.
+            if (!isCurrent() || requestPending) return;
             const idToken = resp?.credential;
             if (!idToken) {
               setError('Google не вернул данные для входа.');
               return;
             }
+            requestPending = true;
+            gisRequestPendingRef.current = true;
+            controller = new AbortController();
             setLoading(true);
             setError('');
             setGoogleStatus('Проверяем вход Google…');
             try {
               const res = await fetch('/api/auth/google', {
                 method: 'POST',
+                signal: controller.signal,
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                   idToken,
@@ -203,16 +216,20 @@ export default function OnboardingPageContent({ rental = false }: { rental?: boo
                   debug: debugGoogle,
                 }),
               });
+              if (!isCurrent()) return;
               const data = await readResponseJson(res, {} as { error?: string });
+              if (!isCurrent()) return;
               if (!res.ok) {
                 setError(data.error || 'Ошибка входа через Google.');
                 return;
               }
               router.push(afterAuthRedirect);
             } catch {
-              setError('Не удалось завершить вход через Google. Проверьте соединение.');
+              if (isCurrent()) setError('Не удалось завершить вход через Google. Проверьте соединение.');
             } finally {
-              if (!cancelled && isMountedRef.current) {
+              requestPending = false;
+              if (isCurrent()) {
+                gisRequestPendingRef.current = false;
                 setLoading(false);
                 setGoogleStatus('');
               }
@@ -229,15 +246,16 @@ export default function OnboardingPageContent({ rental = false }: { rental?: boo
           logo_alignment: 'left',
           width: '320',
         });
-        if (!cancelled) setGoogleStatus('');
+        if (isCurrent()) setGoogleStatus('');
       } catch {
-        if (cancelled) return;
+        if (!isCurrent()) return;
         setGoogleStatus('');
         setError('Не удалось загрузить Google. Проверьте блокировку Google в браузере.');
       }
     })();
     return () => {
       cancelled = true;
+      controller?.abort();
       host.replaceChildren();
     };
   }, [googleReady, googleOAuthMode, googleClientId, mode, rental, selectedPlanValue, afterAuthRedirect, debugGoogle, router]);
