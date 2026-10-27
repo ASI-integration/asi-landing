@@ -5,14 +5,17 @@ vi.mock('server-only', () => ({}));
 
 const requireDevelopmentOwnerSession = vi.fn();
 const getEngineProgressSnapshot = vi.fn();
+const getStrigunovProgress = vi.fn();
 
 vi.mock('@/lib/development/api-auth', () => ({ requireDevelopmentOwnerSession }));
 vi.mock('@/lib/engine-progress/server', () => ({ getEngineProgressSnapshot }));
+vi.mock('@/lib/engine-progress/strigunov-server', () => ({ getStrigunovProgress }));
 
 beforeEach(() => {
   vi.resetModules();
   requireDevelopmentOwnerSession.mockReset();
   getEngineProgressSnapshot.mockReset();
+  getStrigunovProgress.mockReset();
 });
 
 describe('GET /api/dashboard/engine-progress owner-only', () => {
@@ -52,5 +55,25 @@ describe('GET /api/dashboard/engine-progress owner-only', () => {
     const response = await GET();
     expect(response.status).toBe(503);
     expect(JSON.stringify(await response.json())).not.toContain('sensitive backend error');
+  });
+});
+
+describe('Strigunov view reuses the owner boundary', () => {
+  it.each([401, 403])('denies pilot source access with %i', async status => {
+    requireDevelopmentOwnerSession.mockResolvedValue({ error: NextResponse.json({ ok: false }, { status }) });
+    const { GET } = await import('../route');
+    const response = await GET(new Request('http://localhost/api/dashboard/engine-progress?view=strigunov4'));
+    expect(response.status).toBe(status);
+    expect(getStrigunovProgress).not.toHaveBeenCalled();
+  });
+  it('serves pilot data without calling the legacy store and with no-store', async () => {
+    requireDevelopmentOwnerSession.mockResolvedValue({ session: { userId: 'owner' } });
+    getStrigunovProgress.mockResolvedValue({ available: false, prs: [], route: null });
+    const { GET } = await import('../route');
+    const response = await GET(new Request('http://localhost/api/dashboard/engine-progress?view=strigunov4'));
+    expect(response.status).toBe(200);
+    expect(response.headers.get('cache-control')).toContain('private, no-store');
+    expect(getEngineProgressSnapshot).not.toHaveBeenCalled();
+    expect(getStrigunovProgress).toHaveBeenCalledTimes(1);
   });
 });
