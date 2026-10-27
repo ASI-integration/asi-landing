@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
 import argparse
+import csv
+import subprocess
+import math
 import json
 import os
 import re
@@ -7,6 +10,7 @@ import sys
 import time
 import urllib.error
 import urllib.request
+import urllib.parse
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -332,6 +336,113 @@ def post_payload(endpoint: str, auth_headers: dict[str, str], payload: dict) -> 
         return False, type(exc).__name__
 
 
+
+def operation_empty(identity: str) -> dict:
+    return dict(id=identity, status="UNKNOWN", sourceUpdatedAt=None, process="UNKNOWN", task="UNKNOWN",
+                completed=None, total=None, bytes=None, totalBytes=None, errors=None, archives=[])
+
+
+def operation_number(value, *, gib=False):
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value < 0:
+        return None
+    value = round(value * 1024**3) if gib else value
+    return int(value) if int(value) == value and value <= 9007199254740991 else None
+
+
+def operation_process(pid):
+    if not isinstance(pid, int) or isinstance(pid, bool) or pid <= 0 or sys.platform != "win32":
+        return "UNKNOWN"
+    try:
+        result = subprocess.run(["tasklist", "/FI", "PID eq " + str(pid), "/FO", "CSV", "/NH"],
+                                capture_output=True, encoding="utf-8", errors="replace", timeout=3,
+                                creationflags=0x08000000)
+        if result.returncode != 0:
+            return "UNKNOWN"
+        return "PRESENT" if any(len(row) > 1 and row[1] == str(pid) for row in csv.reader(result.stdout.splitlines())) else "ABSENT"
+    except (OSError, subprocess.TimeoutExpired):
+        return "UNKNOWN"
+
+
+def operation_read(path: Path):
+    # One opened file supplies bytes and mtime. Partial/missing reports stay unknown.
+    try:
+        with path.open("rb") as stream:
+            stat = os.fstat(stream.fileno())
+            if stat.st_size > 12288:
+                return None, None
+            value = json.loads(stream.read(12289).decode("utf-8-sig"))
+        stamp = datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc).isoformat(timespec="milliseconds")
+        return value, stamp
+    except (OSError, ValueError, UnicodeError):
+        return None, None
+
+
+def operations_snapshot(panel: Path, inventory: Path | None = None) -> dict:
+    backup, archives, worker = [operation_empty(i) for i in ("backup-gh", "server-backups", "runtime-worker")]
+    # Read metadata only; never read copied files, recovery keys or process command lines.
+    for file in sorted((panel / "jobs").glob("*.json")):
+        conf, _ = operation_read(file)
+        if not isinstance(conf, dict):
+            continue
+        if conf.get("kind") == "backup_v1":
+            summary_path = conf.get("summary_file")
+            if not isinstance(summary_path, str) or not summary_path:
+                continue
+            summary, stamp = operation_read(Path(summary_path))
+            if not isinstance(summary, dict):
+                continue
+            backup.update(sourceUpdatedAt=stamp, completed=operation_number(summary.get("verified_files")),
+                          total=operation_number(summary.get("planned_files")), bytes=operation_number(summary.get("verified_gib"), gib=True),
+                          totalBytes=operation_number(conf.get("gib_total"), gib=True), errors=operation_number(summary.get("errors")))
+            state = summary.get("status")
+            if state == "RUNNING":
+                backup["process"] = operation_process(conf.get("pid"))
+                backup["status"] = "BLOCKED" if backup["process"] == "ABSENT" else "RUNNING"
+                backup["task"] = "ACTIVE" if backup["process"] == "PRESENT" else "UNKNOWN"
+            elif state == "SUCCESS":
+                backup["status"] = "DONE" if backup["total"] and backup["completed"] == backup["total"] and backup["errors"] == 0 else "BLOCKED"
+                backup["task"] = "IDLE"
+            elif state in ("FAILED", "PARTIAL"):
+                backup["status"] = "ERROR"
+        elif conf.get("kind") == "process":
+            worker["process"] = operation_process(conf.get("pid"))
+            worker["sourceUpdatedAt"] = datetime.now(timezone.utc).isoformat(timespec="milliseconds")
+            worker["status"] = "RUNNING" if worker["process"] == "PRESENT" else "BLOCKED" if worker["process"] == "ABSENT" else "UNKNOWN"
+    if inventory:
+        saved, stamp = operation_read(inventory)
+        if isinstance(saved, dict) and isinstance(saved.get("batches"), list):
+            verified = []
+            for item in saved["batches"]:
+                if not isinstance(item, dict):
+                    continue
+                if item.get("batch") in ("core", "video", "releases", "supplemental") and item.get("verification") == "PASS" and re.fullmatch(r"[a-f0-9]{64}", str(item.get("sha256", ""))) and operation_number(item.get("encrypted_bytes")) is not None:
+                    verified.append(dict(batch=item["batch"], sha256=item["sha256"], bytes=item["encrypted_bytes"]))
+            if len(verified) == 4 and len({x["batch"] for x in verified}) == 4:
+                archives.update(status="DONE", sourceUpdatedAt=stamp, completed=4, total=4, errors=0,
+                                bytes=sum(x["bytes"] for x in verified), archives=verified, task="IDLE")
+    return dict(schemaVersion="asi.operations.v1", observedAt=datetime.now(timezone.utc).isoformat(timespec="milliseconds"), records=[backup, archives, worker])
+
+
+class OperationsNoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+def post_operations(endpoint, headers, payload):
+    # Reject cleartext and redirects: never forward an ingest credential elsewhere.
+    parsed = urllib.parse.urlsplit(endpoint)
+    if parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password or parsed.query or parsed.fragment or parsed.path != "/api/internal/mission-control/status":
+        return False, "https_endpoint_required"
+    request = urllib.request.Request(endpoint, data=json.dumps(payload).encode("utf-8"), method="POST",
+                                     headers={**headers, "Content-Type": "application/json"})
+    try:
+        with urllib.request.build_opener(OperationsNoRedirect()).open(request, timeout=8) as response:
+            return response.status == 200, str(response.status)
+    except urllib.error.HTTPError as error:
+        return False, str(error.code)
+    except Exception:
+        return False, "transport_unavailable"
+
 def main():
     if hasattr(sys.stdout, 'reconfigure'):
         sys.stdout.reconfigure(encoding='utf-8', errors='replace')
@@ -340,9 +451,23 @@ def main():
     parser.add_argument("--loop", action="store_true")
     parser.add_argument("--interval", type=float, default=5.0)
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--operations-panel", type=Path, help="Read existing panel job metadata only")
+    parser.add_argument("--backup-inventory", type=Path, help="Previously verified archive inventory; never keys")
     args = parser.parse_args()
 
     while True:
+        if args.operations_panel:
+            payload = operations_snapshot(args.operations_panel, args.backup_inventory)
+            if args.dry_run:
+                print(json.dumps(payload, ensure_ascii=False))
+            else:
+                headers = push_headers()
+                ok, detail = post_operations(args.endpoint, headers, payload) if headers else (False, "credential_missing")
+                print("OPERATIONS_PUSH=" + ("ok" if ok else "blocked:") + ("" if ok else detail), flush=True)
+            if not args.loop:
+                break
+            time.sleep(max(5.0, args.interval))
+            continue
         payloads = snapshot()
         save_local(payloads)
 

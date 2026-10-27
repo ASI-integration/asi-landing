@@ -2,6 +2,7 @@
 
 import { type FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
+import Link from 'next/link';
 import { readResponseJson } from '@/lib/safeResponseJson';
 import { useDevelopmentTaskPolling } from '@/lib/development/use-task-polling';
 import {
@@ -364,6 +365,8 @@ export default function DevelopmentConsoleClient() {
           </button>
         ) : null}
       </div>
+
+      <Link href="/dashboard/development/processes" className="inline-flex rounded-lg bg-slate-900 px-4 py-3 text-sm font-medium text-white hover:bg-slate-800">Панель процессов →</Link>
 
       {error ? (
         <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">

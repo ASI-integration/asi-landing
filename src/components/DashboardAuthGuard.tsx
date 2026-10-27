@@ -14,7 +14,7 @@ export function DashboardAuthGuard({ children }: { children: React.ReactNode }) 
     if (!session?.user) {
       const query = typeof window !== 'undefined' ? window.location.search.replace(/^\?/, '') : '';
       const redirect = `${pathname || '/dashboard'}${query ? `?${query}` : ''}`;
-      router.replace(`/connect?redirect=${encodeURIComponent(redirect)}`);
+      router.replace(`/connect?auth=login&redirect=${encodeURIComponent(redirect)}`);
     }
   }, [session, loading, router, pathname]);
 
