@@ -13,7 +13,7 @@ spec.loader.exec_module(m)
 
 GOOD={
  "status":"BEGET_G1_ISOLATED_PROCESS_OBSERVED","hostname":m.HOST,
- "pid":m.PID,"invocationId":m.INVOCATION,"unitHash":m.UNIT_SHA,
+ "pid":46657,"invocationId":"4fe48ea3b5d4426483380dcaa21c5947","unitHash":m.UNIT_SHA,
  "releaseSha":m.RELEASE,"noSendEffective":True,
  "health":200,"version":200,"reload":"no","nRestarts":0,
  "environmentMandatory":True,"loopbackOnly":True,"networkDeny":True,
@@ -37,7 +37,7 @@ class BegetProtectedWitnessTests(unittest.TestCase):
   self.assertTrue(m.validate_report(GOOD))
  def test_each_identity_or_safety_drift_blocked(self):
   cases={
-   "status":"PASS","hostname":"asi-pilot-lab-01","pid":250151,
+   "status":"PASS","hostname":"asi-pilot-lab-01","pid":0,
    "invocationId":"foreign","unitHash":"0"*64,"releaseSha":"0"*40,
    "noSendEffective":False,"health":500,"version":500,"reload":"yes",
    "nRestarts":1,"environmentMandatory":False,"loopbackOnly":False,
@@ -47,6 +47,17 @@ class BegetProtectedWitnessTests(unittest.TestCase):
    with self.subTest(name=name):
     report=copy.deepcopy(GOOD);report[name]=value
     with self.assertRaises(ValueError):m.validate_report(report)
+ def test_fresh_process_id_and_invocation_must_remain_witnessed(self):
+  fresh=copy.deepcopy(GOOD)
+  fresh["pid"]=88012
+  fresh["invocationId"]="0123456789abcdef0123456789abcdef"
+  self.assertTrue(m.validate_report(fresh))
+  for bad in (0,1,-1,4194304,True,"46657"):
+   with self.subTest(pid=bad),self.assertRaises(ValueError):
+    m.validate_report(dict(fresh,pid=bad))
+  for bad in ("", "old", "Z"*32, 1, None):
+   with self.subTest(invocation=bad),self.assertRaises(ValueError):
+    m.validate_report(dict(fresh,invocationId=bad))
  def test_missing_extra_and_wrong_type_rejected(self):
   for report in ({k:v for k,v in GOOD.items() if k!="kernelEgressAttached"},
                  dict(GOOD,secret="never"),dict(GOOD,pid=True),
