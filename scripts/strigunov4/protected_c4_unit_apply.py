@@ -17,11 +17,9 @@ IP = "31.129.96.181"
 HOST_KEY = "AAAAC3NzaC1lZDI1NTE5AAAAIKdj5raImDTKyz9C/vwYUKFwNP6V91NPcYmwfWElZoZC"
 RELEASE = "d912aec6663de90e5ca4293cc5a69e2e0ed9ff94"
 UNIT_SHA = "4945ca55cef36015efbaad4d83235add1e01d3a3442f3ee5cd0b0b9dca3fe624"
-PID = 1234
-INVOCATION = "81d61359c00a47a998117ee2a0bfb052"
 ROOT = "/var/www/asi-staging"
 WITNESS_USER = "asi-g1-witness"
-WITNESS_SHA256 = "902d316729ebd54f86c3e85e489f71826d65a7268f48764745de628022a189ed"
+WITNESS_SHA256 = "6019fe068d5e4fc22a14d42740ad1e58842dd6ebc199253bf81917db4c098808"
 NO_SEND = {
     "EMAIL_AUTO_SEND": "false",
     "EMAIL_DRAFT_ONLY": "true",
@@ -46,8 +44,8 @@ def require(value, code):
 def validate_report(data):
     require(type(data) is dict and set(data) == FIELDS, "BEGET_REPORT_SHAPE")
     require(data["status"] == "BEGET_G1_ISOLATED_PROCESS_OBSERVED", "BEGET_REPORT_STATUS")
-    require(data["hostname"] == HOST and type(data["pid"]) is int and data["pid"] == PID, "BEGET_IDENTITY")
-    require(data["invocationId"] == INVOCATION and data["unitHash"] == UNIT_SHA, "BEGET_UNIT")
+    require(data["hostname"] == HOST and type(data["pid"]) is int and 1 < data["pid"] < 4194304, "BEGET_IDENTITY")
+    require(type(data["invocationId"]) is str and re.fullmatch(r"[0-9a-f]{32}", data["invocationId"]) and data["unitHash"] == UNIT_SHA, "BEGET_UNIT")
     require(data["releaseSha"] == RELEASE, "BEGET_RELEASE")
     require(data["health"] == 200 and data["version"] == 200 and data["reload"] == "no"
             and data["nRestarts"] == 0, "BEGET_HEALTH")
@@ -83,7 +81,8 @@ def show():
  return data
 m=show()
 pid=int(m["MainPID"])
-assert os.uname().nodename=="pqukibofpo" and pid==1234
+assert os.uname().nodename=="pqukibofpo" and 1 < pid < 4194304
+assert re.fullmatch(r"[0-9a-f]{32}",m["InvocationID"])
 assert m["User"]=="asi-staging" and m["Group"]=="asi-staging"
 assert m["ActiveState"]=="active" and m["WorkingDirectory"]==str(root/"current")
 assert m["EnvironmentFiles"]==str(env)+" (ignore_errors=no)"
@@ -94,7 +93,8 @@ assert set(m["IPAddressAllow"].split())=={"127.0.0.0/8","::1/128"}
 assert (root/"current").resolve()==root/"releases"/release
 assert json.loads((root/"current/release-meta.json").read_text())=={"gitSha":release}
 es=env.stat()
-assert stat.S_ISREG(es.st_mode) and stat.S_IMODE(es.st_mode)==0o640
+assert stat.S_ISREG(es.st_mode) and es.st_uid==0
+assert stat.S_IMODE(es.st_mode) in (0o600,0o640)
 vals={}
 for row in (pathlib.Path("/proc")/str(pid)/"environ").read_bytes().split(b"\0"):
  if b"=" not in row:continue

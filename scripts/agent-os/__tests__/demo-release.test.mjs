@@ -8,7 +8,13 @@ import { execFileSync } from 'node:child_process';
 import { checkPr, validateContract, CONTRACT, GOVERNANCE, verifiedOwnerComment, previousDiagnostics, requiredApproval, verifyStageRuns, prChanges } from '../check-demo-release.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
-const seed = JSON.parse(fs.readFileSync(path.join(root, CONTRACT), 'utf8'));
+// Historical G1-open fixture: regression tests must not depend on today's release stage.
+const liveContract = JSON.parse(fs.readFileSync(path.join(root, CONTRACT), 'utf8'));
+const seed = structuredClone(liveContract);
+seed.stages[0].status = 'IN_PROGRESS';
+seed.stages[0].proof = [];
+delete seed.stages[0].acceptanceSha;
+seed.stages[1].status = 'NOT_STARTED';
 const sha = 'd'.repeat(40);
 const copy = () => structuredClone(seed);
 const known = new Set(seed.stages.flatMap(s => s.files));
