@@ -31,6 +31,7 @@ jobs:
           # Full history: migration authorization regressions resolve checksum-pinned
           # historical source commits (e.g. git rev-parse <sha>:<migration-path>).
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -38,15 +39,11 @@ jobs:
           node-version: 20
           cache: npm
 
-      - name: Validate demo release milestones and PR scope
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-        run: |
-          node scripts/agent-os/check-demo-release.mjs --ci
-          node --test scripts/agent-os/__tests__/demo-release.test.mjs
-
       - name: Install deps
         run: npm ci
+
+      - name: Release governance offline regressions
+        run: node --test scripts/agent-os/__tests__/demo-release.test.mjs
 
       - name: Lint
         run: npm run lint
@@ -428,6 +425,16 @@ jobs:
       - name: Whitespace check (git diff --check)
         run: git diff --check
 
+      # Admission is still required for validate to succeed, but never prevents
+      # independent source checks. Run after failure too; cancellation stays non-success.
+      # This PR-source job is NOT the independent trusted release_governance boundary.
+      - name: Validate demo release milestones and PR scope
+        if: ${{ !cancelled() }}
+        timeout-minutes: 5
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/agent-os/check-demo-release.mjs --ci
+
   channel-manager-recovery-postgres:
     name: channel-manager-recovery-postgres
     runs-on: ubuntu-latest
@@ -467,6 +474,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 1
+          persist-credentials: false
 
       - name: Setup Node
         uses: actions/setup-node@v4
