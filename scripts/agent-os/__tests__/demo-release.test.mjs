@@ -265,3 +265,190 @@ test('19 rename cannot hide governance or out-of-stage source paths', () => {
     } finally {fs.rmSync(dir,{recursive:true,force:true});}
   }
 });
+
+// CI ordering is tested from parsed YAML, not a substring that can survive a
+// removed/disabled gate. The scheduler below is an offline model, NOT an Actions run.
+const { default: yaml } = await import('js-yaml');
+const workflowPath = '.github/workflows/pr-validation.yml';
+const trustedPath = '.github/workflows/asi-release-governance.yml';
+const loadWorkflow = p => yaml.load(fs.readFileSync(path.join(root, p), 'utf8'));
+const finalGateName = 'Validate demo release milestones and PR scope';
+const gateCommand = 'node scripts/agent-os/check-demo-release.mjs --ci';
+const standardNames = ['Install deps', 'Release governance offline regressions', 'Lint', 'Typecheck',
+  'Tests (Booking Ops focused regression coverage)', 'Build', 'Artifact smoke (isolated local port)',
+  'Whitespace check (git diff --check)'];
+function assertSourceWorkflow(w) {
+  assert.ok(w.on.pull_request);
+  assert.equal(w.on.pull_request_target, undefined);
+  assert.equal(w.env, undefined);
+  assert.deepEqual(w.permissions, { contents: 'read', 'pull-requests': 'read', issues: 'read' });
+  const job = w.jobs.validate;
+  assert.ok(job);
+  assert.equal(job.name, undefined); // preserve the exact existing validate context
+  assert.equal(job.if, undefined);
+  assert.equal(job.needs, undefined);
+  assert.equal(job['runs-on'], 'ubuntu-latest');
+  assert.equal(job['timeout-minutes'], 30);
+  const steps = job.steps;
+  const gates = steps.filter(s => s.name === finalGateName);
+  assert.equal(gates.length, 1);
+  const gate = gates[0];
+  assert.equal(steps.at(-1), gate);
+  assert.equal(gate.run.trim(), gateCommand);
+  assert.equal(gate.if, '${{ !cancelled() }}');
+  assert.equal(gate['timeout-minutes'], 5);
+  assert.deepEqual(gate.env, { GITHUB_TOKEN: '${{ github.token }}' });
+  for (const name of standardNames) {
+    const matches = steps.filter(s => s.name === name);
+    assert.equal(matches.length, 1, name);
+    assert.ok(steps.indexOf(matches[0]) < steps.indexOf(gate), name);
+    assert.equal(matches[0].if, undefined, name);
+  }
+  assert.ok(steps.findIndex(s => s.name === 'Release governance offline regressions') <
+    steps.findIndex(s => s.name === 'Prune devDependencies for runtime bundle'));
+  for (const j of Object.values(w.jobs)) {
+    assert.equal(j['continue-on-error'], undefined);
+    assert.equal(j.environment, undefined);
+    assert.equal(j.permissions, undefined);
+    assert.equal(j['runs-on'], 'ubuntu-latest');
+    assert.doesNotMatch(JSON.stringify(j.env || {}), /GITHUB_TOKEN|GH_TOKEN|secrets\./);
+    for (const step of j.steps) {
+      assert.equal(step['continue-on-error'], undefined);
+      assert.doesNotMatch(JSON.stringify(step), /secrets\./);
+      if (step.uses?.startsWith('actions/checkout@')) assert.equal(step.with['persist-credentials'], false);
+      if (step !== gate) assert.doesNotMatch(JSON.stringify(step), /github\.token|GITHUB_TOKEN|GH_TOKEN/);
+    }
+  }
+  return job;
+}
+function assertTrustedWorkflow(w) {
+  assert.deepEqual(Object.keys(w.on), ['pull_request_target']);
+  assert.deepEqual(w.permissions, { contents: 'read', issues: 'read', 'pull-requests': 'read' });
+  const job = w.jobs.release_governance;
+  assert.equal(job['runs-on'], 'ubuntu-24.04');
+  assert.equal(job['continue-on-error'], undefined);
+  const [checkout, fetchData, setup, gate] = job.steps;
+  assert.equal(job.steps.length, 4);
+  assert.equal(checkout.with.ref, '${{ github.event.pull_request.base.sha }}');
+  assert.equal(checkout.with['persist-credentials'], false);
+  assert.equal(fetchData.env.PR_HEAD_SHA, '${{ github.event.pull_request.head.sha }}');
+  assert.equal(fetchData.run.trim(), 'set -euo pipefail\n[[ "$PR_HEAD_SHA" =~ ^[0-9a-f]{40}$ ]]\ngit fetch --no-tags origin "$PR_HEAD_SHA"\ngit cat-file -e "$PR_HEAD_SHA^{commit}"');
+  assert.match(setup.uses, /^actions\/setup-node@[a-f0-9]{40}$/);
+  assert.equal(gate.run.trim(), gateCommand);
+  for (const step of job.steps) assert.equal(step['continue-on-error'], undefined);
+}
+async function modeledRun({ changed = ['src/unplanned.ts'], headSha = sha, comments = [], failAt,
+  canceled = false, apiOk = true } = {}) {
+  const job = assertSourceWorkflow(loadWorkflow(workflowPath));
+  const input = { contract: seed, changed, prNumber: 520, prBody: body(), headSha };
+  const originalFetch = globalThis.fetch;
+  const attempted = [];
+  let failed = false;
+  let gateOutcome = 'not_run';
+  try {
+    globalThis.fetch = async () => ({ ok: apiOk, json: async () => comments });
+    for (const step of job.steps) {
+      if (canceled) break;
+      const isGate = step.name === finalGateName;
+      // Default Actions success() skips ordinary steps after failure; !cancelled()
+      // makes the FINAL gate run even then. Actual checker/attestation functions run.
+      if (failed && !isGate) continue;
+      attempted.push(step.name);
+      if (isGate) {
+        try {
+          const kind = requiredApproval(input);
+          const approved = kind ? await verifiedOwnerComment(520, headSha, kind, 'OFFLINE_TEST_TOKEN') : false;
+          checkPr({ ...input, baseHasContract: true, ownerApproval: approved });
+          gateOutcome = 'success';
+        } catch { gateOutcome = 'failure'; failed = true; }
+      } else if (step.name === failAt) failed = true;
+    }
+    return { attempted, gateOutcome, result: canceled ? 'cancelled' : failed ? 'failure' : 'success' };
+  } finally { globalThis.fetch = originalFetch; }
+}
+const comment = (kind, head = sha, id = 207600140) => ({ user: { id },
+  body: `ASI-OWNER-APPROVE:${kind}:520:${head}` });
+
+test('20 source YAML preserves validate, isolated checks before final admission and token boundary', () => {
+  assertSourceWorkflow(loadWorkflow(workflowPath));
+  assertTrustedWorkflow(loadWorkflow(trustedPath));
+});
+test('21 unapproved out-of-scope code attempts independent checks but final validate fails', async () => {
+  const result = await modeledRun();
+  for (const name of standardNames) assert.ok(result.attempted.includes(name));
+  assert.equal(result.attempted.at(-1), finalGateName);
+  assert.equal(result.gateOutcome, 'failure');
+  assert.equal(result.result, 'failure');
+});
+test('22 exact owner and HEAD allow admission; new HEAD still tests but rejects old approval', async () => {
+  const comments = [comment('RELEASE-EXCEPTION')];
+  assert.equal((await modeledRun({ comments })).result, 'success');
+  const changed = await modeledRun({ comments, headSha: 'e'.repeat(40) });
+  assert.ok(changed.attempted.includes('Build'));
+  assert.equal(changed.result, 'failure');
+});
+test('23 governance changes still require CONTRACT-CHANGE, never just RELEASE-EXCEPTION', async () => {
+  for (const file of GOVERNANCE) {
+    const input = { changed: [file] };
+    const denied = await modeledRun({ ...input, comments: [comment('RELEASE-EXCEPTION')] });
+    assert.equal(denied.result, 'failure', file);
+    assert.ok(denied.attempted.includes('Typecheck'), file);
+    assert.equal((await modeledRun({ ...input, comments: [comment('CONTRACT-CHANGE')] })).result, 'success', file);
+  }
+});
+test('24 anonymous, wrong-user and unavailable approval sources all fail closed after checks', async () => {
+  for (const comments of [[], [{ body: comment('RELEASE-EXCEPTION').body }],
+    [comment('RELEASE-EXCEPTION', sha, 9999)]]) {
+    const result = await modeledRun({ comments });
+    assert.equal(result.result, 'failure'); assert.ok(result.attempted.includes('Build'));
+  }
+  const unavailable = await modeledRun({ apiOk: false, comments: [comment('RELEASE-EXCEPTION')] });
+  assert.equal(unavailable.result, 'failure');
+});
+test('25 source failure remains failure even when the final authorized gate succeeds', async () => {
+  const r = await modeledRun({ failAt: 'Typecheck', comments: [comment('RELEASE-EXCEPTION')] });
+  assert.equal(r.gateOutcome, 'success'); assert.equal(r.result, 'failure');
+  assert.ok(!r.attempted.includes('Build')); assert.equal(r.attempted.at(-1), finalGateName);
+  const noApproval = await modeledRun({ failAt: 'Install deps' });
+  assert.equal(noApproval.gateOutcome, 'failure'); assert.equal(noApproval.result, 'failure');
+});
+test('26 cancellation is non-success and never runs final network admission', async () => {
+  const r = await modeledRun({ canceled: true, comments: [comment('RELEASE-EXCEPTION')] });
+  assert.equal(r.result, 'cancelled'); assert.equal(r.gateOutcome, 'not_run');
+  assert.equal(r.attempted.length, 0);
+});
+test('27 removing, disabling or swallowing the final gate is rejected by YAML contract', () => {
+  for (const mutate of [
+    w => w.jobs.validate.steps.pop(),
+    w => { w.jobs.validate.steps.at(-1).if = '${{ success() }}'; },
+    w => { w.jobs.validate.steps.at(-1).run += ' || true'; },
+    w => { w.jobs.validate.steps.at(-1)['continue-on-error'] = true; },
+    w => { w.jobs.validate['continue-on-error'] = true; },
+    w => { w.jobs.validate.steps.find(s => s.name === 'Typecheck')['continue-on-error'] = true; },
+    w => { w.jobs.validate.steps.unshift(w.jobs.validate.steps.pop()); },
+  ]) {
+    const w = loadWorkflow(workflowPath); mutate(w); assert.throws(() => assertSourceWorkflow(w));
+  }
+});
+test('28 moving trusted checkout to PR code, reordering or swallowing trusted gate is rejected', () => {
+  for (const mutate of [
+    w => { w.jobs.release_governance.steps[0].with.ref = '${{ github.event.pull_request.head.sha }}'; },
+    w => { w.jobs.release_governance.steps.reverse(); },
+    w => { w.jobs.release_governance.steps.at(-1).run += ' || true'; },
+    w => { w.jobs.release_governance.steps.at(-1)['continue-on-error'] = true; },
+    w => { w.on = { pull_request: {} }; },
+  ]) {
+    const w = loadWorkflow(trustedPath); mutate(w); assert.throws(() => assertTrustedWorkflow(w));
+  }
+});
+test('29 credential persistence, secrets or elevated source permissions are rejected', () => {
+  for (const mutate of [
+    w => { w.jobs.validate.steps[0].with['persist-credentials'] = true; },
+    w => { w.jobs.validate.steps[2].env = { GITHUB_TOKEN: '${{ github.token }}' }; },
+    w => { w.jobs.validate.env = { KEY: '${{ secrets.PRODUCTION_KEY }}' }; },
+    w => { w.permissions.contents = 'write'; },
+    w => { w.jobs.validate.environment = 'production'; },
+  ]) {
+    const w = loadWorkflow(workflowPath); mutate(w); assert.throws(() => assertSourceWorkflow(w));
+  }
+});
