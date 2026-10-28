@@ -6,7 +6,9 @@ import argparse
 import base64
 import hashlib
 import json
+import math
 import os
+import re
 from pathlib import Path
 import pwd
 import shutil
@@ -107,6 +109,21 @@ def authority_traversal():
         require(stat.S_ISDIR(st.st_mode) and st.st_uid==0 and
             not st.st_mode&0o022 and st.st_mode&0o001,'AUTHORITY_NOT_TRAVERSABLE')
 
+def fence_preclaim(f, activation):
+    # Match loadBegetAuthority().fencingWitness before any install mutation.
+    # This validates the admitted record, not the remote provider evidence itself.
+    def safe_integer(v):
+        return type(v) in (int, float) and abs(v)<=9007199254740991 and math.isfinite(v) and int(v)==v
+    require(type(f) is dict and type(activation.get('githubApp')) is dict,'OLD_WRITER_FENCING_UNVERIFIED')
+    old=f.get('oldInstallationId');expiry=f.get('outstandingTokensExpiredAt');evidence=f.get('independentEvidenceSha256')
+    require(f.get('schema')=='asi.old-writer-fence.v1' and f.get('repository')==activation.get('repo') and
+        f.get('method')=='REVOKED_OLD_GITHUB_INSTALLATION' and safe_integer(old) and old>0 and
+        old!=activation['githubApp'].get('installationId') and f.get('oldCredentialsRevoked') is True and
+        safe_integer(expiry) and expiry<=activation['notBefore'] and
+        type(evidence) is str and re.fullmatch('[a-f0-9]{64}',evidence) is not None and
+        f.get('verifiedBy')=='protected-install-review' and type(f.get('deniedPullRequests')) is list and
+        531 in f['deniedPullRequests'],'OLD_WRITER_FENCING_UNVERIFIED')
+
 def apply(package,node,bwrap):
     raw,m,files=prepared(package)
     require(os.geteuid()==0 and os.uname().nodename==HOST,'PROTECTED_HOST_REQUIRED')
@@ -150,6 +167,12 @@ def apply(package,node,bwrap):
     now=int(time.time()*1000)
     require(permit['notBefore']<=now<permit['expiresAt'],'INSTALL_ADMISSION')
     activation_preclaim(activation, now)
+    fence=regular_bytes(AUTH/'fence.json',root=True)
+    require(digest(fence)==permit['fenceSha256']==activation.get('fenceSha256'),'PROTECTED_EVIDENCE_CHANGED')
+    def reject_constant(_):raise ValueError()
+    try:fence_record=json.loads(fence.decode('utf8'),parse_constant=reject_constant)
+    except (ValueError, UnicodeError):raise Block('OLD_WRITER_FENCING_UNVERIFIED')
+    fence_preclaim(fence_record, activation)
     write_new(claim,json.dumps({'manifestSha256':digest(raw),'at':now,'oneUse':True}).encode())
     installed_unit=False
     try:
