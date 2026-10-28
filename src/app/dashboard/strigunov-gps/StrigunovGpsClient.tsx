@@ -68,7 +68,14 @@ export default function StrigunovGpsClient() {
     ({id, title: fallbackTitles[i], status: 'UNKNOWN', proofCount: 0, acceptance: []}));
   const trusted = data?.serverEvidence?.verifiedStages ?? [];
   const count = acceptedPrefix(stages, trusted);
-  const current = data ? stages.find(s => !physicallyAccepted(s, trusted)) : null;
+  // The product's current development stage comes from the canonical release map.
+  // Independent physical verification is a separate question, not the navigation cursor.
+  const current = data ? (stages.find(s => s.status === 'IN_PROGRESS') ??
+    stages.find(s => !physicallyAccepted(s, trusted))) : null;
+  const canonicalCount = data ? stages.reduce((n, s, i) =>
+    n === i && s.status === 'ACCEPTED' ? n + 1 : n, 0) : 0;
+  const enginePr = data?.prs.find(p => p.number === 549);
+  const g2Pr = data?.prs.find(p => p.number === 550);
   const chosen = stages.find(s => s.id === selected) ?? stages[0];
   const currentIndex = current ? stages.indexOf(current) : -1;
   const ci = data?.prs.flatMap(p => p.ci) ?? [];
@@ -76,13 +83,16 @@ export default function StrigunovGpsClient() {
   const ciFail = ci.filter(x => x.conclusion === 'failure').length;
   const observed = data?.observedAt && Number.isFinite(Date.parse(data.observedAt))
     ? new Date(data.observedAt).toLocaleString('ru-RU') : 'нет';
-  const issueUrl = 'https://github.com/ASI-integration/asi-landing/issues/' +
-    (511 + ids.indexOf(selected));
+  // G1 and G2 have known canonical issues. Never fabricate numbers for later stages.
+  const issueUrl = selected === 'S4-G1'
+    ? 'https://github.com/ASI-integration/asi-landing/issues/511'
+    : selected === 'S4-G2'
+      ? 'https://github.com/ASI-integration/asi-landing/issues/512' : data?.mapUrl;
   return <main className="mx-auto w-full max-w-[1700px] pb-12 text-slate-900">
     <header className="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-slate-950 px-5 py-4 text-white">
       <div>
         <p className="text-xs font-bold uppercase tracking-wider text-blue-300">ASI · GPS проекта</p>
-        <h1 className="mt-1 text-2xl font-black">Стригунов 4</h1>
+        <h1 className="mt-1 text-2xl font-black">Карта ASI · Стригунов 4</h1>
         <p className="text-xs text-slate-300">S4-G1 → S4-G6 → READY_FOR_DEMO</p>
       </div>
       <div className="flex flex-wrap items-center gap-3">
@@ -99,30 +109,38 @@ export default function StrigunovGpsClient() {
         <div className="rounded-2xl border bg-white p-4 shadow-sm">
           <p className="text-xs font-semibold text-slate-500">Вы здесь</p>
           <p className="mt-1 text-3xl font-black text-blue-700">{current?.id ?? 'Нет данных'}</p>
-          <p className="mt-1 text-xs text-slate-500">{current ? 'Первый непринятый этап — не текущая разработка' : 'Положение не проверено'}</p>
+          <p className="mt-1 text-xs text-slate-500">{current ? 'Этап разработки по канонической карте' : 'Положение не проверено'}</p>
           <div className="mt-3 rounded-xl border border-blue-200 bg-blue-50 p-3">
             <p className="text-xs font-semibold text-blue-800">Текущая локальная работа · G2</p>
-            <p className="mt-1 text-xs text-blue-900">Права оператора и вход. Последнее локальное свидетельство: 96/96 Linux-тестов PASS, 25.10.2026. Это сохранённый результат, не живой сигнал с D: и не приёмка этапа.</p>
+            <p className="mt-1 text-xs text-blue-900">Права оператора и Google-вход · статус в карте: {stages[1].status}. Прошлые локальные тесты не считаются живой телеметрией или физической приёмкой.</p>
+            {g2Pr && <p className="mt-2 text-xs"><A href={g2Pr.url}>G2 · PR #550</A> · {g2Pr.merged ? 'merged' : g2Pr.draft ? 'Draft' : g2Pr.state}</p>}
           </div>
         </div>
         <div className="rounded-2xl border bg-white p-4 shadow-sm">
-          <p className="text-xs font-semibold text-slate-500">Физически приняты этапы</p>
-          <p className="mt-1 text-3xl font-black">{data ? count : '—'}<span className="text-base font-normal text-slate-500"> / 6</span></p>
+          <p className="text-xs font-semibold text-slate-500">Принято по канонической карте</p>
+          <p className="mt-1 text-3xl font-black">{data ? canonicalCount : '—'}<span className="text-base font-normal text-slate-500"> / 6</span></p>
           <div className="mt-2 h-2 rounded-full bg-slate-200">
-            <div className="h-2 rounded-full bg-emerald-500" style={{width: (count / 6 * 100) + '%'}} />
+            <div className="h-2 rounded-full bg-emerald-500" style={{width: (canonicalCount / 6 * 100) + '%'}} />
           </div>
-          <p className="mt-2 text-xs text-slate-500">PR и CI не двигают физический прогресс.</p>
+          <p className="mt-2 text-xs text-slate-500">Независимо перепроверено в этом запросе: {data ? count : '—'} / 6. При недоступности источника канонический статус не отменяется. PR и CI не являются физической приёмкой.</p>
+        </div>
+        <div className="rounded-2xl border border-indigo-200 bg-indigo-50 p-4">
+          <p className="text-xs font-semibold text-indigo-800">Приоритет №1 · Universal Engine</p>
+          <p className="mt-1 text-base font-black text-slate-900">{enginePr ? 'PR #549 · ' + (enginePr.merged ? 'merged' : enginePr.draft ? 'Draft' : enginePr.state) : 'Данные PR недоступны'}</p>
+          <p className="mt-1 font-mono text-xs text-slate-500">{enginePr?.head.slice(0, 12) ?? 'HEAD не проверен'}</p>
+          <p className="mt-2 text-xs text-indigo-900">Работающий серверный Engine 24/7 этим API не подтверждается. Код/CI и физический запуск — разные состояния.</p>
+          <div className="mt-2 space-x-3 text-xs"><A href="/dashboard/engine-progress">Вехи движка</A><A href="https://github.com/ASI-integration/asi-landing/pull/549">PR #549</A></div>
         </div>
         <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
           <p className="text-xs font-semibold text-amber-800">Подготовка в GitHub</p>
-          <p className="mt-2 text-lg font-black">{data ? (ciPass + ' PASS / ' + ciFail + ' FAIL') : 'Не проверено'}</p>
-          <p className="mt-1 text-xs text-amber-800">Отдельно от приёмки этапов.</p>
+          <p className="mt-2 text-lg font-black">{data ? data.prs.length + ' PR' : 'Не проверено'}</p>
+          <p className="mt-1 text-xs text-amber-800">Исторические CI записи: {ciPass} PASS / {ciFail} FAIL. Смотри точные HEAD и последний run справа; это не физическая приёмка.</p>
         </div>
         <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4">
           <p className="text-xs font-semibold text-rose-700">Ближайшее препятствие</p>
           <p className="mt-1 text-sm font-bold">
-            {count === 6 ? 'Маршрут завершён' :
-              'Нет независимых физических доказательств для ' + (current?.id ?? 'этапа')}
+            {canonicalCount === 6 ? 'Маршрут формально завершён — перепроверь свидетельства' :
+              current ? 'Физическая приёмка ' + current.id + ' ещё не подтверждена' : 'Нужны данные канонического маршрута'}
           </p>
         </div>
         <div className="rounded-2xl border bg-white p-4">
@@ -132,7 +150,7 @@ export default function StrigunovGpsClient() {
           <p className="mt-1 text-xs text-slate-500">
             {data?.telemetry?.available ? data.telemetry.stage : 'Нет свежей телеметрии'}
           </p>
-          <p className="mt-2 text-xs text-slate-500">Телеметрия не подтверждает физическую приёмку Hetzner.</p>
+          <p className="mt-2 text-xs text-slate-500">Источник: Mission Control, обновлён {data?.telemetry?.updatedAt ? new Date(data.telemetry.updatedAt).toLocaleString('ru-RU') : 'неизвестно'}. Отсутствие сигнала не доказывает остановку задач. Телеметрия не подтверждает Engine или приёмку G2.</p>
         </div>
       </aside>
 
@@ -180,6 +198,7 @@ export default function StrigunovGpsClient() {
             </svg>
             {stages.map((stage, index) => {
               const done = physicallyAccepted(stage, trusted);
+              const acceptedByMap = stage.status === 'ACCEPTED';
               const active = stage.id === current?.id;
               const [x, y] = positions[index];
               return <button type="button" key={stage.id}
@@ -189,9 +208,10 @@ export default function StrigunovGpsClient() {
                 className={'absolute z-10 -translate-x-1/2 -translate-y-1/2 rounded-xl border-2 px-3 py-2 text-sm font-black shadow-lg hover:scale-105 ' +
                   (selected === stage.id ? 'ring-4 ring-blue-200 ' : '') +
                   (done ? 'border-emerald-700 bg-emerald-600 text-white' :
+                    acceptedByMap ? 'border-amber-700 bg-amber-100 text-amber-900' :
                     active ? 'border-blue-800 bg-blue-600 text-white' :
                     'border-slate-400 bg-white text-slate-700')}>
-                {done ? '✓ ' : active ? '◎ ' : '🔒 '}{stage.id}
+                {done ? '✓ ' : acceptedByMap ? '◇ ' : active ? '◎ ' : '🔒 '}{stage.id}
                 {active && <span className="block text-[10px]">ПРИЁМКА</span>}
               </button>;
             })}
@@ -224,7 +244,7 @@ export default function StrigunovGpsClient() {
             </div>
           </details>
           <div className="mt-3 flex flex-wrap gap-4 text-sm">
-            <A href={issueUrl}>Задача #{511 + ids.indexOf(selected)}</A>
+            {issueUrl && <A href={issueUrl}>{selected === 'S4-G1' ? 'Issue #511' : selected === 'S4-G2' ? 'Issue #512' : 'Каноническая карта'}</A>}
             {data && <A href={data.mapUrl}>Каноническая карта</A>}
           </div>
         </div>
@@ -265,7 +285,7 @@ export default function StrigunovGpsClient() {
     </div>
     <p className="mt-3 text-xs text-slate-500">
       Автоматическое чтение серверной карты каждые 30 секунд. Локальные тесты G2 показаны как датированный снимок и пока не синхронизируются с D:. Только чтение; без PR, merge, запуска Engine и изменений серверов.
-      CI и статус Dispatcher не заменяют проверку физической приёмки.
+      Факты обновляются раздельно: канонический статус, независимо подтверждённые свидетельства и серверная телеметрия. CI не заменяет физическую приёмку.
     </p>
   </main>;
 }
