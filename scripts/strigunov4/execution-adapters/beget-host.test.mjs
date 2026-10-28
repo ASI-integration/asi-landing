@@ -121,3 +121,21 @@ test('offline review requires authenticated independent evidence and exact delta
  const f=await setup(t),file=path.join(f.root,'state/autopilot-ledger.json');await fs.writeFile(file,'{');
  assert.equal((await tick(await loop(f))).mode,'FAILED_LOCKED');assert.equal(await fs.readFile(file,'utf8'),'{');assert.equal(f.writes.length,0);
  });
+
+test('installer ignores access-time updates but rejects inode replacement',()=>{
+ const code=`import importlib.util,tempfile,sys
+from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import patch
+s=importlib.util.spec_from_file_location('installer',sys.argv[1]);m=importlib.util.module_from_spec(s);s.loader.exec_module(m)
+with tempfile.TemporaryDirectory() as d:
+ f=Path(d)/'artifact';f.write_bytes(b'{}');before=f.stat();fields=('st_dev','st_ino','st_mode','st_uid','st_gid','st_nlink','st_size','st_mtime_ns','st_ctime_ns')
+ after=SimpleNamespace(**{k:getattr(before,k) for k in fields},st_atime=before.st_atime+5)
+ with patch.object(m.os,'fstat',side_effect=[before,after]):assert m.regular_bytes(f)==b'{}'
+ after.st_ino+=1
+ with patch.object(m.os,'fstat',side_effect=[before,after]):
+  try:m.regular_bytes(f);raise AssertionError('inode mutation accepted')
+  except m.Block as e:assert str(e)=='FILE_CHANGED'
+`;
+ execFileSync('/usr/bin/python3',['-I','-S','-B','-c',code,new URL('./beget-install.py',import.meta.url).pathname],{timeout:5000});
+});

@@ -48,7 +48,9 @@ def regular_bytes(p, root=False, limit=2000000):
             piece=os.read(fd,min(65536,limit+1-len(raw)))
             if not piece:break
             raw+=piece
-        require(len(raw)==st.st_size and os.fstat(fd)==st,'FILE_CHANGED')
+        after=os.fstat(fd)
+        fields=('st_dev','st_ino','st_mode','st_uid','st_gid','st_nlink','st_size','st_mtime_ns','st_ctime_ns')
+        require(len(raw)==st.st_size and all(getattr(after,k)==getattr(st,k) for k in fields),'FILE_CHANGED')
         return raw
     finally:os.close(fd)
 
