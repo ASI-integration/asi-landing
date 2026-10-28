@@ -9,7 +9,8 @@ export const dynamic = 'force-dynamic';
 const REPO = 'ASI-integration/asi-landing';
 const BASE = 'https://api.github.com/repos/' + REPO;
 const RELEASE_PATH = 'docs/agent-os/releases/strigunov4-demo.json';
-const PR_NUMBERS = [529, 532, 533];
+// Include the current infrastructure and G2 integration PRs. Keep legacy G1 context.
+const PR_NUMBERS = [529, 532, 533, 549, 550];
 const STAGE_IDS = [1, 2, 3, 4, 5, 6].map(n => 'S4-G' + n);
 type GitHubPR = { number: number; state: string; draft: boolean; merged: boolean; updated_at: string; head: { sha: string } };
 type Workflow = { id: number; name: string; status: string; conclusion: string | null; head_sha: string; html_url: string };
