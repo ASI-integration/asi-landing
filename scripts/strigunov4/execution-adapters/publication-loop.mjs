@@ -27,7 +27,9 @@ export async function createPublicationLoop({root,legacyStateDir,catalog,fetchSn
   let dispatcher,policy,continuing=false,completedIds=[];
   if(closedLoop){
     closedLoop=Object.freeze({...closedLoop,policy:structuredClone(closedLoop.policy)});
-    must(publishedReview&&typeof publishedReview.verify==='function','EXPLICIT_REVIEW_POLICY_REQUIRED');
+    // No override means the existing strict CodeRabbit reader, not skipped review.
+    // An alternative review port still needs its exact native capability binding.
+    must(publishedReview===undefined||typeof publishedReview.verify==='function','EXPLICIT_REVIEW_POLICY_REQUIRED');
     must(typeof closedLoop.readTrustedComments==='function'&&Number.isSafeInteger(closedLoop.maxTicks)&&
       closedLoop.maxTicks>=1&&closedLoop.maxTicks<=100,'CLOSED_LOOP_LIMITS');
     policy=structuredClone(closedLoop.policy);

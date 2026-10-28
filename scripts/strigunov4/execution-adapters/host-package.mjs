@@ -5,6 +5,39 @@ import {fileURLToPath} from 'node:url';
 import {execFileSync} from 'node:child_process';
 import {digest,must} from './state.mjs';
 import {ENGINE_PILOT} from '../ASI-STRIGUNOV4-MULTIJOB-20261020.mjs';
+
+/** Non-installable runtime source closure. Preserve the repository layout so
+ * the existing sibling Global Dispatcher imports resolve without duplication.
+ * Never reuse the old pilot installer/claim for this new source layout.
+ */
+export async function buildRuntimeClosure({repository,output}){
+  const scripts=path.join(await fs.realpath(repository),'scripts'),files={};
+  await fs.mkdir(output,{mode:0o700});
+  must(await fs.realpath(output)===path.resolve(output),'PACKAGE_OUTPUT_PATH');
+  async function copy(relative){
+    const name=path.posix.normalize(relative);
+    must((/^strigunov4\/[A-Za-z0-9_./-]+\.mjs$/.test(name)||
+      ['global-dispatcher/dispatcher.mjs','global-dispatcher/product-adapters.mjs'].includes(name))&&
+      !name.split('/').includes('..'),'PACKAGE_IMPORT_SCOPE');
+    if(Object.hasOwn(files,name))return;
+    const source=path.join(scripts,name);
+    must(await fs.realpath(source)===source&&(await fs.lstat(source)).isFile(),'PACKAGE_SOURCE_PATH');
+    const content=await fs.readFile(source,'utf8');files[name]=digest(content);
+    const destination=path.join(output,'scripts',name);
+    await fs.mkdir(path.dirname(destination),{recursive:true,mode:0o700});
+    await fs.writeFile(destination,content,{flag:'wx',mode:0o600});
+    for(const m of content.matchAll(/(?:from\s*|import\s*)['"]([^'"]+)['"]/g)){
+      if(m[1].startsWith('node:'))continue;
+      must(m[1].startsWith('.'),'PACKAGE_EXTERNAL_DEPENDENCY');
+      await copy(path.posix.join(path.posix.dirname(name),m[1]));
+    }
+  }
+  await copy('strigunov4/execution-adapters/host-runtime.mjs');
+  const manifest={schema:'asi.engine-runtime-source-closure.v1',entry:'scripts/strigunov4/execution-adapters/host-runtime.mjs',
+    files,installable:false,reason:'HOST_RUNNER_ADMISSION_AND_FENCING_REQUIRED'};
+  await fs.writeFile(path.join(output,'manifest.json'),JSON.stringify(manifest,null,2)+'\n',{flag:'wx',mode:0o600});
+  return manifest;
+}
 export const OLD_RUNNER='afbac44ff351d7c929e20886b6739bef97e302eb28f89d344902a9364e1d98e8';
 export function runnerCandidate(original){
   must(digest(original)===OLD_RUNNER,'RUNNER_BASE_MISMATCH');

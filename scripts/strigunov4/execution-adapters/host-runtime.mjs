@@ -4,7 +4,7 @@ import path from 'node:path';
 import os from 'node:os';
 import {execFile} from 'node:child_process';
 import {promisify} from 'node:util';
-import {loadHostAuthority,ENGINE_ROOT,LEGACY_STATE} from './host-authority.mjs';
+import {loadHostAuthority,validateHostLoop,ENGINE_ROOT,LEGACY_STATE} from './host-authority.mjs';
 import {createAppTokenProvider} from './host-github-app.mjs';
 import {createHostChecks} from './host-checks.mjs';
 import {createGitHubReader} from './github-readonly.mjs';
@@ -14,6 +14,29 @@ import {digest,must,regular} from './state.mjs';
 import {selectRoute} from '../ASI-STRIGUNOV4-RUNNER-BRIDGE-20261020.mjs';
 import {WORK_ORDERS,ENGINE_PILOT} from '../ASI-STRIGUNOV4-MULTIJOB-20261020.mjs';
 const exec=promisify(execFile),REPO='ASI-integration/asi-landing';
+
+/** Build ports from an already verified signed host payload. No caller callback,
+ * Issue text, environment switch or advisory decision can select a review policy.
+ * The reader is the existing authenticated fixed-origin GitHub reader.
+ */
+export function hostLoopOptions(payload,reader){
+  validateHostLoop(payload);
+  if(payload.closedLoop===undefined)return {};
+  const c=payload.closedLoop;
+  return {intervalMs:c.intervalMs,closedLoop:{
+    stateDir:path.join(ENGINE_ROOT,'routing'),policy:c.policy,maxTicks:c.maxTicks,
+    async readTrustedComments({repository,issue}){
+      must(repository===REPO&&issue===511,'OWNER_COMMENT_SCOPE');
+      const p=await reader.get('issues/511');
+      must(p.number===511&&p.state==='open'&&!p.pull_request&&
+        p.url===`https://api.github.com/repos/${REPO}/issues/511`,'OWNER_COMMENT_IDENTITY');
+      const comments=await reader.pages('issues/511/comments');
+      must(Array.isArray(comments)&&comments.every(v=>Number.isSafeInteger(v.id)&&v.id>0&&
+        v.issue_url===p.url),'OWNER_COMMENT_IDENTITY');
+      return comments;
+    }
+  }};
+}
 
 export function createHostSnapshot({reader,contract,readProjectGates,baseSha}){
   return async()=>{
@@ -57,7 +80,7 @@ async function construct({readProjectGates}){
   const fetchSnapshot=createHostSnapshot({reader,contract,readProjectGates,baseSha:payload.baseSha});
   const loop=await createPublicationLoop({root:ENGINE_ROOT,legacyStateDir:LEGACY_STATE,catalog,fetchSnapshot,
     reader,remote,authorize:authority.authorize,...checks,ciPolicies:payload.ciPolicies,
-    liveAdmission:authority.admission,enginePilot:true,timeoutMs:30000});
+    liveAdmission:authority.admission,enginePilot:true,timeoutMs:30000,...hostLoopOptions(payload,reader)});
   return {authority,loop};
 }
 export async function engineIteration(ports){

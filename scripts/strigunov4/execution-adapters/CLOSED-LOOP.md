@@ -69,3 +69,35 @@ reader against the existing loopback GitHub fixture. Pending publication,
 verified first order, verified second order and terminal idle are distinct ticks.
 All simulated PRs and host grants are fixtures, not live publications/authority.
 SIGKILL proves process-crash handling, not power-loss durability.
+
+## Native host entry point
+
+The existing host-runtime hook now accepts an optional `closedLoop` member only
+inside the verified owner-signed activation payload. It contains `policy`,
+`intervalMs` (600000–900000), `maxTicks` (1–100), and `reviewMode: coderabbit`.
+The stage policy must have the same base and validity as the host envelope;
+its task identities must match the signed native catalog. The native host,
+G1 stage, single pilot, checks and App restrictions remain unchanged.
+This is not Beget/G2 admission or a migration of the installed recovered Engine.
+
+Routing uses the existing Engine root's `routing` directory, which must already
+be initialized by a separately admitted installation. No automatic initializer
+or fallback runs in the hook. Owner comments are fetched through the existing
+authenticated reader, with issue/repository/comment identities checked each time.
+No custom published reviewer is implicitly authorized by native host consent.
+With no override, the Publisher still requires its full exact-head CodeRabbit
+review; skipped review never passes. No provider calls are made by these tests.
+
+`buildRuntimeClosure()` in host-package.mjs creates a non-installable, hashed
+source closure preserving scripts/strigunov4 and scripts/global-dispatcher.
+The old pilot package layout does not contain the sibling Dispatcher modules;
+do not use the old builder/installer/claim to relocate this runtime. The closure
+imports successfully but is deliberately marked installable:false. An installed
+runner/dependency/authority witness and old-executor fencing remain mandatory.
+
+At the real current G2 map there is no admitted prepare-source work order. This
+patch does not reopen G1, publish its pilot again, accept G2 or authorize G3.
+The 100-tick bound is finite (at ten minutes, at most about 16h40m); it is not a
+14-day unlimited execution grant and is never reset automatically. A Beget
+profile, current-stage catalog, check/reviewer implementation and enforceable
+cost envelope still require exact admission.
