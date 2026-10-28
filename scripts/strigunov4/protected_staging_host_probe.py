@@ -18,7 +18,7 @@ ARCHIVE_HASH = "030880c750c8fb28cb61ebfbba85e0e23718279e4c165655fcae6a1c2d07c486
 MANIFEST_HASH = "f903dbf3296f81e5fa02262d7342d32cbbeabc9b9eacfdf4df13b9da1ffcc5be"
 APP_BASE = Path("/var/www/asi-staging")
 QUARANTINE = Path("/home/project_ayfaar/.asi-strigunov4-g0-d912aec6-quarantine")
-UNIT_HASH = "9072dd1a276c7bea2bb7d17031a51b250177e2806cd632e26728028c0a8a01d9"
+UNIT_HASH = "6e0ce12922e015738368c89deeef154c195f19b2a0678d72d27d58e5414bf62c"
 FLAGS = {
     "EMAIL_AUTO_SEND": "false",
     "EMAIL_DRAFT_ONLY": "true",

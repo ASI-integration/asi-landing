@@ -26,7 +26,7 @@ CURRENT = ROOT / "current"
 SERVICE = "asi-landing-staging"
 HOST = "asi-agent-runner"
 OLD = "5c91b27bcde395f01cc078d1fbe454dd7436e1c6"
-UNIT_HASH = "9072dd1a276c7bea2bb7d17031a51b250177e2806cd632e26728028c0a8a01d9"
+UNIT_HASH = "6e0ce12922e015738368c89deeef154c195f19b2a0678d72d27d58e5414bf62c"
 EXPECTED = {
     "EMAIL_AUTO_SEND": "false",
     "EMAIL_DRAFT_ONLY": "true",
