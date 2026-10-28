@@ -26,7 +26,7 @@ export function inventoryPath(p) {
     p.split('/').every(c => c && c !== '.' && c !== '..' && c !== '.git'),
     'INVENTORY_PATH_NOT_ALLOWED');
 }
-async function target(root,relative) {
+async function target(root,relative,{absent=false}={}) {
   safePath(relative); const full = path.join(root,relative);
   let dir = root;
   for (const part of relative.split('/').slice(0,-1)) {
@@ -34,7 +34,8 @@ async function target(root,relative) {
     const st = await fs.lstat(dir);
     must(st.isDirectory() && !st.isSymbolicLink(), 'ANCESTOR_NOT_DIRECTORY');
   }
-  await regular(full); return full;
+  if(absent){try{await fs.lstat(full);throw Error('CREATE_TARGET_EXISTS');}catch(e){if(e.code!=='ENOENT')throw e;}}
+  else await regular(full); return full;
 }
 // A trusted scratch clone may be created with ordinary 0755 nested directories.
 // Revoke group/other access on its directories using no-follow file descriptors
@@ -138,11 +139,14 @@ export function validateScratchGitConfig(config) {
  * Scratch must be a private independent detached clone; caller creates it without executing hooks.
  */
 export async function prepareDelta(store,task,{ admission, changes }) {
-  must(admission?.taskId === task.id && admission.head === task.sha && admission.stage === 'S4-G1' &&
+  must(admission?.taskId === task.id && admission.head === task.sha && admission.stage === task.stage && ['S4-G1','S4-G2'].includes(task.stage) &&
     admission.mode === 'ISOLATED_PREPARE_ONLY' && Array.isArray(admission.paths) && admission.paths.length > 0 &&
     admission.paths.length <= 3, 'TRUSTED_ADMISSION_REQUIRED');
   must(Array.isArray(changes) && changes.length > 0 && changes.length <= 3 &&
     new Set(changes.map(c=>c.path)).size === changes.length, 'CHANGE_SET_INVALID');
+  const creation=task.stage==='S4-G2'&&/^beget-g2-witness-(identity|races)-v1$/.test(task.id);
+  if(task.stage==='S4-G2')must(creation&&changes.length===1&&changes[0].path===
+    'scripts/strigunov4/test_'+task.id.replaceAll('-','_')+'.py'&&changes[0].beforeSha256===null,'G2_CREATE_SCOPE');
   const cwd = path.join(store.root,'scratchpads',task.id);
   must((await fs.realpath(cwd))===cwd, 'SCRATCH_REDIRECTED');
   const st = await fs.stat(cwd);
@@ -163,10 +167,10 @@ export async function prepareDelta(store,task,{ admission, changes }) {
   for (const change of changes) {
     safePath(change.path);
     must(admission.paths.includes(change.path) && typeof change.content === 'string' &&
-      Buffer.byteLength(change.content) <= 200000 && /^[a-f0-9]{64}$/.test(change.beforeSha256), 'CHANGE_NOT_ADMITTED');
-    const file = await target(cwd,change.path);
-    const source = await fs.readFile(file,'utf8');
-    must(digest(source)===change.beforeSha256 && baseline[change.path].hash===change.beforeSha256, 'PRECONDITION_CHANGED');
+      Buffer.byteLength(change.content) <= 200000 && (creation?change.beforeSha256===null:/^[a-f0-9]{64}$/.test(change.beforeSha256)), 'CHANGE_NOT_ADMITTED');
+    const file = await target(cwd,change.path,{absent:creation});
+    const source = creation?'':await fs.readFile(file,'utf8');
+    must(creation?!Object.hasOwn(baseline,change.path):digest(source)===change.beforeSha256 && baseline[change.path].hash===change.beforeSha256, 'PRECONDITION_CHANGED');
     const content = normalizeProposedContent(change.path,change.content);
     must(content!==source, 'EMPTY_CHANGE');
     await syntax(change.path,content,cwd);
@@ -175,18 +179,19 @@ export async function prepareDelta(store,task,{ admission, changes }) {
   // Validate all proposals before the first write; partial mutation on I/O error is quarantined by ledger.
   for (const p of prepared) {
     await privatizeScratchAncestors(cwd,p.path);
-    await target(cwd,p.path);
-    must(digest(await fs.readFile(p.file))===p.beforeSha256, 'CONCURRENT_CHANGE');
-    await atomicWrite(p.file,p.content,{mode:baseline[p.path].mode});
+    await target(cwd,p.path,{absent:creation});
+    if(!creation)must(digest(await fs.readFile(p.file))===p.beforeSha256, 'CONCURRENT_CHANGE');
+    await atomicWrite(p.file,p.content,{mode:creation?0o644:baseline[p.path].mode});
   }
   const after = await inventory(cwd);
-  must(Object.keys(baseline).sort().join('\0')===Object.keys(after).sort().join('\0'), 'FILE_SET_CHANGED');
+  must([...Object.keys(baseline),...(creation?prepared.map(p=>p.path):[])].sort().join('\0')===Object.keys(after).sort().join('\0'), 'FILE_SET_CHANGED');
   const expected = new Map(prepared.map(p=>[p.path,p.afterSha256]));
-  must(Object.keys(after).every(p=>after[p].hash===(expected.get(p)??baseline[p].hash) && after[p].mode===baseline[p].mode), 'DELTA_OUTSIDE_SCOPE');
+  must(Object.keys(after).every(p=>after[p].hash===(expected.get(p)??baseline[p].hash) && after[p].mode===(baseline[p]?.mode??0o644)), 'DELTA_OUTSIDE_SCOPE');
   must((await git(cwd,['rev-parse','HEAD'])).trim()===task.sha, 'HEAD_MOVED');
   must(!(await git(cwd,['diff','--cached','--name-only'])).trim(), 'INDEX_CHANGED');
   await git(cwd,['diff','--no-ext-diff','--no-textconv','--check']);
-  const diff = await git(cwd,['diff','--no-ext-diff','--no-textconv','--',...prepared.map(p=>p.path)]);
+  const diff = creation?JSON.stringify(prepared.map(({path,beforeSha256,afterSha256})=>({path,beforeSha256,afterSha256}))):
+    await git(cwd,['diff','--no-ext-diff','--no-textconv','--',...prepared.map(p=>p.path)]);
   must(diff.length > 0 && diff.length <= 500000, 'DIFF_SIZE');
   return { status:'PASS',head:task.sha,preparedOnly:true,commitCreated:false,
     deltaSha256:digest(diff),files:prepared.map(({path,beforeSha256,afterSha256})=>({path,beforeSha256,afterSha256})) };

@@ -21,6 +21,9 @@ const work=Object.freeze([
   {id:'g5-operator-ui-egress',stage:'S4-G5',kind:'physical-gate',needs:'Human UI, cross-account denials, side-effect-free reads, independent no-send witness'},
   {id:'g6-acceptance',stage:'S4-G6',kind:'physical-gate',needs:'Independent physical acceptance and explicit owner READY_FOR_DEMO'}
 ]);
+export const BEGET_TASKS=Object.freeze(['identity','races'].map(part=>Object.freeze({
+ id:`beget-g2-witness-${part}-v1`,stage:'S4-G2',kind:'prepare-source',
+ paths:Object.freeze([`scripts/strigunov4/test_beget_g2_witness_${part}_v1.py`])})));
 export const WORK_ORDERS=work;
 // Host opt-in only. This test-only pilot does not unlock physical G1/G2 or
 // require creating the protected unit-apply workflow.
@@ -101,9 +104,10 @@ function sourceState(ticket,record,prstates,projectGate){
     return {status:'WAIT_PROJECT',reason:'PROJECT_SOURCE_GATE_NOT_GRANTED'};
   return {status:'SOURCE_PREPARATION_READY',reason:'PINNED_PATHS_ONLY',paths:ticket.paths};
 }
-export function decideQueue(snapshot,{enginePilot=false}={}){
+export function decideQueue(snapshot,{enginePilot=false,begetTasks=false}={}){
   const {contract,issues,prs={},checks={},reviews={},ledger={},project={}}=snapshot||{};
-  const orders=enginePilot?[...work.slice(0,3),ENGINE_PILOT,...work.slice(3)]:work;
+  const native=enginePilot?[...work.slice(0,3),ENGINE_PILOT,...work.slice(3)]:work;
+  const orders=begetTasks?[...native,...BEGET_TASKS]:native;
   const index=verifyRelease(contract);validateWorkOrders(orders,contract);
   if(index===6)return {release:RELEASE,stage:null,decision:'AWAIT_FINAL_OWNER_ACCEPTANCE',
     jobs:[],actions:[],stop:'No subsequent release scope authorized'};

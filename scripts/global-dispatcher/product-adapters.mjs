@@ -1,6 +1,6 @@
 // Planning contracts only. No credentials, authorizer, transport or executor ports.
 import {createHash} from 'node:crypto';
-import {decideQueue, WORK_ORDERS, ENGINE_PILOT, RELEASE} from '../strigunov4/ASI-STRIGUNOV4-MULTIJOB-20261020.mjs';
+import {decideQueue, WORK_ORDERS,BEGET_TASKS, ENGINE_PILOT, RELEASE} from '../strigunov4/ASI-STRIGUNOV4-MULTIJOB-20261020.mjs';
 
 export const must = (value, code) => { if (!value) throw Error(code); };
 export const hash = value => createHash('sha256').update(JSON.stringify(value)).digest('hex');
@@ -251,15 +251,15 @@ export function createProductAdapter(input, {verifyEvidence} = {}) {
 
 // References the existing catalog and canonical release; never copies jobs or
 // infers G1 acceptance. Preserve the native queue byte-for-byte for consumers.
-export function createStrigunovAdapter({enginePilot = false, verifyEvidence} = {}) {
-  const contractHash = hash({release: RELEASE, enginePilot});
+export function createStrigunovAdapter({enginePilot = false, begetTasks = false, verifyEvidence} = {}) {
+  const contractHash = hash({release: RELEASE, enginePilot,...(begetTasks?{begetTasks:true}:{})});
   return Object.freeze({id: 'strigunov4', contractHash,
     contract: {execution: 'disabled', maxAttemptsPerTask: 1, maxPlansPerStage: 2,
       goal: {source: 'docs/agent-os/releases/strigunov4-demo.json'},
       functions: ['prepare-source'], tools: ['existing-runner-bridge'], catalog: WORK_ORDERS},
     evaluate(snapshot) {
       must(sha(snapshot?.mainSha), 'VERIFIED_MAIN_SHA_REQUIRED');
-      const queue = decideQueue(snapshot, {enginePilot});
+      const queue = decideQueue(snapshot, {enginePilot,begetTasks});
       if (snapshot.oversight !== undefined) {
         const workOrderId = snapshot.oversight?.task?.workOrderId;
         must(queue.jobs.some(j => j.job === workOrderId), 'OVERSIGHT_WORK_ORDER_OUTSIDE_QUEUE');
@@ -275,7 +275,7 @@ export function createStrigunovAdapter({enginePilot = false, verifyEvidence} = {
       }
       const blocked = queue.jobs.find(job => !job.optional && job.status === 'BLOCKED');
       const candidates = queue.jobs.filter(job => job.status === 'SOURCE_PREPARATION_READY').map(job => {
-        const work = [...WORK_ORDERS, ENGINE_PILOT].find(w => w.id === job.job);
+        const work = [...WORK_ORDERS, ENGINE_PILOT,...(begetTasks?BEGET_TASKS:[])].find(w => w.id === job.job);
         return {id: job.job, stage: queue.stage, operation: 'prepare-source', priority: 0,
           tool: 'existing-runner-bridge', paths: [...work.paths]};
       });

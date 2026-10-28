@@ -10,12 +10,12 @@ export const readState=async(f,name)=>JSON.parse(await fs.readFile(path.join(f.r
 export async function closedFixture(t,options={}){
  const f=await fixture(t,{distinctWorkOrders:true,...options}),now={value:1000000};
  const routing=path.join(f.base,'routing');await fs.mkdir(routing,{mode:0o700});await initializeRoutingState(routing);
- const policy={schema:'asi.stage-authority.v1',repository:'ASI-integration/asi-landing',stage:'S4-G1',issue:511,
+ const policy={schema:options.beget?'asi.stage-authority.beget.v1':'asi.stage-authority.v1',repository:'ASI-integration/asi-landing',stage:options.beget?'S4-G2':'S4-G1',issue:options.beget?512:511,
   baseSha:f.sha,notBefore:now.value-1000,expiresAt:now.value+86400000,
   tasks:f.catalog.map(t=>({id:t.id,workOrderId:t.workOrderId,branch:t.branch,baseSha:t.sha,paths:t.changes.map(c=>c.path),
    operations:['create-tree','create-commit','create-branch','create-draft-pr']}))};
  const stamp=new Date(now.value).toISOString();
- const comments=[{body:'ASI-OWNER-STAGE-APPROVE:S4-G1:511:'+stagePolicyHash(policy),user:{id:207600140},created_at:stamp,updated_at:stamp}];
+ const comments=[{body:`ASI-OWNER-STAGE-APPROVE:${policy.stage}:${policy.issue}:`+stagePolicyHash(policy),user:{id:207600140},created_at:stamp,updated_at:stamp}];
  const closedLoop={stateDir:routing,policy,readTrustedComments:async()=>structuredClone(comments),maxTicks:8};
  const reviewPolicy=digest('fixture-local-independent-review-v1: no remote model or CodeRabbit');
  const independentReview=async e=>{

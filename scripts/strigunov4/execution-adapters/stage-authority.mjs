@@ -17,7 +17,8 @@ const grants=new WeakMap();
 export const stagePolicyHash=p=>hash(JSON.stringify(p));
 export function validateStagePolicy(p,now=Date.now()){
  require(exactKeys(p,['schema','repository','stage','issue','baseSha','notBefore','expiresAt','tasks']),'STAGE_POLICY_SCHEMA');
- require(p.schema==='asi.stage-authority.v1'&&p.repository===REPO&&p.stage==='S4-G1'&&p.issue===511&&sha40(p.baseSha)&&
+ require(((p.schema==='asi.stage-authority.v1'&&p.stage==='S4-G1'&&p.issue===511)||
+  (p.schema==='asi.stage-authority.beget.v1'&&p.stage==='S4-G2'&&p.issue===512))&&p.repository===REPO&&sha40(p.baseSha)&&
   Number.isSafeInteger(p.notBefore)&&Number.isSafeInteger(p.expiresAt)&&p.notBefore<=now&&now<p.expiresAt&&
   p.expiresAt-p.notBefore<=14*86400000,'STAGE_POLICY_SCOPE_OR_EXPIRY');
  require(Array.isArray(p.tasks)&&p.tasks.length>0&&p.tasks.length<=8,'STAGE_TASK_BOUND');
@@ -30,6 +31,11 @@ export function validateStagePolicy(p,now=Date.now()){
     !x.includes('..')&&!x.includes('//')&&!x.includes('/candidates/'))&&
    JSON.stringify(t.operations)===JSON.stringify(actions),'STAGE_TASK_SCOPE');
  }
+ if(p.schema==='asi.stage-authority.beget.v1'){
+  require(p.tasks.length<=2&&p.tasks.every(t=>t.id===t.workOrderId&&
+    /^beget-g2-witness-(identity|races)-v1$/.test(t.id)&&t.branch==='asi/engine-task/'+t.id&&
+    t.paths.length===1&&t.paths[0]==='scripts/strigunov4/test_'+t.id.replaceAll('-','_')+'.py'),'BEGET_TASK_SCOPE');
+ }
  return stagePolicyHash(p);
 }
 /** The trusted host reader must verify the repository/issue and return the
@@ -38,9 +44,9 @@ export function validateStagePolicy(p,now=Date.now()){
 export async function verifyOwnerStageDecision(p,{readTrustedComments,now=Date.now()}={}){
  const policyHash=validateStagePolicy(p,now);
  require(typeof readTrustedComments==='function','TRUSTED_OWNER_READER_REQUIRED');
- const comments=await readTrustedComments({repository:REPO,issue:511});
+ const comments=await readTrustedComments({repository:REPO,issue:p.issue});
  require(Array.isArray(comments)&&comments.length<=1000,'OWNER_COMMENT_SOURCE_INVALID');
- const exact='ASI-OWNER-STAGE-APPROVE:S4-G1:511:'+policyHash;
+ const exact=`ASI-OWNER-STAGE-APPROVE:${p.stage}:${p.issue}:`+policyHash;
  const matching=comments.filter(c=>c?.body===exact&&c.user?.id===OWNER_ID&&
   Number.isFinite(Date.parse(c.created_at))&&Date.parse(c.created_at)>=p.notBefore&&
   Date.parse(c.created_at)<=now&&c.updated_at===c.created_at);

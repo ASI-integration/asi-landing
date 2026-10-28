@@ -20,10 +20,11 @@ export async function fixture(t,options={}){
  await fs.writeFile(path.join(legacy,'receipts.json'),JSON.stringify({version:1,completed:[]}));
  t.after(()=>fs.rm(base,{recursive:true,force:true}));
  const seed=path.join(base,'seed');await fs.mkdir(path.join(seed,path.dirname(target)),{recursive:true});
- await fs.writeFile(path.join(seed,target),'VALUE = 1\n');if(options.distinctWorkOrders)await fs.writeFile(path.join(seed,secondTarget),'VALUE = 1\n');git(seed,['init','-q']);git(seed,['add','.']);git(seed,['commit','-qm','fixture']);
+ await fs.writeFile(path.join(seed,target),'VALUE = 1\n');if(options.distinctWorkOrders)await fs.writeFile(path.join(seed,secondTarget),'VALUE = 1\n');if(options.beget)await fs.copyFile(new URL('../beget_g2_operator_witness.py',import.meta.url),path.join(seed,'scripts/strigunov4/beget_g2_operator_witness.py'));git(seed,['init','-q']);git(seed,['add','.']);git(seed,['commit','-qm','fixture']);
  const sha=git(seed,['rev-parse','HEAD']);
- const catalog=['fixture-a','fixture-b'].map((id,i)=>({id,kind:'github-publisher',stage:'S4-G1',workOrderId:options.distinctWorkOrders&&i===0?'g1-engine-receipt-replay-test':'g1-unit-apply-source',repo,sha,pr:null,
+ let catalog=['fixture-a','fixture-b'].map((id,i)=>({id,kind:'github-publisher',stage:'S4-G1',workOrderId:options.distinctWorkOrders&&i===0?'g1-engine-receipt-replay-test':'g1-unit-apply-source',repo,sha,pr:null,
   branch:'asi/engine-task/'+id,changes:[{path:options.distinctWorkOrders&&i===0?secondTarget:target,beforeSha256:digest('VALUE = 1\n'),content:`VALUE = ${i+2}\n`}]}));
+ if(options.beget)catalog=await Promise.all(['identity','races'].map(async part=>({id:`beget-g2-witness-${part}-v1`,kind:'github-publisher',stage:'S4-G2',workOrderId:`beget-g2-witness-${part}-v1`,repo,sha,pr:null,branch:`asi/engine-task/beget-g2-witness-${part}-v1`,changes:[{path:`scripts/strigunov4/test_beget_g2_witness_${part}_v1.py`,beforeSha256:null,content:await fs.readFile(new URL(`./beget-work-orders/${part}.py.txt`,import.meta.url),'utf8')}]})));
  for(const task of catalog){const dir=path.join(root,'scratchpads',task.id);git(base,['clone','-q','--no-hardlinks',seed,dir]);git(dir,['checkout','--detach','-q']);await fs.chmod(dir,0o700);}
  const prs=Object.fromEntries([[509,'b3c8ff2e4904b0b503197d29aa217773918831bc'],[508,'8ac8e8ac11e39ac070ccc058218e3b73190cb43f'],[520,'6693312b0a94b8afcee3a34907055ce301a5fb3e']].map(([number,head])=>[number,{number,head,state:'open',merged:false}]));
  const snapshot={mainSha:sha,contract:{schemaVersion:'asi.demo-release.v1',releaseId:'STRIGUNOV4-READY-FOR-DEMO',state:'FROZEN_ON_OWNER_MERGE',
@@ -31,6 +32,7 @@ export async function fixture(t,options={}){
   plannedFiles:i===1?[target,'.github/workflows/strigunov4-c4-unit-apply.yml','scripts/strigunov4/test_protected_c4_unit_apply.py']:[]}))},
   issues:{511:{number:511,state:'open',labels:['agent-source-ready']}},project:{511:'PREPARATION_ONLY'},prs,
   checks:{509:{head:prs[509].head,validate:'success',release_governance:'success'}},reviews:{509:{head:prs[509].head,completed:true,actionable:false}},ledger:{}};
+ if(options.beget){snapshot.contract.stages[0].status='ACCEPTED';snapshot.contract.stages[1].status='IN_PROGRESS';snapshot.contract.stages[1].plannedFiles=catalog.flatMap(t=>t.changes.map(c=>c.path));snapshot.issues[512]={number:512,state:'open',labels:['agent-source-ready']};snapshot.project[512]='PREPARATION_ONLY';}
  const trees=new Map(),commits=new Map(),refs=new Map(),pulls=new Map(),writes=[],requests=[];
  const baseTree=git(seed,['rev-parse','HEAD^{tree}']);
  const leaves=git(seed,['ls-tree','-r',sha]).split('\n').map(line=>{const [meta,p]=line.split('\t'),[mode,type,hash]=meta.split(' ');return {path:p,mode,type,sha:hash};});
@@ -43,7 +45,7 @@ export async function fixture(t,options={}){
   if(route==='branches/main')result={protected:true,commit:{sha:state.main}};
   else if(route.startsWith('git/matching-refs/')){const ref=route.slice('git/matching-refs/'.length);result=[...refs].filter(([r])=>r.startsWith('refs/'+ref)).map(([r,head])=>({ref:r,object:{sha:head,type:'commit'}}));}
   else if(route==='git/trees'&&req.method==='POST'){
-   const tree=structuredClone(trees.get(data.base_tree).tree);for(const e of data.tree){const old=tree.find(x=>x.path===e.path);Object.assign(old,{sha:oid('blob',e.content)});}
+   const tree=structuredClone(trees.get(data.base_tree).tree);for(const e of data.tree){const old=tree.find(x=>x.path===e.path);if(old)Object.assign(old,{sha:oid('blob',e.content)});else tree.push({path:e.path,mode:e.mode,type:'blob',sha:oid('blob',e.content)});}
    const hash=oid('tree',JSON.stringify(tree));trees.set(hash,{sha:hash,truncated:false,tree});result={sha:hash};
   }else if(route.startsWith('git/trees/')){result=structuredClone(trees.get(route.split('/').at(-1)));if(state.badTree&&result.sha!==baseTree)result.tree[0].mode='100755';}
   else if(route==='git/commits'&&req.method==='POST'){const hash=oid('commit',JSON.stringify(data));commits.set(hash,{sha:hash,tree:{sha:data.tree},parents:data.parents.map(sha=>({sha}))});result={sha:hash};}
@@ -53,7 +55,7 @@ export async function fixture(t,options={}){
    const number=600+pulls.size,head=refs.get('refs/heads/'+data.head);result={number,title:data.title,body:data.body,state:'open',merged:false,draft:data.draft,changed_files:1,
     head:{sha:head,ref:data.head,repo:{full_name:repo}},base:{sha:state.main,ref:'main',repo:{full_name:repo}},html_url:`https://github.com/${repo}/pull/${number}`};pulls.set(number,result);
   }else if(route==='pulls')result=[...pulls.values()].filter(p=>url.searchParams.get('head')==='ASI-integration:'+p.head.ref);
-  else if(/^pulls\/\d+\/files$/.test(route)){const p=pulls.get(Number(route.split('/')[1])),commit=commits.get(p.head.sha);result=trees.get(commit.tree.sha).tree.filter(e=>e.sha!==leaves.find(b=>b.path===e.path)?.sha).map(e=>({filename:e.path,status:'modified',sha:e.sha}));}
+  else if(/^pulls\/\d+\/files$/.test(route)){const p=pulls.get(Number(route.split('/')[1])),commit=commits.get(p.head.sha);result=trees.get(commit.tree.sha).tree.filter(e=>e.sha!==leaves.find(b=>b.path===e.path)?.sha).map(e=>({filename:e.path,status:leaves.some(b=>b.path===e.path)?'modified':'added',sha:e.sha}));}
   else if(/^pulls\/\d+$/.test(route))result=pulls.get(Number(route.split('/')[1]));
   else if(route==='actions/runs'){
    const head=url.searchParams.get('head_sha'),event=url.searchParams.get('event');

@@ -27,9 +27,10 @@ export function verifyPinnedReviewPr(p,task) {
 /** Fixed GitHub origin; GET REST + one fixed GraphQL QUERY, never a mutation.
  * Token is supplied by the host, never serialized. No retries or redirects.
  */
-export function createGitHubReader({ token, timeoutMs = 10000 }) {
+export function createGitHubReader({ token, timeoutMs = 10000, beforeRequest=async()=>{} }) {
   must(typeof token==='function'||typeof token === 'string' && token.trim().length > 0, 'TOKEN_REQUIRED');
   async function request(url, body) {
+    await beforeRequest({mutation:false});
     const credential=typeof token==='function'?await token():token;
     must(typeof credential==='string'&&credential.trim().length>0,'TOKEN_REQUIRED');
     const response = await fetch(url, { method: body ? 'POST' : 'GET', redirect: 'error',

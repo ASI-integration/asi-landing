@@ -44,12 +44,12 @@ export default function OnboardingPageContent({ rental = false }: { rental?: boo
   // Kept only for GIS fallback/debug; not used for enablement.
   const [googleClientId, setGoogleClientId] = useState<string>(() => (process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || '').trim());
   const gsiButtonHostRef = useRef<HTMLDivElement | null>(null);
+  const gisRequestPendingRef = useRef(false);
   const debugGoogle = useMemo(() => searchParams.get('debugGoogle') === '1', [searchParams]);
   const afterAuthRedirect = useMemo(
     () => safeAuthRedirectPath(searchParams.get('redirect') || (rental ? RU_LEGAL_ONBOARDING_PATH : null)),
     [searchParams, rental],
   );
-  const publicConfigFetchAttemptedRef = useRef(false);
 
   useEffect(() => {
     isMountedRef.current = true;
@@ -112,9 +112,7 @@ export default function OnboardingPageContent({ rental = false }: { rental?: boo
           setGoogleOAuthMode('disabled');
         }
       } finally {
-        // Always clear the loading flag once the request settles.
-        // Guard only against true unmount, not effect re-runs.
-        if (isMountedRef.current) setGoogleConfigLoading(false);
+        if (!cancelled && isMountedRef.current) setGoogleConfigLoading(false);
       }
     })();
     return () => {
@@ -166,6 +164,101 @@ export default function OnboardingPageContent({ rental = false }: { rental?: boo
   }, [selectedPlanValue]);
 
   const googleReady = googleOAuthConfigured && !googleConfigLoading;
+
+  // GIS requires a visible Google-rendered button and a real user click.
+  // Programmatically clicking a hidden iframe is unreliable and may be blocked.
+  useEffect(() => {
+    // A replaced GIS generation must not leave the new view in a loading state.
+    if (gisRequestPendingRef.current) {
+      gisRequestPendingRef.current = false;
+      setLoading(false);
+      setGoogleStatus('');
+    }
+    if (!googleReady || googleOAuthMode !== 'gis' || !googleClientId) return;
+    const host = gsiButtonHostRef.current;
+    if (!host) return;
+
+    let cancelled = false;
+    let requestPending = false;
+    let controller: AbortController | undefined;
+    const isCurrent = () => !cancelled && isMountedRef.current;
+    setGoogleStatus('Загружаем кнопку Google…');
+    (async () => {
+      try {
+        await loadGoogleIdentityServices();
+        if (!isCurrent()) return;
+        const googleId = window.google?.accounts?.id;
+        if (!googleId) throw new Error('google_identity_unavailable');
+        googleId.initialize({
+          client_id: googleClientId,
+          callback: async (resp) => {
+            // Single flight: repeated GIS delivery must not create concurrent sessions.
+            if (!isCurrent() || requestPending) return;
+            const idToken = resp?.credential;
+            if (!idToken) {
+              setError('Google не вернул данные для входа.');
+              return;
+            }
+            requestPending = true;
+            gisRequestPendingRef.current = true;
+            controller = new AbortController();
+            setLoading(true);
+            setError('');
+            setGoogleStatus('Проверяем вход Google…');
+            try {
+              const res = await fetch('/api/auth/google', {
+                method: 'POST',
+                signal: controller.signal,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  idToken,
+                  plan: rental ? undefined : selectedPlanValue,
+                  debug: debugGoogle,
+                }),
+              });
+              if (!isCurrent()) return;
+              const data = await readResponseJson(res, {} as { error?: string });
+              if (!isCurrent()) return;
+              if (!res.ok) {
+                setError(data.error || 'Ошибка входа через Google.');
+                return;
+              }
+              router.push(afterAuthRedirect);
+            } catch {
+              if (isCurrent()) setError('Не удалось завершить вход через Google. Проверьте соединение.');
+            } finally {
+              requestPending = false;
+              if (isCurrent()) {
+                gisRequestPendingRef.current = false;
+                setLoading(false);
+                setGoogleStatus('');
+              }
+            }
+          },
+        });
+        host.replaceChildren();
+        googleId.renderButton(host, {
+          type: 'standard',
+          theme: 'outline',
+          size: 'large',
+          text: mode === 'signup' ? 'signup_with' : 'signin_with',
+          shape: 'pill',
+          logo_alignment: 'left',
+          width: '320',
+        });
+        if (isCurrent()) setGoogleStatus('');
+      } catch {
+        if (!isCurrent()) return;
+        setGoogleStatus('');
+        setError('Не удалось загрузить Google. Проверьте блокировку Google в браузере.');
+      }
+    })();
+    return () => {
+      cancelled = true;
+      controller?.abort();
+      host.replaceChildren();
+    };
+  }, [googleReady, googleOAuthMode, googleClientId, mode, rental, selectedPlanValue, afterAuthRedirect, debugGoogle, router]);
   const demoMailto = useMemo(
     () =>
       `mailto:${productSupportEmail}?subject=${encodeURIComponent(rental ? 'Подключение объекта к ASI' : 'Доступ к демо / тест (7 дней)')}&body=${encodeURIComponent('Здравствуйте! Хочу получить доступ к демо.\n\nКомпания / контакт:\n')}`,
@@ -205,195 +298,17 @@ export default function OnboardingPageContent({ rental = false }: { rental?: boo
     }
   };
 
-  const handleGoogle = async () => {
+  const handleGoogle = () => {
     setError('');
-    setGoogleStatus('');
-    setLoading(true);
-    try {
-      if (debugGoogle) {
-        // eslint-disable-next-line no-console
-        console.info('[GoogleOAuth][/connect] click handler started', { oauthConfigured: googleOAuthConfigured, hasClientId: Boolean(googleClientId) });
-      }
-
-      if (!googleOAuthConfigured) {
-        setError('Вход через Google сейчас недоступен (не настроено). Используйте email.');
-        return;
-      }
-
-      // Mode 1: redirect OAuth (requires server-side client secret).
-      if (googleOAuthMode === 'redirect') {
-        const debug = debugGoogle ? '1' : '0';
-        const url = `/api/auth/google/start?${rental ? '' : `plan=${encodeURIComponent(String(selectedPlanValue))}&`}debug=${debug}&redirect=${encodeURIComponent(afterAuthRedirect)}`;
-        setGoogleStatus('Открываем Google…');
-        window.location.assign(url);
-        return;
-      }
-
-      // Mode 2: GIS id_token (no server secret required). Requires client id.
-      // If config wasn't available at click time, re-fetch once (protects against earlier transient failures).
-      if (!googleClientId && !publicConfigFetchAttemptedRef.current) {
-        publicConfigFetchAttemptedRef.current = true;
-        try {
-          const controller = new AbortController();
-          const timeoutId = window.setTimeout(() => controller.abort(), 5000);
-          let res: Response;
-          try {
-            res = await fetch('/api/public-config', { method: 'GET', signal: controller.signal });
-          } finally {
-            window.clearTimeout(timeoutId);
-          }
-          const data = await readResponseJson(res, emptyPublicConfig);
-          const clientId = (data.googleClientId || '').trim();
-          setGoogleClientId(clientId);
-          if (debugGoogle) {
-            // eslint-disable-next-line no-console
-            console.info('[GoogleOAuth][/connect] click-time config fetched', { ok: res.ok, clientIdPresent: Boolean(clientId) });
-          }
-        } catch (e) {
-          if (debugGoogle) {
-            // eslint-disable-next-line no-console
-            console.info('[GoogleOAuth][/connect] click-time config fetch failed', e);
-          }
-        }
-      }
-
-      if (!googleClientId) {
-        setError('Вход через Google сейчас недоступен. Попробуйте позже или используйте email.');
-        return;
-      }
-
-      await loadGoogleIdentityServices();
-      if (debugGoogle) {
-        // eslint-disable-next-line no-console
-        console.info('[GoogleOAuth][/connect] GIS script loaded');
-      }
-      if (!window.google?.accounts?.id) {
-        setError('Google авторизация недоступна. Попробуйте позже.');
-        return;
-      }
-
-      const idToken: string = await new Promise((resolve, reject) => {
-        const timer = window.setTimeout(() => reject(new Error('timeout')), 2 * 60 * 1000);
-        let credentialReceived = false;
-
-        if (debugGoogle) {
-          // eslint-disable-next-line no-console
-          console.info('[GoogleOAuth][/connect] GIS loaded, initializing');
-        }
-
-        window.google!.accounts!.id!.initialize({
-          client_id: googleClientId,
-          callback: (resp) => {
-            if (debugGoogle) {
-              // eslint-disable-next-line no-console
-              console.info('[GoogleOAuth][/connect] credential callback fired', {
-                hasCredential: Boolean(resp?.credential),
-                select_by: (resp as { select_by?: string } | undefined)?.select_by,
-              });
-            }
-            const token = resp?.credential;
-            credentialReceived = true;
-            window.clearTimeout(timer);
-            if (token) {
-              if (debugGoogle) {
-                // eslint-disable-next-line no-console
-                console.info('[GoogleOAuth][/connect] credential received');
-              }
-              resolve(token);
-            } else {
-              reject(new Error('no_credential'));
-            }
-          },
-        });
-        if (debugGoogle) {
-          // eslint-disable-next-line no-console
-          console.info('[GoogleOAuth][/connect] google.accounts.id.initialize succeeded');
-        }
-
-        // When the popup is dismissed (user closes Google chooser without selecting),
-        // the callback never fires. Detect page focus returning to reset loading state.
-        const onWindowFocus = () => {
-          // Give GIS ~800ms to deliver the credential after focus returns.
-          window.setTimeout(() => {
-            if (!credentialReceived) {
-              window.clearTimeout(timer);
-              reject(new Error('dismissed'));
-            }
-          }, 800);
-        };
-        window.addEventListener('focus', onWindowFocus, { once: true });
-
-        // Use a real GIS-rendered button under the hood (reliable click → chooser).
-        const host = gsiButtonHostRef.current;
-        if (host) {
-          host.innerHTML = '';
-          window.google!.accounts!.id!.renderButton(host, {
-            type: 'standard',
-            theme: 'outline',
-            size: 'large',
-            text: mode === 'signup' ? 'signup_with' : 'signin_with',
-            shape: 'pill',
-            logo_alignment: 'left',
-            width: '320',
-          });
-          const clickable = host.querySelector<HTMLElement>('[role="button"], button, div');
-          if (debugGoogle) {
-            // eslint-disable-next-line no-console
-            console.info('[GoogleOAuth][/connect] renderButton done', { hasClickable: Boolean(clickable) });
-          }
-          if (clickable) {
-            clickable.click();
-          } else {
-            // renderButton produced nothing — fall through to prompt()
-            window.removeEventListener('focus', onWindowFocus);
-            if (debugGoogle) {
-              // eslint-disable-next-line no-console
-              console.info('[GoogleOAuth][/connect] calling prompt() after renderButton');
-            }
-            window.google!.accounts!.id!.prompt();
-          }
-          return;
-        }
-
-        // Fallback: One Tap prompt (may be blocked by browser settings).
-        if (debugGoogle) {
-          // eslint-disable-next-line no-console
-          console.info('[GoogleOAuth][/connect] no render host, using prompt() fallback');
-        }
-        window.google!.accounts!.id!.prompt();
-      });
-
-      if (debugGoogle) {
-        // eslint-disable-next-line no-console
-        console.info('[GoogleOAuth][/connect] posting idToken to backend', { tokenLen: idToken.length });
-      }
-      const res = await fetch('/api/auth/google', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ idToken, plan: rental ? undefined : selectedPlanValue, debug: debugGoogle }),
-      });
-      const data = await readResponseJson(res, {} as { error?: string });
-      if (!res.ok) {
-        if (debugGoogle) {
-          // eslint-disable-next-line no-console
-          console.error('[GoogleOAuth][/connect] backend /api/auth/google failed', { status: res.status, data });
-        }
-        setError(data.error || 'Ошибка входа через Google.');
-        return;
-      }
-      router.push(afterAuthRedirect);
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : '';
-      if (msg !== 'dismissed') {
-        if (debugGoogle) {
-          // eslint-disable-next-line no-console
-          console.error('[GoogleOAuth][/connect] Google sign-in flow failed', err);
-        }
-        setError('Не удалось войти через Google. Используйте email.');
-      }
-    } finally {
-      setLoading(false);
+    if (!googleOAuthConfigured || googleOAuthMode !== 'redirect') {
+      setError('Вход через Google пока недоступен.');
+      return;
     }
+    setLoading(true);
+    setGoogleStatus('Открываем Google…');
+    const debug = debugGoogle ? '1' : '0';
+    const url = `/api/auth/google/start?${rental ? '' : `plan=${encodeURIComponent(String(selectedPlanValue))}&`}debug=${debug}&redirect=${encodeURIComponent(afterAuthRedirect)}`;
+    window.location.assign(url);
   };
 
   return (
@@ -468,8 +383,12 @@ export default function OnboardingPageContent({ rental = false }: { rental?: boo
                 >
                   Проверяем…
                 </button>
-              ) : googleReady ? (
-                <button
+              ) : googleReady && googleOAuthMode === 'gis' ? (
+                <div className="mt-3 min-h-[44px]" data-testid="google-gis-visible-button">
+                  <div ref={gsiButtonHostRef} aria-label="Войти через Google" />
+                  {loading ? <p className="mt-2 text-sm text-slate-600">Проверяем вход Google…</p> : null}
+                </div>
+              ) : googleReady ? (                <button
                   type="button"
                   onClick={handleGoogle}
                   disabled={loading}
@@ -519,12 +438,6 @@ export default function OnboardingPageContent({ rental = false }: { rental?: boo
               )}
               {googleStatus ? <p className="mt-2 text-xs text-slate-600">{googleStatus}</p> : null}
               {error ? <p role="alert" className="mt-2 text-base text-red-700">{error}</p> : null}
-              {/* Off-screen, not clipped — GIS needs real dimensions to render and click */}
-              <div
-                ref={gsiButtonHostRef}
-                aria-hidden="true"
-                style={{ position: 'fixed', top: '-9999px', left: '-9999px', width: '400px', height: '80px', overflow: 'visible' }}
-              />
               <p className="mt-3 text-xs text-slate-500">
                 {rental ? 'Вы вернётесь к настройке после входа.' : 'Мы создадим рабочее пространство и запустим 7‑дневный тест.'}
               </p>

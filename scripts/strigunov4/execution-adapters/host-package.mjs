@@ -90,3 +90,36 @@ if(process.argv[1]===fileURLToPath(import.meta.url)){
   const [repository,runnerFile,output,baseSha]=process.argv.slice(2);
   buildPackage({repository,runnerFile,output,baseSha}).then(x=>console.log(JSON.stringify(x))).catch(()=>{console.error('PACKAGE_BUILD_FAILED');process.exitCode=1;});
 }
+
+/** Freeze a Beget source candidate, not an assertion of install/authority PASS. */
+export async function buildBegetCandidate({repository,output,baseSha}){
+  must(/^[a-f0-9]{40}$/.test(baseSha),'BEGET_BASE_SHA');
+  const closure=await buildRuntimeClosure({repository,output});
+  const catalog=[];
+  for(const part of ['identity','races']){
+    const id=`beget-g2-witness-${part}-v1`,name=`scripts/strigunov4/test_${id.replaceAll('-','_')}.py`;
+    const content=await fs.readFile(path.join(repository,`scripts/strigunov4/execution-adapters/beget-work-orders/${part}.py.txt`),'utf8');
+    // Exact source branch must already contain the accepted witness; no substitute stub.
+    const witness=execFileSync('/usr/bin/git',['show',baseSha+':scripts/strigunov4/beget_g2_operator_witness.py'],{cwd:repository});
+    must(digest(witness)==='0b0b9c10db3f84bf3491f02c664b4c92fcb9464d8a7f59776a67690b1c49e39e','WITNESS_BASE_HASH');
+    try{execFileSync('/usr/bin/git',['cat-file','-e',baseSha+':'+name],{cwd:repository,stdio:'pipe'});throw Error('TASK_ALREADY_EXISTS');}
+    catch(e){must(e.status===128,'TASK_ALREADY_EXISTS');}
+    catalog.push({id,kind:'github-publisher',stage:'S4-G2',workOrderId:id,repo:'ASI-integration/asi-landing',sha:baseSha,pr:null,
+      branch:'asi/engine-task/'+id,changes:[{path:name,beforeSha256:null,content}]});
+  }
+  const catalogRaw=JSON.stringify(catalog,null,2)+'\n';
+  await fs.writeFile(path.join(output,'catalog.json'),catalogRaw,{flag:'wx',mode:0o600});
+  const unit=await fs.readFile(path.join(repository,'scripts/strigunov4/execution-adapters/asi-strigunov-agent.service'));
+  await fs.writeFile(path.join(output,'asi-strigunov-agent.service'),unit,{flag:'wx',mode:0o600});
+  const installer=await fs.readFile(path.join(repository,'scripts/strigunov4/execution-adapters/beget-install.py'));
+  await fs.writeFile(path.join(output,'beget-install.py'),installer,{flag:'wx',mode:0o600});
+  const manifest={schema:'asi.beget-engine-source.v1',sourceSha:execFileSync('/usr/bin/git',['rev-parse','HEAD'],{cwd:repository,encoding:'utf8'}).trim(),
+    baseSha,entry:'scripts/strigunov4/ASI-STRIGUNOV4-RUNNER-BRIDGE-20261020.mjs',
+    files:Object.entries(closure.files).map(([name,sha256])=>({path:'scripts/'+name,sha256})).sort((a,b)=>a.path.localeCompare(b.path)),
+    catalogSha256:digest(catalogRaw),unitSha256:digest(unit),installerSha256:digest(installer),
+    nodeSha256:'8142d37c6f2f372ef040419e7a111a6baf17df89f8078d02447d6c639ae20c1d',
+    bwrapSha256:'e318903862396f96de3df57264e0158682b952fd3fb53ac23d876413e7b30f71',installable:false,
+    requiredGates:['SOURCE_REVIEW','PROTECTED_MAIN_BASE','NATIVE_BWRAP_ACCEPTANCE','INDEPENDENT_OLD_WRITER_FENCE','SIGNED_INSTALL_AND_TASK_AUTHORITY']};
+  await fs.writeFile(path.join(output,'manifest.json'),JSON.stringify(manifest,null,2)+'\n',{mode:0o600});
+  return manifest;
+}

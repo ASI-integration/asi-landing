@@ -33,7 +33,7 @@ export function createGitHubPublisher({store,remote,reader,authorize,runChecks,i
   return Object.freeze({async run(input,{execute=false}={}){
     must(execute===true,'PUBLISH_NOT_AUTHORIZED');
     const task=freeze(structuredClone(input));
-    must(task.repo===REPOSITORY&&task.stage==='S4-G1'&&task.kind==='github-publisher'&&
+    must(task.repo===REPOSITORY&&['S4-G1','S4-G2'].includes(task.stage)&&task.kind==='github-publisher'&&
       /^[a-z0-9-]{1,96}$/.test(task.id)&&sha(task.sha)&&task.pr===null&&branchAllowed(task.branch),'PUBLISH_TASK_INVALID');
     must(Array.isArray(task.changes)&&task.changes.length>0&&task.changes.length<=3&&
       new Set(task.changes.map(c=>c.path)).size===task.changes.length,'PUBLISH_DELTA_INVALID');
@@ -79,7 +79,7 @@ export function createGitHubPublisher({store,remote,reader,authorize,runChecks,i
       must(commit.sha===record.head&&commit.tree?.sha===record.tree&&commit.parents?.length===1&&commit.parents[0].sha===task.sha,'COMMIT_READBACK_FAILED');
       const changed=await call(()=>remote.get(`pulls/${record.pr}/files?per_page=100`));
       must(Array.isArray(changed)&&changed.length===task.changes.length&&p.changed_files===changed.length&&
-        new Set(changed.map(f=>f.filename)).size===changed.length&&changed.every(f=>f.status==='modified'&&
+        new Set(changed.map(f=>f.filename)).size===changed.length&&changed.every(f=>f.status===(task.stage==='S4-G2'?'added':'modified')&&
           task.changes.some(c=>c.path===f.filename&&f.sha===hashBlob(normalizeProposedContent(c.path,c.content)))),'PR_DIFF_READBACK_FAILED');
       await guard(record.head,record.pr);
     }
@@ -109,19 +109,21 @@ export function createGitHubPublisher({store,remote,reader,authorize,runChecks,i
       must(before.sha===parent.tree.sha&&before.truncated===false&&Array.isArray(before.tree)&&before.tree.length<=10000&&
         new Set(before.tree.map(e=>e.path)).size===before.tree.length,'BASE_TREE_UNVERIFIED');
       const entries=task.changes.map(c=>{const old=before.tree.find(e=>e.path===c.path);
-        must(old?.type==='blob'&&['100644','100755'].includes(old.mode),'EXISTING_REGULAR_FILE_REQUIRED');
-        return {path:c.path,mode:old.mode,type:'blob',content:normalizeProposedContent(c.path,c.content)};});
-      record={version:1,kind:task.kind,taskBinding:binding,operationId:grant.operationId,baseSha:task.sha,
+        must(task.stage==='S4-G2'?!old&&c.beforeSha256===null:old?.type==='blob'&&['100644','100755'].includes(old.mode),'EXISTING_REGULAR_FILE_REQUIRED');
+        return {path:c.path,mode:old?.mode??'100644',type:'blob',content:normalizeProposedContent(c.path,c.content)};});
+      record={version:1,stage:task.stage,kind:task.kind,taskBinding:binding,operationId:grant.operationId,baseSha:task.sha,
         branch:task.branch,deltaSha256:prepared.deltaSha256,reviewEvidenceId:review.evidenceId};
       const tree=await mutate('create-tree',()=>remote.createTree(parent.tree.sha,entries));
       must(sha(tree.sha),'TREE_RESULT_INVALID');
       const actual=await call(()=>remote.get(`git/trees/${tree.sha}?recursive=1`));
-      must(actual.sha===tree.sha&&actual.truncated===false&&Array.isArray(actual.tree)&&actual.tree.length===before.tree.length&&
+      must(actual.sha===tree.sha&&actual.truncated===false&&Array.isArray(actual.tree)&&actual.tree.length===before.tree.length+(task.stage==='S4-G2'?entries.length:0)&&
         new Set(actual.tree.map(e=>e.path)).size===actual.tree.length,'TREE_READBACK_FAILED');
       for(const old of before.tree){const now=actual.tree.find(e=>e.path===old.path),change=entries.find(e=>e.path===old.path);
         must(now&&now.mode===old.mode&&now.type===old.type,'TREE_MODE_CHANGED');
         // Parent tree identities change when a nested blob changes; compare all leaf identities.
         if(old.type!=='tree')must(now.sha===(change?hashBlob(change.content):old.sha),'TREE_OUTSIDE_SCOPE');}
+      for(const entry of entries){const item=actual.tree.find(e=>e.path===entry.path);
+        must(item?.type==='blob'&&item.mode===entry.mode&&item.sha===hashBlob(entry.content),'ADDED_BLOB_READBACK');}
       await save('TREE_CREATED',{tree:tree.sha});
       const commit=await mutate('create-commit',()=>remote.createCommit(task.sha,tree.sha,task.id));
       must(sha(commit.sha),'COMMIT_RESULT_INVALID');
