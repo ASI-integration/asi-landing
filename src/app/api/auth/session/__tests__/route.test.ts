@@ -28,6 +28,6 @@ describe('/api/auth/session', () => {
     const json = await res.json();
 
     expect(res.status).toBe(200);
-    expect(json).toEqual({ user: null, subscription: null, account: null });
+    expect(json).toEqual({ user: null, subscription: null, account: null, ruCommercialPilot: null });
   });
 });
