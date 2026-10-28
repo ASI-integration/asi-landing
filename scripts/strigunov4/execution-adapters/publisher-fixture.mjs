@@ -10,6 +10,7 @@ import {createPublicationLoop} from './publication-loop.mjs';
 import {createPublisherTransport} from './publisher-transport.mjs';
 import {createGitHubReader,BOT_ID} from './github-readonly.mjs';
 const repo='ASI-integration/asi-landing',prefix='/repos/'+repo+'/';
+export const secondTarget='scripts/strigunov4/test_c4_unit_readonly.py';
 export const target='scripts/strigunov4/protected_c4_unit_apply.py';
 const git=(cwd,args,input)=>execFileSync('/usr/bin/git',args,{cwd,input,encoding:'utf8',env:{PATH:'/usr/bin:/bin',HOME:'/nonexistent',GIT_CONFIG_NOSYSTEM:'1',GIT_CONFIG_GLOBAL:'/dev/null',GIT_AUTHOR_NAME:'Fixture',GIT_AUTHOR_EMAIL:'fixture@example.invalid',GIT_COMMITTER_NAME:'Fixture',GIT_COMMITTER_EMAIL:'fixture@example.invalid'}}).trim();
 const oid=(kind,text)=>createHash('sha1').update(`${kind} ${Buffer.byteLength(text)}\0`).update(text).digest('hex');
@@ -19,14 +20,14 @@ export async function fixture(t,options={}){
  await fs.writeFile(path.join(legacy,'receipts.json'),JSON.stringify({version:1,completed:[]}));
  t.after(()=>fs.rm(base,{recursive:true,force:true}));
  const seed=path.join(base,'seed');await fs.mkdir(path.join(seed,path.dirname(target)),{recursive:true});
- await fs.writeFile(path.join(seed,target),'VALUE = 1\n');git(seed,['init','-q']);git(seed,['add','.']);git(seed,['commit','-qm','fixture']);
+ await fs.writeFile(path.join(seed,target),'VALUE = 1\n');if(options.distinctWorkOrders)await fs.writeFile(path.join(seed,secondTarget),'VALUE = 1\n');git(seed,['init','-q']);git(seed,['add','.']);git(seed,['commit','-qm','fixture']);
  const sha=git(seed,['rev-parse','HEAD']);
- const catalog=['fixture-a','fixture-b'].map((id,i)=>({id,kind:'github-publisher',stage:'S4-G1',workOrderId:'g1-unit-apply-source',repo,sha,pr:null,
-  branch:'asi/engine-task/'+id,changes:[{path:target,beforeSha256:digest('VALUE = 1\n'),content:`VALUE = ${i+2}\n`}]}));
+ const catalog=['fixture-a','fixture-b'].map((id,i)=>({id,kind:'github-publisher',stage:'S4-G1',workOrderId:options.distinctWorkOrders&&i===0?'g1-engine-receipt-replay-test':'g1-unit-apply-source',repo,sha,pr:null,
+  branch:'asi/engine-task/'+id,changes:[{path:options.distinctWorkOrders&&i===0?secondTarget:target,beforeSha256:digest('VALUE = 1\n'),content:`VALUE = ${i+2}\n`}]}));
  for(const task of catalog){const dir=path.join(root,'scratchpads',task.id);git(base,['clone','-q','--no-hardlinks',seed,dir]);git(dir,['checkout','--detach','-q']);await fs.chmod(dir,0o700);}
  const prs=Object.fromEntries([[509,'b3c8ff2e4904b0b503197d29aa217773918831bc'],[508,'8ac8e8ac11e39ac070ccc058218e3b73190cb43f'],[520,'6693312b0a94b8afcee3a34907055ce301a5fb3e']].map(([number,head])=>[number,{number,head,state:'open',merged:false}]));
  const snapshot={mainSha:sha,contract:{schemaVersion:'asi.demo-release.v1',releaseId:'STRIGUNOV4-READY-FOR-DEMO',state:'FROZEN_ON_OWNER_MERGE',
-  stages:[1,2,3,4,5,6].map(i=>({id:`S4-G${i}`,status:i===1?'IN_PROGRESS':'NOT_STARTED',proof:[],files:i===1?[target]:[],
+  stages:[1,2,3,4,5,6].map(i=>({id:`S4-G${i}`,status:i===1?'IN_PROGRESS':'NOT_STARTED',proof:[],files:i===1?[target,...(options.distinctWorkOrders?[secondTarget]:[])]:[],
   plannedFiles:i===1?[target,'.github/workflows/strigunov4-c4-unit-apply.yml','scripts/strigunov4/test_protected_c4_unit_apply.py']:[]}))},
   issues:{511:{number:511,state:'open',labels:['agent-source-ready']}},project:{511:'PREPARATION_ONLY'},prs,
   checks:{509:{head:prs[509].head,validate:'success',release_governance:'success'}},reviews:{509:{head:prs[509].head,completed:true,actionable:false}},ledger:{}};
@@ -52,7 +53,7 @@ export async function fixture(t,options={}){
    const number=600+pulls.size,head=refs.get('refs/heads/'+data.head);result={number,title:data.title,body:data.body,state:'open',merged:false,draft:data.draft,changed_files:1,
     head:{sha:head,ref:data.head,repo:{full_name:repo}},base:{sha:state.main,ref:'main',repo:{full_name:repo}},html_url:`https://github.com/${repo}/pull/${number}`};pulls.set(number,result);
   }else if(route==='pulls')result=[...pulls.values()].filter(p=>url.searchParams.get('head')==='ASI-integration:'+p.head.ref);
-  else if(/^pulls\/\d+\/files$/.test(route)){const p=pulls.get(Number(route.split('/')[1])),commit=commits.get(p.head.sha);result=trees.get(commit.tree.sha).tree.map(e=>({filename:e.path,status:'modified',sha:e.sha}));}
+  else if(/^pulls\/\d+\/files$/.test(route)){const p=pulls.get(Number(route.split('/')[1])),commit=commits.get(p.head.sha);result=trees.get(commit.tree.sha).tree.filter(e=>e.sha!==leaves.find(b=>b.path===e.path)?.sha).map(e=>({filename:e.path,status:'modified',sha:e.sha}));}
   else if(/^pulls\/\d+$/.test(route))result=pulls.get(Number(route.split('/')[1]));
   else if(route==='actions/runs'){
    const head=url.searchParams.get('head_sha'),event=url.searchParams.get('event');
@@ -97,7 +98,7 @@ export async function makeLoop(f,options={}){
   clock:()=>options.now?.value??1000000,timeoutMs:options.timeoutMs??1000,
   authorize:async request=>({approved:true,request,automaticCiApproved:true,automaticReviewApproved:true,operationId:'op-'+request.taskId,expiresAt:999999999}),
   runChecks:async e=>{
-   const file=path.join(f.root,'scratchpads',e.taskId,target);
+   const file=path.join(f.root,'scratchpads',e.taskId,f.catalog.find(t=>t.id===e.taskId).changes[0].path);
    execFileSync('/usr/bin/python3',['-I','-S','-c','import ast,pathlib,sys; t=ast.parse(pathlib.Path(sys.argv[1]).read_text()); assert len(t.body)==1 and isinstance(t.body[0],ast.Assign) and isinstance(t.body[0].value,ast.Constant) and t.body[0].value.value in (2,3)',file],{timeout:1000});
    return {...e,status:'PASS'};},
   // Synthetic independent-review evidence for protocol acceptance, NOT a real CodeRabbit review.

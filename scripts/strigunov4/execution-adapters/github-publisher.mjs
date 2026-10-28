@@ -19,10 +19,15 @@ async function load(file){let value;try{must((await regular(file)).size<500000,'
  * engine: the existing ledger is the durable brake and final receipt authority.
  * This subordinate journal records remote intent/readback across WAITING ticks.
  */
-export function createGitHubPublisher({store,remote,reader,authorize,runChecks,independentReview,verifyAdmission,ciPolicies,clock=Date.now,timeoutMs=10000}={}){
+export function createGitHubPublisher({store,remote,reader,authorize,runChecks,independentReview,verifyAdmission,ciPolicies,publishedReview,clock=Date.now,timeoutMs=10000}={}){
   must([authorize,runChecks,independentReview,verifyAdmission,clock].every(x=>typeof x==='function'),'HOST_PORTS_REQUIRED');
   must(ciPolicies?.some(p=>p.name==='validate')&&ciPolicies.some(p=>p.name==='release_governance'),'REQUIRED_CI_MISSING');
   const policies=freeze(structuredClone(ciPolicies));
+  // Alternative host-reviewed evidence is opt-in and bound into the exact grant.
+  // Existing installations retain CodeRabbit; no advisory snapshot selects a reviewer.
+  must(publishedReview===undefined||typeof publishedReview.verify==='function'&&
+    /^[a-f0-9]{64}$/.test(publishedReview.policySha256),'PUBLISHED_REVIEW_POLICY');
+  const reviewPolicy=publishedReview&&Object.freeze({...publishedReview});
   const call=f=>bounded(f,timeoutMs);
   const evidence=f=>bounded(f,Math.min(30000,timeoutMs*3));
   return Object.freeze({async run(input,{execute=false}={}){
@@ -36,7 +41,8 @@ export function createGitHubPublisher({store,remote,reader,authorize,runChecks,i
     const binding=bindTask(task),file=store.file(`publication-${task.id}.json`);
     let record=await load(file);
     const request=freeze({taskId:task.id,taskBinding:binding,repo:task.repo,stage:task.stage,
-      baseSha:task.sha,branch:task.branch,paths:task.changes.map(c=>c.path),operations:['create-tree','create-commit','create-branch','create-draft-pr']});
+      baseSha:task.sha,branch:task.branch,paths:task.changes.map(c=>c.path),operations:['create-tree','create-commit','create-branch','create-draft-pr'],
+      ...(reviewPolicy?{reviewPolicySha256:reviewPolicy.policySha256}:{})});
     const grant=freeze(structuredClone(await call(signal=>authorize(request,{signal}))));
     must(grant?.approved===true&&equal(grant.request,request)&&grant.automaticCiApproved===true&&
       grant.automaticReviewApproved===true&&typeof grant.operationId==='string'&&/^[a-z0-9-]{1,96}$/.test(grant.operationId)&&
@@ -130,15 +136,25 @@ export function createGitHubPublisher({store,remote,reader,authorize,runChecks,i
     }
     await verifyRemote();
     const pin={id:task.id,repo:task.repo,stage:task.stage,sha:record.head,pr:record.pr,branch:task.branch,baseSha:task.sha};
+    async function inspectReview(){
+      if(!reviewPolicy)return inspectCodeRabbit(reader,pin);
+      const r=await reviewPolicy.verify(freeze({...pin,deltaSha256:record.deltaSha256,policySha256:reviewPolicy.policySha256}));
+      must(r&&['PASS','WAITING','FAILED'].includes(r.status)&&r.repo===pin.repo&&r.pr===pin.pr&&r.head===pin.sha&&
+        r.baseSha===pin.baseSha&&r.policySha256===reviewPolicy.policySha256&&r.independent===true&&
+        /^[a-f0-9]{64}$/.test(r.evidenceSha256),'PUBLISHED_REVIEW_UNVERIFIED');
+      // Persist allowlisted metadata only, never raw reviewer output.
+      return {status:r.status,repo:r.repo,pr:r.pr,head:r.head,baseSha:r.baseSha,policySha256:r.policySha256,
+        independent:true,evidenceSha256:r.evidenceSha256};
+    }
     const ci=await evidence(()=>inspectCI(reader,pin,policies));
     if(ci.status==='FAILED')return {status:'FAILED',phase:'REMOTE_CI'};
     if(ci.status!=='PASS')return {status:'WAITING',phase:'REMOTE_CI',head:record.head,pr:record.pr};
-    const review=await evidence(()=>inspectCodeRabbit(reader,pin));
+    const review=await evidence(inspectReview);
     if(review.status==='FAILED')return {status:'FAILED',phase:'REMOTE_REVIEW'};
     if(review.status!=='PASS')return {status:'WAITING',phase:'REMOTE_REVIEW',head:record.head,pr:record.pr};
     await verifyRemote();
     const freshCI=await evidence(()=>inspectCI(reader,pin,policies));
-    const freshReview=await evidence(()=>inspectCodeRabbit(reader,pin));
+    const freshReview=await evidence(inspectReview);
     must(equal(ci,freshCI)&&equal(review,freshReview),'PROMOTION_EVIDENCE_CHANGED');
     await verifyRemote();await save('VERIFIED');
     return {status:'PASS',artifactType:'GITHUB_PR_VERIFIED',head:record.head,pr:record.pr,

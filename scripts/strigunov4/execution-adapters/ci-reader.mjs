@@ -59,7 +59,8 @@ export async function inspectCI(github, task, policies) {
       (eventFor(policy)==='pull_request_target'?targetAssociation(r):
         r.head_branch===task.branch&&
         (r.pull_requests==null||Array.isArray(r.pull_requests)&&
-          (r.pull_requests.length===0||r.pull_requests.some(p=>p.number===task.pr)))));
+          (r.pull_requests.length===0||r.pull_requests.some(p=>p.number===task.pr&&
+            (p.head===undefined||p.head.sha===task.sha&&p.head.ref===task.branch))))));
     const run = candidates.sort((a,b) => b.id - a.id)[0];
     if (!run) { waiting = true; evidence.push({ name: policy.name, state: 'missing' }); continue; }
     must(Number.isSafeInteger(run.run_attempt) && run.run_attempt > 0, 'ATTEMPT_REQUIRED');
