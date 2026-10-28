@@ -89,11 +89,14 @@ class WitnessTests(unittest.TestCase):
                                        (0o644, True, False), (0o640, True, False),
                                        (0o604, True, False), (0o644, False, True)]:
             meta = info(mode)
-            with self.subTest(mode=mode, private=private), patch.object(w.os, "open", return_value=9), \
+            with self.subTest(mode=mode, private=private), patch.object(w.os, "open", return_value=9) as opened, \
                  patch.object(w.os, "close"), patch.object(w.os, "fstat", return_value=meta), \
                  patch.object(w.os, "stat", return_value=meta), patch.object(w.os, "read", return_value=b"{}") as read:
                 if accepted:
                     self.assertEqual(w.trusted_file("/policy", private=private), b"{}")
+                    self.assertEqual(opened.call_args.args[0], "policy")
+                    self.assertTrue(opened.call_args.args[1] & w.os.O_NOFOLLOW)
+                    self.assertEqual(opened.call_args.kwargs["dir_fd"], 9)
                 else:
                     with self.assertRaisesRegex(w.Block, "POLICY_MODE"):
                         w.trusted_file("/policy", private=private)
@@ -120,7 +123,9 @@ class WitnessTests(unittest.TestCase):
             resolve.return_value = w.Path("/var/www/asi-staging/releases/" + self.policy["release"])
             uname.return_value.nodename = w.HOST
             show.return_value = "\n".join(k + "=" + v for k,v in props.items())
-            self.assertEqual(w.snapshot(self.policy)["pid"], self.policy["pid"])
+            snapshot = w.snapshot(self.policy)
+            self.assertEqual(snapshot["pid"], self.policy["pid"])
+            self.assertEqual(snapshot["unitHash"], w.hashlib.sha256(b"unit").hexdigest())
             self.assertIn("-pDropInPaths", show.call_args.args[0])
             self.assertIn("-pFragmentPath", show.call_args.args[0])
             for change in ({"DropInPaths":"/etc/systemd/system/"+w.UNIT+".d/override.conf"},
@@ -131,6 +136,15 @@ class WitnessTests(unittest.TestCase):
                 with self.assertRaisesRegex(w.Block, "UNIT_OVERRIDE"):
                     w.snapshot(self.policy)
                 read.assert_not_called()
+            for key in ("ActiveState", "User", "Group", "WorkingDirectory", "EnvironmentFiles", "NeedDaemonReload"):
+                altered = props | {key:"wrong"}
+                show.return_value = "\n".join(k + "=" + v for k,v in altered.items())
+                with self.subTest(property=key), self.assertRaisesRegex(w.Block, "SERVICE"):
+                    w.snapshot(self.policy)
+            show.return_value = "\n".join(k + "=" + v for k,v in props.items())
+            resolve.return_value = w.Path("/var/www/asi-staging/releases/" + "d"*40)
+            with self.assertRaisesRegex(w.Block, "RELEASE"):
+                w.snapshot(self.policy)
 
     def test_observe_private_policy_reread_and_race(self):
         raw = b"".join((k+"="+v).encode()+b"\0" for k,v in self.env.items())

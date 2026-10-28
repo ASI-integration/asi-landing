@@ -73,7 +73,7 @@ describe('Google GIS effect lifecycle', () => {
   it('renders into the visible host without initiating authentication', async () => {
     const h = setup(); await h.run();
     expect(h.renderButton).toHaveBeenCalledWith(h.host, expect.objectContaining({ type: 'standard', text: 'signup_with' }));
-    expect(source).toContain('data-testid="google-gis-visible-button"');
+    expect(source).toMatch(/data-testid="google-gis-visible-button">\s*<div ref=\{gsiButtonHostRef\}/);
     expect(source).not.toMatch(/\.click\(\)|top: '-9999px'|\.prompt\(/);
     expect(h.fetcher).not.toHaveBeenCalled();
   });
