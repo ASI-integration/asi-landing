@@ -26,15 +26,22 @@ function setup(options: { loader?: () => Promise<void>; fetcher?: () => Promise<
   const changes: [string, unknown][] = [];
   const state: Record<string, unknown> = {};
   const setter = (name: string) => vi.fn((value: unknown) => { state[name] = value; changes.push([name, value]); });
-  const host = { replaceChildren: vi.fn() };
+  const host = { replaceChildren: vi.fn(), getBoundingClientRect: vi.fn(() => ({ width: 320 })) };
+  let resized: (() => void) | undefined;
+  const disconnect = vi.fn();
+  class ResizeObserverMock {
+    constructor(callback: () => void) { resized = callback; }
+    observe = vi.fn();
+    disconnect = disconnect;
+  }
   const fetcher = vi.fn(options.fetcher || (async () => reply()));
   const loader = vi.fn(options.loader || (async () => undefined));
   const push = vi.fn();
   const renderButton = vi.fn();
   const context = vm.createContext({
-    AbortController, JSON,
+    AbortController, JSON, ResizeObserver: ResizeObserverMock,
     googleReady: true, googleOAuthMode: 'gis', googleClientId: 'fake-client.invalid',
-    gsiButtonHostRef: { current: host }, gisRequestPendingRef: { current: false },
+    gsiButtonHostRef: { current: host }, gisRequestPendingRef: { current: false }, emailRequestPendingRef: { current: false },
     isMountedRef: { current: true }, mode: 'signup', rental: false,
     selectedPlanValue: 'small', afterAuthRedirect: '/dashboard', debugGoogle: false,
     router: { push }, loadGoogleIdentityServices: loader, fetch: fetcher,
@@ -56,6 +63,7 @@ function setup(options: { loader?: () => Promise<void>; fetcher?: () => Promise<
     await flush();
   };
   return { callbacks, changes, state, host, fetcher, loader, push, renderButton, context, run,
+    resize: () => resized?.(), disconnect,
     cleanup: () => cleanup?.(), dependencies: () => dependencies,
     callback: (credential = 'FAKE_TEST_CREDENTIAL') => callbacks.at(-1)!({ credential }),
   };
@@ -173,6 +181,42 @@ describe('Google GIS effect lifecycle', () => {
     vm.runInContext(ts.transpile(handler + '\ncapture(handleGoogle);'), h.context);
     redirectHandler();
     expect(h.context.window.location.assign).toHaveBeenCalledWith('/api/auth/google/start?plan=small&debug=0&redirect=%2Fdashboard');
+  });
+  it('serializes email and GIS requests in both directions and releases on failure', async () => {
+    const wait = deferred<Reply>(); const h = setup({ fetcher: () => wait.promise });
+    await h.run();
+    let emailAuth!: (e: { preventDefault: () => void }) => Promise<void>;
+    Object.assign(h.context, { email: 'fixture@example.invalid', password: 'FAKE_TEST_ONLY',
+      capture: (fn: typeof emailAuth) => { emailAuth = fn; } });
+    const handler = source.slice(source.indexOf('  const handleEmailAuth ='), source.indexOf('  const handleGoogle ='));
+    vm.runInContext(ts.transpile(jsonHelper + handler + '\ncapture(handleEmailAuth);'), h.context);
+    const event = { preventDefault: vi.fn() };
+    const pending = emailAuth(event);
+    await emailAuth(event); await h.callback();
+    expect(h.fetcher).toHaveBeenCalledOnce();
+    expect(h.fetcher).toHaveBeenNthCalledWith(1, '/api/auth/signup', expect.any(Object));
+    wait.resolve(reply(false, '{"error":"fixture denial"}')); await pending;
+    expect(h.context.emailRequestPendingRef.current).toBe(false);
+    const google = deferred<Reply>(); h.fetcher.mockReturnValueOnce(google.promise);
+    const signingIn = h.callback(); await emailAuth(event);
+    expect(h.fetcher).toHaveBeenCalledTimes(2);
+    expect(h.fetcher).toHaveBeenNthCalledWith(2, '/api/auth/google', expect.any(Object));
+    google.resolve(reply()); await signingIn;
+    expect(h.push).toHaveBeenCalledOnce();
+  });
+  it('fits the host, uses a compact button on narrow screens and disconnects resize observation', async () => {
+    const h = setup(); h.host.getBoundingClientRect.mockReturnValue({ width: 238 });
+    await h.run();
+    expect(h.renderButton).toHaveBeenLastCalledWith(h.host, expect.objectContaining({ width: '238', type: 'standard' }));
+    h.resize(); expect(h.renderButton).toHaveBeenCalledOnce();
+    h.host.getBoundingClientRect.mockReturnValue({ width: 188 }); h.resize();
+    expect(h.renderButton).toHaveBeenLastCalledWith(h.host, expect.objectContaining({ type: 'icon' }));
+    expect(h.renderButton.mock.calls.at(-1)![1]).not.toHaveProperty('width');
+    h.host.getBoundingClientRect.mockReturnValue({ width: 650 }); h.resize();
+    expect(h.renderButton).toHaveBeenLastCalledWith(h.host, expect.objectContaining({ width: '400' }));
+    h.cleanup(); const count = h.renderButton.mock.calls.length;
+    h.host.getBoundingClientRect.mockReturnValue({ width: 250 }); h.resize();
+    expect(h.disconnect).toHaveBeenCalledOnce(); expect(h.renderButton).toHaveBeenCalledTimes(count);
   });
   it('does not let stale config completion clear a new config loading state', async () => {
     const old = deferred<Reply>(); const fresh = deferred<Reply>(); const h = setup();

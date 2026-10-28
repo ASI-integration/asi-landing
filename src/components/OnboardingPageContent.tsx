@@ -45,6 +45,7 @@ export default function OnboardingPageContent({ rental = false }: { rental?: boo
   const [googleClientId, setGoogleClientId] = useState<string>(() => (process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || '').trim());
   const gsiButtonHostRef = useRef<HTMLDivElement | null>(null);
   const gisRequestPendingRef = useRef(false);
+  const emailRequestPendingRef = useRef(false);
   const debugGoogle = useMemo(() => searchParams.get('debugGoogle') === '1', [searchParams]);
   const afterAuthRedirect = useMemo(
     () => safeAuthRedirectPath(searchParams.get('redirect') || (rental ? RU_LEGAL_ONBOARDING_PATH : null)),
@@ -181,6 +182,7 @@ export default function OnboardingPageContent({ rental = false }: { rental?: boo
     let cancelled = false;
     let requestPending = false;
     let controller: AbortController | undefined;
+    let resizeObserver: ResizeObserver | undefined;
     const isCurrent = () => !cancelled && isMountedRef.current;
     setGoogleStatus('Загружаем кнопку Google…');
     (async () => {
@@ -193,7 +195,7 @@ export default function OnboardingPageContent({ rental = false }: { rental?: boo
           client_id: googleClientId,
           callback: async (resp) => {
             // Single flight: repeated GIS delivery must not create concurrent sessions.
-            if (!isCurrent() || requestPending) return;
+            if (!isCurrent() || requestPending || emailRequestPendingRef.current) return;
             const idToken = resp?.credential;
             if (!idToken) {
               setError('Google не вернул данные для входа.');
@@ -236,16 +238,27 @@ export default function OnboardingPageContent({ rental = false }: { rental?: boo
             }
           },
         });
-        host.replaceChildren();
-        googleId.renderButton(host, {
-          type: 'standard',
-          theme: 'outline',
-          size: 'large',
-          text: mode === 'signup' ? 'signup_with' : 'signin_with',
-          shape: 'pill',
-          logo_alignment: 'left',
-          width: '320',
-        });
+        let renderedWidth = -1;
+        const render = () => {
+          if (!isCurrent()) return;
+          const width = Math.min(400, Math.floor(host.getBoundingClientRect().width));
+          if (width <= 0 || width === renderedWidth) return;
+          renderedWidth = width;
+          host.replaceChildren();
+          // Use Google's compact genuine button when a labelled button cannot fit.
+          googleId.renderButton(host, {
+            type: width < 200 ? 'icon' : 'standard',
+            theme: 'outline',
+            size: 'large',
+            text: mode === 'signup' ? 'signup_with' : 'signin_with',
+            shape: 'pill',
+            logo_alignment: 'left',
+            ...(width >= 200 ? { width: String(width) } : {}),
+          });
+        };
+        render();
+        resizeObserver = new ResizeObserver(render);
+        resizeObserver.observe(host);
         if (isCurrent()) setGoogleStatus('');
       } catch {
         if (!isCurrent()) return;
@@ -256,6 +269,7 @@ export default function OnboardingPageContent({ rental = false }: { rental?: boo
     return () => {
       cancelled = true;
       controller?.abort();
+      resizeObserver?.disconnect();
       host.replaceChildren();
     };
   }, [googleReady, googleOAuthMode, googleClientId, mode, rental, selectedPlanValue, afterAuthRedirect, debugGoogle, router]);
@@ -267,12 +281,14 @@ export default function OnboardingPageContent({ rental = false }: { rental?: boo
 
   const handleEmailAuth = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (emailRequestPendingRef.current || gisRequestPendingRef.current) return;
     setError('');
     if (!email.trim() || !password) {
       setError('Укажите email и пароль.');
       return;
     }
 
+    emailRequestPendingRef.current = true;
     setLoading(true);
     try {
       const endpoint = mode === 'signup' ? '/api/auth/signup' : '/api/auth/login';
@@ -294,6 +310,7 @@ export default function OnboardingPageContent({ rental = false }: { rental?: boo
     } catch {
       setError('Ошибка сети. Попробуйте ещё раз.');
     } finally {
+      emailRequestPendingRef.current = false;
       setLoading(false);
     }
   };
@@ -347,7 +364,7 @@ export default function OnboardingPageContent({ rental = false }: { rental?: boo
 
           <div className={`mt-8 grid gap-6 ${rental ? "" : "sm:grid-cols-2"}`}>
             <div
-              className="bg-white rounded-2xl border border-slate-200 p-5"
+              className="min-w-0 bg-white rounded-2xl border border-slate-200 p-5"
               data-connect-google-status={googleReady ? 'ready' : googleConfigLoading ? 'checking' : 'unavailable'}
               data-google-oauth-env={googleOAuthEnv || undefined}
             >
@@ -385,7 +402,7 @@ export default function OnboardingPageContent({ rental = false }: { rental?: boo
                 </button>
               ) : googleReady && googleOAuthMode === 'gis' ? (
                 <div className="mt-3 min-h-[44px]" data-testid="google-gis-visible-button">
-                  <div ref={gsiButtonHostRef} aria-label="Войти через Google" />
+                  <div ref={gsiButtonHostRef} className="w-full min-w-0 overflow-hidden" aria-label="Войти через Google" />
                   {loading ? <p className="mt-2 text-sm text-slate-600">Проверяем вход Google…</p> : null}
                 </div>
               ) : googleReady ? (                <button

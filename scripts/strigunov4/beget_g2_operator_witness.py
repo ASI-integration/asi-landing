@@ -30,7 +30,7 @@ def unique(pairs):
         out[k] = v
     return out
 
-def trusted_file(path):
+def trusted_file(path, private=False):
     # Walk each parent through directory descriptors; do not follow symlinks.
     parts = Path(path).parts
     fd = os.open("/", os.O_RDONLY | os.O_DIRECTORY)
@@ -47,6 +47,7 @@ def trusted_file(path):
             require(stat.S_ISREG(before.st_mode) and before.st_uid == 0
                     and not before.st_mode & 0o022 and before.st_nlink == 1
                     and before.st_size <= 65536, "FILE")
+            require(not private or not before.st_mode & 0o077, "POLICY_MODE")
             raw = os.read(child, 65537)
             after = os.fstat(child)
             named = os.stat(parts[-1], dir_fd=fd, follow_symlinks=False)
@@ -118,13 +119,15 @@ def validate_receipt(value, policy):
 def snapshot(policy):
     validate_policy(policy)
     args = ["systemctl", "show", UNIT, "-pMainPID", "-pInvocationID", "-pActiveState",
-            "-pUser", "-pGroup", "-pWorkingDirectory", "-pEnvironmentFiles", "-pNeedDaemonReload"]
+            "-pUser", "-pGroup", "-pWorkingDirectory", "-pEnvironmentFiles", "-pNeedDaemonReload", "-pFragmentPath", "-pDropInPaths"]
     raw = subprocess.check_output(args, text=True, timeout=5, stderr=subprocess.DEVNULL)
     props = unique(line.split("=", 1) for line in raw.splitlines())
     require(props["ActiveState"] == "active" and props["User"] == props["Group"] == "asi-staging"
             and props["WorkingDirectory"] == "/var/www/asi-staging/current"
             and props["EnvironmentFiles"] == "/var/www/asi-staging/shared/.env.staging.local (ignore_errors=no)"
             and props["NeedDaemonReload"] == "no", "SERVICE")
+    require(props.get("FragmentPath") == "/etc/systemd/system/" + UNIT
+            and props.get("DropInPaths") == "", "UNIT_OVERRIDE")
     require(str(Path("/var/www/asi-staging/current").resolve()) ==
             "/var/www/asi-staging/releases/" + policy["release"], "RELEASE")
     return {"host": os.uname().nodename, "unit": UNIT, "release": policy["release"],
@@ -135,7 +138,7 @@ def observe():
     require(len(sys.argv) == 1 and not os.environ.get("SSH_ORIGINAL_COMMAND"), "ARGS")
     require(os.uname().nodename == HOST, "HOST")
     require(os.geteuid() == 0, "AUTHORIZED_WITNESS_NOT_INSTALLED")
-    policy = json.loads(trusted_file(POLICY), object_pairs_hook=unique)
+    policy = json.loads(trusted_file(POLICY, private=True), object_pairs_hook=unique)
     validate_policy(policy)
     before = snapshot(policy)
     require(before["pid"] == policy["pid"] and before["invocation"] == policy["invocation"], "PIN")
@@ -147,7 +150,7 @@ def observe():
     finally:
         os.close(fd)
     result = evaluate(before, snapshot(policy), env, policy)
-    require(json.loads(trusted_file(POLICY), object_pairs_hook=unique) == policy, "POLICY_RACE")
+    require(json.loads(trusted_file(POLICY, private=True), object_pairs_hook=unique) == policy, "POLICY_RACE")
     return result
 
 if __name__ == "__main__":
