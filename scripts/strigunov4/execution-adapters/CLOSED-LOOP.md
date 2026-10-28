@@ -23,7 +23,8 @@ Lost responses, retained locks, changed catalogs, corrupt evidence and crashes
 remain blocked; there is no automatic stale-lock removal or rollback of receipts.
 
 `closedLoop` requires an existing private routing state, immutable stage policy,
-trusted owner-comment reader and finite `maxTicks` (1–100). Policy/catalog must
+trusted owner-comment reader and finite `maxTicks` (1–2016). The native host
+hook retains its narrower 1–100 bound. Policy/catalog must
 bind the same IDs, unique work orders, branches, base and paths. The #533 verifier
 limits a policy to eight tasks and 14 days, checks the exact owner ID/comment,
 and is re-read for revocation before publication mutations. The existing native

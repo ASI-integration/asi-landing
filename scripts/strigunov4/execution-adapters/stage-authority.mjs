@@ -25,7 +25,7 @@ export function validateStagePolicy(p,now=Date.now()){
  require(distinct(p.tasks.map(t=>t.id))&&distinct(p.tasks.map(t=>t.branch))&&distinct(p.tasks.map(t=>t.workOrderId)),'STAGE_TASK_REPLAY');
  for(const t of p.tasks){
   require(exactKeys(t,['id','workOrderId','branch','baseSha','paths','operations'])&&validId(t.id)&&validId(t.workOrderId)&&
-   typeof t.branch==='string'&&/^asi\/engine-task\/[a-z0-9][a-z0-9-]{3,79}$/.test(t.branch)&&
+   typeof t.branch==='string'&&/^asi\/engine-task\/[a-z0-9][a-z0-9-]{3,70}$/.test(t.branch)&&
    t.baseSha===p.baseSha&&Array.isArray(t.paths)&&t.paths.length>0&&t.paths.length<=3&&distinct(t.paths)&&
    t.paths.every(x=>typeof x==='string'&&/^scripts\/strigunov4\/[a-zA-Z0-9][a-zA-Z0-9_./-]*\.py$/.test(x)&&
     !x.includes('..')&&!x.includes('//')&&!x.includes('/candidates/'))&&

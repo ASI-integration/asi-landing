@@ -173,6 +173,10 @@ export async function prepareDelta(store,task,{ admission, changes }) {
     must(creation?!Object.hasOwn(baseline,change.path):digest(source)===change.beforeSha256 && baseline[change.path].hash===change.beforeSha256, 'PRECONDITION_CHANGED');
     const content = normalizeProposedContent(change.path,change.content);
     must(content!==source, 'EMPTY_CHANGE');
+    // Untracked creations are invisible to git diff --check. Apply the same
+    // default whitespace guards before writing any new-file proposal.
+    if(creation)must(!content.split('\n').some(line=>/[ \t]+\r?$/.test(line)||/^[ \t]* \t/.test(line))&&
+      !/\n(?:\r?\n)+$/.test(content),'NEW_FILE_WHITESPACE');
     await syntax(change.path,content,cwd);
     prepared.push({file,path:change.path,content,beforeSha256:change.beforeSha256,afterSha256:digest(content)});
   }

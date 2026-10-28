@@ -8,7 +8,8 @@ import {closedFixture,makeClosedLoop,tick,readState} from './closed-loop-fixture
 import {once} from 'node:events';
 import {createRequestBudget} from './host-runtime.mjs';
 import {BEGET,verifyBegetActivation} from './host-authority.mjs';
-import {stagePolicyHash} from './stage-authority.mjs';
+import {stagePolicyHash,validateStagePolicy} from './stage-authority.mjs';
+import {prepareDelta} from './change-preparer.mjs';
 import {runContinuousWorker} from '../ASI-STRIGUNOV4-RUNNER-BRIDGE-20261020.mjs';
 import {createBegetChecks} from './host-checks.mjs';
 import {digest} from './state.mjs';
@@ -25,6 +26,25 @@ async function setup(t,options={}){
  return f;
 }
 const loop=f=>makeClosedLoop(f,{enginePilot:false,intervalMs:600000,fencingWitness:async()=>({fixtureFence:true}),runChecks:f.runChecks});
+
+test('untracked G2 creations reject whitespace before any scratch write',async t=>{
+ for(const suffix of ['# trailing space \n','# trailing tab\t\n','\n',' \t# space before tab\n','\t \t# mixed indent\n']){
+  const f=await setup(t),task=f.catalog[0],change=task.changes[0];
+  const filename=path.join(f.root,'scratchpads',task.id,change.path);
+  await assert.rejects(()=>prepareDelta({root:f.root},task,{admission:{taskId:task.id,head:task.sha,
+   stage:task.stage,mode:'ISOLATED_PREPARE_ONLY',paths:[change.path]},
+   changes:[{...change,content:change.content+suffix}]}),/NEW_FILE_WHITESPACE/);
+  await assert.rejects(fs.stat(filename),{code:'ENOENT'});
+ }
+});
+
+test('stage admission uses the same maximum branch suffix as Publisher',async t=>{
+ const f=await setup(t),p=structuredClone(f.policy);
+ p.schema='asi.stage-authority.v1';p.stage='S4-G1';p.issue=511;p.tasks=p.tasks.slice(0,1);
+ p.tasks[0].branch='asi/engine-task/'+'a'.repeat(71);
+ assert.doesNotThrow(()=>validateStagePolicy(p,f.now.value));
+ p.tasks[0].branch+='a';assert.throws(()=>validateStagePolicy(p,f.now.value),/STAGE_TASK_SCOPE/);
+});
 
 test('real witness changes: two disjoint file creations through existing Publisher and Dispatcher; fixture writes only',async t=>{
  const f=await setup(t,{ci:'pending'});assert.equal((await tick(await loop(f))).mode,'WAITING');assert.equal(f.pulls.size,1);

@@ -165,18 +165,46 @@ export async function createBegetRuntime(){
 }
 
 export function createRequestBudget({root,payload,revalidate}){
-  const budgetFile=root+'/state/api-budget.json',policyHash=digest(JSON.stringify(payload));
-  // Worker process has the OS-level flock. Reserve spend durably BEFORE every
-  // request, including authentication and failed requests; never reset on restart.
+  const stateDir=path.join(root,'state'),budgetFile=path.join(stateDir,'api-budget.json');
+  const lock=path.join(stateDir,'api-budget.lock'),policyHash=digest(JSON.stringify(payload));
+  // Use the existing durable directory-lock protocol even outside the unit's
+  // flock. A crash/uncertain write leaves the marker for protected review.
+  const syncDirectory=async()=>{
+    const handle=await fs.open(stateDir,'r');try{await handle.sync();}finally{await handle.close();}
+  };
   let busy=false;
   const beforeRequest=async({mutation=false}={})=>{
     must(!busy,'CONCURRENT_API_REQUEST');busy=true;
-    try{await revalidate();await regular(budgetFile);const b=JSON.parse(await fs.readFile(budgetFile));
+    let release=false;
+    try{
+      must(process.platform==='linux'&&await fs.realpath(stateDir)===path.resolve(stateDir),'API_BUDGET_DIRECTORY');
+      const st=await fs.stat(stateDir);
+      must(st.isDirectory()&&st.uid===process.getuid()&&!(st.mode&0o022),'API_BUDGET_DIRECTORY');
+      try{await fs.mkdir(lock,{mode:0o700});}
+      catch(e){if(e.code==='EEXIST')throw Error('API_BUDGET_LOCKED_OR_CRASHED');throw e;}
+      await syncDirectory();
+      // Until a write starts, a rejection is known not to have reserved spend.
+      release=true;
+      await revalidate();await regular(budgetFile);const b=JSON.parse(await fs.readFile(budgetFile));
       must(b.policySha256===policyHash&&Number.isSafeInteger(b.requests)&&b.requests>=0&&
-        Number.isSafeInteger(b.mutations)&&b.mutations>=0&&b.requests<payload.budget.maxRequests&&
+        Number.isSafeInteger(b.mutations)&&b.mutations>=0&&b.mutations<=b.requests&&
+        b.requests<payload.budget.maxRequests&&b.mutations<=payload.budget.maxMutations&&
         (!mutation||b.mutations<payload.budget.maxMutations),'API_BUDGET_EXHAUSTED_OR_CHANGED');
+      release=false;
       await atomicJson(budgetFile,{...b,requests:b.requests+1,mutations:b.mutations+Number(mutation)});
-    }finally{busy=false;}
+      release=true;
+    }finally{
+      try{
+        if(release){
+          try{await fs.rmdir(lock);await syncDirectory();}
+          catch{
+            await fs.mkdir(lock,{mode:0o700}).catch(()=>{});
+            await syncDirectory().catch(()=>{});
+            throw Error('API_BUDGET_LOCK_RELEASE_UNVERIFIED');
+          }
+        }
+      }finally{busy=false;}
+    }
   };
   return beforeRequest;
 }
