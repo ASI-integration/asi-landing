@@ -93,6 +93,20 @@ def inactive():
     status=call(['/usr/bin/systemctl','show',UNIT,'-pLoadState','-pActiveState','-pMainPID']).decode()
     require('LoadState=not-found' in status and 'MainPID=0' in status,'EXISTING_ENGINE_REQUIRES_REVIEW')
 
+def activation_preclaim(activation, now):
+    require(activation.get('host')==HOST and activation.get('service')==UNIT and
+        type(activation.get('notBefore')) is int and type(activation.get('expiresAt')) is int and
+        activation['notBefore']<=now<activation['expiresAt'] and
+        activation['expiresAt']-activation['notBefore']<=14*86400000,'ACTIVATION_WINDOW_OR_HOST')
+
+def authority_traversal():
+    # The account does not exist yet. Require traversal for a new, unrelated UID,
+    # without changing directory permissions or granting directory listing/write.
+    for p in (AUTH, *AUTH.parents):
+        st=p.lstat()
+        require(stat.S_ISDIR(st.st_mode) and st.st_uid==0 and
+            not st.st_mode&0o022 and st.st_mode&0o001,'AUTHORITY_NOT_TRAVERSABLE')
+
 def apply(package,node,bwrap):
     raw,m,files=prepared(package)
     require(os.geteuid()==0 and os.uname().nodename==HOST,'PROTECTED_HOST_REQUIRED')
@@ -117,6 +131,8 @@ def apply(package,node,bwrap):
     require(review.get('sourceSha')==m['sourceSha'] and review.get('result')=='PASS' and
         review.get('independent') is True and review.get('findings')==0,'SOURCE_REVIEW_NOT_PROVEN')
     activation=signed('activation.json',public)
+    activation_preclaim(activation, now)
+    authority_traversal()
     require(activation.get('runtimeManifestSha256')==digest(raw) and activation.get('catalogSha256')==m['catalogSha256'] and
         activation.get('baseSha')==m['baseSha'],'ACTIVATION_MANIFEST')
     require(regular_bytes(AUTH/'catalog.json',root=True)==files['catalog.json'],'CATALOG_BYTES')

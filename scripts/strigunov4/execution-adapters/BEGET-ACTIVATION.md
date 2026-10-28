@@ -140,3 +140,5 @@ restore ledgers or delete uncertain remote results. No other service is stopped.
 There was no preexisting target unit/runtime to overwrite: exact absence is a
 mandatory precondition. Retiring the inert account/runtime later is a separate
 bounded cleanup; disabling is the safe rollback, not history deletion.
+
+Pre-claim requirements: authority directories must be root-owned, non-writable by group/other, and traversable by the new service UID (for example 0711); authority files remain restricted. The installer rejects inaccessible directories without changing their permissions or consuming a claim. Activation host/service and validity are checked before the claim. Package generation requires a clean tracked/untracked source tree and unchanged HEAD.

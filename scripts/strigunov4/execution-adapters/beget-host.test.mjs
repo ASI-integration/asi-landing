@@ -139,3 +139,36 @@ with tempfile.TemporaryDirectory() as d:
 `;
  execFileSync('/usr/bin/python3',['-I','-S','-B','-c',code,new URL('./beget-install.py',import.meta.url).pathname],{timeout:5000});
 });
+
+test('installer rejects invalid activation and untraversable authority before claims',()=>{
+ const code=`import importlib.util,sys,stat
+from types import SimpleNamespace
+from unittest.mock import patch
+s=importlib.util.spec_from_file_location('installer',sys.argv[1]);m=importlib.util.module_from_spec(s);s.loader.exec_module(m)
+p={'host':m.HOST,'service':m.UNIT,'notBefore':100,'expiresAt':200}
+m.activation_preclaim(p,150)
+for delta in ({'host':'other'},{'service':'other'},{'expiresAt':150},{'notBefore':151},{'notBefore':True}):
+ try:m.activation_preclaim(dict(p,**delta),150);raise AssertionError('invalid activation accepted')
+ except m.Block:pass
+for mode,accepted in ((0o700,False),(0o711,True),(0o777,False)):
+ with patch.object(m.Path,'lstat',return_value=SimpleNamespace(st_uid=0,st_mode=stat.S_IFDIR|mode)):
+  try:m.authority_traversal();assert accepted
+  except m.Block:assert not accepted
+`;
+ execFileSync('/usr/bin/python3',['-I','-S','-B','-c',code,new URL('./beget-install.py',import.meta.url).pathname],{timeout:5000});
+});
+
+test('package builder rejects dirty source before creating output',async t=>{
+ const {buildBegetCandidate}=await import('./host-package.mjs');
+ const dir=await fs.mkdtemp('/tmp/asi-package-source-');t.after(()=>fs.rm(dir,{recursive:true,force:true}));
+ const git=(...args)=>execFileSync('/usr/bin/git',args,{cwd:dir,stdio:'pipe'});
+ git('init');git('config','user.email','fixture@example.invalid');git('config','user.name','Fixture');
+ await fs.writeFile(path.join(dir,'source'),'original');git('add','source');git('commit','-m','fixture');
+ const sha=git('rev-parse','HEAD').toString().trim(),output=path.join(dir,'output');
+ for(const kind of ['tracked','untracked']){
+  if(kind==='tracked')await fs.writeFile(path.join(dir,'source'),'changed');
+  else{git('checkout','--','source');await fs.writeFile(path.join(dir,'extra'),'untracked');}
+  await assert.rejects(()=>buildBegetCandidate({repository:dir,output,baseSha:sha}),/PACKAGE_DIRTY_SOURCE/);
+  await assert.rejects(()=>fs.stat(output),{code:'ENOENT'});
+ }
+});
