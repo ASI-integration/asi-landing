@@ -115,10 +115,12 @@ def fence_preclaim(f, activation):
     def safe_integer(v):
         return type(v) in (int, float) and abs(v)<=9007199254740991 and math.isfinite(v) and int(v)==v
     require(type(f) is dict and type(activation.get('githubApp')) is dict,'OLD_WRITER_FENCING_UNVERIFIED')
+    new=activation['githubApp'].get('installationId')
     old=f.get('oldInstallationId');expiry=f.get('outstandingTokensExpiredAt');evidence=f.get('independentEvidenceSha256')
-    require(f.get('schema')=='asi.old-writer-fence.v1' and f.get('repository')==activation.get('repo') and
+    require(f.get('schema')=='asi.old-writer-fence.v1' and type(activation.get('repo')) is str and
+        f.get('repository')==activation['repo'] and safe_integer(new) and new>0 and
         f.get('method')=='REVOKED_OLD_GITHUB_INSTALLATION' and safe_integer(old) and old>0 and
-        old!=activation['githubApp'].get('installationId') and f.get('oldCredentialsRevoked') is True and
+        old!=new and f.get('oldCredentialsRevoked') is True and
         safe_integer(expiry) and expiry<=activation['notBefore'] and
         type(evidence) is str and re.fullmatch('[a-f0-9]{64}',evidence) is not None and
         f.get('verifiedBy')=='protected-install-review' and type(f.get('deniedPullRequests')) is list and

@@ -29,6 +29,13 @@ invalid={'fence-schema':{'schema':'wrong'},'fence-repository':{'repository':'ano
 fence.update(invalid.get(mode,{}))
 activation={'repo':'ASI-integration/asi-landing','githubApp':{'installationId':2},'host':m.HOST,'service':m.UNIT,'notBefore':0,'expiresAt':2000 if mode=='activation-expired' else 5000,
  'runtimeManifestSha256':m.digest(raw),'catalogSha256':manifest['catalogSha256'],'baseSha':base}
+if mode=='fence-missing-repositories':activation.pop('repo');fence.pop('repository')
+if mode=='fence-null-repositories':activation['repo']=None;fence['repository']=None
+if mode=='fence-missing-new-installation':activation['githubApp'].pop('installationId')
+new_ids={'fence-new-installation-bool':True,'fence-new-installation-zero':0,'fence-new-installation-negative':-2,
+ 'fence-new-installation-string':'2','fence-new-installation-fraction':2.5,'fence-new-installation-unsafe':9007199254740992,
+ 'fence-new-installation-null':None}
+if mode in new_ids:activation['githubApp']['installationId']=new_ids[mode]
 contents={'owner-public.pem':b'fixture-public','catalog.json':catalog,'node':b'fixture-node','bwrap':b'fixture-bwrap',
  'fence.json':json.dumps(fence).encode(),'activation.json':b'fixture-activation',
  'source-review.json':json.dumps({'sourceSha':manifest['sourceSha'],'result':'PASS','independent':True,'findings':0}).encode()}
@@ -89,9 +96,27 @@ for(const mode of ['install-expired','activation-expired','valid']){
 test('actual installer rejects invalid or replaced fence before claim and host mutations',()=>{
   for(const mode of ['fence-schema','fence-repository','fence-method','fence-installation','fence-installation-type',
     'fence-revoked','fence-expiry','fence-digest','fence-reviewer','fence-denied-pr','fence-activation-hash','fence-replaced',
-    'fence-malformed-json','fence-extra-nan','fence-utf8-bom','fence-utf16','fence-list','fence-null']){
+    'fence-malformed-json','fence-extra-nan','fence-utf8-bom','fence-utf16','fence-list','fence-null',
+    'fence-missing-repositories','fence-null-repositories','fence-missing-new-installation',
+    'fence-new-installation-bool','fence-new-installation-zero','fence-new-installation-negative',
+    'fence-new-installation-string','fence-new-installation-fraction','fence-new-installation-unsafe','fence-new-installation-null']){
     execFileSync('/usr/bin/python3',['-I','-S','-B','-c',preclaimTest,installer,mode],{timeout:5000,stdio:'pipe'});
   }
+});
+
+test('installer signed verifier rejects a real invalid Ed25519 signature',()=>{
+  const {publicKey}=generateKeyPairSync('ed25519'); // Isolated test key, never a live credential.
+  const code=`import importlib.util,json,sys,subprocess,base64
+from unittest.mock import patch
+s=importlib.util.spec_from_file_location('installer',sys.argv[1]);m=importlib.util.module_from_spec(s);s.loader.exec_module(m)
+envelope=json.dumps({'payload':'{"fixture":true}','signature':base64.b64encode(bytes(64)).decode()}).encode()
+with patch.object(m,'regular_bytes',return_value=envelope):
+ try:m.signed('fixture.json',sys.stdin.buffer.read())
+ except subprocess.CalledProcessError:pass
+ else:raise AssertionError('invalid signature accepted')
+`;
+  execFileSync('/usr/bin/python3',['-I','-S','-B','-c',code,installer],{
+    input:publicKey.export({type:'spki',format:'pem'}),timeout:5000,stdio:['pipe','pipe','pipe']});
 });
 
 async function actualAuthorityFixture(t,f,override={}){
