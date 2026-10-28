@@ -150,12 +150,131 @@ export function validateProductContract(contract) {
   return contract;
 }
 
+/** Compile a STRUCTURED goal against an already trusted finite work catalog.
+ * This is not a free-form/model planner: it never invents jobs, code or tools.
+ * The host supplies time/catalog provenance. Requirements and budgets below
+ * describe a proposal; they confer no capability and cannot replace admission.
+ */
+export function decomposeProductGoal(input, goal, workOrders, {now} = {}) {
+  const contract = structuredClone(validateProductContract(input));
+  const keys = (value, expected) => value && typeof value === 'object' && !Array.isArray(value) &&
+    Object.keys(value).sort().join('|') === [...expected].sort().join('|');
+  const strings = (values, check = text) => Array.isArray(values) && values.length <= 100 &&
+    values.every(check) && new Set(values).size === values.length;
+  const amount = value => Number.isSafeInteger(value) && value >= 0;
+  const costs = ['requests', 'mutations', 'computeMs', 'paidMicrousd'];
+  const limits = ['maxRequests', 'maxMutations', 'maxComputeMs', 'maxPaidMicrousd'];
+  must(keys(goal, ['id', 'product', 'repository', 'head', 'criteria', 'priority',
+    'notBefore', 'expiresAt', 'budget']) && id(goal.id) && goal.product === contract.id &&
+    goal.repository === contract.repository && sha(goal.head) && list(goal.criteria) &&
+    goal.criteria.every(c => contract.goal.criteria.includes(c)) &&
+    Number.isSafeInteger(goal.priority) && goal.priority >= 0 && goal.priority <= 100,
+  'STRUCTURED_GOAL_SCOPE');
+  must(Number.isSafeInteger(now) && now >= 0 && Number.isSafeInteger(goal.notBefore) &&
+    goal.notBefore >= 0 && Number.isSafeInteger(goal.expiresAt) &&
+    goal.notBefore <= now && now < goal.expiresAt &&
+    goal.expiresAt - goal.notBefore <= 14 * 86400000, 'GOAL_WINDOW_INVALID');
+  must(keys(goal.budget, ['maxTasks', ...limits]) && Number.isSafeInteger(goal.budget.maxTasks) &&
+    goal.budget.maxTasks >= 1 && goal.budget.maxTasks <= 100 &&
+    limits.every(k => amount(goal.budget[k])), 'GOAL_BUDGET_INVALID');
+  must(Array.isArray(workOrders) && workOrders.length > 0 && workOrders.length <= 100,
+    'FINITE_WORK_CATALOG_REQUIRED');
+  const stages = new Map(contract.stages.map((stage, index) => [stage.id, index]));
+  const criteria = new Set([...contract.goal.criteria, ...contract.stages.flatMap(s => s.criteria)]);
+  const catalog = new Map();
+  for (const order of workOrders) {
+    must(keys(order, ['id', 'stage', 'operation', 'tool', 'paths', 'covers', 'dependsOn',
+      'priority', 'requiredAuthority', 'cost']) && id(order.id) && !catalog.has(order.id) &&
+      stages.has(order.stage) && contract.functions.includes(order.operation) &&
+      contract.tools.includes(order.tool) && list(order.paths, safePath) &&
+      order.paths.every(p => contract.paths.includes(p) && !deniedPath(p)) &&
+      strings(order.covers) && order.covers.every(c => criteria.has(c)) &&
+      strings(order.dependsOn, id) && strings(order.requiredAuthority, id) &&
+      Number.isSafeInteger(order.priority) && order.priority >= 0 && order.priority <= 100 &&
+      keys(order.cost, costs) && costs.every(k => amount(order.cost[k])), 'GOAL_WORK_ORDER_SCOPE');
+    // Fixed field order and sorted set fields make the plan independent of
+    // catalog iteration order, without changing any work-order identity.
+    catalog.set(order.id, {id: order.id, stage: order.stage, operation: order.operation,
+      tool: order.tool, paths: [...order.paths].sort(), covers: [...order.covers].sort(),
+      dependsOn: [...order.dependsOn].sort(), priority: order.priority,
+      requiredAuthority: [...order.requiredAuthority].sort(),
+      cost: Object.fromEntries(costs.map(k => [k, order.cost[k]]))});
+  }
+  const visiting = new Set(), visited = new Set();
+  const visit = order => {
+    must(!visiting.has(order.id), 'GOAL_DEPENDENCY_CYCLE');
+    if (visited.has(order.id)) return;
+    visiting.add(order.id);
+    for (const name of order.dependsOn) {
+      const dependency = catalog.get(name);
+      must(dependency && stages.get(dependency.stage) <= stages.get(order.stage),
+        'GOAL_DEPENDENCY_INVALID');
+      visit(dependency);
+    }
+    visiting.delete(order.id); visited.add(order.id);
+  };
+  [...catalog.values()].forEach(visit);
+  const selected = new Set();
+  const include = order => {
+    if (selected.has(order.id)) return;
+    selected.add(order.id);
+    order.dependsOn.forEach(name => include(catalog.get(name)));
+  };
+  for (const criterion of goal.criteria) {
+    const providers = [...catalog.values()].filter(order => order.covers.includes(criterion));
+    must(providers.length > 0, 'GOAL_CRITERION_UNSUPPORTED');
+    must(providers.length === 1, 'GOAL_CRITERION_AMBIGUOUS');
+    include(providers[0]);
+  }
+  const total = {tasks: selected.size, ...Object.fromEntries(costs.map(k => [k, 0]))};
+  must(selected.size <= goal.budget.maxTasks, 'GOAL_BUDGET_EXCEEDED');
+  for (const stage of stages.keys()) {
+    must([...selected].filter(name => catalog.get(name).stage === stage).length <=
+      contract.maxPlansPerStage, 'GOAL_STAGE_PLAN_LIMIT');
+  }
+  for (const name of selected) {
+    costs.forEach((key, index) => {
+      total[key] += catalog.get(name).cost[key];
+      must(Number.isSafeInteger(total[key]) && total[key] <= goal.budget[limits[index]],
+        'GOAL_BUDGET_EXCEEDED');
+    });
+  }
+  const nodes = [], pending = new Set(selected);
+  while (pending.size) {
+    const ready = [...pending].map(name => catalog.get(name)).filter(order =>
+      order.dependsOn.every(name => !pending.has(name)))
+      .sort((a, b) => b.priority - a.priority || a.id.localeCompare(b.id));
+    must(ready.length > 0, 'GOAL_DEPENDENCY_CYCLE');
+    // Topological waves retain independent siblings for a separately admitted
+    // bounded executor. This compiler does not start them or reserve authority.
+    for (const order of ready) { nodes.push(order); pending.delete(order.id); }
+  }
+  const definition = {schema: 'asi.structured-goal-plan.v1', product: contract.id,
+    repository: contract.repository, head: goal.head, contractHash: hash(contract),
+    catalogHash: hash([...catalog.values()].sort((a, b) => a.id.localeCompare(b.id))),
+    goal: {id: goal.id, result: contract.goal.result, criteria: [...goal.criteria].sort(),
+      priority: goal.priority}, notBefore: goal.notBefore, expiresAt: goal.expiresAt,
+    budget: Object.fromEntries(['maxTasks', ...limits].map(k => [k, goal.budget[k]])),
+    total, nodes};
+  const planHash = hash(definition);
+  const freeze = value => {
+    if (value && typeof value === 'object') { Object.values(value).forEach(freeze); Object.freeze(value); }
+    return value;
+  };
+  return freeze({...definition, id: 'goal-' + planHash.slice(0, 48), planHash,
+    executable: false, authority: null});
+}
+
 // verifyEvidence is a trusted, synchronous read-only port. Payload booleans are
 // never acceptance. In this prototype only test fixtures supply this port.
-export function createProductAdapter(input, {verifyEvidence} = {}) {
+export function createProductAdapter(input, {verifyEvidence, workOrders, clock = Date.now, maxConcurrentPlans = 1} = {}) {
   const contract = structuredClone(validateProductContract(input));
   must(typeof verifyEvidence === 'function', 'INDEPENDENT_EVIDENCE_VERIFIER_REQUIRED');
-  const contractHash = hash(contract);
+  const catalog = workOrders === undefined ? undefined : structuredClone(workOrders);
+  must(catalog === undefined || (Array.isArray(catalog) && typeof clock === 'function'), 'FINITE_WORK_CATALOG_REQUIRED');
+  must(catalog === undefined || (Number.isSafeInteger(maxConcurrentPlans) &&
+    maxConcurrentPlans >= 1 && maxConcurrentPlans <= 4), 'GOAL_CONCURRENCY_LIMIT');
+  const contractHash = catalog === undefined ? hash(contract) : hash({contract, workOrders: catalog, maxConcurrentPlans});
   const proof = (evidence, snapshot, subject, criteria) => {
     must(evidence?.product === contract.id && evidence.contractHash === contractHash &&
       evidence.subject === subject && evidence.head === snapshot.head &&
@@ -167,11 +286,27 @@ export function createProductAdapter(input, {verifyEvidence} = {}) {
       verifyEvidence(structuredClone(evidence)) === true, 'EXACT_RESULT_EVIDENCE_REQUIRED');
   };
   return Object.freeze({id: contract.id, contractHash, contract: structuredClone(contract),
+    ...(catalog === undefined ? {} : {goalPlanning: true, maxConcurrentPlans}),
     evaluate(snapshot) {
       must(snapshot?.product === contract.id && snapshot.contractHash === contractHash &&
         sha(snapshot.head), 'SNAPSHOT_PRODUCT_BINDING');
       must(Array.isArray(snapshot.stages) && snapshot.stages.length === contract.stages.length &&
         Array.isArray(snapshot.tasks) && snapshot.tasks.length <= 100, 'SNAPSHOT_SCHEMA');
+      let goalResult = {};
+      if (catalog !== undefined) {
+        must(snapshot.goal?.head === snapshot.head, 'GOAL_HEAD_BINDING');
+        const goalGraph = decomposeProductGoal(contract, snapshot.goal, catalog, {now: clock()});
+        const expected = new Map(goalGraph.nodes.map(node => [node.id, node]));
+        const fixed = ['id', 'stage', 'operation', 'tool', 'paths', 'covers', 'dependsOn',
+          'priority', 'requiredAuthority', 'cost'];
+        const allowed = new Set([...fixed, 'status', 'evidence', 'nextAction']);
+        must(snapshot.tasks.length === expected.size && snapshot.tasks.every(task => {
+          const node = expected.get(task.id);
+          return node && Object.keys(task).every(key => allowed.has(key)) &&
+            fixed.every(key => Object.hasOwn(task, key) && hash(task[key]) === hash(node[key]));
+        }), 'GOAL_TASK_GRAPH_BINDING');
+        goalResult = {goalGraph};
+      }
       let active = contract.stages.length;
       const acceptedStages = [];
       snapshot.stages.forEach((stage, i) => {
@@ -226,25 +361,27 @@ export function createProductAdapter(input, {verifyEvidence} = {}) {
           repository: contract.repository, head: snapshot.head, stage: task.stage, candidates: [],
           acceptedStages, terminal: failedLocked ?
             [...terminal.filter(t => t.id !== workOrderId), {id: workOrderId, status: 'FAILED_LOCKED'}] : terminal,
-          oversight, nextAction: oversight.NextAction};
+          oversight, ...goalResult, nextAction: oversight.NextAction};
       }
       if (active === contract.stages.length) {
         proof(snapshot.goalEvidence, snapshot, 'goal', contract.goal.criteria);
         return {status: 'ACCEPTED', repository: contract.repository, head: snapshot.head,
-          stage: null, candidates: [], terminal, acceptedStages,
+          stage: null, candidates: [], terminal, acceptedStages, ...goalResult,
           nextAction: 'Goal accepted; no further work is authorized.'};
       }
       const stage = contract.stages[active].id;
       const current = snapshot.tasks.filter(t => t.stage === stage);
       const candidates = current.filter(t => t.status === 'READY' &&
         t.dependsOn.every(d => tasks.get(d).status === 'ACCEPTED'));
-      const locked = current.find(t => t.status === 'FAILED_LOCKED');
+      const locked = (catalog === undefined ? current : snapshot.tasks).find(t => t.status === 'FAILED_LOCKED');
       const blocked = current.find(t => t.status === 'BLOCKED' || t.dependsOn.some(d =>
         ['BLOCKED', 'FAILED_LOCKED'].includes(tasks.get(d).status)));
-      const status = locked ? 'FAILED_LOCKED' : blocked ? 'BLOCKED' : candidates.length ? 'READY' : 'WAITING';
+      const status = locked ? 'FAILED_LOCKED' : catalog !== undefined && candidates.length ? 'READY' :
+        blocked ? 'BLOCKED' : candidates.length ? 'READY' : 'WAITING';
       return {status, repository: contract.repository, head: snapshot.head, stage,
-        candidates: status === 'READY' ? candidates : [], terminal, acceptedStages,
-        nextAction: locked?.nextAction || blocked?.nextAction || (status === 'READY' ?
+        candidates: status === 'READY' ? candidates : [], terminal, acceptedStages, ...goalResult,
+        nextAction: catalog !== undefined && status === 'READY' ? 'Review this source-only plan; execution is disabled.' :
+          locked?.nextAction || blocked?.nextAction || (status === 'READY' ?
           'Review this source-only plan; execution is disabled.' : 'Supply verified dependencies or stage acceptance; do not create filler work.')};
     }});
 }

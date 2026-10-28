@@ -86,6 +86,8 @@ export function createGitHubPublisher({store,remote,reader,authorize,runChecks,i
     if(record){
       must(record.version===1&&record.taskBinding===binding&&record.operationId===grant.operationId&&
         record.kind===task.kind&&['PUBLISHED_WAITING','VERIFIED'].includes(record.phase),'UNCERTAIN_OR_FOREIGN_PUBLICATION');
+      must(record.reviewPolicySha256===undefined||record.reviewPolicySha256===reviewPolicy?.policySha256,
+        'PUBLISHED_REVIEW_POLICY_CHANGED');
     }else{
       await guard();
       for(const name of await fs.readdir(path.dirname(file))){
@@ -112,7 +114,8 @@ export function createGitHubPublisher({store,remote,reader,authorize,runChecks,i
         must(task.stage==='S4-G2'?!old&&c.beforeSha256===null:old?.type==='blob'&&['100644','100755'].includes(old.mode),'EXISTING_REGULAR_FILE_REQUIRED');
         return {path:c.path,mode:old?.mode??'100644',type:'blob',content:normalizeProposedContent(c.path,c.content)};});
       record={version:1,stage:task.stage,kind:task.kind,taskBinding:binding,operationId:grant.operationId,baseSha:task.sha,
-        branch:task.branch,deltaSha256:prepared.deltaSha256,reviewEvidenceId:review.evidenceId};
+        branch:task.branch,deltaSha256:prepared.deltaSha256,reviewEvidenceId:review.evidenceId,
+        ...(reviewPolicy?{reviewPolicySha256:reviewPolicy.policySha256}:{})};
       const tree=await mutate('create-tree',()=>remote.createTree(parent.tree.sha,entries));
       must(sha(tree.sha),'TREE_RESULT_INVALID');
       const actual=await call(()=>remote.get(`git/trees/${tree.sha}?recursive=1`));

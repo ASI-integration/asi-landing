@@ -7,6 +7,19 @@ const schema = 'asi.global-routing.v1';
 const own = (object, key) => Object.hasOwn(object, key);
 const failure = reason => ({status: 'FAILED_LOCKED', reason, selected: null,
   executable: false, nextAction: 'Reconcile the preserved routing journal and lock against evidence; do not replay or delete them automatically.'});
+function validateGoalGraph(graph, product) {
+  must(graph && typeof graph === 'object' && !Array.isArray(graph), 'GOAL_GRAPH_SCHEMA');
+  const {id, planHash, executable, authority, ...definition} = graph;
+  must(Object.keys(definition).sort().join(',') ===
+    'budget,catalogHash,contractHash,expiresAt,goal,head,nodes,notBefore,product,repository,schema,total' &&
+    definition.schema === 'asi.structured-goal-plan.v1' && definition.product === product &&
+    /^[a-f0-9]{64}$/.test(planHash) && hash(definition) === planHash &&
+    id === 'goal-' + planHash.slice(0, 48) && executable === false && authority === null &&
+    Array.isArray(definition.nodes) && definition.nodes.length > 0 && definition.nodes.length <= 100 &&
+    new Set(definition.nodes.map(n => n.id)).size === definition.nodes.length,
+  'GOAL_GRAPH_INTEGRITY');
+  return graph;
+}
 async function syncDirectory(directory) {
   const handle = await fs.open(directory, 'r');
   try { await handle.sync(); } finally { await handle.close(); }
@@ -39,6 +52,11 @@ async function readState(filename) {
       new Set(p.terminal.map(t => t.id)).size === p.terminal.length &&
       Array.isArray(p.planned) && p.planned.every(x => id(x.id) && typeof x.stage === 'string' && /^[a-f0-9]{40}$/.test(x.head)) &&
       new Set(p.planned.map(t => t.id)).size === p.planned.length, 'PRODUCT_STATE_SCHEMA');
+    if (p.goalGraph !== undefined) {
+      validateGoalGraph(p.goalGraph, p.id);
+      must([...p.planned, ...p.terminal].every(t => p.goalGraph.nodes.some(n => n.id === t.id)),
+        'GOAL_CHECKPOINT_BINDING');
+    }
   }
   must(new Set(state.products.map(p => p.id)).size === state.products.length, 'DUPLICATE_PRODUCT_STATE');
   return state;
@@ -74,10 +92,13 @@ export function createGlobalDispatcher({stateDir, adapters} = {}) {
     a.contract.maxAttemptsPerTask === 1 && Number.isSafeInteger(a.contract.maxPlansPerStage) &&
     a.contract.maxPlansPerStage >= 1 && a.contract.maxPlansPerStage <= 10 && typeof a.evaluate === 'function') &&
     new Set(adapters.map(a => a.id)).size === adapters.length, 'UNIQUE_DISABLED_ADAPTERS_REQUIRED');
+  must(adapters.every(a => a.goalPlanning !== true || Number.isSafeInteger(a.maxConcurrentPlans) &&
+    a.maxConcurrentPlans >= 1 && a.maxConcurrentPlans <= 4), 'GOAL_CONCURRENCY_LIMIT');
   // Capture admission limits; callers cannot expand them by later mutating a
   // contract object that was already registered against a persistent hash.
   const routes = adapters.map(a => ({id: a.id, contractHash: a.contractHash,
-    evaluate: a.evaluate.bind(a), maxPlansPerStage: a.contract.maxPlansPerStage}));
+    evaluate: a.evaluate.bind(a), maxPlansPerStage: a.contract.maxPlansPerStage,
+    goalPlanning: a.goalPlanning === true, maxConcurrentPlans: a.maxConcurrentPlans ?? 1}));
   return Object.freeze({async plan(snapshots) {
     let lock;
     const lockPath = path.join(stateDir, 'routing.lock');
@@ -119,6 +140,21 @@ export function createGlobalDispatcher({stateDir, adapters} = {}) {
                 typeof c.tool === 'string' && Number.isSafeInteger(c.priority) &&
                 Array.isArray(c.paths) && c.paths.every(p => typeof p === 'string')))), 'ADAPTER_RESULT_INVALID');
           result.terminal = result.terminal.map(({id, status}) => ({id, status}));
+          if (adapter.goalPlanning || product.goalGraph !== undefined || result.goalGraph !== undefined) {
+            must(adapter.goalPlanning, 'GOAL_ADAPTER_REQUIRED');
+            const graph = validateGoalGraph(result.goalGraph, adapter.id);
+            must(graph.repository === result.repository && graph.head === result.head,
+              'GOAL_RESULT_BINDING');
+            if (product.goalGraph === undefined) {
+              must(product.planned.length === 0 && product.terminal.length === 0,
+                'GOAL_ADOPTION_REQUIRES_RECONCILIATION');
+            } else must(hash(product.goalGraph) === hash(graph), 'GOAL_CHANGE_REQUIRES_RECONCILIATION');
+            must([...result.candidates, ...result.terminal].every(t => graph.nodes.some(n => n.id === t.id)),
+              'GOAL_RESULT_OUTSIDE_GRAPH');
+            // Same journal and lock: the full immutable plan is retained with
+            // its existing planned/terminal checkpoints, never a second queue.
+            product.goalGraph = structuredClone(graph);
+          }
           must(product.acceptedStages.every((s, i) => result.acceptedStages[i] === s), 'ACCEPTED_STAGE_REGRESSION');
           must(!result.terminal.some(t => t.status !== 'FAILED_LOCKED' &&
             product.terminal.some(p => p.id === t.id && p.status === 'FAILED_LOCKED')),
@@ -141,13 +177,16 @@ export function createGlobalDispatcher({stateDir, adapters} = {}) {
           const eligible = result.candidates.filter(c => !product.terminal.some(t => t.id === c.id));
           const repeated = eligible.some(c => product.planned.some(p => p.id === c.id));
           const exhausted = eligible.length > 0 && product.planned.filter(p => p.stage === result.stage).length >= adapter.maxPlansPerStage;
+          const atCapacity = adapter.goalPlanning && product.planned.filter(p =>
+            !product.terminal.some(t => t.id === p.id)).length >= adapter.maxConcurrentPlans;
           // The same job is never automatically reissued, even on a new SHA or
           // after a cosmetic change. Explicit evidence reconciliation is a later gate.
           result.candidates = eligible.filter(c => !product.planned.some(p => p.id === c.id));
-          if (result.status === 'READY' && (repeated || exhausted || !result.candidates.length)) {
-            result.status = repeated || exhausted ? 'BLOCKED' : 'WAITING';
+          if (result.status === 'READY' && ((!adapter.goalPlanning && repeated) || exhausted || atCapacity || !result.candidates.length)) {
+            result.status = repeated || exhausted || atCapacity ? 'BLOCKED' : 'WAITING';
             result.candidates = [];
-            result.nextAction = 'Reconcile the existing task reservation/publication or supply stage acceptance; automatic retry is disabled.';
+            result.nextAction = atCapacity ? 'Await verified results for the bounded in-flight reservations; do not reissue them.' :
+              'Reconcile the existing task reservation/publication or supply stage acceptance; automatic retry is disabled.';
           }
         } catch (error) {
           const reason = /^[A-Z_]{3,100}$/.test(error?.message || '') ? error.message : 'PRODUCT_SNAPSHOT_INVALID';
@@ -175,6 +214,7 @@ export function createGlobalDispatcher({stateDir, adapters} = {}) {
         product.planned.push({id: task.id, stage: winner.stage, head: winner.head});
         selected = {product: winner.product, contractHash: product.contractHash,
           repository: winner.repository, head: winner.head, task,
+          ...(product.goalGraph ? {goalPlanHash: product.goalGraph.planHash} : {}),
           executable: false, authority: null};
       }
       must(Buffer.byteLength(JSON.stringify({state, checksum: hash(state)}, null, 2) + '\n') < 900_000,

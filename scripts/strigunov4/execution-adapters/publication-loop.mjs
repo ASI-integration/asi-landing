@@ -7,7 +7,7 @@ import {existingState,atomicJson,regular,digest,must,LIVE_ROOT} from './state.mj
 import {createGitHubPublisher,bindTask} from './github-publisher.mjs';
 import {bounded} from './publisher-transport.mjs';
 import {createGlobalDispatcher} from '../../global-dispatcher/dispatcher.mjs';
-import {createStrigunovAdapter,hash} from '../../global-dispatcher/product-adapters.mjs';
+import {createStrigunovAdapter,decomposeProductGoal,hash} from '../../global-dispatcher/product-adapters.mjs';
 import {verifyOwnerStageDecision,authorizeStageTask,stagePolicyHash} from './stage-authority.mjs';
 
 /** Host supplies an immutable approved catalog and signed authority ports. Issue/PR
@@ -24,9 +24,10 @@ export async function createPublicationLoop({root,legacyStateDir,catalog,fetchSn
   const tasks=structuredClone(catalog),store=await existingState(root,{liveAdmission});
   // The same Engine lock, catalog, Publisher and receipts own the whole cycle.
   // Optional integration does not migrate live state or generalize G1 authority.
-  let dispatcher,policy,continuing=false,completedIds=[];
+  let dispatcher,policy,goalGraph,continuing=false,completedIds=[];
   if(closedLoop){
-    closedLoop=Object.freeze({...closedLoop,policy:structuredClone(closedLoop.policy)});
+    closedLoop=Object.freeze({...closedLoop,policy:structuredClone(closedLoop.policy),
+      ...(closedLoop.planning===undefined?{}:{planning:structuredClone(closedLoop.planning)})});
     // No override means the existing strict CodeRabbit reader, not skipped review.
     // An alternative review port still needs its exact native capability binding.
     must(publishedReview===undefined||typeof publishedReview.verify==='function','EXPLICIT_REVIEW_POLICY_REQUIRED');
@@ -38,8 +39,40 @@ export async function createPublicationLoop({root,legacyStateDir,catalog,fetchSn
       p.workOrderId===t.workOrderId&&p.branch===t.branch&&p.baseSha===t.sha&&
       JSON.stringify(p.paths)===JSON.stringify(t.changes.map(c=>c.path)))),'POLICY_CATALOG_BINDING');
     const native=createStrigunovAdapter({enginePilot,begetTasks:policy.schema==='asi.stage-authority.beget.v1'});
-    const adapter={...native,contractHash:hash({native:native.contractHash,catalog:bindTask(tasks),policy:stagePolicyHash(policy)}),
-      evaluate(snapshot){const r=native.evaluate(snapshot);return {...r,status:continuing&&r.status==='READY'?'WAITING':r.status,candidates:continuing?[]:r.candidates.filter(c=>tasks.some(t=>t.workOrderId===c.id))};}};
+    // Optional structured planning uses this SAME finite signed catalog and
+    // native authority chain. It cannot add a task, path, writer or permission.
+    const compileGoal=()=>{
+      const p=closedLoop.planning;
+      must(policy.schema==='asi.stage-authority.beget.v1'&&p&&
+        Object.keys(p).sort().join(',')==='contract,goal,workOrders','PLANNING_SCOPE');
+      const graph=decomposeProductGoal(p.contract,p.goal,p.workOrders,{now:clock()});
+      must(graph.product==='strigunov4'&&graph.repository===policy.repository&&graph.head===policy.baseSha&&
+        graph.notBefore===policy.notBefore&&graph.expiresAt===policy.expiresAt&&
+        graph.budget.maxTasks===tasks.length&&graph.nodes.length===tasks.length&&
+        new Set(tasks.map(t=>t.workOrderId)).size===tasks.length&&graph.nodes.every(n=>{
+          const task=tasks.find(t=>t.workOrderId===n.id);
+          return task&&n.stage===policy.stage.toLowerCase()&&n.operation==='prepare-source'&&
+            n.tool==='existing-runner-bridge'&&hash(n.paths)===hash(task.changes.map(c=>c.path).sort());
+        }),'PLANNING_CATALOG_BINDING');
+      return graph;
+    };
+    const initialGraph=closedLoop.planning===undefined?undefined:compileGoal();
+    goalGraph=initialGraph;
+    const adapter={...native,
+      ...(initialGraph?{goalPlanning:true,maxConcurrentPlans:1}:{}),
+      contractHash:hash({native:native.contractHash,catalog:bindTask(tasks),policy:stagePolicyHash(policy),
+        ...(initialGraph?{planHash:initialGraph.planHash}:{})}),
+      evaluate(snapshot){
+        const graph=initialGraph?compileGoal():undefined;
+        must(!graph||graph.planHash===initialGraph.planHash,'PLANNING_CHANGED');
+        const r=native.evaluate(snapshot);
+        const candidates=continuing?[]:r.candidates.filter(c=>tasks.some(t=>t.workOrderId===c.id))
+          .filter(c=>!graph||graph.nodes.find(n=>n.id===c.id)?.dependsOn.every(id=>
+            completedIds.includes(tasks.find(t=>t.workOrderId===id)?.id)))
+          .map(c=>graph?{...c,priority:graph.nodes.find(n=>n.id===c.id).priority}:c);
+        return {...r,...(graph?{goalGraph:graph}:{}),
+          status:continuing&&r.status==='READY'?'WAITING':r.status,candidates};
+      }};
     dispatcher=createGlobalDispatcher({stateDir:closedLoop.stateDir,adapters:[adapter]});
   }
   async function admission(task){
@@ -143,6 +176,8 @@ export async function createPublicationLoop({root,legacyStateDir,catalog,fetchSn
           chosen=remaining.find(t=>t.workOrderId===plan.selected.task.id);
           must(chosen,'DISPATCHER_TASK_NOT_IN_CATALOG');
         }
+        if(goalGraph)must(goalGraph.nodes.find(n=>n.id===chosen.workOrderId)?.dependsOn.every(id=>
+          completedIds.includes(tasks.find(t=>t.workOrderId===id)?.id)),'PLANNING_DEPENDENCY_NOT_READY');
         must(queue.jobs.find(w=>w.job===chosen.workOrderId)?.status==='SOURCE_PREPARATION_READY','DEPENDENCY_NOT_READY');
         if(closedLoop.continuous){
           if((last?.count??0)>=closedLoop.maxTicks){reason='WORK_POLL_BUDGET_EXHAUSTED';return null;}

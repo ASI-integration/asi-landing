@@ -8,8 +8,9 @@ import beget_g2_operator_witness as w
 
 class RaceTests(unittest.TestCase):
     def observe(self, race=None):
-        policy=dict(pid=42, invocation='a'*32, crm='operator@example.invalid', ops='operator@example.invalid')
-        identity=dict(host=w.HOST,unit=w.UNIT,release=w.RELEASE,unitHash=w.UNIT_HASH,pid=42,invocation='a'*32)
+        policy=dict(release='b'*40, unitHash='c'*64, pid=42, invocation='a'*32,
+                    crm='operator@example.invalid', ops='operator@example.invalid')
+        identity=dict(host=w.HOST,unit=w.UNIT,**{k:policy[k] for k in ('release','unitHash','pid','invocation')})
         env=dict(w.FLAGS,CRM_OPERATOR_EMAILS=policy['crm'],OPS_ADMIN_EMAILS=policy['ops'])
         raw=b''.join((k+'='+v).encode()+b'\0' for k,v in env.items())
         later=identity | ({'pid':43} if race=='pid' else {'invocation':'b'*32} if race=='invocation' else {})

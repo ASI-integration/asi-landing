@@ -145,6 +145,11 @@ def apply(package,node,bwrap):
     main=call(['/usr/bin/git','ls-remote','https://github.com/ASI-integration/asi-landing.git','refs/heads/main']).decode().split()
     require(main==[m['baseSha'],'refs/heads/main'],'PROTECTED_MAIN_NOT_EXACT_BASE')
     claim=AUTH/('install-claim-'+digest(raw)+'.json')
+    # Slow external verification may consume the remaining authorization window.
+    # Recheck both signed grants at the irreversible one-use claim boundary.
+    now=int(time.time()*1000)
+    require(permit['notBefore']<=now<permit['expiresAt'],'INSTALL_ADMISSION')
+    activation_preclaim(activation, now)
     write_new(claim,json.dumps({'manifestSha256':digest(raw),'at':now,'oneUse':True}).encode())
     installed_unit=False
     try:

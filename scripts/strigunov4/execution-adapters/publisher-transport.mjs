@@ -5,6 +5,9 @@ export const branchAllowed=b=>typeof b==='string'&&/^asi\/engine-task\/[a-z0-9][
 export function draftBody(job,evidence){
   must(/^[a-z0-9-]{1,96}$/.test(job)&&sha(evidence?.baseSha)&&sha(evidence?.head)&&/^[a-f0-9]{64}$/.test(evidence?.deltaSha256),'PR_EVIDENCE_REQUIRED');
   must(evidence.stage===undefined||['S4-G1','S4-G2'].includes(evidence.stage),'PR_STAGE');
+  must(evidence.reviewPolicySha256===undefined||/^[a-f0-9]{64}$/.test(evidence.reviewPolicySha256),'PR_REVIEW_POLICY');
+  const pendingReview=evidence.reviewPolicySha256===undefined?'exact-HEAD CodeRabbit':
+    `independent published review (policy SHA256 ${evidence.reviewPolicySha256})`;
   return `Release-Stage: ${evidence.stage??'S4-G1'}\nRelease-Mode: implementation\n
 ## Результат
 Approved source task ${job}. Draft publication only; physical acceptance is not claimed.
@@ -20,7 +23,7 @@ No product scope or authority expansion; host admission required.
 ## Изменённые файлы
 Exact admitted diff verified through GitHub tree and PR file readback.
 ## Проверки
-Local checks and independent delta review passed. GitHub CI and exact-HEAD CodeRabbit remain pending verification.
+Local checks and independent delta review passed. GitHub CI and ${pendingReview} remain pending verification.
 ## Data, migration и external side effects
 Git objects, one task branch and one Draft PR only. No server, database, messages or payments.
 ## Staging / rollout / rollback

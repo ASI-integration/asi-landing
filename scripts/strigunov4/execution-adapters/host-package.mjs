@@ -94,6 +94,13 @@ if(process.argv[1]===fileURLToPath(import.meta.url)){
 /** Freeze a Beget source candidate, not an assertion of install/authority PASS. */
 export async function buildBegetCandidate({repository,output,baseSha}){
   must(/^[a-f0-9]{40}$/.test(baseSha),'BEGET_BASE_SHA');
+  repository=await fs.realpath(repository);
+  const outputPath=path.resolve(output),outputParent=await fs.realpath(path.dirname(outputPath));
+  const canonicalOutput=path.join(outputParent,path.basename(outputPath));
+  must(canonicalOutput!==repository&&!canonicalOutput.startsWith(repository+path.sep),'PACKAGE_OUTPUT_IN_SOURCE');
+  // The closure builder requires a canonical, previously absent destination.
+  // Reject aliases before mkdir so a failed build cannot dirty its own source.
+  must(outputParent===path.dirname(outputPath),'PACKAGE_OUTPUT_PATH');
   const sourceSha=execFileSync('/usr/bin/git',['rev-parse','HEAD'],{cwd:repository,encoding:'utf8'}).trim();
   const assertSource=()=>{
     must(execFileSync('/usr/bin/git',['status','--porcelain','--untracked-files=normal'],{cwd:repository,encoding:'utf8'}).trim()==='', 'PACKAGE_DIRTY_SOURCE');
@@ -107,7 +114,7 @@ export async function buildBegetCandidate({repository,output,baseSha}){
     const content=await fs.readFile(path.join(repository,`scripts/strigunov4/execution-adapters/beget-work-orders/${part}.py.txt`),'utf8');
     // Exact source branch must already contain the accepted witness; no substitute stub.
     const witness=execFileSync('/usr/bin/git',['show',baseSha+':scripts/strigunov4/beget_g2_operator_witness.py'],{cwd:repository});
-    must(digest(witness)==='0b0b9c10db3f84bf3491f02c664b4c92fcb9464d8a7f59776a67690b1c49e39e','WITNESS_BASE_HASH');
+    must(digest(witness)==='44bd342a521a3c609338cd9fd29e7f9e1388d8c85cbd71cf68a8990fdbefad6a','WITNESS_BASE_HASH');
     try{execFileSync('/usr/bin/git',['cat-file','-e',baseSha+':'+name],{cwd:repository,stdio:'pipe'});throw Error('TASK_ALREADY_EXISTS');}
     catch(e){must(e.status===128,'TASK_ALREADY_EXISTS');}
     catalog.push({id,kind:'github-publisher',stage:'S4-G2',workOrderId:id,repo:'ASI-integration/asi-landing',sha:baseSha,pr:null,

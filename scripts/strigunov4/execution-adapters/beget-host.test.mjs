@@ -13,6 +13,7 @@ import {prepareDelta} from './change-preparer.mjs';
 import {runContinuousWorker} from '../ASI-STRIGUNOV4-RUNNER-BRIDGE-20261020.mjs';
 import {createBegetChecks} from './host-checks.mjs';
 import {digest} from './state.mjs';
+import {draftBody} from './publisher-transport.mjs';
 const advance=f=>{f.now.value+=600000;};
 async function setup(t,options={}){
  const f=await closedFixture(t,{beget:true,distinctWorkOrders:true,...options});
@@ -26,6 +27,15 @@ async function setup(t,options={}){
  return f;
 }
 const loop=f=>makeClosedLoop(f,{enginePilot:false,intervalMs:600000,fencingWitness:async()=>({fixtureFence:true}),runChecks:f.runChecks});
+
+test('published review describes its bound policy while legacy draft bytes remain unchanged',()=>{
+ const record={baseSha:'a'.repeat(40),head:'b'.repeat(40),deltaSha256:'c'.repeat(64)};
+ assert.equal(digest(draftBody('legacy-job',record)),'8e6eccad129d742e8ef1bc7019832853f11f8cd733a2367ea7225cdd05d78c7e');
+ const text=draftBody('legacy-job',{...record,reviewPolicySha256:'d'.repeat(64)});
+ assert.ok(text.includes('independent published review (policy SHA256 '+'d'.repeat(64)+')'));
+ assert.equal(text.includes('CodeRabbit remain pending'),false);
+ assert.throws(()=>draftBody('legacy-job',{...record,reviewPolicySha256:'invalid'}),/PR_REVIEW_POLICY/);
+});
 
 test('untracked G2 creations reject whitespace before any scratch write',async t=>{
  for(const suffix of ['# trailing space \n','# trailing tab\t\n','\n',' \t# space before tab\n','\t \t# mixed indent\n']){

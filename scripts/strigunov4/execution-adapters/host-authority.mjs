@@ -5,6 +5,7 @@ import {constants} from 'node:fs';
 import path from 'node:path';
 import {verify,createPublicKey,createHash} from 'node:crypto';
 import {validateStagePolicy} from './stage-authority.mjs';
+import {decomposeProductGoal} from '../../global-dispatcher/product-adapters.mjs';
 
 export const ENGINE_ROOT='/home/project_ayfaar/asi-strigunov-agent/engine';
 export const LEGACY_STATE='/home/project_ayfaar/asi-strigunov-agent/state';
@@ -130,6 +131,24 @@ export function verifyBegetActivation(envelope,publicKey,now=Date.now()){
     c.policy?.schema==='asi.stage-authority.beget.v1'&&c.policy.baseSha===p.baseSha&&
     c.policy.notBefore===p.notBefore&&c.policy.expiresAt===p.expiresAt,'BEGET_SCOPE_OR_EXPIRY');
   validateStagePolicy(c.policy,now);
+  if(c.planning!==undefined){
+    const planning=c.planning;
+    must(planning&&Object.keys(planning).sort().join(',')==='contract,goal,workOrders',
+      'BEGET_PLANNING_SCOPE');
+    const graph=decomposeProductGoal(planning.contract,planning.goal,planning.workOrders,{now});
+    // Requests/mutations are enforced by the existing durable native counter.
+    // Do not promise a tighter graph cap than that counter actually enforces.
+    // computeMs remains a declared preparation estimate, NOT an aggregate meter.
+    must(graph.product==='strigunov4'&&graph.repository===p.repo&&graph.head===p.baseSha&&
+      graph.notBefore===p.notBefore&&graph.expiresAt===p.expiresAt&&
+      graph.budget.maxTasks===p.budget.maxTasks&&graph.budget.maxRequests===p.budget.maxRequests&&
+      graph.budget.maxMutations===p.budget.maxMutations&&graph.budget.maxPaidMicrousd===0&&
+      planning.workOrders.length===2&&graph.nodes.length===2&&graph.nodes.every(n=>{
+        const task=c.policy.tasks.find(t=>t.workOrderId===n.id);
+        return task&&n.stage===p.stage.toLowerCase()&&n.operation==='prepare-source'&&
+          n.tool==='existing-runner-bridge'&&equal(n.paths,[...task.paths].sort());
+      }),'BEGET_PLANNING_BINDING');
+  }
   must(Array.isArray(p.ciPolicies)&&p.ciPolicies.length===2&&
     p.ciPolicies.some(q=>q.name==='validate'&&q.workflowId===311380800&&q.event==='pull_request')&&
     p.ciPolicies.some(q=>q.name==='release_governance'&&q.workflowId===390653294&&q.event==='pull_request_target'),'BEGET_CI_POLICY');
