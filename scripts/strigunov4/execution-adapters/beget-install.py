@@ -117,7 +117,7 @@ def fence_preclaim(f, activation):
     require(type(f) is dict and type(activation.get('githubApp')) is dict,'OLD_WRITER_FENCING_UNVERIFIED')
     new=activation['githubApp'].get('installationId')
     old=f.get('oldInstallationId');expiry=f.get('outstandingTokensExpiredAt');evidence=f.get('independentEvidenceSha256')
-    require(f.get('schema')=='asi.old-writer-fence.v1' and type(activation.get('repo')) is str and
+    require(f.get('schema')=='asi.old-writer-fence.v1' and activation.get('repo')=='ASI-integration/asi-landing' and
         f.get('repository')==activation['repo'] and safe_integer(new) and new>0 and
         f.get('method')=='REVOKED_OLD_GITHUB_INSTALLATION' and safe_integer(old) and old>0 and
         old!=new and f.get('oldCredentialsRevoked') is True and

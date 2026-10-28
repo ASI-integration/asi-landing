@@ -29,6 +29,7 @@ invalid={'fence-schema':{'schema':'wrong'},'fence-repository':{'repository':'ano
 fence.update(invalid.get(mode,{}))
 activation={'repo':'ASI-integration/asi-landing','githubApp':{'installationId':2},'host':m.HOST,'service':m.UNIT,'notBefore':0,'expiresAt':2000 if mode=='activation-expired' else 5000,
  'runtimeManifestSha256':m.digest(raw),'catalogSha256':manifest['catalogSha256'],'baseSha':base}
+if mode=='fence-noncanonical-pair':activation['repo']='another/repository';fence['repository']='another/repository'
 if mode=='fence-missing-repositories':activation.pop('repo');fence.pop('repository')
 if mode=='fence-null-repositories':activation['repo']=None;fence['repository']=None
 if mode=='fence-missing-new-installation':activation['githubApp'].pop('installationId')
@@ -97,7 +98,7 @@ test('actual installer rejects invalid or replaced fence before claim and host m
   for(const mode of ['fence-schema','fence-repository','fence-method','fence-installation','fence-installation-type',
     'fence-revoked','fence-expiry','fence-digest','fence-reviewer','fence-denied-pr','fence-activation-hash','fence-replaced',
     'fence-malformed-json','fence-extra-nan','fence-utf8-bom','fence-utf16','fence-list','fence-null',
-    'fence-missing-repositories','fence-null-repositories','fence-missing-new-installation',
+    'fence-noncanonical-pair','fence-missing-repositories','fence-null-repositories','fence-missing-new-installation',
     'fence-new-installation-bool','fence-new-installation-zero','fence-new-installation-negative',
     'fence-new-installation-string','fence-new-installation-fraction','fence-new-installation-unsafe','fence-new-installation-null']){
     execFileSync('/usr/bin/python3',['-I','-S','-B','-c',preclaimTest,installer,mode],{timeout:5000,stdio:'pipe'});
@@ -116,6 +117,20 @@ with patch.object(m,'regular_bytes',return_value=envelope):
  else:raise AssertionError('invalid signature accepted')
 `;
   execFileSync('/usr/bin/python3',['-I','-S','-B','-c',code,installer],{
+    input:publicKey.export({type:'spki',format:'pem'}),timeout:5000,stdio:['pipe','pipe','pipe']});
+});
+
+test('installer signed verifier accepts a real valid Ed25519 signature',()=>{
+  const {privateKey,publicKey}=generateKeyPairSync('ed25519'); // Isolated fixture only.
+  const payload='{"fixture":true}';
+  const envelope=JSON.stringify({payload,signature:sign(null,Buffer.from(payload),privateKey).toString('base64')});
+  const code=`import importlib.util,sys
+from unittest.mock import patch
+s=importlib.util.spec_from_file_location('installer',sys.argv[1]);m=importlib.util.module_from_spec(s);s.loader.exec_module(m)
+with patch.object(m,'regular_bytes',return_value=sys.argv[2].encode()):
+ assert m.signed('fixture.json',sys.stdin.buffer.read())=={'fixture':True}
+`;
+  execFileSync('/usr/bin/python3',['-I','-S','-B','-c',code,installer,envelope],{
     input:publicKey.export({type:'spki',format:'pem'}),timeout:5000,stdio:['pipe','pipe','pipe']});
 });
 
