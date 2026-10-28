@@ -60,3 +60,5 @@ jobs:
             scripts/strigunov4/execution-adapters/host-integration.test.mjs
       - name: Verify two-order closed loop without live credentials or paid review
         run: node --test scripts/strigunov4/execution-adapters/closed-loop.test.mjs scripts/strigunov4/execution-adapters/host-loop.test.mjs scripts/strigunov4/execution-adapters/beget-host.test.mjs
+      - name: Bounded goal integration and preclaim regressions
+        run: node --test scripts/global-dispatcher/goal-decomposition.test.mjs scripts/global-dispatcher/goal-routing.test.mjs scripts/strigunov4/execution-adapters/goal-publication.test.mjs scripts/strigunov4/execution-adapters/beget-preclaim.test.mjs

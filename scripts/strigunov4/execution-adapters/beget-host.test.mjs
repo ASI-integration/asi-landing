@@ -194,7 +194,9 @@ test('package builder rejects dirty source before creating output',async t=>{
  const git=(...args)=>execFileSync('/usr/bin/git',args,{cwd:dir,stdio:'pipe'});
  git('init');git('config','user.email','fixture@example.invalid');git('config','user.name','Fixture');
  await fs.writeFile(path.join(dir,'source'),'original');git('add','source');git('commit','-m','fixture');
- const sha=git('rev-parse','HEAD').toString().trim(),output=path.join(dir,'output');
+ const outputParent=await fs.mkdtemp('/tmp/asi-package-output-');
+ t.after(()=>fs.rm(outputParent,{recursive:true,force:true}));
+ const sha=git('rev-parse','HEAD').toString().trim(),output=path.join(outputParent,'output');
  for(const kind of ['tracked','untracked']){
   if(kind==='tracked')await fs.writeFile(path.join(dir,'source'),'changed');
   else{git('checkout','--','source');await fs.writeFile(path.join(dir,'extra'),'untracked');}
