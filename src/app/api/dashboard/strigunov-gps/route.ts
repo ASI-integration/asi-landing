@@ -52,7 +52,7 @@ async function github<T>(url: string, token: string): Promise<T> {
       method: 'GET', cache: 'no-store', signal: ctrl.signal,
       headers: {
         Accept: 'application/vnd.github+json',
-        Authorization: 'Bearer ' + token,
+        ...(token ? {Authorization: 'Bearer ' + token} : {}),
         'X-GitHub-Api-Version': '2022-11-28',
       },
     });
@@ -85,10 +85,13 @@ const noStore = { 'cache-control': 'private, no-store, max-age=0', 'x-content-ty
 export async function GET() {
   const auth = await requireDevelopmentOwnerSession();
   if ('error' in auth) return auth.error;
-  if (memo && Date.now() - memo.at < 20000)
+  const token = process.env.GITHUB_TOKEN?.trim() || '';
+  // Authenticated GitHub: source refresh at most every 3 min.
+  // Public-repo fallback: ~20 GETs/30 min, under GitHub's unauthenticated
+  // per-IP rate cap on one instance. No private repo is ever inferred as public.
+  const cacheMs = token ? 3 * 60 * 1000 : 30 * 60 * 1000;
+  if (memo && Date.now() - memo.at < cacheMs)
     return NextResponse.json(memo.value, { headers: noStore });
-  const token = process.env.GITHUB_TOKEN?.trim();
-  if (!token) return NextResponse.json({ok: false, reason: 'Нет серверного доступа к GitHub'}, {status: 503, headers: noStore});
   try {
     // The canonical release file is mandatory, but an optional PR/issue outage
     // must not hide the whole map. Missing data always remains UNKNOWN.
@@ -172,6 +175,8 @@ export async function GET() {
     const g1Accepted = await verifyPhysicalG1(release.stages[0], token);
     const payload = {
       ok: true, observedAt: new Date().toISOString(), mapSha: file.sha,
+      githubMode: token ? 'authenticated' : 'public-read-only',
+      githubRefreshSeconds: Math.round(cacheMs / 1000),
       partialSources: partialPrData || issue === null || prs.some(p => !p.ciAvailable) || workerLanes.some(l => !l.codeObserved),
       mapUrl: 'https://github.com/' + REPO + '/blob/main/' + RELEASE_PATH,
       issue: {number: 511, state: issue?.state ?? 'UNKNOWN', updatedAt: issue?.updated_at ?? null,
