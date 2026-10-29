@@ -140,6 +140,56 @@ new account, new runtime/state and named authority-file read permissions change.
 Initial state/routing/budget are created once; runtime never recreates them.
 Installation output INSTALLED_ACCEPTANCE_PENDING is not final acceptance.
 
+## Repair: two-phase Beget native-isolation bootstrap
+
+The former single-phase installer required `native-isolation.json:PASS` before
+creating the very `asi-engine` user and exact systemd unit under test, while
+rejecting any pre-existing account/unit. It remains backward compatible, but
+**must not be used to assert native isolation from an unrelated `nobody` probe**.
+
+This source revision introduces two separately owner-signed transitions using
+the **existing** installer, package, host, runtime and final activation gates:
+
+1. **Stage only**: `beget-install.py --package <exact-package> --stage --node
+   <verified-node> --bwrap <verified-bwrap>`. Requires root on `pqukibofpo`,
+   a fresh owner Ed25519-signed `stage-approval.json` with
+   `schema: asi.beget-isolation-stage-authorization.v1`, pinned
+   `manifestSha256`, `sourceSha`, `baseSha`, `unitSha256`, host, unit,
+   and the fixed `STAGE_ACTIONS` array in source; at most 14 days.
+   Verify absence of an existing Engine/user/state/active authority,
+   package closure, Node/bwrap bytes, exact protected main and current grant.
+   One use writes a durable stage claim, creates only the new unprivileged
+   account, root-owned runtime bytes, private empty state directory and exact
+   **disabled/inactive** service file. It does **not** enable/start the unit,
+   grant access to GitHub App keys, initialize a live catalog, mint a token,
+   publish code or declare a physical PASS.
+2. **Physical native acceptance**: An authorized operator tests the **staged
+   exact unit with its real UID and effective systemd restrictions**. Record
+   UID, InvocationID/test session, exact unit and package hashes, AppArmor and
+   bubblewrap identity, expected network denial for isolated test children,
+   and absence of authority visibility. A static `systemd-analyze` result,
+   a sandbox test outside systemd, or a stopped unit is **insufficient**.
+   Store an independently authenticated, root-owned
+   `native-isolation.json` bound to exact host/unit/bwrap and source evidence.
+   If a protected native test cannot be executed, **BLOCK**; do not create
+   synthetic results or relax systemd, AppArmor or Desktop Commander.
+3. **Activate only after acceptance**:
+   `beget-install.py --package <same-exact-package> --activate-stage --node
+   <verified-node> --bwrap <verified-bwrap>`. Requires the separate, current
+   owner-signed `install-approval.json` and `activation.json`, review and
+   fence records, exact catalog and native evidence, verified old-writer
+   revocation, same protected main and intact staged code/account/unit/receipt.
+   Rechecks everything at its irreversible one-use claim, then grants
+   minimal group-readable authority, initializes new state and enables/starts
+   the **same** unit. A changed, running, enabled or mismatched staged service
+   is refused. Stage and activation are not the same approval.
+
+Never regenerate a consumed claim, delete the staged evidence after an unknown
+outcome, or use `--apply` as a fallback for failed staged activation. The
+existing observer, staging and protected production services are out of scope.
+Only successful live two-task receipts and a separately approved controlled
+restart can establish Engine physical acceptance.
+
 ## Physical acceptance after exact protected admission
 
 Capture PID, InvocationID, unit/source/dependency SHA and OS flock owner. Verify
