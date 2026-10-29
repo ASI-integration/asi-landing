@@ -14,7 +14,7 @@ type Pr = {
 type Snapshot = {
   ok: boolean; observedAt: string; mapUrl: string; mapSha: string;
   issue: {number: number; state: string; updatedAt: string; url: string};
-  stages: Stage[]; prs: Pr[];
+  stages: Stage[]; prs: Pr[]; partialSources?: boolean;
   telemetry: {available: boolean; stale: boolean; status: string;
     stage: string | null; updatedAt: string | null; physicalProof: false};
   serverEvidence: {available: boolean; verifiedStages: string[]; reason: string};
@@ -51,13 +51,15 @@ export default function StrigunovGpsClient() {
     try {
       const res = await fetch('/api/dashboard/strigunov-gps',
         {credentials: 'include', cache: 'no-store'});
-      if (!res.ok) throw new Error('Источник недоступен');
+      if (res.status === 401) throw new Error('Требуется повторный вход в кабинет.');
+      if (res.status === 403) throw new Error('Нет прав владельца для просмотра карты.');
+      if (!res.ok) throw new Error('Обновление пока недоступно. Попробуйте ещё раз.');
       const json = await res.json() as Snapshot;
       if (!json.ok || json.stages?.length !== 6) throw new Error('Неожиданный ответ');
       if (ticket === seq.current) { setData(json); setError(''); }
-    } catch {
+    } catch (cause) {
       if (ticket === seq.current)
-        setError('Источник недоступен. Последний снимок может быть устаревшим; новых подтверждений нет.');
+        setError(cause instanceof Error ? cause.message : 'Обновление временно недоступно.');
     } finally { if (ticket === seq.current) setBusy(false); }
   }, []);
   useEffect(() => {
@@ -104,20 +106,25 @@ export default function StrigunovGpsClient() {
         <p className="text-xs text-slate-300">S4-G1 → S4-G6 → READY_FOR_DEMO</p>
       </div>
       <div className="flex flex-wrap items-center gap-3">
-        <span className="text-xs text-slate-300">Облачная проверка: {observed}</span>
+        <span className="text-xs text-slate-300">{error ? 'Последнее успешное обновление: ' : 'Данные проверены: '}{observed}</span>
         <button type="button" disabled={busy} onClick={() => void load()}
           className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-bold text-white hover:bg-blue-500 disabled:opacity-50">
           {busy ? 'Проверка…' : 'Обновить'}
         </button>
       </div>
     </header>
-    {error && <div role="alert" className="mb-3 rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800">{error}</div>}
+    {error && <div role="alert" className="mb-3 rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800">
+      {error} {data ? 'На карте сохранены предыдущие данные. Новые результаты не подтверждены.' : 'Подтверждённого снимка пока нет.'}
+    </div>}
+    {data?.partialSources && <div className="mb-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+      Карта загружена. Часть дополнительных сведений GitHub временно недоступна и не учитывается как успешная проверка.
+    </div>}
     <div className="grid grid-cols-1 gap-3 xl:grid-cols-[230px_minmax(0,1fr)_290px]">
       <aside className="space-y-3">
         <div className="rounded-2xl border bg-white p-4 shadow-sm">
           <p className="text-xs font-semibold text-slate-500">Вы здесь</p>
           <p className="mt-1 text-3xl font-black text-blue-700">{current?.id ?? 'Нет данных'}</p>
-          <p className="mt-1 text-xs text-slate-500">{current ? 'Этап разработки по канонической карте' : 'Положение не проверено'}</p>
+          <p className="mt-1 text-xs text-slate-500">{current ? 'Текущий этап по утверждённой карте' : 'Положение не проверено'}</p>
           <div className="mt-3 rounded-xl border border-blue-200 bg-blue-50 p-3">
             <p className="text-xs font-semibold text-blue-800">Текущая локальная работа · G2</p>
             <p className="mt-1 text-xs text-blue-900">Права оператора и Google-вход · статус в карте: {stages[1].status}. Прошлые локальные тесты не считаются живой телеметрией или физической приёмкой.</p>
@@ -142,7 +149,7 @@ export default function StrigunovGpsClient() {
         <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
           <p className="text-xs font-semibold text-amber-800">Подготовка в GitHub</p>
           <p className="mt-2 text-lg font-black">{data ? data.prs.length + ' PR' : 'Не проверено'}</p>
-          <p className="mt-1 text-xs text-amber-800">Исторические CI записи: {ciPass} PASS / {ciFail} FAIL. Смотри точные HEAD и последний run справа; это не физическая приёмка.</p>
+          <p className="mt-1 text-xs text-amber-800">Проверки GitHub: {ciPass} PASS / {ciFail} FAIL среди доступных записей. Это не выполнение задач и не физическая приёмка.</p>
         </div>
         <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4">
           <p className="text-xs font-semibold text-rose-700">Ближайшее препятствие</p>
@@ -196,9 +203,14 @@ export default function StrigunovGpsClient() {
               <path d="M-20 170Q230 240 430 150T1010 22 M130 590Q400 385 610 452T1010 360"
                 fill="none" stroke="#fff2cf" strokeWidth="3"/>
               <g fill="#819783" fontSize="17" fontWeight="500">
-                <text x="135" y="90">Лес задач</text><text x="405" y="110">Долина проверок</text>
+                <text x="135" y="90">Лес задач</text>
                 <text x="640" y="520">Поле испытаний</text><text x="775" y="105">Демо-город</text>
               </g>
+              {/* A tiny grass blade replaces the former oversized "Valley of checks". */}
+              <g aria-hidden="true" stroke="#6d9566" strokeWidth="1.5" fill="none" strokeLinecap="round">
+                <path d="M482 125q-2-10-1-19 M482 125q-7-6-10-11 M482 125q6-11 10-15"/>
+              </g>
+              <text x="497" y="121" fill="#819783" fontSize="10">Проверки</text>
               <path d="M120 447C195 440 230 405 290 389S415 344 460 302S585 265 630 250S720 212 760 174S840 135 880 105"
                 fill="none" stroke="#fff" strokeWidth="15" strokeLinecap="round"/>
               <path d="M120 447C195 440 230 405 290 389S415 344 460 302S585 265 630 250S720 212 760 174S840 135 880 105"
@@ -226,7 +238,7 @@ export default function StrigunovGpsClient() {
             {currentIndex >= 0 && <span className="absolute z-10 rounded-xl bg-rose-600 px-3 py-2 text-xs font-bold text-white shadow"
               style={{left: Math.min(86, positions[currentIndex][0] + 6) + '%',
                 top: Math.max(10, positions[currentIndex][1] - 11) + '%'}}>
-              ⛔ Приёмка {current?.id} не подтверждена
+              Для {current?.id} ещё нужны доказательства приёмки
             </span>}
             <div className="absolute right-[3%] top-[6%] rounded-xl border-2 border-red-500 bg-white p-2 text-xs font-black shadow">
               ⌖ READY_FOR_DEMO
