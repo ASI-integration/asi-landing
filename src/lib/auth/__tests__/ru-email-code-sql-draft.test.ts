@@ -1,0 +1,60 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { describe, expect, it } from 'vitest';
+
+// This guards against source-edit corruption only. It is NOT a PostgreSQL parse,
+// concurrency test, migration acceptance, privilege test, or deployed schema.
+const sql = readFileSync(
+  resolve(process.cwd(), 'docs/operations/ru-email-code-auth-sql-draft.sql'),
+  'utf8',
+);
+const count = (pattern: RegExp): number => [...sql.matchAll(pattern)].length;
+
+describe('RU auth SQL draft structural integrity (no database access)', () => {
+  it('keeps each RPC declaration exactly once with complete dollar quoting', () => {
+    for (const name of [
+      'ru_auth_issue_email_code', 'ru_auth_activate_email_code',
+      'ru_auth_consume_email_code', 'ru_auth_revoke_email_code',
+    ]) {
+      expect(count(new RegExp('CREATE OR REPLACE FUNCTION public\\.' + name + '\\(', 'g'))).toBe(1);
+    }
+    expect(count(/^AS \$\$$/gm)).toBe(4);
+    expect(count(/^\$\$;$/gm)).toBe(4);
+    expect(count(/^RETURNS BOOLEAN LANGUAGE plpgsql SECURITY INVOKER SET search_path = ''$/gm)).toBe(3);
+    expect(count(/^RETURNS VOID LANGUAGE sql SECURITY INVOKER SET search_path = ''$/gm)).toBe(1);
+    expect(sql).not.toMatch(/^AS \$$/m);
+    expect(sql).not.toMatch(/^\$$/m);
+  });
+
+  it('keeps one challenge, one IP counter and one subject-link table', () => {
+    for (const name of [
+      'ru_auth_email_challenges', 'ru_auth_ip_limits', 'ru_auth_yandex_links',
+    ]) {
+      expect(count(new RegExp('CREATE TABLE IF NOT EXISTS public\\.' + name + '\\s*\\(', 'g'))).toBe(1);
+      expect(sql).toContain('ALTER TABLE public.' + name + ' ENABLE ROW LEVEL SECURITY');
+      expect(sql).toMatch(new RegExp('REVOKE ALL ON public\\.' + name + ' FROM PUBLIC, anon, authenticated'));
+    }
+  });
+
+  it('requires delivery activation of the exact pending HMAC, not just reservation', () => {
+    const activation = sql.split('CREATE OR REPLACE FUNCTION public.ru_auth_activate_email_code')[1]
+      ?.split('CREATE OR REPLACE FUNCTION public.ru_auth_consume_email_code')[0] ?? '';
+    expect(activation).toContain('p_hash IS NULL');
+    expect(activation).toContain('code_hash = p_hash AND delivered_at IS NULL');
+    expect(activation).toContain('failed_attempts = 0 AND expires_at > clock_timestamp()');
+    const consume = sql.split('CREATE OR REPLACE FUNCTION public.ru_auth_consume_email_code')[1]
+      ?.split('CREATE OR REPLACE FUNCTION public.ru_auth_revoke_email_code')[0] ?? '';
+    expect(consume).toContain('row_value.delivered_at IS NULL');
+    expect(consume).toContain('FOR UPDATE');
+    expect(consume).toContain('SET expires_at=clock_timestamp(), failed_attempts=5');
+    for (const name of [
+      'ru_auth_issue_email_code(TEXT,TEXT,TEXT)',
+      'ru_auth_activate_email_code(TEXT,TEXT)',
+      'ru_auth_consume_email_code(TEXT,TEXT)',
+      'ru_auth_revoke_email_code(TEXT,TEXT)',
+    ]) {
+      expect(sql).toContain('REVOKE ALL ON FUNCTION public.' + name + ' FROM PUBLIC,anon,authenticated');
+      expect(sql).toContain('GRANT EXECUTE ON FUNCTION public.' + name + ' TO service_role');
+    }
+  });
+});
