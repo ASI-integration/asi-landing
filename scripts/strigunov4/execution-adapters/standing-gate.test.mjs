@@ -10,23 +10,40 @@ import {bindTask,inspectPublisherLifecycleEvidence} from './github-publisher.mjs
 import {inspectStandingTransaction} from './state.mjs';
 import {createPublisherTransport} from './publisher-transport.mjs';
 import {createGitHubReader} from './github-readonly.mjs';
-import {createStandingRequestPreview} from './standing-request-guard.mjs';
-import {ENVELOPE_SECURITY_REQUIRED,inspectProtectedRepositorySecurity} from '../../agent-os/check-demo-release.mjs';
+import {createStandingRequestPreview,inspectStandingAdmissionReceipt} from './standing-request-guard.mjs';
+import {ENVELOPE_SECURITY_REQUIRED,inspectProtectedRepositorySecurity,checkPr,main} from '../../agent-os/check-demo-release.mjs';
 const hash=x=>createHash('sha256').update(x).digest('hex');
 const key=()=>{const pair=generateKeyPairSync('ed25519');return {...pair,pem:pair.publicKey.export({type:'spki',format:'pem'}),digest:hash(pair.publicKey.export({type:'spki',format:'der'}))};};
 const signed=(value,k)=>{const payload=JSON.stringify(value);return {payload,signature:sign(null,Buffer.from(payload),k.privateKey).toString('base64')};};
 const descriptor=(method='GET',route='branches/main')=>{const payloadSha256=hash(method==='GET'?'':'{}');return {method,route,payloadSha256,requestSha256:hash(JSON.stringify({method,route,payloadSha256}))};};
-async function setup(t,{wrongLocal=false,forgedLocal=false,lateRevocation=false,rollbackRevocation=false,pendingCI=true,sourcePending=false,resumeSame=false,gateMode=null,skipLocal=false,wrongReviewer=false,gateBudget=false,gateFailure=false,lateGateClock=Infinity}={}){
+async function setup(t,{adoptionMode=null,wrongLocal=false,forgedLocal=false,lateRevocation=false,rollbackRevocation=false,pendingCI=true,sourcePending=false,resumeSame=false,gateMode=null,skipLocal=false,wrongReviewer=false,gateBudget=false,gateFailure=false,lateGateClock=Infinity}={}){
  const original=globalThis.fetch;t.after(()=>{globalThis.fetch=original;});
- const f=await fixture(t,{realGitObjects:true,ci:pendingCI?'pending':'success',seedFiles:Object.fromEntries(ENVELOPE_SECURITY_REQUIRED.map(p=>[p,'inert protected '+p+'\n']))});
+ const seedFiles=Object.fromEntries(ENVELOPE_SECURITY_REQUIRED.map(p=>[p,'inert protected '+p+'\n']));
+ let release;
+ if(adoptionMode){
+  release=JSON.parse(await fs.readFile(new URL('../../../docs/agent-os/releases/strigunov4-demo.json',import.meta.url),'utf8'));
+  release.stages.forEach((s,i)=>{s.status=i?'NOT_STARTED':'IN_PROGRESS';s.proof=[];delete s.acceptanceSha;s.files=['scripts/strigunov4/fixture_stage_'+i+'_a.py','scripts/strigunov4/fixture_stage_'+i+'_b.py'];s.plannedFiles=[];});
+  release.stages[0].plannedFiles=release.stages[0].plannedFiles.filter(p=>p!==target);release.stages[0].files.push(target);
+  for(const s of release.stages)for(const p of s.files)if(!Object.hasOwn(seedFiles,p))seedFiles[p]='inert fixture\n';
+  seedFiles['docs/agent-os/releases/strigunov4-demo.json']=JSON.stringify(release);
+ }
+ const f=await fixture(t,{realGitObjects:true,ci:pendingCI?'pending':'success',seedFiles});
  const now={value:1000000},source={pending:sourcePending},owner=key(),verifier=key(),comparison={repository:'ASI-integration/asi-landing',repoRoot:path.join(f.base,'seed'),baseSha:f.sha,headSha:f.sha};
  const security=inspectProtectedRepositorySecurity(comparison);assert.equal(security.status,'PROTECTED_SECURITY_VERIFIED');
  const envelope={schema:'asi.release-envelope.proposal.v1',repo:comparison.repository,environment:'beget-staging',target:'pqukibofpo',appId:5514822,installationId:176281163,policyDigest:security.policyDigest,securityDigest:security.securityDigest,notBefore:now.value-1000,expiresAt:now.value+600000,action:'source',allowedPaths:[target],maxOperations:256,maxRequests:gateBudget||256,maxWrites:8,paidApiUsd:0,verifierKeySha256:verifier.digest};
  const signedEnvelope=signed(envelope,owner),envelopeDigest=hash(signedEnvelope.payload);
- const manifest={schema:'asi.release-envelope-revocations.v1',repository:envelope.repo,environment:envelope.environment,target:envelope.target,issuerKeySha256:owner.digest,verifierKeySha256:verifier.digest,sequence:1,issuedAt:now.value-1000,expiresAt:envelope.expiresAt,revokedEnvelopeDigests:[]};
+ const adoption={schema:'asi.standing-adoption.v1',ownerId:207600140,mode:'ROUTINE_SOURCE_ADMISSION_ONLY',repo:envelope.repo,environment:envelope.environment,target:envelope.target,envelopeDigest,securityDigest:security.securityDigest,policyDigest:security.policyDigest,appId:envelope.appId,installationId:envelope.installationId,issuerKeySha256:owner.digest,verifierKeySha256:verifier.digest,notBefore:envelope.notBefore,expiresAt:envelope.expiresAt};
+ if(adoptionMode==='identity')adoption.appId++;
+ if(adoptionMode==='target')adoption.target='other';
+ if(adoptionMode==='security')adoption.securityDigest='a'.repeat(64);
+ if(adoptionMode==='expired')adoption.expiresAt=now.value-1;
+ const adoptionSigned=signed(adoption,adoptionMode==='signer'?verifier:owner),admissions=[];
+ const manifest={schema:'asi.release-envelope-revocations.v1',repository:envelope.repo,environment:envelope.environment,target:envelope.target,issuerKeySha256:owner.digest,verifierKeySha256:verifier.digest,sequence:1,issuedAt:now.value-1000,expiresAt:adoptionMode==='consume-expiry'?now.value+1000:envelope.expiresAt,revokedEnvelopeDigests:[]};
  const revocation=signed(manifest,owner),prior={sequence:1,manifestDigest:hash(revocation.payload),revokedEnvelopeDigests:[]};
  let revoked=false,selected=0,newRevocation=false;const records=[],phases=[],previews=[],providerCalls=[],gateResults=[],gateCalls=[],gateClockCounts=[],gateEvents=[];let gateActive=false,gateClockCount=0;
- const protectedReader=async p=>p.endsWith('owner-public.pem')?owner.pem:p.endsWith('standing-verifier-public.pem')?verifier.pem:
+ let adoptionReads=0;
+ const adoptionBytes=()=>{if(++adoptionReads===2&&adoptionMode==='late-expiry')now.value=envelope.expiresAt+1;return JSON.stringify(adoptionSigned);};
+ const protectedReader=async p=>p.endsWith('standing-adoption.json')?adoptionBytes():p.endsWith('owner-public.pem')?owner.pem:p.endsWith('standing-verifier-public.pem')?verifier.pem:
   JSON.stringify(revoked?signed({...manifest,sequence:2,revokedEnvelopeDigests:[envelopeDigest]},owner):newRevocation?signed({...manifest,sequence:2},owner):revocation);
  const expectedTrust={repository:envelope.repo,environment:envelope.environment,target:envelope.target,issuerKeySha256:owner.digest,verifierKeySha256:verifier.digest,envelopeDigest};
  const deltas=[];
@@ -40,7 +57,7 @@ async function setup(t,{wrongLocal=false,forgedLocal=false,lateRevocation=false,
   const lease=inspectStandingTransaction(transaction);if(!lease.ledger.standingRevocationCheckpoint)lease.ledger.standingRevocationCheckpoint=prior;
   const request={action:'source',repo:envelope.repo,environment:envelope.environment,target:envelope.target,appId:envelope.appId,installationId:envelope.installationId,securityDigest:envelope.securityDigest,changedPaths:[target],headSha:null,baseSha:f.sha,artifactDigest,taskId:task.id,taskBinding:bindTask(task),branch:task.branch};
   const witness=(phase,event)=>({schema:'asi.release-envelope-publisher-evidence.proposal.v1',phase,envelopeDigest,policyDigest:envelope.policyDigest,revocation:'NOT_REVOKED',observedAt:now.value,baseSha:f.sha,headSha:event?.headSha??null,artifactDigest,changedPaths:[target],taskId:task.id,taskBinding:request.taskBinding,branch:request.branch,ci:phase==='EXACT_HEAD_VERIFIED'?'SUCCESS':null,independentReview:phase==='EXACT_HEAD_VERIFIED'?'PASS':null,branchProtection:'PASS',usedOperations:0,paidApiUsd:0,claim:'UNCLAIMED',externalResult:'NONE',...(phase==='LOCAL_DELTA_VERIFIED'?{localChecks:'PASS',independentDeltaReview:'PASS',reviewEvidenceId:event.reviewEvidenceId}:{})});
-  const preview=createStandingRequestPreview({store,transaction,signedEnvelope,signedEvidence:signed(witness('ADMISSION_READ'),verifier),request,comparison,providerExpected:{independentReviewerId:1234},expectedTrust,clock:()=>{if(gateActive&&++gateClockCount===lateGateClock)now.value=envelope.expiresAt+1;return now.value;},protectedReader,isolatedPreview:true,publisherPhases:true});previews.push(preview);
+  const preview=createStandingRequestPreview({store,transaction,signedEnvelope,signedEvidence:signed(witness('ADMISSION_READ'),verifier),request,comparison,providerExpected:{independentReviewerId:1234},expectedTrust,clock:()=>{if(gateActive&&++gateClockCount===lateGateClock)now.value=envelope.expiresAt+1;return now.value;},protectedReader,isolatedPreview:true,publisherPhases:true,expectedAdoptionDigest:adoptionMode==='missing'?null:adoptionMode==='pin'?'a'.repeat(64):hash(adoptionSigned.payload)});previews.push(preview);
   // TEST ONLY: this wrapper executes loopback fixture effects under makeLoop's
   // explicit synthetic v0 grant. Production preview.beforeRequest always refuses.
   const runGate=async event=>{
@@ -83,6 +100,21 @@ async function setup(t,{wrongLocal=false,forgedLocal=false,lateRevocation=false,
         return new Response(JSON.stringify(value),{headers:{'Content-Type':'application/json'}});
       }});
     gateActive=false;gateClockCounts.push(gateClockCount);gateResults.push(gate);
+    if(adoptionMode){
+      const admission=await preview.readAdoptedSourceAdmission(adoptionMode==='copied'?{...gate}:gate);
+      const contract=release;
+      const args={contract,changed:[target],prNumber:event.pr,headSha:event.headSha,baseSha:f.sha,prBody:'Release-Stage: S4-G1\nRelease-Mode: implementation',baseHasContract:true,standingAdmission:admission};
+      if(adoptionMode==='consume-expiry')now.value+=2000;
+      let status;try{status=checkPr(args).status;}catch(e){status=e.message;}
+      let mainStatus;
+      const env={GITHUB_EVENT_NAME:process.env.GITHUB_EVENT_NAME,GITHUB_EVENT_PATH:process.env.GITHUB_EVENT_PATH};
+      const eventPath=path.join(f.base,'admission-event.json');
+      await fs.writeFile(eventPath,JSON.stringify({repository:{full_name:envelope.repo},number:event.pr,pull_request:{number:event.pr,body:args.prBody,base:{ref:'main',sha:f.sha},head:{sha:event.headSha,repo:{full_name:envelope.repo}}}}));
+      process.env.GITHUB_EVENT_NAME='pull_request_target';process.env.GITHUB_EVENT_PATH=eventPath;
+      try{mainStatus=(await main({ci:true,repoRoot:comparison.repoRoot,standingAdmission:admission})).status;}catch(e){mainStatus=e.message;}
+      finally{for(const [k,v] of Object.entries(env)){if(v===undefined)delete process.env[k];else process.env[k]=v;}}
+      admissions.push({admission,args,status,mainStatus});
+    }
     if(gateMode==='remote-change')f.pulls.get(event.pr).head.sha='f'.repeat(40);
     return gate; // Proposal only; final CI remains pending.
   };
@@ -92,6 +124,7 @@ async function setup(t,{wrongLocal=false,forgedLocal=false,lateRevocation=false,
   let snapshots=0;
   return {remote,reader,inspectGate:runGate,fetchSnapshot:async()=>{if(snapshots++===0)await reader.get('branches/main');return structuredClone(f.snapshot);},observeLifecycle:async event=>{
    if(skipLocal&&event.phase==='LOCAL_DELTA_VERIFIED')return true;
+   if(adoptionMode==='two-head'&&event.phase==='EXACT_HEAD_VERIFIED')return true;
    assert.notEqual(event.phase,'EXACT_HEAD_VERIFIED','PRE_GATE must not await final CI evidence');
    const value=witness(event.phase,event);if(wrongLocal&&event.phase==='LOCAL_DELTA_VERIFIED')value.taskBinding='a'.repeat(64);
    if(lateRevocation&&event.phase==='LOCAL_DELTA_VERIFIED')revoked=true;
@@ -100,7 +133,7 @@ async function setup(t,{wrongLocal=false,forgedLocal=false,lateRevocation=false,
    phases.push(result);if(rollbackRevocation)newRevocation=false;return result.status==='PROPOSAL_ELIGIBLE';
   }};
  }});
- return {f,loop,now,source,records,phases,previews,providerCalls,gateResults,gateCalls,gateClockCounts,gateEvents,signedEnvelope,envelopeDigest};
+ return {f,loop,now,source,records,phases,previews,providerCalls,gateResults,gateCalls,gateClockCounts,gateEvents,signedEnvelope,envelopeDigest,admissions};
 }
 
 // Synthetic provider and v0 fixture only; actual Publisher localPhase, native
@@ -184,4 +217,42 @@ test('authenticated pending source preserves WAITING and resumes with no write r
 test('timed-out gate revokes its native event before late continuation',async t=>{
  const x=await setup(t,{gateMode:'timeout'});assert.equal((await x.loop.poll({execute:true})).mode,'FAILED_LOCKED');
  await new Promise(r=>setTimeout(r,1600));assert.equal(x.gateCalls.length,0);assert.equal(x.gateEvents.length,1);assert.deepEqual(x.gateClockCounts,[-1]);
+});
+
+// Source-only signed adoption fixture. Production remains unconfigured/v0.
+test('native signed admission is routine-only, noncopyable and expires with callback',async t=>{
+ const x=await setup(t,{adoptionMode:'valid'});await x.loop.poll({execute:true});
+ const a=x.admissions[0];assert.equal(a.status,'STANDING_SOURCE_ADMISSION_VERIFIED',JSON.stringify(a));
+ assert.equal(a.mainStatus,'STANDING_SOURCE_ADMISSION_VERIFIED',JSON.stringify(a));
+ assert.equal(a.admission.authorized,false);
+ assert.throws(()=>checkPr({...a.args,standingAdmission:{...a.admission}}),/STANDING_ADMISSION_UNTRUSTED/);
+ assert.throws(()=>checkPr(a.args),/PUBLICATION_EVIDENCE_UNTRUSTED/);
+ assert.throws(()=>checkPr({...a.args,changed:['AGENTS.md']}),/GOVERNANCE_CHANGE_NEEDS_VERIFIED_OWNER_ATTESTATION/);
+ assert.throws(()=>checkPr({...a.args,changed:['src/outside.ts']}),/PR_HAS_OUT_OF_STAGE_FILES/);
+ const protectedPath='scripts/strigunov4/execution-adapters/example.mjs',contract=structuredClone(a.args.contract);contract.stages[0].files.push(protectedPath);
+ assert.throws(()=>checkPr({...a.args,contract,changed:[protectedPath]}),/STANDING_PROTECTED_CHANGE/);
+ assert.equal(checkPr({...a.args,standingAdmission:undefined}).status,'CURRENT_MILESTONE_SCOPED');
+});
+test('missing tampered expired signer or executor adoption blocks native admission',async t=>{
+ for(const mode of ['missing','pin','expired','signer','identity','target','security','late-expiry','copied']){
+  const x=await setup(t,{adoptionMode:mode});await x.loop.poll({execute:true});
+  assert.equal(x.admissions[0].admission.status,'BLOCKED',mode);
+ }
+});
+
+test('two native published HEADs reuse one pinned adoption without owner comments',async t=>{
+ const x=await setup(t,{adoptionMode:'two-head',pendingCI:false});
+ assert.equal((await x.loop.poll({execute:true})).mode,'REPORT_READY');
+ x.now.value+=180000;x.f.state.ci='pending';
+ const second=await x.loop.poll({execute:true});assert.equal(second.mode,'WAITING',JSON.stringify({second,admissions:x.admissions.map(a=>({status:a.status,main:a.mainStatus})),gates:x.gateResults}));
+ assert.equal(x.admissions.length,2);
+ assert(x.admissions.every(a=>a.status==='STANDING_SOURCE_ADMISSION_VERIFIED'&&a.mainStatus==='STANDING_SOURCE_ADMISSION_VERIFIED'));
+ assert.notEqual(x.admissions[0].args.headSha,x.admissions[1].args.headSha);
+});
+
+test('native admission consumption refuses expired signed revocation before envelope expiry',async t=>{
+ const x=await setup(t,{adoptionMode:'consume-expiry'});await x.loop.poll({execute:true});
+ assert.equal(x.admissions[0].admission.status,'STANDING_SOURCE_ADMISSION_VERIFIED');
+ assert.equal(x.admissions[0].status,'STANDING_ADMISSION_STALE');
+ assert.equal(x.admissions[0].mainStatus,'STANDING_ADMISSION_STALE');
 });

@@ -4,12 +4,17 @@
  */
 import path from 'node:path';
 import {inspectStandingTransaction,atomicJson,digest,must,LIVE_ROOT} from './state.mjs';
-import {ENGINE_ROOT,BEGET,verifySignedPayload} from './host-authority.mjs';
+import {ENGINE_ROOT,BEGET,verifySignedPayload,AUTHORITY_DIR,rootOwned} from './host-authority.mjs';
 import {isCompiledGitHubRead} from './github-readonly.mjs';
 import {inspectPublisherLifecycleEvidence} from './github-publisher.mjs';
 import {createStandingPublisherBudget} from './standing-budget.mjs';
 import {readProtectedStandingTrustSnapshot} from '../../agent-os/release-envelope-trust-roots.mjs';
 import {readAuthenticatedProviderSnapshot,inspectAuthenticatedProviderSnapshot,assessRepositoryReleaseEnvelopeProposal,assessPublisherReleaseEnvelopeProposal,readAndAssessProtectedGateProposal} from '../../agent-os/check-demo-release.mjs';
+const gateReceipts=new WeakMap(),admissionReceipts=new WeakMap();
+export function inspectStandingAdmissionReceipt(receipt,request){
+  const check=admissionReceipts.get(receipt);must(check,'STANDING_ADMISSION_UNTRUSTED');
+  return check(request);
+}
 const blocked=reason=>Object.freeze({status:'BLOCKED',reason,authorized:false});
 const h64=x=>typeof x==='string'&&/^[a-f0-9]{64}$/.test(x);
 const providerFields=['repository','number','baseSha','headSha','independentReviewerId'];
@@ -34,8 +39,9 @@ export function isIsolatedStandingPreviewRoot(root){
 /** Isolated preview only. Never attach reserve() to transport: its result is NOT true. */
 export function createStandingRequestPreview({store,transaction,signedEnvelope,signedEvidence,
   request,comparison,providerObservation,providerExpected,expectedTrust,clock=Date.now,protectedReader,
-  isolatedPreview=false,publisherPhases=false}={}) {
+  isolatedPreview=false,publisherPhases=false,expectedAdoptionDigest=null}={}) {
   const initial=inspectStandingTransaction(transaction);
+  must(expectedAdoptionDigest===null||h64(expectedAdoptionDigest),'STANDING_ADOPTION_PIN');
   must(typeof publisherPhases==='boolean','STANDING_PHASE_MODE');
   must(isolatedPreview===true&&isIsolatedStandingPreviewRoot(initial.root),
   'STANDING_ISOLATED_PREVIEW_REQUIRED');
@@ -331,8 +337,57 @@ export function createStandingRequestPreview({store,transaction,signedEnvelope,s
           current.taskSha===lease.taskSha,'STANDING_PHASE_CHANGED');
         inspectPublisherLifecycleEvidence(native,transaction);
         inspectPublisherLifecycleEvidence(gateNative,transaction);
-        return dataCopy(result);
+        const receipt=Object.freeze(dataCopy(result));
+        if(result.status==='PROPOSAL_ELIGIBLE')gateReceipts.set(receipt,{owner:input,event:gateNative,
+          expected:dataCopy(e),revocation:JSON.stringify(ledger.standingRevocationCheckpoint)});
+        return receipt;
       }catch{poisoned=true;return blocked('STANDING_GATE_REJECTED');}
+      finally{bootstrapActive=false;}
+    },
+    async readAdoptedSourceAdmission(gateReceipt){
+      if(poisoned||bootstrapActive||phaseChanging||pending>0)return blocked('STANDING_PREVIEW_LOCKED');
+      bootstrapActive=true;
+      try{
+        const gate=gateReceipts.get(gateReceipt);
+        must(expectedAdoptionDigest&&gate?.owner===input,'STANDING_ADOPTION_CONTEXT');
+        inspectPublisherLifecycleEvidence(gate.event,transaction);
+        const read=protectedReader||rootOwned;
+        const file=path.join(AUTHORITY_DIR,'standing-adoption.json');
+        const raw=await read(file,65536),signed=dataCopy(JSON.parse(raw));
+        must(digest(signed.payload)===expectedAdoptionDigest,'STANDING_ADOPTION_PIN');
+        const trust=await readTrust(),a=verifySignedPayload(signed,trust.issuerPublicKey);
+        const envelope=JSON.parse(input.signedEnvelope.payload);
+        must(JSON.stringify(a)===signed.payload&&a.schema==='asi.standing-adoption.v1'&&
+          a.environment===envelope.environment&&a.target===envelope.target&&
+          a.ownerId===207600140&&a.mode==='ROUTINE_SOURCE_ADMISSION_ONLY'&&a.repo===input.request.repo&&
+          a.envelopeDigest===trust.envelopeDigest&&a.securityDigest===envelope.securityDigest&&
+          a.policyDigest===envelope.policyDigest&&a.appId===envelope.appId&&a.installationId===envelope.installationId&&
+          a.issuerKeySha256===trust.issuerKeySha256&&a.verifierKeySha256===trust.verifierKeySha256&&
+          Number.isSafeInteger(a.notBefore)&&Number.isSafeInteger(a.expiresAt)&&
+          a.notBefore>=envelope.notBefore&&a.expiresAt<=envelope.expiresAt&&
+          a.expiresAt>a.notBefore&&a.expiresAt-a.notBefore<=14*86400000,'STANDING_ADOPTION_BINDING');
+        must(await read(file,65536)===raw,'STANDING_ADOPTION_CHANGED');
+        const finalTrust=await readTrust();
+        must(finalTrust.envelopeDigest===trust.envelopeDigest&&finalTrust.issuerKeySha256===trust.issuerKeySha256&&
+          finalTrust.verifierKeySha256===trust.verifierKeySha256&&
+          JSON.stringify(finalTrust.revocationCheckpoint)===gate.revocation,'STANDING_ADOPTION_TRUST_CHANGED');
+        const budgetState=JSON.stringify(ledger.standingDelegationBudget);
+        const check=request=>{
+          const at=clock();inspectPublisherLifecycleEvidence(gate.event,transaction);
+          must(!poisoned&&at>=a.notBefore&&at<a.expiresAt&&
+            at>=finalTrust.observedAt&&at<finalTrust.revocationExpiresAt&&
+            at>=gateReceipt.providerReceipt.observedAt&&at-gateReceipt.providerReceipt.observedAt<=60000&&
+            JSON.stringify(ledger.standingRevocationCheckpoint)===gate.revocation&&
+            JSON.stringify(ledger.standingDelegationBudget)===budgetState,'STANDING_ADMISSION_STALE');
+          must(request.prNumber===gate.expected.number&&request.headSha===gate.expected.headSha&&
+            request.baseSha===gate.expected.baseSha&&
+            JSON.stringify(request.changed)===JSON.stringify(input.request.changedPaths),'STANDING_ADMISSION_REQUEST');
+          return {status:'STANDING_SOURCE_ADMISSION_VERIFIED',authorized:false,adoptionDigest:expectedAdoptionDigest};
+        };
+        check({prNumber:gate.expected.number,headSha:gate.expected.headSha,baseSha:gate.expected.baseSha,changed:input.request.changedPaths});
+        const receipt=Object.freeze({status:'STANDING_SOURCE_ADMISSION_VERIFIED',authorized:false});
+        admissionReceipts.set(receipt,check);return receipt;
+      }catch{poisoned=true;return blocked('STANDING_ADOPTION_REJECTED');}
       finally{bootstrapActive=false;}
     },
     async readProvider({token,fetchImpl,publisherEvidence,expected}={}){

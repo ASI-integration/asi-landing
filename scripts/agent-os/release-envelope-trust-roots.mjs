@@ -193,7 +193,7 @@ export async function readProtectedStandingTrustSnapshot({expected, now=Date.now
       issuerPublicKey:issuerPem, verifierPublicKey:verifierPem,
       issuerKeySha256:issuer.digest, verifierKeySha256:verifier.digest,
       revocationSequence:m.sequence, revocationManifestDigest:manifestDigest,
-      observedAt:completedAt, envelopeDigest:pinned.envelopeDigest,
+      observedAt:completedAt, revocationExpiresAt:m.expiresAt, envelopeDigest:pinned.envelopeDigest,
       // Candidate for atomic persistence under the EXISTING Publisher lock.
       // This reader never updates the ledger and never grants authority.
       revocationCheckpoint:Object.freeze({

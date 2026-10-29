@@ -5,6 +5,7 @@
  * This gate does not grant permission for merge, staging or server mutations.
  */
 import fs from 'node:fs';
+import {inspectStandingAdmissionReceipt} from '../strigunov4/execution-adapters/standing-request-guard.mjs';
 import { readProtectedStandingTrustSnapshot } from './release-envelope-trust-roots.mjs';
 import { createHash, createPublicKey } from 'node:crypto';
 import { verifySignedPayload } from '../strigunov4/execution-adapters/host-authority.mjs';
@@ -1007,7 +1008,7 @@ export function inspectProtectedRepositorySecurity({repoRoot, baseSha, headSha} 
 }
 
 export function checkPr({ contract, changed, prNumber, prBody, headSha,
-                          baseHasContract, ownerApproval = false, priorDiagnosticCount = 0, verifiedRuns = new Set() }) {
+                          baseHasContract, ownerApproval = false, standingAdmission, baseSha, priorDiagnosticCount = 0, verifiedRuns = new Set() }) {
   must(Number.isSafeInteger(prNumber) && prNumber > 0 && SHA.test(headSha), 'PR_ID');
   must(Array.isArray(changed) && changed.length > 0 &&
        changed.every(p => typeof p === 'string' && !p.startsWith('/') && !p.includes('..')),
@@ -1050,6 +1051,11 @@ export function checkPr({ contract, changed, prNumber, prBody, headSha,
   if (!changed.every(p => allowed.has(p))) {
     must(ownerApproval, 'PR_HAS_OUT_OF_STAGE_FILES');
     return { status: 'OWNER_ATTESTED_RELEASE_EXCEPTION', stage: f.stage };
+  }
+  if(standingAdmission!==undefined){
+    must(!changed.some(envelopeProtectedPath),'STANDING_PROTECTED_CHANGE');
+    const receipt=inspectStandingAdmissionReceipt(standingAdmission,{prNumber,headSha,baseSha,changed});
+    return {...receipt,stage:f.stage,mode:f.mode};
   }
   return { status: 'CURRENT_MILESTONE_SCOPED', stage: f.stage, mode: f.mode };
 }
@@ -1196,7 +1202,7 @@ export async function main(options = {}) {
     ? await previousDiagnostics(parsed.stage, pr.number, process.env.GITHUB_TOKEN) : 0;
   return { ...checkPr({ contract: release, changed, prNumber: pr.number,
     prBody: pr.body || '', headSha: pr.head.sha, baseHasContract, ownerApproval,
-    priorDiagnosticCount, verifiedRuns }),
+    priorDiagnosticCount, verifiedRuns,baseSha:pr.base.sha,standingAdmission:options.standingAdmission }),
     nextStage: status.nextStage, changedFiles: changed.length };
 }
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
