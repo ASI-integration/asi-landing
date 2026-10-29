@@ -16,6 +16,7 @@ import stat
 import subprocess
 import tempfile
 import time
+import urllib.request
 
 HOST='pqukibofpo'
 UNIT='asi-strigunov-agent.service'
@@ -126,6 +127,50 @@ def fence_preclaim(f, activation):
         f.get('verifiedBy')=='protected-install-review' and type(f.get('deniedPullRequests')) is list and
         531 in f['deniedPullRequests'],'OLD_WRITER_FENCING_UNVERIFIED')
 
+# Single-owner bootstrap is deliberately distinct from an independent-human review.
+# Re-read GitHub CI using HTTPS; owner-supplied run IDs or JSON flags are not evidence.
+def verified_owner_ci_run(run_id, workflow_id, sha, event):
+    require(type(run_id) is int and run_id>0,'OWNER_CI_RUN_ID')
+    url='https://api.github.com/repos/ASI-integration/asi-landing/actions/runs/'+str(run_id)
+    req=urllib.request.Request(url,headers={
+        'Accept':'application/vnd.github+json',
+        'X-GitHub-Api-Version':'2022-11-28',
+        'User-Agent':'asi-beget-exact-release-verifier'})
+    try:
+        with urllib.request.urlopen(req,timeout=12) as response:
+            require(response.status==200,'OWNER_CI_PROVIDER_UNVERIFIED')
+            raw=response.read(200001)
+        require(len(raw)<=200000,'OWNER_CI_PROVIDER_UNVERIFIED')
+        run=json.loads(raw)
+    except Exception:
+        raise Block('OWNER_CI_PROVIDER_UNVERIFIED')
+    require(type(run) is dict and run.get('id')==run_id and
+            run.get('workflow_id')==workflow_id and
+            run.get('event')==event and run.get('head_sha')==sha and
+            run.get('status')=='completed' and run.get('conclusion')=='success' and
+            type(run.get('repository')) is dict and
+            run['repository'].get('full_name')=='ASI-integration/asi-landing',
+            'OWNER_CI_EXACT_HEAD_FAILED')
+
+def source_review_preclaim(review,manifest):
+    require(type(review) is dict and review.get('sourceSha')==manifest['sourceSha'] and
+            review.get('result')=='PASS' and
+            type(review.get('findings')) is int and review['findings']==0,
+            'SOURCE_REVIEW_NOT_PROVEN')
+    if review.get('mode')=='OWNER_VERIFIED_CI':
+        require(type(review.get('ownerId')) is int and review['ownerId']==207600140 and
+                review.get('scope')=='BEGET_G2_TWO_DRAFT_WITNESSES' and
+                review.get('independent') is False and
+                type(review.get('validationRunId')) is int and
+                type(review.get('governanceRunId')) is int and
+                review.get('validationRunId')!=review.get('governanceRunId'),
+                'OWNER_CI_SCOPE')
+        verified_owner_ci_run(review['validationRunId'],311380800,manifest['sourceSha'],'pull_request')
+        verified_owner_ci_run(review['governanceRunId'],390653294,manifest['sourceSha'],'pull_request_target')
+    else:
+        require(review.get('independent') is True and review.get('mode') in (None,'INDEPENDENT_HUMAN'),
+                'SOURCE_REVIEW_NOT_PROVEN')
+
 def apply(package,node,bwrap):
     raw,m,files=prepared(package)
     require(os.geteuid()==0 and os.uname().nodename==HOST,'PROTECTED_HOST_REQUIRED')
@@ -147,8 +192,7 @@ def apply(package,node,bwrap):
         native.get('bwrapSha256')==BWRAP_SHA and native.get('result')=='PASS' and
         native.get('networkDenied') is True and native.get('authorityInaccessible') is True,'NATIVE_SANDBOX_NOT_PROVEN')
     review=json.loads(regular_bytes(AUTH/'source-review.json',root=True))
-    require(review.get('sourceSha')==m['sourceSha'] and review.get('result')=='PASS' and
-        review.get('independent') is True and review.get('findings')==0,'SOURCE_REVIEW_NOT_PROVEN')
+    source_review_preclaim(review,m)
     activation=signed('activation.json',public)
     activation_preclaim(activation, now)
     authority_traversal()
