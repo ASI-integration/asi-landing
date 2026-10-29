@@ -38,7 +38,9 @@ for (const [title, edit, reason] of [
   ['stale observation', x => { x.evidence.observedAt = 999; }, 'ENVELOPE_TRUST'],
 ]) test(title, () => { const x = fixture(); edit(x); assert.deepEqual(assess(x), {status:'BLOCKED', reason, authorized:false}); });
 test('protected and traversal paths cannot be authorized by broad caller allowlist', () => {
-  for (const path of ['docs/agent-os/AUTONOMY_POLICY.md', '.github/workflows/x.yml', 'secrets/a.pem', 'scripts/../x', '/abs', 'scripts//x']) {
+  for (const path of ['docs/agent-os/AUTONOMY_POLICY.md', '.github/workflows/x.yml', 'secrets/a.pem', 'scripts/../x', '/abs', 'scripts//x',
+    '.coderabbit.yaml', '.eslintrc.json', 'tsconfig.typecheck.json',
+    'scripts/strigunov4/ASI-STRIGUNOV4-RUNNER-BRIDGE-20261020.mjs']) {
     const x = fixture(); x.envelope.allowedPaths = x.request.changedPaths = [path];
     assert.equal(assess(x).reason, 'ENVELOPE_PROTECTED_CHANGE');
   }

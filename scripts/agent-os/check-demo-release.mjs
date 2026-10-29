@@ -27,9 +27,13 @@ const OWNER_ID = 207600140;
 const SHA = /^[a-f0-9]{40}$/;
 export const ENVELOPE_SECURITY_REQUIRED = Object.freeze([
   'AGENTS.md', 'package.json', 'package-lock.json', CONTRACT,
+  '.coderabbit.yaml', '.eslintrc.json', 'tsconfig.json', 'tsconfig.typecheck.json',
+  'next.config.js',
   'docs/agent-os/AUTONOMY_POLICY.md', 'docs/agent-os/OWNER_GATE.md',
   'docs/agent-os/RELEASE-GOVERNANCE.md', 'scripts/agent-os/check-demo-release.mjs',
   '.github/workflows/pr-validation.yml', '.github/workflows/asi-release-governance.yml',
+  ...['RUNNER-BRIDGE', 'MULTIJOB', 'ORCHESTRATOR-CANDIDATE'].map(name =>
+    'scripts/strigunov4/ASI-STRIGUNOV4-' + name + '-20261020.mjs'),
   ...['host-authority', 'host-runtime', 'state', 'github-publisher', 'publisher-transport',
     'ci-reader', 'coderabbit-analyzer', 'change-preparer'].map(name =>
     'scripts/strigunov4/execution-adapters/' + name + '.mjs'),
@@ -276,17 +280,18 @@ export function inspectAuthenticatedProviderSnapshot({pr, runs, reviews, expecte
     const matches = runs.filter(run =>
       run.workflow_id === rule.workflow_id && run.event === rule.event &&
       run.head_sha === rule.head_sha &&
-      run.repository?.full_name === REPO &&
-      Array.isArray(run.pull_requests) &&
-      run.pull_requests.some(p => p.number === expected.number &&
-        p.head?.sha === expected.headSha &&
-        p.base?.sha === expected.baseSha));
+      run.repository?.full_name === REPO);
     // Missing PR bindings, unclear attempts, or a newer failing run fail closed.
     if (!matches.length || matches.some(run => !Number.isSafeInteger(run.id) ||
           !Number.isSafeInteger(run.run_attempt) || run.run_attempt < 1))
       return deny('PROVIDER_WORKFLOW_IDENTITY');
     matches.sort((a,b) => b.id - a.id || b.run_attempt - a.run_attempt);
     const latest = matches[0];
+    // Do not hide a newer ambiguous/unbound run behind an old bound success.
+    if (!Array.isArray(latest.pull_requests) ||
+        !latest.pull_requests.some(p => p.number === expected.number &&
+          p.head?.sha === expected.headSha && p.base?.sha === expected.baseSha))
+      return deny('PROVIDER_WORKFLOW_IDENTITY');
     if (latest.status !== 'completed' || latest.conclusion !== 'success')
       return deny('PROVIDER_WORKFLOW_NOT_GREEN');
     const finished = Date.parse(latest.updated_at || '');
@@ -442,7 +447,8 @@ export function assessRepositoryReleaseEnvelopeProposal(input, trustedComparison
   let envelope;
   try { envelope = verifySignedPayload(input.signedEnvelope, input.trustedPublicKey); }
   catch { return deny('ENVELOPE_SIGNATURE_INVALID'); }
-  if (envelope.securityDigest !== security.securityDigest ||
+  if (!envelope || typeof envelope !== 'object' || Array.isArray(envelope) ||
+      envelope.securityDigest !== security.securityDigest ||
       envelope.policyDigest !== security.policyDigest ||
       input.request.securityDigest !== security.securityDigest)
     return deny('ENVELOPE_SECURITY_DIGEST');

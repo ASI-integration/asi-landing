@@ -135,6 +135,20 @@ test('repository proposal requires signed digest of actual protected base',()=>r
  args[0].envelope.securityDigest='0'.repeat(64);args[0].signedEnvelope=signed(args[0].envelope,args[0].owner);
  assert.equal(assessRepository(...args).reason,'ENVELOPE_SECURITY_DIGEST');
 }));
+test('repository proposal returns BLOCKED for correctly signed null rather than throwing',()=>repositoryFixture(({root,git,baseSha})=>{
+ fs.writeFileSync(path.join(root,'scripts/example.mjs'),'new');git('add','.');git('-c','core.hooksPath=/dev/null','commit','-m','routine');
+ const args=boundFixture(root,baseSha,git('rev-parse','HEAD'),['scripts/example.mjs']);
+ args[0].signedEnvelope=signed(null,args[0].owner);
+ assert.equal(assessRepository(...args).reason,'ENVELOPE_SECURITY_DIGEST');
+}));
+test('advanced repository and request cannot reuse the previous HEAD witness',()=>repositoryFixture(({root,git,baseSha})=>{
+ fs.writeFileSync(path.join(root,'scripts/example.mjs'),'new');git('add','.');git('-c','core.hooksPath=/dev/null','commit','-m','routine');
+ const args=boundFixture(root,baseSha,git('rev-parse','HEAD'),['scripts/example.mjs']);
+ fs.writeFileSync(path.join(root,'scripts/example.mjs'),'newer');git('add','.');git('-c','core.hooksPath=/dev/null','commit','-m','next');
+ args[0].request.headSha=args[1].headSha=git('rev-parse','HEAD');
+ assert.equal(assessRepository(...args).reason,'ENVELOPE_EXACT_EVIDENCE');
+ assert.equal(assessRepository(...args).authorized,false);
+}));
 test('real rename cannot hide protected source even with a signed incomplete inventory',()=>repositoryFixture(({root,git,baseSha})=>{
  git('mv','.github/protected.yml','scripts/renamed.mjs');git('-c','core.hooksPath=/dev/null','commit','-m','rename');
  const args=boundFixture(root,baseSha,git('rev-parse','HEAD'),['scripts/renamed.mjs']);
@@ -179,6 +193,12 @@ test('latest failed job or spoofed workflow cannot be treated as success',()=>{
  assert.equal(provider(x).reason,'PROVIDER_WORKFLOW_NOT_GREEN');
  x.runs.pop();x.runs[0].workflow_id=123;
  assert.equal(provider(x).reason,'PROVIDER_WORKFLOW_IDENTITY');
+});
+test('newer unbound workflow cannot be hidden behind historical bound success',()=>{
+ for(const links of [[],[{number:999,head:{sha:'c'.repeat(40)},base:{sha:'a'.repeat(40)}}]]) {
+  const x=providerFixture();x.runs.push({...x.runs[0],id:4,pull_requests:links,conclusion:'failure'});
+  assert.equal(provider(x).reason,'PROVIDER_WORKFLOW_IDENTITY');
+ }
 });
 test('owner self-review, dismissed review and old SHA never establish independence',()=>{
  const x=providerFixture();x.expected.independentReviewerId=207600140;
