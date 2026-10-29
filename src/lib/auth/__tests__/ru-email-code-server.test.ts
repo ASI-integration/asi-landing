@@ -10,6 +10,7 @@ const req=()=>new Request('https://www.asi-global.ru/api/auth/email-code/request
 
 beforeEach(()=>{
   vi.stubEnv('ASI_RU_EMAIL_CODE_ENABLED','true');
+  vi.stubEnv('ASI_RU_EMAIL_CODE_SCHEMA_READY','true');
   vi.stubEnv('ASI_RU_EMAIL_CODE_PEPPER',pepper);
   vi.stubEnv('ASI_AUTH_RESEND_API_KEY','inert-test-key');
   vi.stubEnv('ASI_AUTH_FROM_EMAIL','login@asi-global.ru');
