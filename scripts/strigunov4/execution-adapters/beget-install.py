@@ -236,8 +236,54 @@ def staged_state(raw,manifest,files,public):
     st=STATE.lstat()
     require(stat.S_ISDIR(st.st_mode) and st.st_uid==identity.pw_uid and
         st.st_gid==identity.pw_gid and not st.st_mode&0o077,'STAGED_STATE_CHANGED')
+    runtime_service_access(files)
     exact_disabled_unit_state()
     return identity
+
+def runtime_targets(files):
+    # Package paths are constrained by prepared(); no mutable authority files.
+    paths=[(RUNTIME/rel,0o644) for rel in files if rel.startswith('scripts/')]
+    paths.extend([(RUNTIME/'manifest.json',0o644),(RUNTIME/'node',0o755),(RUNTIME/'bwrap',0o755)])
+    dirs={RUNTIME}
+    for path,_ in paths:
+        parent=path.parent
+        while parent!=RUNTIME:
+            dirs.add(parent)
+            parent=parent.parent
+    return sorted(dirs,key=lambda p:(len(p.parts),str(p))),paths
+
+def runtime_service_access(files,owner_uid=0):
+    # Necessary POSIX access for the non-root service UID; native sandbox PASS
+    # remains a separate physical gate. Never grant access to AUTH or STATE.
+    dirs,paths=runtime_targets(files)
+    for d in dirs:
+        st=d.lstat()
+        require(stat.S_ISDIR(st.st_mode) and st.st_uid==owner_uid and
+                not st.st_mode&0o022,'STAGED_RUNTIME_PATH')
+        require(st.st_mode&0o005==0o005,'STAGED_RUNTIME_UNREADABLE')
+    for p,mode in paths:
+        st=p.lstat()
+        require(stat.S_ISREG(st.st_mode) and st.st_uid==owner_uid and
+                st.st_nlink==1 and not st.st_mode&0o022,'STAGED_RUNTIME_PATH')
+        needed=0o005 if mode==0o755 else 0o004
+        require(st.st_mode&needed==needed,'STAGED_RUNTIME_UNREADABLE')
+
+def normalize_new_runtime_modes(files):
+    # mkdir/open modes are filtered by inherited umask (e.g. 0077). Only
+    # files created for this one new runtime are normalized, never AUTH/STATE.
+    dirs,paths=runtime_targets(files)
+    uid=os.geteuid()
+    for d in dirs:
+        st=d.lstat()
+        require(stat.S_ISDIR(st.st_mode) and st.st_uid==uid and
+                not st.st_mode&0o022,'STAGED_RUNTIME_PATH')
+        os.chmod(d,0o755)
+    for p,mode in paths:
+        st=p.lstat()
+        require(stat.S_ISREG(st.st_mode) and st.st_uid==uid and
+                st.st_nlink==1 and not st.st_mode&0o022,'STAGED_RUNTIME_PATH')
+        os.chmod(p,mode)
+    runtime_service_access(files,uid)
 
 def stage(package,node,bwrap):
     # Fail closed before any mutation; the staged unit is never enabled or started.
@@ -287,6 +333,7 @@ def stage(package,node,bwrap):
         write_new(RUNTIME/'manifest.json',raw,0o644)
         write_new(RUNTIME/'node',nodebytes,0o755)
         write_new(RUNTIME/'bwrap',bwrapbytes,0o755)
+        normalize_new_runtime_modes(files)
         STATE.mkdir(mode=0o700)
         os.chown(STATE,identity.pw_uid,identity.pw_gid)
         write_new(Path('/etc/systemd/system')/UNIT,files[UNIT],0o644)
@@ -399,6 +446,7 @@ def apply(package,node,bwrap,staged=False):
             write_new(RUNTIME/'manifest.json',raw,0o644)
             write_new(RUNTIME/'node',nodebytes,0o755)
             write_new(RUNTIME/'bwrap',bwrapbytes,0o755)
+            normalize_new_runtime_modes(files)
             STATE.mkdir(mode=0o700);os.chown(STATE,identity.pw_uid,identity.pw_gid)
         for name in ('owner-public.pem','activation.json','catalog.json','fence.json','reviews.json','github-app.pem'):
             p=AUTH/name;regular_bytes(p,root=True);os.chown(p,0,identity.pw_gid);os.chmod(p,0o640)
