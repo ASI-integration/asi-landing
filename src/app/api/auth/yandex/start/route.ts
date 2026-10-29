@@ -21,6 +21,11 @@ export async function GET(request:Request) {
   const session=await getSession();
   if(link && !session.userId)
     return NextResponse.redirect(new URL('/login?yandex_error=sign_in_first',url.origin));
+  // A seven-day session cookie alone must not permit attaching a new login method.
+  if(link && (!Number.isSafeInteger(session.lastStrongAuthAt) ||
+      Date.now()<session.lastStrongAuthAt! ||
+      Date.now()-session.lastStrongAuthAt!>10*60*1000))
+    return NextResponse.redirect(new URL('/dashboard/settings?yandex_error=recent_auth_required',url.origin));
   // The provider identity must never be bound merely by matching profile email.
   const flow=generateYandexFlow();
   session.yandexOauthState=flow.state;
