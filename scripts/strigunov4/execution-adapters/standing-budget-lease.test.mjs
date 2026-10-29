@@ -238,3 +238,23 @@ leaseTest('signature expiry after durable fsync denies success but preserves the
     assert.equal(saved.scope.maxOperations,5);
   }finally{await f.close();}
 });
+
+leaseTest('post-fsync clock rollback denies but keeps its durable spent claim',async()=>{
+  const f=await fixture();try{
+    let ticks=0, observed;
+    const outcome=await f.store.execute('github-publisher',async({transaction})=>{
+      const budget=createLeaseBoundStandingBudget({transaction,pinnedBaseSha:base,
+        clock:()=>++ticks<=2?at:at-100});
+      const lease=inspectStandingTransaction(transaction);
+      observed=await budget.reserve({envelope:envelope(),
+        effect:effect('clock-rollback-read',lease)});
+      return null;
+    },{async verifyTask(){throw Error('unexpected');}},async()=>{throw Error('unexpected');});
+    assert.equal(outcome.mode,'WAITING');
+    assert.equal(observed?.reason,'BUDGET_CLOCK_AFTER_RESERVATION');
+    assert.equal(observed.authorized,false);
+    const saved=(await f.read()).standingDelegationBudget.envelopes['b'.repeat(64)];
+    assert.equal(saved.claims.length,1);
+    assert.equal(saved.requests,1);
+  }finally{await f.close();}
+});
