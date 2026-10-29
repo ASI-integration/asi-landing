@@ -361,6 +361,10 @@ def apply(package,node,bwrap,staged=False):
     try:fence_record=json.loads(fence.decode('utf8'),parse_constant=reject_constant)
     except (ValueError, UnicodeError):raise Block('OLD_WRITER_FENCING_UNVERIFIED')
     fence_preclaim(fence_record, activation)
+    if staged:
+        # Native isolation evidence and the staged unit may change while the
+        # external GitHub main check is running; recheck before consuming claim.
+        staged_state(raw,m,files,public)
     write_new(claim,json.dumps({'manifestSha256':digest(raw),'at':now,'oneUse':True}).encode())
     installed_unit=staged
     try:
