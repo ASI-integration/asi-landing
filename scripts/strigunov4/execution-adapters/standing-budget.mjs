@@ -66,10 +66,15 @@ const same = (a,b) => JSON.stringify(a) === JSON.stringify(b);
 export function createStandingPublisherBudget({store, ledger, clock=Date.now}={}) {
   must(typeof store?.file === 'function' && ledger && typeof ledger === 'object' &&
     !Array.isArray(ledger) && typeof clock === 'function', 'BUDGET_HOST_REQUIRED');
-  let tail = Promise.resolve();
+  let tail = Promise.resolve(), poisoned = false;
   function enqueue(fn) {
-    const next = tail.then(fn);
-    tail = next.catch(() => {}); // A failed write cannot unblock an external effect.
+    const next = tail.then(async () => {
+      if (poisoned) return deny('BUDGET_UNCERTAIN_STORAGE');
+      try { return await fn(); }
+      catch (e) { poisoned = true; throw e; }
+    });
+    // Keep the serialized lane alive solely to deliver a fixed DENY once poisoned.
+    tail = next.then(() => {}, () => {});
     return next;
   }
   return Object.freeze({reserve({envelope, effect}={}) {
