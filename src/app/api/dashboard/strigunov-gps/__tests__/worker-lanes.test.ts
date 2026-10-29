@@ -33,7 +33,7 @@ afterEach(() => {
 function fixtureGitHubFetch(atomicMissing = false) {
   const reply = (data: unknown, status = 200) => Promise.resolve(new Response(
     JSON.stringify(data), {status, headers: {'content-type':'application/json'}}));
-  return vi.fn((input: string | URL | Request) => {
+  return vi.fn((input: string | URL | Request, _init?: RequestInit) => {
     const url = String(input);
     if (url.includes('/contents/docs/agent-os/releases/strigunov4-demo.json')) {
       return reply({
