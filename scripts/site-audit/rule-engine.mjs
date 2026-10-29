@@ -79,8 +79,8 @@ export function detectCommercialConflicts(text, url) {
 
   // Paid pilot — tight phrases only (avoid nav "Пилот" + unrelated "оплата")
   if (
-    /платн[а-яё]*\s+пилот/i.test(t) ||
-    /пилот[а-яё]*\s*[—\-–]?\s*платн/i.test(t) ||
+    /(?<!бес)платн[а-яё]*\s+пилот/i.test(t) ||
+    /пилот[а-яё]*\s*[—\-–]?\s*(?<!бес)платн/i.test(t) ||
     /стоимость\s+пилот/i.test(t) ||
     /оплата\s+пилот/i.test(t) ||
     /пилот[^\n.]{0,25}стоит/i.test(t)
@@ -95,7 +95,7 @@ export function detectCommercialConflicts(text, url) {
         title: 'Pilot described as paid',
         evidence: snippetAround(
           t,
-          t.search(/платн[а-яё]*\s+пилот|пилот[а-яё]*\s*[—\-–]?\s*платн|стоимость\s+пилот|оплата\s+пилот/i),
+          t.search(/(?<!бес)платн[а-яё]*\s+пилот|пилот[а-яё]*\s*[—\-–]?\s*(?<!бес)платн|стоимость\s+пилот|оплата\s+пилот/i),
         ),
         explanation: `Conflicts with canonical pilot cost = ${contract.pilotRub} ₽.`,
         action: 'review public copy',
