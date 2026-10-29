@@ -141,6 +141,12 @@ export async function GET() {
     memo = { at: Date.now(), value: payload };
     return NextResponse.json(payload, {headers: noStore});
   } catch {
+    // Keep a prior *successful* authenticated snapshot available during an upstream
+    // outage, but never relabel old evidence as a fresh verification.
+    if (memo && typeof memo.value === 'object' && memo.value !== null) {
+      return NextResponse.json({...memo.value, partialSources: true, staleSnapshot: true},
+        {headers: noStore});
+    }
     return NextResponse.json({ok: false, reason: 'Не удалось подтвердить данные GitHub.'},
       {status: 503, headers: noStore});
   }
