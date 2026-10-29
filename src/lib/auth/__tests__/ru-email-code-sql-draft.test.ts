@@ -32,8 +32,10 @@ describe('RU auth SQL draft structural integrity (no database access)', () => {
     ]) {
       expect(count(new RegExp('CREATE TABLE IF NOT EXISTS public\\.' + name + '\\s*\\(', 'g'))).toBe(1);
       expect(sql).toContain('ALTER TABLE public.' + name + ' ENABLE ROW LEVEL SECURITY');
-      expect(sql).toMatch(new RegExp('REVOKE ALL ON public\\.' + name + ' FROM PUBLIC, anon, authenticated'));
     }
+    // The two OTP tables share one SQL REVOKE; do not invent separate grants.
+    expect(sql).toMatch(/REVOKE ALL ON public\.ru_auth_email_challenges,\s*public\.ru_auth_ip_limits FROM PUBLIC,\s*anon,\s*authenticated;/);
+    expect(sql).toMatch(/REVOKE ALL ON public\.ru_auth_yandex_links FROM PUBLIC,\s*anon,\s*authenticated;/);
   });
 
   it('requires delivery activation of the exact pending HMAC, not just reservation', () => {
