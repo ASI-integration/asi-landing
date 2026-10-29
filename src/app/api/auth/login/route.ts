@@ -1,4 +1,5 @@
 import { getIsRuHost } from '@/lib/getIsRuHost';
+import { isRuRuntimeHost } from '@/lib/runtimeHost';
 import { NextResponse } from 'next/server';
 import bcrypt from 'bcryptjs';
 import { supabase } from '@/lib/supabase';
@@ -11,7 +12,10 @@ export async function POST(req: Request) {
   try {
     // RU cookies retain SameSite=None for OAuth. Password login must reject
     // cross-site login CSRF before credentials or session cookies are touched.
-    const isRu = await getIsRuHost();
+    // Forwarded Host can be misconfigured or supplied by an untrusted proxy.
+    // Never let it downgrade an actual .ru request into the global plan/trial
+    // login branch. Either independently observed RU signal enforces RU policy.
+    const isRu = isRuRuntimeHost(new URL(req.url).hostname) || await getIsRuHost();
     if (isRu && process.env.NODE_ENV === 'production' &&
         !isSameOriginAuthRequest(req.url, req.headers.get('origin'))) {
       return NextResponse.json({ error: 'Invalid origin' }, { status: 403 });
