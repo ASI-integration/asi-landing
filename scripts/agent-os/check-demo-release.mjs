@@ -5,6 +5,8 @@
  * This gate does not grant permission for merge, staging or server mutations.
  */
 import fs from 'node:fs';
+import { createHash } from 'node:crypto';
+import { verifySignedPayload } from '../strigunov4/execution-adapters/host-authority.mjs';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
@@ -174,6 +176,26 @@ export function assessReleaseEnvelopeProposal({ envelope: e, evidence: v, reques
       v.runtimeChecks !== 'PASS' || v.rollback !== 'PASS' || v.environmentProtection !== 'PASS'))
     return deny('ENVELOPE_HOST_GATE');
   return { status: 'PROPOSAL_ELIGIBLE', authorized: false, requiresAtomicReservation: true };
+}
+
+/** Disabled draft adapter; trustedPublicKey must come from protected configuration.
+ * No network, filesystem writes, claims or live admission. Signature alone is
+ * insufficient: current exact-head evidence and revocation remain mandatory.
+ */
+export function assessSignedReleaseEnvelopeProposal({ signedEnvelope, trustedPublicKey, evidence, request, now }) {
+  try {
+    const payload = verifySignedPayload(signedEnvelope, trustedPublicKey);
+    if (!payload || typeof payload !== 'object' || Array.isArray(payload) ||
+        Object.hasOwn(payload, 'envelopeDigest') ||
+        JSON.stringify(payload) !== signedEnvelope.payload)
+      return { status: 'BLOCKED', reason: 'ENVELOPE_SIGNED_PAYLOAD', authorized: false };
+    // Hash the exact signed bytes, never a caller-supplied or self-referential digest.
+    const envelopeDigest = createHash('sha256').update(signedEnvelope.payload).digest('hex');
+    return assessReleaseEnvelopeProposal({ envelope: { ...payload, envelopeDigest },
+      evidence, request, now });
+  } catch {
+    return { status: 'BLOCKED', reason: 'ENVELOPE_SIGNATURE_INVALID', authorized: false };
+  }
 }
 
 export function checkPr({ contract, changed, prNumber, prBody, headSha,

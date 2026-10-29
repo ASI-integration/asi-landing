@@ -114,10 +114,23 @@ trusted-base verifier с аутентифицированным owner/signed env
 сохраняются, расход бюджета и срок не сбрасываются при рестарте. Подпись не заменяет
 branch protection, environments, fencing, native isolation, rollback и host checks.
 Криптографический envelopeDigest должен вычисляться по каноническому payload без
-поля самого digest; модель не реализует подпись/проверку и не доказывает её.
+поля самого digest; чистая модель сама не проверяет подпись — disabled adapter ниже
+проверяет её отдельно, без предоставления live authority.
 
 Миграция: draft/tests → independent review → отдельное принятие новой policy →
 интеграция existing Authority/Verifier и CI → изолированные replay/concurrency tests →
 отдельно разрешённый physical acceptance. До этого любые release/install остаются
 BLOCKED. Откат будущей политики: прекратить новые claims, сохранить журнал и
 UNKNOWN, вернуться к v0; не отзывать/менять ключи неявно.
+
+
+Draft adapter update: `assessSignedReleaseEnvelopeProposal` использует извлечённую
+криптографическую функцию существующего host-authority, с реальной Ed25519-проверкой.
+Ключ в production не читается и не создаётся. Подписывается compact JSON payload
+без envelopeDigest; повторные ключи/неканоническая сериализация отклоняются,
+SHA256 вычисляется по точным подписанным байтам. Это не принятие policy и не live
+admission: `authorized=false` всегда. Trusted public key обязан поступать из
+защищённой конфигурации; переданный вызывающим кодом ключ не доказывает identity.
+Повторное использование подписи при новом HEAD требует новых независимых evidence.
+Atomic reservation, свежий отзыв и исчерпывающая проверка security diff по прежнему
+не подключены: поля evidence в draft-тестах — fixtures, не provider evidence.
