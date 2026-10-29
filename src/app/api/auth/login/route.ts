@@ -37,6 +37,7 @@ export async function POST(req: Request) {
     const session = await getSession();
     session.userId = user.id;
     session.email = user.email;
+    session.lastStrongAuthAt = Date.now();
     await session.save();
 
     // Login never starts or resets a pilot; readiness owns that transition.
