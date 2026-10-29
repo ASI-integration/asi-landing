@@ -19,6 +19,13 @@ async function load(file){let value;try{must((await regular(file)).size<500000,'
  * engine: the existing ledger is the durable brake and final receipt authority.
  * This subordinate journal records remote intent/readback across WAITING ticks.
  */
+// This second admission is owner-governed, not a claim of independent human review.
+export function acceptedReviewEvidence(r,stage,policySha){
+  if(r?.independent===true&&r?.ownerVerifiedCi!==true)return true;
+  return stage==='S4-G2'&&/^[a-f0-9]{64}$/.test(policySha??'')&&
+    r?.independent===false&&r?.ownerVerifiedCi===true&&
+    r.reviewPolicySha256===policySha;
+}
 export function createGitHubPublisher({store,remote,reader,authorize,runChecks,independentReview,verifyAdmission,ciPolicies,publishedReview,clock=Date.now,timeoutMs=10000}={}){
   must([authorize,runChecks,independentReview,verifyAdmission,clock].every(x=>typeof x==='function'),'HOST_PORTS_REQUIRED');
   must(ciPolicies?.some(p=>p.name==='validate')&&ciPolicies.some(p=>p.name==='release_governance'),'REQUIRED_CI_MISSING');
@@ -101,7 +108,8 @@ export function createGitHubPublisher({store,remote,reader,authorize,runChecks,i
       must(check?.status==='PASS'&&check.deltaSha256===prepared.deltaSha256&&check.baseSha===task.sha,'LOCAL_CHECK_UNVERIFIED');
       const review=await call(signal=>independentReview(freeze({taskId:task.id,baseSha:task.sha,deltaSha256:prepared.deltaSha256}),{signal}));
       must(review?.status==='PASS'&&review.deltaSha256===prepared.deltaSha256&&review.baseSha===task.sha&&
-        review.independent===true&&typeof review.evidenceId==='string'&&/^[a-zA-Z0-9_-]{1,96}$/.test(review.evidenceId),'INDEPENDENT_REVIEW_UNVERIFIED');
+        acceptedReviewEvidence(review,task.stage,reviewPolicy?.policySha256)&&
+        typeof review.evidenceId==='string'&&/^[a-zA-Z0-9_-]{1,96}$/.test(review.evidenceId),'INDEPENDENT_REVIEW_UNVERIFIED');
       // Check exact prepared bytes again after host tests/review. No test output or source is logged.
       for(const c of task.changes){const f=path.join(store.root,'scratchpads',task.id,c.path);await regular(f);
         must(digest(await fs.readFile(f))===digest(normalizeProposedContent(c.path,c.content)),'PREPARED_BYTES_CHANGED');}
@@ -145,11 +153,13 @@ export function createGitHubPublisher({store,remote,reader,authorize,runChecks,i
       if(!reviewPolicy)return inspectCodeRabbit(reader,pin);
       const r=await reviewPolicy.verify(freeze({...pin,deltaSha256:record.deltaSha256,policySha256:reviewPolicy.policySha256}));
       must(r&&['PASS','WAITING','FAILED'].includes(r.status)&&r.repo===pin.repo&&r.pr===pin.pr&&r.head===pin.sha&&
-        r.baseSha===pin.baseSha&&r.policySha256===reviewPolicy.policySha256&&r.independent===true&&
+        r.baseSha===pin.baseSha&&r.policySha256===reviewPolicy.policySha256&&
+        acceptedReviewEvidence(r,task.stage,reviewPolicy.policySha256)&&
         /^[a-f0-9]{64}$/.test(r.evidenceSha256),'PUBLISHED_REVIEW_UNVERIFIED');
       // Persist allowlisted metadata only, never raw reviewer output.
       return {status:r.status,repo:r.repo,pr:r.pr,head:r.head,baseSha:r.baseSha,policySha256:r.policySha256,
-        independent:true,evidenceSha256:r.evidenceSha256};
+        independent:r.independent===true,...(r.ownerVerifiedCi===true?{ownerVerifiedCi:true}:{}),
+        evidenceSha256:r.evidenceSha256};
     }
     const ci=await evidence(()=>inspectCI(reader,pin,policies));
     if(ci.status==='FAILED')return {status:'FAILED',phase:'REMOTE_CI'};
