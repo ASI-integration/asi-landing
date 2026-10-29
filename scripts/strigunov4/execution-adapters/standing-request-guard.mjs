@@ -9,7 +9,7 @@ import {isCompiledGitHubRead} from './github-readonly.mjs';
 import {inspectPublisherLifecycleEvidence} from './github-publisher.mjs';
 import {createStandingPublisherBudget} from './standing-budget.mjs';
 import {readProtectedStandingTrustSnapshot} from '../../agent-os/release-envelope-trust-roots.mjs';
-import {readAuthenticatedProviderSnapshot,inspectAuthenticatedProviderSnapshot,assessRepositoryReleaseEnvelopeProposal,assessPublisherReleaseEnvelopeProposal} from '../../agent-os/check-demo-release.mjs';
+import {readAuthenticatedProviderSnapshot,inspectAuthenticatedProviderSnapshot,assessRepositoryReleaseEnvelopeProposal,assessPublisherReleaseEnvelopeProposal,readAndAssessProtectedGateProposal} from '../../agent-os/check-demo-release.mjs';
 const blocked=reason=>Object.freeze({status:'BLOCKED',reason,authorized:false});
 const h64=x=>typeof x==='string'&&/^[a-f0-9]{64}$/.test(x);
 const providerFields=['repository','number','baseSha','headSha','independentReviewerId'];
@@ -276,6 +276,55 @@ export function createStandingRequestPreview({store,transaction,signedEnvelope,s
         return Object.freeze({status:'PROPOSAL_ELIGIBLE',phase,authorized:false});
       }catch{poisoned=true;return blocked('STANDING_PHASE_REJECTED');}
       finally{phaseChanging=false;}
+    },
+    // PRE_GATE is a separate read-only evidence class. Never require the future
+    // final provider token here or promote its result into phaseProvider.
+    async readGateProposal({token,fetchImpl,expected,trustedGateContext,signedEvidence}={}){
+      if(!publisherPhases||poisoned||bootstrapActive||phaseChanging||pending>0||!localPhase||exactPhase)
+        return blocked('STANDING_PREVIEW_LOCKED');
+      bootstrapActive=true;
+      try{
+        const lease=inspectStandingTransaction(transaction,{write:true});
+        const native=inspectPublisherLifecycleEvidence(localPhase.publisherEvidence,transaction);
+        const pins=dataCopy({expected,trustedGateContext,signedEvidence});
+        const e=pins.expected;
+        must(native.phase==='LOCAL_DELTA_VERIFIED'&&native.taskId===input.request.taskId&&
+          native.taskSha===input.request.baseSha&&native.taskBinding===input.request.taskBinding&&
+          e.repository===input.request.repo&&e.baseSha===input.request.baseSha&&
+          e.independentReviewerId===input.providerExpected.independentReviewerId,
+        'STANDING_GATE_IDENTITY');
+        const prior=ledger.standingRevocationCheckpoint;
+        const result=await readAndAssessProtectedGateProposal({signedEnvelope:input.signedEnvelope,
+          signedEvidence:pins.signedEvidence,request:{...input.request,headSha:e.headSha,pr:e.number}},
+        {expected:e,trustedGateContext:pins.trustedGateContext,
+          comparison:{...input.comparison,headSha:e.headSha},
+          expectedTrust:{...input.expectedTrust,minRevocationSequence:prior.sequence,
+            minRevocationManifestDigest:prior.manifestDigest,priorRevokedEnvelopeDigests:prior.revokedEnvelopeDigests},
+          token,fetchImpl,clock,protectedReader,beforeRequest:async descriptor=>{
+            const reserved=await reserveInternal(descriptor,false);
+            return reserved.status==='RESERVED_PREVIEW'&&!descriptor.signal.aborted;
+          }});
+        must(result.status==='PROPOSAL_ELIGIBLE'&&result.phase==='PRE_GATE'&&result.authorized===false,
+          'STANDING_GATE_REJECTED');
+        // Every GET already persisted its revocation floor with its spent claim.
+        // A later different trust generation needs a new explicit observation;
+        // never return a checkpoint that was not durably recorded in this lane.
+        must(JSON.stringify(result.revocationCheckpoint)===JSON.stringify(ledger.standingRevocationCheckpoint),
+          'STANDING_GATE_REVOCATION_CHANGED');
+        const at=clock();
+        const envelope=JSON.parse(input.signedEnvelope.payload),witness=JSON.parse(pins.signedEvidence.payload);
+        must(at>=envelope.notBefore&&at<envelope.expiresAt&&
+          Number.isSafeInteger(witness.observedAt)&&witness.observedAt<=at&&at-witness.observedAt<=60000,
+          'STANDING_GATE_EXPIRED');
+        must(at>=result.providerReceipt.observedAt&&at-result.providerReceipt.observedAt<=60000,
+          'STANDING_GATE_STALE');
+        const current=inspectStandingTransaction(transaction,{write:true});
+        must(!poisoned&&current.phase===lease.phase&&current.taskId===lease.taskId&&
+          current.taskSha===lease.taskSha,'STANDING_PHASE_CHANGED');
+        inspectPublisherLifecycleEvidence(native,transaction);
+        return dataCopy(result);
+      }catch{poisoned=true;return blocked('STANDING_GATE_REJECTED');}
+      finally{bootstrapActive=false;}
     },
     async readProvider({token,fetchImpl,publisherEvidence,expected}={}){
       if(poisoned||bootstrapActive||phaseChanging||pending>0)return blocked('STANDING_PREVIEW_LOCKED');

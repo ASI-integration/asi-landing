@@ -61,7 +61,7 @@ jobs:
           node --test scripts/agent-os/__tests__/release-envelope-provider-metering.test.mjs scripts/strigunov4/execution-adapters/standing-readonly.test.mjs
           node --test scripts/strigunov4/execution-adapters/standing-publication.test.mjs
           node --test scripts/strigunov4/execution-adapters/standing-lifecycle.test.mjs
-          node --test scripts/agent-os/__tests__/release-envelope-phases.test.mjs scripts/strigunov4/execution-adapters/standing-phase-guard.test.mjs
+          node --test scripts/agent-os/__tests__/release-envelope-phases.test.mjs scripts/strigunov4/execution-adapters/standing-phase-guard.test.mjs scripts/strigunov4/execution-adapters/standing-gate.test.mjs
 
       - name: Install deps
         run: npm ci
