@@ -91,7 +91,8 @@ export function createHostChecks({root,catalog,codexHome,reviewDirectory}){
 export async function createBegetChecks({root,catalog,reviewsRaw,verifyReviewProvenance,reviewPolicySha256,revalidate,clock=Date.now}){
   const reviews=JSON.parse(reviewsRaw);
   must(typeof verifyReviewProvenance==='function','REVIEW_PROVENANCE_REQUIRED');
-  must(reviews.schema==='asi.offline-delta-review.v1'&&reviews.repository==='ASI-integration/asi-landing'&&
+  const ownerCI=reviews.schema==='asi.owner-ci-delta-review.v1';
+  must((ownerCI||reviews.schema==='asi.offline-delta-review.v1')&&reviews.repository==='ASI-integration/asi-landing'&&
     Array.isArray(reviews.tasks)&&reviews.tasks.length===catalog.length&&
     new Set(reviews.tasks.map(t=>t.id)).size===catalog.length,'REVIEW_SCHEMA');
   const pin=task=>({path:task.changes[0].path,beforeSha256:null,afterSha256:digest(task.changes[0].content)});
@@ -102,7 +103,8 @@ export async function createBegetChecks({root,catalog,reviewsRaw,verifyReviewPro
       Number.isSafeInteger(reviews.notBefore)&&Number.isSafeInteger(reviews.expiresAt)&&
       reviews.notBefore<=clock()&&clock()<reviews.expiresAt&&reviews.expiresAt-reviews.notBefore<=14*86400000,
       'OFFLINE_REVIEW_UNVERIFIED');
-    return {...r,independent:true,evidenceId:'review-'+digest(reviewsRaw).slice(0,48)};
+    return {...r,independent:!ownerCI,ownerVerifiedCi:ownerCI,reviewPolicySha256,
+      evidenceId:'review-'+digest(reviewsRaw).slice(0,48)};
   }
   async function bytes(e){
     const task=catalog.find(t=>t.id===e.taskId);must(task?.sha===e.baseSha,'CHECK_TASK');
@@ -122,6 +124,7 @@ export async function createBegetChecks({root,catalog,reviewsRaw,verifyReviewPro
     must(p.baseSha===task.sha&&p.branch===task.branch&&p.policySha256===reviewPolicySha256,'PUBLISHED_REVIEW_PIN');
     // Publisher separately verifies the exact PR tree/commit, HEAD, base and CI.
     return {status:r.status,repo:p.repo,pr:p.pr,head:p.sha,baseSha:p.baseSha,policySha256:reviewPolicySha256,
-      independent:true,evidenceSha256:digest(JSON.stringify({review:reviewPolicySha256,delta:p.deltaSha256,head:p.sha,pr:p.pr}))};
+      independent:!ownerCI,ownerVerifiedCi:ownerCI,reviewPolicySha256,
+      evidenceSha256:digest(JSON.stringify({review:reviewPolicySha256,delta:p.deltaSha256,head:p.sha,pr:p.pr}))};
   }}};
 }
