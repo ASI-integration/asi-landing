@@ -47,6 +47,11 @@ jobs:
       - name: Standing transaction and transport boundaries (no authority)
         run: node --test scripts/strigunov4/execution-adapters/standing-transaction.test.mjs scripts/strigunov4/execution-adapters/standing-transport.test.mjs
 
+      - name: Standing trust and budget integration (isolated, no authority)
+        run: |
+          node --test scripts/agent-os/__tests__/release-envelope-trust-roots.test.mjs scripts/strigunov4/execution-adapters/standing-budget.test.mjs
+          node --test scripts/strigunov4/execution-adapters/standing-request-guard.test.mjs
+
       - name: Validate demo release milestones and PR scope
         env:
           GITHUB_TOKEN: ${{ github.token }}
