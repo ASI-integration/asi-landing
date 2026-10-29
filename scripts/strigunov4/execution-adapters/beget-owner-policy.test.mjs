@@ -57,7 +57,7 @@ for(const mode of ['asi.owner-ci-delta-review.v1','asi.offline-delta-review.v1']
     assert.equal(published.independent,!owner);
     assert.equal(published.ownerVerifiedCi,owner);
     assert.equal(acceptedReviewEvidence(published,'S4-G2',POLICY),true);
-    assert.equal(provenance,3);
+    assert.equal(provenance,4); // admission, pre/post delta verification, and published review
     await assert.rejects(()=>checks.independentReview({taskId:item.id,baseSha:BASE,deltaSha256:'0'.repeat(64)}),
       /OFFLINE_REVIEW_UNVERIFIED/);
   });
