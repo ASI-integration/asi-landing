@@ -3,6 +3,7 @@ import {
   buildYandexAuthorizationUrl,generateYandexFlow,ruYandexConfigured,
   verifyYandexState,yandexFlowStillValid,yandexSubject,yandexCallbackUrl,
   hasRecentYandexLinkProof,verifiedYandexProfileSubject,trustedYandexLinkNavigation,
+  verifiedYandexBearerAccessToken,
 } from '../ru-yandex-policy';
 
 const env={
@@ -79,6 +80,21 @@ describe('RU Yandex link-only OAuth',()=>{
     expect(trustedYandexLinkNavigation(url,null,'https://evil.example/settings')).toBe(false);
     expect(trustedYandexLinkNavigation('http://www.asi-global.ru/api/auth/yandex/start',null,
       'http://www.asi-global.ru/dashboard/settings')).toBe(false);
+  });
+  it('rejects malformed Yandex bearer responses before using Authorization',()=>{
+    const valid={token_type:'bearer',access_token:'test-only-access-token'};
+    expect(verifiedYandexBearerAccessToken(valid)).toBe(valid.access_token);
+    expect(verifiedYandexBearerAccessToken({...valid,token_type:'Bearer'})).toBe(valid.access_token);
+    for(const invalid of [
+      null, [], {}, 'test-only-access-token',
+      {...valid,token_type:'mac'}, {...valid,token_type:null},
+      {...valid,access_token:'short'}, {...valid,access_token:123},
+      {...valid,access_token:'test-only-access-token\nHeader: injected'},
+      {...valid,access_token:'test-only-access-token\r'},
+      {...valid,access_token:'test-only-access-token '},
+      {...valid,access_token:'a'.repeat(4097)},
+      {...valid,access_token:new String('test-only-access-token')},
+    ])expect(verifiedYandexBearerAccessToken(invalid)).toBeNull();
   });
   it('binds the Yandex subject to our registered OAuth app',()=>{
     expect(verifiedYandexProfileSubject({id:'12345',client_id:'fixture-client'},'fixture-client')).toBe('12345');
