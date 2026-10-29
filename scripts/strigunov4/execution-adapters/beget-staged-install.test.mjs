@@ -48,7 +48,7 @@ def call(cmd,**kw):
  assert cmd==['/usr/bin/git','ls-remote',
  'https://github.com/ASI-integration/asi-landing.git','refs/heads/main'],cmd
  return (('e'*40 if mode=='different-main' else manifest['baseSha'])+
- '\\trefs/heads/main\\n').encode()
+ '\trefs/heads/main\n').encode()
 with patch.object(m,'prepared',return_value=(raw,manifest,files)),\
  patch.object(m.os,'geteuid',return_value=0),\
  patch.object(m.os,'uname',return_value=SimpleNamespace(nodename=m.HOST)),\
@@ -96,7 +96,7 @@ if mode=='altered-module':stored['runtime.mjs']=b'changed'
 if mode=='altered-receipt':stored['staged.json']=b'{}'
 identity=SimpleNamespace(pw_uid=1020,pw_gid=1020,pw_shell='/usr/sbin/nologin',pw_dir=str(m.STATE))
 if mode=='wrong-user':identity.pw_uid=2020
-status='LoadState=loaded\\nActiveState=inactive\\nMainPID=0\\nUnitFileState=disabled\\n'
+status='LoadState=loaded\nActiveState=inactive\nMainPID=0\nUnitFileState=disabled\n'
 if mode=='enabled':status=status.replace('disabled','enabled')
 if mode=='running':status=status.replace('inactive','active').replace('MainPID=0','MainPID=999')
 def read_file(p,**kw):return stored[Path(p).name]
