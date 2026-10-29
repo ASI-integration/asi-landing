@@ -35,10 +35,20 @@ export async function issueRuEmailCode(emailInput: unknown, req: Request): Promi
   if (data !== true) return {sent:false, throttled:true};
   try {
     await sendRuAuthMail(email, code);
+    // Issuance reserves a PENDING hash, not an authenticating credential.
+    // Only a successful mail-provider response allows exact-hash activation.
+    const {data:activated,error:activateError}=await supabase.rpc('ru_auth_activate_email_code',{
+      p_email:email,p_hash:digest,
+    });
+    if(activateError || activated!==true) throw new Error('RU_AUTH_OTP_ACTIVATION_FAILED');
     return {sent:true, throttled:false};
   } catch {
-    // Never leave a fresh credential valid after a delivery failure.
-    await supabase.rpc('ru_auth_revoke_email_code', {p_email:email,p_hash:digest});
+    // A failed send/activation leaves PENDING codes unusable. Revoke as an
+    // additional precaution; report DB failures instead of claiming success.
+    const {error:revokeError}=await supabase.rpc('ru_auth_revoke_email_code',{
+      p_email:email,p_hash:digest,
+    });
+    if(revokeError) throw new Error('RU_AUTH_OTP_REVOCATION_UNCERTAIN');
     return {sent:false, throttled:false};
   }
 }
