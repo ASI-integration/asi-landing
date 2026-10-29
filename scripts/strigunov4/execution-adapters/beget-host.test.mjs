@@ -14,6 +14,7 @@ import {runContinuousWorker} from '../ASI-STRIGUNOV4-RUNNER-BRIDGE-20261020.mjs'
 import {createBegetChecks} from './host-checks.mjs';
 import {digest} from './state.mjs';
 import {draftBody} from './publisher-transport.mjs';
+import {OWNER_LANES,projectOwnerLaneAdmission} from './owner-lanes.mjs';
 const advance=f=>{f.now.value+=600000;};
 async function setup(t,options={}){
  const f=await closedFixture(t,{beget:true,distinctWorkOrders:true,...options});
@@ -202,5 +203,26 @@ test('package builder rejects dirty source before creating output',async t=>{
   else{git('checkout','--','source');await fs.writeFile(path.join(dir,'extra'),'untracked');}
   await assert.rejects(()=>buildBegetCandidate({repository:dir,output,baseSha:sha}),/PACKAGE_DIRTY_SOURCE/);
   await assert.rejects(()=>fs.stat(output),{code:'ENOENT'});
+ }
+});
+
+test('five owner lanes preserve literal repository and branch identity without running a new dispatcher',()=>{
+ assert.deepEqual(OWNER_LANES.map(x=>x.id),['engine','ru-auth','p0-integration','p0-trust','p0-atomic-budget']);
+ assert.deepEqual(OWNER_LANES.map(x=>x.pr),[549,554,552,null,null]);
+ assert.equal(new Set(OWNER_LANES.map(x=>x.branch)).size,5);
+ assert.ok(OWNER_LANES.every(x=>x.repository==='ASI-integration/asi-landing'&&Object.isFrozen(x)));
+ assert.ok(Object.isFrozen(OWNER_LANES));
+});
+test('a scheduled task, GitHub commit or forged host PID is never accepted as a server lane heartbeat',async()=>{
+ for(const v of [undefined,{}, {catalog:OWNER_LANES},{
+   admission:{root:'/var/lib/asi-engine'},
+   catalog:OWNER_LANES.map(x=>({id:x.id,branch:x.branch,repo:x.repository,kind:'github-publisher',changes:[]})),
+   revalidate:async()=>{},fencingWitness:async()=>({sha256:'0'.repeat(64)}),
+   systemd:{host:'pqukibofpo',unit:'asi-strigunov-agent.service',MainPID:3456,InvocationID:'fake'},
+   heartbeat:{at:new Date().toISOString(),mode:'RUNNING'}
+ }]){
+   const rows=await projectOwnerLaneAdmission(v);
+   assert.equal(rows.length,5);
+   assert.ok(rows.every(x=>x.status==='UNKNOWN'&&x.lastHeartbeat===null&&x.currentTask===null));
  }
 });
