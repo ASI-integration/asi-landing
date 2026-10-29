@@ -16,6 +16,8 @@ export type SessionData = {
   yandexOauthRedirect?: string;
   yandexOauthMode?: 'login' | 'link';
   yandexOauthLinkUserId?: string;
+  /** Authenticated just now with a password or email-code, not merely a 7-day cookie. */
+  lastStrongAuthAt?: number;
 };
 
 export function getSessionCookieOptions(
