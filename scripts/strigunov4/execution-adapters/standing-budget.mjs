@@ -174,7 +174,7 @@ export function createStandingPublisherBudget({store, ledger, clock=Date.now}={}
     tail = next.then(() => {}, () => {});
     return next;
   }
-  return Object.freeze({reserve({envelope, effect, compiledReadDescriptor}={}) {
+  return Object.freeze({reserve({envelope, effect, compiledReadDescriptor, afterDurableClaim}={}) {
     // A caller may reuse or mutate input objects, but no later mutation may
     // change the scope or effect of this particular reservation.
     let capturedEnvelope, capturedEffect;
@@ -277,9 +277,27 @@ export function createStandingPublisherBudget({store, ledger, clock=Date.now}={}
       // Do not mutate the shared in-memory ledger before fsync success.
       await atomicJson(store.file('autopilot-ledger.json'),{...ledger,standingDelegationBudget:next});
       ledger.standingDelegationBudget = next;
-      // Aborting after fsync cannot unspend the request claim; it also cannot
-      // yield a success-like result to the host.
-      if (compiledSignal?.aborted) return deny('BUDGET_COMPILED_READ_ABORTED_AFTER_RESERVATION');
+      // The genuine transaction's post-fsync check runs INSIDE the already
+      // existing reservation queue, before another queued claim may be spent.
+      // No second queue/lock/ledger is introduced. A terminal uncertainty
+      // poisons this queue without refunding the durable claim.
+      if (afterDurableClaim !== undefined) {
+        let lateReason;
+        try { lateReason = typeof afterDurableClaim === 'function'
+          ? afterDurableClaim() : 'BUDGET_POST_COMMIT_CHECK_INVALID'; }
+        catch { lateReason = 'BUDGET_POST_COMMIT_CHECK_FAILED'; }
+        if (lateReason !== null) {
+          poisoned = true;
+          return deny(typeof lateReason === 'string' &&
+            /^BUDGET_[A-Z_]+$/.test(lateReason)
+            ? lateReason : 'BUDGET_POST_COMMIT_CHECK_INVALID');
+        }
+      }
+      // Compiled-read cancellation after fsync is irreversible uncertainty.
+      if (compiledSignal?.aborted) {
+        poisoned = true;
+        return deny('BUDGET_COMPILED_READ_ABORTED_AFTER_RESERVATION');
+      }
       return Object.freeze({status:'RESERVED',reserved:true,envelopeDigest:scope.digest,
         effectId:claim.effectId,taskId:claim.taskId,taskSha:claim.taskSha,
         requestSha256:claim.requestSha256,headSha:claim.headSha,

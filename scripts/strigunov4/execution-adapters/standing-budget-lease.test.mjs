@@ -159,7 +159,7 @@ leaseTest('second STARTED job denies claim even when current job matches selecte
 async function reserveOfflineCompiledRead(transaction,budget,id) {
   const lease=inspectStandingTransaction(transaction);
   let reserved;
-  const reader=createGitHubReader({token:'offline-test-only',beforeRequest:async descriptor=>{
+  const reader=createGitHubReader({token:'offline-test-only',requestAdmission:async descriptor=>{
     reserved=await budget.reserve({envelope:envelope(),
       effect:{...effect(id,lease),kind:'github-compiled-read',
         method:descriptor.method,route:descriptor.route,
@@ -299,4 +299,35 @@ leaseTest('post-fsync clock rollback denies but keeps its durable spent claim',a
     assert.equal(saved.claims.length,1);
     assert.equal(saved.requests,1);
   }finally{await f.close();}
+});
+
+leaseTest('concurrent queued admission reserves cannot outlive a poisoned post-fsync lease', async () => {
+  const f = await fixture();
+  try {
+    let first, second, ticks = 0;
+    const outcome = await f.store.execute('github-publisher', async ({transaction}) => {
+      const b = createLeaseBoundStandingBudget({
+        transaction, pinnedBaseSha:base,
+        clock:() => ++ticks <= 2 ? at : at + 100001,
+      });
+      const lease = inspectStandingTransaction(transaction);
+      const freshDigest = 'f'.repeat(64);
+      [first, second] = await Promise.all([
+        b.reserve({envelope:envelope(),effect:effect('queued-expiring',lease)}),
+        b.reserve({
+          envelope:envelope({envelopeDigest:freshDigest,expiresAt:at+500000}),
+          effect:effect('queued-after-poison',lease,'github-read',{envelopeDigest:freshDigest}),
+        }),
+      ]);
+      return null;
+    }, {async verifyTask(){throw Error('unexpected');}},
+       async () => {throw Error('unexpected');});
+    assert.equal(outcome.mode,'WAITING');
+    assert.equal(first.reason,'BUDGET_ENVELOPE_EXPIRED_AFTER_RESERVATION');
+    assert.equal(second.reason,'BUDGET_UNCERTAIN_TRANSACTION');
+    assert.equal(second.authorized,false);
+    const saved=(await f.read()).standingDelegationBudget;
+    assert.deepEqual(Object.keys(saved.envelopes),['b'.repeat(64)]);
+    assert.equal(saved.envelopes['b'.repeat(64)].claims.length,1);
+  } finally {await f.close();}
 });

@@ -96,30 +96,41 @@ export function createLeaseBoundStandingBudget({transaction,pinnedBaseSha,clock=
       try {current=inspectStandingTransaction(transaction,{write});}
       catch {return deny('BUDGET_LEASE_INACTIVE');}
       if (!sameLease(current,before))return deny('BUDGET_LEASE_CHANGED');
+      // Complete the real lease/clock check before the existing fsync queue
+      // advances to a second concurrent reservation. Previously two callers
+      // could both enqueue before the first post-fsync expiry poisoned the lease.
+      const afterDurableClaim = () => {
+        let live;
+        try {live=inspectStandingTransaction(transaction,{write});}
+        catch {poisoned=true;return 'BUDGET_LEASE_EXPIRED_AFTER_RESERVATION';}
+        if (!sameLease(live,before)) {
+          poisoned=true;return 'BUDGET_LEASE_CHANGED_AFTER_RESERVATION';
+        }
+        let finishedAt;
+        try {finishedAt=observedClock();}
+        catch {poisoned=true;return 'BUDGET_CLOCK_AFTER_RESERVATION';}
+        if (!Number.isSafeInteger(finishedAt) || finishedAt < signedScope.notBefore ||
+            finishedAt < clockHighWater) {
+          poisoned=true;return 'BUDGET_CLOCK_AFTER_RESERVATION';
+        }
+        if (finishedAt >= signedScope.expiresAt) {
+          poisoned=true;return 'BUDGET_ENVELOPE_EXPIRED_AFTER_RESERVATION';
+        }
+        return null;
+      };
       let result;
-      try {result=await budget.reserve({envelope:signedScope,effect:captured,compiledReadDescriptor});}
-      catch (error) {poisoned=true;throw error;}
+      try {
+        result=await budget.reserve({envelope:signedScope,effect:captured,
+          compiledReadDescriptor,afterDurableClaim});
+      } catch (error) {poisoned=true;throw error;}
       if (result.status !== 'RESERVED') {
         if (result.reason === 'BUDGET_COMPILED_READ_ABORTED_AFTER_RESERVATION')
           poisoned=true;
+        if (poisoned && result.reason === 'BUDGET_UNCERTAIN_STORAGE')
+          return deny('BUDGET_UNCERTAIN_TRANSACTION');
         return Object.freeze({...result,authorized:false});
       }
-      // If execute closed or advanced phase while awaiting fsync, the spent
-      // claim remains irreversible, but no remote effect may follow.
-      try {current=inspectStandingTransaction(transaction,{write});}
-      catch {return poison('BUDGET_LEASE_EXPIRED_AFTER_RESERVATION');}
-      if (!sameLease(current,before))
-        return poison('BUDGET_LEASE_CHANGED_AFTER_RESERVATION');
-      // The durable claim is spent even if the signature expires during fsync.
-      // Never return a success-like reservation after expiry/clock failure.
-      let finishedAt;
-      try {finishedAt=observedClock();}
-      catch {return poison('BUDGET_CLOCK_AFTER_RESERVATION');}
-      if (!Number.isSafeInteger(finishedAt) || finishedAt < signedScope.notBefore ||
-          finishedAt < clockHighWater)
-        return poison('BUDGET_CLOCK_AFTER_RESERVATION');
-      if (finishedAt >= signedScope.expiresAt)
-        return poison('BUDGET_ENVELOPE_EXPIRED_AFTER_RESERVATION');
+      // RESERVED still grants NO authority to dispatch or change governance.
       return Object.freeze({...result,authorized:false});
     })();
   }});
