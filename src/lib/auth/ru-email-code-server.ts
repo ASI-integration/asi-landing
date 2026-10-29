@@ -83,5 +83,13 @@ async function sendRuAuthMail(email: string, code: string): Promise<void> {
       signal:controller.signal,
     });
     if(!response.ok)throw new Error('AUTH_DELIVERY_FAILED');
+    // Resend POST /emails confirms acceptance with a JSON message ID.
+    // A 2xx with an empty or malformed body is not a send receipt.
+    const receipt: unknown = await response.json();
+    if (!receipt || typeof receipt !== 'object' || Array.isArray(receipt) ||
+        typeof (receipt as Record<string, unknown>).id !== 'string' ||
+        !/^[A-Za-z0-9_-]{8,128}$/.test((receipt as {id: string}).id)) {
+      throw new Error('AUTH_DELIVERY_UNCONFIRMED');
+    }
   } finally {clearTimeout(deadline);}
 }
