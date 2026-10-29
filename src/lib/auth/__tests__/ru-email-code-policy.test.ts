@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { safeAuthRedirectPath } from '../app-url';
 import {
   createOneTimeCode, digestOneTimeCode, isSameOriginAuthRequest,
   matchOneTimeCodeDigest, normalizeLoginEmail, ruCodeAuthConfigured,
@@ -37,6 +38,16 @@ describe('shared RU email-code identity policy', () => {
     expect(ruCodeAuthConfigured({ ...env, ASI_RU_EMAIL_CODE_PEPPER: '' })).toBe(false);
     expect(ruCodeAuthConfigured({ ...env, ASI_AUTH_RESEND_API_KEY: undefined })).toBe(false);
     expect(ruCodeAuthConfigured({ ...env, SESSION_SECRET: '' })).toBe(false);
+  });
+  it('preserves internal redirects and rejects cross-origin login destinations', () => {
+    expect(safeAuthRedirectPath('/dashboard/settings?tab=profile'))
+      .toBe('/dashboard/settings?tab=profile');
+    for (const unsafe of [
+      null, '', '//evil.example', '/\\\\evil.example', '/next\\\\evil.example',
+      '/next\nmalicious', 'https://evil.example', 'javascript:alert(1)',
+    ]) {
+      expect(safeAuthRedirectPath(unsafe)).toBe('/dashboard');
+    }
   });
   it('rejects cross-origin and non-HTTPS requests', () => {
     const url='https://asi-global.ru/api/auth/email-code/request';
