@@ -8,7 +8,7 @@ const run=(code,mode)=>execFileSync('/usr/bin/python3',
   ['-I','-S','-B','-c',code,installer,mode],
   {timeout:6500,encoding:'utf8',stdio:['ignore','pipe','pipe']});
 
-const stageFixture=String.raw\`
+const stageFixture=String.raw`
 import importlib.util,sys,json,stat
 from pathlib import Path
 from types import SimpleNamespace
@@ -74,11 +74,11 @@ with patch.object(m,'prepared',return_value=(raw,manifest,files)),\
   elif mode=='revoked-after-git':assert str(e)=='STAGE_GRANT_CHANGED'
   else:assert str(e)=='STAGE_ADMISSION'
  else:raise AssertionError('stage unexpectedly returned')
-\`;
+`;
 for(const mode of ['valid','wrong-action','expired','wrong-unit','wrong-source','different-main','revoked-after-git']){
   test('exact signed isolation-stage preclaim is fail-closed: '+mode,()=>assert.doesNotThrow(()=>run(stageFixture,mode)));
 }
-const checkStaged=String.raw\`
+const checkStaged=String.raw`
 import importlib.util,sys,json,stat
 from pathlib import Path
 from types import SimpleNamespace
@@ -111,7 +111,7 @@ with patch.object(m,'regular_bytes',side_effect=read_file),\
  except (m.Block,KeyError) as e:
   assert mode!='valid',mode
  else:assert mode=='valid',mode
-\`;
+`;
 for(const mode of ['valid','enabled','running','wrong-user','altered-module','altered-receipt']){
   test('activation rechecks exact staged unit and bytes: '+mode,()=>assert.doesNotThrow(()=>run(checkStaged,mode)));
 }
