@@ -117,13 +117,25 @@ test('durability failure never returns RESERVED or permits effects',async()=>{
     await fs.mkdir(f.store.file('autopilot-ledger.json'));
     await assert.rejects(f.budget.reserve({envelope:env(),effect:effect('a','create-branch')}));
     assert.equal(f.ledger.standingDelegationBudget,undefined);
+    await fs.rmdir(f.store.file('autopilot-ledger.json'));
+    await fs.writeFile(f.store.file('autopilot-ledger.json'),JSON.stringify(f.ledger));
+    assert.equal((await f.budget.reserve({envelope:env(),effect:effect('b','create-branch')})).reason,'BUDGET_UNCERTAIN_STORAGE');
   }finally{await f.close()}
 });
 
-test('a different envelope or forged same-digest scope cannot inherit budget',async()=>{
+test('a forged same-digest scope poisons the transaction',async()=>{
   const f=await fixture();try{
     assert.equal((await f.budget.reserve({envelope:env(),effect:effect('a')})).status,'RESERVED');
     await assert.rejects(f.budget.reserve({envelope:env({policyDigest:'f'.repeat(64)}),effect:effect('b')}),/BUDGET_LEDGER_INVALID/);
+    assert.equal((await f.budget.reserve({envelope:env({envelopeDigest:'f'.repeat(64)}),
+      effect:effect('c','github-read',{envelopeDigest:'f'.repeat(64)})})).reason,'BUDGET_UNCERTAIN_STORAGE');
+    assert.equal(Object.keys((await f.read()).standingDelegationBudget.envelopes).length,1);
+  }finally{await f.close()}
+});
+  
+test('two independent signed envelopes each carry their own bounded count',async()=>{
+  const f=await fixture();try{
+    assert.equal((await f.budget.reserve({envelope:env(),effect:effect('a')})).status,'RESERVED');
     assert.equal((await f.budget.reserve({envelope:env({envelopeDigest:'f'.repeat(64)}),
       effect:effect('c','github-read',{envelopeDigest:'f'.repeat(64)})})).status,'RESERVED');
     assert.equal(Object.keys((await f.read()).standingDelegationBudget.envelopes).length,2);
