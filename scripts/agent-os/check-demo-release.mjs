@@ -111,7 +111,7 @@ export function prChanges(baseSha, headSha, repoRoot = ROOT) {
   must(SHA.test(baseSha) && SHA.test(headSha), 'PR_SHA');
   // Authorize both paths of a rename; --name-only with rename detection hides
   // the source path and could conceal deletion of a governed file.
-  const raw = execFileSync('git', ['diff', '--no-renames', '--name-only', '-z', baseSha + '...' + headSha], {
+  const raw = execFileSync('git', ['diff', '--no-ext-diff', '--no-textconv', '--no-renames', '--name-only', '-z', baseSha + '...' + headSha], {
     cwd: repoRoot, encoding: 'utf8', maxBuffer: 4 * 1024 * 1024,
   });
   return raw.split('\0').filter(Boolean);
@@ -230,6 +230,28 @@ export function assessWitnessedReleaseEnvelopeProposal({ signedEnvelope, trusted
   } catch {
     return deny('ENVELOPE_WITNESS_SIGNATURE');
   }
+}
+
+/** Disabled source-only adapter. trustedComparison is supplied by the protected
+ * base runner from authenticated PR metadata, never from request/PR content.
+ * PR commits are Git data only: no checkout, scripts, hooks or text conversion.
+ */
+export function assessRepositoryReleaseEnvelopeProposal(input, trustedComparison) {
+  const deny = reason => ({status:'BLOCKED', reason, authorized:false});
+  if (!trustedComparison || trustedComparison.repository !== REPO ||
+      !SHA.test(trustedComparison.baseSha || '') || !SHA.test(trustedComparison.headSha || '') ||
+      typeof trustedComparison.repoRoot !== 'string' || !path.isAbsolute(trustedComparison.repoRoot) ||
+      input?.request?.baseSha !== trustedComparison.baseSha ||
+      input?.request?.headSha !== trustedComparison.headSha)
+    return deny('ENVELOPE_TRUSTED_COMPARISON');
+  let changed;
+  try {
+    changed = prChanges(trustedComparison.baseSha, trustedComparison.headSha, trustedComparison.repoRoot);
+  } catch { return deny('ENVELOPE_DIFF_UNAVAILABLE'); }
+  // Preserve order and both sides of renames from the complete Git inventory.
+  if (JSON.stringify(changed) !== JSON.stringify(input.request.changedPaths))
+    return deny('ENVELOPE_DIFF_INVENTORY');
+  return assessWitnessedReleaseEnvelopeProposal(input);
 }
 
 export function checkPr({ contract, changed, prNumber, prBody, headSha,

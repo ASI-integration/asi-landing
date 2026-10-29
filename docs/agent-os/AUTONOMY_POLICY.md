@@ -154,3 +154,57 @@ HEAD/base/artifact. The adapter rejects a missing or different request inventory
 and applies the protected-path gate to the signed list. The protected producer
 must derive that list from the trusted complete diff, including both rename paths;
 a signature alone still does not prove inventory completeness. No live admission.
+
+
+### P0 trust boundaries and adoption inventory (DRAFT, 29 October)
+
+All non-governance ASI development is on hold by the current owner task. This
+appendix changes no live admission. CODE_PREPARED, GOVERNANCE_ADOPTED and
+ENGINE_ENABLED are independent states; none implies the next.
+
+Existing loops and invariants:
+- `requiredApproval` / `checkPr`: governance changes require exact-head
+  CONTRACT-CHANGE; out-of-stage/legacy exceptions require RELEASE-EXCEPTION.
+  These are source exceptions, never merge/deploy grants.
+- `verifiedOwnerComment`: authenticated numeric owner identity and exact text;
+  agent-authored comments and PR bodies do not count as owner evidence.
+- protected-base `pull_request_target`: checkout base only, fetch head as Git
+  data; never execute PR scripts with trusted credentials. Required protection
+  remains enforced independently of the proposed envelope.
+- Native Authority: signed root-owned artifacts, fixed identities/targets,
+  expiry and catalog bindings. Publisher: existing durable operation reservations,
+  idempotency and unknown-outcome locks; no parallel budget ledger is permitted.
+
+The disabled `assessRepositoryReleaseEnvelopeProposal` now derives the entire
+base...head inventory through the existing `prChanges` helper, with rename
+recognition disabled (both old and new paths), external diff/text conversion
+explicitly disabled. It verifies request SHAs against a separate trusted
+comparison and requires exact equality with signed witness paths. Missing objects
+fail as ENVELOPE_DIFF_UNAVAILABLE, never signature error. It does not checkout or
+execute head content. `trustedComparison` must come from authenticated PR metadata
+in the protected base runner and an operator-controlled object store; accepting
+that object or repoRoot from PR JSON would destroy this boundary. This producer
+seam remains disabled until provenance/configuration and adoption are verified.
+
+Remaining adoption blockers: protected signer registry and authenticated revocation;
+trusted numeric executor/reviewer identities and latest non-dismissed exact-head
+review; trusted required workflow identity/current attempt/base/head and freshness;
+security inventory/digest from protected base; aggregate API/write reservations
+bound atomically to the existing Publisher effect under its existing lock.
+A caller's PASS string, distinct generated test key or local record count cannot
+replace those facts. Authorization still always false. No checkPr bypass is wired.
+
+One policy transition package must pin the final PR552 SHA, policy/security digest,
+independent human authorization under v0, trusted issuer/executor/reviewer/workflow
+identities, finite scope/budget/expiry, protected configuration provenance, test
+receipts and rollback. It must show two different routine HEADs progressing with
+one unchanged valid delegation and fresh trusted CI/review, with all out-of-bounds
+cases blocked, before claiming adoption. Current protected integration is forbidden
+without that verified authority. Rollback stops new admissions while preserving
+claims, budget and UNKNOWN; it does not replay effects or reset durable history.
+
+Dependency distinction: PR552's base already has the Publisher intent/readback
+journal and state lock. The aggregate native request/mutation counter observed in
+PR549 `host-runtime.mjs` is unmerged source, not adopted main behavior. Reusing that
+mechanism for governance requires an explicitly reviewed source integration into
+this proposal; this task must neither merge nor activate PR549 to obtain it.

@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -5,7 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { initializeState, existingState } from '../../strigunov4/execution-adapters/state.mjs';
 import { generateKeyPairSync, createHash, sign } from 'node:crypto';
-import { assessWitnessedReleaseEnvelopeProposal as assess } from '../check-demo-release.mjs';
+import { assessWitnessedReleaseEnvelopeProposal as assess, assessRepositoryReleaseEnvelopeProposal as assessRepository } from '../check-demo-release.mjs';
 const hash=x=>createHash('sha256').update(x).digest('hex');
 const key=()=>{const p=generateKeyPairSync('ed25519');return {...p,pem:p.publicKey.export({type:'spki',format:'pem'}),digest:hash(p.publicKey.export({type:'spki',format:'der'}))};};
 const signed=(payload,k)=>{payload=JSON.stringify(payload);return {payload,signature:sign(null,Buffer.from(payload),k.privateKey).toString('base64')};};
@@ -82,3 +83,44 @@ test('signed invalid path inventories remain subject to existing path validation
   assert.equal(assess(x).reason,'ENVELOPE_PROTECTED_CHANGE');assert.equal(assess(x).authorized,false);
  }
 });
+
+
+test('witnessed proposal rejects changed base with unchanged head',()=>{
+ const x=fixture();x.request.baseSha='c'.repeat(40);
+ assert.equal(assess(x).reason,'ENVELOPE_EXACT_EVIDENCE');assert.equal(assess(x).authorized,false);
+});
+function repositoryFixture(run){
+ const root=fs.mkdtempSync(path.join(os.tmpdir(),'asi-envelope-diff-'));
+ const git=(...args)=>execFileSync('git',args,{cwd:root,encoding:'utf8',stdio:['ignore','pipe','pipe']}).trim();
+ try {
+  git('init');git('config','user.name','Fixture');git('config','user.email','fixture@example.invalid');
+  fs.mkdirSync(path.join(root,'scripts'));fs.mkdirSync(path.join(root,'.github'));
+  fs.writeFileSync(path.join(root,'scripts/example.mjs'),'old');fs.writeFileSync(path.join(root,'.github/protected.yml'),'protected');
+  git('add','.');git('-c','core.hooksPath=/dev/null','commit','-m','base');const baseSha=git('rev-parse','HEAD');
+  run({root,git,baseSha});
+ }finally{fs.rmSync(root,{recursive:true,force:true});}
+}
+function boundFixture(root,baseSha,headSha,paths){
+ const x=fixture();Object.assign(x.request,{baseSha,headSha,changedPaths:paths});
+ Object.assign(x.evidence,{baseSha,headSha,changedPaths:paths});x.signedEvidence=signed(x.evidence,x.verifier);
+ return [x,{repository:x.request.repo,repoRoot:root,baseSha,headSha}];
+}
+test('protected-base Git inventory admits routine new heads only with fresh bound witness',()=>repositoryFixture(({root,git,baseSha})=>{
+ fs.writeFileSync(path.join(root,'scripts/example.mjs'),'new');git('add','.');git('-c','core.hooksPath=/dev/null','commit','-m','routine');
+ const args=boundFixture(root,baseSha,git('rev-parse','HEAD'),['scripts/example.mjs']);
+ assert.equal(assessRepository(...args).status,'PROPOSAL_ELIGIBLE');assert.equal(assessRepository(...args).authorized,false);
+ args[0].request.headSha='f'.repeat(40);assert.equal(assessRepository(...args).reason,'ENVELOPE_TRUSTED_COMPARISON');
+}));
+test('real rename cannot hide protected source even with a signed incomplete inventory',()=>repositoryFixture(({root,git,baseSha})=>{
+ git('mv','.github/protected.yml','scripts/renamed.mjs');git('-c','core.hooksPath=/dev/null','commit','-m','rename');
+ const args=boundFixture(root,baseSha,git('rev-parse','HEAD'),['scripts/renamed.mjs']);
+ assert.equal(assessRepository(...args).reason,'ENVELOPE_DIFF_INVENTORY');
+ const full=['.github/protected.yml','scripts/renamed.mjs'];args[0].request.changedPaths=full;args[0].evidence.changedPaths=full;
+ args[0].signedEvidence=signed(args[0].evidence,args[0].verifier);
+ assert.equal(assessRepository(...args).reason,'ENVELOPE_PROTECTED_CHANGE');
+}));
+test('missing trusted commit fails closed without conflating diff and signature failures',()=>repositoryFixture(({root,baseSha})=>{
+ const args=boundFixture(root,baseSha,'f'.repeat(40),['scripts/example.mjs']);
+ assert.equal(assessRepository(...args).reason,'ENVELOPE_DIFF_UNAVAILABLE');
+ args[1].repository='other/repo';assert.equal(assessRepository(...args).reason,'ENVELOPE_TRUSTED_COMPARISON');
+}));
