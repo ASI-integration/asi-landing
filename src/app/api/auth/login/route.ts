@@ -44,8 +44,12 @@ export async function POST(req: Request) {
 
     // Failure to establish account mapping must not leave a valid login
     // session cookie after a 500. Login never starts or resets a pilot.
-    await ensureAccountForUser(
-      { userId: user.id, email: user.email, selectedPlan: plan, ...(isRu ? { ruCommercial: true } : { deferTrial: true }) }
+    // Sign-in is not a purchase or plan-change operation. RU callers must
+    // not upgrade or reset an existing commercial plan with a forged `plan`.
+    // Keep the pre-existing non-RU login contract unchanged in this Draft PR.
+    await ensureAccountForUser(isRu
+      ? { userId: user.id, email: user.email, ruCommercial: true }
+      : { userId: user.id, email: user.email, selectedPlan: plan, deferTrial: true }
     );
 
     const session = await getSession();
