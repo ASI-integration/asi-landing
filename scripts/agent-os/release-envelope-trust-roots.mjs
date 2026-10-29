@@ -58,7 +58,10 @@ function signedRevocations(raw, issuerKey) {
  * @param {object} input
  * @param {object} input.expected - MUST originate in protected config/owner issue,
  *   not agent input. issuer/verifier SHA-256 hashes of SPKI DER are independently
- *   pinned, and minRevocationSequence comes from existing durable publisher state.
+ *   pinned, and minRevocationSequence, minRevocationManifestDigest and
+ *   priorRevokedEnvelopeDigests come from existing durable Publisher state.
+ *   The integrator must durably advance this history under the same effect lock;
+ *   it cannot be replaced with a signed list from a PR or a fresh empty array.
  * @param {number} [input.now] - trusted verifier clock, milliseconds since epoch.
  * @param {function} [input.clock] - injected only in focused tests; production
  *   uses Date.now and checks the final snapshot timestamp, not just the start.
@@ -73,12 +76,15 @@ export async function readProtectedStandingTrustSnapshot({expected, now=Date.now
     // Snapshot every protected input BEFORE the first await. Never reread mutable
     // caller data to decide trust. Detect later changes and fail closed instead
     // of returning an inconsistent observation.
+    const prior = expected?.priorRevokedEnvelopeDigests;
     pinned = Object.freeze({
       repository:expected?.repository, environment:expected?.environment,
       target:expected?.target, issuerKeySha256:expected?.issuerKeySha256,
       verifierKeySha256:expected?.verifierKeySha256,
       envelopeDigest:expected?.envelopeDigest,
       minRevocationSequence:expected?.minRevocationSequence,
+      minRevocationManifestDigest:expected?.minRevocationManifestDigest,
+      priorRevokedEnvelopeDigests:Object.freeze(Array.isArray(prior) ? [...prior] : []),
     });
     if (pinned.repository !== REPO || pinned.environment !== ENVIRONMENT ||
         pinned.target !== TARGET || !DIGEST.test(pinned.issuerKeySha256 || '') ||
@@ -87,6 +93,10 @@ export async function readProtectedStandingTrustSnapshot({expected, now=Date.now
         pinned.issuerKeySha256 === pinned.verifierKeySha256 ||
         !Number.isSafeInteger(pinned.minRevocationSequence) ||
         pinned.minRevocationSequence < 0 ||
+        !DIGEST.test(pinned.minRevocationManifestDigest || '') ||
+        !Array.isArray(prior) || pinned.priorRevokedEnvelopeDigests.length > 1024 ||
+        pinned.priorRevokedEnvelopeDigests.some((d,i,a) => !DIGEST.test(d) ||
+          (i>0 && d<=a[i-1])) ||
         !Number.isSafeInteger(now) || now < 0 ||
         typeof protectedReader !== 'function' || typeof clock !== 'function')
       return deny('TRUST_CONTEXT');
@@ -117,7 +127,17 @@ export async function readProtectedStandingTrustSnapshot({expected, now=Date.now
         m.revokedEnvelopeDigests.some(d => !DIGEST.test(d)) ||
         m.revokedEnvelopeDigests.some((d,i) => i && d <= m.revokedEnvelopeDigests[i-1]))
       return deny('TRUST_REVOCATION_FORMAT');
-    if (m.revokedEnvelopeDigests.includes(pinned.envelopeDigest))
+    // Durable history pins the exact last manifest at the same sequence. A
+    // later signed manifest must retain every prior revocation: no resurrection
+    // through same-sequence equivocation or a newer signed erasure.
+    if (m.sequence === pinned.minRevocationSequence &&
+        manifestDigest !== pinned.minRevocationManifestDigest)
+      return deny('TRUST_REVOCATION_EQUIVOCATION');
+    if (pinned.priorRevokedEnvelopeDigests.some(d =>
+      !m.revokedEnvelopeDigests.includes(d)))
+      return deny('TRUST_REVOCATION_ERASURE');
+    if (m.revokedEnvelopeDigests.includes(pinned.envelopeDigest) ||
+        pinned.priorRevokedEnvelopeDigests.includes(pinned.envelopeDigest))
       return deny('TRUST_ENVELOPE_REVOKED');
     for (const [name, first, cap] of [
       ['issuer',issuerPem,10000], ['verifier',verifierPem,10000],
@@ -127,7 +147,12 @@ export async function readProtectedStandingTrustSnapshot({expected, now=Date.now
     }
     // The expected owner context must still match the original snapshot and
     // the signed revocation record must still be live AFTER all async reads.
-    if (Object.entries(pinned).some(([k,v]) => expected[k] !== v))
+    if (Object.entries(pinned).some(([k,v]) =>
+          k !== 'priorRevokedEnvelopeDigests' && expected[k] !== v) ||
+        !Array.isArray(expected.priorRevokedEnvelopeDigests) ||
+        expected.priorRevokedEnvelopeDigests.length !== pinned.priorRevokedEnvelopeDigests.length ||
+        pinned.priorRevokedEnvelopeDigests.some((d,i) =>
+          expected.priorRevokedEnvelopeDigests[i] !== d))
       return deny('TRUST_CONTEXT_CHANGED');
     const completedAt = clock();
     if (!Number.isSafeInteger(completedAt) || completedAt < now ||
@@ -141,6 +166,12 @@ export async function readProtectedStandingTrustSnapshot({expected, now=Date.now
       issuerKeySha256:issuer.digest, verifierKeySha256:verifier.digest,
       revocationSequence:m.sequence, revocationManifestDigest:manifestDigest,
       observedAt:completedAt, envelopeDigest:pinned.envelopeDigest,
+      // Candidate for atomic persistence under the EXISTING Publisher lock.
+      // This reader never updates the ledger and never grants authority.
+      revocationCheckpoint:Object.freeze({
+        sequence:m.sequence, manifestDigest,
+        revokedEnvelopeDigests:Object.freeze([...m.revokedEnvelopeDigests]),
+      }),
     });
   } catch {
     // Never expose file content, filesystem paths, or cryptographic exceptions.
