@@ -5,7 +5,7 @@
  * This gate does not grant permission for merge, staging or server mutations.
  */
 import fs from 'node:fs';
-import { createHash } from 'node:crypto';
+import { createHash, createPublicKey } from 'node:crypto';
 import { verifySignedPayload } from '../strigunov4/execution-adapters/host-authority.mjs';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
@@ -195,6 +195,33 @@ export function assessSignedReleaseEnvelopeProposal({ signedEnvelope, trustedPub
       evidence, request, now });
   } catch {
     return { status: 'BLOCKED', reason: 'ENVELOPE_SIGNATURE_INVALID', authorized: false };
+  }
+}
+
+/** Draft authenticated-evidence seam. Owner binds an independent verifier key.
+ * Both trust roots are inputs from future protected configuration, not PR fields.
+ * No authority, claims or effects are produced by this diagnostic adapter.
+ */
+export function assessWitnessedReleaseEnvelopeProposal({ signedEnvelope, trustedPublicKey,
+  signedEvidence, verifierPublicKey, request, now }) {
+  const deny = reason => ({ status: 'BLOCKED', reason, authorized: false });
+  try {
+    const e = verifySignedPayload(signedEnvelope, trustedPublicKey);
+    const fingerprint = pem => createHash('sha256').update(createPublicKey(pem)
+      .export({ type: 'spki', format: 'der' })).digest('hex');
+    if (!e || !/^[a-f0-9]{64}$/.test(e.verifierKeySha256) ||
+        e.verifierKeySha256 !== fingerprint(verifierPublicKey) ||
+        fingerprint(trustedPublicKey) === e.verifierKeySha256)
+      return deny('ENVELOPE_VERIFIER_IDENTITY');
+    const witness = verifySignedPayload(signedEvidence, verifierPublicKey);
+    if (!witness || witness.schema !== 'asi.release-envelope-evidence.proposal.v1' ||
+        JSON.stringify(witness) !== signedEvidence.payload ||
+        witness.envelopeDigest !== createHash('sha256').update(signedEnvelope.payload).digest('hex'))
+      return deny('ENVELOPE_WITNESS_BINDING');
+    return assessSignedReleaseEnvelopeProposal({ signedEnvelope, trustedPublicKey,
+      evidence: { ...witness, ownerVerified: true, ownerId: OWNER_ID }, request, now });
+  } catch {
+    return deny('ENVELOPE_WITNESS_SIGNATURE');
   }
 }
 

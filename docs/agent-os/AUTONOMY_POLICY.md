@@ -134,3 +134,17 @@ admission: `authorized=false` всегда. Trusted public key обязан по
 Повторное использование подписи при новом HEAD требует новых независимых evidence.
 Atomic reservation, свежий отзыв и исчерпывающая проверка security diff по прежнему
 не подключены: поля evidence в draft-тестах — fixtures, не provider evidence.
+
+
+Draft evidence adapter: владелец подписывает fingerprint независимого verifier
+(SHA256 SPKI DER) в envelope. Отдельная Ed25519-подпись witness связывает digest
+этого envelope с current HEAD/base/artifact, временем, отзывом и бюджетом. Тот же
+ключ владельца не может выступать независимым verifier. Проверяется подпись и
+binding, но истинность утверждений verifier требует отдельно проверенного
+producer; self-signed fixture не является GitHub/provider evidence.
+Изолированный тест использует существующий state.execute/ledger: два разных
+задания, reopen между ними и отказ третьему при исчерпании бюджета. Нового ledger
+нет; это test-only verifier внутри существующего lock, не разрешённая публикация.
+До live-интеграции необходимы защищённый key registry, независимый producer,
+полный security-diff inventory и атомарное связывание envelope ID с резервами
+существующего Publisher. Подписи и source tests сами по себе не открывают release.

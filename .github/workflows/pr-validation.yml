@@ -39,7 +39,7 @@ jobs:
           cache: npm
 
       - name: Draft release-envelope model (no authority)
-        run: node --test scripts/agent-os/__tests__/release-envelope-proposal.test.mjs
+        run: node --test scripts/agent-os/__tests__/release-envelope-proposal.test.mjs scripts/agent-os/__tests__/release-envelope-witness.test.mjs
 
       - name: Validate demo release milestones and PR scope
         env:
