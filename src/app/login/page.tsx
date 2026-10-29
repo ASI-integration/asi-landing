@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useTranslation } from '@/i18n/useTranslation';
@@ -18,6 +18,23 @@ export default function LoginPage() {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [yandexNotice, setYandexNotice] = useState('');
+
+  useEffect(() => {
+    const reason = new URLSearchParams(window.location.search).get('yandex_error');
+    if (!reason) return;
+    const explanations: Record<string, string> = {
+      link_first: 'Сначала войдите в существующий аккаунт ASI по паролю или email-коду. Затем откройте «Настройки» и привяжите Яндекс ID.',
+      invalid_state: 'Проверка входа через Яндекс не прошла. Начните вход заново.',
+      unavailable: 'Яндекс ID пока не настроен. Можно войти по паролю или email-коду.',
+      account_not_found: 'Связанный аккаунт ASI не найден. Войдите обычным способом.',
+      already_linked: 'Этот Яндекс ID уже привязан к другому аккаунту ASI.',
+      link_not_available: 'Привязка Яндекс ID пока недоступна. Повторите позже.',
+      link_requires_recent_auth: 'Для привязки Яндекс ID заново подтвердите вход по паролю или email-коду.',
+      temporary_failure: 'Яндекс ID временно недоступен. Попробуйте позже или используйте обычный вход.',
+    };
+    setYandexNotice(explanations[reason] || 'Не удалось завершить вход через Яндекс ID.');
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -62,6 +79,12 @@ export default function LoginPage() {
         <p className="mt-2 text-center text-sm text-slate-500">
           {t('login.subtitle')}
         </p>
+
+        {yandexNotice && (
+          <p role="alert" className="mt-5 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+            {yandexNotice}
+          </p>
+        )}
 
         <RuEmailCodeSignIn redirectPath={typeof window !== 'undefined'
           ? safeRedirectPath(new URLSearchParams(window.location.search).get('redirect')) : '/dashboard'} />
