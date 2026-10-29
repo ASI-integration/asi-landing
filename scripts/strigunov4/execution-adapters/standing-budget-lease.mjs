@@ -130,6 +130,24 @@ export function createLeaseBoundStandingBudget({transaction,pinnedBaseSha,clock=
           return deny('BUDGET_UNCERTAIN_TRANSACTION');
         return Object.freeze({...result,authorized:false});
       }
+      // The transaction can close or its selected task can change between
+      // the inner post-fsync check and resumption of this awaiting caller.
+      // Recheck the time first (host clocks may have side effects in tests),
+      // then inspect the genuine lease without another await. Once spent,
+      // a late mismatch is irreversibly uncertain, never a fresh permit.
+      let returnedAt;
+      try {returnedAt=observedClock();}
+      catch {return poison('BUDGET_CLOCK_AFTER_RESERVATION');}
+      if(!Number.isSafeInteger(returnedAt) || returnedAt < signedScope.notBefore ||
+          returnedAt < clockHighWater)
+        return poison('BUDGET_CLOCK_AFTER_RESERVATION');
+      if(returnedAt >= signedScope.expiresAt)
+        return poison('BUDGET_ENVELOPE_EXPIRED_AFTER_RESERVATION');
+      let returnedLease;
+      try {returnedLease=inspectStandingTransaction(transaction,{write});}
+      catch {return poison('BUDGET_LEASE_EXPIRED_AFTER_RESERVATION');}
+      if(!sameLease(returnedLease,before))
+        return poison('BUDGET_LEASE_CHANGED_AFTER_RESERVATION');
       // RESERVED still grants NO authority to dispatch or change governance.
       return Object.freeze({...result,authorized:false});
     })();
