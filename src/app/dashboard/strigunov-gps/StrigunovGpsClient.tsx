@@ -129,7 +129,7 @@ export default function StrigunovGpsClient() {
           <p className="mt-1 text-base font-black text-slate-900">{enginePr ? 'PR #549 · ' + (enginePr.merged ? 'merged' : enginePr.draft ? 'Draft' : enginePr.state) : 'Данные PR недоступны'}</p>
           <p className="mt-1 font-mono text-xs text-slate-500">{enginePr?.head.slice(0, 12) ?? 'HEAD не проверен'}</p>
           <p className="mt-2 text-xs text-indigo-900">Работающий серверный Engine 24/7 этим API не подтверждается. Код/CI и физический запуск — разные состояния.</p>
-          <div className="mt-2 space-x-3 text-xs"><A href="/dashboard/engine-progress">Вехи движка</A><A href="https://github.com/ASI-integration/asi-landing/pull/549">PR #549</A></div>
+          <div className="mt-2 text-xs"><A href="https://github.com/ASI-integration/asi-landing/pull/549">Ход работ над Engine · PR #549</A></div>
         </div>
         <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
           <p className="text-xs font-semibold text-amber-800">Подготовка в GitHub</p>
