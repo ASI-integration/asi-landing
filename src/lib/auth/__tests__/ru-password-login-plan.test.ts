@@ -80,4 +80,29 @@ describe('RU password login cannot change plan entitlements', () => {
     expect(authMocks.ensureAccount).not.toHaveBeenCalled();
     vi.unstubAllEnvs();
   });
+  it('cancels a stale Yandex login/link flow after a successful password account switch', async () => {
+    authMocks.isRu.mockResolvedValue(true);
+    const session = {
+      userId: 'old-user',
+      yandexOauthState: 'stale-state',
+      yandexOauthVerifier: 'stale-verifier',
+      yandexOauthStartedAt: Date.now(),
+      yandexOauthRedirect: '/dashboard',
+      yandexOauthMode: 'link',
+      yandexOauthLinkUserId: 'old-user',
+      save: vi.fn().mockResolvedValue(undefined),
+    };
+    authMocks.getSession.mockResolvedValueOnce(session);
+    const res = await POST(loginRequest('small', true));
+    expect(res.status).toBe(200);
+    expect(session.userId).toBe('existing-user');
+    expect(session.yandexOauthState).toBeUndefined();
+    expect(session.yandexOauthVerifier).toBeUndefined();
+    expect(session.yandexOauthStartedAt).toBeUndefined();
+    expect(session.yandexOauthRedirect).toBeUndefined();
+    expect(session.yandexOauthMode).toBeUndefined();
+    expect(session.yandexOauthLinkUserId).toBeUndefined();
+    expect(session.save).toHaveBeenCalledOnce();
+  });
+
 });

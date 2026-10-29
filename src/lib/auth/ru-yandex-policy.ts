@@ -66,6 +66,27 @@ export function trustedYandexStartNavigation(
   } catch { return false; }
 }
 
+/** A completed password/OTP login supersedes any older, unfinished Yandex
+ * authorization in this browser session. Otherwise a late OAuth callback can
+ * unexpectedly switch the newly authenticated identity. Only transient flow
+ * state is cleared; the existing ASI session and strong proof are preserved.
+ */
+export function clearPendingYandexOauth(session: {
+  yandexOauthState?: string;
+  yandexOauthVerifier?: string;
+  yandexOauthStartedAt?: number;
+  yandexOauthRedirect?: string;
+  yandexOauthMode?: YandexFlowMode;
+  yandexOauthLinkUserId?: string;
+}): void {
+  delete session.yandexOauthState;
+  delete session.yandexOauthVerifier;
+  delete session.yandexOauthStartedAt;
+  delete session.yandexOauthRedirect;
+  delete session.yandexOauthMode;
+  delete session.yandexOauthLinkUserId;
+}
+
 export function yandexCallbackUrl(env: Readonly<Record<string,string|undefined>>): string {
   if (!ruYandexConfigured(env)) throw new Error('YANDEX_NOT_CONFIGURED');
   return env.ASI_RU_YANDEX_ORIGIN! + YANDEX_CALLBACK_PATH;

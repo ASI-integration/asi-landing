@@ -7,6 +7,7 @@ import { getSession } from '@/lib/auth';
 import { ensureAccountForUser } from '@/lib/accounts';
 import { readRequestJson } from '@/lib/safeRequestJson';
 import { isSameOriginAuthRequest } from '@/lib/auth/ru-email-code-policy';
+import { clearPendingYandexOauth } from '@/lib/auth/ru-yandex-policy';
 
 export async function POST(req: Request) {
   try {
@@ -57,6 +58,7 @@ export async function POST(req: Request) {
     );
 
     const session = await getSession();
+    clearPendingYandexOauth(session);
     session.userId = user.id;
     session.email = user.email;
     session.lastStrongAuthAt = Date.now();
