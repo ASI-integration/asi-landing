@@ -1,6 +1,6 @@
 // Read-only projection for five owner workstreams. Importing this module performs
 // no I/O, scheduling, network calls or privilege changes. It never grants work.
-import {assertLiveAdmission, BEGET} from './host-authority.mjs';
+import {assertLiveAdmission, loadBegetAuthority, BEGET} from './host-authority.mjs';
 
 const REPO = 'ASI-integration/asi-landing';
 const definitions = [
@@ -22,10 +22,12 @@ const unknown = reason => OWNER_LANES.map(lane => ({...lane, status: 'UNKNOWN', 
  * catalog and host checks. It MUST be revalidated against disk on every read.
  * A catalog match alone NEVER proves service identity, a PID or a heartbeat.
  */
-export async function projectOwnerLaneAdmission(authority) {
-  if(!authority?.admission || typeof authority.revalidate !== 'function' ||
-     typeof authority.fencingWitness !== 'function') return unknown('SIGNED_ENGINE_AUTHORITY_UNAVAILABLE');
+export async function projectOwnerLaneAdmission() {
+  // Never accept caller-supplied catalogs or verification callbacks. Read the
+  // actual signed Beget artifacts through the existing native authority loader.
+  let authority;
   try {
+    authority = await loadBegetAuthority();
     assertLiveAdmission(authority.admission, BEGET.root);
     await authority.revalidate();
     await authority.fencingWitness();
