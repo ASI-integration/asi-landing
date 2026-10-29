@@ -15,7 +15,7 @@ export function ruYandexConfigured(env: Readonly<Record<string,string|undefined>
       !env.ASI_RU_YANDEX_CLIENT_SECRET?.trim()) return false;
     const raw = env.ASI_RU_YANDEX_ORIGIN?.trim() || '';
     const origin = new URL(raw);
-    return origin.protocol === 'https:' && origin.origin === raw &&
+    return origin.protocol === 'https:' && origin.origin === raw && origin.port === '' &&
       (origin.hostname === 'asi-global.ru' || origin.hostname === 'www.asi-global.ru');
   } catch { return false; }
 }

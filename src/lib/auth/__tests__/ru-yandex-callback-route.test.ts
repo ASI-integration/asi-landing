@@ -38,9 +38,61 @@ beforeEach(() => {
   mocks.isRu.mockResolvedValue(true);
   mocks.save.mockResolvedValue(undefined);
 });
-afterEach(() => { vi.unstubAllEnvs(); });
+afterEach(() => { vi.unstubAllEnvs(); vi.unstubAllGlobals(); });
 
 describe('RU Yandex OAuth callback cannot cancel a pending flow by CSRF', () => {
+  it('does not redirect to attacker-controlled callback host or touch an existing session', async () => {
+    mocks.getSession.mockResolvedValue(pendingSession());
+    const response = await GET(new Request(
+      'https://attacker.example/api/auth/yandex/callback?state=' + state + '&code=fixture-code',
+    ));
+    expect(response.status).toBe(503);
+    expect(response.headers.get('location')).toBeNull();
+    expect(await response.json()).toEqual({ ok: false, error: 'YANDEX_LOGIN_UNAVAILABLE' });
+    expect(mocks.getSession).not.toHaveBeenCalled();
+    expect(mocks.save).not.toHaveBeenCalled();
+    expect(mocks.from).not.toHaveBeenCalled();
+  });
+
+  it('uses only non-redirecting provider requests before linking the verified subject', async () => {
+    const session = pendingSession();
+    mocks.getSession.mockResolvedValue(session);
+    const insert = vi.fn().mockResolvedValue({ error: null });
+    mocks.from.mockImplementation((table: string) => {
+      expect(table).toBe('ru_auth_yandex_links');
+      return {
+        select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: null, error: null }) }) }),
+        insert,
+      };
+    });
+    const providerFetch = vi.fn(async (providerUrl: string, opts: RequestInit): Promise<Response> => {
+      expect(opts.redirect).toBe('error');
+      if (providerUrl === 'https://oauth.yandex.ru/token') {
+        const body = new URLSearchParams(String(opts.body));
+        expect(body.get('code_verifier')).toBe('B'.repeat(64));
+        expect(body.has('redirect_uri')).toBe(false);
+        return new Response(JSON.stringify({
+          token_type: 'bearer', access_token: 'isolated-test-access-token', scope: 'login:info',
+        }), { status: 200 });
+      }
+      if (providerUrl === 'https://login.yandex.ru/info?format=json') {
+        expect((opts.headers as Record<string, string>).Authorization).toBe('OAuth isolated-test-access-token');
+        return new Response(JSON.stringify({ id: '123456', client_id: 'inert-test-client' }), { status: 200 });
+      }
+      throw new Error('UNEXPECTED_PROVIDER_ENDPOINT');
+    });
+    vi.stubGlobal('fetch', providerFetch);
+
+    const response = await GET(new Request(
+      origin + '/api/auth/yandex/callback?state=' + state + '&code=fixture-auth-code',
+    ));
+    expect(response.status).toBe(307);
+    expect(response.headers.get('location')).toBe(origin + '/dashboard/settings');
+    expect(providerFetch).toHaveBeenCalledTimes(2);
+    expect(insert).toHaveBeenCalledWith({ yandex_subject: '123456', user_id: 'owner-a' });
+    expect(mocks.ensure).not.toHaveBeenCalled();
+    expect(mocks.save).toHaveBeenCalledOnce();
+  });
   it('leaves a pending link intact on a missing or unrelated state, without provider or DB calls', async () => {
     const session = pendingSession();
     mocks.getSession.mockResolvedValue(session);

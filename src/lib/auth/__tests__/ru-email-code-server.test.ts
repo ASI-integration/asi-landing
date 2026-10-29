@@ -86,6 +86,7 @@ describe('RU email code: durable pending -> delivery -> activation',()=>{
       throw Error('unexpected RPC '+name);
     });
     mocks.fetch.mockImplementation(async(_url:string,opts:RequestInit)=>{
+      expect(opts.redirect).toBe('error');
       events.push('mail');
       const payload=JSON.parse(String(opts.body));
       expect(payload.to).toEqual(['user@example.ru']);

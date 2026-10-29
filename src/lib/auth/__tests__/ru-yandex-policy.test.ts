@@ -20,6 +20,7 @@ describe('RU Yandex link-only OAuth',()=>{
     }
     expect(ruYandexConfigured({...env,ASI_RU_YANDEX_ORIGIN:'https://evil.example'})).toBe(false);
     expect(ruYandexConfigured({...env,ASI_RU_YANDEX_ORIGIN:'http://www.asi-global.ru'})).toBe(false);
+    expect(ruYandexConfigured({...env,ASI_RU_YANDEX_ORIGIN:'https://www.asi-global.ru:8443'})).toBe(false);
     expect(yandexCallbackUrl(env)).toBe('https://www.asi-global.ru/api/auth/yandex/callback');
   });
   it('generates fresh random state and PKCE S256 with exact registered callback',()=>{

@@ -30,14 +30,14 @@ async function yandexProfile(code:string,verifier:string):Promise<string> {
     const response=await fetch('https://oauth.yandex.ru/token',{
       method:'POST',
       headers:{'Content-Type':'application/x-www-form-urlencoded'},
-      body:form.toString(),signal:ctrl.signal,cache:'no-store',
+      body:form.toString(),signal:ctrl.signal,cache:'no-store',redirect:'error',
     });
     if(!response.ok)throw new Error('YANDEX_TOKEN_EXCHANGE_REJECTED');
     const token=await response.json() as unknown;
     const accessToken=verifiedYandexBearerAccessToken(token);
     if(!accessToken)throw new Error('YANDEX_INVALID_TOKEN_RESPONSE');
     const user=await fetch('https://login.yandex.ru/info?format=json',{
-      headers:{Authorization:'OAuth '+accessToken},signal:ctrl.signal,cache:'no-store',
+      headers:{Authorization:'OAuth '+accessToken},signal:ctrl.signal,cache:'no-store',redirect:'error',
     });
     if(!user.ok)throw new Error('YANDEX_PROFILE_REJECTED');
     const profile=await user.json() as unknown;
@@ -51,7 +51,9 @@ export async function GET(request:Request) {
   const url=new URL(request.url);
   if(!await getIsRuHost() || !ruYandexConfigured(process.env) ||
      url.origin!==process.env.ASI_RU_YANDEX_ORIGIN)
-    return fail(url.origin,'unavailable');
+    // Do not reflect an untrusted Host/request origin into a login redirect.
+    return NextResponse.json({ok:false,error:'YANDEX_LOGIN_UNAVAILABLE'},
+      {status:503,headers:{'Cache-Control':'private, no-store, max-age=0'}});
   const session=await getSession();
   const state=session.yandexOauthState;
   const verifier=session.yandexOauthVerifier;

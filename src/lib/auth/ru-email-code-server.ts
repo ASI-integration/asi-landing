@@ -87,6 +87,7 @@ async function sendRuAuthMail(email: string, code: string): Promise<void> {
         text:'Ваш одноразовый код ASI: '+code+'\n\nКод действует 10 минут. Если вы не запрашивали вход, проигнорируйте это письмо.',
       }),
       cache:'no-store',
+      redirect:'error',
       signal:controller.signal,
     });
     if(!response.ok)throw new Error('AUTH_DELIVERY_FAILED');
