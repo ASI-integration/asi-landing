@@ -79,3 +79,75 @@ Do not invent credentials or expose a working-looking unauthenticated button.
 **SOURCE_PREPARED only**. No schema changes applied, no production mail,
 no Yandex app registered, no site/secret modifications and no protected merge.
 P0 standing authority work (#551/#552) is separate and must not be interrupted.
+
+
+## Yandex ID implementation and owner-required registration
+
+Source code now includes disabled exact-origin OAuth 2.0 flow:
+- `src/lib/auth/ru-yandex-policy.ts`: 32-byte state, S256 PKCE, signed session
+  transient state, 10-minute expiry and canonical RU origin restriction.
+- `src/app/api/auth/yandex/start/route.ts`: login/link initiation. A link
+  requires an existing ASI session with fresh password or email-code proof.
+- `src/app/api/auth/yandex/callback/route.ts`: one-time state invalidation
+  before server-only code exchange; fetch subject `id` from Yandex with an
+  Authorization header, never URL query; link only by persistent Yandex
+  numeric subject. No automatic link by provider email.
+- `src/app/dashboard/settings/page.tsx`: link button only when configured.
+- `src/lib/auth/__tests__/ru-yandex-policy.test.ts`: pure negative tests.
+- Draft table `ru_auth_yandex_links`: RLS-enabled, service-role-only, one
+  Yandex subject per ASI user, no anonymous endpoint or direct grants.
+
+The app itself must be registered with the authorized ASI/Yandex operator:
+https://oauth.yandex.ru/client/new (registration interaction required; do NOT
+paste client_secret in a PR, chat, log, or public config).
+Choose **user authentication**, **Web services**, minimal scope
+`login:info` and the exact registered callback
+`https://www.asi-global.ru/api/auth/yandex/callback`
+(only if `www` is the production RU host; do not swap with Beget/G2/preview).
+After verified ownership, operator places server-only
+`ASI_RU_YANDEX_CLIENT_ID`, `ASI_RU_YANDEX_CLIENT_SECRET`,
+`ASI_RU_YANDEX_ORIGIN=https://www.asi-global.ru` in the actual RU host.
+Leave `ASI_RU_YANDEX_ID_ENABLED=false` and
+`ASI_RU_YANDEX_LINKS_READY=false` until the protected migration,
+full OAuth callback acceptance, redirect-origin check and user linking are
+independently verified. The UI has no functional button until both flags true.
+
+**Security:** Never infer owner entitlement from Yandex email. The initial
+Yandex login for an unlinked subject returns `link_first`. Authenticate the
+existing user with a confirmed email-code or valid password, then link
+from account settings after fresh login. Prevent link if the subject is already
+owned by another user, and never create another ASI account silently.
+Provider and ASI data-sharing consent/privacy notices require release review.
+
+## Verified environment reconnaissance (2026-10-29)
+- Connected Supabase provides **one active ASI project**. Read-only catalog
+  query confirmed none of the three proposed auth tables yet exist.
+  This may be live/shared data; NO production DDL is authorized by a Draft PR
+  or by exploratory verification.
+- Vercel project metadata reveals no `ASI_RU_EMAIL_CODE_PEPPER`,
+  `ASI_AUTH_RESEND_API_KEY`, `ASI_AUTH_FROM_EMAIL` or Yandex OAuth env
+  keys; existing variable VALUES were not accessed.
+- Live domain/target and sender ownership must be independently confirmed.
+  Existing runtime route evidence does not prove DNS health or operator access.
+- On current branch code is SOURCE_PREPARED only. All production/host/secret/
+  migration/real-send operations remain untouched until exact target,
+  independently validated rollout, pre-approved protected action and
+  rollback are available. A preview build cannot replace a live sign-in test.
+
+## Acceptance checklist to unblock a controlled rollout
+1. Install named migration in an **isolated staging database first**, using
+   an installed and version-checked Supabase CLI with `migration new`; do
+   not run the draft SQL directly against connected production. Capture
+   migration SHA/rollback plan, service_role/anon/authenticated grants, and
+   concurrent issuance/consume/expired/replay tests.
+2. Register/verify sending domain with SPF, DKIM and DMARC; configure the
+   transactional mail sender using protected environment variables only.
+   Test one consented dedicated mailbox, no bulk or guest messages.
+3. Verify persistent existing user identity and the existing iron-session,
+   old password login, owner GPS permissions, nonowner denial, no new trial,
+   five failed attempts and full code expiry/replay.
+4. Register and configure Yandex application; verify fresh password/code
+   step-up, link, re-login by subject, bad state, callback mismatch, expired
+   flow, subject conflicts, CSRF replay and revocation behavior.
+5. Independent exact-head CI and protected release, verify deployed source
+   SHA and rollback. Preserve existing account and messaging safety rules.
