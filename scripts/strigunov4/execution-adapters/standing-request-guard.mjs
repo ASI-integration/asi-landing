@@ -6,9 +6,10 @@ import path from 'node:path';
 import {inspectStandingTransaction,atomicJson,digest,must,LIVE_ROOT} from './state.mjs';
 import {ENGINE_ROOT,verifySignedPayload} from './host-authority.mjs';
 import {isCompiledGitHubRead} from './github-readonly.mjs';
+import {inspectPublisherLifecycleEvidence} from './github-publisher.mjs';
 import {createStandingPublisherBudget} from './standing-budget.mjs';
 import {readProtectedStandingTrustSnapshot} from '../../agent-os/release-envelope-trust-roots.mjs';
-import {readAuthenticatedProviderSnapshot,inspectAuthenticatedProviderSnapshot,assessRepositoryReleaseEnvelopeProposal} from '../../agent-os/check-demo-release.mjs';
+import {readAuthenticatedProviderSnapshot,inspectAuthenticatedProviderSnapshot,assessRepositoryReleaseEnvelopeProposal,assessPublisherReleaseEnvelopeProposal} from '../../agent-os/check-demo-release.mjs';
 const blocked=reason=>Object.freeze({status:'BLOCKED',reason,authorized:false});
 const h64=x=>typeof x==='string'&&/^[a-f0-9]{64}$/.test(x);
 const providerFields=['repository','number','baseSha','headSha','independentReviewerId'];
@@ -27,7 +28,8 @@ const below=(root,parent)=>root===parent||root.startsWith(parent+path.sep);
 /** Isolated preview only. Never attach reserve() to transport: its result is NOT true. */
 export function createStandingRequestPreview({store,transaction,signedEnvelope,signedEvidence,
   request,comparison,providerObservation,providerExpected,expectedTrust,clock=Date.now,protectedReader,
-  isolatedPreview=false}={}) {
+  isolatedPreview=false,publisherPhases=false}={}) {
+  must(typeof publisherPhases==='boolean','STANDING_PHASE_MODE');
   const initial=inspectStandingTransaction(transaction);
   must(isolatedPreview===true&&path.isAbsolute(initial.root)&&
     !below(path.resolve(initial.root),LIVE_ROOT)&&!below(path.resolve(initial.root),ENGINE_ROOT),
@@ -36,17 +38,33 @@ export function createStandingRequestPreview({store,transaction,signedEnvelope,s
   must(declaredRoot&&Object.hasOwn(declaredRoot,'value')&&declaredRoot.value===initial.root&&
     initial.kind==='github-publisher','STANDING_STORE_MISMATCH');
   // Signed strings, comparison and proposal context are copied before asynchronous work.
-  const input=dataCopy({signedEnvelope,signedEvidence,request,comparison,providerObservation:providerObservation??null,providerExpected,expectedTrust});
+  const input=dataCopy({signedEnvelope,signedEvidence,request,comparison,providerObservation:providerObservation??null,providerExpected:providerExpected??null,expectedTrust});
   // Journal paths come only from the authenticated state lease, never a caller facade.
   const boundStore=Object.freeze({root:initial.root,file(name){
     must(['execution.lock','autopilot-ledger.json'].includes(name),'STANDING_STATE_PATH');
     return path.join(initial.root,'state',name);
   }});
+  // Observe every budget/trust clock read through one transaction-scoped floor.
+  // A post-fsync rollback cannot revive expired or stale evidence; spent claims
+  // remain durable when this throws and the preview becomes permanently blocked.
+  const sourceClock=clock;let clockHighWater=-1;
+  clock=()=>{
+    const at=sourceClock();
+    must(Number.isSafeInteger(at)&&at>=0&&at>=clockHighWater,'STANDING_CLOCK_REGRESSION');
+    clockHighWater=at;return at;
+  };
   const ledger=initial.ledger,budget=createStandingPublisherBudget({store:boundStore,ledger,clock});
   let ordinal=0,poisoned=false,bootstrapActive=false,pending=0,providerAttempted=false,authenticatedObservation;
-  let tail=Promise.resolve();
-  const bootstrapRoutes=new Set([`pulls/${input.providerExpected.number}`]);
-  for(let page=1;page<=3;page++){
+  let tail=Promise.resolve(),phaseChanging=false,localPhase=null,exactPhase=null,phaseProvider=null;
+  const admissionPhase={phase:'ADMISSION_READ',signedEvidence:input.signedEvidence,request:input.request,comparison:input.comparison};
+  if(publisherPhases){
+    must(input.request.headSha===null,'STANDING_PREPUBLICATION_HEAD');
+    must(input.providerExpected&&Object.keys(input.providerExpected).length===1&&
+      Number.isSafeInteger(input.providerExpected.independentReviewerId)&&input.providerExpected.independentReviewerId>0,
+    'STANDING_REVIEWER_PIN_REQUIRED');
+  }
+  const bootstrapRoutes=new Set(!publisherPhases&&input.providerExpected?[`pulls/${input.providerExpected.number}`]:[]);
+  for(let page=1;!publisherPhases&&input.providerExpected&&page<=3;page++){
     bootstrapRoutes.add(`pulls/${input.providerExpected.number}/reviews?per_page=100&page=${page}`);
     for(const [id,event,sha] of [[311380800,'pull_request',input.providerExpected.headSha],
       [390653294,'pull_request_target',input.providerExpected.baseSha]])
@@ -65,15 +83,34 @@ export function createStandingRequestPreview({store,transaction,signedEnvelope,s
       inspectAuthenticatedProviderSnapshot({...observation.snapshot,expected:input.providerExpected,now:clock()}).status==='PROVIDER_EVIDENCE_VERIFIED',
     'STANDING_PROVIDER_PROPOSAL_BLOCKED');
   }
+  function assessPhase(phase,trust,descriptor){
+    return assessPublisherReleaseEnvelopeProposal({signedEnvelope:input.signedEnvelope,
+      signedEvidence:phase.signedEvidence,trustedPublicKey:trust.issuerPublicKey,
+      verifierPublicKey:trust.verifierPublicKey,request:phase.request,now:clock()},
+    {phase:phase.phase,transaction,publisherEvidence:phase.publisherEvidence,
+      comparison:phase.comparison,descriptor,providerObservation:phase.providerObservation,
+      providerExpected:phase.providerExpected});
+  }
+  async function readTrust(){
+    const prior=ledger.standingRevocationCheckpoint;
+    must(prior&&Number.isSafeInteger(prior.sequence)&&h64(prior.manifestDigest)&&
+      Array.isArray(prior.revokedEnvelopeDigests),'STANDING_REVOCATION_HISTORY_REQUIRED');
+    const trust=await readProtectedStandingTrustSnapshot({expected:{...input.expectedTrust,
+      minRevocationSequence:prior.sequence,minRevocationManifestDigest:prior.manifestDigest,
+      priorRevokedEnvelopeDigests:prior.revokedEnvelopeDigests},now:clock(),clock,protectedReader});
+    must(trust.status==='PROTECTED_TRUST_VERIFIED','STANDING_TRUST_BLOCKED');return trust;
+  }
   // The bootstrap switch is lexical, never a caller argument to reserve(). It
   // admits only the reader's fixed GET inventory after signed local checks.
-  async function reserveInternal(descriptor,bootstrap=false,compiledRead=false,enqueuedLease){
+  async function reserveInternal(descriptor,bootstrap=false,compiledRead=false,enqueuedLease,readDescriptor){
       try {
         const {method,route,payloadSha256,requestSha256}=descriptor||{};
         must(['GET','POST'].includes(method)&&typeof route==='string'&&
           /^[A-Za-z0-9_/?=&:%.-]+$/.test(route)&&h64(payloadSha256)&&h64(requestSha256)&&
           requestSha256===digest(JSON.stringify({method,route,payloadSha256})), 'STANDING_REQUEST_IDENTITY');
         const write=method==='POST'&&!compiledRead;
+        const phase=publisherPhases?(write?localPhase:admissionPhase):null;
+        if(publisherPhases)must(phase&&(!write||!exactPhase),'STANDING_LOCAL_PHASE_REQUIRED');
         must(!compiledRead||method==='POST'&&route==='graphql','STANDING_REQUEST_OPERATION');
         must(!write||writes[route],'STANDING_REQUEST_OPERATION');
         must(!descriptor.signal?.aborted,'STANDING_REQUEST_ABORTED');
@@ -99,11 +136,16 @@ export function createStandingRequestPreview({store,transaction,signedEnvelope,s
         const envelopeDigest=digest(input.signedEnvelope.payload);
         must(envelopeDigest===trust.envelopeDigest&&envelope.verifierKeySha256===trust.verifierKeySha256,
           'STANDING_SIGNATURE_BINDING');
-        if(!bootstrap)verifyObservation(providerAttempted?authenticatedObservation:input.providerObservation);
-        must(assessRepositoryReleaseEnvelopeProposal({signedEnvelope:input.signedEnvelope,
-          signedEvidence:input.signedEvidence,trustedPublicKey:trust.issuerPublicKey,
-          verifierPublicKey:trust.verifierPublicKey,request:input.request,now:clock()},
-        input.comparison).status==='PROPOSAL_ELIGIBLE','STANDING_REPOSITORY_PROPOSAL_BLOCKED');
+        if(publisherPhases){
+          must(assessPhase(phase,trust,readDescriptor||descriptor).status==='PROPOSAL_ELIGIBLE',
+            'STANDING_PHASE_PROPOSAL_BLOCKED');
+        }else{
+          if(!bootstrap)verifyObservation(providerAttempted?authenticatedObservation:input.providerObservation);
+          must(assessRepositoryReleaseEnvelopeProposal({signedEnvelope:input.signedEnvelope,
+            signedEvidence:input.signedEvidence,trustedPublicKey:trust.issuerPublicKey,
+            verifierPublicKey:trust.verifierPublicKey,request:input.request,now:clock()},
+          input.comparison).status==='PROPOSAL_ELIGIBLE','STANDING_REPOSITORY_PROPOSAL_BLOCKED');
+        }
         const current=inspectStandingTransaction(transaction,{write});
         must(current.phase===lease.phase&&current.taskId===lease.taskId&&current.taskSha===lease.taskSha,
           'STANDING_PHASE_CHANGED');
@@ -114,7 +156,8 @@ export function createStandingRequestPreview({store,transaction,signedEnvelope,s
         const effectId=digest(JSON.stringify({envelopeDigest,method,route,payloadSha256,
           ...(write?{}:{transactionId:lease.transactionId,phase:lease.phase,ordinal:ordinal++})}));
         const binding={taskId,taskSha,candidateSha:input.request.headSha,method,route,payloadSha256,
-          requestSha256,envelopeDigest,phase:lease.phase,evidencePhase:bootstrap?'bootstrap':'complete',
+          requestSha256,envelopeDigest,phase:lease.phase,evidencePhase:publisherPhases?phase.phase:bootstrap?'bootstrap':'complete',
+          ...(publisherPhases?{headBinding:'ORIGINAL_BASE_BEFORE_PUBLICATION',taskBinding:input.request.taskBinding,artifactDigest:input.request.artifactDigest}:{}),
           operationKind:kind};
         const bindings=ledger.standingRequestBindings||{};
         must(!Object.hasOwn(bindings,effectId),'STANDING_REQUEST_REPLAY');
@@ -127,8 +170,8 @@ export function createStandingRequestPreview({store,transaction,signedEnvelope,s
         ledger.standingRevocationCheckpoint=trust.revocationCheckpoint;
         ledger.standingRequestBindings=nextBindings;
         inspectStandingTransaction(transaction,{write});
-        const result=await budget.reserve({envelope:{...envelope,envelopeDigest},effect:{effectId,
-          taskId,headSha:taskSha,kind,envelopeDigest,repo:envelope.repo,environment:envelope.environment,
+        const result=await budget.reserve({readDescriptor,envelope:{...envelope,envelopeDigest},effect:{effectId,
+          taskId,taskSha,headSha:publisherPhases?input.request.baseSha:input.request.headSha,method,route,payloadSha256,requestSha256,kind,envelopeDigest,repo:envelope.repo,environment:envelope.environment,
           target:envelope.target,action:envelope.action}});
         inspectStandingTransaction(transaction,{write});
         must(result.status==='RESERVED','STANDING_BUDGET_BLOCKED');
@@ -143,11 +186,13 @@ export function createStandingRequestPreview({store,transaction,signedEnvelope,s
           finalTrust.revocationManifestDigest===trust.revocationManifestDigest&&
           clock()>=envelope.notBefore&&clock()<envelope.expiresAt,'STANDING_CHANGED_AFTER_RESERVATION');
         // Reservation/trust I/O can cross the evidence freshness boundary.
-        const finishedAt=clock(),witness=verifySignedPayload(input.signedEvidence,finalTrust.verifierPublicKey);
+        const finishedAt=clock(),witness=verifySignedPayload(publisherPhases?phase.signedEvidence:input.signedEvidence,finalTrust.verifierPublicKey);
         must(Number.isSafeInteger(finishedAt)&&Number.isSafeInteger(witness.observedAt)&&
           witness.observedAt>=envelope.notBefore&&witness.observedAt<=finishedAt&&
           finishedAt-witness.observedAt<=60000,'STANDING_EVIDENCE_STALE_AFTER_RESERVATION');
-        if(!bootstrap)verifyObservation(providerAttempted?authenticatedObservation:input.providerObservation);
+        if(publisherPhases)must(assessPhase(phase,finalTrust,readDescriptor||descriptor).status==='PROPOSAL_ELIGIBLE',
+          'STANDING_PHASE_CHANGED_AFTER_RESERVATION');
+        else if(!bootstrap)verifyObservation(providerAttempted?authenticatedObservation:input.providerObservation);
         must(!descriptor.signal?.aborted,'STANDING_REQUEST_ABORTED');
         return Object.freeze({status:'RESERVED_PREVIEW',authorized:false,effectId,taskId,taskSha,
           requestSha256,requests:result.requests,writes:result.writes});
@@ -157,7 +202,7 @@ export function createStandingRequestPreview({store,transaction,signedEnvelope,s
     // Explicit hard stop: neither bootstrap evidence nor a reservation grants authority.
     beforeRequest:async()=>false,
     reserve(descriptor){
-      if(poisoned||bootstrapActive)return Promise.resolve(blocked('STANDING_PREVIEW_LOCKED'));
+      if(poisoned||bootstrapActive||phaseChanging)return Promise.resolve(blocked('STANDING_PREVIEW_LOCKED'));
       if(pending>=256){poisoned=true;return Promise.resolve(blocked('STANDING_QUEUE_LIMIT'));}
       let captured,compiledRead,enqueuedLease;
       try{
@@ -176,25 +221,72 @@ export function createStandingRequestPreview({store,transaction,signedEnvelope,s
       }catch{poisoned=true;return Promise.resolve(blocked('STANDING_PREVIEW_REJECTED'));}
       pending++;
       const next=tail.then(()=>poisoned?blocked('STANDING_PREVIEW_LOCKED'):
-        reserveInternal(captured,false,compiledRead,enqueuedLease));
+        reserveInternal(captured,false,compiledRead,enqueuedLease,compiledRead?descriptor:undefined));
       // All ports share this single lane; failed/unknown reservations deny queued work.
       tail=next.then(()=>{},()=>{poisoned=true;});
       return next.finally(()=>{pending--;});
     },
-    async readProvider({token,fetchImpl}={}){
-      if(poisoned||bootstrapActive||pending>0)return blocked('STANDING_PREVIEW_LOCKED');
+    // Records native phase evidence only; never returns the transport's boolean grant.
+    async observeLifecycle(event,evidence){
+      if(!publisherPhases||poisoned||bootstrapActive||phaseChanging||pending>0)return blocked('STANDING_PREVIEW_LOCKED');
+      phaseChanging=true;
+      try{
+        const native=inspectPublisherLifecycleEvidence(event,transaction),phase=native.phase;
+        must(phase==='LOCAL_DELTA_VERIFIED'&&!localPhase&&!exactPhase||
+          phase==='EXACT_HEAD_VERIFIED'&&!exactPhase,'STANDING_PHASE_ORDER');
+        const supplied=dataCopy(evidence);
+        if(phase==='EXACT_HEAD_VERIFIED')must(phaseProvider?.event===native,'STANDING_PHASE_PROVIDER_REQUIRED');
+        const candidate={phase,publisherEvidence:native,signedEvidence:supplied.signedEvidence,
+          request:phase==='LOCAL_DELTA_VERIFIED'?input.request:{...input.request,headSha:native.headSha,pr:native.pr},
+          comparison:phase==='LOCAL_DELTA_VERIFIED'?input.comparison:{...input.comparison,headSha:native.headSha},
+          providerObservation:phase==='EXACT_HEAD_VERIFIED'?phaseProvider.observation:null,
+          providerExpected:phase==='EXACT_HEAD_VERIFIED'?phaseProvider.expected:null};
+        const trust=await readTrust();
+        must(assessPhase(candidate,trust).status==='PROPOSAL_ELIGIBLE','STANDING_PHASE_PROPOSAL_BLOCKED');
+        // Phase observation advances the same durable revocation floor even
+        // before its next metered request; a later old manifest cannot roll back.
+        await atomicJson(boundStore.file('autopilot-ledger.json'),{...ledger,standingRevocationCheckpoint:trust.revocationCheckpoint});
+        ledger.standingRevocationCheckpoint=trust.revocationCheckpoint;
+        const finalTrust=await readTrust();
+        must(finalTrust.revocationManifestDigest===trust.revocationManifestDigest&&
+          assessPhase(candidate,finalTrust).status==='PROPOSAL_ELIGIBLE','STANDING_PHASE_CHANGED');
+        inspectPublisherLifecycleEvidence(native,transaction);
+        if(phase==='LOCAL_DELTA_VERIFIED')localPhase=candidate;else exactPhase=candidate;
+        return Object.freeze({status:'PROPOSAL_ELIGIBLE',phase,authorized:false});
+      }catch{poisoned=true;return blocked('STANDING_PHASE_REJECTED');}
+      finally{phaseChanging=false;}
+    },
+    async readProvider({token,fetchImpl,publisherEvidence,expected}={}){
+      if(poisoned||bootstrapActive||phaseChanging||pending>0)return blocked('STANDING_PREVIEW_LOCKED');
       bootstrapActive=true;providerAttempted=true;authenticatedObservation=undefined;
       try{
         const lease=inspectStandingTransaction(transaction);
+        let pinned=input.providerExpected,native;
+        if(publisherPhases){
+          phaseProvider=null;native=inspectPublisherLifecycleEvidence(publisherEvidence,transaction);
+          must(native.phase==='EXACT_HEAD_VERIFIED'&&native.taskId===input.request.taskId&&
+            native.taskSha===input.request.baseSha&&native.taskBinding===input.request.taskBinding,
+          'STANDING_PHASE_PROVIDER_IDENTITY');
+          pinned=dataCopy(expected);
+          must(pinned.repository===input.request.repo&&pinned.baseSha===input.request.baseSha&&
+            pinned.headSha===native.headSha&&pinned.number===native.pr&&
+            pinned.independentReviewerId===input.providerExpected.independentReviewerId,'STANDING_PHASE_PROVIDER_IDENTITY');
+        }
         const observation=await readAuthenticatedProviderSnapshot({token,fetchImpl,clock,
-          expected:dataCopy(input.providerExpected),beforeRequest:async descriptor=>{
-            const result=await reserveInternal(descriptor,true);
+          expected:dataCopy(pinned),beforeRequest:async descriptor=>{
+            const result=await reserveInternal(descriptor,!publisherPhases);
             return result.status==='RESERVED_PREVIEW'&&!descriptor.signal.aborted;
           }});
         const current=inspectStandingTransaction(transaction);
         must(!poisoned&&current.phase===lease.phase&&current.taskId===lease.taskId&&
           current.taskSha===lease.taskSha,'STANDING_PHASE_CHANGED');
-        verifyObservation(observation);
+        if(publisherPhases){
+          inspectPublisherLifecycleEvidence(native,transaction);
+          must(observation.status==='PROVIDER_EVIDENCE_VERIFIED'&&observation.authorized===false&&
+            inspectAuthenticatedProviderSnapshot({...observation.snapshot,expected:pinned,now:clock()}).status==='PROVIDER_EVIDENCE_VERIFIED',
+          'STANDING_PHASE_PROVIDER_REJECTED');
+          phaseProvider={event:native,expected:dataCopy(pinned),observation:dataCopy(observation)};
+        }else verifyObservation(observation);
         // No externally supplied snapshot can overwrite the private observed bytes.
         authenticatedObservation=dataCopy(observation);
         return dataCopy(observation);

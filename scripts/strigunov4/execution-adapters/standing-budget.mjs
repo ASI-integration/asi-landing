@@ -11,7 +11,9 @@
  * No separate ledger, writer, scheduler, capability or automatic replay.
  */
 import fs from 'node:fs/promises';
+import {createHash} from 'node:crypto';
 import {atomicJson, must} from './state.mjs';
+import {isCompiledGitHubRead} from './github-readonly.mjs';
 
 const HEX64 = /^[0-9a-f]{64}$/;
 const HEX40 = /^[0-9a-f]{40}$/;
@@ -22,12 +24,17 @@ const MAX_ENVELOPES = 16;
 const MAX_CLAIMS = 256;
 const READ = 'github-read';
 const WRITES = new Set(['create-tree', 'create-commit', 'create-branch', 'create-draft-pr']);
+const POST_ROUTES = Object.freeze({'create-tree':'git/trees','create-commit':'git/commits',
+  'create-branch':'git/refs','create-draft-pr':'pulls'});
+const WIRE_ROUTE = /^[A-Za-z0-9_/?=&:%.-]{1,512}$/;
+const hash = value => createHash('sha256').update(value).digest('hex');
 // A store.execute ledger object must never have two independent reservation queues.
 const budgetInstances = new WeakSet();
 const ENVELOPE_FIELDS = ['schema','repo','environment','target','action','envelopeDigest',
   'securityDigest','policyDigest','notBefore','expiresAt','paidApiUsd',
   'maxOperations','maxRequests','maxWrites'];
-const EFFECT_FIELDS = ['effectId','taskId','headSha','kind','envelopeDigest',
+const EFFECT_FIELDS = ['effectId','taskId','taskSha','headSha','kind','method','route',
+  'payloadSha256','requestSha256','envelopeDigest',
   'repo','environment','target','action'];
 // Capture every checked field synchronously BEFORE enqueue/await. Reject accessors,
 // inherited properties and non-plain objects rather than reading mutable input later.
@@ -48,6 +55,25 @@ const h64 = x => typeof x === 'string' && HEX64.test(x);
 const h40 = x => typeof x === 'string' && HEX40.test(x);
 const ident = x => typeof x === 'string' && ID.test(x);
 const deny = reason => Object.freeze({status:'DENIED', reason, reserved:false});
+// The host passes the exact serialized transport identity. It must already have
+// selected the trusted route and captured the outbound body before calling us.
+// A write's wire fingerprint, unlike its envelope-specific effectId, survives
+// issuer rotation, new envelope signatures and new caller-chosen effect IDs.
+function validWire(e) {
+  if (!h40(e.taskSha) || !h64(e.payloadSha256) || !h64(e.requestSha256) ||
+      typeof e.route !== 'string' || !WIRE_ROUTE.test(e.route) ||
+      e.route.includes('..') || e.route.startsWith('/')) return false;
+  const read = e.kind === READ;
+  const query=read&&e.readProtocol==='compiled-threads';
+  if(query){if(e.method!=='POST'||e.route!=='graphql')return false;}
+  else {
+    if(e.readProtocol!==undefined||e.method!==(read?'GET':'POST'))return false;
+    if(read?e.payloadSha256!==hash(''):POST_ROUTES[e.kind]!==e.route)return false;
+  }
+  return e.requestSha256 === hash(JSON.stringify({
+    method:e.method,route:e.route,payloadSha256:e.payloadSha256,
+  }));
+}
 
 function validateEnvelope(e, at) {
   if (!e || e.schema !== 'asi.release-envelope.proposal.v1' || e.repo !== REPO ||
@@ -65,7 +91,7 @@ function validateEnvelope(e, at) {
 
 function validateEffect(e, effect) {
   if (!effect || !ident(effect.effectId) || !ident(effect.taskId) ||
-      !h40(effect.headSha) ||
+      !h40(effect.headSha) || !validWire(effect) ||
       typeof effect.kind !== 'string' || (effect.kind !== READ && !WRITES.has(effect.kind)) ||
       effect.envelopeDigest !== e.envelopeDigest || effect.repo !== e.repo ||
       effect.environment !== e.environment || effect.target !== e.target ||
@@ -98,7 +124,7 @@ function soundJournalEntry(entry, key) {
       entry.requests > scope.maxRequests || entry.writes > scope.maxWrites ||
       entry.operations > scope.maxOperations ||
       !entry.claims.every(c=>c && ident(c.effectId) && ident(c.taskId) &&
-        h40(c.headSha) && (c.kind === READ || WRITES.has(c.kind)) &&
+        h40(c.headSha) && (c.kind === READ || WRITES.has(c.kind)) && validWire(c) &&
         Number.isSafeInteger(c.reservedAt) && c.reservedAt >= scope.notBefore &&
         c.reservedAt < scope.expiresAt && c.reservedAt <= entry.lastObservedAt &&
         c.phase === 'RESERVED' &&
@@ -106,7 +132,9 @@ function soundJournalEntry(entry, key) {
       entry.requests !== entry.claims.length ||
       entry.writes !== entry.claims.filter(c=>c.kind !== READ).length ||
       entry.operations !== entry.claims.length ||
-      new Set(entry.claims.map(c=>c.effectId)).size !== entry.claims.length) return false;
+      new Set(entry.claims.map(c=>c.effectId)).size !== entry.claims.length ||
+      new Set(entry.claims.filter(c=>c.kind!==READ).map(c=>c.requestSha256)).size !==
+        entry.claims.filter(c=>c.kind!==READ).length) return false;
   return true;
 }
 
@@ -127,13 +155,17 @@ export function createStandingPublisherBudget({store, ledger, clock=Date.now}={}
     tail = next.then(() => {}, () => {});
     return next;
   }
-  return Object.freeze({reserve({envelope, effect}={}) {
+  return Object.freeze({reserve({envelope, effect, readDescriptor}={}) {
     // A caller may reuse or mutate input objects, but no later mutation may
     // change the scope or effect of this particular reservation.
     let capturedEnvelope, capturedEffect;
     try {
       capturedEnvelope=snapshot(envelope,ENVELOPE_FIELDS);
       capturedEffect=snapshot(effect,EFFECT_FIELDS);
+      if(capturedEffect?.kind===READ&&capturedEffect.method==='POST'){
+        if(!isCompiledGitHubRead(readDescriptor)||!['method','route','payloadSha256','requestSha256'].every(k=>readDescriptor[k]===capturedEffect[k]))capturedEffect=null;
+        else capturedEffect=Object.freeze({...capturedEffect,readProtocol:'compiled-threads'});
+      }
     } catch { capturedEnvelope=null; capturedEffect=null; }
     return enqueue(async () => {
       if (!capturedEnvelope || !capturedEffect) return deny('BUDGET_INPUT_INVALID');
@@ -170,11 +202,25 @@ export function createStandingPublisherBudget({store, ledger, clock=Date.now}={}
       const scope = exactScope(envelope);
       // Validate ALL existing claims and reject effect IDs used under another
       // envelope. A new signature never grants permission to replay an effect.
+      // Historical duplicates must also block unrelated new work: checking only
+      // today's effect would silently accept an already-corrupt cross-envelope journal.
+      const usedIds=new Set(),usedPosts=new Set();
+      let latestObserved=0;
       for (const [key,entry] of Object.entries(budget.envelopes)) {
         must(soundJournalEntry(entry,key),'BUDGET_LEDGER_INVALID');
-        if (entry.claims.some(c=>c.effectId===effect.effectId))
-          return deny('BUDGET_REPLAY_OR_UNKNOWN');
+        latestObserved=Math.max(latestObserved,entry.lastObservedAt);
+        for(const claim of entry.claims){
+          must(!usedIds.has(claim.effectId),'BUDGET_LEDGER_INVALID');
+          usedIds.add(claim.effectId);
+          if(claim.kind!==READ){
+            must(!usedPosts.has(claim.requestSha256),'BUDGET_LEDGER_INVALID');
+            usedPosts.add(claim.requestSha256);
+          }
+        }
       }
+      if(lockedAt<latestObserved)return deny('BUDGET_CLOCK_REGRESSION');
+      if(usedIds.has(effect.effectId)||(effect.kind!==READ&&usedPosts.has(effect.requestSha256)))
+        return deny('BUDGET_REPLAY_OR_UNKNOWN');
       if (current) {
         must(same(current.scope,scope),'BUDGET_LEDGER_INVALID');
         if (lockedAt < current.lastObservedAt) return deny('BUDGET_CLOCK_REGRESSION');
@@ -189,8 +235,11 @@ export function createStandingPublisherBudget({store, ledger, clock=Date.now}={}
       // A reservation is irreversible, even when the API call fails or times out.
       // Existing publication-${taskId}.json INTENT and state.execute FAILED_LOCKED
       // provide remote-result evidence and the crash brake; neither is reset here.
-      const claim = {effectId:effect.effectId,taskId:effect.taskId,headSha:effect.headSha,
-        kind:effect.kind, reservedAt:lockedAt, phase:'RESERVED',
+      const claim = {effectId:effect.effectId,taskId:effect.taskId,taskSha:effect.taskSha,
+        headSha:effect.headSha,kind:effect.kind,method:effect.method,route:effect.route,
+        payloadSha256:effect.payloadSha256,requestSha256:effect.requestSha256,
+        ...(effect.readProtocol?{readProtocol:effect.readProtocol}:{}),
+        reservedAt:lockedAt, phase:'RESERVED',
         publicationJournal:`publication-${effect.taskId}.json`};
       const updated = {...before,lastObservedAt:lockedAt,operations:before.operations + 1,
         requests:before.requests + 1,writes:before.writes + write,
@@ -201,7 +250,8 @@ export function createStandingPublisherBudget({store, ledger, clock=Date.now}={}
       await atomicJson(store.file('autopilot-ledger.json'),{...ledger,standingDelegationBudget:next});
       ledger.standingDelegationBudget = next;
       return Object.freeze({status:'RESERVED',reserved:true,envelopeDigest:scope.digest,
-        effectId:claim.effectId,taskId:claim.taskId,headSha:claim.headSha,
+        effectId:claim.effectId,taskId:claim.taskId,taskSha:claim.taskSha,
+        requestSha256:claim.requestSha256,headSha:claim.headSha,
         kind:claim.kind,operations:updated.operations,requests:updated.requests,
         writes:updated.writes});
     });

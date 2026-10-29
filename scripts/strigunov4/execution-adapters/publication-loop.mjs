@@ -60,6 +60,11 @@ export async function createPublicationLoop({root,legacyStateDir,catalog,fetchSn
         must(d&&Object.hasOwn(d,'value'),'TRANSACTION_PORTS_INVALID');captured[name]=d.value;
       }
       must(typeof captured.fetchSnapshot==='function'&&captured.remote&&captured.reader,'TRANSACTION_PORTS_INVALID');
+      if(transactionPorts){
+        const observer=Object.getOwnPropertyDescriptor(supplied,'observeLifecycle');
+        if(observer){must(Object.hasOwn(observer,'value')&&typeof observer.value==='function','PUBLICATION_OBSERVER_INVALID');
+          captured.observeLifecycle=observer.value;}
+      }
       if(transactionPorts)for(const [name,methods] of [
         ['remote',['get','createTree','createCommit','createBranch','createDraft']],
         ['reader',['get','pages','verifyTask','threads']],
@@ -69,7 +74,8 @@ export async function createPublicationLoop({root,legacyStateDir,catalog,fetchSn
           must(d&&Object.hasOwn(d,'value')&&typeof d.value==='function','TRANSACTION_PORTS_INVALID');}
       }
       ports=Object.freeze(captured);
-      publisher=createGitHubPublisher({store,remote:ports.remote,reader:ports.reader,authorize,runChecks,independentReview,verifyAdmission,ciPolicies,clock,timeoutMs});
+      publisher=createGitHubPublisher({store,remote:ports.remote,reader:ports.reader,authorize,runChecks,independentReview,verifyAdmission,ciPolicies,clock,timeoutMs,
+        transaction,observeLifecycle:ports.observeLifecycle});
       priorWitness=await witness();
       const snapshot=await bounded(signal=>ports.fetchSnapshot({signal,transaction}),timeoutMs),queue=decideQueue(snapshot,{enginePilot});
       activeSnapshot=JSON.stringify(snapshot);

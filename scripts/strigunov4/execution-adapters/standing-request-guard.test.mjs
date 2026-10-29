@@ -38,18 +38,26 @@ function fixture({maxRequests=10,revoked=false}={}){
  const protectedReader=async p=>p.endsWith('owner-public.pem')?owner.pem:p.endsWith('standing-verifier-public.pem')?verifier.pem:JSON.stringify(sr);
  const input={signedEnvelope,signedEvidence,request,comparison,providerObservation,providerExpected,expectedTrust,clock:()=>now,protectedReader,isolatedPreview:true};
  const task={id:'source-task',sha:baseSha,repo:envelope.repo,branch:'fixture',stage:'S4-G1',pr:null};
- return {root,state,input,prior,task,close:()=>fs.rmSync(root,{recursive:true,force:true})};
+ return {root,state,input,prior,task,owner,verifier,close:()=>fs.rmSync(root,{recursive:true,force:true})};
+}
+// state.execute intentionally catches callback failures and returns FAILED_LOCKED.
+// Assert its outcome OUTSIDE that catch so a failing fixture assertion fails the test.
+async function checkedExecute(store,...args){
+ const result=await store.execute(...args);
+ assert(result?.status==='PASS'||result?.mode==='WAITING',
+  `unexpected transaction outcome: ${JSON.stringify(result)}`);
+ return result;
 }
 const descriptor=(method='GET',route='branches/main')=>{const payloadSha256=digest('');return {method,route,payloadSha256,requestSha256:digest(JSON.stringify({method,route,payloadSha256}))};};
 test('real signed trust/Git/provider model reserves pre-STARTED reads and STARTED writes under one real transaction, never admits transport',async()=>{
  const x=fixture();try{const store=await initializeState(x.state);let preview;
- const result=await store.execute('github-publisher',async({ledger,transaction})=>{ledger.standingRevocationCheckpoint=x.prior;preview=createStandingRequestPreview({...x.input,store,transaction});assert.equal(await preview.beforeRequest(),false);assert.equal((await preview.reserve(descriptor())).status,'RESERVED_PREVIEW');return x.task;},{verifyTask:async()=>({sha:x.task.sha})},async()=>{const r=await preview.reserve(descriptor('POST','git/trees'));assert.equal(r.status,'RESERVED_PREVIEW');assert.equal(r.authorized,false);assert.equal(r.taskSha,x.task.sha);return {status:'PASS'};});
+ const result=await checkedExecute(store,'github-publisher',async({ledger,transaction})=>{ledger.standingRevocationCheckpoint=x.prior;preview=createStandingRequestPreview({...x.input,store,transaction});assert.equal(await preview.beforeRequest(),false);assert.equal((await preview.reserve(descriptor())).status,'RESERVED_PREVIEW');return x.task;},{verifyTask:async()=>({sha:x.task.sha})},async()=>{const r=await preview.reserve(descriptor('POST','git/trees'));assert.equal(r.status,'RESERVED_PREVIEW');assert.equal(r.authorized,false);assert.equal(r.taskSha,x.task.sha);return {status:'PASS'};});
  assert.equal(result.status,'PASS');const ledger=JSON.parse(fs.readFileSync(store.file('autopilot-ledger.json')));assert.equal(Object.keys(ledger.standingRequestBindings).length,2);assert.equal(Object.values(ledger.standingDelegationBudget.envelopes)[0].requests,2);assert.equal(ledger.standingRevocationCheckpoint.sequence,1);
  assert.equal((await preview.reserve(descriptor())).status,'BLOCKED');
  }finally{x.close();}
 });
 test('admission write, stale provider and missing history fail closed without budget',async()=>{
- for(const mode of ['write','stale','missing']){const x=fixture();try{const store=await initializeState(x.state);await store.execute('github-publisher',async({ledger,transaction})=>{if(mode!=='missing')ledger.standingRevocationCheckpoint=x.prior;if(mode==='stale')x.input.providerObservation.snapshot.reviews[0].state='DISMISSED';const p=createStandingRequestPreview({...x.input,store,transaction});assert.equal((await p.reserve(mode==='write'?descriptor('POST','git/trees'):descriptor())).status,'BLOCKED');assert.equal(ledger.standingDelegationBudget,undefined);return null;},{},()=>{});}finally{x.close();}}
+ for(const mode of ['write','stale','missing']){const x=fixture();try{const store=await initializeState(x.state);await checkedExecute(store,'github-publisher',async({ledger,transaction})=>{if(mode!=='missing')ledger.standingRevocationCheckpoint=x.prior;if(mode==='stale')x.input.providerObservation.snapshot.reviews[0].state='DISMISSED';const p=createStandingRequestPreview({...x.input,store,transaction});assert.equal((await p.reserve(mode==='write'?descriptor('POST','git/trees'):descriptor())).status,'BLOCKED');assert.equal(ledger.standingDelegationBudget,undefined);return null;},{},()=>{});}finally{x.close();}}
 });
 test('live-root preview construction is always rejected before any trust read',()=>{
  assert.throws(()=>createStandingRequestPreview({store:{root:LIVE_ROOT},isolatedPreview:true}),/STANDING_TRANSACTION_INVALID/);
@@ -57,7 +65,7 @@ test('live-root preview construction is always rejected before any trust read',(
 
 test('expiry after reservation denies and retains spent claim',async()=>{
  const x=fixture();try{const store=await initializeState(x.state);let calls=0;
-  await store.execute('github-publisher',async({ledger,transaction})=>{
+  await checkedExecute(store,'github-publisher',async({ledger,transaction})=>{
    ledger.standingRevocationCheckpoint=x.prior;
    // The final trust reread happens only after the real budget commit.
    const protectedReader=async p=>{calls++;return x.input.protectedReader(p);};
@@ -71,7 +79,7 @@ test('expiry after reservation denies and retains spent claim',async()=>{
 });
 test('caller store facade cannot redirect journal or lock paths outside authenticated lease',async()=>{
  const x=fixture();try{const store=await initializeState(x.state),external=path.join(x.root,'external');fs.mkdirSync(external);let called=false;
-  await store.execute('github-publisher',async({ledger,transaction})=>{
+  await checkedExecute(store,'github-publisher',async({ledger,transaction})=>{
    ledger.standingRevocationCheckpoint=x.prior;
    const facade={root:store.root,file(name){called=true;return path.join(external,name);}};
    const preview=createStandingRequestPreview({...x.input,store:facade,transaction});
@@ -85,7 +93,7 @@ test('caller store facade cannot redirect journal or lock paths outside authenti
 
 test('accessor root facade is rejected without invoking its getter',async()=>{
  const x=fixture();try{const store=await initializeState(x.state);let called=false;
-  await store.execute('github-publisher',async({ledger,transaction})=>{
+  await checkedExecute(store,'github-publisher',async({ledger,transaction})=>{
    ledger.standingRevocationCheckpoint=x.prior;
    const facade={get root(){called=true;return store.root;},file:store.file};
    assert.throws(()=>createStandingRequestPreview({...x.input,store:facade,transaction}),/STANDING_STORE_MISMATCH/);
@@ -95,14 +103,17 @@ test('accessor root facade is rejected without invoking its getter',async()=>{
 });
 
 function providerFetch(x,store,{beforeFetch=()=>{},reviewState}={}){
- let calls=0;const snapshot=x.input.providerObservation.snapshot;
- return {get calls(){return calls;},async fetch(url){
+ let calls=0;const snapshot=x.input.providerObservation.snapshot,observations=[];
+ return {get calls(){return calls;},verify(){
+   for(const [index,entry] of observations.entries()){
+    assert.equal(entry.requests,index+1,'durable charge must precede reader fetch');
+    assert.equal(entry.writes,0);assert.equal(entry.jobs,0,'bootstrap cannot manufacture STARTED');
+   }
+  },async fetch(url){
    calls++;
    const ledger=JSON.parse(fs.readFileSync(store.file('autopilot-ledger.json')));
-   assert.equal(Object.values(ledger.standingDelegationBudget.envelopes)[0].requests,calls,
-     'durable request charge must exist before each actual reader fetch');
-   assert.equal(Object.values(ledger.standingDelegationBudget.envelopes)[0].writes,0);
-   assert.equal(Object.keys(ledger.jobs).length,0,'bootstrap must not manufacture STARTED');
+   const budget=Object.values(ledger.standingDelegationBudget?.envelopes||{})[0];
+   observations.push({requests:budget?.requests,writes:budget?.writes,jobs:Object.keys(ledger.jobs).length});
    await beforeFetch();
    const u=new URL(url);let body;
    if(u.pathname.endsWith('/reviews'))body=snapshot.reviews.map(r=>({...r,state:reviewState||r.state}));
@@ -113,7 +124,7 @@ function providerFetch(x,store,{beforeFetch=()=>{},reviewState}={}){
 }
 test('authenticated reader bootstrap and subsequent STARTED write share one durable budget; returned evidence cannot mutate private observation',async()=>{
  const x=fixture();try{const store=await initializeState(x.state);let preview,transport;
-  const result=await store.execute('github-publisher',async({ledger,transaction})=>{
+  const result=await checkedExecute(store,'github-publisher',async({ledger,transaction})=>{
    ledger.standingRevocationCheckpoint=x.prior;
    // No caller snapshot is required to fetch its authenticated replacement.
    transport=providerFetch(x,store,{reviewState:'APPROVED'});
@@ -125,7 +136,7 @@ test('authenticated reader bootstrap and subsequent STARTED write share one dura
    preview=createStandingRequestPreview({...withoutObservation,store,transaction,clock:()=>now+ticks++});
    const observed=await preview.readProvider({token:'INERT_FIXTURE',fetchImpl:transport.fetch});
    assert.equal(observed.status,'PROVIDER_EVIDENCE_VERIFIED');assert.equal(observed.authorized,false);
-   assert.equal(transport.calls,5);observed.snapshot.reviews[0].state='DISMISSED';
+   transport.verify();assert.equal(transport.calls,5);observed.snapshot.reviews[0].state='DISMISSED';
    return x.task;
   },{verifyTask:async()=>({sha:x.task.sha})},async()=>{
    const charged=await preview.reserve(descriptor('POST','git/trees'));
@@ -138,12 +149,12 @@ test('authenticated reader bootstrap and subsequent STARTED write share one dura
 });
 test('bootstrap exhaustion and unknown response retain charges and never fall back to supplied proposal snapshot',async()=>{
  for(const mode of ['exhausted','unknown','stale']){const x=fixture({maxRequests:mode==='exhausted'?3:10});try{const store=await initializeState(x.state);
-  await store.execute('github-publisher',async({ledger,transaction})=>{
+  await checkedExecute(store,'github-publisher',async({ledger,transaction})=>{
    ledger.standingRevocationCheckpoint=x.prior;const p=createStandingRequestPreview({...x.input,store,transaction});
    const remote=providerFetch(x,store,{reviewState:mode==='stale'?'DISMISSED':undefined,
      beforeFetch:()=>{if(mode==='unknown')throw Error('unknown response');}});
    assert.equal((await p.readProvider({token:'INERT_FIXTURE',fetchImpl:remote.fetch})).status,'BLOCKED');
-   const spent=mode==='exhausted'?3:mode==='unknown'?1:5;
+   remote.verify();const spent=mode==='exhausted'?3:mode==='unknown'?1:5;
    assert.equal(remote.calls,spent);assert.equal(Object.values(ledger.standingDelegationBudget.envelopes)[0].requests,spent);
    assert.equal((await p.reserve(descriptor())).status,'BLOCKED');return null;
   },{},()=>{});
@@ -151,7 +162,7 @@ test('bootstrap exhaustion and unknown response retain charges and never fall ba
 });
 test('revoked or expired bootstrap performs no provider fetch and consumes no request claim',async()=>{
  for(const mode of ['revoked','expired']){const x=fixture({revoked:mode==='revoked'});try{const store=await initializeState(x.state);let calls=0;
-  await store.execute('github-publisher',async({ledger,transaction})=>{
+  await checkedExecute(store,'github-publisher',async({ledger,transaction})=>{
    ledger.standingRevocationCheckpoint=x.prior;const p=createStandingRequestPreview({...x.input,store,transaction,
      clock:()=>mode==='expired'?now+100001:now});
    assert.equal((await p.readProvider({token:'INERT_FIXTURE',fetchImpl:async()=>{calls++;throw Error('must not dispatch');}})).status,'BLOCKED');
@@ -161,7 +172,7 @@ test('revoked or expired bootstrap performs no provider fetch and consumes no re
 });
 test('concurrent reserve/read cannot interleave bootstrap accounting or grant a pre-STARTED write',async()=>{
  const x=fixture();try{const store=await initializeState(x.state);
-  await store.execute('github-publisher',async({ledger,transaction})=>{
+  await checkedExecute(store,'github-publisher',async({ledger,transaction})=>{
    ledger.standingRevocationCheckpoint=x.prior;const p=createStandingRequestPreview({...x.input,store,transaction});
    let release,entered;const waiting=new Promise(r=>{entered=r;}),gate=new Promise(r=>{release=r;});
    const remote=providerFetch(x,store,{beforeFetch:async()=>{entered();await gate;}});
@@ -169,7 +180,7 @@ test('concurrent reserve/read cannot interleave bootstrap accounting or grant a 
    assert.equal((await p.reserve(descriptor('POST','git/trees'))).status,'BLOCKED');
    assert.equal((await p.readProvider({token:'INERT_FIXTURE',fetchImpl:remote.fetch})).status,'BLOCKED');
    release();assert.equal((await reading).status,'PROVIDER_EVIDENCE_VERIFIED');
-   assert.equal(remote.calls,5);return null;
+   remote.verify();assert.equal(remote.calls,5);return null;
   },{},()=>{});
  }finally{x.close();}
 });
@@ -177,7 +188,7 @@ test('concurrent reserve/read cannot interleave bootstrap accounting or grant a 
 test('concurrent real reader REST and compiled GraphQL requests queue in one budget and preserve read semantics',async t=>{
  const x=fixture();const original=globalThis.fetch;t.after(()=>{globalThis.fetch=original;x.close();});
  const store=await initializeState(x.state);let calls=0;
- await store.execute('github-publisher',async({ledger,transaction})=>{
+ await checkedExecute(store,'github-publisher',async({ledger,transaction})=>{
   ledger.standingRevocationCheckpoint=x.prior;const p=createStandingRequestPreview({...x.input,store,transaction});
   globalThis.fetch=async(url,options)=>{
    calls++;const disk=JSON.parse(fs.readFileSync(store.file('autopilot-ledger.json')));
@@ -192,15 +203,17 @@ test('concurrent real reader REST and compiled GraphQL requests queue in one bud
   };
   const reader=createGitHubReader({token:'INERT_FIXTURE',beforeRequest:async d=>(await p.reserve(d)).status==='RESERVED_PREVIEW'});
   await Promise.all([reader.get('branches/main'),reader.get('issues/511'),reader.threads({pr:123,sha:x.input.request.headSha})]);
-  assert.equal(calls,3);const entry=Object.values(ledger.standingDelegationBudget.envelopes)[0];
-  assert.equal(entry.requests,3);assert.equal(entry.writes,0);
+  await reader.threads({pr:123,sha:x.input.request.headSha});
+  assert.equal(calls,4);const entry=Object.values(ledger.standingDelegationBudget.envelopes)[0];
+  assert.equal(entry.requests,4);assert.equal(entry.writes,0);
+  assert.equal(entry.claims.filter(c=>c.readProtocol==='compiled-threads').length,2);
   const graph=Object.values(ledger.standingRequestBindings).find(b=>b.route==='graphql');
   assert.equal(graph.method,'POST');assert.equal(graph.operationKind,'github-read');return null;
  },{},()=>{});
 });
 test('queued descriptor bytes are captured before await and budget exhaustion denies queued work',async()=>{
  const x=fixture({maxRequests:2});try{const store=await initializeState(x.state);
-  await store.execute('github-publisher',async({ledger,transaction})=>{
+  await checkedExecute(store,'github-publisher',async({ledger,transaction})=>{
    ledger.standingRevocationCheckpoint=x.prior;const p=createStandingRequestPreview({...x.input,store,transaction});
    const first=descriptor('GET','branches/main'),a=p.reserve(first);first.route='issues/999';
    const b=p.reserve(descriptor('GET','issues/511')),c=p.reserve(descriptor('GET','pulls/123')),
@@ -214,7 +227,7 @@ test('queued descriptor bytes are captured before await and budget exhaustion de
 });
 test('forged GraphQL read descriptor cannot acquire compiled-query provenance or consume a claim',async()=>{
  const x=fixture();try{const store=await initializeState(x.state);let p;
-  await store.execute('github-publisher',async({ledger,transaction})=>{
+  await checkedExecute(store,'github-publisher',async({ledger,transaction})=>{
    ledger.standingRevocationCheckpoint=x.prior;p=createStandingRequestPreview({...x.input,store,transaction});return x.task;
   },{verifyTask:async()=>({sha:x.task.sha})},async()=>{
    assert.equal((await p.reserve({...descriptor('POST','graphql'),readOnly:true,operationKind:'github-read'})).status,'BLOCKED');
@@ -225,12 +238,61 @@ test('forged GraphQL read descriptor cannot acquire compiled-query provenance or
 });
 test('evidence that expires during final trust reads denies while preserving its spent claim',async()=>{
  const x=fixture();try{const store=await initializeState(x.state);let reads=0;
-  await store.execute('github-publisher',async({ledger,transaction})=>{
+  await checkedExecute(store,'github-publisher',async({ledger,transaction})=>{
    ledger.standingRevocationCheckpoint=x.prior;
    const p=createStandingRequestPreview({...x.input,store,transaction,
     protectedReader:async file=>{reads++;return x.input.protectedReader(file);},clock:()=>reads>6?now+60001:now});
    assert.equal((await p.reserve(descriptor())).status,'BLOCKED');
    assert.equal(Object.values(ledger.standingDelegationBudget.envelopes)[0].requests,1);return null;
   },{},()=>{});
+ }finally{x.close();}
+});
+
+
+test('same exact write cannot replay under a newly signed envelope and different task identity',async()=>{
+ const x=fixture();try{const store=await initializeState(x.state);let preview;
+  const run=async()=>store.execute('github-publisher',async({ledger,transaction})=>{
+   ledger.standingRevocationCheckpoint=x.prior;preview=createStandingRequestPreview({...x.input,store,transaction});return x.task;
+  },{verifyTask:async()=>({sha:x.task.sha})},async()=>{
+   const result=await preview.reserve(descriptor('POST','git/trees'));
+   if(result.status!=='RESERVED_PREVIEW')throw Error('REPLAY_BLOCKED');return {status:'PASS'};
+  });
+  assert.equal((await run()).status,'PASS');
+  const old=JSON.parse(x.input.signedEnvelope.payload),evidence=JSON.parse(x.input.signedEvidence.payload);
+  x.input.signedEnvelope=signed({...old,notBefore:old.notBefore-1},x.owner);
+  const envelopeDigest=hash(x.input.signedEnvelope.payload);
+  x.task={...x.task,id:'second-task'};x.input.request.taskId=x.task.id;
+  x.input.expectedTrust.envelopeDigest=envelopeDigest;
+  x.input.signedEvidence=signed({...evidence,envelopeDigest,taskId:x.task.id},x.verifier);
+  assert.equal((await run()).mode,'FAILED_LOCKED');
+  const ledger=JSON.parse(fs.readFileSync(store.file('autopilot-ledger.json')));
+  assert.equal(Object.values(ledger.standingDelegationBudget.envelopes).flatMap(e=>e.claims).length,1);
+ }finally{x.close();}
+});
+
+test('post-fsync clock rollback denies the real preview lease and preserves its spent claim',async()=>{
+ const x=fixture();try{
+  const store=await initializeState(x.state);let reserved,closed;
+  const observedAt=now-500;
+  const witness=JSON.parse(x.input.signedEvidence.payload);
+  x.input.signedEvidence=signed({...witness,observedAt},x.verifier);
+  x.input.providerObservation.snapshot.now=observedAt;
+  x.input.providerObservation.receipt.observedAt=observedAt;
+  for(const run of x.input.providerObservation.snapshot.runs)run.updated_at=new Date(observedAt).toISOString();
+  x.input.providerObservation.snapshot.reviews[0].submitted_at=new Date(observedAt).toISOString();
+  const clock=()=>{
+   const disk=JSON.parse(fs.readFileSync(store.file('autopilot-ledger.json')));
+   return disk.standingDelegationBudget?now-1:now;
+  };
+  await checkedExecute(store,'github-publisher',async({ledger,transaction})=>{
+   ledger.standingRevocationCheckpoint=x.prior;
+   const p=createStandingRequestPreview({...x.input,store,transaction,clock});
+   reserved=await p.reserve(descriptor());closed=await p.reserve(descriptor());return null;
+  },{},()=>{});
+  // Assertions outside execute: its FAILED_LOCKED exception handler must not hide regressions.
+  assert.equal(reserved?.status,'BLOCKED');assert.equal(closed?.status,'BLOCKED');
+  const disk=JSON.parse(fs.readFileSync(store.file('autopilot-ledger.json')));
+  assert.equal(Object.values(disk.standingDelegationBudget.envelopes)[0].requests,1);
+  assert.equal(Object.keys(disk.standingRequestBindings).length,1);
  }finally{x.close();}
 });

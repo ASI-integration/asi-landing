@@ -11,7 +11,7 @@ import {createPublisherTransport} from './publisher-transport.mjs';
 import {createGitHubReader,BOT_ID} from './github-readonly.mjs';
 const repo='ASI-integration/asi-landing',prefix='/repos/'+repo+'/';
 export const target='scripts/strigunov4/protected_c4_unit_apply.py';
-const git=(cwd,args,input)=>execFileSync('/usr/bin/git',args,{cwd,input,encoding:'utf8',env:{PATH:'/usr/bin:/bin',HOME:'/nonexistent',GIT_CONFIG_NOSYSTEM:'1',GIT_CONFIG_GLOBAL:'/dev/null',GIT_AUTHOR_NAME:'Fixture',GIT_AUTHOR_EMAIL:'fixture@example.invalid',GIT_COMMITTER_NAME:'Fixture',GIT_COMMITTER_EMAIL:'fixture@example.invalid'}}).trim();
+const git=(cwd,args,input,extraEnv={})=>execFileSync('/usr/bin/git',args,{cwd,input,encoding:'utf8',env:{PATH:'/usr/bin:/bin',HOME:'/nonexistent',GIT_CONFIG_NOSYSTEM:'1',GIT_CONFIG_GLOBAL:'/dev/null',GIT_AUTHOR_NAME:'Fixture',GIT_AUTHOR_EMAIL:'fixture@example.invalid',GIT_COMMITTER_NAME:'Fixture',GIT_COMMITTER_EMAIL:'fixture@example.invalid',...extraEnv}}).trim();
 const oid=(kind,text)=>createHash('sha1').update(`${kind} ${Buffer.byteLength(text)}\0`).update(text).digest('hex');
 export async function fixture(t,options={}){
  const base=await fs.mkdtemp(path.join(os.tmpdir(),'asi-publisher-')),root=path.join(base,'isolated'),legacy=path.join(base,'legacy');
@@ -19,6 +19,11 @@ export async function fixture(t,options={}){
  await fs.writeFile(path.join(legacy,'receipts.json'),JSON.stringify({version:1,completed:[]}));
  t.after(()=>fs.rm(base,{recursive:true,force:true}));
  const seed=path.join(base,'seed');await fs.mkdir(path.join(seed,path.dirname(target)),{recursive:true});
+ // Optional inert protected-base inventory for standing phase tests only.
+ for(const [relative,content] of Object.entries(options.seedFiles||{})){
+  if(!/^[A-Za-z0-9_./-]+$/.test(relative)||relative.split('/').some(x=>!x||x==='.'||x==='..')||relative.startsWith('/'))throw Error('FIXTURE_SEED_PATH');
+  await fs.mkdir(path.dirname(path.join(seed,relative)),{recursive:true});await fs.writeFile(path.join(seed,relative),content);
+ }
  await fs.writeFile(path.join(seed,target),'VALUE = 1\n');git(seed,['init','-q']);git(seed,['add','.']);git(seed,['commit','-qm','fixture']);
  const sha=git(seed,['rev-parse','HEAD']);
  const catalog=['fixture-a','fixture-b'].map((id,i)=>({id,kind:'github-publisher',stage:'S4-G1',workOrderId:'g1-unit-apply-source',repo,sha,pr:null,
@@ -43,16 +48,24 @@ export async function fixture(t,options={}){
   else if(route.startsWith('git/matching-refs/')){const ref=route.slice('git/matching-refs/'.length);result=[...refs].filter(([r])=>r.startsWith('refs/'+ref)).map(([r,head])=>({ref:r,object:{sha:head,type:'commit'}}));}
   else if(route==='git/trees'&&req.method==='POST'){
    const tree=structuredClone(trees.get(data.base_tree).tree);for(const e of data.tree){const old=tree.find(x=>x.path===e.path);Object.assign(old,{sha:oid('blob',e.content)});}
-   const hash=oid('tree',JSON.stringify(tree));trees.set(hash,{sha:hash,truncated:false,tree});result={sha:hash};
+   let hash=oid('tree',JSON.stringify(tree));
+   if(options.realGitObjects){
+    const env={GIT_INDEX_FILE:path.join(seed,'.git','fixture-publication-index')};
+    git(seed,['read-tree',data.base_tree],undefined,env);
+    for(const e of data.tree){const blob=git(seed,['hash-object','-w','--stdin'],e.content);
+     git(seed,['update-index','--add','--cacheinfo',`${e.mode},${blob},${e.path}`],undefined,env);}
+    hash=git(seed,['write-tree'],undefined,env);
+   }
+   trees.set(hash,{sha:hash,truncated:false,tree});result={sha:hash};
   }else if(route.startsWith('git/trees/')){result=structuredClone(trees.get(route.split('/').at(-1)));if(state.badTree&&result.sha!==baseTree)result.tree[0].mode='100755';}
-  else if(route==='git/commits'&&req.method==='POST'){const hash=oid('commit',JSON.stringify(data));commits.set(hash,{sha:hash,tree:{sha:data.tree},parents:data.parents.map(sha=>({sha}))});result={sha:hash};}
+  else if(route==='git/commits'&&req.method==='POST'){const hash=options.realGitObjects?git(seed,['commit-tree',data.tree,...data.parents.flatMap(sha=>['-p',sha])],data.message):oid('commit',JSON.stringify(data));commits.set(hash,{sha:hash,tree:{sha:data.tree},parents:data.parents.map(sha=>({sha}))});result={sha:hash};}
   else if(route.startsWith('git/commits/')){result=commits.get(route.split('/').at(-1));}
   else if(route==='git/refs'&&req.method==='POST'){if(refs.has(data.ref)){res.writeHead(422);res.end('{}');return;}refs.set(data.ref,data.sha);result={ref:data.ref,object:{sha:data.sha,type:'commit'}};}
   else if(route==='pulls'&&req.method==='POST'){
    const number=600+pulls.size,head=refs.get('refs/heads/'+data.head);result={number,title:data.title,body:data.body,state:'open',merged:false,draft:data.draft,changed_files:1,
     head:{sha:head,ref:data.head,repo:{full_name:repo}},base:{sha:state.main,ref:'main',repo:{full_name:repo}},html_url:`https://github.com/${repo}/pull/${number}`};pulls.set(number,result);
   }else if(route==='pulls')result=[...pulls.values()].filter(p=>url.searchParams.get('head')==='ASI-integration:'+p.head.ref);
-  else if(/^pulls\/\d+\/files$/.test(route)){const p=pulls.get(Number(route.split('/')[1])),commit=commits.get(p.head.sha);result=trees.get(commit.tree.sha).tree.map(e=>({filename:e.path,status:'modified',sha:e.sha}));}
+  else if(/^pulls\/\d+\/files$/.test(route)){const p=pulls.get(Number(route.split('/')[1])),commit=commits.get(p.head.sha);result=trees.get(commit.tree.sha).tree.filter(e=>!leaves.some(base=>base.path===e.path&&base.sha===e.sha)).map(e=>({filename:e.path,status:'modified',sha:e.sha}));}
   else if(/^pulls\/\d+$/.test(route))result=pulls.get(Number(route.split('/')[1]));
   else if(route==='actions/runs'){
    const head=url.searchParams.get('head_sha'),event=url.searchParams.get('event');

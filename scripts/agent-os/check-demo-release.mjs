@@ -7,6 +7,9 @@
 import fs from 'node:fs';
 import { createHash, createPublicKey } from 'node:crypto';
 import { verifySignedPayload } from '../strigunov4/execution-adapters/host-authority.mjs';
+import { inspectStandingTransaction } from '../strigunov4/execution-adapters/state.mjs';
+import { inspectPublisherLifecycleEvidence } from '../strigunov4/execution-adapters/github-publisher.mjs';
+import { isCompiledGitHubRead } from '../strigunov4/execution-adapters/github-readonly.mjs';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
@@ -151,7 +154,11 @@ function fields(body) {
  * Even an eligible proposal returns authorized=false: adoption and durable
  * reservation must be implemented/reviewed before any authority is granted.
  */
-export function assessReleaseEnvelopeProposal({ envelope: e, evidence: v, request: r, now }) {
+export function assessReleaseEnvelopeProposal(input) {
+  return assessEnvelopePhase(input, 'EXACT_HEAD_VERIFIED');
+}
+// Internal phase split: prepublication checks never invent a future HEAD or CI.
+function assessEnvelopePhase({ envelope: e, evidence: v, request: r, now }, phase) {
   const deny = reason => ({ status: 'BLOCKED', reason, authorized: false });
   const digest = x => typeof x === 'string' && /^[a-f0-9]{64}$/.test(x);
   const sha = x => typeof x === 'string' && SHA.test(x);
@@ -183,10 +190,16 @@ export function assessReleaseEnvelopeProposal({ envelope: e, evidence: v, reques
       !r.changedPaths.every(p => e.allowedPaths.includes(p)) ||
       r.changedPaths.some(envelopeProtectedPath))
     return deny('ENVELOPE_PROTECTED_CHANGE');
-  if (!sha(r.headSha) || !sha(r.baseSha) || !digest(r.artifactDigest) ||
-      v.headSha !== r.headSha || v.baseSha !== r.baseSha || v.artifactDigest !== r.artifactDigest ||
-      v.ci !== 'SUCCESS' || v.independentReview !== 'PASS' || v.branchProtection !== 'PASS')
+  if (!sha(r.baseSha) || !digest(r.artifactDigest) || v.baseSha !== r.baseSha ||
+      v.artifactDigest !== r.artifactDigest || v.branchProtection !== 'PASS')
     return deny('ENVELOPE_EXACT_EVIDENCE');
+  if (phase === 'EXACT_HEAD_VERIFIED') {
+    if (!sha(r.headSha) || v.headSha !== r.headSha || v.ci !== 'SUCCESS' ||
+        v.independentReview !== 'PASS') return deny('ENVELOPE_EXACT_EVIDENCE');
+  } else if (e.action !== 'source' || r.headSha !== null || v.headSha !== null ||
+      v.ci !== null || v.independentReview !== null) {
+    return deny('ENVELOPE_PREPUBLICATION_EVIDENCE');
+  }
   if (!natural(e.maxOperations) || e.maxOperations === 0 || !natural(v.usedOperations) ||
       v.usedOperations >= e.maxOperations || e.paidApiUsd !== 0 || v.paidApiUsd !== 0)
     return deny('ENVELOPE_BUDGET');
@@ -502,6 +515,129 @@ export function assessRepositoryReleaseEnvelopeProposal(input, trustedComparison
       input.request.securityDigest !== security.securityDigest)
     return deny('ENVELOPE_SECURITY_DIGEST');
   return assessWitnessedReleaseEnvelopeProposal(input);
+}
+
+/** Disabled Publisher phase composition. This does NOT replace checkPr or the
+ * existing authorize port. A protected verifier must issue each fresh phase
+ * witness; neither a native callback nor a signature is live authority.
+ * ADMISSION_READ admits no write and needs no nonexistent PR/head/CI.
+ */
+export function assessPublisherReleaseEnvelopeProposal(input, context) {
+  const deny = reason => ({status:'BLOCKED', reason, authorized:false});
+  const hash = value => createHash('sha256').update(value).digest('hex');
+  const fingerprint = pem => hash(createPublicKey(pem).export({type:'spki',format:'der'}));
+  const same = (a,b) => JSON.stringify(a) === JSON.stringify(b);
+  let copiedFields = 0;
+  const copy = (value, depth = 0) => {
+    must(depth <= 16 && ++copiedFields <= 10000,'ENVELOPE_PHASE_DATA');
+    if (value === null || ['string','boolean','number'].includes(typeof value)) return value;
+    must(value && typeof value === 'object' &&
+      (Array.isArray(value) || [Object.prototype,null].includes(Object.getPrototypeOf(value))),
+    'ENVELOPE_PHASE_DATA');
+    const result = Array.isArray(value) ? [] : {};
+    for (const [key,descriptor] of Object.entries(Object.getOwnPropertyDescriptors(value))) {
+      if (Array.isArray(value) && key === 'length') continue;
+      must(key !== '__proto__' && Object.hasOwn(descriptor,'value'),'ENVELOPE_PHASE_DATA');
+      result[key] = copy(descriptor.value,depth+1);
+    }
+    return result;
+  };
+  try {
+    input = copy(input);
+    const descriptors = Object.getOwnPropertyDescriptors(context || {});
+    context = {};
+    for (const [key,descriptor] of Object.entries(descriptors)) {
+      must(key !== '__proto__' && Object.hasOwn(descriptor,'value'),'ENVELOPE_PHASE_DATA');
+      context[key] = descriptor.value;
+    }
+    const phase = context.phase;
+    must(['ADMISSION_READ','LOCAL_DELTA_VERIFIED','EXACT_HEAD_VERIFIED'].includes(phase),
+      'ENVELOPE_PHASE');
+    const request = copy(input.request), comparison = copy(context.comparison);
+    const now = input.now;
+    const lease = inspectStandingTransaction(context.transaction,{write:phase!=='ADMISSION_READ'});
+    must(lease.kind === 'github-publisher' &&
+      (phase === 'ADMISSION_READ' ? ['admission','preflight','started','postflight'].includes(lease.phase) : lease.phase === 'started'),
+    'ENVELOPE_PHASE_LEASE');
+    if (lease.taskId) must(lease.taskId === request.taskId && lease.taskSha === request.baseSha,
+      'ENVELOPE_PHASE_TASK');
+    if (phase === 'ADMISSION_READ') {
+      const descriptor = context.descriptor;
+      const data = Object.getOwnPropertyDescriptors(descriptor || {});
+      const read = Object.fromEntries(['method','route','payloadSha256','requestSha256'].map(key => {
+        must(data[key] && Object.hasOwn(data[key],'value') && typeof data[key].value === 'string',
+          'ENVELOPE_READ_DESCRIPTOR');return [key,data[key].value];
+      }));
+      must(read.method === 'GET' && read.payloadSha256 === hash('') ||
+        read.method === 'POST' && read.route === 'graphql' && isCompiledGitHubRead(descriptor),
+      'ENVELOPE_READ_ONLY');
+      must(read.requestSha256 === hash(JSON.stringify({method:read.method,route:read.route,
+        payloadSha256:read.payloadSha256})),'ENVELOPE_READ_DESCRIPTOR');
+      must(!data.signal || Object.hasOwn(data.signal,'value') &&
+        data.signal.value instanceof AbortSignal && !data.signal.value.aborted,'ENVELOPE_READ_DESCRIPTOR');
+    }
+    must(typeof request.taskBinding === 'string' && /^[a-f0-9]{64}$/.test(request.taskBinding) &&
+      typeof request.branch === 'string' && /^asi\/engine-task\/[a-z0-9-]{1,96}$/.test(request.branch),
+    'ENVELOPE_PHASE_TASK');
+    const envelope = verifySignedPayload(input.signedEnvelope,input.trustedPublicKey);
+    must(envelope && !Array.isArray(envelope) && !Object.hasOwn(envelope,'envelopeDigest') &&
+      JSON.stringify(envelope) === input.signedEnvelope.payload && envelope.action === 'source',
+    'ENVELOPE_PHASE_SCOPE');
+    must(envelope.verifierKeySha256 === fingerprint(input.verifierPublicKey) &&
+      envelope.verifierKeySha256 !== fingerprint(input.trustedPublicKey),'ENVELOPE_VERIFIER_IDENTITY');
+    const envelopeDigest = hash(input.signedEnvelope.payload);
+    const witness = verifySignedPayload(input.signedEvidence,input.verifierPublicKey);
+    must(witness && witness.schema === 'asi.release-envelope-publisher-evidence.proposal.v1' &&
+      JSON.stringify(witness) === input.signedEvidence.payload && witness.phase === phase &&
+      witness.envelopeDigest === envelopeDigest && witness.taskBinding === request.taskBinding &&
+      witness.branch === request.branch && same(witness.changedPaths,request.changedPaths),
+    'ENVELOPE_PHASE_WITNESS');
+    must(comparison.repository === REPO && comparison.baseSha === request.baseSha &&
+      comparison.headSha === (phase === 'EXACT_HEAD_VERIFIED' ? request.headSha : request.baseSha),
+    'ENVELOPE_TRUSTED_COMPARISON');
+    const security = inspectProtectedRepositorySecurity(comparison);
+    must(security.status === 'PROTECTED_SECURITY_VERIFIED' &&
+      security.securityDigest === envelope.securityDigest && security.policyDigest === envelope.policyDigest,
+    'ENVELOPE_SECURITY_DIGEST');
+    if (phase !== 'ADMISSION_READ') {
+      const native = inspectPublisherLifecycleEvidence(context.publisherEvidence,context.transaction);
+      must(native.phase === phase && native.repo === request.repo && native.taskId === request.taskId &&
+        native.taskSha === request.baseSha && native.taskBinding === request.taskBinding &&
+        native.branch === request.branch && same(native.paths,request.changedPaths) &&
+        native.deltaSha256 === request.artifactDigest && Number.isSafeInteger(native.observedAt) &&
+        native.observedAt >= envelope.notBefore && native.observedAt <= now && now-native.observedAt <= 60000,
+      'ENVELOPE_NATIVE_PHASE_BINDING');
+      if (phase === 'LOCAL_DELTA_VERIFIED') {
+        must(native.localChecks === 'PASS' && native.independentDeltaReview === 'PASS' &&
+          typeof native.reviewEvidenceId === 'string' && native.reviewEvidenceId.length > 0 &&
+          witness.localChecks === native.localChecks && witness.independentDeltaReview === native.independentDeltaReview &&
+          witness.reviewEvidenceId === native.reviewEvidenceId,'ENVELOPE_LOCAL_REVIEW');
+      } else {
+        must(native.headSha === request.headSha && native.pr === request.pr &&
+          native.ci?.status === 'PASS' && native.review?.status === 'PASS','ENVELOPE_NATIVE_EXACT_HEAD');
+      }
+    }
+    if (phase === 'EXACT_HEAD_VERIFIED') {
+      must(same(prChanges(comparison.baseSha,comparison.headSha,comparison.repoRoot),request.changedPaths),
+        'ENVELOPE_DIFF_INVENTORY');
+      const observation = copy(context.providerObservation), expected = copy(context.providerExpected);
+      must(expected.repository === request.repo && expected.baseSha === request.baseSha &&
+        expected.headSha === request.headSha && expected.number === request.pr &&
+        observation.status === 'PROVIDER_EVIDENCE_VERIFIED' && observation.authorized === false &&
+        same(observation.snapshot.expected,expected) && observation.receipt?.observedAt === observation.snapshot.now &&
+        Number.isSafeInteger(observation.snapshot.now) && observation.snapshot.now <= now &&
+        now-observation.snapshot.now <= 60000 &&
+        inspectAuthenticatedProviderSnapshot({...observation.snapshot,expected,now}).status === 'PROVIDER_EVIDENCE_VERIFIED',
+      'ENVELOPE_PHASE_PROVIDER');
+    }
+    const result = assessEnvelopePhase({envelope:{...envelope,envelopeDigest},
+      evidence:{...witness,ownerVerified:true,ownerId:OWNER_ID},request,now},phase);
+    return result.status === 'PROPOSAL_ELIGIBLE' ? {...result,phase,
+      permittedEffect:phase === 'ADMISSION_READ' ? 'READ_ONLY' :
+        phase === 'LOCAL_DELTA_VERIFIED' ? 'DRAFT_SOURCE_ONLY' : 'VERIFICATION_ONLY'} : result;
+  } catch (error) {
+    return deny(/^ENVELOPE_[A-Z_]+$/.test(error?.message || '') ? error.message : 'ENVELOPE_PHASE_UNVERIFIED');
+  }
 }
 
 /** Git objects only, no execution of either tree. Security inventory includes

@@ -246,3 +246,34 @@ adoption design must also avoid requiring a successful invocation of the same
 governance job before that job can admit a routine update; its independent CI and
 post-integration acceptance phases must be explicitly reviewed. No new owner
 decision is requested while these source integration items remain.
+
+
+### Draft Publisher phase composition (source only)
+
+The existing Publisher now distinguishes signed `ADMISSION_READ`,
+`LOCAL_DELTA_VERIFIED` and `EXACT_HEAD_VERIFIED` proposal evidence. Read admission
+before STARTED does not assert a future PR/head or successful future CI. Local
+publication evidence binds the actual prepared delta, whole task identity and
+independent delta-review receipt. Final evidence binds the published Git HEAD,
+complete diff and independently checked provider CI/review. Native evidence is
+transaction-bound and does not confer authority; a copied event is invalid.
+
+The isolated standing preview shares the existing execution lock and journal for
+all request phases. Request wire identity prevents a new signed envelope from
+replaying a previously reserved write. The complete budget history and a durable
+clock floor are validated; denial after fsync retains the spent claim. Old
+proposal journals missing required wire fields fail closed; this change contains
+no live journal migration or reset.
+
+`PROPOSAL_ELIGIBLE` / `RESERVED_PREVIEW` are never `AUTHORIZED`. The preview's
+`beforeRequest` remains false, existing Publisher authorization stays mandatory,
+and protected-base `checkPr` still enforces v0. Loopback tests with fixture keys
+and fixture authority do not adopt delegation. A separately verified policy
+transition and trusted enforcement/issuer/verifier configuration are required
+before any live standing capability. Stop/rollback preserves claims, revocation
+history and UNKNOWN/FAILED_LOCKED; no automatic refund, retry or key change.
+
+Scope clarification (owner override, 29 October 2026): this P0 lane does not
+freeze, stop, edit or approve the independent Engine #549 and RU-auth #554
+workstreams. Earlier global-freeze wording is superseded; their protected gates
+and separate permissions remain mandatory.
