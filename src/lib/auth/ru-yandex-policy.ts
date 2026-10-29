@@ -51,6 +51,20 @@ export function hasRecentYandexLinkProof(
     now >= authenticatedAt && now - authenticatedAt <= YANDEX_OAUTH_TTL_MS;
 }
 
+/** Account linking must start through intentional first-party browser navigation.
+ * Same-site subdomains and unsolicited cross-site GETs are not trustworthy.
+ */
+export function trustedYandexLinkNavigation(
+  requestUrl: string, fetchSite: string | null, referer: string | null,
+): boolean {
+  try {
+    const target = new URL(requestUrl);
+    if (target.protocol !== 'https:') return false;
+    if (fetchSite !== null) return fetchSite === 'same-origin';
+    return !!referer && new URL(referer).origin === target.origin;
+  } catch { return false; }
+}
+
 export function yandexCallbackUrl(env: Readonly<Record<string,string|undefined>>): string {
   if (!ruYandexConfigured(env)) throw new Error('YANDEX_NOT_CONFIGURED');
   return env.ASI_RU_YANDEX_ORIGIN! + YANDEX_CALLBACK_PATH;
