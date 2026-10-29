@@ -239,6 +239,48 @@ leaseTest('signature expiry after durable fsync denies success but preserves the
   }finally{await f.close();}
 });
 
+leaseTest('a post-fsync clock rollback poisons the lease for later operations even if the clock recovers',async()=>{
+  const f=await fixture();try{
+    let ticks=0,first,second;
+    const outcome=await f.store.execute('github-publisher',async({transaction})=>{
+      const b=createLeaseBoundStandingBudget({transaction,pinnedBaseSha:base,
+        clock:()=>++ticks===3?at-100:at});
+      const lease=inspectStandingTransaction(transaction);
+      first=await b.reserve({envelope:envelope(),effect:effect('anomaly-first',lease)});
+      second=await b.reserve({envelope:envelope(),effect:effect('anomaly-second',lease)});
+      return null;
+    },{async verifyTask(){throw Error('unexpected');}},async()=>{throw Error('unexpected');});
+    assert.equal(outcome.mode,'WAITING');
+    assert.equal(first.reason,'BUDGET_CLOCK_AFTER_RESERVATION');
+    assert.equal(second.reason,'BUDGET_UNCERTAIN_TRANSACTION');
+    assert.equal(second.authorized,false);
+    assert.equal((await f.read()).standingDelegationBudget.envelopes['b'.repeat(64)].claims.length,1);
+  }finally{await f.close();}
+});
+
+leaseTest('post-fsync signed expiry cannot switch to a fresh envelope in the same uncertain transaction',async()=>{
+  const f=await fixture();try{
+    let ticks=0,first,second;
+    await f.store.execute('github-publisher',async({transaction})=>{
+      const budget=createLeaseBoundStandingBudget({transaction,pinnedBaseSha:base,
+        clock:()=>++ticks<=2?at:at+100001});
+      const lease=inspectStandingTransaction(transaction);
+      first=await budget.reserve({envelope:envelope(),
+        effect:effect('expired-first',lease)});
+      const nextDigest='f'.repeat(64);
+      second=await budget.reserve({
+        envelope:envelope({envelopeDigest:nextDigest,expiresAt:at+500000}),
+        effect:effect('fresh-after-expiry',lease,'github-read',{envelopeDigest:nextDigest})});
+      return null;
+    },{async verifyTask(){throw Error('unexpected');}},async()=>{throw Error('unexpected');});
+    assert.equal(first.reason,'BUDGET_ENVELOPE_EXPIRED_AFTER_RESERVATION');
+    assert.equal(second.reason,'BUDGET_UNCERTAIN_TRANSACTION');
+    const budget=(await f.read()).standingDelegationBudget;
+    assert.deepEqual(Object.keys(budget.envelopes),['b'.repeat(64)]);
+    assert.equal(budget.envelopes['b'.repeat(64)].claims.length,1);
+  }finally{await f.close();}
+});
+
 leaseTest('post-fsync clock rollback denies but keeps its durable spent claim',async()=>{
   const f=await fixture();try{
     let ticks=0, observed;
