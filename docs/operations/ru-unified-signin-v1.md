@@ -199,3 +199,33 @@ Provider and ASI data-sharing consent/privacy notices require release review.
   requires isolated PostgreSQL, RLS and race verification before migration.
 - No Yandex application, domain, DNS, credentials, sender, database or
   production release was modified in this checkpoint.
+
+## OTP pending activation and token response hardening — 29 October 2026
+
+- The SQL remains a **source-only draft**. The issue RPC now persists an
+  **inactive** pending challenge; delivered_at stays NULL and the consume RPC
+  rejects it. The separate activate RPC can make only that exact hash usable,
+  in a DB transaction and only after the dedicated mail provider accepted the
+  request. The service checks a true RPC result; errors or timeouts do not count
+  as successful delivery. Failures attempt exact-hash revocation, preserving the
+  hour quotas. This closes the prior window when a newly issued hash was valid
+  before mail confirmation.
+- Operational caveat: a mail-provider acknowledgement, a database commit and the
+  application's receipt cannot form one distributed atomic transaction. If an
+  activation commits but its reply is lost and subsequent revocation fails, the
+  result is **UNKNOWN**, not a proven revoked code. Keep email login disabled
+  until disposable-DB fault injection has exercised this path and the controlled
+  release has an incident/expiry response. The pending-by-default path prevents
+  credentials from activating merely because issuance or delivery failed.
+- The Yandex token response is now checked for the officially documented
+  token_type=bearer; unknown types, control characters, missing tokens and
+  oversized access tokens fail closed before sending an Authorization header.
+  References: https://yandex.ru/dev/id/doc/ru/codes/code-url and
+  https://yandex.ru/dev/id/doc/ru/user-information .
+- Focused mock regression tests were **added**, including request/delivery/
+  activation ordering and negative failure paths. Auth source has not passed
+  standalone repository TypeScript, Vitest, isolated SQL concurrency, provider
+  acceptance or owner login yet. A Vercel preview build alone is not acceptance.
+- No schema was applied to either of the owner's TWO Supabase projects or to
+  Beget PostgreSQL. No sender or OAuth application was administered, and no
+  real mail was sent during this source change.
