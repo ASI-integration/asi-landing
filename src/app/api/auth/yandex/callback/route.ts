@@ -62,14 +62,20 @@ export async function GET(request:Request) {
   const strongUserId=session.lastStrongAuthUserId;
   const intended=yandexSafeReturn(session.yandexOauthRedirect);
   const code=url.searchParams.get('code');
-  const matched=verifyYandexState(state,url.searchParams.get('state')) &&
-    yandexFlowStillValid(startedAt) &&
+  const matched=yandexFlowStillValid(startedAt) &&
     typeof verifier==='string' && /^[A-Za-z0-9_-]{43,128}$/.test(verifier) &&
     (mode==='login'||mode==='link') &&
     !url.searchParams.has('error') &&
     typeof code==='string' && code.length>5 && code.length<4096;
 
-  // Burn transient state before external token request; never reuse a callback.
+  // A cross-site request can hit this GET callback with SameSite=None cookies.
+  // Never let an unsolicited/mismatched state erase the user's pending OAuth
+  // login or account link. Only a callback proving possession of our random
+  // state may consume the transient flow, including legitimate provider errors.
+  if (!verifyYandexState(state,url.searchParams.get('state')))
+    return fail(url.origin,'invalid_state');
+
+  // Burn a state-matched flow before external token request; prevent reuse.
   delete session.yandexOauthState;
   delete session.yandexOauthVerifier;
   delete session.yandexOauthStartedAt;
