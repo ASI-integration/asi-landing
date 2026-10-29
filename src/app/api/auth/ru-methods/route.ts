@@ -5,7 +5,7 @@ import { ruYandexConfigured } from '@/lib/auth/ru-yandex-policy';
 
 export const runtime='nodejs';
 export const dynamic='force-dynamic';
-export async function GET() {
+export async function GET(request: Request) {
   const isRu=await getIsRuHost();
   return NextResponse.json({
     market:isRu?'ru':'other',
@@ -13,7 +13,8 @@ export async function GET() {
     password:true,
     // Yandex ID must not be advertised until app registration, state/PKCE,
     // protected subject binding and independent acceptance are all complete.
-    yandexId:isRu&&ruYandexConfigured(process.env),
+    yandexId:isRu&&ruYandexConfigured(process.env)&&
+      new URL(request.url).origin===process.env.ASI_RU_YANDEX_ORIGIN,
     googleOptional:true,
   },{headers:{'Cache-Control':'private, no-store, max-age=0'}});
 }
