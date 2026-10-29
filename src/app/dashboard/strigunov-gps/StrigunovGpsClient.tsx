@@ -21,6 +21,7 @@ type Snapshot = {
   ok: boolean; observedAt: string; mapUrl: string; mapSha: string; staleSnapshot?: boolean;
   issue: {number: number; state: string; updatedAt: string; url: string};
   stages: Stage[]; prs: Pr[]; workerLanes?: AgentLane[]; partialSources?: boolean;
+  githubMode?: 'authenticated' | 'public-read-only'; githubRefreshSeconds?: number;
   telemetry: {available: boolean; stale: boolean; status: string;
     stage: string | null; updatedAt: string | null; physicalProof: false};
   serverEvidence: {available: boolean; verifiedStages: string[]; reason: string};
@@ -136,6 +137,10 @@ export default function StrigunovGpsClient() {
           <h2 className="text-lg font-black">5 инженерных направлений · одна система ASI</h2>
           <p className="mt-1 text-xs text-slate-600">
             Источник — GitHub: коммиты, PR и ветки. Наличие кода не подтверждает запущенный процесс.
+            {data?.githubMode==='public-read-only' &&
+              ' Публичные данные GitHub кэшируются на 30 минут; это не прямая телеметрия Engine.'}
+            {data?.githubMode==='authenticated' &&
+              ' Исходные данные GitHub кэшируются на 3 минуты.'}
           </p>
         </div>
         <span className="rounded-lg bg-slate-100 px-3 py-2 text-xs font-semibold text-slate-700">
