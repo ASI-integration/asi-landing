@@ -84,6 +84,16 @@ export function buildYandexAuthorizationUrl(opts:{
   return url.toString();
 }
 
+/** Yandex documents bearer token_type; never put malformed/unknown tokens in an Authorization header. */
+export function verifiedYandexBearerAccessToken(value: unknown): string | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const body = value as Record<string, unknown>;
+  if (typeof body.token_type !== 'string' || body.token_type.toLowerCase() !== 'bearer') return null;
+  if (typeof body.access_token !== 'string' ||
+      !/^[\x21-\x7e]{10,4096}$/.test(body.access_token)) return null;
+  return body.access_token;
+}
+
 export function yandexSubject(value:unknown): string|null {
   // Yandex ID /info "id" is numeric string. Never authenticate by email.
   if(typeof value==='string' && /^[1-9][0-9]{0,39}$/.test(value)) return value;
