@@ -106,16 +106,30 @@ def read_file(p,**kw):return stored[Path(p).name]
 def call(a,**kw):
  assert a[:3]==['/usr/bin/systemctl','show',m.UNIT]
  return status.encode()
+def staged_lstat(p):
+ p=Path(p)
+ if p==m.STATE:
+  return SimpleNamespace(st_mode=stat.S_IFDIR|0o700,st_uid=1020,st_gid=1020)
+ directory=p==m.RUNTIME or p==m.RUNTIME/'scripts'
+ if directory:
+  permissions=0o700 if mode=='runtime-0700' and p==m.RUNTIME else 0o755
+  return SimpleNamespace(st_mode=stat.S_IFDIR|permissions,st_uid=0,st_gid=0)
+ if p.name in ('node','bwrap','runtime.mjs','manifest.json'):
+  permissions=(0o755 if p.name in ('node','bwrap') else 0o644)
+  if mode=='module-0600' and p.name=='runtime.mjs':permissions=0o600
+  if mode=='node-0700' and p.name=='node':permissions=0o700
+  return SimpleNamespace(st_mode=stat.S_IFREG|permissions,st_uid=0,st_gid=0,st_nlink=1)
+ raise AssertionError('unexpected staged path '+str(p))
 with patch.object(m,'regular_bytes',side_effect=read_file),\
  patch.object(m.pwd,'getpwnam',return_value=identity),\
- patch.object(m.Path,'lstat',return_value=SimpleNamespace(st_mode=stat.S_IFDIR|0o700,st_uid=1020,st_gid=1020)),\
+ patch.object(m.Path,'lstat',side_effect=staged_lstat),\
  patch.object(m,'call',side_effect=call):
  try:m.staged_state(raw,manifest,{'scripts/runtime.mjs':b'module',m.UNIT:u},b'public')
  except (m.Block,KeyError) as e:
   assert mode!='valid',mode
  else:assert mode=='valid',mode
 `;
-for(const mode of ['valid','enabled','running','wrong-user','altered-module','altered-receipt','dropin','wrong-fragment','wrong-effective-user']){
+for(const mode of ['valid','enabled','running','wrong-user','altered-module','altered-receipt','dropin','wrong-fragment','wrong-effective-user','runtime-0700','module-0600','node-0700']){
   test('activation rechecks exact staged unit and bytes: '+mode,()=>assert.doesNotThrow(()=>run(checkStaged,mode)));
 }
 
@@ -164,6 +178,7 @@ with patch.object(m,'prepared',return_value=(raw,manifest,files)),\
  patch.object(m.time,'time',return_value=0.6),\
  patch.object(m,'call',side_effect=call),\
  patch.object(m,'write_new',side_effect=write),\
+ patch.object(m,'normalize_new_runtime_modes'),\
  patch.object(m.Path,'mkdir'),patch.object(m.os,'chown'):
  m.stage(Path('/fixture'),Path('/node'),Path('/bwrap'))
 assert len(writes)==7,writes # claim, module, manifest, node, bwrap, unit, receipt
@@ -176,3 +191,55 @@ assert all('github-app.pem' not in w[0] for w in writes)
 test('successful staged install only provisions a disabled unit; no start/enable/key grant',()=>{
   assert.match(run(fullStage,'valid'),/STAGED_ISOLATION_PENDING/);
 });
+
+
+// Real mode regression: staging under a 0077 umask must produce traversable
+// root-owned runtime bytes for the *different* service UID, but never open
+// authority/state paths. Uses only isolated temporary fixture files.
+const runtimeModeFixture=String.raw\`
+import importlib.util,os,sys,stat,tempfile
+from pathlib import Path
+s=importlib.util.spec_from_file_location('installer',sys.argv[1])
+m=importlib.util.module_from_spec(s);s.loader.exec_module(m)
+mode=sys.argv[2]
+files={'scripts/strigunov4/execution-adapters/runtime.mjs':b'export const fixture=true'}
+with tempfile.TemporaryDirectory(prefix='asi-engine-umask-') as root:
+ m.RUNTIME=Path(root)/'runtime'
+ old=os.umask(0o077)
+ try:
+  m.RUNTIME.mkdir(mode=0o755)
+  for rel,body in files.items():m.write_new(m.RUNTIME/rel,body,0o644)
+  m.write_new(m.RUNTIME/'manifest.json',b'{}',0o644)
+  m.write_new(m.RUNTIME/'node',b'node-fixture',0o755)
+  m.write_new(m.RUNTIME/'bwrap',b'bwrap-fixture',0o755)
+ finally:os.umask(old)
+ assert stat.S_IMODE(m.RUNTIME.stat().st_mode)==0o700
+ assert stat.S_IMODE((m.RUNTIME/'node').stat().st_mode)==0o700
+ m.normalize_new_runtime_modes(files)
+ m.runtime_service_access(files,os.geteuid())
+ dirs,targets=m.runtime_targets(files)
+ assert all(stat.S_IMODE(d.stat().st_mode)==0o755 for d in dirs)
+ assert all(stat.S_IMODE(p.stat().st_mode)==access for p,access in targets)
+ p={'runtime-0700':m.RUNTIME,
+    'module-0600':m.RUNTIME/'scripts/strigunov4/execution-adapters/runtime.mjs',
+    'node-0700':m.RUNTIME/'node',
+    'bwrap-0700':m.RUNTIME/'bwrap',
+    'script-dir-0700':m.RUNTIME/'scripts',
+    'world-writable-module':m.RUNTIME/'scripts/strigunov4/execution-adapters/runtime.mjs'
+   }.get(mode)
+ if p is not None:
+  p.chmod(0o666 if mode=='world-writable-module' else 0o700 if '0700' in mode else 0o600)
+  try:m.runtime_service_access(files,os.geteuid())
+  except m.Block as e:assert str(e) in ('STAGED_RUNTIME_UNREADABLE','STAGED_RUNTIME_PATH')
+  else:raise AssertionError('inaccessible staged bytes accepted: '+mode)
+ elif mode=='symlink-module':
+  p=m.RUNTIME/'scripts/strigunov4/execution-adapters/runtime.mjs'
+  p.unlink();p.symlink_to(m.RUNTIME/'manifest.json')
+  try:m.runtime_service_access(files,os.geteuid())
+  except m.Block as e:assert str(e)=='STAGED_RUNTIME_PATH'
+  else:raise AssertionError('symlink accepted')
+ else:assert mode=='valid'
+\`;
+for(const mode of ['valid','runtime-0700','module-0600','node-0700','bwrap-0700','script-dir-0700','world-writable-module','symlink-module']){
+  test('restrictive umask / staged runtime access: '+mode,()=>assert.doesNotThrow(()=>run(runtimeModeFixture,mode)));
+}
