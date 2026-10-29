@@ -49,7 +49,11 @@ async function github<T>(url: string, token: string): Promise<T> {
   const timer = setTimeout(() => ctrl.abort(), 8000);
   try {
     const res = await fetch(url, {
-      method: 'GET', cache: 'no-store', signal: ctrl.signal,
+      method: 'GET',
+      // The public-repo fallback uses Next's shared fetch cache so cold
+      // serverless instances do not each burn anonymous GitHub rate limits.
+      ...(token ? {cache: 'no-store' as const} : {next: {revalidate: 1800}}),
+      signal: ctrl.signal,
       headers: {
         Accept: 'application/vnd.github+json',
         ...(token ? {Authorization: 'Bearer ' + token} : {}),
