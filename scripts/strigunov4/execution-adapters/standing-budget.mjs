@@ -27,7 +27,6 @@ const h64 = x => typeof x === 'string' && HEX64.test(x);
 const h40 = x => typeof x === 'string' && HEX40.test(x);
 const ident = x => typeof x === 'string' && ID.test(x);
 const deny = reason => Object.freeze({status:'DENIED', reason, reserved:false});
-const own = (o, k) => Object.hasOwn(o, k);
 
 function validateEnvelope(e, at) {
   if (!e || e.schema !== 'asi.release-envelope.proposal.v1' || e.repo !== REPO ||
