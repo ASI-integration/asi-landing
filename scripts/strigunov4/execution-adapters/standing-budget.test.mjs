@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import {createHash} from 'node:crypto';
 import {createStandingPublisherBudget} from './standing-budget.mjs';
 
 const at = 1793260000000;
@@ -11,9 +12,18 @@ const env = (override={}) => ({schema:'asi.release-envelope.proposal.v1',repo:'A
   environment:'beget-staging',target:'pqukibofpo',action:'source',envelopeDigest:hex64,
   securityDigest:'d'.repeat(64),policyDigest:'e'.repeat(64),
   notBefore:at-1000,expiresAt:at+100000,maxOperations:3,maxRequests:3,maxWrites:2,paidApiUsd:0,...override});
-const effect = (id,kind='github-read',override={}) => ({effectId:id,taskId:'source-task',
-  headSha:hex40,kind,envelopeDigest:hex64,repo:'ASI-integration/asi-landing',
-  environment:'beget-staging',target:'pqukibofpo',action:'source',...override});
+const hash = value => createHash('sha256').update(value).digest('hex');
+const writeRoutes = {'create-tree':'git/trees','create-commit':'git/commits',
+  'create-branch':'git/refs','create-draft-pr':'pulls'};
+const effect = (id,kind='github-read',override={}) => {
+  const method = kind==='github-read'?'GET':'POST';
+  const route = kind==='github-read'?'branches/main':writeRoutes[kind]||'git/trees';
+  const payloadSha256 = hash(method==='GET'?'':JSON.stringify({id}));
+  const requestSha256 = hash(JSON.stringify({method,route,payloadSha256}));
+  return {effectId:id,taskId:'source-task',taskSha:hex40,headSha:hex40,kind,method,
+    route,payloadSha256,requestSha256,envelopeDigest:hex64,repo:'ASI-integration/asi-landing',
+    environment:'beget-staging',target:'pqukibofpo',action:'source',...override};
+};
 async function fixture(){
   const root=await fs.mkdtemp(path.join(os.tmpdir(),'asi-p0-budget-'));
   const file=n=>path.join(root,n);
@@ -148,6 +158,7 @@ test('caller mutation after reserve invocation cannot change queued scope or eff
     const pending=f.budget.reserve({envelope:e,effect:x});
     e.maxRequests=0;e.maxWrites=0;e.envelopeDigest='f'.repeat(64);
     x.effectId='changed';x.kind='merge-main';x.headSha='wrong';
+    x.taskSha='wrong';x.requestSha256='0'.repeat(64);
     const result=await pending;
     assert.equal(result.status,'RESERVED');assert.equal(result.effectId,'original');
     const record=(await f.read()).standingDelegationBudget.envelopes[hex64];
@@ -202,5 +213,67 @@ test('accessor-based payload cannot change post-validation scope',async()=>{
     const e=env();Object.defineProperty(e,'maxRequests',{get(){throw Error('bad getter')}});
     assert.equal((await f.budget.reserve({envelope:e,effect:effect('x')})).reason,'BUDGET_INPUT_INVALID');
     assert.equal((await f.read()).standingDelegationBudget,undefined);
+  }finally{await f.close()}
+});
+
+test('new envelope and different effect ID cannot replay the same POST wire bytes',async()=>{
+  const f=await fixture();try{
+    const original=effect('wire-old','create-tree');
+    assert.equal((await f.budget.reserve({envelope:env(),effect:original})).status,'RESERVED');
+    const other='f'.repeat(64);
+    const replay=effect('wire-new','create-tree',{envelopeDigest:other,
+      payloadSha256:original.payloadSha256,requestSha256:original.requestSha256});
+    assert.equal((await f.budget.reserve({envelope:env({envelopeDigest:other}),effect:replay})).reason,
+      'BUDGET_REPLAY_OR_UNKNOWN');
+    const state=await f.read();
+    assert.equal(Object.keys(state.standingDelegationBudget.envelopes).length,1);
+  }finally{await f.close()}
+});
+
+test('same envelope cannot replay a POST with a fresh operation identifier',async()=>{
+  const f=await fixture();try{
+    const a=effect('first','create-commit');
+    const b=effect('second','create-commit',{payloadSha256:a.payloadSha256,
+      requestSha256:a.requestSha256});
+    assert.equal((await f.budget.reserve({envelope:env(),effect:a})).status,'RESERVED');
+    assert.equal((await f.budget.reserve({envelope:env(),effect:b})).reason,
+      'BUDGET_REPLAY_OR_UNKNOWN');
+  }finally{await f.close()}
+});
+
+test('independent read intents can repeat identical GET bytes but consume two requests',async()=>{
+  const f=await fixture();try{
+    assert.equal((await f.budget.reserve({envelope:env(),effect:effect('read-a')})).status,'RESERVED');
+    assert.equal((await f.budget.reserve({envelope:env(),effect:effect('read-b')})).status,'RESERVED');
+    const state=await f.read();
+    assert.equal(state.standingDelegationBudget.envelopes[hex64].requests,2);
+    assert.equal(state.standingDelegationBudget.envelopes[hex64].writes,0);
+  }finally{await f.close()}
+});
+
+test('forged method, route, wire digest or original task SHA rejects before persistence',async()=>{
+  const f=await fixture();try{
+    const cases=[
+      effect('bad-method','create-tree',{method:'GET'}),
+      effect('bad-route','create-tree',{route:'git/refs'}),
+      effect('bad-wire','create-tree',{requestSha256:'0'.repeat(64)}),
+      effect('bad-source','create-tree',{taskSha:'bad'}),
+      effect('bad-body','github-read',{payloadSha256:'0'.repeat(64)}),
+    ];
+    for(const e of cases)assert.equal((await f.budget.reserve({envelope:env(),effect:e})).reason,
+      'BUDGET_EFFECT_SCOPE');
+    assert.equal((await f.read()).standingDelegationBudget,undefined);
+  }finally{await f.close()}
+});
+
+test('reopened corrupted historical wire fingerprint poisons subsequent claims',async()=>{
+  const f=await fixture();try{
+    assert.equal((await f.budget.reserve({envelope:env(),effect:effect('write','create-tree')})).status,'RESERVED');
+    const state=await f.read();
+    state.standingDelegationBudget.envelopes[hex64].claims[0].requestSha256='0'.repeat(64);
+    const reopened=createStandingPublisherBudget({store:f.store,ledger:state,clock:()=>at});
+    await assert.rejects(reopened.reserve({envelope:env(),effect:effect('later')}),
+      /BUDGET_LEDGER_INVALID/);
+    assert.equal((await f.read()).standingDelegationBudget.envelopes[hex64].claims.length,1);
   }finally{await f.close()}
 });
