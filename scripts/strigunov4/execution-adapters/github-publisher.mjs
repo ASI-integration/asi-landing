@@ -123,7 +123,8 @@ export function createGitHubPublisher({store,remote,reader,authorize,runChecks,i
         return {path:c.path,mode:old?.mode??'100644',type:'blob',content:normalizeProposedContent(c.path,c.content)};});
       record={version:1,stage:task.stage,kind:task.kind,taskBinding:binding,operationId:grant.operationId,baseSha:task.sha,
         branch:task.branch,deltaSha256:prepared.deltaSha256,reviewEvidenceId:review.evidenceId,
-        ...(reviewPolicy?{reviewPolicySha256:reviewPolicy.policySha256}:{})};
+        ...(reviewPolicy?{reviewPolicySha256:reviewPolicy.policySha256}:{}),
+        ...(review.ownerVerifiedCi===true?{reviewMode:'OWNER_VERIFIED_CI'}:{})};
       const tree=await mutate('create-tree',()=>remote.createTree(parent.tree.sha,entries));
       must(sha(tree.sha),'TREE_RESULT_INVALID');
       const actual=await call(()=>remote.get(`git/trees/${tree.sha}?recursive=1`));
