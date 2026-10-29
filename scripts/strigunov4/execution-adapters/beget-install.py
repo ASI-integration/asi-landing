@@ -193,6 +193,25 @@ def stage_scope(permit,manifest,raw,now):
 def stage_receipt_path(raw):
     return AUTH/('staged-isolation-'+digest(raw)+'.json')
 
+def exact_disabled_unit_state():
+    # Validate systemd's EFFECTIVE loaded identity, not just a file on disk.
+    # Drop-ins can change ExecStart/privileges without changing unit bytes.
+    lines=call(['/usr/bin/systemctl','show',UNIT,
+                '-pLoadState','-pActiveState','-pMainPID','-pUnitFileState',
+                '-pFragmentPath','-pDropInPaths','-pUser','-pGroup']).decode().splitlines()
+    fields={}
+    for line in lines:
+        if '=' not in line:raise Block('STAGED_UNIT_NOT_DISABLED')
+        key,value=line.split('=',1)
+        require(key not in fields,'STAGED_UNIT_NOT_DISABLED')
+        fields[key]=value
+    require(fields=={'LoadState':'loaded','ActiveState':'inactive',
+                     'MainPID':'0','UnitFileState':'disabled',
+                     'FragmentPath':'/etc/systemd/system/'+UNIT,
+                     'DropInPaths':'','User':USER,'Group':USER},
+            'STAGED_UNIT_NOT_DISABLED')
+
+
 def staged_state(raw,manifest,files,public):
     # Enforce *exact* staged bytes, without trusting a root-owned JSON claim alone.
     receipt=json.loads(regular_bytes(stage_receipt_path(raw),root=True))
@@ -217,11 +236,7 @@ def staged_state(raw,manifest,files,public):
     st=STATE.lstat()
     require(stat.S_ISDIR(st.st_mode) and st.st_uid==identity.pw_uid and
         st.st_gid==identity.pw_gid and not st.st_mode&0o077,'STAGED_STATE_CHANGED')
-    status=call(['/usr/bin/systemctl','show',UNIT,
-                 '-pLoadState','-pActiveState','-pMainPID','-pUnitFileState']).decode().splitlines()
-    require('LoadState=loaded' in status and 'ActiveState=inactive' in status and
-        'MainPID=0' in status and 'UnitFileState=disabled' in status,
-        'STAGED_UNIT_NOT_DISABLED')
+    exact_disabled_unit_state()
     return identity
 
 def stage(package,node,bwrap):
@@ -280,11 +295,7 @@ def stage(package,node,bwrap):
         call(['/usr/bin/systemctl','daemon-reload'])
         # A new unit is disabled by default; assert rather than trying to
         # reset the status of any pre-existing service.
-        status=call(['/usr/bin/systemctl','show',UNIT,
-                     '-pLoadState','-pActiveState','-pMainPID','-pUnitFileState']).decode().splitlines()
-        require('LoadState=loaded' in status and 'ActiveState=inactive' in status and
-                'MainPID=0' in status and 'UnitFileState=disabled' in status,
-                'STAGED_UNIT_NOT_DISABLED')
+        exact_disabled_unit_state()
         receipt={'schema':'asi.beget-staged-isolation.v1',
                  'manifestSha256':digest(raw),
                  'unitSha256':manifest['unitSha256'],
