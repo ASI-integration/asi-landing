@@ -56,4 +56,28 @@ describe('RU password login cannot change plan entitlements', () => {
       selectedPlan: 'growth', deferTrial: true,
     });
   });
+
+  it('does not downgrade a real RU URL when a forwarded-host classifier says global', async () => {
+    authMocks.isRu.mockResolvedValue(false);
+    const response = await POST(loginRequest('enterprise', true));
+    expect(response.status).toBe(200);
+    expect(authMocks.ensureAccount).toHaveBeenCalledWith({
+      userId: 'existing-user', email: 'user@example.ru', ruCommercial: true,
+    });
+  });
+
+  it('still enforces same-origin CSRF on a real RU URL despite forwarded-host spoofing', async () => {
+    vi.stubEnv('NODE_ENV', 'production');
+    authMocks.isRu.mockResolvedValue(false);
+    const original = loginRequest('enterprise', true);
+    const request = new Request(original.url, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', Origin: 'https://evil.example' },
+      body: JSON.stringify({ email: 'user@example.ru', password: 'isolated-only', plan: 'enterprise' }),
+    });
+    const response = await POST(request);
+    expect(response.status).toBe(403);
+    expect(authMocks.compare).not.toHaveBeenCalled();
+    expect(authMocks.ensureAccount).not.toHaveBeenCalled();
+    vi.unstubAllEnvs();
+  });
 });
