@@ -18,7 +18,9 @@ const ENV={repository:'ASI-integration/asi-landing',environment:'beget-staging',
 function fixture() {
   const issuer=key(), verifier=key();
   const expected={...ENV,issuerKeySha256:issuer.digest,verifierKeySha256:verifier.digest,
-    envelopeDigest:'c'.repeat(64),minRevocationSequence:4};
+    envelopeDigest:'c'.repeat(64),minRevocationSequence:3,
+    minRevocationManifestDigest:hash('previous trusted revocation manifest'),
+    priorRevokedEnvelopeDigests:[]};
   const manifest={schema:'asi.release-envelope-revocations.v1',...ENV,
     issuerKeySha256:issuer.digest,verifierKeySha256:verifier.digest,
     sequence:4,issuedAt:NOW-2000,expiresAt:NOW+86400000,revokedEnvelopeDigests:[]};
@@ -49,7 +51,7 @@ test('read-only pinned issuer and independent verifier prove signed local revoca
 
 test('expired, future-dated and rollback revocation manifests deny',async()=>{
   for(const edit of [m=>{m.expiresAt=NOW;},m=>{m.issuedAt=NOW+1;},
-    m=>{m.sequence=3;},m=>{m.expiresAt=m.issuedAt+15*86400000;}]) {
+    m=>{m.sequence=2;},m=>{m.expiresAt=m.issuedAt+15*86400000;}]) {
     const x=fixture();edit(x.manifest);x.resign();
     assert.deepEqual(await x.readSnapshot(),{status:'BLOCKED',reason:'TRUST_REVOCATION_STALE',authorized:false});
   }
@@ -140,4 +142,51 @@ test('fresh completion time is the reported observation and never grants authori
   assert.equal(r.status,'PROTECTED_TRUST_VERIFIED');
   assert.equal(r.observedAt,NOW+10);
   assert.equal(r.authorized,false);
+});
+
+
+test('same revision cannot be rewritten even with a valid issuer signature',async()=>{
+  const x=fixture();
+  x.expected.minRevocationSequence=4;
+  x.expected.minRevocationManifestDigest=hash(JSON.stringify(x.manifest));
+  assert.equal((await x.readSnapshot()).status,'PROTECTED_TRUST_VERIFIED');
+  x.manifest.revokedEnvelopeDigests=['a'.repeat(64)];x.resign();
+  assert.equal((await x.readSnapshot()).reason,'TRUST_REVOCATION_EQUIVOCATION');
+});
+
+test('newer signed manifest cannot erase a previously persisted revocation',async()=>{
+  const x=fixture(),old='a'.repeat(64);
+  x.expected.priorRevokedEnvelopeDigests=[old];
+  assert.equal((await x.readSnapshot()).reason,'TRUST_REVOCATION_ERASURE');
+  x.manifest.revokedEnvelopeDigests=[old];x.resign();
+  const r=await x.readSnapshot();
+  assert.equal(r.status,'PROTECTED_TRUST_VERIFIED');
+  assert.equal(r.revocationCheckpoint.sequence,4);
+  assert.deepEqual(r.revocationCheckpoint.revokedEnvelopeDigests,[old]);
+  assert.equal(Object.isFrozen(r.revocationCheckpoint),true);
+  x.expected.priorRevokedEnvelopeDigests=[old,x.expected.envelopeDigest];
+  assert.equal((await x.readSnapshot()).reason,'TRUST_REVOCATION_ERASURE');
+  x.manifest.revokedEnvelopeDigests=[old,x.expected.envelopeDigest].sort();x.resign();
+  assert.equal((await x.readSnapshot()).reason,'TRUST_ENVELOPE_REVOKED');
+});
+
+test('invalid protected revocation history and sequence anchor deny',async()=>{
+  for(const edit of [x=>x.expected.minRevocationManifestDigest='bad',
+    x=>delete x.expected.priorRevokedEnvelopeDigests,
+    x=>x.expected.priorRevokedEnvelopeDigests=['z'.repeat(64)],
+    x=>x.expected.priorRevokedEnvelopeDigests=['a'.repeat(64),'a'.repeat(64)],
+    x=>x.expected.priorRevokedEnvelopeDigests=['f'.repeat(64),'a'.repeat(64)]]) {
+    const x=fixture();edit(x);
+    assert.equal((await x.readSnapshot()).reason,'TRUST_CONTEXT');
+  }
+});
+
+test('historical revocation list mutated across awaits fails closed',async()=>{
+  const x=fixture(),old='a'.repeat(64);
+  x.expected.priorRevokedEnvelopeDigests=[old];x.manifest.revokedEnvelopeDigests=[old];x.resign();
+  let n=0;
+  const reader=async p=>{if(++n===1)x.expected.priorRevokedEnvelopeDigests.splice(0);
+    return x.protectedReader(p);};
+  const r=await read({expected:x.expected,now:NOW,clock:()=>NOW,protectedReader:reader});
+  assert.deepEqual(r,{status:'BLOCKED',reason:'TRUST_CONTEXT_CHANGED',authorized:false});
 });
