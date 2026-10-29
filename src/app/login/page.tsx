@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useTranslation } from '@/i18n/useTranslation';
+import { RuEmailCodeSignIn } from '@/components/auth/RuEmailCodeSignIn';
 
 function safeRedirectPath(value: string | null): string {
   if (!value || !value.startsWith('/') || value.startsWith('//')) return '/dashboard';
@@ -61,6 +62,9 @@ export default function LoginPage() {
         <p className="mt-2 text-center text-sm text-slate-500">
           {t('login.subtitle')}
         </p>
+
+        <RuEmailCodeSignIn redirectPath={typeof window !== 'undefined'
+          ? safeRedirectPath(new URLSearchParams(window.location.search).get('redirect')) : '/dashboard'} />
 
         <form onSubmit={handleSubmit} className="mt-8 space-y-4">
           <div>
