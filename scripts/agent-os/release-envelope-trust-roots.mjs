@@ -28,6 +28,56 @@ const FILES = Object.freeze({
 const deny = reason => Object.freeze({status:'BLOCKED', reason, authorized:false});
 const sha256 = buf => createHash('sha256').update(buf).digest('hex');
 
+const plainDigest = value => typeof value === 'string' && DIGEST.test(value);
+const ownData = (descriptors, key) => {
+  const descriptor = descriptors[key];
+  if (!descriptor || !Object.hasOwn(descriptor, 'value')) throw Error('TRUST_CONTEXT');
+  return descriptor.value;
+};
+
+// Snapshot OWN DATA properties. Never run a caller getter, spread a hostile
+// array or coerce a digest to string before validating its primitive type.
+function captureExpected(expected) {
+  if (!expected || typeof expected !== 'object' || Array.isArray(expected) ||
+      ![Object.prototype, null].includes(Object.getPrototypeOf(expected)))
+    throw Error('TRUST_CONTEXT');
+  const fields = Object.getOwnPropertyDescriptors(expected);
+  if (Object.values(fields).some(d => !Object.hasOwn(d, 'value')))
+    throw Error('TRUST_CONTEXT');
+  const get = key => ownData(fields, key);
+  const previous = get('priorRevokedEnvelopeDigests');
+  if (!Array.isArray(previous) || Object.getPrototypeOf(previous) !== Array.prototype ||
+      previous.length > 1024) throw Error('TRUST_CONTEXT');
+  const entries = Object.getOwnPropertyDescriptors(previous);
+  if (Object.values(entries).some(d => !Object.hasOwn(d, 'value')))
+    throw Error('TRUST_CONTEXT');
+  const history = [];
+  for (let i = 0; i < previous.length; i++) {
+    const digest = ownData(entries, String(i));
+    if (!plainDigest(digest) || (i && digest <= history[i - 1]))
+      throw Error('TRUST_CONTEXT');
+    history.push(digest);
+  }
+  const pinned = Object.freeze({
+    repository:get('repository'), environment:get('environment'),
+    target:get('target'), issuerKeySha256:get('issuerKeySha256'),
+    verifierKeySha256:get('verifierKeySha256'),
+    envelopeDigest:get('envelopeDigest'),
+    minRevocationSequence:get('minRevocationSequence'),
+    minRevocationManifestDigest:get('minRevocationManifestDigest'),
+    priorRevokedEnvelopeDigests:Object.freeze(history),
+  });
+  if (pinned.repository !== REPO || pinned.environment !== ENVIRONMENT ||
+      pinned.target !== TARGET || !plainDigest(pinned.issuerKeySha256) ||
+      !plainDigest(pinned.verifierKeySha256) || !plainDigest(pinned.envelopeDigest) ||
+      pinned.issuerKeySha256 === pinned.verifierKeySha256 ||
+      !Number.isSafeInteger(pinned.minRevocationSequence) ||
+      pinned.minRevocationSequence < 0 ||
+      !plainDigest(pinned.minRevocationManifestDigest)) throw Error('TRUST_CONTEXT');
+  return pinned;
+}
+
+
 function publicKey(pem) {
   if (typeof pem !== 'string' || pem.length > 10000 ||
       !/^-----BEGIN PUBLIC KEY-----\r?\n[\s\S]+\r?\n-----END PUBLIC KEY-----\r?\n?$/.test(pem))
@@ -73,31 +123,8 @@ export async function readProtectedStandingTrustSnapshot({expected, now=Date.now
   protectedReader=rootOwned, clock=Date.now} = {}) {
   let pinned;
   try {
-    // Snapshot every protected input BEFORE the first await. Never reread mutable
-    // caller data to decide trust. Detect later changes and fail closed instead
-    // of returning an inconsistent observation.
-    const prior = expected?.priorRevokedEnvelopeDigests;
-    pinned = Object.freeze({
-      repository:expected?.repository, environment:expected?.environment,
-      target:expected?.target, issuerKeySha256:expected?.issuerKeySha256,
-      verifierKeySha256:expected?.verifierKeySha256,
-      envelopeDigest:expected?.envelopeDigest,
-      minRevocationSequence:expected?.minRevocationSequence,
-      minRevocationManifestDigest:expected?.minRevocationManifestDigest,
-      priorRevokedEnvelopeDigests:Object.freeze(Array.isArray(prior) ? [...prior] : []),
-    });
-    if (pinned.repository !== REPO || pinned.environment !== ENVIRONMENT ||
-        pinned.target !== TARGET || !DIGEST.test(pinned.issuerKeySha256 || '') ||
-        !DIGEST.test(pinned.verifierKeySha256 || '') ||
-        !DIGEST.test(pinned.envelopeDigest || '') ||
-        pinned.issuerKeySha256 === pinned.verifierKeySha256 ||
-        !Number.isSafeInteger(pinned.minRevocationSequence) ||
-        pinned.minRevocationSequence < 0 ||
-        !DIGEST.test(pinned.minRevocationManifestDigest || '') ||
-        !Array.isArray(prior) || pinned.priorRevokedEnvelopeDigests.length > 1024 ||
-        pinned.priorRevokedEnvelopeDigests.some((d,i,a) => !DIGEST.test(d) ||
-          (i>0 && d<=a[i-1])) ||
-        !Number.isSafeInteger(now) || now < 0 ||
+    pinned = captureExpected(expected);
+    if (!Number.isSafeInteger(now) || now < 0 ||
         typeof protectedReader !== 'function' || typeof clock !== 'function')
       return deny('TRUST_CONTEXT');
   } catch { return deny('TRUST_CONTEXT'); }
@@ -124,7 +151,7 @@ export async function readProtectedStandingTrustSnapshot({expected, now=Date.now
         m.expiresAt <= m.issuedAt || m.expiresAt - m.issuedAt > 14*DAY)
       return deny('TRUST_REVOCATION_STALE');
     if (!Array.isArray(m.revokedEnvelopeDigests) || m.revokedEnvelopeDigests.length > 1024 ||
-        m.revokedEnvelopeDigests.some(d => !DIGEST.test(d)) ||
+        m.revokedEnvelopeDigests.some(d => !plainDigest(d)) ||
         m.revokedEnvelopeDigests.some((d,i) => i && d <= m.revokedEnvelopeDigests[i-1]))
       return deny('TRUST_REVOCATION_FORMAT');
     // Durable history pins the exact last manifest at the same sequence. A
@@ -147,12 +174,13 @@ export async function readProtectedStandingTrustSnapshot({expected, now=Date.now
     }
     // The expected owner context must still match the original snapshot and
     // the signed revocation record must still be live AFTER all async reads.
+    let current;
+    try { current = captureExpected(expected); }
+    catch { return deny('TRUST_CONTEXT_CHANGED'); }
     if (Object.entries(pinned).some(([k,v]) =>
-          k !== 'priorRevokedEnvelopeDigests' && expected[k] !== v) ||
-        !Array.isArray(expected.priorRevokedEnvelopeDigests) ||
-        expected.priorRevokedEnvelopeDigests.length !== pinned.priorRevokedEnvelopeDigests.length ||
-        pinned.priorRevokedEnvelopeDigests.some((d,i) =>
-          expected.priorRevokedEnvelopeDigests[i] !== d))
+      k === 'priorRevokedEnvelopeDigests'
+        ? v.length !== current[k].length || v.some((d,i) => current[k][i] !== d)
+        : current[k] !== v))
       return deny('TRUST_CONTEXT_CHANGED');
     const completedAt = clock();
     if (!Number.isSafeInteger(completedAt) || completedAt < now ||
