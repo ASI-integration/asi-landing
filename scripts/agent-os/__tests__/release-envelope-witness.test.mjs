@@ -6,7 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { initializeState, existingState } from '../../strigunov4/execution-adapters/state.mjs';
 import { generateKeyPairSync, createHash, sign } from 'node:crypto';
-import { assessWitnessedReleaseEnvelopeProposal as assess, assessRepositoryReleaseEnvelopeProposal as assessRepository } from '../check-demo-release.mjs';
+import { assessWitnessedReleaseEnvelopeProposal as assess, assessRepositoryReleaseEnvelopeProposal as assessRepository, inspectAuthenticatedProviderSnapshot as provider } from '../check-demo-release.mjs';
 const hash=x=>createHash('sha256').update(x).digest('hex');
 const key=()=>{const p=generateKeyPairSync('ed25519');return {...p,pem:p.publicKey.export({type:'spki',format:'pem'}),digest:hash(p.publicKey.export({type:'spki',format:'der'}))};};
 const signed=(payload,k)=>{payload=JSON.stringify(payload);return {payload,signature:sign(null,Buffer.from(payload),k.privateKey).toString('base64')};};
@@ -124,3 +124,50 @@ test('missing trusted commit fails closed without conflating diff and signature 
  assert.equal(assessRepository(...args).reason,'ENVELOPE_DIFF_UNAVAILABLE');
  args[1].repository='other/repo';assert.equal(assessRepository(...args).reason,'ENVELOPE_TRUSTED_COMPARISON');
 }));
+
+function providerFixture() {
+ const repo='ASI-integration/asi-landing';
+ const baseSha='a'.repeat(40),headSha='c'.repeat(40);
+ const now=Date.parse('2026-10-29T07:15:00.000Z');
+ const expected={repository:repo,number:552,baseSha,headSha,independentReviewerId:20261029};
+ const pullRef={number:552,head:{sha:headSha},base:{sha:baseSha}};
+ const pr={number:552,state:'open',user:{id:207600140},
+  head:{sha:headSha,repo:{full_name:repo}},
+  base:{ref:'main',sha:baseSha,repo:{full_name:repo}}};
+ const workflows=[
+  {id:2,workflow_id:311380800,event:'pull_request',head_sha:headSha},
+  {id:3,workflow_id:390653294,event:'pull_request_target',head_sha:baseSha},
+ ].map(run=>({...run,run_attempt:1,status:'completed',conclusion:'success',
+   repository:{full_name:repo},pull_requests:[pullRef],
+   updated_at:'2026-10-29T07:14:00.000Z'}));
+ const reviews=[{state:'APPROVED',commit_id:headSha,user:{id:expected.independentReviewerId},
+   submitted_at:'2026-10-29T07:14:30.000Z'}];
+ return {pr,runs:workflows,reviews,expected,now};
+}
+test('provider snapshots need both required workflow identities and independent exact-head review',()=>{
+ const x=providerFixture();
+ assert.deepEqual(provider(x),{status:'PROVIDER_EVIDENCE_VERIFIED',authorized:false});
+ const next=structuredClone(x);next.expected.headSha='f'.repeat(40);
+ assert.equal(provider(next).reason,'PROVIDER_PR_IDENTITY');
+});
+test('latest failed job or spoofed workflow cannot be treated as success',()=>{
+ const x=providerFixture();x.runs.push({...x.runs[0],id:4,conclusion:'failure'});
+ assert.equal(provider(x).reason,'PROVIDER_WORKFLOW_NOT_GREEN');
+ x.runs.pop();x.runs[0].workflow_id=123;
+ assert.equal(provider(x).reason,'PROVIDER_WORKFLOW_IDENTITY');
+});
+test('owner self-review, dismissed review and old SHA never establish independence',()=>{
+ const x=providerFixture();x.expected.independentReviewerId=207600140;
+ assert.equal(provider(x).reason,'PROVIDER_PR_IDENTITY');
+ x.expected.independentReviewerId=20261029;x.reviews[0].state='DISMISSED';
+ assert.equal(provider(x).reason,'PROVIDER_INDEPENDENT_REVIEW');
+ x.reviews[0].state='APPROVED';x.reviews[0].commit_id='e'.repeat(40);
+ assert.equal(provider(x).reason,'PROVIDER_INDEPENDENT_REVIEW');
+});
+test('missing provider PR association and stale run fail closed',()=>{
+ const x=providerFixture();x.runs[0].pull_requests=[];
+ assert.equal(provider(x).reason,'PROVIDER_WORKFLOW_IDENTITY');
+ x.runs[0].pull_requests=x.runs[1].pull_requests;
+ x.runs[0].updated_at='2026-10-29T04:00:00.000Z';
+ assert.equal(provider(x).reason,'PROVIDER_WORKFLOW_STALE');
+});
