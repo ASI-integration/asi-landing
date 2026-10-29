@@ -11,10 +11,16 @@ type Pr = {
   number: number; state: string; draft: boolean; merged: boolean;
   head: string; ci: Ci[]; ciAvailable: boolean; url: string;
 };
+type AgentLane = {
+  id: string; title: string; source: 'PR' | 'BRANCH';
+  state: 'DRAFT' | 'MERGED' | 'OPEN' | 'BRANCH' | 'UNKNOWN';
+  head: string | null; lastCodeAt: string | null; lastPrUpdateAt: string | null;
+  url: string; runVerified: false; codeObserved: boolean;
+};
 type Snapshot = {
   ok: boolean; observedAt: string; mapUrl: string; mapSha: string; staleSnapshot?: boolean;
   issue: {number: number; state: string; updatedAt: string; url: string};
-  stages: Stage[]; prs: Pr[]; partialSources?: boolean;
+  stages: Stage[]; prs: Pr[]; workerLanes?: AgentLane[]; partialSources?: boolean;
   telemetry: {available: boolean; stale: boolean; status: string;
     stage: string | null; updatedAt: string | null; physicalProof: false};
   serverEvidence: {available: boolean; verifiedStages: string[]; reason: string};
@@ -124,6 +130,54 @@ export default function StrigunovGpsClient() {
     {data?.partialSources && !data?.staleSnapshot && <div className="mb-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
       Карта загружена. Часть дополнительных сведений GitHub временно недоступна и не учитывается как успешная проверка.
     </div>}
+    <section className="mb-3 rounded-2xl border bg-white p-4 shadow-sm" aria-label="Пять направлений ASI">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <h2 className="text-lg font-black">5 инженерных направлений · одна система ASI</h2>
+          <p className="mt-1 text-xs text-slate-600">
+            Источник — GitHub: коммиты, PR и ветки. Наличие кода не подтверждает запущенный процесс.
+          </p>
+        </div>
+        <span className="rounded-lg bg-slate-100 px-3 py-2 text-xs font-semibold text-slate-700">
+          Серверные heartbeat: не подключены
+        </span>
+      </div>
+      <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-5">
+        {(data?.workerLanes ?? []).map((lane, i) => {
+          const observed=lane.lastCodeAt ?? lane.lastPrUpdateAt;
+          const date=observed && Number.isFinite(Date.parse(observed))
+            ? new Date(observed).toLocaleString('ru-RU') : 'нет данных';
+          const gitState=lane.state==='MERGED' ? 'Объединён' :
+            lane.state==='DRAFT' ? 'Draft PR' :
+            lane.state==='OPEN' ? 'PR открыт' :
+            lane.state==='BRANCH' ? 'Исходная ветка' : 'Нет данных';
+          const prNumber=lane.id==='engine' ? 549 : lane.id==='ru-auth' ? 554 :
+            lane.id==='p0-lead' ? 552 : null;
+          return <article key={lane.id} className={'rounded-xl border p-3 ' +
+            (i===0 ? 'border-indigo-300 bg-indigo-50' : 'border-slate-200 bg-slate-50')}>
+            <p className="text-xs font-bold text-slate-500">Направление {i+1}</p>
+            <h3 className="mt-1 text-sm font-bold text-slate-900">{lane.title}</h3>
+            <p className="mt-2 text-xs font-semibold text-slate-700">{gitState}</p>
+            <p className="mt-1 break-all font-mono text-[11px] text-slate-600">
+              {lane.head?.slice(0,12) ?? 'HEAD неизвестен'}
+            </p>
+            <p className="mt-1 text-[11px] text-slate-500">
+              {lane.lastCodeAt ? 'Последний коммит: ' :
+                lane.lastPrUpdateAt ? 'Обновление PR: ' : 'Нет подтверждённого времени: '}{date}
+            </p>
+            <p className="mt-2 text-xs font-semibold text-amber-800">
+              Исполнение 24/7: не подтверждено
+            </p>
+            <div className="mt-2 text-xs">
+              <A href={lane.url}>{prNumber ? 'PR #'+prNumber : 'Ветка инженера'}</A>
+            </div>
+          </article>;
+        })}
+        {!data?.workerLanes?.length && <div className="col-span-full rounded-xl border border-dashed p-4 text-sm text-amber-800">
+          Нет свежих подтверждённых сведений о пяти направлениях. Это не означает, что исполнители остановлены.
+        </div>}
+      </div>
+    </section>
     <div className="mb-3 grid gap-2 text-sm md:grid-cols-3">
       <div className="rounded-xl border border-blue-200 bg-blue-50 p-3">
         <p className="text-xs font-bold text-blue-700">Продукт · Стригунов</p>
