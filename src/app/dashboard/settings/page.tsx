@@ -8,6 +8,11 @@ export default function SettingsPage() {
   const email = session?.user?.email ?? '—';
   const accountName = session?.account?.name ?? '—';
   const [yandexAvailable,setYandexAvailable]=useState(false);
+  const [linkError,setLinkError]=useState(false);
+  useEffect(()=>{
+    if(new URLSearchParams(window.location.search).get('yandex_error')==='recent_auth_required')
+      setLinkError(true);
+  },[]);
   useEffect(()=>{
     let active=true;
     void fetch('/api/auth/ru-methods',{cache:'no-store'})
@@ -48,7 +53,8 @@ export default function SettingsPage() {
 
       {yandexAvailable && <section className="rounded-xl border border-slate-200 bg-white p-7">
         <h2 className="text-lg font-bold text-slate-900">Яндекс ID</h2>
-        <p className="mt-2 text-sm text-slate-600">Привяжите Яндекс к существующему аккаунту ASI, чтобы позже входить без Google и пароля.</p>
+        <p className="mt-2 text-sm text-slate-600">Привяжите Яндекс к существующему аккаунту ASI, чтобы позже входить без Google и пароля. Для защиты аккаунта потребуется недавний вход по паролю или одноразовому коду.</p>
+        {linkError && <p role="alert" className="mt-3 text-sm text-amber-800">Сначала повторно подтвердите вход в ASI. <a className="underline" href="/login?redirect=%2Fdashboard%2Fsettings">Перейти ко входу</a>.</p>}
         <a href="/api/auth/yandex/start?mode=link&redirect=%2Fdashboard%2Fsettings"
           className="mt-4 inline-block rounded-lg border border-slate-900 px-4 py-3 text-sm font-semibold text-slate-900">
           Привязать Яндекс ID
