@@ -89,6 +89,10 @@ export function verifiedYandexBearerAccessToken(value: unknown): string | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
   const body = value as Record<string, unknown>;
   if (typeof body.token_type !== 'string' || body.token_type.toLowerCase() !== 'bearer') return null;
+  // Yandex returns scope only when it has reduced the requested rights.
+  // A down-scoped token without login:info must never establish ASI identity.
+  if (body.scope !== undefined &&
+      (typeof body.scope !== 'string' || !body.scope.split(/\s+/).includes('login:info'))) return null;
   if (typeof body.access_token !== 'string' ||
       !/^[\x21-\x7e]{10,4096}$/.test(body.access_token)) return null;
   return body.access_token;
