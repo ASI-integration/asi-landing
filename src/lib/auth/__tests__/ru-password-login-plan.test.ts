@@ -39,7 +39,8 @@ describe('RU password login cannot change plan entitlements', () => {
     authMocks.isRu.mockResolvedValue(true);
     const response = await POST(loginRequest('enterprise', true));
     expect(response.status).toBe(200);
-    expect(authMocks.ensureAccount).toHaveBeenCalledExactlyOnceWith({
+    expect(authMocks.ensureAccount).toHaveBeenCalledTimes(1);
+    expect(authMocks.ensureAccount).toHaveBeenCalledWith({
       userId: 'existing-user', email: 'user@example.ru', ruCommercial: true,
     });
     expect(authMocks.compare).toHaveBeenCalledOnce();
@@ -49,7 +50,8 @@ describe('RU password login cannot change plan entitlements', () => {
     authMocks.isRu.mockResolvedValue(false);
     const response = await POST(loginRequest('growth', false));
     expect(response.status).toBe(200);
-    expect(authMocks.ensureAccount).toHaveBeenCalledExactlyOnceWith({
+    expect(authMocks.ensureAccount).toHaveBeenCalledTimes(1);
+    expect(authMocks.ensureAccount).toHaveBeenCalledWith({
       userId: 'existing-user', email: 'user@example.ru',
       selectedPlan: 'growth', deferTrial: true,
     });
