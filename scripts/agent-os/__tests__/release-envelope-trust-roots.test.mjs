@@ -30,7 +30,7 @@ function fixture() {
   let reads=0;
   const protectedReader=async p=>{ reads++; const name=p.split('/').at(-1);
     if (!Object.hasOwn(documents,name)) throw Error('unexpected filename'); return documents[name]; };
-  const readSnapshot=()=>read({expected, now:NOW,protectedReader});
+  const readSnapshot=()=>read({expected, now:NOW,clock:()=>NOW,protectedReader});
   const resign=()=>{documents['standing-revocations.json']=signed(manifest,issuer);};
   return {issuer,verifier,expected,manifest,documents,readSnapshot,resign,protectedReader,
     reads:()=>reads};
@@ -96,12 +96,12 @@ test('changed protected snapshot during read fails closed',async()=>{
     if(n===6)return 'replaced file during read';
     return x.protectedReader(p);
   };
-  const r=await read({expected:x.expected,now:NOW,protectedReader});
+  const r=await read({expected:x.expected,now:NOW,clock:()=>NOW,protectedReader});
   assert.equal(r.reason,'TRUST_SNAPSHOT_CHANGED');assert.equal(r.authorized,false);
 });
 
 test('unavailable protected file denies without disclosing filesystem error',async()=>{
-  const x=fixture(), r=await read({expected:x.expected,now:NOW,
+  const x=fixture(), r=await read({expected:x.expected,now:NOW,clock:()=>NOW,
     protectedReader:async()=>{throw Error('DO NOT LOG PRIVATE CONTEXT');}});
   assert.deepEqual(r,{status:'BLOCKED',reason:'TRUST_SNAPSHOT_UNAVAILABLE',authorized:false});
 });
@@ -113,4 +113,31 @@ test('untrusted caller cannot change target, empty fingerprint, or revision floo
   assert.equal((await x.readSnapshot()).reason,'TRUST_CONTEXT');
   x.expected.minRevocationSequence=0;x.expected.issuerKeySha256='bad';
   assert.equal((await x.readSnapshot()).reason,'TRUST_CONTEXT');
+});
+
+test('mutating expected trust key or revocation floor during async read cannot downgrade pinned context',async()=>{
+  for (const mutate of [x=>x.expected.verifierKeySha256='a'.repeat(64),
+    x=>x.expected.minRevocationSequence=0,
+    x=>x.expected.envelopeDigest='f'.repeat(64)]) {
+    const x=fixture();let n=0;
+    const protectedReader=async p=>{if(++n===1)mutate(x);return x.protectedReader(p);};
+    const r=await read({expected:x.expected,now:NOW,clock:()=>NOW,protectedReader});
+    assert.deepEqual(r,{status:'BLOCKED',reason:'TRUST_CONTEXT_CHANGED',authorized:false});
+  }
+});
+
+test('revocation expiry after first read, invalid or regressed clock and overlong reads all deny',async()=>{
+  for(const finalAt of [NOW+86400000, NOW-1, NOW+31000, NaN]){
+    const x=fixture();const r=await read({expected:x.expected,now:NOW,
+      clock:()=>finalAt,protectedReader:x.protectedReader});
+    assert.deepEqual(r,{status:'BLOCKED',reason:'TRUST_REVOCATION_STALE',authorized:false});
+  }
+});
+
+test('fresh completion time is the reported observation and never grants authority',async()=>{
+  const x=fixture();const r=await read({expected:x.expected,now:NOW,
+    clock:()=>NOW+10,protectedReader:x.protectedReader});
+  assert.equal(r.status,'PROTECTED_TRUST_VERIFIED');
+  assert.equal(r.observedAt,NOW+10);
+  assert.equal(r.authorized,false);
 });
