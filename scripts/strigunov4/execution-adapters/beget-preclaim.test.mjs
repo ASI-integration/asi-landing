@@ -59,13 +59,22 @@ def call(args,**kwargs):
  assert args==['/usr/bin/git','ls-remote','https://github.com/ASI-integration/asi-landing.git','refs/heads/main']
  calls.append(args);clock[0]=2000
  if mode=='fence-replaced':contents['fence.json']=json.dumps(dict(fence,oldCredentialsRevoked=False)).encode()
+ if mode=='review-replaced':contents['source-review.json']=b'{}'
+ if mode=='native-replaced':contents['native-isolation.json']=b'{}'
+ if mode=='catalog-replaced':contents['catalog.json']=b'[{}]'
+ if mode=='owner-key-replaced':contents['owner-public.pem']=b'other-public-key'
+ if mode=='activation-file-replaced':contents['activation.json']=b'other-activation'
  return (base+'\\trefs/heads/main\\n').encode()
 class StopAtClaim(Exception):pass
 def write(p,data,**kwargs):claims.append((p,json.loads(data)));raise StopAtClaim()
+def read_signed(name,public):
+ if name=='install-approval.json':
+  return dict(permit,expiresAt=1500) if mode=='install-revoked' and calls else permit
+ return dict(activation,expiresAt=1500) if mode=='activation-revoked' and calls else activation
 with patch.object(m,'prepared',return_value=(raw,manifest,{'catalog.json':catalog})), \
  patch.object(m.os,'geteuid',return_value=0),patch.object(m.os,'uname',return_value=SimpleNamespace(nodename=m.HOST)), \
  patch.object(m,'regular_bytes',side_effect=lambda p,**kwargs:contents[Path(p).name]), \
- patch.object(m,'signed',side_effect=lambda name,public:permit if name=='install-approval.json' else activation), \
+ patch.object(m,'signed',side_effect=read_signed), \
  patch.object(m.time,'time',side_effect=lambda:clock[0]/1000),patch.object(m,'authority_traversal'), \
  patch.object(m,'inactive'),patch.object(m.Path,'exists',return_value=False), \
  patch.object(m.pwd,'getpwnam',side_effect=KeyError),patch.object(m,'call',side_effect=call), \
@@ -77,7 +86,11 @@ with patch.object(m,'prepared',return_value=(raw,manifest,{'catalog.json':catalo
  except m.Block as e:
   assert mode!='valid',str(e)
   expected=('INSTALL_ADMISSION' if mode=='install-expired' else 'ACTIVATION_WINDOW_OR_HOST' if mode=='activation-expired' else
-   'PROTECTED_EVIDENCE_CHANGED' if mode in ('fence-replaced','fence-activation-hash') else 'OLD_WRITER_FENCING_UNVERIFIED')
+   'OWNER_KEY_CHANGED_BEFORE_CLAIM' if mode=='owner-key-replaced' else
+   'PROTECTED_GRANT_CHANGED' if mode in ('install-revoked','activation-revoked') else
+   'CATALOG_BYTES' if mode=='catalog-replaced' else
+   'PROTECTED_EVIDENCE_CHANGED' if mode in ('fence-replaced','fence-activation-hash','review-replaced','native-replaced','activation-file-replaced') else
+   'OLD_WRITER_FENCING_UNVERIFIED')
   assert str(e)==expected,str(e)
   assert claims==[],'rejected preclaim consumed a claim'
  except StopAtClaim:
@@ -94,13 +107,15 @@ for(const mode of ['install-expired','activation-expired','valid']){
   });
 }
 
-test('actual installer rejects invalid or replaced fence before claim and host mutations',()=>{
+test('actual installer rechecks protected evidence and signed grants before claim',()=>{
   for(const mode of ['fence-schema','fence-repository','fence-method','fence-installation','fence-installation-type',
     'fence-revoked','fence-expiry','fence-digest','fence-reviewer','fence-denied-pr','fence-activation-hash','fence-replaced',
     'fence-malformed-json','fence-extra-nan','fence-utf8-bom','fence-utf16','fence-list','fence-null',
     'fence-noncanonical-pair','fence-missing-repositories','fence-null-repositories','fence-missing-new-installation',
     'fence-new-installation-bool','fence-new-installation-zero','fence-new-installation-negative',
-    'fence-new-installation-string','fence-new-installation-fraction','fence-new-installation-unsafe','fence-new-installation-null']){
+    'fence-new-installation-string','fence-new-installation-fraction','fence-new-installation-unsafe','fence-new-installation-null',
+    'review-replaced','native-replaced','catalog-replaced','owner-key-replaced','activation-file-replaced',
+    'install-revoked','activation-revoked']){
     execFileSync('/usr/bin/python3',['-I','-S','-B','-c',preclaimTest,installer,mode],{timeout:5000,stdio:'pipe'});
   }
 });
