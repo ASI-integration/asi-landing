@@ -12,7 +12,7 @@ type Pr = {
   head: string; ci: Ci[]; ciAvailable: boolean; url: string;
 };
 type Snapshot = {
-  ok: boolean; observedAt: string; mapUrl: string; mapSha: string;
+  ok: boolean; observedAt: string; mapUrl: string; mapSha: string; staleSnapshot?: boolean;
   issue: {number: number; state: string; updatedAt: string; url: string};
   stages: Stage[]; prs: Pr[]; partialSources?: boolean;
   telemetry: {available: boolean; stale: boolean; status: string;
@@ -108,7 +108,7 @@ export default function StrigunovGpsClient() {
         <p className="text-xs text-slate-300">S4-G1 → S4-G6 → READY_FOR_DEMO</p>
       </div>
       <div className="flex flex-wrap items-center gap-3">
-        <span className="text-xs text-slate-300">{error ? 'Последнее успешное обновление: ' : 'Данные проверены: '}{observed}</span>
+        <span className="text-xs text-slate-300">{error || data?.staleSnapshot ? 'Последнее успешное обновление: ' : 'Данные проверены: '}{observed}</span>
         <button type="button" disabled={busy} onClick={() => void load()}
           className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-bold text-white hover:bg-blue-500 disabled:opacity-50">
           {busy ? 'Проверка…' : 'Обновить'}
@@ -118,7 +118,10 @@ export default function StrigunovGpsClient() {
     {error && <div role="alert" className="mb-3 rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800">
       {error} {data ? 'На карте сохранены предыдущие данные. Новые результаты не подтверждены.' : 'Подтверждённого снимка пока нет.'}
     </div>}
-    {data?.partialSources && <div className="mb-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+    {data?.staleSnapshot && <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+      Обновление GitHub временно недоступно. Отображается предыдущий проверенный снимок; свежих подтверждений нет.
+    </div>}
+    {data?.partialSources && !data?.staleSnapshot && <div className="mb-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
       Карта загружена. Часть дополнительных сведений GitHub временно недоступна и не учитывается как успешная проверка.
     </div>}
     <div className="mb-3 grid gap-2 text-sm md:grid-cols-3">
