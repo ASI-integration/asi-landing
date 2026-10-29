@@ -10,10 +10,37 @@ const REPO = 'ASI-integration/asi-landing';
 const BASE = 'https://api.github.com/repos/' + REPO;
 const RELEASE_PATH = 'docs/agent-os/releases/strigunov4-demo.json';
 // Include the current infrastructure and G2 integration PRs. Keep legacy G1 context.
-const PR_NUMBERS = [529, 532, 533, 537, 549, 550, 552];
+const PR_NUMBERS = [529, 532, 533, 537, 549, 550, 552, 554];
+const AGENT_BRANCHES = [
+  { id: 'trusted-evidence', title: 'P0 · проверка доверия', branch: 'asi/p0-trusted-evidence-worker-20261029' },
+  { id: 'atomic-budget', title: 'P0 · атомарный бюджет', branch: 'asi/p0-atomic-budget-worker-20261029' },
+] as const;
 const STAGE_IDS = [1, 2, 3, 4, 5, 6].map(n => 'S4-G' + n);
 type GitHubPR = { number: number; state: string; draft: boolean; merged: boolean; updated_at: string; head: { sha: string } };
 type Workflow = { id: number; name: string; status: string; conclusion: string | null; head_sha: string; html_url: string };
+type BranchCommit = { sha?: unknown; commit?: { committer?: { date?: unknown } }; html_url?: unknown };
+type AgentWorkstream = {
+  id: string; title: string; source: 'PR' | 'BRANCH'; state: 'DRAFT' | 'MERGED' | 'OPEN' | 'BRANCH' | 'UNKNOWN';
+  head: string | null; lastCodeAt: string | null; lastPrUpdateAt: string | null;
+  url: string; runVerified: false; codeObserved: boolean;
+};
+function validSha(value: unknown): value is string {
+  return typeof value === 'string' && /^[a-f0-9]{40}$/.test(value);
+}
+function knownDate(value: unknown): string | null {
+  return typeof value === 'string' && Number.isFinite(Date.parse(value)) ? value : null;
+}
+function prWorkstream(prs: Array<{number: number; draft: boolean; merged: boolean; state: string; head: string; updatedAt: string}>, number: number, id: string, title: string): AgentWorkstream {
+  const p=prs.find(x=>x.number===number);
+  return {
+    id,title,source:'PR',state:p?(p.merged?'MERGED':p.draft?'DRAFT':p.state==='open'?'OPEN':'UNKNOWN'):'UNKNOWN',
+    head:p && validSha(p.head)?p.head:null,
+    // PR updatedAt may be a comment/edit, NOT the time code was committed.
+    lastCodeAt:null,lastPrUpdateAt:knownDate(p?.updatedAt),
+    url:'https://github.com/'+REPO+'/pull/'+number,
+    runVerified:false,codeObserved:!!(p && validSha(p.head)),
+  };
+}
 type ReleaseStage = { id: string; title: string; status: string; proof: unknown[]; acceptance: string[]; acceptanceSha?: string };
 let memo: { at: number; value: unknown } | null = null;
 
@@ -106,6 +133,32 @@ export async function GET() {
         url: 'https://github.com/' + REPO + '/pull/' + p.number,
       };
     }));
+    // These five source branches/PRs are NOT five 24/7 running workers.
+    // GitHub proves code state only. An authenticated server heartbeat,
+    // bound to the exact service instance/task, is required before showing RUNNING.
+    const branchEvidence=await Promise.all(AGENT_BRANCHES.map(async item => {
+      try {
+        const commit=await github<BranchCommit>(
+          BASE+'/commits/'+encodeURIComponent(item.branch),token);
+        if(!validSha(commit.sha)) throw new Error('Unexpected branch head');
+        return { ...item, head:commit.sha,
+          committedAt:knownDate(commit.commit?.committer?.date) };
+      } catch {
+        return { ...item, head:null, committedAt:null };
+      }
+    }));
+    const workerLanes: AgentWorkstream[]=[
+      prWorkstream(prs,549,'engine','Universal Engine · Beget'),
+      prWorkstream(prs,554,'ru-auth','RU · Яндекс ID и email'),
+      prWorkstream(prs,552,'p0-lead','Астра · делегирование'),
+      ...branchEvidence.map(b=>({
+        id:b.id,title:b.title,source:'BRANCH' as const,
+        state:b.head?'BRANCH' as const:'UNKNOWN' as const,
+        head:b.head,lastCodeAt:b.committedAt,lastPrUpdateAt:null,
+        url:'https://github.com/'+REPO+'/tree/'+b.branch,
+        runVerified:false as const,codeObserved:!!b.head,
+      })),
+    ];
     const telemetry = await getMissionControlDashboard().then(rows => {
       const row = rows.find(x => x.projectId === 'asi');
       return row ? {
@@ -119,7 +172,7 @@ export async function GET() {
     const g1Accepted = await verifyPhysicalG1(release.stages[0], token);
     const payload = {
       ok: true, observedAt: new Date().toISOString(), mapSha: file.sha,
-      partialSources: partialPrData || issue === null || prs.some(p => !p.ciAvailable),
+      partialSources: partialPrData || issue === null || prs.some(p => !p.ciAvailable) || workerLanes.some(l => !l.codeObserved),
       mapUrl: 'https://github.com/' + REPO + '/blob/main/' + RELEASE_PATH,
       issue: {number: 511, state: issue?.state ?? 'UNKNOWN', updatedAt: issue?.updated_at ?? null,
         url: 'https://github.com/' + REPO + '/issues/511'},
@@ -127,7 +180,7 @@ export async function GET() {
         id: s.id, title: s.title, status: s.status, proofCount: s.proof.length,
         acceptance: s.acceptance,
       })),
-      prs, telemetry,
+      prs, telemetry, workerLanes,
       // Only the protected, owner-approved, exact-SHA run can unlock G1.
       // Other stages require separate, reviewed proof validators.
       serverEvidence: {
