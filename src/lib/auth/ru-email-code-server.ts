@@ -25,7 +25,7 @@ export function trustedClientIp(req: Request): string {
   const address = (process.env.VERCEL === '1'
     ? req.headers.get('x-vercel-forwarded-for')
     : req.headers.get('x-forwarded-for'))?.trim() || '';
-  return isIP(address) !== 0 ? address.toLowerCase() : 'unattributed';
+  return address.includes('%') || isIP(address) === 0 ? 'unattributed' : address.toLowerCase();
 }
 
 export async function issueRuEmailCode(emailInput: unknown, req: Request): Promise<{sent: boolean; throttled: boolean}> {
