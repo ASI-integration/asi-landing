@@ -60,22 +60,37 @@ function signedRevocations(raw, issuerKey) {
  *   not agent input. issuer/verifier SHA-256 hashes of SPKI DER are independently
  *   pinned, and minRevocationSequence comes from existing durable publisher state.
  * @param {number} [input.now] - trusted verifier clock, milliseconds since epoch.
+ * @param {function} [input.clock] - injected only in focused tests; production
+ *   uses Date.now and checks the final snapshot timestamp, not just the start.
  * @param {function} [input.protectedReader] - test injection only; production
  *   uses existing rootOwned (no arbitrary path or network fetches).
  * @returns {Promise<object>} explicit authorized:false diagnostics only.
  */
 export async function readProtectedStandingTrustSnapshot({expected, now=Date.now(),
-  protectedReader=rootOwned} = {}) {
-  if (!expected || expected.repository !== REPO ||
-      expected.environment !== ENVIRONMENT || expected.target !== TARGET ||
-      !DIGEST.test(expected.issuerKeySha256 || '') ||
-      !DIGEST.test(expected.verifierKeySha256 || '') ||
-      !DIGEST.test(expected.envelopeDigest || '') ||
-      expected.issuerKeySha256 === expected.verifierKeySha256 ||
-      !Number.isSafeInteger(expected.minRevocationSequence) ||
-      expected.minRevocationSequence < 0 ||
-      !Number.isSafeInteger(now) || now < 0 ||
-      typeof protectedReader !== 'function') return deny('TRUST_CONTEXT');
+  protectedReader=rootOwned, clock=Date.now} = {}) {
+  let pinned;
+  try {
+    // Snapshot every protected input BEFORE the first await. Never reread mutable
+    // caller data to decide trust. Detect later changes and fail closed instead
+    // of returning an inconsistent observation.
+    pinned = Object.freeze({
+      repository:expected?.repository, environment:expected?.environment,
+      target:expected?.target, issuerKeySha256:expected?.issuerKeySha256,
+      verifierKeySha256:expected?.verifierKeySha256,
+      envelopeDigest:expected?.envelopeDigest,
+      minRevocationSequence:expected?.minRevocationSequence,
+    });
+    if (pinned.repository !== REPO || pinned.environment !== ENVIRONMENT ||
+        pinned.target !== TARGET || !DIGEST.test(pinned.issuerKeySha256 || '') ||
+        !DIGEST.test(pinned.verifierKeySha256 || '') ||
+        !DIGEST.test(pinned.envelopeDigest || '') ||
+        pinned.issuerKeySha256 === pinned.verifierKeySha256 ||
+        !Number.isSafeInteger(pinned.minRevocationSequence) ||
+        pinned.minRevocationSequence < 0 ||
+        !Number.isSafeInteger(now) || now < 0 ||
+        typeof protectedReader !== 'function' || typeof clock !== 'function')
+      return deny('TRUST_CONTEXT');
+  } catch { return deny('TRUST_CONTEXT'); }
 
   try {
     // Read protected files directly. Re-read after cryptographic validation:
@@ -84,8 +99,8 @@ export async function readProtectedStandingTrustSnapshot({expected, now=Date.now
     const verifierPem = await protectedReader(FILES.verifier, 10000);
     const revocationsRaw = await protectedReader(FILES.revocations, 65536);
     const issuer = publicKey(issuerPem), verifier = publicKey(verifierPem);
-    if (issuer.digest !== expected.issuerKeySha256 ||
-        verifier.digest !== expected.verifierKeySha256 ||
+    if (issuer.digest !== pinned.issuerKeySha256 ||
+        verifier.digest !== pinned.verifierKeySha256 ||
         issuer.digest === verifier.digest) return deny('TRUST_KEY_PROVENANCE');
     const {manifest:m, manifestDigest} = signedRevocations(revocationsRaw, issuer.key);
     if (m.schema !== 'asi.release-envelope-revocations.v1' || m.repository !== REPO ||
@@ -93,7 +108,7 @@ export async function readProtectedStandingTrustSnapshot({expected, now=Date.now
         m.issuerKeySha256 !== issuer.digest ||
         m.verifierKeySha256 !== verifier.digest)
       return deny('TRUST_REVOCATION_BINDING');
-    if (!Number.isSafeInteger(m.sequence) || m.sequence < expected.minRevocationSequence ||
+    if (!Number.isSafeInteger(m.sequence) || m.sequence < pinned.minRevocationSequence ||
         !Number.isSafeInteger(m.issuedAt) || !Number.isSafeInteger(m.expiresAt) ||
         m.issuedAt > now || m.expiresAt <= now ||
         m.expiresAt <= m.issuedAt || m.expiresAt - m.issuedAt > 14*DAY)
@@ -102,7 +117,7 @@ export async function readProtectedStandingTrustSnapshot({expected, now=Date.now
         m.revokedEnvelopeDigests.some(d => !DIGEST.test(d)) ||
         m.revokedEnvelopeDigests.some((d,i) => i && d <= m.revokedEnvelopeDigests[i-1]))
       return deny('TRUST_REVOCATION_FORMAT');
-    if (m.revokedEnvelopeDigests.includes(expected.envelopeDigest))
+    if (m.revokedEnvelopeDigests.includes(pinned.envelopeDigest))
       return deny('TRUST_ENVELOPE_REVOKED');
     for (const [name, first, cap] of [
       ['issuer',issuerPem,10000], ['verifier',verifierPem,10000],
@@ -110,13 +125,22 @@ export async function readProtectedStandingTrustSnapshot({expected, now=Date.now
       if (await protectedReader(FILES[name], cap) !== first)
         return deny('TRUST_SNAPSHOT_CHANGED');
     }
+    // The expected owner context must still match the original snapshot and
+    // the signed revocation record must still be live AFTER all async reads.
+    if (Object.entries(pinned).some(([k,v]) => expected[k] !== v))
+      return deny('TRUST_CONTEXT_CHANGED');
+    const completedAt = clock();
+    if (!Number.isSafeInteger(completedAt) || completedAt < now ||
+        completedAt - now > 30000 || completedAt >= m.expiresAt ||
+        completedAt < m.issuedAt)
+      return deny('TRUST_REVOCATION_STALE');
     return Object.freeze({
       status:'PROTECTED_TRUST_VERIFIED', authorized:false,
       // Public keys only. No private key or authorization token is returned.
       issuerPublicKey:issuerPem, verifierPublicKey:verifierPem,
       issuerKeySha256:issuer.digest, verifierKeySha256:verifier.digest,
       revocationSequence:m.sequence, revocationManifestDigest:manifestDigest,
-      observedAt:now, envelopeDigest:expected.envelopeDigest,
+      observedAt:completedAt, envelopeDigest:pinned.envelopeDigest,
     });
   } catch {
     // Never expose file content, filesystem paths, or cryptographic exceptions.
