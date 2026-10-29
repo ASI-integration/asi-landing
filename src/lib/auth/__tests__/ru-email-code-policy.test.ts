@@ -28,13 +28,16 @@ describe('shared RU email-code identity policy', () => {
   });
   it('defaults to disabled unless the complete server-only capability is configured', () => {
     const env = {
-      ASI_RU_EMAIL_CODE_ENABLED: 'true', ASI_RU_EMAIL_CODE_PEPPER: pepper,
+      ASI_RU_EMAIL_CODE_ENABLED: 'true', ASI_RU_EMAIL_CODE_SCHEMA_READY: 'true',
+      ASI_RU_EMAIL_CODE_PEPPER: pepper,
       ASI_AUTH_RESEND_API_KEY: 'fixture', ASI_AUTH_FROM_EMAIL: 'no-reply@asi-global.ru',
       SESSION_SECRET: pepper, SUPABASE_URL: 'https://example.test',
       SUPABASE_SERVICE_ROLE_KEY: 'fixture',
     };
     expect(ruCodeAuthConfigured(env)).toBe(true);
     expect(ruCodeAuthConfigured({ ...env, ASI_RU_EMAIL_CODE_ENABLED: undefined })).toBe(false);
+    expect(ruCodeAuthConfigured({ ...env, ASI_RU_EMAIL_CODE_SCHEMA_READY: undefined })).toBe(false);
+    expect(ruCodeAuthConfigured({ ...env, ASI_RU_EMAIL_CODE_SCHEMA_READY: 'false' })).toBe(false);
     expect(ruCodeAuthConfigured({ ...env, ASI_RU_EMAIL_CODE_PEPPER: '' })).toBe(false);
     expect(ruCodeAuthConfigured({ ...env, ASI_AUTH_RESEND_API_KEY: undefined })).toBe(false);
     expect(ruCodeAuthConfigured({ ...env, SESSION_SECRET: '' })).toBe(false);
