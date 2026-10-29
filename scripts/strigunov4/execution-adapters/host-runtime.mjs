@@ -118,11 +118,36 @@ export async function createBegetRuntime(){
   const checks=await createBegetChecks({root:BEGET.root,catalog,reviewsRaw:authority.files['reviews.json'],
     reviewPolicySha256:payload.reviewsSha256,revalidate:authority.revalidate,
     async verifyReviewProvenance(v){
-      must(Number.isSafeInteger(v.sourcePr)&&v.sourcePr>0&&/^[a-f0-9]{40}$/.test(v.sourceSha)&&
-        Number.isSafeInteger(v.reviewerId)&&v.reviewerId>0,'REVIEW_PROVENANCE_SCHEMA');
-      const p=await reader.get('pulls/'+v.sourcePr),reviews=await reader.pages('pulls/'+v.sourcePr+'/reviews');
+      const ownerCI=v.schema==='asi.owner-ci-delta-review.v1';
+      must(Number.isSafeInteger(v.sourcePr)&&v.sourcePr>0&&/^[a-f0-9]{40}$/.test(v.sourceSha),
+        'REVIEW_PROVENANCE_SCHEMA');
+      const p=await reader.get('pulls/'+v.sourcePr);
       must(p.number===v.sourcePr&&p.head?.sha===v.sourceSha&&p.head?.repo?.full_name===REPO&&
-        p.base?.repo?.full_name===REPO&&Number.isSafeInteger(p.user?.id)&&p.user.id!==v.reviewerId,'REVIEW_SOURCE_IDENTITY');
+        p.base?.repo?.full_name===REPO&&Number.isSafeInteger(p.user?.id),'REVIEW_SOURCE_IDENTITY');
+      if(ownerCI){
+        must(v.sourcePr===549&&v.ownerId===207600140&&p.user.id===v.ownerId&&
+          v.scope==='BEGET_G2_TWO_DRAFT_WITNESSES'&&
+          Number.isSafeInteger(v.validationRunId)&&v.validationRunId>0&&
+          Number.isSafeInteger(v.governanceRunId)&&v.governanceRunId>0&&
+          v.validationRunId!==v.governanceRunId,'OWNER_REVIEW_SCOPE');
+        const comments=await reader.pages('issues/'+v.sourcePr+'/comments');
+        const exact='ASI-OWNER-APPROVE:CONTRACT-CHANGE:'+v.sourcePr+':'+v.sourceSha;
+        must(comments.some(c=>c.user?.id===v.ownerId&&c.body?.trim()===exact),
+          'OWNER_ATTESTATION_NOT_VERIFIED');
+        for(const [id,workflow,event] of [
+          [v.validationRunId,311380800,'pull_request'],
+          [v.governanceRunId,390653294,'pull_request_target']]){
+          const run=await reader.get('actions/runs/'+id);
+          must(run.id===id&&run.workflow_id===workflow&&run.event===event&&
+            run.head_sha===v.sourceSha&&run.status==='completed'&&
+            run.conclusion==='success'&&run.repository?.full_name===REPO,
+            'OWNER_CI_EXACT_HEAD_UNVERIFIED');
+        }
+        return;
+      }
+      must(Number.isSafeInteger(v.reviewerId)&&v.reviewerId>0&&
+        p.user.id!==v.reviewerId,'REVIEW_PROVENANCE_SCHEMA');
+      const reviews=await reader.pages('pulls/'+v.sourcePr+'/reviews');
       const latest=reviews.filter(r=>r.user?.id===v.reviewerId).sort((a,b)=>b.id-a.id)[0];
       must(latest?.commit_id===v.sourceSha&&latest.state==='APPROVED'&&
         latest.body==='ASI-OFFLINE-DELTA-REVIEW:'+digest(JSON.stringify(v.tasks))&&
