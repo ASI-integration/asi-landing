@@ -58,6 +58,7 @@ export async function GET(request:Request) {
   const startedAt=session.yandexOauthStartedAt;
   const mode=session.yandexOauthMode;
   const linkUserId=session.yandexOauthLinkUserId;
+  const strongAt=session.lastStrongAuthAt;
   const intended=yandexSafeReturn(session.yandexOauthRedirect);
   const code=url.searchParams.get('code');
   const matched=verifyYandexState(state,url.searchParams.get('state')) &&
@@ -84,8 +85,10 @@ export async function GET(request:Request) {
     if(lookupError)throw new Error('YANDEX_LINK_REGISTRY_UNAVAILABLE');
 
     if(mode==='link'){
-      if(!linkUserId || session.userId!==linkUserId)
-        return fail(url.origin,'link_requires_session');
+      if(!linkUserId || session.userId!==linkUserId ||
+          !Number.isSafeInteger(strongAt) || Date.now()<strongAt! ||
+          Date.now()-strongAt!>10*60*1000)
+        return fail(url.origin,'link_requires_recent_auth');
       if(linked && linked.user_id!==linkUserId)
         return fail(url.origin,'already_linked');
       if(!linked){
