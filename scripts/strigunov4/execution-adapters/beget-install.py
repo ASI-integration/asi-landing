@@ -29,6 +29,11 @@ ACTIONS=['create-service-account','install-exact-runtime','grant-read-only-autho
          'stop-disable-engine-on-failure']
 NODE_SHA='8142d37c6f2f372ef040419e7a111a6baf17df89f8078d02447d6c639ae20c1d'
 BWRAP_SHA='e318903862396f96de3df57264e0158682b952fd3fb53ac23d876413e7b30f71'
+# Staging is a separately signed, ONE-USE permission. It never starts the Engine.
+# The original installation approval is required again at the second phase.
+STAGE_ACTIONS=['create-isolated-service-account','install-exact-runtime-without-authority',
+               'install-disabled-unit','native-isolation-acceptance-only']
+STAGE_SCHEMA='asi.beget-isolation-stage-authorization.v1'
 class Block(Exception): pass
 def require(ok,code):
     if not ok: raise Block(code)
@@ -171,7 +176,128 @@ def source_review_preclaim(review,manifest):
         require(review.get('independent') is True and review.get('mode') in (None,'INDEPENDENT_HUMAN'),
                 'SOURCE_REVIEW_NOT_PROVEN')
 
-def apply(package,node,bwrap):
+
+def stage_scope(permit,manifest,raw,now):
+    require(type(permit) is dict and permit.get('schema')==STAGE_SCHEMA and
+        permit.get('host')==HOST and permit.get('unit')==UNIT and
+        permit.get('manifestSha256')==digest(raw) and
+        permit.get('sourceSha')==manifest['sourceSha'] and
+        permit.get('baseSha')==manifest['baseSha'] and
+        permit.get('unitSha256')==manifest['unitSha256'] and
+        permit.get('actions')==STAGE_ACTIONS and
+        type(permit.get('notBefore')) is int and type(permit.get('expiresAt')) is int and
+        permit['notBefore']<=now<permit['expiresAt'] and
+        permit['expiresAt']-permit['notBefore']<=14*86400000,
+        'STAGE_ADMISSION')
+
+def stage_receipt_path(raw):
+    return AUTH/('staged-isolation-'+digest(raw)+'.json')
+
+def staged_state(raw,manifest,files,public):
+    # Enforce *exact* staged bytes, without trusting a root-owned JSON claim alone.
+    receipt=json.loads(regular_bytes(stage_receipt_path(raw),root=True))
+    require(type(receipt) is dict and receipt.get('schema')=='asi.beget-staged-isolation.v1' and
+        receipt.get('manifestSha256')==digest(raw) and
+        receipt.get('unitSha256')==manifest['unitSha256'] and
+        receipt.get('nodeSha256')==NODE_SHA and receipt.get('bwrapSha256')==BWRAP_SHA,
+        'STAGE_RECEIPT_UNVERIFIED')
+    identity=pwd.getpwnam(USER)
+    require(identity.pw_uid>0 and identity.pw_gid>0 and identity.pw_shell=='/usr/sbin/nologin' and
+        identity.pw_dir==str(STATE),'STAGED_IDENTITY_CHANGED')
+    require(regular_bytes(AUTH/'owner-public.pem',root=True)==public,'STAGED_OWNER_KEY_CHANGED')
+    for rel,data in files.items():
+        if rel.startswith('scripts/'):
+            require(regular_bytes(RUNTIME/rel,root=True)==data,'STAGED_SOURCE_CHANGED')
+    require(regular_bytes(RUNTIME/'manifest.json',root=True)==raw and
+        digest(regular_bytes(RUNTIME/'node',root=True,limit=150000000))==NODE_SHA and
+        digest(regular_bytes(RUNTIME/'bwrap',root=True))==BWRAP_SHA and
+        regular_bytes(Path('/etc/systemd/system')/UNIT,root=True)==files[UNIT],
+        'STAGED_DEPENDENCY_CHANGED')
+    st=STATE.lstat()
+    require(stat.S_ISDIR(st.st_mode) and st.st_uid==identity.pw_uid and
+        st.st_gid==identity.pw_gid and not st.st_mode&0o077,'STAGED_STATE_CHANGED')
+    status=call(['/usr/bin/systemctl','show',UNIT,
+                 '-pLoadState','-pActiveState','-pMainPID','-pUnitFileState']).decode().splitlines()
+    require('LoadState=loaded' in status and 'ActiveState=inactive' in status and
+        'MainPID=0' in status and 'UnitFileState=disabled' in status,
+        'STAGED_UNIT_NOT_DISABLED')
+    return identity
+
+def stage(package,node,bwrap):
+    # Fail closed before any mutation; the staged unit is never enabled or started.
+    raw,manifest,files=prepared(package)
+    require(os.geteuid()==0 and os.uname().nodename==HOST,'PROTECTED_HOST_REQUIRED')
+    public=regular_bytes(AUTH/'owner-public.pem',root=True)
+    permit=signed('stage-approval.json',public)
+    stage_scope(permit,manifest,raw,int(time.time()*1000))
+    nodebytes=regular_bytes(node,limit=150000000)
+    bwrapbytes=regular_bytes(bwrap)
+    require(digest(nodebytes)==NODE_SHA and digest(bwrapbytes)==BWRAP_SHA,
+            'DEPENDENCY_HASH')
+    inactive()
+    require(not RUNTIME.exists() and not STATE.exists() and
+        not Path('/etc/systemd/system',UNIT).exists() and
+        not stage_receipt_path(raw).exists(),'STAGE_NOT_CLEAN')
+    try:pwd.getpwnam(USER);raise Block('SERVICE_IDENTITY_EXISTS')
+    except KeyError:pass
+    # No activation material may be present; the service cannot publish.
+    require(all(not (AUTH/name).exists() for name in
+        ('activation.json','catalog.json','reviews.json','install-approval.json')),
+        'STAGE_LIVE_AUTHORITY_PRESENT')
+    require(regular_bytes(AUTH/'github-app.pem',root=True,limit=20000)!=b'',
+            'STAGE_APP_KEY_MISSING')
+    main=call(['/usr/bin/git','ls-remote',
+               'https://github.com/ASI-integration/asi-landing.git','refs/heads/main']).decode().split()
+    require(main==[manifest['baseSha'],'refs/heads/main'],
+            'PROTECTED_MAIN_NOT_EXACT_BASE')
+    stage_scope(permit,manifest,raw,int(time.time()*1000))
+    require(regular_bytes(AUTH/'owner-public.pem',root=True)==public and
+        signed('stage-approval.json',public)==permit,'STAGE_GRANT_CHANGED')
+    claim=AUTH/('stage-claim-'+digest(raw)+'.json')
+    write_new(claim,json.dumps({'manifestSha256':digest(raw),'oneUse':True}).encode())
+    installed_unit=False
+    try:
+        call(['/usr/sbin/useradd','--system','--user-group','--home-dir',str(STATE),
+              '--no-create-home','--shell','/usr/sbin/nologin',USER])
+        identity=pwd.getpwnam(USER)
+        RUNTIME.mkdir(mode=0o755)
+        for rel,data in files.items():
+            if rel.startswith('scripts/'):write_new(RUNTIME/rel,data,0o644)
+        write_new(RUNTIME/'manifest.json',raw,0o644)
+        write_new(RUNTIME/'node',nodebytes,0o755)
+        write_new(RUNTIME/'bwrap',bwrapbytes,0o755)
+        STATE.mkdir(mode=0o700)
+        os.chown(STATE,identity.pw_uid,identity.pw_gid)
+        write_new(Path('/etc/systemd/system')/UNIT,files[UNIT],0o644)
+        installed_unit=True
+        call(['/usr/bin/systemd-analyze','verify',str(Path('/etc/systemd/system')/UNIT)])
+        call(['/usr/bin/systemctl','daemon-reload'])
+        # A new unit is disabled by default; assert rather than trying to
+        # reset the status of any pre-existing service.
+        status=call(['/usr/bin/systemctl','show',UNIT,
+                     '-pLoadState','-pActiveState','-pMainPID','-pUnitFileState']).decode().splitlines()
+        require('LoadState=loaded' in status and 'ActiveState=inactive' in status and
+                'MainPID=0' in status and 'UnitFileState=disabled' in status,
+                'STAGED_UNIT_NOT_DISABLED')
+        receipt={'schema':'asi.beget-staged-isolation.v1',
+                 'manifestSha256':digest(raw),
+                 'unitSha256':manifest['unitSha256'],
+                 'nodeSha256':NODE_SHA,'bwrapSha256':BWRAP_SHA,
+                 'uid':identity.pw_uid}
+        write_new(stage_receipt_path(raw),json.dumps(receipt,sort_keys=True).encode())
+        print(json.dumps({'status':'STAGED_ISOLATION_PENDING',
+                          'manifestSha256':digest(raw),'unit':UNIT,
+                          'serviceEnabled':False,'serviceStarted':False}))
+    except Exception:
+        if installed_unit:
+            try:
+                call(['/usr/bin/systemctl','disable','--now',UNIT])
+                require(call(['/usr/bin/systemctl','show',UNIT,'-pMainPID','--value']).strip()==b'0',
+                        'STOP_UNCONFIRMED')
+            except Exception:raise Block('STOP_UNCONFIRMED')
+        raise Block('STAGE_FAILED_SAFE_STOP_RETAINED')
+
+def apply(package,node,bwrap,staged=False):
     raw,m,files=prepared(package)
     require(os.geteuid()==0 and os.uname().nodename==HOST,'PROTECTED_HOST_REQUIRED')
     public=regular_bytes(AUTH/'owner-public.pem',root=True)
@@ -201,10 +327,17 @@ def apply(package,node,bwrap):
     require(regular_bytes(AUTH/'catalog.json',root=True)==files['catalog.json'],'CATALOG_BYTES')
     nodebytes=regular_bytes(node,limit=150000000);bwrapbytes=regular_bytes(bwrap)
     require(digest(nodebytes)==NODE_SHA and digest(bwrapbytes)==BWRAP_SHA,'DEPENDENCY_HASH')
-    inactive()
-    require(not RUNTIME.exists() and not STATE.exists() and not Path('/etc/systemd/system',UNIT).exists(),'CLEAN_INSTALL_REQUIRED')
-    try:pwd.getpwnam(USER);raise Block('SERVICE_IDENTITY_EXISTS')
-    except KeyError:pass
+    if staged:
+        staged_state(raw,m,files,public)
+        # Stage and activation are never the same owner signature.
+        require(regular_bytes(AUTH/'stage-approval.json',root=True)!=b'',
+                'STAGE_GRANT_MISSING')
+    else:
+        inactive()
+        require(not RUNTIME.exists() and not STATE.exists() and
+                not Path('/etc/systemd/system',UNIT).exists(),'CLEAN_INSTALL_REQUIRED')
+        try:pwd.getpwnam(USER);raise Block('SERVICE_IDENTITY_EXISTS')
+        except KeyError:pass
     main=call(['/usr/bin/git','ls-remote','https://github.com/ASI-integration/asi-landing.git','refs/heads/main']).decode().split()
     require(main==[m['baseSha'],'refs/heads/main'],'PROTECTED_MAIN_NOT_EXACT_BASE')
     claim=AUTH/('install-claim-'+digest(raw)+'.json')
@@ -229,16 +362,20 @@ def apply(package,node,bwrap):
     except (ValueError, UnicodeError):raise Block('OLD_WRITER_FENCING_UNVERIFIED')
     fence_preclaim(fence_record, activation)
     write_new(claim,json.dumps({'manifestSha256':digest(raw),'at':now,'oneUse':True}).encode())
-    installed_unit=False
+    installed_unit=staged
     try:
-        call(['/usr/sbin/useradd','--system','--user-group','--home-dir',str(STATE),'--no-create-home','--shell','/usr/sbin/nologin',USER])
+        if not staged:
+            call(['/usr/sbin/useradd','--system','--user-group','--home-dir',str(STATE),
+                  '--no-create-home','--shell','/usr/sbin/nologin',USER])
         identity=pwd.getpwnam(USER)
-        RUNTIME.mkdir(mode=0o755)
-        for rel,data in files.items():
-            if rel.startswith('scripts/'):write_new(RUNTIME/rel,data,0o644)
-        write_new(RUNTIME/'manifest.json',raw,0o644)
-        write_new(RUNTIME/'node',nodebytes,0o755);write_new(RUNTIME/'bwrap',bwrapbytes,0o755)
-        STATE.mkdir(mode=0o700);os.chown(STATE,identity.pw_uid,identity.pw_gid)
+        if not staged:
+            RUNTIME.mkdir(mode=0o755)
+            for rel,data in files.items():
+                if rel.startswith('scripts/'):write_new(RUNTIME/rel,data,0o644)
+            write_new(RUNTIME/'manifest.json',raw,0o644)
+            write_new(RUNTIME/'node',nodebytes,0o755)
+            write_new(RUNTIME/'bwrap',bwrapbytes,0o755)
+            STATE.mkdir(mode=0o700);os.chown(STATE,identity.pw_uid,identity.pw_gid)
         for name in ('owner-public.pem','activation.json','catalog.json','fence.json','reviews.json','github-app.pem'):
             p=AUTH/name;regular_bytes(p,root=True);os.chown(p,0,identity.pw_gid);os.chmod(p,0o640)
         code="""import fs from 'node:fs/promises';import {loadBegetAuthority,BEGET} from '/opt/asi-engine/scripts/strigunov4/execution-adapters/host-authority.mjs';import {initializeState,atomicJson,digest} from '/opt/asi-engine/scripts/strigunov4/execution-adapters/state.mjs';import {initializeRoutingState} from '/opt/asi-engine/scripts/global-dispatcher/dispatcher.mjs';const a=await loadBegetAuthority();await a.fencingWitness();await initializeState(BEGET.root,{liveAdmission:a.admission});await fs.mkdir(BEGET.root+'/routing',{mode:0o700});await initializeRoutingState(BEGET.root+'/routing');await atomicJson(BEGET.root+'/state/api-budget.json',{policySha256:digest(JSON.stringify(a.payload)),requests:0,mutations:0});"""
@@ -248,9 +385,12 @@ def apply(package,node,bwrap):
             call(['/usr/sbin/runuser','-u',USER,'--','/usr/bin/git','-c','core.hooksPath=/dev/null','clone','--no-checkout','--no-hardlinks','https://github.com/ASI-integration/asi-landing.git',dest])
             call(['/usr/sbin/runuser','-u',USER,'--','/usr/bin/git','-C',dest,'-c','core.hooksPath=/dev/null','checkout','--detach',m['baseSha']])
             os.chmod(dest,0o700)
-        write_new(Path('/etc/systemd/system')/UNIT,files[UNIT],0o644);installed_unit=True
+        if not staged:
+            write_new(Path('/etc/systemd/system')/UNIT,files[UNIT],0o644)
+            installed_unit=True
         call(['/usr/bin/systemd-analyze','verify',str(Path('/etc/systemd/system')/UNIT)])
-        call(['/usr/bin/systemctl','daemon-reload']);call(['/usr/bin/systemctl','enable','--now',UNIT])
+        call(['/usr/bin/systemctl','daemon-reload'])
+        call(['/usr/bin/systemctl','enable','--now',UNIT])
         print(json.dumps({'status':'INSTALLED_ACCEPTANCE_PENDING','manifestSha256':digest(raw)}))
     except Exception:
         if installed_unit:
@@ -262,10 +402,16 @@ def apply(package,node,bwrap):
 
 def main():
     parser=argparse.ArgumentParser();parser.add_argument('--package',type=Path,required=True)
-    parser.add_argument('--apply',action='store_true');parser.add_argument('--node',type=Path);parser.add_argument('--bwrap',type=Path)
+    modes=parser.add_mutually_exclusive_group()
+    modes.add_argument('--stage',action='store_true')
+    modes.add_argument('--activate-stage',action='store_true')
+    modes.add_argument('--apply',action='store_true')
+    parser.add_argument('--node',type=Path);parser.add_argument('--bwrap',type=Path)
     args=parser.parse_args();package=args.package.resolve()
-    if args.apply:
-        require(args.node is not None and args.bwrap is not None,'DEPENDENCIES_REQUIRED');apply(package,args.node.resolve(),args.bwrap.resolve())
+    if args.apply or args.stage or args.activate_stage:
+        require(args.node is not None and args.bwrap is not None,'DEPENDENCIES_REQUIRED')
+        if args.stage: stage(package,args.node.resolve(),args.bwrap.resolve())
+        else: apply(package,args.node.resolve(),args.bwrap.resolve(),staged=args.activate_stage)
     else:
         raw,m,_=prepared(package)
         print(json.dumps({'status':'CANDIDATE_ONLY','manifestSha256':digest(raw),'host':HOST,'unit':UNIT,'actions':ACTIONS,
