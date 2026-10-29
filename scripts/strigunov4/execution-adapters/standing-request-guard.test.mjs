@@ -305,3 +305,93 @@ test('isolated preview root predicate excludes all live host roots without files
  for(const candidate of ['/tmp/standing-fixture','/var/lib/asi-engine-fixture','/opt/asi-engine-fixture'])assert.equal(isIsolatedStandingPreviewRoot(candidate),true);
  assert.throws(()=>createStandingRequestPreview({store:{root:'/var/lib/asi-engine'},isolatedPreview:true}),/STANDING_TRANSACTION_INVALID/);
 });
+
+
+// Calibrate against the unchanged successful path rather than guessing how many
+// clock reads the trust/provider predicates currently perform. Native execute,
+// selected task, fsync journal and signed fixtures remain real in every run.
+async function finalReturnProbe({changeAt=Infinity,mode}={}){
+ const x=fixture();try{
+  const envelope=JSON.parse(x.input.signedEnvelope.payload);
+  x.input.signedEnvelope=signed({...envelope,expiresAt:now+(['stale','provider'].includes(mode)?100000:30000)},x.owner);
+  const envelopeDigest=hash(x.input.signedEnvelope.payload);
+  x.input.expectedTrust.envelopeDigest=envelopeDigest;
+  x.input.signedEvidence=signed({...JSON.parse(x.input.signedEvidence.payload),envelopeDigest},x.verifier);
+  if(mode==='provider'){
+   const observation=x.input.providerObservation,at=now-500;
+   observation.snapshot.now=at;observation.receipt.observedAt=at;
+   for(const run of observation.snapshot.runs)run.updated_at=new Date(at).toISOString();
+   observation.snapshot.reviews[0].submitted_at=new Date(at).toISOString();
+  }
+  const controller=new AbortController();
+  const store=await initializeState(x.state);let calls=0,observed,second,preview,taskAtReturn;
+  await checkedExecute(store,'github-publisher',async({ledger,transaction})=>{
+   ledger.standingRevocationCheckpoint=x.prior;
+   preview=createStandingRequestPreview({...x.input,store,transaction,clock:()=>{
+    if(++calls===changeAt){
+     if(mode==='task')x.task.sha='f'.repeat(40);
+     if(mode==='expiry')return now+30001;
+     if(mode==='stale')return now+60001;
+     if(mode==='provider')return now+59501;
+     if(mode==='abort')controller.abort();
+    }
+    return now;
+   }});
+   return x.task;
+  },{verifyTask:async()=>({sha:x.task.sha})},async()=>{
+   observed=await preview.reserve({...descriptor('POST','git/trees'),signal:controller.signal});
+   taskAtReturn=x.task.sha;
+   // Restore only the caller fixture, never claims or native transaction state.
+   x.task.sha=x.input.request.baseSha;
+   if(mode)second=await preview.reserve(descriptor('GET','issues/511'));
+   return {status:'PASS'};
+  });
+  const ledger=JSON.parse(fs.readFileSync(store.file('autopilot-ledger.json')));
+  return {calls,observed,second,taskAtReturn,budget:Object.values(ledger.standingDelegationBudget.envelopes)[0],
+   bindings:Object.keys(ledger.standingRequestBindings).length};
+ }finally{x.close();}
+}
+
+test('final clock callback changing the native selected task denies and permanently poisons the preview',async()=>{
+ const baseline=await finalReturnProbe();assert.equal(baseline.observed.status,'RESERVED_PREVIEW');
+ const result=await finalReturnProbe({changeAt:baseline.calls,mode:'task'});
+ assert.equal(result.taskAtReturn,'f'.repeat(40));
+ assert.equal(result.observed.status,'BLOCKED');assert.equal(result.observed.authorized,false);
+ assert.equal(result.second.reason,'STANDING_PREVIEW_LOCKED');
+ assert.equal(result.calls,baseline.calls);
+ assert.equal(result.budget.requests,1);assert.equal(result.budget.writes,1);
+ assert.equal(result.budget.claims.length,1);assert.equal(result.bindings,1);
+});
+
+test('expiry on the final return clock denies without refund or later reservation',async()=>{
+ const baseline=await finalReturnProbe();assert.equal(baseline.observed.status,'RESERVED_PREVIEW');
+ const result=await finalReturnProbe({changeAt:baseline.calls,mode:'expiry'});
+ assert.equal(result.observed.status,'BLOCKED');assert.equal(result.observed.authorized,false);
+ assert.equal(result.second.reason,'STANDING_PREVIEW_LOCKED');
+ assert.equal(result.calls,baseline.calls);
+ assert.equal(result.budget.requests,1);assert.equal(result.budget.writes,1);
+ assert.equal(result.budget.claims.length,1);assert.equal(result.bindings,1);
+});
+
+
+test('final return timestamp revalidates witness and provider freshness while envelope is valid',async()=>{
+ const baseline=await finalReturnProbe();assert.equal(baseline.observed.status,'RESERVED_PREVIEW');
+ for(const mode of ['stale','provider']){
+  const result=await finalReturnProbe({changeAt:baseline.calls,mode});
+  assert.equal(result.observed.status,'BLOCKED',mode);assert.equal(result.observed.authorized,false);
+  assert.equal(result.second.reason,'STANDING_PREVIEW_LOCKED');
+  assert.equal(result.calls,baseline.calls);
+  assert.equal(result.budget.requests,1);assert.equal(result.budget.writes,1);
+  assert.equal(result.budget.claims.length,1);assert.equal(result.bindings,1);
+ }
+});
+
+test('abort triggered by final clock callback cannot return a reserved preview',async()=>{
+ const baseline=await finalReturnProbe();assert.equal(baseline.observed.status,'RESERVED_PREVIEW');
+ const result=await finalReturnProbe({changeAt:baseline.calls,mode:'abort'});
+ assert.equal(result.observed.status,'BLOCKED');assert.equal(result.observed.authorized,false);
+ assert.equal(result.second.reason,'STANDING_PREVIEW_LOCKED');
+ assert.equal(result.calls,baseline.calls);
+ assert.equal(result.budget.requests,1);assert.equal(result.budget.writes,1);
+ assert.equal(result.budget.claims.length,1);assert.equal(result.bindings,1);
+});

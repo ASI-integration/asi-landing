@@ -323,8 +323,25 @@ review. Missing or changed definitions, job inventories, identities or evidence
 fail closed. Caller-selected failed-job exclusions are forbidden. Its read-only
 requests remain bounded and metered through the existing admission hook.
 
-The current workflow's source/admission separation is not activated by this
-proposal. The existing v0 command, protected-base checkPr/main and transport denial
-remain unchanged; adopting a split profile requires its exact protected definition
-and paired enforcement configuration to be independently reviewed. No fixture
-key, caller context, preliminary evidence or draft patch grants that adoption.
+The Draft workflow separates `source_validation` from admission while preserving
+`validate` as the required aggregate check. It requires both source jobs to succeed
+and still executes the original v0 scope/owner check. Failed, skipped, cancelled or
+unknown source results cannot become successful admission. The protected-base
+`release_governance` workflow and checkPr/main still enforce v0. PRE_GATE only
+observes source jobs; it cannot promote itself to final two-workflow SUCCESS.
+
+`readAndAssessProtectedGateProposal` composes the existing protected public-key /
+signed-revocation reader, authenticated PRE_GATE collection and real Git diff /
+security inventory. The artifact digest is recomputed from the existing Publisher
+edit-patch or supported creation-manifest bytes; unsupported deltas fail closed.
+Its separate verifier-signed PRE_GATE witness binds the current
+source/evaluator attempts, reviewer and exact workflow definitions. Results remain
+`authorized=false`; this callable is not installed in checkPr/main and does not
+mint a transport capability or consume a publication claim. Its GET hook must be
+the existing transaction's metered read seam; an arbitrary callback is not proof of
+a durable budget. Actual protected invocation, public trust provenance and policy
+transition remain separately gated. Fixture keys or caller context cannot adopt it.
+
+The Publisher request guard also rechecks time and the native selected task at
+its final return boundary. A mismatch preserves the already-spent claim and locks
+later reservations; no refund, retry, or permission follows a RESERVED_PREVIEW.

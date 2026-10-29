@@ -75,7 +75,8 @@ export function createStandingRequestPreview({store,transaction,signedEnvelope,s
       [390653294,'pull_request_target',input.providerExpected.baseSha]])
       bootstrapRoutes.add(`actions/workflows/${id}/runs?event=${event}&head_sha=${sha}&per_page=100&page=${page}`);
   }
-  function verifyObservation(observation){
+  function verifyObservation(observation,at){
+    const observedClock=at===undefined?clock:()=>at;
     must(observation?.status==='PROVIDER_EVIDENCE_VERIFIED'&&observation.authorized===false&&
       observation.snapshot?.expected&&Object.keys(observation.snapshot.expected).length===providerFields.length&&
       Object.keys(input.providerExpected).length===providerFields.length&&
@@ -84,14 +85,14 @@ export function createStandingRequestPreview({store,transaction,signedEnvelope,s
       observation.snapshot?.expected?.headSha===input.request.headSha&&
       observation.snapshot?.expected?.baseSha===input.request.baseSha&&
       observation.receipt?.observedAt===observation.snapshot.now&&
-      clock()>=observation.snapshot.now&&clock()-observation.snapshot.now<=60000&&
-      inspectAuthenticatedProviderSnapshot({...observation.snapshot,expected:input.providerExpected,now:clock()}).status==='PROVIDER_EVIDENCE_VERIFIED',
+      observedClock()>=observation.snapshot.now&&observedClock()-observation.snapshot.now<=60000&&
+      inspectAuthenticatedProviderSnapshot({...observation.snapshot,expected:input.providerExpected,now:observedClock()}).status==='PROVIDER_EVIDENCE_VERIFIED',
     'STANDING_PROVIDER_PROPOSAL_BLOCKED');
   }
-  function assessPhase(phase,trust,descriptor){
+  function assessPhase(phase,trust,descriptor,at=clock()){
     return assessPublisherReleaseEnvelopeProposal({signedEnvelope:input.signedEnvelope,
       signedEvidence:phase.signedEvidence,trustedPublicKey:trust.issuerPublicKey,
-      verifierPublicKey:trust.verifierPublicKey,request:phase.request,now:clock()},
+      verifierPublicKey:trust.verifierPublicKey,request:phase.request,now:at},
     {phase:phase.phase,transaction,publisherEvidence:phase.publisherEvidence,
       comparison:phase.comparison,descriptor,providerObservation:phase.providerObservation,
       providerExpected:phase.providerExpected});
@@ -199,6 +200,21 @@ export function createStandingRequestPreview({store,transaction,signedEnvelope,s
           'STANDING_PHASE_CHANGED_AFTER_RESERVATION');
         else if(!bootstrap)verifyObservation(providerAttempted?authenticatedObservation:input.providerObservation);
         must(!descriptor.signal?.aborted,'STANDING_REQUEST_ABORTED');
+        // Evidence/clock callbacks above can invalidate the native selected task.
+        // Capture time first, then close the lease boundary without another await
+        // or caller callback. A late mismatch poisons this lane, never refunds it.
+        const returnedAt=clock();
+        must(returnedAt>=envelope.notBefore&&returnedAt<envelope.expiresAt,
+          'STANDING_EXPIRED_BEFORE_RETURN');
+        must(witness.observedAt<=returnedAt&&returnedAt-witness.observedAt<=60000,
+          'STANDING_EVIDENCE_STALE_BEFORE_RETURN');
+        if(publisherPhases)must(assessPhase(phase,finalTrust,readDescriptor||descriptor,returnedAt).status==='PROPOSAL_ELIGIBLE',
+          'STANDING_PHASE_CHANGED_BEFORE_RETURN');
+        else if(!bootstrap)verifyObservation(providerAttempted?authenticatedObservation:input.providerObservation,returnedAt);
+        must(!descriptor.signal?.aborted,'STANDING_REQUEST_ABORTED');
+        const returnedLease=inspectStandingTransaction(transaction,{write});
+        must(returnedLease.phase===lease.phase&&returnedLease.taskId===lease.taskId&&
+          returnedLease.taskSha===lease.taskSha,'STANDING_PHASE_CHANGED_BEFORE_RETURN');
         return Object.freeze({status:'RESERVED_PREVIEW',authorized:false,effectId,taskId,taskSha,
           requestSha256,requests:result.requests,writes:result.writes});
       } catch {poisoned=true;return blocked('STANDING_PREVIEW_REJECTED');}

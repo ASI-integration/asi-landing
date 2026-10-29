@@ -5,6 +5,7 @@
  * This gate does not grant permission for merge, staging or server mutations.
  */
 import fs from 'node:fs';
+import { readProtectedStandingTrustSnapshot } from './release-envelope-trust-roots.mjs';
 import { createHash, createPublicKey } from 'node:crypto';
 import { verifySignedPayload } from '../strigunov4/execution-adapters/host-authority.mjs';
 import { inspectStandingTransaction } from '../strigunov4/execution-adapters/state.mjs';
@@ -193,8 +194,9 @@ function assessEnvelopePhase({ envelope: e, evidence: v, request: r, now }, phas
   if (!sha(r.baseSha) || !digest(r.artifactDigest) || v.baseSha !== r.baseSha ||
       v.artifactDigest !== r.artifactDigest || v.branchProtection !== 'PASS')
     return deny('ENVELOPE_EXACT_EVIDENCE');
-  if (phase === 'EXACT_HEAD_VERIFIED') {
-    if (!sha(r.headSha) || v.headSha !== r.headSha || v.ci !== 'SUCCESS' ||
+  if (phase === 'EXACT_HEAD_VERIFIED' || phase === 'PRE_GATE') {
+    if (!sha(r.headSha) || v.headSha !== r.headSha ||
+        v.ci !== (phase === 'PRE_GATE' ? 'SOURCE_SUCCESS' : 'SUCCESS') ||
         v.independentReview !== 'PASS') return deny('ENVELOPE_EXACT_EVIDENCE');
   } else if (e.action !== 'source' || r.headSha !== null || v.headSha !== null ||
       v.ci !== null || v.independentReview !== null) {
@@ -345,7 +347,7 @@ function inspectProviderSnapshot({pr, runs, reviews, expected, now}, preGate) {
 // Draft PRE_GATE is a different evidence class, not a relaxed final provider
 // verdict. Its split-job profile must come from separately adopted protected
 // configuration; the current unsplit workflow cannot satisfy this inventory.
-const GATE_SOURCE_JOBS = Object.freeze(['validate','channel-manager-recovery-postgres']);
+const GATE_SOURCE_JOBS = Object.freeze(['source_validation','channel-manager-recovery-postgres']);
 function captureGateData(value,depth=0,budget={fields:0}) {
   must(depth<=16 && ++budget.fields<=10000,'GATE_CONTEXT');
   if(value===null || ['string','number','boolean'].includes(typeof value))return value;
@@ -393,7 +395,7 @@ function inspectGateSourceJobs(run,inventory,now){
     !inventory||inventory.runId!==run.id||inventory.runAttempt!==run.run_attempt||
     inventory.totalCount!==3||!Array.isArray(inventory.jobs)||inventory.jobs.length!==3)
     return 'GATE_SOURCE_INVENTORY';
-  const jobs=inventory.jobs,names=[...GATE_SOURCE_JOBS,'release_scope'];
+  const jobs=inventory.jobs,names=[...GATE_SOURCE_JOBS,'validate'];
   if(new Set(jobs.map(j=>j.id)).size!==3||new Set(jobs.map(j=>j.name)).size!==3||
     jobs.some(j=>!Number.isSafeInteger(j.id)||j.id<=0||!names.includes(j.name)||
       j.run_id!==run.id||j.head_sha!==run.head_sha))return 'GATE_SOURCE_INVENTORY';
@@ -407,7 +409,7 @@ function inspectGateSourceJobs(run,inventory,now){
       return 'GATE_ADMISSION_STATE';
     }
   }
-  const admission=jobs.find(j=>j.name==='release_scope');
+  const admission=jobs.find(j=>j.name==='validate');
   if(run.status==='completed'&&(admission.status!=='completed'||
     run.conclusion!==admission.conclusion))return 'GATE_ADMISSION_STATE';
   return null;
@@ -666,6 +668,142 @@ async function readProviderSnapshot({token,expected,fetchImpl,clock,beforeReques
     const reason = /^PROVIDER_READER_[A-Z_]+$/.test(error?.message || '')
       ? error.message : 'PROVIDER_READER_UNAVAILABLE';
     return deny(reason);
+  }
+}
+
+// Reconstruct the CURRENT Publisher preparer's two supported artifact formats
+// from immutable Git objects. Never trust a signed digest that was not measured.
+// Mixed create/edit/delete, renames and mode changes are not Publisher artifacts.
+function protectedGateArtifactDigest(comparison,request) {
+  must(SHA.test(comparison.baseSha||'')&&SHA.test(comparison.headSha||''),'ENVELOPE_ARTIFACT_SCOPE');
+  const hash=bytes=>createHash('sha256').update(bytes).digest('hex');
+  const git=args=>execFileSync('/usr/bin/git',['-c','core.fsmonitor=false',
+    '-c','core.hooksPath=/dev/null',...args],{cwd:comparison.repoRoot,
+    timeout:15000,maxBuffer:4*1024*1024,stdio:['ignore','pipe','pipe'],
+    env:{PATH:'/usr/bin:/bin',LANG:'C.UTF-8',GIT_CONFIG_NOSYSTEM:'1',GIT_CONFIG_GLOBAL:'/dev/null',
+      GIT_TERMINAL_PROMPT:'0',GIT_OPTIONAL_LOCKS:'0'}});
+  must(Array.isArray(request.changedPaths)&&request.changedPaths.length>0&&request.changedPaths.length<=3,
+    'ENVELOPE_ARTIFACT_SCOPE');
+  const inventory=sha=>new Map(git(['ls-tree','-r','-z','--full-tree',sha]).toString('utf8')
+    .split('\0').filter(Boolean).map(line=>{
+      const m=/^(\d{6}) (blob|commit) ([a-f0-9]{40})\t([\s\S]+)$/.exec(line);
+      must(m,'ENVELOPE_ARTIFACT_SCOPE');return [m[4],{mode:m[1],type:m[2],oid:m[3]}];
+    }));
+  const before=inventory(comparison.baseSha),after=inventory(comparison.headSha);
+  const files=request.changedPaths.map(p=>({path:p,before:before.get(p),after:after.get(p)}));
+  must(files.every(f=>f.after?.type==='blob'&&['100644','100755'].includes(f.after.mode)),
+    'ENVELOPE_ARTIFACT_SCOPE');
+  for(const f of files){
+    const bytes=git(['cat-file','blob',f.after.oid]);
+    must(bytes.length<=200000&&!bytes.includes(0)&&Buffer.from(bytes.toString('utf8')).equals(bytes),'ENVELOPE_ARTIFACT_SIZE');
+    f.afterSha256=hash(bytes);
+  }
+  if(files.every(f=>f.before?.type==='blob'&&f.before.mode===f.after.mode)){
+    const diff=git(['diff','--no-ext-diff','--no-textconv',comparison.baseSha,comparison.headSha,
+      '--',...request.changedPaths]);
+    must(diff.length>0&&diff.length<=500000&&!/^Binary files /m.test(diff.toString('utf8')),'ENVELOPE_ARTIFACT_SIZE');
+    return hash(diff);
+  }
+  must(files.length===1&&!files[0].before&&files[0].after.mode==='100644'&&
+    /^beget-g2-witness-(identity|races)-v1$/.test(request.taskId)&&
+    files[0].path==='scripts/strigunov4/test_'+request.taskId.replaceAll('-','_')+'.py',
+  'ENVELOPE_ARTIFACT_SCOPE');
+  return hash(JSON.stringify(files.map(f=>({path:f.path,beforeSha256:null,afterSha256:f.afterSha256}))));
+}
+
+/** Disabled protected caller candidate. Reads only public trust material and
+ * authenticated GET evidence; never replaces checkPr/main or returns authority.
+ * All data pins must originate outside the PR in independently adopted protected
+ * configuration. The mandatory metering callback is the existing Publisher
+ * admission seam, not a permission supplied by this proposal. No claims/effects
+ * are created here; final publication still requires BOTH whole workflows green.
+ */
+export async function readAndAssessProtectedGateProposal(input, context) {
+  const deny=reason=>({status:'BLOCKED',reason,authorized:false});
+  const hash=bytes=>createHash('sha256').update(bytes).digest('hex');
+  const same=(a,b)=>JSON.stringify(a)===JSON.stringify(b);
+  let data,ports,startedAt,highWater=-1;
+  try {
+    input=captureGateData(input);
+    must(context&&[Object.prototype,null].includes(Object.getPrototypeOf(context)),'GATE_CALLER_CONTEXT');
+    const d=Object.getOwnPropertyDescriptors(context);
+    must(Object.values(d).every(x=>Object.hasOwn(x,'value')),'GATE_CALLER_CONTEXT');
+    const value=k=>d[k]?.value;
+    data=captureGateData({expected:value('expected'),trustedGateContext:value('trustedGateContext'),
+      comparison:value('comparison'),expectedTrust:value('expectedTrust')});
+    ports={token:value('token'),beforeRequest:value('beforeRequest'),
+      protectedReader:value('protectedReader'),fetchImpl:value('fetchImpl'),clock:value('clock')||Date.now};
+    must(typeof ports.beforeRequest==='function'&&typeof ports.clock==='function'&&
+      typeof ports.token==='string'&&ports.token.length>0,'GATE_CALLER_CONTEXT');
+    captureGateContext(data.trustedGateContext,data.expected);
+    const r=input.request,c=data.comparison,e=data.expected;
+    must(r.action==='source'&&r.repo===REPO&&r.repo===e.repository&&r.pr===e.number&&
+      r.baseSha===e.baseSha&&r.headSha===e.headSha&&c.repository===REPO&&
+      c.baseSha===r.baseSha&&c.headSha===r.headSha&&typeof c.repoRoot==='string'&&
+      path.isAbsolute(c.repoRoot),'GATE_CALLER_BINDING');
+    must(same(prChanges(c.baseSha,c.headSha,c.repoRoot),r.changedPaths),'ENVELOPE_DIFF_INVENTORY');
+    const security=inspectProtectedRepositorySecurity(c);
+    must(security.status==='PROTECTED_SECURITY_VERIFIED','ENVELOPE_PROTECTED_CHANGE');
+    must(protectedGateArtifactDigest(c,r)===r.artifactDigest,'ENVELOPE_ARTIFACT_DIGEST');
+    const clock=()=>{
+      const at=ports.clock();
+      must(Number.isSafeInteger(at)&&at>=0&&at>=highWater&&
+        (startedAt===undefined||at-startedAt<30000),'GATE_CALLER_TIME');
+      highWater=at;return at;
+    };
+    startedAt=clock();
+    const readTrust=expected=>readProtectedStandingTrustSnapshot({expected,now:clock(),clock,
+      ...(ports.protectedReader===undefined?{}:{protectedReader:ports.protectedReader})});
+    const trust=await readTrust(data.expectedTrust);
+    must(trust.status==='PROTECTED_TRUST_VERIFIED','GATE_CALLER_TRUST');
+    const envelope=verifySignedPayload(input.signedEnvelope,trust.issuerPublicKey);
+    const witness=verifySignedPayload(input.signedEvidence,trust.verifierPublicKey);
+    must(envelope&&JSON.stringify(envelope)===input.signedEnvelope.payload&&
+      !Object.hasOwn(envelope,'envelopeDigest')&&envelope.action==='source'&&
+      hash(input.signedEnvelope.payload)===trust.envelopeDigest&&
+      envelope.verifierKeySha256===trust.verifierKeySha256,'GATE_CALLER_SIGNATURE');
+    must(envelope.securityDigest===security.securityDigest&&envelope.policyDigest===security.policyDigest&&
+      r.securityDigest===security.securityDigest,'ENVELOPE_SECURITY_DIGEST');
+    must(witness&&witness.schema==='asi.release-envelope-gate-evidence.proposal.v1'&&
+      witness.phase==='PRE_GATE'&&JSON.stringify(witness)===input.signedEvidence.payload&&
+      same(witness.changedPaths,r.changedPaths),'GATE_CALLER_WITNESS');
+    const assess=()=>assessEnvelopePhase({envelope:{...envelope,envelopeDigest:trust.envelopeDigest},
+      evidence:{...witness,ownerVerified:true,ownerId:OWNER_ID},request:r,now:clock()},'PRE_GATE');
+    const before=assess();if(before.status!=='PROPOSAL_ELIGIBLE')return before;
+    const observation=await readAuthenticatedGatePrerequisites({token:ports.token,expected:data.expected,
+      trustedGateContext:data.trustedGateContext,clock,beforeRequest:ports.beforeRequest,
+      ...(ports.fetchImpl===undefined?{}:{fetchImpl:ports.fetchImpl})});
+    if(observation.status!=='GATE_PREREQUISITES_VERIFIED')return observation;
+    // Do not accept a signed boolean or an arbitrary excluded run. The witness
+    // binds the exact independently authenticated source/evaluator attempts and
+    // review decision, plus the protected workflow definition pins.
+    const s=observation.snapshot;
+    const decisions=s.reviews.filter(review=>review.user?.id===data.expected.independentReviewerId&&
+      ['APPROVED','CHANGES_REQUESTED','DISMISSED'].includes(review.state))
+      .sort((a,b)=>Date.parse(b.submitted_at)-Date.parse(a.submitted_at)||b.id-a.id);
+    const binding={...data.trustedGateContext,sourceRunId:s.sourceJobs.runId,
+      sourceRunAttempt:s.sourceJobs.runAttempt,independentReviewerId:data.expected.independentReviewerId,
+      reviewId:decisions[0]?.id};
+    must(same(witness.gateBinding,binding),'GATE_CALLER_WITNESS_BINDING');
+    const finalTrust=await readTrust({...data.expectedTrust,
+      minRevocationSequence:trust.revocationCheckpoint.sequence,
+      minRevocationManifestDigest:trust.revocationCheckpoint.manifestDigest,
+      priorRevokedEnvelopeDigests:trust.revocationCheckpoint.revokedEnvelopeDigests});
+    must(finalTrust.status==='PROTECTED_TRUST_VERIFIED'&&finalTrust.envelopeDigest===trust.envelopeDigest&&
+      finalTrust.issuerKeySha256===trust.issuerKeySha256&&finalTrust.verifierKeySha256===trust.verifierKeySha256,
+    'GATE_CALLER_TRUST');
+    const now=clock();
+    must(observation.authorized===false&&observation.receipt.observedAt===s.now&&
+      s.now<=now&&now-s.now<=60000&&
+      inspectProtectedGatePrerequisites({...s,now},data.trustedGateContext).status==='GATE_PREREQUISITES_VERIFIED',
+    'GATE_CALLER_OBSERVATION');
+    const result=assess();
+    return result.status==='PROPOSAL_ELIGIBLE'?{...result,phase:'PRE_GATE',
+      permittedEffect:'ADMISSION_REVIEW_ONLY',providerReceipt:observation.receipt,
+      revocationCheckpoint:finalTrust.revocationCheckpoint}:result;
+  } catch(error) {
+    return deny(/^(GATE_CALLER|ENVELOPE)_[A-Z_]+$/.test(error?.message||'')?
+      error.message:'GATE_CALLER_UNVERIFIED');
   }
 }
 

@@ -17,14 +17,14 @@ function fixture(){
   const evaluator=run(42,390653294,'pull_request_target',baseSha,'.github/workflows/asi-release-governance.yml');
   // Inert proposed definition bytes; no YAML is executed. Production pins must
   // originate in independently reviewed protected configuration, not this fixture.
-  const contents=[Buffer.from('jobs:\n  validate: {}\n  channel-manager-recovery-postgres: {}\n  release_scope: {}\n'),
+  const contents=[Buffer.from('jobs:\n  source_validation: {}\n  channel-manager-recovery-postgres: {}\n  validate: {}\n'),
     Buffer.from('jobs:\n  release_governance: {}\n')];
   const workflowDefinitions=contents.map((bytes,i)=>({path:i?evaluator.path:source.path,baseSha,sha:object(bytes),
     headSha,headBlobSha:object(bytes)}));
   const context={schema:'asi.protected-gate-split.proposal.v1',repository:repo,number:552,baseSha,headSha,
     evaluatorRunId:42,evaluatorRunAttempt:1,sourceWorkflowBlobSha:workflowDefinitions[0].sha,
     evaluatorWorkflowBlobSha:workflowDefinitions[1].sha};
-  const jobs=['validate','channel-manager-recovery-postgres','release_scope'].map((name,i)=>({
+  const jobs=['source_validation','channel-manager-recovery-postgres','validate'].map((name,i)=>({
     id:101+i,name,run_id:41,head_sha:headSha,status:i===2?'in_progress':'completed',
     conclusion:i===2?null:'success',completed_at:i===2?null:recent}));
   const snapshot={expected,now,pr:{number:552,state:'open',user:{id:207600140},
@@ -71,7 +71,7 @@ test('admission failure is not source failure but cannot become final green',()=
   assert.equal(finalProvider(f.snapshot).status,'BLOCKED');
 });
 test('missing duplicate renamed and extra jobs including current unsplit workflow block',()=>{
-  for(const mutate of [s=>s.sourceJobs.jobs.pop(),s=>s.sourceJobs.jobs[1].name='validate',
+  for(const mutate of [s=>s.sourceJobs.jobs.pop(),s=>s.sourceJobs.jobs[1].name='source_validation',
     s=>s.sourceJobs.jobs[1].id=101,s=>s.sourceJobs.jobs[0].name='renamed',
     s=>s.sourceJobs.jobs.push({...s.sourceJobs.jobs[0],id:999,name:'unknown'}),s=>s.sourceJobs.totalCount=2]){
     const f=fixture();mutate(f.snapshot);blocked(f);

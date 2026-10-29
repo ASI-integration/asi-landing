@@ -21,7 +21,7 @@ permissions:
   issues: read
 
 jobs:
-  validate:
+  source_validation:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -46,7 +46,7 @@ jobs:
         run: node --test scripts/agent-os/__tests__/agent-intake.test.mjs
 
       - name: Disabled pre-gate evidence regression (no authority)
-        run: node --test scripts/agent-os/__tests__/release-envelope-pre-gate.test.mjs
+        run: node --test scripts/agent-os/__tests__/release-envelope-pre-gate.test.mjs scripts/agent-os/__tests__/release-envelope-gate-composition.test.mjs scripts/agent-os/__tests__/release-envelope-workflow.test.mjs
 
       - name: Standing transaction and transport boundaries (no authority)
         run: node --test scripts/strigunov4/execution-adapters/standing-transaction.test.mjs scripts/strigunov4/execution-adapters/standing-transport.test.mjs
@@ -449,9 +449,31 @@ jobs:
       - name: Whitespace check (git diff --check)
         run: git diff --check
 
-      # Admission is still required for validate to succeed, but never prevents
-      # independent source checks. Run after failure too; cancellation stays non-success.
-      # This PR-source job is NOT the independent trusted release_governance boundary.
+  # Preserve the required check name: validate still fails unless ALL source
+  # checks and the original v0 scope/owner gate pass. PRE_GATE observes only the
+  # source jobs; it is not authority and cannot complete this admission job.
+  validate:
+    needs: [source_validation, channel-manager-recovery-postgres]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require successful source jobs
+        env:
+          SOURCE_RESULT: ${{ needs.source_validation.result }}
+          RECOVERY_RESULT: ${{ needs.channel-manager-recovery-postgres.result }}
+        run: |
+          test "$SOURCE_RESULT" = success
+          test "$RECOVERY_RESULT" = success
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
       - name: Validate demo release milestones and PR scope
         if: ${{ !cancelled() }}
         timeout-minutes: 5
