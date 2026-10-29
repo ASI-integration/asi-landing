@@ -71,85 +71,23 @@ $$;
 -- A code is NEVER valid merely because issuance reserved it. Explicitly
 -- activate only the exact still-pending hash AFTER the mail provider accepts it.
 -- If transport/activation fails or times out, an inactive challenge cannot log in.
-CREATE OR REPLACE FUNCTION public.ru_auth_activate_email_code(p_email TEXT,p_hash TEXT)
+CREATE OR REPLACE FUNCTION public.ru_auth_activate_email_code(p_email TEXT, p_hash TEXT)
 RETURNS BOOLEAN LANGUAGE plpgsql SECURITY INVOKER SET search_path = ''
-AS $
+AS $$
 DECLARE changed_rows INTEGER;
 BEGIN
-  IF p_email IS NULL OR p_hash !~ '^[a-f0-9]{64}
-RETURNS BOOLEAN LANGUAGE plpgsql SECURITY INVOKER SET search_path = ''
-AS $$
-DECLARE row_value public.ru_auth_email_challenges%ROWTYPE;
-BEGIN
-  IF p_email IS NULL OR p_hash !~ '^[a-f0-9]{64}$' THEN RETURN FALSE; END IF;
-  SELECT * INTO row_value FROM public.ru_auth_email_challenges WHERE email=p_email FOR UPDATE;
-  IF NOT FOUND THEN RETURN FALSE; END IF;
-  IF row_value.delivered_at IS NULL OR row_value.expires_at <= clock_timestamp() OR row_value.failed_attempts >= 5 THEN
+  IF p_email IS NULL OR p_hash IS NULL OR p_hash !~ '^[a-f0-9]{64}$' THEN
     RETURN FALSE;
   END IF;
-  IF row_value.code_hash <> p_hash THEN
-    UPDATE public.ru_auth_email_challenges SET failed_attempts=failed_attempts+1 WHERE email=p_email;
-    RETURN FALSE;
-  END IF;
-  -- Invalidate code but PRESERVE the 1-hour email quota history.
-  -- Deleting on successful verification would allow unlimited new challenges.
+  -- Confirm only an exact pending, unexpired, unconsumed challenge.
   UPDATE public.ru_auth_email_challenges
-    SET expires_at=clock_timestamp(), failed_attempts=5
-    WHERE email=p_email;
-  RETURN TRUE;
-END;
-$$;
-
-CREATE OR REPLACE FUNCTION public.ru_auth_revoke_email_code(p_email TEXT,p_hash TEXT)
-RETURNS VOID LANGUAGE sql SECURITY INVOKER SET search_path = ''
-AS $$
-  -- Preserve issuance budget even when the email transport fails.
-  UPDATE public.ru_auth_email_challenges
-    SET expires_at=clock_timestamp(), failed_attempts=5
-    WHERE email=p_email AND code_hash=p_hash;
-$$;
-
-REVOKE ALL ON FUNCTION public.ru_auth_issue_email_code(TEXT,TEXT,TEXT) FROM PUBLIC,anon,authenticated;
-REVOKE ALL ON FUNCTION public.ru_auth_activate_email_code(TEXT,TEXT) FROM PUBLIC,anon,authenticated;
-REVOKE ALL ON FUNCTION public.ru_auth_consume_email_code(TEXT,TEXT) FROM PUBLIC,anon,authenticated;
-REVOKE ALL ON FUNCTION public.ru_auth_revoke_email_code(TEXT,TEXT) FROM PUBLIC,anon,authenticated;
-GRANT EXECUTE ON FUNCTION public.ru_auth_issue_email_code(TEXT,TEXT,TEXT) TO service_role;
-GRANT EXECUTE ON FUNCTION public.ru_auth_activate_email_code(TEXT,TEXT) TO service_role;
-GRANT EXECUTE ON FUNCTION public.ru_auth_consume_email_code(TEXT,TEXT) TO service_role;
-GRANT EXECUTE ON FUNCTION public.ru_auth_revoke_email_code(TEXT,TEXT) TO service_role;
-
--- Prior to enabling: independently test concurrency, 5 failed attempts, 60s
--- cooldown, 5/email/hour, 20/IP/hour, PENDING-not-consumable before mail
--- confirmation, atomic activation, 10-minute expiry, replay and DB/RPC
--- authorization denials under anon and authenticated roles.
-
-
--- Yandex is optional; subject is linked ONLY from an authenticated ASI
--- session that just proved ownership using password or email code.
--- THIS REMAINS DESIGN-ONLY SQL; DO NOT RUN AGAINST PRODUCTION.
-CREATE TABLE IF NOT EXISTS public.ru_auth_yandex_links (
-  yandex_subject TEXT PRIMARY KEY
-    CHECK (yandex_subject ~ '^[1-9][0-9]{0,39}$'),
-  user_id UUID NOT NULL UNIQUE REFERENCES public.users(id) ON DELETE CASCADE,
-  linked_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-CREATE INDEX IF NOT EXISTS idx_ru_auth_yandex_links_user_id
-  ON public.ru_auth_yandex_links(user_id);
-ALTER TABLE public.ru_auth_yandex_links ENABLE ROW LEVEL SECURITY;
-REVOKE ALL ON public.ru_auth_yandex_links FROM PUBLIC, anon, authenticated;
-GRANT SELECT, INSERT, DELETE ON public.ru_auth_yandex_links TO service_role;
--- No anonymous/authenticated policies; never look up ASI identity via Yandex email.
--- Before staging acceptance: verify table grants and concurrent attempts to link
--- a single subject to different users, and a user to different subjects.
- THEN RETURN FALSE; END IF;
-  UPDATE public.ru_auth_email_challenges
-    SET delivered_at=clock_timestamp()
-    WHERE email=p_email AND code_hash=p_hash AND delivered_at IS NULL
-      AND failed_attempts=0 AND expires_at > clock_timestamp();
+    SET delivered_at = clock_timestamp()
+    WHERE email = p_email AND code_hash = p_hash AND delivered_at IS NULL
+      AND failed_attempts = 0 AND expires_at > clock_timestamp();
   GET DIAGNOSTICS changed_rows = ROW_COUNT;
   RETURN changed_rows = 1;
 END;
-$;
+$$;
 
 CREATE OR REPLACE FUNCTION public.ru_auth_consume_email_code(p_email TEXT,p_hash TEXT)
 RETURNS BOOLEAN LANGUAGE plpgsql SECURITY INVOKER SET search_path = ''
