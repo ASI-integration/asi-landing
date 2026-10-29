@@ -86,6 +86,8 @@ export default function StrigunovGpsClient() {
     n === i && s.status === 'ACCEPTED' ? n + 1 : n, 0) : 0;
   const enginePr = data?.prs.find(p => p.number === 549);
   const g2Pr = data?.prs.find(p => p.number === 550);
+  const delegationPr = data?.prs.find(p => p.number === 552);
+  const mapPr = data?.prs.find(p => p.number === 537);
   const chosen = stages.find(s => s.id === selected) ?? stages[0];
   const currentIndex = current ? stages.indexOf(current) : -1;
   const ci = data?.prs.flatMap(p => p.ci) ?? [];
@@ -119,6 +121,23 @@ export default function StrigunovGpsClient() {
     {data?.partialSources && <div className="mb-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
       Карта загружена. Часть дополнительных сведений GitHub временно недоступна и не учитывается как успешная проверка.
     </div>}
+    <div className="mb-3 grid gap-2 text-sm md:grid-cols-3">
+      <div className="rounded-xl border border-blue-200 bg-blue-50 p-3">
+        <p className="text-xs font-bold text-blue-700">Продукт · Стригунов</p>
+        <p className="mt-1 font-semibold text-slate-900">G1 принят → G2: права и Google-вход</p>
+        <p className="mt-1 text-xs text-slate-700">Следующее доказательство: права оператора, семь no-send и проверенный вход.</p>
+      </div>
+      <div className="rounded-xl border bg-white p-3">
+        <p className="text-xs font-bold text-slate-600">Engine · Beget</p>
+        <p className="mt-1 font-semibold text-slate-900">Работа 24/7 не подтверждена</p>
+        <p className="mt-1 text-xs text-slate-600">{enginePr ? 'Код: PR #549 · ' + (enginePr.merged ? 'объединён' : 'в разработке') : 'Актуальные PR-данные недоступны'}. Нет свидетельства запуска в этом API.</p>
+      </div>
+      <div className="rounded-xl border bg-white p-3">
+        <p className="text-xs font-bold text-slate-600">Разрешения и GPS-публикация</p>
+        <p className="mt-1 font-semibold text-slate-900">Делегирование: {delegationPr ? delegationPr.merged ? 'PR объединён, применение не доказано' : 'проект, ещё не введён' : 'не подтверждено'}</p>
+        <p className="mt-1 text-xs text-slate-600">Карта: {mapPr ? mapPr.merged ? 'PR объединён; публикацию проверить отдельно' : 'исправления в Draft PR #537' : 'состояние выпуска неизвестно'}.</p>
+      </div>
+    </div>
     <div className="grid grid-cols-1 gap-3 xl:grid-cols-[230px_minmax(0,1fr)_290px]">
       <aside className="space-y-3">
         <div className="rounded-2xl border bg-white p-4 shadow-sm">
