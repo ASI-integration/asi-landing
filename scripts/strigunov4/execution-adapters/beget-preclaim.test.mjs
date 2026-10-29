@@ -9,6 +9,8 @@ import {generateKeyPairSync,sign} from 'node:crypto';
 import {BEGET,AUTHORITY_DIR,loadBegetAuthority} from './host-authority.mjs';
 import {closedFixture,makeClosedLoop,tick} from './closed-loop-fixture.mjs';
 import {digest} from './state.mjs';
+// Protected CI invokes this preclaim suite: include the one-use staged path.
+import './beget-staged-install.test.mjs';
 
 const installer=new URL('./beget-install.py',import.meta.url).pathname;
 const preclaimTest=`import importlib.util,json,sys
