@@ -2,6 +2,7 @@ import { describe,expect,it } from 'vitest';
 import {
   buildYandexAuthorizationUrl,generateYandexFlow,ruYandexConfigured,
   verifyYandexState,yandexFlowStillValid,yandexSubject,yandexCallbackUrl,
+  hasRecentYandexLinkProof,verifiedYandexProfileSubject,
 } from '../ru-yandex-policy';
 
 const env={
@@ -52,7 +53,25 @@ describe('RU Yandex link-only OAuth',()=>{
     expect(yandexSubject('123456789')).toBe('123456789');
     expect(yandexSubject('john@example.ru')).toBeNull();
     expect(yandexSubject('123abc')).toBeNull();
+    expect(yandexSubject('0')).toBeNull();
+    expect(yandexSubject('00123')).toBeNull();
     expect(yandexSubject('')).toBeNull();
     expect(yandexSubject({email:'verified@example.ru'})).toBeNull();
+  });
+  it('never accepts fresh strong proof belonging to a different ASI user',()=>{
+    const now=1_800_000_000_000;
+    expect(hasRecentYandexLinkProof('user-a','user-a',now-1000,now)).toBe(true);
+    expect(hasRecentYandexLinkProof('user-b','user-a',now-1000,now)).toBe(false);
+    expect(hasRecentYandexLinkProof('user-a',undefined,now-1000,now)).toBe(false);
+    expect(hasRecentYandexLinkProof('user-a','user-a',now-600001,now)).toBe(false);
+    expect(hasRecentYandexLinkProof('user-a','user-a',now+1,now)).toBe(false);
+  });
+  it('binds the Yandex subject to our registered OAuth app',()=>{
+    expect(verifiedYandexProfileSubject({id:'12345',client_id:'fixture-client'},'fixture-client')).toBe('12345');
+    for(const profile of [
+      {id:'12345',client_id:'different-client'}, {id:'12345'},
+      {id:'john@example.ru',client_id:'fixture-client'},
+      {id:'0',client_id:'fixture-client'}, null,
+    ]) expect(verifiedYandexProfileSubject(profile,'fixture-client')).toBeNull();
   });
 });
