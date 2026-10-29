@@ -91,7 +91,11 @@ export function RuEmailCodeSignIn({redirectPath='/dashboard'}:{redirectPath?:str
     </p>}
     {message&&<p role="status" className="mt-2 text-xs text-slate-600">{message}</p>}
     {error&&<p role="alert" className="mt-2 text-xs text-red-700">{error}</p>}
-    {!methods.yandexId&&<p className="mt-3 text-xs text-slate-500">
+    {methods.yandexId ? <a
+      className="mt-3 block rounded-lg border border-slate-900 px-4 py-3 text-center text-sm font-semibold text-slate-900"
+      href={'/api/auth/yandex/start?redirect='+encodeURIComponent(safeAuthRedirectPath(redirectPath))}>
+      Войти через Яндекс ID
+    </a> : <p className="mt-3 text-xs text-slate-500">
       Яндекс ID появится после регистрации приложения и проверки безопасности. Google остаётся необязательным.
     </p>}
   </section>;
