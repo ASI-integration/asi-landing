@@ -31,7 +31,10 @@ export function matchOneTimeCodeDigest(expectedHex: string, actualHex: string): 
 }
 
 export function ruCodeAuthConfigured(env: Readonly<Record<string, string | undefined>>): boolean {
+  // Enabling the UI must require an independently accepted database contract,
+  // not merely a mail credential and a feature switch.
   return env.ASI_RU_EMAIL_CODE_ENABLED === 'true' &&
+    env.ASI_RU_EMAIL_CODE_SCHEMA_READY === 'true' &&
     (env.ASI_RU_EMAIL_CODE_PEPPER?.length ?? 0) >= 32 &&
     Boolean(env.ASI_AUTH_RESEND_API_KEY?.trim()) &&
     Boolean(env.ASI_AUTH_FROM_EMAIL?.trim()) &&
