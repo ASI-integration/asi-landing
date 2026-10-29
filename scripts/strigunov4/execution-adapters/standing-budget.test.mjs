@@ -5,6 +5,11 @@ import os from 'node:os';
 import path from 'node:path';
 import {createHash} from 'node:crypto';
 import {createStandingPublisherBudget} from './standing-budget.mjs';
+import * as githubReadonly from './github-readonly.mjs';
+const {createGitHubReader,isCompiledGitHubRead}=githubReadonly;
+// The protected main baseline does not yet expose the private compiled-query brand.
+// GraphQL regression is therefore gated on the exact #552 source overlay.
+const compiledTest=typeof isCompiledGitHubRead==='function'?test:test.skip;
 
 const at = 1793260000000;
 const hex64 = 'b'.repeat(64), hex40 = 'c'.repeat(40);
@@ -276,4 +281,80 @@ test('reopened corrupted historical wire fingerprint poisons subsequent claims',
       /BUDGET_LEDGER_INVALID/);
     assert.equal((await f.read()).standingDelegationBudget.envelopes[hex64].claims.length,1);
   }finally{await f.close()}
+});
+
+
+// GraphQL POST has read-only budget semantics solely for the compiled,
+ // privately branded GitHub thread query. No test sends a network request.
+async function compiledGraphqlDescriptor() {
+  let captured;
+  const reader=createGitHubReader({token:'isolated-fixture-token',
+    beforeRequest:async d=>{captured=d;return false;}});
+  await assert.rejects(reader.threads({pr:42,sha:hex40}),/HOST_REQUEST_GUARD_DENIED/);
+  assert.equal(isCompiledGitHubRead(captured),true);
+  return captured;
+}
+function graphqlEffect(id,descriptor,patch={}) {
+  return effect(id,'github-read',{kind:'github-compiled-read',
+    method:descriptor.method,route:descriptor.route,
+    payloadSha256:descriptor.payloadSha256,requestSha256:descriptor.requestSha256,...patch});
+}
+compiledTest('actual privately compiled GraphQL POST spends a request but never a write',async()=>{
+  const f=await fixture();try{
+    const d=await compiledGraphqlDescriptor();
+    const got=await f.budget.reserve({envelope:env(),effect:graphqlEffect('graphql-one',d),
+      compiledReadDescriptor:d});
+    assert.equal(got.status,'RESERVED');
+    const saved=(await f.read()).standingDelegationBudget.envelopes[hex64];
+    assert.equal(saved.operations,1);assert.equal(saved.requests,1);assert.equal(saved.writes,0);
+    assert.equal(saved.claims[0].kind,'github-compiled-read');
+    assert.equal(saved.claims[0].method,'POST');assert.equal(saved.claims[0].route,'graphql');
+  }finally{await f.close();}
+});
+compiledTest('copied or fabricated compiled GraphQL descriptor cannot consume read allowance',async()=>{
+  const f=await fixture();try{
+    const d=await compiledGraphqlDescriptor();
+    for(const forged of [Object.freeze({...d}),Object.freeze({...d,compiledRead:true}),null]){
+      const got=await f.budget.reserve({envelope:env(),effect:graphqlEffect('forged',d),
+        compiledReadDescriptor:forged});
+      assert.equal(got.reason,'BUDGET_COMPILED_READ_PROVENANCE');
+    }
+    assert.equal((await f.read()).standingDelegationBudget,undefined);
+  }finally{await f.close();}
+});
+compiledTest('compiled provenance is bound to the exact POST payload and route',async()=>{
+  const f=await fixture();try{
+    const d=await compiledGraphqlDescriptor();
+    for(const patch of [{payloadSha256:'0'.repeat(64)},{route:'git/trees'},
+      {requestSha256:'f'.repeat(64)},{method:'GET'}]){
+      const got=await f.budget.reserve({envelope:env(),effect:graphqlEffect('wrong',d,patch),
+        compiledReadDescriptor:d});
+      assert.equal(got.reason,'BUDGET_COMPILED_READ_PROVENANCE');
+    }
+    assert.equal((await f.read()).standingDelegationBudget,undefined);
+  }finally{await f.close();}
+});
+compiledTest('unbranded GraphQL POST never obtains GET or write quota classification',async()=>{
+  const f=await fixture();try{
+    const d=await compiledGraphqlDescriptor();
+    const asGet=graphqlEffect('bad-get',d,{kind:'github-read'});
+    const asWrite=graphqlEffect('bad-write',d,{kind:'create-tree'});
+    assert.equal((await f.budget.reserve({envelope:env(),effect:asGet})).reason,'BUDGET_EFFECT_SCOPE');
+    assert.equal((await f.budget.reserve({envelope:env(),effect:asWrite})).reason,'BUDGET_EFFECT_SCOPE');
+    assert.equal((await f.read()).standingDelegationBudget,undefined);
+  }finally{await f.close();}
+});
+compiledTest('reopened GraphQL read history remains sound and repeatable under a different envelope',async()=>{
+  const f=await fixture();try{
+    const d=await compiledGraphqlDescriptor();
+    assert.equal((await f.budget.reserve({envelope:env(),effect:graphqlEffect('graphql-a',d),
+      compiledReadDescriptor:d})).status,'RESERVED');
+    const reopened=createStandingPublisherBudget({store:f.store,ledger:await f.read(),clock:()=>at});
+    const nextDigest='f'.repeat(64);
+    assert.equal((await reopened.reserve({envelope:env({envelopeDigest:nextDigest}),
+      effect:graphqlEffect('graphql-b',d,{envelopeDigest:nextDigest}),
+      compiledReadDescriptor:d})).status,'RESERVED');
+    const entries=(await f.read()).standingDelegationBudget.envelopes;
+    assert.equal(entries[hex64].writes,0);assert.equal(entries[nextDigest].writes,0);
+  }finally{await f.close();}
 });
