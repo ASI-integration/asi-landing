@@ -25,6 +25,19 @@ export const GOVERNANCE = new Set([
 const REPO = 'ASI-integration/asi-landing';
 const OWNER_ID = 207600140;
 const SHA = /^[a-f0-9]{40}$/;
+export const ENVELOPE_SECURITY_REQUIRED = Object.freeze([
+  'AGENTS.md', 'package.json', 'package-lock.json', CONTRACT,
+  'docs/agent-os/AUTONOMY_POLICY.md', 'docs/agent-os/OWNER_GATE.md',
+  'docs/agent-os/RELEASE-GOVERNANCE.md', 'scripts/agent-os/check-demo-release.mjs',
+  '.github/workflows/pr-validation.yml', '.github/workflows/asi-release-governance.yml',
+  ...['host-authority', 'host-runtime', 'state', 'github-publisher', 'publisher-transport',
+    'ci-reader', 'coderabbit-analyzer', 'change-preparer'].map(name =>
+    'scripts/strigunov4/execution-adapters/' + name + '.mjs'),
+]);
+const envelopeProtectedPath = p => ENVELOPE_SECURITY_REQUIRED.includes(p) || GOVERNANCE.has(p) ||
+  ['.github/', '.agents/', 'scripts/agent-os/', 'docs/agent-os/',
+    'scripts/strigunov4/execution-adapters/'].some(prefix => p.startsWith(prefix)) ||
+  /(^|\/)(secrets?|authority|permissions)(\/|\.)/i.test(p);
 
 function must(ok, label) {
   if (!ok) throw new Error(label);
@@ -159,8 +172,7 @@ export function assessReleaseEnvelopeProposal({ envelope: e, evidence: v, reques
       r.securityDigest !== e.securityDigest) return deny('ENVELOPE_SCOPE');
   if (!paths(e.allowedPaths) || !paths(r.changedPaths) ||
       !r.changedPaths.every(p => e.allowedPaths.includes(p)) ||
-      r.changedPaths.some(p => GOVERNANCE.has(p) || p === 'docs/agent-os/AUTONOMY_POLICY.md' ||
-        p.startsWith('.github/') || /(^|\/)(secrets?|authority|permissions)(\/|\.)/i.test(p)))
+      r.changedPaths.some(envelopeProtectedPath))
     return deny('ENVELOPE_PROTECTED_CHANGE');
   if (!sha(r.headSha) || !sha(r.baseSha) || !digest(r.artifactDigest) ||
       v.headSha !== r.headSha || v.baseSha !== r.baseSha || v.artifactDigest !== r.artifactDigest ||
@@ -282,14 +294,128 @@ export function inspectAuthenticatedProviderSnapshot({pr, runs, reviews, expecte
         finished < now - 60 * 60 * 1000)
       return deny('PROVIDER_WORKFLOW_STALE');
   }
-  const matchingReview = reviews.some(review =>
-    review?.state === 'APPROVED' &&
-    review.commit_id === expected.headSha &&
-    review.user?.id === expected.independentReviewerId &&
-    Number.isFinite(Date.parse(review.submitted_at || '')) &&
-    Date.parse(review.submitted_at) <= now);
-  if (!matchingReview) return deny('PROVIDER_INDEPENDENT_REVIEW');
+  // A newer dismissal or change request must supersede an older approval.
+  const decisions = reviews.filter(review =>
+    review?.user?.id === expected.independentReviewerId &&
+    ['APPROVED', 'CHANGES_REQUESTED', 'DISMISSED'].includes(review.state));
+  if (!decisions.length || decisions.some(review =>
+    !Number.isSafeInteger(review.id) || review.id <= 0 ||
+    !Number.isFinite(Date.parse(review.submitted_at || '')) ||
+    Date.parse(review.submitted_at) > now)) return deny('PROVIDER_INDEPENDENT_REVIEW');
+  decisions.sort((a, b) => Date.parse(b.submitted_at) - Date.parse(a.submitted_at) || b.id - a.id);
+  const review = decisions[0];
+  if (review.state !== 'APPROVED' || review.commit_id !== expected.headSha ||
+      Date.parse(review.submitted_at) < now - 60 * 60 * 1000)
+    return deny('PROVIDER_INDEPENDENT_REVIEW');
   return {status:'PROVIDER_EVIDENCE_VERIFIED', authorized:false};
+}
+
+/** Disabled protected-base reader; never called by checkPr/main.
+ * token, expected reviewer and transport must originate in trusted configuration,
+ * never PR JSON. Production uses native fetch; injection is for offline tests.
+ * GET only, fixed repository/host, no redirects/retries, 11 requests maximum,
+ * 30s overall / 5s per response, 2 MiB per response, bounded complete pagination.
+ * No key access, signing, claims, writes or authority. Admission must revalidate
+ * this observation under the existing Publisher lock; GitHub has no atomic
+ * multi-resource snapshot API.
+ */
+export async function readAuthenticatedProviderSnapshot({token, expected,
+  fetchImpl = globalThis.fetch, clock = Date.now}) {
+  const deny = reason => ({status:'BLOCKED', reason, authorized:false});
+  if (typeof token !== 'string' || !token.trim() || /[\r\n]/.test(token) ||
+      !expected || expected.repository !== REPO ||
+      !Number.isSafeInteger(expected.number) || expected.number <= 0 ||
+      !SHA.test(expected.baseSha || '') || !SHA.test(expected.headSha || '') ||
+      !Number.isSafeInteger(expected.independentReviewerId) || expected.independentReviewerId <= 0)
+    return deny('PROVIDER_READER_CONTEXT');
+  // Capture primitives so asynchronous callers cannot change the expected target.
+  expected = {...expected};
+  const startedAt = clock();
+  if (!Number.isSafeInteger(startedAt)) return deny('PROVIDER_READER_CONTEXT');
+  let requests = 0;
+  const root = 'https://api.github.com/repos/' + REPO;
+  const get = async suffix => {
+    const remaining = 30000 - (clock() - startedAt);
+    must(remaining > 0 && remaining <= 30000 && ++requests <= 11, 'PROVIDER_READER_BUDGET');
+    const url = root + suffix;
+    const response = await fetchImpl(url, {method:'GET', redirect:'error',
+      signal:AbortSignal.timeout(Math.min(5000, remaining)), headers:{
+        Accept:'application/vnd.github+json', Authorization:'Bearer ' + token,
+        'X-GitHub-Api-Version':'2022-11-28',
+      }});
+    must(response.ok && !response.redirected && (!response.url || response.url === url),
+      'PROVIDER_READER_HTTP');
+    must(/^application\/json(?:;|$)/i.test(response.headers.get('content-type') || ''),
+      'PROVIDER_READER_RESPONSE');
+    const reader = response.body?.getReader();
+    must(reader, 'PROVIDER_READER_RESPONSE');
+    const chunks = []; let size = 0;
+    try {
+      for (;;) {
+        const {done, value} = await reader.read();
+        if (done) break;
+        size += value.byteLength;
+        must(size <= 2 * 1024 * 1024, 'PROVIDER_READER_RESPONSE');
+        chunks.push(value);
+      }
+    } finally { await reader.cancel(); }
+    return JSON.parse(new TextDecoder('utf-8', {fatal:true}).decode(Buffer.concat(chunks)));
+  };
+  try {
+    const pr = await get('/pulls/' + expected.number);
+    const runs = [];
+    for (const rule of [
+      {id:311380800, event:'pull_request', sha:expected.headSha},
+      {id:390653294, event:'pull_request_target', sha:expected.baseSha},
+    ]) {
+      const collected = []; let total;
+      for (let page = 1; page <= 3; page++) {
+        const result = await get('/actions/workflows/' + rule.id + '/runs?event=' + rule.event +
+          '&head_sha=' + rule.sha + '&per_page=100&page=' + page);
+        must(Number.isSafeInteger(result.total_count) && result.total_count >= 0 &&
+          result.total_count < 300 && Array.isArray(result.workflow_runs) &&
+          result.workflow_runs.length <= 100 && (total === undefined || total === result.total_count),
+          'PROVIDER_READER_INCOMPLETE');
+        total = result.total_count;
+        collected.push(...result.workflow_runs);
+        must(collected.every(r => Number.isSafeInteger(r?.id) && r.id > 0) &&
+          new Set(collected.map(r => r.id)).size === collected.length,
+          'PROVIDER_READER_INCOMPLETE');
+        if (result.workflow_runs.length < 100) {
+          must(collected.length === total, 'PROVIDER_READER_INCOMPLETE'); break;
+        }
+      }
+      must(collected.length === total, 'PROVIDER_READER_INCOMPLETE');
+      runs.push(...collected);
+    }
+    const reviews = [];
+    for (let page = 1; page <= 3; page++) {
+      const batch = await get('/pulls/' + expected.number + '/reviews?per_page=100&page=' + page);
+      must(Array.isArray(batch) && batch.length <= 100, 'PROVIDER_READER_INCOMPLETE');
+      reviews.push(...batch);
+      must(reviews.every(r => Number.isSafeInteger(r?.id) && r.id > 0) &&
+        new Set(reviews.map(r => r.id)).size === reviews.length, 'PROVIDER_READER_INCOMPLETE');
+      if (batch.length < 100) break;
+      must(page < 3, 'PROVIDER_READER_INCOMPLETE');
+    }
+    const currentPr = await get('/pulls/' + expected.number);
+    const now = clock();
+    must(Number.isSafeInteger(now) && now >= startedAt && now - startedAt < 30000,
+      'PROVIDER_READER_BUDGET');
+    for (const observed of [pr, currentPr]) {
+      const result = inspectAuthenticatedProviderSnapshot({pr:observed, runs, reviews, expected, now});
+      if (result.status === 'BLOCKED') return result;
+    }
+    return {status:'PROVIDER_EVIDENCE_VERIFIED', authorized:false,
+      snapshot:{pr:currentPr, runs, reviews, expected, now},
+      receipt:{repository:REPO, number:expected.number, baseSha:expected.baseSha,
+        headSha:expected.headSha, startedAt, observedAt:now, requests, writes:0}};
+  } catch (error) {
+    // Never leak provider bodies, transport exceptions or authentication material.
+    const reason = /^PROVIDER_READER_[A-Z_]+$/.test(error?.message || '')
+      ? error.message : 'PROVIDER_READER_UNAVAILABLE';
+    return deny(reason);
+  }
 }
 
 /** Disabled source-only adapter. trustedComparison is supplied by the protected
@@ -311,7 +437,49 @@ export function assessRepositoryReleaseEnvelopeProposal(input, trustedComparison
   // Preserve order and both sides of renames from the complete Git inventory.
   if (JSON.stringify(changed) !== JSON.stringify(input.request.changedPaths))
     return deny('ENVELOPE_DIFF_INVENTORY');
+  const security = inspectProtectedRepositorySecurity(trustedComparison);
+  if (security.status === 'BLOCKED') return security;
+  let envelope;
+  try { envelope = verifySignedPayload(input.signedEnvelope, input.trustedPublicKey); }
+  catch { return deny('ENVELOPE_SIGNATURE_INVALID'); }
+  if (envelope.securityDigest !== security.securityDigest ||
+      envelope.policyDigest !== security.policyDigest ||
+      input.request.securityDigest !== security.securityDigest)
+    return deny('ENVELOPE_SECURITY_DIGEST');
   return assessWitnessedReleaseEnvelopeProposal(input);
+}
+
+/** Git objects only, no execution of either tree. Security inventory includes
+ * names, modes and object IDs; additions, deletions, renames and symlinks cannot
+ * hide behind an unchanged list supplied by a PR. Trust in base identity still
+ * requires the authenticated provider and separately adopted configuration.
+ */
+export function inspectProtectedRepositorySecurity({repoRoot, baseSha, headSha} = {}) {
+  const deny = reason => ({status:'BLOCKED', reason, authorized:false});
+  if (typeof repoRoot !== 'string' || !path.isAbsolute(repoRoot) ||
+      !SHA.test(baseSha || '') || !SHA.test(headSha || '')) return deny('ENVELOPE_SECURITY_CONTEXT');
+  const inventory = sha => {
+    const raw = execFileSync('git', ['ls-tree', '-r', '-z', '--full-tree', sha],
+      {cwd:repoRoot, encoding:'utf8', maxBuffer:4*1024*1024, stdio:['ignore','pipe','pipe']});
+    const entries = raw.split('\0').filter(Boolean).map(line => {
+      const match = /^(\d{6}) (blob|commit) ([a-f0-9]{40})\t([\s\S]+)$/.exec(line);
+      must(match, 'ENVELOPE_SECURITY_INVENTORY');
+      return {mode:match[1], type:match[2], oid:match[3], path:match[4]};
+    }).filter(entry => envelopeProtectedPath(entry.path));
+    must(ENVELOPE_SECURITY_REQUIRED.every(p => entries.some(e => e.path === p)) &&
+      entries.every(e => e.type === 'blob' && ['100644','100755'].includes(e.mode)),
+      'ENVELOPE_SECURITY_INVENTORY');
+    return entries;
+  };
+  try {
+    const base = inventory(baseSha), head = inventory(headSha);
+    if (JSON.stringify(base) !== JSON.stringify(head)) return deny('ENVELOPE_PROTECTED_CHANGE');
+    const policy = execFileSync('git', ['cat-file', 'blob', baseSha + ':docs/agent-os/AUTONOMY_POLICY.md'],
+      {cwd:repoRoot, maxBuffer:1024*1024, stdio:['ignore','pipe','pipe']});
+    return {status:'PROTECTED_SECURITY_VERIFIED', authorized:false,
+      securityDigest:createHash('sha256').update(JSON.stringify(base)).digest('hex'),
+      policyDigest:createHash('sha256').update(policy).digest('hex'), inventory:base};
+  } catch { return deny('ENVELOPE_SECURITY_INVENTORY'); }
 }
 
 export function checkPr({ contract, changed, prNumber, prBody, headSha,

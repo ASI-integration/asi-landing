@@ -208,3 +208,41 @@ journal and state lock. The aggregate native request/mutation counter observed i
 PR549 `host-runtime.mjs` is unmerged source, not adopted main behavior. Reusing that
 mechanism for governance requires an explicitly reviewed source integration into
 this proposal; this task must neither merge nor activate PR549 to obtain it.
+
+### Disabled authenticated reader and protected security inventory
+
+`readAuthenticatedProviderSnapshot` now implements the read-only producer for the
+existing predicate: fixed GitHub host/repository, authenticated GET only, no
+redirects or automatic retry, maximum 11 requests, 30 seconds overall and 5 seconds
+per response, 2 MiB per response. Required workflow inventories are complete with
+stable counts and unique IDs; ambiguous/truncated pagination blocks. Reviews are
+fully paginated within the cap; a newer dismissal/change request supersedes old
+approval, and an approval expires after one hour. PR identity/base/head are checked
+again after collection. Transport errors never serialize credential/body details.
+
+The protected caller must supply the token, reviewer identity and expected SHAs;
+PR JSON is not configuration. The test transport and clock are offline injection
+ports, not permission to replace the protected runtime transport. GitHub does not
+provide an atomic snapshot across PR/runs/reviews: this observation must be
+revalidated before reservation/publication under the existing lock. The current
+trusted workflow lacks `actions:read`; installing a reviewed reader and changing
+that protected permission is a separately authorized adoption step, not performed
+by this draft. No reader call is wired into `checkPr/main`.
+
+`inspectProtectedRepositorySecurity` inventories base and head Git objects without
+checkout, including path, mode and object ID. Required policy/workflow/Authority/
+Publisher/state/dependency files cannot disappear; symlinks and submodules in the
+protected inventory block. All Agent OS, workflow, agent-skill and execution-adapter
+paths are outside routine source delegation. The repository adapter requires the
+same protected inventory in both trees and compares its actual SHA256 and policy
+bytes digest with the signed envelope. This also closes the prior path-pattern
+gap for `host-authority.mjs` and `github-publisher.mjs`.
+
+These are source-prepared functions and offline proofs only. The separately
+protected issuer/verifier registry and current authenticated revocation source,
+Publisher aggregate budget integration and actual trusted workflow adoption are
+still incomplete. Do not turn PROVIDER_EVIDENCE_VERIFIED into AUTHORIZED. The
+adoption design must also avoid requiring a successful invocation of the same
+governance job before that job can admit a routine update; its independent CI and
+post-integration acceptance phases must be explicitly reviewed. No new owner
+decision is requested while these source integration items remain.

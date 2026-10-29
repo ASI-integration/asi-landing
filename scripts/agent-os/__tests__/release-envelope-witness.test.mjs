@@ -6,7 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { initializeState, existingState } from '../../strigunov4/execution-adapters/state.mjs';
 import { generateKeyPairSync, createHash, sign } from 'node:crypto';
-import { assessWitnessedReleaseEnvelopeProposal as assess, assessRepositoryReleaseEnvelopeProposal as assessRepository, inspectAuthenticatedProviderSnapshot as provider } from '../check-demo-release.mjs';
+import { assessWitnessedReleaseEnvelopeProposal as assess, assessRepositoryReleaseEnvelopeProposal as assessRepository, inspectAuthenticatedProviderSnapshot as provider, readAuthenticatedProviderSnapshot as readProvider, inspectProtectedRepositorySecurity as inspectSecurity, ENVELOPE_SECURITY_REQUIRED } from '../check-demo-release.mjs';
 const hash=x=>createHash('sha256').update(x).digest('hex');
 const key=()=>{const p=generateKeyPairSync('ed25519');return {...p,pem:p.publicKey.export({type:'spki',format:'pem'}),digest:hash(p.publicKey.export({type:'spki',format:'der'}))};};
 const signed=(payload,k)=>{payload=JSON.stringify(payload);return {payload,signature:sign(null,Buffer.from(payload),k.privateKey).toString('base64')};};
@@ -96,12 +96,19 @@ function repositoryFixture(run){
   git('init');git('config','user.name','Fixture');git('config','user.email','fixture@example.invalid');
   fs.mkdirSync(path.join(root,'scripts'));fs.mkdirSync(path.join(root,'.github'));
   fs.writeFileSync(path.join(root,'scripts/example.mjs'),'old');fs.writeFileSync(path.join(root,'.github/protected.yml'),'protected');
+  for(const p of ENVELOPE_SECURITY_REQUIRED) {
+   fs.mkdirSync(path.dirname(path.join(root,p)),{recursive:true});fs.writeFileSync(path.join(root,p),'fixture protected '+p);
+  }
   git('add','.');git('-c','core.hooksPath=/dev/null','commit','-m','base');const baseSha=git('rev-parse','HEAD');
   run({root,git,baseSha});
  }finally{fs.rmSync(root,{recursive:true,force:true});}
 }
 function boundFixture(root,baseSha,headSha,paths){
  const x=fixture();Object.assign(x.request,{baseSha,headSha,changedPaths:paths});
+ const security=inspectSecurity({repoRoot:root,baseSha,headSha:baseSha});
+ Object.assign(x.envelope,{securityDigest:security.securityDigest,policyDigest:security.policyDigest});
+ x.request.securityDigest=security.securityDigest;x.evidence.policyDigest=security.policyDigest;
+ x.signedEnvelope=signed(x.envelope,x.owner);x.evidence.envelopeDigest=hash(x.signedEnvelope.payload);
  Object.assign(x.evidence,{baseSha,headSha,changedPaths:paths});x.signedEvidence=signed(x.evidence,x.verifier);
  return [x,{repository:x.request.repo,repoRoot:root,baseSha,headSha}];
 }
@@ -110,6 +117,23 @@ test('protected-base Git inventory admits routine new heads only with fresh boun
  const args=boundFixture(root,baseSha,git('rev-parse','HEAD'),['scripts/example.mjs']);
  assert.equal(assessRepository(...args).status,'PROPOSAL_ELIGIBLE');assert.equal(assessRepository(...args).authorized,false);
  args[0].request.headSha='f'.repeat(40);assert.equal(assessRepository(...args).reason,'ENVELOPE_TRUSTED_COMPARISON');
+}));
+
+test('protected-base digest rejects changed authority, missing required path and symlink',()=>{
+ for(const operation of ['change','delete','symlink']) repositoryFixture(({root,git,baseSha})=>{
+  const file=path.join(root,'scripts/strigunov4/execution-adapters/host-authority.mjs');
+  if(operation==='change')fs.writeFileSync(file,'changed');
+  else {fs.unlinkSync(file);if(operation==='symlink')fs.symlinkSync('host-runtime.mjs',file);}
+  git('add','.');git('-c','core.hooksPath=/dev/null','commit','-m',operation);
+  const result=inspectSecurity({repoRoot:root,baseSha,headSha:git('rev-parse','HEAD')});
+  assert.equal(result.status,'BLOCKED');assert.equal(result.authorized,false);
+ });
+});
+test('repository proposal requires signed digest of actual protected base',()=>repositoryFixture(({root,git,baseSha})=>{
+ fs.writeFileSync(path.join(root,'scripts/example.mjs'),'new');git('add','.');git('-c','core.hooksPath=/dev/null','commit','-m','routine');
+ const args=boundFixture(root,baseSha,git('rev-parse','HEAD'),['scripts/example.mjs']);
+ args[0].envelope.securityDigest='0'.repeat(64);args[0].signedEnvelope=signed(args[0].envelope,args[0].owner);
+ assert.equal(assessRepository(...args).reason,'ENVELOPE_SECURITY_DIGEST');
 }));
 test('real rename cannot hide protected source even with a signed incomplete inventory',()=>repositoryFixture(({root,git,baseSha})=>{
  git('mv','.github/protected.yml','scripts/renamed.mjs');git('-c','core.hooksPath=/dev/null','commit','-m','rename');
@@ -140,7 +164,7 @@ function providerFixture() {
  ].map(run=>({...run,run_attempt:1,status:'completed',conclusion:'success',
    repository:{full_name:repo},pull_requests:[pullRef],
    updated_at:'2026-10-29T07:14:00.000Z'}));
- const reviews=[{state:'APPROVED',commit_id:headSha,user:{id:expected.independentReviewerId},
+ const reviews=[{id:10,state:'APPROVED',commit_id:headSha,user:{id:expected.independentReviewerId},
    submitted_at:'2026-10-29T07:14:30.000Z'}];
  return {pr,runs:workflows,reviews,expected,now};
 }
@@ -170,4 +194,94 @@ test('missing provider PR association and stale run fail closed',()=>{
  x.runs[0].pull_requests=x.runs[1].pull_requests;
  x.runs[0].updated_at='2026-10-29T04:00:00.000Z';
  assert.equal(provider(x).reason,'PROVIDER_WORKFLOW_STALE');
+});
+
+test('newer change request and aged approval supersede historical PASS',()=>{
+ const x=providerFixture();
+ x.reviews.push({...x.reviews[0],id:11,state:'CHANGES_REQUESTED',submitted_at:'2026-10-29T07:14:45.000Z'});
+ assert.equal(provider(x).reason,'PROVIDER_INDEPENDENT_REVIEW');
+ x.reviews.pop();x.reviews[0].submitted_at='2026-10-28T07:14:30.000Z';
+ assert.equal(provider(x).reason,'PROVIDER_INDEPENDENT_REVIEW');
+});
+function readerFixture(change = () => {}) {
+ const x=providerFixture(), calls=[];
+ const fetchImpl=async(url,options)=>{
+  calls.push({url,options});
+  const u=new URL(url);let value;
+  if(u.pathname.endsWith('/reviews')) value=x.reviews;
+  else if(u.pathname.includes('/actions/workflows/')) {
+   const id=Number(u.pathname.split('/').at(-2));
+   const runs=x.runs.filter(r=>r.workflow_id===id);
+   value={total_count:runs.length,workflow_runs:runs};
+  } else value=x.pr;
+  const response=change({url:u,value,calls,x});
+  return response || new Response(JSON.stringify(value),{headers:{'Content-Type':'application/json'}});
+ };
+ return {x,calls,input:{token:'offline-fixture-token',expected:x.expected,clock:()=>x.now,fetchImpl}};
+}
+test('reader obtains bounded authenticated GET observations and never authority',async()=>{
+ const f=readerFixture();const result=await readProvider(f.input);
+ assert.equal(result.status,'PROVIDER_EVIDENCE_VERIFIED');assert.equal(result.authorized,false);
+ assert.equal(result.receipt.requests,5);assert.equal(result.receipt.writes,0);
+ assert(!JSON.stringify(result).includes(f.input.token));
+ for(const {url,options} of f.calls) {
+  assert(url.startsWith('https://api.github.com/repos/ASI-integration/asi-landing/'));
+  assert.equal(options.method,'GET');assert.equal(options.redirect,'error');
+  assert.equal(options.headers.Authorization,'Bearer '+f.input.token);assert(options.signal);
+ }
+});
+test('reader blocks authentication failure and redirect without retries or leaked body',async()=>{
+ for(const status of [302,401,403,429,500]) {
+  const f=readerFixture(()=>new Response('private transport details',{status}));
+  assert.deepEqual(await readProvider(f.input),{status:'BLOCKED',reason:'PROVIDER_READER_HTTP',authorized:false});
+  assert.equal(f.calls.length,1);
+ }
+ const f=readerFixture();f.input.fetchImpl=async()=>{throw new Error(f.input.token);};
+ assert.equal((await readProvider(f.input)).reason,'PROVIDER_READER_UNAVAILABLE');
+});
+test('reader refuses incomplete, truncated, duplicate or changing page inventories',async()=>{
+ for(const alter of [v=>{v.total_count=2;},v=>{v.total_count=300;},
+  v=>{v.workflow_runs.push(v.workflow_runs[0]);v.total_count=2;}]) {
+  const f=readerFixture(({value,url})=>{if(url.pathname.includes('/workflows/'))alter(value);});
+  assert.equal((await readProvider(f.input)).reason,'PROVIDER_READER_INCOMPLETE');
+ }
+ const f=readerFixture(({url,value})=>{
+  if(url.pathname.includes('/workflows/')) {
+   value.total_count=url.searchParams.get('page')==='1'?101:102;
+   value.workflow_runs=Array.from({length:url.searchParams.get('page')==='1'?100:2},(_,i)=>({...value.workflow_runs[0],id:i+100}));
+  }
+ });
+ assert.equal((await readProvider(f.input)).reason,'PROVIDER_READER_INCOMPLETE');
+});
+test('reader paginates reviews completely so later denial is not hidden',async()=>{
+ const f=readerFixture(({url,value})=>{
+  if(url.pathname.endsWith('/reviews')) {
+   const review=value[0];
+   return new Response(JSON.stringify(url.searchParams.get('page')==='1'
+    ? Array.from({length:100},(_,i)=>({...review,id:i+1}))
+    : [{...review,id:101,state:'CHANGES_REQUESTED',submitted_at:'2026-10-29T07:14:45.000Z'}]),
+    {headers:{'Content-Type':'application/json'}});
+  }
+ });
+ assert.equal((await readProvider(f.input)).reason,'PROVIDER_INDEPENDENT_REVIEW');
+ assert.equal(f.calls.length,6);
+});
+test('reader rechecks PR identity and rejects concurrent head/base movement',async()=>{
+ for(const side of ['head','base']) {
+  const f=readerFixture(({calls,x,url})=>{
+   if(calls.length===5 && url.pathname.endsWith('/552')) {
+    const value=structuredClone(x.pr);value[side].sha='e'.repeat(40);
+    return new Response(JSON.stringify(value),{headers:{'Content-Type':'application/json'}});
+   }
+  });
+  assert.equal((await readProvider(f.input)).reason,'PROVIDER_PR_IDENTITY');
+ }
+});
+test('reader bounds bytes/time and refuses caller-controlled repository before network',async()=>{
+ const f=readerFixture(()=>new Response(' '.repeat(2*1024*1024+1),{headers:{'Content-Type':'application/json'}}));
+ assert.equal((await readProvider(f.input)).reason,'PROVIDER_READER_RESPONSE');
+ const g=readerFixture();let ticks=0;g.input.clock=()=>g.x.now+(ticks++ ? 30001:0);
+ assert.equal((await readProvider(g.input)).reason,'PROVIDER_READER_BUDGET');assert.equal(g.calls.length,0);
+ const h=readerFixture();h.input.expected={...h.input.expected,repository:'other/repo'};
+ assert.equal((await readProvider(h.input)).reason,'PROVIDER_READER_CONTEXT');assert.equal(h.calls.length,0);
 });
