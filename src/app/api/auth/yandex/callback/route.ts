@@ -5,7 +5,8 @@ import { supabase } from '@/lib/supabase';
 import { ensureAccountForUser } from '@/lib/accounts';
 import {
   ruYandexConfigured, verifyYandexState, yandexFlowStillValid,
-  yandexCallbackUrl, yandexSubject, yandexSafeReturn,
+  yandexCallbackUrl, verifiedYandexProfileSubject, yandexSafeReturn,
+  hasRecentYandexLinkProof,
 } from '@/lib/auth/ru-yandex-policy';
 
 export const runtime='nodejs';
@@ -40,8 +41,8 @@ async function yandexProfile(code:string,verifier:string):Promise<string> {
       headers:{Authorization:'OAuth '+token.access_token},signal:ctrl.signal,cache:'no-store',
     });
     if(!user.ok)throw new Error('YANDEX_PROFILE_REJECTED');
-    const profile=await user.json() as {id?:unknown};
-    const subject=yandexSubject(profile.id);
+    const profile=await user.json() as unknown;
+    const subject=verifiedYandexProfileSubject(profile,process.env.ASI_RU_YANDEX_CLIENT_ID!);
     if(!subject)throw new Error('YANDEX_SUBJECT_UNVERIFIED');
     return subject;
   } finally { clearTimeout(timer); }
@@ -59,6 +60,7 @@ export async function GET(request:Request) {
   const mode=session.yandexOauthMode;
   const linkUserId=session.yandexOauthLinkUserId;
   const strongAt=session.lastStrongAuthAt;
+  const strongUserId=session.lastStrongAuthUserId;
   const intended=yandexSafeReturn(session.yandexOauthRedirect);
   const code=url.searchParams.get('code');
   const matched=verifyYandexState(state,url.searchParams.get('state')) &&
@@ -86,8 +88,7 @@ export async function GET(request:Request) {
 
     if(mode==='link'){
       if(!linkUserId || session.userId!==linkUserId ||
-          !Number.isSafeInteger(strongAt) || Date.now()<strongAt! ||
-          Date.now()-strongAt!>10*60*1000)
+          !hasRecentYandexLinkProof(linkUserId,strongUserId,strongAt))
         return fail(url.origin,'link_requires_recent_auth');
       if(linked && linked.user_id!==linkUserId)
         return fail(url.origin,'already_linked');
@@ -110,6 +111,9 @@ export async function GET(request:Request) {
     await ensureAccountForUser({userId:user.id,email:user.email,ruCommercial:true});
     session.userId=user.id;
     session.email=user.email;
+    // A Yandex login must not inherit password/email step-up from another identity.
+    delete session.lastStrongAuthAt;
+    delete session.lastStrongAuthUserId;
     await session.save();
     return NextResponse.redirect(new URL(intended,url.origin));
   } catch {
