@@ -7,7 +7,7 @@ import { getSession } from '@/lib/auth';
 import { ensureAccountForUser } from '@/lib/accounts';
 import { readRequestJson } from '@/lib/safeRequestJson';
 import { isSameOriginAuthRequest } from '@/lib/auth/ru-email-code-policy';
-import { clearPendingYandexOauth } from '@/lib/auth/ru-yandex-policy';
+import { clearPendingYandexOauth, clearPendingGoogleOauth } from '@/lib/auth/ru-yandex-policy';
 
 export async function POST(req: Request) {
   try {
@@ -59,6 +59,9 @@ export async function POST(req: Request) {
 
     const session = await getSession();
     clearPendingYandexOauth(session);
+    // A completed RU password login invalidates older, unfinished provider flows.
+    // Keep existing international Google login behavior unchanged.
+    if (isRu) clearPendingGoogleOauth(session);
     session.userId = user.id;
     session.email = user.email;
     session.lastStrongAuthAt = Date.now();

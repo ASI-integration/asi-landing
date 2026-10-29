@@ -26,6 +26,9 @@ function request() {
 function oldSession() {
   return {
     userId: 'different-user',
+    googleOauthState: 'stale-google-state',
+    googleOauthPlan: 'enterprise',
+    googleOauthRedirect: '/billing',
     yandexOauthState: 'stale-state',
     yandexOauthVerifier: 'stale-verifier',
     yandexOauthStartedAt: Date.now(),
@@ -61,6 +64,9 @@ describe('RU OTP completion supersedes stale Yandex OAuth state', () => {
     expect(session.userId).toBe('verified-user');
     expect(session.lastStrongAuthUserId).toBe('verified-user');
     expect(session.lastStrongAuthAt).toBeGreaterThan(1);
+    expect(session.googleOauthState).toBeUndefined();
+    expect(session.googleOauthPlan).toBeUndefined();
+    expect(session.googleOauthRedirect).toBeUndefined();
     expect(session.yandexOauthState).toBeUndefined();
     expect(session.yandexOauthVerifier).toBeUndefined();
     expect(session.yandexOauthStartedAt).toBeUndefined();
@@ -80,6 +86,7 @@ describe('RU OTP completion supersedes stale Yandex OAuth state', () => {
     const res = await POST(request());
     expect(res.status).toBe(401);
     expect(session.userId).toBe('different-user');
+    expect(session.googleOauthState).toBe('stale-google-state');
     expect(session.yandexOauthState).toBe('stale-state');
     expect(mocks.getSession).not.toHaveBeenCalled();
     expect(mocks.ensure).not.toHaveBeenCalled();

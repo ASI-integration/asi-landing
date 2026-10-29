@@ -84,6 +84,9 @@ describe('RU password login cannot change plan entitlements', () => {
     authMocks.isRu.mockResolvedValue(true);
     const session = {
       userId: 'old-user',
+      googleOauthState: 'old-google-state',
+      googleOauthPlan: 'enterprise',
+      googleOauthRedirect: '/billing',
       yandexOauthState: 'stale-state',
       yandexOauthVerifier: 'stale-verifier',
       yandexOauthStartedAt: Date.now(),
@@ -96,6 +99,9 @@ describe('RU password login cannot change plan entitlements', () => {
     const res = await POST(loginRequest('small', true));
     expect(res.status).toBe(200);
     expect(session.userId).toBe('existing-user');
+    expect(session.googleOauthState).toBeUndefined();
+    expect(session.googleOauthPlan).toBeUndefined();
+    expect(session.googleOauthRedirect).toBeUndefined();
     expect(session.yandexOauthState).toBeUndefined();
     expect(session.yandexOauthVerifier).toBeUndefined();
     expect(session.yandexOauthStartedAt).toBeUndefined();

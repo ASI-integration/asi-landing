@@ -6,7 +6,7 @@ import { ensureAccountForUser } from '@/lib/accounts';
 import {
   ruYandexConfigured, verifyYandexState, yandexFlowStillValid,
   verifiedYandexBearerAccessToken, verifiedYandexProfileSubject, yandexSafeReturn,
-  hasRecentYandexLinkProof,
+  hasRecentYandexLinkProof, clearPendingGoogleOauth,
 } from '@/lib/auth/ru-yandex-policy';
 
 export const runtime='nodejs';
@@ -116,6 +116,9 @@ export async function GET(request:Request) {
     // Reuse existing ASI identity and session, never infer ownership from a
     // Yandex email or start/restart a trial by authenticating.
     await ensureAccountForUser({userId:user.id,email:user.email,ruCommercial:true});
+    // Completing a Yandex login supersedes a pending Google login; otherwise
+    // a later callback could replace the newly chosen identity or plan.
+    clearPendingGoogleOauth(session);
     session.userId=user.id;
     session.email=user.email;
     // A Yandex login must not inherit password/email step-up from another identity.

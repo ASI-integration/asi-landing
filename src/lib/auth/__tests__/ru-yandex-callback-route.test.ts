@@ -93,6 +93,56 @@ describe('RU Yandex OAuth callback cannot cancel a pending flow by CSRF', () => 
     expect(mocks.ensure).not.toHaveBeenCalled();
     expect(mocks.save).toHaveBeenCalledOnce();
   });
+
+  it('clears stale Google flow when a linked Yandex subject completes a new RU login', async () => {
+    const session = {
+      ...pendingSession(),
+      email: 'previous@example.ru',
+      yandexOauthMode: 'login' as const,
+      yandexOauthLinkUserId: undefined,
+      googleOauthState: 'old-google-state',
+      googleOauthPlan: 'enterprise',
+      googleOauthRedirect: '/billing',
+    };
+    mocks.getSession.mockResolvedValue(session);
+    mocks.ensure.mockResolvedValue({ accountId: 'existing', created: false });
+    mocks.from.mockImplementation((table: string) => {
+      if (table === 'ru_auth_yandex_links') {
+        return { select: () => ({ eq: () => ({ maybeSingle: async () =>
+          ({ data: { user_id: 'linked-user' }, error: null }) }) }) };
+      }
+      if (table === 'users') {
+        return { select: () => ({ eq: () => ({ maybeSingle: async () =>
+          ({ data: { id: 'linked-user', email: 'linked@example.ru' }, error: null }) }) }) };
+      }
+      throw new Error('unexpected table ' + table);
+    });
+    vi.stubGlobal('fetch', vi.fn(async (providerUrl: string) => {
+      if (providerUrl === 'https://oauth.yandex.ru/token') {
+        return new Response(JSON.stringify({
+          token_type: 'bearer', access_token: 'isolated-test-access-token', scope: 'login:info',
+        }), { status: 200 });
+      }
+      if (providerUrl === 'https://login.yandex.ru/info?format=json') {
+        return new Response(JSON.stringify({ id: '123456', client_id: 'inert-test-client' }), { status: 200 });
+      }
+      throw new Error('unexpected endpoint');
+    }));
+    const response = await GET(new Request(
+      origin + '/api/auth/yandex/callback?state=' + state + '&code=fixture-auth-code',
+    ));
+    expect(response.status).toBe(307);
+    expect(session.userId).toBe('linked-user');
+    expect(session.email).toBe('linked@example.ru');
+    expect(session.googleOauthState).toBeUndefined();
+    expect(session.googleOauthPlan).toBeUndefined();
+    expect(session.googleOauthRedirect).toBeUndefined();
+    expect(mocks.ensure).toHaveBeenCalledWith({
+      userId: 'linked-user', email: 'linked@example.ru', ruCommercial: true,
+    });
+    expect(mocks.save).toHaveBeenCalledTimes(2);
+  });
+
   it('leaves a pending link intact on a missing or unrelated state, without provider or DB calls', async () => {
     const session = pendingSession();
     mocks.getSession.mockResolvedValue(session);

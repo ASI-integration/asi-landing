@@ -87,6 +87,20 @@ export function clearPendingYandexOauth(session: {
   delete session.yandexOauthLinkUserId;
 }
 
+/** A successful RU login supersedes an unfinished Google OAuth attempt too.
+ * Clear only its transient state, not any authenticated session or credentials.
+ * In particular, a late Google callback must not inherit an old state/plan.
+ */
+export function clearPendingGoogleOauth(session: {
+  googleOauthState?: string;
+  googleOauthPlan?: unknown;
+  googleOauthRedirect?: string;
+}): void {
+  delete session.googleOauthState;
+  delete session.googleOauthPlan;
+  delete session.googleOauthRedirect;
+}
+
 export function yandexCallbackUrl(env: Readonly<Record<string,string|undefined>>): string {
   if (!ruYandexConfigured(env)) throw new Error('YANDEX_NOT_CONFIGURED');
   return env.ASI_RU_YANDEX_ORIGIN! + YANDEX_CALLBACK_PATH;

@@ -8,7 +8,7 @@ import { readRequestJson } from '@/lib/safeRequestJson';
 import { supabase } from '@/lib/supabase';
 import { consumeRuEmailCode, ruEmailCodeReady } from '@/lib/auth/ru-email-code-server';
 import { isCanonicalRuEmailCodeRequest, isSameOriginAuthRequest } from '@/lib/auth/ru-email-code-policy';
-import { clearPendingYandexOauth } from '@/lib/auth/ru-yandex-policy';
+import { clearPendingYandexOauth, clearPendingGoogleOauth } from '@/lib/auth/ru-yandex-policy';
 
 export const runtime='nodejs';
 export const dynamic='force-dynamic';
@@ -51,6 +51,7 @@ export async function POST(req:Request) {
     await ensureAccountForUser({userId:user.id,email:user.email,ruCommercial:true});
     const session=await getSession();
     clearPendingYandexOauth(session);
+    clearPendingGoogleOauth(session);
     session.userId=user.id;
     session.email=user.email;
     session.lastStrongAuthAt=Date.now();
