@@ -18,6 +18,14 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
+  // Reuse the already configured Google flow on /connect.
+  // GIS requires a genuine Google-rendered button, so do not simulate a click.
+  const openGoogleLogin = () => {
+    const params = new URLSearchParams(window.location.search);
+    const returnTo = safeRedirectPath(params.get('redirect'));
+    window.location.assign('/connect?redirect=' + encodeURIComponent(returnTo));
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
@@ -62,7 +70,26 @@ export default function LoginPage() {
           {t('login.subtitle')}
         </p>
 
-        <form onSubmit={handleSubmit} className="mt-8 space-y-4">
+        <div className="mt-8">
+          <button
+            type="button"
+            onClick={openGoogleLogin}
+            className="w-full rounded-lg border border-slate-300 bg-white px-6 py-3 font-medium text-slate-900 hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-slate-900"
+          >
+            Войти через Google
+          </button>
+          <p className="mt-2 text-center text-xs text-slate-500">
+            На следующей странице выберите вход через Google.
+          </p>
+        </div>
+
+        <div className="my-5 flex items-center gap-3 text-xs text-slate-400">
+          <span className="h-px flex-1 bg-slate-200" />
+          <span>или по email</span>
+          <span className="h-px flex-1 bg-slate-200" />
+        </div>
+
+        <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label htmlFor="email" className="block text-sm font-medium text-slate-700 mb-1">
               {t('signup.emailLabel')}
