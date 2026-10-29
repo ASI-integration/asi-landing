@@ -5,7 +5,7 @@ import { supabase } from '@/lib/supabase';
 import { ensureAccountForUser } from '@/lib/accounts';
 import {
   ruYandexConfigured, verifyYandexState, yandexFlowStillValid,
-  yandexCallbackUrl, verifiedYandexProfileSubject, yandexSafeReturn,
+  verifiedYandexBearerAccessToken, verifiedYandexProfileSubject, yandexSafeReturn,
   hasRecentYandexLinkProof,
 } from '@/lib/auth/ru-yandex-policy';
 
@@ -33,11 +33,11 @@ async function yandexProfile(code:string,verifier:string):Promise<string> {
       body:form.toString(),signal:ctrl.signal,cache:'no-store',
     });
     if(!response.ok)throw new Error('YANDEX_TOKEN_EXCHANGE_REJECTED');
-    const token=await response.json() as {access_token?:unknown;token_type?:unknown};
-    if(typeof token.access_token!=='string'||token.access_token.length<10)
-      throw new Error('YANDEX_EMPTY_ACCESS_TOKEN');
+    const token=await response.json() as unknown;
+    const accessToken=verifiedYandexBearerAccessToken(token);
+    if(!accessToken)throw new Error('YANDEX_INVALID_TOKEN_RESPONSE');
     const user=await fetch('https://login.yandex.ru/info?format=json',{
-      headers:{Authorization:'OAuth '+token.access_token},signal:ctrl.signal,cache:'no-store',
+      headers:{Authorization:'OAuth '+accessToken},signal:ctrl.signal,cache:'no-store',
     });
     if(!user.ok)throw new Error('YANDEX_PROFILE_REJECTED');
     const profile=await user.json() as unknown;
