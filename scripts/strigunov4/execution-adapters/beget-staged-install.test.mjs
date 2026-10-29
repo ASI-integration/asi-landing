@@ -196,7 +196,7 @@ test('successful staged install only provisions a disabled unit; no start/enable
 // Real mode regression: staging under a 0077 umask must produce traversable
 // root-owned runtime bytes for the *different* service UID, but never open
 // authority/state paths. Uses only isolated temporary fixture files.
-const runtimeModeFixture=String.raw\`
+const runtimeModeFixture=String.raw`
 import importlib.util,os,sys,stat,tempfile
 from pathlib import Path
 s=importlib.util.spec_from_file_location('installer',sys.argv[1])
@@ -239,7 +239,7 @@ with tempfile.TemporaryDirectory(prefix='asi-engine-umask-') as root:
   except m.Block as e:assert str(e)=='STAGED_RUNTIME_PATH'
   else:raise AssertionError('symlink accepted')
  else:assert mode=='valid'
-\`;
+`;
 for(const mode of ['valid','runtime-0700','module-0600','node-0700','bwrap-0700','script-dir-0700','world-writable-module','symlink-module']){
   test('restrictive umask / staged runtime access: '+mode,()=>assert.doesNotThrow(()=>run(runtimeModeFixture,mode)));
 }
