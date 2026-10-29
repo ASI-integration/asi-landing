@@ -274,6 +274,9 @@ export function assessWitnessedReleaseEnvelopeProposal({ signedEnvelope, trusted
  * No caller from checkPr/main; returning VERIFIED is not an authorization.
  */
 export function inspectAuthenticatedProviderSnapshot({pr, runs, reviews, expected, now}) {
+  return inspectProviderSnapshot({pr,runs,reviews,expected,now});
+}
+function inspectProviderSnapshot({pr, runs, reviews, expected, now}, preGate) {
   const deny = reason => ({status:'BLOCKED', reason, authorized:false});
   if (!Number.isSafeInteger(now) || !expected || expected.repository !== REPO ||
       !Number.isSafeInteger(expected.number) || expected.number <= 0 ||
@@ -310,8 +313,14 @@ export function inspectAuthenticatedProviderSnapshot({pr, runs, reviews, expecte
         !latest.pull_requests.some(p => p.number === expected.number &&
           p.head?.sha === expected.headSha && p.base?.sha === expected.baseSha))
       return deny('PROVIDER_WORKFLOW_IDENTITY');
-    if (latest.status !== 'completed' || latest.conclusion !== 'success')
+    if (preGate) {
+      const result = rule.workflow_id === 311380800
+        ? inspectGateSourceJobs(latest,preGate.sourceJobs,now)
+        : inspectGateEvaluator(latest,preGate.evaluatorRun,preGate.context);
+      if (result) return deny(result);
+    } else if (latest.status !== 'completed' || latest.conclusion !== 'success') {
       return deny('PROVIDER_WORKFLOW_NOT_GREEN');
+    }
     const finished = Date.parse(latest.updated_at || '');
     if (!Number.isFinite(finished) || finished > now ||
         finished < now - 60 * 60 * 1000)
@@ -330,7 +339,95 @@ export function inspectAuthenticatedProviderSnapshot({pr, runs, reviews, expecte
   if (review.state !== 'APPROVED' || review.commit_id !== expected.headSha ||
       Date.parse(review.submitted_at) < now - 60 * 60 * 1000)
     return deny('PROVIDER_INDEPENDENT_REVIEW');
-  return {status:'PROVIDER_EVIDENCE_VERIFIED', authorized:false};
+  return {status:preGate?'GATE_PREREQUISITES_VERIFIED':'PROVIDER_EVIDENCE_VERIFIED', authorized:false};
+}
+
+// Draft PRE_GATE is a different evidence class, not a relaxed final provider
+// verdict. Its split-job profile must come from separately adopted protected
+// configuration; the current unsplit workflow cannot satisfy this inventory.
+const GATE_SOURCE_JOBS = Object.freeze(['validate','channel-manager-recovery-postgres']);
+function captureGateData(value,depth=0,budget={fields:0}) {
+  must(depth<=16 && ++budget.fields<=10000,'GATE_CONTEXT');
+  if(value===null || ['string','number','boolean'].includes(typeof value))return value;
+  must(value && typeof value==='object' &&
+    (Array.isArray(value)?Object.getPrototypeOf(value)===Array.prototype:
+      [Object.prototype,null].includes(Object.getPrototypeOf(value))),'GATE_CONTEXT');
+  const result=Array.isArray(value)?[]:{};
+  for(const key of Reflect.ownKeys(value)){
+    if(Array.isArray(value)&&key==='length')continue;
+    const d=Object.getOwnPropertyDescriptor(value,key);
+    must(typeof key==='string'&&key!=='__proto__'&&Object.hasOwn(d,'value'),'GATE_CONTEXT');
+    result[key]=captureGateData(d.value,depth+1,budget);
+  }
+  return result;
+}
+function captureGateContext(value,expected){
+  const c=captureGateData(value);
+  const keys=['schema','repository','number','baseSha','headSha','evaluatorRunId',
+    'evaluatorRunAttempt','sourceWorkflowBlobSha','evaluatorWorkflowBlobSha'];
+  must(Object.keys(c).length===keys.length&&keys.every(k=>Object.hasOwn(c,k))&&
+    c.schema==='asi.protected-gate-split.proposal.v1'&&c.repository===REPO&&
+    c.repository===expected.repository&&c.number===expected.number&&
+    c.baseSha===expected.baseSha&&c.headSha===expected.headSha&&
+    Number.isSafeInteger(c.evaluatorRunId)&&c.evaluatorRunId>0&&
+    Number.isSafeInteger(c.evaluatorRunAttempt)&&c.evaluatorRunAttempt>0&&
+    SHA.test(c.sourceWorkflowBlobSha)&&SHA.test(c.evaluatorWorkflowBlobSha),'GATE_CONTEXT');
+  return Object.freeze(c);
+}
+function inspectGateEvaluator(latest,current,context){
+  const keys=['id','workflow_id','run_attempt','event','head_sha','path','status','conclusion'];
+  const same=current&&keys.every(k=>latest[k]===current[k])&&
+    current.repository?.full_name===REPO&&Array.isArray(current.pull_requests)&&
+    current.pull_requests.some(p=>p.number===context.number&&
+      p.base?.sha===context.baseSha&&p.head?.sha===context.headSha);
+  return !same || latest.id!==context.evaluatorRunId ||
+    latest.run_attempt!==context.evaluatorRunAttempt || latest.status!=='in_progress'||
+    latest.conclusion!==null||latest.path!=='.github/workflows/asi-release-governance.yml'
+    ?'GATE_EVALUATOR_IDENTITY':null;
+}
+function inspectGateSourceJobs(run,inventory,now){
+  if(run.path!=='.github/workflows/pr-validation.yml'||
+    !['in_progress','completed'].includes(run.status)||
+    !(run.conclusion===null||['success','failure'].includes(run.conclusion))||
+    (run.status==='in_progress'&&run.conclusion!==null)||
+    !inventory||inventory.runId!==run.id||inventory.runAttempt!==run.run_attempt||
+    inventory.totalCount!==3||!Array.isArray(inventory.jobs)||inventory.jobs.length!==3)
+    return 'GATE_SOURCE_INVENTORY';
+  const jobs=inventory.jobs,names=[...GATE_SOURCE_JOBS,'release_scope'];
+  if(new Set(jobs.map(j=>j.id)).size!==3||new Set(jobs.map(j=>j.name)).size!==3||
+    jobs.some(j=>!Number.isSafeInteger(j.id)||j.id<=0||!names.includes(j.name)||
+      j.run_id!==run.id||j.head_sha!==run.head_sha))return 'GATE_SOURCE_INVENTORY';
+  for(const job of jobs){
+    if(GATE_SOURCE_JOBS.includes(job.name)){
+      const finished=Date.parse(job.completed_at||'');
+      if(job.status!=='completed'||job.conclusion!=='success'||!Number.isFinite(finished)||
+        finished>now||finished<now-3600000)return 'GATE_SOURCE_NOT_GREEN';
+    }else if(!['queued','in_progress','completed'].includes(job.status)||
+      (job.status==='completed'?!['success','failure'].includes(job.conclusion):job.conclusion!==null)){
+      return 'GATE_ADMISSION_STATE';
+    }
+  }
+  const admission=jobs.find(j=>j.name==='release_scope');
+  if(run.status==='completed'&&(admission.status!=='completed'||
+    run.conclusion!==admission.conclusion))return 'GATE_ADMISSION_STATE';
+  return null;
+}
+export function inspectProtectedGatePrerequisites(snapshot,trustedGateContext){
+  try{
+    const captured=captureGateData(snapshot);
+    const context=captureGateContext(trustedGateContext,captured.expected);
+    must(Array.isArray(captured.workflowDefinitions)&&captured.workflowDefinitions.length===2,
+      'GATE_CONTEXT');
+    for(const [index,path,pin] of [[0,'.github/workflows/pr-validation.yml',context.sourceWorkflowBlobSha],
+      [1,'.github/workflows/asi-release-governance.yml',context.evaluatorWorkflowBlobSha]]){
+      const definition=captured.workflowDefinitions[index];
+      must(definition.path===path&&definition.baseSha===context.baseSha&&definition.sha===pin&&
+        definition.headSha===context.headSha&&definition.headBlobSha===pin,
+        'GATE_CONTEXT');
+    }
+    return inspectProviderSnapshot(captured,{context,sourceJobs:captured.sourceJobs,
+      evaluatorRun:captured.evaluatorRun});
+  }catch{return {status:'BLOCKED',reason:'GATE_CONTEXT',authorized:false};}
 }
 
 /** Disabled protected-base reader; never called by checkPr/main.
@@ -347,7 +444,24 @@ export function inspectAuthenticatedProviderSnapshot({pr, runs, reviews, expecte
  */
 export async function readAuthenticatedProviderSnapshot({token, expected,
   fetchImpl = globalThis.fetch, clock = Date.now, beforeRequest}) {
+  return readProviderSnapshot({token,expected,fetchImpl,clock,beforeRequest});
+}
+/** Disabled PRE_GATE reader for the separately reviewed split-job profile.
+ * The caller's context is a protected-configuration seam, not proof of adoption.
+ * Fetch and hash both definitions at the exact protected base AND PR HEAD, then collect the
+ * complete source-job attempt and current evaluator without requiring its own
+ * SUCCESS. At most 25 fixed GETs (13 without pagination); existing time/body caps
+ * and strict metering apply. Never returns final provider evidence or authority.
+ */
+export async function readAuthenticatedGatePrerequisites({token,expected,trustedGateContext,
+  fetchImpl=globalThis.fetch,clock=Date.now,beforeRequest}){
+  if(trustedGateContext===undefined)return {status:'BLOCKED',reason:'GATE_CONTEXT',authorized:false};
+  if(typeof beforeRequest!=='function')return {status:'BLOCKED',reason:'PROVIDER_READER_GUARD_REQUIRED',authorized:false};
+  return readProviderSnapshot({token,expected,fetchImpl,clock,beforeRequest},trustedGateContext);
+}
+async function readProviderSnapshot({token,expected,fetchImpl,clock,beforeRequest},gateInput){
   const deny = reason => ({status:'BLOCKED', reason, authorized:false});
+  let gate;
   // Capture only primitive own-data pins before any validation or await. Do not
   // invoke accessors or coerce boxed values while inspecting a caller context.
   try {
@@ -358,6 +472,7 @@ export async function readAuthenticatedProviderSnapshot({token, expected,
     must(Reflect.ownKeys(descriptors).length === fields.length && fields.every(key =>
       descriptors[key] && Object.hasOwn(descriptors[key], 'value')), 'PROVIDER_READER_CONTEXT');
     expected = Object.freeze(Object.fromEntries(fields.map(key => [key, descriptors[key].value])));
+    if(gateInput!==undefined)gate=captureGateContext(gateInput,expected);
   } catch { return deny('PROVIDER_READER_CONTEXT'); }
   if (typeof token !== 'string' || !token.trim() || /[\r\n]/.test(token) ||
       (beforeRequest !== undefined && typeof beforeRequest !== 'function') ||
@@ -379,7 +494,7 @@ export async function readAuthenticatedProviderSnapshot({token, expected,
       return 30000 - (now - startedAt);
     };
     const timeoutMs = Math.min(5000, remaining());
-    must(++requests <= 11, 'PROVIDER_READER_BUDGET');
+    must(++requests <= (gate?25:11), 'PROVIDER_READER_BUDGET');
     const url = root + suffix, route = suffix.slice(1), method = 'GET';
     const hash = value => createHash('sha256').update(value).digest('hex');
     const payloadSha256 = hash('');
@@ -430,6 +545,24 @@ export async function readAuthenticatedProviderSnapshot({token, expected,
   };
   try {
     const pr = await get('/pulls/' + expected.number);
+    const workflowDefinitions=[];
+    if(gate){
+      for(const [definitionPath,pin] of [['.github/workflows/pr-validation.yml',gate.sourceWorkflowBlobSha],
+        ['.github/workflows/asi-release-governance.yml',gate.evaluatorWorkflowBlobSha]]){
+        for(const ref of [expected.baseSha,expected.headSha]){
+          const definition=await get('/contents/'+definitionPath+'?ref='+ref);
+          must(definition.type==='file'&&definition.path===definitionPath&&definition.sha===pin&&
+            definition.encoding==='base64'&&typeof definition.content==='string'&&
+            /^[A-Za-z0-9+/=\r\n]*$/.test(definition.content),'PROVIDER_READER_GATE_DEFINITION');
+          const bytes=Buffer.from(definition.content,'base64');
+          const object=createHash('sha1').update('blob '+bytes.length+'\0').update(bytes).digest('hex');
+          must(object===pin,'PROVIDER_READER_GATE_DEFINITION');
+        }
+        workflowDefinitions.push({path:definitionPath,baseSha:expected.baseSha,sha:pin,
+          headSha:expected.headSha,headBlobSha:pin});
+      }
+    }
+    const collectRuns=async()=>{
     const runs = [];
     for (const rule of [
       {id:311380800, event:'pull_request', sha:expected.headSha},
@@ -455,6 +588,32 @@ export async function readAuthenticatedProviderSnapshot({token, expected,
       must(collected.length === total, 'PROVIDER_READER_INCOMPLETE');
       runs.push(...collected);
     }
+    return runs;
+    };
+    let runs=await collectRuns();
+    let sourceJobs,evaluatorRun;
+    if(gate){
+      const latest=runs.filter(r=>r.workflow_id===311380800&&r.event==='pull_request'&&
+        r.head_sha===expected.headSha&&r.repository?.full_name===REPO)
+        .sort((a,b)=>b.id-a.id||b.run_attempt-a.run_attempt)[0];
+      must(latest&&Number.isSafeInteger(latest.id)&&latest.id>0&&
+        Number.isSafeInteger(latest.run_attempt)&&latest.run_attempt>0,'PROVIDER_READER_GATE_RUN');
+      const jobs=[];let total;
+      for(let page=1;page<=3;page++){
+        const batch=await get('/actions/runs/'+latest.id+'/attempts/'+latest.run_attempt+
+          '/jobs?per_page=100&page='+page);
+        must(Number.isSafeInteger(batch.total_count)&&batch.total_count>=0&&batch.total_count<300&&
+          (total===undefined||total===batch.total_count)&&Array.isArray(batch.jobs)&&batch.jobs.length<=100,
+          'PROVIDER_READER_INCOMPLETE');
+        total=batch.total_count;jobs.push(...batch.jobs);
+        must(jobs.every(j=>Number.isSafeInteger(j?.id)&&j.id>0)&&
+          new Set(jobs.map(j=>j.id)).size===jobs.length,'PROVIDER_READER_INCOMPLETE');
+        if(batch.jobs.length<100)break;
+      }
+      must(jobs.length===total,'PROVIDER_READER_INCOMPLETE');
+      sourceJobs={runId:latest.id,runAttempt:latest.run_attempt,totalCount:total,jobs};
+      evaluatorRun=await get('/actions/runs/'+gate.evaluatorRunId);
+    }
     const reviews = [];
     for (let page = 1; page <= 3; page++) {
       const batch = await get('/pulls/' + expected.number + '/reviews?per_page=100&page=' + page);
@@ -465,16 +624,41 @@ export async function readAuthenticatedProviderSnapshot({token, expected,
       if (batch.length < 100) break;
       must(page < 3, 'PROVIDER_READER_INCOMPLETE');
     }
+    if(gate){
+      // A PR reread cannot detect a rerun/new CI attempt on the same HEAD.
+      // Recollect COMPLETE workflow inventories; never query only the old run.
+      // Drift invalidates this observation instead of retrying or upgrading it.
+      const freshRuns=await collectRuns();
+      const latestBinding=(list,id,event,sha)=>{
+        const r=list.filter(r=>r.workflow_id===id&&r.event===event&&
+          r.head_sha===sha&&r.repository?.full_name===REPO)
+          .sort((a,b)=>b.id-a.id||b.run_attempt-a.run_attempt)[0];
+        if(!r||!Array.isArray(r.pull_requests))return null;
+        return JSON.stringify([r.id,r.workflow_id,r.event,r.head_sha,r.path,r.run_attempt,
+          r.status,r.conclusion,r.repository.full_name,r.updated_at,
+          r.pull_requests.map(p=>[p.number,p.base?.sha,p.head?.sha]).sort((a,b)=>a[0]-b[0])]);
+      };
+      for(const [id,event,sha] of [[311380800,'pull_request',expected.headSha],
+        [390653294,'pull_request_target',expected.baseSha]]){
+        const before=latestBinding(runs,id,event,sha),after=latestBinding(freshRuns,id,event,sha);
+        must(before!==null&&before===after,'PROVIDER_READER_GATE_RACE');
+      }
+      runs=freshRuns;
+    }
     const currentPr = await get('/pulls/' + expected.number);
     const now = clock();
     must(Number.isSafeInteger(now) && now >= startedAt && now - startedAt < 30000,
       'PROVIDER_READER_BUDGET');
     for (const observed of [pr, currentPr]) {
-      const result = inspectAuthenticatedProviderSnapshot({pr:observed, runs, reviews, expected, now});
+      const snapshot={pr:observed,runs,reviews,expected,now,
+        ...(gate?{sourceJobs,evaluatorRun,workflowDefinitions}:{})};
+      const result = gate?inspectProtectedGatePrerequisites(snapshot,gate):
+        inspectAuthenticatedProviderSnapshot(snapshot);
       if (result.status === 'BLOCKED') return result;
     }
-    return {status:'PROVIDER_EVIDENCE_VERIFIED', authorized:false,
-      snapshot:{pr:currentPr, runs, reviews, expected, now},
+    return {status:gate?'GATE_PREREQUISITES_VERIFIED':'PROVIDER_EVIDENCE_VERIFIED', authorized:false,
+      snapshot:{pr:currentPr, runs, reviews, expected, now,
+        ...(gate?{sourceJobs,evaluatorRun,workflowDefinitions}:{})},
       receipt:{repository:REPO, number:expected.number, baseSha:expected.baseSha,
         headSha:expected.headSha, startedAt, observedAt:now, requests, writes:0}};
   } catch (error) {

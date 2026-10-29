@@ -306,3 +306,25 @@ Scope clarification (owner override, 29 October 2026): this P0 lane does not
 freeze, stop, edit or approve the independent Engine #549 and RU-auth #554
 workstreams. Earlier global-freeze wording is superseded; their protected gates
 and separate permissions remain mandatory.
+
+### Draft PRE_GATE evidence boundary (not adopted)
+
+A protected evaluator cannot require its own successful outcome. The current
+PR Validation workflow also contains a trailing v0 admission check, so whole-run
+SUCCESS cannot serve as independent pre-admission source evidence. The proposed
+PRE_GATE profile therefore has a distinct `GATE_PREREQUISITES_VERIFIED` result,
+never final provider evidence or authorization. Final publication continues to
+require both existing workflows to succeed.
+
+The profile must bind a current authenticated evaluator run and attempt to the
+exact repository/base/head/PR, independently reviewed protected workflow bytes,
+a complete source-job inventory, latest source run/attempt, and fresh independent
+review. Missing or changed definitions, job inventories, identities or evidence
+fail closed. Caller-selected failed-job exclusions are forbidden. Its read-only
+requests remain bounded and metered through the existing admission hook.
+
+The current workflow's source/admission separation is not activated by this
+proposal. The existing v0 command, protected-base checkPr/main and transport denial
+remain unchanged; adopting a split profile requires its exact protected definition
+and paired enforcement configuration to be independently reviewed. No fixture
+key, caller context, preliminary evidence or draft patch grants that adoption.
