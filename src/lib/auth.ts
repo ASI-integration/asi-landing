@@ -9,6 +9,13 @@ export type SessionData = {
   googleOauthState?: string;
   googleOauthPlan?: unknown;
   googleOauthRedirect?: string;
+  // Short-lived encrypted Yandex OAuth state for RU account login/link.
+  yandexOauthState?: string;
+  yandexOauthVerifier?: string;
+  yandexOauthStartedAt?: number;
+  yandexOauthRedirect?: string;
+  yandexOauthMode?: 'login' | 'link';
+  yandexOauthLinkUserId?: string;
 };
 
 export function getSessionCookieOptions(
