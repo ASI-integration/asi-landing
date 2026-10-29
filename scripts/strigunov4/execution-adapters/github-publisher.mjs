@@ -2,7 +2,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import {createHash} from 'node:crypto';
 import {atomicJson,digest,must,regular,sha,inspectStandingTransaction} from './state.mjs';
-import {prepareDelta,normalizeProposedContent} from './change-preparer.mjs';
+import {prepareDelta,verifyPreparedDelta,normalizeProposedContent} from './change-preparer.mjs';
 import {inspectCI,validateCiPolicy} from './ci-reader.mjs';
 import {inspectCodeRabbit} from './coderabbit-analyzer.mjs';
 import {bounded,branchAllowed,REPOSITORY,draftBody} from './publisher-transport.mjs';
@@ -15,7 +15,7 @@ const lifecycleEvidence=new WeakMap();
 /** Native phase evidence, not authority. Copies and stale transaction leases deny. */
 export function inspectPublisherLifecycleEvidence(value,transaction){
   const bound=lifecycleEvidence.get(value);
-  must(bound&&bound.transaction===transaction,'PUBLICATION_EVIDENCE_UNTRUSTED');
+  must(bound&&bound.active!==false&&bound.transaction===transaction,'PUBLICATION_EVIDENCE_UNTRUSTED');
   const lease=inspectStandingTransaction(transaction,{write:true,taskId:bound.taskId,taskSha:bound.taskSha});
   must(lease.phase==='started','PUBLICATION_EVIDENCE_PHASE');return value;
 }
@@ -34,9 +34,10 @@ export function acceptedReviewEvidence(r,stage,policySha){
     r?.independent===false&&r?.ownerVerifiedCi===true&&
     r.reviewPolicySha256===policySha;
 }
-export function createGitHubPublisher({store,remote,reader,authorize,runChecks,independentReview,verifyAdmission,ciPolicies,publishedReview,clock=Date.now,timeoutMs=10000,transaction,observeLifecycle}={}){
+export function createGitHubPublisher({store,remote,reader,authorize,runChecks,independentReview,verifyAdmission,ciPolicies,publishedReview,clock=Date.now,timeoutMs=10000,transaction,observeLifecycle,inspectGate}={}){
   must([authorize,runChecks,independentReview,verifyAdmission,clock].every(x=>typeof x==='function'),'HOST_PORTS_REQUIRED');
   must(observeLifecycle===undefined||typeof observeLifecycle==='function','PUBLICATION_OBSERVER_INVALID');
+  must(inspectGate===undefined||typeof inspectGate==='function'&&typeof observeLifecycle==='function','PUBLICATION_GATE_INVALID');
   must(ciPolicies?.some(p=>p.name==='validate')&&ciPolicies.some(p=>p.name==='release_governance'),'REQUIRED_CI_MISSING');
   const policies=freeze(structuredClone(ciPolicies));
   // Alternative host-reviewed evidence is opt-in and bound into the exact grant.
@@ -115,6 +116,23 @@ export function createGitHubPublisher({store,remote,reader,authorize,runChecks,i
         record.kind===task.kind&&['PUBLISHED_WAITING','VERIFIED'].includes(record.phase),'UNCERTAIN_OR_FOREIGN_PUBLICATION');
       must(record.reviewPolicySha256===undefined||record.reviewPolicySha256===reviewPolicy?.policySha256,
         'PUBLISHED_REVIEW_POLICY_CHANGED');
+      if(inspectGate){
+        // Journal PASS is not native evidence. Re-measure the existing delta,
+        // rerun trusted local checks/review and mint fresh lease-bound evidence.
+        await verifyPreparedDelta(store,task,record.deltaSha256);
+        const local=freeze({taskId:task.id,baseSha:task.sha,deltaSha256:record.deltaSha256});
+        const check=await call(signal=>runChecks(local,{signal}));
+        must(check?.status==='PASS'&&check.deltaSha256===record.deltaSha256&&check.baseSha===task.sha,'LOCAL_CHECK_UNVERIFIED');
+        const review=await call(signal=>independentReview(local,{signal}));
+        must(review?.status==='PASS'&&review.deltaSha256===record.deltaSha256&&review.baseSha===task.sha&&
+          acceptedReviewEvidence(review,task.stage,reviewPolicy?.policySha256)&&
+          typeof review.evidenceId==='string'&&/^[a-zA-Z0-9_-]{1,96}$/.test(review.evidenceId),'INDEPENDENT_REVIEW_UNVERIFIED');
+        await verifyPreparedDelta(store,task,record.deltaSha256);
+        await observe('LOCAL_DELTA_VERIFIED',{deltaSha256:record.deltaSha256,localChecks:'PASS',
+          independentDeltaReview:review.independent===true&&review.ownerVerifiedCi!==true?'PASS':'NOT_INDEPENDENT',
+          reviewEvidenceId:review.evidenceId});
+        await verifyPreparedDelta(store,task,record.deltaSha256);
+      }
     }else{
       await guard();
       for(const name of await fs.readdir(path.dirname(file))){
@@ -188,6 +206,27 @@ export function createGitHubPublisher({store,remote,reader,authorize,runChecks,i
       return {status:r.status,repo:r.repo,pr:r.pr,head:r.head,baseSha:r.baseSha,policySha256:r.policySha256,
         independent:r.independent===true,...(r.ownerVerifiedCi===true?{ownerVerifiedCi:true}:{}),
         evidenceSha256:r.evidenceSha256};
+    }
+    if(inspectGate){
+      const event=freeze({schema:'asi.publisher-lifecycle-evidence.v1',phase:'PRE_GATE_READY',authorized:false,
+        taskId:task.id,taskSha:task.sha,taskBinding:binding,repo:task.repo,branch:task.branch,
+        paths:[...request.paths],observedAt:clock(),deltaSha256:record.deltaSha256,
+        headSha:record.head,pr:record.pr});
+      const bound={transaction,taskId:task.id,taskSha:task.sha,active:true};
+      lifecycleEvidence.set(event,bound);
+      try{
+        inspectPublisherLifecycleEvidence(event,transaction);
+        const result=await evidence(async signal=>{
+          signal.addEventListener('abort',()=>{bound.active=false;},{once:true});
+          return inspectGate(event,{signal});
+        });
+        inspectPublisherLifecycleEvidence(event,transaction);assertGrant();
+        const pending=result?.status==='WAITING'&&result.reason==='GATE_SOURCE_PENDING'&&result.permittedEffect==='NONE';
+        must((result?.status==='PROPOSAL_ELIGIBLE'||pending)&&result.phase==='PRE_GATE'&&result.authorized===false,
+          'PUBLICATION_GATE_REJECTED');
+        await verifyRemote(); // Async gate reads cannot stale the pinned publication.
+        if(pending)return {status:'WAITING',phase:'PRE_GATE',head:record.head,pr:record.pr};
+      }finally{bound.active=false;}
     }
     const ci=await evidence(()=>inspectCI(reader,pin,policies));
     if(ci.status==='FAILED')return {status:'FAILED',phase:'REMOTE_CI'};

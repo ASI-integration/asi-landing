@@ -299,6 +299,7 @@ function inspectProviderSnapshot({pr, runs, reviews, expected, now}, preGate) {
     {workflow_id:311380800,event:'pull_request',head_sha:expected.headSha},
     {workflow_id:390653294,event:'pull_request_target',head_sha:expected.baseSha},
   ];
+  let sourcePending=false;
   for (const rule of required) {
     const matches = runs.filter(run =>
       run.workflow_id === rule.workflow_id && run.event === rule.event &&
@@ -319,7 +320,8 @@ function inspectProviderSnapshot({pr, runs, reviews, expected, now}, preGate) {
       const result = rule.workflow_id === 311380800
         ? inspectGateSourceJobs(latest,preGate.sourceJobs,now)
         : inspectGateEvaluator(latest,preGate.evaluatorRun,preGate.context);
-      if (result) return deny(result);
+      if (result==='GATE_SOURCE_PENDING')sourcePending=true;
+      else if (result) return deny(result);
     } else if (latest.status !== 'completed' || latest.conclusion !== 'success') {
       return deny('PROVIDER_WORKFLOW_NOT_GREEN');
     }
@@ -341,7 +343,7 @@ function inspectProviderSnapshot({pr, runs, reviews, expected, now}, preGate) {
   if (review.state !== 'APPROVED' || review.commit_id !== expected.headSha ||
       Date.parse(review.submitted_at) < now - 60 * 60 * 1000)
     return deny('PROVIDER_INDEPENDENT_REVIEW');
-  return {status:preGate?'GATE_PREREQUISITES_VERIFIED':'PROVIDER_EVIDENCE_VERIFIED', authorized:false};
+  return {status:preGate?(sourcePending?'GATE_PREREQUISITES_PENDING':'GATE_PREREQUISITES_VERIFIED'):'PROVIDER_EVIDENCE_VERIFIED', authorized:false};
 }
 
 // Draft PRE_GATE is a different evidence class, not a relaxed final provider
@@ -399,8 +401,11 @@ function inspectGateSourceJobs(run,inventory,now){
   if(new Set(jobs.map(j=>j.id)).size!==3||new Set(jobs.map(j=>j.name)).size!==3||
     jobs.some(j=>!Number.isSafeInteger(j.id)||j.id<=0||!names.includes(j.name)||
       j.run_id!==run.id||j.head_sha!==run.head_sha))return 'GATE_SOURCE_INVENTORY';
+  let pending=false;
   for(const job of jobs){
     if(GATE_SOURCE_JOBS.includes(job.name)){
+      if(['queued','in_progress'].includes(job.status)&&job.conclusion===null&&job.completed_at===null&&
+        run.status==='in_progress'&&run.conclusion===null){pending=true;continue;}
       const finished=Date.parse(job.completed_at||'');
       if(job.status!=='completed'||job.conclusion!=='success'||!Number.isFinite(finished)||
         finished>now||finished<now-3600000)return 'GATE_SOURCE_NOT_GREEN';
@@ -412,7 +417,7 @@ function inspectGateSourceJobs(run,inventory,now){
   const admission=jobs.find(j=>j.name==='validate');
   if(run.status==='completed'&&(admission.status!=='completed'||
     run.conclusion!==admission.conclusion))return 'GATE_ADMISSION_STATE';
-  return null;
+  return pending?'GATE_SOURCE_PENDING':null;
 }
 export function inspectProtectedGatePrerequisites(snapshot,trustedGateContext){
   try{
@@ -651,14 +656,17 @@ async function readProviderSnapshot({token,expected,fetchImpl,clock,beforeReques
     const now = clock();
     must(Number.isSafeInteger(now) && now >= startedAt && now - startedAt < 30000,
       'PROVIDER_READER_BUDGET');
+    let observedStatus;
     for (const observed of [pr, currentPr]) {
       const snapshot={pr:observed,runs,reviews,expected,now,
         ...(gate?{sourceJobs,evaluatorRun,workflowDefinitions}:{})};
       const result = gate?inspectProtectedGatePrerequisites(snapshot,gate):
         inspectAuthenticatedProviderSnapshot(snapshot);
       if (result.status === 'BLOCKED') return result;
+      if(observedStatus!==undefined&&observedStatus!==result.status)return deny('PROVIDER_READER_GATE_RACE');
+      observedStatus=result.status;
     }
-    return {status:gate?'GATE_PREREQUISITES_VERIFIED':'PROVIDER_EVIDENCE_VERIFIED', authorized:false,
+    return {status:observedStatus, authorized:false,
       snapshot:{pr:currentPr, runs, reviews, expected, now,
         ...(gate?{sourceJobs,evaluatorRun,workflowDefinitions}:{})},
       receipt:{repository:REPO, number:expected.number, baseSha:expected.baseSha,
@@ -773,7 +781,7 @@ export async function readAndAssessProtectedGateProposal(input, context) {
     const observation=await readAuthenticatedGatePrerequisites({token:ports.token,expected:data.expected,
       trustedGateContext:data.trustedGateContext,clock,beforeRequest:ports.beforeRequest,
       ...(ports.fetchImpl===undefined?{}:{fetchImpl:ports.fetchImpl})});
-    if(observation.status!=='GATE_PREREQUISITES_VERIFIED')return observation;
+    if(!['GATE_PREREQUISITES_VERIFIED','GATE_PREREQUISITES_PENDING'].includes(observation.status))return observation;
     // Do not accept a signed boolean or an arbitrary excluded run. The witness
     // binds the exact independently authenticated source/evaluator attempts and
     // review decision, plus the protected workflow definition pins.
@@ -795,9 +803,12 @@ export async function readAndAssessProtectedGateProposal(input, context) {
     const now=clock();
     must(observation.authorized===false&&observation.receipt.observedAt===s.now&&
       s.now<=now&&now-s.now<=60000&&
-      inspectProtectedGatePrerequisites({...s,now},data.trustedGateContext).status==='GATE_PREREQUISITES_VERIFIED',
+      inspectProtectedGatePrerequisites({...s,now},data.trustedGateContext).status===observation.status,
     'GATE_CALLER_OBSERVATION');
     const result=assess();
+    if(result.status==='PROPOSAL_ELIGIBLE'&&observation.status==='GATE_PREREQUISITES_PENDING')
+      return {status:'WAITING',reason:'GATE_SOURCE_PENDING',phase:'PRE_GATE',authorized:false,
+        permittedEffect:'NONE',providerReceipt:observation.receipt,revocationCheckpoint:finalTrust.revocationCheckpoint};
     return result.status==='PROPOSAL_ELIGIBLE'?{...result,phase:'PRE_GATE',
       permittedEffect:'ADMISSION_REVIEW_ONLY',providerReceipt:observation.receipt,
       revocationCheckpoint:finalTrust.revocationCheckpoint}:result;

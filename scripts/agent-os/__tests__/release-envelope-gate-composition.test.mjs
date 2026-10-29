@@ -147,3 +147,10 @@ test('unsupported creation and mode changes are not accepted as edit artifacts',
  assert.equal((await read(z.input,z.context)).reason,'ENVELOPE_ARTIFACT_SCOPE');
  assert.equal(x.input.request.taskId,'routine-task');
 });
+test('authenticated source pending retains metered receipt without granting eligibility',async t=>{
+ const f=fixture(t),x=f.candidate();Object.assign(x.snapshot.jobs[0],{status:'queued',conclusion:null,completed_at:null});
+ const r=await read(x.input,x.context);assert.equal(r.status,'WAITING',JSON.stringify(r));
+ assert.equal(r.reason,'GATE_SOURCE_PENDING');assert.equal(r.authorized,false);assert.equal(r.permittedEffect,'NONE');
+ assert.equal(r.providerReceipt.requests,13);assert.equal(f.metered.length,13);assert.equal(r.revocationCheckpoint.sequence,1);
+ x.witness.gateBinding.sourceRunAttempt=2;x.resign();assert.equal((await read(x.input,x.context)).status,'BLOCKED');
+});

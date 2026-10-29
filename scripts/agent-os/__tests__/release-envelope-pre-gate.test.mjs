@@ -159,3 +159,13 @@ test('reader rejects PR HEAD workflow tampering despite an intact protected base
   assert.equal((await read(f.input)).reason,'PROVIDER_READER_GATE_DEFINITION');
   const g=fixture();delete g.snapshot.workflowDefinitions[0].headBlobSha;blocked(g);
 });
+test('complete current pending source inventory waits only after all other trust checks',()=>{
+ const waiting=f=>Object.assign(f.snapshot.sourceJobs.jobs[0],{status:'queued',conclusion:null,completed_at:null});
+ const f=fixture();waiting(f);assert.equal(result(f).status,'GATE_PREREQUISITES_PENDING');
+ assert.equal(finalProvider(f.snapshot).status,'BLOCKED');
+ for(const mutate of [s=>s.reviews=[],s=>s.reviews[0].state='DISMISSED',
+  s=>s.sourceJobs.jobs[1].conclusion='failure',s=>s.evaluatorRun.run_attempt=2,
+  s=>s.runs[0].updated_at=new Date(now-3600001).toISOString(),s=>s.sourceJobs.jobs.pop()]){
+  const x=fixture();waiting(x);mutate(x.snapshot);blocked(x);
+ }
+});

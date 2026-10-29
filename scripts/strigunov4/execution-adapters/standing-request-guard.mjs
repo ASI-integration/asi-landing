@@ -279,15 +279,21 @@ export function createStandingRequestPreview({store,transaction,signedEnvelope,s
     },
     // PRE_GATE is a separate read-only evidence class. Never require the future
     // final provider token here or promote its result into phaseProvider.
-    async readGateProposal({token,fetchImpl,expected,trustedGateContext,signedEvidence}={}){
+    async readGateProposal({token,fetchImpl,expected,trustedGateContext,signedEvidence,publisherEvidence}={}){
       if(!publisherPhases||poisoned||bootstrapActive||phaseChanging||pending>0||!localPhase||exactPhase)
         return blocked('STANDING_PREVIEW_LOCKED');
       bootstrapActive=true;
       try{
         const lease=inspectStandingTransaction(transaction,{write:true});
         const native=inspectPublisherLifecycleEvidence(localPhase.publisherEvidence,transaction);
+        const gateNative=inspectPublisherLifecycleEvidence(publisherEvidence,transaction);
         const pins=dataCopy({expected,trustedGateContext,signedEvidence});
         const e=pins.expected;
+        must(gateNative.phase==='PRE_GATE_READY'&&gateNative.taskBinding===native.taskBinding&&
+          gateNative.deltaSha256===native.deltaSha256&&gateNative.taskId===native.taskId&&
+          gateNative.taskSha===native.taskSha&&gateNative.repo===native.repo&&
+          gateNative.branch===native.branch&&gateNative.headSha===e.headSha&&gateNative.pr===e.number,
+          'STANDING_GATE_NATIVE_BINDING');
         must(native.phase==='LOCAL_DELTA_VERIFIED'&&native.taskId===input.request.taskId&&
           native.taskSha===input.request.baseSha&&native.taskBinding===input.request.taskBinding&&
           e.repository===input.request.repo&&e.baseSha===input.request.baseSha&&
@@ -301,10 +307,12 @@ export function createStandingRequestPreview({store,transaction,signedEnvelope,s
           expectedTrust:{...input.expectedTrust,minRevocationSequence:prior.sequence,
             minRevocationManifestDigest:prior.manifestDigest,priorRevokedEnvelopeDigests:prior.revokedEnvelopeDigests},
           token,fetchImpl,clock,protectedReader,beforeRequest:async descriptor=>{
+            inspectPublisherLifecycleEvidence(gateNative,transaction);
             const reserved=await reserveInternal(descriptor,false);
+            inspectPublisherLifecycleEvidence(gateNative,transaction);
             return reserved.status==='RESERVED_PREVIEW'&&!descriptor.signal.aborted;
           }});
-        must(result.status==='PROPOSAL_ELIGIBLE'&&result.phase==='PRE_GATE'&&result.authorized===false,
+        must((result.status==='PROPOSAL_ELIGIBLE'||result.status==='WAITING'&&result.reason==='GATE_SOURCE_PENDING'&&result.permittedEffect==='NONE')&&result.phase==='PRE_GATE'&&result.authorized===false,
           'STANDING_GATE_REJECTED');
         // Every GET already persisted its revocation floor with its spent claim.
         // A later different trust generation needs a new explicit observation;
@@ -322,6 +330,7 @@ export function createStandingRequestPreview({store,transaction,signedEnvelope,s
         must(!poisoned&&current.phase===lease.phase&&current.taskId===lease.taskId&&
           current.taskSha===lease.taskSha,'STANDING_PHASE_CHANGED');
         inspectPublisherLifecycleEvidence(native,transaction);
+        inspectPublisherLifecycleEvidence(gateNative,transaction);
         return dataCopy(result);
       }catch{poisoned=true;return blocked('STANDING_GATE_REJECTED');}
       finally{bootstrapActive=false;}

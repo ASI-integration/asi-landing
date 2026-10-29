@@ -134,9 +134,11 @@ export async function createPublicationLoop({root,legacyStateDir,catalog,fetchSn
       }
       must(typeof captured.fetchSnapshot==='function'&&captured.remote&&captured.reader,'TRANSACTION_PORTS_INVALID');
       if(transactionPorts){
-        const observer=Object.getOwnPropertyDescriptor(supplied,'observeLifecycle');
-        if(observer){must(Object.hasOwn(observer,'value')&&typeof observer.value==='function','PUBLICATION_OBSERVER_INVALID');
-          captured.observeLifecycle=observer.value;}
+        for(const name of ['observeLifecycle','inspectGate']){
+          const observer=Object.getOwnPropertyDescriptor(supplied,name);
+          if(observer){must(Object.hasOwn(observer,'value')&&typeof observer.value==='function','PUBLICATION_OBSERVER_INVALID');
+            captured[name]=observer.value;}
+        }
       }
       if(transactionPorts)for(const [name,methods] of [
         ['remote',['get','createTree','createCommit','createBranch','createDraft']],
@@ -148,7 +150,7 @@ export async function createPublicationLoop({root,legacyStateDir,catalog,fetchSn
       }
       ports=Object.freeze(captured);
       publisher=createGitHubPublisher({store,remote:ports.remote,reader:ports.reader,authorize,runChecks,independentReview,verifyAdmission,ciPolicies,publishedReview,clock,timeoutMs,
-        transaction,observeLifecycle:ports.observeLifecycle});
+        transaction,observeLifecycle:ports.observeLifecycle,inspectGate:ports.inspectGate});
       priorWitness=await witness();
       const snapshot=await bounded(signal=>ports.fetchSnapshot({signal,transaction}),timeoutMs),queue=decideQueue(snapshot,{enginePilot,begetTasks:policy?.schema==='asi.stage-authority.beget.v1'});
       activeSnapshot=JSON.stringify(snapshot);
