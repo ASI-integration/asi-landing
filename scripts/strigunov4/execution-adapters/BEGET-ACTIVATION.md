@@ -142,3 +142,48 @@ mandatory precondition. Retiring the inert account/runtime later is a separate
 bounded cleanup; disabling is the safe rollback, not history deletion.
 
 Pre-claim requirements: authority directories must be root-owned, non-writable by group/other, and traversable by the new service UID (for example 0711); authority files remain restricted. The installer rejects inaccessible directories without changing their permissions or consuming a claim. Activation host/service and validity are checked before the claim. Package generation requires a clean tracked/untracked source tree and unchanged HEAD.
+
+## Five owner workstreams — source boundary, not installed runtime
+
+The owner named five **logical** lanes on 2026-10-29: Engine #549
+(`asi/beget-one-engine-20261028`), RU Auth #554
+(`feat/ru-unified-auth-20261029`), P0 integration #552
+(`asi/standing-delegation-551`), trusted evidence
+(`asi/p0-trusted-evidence-worker-20261029`) and atomic budget
+(`asi/p0-atomic-budget-worker-20261029`). All target
+`ASI-integration/asi-landing`. Five ChatGPT scheduled sessions are **not**
+five systemd processes, verified server workers or durable heartbeats.
+
+The **current signed Beget activation schema still admits exactly two G2
+witness tasks**, not any of these five lanes. The read-only
+`owner-lanes.mjs` source adapter names them without granting permissions.
+Its admission token is minted only by the existing signed host verifier;
+missing/unverifiable authority yields UNKNOWN. An authenticated catalog
+omission is BLOCKED; a catalog match alone remains UNKNOWN without independent
+service-instance and heartbeat evidence. It never marks RUNNING or IDLE.
+
+Future extension requires an **explicit protected new signed catalog and
+activation policy** for every exact repo/base/branch/work-order/path, with
+nonoverlap and separate authorization for any new product action. Do not
+treat the five names as a blanket grant or repurpose the two G2 witnesses.
+Reuse the existing Dispatcher under the **same durable Engine execution
+lock and single Publisher**, at most one mutation/pending PR at a time.
+When authorized, cooperative candidate rotation must bound starvation and
+persist per-lane eligibility, last-served and capped retry/backoff (without
+retrying UNKNOWN, FAILED_LOCKED or uncertain writes). Fairness never overrides
+dependency, review, budget, isolation or stage gates.
+
+The future per-lane journal belongs under the existing Engine state/lock,
+with `currentTask`, terminal `result` and `lastHeartbeat` durably committed
+and identity-bound to the **actually observed** Beget hostname, approved
+systemd unit, live MainPID and InvocationID. A protected local reader must
+cross-check kernel/systemd identity, fresh timestamps and file provenance;
+GitHub commits, Actions and ChatGPT schedule starts are not heartbeats.
+Only then may an authenticated GPS #537 read-only adapter display
+VERIFIED RUNNING / BLOCKED / IDLE / UNKNOWN, using UNKNOWN on stale,
+missing or unverified evidence. No parallel server collector, DB, queue,
+secret, DNS change or GPS deployment is authorized by this source note.
+
+**Installation priority stays first.** These source-only safeguards are not
+a reason to delay one protected two-witness Engine acceptance, and a resident
+service after grant expiry is BLOCKED, not authorized perpetual execution.
