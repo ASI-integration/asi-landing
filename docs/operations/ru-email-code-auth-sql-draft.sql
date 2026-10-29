@@ -74,14 +74,17 @@ BEGIN
   SELECT * INTO row_value FROM public.ru_auth_email_challenges WHERE email=p_email FOR UPDATE;
   IF NOT FOUND THEN RETURN FALSE; END IF;
   IF row_value.expires_at <= clock_timestamp() OR row_value.failed_attempts >= 5 THEN
-    DELETE FROM public.ru_auth_email_challenges WHERE email=p_email; RETURN FALSE;
+    RETURN FALSE;
   END IF;
   IF row_value.code_hash <> p_hash THEN
     UPDATE public.ru_auth_email_challenges SET failed_attempts=failed_attempts+1 WHERE email=p_email;
     RETURN FALSE;
   END IF;
-  -- Delete is transactionally committed before true can be returned.
-  DELETE FROM public.ru_auth_email_challenges WHERE email=p_email;
+  -- Invalidate code but PRESERVE the 1-hour email quota history.
+  -- Deleting on successful verification would allow unlimited new challenges.
+  UPDATE public.ru_auth_email_challenges
+    SET expires_at=clock_timestamp(), failed_attempts=5
+    WHERE email=p_email;
   RETURN TRUE;
 END;
 $$;
@@ -89,7 +92,10 @@ $$;
 CREATE OR REPLACE FUNCTION public.ru_auth_revoke_email_code(p_email TEXT,p_hash TEXT)
 RETURNS VOID LANGUAGE sql SECURITY INVOKER SET search_path = ''
 AS $$
-  DELETE FROM public.ru_auth_email_challenges WHERE email=p_email AND code_hash=p_hash;
+  -- Preserve issuance budget even when the email transport fails.
+  UPDATE public.ru_auth_email_challenges
+    SET expires_at=clock_timestamp(), failed_attempts=5
+    WHERE email=p_email AND code_hash=p_hash;
 $$;
 
 REVOKE ALL ON FUNCTION public.ru_auth_issue_email_code(TEXT,TEXT,TEXT) FROM PUBLIC,anon,authenticated;
