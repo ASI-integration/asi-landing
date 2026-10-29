@@ -5,9 +5,17 @@ import { supabase } from '@/lib/supabase';
 import { getSession } from '@/lib/auth';
 import { ensureAccountForUser } from '@/lib/accounts';
 import { readRequestJson } from '@/lib/safeRequestJson';
+import { isSameOriginAuthRequest } from '@/lib/auth/ru-email-code-policy';
 
 export async function POST(req: Request) {
   try {
+    // RU cookies retain SameSite=None for OAuth. Password login must reject
+    // cross-site login CSRF before credentials or session cookies are touched.
+    const isRu = await getIsRuHost();
+    if (isRu && process.env.NODE_ENV === 'production' &&
+        !isSameOriginAuthRequest(req.url, req.headers.get('origin'))) {
+      return NextResponse.json({ error: 'Invalid origin' }, { status: 403 });
+    }
     const parsed = await readRequestJson<{ email?: string; password?: string; plan?: unknown }>(req);
     if (!parsed.ok) {
       return NextResponse.json({ error: 'Invalid request body' }, { status: 400 });
@@ -34,17 +42,18 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Invalid email or password' }, { status: 401 });
     }
 
+    // Failure to establish account mapping must not leave a valid login
+    // session cookie after a 500. Login never starts or resets a pilot.
+    await ensureAccountForUser(
+      { userId: user.id, email: user.email, selectedPlan: plan, ...(isRu ? { ruCommercial: true } : { deferTrial: true }) }
+    );
+
     const session = await getSession();
     session.userId = user.id;
     session.email = user.email;
     session.lastStrongAuthAt = Date.now();
     session.lastStrongAuthUserId = user.id;
     await session.save();
-
-    // Login never starts or resets a pilot; readiness owns that transition.
-    await ensureAccountForUser(
-      { userId: user.id, email: user.email, selectedPlan: plan, ...(await getIsRuHost() ? { ruCommercial: true } : { deferTrial: true }) }
-    );
 
     return NextResponse.json({ ok: true, userId: user.id });
   } catch (err) {
