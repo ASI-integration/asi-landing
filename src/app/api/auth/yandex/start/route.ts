@@ -4,6 +4,7 @@ import { getIsRuHost } from '@/lib/getIsRuHost';
 import {
   ruYandexConfigured, generateYandexFlow, yandexCallbackUrl,
   buildYandexAuthorizationUrl, yandexSafeReturn, hasRecentYandexLinkProof,
+  trustedYandexLinkNavigation,
 } from '@/lib/auth/ru-yandex-policy';
 
 export const runtime='nodejs';
@@ -18,6 +19,10 @@ export async function GET(request:Request) {
     return NextResponse.json({ok:false,error:'YANDEX_LOGIN_UNAVAILABLE'},{status:503,headers});
   }
   const link=url.searchParams.get('mode')==='link';
+  // Reject unsolicited cross-origin navigation before touching OAuth session.
+  if (link && !trustedYandexLinkNavigation(
+    request.url, request.headers.get('sec-fetch-site'), request.headers.get('referer')))
+    return NextResponse.json({ok:false,error:'YANDEX_LINK_ORIGIN_REJECTED'},{status:403,headers});
   const session=await getSession();
   if(link && !session.userId)
     return NextResponse.redirect(new URL('/login?yandex_error=sign_in_first',url.origin));
