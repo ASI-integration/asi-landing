@@ -199,11 +199,12 @@ def staged_state(raw,manifest,files,public):
     require(type(receipt) is dict and receipt.get('schema')=='asi.beget-staged-isolation.v1' and
         receipt.get('manifestSha256')==digest(raw) and
         receipt.get('unitSha256')==manifest['unitSha256'] and
-        receipt.get('nodeSha256')==NODE_SHA and receipt.get('bwrapSha256')==BWRAP_SHA,
+        receipt.get('nodeSha256')==NODE_SHA and receipt.get('bwrapSha256')==BWRAP_SHA and
+        type(receipt.get('uid')) is int and receipt['uid']>0,
         'STAGE_RECEIPT_UNVERIFIED')
     identity=pwd.getpwnam(USER)
     require(identity.pw_uid>0 and identity.pw_gid>0 and identity.pw_shell=='/usr/sbin/nologin' and
-        identity.pw_dir==str(STATE),'STAGED_IDENTITY_CHANGED')
+        identity.pw_dir==str(STATE) and identity.pw_uid==receipt['uid'],'STAGED_IDENTITY_CHANGED')
     require(regular_bytes(AUTH/'owner-public.pem',root=True)==public,'STAGED_OWNER_KEY_CHANGED')
     for rel,data in files.items():
         if rel.startswith('scripts/'):
@@ -251,6 +252,11 @@ def stage(package,node,bwrap):
     require(main==[manifest['baseSha'],'refs/heads/main'],
             'PROTECTED_MAIN_NOT_EXACT_BASE')
     stage_scope(permit,manifest,raw,int(time.time()*1000))
+    require(all(not (AUTH/name).exists() for name in
+        ('activation.json','catalog.json','reviews.json','install-approval.json')),
+        'STAGE_LIVE_AUTHORITY_PRESENT')
+    require(not RUNTIME.exists() and not STATE.exists() and
+        not Path('/etc/systemd/system',UNIT).exists(),'STAGE_NOT_CLEAN')
     require(regular_bytes(AUTH/'owner-public.pem',root=True)==public and
         signed('stage-approval.json',public)==permit,'STAGE_GRANT_CHANGED')
     claim=AUTH/('stage-claim-'+digest(raw)+'.json')
@@ -330,8 +336,10 @@ def apply(package,node,bwrap,staged=False):
     if staged:
         staged_state(raw,m,files,public)
         # Stage and activation are never the same owner signature.
-        require(regular_bytes(AUTH/'stage-approval.json',root=True)!=b'',
-                'STAGE_GRANT_MISSING')
+        # A root-owned stage receipt is insufficient without the owner's
+        # original, still-verifiable and exact-bound signed stage grant.
+        stage_grant=signed('stage-approval.json',public)
+        stage_scope(stage_grant,m,raw,int(time.time()*1000))
     else:
         inactive()
         require(not RUNTIME.exists() and not STATE.exists() and
@@ -365,6 +373,7 @@ def apply(package,node,bwrap,staged=False):
         # Native isolation evidence and the staged unit may change while the
         # external GitHub main check is running; recheck before consuming claim.
         staged_state(raw,m,files,public)
+        stage_scope(signed('stage-approval.json',public),m,raw,now)
     write_new(claim,json.dumps({'manifestSha256':digest(raw),'at':now,'oneUse':True}).encode())
     installed_unit=staged
     try:
