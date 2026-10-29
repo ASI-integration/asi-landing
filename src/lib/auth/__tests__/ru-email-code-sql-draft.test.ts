@@ -38,6 +38,20 @@ describe('RU auth SQL draft structural integrity (no database access)', () => {
     expect(sql).toMatch(/REVOKE ALL ON public\.ru_auth_yandex_links FROM PUBLIC,\s*anon,\s*authenticated;/);
   });
 
+  it('denies SQL NULL digests before an issue or OTP consume operation', () => {
+    // PostgreSQL IF treats NULL as not TRUE. Without explicit IS NULL,
+    // "code_hash <> NULL" also evaluates to NULL and could reach success.
+    // Source integrity only: a real isolated PG execution is still mandatory.
+    const issue = sql.split('CREATE OR REPLACE FUNCTION public.ru_auth_issue_email_code')[1]
+      ?.split('CREATE OR REPLACE FUNCTION public.ru_auth_activate_email_code')[0] ?? '';
+    const consume = sql.split('CREATE OR REPLACE FUNCTION public.ru_auth_consume_email_code')[1]
+      ?.split('CREATE OR REPLACE FUNCTION public.ru_auth_revoke_email_code')[0] ?? '';
+    expect(issue).toMatch(/p_email IS NULL[\s\S]*p_hash IS NULL OR p_ip_hash IS NULL/);
+    expect(consume).toContain('IF p_email IS NULL OR p_hash IS NULL OR p_hash !~');
+    expect(issue).toContain('p_hash !~');
+    expect(issue).toContain('p_ip_hash !~');
+  });
+
   it('requires delivery activation of the exact pending HMAC, not just reservation', () => {
     const activation = sql.split('CREATE OR REPLACE FUNCTION public.ru_auth_activate_email_code')[1]
       ?.split('CREATE OR REPLACE FUNCTION public.ru_auth_consume_email_code')[0] ?? '';

@@ -34,6 +34,7 @@ DECLARE
   email_row public.ru_auth_email_challenges%ROWTYPE;
 BEGIN
   IF p_email IS NULL OR length(p_email) > 254 OR
+     p_hash IS NULL OR p_ip_hash IS NULL OR
      p_hash !~ '^[a-f0-9]{64}$' OR p_ip_hash !~ '^[a-f0-9]{64}$'
     THEN RETURN FALSE; END IF;
   -- Lock same-IP before same-email in the same order in every issuance.
@@ -94,7 +95,7 @@ RETURNS BOOLEAN LANGUAGE plpgsql SECURITY INVOKER SET search_path = ''
 AS $$
 DECLARE row_value public.ru_auth_email_challenges%ROWTYPE;
 BEGIN
-  IF p_email IS NULL OR p_hash !~ '^[a-f0-9]{64}$' THEN RETURN FALSE; END IF;
+  IF p_email IS NULL OR p_hash IS NULL OR p_hash !~ '^[a-f0-9]{64}$' THEN RETURN FALSE; END IF;
   SELECT * INTO row_value FROM public.ru_auth_email_challenges WHERE email=p_email FOR UPDATE;
   IF NOT FOUND THEN RETURN FALSE; END IF;
   IF row_value.delivered_at IS NULL OR row_value.expires_at <= clock_timestamp() OR row_value.failed_attempts >= 5 THEN
