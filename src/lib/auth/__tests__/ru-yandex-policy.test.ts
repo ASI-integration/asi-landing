@@ -85,7 +85,17 @@ describe('RU Yandex link-only OAuth',()=>{
     const valid={token_type:'bearer',access_token:'test-only-access-token'};
     expect(verifiedYandexBearerAccessToken(valid)).toBe(valid.access_token);
     expect(verifiedYandexBearerAccessToken({...valid,token_type:'Bearer'})).toBe(valid.access_token);
+    // The provider may omit scope for full grants or return a space-separated
+    // reduced grant; only exact login:info is sufficient for ASI sign-in.
+    expect(verifiedYandexBearerAccessToken({...valid,scope:'login:info'})).toBe(valid.access_token);
+    expect(verifiedYandexBearerAccessToken({...valid,scope:'login:email login:info'})).toBe(valid.access_token);
     for(const invalid of [
+      {...valid,scope:'login:email login:avatar'},
+      {...valid,scope:'login:information'},
+      {...valid,scope:'other:login:info'},
+      {...valid,scope:''},
+      {...valid,scope:[]},
+      {...valid,scope:null},
       null, [], {}, 'test-only-access-token',
       {...valid,token_type:'mac'}, {...valid,token_type:null},
       {...valid,access_token:'short'}, {...valid,access_token:123},
