@@ -169,6 +169,15 @@ def apply(package,node,bwrap):
     now=int(time.time()*1000)
     require(permit['notBefore']<=now<permit['expiresAt'],'INSTALL_ADMISSION')
     activation_preclaim(activation, now)
+    # Slow provider verification may span a root-owned grant or evidence
+    # replacement. Recheck every protected input before the one-use claim.
+    require(regular_bytes(AUTH/'owner-public.pem',root=True)==public,'OWNER_KEY_CHANGED_BEFORE_CLAIM')
+    require(signed('install-approval.json',public)==permit and
+            signed('activation.json',public)==activation,'PROTECTED_GRANT_CHANGED')
+    for name,field in [('native-isolation.json','nativeIsolationSha256'),
+                       ('source-review.json','sourceReviewSha256'),('activation.json','activationSha256')]:
+        require(digest(regular_bytes(AUTH/name,root=True))==permit[field],'PROTECTED_EVIDENCE_CHANGED')
+    require(regular_bytes(AUTH/'catalog.json',root=True)==files['catalog.json'],'CATALOG_BYTES')
     fence=regular_bytes(AUTH/'fence.json',root=True)
     require(digest(fence)==permit['fenceSha256']==activation.get('fenceSha256'),'PROTECTED_EVIDENCE_CHANGED')
     def reject_constant(_):raise ValueError()
