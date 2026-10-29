@@ -49,8 +49,17 @@ export function createLeaseBoundStandingBudget({transaction,pinnedBaseSha,clock=
       'BUDGET_STATE_PATH_DENIED');
     return path.join(initial.root,'state',name);
   }});
+  // The signed cap must not be revived by a backwards wall-clock jump
+  // between the durable fsync and the final transaction-lease check.
+  let clockHighWater = -1;
+  const observedClock = () => {
+    const now = clock();
+    if (Number.isSafeInteger(now) && now >= 0)
+      clockHighWater = Math.max(clockHighWater, now);
+    return now;
+  };
   const budget = createStandingPublisherBudget({store:boundStore,
-    ledger:initial.ledger,clock});
+    ledger:initial.ledger,clock:observedClock});
   return Object.freeze({reserve({envelope,effect,compiledReadDescriptor}={}) {
     // Snapshot the full signed scope and outbound effect before any await.
     let captured, signedScope;
@@ -93,8 +102,11 @@ export function createLeaseBoundStandingBudget({transaction,pinnedBaseSha,clock=
         return deny('BUDGET_LEASE_CHANGED_AFTER_RESERVATION');
       // The durable claim is spent even if the signature expires during fsync.
       // Never return a success-like reservation after expiry/clock failure.
-      const finishedAt=clock();
-      if (!Number.isSafeInteger(finishedAt) || finishedAt < signedScope.notBefore)
+      let finishedAt;
+      try {finishedAt=observedClock();}
+      catch {return deny('BUDGET_CLOCK_AFTER_RESERVATION');}
+      if (!Number.isSafeInteger(finishedAt) || finishedAt < signedScope.notBefore ||
+          finishedAt < clockHighWater)
         return deny('BUDGET_CLOCK_AFTER_RESERVATION');
       if (finishedAt >= signedScope.expiresAt)
         return deny('BUDGET_ENVELOPE_EXPIRED_AFTER_RESERVATION');
