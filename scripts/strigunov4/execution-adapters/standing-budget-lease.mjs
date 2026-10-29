@@ -13,12 +13,15 @@ import {createStandingPublisherBudget} from './standing-budget.mjs';
 const SHA40 = /^[0-9a-f]{40}$/;
 const EFFECT_KEYS = ['effectId','taskId','taskSha','headSha','kind','method','route',
   'payloadSha256','requestSha256','envelopeDigest','repo','environment','target','action'];
+const ENVELOPE_KEYS = ['schema','repo','environment','target','action','envelopeDigest',
+  'securityDigest','policyDigest','notBefore','expiresAt','paidApiUsd',
+  'maxOperations','maxRequests','maxWrites'];
 const deny = reason => Object.freeze({status:'DENIED',reason,reserved:false,authorized:false});
-function capture(value) {
+function capture(value, keys=EFFECT_KEYS) {
   if (!value || typeof value !== 'object' || Array.isArray(value) ||
       ![null,Object.prototype].includes(Object.getPrototypeOf(value))) return null;
   const out = {};
-  for (const key of EFFECT_KEYS) {
+  for (const key of keys) {
     const d = Object.getOwnPropertyDescriptor(value,key);
     if (!d || !Object.hasOwn(d,'value')) return null;
     out[key] = d.value;
@@ -48,12 +51,15 @@ export function createLeaseBoundStandingBudget({transaction,pinnedBaseSha,clock=
   }});
   const budget = createStandingPublisherBudget({store:boundStore,
     ledger:initial.ledger,clock});
-  return Object.freeze({reserve({envelope,effect}={}) {
-    // Snapshot before the first await, without executing accessors.
-    let captured;
-    try {captured=capture(effect);} catch {captured=null;}
-    if (!captured)return Promise.resolve(deny('BUDGET_INPUT_INVALID'));
-    const write=captured.kind !== 'github-read';
+  return Object.freeze({reserve({envelope,effect,compiledReadDescriptor}={}) {
+    // Snapshot the full signed scope and outbound effect before any await.
+    let captured, signedScope;
+    try {captured=capture(effect);signedScope=capture(envelope,ENVELOPE_KEYS);}
+    catch {captured=null;signedScope=null;}
+    if (!captured || !signedScope)return Promise.resolve(deny('BUDGET_INPUT_INVALID'));
+    // Private compiled GraphQL POST reads must consume API quota, not write quota.
+    // Low-level budget independently verifies the genuine frozen descriptor.
+    const write=captured.kind !== 'github-read' && captured.kind !== 'github-compiled-read';
     let before;
     try {before=inspectStandingTransaction(transaction,{write});}
     catch {return Promise.resolve(deny('BUDGET_LEASE_INACTIVE'));}
@@ -77,7 +83,7 @@ export function createLeaseBoundStandingBudget({transaction,pinnedBaseSha,clock=
       try {current=inspectStandingTransaction(transaction,{write});}
       catch {return deny('BUDGET_LEASE_INACTIVE');}
       if (!sameLease(current,before))return deny('BUDGET_LEASE_CHANGED');
-      const result=await budget.reserve({envelope,effect:captured});
+      const result=await budget.reserve({envelope:signedScope,effect:captured,compiledReadDescriptor});
       if (result.status !== 'RESERVED')return Object.freeze({...result,authorized:false});
       // If execute closed or advanced phase while awaiting fsync, the spent
       // claim remains irreversible, but no remote effect may follow.
@@ -85,6 +91,13 @@ export function createLeaseBoundStandingBudget({transaction,pinnedBaseSha,clock=
       catch {return deny('BUDGET_LEASE_EXPIRED_AFTER_RESERVATION');}
       if (!sameLease(current,before))
         return deny('BUDGET_LEASE_CHANGED_AFTER_RESERVATION');
+      // The durable claim is spent even if the signature expires during fsync.
+      // Never return a success-like reservation after expiry/clock failure.
+      const finishedAt=clock();
+      if (!Number.isSafeInteger(finishedAt) || finishedAt < signedScope.notBefore)
+        return deny('BUDGET_CLOCK_AFTER_RESERVATION');
+      if (finishedAt >= signedScope.expiresAt)
+        return deny('BUDGET_ENVELOPE_EXPIRED_AFTER_RESERVATION');
       return Object.freeze({...result,authorized:false});
     })();
   }});
