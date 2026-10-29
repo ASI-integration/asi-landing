@@ -41,6 +41,16 @@ export function yandexFlowStillValid(createdAt: number | undefined, now: number=
     now >= createdAt! && now - createdAt! <= YANDEX_OAUTH_TTL_MS;
 }
 
+/** A recent strong login is valid only for the SAME ASI identity. */
+export function hasRecentYandexLinkProof(
+  userId: unknown, proofUserId: unknown, authenticatedAt: unknown, now: number = Date.now(),
+): boolean {
+  return typeof userId === 'string' && userId.length > 0 &&
+    proofUserId === userId && typeof authenticatedAt === 'number' &&
+    Number.isSafeInteger(authenticatedAt) && Number.isSafeInteger(now) &&
+    now >= authenticatedAt && now - authenticatedAt <= YANDEX_OAUTH_TTL_MS;
+}
+
 export function yandexCallbackUrl(env: Readonly<Record<string,string|undefined>>): string {
   if (!ruYandexConfigured(env)) throw new Error('YANDEX_NOT_CONFIGURED');
   return env.ASI_RU_YANDEX_ORIGIN! + YANDEX_CALLBACK_PATH;
@@ -62,10 +72,18 @@ export function buildYandexAuthorizationUrl(opts:{
 
 export function yandexSubject(value:unknown): string|null {
   // Yandex ID /info "id" is numeric string. Never authenticate by email.
-  if(typeof value==='string' && /^[0-9]{1,40}$/.test(value)) return value;
+  if(typeof value==='string' && /^[1-9][0-9]{0,39}$/.test(value)) return value;
   if(typeof value==='number' && Number.isSafeInteger(value) && value>0) return String(value);
   return null;
 }
+/** Trust only the provider subject for our own OAuth app. */
+export function verifiedYandexProfileSubject(profile: unknown, clientId: string): string | null {
+  if (!profile || typeof profile !== 'object' || Array.isArray(profile) || !clientId) return null;
+  const attributes = profile as Record<string, unknown>;
+  if (attributes.client_id !== clientId) return null;
+  return yandexSubject(attributes.id);
+}
+
 export function yandexSafeReturn(value:string|undefined):string {
   return safeAuthRedirectPath(value);
 }
