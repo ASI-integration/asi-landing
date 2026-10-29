@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import {createBegetChecks} from './host-checks.mjs';
 import {acceptedReviewEvidence} from './github-publisher.mjs';
+import {draftBody} from './publisher-transport.mjs';
 import {digest} from './state.mjs';
 
 const POLICY='a'.repeat(64),HEAD='b'.repeat(40),BASE='c'.repeat(40);
@@ -28,6 +29,16 @@ test('only exact-bound owner G2 review evidence is accepted',()=>{
     [{independent:false},'S4-G2',POLICY]
   ])assert.equal(acceptedReviewEvidence(v,stage,policy),false);
   assert.equal(acceptedReviewEvidence({independent:true},'S4-G1',undefined),true);
+});
+test('G2 owner-CI Draft PR text does not claim an independent human review',()=>{
+  const evidence={stage:'S4-G2',baseSha:BASE,head:HEAD,deltaSha256:POLICY,
+    reviewPolicySha256:POLICY,reviewMode:'OWNER_VERIFIED_CI'};
+  const body=draftBody('g2-owner-witness',evidence);
+  assert.match(body,/owner-verified CI delta review passed/);
+  assert.match(body,/owner-verified CI review/);
+  assert.equal(body.includes('independent delta review passed'),false);
+  assert.throws(()=>draftBody('g2-owner-witness',{...evidence,stage:'S4-G1'}),/PR_REVIEW_MODE/);
+  assert.throws(()=>draftBody('g2-owner-witness',{...evidence,reviewPolicySha256:undefined}),/PR_REVIEW_MODE/);
 });
 for(const mode of ['asi.owner-ci-delta-review.v1','asi.offline-delta-review.v1']){
   test('signed exact two-delta policy preserves review identity: '+mode,async t=>{
