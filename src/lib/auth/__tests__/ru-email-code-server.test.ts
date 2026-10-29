@@ -48,7 +48,7 @@ describe('RU email code: durable pending -> delivery -> activation',()=>{
       expect(payload.to).toEqual(['user@example.ru']);
       expect(payload.text).toContain('Код действует 10 минут');
       expect(payload.text).not.toContain(issuedHash);
-      return new Response(null,{status:202});
+      return new Response(JSON.stringify({id:'e7e2f64a-3cbe-4f91-92cc-79edfae94a41'}),{status:200});
     });
     expect(await issueRuEmailCode(' USER@example.RU ',req())).toEqual({sent:true,throttled:false});
     expect(events).toEqual(['ru_auth_issue_email_code','mail','ru_auth_activate_email_code']);
@@ -77,10 +77,23 @@ describe('RU email code: durable pending -> delivery -> activation',()=>{
       if(name==='ru_auth_revoke_email_code')return {data:null,error:null};
       throw Error('unexpected RPC');
     });
-    mocks.fetch.mockResolvedValue(new Response(null,{status:202}));
+    mocks.fetch.mockResolvedValue(new Response(JSON.stringify({id:'e7e2f64a-3cbe-4f91-92cc-79edfae94a41'}),{status:200}));
     expect(await issueRuEmailCode('user@example.ru',req())).toEqual({sent:false,throttled:false});
     expect(mocks.rpc.mock.calls.map(([name])=>name)).toEqual([
       'ru_auth_issue_email_code','ru_auth_activate_email_code','ru_auth_revoke_email_code',
+    ]);
+  });
+
+  it('rejects a successful HTTP status without a Resend acceptance ID',async()=>{
+    mocks.rpc.mockImplementation(async(name:string)=>{
+      if(name==='ru_auth_issue_email_code')return {data:true,error:null};
+      if(name==='ru_auth_revoke_email_code')return {data:null,error:null};
+      throw Error('should never activate an unconfirmed code');
+    });
+    mocks.fetch.mockResolvedValue(new Response(JSON.stringify({id:null}),{status:200}));
+    expect(await issueRuEmailCode('user@example.ru',req())).toEqual({sent:false,throttled:false});
+    expect(mocks.rpc.mock.calls.map(([name])=>name)).toEqual([
+      'ru_auth_issue_email_code','ru_auth_revoke_email_code',
     ]);
   });
 
