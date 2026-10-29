@@ -19,7 +19,9 @@ export async function POST(req: Request) {
   try {
     // Always respond identically for known and unknown users, success and cooldown.
     // IP and address quotas are enforced in one SQL transaction.
-    await issueRuEmailCode(parsed.data.email,req);
+    const delivery=await issueRuEmailCode(parsed.data.email,req);
+    if (!delivery.sent && !delivery.throttled)
+      return NextResponse.json({ok:false,error:'AUTH_TEMPORARILY_UNAVAILABLE'},{status:503,headers:noStore});
     return NextResponse.json(AUTH_GENERIC_RESPONSE,{status:202,headers:noStore});
   } catch {
     // No email, OTP, HMAC or database internals enter logs or responses.
