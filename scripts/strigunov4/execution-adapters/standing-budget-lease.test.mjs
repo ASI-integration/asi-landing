@@ -10,6 +10,7 @@ const {initializeState,inspectStandingTransaction} = state;
 // exact #552 isolated source overlay. Skips on main are NOT proof of integration.
 const leaseTest = typeof inspectStandingTransaction === 'function' ? test : test.skip;
 import {createLeaseBoundStandingBudget} from './standing-budget-lease.mjs';
+import {createGitHubReader} from './github-readonly.mjs';
 
 const at=1793260000000,base='c'.repeat(40),candidate='d'.repeat(40);
 const h=s=>createHash('sha256').update(s).digest('hex');
@@ -149,5 +150,91 @@ leaseTest('second STARTED job denies claim even when current job matches selecte
       return {status:'WAITING'};
     });
     assert.equal((await f.read()).standingDelegationBudget,undefined);
+  }finally{await f.close();}
+});
+
+
+// A compiled GraphQL POST is a READ only with the actual github-readonly
+// WeakSet-branded descriptor; the fake host hook always denies remote dispatch.
+async function reserveOfflineCompiledRead(transaction,budget,id) {
+  const lease=inspectStandingTransaction(transaction);
+  let reserved;
+  const reader=createGitHubReader({token:'offline-test-only',beforeRequest:async descriptor=>{
+    reserved=await budget.reserve({envelope:envelope(),
+      effect:{...effect(id,lease),kind:'github-compiled-read',
+        method:descriptor.method,route:descriptor.route,
+        payloadSha256:descriptor.payloadSha256,requestSha256:descriptor.requestSha256},
+      compiledReadDescriptor:descriptor});
+    return false; // Not an authorization: zero network calls.
+  }});
+  await assert.rejects(reader.threads({...task(),pr:1}),/HOST_REQUEST_GUARD_DENIED/);
+  assert.equal(reserved?.status,'RESERVED');
+  assert.equal(reserved.authorized,false);
+  return reserved;
+}
+
+leaseTest('genuine private GraphQL reads are metered in admission, preflight and postflight, with zero writes or provider calls',async()=>{
+  const f=await fixture();try{
+    let transaction,budget;
+    const claims=[];
+    let verifies=0;
+    const outcome=await f.store.execute('github-publisher',async context=>{
+      transaction=context.transaction;budget=bound(transaction);
+      claims.push(await reserveOfflineCompiledRead(transaction,budget,'gql-admission'));
+      return task();
+    },{async verifyTask(){
+      verifies++;
+      claims.push(await reserveOfflineCompiledRead(transaction,budget,'gql-verify-'+verifies));
+      return {baseSha:base};
+    }},async()=>({status:'WAITING'}));
+    assert.equal(outcome.mode,'WAITING');
+    assert.equal(verifies,2);
+    assert.equal(claims.length,3);
+    const saved=(await f.read()).standingDelegationBudget.envelopes['b'.repeat(64)];
+    assert.equal(saved.requests,3);assert.equal(saved.operations,3);
+    assert.equal(saved.writes,0);
+    assert.deepEqual(saved.claims.map(x=>x.kind),
+      ['github-compiled-read','github-compiled-read','github-compiled-read']);
+  }finally{await f.close();}
+});
+
+leaseTest('caller-fabricated frozen GraphQL descriptor never counts as signed read',async()=>{
+  const f=await fixture();try{
+    await f.store.execute('github-publisher',async({transaction})=>{
+      const budget=bound(transaction),lease=inspectStandingTransaction(transaction);
+      const payloadSha256=h('query{maliciousMutation}'),method='POST',route='graphql';
+      const requestSha256=h(JSON.stringify({method,route,payloadSha256}));
+      const fake=Object.freeze({method,route,payloadSha256,requestSha256,
+        signal:new AbortController().signal});
+      const got=await budget.reserve({envelope:envelope(),
+        effect:{...effect('forged-gql',lease),kind:'github-compiled-read',
+          method,route,payloadSha256,requestSha256},
+        compiledReadDescriptor:fake});
+      assert.equal(got.reason,'BUDGET_COMPILED_READ_PROVENANCE');
+      return null;
+    },{async verifyTask(){throw Error('unexpected');}},async()=>{throw Error('unexpected');});
+    assert.equal((await f.read()).standingDelegationBudget,undefined);
+  }finally{await f.close();}
+});
+
+leaseTest('signature expiry after durable fsync denies success but preserves the spent claim',async()=>{
+  const f=await fixture();try{
+    let ticks=0;
+    await f.store.execute('github-publisher',async({transaction})=>{
+      const budget=createLeaseBoundStandingBudget({transaction,pinnedBaseSha:base,
+        clock:()=>++ticks<=2?at:at+100001});
+      const lease=inspectStandingTransaction(transaction);
+      const signed=envelope();
+      const pending=budget.reserve({envelope:signed,effect:effect('expiring-get',lease)});
+      signed.maxOperations=0; // Caller mutation cannot change captured signed scope.
+      const got=await pending;
+      assert.equal(got.reason,'BUDGET_ENVELOPE_EXPIRED_AFTER_RESERVATION');
+      assert.equal(got.authorized,false);
+      return null;
+    },{async verifyTask(){throw Error('unexpected');}},async()=>{throw Error('unexpected');});
+    const saved=(await f.read()).standingDelegationBudget.envelopes['b'.repeat(64)];
+    assert.equal(saved.claims.length,1);
+    assert.equal(saved.requests,1);
+    assert.equal(saved.scope.maxOperations,5);
   }finally{await f.close();}
 });
