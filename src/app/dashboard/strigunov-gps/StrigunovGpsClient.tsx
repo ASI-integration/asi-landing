@@ -26,6 +26,14 @@ const fallbackTitles = [
   'Согласование тестовых данных', 'Тестовая бронь целиком',
   'Операторский экран и защита отправок', 'Независимая приёмка демонстрации',
 ];
+// Display-only translations for the exact G2 acceptance criteria.
+// Canonical GitHub wording and verified evidence remain unchanged.
+const g2AcceptanceRu: Record<string, string> = {
+  'Both effective allowlists and seven no-send flags witnessed':
+    'Независимо подтверждены оба действующих списка доступа операторов и все семь запретов отправки сообщений.',
+  'Approved human staging operator login demonstrably works':
+    'Подтверждён реальный вход уполномоченного оператора в тестовый кабинет через Google.',
+};
 function A({href, children}: {href: string; children: ReactNode}) {
   return <a href={href} target="_blank" rel="noopener noreferrer"
     className="font-semibold text-blue-700 underline underline-offset-2 hover:text-blue-900">{children}</a>;
@@ -144,13 +152,13 @@ export default function StrigunovGpsClient() {
           </p>
         </div>
         <div className="rounded-2xl border bg-white p-4">
-          <p className="text-xs font-semibold text-slate-500">Серверный сигнал</p>
+          <p className="text-xs font-semibold text-slate-500">Телеметрия · не физическая приёмка</p>
           <p className="mt-1 text-sm font-bold">{data?.telemetry?.available
             ? data.telemetry.status : 'Недоступен или устарел'}</p>
           <p className="mt-1 text-xs text-slate-500">
             {data?.telemetry?.available ? data.telemetry.stage : 'Нет свежей телеметрии'}
           </p>
-          <p className="mt-2 text-xs text-slate-500">Источник: Mission Control, обновлён {data?.telemetry?.updatedAt ? new Date(data.telemetry.updatedAt).toLocaleString('ru-RU') : 'неизвестно'}. Отсутствие сигнала не доказывает остановку задач. Телеметрия не подтверждает Engine или приёмку G2.</p>
+          <p className="mt-2 text-xs text-slate-500">Целевой сервер G2: Beget. Источник показанного сигнала — Mission Control, обновлён {data?.telemetry?.updatedAt ? new Date(data.telemetry.updatedAt).toLocaleString('ru-RU') : 'неизвестно'}. Этот сигнал не является проверкой Beget, запуском Engine или физической приёмкой G2. Отсутствие сигнала не доказывает остановку задач.</p>
         </div>
       </aside>
 
@@ -230,16 +238,16 @@ export default function StrigunovGpsClient() {
         </div>
         <div className="border-t p-4">
           <p className="text-xs font-bold text-blue-700">Выбранный пункт: {chosen.id}</p>
-          <h2 className="mt-1 text-lg font-black">{chosen.title}</h2>
+          <h2 className="mt-1 text-lg font-black">{chosen.id === 'S4-G2' ? 'Права оператора и вход в кабинет' : chosen.title}</h2>
           <p className="mt-1 text-xs text-slate-600">
             Статус: {chosen.status} · доказательств в карте: {chosen.proofCount} ·
             физическая приёмка: {physicallyAccepted(chosen, trusted) ? 'подтверждена' : 'не подтверждена'}
           </p>
-          <details className="mt-3 rounded-xl bg-slate-50 p-3" open={selected === 'S4-G1'}>
+          <details key={selected} className="mt-3 rounded-xl bg-slate-50 p-3" open={selected === 'S4-G1' || selected === 'S4-G2'}>
             <summary className="cursor-pointer text-sm font-bold">Условия завершения ({chosen.acceptance.length})</summary>
             <div className="mt-2 space-y-2">
               {chosen.acceptance.map((item, i) =>
-                <p className="text-xs leading-5 text-slate-700" key={i}>□ {item}</p>)}
+                <p className="text-xs leading-5 text-slate-700" key={i}>□ {chosen.id === 'S4-G2' ? (g2AcceptanceRu[item] ?? item) : item}</p>)}
               {!chosen.acceptance.length && <p className="text-xs">Ожидаем сведения из канонической карты.</p>}
             </div>
           </details>
@@ -276,15 +284,16 @@ export default function StrigunovGpsClient() {
               </span>
             </p>)}
           </div>)}
-          <div className="rounded-xl border border-rose-200 bg-rose-50 p-3">
-            <p className="text-sm font-bold text-rose-800">Физическая приёмка</p>
-            <p className="mt-1 text-xs text-rose-700">{data.serverEvidence.reason}</p>
+          <div className={'rounded-xl border p-3 ' + (data.serverEvidence.available ? 'border-emerald-200 bg-emerald-50' : 'border-amber-200 bg-amber-50')}>
+            <p className="text-sm font-bold text-slate-900">Независимая физическая проверка G1</p>
+            <p className="mt-1 text-xs text-slate-700">{data.serverEvidence.reason}</p>
+            <p className="mt-2 text-xs font-semibold text-amber-800">G2: физическая приёмка не подтверждена. Результаты CI не заменяют её.</p>
           </div>
         </>}
       </aside>
     </div>
     <p className="mt-3 text-xs text-slate-500">
-      Автоматическое чтение серверной карты каждые 30 секунд. Локальные тесты G2 показаны как датированный снимок и пока не синхронизируются с D:. Только чтение; без PR, merge, запуска Engine и изменений серверов.
+      Автоматическое чтение канонической карты каждые 30 секунд. Локальные тесты G2 с диска H: не считываются в реальном времени и не доказывают серверную приёмку. Только чтение; без PR, merge, запуска Engine и изменений серверов.
       Факты обновляются раздельно: канонический статус, независимо подтверждённые свидетельства и серверная телеметрия. CI не заменяет физическую приёмку.
     </p>
   </main>;
