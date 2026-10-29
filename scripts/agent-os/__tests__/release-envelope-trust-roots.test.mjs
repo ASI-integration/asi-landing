@@ -190,3 +190,84 @@ test('historical revocation list mutated across awaits fails closed',async()=>{
   const r=await read({expected:x.expected,now:NOW,clock:()=>NOW,protectedReader:reader});
   assert.deepEqual(r,{status:'BLOCKED',reason:'TRUST_CONTEXT_CHANGED',authorized:false});
 });
+
+
+test('boxed, array, object and coercible expected digest values deny before any protected read',async()=>{
+  const good='c'.repeat(64);
+  for (const field of ['issuerKeySha256','verifierKeySha256','envelopeDigest','minRevocationManifestDigest']) {
+    for (const value of [new String(good), [good], {toString:()=>good}, {valueOf:()=>good}]) {
+      const x=fixture();x.expected[field]=value;
+      assert.deepEqual(await x.readSnapshot(),
+        {status:'BLOCKED',reason:'TRUST_CONTEXT',authorized:false});
+      assert.equal(x.reads(),0);
+    }
+  }
+});
+
+test('accessor digest, inherited digest and accessor object properties never execute getters',async()=>{
+  for (const field of ['envelopeDigest','issuerKeySha256','minRevocationManifestDigest']) {
+    let executed=false;const x=fixture();
+    Object.defineProperty(x.expected,field,{enumerable:true,configurable:true,
+      get(){executed=true;return 'c'.repeat(64);}});
+    assert.equal((await x.readSnapshot()).reason,'TRUST_CONTEXT');
+    assert.equal(executed,false);assert.equal(x.reads(),0);
+  }
+  const x=fixture(),digest=x.expected.envelopeDigest;
+  delete x.expected.envelopeDigest;
+  Object.setPrototypeOf(x.expected,{envelopeDigest:digest});
+  assert.equal((await x.readSnapshot()).reason,'TRUST_CONTEXT');
+  assert.equal(x.reads(),0);
+});
+
+test('boxed, object, array and getter historical revocation entries deny before any reads',async()=>{
+  const good='a'.repeat(64);
+  for (const value of [new String(good),[good],{toString:()=>good},0,null]) {
+    const x=fixture();x.expected.priorRevokedEnvelopeDigests=[value];
+    assert.equal((await x.readSnapshot()).reason,'TRUST_CONTEXT');
+    assert.equal(x.reads(),0);
+  }
+  let executed=false;const y=fixture(),history=[good];
+  Object.defineProperty(history,'0',{configurable:true,enumerable:true,
+    get(){executed=true;return good;}});
+  y.expected.priorRevokedEnvelopeDigests=history;
+  assert.equal((await y.readSnapshot()).reason,'TRUST_CONTEXT');
+  assert.equal(executed,false);assert.equal(y.reads(),0);
+  const z=fixture();z.expected.priorRevokedEnvelopeDigests=new Array(1);
+  assert.equal((await z.readSnapshot()).reason,'TRUST_CONTEXT');
+});
+
+test('signed JSON revocation entries must be primitive hex strings, not arrays, numbers or objects',async()=>{
+  for(const value of [0,null,['a'.repeat(64)],{digest:'a'.repeat(64)}]){
+    const x=fixture();x.manifest.revokedEnvelopeDigests=[value];x.resign();
+    assert.deepEqual(await x.readSnapshot(),
+      {status:'BLOCKED',reason:'TRUST_REVOCATION_FORMAT',authorized:false});
+  }
+});
+
+test('mid-read accessor swap in expected or historical array fails as changed context',async()=>{
+  for (const mutate of [
+    x=>Object.defineProperty(x.expected,'envelopeDigest',{configurable:true,get(){throw Error('getter must never run');}}),
+    x=>Object.defineProperty(x.expected.priorRevokedEnvelopeDigests,'0',
+      {configurable:true,get(){throw Error('history getter must never run');}})
+  ]) {
+    const x=fixture(),old='a'.repeat(64);
+    x.expected.priorRevokedEnvelopeDigests=[old];
+    x.manifest.revokedEnvelopeDigests=[old];x.resign();
+    let n=0;
+    const reader=async p=>{if(++n===1)mutate(x);return x.protectedReader(p);};
+    const r=await read({expected:x.expected,now:NOW,clock:()=>NOW,protectedReader:reader});
+    assert.deepEqual(r,{status:'BLOCKED',reason:'TRUST_CONTEXT_CHANGED',authorized:false});
+  }
+});
+
+test('positive cumulative history with two primitive revoked digests stays non-authorizing',async()=>{
+  const x=fixture(),history=['a'.repeat(64),'b'.repeat(64)];
+  x.expected.priorRevokedEnvelopeDigests=history;
+  x.manifest.revokedEnvelopeDigests=[...history];x.resign();
+  const r=await x.readSnapshot();
+  assert.equal(r.status,'PROTECTED_TRUST_VERIFIED');
+  assert.equal(r.authorized,false);
+  assert.deepEqual(r.revocationCheckpoint.revokedEnvelopeDigests,history);
+  assert.equal(Object.isFrozen(r.revocationCheckpoint.revokedEnvelopeDigests),true);
+  assert.equal(x.reads(),6);
+});
