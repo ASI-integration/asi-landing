@@ -2,10 +2,12 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import {execFileSync} from 'node:child_process';
+import {existingState} from './state.mjs';
 import {fixture,makeLoop,target} from './publisher-fixture.mjs';
 import {createPublisherTransport} from './publisher-transport.mjs';
 import {createGitHubReader} from './github-readonly.mjs';
-import {inspectPublisherLifecycleEvidence} from './github-publisher.mjs';
+import {createGitHubPublisher,inspectPublisherLifecycleEvidence} from './github-publisher.mjs';
 
 async function setup(t,options={},observer=()=>true,loopOptions={}){
  const native=globalThis.fetch;t.after(()=>{globalThis.fetch=native;});
@@ -57,4 +59,39 @@ test('observer cannot attest mutated local bytes or stale final CI',async t=>{
   const receipts=JSON.parse(await fs.readFile(path.join(x.f.root,'state','receipts.json'),'utf8'));
   assert.equal(receipts.completed.some(r=>r.status==='PASS'),false);
  }
+});
+
+
+test('unadopted standing ports cannot attach to the owner closed loop',async t=>{
+ const native=globalThis.fetch;t.after(()=>{globalThis.fetch=native;});
+ const f=await fixture(t);let factories=0;
+ await assert.rejects(()=>makeLoop(f,{closedLoop:{},transactionPorts:async()=>{factories++;return {};}}),
+  /STANDING_CLOSED_LOOP_NOT_ADOPTED/);
+ assert.equal(factories,0);assert.equal(f.requests.length,0);assert.equal(f.writes.length,0);
+});
+
+test('owner-verified CI never becomes an independent native lifecycle review',async t=>{
+ const native=globalThis.fetch;t.after(()=>{globalThis.fetch=native;});
+ const f=await fixture(t,{beget:true});
+ await makeLoop(f); // Configure inert loopback transport only; do not poll Engine/catalog.
+ const store=await existingState(f.root),task=f.catalog[0],policySha='c'.repeat(64);let event;
+ const result=await store.execute('github-publisher',task,{verifyTask:async()=>({sha:task.sha})},async({transaction})=>{
+  const publisher=createGitHubPublisher({store,transaction,
+   remote:createPublisherTransport({token:'INERT_FIXTURE_ONLY'}),reader:createGitHubReader({token:'INERT_FIXTURE_ONLY'}),
+   authorize:async request=>({approved:true,request,automaticCiApproved:true,automaticReviewApproved:true,operationId:'fixture-owner-review',expiresAt:2000000}),
+   runChecks:async e=>{
+    const file=path.join(f.root,'scratchpads',task.id,task.changes[0].path);
+    execFileSync('/usr/bin/python3',['-I','-S','-c','import ast,pathlib,sys; ast.parse(pathlib.Path(sys.argv[1]).read_text())',file],{timeout:1000});
+    return {...e,status:'PASS'};
+   },
+   independentReview:async e=>({...e,status:'PASS',independent:false,ownerVerifiedCi:true,reviewPolicySha256:policySha,evidenceId:'fixture-owner-ci'}),
+   publishedReview:{policySha256:policySha,verify:async()=>{throw Error('NO_PUBLISHED_REVIEW_EXPECTED');}},
+   verifyAdmission:async()=>{},ciPolicies:[{name:'validate',workflowId:10},{name:'release_governance',workflowId:20}],clock:()=>1000000,
+   observeLifecycle:e=>{event=e;return false;},
+  });
+  return publisher.run(task,{execute:true});
+ });
+ assert.equal(result.mode,'FAILED_LOCKED');assert.equal(event?.phase,'LOCAL_DELTA_VERIFIED');
+ assert.equal(event.independentDeltaReview,'NOT_INDEPENDENT');assert.equal(event.authorized,false);
+ assert.equal(f.writes.length,0);
 });

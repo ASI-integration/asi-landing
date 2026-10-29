@@ -7,7 +7,7 @@ import {execFileSync} from 'node:child_process';
 import {generateKeyPairSync,sign,createHash} from 'node:crypto';
 import {initializeState,digest,LIVE_ROOT} from './state.mjs';
 import {createGitHubReader} from './github-readonly.mjs';
-import {createStandingRequestPreview} from './standing-request-guard.mjs';
+import {createStandingRequestPreview,isIsolatedStandingPreviewRoot} from './standing-request-guard.mjs';
 import {ENVELOPE_SECURITY_REQUIRED,inspectProtectedRepositorySecurity} from '../../agent-os/check-demo-release.mjs';
 const now=1793260000000;
 const hash=x=>createHash('sha256').update(x).digest('hex');
@@ -201,7 +201,7 @@ test('concurrent real reader REST and compiled GraphQL requests queue in one bud
    }
    return new Response(JSON.stringify(body),{status:200,headers:{'content-type':'application/json'}});
   };
-  const reader=createGitHubReader({token:'INERT_FIXTURE',beforeRequest:async d=>(await p.reserve(d)).status==='RESERVED_PREVIEW'});
+  const reader=createGitHubReader({token:'INERT_FIXTURE',requestAdmission:async d=>(await p.reserve(d)).status==='RESERVED_PREVIEW'});
   await Promise.all([reader.get('branches/main'),reader.get('issues/511'),reader.threads({pr:123,sha:x.input.request.headSha})]);
   await reader.threads({pr:123,sha:x.input.request.headSha});
   assert.equal(calls,4);const entry=Object.values(ledger.standingDelegationBudget.envelopes)[0];
@@ -295,4 +295,13 @@ test('post-fsync clock rollback denies the real preview lease and preserves its 
   assert.equal(Object.values(disk.standingDelegationBudget.envelopes)[0].requests,1);
   assert.equal(Object.keys(disk.standingRequestBindings).length,1);
  }finally{x.close();}
+});
+
+test('isolated preview root predicate excludes all live host roots without filesystem access',()=>{
+ for(const root of ['/var/lib/asi-engine','/opt/asi-engine',LIVE_ROOT,LIVE_ROOT+'/engine']){
+  for(const candidate of [root,root+'/child',root+'/a/../child'])assert.equal(isIsolatedStandingPreviewRoot(candidate),false,candidate);
+ }
+ for(const candidate of [null,{},'relative/path'])assert.equal(isIsolatedStandingPreviewRoot(candidate),false);
+ for(const candidate of ['/tmp/standing-fixture','/var/lib/asi-engine-fixture','/opt/asi-engine-fixture'])assert.equal(isIsolatedStandingPreviewRoot(candidate),true);
+ assert.throws(()=>createStandingRequestPreview({store:{root:'/var/lib/asi-engine'},isolatedPreview:true}),/STANDING_TRANSACTION_INVALID/);
 });

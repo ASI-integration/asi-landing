@@ -221,6 +221,10 @@
         "scripts/strigunov4/protected_c4_operator_repair.py",
         ".github/workflows/strigunov4-c4-operator-repair.yml",
         "src/app/dashboard/booking-ops/page.tsx"
+      ],
+      "plannedFiles": [
+        "scripts/strigunov4/test_beget_g2_witness_identity_v1.py",
+        "scripts/strigunov4/test_beget_g2_witness_races_v1.py"
       ]
     },
     {

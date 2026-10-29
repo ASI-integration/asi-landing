@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { randomUUID, createHash } from 'node:crypto';
-import {assertLiveAdmission} from './host-authority.mjs';
+import {assertLiveAdmission,BEGET} from './host-authority.mjs';
 
 export const LIVE_ROOT = '/home/project_ayfaar/asi-strigunov-agent';
 export const must = (ok, code) => { if (!ok) throw new Error(code); };
@@ -61,7 +61,7 @@ async function json(file) {
 }
 
 export function validateTask(t) {
-  must(t && identifier(t.id) && sha(t.sha) && t.stage === 'S4-G1', 'TASK_IDENTITY');
+  must(t && identifier(t.id) && sha(t.sha) && ['S4-G1','S4-G2'].includes(t.stage), 'TASK_IDENTITY');
   must(t.repo === 'ASI-integration/asi-landing', 'REPOSITORY_NOT_ALLOWED');
   must(t.pr === null || Number.isSafeInteger(t.pr) && t.pr > 0, 'EXPLICIT_PR_OR_NULL_REQUIRED');
   must(typeof t.branch === 'string' && /^[a-zA-Z0-9][a-zA-Z0-9/_-]{0,150}$/.test(t.branch), 'BRANCH_REQUIRED');
@@ -71,7 +71,7 @@ export function validateTask(t) {
 export async function openState({ root, isolated = false, liveAdmission }) {
   must(isolated === true && path.isAbsolute(root), 'ISOLATED_ROOT_REQUIRED');
   root = path.resolve(root);
-  if(root === LIVE_ROOT || root.startsWith(LIVE_ROOT + '/')){
+  if(root === LIVE_ROOT || root.startsWith(LIVE_ROOT + '/') || root===BEGET.root || root.startsWith(BEGET.root+'/')){
     must(liveAdmission,'LIVE_ROOT_FORBIDDEN');assertLiveAdmission(liveAdmission,root);
   }
   await directory(root);
@@ -92,7 +92,7 @@ export async function initializeState(root,{liveAdmission}={}) {
 }
 export async function existingState(root,{liveAdmission}={}) {
   root = path.resolve(root);
-  if(root === LIVE_ROOT || root.startsWith(LIVE_ROOT + '/')){
+  if(root === LIVE_ROOT || root.startsWith(LIVE_ROOT + '/') || root===BEGET.root || root.startsWith(BEGET.root+'/')){
     must(liveAdmission,'LIVE_ROOT_FORBIDDEN');assertLiveAdmission(liveAdmission,root);
   }
   for (const dir of [root, ...['state', 'reports', 'scratchpads'].map(p => path.join(root, p))]) await directory(dir);
@@ -101,7 +101,7 @@ export async function existingState(root,{liveAdmission}={}) {
 function stateAt(root,liveAdmission) {
   const file = name => path.join(root, 'state', name);
   return { root, file, async execute(kind, task, github, action) {
-    if(root === LIVE_ROOT || root.startsWith(LIVE_ROOT + '/'))assertLiveAdmission(liveAdmission,root);
+    if(root === LIVE_ROOT || root.startsWith(LIVE_ROOT + '/') || root===BEGET.root || root.startsWith(BEGET.root+'/'))assertLiveAdmission(liveAdmission,root);
     const lock = file('execution.lock');
     let lockCreated = false;
     try {

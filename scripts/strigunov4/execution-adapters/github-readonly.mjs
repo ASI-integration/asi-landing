@@ -32,9 +32,10 @@ export function verifyPinnedReviewPr(p,task) {
 /** Fixed GitHub origin; GET REST + one fixed GraphQL QUERY, never a mutation.
  * Token is supplied by the host, never serialized. No retries or redirects.
  */
-export function createGitHubReader({ token, timeoutMs = 10000, beforeRequest }) {
+export function createGitHubReader({ token, timeoutMs = 10000, requestAdmission, beforeRequest=async()=>{} }) {
   must(typeof token==='function'||typeof token === 'string' && token.trim().length > 0, 'TOKEN_REQUIRED');
-  must(beforeRequest===undefined||typeof beforeRequest==='function','HOST_REQUEST_GUARD_REQUIRED');
+  must(requestAdmission===undefined||typeof requestAdmission==='function','HOST_REQUEST_GUARD_REQUIRED');
+  must(beforeRequest===undefined||typeof beforeRequest==='function','HOST_CREDENTIAL_GUARD_REQUIRED');
   let poisoned=false;
   async function request(url, body) {
     must(!poisoned,'GITHUB_READER_LOCKED');
@@ -47,13 +48,17 @@ export function createGitHubReader({ token, timeoutMs = 10000, beforeRequest }) 
       const requestSha256=digest(JSON.stringify({method,route,payloadSha256}));
       return await bounded(async signal=>{
         const active=()=>must(!poisoned&&!signal.aborted,'GITHUB_READER_LOCKED');
+        // Existing host authority/fence checks precede credential acquisition;
+        // request budget admission below is a distinct exact-wire boolean gate.
+        if(beforeRequest)await beforeRequest(Object.freeze({mutation:false}));
+        active();
         const credential=typeof token==='function'?await token():token;
         active();
         must(typeof credential==='string'&&credential.trim().length>0,'TOKEN_REQUIRED');
-        if(beforeRequest) {
+        if(requestAdmission) {
           const descriptor=Object.freeze({method,route,payloadSha256,requestSha256,signal});
           if(url==='https://api.github.com/graphql'&&body?.query===THREAD_QUERY)compiledReadDescriptors.add(descriptor);
-          const allowed=await beforeRequest(descriptor);
+          const allowed=await requestAdmission(descriptor);
           must(allowed===true,'HOST_REQUEST_GUARD_DENIED');
         }
         // Timed-out token or guard continuations must never reach the network.

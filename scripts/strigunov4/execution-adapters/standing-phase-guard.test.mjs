@@ -43,8 +43,8 @@ async function setup(t,{wrongLocal=false,forgedLocal=false,lateRevocation=false,
   const preview=createStandingRequestPreview({store,transaction,signedEnvelope,signedEvidence:signed(witness('ADMISSION_READ'),verifier),request,comparison,providerExpected:{independentReviewerId:1234},expectedTrust,clock:()=>now.value,protectedReader,isolatedPreview:true,publisherPhases:true});previews.push(preview);
   // TEST ONLY: this wrapper executes loopback fixture effects under makeLoop's
   // explicit synthetic v0 grant. Production preview.beforeRequest always refuses.
-  const beforeRequest=async d=>{const r=await preview.reserve(d);records.push({phase:inspectStandingTransaction(transaction).phase,method:d.method,route:d.route,result:r});return r.status==='RESERVED_PREVIEW';};
-  const reader=createGitHubReader({token:'INERT_FIXTURE_ONLY',timeoutMs:10000,beforeRequest}),remote=createPublisherTransport({token:'INERT_FIXTURE_ONLY',timeoutMs:10000,beforeRequest});
+  const requestAdmission=async d=>{const r=await preview.reserve(d);records.push({phase:inspectStandingTransaction(transaction).phase,method:d.method,route:d.route,result:r});return r.status==='RESERVED_PREVIEW';};
+  const reader=createGitHubReader({token:'INERT_FIXTURE_ONLY',timeoutMs:10000,requestAdmission}),remote=createPublisherTransport({token:'INERT_FIXTURE_ONLY',timeoutMs:10000,requestAdmission});
   let snapshots=0;
   return {remote,reader,fetchSnapshot:async()=>{if(snapshots++===0)await reader.get('branches/main');return structuredClone(f.snapshot);},observeLifecycle:async event=>{
    if(skipLocal&&event.phase==='LOCAL_DELTA_VERIFIED')return true;

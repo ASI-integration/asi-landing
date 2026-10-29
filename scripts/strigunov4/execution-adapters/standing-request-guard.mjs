@@ -4,7 +4,7 @@
  */
 import path from 'node:path';
 import {inspectStandingTransaction,atomicJson,digest,must,LIVE_ROOT} from './state.mjs';
-import {ENGINE_ROOT,verifySignedPayload} from './host-authority.mjs';
+import {ENGINE_ROOT,BEGET,verifySignedPayload} from './host-authority.mjs';
 import {isCompiledGitHubRead} from './github-readonly.mjs';
 import {inspectPublisherLifecycleEvidence} from './github-publisher.mjs';
 import {createStandingPublisherBudget} from './standing-budget.mjs';
@@ -25,14 +25,19 @@ function dataCopy(value,depth=0){
   }return out;
 }
 const below=(root,parent)=>root===parent||root.startsWith(parent+path.sep);
+// Pure path check only: the genuine execute lease is checked before this predicate.
+export function isIsolatedStandingPreviewRoot(root){
+  if(typeof root!=='string'||!path.isAbsolute(root))return false;
+  const resolved=path.resolve(root);
+  return ![LIVE_ROOT,ENGINE_ROOT,BEGET.root,BEGET.runtime].some(parent=>below(resolved,path.resolve(parent)));
+}
 /** Isolated preview only. Never attach reserve() to transport: its result is NOT true. */
 export function createStandingRequestPreview({store,transaction,signedEnvelope,signedEvidence,
   request,comparison,providerObservation,providerExpected,expectedTrust,clock=Date.now,protectedReader,
   isolatedPreview=false,publisherPhases=false}={}) {
-  must(typeof publisherPhases==='boolean','STANDING_PHASE_MODE');
   const initial=inspectStandingTransaction(transaction);
-  must(isolatedPreview===true&&path.isAbsolute(initial.root)&&
-    !below(path.resolve(initial.root),LIVE_ROOT)&&!below(path.resolve(initial.root),ENGINE_ROOT),
+  must(typeof publisherPhases==='boolean','STANDING_PHASE_MODE');
+  must(isolatedPreview===true&&isIsolatedStandingPreviewRoot(initial.root),
   'STANDING_ISOLATED_PREVIEW_REQUIRED');
   const declaredRoot=store&&Object.getOwnPropertyDescriptor(store,'root');
   must(declaredRoot&&Object.hasOwn(declaredRoot,'value')&&declaredRoot.value===initial.root&&

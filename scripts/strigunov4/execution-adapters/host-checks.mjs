@@ -84,3 +84,47 @@ export function createHostChecks({root,catalog,codexHome,reviewDirectory}){
     await delta(e);return parseIndependentReview(raw,e);
   }};
 }
+
+/** Offline review uses an authenticated exact-delta review, NOT a
+ * subprocess claiming independence because its own assertions passed. No model
+ * API is invoked. Absent/expired/revoked artifacts block before publication. */
+export async function createBegetChecks({root,catalog,reviewsRaw,verifyReviewProvenance,reviewPolicySha256,revalidate,clock=Date.now}){
+  const reviews=JSON.parse(reviewsRaw);
+  must(typeof verifyReviewProvenance==='function','REVIEW_PROVENANCE_REQUIRED');
+  const ownerCI=reviews.schema==='asi.owner-ci-delta-review.v1';
+  must((ownerCI||reviews.schema==='asi.offline-delta-review.v1')&&reviews.repository==='ASI-integration/asi-landing'&&
+    Array.isArray(reviews.tasks)&&reviews.tasks.length===catalog.length&&
+    new Set(reviews.tasks.map(t=>t.id)).size===catalog.length,'REVIEW_SCHEMA');
+  const pin=task=>({path:task.changes[0].path,beforeSha256:null,afterSha256:digest(task.changes[0].content)});
+  async function attestation(task,delta){
+    await revalidate();await verifyReviewProvenance(reviews);const r=reviews.tasks.find(t=>t.id===task?.id);
+    must(task&&r&&r.status==='PASS'&&r.findings===0&&r.baseSha===task.sha&&
+      r.deltaSha256===delta&&delta===digest(JSON.stringify([pin(task)]))&&
+      Number.isSafeInteger(reviews.notBefore)&&Number.isSafeInteger(reviews.expiresAt)&&
+      reviews.notBefore<=clock()&&clock()<reviews.expiresAt&&reviews.expiresAt-reviews.notBefore<=14*86400000,
+      'OFFLINE_REVIEW_UNVERIFIED');
+    return {...r,independent:!ownerCI,ownerVerifiedCi:ownerCI,reviewPolicySha256,
+      evidenceId:'review-'+digest(reviewsRaw).slice(0,48)};
+  }
+  async function bytes(e){
+    const task=catalog.find(t=>t.id===e.taskId);must(task?.sha===e.baseSha,'CHECK_TASK');
+    const file=path.join(root,'scratchpads',task.id,task.changes[0].path);await regular(file);
+    must(digest(await fs.readFile(file))===pin(task).afterSha256,'CHECK_BYTES_CHANGED');
+    await attestation(task,e.deltaSha256);return task;
+  }
+  return {verifyReviews:async()=>verifyReviewProvenance(reviews),async runChecks(e,{signal}){
+    const task=await bytes(e),cwd=path.join(root,'scratchpads',task.id);
+    const testModule=path.basename(task.changes[0].path,'.py');
+    const args=sandboxArguments(cwd);
+    args[args.length-1]=`import sys,unittest;sys.path.insert(0,'.');s=unittest.defaultTestLoader.loadTestsFromName('${testModule}');r=unittest.TextTestRunner().run(s);sys.exit(0 if r.wasSuccessful() and r.testsRun>0 else 1)`;
+    await execute('/opt/asi-engine/bwrap',args,{cwd,signal});await bytes(e);return {...e,status:'PASS'};
+  },async independentReview(e){const task=await bytes(e);return {...e,...await attestation(task,e.deltaSha256)};},
+  publishedReview:{policySha256:reviewPolicySha256,async verify(p){
+    const task=catalog.find(t=>t.id===p.id);const r=await attestation(task,p.deltaSha256);
+    must(p.baseSha===task.sha&&p.branch===task.branch&&p.policySha256===reviewPolicySha256,'PUBLISHED_REVIEW_PIN');
+    // Publisher separately verifies the exact PR tree/commit, HEAD, base and CI.
+    return {status:r.status,repo:p.repo,pr:p.pr,head:p.sha,baseSha:p.baseSha,policySha256:reviewPolicySha256,
+      independent:!ownerCI,ownerVerifiedCi:ownerCI,reviewPolicySha256,
+      evidenceSha256:digest(JSON.stringify({review:reviewPolicySha256,delta:p.deltaSha256,head:p.sha,pr:p.pr}))};
+  }}};
+}
