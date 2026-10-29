@@ -176,3 +176,26 @@ Provider and ASI data-sharing consent/privacy notices require release review.
   application, independent DB tests, verified sender, deployed authentication,
   or protected release. The original two Supabase projects and Beget PostgreSQL
   remain separate; no migration, DB schema, secret or production host changed.
+
+## Additional Yandex server-side protocol review — 29 October 2026
+- Official code redirect reference:
+  https://yandex.ru/dev/id/doc/ru/codes/code-url specifies `response_type=code`,
+  exact **Web services / Redirect URI**, `state`, S256 PKCE and ten-minute
+  code validity. The documented token POST accepts `grant_type`, `code`,
+  client credentials and `code_verifier`; the previously sent undocumented
+  `redirect_uri` token POST parameter has been removed.
+- Official profile reference: https://yandex.ru/dev/id/doc/ru/user-information
+  documents both `client_id` and `id`, which are checked as our trusted
+  application and the stable provider subject. ASI access is not email-matched.
+- Account-link GET initiation now rejects `Sec-Fetch-Site` values `cross-site`,
+  `same-site` and `none`; legacy browsers need an exact same-origin
+  `Referer`. The normal login redirect flow is unaffected.
+- Server-side redirect flow requires the Yandex app's exact **Web services
+  Redirect URI**; JavaScript origins are only required if a separate browser
+  widget is later used or the app admin requires them. Do not present the
+  existing disabled button as a working login.
+- SQL draft previously had a truncated CHECK plus duplicate orphan table
+  fragment. Both were repaired; this file remains design-only SQL that still
+  requires isolated PostgreSQL, RLS and race verification before migration.
+- No Yandex application, domain, DNS, credentials, sender, database or
+  production release was modified in this checkpoint.
