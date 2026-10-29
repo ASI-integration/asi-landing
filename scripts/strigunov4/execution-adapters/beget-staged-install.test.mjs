@@ -115,3 +115,61 @@ with patch.object(m,'regular_bytes',side_effect=read_file),\
 for(const mode of ['valid','enabled','running','wrong-user','altered-module','altered-receipt']){
   test('activation rechecks exact staged unit and bytes: '+mode,()=>assert.doesNotThrow(()=>run(checkStaged,mode)));
 }
+
+
+const fullStage=String.raw`
+import importlib.util,sys,json
+from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import patch
+s=importlib.util.spec_from_file_location('installer',sys.argv[1])
+m=importlib.util.module_from_spec(s);s.loader.exec_module(m)
+raw=b'{"stage":true}'
+m.NODE_SHA=m.digest(b'node')
+m.BWRAP_SHA=m.digest(b'bwrap')
+files={m.UNIT:b'[Unit]\nDescription=fixture\n',
+       'scripts/strigunov4/execution-adapters/host-runtime.mjs':b'export {}'}
+manifest={'sourceSha':'a'*40,'baseSha':'b'*40,'unitSha256':m.digest(files[m.UNIT])}
+grant=dict(schema=m.STAGE_SCHEMA,host=m.HOST,unit=m.UNIT,
+           manifestSha256=m.digest(raw),sourceSha=manifest['sourceSha'],
+           baseSha=manifest['baseSha'],unitSha256=manifest['unitSha256'],
+           actions=m.STAGE_ACTIONS,notBefore=100,expiresAt=5000)
+commands=[];writes=[];lookups=[0]
+def checkuser(name):
+ lookups[0]+=1
+ if lookups[0]==1:raise KeyError()
+ return SimpleNamespace(pw_uid=1020,pw_gid=1020)
+def call(argv,**kwargs):
+ commands.append(argv)
+ if argv[:2]==['/usr/bin/git','ls-remote']:
+  return (manifest['baseSha']+'\trefs/heads/main\n').encode()
+ if argv[:3]==['/usr/bin/systemctl','show',m.UNIT]:
+  return b'LoadState=loaded\nActiveState=inactive\nMainPID=0\nUnitFileState=disabled\n'
+ return b''
+def read(p,**kw):
+ return {'owner-public.pem':b'public','node':b'node','bwrap':b'bwrap',
+         'github-app.pem':b'valid-old-app-credential'}[Path(p).name]
+def write(p,b,mode=0o600):writes.append((str(p),mode))
+with patch.object(m,'prepared',return_value=(raw,manifest,files)),\
+ patch.object(m.os,'geteuid',return_value=0),\
+ patch.object(m.os,'uname',return_value=SimpleNamespace(nodename=m.HOST)),\
+ patch.object(m,'regular_bytes',side_effect=read),\
+ patch.object(m,'signed',return_value=grant),\
+ patch.object(m,'inactive'),\
+ patch.object(m.Path,'exists',return_value=False),\
+ patch.object(m.pwd,'getpwnam',side_effect=checkuser),\
+ patch.object(m.time,'time',return_value=0.6),\
+ patch.object(m,'call',side_effect=call),\
+ patch.object(m,'write_new',side_effect=write),\
+ patch.object(m.Path,'mkdir'),patch.object(m.os,'chown'):
+ m.stage(Path('/fixture'),Path('/node'),Path('/bwrap'))
+assert len(writes)==7,writes # claim, module, manifest, node, bwrap, unit, receipt
+assert 'stage-claim-' in writes[0][0] and 'staged-isolation-' in writes[-1][0]
+assert any(cmd[0]=='/usr/sbin/useradd' for cmd in commands)
+assert any(cmd[:2]==['/usr/bin/systemctl','daemon-reload'] for cmd in commands)
+assert not any('enable' in cmd or 'start' in cmd or '--now' in cmd for cmd in commands),commands
+assert all('github-app.pem' not in w[0] for w in writes)
+`;
+test('successful staged install only provisions a disabled unit; no start/enable/key grant',()=>{
+  assert.match(run(fullStage,'valid'),/STAGED_ISOLATION_PENDING/);
+});
