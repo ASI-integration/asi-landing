@@ -96,9 +96,12 @@ if mode=='altered-module':stored['runtime.mjs']=b'changed'
 if mode=='altered-receipt':stored['staged.json']=b'{}'
 identity=SimpleNamespace(pw_uid=1020,pw_gid=1020,pw_shell='/usr/sbin/nologin',pw_dir=str(m.STATE))
 if mode=='wrong-user':identity.pw_uid=2020
-status='LoadState=loaded\nActiveState=inactive\nMainPID=0\nUnitFileState=disabled\n'
+status='LoadState=loaded\nActiveState=inactive\nMainPID=0\nUnitFileState=disabled\nFragmentPath=/etc/systemd/system/asi-strigunov-agent.service\nDropInPaths=\nUser=asi-engine\nGroup=asi-engine\n'
 if mode=='enabled':status=status.replace('disabled','enabled')
 if mode=='running':status=status.replace('inactive','active').replace('MainPID=0','MainPID=999')
+if mode=='dropin':status=status.replace('DropInPaths=','DropInPaths=/etc/systemd/system/asi-strigunov-agent.service.d/replaced.conf')
+if mode=='wrong-fragment':status=status.replace('FragmentPath=/etc/systemd/system/','FragmentPath=/run/systemd/system/')
+if mode=='wrong-effective-user':status=status.replace('User=asi-engine','User=root')
 def read_file(p,**kw):return stored[Path(p).name]
 def call(a,**kw):
  assert a[:3]==['/usr/bin/systemctl','show',m.UNIT]
@@ -112,7 +115,7 @@ with patch.object(m,'regular_bytes',side_effect=read_file),\
   assert mode!='valid',mode
  else:assert mode=='valid',mode
 `;
-for(const mode of ['valid','enabled','running','wrong-user','altered-module','altered-receipt']){
+for(const mode of ['valid','enabled','running','wrong-user','altered-module','altered-receipt','dropin','wrong-fragment','wrong-effective-user']){
   test('activation rechecks exact staged unit and bytes: '+mode,()=>assert.doesNotThrow(()=>run(checkStaged,mode)));
 }
 
@@ -144,7 +147,7 @@ def call(argv,**kwargs):
  if argv[:2]==['/usr/bin/git','ls-remote']:
   return (manifest['baseSha']+'\trefs/heads/main\n').encode()
  if argv[:3]==['/usr/bin/systemctl','show',m.UNIT]:
-  return b'LoadState=loaded\nActiveState=inactive\nMainPID=0\nUnitFileState=disabled\n'
+  return b'LoadState=loaded\nActiveState=inactive\nMainPID=0\nUnitFileState=disabled\nFragmentPath=/etc/systemd/system/asi-strigunov-agent.service\nDropInPaths=\nUser=asi-engine\nGroup=asi-engine\n'
  return b''
 def read(p,**kw):
  return {'owner-public.pem':b'public','node':b'node','bwrap':b'bwrap',
