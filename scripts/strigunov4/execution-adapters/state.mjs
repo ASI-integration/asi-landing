@@ -9,6 +9,14 @@ export const digest = text => createHash('sha256').update(text).digest('hex');
 export const sha = s => typeof s === 'string' && /^[a-f0-9]{40}$/.test(s);
 export const identifier = s => typeof s === 'string' && /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,95}$/.test(s);
 const stamp = () => new Date().toISOString();
+// Proof of this process's real execute lifetime, not authority or a lock-directory guess.
+// Only stateAt can mint a lease. Consumers must recheck after every awaited operation.
+const standingTransactions = new WeakMap();
+export function inspectStandingTransaction(transaction, {write=false,taskId,taskSha}={}) {
+  const read = transaction && standingTransactions.get(transaction);
+  must(typeof read === 'function', 'STANDING_TRANSACTION_INVALID');
+  return read({write,taskId,taskSha});
+}
 
 export async function regular(file) {
   const st = await fs.lstat(file);
@@ -108,6 +116,36 @@ function stateAt(root,liveAdmission) {
       throw e;
     }
     let ledger, receipts, armed = false, terminal = false;
+    let transaction, phase = 'closed', selected = null;
+    const transactionId = randomUUID();
+    const closeTransaction = () => {
+      phase = 'closed';
+      if (transaction) standingTransactions.delete(transaction);
+    };
+    const beginTransaction = () => {
+      transaction = Object.freeze({}); phase = 'admission';
+      standingTransactions.set(transaction, ({write,taskId,taskSha}) => {
+        must(armed && phase !== 'closed' && ledger?.mode === 'FAILED_LOCKED' &&
+          ledger.reason === 'IN_FLIGHT_OR_CRASHED', 'STANDING_TRANSACTION_INACTIVE');
+        must(typeof write === 'boolean', 'STANDING_TRANSACTION_OPERATION');
+        if (selected) {
+          must(task?.id === selected.id && task?.sha === selected.sha &&
+            task?.repo === selected.repo && task?.branch === selected.branch &&
+            task?.pr === selected.pr && task?.stage === selected.stage, 'STANDING_TASK_CHANGED');
+          must((taskId === undefined || taskId === selected.id) &&
+            (taskSha === undefined || taskSha === selected.sha), 'STANDING_TASK_MISMATCH');
+        } else must(taskId === undefined && taskSha === undefined, 'STANDING_TASK_UNSELECTED');
+        if (write) must(phase === 'started' && kind === 'github-publisher', 'STANDING_WRITE_PHASE');
+        if (phase === 'started' || phase === 'postflight') {
+          const started = Object.entries(ledger.jobs).filter(([,job]) => job?.mode === 'STARTED');
+          must(started.length === 1 && started[0][0] === selected.id &&
+            started[0][1].sha === selected.sha && started[0][1].pr === selected.pr &&
+            started[0][1].kind === kind, 'STANDING_STARTED_TASK_MISMATCH');
+        }
+        return Object.freeze({transactionId,phase,kind,root,ledger,
+          taskId:selected?.id ?? null,taskSha:selected?.sha ?? null});
+      });
+    };
     const fail = async reason => {
       // Never serialize error messages from subprocess/API: they may contain secrets.
       ledger ??= { schemaVersion: 'asi.execution-adapters.v1', jobs: {} };
@@ -140,17 +178,22 @@ function stateAt(root,liveAdmission) {
       // Durable brake BEFORE any external read or candidate mutation. SIGKILL cannot bypass it.
       ledger.mode = 'FAILED_LOCKED'; ledger.reason = 'IN_FLIGHT_OR_CRASHED';
       await atomicJson(file('autopilot-ledger.json'), ledger); armed = true;
-      if(typeof task==='function')task=await task({ledger,receipts});
+      beginTransaction();
+      if(typeof task==='function')task=await task({ledger,receipts,transaction});
       if(task===null){
+        closeTransaction();
         ledger.mode='IDLE';delete ledger.reason;
         await atomicJson(file('heartbeat.json'),{mode:'WAITING',reason:'NO_NEXT_ISOLATED_JOB',at:stamp()});
         await atomicJson(file('autopilot-ledger.json'),ledger);terminal=true;
         return {mode:'WAITING',reason:'NO_NEXT_ISOLATED_JOB'};
       }
       validateTask(task);
-      const before = await github.verifyTask(task);
+      selected = Object.freeze({id:task.id,sha:task.sha,repo:task.repo,branch:task.branch,pr:task.pr,stage:task.stage});
+      phase = 'preflight';
+      const before = await github.verifyTask(task,{transaction});
       const old = receipts.completed.filter(r => r.id === task.id);
       if (old.length || ledger.jobs[task.id]) {
+        closeTransaction();
         const entry = ledger.jobs[task.id];
         if (old.length === 1 && old[0].status === 'PASS' && old[0].sha === task.sha && old[0].pr === task.pr && old[0].kind === kind &&
           entry?.mode === 'PUBLISHED' && entry.sha === task.sha && entry.pr === task.pr && entry.kind === kind) {
@@ -165,8 +208,11 @@ function stateAt(root,liveAdmission) {
       ledger.jobs[task.id] = { mode: 'STARTED', kind, sha: task.sha, pr: task.pr, at: stamp() };
       await atomicJson(file('autopilot-ledger.json'), ledger);
       await atomicJson(file('heartbeat.json'), { mode: 'RUNNING', task: task.id, head: task.sha, at: stamp() });
-      const result = await action();
-      const after = await github.verifyTask(task);
+      phase = 'started';
+      const result = await action({transaction});
+      phase = 'postflight';
+      const after = await github.verifyTask(task,{transaction});
+      closeTransaction();
       if (JSON.stringify(before) !== JSON.stringify(after)) return await fail('STALE');
       must(result && result.mode === undefined && ['PASS', 'WAITING', 'FAILED'].includes(result.status), 'UNKNOWN_RESULT');
       if (result.status === 'FAILED') return await fail('ADAPTER_REJECTED');
@@ -193,6 +239,7 @@ function stateAt(root,liveAdmission) {
       await atomicJson(file('autopilot-ledger.json'), ledger); terminal = true;
       return { mode: 'REPORT_READY', ...result, report: reportName };
     } catch {
+      closeTransaction();
       // Deliberately do not persist raw exception text; external messages can
       // contain secrets. The fixed reason plus retained lock requires review.
       if (armed) return await fail('UNHANDLED_OR_UNKNOWN_RESULT');
@@ -202,6 +249,7 @@ function stateAt(root,liveAdmission) {
     };
     try { outcome = await perform(); }
     finally {
+      closeTransaction();
       if (terminal) {
         try {
           await fs.rmdir(lock);

@@ -44,6 +44,9 @@ jobs:
       - name: Governance intake parsing regression (no authority)
         run: node --test scripts/agent-os/__tests__/agent-intake.test.mjs
 
+      - name: Standing transaction and transport boundaries (no authority)
+        run: node --test scripts/strigunov4/execution-adapters/standing-transaction.test.mjs scripts/strigunov4/execution-adapters/standing-transport.test.mjs
+
       - name: Validate demo release milestones and PR scope
         env:
           GITHUB_TOKEN: ${{ github.token }}
