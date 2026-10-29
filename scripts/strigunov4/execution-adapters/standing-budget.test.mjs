@@ -284,6 +284,38 @@ test('reopened corrupted historical wire fingerprint poisons subsequent claims',
 });
 
 
+test('cross-envelope duplicate historical write or effect ID poisons reopened journal',async()=>{
+  const f=await fixture();try{
+    const second='f'.repeat(64),third='a'.repeat(64);
+    assert.equal((await f.budget.reserve({envelope:env(),effect:effect('first','create-tree')})).status,'RESERVED');
+    assert.equal((await f.budget.reserve({envelope:env({envelopeDigest:second}),
+      effect:effect('second','github-read',{envelopeDigest:second})})).status,'RESERVED');
+    const original=await f.read();
+    for(const id of ['first','another-id']){
+      const corrupted=structuredClone(original);
+      const first=corrupted.standingDelegationBudget.envelopes[hex64].claims[0];
+      const entry=corrupted.standingDelegationBudget.envelopes[second];
+      entry.claims[0]={...first,effectId:id};
+      entry.writes=1;
+      const reopened=createStandingPublisherBudget({store:f.store,ledger:corrupted,clock:()=>at});
+      await assert.rejects(reopened.reserve({envelope:env({envelopeDigest:third}),
+        effect:effect('unrelated','github-read',{envelopeDigest:third})}),/BUDGET_LEDGER_INVALID/);
+    }
+    assert.deepEqual((await f.read()).standingDelegationBudget,original.standingDelegationBudget);
+  }finally{await f.close()}
+});
+
+test('prior-envelope clock high-water blocks rollback on newly signed digest',async()=>{
+  const f=await fixture();try{
+    assert.equal((await f.budget.reserve({envelope:env(),effect:effect('first')})).status,'RESERVED');
+    const second='f'.repeat(64);
+    const reopened=createStandingPublisherBudget({store:f.store,ledger:await f.read(),clock:()=>at-500});
+    assert.equal((await reopened.reserve({envelope:env({envelopeDigest:second}),
+      effect:effect('second','github-read',{envelopeDigest:second})})).reason,'BUDGET_CLOCK_REGRESSION');
+    assert.deepEqual(Object.keys((await f.read()).standingDelegationBudget.envelopes),[hex64]);
+  }finally{await f.close()}
+});
+
 // GraphQL POST has read-only budget semantics solely for the compiled,
  // privately branded GitHub thread query. No test sends a network request.
 async function compiledGraphqlDescriptor() {

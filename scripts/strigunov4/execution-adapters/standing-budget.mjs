@@ -228,12 +228,28 @@ export function createStandingPublisherBudget({store, ledger, clock=Date.now}={}
       const scope = exactScope(envelope);
       // Validate ALL existing claims and reject effect IDs used under another
       // envelope. A new signature never grants permission to replay an effect.
+      // Audit historical claims across ALL signed envelopes before admitting
+      // unrelated work. A forged duplicate in old history must not become
+      // invisible merely because today's effect has a different identifier.
+      const usedIds=new Set(),usedPosts=new Set();
+      let latestObserved=0;
       for (const [key,entry] of Object.entries(budget.envelopes)) {
         must(soundJournalEntry(entry,key),'BUDGET_LEDGER_INVALID');
-        if (entry.claims.some(c=>c.effectId===effect.effectId ||
-          (!isRead(effect.kind) && !isRead(c.kind) && c.requestSha256===effect.requestSha256)))
-          return deny('BUDGET_REPLAY_OR_UNKNOWN');
+        latestObserved=Math.max(latestObserved,entry.lastObservedAt);
+        for (const claim of entry.claims) {
+          must(!usedIds.has(claim.effectId),'BUDGET_LEDGER_INVALID');
+          usedIds.add(claim.effectId);
+          if (!isRead(claim.kind)) {
+            must(!usedPosts.has(claim.requestSha256),'BUDGET_LEDGER_INVALID');
+            usedPosts.add(claim.requestSha256);
+          }
+        }
       }
+      // The signed-envelope boundary must not reset the durable clock floor.
+      if (lockedAt < latestObserved) return deny('BUDGET_CLOCK_REGRESSION');
+      if (usedIds.has(effect.effectId) ||
+          (!isRead(effect.kind) && usedPosts.has(effect.requestSha256)))
+        return deny('BUDGET_REPLAY_OR_UNKNOWN');
       if (current) {
         must(same(current.scope,scope),'BUDGET_LEDGER_INVALID');
         if (lockedAt < current.lastObservedAt) return deny('BUDGET_CLOCK_REGRESSION');
