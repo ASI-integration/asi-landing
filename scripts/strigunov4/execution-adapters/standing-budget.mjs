@@ -13,6 +13,7 @@
 import fs from 'node:fs/promises';
 import {createHash} from 'node:crypto';
 import {atomicJson, must} from './state.mjs';
+import * as githubReadonly from './github-readonly.mjs';
 
 const HEX64 = /^[0-9a-f]{64}$/;
 const HEX40 = /^[0-9a-f]{40}$/;
@@ -22,6 +23,8 @@ const TIME_LIMIT = 14 * 86400000;
 const MAX_ENVELOPES = 16;
 const MAX_CLAIMS = 256;
 const READ = 'github-read';
+const COMPILED_READ = 'github-compiled-read';
+const isRead = kind => kind === READ || kind === COMPILED_READ;
 const WRITES = new Set(['create-tree', 'create-commit', 'create-branch', 'create-draft-pr']);
 const POST_ROUTES = Object.freeze({'create-tree':'git/trees','create-commit':'git/commits',
   'create-branch':'git/refs','create-draft-pr':'pulls'});
@@ -62,12 +65,33 @@ function validWire(e) {
   if (!h40(e.taskSha) || !h64(e.payloadSha256) || !h64(e.requestSha256) ||
       typeof e.route !== 'string' || !WIRE_ROUTE.test(e.route) ||
       e.route.includes('..') || e.route.startsWith('/')) return false;
-  const read = e.kind === READ;
-  if (e.method !== (read ? 'GET' : 'POST')) return false;
-  if (read ? e.payloadSha256 !== hash('') : POST_ROUTES[e.kind] !== e.route) return false;
+  const graphqlRead = e.kind === COMPILED_READ;
+  const read = isRead(e.kind);
+  if (e.method !== (graphqlRead ? 'POST' : read ? 'GET' : 'POST')) return false;
+  if (graphqlRead ? e.route !== 'graphql' :
+      read ? e.payloadSha256 !== hash('') : POST_ROUTES[e.kind] !== e.route) return false;
   return e.requestSha256 === hash(JSON.stringify({
     method:e.method,route:e.route,payloadSha256:e.payloadSha256,
   }));
+}
+
+// A GraphQL POST is chargeable as a read ONLY when the exact descriptor
+// originates from github-readonly's private compiled-query WeakSet. Caller
+// flags, copied objects and arbitrary GraphQL POST bodies are not sufficient.
+function genuineCompiledRead(descriptor, effect) {
+  try {
+    if (typeof githubReadonly.isCompiledGitHubRead !== 'function' ||
+        !githubReadonly.isCompiledGitHubRead(descriptor) ||
+        !Object.isFrozen(descriptor) ||
+        ![Object.prototype,null].includes(Object.getPrototypeOf(descriptor))) return false;
+    for (const key of ['method','route','payloadSha256','requestSha256']) {
+      const own = Object.getOwnPropertyDescriptor(descriptor,key);
+      if (!own || !Object.hasOwn(own,'value') || own.value !== effect[key]) return false;
+    }
+    const signal = Object.getOwnPropertyDescriptor(descriptor,'signal');
+    return !!signal && Object.hasOwn(signal,'value') &&
+      signal.value instanceof AbortSignal && !signal.value.aborted;
+  } catch { return false; }
 }
 
 function validateEnvelope(e, at) {
@@ -87,7 +111,7 @@ function validateEnvelope(e, at) {
 function validateEffect(e, effect) {
   if (!effect || !ident(effect.effectId) || !ident(effect.taskId) ||
       !h40(effect.headSha) || !validWire(effect) ||
-      typeof effect.kind !== 'string' || (effect.kind !== READ && !WRITES.has(effect.kind)) ||
+      typeof effect.kind !== 'string' || (!isRead(effect.kind) && !WRITES.has(effect.kind)) ||
       effect.envelopeDigest !== e.envelopeDigest || effect.repo !== e.repo ||
       effect.environment !== e.environment || effect.target !== e.target ||
       effect.action !== e.action) return 'BUDGET_EFFECT_SCOPE';
@@ -119,17 +143,17 @@ function soundJournalEntry(entry, key) {
       entry.requests > scope.maxRequests || entry.writes > scope.maxWrites ||
       entry.operations > scope.maxOperations ||
       !entry.claims.every(c=>c && ident(c.effectId) && ident(c.taskId) &&
-        h40(c.headSha) && (c.kind === READ || WRITES.has(c.kind)) && validWire(c) &&
+        h40(c.headSha) && (isRead(c.kind) || WRITES.has(c.kind)) && validWire(c) &&
         Number.isSafeInteger(c.reservedAt) && c.reservedAt >= scope.notBefore &&
         c.reservedAt < scope.expiresAt && c.reservedAt <= entry.lastObservedAt &&
         c.phase === 'RESERVED' &&
         c.publicationJournal === `publication-${c.taskId}.json`) ||
       entry.requests !== entry.claims.length ||
-      entry.writes !== entry.claims.filter(c=>c.kind !== READ).length ||
+      entry.writes !== entry.claims.filter(c=>!isRead(c.kind)).length ||
       entry.operations !== entry.claims.length ||
       new Set(entry.claims.map(c=>c.effectId)).size !== entry.claims.length ||
-      new Set(entry.claims.filter(c=>c.kind!==READ).map(c=>c.requestSha256)).size !==
-        entry.claims.filter(c=>c.kind!==READ).length) return false;
+      new Set(entry.claims.filter(c=>!isRead(c.kind)).map(c=>c.requestSha256)).size !==
+        entry.claims.filter(c=>!isRead(c.kind)).length) return false;
   return true;
 }
 
@@ -150,7 +174,7 @@ export function createStandingPublisherBudget({store, ledger, clock=Date.now}={}
     tail = next.then(() => {}, () => {});
     return next;
   }
-  return Object.freeze({reserve({envelope, effect}={}) {
+  return Object.freeze({reserve({envelope, effect, compiledReadDescriptor}={}) {
     // A caller may reuse or mutate input objects, but no later mutation may
     // change the scope or effect of this particular reservation.
     let capturedEnvelope, capturedEffect;
@@ -158,9 +182,20 @@ export function createStandingPublisherBudget({store, ledger, clock=Date.now}={}
       capturedEnvelope=snapshot(envelope,ENVELOPE_FIELDS);
       capturedEffect=snapshot(effect,EFFECT_FIELDS);
     } catch { capturedEnvelope=null; capturedEffect=null; }
+    // Verify compiled provenance synchronously, before the queue/await. The
+    // reader-owned frozen descriptor cannot be substituted later.
+    let compiledReadProvenance=false, compiledSignal=null;
+    if (capturedEffect?.kind === COMPILED_READ &&
+        genuineCompiledRead(compiledReadDescriptor,capturedEffect)) {
+      compiledReadProvenance=true;
+      compiledSignal=Object.getOwnPropertyDescriptor(compiledReadDescriptor,'signal').value;
+    }
     return enqueue(async () => {
       if (!capturedEnvelope || !capturedEffect) return deny('BUDGET_INPUT_INVALID');
       const envelope=capturedEnvelope, effect=capturedEffect;
+      if (effect.kind === COMPILED_READ && !compiledReadProvenance)
+        return deny('BUDGET_COMPILED_READ_PROVENANCE');
+      if (compiledSignal?.aborted) return deny('BUDGET_COMPILED_READ_ABORTED');
       const at = clock();
       if (!Number.isSafeInteger(at) || at < 0) return deny('BUDGET_CLOCK');
       const eReason = validateEnvelope(envelope, at);
@@ -196,7 +231,7 @@ export function createStandingPublisherBudget({store, ledger, clock=Date.now}={}
       for (const [key,entry] of Object.entries(budget.envelopes)) {
         must(soundJournalEntry(entry,key),'BUDGET_LEDGER_INVALID');
         if (entry.claims.some(c=>c.effectId===effect.effectId ||
-          (effect.kind!==READ && c.kind!==READ && c.requestSha256===effect.requestSha256)))
+          (!isRead(effect.kind) && !isRead(c.kind) && c.requestSha256===effect.requestSha256)))
           return deny('BUDGET_REPLAY_OR_UNKNOWN');
       }
       if (current) {
@@ -206,7 +241,7 @@ export function createStandingPublisherBudget({store, ledger, clock=Date.now}={}
       if (!current && Object.keys(budget.envelopes).length >= MAX_ENVELOPES)
         return deny('BUDGET_HISTORY_FULL');
       const before = current || {scope, lastObservedAt:lockedAt, operations:0, requests:0, writes:0, claims:[]};
-      const write = effect.kind === READ ? 0 : 1;
+      const write = isRead(effect.kind) ? 0 : 1;
       if (before.operations + 1 > scope.maxOperations ||
           before.requests + 1 > scope.maxRequests || before.writes + write > scope.maxWrites ||
           before.claims.length >= MAX_CLAIMS) return deny('BUDGET_EXHAUSTED');
@@ -226,6 +261,9 @@ export function createStandingPublisherBudget({store, ledger, clock=Date.now}={}
       // Do not mutate the shared in-memory ledger before fsync success.
       await atomicJson(store.file('autopilot-ledger.json'),{...ledger,standingDelegationBudget:next});
       ledger.standingDelegationBudget = next;
+      // Aborting after fsync cannot unspend the request claim; it also cannot
+      // yield a success-like result to the host.
+      if (compiledSignal?.aborted) return deny('BUDGET_COMPILED_READ_ABORTED_AFTER_RESERVATION');
       return Object.freeze({status:'RESERVED',reserved:true,envelopeDigest:scope.digest,
         effectId:claim.effectId,taskId:claim.taskId,taskSha:claim.taskSha,
         requestSha256:claim.requestSha256,headSha:claim.headSha,
