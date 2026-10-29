@@ -141,3 +141,66 @@ test('two independent signed envelopes each carry their own bounded count',async
     assert.equal(Object.keys((await f.read()).standingDelegationBudget.envelopes).length,2);
   }finally{await f.close()}
 });
+
+test('caller mutation after reserve invocation cannot change queued scope or effect',async()=>{
+  const f=await fixture();try{
+    const e=env(),x=effect('original','create-branch');
+    const pending=f.budget.reserve({envelope:e,effect:x});
+    e.maxRequests=0;e.maxWrites=0;e.envelopeDigest='f'.repeat(64);
+    x.effectId='changed';x.kind='merge-main';x.headSha='wrong';
+    const result=await pending;
+    assert.equal(result.status,'RESERVED');assert.equal(result.effectId,'original');
+    const record=(await f.read()).standingDelegationBudget.envelopes[hex64];
+    assert.equal(record.scope.maxRequests,3);assert.equal(record.claims[0].headSha,hex40);
+  }finally{await f.close()}
+});
+
+test('one ledger instance cannot create two independent reservation queues',async()=>{
+  const f=await fixture();try{
+    assert.throws(()=>createStandingPublisherBudget({store:f.store,ledger:f.ledger,clock:()=>at}),
+      /BUDGET_DUPLICATE_TRANSACTION_INSTANCE/);
+    assert.equal((await f.budget.reserve({envelope:env(),effect:effect('after')})).status,'RESERVED');
+  }finally{await f.close()}
+});
+
+test('a second envelope cannot replay the same effect identifier',async()=>{
+  const f=await fixture();try{
+    assert.equal((await f.budget.reserve({envelope:env(),effect:effect('shared','create-tree')})).status,'RESERVED');
+    const newDigest='f'.repeat(64);
+    const result=await f.budget.reserve({envelope:env({envelopeDigest:newDigest}),
+      effect:effect('shared','create-tree',{envelopeDigest:newDigest})});
+    assert.equal(result.reason,'BUDGET_REPLAY_OR_UNKNOWN');
+    assert.equal(Object.keys((await f.read()).standingDelegationBudget.envelopes).length,1);
+  }finally{await f.close()}
+});
+
+test('expiry between queued acceptance and lock read denies without claims',async()=>{
+  const f=await fixture();try{
+    const ledger=await f.read();let ticks=0;
+    const budget=createStandingPublisherBudget({store:f.store,ledger,
+      clock:()=>++ticks===1?at:at+100000});
+    assert.equal((await budget.reserve({envelope:env(),effect:effect('late')})).reason,
+      'BUDGET_ENVELOPE_SCOPE');
+    assert.equal((await f.read()).standingDelegationBudget,undefined);
+  }finally{await f.close()}
+});
+
+test('malformed unrelated signed-envelope budget history fails closed',async()=>{
+  const f=await fixture();try{
+    await f.budget.reserve({envelope:env(),effect:effect('original','create-tree')});
+    const ledger=await f.read();ledger.standingDelegationBudget.envelopes[hex64].writes=500;
+    const reopened=createStandingPublisherBudget({store:f.store,ledger,clock:()=>at});
+    const newDigest='f'.repeat(64);
+    await assert.rejects(reopened.reserve({envelope:env({envelopeDigest:newDigest}),
+      effect:effect('new','github-read',{envelopeDigest:newDigest})}),/BUDGET_LEDGER_INVALID/);
+    assert.equal(Object.keys((await f.read()).standingDelegationBudget.envelopes).length,1);
+  }finally{await f.close()}
+});
+
+test('accessor-based payload cannot change post-validation scope',async()=>{
+  const f=await fixture();try{
+    const e=env();Object.defineProperty(e,'maxRequests',{get(){throw Error('bad getter')}});
+    assert.equal((await f.budget.reserve({envelope:e,effect:effect('x')})).reason,'BUDGET_INPUT_INVALID');
+    assert.equal((await f.read()).standingDelegationBudget,undefined);
+  }finally{await f.close()}
+});
