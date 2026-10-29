@@ -18,6 +18,8 @@ export type SessionData = {
   yandexOauthLinkUserId?: string;
   /** Authenticated just now with a password or email-code, not merely a 7-day cookie. */
   lastStrongAuthAt?: number;
+  /** Account ID that actually passed the latest password or email-code step-up. */
+  lastStrongAuthUserId?: string;
 };
 
 export function getSessionCookieOptions(
