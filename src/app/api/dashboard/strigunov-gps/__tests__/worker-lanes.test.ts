@@ -104,13 +104,22 @@ describe('owner-only GPS and five ASI workstreams', () => {
     expect(body.partialSources).toBe(true);
   });
 
-  it('does not return GitHub data when token is absent', async () => {
+  it('uses bounded public-repo GitHub reads without bearer token', async () => {
     delete process.env.GITHUB_TOKEN;
     const fetcher=fixtureGitHubFetch();
     vi.stubGlobal('fetch',fetcher);
     requireDevelopmentOwnerSession.mockResolvedValue({session:{userId:'owner'}});
     const {GET} = await import('../route');
-    expect((await GET()).status).toBe(503);
-    expect(fetcher).not.toHaveBeenCalled();
+    const response=await GET();
+    const body=await response.json();
+    expect(response.status).toBe(200);
+    expect(body.githubMode).toBe('public-read-only');
+    expect(body.githubRefreshSeconds).toBe(1800);
+    expect(body.workerLanes).toHaveLength(5);
+    for (const [, init] of fetcher.mock.calls) {
+      const headers=(init as RequestInit).headers as Record<string,string>;
+      expect(headers).not.toHaveProperty('Authorization');
+      expect((init as RequestInit & {next?: {revalidate:number}}).next?.revalidate).toBe(1800);
+    }
   });
 });
