@@ -23,7 +23,6 @@ async function yandexProfile(code:string,verifier:string):Promise<string> {
     grant_type:'authorization_code',code,code_verifier:verifier,
     client_id:process.env.ASI_RU_YANDEX_CLIENT_ID!,
     client_secret:process.env.ASI_RU_YANDEX_CLIENT_SECRET!,
-    redirect_uri:yandexCallbackUrl(process.env),
   });
   const ctrl=new AbortController();
   const timer=setTimeout(()=>ctrl.abort(),8000);
