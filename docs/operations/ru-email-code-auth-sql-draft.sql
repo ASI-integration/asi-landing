@@ -113,7 +113,17 @@ GRANT EXECUTE ON FUNCTION public.ru_auth_revoke_email_code(TEXT,TEXT) TO service
 -- Yandex is optional; subject is linked ONLY from an authenticated ASI
 -- session which already proved ownership by email-code or password.
 CREATE TABLE IF NOT EXISTS public.ru_auth_yandex_links (
-  yandex_subject TEXT PRIMARY KEY CHECK (yandex_subject ~ '^[0-9]{1,40}$'),
+  yandex_subject TEXT PRIMARY KEY CHECK (yandex_subject ~ '^[1-9][0-9]{0,39},
+  user_id UUID NOT NULL UNIQUE REFERENCES public.users(id) ON DELETE CASCADE,
+  linked_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_ru_auth_yandex_links_user_id
+  ON public.ru_auth_yandex_links(user_id);
+ALTER TABLE public.ru_auth_yandex_links ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON public.ru_auth_yandex_links FROM PUBLIC, anon, authenticated;
+GRANT SELECT, INSERT, DELETE ON public.ru_auth_yandex_links TO service_role;
+-- No anonymous policies; never resolve users by Yandex email alone.
+),
   user_id UUID NOT NULL UNIQUE REFERENCES public.users(id) ON DELETE CASCADE,
   linked_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
