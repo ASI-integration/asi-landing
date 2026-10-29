@@ -87,11 +87,14 @@ Source code now includes disabled exact-origin OAuth 2.0 flow:
 - `src/lib/auth/ru-yandex-policy.ts`: 32-byte state, S256 PKCE, signed session
   transient state, 10-minute expiry and canonical RU origin restriction.
 - `src/app/api/auth/yandex/start/route.ts`: login/link initiation. A link
-  requires an existing ASI session with fresh password or email-code proof.
+  requires a recent password/email-code proof **bound to the same ASI
+  user ID**. Older sessions without that identity-bound proof fail closed.
+  A Yandex re-login cannot inherit stale strong-proof flags from another user.
 - `src/app/api/auth/yandex/callback/route.ts`: one-time state invalidation
   before server-only code exchange; fetch subject `id` from Yandex with an
-  Authorization header, never URL query; link only by persistent Yandex
-  numeric subject. No automatic link by provider email.
+  Authorization header, never URL query; require the returned Yandex
+  `client_id` to match our registered OAuth app and a positive canonical
+  numeric `id`; link only by persistent subject. No auto-link by email.
 - `src/app/dashboard/settings/page.tsx`: link button only when configured.
 - `src/lib/auth/__tests__/ru-yandex-policy.test.ts`: pure negative tests.
 - Draft table `ru_auth_yandex_links`: RLS-enabled, service-role-only, one
@@ -120,10 +123,15 @@ owned by another user, and never create another ASI account silently.
 Provider and ASI data-sharing consent/privacy notices require release review.
 
 ## Verified environment reconnaissance (2026-10-29)
-- Connected Supabase provides **one active ASI project**. Read-only catalog
-  query confirmed none of the three proposed auth tables yet exist.
-  This may be live/shared data; NO production DDL is authorized by a Draft PR
-  or by exploratory verification.
+- The current connected Supabase integration enumerates only
+  `meeravcldnmocjtlqoeu`, whereas the ASI owner confirms **two**
+  existing Supabase projects (the other is `jwinifeienvzejofmbua`).
+  The connector listing is not evidence that the second project is absent.
+  Read-only metadata verified `public.users.id` is UUID and
+  `password_hash` remains NOT NULL in the accessible project; none of
+  the proposed RU-auth tables existed there on 2026-10-29.
+  **Neither project is approved as a disposable staging database.**
+  NO migration, tests with real credentials, or user writes were made.
 - Vercel project metadata reveals no `ASI_RU_EMAIL_CODE_PEPPER`,
   `ASI_AUTH_RESEND_API_KEY`, `ASI_AUTH_FROM_EMAIL` or Yandex OAuth env
   keys; existing variable VALUES were not accessed.
@@ -151,3 +159,20 @@ Provider and ASI data-sharing consent/privacy notices require release review.
    flow, subject conflicts, CSRF replay and revocation behavior.
 5. Independent exact-head CI and protected release, verify deployed source
    SHA and rollback. Preserve existing account and messaging safety rules.
+
+## Source security checkpoint — 2026-10-29
+- The identity-bound `lastStrongAuthUserId` is recorded only by successful
+  password/email-code routes and compared at both Yandex-link start and callback.
+  This prevents a fresh step-up from user A being reused after switching the
+  browser session to user B through another provider.
+- The Yandex profile `client_id` is checked against the exact configured
+  application ID in addition to the OAuth code exchange and PKCE checks.
+  Numeric zero/leading-zero subjects are rejected consistently in code and
+  proposed SQL. A user must first explicitly link an existing ASI account;
+  unlinked sign-in now returns a concrete guidance message, not a fake success.
+- Documentation: https://yandex.ru/dev/id/doc/ru/user-information
+  lists `client_id`, `id`, and `psuid` in the Yandex identity response.
+- These are **source-only defenses**, not evidence of a configured Yandex
+  application, independent DB tests, verified sender, deployed authentication,
+  or protected release. The original two Supabase projects and Beget PostgreSQL
+  remain separate; no migration, DB schema, secret or production host changed.
