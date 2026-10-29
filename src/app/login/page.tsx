@@ -5,11 +5,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useTranslation } from '@/i18n/useTranslation';
 import { RuEmailCodeSignIn } from '@/components/auth/RuEmailCodeSignIn';
-
-function safeRedirectPath(value: string | null): string {
-  if (!value || !value.startsWith('/') || value.startsWith('//')) return '/dashboard';
-  return value;
-}
+import { safeAuthRedirectPath } from '@/lib/auth/app-url';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -58,7 +54,7 @@ export default function LoginPage() {
         return;
       }
       const params = new URLSearchParams(window.location.search);
-      router.push(safeRedirectPath(params.get('redirect')));
+      router.push(safeAuthRedirectPath(params.get('redirect')));
     } catch {
       setError(t('signup.errorGeneric'));
     } finally {
@@ -87,7 +83,7 @@ export default function LoginPage() {
         )}
 
         <RuEmailCodeSignIn redirectPath={typeof window !== 'undefined'
-          ? safeRedirectPath(new URLSearchParams(window.location.search).get('redirect')) : '/dashboard'} />
+          ? safeAuthRedirectPath(new URLSearchParams(window.location.search).get('redirect')) : '/dashboard'} />
 
         <form onSubmit={handleSubmit} className="mt-8 space-y-4">
           <div>
