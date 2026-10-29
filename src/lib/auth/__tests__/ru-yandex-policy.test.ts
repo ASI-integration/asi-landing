@@ -2,7 +2,7 @@ import { describe,expect,it } from 'vitest';
 import {
   buildYandexAuthorizationUrl,generateYandexFlow,ruYandexConfigured,
   verifyYandexState,yandexFlowStillValid,yandexSubject,yandexCallbackUrl,
-  hasRecentYandexLinkProof,verifiedYandexProfileSubject,trustedYandexLinkNavigation,
+  hasRecentYandexLinkProof,verifiedYandexProfileSubject,trustedYandexStartNavigation,
   verifiedYandexBearerAccessToken,
 } from '../ru-yandex-policy';
 
@@ -70,15 +70,15 @@ describe('RU Yandex link-only OAuth',()=>{
   it('rejects cross-origin, cross-subdomain and third-party account-link starts',()=>{
     const url='https://www.asi-global.ru/api/auth/yandex/start?mode=link';
     const same='https://www.asi-global.ru/dashboard/settings';
-    expect(trustedYandexLinkNavigation(url,'same-origin',null)).toBe(true);
-    expect(trustedYandexLinkNavigation(url,null,same)).toBe(true);
+    expect(trustedYandexStartNavigation(url,'same-origin',null)).toBe(true);
+    expect(trustedYandexStartNavigation(url,null,same)).toBe(true);
     for(const site of ['same-site','cross-site','none']){
-      expect(trustedYandexLinkNavigation(url,site,same)).toBe(false);
+      expect(trustedYandexStartNavigation(url,site,same)).toBe(false);
     }
-    expect(trustedYandexLinkNavigation(url,null,null)).toBe(false);
-    expect(trustedYandexLinkNavigation(url,null,'https://asi-global.ru/dashboard/settings')).toBe(false);
-    expect(trustedYandexLinkNavigation(url,null,'https://evil.example/settings')).toBe(false);
-    expect(trustedYandexLinkNavigation('http://www.asi-global.ru/api/auth/yandex/start',null,
+    expect(trustedYandexStartNavigation(url,null,null)).toBe(false);
+    expect(trustedYandexStartNavigation(url,null,'https://asi-global.ru/dashboard/settings')).toBe(false);
+    expect(trustedYandexStartNavigation(url,null,'https://evil.example/settings')).toBe(false);
+    expect(trustedYandexStartNavigation('http://www.asi-global.ru/api/auth/yandex/start',null,
       'http://www.asi-global.ru/dashboard/settings')).toBe(false);
   });
   it('rejects malformed Yandex bearer responses before using Authorization',()=>{

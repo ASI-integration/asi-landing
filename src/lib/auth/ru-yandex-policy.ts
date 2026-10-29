@@ -51,10 +51,11 @@ export function hasRecentYandexLinkProof(
     now >= authenticatedAt && now - authenticatedAt <= YANDEX_OAUTH_TTL_MS;
 }
 
-/** Account linking must start through intentional first-party browser navigation.
+/** Login and account linking must both start through first-party navigation.
+ * OAuth state+PKCE do not stop cross-site GETs from causing login CSRF.
  * Same-site subdomains and unsolicited cross-site GETs are not trustworthy.
  */
-export function trustedYandexLinkNavigation(
+export function trustedYandexStartNavigation(
   requestUrl: string, fetchSite: string | null, referer: string | null,
 ): boolean {
   try {
