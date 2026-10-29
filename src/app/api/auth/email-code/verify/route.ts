@@ -52,6 +52,7 @@ export async function POST(req:Request) {
     session.userId=user.id;
     session.email=user.email;
     session.lastStrongAuthAt=Date.now();
+    session.lastStrongAuthUserId=user.id;
     await session.save();
     return NextResponse.json({ok:true},{headers});
   } catch {
