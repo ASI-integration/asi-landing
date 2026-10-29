@@ -65,6 +65,28 @@ commit parent, branch, PR, HEAD and required current CI. The offline review is
 never manufactured from passing tests or a subprocess claiming independence.
 No reviewer private key or additional signing system is introduced.
 
+## Exact G2 single-owner bootstrap exception (owner decision 2026-10-29)
+
+The original independent-human source/review route remains supported. For this
+**one existing** Beget Engine and **only two fixed G2 Draft-PR witness tasks**,
+the owner authorizes a separate `OWNER_VERIFIED_CI` review mode instead of an
+external human reviewer. It is not named or reported as independent human review.
+
+This is an **implementation contract**, not a successful activation: before the
+installer and runtime can use it, both must independently query authenticated
+GitHub run/review results for the exact pinned source and task deltas, confirm
+the owner identity and exact-SHA attestation, and reject expiry or replacement.
+Both protected CI workflows must be SUCCESS. The owner must separately sign
+the exact manifest, limited catalog, installation and activation grants.
+No self-asserted `independent:true` or copied JSON fields can confer access.
+
+Old-writer GitHub token fencing, provider-origin evidence, native Beget
+systemd/bwrap isolation, one-use root admission, zero-paid API budget, single
+publisher lock, stop-on-uncertain-write, protected-main pin and strict expiry
+remain mandatory. This exception grants **no** live deployment, merge, writes
+outside the two witness paths, extra lanes or post-expiry continuation.
+A missing check stays BLOCKED; the operator must not fabricate evidence.
+
 ## Protected prerequisites — one decision, independently checked atomic actions
 
 1. Effective source review and required CI on the final integration SHA. The
