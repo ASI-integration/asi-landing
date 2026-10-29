@@ -35,8 +35,30 @@ for (const [title, edit, reason] of [
   ['unknown result', x => { x.evidence.externalResult = 'UNKNOWN'; }, 'ENVELOPE_REPLAY_OR_UNKNOWN'],
   ['failed locked', x => { x.evidence.claim = 'FAILED_LOCKED'; }, 'ENVELOPE_REPLAY_OR_UNKNOWN'],
   ['missing review', x => { x.evidence.independentReview = 'PENDING'; }, 'ENVELOPE_EXACT_EVIDENCE'],
-  ['stale observation', x => { x.evidence.observedAt = 999; }, 'ENVELOPE_TRUST'],
+  ['stale observation', x => { x.envelope.expiresAt = 100000; x.now = 61001; }, 'ENVELOPE_TRUST'],
 ]) test(title, () => { const x = fixture(); edit(x); assert.deepEqual(assess(x), {status:'BLOCKED', reason, authorized:false}); });
+test('unchanged signed observation tolerates advancing time only within bounded freshness', () => {
+  const x = fixture(); x.envelope.expiresAt = 100000;
+  const original = JSON.stringify(x.evidence);
+  for (const elapsed of [0, 1, 5000, 60000]) {
+    x.now = 1000 + elapsed;
+    assert.equal(assess(x).status, 'PROPOSAL_ELIGIBLE');
+    assert.equal(assess(x).authorized, false);
+    assert.equal(JSON.stringify(x.evidence), original);
+  }
+  x.now = 61001;
+  assert.equal(assess(x).reason, 'ENVELOPE_TRUST');
+});
+test('future, pre-envelope and malformed observation times are never fresh evidence', () => {
+  for (const observedAt of [1001, -1, 999.5, NaN, Infinity, '1000', null, undefined]) {
+    const x = fixture(); x.evidence.observedAt = observedAt;
+    assert.equal(assess(x).reason, 'ENVELOPE_TRUST');
+  }
+  const x = fixture(); x.envelope.notBefore = 900; x.evidence.observedAt = 899;
+  assert.equal(assess(x).reason, 'ENVELOPE_TRUST');
+  x.evidence.observedAt = 900;
+  assert.equal(assess(x).status, 'PROPOSAL_ELIGIBLE');
+});
 test('protected and traversal paths cannot be authorized by broad caller allowlist', () => {
   for (const path of ['docs/agent-os/AUTONOMY_POLICY.md', '.github/workflows/x.yml', 'secrets/a.pem', 'scripts/../x', '/abs', 'scripts//x',
     '.coderabbit.yaml', '.eslintrc.json', 'tsconfig.typecheck.json',

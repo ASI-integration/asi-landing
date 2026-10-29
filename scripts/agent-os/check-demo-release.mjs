@@ -167,9 +167,14 @@ export function assessReleaseEnvelopeProposal({ envelope: e, evidence: v, reques
   if (!Number.isSafeInteger(e.notBefore) || !Number.isSafeInteger(e.expiresAt) ||
       e.expiresAt <= e.notBefore || e.expiresAt - e.notBefore > 14 * 86400000 ||
       now < e.notBefore || now >= e.expiresAt) return deny('ENVELOPE_TIME');
+  // Signed evidence keeps its original timestamp across asynchronous reads.
+  // The disabled proposal permits at most the existing provider freshness
+  // window; future/pre-envelope observations and older witnesses fail closed.
   if (v.ownerVerified !== true || v.ownerId !== OWNER_ID ||
       v.envelopeDigest !== e.envelopeDigest || v.policyDigest !== e.policyDigest ||
-      v.revocation !== 'NOT_REVOKED' || v.observedAt !== now) return deny('ENVELOPE_TRUST');
+      v.revocation !== 'NOT_REVOKED' || !natural(v.observedAt) ||
+      v.observedAt < e.notBefore || v.observedAt > now ||
+      now - v.observedAt > 60000) return deny('ENVELOPE_TRUST');
   if (!['source', 'release', 'activation'].includes(e.action) || r.action !== e.action ||
       r.repo !== e.repo || r.target !== e.target || r.environment !== e.environment ||
       r.appId !== e.appId || r.installationId !== e.installationId ||
@@ -320,51 +325,95 @@ export function inspectAuthenticatedProviderSnapshot({pr, runs, reviews, expecte
  * never PR JSON. Production uses native fetch; injection is for offline tests.
  * GET only, fixed repository/host, no redirects/retries, 11 requests maximum,
  * 30s overall / 5s per response, 2 MiB per response, bounded complete pagination.
- * No key access, signing, claims, writes or authority. Admission must revalidate
+ * Optional beforeRequest is a trusted-host budget seam, never an authority source:
+ * every fixed GET is described without credentials and requires exactly true.
+ * Guard waits share the response deadline; late completion cannot dispatch.
+ * No key access, signing, writes or authority. Admission must revalidate
  * this observation under the existing Publisher lock; GitHub has no atomic
  * multi-resource snapshot API.
  */
 export async function readAuthenticatedProviderSnapshot({token, expected,
-  fetchImpl = globalThis.fetch, clock = Date.now}) {
+  fetchImpl = globalThis.fetch, clock = Date.now, beforeRequest}) {
   const deny = reason => ({status:'BLOCKED', reason, authorized:false});
+  // Capture only primitive own-data pins before any validation or await. Do not
+  // invoke accessors or coerce boxed values while inspecting a caller context.
+  try {
+    must(expected && typeof expected === 'object' && !Array.isArray(expected) &&
+      [Object.prototype, null].includes(Object.getPrototypeOf(expected)), 'PROVIDER_READER_CONTEXT');
+    const fields = ['repository', 'number', 'baseSha', 'headSha', 'independentReviewerId'];
+    const descriptors = Object.getOwnPropertyDescriptors(expected);
+    must(Reflect.ownKeys(descriptors).length === fields.length && fields.every(key =>
+      descriptors[key] && Object.hasOwn(descriptors[key], 'value')), 'PROVIDER_READER_CONTEXT');
+    expected = Object.freeze(Object.fromEntries(fields.map(key => [key, descriptors[key].value])));
+  } catch { return deny('PROVIDER_READER_CONTEXT'); }
   if (typeof token !== 'string' || !token.trim() || /[\r\n]/.test(token) ||
-      !expected || expected.repository !== REPO ||
+      (beforeRequest !== undefined && typeof beforeRequest !== 'function') ||
+      expected.repository !== REPO ||
       !Number.isSafeInteger(expected.number) || expected.number <= 0 ||
-      !SHA.test(expected.baseSha || '') || !SHA.test(expected.headSha || '') ||
+      typeof expected.baseSha !== 'string' || !SHA.test(expected.baseSha) ||
+      typeof expected.headSha !== 'string' || !SHA.test(expected.headSha) ||
       !Number.isSafeInteger(expected.independentReviewerId) || expected.independentReviewerId <= 0)
     return deny('PROVIDER_READER_CONTEXT');
-  // Capture primitives so asynchronous callers cannot change the expected target.
-  expected = {...expected};
   const startedAt = clock();
   if (!Number.isSafeInteger(startedAt)) return deny('PROVIDER_READER_CONTEXT');
   let requests = 0;
   const root = 'https://api.github.com/repos/' + REPO;
   const get = async suffix => {
-    const remaining = 30000 - (clock() - startedAt);
-    must(remaining > 0 && remaining <= 30000 && ++requests <= 11, 'PROVIDER_READER_BUDGET');
-    const url = root + suffix;
-    const response = await fetchImpl(url, {method:'GET', redirect:'error',
-      signal:AbortSignal.timeout(Math.min(5000, remaining)), headers:{
-        Accept:'application/vnd.github+json', Authorization:'Bearer ' + token,
-        'X-GitHub-Api-Version':'2022-11-28',
-      }});
-    must(response.ok && !response.redirected && (!response.url || response.url === url),
-      'PROVIDER_READER_HTTP');
-    must(/^application\/json(?:;|$)/i.test(response.headers.get('content-type') || ''),
-      'PROVIDER_READER_RESPONSE');
-    const reader = response.body?.getReader();
-    must(reader, 'PROVIDER_READER_RESPONSE');
-    const chunks = []; let size = 0;
+    const remaining = () => {
+      const now = clock();
+      must(Number.isSafeInteger(now) && now >= startedAt && now - startedAt < 30000,
+        'PROVIDER_READER_BUDGET');
+      return 30000 - (now - startedAt);
+    };
+    const timeoutMs = Math.min(5000, remaining());
+    must(++requests <= 11, 'PROVIDER_READER_BUDGET');
+    const url = root + suffix, route = suffix.slice(1), method = 'GET';
+    const hash = value => createHash('sha256').update(value).digest('hex');
+    const payloadSha256 = hash('');
+    const requestSha256 = hash(JSON.stringify({method, route, payloadSha256}));
+    const controller = new AbortController(); let timer;
+    const expired = new Promise((_, reject) => {
+      timer = setTimeout(() => {
+        controller.abort(); reject(new Error('PROVIDER_READER_TIMEOUT'));
+      }, timeoutMs);
+    });
     try {
-      for (;;) {
-        const {done, value} = await reader.read();
-        if (done) break;
-        size += value.byteLength;
-        must(size <= 2 * 1024 * 1024, 'PROVIDER_READER_RESPONSE');
-        chunks.push(value);
-      }
-    } finally { await reader.cancel(); }
-    return JSON.parse(new TextDecoder('utf-8', {fatal:true}).decode(Buffer.concat(chunks)));
+      return await Promise.race([expired, (async () => {
+        const signal = controller.signal;
+        if (beforeRequest) {
+          const allowed = await beforeRequest(Object.freeze({
+            method, route, payloadSha256, requestSha256, signal,
+          }));
+          must(allowed === true, 'PROVIDER_READER_GUARD_DENIED');
+        }
+        // Do not dispatch after a guard ignored its abort or the signed budget's
+        // clock advanced during reservation. Requests are never retried here.
+        must(!signal.aborted, 'PROVIDER_READER_TIMEOUT'); remaining();
+        const response = await fetchImpl(url, {method, redirect:'error', signal, headers:{
+          Accept:'application/vnd.github+json', Authorization:'Bearer ' + token,
+          'X-GitHub-Api-Version':'2022-11-28',
+        }});
+        must(!signal.aborted, 'PROVIDER_READER_TIMEOUT'); remaining();
+        must(response.ok && !response.redirected && (!response.url || response.url === url),
+          'PROVIDER_READER_HTTP');
+        must(/^application\/json(?:;|$)/i.test(response.headers.get('content-type') || ''),
+          'PROVIDER_READER_RESPONSE');
+        const reader = response.body?.getReader();
+        must(reader, 'PROVIDER_READER_RESPONSE');
+        const chunks = []; let size = 0;
+        try {
+          for (;;) {
+            const {done, value} = await reader.read();
+            must(!signal.aborted, 'PROVIDER_READER_TIMEOUT'); remaining();
+            if (done) break;
+            size += value.byteLength;
+            must(size <= 2 * 1024 * 1024, 'PROVIDER_READER_RESPONSE');
+            chunks.push(value);
+          }
+        } finally { await reader.cancel(); }
+        return JSON.parse(new TextDecoder('utf-8', {fatal:true}).decode(Buffer.concat(chunks)));
+      })()]);
+    } finally { clearTimeout(timer); }
   };
   try {
     const pr = await get('/pulls/' + expected.number);

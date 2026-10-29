@@ -52,6 +52,11 @@ jobs:
           node --test scripts/agent-os/__tests__/release-envelope-trust-roots.test.mjs scripts/strigunov4/execution-adapters/standing-budget.test.mjs
           node --test scripts/strigunov4/execution-adapters/standing-request-guard.test.mjs
 
+      - name: Standing provider and publication request metering (isolated, no authority)
+        run: |
+          node --test scripts/agent-os/__tests__/release-envelope-provider-metering.test.mjs scripts/strigunov4/execution-adapters/standing-readonly.test.mjs
+          node --test scripts/strigunov4/execution-adapters/standing-publication.test.mjs
+
       - name: Validate demo release milestones and PR scope
         env:
           GITHUB_TOKEN: ${{ github.token }}

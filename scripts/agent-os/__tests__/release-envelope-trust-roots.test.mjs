@@ -271,3 +271,15 @@ test('positive cumulative history with two primitive revoked digests stays non-a
   assert.equal(Object.isFrozen(r.revocationCheckpoint.revokedEnvelopeDigests),true);
   assert.equal(x.reads(),6);
 });
+
+test('exact boxed revoked envelope cannot bypass signed-list identity',async()=>{
+  const x=fixture(),revoked=x.expected.envelopeDigest;
+  x.manifest.revokedEnvelopeDigests=[revoked];x.resign();
+  x.expected.envelopeDigest=new String(revoked);
+  assert.deepEqual(await x.readSnapshot(),
+    {status:'BLOCKED',reason:'TRUST_CONTEXT',authorized:false});
+  assert.equal(x.reads(),0);
+  x.expected.envelopeDigest=revoked;
+  assert.deepEqual(await x.readSnapshot(),
+    {status:'BLOCKED',reason:'TRUST_ENVELOPE_REVOKED',authorized:false});
+});

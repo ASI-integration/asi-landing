@@ -34,8 +34,8 @@ test('witness tampering and witness from a different envelope denied',()=>{
  const x=fixture();x.signedEvidence.payload=x.signedEvidence.payload.replace('SUCCESS','FAILURE');assert.equal(assess(x).reason,'ENVELOPE_WITNESS_SIGNATURE');
  x.evidence.envelopeDigest='f'.repeat(64);x.signedEvidence=signed(x.evidence,x.verifier);assert.equal(assess(x).reason,'ENVELOPE_WITNESS_BINDING');
 });
-test('signed stale/revoked evidence, exhausted budget and UNKNOWN still denied',()=>{
- for(const [k,v] of [['observedAt',999],['revocation','REVOKED'],['usedOperations',2],['claim','FAILED_LOCKED']]){
+test('signed future/revoked evidence, exhausted budget and UNKNOWN still denied',()=>{
+ for(const [k,v] of [['observedAt',1001],['revocation','REVOKED'],['usedOperations',2],['claim','FAILED_LOCKED']]){
  const x=fixture();x.evidence[k]=v;x.signedEvidence=signed(x.evidence,x.verifier);assert.equal(assess(x).status,'BLOCKED');}
 });
 

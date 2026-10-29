@@ -1,6 +1,11 @@
-import { must, validateTask } from './state.mjs';
+import { must, validateTask, digest } from './state.mjs';
+import { bounded } from './publisher-transport.mjs';
 const REPO = 'ASI-integration/asi-landing';
 const BASE = `https://api.github.com/repos/${REPO}/`;
+// Provenance only: distinguishes the compiled read query from arbitrary POSTs.
+// This marker grants no authority and cannot substitute for request admission.
+const compiledReadDescriptors=new WeakSet();
+export const isCompiledGitHubRead=descriptor=>compiledReadDescriptors.has(descriptor);
 const BOT_ID = 136622811;
 export { BOT_ID };
 const THREAD_QUERY = `query($owner:String!,$repo:String!,$number:Int!,$cursor:String){
@@ -27,31 +32,56 @@ export function verifyPinnedReviewPr(p,task) {
 /** Fixed GitHub origin; GET REST + one fixed GraphQL QUERY, never a mutation.
  * Token is supplied by the host, never serialized. No retries or redirects.
  */
-export function createGitHubReader({ token, timeoutMs = 10000 }) {
+export function createGitHubReader({ token, timeoutMs = 10000, beforeRequest }) {
   must(typeof token==='function'||typeof token === 'string' && token.trim().length > 0, 'TOKEN_REQUIRED');
+  must(beforeRequest===undefined||typeof beforeRequest==='function','HOST_REQUEST_GUARD_REQUIRED');
+  let poisoned=false;
   async function request(url, body) {
-    const credential=typeof token==='function'?await token():token;
-    must(typeof credential==='string'&&credential.trim().length>0,'TOKEN_REQUIRED');
-    const response = await fetch(url, { method: body ? 'POST' : 'GET', redirect: 'error',
-      signal: AbortSignal.timeout(timeoutMs), headers: {
-        Authorization: `Bearer ${credential}`, Accept: 'application/vnd.github+json',
-        'X-GitHub-Api-Version': '2022-11-28', ...(body ? { 'Content-Type': 'application/json' } : {}),
-      }, ...(body ? { body: JSON.stringify(body) } : {}) });
-    must(response.ok, 'GITHUB_READ_FAILED');
-    const reader = response.body.getReader(); let bytes = 0; const chunks = [];
+    must(!poisoned,'GITHUB_READER_LOCKED');
     try {
-      while (true) {
-        const next = await reader.read(); if (next.done) break;
-        bytes += next.value.length; must(bytes <= 4_000_000, 'GITHUB_RESPONSE_LIMIT'); chunks.push(next.value);
-      }
-    } finally { await reader.cancel(); }
-    const data = JSON.parse(Buffer.concat(chunks).toString('utf8'));
-    must(!data.errors, 'GITHUB_QUERY_INCOMPLETE'); return data;
+      // Snapshot the fixed query/variables before token or reservation can await.
+      // A GraphQL POST is the one compiled read query above, never a mutation.
+      const method=body===undefined?'GET':'POST',route=url==='https://api.github.com/graphql'?'graphql':url.slice(BASE.length);
+      const payload=body===undefined?undefined:JSON.stringify(body);
+      const payloadSha256=digest(payload??'');
+      const requestSha256=digest(JSON.stringify({method,route,payloadSha256}));
+      return await bounded(async signal=>{
+        const active=()=>must(!poisoned&&!signal.aborted,'GITHUB_READER_LOCKED');
+        const credential=typeof token==='function'?await token():token;
+        active();
+        must(typeof credential==='string'&&credential.trim().length>0,'TOKEN_REQUIRED');
+        if(beforeRequest) {
+          const descriptor=Object.freeze({method,route,payloadSha256,requestSha256,signal});
+          if(url==='https://api.github.com/graphql'&&body?.query===THREAD_QUERY)compiledReadDescriptors.add(descriptor);
+          const allowed=await beforeRequest(descriptor);
+          must(allowed===true,'HOST_REQUEST_GUARD_DENIED');
+        }
+        // Timed-out token or guard continuations must never reach the network.
+        active();
+        const response = await fetch(url, { method, redirect: 'error', signal, headers: {
+          Authorization: `Bearer ${credential}`, Accept: 'application/vnd.github+json',
+          'X-GitHub-Api-Version': '2022-11-28', ...(payload!==undefined ? { 'Content-Type': 'application/json' } : {}),
+        }, ...(payload!==undefined ? { body: payload } : {}) });
+        active();must(response.ok, 'GITHUB_READ_FAILED');
+        const reader = response.body.getReader(); let bytes = 0; const chunks = [];
+        try {
+          while (true) {
+            const next = await reader.read(); active();if (next.done) break;
+            bytes += next.value.length; must(bytes <= 4_000_000, 'GITHUB_RESPONSE_LIMIT'); chunks.push(next.value);
+          }
+        } finally { await reader.cancel(); }
+        active();
+        const data = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+        must(!data.errors, 'GITHUB_QUERY_INCOMPLETE'); return data;
+      },timeoutMs);
+    } catch(error) {poisoned=true;throw error;}
   }
   async function get(route) {
     // No caller-supplied absolute URL, traversal, or arbitrary endpoint families.
     must(typeof route === 'string' && /^(pulls|commits|actions|issues|branches)(?:\/|\?)/.test(route) &&
-      !route.includes('..') && !route.includes('\\') && !route.includes('#'), 'ENDPOINT_NOT_ALLOWED');
+      !route.includes('..') && !route.includes('\\') && !route.includes('#') &&
+      !route.split('?')[0].includes('%') && new URL(BASE + route).href === BASE + route,
+    'ENDPOINT_NOT_ALLOWED');
     return request(BASE + route);
   }
   async function pages(route, field = null) {
