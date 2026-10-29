@@ -87,3 +87,37 @@
 - Не использовать production credential для staging.
 - Не считать успешный PR check доказательством deploy или live acceptance.
 - При конфликте правил применять более строгий уровень и записывать причину в `BLOCKERS.md`.
+
+
+## DRAFT #551 — standing release envelope (не вступил в силу)
+
+Предложение не меняет v0, действующие owner gates, main/protection или права служб.
+Одна будущая подпись ограничивает repository, target/environment, action-class,
+App/installation, policy/security digest, точные разрешённые пути, срок до 14 суток,
+нулевой paid API budget, счётчик операций и отзыв. Текущий HEAD и artifact digest
+проверяются заново по независимому CI/review; смена HEAD внутри этих границ сама
+по себе не требует подписи владельца. Изменение security contract, policy, secrets,
+permissions или границ требует отдельного решения. Source, release и activation
+не взаимозаменяемы; production не входит в данный проект envelope.
+
+`assessReleaseEnvelopeProposal` в существующем governance-модуле — чистая модель,
+не используемая `checkPr`, CI admission или host Authority. Она всегда возвращает
+`authorized=false`, включая PROPOSAL_ELIGIBLE. JSON от PR не является доверенным
+evidence. Существующие exact-HEAD approvals остаются обязательными.
+
+До защищённого включения необходимы: отдельное утверждение policy digest;
+trusted-base verifier с аутентифицированным owner/signed envelope и свежим отзывом;
+проверка полного diff без rename hiding, policy/security hash из доверенного base;
+связанные с exact HEAD независимые CI/review и artifact evidence; интеграция с
+существующим durable claim/Authority (atomic budget reservation + task idempotency);
+повторная проверка отзыва непосредственно перед effect. UNKNOWN/FAILED_LOCKED
+сохраняются, расход бюджета и срок не сбрасываются при рестарте. Подпись не заменяет
+branch protection, environments, fencing, native isolation, rollback и host checks.
+Криптографический envelopeDigest должен вычисляться по каноническому payload без
+поля самого digest; модель не реализует подпись/проверку и не доказывает её.
+
+Миграция: draft/tests → independent review → отдельное принятие новой policy →
+интеграция existing Authority/Verifier и CI → изолированные replay/concurrency tests →
+отдельно разрешённый physical acceptance. До этого любые release/install остаются
+BLOCKED. Откат будущей политики: прекратить новые claims, сохранить журнал и
+UNKNOWN, вернуться к v0; не отзывать/менять ключи неявно.

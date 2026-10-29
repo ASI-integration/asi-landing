@@ -38,6 +38,9 @@ jobs:
           node-version: 20
           cache: npm
 
+      - name: Draft release-envelope model (no authority)
+        run: node --test scripts/agent-os/__tests__/release-envelope-proposal.test.mjs
+
       - name: Validate demo release milestones and PR scope
         env:
           GITHUB_TOKEN: ${{ github.token }}

@@ -126,6 +126,56 @@ function fields(body) {
     iteration: get('Release-Diagnostic-Iteration'),
   };
 }
+/**
+ * Draft #551 model only. No caller in checkPr/main or host execution.
+ * Evidence is supplied by a future protected-base verifier, never PR JSON.
+ * Even an eligible proposal returns authorized=false: adoption and durable
+ * reservation must be implemented/reviewed before any authority is granted.
+ */
+export function assessReleaseEnvelopeProposal({ envelope: e, evidence: v, request: r, now }) {
+  const deny = reason => ({ status: 'BLOCKED', reason, authorized: false });
+  const digest = x => typeof x === 'string' && /^[a-f0-9]{64}$/.test(x);
+  const sha = x => typeof x === 'string' && SHA.test(x);
+  const natural = x => Number.isSafeInteger(x) && x >= 0;
+  const paths = x => Array.isArray(x) && x.length > 0 && new Set(x).size === x.length &&
+    x.every(p => typeof p === 'string' && /^[A-Za-z0-9_.\/-]+$/.test(p) &&
+      !p.startsWith('/') && !p.split('/').some(part => !part || part === '..' || part === '.'));
+  if (!e || !v || !r || !Number.isSafeInteger(now)) return deny('ENVELOPE_INPUT');
+  if (e.schema !== 'asi.release-envelope.proposal.v1' || e.repo !== REPO ||
+      e.environment !== 'beget-staging' || e.target !== 'pqukibofpo' ||
+      e.appId !== 5514822 || e.installationId !== 176281163 || !digest(e.policyDigest) ||
+      !digest(e.securityDigest) || !digest(e.envelopeDigest)) return deny('ENVELOPE_IDENTITY');
+  if (!Number.isSafeInteger(e.notBefore) || !Number.isSafeInteger(e.expiresAt) ||
+      e.expiresAt <= e.notBefore || e.expiresAt - e.notBefore > 14 * 86400000 ||
+      now < e.notBefore || now >= e.expiresAt) return deny('ENVELOPE_TIME');
+  if (v.ownerVerified !== true || v.ownerId !== OWNER_ID ||
+      v.envelopeDigest !== e.envelopeDigest || v.policyDigest !== e.policyDigest ||
+      v.revocation !== 'NOT_REVOKED' || v.observedAt !== now) return deny('ENVELOPE_TRUST');
+  if (!['source', 'release', 'activation'].includes(e.action) || r.action !== e.action ||
+      r.repo !== e.repo || r.target !== e.target || r.environment !== e.environment ||
+      r.appId !== e.appId || r.installationId !== e.installationId ||
+      r.securityDigest !== e.securityDigest) return deny('ENVELOPE_SCOPE');
+  if (!paths(e.allowedPaths) || !paths(r.changedPaths) ||
+      !r.changedPaths.every(p => e.allowedPaths.includes(p)) ||
+      r.changedPaths.some(p => GOVERNANCE.has(p) || p === 'docs/agent-os/AUTONOMY_POLICY.md' ||
+        p.startsWith('.github/') || /(^|\/)(secrets?|authority|permissions)(\/|\.)/i.test(p)))
+    return deny('ENVELOPE_PROTECTED_CHANGE');
+  if (!sha(r.headSha) || !sha(r.baseSha) || !digest(r.artifactDigest) ||
+      v.headSha !== r.headSha || v.baseSha !== r.baseSha || v.artifactDigest !== r.artifactDigest ||
+      v.ci !== 'SUCCESS' || v.independentReview !== 'PASS' || v.branchProtection !== 'PASS')
+    return deny('ENVELOPE_EXACT_EVIDENCE');
+  if (!natural(e.maxOperations) || e.maxOperations === 0 || !natural(v.usedOperations) ||
+      v.usedOperations >= e.maxOperations || e.paidApiUsd !== 0 || v.paidApiUsd !== 0)
+    return deny('ENVELOPE_BUDGET');
+  if (typeof r.taskId !== 'string' || !/^[a-z0-9][a-z0-9-]{0,99}$/.test(r.taskId) ||
+      v.taskId !== r.taskId || v.claim !== 'UNCLAIMED' || v.externalResult !== 'NONE')
+    return deny('ENVELOPE_REPLAY_OR_UNKNOWN');
+  if (e.action !== 'source' && (v.fencing !== 'PASS' || v.nativeIsolation !== 'PASS' ||
+      v.runtimeChecks !== 'PASS' || v.rollback !== 'PASS' || v.environmentProtection !== 'PASS'))
+    return deny('ENVELOPE_HOST_GATE');
+  return { status: 'PROPOSAL_ELIGIBLE', authorized: false, requiresAtomicReservation: true };
+}
+
 export function checkPr({ contract, changed, prNumber, prBody, headSha,
                           baseHasContract, ownerApproval = false, priorDiagnosticCount = 0, verifiedRuns = new Set() }) {
   must(Number.isSafeInteger(prNumber) && prNumber > 0 && SHA.test(headSha), 'PR_ID');
