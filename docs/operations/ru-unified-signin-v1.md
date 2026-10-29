@@ -52,7 +52,10 @@ expose the Resend key or pepper through `NEXT_PUBLIC_*`.
    acceptance, set protected `ASI_RU_EMAIL_CODE_SCHEMA_READY=true` on the exact
    reviewed RU target. This defaults OFF: possessing mail credentials alone
    must not advertise a working code-login button or admit OTP requests.
-   Configure server-only `ASI_RU_EMAIL_CODE_ENABLED=true`,
+   Configure the exact server-only `ASI_RU_EMAIL_CODE_ORIGIN=https://www.asi-global.ru`
+   (only when that is the independently verified RU host); never trust generic
+   `.ru` or client-controlled forwarded-host values for OTP routing. Configure
+   server-only `ASI_RU_EMAIL_CODE_ENABLED=true`,
    `ASI_RU_EMAIL_CODE_PEPPER` (>=32 random characters, independent of
    `SESSION_SECRET`), `ASI_AUTH_RESEND_API_KEY` and
    `ASI_AUTH_FROM_EMAIL` on the exact RU deployment target.

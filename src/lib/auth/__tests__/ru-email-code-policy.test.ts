@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { safeAuthRedirectPath } from '../app-url';
 import {
   createOneTimeCode, digestOneTimeCode, isSameOriginAuthRequest,
+  isCanonicalRuEmailCodeRequest,
   matchOneTimeCodeDigest, normalizeLoginEmail, ruCodeAuthConfigured,
 } from '../ru-email-code-policy';
 
@@ -29,6 +30,7 @@ describe('shared RU email-code identity policy', () => {
   it('defaults to disabled unless the complete server-only capability is configured', () => {
     const env = {
       ASI_RU_EMAIL_CODE_ENABLED: 'true', ASI_RU_EMAIL_CODE_SCHEMA_READY: 'true',
+      ASI_RU_EMAIL_CODE_ORIGIN: 'https://www.asi-global.ru',
       ASI_RU_EMAIL_CODE_PEPPER: pepper,
       ASI_AUTH_RESEND_API_KEY: 'fixture', ASI_AUTH_FROM_EMAIL: 'no-reply@asi-global.ru',
       SESSION_SECRET: pepper, SUPABASE_URL: 'https://example.test',
@@ -37,6 +39,8 @@ describe('shared RU email-code identity policy', () => {
     expect(ruCodeAuthConfigured(env)).toBe(true);
     expect(ruCodeAuthConfigured({ ...env, ASI_RU_EMAIL_CODE_ENABLED: undefined })).toBe(false);
     expect(ruCodeAuthConfigured({ ...env, ASI_RU_EMAIL_CODE_SCHEMA_READY: undefined })).toBe(false);
+    expect(ruCodeAuthConfigured({ ...env, ASI_RU_EMAIL_CODE_ORIGIN: undefined })).toBe(false);
+    expect(ruCodeAuthConfigured({ ...env, ASI_RU_EMAIL_CODE_ORIGIN: 'https://evil.ru' })).toBe(false);
     expect(ruCodeAuthConfigured({ ...env, ASI_RU_EMAIL_CODE_SCHEMA_READY: 'false' })).toBe(false);
     expect(ruCodeAuthConfigured({ ...env, ASI_RU_EMAIL_CODE_PEPPER: '' })).toBe(false);
     expect(ruCodeAuthConfigured({ ...env, ASI_AUTH_RESEND_API_KEY: undefined })).toBe(false);
@@ -50,6 +54,25 @@ describe('shared RU email-code identity policy', () => {
       '/next\nmalicious', 'https://evil.example', 'javascript:alert(1)',
     ]) {
       expect(safeAuthRedirectPath(unsafe)).toBe('/dashboard');
+    }
+  });
+  it('accepts OTP only at its exact configured ASI RU origin, regardless of a spoofed forwarded host', () => {
+    const env={ASI_RU_EMAIL_CODE_ORIGIN:'https://www.asi-global.ru'};
+    expect(isCanonicalRuEmailCodeRequest('https://www.asi-global.ru/api/auth/email-code/request',env)).toBe(true);
+    for (const uri of [
+      'http://www.asi-global.ru/api/auth/email-code/request',
+      'https://asi-global.ru/api/auth/email-code/request',
+      'https://g2.asi-global.ru/api/auth/email-code/request',
+      'https://another-business.ru/api/auth/email-code/request',
+      'https://www.asi-global.ru.evil.ru/api/auth/email-code/request',
+      'https://www.asi-global.ru:8443/api/auth/email-code/request',
+      'not-a-url',
+    ]) expect(isCanonicalRuEmailCodeRequest(uri,env)).toBe(false);
+    for (const origin of [undefined,'https://evil.ru','https://www.asi-global.ru:8443',
+      'http://www.asi-global.ru','https://user@www.asi-global.ru',
+      'https://www.asi-global.ru/extra']) {
+      expect(isCanonicalRuEmailCodeRequest('https://www.asi-global.ru/api/auth/email-code/request',
+        {ASI_RU_EMAIL_CODE_ORIGIN:origin})).toBe(false);
     }
   });
   it('rejects cross-origin and non-HTTPS requests', () => {

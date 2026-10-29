@@ -7,7 +7,7 @@ import { ensureAccountForUser } from '@/lib/accounts';
 import { readRequestJson } from '@/lib/safeRequestJson';
 import { supabase } from '@/lib/supabase';
 import { consumeRuEmailCode, ruEmailCodeReady } from '@/lib/auth/ru-email-code-server';
-import { isSameOriginAuthRequest } from '@/lib/auth/ru-email-code-policy';
+import { isCanonicalRuEmailCodeRequest, isSameOriginAuthRequest } from '@/lib/auth/ru-email-code-policy';
 
 export const runtime='nodejs';
 export const dynamic='force-dynamic';
@@ -35,7 +35,7 @@ async function findOrCreateExistingIdentity(email: string): Promise<{id:string;e
 }
 
 export async function POST(req:Request) {
-  if (!await getIsRuHost() || !ruEmailCodeReady())
+  if (!await getIsRuHost() || !ruEmailCodeReady() || !isCanonicalRuEmailCodeRequest(req.url,process.env))
     return NextResponse.json({ok:false,error:'EMAIL_CODE_UNAVAILABLE'},{status:503,headers});
   if(!isSameOriginAuthRequest(req.url,req.headers.get('origin')))
     return NextResponse.json({ok:false,error:'INVALID_ORIGIN'},{status:403,headers});

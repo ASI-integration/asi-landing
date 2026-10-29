@@ -30,10 +30,31 @@ export function matchOneTimeCodeDigest(expectedHex: string, actualHex: string): 
   return timingSafeEqual(Buffer.from(expectedHex, 'hex'), Buffer.from(actualHex, 'hex'));
 }
 
+/** Restrict RU OTP to a protected, exact ASI origin: a generic .ru/forwarded host is not sufficient. */
+export function canonicalRuEmailCodeOrigin(env: Readonly<Record<string, string | undefined>>): string | null {
+  const configured=env.ASI_RU_EMAIL_CODE_ORIGIN?.trim();
+  if (!configured) return null;
+  try {
+    const origin=new URL(configured);
+    if (origin.protocol !== 'https:' || origin.origin !== configured || origin.port !== '' ||
+        !['asi-global.ru','www.asi-global.ru'].includes(origin.hostname)) return null;
+    return configured;
+  } catch { return null; }
+}
+
+export function isCanonicalRuEmailCodeRequest(
+  requestUrl: string, env: Readonly<Record<string, string | undefined>>,
+): boolean {
+  const trusted=canonicalRuEmailCodeOrigin(env);
+  if (!trusted) return false;
+  try { return new URL(requestUrl).origin === trusted; } catch { return false; }
+}
+
 export function ruCodeAuthConfigured(env: Readonly<Record<string, string | undefined>>): boolean {
   // Enabling the UI must require an independently accepted database contract,
   // not merely a mail credential and a feature switch.
   return env.ASI_RU_EMAIL_CODE_ENABLED === 'true' &&
+    canonicalRuEmailCodeOrigin(env) !== null &&
     env.ASI_RU_EMAIL_CODE_SCHEMA_READY === 'true' &&
     (env.ASI_RU_EMAIL_CODE_PEPPER?.length ?? 0) >= 32 &&
     Boolean(env.ASI_AUTH_RESEND_API_KEY?.trim()) &&

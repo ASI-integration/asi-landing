@@ -11,6 +11,7 @@ const req=()=>new Request('https://www.asi-global.ru/api/auth/email-code/request
 beforeEach(()=>{
   vi.stubEnv('ASI_RU_EMAIL_CODE_ENABLED','true');
   vi.stubEnv('ASI_RU_EMAIL_CODE_SCHEMA_READY','true');
+  vi.stubEnv('ASI_RU_EMAIL_CODE_ORIGIN','https://www.asi-global.ru');
   vi.stubEnv('ASI_RU_EMAIL_CODE_PEPPER',pepper);
   vi.stubEnv('ASI_AUTH_RESEND_API_KEY','inert-test-key');
   vi.stubEnv('ASI_AUTH_FROM_EMAIL','login@asi-global.ru');
@@ -113,6 +114,14 @@ describe('RU email code: durable pending -> delivery -> activation',()=>{
   it('refuses issuance without server-only delivery configuration',async()=>{
     vi.stubEnv('ASI_AUTH_RESEND_API_KEY','');
     expect(await issueRuEmailCode('user@example.ru',req())).toEqual({sent:false,throttled:true});
+    expect(mocks.rpc).not.toHaveBeenCalled();
+    expect(mocks.fetch).not.toHaveBeenCalled();
+  });
+
+  it('refuses OTP issue or consume when the protected canonical RU origin is absent',async()=>{
+    vi.stubEnv('ASI_RU_EMAIL_CODE_ORIGIN','https://another-business.ru');
+    expect(await issueRuEmailCode('user@example.ru',req())).toEqual({sent:false,throttled:true});
+    expect(await consumeRuEmailCode('user@example.ru','12345678')).toBeNull();
     expect(mocks.rpc).not.toHaveBeenCalled();
     expect(mocks.fetch).not.toHaveBeenCalled();
   });
