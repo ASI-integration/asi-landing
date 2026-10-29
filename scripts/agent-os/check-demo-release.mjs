@@ -232,6 +232,66 @@ export function assessWitnessedReleaseEnvelopeProposal({ signedEnvelope, trusted
   }
 }
 
+/**
+ * Pure, non-authorizing check of a *trusted producer's* GitHub snapshots.
+ * A PR author must never be allowed to supply these objects as evidence.
+ * The protected-base workflow will have to fetch the actual provider responses,
+ * bind them to an independently signed witness and verify key provenance.
+ * No caller from checkPr/main; returning VERIFIED is not an authorization.
+ */
+export function inspectAuthenticatedProviderSnapshot({pr, runs, reviews, expected, now}) {
+  const deny = reason => ({status:'BLOCKED', reason, authorized:false});
+  if (!Number.isSafeInteger(now) || !expected || expected.repository !== REPO ||
+      !Number.isSafeInteger(expected.number) || expected.number <= 0 ||
+      !SHA.test(expected.baseSha || '') || !SHA.test(expected.headSha || '') ||
+      !Number.isSafeInteger(expected.independentReviewerId) ||
+      expected.independentReviewerId <= 0) return deny('PROVIDER_CONTEXT');
+  if (!pr || pr.number !== expected.number || pr.state !== 'open' ||
+      pr.base?.ref !== 'main' || pr.base?.sha !== expected.baseSha ||
+      pr.head?.sha !== expected.headSha ||
+      pr.head?.repo?.full_name !== REPO || pr.base?.repo?.full_name !== REPO ||
+      !Number.isSafeInteger(pr.user?.id) ||
+      expected.independentReviewerId === pr.user.id ||
+      expected.independentReviewerId === OWNER_ID) return deny('PROVIDER_PR_IDENTITY');
+  if (!Array.isArray(runs) || !Array.isArray(reviews)) return deny('PROVIDER_INCOMPLETE');
+  // Both required workflow IDs are pinned in the preexisting host activation
+  // contract; status names alone are not a trusted workflow identity.
+  const required = [
+    {workflow_id:311380800,event:'pull_request',head_sha:expected.headSha},
+    {workflow_id:390653294,event:'pull_request_target',head_sha:expected.baseSha},
+  ];
+  for (const rule of required) {
+    const matches = runs.filter(run =>
+      run.workflow_id === rule.workflow_id && run.event === rule.event &&
+      run.head_sha === rule.head_sha &&
+      run.repository?.full_name === REPO &&
+      Array.isArray(run.pull_requests) &&
+      run.pull_requests.some(p => p.number === expected.number &&
+        p.head?.sha === expected.headSha &&
+        p.base?.sha === expected.baseSha));
+    // Missing PR bindings, unclear attempts, or a newer failing run fail closed.
+    if (!matches.length || matches.some(run => !Number.isSafeInteger(run.id) ||
+          !Number.isSafeInteger(run.run_attempt) || run.run_attempt < 1))
+      return deny('PROVIDER_WORKFLOW_IDENTITY');
+    matches.sort((a,b) => b.id - a.id || b.run_attempt - a.run_attempt);
+    const latest = matches[0];
+    if (latest.status !== 'completed' || latest.conclusion !== 'success')
+      return deny('PROVIDER_WORKFLOW_NOT_GREEN');
+    const finished = Date.parse(latest.updated_at || '');
+    if (!Number.isFinite(finished) || finished > now ||
+        finished < now - 60 * 60 * 1000)
+      return deny('PROVIDER_WORKFLOW_STALE');
+  }
+  const matchingReview = reviews.some(review =>
+    review?.state === 'APPROVED' &&
+    review.commit_id === expected.headSha &&
+    review.user?.id === expected.independentReviewerId &&
+    Number.isFinite(Date.parse(review.submitted_at || '')) &&
+    Date.parse(review.submitted_at) <= now);
+  if (!matchingReview) return deny('PROVIDER_INDEPENDENT_REVIEW');
+  return {status:'PROVIDER_EVIDENCE_VERIFIED', authorized:false};
+}
+
 /** Disabled source-only adapter. trustedComparison is supplied by the protected
  * base runner from authenticated PR metadata, never from request/PR content.
  * PR commits are Git data only: no checkout, scripts, hooks or text conversion.
