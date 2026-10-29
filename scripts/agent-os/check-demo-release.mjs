@@ -218,8 +218,15 @@ export function assessWitnessedReleaseEnvelopeProposal({ signedEnvelope, trusted
         JSON.stringify(witness) !== signedEvidence.payload ||
         witness.envelopeDigest !== createHash('sha256').update(signedEnvelope.payload).digest('hex'))
       return deny('ENVELOPE_WITNESS_BINDING');
+    // The protected verifier must inventory the complete trusted diff (including
+    // both rename paths). Bind that inventory to this signed exact-head witness;
+    // never let a caller omit protected files from the gate's input.
+    if (!Array.isArray(witness.changedPaths) || !Array.isArray(request?.changedPaths) ||
+        JSON.stringify(witness.changedPaths) !== JSON.stringify(request.changedPaths))
+      return deny('ENVELOPE_WITNESS_PATHS');
     return assessSignedReleaseEnvelopeProposal({ signedEnvelope, trustedPublicKey,
-      evidence: { ...witness, ownerVerified: true, ownerId: OWNER_ID }, request, now });
+      evidence: { ...witness, ownerVerified: true, ownerId: OWNER_ID },
+      request: { ...request, changedPaths: witness.changedPaths }, now });
   } catch {
     return deny('ENVELOPE_WITNESS_SIGNATURE');
   }

@@ -148,3 +148,9 @@ producer; self-signed fixture не является GitHub/provider evidence.
 До live-интеграции необходимы защищённый key registry, независимый producer,
 полный security-diff inventory и атомарное связывание envelope ID с резервами
 существующего Publisher. Подписи и source tests сами по себе не открывают release.
+
+Draft witness binds the complete `changedPaths` inventory in the same signature as
+HEAD/base/artifact. The adapter rejects a missing or different request inventory
+and applies the protected-path gate to the signed list. The protected producer
+must derive that list from the trusted complete diff, including both rename paths;
+a signature alone still does not prove inventory completeness. No live admission.

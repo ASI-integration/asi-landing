@@ -13,7 +13,7 @@ function fixture(){
  const owner=key(),verifier=key(),d='b'.repeat(64),h='a'.repeat(40);
  const envelope={schema:'asi.release-envelope.proposal.v1',repo:'ASI-integration/asi-landing',environment:'beget-staging',target:'pqukibofpo',appId:5514822,installationId:176281163,policyDigest:d,securityDigest:d,notBefore:0,expiresAt:2000,action:'source',allowedPaths:['scripts/example.mjs'],maxOperations:2,paidApiUsd:0,verifierKeySha256:verifier.digest};
  const signedEnvelope=signed(envelope,owner);
- const evidence={schema:'asi.release-envelope-evidence.proposal.v1',envelopeDigest:hash(signedEnvelope.payload),policyDigest:d,revocation:'NOT_REVOKED',observedAt:1000,headSha:h,baseSha:h,artifactDigest:d,ci:'SUCCESS',independentReview:'PASS',branchProtection:'PASS',usedOperations:0,paidApiUsd:0,taskId:'task-1',claim:'UNCLAIMED',externalResult:'NONE'};
+ const evidence={schema:'asi.release-envelope-evidence.proposal.v1',changedPaths:['scripts/example.mjs'],envelopeDigest:hash(signedEnvelope.payload),policyDigest:d,revocation:'NOT_REVOKED',observedAt:1000,headSha:h,baseSha:h,artifactDigest:d,ci:'SUCCESS',independentReview:'PASS',branchProtection:'PASS',usedOperations:0,paidApiUsd:0,taskId:'task-1',claim:'UNCLAIMED',externalResult:'NONE'};
  const request={action:'source',repo:envelope.repo,environment:envelope.environment,target:envelope.target,appId:envelope.appId,installationId:envelope.installationId,securityDigest:d,changedPaths:['scripts/example.mjs'],headSha:h,baseSha:h,artifactDigest:d,taskId:'task-1'};
  return {owner,verifier,envelope,evidence,request,now:1000,signedEnvelope,signedEvidence:signed(evidence,verifier),trustedPublicKey:owner.pem,verifierPublicKey:verifier.pem};
 }
@@ -57,4 +57,28 @@ test('isolated existing ledger supplies durable budget across two distinct tasks
   assert.equal((await run('third-task')).mode,'WAITING');assert.equal(effects,2);
   assert.equal(JSON.parse(fs.readFileSync(store.file('receipts.json'))).completed.length,2);
  }finally{fs.rmSync(root,{recursive:true,force:true});}
+});
+
+
+test('signed path inventory rejects omitted protected paths and unsigned substitutions',()=>{
+ const x=fixture();x.evidence.changedPaths.push('.github/workflows/pr-validation.yml');
+ x.signedEvidence=signed(x.evidence,x.verifier);
+ assert.equal(assess(x).reason,'ENVELOPE_WITNESS_PATHS');
+ x.request.changedPaths=[...x.evidence.changedPaths];
+ assert.equal(assess(x).reason,'ENVELOPE_PROTECTED_CHANGE');
+ const y=fixture();y.request.changedPaths=['scripts/other.mjs'];
+ assert.equal(assess(y).reason,'ENVELOPE_WITNESS_PATHS');
+});
+test('missing signed inventory fails closed and tampering invalidates witness',()=>{
+ const x=fixture();delete x.evidence.changedPaths;x.signedEvidence=signed(x.evidence,x.verifier);
+ assert.equal(assess(x).reason,'ENVELOPE_WITNESS_PATHS');
+ const y=fixture();y.signedEvidence.payload=y.signedEvidence.payload.replace('scripts/example.mjs','scripts/other.mjs');
+ assert.equal(assess(y).reason,'ENVELOPE_WITNESS_SIGNATURE');
+});
+test('signed invalid path inventories remain subject to existing path validation',()=>{
+ for(const paths of [[],['../scripts/example.mjs'],['scripts/example.mjs','scripts/example.mjs']]){
+  const x=fixture();x.evidence.changedPaths=paths;x.request.changedPaths=paths;
+  x.signedEvidence=signed(x.evidence,x.verifier);
+  assert.equal(assess(x).reason,'ENVELOPE_PROTECTED_CHANGE');assert.equal(assess(x).authorized,false);
+ }
 });
