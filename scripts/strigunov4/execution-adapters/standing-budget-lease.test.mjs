@@ -331,3 +331,54 @@ leaseTest('concurrent queued admission reserves cannot outlive a poisoned post-f
     assert.equal(saved.envelopes['b'.repeat(64)].claims.length,1);
   } finally {await f.close();}
 });
+
+
+leaseTest('expiry between post-fsync callback and public lease return spends but denies', async () => {
+  const f=await fixture();
+  try {
+    let ticks=0, got;
+    const outcome=await f.store.execute('github-publisher',async ({transaction})=>{
+      const budget=createLeaseBoundStandingBudget({transaction,pinnedBaseSha:base,
+        clock:()=>++ticks<=3?at:at+100001});
+      const lease=inspectStandingTransaction(transaction);
+      got=await budget.reserve({envelope:envelope(),effect:effect('last-moment-expiry',lease)});
+      assert.equal(got.reason,'BUDGET_ENVELOPE_EXPIRED_AFTER_RESERVATION');
+      assert.equal(got.authorized,false);
+      return null;
+    },{async verifyTask(){throw Error('unexpected');}},
+       async()=>{throw Error('unexpected');});
+    assert.equal(outcome.mode,'WAITING');
+    const saved=(await f.read()).standingDelegationBudget.envelopes['b'.repeat(64)];
+    assert.equal(saved.requests,1);
+    assert.equal(saved.claims.length,1); // post-fsync uncertainty cannot refund
+  } finally {await f.close();}
+});
+
+leaseTest('selected task mutation during final post-fsync clock read cannot return RESERVED', async () => {
+  const f=await fixture();
+  try {
+    let transaction, observed, ticks=0;
+    const selected=task();
+    const outcome=await f.store.execute('github-publisher',async ({transaction:t})=>{
+      transaction=t;
+      return selected;
+    },{async verifyTask(){return {baseSha:base};}},async()=>{
+      const lease=inspectStandingTransaction(transaction,{write:true});
+      const budget=createLeaseBoundStandingBudget({transaction,pinnedBaseSha:base,
+        clock:()=>{if(++ticks===3)selected.sha='f'.repeat(40);return at;}});
+      observed=await budget.reserve({envelope:envelope(),
+        effect:effect('postfsync-selected-mutation',lease,'create-tree')});
+      // Real state.execute rejects the mutated source task, even when
+      // the id/SHA captured in the effect were originally correct.
+      assert.equal(observed.reason,'BUDGET_LEASE_EXPIRED_AFTER_RESERVATION');
+      assert.equal(observed.authorized,false);
+      selected.sha=base; // test fixture restoration, no state or journal reset
+      return {status:'WAITING'};
+    });
+    assert.equal(outcome.mode,'WAITING');
+    const saved=(await f.read()).standingDelegationBudget.envelopes['b'.repeat(64)];
+    assert.equal(saved.requests,1);
+    assert.equal(saved.writes,1);
+    assert.equal(saved.claims.length,1);
+  } finally {await f.close();}
+});
