@@ -4,14 +4,23 @@ export const REPOSITORY='ASI-integration/asi-landing';
 export const branchAllowed=b=>typeof b==='string'&&/^asi\/engine-task\/[a-z0-9][a-z0-9-]{0,70}$/.test(b);
 export function draftBody(job,evidence){
   must(/^[a-z0-9-]{1,96}$/.test(job)&&sha(evidence?.baseSha)&&sha(evidence?.head)&&/^[a-f0-9]{64}$/.test(evidence?.deltaSha256),'PR_EVIDENCE_REQUIRED');
-  return `Release-Stage: S4-G1\nRelease-Mode: implementation\n
+  must(evidence.stage===undefined||['S4-G1','S4-G2'].includes(evidence.stage),'PR_STAGE');
+  must(evidence.reviewPolicySha256===undefined||/^[a-f0-9]{64}$/.test(evidence.reviewPolicySha256),'PR_REVIEW_POLICY');
+  must(evidence.reviewMode===undefined||(evidence.reviewMode==='OWNER_VERIFIED_CI'&&
+    evidence.stage==='S4-G2'&&evidence.reviewPolicySha256!==undefined),'PR_REVIEW_MODE');
+  const ownerCI=evidence.reviewMode==='OWNER_VERIFIED_CI';
+  const pendingReview=evidence.reviewPolicySha256===undefined?'exact-HEAD CodeRabbit':
+    `${ownerCI?'owner-verified CI':'independent published'} review (policy SHA256 ${evidence.reviewPolicySha256})`;
+  const deltaReview=ownerCI?'owner-verified CI delta':'independent delta';
+  const nextReview=ownerCI?'authenticated owner-CI':'independent';
+  return `Release-Stage: ${evidence.stage??'S4-G1'}\nRelease-Mode: implementation\n
 ## Результат
 Approved source task ${job}. Draft publication only; physical acceptance is not claimed.
 ## Scope
 Baseline SHA: ${evidence.baseSha}
 Candidate SHA: ${evidence.head}
 Delta SHA256: ${evidence.deltaSha256}
-Only host-admitted existing files. No deployment or merge.
+Only exact host-admitted files. No deployment or merge.
 ## Product contract
 No product scope or authority expansion; host admission required.
 ## Autonomy и риск
@@ -19,15 +28,15 @@ No product scope or authority expansion; host admission required.
 ## Изменённые файлы
 Exact admitted diff verified through GitHub tree and PR file readback.
 ## Проверки
-Local checks and independent delta review passed. GitHub CI and exact-HEAD CodeRabbit remain pending verification.
+Local checks and ${deltaReview} review passed. GitHub CI and ${pendingReview} remain pending verification.
 ## Data, migration и external side effects
 Git objects, one task branch and one Draft PR only. No server, database, messages or payments.
 ## Staging / rollout / rollback
 No staging or production execution. Stop admission; preserve receipts and locks. No automatic remote deletion or history rewrite.
 ## Blockers и handoff
-Wait for exact-HEAD CI and independent review. Owner-only gates are never inferred from this text.
+Wait for exact-HEAD CI and ${nextReview} review. Owner-only gates are never inferred from this text.
 ## Checklist
-Draft; no merge; no physical G1 acceptance; G2 remains closed.\n`;
+Draft; no merge; no physical stage acceptance or stage transition.\n`;
 }
 export async function bounded(operation,timeoutMs=10000){
   must(Number.isSafeInteger(timeoutMs)&&timeoutMs>0&&timeoutMs<=30000,'DEADLINE_REQUIRED');
@@ -39,12 +48,13 @@ export async function bounded(operation,timeoutMs=10000){
 /** A timed-out transport is permanently poisoned, including abort-ignoring fetches.
  * Hosts must not construct a replacement to replay an uncertain mutation.
  */
-export function createPublisherTransport({token,timeoutMs=10000}={}){
+export function createPublisherTransport({token,timeoutMs=10000,beforeRequest=async()=>{}}={}){
   must(typeof token==='function'||typeof token==='string'&&token.trim().length>0,'HOST_TOKEN_REQUIRED');
   let poisoned=false,busy=false;
   async function request(method,route,body){
     must(!poisoned&&!busy,'TRANSPORT_LOCKED');busy=true;
     try{return await bounded(async signal=>{
+      await beforeRequest({mutation:method==='POST'});
       const credential=typeof token==='function'?await token():token;
       must(typeof credential==='string'&&credential.trim().length>0,'HOST_TOKEN_REQUIRED');
       const response=await fetch(`https://api.github.com/repos/${REPOSITORY}/${route}`,{

@@ -5,6 +5,39 @@ import {fileURLToPath} from 'node:url';
 import {execFileSync} from 'node:child_process';
 import {digest,must} from './state.mjs';
 import {ENGINE_PILOT} from '../ASI-STRIGUNOV4-MULTIJOB-20261020.mjs';
+
+/** Non-installable runtime source closure. Preserve the repository layout so
+ * the existing sibling Global Dispatcher imports resolve without duplication.
+ * Never reuse the old pilot installer/claim for this new source layout.
+ */
+export async function buildRuntimeClosure({repository,output}){
+  const scripts=path.join(await fs.realpath(repository),'scripts'),files={};
+  await fs.mkdir(output,{mode:0o700});
+  must(await fs.realpath(output)===path.resolve(output),'PACKAGE_OUTPUT_PATH');
+  async function copy(relative){
+    const name=path.posix.normalize(relative);
+    must((/^strigunov4\/[A-Za-z0-9_./-]+\.mjs$/.test(name)||
+      ['global-dispatcher/dispatcher.mjs','global-dispatcher/product-adapters.mjs'].includes(name))&&
+      !name.split('/').includes('..'),'PACKAGE_IMPORT_SCOPE');
+    if(Object.hasOwn(files,name))return;
+    const source=path.join(scripts,name);
+    must(await fs.realpath(source)===source&&(await fs.lstat(source)).isFile(),'PACKAGE_SOURCE_PATH');
+    const content=await fs.readFile(source,'utf8');files[name]=digest(content);
+    const destination=path.join(output,'scripts',name);
+    await fs.mkdir(path.dirname(destination),{recursive:true,mode:0o700});
+    await fs.writeFile(destination,content,{flag:'wx',mode:0o600});
+    for(const m of content.matchAll(/(?:from\s*|import\s*)['"]([^'"]+)['"]/g)){
+      if(m[1].startsWith('node:'))continue;
+      must(m[1].startsWith('.'),'PACKAGE_EXTERNAL_DEPENDENCY');
+      await copy(path.posix.join(path.posix.dirname(name),m[1]));
+    }
+  }
+  await copy('strigunov4/execution-adapters/host-runtime.mjs');
+  const manifest={schema:'asi.engine-runtime-source-closure.v1',entry:'scripts/strigunov4/execution-adapters/host-runtime.mjs',
+    files,installable:false,reason:'HOST_RUNNER_ADMISSION_AND_FENCING_REQUIRED'};
+  await fs.writeFile(path.join(output,'manifest.json'),JSON.stringify(manifest,null,2)+'\n',{flag:'wx',mode:0o600});
+  return manifest;
+}
 export const OLD_RUNNER='afbac44ff351d7c929e20886b6739bef97e302eb28f89d344902a9364e1d98e8';
 export function runnerCandidate(original){
   must(digest(original)===OLD_RUNNER,'RUNNER_BASE_MISMATCH');
@@ -56,4 +89,51 @@ export async function buildPackage({repository,runnerFile,output,baseSha}){
 if(process.argv[1]===fileURLToPath(import.meta.url)){
   const [repository,runnerFile,output,baseSha]=process.argv.slice(2);
   buildPackage({repository,runnerFile,output,baseSha}).then(x=>console.log(JSON.stringify(x))).catch(()=>{console.error('PACKAGE_BUILD_FAILED');process.exitCode=1;});
+}
+
+/** Freeze a Beget source candidate, not an assertion of install/authority PASS. */
+export async function buildBegetCandidate({repository,output,baseSha}){
+  must(/^[a-f0-9]{40}$/.test(baseSha),'BEGET_BASE_SHA');
+  repository=await fs.realpath(repository);
+  const outputPath=path.resolve(output),outputParent=await fs.realpath(path.dirname(outputPath));
+  const canonicalOutput=path.join(outputParent,path.basename(outputPath));
+  must(canonicalOutput!==repository&&!canonicalOutput.startsWith(repository+path.sep),'PACKAGE_OUTPUT_IN_SOURCE');
+  // The closure builder requires a canonical, previously absent destination.
+  // Reject aliases before mkdir so a failed build cannot dirty its own source.
+  must(outputParent===path.dirname(outputPath),'PACKAGE_OUTPUT_PATH');
+  const sourceSha=execFileSync('/usr/bin/git',['rev-parse','HEAD'],{cwd:repository,encoding:'utf8'}).trim();
+  const assertSource=()=>{
+    must(execFileSync('/usr/bin/git',['status','--porcelain','--untracked-files=normal'],{cwd:repository,encoding:'utf8'}).trim()==='', 'PACKAGE_DIRTY_SOURCE');
+    must(execFileSync('/usr/bin/git',['rev-parse','HEAD'],{cwd:repository,encoding:'utf8'}).trim()===sourceSha,'PACKAGE_SOURCE_CHANGED');
+  };
+  assertSource();
+  const closure=await buildRuntimeClosure({repository,output});
+  const catalog=[];
+  for(const part of ['identity','races']){
+    const id=`beget-g2-witness-${part}-v1`,name=`scripts/strigunov4/test_${id.replaceAll('-','_')}.py`;
+    const content=await fs.readFile(path.join(repository,`scripts/strigunov4/execution-adapters/beget-work-orders/${part}.py.txt`),'utf8');
+    // Exact source branch must already contain the accepted witness; no substitute stub.
+    const witness=execFileSync('/usr/bin/git',['show',baseSha+':scripts/strigunov4/beget_g2_operator_witness.py'],{cwd:repository});
+    must(digest(witness)==='44bd342a521a3c609338cd9fd29e7f9e1388d8c85cbd71cf68a8990fdbefad6a','WITNESS_BASE_HASH');
+    try{execFileSync('/usr/bin/git',['cat-file','-e',baseSha+':'+name],{cwd:repository,stdio:'pipe'});throw Error('TASK_ALREADY_EXISTS');}
+    catch(e){must(e.status===128,'TASK_ALREADY_EXISTS');}
+    catalog.push({id,kind:'github-publisher',stage:'S4-G2',workOrderId:id,repo:'ASI-integration/asi-landing',sha:baseSha,pr:null,
+      branch:'asi/engine-task/'+id,changes:[{path:name,beforeSha256:null,content}]});
+  }
+  const catalogRaw=JSON.stringify(catalog,null,2)+'\n';
+  await fs.writeFile(path.join(output,'catalog.json'),catalogRaw,{flag:'wx',mode:0o600});
+  const unit=await fs.readFile(path.join(repository,'scripts/strigunov4/execution-adapters/asi-strigunov-agent.service'));
+  await fs.writeFile(path.join(output,'asi-strigunov-agent.service'),unit,{flag:'wx',mode:0o600});
+  const installer=await fs.readFile(path.join(repository,'scripts/strigunov4/execution-adapters/beget-install.py'));
+  await fs.writeFile(path.join(output,'beget-install.py'),installer,{flag:'wx',mode:0o600});
+  assertSource();
+  const manifest={schema:'asi.beget-engine-source.v1',sourceSha,
+    baseSha,entry:'scripts/strigunov4/ASI-STRIGUNOV4-RUNNER-BRIDGE-20261020.mjs',
+    files:Object.entries(closure.files).map(([name,sha256])=>({path:'scripts/'+name,sha256})).sort((a,b)=>a.path.localeCompare(b.path)),
+    catalogSha256:digest(catalogRaw),unitSha256:digest(unit),installerSha256:digest(installer),
+    nodeSha256:'8142d37c6f2f372ef040419e7a111a6baf17df89f8078d02447d6c639ae20c1d',
+    bwrapSha256:'e318903862396f96de3df57264e0158682b952fd3fb53ac23d876413e7b30f71',installable:false,
+    requiredGates:['SOURCE_REVIEW','PROTECTED_MAIN_BASE','NATIVE_BWRAP_ACCEPTANCE','INDEPENDENT_OLD_WRITER_FENCE','SIGNED_INSTALL_AND_TASK_AUTHORITY']};
+  await fs.writeFile(path.join(output,'manifest.json'),JSON.stringify(manifest,null,2)+'\n',{mode:0o600});
+  return manifest;
 }

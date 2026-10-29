@@ -1,0 +1,51 @@
+[Unit]
+Description=ASI existing Engine on Beget (finite signed tasks)
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=3600
+StartLimitBurst=3
+ConditionHost=pqukibofpo
+
+[Service]
+Type=simple
+User=asi-engine
+Group=asi-engine
+WorkingDirectory=/var/lib/asi-engine
+RuntimeDirectory=asi-engine
+RuntimeDirectoryMode=0700
+ExecStart=/usr/bin/flock -n -E 73 --no-fork /run/asi-engine/worker.lock /opt/asi-engine/node /opt/asi-engine/scripts/strigunov4/ASI-STRIGUNOV4-RUNNER-BRIDGE-20261020.mjs --beget
+Restart=on-failure
+RestartSec=600
+RestartPreventExitStatus=73
+TimeoutStopSec=1800
+KillMode=control-group
+UMask=0077
+NoNewPrivileges=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+ReadWritePaths=/var/lib/asi-engine /run/asi-engine
+InaccessiblePaths=-/var/lib/asi-runtime -/var/www/asi-staging -/var/www/asi-production
+MemoryMax=1G
+MemorySwapMax=0
+CPUQuota=75%
+TasksMax=64
+LimitNOFILE=256
+LogRateLimitIntervalSec=3600
+LogRateLimitBurst=20
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

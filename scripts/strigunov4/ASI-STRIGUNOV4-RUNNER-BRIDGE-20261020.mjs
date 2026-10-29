@@ -92,3 +92,31 @@ export function createReadOnlyRunnerBridge({stateDir,fetchSnapshot,clock=()=>Dat
 
 // Explicit isolated acceptance seam; the observing bridge above remains read-only.
 export {createIsolatedAcceptanceLoop} from './execution-adapters/isolated-loop.mjs';
+
+// Service entry for the existing Engine, with no home-PC dependency. Process
+// cadence is unbounded; signed task/API limits and ledger brakes are not.
+export async function runContinuousWorker({iteration,signal,wait,emit=()=>{}}){
+  must(typeof iteration==='function'&&typeof wait==='function','WORKER_PORTS');
+  let failures=0;
+  while(!signal?.aborted){
+    let r;
+    try{r=await iteration();must(r&&['WAITING','REPORT_READY','FAILED_LOCKED','BLOCKED'].includes(r.mode),'WORKER_RESULT');}
+    catch{r={mode:'BLOCKED',reason:'HOST_ADMISSION_OR_RESULT_UNVERIFIED'};}
+    failures=['BLOCKED','FAILED_LOCKED'].includes(r.mode)?Math.min(6,failures+1):0;
+    // Fixed metadata only: no raw error/output, task content, API response or token.
+    emit({event:'engine_tick',at:new Date().toISOString(),mode:r.mode,
+      outcome:r.mode==='REPORT_READY'?'VERIFIED_RECEIPT':r.mode==='WAITING'?'IDLE_OR_PENDING':'EXECUTION_BLOCKED',failures});
+    if(!signal?.aborted)await wait(Math.min(3600000,600000*2**failures),signal);
+  }
+}
+import {fileURLToPath} from 'node:url';
+import {setTimeout as delay} from 'node:timers/promises';
+import {createBegetRuntime} from './execution-adapters/host-runtime.mjs';
+if(process.argv[1]===fileURLToPath(import.meta.url)&&process.argv[2]==='--beget'&&process.argv.length===3){
+  const stop=new AbortController();process.on('SIGTERM',()=>stop.abort());process.on('SIGINT',()=>stop.abort());
+  let active;
+  await runContinuousWorker({signal:stop.signal,
+    iteration:async()=>{active??=createBegetRuntime();return (await active).iteration();},
+    wait:async ms=>{try{await delay(ms,null,{signal:stop.signal});}catch(e){if(e.name!=='AbortError')throw e;}},
+    emit:x=>console.log(JSON.stringify(x))});
+}
