@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks=vi.hoisted(()=>({rpc:vi.fn(), fetch:vi.fn()}));
 vi.mock('@/lib/supabase',()=>({supabase:{rpc:mocks.rpc}}));
 
-import { issueRuEmailCode, consumeRuEmailCode } from '../ru-email-code-server';
+import { issueRuEmailCode, consumeRuEmailCode, trustedClientIp } from '../ru-email-code-server';
 
 const pepper='isolated-test-only-strong-pepper-at-least-32-chars';
 const req=()=>new Request('https://www.asi-global.ru/api/auth/email-code/request',{method:'POST'});
@@ -24,6 +24,47 @@ beforeEach(()=>{
   mocks.fetch.mockReset();
 });
 afterEach(()=>{vi.unstubAllEnvs();vi.unstubAllGlobals();});
+
+describe('RU email OTP IP quota cannot be split by spoofed headers',()=>{
+  it('uses only Vercel edge-forwarded IP, ignoring x-real-ip and x-forwarded-for',()=>{
+    vi.stubEnv('ASI_RU_AUTH_TRUST_PROXY','true');
+    vi.stubEnv('VERCEL','1');
+    const request=new Request('https://www.asi-global.ru/api/auth/email-code/request',{
+      headers:{
+        'x-vercel-forwarded-for':'203.0.113.25',
+        'x-real-ip':'198.51.100.77',
+        'x-forwarded-for':'192.0.2.42',
+      },
+    });
+    expect(trustedClientIp(request)).toBe('203.0.113.25');
+  });
+
+  it('uses a shared quota when the edge address is missing, invalid or ambiguous',()=>{
+    vi.stubEnv('ASI_RU_AUTH_TRUST_PROXY','true');
+    vi.stubEnv('VERCEL','1');
+    for(const bad of ['', '203.0.113.1, 198.51.100.1', '999.999.999.999', '2001:db8::1%eth0']){
+      const request=new Request('https://www.asi-global.ru/',{
+        headers:{'x-vercel-forwarded-for':bad,'x-real-ip':'198.51.100.77'},
+      });
+      expect(trustedClientIp(request)).toBe('unattributed');
+    }
+    expect(trustedClientIp(new Request('https://www.asi-global.ru/'))).toBe('unattributed');
+  });
+
+  it('requires explicit trusted proxy for a single self-hosted IP',()=>{
+    vi.stubEnv('VERCEL','');
+    const request=new Request('https://www.asi-global.ru/',{
+      headers:{'x-forwarded-for':'2001:db8::1','x-real-ip':'192.0.2.42'},
+    });
+    expect(trustedClientIp(request)).toBe('unattributed');
+    vi.stubEnv('ASI_RU_AUTH_TRUST_PROXY','true');
+    expect(trustedClientIp(request)).toBe('2001:db8::1');
+    const appended=new Request('https://www.asi-global.ru/',{
+      headers:{'x-forwarded-for':'2001:db8::1, 192.0.2.42'},
+    });
+    expect(trustedClientIp(appended)).toBe('unattributed');
+  });
+});
 
 describe('RU email code: durable pending -> delivery -> activation',()=>{
   it('activates the exact issued HMAC only after mail provider accepts the send',async()=>{

@@ -1,4 +1,5 @@
 import { createHmac } from 'node:crypto';
+import { isIP } from 'node:net';
 import { createOneTimeCode, digestOneTimeCode, normalizeLoginEmail, ruCodeAuthConfigured } from './ru-email-code-policy';
 import { supabase } from '@/lib/supabase';
 
@@ -14,11 +15,17 @@ export function emailCodeIpDigest(ip: string, pepper: string): string {
   return createHmac('sha256', pepper).update('asi.ru.email-code.ip.v1\0').update(ip).digest('hex');
 }
 
-/** Proxy must overwrite forwarded IP headers; otherwise use a shared quota. */
+/** Only an edge-overwritten single valid IP may divide the hourly quota.
+ * On Vercel use its edge-owned address, never caller-supplied x-real-ip.
+ * Self-hosted proxy mode requires verified overwrite of x-forwarded-for.
+ * Malformed or ambiguous addresses use the conservative shared IP bucket.
+ */
 export function trustedClientIp(req: Request): string {
   if (process.env.ASI_RU_AUTH_TRUST_PROXY !== 'true') return 'unattributed';
-  const ip = (req.headers.get('x-real-ip') || req.headers.get('x-forwarded-for')?.split(',')[0] || '').trim();
-  return /^[0-9a-f.:]{3,45}$/i.test(ip) ? ip : 'unattributed';
+  const address = (process.env.VERCEL === '1'
+    ? req.headers.get('x-vercel-forwarded-for')
+    : req.headers.get('x-forwarded-for'))?.trim() || '';
+  return isIP(address) !== 0 ? address.toLowerCase() : 'unattributed';
 }
 
 export async function issueRuEmailCode(emailInput: unknown, req: Request): Promise<{sent: boolean; throttled: boolean}> {
