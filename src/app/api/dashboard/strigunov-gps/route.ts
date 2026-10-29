@@ -10,7 +10,7 @@ const REPO = 'ASI-integration/asi-landing';
 const BASE = 'https://api.github.com/repos/' + REPO;
 const RELEASE_PATH = 'docs/agent-os/releases/strigunov4-demo.json';
 // Include the current infrastructure and G2 integration PRs. Keep legacy G1 context.
-const PR_NUMBERS = [529, 532, 533, 549, 550];
+const PR_NUMBERS = [529, 532, 533, 537, 549, 550, 552];
 const STAGE_IDS = [1, 2, 3, 4, 5, 6].map(n => 'S4-G' + n);
 type GitHubPR = { number: number; state: string; draft: boolean; merged: boolean; updated_at: string; head: { sha: string } };
 type Workflow = { id: number; name: string; status: string; conclusion: string | null; head_sha: string; html_url: string };
@@ -63,11 +63,15 @@ export async function GET() {
   const token = process.env.GITHUB_TOKEN?.trim();
   if (!token) return NextResponse.json({ok: false, reason: 'Нет серверного доступа к GitHub'}, {status: 503, headers: noStore});
   try {
-    const [file, issue, ...prList] = await Promise.all([
+    // The canonical release file is mandatory, but an optional PR/issue outage
+    // must not hide the whole map. Missing data always remains UNKNOWN.
+    const [file, issue, prResults] = await Promise.all([
       github<{ content: string; encoding: string; sha: string }>(BASE + '/contents/' + RELEASE_PATH + '?ref=main', token),
-      github<{ number: number; state: string; updated_at: string }>(BASE + '/issues/511', token),
-      ...PR_NUMBERS.map(n => github<GitHubPR>(BASE + '/pulls/' + n, token)),
+      github<{ number: number; state: string; updated_at: string }>(BASE + '/issues/511', token).catch(() => null),
+      Promise.all(PR_NUMBERS.map(n => github<GitHubPR>(BASE + '/pulls/' + n, token).catch(() => null))),
     ]);
+    const partialPrData = prResults.some(p => p === null);
+    const prList = prResults.filter((p): p is GitHubPR => p !== null);
     if (file.encoding !== 'base64') throw new Error('Unrecognized release encoding');
     const release = JSON.parse(Buffer.from(file.content.replace(/\s/g, ''), 'base64').toString('utf8')) as {
       schemaVersion: string; releaseId: string; stages: ReleaseStage[];
@@ -115,8 +119,9 @@ export async function GET() {
     const g1Accepted = await verifyPhysicalG1(release.stages[0], token);
     const payload = {
       ok: true, observedAt: new Date().toISOString(), mapSha: file.sha,
+      partialSources: partialPrData || issue === null || prs.some(p => !p.ciAvailable),
       mapUrl: 'https://github.com/' + REPO + '/blob/main/' + RELEASE_PATH,
-      issue: {number: 511, state: issue.state, updatedAt: issue.updated_at,
+      issue: {number: 511, state: issue?.state ?? 'UNKNOWN', updatedAt: issue?.updated_at ?? null,
         url: 'https://github.com/' + REPO + '/issues/511'},
       stages: release.stages.map(s => ({
         id: s.id, title: s.title, status: s.status, proofCount: s.proof.length,
