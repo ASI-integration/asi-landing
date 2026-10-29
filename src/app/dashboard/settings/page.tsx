@@ -1,11 +1,21 @@
 'use client';
 
 import { useSession } from '@/contexts/SessionContext';
+import { useEffect, useState } from 'react';
 
 export default function SettingsPage() {
   const { session } = useSession();
   const email = session?.user?.email ?? '—';
   const accountName = session?.account?.name ?? '—';
+  const [yandexAvailable,setYandexAvailable]=useState(false);
+  useEffect(()=>{
+    let active=true;
+    void fetch('/api/auth/ru-methods',{cache:'no-store'})
+      .then(r=>r.ok?r.json():null)
+      .then(j=>{if(active)setYandexAvailable(j?.market==='ru'&&j?.yandexId===true);})
+      .catch(()=>{if(active)setYandexAvailable(false);});
+    return ()=>{active=false;};
+  },[]);
 
   return (
     <div className="space-y-8 max-w-2xl">
@@ -35,6 +45,15 @@ export default function SettingsPage() {
           </div>
         </div>
       </section>
+
+      {yandexAvailable && <section className="rounded-xl border border-slate-200 bg-white p-7">
+        <h2 className="text-lg font-bold text-slate-900">Яндекс ID</h2>
+        <p className="mt-2 text-sm text-slate-600">Привяжите Яндекс к существующему аккаунту ASI, чтобы позже входить без Google и пароля.</p>
+        <a href="/api/auth/yandex/start?mode=link&redirect=%2Fdashboard%2Fsettings"
+          className="mt-4 inline-block rounded-lg border border-slate-900 px-4 py-3 text-sm font-semibold text-slate-900">
+          Привязать Яндекс ID
+        </a>
+      </section>}
 
       {/* Sections coming later */}
       <section className="bg-slate-50 rounded-xl border border-slate-200 p-7">
