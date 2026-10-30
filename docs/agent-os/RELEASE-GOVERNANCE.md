@@ -50,3 +50,20 @@ ASI-OWNER-APPROVE:RELEASE-EXCEPTION:<номер_PR>:<40-символьный_HEA
 ## Конечная точка
 
 Текущие этапы идут по порядку `S4-G1` → `S4-G6`. После отдельной физической приёмки последнего этапа владелец фиксирует `READY_FOR_DEMO`. Добавление не требовавшихся функций переводится в следующий релиз, а не задерживает показ. Изменение финишной точки само является защищённым решением владельца.
+
+## ASI DEVELOPMENT — source-only workflow (proposal pending governed adoption)
+
+For routine development PRs, set `Release-Mode: development`. Source changes
+limited to `src/`, `tests/`, `docs/` and `scripts/strigunov4/` may pass
+the milestone gate without owner-per-commit or per-file attestation, provided
+they do not change protected authority, credentials, secrets, governance or
+deployment paths. Missing/unknown paths remain denied, and the independent
+protected-base workflow must retain trusted full diff inventory.
+
+This mode returns `SOURCE_DEVELOPMENT_ONLY` with `authority: NONE`.
+It **does not grant** protected main merge, production or staging deployment,
+installation, operator privilege, real guest sends, paid effects or authority
+to modify authorization policy. CI, review and branch protections continue
+to apply. Protected releases retain separate signed admission and physical
+isolation requirements. Adoption of this change itself follows protected
+governance; it is NOT active until merged and independently verified.
