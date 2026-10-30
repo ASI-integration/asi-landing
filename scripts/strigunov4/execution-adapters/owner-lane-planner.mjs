@@ -33,10 +33,22 @@ const response = (kind, reason, lanes = [], candidate = null) => Object.freeze({
   authority: 'NONE_SOURCE_ONLY',
 });
 const safeMs = n => Number.isSafeInteger(n) && n >= 0;
+// Durable evidence must be plain owned data: prototypes/accessors cannot supply
+// catalog, scope or journal fields that were never persistently recorded.
+const ownDataRecord = (value, fields) => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const proto = Object.getPrototypeOf(value);
+  if (proto !== Object.prototype && proto !== null) return false;
+  return fields.every(field => {
+    const property = Object.getOwnPropertyDescriptor(value, field);
+    return property && Object.hasOwn(property, 'value');
+  });
+};
 const MODES = Object.freeze(['READY', 'BACKOFF', 'DONE', 'BLOCKED', 'UNKNOWN', 'FAILED_LOCKED']);
 // Missing, stale, or corrupt records are not made harmless by catalog withdrawal.
 function validDurableRecord(s, nowMs) {
-  if (!s || typeof s !== 'object' || Array.isArray(s) || !MODES.includes(s.mode) ||
+  if (!ownDataRecord(s, ['mode', 'taskId', 'taskSha', 'lastServedAtMs',
+    'nextEligibleAtMs', 'retries']) || !MODES.includes(s.mode) ||
       !safeMs(s.lastServedAtMs) || s.lastServedAtMs > nowMs ||
       !safeMs(s.nextEligibleAtMs) || !Number.isSafeInteger(s.retries) ||
       s.retries < 0 || s.retries > MAX_RETRIES) return false;
@@ -61,17 +73,27 @@ export function minimumBackoffMs(retries) {
  * @returns {object} advisory read-only plan. No mutation or refresh happens.
  */
 export function planCooperativeOwnerLane(snapshot) {
-  const {laneDefinitions, admittedCatalog, journal, nowMs} = snapshot ?? {};
+  try { return planValidatedSnapshot(snapshot); }
+  catch { return response('UNKNOWN', 'UNREADABLE_OR_HOSTILE_SNAPSHOT'); }
+}
+function planValidatedSnapshot(snapshot) {
+  if (!ownDataRecord(snapshot, ['laneDefinitions', 'admittedCatalog', 'journal', 'nowMs']))
+    return response('UNKNOWN', 'SNAPSHOT_MUST_HAVE_OWN_DATA');
+  const {laneDefinitions, admittedCatalog, journal, nowMs} = snapshot;
   if (!safeMs(nowMs)) return response('UNKNOWN', 'CLOCK_UNVERIFIED');
   if (!Array.isArray(laneDefinitions) || laneDefinitions.length !== OWNER_LANES.length ||
-      laneDefinitions.some((lane, index) => !lane || lane.id !== OWNER_LANES[index][0] ||
+      laneDefinitions.some((lane, index) => !ownDataRecord(lane, ['id', 'repository', 'branch']) ||
+        lane.id !== OWNER_LANES[index][0] ||
         lane.repository !== REPO || lane.branch !== OWNER_LANES[index][1] || !BRANCH.test(lane.branch)) ||
       new Set(laneDefinitions.map(x => x.branch)).size !== KNOWN_IDS.length)
     return response('UNKNOWN', 'STATIC_LANE_DEFINITIONS_INVALID');
-  if (!Array.isArray(admittedCatalog) || admittedCatalog.length < 1 || admittedCatalog.length > 20)
+  if (!Array.isArray(admittedCatalog) || admittedCatalog.length < 1 || admittedCatalog.length > 20 ||
+      admittedCatalog.some(task => !ownDataRecord(task,
+        ['id', 'sha', 'repo', 'branch', 'stage', 'kind', 'changes'])))
     return response('UNKNOWN', 'NATIVE_CATALOG_NOT_VERIFIED');
-  if (!journal || journal.schema !== 'asi.beget-owner-lane-journal.v1' ||
-      !journal.lanes || typeof journal.lanes !== 'object' || Array.isArray(journal.lanes) ||
+  if (!ownDataRecord(journal, ['schema', 'engineMode', 'lanes']) ||
+      journal.schema !== 'asi.beget-owner-lane-journal.v1' ||
+      !ownDataRecord(journal.lanes, []) ||
       !['IDLE', 'FAILED_LOCKED', 'UNKNOWN'].includes(journal.engineMode))
     return response('UNKNOWN', 'DURABLE_ENGINE_JOURNAL_NOT_VERIFIED');
   if (journal.engineMode !== 'IDLE')
@@ -114,7 +136,7 @@ export function planCooperativeOwnerLane(snapshot) {
         usedTaskIds.has(task.id)) return response('STOPPED', 'ADMITTED_TASK_SCOPE_INVALID');
     usedTaskIds.add(task.id);
     for (const c of task.changes) {
-      if (!c || typeof c.path !== 'string' || !/^([a-zA-Z0-9_.-]+\/)*[a-zA-Z0-9_.-]+$/.test(c.path) ||
+      if (!ownDataRecord(c, ['path']) || typeof c.path !== 'string' || !/^([a-zA-Z0-9_.-]+\/)*[a-zA-Z0-9_.-]+$/.test(c.path) ||
           c.path.includes('..') || c.path.split('/').some(seg => seg === '.' || seg === '..' || seg.toLowerCase() === '.git') ||
           paths.some(p => p === c.path || p.startsWith(c.path + '/') || c.path.startsWith(p + '/')))
         return response('STOPPED', 'OVERLAPPING_OR_UNSAFE_ADMITTED_PATH');
@@ -131,12 +153,8 @@ export function planCooperativeOwnerLane(snapshot) {
       continue;
     }
     const state = journal.lanes[lane.id];
-    if (!state || typeof state !== 'object' || Array.isArray(state) ||
-        state.taskId !== task.id || state.taskSha !== task.sha ||
-        !safeMs(state.lastServedAtMs) || !safeMs(state.nextEligibleAtMs) ||
-        !Number.isSafeInteger(state.retries) || state.retries < 0 || state.retries > MAX_RETRIES ||
-        !['READY', 'BACKOFF', 'DONE', 'BLOCKED', 'UNKNOWN', 'FAILED_LOCKED'].includes(state.mode) ||
-        state.lastServedAtMs > nowMs || state.nextEligibleAtMs > Number.MAX_SAFE_INTEGER) {
+    if (!validDurableRecord(state, nowMs) ||
+        state.taskId !== task.id || state.taskSha !== task.sha) {
       return response('STOPPED', 'DURABLE_LANE_IDENTITY_OR_STATE_INVALID', states);
     }
     if (state.mode === 'FAILED_LOCKED')

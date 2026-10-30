@@ -204,3 +204,32 @@ test('withdrawn never-admitted BLOCKED identity cannot erase prior durable work 
     assert.equal(result.authority,'NONE_SOURCE_ONLY');
   }
 });
+
+test('inherited journal map and prototype-backed state cannot fabricate readiness',()=>{
+  for(const mutation of [
+    state=>{state.lanes=Object.create(state.lanes);},
+    state=>{state.lanes.engine=Object.create(state.lanes.engine);},
+    state=>{const old=state.lanes.engine;state.lanes.engine={...old};delete state.lanes.engine.mode;Object.setPrototypeOf(state.lanes.engine,old);},
+  ]){
+    const state=journal();mutation(state);
+    const result=choose(make({journal:state}));
+    assert.notEqual(result.kind,'CANDIDATE');
+    assert.equal(result.candidate,null);
+    assert.equal(result.authority,'NONE_SOURCE_ONLY');
+  }
+});
+test('inherited catalog/scope, accessor traps and hostile proxies fail closed',()=>{
+  const checks=[
+    ()=>{const d=structuredClone(lanes);d[0]=Object.create(d[0]);return make({laneDefinitions:d});},
+    ()=>{const c=structuredClone(tasks);c[0]=Object.create(c[0]);return make({admittedCatalog:c});},
+    ()=>{const c=structuredClone(tasks);c[0].changes[0]=Object.create(c[0].changes[0]);return make({admittedCatalog:c});},
+    ()=>{const c=structuredClone(tasks);Object.defineProperty(c[0].changes[0],'path',{get(){throw Error('hostile getter');}});return make({admittedCatalog:c});},
+    ()=>new Proxy(make(),{get(){throw Error('hostile snapshot');}}),
+  ];
+  for(const makeAttack of checks){
+    const result=choose(makeAttack());
+    assert.notEqual(result.kind,'CANDIDATE');
+    assert.equal(result.candidate,null);
+    assert.equal(result.authority,'NONE_SOURCE_ONLY');
+  }
+});
