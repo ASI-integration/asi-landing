@@ -80,11 +80,15 @@ describe('Yandex start rejects unsolicited login CSRF as well as linking CSRF', 
     expect(response.status).toBe(307);
     expect(new URL(response.headers.get('location')!).origin).toBe('https://oauth.yandex.ru');
     expect(mocks.save).toHaveBeenCalledOnce();
+    expect(response.headers.get('referrer-policy')).toBe('no-referrer');
+    expect(response.headers.get('cache-control')).toContain('no-store');
   });
 
   it('retains normal same-origin first-party Yandex login redirect with fresh state/PKCE', async () => {
     const res = await GET(startRequest('login', { 'sec-fetch-site': 'same-origin' }));
     expect(res.status).toBe(307);
+    expect(res.headers.get('referrer-policy')).toBe('no-referrer');
+    expect(res.headers.get('cache-control')).toContain('no-store');
     const location = new URL(res.headers.get('location')!);
     expect(location.origin).toBe('https://oauth.yandex.ru');
     expect(location.searchParams.get('response_type')).toBe('code');
@@ -106,6 +110,8 @@ describe('Yandex start rejects unsolicited login CSRF as well as linking CSRF', 
     const res = await GET(startRequest('link', { 'sec-fetch-site': 'same-origin' }));
     expect(res.status).toBe(307);
     expect(res.headers.get('location')).toContain('recent_auth_required');
+    expect(res.headers.get('referrer-policy')).toBe('no-referrer');
+    expect(res.headers.get('cache-control')).toContain('no-store');
     expect(mocks.save).not.toHaveBeenCalled();
   });
 });

@@ -9,7 +9,12 @@ import {
 
 export const runtime='nodejs';
 export const dynamic='force-dynamic';
-const headers={'Cache-Control':'private, no-store, max-age=0'};
+// The browser must not leak the local login/link URL or flow context in a Referer
+// when it follows the cross-origin redirect to Yandex.
+const headers={
+  'Cache-Control':'private, no-store, max-age=0',
+  'Referrer-Policy':'no-referrer',
+};
 
 /** A Yandex login always starts through our own canonical RU HTTPS origin. */
 export async function GET(request:Request) {
@@ -32,11 +37,11 @@ export async function GET(request:Request) {
     return NextResponse.json({ok:false,error:'YANDEX_START_ORIGIN_REJECTED'},{status:403,headers});
   const session=await getSession();
   if(link && !session.userId)
-    return NextResponse.redirect(new URL('/login?yandex_error=sign_in_first',url.origin));
+    return NextResponse.redirect(new URL('/login?yandex_error=sign_in_first',url.origin),{headers});
   // A seven-day session cookie alone must not permit attaching a new login method.
   if(link && !hasRecentYandexLinkProof(
       session.userId,session.lastStrongAuthUserId,session.lastStrongAuthAt))
-    return NextResponse.redirect(new URL('/dashboard/settings?yandex_error=recent_auth_required',url.origin));
+    return NextResponse.redirect(new URL('/dashboard/settings?yandex_error=recent_auth_required',url.origin),{headers});
   // The provider identity must never be bound merely by matching profile email.
   const flow=generateYandexFlow();
   session.yandexOauthState=flow.state;
