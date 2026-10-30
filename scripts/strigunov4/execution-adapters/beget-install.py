@@ -387,9 +387,17 @@ def verify_staged_generation(raw,manifest,files,public,now):
     # Presence selects the repaired route; malformed evidence must NEVER
     # silently fall back to the original same-generation stage route.
     if (AUTH/('repaired-stage-'+digest(raw)+'.json')).exists():
-        return repaired_staged_state(raw,manifest,files,public,now)
-    identity=staged_state(raw,manifest,files,public)
-    stage_scope(signed('stage-approval.json',public),manifest,raw,now)
+        identity=repaired_staged_state(raw,manifest,files,public,now)
+    else:
+        identity=staged_state(raw,manifest,files,public)
+        stage_scope(signed('stage-approval.json',public),manifest,raw,now)
+    # A stopped stage may contain durable FAILED_LOCKED/UNKNOWN receipts after
+    # an interrupted earlier activation. Do not consume a new one-use claim
+    # and then silently overwrite those records during initialization.
+    try:
+        require(not any(STATE.iterdir()),'STAGED_STATE_NOT_PRISTINE')
+    except OSError:
+        raise Block('STAGED_STATE_NOT_PRISTINE')
     return identity
 
 def stage(package,node,bwrap):
@@ -549,7 +557,7 @@ def apply(package,node,bwrap,staged=False):
             STATE.mkdir(mode=0o700);os.chown(STATE,identity.pw_uid,identity.pw_gid)
         for name in ('owner-public.pem','activation.json','catalog.json','fence.json','reviews.json','github-app.pem'):
             p=AUTH/name;regular_bytes(p,root=True);os.chown(p,0,identity.pw_gid);os.chmod(p,0o640)
-        code="""import fs from 'node:fs/promises';import {loadBegetAuthority,BEGET} from '/opt/asi-engine/scripts/strigunov4/execution-adapters/host-authority.mjs';import {initializeState,atomicJson,digest} from '/opt/asi-engine/scripts/strigunov4/execution-adapters/state.mjs';import {initializeRoutingState} from '/opt/asi-engine/scripts/global-dispatcher/dispatcher.mjs';const a=await loadBegetAuthority();await a.fencingWitness();await initializeState(BEGET.root,{liveAdmission:a.admission});await fs.mkdir(BEGET.root+'/routing',{mode:0o700});await initializeRoutingState(BEGET.root+'/routing');await atomicJson(BEGET.root+'/state/api-budget.json',{policySha256:digest(JSON.stringify(a.payload)),requests:0,mutations:0});"""
+        code="""import fs from 'node:fs/promises';import {loadBegetAuthority,BEGET} from '/opt/asi-engine/scripts/strigunov4/execution-adapters/host-authority.mjs';import {initializeState,atomicJson,digest} from '/opt/asi-engine/scripts/strigunov4/execution-adapters/state.mjs';import {initializeRoutingState} from '/opt/asi-engine/scripts/global-dispatcher/dispatcher.mjs';const a=await loadBegetAuthority();await a.fencingWitness();if((await fs.readdir(BEGET.root)).length!==0)throw Error('STAGED_STATE_NOT_PRISTINE');await initializeState(BEGET.root,{liveAdmission:a.admission});await fs.mkdir(BEGET.root+'/routing',{mode:0o700});await initializeRoutingState(BEGET.root+'/routing');await atomicJson(BEGET.root+'/state/api-budget.json',{policySha256:digest(JSON.stringify(a.payload)),requests:0,mutations:0});"""
         call(['/usr/sbin/runuser','-u',USER,'--',str(RUNTIME/'node'),'--input-type=module','-e',code])
         for task in json.loads(files['catalog.json']):
             dest=str(STATE/'scratchpads'/task['id'])
