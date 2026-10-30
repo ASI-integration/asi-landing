@@ -134,7 +134,13 @@ function routineStagePath(stageId, p) {
 // Development is source-only: no governance, deployment, authority or secret changes.
 // A successful development check never authorizes merge, installation or execution.
 function developmentPath(p) {
+  if (typeof p !== 'string' || p.includes('\\') || /[\x00-\x1f\x7f]/.test(p)) return false;
   if (!/^(?:src\/|tests\/|docs\/|scripts\/strigunov4\/)/.test(p)) return false;
+  // Live HTTP handlers, auth middleware and sensitive app internals require
+  // the ordinary protected-release path even when the PR says development.
+  if (/^src\/(?:app|pages)\/api\//.test(p) ||
+      /^src\/(?:middleware|instrumentation)\.[cm]?[jt]sx?$/.test(p) ||
+      /(?:^|\/)(?:auth|security|payment|payments|billing|webhook|migrations?|permissions?)(?:\/|\.|-|$)/i.test(p)) return false;
   if (p.startsWith('docs/agent-os/') || p.startsWith('scripts/strigunov4/execution-adapters/')) return false;
   // Scripts that operate the live host, installer and authority never become
   // development-safe merely because they live under scripts/strigunov4/.
