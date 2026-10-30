@@ -6,6 +6,7 @@
  */
 import {inspectStandingTransaction} from './state.mjs';
 import {assessParentBudgetProposal} from './standing-parent-budget-proposal.mjs';
+import {inspectSignedParentChildSource} from './standing-parent-signature-source.mjs';
 
 const WRITES=new Set(['create-tree','create-commit','create-branch','create-draft-pr']);
 const deny=reason=>Object.freeze({status:'PARENT_NATIVE_PREVIEW_BLOCKED',reason,authorized:false});
@@ -58,4 +59,37 @@ export function inspectParentCandidateInNativeTransaction({
   }catch{
     return deny('NATIVE_PREVIEW_UNTRUSTED_TRANSACTION');
   }
+}
+
+/**
+ * Source-only signed variant. Authenticates both exact payload signatures
+ * against CALLER-SUPPLIED keys/context, then uses real state.execute task/root
+ * identity and existing parent history model. Cannot confer a native permit.
+ * A future protected-base caller must independently read and pin trust keys
+ * and revocation floor before passing any result into an actual admission.
+ */
+export function inspectSignedParentInNativeTransaction({
+  store,transaction,effect,now,signedParent,signedChild,ownerPublicKey,
+  verifierPublicKey,expected,revokedParentDigests,revokedChildDigests
+}={}){
+  try{
+    const evidence=inspectSignedParentChildSource({
+      signedParent,signedChild,ownerPublicKey,verifierPublicKey,expected,
+      now,revokedParentDigests,revokedChildDigests
+    });
+    if(evidence.status!=='SIGNED_PARENT_CHILD_SOURCE_VERIFIED'||evidence.authorized!==false)
+      return deny('NATIVE_SIGNED_SOURCE_UNVERIFIED');
+    const proposal=inspectParentCandidateInNativeTransaction({
+      store,transaction,parent:evidence.parent,child:evidence.child,
+      childLinks:{[evidence.child.digest]:evidence.childLink},
+      effect,now,revokedParentDigests
+    });
+    if(proposal.status!=='PARENT_NATIVE_SOURCE_ELIGIBLE'||proposal.authorized!==false||
+       proposal.parentDigest!==evidence.parent.digest||
+       proposal.childDigest!==evidence.child.digest)
+      return deny('NATIVE_SIGNED_SOURCE_NOT_BOUND');
+    return Object.freeze({...proposal,status:'SIGNED_PARENT_NATIVE_SOURCE_ELIGIBLE',
+      authorized:false,ownerKeySha256:evidence.ownerKeySha256,
+      verifierKeySha256:evidence.verifierKeySha256});
+  }catch{return deny('NATIVE_SIGNED_SOURCE_UNTRUSTED');}
 }
