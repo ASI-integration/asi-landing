@@ -125,19 +125,25 @@ def exact_main(i,new):
     safe(remote==[new['baseSha'],'refs/heads/main'],'REPAIR_PROTECTED_MAIN_CHANGED')
 
 def plan(package):
+    # Intentionally unprivileged: report public SHA and presence only. Root-owned
+    # signed receipts are verified again in apply(), never inferred from this plan.
     i=installer()
-    newraw,new,files=i.prepared(package)
-    oldraw,old,_,_=old_generation(i)
+    newraw,new,_=i.prepared(package)
+    oldraw=(ENGINE/'manifest.json').read_bytes()
+    old=json.loads(oldraw)
+    safe(old['schema']=='asi.beget-engine-source.v1','REPAIR_OLD_MANIFEST')
     stopped(i)
     safe(new['unitSha256']==old['unitSha256'],'REPAIR_UNIT_MISMATCH')
     backup=Path('/opt/asi-engine-staged-backup-'+sha(oldraw)[:16])
     claim=AUTH/('repair-claim-'+sha(oldraw)+'-'+sha(newraw)+'.json')
+    receipt=AUTH/('staged-isolation-'+sha(oldraw)+'.json')
     return {'status':'SIGNED_REPAIR_REQUIRED','oldManifestSha256':sha(oldraw),
       'newManifestSha256':sha(newraw),'oldBaseSha':old['baseSha'],
       'newBaseSha':new['baseSha'],'oldUnitSha256':old['unitSha256'],
       'newUnitSha256':new['unitSha256'],'rollback':str(backup),
-      'priorStatePreserved':str(STATE),'existingClaim':claim.exists(),
-      'willStartService':False,'authorized':False}
+      'priorStatePreserved':str(STATE),'oldStageReceiptPresent':receipt.exists(),
+      'existingClaim':claim.exists(),'willStartService':False,
+      'authorized':False,'installable':False}
 
 def apply(package):
     # All live file mutation requires independent root operator and an owner
