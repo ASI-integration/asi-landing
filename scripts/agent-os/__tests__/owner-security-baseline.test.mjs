@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {validateOwnerSecurityBaseline,verifyOwnerSecurityFiles,
-  verifyOwnerBootstrapSource,OWNER_SECURITY_BASELINE}
+  verifyOwnerBootstrapSource,verifyOwnerRepairSource,OWNER_SECURITY_BASELINE}
   from '../verify-owner-security-baseline.mjs';
 import {GOVERNANCE,OWNER_BASELINE_PATHS,requiredApproval,checkPr,CONTRACT}
   from '../check-demo-release.mjs';
@@ -48,6 +48,17 @@ test('source explicitly retains owner-verified CI option without claiming second
   assert.throws(()=>verifyOwnerBootstrapSource(source.replace(
     "if review.get('mode')=='OWNER_VERIFIED_CI':",'if False:')),
     /OWNER_VERIFIED_CI_PATH_REMOVED_OR_CHANGED/);
+});
+test('when the protected repair code is present, second-human enforcement cannot silently replace owner CI',()=>{
+  const nativeOption="if repairReview.get('mode')=='OWNER_VERIFIED_CI':\n        safe(repairReview.get('independent') is False)\n        i.verified_owner_ci_run(";
+  assert.equal(verifyOwnerRepairSource(nativeOption),true);
+  assert.throws(()=>verifyOwnerRepairSource(nativeOption.replace(
+    "repairReview.get('independent') is False",
+    "repairReview.get('independent') is True")),
+    /REPAIR_OWNER_VERIFIED_CI_REMOVED_OR_SECOND_REVIEWER_FORCED/);
+  assert.throws(()=>verifyOwnerRepairSource(nativeOption.replace(
+    "if repairReview.get('mode')=='OWNER_VERIFIED_CI':",'if False:')),
+    /REPAIR_OWNER_VERIFIED_CI_REMOVED_OR_SECOND_REVIEWER_FORCED/);
 });
 test('security policy and verifier files are protected governance paths',()=>{
   for(const name of OWNER_BASELINE_PATHS){
