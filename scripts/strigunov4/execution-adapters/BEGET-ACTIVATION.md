@@ -184,6 +184,59 @@ the **existing** installer, package, host, runtime and final activation gates:
    the **same** unit. A changed, running, enabled or mismatched staged service
    is refused. Stage and activation are not the same approval.
 
+### Already staged with restrictive umask: one signed, mode-only recovery
+
+The existing Beget stage is **not** eligible for `--stage` again and must not
+consume an `--activate-stage` claim while the original root-owned runtime is
+not traversable by `asi-engine`. The newer installer bytes have a different
+identity from the original staged package. A future-stage umask fix cannot
+change that original package or replace its already consumed stage approval.
+
+**Protected operator sequence (not permission granted by this document):**
+
+1. Obtain the **original exact stage package** including its original installer,
+   manifest, unit and file closure, and independently verify its provenance.
+   Review the proposed repairer's exact Git commit and full tests; it is
+   source-only until that review, owner signature and operator identity pass.
+2. As a separately authenticated root operator on `pqukibofpo`, run the new
+   reviewed repair script with `--package <original-package> --stage-repair-plan`.
+   This is read-only: it verifies signed original stage approval, root-owned
+   stage receipt and consumed stage claim, all exact staged bytes, UID and
+   effective *disabled/inactive* unit, and outputs **only** SHA-bound proof
+   fields (never a signature or secret). If any proof is missing, stop with
+   UNKNOWN; do not guess the original manifest hash.
+3. After independent review, owner may separately sign a one-use
+   `repair-approval.json` envelope with
+   `schema: asi.beget-stage-mode-repair.v1`, the exact
+   `host`, `unit`, `manifestSha256`, `sourceSha`, `baseSha`,
+   `originalInstallerSha256`, `unitSha256`, `stageClaimSha256`,
+   `stageReceiptSha256`, `serviceUid`, `repairScriptSha256`,
+   `actions: ["normalize-exact-staged-runtime-modes-only"]`,
+   `oneUse: true` and an integer millisecond `notBefore/expiresAt` window
+   no longer than 14 days. Use only the installed owner public-key verifier;
+   the private signing key must stay on the authorized owner device. A text
+   message, checklist or this runbook is not a signed approval.
+4. With that **new exact signed approval** and no live activation materials,
+   an authenticated operator may execute `--package <original-package>
+   --repair-stage-modes` using the exact independently reviewed root-owned
+   repair script. It rechecks grant, original claim/receipt and *all staged
+   bytes* before atomically reserving its own one-use repair claim. It changes
+   **only mode bits** of original root-owned `/opt/asi-engine` directories,
+   script/manifest files and Node/bwrap executables; never contents, owner,
+   state, authority, GitHub rights, unit enablement or any other service.
+   Expected output is `STAGED_MODES_REPAIRED_NATIVE_ACCEPTANCE_REQUIRED`,
+   **not** an Engine start or activation.
+5. On any result other than exact confirmed success, preserve the consumed
+   repair claim, original stage receipt/claim, runtime and failed-state
+   evidence; no replay or manual chmod. Independently retest all file hashes,
+   effective UID access and native systemd/bubblewrap isolation. Continue the
+   already-required independent fence/review/candidate/signature gates before
+   the *original* stage-package activation path can be considered.
+
+The recovery mode's Python/Node fixture tests do not establish physical
+native acceptance or approve `repair-approval.json`. No new Engine, worker,
+catalog entry or background service is authorized by this recovery.
+
 Never regenerate a consumed claim, delete the staged evidence after an unknown
 outcome, or use `--apply` as a fallback for failed staged activation. The
 existing observer, staging and protected production services are out of scope.
