@@ -207,32 +207,42 @@ describe('RU Yandex OAuth callback cannot cancel a pending flow by CSRF', () => 
     expect(mocks.save).toHaveBeenCalledOnce();
     expect(mocks.from).not.toHaveBeenCalled();
   });
-  it('refuses to link the provider after a browser session switches ASI identities', async () => {
+  it('refuses a Yandex account link after the current ASI session switches identities, without provider calls', async () => {
     const session = { ...pendingSession(), userId: 'different-user', email: 'different@example.ru' };
     mocks.getSession.mockResolvedValue(session);
-    const insert = vi.fn();
-    mocks.from.mockReturnValue({
-      select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: null, error: null }) }) }),
-      insert,
-    });
-    vi.stubGlobal('fetch', vi.fn(async (providerUrl: string) => {
-      if (providerUrl === 'https://oauth.yandex.ru/token')
-        return new Response(JSON.stringify({
-          token_type: 'bearer', access_token: 'isolated-test-access-token', scope: 'login:info',
-        }), { status: 200 });
-      if (providerUrl === 'https://login.yandex.ru/info?format=json')
-        return new Response(JSON.stringify({ id: '123456', client_id: 'inert-test-client' }), { status: 200 });
-      throw new Error('unexpected provider endpoint');
-    }));
+    const providerFetch = vi.fn();
+    vi.stubGlobal('fetch', providerFetch);
     const response = await GET(new Request(
       origin + '/api/auth/yandex/callback?state=' + state + '&code=fixture-auth-code',
     ));
     expect(response.status).toBe(307);
     expect(response.headers.get('location')).toContain('yandex_error=link_requires_recent_auth');
-    expect(insert).not.toHaveBeenCalled();
+    expect(providerFetch).not.toHaveBeenCalled();
+    expect(mocks.from).not.toHaveBeenCalled();
     expect(mocks.ensure).not.toHaveBeenCalled();
     expect(session.userId).toBe('different-user');
     expect(session.email).toBe('different@example.ru');
+    expect(session.yandexOauthState).toBeUndefined();
+    expect(mocks.save).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    ['expired proof', { lastStrongAuthAt: Date.now() - 11 * 60 * 1000 }],
+    ['proof belongs to another user', { lastStrongAuthUserId: 'other-user' }],
+    ['missing link identity', { yandexOauthLinkUserId: undefined }],
+  ])('rejects Yandex link with %s before token exchange or registry access', async (_case, patch) => {
+    const session = { ...pendingSession(), ...patch };
+    mocks.getSession.mockResolvedValue(session);
+    const providerFetch = vi.fn();
+    vi.stubGlobal('fetch', providerFetch);
+    const response = await GET(new Request(
+      origin + '/api/auth/yandex/callback?state=' + state + '&code=fixture-auth-code',
+    ));
+    expect(response.status).toBe(307);
+    expect(response.headers.get('location')).toContain('yandex_error=link_requires_recent_auth');
+    expect(providerFetch).not.toHaveBeenCalled();
+    expect(mocks.from).not.toHaveBeenCalled();
+    expect(mocks.ensure).not.toHaveBeenCalled();
     expect(session.yandexOauthState).toBeUndefined();
     expect(mocks.save).toHaveBeenCalledOnce();
   });
