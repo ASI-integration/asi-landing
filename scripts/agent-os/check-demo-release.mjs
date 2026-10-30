@@ -136,6 +136,10 @@ function routineStagePath(stageId, p) {
 function developmentPath(p) {
   if (!/^(?:src\/|tests\/|docs\/|scripts\/strigunov4\/)/.test(p)) return false;
   if (p.startsWith('docs/agent-os/') || p.startsWith('scripts/strigunov4/execution-adapters/')) return false;
+  // Scripts that operate the live host, installer and authority never become
+  // development-safe merely because they live under scripts/strigunov4/.
+  if (p.startsWith('scripts/strigunov4/') &&
+      !/^scripts\/strigunov4\/(?:test_[A-Za-z0-9_-]+\.py|[A-Za-z0-9_-]+\.test\.mjs)$/.test(p)) return false;
   if (/(?:^|[\/-])(?:\.env[^/]*|secrets?|credentials?|private-keys?|deploy(?:ment)?|production|publisher|authority|budget|owner-gate|release-governance)(?:\/|\.|-|$)/i.test(p)) return false;
   if (/\.(?:pem|key|p12|pfx|env)$/i.test(p)) return false;
   return true;
