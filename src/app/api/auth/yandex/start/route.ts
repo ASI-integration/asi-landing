@@ -18,7 +18,12 @@ export async function GET(request:Request) {
      url.origin!==process.env.ASI_RU_YANDEX_ORIGIN) {
     return NextResponse.json({ok:false,error:'YANDEX_LOGIN_UNAVAILABLE'},{status:503,headers});
   }
-  const link=url.searchParams.get('mode')==='link';
+  // Do not silently turn an invalid/ambiguous account-link request into a
+  // login that can switch the browser to a different ASI identity.
+  const modes=url.searchParams.getAll('mode');
+  if (modes.length>1 || (modes.length===1 && modes[0]!=='login' && modes[0]!=='link'))
+    return NextResponse.json({ok:false,error:'YANDEX_INVALID_MODE'},{status:400,headers});
+  const link=modes[0]==='link';
   // Login as well as account-link initiation must be an intentional first-party
   // navigation. A third-party GET must not silently switch an existing session
   // to a Yandex-linked identity (login CSRF), even with OAuth state + PKCE.
