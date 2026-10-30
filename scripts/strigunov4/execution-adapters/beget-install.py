@@ -239,6 +239,159 @@ def staged_state(raw,manifest,files,public):
     exact_disabled_unit_state()
     return identity
 
+
+def repaired_staged_state(raw, manifest, files, public, now):
+    """Accept a separately owner-signed exact repair, never an implied new stage."""
+    current=digest(raw)
+    receipt_name='repaired-stage-'+current+'.json'
+    receipt=json.loads(regular_bytes(AUTH/receipt_name,root=True))
+    require(type(receipt) is dict and receipt.get('schema')=='asi.beget-disabled-repaired-stage.v1'
+            and receipt.get('newManifestSha256')==current and receipt.get('serviceStarted') is False,
+            'REPAIRED_STAGE_RECEIPT')
+    oldhash=receipt.get('oldManifestSha256')
+    require(type(oldhash) is str and re.fullmatch('[0-9a-f]{64}',oldhash) is not None
+            and oldhash!=current, 'REPAIRED_OLD_DIGEST')
+    backup=Path('/opt/asi-engine-staged-backup-'+oldhash[:16])
+    require(receipt.get('originalBackup')==str(backup),'REPAIRED_BACKUP_PATH')
+    oldraw=regular_bytes(backup/'manifest.json',root=True)
+    require(digest(oldraw)==oldhash,'REPAIRED_BACKUP_MANIFEST')
+    old=json.loads(oldraw)
+    require(type(old) is dict and old.get('schema')=='asi.beget-engine-source.v1'
+            and old.get('unitSha256')==manifest['unitSha256']
+            and type(old.get('files')) is list,'REPAIRED_BACKUP_SCOPE')
+    # The original receipt and claim are historical evidence, not reusable grants.
+    old_receipt=json.loads(regular_bytes(AUTH/('staged-isolation-'+oldhash+'.json'),root=True))
+    old_claim=json.loads(regular_bytes(AUTH/('stage-claim-'+oldhash+'.json'),root=True))
+    require(type(old_receipt) is dict
+            and old_receipt.get('schema')=='asi.beget-staged-isolation.v1'
+            and old_receipt.get('manifestSha256')==oldhash
+            and old_receipt.get('unitSha256')==manifest['unitSha256']
+            and old_receipt.get('nodeSha256')==NODE_SHA
+            and old_receipt.get('bwrapSha256')==BWRAP_SHA
+            and type(old_receipt.get('uid')) is int and old_receipt['uid']>0
+            and type(old_claim) is dict and old_claim.get('manifestSha256')==oldhash
+            and old_claim.get('oneUse') is True,'REPAIRED_OLD_STAGE_UNVERIFIED')
+    old_stage=signed('stage-approval.json',public)
+    require(type(old_stage) is dict and old_stage.get('schema')==STAGE_SCHEMA
+            and old_stage.get('host')==HOST and old_stage.get('unit')==UNIT
+            and old_stage.get('manifestSha256')==oldhash
+            and old_stage.get('sourceSha')==old['sourceSha']
+            and old_stage.get('baseSha')==old['baseSha']
+            and old_stage.get('unitSha256')==old['unitSha256']
+            and old_stage.get('actions')==STAGE_ACTIONS
+            and type(old_stage.get('notBefore')) is int
+            and type(old_stage.get('expiresAt')) is int
+            and 0<old_stage['expiresAt']-old_stage['notBefore']<=14*86400000,
+            'REPAIRED_OLD_SIGNATURE')
+    for entry in old['files']:
+        require(type(entry) is dict and type(entry.get('path')) is str
+                and entry['path'].startswith('scripts/')
+                and entry['path'].endswith('.mjs')
+                and all(x not in ('','.','..') for x in entry['path'].split('/'))
+                and type(entry.get('sha256')) is str
+                and digest(regular_bytes(backup/entry['path'],root=True))==entry['sha256'],
+                'REPAIRED_OLD_SOURCE')
+    require(digest(regular_bytes(backup/'node',root=True,limit=150000000))==NODE_SHA
+            and digest(regular_bytes(backup/'bwrap',root=True))==BWRAP_SHA,
+            'REPAIRED_BACKUP_BINARIES')
+    grant=signed('repair-approval.json',public)
+    require(type(grant) is dict and grant.get('schema')=='asi.beget-staged-generation-repair.v1'
+            and grant.get('host')==HOST and grant.get('unit')==UNIT
+            and grant.get('actions')==['repair-disabled-staged-runtime','preserve-state',
+                                       'preserve-original-generation','remain-disabled']
+            and grant.get('oldManifestSha256')==oldhash
+            and grant.get('newManifestSha256')==current
+            and grant.get('oldBaseSha')==old['baseSha']
+            and grant.get('newBaseSha')==manifest['baseSha']
+            and grant.get('newSourceSha')==manifest['sourceSha']
+            and grant.get('newCatalogSha256')==manifest['catalogSha256']
+            and grant.get('unitSha256')==manifest['unitSha256']
+            and type(grant.get('repairScriptSha256')) is str
+            and re.fullmatch('[0-9a-f]{64}',grant['repairScriptSha256'])
+            and type(grant.get('repairReviewHead')) is str
+            and re.fullmatch('[0-9a-f]{40}',grant['repairReviewHead'])
+            and type(grant.get('notBefore')) is int
+            and type(grant.get('expiresAt')) is int
+            and grant['notBefore']<=now<grant['expiresAt']
+            and 0<grant['expiresAt']-grant['notBefore']<=14*86400000,
+            'REPAIRED_SIGNED_SCOPE')
+    require(digest(regular_bytes(AUTH/'repair-approval.json',root=True))==
+            receipt.get('ownerGrantSha256'),'REPAIRED_GRANT_RECEIPT')
+    for name,field in [('source-review.json','sourceReviewSha256'),
+                       ('native-isolation.json','nativeIsolationSha256'),
+                       ('repair-review.json','repairReviewSha256')]:
+        expected=grant.get(field)
+        require(type(expected) is str and re.fullmatch('[0-9a-f]{64}',expected)
+                and digest(regular_bytes(AUTH/name,root=True))==expected,
+                'REPAIRED_EVIDENCE_CHANGED')
+    review=json.loads(regular_bytes(AUTH/'repair-review.json',root=True))
+    require(type(review) is dict and review.get('schema')=='asi.beget-staged-repair-review.v1'
+            and review.get('result')=='PASS'
+            and type(review.get('findings')) is int and review['findings']==0
+            and review.get('repairScriptSha256')==grant['repairScriptSha256']
+            and review.get('protectedBaseSha')==manifest['baseSha']
+            and review.get('reviewedPr')==559
+            and review.get('reviewedHead')==grant['repairReviewHead'],
+            'REPAIRED_REVIEW_UNVERIFIED')
+    if review.get('mode')=='OWNER_VERIFIED_CI':
+        require(review.get('independent') is False and
+                type(review.get('ownerId')) is int and review['ownerId']==207600140
+                and review.get('scope')=='BEGET_G2_TWO_DRAFT_WITNESSES'
+                and type(review.get('validationRunId')) is int
+                and review['validationRunId']>0,'REPAIRED_OWNER_CI_UNVERIFIED')
+        verified_owner_ci_run(review['validationRunId'],311380800,
+                              grant['repairReviewHead'],'pull_request')
+    else:
+        require(review.get('independent') is True and
+                review.get('mode') in (None,'INDEPENDENT_HUMAN'),
+                'REPAIRED_REVIEW_UNVERIFIED')
+    # Current-generation native acceptance must be new, not just the old stage's UID.
+    native=json.loads(regular_bytes(AUTH/'native-isolation.json',root=True))
+    require(type(native) is dict and native.get('manifestSha256')==current
+            and native.get('host')==HOST
+            and native.get('unitSha256')==manifest['unitSha256']
+            and native.get('bwrapSha256')==BWRAP_SHA
+            and native.get('result')=='PASS'
+            and native.get('networkDenied') is True
+            and native.get('authorityInaccessible') is True,
+            'REPAIRED_NATIVE_GENERATION_UNVERIFIED')
+    repair_claim=json.loads(regular_bytes(
+        AUTH/('repair-claim-'+oldhash+'-'+current+'.json'),root=True))
+    require(type(repair_claim) is dict
+            and repair_claim.get('oldManifestSha256')==oldhash
+            and repair_claim.get('newManifestSha256')==current
+            and repair_claim.get('oneUse') is True,'REPAIRED_CLAIM_UNVERIFIED')
+    identity=pwd.getpwnam(USER)
+    st=STATE.lstat()
+    require(identity.pw_uid==old_receipt['uid'] and identity.pw_uid>0
+            and identity.pw_gid>0 and identity.pw_shell=='/usr/sbin/nologin'
+            and identity.pw_dir==str(STATE)
+            and stat.S_ISDIR(st.st_mode) and st.st_uid==identity.pw_uid
+            and st.st_gid==identity.pw_gid and not st.st_mode&0o077,
+            'REPAIRED_STATE_IDENTITY')
+    require(regular_bytes(RUNTIME/'manifest.json',root=True)==raw,
+            'REPAIRED_RUNTIME_MANIFEST')
+    for rel,data in files.items():
+        if rel.startswith('scripts/'):
+            require(regular_bytes(RUNTIME/rel,root=True)==data,
+                    'REPAIRED_RUNTIME_SOURCE')
+    require(regular_bytes(RUNTIME/'beget-install.py',root=True)==files['beget-install.py']
+            and digest(regular_bytes(RUNTIME/'node',root=True,limit=150000000))==NODE_SHA
+            and digest(regular_bytes(RUNTIME/'bwrap',root=True))==BWRAP_SHA
+            and regular_bytes(Path('/etc/systemd/system')/UNIT,root=True)==files[UNIT],
+            'REPAIRED_RUNTIME_BINARIES')
+    exact_disabled_unit_state()
+    return identity
+
+def verify_staged_generation(raw,manifest,files,public,now):
+    # Presence selects the repaired route; malformed evidence must NEVER
+    # silently fall back to the original same-generation stage route.
+    if (AUTH/('repaired-stage-'+digest(raw)+'.json')).exists():
+        return repaired_staged_state(raw,manifest,files,public,now)
+    identity=staged_state(raw,manifest,files,public)
+    stage_scope(signed('stage-approval.json',public),manifest,raw,now)
+    return identity
+
 def stage(package,node,bwrap):
     # Fail closed before any mutation; the staged unit is never enabled or started.
     raw,manifest,files=prepared(package)
@@ -345,12 +498,7 @@ def apply(package,node,bwrap,staged=False):
     nodebytes=regular_bytes(node,limit=150000000);bwrapbytes=regular_bytes(bwrap)
     require(digest(nodebytes)==NODE_SHA and digest(bwrapbytes)==BWRAP_SHA,'DEPENDENCY_HASH')
     if staged:
-        staged_state(raw,m,files,public)
-        # Stage and activation are never the same owner signature.
-        # A root-owned stage receipt is insufficient without the owner's
-        # original, still-verifiable and exact-bound signed stage grant.
-        stage_grant=signed('stage-approval.json',public)
-        stage_scope(stage_grant,m,raw,int(time.time()*1000))
+        verify_staged_generation(raw,m,files,public,now)
     else:
         inactive()
         require(not RUNTIME.exists() and not STATE.exists() and
@@ -381,10 +529,9 @@ def apply(package,node,bwrap,staged=False):
     except (ValueError, UnicodeError):raise Block('OLD_WRITER_FENCING_UNVERIFIED')
     fence_preclaim(fence_record, activation)
     if staged:
-        # Native isolation evidence and the staged unit may change while the
-        # external GitHub main check is running; recheck before consuming claim.
-        staged_state(raw,m,files,public)
-        stage_scope(signed('stage-approval.json',public),m,raw,now)
+        # Re-read the signed repair, old claim, native proof and runtime identity
+        # immediately before consuming the irreversible activation claim.
+        verify_staged_generation(raw,m,files,public,now)
     write_new(claim,json.dumps({'manifestSha256':digest(raw),'at':now,'oneUse':True}).encode())
     installed_unit=staged
     try:
