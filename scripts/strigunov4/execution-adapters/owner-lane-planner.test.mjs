@@ -191,3 +191,16 @@ test('withdrawn lane cannot hide corrupt clock, retry, or pinned identity in its
   assert.equal(result.kind,'CANDIDATE');
   assert.equal(result.candidate.laneId,'engine');
 });
+
+test('withdrawn never-admitted BLOCKED identity cannot erase prior durable work counters',()=>{
+  const catalog=structuredClone(tasks.slice(0,4));
+  for(const [field,value] of [['lastServedAtMs',1],['nextEligibleAtMs',1],['retries',1]]){
+    const state=journal();
+    state.lanes['p0-atomic-budget']={mode:'BLOCKED',taskId:null,taskSha:null,
+      lastServedAtMs:0,nextEligibleAtMs:0,retries:0,[field]:value};
+    const result=choose(make({admittedCatalog:catalog,journal:state}));
+    assert.equal(result.kind,'STOPPED',field);
+    assert.equal(result.reason,'UNADMITTED_LANE_JOURNAL_INVALID',field);
+    assert.equal(result.authority,'NONE_SOURCE_ONLY');
+  }
+});
