@@ -24,7 +24,7 @@ const effect = (id,kind='github-read',override={}) => {
     route,payloadSha256,requestSha256,envelopeDigest:hex64,repo:'ASI-integration/asi-landing',
     environment:'beget-staging',target:'pqukibofpo',action:'source',...override};
 };
-async function fixture(){
+async function fixture(clock=()=>at){
   const root=await fs.mkdtemp(path.join(os.tmpdir(),'asi-p0-budget-'));
   const file=n=>path.join(root,n);
   const ledger={schemaVersion:'asi.execution-adapters.v1',mode:'FAILED_LOCKED',
@@ -32,7 +32,7 @@ async function fixture(){
   await fs.mkdir(file('execution.lock'));
   await fs.writeFile(file('autopilot-ledger.json'),JSON.stringify(ledger));
   const store={file};
-  return {root,ledger,store,budget:createStandingPublisherBudget({store,ledger,clock:()=>at}),
+  return {root,ledger,store,budget:createStandingPublisherBudget({store,ledger,clock}),
     read:async()=>JSON.parse(await fs.readFile(file('autopilot-ledger.json'),'utf8')),
     close:async()=>fs.rm(root,{recursive:true,force:true})};
 }
@@ -311,26 +311,74 @@ test('prior-envelope clock high-water blocks rollback on newly signed digest',as
 });
 
 
-test('legacy 16-child envelope history denies a 17th without resetting previous durable claims',async()=>{
+
+test('27 sequential 14-day children retain all prior spends under a 365-day term',async()=>{
+  const time={value:at},f=await fixture(()=>time.value),day=86400000;
+  try{
+    const first=at, end=first+365*day;
+    for(let i=0;i<27;i++){
+      time.value=first+i*14*day;
+      const digest=(i+1).toString(16).padStart(64,'0');
+      const scope=env({envelopeDigest:digest,notBefore:time.value-1000,
+        expiresAt:Math.min(time.value+14*day-1000,end),maxOperations:1,maxRequests:1,maxWrites:1});
+      const result=await f.budget.reserve({envelope:scope,
+        effect:effect('rotation-'+i,'github-read',{envelopeDigest:digest})});
+      assert.equal(result.status,'RESERVED','child '+i);
+    }
+    const retained=await f.read();
+    const history=retained.standingDelegationBudget.envelopes;
+    assert.equal(Object.keys(history).length,27);
+    assert.equal(Object.values(history).reduce((n,x)=>n+x.claims.length,0),27);
+    const reopened=createStandingPublisherBudget({store:f.store,ledger:retained,clock:()=>time.value});
+    const last='1b'.padStart(64,'0'),lastScope=history[last].scope;
+    assert.equal((await reopened.reserve({envelope:env({...lastScope,envelopeDigest:last}),
+      effect:effect('rotation-26','github-read',{envelopeDigest:last})})).reason,
+      'BUDGET_REPLAY_OR_UNKNOWN');
+    assert.deepEqual((await f.read()).standingDelegationBudget,retained.standingDelegationBudget);
+  }finally{await f.close()}
+});
+
+test('64 retained child histories deny 65th without truncation or replay reset',async()=>{
   const f=await fixture();
   try{
-    for(let i=1;i<=16;i++){
-      const scopeDigest=i.toString(16).padStart(64,'0');
-      const response=await f.budget.reserve({envelope:env({envelopeDigest:scopeDigest}),
-        effect:effect('legacy-child-'+i,'github-read',{envelopeDigest:scopeDigest})});
-      assert.equal(response.status,'RESERVED','historical child '+i);
+    for(let i=1;i<=64;i++){
+      const digest=i.toString(16).padStart(64,'0');
+      assert.equal((await f.budget.reserve({envelope:env({envelopeDigest:digest}),
+        effect:effect('history-'+i,'github-read',{envelopeDigest:digest})})).status,
+        'RESERVED','history '+i);
     }
-    const before=await f.read();
-    assert.equal(Object.keys(before.standingDelegationBudget.envelopes).length,16);
-    const next='11'.padStart(64,'0');
-    const denied=await f.budget.reserve({envelope:env({envelopeDigest:next}),
-      effect:effect('legacy-child-17','github-read',{envelopeDigest:next})});
-    assert.equal(denied.reason,'BUDGET_HISTORY_FULL');
+    const before=await f.read(),next='41'.padStart(64,'0');
+    assert.equal(Object.keys(before.standingDelegationBudget.envelopes).length,64);
+    assert.equal((await f.budget.reserve({envelope:env({envelopeDigest:next}),
+      effect:effect('history-65','github-read',{envelopeDigest:next})})).reason,
+      'BUDGET_HISTORY_FULL');
+    assert.deepEqual((await f.read()).standingDelegationBudget,before.standingDelegationBudget);
+  }finally{await f.close()}
+});
+
+test('global cumulative 256 reservations cannot reset at child renewal',async()=>{
+  const f=await fixture();
+  try{
+    for(let i=1;i<=64;i++){
+      const digest=i.toString(16).padStart(64,'0');
+      for(let k=1;k<=4;k++){
+        const result=await f.budget.reserve({envelope:env({envelopeDigest:digest,
+          maxOperations:5,maxRequests:5,maxWrites:1}),
+          effect:effect('global-'+i+'-'+k,'github-read',{envelopeDigest:digest})});
+        assert.equal(result.status,'RESERVED','claim '+i+':'+k);
+      }
+    }
+    const before=await f.read(),digest='40'.padStart(64,'0');
+    const denied=await f.budget.reserve({envelope:env({envelopeDigest:digest,
+      maxOperations:5,maxRequests:5,maxWrites:1}),
+      effect:effect('global-257','github-read',{envelopeDigest:digest})});
+    assert.equal(denied.reason,'BUDGET_GLOBAL_EXHAUSTED');
     assert.deepEqual((await f.read()).standingDelegationBudget,before.standingDelegationBudget);
     const reopened=createStandingPublisherBudget({store:f.store,ledger:await f.read(),clock:()=>at});
-    assert.equal((await reopened.reserve({envelope:env({envelopeDigest:next}),
-      effect:effect('legacy-child-17-retry','github-read',{envelopeDigest:next})})).reason,'BUDGET_HISTORY_FULL');
-    assert.deepEqual((await f.read()).standingDelegationBudget,before.standingDelegationBudget);
+    assert.equal((await reopened.reserve({envelope:env({envelopeDigest:digest,
+      maxOperations:5,maxRequests:5,maxWrites:1}),
+      effect:effect('global-after-restart','github-read',{envelopeDigest:digest})})).reason,
+      'BUDGET_GLOBAL_EXHAUSTED');
   }finally{await f.close()}
 });
 
