@@ -64,6 +64,21 @@ export function planCooperativeOwnerLane(snapshot) {
   if (journal.engineMode !== 'IDLE')
     return response('STOPPED', 'GLOBAL_ENGINE_LOCK_OR_EVIDENCE_UNCERTAIN');
 
+  // An execution-catalog withdrawal does not erase historical durable locks.
+  // Even lanes without a currently admitted task must retain a valid journal
+  // record, and unknown lane IDs never create a new workstream implicitly.
+  if (Object.keys(journal.lanes).some(id => !KNOWN_IDS.includes(id)))
+    return response('STOPPED', 'UNRECOGNIZED_DURABLE_LANE');
+  for (const lane of laneDefinitions) {
+    if (admittedCatalog.some(t => t?.branch === lane.branch && t?.repo === lane.repository)) continue;
+    const state = journal.lanes[lane.id];
+    if (!state || typeof state !== 'object' || Array.isArray(state) ||
+        !['READY', 'BACKOFF', 'DONE', 'BLOCKED', 'UNKNOWN', 'FAILED_LOCKED'].includes(state.mode))
+      return response('STOPPED', 'UNADMITTED_LANE_JOURNAL_INVALID');
+    if (state.mode === 'UNKNOWN' || state.mode === 'FAILED_LOCKED')
+      return response('STOPPED', 'HISTORICAL_LANE_LOCK_REQUIRES_RECONCILIATION');
+  }
+
   const matched = new Map(), usedTaskIds = new Set(), paths = [];
   for (const lane of laneDefinitions) {
     const hits = admittedCatalog.filter(t => t?.branch === lane.branch && t?.repo === lane.repository);
