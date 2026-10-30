@@ -79,6 +79,14 @@ export function planCooperativeOwnerLane(snapshot) {
       return response('STOPPED', 'HISTORICAL_LANE_LOCK_REQUIRES_RECONCILIATION');
   }
 
+  // Signed G2-only witnesses remain inert, but never silently ignore a sixth
+  // catalog entry once any owner-lane task is eligible for consideration.
+  // A future protected catalog must be explicitly reviewed as a WHOLE.
+  const ownerCatalogCount = admittedCatalog.filter(t =>
+    laneDefinitions.some(lane => t?.branch === lane.branch && t?.repo === lane.repository)).length;
+  if (ownerCatalogCount !== 0 && ownerCatalogCount !== admittedCatalog.length)
+    return response('STOPPED', 'MIXED_OR_UNRECOGNIZED_ADMITTED_SCOPE');
+
   const matched = new Map(), usedTaskIds = new Set(), paths = [];
   for (const lane of laneDefinitions) {
     const hits = admittedCatalog.filter(t => t?.branch === lane.branch && t?.repo === lane.repository);
