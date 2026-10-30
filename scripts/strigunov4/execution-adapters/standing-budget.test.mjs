@@ -347,3 +347,16 @@ test('365-day parent is never substituted for a signed short-lived execution chi
     assert.equal((await f.read()).standingDelegationBudget.envelopes[hex64].claims.length,1);
   }finally{await f.close()}
 });
+
+test('a child rotation cannot recycle a spent digest with expanded validity or counters',async()=>{
+  const f=await fixture();try{
+    const first='1'.padStart(64,'0');
+    assert.equal((await f.budget.reserve({envelope:env({envelopeDigest:first}),
+      effect:effect('first-child','create-tree',{envelopeDigest:first})})).status,'RESERVED');
+    const spent=await f.read();
+    const recycled=env({envelopeDigest:first,expiresAt:at+200000,maxOperations:7,maxRequests:7,maxWrites:3});
+    await assert.rejects(f.budget.reserve({envelope:recycled,
+      effect:effect('recycled-child','create-tree',{envelopeDigest:first})}),/BUDGET_LEDGER_INVALID/);
+    assert.deepEqual((await f.read()).standingDelegationBudget,spent.standingDelegationBudget);
+  }finally{await f.close()}
+});
