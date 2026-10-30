@@ -458,7 +458,10 @@ class RepairedActivationCompatibilityTests(TestCase):
                                                    PATH.with_name('beget-install.py'))
         i=importlib.util.module_from_spec(spec);spec.loader.exec_module(i)
         with TemporaryDirectory(prefix='asi-original-stage-route-') as folder:
+            state=Path(folder)/'state'
+            state.mkdir()
             with mock.patch.object(i,'AUTH',Path(folder)), \
+                 mock.patch.object(i,'STATE',state), \
                  mock.patch.object(i,'staged_state',return_value='original') as stage, \
                  mock.patch.object(i,'signed',return_value={'notBefore':1}) as signed, \
                  mock.patch.object(i,'stage_scope') as check, \
