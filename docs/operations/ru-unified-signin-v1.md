@@ -52,6 +52,9 @@ expose the Resend key or pepper through `NEXT_PUBLIC_*`.
    and limits all valid-format OTP verification attempts (including unknown
    emails) to 50/IP/hour, under the same trusted-IP lock order. Verify actual
    concurrency, grants and collateral lockouts in an isolated PostgreSQL DB.
+   Issuance and verification windows start independently at their respective
+   first charged attempt; creating an IP row for one purpose must not shorten
+   the other window and permit burst-limit resets.
 2. Only after the isolated database has passed the real RPC/RLS and concurrency
    acceptance, set protected `ASI_RU_EMAIL_CODE_SCHEMA_READY=true` on the exact
    reviewed RU target. This defaults OFF: possessing mail credentials alone

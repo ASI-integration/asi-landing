@@ -16,10 +16,12 @@ CREATE TABLE IF NOT EXISTS public.ru_auth_email_challenges (
 );
 CREATE TABLE IF NOT EXISTS public.ru_auth_ip_limits (
   ip_hash TEXT PRIMARY KEY CHECK (ip_hash ~ '^[a-f0-9]{64}$'),
-  window_start TIMESTAMPTZ NOT NULL,
+  -- NULL means the relevant budget has never been used. In particular, a
+  -- verification-only IP row must not start an issuance window (or vice versa).
+  window_start TIMESTAMPTZ,
   count INTEGER NOT NULL DEFAULT 0 CHECK (count BETWEEN 0 AND 20),
   -- This independent budget counts OTP guesses even against unknown emails.
-  verify_window_start TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  verify_window_start TIMESTAMPTZ,
   verify_count INTEGER NOT NULL DEFAULT 0 CHECK (verify_count BETWEEN 0 AND 50)
 );
 ALTER TABLE public.ru_auth_email_challenges ENABLE ROW LEVEL SECURITY;
@@ -49,9 +51,9 @@ BEGIN
   INSERT INTO public.ru_auth_ip_limits(ip_hash,window_start,count)
   VALUES(p_ip_hash,now_at,1)
   ON CONFLICT (ip_hash) DO UPDATE SET
-    window_start = CASE WHEN ru_auth_ip_limits.window_start <= now_at - INTERVAL '1 hour'
+    window_start = CASE WHEN ru_auth_ip_limits.count = 0 OR ru_auth_ip_limits.window_start IS NULL OR ru_auth_ip_limits.window_start <= now_at - INTERVAL '1 hour'
       THEN now_at ELSE ru_auth_ip_limits.window_start END,
-    count = CASE WHEN ru_auth_ip_limits.window_start <= now_at - INTERVAL '1 hour'
+    count = CASE WHEN ru_auth_ip_limits.count = 0 OR ru_auth_ip_limits.window_start IS NULL OR ru_auth_ip_limits.window_start <= now_at - INTERVAL '1 hour'
       THEN 1 ELSE ru_auth_ip_limits.count + 1 END;
 
   PERFORM pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended('ru-otp-email:' || p_email, 0));
@@ -113,11 +115,11 @@ BEGIN
   IF FOUND AND ip_row.verify_window_start > now_at - INTERVAL '1 hour' AND
      ip_row.verify_count >= 50 THEN RETURN FALSE; END IF;
   INSERT INTO public.ru_auth_ip_limits(ip_hash,window_start,count,verify_window_start,verify_count)
-  VALUES(p_ip_hash,now_at,0,now_at,1)
+  VALUES(p_ip_hash,NULL,0,now_at,1)
   ON CONFLICT (ip_hash) DO UPDATE SET
-    verify_window_start=CASE WHEN ru_auth_ip_limits.verify_window_start <= now_at - INTERVAL '1 hour'
+    verify_window_start=CASE WHEN ru_auth_ip_limits.verify_count = 0 OR ru_auth_ip_limits.verify_window_start IS NULL OR ru_auth_ip_limits.verify_window_start <= now_at - INTERVAL '1 hour'
       THEN now_at ELSE ru_auth_ip_limits.verify_window_start END,
-    verify_count=CASE WHEN ru_auth_ip_limits.verify_window_start <= now_at - INTERVAL '1 hour'
+    verify_count=CASE WHEN ru_auth_ip_limits.verify_count = 0 OR ru_auth_ip_limits.verify_window_start IS NULL OR ru_auth_ip_limits.verify_window_start <= now_at - INTERVAL '1 hour'
       THEN 1 ELSE ru_auth_ip_limits.verify_count+1 END;
   SELECT * INTO row_value FROM public.ru_auth_email_challenges WHERE email=p_email FOR UPDATE;
   IF NOT FOUND THEN RETURN FALSE; END IF;

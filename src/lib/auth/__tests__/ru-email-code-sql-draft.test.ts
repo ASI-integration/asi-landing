@@ -89,4 +89,18 @@ describe('RU auth SQL draft structural integrity (no database access)', () => {
       consume.indexOf('SELECT * INTO row_value'));
   });
 
+  it('starts each IP budget at its first charged request, not the other kind of request',()=>{
+    const limits = sql.split('CREATE TABLE IF NOT EXISTS public.ru_auth_ip_limits')[1]
+      ?.split('ALTER TABLE public.ru_auth_email_challenges')[0] ?? '';
+    expect(limits).toContain('window_start TIMESTAMPTZ,');
+    expect(limits).toContain('verify_window_start TIMESTAMPTZ,');
+    const issue = sql.split('CREATE OR REPLACE FUNCTION public.ru_auth_issue_email_code')[1]
+      ?.split('CREATE OR REPLACE FUNCTION public.ru_auth_activate_email_code')[0] ?? '';
+    expect(issue).toContain('ru_auth_ip_limits.count = 0 OR ru_auth_ip_limits.window_start IS NULL');
+    const consume = sql.split('CREATE OR REPLACE FUNCTION public.ru_auth_consume_email_code')[1]
+      ?.split('CREATE OR REPLACE FUNCTION public.ru_auth_revoke_email_code')[0] ?? '';
+    expect(consume).toContain('VALUES(p_ip_hash,NULL,0,now_at,1)');
+    expect(consume).toContain('ru_auth_ip_limits.verify_count = 0 OR ru_auth_ip_limits.verify_window_start IS NULL');
+  });
+
 });
