@@ -224,7 +224,8 @@
       ],
       "plannedFiles": [
         "scripts/strigunov4/test_beget_g2_witness_identity_v1.py",
-        "scripts/strigunov4/test_beget_g2_witness_races_v1.py"
+        "scripts/strigunov4/test_beget_g2_witness_races_v1.py",
+        "scripts/strigunov4/execution-adapters/host-checks.mjs"
       ]
     },
     {
