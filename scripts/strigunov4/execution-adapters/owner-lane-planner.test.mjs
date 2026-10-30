@@ -233,3 +233,30 @@ test('inherited catalog/scope, accessor traps and hostile proxies fail closed',(
     assert.equal(result.authority,'NONE_SOURCE_ONLY');
   }
 });
+
+test('mutating Array.some/map cannot rewrite the fixed five-lane branch contract',()=>{
+  const definitions=structuredClone(lanes), catalog=structuredClone(tasks);
+  definitions[0].branch='asi/evil-branch';
+  catalog[0].branch='asi/evil-branch';
+  definitions.some=()=>false;
+  definitions.map=()=>names.map(([id])=>id);
+  const result=choose(make({laneDefinitions:definitions,admittedCatalog:catalog}));
+  assert.equal(result.kind,'UNKNOWN');
+  assert.equal(result.reason,'STATIC_LANE_DEFINITIONS_INVALID');
+  assert.equal(result.candidate,null);
+});
+test('admitted catalog and path arrays cannot use method overrides, holes or getters',()=>{
+  const checks=[
+    ()=>{const c=structuredClone(tasks);c.filter=()=>[];return c;},
+    ()=>{const c=structuredClone(tasks);delete c[1];return c;},
+    ()=>{const c=structuredClone(tasks);c[0].changes.some=()=>false;return c;},
+    ()=>{const c=structuredClone(tasks);c[0].changes[Symbol.iterator]=function*(){};return c;},
+    ()=>{const c=structuredClone(tasks);Object.defineProperty(c,0,{get(){throw Error('trapped catalog');}});return c;},
+  ];
+  for(const attack of checks){
+    const result=choose(make({admittedCatalog:attack()}));
+    assert.notEqual(result.kind,'CANDIDATE');
+    assert.equal(result.candidate,null);
+    assert.equal(result.authority,'NONE_SOURCE_ONLY');
+  }
+});

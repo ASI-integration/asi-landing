@@ -44,6 +44,18 @@ const ownDataRecord = (value, fields) => {
     return property && Object.hasOwn(property, 'value');
   });
 };
+// Forbid custom array methods, inherited elements, sparse indexes and iterator
+// overrides that could skip static branch validation yet suggest a candidate.
+const ownDenseArray = (value, min, max) => {
+  if (!Array.isArray(value) || Object.getPrototypeOf(value) !== Array.prototype ||
+      value.length < min || value.length > max ||
+      Reflect.ownKeys(value).length !== value.length + 1) return false;
+  for (let i = 0; i < value.length; i += 1) {
+    const item = Object.getOwnPropertyDescriptor(value, String(i));
+    if (!item || !Object.hasOwn(item, 'value') || !item.enumerable) return false;
+  }
+  return true;
+};
 const MODES = Object.freeze(['READY', 'BACKOFF', 'DONE', 'BLOCKED', 'UNKNOWN', 'FAILED_LOCKED']);
 // Missing, stale, or corrupt records are not made harmless by catalog withdrawal.
 function validDurableRecord(s, nowMs) {
@@ -81,13 +93,13 @@ function planValidatedSnapshot(snapshot) {
     return response('UNKNOWN', 'SNAPSHOT_MUST_HAVE_OWN_DATA');
   const {laneDefinitions, admittedCatalog, journal, nowMs} = snapshot;
   if (!safeMs(nowMs)) return response('UNKNOWN', 'CLOCK_UNVERIFIED');
-  if (!Array.isArray(laneDefinitions) || laneDefinitions.length !== OWNER_LANES.length ||
+  if (!ownDenseArray(laneDefinitions, OWNER_LANES.length, OWNER_LANES.length) ||
       laneDefinitions.some((lane, index) => !ownDataRecord(lane, ['id', 'repository', 'branch']) ||
         lane.id !== OWNER_LANES[index][0] ||
         lane.repository !== REPO || lane.branch !== OWNER_LANES[index][1] || !BRANCH.test(lane.branch)) ||
       new Set(laneDefinitions.map(x => x.branch)).size !== KNOWN_IDS.length)
     return response('UNKNOWN', 'STATIC_LANE_DEFINITIONS_INVALID');
-  if (!Array.isArray(admittedCatalog) || admittedCatalog.length < 1 || admittedCatalog.length > 20 ||
+  if (!ownDenseArray(admittedCatalog, 1, 20) ||
       admittedCatalog.some(task => !ownDataRecord(task,
         ['id', 'sha', 'repo', 'branch', 'stage', 'kind', 'changes'])))
     return response('UNKNOWN', 'NATIVE_CATALOG_NOT_VERIFIED');
@@ -132,7 +144,7 @@ function planValidatedSnapshot(snapshot) {
     const task = hits[0];
     if (!IDENT.test(task.id ?? '') || !SHA.test(task.sha ?? '') ||
         task.stage !== 'S4-G2' || task.kind !== 'github-publisher' ||
-        !Array.isArray(task.changes) || task.changes.length < 1 || task.changes.length > 20 ||
+        !ownDenseArray(task.changes, 1, 20) ||
         usedTaskIds.has(task.id)) return response('STOPPED', 'ADMITTED_TASK_SCOPE_INVALID');
     usedTaskIds.add(task.id);
     for (const c of task.changes) {
