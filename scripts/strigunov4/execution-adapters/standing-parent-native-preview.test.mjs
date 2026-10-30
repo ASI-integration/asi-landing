@@ -18,14 +18,15 @@ function data(){
     environment:'beget-staging',target:'pqukibofpo',action:'source',
     paidApiUsd:0,notBefore:now-1000,expiresAt:now+365*day-1000,
     maxOperations:256,maxRequests:256,maxWrites:64};
-  const child={...parent,schema:undefined,paidApiUsd:undefined,
+  const child={...parent,schema:undefined,paidApiUsd:0,
     digest:sha('source-only-child'),notBefore:now-1000,expiresAt:now+14*day-1000,
     maxOperations:2,maxRequests:2,maxWrites:2};
   const link={childDigest:child.digest,parentDigest:parent.digest,
     issuerKeyDigest:sha('inert-fixture-issuer'),notBefore:child.notBefore,
     expiresAt:child.expiresAt,repo:child.repo,environment:child.environment,
     target:child.target,action:child.action,securityDigest:child.securityDigest,
-    policyDigest:child.policyDigest};
+    policyDigest:child.policyDigest,paidApiUsd:child.paidApiUsd,
+    maxOperations:child.maxOperations,maxRequests:child.maxRequests,maxWrites:child.maxWrites};
   const method='GET',route='pulls/552',payloadSha256=sha('');
   const effect={effectId:'native-preview-1',taskId:task().id,taskSha:task().sha,
     headSha:task().sha,kind:'github-read',method,route,payloadSha256,
