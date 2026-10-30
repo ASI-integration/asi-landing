@@ -150,6 +150,9 @@ def apply(package):
     # Ed25519 signature. A chat request, branch comment or source PR cannot sign.
     i=installer()
     safe(os.geteuid()==0 and os.uname().nodename==HOST,'REPAIR_ROOT_HOST_REQUIRED')
+    # The repair executable itself must be a protected root-owned file: an
+    # editable operator checkout is never a valid root release executable.
+    repair_script=i.regular_bytes(Path(__file__).resolve(),root=True)
     newraw,new,files=i.prepared(package)
     oldraw,old,owner,_=old_generation(i)
     stopped(i)
@@ -159,6 +162,7 @@ def apply(package):
     grant=i.signed('repair-approval.json',owner)
     now=int(time.time()*1000)
     scope(grant,oldraw,newraw,old,new,now)
+    safe(sha(repair_script)==grant['repairScriptSha256'],'REPAIR_EXECUTABLE_CHANGED')
     independent_evidence(i,grant,new)
     exact_main(i,new)
     backup=Path('/opt/asi-engine-staged-backup-'+oldhash[:16])
@@ -172,6 +176,8 @@ def apply(package):
     safe(i.regular_bytes(AUTH/'owner-public.pem',root=True)==owner and
          i.signed('repair-approval.json',owner)==grant,'REPAIR_OWNER_GRANT_CHANGED')
     scope(grant,oldraw,newraw,old,new,int(time.time()*1000))
+    safe(i.regular_bytes(Path(__file__).resolve(),root=True)==repair_script,
+         'REPAIR_EXECUTABLE_CHANGED')
     old_generation(i); stopped(i); independent_evidence(i,grant,new)
     exact_main(i,new)
     # Stage new source *without touching old state or runtime* before one-use claim.
