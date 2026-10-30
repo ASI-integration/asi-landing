@@ -1,13 +1,14 @@
 diff --git a/scripts/strigunov4/execution-adapters/standing-budget-crash-probe.test.mjs b/scripts/strigunov4/execution-adapters/standing-budget-crash-probe.test.mjs
 new file mode 100644
-index 00000000..04986720
+index 00000000..5e230560
 --- /dev/null
 +++ b/scripts/strigunov4/execution-adapters/standing-budget-crash-probe.test.mjs
-@@ -0,0 +1,168 @@
+@@ -0,0 +1,170 @@
 +import test from 'node:test';
 +import assert from 'node:assert/strict';
 +import fs from 'node:fs/promises';
 +import path from 'node:path';
++import os from 'node:os';
 +import {spawn} from 'node:child_process';
 +import {createHash} from 'node:crypto';
 +import {fileURLToPath} from 'node:url';
@@ -26,7 +27,8 @@ index 00000000..04986720
 +  return {effectId:id,taskId:task.id,taskSha:task.sha,headSha:task.sha,kind:'create-commit',
 +    method,route,payloadSha256,requestSha256:h(JSON.stringify({method,route,payloadSha256})),
 +    envelopeDigest:hex64,repo:task.repo,environment:'beget-staging',target:'pqukibofpo',action:'source'};}
-+const root=process.argv[2], role=process.env.PROBE_ROLE;
++const root=process.argv[2] || await fs.mkdtemp(path.join(os.tmpdir(),'asi-budget-lease-proof-'));
++const role=process.env.PROBE_ROLE;
 +if(role==='holder'){
 +  const store=await existingState(root);let ledgerRef;
 +  await store.execute('github-publisher',async ({ledger,transaction})=>{
