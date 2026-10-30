@@ -26,7 +26,7 @@ function fixture(phase='started',kind='create-commit'){
     requestSha256:SHA(JSON.stringify({method,route,payloadSha256}))};
   return {parent,child,effect,lease,selectedTask,baseSha:s};
 }
-function check(f){const r=capture(f);return r.assessAfter?.({lease:f.lease,selectedTask:f.selectedTask,effect:f.effect})??r;}
+function check(f){const r=capture(f);return r.assessAfter?.({lease:f.lease,selectedTask:f.selectedTask,effect:f.effect,baseSha:f.baseSha})??r;}
 test('selected started write is source-eligible but never authorized',()=>{
   const r=check(fixture());assert.equal(r.status,'PARENT_TASK_SOURCE_ELIGIBLE');assert.equal(r.authorized,false);
 });
@@ -154,4 +154,25 @@ test('child paid ceiling or cumulative cap cannot widen signed parent scope',()=
   assert.equal(check(f).reason,'PARENT_CHILD_STAGE_OR_CLASS_SCOPE');
   const q=fixture();q.parent.maxRequests=8;
   assert.equal(check(q).reason,'PARENT_CHILD_STAGE_OR_CLASS_SCOPE');
+});
+
+test('protected-base SHA must match the selected preflight task at snapshot',()=>{
+  const f=fixture('preflight','github-read');f.baseSha='b'.repeat(40);
+  assert.equal(capture(f).reason,'TASK_BASE_SHA_MISMATCH');
+});
+test('changed protected-base SHA across await denies pretask and pre-STARTED reads',()=>{
+  for(const phase of ['admission','preflight']){
+    const f=fixture(phase,'github-read'),snap=capture(f);
+    assert.equal(snap.status,'PARENT_TASK_SOURCE_SNAPSHOT');
+    assert.equal(snap.assessAfter({lease:f.lease,selectedTask:f.selectedTask,effect:f.effect,
+      baseSha:'b'.repeat(40)}).reason,'POST_AWAIT_BASE_SHA_CHANGED');
+  }
+});
+test('started write cannot reuse stale or absent protected-base SHA after await',()=>{
+  const f=fixture(),snap=capture(f);
+  assert.equal(snap.status,'PARENT_TASK_SOURCE_SNAPSHOT');
+  assert.equal(snap.assessAfter({lease:f.lease,selectedTask:f.selectedTask,effect:f.effect,
+    baseSha:'b'.repeat(40)}).reason,'POST_AWAIT_BASE_SHA_CHANGED');
+  assert.equal(snap.assessAfter({lease:f.lease,selectedTask:f.selectedTask,effect:f.effect})
+    .reason,'POST_AWAIT_BASE_SHA_CHANGED');
 });
