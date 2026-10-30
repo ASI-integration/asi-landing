@@ -161,3 +161,29 @@ test('a sixth admitted task cannot be silently ignored beside a named owner lane
   assert.equal(choose(make({admittedCatalog:[tasks[0],{...rogue,repo:'another/repository'}]})).kind,'STOPPED');
   assert.equal(choose(make({admittedCatalog:[rogue]})).kind,'NONE');
 });
+
+test('withdrawn lane cannot hide corrupt clock, retry, or pinned identity in its journal',()=>{
+  const catalog=structuredClone(tasks.slice(0,4));
+  for(const mutate of [
+    s=>{delete s.taskSha;},
+    s=>{s.taskId='';},
+    s=>{s.taskSha='f';},
+    s=>{s.lastServedAtMs=NOW+1;},
+    s=>{s.nextEligibleAtMs=-1;},
+    s=>{s.retries=99;},
+    s=>{s.mode='READY';s.retries=1;},
+    s=>{s.mode='BACKOFF';s.retries=1;s.nextEligibleAtMs=0;},
+    s=>{s.mode='READY';s.taskId=null;s.taskSha=null;},
+  ]){
+    const state=journal();mutate(state.lanes['p0-atomic-budget']);
+    const result=choose(make({admittedCatalog:catalog,journal:state}));
+    assert.equal(result.kind,'STOPPED');
+    assert.equal(result.reason,'UNADMITTED_LANE_JOURNAL_INVALID');
+  }
+  const state=journal();
+  state.lanes['p0-atomic-budget']={mode:'BLOCKED',taskId:null,taskSha:null,
+    lastServedAtMs:0,nextEligibleAtMs:0,retries:0};
+  const result=choose(make({admittedCatalog:catalog,journal:state}));
+  assert.equal(result.kind,'CANDIDATE');
+  assert.equal(result.candidate.laneId,'engine');
+});

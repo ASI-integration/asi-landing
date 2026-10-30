@@ -33,6 +33,18 @@ const response = (kind, reason, lanes = [], candidate = null) => Object.freeze({
   authority: 'NONE_SOURCE_ONLY',
 });
 const safeMs = n => Number.isSafeInteger(n) && n >= 0;
+const MODES = Object.freeze(['READY', 'BACKOFF', 'DONE', 'BLOCKED', 'UNKNOWN', 'FAILED_LOCKED']);
+// Missing, stale, or corrupt records are not made harmless by catalog withdrawal.
+function validDurableRecord(s, nowMs) {
+  if (!s || typeof s !== 'object' || Array.isArray(s) || !MODES.includes(s.mode) ||
+      !safeMs(s.lastServedAtMs) || s.lastServedAtMs > nowMs ||
+      !safeMs(s.nextEligibleAtMs) || !Number.isSafeInteger(s.retries) ||
+      s.retries < 0 || s.retries > MAX_RETRIES) return false;
+  const pinned = typeof s.taskId === 'string' && IDENT.test(s.taskId) &&
+    typeof s.taskSha === 'string' && SHA.test(s.taskSha);
+  const neverAdmitted = s.taskId === null && s.taskSha === null && s.mode === 'BLOCKED';
+  return pinned || neverAdmitted;
+}
 
 /** For tests and later protected native integration; not an execution budget. */
 export function minimumBackoffMs(retries) {
@@ -72,8 +84,10 @@ export function planCooperativeOwnerLane(snapshot) {
   for (const lane of laneDefinitions) {
     if (admittedCatalog.some(t => t?.branch === lane.branch && t?.repo === lane.repository)) continue;
     const state = journal.lanes[lane.id];
-    if (!state || typeof state !== 'object' || Array.isArray(state) ||
-        !['READY', 'BACKOFF', 'DONE', 'BLOCKED', 'UNKNOWN', 'FAILED_LOCKED'].includes(state.mode))
+    if (!validDurableRecord(state, nowMs) ||
+        (state.mode === 'READY' && (state.retries !== 0 || state.nextEligibleAtMs !== 0)) ||
+        (state.mode === 'BACKOFF' && (state.retries < 1 ||
+          state.lastServedAtMs + minimumBackoffMs(state.retries) > state.nextEligibleAtMs)))
       return response('STOPPED', 'UNADMITTED_LANE_JOURNAL_INVALID');
     if (state.mode === 'UNKNOWN' || state.mode === 'FAILED_LOCKED')
       return response('STOPPED', 'HISTORICAL_LANE_LOCK_REQUIRES_RECONCILIATION');
