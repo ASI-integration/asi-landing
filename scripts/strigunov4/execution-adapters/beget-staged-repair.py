@@ -148,13 +148,29 @@ def independent_evidence(i,grant,new):
     safe(type(repairReview) is dict and
          repairReview.get('schema')=='asi.beget-staged-repair-review.v1' and
          repairReview.get('result')=='PASS' and
-         repairReview.get('independent') is True and
          type(repairReview.get('findings')) is int and repairReview['findings']==0 and
          repairReview.get('repairScriptSha256')==grant['repairScriptSha256'] and
          repairReview.get('protectedBaseSha')==new['baseSha'] and
          type(repairReview.get('reviewedPr')) is int and repairReview['reviewedPr']==559 and
          repairReview.get('reviewedHead')==grant['repairReviewHead'],
          'REPAIR_SOURCE_REVIEW_REQUIRED')
+    if repairReview.get('mode')=='OWNER_VERIFIED_CI':
+        # Owner elected NORMAL security: no mandatory second human reviewer.
+        # Still verify the exact PR-head CI through GitHub independently of
+        # the root-owned JSON, plus the separate owner Ed25519 repair grant.
+        safe(repairReview.get('independent') is False and
+             type(repairReview.get('ownerId')) is int and
+             repairReview['ownerId']==207600140 and
+             repairReview.get('scope')=='BEGET_G2_TWO_DRAFT_WITNESSES' and
+             type(repairReview.get('validationRunId')) is int and
+             repairReview['validationRunId']>0,
+             'REPAIR_OWNER_VERIFIED_CI_SCOPE')
+        i.verified_owner_ci_run(repairReview['validationRunId'],311380800,
+                                grant['repairReviewHead'],'pull_request')
+    else:
+        safe(repairReview.get('independent') is True and
+             repairReview.get('mode') in (None,'INDEPENDENT_HUMAN'),
+             'REPAIR_SOURCE_REVIEW_REQUIRED')
     review=json.loads(reviewraw)
     i.source_review_preclaim(review,new)
     isolation=json.loads(isolationraw)
