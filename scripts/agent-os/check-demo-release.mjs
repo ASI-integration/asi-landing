@@ -267,8 +267,13 @@ export async function verifiedOwnerComment(number, sha, kind, token) {
 export function requiredApproval({contract, changed, prNumber, prBody, headSha}) {
   // A security-level change receives ONE owner exact-head approval, not a new
   // second reviewer or multiple per-commit approvals.
-  if (changed.some(p => OWNER_BASELINE_PATHS.has(p))) return 'SECURITY-BASELINE-CHANGE';
-  if (changed.some(p => GOVERNANCE.has(p))) return 'CONTRACT-CHANGE';
+  // When this protected checker itself changes, the existing trusted-main
+  // CONTRACT-CHANGE attestation remains the one required approval. Subsequent
+  // baseline-only changes use SECURITY-BASELINE-CHANGE, never two at once.
+  if (changed.some(p => GOVERNANCE.has(p) && !OWNER_BASELINE_PATHS.has(p)))
+    return 'CONTRACT-CHANGE';
+  if (changed.some(p => OWNER_BASELINE_PATHS.has(p)))
+    return 'SECURITY-BASELINE-CHANGE';
   if (prNumber <= contract.transition.legacyPrMax) {
     return [502, 508, 509].includes(prNumber) &&
       contract.transition.legacyHeads[String(prNumber)] === headSha
