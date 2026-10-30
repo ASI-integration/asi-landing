@@ -114,4 +114,17 @@ describe('RU auth SQL draft structural integrity (no database access)', () => {
     expect(consume).toContain('ru_auth_ip_limits.verify_count = 0 OR ru_auth_ip_limits.verify_window_start IS NULL');
   });
 
+  it('requires a database-enforced case-folded users.email invariant before new RU OTP identities', () => {
+    // An ILIKE lookup alone cannot prevent a concurrent legacy writer from
+    // creating two different user IDs for one mailbox with alternate casing.
+    // A duplicate must stop protected staging migration, never auto-link it.
+    const index = 'CREATE UNIQUE INDEX ru_auth_users_email_ci_unique\n' +
+      '  ON public.users (pg_catalog.lower(email));';
+    expect(sql).toContain(index);
+    expect(count(/CREATE UNIQUE INDEX ru_auth_users_email_ci_unique/g)).toBe(1);
+    expect(sql.indexOf(index)).toBeLessThan(
+      sql.indexOf('CREATE TABLE public.ru_auth_email_challenges'));
+    expect(sql).not.toMatch(/CREATE UNIQUE INDEX IF NOT EXISTS/);
+  });
+
 });
