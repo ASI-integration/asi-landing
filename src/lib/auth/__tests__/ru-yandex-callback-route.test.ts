@@ -90,6 +90,8 @@ describe('RU Yandex OAuth callback cannot cancel a pending flow by CSRF', () => 
     ));
     expect(response.status).toBe(307);
     expect(response.headers.get('location')).toBe(origin + '/dashboard/settings');
+    expect(response.headers.get('referrer-policy')).toBe('no-referrer');
+    expect(response.headers.get('cache-control')).toContain('no-store');
     expect(providerFetch).toHaveBeenCalledTimes(2);
     expect(insert).toHaveBeenCalledWith({ yandex_subject: '123456', user_id: 'owner-a' });
     expect(mocks.ensure).not.toHaveBeenCalled();
@@ -136,6 +138,8 @@ describe('RU Yandex OAuth callback cannot cancel a pending flow by CSRF', () => 
     expect(response.status).toBe(307);
     expect(session.userId).toBe('linked-user');
     expect(session.email).toBe('linked@example.ru');
+    expect(response.headers.get('referrer-policy')).toBe('no-referrer');
+    expect(response.headers.get('cache-control')).toContain('no-store');
     expect(session.googleOauthState).toBeUndefined();
     expect(session.googleOauthPlan).toBeUndefined();
     expect(session.googleOauthRedirect).toBeUndefined();
@@ -152,6 +156,7 @@ describe('RU Yandex OAuth callback cannot cancel a pending flow by CSRF', () => 
       const response = await GET(new Request(origin + '/api/auth/yandex/callback' + query));
       expect(response.status).toBe(307);
       expect(response.headers.get('location')).toContain('yandex_error=invalid_state');
+      expect(response.headers.get('referrer-policy')).toBe('no-referrer');
       expect(session.yandexOauthState).toBe(state);
       expect(session.yandexOauthVerifier).toBe('B'.repeat(64));
     }
@@ -201,6 +206,8 @@ describe('RU Yandex OAuth callback cannot cancel a pending flow by CSRF', () => 
     ));
     expect(response.status).toBe(307);
     expect(response.headers.get('location')).toContain('yandex_error=access_denied');
+    expect(response.headers.get('referrer-policy')).toBe('no-referrer');
+    expect(response.headers.get('cache-control')).toContain('no-store');
     expect(session.yandexOauthState).toBeUndefined();
     expect(session.yandexOauthVerifier).toBeUndefined();
     expect(session.yandexOauthMode).toBeUndefined();
