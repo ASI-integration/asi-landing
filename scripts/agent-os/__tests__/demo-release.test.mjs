@@ -265,3 +265,27 @@ test('19 rename cannot hide governance or out-of-stage source paths', () => {
     } finally {fs.rmSync(dir,{recursive:true,force:true});}
   }
 });
+
+test('20 routine Stage G2 host maintenance avoids per-file owner exception, protected files still denied', () => {
+  const c=copy();
+  c.stages[0].status='ACCEPTED';
+  c.stages[0].acceptanceSha=sha;
+  c.stages[0].proof=['https://github.com/ASI-integration/asi-landing/actions/runs/123'];
+  c.stages[1].status='IN_PROGRESS';
+  const evidence=new Set(c.stages[0].proof);
+  const b=body('S4-G2');
+  const routine='scripts/strigunov4/execution-adapters/beget-host.test.mjs';
+  const args={contract:c,changed:[routine],prNumber:560,prBody:b,headSha:sha,baseHasContract:true,verifiedRuns:evidence};
+  assert.equal(checkPr(args).status,'CURRENT_MILESTONE_SCOPED');
+  assert.equal(requiredApproval({contract:c,changed:[routine],prNumber:560,prBody:b,headSha:sha}),null);
+  for (const blocked of [
+    'scripts/strigunov4/execution-adapters/host-authority.mjs',
+    'scripts/strigunov4/execution-adapters/standing-budget.mjs',
+    'scripts/agent-os/check-demo-release.mjs',
+    'src/unrelated.ts'
+  ]) {
+    assert.throws(()=>checkPr({...args,changed:[blocked]}),
+      /PR_HAS_OUT_OF_STAGE_FILES|GOVERNANCE_CHANGE_NEEDS_VERIFIED_OWNER_ATTESTATION/);
+    assert.notEqual(requiredApproval({contract:c,changed:[blocked],prNumber:560,prBody:b,headSha:sha}),null);
+  }
+});
