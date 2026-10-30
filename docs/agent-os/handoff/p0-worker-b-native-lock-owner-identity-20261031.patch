@@ -1,0 +1,95 @@
+diff --git a/scripts/strigunov4/execution-adapters/standing-budget-crash-probe.test.mjs b/scripts/strigunov4/execution-adapters/standing-budget-crash-probe.test.mjs
+index 048d8390..049cb456 100644
+--- a/scripts/strigunov4/execution-adapters/standing-budget-crash-probe.test.mjs
++++ b/scripts/strigunov4/execution-adapters/standing-budget-crash-probe.test.mjs
+@@ -174,4 +174,45 @@ if(role==='holder'){
+     }finally{await fs.rm(phaseRoot,{recursive:true,force:true});}
+   });
+ 
+-}
+\ No newline at end of file
++test('native owner-lock path replacement refuses a second claim, preserving the journal',async()=>{
++  // Isolated same-UID directory replacement; not a live operation or a claim
++  // of protection against every filesystem adversary. The original lease
++  // remains held while the pathname points to a different directory inode.
++  const swapRoot=root+'-swap';
++  await fs.mkdir(swapRoot,{mode:0o700});
++  const store=await initializeState(swapRoot);
++  let ledgerRef;
++  try {
++    const result=await store.execute('github-publisher',
++      async({ledger})=>{ledgerRef=ledger;return {...task};},
++      {async verifyTask(){return {verified:true};}},
++      async({transaction})=>{
++        const lease=inspectStandingTransaction(transaction,{write:true});
++        assert.equal(lease.phase,'started');
++        const budget=createStandingPublisherBudget({store,ledger:ledgerRef,transaction,clock:()=>at});
++        const original=store.file('execution.lock');
++        const moved=original+'-old-lease';
++        await fs.rename(original,moved);
++        await fs.mkdir(original,{mode:0o700});
++        let attempted;
++        try{
++          attempted=await budget.reserve({envelope,effect:effect('path-replaced')});
++          console.log('SWAP_RESERVATION:'+JSON.stringify(attempted));
++          assert.equal(attempted.reason,'BUDGET_NATIVE_LEASE_MISMATCH',
++            'a new inode at the lock pathname cannot authorize the old lease');
++          assert.equal(ledgerRef.standingDelegationBudget?.envelopes?.[hex64],undefined);
++          const onDisk=JSON.parse(await fs.readFile(store.file('autopilot-ledger.json'),'utf8'));
++          assert.equal(onDisk.standingDelegationBudget?.envelopes?.[hex64],undefined);
++        }finally{
++          await fs.rmdir(original);
++          await fs.rename(moved,original);
++        }
++        return {status:'WAITING',reason:'SOURCE_ONLY_LOCK_SWAP_TEST'};
++      });
++    assert.equal(result.mode,'WAITING');
++  }finally{
++    await fs.rm(swapRoot,{recursive:true,force:true});
++  }
++});
++
++}
+diff --git a/scripts/strigunov4/execution-adapters/state.mjs b/scripts/strigunov4/execution-adapters/state.mjs
+index df4bbdaf..73ed617e 100644
+--- a/scripts/strigunov4/execution-adapters/state.mjs
++++ b/scripts/strigunov4/execution-adapters/state.mjs
+@@ -1,4 +1,5 @@
+ import fs from 'node:fs/promises';
++import { lstatSync } from 'node:fs';
+ import path from 'node:path';
+ import { randomUUID, createHash } from 'node:crypto';
+ import {assertLiveAdmission,BEGET} from './host-authority.mjs';
+@@ -103,9 +104,16 @@ function stateAt(root,liveAdmission) {
+   return { root, file, async execute(kind, task, github, action) {
+     if(root === LIVE_ROOT || root.startsWith(LIVE_ROOT + '/') || root===BEGET.root || root.startsWith(BEGET.root+'/'))assertLiveAdmission(liveAdmission,root);
+     const lock = file('execution.lock');
+-    let lockCreated = false;
++    let lockCreated = false, ownedLockIdentity;
+     try {
+       await fs.mkdir(lock, { mode: 0o700 }); lockCreated = true;
++      // Pin the specific filesystem object this execute() acquired, BEFORE
++      // the first asynchronous fsync of the parent directory. The pathname
++      // alone is insufficient: another process under this UID could rename
++      // execution.lock and replace it with a different directory.
++      const acquired = lstatSync(lock,{bigint:true});
++      must(acquired.isDirectory() && !acquired.isSymbolicLink(), 'LOCK_OWNER_CAPTURE_FAILED');
++      ownedLockIdentity = Object.freeze({dev:acquired.dev,ino:acquired.ino});
+       await syncDir(path.dirname(lock));
+     } catch (e) {
+       if (!lockCreated && e.code === 'EEXIST')
+@@ -125,6 +133,14 @@ function stateAt(root,liveAdmission) {
+     const beginTransaction = () => {
+       transaction = Object.freeze({}); phase = 'admission';
+       standingTransactions.set(transaction, ({write,taskId,taskSha}) => {
++        // Check the *original* mkdir inode on every native lease inspection.
++        // In particular, another directory at the same path is not our lock.
++        let present;
++        try { present=lstatSync(lock,{bigint:true}); } catch {}
++        must(!!ownedLockIdentity && present?.isDirectory() &&
++          !present.isSymbolicLink() &&
++          present.dev===ownedLockIdentity.dev &&
++          present.ino===ownedLockIdentity.ino, 'STANDING_LOCK_OWNER_CHANGED');
+         must(armed && phase !== 'closed' && ledger?.mode === 'FAILED_LOCKED' &&
+           ledger.reason === 'IN_FLIGHT_OR_CRASHED', 'STANDING_TRANSACTION_INACTIVE');
+         must(typeof write === 'boolean', 'STANDING_TRANSACTION_OPERATION');
