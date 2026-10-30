@@ -24,9 +24,9 @@ function fixture(phase='started',kind='create-commit'){
     stage:'S4-G2',phase,kind,routineClass:'stage4-source-maintenance',headSha:s,
     method,route,payloadSha256,
     requestSha256:SHA(JSON.stringify({method,route,payloadSha256}))};
-  return {parent,child,effect,lease,selectedTask,baseSha:s};
+  return {parent,child,effect,lease,selectedTask,baseSha:s,now:parent.notBefore+1000};
 }
-function check(f){const r=capture(f);return r.assessAfter?.({lease:f.lease,selectedTask:f.selectedTask,effect:f.effect,baseSha:f.baseSha})??r;}
+function check(f){const r=capture(f);return r.assessAfter?.({lease:f.lease,selectedTask:f.selectedTask,effect:f.effect,baseSha:f.baseSha,now:f.now})??r;}
 test('selected started write is source-eligible but never authorized',()=>{
   const r=check(fixture());assert.equal(r.status,'PARENT_TASK_SOURCE_ELIGIBLE');assert.equal(r.authorized,false);
 });
@@ -175,4 +175,42 @@ test('started write cannot reuse stale or absent protected-base SHA after await'
     baseSha:'b'.repeat(40)}).reason,'POST_AWAIT_BASE_SHA_CHANGED');
   assert.equal(snap.assessAfter({lease:f.lease,selectedTask:f.selectedTask,effect:f.effect})
     .reason,'POST_AWAIT_BASE_SHA_CHANGED');
+});
+
+// The native host must refresh the clock itself after every awaited trust/queue
+// boundary. These are source-model tests; they do NOT authenticate its origin.
+test('expired or not-yet-valid parent/child denied at capture in every read/write phase',()=>{
+  for(const [phase,kind] of [['admission','github-read'],['preflight','github-read'],
+    ['started','create-commit']]){
+    const f=fixture(phase,kind);
+    for(const at of [f.parent.notBefore-1,f.child.expiresAt,f.parent.expiresAt]){
+      f.now=at;
+      assert.equal(capture(f).reason,'LEASE_TIME_EXPIRED_OR_INVALID');
+    }
+    f.now='untrusted-string';
+    assert.equal(capture(f).reason,'LEASE_TIME_EXPIRED_OR_INVALID');
+  }
+});
+test('await crossing child expiry denies admission GET, verify GET and started write',()=>{
+  for(const [phase,kind] of [['admission','github-read'],['preflight','github-read'],
+    ['started','create-commit']]){
+    const f=fixture(phase,kind),snap=capture(f);
+    assert.equal(snap.status,'PARENT_TASK_SOURCE_SNAPSHOT');
+    const input={lease:f.lease,selectedTask:f.selectedTask,effect:f.effect,baseSha:f.baseSha};
+    assert.equal(snap.assessAfter({...input,now:f.child.expiresAt-1}).status,
+      'PARENT_TASK_SOURCE_ELIGIBLE');
+    assert.equal(snap.assessAfter({...input,now:f.child.expiresAt}).reason,
+      'POST_AWAIT_LEASE_TIME_EXPIRED_OR_REGRESSED');
+  }
+});
+test('post-await missing, backward, or noninteger clock denies without renewal',()=>{
+  const f=fixture(),snap=capture(f);
+  const input={lease:f.lease,selectedTask:f.selectedTask,effect:f.effect,baseSha:f.baseSha};
+  for(const at of [undefined,f.now-1,NaN,Infinity,'1',1.1]){
+    assert.equal(snap.assessAfter({...input,now:at}).reason,
+      'POST_AWAIT_LEASE_TIME_EXPIRED_OR_REGRESSED');
+  }
+  const ok=snap.assessAfter({...input,now:f.now});
+  assert.equal(ok.status,'PARENT_TASK_SOURCE_ELIGIBLE');
+  assert.equal(ok.authorized,false);
 });
