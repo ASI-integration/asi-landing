@@ -146,7 +146,8 @@ test('13 rejects forged owner comments, accepts only exact owner+SHA+action', as
   try {
     globalThis.fetch = async () => ({ok: true, json: async () => [
       {user: {id: 9999}, body: 'ASI-OWNER-APPROVE:CONTRACT-CHANGE:520:' + sha},
-      {user: {id: 207600140}, body: 'ASI-OWNER-APPROVE:CONTRACT-CHANGE:520:' + sha},
+      {id: 314159, user: {id: 207600140, type: 'User'}, performed_via_github_app: null,
+       body: 'ASI-OWNER-APPROVE:CONTRACT-CHANGE:520:' + sha},
     ]});
     assert.equal(await verifiedOwnerComment(520, sha, 'CONTRACT-CHANGE', 'token'), true);
     assert.equal(await verifiedOwnerComment(520, sha, 'RELEASE-EXCEPTION', 'token'), false);
@@ -302,4 +303,21 @@ test('21 development mode permits routine code, not protected operations', () =>
     assert.throws(()=>checkPr(args), /DEVELOPMENT_PROTECTED_OR_OUT_OF_SCOPE_PATH|GOVERNANCE_CHANGE_NEEDS_VERIFIED_OWNER_ATTESTATION/);
     assert.notEqual(requiredApproval({contract:seed,changed:[filename],prNumber:570,prBody:bodyDev,headSha:sha}),null);
   }
+});
+
+test('22 App-origin and incomplete provenance cannot impersonate an owner comment', async () => {
+  const old = globalThis.fetch;
+  const exact='ASI-OWNER-APPROVE:CONTRACT-CHANGE:520:'+sha;
+  try {
+    for(const forged of [
+      {id:1,user:{id:207600140,type:'User'},performed_via_github_app:{id:99},body:exact},
+      {id:2,user:{id:207600140,type:'Bot'},performed_via_github_app:null,body:exact},
+      {id:3,user:{id:207600140,type:'User'},body:exact},
+      {id:4,user:{id:207600140,type:'User'},performed_via_github_app:null,body:exact+'-extra'},
+      {id:'5',user:{id:207600140,type:'User'},performed_via_github_app:null,body:exact},
+    ]) {
+      globalThis.fetch=async()=>({ok:true,json:async()=>[forged]});
+      assert.equal(await verifiedOwnerComment(520,sha,'CONTRACT-CHANGE','token'),false);
+    }
+  } finally {globalThis.fetch=old;}
 });
