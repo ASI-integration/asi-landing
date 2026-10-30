@@ -82,3 +82,12 @@ test('bootstrap with protected gate changed uses one existing CONTRACT-CHANGE co
   assert.equal(requiredApproval({contract,changed:exactChanged,prNumber:NUMBER,
     prBody:'',headSha:HEAD}),'SECURITY-BASELINE-CHANGE');
 });
+
+test('trusted governance has read-only Actions proof access, never write',()=>{
+  const workflow=fs.readFileSync(path.join(root,'.github/workflows/asi-release-governance.yml'),'utf8');
+  const permissions=workflow.split(/^permissions:\s*$/m)[1]?.split(/^concurrency:\s*$/m)[0];
+  assert.ok(permissions,'TRUSTED_GOVERNANCE_PERMISSIONS_MISSING');
+  assert.match(permissions,/^  actions: read(?:\s|$)/m);
+  assert.doesNotMatch(permissions,/^  actions: write(?:\s|$)/m);
+  assert.doesNotMatch(workflow,/persist-credentials: true/);
+});
