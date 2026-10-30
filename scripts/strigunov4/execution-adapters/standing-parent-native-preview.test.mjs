@@ -3,9 +3,9 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
-import {createHash} from 'node:crypto';
+import {createHash,generateKeyPairSync,sign} from 'node:crypto';
 import {initializeState,inspectStandingTransaction} from './state.mjs';
-import {inspectParentCandidateInNativeTransaction as inspect} from './standing-parent-native-preview.mjs';
+import {inspectParentCandidateInNativeTransaction as inspect,inspectSignedParentInNativeTransaction as inspectSigned} from './standing-parent-native-preview.mjs';
 
 const sha=v=>createHash('sha256').update(v).digest('hex');
 const now=1793340000000,day=86400000;
@@ -90,4 +90,65 @@ test('outside the existing state.execute callback, native proposal cannot be rep
     ...valid,now});
   assert.equal(r.status,'PARENT_NATIVE_PREVIEW_BLOCKED');
   assert.equal(r.authorized,false);
+});
+
+function signedInput(){
+  const d=data();
+  const owner=generateKeyPairSync('ed25519');
+  const verifier=generateKeyPairSync('ed25519');
+  const fingerprint=k=>sha(k.export({type:'spki',format:'der'}));
+  const signed=(payload,key)=>{const raw=JSON.stringify(payload);
+    return {payload:raw,signature:sign(null,Buffer.from(raw),key).toString('base64')};};
+  const parent={...d.parent,baseSha:task().sha,stage:'S4-G2',
+    approvedRoutineClasses:['stage4-source-maintenance','stage4-source-test']};
+  delete parent.digest;
+  const signedParent=signed(parent,owner.privateKey);
+  const child={...d.child,baseSha:task().sha,stage:'S4-G2',
+    approvedRoutineClasses:['stage4-source-maintenance'],
+    schema:'asi.standing-child.proposal.v1',parentDigest:sha(signedParent.payload)};
+  delete child.digest;
+  const signedChild=signed(child,verifier.privateKey);
+  const ownerPublicKey=owner.publicKey.export({type:'spki',format:'pem'});
+  const verifierPublicKey=verifier.publicKey.export({type:'spki',format:'pem'});
+  const expected={baseSha:task().sha,securityDigest:parent.securityDigest,
+    policyDigest:parent.policyDigest,ownerKeySha256:fingerprint(owner.publicKey),
+    verifierKeySha256:fingerprint(verifier.publicKey)};
+  return {signedParent,signedChild,ownerPublicKey,verifierPublicKey,expected,
+    effect:d.effect,now,revokedParentDigests:[],revokedChildDigests:[]};
+}
+
+test('both signed source payloads bind to real state.execute lease, still no permit',async t=>{
+  const args=signedInput();
+  const {result,calls}=await fixture(t,async({store,transaction,lease})=>{
+    const before=JSON.stringify(lease.ledger.standingDelegationBudget);
+    const outcome=inspectSigned({store,transaction,...args});
+    assert.equal(outcome.status,'SIGNED_PARENT_NATIVE_SOURCE_ELIGIBLE');
+    assert.equal(outcome.authorized,false);
+    assert.equal(outcome.transactionId,lease.transactionId);
+    assert.equal(outcome.taskId,args.effect.taskId);
+    assert.equal(JSON.stringify(lease.ledger.standingDelegationBudget),before);
+  });
+  assert.equal(result.mode,'WAITING');
+  assert.equal(calls,2);
+});
+test('signed source cannot reuse forged lease, signer or revoked parent',async t=>{
+  const args=signedInput();
+  const {result}=await fixture(t,async({store,transaction,lease})=>{
+    const before=JSON.stringify(lease.ledger.standingDelegationBudget);
+    for(const wrong of [
+      {transaction:{}},
+      {expected:{...args.expected,ownerKeySha256:sha('imposter')}},
+      {revokedParentDigests:[sha(args.signedParent.payload)]},
+      {signedChild:{...args.signedChild,payload:args.signedChild.payload+' '}},
+      {effect:{...args.effect,taskSha:'b'.repeat(40)}},
+      {store:{...store,root:'/tmp/imposter'}},
+      {now:now+14*day},
+    ]) {
+      const out=inspectSigned({store,transaction,...args,...wrong});
+      assert.equal(out.authorized,false);
+      assert.notEqual(out.status,'SIGNED_PARENT_NATIVE_SOURCE_ELIGIBLE');
+    }
+    assert.equal(JSON.stringify(lease.ledger.standingDelegationBudget),before);
+  });
+  assert.equal(result.mode,'WAITING');
 });
