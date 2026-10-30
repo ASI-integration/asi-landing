@@ -150,6 +150,13 @@ export function assessParentBudgetProposal({parent, child, childLinks, ledger, e
   if (effectIds.has(effect.effectId) || (isWrite(effect.kind) && postWires.has(effect.requestSha256)))
     return deny('PARENT_REPLAY');
   const childEntry=ledger.standingDelegationBudget.envelopes[child.digest];
+  // A renewed presentation of the SAME digest must match the exact durable
+  // child scope. The digest/link shape alone does not bind numeric limits here.
+  // This is defensive source consistency, NOT signature authentication.
+  if (childEntry && !['digest','repo','environment','target','action',
+    'securityDigest','policyDigest','notBefore','expiresAt',
+    'maxOperations','maxRequests','maxWrites'].every(k=>childEntry.scope[k]===child[k]))
+    return deny('PARENT_CHILD_SCOPE_CHANGED');
   const childCount=childEntry?.claims.length ?? 0;
   const childWrites=childEntry?.writes ?? 0;
   const plusWrite=Number(isWrite(effect.kind));
