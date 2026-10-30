@@ -96,6 +96,9 @@ def scope(grant,oldraw,newraw,old,new,now):
          grant.get('newCatalogSha256')==new['catalogSha256'] and
          grant.get('unitSha256')==new['unitSha256'] and
          grant.get('repairScriptSha256')==sha(Path(__file__).read_bytes()) and
+         type(grant.get('repairReviewHead')) is str and
+         len(grant['repairReviewHead'])==40 and
+         all(c in '0123456789abcdef' for c in grant['repairReviewHead']) and
          type(grant.get('sourceReviewSha256')) is str and
          type(grant.get('nativeIsolationSha256')) is str and
          type(grant.get('repairReviewSha256')) is str and
@@ -125,9 +128,7 @@ def independent_evidence(i,grant,new):
          repairReview.get('repairScriptSha256')==grant['repairScriptSha256'] and
          repairReview.get('protectedBaseSha')==new['baseSha'] and
          type(repairReview.get('reviewedPr')) is int and repairReview['reviewedPr']==559 and
-         type(repairReview.get('reviewedHead')) is str and
-         len(repairReview['reviewedHead'])==40 and
-         all(c in '0123456789abcdef' for c in repairReview['reviewedHead']),
+         repairReview.get('reviewedHead')==grant['repairReviewHead'],
          'REPAIR_SOURCE_REVIEW_REQUIRED')
     review=json.loads(reviewraw)
     i.source_review_preclaim(review,new)
