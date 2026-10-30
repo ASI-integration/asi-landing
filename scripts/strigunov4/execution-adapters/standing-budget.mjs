@@ -20,8 +20,13 @@ const HEX40 = /^[0-9a-f]{40}$/;
 const ID = /^[a-z0-9][a-z0-9-]{0,95}$/;
 const REPO = 'ASI-integration/asi-landing';
 const TIME_LIMIT = 14 * 86400000;
-const MAX_ENVELOPES = 16;
+// Keep all historical child digests: 365 days needs at least 27 <=14-day renewals.
+// This expands retention, not authority; the native parent signer remains required.
+const MAX_ENVELOPES = 64;
 const MAX_CLAIMS = 256;
+// Fail-closed total across all retained child envelopes, including unknown effects.
+const MAX_GLOBAL_CLAIMS = 256;
+const MAX_GLOBAL_WRITES = 64;
 const READ = 'github-read';
 const WRITES = new Set(['create-tree', 'create-commit', 'create-branch', 'create-draft-pr']);
 const POST_ROUTES = Object.freeze({'create-tree':'git/trees','create-commit':'git/commits',
@@ -205,9 +210,13 @@ export function createStandingPublisherBudget({store, ledger, clock=Date.now}={}
       // Historical duplicates must also block unrelated new work: checking only
       // today's effect would silently accept an already-corrupt cross-envelope journal.
       const usedIds=new Set(),usedPosts=new Set();
-      let latestObserved=0;
+      let latestObserved=0, globalClaims=0, globalWrites=0;
       for (const [key,entry] of Object.entries(budget.envelopes)) {
         must(soundJournalEntry(entry,key),'BUDGET_LEDGER_INVALID');
+        globalClaims+=entry.claims.length;
+        globalWrites+=entry.writes;
+        must(globalClaims<=MAX_GLOBAL_CLAIMS&&globalWrites<=MAX_GLOBAL_WRITES,
+          'BUDGET_LEDGER_INVALID');
         latestObserved=Math.max(latestObserved,entry.lastObservedAt);
         for(const claim of entry.claims){
           must(!usedIds.has(claim.effectId),'BUDGET_LEDGER_INVALID');
@@ -229,6 +238,8 @@ export function createStandingPublisherBudget({store, ledger, clock=Date.now}={}
         return deny('BUDGET_HISTORY_FULL');
       const before = current || {scope, lastObservedAt:lockedAt, operations:0, requests:0, writes:0, claims:[]};
       const write = effect.kind === READ ? 0 : 1;
+      if (globalClaims+1>MAX_GLOBAL_CLAIMS || globalWrites+write>MAX_GLOBAL_WRITES)
+        return deny('BUDGET_GLOBAL_EXHAUSTED');
       if (before.operations + 1 > scope.maxOperations ||
           before.requests + 1 > scope.maxRequests || before.writes + write > scope.maxWrites ||
           before.claims.length >= MAX_CLAIMS) return deny('BUDGET_EXHAUSTED');
