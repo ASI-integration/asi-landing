@@ -260,3 +260,32 @@ test('admitted catalog and path arrays cannot use method overrides, holes or get
     assert.equal(result.authority,'NONE_SOURCE_ONLY');
   }
 });
+
+
+test('non-enumerable and Symbol journal keys cannot conceal withdrawn failed lanes',()=>{
+  for(const key of ['hidden-sixth-lane',Symbol('hidden-sixth-lane')]){
+    const state=journal();
+    Object.defineProperty(state.lanes,key,{value:{mode:'FAILED_LOCKED'},enumerable:false});
+    const result=choose(make({journal:state}));
+    assert.equal(result.kind,'STOPPED');
+    assert.equal(result.reason,'UNRECOGNIZED_DURABLE_LANE');
+    assert.equal(result.candidate,null);
+  }
+});
+test('inherited Object.prototype lane state cannot replace missing owned durable evidence',()=>{
+  const state=journal();delete state.lanes.engine;
+  const original=Object.getOwnPropertyDescriptor(Object.prototype,'engine');
+  Object.defineProperty(Object.prototype,'engine',{configurable:true,value:{
+    mode:'READY',taskId:tasks[0].id,taskSha:tasks[0].sha,
+    lastServedAtMs:0,nextEligibleAtMs:0,retries:0
+  }});
+  try {
+    const result=choose(make({journal:state}));
+    assert.equal(result.kind,'STOPPED');
+    assert.equal(result.reason,'DURABLE_LANE_IDENTITY_OR_STATE_INVALID');
+    assert.equal(result.candidate,null);
+  } finally {
+    if(original) Object.defineProperty(Object.prototype,'engine',original);
+    else delete Object.prototype.engine;
+  }
+});
