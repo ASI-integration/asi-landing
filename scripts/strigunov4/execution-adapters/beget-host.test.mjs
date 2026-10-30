@@ -11,7 +11,7 @@ import {BEGET,verifyBegetActivation} from './host-authority.mjs';
 import {stagePolicyHash,validateStagePolicy} from './stage-authority.mjs';
 import {prepareDelta} from './change-preparer.mjs';
 import {runContinuousWorker} from '../ASI-STRIGUNOV4-RUNNER-BRIDGE-20261020.mjs';
-import {createBegetChecks} from './host-checks.mjs';
+import {createBegetChecks,sandboxArguments} from './host-checks.mjs';
 import {digest} from './state.mjs';
 import {draftBody} from './publisher-transport.mjs';
 import {OWNER_LANES,projectOwnerLaneAdmission} from './owner-lanes.mjs';
@@ -225,4 +225,21 @@ test('a scheduled task, GitHub commit or forged host PID is never accepted as a 
    assert.equal(rows.length,5);
    assert.ok(rows.every(x=>x.status==='UNKNOWN'&&x.lastHeartbeat===null&&x.currentTask===null));
  }
+});
+
+test('Bubblewrap sandbox keeps network unshared and host mounts read-only after distro-path repair', () => {
+  const args=sandboxArguments('/tmp/asi-bwrap-fixture');
+  for(const required of ['--die-with-parent','--new-session','--unshare-all','--clearenv','--ro-bind','--tmpfs']) {
+    assert.ok(args.includes(required), 'missing '+required);
+  }
+  for(const forbidden of ['--share-net','--bind','--bind-try','--setenv','--unshare-user-try']) {
+    if(forbidden==='--setenv') continue; // fixed PATH/LANG variables are intentional
+    assert.equal(args.includes(forbidden),false,'unsafe '+forbidden);
+  }
+  const ro=[];
+  for(let i=0;i<args.length-2;i++) if(args[i]==='--ro-bind')ro.push([args[i+1],args[i+2]]);
+  for(const expected of [['/usr','/usr'],['/lib','/lib'],['/tmp/asi-bwrap-fixture','/work']]) {
+    assert.ok(ro.some(x=>x[0]===expected[0]&&x[1]===expected[1]),'missing readonly mount '+expected.join(' '));
+  }
+  assert.throws(()=>sandboxArguments('relative/path'),/CHECK_WORKSPACE/);
 });
