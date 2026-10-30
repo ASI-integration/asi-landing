@@ -7,6 +7,8 @@
  * Host must independently verify signatures, scope, protected-path inventory,
  * revocation, expiry and cumulative budget, then reserve/fsync through the
  * EXISTING Publisher journal before any effect. Never attach this to transport.
+ * `now`/post-await `now` must be independently read from the native host clock,
+ * not supplied from a caller payload. This helper cannot prove clock origin.
  */
 import {createHash} from 'node:crypto';
 const SHA = v => createHash('sha256').update(v).digest('hex');
@@ -89,7 +91,7 @@ function validWire(e,readProtocol){
 }
 
 /** Capture the immutable source fields BEFORE async trust reads / queue delay. */
-export function captureParentTaskLeaseProposal({parent,child,effect,lease,selectedTask=null,baseSha}={}){
+export function captureParentTaskLeaseProposal({parent,child,effect,lease,selectedTask=null,baseSha,now}={}){
   try {
   const p=capture(parent,parentFields),c=capture(child,childFields);
   const e=capture(effect,effectFields),l=capture(lease,leaseFields);
@@ -109,6 +111,9 @@ export function captureParentTaskLeaseProposal({parent,child,effect,lease,select
      c.notBefore<p.notBefore||c.expiresAt>p.expiresAt||!capsOK(p)||!capsOK(c)||
      c.maxOperations>p.maxOperations||c.maxRequests>p.maxRequests||c.maxWrites>p.maxWrites)
     return deny('PARENT_CHILD_STAGE_OR_CLASS_SCOPE');
+  if(!Number.isSafeInteger(now)||now<0||now<p.notBefore||now>=p.expiresAt||
+     now<c.notBefore||now>=c.expiresAt)
+    return deny('LEASE_TIME_EXPIRED_OR_INVALID');
   if(!ident(e.taskId)||!h40(e.taskSha)||!h64(e.requestSha256)||
      !PHASES.has(e.phase)||(!READS.has(e.kind)&&!WRITES.has(e.kind))||
      !validWire(e,protocol.value)||
@@ -136,7 +141,7 @@ export function captureParentTaskLeaseProposal({parent,child,effect,lease,select
   // The journal reference is compared by identity; only the native host can
   // prove that it is the actual lock owner's armed ledger.
   return Object.freeze({status:'PARENT_TASK_SOURCE_SNAPSHOT',authorized:false,
-    assessAfter({lease:afterLease,selectedTask:afterTask=null,effect:afterEffect,baseSha:afterBaseSha}={}){
+    assessAfter({lease:afterLease,selectedTask:afterTask=null,effect:afterEffect,baseSha:afterBaseSha,now:afterNow}={}){
       try {
       const a=capture(afterLease,leaseFields),e2=capture(afterEffect,effectFields);
       const p2=capture(parent,parentFields),c2=capture(child,childFields);
@@ -157,6 +162,9 @@ export function captureParentTaskLeaseProposal({parent,child,effect,lease,select
       // Re-read from authenticated native task/base evidence AFTER awaits.
       // Missing or shifted base SHA is not a valid continuation token.
       if(afterBaseSha!==baseSha)return deny('POST_AWAIT_BASE_SHA_CHANGED');
+      if(!Number.isSafeInteger(afterNow)||afterNow<now||afterNow>=p.expiresAt||
+         afterNow>=c.expiresAt)
+        return deny('POST_AWAIT_LEASE_TIME_EXPIRED_OR_REGRESSED');
       return Object.freeze({status:'PARENT_TASK_SOURCE_ELIGIBLE',authorized:false,
         stage:p.stage,transactionId:e.transactionId,taskId:e.taskId,
         phase:e.phase,kind:e.kind,routineClass:e.routineClass});
