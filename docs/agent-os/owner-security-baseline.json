@@ -1,0 +1,36 @@
+{
+  "schema": "asi.owner-security-baseline.v1",
+  "policyVersion": 1,
+  "owner": "ASI-integration",
+  "level": "NORMAL_OWNER_CONTROLLED",
+  "bootstrap": {
+    "target": "pqukibofpo",
+    "existingEngineOnly": true,
+    "g2WitnessJobs": 2,
+    "permittedReviewMode": "OWNER_VERIFIED_CI",
+    "secondHumanReviewerMandatory": false,
+    "ownerApprovalMode": "ONE_AUTHENTICATED_EXACT_HEAD",
+    "reapproveEveryIntermediateCommit": false
+  },
+  "standingDelegation": {
+    "parentMaxDays": 365,
+    "childMaxDays": 14,
+    "repeatOwnerApprovalsForInScopeChildren": false,
+    "effectiveOnlyAfterNativeSignedVerifierAndRevocation": true
+  },
+  "retainedSafeguards": {
+    "signedPrivilegedInstallation": true,
+    "exactScopeAndBudget": true,
+    "revocablePermission": true,
+    "existingLocksAndNoReplay": true,
+    "statePreservingRollback": true,
+    "noUnauthorizedProductionEffects": true,
+    "noOwnerImpersonation": true
+  },
+  "changeControl": {
+    "changeRequiresAuthenticatedOwnerExactPrHead": true,
+    "changeApprovalKind": "SECURITY-BASELINE-CHANGE",
+    "automaticSecurityEscalationAllowed": false,
+    "appOrBotMayApprove": false
+  }
+}
