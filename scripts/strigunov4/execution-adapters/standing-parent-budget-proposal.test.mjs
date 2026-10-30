@@ -178,3 +178,13 @@ test('adversarial proxy throws fail-closed rather than crashing the caller',()=>
   const f=fixture();f.childLinks=new Proxy({}, {ownKeys(){throw Error('untrusted proxy');}});
   assert.equal(assess(f).reason,'PARENT_UNSAFE_INPUT');
 });
+
+test('child cannot widen parent write cap even when first spend fits',()=>{
+  const f=fixture(); f.parent.maxWrites=1; // parent still valid; child write cap remains 2
+  assert.equal(assess(f).reason,'PARENT_HISTORY_OR_LINK_INVALID');
+});
+test('child cannot widen parent request or operation caps on renewal',()=>{
+  const f=fixture();
+  f.parent.maxOperations=1;f.parent.maxRequests=1;f.parent.maxWrites=1;
+  assert.equal(assess(f).reason,'PARENT_HISTORY_OR_LINK_INVALID');
+});
