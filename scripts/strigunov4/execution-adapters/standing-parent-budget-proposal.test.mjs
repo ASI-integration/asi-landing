@@ -11,11 +11,13 @@ const parent=()=>({schema:'asi.standing-parent.proposal.v1',digest:h('signed-par
   securityDigest:h('security'),policyDigest:h('policy'),repo:'ASI-integration/asi-landing',
   environment:'beget-staging',target:'pqukibofpo',action:'source',paidApiUsd:0,
   notBefore:start,expiresAt:start+Y,maxOperations:256,maxRequests:256,maxWrites:64});
-const child=(i,p=parent())=>({...p,digest:h('child'+i),schema:undefined,paidApiUsd:undefined,
+const child=(i,p=parent())=>({...p,digest:h('child'+i),schema:undefined,paidApiUsd:0,
   notBefore:start+i*D,expiresAt:start+(i+1)*D,maxOperations:2,maxRequests:2,maxWrites:2});
 const link=(c,p)=>({childDigest:c.digest,parentDigest:p.digest,issuerKeyDigest:h('verified-issuer-fixture'),
   notBefore:c.notBefore,expiresAt:c.expiresAt,repo:c.repo,environment:c.environment,
-  target:c.target,action:c.action,securityDigest:c.securityDigest,policyDigest:c.policyDigest});
+  target:c.target,action:c.action,securityDigest:c.securityDigest,policyDigest:c.policyDigest,
+  paidApiUsd:c.paidApiUsd,maxOperations:c.maxOperations,maxRequests:c.maxRequests,
+  maxWrites:c.maxWrites});
 const claim=(id,time,kind='create-commit')=>{
   const method=kind==='github-read'?'GET':'POST', route=kind==='github-read'?'pulls/552':'git/commits';
   const payloadSha256=kind==='github-read'?h(''):h(id+'-payload');
@@ -187,4 +189,49 @@ test('child cannot widen parent request or operation caps on renewal',()=>{
   const f=fixture();
   f.parent.maxOperations=1;f.parent.maxRequests=1;f.parent.maxWrites=1;
   assert.equal(assess(f).reason,'PARENT_HISTORY_OR_LINK_INVALID');
+});
+
+test('same digest cannot widen persisted child scope after original cap exhausted',()=>{
+  const f=fixture();spend(f,0,'used1');spend(f,0,'used2');
+  f.child={...f.child,maxOperations:3,maxRequests:3,maxWrites:3};
+  f.childLinks[f.child.digest]=link(f.child,f.parent); // Consistent new link cannot rewrite durable history.
+  // Historical issuer-bound scope is checked before the active record is reused.
+  assert.equal(assess(f).reason,'PARENT_HISTORY_OR_LINK_INVALID');
+});
+test('same digest cannot silently narrow persisted child scope',()=>{
+  const f=fixture();
+  f.child={...f.child,maxOperations:1,maxRequests:1,maxWrites:1};
+  f.childLinks[f.child.digest]=link(f.child,f.parent); // Consistent new link cannot rewrite durable history.
+  // Historical issuer-bound scope is checked before the active record is reused.
+  assert.equal(assess(f).reason,'PARENT_HISTORY_OR_LINK_INVALID');
+});
+
+// A child cannot silently add a paid allowance under a zero-paid parent,
+// including by corrupting an earlier durable child scope and retaining its digest.
+test('zero-paid child scope is immutable in active and historical budget records',()=>{
+  const active=fixture();active.child={...active.child,paidApiUsd:1};
+  assert.equal(assess(active).reason,'PARENT_HISTORY_OR_LINK_INVALID');
+  const missing=fixture();missing.child={...missing.child,paidApiUsd:undefined};
+  assert.equal(assess(missing).reason,'PARENT_HISTORY_OR_LINK_INVALID');
+  const history=fixture();history.child={...history.child};
+  history.ledger.standingDelegationBudget.envelopes[history.child.digest].scope.paidApiUsd=1;
+  assert.equal(assess(history).reason,'PARENT_HISTORY_OR_LINK_INVALID');
+});
+
+// A child-to-parent link must bind the exact numerical limits as well as the
+// digests. Source consistency is separate from independent signature proof.
+test('child issuer link cannot omit or misrepresent scoped budget fields',()=>{
+  for(const field of ['maxOperations','maxRequests','maxWrites','paidApiUsd']){
+    const current=fixture();
+    current.childLinks[current.child.digest][field]=
+      field==='paidApiUsd'?1:current.child[field]+1;
+    assert.equal(assess(current).reason,'PARENT_HISTORY_OR_LINK_INVALID',field);
+    const historical=fixture(2);
+    const second=Object.values(historical.ledger.standingDelegationBudget.envelopes)[1].scope;
+    historical.childLinks[second.digest][field]=
+      field==='paidApiUsd'?1:second[field]+1;
+    assert.equal(assess(historical).reason,'PARENT_HISTORY_OR_LINK_INVALID',field+'-historical');
+  }
+  const missing=fixture();delete missing.childLinks[missing.child.digest].maxRequests;
+  assert.equal(assess(missing).reason,'PARENT_HISTORY_OR_LINK_INVALID');
 });

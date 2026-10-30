@@ -69,8 +69,8 @@ function parentScope(p, now) {
     p.maxWrites <= p.maxOperations && p.maxWrites <= p.maxRequests;
 }
 function childScope(c, p) {
-  return plain(c) && hex64(c.digest) && hex64(c.securityDigest) &&
-    hex64(c.policyDigest) && validTime(c.notBefore) && validTime(c.expiresAt) &&
+  return plain(c) && c.paidApiUsd === 0 &&
+    hex64(c.digest) && hex64(c.securityDigest) && hex64(c.policyDigest) && validTime(c.notBefore) && validTime(c.expiresAt) &&
     c.notBefore >= p.notBefore && c.expiresAt <= p.expiresAt &&
     c.expiresAt > c.notBefore && c.expiresAt-c.notBefore <= CHILD_MS &&
     ['repo','environment','target','action','securityDigest','policyDigest'].every(k=>same(c[k],p[k])) &&
@@ -97,7 +97,13 @@ function boundLink(link, scope, p) {
     link.notBefore === scope.notBefore && link.expiresAt === scope.expiresAt &&
     link.repo === scope.repo && link.environment === scope.environment &&
     link.target === scope.target && link.action === scope.action &&
-    link.securityDigest === scope.securityDigest && link.policyDigest === scope.policyDigest;
+    link.securityDigest === scope.securityDigest && link.policyDigest === scope.policyDigest &&
+    // Numeric caps and zero-paid budget are part of the child link identity.
+    // A structurally valid digest without these values is not a complete bound link.
+    link.paidApiUsd === scope.paidApiUsd &&
+    link.maxOperations === scope.maxOperations &&
+    link.maxRequests === scope.maxRequests &&
+    link.maxWrites === scope.maxWrites;
 }
 /** Pure contract check only; never implies a verified signer or atomic claim. */
 export function assessParentBudgetProposal({parent, child, childLinks, ledger, effect, now,
@@ -150,6 +156,13 @@ export function assessParentBudgetProposal({parent, child, childLinks, ledger, e
   if (effectIds.has(effect.effectId) || (isWrite(effect.kind) && postWires.has(effect.requestSha256)))
     return deny('PARENT_REPLAY');
   const childEntry=ledger.standingDelegationBudget.envelopes[child.digest];
+  // A renewed presentation of the SAME digest must match the exact durable
+  // child scope. The digest/link shape alone does not bind numeric limits here.
+  // This is defensive source consistency, NOT signature authentication.
+  if (childEntry && !['digest','repo','environment','target','action',
+    'securityDigest','policyDigest','paidApiUsd','notBefore','expiresAt',
+    'maxOperations','maxRequests','maxWrites'].every(k=>childEntry.scope[k]===child[k]))
+    return deny('PARENT_CHILD_SCOPE_CHANGED');
   const childCount=childEntry?.claims.length ?? 0;
   const childWrites=childEntry?.writes ?? 0;
   const plusWrite=Number(isWrite(effect.kind));
