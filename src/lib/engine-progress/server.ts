@@ -20,12 +20,13 @@ export type EngineCi = {
   runUrl: string | null;
   runId: number | null;
   checkedAt: string;
+  sourceEventAt: string | null;
   jobs: Record<'ubuntu' | 'windows' | 'artifact', JobState>;
 };
 type GitHubJob = { name?: unknown; status?: unknown; conclusion?: unknown };
 type GitHubRun = {
   id?: unknown; name?: unknown; event?: unknown;
-  head_sha?: unknown; status?: unknown; conclusion?: unknown;
+  head_sha?: unknown; status?: unknown; conclusion?: unknown; updated_at?: unknown;
 };
 const blankJobs = (): EngineCi['jobs'] => ({ ubuntu: 'missing', windows: 'missing', artifact: 'missing' });
 const validSha = (s: unknown): s is string => typeof s === 'string' && /^[0-9a-f]{40}$/.test(s);
@@ -58,13 +59,21 @@ async function githubGet<T>(path: string, token: string): Promise<T> {
 
 let cached: { at: number; value: EngineCi } | null = null;
 /** Server-only bounded polling. Never mark a step PASS from an old CI SHA. */
+let inFlight: Promise<EngineCi> | null = null;
 export async function getEngineCi(): Promise<EngineCi> {
+  if (cached && Date.now() - cached.at < 15000) return cached.value;
+  if (inFlight) return inFlight;
+  inFlight = readEngineCi().then(value => { cached = { at: Date.now(), value }; return value; })
+    .finally(() => { inFlight = null; });
+  return inFlight;
+}
+async function readEngineCi(): Promise<EngineCi> {
   if (cached && Date.now() - cached.at < 15000) return cached.value;
   const checkedAt = new Date().toISOString();
   const fallback: EngineCi = {
     available: false, reason: 'Источник GitHub пока недоступен.',
     sha: null, prUrl: `https://github.com/${OWNER_REPO}/pull/${PR_NUMBER}`,
-    runUrl: null, runId: null, checkedAt, jobs: blankJobs(),
+    runUrl: null, runId: null, checkedAt, sourceEventAt: null, jobs: blankJobs(),
   };
   const token = process.env.GITHUB_TOKEN?.trim();
   if (!token) return { ...fallback, reason: 'Не подключён серверный GITHUB_TOKEN для GitHub CI.' };
@@ -97,6 +106,7 @@ export async function getEngineCi(): Promise<EngineCi> {
       prUrl: fallback.prUrl,
       runUrl: `https://github.com/${OWNER_REPO}/actions/runs/${runId}`,
       runId, checkedAt, jobs,
+      sourceEventAt: typeof run.updated_at === 'string' && Number.isFinite(Date.parse(run.updated_at)) ? run.updated_at : null,
     };
     cached = { at: Date.now(), value: result };
     return result;
@@ -130,7 +140,7 @@ export async function getEngineProgressSnapshot() {
   const overrides = liveOverrides(ci);
   const steps = ENGINE_STEPS.map((step) => ({
     ...step,
-    status: overrides[step.id] ?? step.initialStatus,
+    status: overrides[step.id] ?? 'unknown',
     source: Object.prototype.hasOwnProperty.call(overrides,step.id) ? 'github' : 'snapshot',
     evidenceUrl: Object.prototype.hasOwnProperty.call(overrides,step.id) ? ci.runUrl : null,
   }));
