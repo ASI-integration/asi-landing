@@ -261,13 +261,14 @@ export function createStandingRequestPreview({store,transaction,signedEnvelope,s
           const at=clock();inspectPublisherLifecycleEvidence(gate.event,transaction);
           must(!poisoned&&at>=a.notBefore&&at<a.expiresAt&&
             at>=finalTrust.observedAt&&at<finalTrust.revocationExpiresAt&&
-            at>=gateReceipt.providerReceipt.observedAt&&at-gateReceipt.providerReceipt.observedAt<=60000&&
+            at>=gateReceipt.providerReceipt.observedAt&&at-gateReceipt.providerReceipt.observedAt<60000&&
             JSON.stringify(ledger.standingRevocationCheckpoint)===gate.revocation&&
             JSON.stringify(ledger.standingDelegationBudget)===budgetState,'STANDING_ADMISSION_STALE');
           must(request.prNumber===gate.expected.number&&request.headSha===gate.expected.headSha&&
             request.baseSha===gate.expected.baseSha&&
             JSON.stringify(request.changed)===JSON.stringify(input.request.changedPaths),'STANDING_ADMISSION_REQUEST');
-          return {status:'STANDING_SOURCE_ADMISSION_VERIFIED',authorized:false,adoptionDigest:expectedAdoptionDigest};
+          return {status:'STANDING_SOURCE_ADMISSION_VERIFIED',authorized:false,adoptionDigest:expectedAdoptionDigest,
+            expiresAt:Math.min(a.expiresAt,finalTrust.revocationExpiresAt,gateReceipt.providerReceipt.observedAt+60000)};
         };
         check({prNumber:gate.expected.number,headSha:gate.expected.headSha,baseSha:gate.expected.baseSha,changed:input.request.changedPaths});
         const receipt=Object.freeze({status:'STANDING_SOURCE_ADMISSION_VERIFIED',authorized:false});
@@ -427,7 +428,8 @@ export function createStandingRequestPreview({store,transaction,signedEnvelope,s
         inspectPublisherLifecycleEvidence(gateNative,transaction);
         const receipt=Object.freeze(dataCopy(result));
         if(result.status==='PROPOSAL_ELIGIBLE')gateReceipts.set(receipt,{owner:input,event:gateNative,
-          expected:dataCopy(e),revocation:JSON.stringify(ledger.standingRevocationCheckpoint)});
+          expected:dataCopy(e),witnessBinding:dataCopy(witness.gateBinding),
+          revocation:JSON.stringify(ledger.standingRevocationCheckpoint)});
         return receipt;
       }catch{poisoned=true;return blocked('STANDING_GATE_REJECTED');}
       finally{bootstrapActive=false;}
@@ -463,7 +465,7 @@ export function createStandingRequestPreview({store,transaction,signedEnvelope,s
             pr.state==='open'&&pr.merged===false,'STANDING_RELEASE_PR_CHANGED');
           return {number:pr.number,body:pr.body||'',base:pr.base,head:pr.head};
         };
-        const pr=await readPr();
+        const pr=await readPr();let finalReceipt;
         const result=await main({ci:true,repoRoot:input.comparison.repoRoot,githubReader:reader,
           prEvent:{repository:{full_name:input.request.repo},number:pr.number,pull_request:pr},
           resolveStandingAdmission:async()=>{
@@ -473,11 +475,42 @@ export function createStandingRequestPreview({store,transaction,signedEnvelope,s
               'STANDING_RELEASE_BASE_CHANGED');
             const receipt=await readAdoptedSourceAdmission(gateReceipt);
             must(receipt.status==='STANDING_SOURCE_ADMISSION_VERIFIED','STANDING_RELEASE_ADMISSION_REJECTED');
-            return receipt;
+            finalReceipt=receipt;return receipt;
           }});
         active();
         must(result.status==='STANDING_SOURCE_ADMISSION_VERIFIED','STANDING_RELEASE_ADMISSION_REJECTED');
-        return Object.freeze({...result,authorized:false});
+        // Export DATA for the existing independent verifier, never the private
+        // receipt/capability. It describes already-spent durable requests only;
+        // it reserves nothing for another process and grants no future effects.
+        const observedAt=clock();
+        inspectStandingAdmissionReceipt(finalReceipt,{prNumber:pr.number,headSha:pr.head.sha,
+          baseSha:pr.base.sha,changed:input.request.changedPaths});
+        const lease=inspectStandingTransaction(transaction),native=active();
+        const envelope=JSON.parse(input.signedEnvelope.payload);
+        const budgetState=JSON.stringify(ledger.standingDelegationBudget);
+        const spent=ledger.standingDelegationBudget.envelopes[gitTrust.envelopeDigest];
+        must(spent&&observedAt<result.expiresAt,'STANDING_SIGNING_INPUT_STALE');
+        const payload=JSON.stringify({schema:'asi.standing-admission-signing-input.v1',
+          purpose:'INDEPENDENT_WORKFLOW_ATTESTATION_INPUT_ONLY',authorized:false,
+          repository:input.request.repo,environment:envelope.environment,target:envelope.target,
+          prNumber:pr.number,baseSha:pr.base.sha,headSha:pr.head.sha,
+          prBodySha256:digest(pr.body),stage:result.stage,mode:result.mode,
+          appId:envelope.appId,installationId:envelope.installationId,
+          adoptionDigest:result.adoptionDigest,envelopeDigest:gitTrust.envelopeDigest,
+          securityDigest:envelope.securityDigest,policyDigest:envelope.policyDigest,
+          issuerKeySha256:gitTrust.issuerKeySha256,verifierKeySha256:gitTrust.verifierKeySha256,
+          registryBlobSha:gitTrust.registryBlobSha,gateBinding:gate.witnessBinding,
+          publisher:{transactionId:lease.transactionId,phase:lease.phase,kind:lease.kind,
+            taskId:native.taskId,taskBinding:native.taskBinding,branch:native.branch,
+            artifactDigest:native.deltaSha256},
+          budget:{purpose:'OBSERVED_SPEND_ONLY',journalDigest:digest(budgetState),
+            operations:spent.operations,requests:spent.requests,writes:spent.writes,
+            claims:spent.claims.length,lastClaimDigest:digest(JSON.stringify(spent.claims.at(-1)))},
+          revocation:JSON.parse(gate.revocation),observedAt,expiresAt:result.expiresAt});
+        active();
+        const signingInput=Object.freeze({payload,payloadSha256:digest(payload),
+          requiresIndependentSignature:true,authorized:false});
+        return Object.freeze({...result,signingInput,authorized:false});
       }catch{poisoned=true;return blocked('STANDING_RELEASE_ADMISSION_REJECTED');}
       finally{releaseReaders.delete(reader);releaseActive=false;}
     },

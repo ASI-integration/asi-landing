@@ -153,12 +153,13 @@ async function setup(t,{adoptionMode=null,wrongLocal=false,forgedLocal=false,lat
       let result;
       try{result=await preview.runAdoptedReleaseAdmission(gate,{token:'INERT_COMPILED_RELEASE'});}
       finally{globalThis.fetch=priorFetch;await fs.writeFile(contractPath,before);}
-      admissions.push({result});
+      admissions.push({result,ledgerAtAdmission:JSON.parse(await fs.readFile(store.file('autopilot-ledger.json'),'utf8'))});
     }else if(adoptionMode){
       const admission=await preview.readAdoptedSourceAdmission(adoptionMode==='copied'?{...gate}:gate);
       const contract=release;
       const args={contract,changed:[target],prNumber:event.pr,headSha:event.headSha,baseSha:f.sha,prBody:'Release-Stage: S4-G1\nRelease-Mode: implementation',baseHasContract:true,standingAdmission:admission};
       if(adoptionMode==='consume-expiry')now.value+=2000;
+      if(adoptionMode==='consume-freshness-boundary')now.value+=60000;
       let status;try{status=checkPr(args).status;}catch(e){status=e.message;}
       let mainStatus;
       const env={GITHUB_EVENT_NAME:process.env.GITHUB_EVENT_NAME,GITHUB_EVENT_PATH:process.env.GITHUB_EVENT_PATH};
@@ -304,11 +305,13 @@ test('two native published HEADs reuse one pinned adoption without owner comment
  assert.notEqual(x.admissions[0].args.headSha,x.admissions[1].args.headSha);
 });
 
-test('native admission consumption refuses expired signed revocation before envelope expiry',async t=>{
- const x=await setup(t,{adoptionMode:'consume-expiry'});await x.loop.poll({execute:true});
+test('native admission consumption refuses expired revocation and exact freshness boundary',async t=>{
+ for(const mode of ['consume-expiry','consume-freshness-boundary']){
+ const x=await setup(t,{adoptionMode:mode});await x.loop.poll({execute:true});
  assert.equal(x.admissions[0].admission.status,'STANDING_SOURCE_ADMISSION_VERIFIED');
  assert.equal(x.admissions[0].status,'STANDING_ADMISSION_STALE');
  assert.equal(x.admissions[0].mainStatus,'STANDING_ADMISSION_STALE');
+ }
 });
 
 
@@ -319,11 +322,33 @@ test('compiled native release caller meters accepted-stage and diagnostic reads 
  assert.deepEqual(x.releaseReads.map(r=>r.route),['branches/main','branches/main','pulls/600','actions/runs/777','actions/runs/777/approvals','actions/runs/777/jobs','pulls','pulls/600','branches/main']);
  for(let i=1;i<x.releaseReads.length;i++)assert.equal(x.releaseReads[i].requests,x.releaseReads[i-1].requests+1);
  assert.equal(await x.previews[0].beforeRequest(),false);
+ const input=x.admissions[0].result.signingInput;
+ assert.equal(input.requiresIndependentSignature,true);assert.equal(input.authorized,false);
+ assert.equal(hash(input.payload),input.payloadSha256);assert(Object.isFrozen(input));
+ const claim=JSON.parse(input.payload),ledger=x.admissions[0].ledgerAtAdmission;
+ assert.equal(claim.schema,'asi.standing-admission-signing-input.v1');assert.equal(claim.authorized,false);
+ assert.equal(claim.publisher.taskId,x.f.catalog[0].id);assert.equal(claim.publisher.taskBinding,bindTask(x.f.catalog[0]));
+ assert.match(claim.publisher.transactionId,/^[a-f0-9-]{36}$/);
+ assert.equal(claim.headSha,x.gateEvents[0].headSha);assert.equal(claim.baseSha,x.f.sha);
+ assert.equal(claim.prBodySha256,hash('Release-Stage: S4-G2\nRelease-Mode: diagnostic\nRelease-Diagnostic-Iteration: 1'));
+ assert.equal(claim.stage,'S4-G2');assert.equal(claim.mode,'diagnostic');
+ assert.equal(claim.appId,5514822);assert.equal(claim.installationId,176281163);
+ assert.equal(claim.gateBinding.sourceRunId,100);assert.equal(claim.gateBinding.evaluatorRunId,101);
+ assert.equal(claim.gateBinding.independentReviewerId,1234);assert.equal(claim.gateBinding.reviewId,9);
+ assert.equal(claim.envelopeDigest,x.envelopeDigest);assert.match(claim.adoptionDigest,/^[a-f0-9]{64}$/);
+ assert.equal(claim.budget.purpose,'OBSERVED_SPEND_ONLY');
+ assert.equal(claim.budget.journalDigest,hash(JSON.stringify(ledger.standingDelegationBudget)));
+ assert.equal(claim.budget.requests,x.releaseReads.at(-1).requests);
+ assert.deepEqual(claim.revocation,ledger.standingRevocationCheckpoint);
+ assert(claim.expiresAt>claim.observedAt&&claim.expiresAt-claim.observedAt<=60000);
+ assert.throws(()=>inspectStandingAdmissionReceipt(input,{}),/UNTRUSTED/);
+ assert.throws(()=>inspectStandingAdmissionReceipt(JSON.parse(input.payload),{}),/UNTRUSTED/);
 });
 test('compiled release caller fails closed on stale PR failed proof unknown response or revocation',async t=>{
  for(const mode of ['compiled-pr-change','compiled-run-fail','compiled-unknown','compiled-revocation','compiled-outscope','compiled-final-base-change','compiled-missing-registry']){
   const x=await setup(t,{adoptionMode:mode});await x.loop.poll({execute:true});
   assert.equal(x.admissions[0].result.status,'BLOCKED',mode);
+  assert.equal(x.admissions[0].result.signingInput,undefined);
   if(mode==='compiled-outscope')assert(x.releaseReads.some(r=>r.route==='issues/600/comments'));
   if(mode==='compiled-run-fail')assert.equal(x.releaseReads.length,4);
   if(mode==='compiled-unknown')assert.equal(x.releaseReads.length,5);
