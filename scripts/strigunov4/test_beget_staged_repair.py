@@ -2,6 +2,9 @@
 import importlib.util
 from pathlib import Path
 from unittest import TestCase, main, mock
+from tempfile import TemporaryDirectory
+from types import SimpleNamespace
+import os
 import hashlib
 import json
 
@@ -76,4 +79,85 @@ class SourceOnlyRepairTests(TestCase):
             with self.subTest(change=changed):
                 with self.assertRaisesRegex(RuntimeError,'REPAIR_UNIT_NOT_DISABLED'):
                     R.stopped(Fake({**ok,**changed}))
+
+class IsolatedAtomicRepairTests(TestCase):
+    def run_repair(self,fail_receipt=False):
+        with TemporaryDirectory(prefix='asi-repair-fixture-') as tempdir:
+            t=Path(tempdir)
+            engine=t/'opt'/'asi-engine';auth=t/'etc'/'asi';state=t/'state'
+            engine.mkdir(parents=True);auth.mkdir(parents=True);state.mkdir()
+            original=b'installed-old-content'
+            (engine/'manifest.json').write_bytes(original)
+            (engine/'node').write_bytes(b'fake-node')
+            (engine/'bwrap').write_bytes(b'fake-bwrap')
+            (auth/'owner-public.pem').write_bytes(b'inert-owner-key')
+            (auth/'repair-approval.json').write_bytes(b'inert-signed-envelope-fixture')
+            (state/'durable-ledger.json').write_bytes(b'{"spent":"never-refund"}')
+            newraw=NEW_RAW
+            files={'scripts/strigunov4/unit.mjs':b'export const unit = true;\\n',
+                'beget-install.py':b'fixture-installer'}
+            grant=valid()
+            grant['oldManifestSha256']=hashbytes(original)
+            class FakeInstaller:
+                def prepared(self,package):return newraw,NEW,files
+                def signed(self,name,public):
+                    assert name=='repair-approval.json'
+                    assert public==b'inert-owner-key'
+                    return grant.copy()
+                def regular_bytes(self,path,root=False,limit=2000000):
+                    return Path(path).read_bytes()
+                def write_new(self,path,data,mode=0o600):
+                    path=Path(path)
+                    if fail_receipt and path.name.startswith('repaired-stage-'):
+                        raise OSError('fixture receipt write failure')
+                    path.parent.mkdir(parents=True,exist_ok=True)
+                    with path.open('xb') as out:out.write(data)
+                    path.chmod(mode)
+            backup=t/'opt'/('asi-engine-staged-backup-'+hashbytes(original)[:16])
+            quarantine=t/'opt'/('.asi-engine-repair-failed-'+hashbytes(newraw)[:16])
+            settings=[
+                mock.patch.object(R,'ENGINE',engine),
+                mock.patch.object(R,'STATE',state),
+                mock.patch.object(R,'AUTH',auth),
+                mock.patch.object(R,'BACKUP_ROOT',t/'opt'),
+                mock.patch.object(R,'installer',return_value=FakeInstaller()),
+                mock.patch.object(R,'old_generation',return_value=(original,OLD,b'inert-owner-key',{})),
+                mock.patch.object(R,'stopped',return_value={}),
+                mock.patch.object(R,'independent_evidence',return_value=None),
+                mock.patch.object(R,'exact_main',return_value=None),
+                mock.patch.object(R.os,'geteuid',return_value=0),
+                mock.patch.object(R.os,'uname',return_value=SimpleNamespace(nodename=R.HOST)),
+                mock.patch.object(R.time,'time',return_value=NOW/1000),
+            ]
+            for p in settings:p.start()
+            try:
+                if fail_receipt:
+                    with self.assertRaisesRegex(OSError,'fixture receipt write failure'):
+                        R.apply(t/'inert-package')
+                else:
+                    out=R.apply(t/'inert-package')
+                    self.assertEqual(out['status'],'DISABLED_REPAIR_STAGE_ONLY')
+                    self.assertTrue(out['needsSeparatelySignedActivation'])
+                    self.assertEqual((engine/'manifest.json').read_bytes(),newraw)
+                    self.assertEqual((engine.stat().st_mode & 0o777),0o755)
+                    self.assertEqual((backup/'manifest.json').read_bytes(),original)
+                    self.assertFalse(quarantine.exists())
+                if fail_receipt:
+                    self.assertEqual((engine/'manifest.json').read_bytes(),original)
+                    self.assertTrue(quarantine.exists())
+                    self.assertEqual((quarantine/'manifest.json').read_bytes(),newraw)
+                    self.assertFalse(backup.exists())
+                self.assertEqual((state/'durable-ledger.json').read_bytes(),b'{"spent":"never-refund"}')
+                claim=auth/('repair-claim-'+hashbytes(original)+'-'+hashbytes(newraw)+'.json')
+                self.assertTrue(claim.exists())
+                self.assertTrue(json.loads(claim.read_text())['oneUse'])
+            finally:
+                for patch in reversed(settings):patch.stop()
+
+    def test_disabled_staged_repair_atomic_swap_preserves_state_and_backup(self):
+        self.run_repair(fail_receipt=False)
+
+    def test_receipt_failure_rolls_back_and_consumes_one_use_claim(self):
+        self.run_repair(fail_receipt=True)
+
 if __name__=='__main__':main()
