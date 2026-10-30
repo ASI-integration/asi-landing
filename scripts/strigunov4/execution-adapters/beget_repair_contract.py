@@ -5,6 +5,8 @@ a signature, creates a receipt, or grants any authority. A protected integration
 must independently authenticate the owner Ed25519 envelope and current provider,
 native isolation and old-writer fence BEFORE and AGAIN at the one-use claim.
 """
+import hashlib
+import json
 import re
 
 SCHEMA = "asi.beget-staged-generation-repair-authorization.v1"
@@ -47,7 +49,25 @@ def _sha(value):
 def _integer(value):
     return type(value) is int and 0 <= value <= MAX_SAFE_INT
 
-def validate_repair_contract(payload, old, new, current_main, observed, now):
+def _read_manifest(raw):
+    _require(type(raw) is bytes and 0 < len(raw) <= 2000000, "REPAIR_RAW_MANIFEST")
+    def no_duplicates(pairs):
+        value = {}
+        for key, item in pairs:
+            _require(key not in value, "REPAIR_DUPLICATE_JSON_KEY")
+            value[key] = item
+        return value
+    def reject_constant(value):
+        raise RepairContractError("REPAIR_NONFINITE_JSON")
+    try:
+        manifest = json.loads(raw.decode("utf-8"), object_pairs_hook=no_duplicates,
+                              parse_constant=reject_constant)
+    except (ValueError, UnicodeError) as error:
+        raise RepairContractError("REPAIR_BAD_JSON") from error
+    _require(type(manifest) is dict, "REPAIR_MANIFEST")
+    return manifest, hashlib.sha256(raw).hexdigest()
+
+def validate_repair_contract(payload, old_raw, new_raw, current_main, observed, now):
     """Validate scope only. Return a permanently NON-AUTHORIZING receipt.
 
     All supplied values may be untrusted; a positive structural check is NOT
@@ -55,12 +75,14 @@ def validate_repair_contract(payload, old, new, current_main, observed, now):
     The existing installer has no staged-generation repair operation.
     """
     _require(type(payload) is dict and set(payload) == KEYS, "REPAIR_SCHEMA_KEYS")
-    _require(type(old) is dict and type(new) is dict and type(observed) is dict,
-             "REPAIR_INPUTS")
+    _require(type(observed) is dict, "REPAIR_INPUTS")
+    old, old_hash = _read_manifest(old_raw)
+    new, new_hash = _read_manifest(new_raw)
     _require(payload["schema"] == SCHEMA and payload["repository"] == REPO and
              payload["host"] == HOST and payload["unit"] == UNIT and
              payload["serviceUser"] == USER and
              type(payload["oneUse"]) is bool and payload["oneUse"] is True and
+             type(payload["actions"]) is list and
              payload["actions"] == STAGE_ONLY_ACTIONS and
              type(payload["paidBudget"]) is int and payload["paidBudget"] == 0 and
              type(payload["startService"]) is bool and payload["startService"] is False,
@@ -76,8 +98,9 @@ def validate_repair_contract(payload, old, new, current_main, observed, now):
         _require(_digest(payload[name]), "REPAIR_DIGEST")
     for name in ("oldBaseSha", "oldSourceSha", "newBaseSha", "newSourceSha"):
         _require(_sha(payload[name]), "REPAIR_GIT_SHA")
-    for side, m in (("old", old), ("new", new)):
-        _require(m.get("schema") == "asi.beget-engine-source.v1", "REPAIR_MANIFEST")
+    for side, m, manifest_hash in (("old", old, old_hash), ("new", new, new_hash)):
+        _require(m.get("schema") == "asi.beget-engine-source.v1" and
+                 manifest_hash == payload[side+"ManifestSha256"], "REPAIR_MANIFEST")
         for field, dest in (("manifestSha256", side+"ManifestSha256"),
                             ("catalogSha256", side+"CatalogSha256"),
                             ("baseSha", side+"BaseSha"),
