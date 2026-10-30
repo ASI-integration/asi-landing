@@ -123,7 +123,7 @@ class SourceOnlyRepairTests(TestCase):
                     R.stopped(Fake({**ok,**changed}))
 
 class IsolatedAtomicRepairTests(TestCase):
-    def run_repair(self,fail_receipt=False):
+    def run_repair(self,fail_receipt=False,fail_after_exchange=False):
         with TemporaryDirectory(prefix='asi-repair-fixture-') as tempdir:
             t=Path(tempdir)
             engine=t/'opt'/'asi-engine';auth=t/'etc'/'asi';state=t/'state'
@@ -171,10 +171,19 @@ class IsolatedAtomicRepairTests(TestCase):
                 mock.patch.object(R.os,'uname',return_value=SimpleNamespace(nodename=R.HOST)),
                 mock.patch.object(R.time,'time',return_value=NOW/1000),
             ]
+            original_sync=R.sync_directory
+            sync_calls=[0]
+            def injected_sync(path):
+                sync_calls[0]+=1
+                if fail_after_exchange and sync_calls[0]==1:
+                    raise OSError('fixture exchange sync failure')
+                return original_sync(path)
+            settings.append(mock.patch.object(R,'sync_directory',side_effect=injected_sync))
             for p in settings:p.start()
             try:
-                if fail_receipt:
-                    with self.assertRaisesRegex(OSError,'fixture receipt write failure'):
+                if fail_receipt or fail_after_exchange:
+                    message='fixture receipt write failure' if fail_receipt else 'fixture exchange sync failure'
+                    with self.assertRaisesRegex(OSError,message):
                         R.apply(t/'inert-package')
                 else:
                     out=R.apply(t/'inert-package')
@@ -184,7 +193,7 @@ class IsolatedAtomicRepairTests(TestCase):
                     self.assertEqual((engine.stat().st_mode & 0o777),0o755)
                     self.assertEqual((backup/'manifest.json').read_bytes(),original)
                     self.assertFalse(quarantine.exists())
-                if fail_receipt:
+                if fail_receipt or fail_after_exchange:
                     self.assertEqual((engine/'manifest.json').read_bytes(),original)
                     self.assertTrue(quarantine.exists())
                     self.assertEqual((quarantine/'manifest.json').read_bytes(),newraw)
@@ -201,5 +210,31 @@ class IsolatedAtomicRepairTests(TestCase):
 
     def test_receipt_failure_rolls_back_and_consumes_one_use_claim(self):
         self.run_repair(fail_receipt=True)
+
+    def test_failed_directory_sync_after_exchange_atomically_restores_original(self):
+        self.run_repair(fail_after_exchange=True)
+
+    def test_real_atomic_exchange_never_leaves_either_directory_missing(self):
+        with TemporaryDirectory(prefix='asi-atomic-exchange-test-') as folder:
+            left=Path(folder)/'left';right=Path(folder)/'right'
+            left.mkdir();right.mkdir()
+            (left/'old').write_text('old')
+            (right/'new').write_text('new')
+            R.exchange_directories(left,right)
+            self.assertTrue(left.is_dir() and right.is_dir())
+            self.assertTrue((left/'new').exists() and (right/'old').exists())
+            R.exchange_directories(left,right)
+            self.assertTrue((left/'old').exists() and (right/'new').exists())
+
+    def test_exchange_refuses_symlink_and_incompatible_parent(self):
+        with TemporaryDirectory(prefix='asi-exchange-guard-test-') as folder:
+            root=Path(folder);left=root/'left';right=root/'right'
+            left.mkdir();right.mkdir()
+            link=root/'link';link.symlink_to(left,target_is_directory=True)
+            with self.assertRaisesRegex(RuntimeError,'REPAIR_EXCHANGE_NOT_DIRECTORY'):
+                R.exchange_directories(link,right)
+            other=root/'sub';other.mkdir()
+            with self.assertRaisesRegex(RuntimeError,'REPAIR_EXCHANGE_PARENT'):
+                R.exchange_directories(left,other)
 
 if __name__=='__main__':main()
