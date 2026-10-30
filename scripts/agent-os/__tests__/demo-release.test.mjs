@@ -1,3 +1,4 @@
+import './owner-security-baseline.test.mjs'; // Include owner security negative tests in existing required PR Validation job.
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';

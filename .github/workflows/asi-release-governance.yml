@@ -6,6 +6,7 @@ on:
     branches: [main]
 
 permissions:
+  actions: read # Read historic acceptance workflow jobs; no write permission.
   contents: read
   issues: read
   pull-requests: read

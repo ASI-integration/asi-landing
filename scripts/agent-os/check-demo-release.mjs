@@ -15,11 +15,20 @@ import { isCompiledGitHubRead } from '../strigunov4/execution-adapters/github-re
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import {verifyOwnerSecurityFiles} from './verify-owner-security-baseline.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 export const CONTRACT = 'docs/agent-os/releases/strigunov4-demo.json';
+export const OWNER_BASELINE_PATHS = new Set([
+  'docs/agent-os/owner-security-baseline.json',
+  'docs/agent-os/OWNER-SECURITY-LEVEL.md',
+  'docs/agent-os/AUTONOMY_POLICY.md',
+  '.github/CODEOWNERS',
+  'scripts/agent-os/verify-owner-security-baseline.mjs',
+  'scripts/agent-os/__tests__/owner-security-baseline.test.mjs',
+]);
 export const GOVERNANCE = new Set([
-  CONTRACT, 'scripts/agent-os/check-demo-release.mjs',
+  CONTRACT, ...OWNER_BASELINE_PATHS, 'scripts/agent-os/check-demo-release.mjs',
   'scripts/agent-os/__tests__/demo-release.test.mjs',
   '.github/workflows/pr-validation.yml',
   '.github/workflows/asi-release-governance.yml',
@@ -1146,7 +1155,15 @@ export async function verifiedOwnerComment(number, sha, kind, token, reader) {
   throw new Error('OWNER_ATTESTATION_PAGINATION_BLOCK');
 }
 export function requiredApproval({contract, changed, prNumber, prBody, headSha}) {
-  if (changed.some(p => GOVERNANCE.has(p))) return 'CONTRACT-CHANGE';
+  // A security-level change receives ONE owner exact-head approval, not a new
+  // second reviewer or multiple per-commit approvals.
+  // When this protected checker itself changes, the existing trusted-main
+  // CONTRACT-CHANGE attestation remains the one required approval. Subsequent
+  // baseline-only changes use SECURITY-BASELINE-CHANGE, never two at once.
+  if (changed.some(p => GOVERNANCE.has(p) && !OWNER_BASELINE_PATHS.has(p)))
+    return 'CONTRACT-CHANGE';
+  if (changed.some(p => OWNER_BASELINE_PATHS.has(p)))
+    return 'SECURITY-BASELINE-CHANGE';
   if (prNumber <= contract.transition.legacyPrMax) {
     return [502, 508, 509].includes(prNumber) &&
       contract.transition.legacyHeads[String(prNumber)] === headSha
@@ -1205,6 +1222,8 @@ export async function verifyStageRuns(contract, token, reader) {
 
 export async function main(options = {}) {
   const repoRoot = options.repoRoot || ROOT;
+  // Retain protected main NORMAL security baseline before native/CI gate reads.
+  verifyOwnerSecurityFiles(repoRoot);
   // Snapshot the host-selected context before the first asynchronous read. A
   // native invocation must not silently inherit an unrelated CI event/token.
   const reader = options.githubReader;
