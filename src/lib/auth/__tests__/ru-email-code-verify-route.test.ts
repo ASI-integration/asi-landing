@@ -79,6 +79,23 @@ describe('RU OTP completion supersedes stale Yandex OAuth state', () => {
     });
   });
 
+  it('rejects oversized unauthenticated JSON before OTP consume or session mutation', async () => {
+    const tooLarge = new Request(origin + '/api/auth/email-code/verify', {
+      method: 'POST',
+      headers: { origin, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: 'user@example.ru', code: '12345678', padding: 'X'.repeat(2048),
+      }),
+    });
+    const res = await POST(tooLarge);
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ ok: false, error: 'INVALID_BODY' });
+    expect(mocks.consume).not.toHaveBeenCalled();
+    expect(mocks.from).not.toHaveBeenCalled();
+    expect(mocks.ensure).not.toHaveBeenCalled();
+    expect(mocks.getSession).not.toHaveBeenCalled();
+  });
+
   it('preserves the existing browser session and pending flow on an invalid code', async () => {
     const session = oldSession();
     mocks.getSession.mockResolvedValue(session);

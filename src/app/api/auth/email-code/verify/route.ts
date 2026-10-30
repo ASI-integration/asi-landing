@@ -13,6 +13,8 @@ import { clearPendingYandexOauth, clearPendingGoogleOauth } from '@/lib/auth/ru-
 export const runtime='nodejs';
 export const dynamic='force-dynamic';
 const headers={'Cache-Control':'private, no-store, max-age=0'};
+// Reject oversized unauthenticated JSON without buffering the whole body.
+const RU_AUTH_MAX_JSON_BYTES = 1024;
 
 async function findOrCreateExistingIdentity(email: string): Promise<{id:string;email:string}> {
   const {data:user,error:lookupError}=await supabase
@@ -40,7 +42,7 @@ export async function POST(req:Request) {
     return NextResponse.json({ok:false,error:'EMAIL_CODE_UNAVAILABLE'},{status:503,headers});
   if(!isSameOriginAuthRequest(req.url,req.headers.get('origin')))
     return NextResponse.json({ok:false,error:'INVALID_ORIGIN'},{status:403,headers});
-  const parsed=await readRequestJson<{email?:unknown;code?:unknown}>(req);
+  const parsed=await readRequestJson<{email?:unknown;code?:unknown}>(req, { maxBytes: RU_AUTH_MAX_JSON_BYTES });
   if(!parsed.ok)
     return NextResponse.json({ok:false,error:'INVALID_BODY'},{status:400,headers});
   try {
