@@ -76,7 +76,11 @@ function childScope(c, p) {
     ['repo','environment','target','action','securityDigest','policyDigest'].every(k=>same(c[k],p[k])) &&
     validCount(c.maxOperations,MAX_CLAIMS) && validCount(c.maxRequests,MAX_CLAIMS) &&
     validCount(c.maxWrites,64) && c.maxWrites <= c.maxOperations &&
-    c.maxWrites <= c.maxRequests;
+    c.maxWrites <= c.maxRequests &&
+    // A signed child must never widen parent's *own* numeric scope.
+    // Aggregate spend checking is necessary but not a substitute for this.
+    c.maxOperations <= p.maxOperations && c.maxRequests <= p.maxRequests &&
+    c.maxWrites <= p.maxWrites;
 }
 function checkClaim(c, s) {
   if (!plain(c) || !ident(c.effectId) || !ident(c.taskId) || !hex40(c.taskSha) ||
