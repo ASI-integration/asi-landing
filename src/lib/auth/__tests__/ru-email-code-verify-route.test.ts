@@ -26,6 +26,7 @@ function request() {
 function oldSession() {
   return {
     userId: 'different-user',
+    email: 'previous@example.ru',
     googleOauthState: 'stale-google-state',
     googleOauthPlan: 'enterprise',
     googleOauthRedirect: '/billing',
