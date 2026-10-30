@@ -11,11 +11,17 @@ import {
 
 export const runtime='nodejs';
 export const dynamic='force-dynamic';
+// Never expose transient OAuth callback codes/states as Referer on subsequent
+// navigation, including when the provider returns an error.
+const oauthRedirectHeaders={
+  'Cache-Control':'private, no-store, max-age=0',
+  'Referrer-Policy':'no-referrer',
+};
 
 function fail(origin:string,reason:string) {
   const url=new URL('/login',origin);
   url.searchParams.set('yandex_error',reason);
-  return NextResponse.redirect(url,{headers:{'Cache-Control':'private, no-store, max-age=0'}});
+  return NextResponse.redirect(url,{headers:oauthRedirectHeaders});
 }
 async function yandexProfile(code:string,verifier:string):Promise<string> {
   // Only backend may access secret/tokens; no sensitive values enter browser/logs.
@@ -128,7 +134,7 @@ export async function GET(request:Request) {
           .insert({yandex_subject:subject,user_id:linkUserId});
         if(insertError)return fail(url.origin,'link_not_available');
       }
-      return NextResponse.redirect(new URL(intended,url.origin));
+      return NextResponse.redirect(new URL(intended,url.origin),{headers:oauthRedirectHeaders});
     }
     if(!linked?.user_id)
       return fail(url.origin,'link_first');
@@ -149,7 +155,7 @@ export async function GET(request:Request) {
     delete session.lastStrongAuthAt;
     delete session.lastStrongAuthUserId;
     await session.save();
-    return NextResponse.redirect(new URL(intended,url.origin));
+    return NextResponse.redirect(new URL(intended,url.origin),{headers:oauthRedirectHeaders});
   } catch {
     return fail(url.origin,'temporary_failure');
   }
