@@ -37,13 +37,34 @@ export async function POST(req: Request) {
 
     const emailLower = email.trim().toLowerCase();
 
-    const { data: user, error } = await supabase
+    // RU password fallback must resolve the same existing identity as OTP.
+    // users.email has case-sensitive uniqueness today: never authenticate an
+    // ambiguous case-folded identity or a broad ILIKE wildcard match.
+    let user: { id: string; email: string; password_hash: string } | null = null;
+    if (isRu) {
+      const escaped = emailLower.replace(/[\\%_]/g, '\\    const { data: user, error } = await supabase
       .from('users')
       .select('id, email, password_hash')
       .eq('email', emailLower)
       .single();
 
     if (error || !user) {
+      return NextResponse.json({ error: 'Invalid email or password' }, { status: 401 });
+    }');
+      const { data: rows, error } = await supabase.from('users')
+        .select('id, email, password_hash').ilike('email', escaped).limit(3);
+      if (!error && rows?.length === 1 &&
+          typeof rows[0].email === 'string' &&
+          rows[0].email.toLowerCase() === emailLower) {
+        user = rows[0];
+      }
+    } else {
+      // Leave international email/password matching unchanged.
+      const { data, error } = await supabase.from('users')
+        .select('id, email, password_hash').eq('email', emailLower).single();
+      if (!error) user = data;
+    }
+    if (!user) {
       return NextResponse.json({ error: 'Invalid email or password' }, { status: 401 });
     }
 

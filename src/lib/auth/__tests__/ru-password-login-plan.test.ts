@@ -25,10 +25,16 @@ beforeEach(() => {
   vi.clearAllMocks();
   authMocks.compare.mockResolvedValue(true);
   authMocks.from.mockReturnValue({
-    select: () => ({ eq: () => ({ single: async () => ({
-      data: { id: 'existing-user', email: 'user@example.ru', password_hash: 'test-hash' },
-      error: null,
-    }) }) }),
+    select: () => ({
+      eq: () => ({ single: async () => ({
+        data: { id: 'existing-user', email: 'user@example.ru', password_hash: 'test-hash' },
+        error: null,
+      }) }),
+      ilike: () => ({ limit: async () => ({
+        data: [{ id: 'existing-user', email: 'user@example.ru', password_hash: 'test-hash' }],
+        error: null,
+      }) }),
+    }),
   });
   authMocks.ensureAccount.mockResolvedValue({ accountId: 'existing', created: false });
   authMocks.getSession.mockResolvedValue({ save: vi.fn().mockResolvedValue(undefined) });
@@ -159,6 +165,66 @@ describe('RU password login cannot change plan entitlements', () => {
     expect(session.yandexOauthMode).toBeUndefined();
     expect(session.yandexOauthLinkUserId).toBeUndefined();
     expect(session.save).toHaveBeenCalledOnce();
+  });
+
+  it('reuses an existing mixed-case RU identity with password without a second account', async () => {
+    authMocks.isRu.mockResolvedValue(true);
+    authMocks.from.mockReturnValue({
+      select: () => ({ ilike: (column: string, pattern: string) => {
+        expect(column).toBe('email');
+        expect(pattern).toBe('user@example.ru');
+        return { limit: async () => ({
+          data: [{ id: 'mixed-user', email: 'User@Example.RU', password_hash: 'old-password-hash' }],
+          error: null,
+        }) };
+      } }),
+    });
+    const res = await POST(loginRequest('small', true));
+    expect(res.status).toBe(200);
+    expect(authMocks.compare).toHaveBeenCalledWith('isolated-only', 'old-password-hash');
+    expect(authMocks.ensureAccount).toHaveBeenCalledWith({
+      userId: 'mixed-user', email: 'User@Example.RU', ruCommercial: true,
+    });
+  });
+
+  it('denies ambiguous casefold RU password identities before bcrypt or session', async () => {
+    authMocks.isRu.mockResolvedValue(true);
+    authMocks.from.mockReturnValue({
+      select: () => ({ ilike: () => ({ limit: async () => ({
+        data: [
+          { id: 'user-a', email: 'user@example.ru', password_hash: 'hash-a' },
+          { id: 'user-b', email: 'User@Example.RU', password_hash: 'hash-b' },
+        ],
+        error: null,
+      }) }) }),
+    });
+    const res = await POST(loginRequest('small', true));
+    expect(res.status).toBe(401);
+    expect(authMocks.compare).not.toHaveBeenCalled();
+    expect(authMocks.ensureAccount).not.toHaveBeenCalled();
+    expect(authMocks.getSession).not.toHaveBeenCalled();
+  });
+
+  it('rejects unrelated ILIKE wildcard matches for RU password login', async () => {
+    authMocks.isRu.mockResolvedValue(true);
+    const origin = 'https://www.asi-global.ru';
+    authMocks.from.mockReturnValue({
+      select: () => ({ ilike: (column: string, pattern: string) => {
+        expect(column).toBe('email');
+        expect(pattern).toBe('u\\_ser@example.ru');
+        return { limit: async () => ({
+          data: [{ id: 'other-user', email: 'user@example.ru', password_hash: 'hash-other' }],
+          error: null,
+        }) };
+      } }),
+    });
+    const res = await POST(new Request(origin + '/api/auth/login', {
+      method: 'POST', headers: { Origin: origin, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: 'u_ser@example.ru', password: 'isolated-only' }),
+    }));
+    expect(res.status).toBe(401);
+    expect(authMocks.compare).not.toHaveBeenCalled();
+    expect(authMocks.getSession).not.toHaveBeenCalled();
   });
 
 });
