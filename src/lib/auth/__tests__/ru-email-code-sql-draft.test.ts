@@ -7,7 +7,8 @@ import { describe, expect, it } from 'vitest';
 const sql = readFileSync(
   resolve(process.cwd(), 'docs/operations/ru-email-code-auth-sql-draft.sql'),
   'utf8',
-);
+  // Keep structural assertions independent of Git checkout line endings.
+).replace(/\r\n?/g, '\n');
 const count = (pattern: RegExp): number => [...sql.matchAll(pattern)].length;
 
 describe('RU auth SQL draft structural integrity (no database access)', () => {
