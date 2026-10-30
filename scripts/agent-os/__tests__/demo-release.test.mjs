@@ -286,6 +286,29 @@ test('20 owner-login App comments and missing origin cannot attest governance', 
     assert.equal(await verifiedOwnerComment(520,sha,'CONTRACT-CHANGE','INERT'),true);
   } finally { globalThis.fetch=previous; }
 });
+test('20 routine Stage G2 host maintenance avoids per-file owner exception, protected files still denied', () => {
+  const c=copy();
+  c.stages[0].status='ACCEPTED';
+  c.stages[0].acceptanceSha=sha;
+  c.stages[0].proof=['https://github.com/ASI-integration/asi-landing/actions/runs/123'];
+  c.stages[1].status='IN_PROGRESS';
+  const evidence=new Set(c.stages[0].proof);
+  const b=body('S4-G2');
+  const routine='scripts/strigunov4/execution-adapters/beget-host.test.mjs';
+  const args={contract:c,changed:[routine],prNumber:560,prBody:b,headSha:sha,baseHasContract:true,verifiedRuns:evidence};
+  assert.equal(checkPr(args).status,'CURRENT_MILESTONE_SCOPED');
+  assert.equal(requiredApproval({contract:c,changed:[routine],prNumber:560,prBody:b,headSha:sha}),null);
+  for (const blocked of [
+    'scripts/strigunov4/execution-adapters/host-authority.mjs',
+    'scripts/strigunov4/execution-adapters/standing-budget.mjs',
+    'scripts/agent-os/check-demo-release.mjs',
+    'src/unrelated.ts'
+  ]) {
+    assert.throws(()=>checkPr({...args,changed:[blocked]}),
+      /PR_HAS_OUT_OF_STAGE_FILES|GOVERNANCE_CHANGE_NEEDS_VERIFIED_OWNER_ATTESTATION/);
+    assert.notEqual(requiredApproval({contract:c,changed:[blocked],prNumber:560,prBody:b,headSha:sha}),null);
+  }
+});
 
 test('21 development mode permits routine code, not protected operations', () => {
   const bodyDev=body('S4-G2','development');
@@ -301,3 +324,19 @@ test('21 development mode permits routine code, not protected operations', () =>
   }
 });
 
+test('22 App-origin and incomplete provenance cannot impersonate an owner comment', async () => {
+  const old = globalThis.fetch;
+  const exact='ASI-OWNER-APPROVE:CONTRACT-CHANGE:520:'+sha;
+  try {
+    for(const forged of [
+      {id:1,user:{id:207600140,type:'User'},performed_via_github_app:{id:99},body:exact},
+      {id:2,user:{id:207600140,type:'Bot'},performed_via_github_app:null,body:exact},
+      {id:3,user:{id:207600140,type:'User'},body:exact},
+      {id:4,user:{id:207600140,type:'User'},performed_via_github_app:null,body:exact+'-extra'},
+      {id:'5',user:{id:207600140,type:'User'},performed_via_github_app:null,body:exact},
+    ]) {
+      globalThis.fetch=async()=>({ok:true,json:async()=>[forged]});
+      assert.equal(await verifiedOwnerComment(520,sha,'CONTRACT-CHANGE','token'),false);
+    }
+  } finally {globalThis.fetch=old;}
+});

@@ -1077,7 +1077,9 @@ export function checkPr({ contract, changed, prNumber, prBody, headSha,
          'DIAGNOSTIC_LIMIT_REQUIRES_DECISION');
   }
   const allowed = new Set([...stage.files, ...(stage.plannedFiles || [])]);
-  for (const p of changed) if (routineStagePath(stage.id,p)) allowed.add(p);
+  for (const p of changed) {
+    if (routineStagePath(stage.id, p)) allowed.add(p);
+  }
   if (!changed.every(p => allowed.has(p))) {
     must(ownerApproval, 'PR_HAS_OUT_OF_STAGE_FILES');
     return { status: 'OWNER_ATTESTED_RELEASE_EXCEPTION', stage: f.stage };
