@@ -24,6 +24,7 @@ def valid():
         'oldBaseSha':OLD['baseSha'],'newBaseSha':NEW['baseSha'],
         'newSourceSha':NEW['sourceSha'],'newCatalogSha256':NEW['catalogSha256'],
         'unitSha256':NEW['unitSha256'],'repairScriptSha256':hashbytes(PATH.read_bytes()),
+        'repairReviewHead':'a'*40,
         'sourceReviewSha256':'1'*64,'nativeIsolationSha256':'2'*64,
         'repairReviewSha256':'3'*64,
         'notBefore':NOW-1000,'expiresAt':NOW+5000}
@@ -36,7 +37,7 @@ class SourceOnlyRepairTests(TestCase):
         for field,value in [('oldManifestSha256','f'*64),('newManifestSha256','f'*64),
                             ('oldBaseSha','f'*40),('newBaseSha','f'*40),
                             ('newSourceSha','f'*40),('newCatalogSha256','f'*64),
-                            ('unitSha256','f'*64),('repairScriptSha256','f'*64)]:
+                            ('unitSha256','f'*64),('repairScriptSha256','f'*64),('repairReviewHead','f'*40)]:
             with self.subTest(field=field):
                 with self.assertRaisesRegex(RuntimeError,'REPAIR_SIGNED_SCOPE'):
                     R.scope({**valid(),field:value},OLD_RAW,NEW_RAW,OLD,NEW,NOW)
@@ -93,7 +94,7 @@ class SourceOnlyRepairTests(TestCase):
             with mock.patch.object(R,'AUTH',folder):
                 R.independent_evidence(Reader(),grant,NEW)
                 for change in [{'independent':False},{'result':'FAIL'},
-                               {'reviewedPr':558},{'repairScriptSha256':'f'*64},
+                               {'reviewedPr':558},{'reviewedHead':'f'*40},{'repairScriptSha256':'f'*64},
                                {'protectedBaseSha':'f'*40},{'findings':1}]:
                     bad={**review,**change}
                     payloads['repair-review.json']=json.dumps(bad).encode()
