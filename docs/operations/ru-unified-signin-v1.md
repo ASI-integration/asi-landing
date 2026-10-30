@@ -266,3 +266,18 @@ a substitute for a database-level invariant: require a reviewed audit of
 lower(email) duplicates and an appropriate case-insensitive unique index (or
 equivalent guaranteed invariant) in explicitly isolated staging before
 enabling new-user creation at scale. No live index/user modification is approved.
+
+### Required case-folded identity constraint (draft only)
+The proposed SQL now includes `CREATE UNIQUE INDEX ru_auth_users_email_ci_unique ON public.users (pg_catalog.lower(email))`. This is **not applied**. It is necessary because a preflight `ILIKE` search and ordinary case-sensitive `users.email` uniqueness cannot prevent a concurrent legacy writer from creating a different user ID for the same verified mailbox under another casing.
+
+Before any protected staging migration, run this **read-only** collision audit on the explicitly approved isolated staging copy, and review the result with the owner of the identity data:
+
+```sql
+SELECT pg_catalog.lower(email) AS folded_email, pg_catalog.count(*) AS user_count
+FROM public.users
+GROUP BY pg_catalog.lower(email)
+HAVING pg_catalog.count(*) > 1;
+```
+
+If any collisions exist, stop the staging migration and investigate identity ownership by a separately authorized procedure. Do not auto-merge, delete, or reassociate existing accounts. Require an independent check that the unique index exists and actively rejects two inserts differing only in ASCII case, using disposable test users **only in isolated staging**. Existing user sessions and passwords must continue to work; index rollout/rollback requires its own protected gate. Neither Supabase project nor Beget PG was modified when this draft was prepared.
+
