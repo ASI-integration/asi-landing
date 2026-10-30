@@ -69,8 +69,8 @@ function parentScope(p, now) {
     p.maxWrites <= p.maxOperations && p.maxWrites <= p.maxRequests;
 }
 function childScope(c, p) {
-  return plain(c) && hex64(c.digest) && hex64(c.securityDigest) &&
-    hex64(c.policyDigest) && validTime(c.notBefore) && validTime(c.expiresAt) &&
+  return plain(c) && c.paidApiUsd === 0 &&
+    hex64(c.digest) && hex64(c.securityDigest) && hex64(c.policyDigest) && validTime(c.notBefore) && validTime(c.expiresAt) &&
     c.notBefore >= p.notBefore && c.expiresAt <= p.expiresAt &&
     c.expiresAt > c.notBefore && c.expiresAt-c.notBefore <= CHILD_MS &&
     ['repo','environment','target','action','securityDigest','policyDigest'].every(k=>same(c[k],p[k])) &&
@@ -154,7 +154,7 @@ export function assessParentBudgetProposal({parent, child, childLinks, ledger, e
   // child scope. The digest/link shape alone does not bind numeric limits here.
   // This is defensive source consistency, NOT signature authentication.
   if (childEntry && !['digest','repo','environment','target','action',
-    'securityDigest','policyDigest','notBefore','expiresAt',
+    'securityDigest','policyDigest','paidApiUsd','notBefore','expiresAt',
     'maxOperations','maxRequests','maxWrites'].every(k=>childEntry.scope[k]===child[k]))
     return deny('PARENT_CHILD_SCOPE_CHANGED');
   const childCount=childEntry?.claims.length ?? 0;
