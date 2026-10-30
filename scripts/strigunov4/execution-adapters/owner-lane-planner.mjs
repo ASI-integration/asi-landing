@@ -67,8 +67,31 @@ const HOST_INTRINSICS = Object.freeze({
   stringSplit: String.prototype.split, stringToLowerCase: String.prototype.toLowerCase,
   mapSet: Map.prototype.set, mapGet: Map.prototype.get,
   setAdd: Set.prototype.add, setHas: Set.prototype.has,
+  // The other built-ins below also influence admissibility, durable identity,
+  // path validation, clock checks and immutability of advisory outputs.
+  objectCtor: Object, arrayCtor: Array, stringCtor: String,
+  mapCtor: Map, setCtor: Set, numberCtor: Number,
+  regexpCtor: RegExp, reflectObject: Reflect,
+  objectHasOwn: Object.hasOwn, objectGetProto: Object.getPrototypeOf,
+  objectGetDescriptor: Object.getOwnPropertyDescriptor,
+  objectFreeze: Object.freeze, arrayIsArray: Array.isArray,
+  arrayPush: Array.prototype.push, numberSafeInteger: Number.isSafeInteger,
+  reflectOwnKeys: Reflect.ownKeys, regexTest: RegExp.prototype.test,
 });
 const hostIntrinsicsIntact = () =>
+  Object === HOST_INTRINSICS.objectCtor && Array === HOST_INTRINSICS.arrayCtor &&
+  String === HOST_INTRINSICS.stringCtor && Map === HOST_INTRINSICS.mapCtor &&
+  Set === HOST_INTRINSICS.setCtor && Number === HOST_INTRINSICS.numberCtor &&
+  RegExp === HOST_INTRINSICS.regexpCtor && Reflect === HOST_INTRINSICS.reflectObject &&
+  Object.hasOwn === HOST_INTRINSICS.objectHasOwn &&
+  Object.getPrototypeOf === HOST_INTRINSICS.objectGetProto &&
+  Object.getOwnPropertyDescriptor === HOST_INTRINSICS.objectGetDescriptor &&
+  Object.freeze === HOST_INTRINSICS.objectFreeze &&
+  Array.isArray === HOST_INTRINSICS.arrayIsArray &&
+  Array.prototype.push === HOST_INTRINSICS.arrayPush &&
+  Number.isSafeInteger === HOST_INTRINSICS.numberSafeInteger &&
+  Reflect.ownKeys === HOST_INTRINSICS.reflectOwnKeys &&
+  RegExp.prototype.test === HOST_INTRINSICS.regexTest &&
   Array.prototype.some === HOST_INTRINSICS.arraySome &&
   Array.prototype.map === HOST_INTRINSICS.arrayMap &&
   Array.prototype.filter === HOST_INTRINSICS.arrayFilter &&

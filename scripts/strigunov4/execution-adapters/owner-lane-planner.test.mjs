@@ -323,3 +323,52 @@ test('post-load global Array and String prototype poisoning cannot replace prote
     assert.equal(result.authority,'NONE_SOURCE_ONLY',property);
   }
 });
+
+test('missing durable journal record cannot be inherited by poisoning Object.hasOwn', () => {
+  const state=journal(), inherited=state.lanes.engine;
+  delete state.lanes.engine;
+  const original=Object.hasOwn, prior=Object.getOwnPropertyDescriptor(Object.prototype,'engine');
+  let result;
+  try {
+    Object.defineProperty(Object.prototype,'engine',{configurable:true,value:inherited});
+    Object.hasOwn=()=>true;
+    result=choose(make({journal:state}));
+  } finally {
+    Object.hasOwn=original;
+    if(prior) Object.defineProperty(Object.prototype,'engine',prior);
+    else delete Object.prototype.engine;
+  }
+  assert.equal(result.kind,'UNKNOWN');
+  assert.equal(result.reason,'HOST_INTRINSICS_UNTRUSTED');
+  assert.equal(result.candidate,null);
+});
+test('regex poisoning cannot admit unsafe path syntax into owner lane catalog', () => {
+  const catalog=structuredClone(tasks);catalog[0].changes[0].path='docs/unsafe;argument.txt';
+  const original=RegExp.prototype.test;let result;
+  try { RegExp.prototype.test=()=>true;result=choose(make({admittedCatalog:catalog})); }
+  finally {RegExp.prototype.test=original;}
+  assert.equal(result.kind,'UNKNOWN');
+  assert.equal(result.reason,'HOST_INTRINSICS_UNTRUSTED');
+  assert.equal(result.candidate,null);
+});
+test('poisoned clock validator and reflection APIs cannot produce a candidate', () => {
+  const nativeOwnKeys=Reflect.ownKeys;
+  const samples=[
+    [Number,'isSafeInteger',()=>true,make({nowMs:NaN})],
+    [Reflect,'ownKeys',value=>Array.isArray(value) ? nativeOwnKeys(value) : nativeOwnKeys(value).filter(k=>typeof k==='string'),null],
+    [Object,'getOwnPropertyDescriptor',()=>({value:'forged',enumerable:true}),make()],
+    [Object,'getPrototypeOf',()=>Object.prototype,make()],
+    [Object,'freeze',x=>x,make()],
+    [Array.prototype,'push',()=>0,make()],
+  ];
+  for(const [holder,key,replacement,provided] of samples){
+    const original=holder[key];let result;
+    const sample=provided || make();
+    if(holder===Reflect)sample.journal.lanes[Symbol('hidden')]={};
+    try {holder[key]=replacement;result=choose(sample);}
+    finally {holder[key]=original;}
+    assert.equal(result.kind,'UNKNOWN',key);
+    assert.equal(result.reason,'HOST_INTRINSICS_UNTRUSTED',key);
+    assert.equal(result.candidate,null,key);
+  }
+});
