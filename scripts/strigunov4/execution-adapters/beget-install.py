@@ -73,7 +73,7 @@ def signed(name, public):
               '-rawin','-in',d+'/payload','-sigfile',d+'/signature'])
     return json.loads(raw)
 
-def prepared(package):
+def prepared(package, check_installer_identity=True):
     raw=regular_bytes(package/'manifest.json');m=json.loads(raw)
     require(m['schema']=='asi.beget-engine-source.v1' and len(m['files'])<=100,'MANIFEST')
     files={}
@@ -83,7 +83,8 @@ def prepared(package):
         content=regular_bytes(package/rel);require(digest(content)==row['sha256'],'SOURCE_HASH');files[rel]=content
     for name,field in [('catalog.json','catalogSha256'),(UNIT,'unitSha256'),('beget-install.py','installerSha256')]:
         content=regular_bytes(package/name);require(digest(content)==m[field],'ARTIFACT_HASH');files[name]=content
-    require(files['beget-install.py']==regular_bytes(Path(__file__).resolve()),'INSTALLER_IDENTITY')
+    if check_installer_identity:
+        require(files['beget-install.py']==regular_bytes(Path(__file__).resolve()),'INSTALLER_IDENTITY')
     return raw,m,files
 
 def write_new(p,data,mode=0o600):
@@ -212,7 +213,7 @@ def exact_disabled_unit_state():
             'STAGED_UNIT_NOT_DISABLED')
 
 
-def staged_state(raw,manifest,files,public):
+def staged_state(raw,manifest,files,public,check_modes=True):
     # Enforce *exact* staged bytes, without trusting a root-owned JSON claim alone.
     receipt=json.loads(regular_bytes(stage_receipt_path(raw),root=True))
     require(type(receipt) is dict and receipt.get('schema')=='asi.beget-staged-isolation.v1' and
@@ -236,7 +237,7 @@ def staged_state(raw,manifest,files,public):
     st=STATE.lstat()
     require(stat.S_ISDIR(st.st_mode) and st.st_uid==identity.pw_uid and
         st.st_gid==identity.pw_gid and not st.st_mode&0o077,'STAGED_STATE_CHANGED')
-    runtime_service_access(files)
+    if check_modes:runtime_service_access(files)
     exact_disabled_unit_state()
     return identity
 
@@ -284,6 +285,85 @@ def normalize_new_runtime_modes(files):
                 st.st_nlink==1 and not st.st_mode&0o022,'STAGED_RUNTIME_PATH')
         os.chmod(p,mode)
     runtime_service_access(files,uid)
+
+
+# A separate *owner-signed* recovery for the ORIGINAL staged package. It does
+# not replace the original install/activation approval or old stage receipt.
+REPAIR_SCHEMA='asi.beget-stage-mode-repair.v1'
+REPAIR_ACTIONS=['normalize-exact-staged-runtime-modes-only']
+
+def repair_staged_modes(package,plan=False):
+    # Unlike activation, this must run using newly reviewed repair code against
+    # the original immutable candidate; the original installer hash stays
+    # independently checked by prepared(), but it need not equal this repairer.
+    raw,m,files=prepared(package,check_installer_identity=False)
+    require(os.geteuid()==0 and os.uname().nodename==HOST,'PROTECTED_HOST_REQUIRED')
+    public=regular_bytes(AUTH/'owner-public.pem',root=True)
+    stage_grant=signed('stage-approval.json',public)
+    # Recheck that the original signed stage grant genuinely covered these
+    # bytes. A newly signed repair grant carries its own CURRENT time window.
+    stage_scope(stage_grant,m,raw,stage_grant.get('notBefore'))
+    original_claim_path=AUTH/('stage-claim-'+digest(raw)+'.json')
+    original_claim=regular_bytes(original_claim_path,root=True)
+    original_receipt=regular_bytes(stage_receipt_path(raw),root=True)
+    claim=json.loads(original_claim)
+    require(type(claim) is dict and claim.get('manifestSha256')==digest(raw) and
+            claim.get('oneUse') is True,'STAGE_CLAIM_UNVERIFIED')
+    identity=staged_state(raw,m,files,public,check_modes=False)
+    require(all(not (AUTH/name).exists() for name in
+            ('activation.json','catalog.json','reviews.json','install-approval.json',
+             'fence.json','native-isolation.json','source-review.json')),
+            'STAGED_LIVE_AUTHORITY_PRESENT')
+    # Fail closed on unreviewed repair scripts or a mutable execution path.
+    repair_script=regular_bytes(Path(__file__).resolve(),root=True)
+    proof={'host':HOST,'unit':UNIT,'manifestSha256':digest(raw),
+           'sourceSha':m['sourceSha'],'baseSha':m['baseSha'],
+           'originalInstallerSha256':m['installerSha256'],
+           'unitSha256':m['unitSha256'],'stageClaimSha256':digest(original_claim),
+           'stageReceiptSha256':digest(original_receipt),'serviceUid':identity.pw_uid,
+           'repairScriptSha256':digest(repair_script),'actions':REPAIR_ACTIONS}
+    # The plan reads original source/claims; it grants absolutely no mutation.
+    if plan:
+        print(json.dumps({'status':'STAGE_MODE_REPAIR_PLAN_ONLY',**proof,'allowed':False}))
+        return
+    grant=signed('repair-approval.json',public)
+    now=int(time.time()*1000)
+    require(type(grant) is dict and grant.get('schema')==REPAIR_SCHEMA and
+            all(grant.get(k)==v for k,v in proof.items()) and
+            grant.get('oneUse') is True and
+            type(grant.get('notBefore')) is int and
+            type(grant.get('expiresAt')) is int and
+            grant['notBefore']<=now<grant['expiresAt'] and
+            0<grant['expiresAt']-grant['notBefore']<=14*86400000,
+            'STAGE_REPAIR_ADMISSION')
+    # No generic chmod/chown: every destination is the old manifest's exact
+    # root-owned, non-writable file or ancestor directory.
+    # Re-read all protected evidence and exact bytes before one-use claim.
+    require(regular_bytes(AUTH/'owner-public.pem',root=True)==public and
+            signed('repair-approval.json',public)==grant and
+            signed('stage-approval.json',public)==stage_grant and
+            regular_bytes(original_claim_path,root=True)==original_claim and
+            regular_bytes(stage_receipt_path(raw),root=True)==original_receipt,
+            'STAGE_REPAIR_EVIDENCE_CHANGED')
+    raw2,m2,files2=prepared(package,check_installer_identity=False)
+    require(raw2==raw and m2==m and files2==files,'STAGE_REPAIR_PACKAGE_CHANGED')
+    staged_state(raw,m,files,public,check_modes=False)
+    require(all(not (AUTH/name).exists() for name in
+            ('activation.json','catalog.json','reviews.json','install-approval.json',
+             'fence.json','native-isolation.json','source-review.json')),
+            'STAGED_LIVE_AUTHORITY_PRESENT')
+    now=int(time.time()*1000)
+    require(grant['notBefore']<=now<grant['expiresAt'],'STAGE_REPAIR_ADMISSION')
+    # Durable claim is intentionally never rolled back after a partial chmod.
+    repair_claim=AUTH/('stage-mode-repair-claim-'+digest(raw)+'.json')
+    write_new(repair_claim,json.dumps({'manifestSha256':digest(raw),
+                                      'repairScriptSha256':digest(repair_script),
+                                      'oneUse':True,'at':now}).encode())
+    normalize_new_runtime_modes(files)
+    staged_state(raw,m,files,public)
+    print(json.dumps({'status':'STAGED_MODES_REPAIRED_NATIVE_ACCEPTANCE_REQUIRED',
+                      'manifestSha256':digest(raw),'serviceStarted':False,
+                      'activationAuthorized':False}))
 
 def stage(package,node,bwrap):
     # Fail closed before any mutation; the staged unit is never enabled or started.
@@ -478,9 +558,14 @@ def main():
     modes.add_argument('--stage',action='store_true')
     modes.add_argument('--activate-stage',action='store_true')
     modes.add_argument('--apply',action='store_true')
+    modes.add_argument('--stage-repair-plan',action='store_true')
+    modes.add_argument('--repair-stage-modes',action='store_true')
     parser.add_argument('--node',type=Path);parser.add_argument('--bwrap',type=Path)
     args=parser.parse_args();package=args.package.resolve()
-    if args.apply or args.stage or args.activate_stage:
+    if args.stage_repair_plan or args.repair_stage_modes:
+        require(args.node is None and args.bwrap is None,'REPAIR_NO_DEPENDENCY_OVERRIDE')
+        repair_staged_modes(package,plan=args.stage_repair_plan)
+    elif args.apply or args.stage or args.activate_stage:
         require(args.node is not None and args.bwrap is not None,'DEPENDENCIES_REQUIRED')
         if args.stage: stage(package,args.node.resolve(),args.bwrap.resolve())
         else: apply(package,args.node.resolve(),args.bwrap.resolve(),staged=args.activate_stage)
