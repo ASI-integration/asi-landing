@@ -7,7 +7,7 @@ import {generateKeyPairSync,sign} from 'node:crypto';
 import {closedFixture,makeClosedLoop,tick,readState} from './closed-loop-fixture.mjs';
 import {once} from 'node:events';
 import {createRequestBudget} from './host-runtime.mjs';
-import {BEGET,verifyBegetActivation} from './host-authority.mjs';
+import {BEGET,verifyBegetActivation,rootOwned} from './host-authority.mjs';
 import {stagePolicyHash,validateStagePolicy} from './stage-authority.mjs';
 import {prepareDelta} from './change-preparer.mjs';
 import {runContinuousWorker} from '../ASI-STRIGUNOV4-RUNNER-BRIDGE-20261020.mjs';
@@ -266,4 +266,13 @@ test('G2 stage gate excludes legacy PR #531 and foreign task even with syntactic
    assert.throws(()=>validateStagePolicy(candidate,f.now.value),
      /BEGET_TASK_SCOPE|STAGE_TASK_SCOPE|STAGE_POLICY_SCOPE_OR_EXPIRY/);
  }
+});
+
+test('root-owned Bubblewrap reader rejects untrusted file chain and symlink before execute', async t => {
+ const dir=await fs.mkdtemp('/tmp/asi-bwrap-rootowned-negative-');
+ t.after(()=>fs.rm(dir,{recursive:true,force:true}));
+ const untrusted=path.join(dir,'bwrap');await fs.writeFile(untrusted,'not a pinned distro binary');
+ await assert.rejects(()=>rootOwned(untrusted,2000000,{encoding:null}),/AUTHORITY_DIRECTORY|AUTHORITY_FILE/);
+ const link=path.join(dir,'link');await fs.symlink(untrusted,link);
+ await assert.rejects(()=>rootOwned(link,2000000,{encoding:null}),/AUTHORITY_PATH|AUTHORITY_DIRECTORY|AUTHORITY_FILE/);
 });
