@@ -21,12 +21,17 @@ export async function POST(req: Request) {
         !isSameOriginAuthRequest(req.url, req.headers.get('origin'))) {
       return NextResponse.json({ error: 'Invalid origin' }, { status: 403 });
     }
-    const parsed = await readRequestJson<{ email?: string; password?: string; plan?: unknown }>(req);
+    // RU password login has the same bounded unauthenticated request-body policy
+    // as RU email-code login. Preserve the existing non-RU parser behavior.
+    const parsed = await readRequestJson<{
+      email?: unknown; password?: unknown; plan?: unknown;
+    }>(req, isRu ? { maxBytes: 2048 } : {});
     if (!parsed.ok) {
       return NextResponse.json({ error: 'Invalid request body' }, { status: 400 });
     }
     const { email, password, plan } = parsed.data;
-    if (!email?.trim() || !password) {
+    if (typeof email !== 'string' || !email.trim() ||
+        typeof password !== 'string' || !password) {
       return NextResponse.json({ error: 'Email and password required' }, { status: 400 });
     }
 

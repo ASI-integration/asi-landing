@@ -80,6 +80,56 @@ describe('RU password login cannot change plan entitlements', () => {
     expect(authMocks.ensureAccount).not.toHaveBeenCalled();
     vi.unstubAllEnvs();
   });
+
+  it('bounds RU password JSON before looking up any identity or modifying a session', async () => {
+    // Trust the request URL, not a spoofed forwarded-host classifier.
+    authMocks.isRu.mockResolvedValue(false);
+    const origin = 'https://www.asi-global.ru';
+    const response = await POST(new Request(origin + '/api/auth/login', {
+      method: 'POST', headers: { Origin: origin, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: 'user@example.ru', password: 'isolated-only',
+        padding: 'x'.repeat(4096) }),
+    }));
+    expect(response.status).toBe(400);
+    expect(authMocks.from).not.toHaveBeenCalled();
+    expect(authMocks.compare).not.toHaveBeenCalled();
+    expect(authMocks.ensureAccount).not.toHaveBeenCalled();
+    expect(authMocks.getSession).not.toHaveBeenCalled();
+  });
+
+  it('rejects non-string RU credentials before a database query or session mutation', async () => {
+    authMocks.isRu.mockResolvedValue(true);
+    const origin = 'https://www.asi-global.ru';
+    for (const credentials of [
+      { email: { value: 'user@example.ru' }, password: 'isolated-only' },
+      { email: 'user@example.ru', password: ['isolated-only'] },
+    ]) {
+      const response = await POST(new Request(origin + '/api/auth/login', {
+        method: 'POST', headers: { Origin: origin, 'Content-Type': 'application/json' },
+        body: JSON.stringify(credentials),
+      }));
+      expect(response.status).toBe(400);
+    }
+    expect(authMocks.from).not.toHaveBeenCalled();
+    expect(authMocks.compare).not.toHaveBeenCalled();
+    expect(authMocks.ensureAccount).not.toHaveBeenCalled();
+    expect(authMocks.getSession).not.toHaveBeenCalled();
+  });
+
+  it('retains the existing international login parser for otherwise valid large payloads', async () => {
+    authMocks.isRu.mockResolvedValue(false);
+    const origin = 'https://global.example';
+    const response = await POST(new Request(origin + '/api/auth/login', {
+      method: 'POST', headers: { Origin: origin, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: 'user@example.ru', password: 'isolated-only',
+        padding: 'x'.repeat(4096) }),
+    }));
+    expect(response.status).toBe(200);
+    expect(authMocks.ensureAccount).toHaveBeenCalledWith({
+      userId: 'existing-user', email: 'user@example.ru',
+      selectedPlan: undefined, deferTrial: true,
+    });
+  });
   it('cancels a stale Yandex login/link flow after a successful password account switch', async () => {
     authMocks.isRu.mockResolvedValue(true);
     const session = {
