@@ -324,26 +324,26 @@ def repaired_staged_state(raw, manifest, files, public, now):
         require(type(expected) is str and re.fullmatch('[0-9a-f]{64}',expected)
                 and digest(regular_bytes(AUTH/name,root=True))==expected,
                 'REPAIRED_EVIDENCE_CHANGED')
-    review=json.loads(regular_bytes(AUTH/'repair-review.json',root=True))
-    require(type(review) is dict and review.get('schema')=='asi.beget-staged-repair-review.v1'
-            and review.get('result')=='PASS'
-            and type(review.get('findings')) is int and review['findings']==0
-            and review.get('repairScriptSha256')==grant['repairScriptSha256']
-            and review.get('protectedBaseSha')==manifest['baseSha']
-            and review.get('reviewedPr')==559
-            and review.get('reviewedHead')==grant['repairReviewHead'],
+    repair_review=json.loads(regular_bytes(AUTH/'repair-review.json',root=True))
+    require(type(repair_review) is dict and repair_review.get('schema')=='asi.beget-staged-repair-review.v1'
+            and repair_review.get('result')=='PASS'
+            and type(repair_review.get('findings')) is int and repair_review['findings']==0
+            and repair_review.get('repairScriptSha256')==grant['repairScriptSha256']
+            and repair_review.get('protectedBaseSha')==manifest['baseSha']
+            and repair_review.get('reviewedPr')==559
+            and repair_review.get('reviewedHead')==grant['repairReviewHead'],
             'REPAIRED_REVIEW_UNVERIFIED')
-    if review.get('mode')=='OWNER_VERIFIED_CI':
-        require(review.get('independent') is False and
-                type(review.get('ownerId')) is int and review['ownerId']==207600140
-                and review.get('scope')=='BEGET_G2_TWO_DRAFT_WITNESSES'
-                and type(review.get('validationRunId')) is int
-                and review['validationRunId']>0,'REPAIRED_OWNER_CI_UNVERIFIED')
-        verified_owner_ci_run(review['validationRunId'],311380800,
+    if repair_review.get('mode')=='OWNER_VERIFIED_CI':
+        require(repair_review.get('independent') is False and
+                type(repair_review.get('ownerId')) is int and repair_review['ownerId']==207600140
+                and repair_review.get('scope')=='BEGET_G2_TWO_DRAFT_WITNESSES'
+                and type(repair_review.get('validationRunId')) is int
+                and repair_review['validationRunId']>0,'REPAIRED_OWNER_CI_UNVERIFIED')
+        verified_owner_ci_run(repair_review['validationRunId'],311380800,
                               grant['repairReviewHead'],'pull_request')
     else:
-        require(review.get('independent') is True and
-                review.get('mode') in (None,'INDEPENDENT_HUMAN'),
+        require(repair_review.get('independent') is True and
+                repair_review.get('mode') in (None,'INDEPENDENT_HUMAN'),
                 'REPAIRED_REVIEW_UNVERIFIED')
     # Current-generation native acceptance must be new, not just the old stage's UID.
     native=json.loads(regular_bytes(AUTH/'native-isolation.json',root=True))
