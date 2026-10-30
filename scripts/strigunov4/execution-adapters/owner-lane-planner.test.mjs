@@ -126,3 +126,27 @@ test('unknown or missing durable state cannot release another lane after crash',
     assert.equal(result.authority,'NONE_SOURCE_ONLY');
   }
 });
+
+
+test('catalog withdrawal cannot erase historical UNKNOWN or FAILED_LOCKED records',()=>{
+  const catalog=structuredClone(tasks.slice(0,4));
+  const state=journal();
+  state.lanes['p0-atomic-budget'].mode='FAILED_LOCKED';
+  assert.equal(choose(make({admittedCatalog:catalog,journal:state})).reason,
+    'HISTORICAL_LANE_LOCK_REQUIRES_RECONCILIATION');
+  state.lanes['p0-atomic-budget'].mode='UNKNOWN';
+  assert.equal(choose(make({admittedCatalog:catalog,journal:state})).reason,
+    'HISTORICAL_LANE_LOCK_REQUIRES_RECONCILIATION');
+  state.lanes['p0-atomic-budget'].mode='DONE';
+  assert.equal(choose(make({admittedCatalog:catalog,journal:state})).kind,'CANDIDATE');
+  delete state.lanes['p0-atomic-budget'];
+  assert.equal(choose(make({admittedCatalog:catalog,journal:state})).reason,
+    'UNADMITTED_LANE_JOURNAL_INVALID');
+  state.lanes['unexpected-sixth-lane']={...state.lanes.engine};
+  assert.equal(choose(make({admittedCatalog:catalog,journal:state})).reason,
+    'UNRECOGNIZED_DURABLE_LANE');
+  state.lanes['p0-atomic-budget']=null;
+  delete state.lanes['unexpected-sixth-lane'];
+  assert.equal(choose(make({admittedCatalog:catalog,journal:state})).reason,
+    'UNADMITTED_LANE_JOURNAL_INVALID');
+});
