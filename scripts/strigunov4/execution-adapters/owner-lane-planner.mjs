@@ -56,6 +56,35 @@ const ownDenseArray = (value, min, max) => {
   }
   return true;
 };
+// Deny post-load poisoning of shared built-ins: inherited Array methods, Map/Set
+// operations and string path checks must not decide signed execution scope.
+const HOST_INTRINSICS = Object.freeze({
+  arraySome: Array.prototype.some, arrayMap: Array.prototype.map,
+  arrayFilter: Array.prototype.filter, arraySort: Array.prototype.sort,
+  arrayIncludes: Array.prototype.includes, arrayIndexOf: Array.prototype.indexOf,
+  arrayEvery: Array.prototype.every, arrayIterator: Array.prototype[Symbol.iterator],
+  stringIncludes: String.prototype.includes, stringStartsWith: String.prototype.startsWith,
+  stringSplit: String.prototype.split, stringToLowerCase: String.prototype.toLowerCase,
+  mapSet: Map.prototype.set, mapGet: Map.prototype.get,
+  setAdd: Set.prototype.add, setHas: Set.prototype.has,
+});
+const hostIntrinsicsIntact = () =>
+  Array.prototype.some === HOST_INTRINSICS.arraySome &&
+  Array.prototype.map === HOST_INTRINSICS.arrayMap &&
+  Array.prototype.filter === HOST_INTRINSICS.arrayFilter &&
+  Array.prototype.sort === HOST_INTRINSICS.arraySort &&
+  Array.prototype.includes === HOST_INTRINSICS.arrayIncludes &&
+  Array.prototype.indexOf === HOST_INTRINSICS.arrayIndexOf &&
+  Array.prototype.every === HOST_INTRINSICS.arrayEvery &&
+  Array.prototype[Symbol.iterator] === HOST_INTRINSICS.arrayIterator &&
+  String.prototype.includes === HOST_INTRINSICS.stringIncludes &&
+  String.prototype.startsWith === HOST_INTRINSICS.stringStartsWith &&
+  String.prototype.split === HOST_INTRINSICS.stringSplit &&
+  String.prototype.toLowerCase === HOST_INTRINSICS.stringToLowerCase &&
+  Map.prototype.set === HOST_INTRINSICS.mapSet &&
+  Map.prototype.get === HOST_INTRINSICS.mapGet &&
+  Set.prototype.add === HOST_INTRINSICS.setAdd &&
+  Set.prototype.has === HOST_INTRINSICS.setHas;
 const MODES = Object.freeze(['READY', 'BACKOFF', 'DONE', 'BLOCKED', 'UNKNOWN', 'FAILED_LOCKED']);
 // Missing, stale, or corrupt records are not made harmless by catalog withdrawal.
 function validDurableRecord(s, nowMs) {
@@ -89,6 +118,7 @@ export function planCooperativeOwnerLane(snapshot) {
   catch { return response('UNKNOWN', 'UNREADABLE_OR_HOSTILE_SNAPSHOT'); }
 }
 function planValidatedSnapshot(snapshot) {
+  if (!hostIntrinsicsIntact()) return response('UNKNOWN', 'HOST_INTRINSICS_UNTRUSTED');
   if (!ownDataRecord(snapshot, ['laneDefinitions', 'admittedCatalog', 'journal', 'nowMs']))
     return response('UNKNOWN', 'SNAPSHOT_MUST_HAVE_OWN_DATA');
   const {laneDefinitions, admittedCatalog, journal, nowMs} = snapshot;

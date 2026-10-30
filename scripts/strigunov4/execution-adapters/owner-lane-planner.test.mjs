@@ -289,3 +289,37 @@ test('inherited Object.prototype lane state cannot replace missing owned durable
     else delete Object.prototype.engine;
   }
 });
+
+
+test('post-load global Array and String prototype poisoning cannot replace protected scope',()=>{
+  const poisonedDefinitions=structuredClone(lanes);
+  const poisonedCatalog=structuredClone(tasks);
+  poisonedDefinitions[0].branch='asi/evil-branch';
+  poisonedCatalog[0].branch='asi/evil-branch';
+  const substituted=make({laneDefinitions:poisonedDefinitions,admittedCatalog:poisonedCatalog});
+  assert.equal(choose(substituted).kind,'UNKNOWN');
+  const pathCatalog=structuredClone(tasks);
+  pathCatalog[0].changes[0].path='docs/.GIT/config';
+  const unsafe=make({admittedCatalog:pathCatalog});
+  assert.equal(choose(unsafe).kind,'STOPPED');
+  for(const [owner,property,replacement,snapshot] of [
+    [Array.prototype,'some',()=>false,substituted],
+    [Array.prototype,'map',()=>[],substituted],
+    [String.prototype,'toLowerCase',function(){return String(this);},unsafe],
+    [Map.prototype,'get',()=>tasks[0],make()],
+    [Set.prototype,'has',()=>false,make()],
+  ]){
+    const original=owner[property];
+    let result;
+    try {
+      owner[property]=replacement;
+      result=choose(snapshot);
+    } finally {
+      owner[property]=original;
+    }
+    assert.equal(result.kind,'UNKNOWN',property);
+    assert.equal(result.reason,'HOST_INTRINSICS_UNTRUSTED',property);
+    assert.equal(result.candidate,null,property);
+    assert.equal(result.authority,'NONE_SOURCE_ONLY',property);
+  }
+});
