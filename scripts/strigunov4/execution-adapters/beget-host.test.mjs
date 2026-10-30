@@ -245,3 +245,25 @@ test('Bubblewrap sandbox keeps network unshared and host mounts read-only after 
   }
   assert.throws(()=>sandboxArguments('relative/path'),/CHECK_WORKSPACE/);
 });
+
+test('G2 stage gate excludes legacy PR #531 and foreign task even with syntactically valid work', async t => {
+ const f=await setup(t),p=structuredClone(f.policy);
+ assert.equal(p.schema,'asi.stage-authority.beget.v1');
+ assert.equal(p.tasks.length,2);
+ assert.doesNotThrow(()=>validateStagePolicy(p,f.now.value));
+ const legacy=structuredClone(p.tasks[0]);
+ legacy.id='legacy-pr-531';legacy.workOrderId=legacy.id;legacy.branch='asi/engine-task/'+legacy.id;
+ legacy.paths=['scripts/strigunov4/test_legacy_pr_531.py'];
+ for(const mutate of [
+   x=>{x.tasks=[legacy];},
+   x=>{x.tasks.push(legacy);},
+   x=>{x.tasks[0].branch='asi/engine-task/legacy-pr-531';},
+   x=>{x.tasks[0].paths=['scripts/strigunov4/test_legacy_pr_531.py'];},
+   x=>{x.repository='other-owner/asi-landing';},
+   x=>{x.issue=531;},
+ ]) {
+   const candidate=structuredClone(p);mutate(candidate);
+   assert.throws(()=>validateStagePolicy(candidate,f.now.value),
+     /BEGET_TASK_SCOPE|STAGE_TASK_SCOPE|STAGE_POLICY_SCOPE_OR_EXPIRY/);
+ }
+});
