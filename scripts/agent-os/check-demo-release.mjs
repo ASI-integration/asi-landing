@@ -131,6 +131,14 @@ function routineStagePath(stageId, p) {
   return stageId === 'S4-G2' &&
     /^scripts\/strigunov4\/execution-adapters\/(?:host-checks(?:\.test)?|beget-host\.test|beget-staged-install\.test)\.mjs$/.test(p);
 }
+// Development is source-only: no governance, deployment, authority or secret changes.
+// A successful development check never authorizes merge, installation or execution.
+function developmentPath(p) {
+  if (!/^(?:src\/|tests\/|docs\/|scripts\/strigunov4\/)/.test(p)) return false;
+  if (/(?:^|\/)(?:\.env[^/]*|secrets?|credentials?|private-keys?|deploy(?:ment)?|production|publisher|authority|owner-gate|release-governance)(?:\/|\.|-|$)/i.test(p)) return false;
+  if (/\.(?:pem|key|p12|pfx|env)$/i.test(p)) return false;
+  return true;
+}
 export function checkPr({ contract, changed, prNumber, prBody, headSha,
                           baseHasContract, ownerApproval = false, priorDiagnosticCount = 0, verifiedRuns = new Set() }) {
   must(Number.isSafeInteger(prNumber) && prNumber > 0 && SHA.test(headSha), 'PR_ID');
@@ -158,6 +166,10 @@ export function checkPr({ contract, changed, prNumber, prBody, headSha,
     return { status: 'OWNER_ATTESTED_GOVERNANCE_CHANGE', stage: null };
   }
   const f = fields(prBody);
+  if (f.mode === 'development') {
+    must(changed.every(developmentPath), 'DEVELOPMENT_PROTECTED_OR_OUT_OF_SCOPE_PATH');
+    return {status:'SOURCE_DEVELOPMENT_ONLY',stage:null,authority:'NONE'};
+  }
   const next = validateContract(contract, new Set(contract.stages.flatMap(s => s.files)), verifiedRuns).nextStage;
   const stage = contract.stages.find(s => s.id === f.stage);
   if (!stage || f.stage !== next ||
@@ -234,8 +246,9 @@ export function requiredApproval({contract, changed, prNumber, prBody, headSha})
       contract.transition.legacyHeads[String(prNumber)] === headSha
       ? null : 'RELEASE-EXCEPTION';
   }
-  const next = contract.stages.find(s => s.status !== 'ACCEPTED')?.id;
   const f = fields(prBody || '');
+  if (f.mode === 'development' && changed.every(developmentPath)) return null;
+  const next = contract.stages.find(s => s.status !== 'ACCEPTED')?.id;
   const stage = contract.stages.find(s => s.id === f.stage);
   return !stage || stage.id !== next ||
     !['implementation', 'diagnostic', 'acceptance'].includes(f.mode) ||
