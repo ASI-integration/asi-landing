@@ -140,6 +140,7 @@ function developmentPath(p) {
   // the ordinary protected-release path even when the PR says development.
   if (/^src\/(?:app|pages)\/api\//.test(p) ||
       /^src\/(?:middleware|instrumentation)\.[cm]?[jt]sx?$/.test(p) ||
+      /\/(?:route|middleware|instrumentation)\.[cm]?[jt]sx?$/.test(p) ||
       /(?:^|\/)(?:auth|security|payment|payments|billing|webhook|migrations?|permissions?)(?:\/|\.|-|$)/i.test(p)) return false;
   if (p.startsWith('docs/agent-os/') || p.startsWith('scripts/strigunov4/execution-adapters/')) return false;
   // Scripts that operate the live host, installer and authority never become
