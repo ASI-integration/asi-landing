@@ -47,7 +47,10 @@ describe('RU auth SQL draft structural integrity (no database access)', () => {
     const consume = sql.split('CREATE OR REPLACE FUNCTION public.ru_auth_consume_email_code')[1]
       ?.split('CREATE OR REPLACE FUNCTION public.ru_auth_revoke_email_code')[0] ?? '';
     expect(issue).toMatch(/p_email IS NULL[\s\S]*p_hash IS NULL OR p_ip_hash IS NULL/);
-    expect(consume).toContain('IF p_email IS NULL OR p_hash IS NULL OR p_hash !~');
+    expect(consume).toContain('p_email IS NULL OR length(p_email) > 254');
+    expect(consume).toContain('p_hash IS NULL OR p_ip_hash IS NULL');
+    expect(consume).toContain('p_hash !~');
+    expect(consume).toContain('p_ip_hash !~');
     expect(issue).toContain('p_hash !~');
     expect(issue).toContain('p_ip_hash !~');
   });
@@ -66,11 +69,24 @@ describe('RU auth SQL draft structural integrity (no database access)', () => {
     for (const name of [
       'ru_auth_issue_email_code(TEXT,TEXT,TEXT)',
       'ru_auth_activate_email_code(TEXT,TEXT)',
-      'ru_auth_consume_email_code(TEXT,TEXT)',
+      'ru_auth_consume_email_code(TEXT,TEXT,TEXT)',
       'ru_auth_revoke_email_code(TEXT,TEXT)',
     ]) {
       expect(sql).toContain('REVOKE ALL ON FUNCTION public.' + name + ' FROM PUBLIC,anon,authenticated');
       expect(sql).toContain('GRANT EXECUTE ON FUNCTION public.' + name + ' TO service_role');
     }
   });
+  it('charges rejected issuance requests and limits all valid-format verification IP attempts',()=>{
+    const issue=sql.split('CREATE OR REPLACE FUNCTION public.ru_auth_issue_email_code')[1]
+      ?.split('CREATE OR REPLACE FUNCTION public.ru_auth_activate_email_code')[0] ?? '';
+    expect(issue.indexOf('INSERT INTO public.ru_auth_ip_limits')).toBeLessThan(
+      issue.indexOf("'ru-otp-email:' || p_email"));
+    const consume=sql.split('CREATE OR REPLACE FUNCTION public.ru_auth_consume_email_code')[1]
+      ?.split('CREATE OR REPLACE FUNCTION public.ru_auth_revoke_email_code')[0] ?? '';
+    expect(consume).toContain('ip_row.verify_count >= 50');
+    expect(consume).toContain('verify_count=CASE');
+    expect(consume.indexOf('INSERT INTO public.ru_auth_ip_limits')).toBeLessThan(
+      consume.indexOf('SELECT * INTO row_value'));
+  });
+
 });

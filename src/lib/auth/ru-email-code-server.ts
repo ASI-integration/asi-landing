@@ -60,11 +60,16 @@ export async function issueRuEmailCode(emailInput: unknown, req: Request): Promi
   }
 }
 
-export async function consumeRuEmailCode(emailInput: unknown, codeInput: unknown): Promise<string | null> {
+export async function consumeRuEmailCode(emailInput: unknown, codeInput: unknown, req: Request): Promise<string | null> {
   const email=normalizeLoginEmail(emailInput);
   if (!email || typeof codeInput !== 'string' || !/^[0-9]{8}$/.test(codeInput) || !ruEmailCodeReady()) return null;
-  const digest=digestOneTimeCode(email,codeInput,process.env.ASI_RU_EMAIL_CODE_PEPPER!);
-  const {data,error}=await supabase.rpc('ru_auth_consume_email_code',{p_email:email,p_hash:digest});
+  const pepper=process.env.ASI_RU_EMAIL_CODE_PEPPER!;
+  const digest=digestOneTimeCode(email,codeInput,pepper);
+  // Never use a caller-controlled forwarded header for the rate-limit key.
+  const ipHash=emailCodeIpDigest(trustedClientIp(req),pepper);
+  const {data,error}=await supabase.rpc('ru_auth_consume_email_code',{
+    p_email:email,p_hash:digest,p_ip_hash:ipHash,
+  });
   if(error) throw new Error('RU_AUTH_OTP_DATABASE_NOT_READY');
   return data===true ? email : null;
 }

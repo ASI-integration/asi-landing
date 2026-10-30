@@ -62,7 +62,7 @@ export async function POST(req:Request) {
     return NextResponse.json({ok:false,error:'INVALID_BODY'},{status:400,headers});
   try {
     // Single-use code is consumed transactionally by the database before login.
-    const email=await consumeRuEmailCode(parsed.data.email,parsed.data.code);
+    const email=await consumeRuEmailCode(parsed.data.email,parsed.data.code,req);
     if(!email)return NextResponse.json({ok:false,error:'INVALID_OR_EXPIRED_CODE'}, {status:401,headers});
     const user=await findOrCreateExistingIdentity(email);
     await ensureAccountForUser({userId:user.id,email:user.email,ruCommercial:true});

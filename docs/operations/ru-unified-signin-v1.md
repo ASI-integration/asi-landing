@@ -48,6 +48,10 @@ expose the Resend key or pepper through `NEXT_PUBLIC_*`.
    `service_role`, no public execution. Verify 60-second email cooldown,
    5/email/hour, 20/IP/hour, 5 failures, 10-minute expiry, consumption and
    replay, simultaneous requests, crashed/failed SMTP behavior.
+   The draft now counts even cooldown-rejected issuance against 20/IP/hour,
+   and limits all valid-format OTP verification attempts (including unknown
+   emails) to 50/IP/hour, under the same trusted-IP lock order. Verify actual
+   concurrency, grants and collateral lockouts in an isolated PostgreSQL DB.
 2. Only after the isolated database has passed the real RPC/RLS and concurrency
    acceptance, set protected `ASI_RU_EMAIL_CODE_SCHEMA_READY=true` on the exact
    reviewed RU target. This defaults OFF: possessing mail credentials alone

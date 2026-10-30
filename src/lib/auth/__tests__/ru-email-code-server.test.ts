@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks=vi.hoisted(()=>({rpc:vi.fn(), fetch:vi.fn()}));
 vi.mock('@/lib/supabase',()=>({supabase:{rpc:mocks.rpc}}));
 
-import { issueRuEmailCode, consumeRuEmailCode, trustedClientIp } from '../ru-email-code-server';
+import { issueRuEmailCode, consumeRuEmailCode, trustedClientIp, emailCodeIpDigest } from '../ru-email-code-server';
 
 const pepper='isolated-test-only-strong-pepper-at-least-32-chars';
 const req=()=>new Request('https://www.asi-global.ru/api/auth/email-code/request',{method:'POST'});
@@ -163,7 +163,7 @@ describe('RU email code: durable pending -> delivery -> activation',()=>{
   it('refuses OTP issue or consume when the protected canonical RU origin is absent',async()=>{
     vi.stubEnv('ASI_RU_EMAIL_CODE_ORIGIN','https://another-business.ru');
     expect(await issueRuEmailCode('user@example.ru',req())).toEqual({sent:false,throttled:true});
-    expect(await consumeRuEmailCode('user@example.ru','12345678')).toBeNull();
+    expect(await consumeRuEmailCode('user@example.ru','12345678',req())).toBeNull();
     expect(mocks.rpc).not.toHaveBeenCalled();
     expect(mocks.fetch).not.toHaveBeenCalled();
   });
@@ -172,12 +172,29 @@ describe('RU email code: durable pending -> delivery -> activation',()=>{
     mocks.rpc.mockResolvedValueOnce({data:false,error:null})
       .mockResolvedValueOnce({data:true,error:null})
       .mockResolvedValueOnce({data:null,error:{message:'isolated SQL failure'}});
-    expect(await consumeRuEmailCode('user@example.ru','12345678')).toBeNull();
-    expect(await consumeRuEmailCode('user@example.ru','12345678')).toBe('user@example.ru');
-    await expect(consumeRuEmailCode('user@example.ru','12345678'))
+    expect(await consumeRuEmailCode('user@example.ru','12345678',req())).toBeNull();
+    expect(await consumeRuEmailCode('user@example.ru','12345678',req())).toBe('user@example.ru');
+    await expect(consumeRuEmailCode('user@example.ru','12345678',req()))
       .rejects.toThrow('RU_AUTH_OTP_DATABASE_NOT_READY');
     expect(mocks.rpc.mock.calls.map(([name])=>name)).toEqual([
       'ru_auth_consume_email_code','ru_auth_consume_email_code','ru_auth_consume_email_code',
     ]);
+    for(const [,args] of mocks.rpc.mock.calls) expect(args.p_ip_hash).toMatch(/^[a-f0-9]{64}$/);
   });
+  it('uses only the trusted edge IP to rate-limit verification attempts',async()=>{
+    vi.stubEnv('ASI_RU_AUTH_TRUST_PROXY','true');
+    vi.stubEnv('VERCEL','1');
+    mocks.rpc.mockResolvedValue({data:false,error:null});
+    const request=new Request('https://www.asi-global.ru/api/auth/email-code/verify',{
+      headers:{'x-vercel-forwarded-for':'203.0.113.25',
+        'x-forwarded-for':'198.51.100.7','x-real-ip':'192.0.2.5'},
+    });
+    expect(await consumeRuEmailCode('user@example.ru','12345678',request)).toBeNull();
+    expect(mocks.rpc).toHaveBeenCalledWith('ru_auth_consume_email_code',{
+      p_email:'user@example.ru',
+      p_hash:expect.stringMatching(/^[a-f0-9]{64}$/),
+      p_ip_hash:emailCodeIpDigest('203.0.113.25',pepper),
+    });
+  });
+
 });
