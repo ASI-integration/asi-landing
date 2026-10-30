@@ -190,6 +190,9 @@ def apply(package):
         i.write_new(temp/'node',i.regular_bytes(ENGINE/'node',root=True,limit=150000000),0o755)
         i.write_new(temp/'bwrap',i.regular_bytes(ENGINE/'bwrap',root=True),0o755)
         i.write_new(temp/'beget-install.py',files['beget-install.py'],0o644)
+        # The service UID must be able to traverse the committed runtime root.
+        # Keep the work-in-progress hidden until all exact content is written.
+        os.chmod(temp,0o755)
         # This claim is irreversible, including when the swap fails/rolls back.
         old_generation(i);stopped(i)
         scope(i.signed('repair-approval.json',owner),oldraw,newraw,old,new,int(time.time()*1000))
