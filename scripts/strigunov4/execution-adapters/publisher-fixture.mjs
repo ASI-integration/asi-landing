@@ -13,6 +13,26 @@ const repo='ASI-integration/asi-landing',prefix='/repos/'+repo+'/';
 export const secondTarget='scripts/strigunov4/test_c4_unit_readonly.py';
 export const target='scripts/strigunov4/protected_c4_unit_apply.py';
 const git=(cwd,args,input,extraEnv={})=>execFileSync('/usr/bin/git',args,{cwd,input,encoding:'utf8',env:{PATH:'/usr/bin:/bin',HOME:'/nonexistent',GIT_CONFIG_NOSYSTEM:'1',GIT_CONFIG_GLOBAL:'/dev/null',GIT_AUTHOR_NAME:'Fixture',GIT_AUTHOR_EMAIL:'fixture@example.invalid',GIT_COMMITTER_NAME:'Fixture',GIT_COMMITTER_EMAIL:'fixture@example.invalid',...extraEnv}}).trim();
+// Reproduce Git tree modes even under a private 0077 host umask. This is
+// TEST FIXTURE ONLY: real Publisher scratch verification remains fail-closed.
+async function restoreFixtureGitFileModes(dir) {
+ const entries=git(dir,['ls-files','--stage','-z']).split('\0').filter(Boolean);
+ for(const entry of entries){
+  const m=/^(100644|100755) [a-f0-9]{40} 0\t(.+)$/.exec(entry);
+  if(!m||!m[2]||m[2].startsWith('/')||
+     m[2].split('/').some(part=>!part||part==='.'||part==='..'||part==='.git'))
+    throw Error('FIXTURE_GIT_FILE_MODE');
+  const file=path.join(dir,m[2]),st=await fs.lstat(file);
+  if(!st.isFile()||st.isSymbolicLink()||st.nlink!==1)
+    throw Error('FIXTURE_GIT_FILE_TYPE');
+  const expected=m[1]==='100755'?0o755:0o644;
+  if((st.mode & 0o777)!==expected)await fs.chmod(file,expected);
+  const after=await fs.lstat(file);
+  if(!after.isFile()||after.isSymbolicLink()||after.ino!==st.ino||
+     (after.mode & 0o777)!==expected)
+    throw Error('FIXTURE_GIT_FILE_MODE_CHANGED');
+ }
+}
 const oid=(kind,text)=>createHash('sha1').update(`${kind} ${Buffer.byteLength(text)}\0`).update(text).digest('hex');
 export async function fixture(t,options={}){
  const base=await fs.mkdtemp(path.join(os.tmpdir(),'asi-publisher-')),root=path.join(base,'isolated'),legacy=path.join(base,'legacy');
@@ -30,7 +50,7 @@ export async function fixture(t,options={}){
  let catalog=['fixture-a','fixture-b'].map((id,i)=>({id,kind:'github-publisher',stage:'S4-G1',workOrderId:options.distinctWorkOrders&&i===0?'g1-engine-receipt-replay-test':'g1-unit-apply-source',repo,sha,pr:null,
   branch:'asi/engine-task/'+id,changes:[{path:options.distinctWorkOrders&&i===0?secondTarget:target,beforeSha256:digest('VALUE = 1\n'),content:`VALUE = ${i+2}\n`}]}));
  if(options.beget)catalog=await Promise.all(['identity','races'].map(async part=>({id:`beget-g2-witness-${part}-v1`,kind:'github-publisher',stage:'S4-G2',workOrderId:`beget-g2-witness-${part}-v1`,repo,sha,pr:null,branch:`asi/engine-task/beget-g2-witness-${part}-v1`,changes:[{path:`scripts/strigunov4/test_beget_g2_witness_${part}_v1.py`,beforeSha256:null,content:await fs.readFile(new URL(`./beget-work-orders/${part}.py.txt`,import.meta.url),'utf8')}]})));
- for(const task of catalog){const dir=path.join(root,'scratchpads',task.id);git(base,['clone','-q','--no-hardlinks',seed,dir]);git(dir,['checkout','--detach','-q']);await fs.chmod(dir,0o700);}
+ for(const task of catalog){const dir=path.join(root,'scratchpads',task.id);git(base,['clone','-q','--no-hardlinks',seed,dir]);git(dir,['checkout','--detach','-q']);await fs.chmod(dir,0o700);await restoreFixtureGitFileModes(dir);}
  const prs=Object.fromEntries([[509,'b3c8ff2e4904b0b503197d29aa217773918831bc'],[508,'8ac8e8ac11e39ac070ccc058218e3b73190cb43f'],[520,'6693312b0a94b8afcee3a34907055ce301a5fb3e']].map(([number,head])=>[number,{number,head,state:'open',merged:false}]));
  const snapshot={mainSha:sha,contract:{schemaVersion:'asi.demo-release.v1',releaseId:'STRIGUNOV4-READY-FOR-DEMO',state:'FROZEN_ON_OWNER_MERGE',
   stages:[1,2,3,4,5,6].map(i=>({id:`S4-G${i}`,status:i===1?'IN_PROGRESS':'NOT_STARTED',proof:[],files:i===1?[target,...(options.distinctWorkOrders?[secondTarget]:[])]:[],
