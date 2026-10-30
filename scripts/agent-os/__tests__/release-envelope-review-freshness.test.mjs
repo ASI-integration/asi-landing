@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {inspectFreshIndependentReview as check} from './release-envelope-review-freshness.mjs';
+import {inspectFreshIndependentReview as check} from '../release-envelope-review-freshness.mjs';
 const H='a'.repeat(40), OTHER='b'.repeat(40), NOW=1793390000000;
 const ISO=new Date(NOW-2000).toISOString().replace('.000Z','Z');
 const expected={repository:'ASI-integration/asi-landing',headSha:H,
