@@ -310,3 +310,26 @@ test('prior-envelope clock high-water blocks rollback on newly signed digest',as
   }finally{await f.close()}
 });
 
+
+test('legacy 16-child envelope history denies a 17th without resetting previous durable claims',async()=>{
+  const f=await fixture();
+  try{
+    for(let i=1;i<=16;i++){
+      const scopeDigest=i.toString(16).padStart(64,'0');
+      const response=await f.budget.reserve({envelope:env({envelopeDigest:scopeDigest}),
+        effect:effect('legacy-child-'+i,'github-read',{envelopeDigest:scopeDigest})});
+      assert.equal(response.status,'RESERVED','historical child '+i);
+    }
+    const before=await f.read();
+    assert.equal(Object.keys(before.standingDelegationBudget.envelopes).length,16);
+    const next='11'.padStart(64,'0');
+    const denied=await f.budget.reserve({envelope:env({envelopeDigest:next}),
+      effect:effect('legacy-child-17','github-read',{envelopeDigest:next})});
+    assert.equal(denied.reason,'BUDGET_HISTORY_FULL');
+    assert.deepEqual((await f.read()).standingDelegationBudget,before.standingDelegationBudget);
+    const reopened=createStandingPublisherBudget({store:f.store,ledger:await f.read(),clock:()=>at});
+    assert.equal((await reopened.reserve({envelope:env({envelopeDigest:next}),
+      effect:effect('legacy-child-17-retry','github-read',{envelopeDigest:next})})).reason,'BUDGET_HISTORY_FULL');
+    assert.deepEqual((await f.read()).standingDelegationBudget,before.standingDelegationBudget);
+  }finally{await f.close()}
+});
