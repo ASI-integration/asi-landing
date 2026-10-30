@@ -211,6 +211,9 @@ def apply(package):
     # Ed25519 signature. A chat request, branch comment or source PR cannot sign.
     i=installer()
     safe(os.geteuid()==0 and os.uname().nodename==HOST,'REPAIR_ROOT_HOST_REQUIRED')
+    # Never spend a one-use repair claim on a package that cannot be activated.
+    safe(callable(getattr(i,'repaired_staged_state',None)),
+         'REPAIR_ACTIVATION_PATH_UNAVAILABLE')
     # The repair executable itself must be a protected root-owned file: an
     # editable operator checkout is never a valid root release executable.
     repair_script=i.regular_bytes(Path(__file__).resolve(),root=True)
