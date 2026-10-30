@@ -18,7 +18,7 @@ const link=(c,p)=>({childDigest:c.digest,parentDigest:p.digest,issuerKeyDigest:h
   target:c.target,action:c.action,securityDigest:c.securityDigest,policyDigest:c.policyDigest});
 const claim=(id,time,kind='create-commit')=>{
   const method=kind==='github-read'?'GET':'POST', route=kind==='github-read'?'pulls/552':'git/commits';
-  const payloadSha256=h(id+'-payload');
+  const payloadSha256=kind==='github-read'?h(''):h(id+'-payload');
   return {effectId:id,taskId:'task-'+id,taskSha:sha40,headSha:sha40,kind,method,route,payloadSha256,
     requestSha256:h(JSON.stringify({method,route,payloadSha256})),reservedAt:time,phase:'RESERVED',
     publicationJournal:`publication-task-${id}.json`};
@@ -114,4 +114,67 @@ test('child cannot extend beyond parent or exceed 14 days',()=>{
 test('reject accessors rather than reading hostile parent properties',()=>{
   const f=fixture();Object.defineProperty(f.parent,'digest',{get(){throw Error('unexpected getter');}});
   assert.equal(assess(f).reason,'PARENT_INVALID_OR_EXPIRED');
+});
+
+// These are source-contract probes, never native descriptor/lock/fsync evidence.
+test('metered GET uses the exact empty-body hash, not a chosen payload',()=>{
+  const f=fixture();f.effect.kind='github-read';f.effect.method='GET';f.effect.route='pulls/552';
+  f.effect.payloadSha256=h('not-empty');
+  f.effect.requestSha256=h(JSON.stringify({method:f.effect.method,route:f.effect.route,
+    payloadSha256:f.effect.payloadSha256}));
+  assert.equal(assess(f).reason,'PARENT_EFFECT_INVALID');
+});
+test('a mislabeled POST cannot consume GET budget or hide a write',()=>{
+  const f=fixture();f.effect.kind='github-read';f.effect.method='POST';
+  f.effect.route='git/commits';
+  assert.equal(assess(f).reason,'PARENT_EFFECT_INVALID');
+});
+test('compiled GraphQL POST shape is a read but still not authentication',()=>{
+  const f=fixture();f.effect.kind='github-read';f.effect.method='POST';
+  f.effect.route='graphql';f.effect.readProtocol='compiled-threads';
+  f.effect.requestSha256=h(JSON.stringify({method:f.effect.method,route:f.effect.route,
+    payloadSha256:f.effect.payloadSha256}));
+  const r=assess(f);assert.equal(r.status,'PARENT_BUDGET_SOURCE_ELIGIBLE');
+  assert.equal(r.writes,0);assert.equal(r.authorized,false);
+});
+test('fabricated compiled read protocol with GET or wrong route denied',()=>{
+  const f=fixture();f.effect.kind='github-read';f.effect.method='GET';
+  f.effect.route='graphql';f.effect.readProtocol='compiled-threads';
+  f.effect.requestSha256=h(JSON.stringify({method:f.effect.method,route:f.effect.route,
+    payloadSha256:f.effect.payloadSha256}));
+  assert.equal(assess(f).reason,'PARENT_EFFECT_INVALID');
+  f.effect.method='POST';f.effect.route='git/commits';
+  f.effect.requestSha256=h(JSON.stringify({method:f.effect.method,route:f.effect.route,
+    payloadSha256:f.effect.payloadSha256}));
+  assert.equal(assess(f).reason,'PARENT_EFFECT_INVALID');
+});
+test('obsolete github-compiled-read kind is not a native Publisher kind',()=>{
+  const f=fixture();f.effect.kind='github-compiled-read';f.effect.method='POST';
+  f.effect.route='graphql';f.effect.readProtocol='compiled-threads';
+  f.effect.requestSha256=h(JSON.stringify({method:f.effect.method,route:f.effect.route,
+    payloadSha256:f.effect.payloadSha256}));
+  assert.equal(assess(f).reason,'PARENT_EFFECT_INVALID');
+});
+test('wrong POST route or path-traversal cannot pass source validation',()=>{
+  const f=fixture();f.effect.route='git/refs';
+  f.effect.requestSha256=h(JSON.stringify({method:f.effect.method,route:f.effect.route,
+    payloadSha256:f.effect.payloadSha256}));
+  assert.equal(assess(f).reason,'PARENT_EFFECT_INVALID');
+  f.effect.route='git/../commits';
+  f.effect.requestSha256=h(JSON.stringify({method:f.effect.method,route:f.effect.route,
+    payloadSha256:f.effect.payloadSha256}));
+  assert.equal(assess(f).reason,'PARENT_EFFECT_INVALID');
+});
+test('tampered historical read-method cannot undercount a POST',()=>{
+  const f=fixture();const entry=f.ledger.standingDelegationBudget.envelopes[f.child.digest];
+  const c=claim('malformed',start+500,'github-read');
+  c.method='POST';c.route='git/commits';
+  c.requestSha256=h(JSON.stringify({method:c.method,route:c.route,payloadSha256:c.payloadSha256}));
+  entry.claims=[c];entry.operations=1;entry.requests=1;entry.writes=0;
+  entry.lastObservedAt=c.reservedAt;f.now=start+1000;
+  assert.equal(assess(f).reason,'PARENT_HISTORY_REPLAY_OR_CORRUPTION');
+});
+test('adversarial proxy throws fail-closed rather than crashing the caller',()=>{
+  const f=fixture();f.childLinks=new Proxy({}, {ownKeys(){throw Error('untrusted proxy');}});
+  assert.equal(assess(f).reason,'PARENT_UNSAFE_INPUT');
 });

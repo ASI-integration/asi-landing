@@ -23,6 +23,10 @@ const CHILD_MS = 14 * 86400000;
 const MAX_CHILDREN = 64;
 const MAX_CLAIMS = 256; // Existing bounded Publisher request history.
 const WRITES = new Set(['create-tree','create-commit','create-branch','create-draft-pr']);
+const READ = 'github-read';
+const POST_ROUTES = Object.freeze({'create-tree':'git/trees','create-commit':'git/commits',
+  'create-branch':'git/refs','create-draft-pr':'pulls'});
+const WIRE_ROUTE = /^[A-Za-z0-9_/?=&:%.-]{1,512}$/;
 const SHA = v => createHash('sha256').update(v).digest('hex');
 const deny = reason => Object.freeze({status:'PARENT_BUDGET_DENIED', reason, authorized:false});
 const plain = x => x && typeof x === 'object' && !Array.isArray(x) &&
@@ -32,7 +36,24 @@ const plain = x => x && typeof x === 'object' && !Array.isArray(x) &&
 const validTime = t => Number.isSafeInteger(t) && t >= 0;
 const same = (a,b) => a === b;
 const isWrite = k => WRITES.has(k);
-const isRead = k => k === 'github-read' || k === 'github-compiled-read';
+const isRead = k => k === READ;
+// Match #552's existing Publisher journal wire grammar. A GraphQL POST is
+// metered as a read only with the native private compiled-read provenance;
+// the `readProtocol` string by itself NEVER proves that provenance here.
+function validWire(e) {
+  if (!hex40(e.taskSha) || !hex64(e.payloadSha256) || !hex64(e.requestSha256) ||
+      typeof e.route !== 'string' || !WIRE_ROUTE.test(e.route) ||
+      e.route.startsWith('/') || e.route.includes('..')) return false;
+  const read=isRead(e.kind), compiled=read&&e.readProtocol==='compiled-threads';
+  if (compiled) {
+    if (e.method!=='POST' || e.route!=='graphql') return false;
+  } else {
+    if (e.readProtocol!==undefined || e.method!==(read?'GET':'POST')) return false;
+    if (read ? e.payloadSha256!==SHA('') : POST_ROUTES[e.kind]!==e.route) return false;
+  }
+  return e.requestSha256===SHA(JSON.stringify({method:e.method,route:e.route,
+    payloadSha256:e.payloadSha256}));
+}
 
 function parentScope(p, now) {
   return plain(p) && p.schema === 'asi.standing-parent.proposal.v1' &&
@@ -63,10 +84,7 @@ function checkClaim(c, s) {
       !validTime(c.reservedAt) || c.reservedAt < s.notBefore ||
       c.reservedAt >= s.expiresAt || c.phase !== 'RESERVED' ||
       c.publicationJournal !== `publication-${c.taskId}.json` ||
-      (!isRead(c.kind) && !isWrite(c.kind)) ||
-      !['GET','POST'].includes(c.method) || typeof c.route !== 'string' ||
-      c.requestSha256 !== SHA(JSON.stringify({method:c.method,route:c.route,
-        payloadSha256:c.payloadSha256}))) return false;
+      (!isRead(c.kind) && !isWrite(c.kind)) || !validWire(c)) return false;
   return true;
 }
 function boundLink(link, scope, p) {
@@ -80,6 +98,7 @@ function boundLink(link, scope, p) {
 /** Pure contract check only; never implies a verified signer or atomic claim. */
 export function assessParentBudgetProposal({parent, child, childLinks, ledger, effect, now,
   revokedParentDigests=[]}={}) {
+  try {
   if (!validTime(now) || !parentScope(parent,now)) return deny('PARENT_INVALID_OR_EXPIRED');
   if (!Array.isArray(revokedParentDigests) || !revokedParentDigests.every(hex64) ||
       revokedParentDigests.includes(parent.digest)) return deny('PARENT_REVOKED_OR_UNVERIFIED_REVOCATION');
@@ -90,7 +109,8 @@ export function assessParentBudgetProposal({parent, child, childLinks, ledger, e
       !childScope(child,parent) || !boundLink(childLinks[child.digest],child,parent))
     return deny('PARENT_HISTORY_OR_LINK_INVALID');
   if (!plain(effect) || !ident(effect.effectId) || !hex64(effect.requestSha256) ||
-      (!isRead(effect.kind) && !isWrite(effect.kind))) return deny('PARENT_EFFECT_INVALID');
+      (!isRead(effect.kind) && !isWrite(effect.kind)) ||
+      !validWire(effect)) return deny('PARENT_EFFECT_INVALID');
   const entries=Object.entries(ledger.standingDelegationBudget.envelopes);
   if (entries.length > MAX_CHILDREN) return deny('PARENT_HISTORY_FULL');
   let operations=0, requests=0, writes=0, newest=0;
@@ -141,4 +161,5 @@ export function assessParentBudgetProposal({parent, child, childLinks, ledger, e
     parentDigest:parent.digest,childDigest:child.digest,
     operations:operations+1,requests:requests+1,writes:writes+plusWrite,
     retainedChildren:entries.length+Number(!childEntry)});
+  } catch { return deny('PARENT_UNSAFE_INPUT'); }
 }
