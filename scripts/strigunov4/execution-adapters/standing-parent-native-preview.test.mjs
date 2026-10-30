@@ -105,7 +105,7 @@ function signedInput(){
   const signedParent=signed(parent,owner.privateKey);
   const child={...d.child,baseSha:task().sha,stage:'S4-G2',
     approvedRoutineClasses:['stage4-source-maintenance'],
-    schema:'asi.standing-child.proposal.v1',parentDigest:sha(signedParent.payload)};
+    schema:'asi.standing-child.proposal.v1',paidApiUsd:0,parentDigest:sha(signedParent.payload)};
   delete child.digest;
   const signedChild=signed(child,verifier.privateKey);
   const ownerPublicKey=owner.publicKey.export({type:'spki',format:'pem'});
@@ -122,7 +122,7 @@ test('both signed source payloads bind to real state.execute lease, still no per
   const {result,calls}=await fixture(t,async({store,transaction,lease})=>{
     const before=JSON.stringify(lease.ledger.standingDelegationBudget);
     const outcome=inspectSigned({store,transaction,...args});
-    console.log('SIGNED_PREVIEW_DIAGNOSTIC',JSON.stringify(outcome));
+    assert.equal(outcome.status,'SIGNED_PARENT_NATIVE_SOURCE_ELIGIBLE',JSON.stringify(outcome));
     assert.equal(outcome.authorized,false);
     assert.equal(outcome.transactionId,lease.transactionId);
     assert.equal(outcome.taskId,args.effect.taskId);
