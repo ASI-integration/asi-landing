@@ -113,7 +113,9 @@ export function inspectSignedParentChildSource({
     const childLink=Object.freeze({childDigest:child.digest,parentDigest:parent.digest,
       issuerKeyDigest:pinned.verifierKeySha256,notBefore:c.notBefore,expiresAt:c.expiresAt,
       repo:c.repo,environment:c.environment,target:c.target,action:c.action,
-      securityDigest:c.securityDigest,policyDigest:c.policyDigest});
+      securityDigest:c.securityDigest,policyDigest:c.policyDigest,
+      paidApiUsd:c.paidApiUsd,maxOperations:c.maxOperations,
+      maxRequests:c.maxRequests,maxWrites:c.maxWrites});
     return Object.freeze({status:'SIGNED_PARENT_CHILD_SOURCE_VERIFIED',authorized:false,
       parent,child,childLink,ownerKeySha256:pinned.ownerKeySha256,
       verifierKeySha256:pinned.verifierKeySha256,baseSha:pinned.baseSha,
