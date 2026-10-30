@@ -51,6 +51,24 @@ describe('RU email OTP IP quota cannot be split by spoofed headers',()=>{
     expect(trustedClientIp(new Request('https://www.asi-global.ru/'))).toBe('unattributed');
   });
 
+  it('charges equivalent IPv6 spellings to one HMAC-protected hourly IP quota',()=>{
+    vi.stubEnv('ASI_RU_AUTH_TRUST_PROXY','true');
+    vi.stubEnv('VERCEL','1');
+    for(const variants of [
+      ['2001:0DB8:0000:0000:0000:0000:0000:0001','2001:db8::1'],
+      ['::ffff:192.0.2.1','::ffff:c000:201'],
+    ]) {
+      const digests=variants.map(ip=>{
+        const request=new Request('https://www.asi-global.ru/',{
+          headers:{'x-vercel-forwarded-for':ip},
+        });
+        return emailCodeIpDigest(trustedClientIp(request),pepper);
+      });
+      expect(digests[0]).toBe(digests[1]);
+      expect(digests[0]).toMatch(/^[a-f0-9]{64}$/);
+    }
+  });
+
   it('requires explicit trusted proxy for a single self-hosted IP',()=>{
     vi.stubEnv('VERCEL','');
     const request=new Request('https://www.asi-global.ru/',{
