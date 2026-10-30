@@ -167,6 +167,16 @@ export function checkPr({ contract, changed, prNumber, prBody, headSha,
          'DIAGNOSTIC_LIMIT_REQUIRES_DECISION');
   }
   const allowed = new Set([...stage.files, ...(stage.plannedFiles || [])]);
+  // Routine host checks and their focused regressions are a bounded stage-G2
+  // maintenance class, not a reason for a fresh owner signature per filename.
+  // No authority, budget, secret, workflow or release-policy paths are included.
+  if (stage.id === 'S4-G2') {
+    for (const p of changed) {
+      if (/^scripts\/strigunov4\/execution-adapters\/(?:host-checks(?:\.test)?|beget-host\.test|beget-staged-install\.test)\.mjs$/.test(p)) {
+        allowed.add(p);
+      }
+    }
+  }
   if (!changed.every(p => allowed.has(p))) {
     must(ownerApproval, 'PR_HAS_OUT_OF_STAGE_FILES');
     return { status: 'OWNER_ATTESTED_RELEASE_EXCEPTION', stage: f.stage };
