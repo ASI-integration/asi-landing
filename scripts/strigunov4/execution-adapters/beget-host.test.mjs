@@ -232,10 +232,12 @@ test('Bubblewrap sandbox keeps network unshared and host mounts read-only after 
   for(const required of ['--die-with-parent','--new-session','--unshare-all','--clearenv','--ro-bind','--tmpfs']) {
     assert.ok(args.includes(required), 'missing '+required);
   }
-  for(const forbidden of ['--share-net','--bind','--bind-try','--setenv','--unshare-user-try']) {
-    if(forbidden==='--setenv') continue; // fixed PATH/LANG variables are intentional
+  for(const forbidden of ['--share-net','--bind','--bind-try','--unshare-user-try']) {
     assert.equal(args.includes(forbidden),false,'unsafe '+forbidden);
   }
+  const envNames=[];
+  for(let i=0;i<args.length-2;i++)if(args[i]==='--setenv')envNames.push(args[i+1]);
+  assert.deepEqual(envNames,['PATH','LANG'],'sandbox must not inherit extra environment variables');
   const ro=[];
   for(let i=0;i<args.length-2;i++) if(args[i]==='--ro-bind')ro.push([args[i+1],args[i+2]]);
   for(const expected of [['/usr','/usr'],['/lib','/lib'],['/tmp/asi-bwrap-fixture','/work']]) {
