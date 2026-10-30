@@ -145,6 +145,15 @@ class SourceOnlyRepairTests(TestCase):
                         with self.assertRaisesRegex(RuntimeError,
                             'REPAIR_OWNER_VERIFIED_CI_SCOPE|REPAIR_SOURCE_REVIEW_REQUIRED'):
                             R.independent_evidence(Reader(),grant,NEW)
+    def test_repair_cannot_consume_claim_without_compatible_activation(self):
+        class OldInstaller: pass
+        with mock.patch.object(R,'installer',return_value=OldInstaller()), \
+             mock.patch.object(R.os,'geteuid',return_value=0), \
+             mock.patch.object(R.os,'uname',return_value=SimpleNamespace(nodename=R.HOST)), \
+             mock.patch.object(R,'old_generation',side_effect=AssertionError('unexpected read')):
+            with self.assertRaisesRegex(RuntimeError,'REPAIR_ACTIVATION_PATH_UNAVAILABLE'):
+                R.apply(Path('/tmp/inert-package'))
+
     def test_root_ownership_required_before_any_package_read_or_write(self):
         with mock.patch.object(R.os,'geteuid',return_value=1000):
             with self.assertRaisesRegex(RuntimeError,'REPAIR_ROOT_HOST_REQUIRED'):
@@ -184,6 +193,7 @@ class IsolatedAtomicRepairTests(TestCase):
             grant=valid()
             grant['oldManifestSha256']=hashbytes(original)
             class FakeInstaller:
+                def repaired_staged_state(self,*args): return None
                 def prepared(self,package):return newraw,NEW,files
                 def signed(self,name,public):
                     assert name=='repair-approval.json'
@@ -280,5 +290,185 @@ class IsolatedAtomicRepairTests(TestCase):
             nested=other/'child';nested.mkdir()
             with self.assertRaisesRegex(RuntimeError,'REPAIR_EXCHANGE_PARENT'):
                 R.exchange_directories(left,nested)
+
+
+class RepairedActivationCompatibilityTests(TestCase):
+    """Only source-level fixtures: fake keys, fake authority files, no root effects."""
+
+    def test_repaired_generation_requires_signed_original_and_new_current_proof(self):
+        path=PATH.with_name('beget-install.py')
+        spec=importlib.util.spec_from_file_location('beget_compat_fixture',path)
+        i=importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(i)
+        with TemporaryDirectory(prefix='asi-repair-activate-compat-') as tmp:
+            root=Path(tmp)
+            auth=root/'auth'; runtime=root/'runtime'; state=root/'state'
+            auth.mkdir();runtime.mkdir();state.mkdir(mode=0o700)
+            node=b'inert-node'; bwrap=b'inert-bwrap'
+            source_old=b'export const old = 1;'
+            source_new=b'export const new = 2;'
+            old_path='scripts/strigunov4/old.mjs'
+            new_path='scripts/strigunov4/new.mjs'
+            old={'schema':'asi.beget-engine-source.v1','baseSha':'a'*40,
+                 'sourceSha':'b'*40,'unitSha256':'c'*64,
+                 'files':[{'path':old_path,'sha256':hashbytes(source_old)}]}
+            new={'schema':'asi.beget-engine-source.v1','baseSha':'d'*40,
+                 'sourceSha':'e'*40,'unitSha256':old['unitSha256'],
+                 'catalogSha256':'f'*64}
+            raw_old=json.dumps(old,sort_keys=True).encode()
+            raw_new=json.dumps(new,sort_keys=True).encode()
+            oldhash=hashbytes(raw_old); newhash=hashbytes(raw_new)
+            backup=Path('/opt/asi-engine-staged-backup-'+oldhash[:16])
+            receipt_path=auth/('repaired-stage-'+newhash+'.json')
+            repair_grant_raw=b'fixture-signed-repair-envelope'
+            receipt={'schema':'asi.beget-disabled-repaired-stage.v1',
+                     'oldManifestSha256':oldhash,'newManifestSha256':newhash,
+                     'serviceStarted':False,'originalBackup':str(backup),
+                     'ownerGrantSha256':hashbytes(repair_grant_raw)}
+            receipt_path.write_text(json.dumps(receipt))
+            old_stage={'schema':i.STAGE_SCHEMA,'host':i.HOST,'unit':i.UNIT,
+                       'manifestSha256':oldhash,'sourceSha':old['sourceSha'],
+                       'baseSha':old['baseSha'],'unitSha256':old['unitSha256'],
+                       'actions':i.STAGE_ACTIONS,
+                       'notBefore':NOW-120000,'expiresAt':NOW+600000}
+            repair_review={'schema':'asi.beget-staged-repair-review.v1',
+                           'result':'PASS','mode':'OWNER_VERIFIED_CI',
+                           'independent':False,'ownerId':207600140,
+                           'scope':'BEGET_G2_TWO_DRAFT_WITNESSES',
+                           'validationRunId':123456789,'findings':0,
+                           'repairScriptSha256':'1'*64,
+                           'protectedBaseSha':new['baseSha'],
+                           'reviewedPr':559,'reviewedHead':'2'*40}
+            native={'host':i.HOST,'unitSha256':new['unitSha256'],
+                    'bwrapSha256':hashbytes(bwrap),'manifestSha256':newhash,
+                    'result':'PASS','networkDenied':True,
+                    'authorityInaccessible':True}
+            payloads={
+                str(receipt_path):json.dumps(receipt).encode(),
+                str(backup/'manifest.json'):raw_old,
+                str(backup/old_path):source_old,
+                str(backup/'node'):node,
+                str(backup/'bwrap'):bwrap,
+                str(auth/('staged-isolation-'+oldhash+'.json')):
+                     json.dumps({'schema':'asi.beget-staged-isolation.v1',
+                         'manifestSha256':oldhash,'unitSha256':old['unitSha256'],
+                         'nodeSha256':hashbytes(node),'bwrapSha256':hashbytes(bwrap),
+                         'uid':os.getuid()}).encode(),
+                str(auth/('stage-claim-'+oldhash+'.json')):
+                    json.dumps({'manifestSha256':oldhash,'oneUse':True}).encode(),
+                str(auth/'repair-approval.json'):repair_grant_raw,
+                str(auth/'source-review.json'):b'{"result":"PASS"}',
+                str(auth/'native-isolation.json'):json.dumps(native).encode(),
+                str(auth/'repair-review.json'):json.dumps(repair_review).encode(),
+                str(auth/('repair-claim-'+oldhash+'-'+newhash+'.json')):
+                    json.dumps({'oldManifestSha256':oldhash,
+                                'newManifestSha256':newhash,'oneUse':True}).encode(),
+                str(runtime/'manifest.json'):raw_new,
+                str(runtime/new_path):source_new,
+                str(runtime/'beget-install.py'):b'fixture-new-installer',
+                str(runtime/'node'):node,
+                str(runtime/'bwrap'):bwrap,
+                str(Path('/etc/systemd/system')/i.UNIT):b'fixture-unit'
+            }
+            repair_grant={
+                'schema':'asi.beget-staged-generation-repair.v1',
+                'host':i.HOST,'unit':i.UNIT,'actions':R.ACTIONS,
+                'oldManifestSha256':oldhash,'newManifestSha256':newhash,
+                'oldBaseSha':old['baseSha'],'newBaseSha':new['baseSha'],
+                'newSourceSha':new['sourceSha'],'newCatalogSha256':new['catalogSha256'],
+                'unitSha256':new['unitSha256'],'repairScriptSha256':'1'*64,
+                'repairReviewHead':'2'*40,
+                'sourceReviewSha256':hashbytes(payloads[str(auth/'source-review.json')]),
+                'nativeIsolationSha256':hashbytes(payloads[str(auth/'native-isolation.json')]),
+                'repairReviewSha256':hashbytes(payloads[str(auth/'repair-review.json')]),
+                'notBefore':NOW-1000,'expiresAt':NOW+5000
+            }
+            def regular(path,root=False,limit=2000000):
+                return payloads[str(path)]
+            def signed(name,public):
+                return (old_stage if name=='stage-approval.json' else repair_grant).copy()
+            fake_identity=SimpleNamespace(pw_uid=os.getuid(),pw_gid=os.getgid(),
+                pw_shell='/usr/sbin/nologin',pw_dir=str(state))
+            files={new_path:source_new,'beget-install.py':b'fixture-new-installer',
+                   i.UNIT:b'fixture-unit'}
+            with mock.patch.object(i,'AUTH',auth), \
+                 mock.patch.object(i,'RUNTIME',runtime), \
+                 mock.patch.object(i,'STATE',state), \
+                 mock.patch.object(i,'NODE_SHA',hashbytes(node)), \
+                 mock.patch.object(i,'BWRAP_SHA',hashbytes(bwrap)), \
+                 mock.patch.object(i,'regular_bytes',side_effect=regular), \
+                 mock.patch.object(i,'signed',side_effect=signed), \
+                 mock.patch.object(i.pwd,'getpwnam',return_value=fake_identity), \
+                 mock.patch.object(i,'exact_disabled_unit_state'), \
+                 mock.patch.object(i,'verified_owner_ci_run') as verified:
+                self.assertEqual(i.verify_staged_generation(
+                    raw_new,new,files,b'fake-public',NOW),fake_identity)
+                verified.assert_called_once_with(
+                    123456789,311380800,'2'*40,'pull_request')
+
+                variants=[
+                    ('REPAIRED_STAGE_RECEIPT',str(receipt_path),
+                        {**receipt,'serviceStarted':True}),
+                    ('REPAIRED_BACKUP_MANIFEST',str(backup/'manifest.json'),
+                        b'wrong-manifest-bytes'),
+                    ('REPAIRED_OLD_STAGE_UNVERIFIED',
+                        str(auth/('stage-claim-'+oldhash+'.json')),
+                        {'manifestSha256':oldhash,'oneUse':False}),
+                    ('REPAIRED_NATIVE_GENERATION_UNVERIFIED',
+                        str(auth/'native-isolation.json'),
+                        {**native,'manifestSha256':'0'*64}),
+                    ('REPAIRED_RUNTIME_SOURCE',str(runtime/new_path),
+                        b'changed-source')
+                ]
+                for message,key,invalid in variants:
+                    original=payloads[key]
+                    payloads[key]=invalid if isinstance(invalid,bytes) else json.dumps(invalid).encode()
+                    # The signed evidence hash is updated for the native-only case;
+                    # otherwise changed protected bytes are denied still earlier.
+                    if key==str(auth/'native-isolation.json'):
+                        repair_grant['nativeIsolationSha256']=hashbytes(payloads[key])
+                    with self.subTest(failure=message):
+                        with self.assertRaisesRegex(i.Block,message):
+                            i.verify_staged_generation(
+                                raw_new,new,files,b'fake-public',NOW)
+                    payloads[key]=original
+                    if key==str(auth/'native-isolation.json'):
+                        repair_grant['nativeIsolationSha256']=hashbytes(original)
+                with self.assertRaisesRegex(i.Block,'REPAIRED_SIGNED_SCOPE'):
+                    i.verify_staged_generation(raw_new,new,files,b'fake-public',NOW+5000)
+
+    def test_repaired_route_never_falls_back_on_invalid_receipt(self):
+        spec=importlib.util.spec_from_file_location('beget_compat_selector',
+                                                   PATH.with_name('beget-install.py'))
+        i=importlib.util.module_from_spec(spec);spec.loader.exec_module(i)
+        with TemporaryDirectory(prefix='asi-repair-route-') as folder:
+            with mock.patch.object(i,'AUTH',Path(folder)), \
+                 mock.patch.object(i,'repaired_staged_state',
+                                   side_effect=RuntimeError('REPAIRED_DENIED')), \
+                 mock.patch.object(i,'staged_state',
+                                   side_effect=AssertionError('unsafe fallback')):
+                raw=b'exact-new-manifest'
+                receipt=Path(folder)/('repaired-stage-'+hashbytes(raw)+'.json')
+                receipt.write_text('not-even-json')
+                with self.assertRaisesRegex(RuntimeError,'REPAIRED_DENIED'):
+                    i.verify_staged_generation(raw,{}, {},b'public',NOW)
+
+    def test_original_stage_path_remains_unchanged_without_repair_receipt(self):
+        spec=importlib.util.spec_from_file_location('beget_compat_original',
+                                                   PATH.with_name('beget-install.py'))
+        i=importlib.util.module_from_spec(spec);spec.loader.exec_module(i)
+        with TemporaryDirectory(prefix='asi-original-stage-route-') as folder:
+            with mock.patch.object(i,'AUTH',Path(folder)), \
+                 mock.patch.object(i,'staged_state',return_value='original') as stage, \
+                 mock.patch.object(i,'signed',return_value={'notBefore':1}) as signed, \
+                 mock.patch.object(i,'stage_scope') as check, \
+                 mock.patch.object(i,'repaired_staged_state',
+                                   side_effect=AssertionError('wrong path')):
+                raw=b'original-package'
+                self.assertEqual(i.verify_staged_generation(
+                    raw,{}, {},b'public',NOW),'original')
+                stage.assert_called_once()
+                signed.assert_called_once_with('stage-approval.json',b'public')
+                check.assert_called_once()
 
 if __name__=='__main__':main()
