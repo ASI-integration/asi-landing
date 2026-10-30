@@ -11,6 +11,17 @@ const sql = readFileSync(
 const count = (pattern: RegExp): number => [...sql.matchAll(pattern)].length;
 
 describe('RU auth SQL draft structural integrity (no database access)', () => {
+  it('installs atomically and fails closed if unexpected RU auth objects already exist', () => {
+    // A new migration must never silently accept an attacker-owned or stale
+    // table/function with the right name but wrong schema or permissions.
+    expect(sql).toMatch(/^BEGIN;$/m);
+    expect(sql.trimEnd().endsWith('COMMIT;')).toBe(true);
+    expect(count(/^BEGIN;$/gm)).toBe(1);
+    expect(count(/^COMMIT;$/gm)).toBe(1);
+    expect(sql).not.toMatch(/CREATE (?:TABLE|INDEX) IF NOT EXISTS/);
+    expect(sql).not.toMatch(/CREATE OR REPLACE FUNCTION/);
+  });
+
   it('keeps each RPC declaration exactly once with complete dollar quoting', () => {
     for (const name of [
       'ru_auth_issue_email_code', 'ru_auth_activate_email_code',
@@ -42,10 +53,10 @@ describe('RU auth SQL draft structural integrity (no database access)', () => {
     // PostgreSQL IF treats NULL as not TRUE. Without explicit IS NULL,
     // "code_hash <> NULL" also evaluates to NULL and could reach success.
     // Source integrity only: a real isolated PG execution is still mandatory.
-    const issue = sql.split('CREATE OR REPLACE FUNCTION public.ru_auth_issue_email_code')[1]
-      ?.split('CREATE OR REPLACE FUNCTION public.ru_auth_activate_email_code')[0] ?? '';
-    const consume = sql.split('CREATE OR REPLACE FUNCTION public.ru_auth_consume_email_code')[1]
-      ?.split('CREATE OR REPLACE FUNCTION public.ru_auth_revoke_email_code')[0] ?? '';
+    const issue = sql.split('CREATE FUNCTION public.ru_auth_issue_email_code')[1]
+      ?.split('CREATE FUNCTION public.ru_auth_activate_email_code')[0] ?? '';
+    const consume = sql.split('CREATE FUNCTION public.ru_auth_consume_email_code')[1]
+      ?.split('CREATE FUNCTION public.ru_auth_revoke_email_code')[0] ?? '';
     expect(issue).toMatch(/p_email IS NULL[\s\S]*p_hash IS NULL OR p_ip_hash IS NULL/);
     expect(consume).toContain('p_email IS NULL OR length(p_email) > 254');
     expect(consume).toContain('p_hash IS NULL OR p_ip_hash IS NULL');
@@ -56,13 +67,13 @@ describe('RU auth SQL draft structural integrity (no database access)', () => {
   });
 
   it('requires delivery activation of the exact pending HMAC, not just reservation', () => {
-    const activation = sql.split('CREATE OR REPLACE FUNCTION public.ru_auth_activate_email_code')[1]
-      ?.split('CREATE OR REPLACE FUNCTION public.ru_auth_consume_email_code')[0] ?? '';
+    const activation = sql.split('CREATE FUNCTION public.ru_auth_activate_email_code')[1]
+      ?.split('CREATE FUNCTION public.ru_auth_consume_email_code')[0] ?? '';
     expect(activation).toContain('p_hash IS NULL');
     expect(activation).toContain('code_hash = p_hash AND delivered_at IS NULL');
     expect(activation).toContain('failed_attempts = 0 AND expires_at > clock_timestamp()');
-    const consume = sql.split('CREATE OR REPLACE FUNCTION public.ru_auth_consume_email_code')[1]
-      ?.split('CREATE OR REPLACE FUNCTION public.ru_auth_revoke_email_code')[0] ?? '';
+    const consume = sql.split('CREATE FUNCTION public.ru_auth_consume_email_code')[1]
+      ?.split('CREATE FUNCTION public.ru_auth_revoke_email_code')[0] ?? '';
     expect(consume).toContain('row_value.delivered_at IS NULL');
     expect(consume).toContain('FOR UPDATE');
     expect(consume).toContain('SET expires_at=clock_timestamp(), failed_attempts=5');
@@ -77,12 +88,12 @@ describe('RU auth SQL draft structural integrity (no database access)', () => {
     }
   });
   it('charges rejected issuance requests and limits all valid-format verification IP attempts',()=>{
-    const issue=sql.split('CREATE OR REPLACE FUNCTION public.ru_auth_issue_email_code')[1]
-      ?.split('CREATE OR REPLACE FUNCTION public.ru_auth_activate_email_code')[0] ?? '';
+    const issue=sql.split('CREATE FUNCTION public.ru_auth_issue_email_code')[1]
+      ?.split('CREATE FUNCTION public.ru_auth_activate_email_code')[0] ?? '';
     expect(issue.indexOf('INSERT INTO public.ru_auth_ip_limits')).toBeLessThan(
       issue.indexOf("'ru-otp-email:' || p_email"));
-    const consume=sql.split('CREATE OR REPLACE FUNCTION public.ru_auth_consume_email_code')[1]
-      ?.split('CREATE OR REPLACE FUNCTION public.ru_auth_revoke_email_code')[0] ?? '';
+    const consume=sql.split('CREATE FUNCTION public.ru_auth_consume_email_code')[1]
+      ?.split('CREATE FUNCTION public.ru_auth_revoke_email_code')[0] ?? '';
     expect(consume).toContain('ip_row.verify_count >= 50');
     expect(consume).toContain('verify_count=CASE');
     expect(consume.indexOf('INSERT INTO public.ru_auth_ip_limits')).toBeLessThan(
@@ -90,15 +101,15 @@ describe('RU auth SQL draft structural integrity (no database access)', () => {
   });
 
   it('starts each IP budget at its first charged request, not the other kind of request',()=>{
-    const limits = sql.split('CREATE TABLE IF NOT EXISTS public.ru_auth_ip_limits')[1]
+    const limits = sql.split('CREATE TABLE public.ru_auth_ip_limits')[1]
       ?.split('ALTER TABLE public.ru_auth_email_challenges')[0] ?? '';
     expect(limits).toContain('window_start TIMESTAMPTZ,');
     expect(limits).toContain('verify_window_start TIMESTAMPTZ,');
-    const issue = sql.split('CREATE OR REPLACE FUNCTION public.ru_auth_issue_email_code')[1]
-      ?.split('CREATE OR REPLACE FUNCTION public.ru_auth_activate_email_code')[0] ?? '';
+    const issue = sql.split('CREATE FUNCTION public.ru_auth_issue_email_code')[1]
+      ?.split('CREATE FUNCTION public.ru_auth_activate_email_code')[0] ?? '';
     expect(issue).toContain('ru_auth_ip_limits.count = 0 OR ru_auth_ip_limits.window_start IS NULL');
-    const consume = sql.split('CREATE OR REPLACE FUNCTION public.ru_auth_consume_email_code')[1]
-      ?.split('CREATE OR REPLACE FUNCTION public.ru_auth_revoke_email_code')[0] ?? '';
+    const consume = sql.split('CREATE FUNCTION public.ru_auth_consume_email_code')[1]
+      ?.split('CREATE FUNCTION public.ru_auth_revoke_email_code')[0] ?? '';
     expect(consume).toContain('VALUES(p_ip_hash,NULL,0,now_at,1)');
     expect(consume).toContain('ru_auth_ip_limits.verify_count = 0 OR ru_auth_ip_limits.verify_window_start IS NULL');
   });

@@ -2,8 +2,12 @@
 -- Create a real numbered migration with the Supabase CLI after independent
 -- security review and protected staging approval; do not manually run in prod.
 -- All operations use the EXISTING service-role server connection and users table.
+-- Initial installation only: fail on pre-existing objects instead of silently
+-- accepting a table with unexpected constraints or replacing an existing RPC.
+-- DDL, restricted grants and RPCs must become visible together or not at all.
+BEGIN;
 
-CREATE TABLE IF NOT EXISTS public.ru_auth_email_challenges (
+CREATE TABLE public.ru_auth_email_challenges (
   email TEXT PRIMARY KEY,
   code_hash TEXT NOT NULL CHECK (code_hash ~ '^[a-f0-9]{64}$'),
   sent_at TIMESTAMPTZ NOT NULL,
@@ -14,7 +18,7 @@ CREATE TABLE IF NOT EXISTS public.ru_auth_email_challenges (
   window_start TIMESTAMPTZ NOT NULL,
   window_issues INTEGER NOT NULL DEFAULT 0 CHECK (window_issues BETWEEN 0 AND 5)
 );
-CREATE TABLE IF NOT EXISTS public.ru_auth_ip_limits (
+CREATE TABLE public.ru_auth_ip_limits (
   ip_hash TEXT PRIMARY KEY CHECK (ip_hash ~ '^[a-f0-9]{64}$'),
   -- NULL means the relevant budget has never been used. In particular, a
   -- verification-only IP row must not start an issuance window (or vice versa).
@@ -30,7 +34,7 @@ REVOKE ALL ON public.ru_auth_email_challenges, public.ru_auth_ip_limits FROM PUB
 -- No anon/authenticated RLS policies. Server service_role only.
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.ru_auth_email_challenges, public.ru_auth_ip_limits TO service_role;
 
-CREATE OR REPLACE FUNCTION public.ru_auth_issue_email_code(p_email TEXT, p_hash TEXT, p_ip_hash TEXT)
+CREATE FUNCTION public.ru_auth_issue_email_code(p_email TEXT, p_hash TEXT, p_ip_hash TEXT)
 RETURNS BOOLEAN LANGUAGE plpgsql SECURITY INVOKER SET search_path = ''
 AS $$
 DECLARE
@@ -78,7 +82,7 @@ $$;
 -- A code is NEVER valid merely because issuance reserved it. Explicitly
 -- activate only the exact still-pending hash AFTER the mail provider accepts it.
 -- If transport/activation fails or times out, an inactive challenge cannot log in.
-CREATE OR REPLACE FUNCTION public.ru_auth_activate_email_code(p_email TEXT, p_hash TEXT)
+CREATE FUNCTION public.ru_auth_activate_email_code(p_email TEXT, p_hash TEXT)
 RETURNS BOOLEAN LANGUAGE plpgsql SECURITY INVOKER SET search_path = ''
 AS $$
 DECLARE changed_rows INTEGER;
@@ -96,7 +100,7 @@ BEGIN
 END;
 $$;
 
-CREATE OR REPLACE FUNCTION public.ru_auth_consume_email_code(p_email TEXT,p_hash TEXT,p_ip_hash TEXT)
+CREATE FUNCTION public.ru_auth_consume_email_code(p_email TEXT,p_hash TEXT,p_ip_hash TEXT)
 RETURNS BOOLEAN LANGUAGE plpgsql SECURITY INVOKER SET search_path = ''
 AS $$
 DECLARE
@@ -139,7 +143,7 @@ BEGIN
 END;
 $$;
 
-CREATE OR REPLACE FUNCTION public.ru_auth_revoke_email_code(p_email TEXT,p_hash TEXT)
+CREATE FUNCTION public.ru_auth_revoke_email_code(p_email TEXT,p_hash TEXT)
 RETURNS VOID LANGUAGE sql SECURITY INVOKER SET search_path = ''
 AS $$
   -- Preserve issuance budget even when the email transport fails.
@@ -167,13 +171,13 @@ GRANT EXECUTE ON FUNCTION public.ru_auth_revoke_email_code(TEXT,TEXT) TO service
 -- Yandex is optional; subject is linked ONLY from an authenticated ASI
 -- session that just proved ownership using password or email code.
 -- THIS REMAINS DESIGN-ONLY SQL; DO NOT RUN AGAINST PRODUCTION.
-CREATE TABLE IF NOT EXISTS public.ru_auth_yandex_links (
+CREATE TABLE public.ru_auth_yandex_links (
   yandex_subject TEXT PRIMARY KEY
     CHECK (yandex_subject ~ '^[1-9][0-9]{0,39}$'),
   user_id UUID NOT NULL UNIQUE REFERENCES public.users(id) ON DELETE CASCADE,
   linked_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
-CREATE INDEX IF NOT EXISTS idx_ru_auth_yandex_links_user_id
+CREATE INDEX idx_ru_auth_yandex_links_user_id
   ON public.ru_auth_yandex_links(user_id);
 ALTER TABLE public.ru_auth_yandex_links ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON public.ru_auth_yandex_links FROM PUBLIC, anon, authenticated;
@@ -181,3 +185,5 @@ GRANT SELECT, INSERT, DELETE ON public.ru_auth_yandex_links TO service_role;
 -- No anonymous/authenticated policies; never look up ASI identity via Yandex email.
 -- Before staging acceptance: verify table grants and concurrent attempts to link
 -- a single subject to different users, and a user to different subjects.
+
+COMMIT;
