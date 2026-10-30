@@ -286,3 +286,18 @@ test('20 owner-login App comments and missing origin cannot attest governance', 
     assert.equal(await verifiedOwnerComment(520,sha,'CONTRACT-CHANGE','INERT'),true);
   } finally { globalThis.fetch=previous; }
 });
+
+test('21 development mode permits routine code, not protected operations', () => {
+  const bodyDev=body('S4-G2','development');
+  for (const filename of ['src/app/demo/page.tsx','tests/example.test.ts','scripts/strigunov4/test_c4_unit_readonly.py','docs/example.md']) {
+    const args={contract:seed,changed:[filename],prNumber:570,prBody:bodyDev,headSha:sha,baseHasContract:true};
+    assert.equal(checkPr(args).status,'SOURCE_DEVELOPMENT_ONLY');
+    assert.equal(requiredApproval({contract:seed,changed:[filename],prNumber:570,prBody:bodyDev,headSha:sha}),null);
+  }
+  for (const filename of ['.github/workflows/pr-validation.yml','scripts/agent-os/check-demo-release.mjs','scripts/strigunov4/execution-adapters/host-authority.mjs','scripts/strigunov4/execution-adapters/host-checks.mjs','scripts/strigunov4/execution-adapters/standing-budget.mjs','docs/agent-os/AUTONOMY_POLICY.md','scripts/strigunov4/beget-install.py','scripts/strigunov4/g0_activation_host.py','scripts/strigunov4/staging_no_send_host.py','src/app/api/booking-ops/route.ts','src/pages/api/users.ts','src/middleware.ts','src/instrumentation.ts','src/lib/auth/session.ts','src/lib/payment/settlement.ts','src/app/demo/route.ts','src/app/demo\\unsafe.ts','src/app/demo\nunsafe.ts','src/.env','scripts/deploy.sh','src/production/secrets.pem']) {
+    const args={contract:seed,changed:[filename],prNumber:570,prBody:bodyDev,headSha:sha,baseHasContract:true};
+    assert.throws(()=>checkPr(args), /DEVELOPMENT_PROTECTED_OR_OUT_OF_SCOPE_PATH|GOVERNANCE_CHANGE_NEEDS_VERIFIED_OWNER_ATTESTATION/);
+    assert.notEqual(requiredApproval({contract:seed,changed:[filename],prNumber:570,prBody:bodyDev,headSha:sha}),null);
+  }
+});
+
