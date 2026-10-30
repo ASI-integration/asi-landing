@@ -63,8 +63,16 @@ export async function GET(request:Request) {
   const strongAt=session.lastStrongAuthAt;
   const strongUserId=session.lastStrongAuthUserId;
   const intended=yandexSafeReturn(session.yandexOauthRedirect);
-  const code=url.searchParams.get('code');
-  const matched=yandexFlowStillValid(startedAt) &&
+  // An OAuth callback must contain exactly one state and either one code or
+  // one provider error. Duplicate/contradictory parameters must not rely on
+  // URLSearchParams.get() silently choosing the first value.
+  const states=url.searchParams.getAll('state');
+  const codes=url.searchParams.getAll('code');
+  const errors=url.searchParams.getAll('error');
+  const unambiguousCallback=states.length===1 &&
+    ((codes.length===1 && errors.length===0) || (codes.length===0 && errors.length===1));
+  const code=codes[0] ?? null;
+  const matched=unambiguousCallback && yandexFlowStillValid(startedAt) &&
     typeof verifier==='string' && /^[A-Za-z0-9_-]{43,128}$/.test(verifier) &&
     (mode==='login'||mode==='link') &&
     !url.searchParams.has('error') &&
@@ -74,7 +82,7 @@ export async function GET(request:Request) {
   // Never let an unsolicited/mismatched state erase the user's pending OAuth
   // login or account link. Only a callback proving possession of our random
   // state may consume the transient flow, including legitimate provider errors.
-  if (!verifyYandexState(state,url.searchParams.get('state')))
+  if (states.length!==1 || !verifyYandexState(state,states[0] ?? null))
     return fail(url.origin,'invalid_state');
 
   // Burn a state-matched flow before external token request; prevent reuse.
