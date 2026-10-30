@@ -35,6 +35,8 @@ beforeEach(() => {
   vi.stubEnv('ASI_RU_YANDEX_CLIENT_ID', 'inert-test-client');
   vi.stubEnv('ASI_RU_YANDEX_CLIENT_SECRET', 'inert-test-secret');
   vi.stubEnv('SESSION_SECRET', 'inert-session-secret-at-least-32-characters');
+  vi.stubEnv('SUPABASE_URL', 'https://fixture.invalid');
+  vi.stubEnv('SUPABASE_SERVICE_ROLE_KEY', 'inert-test-role-key');
   mocks.isRu.mockResolvedValue(true);
   mocks.save.mockResolvedValue(undefined);
 });

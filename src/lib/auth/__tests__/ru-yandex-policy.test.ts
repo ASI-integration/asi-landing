@@ -11,6 +11,8 @@ const env={
   ASI_RU_YANDEX_CLIENT_ID:'fixture-client',ASI_RU_YANDEX_CLIENT_SECRET:'fixture-secret',
   ASI_RU_YANDEX_ORIGIN:'https://www.asi-global.ru',
   SESSION_SECRET:'fixture-session-secret-which-is-long-enough',
+  SUPABASE_URL:'https://fixture.invalid',
+  SUPABASE_SERVICE_ROLE_KEY:'fixture-server-only-service-key',
 };
 describe('RU Yandex link-only OAuth',()=>{
   it('requires complete registered canonical RU environment',()=>{
@@ -18,6 +20,11 @@ describe('RU Yandex link-only OAuth',()=>{
     for(const key of Object.keys(env)){
       expect(ruYandexConfigured({...env,[key]:undefined})).toBe(false);
     }
+    // Preserve the existing server-side URL fallback, but never advertise an
+    // operational provider with no service-role credentials or database URL.
+    expect(ruYandexConfigured({...env,SUPABASE_URL:undefined,
+      NEXT_PUBLIC_SUPABASE_URL:'https://fixture.invalid'})).toBe(true);
+    expect(ruYandexConfigured({...env,SUPABASE_SERVICE_ROLE_KEY:'   '})).toBe(false);
     expect(ruYandexConfigured({...env,ASI_RU_YANDEX_ORIGIN:'https://evil.example'})).toBe(false);
     expect(ruYandexConfigured({...env,ASI_RU_YANDEX_ORIGIN:'http://www.asi-global.ru'})).toBe(false);
     expect(ruYandexConfigured({...env,ASI_RU_YANDEX_ORIGIN:'https://www.asi-global.ru:8443'})).toBe(false);

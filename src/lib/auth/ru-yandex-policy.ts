@@ -10,6 +10,10 @@ export function ruYandexConfigured(env: Readonly<Record<string,string|undefined>
   try {
     if (env.ASI_RU_YANDEX_ID_ENABLED !== 'true' ||
       env.ASI_RU_YANDEX_LINKS_READY !== 'true' ||
+      // The provider UI must not claim Yandex is enabled when the shared ASI
+      // user/link registry cannot even initialize its server-only client.
+      !env.SUPABASE_SERVICE_ROLE_KEY?.trim() ||
+      !(env.SUPABASE_URL?.trim() || env.NEXT_PUBLIC_SUPABASE_URL?.trim()) ||
       (env.SESSION_SECRET?.trim().length ?? 0) < 32 ||
       !env.ASI_RU_YANDEX_CLIENT_ID?.trim() ||
       !env.ASI_RU_YANDEX_CLIENT_SECRET?.trim()) return false;

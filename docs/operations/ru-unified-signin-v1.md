@@ -117,6 +117,11 @@ Choose **user authentication**, **Web services**, minimal scope
 After verified ownership, operator places server-only
 `ASI_RU_YANDEX_CLIENT_ID`, `ASI_RU_YANDEX_CLIENT_SECRET`,
 `ASI_RU_YANDEX_ORIGIN=https://www.asi-global.ru` in the actual RU host.
+The capability guard also requires the existing **server-only**
+`SUPABASE_SERVICE_ROLE_KEY` and `SUPABASE_URL` (or legacy
+`NEXT_PUBLIC_SUPABASE_URL`) for the same approved ASI identity project.
+Missing database connection settings must not make Yandex appear operational;
+this check does not grant permission to migrate either existing project.
 Leave `ASI_RU_YANDEX_ID_ENABLED=false` and
 `ASI_RU_YANDEX_LINKS_READY=false` until the protected migration,
 full OAuth callback acceptance, redirect-origin check and user linking are
