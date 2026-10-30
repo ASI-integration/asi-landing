@@ -129,11 +129,14 @@ export function captureParentTaskLeaseProposal({parent,child,effect,lease,select
             l.taskId!==t.id||l.taskSha!==t.sha||
             e.taskId!==t.id||e.taskSha!==t.sha)
     return deny('SELECTED_TASK_MISMATCH');
+  // The native protected-base SHA must match the task anchor even before
+  // STARTED. This pure check does not authenticate the host-supplied SHA.
+  if(!h40(baseSha)||baseSha!==e.taskSha)return deny('TASK_BASE_SHA_MISMATCH');
   // This closure stores copied primitive fields, never original mutable args.
   // The journal reference is compared by identity; only the native host can
   // prove that it is the actual lock owner's armed ledger.
   return Object.freeze({status:'PARENT_TASK_SOURCE_SNAPSHOT',authorized:false,
-    assessAfter({lease:afterLease,selectedTask:afterTask=null,effect:afterEffect}={}){
+    assessAfter({lease:afterLease,selectedTask:afterTask=null,effect:afterEffect,baseSha:afterBaseSha}={}){
       try {
       const a=capture(afterLease,leaseFields),e2=capture(afterEffect,effectFields);
       const p2=capture(parent,parentFields),c2=capture(child,childFields);
@@ -151,6 +154,9 @@ export function captureParentTaskLeaseProposal({parent,child,effect,lease,select
          a.ledger.mode!=='FAILED_LOCKED'||a.ledger.reason!=='IN_FLIGHT_OR_CRASHED'||
          (t===null?t2!==null:!t2||!same(t,t2,taskFields)))
         return deny('POST_AWAIT_LEASE_OR_TASK_CHANGED');
+      // Re-read from authenticated native task/base evidence AFTER awaits.
+      // Missing or shifted base SHA is not a valid continuation token.
+      if(afterBaseSha!==baseSha)return deny('POST_AWAIT_BASE_SHA_CHANGED');
       return Object.freeze({status:'PARENT_TASK_SOURCE_ELIGIBLE',authorized:false,
         stage:p.stage,transactionId:e.transactionId,taskId:e.taskId,
         phase:e.phase,kind:e.kind,routineClass:e.routineClass});
