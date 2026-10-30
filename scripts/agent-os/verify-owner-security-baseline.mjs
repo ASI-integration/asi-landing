@@ -58,11 +58,22 @@ export function verifyOwnerBootstrapSource(source) {
     'OWNER_VERIFIED_CI_PATH_REMOVED_OR_CHANGED');
   return true;
 }
+export function verifyOwnerRepairSource(source) {
+  requirePolicy(typeof source==='string' &&
+    source.includes("if repairReview.get('mode')=='OWNER_VERIFIED_CI':") &&
+    source.includes("repairReview.get('independent') is False") &&
+    source.includes('i.verified_owner_ci_run('),
+    'REPAIR_OWNER_VERIFIED_CI_REMOVED_OR_SECOND_REVIEWER_FORCED');
+  return true;
+}
 export function verifyOwnerSecurityFiles(repoRoot=ROOT) {
   const value=JSON.parse(fs.readFileSync(path.join(repoRoot,OWNER_SECURITY_BASELINE),'utf8'));
   const source=fs.readFileSync(path.join(repoRoot,'scripts/strigunov4/execution-adapters/beget-install.py'),'utf8');
   const result=validateOwnerSecurityBaseline(value);
   verifyOwnerBootstrapSource(source);
+  const repair=path.join(repoRoot,'scripts/strigunov4/execution-adapters/beget-staged-repair.py');
+  if(fs.existsSync(repair))
+    verifyOwnerRepairSource(fs.readFileSync(repair,'utf8'));
   return result;
 }
 if(process.argv[1] && path.resolve(process.argv[1])===fileURLToPath(import.meta.url)){
