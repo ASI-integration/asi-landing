@@ -1,0 +1,30 @@
+diff --git a/scripts/strigunov4/execution-adapters/standing-budget-crash-probe.test.mjs b/scripts/strigunov4/execution-adapters/standing-budget-crash-probe.test.mjs
+index 049cb456..eefa5dca 100644
+--- a/scripts/strigunov4/execution-adapters/standing-budget-crash-probe.test.mjs
++++ b/scripts/strigunov4/execution-adapters/standing-budget-crash-probe.test.mjs
+@@ -91,18 +91,16 @@ if(role==='holder'){
+       assert.equal(afterCrash.standingDelegationBudget.envelopes[hex64].claims.length,1);
+       assert.throws(()=>inspectStandingTransaction({}),/STANDING_TRANSACTION_INVALID/);
+       const orphan=await run('orphan',root);
+-      const expectHardened=process.env.EXPECT_HARDENED==='1';
+-      if(expectHardened){
+-        assert.notEqual(orphan.status,'RESERVED','orphan may never reserve without native lease');
+-        assert.match(orphan.error||orphan.reason||'',/STANDING_TRANSACTION_INVALID|BUDGET_NATIVE/);
+-      }else{
+-        assert.equal(orphan.status,'RESERVED','legacy gap: orphaned lock + reopened ledger mistakenly reserves');
+-      }
++      // The default regression MUST enforce native lease ownership. Historical
++      // exploit reproduction belongs in a separate pre-fix checkout; forgetting
++      // an environment switch must not make the unsafe outcome an expected PASS.
++      assert.notEqual(orphan.status,'RESERVED','orphan may never reserve without native lease');
++      assert.match(orphan.error||orphan.reason||'',/STANDING_TRANSACTION_INVALID|BUDGET_NATIVE/);
+       const final=JSON.parse(await fs.readFile(store.file('autopilot-ledger.json'),'utf8'));
+-      assert.equal(final.standingDelegationBudget.envelopes[hex64].claims.length,expectHardened?1:2);
++      assert.equal(final.standingDelegationBudget.envelopes[hex64].claims.length,1);
+       console.log('PROOF:'+JSON.stringify({nativeCompeting:competing.mode,afterSigkill:restarted.mode,
+         orphanReserve:orphan.status||orphan.error,claimsAfter:final.standingDelegationBudget.envelopes[hex64].claims.length,
+-        baselineDefect:!expectHardened}));
++        baselineDefect:false}));
+     }finally{if(holder.exitCode===null&&holder.signalCode===null){holder.kill('SIGKILL');await new Promise(resolve=>holder.once('exit',resolve));}
+       await fs.rm(root,{recursive:true,force:true});}
+   });
