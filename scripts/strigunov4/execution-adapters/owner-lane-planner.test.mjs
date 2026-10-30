@@ -1,0 +1,102 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {minimumBackoffMs,planCooperativeOwnerLane} from './owner-lane-planner.mjs';
+
+const REPO='ASI-integration/asi-landing', NOW=1793340000000;
+const names=[
+  ['engine','asi/beget-one-engine-20261028'],
+  ['ru-auth','feat/ru-unified-auth-20261029'],
+  ['p0-integration','asi/standing-delegation-551'],
+  ['p0-trust','asi/p0-trusted-evidence-worker-20261029'],
+  ['p0-atomic-budget','asi/p0-atomic-budget-worker-20261029'],
+];
+const lanes=names.map(([id,branch])=>({id,repository:REPO,branch}));
+const tasks=lanes.map((lane,i)=>({id:`task-${i}`,repo:REPO,branch:lane.branch,stage:'S4-G2',kind:'github-publisher',
+  sha:String(i+1).repeat(40),changes:[{path:`docs/engine-lanes/test-${i}.txt`}] }));
+const journal=()=>({schema:'asi.beget-owner-lane-journal.v1',engineMode:'IDLE',lanes:Object.fromEntries(
+  lanes.map((lane,i)=>[lane.id,{mode:'READY',taskId:tasks[i].id,taskSha:tasks[i].sha,
+    lastServedAtMs:0,nextEligibleAtMs:0,retries:0}]))});
+const make=(overrides={})=>({laneDefinitions:lanes,admittedCatalog:tasks,journal:journal(),nowMs:NOW,...overrides});
+const choose=s=>planCooperativeOwnerLane(s);
+
+test('zero live privileges: never returns an execution grant or verified server status',()=>{
+  const result=choose(make());
+  assert.equal(result.kind,'CANDIDATE');
+  assert.equal(result.authority,'NONE_SOURCE_ONLY');
+  assert.equal(result.candidate.laneId,'engine');
+  assert.equal(Object.isFrozen(result),true);
+  assert.equal(JSON.stringify(result).includes('VERIFIED RUNNING'),false);
+});
+test('rejects absent and malformed catalog input and caller lane definitions',()=>{
+  assert.equal(choose(make({admittedCatalog:null})).kind,'UNKNOWN');
+  assert.equal(choose(make({admittedCatalog:[]})).kind,'UNKNOWN');
+  assert.equal(choose(make({laneDefinitions:[...lanes,{id:'evil',repository:REPO,branch:'new'}]})).kind,'UNKNOWN');
+  assert.equal(choose(make({laneDefinitions:[...lanes.slice(0,4),{...lanes[4],branch:lanes[3].branch}]})).kind,'UNKNOWN');
+  assert.equal(choose(make({nowMs:NaN})).kind,'UNKNOWN');
+});
+test('the historical two-witness catalog adds no authority to five owner branches',()=>{
+  const witness=[{...tasks[0],id:'g2-witness',branch:'asi/approved-only-g2'}];
+  const result=choose(make({admittedCatalog:witness}));
+  assert.equal(result.kind,'NONE');
+  assert.equal(result.lanes.length,5);
+  assert.ok(result.lanes.every(l=>l.reason==='NOT_IN_SIGNED_EXECUTION_CATALOG'));
+});
+test('candidate fairness rotates least recently served under the SAME serial writer',()=>{
+  const state=journal();state.lanes.engine.lastServedAtMs=NOW-1000;
+  assert.equal(choose(make({journal:state})).candidate.laneId,'ru-auth');
+  state.lanes['ru-auth'].lastServedAtMs=NOW-900;
+  assert.equal(choose(make({journal:state})).candidate.laneId,'p0-integration');
+});
+test('one blocked lane never grants it a turn or blocks disjoint admitted work',()=>{
+  const state=journal();state.lanes.engine.mode='BLOCKED';
+  const result=choose(make({journal:state}));
+  assert.equal(result.candidate.laneId,'ru-auth');
+  assert.equal(result.lanes[0].reason,'NO_AUTOMATIC_RETRY');
+});
+test('crash uncertainty or FAILED_LOCKED is a global stop, not cooperative bypass',()=>{
+  const state=journal();state.engineMode='FAILED_LOCKED';
+  assert.equal(choose(make({journal:state})).kind,'STOPPED');
+  state.engineMode='IDLE';state.lanes.engine.mode='FAILED_LOCKED';
+  assert.equal(choose(make({journal:state})).kind,'STOPPED');
+  state.lanes.engine.mode='UNKNOWN';
+  assert.equal(choose(make({journal:state})).candidate.laneId,'ru-auth');
+});
+test('retry backoff is capped, no early lease or stale task identity is eligible',()=>{
+  assert.equal(minimumBackoffMs(1),60000);
+  assert.equal(minimumBackoffMs(7),3600000);
+  assert.equal(minimumBackoffMs(8),null);
+  const state=journal();state.lanes.engine={...state.lanes.engine,mode:'BACKOFF',retries:3,
+    lastServedAtMs:NOW-10000,nextEligibleAtMs:NOW+230000};
+  assert.equal(choose(make({journal:state})).candidate.laneId,'ru-auth');
+  state.lanes.engine.nextEligibleAtMs=NOW-5000;
+  assert.equal(choose(make({journal:state})).lanes[0].reason,'BACKOFF_BYPASS_OR_INVALID');
+  state.lanes.engine.taskSha='f'.repeat(40);
+  assert.equal(choose(make({journal:state})).lanes[0].mode,'UNKNOWN');
+});
+test('never selects duplicate task, colliding path, outside stage or unsafe path',()=>{
+  for(const mutation of [
+    t=>t.push({...t[0]}),
+    t=>t[1].id=t[0].id,
+    t=>t[1].changes[0].path=t[0].changes[0].path,
+    t=>t[0].stage='S4-G3',
+    t=>t[0].changes[0].path='../escape',
+  ]){
+    const catalog=structuredClone(tasks);mutation(catalog);
+    assert.equal(choose(make({admittedCatalog:catalog})).kind,'STOPPED');
+  }
+});
+test('missing journal never creates fresh readiness or resets a retry',()=>{
+  assert.equal(choose(make({journal:null})).kind,'UNKNOWN');
+  const state=journal();delete state.lanes.engine;
+  assert.equal(choose(make({journal:state})).candidate.laneId,'ru-auth');
+  assert.equal(choose(make({journal:state})).lanes[0].mode,'UNKNOWN');
+  state.lanes['ru-auth'].retries=2;
+  assert.equal(choose(make({journal:state})).candidate.laneId,'p0-integration');
+});
+
+test('advisory planning never mutates any catalog, journal, or lane input',()=>{
+  const state=journal(),catalog=structuredClone(tasks),defs=structuredClone(lanes);
+  const before=JSON.stringify({state,catalog,defs});
+  choose(make({laneDefinitions:defs,admittedCatalog:catalog,journal:state}));
+  assert.equal(JSON.stringify({state,catalog,defs}),before);
+});
