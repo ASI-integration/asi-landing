@@ -114,11 +114,17 @@ function planValidatedSnapshot(snapshot) {
   // An execution-catalog withdrawal does not erase historical durable locks.
   // Even lanes without a currently admitted task must retain a valid journal
   // record, and unknown lane IDs never create a new workstream implicitly.
-  if (Object.keys(journal.lanes).some(id => !KNOWN_IDS.includes(id)))
-    return response('STOPPED', 'UNRECOGNIZED_DURABLE_LANE');
+  // Object.keys hides non-enumerable and Symbol records. Durable lane maps
+  // must expose their entire own-data inventory before any work is suggested.
+  if (Reflect.ownKeys(journal.lanes).some(id => {
+    if (typeof id !== 'string' || !KNOWN_IDS.includes(id)) return true;
+    const descriptor = Object.getOwnPropertyDescriptor(journal.lanes, id);
+    return !descriptor || !Object.hasOwn(descriptor, 'value') || !descriptor.enumerable;
+  })) return response('STOPPED', 'UNRECOGNIZED_DURABLE_LANE');
   for (const lane of laneDefinitions) {
     if (admittedCatalog.some(t => t?.branch === lane.branch && t?.repo === lane.repository)) continue;
-    const state = journal.lanes[lane.id];
+    // A missing own record must not be supplied by Object.prototype.
+    const state = Object.hasOwn(journal.lanes, lane.id) ? journal.lanes[lane.id] : null;
     if (!validDurableRecord(state, nowMs) ||
         (state.mode === 'READY' && (state.retries !== 0 || state.nextEligibleAtMs !== 0)) ||
         (state.mode === 'BACKOFF' && (state.retries < 1 ||
@@ -164,7 +170,8 @@ function planValidatedSnapshot(snapshot) {
       states.push({id: lane.id, mode: 'BLOCKED', reason: 'NOT_IN_SIGNED_EXECUTION_CATALOG'});
       continue;
     }
-    const state = journal.lanes[lane.id];
+    // A missing own record must not be supplied by Object.prototype.
+    const state = Object.hasOwn(journal.lanes, lane.id) ? journal.lanes[lane.id] : null;
     if (!validDurableRecord(state, nowMs) ||
         state.taskId !== task.id || state.taskSha !== task.sha) {
       return response('STOPPED', 'DURABLE_LANE_IDENTITY_OR_STATE_INVALID', states);
