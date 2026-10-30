@@ -17,12 +17,14 @@ const key=()=>{const pair=generateKeyPairSync('ed25519');return {...pair,pem:pai
 const signed=(value,k)=>{const payload=JSON.stringify(value);return {payload,signature:sign(null,Buffer.from(payload),k.privateKey).toString('base64')};};
 const descriptor=(method='GET',route='branches/main')=>{const payloadSha256=hash(method==='GET'?'':'{}');return {method,route,payloadSha256,requestSha256:hash(JSON.stringify({method,route,payloadSha256}))};};
 async function setup(t,{adoptionMode=null,wrongLocal=false,forgedLocal=false,lateRevocation=false,rollbackRevocation=false,pendingCI=true,sourcePending=false,resumeSame=false,gateMode=null,skipLocal=false,wrongReviewer=false,gateBudget=false,gateFailure=false,lateGateClock=Infinity}={}){
+ const compiled=adoptionMode?.startsWith('compiled');
  const original=globalThis.fetch;t.after(()=>{globalThis.fetch=original;});
  const seedFiles=Object.fromEntries(ENVELOPE_SECURITY_REQUIRED.map(p=>[p,'inert protected '+p+'\n']));
  let release;
  if(adoptionMode){
   release=JSON.parse(await fs.readFile(new URL('../../../docs/agent-os/releases/strigunov4-demo.json',import.meta.url),'utf8'));
   release.stages.forEach((s,i)=>{s.status=i?'NOT_STARTED':'IN_PROGRESS';s.proof=[];delete s.acceptanceSha;s.files=['scripts/strigunov4/fixture_stage_'+i+'_a.py','scripts/strigunov4/fixture_stage_'+i+'_b.py'];s.plannedFiles=[];});
+  if(compiled){release.stages[0].status='ACCEPTED';release.stages[0].acceptanceSha='a'.repeat(40);release.stages[0].proof=['https://github.com/ASI-integration/asi-landing/actions/runs/777'];release.stages[1].status='IN_PROGRESS';release.stages[1].files.push(target);}
   release.stages[0].plannedFiles=release.stages[0].plannedFiles.filter(p=>p!==target);release.stages[0].files.push(target);
   for(const s of release.stages)for(const p of s.files)if(!Object.hasOwn(seedFiles,p))seedFiles[p]='inert fixture\n';
   seedFiles['docs/agent-os/releases/strigunov4-demo.json']=JSON.stringify(release);
@@ -37,6 +39,7 @@ async function setup(t,{adoptionMode=null,wrongLocal=false,forgedLocal=false,lat
  if(adoptionMode==='target')adoption.target='other';
  if(adoptionMode==='security')adoption.securityDigest='a'.repeat(64);
  if(adoptionMode==='expired')adoption.expiresAt=now.value-1;
+ const releaseReads=[];
  const adoptionSigned=signed(adoption,adoptionMode==='signer'?verifier:owner),admissions=[];
  const manifest={schema:'asi.release-envelope-revocations.v1',repository:envelope.repo,environment:envelope.environment,target:envelope.target,issuerKeySha256:owner.digest,verifierKeySha256:verifier.digest,sequence:1,issuedAt:now.value-1000,expiresAt:adoptionMode==='consume-expiry'?now.value+1000:envelope.expiresAt,revokedEnvelopeDigests:[]};
  const revocation=signed(manifest,owner),prior={sequence:1,manifestDigest:hash(revocation.payload),revokedEnvelopeDigests:[]};
@@ -100,7 +103,36 @@ async function setup(t,{adoptionMode=null,wrongLocal=false,forgedLocal=false,lat
         return new Response(JSON.stringify(value),{headers:{'Content-Type':'application/json'}});
       }});
     gateActive=false;gateClockCounts.push(gateClockCount);gateResults.push(gate);
-    if(adoptionMode){
+    if(compiled){
+      const pr=f.pulls.get(event.pr);pr.body='Release-Stage: S4-G2\nRelease-Mode: diagnostic\nRelease-Diagnostic-Iteration: 1';
+      if(adoptionMode==='compiled-outscope')pr.body='Release-Stage: S4-G6\nRelease-Mode: implementation';
+      const priorFetch=globalThis.fetch;let prReads=0;
+      globalThis.fetch=async(url,init)=>{
+        const u=new URL(url),route=u.pathname.split('/asi-landing/')[1];
+        const disk=JSON.parse(await fs.readFile(store.file('autopilot-ledger.json'),'utf8'));
+        releaseReads.push({route,requests:Object.values(disk.standingDelegationBudget.envelopes)[0].requests});
+        assert.equal((await preview.reserve(descriptor())).status,'BLOCKED');
+        let value;
+        if(route===`pulls/${event.pr}`){
+          if(++prReads===2&&adoptionMode==='compiled-pr-change')pr.body+='\nchanged';
+          value=pr;
+        }else if(route==='actions/runs/777')value={repository:{full_name:envelope.repo},status:'completed',conclusion:adoptionMode==='compiled-run-fail'?'failure':'success',head_sha:'a'.repeat(40),head_branch:'main',path:'.github/workflows/strigunov4-c4-unit-apply.yml',event:'workflow_dispatch',run_attempt:1};
+        else if(route==='actions/runs/777/approvals')value=[{user:{id:207600140},state:'approved',environments:[{name:'staging',can_admins_bypass:false}]}];
+        else if(route==='actions/runs/777/jobs')value={total_count:1,jobs:[{name:'protected_c4_unit_apply',status:'completed',conclusion:'success'}]};
+        else if(route==='pulls'||route.startsWith('issues/'))value=[];
+        else throw Error('UNEXPECTED_RELEASE_READ');
+        if(adoptionMode==='compiled-unknown'&&route.endsWith('/approvals'))throw Error('inert unknown');
+        if(adoptionMode==='compiled-revocation'&&prReads===2)revoked=true;
+        return new Response(JSON.stringify(value),{headers:{'Content-Type':'application/json'}});
+      };
+      // The working copy must not supply the protected contract to this caller.
+      const contractPath=path.join(comparison.repoRoot,'docs/agent-os/releases/strigunov4-demo.json');
+      const before=await fs.readFile(contractPath);await fs.writeFile(contractPath,'{}');
+      let result;
+      try{result=await preview.runAdoptedReleaseAdmission(gate,{token:'INERT_COMPILED_RELEASE'});}
+      finally{globalThis.fetch=priorFetch;await fs.writeFile(contractPath,before);}
+      admissions.push({result});
+    }else if(adoptionMode){
       const admission=await preview.readAdoptedSourceAdmission(adoptionMode==='copied'?{...gate}:gate);
       const contract=release;
       const args={contract,changed:[target],prNumber:event.pr,headSha:event.headSha,baseSha:f.sha,prBody:'Release-Stage: S4-G1\nRelease-Mode: implementation',baseHasContract:true,standingAdmission:admission};
@@ -133,7 +165,7 @@ async function setup(t,{adoptionMode=null,wrongLocal=false,forgedLocal=false,lat
    phases.push(result);if(rollbackRevocation)newRevocation=false;return result.status==='PROPOSAL_ELIGIBLE';
   }};
  }});
- return {f,loop,now,source,records,phases,previews,providerCalls,gateResults,gateCalls,gateClockCounts,gateEvents,signedEnvelope,envelopeDigest,admissions};
+ return {f,loop,now,source,records,phases,previews,providerCalls,gateResults,gateCalls,gateClockCounts,gateEvents,signedEnvelope,envelopeDigest,admissions,releaseReads};
 }
 
 // Synthetic provider and v0 fixture only; actual Publisher localPhase, native
@@ -255,4 +287,41 @@ test('native admission consumption refuses expired signed revocation before enve
  assert.equal(x.admissions[0].admission.status,'STANDING_SOURCE_ADMISSION_VERIFIED');
  assert.equal(x.admissions[0].status,'STANDING_ADMISSION_STALE');
  assert.equal(x.admissions[0].mainStatus,'STANDING_ADMISSION_STALE');
+});
+
+
+test('compiled native release caller meters accepted-stage and diagnostic reads before minting',async t=>{
+ const x=await setup(t,{adoptionMode:'compiled'});await x.loop.poll({execute:true});
+ assert.equal(x.admissions[0].result.status,'STANDING_SOURCE_ADMISSION_VERIFIED',JSON.stringify(x.admissions));
+ assert.equal(x.admissions[0].result.authorized,false);
+ assert.deepEqual(x.releaseReads.map(r=>r.route),['pulls/600','actions/runs/777','actions/runs/777/approvals','actions/runs/777/jobs','pulls','pulls/600']);
+ for(let i=1;i<x.releaseReads.length;i++)assert.equal(x.releaseReads[i].requests,x.releaseReads[i-1].requests+1);
+ assert.equal(await x.previews[0].beforeRequest(),false);
+});
+test('compiled release caller fails closed on stale PR failed proof unknown response or revocation',async t=>{
+ for(const mode of ['compiled-pr-change','compiled-run-fail','compiled-unknown','compiled-revocation','compiled-outscope']){
+  const x=await setup(t,{adoptionMode:mode});await x.loop.poll({execute:true});
+  assert.equal(x.admissions[0].result.status,'BLOCKED',mode);
+  if(mode==='compiled-outscope')assert(x.releaseReads.some(r=>r.route==='issues/600/comments'));
+  if(mode==='compiled-run-fail')assert.equal(x.releaseReads.length,2);
+  if(mode==='compiled-unknown')assert.equal(x.releaseReads.length,3);
+  assert.equal((await x.previews[0].reserve(descriptor())).status,'BLOCKED',mode);
+  const ledger=JSON.parse(await fs.readFile(path.join(x.f.root,'state','autopilot-ledger.json'),'utf8'));
+  assert(Object.values(ledger.standingDelegationBudget.envelopes)[0].requests>=x.releaseReads.at(-1).requests);
+ }
+});
+test('native main refuses arbitrary or copied reader ports without ambient fallback',async()=>{
+ for(const reader of [{get:async()=>[]},createGitHubReader({token:'INERT'}),createGitHubReader({token:'INERT',requestAdmission:async()=>true}),{...createGitHubReader({token:'INERT'})}])
+  await assert.rejects(main({ci:true,githubReader:reader,prEvent:{}}),/NATIVE_RELEASE_CONTEXT_REQUIRED/);
+});
+
+test('compiled release caller stops at remaining durable budget without refund or fallback',async t=>{
+ const baseline=await setup(t,{adoptionMode:'compiled'});await baseline.loop.poll({execute:true});
+ assert.equal(baseline.admissions[0].result.status,'STANDING_SOURCE_ADMISSION_VERIFIED');
+ const cap=baseline.releaseReads.at(-1).requests-1;
+ const x=await setup(t,{adoptionMode:'compiled',gateBudget:cap});await x.loop.poll({execute:true});
+ assert.equal(x.admissions[0].result.status,'BLOCKED');
+ assert.equal(x.releaseReads.length,5);
+ const ledger=JSON.parse(await fs.readFile(path.join(x.f.root,'state','autopilot-ledger.json'),'utf8'));
+ assert.equal(Object.values(ledger.standingDelegationBudget.envelopes)[0].requests,cap);
 });

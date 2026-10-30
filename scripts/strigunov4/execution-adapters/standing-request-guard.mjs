@@ -5,12 +5,15 @@
 import path from 'node:path';
 import {inspectStandingTransaction,atomicJson,digest,must,LIVE_ROOT} from './state.mjs';
 import {ENGINE_ROOT,BEGET,verifySignedPayload,AUTHORITY_DIR,rootOwned} from './host-authority.mjs';
-import {isCompiledGitHubRead} from './github-readonly.mjs';
+import {createGitHubReader,isCompiledGitHubRead} from './github-readonly.mjs';
 import {inspectPublisherLifecycleEvidence} from './github-publisher.mjs';
 import {createStandingPublisherBudget} from './standing-budget.mjs';
 import {readProtectedStandingTrustSnapshot} from '../../agent-os/release-envelope-trust-roots.mjs';
-import {readAuthenticatedProviderSnapshot,inspectAuthenticatedProviderSnapshot,assessRepositoryReleaseEnvelopeProposal,assessPublisherReleaseEnvelopeProposal,readAndAssessProtectedGateProposal} from '../../agent-os/check-demo-release.mjs';
-const gateReceipts=new WeakMap(),admissionReceipts=new WeakMap();
+import {readAuthenticatedProviderSnapshot,inspectAuthenticatedProviderSnapshot,assessRepositoryReleaseEnvelopeProposal,assessPublisherReleaseEnvelopeProposal,readAndAssessProtectedGateProposal,main} from '../../agent-os/check-demo-release.mjs';
+const gateReceipts=new WeakMap(),admissionReceipts=new WeakMap(),releaseReaders=new WeakMap();
+export function isStandingReleaseReader(reader){
+  try{return releaseReaders.get(reader)?.()===true;}catch{return false;}
+}
 export function inspectStandingAdmissionReceipt(receipt,request){
   const check=admissionReceipts.get(receipt);must(check,'STANDING_ADMISSION_UNTRUSTED');
   return check(request);
@@ -65,7 +68,7 @@ export function createStandingRequestPreview({store,transaction,signedEnvelope,s
     clockHighWater=at;return at;
   };
   const ledger=initial.ledger,budget=createStandingPublisherBudget({store:boundStore,ledger,clock});
-  let ordinal=0,poisoned=false,bootstrapActive=false,pending=0,providerAttempted=false,authenticatedObservation;
+  let ordinal=0,poisoned=false,bootstrapActive=false,releaseActive=false,pending=0,providerAttempted=false,authenticatedObservation;
   let tail=Promise.resolve(),phaseChanging=false,localPhase=null,exactPhase=null,phaseProvider=null;
   const admissionPhase={phase:'ADMISSION_READ',signedEvidence:input.signedEvidence,request:input.request,comparison:input.comparison};
   if(publisherPhases){
@@ -225,11 +228,57 @@ export function createStandingRequestPreview({store,transaction,signedEnvelope,s
           requestSha256,requests:result.requests,writes:result.writes});
       } catch {poisoned=true;return blocked('STANDING_PREVIEW_REJECTED');}
   }
+  async function readAdoptedSourceAdmission(gateReceipt){
+      if(poisoned||bootstrapActive||phaseChanging||pending>0)return blocked('STANDING_PREVIEW_LOCKED');
+      bootstrapActive=true;
+      try{
+        const gate=gateReceipts.get(gateReceipt);
+        must(expectedAdoptionDigest&&gate?.owner===input,'STANDING_ADOPTION_CONTEXT');
+        inspectPublisherLifecycleEvidence(gate.event,transaction);
+        const read=protectedReader||rootOwned;
+        const file=path.join(AUTHORITY_DIR,'standing-adoption.json');
+        const raw=await read(file,65536),signed=dataCopy(JSON.parse(raw));
+        must(digest(signed.payload)===expectedAdoptionDigest,'STANDING_ADOPTION_PIN');
+        const trust=await readTrust(),a=verifySignedPayload(signed,trust.issuerPublicKey);
+        const envelope=JSON.parse(input.signedEnvelope.payload);
+        must(JSON.stringify(a)===signed.payload&&a.schema==='asi.standing-adoption.v1'&&
+          a.environment===envelope.environment&&a.target===envelope.target&&
+          a.ownerId===207600140&&a.mode==='ROUTINE_SOURCE_ADMISSION_ONLY'&&a.repo===input.request.repo&&
+          a.envelopeDigest===trust.envelopeDigest&&a.securityDigest===envelope.securityDigest&&
+          a.policyDigest===envelope.policyDigest&&a.appId===envelope.appId&&a.installationId===envelope.installationId&&
+          a.issuerKeySha256===trust.issuerKeySha256&&a.verifierKeySha256===trust.verifierKeySha256&&
+          Number.isSafeInteger(a.notBefore)&&Number.isSafeInteger(a.expiresAt)&&
+          a.notBefore>=envelope.notBefore&&a.expiresAt<=envelope.expiresAt&&
+          a.expiresAt>a.notBefore&&a.expiresAt-a.notBefore<=14*86400000,'STANDING_ADOPTION_BINDING');
+        must(await read(file,65536)===raw,'STANDING_ADOPTION_CHANGED');
+        const finalTrust=await readTrust();
+        must(finalTrust.envelopeDigest===trust.envelopeDigest&&finalTrust.issuerKeySha256===trust.issuerKeySha256&&
+          finalTrust.verifierKeySha256===trust.verifierKeySha256&&
+          JSON.stringify(finalTrust.revocationCheckpoint)===gate.revocation,'STANDING_ADOPTION_TRUST_CHANGED');
+        const budgetState=JSON.stringify(ledger.standingDelegationBudget);
+        const check=request=>{
+          const at=clock();inspectPublisherLifecycleEvidence(gate.event,transaction);
+          must(!poisoned&&at>=a.notBefore&&at<a.expiresAt&&
+            at>=finalTrust.observedAt&&at<finalTrust.revocationExpiresAt&&
+            at>=gateReceipt.providerReceipt.observedAt&&at-gateReceipt.providerReceipt.observedAt<=60000&&
+            JSON.stringify(ledger.standingRevocationCheckpoint)===gate.revocation&&
+            JSON.stringify(ledger.standingDelegationBudget)===budgetState,'STANDING_ADMISSION_STALE');
+          must(request.prNumber===gate.expected.number&&request.headSha===gate.expected.headSha&&
+            request.baseSha===gate.expected.baseSha&&
+            JSON.stringify(request.changed)===JSON.stringify(input.request.changedPaths),'STANDING_ADMISSION_REQUEST');
+          return {status:'STANDING_SOURCE_ADMISSION_VERIFIED',authorized:false,adoptionDigest:expectedAdoptionDigest};
+        };
+        check({prNumber:gate.expected.number,headSha:gate.expected.headSha,baseSha:gate.expected.baseSha,changed:input.request.changedPaths});
+        const receipt=Object.freeze({status:'STANDING_SOURCE_ADMISSION_VERIFIED',authorized:false});
+        admissionReceipts.set(receipt,check);return receipt;
+      }catch{poisoned=true;return blocked('STANDING_ADOPTION_REJECTED');}
+      finally{bootstrapActive=false;}
+    }
   return Object.freeze({
     // Explicit hard stop: neither bootstrap evidence nor a reservation grants authority.
     beforeRequest:async()=>false,
     reserve(descriptor){
-      if(poisoned||bootstrapActive||phaseChanging)return Promise.resolve(blocked('STANDING_PREVIEW_LOCKED'));
+      if(releaseActive||poisoned||bootstrapActive||phaseChanging)return Promise.resolve(blocked('STANDING_PREVIEW_LOCKED'));
       if(pending>=256){poisoned=true;return Promise.resolve(blocked('STANDING_QUEUE_LIMIT'));}
       let captured,compiledRead,enqueuedLease;
       try{
@@ -255,7 +304,7 @@ export function createStandingRequestPreview({store,transaction,signedEnvelope,s
     },
     // Records native phase evidence only; never returns the transport's boolean grant.
     async observeLifecycle(event,evidence){
-      if(!publisherPhases||poisoned||bootstrapActive||phaseChanging||pending>0)return blocked('STANDING_PREVIEW_LOCKED');
+      if(releaseActive||!publisherPhases||poisoned||bootstrapActive||phaseChanging||pending>0)return blocked('STANDING_PREVIEW_LOCKED');
       phaseChanging=true;
       try{
         const native=inspectPublisherLifecycleEvidence(event,transaction),phase=native.phase;
@@ -286,7 +335,7 @@ export function createStandingRequestPreview({store,transaction,signedEnvelope,s
     // PRE_GATE is a separate read-only evidence class. Never require the future
     // final provider token here or promote its result into phaseProvider.
     async readGateProposal({token,fetchImpl,expected,trustedGateContext,signedEvidence,publisherEvidence}={}){
-      if(!publisherPhases||poisoned||bootstrapActive||phaseChanging||pending>0||!localPhase||exactPhase)
+      if(releaseActive||!publisherPhases||poisoned||bootstrapActive||phaseChanging||pending>0||!localPhase||exactPhase)
         return blocked('STANDING_PREVIEW_LOCKED');
       bootstrapActive=true;
       try{
@@ -344,54 +393,51 @@ export function createStandingRequestPreview({store,transaction,signedEnvelope,s
       }catch{poisoned=true;return blocked('STANDING_GATE_REJECTED');}
       finally{bootstrapActive=false;}
     },
-    async readAdoptedSourceAdmission(gateReceipt){
-      if(poisoned||bootstrapActive||phaseChanging||pending>0)return blocked('STANDING_PREVIEW_LOCKED');
-      bootstrapActive=true;
+    readAdoptedSourceAdmission(gateReceipt){
+      if(releaseActive)return Promise.resolve(blocked('STANDING_PREVIEW_LOCKED'));
+      return readAdoptedSourceAdmission(gateReceipt);
+    },
+    // Compiled in-process caller: all governance reads use this transaction's
+    // budget. Mint only after the final read; a receipt never crosses processes.
+    async runAdoptedReleaseAdmission(gateReceipt,{token}={}){
+      if(releaseActive||poisoned||bootstrapActive||phaseChanging||pending>0)
+        return blocked('STANDING_PREVIEW_LOCKED');
+      releaseActive=true;let reader;
       try{
         const gate=gateReceipts.get(gateReceipt);
-        must(expectedAdoptionDigest&&gate?.owner===input,'STANDING_ADOPTION_CONTEXT');
-        inspectPublisherLifecycleEvidence(gate.event,transaction);
-        const read=protectedReader||rootOwned;
-        const file=path.join(AUTHORITY_DIR,'standing-adoption.json');
-        const raw=await read(file,65536),signed=dataCopy(JSON.parse(raw));
-        must(digest(signed.payload)===expectedAdoptionDigest,'STANDING_ADOPTION_PIN');
-        const trust=await readTrust(),a=verifySignedPayload(signed,trust.issuerPublicKey);
-        const envelope=JSON.parse(input.signedEnvelope.payload);
-        must(JSON.stringify(a)===signed.payload&&a.schema==='asi.standing-adoption.v1'&&
-          a.environment===envelope.environment&&a.target===envelope.target&&
-          a.ownerId===207600140&&a.mode==='ROUTINE_SOURCE_ADMISSION_ONLY'&&a.repo===input.request.repo&&
-          a.envelopeDigest===trust.envelopeDigest&&a.securityDigest===envelope.securityDigest&&
-          a.policyDigest===envelope.policyDigest&&a.appId===envelope.appId&&a.installationId===envelope.installationId&&
-          a.issuerKeySha256===trust.issuerKeySha256&&a.verifierKeySha256===trust.verifierKeySha256&&
-          Number.isSafeInteger(a.notBefore)&&Number.isSafeInteger(a.expiresAt)&&
-          a.notBefore>=envelope.notBefore&&a.expiresAt<=envelope.expiresAt&&
-          a.expiresAt>a.notBefore&&a.expiresAt-a.notBefore<=14*86400000,'STANDING_ADOPTION_BINDING');
-        must(await read(file,65536)===raw,'STANDING_ADOPTION_CHANGED');
-        const finalTrust=await readTrust();
-        must(finalTrust.envelopeDigest===trust.envelopeDigest&&finalTrust.issuerKeySha256===trust.issuerKeySha256&&
-          finalTrust.verifierKeySha256===trust.verifierKeySha256&&
-          JSON.stringify(finalTrust.revocationCheckpoint)===gate.revocation,'STANDING_ADOPTION_TRUST_CHANGED');
-        const budgetState=JSON.stringify(ledger.standingDelegationBudget);
-        const check=request=>{
-          const at=clock();inspectPublisherLifecycleEvidence(gate.event,transaction);
-          must(!poisoned&&at>=a.notBefore&&at<a.expiresAt&&
-            at>=finalTrust.observedAt&&at<finalTrust.revocationExpiresAt&&
-            at>=gateReceipt.providerReceipt.observedAt&&at-gateReceipt.providerReceipt.observedAt<=60000&&
-            JSON.stringify(ledger.standingRevocationCheckpoint)===gate.revocation&&
-            JSON.stringify(ledger.standingDelegationBudget)===budgetState,'STANDING_ADMISSION_STALE');
-          must(request.prNumber===gate.expected.number&&request.headSha===gate.expected.headSha&&
-            request.baseSha===gate.expected.baseSha&&
-            JSON.stringify(request.changed)===JSON.stringify(input.request.changedPaths),'STANDING_ADMISSION_REQUEST');
-          return {status:'STANDING_SOURCE_ADMISSION_VERIFIED',authorized:false,adoptionDigest:expectedAdoptionDigest};
+        must(gate?.owner===input&&expectedAdoptionDigest,'STANDING_ADOPTION_CONTEXT');
+        const active=()=>inspectPublisherLifecycleEvidence(gate.event,transaction);
+        active();
+        reader=createGitHubReader({token,beforeRequest:async()=>{active();},requestAdmission:async descriptor=>{
+          active();const reserved=await reserveInternal(descriptor,false);
+          active();return reserved.status==='RESERVED_PREVIEW'&&!descriptor.signal.aborted;
+        }});
+        releaseReaders.set(reader,()=>{active();return releaseActive&&!poisoned;});
+        const readPr=async()=>{
+          const pr=await reader.get(`pulls/${gate.expected.number}`);active();
+          must(pr.number===gate.expected.number&&pr.head?.sha===gate.expected.headSha&&
+            pr.base?.sha===gate.expected.baseSha&&pr.base?.ref==='main'&&
+            pr.base?.repo?.full_name===input.request.repo&&pr.head?.repo?.full_name===input.request.repo&&
+            pr.state==='open'&&pr.merged===false,'STANDING_RELEASE_PR_CHANGED');
+          return {number:pr.number,body:pr.body||'',base:pr.base,head:pr.head};
         };
-        check({prNumber:gate.expected.number,headSha:gate.expected.headSha,baseSha:gate.expected.baseSha,changed:input.request.changedPaths});
-        const receipt=Object.freeze({status:'STANDING_SOURCE_ADMISSION_VERIFIED',authorized:false});
-        admissionReceipts.set(receipt,check);return receipt;
-      }catch{poisoned=true;return blocked('STANDING_ADOPTION_REJECTED');}
-      finally{bootstrapActive=false;}
+        const pr=await readPr();
+        const result=await main({ci:true,repoRoot:input.comparison.repoRoot,githubReader:reader,
+          prEvent:{repository:{full_name:input.request.repo},number:pr.number,pull_request:pr},
+          resolveStandingAdmission:async()=>{
+            must(JSON.stringify(await readPr())===JSON.stringify(pr),'STANDING_RELEASE_PR_CHANGED');
+            const receipt=await readAdoptedSourceAdmission(gateReceipt);
+            must(receipt.status==='STANDING_SOURCE_ADMISSION_VERIFIED','STANDING_RELEASE_ADMISSION_REJECTED');
+            return receipt;
+          }});
+        active();
+        must(result.status==='STANDING_SOURCE_ADMISSION_VERIFIED','STANDING_RELEASE_ADMISSION_REJECTED');
+        return Object.freeze({...result,authorized:false});
+      }catch{poisoned=true;return blocked('STANDING_RELEASE_ADMISSION_REJECTED');}
+      finally{releaseReaders.delete(reader);releaseActive=false;}
     },
     async readProvider({token,fetchImpl,publisherEvidence,expected}={}){
-      if(poisoned||bootstrapActive||phaseChanging||pending>0)return blocked('STANDING_PREVIEW_LOCKED');
+      if(releaseActive||poisoned||bootstrapActive||phaseChanging||pending>0)return blocked('STANDING_PREVIEW_LOCKED');
       bootstrapActive=true;providerAttempted=true;authenticatedObservation=undefined;
       try{
         const lease=inspectStandingTransaction(transaction);

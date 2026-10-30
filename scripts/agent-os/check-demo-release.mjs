@@ -5,7 +5,7 @@
  * This gate does not grant permission for merge, staging or server mutations.
  */
 import fs from 'node:fs';
-import {inspectStandingAdmissionReceipt} from '../strigunov4/execution-adapters/standing-request-guard.mjs';
+import {inspectStandingAdmissionReceipt,isStandingReleaseReader} from '../strigunov4/execution-adapters/standing-request-guard.mjs';
 import { readProtectedStandingTrustSnapshot } from './release-envelope-trust-roots.mjs';
 import { createHash, createPublicKey } from 'node:crypto';
 import { verifySignedPayload } from '../strigunov4/execution-adapters/host-authority.mjs';
@@ -1059,19 +1059,27 @@ export function checkPr({ contract, changed, prNumber, prBody, headSha,
   }
   return { status: 'CURRENT_MILESTONE_SCOPED', stage: f.stage, mode: f.mode };
 }
-export async function previousDiagnostics(stage, number, token) {
-  must(token && /^S4-G[1-6]$/.test(stage), 'DIAGNOSTIC_HISTORY_CONTEXT');
+// Native callers supply the existing authenticated reader. Once selected, every
+// prerequisite read uses that port; failures never fall back to unmetered fetch.
+async function releaseGitHubRead(route, token, reader, failure) {
+  if (reader !== undefined) {
+    must(reader && isStandingReleaseReader(reader), 'RELEASE_READER_REQUIRED');
+    return reader.get(route);
+  }
+  const response = await fetch('https://api.github.com/repos/' + REPO + '/' + route, { headers: {
+    'Accept': 'application/vnd.github+json',
+    'Authorization': 'Bearer ' + token,
+    'X-GitHub-Api-Version': '2022-11-28',
+  } });
+  must(response.ok, failure);
+  return response.json();
+}
+export async function previousDiagnostics(stage, number, token, reader) {
+  must((token || reader) && /^S4-G[1-6]$/.test(stage), 'DIAGNOSTIC_HISTORY_CONTEXT');
   let count = 0;
   for (let page = 1; page <= 10; page++) {
-    const uri = 'https://api.github.com/repos/' + REPO
-      + '/pulls?state=all&sort=created&direction=desc&per_page=100&page=' + page;
-    const response = await fetch(uri, { headers: {
-      'Accept': 'application/vnd.github+json',
-      'Authorization': 'Bearer ' + token,
-      'X-GitHub-Api-Version': '2022-11-28',
-    } });
-    must(response.ok, 'DIAGNOSTIC_HISTORY_API_FAILED');
-    const prs = await response.json();
+    const route = 'pulls?state=all&sort=created&direction=desc&per_page=100&page=' + page;
+    const prs = await releaseGitHubRead(route, token, reader, 'DIAGNOSTIC_HISTORY_API_FAILED');
     must(Array.isArray(prs), 'DIAGNOSTIC_HISTORY_INVALID');
     for (const pr of prs) {
       if (pr.number < number && pr.number > 509 && fields(pr.body || '').stage === stage) {
@@ -1086,19 +1094,12 @@ export async function previousDiagnostics(stage, number, token) {
   }
   throw new Error('DIAGNOSTIC_HISTORY_PAGINATION_BLOCK');
 }
-export async function verifiedOwnerComment(number, sha, kind, token) {
-  must(Number.isInteger(number) && SHA.test(sha) && token, 'OWNER_ATTESTATION_CONTEXT');
+export async function verifiedOwnerComment(number, sha, kind, token, reader) {
+  must(Number.isInteger(number) && SHA.test(sha) && (token || reader), 'OWNER_ATTESTATION_CONTEXT');
   const exact = 'ASI-OWNER-APPROVE:' + kind + ':' + number + ':' + sha;
   for (let page = 1; page <= 10; page++) {
-    const uri = 'https://api.github.com/repos/' + REPO + '/issues/' + number
-        + '/comments?per_page=100&page=' + page;
-    const response = await fetch(uri, { headers: {
-      'Accept': 'application/vnd.github+json',
-      'Authorization': 'Bearer ' + token,
-      'X-GitHub-Api-Version': '2022-11-28',
-    } });
-    must(response.ok, 'OWNER_ATTESTATION_API_FAILED');
-    const comments = await response.json();
+    const route = 'issues/' + number + '/comments?per_page=100&page=' + page;
+    const comments = await releaseGitHubRead(route, token, reader, 'OWNER_ATTESTATION_API_FAILED');
     must(Array.isArray(comments), 'OWNER_ATTESTATION_INVALID');
     if (comments.some(x => x.user?.id === OWNER_ID && x.body?.trim() === exact)) return true;
     if (comments.length < 100) return false;
@@ -1120,7 +1121,7 @@ export function requiredApproval({contract, changed, prNumber, prBody, headSha})
     changed.some(p => ![...stage.files, ...(stage.plannedFiles || [])].includes(p))
     ? 'RELEASE-EXCEPTION' : null;
 }
-export async function verifyStageRuns(contract, token) {
+export async function verifyStageRuns(contract, token, reader) {
   const verified = new Set();
   // Only the independently approved, protected physical repair path is accepted
   // at this stage. Other stage workflows require a separately reviewed contract.
@@ -1130,21 +1131,15 @@ export async function verifyStageRuns(contract, token) {
   }]]);
   for (const stage of contract.stages) {
     if (stage.status !== 'ACCEPTED') continue;
-    must(token && SHA.test(stage.acceptanceSha), 'ACCEPTANCE_SHA_REQUIRED');
+    must((token || reader) && SHA.test(stage.acceptanceSha), 'ACCEPTANCE_SHA_REQUIRED');
     const expected = allowed.get(stage.id);
     must(expected, 'STAGE_ACCEPTANCE_WORKFLOW_NOT_APPROVED');
     for (const proof of stage.proof) {
       const match = typeof proof === 'string' &&
         /^https:\/\/github\.com\/ASI-integration\/asi-landing\/actions\/runs\/([0-9]+)$/.exec(proof);
       must(match, 'ACCEPTANCE_INVALID_PROOF');
-      const headers = {Accept:'application/vnd.github+json', Authorization:'Bearer '+token,
-        'X-GitHub-Api-Version':'2022-11-28'};
-      const uri = 'https://api.github.com/repos/'+REPO+'/actions/runs/'+match[1];
-      const get = async (url, label) => {
-        const response = await fetch(url, {headers});
-        must(response.ok, label);
-        return response.json();
-      };
+      const uri = 'actions/runs/'+match[1];
+      const get = (route, label) => releaseGitHubRead(route, token, reader, label);
       const run = await get(uri,'ACCEPTANCE_RUN_UNAVAILABLE');
       must(run.repository?.full_name === REPO && run.status === 'completed' &&
         run.conclusion === 'success' && run.head_sha === stage.acceptanceSha &&
@@ -1170,18 +1165,42 @@ export async function verifyStageRuns(contract, token) {
 
 export async function main(options = {}) {
   const repoRoot = options.repoRoot || ROOT;
-  const release = JSON.parse(fs.readFileSync(path.join(repoRoot, CONTRACT), 'utf8'));
-  const verifiedRuns = options.ci && process.env.GITHUB_TOKEN ?
-    await verifyStageRuns(release, process.env.GITHUB_TOKEN) : new Set();
+  // Snapshot the host-selected context before the first asynchronous read. A
+  // native invocation must not silently inherit an unrelated CI event/token.
+  const reader = options.githubReader;
+  const nativeContext = reader !== undefined || options.prEvent !== undefined;
+  must(!nativeContext || options.ci === true && reader && isStandingReleaseReader(reader) &&
+    options.prEvent && typeof options.prEvent === 'object', 'NATIVE_RELEASE_CONTEXT_REQUIRED');
+  const nativeEvent = nativeContext ? structuredClone(options.prEvent) : undefined;
+  if (nativeContext) {
+    const pr = nativeEvent.pull_request;
+    must(nativeEvent.repository?.full_name === REPO && Number.isSafeInteger(nativeEvent.number) &&
+      nativeEvent.number > 0 && pr?.number === nativeEvent.number, 'PR_REPOSITORY');
+    must(pr.base?.ref === 'main' && pr.head?.repo?.full_name === REPO &&
+      SHA.test(pr.base.sha) && SHA.test(pr.head.sha), 'PR_SOURCE');
+  }
+  const resolveAdmission = options.resolveStandingAdmission;
+  must(resolveAdmission === undefined || nativeContext && typeof resolveAdmission === 'function' &&
+    options.standingAdmission === undefined, 'STANDING_ADMISSION_RESOLVER_CONTEXT');
+  const token = nativeContext ? undefined : process.env.GITHUB_TOKEN;
+  // A host call evaluates the protected base contract, never candidate worktree
+  // bytes. The CLI keeps its existing release-validation behavior.
+  const release = JSON.parse(nativeContext ? execFileSync('git',
+    ['-c', 'core.hooksPath=/dev/null', 'show', nativeEvent.pull_request.base.sha + ':' + CONTRACT],
+    { cwd: repoRoot, encoding: 'utf8', timeout: 5000, maxBuffer: 1000000,
+      env: {PATH:process.env.PATH, GIT_CONFIG_NOSYSTEM:'1', GIT_CONFIG_GLOBAL:'/dev/null'} }) :
+    fs.readFileSync(path.join(repoRoot, CONTRACT), 'utf8'));
+  const verifiedRuns = options.ci && (token || reader) ?
+    await verifyStageRuns(release, token, reader) : new Set();
   const status = validateContract(release, trackedFiles(repoRoot), verifiedRuns);
   if (!options.ci) {
     return { status: 'LOCAL_RELEASE_CONTRACT_VALID', ...status };
   }
-  if (!['pull_request', 'pull_request_target'].includes(process.env.GITHUB_EVENT_NAME)) {
+  if (!nativeContext && !['pull_request', 'pull_request_target'].includes(process.env.GITHUB_EVENT_NAME)) {
     return { status: 'CI_NO_PR_CONTEXT', ...status };
   }
-  must(!!process.env.GITHUB_EVENT_PATH, 'PR_EVENT_MISSING');
-  const event = JSON.parse(fs.readFileSync(process.env.GITHUB_EVENT_PATH, 'utf8'));
+  must(nativeContext || !!process.env.GITHUB_EVENT_PATH, 'PR_EVENT_MISSING');
+  const event = nativeEvent ?? JSON.parse(fs.readFileSync(process.env.GITHUB_EVENT_PATH, 'utf8'));
   const pr = event.pull_request;
   must(event.repository?.full_name === REPO && pr?.number === event.number, 'PR_REPOSITORY');
   must(pr.base?.ref === 'main' && pr.head?.repo?.full_name === REPO, 'PR_SOURCE');
@@ -1195,14 +1214,18 @@ export async function main(options = {}) {
   const approvalKind = baseHasContract ? requiredApproval({contract:release,
     changed, prNumber:pr.number, prBody:pr.body || '', headSha:pr.head.sha}) : null;
   const ownerApproval = approvalKind ? await verifiedOwnerComment(
-    pr.number, pr.head.sha, approvalKind, process.env.GITHUB_TOKEN) : false;
+    pr.number, pr.head.sha, approvalKind, token, reader) : false;
   const parsed = fields(pr.body || '');
   const priorDiagnosticCount = baseHasContract && parsed.mode === 'diagnostic' &&
     parsed.stage === status.nextStage && pr.number > release.transition.legacyPrMax
-    ? await previousDiagnostics(parsed.stage, pr.number, process.env.GITHUB_TOKEN) : 0;
+    ? await previousDiagnostics(parsed.stage, pr.number, token, reader) : 0;
+  // The native receipt binds the final durable budget generation. Mint it only
+  // after all prerequisite reads; no await follows before synchronous checkPr.
+  const standingAdmission = resolveAdmission ? await resolveAdmission() : options.standingAdmission;
+  must(resolveAdmission === undefined || standingAdmission !== undefined, 'STANDING_ADMISSION_MISSING');
   return { ...checkPr({ contract: release, changed, prNumber: pr.number,
     prBody: pr.body || '', headSha: pr.head.sha, baseHasContract, ownerApproval,
-    priorDiagnosticCount, verifiedRuns,baseSha:pr.base.sha,standingAdmission:options.standingAdmission }),
+    priorDiagnosticCount, verifiedRuns,baseSha:pr.base.sha,standingAdmission }),
     nextStage: status.nextStage, changedFiles: changed.length };
 }
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
