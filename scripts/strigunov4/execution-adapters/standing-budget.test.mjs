@@ -333,3 +333,17 @@ test('legacy 16-child envelope history denies a 17th without resetting previous 
     assert.deepEqual((await f.read()).standingDelegationBudget,before.standingDelegationBudget);
   }finally{await f.close()}
 });
+
+test('365-day parent is never substituted for a signed short-lived execution child',async()=>{
+  const f=await fixture();
+  try{
+    const year=365*86400000;
+    const forgedParentAsChild=env({notBefore:at-1000,expiresAt:at-1000+year});
+    const denied=await f.budget.reserve({envelope:forgedParentAsChild,effect:effect('year-is-not-child')});
+    assert.equal(denied.reason,'BUDGET_ENVELOPE_SCOPE');
+    assert.equal((await f.read()).standingDelegationBudget,undefined);
+    const short=env({notBefore:at-1000,expiresAt:at-1000+14*86400000});
+    assert.equal((await f.budget.reserve({envelope:short,effect:effect('short-child')})).status,'RESERVED');
+    assert.equal((await f.read()).standingDelegationBudget.envelopes[hex64].claims.length,1);
+  }finally{await f.close()}
+});
