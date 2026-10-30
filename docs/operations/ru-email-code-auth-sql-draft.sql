@@ -9,6 +9,17 @@
 -- wrapping transaction. Do NOT insert manual BEGIN/COMMIT statements: they
 -- can interfere with the CLI migrator's transaction and migration history.
 
+-- The existing users.email UNIQUE constraint is case-sensitive. RU OTP
+-- authenticates a canonical case-folded address; without a DB invariant a
+-- concurrent legacy writer can insert User@Example.RU after OTP's lookup and
+-- create two independently authorized identities for the same mailbox.
+-- The protected staging preflight MUST audit lower(email) collisions and
+-- resolve them by separately reviewed account ownership procedures. This
+-- migration intentionally FAILS on a collision: never auto-merge accounts.
+-- Keep the index in the same reviewed transaction as the RU-auth RPCs.
+CREATE UNIQUE INDEX ru_auth_users_email_ci_unique
+  ON public.users (pg_catalog.lower(email));
+
 CREATE TABLE public.ru_auth_email_challenges (
   email TEXT PRIMARY KEY,
   code_hash TEXT NOT NULL CHECK (code_hash ~ '^[a-f0-9]{64}$'),
