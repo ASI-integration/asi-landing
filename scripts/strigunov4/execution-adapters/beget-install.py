@@ -194,23 +194,44 @@ def stage_receipt_path(raw):
     return AUTH/('staged-isolation-'+digest(raw)+'.json')
 
 def exact_disabled_unit_state():
-    # Validate systemd's EFFECTIVE loaded identity, not just a file on disk.
-    # Drop-ins can change ExecStart/privileges without changing unit bytes.
+    # Require the effective manager configuration, not only the root-owned
+    # unit bytes. An old loaded unit or a changed ExecStart can survive a
+    # restored on-disk unit until daemon-reload; do not activate that state.
+    keys=('LoadState','ActiveState','MainPID','UnitFileState','FragmentPath',
+          'DropInPaths','NeedDaemonReload','User','Group','WorkingDirectory',
+          'ExecStart','NoNewPrivileges','ProtectSystem','ProtectHome',
+          'PrivateTmp','PrivateDevices','CapabilityBoundingSet',
+          'AmbientCapabilities','ReadWritePaths','RestrictAddressFamilies')
     lines=call(['/usr/bin/systemctl','show',UNIT,
-                '-pLoadState','-pActiveState','-pMainPID','-pUnitFileState',
-                '-pFragmentPath','-pDropInPaths','-pUser','-pGroup']).decode().splitlines()
+                *(('-p'+k) for k in keys)]).decode().splitlines()
     fields={}
     for line in lines:
         if '=' not in line:raise Block('STAGED_UNIT_NOT_DISABLED')
         key,value=line.split('=',1)
         require(key not in fields,'STAGED_UNIT_NOT_DISABLED')
         fields[key]=value
-    require(fields=={'LoadState':'loaded','ActiveState':'inactive',
-                     'MainPID':'0','UnitFileState':'disabled',
-                     'FragmentPath':'/etc/systemd/system/'+UNIT,
-                     'DropInPaths':'','User':USER,'Group':USER},
+    argv=('/usr/bin/flock -n -E 73 --no-fork /run/asi-engine/worker.lock '
+          '/opt/asi-engine/node '
+          '/opt/asi-engine/scripts/strigunov4/ASI-STRIGUNOV4-RUNNER-BRIDGE-20261020.mjs --beget')
+    exec_line=fields.pop('ExecStart','')
+    require(exec_line.startswith('{ path=/usr/bin/flock ; argv[]='+argv+' ; ignore_errors=no ; ')
+            and exec_line.endswith(' }')
+            and exec_line.count('path=')==1 and exec_line.count('argv[]=')==1,
             'STAGED_UNIT_NOT_DISABLED')
-
+    families=fields.pop('RestrictAddressFamilies','').split()
+    require(len(families)==4 and set(families)=={'AF_UNIX','AF_INET','AF_INET6','AF_NETLINK'},
+            'STAGED_UNIT_NOT_DISABLED')
+    expected={'LoadState':'loaded','ActiveState':'inactive','MainPID':'0',
+              'UnitFileState':'disabled',
+              'FragmentPath':'/etc/systemd/system/'+UNIT,
+              'DropInPaths':'','NeedDaemonReload':'no',
+              'User':USER,'Group':USER,
+              'WorkingDirectory':str(STATE),
+              'NoNewPrivileges':'yes','ProtectSystem':'strict',
+              'ProtectHome':'yes','PrivateTmp':'yes','PrivateDevices':'yes',
+              'CapabilityBoundingSet':'','AmbientCapabilities':'',
+              'ReadWritePaths':'/var/lib/asi-engine /run/asi-engine'}
+    require(fields==expected,'STAGED_UNIT_NOT_DISABLED')
 
 def staged_state(raw,manifest,files,public):
     # Enforce *exact* staged bytes, without trusting a root-owned JSON claim alone.
