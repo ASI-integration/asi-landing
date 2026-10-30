@@ -11,7 +11,15 @@
  */
 
 const REPO = 'ASI-integration/asi-landing';
-const KNOWN_IDS = Object.freeze(['engine', 'ru-auth', 'p0-integration', 'p0-trust', 'p0-atomic-budget']);
+// Exact owner-named workstreams. These names do not grant execution rights.
+const OWNER_LANES = Object.freeze([
+  ['engine', 'asi/beget-one-engine-20261028'],
+  ['ru-auth', 'feat/ru-unified-auth-20261029'],
+  ['p0-integration', 'asi/standing-delegation-551'],
+  ['p0-trust', 'asi/p0-trusted-evidence-worker-20261029'],
+  ['p0-atomic-budget', 'asi/p0-atomic-budget-worker-20261029'],
+]);
+const KNOWN_IDS = Object.freeze(OWNER_LANES.map(([id]) => id));
 const SHA = /^[a-f0-9]{40}$/;
 const IDENT = /^[a-z0-9][a-z0-9-]{0,79}$/;
 const BRANCH = /^[a-zA-Z0-9][a-zA-Z0-9/_-]{0,150}$/;
@@ -42,9 +50,9 @@ export function minimumBackoffMs(retries) {
 export function planCooperativeOwnerLane(snapshot) {
   const {laneDefinitions, admittedCatalog, journal, nowMs} = snapshot ?? {};
   if (!safeMs(nowMs)) return response('UNKNOWN', 'CLOCK_UNVERIFIED');
-  if (!Array.isArray(laneDefinitions) || laneDefinitions.length !== KNOWN_IDS.length ||
-      laneDefinitions.some((lane, index) => !lane || lane.id !== KNOWN_IDS[index] ||
-        lane.repository !== REPO || typeof lane.branch !== 'string' || !BRANCH.test(lane.branch)) ||
+  if (!Array.isArray(laneDefinitions) || laneDefinitions.length !== OWNER_LANES.length ||
+      laneDefinitions.some((lane, index) => !lane || lane.id !== OWNER_LANES[index][0] ||
+        lane.repository !== REPO || lane.branch !== OWNER_LANES[index][1] || !BRANCH.test(lane.branch)) ||
       new Set(laneDefinitions.map(x => x.branch)).size !== KNOWN_IDS.length)
     return response('UNKNOWN', 'STATIC_LANE_DEFINITIONS_INVALID');
   if (!Array.isArray(admittedCatalog) || admittedCatalog.length < 1 || admittedCatalog.length > 20)
@@ -56,7 +64,7 @@ export function planCooperativeOwnerLane(snapshot) {
   if (journal.engineMode !== 'IDLE')
     return response('STOPPED', 'GLOBAL_ENGINE_LOCK_OR_EVIDENCE_UNCERTAIN');
 
-  const matched = new Map(), usedTaskIds = new Set(), paths = new Set();
+  const matched = new Map(), usedTaskIds = new Set(), paths = [];
   for (const lane of laneDefinitions) {
     const hits = admittedCatalog.filter(t => t?.branch === lane.branch && t?.repo === lane.repository);
     if (hits.length > 1) return response('STOPPED', 'DUPLICATE_ADMITTED_BRANCH');
@@ -69,8 +77,10 @@ export function planCooperativeOwnerLane(snapshot) {
     usedTaskIds.add(task.id);
     for (const c of task.changes) {
       if (!c || typeof c.path !== 'string' || !/^([a-zA-Z0-9_.-]+\/)*[a-zA-Z0-9_.-]+$/.test(c.path) ||
-          c.path.includes('..') || paths.has(c.path)) return response('STOPPED', 'OVERLAPPING_OR_UNSAFE_ADMITTED_PATH');
-      paths.add(c.path);
+          c.path.includes('..') || c.path.split('/').includes('.git') ||
+          paths.some(p => p === c.path || p.startsWith(c.path + '/') || c.path.startsWith(p + '/')))
+        return response('STOPPED', 'OVERLAPPING_OR_UNSAFE_ADMITTED_PATH');
+      paths.push(c.path);
     }
     matched.set(lane.id, task);
   }
@@ -89,24 +99,23 @@ export function planCooperativeOwnerLane(snapshot) {
         !Number.isSafeInteger(state.retries) || state.retries < 0 || state.retries > MAX_RETRIES ||
         !['READY', 'BACKOFF', 'DONE', 'BLOCKED', 'UNKNOWN', 'FAILED_LOCKED'].includes(state.mode) ||
         state.lastServedAtMs > nowMs || state.nextEligibleAtMs > Number.MAX_SAFE_INTEGER) {
-      states.push({id: lane.id, mode: 'UNKNOWN', reason: 'DURABLE_LANE_IDENTITY_OR_STATE_INVALID'});
-      continue;
+      return response('STOPPED', 'DURABLE_LANE_IDENTITY_OR_STATE_INVALID', states);
     }
     if (state.mode === 'FAILED_LOCKED')
       return response('STOPPED', 'FAILED_LOCKED_REQUIRES_RECONCILIATION', states);
-    if (state.mode === 'UNKNOWN' || state.mode === 'BLOCKED' || state.mode === 'DONE') {
+    if (state.mode === 'UNKNOWN')
+      return response('STOPPED', 'LANE_UNKNOWN_REQUIRES_RECONCILIATION', states);
+    if (state.mode === 'BLOCKED' || state.mode === 'DONE') {
       states.push({id: lane.id, mode: state.mode, reason: 'NO_AUTOMATIC_RETRY'});
       continue;
     }
     if (state.mode === 'BACKOFF') {
       const delay = minimumBackoffMs(state.retries);
       if (delay === null || state.lastServedAtMs + delay > state.nextEligibleAtMs) {
-        states.push({id: lane.id, mode: 'UNKNOWN', reason: 'BACKOFF_BYPASS_OR_INVALID'});
-        continue;
+        return response('STOPPED', 'BACKOFF_BYPASS_OR_INVALID', states);
       }
     } else if (state.retries !== 0 || state.nextEligibleAtMs !== 0) {
-      states.push({id: lane.id, mode: 'UNKNOWN', reason: 'READY_MUST_NOT_BYPASS_RETRY'});
-      continue;
+      return response('STOPPED', 'READY_MUST_NOT_BYPASS_RETRY', states);
     }
     if (state.nextEligibleAtMs > nowMs) {
       states.push({id: lane.id, mode: 'BACKOFF', reason: 'WAIT_UNTIL_ELIGIBLE'});
