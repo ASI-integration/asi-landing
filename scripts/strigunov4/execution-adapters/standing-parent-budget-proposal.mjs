@@ -97,7 +97,13 @@ function boundLink(link, scope, p) {
     link.notBefore === scope.notBefore && link.expiresAt === scope.expiresAt &&
     link.repo === scope.repo && link.environment === scope.environment &&
     link.target === scope.target && link.action === scope.action &&
-    link.securityDigest === scope.securityDigest && link.policyDigest === scope.policyDigest;
+    link.securityDigest === scope.securityDigest && link.policyDigest === scope.policyDigest &&
+    // Numeric caps and zero-paid budget are part of the child link identity.
+    // A structurally valid digest without these values is not a complete bound link.
+    link.paidApiUsd === scope.paidApiUsd &&
+    link.maxOperations === scope.maxOperations &&
+    link.maxRequests === scope.maxRequests &&
+    link.maxWrites === scope.maxWrites;
 }
 /** Pure contract check only; never implies a verified signer or atomic claim. */
 export function assessParentBudgetProposal({parent, child, childLinks, ledger, effect, now,
