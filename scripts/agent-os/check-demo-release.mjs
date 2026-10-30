@@ -1101,7 +1101,14 @@ export async function verifiedOwnerComment(number, sha, kind, token, reader) {
     const route = 'issues/' + number + '/comments?per_page=100&page=' + page;
     const comments = await releaseGitHubRead(route, token, reader, 'OWNER_ATTESTATION_API_FAILED');
     must(Array.isArray(comments), 'OWNER_ATTESTATION_INVALID');
-    if (comments.some(x => x.user?.id === OWNER_ID && x.body?.trim() === exact)) return true;
+    // An App can post under the owner's numeric login. That is not an
+    // independent human decision. Missing provenance fails closed too. These
+    // provider fields exclude known App/bot origins; they do not prove human
+    // custody of a user token or authorize standing-policy adoption.
+    if (comments.some(x => Number.isSafeInteger(x?.id) && x.id > 0 &&
+      x.user?.id === OWNER_ID && x.user.type === 'User' &&
+      x.author_association === 'OWNER' && x.performed_via_github_app === null &&
+      typeof x.body === 'string' && x.body.trim() === exact)) return true;
     if (comments.length < 100) return false;
   }
   throw new Error('OWNER_ATTESTATION_PAGINATION_BLOCK');
