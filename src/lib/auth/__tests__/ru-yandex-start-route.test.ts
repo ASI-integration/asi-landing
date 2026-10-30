@@ -61,6 +61,27 @@ describe('Yandex start rejects unsolicited login CSRF as well as linking CSRF', 
     },
   );
 
+  it.each([
+    'mode=', 'mode=Link', 'mode=unknown', 'mode=link&mode=login', 'mode=login&mode=link',
+  ])('rejects ambiguous or unknown Yandex start mode before session mutation: %s', async (query) => {
+    const response = await GET(new Request(origin + '/api/auth/yandex/start?' + query, {
+      headers: { 'sec-fetch-site': 'same-origin' },
+    }));
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ ok: false, error: 'YANDEX_INVALID_MODE' });
+    expect(mocks.getSession).not.toHaveBeenCalled();
+    expect(mocks.save).not.toHaveBeenCalled();
+  });
+
+  it('allows one explicit login mode without requiring an existing owner session', async () => {
+    const response = await GET(new Request(origin + '/api/auth/yandex/start?mode=login', {
+      headers: { 'sec-fetch-site': 'same-origin' },
+    }));
+    expect(response.status).toBe(307);
+    expect(new URL(response.headers.get('location')!).origin).toBe('https://oauth.yandex.ru');
+    expect(mocks.save).toHaveBeenCalledOnce();
+  });
+
   it('retains normal same-origin first-party Yandex login redirect with fresh state/PKCE', async () => {
     const res = await GET(startRequest('login', { 'sec-fetch-site': 'same-origin' }));
     expect(res.status).toBe(307);
