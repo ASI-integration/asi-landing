@@ -292,12 +292,12 @@ test('20 routine Stage G2 host maintenance avoids per-file owner exception, prot
 
 test('21 development mode permits routine code, not protected operations', () => {
   const bodyDev=body('S4-G2','development');
-  for (const filename of ['src/app/demo/page.tsx','tests/example.test.ts','scripts/strigunov4/execution-adapters/host-checks.mjs','docs/example.md']) {
+  for (const filename of ['src/app/demo/page.tsx','tests/example.test.ts','scripts/strigunov4/test_c4_unit_readonly.py','docs/example.md']) {
     const args={contract:seed,changed:[filename],prNumber:570,prBody:bodyDev,headSha:sha,baseHasContract:true};
     assert.equal(checkPr(args).status,'SOURCE_DEVELOPMENT_ONLY');
     assert.equal(requiredApproval({contract:seed,changed:[filename],prNumber:570,prBody:bodyDev,headSha:sha}),null);
   }
-  for (const filename of ['.github/workflows/pr-validation.yml','scripts/agent-os/check-demo-release.mjs','scripts/strigunov4/execution-adapters/host-authority.mjs','scripts/strigunov4/execution-adapters/standing-budget.mjs','src/.env','scripts/deploy.sh','src/production/secrets.pem']) {
+  for (const filename of ['.github/workflows/pr-validation.yml','scripts/agent-os/check-demo-release.mjs','scripts/strigunov4/execution-adapters/host-authority.mjs','scripts/strigunov4/execution-adapters/host-checks.mjs','scripts/strigunov4/execution-adapters/standing-budget.mjs','docs/agent-os/AUTONOMY_POLICY.md','src/.env','scripts/deploy.sh','src/production/secrets.pem']) {
     const args={contract:seed,changed:[filename],prNumber:570,prBody:bodyDev,headSha:sha,baseHasContract:true};
     assert.throws(()=>checkPr(args), /DEVELOPMENT_PROTECTED_OR_OUT_OF_SCOPE_PATH|GOVERNANCE_CHANGE_NEEDS_VERIFIED_OWNER_ATTESTATION/);
     assert.notEqual(requiredApproval({contract:seed,changed:[filename],prNumber:570,prBody:bodyDev,headSha:sha}),null);
