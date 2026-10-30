@@ -2,6 +2,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import {execFile} from 'node:child_process';
 import {digest,must,regular} from './state.mjs';
+import {rootOwned} from './host-authority.mjs';
 
 export const PILOT_TEST='test_c4_unit_readonly.UnitReadonlyTests.test_receipt_replay_flag_requires_literal_false';
 // Pin the observed CLI tool switches, not just the legacy shell switch:
@@ -117,7 +118,14 @@ export async function createBegetChecks({root,catalog,reviewsRaw,verifyReviewPro
     const testModule=path.basename(task.changes[0].path,'.py');
     const args=sandboxArguments(cwd);
     args[args.length-1]=`import sys,unittest;sys.path.insert(0,'.');s=unittest.defaultTestLoader.loadTestsFromName('${testModule}');r=unittest.TextTestRunner().run(s);sys.exit(0 if r.wasSuccessful() and r.testsRun>0 else 1)`;
-    await execute('/opt/asi-engine/bwrap',args,{cwd,signal});await bytes(e);return {...e,status:'PASS'};
+    // Ubuntu's AppArmor userns policy is attached to /usr/bin/bwrap, not the
+    // identical pinned copy in /opt. Avoid global security-policy relaxation.
+    // Root ownership, path and exact binary SHA are verified on every invocation.
+    const distroBwrap='/usr/bin/bwrap';
+    const pinnedBwrapSha='e318903862396f96de3df57264e0158682b952fd3fb53ac23d876413e7b30f71';
+    must(digest(await rootOwned(distroBwrap,2000000,{encoding:null}))===pinnedBwrapSha,
+      'BEGET_BWRAP_APPARMOR_PATH_PIN_CHANGED');
+    await execute(distroBwrap,args,{cwd,signal});await bytes(e);return {...e,status:'PASS'};
   },async independentReview(e){const task=await bytes(e);return {...e,...await attestation(task,e.deltaSha256)};},
   publishedReview:{policySha256:reviewPolicySha256,async verify(p){
     const task=catalog.find(t=>t.id===p.id);const r=await attestation(task,p.deltaSha256);
