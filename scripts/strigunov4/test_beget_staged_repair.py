@@ -234,7 +234,8 @@ class IsolatedAtomicRepairTests(TestCase):
             with self.assertRaisesRegex(RuntimeError,'REPAIR_EXCHANGE_NOT_DIRECTORY'):
                 R.exchange_directories(link,right)
             other=root/'sub';other.mkdir()
+            nested=other/'child';nested.mkdir()
             with self.assertRaisesRegex(RuntimeError,'REPAIR_EXCHANGE_PARENT'):
-                R.exchange_directories(left,other)
+                R.exchange_directories(left,nested)
 
 if __name__=='__main__':main()
