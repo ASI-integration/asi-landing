@@ -276,3 +276,17 @@ test('root-owned Bubblewrap reader rejects untrusted file chain and symlink befo
  const link=path.join(dir,'link');await fs.symlink(untrusted,link);
  await assert.rejects(()=>rootOwned(link,2000000,{encoding:null}),/AUTHORITY_PATH|AUTHORITY_DIRECTORY|AUTHORITY_FILE/);
 });
+
+test('existing G2 child execution grant fails closed at expiry and above fourteen days',async t => {
+ const f=await setup(t),original=structuredClone(f.policy),now=f.now.value;
+ assert.doesNotThrow(()=>validateStagePolicy(original,now));
+ for(const mutate of [
+   p=>{p.expiresAt=now;},
+   p=>{p.notBefore=now+1;p.expiresAt=now+2000;},
+   p=>{p.expiresAt=p.notBefore+14*86400000+1;},
+   p=>{p.notBefore=now-365*86400000;p.expiresAt=now+1;},
+ ]) {
+   const candidate=structuredClone(original);mutate(candidate);
+   assert.throws(()=>validateStagePolicy(candidate,now),/STAGE_POLICY_SCOPE_OR_EXPIRY/);
+ }
+});
