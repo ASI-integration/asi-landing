@@ -11,7 +11,7 @@ const parent=()=>({schema:'asi.standing-parent.proposal.v1',digest:h('signed-par
   securityDigest:h('security'),policyDigest:h('policy'),repo:'ASI-integration/asi-landing',
   environment:'beget-staging',target:'pqukibofpo',action:'source',paidApiUsd:0,
   notBefore:start,expiresAt:start+Y,maxOperations:256,maxRequests:256,maxWrites:64});
-const child=(i,p=parent())=>({...p,digest:h('child'+i),schema:undefined,paidApiUsd:undefined,
+const child=(i,p=parent())=>({...p,digest:h('child'+i),schema:undefined,paidApiUsd:0,
   notBefore:start+i*D,expiresAt:start+(i+1)*D,maxOperations:2,maxRequests:2,maxWrites:2});
 const link=(c,p)=>({childDigest:c.digest,parentDigest:p.digest,issuerKeyDigest:h('verified-issuer-fixture'),
   notBefore:c.notBefore,expiresAt:c.expiresAt,repo:c.repo,environment:c.environment,
@@ -198,4 +198,16 @@ test('same digest cannot silently narrow persisted child scope',()=>{
   const f=fixture();
   f.child={...f.child,maxOperations:1,maxRequests:1,maxWrites:1};
   assert.equal(assess(f).reason,'PARENT_CHILD_SCOPE_CHANGED');
+});
+
+// A child cannot silently add a paid allowance under a zero-paid parent,
+// including by corrupting an earlier durable child scope and retaining its digest.
+test('zero-paid child scope is immutable in active and historical budget records',()=>{
+  const active=fixture();active.child={...active.child,paidApiUsd:1};
+  assert.equal(assess(active).reason,'PARENT_HISTORY_OR_LINK_INVALID');
+  const missing=fixture();missing.child={...missing.child,paidApiUsd:undefined};
+  assert.equal(assess(missing).reason,'PARENT_HISTORY_OR_LINK_INVALID');
+  const history=fixture();history.child={...history.child};
+  history.ledger.standingDelegationBudget.envelopes[history.child.digest].scope.paidApiUsd=1;
+  assert.equal(assess(history).reason,'PARENT_HISTORY_OR_LINK_INVALID');
 });
