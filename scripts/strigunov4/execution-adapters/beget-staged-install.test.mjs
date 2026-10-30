@@ -243,3 +243,127 @@ with tempfile.TemporaryDirectory(prefix='asi-engine-umask-') as root:
 for(const mode of ['valid','runtime-0700','module-0600','node-0700','bwrap-0700','script-dir-0700','world-writable-module','symlink-module']){
   test('restrictive umask / staged runtime access: '+mode,()=>assert.doesNotThrow(()=>run(runtimeModeFixture,mode)));
 }
+
+
+// The already-consumed original stage may not be rebuilt with a new installer.
+// These fixtures test ONLY a new, separately signed, mode-only recovery against
+// that exact original package and receipt. They never mutate Beget.
+const stagedRepairFixture=String.raw`
+import importlib.util,sys,json
+from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import patch
+spec=importlib.util.spec_from_file_location('installer',sys.argv[1])
+m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
+mode=sys.argv[2]
+raw=b'{"original-stage":true}'
+manifest={'schema':'asi.beget-engine-source.v1','sourceSha':'a'*40,
+          'baseSha':'b'*40,'unitSha256':'c'*64,'installerSha256':'d'*64}
+files={'scripts/reviewed.mjs':b'only-original-source',
+       m.UNIT:b'original-disabled-unit','catalog.json':b'[]'}
+stage_grant={'schema':m.STAGE_SCHEMA,'host':m.HOST,'unit':m.UNIT,
+             'manifestSha256':m.digest(raw),'sourceSha':manifest['sourceSha'],
+             'baseSha':manifest['baseSha'],'unitSha256':manifest['unitSha256'],
+             'actions':m.STAGE_ACTIONS,'notBefore':100,'expiresAt':1000}
+original_claim=json.dumps({'manifestSha256':m.digest(raw),'oneUse':True}).encode()
+receipt=b'{"signed-stage-receipt":"fixture"}'
+script=b'exact reviewed repair script'
+proof={'host':m.HOST,'unit':m.UNIT,'manifestSha256':m.digest(raw),
+       'sourceSha':manifest['sourceSha'],'baseSha':manifest['baseSha'],
+       'originalInstallerSha256':manifest['installerSha256'],
+       'unitSha256':manifest['unitSha256'],
+       'stageClaimSha256':m.digest(original_claim),
+       'stageReceiptSha256':m.digest(receipt),'serviceUid':992,
+       'repairScriptSha256':m.digest(script),'actions':m.REPAIR_ACTIONS}
+grant=dict(proof,schema=m.REPAIR_SCHEMA,oneUse=True,notBefore=100,expiresAt=1000)
+if mode=='wrong-script':grant['repairScriptSha256']='e'*64
+if mode=='wrong-manifest':grant['manifestSha256']='e'*64
+if mode=='wrong-uid':grant['serviceUid']=993
+if mode=='wrong-action':grant['actions']=m.REPAIR_ACTIONS+['enable-start-engine']
+if mode=='expired':grant['expiresAt']=500
+if mode=='wrong-unit':grant['unit']='other.service'
+reads=[];writes=[];normalizations=[];checks=[];prepared_calls=[]
+def read_file(path,**_):
+ p=Path(path).name
+ reads.append(p)
+ if p=='owner-public.pem':return b'PUBLIC'
+ if p=='beget-install.py':return script
+ if p.startswith('stage-claim-'):return original_claim
+ if p.startswith('staged-isolation-'):
+  if mode=='missing-receipt':raise FileNotFoundError('staged receipt absent')
+  if mode=='changed-receipt' and reads.count(p)>1:return b'ALTERED'
+  return receipt
+ raise AssertionError('unexpected read '+p)
+def sign(name,public):
+ assert public==b'PUBLIC'
+ if name=='stage-approval.json':
+  if mode=='changed-stage' and len(checks)>0:return dict(stage_grant,actions=[])
+  return stage_grant
+ assert name=='repair-approval.json'
+ return grant
+def stage_state(rawArg,manifestArg,filesArg,public,check_modes=True):
+ checks.append(check_modes)
+ if mode=='running':raise m.Block('STAGED_UNIT_NOT_DISABLED')
+ assert rawArg==raw and manifestArg==manifest and filesArg==files
+ return SimpleNamespace(pw_uid=992)
+def package(*_a,**_kw):
+ prepared_calls.append(1)
+ if mode=='changed-package' and len(prepared_calls)>1:
+  return raw,manifest,dict(files,other=b'unapproved')
+ return raw,manifest,files
+def write_file(path,data,mode=0o600):
+ writes.append((str(path),data))
+ if mode_name=='replayed-claim':raise FileExistsError('one-use claim consumed')
+def normalize(filesArg):
+ normalizations.append(filesArg)
+ if mode=='partial-failure':raise m.Block('MODE_CHANGE_PARTIAL')
+mode_name=mode
+with patch.object(m,'prepared',side_effect=package),\
+ patch.object(m.os,'geteuid',return_value=(1000 if mode=='non-root' else 0)),\
+ patch.object(m.os,'uname',return_value=SimpleNamespace(nodename=('wrong-host' if mode=='wrong-host' else m.HOST))),\
+ patch.object(m,'regular_bytes',side_effect=read_file),\
+ patch.object(m,'signed',side_effect=sign),\
+ patch.object(m,'staged_state',side_effect=stage_state),\
+ patch.object(m.time,'time',return_value=0.6),\
+ patch.object(m,'write_new',side_effect=write_file),\
+ patch.object(m,'normalize_new_runtime_modes',side_effect=normalize),\
+ patch.object(m.Path,'exists',return_value=False):
+ try:
+  m.repair_staged_modes(Path('/original-package'),plan=mode=='plan')
+ except Exception as e:
+  assert mode not in ('valid','plan'),(mode,e)
+  if mode in ('wrong-script','wrong-manifest','wrong-uid','wrong-action','expired','wrong-unit'):
+   assert isinstance(e,m.Block) and str(e)=='STAGE_REPAIR_ADMISSION',(mode,e)
+  elif mode=='changed-package':
+   assert str(e)=='STAGE_REPAIR_PACKAGE_CHANGED',str(e)
+  elif mode=='changed-stage' or mode=='changed-receipt':
+   assert str(e)=='STAGE_REPAIR_EVIDENCE_CHANGED',str(e)
+  elif mode=='non-root' or mode=='wrong-host':
+   assert str(e)=='PROTECTED_HOST_REQUIRED',str(e)
+  elif mode=='running':
+   assert str(e)=='STAGED_UNIT_NOT_DISABLED',str(e)
+  elif mode=='missing-receipt':
+   assert isinstance(e,FileNotFoundError),str(e)
+  elif mode=='replayed-claim':assert isinstance(e,FileExistsError)
+  elif mode=='partial-failure':assert str(e)=='MODE_CHANGE_PARTIAL',str(e)
+  else:raise
+ else:assert mode in ('valid','plan'),mode
+if mode=='valid':
+ assert len(writes)==1 and 'stage-mode-repair-claim-' in writes[0][0],writes
+ assert len(normalizations)==1 and checks==[False,False,True],checks
+elif mode=='plan':
+ assert writes==[] and normalizations==[] and checks==[False]
+elif mode=='partial-failure':
+ assert len(writes)==1 and len(normalizations)==1
+else:
+ assert not normalizations,(mode,normalizations)
+ if mode!='replayed-claim':assert writes==[],(mode,writes)
+`;
+for(const mode of [
+  'valid','plan','wrong-script','wrong-manifest','wrong-uid','wrong-action',
+  'expired','wrong-unit','changed-stage','changed-receipt','changed-package',
+  'non-root','wrong-host','running','missing-receipt','replayed-claim','partial-failure'
+]){
+  test('exact-stage signed mode repair admission: '+mode,
+    ()=>assert.doesNotThrow(()=>run(stagedRepairFixture,mode)));
+}
