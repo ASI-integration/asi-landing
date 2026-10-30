@@ -25,7 +25,15 @@ export function trustedClientIp(req: Request): string {
   const address = (process.env.VERCEL === '1'
     ? req.headers.get('x-vercel-forwarded-for')
     : req.headers.get('x-forwarded-for'))?.trim() || '';
-  return address.includes('%') || isIP(address) === 0 ? 'unattributed' : address.toLowerCase();
+  if (address.includes('%') || isIP(address) === 0) return 'unattributed';
+  // IPv6 has multiple equivalent text forms. Normalize the edge-owned address
+  // before HMAC hashing so one client cannot split its hourly OTP quota by
+  // representation (expanded/compressed or IPv4-mapped IPv6 spellings).
+  if (isIP(address) === 6) {
+    try { return new URL('http://[' + address + ']/').hostname.slice(1, -1); }
+    catch { return 'unattributed'; }
+  }
+  return address.toLowerCase();
 }
 
 export async function issueRuEmailCode(emailInput: unknown, req: Request): Promise<{sent: boolean; throttled: boolean}> {
