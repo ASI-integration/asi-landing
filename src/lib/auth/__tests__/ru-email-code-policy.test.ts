@@ -26,6 +26,11 @@ describe('shared RU email-code identity policy', () => {
     expect(matchOneTimeCodeDigest(a, digestOneTimeCode('one@example.ru', '11112345', pepper))).toBe(false);
     expect(matchOneTimeCodeDigest('zz', a)).toBe(false);
     expect(() => digestOneTimeCode('one@example.ru', '12345678', 'weak')).toThrow();
+    // The public digest helper must be invariant under the same case/space
+    // normalization as the real OTP issuance and verification paths.
+    expect(digestOneTimeCode('  ONE@Example.RU  ', '00012345', pepper)).toBe(a);
+    expect(() => digestOneTimeCode('one@example.ru\\n', '00012345', pepper)).not.toThrow();
+    expect(() => digestOneTimeCode('one@example.ru', '0001234x', pepper)).toThrow();
   });
   it('defaults to disabled unless the complete server-only capability is configured', () => {
     const env = {

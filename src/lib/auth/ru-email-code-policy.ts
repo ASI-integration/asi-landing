@@ -19,10 +19,13 @@ export function createOneTimeCode(): string {
 
 /** Pepper is server-only, >=32 characters, never stored in database or browser. */
 export function digestOneTimeCode(email: string, code: string, pepper: string): string {
-  if (!normalizeLoginEmail(email) || !/^[0-9]{8}$/.test(code) || pepper.length < 32) {
+  const canonicalEmail = normalizeLoginEmail(email);
+  if (!canonicalEmail || !/^[0-9]{8}$/.test(code) || pepper.length < 32) {
     throw new Error('EMAIL_CODE_SECURITY_CONFIGURATION');
   }
-  return createHmac('sha256', pepper).update('asi.ru.email-code.v1\0').update(email).update('\0').update(code).digest('hex');
+  // Bind the digest to exactly the same canonical mailbox as issue/consume.
+  // Never validate a normalized value and then hash its raw spelling.
+  return createHmac('sha256', pepper).update('asi.ru.email-code.v1\0').update(canonicalEmail).update('\0').update(code).digest('hex');
 }
 
 export function matchOneTimeCodeDigest(expectedHex: string, actualHex: string): boolean {
