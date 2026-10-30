@@ -234,6 +234,30 @@ test('PRE_GATE expiry at final return preserves all charges and refuses eligibil
 });
 
 
+test('fixture checkout retains Git tree modes under private host umask',async t=>{
+ const x=await setup(t,{resumeSame:true});
+ const scratch=path.join(x.f.root,'scratchpads',x.f.catalog[0].id);
+ for(const name of ['.coderabbit.yaml',target]){
+   const st=await fs.lstat(path.join(scratch,name));
+   const gitMode=execFileSync('/usr/bin/git',['ls-tree','HEAD','--',name],{cwd:scratch,encoding:'utf8'}).split(' ')[0];
+   assert.equal(gitMode,'100644');
+   assert.equal(st.mode&0o777,0o644,name);
+ }
+});
+test('WAITING resume keeps rejecting altered tracked Git file modes',async t=>{
+ const x=await setup(t,{resumeSame:true});
+ assert.equal((await x.loop.poll({execute:true})).mode,'WAITING');
+ const writes=[...x.f.writes],gateCount=x.gateCalls.length;
+ const scratch=path.join(x.f.root,'scratchpads',x.f.catalog[0].id);
+ const file=path.join(scratch,'.coderabbit.yaml');
+ assert.equal((await fs.lstat(file)).mode&0o777,0o644);
+ await fs.chmod(file,0o600);
+ x.now.value+=180000;
+ const result=await x.loop.poll({execute:true});
+ assert.equal(result.mode,'FAILED_LOCKED');
+ assert.deepEqual(x.f.writes,writes);
+ assert.equal(x.gateCalls.length,gateCount);
+});
 test('native checkpoint resumes WAITING with fresh local proof and no publication replay',async t=>{
  const x=await setup(t,{resumeSame:true});
  assert.equal((await x.loop.poll({execute:true})).mode,'WAITING');
