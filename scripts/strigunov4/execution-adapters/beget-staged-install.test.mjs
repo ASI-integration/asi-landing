@@ -122,7 +122,7 @@ def staged_lstat(p):
  raise AssertionError('unexpected staged path '+str(p))
 with patch.object(m,'regular_bytes',side_effect=read_file),\
  patch.object(m.pwd,'getpwnam',return_value=identity),\
- patch.object(m.Path,'lstat',side_effect=staged_lstat),\
+ patch.object(m.Path,'lstat',autospec=True,side_effect=staged_lstat),\
  patch.object(m,'call',side_effect=call):
  try:m.staged_state(raw,manifest,{'scripts/runtime.mjs':b'module',m.UNIT:u},b'public')
  except (m.Block,KeyError) as e:
