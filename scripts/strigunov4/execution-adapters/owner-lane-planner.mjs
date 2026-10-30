@@ -114,7 +114,7 @@ export function planCooperativeOwnerLane(snapshot) {
     usedTaskIds.add(task.id);
     for (const c of task.changes) {
       if (!c || typeof c.path !== 'string' || !/^([a-zA-Z0-9_.-]+\/)*[a-zA-Z0-9_.-]+$/.test(c.path) ||
-          c.path.includes('..') || c.path.split('/').includes('.git') ||
+          c.path.includes('..') || c.path.split('/').some(seg => seg === '.' || seg === '..' || seg.toLowerCase() === '.git') ||
           paths.some(p => p === c.path || p.startsWith(c.path + '/') || c.path.startsWith(p + '/')))
         return response('STOPPED', 'OVERLAPPING_OR_UNSAFE_ADMITTED_PATH');
       paths.push(c.path);

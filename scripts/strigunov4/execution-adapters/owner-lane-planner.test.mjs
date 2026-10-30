@@ -80,6 +80,10 @@ test('never selects duplicate task, colliding path, outside stage or unsafe path
     t=>t[1].changes[0].path=t[0].changes[0].path,
     t=>t[0].changes[0].path='docs/engine-lanes',
     t=>t[0].changes[0].path='.git/config',
+    t=>t[0].changes[0].path='.',
+    t=>t[0].changes[0].path='docs/engine-lanes/.',
+    t=>t[0].changes[0].path='docs/./engine-lanes/test-0.txt',
+    t=>t[0].changes[0].path='docs/.GIT/hooks/pre-commit',
     t=>t[0].stage='S4-G3',
     t=>t[0].changes[0].path='../escape',
   ]){
