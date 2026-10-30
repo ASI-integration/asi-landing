@@ -6,6 +6,7 @@ repair is NOT a live activation. Protected review is required before any use.
 No network access except exact protected-main verification; no secret reads.
 """
 import argparse
+import ctypes
 import hashlib
 import importlib.util
 import json
@@ -30,6 +31,30 @@ INSTALLER_PATH=Path(__file__).with_name('beget-install.py')
 def sha(raw): return hashlib.sha256(raw).hexdigest()
 def safe(ok,why):
     if not ok: raise RuntimeError(why)
+def sync_directory(directory):
+    fd=os.open(directory,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW)
+    try: os.fsync(fd)
+    finally: os.close(fd)
+
+def exchange_directories(a,b):
+    # Linux renameat2(RENAME_EXCHANGE) atomically exchanges the two existing
+    # directories. Never fall back to two renames with a missing-runtime gap.
+    a,b=Path(a),Path(b)
+    safe(a.parent==b.parent and a.is_absolute() and b.is_absolute() and a!=b,
+         'REPAIR_EXCHANGE_PARENT')
+    for p in (a,b):
+        st=p.lstat()
+        safe(stat.S_ISDIR(st.st_mode) and not stat.S_ISLNK(st.st_mode),
+             'REPAIR_EXCHANGE_NOT_DIRECTORY')
+    libc=ctypes.CDLL(None,use_errno=True)
+    renameat2=getattr(libc,'renameat2',None)
+    safe(renameat2 is not None,'REPAIR_ATOMIC_EXCHANGE_UNAVAILABLE')
+    renameat2.argtypes=[ctypes.c_int,ctypes.c_char_p,ctypes.c_int,ctypes.c_char_p,ctypes.c_uint]
+    renameat2.restype=ctypes.c_int
+    if renameat2(-100,os.fsencode(a),-100,os.fsencode(b),2)!=0:
+        errno=ctypes.get_errno()
+        raise OSError(errno,os.strerror(errno))
+
 def installer():
     spec=importlib.util.spec_from_file_location('asi_beget_exact_installer',INSTALLER_PATH)
     module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
@@ -220,9 +245,16 @@ def apply(package):
         i.write_new(claim,json.dumps({'oldManifestSha256':oldhash,
           'newManifestSha256':newhash,'oneUse':True}).encode())
         swapped=False
+        old_home=temp
         try:
-            ENGINE.rename(backup)
-            temp.rename(ENGINE);swapped=True
+            exchange_directories(ENGINE,temp)
+            swapped=True
+            sync_directory(BACKUP_ROOT)
+            # The old generation stays available throughout this rename;
+            # a crash here leaves both old and new in known places for review.
+            temp.rename(backup)
+            old_home=backup
+            sync_directory(BACKUP_ROOT)
             safe(sha(i.regular_bytes(ENGINE/'manifest.json',root=True))==newhash,
                  'REPAIR_NEW_RUNTIME_MISMATCH')
             stopped(i)
@@ -233,12 +265,13 @@ def apply(package):
             return {'status':'DISABLED_REPAIR_STAGE_ONLY','manifestSha256':newhash,
               'serviceStarted':False,'needsSeparatelySignedActivation':True}
         except Exception:
-            # Fail closed with an irreversible claim and untouched state.
+            # Keep an irreversible claim, retain the new generation and restore
+            # the old generation ATOMICALLY at ENGINE (never a missing interval).
             if swapped:
-                ENGINE.rename(quarantined)
-                backup.rename(ENGINE)
-            elif not ENGINE.exists() and backup.exists():
-                backup.rename(ENGINE)
+                exchange_directories(ENGINE,old_home)
+                sync_directory(BACKUP_ROOT)
+                old_home.rename(quarantined)
+                sync_directory(BACKUP_ROOT)
             raise
     finally:
         # Keep any partial temp and one-use claim for manual review; no
