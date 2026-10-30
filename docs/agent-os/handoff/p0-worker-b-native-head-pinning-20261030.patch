@@ -1,0 +1,50 @@
+diff --git a/scripts/strigunov4/execution-adapters/standing-budget.mjs b/scripts/strigunov4/execution-adapters/standing-budget.mjs
+--- a/scripts/strigunov4/execution-adapters/standing-budget.mjs
++++ b/scripts/strigunov4/execution-adapters/standing-budget.mjs
+@@ -186,6 +186,10 @@
+         if (!['preflight','started','postflight'].includes(lease.phase) ||
+             lease.taskId!==effect.taskId || lease.taskSha!==effect.taskSha) return null;
+       }
++      // A caller-provided head SHA must be the native selected source, not a
++      // different valid SHA hidden behind an otherwise authentic task lease.
++      if (effect.headSha !== (lease.phase==='admission' ? admissionBaseSha : lease.taskSha))
++        return null;
+       return Object.freeze({transactionId:lease.transactionId,phase:lease.phase,
+         kind:lease.kind,root:lease.root,ledger:lease.ledger,
+         taskId:lease.taskId,taskSha:lease.taskSha});
+diff --git a/scripts/strigunov4/execution-adapters/standing-budget-crash-probe.test.mjs b/scripts/strigunov4/execution-adapters/standing-budget-crash-probe.test.mjs
+--- a/scripts/strigunov4/execution-adapters/standing-budget-crash-probe.test.mjs
++++ b/scripts/strigunov4/execution-adapters/standing-budget-crash-probe.test.mjs
+@@ -127,6 +127,10 @@
+           assert.equal(lease.phase,'admission');
+           budget=createStandingPublisherBudget({store,ledger,transaction,
+             admissionBaseSha:sha40,clock:()=>at});
++          const admissionWrongHead=read('admission-head-spoof','admission-'+lease.transactionId,sha40);
++          admissionWrongHead.headSha='f'.repeat(40);
++          assert.equal((await budget.reserve({envelope:cap,effect:admissionWrongHead})).reason,
++            'BUDGET_NATIVE_LEASE_MISMATCH');
+           const a=await budget.reserve({envelope:cap,
+             effect:read('snapshot','admission-'+lease.transactionId,sha40)});
+           assert.equal(a.status,'RESERVED');
+@@ -139,6 +143,11 @@
+           const wrong=read('wrong','wrong-task',sha40);
+           assert.equal((await budget.reserve({envelope:cap,effect:wrong})).reason,
+             'BUDGET_NATIVE_LEASE_MISMATCH');
++          const mismatchedHead=read('head-spoof-'+verifyCount,t.id,t.sha);
++          mismatchedHead.headSha='f'.repeat(40);
++          const wrongHeadResult=await budget.reserve({envelope:cap,effect:mismatchedHead});
++          console.log('HEAD_SPOOF_RESULT:'+JSON.stringify(wrongHeadResult));
++          assert.equal(wrongHeadResult.reason,'BUDGET_NATIVE_LEASE_MISMATCH');
+           const original=read('verify-'+verifyCount,t.id,t.sha);
+           const promise=budget.reserve({envelope:cap,effect:original});
+           original.taskId='altered-after-call';original.taskSha='d'.repeat(40);
+@@ -148,6 +157,9 @@
+         }},async ({transaction})=>{
+           const lease=inspectStandingTransaction(transaction,{write:true,taskId:task.id,taskSha:task.sha});
+           assert.equal(lease.phase,'started');
++          const writeWrongHead={...effect('write-head-spoof'),headSha:'f'.repeat(40)};
++          assert.equal((await budget.reserve({envelope:cap,effect:writeWrongHead})).reason,
++            'BUDGET_NATIVE_LEASE_MISMATCH');
+           assert.equal((await budget.reserve({envelope:cap,effect:effect('publish')})).status,'RESERVED');
+           return {status:'WAITING',reason:'SOURCE_ONLY_NO_REMOTE_EFFECT'};
+         });
