@@ -102,6 +102,49 @@ class SourceOnlyRepairTests(TestCase):
                     with self.subTest(change=change):
                         with self.assertRaisesRegex(RuntimeError,'REPAIR_SOURCE_REVIEW_REQUIRED'):
                             R.independent_evidence(Reader(),grant,NEW)
+    def test_owner_verified_ci_is_valid_without_a_second_human(self):
+        with TemporaryDirectory(prefix='asi-repair-normal-policy-') as directory:
+            folder=Path(directory)
+            grant=valid()
+            review={'schema':'asi.beget-staged-repair-review.v1','mode':'OWNER_VERIFIED_CI',
+                'result':'PASS','independent':False,'ownerId':207600140,
+                'scope':'BEGET_G2_TWO_DRAFT_WITNESSES','validationRunId':123456789,
+                'findings':0,'reviewedPr':559,'reviewedHead':grant['repairReviewHead'],
+                'repairScriptSha256':grant['repairScriptSha256'],
+                'protectedBaseSha':NEW['baseSha']}
+            payloads={
+                'source-review.json':b'{"result":"PASS"}',
+                'native-isolation.json':json.dumps({'host':R.HOST,
+                    'unitSha256':NEW['unitSha256'],
+                    'bwrapSha256':'e318903862396f96de3df57264e0158682b952fd3fb53ac23d876413e7b30f71',
+                    'result':'PASS','networkDenied':True,'authorityInaccessible':True}).encode(),
+                'repair-review.json':json.dumps(review).encode()}
+            grant.update({'sourceReviewSha256':hashbytes(payloads['source-review.json']),
+                'nativeIsolationSha256':hashbytes(payloads['native-isolation.json']),
+                'repairReviewSha256':hashbytes(payloads['repair-review.json'])})
+            calls=[]
+            class Reader:
+                BWRAP_SHA='e318903862396f96de3df57264e0158682b952fd3fb53ac23d876413e7b30f71'
+                def regular_bytes(self,path,root=False):
+                    return payloads[Path(path).name]
+                def source_review_preclaim(self,raw,new):
+                    if raw.get('result')!='PASS':raise RuntimeError('UNVERIFIED')
+                def verified_owner_ci_run(self,run,wf,head,event):
+                    calls.append((run,wf,head,event))
+            with mock.patch.object(R,'AUTH',folder):
+                R.independent_evidence(Reader(),grant,NEW)
+                self.assertEqual(calls,[(123456789,311380800,grant['repairReviewHead'],'pull_request')])
+                for bad in [
+                    {'ownerId':0}, {'independent':True}, {'validationRunId':None},
+                    {'scope':'UNBOUNDED'}, {'reviewedHead':'f'*40}, {'result':'FAIL'}
+                ]:
+                    modified={**review,**bad}
+                    payloads['repair-review.json']=json.dumps(modified).encode()
+                    grant['repairReviewSha256']=hashbytes(payloads['repair-review.json'])
+                    with self.subTest(bad=bad):
+                        with self.assertRaisesRegex(RuntimeError,
+                            'REPAIR_OWNER_VERIFIED_CI_SCOPE|REPAIR_SOURCE_REVIEW_REQUIRED'):
+                            R.independent_evidence(Reader(),grant,NEW)
     def test_root_ownership_required_before_any_package_read_or_write(self):
         with mock.patch.object(R.os,'geteuid',return_value=1000):
             with self.assertRaisesRegex(RuntimeError,'REPAIR_ROOT_HOST_REQUIRED'):
