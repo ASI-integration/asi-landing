@@ -27,7 +27,7 @@ describe('RU auth SQL draft structural integrity (no database access)', () => {
       'ru_auth_issue_email_code', 'ru_auth_activate_email_code',
       'ru_auth_consume_email_code', 'ru_auth_revoke_email_code',
     ]) {
-      expect(count(new RegExp('CREATE OR REPLACE FUNCTION public\\.' + name + '\\(', 'g'))).toBe(1);
+      expect(count(new RegExp('CREATE FUNCTION public\\.' + name + '\\(', 'g'))).toBe(1);
     }
     expect(count(/^AS \$\$$/gm)).toBe(4);
     expect(count(/^\$\$;$/gm)).toBe(4);
@@ -41,7 +41,7 @@ describe('RU auth SQL draft structural integrity (no database access)', () => {
     for (const name of [
       'ru_auth_email_challenges', 'ru_auth_ip_limits', 'ru_auth_yandex_links',
     ]) {
-      expect(count(new RegExp('CREATE TABLE IF NOT EXISTS public\\.' + name + '\\s*\\(', 'g'))).toBe(1);
+      expect(count(new RegExp('CREATE TABLE public\\.' + name + '\\s*\\(', 'g'))).toBe(1);
       expect(sql).toContain('ALTER TABLE public.' + name + ' ENABLE ROW LEVEL SECURITY');
     }
     // The two OTP tables share one SQL REVOKE; do not invent separate grants.
