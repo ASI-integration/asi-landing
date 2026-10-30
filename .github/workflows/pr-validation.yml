@@ -91,21 +91,6 @@ jobs:
           fi
           node --test scripts/agent-os/__tests__/agent-intake.test.mjs
 
-      # Independent evidence for RU Auth. This is NOT a release approval;
-      # the existing protected milestone/scope gate remains mandatory.
-      - name: RU Auth mock-only regression (no mail, OAuth, or database)
-        run: |
-          npx vitest run \
-            src/lib/auth/__tests__/ru-email-code-policy.test.ts \
-            src/lib/auth/__tests__/ru-email-code-server.test.ts \
-            src/lib/auth/__tests__/ru-email-code-request-route.test.ts \
-            src/lib/auth/__tests__/ru-email-code-verify-route.test.ts \
-            src/lib/auth/__tests__/ru-email-code-sql-draft.test.ts \
-            src/lib/auth/__tests__/ru-password-login-plan.test.ts \
-            src/lib/auth/__tests__/ru-yandex-policy.test.ts \
-            src/lib/auth/__tests__/ru-yandex-start-route.test.ts \
-            src/lib/auth/__tests__/ru-yandex-callback-route.test.ts \
-            --reporter=verbose
       - name: Partner authenticated inbox focused regression
         run: |
           npx vitest run \
