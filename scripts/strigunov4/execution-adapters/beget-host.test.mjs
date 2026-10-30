@@ -7,11 +7,11 @@ import {generateKeyPairSync,sign} from 'node:crypto';
 import {closedFixture,makeClosedLoop,tick,readState} from './closed-loop-fixture.mjs';
 import {once} from 'node:events';
 import {createRequestBudget} from './host-runtime.mjs';
-import {BEGET,verifyBegetActivation} from './host-authority.mjs';
+import {BEGET,verifyBegetActivation,rootOwned} from './host-authority.mjs';
 import {stagePolicyHash,validateStagePolicy} from './stage-authority.mjs';
 import {prepareDelta} from './change-preparer.mjs';
 import {runContinuousWorker} from '../ASI-STRIGUNOV4-RUNNER-BRIDGE-20261020.mjs';
-import {createBegetChecks} from './host-checks.mjs';
+import {createBegetChecks,sandboxArguments} from './host-checks.mjs';
 import {digest} from './state.mjs';
 import {draftBody} from './publisher-transport.mjs';
 import {OWNER_LANES,projectOwnerLaneAdmission} from './owner-lanes.mjs';
@@ -224,5 +224,69 @@ test('a scheduled task, GitHub commit or forged host PID is never accepted as a 
    const rows=await projectOwnerLaneAdmission(v);
    assert.equal(rows.length,5);
    assert.ok(rows.every(x=>x.status==='UNKNOWN'&&x.lastHeartbeat===null&&x.currentTask===null));
+ }
+});
+
+test('Bubblewrap sandbox keeps network unshared and host mounts read-only after distro-path repair', () => {
+  const args=sandboxArguments('/tmp/asi-bwrap-fixture');
+  for(const required of ['--die-with-parent','--new-session','--unshare-all','--clearenv','--ro-bind','--tmpfs']) {
+    assert.ok(args.includes(required), 'missing '+required);
+  }
+  for(const forbidden of ['--share-net','--bind','--bind-try','--unshare-user-try']) {
+    assert.equal(args.includes(forbidden),false,'unsafe '+forbidden);
+  }
+  const envNames=[];
+  for(let i=0;i<args.length-2;i++)if(args[i]==='--setenv')envNames.push(args[i+1]);
+  assert.deepEqual(envNames,['PATH','LANG'],'sandbox must not inherit extra environment variables');
+  const ro=[];
+  for(let i=0;i<args.length-2;i++) if(args[i]==='--ro-bind')ro.push([args[i+1],args[i+2]]);
+  for(const expected of [['/usr','/usr'],['/lib','/lib'],['/tmp/asi-bwrap-fixture','/work']]) {
+    assert.ok(ro.some(x=>x[0]===expected[0]&&x[1]===expected[1]),'missing readonly mount '+expected.join(' '));
+  }
+  assert.throws(()=>sandboxArguments('relative/path'),/CHECK_WORKSPACE/);
+});
+
+test('G2 stage gate excludes legacy PR #531 and foreign task even with syntactically valid work', async t => {
+ const f=await setup(t),p=structuredClone(f.policy);
+ assert.equal(p.schema,'asi.stage-authority.beget.v1');
+ assert.equal(p.tasks.length,2);
+ assert.doesNotThrow(()=>validateStagePolicy(p,f.now.value));
+ const legacy=structuredClone(p.tasks[0]);
+ legacy.id='legacy-pr-531';legacy.workOrderId=legacy.id;legacy.branch='asi/engine-task/'+legacy.id;
+ legacy.paths=['scripts/strigunov4/test_legacy_pr_531.py'];
+ for(const mutate of [
+   x=>{x.tasks=[legacy];},
+   x=>{x.tasks.push(legacy);},
+   x=>{x.tasks[0].branch='asi/engine-task/legacy-pr-531';},
+   x=>{x.tasks[0].paths=['scripts/strigunov4/test_legacy_pr_531.py'];},
+   x=>{x.repository='other-owner/asi-landing';},
+   x=>{x.issue=531;},
+ ]) {
+   const candidate=structuredClone(p);mutate(candidate);
+   assert.throws(()=>validateStagePolicy(candidate,f.now.value),
+     /BEGET_TASK_SCOPE|STAGE_TASK_SCOPE|STAGE_POLICY_SCOPE_OR_EXPIRY/);
+ }
+});
+
+test('root-owned Bubblewrap reader rejects untrusted file chain and symlink before execute', async t => {
+ const dir=await fs.mkdtemp('/tmp/asi-bwrap-rootowned-negative-');
+ t.after(()=>fs.rm(dir,{recursive:true,force:true}));
+ const untrusted=path.join(dir,'bwrap');await fs.writeFile(untrusted,'not a pinned distro binary');
+ await assert.rejects(()=>rootOwned(untrusted,2000000,{encoding:null}),/AUTHORITY_DIRECTORY|AUTHORITY_FILE/);
+ const link=path.join(dir,'link');await fs.symlink(untrusted,link);
+ await assert.rejects(()=>rootOwned(link,2000000,{encoding:null}),/AUTHORITY_PATH|AUTHORITY_DIRECTORY|AUTHORITY_FILE/);
+});
+
+test('existing G2 child execution grant fails closed at expiry and above fourteen days',async t => {
+ const f=await setup(t),original=structuredClone(f.policy),now=f.now.value;
+ assert.doesNotThrow(()=>validateStagePolicy(original,now));
+ for(const mutate of [
+   p=>{p.expiresAt=now;},
+   p=>{p.notBefore=now+1;p.expiresAt=now+2000;},
+   p=>{p.expiresAt=p.notBefore+14*86400000+1;},
+   p=>{p.notBefore=now-365*86400000;p.expiresAt=now+1;},
+ ]) {
+   const candidate=structuredClone(original);mutate(candidate);
+   assert.throws(()=>validateStagePolicy(candidate,now),/STAGE_POLICY_SCOPE_OR_EXPIRY/);
  }
 });
