@@ -135,6 +135,7 @@ function routineStagePath(stageId, p) {
 // A successful development check never authorizes merge, installation or execution.
 function developmentPath(p) {
   if (!/^(?:src\/|tests\/|docs\/|scripts\/strigunov4\/)/.test(p)) return false;
+  if (p.startsWith('docs/agent-os/') || p.startsWith('scripts/strigunov4/execution-adapters/')) return false;
   if (/(?:^|[\/-])(?:\.env[^/]*|secrets?|credentials?|private-keys?|deploy(?:ment)?|production|publisher|authority|budget|owner-gate|release-governance)(?:\/|\.|-|$)/i.test(p)) return false;
   if (/\.(?:pem|key|p12|pfx|env)$/i.test(p)) return false;
   return true;
