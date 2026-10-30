@@ -42,7 +42,8 @@ function validDurableRecord(s, nowMs) {
       s.retries < 0 || s.retries > MAX_RETRIES) return false;
   const pinned = typeof s.taskId === 'string' && IDENT.test(s.taskId) &&
     typeof s.taskSha === 'string' && SHA.test(s.taskSha);
-  const neverAdmitted = s.taskId === null && s.taskSha === null && s.mode === 'BLOCKED';
+  const neverAdmitted = s.taskId === null && s.taskSha === null && s.mode === 'BLOCKED' &&
+    s.lastServedAtMs === 0 && s.nextEligibleAtMs === 0 && s.retries === 0;
   return pinned || neverAdmitted;
 }
 
