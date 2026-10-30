@@ -20,6 +20,7 @@ import time
 ENGINE=Path('/opt/asi-engine')
 STATE=Path('/var/lib/asi-engine')
 AUTH=Path('/etc/asi-github-engine')
+BACKUP_ROOT=Path('/opt')
 SERVICE=Path('/etc/systemd/system/asi-strigunov-agent.service')
 UNIT='asi-strigunov-agent.service'
 HOST='pqukibofpo'
@@ -134,7 +135,7 @@ def plan(package):
     safe(old['schema']=='asi.beget-engine-source.v1','REPAIR_OLD_MANIFEST')
     stopped(i)
     safe(new['unitSha256']==old['unitSha256'],'REPAIR_UNIT_MISMATCH')
-    backup=Path('/opt/asi-engine-staged-backup-'+sha(oldraw)[:16])
+    backup=BACKUP_ROOT/('asi-engine-staged-backup-'+sha(oldraw)[:16])
     claim=AUTH/('repair-claim-'+sha(oldraw)+'-'+sha(newraw)+'.json')
     receipt=AUTH/('staged-isolation-'+sha(oldraw)+'.json')
     return {'status':'SIGNED_REPAIR_REQUIRED','oldManifestSha256':sha(oldraw),
@@ -165,9 +166,9 @@ def apply(package):
     safe(sha(repair_script)==grant['repairScriptSha256'],'REPAIR_EXECUTABLE_CHANGED')
     independent_evidence(i,grant,new)
     exact_main(i,new)
-    backup=Path('/opt/asi-engine-staged-backup-'+oldhash[:16])
-    temp=Path('/opt/.asi-engine-repair-pending-'+newhash[:16])
-    quarantined=Path('/opt/.asi-engine-repair-failed-'+newhash[:16])
+    backup=BACKUP_ROOT/('asi-engine-staged-backup-'+oldhash[:16])
+    temp=BACKUP_ROOT/('.asi-engine-repair-pending-'+newhash[:16])
+    quarantined=BACKUP_ROOT/('.asi-engine-repair-failed-'+newhash[:16])
     claim=AUTH/('repair-claim-'+oldhash+'-'+newhash+'.json')
     receipt=AUTH/('repaired-stage-'+newhash+'.json')
     safe(not backup.exists() and not temp.exists() and
