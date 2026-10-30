@@ -98,7 +98,9 @@ def scope(grant,oldraw,newraw,old,new,now):
          grant.get('repairScriptSha256')==sha(Path(__file__).read_bytes()) and
          type(grant.get('sourceReviewSha256')) is str and
          type(grant.get('nativeIsolationSha256')) is str and
-         len(grant['sourceReviewSha256'])==len(grant['nativeIsolationSha256'])==64 and
+         type(grant.get('repairReviewSha256')) is str and
+         all(len(grant[k])==64 and all(c in '0123456789abcdef' for c in grant[k])
+             for k in ('sourceReviewSha256','nativeIsolationSha256','repairReviewSha256')) and
          type(grant.get('notBefore')) is int and
          type(grant.get('expiresAt')) is int and
          grant['notBefore']<=now<grant['expiresAt'] and
@@ -109,8 +111,24 @@ def scope(grant,oldraw,newraw,old,new,now):
 def independent_evidence(i,grant,new):
     reviewraw=i.regular_bytes(AUTH/'source-review.json',root=True)
     isolationraw=i.regular_bytes(AUTH/'native-isolation.json',root=True)
+    repairReviewRaw=i.regular_bytes(AUTH/'repair-review.json',root=True)
     safe(sha(reviewraw)==grant['sourceReviewSha256'] and
-         sha(isolationraw)==grant['nativeIsolationSha256'],'REPAIR_EVIDENCE_CHANGED')
+         sha(isolationraw)==grant['nativeIsolationSha256'] and
+         sha(repairReviewRaw)==grant['repairReviewSha256'],'REPAIR_EVIDENCE_CHANGED')
+    try: repairReview=json.loads(repairReviewRaw)
+    except (ValueError,UnicodeError): raise RuntimeError('REPAIR_SOURCE_REVIEW_REQUIRED')
+    safe(type(repairReview) is dict and
+         repairReview.get('schema')=='asi.beget-staged-repair-review.v1' and
+         repairReview.get('result')=='PASS' and
+         repairReview.get('independent') is True and
+         type(repairReview.get('findings')) is int and repairReview['findings']==0 and
+         repairReview.get('repairScriptSha256')==grant['repairScriptSha256'] and
+         repairReview.get('protectedBaseSha')==new['baseSha'] and
+         type(repairReview.get('reviewedPr')) is int and repairReview['reviewedPr']==559 and
+         type(repairReview.get('reviewedHead')) is str and
+         len(repairReview['reviewedHead'])==40 and
+         all(c in '0123456789abcdef' for c in repairReview['reviewedHead']),
+         'REPAIR_SOURCE_REVIEW_REQUIRED')
     review=json.loads(reviewraw)
     i.source_review_preclaim(review,new)
     isolation=json.loads(isolationraw)
