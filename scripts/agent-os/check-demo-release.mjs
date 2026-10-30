@@ -246,7 +246,13 @@ export async function verifiedOwnerComment(number, sha, kind, token) {
     must(response.ok, 'OWNER_ATTESTATION_API_FAILED');
     const comments = await response.json();
     must(Array.isArray(comments), 'OWNER_ATTESTATION_INVALID');
-    if (comments.some(x => x.user?.id === OWNER_ID && x.body?.trim() === exact)) return true;
+    // An App-authored comment using the owner identity is not a human approval.
+    // This filter is necessary but NOT an independent cryptographic owner grant.
+    if (comments.some(x => Number.isSafeInteger(x.id) &&
+        x.user?.id === OWNER_ID && x.user?.type === 'User' &&
+        Object.hasOwn(x, 'performed_via_github_app') &&
+        x.performed_via_github_app === null &&
+        typeof x.body === 'string' && x.body.trim() === exact)) return true;
     if (comments.length < 100) return false;
   }
   throw new Error('OWNER_ATTESTATION_PAGINATION_BLOCK');
