@@ -48,10 +48,11 @@ expose the Resend key or pepper through `NEXT_PUBLIC_*`.
    `service_role`, no public execution. Verify 60-second email cooldown,
    5/email/hour, 20/IP/hour, 5 failures, 10-minute expiry, consumption and
    replay, simultaneous requests, crashed/failed SMTP behavior.
-   The source-only initial-install draft now uses one explicit transaction and
-   collision-failing CREATE statements so unexpected pre-existing objects
-   cannot silently change the intended schema/RPC security contract. It still
-   requires a reviewed numbered migration and isolated SQL/RLS acceptance.
+   The source-only initial-install draft uses collision-failing CREATE
+   statements so unexpected pre-existing objects cannot silently change the
+   intended schema/RPC security contract. The numbered migration must use the
+   Supabase CLI's wrapping transaction; do NOT embed BEGIN/COMMIT, which can
+   interfere with migration tracking. It still requires isolated SQL/RLS tests.
    The draft now counts even cooldown-rejected issuance against 20/IP/hour,
    and limits all valid-format OTP verification attempts (including unknown
    emails) to 50/IP/hour, under the same trusted-IP lock order. Verify actual

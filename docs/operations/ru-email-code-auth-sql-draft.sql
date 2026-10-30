@@ -5,7 +5,9 @@
 -- Initial installation only: fail on pre-existing objects instead of silently
 -- accepting a table with unexpected constraints or replacing an existing RPC.
 -- DDL, restricted grants and RPCs must become visible together or not at all.
-BEGIN;
+-- Convert to a numbered migration only under the Supabase CLI's normal
+-- wrapping transaction. Do NOT insert manual BEGIN/COMMIT statements: they
+-- can interfere with the CLI migrator's transaction and migration history.
 
 CREATE TABLE public.ru_auth_email_challenges (
   email TEXT PRIMARY KEY,
@@ -186,4 +188,3 @@ GRANT SELECT, INSERT, DELETE ON public.ru_auth_yandex_links TO service_role;
 -- Before staging acceptance: verify table grants and concurrent attempts to link
 -- a single subject to different users, and a user to different subjects.
 
-COMMIT;

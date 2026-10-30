@@ -14,10 +14,10 @@ describe('RU auth SQL draft structural integrity (no database access)', () => {
   it('installs atomically and fails closed if unexpected RU auth objects already exist', () => {
     // A new migration must never silently accept an attacker-owned or stale
     // table/function with the right name but wrong schema or permissions.
-    expect(sql).toMatch(/^BEGIN;$/m);
-    expect(sql.trimEnd().endsWith('COMMIT;')).toBe(true);
-    expect(count(/^BEGIN;$/gm)).toBe(1);
-    expect(count(/^COMMIT;$/gm)).toBe(1);
+    // The Supabase CLI migration runner must own the enclosing transaction.
+    // A manual COMMIT inside its transaction could break migration tracking.
+    expect(sql).not.toMatch(/^BEGIN;$/m);
+    expect(sql).not.toMatch(/^COMMIT;$/m);
     expect(sql).not.toMatch(/CREATE (?:TABLE|INDEX) IF NOT EXISTS/);
     expect(sql).not.toMatch(/CREATE OR REPLACE FUNCTION/);
   });
