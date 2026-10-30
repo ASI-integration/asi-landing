@@ -150,3 +150,14 @@ test('catalog withdrawal cannot erase historical UNKNOWN or FAILED_LOCKED record
   assert.equal(choose(make({admittedCatalog:catalog,journal:state})).reason,
     'UNADMITTED_LANE_JOURNAL_INVALID');
 });
+
+test('a sixth admitted task cannot be silently ignored beside a named owner lane',()=>{
+  const rogue={...tasks[0],id:'extra-sixth',branch:'asi/rogue-extra',
+    changes:[{path:'docs/engine-lanes/extraneous.txt'}]};
+  const result=choose(make({admittedCatalog:[tasks[0],rogue]}));
+  assert.equal(result.kind,'STOPPED');
+  assert.equal(result.reason,'MIXED_OR_UNRECOGNIZED_ADMITTED_SCOPE');
+  assert.equal(result.candidate,null);
+  assert.equal(choose(make({admittedCatalog:[tasks[0],{...rogue,repo:'another/repository'}]})).kind,'STOPPED');
+  assert.equal(choose(make({admittedCatalog:[rogue]})).kind,'NONE');
+});
