@@ -188,3 +188,14 @@ test('child cannot widen parent request or operation caps on renewal',()=>{
   f.parent.maxOperations=1;f.parent.maxRequests=1;f.parent.maxWrites=1;
   assert.equal(assess(f).reason,'PARENT_HISTORY_OR_LINK_INVALID');
 });
+
+test('same digest cannot widen persisted child scope after original cap exhausted',()=>{
+  const f=fixture();spend(f,0,'used1');spend(f,0,'used2');
+  f.child={...f.child,maxOperations:3,maxRequests:3,maxWrites:3};
+  assert.equal(assess(f).reason,'PARENT_CHILD_SCOPE_CHANGED');
+});
+test('same digest cannot silently narrow persisted child scope',()=>{
+  const f=fixture();
+  f.child={...f.child,maxOperations:1,maxRequests:1,maxWrites:1};
+  assert.equal(assess(f).reason,'PARENT_CHILD_SCOPE_CHANGED');
+});
