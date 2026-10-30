@@ -95,6 +95,15 @@ export async function GET(request:Request) {
   await session.save();
   if(!matched)return fail(url.origin,'invalid_state');
 
+  // Check the ASI identity and recent, user-bound step-up BEFORE exchanging
+  // an OAuth code with Yandex or reading/writing the link registry. A browser
+  // identity switch, expired proof, or malformed link session must fail closed
+  // without unnecessary provider calls or side effects. Keep the later guard
+  // as defense in depth across asynchronous provider requests.
+  if(mode==='link' && (!linkUserId || session.userId!==linkUserId ||
+      !hasRecentYandexLinkProof(linkUserId,strongUserId,strongAt)))
+    return fail(url.origin,'link_requires_recent_auth');
+
   try {
     const subject=await yandexProfile(code!,(verifier as string));
     const {data:linked,error:lookupError}=await supabase.from('ru_auth_yandex_links')
