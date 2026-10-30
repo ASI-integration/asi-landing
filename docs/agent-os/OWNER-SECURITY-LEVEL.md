@@ -12,6 +12,8 @@ The frozen machine-readable policy is `docs/agent-os/owner-security-baseline.jso
 
 `ASI-OWNER-APPROVE:SECURITY-BASELINE-CHANGE:<PR>:<HEAD_SHA>`
 
+During the one-time bootstrap PR that also edits the already protected release checker, the existing trusted-main gate uses the single established `CONTRACT-CHANGE` exact-head owner comment instead; **do not request both comments for the same PR**. Thereafter baseline-only changes use `SECURITY-BASELINE-CHANGE`.
+
 An AI comment, GitHub App, workflow, automatic agent, or unsigned draft cannot issue it. Do not silently add mandatory human reviewers, micro-approvals, shorter blanket permission periods, extra owner prompts, or new launch gates. If a real threat warrants a new restriction, propose the exact change to the owner; until then retain this level. An emergency may **stop** unsafe operations but must not silently rewrite the standing policy.
 
 All future implementation must respect this owner decision. Existing protected `main` and Beget remain unchanged until reviewed and adopted; the contract is **not active** merely because a proposal exists.
