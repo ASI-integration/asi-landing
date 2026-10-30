@@ -101,8 +101,7 @@ def validate_repair_contract(payload, old_raw, new_raw, current_main, observed, 
     for side, m, manifest_hash in (("old", old, old_hash), ("new", new, new_hash)):
         _require(m.get("schema") == "asi.beget-engine-source.v1" and
                  manifest_hash == payload[side+"ManifestSha256"], "REPAIR_MANIFEST")
-        for field, dest in (("manifestSha256", side+"ManifestSha256"),
-                            ("catalogSha256", side+"CatalogSha256"),
+        for field, dest in (("catalogSha256", side+"CatalogSha256"),
                             ("baseSha", side+"BaseSha"),
                             ("sourceSha", side+"SourceSha")):
             _require(m.get(field) == payload[dest], "REPAIR_GENERATION_PIN")
