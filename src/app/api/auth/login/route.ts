@@ -42,15 +42,7 @@ export async function POST(req: Request) {
     // ambiguous case-folded identity or a broad ILIKE wildcard match.
     let user: { id: string; email: string; password_hash: string } | null = null;
     if (isRu) {
-      const escaped = emailLower.replace(/[\\%_]/g, '\\    const { data: user, error } = await supabase
-      .from('users')
-      .select('id, email, password_hash')
-      .eq('email', emailLower)
-      .single();
-
-    if (error || !user) {
-      return NextResponse.json({ error: 'Invalid email or password' }, { status: 401 });
-    }');
+      const escaped = emailLower.replace(/[\\%_]/g, '\\$&');
       const { data: rows, error } = await supabase.from('users')
         .select('id, email, password_hash').ilike('email', escaped).limit(3);
       if (!error && rows?.length === 1 &&
