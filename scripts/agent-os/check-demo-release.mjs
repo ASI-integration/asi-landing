@@ -15,6 +15,8 @@ export const CONTRACT = 'docs/agent-os/releases/strigunov4-demo.json';
 export const OWNER_BASELINE_PATHS = new Set([
   'docs/agent-os/owner-security-baseline.json',
   'docs/agent-os/OWNER-SECURITY-LEVEL.md',
+  'docs/agent-os/AUTONOMY_POLICY.md',
+  '.github/CODEOWNERS',
   'scripts/agent-os/verify-owner-security-baseline.mjs',
   'scripts/agent-os/__tests__/owner-security-baseline.test.mjs',
 ]);
