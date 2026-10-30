@@ -25,6 +25,7 @@ def valid():
         'newSourceSha':NEW['sourceSha'],'newCatalogSha256':NEW['catalogSha256'],
         'unitSha256':NEW['unitSha256'],'repairScriptSha256':hashbytes(PATH.read_bytes()),
         'sourceReviewSha256':'1'*64,'nativeIsolationSha256':'2'*64,
+        'repairReviewSha256':'3'*64,
         'notBefore':NOW-1000,'expiresAt':NOW+5000}
 class SourceOnlyRepairTests(TestCase):
     def check(self,value):
@@ -46,7 +47,8 @@ class SourceOnlyRepairTests(TestCase):
                 with self.assertRaisesRegex(RuntimeError,'REPAIR_SIGNED_SCOPE'):
                     self.check({**valid(),field:value})
     def test_missing_evidence_digest_denied(self):
-        for field,value in [('sourceReviewSha256',''),('nativeIsolationSha256',None)]:
+        for field,value in [('sourceReviewSha256',''),('nativeIsolationSha256',None),
+                            ('repairReviewSha256',''),('repairReviewSha256','x'*64)]:
             with self.subTest(field=field):
                 with self.assertRaisesRegex(RuntimeError,'REPAIR_SIGNED_SCOPE'):
                     self.check({**valid(),field:value})
@@ -60,6 +62,45 @@ class SourceOnlyRepairTests(TestCase):
         change={**NEW,'unitSha256':'c'*64}
         with self.assertRaisesRegex(RuntimeError,'REPAIR_UNIT_CHANGE_REQUIRES_DIFFERENT_RELEASE'):
             R.scope({**valid(),'unitSha256':'c'*64},OLD_RAW,NEW_RAW,OLD,change,NOW)
+    def test_independent_exact_repair_review_is_required_before_any_state_change(self):
+        with TemporaryDirectory(prefix='asi-repair-review-contract-') as directory:
+            folder=Path(directory)
+            script_hash=hashbytes(PATH.read_bytes())
+            review={'schema':'asi.beget-staged-repair-review.v1','result':'PASS',
+                'independent':True,'findings':0,'reviewedPr':559,
+                'reviewedHead':'a'*40,
+                'protectedBaseSha':NEW['baseSha'],'repairScriptSha256':script_hash}
+            record=folder/'repair-review.json'
+            record.write_text(json.dumps(review))
+            payloads={
+                'source-review.json':b'{"result":"PASS"}',
+                'native-isolation.json':json.dumps({'host':R.HOST,
+                   'unitSha256':NEW['unitSha256'],
+                   'bwrapSha256':'e318903862396f96de3df57264e0158682b952fd3fb53ac23d876413e7b30f71',
+                   'result':'PASS','networkDenied':True,
+                   'authorityInaccessible':True}).encode(),
+                'repair-review.json':record.read_bytes()}
+            grant=valid()
+            grant['sourceReviewSha256']=hashbytes(payloads['source-review.json'])
+            grant['nativeIsolationSha256']=hashbytes(payloads['native-isolation.json'])
+            grant['repairReviewSha256']=hashbytes(payloads['repair-review.json'])
+            class Reader:
+                BWRAP_SHA='e318903862396f96de3df57264e0158682b952fd3fb53ac23d876413e7b30f71'
+                def regular_bytes(self,path,root=False):
+                    return payloads[Path(path).name]
+                def source_review_preclaim(self,raw,new):
+                    if raw.get('result')!='PASS':raise RuntimeError('REVIEW')
+            with mock.patch.object(R,'AUTH',folder):
+                R.independent_evidence(Reader(),grant,NEW)
+                for change in [{'independent':False},{'result':'FAIL'},
+                               {'reviewedPr':558},{'repairScriptSha256':'f'*64},
+                               {'protectedBaseSha':'f'*40},{'findings':1}]:
+                    bad={**review,**change}
+                    payloads['repair-review.json']=json.dumps(bad).encode()
+                    grant['repairReviewSha256']=hashbytes(payloads['repair-review.json'])
+                    with self.subTest(change=change):
+                        with self.assertRaisesRegex(RuntimeError,'REPAIR_SOURCE_REVIEW_REQUIRED'):
+                            R.independent_evidence(Reader(),grant,NEW)
     def test_root_ownership_required_before_any_package_read_or_write(self):
         with mock.patch.object(R.os,'geteuid',return_value=1000):
             with self.assertRaisesRegex(RuntimeError,'REPAIR_ROOT_HOST_REQUIRED'):
