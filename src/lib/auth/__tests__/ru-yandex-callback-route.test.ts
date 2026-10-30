@@ -160,6 +160,39 @@ describe('RU Yandex OAuth callback cannot cancel a pending flow by CSRF', () => 
     expect(mocks.ensure).not.toHaveBeenCalled();
   });
 
+  it('does not consume a link when the OAuth callback contains repeated state', async () => {
+    const session = pendingSession();
+    mocks.getSession.mockResolvedValue(session);
+    const providerFetch = vi.fn();
+    vi.stubGlobal('fetch', providerFetch);
+    const response = await GET(new Request(
+      origin + '/api/auth/yandex/callback?state=' + state + '&state=' + state + '&code=fixture-auth-code',
+    ));
+    expect(response.status).toBe(307);
+    expect(response.headers.get('location')).toContain('yandex_error=invalid_state');
+    expect(session.yandexOauthState).toBe(state);
+    expect(mocks.save).not.toHaveBeenCalled();
+    expect(mocks.from).not.toHaveBeenCalled();
+    expect(providerFetch).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    '?state=' + state + '&code=fixture-auth-code&code=other-auth-code',
+    '?state=' + state + '&code=fixture-auth-code&error=access_denied',
+  ])('burns an ambiguous state-matched OAuth callback without a token exchange: %s', async (query) => {
+    const session = pendingSession();
+    mocks.getSession.mockResolvedValue(session);
+    const providerFetch = vi.fn();
+    vi.stubGlobal('fetch', providerFetch);
+    const response = await GET(new Request(origin + '/api/auth/yandex/callback' + query));
+    expect(response.status).toBe(307);
+    expect(response.headers.get('location')).toContain('yandex_error=invalid_state');
+    expect(session.yandexOauthState).toBeUndefined();
+    expect(mocks.save).toHaveBeenCalledOnce();
+    expect(mocks.from).not.toHaveBeenCalled();
+    expect(providerFetch).not.toHaveBeenCalled();
+  });
+
   it('burns a matching-state flow on provider error, so it cannot be reused', async () => {
     const session = pendingSession();
     mocks.getSession.mockResolvedValue(session);
