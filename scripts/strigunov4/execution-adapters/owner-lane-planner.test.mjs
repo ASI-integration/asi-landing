@@ -59,7 +59,7 @@ test('crash uncertainty or FAILED_LOCKED is a global stop, not cooperative bypas
   state.engineMode='IDLE';state.lanes.engine.mode='FAILED_LOCKED';
   assert.equal(choose(make({journal:state})).kind,'STOPPED');
   state.lanes.engine.mode='UNKNOWN';
-  assert.equal(choose(make({journal:state})).candidate.laneId,'ru-auth');
+  assert.equal(choose(make({journal:state})).reason,'LANE_UNKNOWN_REQUIRES_RECONCILIATION');
 });
 test('retry backoff is capped, no early lease or stale task identity is eligible',()=>{
   assert.equal(minimumBackoffMs(1),60000);
@@ -69,15 +69,17 @@ test('retry backoff is capped, no early lease or stale task identity is eligible
     lastServedAtMs:NOW-10000,nextEligibleAtMs:NOW+230000};
   assert.equal(choose(make({journal:state})).candidate.laneId,'ru-auth');
   state.lanes.engine.nextEligibleAtMs=NOW-5000;
-  assert.equal(choose(make({journal:state})).lanes[0].reason,'BACKOFF_BYPASS_OR_INVALID');
+  assert.equal(choose(make({journal:state})).reason,'BACKOFF_BYPASS_OR_INVALID');
   state.lanes.engine.taskSha='f'.repeat(40);
-  assert.equal(choose(make({journal:state})).lanes[0].mode,'UNKNOWN');
+  assert.equal(choose(make({journal:state})).reason,'DURABLE_LANE_IDENTITY_OR_STATE_INVALID');
 });
 test('never selects duplicate task, colliding path, outside stage or unsafe path',()=>{
   for(const mutation of [
     t=>t.push({...t[0]}),
     t=>t[1].id=t[0].id,
     t=>t[1].changes[0].path=t[0].changes[0].path,
+    t=>t[0].changes[0].path='docs/engine-lanes',
+    t=>t[0].changes[0].path='.git/config',
     t=>t[0].stage='S4-G3',
     t=>t[0].changes[0].path='../escape',
   ]){
@@ -88,10 +90,9 @@ test('never selects duplicate task, colliding path, outside stage or unsafe path
 test('missing journal never creates fresh readiness or resets a retry',()=>{
   assert.equal(choose(make({journal:null})).kind,'UNKNOWN');
   const state=journal();delete state.lanes.engine;
-  assert.equal(choose(make({journal:state})).candidate.laneId,'ru-auth');
-  assert.equal(choose(make({journal:state})).lanes[0].mode,'UNKNOWN');
+  assert.equal(choose(make({journal:state})).reason,'DURABLE_LANE_IDENTITY_OR_STATE_INVALID');
   state.lanes['ru-auth'].retries=2;
-  assert.equal(choose(make({journal:state})).candidate.laneId,'p0-integration');
+  assert.equal(choose(make({journal:state})).reason,'DURABLE_LANE_IDENTITY_OR_STATE_INVALID');
 });
 
 test('advisory planning never mutates any catalog, journal, or lane input',()=>{
@@ -99,4 +100,29 @@ test('advisory planning never mutates any catalog, journal, or lane input',()=>{
   const before=JSON.stringify({state,catalog,defs});
   choose(make({laneDefinitions:defs,admittedCatalog:catalog,journal:state}));
   assert.equal(JSON.stringify({state,catalog,defs}),before);
+});
+
+test('exact owner workstream branch identity cannot be substituted by caller',()=>{
+  for(const mutation of [
+    defs=>defs[0].branch='asi/unreviewed-engine-work',
+    defs=>{const old=defs[0].branch;defs[0].branch=defs[1].branch;defs[1].branch=old;},
+    defs=>defs[3].repository='malicious/other',
+  ]){
+    const defs=structuredClone(lanes);mutation(defs);
+    assert.equal(choose(make({laneDefinitions:defs})).reason,'STATIC_LANE_DEFINITIONS_INVALID');
+  }
+});
+test('unknown or missing durable state cannot release another lane after crash',()=>{
+  for(const mutation of [
+    state=>{state.lanes['p0-trust'].mode='UNKNOWN';},
+    state=>{delete state.lanes['p0-trust'];},
+    state=>{state.lanes['p0-trust'].mode='READY';state.lanes['p0-trust'].retries=1;},
+    state=>{state.lanes['p0-trust'].mode='BACKOFF';state.lanes['p0-trust'].retries=1;state.lanes['p0-trust'].nextEligibleAtMs=100;},
+  ]){
+    const state=journal();mutation(state);
+    const result=choose(make({journal:state}));
+    assert.equal(result.kind,'STOPPED');
+    assert.equal(result.candidate,null);
+    assert.equal(result.authority,'NONE_SOURCE_ONLY');
+  }
 });
