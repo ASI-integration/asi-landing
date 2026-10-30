@@ -93,7 +93,14 @@ export async function GET(request:Request) {
   delete session.yandexOauthMode;
   delete session.yandexOauthLinkUserId;
   await session.save();
-  if(!matched)return fail(url.origin,'invalid_state');
+  if(!matched) {
+    // A state-matched user refusal is not a forged or expired OAuth state.
+    // Never reflect arbitrary provider error text into the return URL.
+    const declined = unambiguousCallback && codes.length === 0 &&
+      errors[0] === 'access_denied' && yandexFlowStillValid(startedAt) &&
+      (mode === 'login' || mode === 'link');
+    return fail(url.origin, declined ? 'access_denied' : 'invalid_state');
+  }
 
   // Check the ASI identity and recent, user-bound step-up BEFORE exchanging
   // an OAuth code with Yandex or reading/writing the link registry. A browser

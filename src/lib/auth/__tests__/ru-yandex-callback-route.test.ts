@@ -200,13 +200,31 @@ describe('RU Yandex OAuth callback cannot cancel a pending flow by CSRF', () => 
       origin + '/api/auth/yandex/callback?state=' + state + '&error=access_denied',
     ));
     expect(response.status).toBe(307);
-    expect(response.headers.get('location')).toContain('yandex_error=invalid_state');
+    expect(response.headers.get('location')).toContain('yandex_error=access_denied');
     expect(session.yandexOauthState).toBeUndefined();
     expect(session.yandexOauthVerifier).toBeUndefined();
     expect(session.yandexOauthMode).toBeUndefined();
     expect(mocks.save).toHaveBeenCalledOnce();
     expect(mocks.from).not.toHaveBeenCalled();
   });
+  it.each([
+    '?state=' + state + '&error=unexpected_provider_error',
+    '?state=' + state + '&error=access_denied&error=access_denied',
+  ])('burns a matched but untrusted provider error without reflecting its value: %s', async (query) => {
+    const session = pendingSession();
+    mocks.getSession.mockResolvedValue(session);
+    const providerFetch = vi.fn();
+    vi.stubGlobal('fetch', providerFetch);
+    const response = await GET(new Request(origin + '/api/auth/yandex/callback' + query));
+    expect(response.status).toBe(307);
+    expect(response.headers.get('location')).toContain('yandex_error=invalid_state');
+    expect(response.headers.get('location')).not.toContain('unexpected_provider_error');
+    expect(session.yandexOauthState).toBeUndefined();
+    expect(mocks.save).toHaveBeenCalledOnce();
+    expect(providerFetch).not.toHaveBeenCalled();
+    expect(mocks.from).not.toHaveBeenCalled();
+  });
+
   it('refuses a Yandex account link after the current ASI session switches identities, without provider calls', async () => {
     const session = { ...pendingSession(), userId: 'different-user', email: 'different@example.ru' };
     mocks.getSession.mockResolvedValue(session);
