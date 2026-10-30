@@ -8,6 +8,7 @@ import {ENGINE_ROOT,BEGET,verifySignedPayload,AUTHORITY_DIR,rootOwned} from './h
 import {createGitHubReader,isCompiledGitHubRead} from './github-readonly.mjs';
 import {inspectPublisherLifecycleEvidence} from './github-publisher.mjs';
 import {createStandingPublisherBudget} from './standing-budget.mjs';
+import {readProtectedGitStandingTrustSnapshot} from '../../agent-os/release-envelope-git-trust.mjs';
 import {readProtectedStandingTrustSnapshot} from '../../agent-os/release-envelope-trust-roots.mjs';
 import {readAuthenticatedProviderSnapshot,inspectAuthenticatedProviderSnapshot,assessRepositoryReleaseEnvelopeProposal,assessPublisherReleaseEnvelopeProposal,readAndAssessProtectedGateProposal,main} from '../../agent-os/check-demo-release.mjs';
 const gateReceipts=new WeakMap(),admissionReceipts=new WeakMap(),releaseReaders=new WeakMap();
@@ -274,6 +275,44 @@ export function createStandingRequestPreview({store,transaction,signedEnvelope,s
       }catch{poisoned=true;return blocked('STANDING_ADOPTION_REJECTED');}
       finally{bootstrapActive=false;}
     }
+    // Source-only cross-process trust prerequisite. The same native transaction
+    // meters both current-main observations before network; Git bytes alone are
+    // not proof of current protected provenance. No receipt/transport grant.
+  async function readProtectedGitTrust(gateReceipt,{token}={}){
+      if(releaseActive||poisoned||bootstrapActive||phaseChanging||pending>0)
+        return blocked('STANDING_PREVIEW_LOCKED');
+      releaseActive=true;
+      try{
+        const gate=gateReceipts.get(gateReceipt);
+        must(gate?.owner===input,'STANDING_GIT_TRUST_CONTEXT');
+        let observationSignal;
+        const active=()=>{must(releaseActive&&!poisoned&&!observationSignal?.aborted,'STANDING_GIT_TRUST_ABORTED');return inspectPublisherLifecycleEvidence(gate.event,transaction);};
+        active();
+        const reader=createGitHubReader({token,beforeRequest:async()=>{active();},requestAdmission:async descriptor=>{
+          active();must(descriptor.method==='GET'&&descriptor.route==='branches/main','STANDING_GIT_TRUST_ROUTE');
+          const reserved=await reserveInternal(descriptor,false);
+          active();return reserved.status==='RESERVED_PREVIEW'&&!descriptor.signal.aborted;
+        }});
+        const result=await readProtectedGitStandingTrustSnapshot({
+          repoRoot:input.comparison.repoRoot,baseSha:gate.expected.baseSha,
+          envelopeDigest:digest(input.signedEnvelope.payload),clock,
+          priorCheckpoint:dataCopy(ledger.standingRevocationCheckpoint),
+          readCurrentMain:async signal=>{observationSignal=signal;active();const branch=await reader.get('branches/main');active();observationSignal=undefined;return branch;},
+        });
+        active();
+        must(result.status==='PROTECTED_GIT_TRUST_VERIFIED','STANDING_GIT_TRUST_REJECTED');
+        const trust=await readTrust();active();
+        const completedAt=clock();
+        must(trust.issuerKeySha256===result.issuerKeySha256&&
+          trust.verifierKeySha256===result.verifierKeySha256&&
+          JSON.stringify(trust.revocationCheckpoint)===JSON.stringify(result.revocationCheckpoint)&&
+          completedAt>=result.observedAt&&completedAt-result.observedAt<=30000&&
+          completedAt<result.revocationExpiresAt,'STANDING_GIT_TRUST_CHANGED');
+        active();
+        return Object.freeze({...result,authorized:false});
+      }catch{poisoned=true;return blocked('STANDING_GIT_TRUST_REJECTED');}
+      finally{releaseActive=false;}
+  }
   return Object.freeze({
     // Explicit hard stop: neither bootstrap evidence nor a reservation grants authority.
     beforeRequest:async()=>false,
@@ -393,6 +432,7 @@ export function createStandingRequestPreview({store,transaction,signedEnvelope,s
       }catch{poisoned=true;return blocked('STANDING_GATE_REJECTED');}
       finally{bootstrapActive=false;}
     },
+    readProtectedGitTrust,
     readAdoptedSourceAdmission(gateReceipt){
       if(releaseActive)return Promise.resolve(blocked('STANDING_PREVIEW_LOCKED'));
       return readAdoptedSourceAdmission(gateReceipt);
@@ -400,6 +440,8 @@ export function createStandingRequestPreview({store,transaction,signedEnvelope,s
     // Compiled in-process caller: all governance reads use this transaction's
     // budget. Mint only after the final read; a receipt never crosses processes.
     async runAdoptedReleaseAdmission(gateReceipt,{token}={}){
+      const gitTrust=await readProtectedGitTrust(gateReceipt,{token});
+      if(gitTrust.status!=='PROTECTED_GIT_TRUST_VERIFIED')return blocked('STANDING_RELEASE_GIT_TRUST_REQUIRED');
       if(releaseActive||poisoned||bootstrapActive||phaseChanging||pending>0)
         return blocked('STANDING_PREVIEW_LOCKED');
       releaseActive=true;let reader;
@@ -426,6 +468,9 @@ export function createStandingRequestPreview({store,transaction,signedEnvelope,s
           prEvent:{repository:{full_name:input.request.repo},number:pr.number,pull_request:pr},
           resolveStandingAdmission:async()=>{
             must(JSON.stringify(await readPr())===JSON.stringify(pr),'STANDING_RELEASE_PR_CHANGED');
+            const branch=await reader.get('branches/main');active();
+            must(branch?.name==='main'&&branch.protected===true&&branch.commit?.sha===gate.expected.baseSha,
+              'STANDING_RELEASE_BASE_CHANGED');
             const receipt=await readAdoptedSourceAdmission(gateReceipt);
             must(receipt.status==='STANDING_SOURCE_ADMISSION_VERIFIED','STANDING_RELEASE_ADMISSION_REJECTED');
             return receipt;

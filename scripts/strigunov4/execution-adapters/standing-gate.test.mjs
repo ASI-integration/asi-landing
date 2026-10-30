@@ -17,9 +17,16 @@ const key=()=>{const pair=generateKeyPairSync('ed25519');return {...pair,pem:pai
 const signed=(value,k)=>{const payload=JSON.stringify(value);return {payload,signature:sign(null,Buffer.from(payload),k.privateKey).toString('base64')};};
 const descriptor=(method='GET',route='branches/main')=>{const payloadSha256=hash(method==='GET'?'':'{}');return {method,route,payloadSha256,requestSha256:hash(JSON.stringify({method,route,payloadSha256}))};};
 async function setup(t,{adoptionMode=null,wrongLocal=false,forgedLocal=false,lateRevocation=false,rollbackRevocation=false,pendingCI=true,sourcePending=false,resumeSame=false,gateMode=null,skipLocal=false,wrongReviewer=false,gateBudget=false,gateFailure=false,lateGateClock=Infinity}={}){
- const compiled=adoptionMode?.startsWith('compiled');
+ const compiled=adoptionMode?.startsWith('compiled'),gitTrust=adoptionMode?.startsWith('git-trust');
+ const now={value:1000000},owner=key(),verifier=key();
+ const manifest={schema:'asi.release-envelope-revocations.v1',repository:'ASI-integration/asi-landing',environment:'beget-staging',target:'pqukibofpo',issuerKeySha256:owner.digest,verifierKeySha256:verifier.digest,sequence:1,issuedAt:now.value-1000,expiresAt:adoptionMode==='consume-expiry'?now.value+1000:now.value+600000,revokedEnvelopeDigests:[]};
+ const revocation=signed(manifest,owner),prior={sequence:1,manifestDigest:hash(revocation.payload),revokedEnvelopeDigests:[]};
  const original=globalThis.fetch;t.after(()=>{globalThis.fetch=original;});
  const seedFiles=Object.fromEntries(ENVELOPE_SECURITY_REQUIRED.map(p=>[p,'inert protected '+p+'\n']));
+ if((gitTrust||compiled)&&adoptionMode!=='compiled-missing-registry'){
+  const registry={schema:'asi.standing-trust-registry.v1',repository:manifest.repository,environment:manifest.environment,target:manifest.target,issuerKeySha256:owner.digest,verifierKeySha256:verifier.digest,minRevocationSequence:1,minRevocationManifestDigest:prior.manifestDigest,priorRevokedEnvelopeDigests:[]};
+  for(const [name,content] of Object.entries({'registry.json':JSON.stringify(registry),'owner-public.pem':owner.pem,'standing-verifier-public.pem':verifier.pem,'standing-revocations.json':JSON.stringify(revocation)}))seedFiles['docs/agent-os/standing-trust/'+name]=content;
+ }
  let release;
  if(adoptionMode){
   release=JSON.parse(await fs.readFile(new URL('../../../docs/agent-os/releases/strigunov4-demo.json',import.meta.url),'utf8'));
@@ -30,7 +37,7 @@ async function setup(t,{adoptionMode=null,wrongLocal=false,forgedLocal=false,lat
   seedFiles['docs/agent-os/releases/strigunov4-demo.json']=JSON.stringify(release);
  }
  const f=await fixture(t,{realGitObjects:true,ci:pendingCI?'pending':'success',seedFiles});
- const now={value:1000000},source={pending:sourcePending},owner=key(),verifier=key(),comparison={repository:'ASI-integration/asi-landing',repoRoot:path.join(f.base,'seed'),baseSha:f.sha,headSha:f.sha};
+ const source={pending:sourcePending},comparison={repository:'ASI-integration/asi-landing',repoRoot:path.join(f.base,'seed'),baseSha:f.sha,headSha:f.sha};
  const security=inspectProtectedRepositorySecurity(comparison);assert.equal(security.status,'PROTECTED_SECURITY_VERIFIED');
  const envelope={schema:'asi.release-envelope.proposal.v1',repo:comparison.repository,environment:'beget-staging',target:'pqukibofpo',appId:5514822,installationId:176281163,policyDigest:security.policyDigest,securityDigest:security.securityDigest,notBefore:now.value-1000,expiresAt:now.value+600000,action:'source',allowedPaths:[target],maxOperations:256,maxRequests:gateBudget||256,maxWrites:8,paidApiUsd:0,verifierKeySha256:verifier.digest};
  const signedEnvelope=signed(envelope,owner),envelopeDigest=hash(signedEnvelope.payload);
@@ -41,8 +48,6 @@ async function setup(t,{adoptionMode=null,wrongLocal=false,forgedLocal=false,lat
  if(adoptionMode==='expired')adoption.expiresAt=now.value-1;
  const releaseReads=[];
  const adoptionSigned=signed(adoption,adoptionMode==='signer'?verifier:owner),admissions=[];
- const manifest={schema:'asi.release-envelope-revocations.v1',repository:envelope.repo,environment:envelope.environment,target:envelope.target,issuerKeySha256:owner.digest,verifierKeySha256:verifier.digest,sequence:1,issuedAt:now.value-1000,expiresAt:adoptionMode==='consume-expiry'?now.value+1000:envelope.expiresAt,revokedEnvelopeDigests:[]};
- const revocation=signed(manifest,owner),prior={sequence:1,manifestDigest:hash(revocation.payload),revokedEnvelopeDigests:[]};
  let revoked=false,selected=0,newRevocation=false;const records=[],phases=[],previews=[],providerCalls=[],gateResults=[],gateCalls=[],gateClockCounts=[],gateEvents=[];let gateActive=false,gateClockCount=0;
  let adoptionReads=0;
  const adoptionBytes=()=>{if(++adoptionReads===2&&adoptionMode==='late-expiry')now.value=envelope.expiresAt+1;return JSON.stringify(adoptionSigned);};
@@ -103,17 +108,34 @@ async function setup(t,{adoptionMode=null,wrongLocal=false,forgedLocal=false,lat
         return new Response(JSON.stringify(value),{headers:{'Content-Type':'application/json'}});
       }});
     gateActive=false;gateClockCounts.push(gateClockCount);gateResults.push(gate);
-    if(compiled){
+    if(gitTrust){
+      const priorFetch=globalThis.fetch;let reads=0;
+      globalThis.fetch=async url=>{
+        assert.equal(new URL(url).pathname,'/repos/ASI-integration/asi-landing/branches/main');
+        const disk=JSON.parse(await fs.readFile(store.file('autopilot-ledger.json'),'utf8'));
+        releaseReads.push({route:'branches/main',requests:Object.values(disk.standingDelegationBudget.envelopes)[0].requests});
+        assert.equal((await preview.reserve(descriptor())).status,'BLOCKED');
+        if(adoptionMode==='git-trust-unknown')throw Error('inert unknown');
+        const sha=++reads===2&&adoptionMode==='git-trust-moved'?'f'.repeat(40):f.sha;
+        return new Response(JSON.stringify({name:'main',protected:adoptionMode!=='git-trust-unprotected',commit:{sha}}),{headers:{'Content-Type':'application/json'}});
+      };
+      // Git object bytes, never this tampered local registry, supply trust.
+      const registryFile=path.join(comparison.repoRoot,'docs/agent-os/standing-trust/registry.json');
+      const before=await fs.readFile(registryFile);await fs.writeFile(registryFile,'{}');
+      try{admissions.push({result:await preview.readProtectedGitTrust(gate,{token:'INERT_GIT_TRUST'})});}
+      finally{globalThis.fetch=priorFetch;await fs.writeFile(registryFile,before);}
+    }else if(compiled){
       const pr=f.pulls.get(event.pr);pr.body='Release-Stage: S4-G2\nRelease-Mode: diagnostic\nRelease-Diagnostic-Iteration: 1';
       if(adoptionMode==='compiled-outscope')pr.body='Release-Stage: S4-G6\nRelease-Mode: implementation';
-      const priorFetch=globalThis.fetch;let prReads=0;
+      const priorFetch=globalThis.fetch;let prReads=0,mainReads=0;
       globalThis.fetch=async(url,init)=>{
         const u=new URL(url),route=u.pathname.split('/asi-landing/')[1];
         const disk=JSON.parse(await fs.readFile(store.file('autopilot-ledger.json'),'utf8'));
         releaseReads.push({route,requests:Object.values(disk.standingDelegationBudget.envelopes)[0].requests});
         assert.equal((await preview.reserve(descriptor())).status,'BLOCKED');
         let value;
-        if(route===`pulls/${event.pr}`){
+        if(route==='branches/main')value={name:'main',protected:true,commit:{sha:++mainReads===3&&adoptionMode==='compiled-final-base-change'?'f'.repeat(40):f.sha}};
+        else if(route===`pulls/${event.pr}`){
           if(++prReads===2&&adoptionMode==='compiled-pr-change')pr.body+='\nchanged';
           value=pr;
         }else if(route==='actions/runs/777')value={repository:{full_name:envelope.repo},status:'completed',conclusion:adoptionMode==='compiled-run-fail'?'failure':'success',head_sha:'a'.repeat(40),head_branch:'main',path:'.github/workflows/strigunov4-c4-unit-apply.yml',event:'workflow_dispatch',run_attempt:1};
@@ -294,17 +316,17 @@ test('compiled native release caller meters accepted-stage and diagnostic reads 
  const x=await setup(t,{adoptionMode:'compiled'});await x.loop.poll({execute:true});
  assert.equal(x.admissions[0].result.status,'STANDING_SOURCE_ADMISSION_VERIFIED',JSON.stringify(x.admissions));
  assert.equal(x.admissions[0].result.authorized,false);
- assert.deepEqual(x.releaseReads.map(r=>r.route),['pulls/600','actions/runs/777','actions/runs/777/approvals','actions/runs/777/jobs','pulls','pulls/600']);
+ assert.deepEqual(x.releaseReads.map(r=>r.route),['branches/main','branches/main','pulls/600','actions/runs/777','actions/runs/777/approvals','actions/runs/777/jobs','pulls','pulls/600','branches/main']);
  for(let i=1;i<x.releaseReads.length;i++)assert.equal(x.releaseReads[i].requests,x.releaseReads[i-1].requests+1);
  assert.equal(await x.previews[0].beforeRequest(),false);
 });
 test('compiled release caller fails closed on stale PR failed proof unknown response or revocation',async t=>{
- for(const mode of ['compiled-pr-change','compiled-run-fail','compiled-unknown','compiled-revocation','compiled-outscope']){
+ for(const mode of ['compiled-pr-change','compiled-run-fail','compiled-unknown','compiled-revocation','compiled-outscope','compiled-final-base-change','compiled-missing-registry']){
   const x=await setup(t,{adoptionMode:mode});await x.loop.poll({execute:true});
   assert.equal(x.admissions[0].result.status,'BLOCKED',mode);
   if(mode==='compiled-outscope')assert(x.releaseReads.some(r=>r.route==='issues/600/comments'));
-  if(mode==='compiled-run-fail')assert.equal(x.releaseReads.length,2);
-  if(mode==='compiled-unknown')assert.equal(x.releaseReads.length,3);
+  if(mode==='compiled-run-fail')assert.equal(x.releaseReads.length,4);
+  if(mode==='compiled-unknown')assert.equal(x.releaseReads.length,5);
   assert.equal((await x.previews[0].reserve(descriptor())).status,'BLOCKED',mode);
   const ledger=JSON.parse(await fs.readFile(path.join(x.f.root,'state','autopilot-ledger.json'),'utf8'));
   assert(Object.values(ledger.standingDelegationBudget.envelopes)[0].requests>=x.releaseReads.at(-1).requests);
@@ -321,7 +343,26 @@ test('compiled release caller stops at remaining durable budget without refund o
  const cap=baseline.releaseReads.at(-1).requests-1;
  const x=await setup(t,{adoptionMode:'compiled',gateBudget:cap});await x.loop.poll({execute:true});
  assert.equal(x.admissions[0].result.status,'BLOCKED');
- assert.equal(x.releaseReads.length,5);
+ assert.equal(x.releaseReads.length,8);
  const ledger=JSON.parse(await fs.readFile(path.join(x.f.root,'state','autopilot-ledger.json'),'utf8'));
  assert.equal(Object.values(ledger.standingDelegationBudget.envelopes)[0].requests,cap);
+});
+
+
+test('native protected Git trust reads share Publisher budget and ignore worktree registry',async t=>{
+ const x=await setup(t,{adoptionMode:'git-trust'});await x.loop.poll({execute:true});
+ assert.equal(x.admissions[0].result.status,'PROTECTED_GIT_TRUST_VERIFIED',JSON.stringify(x.admissions));
+ assert.equal(x.admissions[0].result.authorized,false);
+ assert.deepEqual(x.releaseReads.map(x=>x.route),['branches/main','branches/main']);
+ assert.equal(x.releaseReads[1].requests,x.releaseReads[0].requests+1);
+ assert.equal(await x.previews[0].beforeRequest(),false);
+});
+test('native Git trust current-main movement or unknown response retains spend and poisons lane',async t=>{
+ for(const mode of ['git-trust-moved','git-trust-unknown','git-trust-unprotected']){
+  const x=await setup(t,{adoptionMode:mode});await x.loop.poll({execute:true});
+  assert.equal(x.admissions[0].result.status,'BLOCKED',mode);
+  assert.equal((await x.previews[0].reserve(descriptor())).status,'BLOCKED',mode);
+  const ledger=JSON.parse(await fs.readFile(path.join(x.f.root,'state','autopilot-ledger.json'),'utf8'));
+  assert.equal(Object.values(ledger.standingDelegationBudget.envelopes)[0].requests,x.releaseReads.at(-1).requests);
+ }
 });

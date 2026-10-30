@@ -53,7 +53,7 @@ jobs:
 
       - name: Standing trust and budget integration (isolated, no authority)
         run: |
-          node --test scripts/agent-os/__tests__/release-envelope-trust-roots.test.mjs scripts/strigunov4/execution-adapters/standing-budget.test.mjs
+          node --test scripts/agent-os/__tests__/release-envelope-trust-roots.test.mjs scripts/agent-os/__tests__/release-envelope-git-trust.test.mjs scripts/strigunov4/execution-adapters/standing-budget.test.mjs
           node --test scripts/strigunov4/execution-adapters/standing-request-guard.test.mjs
 
       - name: Standing provider and publication request metering (isolated, no authority)
