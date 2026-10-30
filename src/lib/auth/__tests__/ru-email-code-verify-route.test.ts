@@ -48,8 +48,8 @@ beforeEach(() => {
   mocks.consume.mockResolvedValue('user@example.ru');
   mocks.ensure.mockResolvedValue({ accountId: 'existing', created: false });
   mocks.from.mockReturnValue({
-    select: () => ({ eq: () => ({ maybeSingle: async () => ({
-      data: { id: 'verified-user', email: 'user@example.ru' }, error: null,
+    select: () => ({ ilike: () => ({ limit: async () => ({
+      data: [{ id: 'verified-user', email: 'user@example.ru' }], error: null,
     }) }) }),
   });
 });
@@ -109,4 +109,65 @@ describe('RU OTP completion supersedes stale Yandex OAuth state', () => {
     expect(mocks.ensure).not.toHaveBeenCalled();
     expect(session.save).not.toHaveBeenCalled();
   });
+  it('reuses the existing mixed-case email identity without creating a second user', async () => {
+    const session = oldSession();
+    mocks.getSession.mockResolvedValue(session);
+    const insert = vi.fn();
+    mocks.from.mockReturnValue({
+      select: () => ({ ilike: (column: string, pattern: string) => {
+        expect(column).toBe('email');
+        expect(pattern).toBe('user@example.ru');
+        return { limit: async (n: number) => {
+          expect(n).toBe(3);
+          return { data: [{ id: 'existing-user', email: 'User@Example.RU' }], error: null };
+        } };
+      } }),
+      insert,
+    });
+    const res = await POST(request());
+    expect(res.status).toBe(200);
+    expect(session.userId).toBe('existing-user');
+    expect(session.email).toBe('User@Example.RU');
+    expect(insert).not.toHaveBeenCalled();
+  });
+
+  it('rejects a collision between two case-fold-equivalent existing user records', async () => {
+    const session = oldSession();
+    mocks.getSession.mockResolvedValue(session);
+    mocks.from.mockReturnValue({
+      select: () => ({ ilike: () => ({ limit: async () => ({
+        data: [
+          { id: 'lower-user', email: 'user@example.ru' },
+          { id: 'mixed-user', email: 'User@Example.RU' },
+        ], error: null,
+      }) }) }),
+    });
+    const res = await POST(request());
+    expect(res.status).toBe(503);
+    expect(session.userId).toBe('different-user');
+    expect(mocks.ensure).not.toHaveBeenCalled();
+    expect(mocks.getSession).not.toHaveBeenCalled();
+    expect(session.save).not.toHaveBeenCalled();
+  });
+
+  it('escapes SQL ILIKE patterns and never authenticates a wildcard-only row', async () => {
+    const session = oldSession();
+    mocks.getSession.mockResolvedValue(session);
+    mocks.consume.mockResolvedValueOnce('buyer_100%@example.ru');
+    mocks.from.mockReturnValue({
+      select: () => ({ ilike: (column: string, pattern: string) => {
+        expect(column).toBe('email');
+        expect(pattern).toBe('buyer\\_100\\%@example.ru');
+        return { limit: async () => ({
+          data: [{ id: 'unrelated', email: 'buyerX100Y@example.ru' }], error: null,
+        }) };
+      } }),
+    });
+    const res = await POST(request());
+    expect(res.status).toBe(503);
+    expect(session.userId).toBe('different-user');
+    expect(mocks.ensure).not.toHaveBeenCalled();
+    expect(mocks.getSession).not.toHaveBeenCalled();
+  });
+
 });

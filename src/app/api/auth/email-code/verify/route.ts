@@ -16,25 +16,40 @@ const headers={'Cache-Control':'private, no-store, max-age=0'};
 // Reject oversized unauthenticated JSON without buffering the whole body.
 const RU_AUTH_MAX_JSON_BYTES = 1024;
 
-async function findOrCreateExistingIdentity(email: string): Promise<{id:string;email:string}> {
-  const {data:user,error:lookupError}=await supabase
-    .from('users').select('id,email').eq('email',email).maybeSingle();
-  if(lookupError)throw lookupError;
-  if(user?.id)return {id:user.id,email:user.email};
+type RuIdentity = { id: string; email: string };
 
-  // The custom ASI users.password_hash remains NOT NULL. A random bcrypt hash
-  // prevents password login for code-created accounts until password is set.
-  const passwordHash=await bcrypt.hash(randomBytes(32).toString('hex'),12);
-  const {data:created,error:createError}=await supabase.from('users')
-    .insert({email,password_hash:passwordHash}).select('id,email').single();
-  if(created?.id)return {id:created.id,email:created.email};
-  if(createError?.code==='23505'){
-    const {data:current,error:readError}=await supabase
-      .from('users').select('id,email').eq('email',email).single();
-    if(readError||!current)throw readError||new Error('IDENTITY_LOOKUP');
-    return {id:current.id,email:current.email};
+/** Existing ASI users.email is unique by case-sensitive spelling only.
+ * Never create a second account for a mixed-case verified mailbox.
+ */
+async function findExistingEmailIdentity(email: string): Promise<RuIdentity | null> {
+  // PostgreSQL ILIKE treats '%' and '_' as patterns, and '\' as an escape.
+  // Also verify exact normalized text after fetching: never authenticate via
+  // a fuzzy database pattern match if escaping or PostgREST semantics change.
+  const pattern = email.replace(/[\\%_]/g, '\\$&');
+  const { data, error } = await supabase.from('users').select('id,email')
+    .ilike('email', pattern).limit(3);
+  if (error) throw error;
+  const rows = data ?? [];
+  const matches = rows.filter(row => typeof row.id === 'string' &&
+    typeof row.email === 'string' && row.email.toLowerCase() === email);
+  if (rows.length > 2 || matches.length !== rows.length || matches.length > 1)
+    throw new Error('RU_AUTH_AMBIGUOUS_EMAIL_IDENTITY');
+  return matches[0] ?? null;
+}
+
+async function findOrCreateExistingIdentity(email: string): Promise<RuIdentity> {
+  const existing = await findExistingEmailIdentity(email);
+  if (existing) return existing;
+  const passwordHash = await bcrypt.hash(randomBytes(32).toString('hex'), 12);
+  const { data: created, error: createError } = await supabase.from('users')
+    .insert({ email, password_hash: passwordHash }).select('id,email').single();
+  if (created?.id) return { id: created.id, email: created.email };
+  if (createError?.code === '23505') {
+    const current = await findExistingEmailIdentity(email);
+    if (!current) throw new Error('RU_AUTH_IDENTITY_LOOKUP');
+    return current;
   }
-  throw createError||new Error('IDENTITY_CREATE');
+  throw createError || new Error('IDENTITY_CREATE');
 }
 
 export async function POST(req:Request) {

@@ -236,3 +236,16 @@ Provider and ASI data-sharing consent/privacy notices require release review.
 - No schema was applied to either of the owner's TWO Supabase projects or to
   Beget PostgreSQL. No sender or OAuth application was administered, and no
   real mail was sent during this source change.
+
+## Case-insensitive identity preflight (source-only)
+
+The existing public.users unique(email) enforces raw case-sensitive spelling,
+while RU OTP normalizes incoming mailboxes. A new verified login must reuse a
+unique case-fold-equivalent existing user; collisions and unexpected ILIKE
+pattern matches must fail closed, not manufacture a second identity or silently
+assign owner privileges. The current source queries with escaped ILIKE literals,
+then verifies exact case-folded matches before issuing a session. This is NOT
+a substitute for a database-level invariant: require a reviewed audit of
+lower(email) duplicates and an appropriate case-insensitive unique index (or
+equivalent guaranteed invariant) in explicitly isolated staging before
+enabling new-user creation at scale. No live index/user modification is approved.
