@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useSearchParams } from 'next/navigation';
 import { loadGoogleIdentityServices } from '@/lib/googleIdentity';
+import { RuEmailCodeSignIn } from '@/components/auth/RuEmailCodeSignIn';
 import { readResponseJson } from '@/lib/safeResponseJson';
 import { safeAuthRedirectPath } from '@/lib/auth/app-url';
 import { RU_LEGAL_ONBOARDING_PATH } from '@/lib/rental-connect/model';
@@ -362,6 +363,7 @@ export default function OnboardingPageContent({ rental = false }: { rental?: boo
 
           </>)}
 
+          {rental && <RuEmailCodeSignIn redirectPath={afterAuthRedirect} />}
           <div className={`mt-8 grid gap-6 ${rental ? "" : "sm:grid-cols-2"}`}>
             <div
               className="min-w-0 bg-white rounded-2xl border border-slate-200 p-5"
