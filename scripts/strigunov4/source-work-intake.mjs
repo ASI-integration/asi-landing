@@ -103,19 +103,31 @@ export async function proposeSourceWork({task,admittedTasks,produce}={}){
   const admission=inspectSourceIntake({task,admittedTasks});
   if(admission.status!=='SOURCE_CANDIDATE')return admission;
   if(typeof produce!=='function')return refuse('SOURCE_PRODUCER_NOT_CONFIGURED');
+  // Snapshot immutable scope before awaiting ANY producer. A model callback
+  // must not change selected task, allowed file set or the signed-catalog
+  // surrogate while the original input is shared with other callers.
+  let pinned;
+  try { pinned=structuredClone(task); }
+  catch { return refuse('TASK_SNAPSHOT_UNVERIFIED'); }
+  if(inspectSourceIntake({task:pinned,admittedTasks}).taskBinding!==admission.taskBinding)
+    return refuse('TASK_SNAPSHOT_CHANGED');
   let output;
   try{
     // Never allow producer access to authority files, secrets or host APIs.
-    output=await produce(Object.freeze({id:task.id,laneId:task.laneId,
-      baseSha:task.baseSha,repository:REPO,branch:task.branch,
-      paths:Object.freeze(task.files.map(x=>x.path))}));
+    output=await produce(Object.freeze({id:pinned.id,laneId:pinned.laneId,
+      baseSha:pinned.baseSha,repository:REPO,branch:pinned.branch,
+      paths:Object.freeze(pinned.files.map(x=>x.path))}));
   }catch{return refuse('PRODUCER_FAILED_OR_UNKNOWN');}
+  // Re-check the entire exact admitted scope AFTER the await. Any change to
+  // task identity or catalog is an uncertain result, not a usable proposal.
+  if(inspectSourceIntake({task,admittedTasks}).taskBinding!==admission.taskBinding)
+    return refuse('TASK_OR_CATALOG_CHANGED_DURING_PRODUCTION');
   if(!data(output,['status','changes'])||output.status!=='PROPOSED'||
-    !dense(output.changes,task.files.length,task.files.length))
+    !dense(output.changes,pinned.files.length,pinned.files.length))
     return refuse('PRODUCER_OUTPUT_NOT_VERIFIED');
   const proposed=[];let total=0;
-  for(let i=0;i<task.files.length;i++){
-    const source=task.files[i],c=output.changes[i];
+  for(let i=0;i<pinned.files.length;i++){
+    const source=pinned.files[i],c=output.changes[i];
     if(!data(c,['path','beforeSha256','content'])||c.path!==source.path||
       c.beforeSha256!==source.beforeSha256||typeof c.content!=='string')
       return refuse('PRODUCER_ESCAPED_TASK_SCOPE');
@@ -131,7 +143,7 @@ export async function proposeSourceWork({task,admittedTasks,produce}={}){
   return Object.freeze({schema:'asi.source-intake-result.v1',
     status:'PROPOSAL_PREPARED',reason:'NEEDS_PROTECTED_PREPARER_TEST_CI_REVIEW_AND_SIGNED_PUBLISHER',
     authorized:false,taskBinding:admission.taskBinding,
-    candidate:Object.freeze({id:task.id,laneId:task.laneId,baseSha:task.baseSha,
-      branch:task.branch,changeDigest,
+    candidate:Object.freeze({id:pinned.id,laneId:pinned.laneId,baseSha:pinned.baseSha,
+      branch:pinned.branch,changeDigest,
       changes:Object.freeze(proposed)})});
 }

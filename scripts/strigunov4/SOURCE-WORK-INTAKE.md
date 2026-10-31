@@ -47,3 +47,20 @@ callback is never itself a credential.
 No new Engine, daemon, queue, added reviewer, increased security tier,
 database migration, credentials, live sends or production effects.
 A mocked producer and green source tests are NOT an autonomous worker.
+
+## 31 October follow-up: source-to-Publisher handoff
+
+The existing Draft PR also contains source-publisher-handoff.mjs and negative
+regressions. The handoff binds the immutable original intake digest to one
+Publisher-shaped task with a separate fixed publication branch
+(asi/engine-task/<task-id>). It rehashes every change and keeps
+authorized:false. It refuses TS/TSX until the existing source preparer has a
+pinned syntax checker, and refuses JSON whose bytes would be normalized later.
+The source intake now checks the original task and catalog both before and
+after awaiting a model/provider callback, rejecting changed scope.
+
+This closes only the **source candidate / shape compatibility** layer. The
+real native source preparer still has a hardcoded G2 two-witness rule and the
+installed Publisher requires the signed workOrderId, release admission, sandboxed
+provider, CI/review and durable receipt. No invocation of the installed Engine
+or real end-to-end automated coding cycle is claimed.

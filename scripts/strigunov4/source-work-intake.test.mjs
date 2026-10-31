@@ -142,3 +142,41 @@ test('multiple exact paths retain ordered per-file hashes, no automatic writes',
   assert.equal(result.candidate.changes[1].beforeSha256,HEX);
   assert.equal(result.authorized,false);
 });
+test('producer cannot alter task scope while asynchronous code generation is running',async()=>{
+  const original=task();
+  const catalog=[task()];
+  const outcome=await proposeSourceWork({task:original,admittedTasks:catalog,
+    produce:async input=>{
+      assert.equal(input.id,original.id);
+      original.files[0].path='src/lib/secret.ts';
+      original.branch='asi/unauthorized';
+      return generate();
+    }});
+  assert.equal(outcome.status,'BLOCKED');
+  assert.equal(outcome.reason,'TASK_OR_CATALOG_CHANGED_DURING_PRODUCTION');
+  assert.equal(outcome.authorized,false);
+});
+test('producer cannot silently substitute catalog bytes after task was accepted',async()=>{
+  const original=task();
+  const catalog=[task()];
+  const outcome=await proposeSourceWork({task:original,admittedTasks:catalog,
+    produce:async ()=>{
+      catalog[0].baseSha='f'.repeat(40);
+      return generate();
+    }});
+  assert.equal(outcome.reason,'TASK_OR_CATALOG_CHANGED_DURING_PRODUCTION');
+  assert.equal(outcome.candidate,null);
+});
+test('producer receives pinned task view, not caller-owned mutable file objects',async()=>{
+  const original=task();
+  const catalog=[task()];
+  const outcome=await proposeSourceWork({task:original,admittedTasks:catalog,
+    produce:async input=>{
+      assert.equal(input.paths[0],'docs/test-task.py');
+      assert.equal(Object.isFrozen(input.paths),true);
+      assert.throws(()=>{input.paths.push('src/evil.ts')},TypeError);
+      return generate();
+    }});
+  assert.equal(outcome.status,'PROPOSAL_PREPARED');
+  assert.equal(outcome.candidate.changes[0].path,'docs/test-task.py');
+});
