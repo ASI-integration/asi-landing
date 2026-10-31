@@ -1,0 +1,61 @@
+diff --git a/scripts/agent-os/__tests__/release-envelope-trust-roots.test.mjs b/scripts/agent-os/__tests__/release-envelope-trust-roots.test.mjs
+index d50574e..21d899c 100644
+--- a/scripts/agent-os/__tests__/release-envelope-trust-roots.test.mjs
++++ b/scripts/agent-os/__tests__/release-envelope-trust-roots.test.mjs
+@@ -236,6 +236,29 @@ test('boxed, object, array and getter historical revocation entries deny before
+   assert.equal((await z.readSnapshot()).reason,'TRUST_CONTEXT');
+ });
+ 
++test('unexpected historical own properties never become an accepted trust snapshot',async()=>{
++  const old='a'.repeat(64);
++  for(const edit of [
++    list=>Object.defineProperty(list,'extra',{value:new String(old),enumerable:true}),
++    list=>Object.defineProperty(list,Symbol('hidden'),{get(){throw Error('must not run getter');}}),
++    list=>Object.defineProperty(list,'01',{value:old,enumerable:true})
++  ]){
++    const x=fixture();
++    x.expected.priorRevokedEnvelopeDigests=[old];
++    x.manifest.revokedEnvelopeDigests=[old];x.resign();
++    edit(x.expected.priorRevokedEnvelopeDigests);
++    assert.deepEqual(await x.readSnapshot(),{status:'BLOCKED',reason:'TRUST_CONTEXT',authorized:false});
++    assert.equal(x.reads(),0);
++  }
++});
++
++test('unexpected expected-context properties are rejected before reading public trust',async()=>{
++  const x=fixture();
++  Object.defineProperty(x.expected,'surplus',{value:new String('a'.repeat(64))});
++  assert.deepEqual(await x.readSnapshot(),{status:'BLOCKED',reason:'TRUST_CONTEXT',authorized:false});
++  assert.equal(x.reads(),0);
++});
++
+ test('signed JSON revocation entries must be primitive hex strings, not arrays, numbers or objects',async()=>{
+   for(const value of [0,null,['a'.repeat(64)],{digest:'a'.repeat(64)}]){
+     const x=fixture();x.manifest.revokedEnvelopeDigests=[value];x.resign();
+diff --git a/scripts/agent-os/release-envelope-trust-roots.mjs b/scripts/agent-os/release-envelope-trust-roots.mjs
+index 401cab6..2e33e47 100644
+--- a/scripts/agent-os/release-envelope-trust-roots.mjs
++++ b/scripts/agent-os/release-envelope-trust-roots.mjs
+@@ -42,14 +42,20 @@ function captureExpected(expected) {
+       ![Object.prototype, null].includes(Object.getPrototypeOf(expected)))
+     throw Error('TRUST_CONTEXT');
+   const fields = Object.getOwnPropertyDescriptors(expected);
+-  if (Object.values(fields).some(d => !Object.hasOwn(d, 'value')))
++  const required = ['repository','environment','target','issuerKeySha256',
++    'verifierKeySha256','envelopeDigest','minRevocationSequence',
++    'minRevocationManifestDigest','priorRevokedEnvelopeDigests'];
++  if (Reflect.ownKeys(fields).length !== required.length ||
++      required.some(key => !Object.hasOwn(fields, key)) ||
++      Object.values(fields).some(d => !Object.hasOwn(d, 'value')))
+     throw Error('TRUST_CONTEXT');
+   const get = key => ownData(fields, key);
+   const previous = get('priorRevokedEnvelopeDigests');
+   if (!Array.isArray(previous) || Object.getPrototypeOf(previous) !== Array.prototype ||
+       previous.length > 1024) throw Error('TRUST_CONTEXT');
+   const entries = Object.getOwnPropertyDescriptors(previous);
+-  if (Object.values(entries).some(d => !Object.hasOwn(d, 'value')))
++  if (Reflect.ownKeys(entries).length !== previous.length + 1 ||
++      Object.values(entries).some(d => !Object.hasOwn(d, 'value')))
+     throw Error('TRUST_CONTEXT');
+   const history = [];
+   for (let i = 0; i < previous.length; i++) {
