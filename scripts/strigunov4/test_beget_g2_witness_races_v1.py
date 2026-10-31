@@ -1,0 +1,58 @@
+"""Regression of the real G2 observe sequence using isolated OS seams."""
+import json
+import unittest
+from contextlib import ExitStack
+from types import SimpleNamespace
+from unittest.mock import patch
+import beget_g2_operator_witness as w
+
+class RaceTests(unittest.TestCase):
+    def observe(self, race=None):
+        policy=dict(release='b'*40, unitHash='c'*64, pid=42, invocation='a'*32,
+                    crm='operator@example.invalid', ops='operator@example.invalid')
+        identity=dict(host=w.HOST,unit=w.UNIT,**{k:policy[k] for k in ('release','unitHash','pid','invocation')})
+        env=dict(w.FLAGS,CRM_OPERATOR_EMAILS=policy['crm'],OPS_ADMIN_EMAILS=policy['ops'])
+        raw=b''.join((k+'='+v).encode()+b'\0' for k,v in env.items())
+        later=identity | ({'pid':43} if race=='pid' else {'invocation':'b'*32} if race=='invocation' else {})
+        final=policy | ({'ops':'different@example.invalid'} if race=='policy' else {})
+        with ExitStack() as stack:
+            stack.enter_context(patch.object(w.sys,'argv',['witness']))
+            stack.enter_context(patch.dict(w.os.environ,{},clear=True))
+            stack.enter_context(patch.object(w.os,'uname',return_value=SimpleNamespace(nodename=w.HOST)))
+            stack.enter_context(patch.object(w.os,'geteuid',return_value=0))
+            stack.enter_context(patch.object(w,'trusted_file',side_effect=[json.dumps(policy).encode(),json.dumps(final).encode()]))
+            stack.enter_context(patch.object(w,'snapshot',side_effect=[identity,later]))
+            opened=stack.enter_context(patch.object(w.os,'open',return_value=90))
+            closed=stack.enter_context(patch.object(w.os,'close'))
+            stack.enter_context(patch.object(w.os,'read',return_value=raw))
+            stack.enter_context(patch.object(w.os,'pread',return_value=raw+b'X' if race=='env' else raw))
+            try:
+                return w.observe()
+            finally:
+                opened.assert_called_once_with('/proc/42/environ',w.os.O_RDONLY | w.os.O_NOFOLLOW)
+                closed.assert_called_once_with(90)
+
+    def test_full_sequence_is_redacted_not_human_login(self):
+        result=self.observe()
+        self.assertEqual(result['humanLogin'],'NOT_PROVEN')
+        self.assertNotIn('operator@example.invalid',json.dumps(result))
+        self.assertEqual(result['effectiveFlags'],7)
+
+    def test_environment_replacement(self):
+        with self.assertRaisesRegex(w.Block,'^ENV_RACE$'):
+            self.observe('env')
+
+    def test_pid_change(self):
+        with self.assertRaisesRegex(w.Block,'^IDENTITY_OR_RACE$'):
+            self.observe('pid')
+
+    def test_invocation_change(self):
+        with self.assertRaisesRegex(w.Block,'^IDENTITY_OR_RACE$'):
+            self.observe('invocation')
+
+    def test_policy_change_after_process_read(self):
+        with self.assertRaisesRegex(w.Block,'^POLICY_RACE$'):
+            self.observe('policy')
+
+if __name__=='__main__':
+    unittest.main()
