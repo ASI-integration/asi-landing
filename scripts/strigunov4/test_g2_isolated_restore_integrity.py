@@ -79,6 +79,15 @@ class IntegrityTests(unittest.TestCase):
         with self.assertRaisesRegex(g2.Block, "NONREGULAR_OR_LINKED_FILE"):
             self.verify()
 
+    def test_walk_errors_are_fail_closed(self):
+        from unittest.mock import patch
+        def denied(_path, **kwargs):
+            kwargs["onerror"](PermissionError("fixture"))
+            yield None
+        with patch.object(g2.os, "walk", side_effect=denied):
+            with self.assertRaisesRegex(g2.Block, "TREE_READ_FAILED"):
+                self.verify()
+
     def test_empty_tree_blocked(self):
         (self.restored / "sub" / "file.txt").unlink()
         with self.assertRaisesRegex(g2.Block, "EMPTY_TREE"):
