@@ -94,6 +94,7 @@ def relative_link(path, root):
     return target
 
 
+
 def tree_fingerprint(root):
     root = safe_directory(root)
     files, folders, links, size = 0, 0, 0, 0
@@ -148,6 +149,7 @@ def tree_fingerprint(root):
     require(links <= MAX_FILES, "TREE_SIZE_LIMIT")
     return {"inventorySha256": fingerprint.hexdigest(), "files": files,
             "directories": folders, "links": links, "bytes": size}
+
 
 def inspect(source_copy, restored_copy, archive, expected_archive_sha256):
     require(type(expected_archive_sha256) is str and
