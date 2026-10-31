@@ -85,6 +85,73 @@ class RealUpgradeSourceTests(unittest.TestCase):
             u.put_new(p,b'original')
             with self.assertRaises(FileExistsError):u.put_new(p,b'new')
             self.assertEqual(p.read_bytes(),b'original')
+    def test_v2_complete_authority_inventory_is_explicit_and_includes_model_key(self):
+        expected={'activation.json','catalog.json','reviews.json','fence.json',
+            'standing-verifier-public.pem','standing-parent.json',
+            'standing-child.json','standing-children-history.json',
+            'standing-revocations.json','five-lane-goal.json',
+            'five-lane-assessments.json','openai-api-key'}
+        self.assertEqual(set(u.NEXT_PROTECTED_FILES),expected)
+        self.assertEqual(len(set(u.NEXT_PROTECTED_FILES.values())),len(expected))
+        self.assertTrue(all(v.startswith('active-next-') for v in
+            u.NEXT_PROTECTED_FILES.values()))
+    def test_missing_any_v2_owner_pinned_source_refuses_before_apply(self):
+        records={name:(b'private-credential-test-only-012345' if name=='openai-api-key'
+                 else (b'[1]\n' if name=='catalog.json' else
+                       ('signed-test-'+name).encode()))
+                 for name in u.NEXT_PROTECTED_FILES}
+        expected={k:sha(v) for k,v in records.items()}
+        catalog=records['catalog.json']
+        original=u.regular
+        def read(file,**kwargs):
+            source=Path(file).name
+            for name,asset in u.NEXT_PROTECTED_FILES.items():
+                if asset==source:return records[name]
+            raise AssertionError('UNEXPECTED_PROTECTED_READ')
+        manifest={'catalogSha256':sha(catalog)}
+        with mock.patch.object(u,'regular',side_effect=read):
+            valid=u.load_next_protected_sources(
+                {'nextProtectedSha256':expected},b'new',manifest,
+                {'catalog.json':catalog},None)
+            self.assertEqual(valid,records)
+            for name in records:
+                changed=dict(expected);changed[name]='0'*64
+                with self.subTest(name=name),self.assertRaisesRegex(
+                    u.Block,'NEXT_PROTECTED_FILE_NOT_SIGNED'):
+                    u.load_next_protected_sources(
+                        {'nextProtectedSha256':changed},b'new',manifest,
+                        {'catalog.json':catalog},None)
+            with self.assertRaisesRegex(u.Block,'NEXT_PROTECTED_INVENTORY_NOT_SIGNED'):
+                u.load_next_protected_sources(
+                    {'nextProtectedSha256':{k:v for k,v in expected.items()
+                       if k!='openai-api-key'}},b'new',manifest,
+                    {'catalog.json':catalog},None)
+        self.assertIs(original,u.regular)
+    def test_missing_signed_model_credential_cannot_be_admitted(self):
+        records={name:(b'k' if name=='openai-api-key' else b'x'*40)
+            for name in u.NEXT_PROTECTED_FILES}
+        records['catalog.json']=b'[1]\n'
+        signed={k:sha(v) for k,v in records.items()}
+        def read(file,**kwargs):
+            for name,source in u.NEXT_PROTECTED_FILES.items():
+                if Path(file).name==source:return records[name]
+            raise AssertionError('unexpected')
+        with mock.patch.object(u,'regular',side_effect=read):
+            with self.assertRaisesRegex(u.Block,'NEXT_MODEL_CREDENTIAL_INVALID'):
+                u.load_next_protected_sources(
+                    {'nextProtectedSha256':signed},b'new',
+                    {'catalogSha256':sha(records['catalog.json'])},
+                    {'catalog.json':records['catalog.json']},None)
+    def test_preexisting_and_absent_protected_files_are_distinguished(self):
+        existing='activation.json'
+        def read(file,**kwargs):
+            if Path(file).name==existing:return b'previous-root-owned-policy'
+            raise FileNotFoundError
+        with mock.patch.object(u,'regular',side_effect=read):
+            out=u.existing_protected_before_exchange(
+                {'activation.json':b'new','openai-api-key':b'new-secret'})
+        self.assertEqual(out,{'activation.json':b'previous-root-owned-policy',
+                              'openai-api-key':None})
     def test_root_signed_grant_without_root_fails_before_read(self):
         with mock.patch.object(u.os,'geteuid',return_value=993):
             with self.assertRaisesRegex(u.Block,'UPGRADE_ROOT_HOST_REQUIRED'):

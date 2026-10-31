@@ -44,6 +44,23 @@ REQUIRED_NATIVE=[
  'scripts/strigunov4/source-responses-provider.mjs',
  'scripts/strigunov4/execution-adapters/standing-request-guard.mjs']
 REPO='ASI-integration/asi-landing'
+# Existing v1 activation/catalog/reviews/fence PLUS every independent v2 input.
+# These are separate owner-controlled protected source files. No values or keys
+# are generated here: each exact source SHA is covered by the owner upgrade grant.
+NEXT_PROTECTED_FILES={
+ 'activation.json':'active-next-activation.json',
+ 'catalog.json':'active-next-catalog.json',
+ 'reviews.json':'active-next-reviews.json',
+ 'fence.json':'active-next-fence.json',
+ 'standing-verifier-public.pem':'active-next-standing-verifier-public.pem',
+ 'standing-parent.json':'active-next-standing-parent.json',
+ 'standing-child.json':'active-next-standing-child.json',
+ 'standing-children-history.json':'active-next-standing-children-history.json',
+ 'standing-revocations.json':'active-next-standing-revocations.json',
+ 'five-lane-goal.json':'active-next-five-lane-goal.json',
+ 'five-lane-assessments.json':'active-next-five-lane-assessments.json',
+ 'openai-api-key':'active-next-openai-api-key',
+}
 class Block(Exception):pass
 def require(ok,code):
     if not ok:raise Block(code)
@@ -255,6 +272,47 @@ def plan(package):
        'newBaseSha':new['baseSha'],'service':UNIT,'liveStateWillBePreserved':True,
        'authorized':False,'installable':False,'applyPerformed':False}
 
+def load_next_protected_sources(grant,newraw,new,files,installer):
+    """Verify ALL new v2 protected bytes before stopping the existing Engine.
+
+    Every file, including the private provider key, is digest-pinned in the
+    owner-signed upgrade grant. Never print contents, create a signer, or
+    synthesize missing records. Old v1 files are preserved separately.
+    """
+    hashes=grant.get('nextProtectedSha256')
+    require(type(hashes) is dict and set(hashes)==set(NEXT_PROTECTED_FILES),
+            'NEXT_PROTECTED_INVENTORY_NOT_SIGNED')
+    proposed={}
+    for target,source in NEXT_PROTECTED_FILES.items():
+        data=regular(AUTH/source,root=True,maxsize=2000000)
+        require(len(data)>0 and hashes[target]==sha(data),
+                'NEXT_PROTECTED_FILE_NOT_SIGNED')
+        if target=='openai-api-key':
+            # This is a real secret, never an empty or public test fixture.
+            # Key validity/account access still requires real online acceptance.
+            require(16<=len(data.strip())<=20000 and b'\x00' not in data,
+                    'NEXT_MODEL_CREDENTIAL_INVALID')
+        proposed[target]=data
+    require(proposed['catalog.json']==files['catalog.json'] and
+            sha(proposed['catalog.json'])==new['catalogSha256'],
+            'NEXT_CATALOG_NOT_BOUND')
+    return proposed
+
+def existing_protected_before_exchange(proposed):
+    """Only preexisting, ordinary root-owned files may be replaced.
+
+    New V2 files may be absent; absence is snapshotted and verified. This
+    function has no mutations and cannot read private signing-key contents.
+    """
+    originals={}
+    for name in proposed:
+        target=AUTH/name
+        try:
+            originals[name]=regular(target,root=True)
+        except FileNotFoundError:
+            originals[name]=None
+    return originals
+
 def protected_admission(package, oldraw,old, state, newraw,new, files, installer):
     """The only authority port: native owner signature over exact bytes."""
     require(os.geteuid()==0 and os.uname().nodename==HOST,'UPGRADE_ROOT_HOST_REQUIRED')
@@ -280,6 +338,13 @@ def protected_admission(package, oldraw,old, state, newraw,new, files, installer
       grant['notBefore']<=now<grant['expiresAt'] and
       0<grant['expiresAt']-grant['notBefore']<=14*86400000,
       'OWNER_SIGNED_LIVE_UPGRADE_SCOPE')
+    # Check the create-versus-replace inventory BEFORE stopping the service.
+    # This field is owner-signed; a surprise preexisting credential or policy
+    # file must never be overwritten on a supposedly create-only upgrade.
+    before=existing_protected_before_exchange({name:b'' for name in NEXT_PROTECTED_FILES})
+    require(grant.get('previousProtectedPresence')==
+      {name:(raw is not None) for name,raw in before.items()},
+      'SIGNED_PREVIOUS_PROTECTED_INVENTORY_MISMATCH')
     hashes={rel:sha(data) for rel,data in state.items()}
     require(grant.get('oldStateDigests')==hashes and
             type(grant.get('newPolicySha256')) is str and
@@ -288,21 +353,19 @@ def protected_admission(package, oldraw,old, state, newraw,new, files, installer
             'SIGNED_DURABLE_STATE_PIN_MISMATCH')
     # The future native 5-lane host must carry an independently reviewed
     # activation, not reuse the legacy two-witness authority.
-    next_activation=regular(AUTH/'active-next-activation.json',root=True)
+    proposed=load_next_protected_sources(grant,newraw,new,files,installer)
     activation=installer.signed('active-next-activation.json',public)
     require(activation.get('runtimeManifestSha256')==sha(newraw) and
       activation.get('baseSha')==new['baseSha'] and
       activation.get('catalogSha256')==new['catalogSha256'] and
       activation.get('root')==str(STATE),
       'NEXT_ACTIVATION_NOT_BOUND_TO_NEW_RUNTIME')
-    next_catalog=regular(AUTH/'active-next-catalog.json',root=True)
-    require(sha(next_catalog)==new['catalogSha256'] and
-            next_catalog==files['catalog.json'],'NEXT_CATALOG_NOT_BOUND')
-    next_reviews=regular(AUTH/'active-next-reviews.json',root=True)
-    next_fence=regular(AUTH/'active-next-fence.json',root=True)
-    require(sha(next_reviews)==activation.get('reviewsSha256') and
-      sha(next_fence)==activation.get('fenceSha256'),
-      'NEXT_NATIVE_POLICY_NOT_PINNED')
+    for name,field in [('reviews.json','reviewsSha256'),
+                       ('fence.json','fenceSha256'),
+                       ('five-lane-goal.json','goalGraphSha256'),
+                       ('five-lane-assessments.json','assessmentsSha256')]:
+        require(sha(proposed[name])==activation.get(field),
+                'NEXT_NATIVE_POLICY_NOT_PINNED')
     reviewraw=regular(AUTH/'active-upgrade-review.json',root=True)
     review=jsonb(reviewraw)
     require(sha(reviewraw)==grant.get('reviewSha256') and
@@ -316,11 +379,6 @@ def protected_admission(package, oldraw,old, state, newraw,new, files, installer
       'INDEPENDENT_NATIVE_REVIEW_REQUIRED')
     # An owner-grant pin makes the exact independent-review record immutable
     # within this transaction; unreviewed flags alone cannot authorize apply.
-    proposed={'activation.json':next_activation,'catalog.json':next_catalog,
-       'reviews.json':next_reviews,'fence.json':next_fence}
-    for name,raw in proposed.items():
-        require(grant.get('nextProtectedSha256',{}).get(name)==sha(raw),
-               'NEXT_PROTECTED_AUTHORITY_CHANGED')
     require(grant.get('newPolicySha256')==
       sha(json.dumps(activation,ensure_ascii=False,separators=(',',':')).encode('utf8')),
       'NATIVE_BUDGET_POLICY_SHA_UNVERIFIED')
@@ -413,8 +471,15 @@ def apply(package):
     # remote journal and accepted report. Original on-disk state stays put.
     hist.mkdir(mode=0o700,parents=True)
     for rel,raw in state.items():put_new(hist/rel,raw)
-    for name in proposed:
-        put_new(hist/'protected-old'/name,regular(AUTH/name,root=True))
+    protected_before=existing_protected_before_exchange(proposed)
+    require(grant.get('previousProtectedPresence')==
+      {name:(raw is not None) for name,raw in protected_before.items()},
+      'SIGNED_PREVIOUS_PROTECTED_INVENTORY_MISMATCH')
+    for name,raw in protected_before.items():
+        if raw is not None:
+            put_new(hist/'protected-old'/name,raw)
+        else:
+            put_new(hist/'protected-absent'/(name+'.absent'),b'ABSENT\n')
     syncdir(HISTORY)
     put_new(claim,json.dumps({'schema':'asi.beget-active-upgrade-claim.v1',
        'old':oldhash,'new':newhash,'oldLedgerSha256':sha(state['state/autopilot-ledger.json']),
@@ -439,7 +504,13 @@ def apply(package):
         # starting new code. The historical record remains root-only.
         for name,raw in proposed.items():
             current=AUTH/name
-            existing=regular(current,root=True)
+            # All old bytes/absences were proved and archived before exchange.
+            previous=protected_before[name]
+            try:
+                observed=regular(current,root=True)
+            except FileNotFoundError:
+                observed=None
+            require(observed==previous,'NEXT_PROTECTED_OLD_BYTES_CHANGED')
             mode=0o640
             gid=pwd.getpwnam('asi-engine').pw_gid
             pending=AUTH/('.'+name+'.active-upgrade-'+newhash[:12])
@@ -447,7 +518,7 @@ def apply(package):
             os.chown(pending,0,gid)
             os.replace(pending,current)
             syncdir(AUTH)
-            changed_protected.append((name,existing))
+            changed_protected.append((name,previous))
         # Preserve original FAILED_LOCKED bytes in root-only HISTORY.
         # The new signed reconciliation is an ADDITIVE irreversible record,
         # not a rewrite of old job or remote publication receipts.
@@ -516,10 +587,17 @@ def apply(package):
                     atomic_replace(STATE/rel,raw,u.pw_uid,u.pw_gid)
                 for name,raw in reversed(changed_protected):
                     current=AUTH/name
-                    pending=AUTH/('.'+name+'.recovery-'+newhash[:12])
-                    put_new(pending,raw)
-                    os.chown(pending,0,pwd.getpwnam('asi-engine').pw_gid)
-                    os.replace(pending,current)
+                    require(sha(regular(current,root=True))==sha(proposed[name]),
+                            'PROTECTED_ROLLBACK_SOURCE_CHANGED')
+                    if raw is None:
+                        # This path was absent before the (never-started)
+                        # generation. Do not leave a newly provisioned key.
+                        os.unlink(current)
+                    else:
+                        pending=AUTH/('.'+name+'.recovery-'+newhash[:12])
+                        put_new(pending,raw)
+                        os.chown(pending,0,pwd.getpwnam('asi-engine').pw_gid)
+                        os.replace(pending,current)
                     syncdir(AUTH)
                 exchange(RUNTIME,oldlocation)
             except Exception:raise Block('FAILED_LOCKED_OPERATOR_RECONCILIATION_REQUIRED')
