@@ -1,5 +1,5 @@
 // Host-owned capability only. Import is inert. No arbitrary REST writes or retries.
-import {must,sha} from './state.mjs';
+import {must,sha,digest} from './state.mjs';
 export const REPOSITORY='ASI-integration/asi-landing';
 export const branchAllowed=b=>typeof b==='string'&&/^asi\/engine-task\/[a-z0-9][a-z0-9-]{0,70}$/.test(b);
 export function draftBody(job,evidence){
@@ -47,20 +47,42 @@ export async function bounded(operation,timeoutMs=10000){
 }
 /** A timed-out transport is permanently poisoned, including abort-ignoring fetches.
  * Hosts must not construct a replacement to replay an uncertain mutation.
+ * Optional requestAdmission is a host-owned reservation/admission seam, not authority:
+ * it receives a frozen exact wire-identity descriptor and must resolve exactly true.
+ * A proposal, reservation object, missing result or rejection cannot admit a request.
  */
-export function createPublisherTransport({token,timeoutMs=10000,beforeRequest=async()=>{}}={}){
+export function createPublisherTransport({token,timeoutMs=10000,requestAdmission,beforeRequest=async()=>{}}={}){
   must(typeof token==='function'||typeof token==='string'&&token.trim().length>0,'HOST_TOKEN_REQUIRED');
+  must(requestAdmission===undefined||typeof requestAdmission==='function','HOST_REQUEST_GUARD_REQUIRED');
+  must(beforeRequest===undefined||typeof beforeRequest==='function','HOST_CREDENTIAL_GUARD_REQUIRED');
   let poisoned=false,busy=false;
   async function request(method,route,body){
     must(!poisoned&&!busy,'TRANSPORT_LOCKED');busy=true;
-    try{return await bounded(async signal=>{
-      await beforeRequest({mutation:method==='POST'});
+    try{
+      // Capture the exact wire payload before token/guard awaits. Caller mutation
+      // cannot change a request after the host has reserved its digest.
+      const payload=body===undefined?undefined:JSON.stringify(body);
+      const payloadSha256=digest(payload??'');
+      const requestSha256=digest(JSON.stringify({method,route,payloadSha256}));
+      return await bounded(async signal=>{
+      // Preserve the main host's throw-only fence before token acquisition.
+      // Its successful return is not the exact-wire admission result below.
+      if(beforeRequest)await beforeRequest(Object.freeze({mutation:method==='POST'}));
+      must(!poisoned&&!signal.aborted,'TRANSPORT_LOCKED');
       const credential=typeof token==='function'?await token():token;
+      must(!poisoned&&!signal.aborted,'TRANSPORT_LOCKED');
       must(typeof credential==='string'&&credential.trim().length>0,'HOST_TOKEN_REQUIRED');
+      if(requestAdmission){
+        const allowed=await requestAdmission(Object.freeze({method,route,payloadSha256,requestSha256,signal}));
+        must(allowed===true,'HOST_REQUEST_GUARD_DENIED');
+      }
+      // Timeout may settle while an abort-ignoring token/guard is still pending.
+      // Its later completion must never initiate the remote effect.
+      must(!poisoned&&!signal.aborted,'TRANSPORT_LOCKED');
       const response=await fetch(`https://api.github.com/repos/${REPOSITORY}/${route}`,{
         method,redirect:'error',signal,headers:{Authorization:`Bearer ${credential}`,
           Accept:'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28',
-          ...(body?{'Content-Type':'application/json'}:{})},...(body?{body:JSON.stringify(body)}:{})});
+          ...(payload!==undefined?{'Content-Type':'application/json'}:{})},...(payload!==undefined?{body:payload}:{})});
       must(response.ok,'REMOTE_RESULT_UNKNOWN');
       const reader=response.body.getReader();const chunks=[];let bytes=0;
       try{for(;;){const x=await reader.read();if(x.done)break;bytes+=x.value.length;
