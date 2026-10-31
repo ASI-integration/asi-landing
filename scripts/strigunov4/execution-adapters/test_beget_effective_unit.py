@@ -54,4 +54,3 @@ class EffectiveUnitAdmission(unittest.TestCase):
  def test_reject_unexpected_address_family(self):self.call_case({'RestrictAddressFamilies':'AF_INET AF_INET6 AF_NETLINK AF_UNIX AF_PACKET'})
 
 if __name__=='__main__':unittest.main()
-
