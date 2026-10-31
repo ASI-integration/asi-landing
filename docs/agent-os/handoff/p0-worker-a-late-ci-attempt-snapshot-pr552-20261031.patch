@@ -1,0 +1,108 @@
+diff --git a/scripts/agent-os/__tests__/release-envelope-provider-metering.test.mjs b/scripts/agent-os/__tests__/release-envelope-provider-metering.test.mjs
+index 4b658ab..75b1b2f 100644
+--- a/scripts/agent-os/__tests__/release-envelope-provider-metering.test.mjs
++++ b/scripts/agent-os/__tests__/release-envelope-provider-metering.test.mjs
+@@ -57,7 +57,7 @@ test('every authenticated GET, review page and PR recheck is reserved before exa
+   const result = await readProvider(f.input);
+   assert.equal(result.status, 'PROVIDER_EVIDENCE_VERIFIED');
+   assert.equal(result.authorized, false);
+-  assert.equal(result.receipt.requests, 8); // two complete paginated review reads
++  assert.equal(result.receipt.requests, 10); // twice-sampled workflows plus two complete paginated review reads
+   for (let i = 0; i < f.events.length; i += 2) {
+     assert.equal(f.events[i][0], 'reserved');
+     assert.deepEqual(f.events[i + 1], ['fetch', f.events[i][1]]);
+diff --git a/scripts/agent-os/__tests__/release-envelope-review-refresh-integration.test.mjs b/scripts/agent-os/__tests__/release-envelope-review-refresh-integration.test.mjs
+index 8e1eedd..63a95cf 100644
+--- a/scripts/agent-os/__tests__/release-envelope-review-refresh-integration.test.mjs
++++ b/scripts/agent-os/__tests__/release-envelope-review-refresh-integration.test.mjs
+@@ -35,6 +35,8 @@ function makeFixture(drift='stable') {
+         if(drift==='changes')reviews=[approval,{...approval,id:11,state:'CHANGES_REQUESTED',
+           submitted_at:'2026-10-29T07:14:45Z'}];
+         if(drift==='identity')reviews=[{...approval,user:{id:43}}];
++        if(drift==='ci-rerun')Object.assign(runs[0],{run_attempt:2,status:'in_progress',conclusion:null});
++        if(drift==='ci-new-run')runs.push({...runs[0],id:20,status:'completed',conclusion:'failure'});
+       }
+     } else if(u.pathname.includes('/actions/workflows/')){
+       const id=Number(u.pathname.split('/').at(-2));
+@@ -52,7 +54,7 @@ test('stable complete review inventories still produce non-authorizing evidence'
+   assert.equal(r.status,'PROVIDER_EVIDENCE_VERIFIED');
+   assert.equal(r.authorized,false);
+   assert.equal(f.getReviewReads(),2);
+-  assert.equal(r.receipt.requests,6);
++  assert.equal(r.receipt.requests,8);
+ });
+ for(const [drift,label] of [['dismiss','dismissal'],['changes','new change request'],
+   ['identity','reviewer identity change']]) {
+@@ -64,3 +66,14 @@ for(const [drift,label] of [['dismiss','dismissal'],['changes','new change reque
+     assert.equal(f.getReviewReads(),2);
+   });
+ }
++
++// A newer required-workflow attempt can appear after the first run inventory
++// even if the PR SHA, approval, and both review inventories remain unchanged.
++for(const drift of ['ci-rerun','ci-new-run']) {
++  test('provider rechecks latest trusted workflow after review fetch: '+drift,async()=>{
++    const f=makeFixture(drift),r=await readProvider(f.input);
++    assert.equal(r.authorized,false);
++    assert.deepEqual({status:r.status,reason:r.reason},
++      {status:'BLOCKED',reason:'PROVIDER_READER_RUN_DRIFT'});
++  });
++}
+diff --git a/scripts/agent-os/__tests__/release-envelope-witness.test.mjs b/scripts/agent-os/__tests__/release-envelope-witness.test.mjs
+index ac3cf54..2f72965 100644
+--- a/scripts/agent-os/__tests__/release-envelope-witness.test.mjs
++++ b/scripts/agent-os/__tests__/release-envelope-witness.test.mjs
+@@ -242,7 +242,7 @@ function readerFixture(change = () => {}) {
+ test('reader obtains bounded authenticated GET observations and never authority',async()=>{
+  const f=readerFixture();const result=await readProvider(f.input);
+  assert.equal(result.status,'PROVIDER_EVIDENCE_VERIFIED');assert.equal(result.authorized,false);
+- assert.equal(result.receipt.requests,6);assert.equal(result.receipt.writes,0);
++ assert.equal(result.receipt.requests,8);assert.equal(result.receipt.writes,0);
+  assert(!JSON.stringify(result).includes(f.input.token));
+  for(const {url,options} of f.calls) {
+   assert(url.startsWith('https://api.github.com/repos/ASI-integration/asi-landing/'));
+@@ -284,12 +284,12 @@ test('reader paginates reviews completely so later denial is not hidden',async()
+   }
+  });
+  assert.equal((await readProvider(f.input)).reason,'PROVIDER_READER_REVIEW_NOT_APPROVED');
+- assert.equal(f.calls.length,7);
++ assert.equal(f.calls.length,9);
+ });
+ test('reader rechecks PR identity and rejects concurrent head/base movement',async()=>{
+  for(const side of ['head','base']) {
+   const f=readerFixture(({calls,x,url})=>{
+-   if(calls.length===6 && url.pathname.endsWith('/552')) {
++   if(calls.length===8 && url.pathname.endsWith('/552')) {
+     const value=structuredClone(x.pr);value[side].sha='e'.repeat(40);
+     return new Response(JSON.stringify(value),{headers:{'Content-Type':'application/json'}});
+    }
+diff --git a/scripts/agent-os/check-demo-release.mjs b/scripts/agent-os/check-demo-release.mjs
+index 048413c..ae0bd5f 100644
+--- a/scripts/agent-os/check-demo-release.mjs
++++ b/scripts/agent-os/check-demo-release.mjs
+@@ -646,10 +646,11 @@ async function readProviderSnapshot({token,expected,fetchImpl,clock,beforeReques
+       return reviews;
+     };
+     let reviews=await collectReviews();
+-    if(gate){
+-      // A PR reread cannot detect a rerun/new CI attempt on the same HEAD.
+-      // Recollect COMPLETE workflow inventories; never query only the old run.
+-      // Drift invalidates this observation instead of retrying or upgrading it.
++    {
++      // The final provider read, not only PRE_GATE, must detect new workflow
++      // attempts on the SAME HEAD after initial CI evidence was collected.
++      // PR SHA rereads and review rereads alone do not detect that race.
++      // Recollect COMPLETE metered workflow inventories without retrying.
+       const freshRuns=await collectRuns();
+       const latestBinding=(list,id,event,sha)=>{
+         const r=list.filter(r=>r.workflow_id===id&&r.event===event&&
+@@ -663,7 +664,8 @@ async function readProviderSnapshot({token,expected,fetchImpl,clock,beforeReques
+       for(const [id,event,sha] of [[311380800,'pull_request',expected.headSha],
+         [390653294,'pull_request_target',expected.baseSha]]){
+         const before=latestBinding(runs,id,event,sha),after=latestBinding(freshRuns,id,event,sha);
+-        must(before!==null&&before===after,'PROVIDER_READER_GATE_RACE');
++        must(before!==null&&before===after,
++          gate?'PROVIDER_READER_GATE_RACE':'PROVIDER_READER_RUN_DRIFT');
+       }
+       runs=freshRuns;
+     }
