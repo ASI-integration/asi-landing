@@ -54,6 +54,17 @@ describe('shared RU email-code identity policy', () => {
     expect(ruCodeAuthConfigured({ ...env, ASI_RU_EMAIL_CODE_PEPPER: '  '+pepper })).toBe(false);
     expect(ruCodeAuthConfigured({ ...env, ASI_AUTH_RESEND_API_KEY: undefined })).toBe(false);
     expect(ruCodeAuthConfigured({ ...env, SESSION_SECRET: '' })).toBe(false);
+    // Require a single bare mailbox, not a malformed Resend sender.
+    // These isolated policy tests never send messages or access credentials.
+    for(const invalidSender of [
+      '', 'not-an-address', 'no-reply@asi-global.ru ',
+      ' ASI <no-reply@asi-global.ru>', 'name@example',
+      'no-reply@asi-global.ru\nX-Injected: value',
+      'one@asi-global.ru,two@asi-global.ru',
+    ]) expect(ruCodeAuthConfigured({...env,ASI_AUTH_FROM_EMAIL:invalidSender})).toBe(false);
+    for(const invalidKey of ['   ', ' fixture', 'fixture ', 'fi xt ure', 'fi\nxture']) {
+      expect(ruCodeAuthConfigured({...env,ASI_AUTH_RESEND_API_KEY:invalidKey})).toBe(false);
+    }
   });
   it('preserves internal redirects and rejects cross-origin login destinations', () => {
     expect(safeAuthRedirectPath('/dashboard/settings?tab=profile'))

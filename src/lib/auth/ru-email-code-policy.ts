@@ -64,8 +64,12 @@ export function ruCodeAuthConfigured(env: Readonly<Record<string, string | undef
     (env.ASI_RU_EMAIL_CODE_PEPPER?.trim().length ?? 0) >= 32 &&
     env.ASI_RU_EMAIL_CODE_PEPPER === env.ASI_RU_EMAIL_CODE_PEPPER?.trim() &&
     env.ASI_RU_EMAIL_CODE_PEPPER !== env.SESSION_SECRET?.trim() &&
-    Boolean(env.ASI_AUTH_RESEND_API_KEY?.trim()) &&
-    Boolean(env.ASI_AUTH_FROM_EMAIL?.trim()) &&
+    // Refuse malformed sender/API credentials before claiming email login works.
+    // The sending domain must still be independently verified with the provider.
+    /^[\x21-\x7e]+$/.test(env.ASI_AUTH_RESEND_API_KEY ?? '') &&
+    typeof env.ASI_AUTH_FROM_EMAIL === 'string' &&
+    env.ASI_AUTH_FROM_EMAIL === env.ASI_AUTH_FROM_EMAIL.trim() &&
+    normalizeLoginEmail(env.ASI_AUTH_FROM_EMAIL) !== null &&
     (env.SESSION_SECRET?.trim().length ?? 0) >= 32 &&
     Boolean(env.SUPABASE_SERVICE_ROLE_KEY?.trim()) &&
     Boolean(env.SUPABASE_URL?.trim() || env.NEXT_PUBLIC_SUPABASE_URL?.trim());
