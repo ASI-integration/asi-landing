@@ -61,17 +61,31 @@ class IntegrityTests(unittest.TestCase):
         with self.assertRaisesRegex(g2.Block, "NOT_TWO_ISOLATED_COPIES"):
             g2.inspect(self.source, self.source / "sub", self.archive, self.pin)
 
-    def test_symlink_in_restored_copy_blocked(self):
+    def test_absolute_external_symlink_blocked(self):
         (self.restored / "sub" / "file.txt").unlink()
         (self.restored / "sub" / "file.txt").symlink_to(self.source / "sub" / "file.txt")
-        with self.assertRaisesRegex(g2.Block, "NONREGULAR_OR_LINKED_FILE"):
+        with self.assertRaisesRegex(g2.Block, "EXTERNAL_OR_INVALID_LINK"):
             self.verify()
 
     def test_symlink_directory_blocked(self):
         (self.restored / "sub" / "file.txt").unlink()
         (self.restored / "sub").rmdir()
         (self.restored / "sub").symlink_to(self.source / "sub", target_is_directory=True)
-        with self.assertRaisesRegex(g2.Block, "TREE_SYMLINK_OR_SPECIAL_DIR"):
+        with self.assertRaisesRegex(g2.Block, "EXTERNAL_OR_INVALID_LINK"):
+            self.verify()
+
+    def test_internal_file_and_directory_links_supported(self):
+        for folder in (self.source, self.restored):
+            (folder / "sub" / "alias.txt").symlink_to("file.txt")
+            (folder / "sub-alias").symlink_to("sub", target_is_directory=True)
+        receipt = self.verify()
+        self.assertEqual(receipt["links"], 2)
+        self.assertEqual(receipt["files"], 1)
+
+    def test_relative_escape_link_blocked(self):
+        for folder in (self.restored,):
+            (folder / "sub" / "bad-link").symlink_to("../../../source-copy/sub/file.txt")
+        with self.assertRaisesRegex(g2.Block, "EXTERNAL_OR_INVALID_LINK"):
             self.verify()
 
     def test_hardlink_blocked(self):
