@@ -16,7 +16,7 @@ After **separate, genuinely authorized** old-release backup and isolated restore
       --backup-archive /isolated-work/verified-backup.tar.gz \
       --expected-backup-sha256 '<independently verified lowercase sha256>'
 
-The verifier reports file/directory counts and digest only; rejects path overlaps, live protected paths, symlinks/hardlinks/special files, malformed or unequal backup hash, empty/oversized input, changed files/modes and unequal restored inventory. Even a positive result is G2_ISOLATED_COPIES_EQUAL_NOT_PHYSICAL_ACCEPTANCE with authorization=false, liveBackupProven=false, humanLoginProven=false and stageSwitched=false. This comparison cannot authenticate backup origin by itself.
+The verifier reports only file/directory/link counts and digests; rejects path overlaps, live protected paths, external/broken/escaping symlinks, hardlinks/special files, malformed or unequal backup hash, empty/oversized input, changed file/directory modes and unequal restored inventory. It records internal relative symlink targets as metadata without following them during the tree walk. A direct read-only inventory of the current G1 release found 41,788 regular files, 54 relative symlinks, zero broken links and zero hardlinked regular files; its size (~1.35 GB) fits the bounded verifier. This is an inventory observation, **not** backup/restore evidence. Even a positive result is G2_ISOLATED_COPIES_EQUAL_NOT_PHYSICAL_ACCEPTANCE with authorization=false, liveBackupProven=false, humanLoginProven=false and stageSwitched=false. This comparison cannot authenticate backup origin by itself.
 
 Focused, offline synthetic test:
 
