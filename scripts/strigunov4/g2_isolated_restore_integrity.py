@@ -160,6 +160,7 @@ def inspect(source_copy, restored_copy, archive, expected_archive_sha256):
     require(source != restored and source not in restored.parents
             and restored not in source.parents, "NOT_TWO_ISOLATED_COPIES")
     backup = Path(archive).absolute()
+    require(backup.resolve(strict=True) == backup, "ARCHIVE_PATH_SYMLINK")
     require(not any(backup == x or x in backup.parents for x in FORBIDDEN),
             "PROTECTED_INPUT_PATH")
     require(backup != source and backup != restored and
