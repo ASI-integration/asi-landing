@@ -52,12 +52,17 @@ export async function rootOwned(file,max=1000000,{secret=false,encoding='utf8'}=
     return await h.readFile(encoding??undefined);}finally{await h.close();}
 }
 
-export function verifySignedArtifact(envelope,publicKey,now=Date.now()){
+// Cryptographic primitive only; decoded payload is NOT a live admission.
+export function verifySignedPayload(envelope,publicKey){
   must(envelope&&typeof envelope.payload==='string'&&envelope.payload.length<800000&&
     typeof envelope.signature==='string'&&/^[A-Za-z0-9+/]{86}==$/.test(envelope.signature),'SIGNED_ARTIFACT_SCHEMA');
   const key=createPublicKey(publicKey);must(key.asymmetricKeyType==='ed25519','OWNER_KEY_TYPE');
   must(verify(null,Buffer.from(envelope.payload),key,Buffer.from(envelope.signature,'base64')),'OWNER_SIGNATURE_INVALID');
-  const p=JSON.parse(envelope.payload);
+  return freeze(JSON.parse(envelope.payload));
+}
+
+export function verifySignedArtifact(envelope,publicKey,now=Date.now()){
+  const p=verifySignedPayload(envelope,publicKey);
   must(p?.schema==='asi.engine-activation.v1'&&p.repo==='ASI-integration/asi-landing'&&
     p.root===ENGINE_ROOT&&p.legacyStateDir===LEGACY_STATE&&p.stage==='S4-G1'&&
     p.host==='asi-agent-runner'&&p.service==='asi-strigunov-agent.service'&&

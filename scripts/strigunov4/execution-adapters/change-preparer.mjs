@@ -1,4 +1,5 @@
 import fs from 'node:fs/promises';
+import {createHash} from 'node:crypto';
 import { constants as fsConstants } from 'node:fs';
 import path from 'node:path';
 import { execFile } from 'node:child_process';
@@ -202,4 +203,52 @@ export async function prepareDelta(store,task,{ admission, changes }) {
 }
 export function prepareChange({store,github,task,admission,changes}) {
   return store.execute('change-preparer',task,github,()=>prepareDelta(store,task,{admission,changes}));
+}
+
+/** Read-only revalidation of a published task's existing scratch delta. No replay. */
+export async function verifyPreparedDelta(store,task,expectedDigest){
+  const changes=task.changes;
+  const creation=task.stage==='S4-G2'&&/^beget-g2-witness-(identity|races)-v1$/.test(task.id);
+  const cwd = path.join(store.root,'scratchpads',task.id);
+  must((await fs.realpath(cwd))===cwd, 'SCRATCH_REDIRECTED');
+  const st = await fs.stat(cwd);
+  must(st.uid===process.getuid() && !(st.mode & 0o077), 'SCRATCH_NOT_PRIVATE');
+  const gitDir = await fs.lstat(path.join(cwd,'.git'));
+  must(gitDir.isDirectory() && !gitDir.isSymbolicLink(), 'LINKED_WORKTREE_NOT_ALLOWED');
+  // Git can execute clean filters even for diff/status. Reject executable/local includes
+  // before invoking git, in addition to disabling hooks, fsmonitor, textconv and ext-diff.
+  const configFile = path.join(cwd,'.git','config'); await regular(configFile);
+  const config = await fs.readFile(configFile,'utf8');
+  validateScratchGitConfig(config);
+  must((await git(cwd,['rev-parse','--show-toplevel'])).trim() === cwd, 'WRONG_WORKTREE');
+  must((await git(cwd,['rev-parse','--git-dir'])).trim() === '.git', 'FOREIGN_GIT_DIR');
+  must((await git(cwd,['rev-parse','HEAD'])).trim() === task.sha, 'WRONG_BASE_SHA');
+  must((await git(cwd,['rev-parse','--abbrev-ref','HEAD'])).trim() === 'HEAD', 'DETACHED_COPY_REQUIRED');
+
+  must(!(await git(cwd,['diff','--cached','--name-only'])).trim(),'INDEX_CHANGED');
+  const actual=await inventory(cwd);
+  const entries=(await git(cwd,['ls-tree','-rz','--full-tree',task.sha])).split('\0').filter(Boolean).map(line=>{
+    const [meta,name]=line.split('\t');const [mode,type,oid]=meta.split(' ');
+    inventoryPath(name);must(type==='blob'&&['100644','100755'].includes(mode),'BASE_ENTRY_UNSAFE');
+    return {name,mode:Number.parseInt(mode.slice(3),8),oid};
+  });
+  const expectedNames=[...entries.map(e=>e.name),...(creation?changes.map(c=>c.path):[])].sort();
+  must(new Set(expectedNames).size===expectedNames.length&&expectedNames.join('\0')===Object.keys(actual).sort().join('\0'),'FILE_SET_CHANGED');
+  for(const entry of entries){
+    const change=changes.find(c=>c.path===entry.name);
+    const content=await fs.readFile(path.join(cwd,entry.name));
+    must(actual[entry.name].mode===entry.mode,'TREE_MODE_CHANGED');
+    if(change){must(!creation&&digest(content)===digest(normalizeProposedContent(change.path,change.content)),'PREPARED_BYTES_CHANGED');}
+    else must(createHash('sha1').update(`blob ${content.length}\0`).update(content).digest('hex')===entry.oid,'DELTA_OUTSIDE_SCOPE');
+  }
+  for(const change of changes){
+    safePath(change.path);await target(cwd,change.path);
+    must(actual[change.path]?.hash===digest(normalizeProposedContent(change.path,change.content)),'PREPARED_BYTES_CHANGED');
+    if(creation)must(change.beforeSha256===null&&actual[change.path].mode===0o644,'G2_CREATE_SCOPE');
+  }
+  await git(cwd,['diff','--no-ext-diff','--no-textconv','--check']);
+  const diff=creation?JSON.stringify(changes.map(c=>({path:c.path,beforeSha256:c.beforeSha256,afterSha256:actual[c.path].hash}))):
+    await git(cwd,['diff','--no-ext-diff','--no-textconv','--',...changes.map(c=>c.path)]);
+  must(digest(diff)===expectedDigest,'RESUME_DELTA_CHANGED');
+  return {deltaSha256:expectedDigest};
 }
