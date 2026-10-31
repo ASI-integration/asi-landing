@@ -111,3 +111,18 @@ test('a fabricated transaction cannot produce a candidate or call the model',asy
   assert.equal(r.status,'BLOCKED');
   assert.equal(invoked,false);
 });
+
+test('unsupported TypeScript source is denied before a paid producer call',async()=>{
+  const x=fixture();let called=false;
+  x.signedCatalog[0].files[0].path='src/unknown.ts';
+  x.produce=async()=>{called=true;throw Error('PAID_REQUEST_MUST_NOT_START')};
+  assert.equal((await inside(x)).status,'BLOCKED');
+  assert.equal(called,false);
+});
+test('missing objective in catalog denies the model before any network use',async()=>{
+  const x=fixture();let called=false;
+  delete x.signedCatalog[0].objective;
+  x.produce=async()=>{called=true;throw Error('PAID_REQUEST_MUST_NOT_START')};
+  assert.equal((await inside(x)).status,'BLOCKED');
+  assert.equal(called,false);
+});

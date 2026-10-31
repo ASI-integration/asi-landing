@@ -23,6 +23,30 @@ const array=a=>Array.isArray(a)&&Object.getPrototypeOf(a)===Array.prototype&&
   Reflect.ownKeys(a).length===a.length+1&&
   a.every((_,i)=>Object.hasOwn(a,i));
 const PATH=/^[A-Za-z0-9_.-]+(?:\/[A-Za-z0-9_.-]+)*\.(?:py|js|mjs|json)$/;
+const LANES=new Map([
+  ['engine','asi/beget-one-engine-20261028'],
+  ['ru-auth','feat/ru-unified-auth-20261029'],
+  ['p0-integration','asi/standing-delegation-551'],
+  ['p0-trust','asi/p0-trusted-evidence-worker-20261029'],
+  ['p0-atomic-budget','asi/p0-atomic-budget-worker-20261029']
+]);
+/** Candidate shape only. Authorize() must independently match the exact
+ * signed catalog and native lease; this predicate cannot confer authority.
+ * Existing G2 witness additions remain a distinct immutable path.
+ */
+export function isNativeSourceModification(task){
+  return plain(task)&&task.repo===REPO&&task.stage==='S4-G2'&&
+    task.kind==='github-publisher'&&task.pr===null&&
+    typeof task.id==='string'&&/^[a-z0-9-]{1,80}$/.test(task.id)&&
+    LANES.has(task.laneId)&&
+    task.branch==='asi/engine-task/'+task.id&&
+    H64.test(task.sourceBinding||'')&&H64.test(task.proposalDigest||'')&&
+    array(task.changes)&&task.changes.length>=1&&task.changes.length<=3&&
+    task.changes.every(c=>plain(c)&&PATH.test(c.path)&&
+      H64.test(c.beforeSha256||'')&&H64.test(c.afterSha256||'')&&
+      typeof c.content==='string'&&digest(c.content)===c.afterSha256);
+}
+
 
 export function compileSourcePublisherHandoff({task,admittedTasks,proposal}={}){
   try{
@@ -73,6 +97,7 @@ export function compileSourcePublisherHandoff({task,admittedTasks,proposal}={}){
       task:Object.freeze({id:task.id,repo:REPO,stage:task.stage,
         sha:task.baseSha,kind:'github-publisher',pr:null,
         branch:'asi/engine-task/'+task.id,laneId:task.laneId,
+        sourceBinding:intake.taskBinding,proposalDigest:proof,
         changes:Object.freeze(checked)})});
   }catch{return denied('UNREADABLE_OR_MUTATED_SOURCE');}
 }

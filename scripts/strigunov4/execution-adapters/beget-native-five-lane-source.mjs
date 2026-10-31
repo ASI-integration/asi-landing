@@ -3,6 +3,7 @@
  * lease. This is not an issuer, provider budget, authority token or writer.
  */
 import {OWNER_LANES} from './owner-lanes.mjs';
+import {inspectStandingTransaction} from './state.mjs';
 import {planNativeOwnerLane} from './owner-lane-native-bridge.mjs';
 import {inspectSourceIntake,proposeSourceWork} from '../source-work-intake.mjs';
 import {compileSourcePublisherHandoff} from '../source-publisher-handoff.mjs';
@@ -13,6 +14,7 @@ const blocked=reason=>Object.freeze({
   authorized:false,reason,task:null
 });
 const sha40=/^[a-f0-9]{40}$/;
+const supportedFile=/\.(?:mjs|js|json|py)$/;
 const same=(a,b)=>JSON.stringify(a)===JSON.stringify(b);
 const laneSnapshot=t=>({id:t.id,sha:t.baseSha,repo:t.repo,
   branch:t.branch,kind:'github-publisher',stage:t.stage,
@@ -37,6 +39,10 @@ export async function prepareNativeFiveLaneSource({
       !signedCatalog.every(t=>t&&t.kind==='source-proposal'&&
         t.stage==='S4-G2'&&sha40.test(t.baseSha||'')&&
         t.repo==='ASI-integration/asi-landing'&&
+        typeof t.objective==='string'&&t.objective.length>0&&
+        t.objective.length<=2400&&Array.isArray(t.files)&&
+        t.files.length>=1&&t.files.length<=3&&
+        t.files.every(f=>typeof f?.path==='string'&&supportedFile.test(f.path))&&
         OWNER_LANES.some(l=>l.id===t.laneId&&l.branch===t.branch&&
           l.repository===t.repo)))
       return blocked('SIGNED_SOURCE_SCOPE_INVALID');
@@ -63,6 +69,12 @@ export async function prepareNativeFiveLaneSource({
     const value=await proposeSourceWork({task,admittedTasks:pinned,produce});
     if(value.status!=='PROPOSAL_PREPARED')
       return blocked('MODEL_PROPOSAL_'+(value.reason||'UNVERIFIED'));
+    // A long-running model must not outlive the native lock/transaction.
+    // Recheck the same private lease AFTER the network await.
+    const lease=inspectStandingTransaction(transaction);
+    if(lease.phase!=='admission'||lease.kind!=='github-publisher'||
+       lease.root!==store.root||lease.ledger!==ledger)
+      return blocked('NATIVE_TRANSACTION_CHANGED_AFTER_MODEL');
     if(await revalidate()!==true||!same(pinned,signedCatalog))
       return blocked('SIGNED_CATALOG_CHANGED_AFTER_MODEL');
     const handoff=compileSourcePublisherHandoff({task,admittedTasks:pinned,proposal:value});

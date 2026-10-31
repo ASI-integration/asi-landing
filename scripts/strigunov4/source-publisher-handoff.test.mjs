@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {proposeSourceWork} from './source-work-intake.mjs';
-import {compileSourcePublisherHandoff} from './source-publisher-handoff.mjs';
+import {compileSourcePublisherHandoff,isNativeSourceModification} from './source-publisher-handoff.mjs';
 const SHA='a'.repeat(40),HEX='b'.repeat(64);
 const task=(overrides={})=>({id:'source-hello',laneId:'engine',
   repo:'ASI-integration/asi-landing',branch:'asi/beget-one-engine-20261028',
@@ -80,4 +80,30 @@ test('malformed external producer object cannot supply a publishing grant',()=>{
       taskBinding:'x',candidate:{}}]){
     assert.equal(compileSourcePublisherHandoff({task:t,admittedTasks:[t],proposal}).status,'BLOCKED');
   }
+});
+
+test('existing-file model proposal is precisely classified for the native Publisher',async()=>{
+  const t=task(),proposal=await prepare(t);
+  const x=compileSourcePublisherHandoff({task:t,admittedTasks:[t],proposal});
+  assert.equal(isNativeSourceModification(x.task),true);
+  assert.equal(x.task.sourceBinding,x.sourceBinding);
+  assert.equal(x.task.proposalDigest,x.proposalDigest);
+  assert.equal(x.task.changes[0].beforeSha256,HEX);
+});
+test('publisher source marker is not a grant and cannot be forged from a G2 witness',async()=>{
+  const t=task(),proposal=await prepare(t);
+  const x=compileSourcePublisherHandoff({task:t,admittedTasks:[t],proposal});
+  for(const changed of [
+    {...x.task,laneId:'foreign'},
+    {...x.task,sourceBinding:'x'},
+    {...x.task,proposalDigest:'x'},
+    {...x.task,branch:t.branch},
+    {...x.task,changes:[{...x.task.changes[0],beforeSha256:null}]},
+    {...x.task,changes:[{...x.task.changes[0],content:'other'}]}
+  ])assert.equal(isNativeSourceModification(changed),false);
+  assert.equal(isNativeSourceModification({
+    id:'beget-g2-witness-races-v1',repo:t.repo,stage:'S4-G2',
+    kind:'github-publisher',pr:null,branch:'asi/engine-task/beget-g2-witness-races-v1',
+    changes:[{path:'scripts/strigunov4/test_beget_g2_witness_races_v1.py',
+      beforeSha256:null,content:'print(1)'}]}),false);
 });
