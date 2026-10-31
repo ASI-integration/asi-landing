@@ -1,0 +1,94 @@
+diff --git a/scripts/strigunov4/execution-adapters/standing-gate.test.mjs b/scripts/strigunov4/execution-adapters/standing-gate.test.mjs
+index 16f9664..5f78215 100644
+--- a/scripts/strigunov4/execution-adapters/standing-gate.test.mjs
++++ b/scripts/strigunov4/execution-adapters/standing-gate.test.mjs
+@@ -68,7 +68,7 @@ async function setup(t,{adoptionMode=null,wrongLocal=false,forgedLocal=false,lat
+   const lease=inspectStandingTransaction(transaction);if(!lease.ledger.standingRevocationCheckpoint)lease.ledger.standingRevocationCheckpoint=prior;
+   const request={action:'source',repo:envelope.repo,environment:envelope.environment,target:envelope.target,appId:envelope.appId,installationId:envelope.installationId,securityDigest:envelope.securityDigest,changedPaths:[target],headSha:null,baseSha:f.sha,artifactDigest,taskId:task.id,taskBinding:bindTask(task),branch:task.branch};
+   const witness=(phase,event)=>({schema:'asi.release-envelope-publisher-evidence.proposal.v1',phase,envelopeDigest,policyDigest:envelope.policyDigest,revocation:'NOT_REVOKED',observedAt:now.value,baseSha:f.sha,headSha:event?.headSha??null,artifactDigest,changedPaths:[target],taskId:task.id,taskBinding:request.taskBinding,branch:request.branch,ci:phase==='EXACT_HEAD_VERIFIED'?'SUCCESS':null,independentReview:phase==='EXACT_HEAD_VERIFIED'?'PASS':null,branchProtection:'PASS',usedOperations:0,paidApiUsd:0,claim:'UNCLAIMED',externalResult:'NONE',...(phase==='LOCAL_DELTA_VERIFIED'?{localChecks:'PASS',independentDeltaReview:'PASS',reviewEvidenceId:event.reviewEvidenceId}:{})});
+-  const preview=createStandingRequestPreview({store,transaction,signedEnvelope,signedEvidence:signed(witness('ADMISSION_READ'),verifier),request,comparison,providerExpected:{independentReviewerId:1234},expectedTrust,clock:()=>{if(gateActive&&++gateClockCount===lateGateClock)now.value=envelope.expiresAt+1;return now.value;},protectedReader,isolatedPreview:true,publisherPhases:true,expectedAdoptionDigest:adoptionMode==='missing'?null:adoptionMode==='pin'?'a'.repeat(64):hash(adoptionSigned.payload)});previews.push(preview);
++  const preview=createStandingRequestPreview({store,transaction,signedEnvelope,signedEvidence:signed(witness('ADMISSION_READ'),verifier),request,comparison,providerExpected:{independentReviewerId:1234},expectedTrust,admissionBaseSha:f.sha,clock:()=>{if(gateActive&&++gateClockCount===lateGateClock)now.value=envelope.expiresAt+1;return now.value;},protectedReader,isolatedPreview:true,publisherPhases:true,expectedAdoptionDigest:adoptionMode==='missing'?null:adoptionMode==='pin'?'a'.repeat(64):hash(adoptionSigned.payload)});previews.push(preview);
+   // TEST ONLY: this wrapper executes loopback fixture effects under makeLoop's
+   // explicit synthetic v0 grant. Production preview.beforeRequest always refuses.
+   const runGate=async event=>{
+@@ -200,7 +200,7 @@ test('PRE_GATE fixed reads consume the same native Publisher budget, never final
+  const x=await setup(t);await x.loop.poll({execute:true});
+  assert.equal(x.gateResults.length,1);assert.equal(x.gateResults[0].status,'PROPOSAL_ELIGIBLE',JSON.stringify(x.gateResults));
+  assert.equal(x.gateResults[0].phase,'PRE_GATE');assert.equal(x.gateResults[0].authorized,false);
+- assert.equal(x.gateCalls.length,13);
++ assert.equal(x.gateCalls.length,14);
+  for(let i=1;i<x.gateCalls.length;i++)assert.equal(x.gateCalls[i].requests,x.gateCalls[i-1].requests+1);
+  assert.equal(await x.previews[0].beforeRequest(),false);
+  const ledger=JSON.parse(await fs.readFile(path.join(x.f.root,'state','autopilot-ledger.json'),'utf8'));
+@@ -231,7 +231,7 @@ test('PRE_GATE expiry at final return preserves all charges and refuses eligibil
+  const baseline=await setup(t);await baseline.loop.poll({execute:true});
+  assert.equal(baseline.gateResults[0].status,'PROPOSAL_ELIGIBLE');
+  const x=await setup(t,{lateGateClock:baseline.gateClockCounts[0]});await x.loop.poll({execute:true});
+- assert.equal(x.gateResults[0].status,'BLOCKED');assert.equal(x.gateCalls.length,13);
++ assert.equal(x.gateResults[0].status,'BLOCKED');assert.equal(x.gateCalls.length,14);
+  const ledger=JSON.parse(await fs.readFile(path.join(x.f.root,'state','autopilot-ledger.json'),'utf8'));
+  assert(Object.values(ledger.standingDelegationBudget.envelopes)[0].requests>=x.gateCalls.at(-1).requests);
+ });
+diff --git a/scripts/strigunov4/execution-adapters/standing-phase-guard.test.mjs b/scripts/strigunov4/execution-adapters/standing-phase-guard.test.mjs
+index 5e7d7e5..4224db4 100644
+--- a/scripts/strigunov4/execution-adapters/standing-phase-guard.test.mjs
++++ b/scripts/strigunov4/execution-adapters/standing-phase-guard.test.mjs
+@@ -40,7 +40,7 @@ async function setup(t,{wrongLocal=false,forgedLocal=false,lateRevocation=false,
+   const lease=inspectStandingTransaction(transaction);if(!lease.ledger.standingRevocationCheckpoint)lease.ledger.standingRevocationCheckpoint=prior;
+   const request={action:'source',repo:envelope.repo,environment:envelope.environment,target:envelope.target,appId:envelope.appId,installationId:envelope.installationId,securityDigest:envelope.securityDigest,changedPaths:[target],headSha:null,baseSha:f.sha,artifactDigest,taskId:task.id,taskBinding:bindTask(task),branch:task.branch};
+   const witness=(phase,event)=>({schema:'asi.release-envelope-publisher-evidence.proposal.v1',phase,envelopeDigest,policyDigest:envelope.policyDigest,revocation:'NOT_REVOKED',observedAt:now.value,baseSha:f.sha,headSha:event?.headSha??null,artifactDigest,changedPaths:[target],taskId:task.id,taskBinding:request.taskBinding,branch:request.branch,ci:phase==='EXACT_HEAD_VERIFIED'?'SUCCESS':null,independentReview:phase==='EXACT_HEAD_VERIFIED'?'PASS':null,branchProtection:'PASS',usedOperations:0,paidApiUsd:0,claim:'UNCLAIMED',externalResult:'NONE',...(phase==='LOCAL_DELTA_VERIFIED'?{localChecks:'PASS',independentDeltaReview:'PASS',reviewEvidenceId:event.reviewEvidenceId}:{})});
+-  const preview=createStandingRequestPreview({store,transaction,signedEnvelope,signedEvidence:signed(witness('ADMISSION_READ'),verifier),request,comparison,providerExpected:{independentReviewerId:1234},expectedTrust,clock:()=>now.value,protectedReader,isolatedPreview:true,publisherPhases:true});previews.push(preview);
++  const preview=createStandingRequestPreview({store,transaction,signedEnvelope,signedEvidence:signed(witness('ADMISSION_READ'),verifier),request,comparison,providerExpected:{independentReviewerId:1234},expectedTrust,admissionBaseSha:f.sha,clock:()=>now.value,protectedReader,isolatedPreview:true,publisherPhases:true});previews.push(preview);
+   // TEST ONLY: this wrapper executes loopback fixture effects under makeLoop's
+   // explicit synthetic v0 grant. Production preview.beforeRequest always refuses.
+   const requestAdmission=async d=>{const r=await preview.reserve(d);records.push({phase:inspectStandingTransaction(transaction).phase,method:d.method,route:d.route,result:r});return r.status==='RESERVED_PREVIEW';};
+@@ -77,7 +77,7 @@ test('two native publications reuse one signed envelope and budget without futur
+  const second=await x.loop.poll({execute:true});assert.equal(second.mode,'REPORT_READY',JSON.stringify({second,last:x.records.at(-1),phases:x.phases,requests:x.f.requests.length}));
+  assert.equal(x.f.pulls.size,2);assert.equal(new Set([...x.f.pulls.values()].map(p=>p.head.sha)).size,2);
+  assert.deepEqual(x.phases.map(p=>p.phase),['LOCAL_DELTA_VERIFIED','EXACT_HEAD_VERIFIED','LOCAL_DELTA_VERIFIED','EXACT_HEAD_VERIFIED']);
+- assert(x.phases.every(p=>p.authorized===false));assert.equal(x.providerCalls.length,10);
++ assert(x.phases.every(p=>p.authorized===false));assert.equal(x.providerCalls.length,12);
+  assert(x.providerCalls.every((c,i)=>i===0||c.budget>x.providerCalls[i-1].budget));
+  for(const p of x.previews)assert.equal(await p.beforeRequest(descriptor('POST','git/trees')),false);
+  const ledger=JSON.parse(await fs.readFile(path.join(x.f.root,'state','autopilot-ledger.json'),'utf8'));
+diff --git a/scripts/strigunov4/execution-adapters/standing-request-guard.test.mjs b/scripts/strigunov4/execution-adapters/standing-request-guard.test.mjs
+index 9c2dc27..51b47f3 100644
+--- a/scripts/strigunov4/execution-adapters/standing-request-guard.test.mjs
++++ b/scripts/strigunov4/execution-adapters/standing-request-guard.test.mjs
+@@ -36,7 +36,7 @@ function fixture({maxRequests=10,revoked=false}={}){
+  const sr=signed(manifest,owner),prior={sequence:1,manifestDigest:hash(sr.payload),revokedEnvelopeDigests:manifest.revokedEnvelopeDigests};
+  const expectedTrust={repository:envelope.repo,environment:envelope.environment,target:envelope.target,issuerKeySha256:owner.digest,verifierKeySha256:verifier.digest,envelopeDigest};
+  const protectedReader=async p=>p.endsWith('owner-public.pem')?owner.pem:p.endsWith('standing-verifier-public.pem')?verifier.pem:JSON.stringify(sr);
+- const input={signedEnvelope,signedEvidence,request,comparison,providerObservation,providerExpected,expectedTrust,clock:()=>now,protectedReader,isolatedPreview:true};
++ const input={signedEnvelope,signedEvidence,request,comparison,admissionBaseSha:baseSha,providerObservation,providerExpected,expectedTrust,clock:()=>now,protectedReader,isolatedPreview:true};
+  const task={id:'source-task',sha:baseSha,repo:envelope.repo,branch:'fixture',stage:'S4-G1',pr:null};
+  return {root,state,input,prior,task,owner,verifier,close:()=>fs.rmSync(root,{recursive:true,force:true})};
+ }
+@@ -136,15 +136,15 @@ test('authenticated reader bootstrap and subsequent STARTED write share one dura
+    preview=createStandingRequestPreview({...withoutObservation,store,transaction,clock:()=>now+ticks++});
+    const observed=await preview.readProvider({token:'INERT_FIXTURE',fetchImpl:transport.fetch});
+    assert.equal(observed.status,'PROVIDER_EVIDENCE_VERIFIED');assert.equal(observed.authorized,false);
+-   transport.verify();assert.equal(transport.calls,5);observed.snapshot.reviews[0].state='DISMISSED';
++   transport.verify();assert.equal(transport.calls,6);observed.snapshot.reviews[0].state='DISMISSED';
+    return x.task;
+   },{verifyTask:async()=>({sha:x.task.sha})},async()=>{
+    const charged=await preview.reserve(descriptor('POST','git/trees'));
+-   assert.equal(charged.status,'RESERVED_PREVIEW');assert.equal(charged.requests,6);assert.equal(charged.writes,1);
++   assert.equal(charged.status,'RESERVED_PREVIEW');assert.equal(charged.requests,7);assert.equal(charged.writes,1);
+    assert.equal(await preview.beforeRequest(),false);return {status:'PASS'};
+   });
+   assert.equal(result.status,'PASS');const ledger=JSON.parse(fs.readFileSync(store.file('autopilot-ledger.json')));
+-  assert.equal(Object.values(ledger.standingRequestBindings).filter(b=>b.evidencePhase==='bootstrap').length,5);
++  assert.equal(Object.values(ledger.standingRequestBindings).filter(b=>b.evidencePhase==='bootstrap').length,6);
+  }finally{x.close();}
+ });
+ test('bootstrap exhaustion and unknown response retain charges and never fall back to supplied proposal snapshot',async()=>{
+@@ -180,7 +180,7 @@ test('concurrent reserve/read cannot interleave bootstrap accounting or grant a
+    assert.equal((await p.reserve(descriptor('POST','git/trees'))).status,'BLOCKED');
+    assert.equal((await p.readProvider({token:'INERT_FIXTURE',fetchImpl:remote.fetch})).status,'BLOCKED');
+    release();assert.equal((await reading).status,'PROVIDER_EVIDENCE_VERIFIED');
+-   remote.verify();assert.equal(remote.calls,5);return null;
++   remote.verify();assert.equal(remote.calls,6);return null;
+   },{},()=>{});
+  }finally{x.close();}
+ });
