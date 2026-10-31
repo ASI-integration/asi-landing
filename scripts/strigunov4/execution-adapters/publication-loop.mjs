@@ -242,6 +242,28 @@ export async function createPublicationLoop({root,legacyStateDir,catalog,fetchSn
  * authority. An unsigned/legacy two-witness catalog is never promoted.
  * This function creates no worker, scheduler, queue, credential or ledger.
  */
+/** Pre-AI fail-closed base check. The current owner-signed parent and child
+ * explicitly bind ONE protected main commit. On advancement do not consume
+ * model credits, create a branch or pretend 365-day coverage follows a new
+ * SHA automatically. A future separately reviewed signed base-transition
+ * contract is required; an issue comment is not one.
+ */
+export function inspectFiveLaneProtectedBase({main,catalog,baseSha}={}){
+  try{
+    const ok=/^[a-f0-9]{40}$/.test(baseSha??'')&&
+      main?.protected===true&&main.commit?.sha===baseSha&&
+      Array.isArray(catalog)&&catalog.length===5&&
+      new Set(catalog.map(t=>t.id)).size===5&&
+      catalog.every(t=>t.baseSha===baseSha&&t.repo==='ASI-integration/asi-landing'&&
+        t.kind==='source-proposal');
+    return Object.freeze({status:ok?'BASE_PINNED':'BLOCKED',
+      authorized:false,reason:ok?'SIGNED_EXACT_BASE':'SIGNED_PARENT_BASE_TRANSITION_REQUIRED'});
+  }catch{
+    return Object.freeze({status:'BLOCKED',authorized:false,
+      reason:'SIGNED_PARENT_BASE_TRANSITION_REQUIRED'});
+  }
+}
+
 export async function createNativeFiveLanePublicationLoop({
   authority,makeTransactionPorts,clock=Date.now,timeoutMs=30000
 }={}) {
@@ -290,6 +312,12 @@ export async function createNativeFiveLanePublicationLoop({
           typeof ports.independentReview==='function'&&
           typeof ports.bindTask==='function',
           'SIGNED_NATIVE_TRANSACTION_PORTS_REQUIRED');
+        // Must happen before source generation or its irreversible paid
+        // reservation, not only in verifyTask after the model has run.
+        const main=await bounded(()=>ports.reader.get('branches/main'),timeoutMs);
+        must(inspectFiveLaneProtectedBase({main,catalog,
+          baseSha:authority.payload.baseSha}).status==='BASE_PINNED',
+          'NATIVE_SIGNED_BASE_MOVED_BEFORE_MODEL');
         const old=Object.hasOwn(ledger,'nativeFiveLaneTask')?
           ledger.nativeFiveLaneTask:null;
         if(old!==null){
