@@ -26,7 +26,7 @@ const laneSnapshot=t=>({id:t.id,sha:t.baseSha,repo:t.repo,
  * Caller-supplied callbacks are NOT an independent proof of host authorization.
  */
 export async function prepareNativeFiveLaneSource({
-  signedCatalog,store,ledger,transaction,nowMs,goalGraph,assessment,history=[],
+  signedCatalog,store,ledger,transaction,nowMs,goalGraph,assessment,assessments,history=[],
   produce,revalidate
 }={}) {
   try {
@@ -62,9 +62,13 @@ export async function prepareNativeFiveLaneSource({
     const intake=inspectSourceIntake({task,admittedTasks:pinned});
     if(intake.status!=='SOURCE_CANDIDATE')
       return blocked('SIGNED_SOURCE_INTAKE_DENIED');
+    // In native mode the assessment must be selected from the same signed
+    // catalog-bound map AFTER the fixed lane has been chosen.
+    const decision=assessments===undefined?assessment:
+      Object.hasOwn(assessments,task.id)?assessments[task.id]:null;
     const triage=inspectValue({product:'strigunov4',
       task:{id:task.id,paths:task.files.map(f=>f.path)},
-      goalGraph,assessment,history});
+      goalGraph,assessment:decision,history});
     if(triage.status!=='ACCEPTED')return blocked('NATIVE_SEMANTIC_'+triage.status);
     const value=await proposeSourceWork({task,admittedTasks:pinned,produce});
     if(value.status!=='PROPOSAL_PREPARED')
