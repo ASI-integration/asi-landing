@@ -249,14 +249,20 @@ export function createGlobalDispatcher({stateDir, adapters} = {}) {
             product.intake.push({id:candidate.id,intentKey,status,reason,
               alternative:verdict.alternative,goalPlanHash:product.goalGraph.planHash});
             if(status!=='ACCEPTED'){
-              winner.intakeDecision={taskId:candidate.id,status,reason,
+              const diagnostic={taskId:candidate.id,status,reason,
                 alternative:verdict.alternative};
+              winner.intakeDecisions??=[];
+              winner.intakeDecisions.push(diagnostic);
+              winner.intakeDecision=diagnostic;
               winner.status='BLOCKED';winner.candidates=[];
               winner.nextAction='Reject task '+candidate.id+': '+reason+
                 '; alternative: '+verdict.alternative;
               continue;
             }
           }
+        // An accepted sibling supersedes an earlier local refusal as the
+        // selected result; all prior diagnostics remain available to caller.
+        winner.status='READY';winner.candidates=[candidate];
         // Never forward arbitrary snapshot fields (including authority-shaped data).
         const task = {id: candidate.id, stage: winner.stage, operation: candidate.operation,
           tool: candidate.tool, paths: [...candidate.paths]};

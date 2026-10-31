@@ -188,3 +188,28 @@ test('same protected path with a different goal cannot run concurrently',async t
  assert.equal(second.selected,null);
  assert.equal((await f.read()).state.products[0].intake[1].status,'BLOCKED_DEPENDENCY');
 });
+
+test('a useful sibling is selected after refusal; rejection remains durable',async t=>{
+ const f=await fixture(t),s=f.snapshot();
+ const triage=({candidate,goalGraph})=>({
+   schema:'asi.task-value-assessment.v1',taskId:candidate.id,
+   goalPlanHash:goalGraph.planHash,
+   decision:candidate.id==='prepare-left'?'NO_VALUE':'ACCEPTED',
+   outcome:'Complete the concrete source work '+candidate.id,
+   expectedBenefit:'A measurable verified effect for the active Engine goal',
+   acceptanceEvidence:['verified-result'],
+   reason:candidate.id==='prepare-left'?'This step is redundant':'Concrete independent result',
+   alternative:'Skip the redundant step; use one approved alternate.',
+   possibleDuplicates:[]
+ });
+ const dispatcher=createGlobalDispatcher({stateDir:f.stateDir,
+   adapters:[{...f.adapter(),triage}]});
+ const r=await dispatcher.plan({[f.contract.id]:s});
+ assert.equal(r.selected.task.id,'prepare-right');
+ assert.equal(r.products[0].status,'READY');
+ assert.equal(r.products[0].intakeDecisions[0].status,'NO_VALUE');
+ assert.equal(r.products[0].candidates.length,1);
+ const st=(await f.read()).state.products[0];
+ assert.equal(st.planned.length,1);
+ assert.deepEqual(st.intake.map(x=>x.status),['NO_VALUE','ACCEPTED']);
+});
