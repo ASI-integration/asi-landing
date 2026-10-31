@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import {createHash} from 'node:crypto';
 import {createStandingPublisherBudget} from './standing-budget.mjs';
+import {initializeState} from './state.mjs';
 
 const at = 1793260000000;
 const hex64 = 'b'.repeat(64), hex40 = 'c'.repeat(40);
@@ -25,16 +26,47 @@ const effect = (id,kind='github-read',override={}) => {
     environment:'beget-staging',target:'pqukibofpo',action:'source',...override};
 };
 async function fixture(clock=()=>at){
+  // Native state.execute owns the durable lock and mints the opaque transaction.
+  // Reopening below starts a NEW genuine native transaction, never a mock token.
   const root=await fs.mkdtemp(path.join(os.tmpdir(),'asi-p0-budget-'));
-  const file=n=>path.join(root,n);
-  const ledger={schemaVersion:'asi.execution-adapters.v1',mode:'FAILED_LOCKED',
-    reason:'IN_FLIGHT_OR_CRASHED',jobs:{}};
-  await fs.mkdir(file('execution.lock'));
-  await fs.writeFile(file('autopilot-ledger.json'),JSON.stringify(ledger));
-  const store={file};
-  return {root,ledger,store,budget:createStandingPublisherBudget({store,ledger,clock}),
-    read:async()=>JSON.parse(await fs.readFile(file('autopilot-ledger.json'),'utf8')),
-    close:async()=>fs.rm(root,{recursive:true,force:true})};
+  const store=await initializeState(root);
+  const task={id:'source-task',sha:hex40,repo:'ASI-integration/asi-landing',
+    branch:'asi/source-test',pr:null,stage:'S4-G2'};
+  let running,unblock;
+  async function enter(activeClock,override) {
+    let readyResolve,ledger;
+    const ready=new Promise(resolve=>{readyResolve=resolve});
+    const hold=new Promise(resolve=>{unblock=resolve});
+    running=store.execute('github-publisher',
+      async({ledger:current})=>{ledger=current;return task;},
+      {async verifyTask(){return {verified:true};}},
+      async({transaction})=>{
+        // Apply deliberately tampered historical input only AFTER state.execute
+        // has durably armed and persisted the authentic STARTED job.
+        if(override){
+          if(Object.hasOwn(override,'standingDelegationBudget'))
+            ledger.standingDelegationBudget=structuredClone(override.standingDelegationBudget);
+          else delete ledger.standingDelegationBudget;
+        }
+        const budget=createStandingPublisherBudget({store,ledger,transaction,clock:activeClock});
+        readyResolve({budget,ledger,transaction});
+        await hold;
+        return {status:'WAITING'};
+      });
+    return await Promise.race([ready,running.then(()=>{throw Error('NATIVE_FIXTURE_CLOSED_EARLY')})]);
+  }
+  async function leave(){unblock();await running;}
+  const active=await enter(clock);
+  const f={root,store,ledger:active.ledger,budget:active.budget,transaction:active.transaction,
+    read:async()=>JSON.parse(await fs.readFile(store.file('autopilot-ledger.json'),'utf8')),
+    async reopenBudget(snapshot,nextClock=clock){
+      await leave();
+      const renewed=await enter(nextClock,snapshot);
+      f.ledger=renewed.ledger;f.budget=renewed.budget;f.transaction=renewed.transaction;
+      return renewed.budget;
+    },
+    close:async()=>{try{await leave()}finally{await fs.rm(root,{recursive:true,force:true})}}};
+  return f;
 }
 
 test('two distinct source HEADs consume one signed-envelope budget, without reissue',async()=>{
@@ -61,7 +93,7 @@ test('restart cannot replay a reserved write, even when previous outcome is unkn
   const f=await fixture();try{
     assert.equal((await f.budget.reserve({envelope:env(),effect:effect('mutate','create-draft-pr')})).status,'RESERVED');
     const ledger=await f.read();
-    const reopened=createStandingPublisherBudget({store:f.store,ledger,clock:()=>at});
+    const reopened=await f.reopenBudget(ledger,()=>at);
     assert.equal((await reopened.reserve({envelope:env(),effect:effect('mutate','create-draft-pr')})).reason,'BUDGET_REPLAY_OR_UNKNOWN');
     assert.equal((await f.read()).standingDelegationBudget.envelopes[hex64].claims.length,1);
   }finally{await f.close()}
@@ -95,10 +127,10 @@ test('changing limits for same signed digest cannot reset consumed budget',async
 test('FAILED_LOCKED unknown state or absent execution lock cannot be reopened',async()=>{
   const f=await fixture();try{
     f.ledger.reason='UNHANDLED_OR_UNKNOWN_RESULT';
-    assert.equal((await f.budget.reserve({envelope:env(),effect:effect('a')})).reason,'BUDGET_NOT_IN_ACTIVE_TRANSACTION');
+    assert.equal((await f.budget.reserve({envelope:env(),effect:effect('a')})).reason,'BUDGET_NATIVE_LEASE_MISMATCH');
     f.ledger.reason='IN_FLIGHT_OR_CRASHED';
     await fs.rmdir(f.store.file('execution.lock'));
-    assert.equal((await f.budget.reserve({envelope:env(),effect:effect('a')})).reason,'BUDGET_LOCK_ABSENT');
+    assert.equal((await f.budget.reserve({envelope:env(),effect:effect('a')})).reason,'BUDGET_NATIVE_LEASE_MISMATCH');
   }finally{await f.close()}
 });
 
@@ -106,7 +138,7 @@ test('clock regression rejects the next claim without restoring budget',async()=
   const f=await fixture();try{
     await f.budget.reserve({envelope:env(),effect:effect('a')});
     const ledger=await f.read();
-    const reopened=createStandingPublisherBudget({store:f.store,ledger,clock:()=>at-1});
+    const reopened=await f.reopenBudget(ledger,()=>at-1);
     assert.equal((await reopened.reserve({envelope:env(),effect:effect('b')})).reason,'BUDGET_CLOCK_REGRESSION');
   }finally{await f.close()}
 });
@@ -115,7 +147,7 @@ test('tampered persisted claim counts throw and preserve state',async()=>{
   const f=await fixture();try{
     await f.budget.reserve({envelope:env(),effect:effect('a')});
     const ledger=await f.read();ledger.standingDelegationBudget.envelopes[hex64].writes=1;
-    const reopened=createStandingPublisherBudget({store:f.store,ledger,clock:()=>at});
+    const reopened=await f.reopenBudget(ledger,()=>at);
     await assert.rejects(reopened.reserve({envelope:env(),effect:effect('b')}),/BUDGET_LEDGER_INVALID/);
     assert.equal((await f.read()).standingDelegationBudget.envelopes[hex64].writes,0);
   }finally{await f.close()}
@@ -168,7 +200,7 @@ test('caller mutation after reserve invocation cannot change queued scope or eff
 
 test('one ledger instance cannot create two independent reservation queues',async()=>{
   const f=await fixture();try{
-    assert.throws(()=>createStandingPublisherBudget({store:f.store,ledger:f.ledger,clock:()=>at}),
+    assert.throws(()=>createStandingPublisherBudget({store:f.store,ledger:f.ledger,transaction:f.transaction,clock:()=>at}),
       /BUDGET_DUPLICATE_TRANSACTION_INSTANCE/);
     assert.equal((await f.budget.reserve({envelope:env(),effect:effect('after')})).status,'RESERVED');
   }finally{await f.close()}
@@ -188,8 +220,7 @@ test('a second envelope cannot replay the same effect identifier',async()=>{
 test('expiry between queued acceptance and lock read denies without claims',async()=>{
   const f=await fixture();try{
     const ledger=await f.read();let ticks=0;
-    const budget=createStandingPublisherBudget({store:f.store,ledger,
-      clock:()=>++ticks===1?at:at+100000});
+    const budget=await f.reopenBudget(ledger,()=>++ticks===1?at:at+100000);
     assert.equal((await budget.reserve({envelope:env(),effect:effect('late')})).reason,
       'BUDGET_ENVELOPE_SCOPE');
     assert.equal((await f.read()).standingDelegationBudget,undefined);
@@ -200,7 +231,7 @@ test('malformed unrelated signed-envelope budget history fails closed',async()=>
   const f=await fixture();try{
     await f.budget.reserve({envelope:env(),effect:effect('original','create-tree')});
     const ledger=await f.read();ledger.standingDelegationBudget.envelopes[hex64].writes=500;
-    const reopened=createStandingPublisherBudget({store:f.store,ledger,clock:()=>at});
+    const reopened=await f.reopenBudget(ledger,()=>at);
     const newDigest='f'.repeat(64);
     await assert.rejects(reopened.reserve({envelope:env({envelopeDigest:newDigest}),
       effect:effect('new','github-read',{envelopeDigest:newDigest})}),/BUDGET_LEDGER_INVALID/);
@@ -261,7 +292,7 @@ test('forged method, route, wire digest or original task SHA rejects before pers
       effect('bad-body','github-read',{payloadSha256:'0'.repeat(64)}),
     ];
     for(const e of cases)assert.equal((await f.budget.reserve({envelope:env(),effect:e})).reason,
-      'BUDGET_EFFECT_SCOPE');
+      e.taskSha!==hex40?'BUDGET_NATIVE_LEASE_MISMATCH':'BUDGET_EFFECT_SCOPE');
     assert.equal((await f.read()).standingDelegationBudget,undefined);
   }finally{await f.close()}
 });
@@ -271,7 +302,7 @@ test('reopened corrupted historical wire fingerprint poisons subsequent claims',
     assert.equal((await f.budget.reserve({envelope:env(),effect:effect('write','create-tree')})).status,'RESERVED');
     const state=await f.read();
     state.standingDelegationBudget.envelopes[hex64].claims[0].requestSha256='0'.repeat(64);
-    const reopened=createStandingPublisherBudget({store:f.store,ledger:state,clock:()=>at});
+    const reopened=await f.reopenBudget(state,()=>at);
     await assert.rejects(reopened.reserve({envelope:env(),effect:effect('later')}),
       /BUDGET_LEDGER_INVALID/);
     assert.equal((await f.read()).standingDelegationBudget.envelopes[hex64].claims.length,1);
@@ -279,31 +310,33 @@ test('reopened corrupted historical wire fingerprint poisons subsequent claims',
 });
 
 test('cross-envelope duplicate historical write or effect ID poisons reopened journal',async()=>{
-  const f=await fixture();try{
-    const second='f'.repeat(64),third='a'.repeat(64);
-    assert.equal((await f.budget.reserve({envelope:env(),effect:effect('first','create-tree')})).status,'RESERVED');
-    assert.equal((await f.budget.reserve({envelope:env({envelopeDigest:second}),
-      effect:effect('second','github-read',{envelopeDigest:second})})).status,'RESERVED');
-    const original=await f.read();
-    for(const id of ['first','another-id']){
+  // Each corruption scenario starts from a fresh native transaction so that a
+  // deliberately injected prior bad fixture cannot pollute the next scenario.
+  for(const id of ['first','another-id']){
+    const f=await fixture();try{
+      const second='f'.repeat(64),third='a'.repeat(64);
+      assert.equal((await f.budget.reserve({envelope:env(),effect:effect('first','create-tree')})).status,'RESERVED');
+      assert.equal((await f.budget.reserve({envelope:env({envelopeDigest:second}),
+        effect:effect('second','github-read',{envelopeDigest:second})})).status,'RESERVED');
+      const original=await f.read();
       const corrupted=structuredClone(original);
       const first=corrupted.standingDelegationBudget.envelopes[hex64].claims[0];
       const entry=corrupted.standingDelegationBudget.envelopes[second];
       entry.claims[0]={...first,effectId:id};
       entry.writes=1;
-      const reopened=createStandingPublisherBudget({store:f.store,ledger:corrupted,clock:()=>at});
+      const reopened=await f.reopenBudget(corrupted,()=>at);
       await assert.rejects(reopened.reserve({envelope:env({envelopeDigest:third}),
         effect:effect('unrelated','github-read',{envelopeDigest:third})}),/BUDGET_LEDGER_INVALID/);
-    }
-    assert.deepEqual((await f.read()).standingDelegationBudget,original.standingDelegationBudget);
-  }finally{await f.close()}
+      assert.deepEqual((await f.read()).standingDelegationBudget,original.standingDelegationBudget);
+    }finally{await f.close()}
+  }
 });
 
 test('prior-envelope clock high-water blocks rollback on newly signed digest',async()=>{
   const f=await fixture();try{
     assert.equal((await f.budget.reserve({envelope:env(),effect:effect('first')})).status,'RESERVED');
     const second='f'.repeat(64);
-    const reopened=createStandingPublisherBudget({store:f.store,ledger:await f.read(),clock:()=>at-500});
+    const reopened=await f.reopenBudget(await f.read(),()=>at-500);
     assert.equal((await reopened.reserve({envelope:env({envelopeDigest:second}),
       effect:effect('second','github-read',{envelopeDigest:second})})).reason,'BUDGET_CLOCK_REGRESSION');
     assert.deepEqual(Object.keys((await f.read()).standingDelegationBudget.envelopes),[hex64]);
@@ -329,7 +362,7 @@ test('27 sequential 14-day children retain all prior spends under a 365-day term
     const history=retained.standingDelegationBudget.envelopes;
     assert.equal(Object.keys(history).length,27);
     assert.equal(Object.values(history).reduce((n,x)=>n+x.claims.length,0),27);
-    const reopened=createStandingPublisherBudget({store:f.store,ledger:retained,clock:()=>time.value});
+    const reopened=await f.reopenBudget(retained,()=>time.value);
     const last='1b'.padStart(64,'0'),lastScope=history[last].scope;
     assert.equal((await reopened.reserve({envelope:env({...lastScope,envelopeDigest:last}),
       effect:effect('rotation-26','github-read',{envelopeDigest:last})})).reason,
@@ -374,7 +407,7 @@ test('global cumulative 256 reservations cannot reset at child renewal',async()=
       effect:effect('global-257','github-read',{envelopeDigest:digest})});
     assert.equal(denied.reason,'BUDGET_GLOBAL_EXHAUSTED');
     assert.deepEqual((await f.read()).standingDelegationBudget,before.standingDelegationBudget);
-    const reopened=createStandingPublisherBudget({store:f.store,ledger:await f.read(),clock:()=>at});
+    const reopened=await f.reopenBudget(await f.read(),()=>at);
     assert.equal((await reopened.reserve({envelope:env({envelopeDigest:digest,
       maxOperations:5,maxRequests:5,maxWrites:1}),
       effect:effect('global-after-restart','github-read',{envelopeDigest:digest})})).reason,
