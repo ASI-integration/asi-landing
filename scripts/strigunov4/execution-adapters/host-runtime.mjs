@@ -10,6 +10,11 @@ import {createHostChecks} from './host-checks.mjs';
 import {createGitHubReader} from './github-readonly.mjs';
 import {createPublisherTransport} from './publisher-transport.mjs';
 import {createPublicationLoop} from './publication-loop.mjs';
+// Source candidate composition is imported into the REAL host runtime closure.
+ // The active two-witness policy cannot invoke it or grant publication; adoption
+ // needs a genuinely signed five-lane catalog and native publisher authority.
+import {prepareNativeFiveLaneSource} from './beget-native-five-lane-source.mjs';
+export {prepareNativeFiveLaneSource};
 import {digest,must,regular,atomicJson} from './state.mjs';
 import {selectRoute} from '../ASI-STRIGUNOV4-RUNNER-BRIDGE-20261020.mjs';
 import {WORK_ORDERS,ENGINE_PILOT} from '../ASI-STRIGUNOV4-MULTIJOB-20261020.mjs';
