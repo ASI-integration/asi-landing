@@ -110,4 +110,3 @@ test('reviewer cannot reuse generation model or authorize without native reserva
       deltaSha256:DELTA})).status,'FAILED');
     assert.equal(external,0);
   });
-

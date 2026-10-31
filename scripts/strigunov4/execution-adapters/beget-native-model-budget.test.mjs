@@ -69,4 +69,3 @@ test('caller-supplied plain object cannot reserve a model request',async()=>{
     transaction:Object.freeze({}),payload,revalidate:async()=>true,
     request:req(model.name)}),/STANDING_TRANSACTION_INVALID/);
 });
-
