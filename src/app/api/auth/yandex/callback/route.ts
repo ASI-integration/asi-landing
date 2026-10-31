@@ -59,7 +59,7 @@ export async function GET(request:Request) {
      url.origin!==process.env.ASI_RU_YANDEX_ORIGIN)
     // Do not reflect an untrusted Host/request origin into a login redirect.
     return NextResponse.json({ok:false,error:'YANDEX_LOGIN_UNAVAILABLE'},
-      {status:503,headers:{'Cache-Control':'private, no-store, max-age=0'}});
+      {status:503,headers:oauthRedirectHeaders});
   const session=await getSession();
   const state=session.yandexOauthState;
   const verifier=session.yandexOauthVerifier;

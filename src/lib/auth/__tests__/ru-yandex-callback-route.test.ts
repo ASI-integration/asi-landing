@@ -49,6 +49,8 @@ describe('RU Yandex OAuth callback cannot cancel a pending flow by CSRF', () => 
       'https://attacker.example/api/auth/yandex/callback?state=' + state + '&code=fixture-code',
     ));
     expect(response.status).toBe(503);
+    expect(response.headers.get('referrer-policy')).toBe('no-referrer');
+    expect(response.headers.get('cache-control')).toContain('no-store');
     expect(response.headers.get('location')).toBeNull();
     expect(await response.json()).toEqual({ ok: false, error: 'YANDEX_LOGIN_UNAVAILABLE' });
     expect(mocks.getSession).not.toHaveBeenCalled();
@@ -270,6 +272,28 @@ describe('RU Yandex OAuth callback cannot cancel a pending flow by CSRF', () => 
     expect(mocks.ensure).not.toHaveBeenCalled();
     expect(session.yandexOauthState).toBeUndefined();
     expect(mocks.save).toHaveBeenCalledOnce();
+  });
+
+  it('fails closed when Yandex rejects code exchange: no ASI DB access or user switch', async () => {
+    const session = pendingSession();
+    mocks.getSession.mockResolvedValue(session);
+    const providerFetch = vi.fn(async (providerUrl: string) => {
+      expect(providerUrl).toBe('https://oauth.yandex.ru/token');
+      return new Response(JSON.stringify({ error: 'invalid_grant' }), { status: 400 });
+    });
+    vi.stubGlobal('fetch', providerFetch);
+    const response = await GET(new Request(
+      origin + '/api/auth/yandex/callback?state=' + state + '&code=fixture-auth-code',
+    ));
+    expect(response.status).toBe(307);
+    expect(response.headers.get('location')).toContain('yandex_error=temporary_failure');
+    expect(response.headers.get('referrer-policy')).toBe('no-referrer');
+    expect(session.userId).toBe('owner-a');
+    expect(session.yandexOauthState).toBeUndefined();
+    expect(mocks.save).toHaveBeenCalledOnce();
+    expect(providerFetch).toHaveBeenCalledOnce();
+    expect(mocks.from).not.toHaveBeenCalled();
+    expect(mocks.ensure).not.toHaveBeenCalled();
   });
 
   it('denies unlinked provider login without creating an ASI user or resetting the session', async () => {
