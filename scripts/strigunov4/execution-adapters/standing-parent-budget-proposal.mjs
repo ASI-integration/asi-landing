@@ -34,6 +34,16 @@ const plain = x => x && typeof x === 'object' && !Array.isArray(x) &&
   Reflect.ownKeys(x).every(k => typeof k === 'string' &&
     Object.hasOwn(Object.getOwnPropertyDescriptor(x,k),'value'));
 const validTime = t => Number.isSafeInteger(t) && t >= 0;
+// The native Publisher writes a canonical scope with no paidApiUsd key:
+// its reservation validator *requires* paidApiUsd === 0, but omits the
+// constant from exactScope(). Accept that exact omission without treating
+// arbitrary non-zero paid scopes as trusted historical state. This remains
+// only a proposal check; no signature or native lease is established here.
+function historicalZeroPaidScope(scope) {
+  if (!plain(scope) || (Object.hasOwn(scope,'paidApiUsd') && scope.paidApiUsd !== 0))
+    return null;
+  return {...scope,paidApiUsd:0};
+}
 const same = (a,b) => a === b;
 const isWrite = k => WRITES.has(k);
 const isRead = k => k === READ;
@@ -113,25 +123,32 @@ export function assessParentBudgetProposal({parent, child, childLinks, ledger, e
   if (!Array.isArray(revokedParentDigests) || !revokedParentDigests.every(hex64) ||
       revokedParentDigests.includes(parent.digest)) return deny('PARENT_REVOKED_OR_UNVERIFIED_REVOCATION');
   if (!plain(ledger) || ledger.schemaVersion !== 'asi.execution-adapters.v1' ||
-      !plain(ledger.standingDelegationBudget) ||
-      ledger.standingDelegationBudget.version !== 1 ||
-      !plain(ledger.standingDelegationBudget.envelopes) || !plain(childLinks) ||
-      !childScope(child,parent) || !boundLink(childLinks[child.digest],child,parent))
+      !plain(childLinks) || !childScope(child,parent) ||
+      !boundLink(childLinks[child.digest],child,parent))
+    return deny('PARENT_HISTORY_OR_LINK_INVALID');
+  // A never-used native ledger legitimately has no budget section. Source-only
+  // preview may assess that zero-history state, but explicit null/undefined,
+  // malformed history and nonempty corrupt history must still be rejected.
+  // The real reserve() initializes the existing fsynced journal under lock.
+  const hasBudget=Object.hasOwn(ledger,'standingDelegationBudget');
+  const budget=hasBudget?ledger.standingDelegationBudget:{version:1,envelopes:Object.create(null)};
+  if(!plain(budget) || budget.version!==1 || !plain(budget.envelopes))
     return deny('PARENT_HISTORY_OR_LINK_INVALID');
   if (!plain(effect) || !ident(effect.effectId) || !hex64(effect.requestSha256) ||
       (!isRead(effect.kind) && !isWrite(effect.kind)) ||
       !validWire(effect)) return deny('PARENT_EFFECT_INVALID');
-  const entries=Object.entries(ledger.standingDelegationBudget.envelopes);
+  const entries=Object.entries(budget.envelopes);
   if (entries.length > MAX_CHILDREN) return deny('PARENT_HISTORY_FULL');
   let operations=0, requests=0, writes=0, newest=0;
   const effectIds=new Set(), postWires=new Set();
   for (const [digest,entry] of entries) {
-    if (!hex64(digest) || !plain(entry) || !plain(entry.scope) ||
+    const normalizedScope=historicalZeroPaidScope(entry?.scope);
+    if (!hex64(digest) || !plain(entry) || !normalizedScope ||
         entry.scope.digest !== digest || !Array.isArray(entry.claims) ||
         entry.claims.length > MAX_CLAIMS || !validTime(entry.lastObservedAt) ||
         !Number.isSafeInteger(entry.operations) || !Number.isSafeInteger(entry.requests) ||
-        !Number.isSafeInteger(entry.writes) || !childScope(entry.scope,parent) ||
-        !boundLink(childLinks[digest],entry.scope,parent))
+        !Number.isSafeInteger(entry.writes) || !childScope(normalizedScope,parent) ||
+        !boundLink(childLinks[digest],normalizedScope,parent))
       return deny('PARENT_HISTORY_OR_LINK_INVALID');
     // All claims must remain present: no compaction or historical reset.
     const claimedWrites=entry.claims.filter(c=>plain(c) && isWrite(c.kind)).length;
@@ -155,13 +172,14 @@ export function assessParentBudgetProposal({parent, child, childLinks, ledger, e
   if (now < child.notBefore || now >= child.expiresAt) return deny('PARENT_CHILD_EXPIRED');
   if (effectIds.has(effect.effectId) || (isWrite(effect.kind) && postWires.has(effect.requestSha256)))
     return deny('PARENT_REPLAY');
-  const childEntry=ledger.standingDelegationBudget.envelopes[child.digest];
+  const childEntry=budget.envelopes[child.digest];
   // A renewed presentation of the SAME digest must match the exact durable
   // child scope. The digest/link shape alone does not bind numeric limits here.
   // This is defensive source consistency, NOT signature authentication.
-  if (childEntry && !['digest','repo','environment','target','action',
+  const historicalChild=childEntry&&historicalZeroPaidScope(childEntry.scope);
+  if (childEntry && (!historicalChild || !['digest','repo','environment','target','action',
     'securityDigest','policyDigest','paidApiUsd','notBefore','expiresAt',
-    'maxOperations','maxRequests','maxWrites'].every(k=>childEntry.scope[k]===child[k]))
+    'maxOperations','maxRequests','maxWrites'].every(k=>historicalChild[k]===child[k])))
     return deny('PARENT_CHILD_SCOPE_CHANGED');
   const childCount=childEntry?.claims.length ?? 0;
   const childWrites=childEntry?.writes ?? 0;

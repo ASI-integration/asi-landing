@@ -111,7 +111,7 @@ test('context excludes caller bypass flags and rejects accessors without executi
 test('reader fetches fixed exact-attempt jobs protected-base blobs and current evaluator with metering',async()=>{
   const f=network(),r=await read(f.input);
   assert.equal(r.status,'GATE_PREREQUISITES_VERIFIED');assert.equal(r.authorized,false);
-  assert.equal(f.calls.length,13);assert.equal(f.metered.length,13);assert.equal(r.receipt.requests,13);
+  assert.equal(f.calls.length,14);assert.equal(f.metered.length,14);assert.equal(r.receipt.requests,14);
   assert(f.calls.every(c=>c.method==='GET'&&c.redirect==='error'));
   assert(f.calls.some(c=>c.url.includes('/actions/runs/41/attempts/1/jobs?')));
   assert.equal(f.calls.filter(c=>c.url.includes('/contents/')&&c.url.endsWith('?ref='+baseSha)).length,2);

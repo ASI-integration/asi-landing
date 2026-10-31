@@ -36,7 +36,7 @@ function fixture({maxRequests=10,revoked=false}={}){
  const sr=signed(manifest,owner),prior={sequence:1,manifestDigest:hash(sr.payload),revokedEnvelopeDigests:manifest.revokedEnvelopeDigests};
  const expectedTrust={repository:envelope.repo,environment:envelope.environment,target:envelope.target,issuerKeySha256:owner.digest,verifierKeySha256:verifier.digest,envelopeDigest};
  const protectedReader=async p=>p.endsWith('owner-public.pem')?owner.pem:p.endsWith('standing-verifier-public.pem')?verifier.pem:JSON.stringify(sr);
- const input={signedEnvelope,signedEvidence,request,comparison,providerObservation,providerExpected,expectedTrust,clock:()=>now,protectedReader,isolatedPreview:true};
+ const input={signedEnvelope,signedEvidence,request,comparison,admissionBaseSha:baseSha,providerObservation,providerExpected,expectedTrust,clock:()=>now,protectedReader,isolatedPreview:true};
  const task={id:'source-task',sha:baseSha,repo:envelope.repo,branch:'fixture',stage:'S4-G1',pr:null};
  return {root,state,input,prior,task,owner,verifier,close:()=>fs.rmSync(root,{recursive:true,force:true})};
 }
@@ -136,15 +136,15 @@ test('authenticated reader bootstrap and subsequent STARTED write share one dura
    preview=createStandingRequestPreview({...withoutObservation,store,transaction,clock:()=>now+ticks++});
    const observed=await preview.readProvider({token:'INERT_FIXTURE',fetchImpl:transport.fetch});
    assert.equal(observed.status,'PROVIDER_EVIDENCE_VERIFIED');assert.equal(observed.authorized,false);
-   transport.verify();assert.equal(transport.calls,5);observed.snapshot.reviews[0].state='DISMISSED';
+   transport.verify();assert.equal(transport.calls,6);observed.snapshot.reviews[0].state='DISMISSED';
    return x.task;
   },{verifyTask:async()=>({sha:x.task.sha})},async()=>{
    const charged=await preview.reserve(descriptor('POST','git/trees'));
-   assert.equal(charged.status,'RESERVED_PREVIEW');assert.equal(charged.requests,6);assert.equal(charged.writes,1);
+   assert.equal(charged.status,'RESERVED_PREVIEW');assert.equal(charged.requests,7);assert.equal(charged.writes,1);
    assert.equal(await preview.beforeRequest(),false);return {status:'PASS'};
   });
   assert.equal(result.status,'PASS');const ledger=JSON.parse(fs.readFileSync(store.file('autopilot-ledger.json')));
-  assert.equal(Object.values(ledger.standingRequestBindings).filter(b=>b.evidencePhase==='bootstrap').length,5);
+  assert.equal(Object.values(ledger.standingRequestBindings).filter(b=>b.evidencePhase==='bootstrap').length,6);
  }finally{x.close();}
 });
 test('bootstrap exhaustion and unknown response retain charges and never fall back to supplied proposal snapshot',async()=>{
@@ -180,7 +180,7 @@ test('concurrent reserve/read cannot interleave bootstrap accounting or grant a 
    assert.equal((await p.reserve(descriptor('POST','git/trees'))).status,'BLOCKED');
    assert.equal((await p.readProvider({token:'INERT_FIXTURE',fetchImpl:remote.fetch})).status,'BLOCKED');
    release();assert.equal((await reading).status,'PROVIDER_EVIDENCE_VERIFIED');
-   remote.verify();assert.equal(remote.calls,5);return null;
+   remote.verify();assert.equal(remote.calls,6);return null;
   },{},()=>{});
  }finally{x.close();}
 });

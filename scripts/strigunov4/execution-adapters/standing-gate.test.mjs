@@ -23,6 +23,9 @@ async function setup(t,{adoptionMode=null,wrongLocal=false,forgedLocal=false,lat
  const revocation=signed(manifest,owner),prior={sequence:1,manifestDigest:hash(revocation.payload),revokedEnvelopeDigests:[]};
  const original=globalThis.fetch;t.after(()=>{globalThis.fetch=original;});
  const seedFiles=Object.fromEntries(ENVELOPE_SECURITY_REQUIRED.map(p=>[p,'inert protected '+p+'\n']));
+ // Fixture-only: reproduce the pinned NORMAL owner baseline and audited bootstrap source.
+ seedFiles['docs/agent-os/owner-security-baseline.json']=await fs.readFile(new URL('../../../docs/agent-os/owner-security-baseline.json',import.meta.url),'utf8');
+ seedFiles['scripts/strigunov4/execution-adapters/beget-install.py']=await fs.readFile(new URL('./beget-install.py',import.meta.url),'utf8');
  if((gitTrust||compiled)&&adoptionMode!=='compiled-missing-registry'){
   const registry={schema:'asi.standing-trust-registry.v1',repository:manifest.repository,environment:manifest.environment,target:manifest.target,issuerKeySha256:owner.digest,verifierKeySha256:verifier.digest,minRevocationSequence:1,minRevocationManifestDigest:prior.manifestDigest,priorRevokedEnvelopeDigests:[]};
   for(const [name,content] of Object.entries({'registry.json':JSON.stringify(registry),'owner-public.pem':owner.pem,'standing-verifier-public.pem':verifier.pem,'standing-revocations.json':JSON.stringify(revocation)}))seedFiles['docs/agent-os/standing-trust/'+name]=content;
@@ -65,7 +68,7 @@ async function setup(t,{adoptionMode=null,wrongLocal=false,forgedLocal=false,lat
   const lease=inspectStandingTransaction(transaction);if(!lease.ledger.standingRevocationCheckpoint)lease.ledger.standingRevocationCheckpoint=prior;
   const request={action:'source',repo:envelope.repo,environment:envelope.environment,target:envelope.target,appId:envelope.appId,installationId:envelope.installationId,securityDigest:envelope.securityDigest,changedPaths:[target],headSha:null,baseSha:f.sha,artifactDigest,taskId:task.id,taskBinding:bindTask(task),branch:task.branch};
   const witness=(phase,event)=>({schema:'asi.release-envelope-publisher-evidence.proposal.v1',phase,envelopeDigest,policyDigest:envelope.policyDigest,revocation:'NOT_REVOKED',observedAt:now.value,baseSha:f.sha,headSha:event?.headSha??null,artifactDigest,changedPaths:[target],taskId:task.id,taskBinding:request.taskBinding,branch:request.branch,ci:phase==='EXACT_HEAD_VERIFIED'?'SUCCESS':null,independentReview:phase==='EXACT_HEAD_VERIFIED'?'PASS':null,branchProtection:'PASS',usedOperations:0,paidApiUsd:0,claim:'UNCLAIMED',externalResult:'NONE',...(phase==='LOCAL_DELTA_VERIFIED'?{localChecks:'PASS',independentDeltaReview:'PASS',reviewEvidenceId:event.reviewEvidenceId}:{})});
-  const preview=createStandingRequestPreview({store,transaction,signedEnvelope,signedEvidence:signed(witness('ADMISSION_READ'),verifier),request,comparison,providerExpected:{independentReviewerId:1234},expectedTrust,clock:()=>{if(gateActive&&++gateClockCount===lateGateClock)now.value=envelope.expiresAt+1;return now.value;},protectedReader,isolatedPreview:true,publisherPhases:true,expectedAdoptionDigest:adoptionMode==='missing'?null:adoptionMode==='pin'?'a'.repeat(64):hash(adoptionSigned.payload)});previews.push(preview);
+  const preview=createStandingRequestPreview({store,transaction,signedEnvelope,signedEvidence:signed(witness('ADMISSION_READ'),verifier),request,comparison,providerExpected:{independentReviewerId:1234},expectedTrust,admissionBaseSha:f.sha,clock:()=>{if(gateActive&&++gateClockCount===lateGateClock)now.value=envelope.expiresAt+1;return now.value;},protectedReader,isolatedPreview:true,publisherPhases:true,expectedAdoptionDigest:adoptionMode==='missing'?null:adoptionMode==='pin'?'a'.repeat(64):hash(adoptionSigned.payload)});previews.push(preview);
   // TEST ONLY: this wrapper executes loopback fixture effects under makeLoop's
   // explicit synthetic v0 grant. Production preview.beforeRequest always refuses.
   const runGate=async event=>{
@@ -197,7 +200,7 @@ test('PRE_GATE fixed reads consume the same native Publisher budget, never final
  const x=await setup(t);await x.loop.poll({execute:true});
  assert.equal(x.gateResults.length,1);assert.equal(x.gateResults[0].status,'PROPOSAL_ELIGIBLE',JSON.stringify(x.gateResults));
  assert.equal(x.gateResults[0].phase,'PRE_GATE');assert.equal(x.gateResults[0].authorized,false);
- assert.equal(x.gateCalls.length,13);
+ assert.equal(x.gateCalls.length,14);
  for(let i=1;i<x.gateCalls.length;i++)assert.equal(x.gateCalls[i].requests,x.gateCalls[i-1].requests+1);
  assert.equal(await x.previews[0].beforeRequest(),false);
  const ledger=JSON.parse(await fs.readFile(path.join(x.f.root,'state','autopilot-ledger.json'),'utf8'));
@@ -228,7 +231,7 @@ test('PRE_GATE expiry at final return preserves all charges and refuses eligibil
  const baseline=await setup(t);await baseline.loop.poll({execute:true});
  assert.equal(baseline.gateResults[0].status,'PROPOSAL_ELIGIBLE');
  const x=await setup(t,{lateGateClock:baseline.gateClockCounts[0]});await x.loop.poll({execute:true});
- assert.equal(x.gateResults[0].status,'BLOCKED');assert.equal(x.gateCalls.length,13);
+ assert.equal(x.gateResults[0].status,'BLOCKED');assert.equal(x.gateCalls.length,14);
  const ledger=JSON.parse(await fs.readFile(path.join(x.f.root,'state','autopilot-ledger.json'),'utf8'));
  assert(Object.values(ledger.standingDelegationBudget.envelopes)[0].requests>=x.gateCalls.at(-1).requests);
 });

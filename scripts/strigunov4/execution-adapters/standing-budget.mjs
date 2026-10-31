@@ -11,8 +11,9 @@
  * No separate ledger, writer, scheduler, capability or automatic replay.
  */
 import fs from 'node:fs/promises';
+import path from 'node:path';
 import {createHash} from 'node:crypto';
-import {atomicJson, must} from './state.mjs';
+import {atomicJson, must, inspectStandingTransaction} from './state.mjs';
 import {isCompiledGitHubRead} from './github-readonly.mjs';
 
 const HEX64 = /^[0-9a-f]{64}$/;
@@ -144,11 +145,63 @@ function soundJournalEntry(entry, key) {
 }
 
 /** One instance per existing store.execute transaction; no effects are run. */
-export function createStandingPublisherBudget({store, ledger, clock=Date.now}={}) {
+export function createStandingPublisherBudget({store, ledger, transaction, admissionBaseSha=null,
+  clock=Date.now}={}) {
   must(typeof store?.file === 'function' && ledger && typeof ledger === 'object' &&
     !Array.isArray(ledger) && typeof clock === 'function', 'BUDGET_HOST_REQUIRED');
+  // This is the host's private WeakMap-backed transaction lease, not a string
+  // token, lock-directory lstat, fabricated FAILED_LOCKED ledger or copied object.
+  // It must be minted by the SAME state.execute callback after the durable brake.
+  let initial;
+  try { initial=inspectStandingTransaction(transaction); } catch {}
+  must(initial?.kind==='github-publisher' && initial.root===store.root &&
+    initial.ledger===ledger && typeof initial.transactionId==='string' &&
+    store.file('execution.lock')===path.join(initial.root,'state','execution.lock') &&
+    store.file('autopilot-ledger.json')===path.join(initial.root,'state','autopilot-ledger.json'),
+    'BUDGET_NATIVE_TRANSACTION_REQUIRED');
   must(!budgetInstances.has(ledger), 'BUDGET_DUPLICATE_TRANSACTION_INSTANCE');
   budgetInstances.add(ledger);
+  // Snapshot the native lease synchronously at invocation, then reacquire it
+  // after EVERY await and at the commit boundary. No caller-supplied task lease.
+  function nativeLease(effect) {
+    try {
+      const write=WRITES.has(effect.kind);
+      const lease=inspectStandingTransaction(transaction,{write});
+      if (lease.kind!=='github-publisher' || lease.root!==initial.root ||
+          lease.ledger!==ledger || lease.transactionId!==initial.transactionId ||
+          store.root!==initial.root ||
+          store.file('autopilot-ledger.json')!==path.join(initial.root,'state','autopilot-ledger.json') ||
+          store.file('execution.lock')!==path.join(initial.root,'state','execution.lock')) return null;
+      if (lease.phase==='admission') {
+        // Pre-task snapshot GET: not a STARTED job and never a write.
+        // The host must independently pin admissionBaseSha from protected Git.
+        if (write || !h40(admissionBaseSha) ||
+            effect.taskId!=='admission-'+lease.transactionId ||
+            effect.taskSha!==admissionBaseSha || lease.taskId!==null ||
+            lease.taskSha!==null) return null;
+      } else {
+        // Pre-STARTED verify GET and postflight GET use the SAME selected task.
+        // The native state inspector independently verifies exactly one
+        // matching STARTED job for started/postflight and refuses stolen tasks.
+        if (!['preflight','started','postflight'].includes(lease.phase) ||
+            lease.taskId!==effect.taskId || lease.taskSha!==effect.taskSha) return null;
+      }
+      // During pre-task admission the only trusted source HEAD is the
+      // independently pinned protected base; later candidate HEADs can move
+      // within the signed budget and must be authenticated by the host.
+      if (lease.phase==='admission' && effect.headSha!==admissionBaseSha) return null;
+      return Object.freeze({transactionId:lease.transactionId,phase:lease.phase,
+        kind:lease.kind,root:lease.root,ledger:lease.ledger,
+        taskId:lease.taskId,taskSha:lease.taskSha});
+    } catch { return null; }
+  }
+  function leaseStillSame(captured,effect) {
+    const now=nativeLease(effect);
+    return !!captured && !!now && captured.transactionId===now.transactionId &&
+      captured.phase===now.phase && captured.kind===now.kind &&
+      captured.root===now.root && captured.ledger===now.ledger &&
+      captured.taskId===now.taskId && captured.taskSha===now.taskSha;
+  }
   let tail = Promise.resolve(), poisoned = false;
   function enqueue(fn) {
     const next = tail.then(async () => {
@@ -163,7 +216,7 @@ export function createStandingPublisherBudget({store, ledger, clock=Date.now}={}
   return Object.freeze({reserve({envelope, effect, readDescriptor}={}) {
     // A caller may reuse or mutate input objects, but no later mutation may
     // change the scope or effect of this particular reservation.
-    let capturedEnvelope, capturedEffect;
+    let capturedEnvelope, capturedEffect, capturedLease;
     try {
       capturedEnvelope=snapshot(envelope,ENVELOPE_FIELDS);
       capturedEffect=snapshot(effect,EFFECT_FIELDS);
@@ -171,10 +224,12 @@ export function createStandingPublisherBudget({store, ledger, clock=Date.now}={}
         if(!isCompiledGitHubRead(readDescriptor)||!['method','route','payloadSha256','requestSha256'].every(k=>readDescriptor[k]===capturedEffect[k]))capturedEffect=null;
         else capturedEffect=Object.freeze({...capturedEffect,readProtocol:'compiled-threads'});
       }
-    } catch { capturedEnvelope=null; capturedEffect=null; }
+      if (capturedEffect) capturedLease=nativeLease(capturedEffect);
+    } catch { capturedEnvelope=null; capturedEffect=null; capturedLease=null; }
     return enqueue(async () => {
       if (!capturedEnvelope || !capturedEffect) return deny('BUDGET_INPUT_INVALID');
       const envelope=capturedEnvelope, effect=capturedEffect;
+      if (!leaseStillSame(capturedLease,effect)) return deny('BUDGET_NATIVE_LEASE_MISMATCH');
       const at = clock();
       if (!Number.isSafeInteger(at) || at < 0) return deny('BUDGET_CLOCK');
       const eReason = validateEnvelope(envelope, at);
@@ -190,6 +245,7 @@ export function createStandingPublisherBudget({store, ledger, clock=Date.now}={}
         throw x;
       });
       if (!lock?.isDirectory() || lock.isSymbolicLink()) return deny('BUDGET_LOCK_ABSENT');
+      if (!leaseStillSame(capturedLease,effect)) return deny('BUDGET_NATIVE_LEASE_MISMATCH');
       // A slow lock read must not authorize an already-expired envelope.
       const lockedAt=clock();
       if (!Number.isSafeInteger(lockedAt) || lockedAt < at) return deny('BUDGET_CLOCK_REGRESSION');
@@ -256,10 +312,23 @@ export function createStandingPublisherBudget({store, ledger, clock=Date.now}={}
         requests:before.requests + 1,writes:before.writes + write,
         claims:[...before.claims,claim]};
       const next = {version:1,envelopes:{...budget.envelopes,[scope.digest]:updated}};
+      // Abort if the native lease/phase or expiry changed while validating
+      // history. Never create a second ledger or make a paid/provider call.
+      const commitAt=clock();
+      if (!Number.isSafeInteger(commitAt) || commitAt<lockedAt)
+        return deny('BUDGET_CLOCK_REGRESSION');
+      if (validateEnvelope(envelope,commitAt))return deny('BUDGET_ENVELOPE_SCOPE');
+      if (!leaseStillSame(capturedLease,effect)) return deny('BUDGET_NATIVE_LEASE_MISMATCH');
       // Exactly one durable commit using the existing atomic file writer.
       // Do not mutate the shared in-memory ledger before fsync success.
       await atomicJson(store.file('autopilot-ledger.json'),{...ledger,standingDelegationBudget:next});
       ledger.standingDelegationBudget = next;
+      // If state.execute ended or expiry hit during fsync, the claim stays
+      // spent and must NOT return a usable receipt; force FAILED_LOCKED.
+      const afterCommitAt=clock();
+      must(Number.isSafeInteger(afterCommitAt) && afterCommitAt>=commitAt &&
+        !validateEnvelope(envelope,afterCommitAt) &&
+        leaseStillSame(capturedLease,effect),'BUDGET_NATIVE_LEASE_CHANGED_AFTER_COMMIT');
       return Object.freeze({status:'RESERVED',reserved:true,envelopeDigest:scope.digest,
         effectId:claim.effectId,taskId:claim.taskId,taskSha:claim.taskSha,
         requestSha256:claim.requestSha256,headSha:claim.headSha,

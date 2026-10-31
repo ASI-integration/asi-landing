@@ -1,4 +1,5 @@
 import fs from 'node:fs/promises';
+import { lstatSync } from 'node:fs';
 import path from 'node:path';
 import { randomUUID, createHash } from 'node:crypto';
 import {assertLiveAdmission,BEGET} from './host-authority.mjs';
@@ -103,9 +104,16 @@ function stateAt(root,liveAdmission) {
   return { root, file, async execute(kind, task, github, action) {
     if(root === LIVE_ROOT || root.startsWith(LIVE_ROOT + '/') || root===BEGET.root || root.startsWith(BEGET.root+'/'))assertLiveAdmission(liveAdmission,root);
     const lock = file('execution.lock');
-    let lockCreated = false;
+    let lockCreated = false, ownedLockIdentity;
     try {
       await fs.mkdir(lock, { mode: 0o700 }); lockCreated = true;
+      // Pin the specific filesystem object this execute() acquired, BEFORE
+      // the first asynchronous fsync of the parent directory. The pathname
+      // alone is insufficient: another process under this UID could rename
+      // execution.lock and replace it with a different directory.
+      const acquired = lstatSync(lock,{bigint:true});
+      must(acquired.isDirectory() && !acquired.isSymbolicLink(), 'LOCK_OWNER_CAPTURE_FAILED');
+      ownedLockIdentity = Object.freeze({dev:acquired.dev,ino:acquired.ino});
       await syncDir(path.dirname(lock));
     } catch (e) {
       if (!lockCreated && e.code === 'EEXIST')
@@ -125,6 +133,14 @@ function stateAt(root,liveAdmission) {
     const beginTransaction = () => {
       transaction = Object.freeze({}); phase = 'admission';
       standingTransactions.set(transaction, ({write,taskId,taskSha}) => {
+        // Check the *original* mkdir inode on every native lease inspection.
+        // In particular, another directory at the same path is not our lock.
+        let present;
+        try { present=lstatSync(lock,{bigint:true}); } catch {}
+        must(!!ownedLockIdentity && present?.isDirectory() &&
+          !present.isSymbolicLink() &&
+          present.dev===ownedLockIdentity.dev &&
+          present.ino===ownedLockIdentity.ino, 'STANDING_LOCK_OWNER_CHANGED');
         must(armed && phase !== 'closed' && ledger?.mode === 'FAILED_LOCKED' &&
           ledger.reason === 'IN_FLIGHT_OR_CRASHED', 'STANDING_TRANSACTION_INACTIVE');
         must(typeof write === 'boolean', 'STANDING_TRANSACTION_OPERATION');
@@ -252,6 +268,15 @@ function stateAt(root,liveAdmission) {
       closeTransaction();
       if (terminal) {
         try {
+          // Never delete a replacement lock at the original pathname.
+          // The lock being released must still be the inode acquired by this
+          // execute() call; otherwise preserve the crash brake for review.
+          const current = lstatSync(lock,{bigint:true});
+          must(!!ownedLockIdentity && current.isDirectory() &&
+            !current.isSymbolicLink() &&
+            current.dev===ownedLockIdentity.dev &&
+            current.ino===ownedLockIdentity.ino,
+          'LOCK_RELEASE_OWNER_CHANGED');
           await fs.rmdir(lock);
           await syncDir(path.dirname(lock));
         } catch {

@@ -57,7 +57,7 @@ test('every authenticated GET, review page and PR recheck is reserved before exa
   const result = await readProvider(f.input);
   assert.equal(result.status, 'PROVIDER_EVIDENCE_VERIFIED');
   assert.equal(result.authorized, false);
-  assert.equal(result.receipt.requests, 6);
+  assert.equal(result.receipt.requests, 8); // two complete paginated review reads
   for (let i = 0; i < f.events.length; i += 2) {
     assert.equal(f.events[i][0], 'reserved');
     assert.deepEqual(f.events[i + 1], ['fetch', f.events[i][1]]);

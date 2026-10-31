@@ -43,7 +43,7 @@ export function isIsolatedStandingPreviewRoot(root){
 /** Isolated preview only. Never attach reserve() to transport: its result is NOT true. */
 export function createStandingRequestPreview({store,transaction,signedEnvelope,signedEvidence,
   request,comparison,providerObservation,providerExpected,expectedTrust,clock=Date.now,protectedReader,
-  isolatedPreview=false,publisherPhases=false,expectedAdoptionDigest=null}={}) {
+  admissionBaseSha=null,isolatedPreview=false,publisherPhases=false,expectedAdoptionDigest=null}={}) {
   const initial=inspectStandingTransaction(transaction);
   must(expectedAdoptionDigest===null||h64(expectedAdoptionDigest),'STANDING_ADOPTION_PIN');
   must(typeof publisherPhases==='boolean','STANDING_PHASE_MODE');
@@ -54,6 +54,10 @@ export function createStandingRequestPreview({store,transaction,signedEnvelope,s
     initial.kind==='github-publisher','STANDING_STORE_MISMATCH');
   // Signed strings, comparison and proposal context are copied before asynchronous work.
   const input=dataCopy({signedEnvelope,signedEvidence,request,comparison,providerObservation:providerObservation??null,providerExpected:providerExpected??null,expectedTrust});
+  // The host must independently pin protected main BEFORE the first metered
+  // admission GET; signed request data alone is not a native base-SHA proof.
+  must(typeof admissionBaseSha==='string'&&/^[a-f0-9]{40}$/.test(admissionBaseSha)&&
+    admissionBaseSha===input.request?.baseSha,'STANDING_BASE_SHA_PIN_REQUIRED');
   // Journal paths come only from the authenticated state lease, never a caller facade.
   const boundStore=Object.freeze({root:initial.root,file(name){
     must(['execution.lock','autopilot-ledger.json'].includes(name),'STANDING_STATE_PATH');
@@ -68,7 +72,8 @@ export function createStandingRequestPreview({store,transaction,signedEnvelope,s
     must(Number.isSafeInteger(at)&&at>=0&&at>=clockHighWater,'STANDING_CLOCK_REGRESSION');
     clockHighWater=at;return at;
   };
-  const ledger=initial.ledger,budget=createStandingPublisherBudget({store:boundStore,ledger,clock});
+  const ledger=initial.ledger,budget=createStandingPublisherBudget({store:boundStore,ledger,
+    transaction,admissionBaseSha,clock});
   let ordinal=0,poisoned=false,bootstrapActive=false,releaseActive=false,pending=0,providerAttempted=false,authenticatedObservation;
   let tail=Promise.resolve(),phaseChanging=false,localPhase=null,exactPhase=null,phaseProvider=null;
   const admissionPhase={phase:'ADMISSION_READ',signedEvidence:input.signedEvidence,request:input.request,comparison:input.comparison};
@@ -187,7 +192,9 @@ export function createStandingRequestPreview({store,transaction,signedEnvelope,s
         ledger.standingRequestBindings=nextBindings;
         inspectStandingTransaction(transaction,{write});
         const result=await budget.reserve({readDescriptor,envelope:{...envelope,envelopeDigest},effect:{effectId,
-          taskId,taskSha,headSha:publisherPhases?input.request.baseSha:input.request.headSha,method,route,payloadSha256,requestSha256,kind,envelopeDigest,repo:envelope.repo,environment:envelope.environment,
+          taskId,taskSha,headSha:lease.phase==='admission'?admissionBaseSha:
+            publisherPhases?input.request.baseSha:input.request.headSha,
+          method,route,payloadSha256,requestSha256,kind,envelopeDigest,repo:envelope.repo,environment:envelope.environment,
           target:envelope.target,action:envelope.action}});
         inspectStandingTransaction(transaction,{write});
         must(result.status==='RESERVED','STANDING_BUDGET_BLOCKED');

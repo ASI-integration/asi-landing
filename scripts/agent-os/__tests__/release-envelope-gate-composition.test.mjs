@@ -65,8 +65,8 @@ function fixture(t,{creation=false}={}){
 }
 test('real two-HEAD Git diff and metered PRE_GATE reads reuse one unchanged owner envelope',async t=>{
  const f=fixture(t),original=JSON.stringify(f.signedEnvelope);
- for(const head of f.heads){const x=f.candidate(head),r=await read(x.input,x.context);assert.equal(r.status,'PROPOSAL_ELIGIBLE',JSON.stringify(r));assert.equal(r.phase,'PRE_GATE');assert.equal(r.permittedEffect,'ADMISSION_REVIEW_ONLY');assert.equal(r.authorized,false);assert.equal(r.requiresAtomicReservation,true);assert.equal(r.providerReceipt.requests,13);}
- assert.notEqual(...f.heads);assert.equal(JSON.stringify(f.signedEnvelope),original);assert.equal(f.calls.length,26);assert.equal(f.metered.length,26);assert(f.metered.every(d=>d.method==='GET'));
+ for(const head of f.heads){const x=f.candidate(head),r=await read(x.input,x.context);assert.equal(r.status,'PROPOSAL_ELIGIBLE',JSON.stringify(r));assert.equal(r.phase,'PRE_GATE');assert.equal(r.permittedEffect,'ADMISSION_REVIEW_ONLY');assert.equal(r.authorized,false);assert.equal(r.requiresAtomicReservation,true);assert.equal(r.providerReceipt.requests,14);}
+ assert.notEqual(...f.heads);assert.equal(JSON.stringify(f.signedEnvelope),original);assert.equal(f.calls.length,28);assert.equal(f.metered.length,28);assert(f.metered.every(d=>d.method==='GET'));
 });
 test('PRE_GATE signature cannot become final witnessed evidence or bypass v0',async t=>{
  const f=fixture(t),x=f.candidate();assert.equal((await read(x.input,x.context)).status,'PROPOSAL_ELIGIBLE');
@@ -151,6 +151,6 @@ test('authenticated source pending retains metered receipt without granting elig
  const f=fixture(t),x=f.candidate();Object.assign(x.snapshot.jobs[0],{status:'queued',conclusion:null,completed_at:null});
  const r=await read(x.input,x.context);assert.equal(r.status,'WAITING',JSON.stringify(r));
  assert.equal(r.reason,'GATE_SOURCE_PENDING');assert.equal(r.authorized,false);assert.equal(r.permittedEffect,'NONE');
- assert.equal(r.providerReceipt.requests,13);assert.equal(f.metered.length,13);assert.equal(r.revocationCheckpoint.sequence,1);
+ assert.equal(r.providerReceipt.requests,14);assert.equal(f.metered.length,14);assert.equal(r.revocationCheckpoint.sequence,1);
  x.witness.gateBinding.sourceRunAttempt=2;x.resign();assert.equal((await read(x.input,x.context)).status,'BLOCKED');
 });

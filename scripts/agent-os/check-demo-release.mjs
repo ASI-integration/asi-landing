@@ -5,6 +5,7 @@
  * This gate does not grant permission for merge, staging or server mutations.
  */
 import fs from 'node:fs';
+import {inspectFreshIndependentReview} from './release-envelope-review-freshness.mjs';
 import {inspectStandingAdmissionReceipt,isStandingReleaseReader} from '../strigunov4/execution-adapters/standing-request-guard.mjs';
 import { readProtectedStandingTrustSnapshot } from './release-envelope-trust-roots.mjs';
 import { createHash, createPublicKey } from 'node:crypto';
@@ -631,16 +632,20 @@ async function readProviderSnapshot({token,expected,fetchImpl,clock,beforeReques
       sourceJobs={runId:latest.id,runAttempt:latest.run_attempt,totalCount:total,jobs};
       evaluatorRun=await get('/actions/runs/'+gate.evaluatorRunId);
     }
-    const reviews = [];
-    for (let page = 1; page <= 3; page++) {
-      const batch = await get('/pulls/' + expected.number + '/reviews?per_page=100&page=' + page);
-      must(Array.isArray(batch) && batch.length <= 100, 'PROVIDER_READER_INCOMPLETE');
-      reviews.push(...batch);
-      must(reviews.every(r => Number.isSafeInteger(r?.id) && r.id > 0) &&
-        new Set(reviews.map(r => r.id)).size === reviews.length, 'PROVIDER_READER_INCOMPLETE');
-      if (batch.length < 100) break;
-      must(page < 3, 'PROVIDER_READER_INCOMPLETE');
-    }
+    const collectReviews=async()=>{
+      const reviews = [];
+      for (let page = 1; page <= 3; page++) {
+        const batch = await get('/pulls/' + expected.number + '/reviews?per_page=100&page=' + page);
+        must(Array.isArray(batch) && batch.length <= 100, 'PROVIDER_READER_INCOMPLETE');
+        reviews.push(...batch);
+        must(reviews.every(r => Number.isSafeInteger(r?.id) && r.id > 0) &&
+          new Set(reviews.map(r => r.id)).size === reviews.length, 'PROVIDER_READER_INCOMPLETE');
+        if (batch.length < 100) break;
+        must(page < 3, 'PROVIDER_READER_INCOMPLETE');
+      }
+      return reviews;
+    };
+    let reviews=await collectReviews();
     if(gate){
       // A PR reread cannot detect a rerun/new CI attempt on the same HEAD.
       // Recollect COMPLETE workflow inventories; never query only the old run.
@@ -662,6 +667,21 @@ async function readProviderSnapshot({token,expected,fetchImpl,clock,beforeReques
       }
       runs=freshRuns;
     }
+    // Re-read the COMPLETE, authenticated review inventory, not merely a PR SHA.
+    // The same bounded, metered GET is used for both samples. Source-only evidence
+    // is never an independent reviewer, owner signature or release authority.
+    const freshReviews=await collectReviews();
+    const reviewGuard=inspectFreshIndependentReview({
+      before:reviews,after:freshReviews,
+      expected:{repository:REPO,headSha:expected.headSha,
+        independentReviewerId:expected.independentReviewerId,
+        authorId:pr?.user?.id,ownerId:OWNER_ID},
+      now:clock(),
+    });
+    if(reviewGuard.status!=='REVIEW_SNAPSHOT_UNCHANGED') return deny(
+      reviewGuard.reason==='REVIEW_SNAPSHOT_DRIFT'?'PROVIDER_READER_REVIEW_DRIFT':
+        'PROVIDER_READER_REVIEW_NOT_APPROVED');
+    reviews=freshReviews;
     const currentPr = await get('/pulls/' + expected.number);
     const now = clock();
     must(Number.isSafeInteger(now) && now >= startedAt && now - startedAt < 30000,

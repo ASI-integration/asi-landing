@@ -242,7 +242,7 @@ function readerFixture(change = () => {}) {
 test('reader obtains bounded authenticated GET observations and never authority',async()=>{
  const f=readerFixture();const result=await readProvider(f.input);
  assert.equal(result.status,'PROVIDER_EVIDENCE_VERIFIED');assert.equal(result.authorized,false);
- assert.equal(result.receipt.requests,5);assert.equal(result.receipt.writes,0);
+ assert.equal(result.receipt.requests,6);assert.equal(result.receipt.writes,0);
  assert(!JSON.stringify(result).includes(f.input.token));
  for(const {url,options} of f.calls) {
   assert(url.startsWith('https://api.github.com/repos/ASI-integration/asi-landing/'));
@@ -283,13 +283,13 @@ test('reader paginates reviews completely so later denial is not hidden',async()
     {headers:{'Content-Type':'application/json'}});
   }
  });
- assert.equal((await readProvider(f.input)).reason,'PROVIDER_INDEPENDENT_REVIEW');
- assert.equal(f.calls.length,6);
+ assert.equal((await readProvider(f.input)).reason,'PROVIDER_READER_REVIEW_NOT_APPROVED');
+ assert.equal(f.calls.length,7);
 });
 test('reader rechecks PR identity and rejects concurrent head/base movement',async()=>{
  for(const side of ['head','base']) {
   const f=readerFixture(({calls,x,url})=>{
-   if(calls.length===5 && url.pathname.endsWith('/552')) {
+   if(calls.length===6 && url.pathname.endsWith('/552')) {
     const value=structuredClone(x.pr);value[side].sha='e'.repeat(40);
     return new Response(JSON.stringify(value),{headers:{'Content-Type':'application/json'}});
    }

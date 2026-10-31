@@ -40,7 +40,7 @@ async function setup(t,{wrongLocal=false,forgedLocal=false,lateRevocation=false,
   const lease=inspectStandingTransaction(transaction);if(!lease.ledger.standingRevocationCheckpoint)lease.ledger.standingRevocationCheckpoint=prior;
   const request={action:'source',repo:envelope.repo,environment:envelope.environment,target:envelope.target,appId:envelope.appId,installationId:envelope.installationId,securityDigest:envelope.securityDigest,changedPaths:[target],headSha:null,baseSha:f.sha,artifactDigest,taskId:task.id,taskBinding:bindTask(task),branch:task.branch};
   const witness=(phase,event)=>({schema:'asi.release-envelope-publisher-evidence.proposal.v1',phase,envelopeDigest,policyDigest:envelope.policyDigest,revocation:'NOT_REVOKED',observedAt:now.value,baseSha:f.sha,headSha:event?.headSha??null,artifactDigest,changedPaths:[target],taskId:task.id,taskBinding:request.taskBinding,branch:request.branch,ci:phase==='EXACT_HEAD_VERIFIED'?'SUCCESS':null,independentReview:phase==='EXACT_HEAD_VERIFIED'?'PASS':null,branchProtection:'PASS',usedOperations:0,paidApiUsd:0,claim:'UNCLAIMED',externalResult:'NONE',...(phase==='LOCAL_DELTA_VERIFIED'?{localChecks:'PASS',independentDeltaReview:'PASS',reviewEvidenceId:event.reviewEvidenceId}:{})});
-  const preview=createStandingRequestPreview({store,transaction,signedEnvelope,signedEvidence:signed(witness('ADMISSION_READ'),verifier),request,comparison,providerExpected:{independentReviewerId:1234},expectedTrust,clock:()=>now.value,protectedReader,isolatedPreview:true,publisherPhases:true});previews.push(preview);
+  const preview=createStandingRequestPreview({store,transaction,signedEnvelope,signedEvidence:signed(witness('ADMISSION_READ'),verifier),request,comparison,providerExpected:{independentReviewerId:1234},expectedTrust,admissionBaseSha:f.sha,clock:()=>now.value,protectedReader,isolatedPreview:true,publisherPhases:true});previews.push(preview);
   // TEST ONLY: this wrapper executes loopback fixture effects under makeLoop's
   // explicit synthetic v0 grant. Production preview.beforeRequest always refuses.
   const requestAdmission=async d=>{const r=await preview.reserve(d);records.push({phase:inspectStandingTransaction(transaction).phase,method:d.method,route:d.route,result:r});return r.status==='RESERVED_PREVIEW';};
@@ -77,7 +77,7 @@ test('two native publications reuse one signed envelope and budget without futur
  const second=await x.loop.poll({execute:true});assert.equal(second.mode,'REPORT_READY',JSON.stringify({second,last:x.records.at(-1),phases:x.phases,requests:x.f.requests.length}));
  assert.equal(x.f.pulls.size,2);assert.equal(new Set([...x.f.pulls.values()].map(p=>p.head.sha)).size,2);
  assert.deepEqual(x.phases.map(p=>p.phase),['LOCAL_DELTA_VERIFIED','EXACT_HEAD_VERIFIED','LOCAL_DELTA_VERIFIED','EXACT_HEAD_VERIFIED']);
- assert(x.phases.every(p=>p.authorized===false));assert.equal(x.providerCalls.length,10);
+ assert(x.phases.every(p=>p.authorized===false));assert.equal(x.providerCalls.length,12);
  assert(x.providerCalls.every((c,i)=>i===0||c.budget>x.providerCalls[i-1].budget));
  for(const p of x.previews)assert.equal(await p.beforeRequest(descriptor('POST','git/trees')),false);
  const ledger=JSON.parse(await fs.readFile(path.join(x.f.root,'state','autopilot-ledger.json'),'utf8'));
