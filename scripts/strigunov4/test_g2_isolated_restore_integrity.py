@@ -107,6 +107,13 @@ class IntegrityTests(unittest.TestCase):
         with self.assertRaisesRegex(g2.Block, "EMPTY_TREE"):
             self.verify()
 
+    def test_archive_symlink_parent_blocked(self):
+        alias = self.root / "backup-dir-alias"
+        alias.symlink_to(self.root, target_is_directory=True)
+        with self.assertRaisesRegex(g2.Block, "ARCHIVE_PATH_SYMLINK"):
+            g2.inspect(self.source, self.restored,
+                       alias / "reviewed-backup.tar.gz", self.pin)
+
     def test_archive_inside_source_copy_blocked(self):
         archive = self.source / "backup.tar.gz"
         archive.write_bytes(b"test")
