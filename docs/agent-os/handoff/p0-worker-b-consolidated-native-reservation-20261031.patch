@@ -1,0 +1,485 @@
+diff --git a/scripts/strigunov4/execution-adapters/standing-budget-crash-probe.test.mjs b/scripts/strigunov4/execution-adapters/standing-budget-crash-probe.test.mjs
+new file mode 100644
+index 00000000..eefa5dca
+--- /dev/null
++++ b/scripts/strigunov4/execution-adapters/standing-budget-crash-probe.test.mjs
+@@ -0,0 +1,216 @@
++import test from 'node:test';
++import assert from 'node:assert/strict';
++import fs from 'node:fs/promises';
++import path from 'node:path';
++import os from 'node:os';
++import {spawn} from 'node:child_process';
++import {createHash} from 'node:crypto';
++import {fileURLToPath} from 'node:url';
++import {initializeState,existingState,inspectStandingTransaction} from './state.mjs';
++import {createStandingPublisherBudget} from './standing-budget.mjs';
++
++const thisFile=fileURLToPath(import.meta.url);
++const at=1793260000000, sha40='c'.repeat(40), hex64='b'.repeat(64);
++const h=s=>createHash('sha256').update(s).digest('hex');
++const task={id:'source-task',sha:sha40,repo:'ASI-integration/asi-landing',stage:'S4-G2',pr:null,branch:'source-task'};
++const envelope={schema:'asi.release-envelope.proposal.v1',repo:task.repo,environment:'beget-staging',
++  target:'pqukibofpo',action:'source',envelopeDigest:hex64,securityDigest:'d'.repeat(64),
++  policyDigest:'e'.repeat(64),notBefore:at-1000,expiresAt:at+100000,
++  maxOperations:3,maxRequests:3,maxWrites:2,paidApiUsd:0};
++function effect(id){const method='POST',route='git/commits',payloadSha256=h(JSON.stringify({id}));
++  return {effectId:id,taskId:task.id,taskSha:task.sha,headSha:task.sha,kind:'create-commit',
++    method,route,payloadSha256,requestSha256:h(JSON.stringify({method,route,payloadSha256})),
++    envelopeDigest:hex64,repo:task.repo,environment:'beget-staging',target:'pqukibofpo',action:'source'};}
++const root=process.argv[2] || await fs.mkdtemp(path.join(os.tmpdir(),'asi-budget-lease-proof-'));
++const role=process.env.PROBE_ROLE;
++if(role==='holder'){
++  const store=await existingState(root);let ledgerRef;
++  await store.execute('github-publisher',async ({ledger,transaction})=>{
++    ledgerRef=ledger;
++    const lease=inspectStandingTransaction(transaction);
++    assert.equal(lease.phase,'admission');
++    return {...task};
++  },{async verifyTask(t,{transaction}){const lease=inspectStandingTransaction(transaction);
++    assert.equal(lease.taskId,t.id);return {verified:true};}},async ({transaction})=>{
++    const lease=inspectStandingTransaction(transaction,{write:true,taskId:task.id,taskSha:task.sha});
++    assert.equal(lease.ledger,ledgerRef);
++    const budget=createStandingPublisherBudget({store,ledger:ledgerRef,transaction,clock:()=>at});
++    const result=await budget.reserve({envelope,effect:effect('first')});
++    process.stdout.write('HOLDER_READY:'+JSON.stringify({phase:lease.phase,budget:result})+'\n');
++    await new Promise(()=>{setInterval(()=>{},1000);});
++  });
++}else if(role==='contender'){
++  const store=await existingState(root);
++  const result=await store.execute('github-publisher',()=>{throw Error('CONCURRENT_ENTRY');},
++    {},()=>{throw Error('UNEXPECTED_EFFECT');});
++  process.stdout.write(JSON.stringify(result)+'\n');
++}else if(role==='orphan'){
++  const store=await existingState(root);
++  const ledger=JSON.parse(await fs.readFile(store.file('autopilot-ledger.json'),'utf8'));
++  let result;
++  try{
++    const budget=createStandingPublisherBudget({store,ledger,clock:()=>at});
++    result=await budget.reserve({envelope,effect:effect('second')});
++  }catch(e){result={error:String(e?.message||e)};}
++  process.stdout.write(JSON.stringify(result)+'\n');
++}else{
++  function run(role,root){
++    return new Promise((resolve,reject)=>{
++      const cp=spawn(process.execPath,[thisFile,root],{env:{...process.env,PROBE_ROLE:role},stdio:['ignore','pipe','pipe']});
++      let out='',err='';cp.stdout.on('data',x=>out+=x);cp.stderr.on('data',x=>err+=x);
++      cp.on('error',reject);cp.on('exit',(code,signal)=>code===0?resolve(JSON.parse(out.trim())):reject(Error(role+': '+code+'/'+signal+' '+err+' '+out)));
++    });
++  }
++  test('real native lock across processes and SIGKILL; orphan adapter regression',async()=>{
++    assert.equal(process.platform,'linux');
++    const store=await initializeState(root);
++    const holder=spawn(process.execPath,[thisFile,root],{env:{...process.env,PROBE_ROLE:'holder'},stdio:['ignore','pipe','pipe']});
++    let err='',buff='';holder.stderr.on('data',d=>err+=d);
++    try{
++      const ready=await new Promise((resolve,reject)=>{
++        const tm=setTimeout(()=>reject(Error('holder timed out '+err+' '+buff)),12000);
++        holder.stdout.on('data',d=>{buff+=d.toString();const match=buff.match(/HOLDER_READY:(\{[^\n]+\})/);
++          if(match){clearTimeout(tm);resolve(JSON.parse(match[1]));}});
++        holder.on('exit',(code,signal)=>{clearTimeout(tm);reject(Error('holder premature exit '+code+'/'+signal+' '+err));});
++      });
++      assert.equal(ready.phase,'started');
++      assert.equal(ready.budget.status,'RESERVED');
++      const first=JSON.parse(await fs.readFile(store.file('autopilot-ledger.json'),'utf8'));
++      assert.equal(first.mode,'FAILED_LOCKED');
++      assert.equal(first.reason,'IN_FLIGHT_OR_CRASHED');
++      assert.equal(first.jobs[task.id].mode,'STARTED');
++      assert.equal(first.standingDelegationBudget.envelopes[hex64].claims.length,1);
++      const competing=await run('contender',root);
++      assert.equal(competing.mode,'BLOCKED');
++      holder.kill('SIGKILL');
++      await new Promise(resolve=>holder.once('exit',resolve));
++      assert((await fs.stat(store.file('execution.lock'))).isDirectory());
++      const restarted=await run('contender',root);
++      assert.equal(restarted.mode,'BLOCKED');
++      const afterCrash=JSON.parse(await fs.readFile(store.file('autopilot-ledger.json'),'utf8'));
++      assert.equal(afterCrash.standingDelegationBudget.envelopes[hex64].claims.length,1);
++      assert.throws(()=>inspectStandingTransaction({}),/STANDING_TRANSACTION_INVALID/);
++      const orphan=await run('orphan',root);
++      // The default regression MUST enforce native lease ownership. Historical
++      // exploit reproduction belongs in a separate pre-fix checkout; forgetting
++      // an environment switch must not make the unsafe outcome an expected PASS.
++      assert.notEqual(orphan.status,'RESERVED','orphan may never reserve without native lease');
++      assert.match(orphan.error||orphan.reason||'',/STANDING_TRANSACTION_INVALID|BUDGET_NATIVE/);
++      const final=JSON.parse(await fs.readFile(store.file('autopilot-ledger.json'),'utf8'));
++      assert.equal(final.standingDelegationBudget.envelopes[hex64].claims.length,1);
++      console.log('PROOF:'+JSON.stringify({nativeCompeting:competing.mode,afterSigkill:restarted.mode,
++        orphanReserve:orphan.status||orphan.error,claimsAfter:final.standingDelegationBudget.envelopes[hex64].claims.length,
++        baselineDefect:false}));
++    }finally{if(holder.exitCode===null&&holder.signalCode===null){holder.kill('SIGKILL');await new Promise(resolve=>holder.once('exit',resolve));}
++      await fs.rm(root,{recursive:true,force:true});}
++  });
++  test('native admission, preflight, started write, postflight share one durable journal',async()=>{
++    const phaseRoot=root+'-phases';
++    await fs.mkdir(phaseRoot,{mode:0o700});
++    const store=await initializeState(phaseRoot);
++    const cap={...envelope,maxOperations:4,maxRequests:4,maxWrites:2};
++    let budget,verifyCount=0;
++    const read=(id,taskId,taskSha)=>{
++      const method='GET',route='branches/main',payloadSha256=h('');
++      return {effectId:id,taskId,taskSha,headSha:taskSha,kind:'github-read',
++        method,route,payloadSha256,
++        requestSha256:h(JSON.stringify({method,route,payloadSha256})),
++        envelopeDigest:hex64,repo:task.repo,environment:'beget-staging',
++        target:'pqukibofpo',action:'source'};
++    };
++    try{
++      const result=await store.execute('github-publisher',
++        async ({ledger,transaction})=>{
++          const lease=inspectStandingTransaction(transaction);
++          assert.equal(lease.phase,'admission');
++          budget=createStandingPublisherBudget({store,ledger,transaction,
++            admissionBaseSha:sha40,clock:()=>at});
++          const admissionWrongHead=read('admission-head-spoof','admission-'+lease.transactionId,sha40);
++          admissionWrongHead.headSha='f'.repeat(40);
++          const wrongAdmission=await budget.reserve({envelope:cap,effect:admissionWrongHead});
++          console.log('ADMISSION_HEAD_SPOOF_RESULT:'+JSON.stringify(wrongAdmission));
++          assert.equal(wrongAdmission.reason,'BUDGET_NATIVE_LEASE_MISMATCH');
++          const a=await budget.reserve({envelope:cap,
++            effect:read('snapshot','admission-'+lease.transactionId,sha40)});
++          assert.equal(a.status,'RESERVED');
++          return {...task};
++        },{async verifyTask(t,{transaction}){
++          const lease=inspectStandingTransaction(transaction);
++          verifyCount++;
++          assert.equal(lease.taskId,t.id);
++          assert.equal(lease.phase,verifyCount===1?'preflight':'postflight');
++          const wrong=read('wrong','wrong-task',sha40);
++          assert.equal((await budget.reserve({envelope:cap,effect:wrong})).reason,
++            'BUDGET_NATIVE_LEASE_MISMATCH');
++          const original=read('verify-'+verifyCount,t.id,t.sha);
++          if(verifyCount===2)original.headSha='a'.repeat(40); // newer candidate postflight
++          const promise=budget.reserve({envelope:cap,effect:original});
++          original.taskId='altered-after-call';original.taskSha='d'.repeat(40);
++          original.method='POST';original.route='git/commits';
++          assert.equal((await promise).status,'RESERVED');
++          return {verified:true};
++        }},async ({transaction})=>{
++          const lease=inspectStandingTransaction(transaction,{write:true,taskId:task.id,taskSha:task.sha});
++          assert.equal(lease.phase,'started');
++          const newCandidateWrite={...effect('publish'),headSha:'f'.repeat(40)};
++          assert.equal((await budget.reserve({envelope:cap,effect:newCandidateWrite})).status,'RESERVED');
++          return {status:'WAITING',reason:'SOURCE_ONLY_NO_REMOTE_EFFECT'};
++        });
++      assert.equal(result.mode,'WAITING');
++      assert.equal(verifyCount,2);
++      const committed=JSON.parse(await fs.readFile(store.file('autopilot-ledger.json'),'utf8'));
++      assert.equal(committed.mode,'IDLE');
++      const child=committed.standingDelegationBudget.envelopes[hex64];
++      assert.deepEqual([child.operations,child.requests,child.writes,child.claims.length],[4,4,1,4]);
++      assert.deepEqual(child.claims.map(c=>c.effectId),['snapshot','verify-1','publish','verify-2']);
++      assert.deepEqual(child.claims.map(c=>c.taskId).slice(1),[task.id,task.id,task.id]);
++      assert.equal(child.claims[1].method,'GET');
++      assert.equal(child.claims[3].method,'GET');
++      console.log('PHASE_PROOF:'+JSON.stringify({mode:committed.mode,
++        requests:child.requests,writes:child.writes,phases:['admission','preflight','started','postflight'],
++        wrongTaskDenied:true,mutatedInputIgnored:true}));
++    }finally{await fs.rm(phaseRoot,{recursive:true,force:true});}
++  });
++
++test('native owner-lock path replacement refuses a second claim, preserving the journal',async()=>{
++  // Isolated same-UID directory replacement; not a live operation or a claim
++  // of protection against every filesystem adversary. The original lease
++  // remains held while the pathname points to a different directory inode.
++  const swapRoot=root+'-swap';
++  await fs.mkdir(swapRoot,{mode:0o700});
++  const store=await initializeState(swapRoot);
++  let ledgerRef;
++  try {
++    const result=await store.execute('github-publisher',
++      async({ledger})=>{ledgerRef=ledger;return {...task};},
++      {async verifyTask(){return {verified:true};}},
++      async({transaction})=>{
++        const lease=inspectStandingTransaction(transaction,{write:true});
++        assert.equal(lease.phase,'started');
++        const budget=createStandingPublisherBudget({store,ledger:ledgerRef,transaction,clock:()=>at});
++        const original=store.file('execution.lock');
++        const moved=original+'-old-lease';
++        await fs.rename(original,moved);
++        await fs.mkdir(original,{mode:0o700});
++        let attempted;
++        try{
++          attempted=await budget.reserve({envelope,effect:effect('path-replaced')});
++          console.log('SWAP_RESERVATION:'+JSON.stringify(attempted));
++          assert.equal(attempted.reason,'BUDGET_NATIVE_LEASE_MISMATCH',
++            'a new inode at the lock pathname cannot authorize the old lease');
++          assert.equal(ledgerRef.standingDelegationBudget?.envelopes?.[hex64],undefined);
++          const onDisk=JSON.parse(await fs.readFile(store.file('autopilot-ledger.json'),'utf8'));
++          assert.equal(onDisk.standingDelegationBudget?.envelopes?.[hex64],undefined);
++        }finally{
++          await fs.rmdir(original);
++          await fs.rename(moved,original);
++        }
++        return {status:'WAITING',reason:'SOURCE_ONLY_LOCK_SWAP_TEST'};
++      });
++    assert.equal(result.mode,'WAITING');
++  }finally{
++    await fs.rm(swapRoot,{recursive:true,force:true});
++  }
++});
++
++}
+diff --git a/scripts/strigunov4/execution-adapters/standing-budget-preview-seam.test.mjs b/scripts/strigunov4/execution-adapters/standing-budget-preview-seam.test.mjs
+new file mode 100644
+index 00000000..1bcf3761
+--- /dev/null
++++ b/scripts/strigunov4/execution-adapters/standing-budget-preview-seam.test.mjs
+@@ -0,0 +1,34 @@
++import test from 'node:test';
++import assert from 'node:assert/strict';
++import fs from 'node:fs/promises';
++import os from 'node:os';
++import path from 'node:path';
++import {initializeState,digest} from './state.mjs';
++import {createStandingRequestPreview} from './standing-request-guard.mjs';
++
++const base='c'.repeat(40);
++test('native preview seam requires independently pinned admission base and the actual execute transaction',async()=>{
++  const root=await fs.mkdtemp(path.join(os.tmpdir(),'asi-p0-preview-lease-'));
++  try{
++    const store=await initializeState(root);
++    const result=await store.execute('github-publisher',async({ledger,transaction})=>{
++      const opts={store,transaction,signedEnvelope:null,signedEvidence:null,
++        request:{baseSha:base,headSha:null},comparison:{},
++        providerExpected:{independentReviewerId:1234},expectedTrust:{},
++        isolatedPreview:true,publisherPhases:true};
++      assert.throws(()=>createStandingRequestPreview(opts),/STANDING_BASE_SHA_PIN_REQUIRED/);
++      assert.throws(()=>createStandingRequestPreview({...opts,admissionBaseSha:'d'.repeat(40)}),
++        /STANDING_BASE_SHA_PIN_REQUIRED/);
++      const preview=createStandingRequestPreview({...opts,admissionBaseSha:base});
++      assert.equal(await preview.beforeRequest(),false);
++      const method='GET',route='branches/main',payloadSha256=digest('');
++      const observation=await preview.reserve({method,route,payloadSha256,
++        requestSha256:digest(JSON.stringify({method,route,payloadSha256}))});
++      assert.equal(observation.status,'BLOCKED');
++      assert.equal(observation.authorized,false);
++      assert.equal(ledger.standingDelegationBudget,undefined);
++      return null;
++    },{},()=>{throw Error('unexpected-action');});
++    assert.equal(result.mode,'WAITING');
++  }finally{await fs.rm(root,{recursive:true,force:true});}
++});
+diff --git a/scripts/strigunov4/execution-adapters/standing-budget.mjs b/scripts/strigunov4/execution-adapters/standing-budget.mjs
+index b153f37d..beafbaf0 100644
+--- a/scripts/strigunov4/execution-adapters/standing-budget.mjs
++++ b/scripts/strigunov4/execution-adapters/standing-budget.mjs
+@@ -11,8 +11,9 @@
+  * No separate ledger, writer, scheduler, capability or automatic replay.
+  */
+ import fs from 'node:fs/promises';
++import path from 'node:path';
+ import {createHash} from 'node:crypto';
+-import {atomicJson, must} from './state.mjs';
++import {atomicJson, must, inspectStandingTransaction} from './state.mjs';
+ import {isCompiledGitHubRead} from './github-readonly.mjs';
+ 
+ const HEX64 = /^[0-9a-f]{64}$/;
+@@ -144,11 +145,63 @@ function soundJournalEntry(entry, key) {
+ }
+ 
+ /** One instance per existing store.execute transaction; no effects are run. */
+-export function createStandingPublisherBudget({store, ledger, clock=Date.now}={}) {
++export function createStandingPublisherBudget({store, ledger, transaction, admissionBaseSha=null,
++  clock=Date.now}={}) {
+   must(typeof store?.file === 'function' && ledger && typeof ledger === 'object' &&
+     !Array.isArray(ledger) && typeof clock === 'function', 'BUDGET_HOST_REQUIRED');
++  // This is the host's private WeakMap-backed transaction lease, not a string
++  // token, lock-directory lstat, fabricated FAILED_LOCKED ledger or copied object.
++  // It must be minted by the SAME state.execute callback after the durable brake.
++  let initial;
++  try { initial=inspectStandingTransaction(transaction); } catch {}
++  must(initial?.kind==='github-publisher' && initial.root===store.root &&
++    initial.ledger===ledger && typeof initial.transactionId==='string' &&
++    store.file('execution.lock')===path.join(initial.root,'state','execution.lock') &&
++    store.file('autopilot-ledger.json')===path.join(initial.root,'state','autopilot-ledger.json'),
++    'BUDGET_NATIVE_TRANSACTION_REQUIRED');
+   must(!budgetInstances.has(ledger), 'BUDGET_DUPLICATE_TRANSACTION_INSTANCE');
+   budgetInstances.add(ledger);
++  // Snapshot the native lease synchronously at invocation, then reacquire it
++  // after EVERY await and at the commit boundary. No caller-supplied task lease.
++  function nativeLease(effect) {
++    try {
++      const write=WRITES.has(effect.kind);
++      const lease=inspectStandingTransaction(transaction,{write});
++      if (lease.kind!=='github-publisher' || lease.root!==initial.root ||
++          lease.ledger!==ledger || lease.transactionId!==initial.transactionId ||
++          store.root!==initial.root ||
++          store.file('autopilot-ledger.json')!==path.join(initial.root,'state','autopilot-ledger.json') ||
++          store.file('execution.lock')!==path.join(initial.root,'state','execution.lock')) return null;
++      if (lease.phase==='admission') {
++        // Pre-task snapshot GET: not a STARTED job and never a write.
++        // The host must independently pin admissionBaseSha from protected Git.
++        if (write || !h40(admissionBaseSha) ||
++            effect.taskId!=='admission-'+lease.transactionId ||
++            effect.taskSha!==admissionBaseSha || lease.taskId!==null ||
++            lease.taskSha!==null) return null;
++      } else {
++        // Pre-STARTED verify GET and postflight GET use the SAME selected task.
++        // The native state inspector independently verifies exactly one
++        // matching STARTED job for started/postflight and refuses stolen tasks.
++        if (!['preflight','started','postflight'].includes(lease.phase) ||
++            lease.taskId!==effect.taskId || lease.taskSha!==effect.taskSha) return null;
++      }
++      // During pre-task admission the only trusted source HEAD is the
++      // independently pinned protected base; later candidate HEADs can move
++      // within the signed budget and must be authenticated by the host.
++      if (lease.phase==='admission' && effect.headSha!==admissionBaseSha) return null;
++      return Object.freeze({transactionId:lease.transactionId,phase:lease.phase,
++        kind:lease.kind,root:lease.root,ledger:lease.ledger,
++        taskId:lease.taskId,taskSha:lease.taskSha});
++    } catch { return null; }
++  }
++  function leaseStillSame(captured,effect) {
++    const now=nativeLease(effect);
++    return !!captured && !!now && captured.transactionId===now.transactionId &&
++      captured.phase===now.phase && captured.kind===now.kind &&
++      captured.root===now.root && captured.ledger===now.ledger &&
++      captured.taskId===now.taskId && captured.taskSha===now.taskSha;
++  }
+   let tail = Promise.resolve(), poisoned = false;
+   function enqueue(fn) {
+     const next = tail.then(async () => {
+@@ -163,7 +216,7 @@ export function createStandingPublisherBudget({store, ledger, clock=Date.now}={}
+   return Object.freeze({reserve({envelope, effect, readDescriptor}={}) {
+     // A caller may reuse or mutate input objects, but no later mutation may
+     // change the scope or effect of this particular reservation.
+-    let capturedEnvelope, capturedEffect;
++    let capturedEnvelope, capturedEffect, capturedLease;
+     try {
+       capturedEnvelope=snapshot(envelope,ENVELOPE_FIELDS);
+       capturedEffect=snapshot(effect,EFFECT_FIELDS);
+@@ -171,10 +224,12 @@ export function createStandingPublisherBudget({store, ledger, clock=Date.now}={}
+         if(!isCompiledGitHubRead(readDescriptor)||!['method','route','payloadSha256','requestSha256'].every(k=>readDescriptor[k]===capturedEffect[k]))capturedEffect=null;
+         else capturedEffect=Object.freeze({...capturedEffect,readProtocol:'compiled-threads'});
+       }
+-    } catch { capturedEnvelope=null; capturedEffect=null; }
++      if (capturedEffect) capturedLease=nativeLease(capturedEffect);
++    } catch { capturedEnvelope=null; capturedEffect=null; capturedLease=null; }
+     return enqueue(async () => {
+       if (!capturedEnvelope || !capturedEffect) return deny('BUDGET_INPUT_INVALID');
+       const envelope=capturedEnvelope, effect=capturedEffect;
++      if (!leaseStillSame(capturedLease,effect)) return deny('BUDGET_NATIVE_LEASE_MISMATCH');
+       const at = clock();
+       if (!Number.isSafeInteger(at) || at < 0) return deny('BUDGET_CLOCK');
+       const eReason = validateEnvelope(envelope, at);
+@@ -190,6 +245,7 @@ export function createStandingPublisherBudget({store, ledger, clock=Date.now}={}
+         throw x;
+       });
+       if (!lock?.isDirectory() || lock.isSymbolicLink()) return deny('BUDGET_LOCK_ABSENT');
++      if (!leaseStillSame(capturedLease,effect)) return deny('BUDGET_NATIVE_LEASE_MISMATCH');
+       // A slow lock read must not authorize an already-expired envelope.
+       const lockedAt=clock();
+       if (!Number.isSafeInteger(lockedAt) || lockedAt < at) return deny('BUDGET_CLOCK_REGRESSION');
+@@ -256,10 +312,23 @@ export function createStandingPublisherBudget({store, ledger, clock=Date.now}={}
+         requests:before.requests + 1,writes:before.writes + write,
+         claims:[...before.claims,claim]};
+       const next = {version:1,envelopes:{...budget.envelopes,[scope.digest]:updated}};
++      // Abort if the native lease/phase or expiry changed while validating
++      // history. Never create a second ledger or make a paid/provider call.
++      const commitAt=clock();
++      if (!Number.isSafeInteger(commitAt) || commitAt<lockedAt)
++        return deny('BUDGET_CLOCK_REGRESSION');
++      if (validateEnvelope(envelope,commitAt))return deny('BUDGET_ENVELOPE_SCOPE');
++      if (!leaseStillSame(capturedLease,effect)) return deny('BUDGET_NATIVE_LEASE_MISMATCH');
+       // Exactly one durable commit using the existing atomic file writer.
+       // Do not mutate the shared in-memory ledger before fsync success.
+       await atomicJson(store.file('autopilot-ledger.json'),{...ledger,standingDelegationBudget:next});
+       ledger.standingDelegationBudget = next;
++      // If state.execute ended or expiry hit during fsync, the claim stays
++      // spent and must NOT return a usable receipt; force FAILED_LOCKED.
++      const afterCommitAt=clock();
++      must(Number.isSafeInteger(afterCommitAt) && afterCommitAt>=commitAt &&
++        !validateEnvelope(envelope,afterCommitAt) &&
++        leaseStillSame(capturedLease,effect),'BUDGET_NATIVE_LEASE_CHANGED_AFTER_COMMIT');
+       return Object.freeze({status:'RESERVED',reserved:true,envelopeDigest:scope.digest,
+         effectId:claim.effectId,taskId:claim.taskId,taskSha:claim.taskSha,
+         requestSha256:claim.requestSha256,headSha:claim.headSha,
+diff --git a/scripts/strigunov4/execution-adapters/standing-request-guard.mjs b/scripts/strigunov4/execution-adapters/standing-request-guard.mjs
+index d82ccbdc..45cf6592 100644
+--- a/scripts/strigunov4/execution-adapters/standing-request-guard.mjs
++++ b/scripts/strigunov4/execution-adapters/standing-request-guard.mjs
+@@ -43,7 +43,7 @@ export function isIsolatedStandingPreviewRoot(root){
+ /** Isolated preview only. Never attach reserve() to transport: its result is NOT true. */
+ export function createStandingRequestPreview({store,transaction,signedEnvelope,signedEvidence,
+   request,comparison,providerObservation,providerExpected,expectedTrust,clock=Date.now,protectedReader,
+-  isolatedPreview=false,publisherPhases=false,expectedAdoptionDigest=null}={}) {
++  admissionBaseSha=null,isolatedPreview=false,publisherPhases=false,expectedAdoptionDigest=null}={}) {
+   const initial=inspectStandingTransaction(transaction);
+   must(expectedAdoptionDigest===null||h64(expectedAdoptionDigest),'STANDING_ADOPTION_PIN');
+   must(typeof publisherPhases==='boolean','STANDING_PHASE_MODE');
+@@ -54,6 +54,10 @@ export function createStandingRequestPreview({store,transaction,signedEnvelope,s
+     initial.kind==='github-publisher','STANDING_STORE_MISMATCH');
+   // Signed strings, comparison and proposal context are copied before asynchronous work.
+   const input=dataCopy({signedEnvelope,signedEvidence,request,comparison,providerObservation:providerObservation??null,providerExpected:providerExpected??null,expectedTrust});
++  // The host must independently pin protected main BEFORE the first metered
++  // admission GET; signed request data alone is not a native base-SHA proof.
++  must(typeof admissionBaseSha==='string'&&/^[a-f0-9]{40}$/.test(admissionBaseSha)&&
++    admissionBaseSha===input.request?.baseSha,'STANDING_BASE_SHA_PIN_REQUIRED');
+   // Journal paths come only from the authenticated state lease, never a caller facade.
+   const boundStore=Object.freeze({root:initial.root,file(name){
+     must(['execution.lock','autopilot-ledger.json'].includes(name),'STANDING_STATE_PATH');
+@@ -68,7 +72,8 @@ export function createStandingRequestPreview({store,transaction,signedEnvelope,s
+     must(Number.isSafeInteger(at)&&at>=0&&at>=clockHighWater,'STANDING_CLOCK_REGRESSION');
+     clockHighWater=at;return at;
+   };
+-  const ledger=initial.ledger,budget=createStandingPublisherBudget({store:boundStore,ledger,clock});
++  const ledger=initial.ledger,budget=createStandingPublisherBudget({store:boundStore,ledger,
++    transaction,admissionBaseSha,clock});
+   let ordinal=0,poisoned=false,bootstrapActive=false,releaseActive=false,pending=0,providerAttempted=false,authenticatedObservation;
+   let tail=Promise.resolve(),phaseChanging=false,localPhase=null,exactPhase=null,phaseProvider=null;
+   const admissionPhase={phase:'ADMISSION_READ',signedEvidence:input.signedEvidence,request:input.request,comparison:input.comparison};
+@@ -187,7 +192,9 @@ export function createStandingRequestPreview({store,transaction,signedEnvelope,s
+         ledger.standingRequestBindings=nextBindings;
+         inspectStandingTransaction(transaction,{write});
+         const result=await budget.reserve({readDescriptor,envelope:{...envelope,envelopeDigest},effect:{effectId,
+-          taskId,taskSha,headSha:publisherPhases?input.request.baseSha:input.request.headSha,method,route,payloadSha256,requestSha256,kind,envelopeDigest,repo:envelope.repo,environment:envelope.environment,
++          taskId,taskSha,headSha:lease.phase==='admission'?admissionBaseSha:
++            publisherPhases?input.request.baseSha:input.request.headSha,
++          method,route,payloadSha256,requestSha256,kind,envelopeDigest,repo:envelope.repo,environment:envelope.environment,
+           target:envelope.target,action:envelope.action}});
+         inspectStandingTransaction(transaction,{write});
+         must(result.status==='RESERVED','STANDING_BUDGET_BLOCKED');
+diff --git a/scripts/strigunov4/execution-adapters/state.mjs b/scripts/strigunov4/execution-adapters/state.mjs
+index df4bbdaf..73ed617e 100644
+--- a/scripts/strigunov4/execution-adapters/state.mjs
++++ b/scripts/strigunov4/execution-adapters/state.mjs
+@@ -1,4 +1,5 @@
+ import fs from 'node:fs/promises';
++import { lstatSync } from 'node:fs';
+ import path from 'node:path';
+ import { randomUUID, createHash } from 'node:crypto';
+ import {assertLiveAdmission,BEGET} from './host-authority.mjs';
+@@ -103,9 +104,16 @@ function stateAt(root,liveAdmission) {
+   return { root, file, async execute(kind, task, github, action) {
+     if(root === LIVE_ROOT || root.startsWith(LIVE_ROOT + '/') || root===BEGET.root || root.startsWith(BEGET.root+'/'))assertLiveAdmission(liveAdmission,root);
+     const lock = file('execution.lock');
+-    let lockCreated = false;
++    let lockCreated = false, ownedLockIdentity;
+     try {
+       await fs.mkdir(lock, { mode: 0o700 }); lockCreated = true;
++      // Pin the specific filesystem object this execute() acquired, BEFORE
++      // the first asynchronous fsync of the parent directory. The pathname
++      // alone is insufficient: another process under this UID could rename
++      // execution.lock and replace it with a different directory.
++      const acquired = lstatSync(lock,{bigint:true});
++      must(acquired.isDirectory() && !acquired.isSymbolicLink(), 'LOCK_OWNER_CAPTURE_FAILED');
++      ownedLockIdentity = Object.freeze({dev:acquired.dev,ino:acquired.ino});
+       await syncDir(path.dirname(lock));
+     } catch (e) {
+       if (!lockCreated && e.code === 'EEXIST')
+@@ -125,6 +133,14 @@ function stateAt(root,liveAdmission) {
+     const beginTransaction = () => {
+       transaction = Object.freeze({}); phase = 'admission';
+       standingTransactions.set(transaction, ({write,taskId,taskSha}) => {
++        // Check the *original* mkdir inode on every native lease inspection.
++        // In particular, another directory at the same path is not our lock.
++        let present;
++        try { present=lstatSync(lock,{bigint:true}); } catch {}
++        must(!!ownedLockIdentity && present?.isDirectory() &&
++          !present.isSymbolicLink() &&
++          present.dev===ownedLockIdentity.dev &&
++          present.ino===ownedLockIdentity.ino, 'STANDING_LOCK_OWNER_CHANGED');
+         must(armed && phase !== 'closed' && ledger?.mode === 'FAILED_LOCKED' &&
+           ledger.reason === 'IN_FLIGHT_OR_CRASHED', 'STANDING_TRANSACTION_INACTIVE');
+         must(typeof write === 'boolean', 'STANDING_TRANSACTION_OPERATION');
