@@ -2,6 +2,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import {atomicWriteJson} from '../strigunov4/ASI-STRIGUNOV4-ORCHESTRATOR-CANDIDATE-20261020.mjs';
 import {must, hash} from './product-adapters.mjs';
+import {inspectTaskIntake} from './task-intake.mjs';
 
 const schema = 'asi.global-routing.v1';
 const own = (object, key) => Object.hasOwn(object, key);
@@ -52,6 +53,18 @@ async function readState(filename) {
       new Set(p.terminal.map(t => t.id)).size === p.terminal.length &&
       Array.isArray(p.planned) && p.planned.every(x => id(x.id) && typeof x.stage === 'string' && /^[a-f0-9]{40}$/.test(x.head)) &&
       new Set(p.planned.map(t => t.id)).size === p.planned.length, 'PRODUCT_STATE_SCHEMA');
+    if (p.intake !== undefined) {
+      must(Array.isArray(p.intake) && p.intake.length <= 250 &&
+        p.intake.every(r => typeof r.id === 'string' && /^[a-z][a-z0-9-]{0,79}$/.test(r.id) &&
+          /^[a-f0-9]{64}$/.test(r.intentKey) &&
+          ['ACCEPTED','DUPLICATE','ALREADY_DONE','NO_VALUE','OUT_OF_SCOPE',
+           'ILL_LOGICAL','BLOCKED_DEPENDENCY','NEEDS_OWNER_DECISION'].includes(r.status) &&
+          typeof r.reason === 'string' && r.reason.length > 0 && r.reason.length <= 900 &&
+          typeof r.alternative === 'string' && r.alternative.length > 0 && r.alternative.length <= 900 &&
+          /^[a-f0-9]{64}$/.test(r.goalPlanHash)) &&
+        new Set(p.intake.map(r => r.id)).size === p.intake.length,
+        'TASK_INTAKE_JOURNAL_INVALID');
+    }
     if (p.goalGraph !== undefined) {
       validateGoalGraph(p.goalGraph, p.id);
       must([...p.planned, ...p.terminal].every(t => p.goalGraph.nodes.some(n => n.id === t.id)),
@@ -89,6 +102,7 @@ export function createGlobalDispatcher({stateDir, adapters} = {}) {
     'ROUTING_CONFIGURATION');
   must(adapters.every(a => /^[a-z][a-z0-9-]{0,79}$/.test(a.id) &&
     /^[a-f0-9]{64}$/.test(a.contractHash) && a.contract?.execution === 'disabled' &&
+    (a.triage === undefined || (a.goalPlanning === true && typeof a.triage === 'function')) &&
     a.contract.maxAttemptsPerTask === 1 && Number.isSafeInteger(a.contract.maxPlansPerStage) &&
     a.contract.maxPlansPerStage >= 1 && a.contract.maxPlansPerStage <= 10 && typeof a.evaluate === 'function') &&
     new Set(adapters.map(a => a.id)).size === adapters.length, 'UNIQUE_DISABLED_ADAPTERS_REQUIRED');
@@ -98,7 +112,8 @@ export function createGlobalDispatcher({stateDir, adapters} = {}) {
   // contract object that was already registered against a persistent hash.
   const routes = adapters.map(a => ({id: a.id, contractHash: a.contractHash,
     evaluate: a.evaluate.bind(a), maxPlansPerStage: a.contract.maxPlansPerStage,
-    goalPlanning: a.goalPlanning === true, maxConcurrentPlans: a.maxConcurrentPlans ?? 1}));
+    goalPlanning: a.goalPlanning === true, maxConcurrentPlans: a.maxConcurrentPlans ?? 1,
+    triage: a.triage === undefined ? null : a.triage.bind(a)}));
   return Object.freeze({async plan(snapshots) {
     let lock;
     const lockPath = path.join(stateDir, 'routing.lock');
@@ -201,14 +216,50 @@ export function createGlobalDispatcher({stateDir, adapters} = {}) {
       // task priority applies within a product, never steals another product's turn.
       ready.sort((a, b) => state.products.find(p => p.id === a.product).lastSelected -
         state.products.find(p => p.id === b.product).lastSelected || a.product.localeCompare(b.product));
-      const winner = ready[0];
+      // Evaluate useful work BEFORE consuming the existing routing slot.
+      // A triage result never implies a native Engine or Publisher capability.
       let selected = null;
-      if (winner) {
-        const candidate = [...winner.candidates].sort((a, b) => b.priority - a.priority || a.id.localeCompare(b.id))[0];
+      for (const winner of ready) {
+        if (selected) break;
+        const route=routes.find(x=>x.id===winner.product);
+        const product=state.products.find(x=>x.id===winner.product);
+        for(const candidate of [...winner.candidates].sort((a,b)=>
+          b.priority-a.priority||a.id.localeCompare(b.id))) {
+          if(route.triage){
+            product.intake ??= [];
+            if(product.intake.some(x=>x.id===candidate.id))continue;
+            let assessment;
+            try{assessment=route.triage(Object.freeze({
+              product:winner.product,candidate:structuredClone(candidate),
+              goalGraph:structuredClone(product.goalGraph)
+            }));}catch{assessment=null;}
+            const verdict=inspectTaskIntake({product:winner.product,
+              task:candidate,goalGraph:product.goalGraph,assessment,
+              history:product.intake});
+            let status=verdict.status,reason=verdict.reason;
+            if(status==='ACCEPTED'&&state.products.some(other=>
+              other.planned.some(plan=>
+                !other.terminal.some(t=>t.id===plan.id)&&
+                other.goalGraph?.nodes.find(n=>n.id===plan.id)?.paths?.some(path=>
+                  candidate.paths.includes(path))))){
+              status='BLOCKED_DEPENDENCY';
+              reason='OVERLAPPING_IN_FLIGHT_CODE_PATH';
+            }
+            const intentKey=verdict.intentKey??hash({product:winner.product,id:candidate.id});
+            product.intake.push({id:candidate.id,intentKey,status,reason,
+              alternative:verdict.alternative,goalPlanHash:product.goalGraph.planHash});
+            if(status!=='ACCEPTED'){
+              winner.intakeDecision={taskId:candidate.id,status,reason,
+                alternative:verdict.alternative};
+              winner.status='BLOCKED';winner.candidates=[];
+              winner.nextAction='Reject task '+candidate.id+': '+reason+
+                '; alternative: '+verdict.alternative;
+              continue;
+            }
+          }
         // Never forward arbitrary snapshot fields (including authority-shaped data).
         const task = {id: candidate.id, stage: winner.stage, operation: candidate.operation,
           tool: candidate.tool, paths: [...candidate.paths]};
-        const product = state.products.find(p => p.id === winner.product);
         must(Number.isSafeInteger(state.tick + 1), 'ROUTING_COUNTER_EXHAUSTED');
         product.lastSelected = ++state.tick;
         product.planned.push({id: task.id, stage: winner.stage, head: winner.head});
@@ -216,6 +267,8 @@ export function createGlobalDispatcher({stateDir, adapters} = {}) {
           repository: winner.repository, head: winner.head, task,
           ...(product.goalGraph ? {goalPlanHash: product.goalGraph.planHash} : {}),
           executable: false, authority: null};
+          break;
+        }
       }
       must(Buffer.byteLength(JSON.stringify({state, checksum: hash(state)}, null, 2) + '\n') < 900_000,
         'ROUTING_JOURNAL_FULL');
