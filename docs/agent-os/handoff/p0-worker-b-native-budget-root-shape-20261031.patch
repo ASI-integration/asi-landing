@@ -1,0 +1,50 @@
+diff --git a/scripts/strigunov4/execution-adapters/standing-budget.mjs b/scripts/strigunov4/execution-adapters/standing-budget.mjs
+index beafbaf0..d0c8a8c9 100644
+--- a/scripts/strigunov4/execution-adapters/standing-budget.mjs
++++ b/scripts/strigunov4/execution-adapters/standing-budget.mjs
+@@ -254,8 +254,14 @@ export function createStandingPublisherBudget({store, ledger, transaction, admis
+         return deny('BUDGET_NOT_IN_ACTIVE_TRANSACTION');
+       must(ledger.schemaVersion === 'asi.execution-adapters.v1' && ledger.jobs &&
+         typeof ledger.jobs === 'object' && !Array.isArray(ledger.jobs), 'BUDGET_LEDGER_INVALID');
+-      const root = ledger.standingDelegationBudget;
+-      if (root !== undefined) must(root && root.version === 1 && root.envelopes &&
++      // Only an ABSENT own journal field represents a pristine first claim.
++      // Explicit undefined, inherited state or accessor getters must never
++      // reset retained claims or run a setter after the fsynced write.
++      const budgetDescriptor = Object.getOwnPropertyDescriptor(ledger,'standingDelegationBudget');
++      must(budgetDescriptor ? Object.hasOwn(budgetDescriptor,'value') :
++        !('standingDelegationBudget' in ledger), 'BUDGET_LEDGER_INVALID');
++      const root = budgetDescriptor?.value;
++      if (budgetDescriptor) must(root && root.version === 1 && root.envelopes &&
+         typeof root.envelopes === 'object' && !Array.isArray(root.envelopes) &&
+         Object.keys(root.envelopes).length <= MAX_ENVELOPES, 'BUDGET_LEDGER_INVALID');
+       const budget = root || {version:1,envelopes:{}};
+diff --git a/scripts/strigunov4/execution-adapters/standing-budget.test.mjs b/scripts/strigunov4/execution-adapters/standing-budget.test.mjs
+index 15e1f769..ebb44216 100644
+--- a/scripts/strigunov4/execution-adapters/standing-budget.test.mjs
++++ b/scripts/strigunov4/execution-adapters/standing-budget.test.mjs
+@@ -441,3 +441,24 @@ test('a child rotation cannot recycle a spent digest with expanded validity or c
+     assert.deepEqual((await f.read()).standingDelegationBudget,spent.standingDelegationBudget);
+   }finally{await f.close()}
+ });
++
++test('native reservation refuses explicit undefined or accessor budget root instead of treating it as pristine',async()=>{
++  const outcomes=[];
++  for(const variant of ['own-undefined','accessor-undefined']){
++    const f=await fixture();
++    try{
++      if(variant==='own-undefined'){
++        Object.defineProperty(f.ledger,'standingDelegationBudget',
++          {value:undefined,writable:true,enumerable:true,configurable:true});
++      }else{
++        Object.defineProperty(f.ledger,'standingDelegationBudget',
++          {get(){return undefined},enumerable:true,configurable:true});
++      }
++      try{
++        const result=await f.budget.reserve({envelope:env(),effect:effect('root-tampered')});
++        outcomes.push(result.status);
++      }catch(err){outcomes.push(err.message)}
++    }finally{await f.close()}
++  }
++  assert.deepEqual(outcomes,['BUDGET_LEDGER_INVALID','BUDGET_LEDGER_INVALID']);
++});
