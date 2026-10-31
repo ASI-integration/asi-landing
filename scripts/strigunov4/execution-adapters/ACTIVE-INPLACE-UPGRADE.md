@@ -104,3 +104,24 @@ A real owner-signed, independently reviewed root executor remains needed.
 Passing these source/scratch tests is NOT signed adoption, live installation
 or physical five-lane autonomous acceptance. Keep the current one Engine
 running until every named native and owner installation gate succeeds.
+
+## Unified native one-Engine candidate — real admission status
+
+The scratch-only merged source of existing Draft PRs #556/#567/#568/#569
+builds 39 source modules (old installed generation has 19). The separate
+beget-live-upgrade.py has a signed --apply path targeting only the
+existing unit; it is NOT activated or installed. It requires an owner
+Ed25519 exact old/new grant, future signed catalog, native five-lane
+reviewed host wiring, remote receipt reconciliation, immutable history
+backup, one-use claim and restart verification. It never uses the old
+first-install apply against an active service. FAILED_LOCKED history
+survives in a root-only archive; budget counters are preserved.
+Unknown external effects after any start attempt forbid auto rollback.
+
+Observed physical Beget --plan result: NATIVE_HOST_RUNTIME_NOT_WIRED.
+All required module files are present, but native host-runtime still
+supports only the original two G2 tasks. No actual five-lane issuer,
+new native activation, authorized AI budget or signed new host-update
+approval currently exists. This package must NOT be signed or installed.
+Before protected release, the native host path needs independently
+reviewed integration under NORMAL_OWNER_CONTROLLED.

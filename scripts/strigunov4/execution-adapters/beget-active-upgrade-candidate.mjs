@@ -18,6 +18,14 @@ const digest=b=>createHash('sha256').update(b).digest('hex');
 const LIVE='/opt/asi-engine';
 const ROOT='/var/lib/asi-engine';
 const UNIT='asi-strigunov-agent.service';
+export const ACTIVE_RUNTIME_ROOTS=Object.freeze([
+  'strigunov4/execution-adapters/owner-lane-native-bridge.mjs',
+  'strigunov4/source-work-intake.mjs',
+  'strigunov4/source-responses-provider.mjs',
+  'strigunov4/source-git-context.mjs',
+  'strigunov4/source-publisher-handoff.mjs',
+  'strigunov4/execution-adapters/autonomy-recovery-observer.mjs'
+]);
 export const STANDING_RUNTIME_ROOTS=Object.freeze([
   'strigunov4/execution-adapters/standing-budget.mjs',
   'strigunov4/execution-adapters/standing-parent-budget-proposal.mjs',
@@ -72,9 +80,10 @@ export async function buildActiveStandingUpgradeCandidate({
   // Prevent replacing owner state or a running service by construction. This
   // invokes only the original source closure builder in a separate scratch.
   const manifest=await buildBegetCandidate({
-    repository,output,baseSha,extraRuntimeRoots:STANDING_RUNTIME_ROOTS
+    repository,output,baseSha,
+    extraRuntimeRoots:[...STANDING_RUNTIME_ROOTS,...ACTIVE_RUNTIME_ROOTS]
   });
-  const roots=STANDING_RUNTIME_ROOTS.map(p=>'scripts/'+p);
+  const roots=[...STANDING_RUNTIME_ROOTS,...ACTIVE_RUNTIME_ROOTS].map(p=>'scripts/'+p);
   const names=manifest.files.map(f=>f.path);
   if(!roots.every(p=>names.includes(p))||!names.includes(manifest.entry)||
     manifest.sourceSha!==expectedSourceSha||manifest.baseSha!==baseSha||
@@ -91,7 +100,9 @@ export async function buildActiveStandingUpgradeCandidate({
     proposed:{sourceSha:manifest.sourceSha,baseSha,
       manifestSha256:digest(manifestRaw),
       catalogSha256:manifest.catalogSha256,unitSha256:manifest.unitSha256,
-      fileCount:manifest.files.length,standingModuleCount:roots.length},
+      fileCount:manifest.files.length,
+      standingModuleCount:STANDING_RUNTIME_ROOTS.length,
+      autonomyModuleCount:ACTIVE_RUNTIME_ROOTS.length},
     target:{runtime:LIVE,privateState:ROOT,service:UNIT},
     continuity:{
       preserveExistingRuntime:true,preserveExistingPrivateState:true,

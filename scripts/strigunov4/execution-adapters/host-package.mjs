@@ -14,6 +14,14 @@ export async function buildRuntimeClosure({repository,output,extraRoots=[]}){
   const scripts=path.join(await fs.realpath(repository),'scripts'),files={};
   await fs.mkdir(output,{mode:0o700});
   must(await fs.realpath(output)===path.resolve(output),'PACKAGE_OUTPUT_PATH');
+  const namedAutonomyRoots=new Set([
+    'strigunov4/execution-adapters/owner-lane-native-bridge.mjs',
+    'strigunov4/source-work-intake.mjs',
+    'strigunov4/source-responses-provider.mjs',
+    'strigunov4/source-git-context.mjs',
+    'strigunov4/source-publisher-handoff.mjs',
+    'strigunov4/execution-adapters/autonomy-recovery-observer.mjs'
+  ]);
   const standingAgentDependencies=new Set([
     'agent-os/check-demo-release.mjs',
     'agent-os/release-envelope-review-freshness.mjs',
@@ -24,7 +32,8 @@ export async function buildRuntimeClosure({repository,output,extraRoots=[]}){
   async function copy(relative){
     const name=path.posix.normalize(relative);
     must((/^strigunov4\/[A-Za-z0-9_./-]+\.mjs$/.test(name)||
-      ['global-dispatcher/dispatcher.mjs','global-dispatcher/product-adapters.mjs'].includes(name)||
+      ['global-dispatcher/dispatcher.mjs','global-dispatcher/product-adapters.mjs',
+       'global-dispatcher/task-intake.mjs'].includes(name)||
       (extraRoots.length>0&&standingAgentDependencies.has(name)))&&
       !name.split('/').includes('..'),'PACKAGE_IMPORT_SCOPE');
     if(Object.hasOwn(files,name))return;
@@ -47,7 +56,8 @@ export async function buildRuntimeClosure({repository,output,extraRoots=[]}){
     new Set(extraRoots).size===extraRoots.length,'PACKAGE_EXTRA_ROOTS');
   for(const extra of extraRoots){
     must(typeof extra==='string'&&
-      /^strigunov4\/execution-adapters\/standing-[a-z-]+\.mjs$/.test(extra),
+      (/^strigunov4\/execution-adapters\/standing-[a-z-]+\.mjs$/.test(extra)||
+       namedAutonomyRoots.has(extra)),
       'PACKAGE_STANDING_EXTRA_ROOT');
     await copy(extra);
   }
