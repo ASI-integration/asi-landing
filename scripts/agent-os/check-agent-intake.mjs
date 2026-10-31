@@ -186,7 +186,9 @@ export function validateTaskInput(input) {
 
 function sectionBody(markdown, heading) {
   const escaped = heading.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const pattern = new RegExp(`${escaped}[ \\t]*\\r?\\n([\\s\\S]*?)(?=\\r?\\n### |\\r?\\n## |$)`, 'm');
+  // With /m, $ matches every line end, including a blank line after a heading.
+  // Use an absolute end-of-input assertion and require a real heading line.
+  const pattern = new RegExp(`^${escaped}[ \\t]*\\r?\\n([\\s\\S]*?)(?=\\r?\\n#{1,3}[ \\t]|(?![\\s\\S]))`, 'm');
   const match = markdown.match(pattern);
   return match ? match[1].trim() : null;
 }

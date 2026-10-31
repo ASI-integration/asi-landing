@@ -120,3 +120,234 @@
 - Не использовать production credential для staging.
 - Не считать успешный PR check доказательством deploy или live acceptance.
 - При конфликте правил применять более строгий уровень и записывать причину в `BLOCKERS.md`.
+
+
+## DRAFT #551 — standing release envelope (не вступил в силу)
+
+Предложение не меняет v0, действующие owner gates, main/protection или права служб.
+Одна будущая подпись ограничивает repository, target/environment, action-class,
+App/installation, policy/security digest, точные разрешённые пути, срок до 14 суток,
+нулевой paid API budget, счётчик операций и отзыв. Текущий HEAD и artifact digest
+проверяются заново по независимому CI/review; смена HEAD внутри этих границ сама
+по себе не требует подписи владельца. Изменение security contract, policy, secrets,
+permissions или границ требует отдельного решения. Source, release и activation
+не взаимозаменяемы; production не входит в данный проект envelope.
+
+`assessReleaseEnvelopeProposal` в существующем governance-модуле — чистая модель,
+не используемая `checkPr`, CI admission или host Authority. Она всегда возвращает
+`authorized=false`, включая PROPOSAL_ELIGIBLE. JSON от PR не является доверенным
+evidence. Существующие exact-HEAD approvals остаются обязательными.
+
+До защищённого включения необходимы: отдельное утверждение policy digest;
+trusted-base verifier с аутентифицированным owner/signed envelope и свежим отзывом;
+проверка полного diff без rename hiding, policy/security hash из доверенного base;
+связанные с exact HEAD независимые CI/review и artifact evidence; интеграция с
+существующим durable claim/Authority (atomic budget reservation + task idempotency);
+повторная проверка отзыва непосредственно перед effect. UNKNOWN/FAILED_LOCKED
+сохраняются, расход бюджета и срок не сбрасываются при рестарте. Подпись не заменяет
+branch protection, environments, fencing, native isolation, rollback и host checks.
+Криптографический envelopeDigest должен вычисляться по каноническому payload без
+поля самого digest; чистая модель сама не проверяет подпись — disabled adapter ниже
+проверяет её отдельно, без предоставления live authority.
+
+Миграция: draft/tests → independent review → отдельное принятие новой policy →
+интеграция existing Authority/Verifier и CI → изолированные replay/concurrency tests →
+отдельно разрешённый physical acceptance. До этого любые release/install остаются
+BLOCKED. Откат будущей политики: прекратить новые claims, сохранить журнал и
+UNKNOWN, вернуться к v0; не отзывать/менять ключи неявно.
+
+
+Draft adapter update: `assessSignedReleaseEnvelopeProposal` использует извлечённую
+криптографическую функцию существующего host-authority, с реальной Ed25519-проверкой.
+Ключ в production не читается и не создаётся. Подписывается compact JSON payload
+без envelopeDigest; повторные ключи/неканоническая сериализация отклоняются,
+SHA256 вычисляется по точным подписанным байтам. Это не принятие policy и не live
+admission: `authorized=false` всегда. Trusted public key обязан поступать из
+защищённой конфигурации; переданный вызывающим кодом ключ не доказывает identity.
+Повторное использование подписи при новом HEAD требует новых независимых evidence.
+Atomic reservation, свежий отзыв и исчерпывающая проверка security diff по прежнему
+не подключены: поля evidence в draft-тестах — fixtures, не provider evidence.
+
+
+Draft evidence adapter: владелец подписывает fingerprint независимого verifier
+(SHA256 SPKI DER) в envelope. Отдельная Ed25519-подпись witness связывает digest
+этого envelope с current HEAD/base/artifact, временем, отзывом и бюджетом. Тот же
+ключ владельца не может выступать независимым verifier. Проверяется подпись и
+binding, но истинность утверждений verifier требует отдельно проверенного
+producer; self-signed fixture не является GitHub/provider evidence.
+Изолированный тест использует существующий state.execute/ledger: два разных
+задания, reopen между ними и отказ третьему при исчерпании бюджета. Нового ledger
+нет; это test-only verifier внутри существующего lock, не разрешённая публикация.
+До live-интеграции необходимы защищённый key registry, независимый producer,
+полный security-diff inventory и атомарное связывание envelope ID с резервами
+существующего Publisher. Подписи и source tests сами по себе не открывают release.
+
+Draft witness binds the complete `changedPaths` inventory in the same signature as
+HEAD/base/artifact. The adapter rejects a missing or different request inventory
+and applies the protected-path gate to the signed list. The protected producer
+must derive that list from the trusted complete diff, including both rename paths;
+a signature alone still does not prove inventory completeness. No live admission.
+
+
+### P0 trust boundaries and adoption inventory (DRAFT, 29 October)
+
+All non-governance ASI development is on hold by the current owner task. This
+appendix changes no live admission. CODE_PREPARED, GOVERNANCE_ADOPTED and
+ENGINE_ENABLED are independent states; none implies the next.
+
+Existing loops and invariants:
+- `requiredApproval` / `checkPr`: governance changes require exact-head
+  CONTRACT-CHANGE; out-of-stage/legacy exceptions require RELEASE-EXCEPTION.
+  These are source exceptions, never merge/deploy grants.
+- `verifiedOwnerComment`: authenticated numeric owner identity and exact text;
+  agent-authored comments and PR bodies do not count as owner evidence.
+- protected-base `pull_request_target`: checkout base only, fetch head as Git
+  data; never execute PR scripts with trusted credentials. Required protection
+  remains enforced independently of the proposed envelope.
+- Native Authority: signed root-owned artifacts, fixed identities/targets,
+  expiry and catalog bindings. Publisher: existing durable operation reservations,
+  idempotency and unknown-outcome locks; no parallel budget ledger is permitted.
+
+The disabled `assessRepositoryReleaseEnvelopeProposal` now derives the entire
+base...head inventory through the existing `prChanges` helper, with rename
+recognition disabled (both old and new paths), external diff/text conversion
+explicitly disabled. It verifies request SHAs against a separate trusted
+comparison and requires exact equality with signed witness paths. Missing objects
+fail as ENVELOPE_DIFF_UNAVAILABLE, never signature error. It does not checkout or
+execute head content. `trustedComparison` must come from authenticated PR metadata
+in the protected base runner and an operator-controlled object store; accepting
+that object or repoRoot from PR JSON would destroy this boundary. This producer
+seam remains disabled until provenance/configuration and adoption are verified.
+
+Remaining adoption blockers: protected signer registry and authenticated revocation;
+trusted numeric executor/reviewer identities and latest non-dismissed exact-head
+review; trusted required workflow identity/current attempt/base/head and freshness;
+security inventory/digest from protected base; aggregate API/write reservations
+bound atomically to the existing Publisher effect under its existing lock.
+A caller's PASS string, distinct generated test key or local record count cannot
+replace those facts. Authorization still always false. No checkPr bypass is wired.
+
+One policy transition package must pin the final PR552 SHA, policy/security digest,
+independent human authorization under v0, trusted issuer/executor/reviewer/workflow
+identities, finite scope/budget/expiry, protected configuration provenance, test
+receipts and rollback. It must show two different routine HEADs progressing with
+one unchanged valid delegation and fresh trusted CI/review, with all out-of-bounds
+cases blocked, before claiming adoption. Current protected integration is forbidden
+without that verified authority. Rollback stops new admissions while preserving
+claims, budget and UNKNOWN; it does not replay effects or reset durable history.
+
+Dependency distinction: PR552 reuses the Publisher intent/readback journal and
+state lock. The earlier observation that PR549 was unmerged is historical: the
+independent Engine lane integrated it into main at
+`f5e64b276786f8427619378d4fa93e71fdc671de`. This proposal preserves that baseline's
+fencing, stage policy and host request counter, and reviews its own integration
+separately. Source integration is not physical Engine acceptance or standing
+policy adoption; this P0 task does not activate or approve the Engine lane.
+
+### Disabled authenticated reader and protected security inventory
+
+`readAuthenticatedProviderSnapshot` now implements the read-only producer for the
+existing predicate: fixed GitHub host/repository, authenticated GET only, no
+redirects or automatic retry, maximum 11 requests, 30 seconds overall and 5 seconds
+per response, 2 MiB per response. Required workflow inventories are complete with
+stable counts and unique IDs; ambiguous/truncated pagination blocks. Reviews are
+fully paginated within the cap; a newer dismissal/change request supersedes old
+approval, and an approval expires after one hour. PR identity/base/head are checked
+again after collection. Transport errors never serialize credential/body details.
+
+The protected caller must supply the token, reviewer identity and expected SHAs;
+PR JSON is not configuration. The test transport and clock are offline injection
+ports, not permission to replace the protected runtime transport. GitHub does not
+provide an atomic snapshot across PR/runs/reviews: this observation must be
+revalidated before reservation/publication under the existing lock. The current
+trusted workflow lacks `actions:read`; installing a reviewed reader and changing
+that protected permission is a separately authorized adoption step, not performed
+by this draft. No reader call is wired into `checkPr/main`.
+
+`inspectProtectedRepositorySecurity` inventories base and head Git objects without
+checkout, including path, mode and object ID. Required policy/workflow/Authority/
+Publisher/state/dependency files cannot disappear; symlinks and submodules in the
+protected inventory block. All Agent OS, workflow, agent-skill and execution-adapter
+paths are outside routine source delegation. The repository adapter requires the
+same protected inventory in both trees and compares its actual SHA256 and policy
+bytes digest with the signed envelope. This also closes the prior path-pattern
+gap for `host-authority.mjs` and `github-publisher.mjs`.
+
+These are source-prepared functions and offline proofs only. The separately
+protected issuer/verifier registry and current authenticated revocation source,
+Publisher aggregate budget integration and actual trusted workflow adoption are
+still incomplete. Do not turn PROVIDER_EVIDENCE_VERIFIED into AUTHORIZED. The
+adoption design must also avoid requiring a successful invocation of the same
+governance job before that job can admit a routine update; its independent CI and
+post-integration acceptance phases must be explicitly reviewed. No new owner
+decision is requested while these source integration items remain.
+
+
+### Draft Publisher phase composition (source only)
+
+The existing Publisher now distinguishes signed `ADMISSION_READ`,
+`LOCAL_DELTA_VERIFIED` and `EXACT_HEAD_VERIFIED` proposal evidence. Read admission
+before STARTED does not assert a future PR/head or successful future CI. Local
+publication evidence binds the actual prepared delta, whole task identity and
+independent delta-review receipt. Final evidence binds the published Git HEAD,
+complete diff and independently checked provider CI/review. Native evidence is
+transaction-bound and does not confer authority; a copied event is invalid.
+
+The isolated standing preview shares the existing execution lock and journal for
+all request phases. Request wire identity prevents a new signed envelope from
+replaying a previously reserved write. The complete budget history and a durable
+clock floor are validated; denial after fsync retains the spent claim. Old
+proposal journals missing required wire fields fail closed; this change contains
+no live journal migration or reset.
+
+`PROPOSAL_ELIGIBLE` / `RESERVED_PREVIEW` are never `AUTHORIZED`. The preview's
+`beforeRequest` remains false, existing Publisher authorization stays mandatory,
+and protected-base `checkPr` still enforces v0. Loopback tests with fixture keys
+and fixture authority do not adopt delegation. A separately verified policy
+transition and trusted enforcement/issuer/verifier configuration are required
+before any live standing capability. Stop/rollback preserves claims, revocation
+history and UNKNOWN/FAILED_LOCKED; no automatic refund, retry or key change.
+
+Scope clarification (owner override, 29 October 2026): this P0 lane does not
+freeze, stop, edit or approve the independent Engine #549 and RU-auth #554
+workstreams. Earlier global-freeze wording is superseded; their protected gates
+and separate permissions remain mandatory.
+
+### Draft PRE_GATE evidence boundary (not adopted)
+
+A protected evaluator cannot require its own successful outcome. The current
+PR Validation workflow also contains a trailing v0 admission check, so whole-run
+SUCCESS cannot serve as independent pre-admission source evidence. The proposed
+PRE_GATE profile therefore has a distinct `GATE_PREREQUISITES_VERIFIED` result,
+never final provider evidence or authorization. Final publication continues to
+require both existing workflows to succeed.
+
+The profile must bind a current authenticated evaluator run and attempt to the
+exact repository/base/head/PR, independently reviewed protected workflow bytes,
+a complete source-job inventory, latest source run/attempt, and fresh independent
+review. Missing or changed definitions, job inventories, identities or evidence
+fail closed. Caller-selected failed-job exclusions are forbidden. Its read-only
+requests remain bounded and metered through the existing admission hook.
+
+The Draft workflow separates `source_validation` from admission while preserving
+`validate` as the required aggregate check. It requires both source jobs to succeed
+and still executes the original v0 scope/owner check. Failed, skipped, cancelled or
+unknown source results cannot become successful admission. The protected-base
+`release_governance` workflow and checkPr/main still enforce v0. PRE_GATE only
+observes source jobs; it cannot promote itself to final two-workflow SUCCESS.
+
+`readAndAssessProtectedGateProposal` composes the existing protected public-key /
+signed-revocation reader, authenticated PRE_GATE collection and real Git diff /
+security inventory. The artifact digest is recomputed from the existing Publisher
+edit-patch or supported creation-manifest bytes; unsupported deltas fail closed.
+Its separate verifier-signed PRE_GATE witness binds the current
+source/evaluator attempts, reviewer and exact workflow definitions. Results remain
+`authorized=false`; this callable is not installed in checkPr/main and does not
+mint a transport capability or consume a publication claim. Its GET hook must be
+the existing transaction's metered read seam; an arbitrary callback is not proof of
+a durable budget. Actual protected invocation, public trust provenance and policy
+transition remain separately gated. Fixture keys or caller context cannot adopt it.
+
+The Publisher request guard also rechecks time and the native selected task at
+its final return boundary. A mismatch preserves the already-spent claim and locks
+later reservations; no refund, retry, or permission follows a RESERVED_PREVIEW.
