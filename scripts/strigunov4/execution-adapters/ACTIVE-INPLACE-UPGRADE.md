@@ -79,3 +79,28 @@ independently witnessed rollback/restore, or a live authenticated
 operator can collect and sign those physical facts. The one
 existing service must remain active until an explicitly authorized
 in-place upgrade has passed those independent gates.
+
+## 31 October — native quiescence and exchange rehearsal
+
+The separate beget-active-upgrade-quiescence.mjs reads externally captured
+source snapshots of the original execution ledger, receipts, heartbeat,
+API budget, routing digest, report bytes and Publisher journals. A proposed
+stop is refused for a held execution lock, FAILED_LOCKED/STARTED job, a
+PUBLISHED_WAITING/INTENT/unknown Publisher phase, a missing or tampered
+report, or changed budget/routing/receipts/process between two captures.
+A stable result is only SOURCE_QUIESCENCE_CANDIDATE, with authorized:false
+and readyForStop:false. An actual authorized operator must still prove the
+captures are service-UID authenticated, hold the real native lock and check
+the remote GitHub effect outcomes immediately before any controlled stop.
+
+The standalone beget-active-exchange-rehearsal.py physically verifies
+Linux renameat2(RENAME_EXCHANGE) with directory fsync in an explicitly
+restricted scratch directory. It keeps the former generation and private
+ledger bytes intact. It has ONLY a rehearsal command, cannot name live
+/opt/asi-engine or /var/lib/asi-engine as its target, and exposes no
+privileged apply, service start/stop, private key or production migration.
+A real owner-signed, independently reviewed root executor remains needed.
+
+Passing these source/scratch tests is NOT signed adoption, live installation
+or physical five-lane autonomous acceptance. Keep the current one Engine
+running until every named native and owner installation gate succeeds.
