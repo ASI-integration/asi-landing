@@ -1,8 +1,8 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import {createHash} from 'node:crypto';
-import {atomicJson,digest,must,regular,sha} from './state.mjs';
-import {prepareDelta,normalizeProposedContent} from './change-preparer.mjs';
+import {atomicJson,digest,must,regular,sha,inspectStandingTransaction} from './state.mjs';
+import {prepareDelta,verifyPreparedDelta,normalizeProposedContent} from './change-preparer.mjs';
 import {inspectCI,validateCiPolicy} from './ci-reader.mjs';
 import {inspectCodeRabbit} from './coderabbit-analyzer.mjs';
 import {bounded,branchAllowed,REPOSITORY,draftBody} from './publisher-transport.mjs';
@@ -11,6 +11,14 @@ const hashBlob=content=>createHash('sha1').update(`blob ${Buffer.byteLength(cont
 const equal=(a,b)=>JSON.stringify(a)===JSON.stringify(b);
 const freeze=x=>{if(x&&typeof x==='object'){Object.values(x).forEach(freeze);Object.freeze(x);}return x;};
 export const bindTask=t=>digest(JSON.stringify(t));
+const lifecycleEvidence=new WeakMap();
+/** Native phase evidence, not authority. Copies and stale transaction leases deny. */
+export function inspectPublisherLifecycleEvidence(value,transaction){
+  const bound=lifecycleEvidence.get(value);
+  must(bound&&bound.active!==false&&bound.transaction===transaction,'PUBLICATION_EVIDENCE_UNTRUSTED');
+  const lease=inspectStandingTransaction(transaction,{write:true,taskId:bound.taskId,taskSha:bound.taskSha});
+  must(lease.phase==='started','PUBLICATION_EVIDENCE_PHASE');return value;
+}
 async function load(file){let value;try{must((await regular(file)).size<500000,'PUBLICATION_JOURNAL_SIZE');value=JSON.parse(await fs.readFile(file,'utf8'));}
   catch(e){if(e.code==='ENOENT')return null;throw e;}
   must(value!==null&&typeof value==='object'&&!Array.isArray(value),'PUBLICATION_JOURNAL_INVALID');return value;}
@@ -26,8 +34,10 @@ export function acceptedReviewEvidence(r,stage,policySha){
     r?.independent===false&&r?.ownerVerifiedCi===true&&
     r.reviewPolicySha256===policySha;
 }
-export function createGitHubPublisher({store,remote,reader,authorize,runChecks,independentReview,verifyAdmission,ciPolicies,publishedReview,clock=Date.now,timeoutMs=10000}={}){
+export function createGitHubPublisher({store,remote,reader,authorize,runChecks,independentReview,verifyAdmission,ciPolicies,publishedReview,clock=Date.now,timeoutMs=10000,transaction,observeLifecycle,inspectGate}={}){
   must([authorize,runChecks,independentReview,verifyAdmission,clock].every(x=>typeof x==='function'),'HOST_PORTS_REQUIRED');
+  must(observeLifecycle===undefined||typeof observeLifecycle==='function','PUBLICATION_OBSERVER_INVALID');
+  must(inspectGate===undefined||typeof inspectGate==='function'&&typeof observeLifecycle==='function','PUBLICATION_GATE_INVALID');
   must(ciPolicies?.some(p=>p.name==='validate')&&ciPolicies.some(p=>p.name==='release_governance'),'REQUIRED_CI_MISSING');
   const policies=freeze(structuredClone(ciPolicies));
   // Alternative host-reviewed evidence is opt-in and bound into the exact grant.
@@ -55,6 +65,17 @@ export function createGitHubPublisher({store,remote,reader,authorize,runChecks,i
       grant.automaticReviewApproved===true&&typeof grant.operationId==='string'&&/^[a-z0-9-]{1,96}$/.test(grant.operationId)&&
       Number.isSafeInteger(grant.expiresAt)&&grant.expiresAt>clock(),'PUBLICATION_CAPABILITY_DENIED');
     const assertGrant=()=>must(grant.expiresAt>clock(),'CAPABILITY_EXPIRED');
+    async function observe(phase,fields){
+      if(!observeLifecycle)return;
+      const lease=inspectStandingTransaction(transaction,{write:true,taskId:task.id,taskSha:task.sha});
+      must(lease.phase==='started'&&lease.root===store.root,'PUBLICATION_EVIDENCE_PHASE');
+      const event=freeze({schema:'asi.publisher-lifecycle-evidence.v1',phase,authorized:false,
+        taskId:task.id,taskSha:task.sha,taskBinding:binding,repo:task.repo,branch:task.branch,
+        paths:[...request.paths],observedAt:clock(),...structuredClone(fields)});
+      lifecycleEvidence.set(event,{transaction,taskId:task.id,taskSha:task.sha});
+      must(await call(signal=>observeLifecycle(event,{signal}))===true,'PUBLICATION_OBSERVER_REJECTED');
+      inspectPublisherLifecycleEvidence(event,transaction);assertGrant();
+    }
     async function main(){assertGrant();await call(signal=>verifyAdmission({signal}));const m=await call(()=>remote.get('branches/main'));
       must(m.protected===true&&m.commit?.sha===task.sha,'MAIN_CHANGED');}
     async function history(){const list=await call(()=>remote.get(`pulls?state=all&head=ASI-integration:${encodeURIComponent(task.branch)}&per_page=100`));
@@ -95,6 +116,23 @@ export function createGitHubPublisher({store,remote,reader,authorize,runChecks,i
         record.kind===task.kind&&['PUBLISHED_WAITING','VERIFIED'].includes(record.phase),'UNCERTAIN_OR_FOREIGN_PUBLICATION');
       must(record.reviewPolicySha256===undefined||record.reviewPolicySha256===reviewPolicy?.policySha256,
         'PUBLISHED_REVIEW_POLICY_CHANGED');
+      if(inspectGate){
+        // Journal PASS is not native evidence. Re-measure the existing delta,
+        // rerun trusted local checks/review and mint fresh lease-bound evidence.
+        await verifyPreparedDelta(store,task,record.deltaSha256);
+        const local=freeze({taskId:task.id,baseSha:task.sha,deltaSha256:record.deltaSha256});
+        const check=await call(signal=>runChecks(local,{signal}));
+        must(check?.status==='PASS'&&check.deltaSha256===record.deltaSha256&&check.baseSha===task.sha,'LOCAL_CHECK_UNVERIFIED');
+        const review=await call(signal=>independentReview(local,{signal}));
+        must(review?.status==='PASS'&&review.deltaSha256===record.deltaSha256&&review.baseSha===task.sha&&
+          acceptedReviewEvidence(review,task.stage,reviewPolicy?.policySha256)&&
+          typeof review.evidenceId==='string'&&/^[a-zA-Z0-9_-]{1,96}$/.test(review.evidenceId),'INDEPENDENT_REVIEW_UNVERIFIED');
+        await verifyPreparedDelta(store,task,record.deltaSha256);
+        await observe('LOCAL_DELTA_VERIFIED',{deltaSha256:record.deltaSha256,localChecks:'PASS',
+          independentDeltaReview:review.independent===true&&review.ownerVerifiedCi!==true?'PASS':'NOT_INDEPENDENT',
+          reviewEvidenceId:review.evidenceId});
+        await verifyPreparedDelta(store,task,record.deltaSha256);
+      }
     }else{
       await guard();
       for(const name of await fs.readdir(path.dirname(file))){
@@ -112,6 +150,13 @@ export function createGitHubPublisher({store,remote,reader,authorize,runChecks,i
         typeof review.evidenceId==='string'&&/^[a-zA-Z0-9_-]{1,96}$/.test(review.evidenceId),'INDEPENDENT_REVIEW_UNVERIFIED');
       // Check exact prepared bytes again after host tests/review. No test output or source is logged.
       for(const c of task.changes){const f=path.join(store.root,'scratchpads',task.id,c.path);await regular(f);
+        must(digest(await fs.readFile(f))===digest(normalizeProposedContent(c.path,c.content)),'PREPARED_BYTES_CHANGED');}
+      await observe('LOCAL_DELTA_VERIFIED',{deltaSha256:prepared.deltaSha256,
+        localChecks:'PASS',independentDeltaReview:review.independent===true&&review.ownerVerifiedCi!==true?'PASS':'NOT_INDEPENDENT',
+        reviewEvidenceId:review.evidenceId});
+      // An observer is an asynchronous host port; its return cannot attest to
+      // source bytes changed while it was running.
+      if(observeLifecycle)for(const c of task.changes){const f=path.join(store.root,'scratchpads',task.id,c.path);await regular(f);
         must(digest(await fs.readFile(f))===digest(normalizeProposedContent(c.path,c.content)),'PREPARED_BYTES_CHANGED');}
       const parent=await call(()=>remote.get(`git/commits/${task.sha}`));
       must(parent.sha===task.sha&&sha(parent.tree?.sha),'BASE_COMMIT_INVALID');
@@ -162,6 +207,27 @@ export function createGitHubPublisher({store,remote,reader,authorize,runChecks,i
         independent:r.independent===true,...(r.ownerVerifiedCi===true?{ownerVerifiedCi:true}:{}),
         evidenceSha256:r.evidenceSha256};
     }
+    if(inspectGate){
+      const event=freeze({schema:'asi.publisher-lifecycle-evidence.v1',phase:'PRE_GATE_READY',authorized:false,
+        taskId:task.id,taskSha:task.sha,taskBinding:binding,repo:task.repo,branch:task.branch,
+        paths:[...request.paths],observedAt:clock(),deltaSha256:record.deltaSha256,
+        headSha:record.head,pr:record.pr});
+      const bound={transaction,taskId:task.id,taskSha:task.sha,active:true};
+      lifecycleEvidence.set(event,bound);
+      try{
+        inspectPublisherLifecycleEvidence(event,transaction);
+        const result=await evidence(async signal=>{
+          signal.addEventListener('abort',()=>{bound.active=false;},{once:true});
+          return inspectGate(event,{signal});
+        });
+        inspectPublisherLifecycleEvidence(event,transaction);assertGrant();
+        const pending=result?.status==='WAITING'&&result.reason==='GATE_SOURCE_PENDING'&&result.permittedEffect==='NONE';
+        must((result?.status==='PROPOSAL_ELIGIBLE'||pending)&&result.phase==='PRE_GATE'&&result.authorized===false,
+          'PUBLICATION_GATE_REJECTED');
+        await verifyRemote(); // Async gate reads cannot stale the pinned publication.
+        if(pending)return {status:'WAITING',phase:'PRE_GATE',head:record.head,pr:record.pr};
+      }finally{bound.active=false;}
+    }
     const ci=await evidence(()=>inspectCI(reader,pin,policies));
     if(ci.status==='FAILED')return {status:'FAILED',phase:'REMOTE_CI'};
     if(ci.status!=='PASS')return {status:'WAITING',phase:'REMOTE_CI',head:record.head,pr:record.pr};
@@ -169,10 +235,16 @@ export function createGitHubPublisher({store,remote,reader,authorize,runChecks,i
     if(review.status==='FAILED')return {status:'FAILED',phase:'REMOTE_REVIEW'};
     if(review.status!=='PASS')return {status:'WAITING',phase:'REMOTE_REVIEW',head:record.head,pr:record.pr};
     await verifyRemote();
+    // The observer consumes the first checked snapshot, never a final receipt.
+    // Place it before the existing final re-read so async observer work cannot
+    // stale acceptance, without adding a redundant third provider-check round.
+    await observe('EXACT_HEAD_VERIFIED',{deltaSha256:record.deltaSha256,headSha:record.head,
+      pr:record.pr,ci,review});
     const freshCI=await evidence(()=>inspectCI(reader,pin,policies));
     const freshReview=await evidence(inspectReview);
     must(equal(ci,freshCI)&&equal(review,freshReview),'PROMOTION_EVIDENCE_CHANGED');
-    await verifyRemote();await save('VERIFIED');
+    await verifyRemote();
+    await save('VERIFIED');
     return {status:'PASS',artifactType:'GITHUB_PR_VERIFIED',head:record.head,pr:record.pr,
       url:`https://github.com/${task.repo}/pull/${record.pr}`,baseSha:task.sha,taskBinding:binding,ci,review,physicalAcceptance:false};
   }});

@@ -147,8 +147,7 @@ test('13 rejects forged owner comments, accepts only exact owner+SHA+action', as
   try {
     globalThis.fetch = async () => ({ok: true, json: async () => [
       {user: {id: 9999}, body: 'ASI-OWNER-APPROVE:CONTRACT-CHANGE:520:' + sha},
-      {id: 314159, user: {id: 207600140, type: 'User'}, performed_via_github_app: null,
-       body: 'ASI-OWNER-APPROVE:CONTRACT-CHANGE:520:' + sha},
+      {id: 42, user: {id: 207600140, type: 'User'}, author_association: 'OWNER', performed_via_github_app: null, body: 'ASI-OWNER-APPROVE:CONTRACT-CHANGE:520:' + sha},
     ]});
     assert.equal(await verifiedOwnerComment(520, sha, 'CONTRACT-CHANGE', 'token'), true);
     assert.equal(await verifiedOwnerComment(520, sha, 'RELEASE-EXCEPTION', 'token'), false);
@@ -268,6 +267,26 @@ test('19 rename cannot hide governance or out-of-stage source paths', () => {
   }
 });
 
+test('20 owner-login App comments and missing origin cannot attest governance', async () => {
+  const previous = globalThis.fetch;
+  const direct = {id:42,user:{id:207600140,type:'User'},author_association:'OWNER',
+    performed_via_github_app:null,body:'ASI-OWNER-APPROVE:CONTRACT-CHANGE:520:'+sha};
+  try {
+    for (const change of [
+      {performed_via_github_app:{id:1144995,slug:'chatgpt-codex-connector'}},
+      {performed_via_github_app:{id:15368,slug:'github-actions'}},
+      {performed_via_github_app:undefined},
+      {user:{id:207600140,type:'Bot'}}, {user:{id:207600140}},
+      {author_association:'MEMBER'}, {author_association:undefined},
+      {id:undefined}, {body:{trim:()=>direct.body}},
+    ]) {
+      globalThis.fetch=async()=>({ok:true,json:async()=>[{...direct,...change}]});
+      assert.equal(await verifiedOwnerComment(520,sha,'CONTRACT-CHANGE','INERT'),false);
+    }
+    globalThis.fetch=async()=>({ok:true,json:async()=>[direct]});
+    assert.equal(await verifiedOwnerComment(520,sha,'CONTRACT-CHANGE','INERT'),true);
+  } finally { globalThis.fetch=previous; }
+});
 test('20 routine Stage G2 host maintenance avoids per-file owner exception, protected files still denied', () => {
   const c=copy();
   c.stages[0].status='ACCEPTED';

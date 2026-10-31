@@ -7,6 +7,7 @@ import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import {
   REQUIRED_ISSUE_FIELD_IDS,
+  REQUIRED_ISSUE_BODY_HEADINGS,
   REQUIRED_PR_SECTIONS,
   assertIssueTemplateContract,
   assertIssueTemplateDefaultFlow,
@@ -72,6 +73,34 @@ test('complete agent-ready issue body is READY', () => {
   const result = validateIssueBody(body);
   assert.equal(result.ok, true);
   assert.equal(result.status, 'READY');
+});
+
+test('populated Markdown sections allow blank lines and multiple paragraphs with LF or CRLF', () => {
+  for (const newline of ['\n', '\r\n']) {
+    const body = REQUIRED_ISSUE_BODY_HEADINGS.map(heading =>
+      [heading, '', 'First paragraph.', '', '- Required detail.', 'Continuation.'].join(newline),
+    ).join(newline + newline);
+    assert.deepEqual(validateIssueBody(body), {ok:true, status:'READY', blockers:[]});
+  }
+});
+
+test('empty or placeholder sections remain blocked before another heading and at document end', () => {
+  for (const index of [0, REQUIRED_ISSUE_BODY_HEADINGS.length - 1]) {
+    for (const empty of ['', '  ', '_No response_', '<!-- -->']) {
+      const body = REQUIRED_ISSUE_BODY_HEADINGS.map((heading, i) =>
+        `${heading}\n\n${i === index ? empty : 'Required detail.'}\n`,
+      ).join('\n');
+      assert.deepEqual(validateIssueBody(body).blockers,
+        [`Empty required section: ${REQUIRED_ISSUE_BODY_HEADINGS[index]}`]);
+    }
+  }
+});
+
+test('inline heading text is not a required section and blank PR paragraphs are accepted', () => {
+  const body = REQUIRED_ISSUE_BODY_HEADINGS.map(heading => `${heading}\n\nDetail.`).join('\n\n');
+  assert.equal(validateIssueBody(body.replace('### Цель', 'Inline ### Цель')).status,'BLOCKED');
+  const pr = fs.readFileSync(path.join(fixtures, 'agent-ready-pr-body.md'), 'utf8');
+  assert.equal(validatePullRequestBody(pr.replace(/^(## .+)$/gm, '$1\n')).ok,true);
 });
 
 test('incomplete issue body is fail-closed BLOCKED', () => {
