@@ -73,7 +73,10 @@ def tree_fingerprint(root):
     root = safe_directory(root)
     files, folders, size = 0, 0, 0
     fingerprint = hashlib.sha256()
-    for directory, children, names in os.walk(root, followlinks=False):
+    def walk_error(_error):
+        raise Block("TREE_READ_FAILED")
+    for directory, children, names in os.walk(root, followlinks=False,
+                                              onerror=walk_error):
         base = Path(directory)
         children.sort()
         names.sort()
