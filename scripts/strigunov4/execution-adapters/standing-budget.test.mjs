@@ -441,3 +441,24 @@ test('a child rotation cannot recycle a spent digest with expanded validity or c
     assert.deepEqual((await f.read()).standingDelegationBudget,spent.standingDelegationBudget);
   }finally{await f.close()}
 });
+
+test('native reservation refuses explicit undefined or accessor budget root instead of treating it as pristine',async()=>{
+  const outcomes=[];
+  for(const variant of ['own-undefined','accessor-undefined']){
+    const f=await fixture();
+    try{
+      if(variant==='own-undefined'){
+        Object.defineProperty(f.ledger,'standingDelegationBudget',
+          {value:undefined,writable:true,enumerable:true,configurable:true});
+      }else{
+        Object.defineProperty(f.ledger,'standingDelegationBudget',
+          {get(){return undefined},enumerable:true,configurable:true});
+      }
+      try{
+        const result=await f.budget.reserve({envelope:env(),effect:effect('root-tampered')});
+        outcomes.push(result.status);
+      }catch(err){outcomes.push(err.message)}
+    }finally{await f.close()}
+  }
+  assert.deepEqual(outcomes,['BUDGET_LEDGER_INVALID','BUDGET_LEDGER_INVALID']);
+});

@@ -42,14 +42,20 @@ function captureExpected(expected) {
       ![Object.prototype, null].includes(Object.getPrototypeOf(expected)))
     throw Error('TRUST_CONTEXT');
   const fields = Object.getOwnPropertyDescriptors(expected);
-  if (Object.values(fields).some(d => !Object.hasOwn(d, 'value')))
+  const required = ['repository','environment','target','issuerKeySha256',
+    'verifierKeySha256','envelopeDigest','minRevocationSequence',
+    'minRevocationManifestDigest','priorRevokedEnvelopeDigests'];
+  if (Reflect.ownKeys(fields).length !== required.length ||
+      required.some(key => !Object.hasOwn(fields, key)) ||
+      Object.values(fields).some(d => !Object.hasOwn(d, 'value')))
     throw Error('TRUST_CONTEXT');
   const get = key => ownData(fields, key);
   const previous = get('priorRevokedEnvelopeDigests');
   if (!Array.isArray(previous) || Object.getPrototypeOf(previous) !== Array.prototype ||
       previous.length > 1024) throw Error('TRUST_CONTEXT');
   const entries = Object.getOwnPropertyDescriptors(previous);
-  if (Object.values(entries).some(d => !Object.hasOwn(d, 'value')))
+  if (Reflect.ownKeys(entries).length !== previous.length + 1 ||
+      Object.values(entries).some(d => !Object.hasOwn(d, 'value')))
     throw Error('TRUST_CONTEXT');
   const history = [];
   for (let i = 0; i < previous.length; i++) {

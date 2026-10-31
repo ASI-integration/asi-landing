@@ -236,6 +236,29 @@ test('boxed, object, array and getter historical revocation entries deny before 
   assert.equal((await z.readSnapshot()).reason,'TRUST_CONTEXT');
 });
 
+test('unexpected historical own properties never become an accepted trust snapshot',async()=>{
+  const old='a'.repeat(64);
+  for(const edit of [
+    list=>Object.defineProperty(list,'extra',{value:new String(old),enumerable:true}),
+    list=>Object.defineProperty(list,Symbol('hidden'),{get(){throw Error('must not run getter');}}),
+    list=>Object.defineProperty(list,'01',{value:old,enumerable:true})
+  ]){
+    const x=fixture();
+    x.expected.priorRevokedEnvelopeDigests=[old];
+    x.manifest.revokedEnvelopeDigests=[old];x.resign();
+    edit(x.expected.priorRevokedEnvelopeDigests);
+    assert.deepEqual(await x.readSnapshot(),{status:'BLOCKED',reason:'TRUST_CONTEXT',authorized:false});
+    assert.equal(x.reads(),0);
+  }
+});
+
+test('unexpected expected-context properties are rejected before reading public trust',async()=>{
+  const x=fixture();
+  Object.defineProperty(x.expected,'surplus',{value:new String('a'.repeat(64))});
+  assert.deepEqual(await x.readSnapshot(),{status:'BLOCKED',reason:'TRUST_CONTEXT',authorized:false});
+  assert.equal(x.reads(),0);
+});
+
 test('signed JSON revocation entries must be primitive hex strings, not arrays, numbers or objects',async()=>{
   for(const value of [0,null,['a'.repeat(64)],{digest:'a'.repeat(64)}]){
     const x=fixture();x.manifest.revokedEnvelopeDigests=[value];x.resign();

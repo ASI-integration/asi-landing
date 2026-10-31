@@ -89,6 +89,14 @@ export function inspectSignedParentInNativeTransaction({
     });
     if(evidence.status!=='SIGNED_PARENT_CHILD_SOURCE_VERIFIED'||evidence.authorized!==false)
       return deny('NATIVE_SIGNED_SOURCE_UNVERIFIED');
+    // The signed child governs exactly this effect. A correctly signed
+    // parent+child MUST NOT bless a foreign envelope or a different
+    // repository/target/action; native reserve() already checks these fields.
+    // This remains source-only eligibility, never a transport permission.
+    if(!effect||typeof effect!=='object'||Array.isArray(effect)||
+       effect.envelopeDigest!==evidence.child.digest||
+       ['repo','environment','target','action'].some(k=>effect[k]!==evidence.child[k]))
+      return deny('NATIVE_SIGNED_EFFECT_SCOPE_MISMATCH');
     // Historical claims are durable in the EXISTING Publisher ledger. Never
     // trust caller-supplied child links: independently verify each original
     // signed child at its FIRST recorded reservation time, using today's

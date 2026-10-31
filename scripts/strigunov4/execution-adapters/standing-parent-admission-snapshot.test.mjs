@@ -43,6 +43,7 @@ const envelope = {schema:'asi.release-envelope.proposal.v1',
 test('signed parent source preview binds first admission GET to native lock and pinned base; reserves once', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(),'p0wb-signed-admission-'));
   let finalArgs;
+  const wrongScopeStatuses=[];
   try {
     const store = await initializeState(root);
     let providerCalls = 0;
@@ -75,6 +76,16 @@ test('signed parent source preview binds first admission GET to native lock and 
       const wrongBase=inspectSignedParentInNativeTransaction({...finalArgs,
         effect:{...effect,headSha:'b'.repeat(40)}});
       assert.equal(wrongBase.status,'PARENT_NATIVE_PREVIEW_BLOCKED');
+      // The signed preview must never bless an effect whose native reservation
+      // would reject a different child digest or repository/effect scope.
+      for(const [field,value] of [
+        ['envelopeDigest',sha('foreign-child')],
+        ['repo','elsewhere/repo'],['environment','production'],
+        ['target','different-host'],['action','deploy']]){
+        const wrongScope=inspectSignedParentInNativeTransaction({...finalArgs,
+          effect:{...effect,[field]:value}});
+        wrongScopeStatuses.push({field,status:wrongScope.status});
+      }
       const writeMethod='POST',writeRoute='git/trees',writePayload=sha('{}');
       const write=inspectSignedParentInNativeTransaction({...finalArgs,
         effect:{...effect,kind:'create-tree',method:writeMethod,route:writeRoute,
@@ -84,11 +95,23 @@ test('signed parent source preview binds first admission GET to native lock and 
 
       const nativeBudget=createStandingPublisherBudget({store,ledger,transaction,
         admissionBaseSha:baseSha,clock:()=>at});
+      // The actual reservation layer already denies all five malformed scopes;
+      // source preview must agree rather than creating a false green signal.
+      for(const [field,value] of [
+        ['envelopeDigest',sha('foreign-child')],
+        ['repo','elsewhere/repo'],['environment','production'],
+        ['target','different-host'],['action','deploy']]){
+        const rejected=await nativeBudget.reserve({envelope,
+          effect:{...effect,[field]:value}});
+        assert.equal(rejected.status,'DENIED',field);
+      }
       const reservation=await nativeBudget.reserve({envelope,effect});
       assert.equal(reservation.status,'RESERVED',JSON.stringify(reservation));
       return null;
     },{},async()=>{providerCalls++;throw new Error('PROVIDER_ACTION_FORBIDDEN');});
     assert.equal(outcome.mode,'WAITING');
+    assert.equal(wrongScopeStatuses.filter(x=>x.status==='PARENT_NATIVE_PREVIEW_BLOCKED').length,5,
+      JSON.stringify(wrongScopeStatuses));
     assert.equal(providerCalls,0);
     const saved=JSON.parse(await fs.readFile(store.file('autopilot-ledger.json'),'utf8'));
     assert.equal(saved.standingDelegationBudget.envelopes[childDigest].claims.length,1);

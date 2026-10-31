@@ -254,8 +254,14 @@ export function createStandingPublisherBudget({store, ledger, transaction, admis
         return deny('BUDGET_NOT_IN_ACTIVE_TRANSACTION');
       must(ledger.schemaVersion === 'asi.execution-adapters.v1' && ledger.jobs &&
         typeof ledger.jobs === 'object' && !Array.isArray(ledger.jobs), 'BUDGET_LEDGER_INVALID');
-      const root = ledger.standingDelegationBudget;
-      if (root !== undefined) must(root && root.version === 1 && root.envelopes &&
+      // Only an ABSENT own journal field represents a pristine first claim.
+      // Explicit undefined, inherited state or accessor getters must never
+      // reset retained claims or run a setter after the fsynced write.
+      const budgetDescriptor = Object.getOwnPropertyDescriptor(ledger,'standingDelegationBudget');
+      must(budgetDescriptor ? Object.hasOwn(budgetDescriptor,'value') :
+        !('standingDelegationBudget' in ledger), 'BUDGET_LEDGER_INVALID');
+      const root = budgetDescriptor?.value;
+      if (budgetDescriptor) must(root && root.version === 1 && root.envelopes &&
         typeof root.envelopes === 'object' && !Array.isArray(root.envelopes) &&
         Object.keys(root.envelopes).length <= MAX_ENVELOPES, 'BUDGET_LEDGER_INVALID');
       const budget = root || {version:1,envelopes:{}};
