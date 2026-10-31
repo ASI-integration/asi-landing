@@ -1,0 +1,114 @@
+diff --git a/scripts/strigunov4/execution-adapters/standing-budget-signed-renewal-gap.test.mjs b/scripts/strigunov4/execution-adapters/standing-budget-signed-renewal-gap.test.mjs
+index 751e43ed..a79364fd 100644
+--- a/scripts/strigunov4/execution-adapters/standing-budget-signed-renewal-gap.test.mjs
++++ b/scripts/strigunov4/execution-adapters/standing-budget-signed-renewal-gap.test.mjs
+@@ -77,6 +77,27 @@ test('real durable old-child reservation exposes signed-renewal history bridge g
+      const signedResult=inspectSignedParentInNativeTransaction({store,transaction,
+       effect:e,now:N,signedParent,signedChild:current.wrapped,ownerPublicKey,
+       verifierPublicKey,expected,revokedParentDigests:[],revokedChildDigests:[]});
++     const args={store,transaction,effect:e,now:N,signedParent,
++       signedChild:current.wrapped,ownerPublicKey,verifierPublicKey,
++       expected,revokedParentDigests:[],revokedChildDigests:[]};
++     const fixed=inspectSignedParentInNativeTransaction({
++       ...args,historicalSignedChildren:{[old.digest]:old.wrapped}});
++     assert.equal(fixed.status,'SIGNED_PARENT_NATIVE_SOURCE_ELIGIBLE',
++       JSON.stringify(fixed));
++     assert.equal(fixed.authorized,false);
++     const missing=inspectSignedParentInNativeTransaction({...args});
++     assert.equal(missing.status,'PARENT_NATIVE_PREVIEW_BLOCKED');
++     assert.equal(missing.reason,'NATIVE_SIGNED_HISTORY_UNVERIFIED');
++     const forged=inspectSignedParentInNativeTransaction({
++       ...args,historicalSignedChildren:{[old.digest]:current.wrapped}});
++     assert.equal(forged.reason,'NATIVE_SIGNED_HISTORY_UNVERIFIED');
++     const revoked=inspectSignedParentInNativeTransaction({...args,
++       revokedChildDigests:[old.digest],
++       historicalSignedChildren:{[old.digest]:old.wrapped}});
++     assert.equal(revoked.reason,'NATIVE_SIGNED_HISTORY_UNVERIFIED');
++     const extraneous=inspectSignedParentInNativeTransaction({...args,
++       historicalSignedChildren:{[old.digest]:old.wrapped,['b'.repeat(64)]:old.wrapped}});
++     assert.equal(extraneous.reason,'NATIVE_SIGNED_HISTORY_UNVERIFIED');
+      const bothLinks=inspectParentCandidateInNativeTransaction({store,transaction,
+       parent:newProof.parent,child:newProof.child,
+       childLinks:{[old.digest]:oldProof.childLink,[current.digest]:newProof.childLink},
+@@ -86,7 +107,7 @@ test('real durable old-child reservation exposes signed-renewal history bridge g
+        ledger:active.ledger,effect:e,now:N,revokedParentDigests:[]});
+      assert.equal(raw.status,'PARENT_BUDGET_SOURCE_ELIGIBLE');
+      assert.equal(signedResult.status,'PARENT_NATIVE_PREVIEW_BLOCKED');
+-     assert.equal(signedResult.reason,'NATIVE_SIGNED_SOURCE_NOT_BOUND');
++     assert.equal(signedResult.reason,'NATIVE_SIGNED_HISTORY_UNVERIFIED');
+      assert.equal(bothLinks.status,'PARENT_NATIVE_SOURCE_ELIGIBLE',JSON.stringify(bothLinks));
+      assert.equal(bothLinks.authorized,false);
+      observed++;
+@@ -100,6 +121,7 @@ test('real durable old-child reservation exposes signed-renewal history bridge g
+    historicalDurableClaims:1,historicalChildExpiredAtSecondRun:true,
+    currentSignedChildValid:true,signedBridge:'BLOCKED',
+    sourceWithBothHistoricalLinks:'SOURCE_ELIGIBLE_NOT_AUTHORIZED',
++   signedHistoryBridge:'SOURCE_ELIGIBLE_NOT_AUTHORIZED',negativeHistoryProofs:4,
+    externalEffects:0}));
+  } finally {await fs.rm(root,{recursive:true,force:true});}
+ });
+diff --git a/scripts/strigunov4/execution-adapters/standing-parent-native-preview.mjs b/scripts/strigunov4/execution-adapters/standing-parent-native-preview.mjs
+index 30846060..02be9920 100644
+--- a/scripts/strigunov4/execution-adapters/standing-parent-native-preview.mjs
++++ b/scripts/strigunov4/execution-adapters/standing-parent-native-preview.mjs
+@@ -70,7 +70,8 @@ export function inspectParentCandidateInNativeTransaction({
+  */
+ export function inspectSignedParentInNativeTransaction({
+   store,transaction,effect,now,signedParent,signedChild,ownerPublicKey,
+-  verifierPublicKey,expected,revokedParentDigests,revokedChildDigests
++  verifierPublicKey,expected,revokedParentDigests,revokedChildDigests,
++  historicalSignedChildren
+ }={}){
+   try{
+     const evidence=inspectSignedParentChildSource({
+@@ -79,10 +80,48 @@ export function inspectSignedParentInNativeTransaction({
+     });
+     if(evidence.status!=='SIGNED_PARENT_CHILD_SOURCE_VERIFIED'||evidence.authorized!==false)
+       return deny('NATIVE_SIGNED_SOURCE_UNVERIFIED');
++    // Historical claims are durable in the EXISTING Publisher ledger. Never
++    // trust caller-supplied child links: independently verify each original
++    // signed child at its FIRST recorded reservation time, using today's
++    // revocations, exact pinned public keys and the same signed parent.
++    // This cannot itself establish journal authenticity or grant authority.
++    const native=inspectStandingTransaction(transaction);
++    const envelopes=native?.ledger?.standingDelegationBudget?.envelopes;
++    if(!envelopes||typeof envelopes!=='object'||Array.isArray(envelopes)||
++       ![Object.prototype,null].includes(Object.getPrototypeOf(envelopes)))
++      return deny('NATIVE_SIGNED_HISTORY_UNAVAILABLE');
++    const entries=Object.entries(envelopes);
++    if(entries.length>64)return deny('NATIVE_SIGNED_HISTORY_LIMIT');
++    const old=entries.filter(([digest])=>digest!==evidence.child.digest);
++    const history=historicalSignedChildren===undefined
++      ? Object.create(null):historicalSignedChildren;
++    if(!history||typeof history!=='object'||Array.isArray(history)||
++       ![Object.prototype,null].includes(Object.getPrototypeOf(history))||
++       Reflect.ownKeys(history).length!==old.length)
++      return deny('NATIVE_SIGNED_HISTORY_UNVERIFIED');
++    const childLinks=Object.create(null);
++    childLinks[evidence.child.digest]=evidence.childLink;
++    for(const [digest,entry] of old){
++      const descriptor=Object.getOwnPropertyDescriptor(history,digest);
++      const at=entry?.claims?.[0]?.reservedAt;
++      if(!descriptor||!Object.hasOwn(descriptor,'value')||
++         !Number.isSafeInteger(at)||at<0)
++        return deny('NATIVE_SIGNED_HISTORY_UNVERIFIED');
++      const historical=inspectSignedParentChildSource({
++        signedParent,signedChild:descriptor.value,ownerPublicKey,
++        verifierPublicKey,expected,now:at,revokedParentDigests,
++        revokedChildDigests
++      });
++      if(historical.status!=='SIGNED_PARENT_CHILD_SOURCE_VERIFIED'||
++         historical.authorized!==false||
++         historical.child.digest!==digest||
++         historical.parent.digest!==evidence.parent.digest)
++        return deny('NATIVE_SIGNED_HISTORY_UNVERIFIED');
++      childLinks[digest]=historical.childLink;
++    }
+     const proposal=inspectParentCandidateInNativeTransaction({
+       store,transaction,parent:evidence.parent,child:evidence.child,
+-      childLinks:{[evidence.child.digest]:evidence.childLink},
+-      effect,now,revokedParentDigests
++      childLinks,effect,now,revokedParentDigests
+     });
+     if(proposal.status!=='PARENT_NATIVE_SOURCE_ELIGIBLE'||proposal.authorized!==false||
+        proposal.parentDigest!==evidence.parent.digest||
