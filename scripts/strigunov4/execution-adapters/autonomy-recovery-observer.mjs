@@ -28,7 +28,7 @@ const fail=reason=>Object.freeze({schema:'asi.autonomy-recovery-observer.v1',
 function receiptIdentity(receipt) {
   if(!plain(receipt)||!ID.test(receipt.id)||!H40.test(receipt.sha)||
     receipt.kind!=='github-publisher'||receipt.status!=='PASS'||
-    !uint(receipt.pr)||receipt.pr===0||!H64.test(receipt.reportSha256)||
+    (receipt.pr!==null&&(!uint(receipt.pr)||receipt.pr===0))||!H64.test(receipt.reportSha256)||
     typeof receipt.report!=='string'||!/^[-a-z0-9_]+[-a-z0-9_.]*\.txt$/.test(receipt.report)||
     receipt.report.includes('..'))return null;
   return [receipt.id,receipt.sha,receipt.pr,receipt.report,receipt.reportSha256];
@@ -55,9 +55,9 @@ function payload(r,reports) {
     const v=JSON.parse(raw);
     if(!plain(v)||!plain(v.result)||v.task!==r.id||v.sha!==r.sha||
       v.kind!==r.kind||v.pr!==r.pr||v.result.artifactType!=='GITHUB_PR_VERIFIED'||
-      v.result.pr!==r.pr||!H40.test(v.result.head)||
+      (!uint(v.result.pr)||v.result.pr===0)||(r.pr!==null&&v.result.pr!==r.pr)||!H40.test(v.result.head)||
       typeof v.result.taskBinding!=='string'||!H64.test(v.result.taskBinding))return null;
-    return Object.freeze({taskId:r.id,pr:r.pr,head:v.result.head,reportSha256:r.reportSha256});
+    return Object.freeze({taskId:r.id,pr:v.result.pr,head:v.result.head,reportSha256:r.reportSha256});
   }catch{return null;}
 }
 /** Compare before+after trusted file bytes AFTER a separately authorized restart. */

@@ -15,12 +15,12 @@ const make=()=>{
   const receipts=['a','b'].map((id,i)=>{
     const item=task(id);
     const raw=JSON.stringify({
-      task:item.id,sha:item.sha,pr:item.pr,kind:'github-publisher',
+      task:item.id,sha:item.sha,pr:null,kind:'github-publisher',
       result:{artifactType:'GITHUB_PR_VERIFIED',taskBinding:H('c'),pr:item.pr,head:SHA(id)}
     })+'\n';
     const name=item.id+'.txt';
     records[name]=raw;
-    return {id:item.id,sha:item.sha,pr:item.pr,kind:'github-publisher',
+    return {id:item.id,sha:item.sha,pr:null,kind:'github-publisher',
       status:'PASS',report:name,reportSha256:sum(raw)};
   });
   const digests={receipts:H('d'),budget:H('e'),routing:H('f')};
