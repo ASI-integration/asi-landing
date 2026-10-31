@@ -1,0 +1,14 @@
+diff --git a/scripts/strigunov4/execution-adapters/standing-gate.test.mjs b/scripts/strigunov4/execution-adapters/standing-gate.test.mjs
+index a002b337..16f96644 100644
+--- a/scripts/strigunov4/execution-adapters/standing-gate.test.mjs
++++ b/scripts/strigunov4/execution-adapters/standing-gate.test.mjs
+@@ -23,6 +23,9 @@ async function setup(t,{adoptionMode=null,wrongLocal=false,forgedLocal=false,lat
+  const revocation=signed(manifest,owner),prior={sequence:1,manifestDigest:hash(revocation.payload),revokedEnvelopeDigests:[]};
+  const original=globalThis.fetch;t.after(()=>{globalThis.fetch=original;});
+  const seedFiles=Object.fromEntries(ENVELOPE_SECURITY_REQUIRED.map(p=>[p,'inert protected '+p+'\n']));
++ // Fixture-only: reproduce the pinned NORMAL owner baseline and audited bootstrap source.
++ seedFiles['docs/agent-os/owner-security-baseline.json']=await fs.readFile(new URL('../../../docs/agent-os/owner-security-baseline.json',import.meta.url),'utf8');
++ seedFiles['scripts/strigunov4/execution-adapters/beget-install.py']=await fs.readFile(new URL('./beget-install.py',import.meta.url),'utf8');
+  if((gitTrust||compiled)&&adoptionMode!=='compiled-missing-registry'){
+   const registry={schema:'asi.standing-trust-registry.v1',repository:manifest.repository,environment:manifest.environment,target:manifest.target,issuerKeySha256:owner.digest,verifierKeySha256:verifier.digest,minRevocationSequence:1,minRevocationManifestDigest:prior.manifestDigest,priorRevokedEnvelopeDigests:[]};
+   for(const [name,content] of Object.entries({'registry.json':JSON.stringify(registry),'owner-public.pem':owner.pem,'standing-verifier-public.pem':verifier.pem,'standing-revocations.json':JSON.stringify(revocation)}))seedFiles['docs/agent-os/standing-trust/'+name]=content;
