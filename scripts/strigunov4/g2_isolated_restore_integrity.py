@@ -69,10 +69,46 @@ def hash_regular(path, maximum):
     return digest.hexdigest(), before.st_size, stat.S_IMODE(before.st_mode)
 
 
+def relative_link(path, root):
+    """Include internal release links as metadata; never follow outside root."""
+    before = path.lstat()
+    require(stat.S_ISLNK(before.st_mode), "LINK_CHANGED")
+    target = os.readlink(path)
+    require(0 < len(target.encode("utf-8")) <= 4096 and
+            not os.path.isabs(target), "EXTERNAL_OR_INVALID_LINK")
+    lexical = Path(os.path.normpath(str(path.parent / target)))
+    require(lexical == root or root in lexical.parents,
+            "EXTERNAL_OR_INVALID_LINK")
+    try:
+        resolved = path.resolve(strict=True)
+    except (OSError, RuntimeError):
+        raise Block("BROKEN_OR_LOOPING_LINK") from None
+    require(resolved == root or root in resolved.parents,
+            "EXTERNAL_OR_INVALID_LINK")
+    after = path.lstat()
+    require((before.st_dev, before.st_ino, before.st_mode, before.st_size,
+             before.st_mtime_ns, before.st_ctime_ns) ==
+            (after.st_dev, after.st_ino, after.st_mode, after.st_size,
+             after.st_mtime_ns, after.st_ctime_ns) and
+            os.readlink(path) == target, "LINK_CHANGED")
+    return target
+
+
 def tree_fingerprint(root):
     root = safe_directory(root)
-    files, folders, size = 0, 0, 0
+    files, folders, links, size = 0, 0, 0, 0
     fingerprint = hashlib.sha256()
+    def field(*values):
+        for value in values:
+            encoded = value.encode("utf-8")
+            fingerprint.update(len(encoded).to_bytes(4, "big"))
+            fingerprint.update(encoded)
+    def link(path):
+        nonlocal links
+        rel = path.relative_to(root).as_posix()
+        require(len(rel.encode("utf-8")) <= 4096, "RELATIVE_PATH_LIMIT")
+        field("L", rel, relative_link(path, root))
+        links += 1
     def walk_error(_error):
         raise Block("TREE_READ_FAILED")
     for directory, children, names in os.walk(root, followlinks=False,
@@ -84,17 +120,22 @@ def tree_fingerprint(root):
         require(stat.S_ISDIR(dir_info.st_mode) and not base.is_symlink(),
                 "TREE_SYMLINK_OR_SPECIAL_DIR")
         rel_dir = base.relative_to(root).as_posix()
-        dir_fields = ("D", rel_dir, str(stat.S_IMODE(dir_info.st_mode)))
-        for value in dir_fields:
-            encoded = value.encode("utf-8")
-            fingerprint.update(len(encoded).to_bytes(4, "big"))
-            fingerprint.update(encoded)
+        field("D", rel_dir, str(stat.S_IMODE(dir_info.st_mode)))
         folders += 1
-        for item in children:
-            info = (base / item).lstat()
-            require(stat.S_ISDIR(info.st_mode), "TREE_SYMLINK_OR_SPECIAL_DIR")
+        for item in list(children):
+            path = base / item
+            info = path.lstat()
+            if stat.S_ISLNK(info.st_mode):
+                link(path)
+                children.remove(item)  # never traverse a directory symlink
+            else:
+                require(stat.S_ISDIR(info.st_mode), "SPECIAL_DIRECTORY_ENTRY")
         for item in names:
             path = base / item
+            info = path.lstat()
+            if stat.S_ISLNK(info.st_mode):
+                link(path)
+                continue
             rel = path.relative_to(root).as_posix()
             require(len(rel.encode("utf-8")) <= 4096, "RELATIVE_PATH_LIMIT")
             remaining = MAX_BYTES - size
@@ -102,15 +143,11 @@ def tree_fingerprint(root):
             digest, nbytes, mode = hash_regular(path, remaining)
             size += nbytes
             files += 1
-            # Length-prefix all variable values to prevent concatenation ambiguity.
-            for value in ("F", rel, str(mode), str(nbytes), digest):
-                encoded = value.encode("utf-8")
-                fingerprint.update(len(encoded).to_bytes(4, "big"))
-                fingerprint.update(encoded)
+            field("F", rel, str(mode), str(nbytes), digest)
     require(files > 0, "EMPTY_TREE")
+    require(links <= MAX_FILES, "TREE_SIZE_LIMIT")
     return {"inventorySha256": fingerprint.hexdigest(), "files": files,
-            "directories": folders, "bytes": size}
-
+            "directories": folders, "links": links, "bytes": size}
 
 def inspect(source_copy, restored_copy, archive, expected_archive_sha256):
     require(type(expected_archive_sha256) is str and
@@ -136,7 +173,7 @@ def inspect(source_copy, restored_copy, archive, expected_archive_sha256):
             "restoredInventorySha256": after["inventorySha256"],
             "backupSha256": archive_hash, "backupBytes": archive_bytes,
             "files": before["files"], "directories": before["directories"],
-            "bytes": before["bytes"],
+            "links": before["links"], "bytes": before["bytes"],
             "authorization": False, "stageSwitched": False,
             "liveBackupProven": False, "humanLoginProven": False,
             "independentWitnessProven": False}
