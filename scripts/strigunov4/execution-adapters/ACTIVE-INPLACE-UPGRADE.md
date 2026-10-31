@@ -54,3 +54,28 @@ Missing runtime integration must be independently reviewed before upgrade.
 
 Keep NORMAL_OWNER_CONTROLLED. No second Engine, unauthorized root work,
 unbudgeted paid provider calls or physical PASS from source tests.
+
+## Exact signed active-upgrade preflight (source-only)
+
+The separate beget-active-upgrade-preflight.mjs now validates the
+existing Ed25519 owner-signed approval envelope under strict
+old/new package SHA, pinned Beget host/unit, seven exact
+state-preserving actions, and a <=14-day authorization window. A
+valid test-fixture signature returns SOURCE_SIGNATURE_VERIFIED with
+authorized:false and installable:false. It does not use GitHub
+comments as keys or owner-signature custody.
+
+The fixed-path read-only probe refuses non-root operators before
+trying to read any protected generation or state. On Beget the
+unprivileged asi-dc session returned PRIVILEGED_OPERATOR_REQUIRED
+for the exact candidate. This is expected and cannot be bypassed
+with a caller-supplied identity, chmod or a forged JSON receipt.
+
+The checked source fixture still DOES NOT provide a root-owned
+public-key provenance attestation, native in-flight Publisher lock
+inspection, active generation exchange/restart implementation,
+independently witnessed rollback/restore, or a live authenticated
+365-day parent/14-day child permit. Only a separately authorized
+operator can collect and sign those physical facts. The one
+existing service must remain active until an explicitly authorized
+in-place upgrade has passed those independent gates.
