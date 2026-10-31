@@ -10,14 +10,22 @@ import {ENGINE_PILOT} from '../ASI-STRIGUNOV4-MULTIJOB-20261020.mjs';
  * the existing sibling Global Dispatcher imports resolve without duplication.
  * Never reuse the old pilot installer/claim for this new source layout.
  */
-export async function buildRuntimeClosure({repository,output}){
+export async function buildRuntimeClosure({repository,output,extraRoots=[]}){
   const scripts=path.join(await fs.realpath(repository),'scripts'),files={};
   await fs.mkdir(output,{mode:0o700});
   must(await fs.realpath(output)===path.resolve(output),'PACKAGE_OUTPUT_PATH');
+  const standingAgentDependencies=new Set([
+    'agent-os/check-demo-release.mjs',
+    'agent-os/release-envelope-review-freshness.mjs',
+    'agent-os/release-envelope-git-trust.mjs',
+    'agent-os/release-envelope-trust-roots.mjs',
+    'agent-os/verify-owner-security-baseline.mjs'
+  ]);
   async function copy(relative){
     const name=path.posix.normalize(relative);
     must((/^strigunov4\/[A-Za-z0-9_./-]+\.mjs$/.test(name)||
-      ['global-dispatcher/dispatcher.mjs','global-dispatcher/product-adapters.mjs'].includes(name))&&
+      ['global-dispatcher/dispatcher.mjs','global-dispatcher/product-adapters.mjs'].includes(name)||
+      (extraRoots.length>0&&standingAgentDependencies.has(name)))&&
       !name.split('/').includes('..'),'PACKAGE_IMPORT_SCOPE');
     if(Object.hasOwn(files,name))return;
     const source=path.join(scripts,name);
@@ -33,6 +41,16 @@ export async function buildRuntimeClosure({repository,output}){
     }
   }
   await copy('strigunov4/execution-adapters/host-runtime.mjs');
+  // Additional source-only standing code is packaged as a separately
+  // pinned module set. Merely copying it never changes live admission.
+  must(Array.isArray(extraRoots)&&extraRoots.length<=12&&
+    new Set(extraRoots).size===extraRoots.length,'PACKAGE_EXTRA_ROOTS');
+  for(const extra of extraRoots){
+    must(typeof extra==='string'&&
+      /^strigunov4\/execution-adapters\/standing-[a-z-]+\.mjs$/.test(extra),
+      'PACKAGE_STANDING_EXTRA_ROOT');
+    await copy(extra);
+  }
   const manifest={schema:'asi.engine-runtime-source-closure.v1',entry:'scripts/strigunov4/execution-adapters/host-runtime.mjs',
     files,installable:false,reason:'HOST_RUNNER_ADMISSION_AND_FENCING_REQUIRED'};
   await fs.writeFile(path.join(output,'manifest.json'),JSON.stringify(manifest,null,2)+'\n',{flag:'wx',mode:0o600});
@@ -92,7 +110,7 @@ if(process.argv[1]===fileURLToPath(import.meta.url)){
 }
 
 /** Freeze a Beget source candidate, not an assertion of install/authority PASS. */
-export async function buildBegetCandidate({repository,output,baseSha}){
+export async function buildBegetCandidate({repository,output,baseSha,extraRuntimeRoots=[]}){
   must(/^[a-f0-9]{40}$/.test(baseSha),'BEGET_BASE_SHA');
   repository=await fs.realpath(repository);
   const outputPath=path.resolve(output),outputParent=await fs.realpath(path.dirname(outputPath));
@@ -107,7 +125,7 @@ export async function buildBegetCandidate({repository,output,baseSha}){
     must(execFileSync('/usr/bin/git',['rev-parse','HEAD'],{cwd:repository,encoding:'utf8'}).trim()===sourceSha,'PACKAGE_SOURCE_CHANGED');
   };
   assertSource();
-  const closure=await buildRuntimeClosure({repository,output});
+  const closure=await buildRuntimeClosure({repository,output,extraRoots:extraRuntimeRoots});
   const catalog=[];
   for(const part of ['identity','races']){
     const id=`beget-g2-witness-${part}-v1`,name=`scripts/strigunov4/test_${id.replaceAll('-','_')}.py`;
