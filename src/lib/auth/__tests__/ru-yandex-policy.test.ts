@@ -28,6 +28,12 @@ describe('RU Yandex link-only OAuth',()=>{
     expect(ruYandexConfigured({...env,ASI_RU_YANDEX_ORIGIN:'https://evil.example'})).toBe(false);
     expect(ruYandexConfigured({...env,ASI_RU_YANDEX_ORIGIN:'http://www.asi-global.ru'})).toBe(false);
     expect(ruYandexConfigured({...env,ASI_RU_YANDEX_ORIGIN:'https://www.asi-global.ru:8443'})).toBe(false);
+    // Environment values are sent/comparison-checked literally by the runtime;
+    // never advertise a configured provider if padding would break either.
+    expect(ruYandexConfigured({...env,ASI_RU_YANDEX_ORIGIN:' https://www.asi-global.ru'})).toBe(false);
+    expect(ruYandexConfigured({...env,ASI_RU_YANDEX_ORIGIN:'https://www.asi-global.ru '})).toBe(false);
+    expect(ruYandexConfigured({...env,ASI_RU_YANDEX_CLIENT_ID:'fixture-client '})).toBe(false);
+    expect(ruYandexConfigured({...env,ASI_RU_YANDEX_CLIENT_SECRET:' fixture-secret'})).toBe(false);
     expect(yandexCallbackUrl(env)).toBe('https://www.asi-global.ru/api/auth/yandex/callback');
   });
   it('generates fresh random state and PKCE S256 with exact registered callback',()=>{

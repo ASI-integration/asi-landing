@@ -17,7 +17,12 @@ export function ruYandexConfigured(env: Readonly<Record<string,string|undefined>
       (env.SESSION_SECRET?.trim().length ?? 0) < 32 ||
       !env.ASI_RU_YANDEX_CLIENT_ID?.trim() ||
       !env.ASI_RU_YANDEX_CLIENT_SECRET?.trim()) return false;
-    const raw = env.ASI_RU_YANDEX_ORIGIN?.trim() || '';
+    // Start/callback use these values literally. Padded values must not
+    // advertise a working Yandex button while breaking host/client matching.
+    if (env.ASI_RU_YANDEX_CLIENT_ID !== env.ASI_RU_YANDEX_CLIENT_ID?.trim() ||
+        env.ASI_RU_YANDEX_CLIENT_SECRET !== env.ASI_RU_YANDEX_CLIENT_SECRET?.trim() ||
+        env.ASI_RU_YANDEX_ORIGIN !== env.ASI_RU_YANDEX_ORIGIN?.trim()) return false;
+    const raw = env.ASI_RU_YANDEX_ORIGIN || '';
     const origin = new URL(raw);
     return origin.protocol === 'https:' && origin.origin === raw && origin.port === '' &&
       (origin.hostname === 'asi-global.ru' || origin.hostname === 'www.asi-global.ru');
