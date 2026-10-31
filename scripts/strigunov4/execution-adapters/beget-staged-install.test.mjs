@@ -96,7 +96,7 @@ if mode=='altered-module':stored['runtime.mjs']=b'changed'
 if mode=='altered-receipt':stored['staged.json']=b'{}'
 identity=SimpleNamespace(pw_uid=1020,pw_gid=1020,pw_shell='/usr/sbin/nologin',pw_dir=str(m.STATE))
 if mode=='wrong-user':identity.pw_uid=2020
-status='LoadState=loaded\nActiveState=inactive\nMainPID=0\nUnitFileState=disabled\nFragmentPath=/etc/systemd/system/asi-strigunov-agent.service\nDropInPaths=\nUser=asi-engine\nGroup=asi-engine\n'
+status='LoadState=loaded\nActiveState=inactive\nMainPID=0\nUnitFileState=disabled\nFragmentPath=/etc/systemd/system/asi-strigunov-agent.service\nDropInPaths=\nUser=asi-engine\nGroup=asi-engine\n'+'NeedDaemonReload=no\nExecStart={ path=/usr/bin/flock ; argv[]=/usr/bin/flock -n -E 73 --no-fork /run/asi-engine/worker.lock /opt/asi-engine/node /opt/asi-engine/scripts/strigunov4/ASI-STRIGUNOV4-RUNNER-BRIDGE-20261020.mjs --beget ; ignore_errors=no ; start_time=[n/a] ; stop_time=[n/a] ; pid=0 ; code=(null) ; status=0/0 }\nNoNewPrivileges=yes\nProtectSystem=strict\nProtectHome=yes\nPrivateTmp=yes\nPrivateDevices=yes\nCapabilityBoundingSet=\nAmbientCapabilities=\nRestrictAddressFamilies=AF_INET AF_INET6 AF_NETLINK AF_UNIX\nReadWritePaths=/var/lib/asi-engine /run/asi-engine\nWorkingDirectory=/var/lib/asi-engine\n'
 if mode=='enabled':status=status.replace('disabled','enabled')
 if mode=='running':status=status.replace('inactive','active').replace('MainPID=0','MainPID=999')
 if mode=='dropin':status=status.replace('DropInPaths=','DropInPaths=/etc/systemd/system/asi-strigunov-agent.service.d/replaced.conf')
@@ -147,7 +147,7 @@ def call(argv,**kwargs):
  if argv[:2]==['/usr/bin/git','ls-remote']:
   return (manifest['baseSha']+'\trefs/heads/main\n').encode()
  if argv[:3]==['/usr/bin/systemctl','show',m.UNIT]:
-  return b'LoadState=loaded\nActiveState=inactive\nMainPID=0\nUnitFileState=disabled\nFragmentPath=/etc/systemd/system/asi-strigunov-agent.service\nDropInPaths=\nUser=asi-engine\nGroup=asi-engine\n'
+  return b'LoadState=loaded\nActiveState=inactive\nMainPID=0\nUnitFileState=disabled\nFragmentPath=/etc/systemd/system/asi-strigunov-agent.service\nDropInPaths=\nUser=asi-engine\nGroup=asi-engine\n'+b'NeedDaemonReload=no\nExecStart={ path=/usr/bin/flock ; argv[]=/usr/bin/flock -n -E 73 --no-fork /run/asi-engine/worker.lock /opt/asi-engine/node /opt/asi-engine/scripts/strigunov4/ASI-STRIGUNOV4-RUNNER-BRIDGE-20261020.mjs --beget ; ignore_errors=no ; start_time=[n/a] ; stop_time=[n/a] ; pid=0 ; code=(null) ; status=0/0 }\nNoNewPrivileges=yes\nProtectSystem=strict\nProtectHome=yes\nPrivateTmp=yes\nPrivateDevices=yes\nCapabilityBoundingSet=\nAmbientCapabilities=\nRestrictAddressFamilies=AF_INET AF_INET6 AF_NETLINK AF_UNIX\nReadWritePaths=/var/lib/asi-engine /run/asi-engine\nWorkingDirectory=/var/lib/asi-engine\n'
  return b''
 def read(p,**kw):
  return {'owner-public.pem':b'public','node':b'node','bwrap':b'bwrap',
