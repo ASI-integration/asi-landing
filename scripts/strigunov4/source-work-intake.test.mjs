@@ -180,3 +180,26 @@ test('producer receives pinned task view, not caller-owned mutable file objects'
   assert.equal(outcome.status,'PROPOSAL_PREPARED');
   assert.equal(outcome.candidate.changes[0].path,'docs/test-task.py');
 });
+test('signed objective is included in task binding and producer input',async()=>{
+  const scoped=task({objective:'Fix the authorized Python return value.'});
+  const expected={...scoped,objective:'Do something else.'};
+  const a=inspectSourceIntake({task:scoped,admittedTasks:[scoped]});
+  const b=inspectSourceIntake({task:expected,admittedTasks:[expected]});
+  assert.notEqual(a.taskBinding,b.taskBinding);
+  assert.equal(inspectSourceIntake({task:scoped,admittedTasks:[expected]}).status,'BLOCKED');
+  const response=await proposeSourceWork({task:scoped,admittedTasks:[scoped],
+    produce:async input=>{
+      assert.equal(input.objective,scoped.objective);
+      return generate();
+    }});
+  assert.equal(response.status,'PROPOSAL_PREPARED');
+});
+test('malformed task objective cannot control model generation',async()=>{
+  for(const objective of ['', ' '.repeat(2),'a'.repeat(2401),17]){
+    let called=0;
+    const scoped=task({objective});
+    const r=await proposeSourceWork({task:scoped,admittedTasks:[scoped],
+      produce:async()=>{called++;return generate()}});
+    assert.equal(r.status,'BLOCKED');assert.equal(called,0);
+  }
+});

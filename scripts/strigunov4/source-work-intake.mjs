@@ -69,12 +69,16 @@ const acceptableTask=(t)=>{
   if(!data(t,['id','laneId','repo','branch','baseSha','stage','kind','files'])||
     !ID.test(t.id)||!SHA40.test(t.baseSha)||t.repo!==REPO||
     t.stage!=='S4-G2'||t.kind!=='source-proposal'||!exactScope(t.files))return false;
+  if(Object.hasOwn(t,'objective') &&
+    (typeof t.objective!=='string'||t.objective.trim()!==t.objective||
+     t.objective.length<1||t.objective.length>2400))return false;
   return LANES.some(([id,branch])=>t.laneId===id&&t.branch===branch);
 };
 const matching=(a,b)=>{
   if(!acceptableTask(a)||!acceptableTask(b))return false;
   return a.id===b.id&&a.laneId===b.laneId&&a.repo===b.repo&&a.branch===b.branch&&
     a.baseSha===b.baseSha&&a.stage===b.stage&&a.kind===b.kind&&
+    a.objective===b.objective&&
     JSON.stringify(a.files)===JSON.stringify(b.files);
 };
 /** Validate exact work-order identity only; this never verifies a signature. */
@@ -87,7 +91,8 @@ export function inspectSourceIntake({task,admittedTasks}={}){
   if(hits.length!==1||!matching(task,hits[0]))return refuse('TASK_NOT_IN_EXACT_ADMITTED_CATALOG');
   const taskBinding=sum(JSON.stringify({
     id:task.id,laneId:task.laneId,repo:task.repo,branch:task.branch,
-    baseSha:task.baseSha,stage:task.stage,files:task.files
+    baseSha:task.baseSha,stage:task.stage,
+    objective:task.objective??null,files:task.files
   }));
   return Object.freeze({schema:'asi.source-intake-result.v1',status:'SOURCE_CANDIDATE',
     reason:'REQUIRES_NATIVE_SIGNED_ADMISSION',authorized:false,taskBinding,
@@ -116,6 +121,7 @@ export async function proposeSourceWork({task,admittedTasks,produce}={}){
     // Never allow producer access to authority files, secrets or host APIs.
     output=await produce(Object.freeze({id:pinned.id,laneId:pinned.laneId,
       baseSha:pinned.baseSha,repository:REPO,branch:pinned.branch,
+      ...(pinned.objective===undefined?{}:{objective:pinned.objective}),
       paths:Object.freeze(pinned.files.map(x=>x.path))}));
   }catch{return refuse('PRODUCER_FAILED_OR_UNKNOWN');}
   // Re-check the entire exact admitted scope AFTER the await. Any change to

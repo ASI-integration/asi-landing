@@ -64,3 +64,49 @@ real native source preparer still has a hardcoded G2 two-witness rule and the
 installed Publisher requires the signed workOrderId, release admission, sandboxed
 provider, CI/review and durable receipt. No invocation of the installed Engine
 or real end-to-end automated coding cycle is claimed.
+
+## Model coding adapter — 31 Oct 2026 source checkpoint
+
+A real OpenAI Responses API adapter (source-responses-provider.mjs) is now
+implemented, without installing a second agent or paid-provider service.
+It pins the HTTPS endpoint to https://api.openai.com/v1/responses, demands a
+host-configured explicit model, protected API credential and *already
+authorized* pre-request model budget, disables model tools and server-side
+response storage, requests structured JSON code changes and never retries a
+request after unknown outcome. The task's bounded objective is included in the
+task binding and revalidated across asynchronous generation.
+
+A separate exact Git SHA reader (source-git-context.mjs) supplies ONLY
+allowlisted source file bytes from a clean, privately-owned, DETACHED checkout,
+with checked .git/config, source SHA256, no symlinks, content size limits,
+matching requested paths and unchanged Git HEAD after reading. The source
+coder output still passes through source-work-intake.mjs and
+source-publisher-handoff.mjs, then the existing Change Preparer.
+
+The source-provider-offline-cycle.test.mjs actually invokes the existing
+Change Preparer on a private synthetic Git repo using a bounded structured
+model response returned by an in-memory mocked HTTP transport. It checks
+the generated Python syntax, expected file, unmodified source HEAD and
+zero GitHub/provider effects. This is an OFFLINE integration proof, NOT
+a real model run, real GitHub Draft PR or autonomous Engine acceptance.
+
+### Remaining LIVE activation requirements (not granted by this PR)
+
+1. An authenticated owner-issued, revocable standing parent/child delegation
+   from #552, with one enforceable durable budget authorizing both provider
+   requests and Publisher operations, zero secret leakage and no per-commit
+   owner prompt. A JavaScript callback alone is NOT signed authority.
+2. Independently approved provider/model, protected API credential and
+   accounted paid-token budget on the existing Beget Engine. No credentials
+   or real model calls have been provisioned in this source package.
+3. Signed expansion of current two-G2-witness execution catalog through #556
+   to one new non-witness source task, and a native transaction-bound
+   handoff into the EXISTING preparer / Publisher. Existing G2 hardcoded
+   limits must not be bypassed by a task prompt.
+4. On Beget with Windows OFF: a real new task → approved source context →
+   actual model generation → existing sandboxed checks → reviewed Draft PR →
+   exact CI + terminal durable receipt → next task, with no unknown-outcome
+   replay and a physical recovery witness.
+
+Do not count 45 passing offline tests as actual 24/7 autonomous coding.
+Keep NORMAL_OWNER_CONTROLLED, one existing Engine and one Publisher.
