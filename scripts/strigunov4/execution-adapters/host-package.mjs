@@ -165,3 +165,37 @@ export async function buildBegetCandidate({repository,output,baseSha,extraRuntim
   await fs.writeFile(path.join(output,'manifest.json'),JSON.stringify(manifest,null,2)+'\n',{mode:0o600});
   return manifest;
 }
+
+/** Deterministic, explicitly non-installable v2 *source closure*.
+ * The existing two-witness catalog in buildBegetCandidate is retained only
+ * for source/preflight compatibility. Five signed tasks, independent review
+ * and new host activation are NOT issued by this helper.
+ */
+export const BEGET_FIVE_LANE_SOURCE_ROOTS=Object.freeze([
+  'strigunov4/execution-adapters/standing-request-guard.mjs',
+  'strigunov4/execution-adapters/standing-parent-native-preview.mjs',
+  'strigunov4/source-responses-provider.mjs',
+  'strigunov4/source-git-context.mjs',
+  'strigunov4/source-publisher-handoff.mjs',
+  'strigunov4/source-work-intake.mjs',
+  'strigunov4/execution-adapters/autonomy-recovery-observer.mjs'
+]);
+export async function buildBegetFiveLaneSourceCandidate({repository,output,baseSha}={}){
+  const candidate=await buildBegetCandidate({repository,output,baseSha,
+    extraRuntimeRoots:[...BEGET_FIVE_LANE_SOURCE_ROOTS]});
+  const required=[
+    'scripts/strigunov4/execution-adapters/standing-request-guard.mjs',
+    'scripts/strigunov4/execution-adapters/beget-native-request-admission.mjs',
+    'scripts/strigunov4/execution-adapters/beget-native-source-review.mjs',
+    'scripts/strigunov4/execution-adapters/beget-native-five-lane-source.mjs',
+    'scripts/strigunov4/execution-adapters/owner-lane-native-bridge.mjs',
+    'scripts/strigunov4/source-responses-provider.mjs',
+    'scripts/global-dispatcher/task-intake.mjs'
+  ];
+  must(required.every(path=>candidate.files.some(f=>f.path===path)),
+    'FIVE_LANE_SOURCE_CLOSURE_INCOMPLETE');
+  must(candidate.installable===false &&
+    candidate.nativeFiveLaneWiring===undefined,
+    'FIVE_LANE_SOURCE_NOT_REVIEWED');
+  return candidate;
+}

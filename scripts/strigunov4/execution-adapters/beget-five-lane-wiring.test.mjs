@@ -4,6 +4,8 @@ import {createHash,generateKeyPairSync,sign} from 'node:crypto';
 import {verifyBegetFiveLaneActivation} from './host-authority.mjs';
 import {createResponsesSourceReviewer} from './beget-native-source-review.mjs';
 import {createNativeFiveLanePublicationLoop} from './publication-loop.mjs';
+import {isBegetV2RuntimeManifest} from './host-runtime.mjs';
+import {BEGET_FIVE_LANE_SOURCE_ROOTS} from './host-package.mjs';
 const sum=x=>createHash('sha256').update(x).digest('hex');
 const pair=()=>generateKeyPairSync('ed25519');
 const fingerprint=key=>sum(key.export({type:'spki',format:'der'}));
@@ -110,3 +112,18 @@ test('reviewer cannot reuse generation model or authorize without native reserva
       deltaSha256:DELTA})).status,'FAILED');
     assert.equal(external,0);
   });
+
+test('source-only v2 manifests require installer-compatible false and protected-reviewed wiring',()=>{
+  const m={schema:'asi.beget-engine-source.v1',
+    nativeFiveLaneWiring:'REVIEWED_PROTECTED_ACTIVE_RUNTIME_V1',
+    installable:false,files:Array.from({length:41},(_,i)=>({path:'scripts/x'+i+'.mjs'})),
+    nodeSha256:'a'.repeat(64),bwrapSha256:'a'.repeat(64),
+    unitSha256:'a'.repeat(64),catalogSha256:'a'.repeat(64)};
+  assert.equal(isBegetV2RuntimeManifest(m),true);
+  assert.equal(isBegetV2RuntimeManifest({...m,installable:true}),false);
+  assert.equal(isBegetV2RuntimeManifest({...m,nativeFiveLaneWiring:undefined}),false);
+  assert.equal(isBegetV2RuntimeManifest({...m,files:m.files.slice(0,20)}),false);
+  assert.equal(isBegetV2RuntimeManifest({...m,nodeSha256:'unknown'}),false);
+  assert.equal(BEGET_FIVE_LANE_SOURCE_ROOTS.includes(
+    'strigunov4/execution-adapters/standing-request-guard.mjs'),true);
+});

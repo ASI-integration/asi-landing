@@ -332,6 +332,15 @@ export async function reserveNativeModelRequest({store,ledger,transaction,payloa
  * the SAME installed service to five-lane mode. Legacy activation remains v1.
  * No user text, environment variable or unsigned manifest toggles this path.
  */
+// Source-shape check only. Protected signature and exact runtime hashes are
+// enforced separately by the native root-owned loader before every use.
+export function isBegetV2RuntimeManifest(m){
+  return m?.schema==='asi.beget-engine-source.v1'&&
+    m.nativeFiveLaneWiring==='REVIEWED_PROTECTED_ACTIVE_RUNTIME_V1'&&
+    m.installable===false&&Array.isArray(m.files)&&m.files.length>=30&&
+    ['unitSha256','nodeSha256','bwrapSha256','catalogSha256'].every(k=>
+      typeof m[k]==='string'&&/^[a-f0-9]{64}$/.test(m[k]));
+}
 export async function createBegetFiveLaneRuntime(){
   const {loadBegetFiveLaneAuthority,BEGET,rootOwned,AUTHORITY_DIR}=
     await import('./host-authority.mjs');
@@ -346,9 +355,9 @@ export async function createBegetFiveLaneRuntime(){
   must(digest(raw)===payload.runtimeManifestSha256,
     'NATIVE_FIVE_LANE_MANIFEST_CHANGED');
   const m=JSON.parse(raw);
-  must(m.schema==='asi.beget-engine-source.v1'&&
-    m.nativeFiveLaneWiring==='REVIEWED_PROTECTED_ACTIVE_RUNTIME_V1'&&
-    m.installable===true&&Array.isArray(m.files)&&m.files.length>=30,
+  // The updater requires installable:false because its independent signed
+  // active-upgrade grant, not the source-package flag, controls execution.
+  must(isBegetV2RuntimeManifest(m),
     'NATIVE_FIVE_LANE_REVIEWED_RUNTIME_REQUIRED');
   for(const f of m.files){
     must(/^scripts\/[A-Za-z0-9_./-]+\.mjs$/.test(f.path)&&
@@ -358,8 +367,12 @@ export async function createBegetFiveLaneRuntime(){
   }
   must(digest(await rootOwned('/etc/systemd/system/'+BEGET.service))===
     m.unitSha256&&
-    process.execPath===BEGET.runtime+'/node',
-    'NATIVE_FIVE_LANE_UNIT_OR_NODE_CHANGED');
+    process.execPath===BEGET.runtime+'/node'&&
+    digest(await rootOwned(BEGET.runtime+'/node',150000000,{encoding:null}))===
+      m.nodeSha256&&
+    digest(await rootOwned(BEGET.runtime+'/bwrap',2000000,{encoding:null}))===
+      m.bwrapSha256,
+    'NATIVE_FIVE_LANE_UNIT_OR_BINARY_CHANGED');
   // Secret is read only by the signed service identity; never log or export.
   const apiKey=String(await rootOwned(AUTHORITY_DIR+'/openai-api-key',20000,
     {secret:true})).trim();
