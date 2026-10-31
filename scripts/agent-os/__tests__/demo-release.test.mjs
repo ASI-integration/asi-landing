@@ -1,3 +1,4 @@
+import './owner-security-baseline.test.mjs'; // Include owner security negative tests in existing required PR Validation job.
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -146,7 +147,8 @@ test('13 rejects forged owner comments, accepts only exact owner+SHA+action', as
   try {
     globalThis.fetch = async () => ({ok: true, json: async () => [
       {user: {id: 9999}, body: 'ASI-OWNER-APPROVE:CONTRACT-CHANGE:520:' + sha},
-      {user: {id: 207600140}, body: 'ASI-OWNER-APPROVE:CONTRACT-CHANGE:520:' + sha},
+      {id: 314159, user: {id: 207600140, type: 'User'}, performed_via_github_app: null,
+       body: 'ASI-OWNER-APPROVE:CONTRACT-CHANGE:520:' + sha},
     ]});
     assert.equal(await verifiedOwnerComment(520, sha, 'CONTRACT-CHANGE', 'token'), true);
     assert.equal(await verifiedOwnerComment(520, sha, 'RELEASE-EXCEPTION', 'token'), false);
@@ -264,4 +266,59 @@ test('19 rename cannot hide governance or out-of-stage source paths', () => {
         source==='AGENTS.md'?'CONTRACT-CHANGE':'RELEASE-EXCEPTION');
     } finally {fs.rmSync(dir,{recursive:true,force:true});}
   }
+});
+
+test('20 routine Stage G2 host maintenance avoids per-file owner exception, protected files still denied', () => {
+  const c=copy();
+  c.stages[0].status='ACCEPTED';
+  c.stages[0].acceptanceSha=sha;
+  c.stages[0].proof=['https://github.com/ASI-integration/asi-landing/actions/runs/123'];
+  c.stages[1].status='IN_PROGRESS';
+  const evidence=new Set(c.stages[0].proof);
+  const b=body('S4-G2');
+  const routine='scripts/strigunov4/execution-adapters/beget-host.test.mjs';
+  const args={contract:c,changed:[routine],prNumber:560,prBody:b,headSha:sha,baseHasContract:true,verifiedRuns:evidence};
+  assert.equal(checkPr(args).status,'CURRENT_MILESTONE_SCOPED');
+  assert.equal(requiredApproval({contract:c,changed:[routine],prNumber:560,prBody:b,headSha:sha}),null);
+  for (const blocked of [
+    'scripts/strigunov4/execution-adapters/host-authority.mjs',
+    'scripts/strigunov4/execution-adapters/standing-budget.mjs',
+    'scripts/agent-os/check-demo-release.mjs',
+    'src/unrelated.ts'
+  ]) {
+    assert.throws(()=>checkPr({...args,changed:[blocked]}),
+      /PR_HAS_OUT_OF_STAGE_FILES|GOVERNANCE_CHANGE_NEEDS_VERIFIED_OWNER_ATTESTATION/);
+    assert.notEqual(requiredApproval({contract:c,changed:[blocked],prNumber:560,prBody:b,headSha:sha}),null);
+  }
+});
+
+test('21 development mode permits routine code, not protected operations', () => {
+  const bodyDev=body('S4-G2','development');
+  for (const filename of ['src/app/demo/page.tsx','tests/example.test.ts','scripts/strigunov4/test_c4_unit_readonly.py','docs/example.md']) {
+    const args={contract:seed,changed:[filename],prNumber:570,prBody:bodyDev,headSha:sha,baseHasContract:true};
+    assert.equal(checkPr(args).status,'SOURCE_DEVELOPMENT_ONLY');
+    assert.equal(requiredApproval({contract:seed,changed:[filename],prNumber:570,prBody:bodyDev,headSha:sha}),null);
+  }
+  for (const filename of ['.github/workflows/pr-validation.yml','scripts/agent-os/check-demo-release.mjs','scripts/strigunov4/execution-adapters/host-authority.mjs','scripts/strigunov4/execution-adapters/host-checks.mjs','scripts/strigunov4/execution-adapters/standing-budget.mjs','docs/agent-os/AUTONOMY_POLICY.md','scripts/strigunov4/beget-install.py','scripts/strigunov4/g0_activation_host.py','scripts/strigunov4/staging_no_send_host.py','src/app/api/booking-ops/route.ts','src/pages/api/users.ts','src/middleware.ts','src/instrumentation.ts','src/lib/auth/session.ts','src/lib/payment/settlement.ts','src/app/demo/route.ts','src/app/demo\\unsafe.ts','src/app/demo\nunsafe.ts','src/.env','scripts/deploy.sh','src/production/secrets.pem']) {
+    const args={contract:seed,changed:[filename],prNumber:570,prBody:bodyDev,headSha:sha,baseHasContract:true};
+    assert.throws(()=>checkPr(args), /DEVELOPMENT_PROTECTED_OR_OUT_OF_SCOPE_PATH|GOVERNANCE_CHANGE_NEEDS_VERIFIED_OWNER_ATTESTATION/);
+    assert.notEqual(requiredApproval({contract:seed,changed:[filename],prNumber:570,prBody:bodyDev,headSha:sha}),null);
+  }
+});
+
+test('22 App-origin and incomplete provenance cannot impersonate an owner comment', async () => {
+  const old = globalThis.fetch;
+  const exact='ASI-OWNER-APPROVE:CONTRACT-CHANGE:520:'+sha;
+  try {
+    for(const forged of [
+      {id:1,user:{id:207600140,type:'User'},performed_via_github_app:{id:99},body:exact},
+      {id:2,user:{id:207600140,type:'Bot'},performed_via_github_app:null,body:exact},
+      {id:3,user:{id:207600140,type:'User'},body:exact},
+      {id:4,user:{id:207600140,type:'User'},performed_via_github_app:null,body:exact+'-extra'},
+      {id:'5',user:{id:207600140,type:'User'},performed_via_github_app:null,body:exact},
+    ]) {
+      globalThis.fetch=async()=>({ok:true,json:async()=>[forged]});
+      assert.equal(await verifiedOwnerComment(520,sha,'CONTRACT-CHANGE','token'),false);
+    }
+  } finally {globalThis.fetch=old;}
 });
