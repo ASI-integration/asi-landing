@@ -62,7 +62,7 @@ test('offline full candidate -> actual existing Git preparer and syntax check; n
        assert.equal(task.files[0].content,'');
        assert.equal(task.objective,admitted.objective);
        return new Response(JSON.stringify({
-         status:'completed',output:[{type:'message',role:'assistant',status:'completed',
+         status:'completed',model:'gpt-6-astra',output:[{type:'message',role:'assistant',status:'completed',
            content:[{type:'output_text',text:JSON.stringify({status:'PROPOSED',
              changes:[{path:SOURCE,content:NEW}]})}]}]
        }),{status:200,headers:{'content-type':'application/json'}});

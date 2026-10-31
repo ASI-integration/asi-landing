@@ -110,3 +110,20 @@ a real model run, real GitHub Draft PR or autonomous Engine acceptance.
 
 Do not count 45 passing offline tests as actual 24/7 autonomous coding.
 Keep NORMAL_OWNER_CONTROLLED, one existing Engine and one Publisher.
+
+## Ground Zero next-five hardening checkpoint — 31 October
+
+AI coding provider (still source-only):
+- snapshot the complete bounded task identity before async context reads and
+  recheck immediately before and after a provider budget reservation;
+- bind paid-provider pathDigest to exact source bytes and objective, not only
+  literal paths/before SHA, without resetting prior native spend;
+- require the completed model identity to match the reserved model;
+- reject any unexpected tool call or additional output item, even alongside an
+  otherwise valid text response;
+- continue to fail closed on uncertain API outcome, without automatic retry.
+
+The existing fake-network end-to-end check still invokes the actual
+Change Preparer on a private detached Git fixture; no real paid model request,
+live GitHub PR, signed owner delegation, five-lane activation or root access.
+These safeguards do NOT supply an approved native API spending authority.

@@ -172,3 +172,71 @@ test('host budget token must bind the exact read-file inventory',async()=>{
   assert.equal(r.reason,'SIGNED_PROVIDER_BUDGET_DENIED');
   assert.equal(record.calls.length,0);
 });
+test('a moving task cannot spend after source context completes',async()=>{
+  let calls=0, paid=0;
+  const moving={id:'coding-work-1',laneId:'engine',baseSha:H40,
+    repository:'ASI-integration/asi-landing',branch:'asi/beget-one-engine-20261028',
+    objective:'Authorized scope',paths:['docs/coding-work.py']};
+  const produce=createResponsesCodeProducer({model:MODEL,apiKey:KEY,
+    getContext:async()=>{
+      moving.objective='Different instruction';
+      return [{path:'docs/coding-work.py',beforeSha256:null,content:''}];
+    },
+    admitRequest:async()=>{paid++;return {authorized:true}},
+    transport:async()=>{calls++;throw Error('should not call')}
+  });
+  const result=await produce(moving);
+  assert.equal(result.reason,'TASK_CHANGED_DURING_CONTEXT_READ');
+  assert.equal(paid,0);assert.equal(calls,0);
+});
+test('provider reservation binds the actual objective and exact source bytes',async()=>{
+  const a={calls:[],admissions:[]};
+  const first=instance({record:a});
+  const t={id:'coding-work-1',laneId:'engine',baseSha:H40,
+    repository:'ASI-integration/asi-landing',branch:'asi/beget-one-engine-20261028',
+    objective:'Instruction alpha',paths:['docs/coding-work.py']};
+  const r1=await first.model(t);assert.equal(r1.status,'PROPOSED');
+  const firstDigest=a.admissions[0].pathDigest;
+  const b={calls:[],admissions:[]};
+  const second=instance({record:b});
+  const r2=await second.model({...t,objective:'Instruction beta'});
+  assert.equal(r2.status,'PROPOSED');
+  assert.notEqual(firstDigest,b.admissions[0].pathDigest);
+});
+test('scope moved after charged reservation does not produce a paid request',async()=>{
+  const t={id:'coding-work-1',laneId:'engine',baseSha:H40,
+    repository:'ASI-integration/asi-landing',branch:'asi/beget-one-engine-20261028',
+    objective:'Approved',paths:['docs/coding-work.py']};
+  let calls=0;
+  const produce=createResponsesCodeProducer({model:MODEL,apiKey:KEY,
+    getContext:async()=>[{path:'docs/coding-work.py',beforeSha256:null,content:''}],
+    admitRequest:async request=>{
+      t.objective='MUTATED AFTER RESERVATION';
+      return {authorized:true,taskId:request.taskId,baseSha:request.baseSha,
+        model:request.model,maxOutputTokens:request.maxOutputTokens,
+        pathDigest:request.pathDigest,operationId:'signed-native-test-1'};
+    },
+    transport:async()=>{calls++;return new Response('{}',{status:200})}
+  });
+  assert.equal((await produce(t)).reason,'TASK_CHANGED_AFTER_PAID_RESERVATION');
+  assert.equal(calls,0);
+});
+test('a changed returned model is not accepted under a different signed model budget',async()=>{
+  const {model}=instance({response:{...output(),model:'gpt-other'}});
+  const r=await model({id:'coding-work-1',baseSha:H40,
+    repository:'ASI-integration/asi-landing',laneId:'engine',
+    branch:'asi/beget-one-engine-20261028',objective:'Code',
+    paths:['docs/coding-work.py']});
+  assert.equal(r.reason,'PROVIDER_MODEL_CHANGED_AFTER_RESERVATION');
+});
+test('tool calls alongside an assistant message are not silently ignored',async()=>{
+  const {model}=instance({response:{...output(),output:[
+    ...output().output,
+    {type:'function_call',name:'shell',call_id:'untrusted',arguments:'{}'}
+  ]}});
+  const r=await model({id:'coding-work-1',baseSha:H40,
+    repository:'ASI-integration/asi-landing',laneId:'engine',
+    branch:'asi/beget-one-engine-20261028',objective:'Code',
+    paths:['docs/coding-work.py']});
+  assert.equal(r.reason,'PROVIDER_OUTPUT_INVALID');
+});
