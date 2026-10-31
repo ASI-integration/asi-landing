@@ -38,7 +38,7 @@ describe('shared RU email-code identity policy', () => {
       ASI_RU_EMAIL_CODE_ORIGIN: 'https://www.asi-global.ru',
       ASI_RU_EMAIL_CODE_PEPPER: pepper,
       ASI_AUTH_RESEND_API_KEY: 'fixture', ASI_AUTH_FROM_EMAIL: 'no-reply@asi-global.ru',
-      SESSION_SECRET: pepper, SUPABASE_URL: 'https://example.test',
+      SESSION_SECRET: 'independent-iron-session-secret-at-least-32', SUPABASE_URL: 'https://example.test',
       SUPABASE_SERVICE_ROLE_KEY: 'fixture',
     };
     expect(ruCodeAuthConfigured(env)).toBe(true);
@@ -48,6 +48,10 @@ describe('shared RU email-code identity policy', () => {
     expect(ruCodeAuthConfigured({ ...env, ASI_RU_EMAIL_CODE_ORIGIN: 'https://evil.ru' })).toBe(false);
     expect(ruCodeAuthConfigured({ ...env, ASI_RU_EMAIL_CODE_SCHEMA_READY: 'false' })).toBe(false);
     expect(ruCodeAuthConfigured({ ...env, ASI_RU_EMAIL_CODE_PEPPER: '' })).toBe(false);
+    // A second env name does not make a reused signing key independent.
+    expect(ruCodeAuthConfigured({ ...env, ASI_RU_EMAIL_CODE_PEPPER: env.SESSION_SECRET })).toBe(false);
+    expect(ruCodeAuthConfigured({ ...env, ASI_RU_EMAIL_CODE_PEPPER: ' '.repeat(40) })).toBe(false);
+    expect(ruCodeAuthConfigured({ ...env, ASI_RU_EMAIL_CODE_PEPPER: '  '+pepper })).toBe(false);
     expect(ruCodeAuthConfigured({ ...env, ASI_AUTH_RESEND_API_KEY: undefined })).toBe(false);
     expect(ruCodeAuthConfigured({ ...env, SESSION_SECRET: '' })).toBe(false);
   });

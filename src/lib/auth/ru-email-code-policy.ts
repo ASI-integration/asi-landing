@@ -59,7 +59,11 @@ export function ruCodeAuthConfigured(env: Readonly<Record<string, string | undef
   return env.ASI_RU_EMAIL_CODE_ENABLED === 'true' &&
     canonicalRuEmailCodeOrigin(env) !== null &&
     env.ASI_RU_EMAIL_CODE_SCHEMA_READY === 'true' &&
-    (env.ASI_RU_EMAIL_CODE_PEPPER?.length ?? 0) >= 32 &&
+    // A dedicated server pepper must not be whitespace padding or the
+    // iron-session signing key reused under a different environment name.
+    (env.ASI_RU_EMAIL_CODE_PEPPER?.trim().length ?? 0) >= 32 &&
+    env.ASI_RU_EMAIL_CODE_PEPPER === env.ASI_RU_EMAIL_CODE_PEPPER?.trim() &&
+    env.ASI_RU_EMAIL_CODE_PEPPER !== env.SESSION_SECRET?.trim() &&
     Boolean(env.ASI_AUTH_RESEND_API_KEY?.trim()) &&
     Boolean(env.ASI_AUTH_FROM_EMAIL?.trim()) &&
     (env.SESSION_SECRET?.trim().length ?? 0) >= 32 &&
