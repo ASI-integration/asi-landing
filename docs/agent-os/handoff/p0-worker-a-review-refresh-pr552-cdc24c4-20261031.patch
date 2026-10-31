@@ -1,0 +1,376 @@
+diff --git a/scripts/agent-os/__tests__/release-envelope-gate-composition.test.mjs b/scripts/agent-os/__tests__/release-envelope-gate-composition.test.mjs
+index 88ad7f0b..d6669ddd 100644
+--- a/scripts/agent-os/__tests__/release-envelope-gate-composition.test.mjs
++++ b/scripts/agent-os/__tests__/release-envelope-gate-composition.test.mjs
+@@ -65,8 +65,8 @@ function fixture(t,{creation=false}={}){
+ }
+ test('real two-HEAD Git diff and metered PRE_GATE reads reuse one unchanged owner envelope',async t=>{
+  const f=fixture(t),original=JSON.stringify(f.signedEnvelope);
+- for(const head of f.heads){const x=f.candidate(head),r=await read(x.input,x.context);assert.equal(r.status,'PROPOSAL_ELIGIBLE',JSON.stringify(r));assert.equal(r.phase,'PRE_GATE');assert.equal(r.permittedEffect,'ADMISSION_REVIEW_ONLY');assert.equal(r.authorized,false);assert.equal(r.requiresAtomicReservation,true);assert.equal(r.providerReceipt.requests,13);}
+- assert.notEqual(...f.heads);assert.equal(JSON.stringify(f.signedEnvelope),original);assert.equal(f.calls.length,26);assert.equal(f.metered.length,26);assert(f.metered.every(d=>d.method==='GET'));
++ for(const head of f.heads){const x=f.candidate(head),r=await read(x.input,x.context);assert.equal(r.status,'PROPOSAL_ELIGIBLE',JSON.stringify(r));assert.equal(r.phase,'PRE_GATE');assert.equal(r.permittedEffect,'ADMISSION_REVIEW_ONLY');assert.equal(r.authorized,false);assert.equal(r.requiresAtomicReservation,true);assert.equal(r.providerReceipt.requests,14);}
++ assert.notEqual(...f.heads);assert.equal(JSON.stringify(f.signedEnvelope),original);assert.equal(f.calls.length,28);assert.equal(f.metered.length,28);assert(f.metered.every(d=>d.method==='GET'));
+ });
+ test('PRE_GATE signature cannot become final witnessed evidence or bypass v0',async t=>{
+  const f=fixture(t),x=f.candidate();assert.equal((await read(x.input,x.context)).status,'PROPOSAL_ELIGIBLE');
+@@ -151,6 +151,6 @@ test('authenticated source pending retains metered receipt without granting elig
+  const f=fixture(t),x=f.candidate();Object.assign(x.snapshot.jobs[0],{status:'queued',conclusion:null,completed_at:null});
+  const r=await read(x.input,x.context);assert.equal(r.status,'WAITING',JSON.stringify(r));
+  assert.equal(r.reason,'GATE_SOURCE_PENDING');assert.equal(r.authorized,false);assert.equal(r.permittedEffect,'NONE');
+- assert.equal(r.providerReceipt.requests,13);assert.equal(f.metered.length,13);assert.equal(r.revocationCheckpoint.sequence,1);
++ assert.equal(r.providerReceipt.requests,14);assert.equal(f.metered.length,14);assert.equal(r.revocationCheckpoint.sequence,1);
+  x.witness.gateBinding.sourceRunAttempt=2;x.resign();assert.equal((await read(x.input,x.context)).status,'BLOCKED');
+ });
+diff --git a/scripts/agent-os/__tests__/release-envelope-pre-gate.test.mjs b/scripts/agent-os/__tests__/release-envelope-pre-gate.test.mjs
+index 50cfffa2..34a8e021 100644
+--- a/scripts/agent-os/__tests__/release-envelope-pre-gate.test.mjs
++++ b/scripts/agent-os/__tests__/release-envelope-pre-gate.test.mjs
+@@ -111,7 +111,7 @@ test('context excludes caller bypass flags and rejects accessors without executi
+ test('reader fetches fixed exact-attempt jobs protected-base blobs and current evaluator with metering',async()=>{
+   const f=network(),r=await read(f.input);
+   assert.equal(r.status,'GATE_PREREQUISITES_VERIFIED');assert.equal(r.authorized,false);
+-  assert.equal(f.calls.length,13);assert.equal(f.metered.length,13);assert.equal(r.receipt.requests,13);
++  assert.equal(f.calls.length,14);assert.equal(f.metered.length,14);assert.equal(r.receipt.requests,14);
+   assert(f.calls.every(c=>c.method==='GET'&&c.redirect==='error'));
+   assert(f.calls.some(c=>c.url.includes('/actions/runs/41/attempts/1/jobs?')));
+   assert.equal(f.calls.filter(c=>c.url.includes('/contents/')&&c.url.endsWith('?ref='+baseSha)).length,2);
+diff --git a/scripts/agent-os/__tests__/release-envelope-provider-metering.test.mjs b/scripts/agent-os/__tests__/release-envelope-provider-metering.test.mjs
+index 4f97c814..4b658ab2 100644
+--- a/scripts/agent-os/__tests__/release-envelope-provider-metering.test.mjs
++++ b/scripts/agent-os/__tests__/release-envelope-provider-metering.test.mjs
+@@ -57,7 +57,7 @@ test('every authenticated GET, review page and PR recheck is reserved before exa
+   const result = await readProvider(f.input);
+   assert.equal(result.status, 'PROVIDER_EVIDENCE_VERIFIED');
+   assert.equal(result.authorized, false);
+-  assert.equal(result.receipt.requests, 6);
++  assert.equal(result.receipt.requests, 8); // two complete paginated review reads
+   for (let i = 0; i < f.events.length; i += 2) {
+     assert.equal(f.events[i][0], 'reserved');
+     assert.deepEqual(f.events[i + 1], ['fetch', f.events[i][1]]);
+diff --git a/scripts/agent-os/__tests__/release-envelope-review-freshness.test.mjs b/scripts/agent-os/__tests__/release-envelope-review-freshness.test.mjs
+new file mode 100644
+index 00000000..72ae2250
+--- /dev/null
++++ b/scripts/agent-os/__tests__/release-envelope-review-freshness.test.mjs
+@@ -0,0 +1,68 @@
++import test from 'node:test';
++import assert from 'node:assert/strict';
++import {inspectFreshIndependentReview as check} from '../release-envelope-review-freshness.mjs';
++const H='a'.repeat(40), OTHER='b'.repeat(40), NOW=1793390000000;
++const ISO=new Date(NOW-2000).toISOString().replace('.000Z','Z');
++const expected={repository:'ASI-integration/asi-landing',headSha:H,
++  independentReviewerId:42,authorId:17,ownerId:207600140};
++const approval=()=>({id:10,user:{id:42},state:'APPROVED',commit_id:H,submitted_at:ISO});
++const other=()=>({id:9,user:{id:99},state:'COMMENTED',commit_id:H,submitted_at:ISO});
++const run=(before,after,override={})=>check({before,after,expected:{...expected,...override},now:NOW});
++
++test('two independent complete inventories with same fresh approval are non-authorizing',()=>{
++  const r=run([other(),approval()],[approval(),other()]);
++  assert.deepEqual(r,{status:'REVIEW_SNAPSHOT_UNCHANGED',authorized:false,reviewId:10,headSha:H});
++});
++test('approval dismissed between first and final review GET fails closed',()=>{
++  const before=[approval()],after=[{...approval(),state:'DISMISSED'}];
++  assert.equal(run(before,after).reason,'REVIEW_SNAPSHOT_DRIFT');
++});
++test('a newer change request after first read fails closed',()=>{
++  const newer={...approval(),id:11,state:'CHANGES_REQUESTED'};
++  assert.equal(run([approval()],[approval(),newer]).reason,'REVIEW_SNAPSHOT_DRIFT');
++});
++test('review disappearance, changed commit and reviewer identity all deny drift',()=>{
++  for(const next of [[],[{...approval(),commit_id:OTHER}],
++    [{...approval(),user:{id:43}}]])
++    assert.equal(run([approval()],next).reason,'REVIEW_SNAPSHOT_DRIFT');
++});
++test('matching negative decisions do not authenticate an approval',()=>{
++  for(const state of ['DISMISSED','CHANGES_REQUESTED']){
++    const a=[{...approval(),state}];assert.equal(run(a,a).reason,'REVIEW_NOT_APPROVED');
++  }
++});
++test('matching stale or wrong-HEAD approvals deny',()=>{
++  const old=new Date(NOW-3600001).toISOString().replace(/\.\d{3}Z$/,'Z');
++  for(const a of [[{...approval(),commit_id:OTHER}],[{...approval(),submitted_at:old}]])
++    assert.equal(run(a,a).reason,'REVIEW_NOT_APPROVED');
++});
++test('same GitHub user as author or owner cannot satisfy independently pinned identity',()=>{
++  for(const who of [{authorId:42},{ownerId:42}])
++    assert.equal(run([approval()],[approval()],who).reason,'REVIEW_CONTEXT');
++});
++test('boxed SHA and invalid pinned identities deny before string regex',()=>{
++  for(const headSha of [new String(H),[H],{toString:()=>H},OTHER.slice(1)])
++    assert.equal(run([approval()],[approval()],{headSha}).reason,'REVIEW_CONTEXT');
++});
++test('getters, sparse histories and coercible review states deny without invocation',()=>{
++  let hit=0;
++  const x=approval();Object.defineProperty(x,'state',{get(){hit++;throw Error('unexpected');}});
++  assert.equal(run([x],[approval()]).reason,'REVIEW_SNAPSHOT_SHAPE');assert.equal(hit,0);
++  const y=[approval(),,other()];
++  assert.equal(run(y,y).reason,'REVIEW_SNAPSHOT_SHAPE');
++  const z=[{...approval(),state:new String('APPROVED')}];
++  assert.equal(run(z,z).reason,'REVIEW_SNAPSHOT_SHAPE');
++});
++test('new negative decision in both captures supersedes older approval',()=>{
++  const later=new Date(NOW-1000).toISOString().replace('.000Z','Z');
++  const a=[approval(),{...approval(),id:12,state:'CHANGES_REQUESTED',submitted_at:later}];
++  assert.equal(run(a,a).reason,'REVIEW_NOT_APPROVED');
++});
++
++test('RFC3339 fractional-second review timestamps retain exact decision binding',()=>{
++  const fractional=new Date(NOW-1500).toISOString();
++  const a=[{...approval(),submitted_at:fractional}];
++  assert.equal(run(a,a).status,'REVIEW_SNAPSHOT_UNCHANGED');
++  const wrong=[{...approval(),submitted_at:fractional.replace('.500Z','.5000Z')}];
++  assert.equal(run(wrong,wrong).reason,'REVIEW_SNAPSHOT_SHAPE');
++});
+diff --git a/scripts/agent-os/__tests__/release-envelope-review-refresh-integration.test.mjs b/scripts/agent-os/__tests__/release-envelope-review-refresh-integration.test.mjs
+new file mode 100644
+index 00000000..8e1eedde
+--- /dev/null
++++ b/scripts/agent-os/__tests__/release-envelope-review-refresh-integration.test.mjs
+@@ -0,0 +1,66 @@
++import test from 'node:test';
++import assert from 'node:assert/strict';
++import {readAuthenticatedProviderSnapshot as readProvider} from '../check-demo-release.mjs';
++
++function makeFixture(drift='stable') {
++  const repository='ASI-integration/asi-landing';
++  const baseSha='a'.repeat(40), headSha='b'.repeat(40);
++  const now=Date.parse('2026-10-29T07:15:00Z');
++  const expected={repository,number:552,baseSha,headSha,independentReviewerId:42};
++  const pullRef={number:552,head:{sha:headSha},base:{sha:baseSha}};
++  const pr={number:552,state:'open',user:{id:19},
++    head:{sha:headSha,repo:{full_name:repository}},
++    base:{ref:'main',sha:baseSha,repo:{full_name:repository}}};
++  const runs=[
++    {id:2,workflow_id:311380800,event:'pull_request',head_sha:headSha},
++    {id:3,workflow_id:390653294,event:'pull_request_target',head_sha:baseSha},
++  ].map(run=>({...run,run_attempt:1,status:'completed',conclusion:'success',
++    repository:{full_name:repository},pull_requests:[pullRef],
++    updated_at:'2026-10-29T07:14:00Z'}));
++  const approval={id:10,user:{id:42},state:'APPROVED',commit_id:headSha,
++    submitted_at:'2026-10-29T07:14:30Z'};
++  let reviews=[approval], reviewReads=0;
++  const calls=[];
++  const fetchImpl=async(url,options)=>{
++    const u=new URL(url);
++    calls.push({route:u.pathname+u.search,options});
++    let body;
++    if(u.pathname.endsWith('/reviews')){
++      reviewReads++;
++      body=structuredClone(reviews);
++      // A provider state change AFTER the first response has been copied,
++      // while the PR base and HEAD remain unchanged.
++      if(reviewReads===1) {
++        if(drift==='dismiss')reviews=[{...approval,state:'DISMISSED'}];
++        if(drift==='changes')reviews=[approval,{...approval,id:11,state:'CHANGES_REQUESTED',
++          submitted_at:'2026-10-29T07:14:45Z'}];
++        if(drift==='identity')reviews=[{...approval,user:{id:43}}];
++      }
++    } else if(u.pathname.includes('/actions/workflows/')){
++      const id=Number(u.pathname.split('/').at(-2));
++      const workflow_runs=runs.filter(r=>r.workflow_id===id);
++      body={total_count:workflow_runs.length,workflow_runs};
++    } else body=pr;
++    return new Response(JSON.stringify(body),{headers:{'Content-Type':'application/json'}});
++  };
++  return {input:{token:'offline-test-only',expected,fetchImpl,clock:()=>now},calls,
++    getReviewReads:()=>reviewReads};
++}
++
++test('stable complete review inventories still produce non-authorizing evidence',async()=>{
++  const f=makeFixture();const r=await readProvider(f.input);
++  assert.equal(r.status,'PROVIDER_EVIDENCE_VERIFIED');
++  assert.equal(r.authorized,false);
++  assert.equal(f.getReviewReads(),2);
++  assert.equal(r.receipt.requests,6);
++});
++for(const [drift,label] of [['dismiss','dismissal'],['changes','new change request'],
++  ['identity','reviewer identity change']]) {
++  test('review freshness denies '+label+' between authenticated GETs',async()=>{
++    const f=makeFixture(drift);const r=await readProvider(f.input);
++    assert.equal(r.authorized,false);
++    assert.equal(r.status,'BLOCKED');
++    assert.equal(r.reason,'PROVIDER_READER_REVIEW_DRIFT');
++    assert.equal(f.getReviewReads(),2);
++  });
++}
+diff --git a/scripts/agent-os/__tests__/release-envelope-witness.test.mjs b/scripts/agent-os/__tests__/release-envelope-witness.test.mjs
+index 566ec59c..ac3cf545 100644
+--- a/scripts/agent-os/__tests__/release-envelope-witness.test.mjs
++++ b/scripts/agent-os/__tests__/release-envelope-witness.test.mjs
+@@ -242,7 +242,7 @@ function readerFixture(change = () => {}) {
+ test('reader obtains bounded authenticated GET observations and never authority',async()=>{
+  const f=readerFixture();const result=await readProvider(f.input);
+  assert.equal(result.status,'PROVIDER_EVIDENCE_VERIFIED');assert.equal(result.authorized,false);
+- assert.equal(result.receipt.requests,5);assert.equal(result.receipt.writes,0);
++ assert.equal(result.receipt.requests,6);assert.equal(result.receipt.writes,0);
+  assert(!JSON.stringify(result).includes(f.input.token));
+  for(const {url,options} of f.calls) {
+   assert(url.startsWith('https://api.github.com/repos/ASI-integration/asi-landing/'));
+@@ -283,13 +283,13 @@ test('reader paginates reviews completely so later denial is not hidden',async()
+     {headers:{'Content-Type':'application/json'}});
+   }
+  });
+- assert.equal((await readProvider(f.input)).reason,'PROVIDER_INDEPENDENT_REVIEW');
+- assert.equal(f.calls.length,6);
++ assert.equal((await readProvider(f.input)).reason,'PROVIDER_READER_REVIEW_NOT_APPROVED');
++ assert.equal(f.calls.length,7);
+ });
+ test('reader rechecks PR identity and rejects concurrent head/base movement',async()=>{
+  for(const side of ['head','base']) {
+   const f=readerFixture(({calls,x,url})=>{
+-   if(calls.length===5 && url.pathname.endsWith('/552')) {
++   if(calls.length===6 && url.pathname.endsWith('/552')) {
+     const value=structuredClone(x.pr);value[side].sha='e'.repeat(40);
+     return new Response(JSON.stringify(value),{headers:{'Content-Type':'application/json'}});
+    }
+diff --git a/scripts/agent-os/check-demo-release.mjs b/scripts/agent-os/check-demo-release.mjs
+index 8c93d4df..048413cb 100644
+--- a/scripts/agent-os/check-demo-release.mjs
++++ b/scripts/agent-os/check-demo-release.mjs
+@@ -5,6 +5,7 @@
+  * This gate does not grant permission for merge, staging or server mutations.
+  */
+ import fs from 'node:fs';
++import {inspectFreshIndependentReview} from './release-envelope-review-freshness.mjs';
+ import {inspectStandingAdmissionReceipt,isStandingReleaseReader} from '../strigunov4/execution-adapters/standing-request-guard.mjs';
+ import { readProtectedStandingTrustSnapshot } from './release-envelope-trust-roots.mjs';
+ import { createHash, createPublicKey } from 'node:crypto';
+@@ -631,16 +632,20 @@ async function readProviderSnapshot({token,expected,fetchImpl,clock,beforeReques
+       sourceJobs={runId:latest.id,runAttempt:latest.run_attempt,totalCount:total,jobs};
+       evaluatorRun=await get('/actions/runs/'+gate.evaluatorRunId);
+     }
+-    const reviews = [];
+-    for (let page = 1; page <= 3; page++) {
+-      const batch = await get('/pulls/' + expected.number + '/reviews?per_page=100&page=' + page);
+-      must(Array.isArray(batch) && batch.length <= 100, 'PROVIDER_READER_INCOMPLETE');
+-      reviews.push(...batch);
+-      must(reviews.every(r => Number.isSafeInteger(r?.id) && r.id > 0) &&
+-        new Set(reviews.map(r => r.id)).size === reviews.length, 'PROVIDER_READER_INCOMPLETE');
+-      if (batch.length < 100) break;
+-      must(page < 3, 'PROVIDER_READER_INCOMPLETE');
+-    }
++    const collectReviews=async()=>{
++      const reviews = [];
++      for (let page = 1; page <= 3; page++) {
++        const batch = await get('/pulls/' + expected.number + '/reviews?per_page=100&page=' + page);
++        must(Array.isArray(batch) && batch.length <= 100, 'PROVIDER_READER_INCOMPLETE');
++        reviews.push(...batch);
++        must(reviews.every(r => Number.isSafeInteger(r?.id) && r.id > 0) &&
++          new Set(reviews.map(r => r.id)).size === reviews.length, 'PROVIDER_READER_INCOMPLETE');
++        if (batch.length < 100) break;
++        must(page < 3, 'PROVIDER_READER_INCOMPLETE');
++      }
++      return reviews;
++    };
++    let reviews=await collectReviews();
+     if(gate){
+       // A PR reread cannot detect a rerun/new CI attempt on the same HEAD.
+       // Recollect COMPLETE workflow inventories; never query only the old run.
+@@ -662,6 +667,21 @@ async function readProviderSnapshot({token,expected,fetchImpl,clock,beforeReques
+       }
+       runs=freshRuns;
+     }
++    // Re-read the COMPLETE, authenticated review inventory, not merely a PR SHA.
++    // The same bounded, metered GET is used for both samples. Source-only evidence
++    // is never an independent reviewer, owner signature or release authority.
++    const freshReviews=await collectReviews();
++    const reviewGuard=inspectFreshIndependentReview({
++      before:reviews,after:freshReviews,
++      expected:{repository:REPO,headSha:expected.headSha,
++        independentReviewerId:expected.independentReviewerId,
++        authorId:pr?.user?.id,ownerId:OWNER_ID},
++      now:clock(),
++    });
++    if(reviewGuard.status!=='REVIEW_SNAPSHOT_UNCHANGED') return deny(
++      reviewGuard.reason==='REVIEW_SNAPSHOT_DRIFT'?'PROVIDER_READER_REVIEW_DRIFT':
++        'PROVIDER_READER_REVIEW_NOT_APPROVED');
++    reviews=freshReviews;
+     const currentPr = await get('/pulls/' + expected.number);
+     const now = clock();
+     must(Number.isSafeInteger(now) && now >= startedAt && now - startedAt < 30000,
+diff --git a/scripts/agent-os/release-envelope-review-freshness.mjs b/scripts/agent-os/release-envelope-review-freshness.mjs
+new file mode 100644
+index 00000000..a954f10e
+--- /dev/null
++++ b/scripts/agent-os/release-envelope-review-freshness.mjs
+@@ -0,0 +1,80 @@
++/**
++ * Source-only adjunct to the existing protected-base GitHub evidence reader.
++ * Compare two COMPLETE, independently fetched GitHub review inventories before
++ * the verifier considers a current-head review. Neither the arrays nor a GitHub
++ * user identity authenticate human independence; protected issuer/reviewer
++ * configuration and the existing Publisher lock remain separate requirements.
++ * NEVER authorizes, signs, or fetches anything.
++ */
++const SHA = /^[0-9a-f]{40}$/;
++const REPO = 'ASI-integration/asi-landing';
++const STATES = new Set(['APPROVED','CHANGES_REQUESTED','DISMISSED','COMMENTED','PENDING']);
++const deny = reason => Object.freeze({status:'BLOCKED',reason,authorized:false});
++
++function data(o) {
++  if (!o || typeof o !== 'object' || Array.isArray(o) ||
++      ![Object.prototype,null].includes(Object.getPrototypeOf(o))) throw Error('SHAPE');
++  const descriptors = Object.getOwnPropertyDescriptors(o);
++  if (Reflect.ownKeys(descriptors).some(key => typeof key !== 'string' ||
++      !Object.hasOwn(descriptors[key],'value'))) throw Error('SHAPE');
++  return descriptors;
++}
++function own(descriptors,key) {
++  const d=descriptors[key];
++  if (!d || !Object.hasOwn(d,'value')) throw Error('SHAPE');
++  return d.value;
++}
++function inventory(input) {
++  if (!Array.isArray(input) || Object.getPrototypeOf(input)!==Array.prototype ||
++      input.length>300) throw Error('SHAPE');
++  const a=Object.getOwnPropertyDescriptors(input);
++  if (Reflect.ownKeys(a).length!==input.length+1 ||
++      Reflect.ownKeys(a).some(k=>!Object.hasOwn(a[k],'value'))) throw Error('SHAPE');
++  const rows=[];
++  for(let i=0;i<input.length;i++) {
++    const d=data(own(a,String(i)));
++    const u=data(own(d,'user'));
++    const id=own(d,'id'),state=own(d,'state'),userId=own(u,'id');
++    const commit=own(d,'commit_id'),time=own(d,'submitted_at');
++    if (!Number.isSafeInteger(id) || id<=0 ||
++        !Number.isSafeInteger(userId) || userId<=0 ||
++        typeof state!=='string' || !STATES.has(state) ||
++        !(commit===null || typeof commit==='string' && SHA.test(commit)) ||
++        !(time===null || typeof time==='string' &&
++          /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d{1,3})?Z$/.test(time) &&
++          Number.isFinite(Date.parse(time)))) throw Error('SHAPE');
++    rows.push({id,userId,state,commit,time});
++  }
++  rows.sort((a,b)=>a.id-b.id);
++  if (rows.some((x,i)=>i>0 && x.id===rows[i-1].id)) throw Error('SHAPE');
++  return rows;
++}
++
++export function inspectFreshIndependentReview({before,after,expected,now}={}) {
++  let pin,prior,fresh;
++  try {
++    const e=data(expected);
++    pin={repository:own(e,'repository'),headSha:own(e,'headSha'),
++      independentReviewerId:own(e,'independentReviewerId'),
++      authorId:own(e,'authorId'),ownerId:own(e,'ownerId')};
++    if (pin.repository!==REPO || typeof pin.headSha!=='string' ||
++        !SHA.test(pin.headSha) || !Number.isSafeInteger(now) || now<0 ||
++        ![pin.independentReviewerId,pin.authorId,pin.ownerId].every(x=>
++          Number.isSafeInteger(x)&&x>0) ||
++        pin.independentReviewerId===pin.authorId ||
++        pin.independentReviewerId===pin.ownerId) return deny('REVIEW_CONTEXT');
++    prior=inventory(before);fresh=inventory(after);
++  } catch {return deny('REVIEW_SNAPSHOT_SHAPE');}
++  // Reordered API pages are fine, but new/removed/changed decisions are not.
++  if (JSON.stringify(prior)!==JSON.stringify(fresh)) return deny('REVIEW_SNAPSHOT_DRIFT');
++  const decisions=fresh.filter(r=>r.userId===pin.independentReviewerId &&
++    ['APPROVED','CHANGES_REQUESTED','DISMISSED'].includes(r.state));
++  if (!decisions.length || decisions.some(r=>r.time===null ||
++      Date.parse(r.time)>now)) return deny('REVIEW_NOT_APPROVED');
++  decisions.sort((a,b)=>Date.parse(b.time)-Date.parse(a.time)||b.id-a.id);
++  const latest=decisions[0];
++  if (latest.state!=='APPROVED' || latest.commit!==pin.headSha ||
++      now-Date.parse(latest.time)>3600000) return deny('REVIEW_NOT_APPROVED');
++  return Object.freeze({status:'REVIEW_SNAPSHOT_UNCHANGED',authorized:false,
++    reviewId:latest.id,headSha:pin.headSha});
++}
