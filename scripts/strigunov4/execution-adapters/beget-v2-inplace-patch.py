@@ -105,12 +105,22 @@ def read_state():
     state_dir=STATE/'state'
     need(not (state_dir/'execution.lock').exists() and
          not (state_dir/'api-budget.lock').exists(),'NATIVE_LOCK_PRESENT')
+    # Directory/file ownership matters: a signed grant must never authorize
+    # snapshotting attacker-controlled or group-writable state at root.
+    private_uid=pwd.getpwnam('asi-engine').pw_uid
     files={}
     for sub in ('state','routing','reports'):
-        for p in sorted((STATE/sub).iterdir()):
-            if p.is_dir():
-                need(False,'UNKNOWN_NATIVE_STATE_DIRECTORY')
-            need(p.is_file() and not p.is_symlink(),'UNKNOWN_NATIVE_STATE_PATH')
+        folder=STATE/sub
+        st=folder.lstat()
+        need(stat.S_ISDIR(st.st_mode) and not folder.is_symlink() and
+             st.st_uid==private_uid and not st.st_mode&0o077,
+             'LIVE_PRIVATE_STATE_DIRECTORY_IDENTITY')
+        for p in sorted(folder.iterdir()):
+            identity=p.lstat()
+            need(stat.S_ISREG(identity.st_mode) and
+                 identity.st_uid==private_uid and identity.st_nlink==1 and
+                 not identity.st_mode&0o077 and not p.is_symlink(),
+                 'LIVE_PRIVATE_STATE_FILE_IDENTITY')
             files[str(p.relative_to(STATE))]=old.regular(p)
     need(len(files)<=100 and all(len(v)<=200000 for v in files.values()),
          'STATE_SNAPSHOT_LIMIT')
@@ -198,6 +208,73 @@ def preflight(package,require_owner=True):
        grant=grant,changed=changed,newActivation=load_root(AUTH/NEXT),
        oldActivation=load_root(AUTH/CURRENT),
        ledger=next_ledger,budget=next_budget)
+def stop_one_existing_engine(observe, stop, previous):
+    """Classify a failed stop before any code/state exchange or external replay.
+
+    Never treat a systemctl error as proof the original service is stopped;
+    do not auto-restart an unknown in-flight publisher operation.
+    """
+    need(previous.get('ActiveState')=='active' and
+         previous.get('MainPID','0').isdigit() and
+         int(previous['MainPID'])>0,
+         'ORIGINAL_ENGINE_IDENTITY_REQUIRED')
+    try:
+        stop()
+    except Exception:
+        try:
+            current=observe()
+        except Exception:
+            raise Denied('STOP_OUTCOME_UNKNOWN_OPERATOR_RECONCILIATION')
+        need(isinstance(current,dict),
+             'STOP_OUTCOME_UNKNOWN_OPERATOR_RECONCILIATION')
+        if (current.get('ActiveState')=='active' and
+            current.get('MainPID')==previous['MainPID'] and
+            current.get('InvocationID')==previous.get('InvocationID')):
+            raise Denied('STOP_FAILED_OLD_ENGINE_STILL_RUNNING')
+        raise Denied('STOP_OUTCOME_UNKNOWN_OPERATOR_RECONCILIATION')
+    try:
+        current=observe()
+    except Exception:
+        raise Denied('STOP_OUTCOME_UNKNOWN_OPERATOR_RECONCILIATION')
+    need(isinstance(current,dict) and
+         current.get('ActiveState')=='inactive' and
+         current.get('MainPID')=='0',
+         'STOP_OUTCOME_UNKNOWN_OPERATOR_RECONCILIATION')
+    return current
+
+def stage_source_bytes_with_mode(target, raw, mode):
+    """Never trust inherited root umask: executable and source files MUST
+    be usable by the original unprivileged asi-engine service after swap.
+    """
+    need(mode in (0o644,0o755),'SOURCE_STAGE_MODE_NOT_ALLOWED')
+    old.put_new(target,raw,mode)
+    os.chmod(target,mode)
+    st=target.lstat()
+    need(stat.S_ISREG(st.st_mode) and not target.is_symlink() and
+         st.st_uid==os.geteuid() and stat.S_IMODE(st.st_mode)==mode,
+         'STAGED_ENGINE_FILE_MODE_UNVERIFIED')
+    return True
+
+def restore_original_activation_bytes(raw, gid):
+    """Pre-start rollback restores group-read mode for existing asi-engine UID.
+
+    The generic state atomic_replace writes 0600, which is NOT valid for
+    root:asi-engine signed activation files that must remain readable by
+    the service after a pre-start rollback.
+    """
+    need(isinstance(raw,bytes) and 0<len(raw)<=2000000,
+         'ROLLBACK_ACTIVATION_INVALID')
+    pending=AUTH/('.activation.rollback-'+hash_bytes(raw)[:16])
+    need(not pending.exists(),'PRIOR_ROLLBACK_ACTIVATION_UNCERTAIN')
+    old.put_new(pending,raw,0o640)
+    os.chown(pending,0,gid)
+    os.chmod(pending,0o640)
+    os.replace(pending,AUTH/CURRENT)
+    old.syncdir(AUTH)
+    need(load_root(AUTH/CURRENT)==raw,
+         'ROLLBACK_ACTIVATION_BYTES_CHANGED')
+    return True
+
 def run_apply(package):
     p=preflight(package)
     oldsha,newsha=hash_bytes(p['raw_old']),hash_bytes(p['raw_new'])
@@ -211,6 +288,7 @@ def run_apply(package):
     # Prepare bytes before stopping the only Engine. Preserve old manifest
     # and pinned binaries; create traversable source dirs (not 0700 bug).
     stage.mkdir(mode=0o755)
+    os.chmod(stage,0o755)
     for rel,value in p['content'].items():
         if rel.startswith('scripts/'):
             target=stage/rel
@@ -218,17 +296,19 @@ def run_apply(package):
             for parent in target.parents:
                 if parent==stage:break
                 if str(parent).startswith(str(stage)+'/'):os.chmod(parent,0o755)
-            old.put_new(target,value,0o644)
+            stage_source_bytes_with_mode(target,value,0o644)
     for name,value,mode in [('manifest.json',p['raw_new'],0o644),
           ('node',old.regular(RUNTIME/'node',150000000,root=True),0o755),
           ('bwrap',old.regular(RUNTIME/'bwrap',2000000,root=True),0o755),
           ('beget-install.py',p['content']['beget-install.py'],0o644)]:
-        old.put_new(stage/name,value,mode)
+        stage_source_bytes_with_mode(stage/name,value,mode)
     old.syncdir(Path('/opt'))
     verify=preflight(package)
     need(verify['hashes']==p['hashes'] and
          verify['service']==p['service'],'LIVE_STATE_CHANGED_BEFORE_STOP')
-    old.run(['/usr/bin/systemctl','stop',UNIT],timeout=1850)
+    stop_one_existing_engine(old.observed_service,
+        lambda:old.run(['/usr/bin/systemctl','stop',UNIT],timeout=1850),
+        p['service'])
     switched=False
     start_attempted=False
     try:
@@ -258,6 +338,7 @@ def run_apply(package):
         pending=AUTH/('.activation.v2-patch-'+newsha[:16])
         old.put_new(pending,p['newActivation'],0o640)
         os.chown(pending,0,u.pw_gid)
+        os.chmod(pending,0o640)
         os.replace(pending,AUTH/CURRENT);old.syncdir(AUTH)
         need(hash_bytes(load_root(AUTH/CURRENT))==
              hash_bytes(p['newActivation']),'ACTIVATION_EXCHANGE_UNVERIFIED')
@@ -302,7 +383,7 @@ def run_apply(package):
                 if old.regular(STATE/rel)!=original:
                     old.atomic_replace(STATE/rel,original,user.pw_uid,user.pw_gid)
             if load_root(AUTH/CURRENT)!=p['oldActivation']:
-                old.atomic_replace(AUTH/CURRENT,p['oldActivation'],0,user.pw_gid)
+                restore_original_activation_bytes(p['oldActivation'],user.pw_gid)
             need(hash_bytes(load_root(RUNTIME/'manifest.json'))==oldsha and
                  all(hash_bytes(old.regular(STATE/rel))==p['hashes'][rel]
                     for rel in ('state/autopilot-ledger.json','state/api-budget.json')) and
