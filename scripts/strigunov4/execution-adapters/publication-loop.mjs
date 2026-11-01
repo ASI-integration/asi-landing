@@ -5,6 +5,8 @@ import {assertLiveAdmission} from './host-authority.mjs';
 import {inspectLegacy,readLegacyFiles} from '../ASI-STRIGUNOV4-ORCHESTRATOR-CANDIDATE-20261020.mjs';
 import {existingState,atomicJson,regular,digest,must,LIVE_ROOT,inspectStandingTransaction} from './state.mjs';
 import {createGitHubPublisher,bindTask} from './github-publisher.mjs';
+import {prepareNativeFiveLaneSource} from './beget-native-five-lane-source.mjs';
+import {isNativeSourceModification} from '../source-publisher-handoff.mjs';
 import {bounded} from './publisher-transport.mjs';
 import {createGlobalDispatcher} from '../../global-dispatcher/dispatcher.mjs';
 import {createStrigunovAdapter,decomposeProductGoal,hash} from '../../global-dispatcher/product-adapters.mjs';
@@ -230,5 +232,193 @@ export async function createPublicationLoop({root,legacyStateDir,catalog,fetchSn
     });
     if(result.mode==='WAITING'&&result.reason==='NO_NEXT_ISOLATED_JOB')return {...result,reason};
     return result;
+  }});
+}
+
+
+/**
+ * Native five-lane mode of the SAME Publisher and state.execute transaction.
+ * It is constructed ONLY by an independently verified, signed Beget host
+ * authority. An unsigned/legacy two-witness catalog is never promoted.
+ * This function creates no worker, scheduler, queue, credential or ledger.
+ */
+/** Pre-AI fail-closed base check. The current owner-signed parent and child
+ * explicitly bind ONE protected main commit. On advancement do not consume
+ * model credits, create a branch or pretend 365-day coverage follows a new
+ * SHA automatically. A future separately reviewed signed base-transition
+ * contract is required; an issue comment is not one.
+ */
+export function inspectFiveLaneProtectedBase({main,catalog,baseSha}={}){
+  try{
+    const ok=/^[a-f0-9]{40}$/.test(baseSha??'')&&
+      main?.protected===true&&main.commit?.sha===baseSha&&
+      Array.isArray(catalog)&&catalog.length===5&&
+      new Set(catalog.map(t=>t.id)).size===5&&
+      catalog.every(t=>t.baseSha===baseSha&&t.repo==='ASI-integration/asi-landing'&&
+        t.kind==='source-proposal');
+    return Object.freeze({status:ok?'BASE_PINNED':'BLOCKED',
+      authorized:false,reason:ok?'SIGNED_EXACT_BASE':'SIGNED_PARENT_BASE_TRANSITION_REQUIRED'});
+  }catch{
+    return Object.freeze({status:'BLOCKED',authorized:false,
+      reason:'SIGNED_PARENT_BASE_TRANSITION_REQUIRED'});
+  }
+}
+
+export async function createNativeFiveLanePublicationLoop({
+  authority,makeTransactionPorts,clock=Date.now,timeoutMs=30000
+}={}) {
+  must(authority?.payload?.schema==='asi.engine-beget-five-lane-activation.v1' &&
+    typeof authority.revalidate==='function'&&
+    typeof authority.fencingWitness==='function'&&
+    typeof authority.authorizePublisher==='function'&&
+    typeof makeTransactionPorts==='function'&&
+    authority.catalog?.length===5 &&
+    Number.isSafeInteger(timeoutMs)&&timeoutMs>=5000&&timeoutMs<=60000,
+    'NATIVE_FIVE_LANE_HOST_AUTHORITY_REQUIRED');
+  // This is a WeakMap-backed signed admission minted by the original authority
+  // loader. A caller-provided object with identical fields cannot reach live state.
+  assertLiveAdmission(authority.admission,authority.payload.root);
+  const store=await existingState(authority.payload.root,{liveAdmission:authority.admission});
+  const catalog=structuredClone(authority.catalog);
+  const catalogHash=digest(JSON.stringify(catalog));
+  const expectedHash=authority.catalogDigest;
+  must(expectedHash===catalogHash,'NATIVE_SIGNED_CATALOG_CHANGED');
+  return Object.freeze({async poll({execute=false}={}){
+    if(execute!==true)return {mode:'OBSERVE_ONLY',reason:'PUBLICATION_DISABLED'};
+    let chosen=null,ports=null,sourceStatus=null,activeTransaction=null,
+      activeLedger=null;
+    try{
+      await authority.revalidate();
+      await authority.fencingWitness();
+      const result=await store.execute('github-publisher',async ({ledger,receipts,transaction})=>{
+        await authority.revalidate();
+        must(await authority.checkRevocationCheckpoint({
+          store,ledger,transaction})===true,
+          'NATIVE_SIGNED_REVOCATION_CHECKPOINT_REQUIRED');
+        must(await authority.verifyChildHistory(ledger)===true,
+          'NATIVE_SIGNED_PARENT_HISTORY_REQUIRED');
+        must(digest(JSON.stringify(authority.catalog))===expectedHash,
+          'NATIVE_SIGNED_CATALOG_CHANGED');
+        // No second queue or lock: the old journal remains the source of truth.
+        // Source intake, model proposal and Publisher handoff happen during the
+        // original native admission phase; no model request without its budget.
+        activeTransaction=transaction;activeLedger=ledger;
+        ports=await bounded(signal=>makeTransactionPorts(Object.freeze({
+          store,ledger,transaction,signal,catalog})),timeoutMs);
+        must(Object.isFrozen(ports)&&typeof ports.produce==='function'&&
+          typeof ports.revalidate==='function'&&
+          ports.remote&&ports.reader&&
+          typeof ports.runChecks==='function'&&
+          typeof ports.independentReview==='function'&&
+          typeof ports.bindTask==='function',
+          'SIGNED_NATIVE_TRANSACTION_PORTS_REQUIRED');
+        // Must happen before source generation or its irreversible paid
+        // reservation, not only in verifyTask after the model has run.
+        const main=await bounded(()=>ports.reader.get('branches/main'),timeoutMs);
+        must(inspectFiveLaneProtectedBase({main,catalog,
+          baseSha:authority.payload.baseSha}).status==='BASE_PINNED',
+          'NATIVE_SIGNED_BASE_MOVED_BEFORE_MODEL');
+        const old=Object.hasOwn(ledger,'nativeFiveLaneTask')?
+          ledger.nativeFiveLaneTask:null;
+        if(old!==null){
+          must(old&&old.version===1&&
+            ['PENDING','DONE'].includes(old.status)&&
+            old.catalogDigest===expectedHash&&
+            old.task&&isNativeSourceModification(old.task)&&
+            digest(JSON.stringify(old.task))===old.taskDigest,
+            'NATIVE_PENDING_SOURCE_LEDGER_INVALID');
+        }
+        if(old?.status==='PENDING'){
+          // The previous model call has already consumed its budget. Resume
+          // the same bound bytes through the original Publisher INTENT journal,
+          // never issue a second model request or silently change the branch.
+          chosen=structuredClone(old.task);
+        }else{
+          const proposal=await bounded(()=>prepareNativeFiveLaneSource({
+            store,ledger,transaction,signedCatalog:catalog,nowMs:clock(),
+            goalGraph:authority.goalGraph,assessments:authority.assessments,
+            history:ledger.intentHistory??[],produce:ports.produce,
+            revalidate:ports.revalidate
+          }),timeoutMs);
+          if(proposal.status!=='SOURCE_PREPARER_CANDIDATE'){
+            sourceStatus=proposal.reason;
+            return null; // WAITING, never a speculative GitHub write.
+          }
+          chosen=proposal.task;
+        }
+        must(await ports.bindTask(chosen)===true,'NATIVE_SIGNED_PORT_TASK_BINDING');
+        must(isNativeSourceModification(chosen)&&
+          chosen.sha===authority.payload.baseSha&&
+          chosen.repo===authority.payload.repo &&
+          catalog.some(x=>x.id===chosen.id&&x.laneId===chosen.laneId&&
+            x.baseSha===chosen.sha&&
+            chosen.changes.every((change,i)=>x.files[i]?.path===change.path&&
+              x.files[i].beforeSha256===change.beforeSha256)),
+          'NATIVE_SOURCE_PUBLISHER_SCOPE_CHANGED');
+        if(old?.status!=='PENDING'){
+          // Persist the single exact model result BEFORE the first external
+          // publication effect. Same original fsynced ledger, no new queue.
+          const record={version:1,status:'PENDING',catalogDigest:expectedHash,
+            taskDigest:digest(JSON.stringify(chosen)),task:structuredClone(chosen)};
+          await atomicJson(store.file('autopilot-ledger.json'),
+            {...ledger,nativeFiveLaneTask:record});
+          ledger.nativeFiveLaneTask=record;
+        }
+        // A signed bounded owner grant is verified in authorizePublisher()
+        // again at each protected effect. This does not treat the source
+        // candidate's "authorized:false" as a grant.
+        return chosen;
+      },{async verifyTask(task){
+        must(task===chosen,'NATIVE_TASK_SUBSTITUTED');
+        await authority.revalidate();
+        const main=await bounded(()=>ports.reader.get('branches/main'),timeoutMs);
+        must(main.protected===true&&main.commit?.sha===task.sha,
+          'NATIVE_MAIN_OR_PROTECTED_BASE_CHANGED');
+        return {baseSha:task.sha,taskBinding:bindTask(task)};
+      }},async()=>{
+        const publisher=createGitHubPublisher({
+          store,remote:ports.remote,reader:ports.reader,transaction:activeTransaction,
+          authorize:request=>authority.authorizePublisher(request,chosen),
+          runChecks:ports.runChecks,independentReview:ports.independentReview,
+          verifyAdmission:async()=>{
+            await authority.revalidate();await authority.fencingWitness();
+            must(digest(JSON.stringify(authority.catalog))===expectedHash,
+              'NATIVE_SIGNED_CATALOG_CHANGED');
+          },
+          ciPolicies:authority.payload.ciPolicies,
+          publishedReview:ports.publishedReview,clock,timeoutMs
+        });
+        const outcome=await publisher.run(chosen,{execute:true});
+        if(outcome?.status==='PASS'){
+          // Keep the PR receipt as the authoritative result. Only then advance
+          // the selected lane; an uncertain PR/CI outcome never moves it.
+          const old=activeLedger.nativeFiveLaneTask;
+          must(old?.status==='PENDING'&&
+            old.taskDigest===digest(JSON.stringify(chosen))&&
+            activeLedger.ownerLaneJournal?.lanes?.[chosen.laneId],
+            'NATIVE_LANE_COMPLETION_UNVERIFIED');
+          const state=activeLedger.ownerLaneJournal.lanes[chosen.laneId];
+          must(state.taskId===chosen.id&&state.taskSha===chosen.sha,
+            'NATIVE_LANE_JOURNAL_MISMATCH');
+          const updated={...activeLedger,
+            nativeFiveLaneTask:{...old,status:'DONE',
+              pr:outcome.pr,head:outcome.head},
+            ownerLaneJournal:{...activeLedger.ownerLaneJournal,
+              lanes:{...activeLedger.ownerLaneJournal.lanes,
+                [chosen.laneId]:{...state,mode:'DONE',lastServedAtMs:clock()}}}};
+          await atomicJson(store.file('autopilot-ledger.json'),updated);
+          activeLedger.nativeFiveLaneTask=updated.nativeFiveLaneTask;
+          activeLedger.ownerLaneJournal=updated.ownerLaneJournal;
+        }
+        return outcome;
+      });
+      return Object.freeze({mode:result.mode,
+        reason:sourceStatus??result.reason??null,
+        pr:result.pr??null,head:result.head??null});
+    }catch{
+      return Object.freeze({mode:'BLOCKED',
+        reason:'SIGNED_NATIVE_FIVE_LANE_RUNTIME_UNVERIFIED',
+        pr:null,head:null});
+    }
   }});
 }
