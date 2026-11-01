@@ -3,15 +3,17 @@
 import {assertLiveAdmission, loadBegetAuthority, BEGET} from './host-authority.mjs';
 
 const REPO = 'ASI-integration/asi-landing';
+// Historical PR numbers preserve lineage only. Replacement refs are targets,
+// not created branches or execution grants.
 const definitions = [
-  ['engine', 'asi/beget-one-engine-20261028', 549],
-  ['ru-auth', 'feat/ru-unified-auth-20261029', 554],
-  ['p0-integration', 'asi/standing-delegation-551', 552],
-  ['p0-trust', 'asi/p0-trusted-evidence-worker-20261029', null],
-  ['p0-atomic-budget', 'asi/p0-atomic-budget-worker-20261029', null],
+  ['engine', 'asi/groundzero-engine-20261101-r2', 549],
+  ['ru-auth', 'asi/groundzero-ru-auth-20261101-r2', 554],
+  ['p0-integration', 'asi/groundzero-p0-integration-20261101-r2', 552],
+  ['p0-trust', 'asi/groundzero-p0-trust-20261101-r2', null],
+  ['p0-atomic-budget', 'asi/groundzero-p0-atomic-budget-20261101-r2', null],
 ];
-export const OWNER_LANES = Object.freeze(definitions.map(([id, branch, pr]) =>
-  Object.freeze({id, repository: REPO, branch, pr})));
+export const OWNER_LANES = Object.freeze(definitions.map(([id, branch, historicalPr]) =>
+  Object.freeze({id, repository: REPO, branch, historicalPr, pr: null})));
 
 const unknown = reason => OWNER_LANES.map(lane => ({...lane, status: 'UNKNOWN', reason,
   currentTask: null, result: null, lastHeartbeat: null}));
