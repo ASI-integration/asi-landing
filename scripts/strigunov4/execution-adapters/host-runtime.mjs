@@ -11,7 +11,7 @@ import {createGitHubReader} from './github-readonly.mjs';
 import {createPublisherTransport} from './publisher-transport.mjs';
 import {createPublicationLoop} from './publication-loop.mjs';
 import {createBegetNativeRequestAdmission} from './beget-native-request-admission.mjs';
-import {createResponsesSourceReviewer} from './beget-native-source-review.mjs';
+import {createResponsesSourceReviewer,createBoundPublishedModelReview} from './beget-native-source-review.mjs';
 import {runNativeSourceChecks} from './beget-native-source-checks.mjs';
 import {createResponsesCodeProducer} from '../source-responses-provider.mjs';
 import {createPinnedSourceReader} from '../source-git-context.mjs';
@@ -456,28 +456,10 @@ export async function createBegetFiveLaneRuntime(){
         return {...e,status:'PASS'};
       },
       independentReview:reviewSource,
-      publishedReview:Object.freeze({
+      publishedReview:createBoundPublishedModelReview({
         policySha256:payload.reviewsSha256,
-        async verify(pin){
-          must(nativeTask?.id===pin.id&&nativeTask.sha===pin.baseSha&&
-            pin.branch===nativeTask.branch&&
-            pin.policySha256===payload.reviewsSha256,
-            'NATIVE_PUBLISHED_REVIEW_SCOPE');
-          const check=await reviewSource({
-            taskId:pin.id,baseSha:pin.baseSha,
-            deltaSha256:pin.deltaSha256,
-            reviewPurpose:'PUBLISHED_PR',pr:pin.pr,head:pin.sha
-          });
-          must(check.status==='PASS'&&check.independent===true,
-            'NATIVE_PUBLISHED_REVIEW_FAILED');
-          return Object.freeze({status:'PASS',repo:pin.repo,pr:pin.pr,
-            head:pin.sha,baseSha:pin.baseSha,
-            policySha256:pin.policySha256,
-            independent:true,evidenceSha256:digest(JSON.stringify({
-              reviewer:payload.model.reviewName,review:check.evidenceId,
-              pr:pin.pr,head:pin.sha,delta:pin.deltaSha256
-            }))});
-        }
+        model:payload.model.reviewName,reviewSource,
+        getBoundTask:()=>nativeTask,revalidate:authority.revalidate
       })
     });
   };

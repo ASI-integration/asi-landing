@@ -100,3 +100,66 @@ export function createResponsesSourceReviewer({model,generatorModel,apiKey,
     }catch{return deny('REVIEW_UNKNOWN_NO_AUTOMATIC_RETRY');}
   };
 }
+
+/**
+ * One authenticated published-PR model verdict per existing Publisher
+ * transaction. The Publisher intentionally checks the review twice before
+ * emitting a receipt; its second check must read the SAME signed-scope
+ * evidence, not make a replayed paid model reservation (which is prohibited).
+ * This closure never survives a crash or changes the old ledger/queues.
+ */
+export function createBoundPublishedModelReview({
+  policySha256,model,reviewSource,getBoundTask,revalidate
+}={}){
+  if(!H64.test(policySha256)||typeof model!=='string'||!model||
+    typeof reviewSource!=='function'||typeof getBoundTask!=='function'||
+    typeof revalidate!=='function')
+    throw Error('NATIVE_PUBLISHED_REVIEW_CONFIGURATION');
+  let cached=null;
+  return Object.freeze({
+    policySha256,
+    async verify(pin){
+      const task=getBoundTask();
+      if(!task||pin?.id!==task.id||pin.baseSha!==task.sha||
+        pin.repo!==task.repo||pin.branch!==task.branch||
+        pin.policySha256!==policySha256||
+        !Number.isSafeInteger(pin.pr)||pin.pr<1||
+        !H40.test(pin.sha)||!H64.test(pin.deltaSha256))
+        throw Error('NATIVE_PUBLISHED_REVIEW_SCOPE');
+      const key=sha(JSON.stringify({
+        id:pin.id,repo:pin.repo,pr:pin.pr,head:pin.sha,
+        baseSha:pin.baseSha,branch:pin.branch,
+        deltaSha256:pin.deltaSha256,policySha256:pin.policySha256
+      }));
+      if(cached&&cached.key!==key)
+        throw Error('NATIVE_PUBLISHED_REVIEW_PIN_MOVED');
+      if(await revalidate()!==true)
+        throw Error('NATIVE_PUBLISHED_REVIEW_AUTHORITY_CHANGED');
+      if(cached)return cached.result;
+      const check=await reviewSource({
+        taskId:pin.id,baseSha:pin.baseSha,deltaSha256:pin.deltaSha256,
+        reviewPurpose:'PUBLISHED_PR',pr:pin.pr,head:pin.sha
+      });
+      if(check?.status!=='PASS'||check.independent!==true||
+        check.taskId!==pin.id||check.baseSha!==pin.baseSha||
+        check.deltaSha256!==pin.deltaSha256||
+        typeof check.evidenceId!=='string'||
+        !/^[A-Za-z0-9_-]{1,96}$/.test(check.evidenceId))
+        throw Error('NATIVE_PUBLISHED_REVIEW_FAILED');
+      if(await revalidate()!==true)
+        throw Error('NATIVE_PUBLISHED_REVIEW_AUTHORITY_CHANGED');
+      const result=Object.freeze({
+        status:'PASS',repo:pin.repo,pr:pin.pr,head:pin.sha,
+        baseSha:pin.baseSha,policySha256,
+        independent:true,
+        evidenceSha256:sha(JSON.stringify({
+          reviewer:model,review:check.evidenceId,
+          pr:pin.pr,head:pin.sha,delta:pin.deltaSha256
+        }))
+      });
+      // Only once fully model-verified and pinned; no optimistic caching.
+      cached=Object.freeze({key,result});
+      return result;
+    }
+  });
+}
