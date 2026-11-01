@@ -8,12 +8,16 @@ export function draftBody(job,evidence){
   must(evidence.reviewPolicySha256===undefined||/^[a-f0-9]{64}$/.test(evidence.reviewPolicySha256),'PR_REVIEW_POLICY');
   must(evidence.reviewMode===undefined||(evidence.reviewMode==='OWNER_VERIFIED_CI'&&
     evidence.stage==='S4-G2'&&evidence.reviewPolicySha256!==undefined),'PR_REVIEW_MODE');
+  must(evidence.releaseMode===undefined||
+    evidence.releaseMode==='development'&&evidence.stage==='S4-G2'&&
+    evidence.reviewPolicySha256!==undefined&&evidence.reviewMode===undefined,
+    'PR_DEVELOPMENT_CLASSIFICATION');
   const ownerCI=evidence.reviewMode==='OWNER_VERIFIED_CI';
   const pendingReview=evidence.reviewPolicySha256===undefined?'exact-HEAD CodeRabbit':
     `${ownerCI?'owner-verified CI':'independent published'} review (policy SHA256 ${evidence.reviewPolicySha256})`;
   const deltaReview=ownerCI?'owner-verified CI delta':'independent delta';
   const nextReview=ownerCI?'authenticated owner-CI':'independent';
-  return `Release-Stage: ${evidence.stage??'S4-G1'}\nRelease-Mode: implementation\n
+  return `Release-Stage: ${evidence.stage??'S4-G1'}\nRelease-Mode: ${evidence.releaseMode??'implementation'}\n
 ## Результат
 Approved source task ${job}. Draft publication only; physical acceptance is not claimed.
 ## Scope

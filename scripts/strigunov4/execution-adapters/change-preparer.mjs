@@ -4,6 +4,7 @@ import { constants as fsConstants } from 'node:fs';
 import path from 'node:path';
 import { execFile } from 'node:child_process';
 import { atomicWrite, digest, must, regular } from './state.mjs';
+import {isNativeSourceModification} from '../source-publisher-handoff.mjs';
 
 function command(exe,args,cwd,input='') {
   return new Promise((resolve,reject) => {
@@ -146,8 +147,12 @@ export async function prepareDelta(store,task,{ admission, changes }) {
   must(Array.isArray(changes) && changes.length > 0 && changes.length <= 3 &&
     new Set(changes.map(c=>c.path)).size === changes.length, 'CHANGE_SET_INVALID');
   const creation=task.stage==='S4-G2'&&/^beget-g2-witness-(identity|races)-v1$/.test(task.id);
-  if(task.stage==='S4-G2')must(creation&&changes.length===1&&changes[0].path===
-    'scripts/strigunov4/test_'+task.id.replaceAll('-','_')+'.py'&&changes[0].beforeSha256===null,'G2_CREATE_SCOPE');
+  if(task.stage==='S4-G2')must(
+    creation&&changes.length===1&&changes[0].path===
+      'scripts/strigunov4/test_'+task.id.replaceAll('-','_')+'.py'&&changes[0].beforeSha256===null ||
+    isNativeSourceModification(task)&&!creation&&
+      changes===task.changes&&changes.every(c=>/^[a-f0-9]{64}$/.test(c.beforeSha256)),
+    'G2_CREATE_OR_SIGNED_SOURCE_SCOPE');
   const cwd = path.join(store.root,'scratchpads',task.id);
   must((await fs.realpath(cwd))===cwd, 'SCRATCH_REDIRECTED');
   const st = await fs.stat(cwd);

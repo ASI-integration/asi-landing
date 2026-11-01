@@ -3,6 +3,7 @@ import path from 'node:path';
 import {createHash} from 'node:crypto';
 import {atomicJson,digest,must,regular,sha,inspectStandingTransaction} from './state.mjs';
 import {prepareDelta,verifyPreparedDelta,normalizeProposedContent} from './change-preparer.mjs';
+import {isNativeSourceModification,nativeDevelopmentPath} from '../source-publisher-handoff.mjs';
 import {inspectCI,validateCiPolicy} from './ci-reader.mjs';
 import {inspectCodeRabbit} from './coderabbit-analyzer.mjs';
 import {bounded,branchAllowed,REPOSITORY,draftBody} from './publisher-transport.mjs';
@@ -55,6 +56,12 @@ export function createGitHubPublisher({store,remote,reader,authorize,runChecks,i
     must(Array.isArray(task.changes)&&task.changes.length>0&&task.changes.length<=3&&
       new Set(task.changes.map(c=>c.path)).size===task.changes.length,'PUBLISH_DELTA_INVALID');
     validateCiPolicy({...task,baseSha:task.sha},policies);
+    const sourceModification=isNativeSourceModification(task);
+    // Strict code-owned release classification. Neither an LLM nor a Draft PR
+    // body can relabel protected source as development-safe.
+    if(sourceModification)must(task.changes.every(c=>nativeDevelopmentPath(c.path))&&
+      reviewPolicy,'NATIVE_DEVELOPMENT_RELEASE_SCOPE_REQUIRED');
+    const g2Addition=task.stage==='S4-G2'&&!sourceModification;
     const binding=bindTask(task),file=store.file(`publication-${task.id}.json`);
     let record=await load(file);
     const request=freeze({taskId:task.id,taskBinding:binding,repo:task.repo,stage:task.stage,
@@ -107,13 +114,15 @@ export function createGitHubPublisher({store,remote,reader,authorize,runChecks,i
       must(commit.sha===record.head&&commit.tree?.sha===record.tree&&commit.parents?.length===1&&commit.parents[0].sha===task.sha,'COMMIT_READBACK_FAILED');
       const changed=await call(()=>remote.get(`pulls/${record.pr}/files?per_page=100`));
       must(Array.isArray(changed)&&changed.length===task.changes.length&&p.changed_files===changed.length&&
-        new Set(changed.map(f=>f.filename)).size===changed.length&&changed.every(f=>f.status===(task.stage==='S4-G2'?'added':'modified')&&
+        new Set(changed.map(f=>f.filename)).size===changed.length&&changed.every(f=>f.status===(g2Addition?'added':'modified')&&
           task.changes.some(c=>c.path===f.filename&&f.sha===hashBlob(normalizeProposedContent(c.path,c.content)))),'PR_DIFF_READBACK_FAILED');
       await guard(record.head,record.pr);
     }
     if(record){
       must(record.version===1&&record.taskBinding===binding&&record.operationId===grant.operationId&&
-        record.kind===task.kind&&['PUBLISHED_WAITING','VERIFIED'].includes(record.phase),'UNCERTAIN_OR_FOREIGN_PUBLICATION');
+        record.kind===task.kind&&
+        record.releaseMode===(sourceModification?'development':undefined)&&
+        ['PUBLISHED_WAITING','VERIFIED'].includes(record.phase),'UNCERTAIN_OR_FOREIGN_PUBLICATION');
       must(record.reviewPolicySha256===undefined||record.reviewPolicySha256===reviewPolicy?.policySha256,
         'PUBLISHED_REVIEW_POLICY_CHANGED');
       if(inspectGate){
@@ -164,16 +173,17 @@ export function createGitHubPublisher({store,remote,reader,authorize,runChecks,i
       must(before.sha===parent.tree.sha&&before.truncated===false&&Array.isArray(before.tree)&&before.tree.length<=10000&&
         new Set(before.tree.map(e=>e.path)).size===before.tree.length,'BASE_TREE_UNVERIFIED');
       const entries=task.changes.map(c=>{const old=before.tree.find(e=>e.path===c.path);
-        must(task.stage==='S4-G2'?!old&&c.beforeSha256===null:old?.type==='blob'&&['100644','100755'].includes(old.mode),'EXISTING_REGULAR_FILE_REQUIRED');
+        must(g2Addition?!old&&c.beforeSha256===null:old?.type==='blob'&&['100644','100755'].includes(old.mode),'EXISTING_REGULAR_FILE_REQUIRED');
         return {path:c.path,mode:old?.mode??'100644',type:'blob',content:normalizeProposedContent(c.path,c.content)};});
       record={version:1,stage:task.stage,kind:task.kind,taskBinding:binding,operationId:grant.operationId,baseSha:task.sha,
         branch:task.branch,deltaSha256:prepared.deltaSha256,reviewEvidenceId:review.evidenceId,
+        ...(sourceModification?{releaseMode:'development'}:{}),
         ...(reviewPolicy?{reviewPolicySha256:reviewPolicy.policySha256}:{}),
         ...(review.ownerVerifiedCi===true?{reviewMode:'OWNER_VERIFIED_CI'}:{})};
       const tree=await mutate('create-tree',()=>remote.createTree(parent.tree.sha,entries));
       must(sha(tree.sha),'TREE_RESULT_INVALID');
       const actual=await call(()=>remote.get(`git/trees/${tree.sha}?recursive=1`));
-      must(actual.sha===tree.sha&&actual.truncated===false&&Array.isArray(actual.tree)&&actual.tree.length===before.tree.length+(task.stage==='S4-G2'?entries.length:0)&&
+      must(actual.sha===tree.sha&&actual.truncated===false&&Array.isArray(actual.tree)&&actual.tree.length===before.tree.length+(g2Addition?entries.length:0)&&
         new Set(actual.tree.map(e=>e.path)).size===actual.tree.length,'TREE_READBACK_FAILED');
       for(const old of before.tree){const now=actual.tree.find(e=>e.path===old.path),change=entries.find(e=>e.path===old.path);
         must(now&&now.mode===old.mode&&now.type===old.type,'TREE_MODE_CHANGED');

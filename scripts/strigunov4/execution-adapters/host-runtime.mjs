@@ -10,6 +10,16 @@ import {createHostChecks} from './host-checks.mjs';
 import {createGitHubReader} from './github-readonly.mjs';
 import {createPublisherTransport} from './publisher-transport.mjs';
 import {createPublicationLoop} from './publication-loop.mjs';
+import {createBegetNativeRequestAdmission} from './beget-native-request-admission.mjs';
+import {createResponsesSourceReviewer,createBoundPublishedModelReview} from './beget-native-source-review.mjs';
+import {runNativeSourceChecks} from './beget-native-source-checks.mjs';
+import {createResponsesCodeProducer} from '../source-responses-provider.mjs';
+import {createPinnedSourceReader} from '../source-git-context.mjs';
+// Source candidate composition is imported into the REAL host runtime closure.
+ // The active two-witness policy cannot invoke it or grant publication; adoption
+ // needs a genuinely signed five-lane catalog and native publisher authority.
+import {prepareNativeFiveLaneSource} from './beget-native-five-lane-source.mjs';
+export {prepareNativeFiveLaneSource};
 import {digest,must,regular,atomicJson} from './state.mjs';
 import {selectRoute} from '../ASI-STRIGUNOV4-RUNNER-BRIDGE-20261020.mjs';
 import {WORK_ORDERS,ENGINE_PILOT} from '../ASI-STRIGUNOV4-MULTIJOB-20261020.mjs';
@@ -96,7 +106,17 @@ export async function engineIteration(ports){
 /** Native Beget profile for the SAME publication loop and Dispatcher. No state
  * migration and no new scheduler; the existing runner owns process cadence. */
 export async function createBegetRuntime(){
-  const {loadBegetAuthority,BEGET,rootOwned}=await import('./host-authority.mjs');
+  const {loadBegetAuthority,BEGET,rootOwned,AUTHORITY_DIR}=await import('./host-authority.mjs');
+  const original=JSON.parse(await rootOwned(AUTHORITY_DIR+'/activation.json'));
+  // The untrusted schema is only a selector; every V2 field is independently
+  // authenticated with the root-owned owner key before it can be used.
+  let selected;
+  try{selected=JSON.parse(original.payload).schema;}catch{
+    throw Error('BEGET_SIGNED_RUNTIME_SCHEMA');
+  }
+  if(selected==='asi.engine-beget-five-lane-activation.v1')
+    return createBegetFiveLaneRuntime();
+  must(selected==='asi.engine-beget-activation.v1','BEGET_SIGNED_RUNTIME_SCHEMA');
   const {createBegetChecks}=await import('./host-checks.mjs');
   const authority=await loadBegetAuthority(),{payload,catalog}=authority;
   must(os.hostname()===BEGET.host&&os.userInfo().username===BEGET.user,'BEGET_HOST_IDENTITY');
@@ -232,4 +252,220 @@ export function createRequestBudget({root,payload,revalidate}){
     }
   };
   return beforeRequest;
+}
+
+/** Same-ledger, single-lock model reservation. A network timeout consumes a
+ * claim forever; no second model request with the same task/input fingerprint.
+ * Only an independently owner-signed v2 payload can provide model limits.
+ */
+export async function reserveNativeModelRequest({store,ledger,transaction,payload,
+  revalidate,request}={}){
+  const {inspectStandingTransaction}=await import('./state.mjs');
+  const {randomUUID}=await import('node:crypto');
+  must(payload?.schema==='asi.engine-beget-five-lane-activation.v1'&&
+    typeof revalidate==='function','NATIVE_MODEL_SIGNED_POLICY_REQUIRED');
+  const lease=inspectStandingTransaction(transaction);
+  const generation=request?.model===payload.model.name;
+  const review=request?.model===payload.model.reviewName;
+  must((generation&&lease.phase==='admission'||
+    review&&lease.phase==='started'&&lease.taskId===request?.taskId)&&
+    lease.kind==='github-publisher'&&
+    lease.root===store?.root&&lease.ledger===ledger&&
+    ledger.mode==='FAILED_LOCKED'&&ledger.reason==='IN_FLIGHT_OR_CRASHED',
+    'NATIVE_MODEL_EXECUTION_LOCK');
+  const m=payload.model,taskId=request?.taskId,baseSha=request?.baseSha;
+  must(typeof taskId==='string'&&/^[a-z0-9-]{1,80}$/.test(taskId)&&
+    baseSha===payload.baseSha&&(generation||review)&&
+    request.maxOutputTokens===m.maxOutputTokens&&
+    /^[a-f0-9]{64}$/.test(request.pathDigest),
+    'NATIVE_MODEL_TASK_OR_SCOPE');
+  must(await revalidate()===true,'NATIVE_MODEL_AUTHORITY_CHANGED');
+  const policySha256=digest(JSON.stringify({model:m,sourceSha:payload.baseSha,
+    repo:payload.repo,activation:payload.runtimeManifestSha256}));
+  const descriptor=Object.getOwnPropertyDescriptor(ledger,'modelReservationBudget');
+  must(descriptor?Object.hasOwn(descriptor,'value')&&descriptor.value!==null:
+    !('modelReservationBudget' in ledger),'NATIVE_MODEL_BUDGET_HISTORY');
+  const old=descriptor?.value??null;
+  must(old===null||old?.version===1&&old.policySha256===policySha256&&
+    Number.isSafeInteger(old.spentMicrousd)&&old.spentMicrousd>=0&&
+    Array.isArray(old.claims)&&old.claims.length<=m.maxCalls&&
+    old.claims.every(c=>typeof c.taskId==='string'&&
+      /^[a-f0-9]{64}$/.test(c.pathDigest)&&
+      c.baseSha===payload.baseSha&&
+      [m.name,m.reviewName].includes(c.model)&&
+      typeof c.operationId==='string'&&
+      /^model-[a-f0-9-]{36}$/.test(c.operationId)&&
+      Number.isSafeInteger(c.microusd)&&
+      c.microusd===m.reserveMicrousdPerCall)&&
+    old.spentMicrousd===old.claims.reduce((n,c)=>n+c.microusd,0)&&
+    new Set(old.claims.map(c=>c.operationId)).size===old.claims.length&&
+    new Set(old.claims.map(c=>c.taskId+':'+c.model+':'+c.pathDigest)).size===
+      old.claims.length,
+    'NATIVE_MODEL_BUDGET_HISTORY');
+  const claims=old?.claims??[];
+  must(!claims.some(c=>c.taskId===taskId&&c.model===request.model&&
+      c.pathDigest===request.pathDigest)&&
+    claims.length<m.maxCalls&&
+    (old?.spentMicrousd??0)+m.reserveMicrousdPerCall<=m.maxPaidMicrousd,
+    'NATIVE_MODEL_BUDGET_EXHAUSTED_OR_REPLAY');
+  const operationId='model-'+randomUUID();
+  const next={version:1,policySha256,
+    spentMicrousd:(old?.spentMicrousd??0)+m.reserveMicrousdPerCall,
+    claims:[...claims,{taskId,pathDigest:request.pathDigest,baseSha,
+      model:request.model,microusd:m.reserveMicrousdPerCall,operationId}]};
+  must(await revalidate()===true,'NATIVE_MODEL_AUTHORITY_CHANGED');
+  const again=inspectStandingTransaction(transaction);
+  must(again.transactionId===lease.transactionId&&again.phase===lease.phase&&
+    again.ledger===ledger,'NATIVE_MODEL_TRANSACTION_CHANGED');
+  await atomicJson(store.file('autopilot-ledger.json'),
+    {...ledger,modelReservationBudget:next});
+  ledger.modelReservationBudget=next;
+  must((await revalidate())===true&&
+    inspectStandingTransaction(transaction).transactionId===lease.transactionId,
+    'NATIVE_MODEL_POST_RESERVATION_UNCERTAIN');
+  return Object.freeze({authorized:true,taskId,baseSha,model:request.model,
+    maxOutputTokens:m.maxOutputTokens,pathDigest:request.pathDigest,
+    operationId});
+}
+
+
+/** V2 runs only when the original owner's signed activation explicitly switches
+ * the SAME installed service to five-lane mode. Legacy activation remains v1.
+ * No user text, environment variable or unsigned manifest toggles this path.
+ */
+// Source-shape check only. Protected signature and exact runtime hashes are
+// enforced separately by the native root-owned loader before every use.
+export function isBegetV2RuntimeManifest(m){
+  return m?.schema==='asi.beget-engine-source.v1'&&
+    ['REVIEWED_PROTECTED_ACTIVE_RUNTIME_V1',
+      'OWNER_SIGNED_TECHNICAL_ACCEPTANCE_V1'].includes(m.nativeFiveLaneWiring)&&
+    m.installable===false&&Array.isArray(m.files)&&m.files.length>=30&&
+    ['unitSha256','nodeSha256','bwrapSha256','catalogSha256'].every(k=>
+      typeof m[k]==='string'&&/^[a-f0-9]{64}$/.test(m[k]));
+}
+export async function createBegetFiveLaneRuntime(){
+  const {loadBegetFiveLaneAuthority,BEGET,rootOwned,AUTHORITY_DIR}=
+    await import('./host-authority.mjs');
+  const {createNativeFiveLanePublicationLoop}=await import('./publication-loop.mjs');
+  const {verifyPreparedDelta}=await import('./change-preparer.mjs');
+  const {execFile:execSource}=await import('node:child_process');
+  const {promisify:promisifySource}=await import('node:util');
+  const authority=await loadBegetFiveLaneAuthority(),{payload,catalog}=authority;
+  must(os.hostname()===BEGET.host&&os.userInfo().username===BEGET.user,
+    'NATIVE_FIVE_LANE_HOST_IDENTITY');
+  const raw=await rootOwned(BEGET.runtime+'/manifest.json');
+  must(digest(raw)===payload.runtimeManifestSha256,
+    'NATIVE_FIVE_LANE_MANIFEST_CHANGED');
+  const m=JSON.parse(raw);
+  // The updater requires installable:false because its independent signed
+  // active-upgrade grant, not the source-package flag, controls execution.
+  must(isBegetV2RuntimeManifest(m),
+    'NATIVE_FIVE_LANE_REVIEWED_RUNTIME_REQUIRED');
+  for(const f of m.files){
+    must(/^scripts\/[A-Za-z0-9_./-]+\.mjs$/.test(f.path)&&
+      !f.path.includes('..')&&/^[a-f0-9]{64}$/.test(f.sha256)&&
+      digest(await rootOwned(BEGET.runtime+'/'+f.path))===f.sha256,
+      'NATIVE_FIVE_LANE_RUNTIME_FILE_CHANGED');
+  }
+  must(digest(await rootOwned('/etc/systemd/system/'+BEGET.service))===
+    m.unitSha256&&
+    process.execPath===BEGET.runtime+'/node'&&
+    digest(await rootOwned(BEGET.runtime+'/node',150000000,{encoding:null}))===
+      m.nodeSha256&&
+    digest(await rootOwned(BEGET.runtime+'/bwrap',2000000,{encoding:null}))===
+      m.bwrapSha256,
+    'NATIVE_FIVE_LANE_UNIT_OR_BINARY_CHANGED');
+  // Secret is read only by the signed service identity; never log or export.
+  const apiKey=String(await rootOwned(AUTHORITY_DIR+'/openai-api-key',20000,
+    {secret:true})).trim();
+  must(apiKey.length>=16,'NATIVE_FIVE_LANE_MODEL_SECRET_ABSENT');
+  const app=createAppTokenProvider(payload.githubApp,{beforeRequest:async()=>{
+    await authority.revalidate();await authority.fencingWitness();
+  }});
+  const makeTransactionPorts=async({store,ledger,transaction,catalog:signedCatalog})=>{
+    must(digest(JSON.stringify(signedCatalog))===authority.catalogDigest,
+      'NATIVE_FIVE_LANE_CATALOG_CHANGED');
+    const requestAdmission=createBegetNativeRequestAdmission({
+      store,ledger,transaction,authority});
+    const beforeRequest=async()=>{
+      await authority.revalidate();await authority.fencingWitness();
+    };
+    const reader=createGitHubReader({token:app.token,
+      requestAdmission,beforeRequest});
+    const remote=createPublisherTransport({token:app.token,
+      requestAdmission,beforeRequest});
+    let nativeTask=null;
+    const getContext=async({id,baseSha,paths})=>{
+      const get=createPinnedSourceReader({
+        checkout:path.join(store.root,'scratchpads',id),
+        admittedTasks:signedCatalog});
+      return get({id,baseSha,paths});
+    };
+    const produce=createResponsesCodeProducer({
+      model:payload.model.name,apiKey,
+      maxOutputTokens:payload.model.maxOutputTokens,
+      getContext,
+      admitRequest:request=>reserveNativeModelRequest({
+        store,ledger,transaction,payload,
+        revalidate:authority.revalidate,request})
+    });
+    const reviewSource=createResponsesSourceReviewer({
+      model:payload.model.reviewName,generatorModel:payload.model.name,
+      apiKey,maxOutputTokens:payload.model.maxOutputTokens,
+      admitRequest:request=>reserveNativeModelRequest({
+        store,ledger,transaction,payload,
+        revalidate:authority.revalidate,request}),
+      async getPreparedDiff(e){
+        must(nativeTask?.id===e.taskId&&nativeTask.sha===e.baseSha,
+          'NATIVE_REVIEW_TASK_UNBOUND');
+        await verifyPreparedDelta(store,nativeTask,e.deltaSha256);
+        const cwd=path.join(store.root,'scratchpads',e.taskId);
+        const {stdout}=await promisifySource(execSource)('/usr/bin/git',
+          ['-c','core.hooksPath=/dev/null','-c','core.fsmonitor=false',
+          'diff','--no-ext-diff','--no-textconv','--',
+          ...nativeTask.changes.map(c=>c.path)],{
+          cwd,timeout:10000,maxBuffer:150000,
+          env:{PATH:'/usr/bin:/bin',GIT_CONFIG_NOSYSTEM:'1',
+            GIT_CONFIG_GLOBAL:'/dev/null',GIT_TERMINAL_PROMPT:'0'}
+        });
+        await verifyPreparedDelta(store,nativeTask,e.deltaSha256);
+        return stdout;
+      }
+    });
+    return Object.freeze({reader,remote,produce,
+      revalidate:authority.revalidate,
+      bindTask(task){must(nativeTask===null&&task&&
+        signedCatalog.some(t=>t.id===task.id&&t.baseSha===task.sha),
+        'NATIVE_FIVE_LANE_TASK_BINDING');nativeTask=task;return true;},
+      async runChecks(e,{signal}={}){
+        must(nativeTask?.id===e.taskId&&nativeTask.sha===e.baseSha,
+          'NATIVE_FIVE_LANE_CHECK_SCOPE');
+        await verifyPreparedDelta(store,nativeTask,e.deltaSha256);
+        // Unlike synthetic source-package tests, the native Publisher must
+        // actually execute the admitted test file in a no-network bwrap
+        // namespace, or schema-check a fixed signed RU fixture.
+        must(digest(await rootOwned('/usr/bin/bwrap',2000000,{encoding:null}))===
+          m.bwrapSha256,'NATIVE_BWRAP_APPARMOR_BINARY_CHANGED');
+        const checks=await runNativeSourceChecks({
+          task:nativeTask,workspace:path.join(store.root,'scratchpads',e.taskId),
+          nodeExecutable:BEGET.runtime+'/node',signal
+        });
+        await verifyPreparedDelta(store,nativeTask,e.deltaSha256);
+        must(checks.status==='PASS'&&checks.isolated===true&&
+          checks.networkDisabled===true,'NATIVE_LOCAL_CHECK_NOT_PROVEN');
+        return {...e,status:'PASS'};
+      },
+      independentReview:reviewSource,
+      publishedReview:createBoundPublishedModelReview({
+        policySha256:payload.reviewsSha256,
+        model:payload.model.reviewName,reviewSource,
+        getBoundTask:()=>nativeTask,revalidate:authority.revalidate
+      })
+    });
+  };
+  const loop=await createNativeFiveLanePublicationLoop({
+    authority,makeTransactionPorts});
+  return Object.freeze({async iteration(){
+    await authority.revalidate();return loop.poll({execute:true});
+  }});
 }

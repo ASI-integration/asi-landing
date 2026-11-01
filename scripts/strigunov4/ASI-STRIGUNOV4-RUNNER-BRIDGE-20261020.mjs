@@ -95,6 +95,25 @@ export {createIsolatedAcceptanceLoop} from './execution-adapters/isolated-loop.m
 
 // Service entry for the existing Engine, with no home-PC dependency. Process
 // cadence is unbounded; signed task/API limits and ledger brakes are not.
+// Only these finite, source-authored codes can be emitted. Never echo arbitrary
+// task text, provider responses, HTTP bodies, errors, headers or credentials.
+const SAFE_NATIVE_SOURCE_REASON_CODES=new Set([
+  'MODEL_PROPOSAL_PROVIDER_REQUEST_UNKNOWN_NO_AUTOMATIC_RETRY',
+  'MODEL_PROPOSAL_PROVIDER_RESPONSE_UNKNOWN_NO_AUTOMATIC_RETRY',
+  'MODEL_PROPOSAL_PROVIDER_MODEL_CHANGED_AFTER_RESERVATION',
+  'MODEL_PROPOSAL_PROVIDER_OUTPUT_INVALID',
+  'MODEL_PROPOSAL_PROVIDER_OUTPUT_ESCAPED_SCOPE',
+  'MODEL_PROPOSAL_SIGNED_PROVIDER_BUDGET_DENIED',
+  'MODEL_PROPOSAL_APPROVED_SOURCE_READ_FAILED',
+  'MODEL_PROPOSAL_SOURCE_IDENTITY_UNVERIFIED',
+  'MODEL_PROPOSAL_SOURCE_BYTES_OR_HASH_UNVERIFIED',
+  'MODEL_OUTCOME_UNKNOWN_BLOCKED_LANE_NO_REPLAY'
+]);
+export function safeNativeSourceReason(reason){
+  return typeof reason==='string'&&SAFE_NATIVE_SOURCE_REASON_CODES.has(reason)
+    ?reason:null;
+}
+
 export async function runContinuousWorker({iteration,signal,wait,emit=()=>{}}){
   must(typeof iteration==='function'&&typeof wait==='function','WORKER_PORTS');
   let failures=0;
@@ -103,9 +122,11 @@ export async function runContinuousWorker({iteration,signal,wait,emit=()=>{}}){
     try{r=await iteration();must(r&&['WAITING','REPORT_READY','FAILED_LOCKED','BLOCKED'].includes(r.mode),'WORKER_RESULT');}
     catch{r={mode:'BLOCKED',reason:'HOST_ADMISSION_OR_RESULT_UNVERIFIED'};}
     failures=['BLOCKED','FAILED_LOCKED'].includes(r.mode)?Math.min(6,failures+1):0;
-    // Fixed metadata only: no raw error/output, task content, API response or token.
+    // Fixed metadata only: do not expose untrusted error/output or any secrets.
+    const reasonCode=r.mode==='WAITING'?safeNativeSourceReason(r.reason):null;
     emit({event:'engine_tick',at:new Date().toISOString(),mode:r.mode,
-      outcome:r.mode==='REPORT_READY'?'VERIFIED_RECEIPT':r.mode==='WAITING'?'IDLE_OR_PENDING':'EXECUTION_BLOCKED',failures});
+      outcome:r.mode==='REPORT_READY'?'VERIFIED_RECEIPT':r.mode==='WAITING'?'IDLE_OR_PENDING':'EXECUTION_BLOCKED',
+      failures,...(reasonCode?{reasonCode}:{})});
     if(!signal?.aborted)await wait(Math.min(3600000,600000*2**failures),signal);
   }
 }

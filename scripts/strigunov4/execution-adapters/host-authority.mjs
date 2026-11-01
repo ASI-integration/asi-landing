@@ -6,6 +6,9 @@ import path from 'node:path';
 import {verify,createPublicKey,createHash} from 'node:crypto';
 import {validateStagePolicy} from './stage-authority.mjs';
 import {decomposeProductGoal} from '../../global-dispatcher/product-adapters.mjs';
+import {inspectSourceIntake} from '../source-work-intake.mjs';
+import {inspectSignedParentChildSource} from './standing-parent-signature-source.mjs';
+import {isNativeSourceModification} from '../source-publisher-handoff.mjs';
 
 export const ENGINE_ROOT='/home/project_ayfaar/asi-strigunov-agent/engine';
 export const LEGACY_STATE='/home/project_ayfaar/asi-strigunov-agent/state';
@@ -200,5 +203,342 @@ export async function loadBegetAuthority(){
         request.reviewPolicySha256===payload.reviewsSha256,'BEGET_TASK_NOT_ADMITTED');
       return {approved:true,request,automaticCiApproved:true,automaticReviewApproved:true,
         operationId:'beget-'+hash(raw+t.id).slice(0,48),expiresAt:payload.expiresAt};}
+  });
+}
+
+/** Explicit opt-in generation for ONE existing Beget service. No unsigned
+ * source, GitHub label, test fixture or legacy activation can enter v2. */
+export function verifyBegetFiveLaneActivation(envelope,ownerPublicKey,now=Date.now()){
+  const p=verifySignedPayload(envelope,ownerPublicKey);
+  const h64=/^[a-f0-9]{64}$/,h40=/^[a-f0-9]{40}$/;
+  must(p?.schema==='asi.engine-beget-five-lane-activation.v1'&&
+    p.repo==='ASI-integration/asi-landing'&&p.host===BEGET.host&&
+    p.user===BEGET.user&&p.service===BEGET.service&&
+    p.root===BEGET.root&&p.runtime===BEGET.runtime&&p.stage==='S4-G2'&&
+    h40.test(p.baseSha)&&
+    Number.isSafeInteger(p.notBefore)&&Number.isSafeInteger(p.expiresAt)&&
+    p.notBefore<=now&&now<p.expiresAt&&
+    p.expiresAt-p.notBefore<=365*86400000&&
+    ['runtimeManifestSha256','catalogSha256','goalGraphSha256',
+     'assessmentsSha256','fenceSha256','reviewsSha256',
+     'securityDigest','policyDigest','ownerKeySha256',
+     'verifierKeySha256','parentDigest'].every(k=>h64.test(p[k]))&&
+    p.githubApp?.appId===5514822&&p.githubApp?.installationId===176281163&&
+    p.model?.name&&/^[A-Za-z0-9][A-Za-z0-9._:-]{0,100}$/.test(p.model.name)&&
+    typeof p.model.reviewName==='string'&&
+    p.model.reviewName!==p.model.name&&
+    /^[A-Za-z0-9][A-Za-z0-9._:-]{0,100}$/.test(p.model.reviewName)&&
+    Number.isSafeInteger(p.model.maxOutputTokens)&&
+    p.model.maxOutputTokens>=128&&p.model.maxOutputTokens<=4096&&
+    Number.isSafeInteger(p.model.maxCalls)&&p.model.maxCalls>=1&&p.model.maxCalls<=256&&
+    Number.isSafeInteger(p.model.reserveMicrousdPerCall)&&
+    p.model.reserveMicrousdPerCall>=1&&p.model.reserveMicrousdPerCall<=1000000&&
+    Number.isSafeInteger(p.model.maxPaidMicrousd)&&
+    p.model.maxPaidMicrousd>=p.model.reserveMicrousdPerCall&&
+    p.model.maxPaidMicrousd<=20000000&&
+    Array.isArray(p.ciPolicies)&&p.ciPolicies.length===2&&
+    p.ciPolicies.some(x=>x.name==='validate'&&x.workflowId===311380800&&
+      x.event==='pull_request')&&
+    p.ciPolicies.some(x=>x.name==='release_governance'&&
+      x.workflowId===390653294&&x.event==='pull_request_target'),
+    'FIVE_LANE_SIGNED_ACTIVATION_SCOPE');
+  const ownerDigest=hash(createPublicKey(ownerPublicKey).export({type:'spki',format:'der'}));
+  must(ownerDigest===p.ownerKeySha256,'FIVE_LANE_OWNER_PIN');
+  return p;
+}
+/** Read-only source decision for a VERIFIED signed child checkpoint.
+ * This is not a signature verifier or execution authorization: the caller
+ * must separately authenticate the current parent+child signatures and
+ * independently preserve/update the original durable Engine ledger lock.
+ */
+export function inspectFiveLaneChildCheckpoint(prior,next){
+  const deny=reason=>Object.freeze({status:'BLOCKED',reason,authorized:false});
+  try{
+    const hex=x=>typeof x==='string'&&/^[a-f0-9]{64}$/.test(x);
+    if(!next||!hex(next.parentDigest)||!hex(next.childDigest)||
+      !hex(next.manifestDigest)||
+      !Number.isSafeInteger(next.sequence)||next.sequence<1||
+      !Array.isArray(next.revokedEnvelopeDigests)||
+      next.revokedEnvelopeDigests.some(x=>!hex(x)))
+      return deny('SIGNED_CHILD_CHECKPOINT_INVALID');
+    if(prior===null)return Object.freeze({
+      status:'FIRST_SIGNED_CHILD',authorized:false,requiresHistoricalProof:false});
+    if(!prior||!hex(prior.parentDigest)||!hex(prior.childDigest)||
+      !hex(prior.manifestDigest)||!Number.isSafeInteger(prior.sequence)||
+      prior.sequence<1||!Array.isArray(prior.revokedEnvelopeDigests)||
+      prior.revokedEnvelopeDigests.some(x=>!hex(x))||
+      next.parentDigest!==prior.parentDigest||
+      next.sequence<prior.sequence||
+      prior.revokedEnvelopeDigests.some(d=>!next.revokedEnvelopeDigests.includes(d)))
+      return deny('SIGNED_CHILD_CHECKPOINT_ROLLBACK');
+    if(next.sequence===prior.sequence&&
+       (next.manifestDigest!==prior.manifestDigest||
+        next.childDigest!==prior.childDigest))
+      return deny('SIGNED_CHILD_CHANGED_WITHOUT_SEQUENCE_ADVANCE');
+    return Object.freeze({
+      status:next.childDigest===prior.childDigest?'SAME_SIGNED_CHILD':'SIGNED_CHILD_ROTATION',
+      authorized:false,requiresHistoricalProof:next.childDigest!==prior.childDigest});
+  }catch{return deny('SIGNED_CHILD_CHECKPOINT_UNTRUSTED');}
+}
+
+export async function loadBegetFiveLaneAuthority(){
+  const read=name=>rootOwned(AUTHORITY_DIR+'/'+name);
+  const owner=await read('owner-public.pem');
+  const activationRaw=await read('activation.json');
+  const activation=JSON.parse(activationRaw);
+  const payload=verifyBegetFiveLaneActivation(activation,owner);
+  const verifier=await read('standing-verifier-public.pem');
+  must(hash(createPublicKey(verifier).export({type:'spki',format:'der'}))===
+    payload.verifierKeySha256,'FIVE_LANE_VERIFIER_PIN');
+  const names={'catalog.json':'catalogSha256','five-lane-goal.json':'goalGraphSha256',
+    'five-lane-assessments.json':'assessmentsSha256',
+    'fence.json':'fenceSha256','reviews.json':'reviewsSha256'};
+  const files={};
+  for(const [name,pin] of Object.entries(names)){
+    files[name]=await read(name);
+    must(hash(files[name])===payload[pin],'FIVE_LANE_SIGNED_FILE_MISMATCH');
+  }
+  const catalog=freeze(JSON.parse(files['catalog.json']));
+  const goalGraph=freeze(JSON.parse(files['five-lane-goal.json']));
+  const assessments=freeze(JSON.parse(files['five-lane-assessments.json']));
+  const reviewPolicy=JSON.parse(files['reviews.json']);
+  must(reviewPolicy?.schema==='asi.five-lane-independent-model-review.v1'&&
+    reviewPolicy.repository===payload.repo&&
+    reviewPolicy.model===payload.model.reviewName&&
+    reviewPolicy.mode==='SOURCE_DRAFT_REVIEW_ONLY'&&
+    reviewPolicy.requiresCi===true,
+    'FIVE_LANE_SIGNED_REVIEW_POLICY');
+  must(Array.isArray(catalog)&&catalog.length===5&&
+    new Set(catalog.map(t=>t.id)).size===5&&
+    new Set(catalog.map(t=>t.branch)).size===5&&
+    catalog.every(t=>t.baseSha===payload.baseSha&&
+      t.kind==='source-proposal'&&t.stage==='S4-G2'&&
+      inspectSourceIntake({task:t,admittedTasks:catalog}).status==='SOURCE_CANDIDATE'),
+    'FIVE_LANE_SIGNED_CATALOG_INVALID');
+  must(assessments&&typeof assessments==='object'&&!Array.isArray(assessments)&&
+    Object.keys(assessments).length===5&&
+    catalog.every(t=>Object.hasOwn(assessments,t.id))&&
+    goalGraph?.planHash&&Array.isArray(goalGraph?.nodes)&&
+    catalog.every(t=>goalGraph.nodes.some(n=>n.id===t.id)),
+    'FIVE_LANE_SIGNED_PLAN_INVALID');
+  async function signedDelegation(){
+    const parent=JSON.parse(await read('standing-parent.json'));
+    const child=JSON.parse(await read('standing-child.json'));
+    const revocations=verifySignedPayload(JSON.parse(await read('standing-revocations.json')),owner);
+    must(revocations?.schema==='asi.standing-revocations.v1'&&
+      revocations.repo===payload.repo&&revocations.target===payload.host&&
+      Number.isSafeInteger(revocations.sequence)&&revocations.sequence>=1&&
+      Array.isArray(revocations.revokedParentDigests)&&
+      Array.isArray(revocations.revokedChildDigests),
+      'FIVE_LANE_REVOCATION_INVALID');
+    const evidence=inspectSignedParentChildSource({
+      signedParent:parent,signedChild:child,
+      ownerPublicKey:owner,verifierPublicKey:verifier,
+      expected:{baseSha:payload.baseSha,securityDigest:payload.securityDigest,
+        policyDigest:payload.policyDigest,ownerKeySha256:payload.ownerKeySha256,
+        verifierKeySha256:payload.verifierKeySha256},
+      now:Date.now(),revokedParentDigests:revocations.revokedParentDigests,
+      revokedChildDigests:revocations.revokedChildDigests
+    });
+    must(evidence.status==='SIGNED_PARENT_CHILD_SOURCE_VERIFIED'&&
+      evidence.parent.digest===payload.parentDigest,
+      'FIVE_LANE_SIGNED_PARENT_CHILD_DENIED');
+    return {evidence,revocations};
+  }
+  const initial=await signedDelegation();
+  // The initial child is not a permanent signer. A new verifier-signed child
+  // may replace it, but ONLY after an incremented signed revocation sequence
+  // and an independently persisted in-lock rotation checkpoint.
+  let revocationFloor=initial.revocations.sequence;
+  let observedChild=initial.evidence.child.digest;
+  const admission=Object.freeze({root:payload.root});
+  admitted.set(admission,payload);
+  async function revalidate(){
+    must(await read('activation.json')===activationRaw&&
+      await read('owner-public.pem')===owner&&
+      await read('standing-verifier-public.pem')===verifier,
+      'FIVE_LANE_SIGNED_ACTIVATION_CHANGED');
+    for(const [name,raw] of Object.entries(files))
+      must(await read(name)===raw,'FIVE_LANE_SIGNED_FILE_CHANGED');
+    verifyBegetFiveLaneActivation(activation,owner);
+    const current=await signedDelegation();
+    must(current.revocations.sequence>=revocationFloor&&
+      (current.evidence.child.digest===observedChild||
+       current.revocations.sequence>revocationFloor),
+      'FIVE_LANE_CHILD_OR_REVOCATION_ROLLBACK');
+    // This in-memory floor is only an additional guard. The durable, original
+    // state.execute ledger checkpoint below owns crash/restart monotonicity.
+    revocationFloor=current.revocations.sequence;
+    observedChild=current.evidence.child.digest;
+    return true;
+  }
+  async function fencingWitness(){
+    await revalidate();
+    const f=JSON.parse(files['fence.json']);
+    must(f.schema==='asi.old-writer-fence.v1'&&f.repository===payload.repo&&
+      f.method==='REVOKED_OLD_GITHUB_INSTALLATION'&&
+      f.oldCredentialsRevoked===true&&
+      Number.isSafeInteger(f.oldInstallationId)&&
+      f.oldInstallationId!==payload.githubApp.installationId&&
+      Number.isSafeInteger(f.outstandingTokensExpiredAt)&&
+      f.outstandingTokensExpiredAt<=payload.notBefore&&
+      f.verifiedBy==='protected-install-review',
+      'FIVE_LANE_OLD_WRITER_FENCE');
+    return true;
+  }
+  async function verifyChildHistory(ledger){
+    await revalidate();
+    const active=await signedDelegation();
+    const activeChild=active.evidence.child.digest;
+    const entries=Object.entries(ledger?.standingDelegationBudget?.envelopes??{});
+    must(entries.length<=64&&entries.every(([digest,e])=>
+      /^[a-f0-9]{64}$/.test(digest)&&e?.scope?.digest===digest&&
+      Array.isArray(e.claims)&&e.claims.length>0&&
+      Number.isSafeInteger(e.claims[0].reservedAt)),
+      'FIVE_LANE_HISTORICAL_LEDGER_INVALID');
+    const old=entries.filter(([digest])=>digest!==activeChild);
+    const raw=await read('standing-children-history.json');
+    const artifacts=JSON.parse(raw);
+    // Historical files can also contain an older signed child which
+    // expired without making any GitHub request. Such unspent certificates
+    // still matter for anti-rollback, but have no budget entry to match.
+    must(Array.isArray(artifacts)&&artifacts.length>=old.length&&
+      artifacts.length<=64,'FIVE_LANE_SIGNED_CHILD_HISTORY_MISSING');
+    const parent=JSON.parse(await read('standing-parent.json'));
+    const currentRev=verifySignedPayload(
+      JSON.parse(await read('standing-revocations.json')),owner);
+    const seen=new Set(),historyDigests=new Set();
+    for(const signedChild of artifacts){
+      const at=JSON.parse(signedChild?.payload??'null')?.notBefore;
+      must(Number.isSafeInteger(at)&&at>=0,
+        'FIVE_LANE_HISTORICAL_CHILD_TIMESTAMP_INVALID');
+      const proof=inspectSignedParentChildSource({
+        signedParent:parent,signedChild,
+        ownerPublicKey:owner,verifierPublicKey:verifier,
+        expected:{baseSha:payload.baseSha,
+          securityDigest:payload.securityDigest,
+          policyDigest:payload.policyDigest,
+          ownerKeySha256:payload.ownerKeySha256,
+          verifierKeySha256:payload.verifierKeySha256},
+        now:at,
+        revokedParentDigests:currentRev.revokedParentDigests,
+        revokedChildDigests:currentRev.revokedChildDigests
+      });
+      must(proof.status==='SIGNED_PARENT_CHILD_SOURCE_VERIFIED'&&
+        proof.parent.digest===payload.parentDigest&&
+        proof.child.digest!==activeChild&&
+        !historyDigests.has(proof.child.digest),
+        'FIVE_LANE_HISTORICAL_SIGNER_OR_DUPLICATE');
+      historyDigests.add(proof.child.digest);
+      const matched=old.find(([digest])=>digest===proof.child.digest);
+      if(matched){
+        const [digest,entry]=matched;
+        must(entry.scope.notBefore===proof.child.notBefore&&
+          entry.scope.expiresAt===proof.child.expiresAt&&
+          entry.claims[0].reservedAt>=proof.child.notBefore&&
+          entry.claims[0].reservedAt<proof.child.expiresAt,
+          'FIVE_LANE_HISTORICAL_CHILD_CLAIM_INVALID');
+        seen.add(digest);
+      }
+    }
+    must(seen.size===old.length,'FIVE_LANE_HISTORICAL_CHILD_INCOMPLETE');
+    return true;
+  }
+  async function checkRevocationCheckpoint({store,ledger,transaction}={}){
+    const {inspectStandingTransaction,atomicJson}=await import('./state.mjs');
+    const lease=inspectStandingTransaction(transaction);
+    must(lease.root===store?.root&&lease.ledger===ledger&&
+      lease.kind==='github-publisher','NATIVE_REVOCATION_LOCK_REQUIRED');
+    const signed=await signedDelegation(),current=signed.revocations;
+    const checkpoint={
+      sequence:current.sequence,manifestDigest:hash(JSON.stringify(current)),
+      parentDigest:signed.evidence.parent.digest,
+      childDigest:signed.evidence.child.digest,
+      revokedEnvelopeDigests:[...new Set([
+        ...current.revokedParentDigests,...current.revokedChildDigests
+      ])].sort()
+    };
+    const own=Object.getOwnPropertyDescriptor(ledger,'standingRevocationCheckpoint');
+    must(own ? Object.hasOwn(own,'value')&&own.value!==null&&
+      typeof own.value==='object'&&!Array.isArray(own.value) :
+      !('standingRevocationCheckpoint' in ledger),
+      'NATIVE_REVOCATION_CHECKPOINT_INVALID');
+    const prior=own?own.value:null;
+    const rotation=inspectFiveLaneChildCheckpoint(prior,checkpoint);
+    must(rotation.status!=='BLOCKED','NATIVE_REVOCATION_ROLLBACK');
+    if(prior){
+      if(rotation.requiresHistoricalProof){
+        // A renewed <=365-day signature must keep the prior exact signed child
+        // in history; it cannot pretend its earlier budget or issuance never
+        // happened. Verify the old child against pinned keys and the SAME
+        // still-current 365-day owner parent at its original notBefore.
+        const historical=JSON.parse(await read('standing-children-history.json'));
+        const parent=JSON.parse(await read('standing-parent.json'));
+        must(Array.isArray(historical)&&historical.length<=64,
+          'NATIVE_PREVIOUS_CHILD_HISTORY_UNAVAILABLE');
+        let found=0;
+        for(const item of historical){
+          const at=JSON.parse(item?.payload??'null')?.notBefore;
+          if(!Number.isSafeInteger(at)||at<0)continue;
+          const proof=inspectSignedParentChildSource({
+            signedParent:parent,signedChild:item,
+            ownerPublicKey:owner,verifierPublicKey:verifier,
+            expected:{baseSha:payload.baseSha,
+              securityDigest:payload.securityDigest,
+              policyDigest:payload.policyDigest,
+              ownerKeySha256:payload.ownerKeySha256,
+              verifierKeySha256:payload.verifierKeySha256},
+            now:at,
+            revokedParentDigests:current.revokedParentDigests,
+            revokedChildDigests:current.revokedChildDigests
+          });
+          if(proof.status==='SIGNED_PARENT_CHILD_SOURCE_VERIFIED'&&
+            proof.child.digest===prior.childDigest&&
+            proof.parent.digest===prior.parentDigest)found++;
+        }
+        must(found===1,'NATIVE_PREVIOUS_CHILD_NOT_SIGNED_OR_REVOKED');
+      }
+      if(checkpoint.sequence===prior.sequence)return true;
+    }else{
+      must(Object.keys(ledger.standingDelegationBudget?.envelopes??{}).length===0,
+        'NATIVE_UNCHECKPOINTED_SPENDING');
+    }
+    await revalidate();
+    const again=inspectStandingTransaction(transaction);
+    must(again.transactionId===lease.transactionId&&again.ledger===ledger,
+      'NATIVE_REVOCATION_LOCK_CHANGED');
+    await atomicJson(store.file('autopilot-ledger.json'),
+      {...ledger,standingRevocationCheckpoint:checkpoint});
+    ledger.standingRevocationCheckpoint=checkpoint;
+    return true;
+  }
+  const catalogDigest=hash(JSON.stringify(catalog));
+  return Object.freeze({payload,catalog,catalogDigest,goalGraph,assessments,
+    admission,revalidate,fencingWitness,verifyChildHistory,
+    checkRevocationCheckpoint,
+    async signedDelegation(){await revalidate();return (await signedDelegation()).evidence;},
+    async authorizePublisher(request,task){
+      await revalidate();await fencingWitness();
+      const exact=catalog.filter(t=>t.id===task?.id&&t.laneId===task.laneId);
+      must(exact.length===1&&isNativeSourceModification(task)&&
+        task.sha===payload.baseSha&&task.sourceBinding===
+          inspectSourceIntake({task:exact[0],admittedTasks:catalog}).taskBinding&&
+        task.changes.length===exact[0].files.length&&
+        task.changes.every((c,i)=>c.path===exact[0].files[i].path&&
+          c.beforeSha256===exact[0].files[i].beforeSha256)&&
+        request?.taskId===task.id&&request.taskBinding===hash(JSON.stringify(task))&&
+        request.repo===payload.repo&&request.stage===payload.stage&&
+        request.baseSha===payload.baseSha&&request.branch===task.branch&&
+        equal(request.paths,task.changes.map(c=>c.path))&&
+        request.reviewPolicySha256===payload.reviewsSha256&&
+        equal(request.operations,['create-tree','create-commit','create-branch','create-draft-pr']),
+        'FIVE_LANE_PUBLISHER_NOT_SIGNED');
+      // A signed envelope covers routine source scope, not production release.
+      return Object.freeze({approved:true,request,automaticCiApproved:true,
+        automaticReviewApproved:true,
+        operationId:'native-'+hash(activationRaw+task.proposalDigest).slice(0,48),
+        expiresAt:Math.min(payload.expiresAt,
+          (await signedDelegation()).evidence.expiresAt)});
+    }
   });
 }
