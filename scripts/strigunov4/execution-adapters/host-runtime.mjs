@@ -12,6 +12,7 @@ import {createPublisherTransport} from './publisher-transport.mjs';
 import {createPublicationLoop} from './publication-loop.mjs';
 import {createBegetNativeRequestAdmission} from './beget-native-request-admission.mjs';
 import {createResponsesSourceReviewer} from './beget-native-source-review.mjs';
+import {runNativeSourceChecks} from './beget-native-source-checks.mjs';
 import {createResponsesCodeProducer} from '../source-responses-provider.mjs';
 import {createPinnedSourceReader} from '../source-git-context.mjs';
 // Source candidate composition is imported into the REAL host runtime closure.
@@ -435,10 +436,22 @@ export async function createBegetFiveLaneRuntime(){
       bindTask(task){must(nativeTask===null&&task&&
         signedCatalog.some(t=>t.id===task.id&&t.baseSha===task.sha),
         'NATIVE_FIVE_LANE_TASK_BINDING');nativeTask=task;return true;},
-      async runChecks(e){
+      async runChecks(e,{signal}={}){
         must(nativeTask?.id===e.taskId&&nativeTask.sha===e.baseSha,
           'NATIVE_FIVE_LANE_CHECK_SCOPE');
         await verifyPreparedDelta(store,nativeTask,e.deltaSha256);
+        // Unlike synthetic source-package tests, the native Publisher must
+        // actually execute the admitted test file in a no-network bwrap
+        // namespace, or schema-check a fixed signed RU fixture.
+        must(digest(await rootOwned('/usr/bin/bwrap',2000000,{encoding:null}))===
+          m.bwrapSha256,'NATIVE_BWRAP_APPARMOR_BINARY_CHANGED');
+        const checks=await runNativeSourceChecks({
+          task:nativeTask,workspace:path.join(store.root,'scratchpads',e.taskId),
+          nodeExecutable:BEGET.runtime+'/node',signal
+        });
+        await verifyPreparedDelta(store,nativeTask,e.deltaSha256);
+        must(checks.status==='PASS'&&checks.isolated===true&&
+          checks.networkDisabled===true,'NATIVE_LOCAL_CHECK_NOT_PROVEN');
         return {...e,status:'PASS'};
       },
       independentReview:reviewSource,
