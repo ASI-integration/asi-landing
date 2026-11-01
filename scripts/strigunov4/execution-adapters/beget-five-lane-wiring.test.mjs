@@ -120,6 +120,12 @@ test('source-only v2 manifests require installer-compatible false and protected-
     nodeSha256:'a'.repeat(64),bwrapSha256:'a'.repeat(64),
     unitSha256:'a'.repeat(64),catalogSha256:'a'.repeat(64)};
   assert.equal(isBegetV2RuntimeManifest(m),true);
+  // Explicit alternative: owner-signed measured acceptance, never an
+  // independent reviewer PASS or unsigned owner chat statement.
+  assert.equal(isBegetV2RuntimeManifest({...m,
+    nativeFiveLaneWiring:'OWNER_SIGNED_TECHNICAL_ACCEPTANCE_V1'}),true);
+  assert.equal(isBegetV2RuntimeManifest({...m,
+    nativeFiveLaneWiring:'OWNER_ASSERTS_PASS'}),false);
   assert.equal(isBegetV2RuntimeManifest({...m,installable:true}),false);
   assert.equal(isBegetV2RuntimeManifest({...m,nativeFiveLaneWiring:undefined}),false);
   assert.equal(isBegetV2RuntimeManifest({...m,files:m.files.slice(0,20)}),false);

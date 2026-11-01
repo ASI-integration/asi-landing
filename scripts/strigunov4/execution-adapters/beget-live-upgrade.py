@@ -442,6 +442,68 @@ def install_staged_native_scratch(stage,names,created):
     syncdir(STATE/'scratchpads')
     return True
 
+def native_owner_test_log_valid(name,raw):
+    """Measured source/installer/host test evidence, not a self-asserted PASS."""
+    require(type(raw) is bytes and 0<len(raw)<200000,
+            'OWNER_TEST_REPORT_UNREADABLE')
+    text=raw.decode('utf8','strict')
+    if name in ('node','serviceUidSandbox'):
+        # Node's final TAP summary must describe genuine non-skipped tests.
+        def last(key):
+            matches=re.findall(r'^# '+key+r' ([0-9]+)\r?$',text,re.M)
+            require(matches,'OWNER_TAP_SUMMARY_MISSING')
+            return int(matches[-1])
+        n=last('tests')
+        require(1<=n<=1000 and n==last('pass') and
+          all(last(k)==0 for k in ('fail','skipped','cancelled','todo')),
+          'OWNER_TAP_TESTS_NOT_CLEAN')
+        if name=='serviceUidSandbox':
+            require(n>=10 and
+              'ENGINE_UID=asi-engine' in text and
+              'NO_NEW_PRIVS=yes' in text and
+              'NETWORK_UNSHARE=all' in text and
+              'BWRAP_RESULT=0' in text,
+              'OWNER_SERVICE_UID_SANDBOX_NOT_PROVEN')
+    elif name=='installer':
+        runs=re.findall(r'^Ran ([0-9]+) tests in ',text,re.M)
+        require(runs and int(runs[-1])>=17 and
+          re.search(r'^OK\s*$',text,re.M) is not None and
+          'FAILED' not in text and 'ERROR:' not in text,
+          'OWNER_INSTALLER_TESTS_NOT_CLEAN')
+    else:
+        raise Block('OWNER_TEST_REPORT_UNKNOWN_KIND')
+    return True
+
+def owner_native_acceptance_scope(accepted,oldraw,newraw,new,hashes):
+    """OWNER-SIGNED technical acceptance, not independent review.
+
+    This must be called only AFTER installer.signed() has verified genuine
+    Ed25519 signature against the root-owned existing owner-public.pem.
+    Network CI and actual root-owned test logs are verified by the caller.
+    """
+    require(type(accepted) is dict and
+      accepted.get('schema')=='asi.beget-owner-native-technical-acceptance.v1' and
+      accepted.get('mode')=='OWNER_SIGNED_TECHNICAL_ACCEPTANCE' and
+      accepted.get('decision')=='ACCEPT_EXACT_RELEASE_FOR_INSTALL' and
+      accepted.get('host')==HOST and accepted.get('unit')==UNIT and
+      accepted.get('sourceSha')==new['sourceSha'] and
+      accepted.get('manifestSha256')==sha(newraw) and
+      accepted.get('catalogSha256')==new['catalogSha256'] and
+      accepted.get('oldManifestSha256')==sha(oldraw) and
+      accepted.get('oldStateDigests')==hashes and
+      type(accepted.get('validationRunId')) is int and
+      accepted['validationRunId']>0 and
+      accepted.get('nativeFiveLaneAdmissionTested') is True and
+      accepted.get('realModelBudgetGateTested') is True and
+      accepted.get('restoreReplayProhibitionTested') is True and
+      type(accepted.get('testEvidenceSha256')) is dict and
+      set(accepted['testEvidenceSha256'])==
+        {'node','installer','serviceUidSandbox'} and
+      all(type(x) is str and re.fullmatch('[0-9a-f]{64}',x)
+          for x in accepted['testEvidenceSha256'].values()),
+      'OWNER_TECHNICAL_ACCEPTANCE_SCOPE')
+    return accepted
+
 def protected_admission(package, oldraw,old, state, newraw,new, files, installer):
     """The only authority port: native owner signature over exact bytes."""
     require(os.geteuid()==0 and os.uname().nodename==HOST,'UPGRADE_ROOT_HOST_REQUIRED')
@@ -480,7 +542,7 @@ def protected_admission(package, oldraw,old, state, newraw,new, files, installer
             len(grant['newPolicySha256'])==64 and
             all(c in '0123456789abcdef' for c in grant['newPolicySha256']),
             'SIGNED_DURABLE_STATE_PIN_MISMATCH')
-    # The future native 5-lane host must carry an independently reviewed
+    # The future native 5-lane host must carry a genuinely owner-signed
     # activation, not reuse the legacy two-witness authority.
     proposed=load_next_protected_sources(grant,newraw,new,files,installer)
     activation=installer.signed('active-next-activation.json',public)
@@ -495,19 +557,50 @@ def protected_admission(package, oldraw,old, state, newraw,new, files, installer
                        ('five-lane-assessments.json','assessmentsSha256')]:
         require(sha(proposed[name])==activation.get(field),
                 'NEXT_NATIVE_POLICY_NOT_PINNED')
+    # Two honest acceptance paths: legacy independent review OR explicit
+    # owner-signed technical acceptance based on exact CI and real test logs.
+    # No external subscription / human reviewer is mandatory. No unsigned
+    # source test, GitHub comment or assistant assertion can issue either.
     reviewraw=regular(AUTH/'active-upgrade-review.json',root=True)
+    require(sha(reviewraw)==grant.get('reviewSha256'),
+            'UPGRADE_ACCEPTANCE_NOT_BOUND_TO_OWNER_GRANT')
     review=jsonb(reviewraw)
-    require(sha(reviewraw)==grant.get('reviewSha256') and
-      review.get('schema')=='asi.beget-native-five-lane-upgrade-review.v1' and
-      review.get('result')=='PASS' and review.get('reviewedSourceSha')==new['sourceSha'] and
-      review.get('reviewedManifestSha256')==sha(newraw) and
-      review.get('oldStateDigests')==hashes and
-      review.get('nativeFiveLaneAdmissionVerified') is True and
-      review.get('realModelBudgetGateVerified') is True and
-      review.get('restoreReplayProhibitionVerified') is True,
-      'INDEPENDENT_NATIVE_REVIEW_REQUIRED')
-    # An owner-grant pin makes the exact independent-review record immutable
-    # within this transaction; unreviewed flags alone cannot authorize apply.
+    if review.get('schema')=='asi.beget-native-five-lane-upgrade-review.v1':
+        require(new.get('nativeFiveLaneWiring')==
+          'REVIEWED_PROTECTED_ACTIVE_RUNTIME_V1',
+          'INDEPENDENT_REVIEW_MARKER_MISMATCH')
+        require(review.get('result')=='PASS' and
+          review.get('reviewedSourceSha')==new['sourceSha'] and
+          review.get('reviewedManifestSha256')==sha(newraw) and
+          review.get('oldStateDigests')==hashes and
+          review.get('nativeFiveLaneAdmissionVerified') is True and
+          review.get('realModelBudgetGateVerified') is True and
+          review.get('restoreReplayProhibitionVerified') is True,
+          'INDEPENDENT_NATIVE_REVIEW_REQUIRED')
+    else:
+        # This is an Ed25519 envelope, not a handwritten "PASS" JSON.
+        # The *same* pinned public owner key verifies it and the distinct
+        # exact-state one-use upgrade grant.
+        require(new.get('nativeFiveLaneWiring')==
+          'OWNER_SIGNED_TECHNICAL_ACCEPTANCE_V1',
+          'OWNER_ACCEPTANCE_MARKER_MISMATCH')
+        accepted=installer.signed('active-upgrade-review.json',public)
+        owner_native_acceptance_scope(accepted,oldraw,newraw,new,hashes)
+        # Require actual immutable root-owned evidence bytes, rather than
+        # accepting a signature over unmeasured declarations.
+        for name,source in [('node','active-acceptance-node-tests.log'),
+                            ('installer','active-acceptance-installer-tests.log'),
+                            ('serviceUidSandbox','active-acceptance-sandbox-tests.log')]:
+            evidence=regular(AUTH/source,root=True,maxsize=200000)
+            require(sha(evidence)==accepted['testEvidenceSha256'][name],
+                    'OWNER_TECHNICAL_TEST_EVIDENCE_MISMATCH')
+            native_owner_test_log_valid(name,evidence)
+        # Owner-selected exact GitHub source validation is checked directly
+        # against the provider, not asserted by chat or fixture.
+        installer.verified_owner_ci_run(
+          accepted['validationRunId'],311380800,new['sourceSha'],'pull_request')
+    # The owner upgrade grant pins the entire authentic review or signed
+    # technical acceptance. No test record or owner statement alone installs.
     require(grant.get('newPolicySha256')==
       sha(json.dumps(activation,ensure_ascii=False,separators=(',',':')).encode('utf8')),
       'NATIVE_BUDGET_POLICY_SHA_UNVERIFIED')
@@ -528,8 +621,10 @@ def verify_generation_preclaim(package):
     # A module in a ZIP does not make it callable from host-runtime.
     # The signed release must carry explicit protected-reviewed wiring
     # from the native request path, not just copied candidate roots.
-    require(new.get('nativeFiveLaneWiring')=='REVIEWED_PROTECTED_ACTIVE_RUNTIME_V1',
-            'FIVE_LANE_HOST_RUNTIME_NOT_WIRED')
+    require(new.get('nativeFiveLaneWiring') in (
+      'REVIEWED_PROTECTED_ACTIVE_RUNTIME_V1',
+      'OWNER_SIGNED_TECHNICAL_ACCEPTANCE_V1'),
+      'FIVE_LANE_HOST_RUNTIME_NOT_WIRED')
     return installer,newraw,new,files
 
 def preflight(package):

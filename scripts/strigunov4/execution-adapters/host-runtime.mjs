@@ -337,7 +337,8 @@ export async function reserveNativeModelRequest({store,ledger,transaction,payloa
 // enforced separately by the native root-owned loader before every use.
 export function isBegetV2RuntimeManifest(m){
   return m?.schema==='asi.beget-engine-source.v1'&&
-    m.nativeFiveLaneWiring==='REVIEWED_PROTECTED_ACTIVE_RUNTIME_V1'&&
+    ['REVIEWED_PROTECTED_ACTIVE_RUNTIME_V1',
+      'OWNER_SIGNED_TECHNICAL_ACCEPTANCE_V1'].includes(m.nativeFiveLaneWiring)&&
     m.installable===false&&Array.isArray(m.files)&&m.files.length>=30&&
     ['unitSha256','nodeSha256','bwrapSha256','catalogSha256'].every(k=>
       typeof m[k]==='string'&&/^[a-f0-9]{64}$/.test(m[k]));
