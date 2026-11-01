@@ -13,7 +13,13 @@ function fixture(){
     id:'native-source-'+i,laneId:lane.id,repo:lane.repository,
     branch:lane.branch,baseSha:SHA,stage:'S4-G2',kind:'source-proposal',
     objective:'Prepare a narrowly scoped source improvement for review',
-    files:[{path:'scripts/native-lane-'+i+'.mjs',beforeSha256:null}]
+    files:[{path:[
+      'scripts/strigunov4/ASI-STRIGUNOV4-GITHUB-SNAPSHOT-20261020.test.mjs',
+      'tests/telegram-live-identity-acceptance.ru.json',
+      'scripts/strigunov4/ASI-STRIGUNOV4-MULTIJOB-20261020.test.mjs',
+      'scripts/strigunov4/ASI-STRIGUNOV4-RUNNER-BRIDGE-20261020.test.mjs',
+      'scripts/strigunov4/ASI-STRIGUNOV4-ORCHESTRATOR-CANDIDATE-20261020.test.mjs'
+    ][i],beforeSha256:H}]
   }));
   const lanes=Object.fromEntries(tasks.map(t=>[t.laneId,{
     mode:'READY',taskId:t.id,taskSha:SHA,
@@ -33,7 +39,7 @@ function fixture(){
     alternative:'Do not publish without approval',possibleDuplicates:[]
   };
   const produce=async task=>({status:'PROPOSED',changes:task.paths.map(path=>({
-    path,beforeSha256:null,content:'export const native = 1;\n'
+    path,beforeSha256:H,content:'export const native = 1;\n'
   }))});
   return {signedCatalog:tasks,journal,nowMs:12345,goalGraph:graph,
     assessment,produce,revalidate:async()=>true};
@@ -61,7 +67,7 @@ test('five fixed signed task candidates yield one non-authorizing publisher hand
   assert.equal(x.laneId,'engine');
   assert.equal(x.task.kind,'github-publisher');
   assert.equal(x.task.branch,'asi/engine-task/native-source-0');
-  assert.equal(x.task.changes[0].path,'scripts/native-lane-0.mjs');
+  assert.equal(x.task.changes[0].path,'scripts/strigunov4/ASI-STRIGUNOV4-GITHUB-SNAPSHOT-20261020.test.mjs');
 });
 test('unsigned/missing source catalog never calls a producer',async()=>{
   const x=fixture();let called=false;
@@ -83,7 +89,7 @@ test('model changes cannot promote a modified catalog',async()=>{
     requested=true;
     x.signedCatalog[0].objective='Changed by unsignable actor';
     return {status:'PROPOSED',changes:task.paths.map(path=>({
-      path,beforeSha256:null,content:'export const native = 1;\n'
+      path,beforeSha256:H,content:'export const native = 1;\n'
     }))};
   };
   assert.equal((await inside(x)).status,'BLOCKED');

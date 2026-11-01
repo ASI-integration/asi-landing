@@ -23,6 +23,13 @@ const array=a=>Array.isArray(a)&&Object.getPrototypeOf(a)===Array.prototype&&
   Reflect.ownKeys(a).length===a.length+1&&
   a.every((_,i)=>Object.hasOwn(a,i));
 const PATH=/^[A-Za-z0-9_.-]+(?:\/[A-Za-z0-9_.-]+)*\.(?:py|js|mjs|json)$/;
+// Exact subset of the adopted protected-main development release scope.
+ // Five signed work orders may only publish safe root tests/fixtures;
+ // protected Engine/authority files never become development by renaming PRs.
+export const nativeDevelopmentPath=p=>typeof p==='string'&&
+  (/^scripts\/strigunov4\/[A-Za-z0-9_-]+\.test\.mjs$/.test(p)||
+   /^tests\/(?:[A-Za-z0-9_.-]+\/)*[A-Za-z0-9_.-]+\.(?:js|mjs|json|py)$/.test(p))&&
+  !/(?:^|[\/-])(?:auth|security|payment|payments|billing|webhook|migrations?|permissions?)(?:[\/.-]|$)/i.test(p);
 const LANES=new Map([
   ['engine','asi/beget-one-engine-20261028'],
   ['ru-auth','feat/ru-unified-auth-20261029'],

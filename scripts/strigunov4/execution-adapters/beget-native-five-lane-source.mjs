@@ -6,7 +6,7 @@ import {OWNER_LANES} from './owner-lanes.mjs';
 import {inspectStandingTransaction} from './state.mjs';
 import {planNativeOwnerLane} from './owner-lane-native-bridge.mjs';
 import {inspectSourceIntake,proposeSourceWork} from '../source-work-intake.mjs';
-import {compileSourcePublisherHandoff} from '../source-publisher-handoff.mjs';
+import {compileSourcePublisherHandoff,nativeDevelopmentPath} from '../source-publisher-handoff.mjs';
 import {inspectTaskIntake as inspectValue} from '../../global-dispatcher/task-intake.mjs';
 
 const blocked=reason=>Object.freeze({
@@ -42,7 +42,8 @@ export async function prepareNativeFiveLaneSource({
         typeof t.objective==='string'&&t.objective.length>0&&
         t.objective.length<=2400&&Array.isArray(t.files)&&
         t.files.length>=1&&t.files.length<=3&&
-        t.files.every(f=>typeof f?.path==='string'&&supportedFile.test(f.path))&&
+        t.files.every(f=>typeof f?.path==='string'&&supportedFile.test(f.path)&&
+          nativeDevelopmentPath(f.path))&&
         OWNER_LANES.some(l=>l.id===t.laneId&&l.branch===t.branch&&
           l.repository===t.repo)))
       return blocked('SIGNED_SOURCE_SCOPE_INVALID');

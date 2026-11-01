@@ -3,7 +3,7 @@ import path from 'node:path';
 import {createHash} from 'node:crypto';
 import {atomicJson,digest,must,regular,sha,inspectStandingTransaction} from './state.mjs';
 import {prepareDelta,verifyPreparedDelta,normalizeProposedContent} from './change-preparer.mjs';
-import {isNativeSourceModification} from '../source-publisher-handoff.mjs';
+import {isNativeSourceModification,nativeDevelopmentPath} from '../source-publisher-handoff.mjs';
 import {inspectCI,validateCiPolicy} from './ci-reader.mjs';
 import {inspectCodeRabbit} from './coderabbit-analyzer.mjs';
 import {bounded,branchAllowed,REPOSITORY,draftBody} from './publisher-transport.mjs';
@@ -57,6 +57,10 @@ export function createGitHubPublisher({store,remote,reader,authorize,runChecks,i
       new Set(task.changes.map(c=>c.path)).size===task.changes.length,'PUBLISH_DELTA_INVALID');
     validateCiPolicy({...task,baseSha:task.sha},policies);
     const sourceModification=isNativeSourceModification(task);
+    // Strict code-owned release classification. Neither an LLM nor a Draft PR
+    // body can relabel protected source as development-safe.
+    if(sourceModification)must(task.changes.every(c=>nativeDevelopmentPath(c.path))&&
+      reviewPolicy,'NATIVE_DEVELOPMENT_RELEASE_SCOPE_REQUIRED');
     const g2Addition=task.stage==='S4-G2'&&!sourceModification;
     const binding=bindTask(task),file=store.file(`publication-${task.id}.json`);
     let record=await load(file);
@@ -116,7 +120,9 @@ export function createGitHubPublisher({store,remote,reader,authorize,runChecks,i
     }
     if(record){
       must(record.version===1&&record.taskBinding===binding&&record.operationId===grant.operationId&&
-        record.kind===task.kind&&['PUBLISHED_WAITING','VERIFIED'].includes(record.phase),'UNCERTAIN_OR_FOREIGN_PUBLICATION');
+        record.kind===task.kind&&
+        record.releaseMode===(sourceModification?'development':undefined)&&
+        ['PUBLISHED_WAITING','VERIFIED'].includes(record.phase),'UNCERTAIN_OR_FOREIGN_PUBLICATION');
       must(record.reviewPolicySha256===undefined||record.reviewPolicySha256===reviewPolicy?.policySha256,
         'PUBLISHED_REVIEW_POLICY_CHANGED');
       if(inspectGate){
@@ -171,6 +177,7 @@ export function createGitHubPublisher({store,remote,reader,authorize,runChecks,i
         return {path:c.path,mode:old?.mode??'100644',type:'blob',content:normalizeProposedContent(c.path,c.content)};});
       record={version:1,stage:task.stage,kind:task.kind,taskBinding:binding,operationId:grant.operationId,baseSha:task.sha,
         branch:task.branch,deltaSha256:prepared.deltaSha256,reviewEvidenceId:review.evidenceId,
+        ...(sourceModification?{releaseMode:'development'}:{}),
         ...(reviewPolicy?{reviewPolicySha256:reviewPolicy.policySha256}:{}),
         ...(review.ownerVerifiedCi===true?{reviewMode:'OWNER_VERIFIED_CI'}:{})};
       const tree=await mutate('create-tree',()=>remote.createTree(parent.tree.sha,entries));
