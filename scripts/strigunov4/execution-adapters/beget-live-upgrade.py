@@ -18,6 +18,7 @@ import json
 import os
 import pwd
 import re
+import shutil
 from pathlib import Path
 import stat
 import subprocess
@@ -68,7 +69,9 @@ def require(ok,code):
 def sha(b):return hashlib.sha256(b).hexdigest()
 def run(args,timeout=30):
     return subprocess.run(args,check=True,timeout=timeout,capture_output=True,
-      env={'PATH':'/usr/sbin:/usr/bin:/sbin:/bin','LANG':'C.UTF-8'}).stdout
+      env={'PATH':'/usr/sbin:/usr/bin:/sbin:/bin','LANG':'C.UTF-8',
+           'GIT_CONFIG_NOSYSTEM':'1','GIT_CONFIG_GLOBAL':'/dev/null',
+           'GIT_TERMINAL_PROMPT':'0'}).stdout
 def regular(p,maxsize=2000000,root=False):
     p=Path(p)
     require(p.is_absolute() and p.resolve()==p,'PATH_NOT_PINNED')
@@ -373,6 +376,72 @@ def prepare_native_five_lane_journal(manifest,files,previous_ledger):
     return {'schema':'asi.beget-owner-lane-journal.v1',
       'engineMode':'IDLE','lanes':records}
 
+def prepare_native_five_lane_scratch(manifest,files,stage):
+    """Stage five private detached worktrees, NEVER as a new Engine.
+
+    This is called only after independently verified owner-signed preflight.
+    The old two G2 scratch workspaces are left untouched. All five are built
+    from the real protected main SHA; a missing clone or uncertain result
+    blocks the upgrade before the first systemd stop.
+    """
+    raw=files['catalog.json']
+    tasks=json.loads(raw)
+    require(type(tasks) is list and len(tasks)==5 and
+      sha(raw)==manifest['catalogSha256'],'NATIVE_SCRATCH_CATALOG_SCOPE')
+    require(stage.parent==STATE/'scratchpads' and
+      re.fullmatch(r'\.native-five-[0-9a-f]{16}',stage.name) and
+      not stage.exists(),'NATIVE_SCRATCH_STAGE_SCOPE')
+    user=pwd.getpwnam('asi-engine')
+    stage.mkdir(mode=0o700)
+    os.chown(stage,user.pw_uid,user.pw_gid)
+    for task in tasks:
+        name=task['id']
+        require(re.fullmatch(r'[a-z0-9][a-z0-9-]{0,79}',name) and
+          task['baseSha']==manifest['baseSha'] and
+          not (STATE/'scratchpads'/name).exists(),
+          'NATIVE_SCRATCH_COLLISION_OR_BASE')
+        dest=stage/name
+        clone=['/usr/sbin/runuser','-u','asi-engine','--',
+          '/usr/bin/git','-c','core.hooksPath=/dev/null',
+          '-c','core.fsmonitor=false','clone','--no-checkout',
+          '--no-hardlinks','https://github.com/'+REPO+'.git',str(dest)]
+        run(clone,timeout=180)
+        run(['/usr/sbin/runuser','-u','asi-engine','--',
+          '/usr/bin/git','-C',str(dest),'-c','core.hooksPath=/dev/null',
+          '-c','core.fsmonitor=false','checkout','--detach',manifest['baseSha']],timeout=120)
+        st=dest.lstat()
+        require(stat.S_ISDIR(st.st_mode) and st.st_uid==user.pw_uid and
+          not dest.is_symlink() and
+          (dest/'.git').is_dir() and
+          not (dest/'.git').is_symlink(),
+          'NATIVE_SCRATCH_OWNER_OR_GIT_DIR')
+        os.chmod(dest,0o700)
+        head=run(['/usr/sbin/runuser','-u','asi-engine','--',
+          '/usr/bin/git','-C',str(dest),'-c','core.hooksPath=/dev/null',
+          'rev-parse','HEAD']).decode().strip()
+        status=run(['/usr/sbin/runuser','-u','asi-engine','--',
+          '/usr/bin/git','-C',str(dest),'-c','core.hooksPath=/dev/null',
+          'status','--porcelain=v1','--untracked-files=all']).strip()
+        require(head==manifest['baseSha'] and status==b'',
+          'NATIVE_SCRATCH_HEAD_OR_WORKTREE_MISMATCH')
+    return [t['id'] for t in tasks]
+
+def install_staged_native_scratch(stage,names,created):
+    """Move only signed paths; update recovery list after EACH rename."""
+    require(type(created) is list and not created,
+            'NATIVE_SCRATCH_RECOVERY_RECORD_REQUIRED')
+    for name in names:
+        src=stage/name
+        dest=STATE/'scratchpads'/name
+        require(src.is_dir() and not src.is_symlink() and
+          not dest.exists(),'NATIVE_SCRATCH_PROMOTION_COLLISION')
+        src.rename(dest)
+        created.append(dest)
+        syncdir(STATE/'scratchpads')
+    stage.rmdir()
+    syncdir(STATE/'scratchpads')
+    return True
+
 def protected_admission(package, oldraw,old, state, newraw,new, files, installer):
     """The only authority port: native owner signature over exact bytes."""
     require(os.geteuid()==0 and os.uname().nodename==HOST,'UPGRADE_ROOT_HOST_REQUIRED')
@@ -495,7 +564,8 @@ def apply(package):
     hist=HISTORY/newhash
     claim=AUTH/('active-upgrade-claim-'+oldhash+'-'+newhash+'.json')
     receipt=AUTH/('active-upgrade-receipt-'+newhash+'.json')
-    require(not any(p.exists() for p in (temp,backup,hist,claim,receipt)),
+    scratchstage=STATE/'scratchpads'/('.native-five-'+newhash[:16])
+    require(not any(p.exists() for p in (temp,backup,hist,claim,receipt,scratchstage)),
             'PRIOR_OR_UNKNOWN_UPGRADE_ATTEMPT')
     require(STATE/'state' in [STATE/'state'], 'STATE_ROOT_INVARIANT')
     # Prepare the new generation while old unit is still serving the
@@ -510,6 +580,9 @@ def apply(package):
     put_new(temp/'beget-install.py',files['beget-install.py'],0o644)
     os.chmod(temp,0o755)
     syncdir(Path('/opt'))
+    # Clone exact signed five-lane detached workspaces BEFORE quiescence.
+    # This is a reversible stage, not a second Engine or live Publisher.
+    scratchnames=prepare_native_five_lane_scratch(new,files,scratchstage)
     # Revalidate right before the first external stop, after potentially
     # lengthy packaging. Any changed record -> BLOCK, no stop.
     require({k:sha(v) for k,v in current_state().items()}==
@@ -553,6 +626,7 @@ def apply(package):
     switched=False
     changed_protected=[]
     changed_state=[]
+    changed_scratch=[]
     start_attempted=False
     try:
         exchange(RUNTIME,temp)
@@ -582,6 +656,9 @@ def apply(package):
             os.replace(pending,current)
             syncdir(AUTH)
             changed_protected.append((name,previous))
+        # Authenticated source clones are promoted only after quiescence,
+        # protected generation exchange and signed authority adoption.
+        install_staged_native_scratch(scratchstage,scratchnames,changed_scratch)
         # Preserve original FAILED_LOCKED bytes in root-only HISTORY.
         # The new signed reconciliation is an ADDITIVE irreversible record,
         # not a rewrite of old job or remote publication receipts.
@@ -646,6 +723,20 @@ def apply(package):
         current=observed_service()
         if current.get('ActiveState')!='active' and switched:
             try:
+                # All paths were absent before this exact signed upgrade.
+                # Delete only the five newly promoted clones before start.
+                for folder in reversed(changed_scratch):
+                    require(folder.parent==STATE/'scratchpads' and
+                      folder.name in scratchnames and folder.is_dir() and
+                      not folder.is_symlink(),
+                      'NATIVE_SCRATCH_ROLLBACK_IDENTITY')
+                    shutil.rmtree(folder)
+                if scratchstage.exists():
+                    require(scratchstage.parent==STATE/'scratchpads' and
+                      scratchstage.is_dir() and not scratchstage.is_symlink(),
+                      'NATIVE_SCRATCH_STAGE_ROLLBACK_UNCERTAIN')
+                    shutil.rmtree(scratchstage)
+                syncdir(STATE/'scratchpads')
                 for rel,raw in reversed(changed_state):
                     u=pwd.getpwnam('asi-engine')
                     atomic_replace(STATE/rel,raw,u.pw_uid,u.pw_gid)

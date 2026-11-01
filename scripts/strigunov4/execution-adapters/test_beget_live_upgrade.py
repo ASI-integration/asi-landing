@@ -54,6 +54,50 @@ def native_catalog_fixture():
     return tasks,raw,{'baseSha':base,'catalogSha256':sha(raw)}
 
 class RealUpgradeSourceTests(unittest.TestCase):
+    def test_five_scratch_sources_stage_without_touching_old_two_witnesses(self):
+        with tempfile.TemporaryDirectory(prefix='asi-five-scratch-fixture-') as d:
+            root=Path(d)
+            scratch=root/'scratchpads'
+            scratch.mkdir()
+            for name in ('beget-g2-witness-identity-v1','beget-g2-witness-races-v1'):
+                (scratch/name).mkdir()
+            tasks,raw,manifest=native_catalog_fixture()
+            staged=scratch/'.native-five-1234567890abcdef'
+            actions=[]
+            def simulated(command,timeout=30):
+                actions.append(command)
+                if 'clone' in command:
+                    target=Path(command[-1]);target.mkdir()
+                    (target/'.git').mkdir()
+                if 'rev-parse' in command:return manifest['baseSha'].encode()+b'\n'
+                return b''
+            identity=mock.Mock(pw_uid=os.getuid(),pw_gid=os.getgid())
+            with mock.patch.object(u,'STATE',root),mock.patch.object(u.pwd,'getpwnam',return_value=identity),mock.patch.object(u,'run',side_effect=simulated):
+                names=u.prepare_native_five_lane_scratch(
+                    manifest,{'catalog.json':raw},staged)
+                self.assertEqual(names,[t['id'] for t in tasks])
+                self.assertEqual(len([c for c in actions if 'clone' in c]),5)
+                self.assertTrue(all('runuser' in c[0] for c in actions))
+                created=[]
+                self.assertTrue(u.install_staged_native_scratch(staged,names,created))
+                self.assertEqual(len(created),5)
+                self.assertFalse(staged.exists())
+                for target in created:self.assertTrue((target/'.git').is_dir())
+                for name in ('beget-g2-witness-identity-v1','beget-g2-witness-races-v1'):
+                    self.assertTrue((scratch/name).is_dir())
+    def test_partial_scratch_promotion_keeps_recovery_list_of_moved_clones(self):
+        with tempfile.TemporaryDirectory(prefix='asi-five-scratch-fixture-') as d:
+            root=Path(d)
+            stage=root/'scratchpads'/'.native-five-1234567890abcdef'
+            stage.mkdir(parents=True)
+            (stage/'first').mkdir()
+            (root/'scratchpads'/'second').mkdir()
+            created=[]
+            with mock.patch.object(u,'STATE',root):
+                with self.assertRaisesRegex(u.Block,'NATIVE_SCRATCH_PROMOTION_COLLISION'):
+                    u.install_staged_native_scratch(stage,['first','second'],created)
+            self.assertEqual(created,[root/'scratchpads'/'first'])
+            self.assertTrue(created[0].is_dir())
     def test_five_lane_journal_created_from_signed_package_bytes_once_only(self):
         catalog,raw,manifest=native_catalog_fixture()
         old={'mode':'FAILED_LOCKED','reason':'UNHANDLED_OR_UNKNOWN_RESULT',
