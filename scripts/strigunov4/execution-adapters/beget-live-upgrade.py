@@ -17,6 +17,7 @@ import hashlib
 import json
 import os
 import pwd
+import re
 from pathlib import Path
 import stat
 import subprocess
@@ -313,6 +314,65 @@ def existing_protected_before_exchange(proposed):
             originals[name]=None
     return originals
 
+# Exact owner-selected lanes; none of these names or records grant a GitHub
+# write. The original Publisher still requires authenticated signed authority.
+FIVE_OWNER_LANES=[
+ ('engine','asi/beget-one-engine-20261028'),
+ ('ru-auth','feat/ru-unified-auth-20261029'),
+ ('p0-integration','asi/standing-delegation-551'),
+ ('p0-trust','asi/p0-trusted-evidence-worker-20261029'),
+ ('p0-atomic-budget','asi/p0-atomic-budget-worker-20261029'),
+]
+def prepare_native_five_lane_journal(manifest,files,previous_ledger):
+    """One-time source-bound reconciliation, not an issuer or new work queue.
+
+    Initialize the SAME existing Engine ledger only after the exact source
+    generation and five-task catalog are signed and verified by preflight.
+    Never synthesize lane IDs at runtime or initialize an unknown prior ledger.
+    """
+    require('ownerLaneJournal' not in previous_ledger,
+            'NATIVE_OWNER_LANES_ALREADY_INITIALIZED')
+    raw=files.get('catalog.json')
+    require(type(raw) is bytes and
+            sha(raw)==manifest.get('catalogSha256'),
+            'NATIVE_FIVE_LANE_CATALOG_DIGEST')
+    try:catalog=json.loads(raw)
+    except (TypeError,ValueError):raise Block('NATIVE_FIVE_LANE_CATALOG_INVALID')
+    require(type(catalog) is list and len(catalog)==5,
+            'NATIVE_FIVE_LANE_CATALOG_INVALID')
+    records={}
+    ids=set()
+    paths=set()
+    for position,(lane_id,branch) in enumerate(FIVE_OWNER_LANES):
+        t=catalog[position]
+        require(type(t) is dict and set(t)=={
+          'id','laneId','repo','branch','baseSha','stage','kind','objective','files'} and
+          t['laneId']==lane_id and t['branch']==branch and
+          t['repo']==REPO and t['stage']=='S4-G2' and
+          t['kind']=='source-proposal' and t['baseSha']==manifest.get('baseSha') and
+          type(t['id']) is str and
+          re.fullmatch(r'[a-z0-9][a-z0-9-]{0,79}',t['id']) and
+          t['id'] not in ids and
+          type(t['objective']) is str and
+          t['objective'].strip()==t['objective'] and
+          0<len(t['objective'])<=2400 and
+          type(t['files']) is list and 1<=len(t['files'])<=3,
+          'NATIVE_FIVE_LANE_TASK_SCOPE')
+        ids.add(t['id'])
+        for f in t['files']:
+            require(type(f) is dict and set(f)=={'path','beforeSha256'} and
+              type(f['path']) is str and
+              re.fullmatch(r'[A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)*\.(?:mjs|js|json|py)',f['path']) and
+              f['path'] not in paths and
+              type(f['beforeSha256']) is str and
+              re.fullmatch('[a-f0-9]{64}',f['beforeSha256']),
+              'NATIVE_FIVE_LANE_SOURCE_SCOPE')
+            paths.add(f['path'])
+        records[lane_id]={'mode':'READY','taskId':t['id'],'taskSha':t['baseSha'],
+          'lastServedAtMs':0,'nextEligibleAtMs':0,'retries':0}
+    return {'schema':'asi.beget-owner-lane-journal.v1',
+      'engineMode':'IDLE','lanes':records}
+
 def protected_admission(package, oldraw,old, state, newraw,new, files, installer):
     """The only authority port: native owner signature over exact bytes."""
     require(os.geteuid()==0 and os.uname().nodename==HOST,'UPGRADE_ROOT_HOST_REQUIRED')
@@ -408,6 +468,9 @@ def preflight(package):
     state=current_state()
     installer,newraw,new,files=verify_generation_preclaim(package)
     grant,proposed=protected_admission(package,oldraw,old,state,newraw,new,files,installer)
+    # The same pinned catalog used for the owner's signature is reconciled
+    # into the original durable ledger BEFORE any stop/side effect.
+    prepare_native_five_lane_journal(new,files,jsonb(state['state/autopilot-ledger.json']))
     require(oldraw!=newraw and new['baseSha']!=old['baseSha'],
             'LIVE_SAME_GENERATION')
     svc=observed_service()
@@ -525,6 +588,7 @@ def apply(package):
         user=pwd.getpwnam('asi-engine')
         ledger=jsonb(state['state/autopilot-ledger.json'])
         ledger['mode']='IDLE'
+        ledger['ownerLaneJournal']=prepare_native_five_lane_journal(new,files,ledger)
         ledger['reconciledFailedLocked']={
           'schema':'asi.beget-signed-live-reconciliation.v1',
           'priorMode':'FAILED_LOCKED',

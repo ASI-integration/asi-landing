@@ -40,7 +40,60 @@ def setup(root):
     payload(root/'state/api-budget.json',{'requests':1375,'mutations':8})
     payload(root/'state/publisher-poll.json',{'at':1,'count':4,'limit':1800})
     payload(root/'routing/routing.json',{'state':{'schema':'asi.global-routing.v1'}})
+def native_catalog_fixture():
+    base='d'*40
+    tasks=[]
+    for i,(lane,branch) in enumerate(u.FIVE_OWNER_LANES):
+        tasks.append({'id':'accepted-five-'+str(i),'laneId':lane,
+          'repo':u.REPO,'branch':branch,'baseSha':base,
+          'stage':'S4-G2','kind':'source-proposal',
+          'objective':'Review exact bounded test changes without modifying production',
+          'files':[{'path':'scripts/strigunov4/fixture-'+str(i)+'.mjs',
+                    'beforeSha256':format(i+1,'x')*64}]})
+    raw=(json.dumps(tasks,indent=2)+'\n').encode()
+    return tasks,raw,{'baseSha':base,'catalogSha256':sha(raw)}
+
 class RealUpgradeSourceTests(unittest.TestCase):
+    def test_five_lane_journal_created_from_signed_package_bytes_once_only(self):
+        catalog,raw,manifest=native_catalog_fixture()
+        old={'mode':'FAILED_LOCKED','reason':'UNHANDLED_OR_UNKNOWN_RESULT',
+             'jobs':{'beget-g2-witness-identity-v1':{'mode':'PUBLISHED'}}}
+        snapshot=json.loads(json.dumps(old))
+        j=u.prepare_native_five_lane_journal(manifest,{'catalog.json':raw},old)
+        self.assertEqual(old,snapshot,'must never mutate original FAILED_LOCKED ledger')
+        self.assertEqual(j['schema'],'asi.beget-owner-lane-journal.v1')
+        self.assertEqual(j['engineMode'],'IDLE')
+        self.assertEqual(list(j['lanes']),[name for name,_ in u.FIVE_OWNER_LANES])
+        for i,(name,_) in enumerate(u.FIVE_OWNER_LANES):
+            self.assertEqual(j['lanes'][name],{
+                'mode':'READY','taskId':catalog[i]['id'],
+                'taskSha':manifest['baseSha'],'lastServedAtMs':0,
+                'nextEligibleAtMs':0,'retries':0})
+        with self.assertRaisesRegex(u.Block,'NATIVE_OWNER_LANES_ALREADY_INITIALIZED'):
+            u.prepare_native_five_lane_journal(manifest,{'catalog.json':raw},
+                {**old,'ownerLaneJournal':j})
+    def test_signed_five_lane_preconditions_reject_unknown_duplicate_or_moved_scope(self):
+        catalog,raw,manifest=native_catalog_fixture()
+        samples=[]
+        x=json.loads(json.dumps(catalog));x.pop();samples.append(x)
+        x=json.loads(json.dumps(catalog));x[0]['id']=x[1]['id'];samples.append(x)
+        x=json.loads(json.dumps(catalog));x[2]['files'][0]['path']=x[0]['files'][0]['path'];samples.append(x)
+        x=json.loads(json.dumps(catalog));x[0]['branch']='asi/not-admitted';samples.append(x)
+        x=json.loads(json.dumps(catalog));x[0]['baseSha']='f'*40;samples.append(x)
+        x=json.loads(json.dumps(catalog));x[0]['files'][0]['beforeSha256']=None;samples.append(x)
+        x=json.loads(json.dumps(catalog));x[0]['objective']='';samples.append(x)
+        x=json.loads(json.dumps(catalog));x[0]['secretKey']='unauthorized';samples.append(x)
+        for sample in samples:
+            source=(json.dumps(sample,indent=2)+'\n').encode()
+            with self.subTest(sample=str(sample[0])[:80]):
+                with self.assertRaisesRegex(u.Block,
+                    'NATIVE_FIVE_LANE_CATALOG_INVALID|NATIVE_FIVE_LANE_TASK_SCOPE|NATIVE_FIVE_LANE_SOURCE_SCOPE'):
+                    u.prepare_native_five_lane_journal(
+                        {**manifest,'catalogSha256':sha(source)},
+                        {'catalog.json':source},{})
+        with self.assertRaisesRegex(u.Block,'NATIVE_FIVE_LANE_CATALOG_DIGEST'):
+            u.prepare_native_five_lane_journal(manifest,
+                {'catalog.json':raw+b' '},{})
     def test_expected_unit_and_host_are_one_existing_service(self):
         self.assertEqual(u.UNIT,'asi-strigunov-agent.service')
         self.assertEqual(u.HOST,'pqukibofpo')
