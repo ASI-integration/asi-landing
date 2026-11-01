@@ -48,6 +48,26 @@ class TestV2(unittest.TestCase):
         a=manifest();b=copy.deepcopy(a)
         b['files'].append({'path':'scripts/strigunov4/foreign.mjs','sha256':TWO})
         with self.assertRaises(m.Denied):m.old_new_files(a,b)
+
+    def test_pr570_repository_tests_are_not_runtime_modules(self):
+        # GitHub adds test files. The signed deploy manifest must remain the
+        # exact same source module set: no tests get executable runtime scope.
+        names=('scripts/strigunov4/engine-tick-safe-diagnostic.test.mjs',
+          'scripts/strigunov4/execution-adapters/model-unknown-lane-quarantine.test.mjs')
+        for name in names:
+            a=manifest();b=copy.deepcopy(a)
+            b['files'][-1]['sha256']=TWO
+            b['files'].append({'path':name,'sha256':TWO})
+            with self.subTest(addition=name),self.assertRaises(m.Denied) as caught:
+                m.old_new_files(a,b)
+            self.assertEqual(str(caught.exception),'V2_SOURCE_SET_CHANGED')
+
+    def test_missing_existing_module_rejected(self):
+        a=manifest();b=copy.deepcopy(a)
+        b['files'][-1]['sha256']=TWO
+        b['files'].pop(0)
+        with self.assertRaises(m.Denied) as caught:m.old_new_files(a,b)
+        self.assertEqual(str(caught.exception),'V2_SOURCE_SET_CHANGED')
     def test_unreviewed_changed_module_rejected(self):
         a=manifest();b=copy.deepcopy(a)
         b['files'][0]['sha256']=TWO
@@ -90,4 +110,84 @@ class TestV2(unittest.TestCase):
     def test_non_idle_denied(self):
         a=activation();t=ledger(a);t['mode']='FAILED_LOCKED'
         with self.assertRaises(m.Denied):m.preserve_ledger(t,a,a)
+class TestStopFailureClassification(unittest.TestCase):
+    previous={'ActiveState':'active','MainPID':'567129',
+              'InvocationID':'known-original-boot'}
+
+    def check_block(self, observe, stop, reason):
+        with self.assertRaises(m.Denied) as caught:
+            m.stop_one_existing_engine(observe,stop,self.previous)
+        self.assertEqual(str(caught.exception),reason)
+
+    def test_clean_stop_verified(self):
+        current={'ActiveState':'inactive','MainPID':'0'}
+        self.assertEqual(m.stop_one_existing_engine(lambda:current,
+                         lambda:None,self.previous),current)
+
+    def test_failed_stop_leaving_original_active(self):
+        def fail(): raise RuntimeError('systemctl returned 1')
+        self.check_block(lambda:dict(self.previous),fail,
+                         'STOP_FAILED_OLD_ENGINE_STILL_RUNNING')
+
+    def test_failed_stop_after_unknown_partial_stop(self):
+        def fail(): raise TimeoutError('systemctl timed out')
+        self.check_block(lambda:{'ActiveState':'inactive','MainPID':'0'},
+                         fail,'STOP_OUTCOME_UNKNOWN_OPERATOR_RECONCILIATION')
+
+    def test_success_exit_but_service_still_active(self):
+        self.check_block(lambda:dict(self.previous),lambda:None,
+                         'STOP_OUTCOME_UNKNOWN_OPERATOR_RECONCILIATION')
+
+    def test_unreadable_service_after_stop_error(self):
+        def fail(): raise RuntimeError('systemctl returned 1')
+        def unknown(): raise OSError('service manager unreachable')
+        self.check_block(unknown,fail,'STOP_OUTCOME_UNKNOWN_OPERATOR_RECONCILIATION')
+
+    def test_rejected_unknown_original_identity(self):
+        prev=dict(self.previous);prev['MainPID']='0'
+        with self.assertRaises(m.Denied):
+            m.stop_one_existing_engine(lambda:None,lambda:None,prev)
+
+class TestRuntimeStageUmask(unittest.TestCase):
+    def test_source_and_binary_permissions_survive_restrictive_umask(self):
+        import tempfile, stat, os
+        with tempfile.TemporaryDirectory() as folder:
+            root=pathlib.Path(folder)
+            orig=os.umask(0o077)
+            try:
+                for name,mode in [('engine.mjs',0o644),('node',0o755),
+                                  ('manifest.json',0o644),('bwrap',0o755)]:
+                    target=root/name
+                    self.assertTrue(m.stage_source_bytes_with_mode(
+                        target,b'no-secret-fixture',mode))
+                    self.assertEqual(stat.S_IMODE(target.stat().st_mode),mode)
+            finally:
+                os.umask(orig)
+    def test_reject_unknown_stage_mode(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as folder:
+            target=pathlib.Path(folder)/'forbidden'
+            with self.assertRaises(m.Denied):
+                m.stage_source_bytes_with_mode(target,b'test',0o777)
+            self.assertFalse(target.exists())
+
+class TestOwnerActivationRollbackMode(unittest.TestCase):
+    def test_original_root_group_mode_is_restored(self):
+        import tempfile, stat
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as folder:
+            root=pathlib.Path(folder)
+            original=b'{"schema":"mock-signed-original"}'
+            (root/'activation.json').write_bytes(b'changed')
+            with (patch.object(m,'AUTH',root),
+                  patch.object(m,'load_root',lambda p:p.read_bytes()),
+                  patch.object(m.os,'chown',lambda *args:None)):
+                self.assertTrue(m.restore_original_activation_bytes(original,777))
+            self.assertEqual((root/'activation.json').read_bytes(),original)
+            self.assertEqual(stat.S_IMODE((root/'activation.json').stat().st_mode),0o640)
+    def test_empty_or_nonbytes_activation_refused(self):
+        for data in (None,'not bytes',b''):
+            with self.assertRaises(m.Denied):
+                m.restore_original_activation_bytes(data,777)
+
 if __name__=='__main__':unittest.main()
