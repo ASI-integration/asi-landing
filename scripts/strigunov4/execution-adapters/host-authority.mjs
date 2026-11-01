@@ -468,7 +468,7 @@ export async function loadBegetFiveLaneAuthority(){
     must(rotation.status!=='BLOCKED','NATIVE_REVOCATION_ROLLBACK');
     if(prior){
       if(rotation.requiresHistoricalProof){
-        // A renewed 14-day signature must keep the prior exact signed child
+        // A renewed <=365-day signature must keep the prior exact signed child
         // in history; it cannot pretend its earlier budget or issuance never
         // happened. Verify the old child against pinned keys and the SAME
         // still-current 365-day owner parent at its original notBefore.

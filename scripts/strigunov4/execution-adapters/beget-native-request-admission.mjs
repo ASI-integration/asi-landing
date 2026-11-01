@@ -21,8 +21,11 @@ export function createBegetNativeRequestAdmission({
   const pinned=inspectStandingTransaction(transaction);
   must(pinned.root===store.root&&pinned.ledger===ledger&&
     pinned.kind==='github-publisher','NATIVE_GITHUB_TRANSACTION_REQUIRED');
+  // The V2 authority authenticates owner parent, signed child, revocations and
+  // exact protected main BEFORE every reservation. Ordinary stage grants
+  // still use the budget's unmodified 14-day default.
   const budget=createStandingPublisherBudget({store,ledger,transaction,
-    admissionBaseSha:authority.payload.baseSha,clock});
+    admissionBaseSha:authority.payload.baseSha,nativeV2YearLease:true,clock});
   let pending=Promise.resolve();
   return function requestAdmission(descriptor){
     const run=async()=>{
