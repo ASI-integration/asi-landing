@@ -73,7 +73,11 @@ export async function prepareNativeFiveLaneSource({
     if(triage.status!=='ACCEPTED')return blocked('NATIVE_SEMANTIC_'+triage.status);
     const value=await proposeSourceWork({task,admittedTasks:pinned,produce});
     if(value.status!=='PROPOSAL_PREPARED')
-      return blocked('MODEL_PROPOSAL_'+(value.reason||'UNVERIFIED'));
+      // A durable native model reservation may already exist. Supply only the
+      // exact selected task ID to the caller; it must verify the native ledger
+      // and quarantine the uncertain claim rather than replay paid generation.
+      return Object.freeze({...blocked('MODEL_PROPOSAL_'+(value.reason||'UNVERIFIED')),
+        failedTaskId:task.id,failedLaneId:task.laneId});
     // A long-running model must not outlive the native lock/transaction.
     // Recheck the same private lease AFTER the network await.
     const lease=inspectStandingTransaction(transaction);

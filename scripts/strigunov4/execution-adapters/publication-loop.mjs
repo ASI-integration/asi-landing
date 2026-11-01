@@ -1,3 +1,4 @@
+import {proposeUncertainModelLaneQuarantine} from './owner-lane-native-bridge.mjs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import {decideQueue,WORK_ORDERS,ENGINE_PILOT,BEGET_TASKS} from '../ASI-STRIGUNOV4-MULTIJOB-20261020.mjs';
@@ -342,7 +343,25 @@ export async function createNativeFiveLanePublicationLoop({
           }),timeoutMs);
           if(proposal.status!=='SOURCE_PREPARER_CANDIDATE'){
             sourceStatus=proposal.reason;
-            return null; // WAITING, never a speculative GitHub write.
+            // Never repay the same unknown model request. After authentic
+            // signed admission, quarantine its lane in the ORIGINAL durable
+            // ledger, while preserving the exact paid claim and all receipts.
+            const quarantine=proposeUncertainModelLaneQuarantine({
+              ledger,signedCatalog:catalog,
+              failedTaskId:proposal.failedTaskId,
+              failedLaneId:proposal.failedLaneId,
+              model:authority.payload.model.name,
+              baseSha:authority.payload.baseSha
+            });
+            if(quarantine.status==='MODEL_UNKNOWN_LANE_QUARANTINE_SOURCE_ONLY'){
+              await authority.revalidate();
+              await atomicJson(store.file('autopilot-ledger.json'),{
+                ...ledger,ownerLaneJournal:quarantine.nextJournal
+              });
+              ledger.ownerLaneJournal=quarantine.nextJournal;
+              sourceStatus='MODEL_OUTCOME_UNKNOWN_BLOCKED_LANE_NO_REPLAY';
+            }
+            return null; // WAITING, no speculative GitHub write.
           }
           chosen=proposal.task;
         }

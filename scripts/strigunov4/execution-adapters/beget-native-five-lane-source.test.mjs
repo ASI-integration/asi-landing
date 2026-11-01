@@ -132,3 +132,21 @@ test('missing objective in catalog denies the model before any network use',asyn
   assert.equal((await inside(x)).status,'BLOCKED');
   assert.equal(called,false);
 });
+
+test('source producer unknown result reports exact signed task only, never retries or authorizes',async()=>{
+  const x=fixture();
+  x.produce=async()=>({status:'BLOCKED',reason:'PROVIDER_REQUEST_UNKNOWN_NO_AUTOMATIC_RETRY',changes:[]});
+  const r=await inside(x);
+  assert.equal(r.status,'BLOCKED');
+  assert.equal(r.failedTaskId,x.signedCatalog[0].id);
+  assert.equal(r.failedLaneId,'engine');
+  assert.equal(r.authorized,false);
+});
+test('missing signed revalidation never attributes uncertainty to any lane',async()=>{
+  const x=fixture();
+  x.revalidate=async()=>false;
+  const r=await inside(x);
+  assert.equal(r.status,'BLOCKED');
+  assert.equal(r.failedTaskId,undefined);
+  assert.equal(r.failedLaneId,undefined);
+});

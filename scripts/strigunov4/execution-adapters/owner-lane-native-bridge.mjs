@@ -55,3 +55,54 @@ export async function planNativeOwnerLane({store,ledger,transaction,signedCatalo
     kind:'CANDIDATE',reason:'REQUIRES_FRESH_SIGNED_POLICY_AND_PUBLISHER_ADMISSION',
     lanes:plan.lanes,candidate:plan.candidate,authority:'NONE_SOURCE_ONLY'});
 }
+
+
+/** Fail closed an UNKNOWN source-model outcome WITHOUT consuming or deleting
+ * an existing paid reservation. Source-only proposal; the original native
+ * Publisher transaction must verify and fsync the exact resulting ledger.
+ * The blocked lane cannot run again automatically; independent lanes remain
+ * eligible under the same signed catalog and cumulative budgets.
+ */
+export function proposeUncertainModelLaneQuarantine({
+  ledger,signedCatalog,failedTaskId,failedLaneId,model,baseSha
+}={}){
+  const deny=reason=>Object.freeze({status:'DENIED',reason,authorized:false});
+  try {
+    const previous=ledger?.nativeFiveLaneTask;
+    if(!ledger||ledger.mode!=='FAILED_LOCKED'||ledger.reason!=='IN_FLIGHT_OR_CRASHED'||
+      (previous!==undefined&&(previous?.status!=='DONE'||
+        previous.task?.id===failedTaskId))||
+      !Array.isArray(signedCatalog)||signedCatalog.length!==5||
+      typeof failedTaskId!=='string'||typeof failedLaneId!=='string'||
+      typeof model!=='string'||typeof baseSha!=='string')
+      return deny('UNVERIFIED_NATIVE_MODEL_TRANSACTION');
+    const task=signedCatalog.filter(x=>x.id===failedTaskId&&
+      x.laneId===failedLaneId&&x.baseSha===baseSha&&
+      x.stage==='S4-G2'&&x.repo==='ASI-integration/asi-landing');
+    if(task.length!==1)return deny('UNKNOWN_MODEL_TASK_NOT_IN_SIGNED_CATALOG');
+    const journal=ledger.ownerLaneJournal;
+    const prior=journal?.lanes?.[failedLaneId];
+    if(journal?.schema!=='asi.beget-owner-lane-journal.v1'||
+      journal.engineMode!=='IDLE'||!prior||
+      prior.mode!=='READY'||prior.taskId!==failedTaskId||
+      prior.taskSha!==baseSha||prior.retries!==0||
+      prior.nextEligibleAtMs!==0)
+      return deny('NATIVE_LANE_NOT_READY_FOR_QUARANTINE');
+    const budget=ledger.modelReservationBudget;
+    const claims=budget?.claims;
+    if(budget?.version!==1||!Array.isArray(claims)||
+      claims.length===0||claims.length>256||
+      claims.some(c=>typeof c?.taskId!=='string'||
+        typeof c?.model!=='string'||typeof c?.pathDigest!=='string'||
+        !/^[a-f0-9]{64}$/.test(c.pathDigest))||
+      !claims.some(c=>c.taskId===failedTaskId&&
+        c.model===model&&c.baseSha===baseSha))
+      return deny('NO_REAL_PRIOR_SIGNED_MODEL_RESERVATION');
+    const updated=structuredClone(journal);
+    updated.lanes[failedLaneId].mode='BLOCKED';
+    return Object.freeze({status:'MODEL_UNKNOWN_LANE_QUARANTINE_SOURCE_ONLY',
+      authorized:false,reason:'PAID_MODEL_OUTCOME_UNVERIFIED_NO_REPLAY',
+      taskId:failedTaskId,laneId:failedLaneId,
+      nextJournal:updated});
+  }catch{return deny('MODEL_QUARANTINE_INPUT_UNREADABLE');}
+}
