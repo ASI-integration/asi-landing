@@ -39,3 +39,11 @@ test('unknown/untrusted reasons are never logged even on errors',async()=>{
   }
   assert.equal((await tick('REPORT_READY',KNOWN)).reasonCode,undefined);
 });
+
+test('known source code is never emitted for an execution-blocked tick',async()=>{
+  for(const mode of ['BLOCKED','FAILED_LOCKED']){
+    const event=await tick(mode,KNOWN);
+    assert.equal('reasonCode' in event,false);
+    assert.equal('reason' in event,false);
+  }
+});
