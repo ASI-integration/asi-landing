@@ -324,6 +324,23 @@ def save_outputs(rows: list[dict], manifest: dict, output_dir: Path) -> None:
     (output_dir / "market-priority-2026.manifest.json").write_text(
         json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
     )
+    # The crawler can consume these files directly as an ordered city catalog.
+    # The focus subset is shortlist-only; safety verification remains mandatory
+    # for any B-SAFETY_VERIFY entry.
+    focus = {"A-PRIORITY", "B-SHORTLIST", "B-SAFETY_VERIFY"}
+    with (output_dir / "ranked-city-catalog-all.jsonl").open("w", encoding="utf-8") as full, (output_dir / "ranked-city-catalog-focus.jsonl").open("w", encoding="utf-8") as shortlist:
+        for row in rows:
+            entry = {
+                "city": row["city"], "country": row["country"],
+                "country_code": row["country_code"], "city_code": row["rank"],
+                "population": row["population_2025"],
+                "priority_band": row["priority_band"],
+                "screening_score_100": row["screening_score_100"],
+            }
+            text = json.dumps(entry, ensure_ascii=False) + "\n"
+            full.write(text)
+            if row["priority_band"] in focus:
+                shortlist.write(text)
 
 
 def main(argv: list[str] | None = None) -> int:
