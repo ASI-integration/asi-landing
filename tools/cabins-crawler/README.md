@@ -52,7 +52,7 @@ Instead of an arbitrary population floor such as 50,000, import **all GeoNames p
 Create a fresh city catalog (Python 3.10+; **downloads the 11 publicly available GeoNames country ZIPs**, but does not access any property website):
 
 ```sh
-python tools/cabins-crawler/cities.py --download --include-unknown --output H:/ASI-Cabins-Crawler/cities.jsonl
+python tools/cabins-crawler/cities.py --download --include-unknown --cache-dir H:/ASI-Cabins-Crawler/geonames --output H:/ASI-Cabins-Crawler/cities.jsonl
 ```
 
 This creates `H:/ASI-Cabins-Crawler/cities.manifest.json` with per-country counts, unknown-population counts, archive hashes and attribution. The example uses the owner's existing H: drive. To use cached archives again, omit `--download` and add `--cache-dir H:/ASI-Cabins-Crawler/geonames`. No arbitrary city-size cap or fixed shortlist applies.
