@@ -28,7 +28,7 @@ COLUMNS = (
     "demand_basis", "city_arrivals_2025", "city_visitors_2025",
     "tourism_country_arrivals", "global_score", "global_rank",
     "global_priority_band", "city_stability_score_100", "stability_band",
-    "stability_evidence_status", "risk_gate",
+    "stability_evidence_status", "risk_gate", "market_access_gate",
     "profitability_band", "rent_per_sqm", "expected_net_margin",
     "evergreen_band", "asi_evergreen_index", "asi_magnet_score",
     "seasonality_verified", "legal_conversion_status",
@@ -86,6 +86,19 @@ def bands(global_row: dict, stability_row: dict | None = None) -> dict:
     )
     country_data = str(global_row["evidence_grade"])
     country_risk = str(global_row["risk_review"])
+    # Official Saudi 2026 law imposes special ownership/real-estate rights
+    # rules in Makkah and Madinah for foreign investors. This flag requires
+    # an operator-specific legal assessment (ownership vs lease vs partnership).
+    # Source: https://rega.gov.sa/en/laws-and-decisions/regulations-and-by-laws/rules/law-of-real-estate-ownership-and-investment-by-non-saudis/
+    name = str(global_row["city"]).lower()
+    special_saudi_holy_city = (
+        code == "SA" and any(term in name for term in
+                           ("mecca", "makkah", "makkah", "madinah", "medina", "medinah"))
+    )
+    market_access_gate = (
+        "SPECIAL_EXTERNAL_INVESTOR_RULES_VERIFY"
+        if special_saudi_holy_city else "LOCAL_ENTRY_RULES_NOT_YET_REVIEWED"
+    )
     safety_complete = (
         country_risk == "NO_AUTOMATIC_BLOCK"
         and str(global_row.get("homicides_per_100k") or "").strip() != ""
@@ -115,7 +128,8 @@ def bands(global_row: dict, stability_row: dict | None = None) -> dict:
     # I: meaningful city evidence, high demand and no country-risk flag.
     # Strong verified hotel data is an alternative to top-ten tourist rankings.
     tier_one = (
-        safety_complete
+        not special_saudi_holy_city
+        and safety_complete
         and demand_band == "HIGH"
         and (
             (has_city_signal and base >= 62 and
@@ -162,15 +176,18 @@ def bands(global_row: dict, stability_row: dict | None = None) -> dict:
         )
     # Research priority is not confirmation that financing or agents exist.
     financing_priority = (
+        "CHECK_FOREIGN_INVESTOR_ELIGIBILITY_FIRST" if special_saudi_holy_city else
         "RESEARCH_FIRST" if tier == "I-HIGH" else
         "RESEARCH_CONDITIONAL" if tier == "II-MEDIUM" else "DEFER"
     )
     partner_priority = (
+        "CHECK_LOCAL_PARTNERSHIP_RULES_FIRST" if special_saudi_holy_city else
         "DISCOVER_FIRST" if tier == "I-HIGH" else
         "DISCOVER_CONDITIONAL" if tier == "II-MEDIUM" else "DEFER"
     )
     # Risks block contracting / outreach independently of market ranking.
     next_gate = (
+        "LOCAL_FOREIGN_OWNERSHIP_AND_HOTEL_OPERATOR_ELIGIBILITY" if special_saudi_holy_city else
         "COUNTRY_AND_CITY_RISK_CLEARANCE" if risk_gate != "BASIC_COUNTRY_CHECK_PASS"
         else "CONFIRM_COMMERCIAL_SITE_RENT_ZONING_AND_MICROCABIN_UNIT_ECONOMICS"
     )
@@ -179,7 +196,7 @@ def bands(global_row: dict, stability_row: dict | None = None) -> dict:
         "population_band": pop_band,
         "demand_band": demand_band,
         "stability_band": stability_band,
-        "risk_gate": risk_gate,
+        "risk_gate": risk_gate, "market_access_gate": market_access_gate,
         "profitability_band": "UNVERIFIED_NO_SITE_COSTS",
         "evergreen_band": "UNVERIFIED_NO_ASI_SITE_REPORT",
         "financing_research_priority": financing_priority,
@@ -225,6 +242,7 @@ def group_markets(global_rows: list[dict], stability_rows: list[dict]) -> tuple[
                 (overlay or {}).get("stability_evidence_status") or "MISSING_CITY_HOTEL_DATA"
             ),
             "risk_gate": tier["risk_gate"],
+            "market_access_gate": tier["market_access_gate"],
             "profitability_band": tier["profitability_band"],
             "rent_per_sqm": None,
             "expected_net_margin": None,
@@ -273,6 +291,7 @@ def group_markets(global_rows: list[dict], stability_rows: list[dict]) -> tuple[
         "limitations": [
             "Ranking is for prioritising research, not comparative profitability or projected contract value.",
             "Finance-program eligibility and agent willingness are NOT implied by tourism/population; separately verify availability, jurisdiction, legal entity, credit, collateral, partner requirements.",
+            "Makkah and Madinah have special foreign real-estate rules: https://rega.gov.sa/en/laws-and-decisions/regulations-and-by-laws/rules/law-of-real-estate-ownership-and-investment-by-non-saudis/ . Stage at Tier II pending legal review, not a prohibition.",
             "Site Evergreen and magnets require an exact location plus valid existing ASI engine analysis; city aggregates cannot replace it.",
             "Russia remains eligible for research; country risk flag is retained even when Moscow has city-level domestic-demand evidence.",
             "Low tier means limited information or weaker preliminary signals, not a blanket judgment about a location or population.",
