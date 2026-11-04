@@ -13,13 +13,46 @@ The current published shortlist contains **500 eligible cities in 125 countries/
 
 Canonical research file in this branch: [data/world_cities_1m_2025.csv](data/world_cities_1m_2025.csv). Provenance/counts: [data/world_cities_1m_2025.manifest.json](data/world_cities_1m_2025.manifest.json). Official source: [UN WUP 2025 File F21](https://population.un.org/wup/downloads?tab=Cities).
 
+## Live commercial property collection — activated London pilot (4 November 2026)
+
+**This is a REAL live run, not a test fixture.** One licensed municipal source has been enabled in `municipal_sources.json`: **Hackney Council** (London Tier I), https://www.hackney.gov.uk/business-and-licensing/commercial-property/let-or-buy-commercial-properties . Council [terms](https://www.hackney.gov.uk/more-us/terms-use) explicitly allow re-use of website data under the UK Open Government Licence. The registered crawler identifies itself, respects the source's allowed robots.txt, uses read-only public HTTPS, and does not request third-party brochures, fill forms, contact agents or save images.
+
+Actual local run on DESKTOP-I29K350 (UTC `2026-11-04T18:24:57Z`): **14 council offers**, of which **10 advertised** and **4 explicitly Under offer**. Published areas and GBP annual asking rents are captured, with calculated GBP monthly comparisons. A listing marked advertised is not guaranteed still available. **All Class E premises have accommodation conversion / fire safety / landowner approval UNVERIFIED.** Do not present these properties as valid hotel conversions.
+
+Verified durable snapshot in this branch:
+- [data/hackney-live-listings.csv](data/hackney-live-listings.csv) — 14 source-listed commercial addresses, size, GBP yearly/monthly rent, underwriting cautions, council source/brochure links and offer status.
+- [data/hackney-live-listings.json](data/hackney-live-listings.json) — full 14-row snapshot.
+- [data/hackney-last-run.json](data/hackney-last-run.json) — actual live execution audit.
+
+Local working outputs on the owner-connected Windows PC:
+```text
+H:\ASI-Cabins-Crawler\live-inventory\municipal-listings.json
+H:\ASI-Cabins-Crawler\live-inventory\municipal-listings.csv
+H:\ASI-Cabins-Crawler\live-inventory\active-candidates.json
+H:\ASI-Cabins-Crawler\live-inventory\municipal-events.jsonl
+H:\ASI-Cabins-Crawler\live-inventory\last-run.json
+H:\ASI-Cabins-Crawler\logs\hackney-*.log
+```
+
+To rerun manually:
+```powershell
+C:\Python314\python.exe H:\ASI-Cabins-Crawler\app\municipal_campaign.py --config H:\ASI-Cabins-Crawler\app\municipal_sources.json --output H:\ASI-Cabins-Crawler\live-inventory --execute
+```
+
+**Repeat schedule ACTIVE only on Windows:** Task Scheduler entry `ASI-Cabins-Hackney-Daily` at **09:20 Moscow Standard Time (UTC+03)** daily. The task uses the versioned script `run_live_daily.ps1`, process-only PowerShell `RemoteSigned`, normal owner privileges, network-required, `StartWhenAvailable` for missed runs, and retains at most 60 logs. A manual task-trigger test on 4 November returned **Task Scheduler result 0** and scanned 14 records with **0 duplicate new/changed events**. Windows must be powered on, online and have the H: disk connected. This is **not** a notebook-off / Beget / 24/7 cloud deployment.
+
+**Cloud recurring scheduling is not active.** Attempting to create a separate ChatGPT Scheduled Task hit the user's current plan limit (`too_many_active_automations`). GitHub Actions schedule would require a reviewed, protected-default-branch workflow; scheduled workflows do not run from this Draft PR branch. The existing ASI Engine, Beget production and protected main remain unchanged.
+
+**Scope boundary:** The broad 11-city Tier I private-property portal campaign still has 0 individually verified/enabled providers in `sources.json`. `municipal_campaign.py` is a separate source-specific adapter for the first *real*, open-licence public commercial-property inventory, and does not imply that global sites permit automated collection. Add other municipal providers only after source-specific accessibility and reuse reviews. Current 45 offline tests include the actual adapter's extraction, annual-vs-monthly rent, under-offer exclusion, change history and fail-closed behavior.
+
+
 ## Components
 
 - `scope.py`: single-source-of-truth owner exclusion policy and strictly >1,000,000 threshold.
 - `global_cities.py`: Python standard-library parser for the downloaded UN WUP 2025 XLSX, with country selection, source provenance, JSONL and Excel-compatible CSV.
 - `crawler.py`: read-only property-page discovery, domain allowlist, robots.txt fail-closed checks, public-address DNS checks, redirects disabled, minimum 2s delay, page limits, approximate property extraction, candidate scoring and errors.
-- `campaign.py`: resumable, single-command crawl runner; tracks per-source city offsets and preserves existing leads between batches. Stops on access failures/uncertain completeness rather than falsely advancing progress.
-- `sources.json`: early property directory candidates; **all DISABLED** until site-specific terms, robots and real search URL formats are verified. No live property scraping or outreach has yet happened.
+- `campaign.py`: resumable, single-command **broad portal** crawl runner; tracks per-source city offsets and preserves existing leads between batches. Stops on access failures/uncertain completeness rather than falsely advancing progress.\n- `municipal_campaign.py` and `municipal_sources.json`: owner-authorized real council public commercial-listing collection, change tracking, source-specific OGL and robots gates; one provider enabled.
+- `sources.json`: broad commercial broker portal candidates; **all DISABLED** until site-specific terms, robots and real search URL formats are verified. The separate, source-reviewed Hackney municipal adapter is the only enabled live source.
 - `cities.py`: retained *legacy* GeoNames 9-country/low-population tool; **not used in the worldwide 1m+ campaign**.
 - `market_tiers.py`: new three-level research order; keeps unknown financing, partner interest, profitability, and Evergreen separate from measured demand.\n- `test_*.py`: offline tests. 
 
@@ -83,7 +116,7 @@ When approved property sources exist, use this **focused** list for the first ca
 C:\Python314\python.exe H:\ASI-Cabins-Crawler\app\campaign.py --execute --city-catalog H:\ASI-Cabins-Crawler\ranking\ranked-city-catalog-focus.jsonl --output H:\ASI-Cabins-Crawler\ranked-crawl-results --batch 3
 ```
 
-**No property source is currently enabled or approved.** Do not run live crawling before verifying each provider's access rules and the listing extraction.
+**The broad multi-city private broker portal campaign still has no enabled source.** The separate Hackney municipal collector is genuinely LIVE as documented above; do not confuse the two.
 
 ## Evergreen Index + demand-magnet bridge (existing ASI engine, no duplicate scorer)
 
@@ -181,7 +214,7 @@ Once a source has passed the access review, enable it and run the **Group I** co
 
 Repeat **the identical command** to resume. It writes `results\leads.csv`, `results\leads.json`, `results\crawl-errors.json` and `results\campaign-state.json`; the cursor advances only after a source run without errors. To check readiness without any network requests, omit `--execute`. There is **no** automatic scheduler or 24/7 deployment: once provider-specific live acceptance has been completed, a separately approved server job could repeat this command.
 
-**No live sources are currently enabled.** The source-specific work is not complete, so `--execute` is intentionally blocked until an actual site has been configured and reviewed.
+**The broad portal `campaign.py` still has 0 enabled sources.** Run the independently verified municipal collector for real public council offers instead; the other listing providers remain under review.
 
 ## Property assessment / legal limits
 
@@ -191,4 +224,4 @@ Every shortlisted property requires human validation of lawful overnight accommo
 
 ## Boundaries
 
-All repository changes stay inside `tools/cabins-crawler/`, including research data. Nothing has been merged to `main`, deployed, scheduled or connected to the existing Universal Engine. Do not enable production or send commercial outreach without approved real-source evidence and owner decision.
+All repository changes stay inside `tools/cabins-crawler/`, including research data. Nothing has been merged to `main`, deployed to production, or connected to the Universal Engine. The **only** scheduled component is the locally tested Windows Hackney municipal research task; no cloud scheduler is running. Do not enable production or send commercial outreach without approved real-source evidence and owner decision.
