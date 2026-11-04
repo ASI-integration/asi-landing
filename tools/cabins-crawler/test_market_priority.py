@@ -72,7 +72,10 @@ class MarketPriorityTests(unittest.TestCase):
             self.assertEqual(by["Paris"]["commercial_property_rent"], None)
             self.assertEqual(manifest["cities"], 4)
             market_priority.save_outputs(scored, manifest, p / "output")
-            self.assertEqual(len(list(csv.DictReader((p / "output" / "market-priority-2026.csv").open(encoding="utf-8-sig")))), 4)
+            with (p / "output" / "market-priority-2026.csv").open(encoding="utf-8-sig") as exported:
+                self.assertEqual(len(list(csv.DictReader(exported))), 4)
+            self.assertEqual(len((p / "output" / "ranked-city-catalog-all.jsonl").read_text().splitlines()), 4)
+            self.assertGreater(len((p / "output" / "ranked-city-catalog-focus.jsonl").read_text().splitlines()), 0)
 
     def test_unknown_tourism_not_falsely_interpreted_as_zero_arrivals(self):
         with tempfile.TemporaryDirectory() as directory:
