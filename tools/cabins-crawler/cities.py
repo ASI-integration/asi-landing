@@ -18,9 +18,9 @@ import zipfile
 
 COUNTRIES = {
     "BN": "Brunei", "KH": "Cambodia", "ID": "Indonesia",
-    "LA": "Laos", "MY": "Malaysia", "MM": "Myanmar",
+    "LA": "Laos", "MY": "Malaysia",
     "PH": "Philippines", "SG": "Singapore", "TH": "Thailand",
-    "TL": "Timor-Leste", "VN": "Vietnam",
+    "VN": "Vietnam",
 }
 # Settlements, including towns and small villages. Exclude abandoned,
 # historical, sections-of-populated-place and religious-only features.
@@ -207,7 +207,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--countries", default=",".join(COUNTRIES), help="ISO country codes, comma separated")
     parser.add_argument("--population-min", type=int, default=2)
     parser.add_argument("--include-unknown", action="store_true", help="Include unverified zero/unknown-population settlements as candidates")
-    parser.add_argument("--download", action="store_true", help="Explicitly download 11 public country data archives")
+    parser.add_argument("--download", action="store_true", help="Explicitly download 9 public country data archives")
     parser.add_argument("--refresh", action="store_true", help="Replace cached country archives (with --download)")
     args = parser.parse_args(argv)
     if args.refresh and not args.download:
