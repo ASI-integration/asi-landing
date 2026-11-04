@@ -1,4 +1,4 @@
-"""Offline tests for all-country SEA settlement coverage and city batching."""
+"""Offline tests for nine-country SEA settlement coverage and city batching."""
 import json
 from pathlib import Path
 import tempfile
@@ -21,12 +21,14 @@ def geonames_row(
 
 
 class SEARegionTests(unittest.TestCase):
-    def test_all_eleven_countries_covered(self):
+    def test_selected_nine_countries_covered(self):
         self.assertEqual(
             set(cities.COUNTRIES),
-            {"BN", "KH", "ID", "LA", "MY", "MM", "PH", "SG", "TH", "TL", "VN"},
+            {"BN", "KH", "ID", "LA", "MY", "PH", "SG", "TH", "VN"},
         )
-        self.assertEqual(len(cities.COUNTRIES), 11)
+        self.assertEqual(len(cities.COUNTRIES), 9)
+        self.assertNotIn("MM", cities.COUNTRIES)
+        self.assertNotIn("TL", cities.COUNTRIES)
 
     def test_population_minimum_is_two(self):
         self.assertIsNone(cities.parse_geonames_line(geonames_row(1, "A", "ID", 1), "ID"))
@@ -48,7 +50,7 @@ class SEARegionTests(unittest.TestCase):
             root = Path(directory)
             cache = root / "cache"
             cache.mkdir()
-            for country in ("ID", "TL"):
+            for country in ("ID", "SG"):
                 with ZipFile(cache / f"{country}.zip", "w") as archive:
                     archive.writestr(
                         f"{country}.txt",
@@ -59,7 +61,7 @@ class SEARegionTests(unittest.TestCase):
                         ]) + "\n"
                     )
             output = root / "cities.jsonl"
-            manifest = cities.build_catalog(cache, output, ["ID", "TL"])
+            manifest = cities.build_catalog(cache, output, ["ID", "SG"])
             records = [json.loads(line) for line in output.read_text().splitlines()]
             self.assertEqual(len(records), 4)
             self.assertIn("TL", manifest["places_by_country"])
@@ -77,7 +79,7 @@ class SEARegionTests(unittest.TestCase):
                     "country_code": country,
                     "country": cities.COUNTRIES[country], "admin1": "10"
                 }) for idx, city, country in [
-                    (1, "Jakarta", "ID"), (2, "Dili", "TL"),
+                    (1, "Jakarta", "ID"), (2, "Singapore", "TL"),
                     (3, "Banda Aceh", "ID"), (4, "Bandung", "ID"),
                 ]) + "\n", encoding="utf-8",
             )
@@ -103,7 +105,7 @@ class SEARegionTests(unittest.TestCase):
             catalog = Path(directory) / "cities.jsonl"
             catalog.write_text(json.dumps({
                 "id": "geonames:1", "name": "Dili", "country_code": "TL",
-                "country": "Timor-Leste"
+                "country": "Singapore"
             }) + "\n")
             source = {
                 "country_codes": ["TL"],
