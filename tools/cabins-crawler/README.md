@@ -85,6 +85,54 @@ C:\Python314\python.exe H:\ASI-Cabins-Crawler\app\campaign.py --execute --city-c
 
 **No property source is currently enabled or approved.** Do not run live crawling before verifying each provider's access rules and the listing extraction.
 
+## Evergreen Index + demand-magnet bridge (existing ASI engine, no duplicate scorer)
+
+**Important distinction:** Evergreen is property-address-based. It cannot be measured for an entire city without verified points of interest and an exact site coordinate. The authoritative implementation is already on \`main\` at:
+- \`src/lib/location/config.ts\` — magnet taxonomy, permanent/semi/temporary multipliers, category radius caps and base weights.
+- \`src/lib/location/gravity-scoring.ts\` — continuous distance attenuation, magnet attraction, clustering and competitor pressure.
+- \`src/lib/location/location-score.ts\` — demand-score blend \`0.6 × evergreenIndex + 0.4 × magnet_score\`; composite \`location_score\` contains other validated factors and must not be confused with this demand blend.
+- \`src/lib/location/location-scoring-rules.ts\` — source-of-truth score policy.
+
+The existing magnet equation is **\`W × P × D\`**: class weight × permanence multiplier × distance-decay factor. Some verified magnetic anchor weights: **metro 9; airport / landmark 8; medical 7; major hotel / university / convention 6; business 5.5; railway hub / major mall 5; supermarket 1.2; cafe 1**. Weights and caps are owned by the primary ASI location engine, **not** this crawler. Regional or specialised transport and medical hubs are handled separately by the engine; avoid treating distant airports as walking-distance magnets.
+
+New **\`evergreen_bridge.py\`** accepts the **actual saved output** of the production ASI location analysis, with explicit site coordinates, ASI integrity flags, precomputed \`evergreenIndex\`, magnet score, and magnet items with distances. It copies numeric results from the original engine and **refuses to publish them** if the original integrity evidence is missing/blocked, its calculated components are missing, or its demand blend fails a consistency check. It does not scrape or guess magnets.
+
+Example command **only after genuine geocoded ASI reports exist** (the input file is not currently present):
+
+\`\`\`powershell
+C:\Python314\python.exe H:\ASI-Cabins-Crawler\app\evergreen_bridge.py --asi-reports H:\ASI-Cabins-Crawler\verified-property-location-reports.jsonl --output H:\ASI-Cabins-Crawler\ranking\property-evergreen.json
+\`\`\`
+
+\`verified-property-location-reports.jsonl\` requires one JSON object per property with \`location_id\`, \`country_code\`, \`city_code\`, \`latitude\`, \`longitude\`, and an \`analysis\` object from existing ASI. \`analysisIntegrity.analysisIncomplete=false\` and \`scoreBlockedDueToIncompleteData=false\` are required; a failed data-quality gate does not become a zero score.
+
+## Popularity and hotel-demand stability (different from Evergreen)
+
+The new \`city_resilience.py\` links independently sourced annual city data to the existing global ranking **by exact UN WUP city identifier**. It does not override the global screening score. For each city it exposes:
+- Annual hotel occupancy (2024, 2025) and year-on-year change.
+- City visitor counts (2024, 2025), visitor growth and domestic visitor share.
+- ADR with original **currency units**, explicitly not treated as profit.
+- A provisional **0–100 two-year demand-resilience proxy** where enough source evidence exists.
+- Seasonality **NOT_MEASURED** without monthly hotel/overnight data; property Evergreen **NOT_MEASURED** without geocoded ASI report.
+- Country security review continues separately; GPI country scores do not represent street crime or a city's financial returns.
+
+This two-year proxy uses 35 points for hotel occupancy level, 30 for its year-to-year consistency, 25 for domestic visitor share and 10 for year-on-year visitor growth. Weights are **research heuristics**, not validated forecasting parameters. No year-round/seasonality claim is supported until multiple years of monthly figures are added.
+
+**Verified example for 2025:** Moscow NF Group hotels: 73.7% occupancy versus 76% in 2024, ADR RUB 10,400, 26.5 million city visitors, 23.7 million domestic; New York City CoStar hotels: 84.1% versus 84.3%, ADR USD 333.71, 65 million city visitors, 52.4 million domestic. The calculated two-year proxy is **Moscow 82.73** vs **NYC 89.96**. These are *different property-market measurement populations*, so they do not prove that one city has higher ROI. Data sources and limitations accompany the benchmark file.
+
+Research outputs:
+- [data/city-hotel-benchmarks-2025.json](data/city-hotel-benchmarks-2025.json) — sourced 2024/2025 hotel and visitor facts for Moscow and NYC.
+- [data/city-stability-overlay.csv](data/city-stability-overlay.csv) — 500-city spreadsheet; only the two cities with adequate local source data have stability scores.
+- [data/city-stability-overlay.manifest.json](data/city-stability-overlay.manifest.json) — formula and limitations.
+
+Local regenerate:
+
+\`\`\`powershell
+C:\Python314\python.exe H:\ASI-Cabins-Crawler\app\city_resilience.py --ranking H:\ASI-Cabins-Crawler\ranking\market-priority-2026.csv --benchmarks H:\ASI-Cabins-Crawler\city-hotel-benchmarks-2025.json --city-catalog H:\ASI-Cabins-Crawler\world_cities_1m_2025.jsonl --output H:\ASI-Cabins-Crawler\ranking
+\`\`\`
+
+**Required before any profit claim:** actual convertible property inventory, legal change-of-use evidence, rent, renovation CAPEX, corridor/bathroom costs, room ADR for the target cabin format, accommodation tax, host staffing/security/cleaning, energy and maintenance, booking costs, and currency/payment risks. The model must not auto-infer these from gross hotel-market ADR.
+
+
 ## How to engage the crawler after provider approval
 
 First, configure *verified, permitted property listing sources* in `sources.json`. A public source serving several countries can use `"country_codes": ["*"]` with a **fixed HTTPS allowlisted domain** and an approved `search_url_template`, such as a search query containing `{city}` and `{country_code}`. The crawler will **always skip MM, BD, KP, TL**, even if a custom catalog accidentally contains them. The same policy prevents explicitly enabling excluded countries.
