@@ -276,7 +276,7 @@ def ranked_markets(
     # A country-score proxy alone does not establish city attractiveness. Give
     # corroborated, fully sourced city signals first in the research queue.
     tier_order = {"A-PRIORITY": 0, "B-SHORTLIST": 1, "B-SAFETY_VERIFY": 2,
-                  "C-RESEARCH": 3, "SAFETY_REVIEW": 4, "NEEDS_DATA": 5}
+                  "C-RESEARCH": 3, "NEEDS_DATA": 4, "SAFETY_REVIEW": 5}
     data.sort(key=lambda x: (
         tier_order[x["priority_band"]], -x["screening_score_100"],
         -x["city_evidence_score_10"], x["country"], x["city"]
