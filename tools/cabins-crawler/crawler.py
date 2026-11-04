@@ -368,6 +368,8 @@ def crawl_source(source: dict, agent: str, limit: int, delay: float, now: str, s
                     queue.append(child)
         except (HTTPError, URLError, OSError, ValueError, UnicodeError) as exc:
             errors.append("SKIPPED " + url + ": " + type(exc).__name__)
+    if queue and len(seen) >= limit:
+        errors.append("PAGE_CAP_REACHED: more listing URLs remain; do not advance city cursor")
     return list(leads.values()), errors
 
 
