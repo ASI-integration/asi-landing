@@ -1,0 +1,46 @@
+{
+  "generated_at": "2026-11-04T18:10:02.732749+00:00",
+  "global_cities": 500,
+  "tiers": {
+    "I-HIGH": 11,
+    "II-MEDIUM": 90,
+    "III-RESERVE": 399
+  },
+  "tier_order": [
+    "I-HIGH",
+    "II-MEDIUM",
+    "III-RESERVE"
+  ],
+  "thresholds": {
+    "urban_population": "strictly above 1m",
+    "population_bands": {
+      "HIGH": ">=5m",
+      "MEDIUM": "2m-5m",
+      "LOW": ">1m-2m"
+    },
+    "demand_bands": "verified city visitors, city destination evidence or country proxy: see market_tiers.py bands()",
+    "tier_I": "HIGH city demand + direct corroboration + adequate country safety evidence; NOT site ROI",
+    "tier_II": "Promising but weaker/partial evidence, or strongly verified domestic demand subject to country risk review",
+    "tier_III": "Low evidence, low demand proxy, or elevated country risk without separate city validation"
+  },
+  "review_status": {
+    "site_evergreen_verified": 0,
+    "profitability_verified": 0,
+    "financing_programs_verified": 0,
+    "interested_local_agents_verified": 0,
+    "note": "These quantities describe currently available inputs, not absence of actual opportunities."
+  },
+  "data_sources": [
+    "market-priority-2026.csv (UN WUP 2025 / UN Tourism / UNODC / IEP GPI 2026 / Euromonitor 2025)",
+    "city-stability-overlay.csv (2024-2025 verifiable city hotel snapshots for Moscow and New York)",
+    "ASI canonical src/lib/location modules required later for true property-level Evergreen"
+  ],
+  "limitations": [
+    "Ranking is for prioritising research, not comparative profitability or projected contract value.",
+    "Finance-program eligibility and agent willingness are NOT implied by tourism/population; separately verify availability, jurisdiction, legal entity, credit, collateral, partner requirements.",
+    "Makkah and Madinah have special foreign real-estate rules: https://rega.gov.sa/en/laws-and-decisions/regulations-and-by-laws/rules/law-of-real-estate-ownership-and-investment-by-non-saudis/ . Stage at Tier II pending legal review, not a prohibition.",
+    "Site Evergreen and magnets require an exact location plus valid existing ASI engine analysis; city aggregates cannot replace it.",
+    "Russia remains eligible for research; country risk flag is retained even when Moscow has city-level domestic-demand evidence.",
+    "Low tier means limited information or weaker preliminary signals, not a blanket judgment about a location or population."
+  ]
+}
