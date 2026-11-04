@@ -45,11 +45,11 @@ For a property marked promising: verify the owner/operator contact, lawful overn
 
 ## Southeast Asia: every recorded settlement with at least 2 residents
 
-The regional catalog covers **all 11 SEA countries**: Brunei (BN), Cambodia (KH), Indonesia (ID), Laos (LA), Malaysia (MY), Myanmar (MM), Philippines (PH), Singapore (SG), Thailand (TH), Timor-Leste (TL) and Vietnam (VN). Japan and Taiwan remain separate East Asian pilot markets.
+The regional catalog covers **the selected 9 SEA countries**: Brunei (BN), Cambodia (KH), Indonesia (ID), Laos (LA), Malaysia (MY), Philippines (PH), Singapore (SG), Thailand (TH), and Vietnam (VN). **Myanmar and Timor-Leste are explicitly excluded by the owner.** Japan and Taiwan remain separate East Asian pilot markets.
 
 Instead of an arbitrary population floor such as 50,000, import **all GeoNames populated places with recorded population >= 2**, including villages and towns. For broader coverage, use `--include-unknown` to include places with **unrecorded population**, marked as `population_status=unknown`. Those records are leads for verification, **not confirmed to have 2+ inhabitants**. This is as complete as the available GeoNames data, not a guarantee every real settlement appears. The source data is updated independently by GeoNames and is distributed under CC BY 4.0 (attribution: [GeoNames](https://www.geonames.org/)). Do not use GeoNames city population as an exact current census.
 
-Create a fresh city catalog (Python 3.10+; **downloads the 11 publicly available GeoNames country ZIPs**, but does not access any property website):
+Create a fresh city catalog (Python 3.10+; **downloads the 9 selected public GeoNames country ZIPs**, but does not access any property website):
 
 ```sh
 python tools/cabins-crawler/cities.py --download --include-unknown --cache-dir H:/ASI-Cabins-Crawler/geonames --output H:/ASI-Cabins-Crawler/cities.jsonl
