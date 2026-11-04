@@ -30,12 +30,19 @@ GEONAMES_URL = "https://download.geonames.org/export/dump/countryInfo.txt"
 
 # Euromonitor 2025 published top tens; these are positive public evidence,
 # not a full census of cities. Lack of entry is NOT evidence of zero tourism.
-TOP_ARRIVALS_2025 = {
-    ("TH", "bangkok"), ("HK", "hong kong"), ("GB", "london"),
-    ("MO", "macau"), ("TR", "istanbul"), ("AE", "dubai"),
-    ("SA", "mecca"), ("TR", "antalya"), ("FR", "paris"),
-    ("MY", "kuala lumpur"),
+CITY_ARRIVALS_2025 = {
+    ("TH", "bangkok"): 30_300_000,
+    ("HK", "hong kong"): 23_200_000,
+    ("GB", "london"): 22_700_000,
+    ("MO", "macau"): 20_400_000,
+    ("TR", "istanbul"): 19_700_000,
+    ("AE", "dubai"): 19_500_000,
+    ("SA", "mecca"): 18_700_000,
+    ("TR", "antalya"): 18_600_000,
+    ("FR", "paris"): 18_300_000,
+    ("MY", "kuala lumpur"): 17_300_000,
 }
+TOP_ARRIVALS_2025 = frozenset(CITY_ARRIVALS_2025)
 TOP_DESTINATIONS_2025 = {
     ("FR", "paris"), ("ES", "madrid"), ("JP", "tokyo"),
     ("IT", "rome"), ("IT", "milan"), ("US", "new york"),
@@ -46,7 +53,8 @@ TOP_DESTINATIONS_2025 = {
 OUTPUT_COLUMNS = (
     "rank", "priority_band", "screening_score_100", "evidence_grade",
     "city", "country", "country_code", "population_2025",
-    "country_tourist_arrivals", "tourism_year", "homicides_per_100k",
+    "country_tourist_arrivals", "tourism_year", "city_arrivals_2025",
+    "demand_basis", "homicides_per_100k",
     "homicide_year", "gpi_overall_2026", "gpi_safety_2026",
     "gpi_conflict_2026", "demand_score_40", "safety_score_35",
     "market_size_score_15", "city_evidence_score_10",
@@ -135,10 +143,16 @@ def clamp(x: float, low: float = 0.0, high: float = 1.0) -> float:
 
 def component_scores(
     population: int, tourist_arrivals: float | None,
-    homicide: float | None, safety: float | None, key: tuple[str, str]
+    homicide: float | None, safety: float | None, key: tuple[str, str],
+    city_arrivals: float | None = None
 ) -> tuple[float, float, float, int]:
+    # Verified 2025 city visitors supersede older, country-wide totals.
+    # The country-only proxy has a lower ceiling because it does not prove
+    # which cities visitors actually went to.
     demand = (
-        40 * clamp(math.log1p(tourist_arrivals / 1_000_000) / math.log1p(60))
+        40 * clamp(math.log1p(city_arrivals / 1_000_000) / math.log1p(30.3))
+        if city_arrivals is not None
+        else 30 * clamp(math.log1p(tourist_arrivals / 1_000_000) / math.log1p(60))
         if tourist_arrivals is not None else 0.0
     )
     crime_score = 15 * math.exp(-min(homicide, 100) / 6) if homicide is not None else 0.0
@@ -185,8 +199,9 @@ def ranked_markets(
             hval = crime_rec[0] if crime_rec else None
             hyear = crime_rec[1] if crime_rec else None
             city_key = (code, normalized_city(code, city["city"]))
+            city_arrivals = CITY_ARRIVALS_2025.get(city_key)
             demand, safety_pts, market_size, city_evidence = component_scores(
-                p, tval, hval, safety, city_key
+                p, tval, hval, safety, city_key, city_arrivals
             )
             # Sources older than 2022 are not sufficiently current for final priority.
             gaps = []
@@ -203,8 +218,9 @@ def ranked_markets(
             if city_evidence == 0:
                 gaps.append("city demand not independently quantified")
             gaps.extend(["city hotel occupancy unknown", "commercial rent unknown", "lodging zoning unknown"])
+            recent_demand = bool(city_arrivals or (tourist_rec and tyear >= 2022))
             complete_country_evidence = bool(
-                tourist_rec and tyear >= 2022 and crime_rec and hyear >= 2020 and gpi_rec
+                recent_demand and crime_rec and hyear >= 2020 and gpi_rec
             )
             risk_review = (
                 "ELEVATED_COUNTRY_RISK_REVIEW"
@@ -212,28 +228,38 @@ def ranked_markets(
                 else "COUNTRY_RISK_DATA_MISSING"
                 if not gpi_rec else "NO_AUTOMATIC_BLOCK"
             )
-            grade = "A-country-data" if complete_country_evidence else (
-                "B-incomplete" if sum([bool(tourist_rec), bool(crime_rec), bool(gpi_rec)]) >= 2
+            grade = (
+                "A-city-data" if complete_country_evidence and city_arrivals
+                else "A-country-data" if complete_country_evidence
+                else "B-incomplete" if sum([bool(city_arrivals or tourist_rec), bool(crime_rec), bool(gpi_rec)]) >= 2
                 else "C-sparse"
             )
             score = round(demand + safety_pts + market_size + city_evidence, 2)
             tier = "NEEDS_DATA"
-            if complete_country_evidence:
-                if risk_review != "NO_AUTOMATIC_BLOCK":
-                    tier = "SAFETY_REVIEW"
-                elif score >= 70 and city_evidence >= 5:
+            if risk_review == "ELEVATED_COUNTRY_RISK_REVIEW":
+                tier = "SAFETY_REVIEW"
+            elif risk_review == "COUNTRY_RISK_DATA_MISSING":
+                tier = "B-SAFETY_VERIFY" if city_arrivals else "NEEDS_DATA"
+            elif city_arrivals and not (crime_rec and hyear >= 2020):
+                tier = "B-SAFETY_VERIFY"
+            elif complete_country_evidence:
+                if score >= 70 and city_evidence >= 5:
                     tier = "A-PRIORITY"
-                elif score >= 55:
+                elif score >= 55 or city_arrivals:
                     tier = "B-SHORTLIST"
                 else:
                     tier = "C-RESEARCH"
+            elif city_arrivals:
+                tier = "B-SHORTLIST"
             data.append({
                 "rank": None, "priority_band": tier, "screening_score_100": score,
                 "evidence_grade": grade,
                 "city": city["city"], "country": city["country"], "country_code": code,
                 "population_2025": p,
                 "country_tourist_arrivals": round(tval) if tval is not None else None,
-                "tourism_year": tyear, "homicides_per_100k": round(hval, 2) if hval is not None else None,
+                "tourism_year": tyear, "city_arrivals_2025": city_arrivals,
+                "demand_basis": "verified_2025_city" if city_arrivals else "country_proxy" if tourist_rec else "missing",
+                "homicides_per_100k": round(hval, 2) if hval is not None else None,
                 "homicide_year": hyear, "gpi_overall_2026": total,
                 "gpi_safety_2026": safety, "gpi_conflict_2026": conflict,
                 "demand_score_40": demand, "safety_score_35": safety_pts,
@@ -249,8 +275,8 @@ def ranked_markets(
             })
     # A country-score proxy alone does not establish city attractiveness. Give
     # corroborated, fully sourced city signals first in the research queue.
-    tier_order = {"A-PRIORITY": 0, "B-SHORTLIST": 1, "C-RESEARCH": 2,
-                  "SAFETY_REVIEW": 3, "NEEDS_DATA": 4}
+    tier_order = {"A-PRIORITY": 0, "B-SHORTLIST": 1, "B-SAFETY_VERIFY": 2,
+                  "C-RESEARCH": 3, "SAFETY_REVIEW": 4, "NEEDS_DATA": 5}
     data.sort(key=lambda x: (
         tier_order[x["priority_band"]], -x["screening_score_100"],
         -x["city_evidence_score_10"], x["country"], x["city"]
@@ -264,12 +290,13 @@ def ranked_markets(
         "cities": len(data),
         "source_urls": [TOURISM_URL, HOMICIDE_URL, GPI_URL, CITY_EVIDENCE_URL, GEONAMES_URL],
         "model_points": {
-            "country_tourism": 40, "country_safety": 35,
+            "tourism_demand": 40, "country_safety": 35,
             "city_population": 15, "euromonitor_2025_top10_evidence": 10,
+            "tourism_demand_method": "2025 city arrivals (max40) if available; otherwise country tourist-arrivals proxy (max30)",
         },
         "cautions": [
             "This score is research-priority, NOT projected ROI, actual city crime rate, affordability or safety certification.",
-            "Tourist arrivals and homicide figures describe countries, not cities; city visitors only confirmed for limited Euromonitor top-ten signals.",
+            "Homicide figures and most tourist arrivals describe countries, not cities. Confirmed 2025 city arrivals override stale country tourism for ten Euromonitor destinations.",
             "Missing inputs receive no points, NOT an imputed zero value; tiers flag incomplete data and require further research.",
             "Rental levels, hotel occupancy, property supply and legal permissions have NOT been researched; no property can be invested in from this file alone.",
             "High national risk triggers SAFETY_REVIEW (not a blanket country exclusion), including cities in Russia.",
@@ -278,6 +305,7 @@ def ranked_markets(
         "priority_counts": dict(sorted(Counter(row["priority_band"] for row in data).items())),
         "evidence_counts": dict(sorted(Counter(row["evidence_grade"] for row in data).items())),
         "city_top10_matches": sum(x["city_evidence_score_10"] > 0 for x in data),
+        "city_arrivals_2025_coverage": sum(x["city_arrivals_2025"] is not None for x in data),
     }
     return data, manifest
 
