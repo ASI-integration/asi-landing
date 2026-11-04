@@ -51,23 +51,23 @@ Instead of an arbitrary population floor like 50,000, import **all GeoNames popu
 
 Create a fresh city catalog (Python 3.10+; **downloads the 11 publicly available GeoNames country ZIPs**, but does not access any property website):
 
-\`\`\`sh
+```sh
 python tools/cabins-crawler/cities.py --download --output cabins-city-catalog.jsonl
-\`\`\`
+```
 
-This also creates \`cabins-city-catalog.manifest.json\`, including per-country counts, download hashes and attribution. To use cached archives again, omit \`--download\`. No arbitrary city-size cap or shortlist applies.
+This also creates `cabins-city-catalog.manifest.json`, including per-country counts, download hashes and attribution. To use cached archives again, omit `--download`. No arbitrary city-size cap or shortlist applies.
 
 When *real listing sources have been approved, their per-city search URL templates configured, and the appropriate sources explicitly enabled*, run the crawler in a bounded batch:
 
-\`\`\`sh
+```sh
 python tools/cabins-crawler/crawler.py --execute --city-catalog cabins-city-catalog.jsonl --city-offset 0 --city-batch 10 --output cabins-crawler-output
-\`\`\`
+```
 
-To scan the next ten eligible settlements for each enabled source, increase \`--city-offset\` to 10, then 20, etc. (or schedule batch progression later). The maximum batch is 50 per source per run. This limit prevents excessive requests; it is **not** a minimum population or a maximum city index.
+To scan the next ten eligible settlements for each enabled source, increase `--city-offset` to 10, then 20, etc. (or schedule batch progression later). The maximum batch is 50 per source per run. This limit prevents excessive requests; it is **not** a minimum population or a maximum city index.
 
-Sources for an all-city search require \`country_codes\` (e.g. \`["ID", "MY"]\`) and an approved \`search_url_template\` with a fixed HTTPS domain. Variables supported in its path/query are \`{city}\`, \`{country}\`, \`{country_code}\`, \`{admin1}\` and \`{geonames_id}\`. City names are URL-escaped and resulting URLs must remain within \`allowed_domains\`. Example for a **hypothetical, explicitly approved** property portal only:
+Sources for an all-city search require `country_codes` (e.g. `["ID", "MY"]`) and an approved `search_url_template` with a fixed HTTPS domain. Variables supported in its path/query are `{city}`, `{country}`, `{country_code}`, `{admin1}` and `{geonames_id}`. City names are URL-escaped and resulting URLs must remain within `allowed_domains`. Example for a **hypothetical, explicitly approved** property portal only:
 
-\`\`\`json
+```json
 {
   "name": "EXAMPLE ONLY — NOT AN APPROVED SOURCE",
   "market": "Southeast Asia",
@@ -78,13 +78,13 @@ Sources for an all-city search require \`country_codes\` (e.g. \`["ID", "MY"]\`)
   "search_url_template": "https://example.com/for-lease?location={city}&cc={country_code}",
   "listing_link_pattern": "/listings/[0-9]+"
 }
-\`\`\`
+```
 
 Do **not** enable this placeholder. No SEA property portal is currently vetted for live crawling. Building the city catalog does not constitute scraping, verifying, or contacting listings. Site robots/terms, local legality, per-city URL coverage, data quality and rate restrictions all need source-specific verification.
 
 ## Launch and ownership
 
-When the source adapters pass live acceptance checks, **run one command** with \`--execute --city-catalog\` (above) for a manual batch, or configure a separate job scheduler to invoke the same command and store the next batch offset. There is currently no active scheduler, unattended deployment, automatic owner outreach, or ASI Engine integration. Such activation requires a separate, owner-controlled release decision.
+When the source adapters pass live acceptance checks, **run one command** with `--execute --city-catalog` (above) for a manual batch, or configure a separate job scheduler to invoke the same command and store the next batch offset. There is currently no active scheduler, unattended deployment, automatic owner outreach, or ASI Engine integration. Such activation requires a separate, owner-controlled release decision.
 
 ## Deployment boundary
 
