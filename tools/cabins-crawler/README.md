@@ -42,6 +42,50 @@ Output fields: `id`, `market`, `city`, `source`, `url`, `title`, `description`, 
 
 For a property marked promising: verify the owner/operator contact, lawful overnight accommodation use, zoning/change-of-use permission, egress/fire rules, ventilation, plumbing, acoustic separation, loading/access, all-in rent and usable area. Any property can fail this review even with a score of 100.
 
+
+## Southeast Asia: every recorded settlement with at least 2 residents
+
+The regional catalog covers **all 11 SEA countries**: Brunei (BN), Cambodia (KH), Indonesia (ID), Laos (LA), Malaysia (MY), Myanmar (MM), Philippines (PH), Singapore (SG), Thailand (TH), Timor-Leste (TL) and Vietnam (VN). Japan and Taiwan remain separate East Asian pilot markets.
+
+Instead of an arbitrary population floor like 50,000, import **all GeoNames populated-place records with a recorded population >= 2**, including small villages and towns. Zero/unknown-population places are excluded because their actual population cannot be verified from GeoNames; this is comprehensive *within available GeoNames data*, not a claim that no real settlement was missed. The source data is updated independently by GeoNames and is distributed under CC BY 4.0 (attribution: [GeoNames](https://www.geonames.org/)). Do not use GeoNames city population as an exact current census.
+
+Create a fresh city catalog (Python 3.10+; **downloads the 11 publicly available GeoNames country ZIPs**, but does not access any property website):
+
+\`\`\`sh
+python tools/cabins-crawler/cities.py --download --output cabins-city-catalog.jsonl
+\`\`\`
+
+This also creates \`cabins-city-catalog.manifest.json\`, including per-country counts, download hashes and attribution. To use cached archives again, omit \`--download\`. No arbitrary city-size cap or shortlist applies.
+
+When *real listing sources have been approved, their per-city search URL templates configured, and the appropriate sources explicitly enabled*, run the crawler in a bounded batch:
+
+\`\`\`sh
+python tools/cabins-crawler/crawler.py --execute --city-catalog cabins-city-catalog.jsonl --city-offset 0 --city-batch 10 --output cabins-crawler-output
+\`\`\`
+
+To scan the next ten eligible settlements for each enabled source, increase \`--city-offset\` to 10, then 20, etc. (or schedule batch progression later). The maximum batch is 50 per source per run. This limit prevents excessive requests; it is **not** a minimum population or a maximum city index.
+
+Sources for an all-city search require \`country_codes\` (e.g. \`["ID", "MY"]\`) and an approved \`search_url_template\` with a fixed HTTPS domain. Variables supported in its path/query are \`{city}\`, \`{country}\`, \`{country_code}\`, \`{admin1}\` and \`{geonames_id}\`. City names are URL-escaped and resulting URLs must remain within \`allowed_domains\`. Example for a **hypothetical, explicitly approved** property portal only:
+
+\`\`\`json
+{
+  "name": "EXAMPLE ONLY — NOT AN APPROVED SOURCE",
+  "market": "Southeast Asia",
+  "city": "Regional",
+  "enabled": false,
+  "country_codes": ["ID", "MY", "SG"],
+  "allowed_domains": ["example.com"],
+  "search_url_template": "https://example.com/for-lease?location={city}&cc={country_code}",
+  "listing_link_pattern": "/listings/[0-9]+"
+}
+\`\`\`
+
+Do **not** enable this placeholder. No SEA property portal is currently vetted for live crawling. Building the city catalog does not constitute scraping, verifying, or contacting listings. Site robots/terms, local legality, per-city URL coverage, data quality and rate restrictions all need source-specific verification.
+
+## Launch and ownership
+
+When the source adapters pass live acceptance checks, **run one command** with \`--execute --city-catalog\` (above) for a manual batch, or configure a separate job scheduler to invoke the same command and store the next batch offset. There is currently no active scheduler, unattended deployment, automatic owner outreach, or ASI Engine integration. Such activation requires a separate, owner-controlled release decision.
+
 ## Deployment boundary
 
 This is independent research tooling, not an ASI Engine lane. It has no scheduler, database writes, live deployment, auto-email outreach, or production service credentials. Do not deploy or merge into `main` before owner review and a verified source-specific pilot.
