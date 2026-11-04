@@ -21,7 +21,7 @@ Canonical research file in this branch: [data/world_cities_1m_2025.csv](data/wor
 - `campaign.py`: resumable, single-command crawl runner; tracks per-source city offsets and preserves existing leads between batches. Stops on access failures/uncertain completeness rather than falsely advancing progress.
 - `sources.json`: early property directory candidates; **all DISABLED** until site-specific terms, robots and real search URL formats are verified. No live property scraping or outreach has yet happened.
 - `cities.py`: retained *legacy* GeoNames 9-country/low-population tool; **not used in the worldwide 1m+ campaign**.
-- `test_*.py`: offline tests. 
+- `market_tiers.py`: new three-level research order; keeps unknown financing, partner interest, profitability, and Evergreen separate from measured demand.\n- `test_*.py`: offline tests. 
 
 ## Recreate the worldwide city list
 
@@ -51,7 +51,7 @@ The world list has now been **prioritised for property research**, rather than t
 
 - Full sortable 500-city research ranking: [data/market-priority-2026.csv](data/market-priority-2026.csv).
 - Documented sources, limitations and score coverage: [data/market-priority-2026.manifest.json](data/market-priority-2026.manifest.json).
-- Immediate **48-city** discovery queue (A, B, or B-with-safety-verification): [data/ranked-city-catalog-focus.jsonl](data/ranked-city-catalog-focus.jsonl).
+- Legacy **48-city** demand/safety exploratory queue (superseded for first-pass work by the 11-city Tier I below): [data/ranked-city-catalog-focus.jsonl](data/ranked-city-catalog-focus.jsonl).
 - Original worldwide 500-city city population source remains preserved separately.
 
 The 0–100 **preliminary research-priority** score has four components:
@@ -133,15 +133,51 @@ C:\Python314\python.exe H:\ASI-Cabins-Crawler\app\city_resilience.py --ranking H
 **Required before any profit claim:** actual convertible property inventory, legal change-of-use evidence, rent, renovation CAPEX, corridor/bathroom costs, room ADR for the target cabin format, accommodation tax, host staffing/security/cleaning, energy and maintenance, booking costs, and currency/payment risks. The model must not auto-infer these from gross hotel-market ADR.
 
 
+## Three research groups — 500-city business-development queue
+
+The owner's new decision divides opportunities into **I / II / III** to concentrate property search, funding eligibility reviews, and local agent/partner scouting where evidence is strongest. The groups **do not** certify property returns or the willingness of financiers, local partners or agents to participate.
+
+| Group | Count | Action | What this means |
+| --- | ---: | --- | --- |
+| I — HIGH | **11** | Start property-market verification, financing-program discovery and initial partner identification | Independently corroborated strong city demand, preliminary country-safety information; **not verified ROI** |
+| II — MEDIUM | **90** | Second search wave, fill evidence gaps, verify regulations | Plausible medium/high demand or strong local demand despite needing extra risk/legality checks |
+| III — RESERVE | **399** | Store in watch/research backlog; no full property-crawl priority | Missing data, weak preliminary signal or country-risk issues not yet offset by independently measured city demand |
+
+**Top 11 by research priority:** London, Tokyo, Paris, Kuala Lumpur, Dubai, Madrid, Barcelona, Milan, Rome, Istanbul, New York. The first group is intentionally small (2.2% of the 500 cities). **Osaka, Seoul, Singapore and Moscow are in Group II**, not excluded. Moscow's documented domestic visitor share and two-year hotel-demand resilience permit conditional research, while its national risk-review gate remains in force. **Mecca is in Group II**: the Saudi 2026 real-estate ownership law imposes special rules on non-Saudi parties in Makkah/Madinah; legal eligibility must be assessed before finance/property negotiations. [Saudi REGA law](https://rega.gov.sa/en/laws-and-decisions/regulations-and-by-laws/rules/law-of-real-estate-ownership-and-investment-by-non-saudis/).
+
+The deliverables separate **four requested dimensions**: (a) demand high/medium/low/unknown, (b) profitability *UNVERIFIED_NO_SITE_COSTS*, (c) population high (5m+), medium (2–5m), low (1–2m), and (d) Evergreen/magnet strength *UNVERIFIED_NO_ASI_SITE_REPORT* until a real geocoded property is analysed by the existing ASI location engine. City-level stability has a real two-year indicator for Moscow and NYC only. A fifth independently enforced field carries risk and regulatory gates.
+
+The matrix also has **financing_program_status=NOT_RESEARCHED** and **local_partner_interest_status=NOT_VERIFIED** for *every city*. Priority describes what the business-development team should research first; it is **not a prediction** of grant eligibility, contract profits or agent enthusiasm. Project financing also depends on local legal form, operator licensing, foreign participation rules, collateral, available incentives and contract economics.
+
+Tier CSV and machine-readable research queues:
+
+- [Three-tier 500-city master CSV](data/market-tiers-2026.csv).
+- [Methodology, counts and evidence-gate manifest](data/market-tiers-2026.manifest.json).
+- [Group I — 11-city research queue](data/city-catalog-i-high.jsonl).
+- [Group II — 90-city queue](data/city-catalog-ii-medium.jsonl).
+- [Group III — 399-city reserve](data/city-catalog-iii-reserve.jsonl).
+
+Rebuild the three tiers from the already generated ranking and city hotel evidence:
+
+```powershell
+C:\Python314\python.exe H:\ASI-Cabins-Crawler\app\market_tiers.py --ranking H:\ASI-Cabins-Crawler\ranking\market-priority-2026.csv --stability H:\ASI-Cabins-Crawler\ranking\city-stability-overlay.csv --output H:\ASI-Cabins-Crawler\ranking
+```
+
+Once legitimate property listing sources have been configured and explicitly enabled, **start with Group I**:
+
+```powershell
+C:\Python314\python.exe H:\ASI-Cabins-Crawler\app\campaign.py --execute --city-catalog H:\ASI-Cabins-Crawler\ranking\city-catalog-i-high.jsonl --output H:\ASI-Cabins-Crawler\tier1-crawl-results --batch 3
+```
+
+Group II uses the same command with `city-catalog-ii-medium.jsonl` and a **separate output directory**. Group III is a research reserve. These outputs are already generated locally but there are still **zero approved/enabled live listing providers**, so executing a property crawl is not yet operational. Read-only preview works without network requests; **40/40 offline tests passed** after this tier implementation.
+
+**Progression / funding gate:** City interest → actual vacant eligible building listings → ASI real address Evergreen + magnets → lawful accommodation conversion → comparable nightly revenue/occupancy and lease/fitout/operating-cost model → verified financing programs and legally qualified partners → underwriting and contract decision. **High-demand cities can be unprofitable if site rent or conversion costs are too high.**
+
 ## How to engage the crawler after provider approval
 
 First, configure *verified, permitted property listing sources* in `sources.json`. A public source serving several countries can use `"country_codes": ["*"]` with a **fixed HTTPS allowlisted domain** and an approved `search_url_template`, such as a search query containing `{city}` and `{country_code}`. The crawler will **always skip MM, BD, KP, TL**, even if a custom catalog accidentally contains them. The same policy prevents explicitly enabling excluded countries.
 
-Once a source has passed the access review, enable it and run:
-
-```powershell
-C:\Python314\python.exe H:\ASI-Cabins-Crawler\app\campaign.py --execute --city-catalog H:\ASI-Cabins-Crawler\world_cities_1m_2025.jsonl --output H:\ASI-Cabins-Crawler\results --batch 3
-```
+Once a source has passed the access review, enable it and run the **Group I** command above. The original full 500-city catalog remains available as a fallback but should not be the first run.
 
 Repeat **the identical command** to resume. It writes `results\leads.csv`, `results\leads.json`, `results\crawl-errors.json` and `results\campaign-state.json`; the cursor advances only after a source run without errors. To check readiness without any network requests, omit `--execute`. There is **no** automatic scheduler or 24/7 deployment: once provider-specific live acceptance has been completed, a separately approved server job could repeat this command.
 
