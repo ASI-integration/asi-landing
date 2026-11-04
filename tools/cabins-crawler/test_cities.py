@@ -35,6 +35,14 @@ class SEARegionTests(unittest.TestCase):
         self.assertIsNone(cities.parse_geonames_line(geonames_row(4, "Old", "ID", 120), "ID", 200))
         self.assertIsNone(cities.parse_geonames_line(geonames_row(5, "Abandoned", "ID", 200, "PPLQ"), "ID"))
 
+    def test_unknown_population_included_but_not_claimed_two_residents(self):
+        raw = geonames_row(55, "Small Place", "TH", 0)
+        self.assertIsNone(cities.parse_geonames_line(raw, "TH"))
+        candidate = cities.parse_geonames_line(raw, "TH", include_unknown=True)
+        self.assertIsNone(candidate["population"])
+        self.assertEqual(candidate["population_status"], "unknown")
+        self.assertIsNone(cities.parse_geonames_line(geonames_row(56, "One Person", "TH", 1), "TH", include_unknown=True))
+
     def test_build_catalog_streams_zip_and_manifest(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
