@@ -1,0 +1,47 @@
+{
+  "version": 1,
+  "user_agent": "ASI-Cabins-Research/0.1 (public property research; read-only)",
+  "max_pages_per_source": 15,
+  "delay_seconds": 3,
+  "sources": [
+    {
+      "name": "JLL Osaka Office Directory",
+      "market": "Japan",
+      "city": "Osaka",
+      "enabled": false,
+      "start_urls": [
+        "https://www.jllproperty.jp/rent-office/osaka/area"
+      ],
+      "allowed_domains": [
+        "www.jllproperty.jp"
+      ],
+      "listing_link_pattern": "/rent-office/|/property/|/office/"
+    },
+    {
+      "name": "CBRE Tokyo Office Directory",
+      "market": "Japan",
+      "city": "Tokyo",
+      "enabled": false,
+      "start_urls": [
+        "https://www.cbre.co.jp/properties/office/area/kanto/tokyo/list"
+      ],
+      "allowed_domains": [
+        "www.cbre.co.jp"
+      ],
+      "listing_link_pattern": "/properties/office/"
+    },
+    {
+      "name": "HX Taipei Office Directory",
+      "market": "Taiwan",
+      "city": "Taipei",
+      "enabled": false,
+      "start_urls": [
+        "https://rent.hxasset.com.tw/"
+      ],
+      "allowed_domains": [
+        "rent.hxasset.com.tw"
+      ],
+      "listing_link_pattern": "/(office|rent|property|detail|object)/"
+    }
+  ]
+}
