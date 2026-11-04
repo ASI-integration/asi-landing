@@ -87,27 +87,27 @@ C:\Python314\python.exe H:\ASI-Cabins-Crawler\app\campaign.py --execute --city-c
 
 ## Evergreen Index + demand-magnet bridge (existing ASI engine, no duplicate scorer)
 
-**Important distinction:** Evergreen is property-address-based. It cannot be measured for an entire city without verified points of interest and an exact site coordinate. The authoritative implementation is already on \`main\` at:
-- \`src/lib/location/config.ts\` — magnet taxonomy, permanent/semi/temporary multipliers, category radius caps and base weights.
-- \`src/lib/location/gravity-scoring.ts\` — continuous distance attenuation, magnet attraction, clustering and competitor pressure.
-- \`src/lib/location/location-score.ts\` — demand-score blend \`0.6 × evergreenIndex + 0.4 × magnet_score\`; composite \`location_score\` contains other validated factors and must not be confused with this demand blend.
-- \`src/lib/location/location-scoring-rules.ts\` — source-of-truth score policy.
+**Important distinction:** Evergreen is property-address-based. It cannot be measured for an entire city without verified points of interest and an exact site coordinate. The authoritative implementation is already on `main` at:
+- `src/lib/location/config.ts` — magnet taxonomy, permanent/semi/temporary multipliers, category radius caps and base weights.
+- `src/lib/location/gravity-scoring.ts` — continuous distance attenuation, magnet attraction, clustering and competitor pressure.
+- `src/lib/location/location-score.ts` — demand-score blend `0.6 × evergreenIndex + 0.4 × magnet_score`; composite `location_score` contains other validated factors and must not be confused with this demand blend.
+- `src/lib/location/location-scoring-rules.ts` — source-of-truth score policy.
 
-The existing magnet equation is **\`W × P × D\`**: class weight × permanence multiplier × distance-decay factor. Some verified magnetic anchor weights: **metro 9; airport / landmark 8; medical 7; major hotel / university / convention 6; business 5.5; railway hub / major mall 5; supermarket 1.2; cafe 1**. Weights and caps are owned by the primary ASI location engine, **not** this crawler. Regional or specialised transport and medical hubs are handled separately by the engine; avoid treating distant airports as walking-distance magnets.
+The existing magnet equation is **`W × P × D`**: class weight × permanence multiplier × distance-decay factor. Some verified magnetic anchor weights: **metro 9; airport / landmark 8; medical 7; major hotel / university / convention 6; business 5.5; railway hub / major mall 5; supermarket 1.2; cafe 1**. Weights and caps are owned by the primary ASI location engine, **not** this crawler. Regional or specialised transport and medical hubs are handled separately by the engine; avoid treating distant airports as walking-distance magnets.
 
-New **\`evergreen_bridge.py\`** accepts the **actual saved output** of the production ASI location analysis, with explicit site coordinates, ASI integrity flags, precomputed \`evergreenIndex\`, magnet score, and magnet items with distances. It copies numeric results from the original engine and **refuses to publish them** if the original integrity evidence is missing/blocked, its calculated components are missing, or its demand blend fails a consistency check. It does not scrape or guess magnets.
+New **`evergreen_bridge.py`** accepts the **actual saved output** of the production ASI location analysis, with explicit site coordinates, ASI integrity flags, precomputed `evergreenIndex`, magnet score, and magnet items with distances. It copies numeric results from the original engine and **refuses to publish them** if the original integrity evidence is missing/blocked, its calculated components are missing, or its demand blend fails a consistency check. It does not scrape or guess magnets.
 
 Example command **only after genuine geocoded ASI reports exist** (the input file is not currently present):
 
-\`\`\`powershell
+```powershell
 C:\Python314\python.exe H:\ASI-Cabins-Crawler\app\evergreen_bridge.py --asi-reports H:\ASI-Cabins-Crawler\verified-property-location-reports.jsonl --output H:\ASI-Cabins-Crawler\ranking\property-evergreen.json
-\`\`\`
+```
 
-\`verified-property-location-reports.jsonl\` requires one JSON object per property with \`location_id\`, \`country_code\`, \`city_code\`, \`latitude\`, \`longitude\`, and an \`analysis\` object from existing ASI. \`analysisIntegrity.analysisIncomplete=false\` and \`scoreBlockedDueToIncompleteData=false\` are required; a failed data-quality gate does not become a zero score.
+`verified-property-location-reports.jsonl` requires one JSON object per property with `location_id`, `country_code`, `city_code`, `latitude`, `longitude`, and an `analysis` object from existing ASI. `analysisIntegrity.analysisIncomplete=false` and `scoreBlockedDueToIncompleteData=false` are required; a failed data-quality gate does not become a zero score.
 
 ## Popularity and hotel-demand stability (different from Evergreen)
 
-The new \`city_resilience.py\` links independently sourced annual city data to the existing global ranking **by exact UN WUP city identifier**. It does not override the global screening score. For each city it exposes:
+The new `city_resilience.py` links independently sourced annual city data to the existing global ranking **by exact UN WUP city identifier**. It does not override the global screening score. For each city it exposes:
 - Annual hotel occupancy (2024, 2025) and year-on-year change.
 - City visitor counts (2024, 2025), visitor growth and domestic visitor share.
 - ADR with original **currency units**, explicitly not treated as profit.
@@ -126,9 +126,9 @@ Research outputs:
 
 Local regenerate:
 
-\`\`\`powershell
+```powershell
 C:\Python314\python.exe H:\ASI-Cabins-Crawler\app\city_resilience.py --ranking H:\ASI-Cabins-Crawler\ranking\market-priority-2026.csv --benchmarks H:\ASI-Cabins-Crawler\city-hotel-benchmarks-2025.json --city-catalog H:\ASI-Cabins-Crawler\world_cities_1m_2025.jsonl --output H:\ASI-Cabins-Crawler\ranking
-\`\`\`
+```
 
 **Required before any profit claim:** actual convertible property inventory, legal change-of-use evidence, rent, renovation CAPEX, corridor/bathroom costs, room ADR for the target cabin format, accommodation tax, host staffing/security/cleaning, energy and maintenance, booking costs, and currency/payment risks. The model must not auto-infer these from gross hotel-market ADR.
 
