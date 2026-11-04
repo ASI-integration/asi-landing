@@ -66,6 +66,7 @@ class MarketPriorityTests(unittest.TestCase):
             self.assertEqual(len(scored), 4)
             by = {r["city"]: r for r in scored}
             self.assertGreater(by["Cairo"]["screening_score_100"], by["Ouagadougou"]["screening_score_100"])
+            self.assertLess(by["Cairo"]["rank"], by["Ouagadougou"]["rank"])
             self.assertEqual(by["Moscow"]["priority_band"], "SAFETY_REVIEW")
             self.assertEqual(by["Ouagadougou"]["priority_band"], "SAFETY_REVIEW")
             self.assertEqual(by["Paris"]["verified_destination_top10"], True)
