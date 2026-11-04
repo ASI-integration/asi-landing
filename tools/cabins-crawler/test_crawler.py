@@ -19,7 +19,6 @@ class CabinCrawlerTests(unittest.TestCase):
 
     def test_area_units(self):
         self.assertAlmostEqual(crawler.first_area("募集面積 55 坪"), 181.8, places=1)
-        self.assertAlmostEqual(crawler.first_area("50 sq ft"), 4.6, places=1) if False else None
         self.assertEqual(crawler.first_area("Space 65.02 m²"), 65.0)
         self.assertEqual(crawler.first_area("1000 sqft"), 92.9)
         self.assertIsNone(crawler.first_area("No area given"))
