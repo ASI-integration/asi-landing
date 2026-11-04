@@ -64,7 +64,7 @@ class SEARegionTests(unittest.TestCase):
             manifest = cities.build_catalog(cache, output, ["ID", "SG"])
             records = [json.loads(line) for line in output.read_text().splitlines()]
             self.assertEqual(len(records), 4)
-            self.assertIn("TL", manifest["places_by_country"])
+            self.assertIn("SG", manifest["places_by_country"])
             self.assertEqual(manifest["population_min"], 2)
             self.assertEqual(manifest["places_total"], 4)
             self.assertEqual(manifest["places_by_country"]["ID"], 2)
@@ -79,7 +79,7 @@ class SEARegionTests(unittest.TestCase):
                     "country_code": country,
                     "country": cities.COUNTRIES[country], "admin1": "10"
                 }) for idx, city, country in [
-                    (1, "Jakarta", "ID"), (2, "Singapore", "TL"),
+                    (1, "Jakarta", "ID"), (2, "Singapore", "SG"),
                     (3, "Banda Aceh", "ID"), (4, "Bandung", "ID"),
                 ]) + "\n", encoding="utf-8",
             )
@@ -104,11 +104,11 @@ class SEARegionTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             catalog = Path(directory) / "cities.jsonl"
             catalog.write_text(json.dumps({
-                "id": "geonames:1", "name": "Dili", "country_code": "TL",
+                "id": "geonames:1", "name": "Singapore", "country_code": "SG",
                 "country": "Singapore"
             }) + "\n")
             source = {
-                "country_codes": ["TL"],
+                "country_codes": ["SG"],
                 "allowed_domains": ["example.com"],
                 "search_url_template": "https://evil.tld/search?city={city}",
             }
