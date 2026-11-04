@@ -1,0 +1,138 @@
+# TEMPORARY / diagnostic-only for PR #318 staging DB blocker.
+# Read-only SELECT + catalog inspection against staging. Do not reuse for writes.
+name: Diagnose Staging Connect Schema (Read-Only)
+
+on:
+  # Temporary: push trigger is required until this file exists on default branch,
+  # because GitHub rejects workflow_dispatch for workflows that are not on main.
+  push:
+    branches:
+      - diagnose/staging-connect-schema-readonly
+    paths:
+      - '.github/workflows/diagnose-staging-connect-schema-readonly.yml'
+      - 'scripts/diagnose-staging-connect-schema-readonly.sh'
+  workflow_dispatch:
+    inputs:
+      confirm_readonly_diagnostic:
+        description: Type RUN_STAGING_CONNECT_SCHEMA_READONLY_DIAGNOSTIC (technical confirmation)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: diagnose-staging-connect-schema-readonly
+  cancel-in-progress: false
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    environment: staging
+    timeout-minutes: 10
+    steps:
+      - name: Require explicit read-only confirmation
+        if: ${{ github.event_name == 'workflow_dispatch' }}
+        shell: bash
+        env:
+          CONFIRM_READONLY_DIAGNOSTIC: ${{ inputs.confirm_readonly_diagnostic }}
+        run: |
+          set -euo pipefail
+          required="RUN_STAGING_CONNECT_SCHEMA_READONLY_DIAGNOSTIC"
+          if [[ "$CONFIRM_READONLY_DIAGNOSTIC" != "$required" ]]; then
+            echo "::error::Read-only diagnostic confirmation phrase mismatch."
+            exit 1
+          fi
+
+      - name: Confirm temporary push-path diagnostic
+        if: ${{ github.event_name == 'push' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "TEMPORARY_PUSH_PATH_DIAGNOSTIC=true"
+          echo "branch=${GITHUB_REF_NAME}"
+          echo "sha=${GITHUB_SHA}"
+          echo "scope=read_only_staging_catalog_only"
+
+      - name: Checkout diagnostic script
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Verify staging database identity
+        shell: bash
+        env:
+          STAGING_SUPABASE_PROJECT_REF: ${{ secrets.STAGING_SUPABASE_PROJECT_REF }}
+          STAGING_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
+          STAGING_DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
+        run: |
+          set -euo pipefail
+          if [[ -n "${STAGING_DATABASE_URL:-}" ]]; then
+            echo "::add-mask::${STAGING_DATABASE_URL}"
+          fi
+          node - <<'NODE'
+          const ref = (process.env.STAGING_SUPABASE_PROJECT_REF || '').trim();
+          const api = (process.env.STAGING_SUPABASE_URL || '').trim();
+          const database = (process.env.STAGING_DATABASE_URL || '').trim();
+          if (!ref || !/^[a-z0-9]{20}$/.test(ref)) {
+            throw new Error('Missing or invalid STAGING_SUPABASE_PROJECT_REF');
+          }
+          if (!api || !database) {
+            throw new Error('Missing STAGING_SUPABASE_URL or STAGING_DATABASE_URL');
+          }
+          let apiUrl;
+          let databaseUrl;
+          try {
+            apiUrl = new URL(api);
+            databaseUrl = new URL(database);
+          } catch {
+            throw new Error('A staging database URL is invalid');
+          }
+          const apiIdentity = apiUrl.hostname.toLowerCase();
+          const databaseIdentity = `${databaseUrl.hostname}:${decodeURIComponent(databaseUrl.username)}`.toLowerCase();
+          if (!apiIdentity.includes(ref) || !databaseIdentity.includes(ref)) {
+            throw new Error('Staging database identity does not match STAGING_SUPABASE_PROJECT_REF');
+          }
+          console.log(`STAGING_IDENTITY_CHECK=PASS`);
+          console.log(`Staging Supabase project: ${ref}`);
+          NODE
+
+      - name: Ensure PostgreSQL client is available
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! command -v psql >/dev/null 2>&1; then
+            sudo apt-get update -qq
+            sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq postgresql-client
+          fi
+          psql --version
+
+      - name: Inspect staging connect schema read-only
+        id: inspect
+        shell: bash
+        env:
+          STAGING_SUPABASE_PROJECT_REF: ${{ secrets.STAGING_SUPABASE_PROJECT_REF }}
+          STAGING_DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
+          STAGING_CONNECT_SCHEMA_DIAGNOSTIC_ARTIFACT: staging-connect-schema-diagnostic.txt
+          PGCONNECT_TIMEOUT: "10"
+          PGOPTIONS: >-
+            -c default_transaction_read_only=on
+            -c statement_timeout=30000
+            -c lock_timeout=3000
+        run: |
+          set -euo pipefail
+          chmod +x scripts/diagnose-staging-connect-schema-readonly.sh
+          bash scripts/diagnose-staging-connect-schema-readonly.sh
+          echo "STAGING_IDENTITY_CHECK=PASS"
+          echo "=== DIAGNOSTIC_ARTIFACT_BEGIN ==="
+          cat staging-connect-schema-diagnostic.txt
+          echo "=== DIAGNOSTIC_ARTIFACT_END ==="
+
+      - name: Upload sanitized diagnostic artifact
+        if: ${{ always() && hashFiles('staging-connect-schema-diagnostic.txt') != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: staging-connect-schema-diagnostic
+          path: staging-connect-schema-diagnostic.txt
+          if-no-files-found: error
+          retention-days: 7
