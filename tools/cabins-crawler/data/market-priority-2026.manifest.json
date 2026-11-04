@@ -1,0 +1,49 @@
+{
+  "created_at": "2026-11-04T17:43:42.803671+00:00",
+  "scope": "UN WUP 2025 worldwide urban areas >1,000,000; owner exclusions applied",
+  "excluded_country_codes": [
+    "BD",
+    "KP",
+    "MM",
+    "TL"
+  ],
+  "cities": 500,
+  "source_urls": [
+    "https://ourworldindata.org/grapher/international-tourist-trips",
+    "https://ourworldindata.org/grapher/homicide-rate-unodc",
+    "https://gpi.economicsandpeace.org/",
+    "https://lp.euromonitor.com/newsroom/press-releases/december-2025/euromonitor-international-unveils-worlds-top-100-city-destinations-for-2025",
+    "https://download.geonames.org/export/dump/countryInfo.txt"
+  ],
+  "model_points": {
+    "tourism_demand": 40,
+    "country_safety": 35,
+    "city_population": 15,
+    "euromonitor_2025_top10_evidence": 10,
+    "tourism_demand_method": "2025 city arrivals (max40) if available; otherwise country tourist-arrivals proxy (max30)"
+  },
+  "cautions": [
+    "This score is research-priority, NOT projected ROI, actual city crime rate, affordability or safety certification.",
+    "Homicide figures and most tourist arrivals describe countries, not cities. Confirmed 2025 city arrivals override stale country tourism for ten Euromonitor destinations.",
+    "Missing inputs receive no points, NOT an imputed zero value; tiers flag incomplete data and require further research.",
+    "Rental levels, hotel occupancy, property supply and legal permissions have NOT been researched; no property can be invested in from this file alone.",
+    "High national risk triggers SAFETY_REVIEW (not a blanket country exclusion), including cities in Russia.",
+    "The GPI has a broader definition of peace than crime. No source automatically characterises a city as safe."
+  ],
+  "priority_counts": {
+    "A-PRIORITY": 6,
+    "B-SAFETY_VERIFY": 4,
+    "B-SHORTLIST": 38,
+    "C-RESEARCH": 213,
+    "NEEDS_DATA": 153,
+    "SAFETY_REVIEW": 86
+  },
+  "evidence_counts": {
+    "A-city-data": 6,
+    "A-country-data": 285,
+    "B-incomplete": 179,
+    "C-sparse": 30
+  },
+  "city_top10_matches": 19,
+  "city_arrivals_2025_coverage": 10
+}
