@@ -47,23 +47,25 @@ For a property marked promising: verify the owner/operator contact, lawful overn
 
 The regional catalog covers **all 11 SEA countries**: Brunei (BN), Cambodia (KH), Indonesia (ID), Laos (LA), Malaysia (MY), Myanmar (MM), Philippines (PH), Singapore (SG), Thailand (TH), Timor-Leste (TL) and Vietnam (VN). Japan and Taiwan remain separate East Asian pilot markets.
 
-Instead of an arbitrary population floor like 50,000, import **all GeoNames populated-place records with a recorded population >= 2**, including small villages and towns. Zero/unknown-population places are excluded because their actual population cannot be verified from GeoNames; this is comprehensive *within available GeoNames data*, not a claim that no real settlement was missed. The source data is updated independently by GeoNames and is distributed under CC BY 4.0 (attribution: [GeoNames](https://www.geonames.org/)). Do not use GeoNames city population as an exact current census.
+Instead of an arbitrary population floor such as 50,000, import **all GeoNames populated places with recorded population >= 2**, including villages and towns. For broader coverage, use `--include-unknown` to include places with **unrecorded population**, marked as `population_status=unknown`. Those records are leads for verification, **not confirmed to have 2+ inhabitants**. This is as complete as the available GeoNames data, not a guarantee every real settlement appears. The source data is updated independently by GeoNames and is distributed under CC BY 4.0 (attribution: [GeoNames](https://www.geonames.org/)). Do not use GeoNames city population as an exact current census.
 
 Create a fresh city catalog (Python 3.10+; **downloads the 11 publicly available GeoNames country ZIPs**, but does not access any property website):
 
 ```sh
-python tools/cabins-crawler/cities.py --download --output cabins-city-catalog.jsonl
+python tools/cabins-crawler/cities.py --download --include-unknown --output H:/ASI-Cabins-Crawler/cities.jsonl
 ```
 
-This also creates `cabins-city-catalog.manifest.json`, including per-country counts, download hashes and attribution. To use cached archives again, omit `--download`. No arbitrary city-size cap or shortlist applies.
+This creates `H:/ASI-Cabins-Crawler/cities.manifest.json` with per-country counts, unknown-population counts, archive hashes and attribution. The example uses the owner's existing H: drive. To use cached archives again, omit `--download` and add `--cache-dir H:/ASI-Cabins-Crawler/geonames`. No arbitrary city-size cap or fixed shortlist applies.
 
-When *real listing sources have been approved, their per-city search URL templates configured, and the appropriate sources explicitly enabled*, run the crawler in a bounded batch:
+When *real property listing sources have been approved, their per-city search URL templates configured, and the appropriate sources explicitly enabled*, launch one resumable batch:
 
 ```sh
-python tools/cabins-crawler/crawler.py --execute --city-catalog cabins-city-catalog.jsonl --city-offset 0 --city-batch 10 --output cabins-crawler-output
+python tools/cabins-crawler/campaign.py --execute --city-catalog H:/ASI-Cabins-Crawler/cities.jsonl --output H:/ASI-Cabins-Crawler/results --batch 3
 ```
 
-To scan the next ten eligible settlements for each enabled source, increase `--city-offset` to 10, then 20, etc. (or schedule batch progression later). The maximum batch is 50 per source per run. This limit prevents excessive requests; it is **not** a minimum population or a maximum city index.
+Repeat **that same command** to resume automatically. The runner saves `results/campaign-state.json` with each source's city offset and **merges** earlier leads into the results instead of overwriting them. It stops advancing a source whenever robots permissions, HTTP errors or a page limit block complete collection. After the source is repaired, repeat the same command. To inspect readiness without network requests, omit `--execute`. A separate scheduler can call the identical command at an owner-approved cadence; none is installed yet.
+
+The lower-level `crawler.py --execute --city-catalog ... --city-offset N --city-batch 10` interface remains available for manual targeted batches, but **its export writes a fresh output** and must not replace the resumable runner's output directory.
 
 Sources for an all-city search require `country_codes` (e.g. `["ID", "MY"]`) and an approved `search_url_template` with a fixed HTTPS domain. Variables supported in its path/query are `{city}`, `{country}`, `{country_code}`, `{admin1}` and `{geonames_id}`. City names are URL-escaped and resulting URLs must remain within `allowed_domains`. Example for a **hypothetical, explicitly approved** property portal only:
 
@@ -84,7 +86,7 @@ Do **not** enable this placeholder. No SEA property portal is currently vetted f
 
 ## Launch and ownership
 
-When the source adapters pass live acceptance checks, **run one command** with `--execute --city-catalog` (above) for a manual batch, or configure a separate job scheduler to invoke the same command and store the next batch offset. There is currently no active scheduler, unattended deployment, automatic owner outreach, or ASI Engine integration. Such activation requires a separate, owner-controlled release decision.
+When the source adapters pass live acceptance checks, **run the `campaign.py --execute` command above**. The runner handles the cursor; a separate job scheduler could invoke the identical command repeatedly. There is currently no active scheduler, unattended deployment, automatic owner outreach, or ASI Engine integration. Such activation requires a separate, owner-controlled release decision.
 
 ## Deployment boundary
 
