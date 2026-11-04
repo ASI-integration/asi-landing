@@ -23,6 +23,8 @@ from urllib.parse import quote, urljoin, urlsplit, urlunsplit
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 from urllib.robotparser import RobotFileParser
 
+from scope import EXCLUDED_COUNTRY_CODES
+
 DEFAULT_CONFIG = Path(__file__).with_name("sources.json")
 FIELDS = (
     "id", "market", "city", "source", "url", "title", "description",
@@ -296,13 +298,16 @@ def city_seed_urls(
 ) -> tuple[list[str], int]:
     """Return an explicit, bounded batch of search URLs for a verified source.
 
-    Each subsequent run advances --city-offset; no city-size ceiling is imposed.
-    Sources must define an approved URL template and country codes.
+    Each subsequent run advances --city-offset. Global population filtering
+    happens in the catalog importer, not here. A verified source may use
+    country_codes=["*"] for worldwide coverage (exclusions still enforced).
     """
     template = source.get("search_url_template")
     codes = set(source.get("country_codes", []))
     if not template or not codes:
         return [], 0
+    if codes & EXCLUDED_COUNTRY_CODES:
+        raise ValueError("Excluded country present in source policy")
     if offset < 0 or batch < 1 or batch > 50:
         raise ValueError("city offset must be >=0 and batch must be 1..50")
     seeds: list[str] = []
@@ -312,7 +317,10 @@ def city_seed_urls(
             if not line.strip():
                 continue
             place = json.loads(line)
-            if place.get("country_code") not in codes:
+            country_code = str(place.get("country_code", "")).upper()
+            if country_code in EXCLUDED_COUNTRY_CODES:
+                continue
+            if "*" not in codes and country_code not in codes:
                 continue
             if matched < offset:
                 matched += 1
@@ -321,11 +329,11 @@ def city_seed_urls(
                 break
             matched += 1
             substitutions = {
-                "city": quote(str(place["name"]), safe=""),
-                "country": quote(str(place["country"]), safe=""),
+                "city": quote(str(place.get("city") or place.get("name") or ""), safe=""),
+                "country": quote(str(place.get("country", "")), safe=""),
                 "country_code": quote(str(place["country_code"]), safe=""),
                 "admin1": quote(str(place.get("admin1", "")), safe=""),
-                "geonames_id": quote(str(place["id"]), safe=""),
+                "geonames_id": quote(str(place.get("id") or place.get("city_code") or ""), safe=""),
             }
             seed = canonical_url(template.format(**substitutions))
             if not allowed_url(seed, source["allowed_domains"]):
@@ -389,6 +397,8 @@ def load_config(path: Path) -> dict:
             raise ValueError("Start URLs must be HTTPS and within allowed_domains")
         if source.get("search_url_template"):
             template = source["search_url_template"]
+            if set(source.get("country_codes", [])) & EXCLUDED_COUNTRY_CODES:
+                raise ValueError("Excluded country present in enabled source country_codes")
             if not source.get("country_codes"):
                 raise ValueError("City search source requires country_codes")
             # Prevent template-controlled host or scheme substitutions.
