@@ -1,93 +1,70 @@
-# ASI Cabins — Property Discovery Crawler (v1)
+# ASI Cabins — Worldwide Property Discovery Crawler (Draft v1)
 
-Purpose: identify **indoor commercial premises** that could host private, two-person ASI micro-cabins. It does not search for cabin manufacturers or make any claim that a property is legally usable for accommodation.
+## Geographic scope (owner decision, 2026-11-04)
 
-## Markets and property strategy
+**WORLDWIDE**, every urban centre with **strictly more than 1,000,000 residents** under the UN's **World Urbanization Prospects 2025 / DEGURBA** harmonised definition. City/urban-centre population is **not** municipal population; metropolitan totals can differ considerably from other sources.
 
-- **Japan first:** Osaka (initial 50–100 m², 3–5 cabin pilot) and Tokyo. Secondary market: Taipei, Taiwan.
-- Prioritize vacant/underused commercial floors, offices, former hotels/hostels and hospitality-convertible premises near transit.
-- Larger property searches (roughly 100–1,200 m²) are also supported for multi-cabin installations. Upper-floor assets are preferable to prime ground-floor retail; basement/windowless assets need specific fire/ventilation review.
-- Each 9–13 m² two-person cabin needs a bed, private bathroom/shower, work surface and effective sound isolation; feasibility cannot be inferred from real estate listings alone.
+The current published shortlist contains **500 eligible cities in 125 countries/areas**, after the owner's explicit country exclusions:
 
-## Current implementation
+- **Exclude:** Bangladesh (**BD**), Myanmar (**MM**), North Korea (**KP**), Timor-Leste (**TL**).
+- **Include**, among other places: **Russia (RU, 7 cities)**, **Japan (JP, 9)**, **Taiwan (TW, 3)**, **South Korea (KR, 5)**. These counts and the full dataset are generated from the same source.
+- These exclusions are choices about suitability for this particular project; the software **does not** score entire countries by subjective labels such as "dirty". Other risks (official travel advisories, lodging legality, tourism volume, commercial vacancy and accessibility) need separate, independently sourced reviews. They have not been applied automatically.
+- **All approved countries** are eligible for discovery; no arbitrary regional/country whitelist.
 
-- Read-only HTTPS GETs. No browser automation, API credentials, forms, authentication, CAPTCHA evasion or robots bypass.
-- Explicit domain allowlist, public-DNS checks, no redirects, per-host robots.txt permission, 1 MB page cap, configurable pages/source (hard cap 50), minimum 2-second delay.
-- HTML title / meta / anchor extraction; area conversion from m², 坪, 평 and square feet; heuristic monthly rent and floor extraction. No unsupported claims about missing facts.
-- Scores each candidate using area, property type, transit context, reuse signals and upper floor. Ground-floor retail is penalized.
-- Deduplication by canonical URL. Exports leads.json, leads.csv and crawl-errors.json. All leads are marked legal_use=UNVERIFIED.
+Canonical research file in this branch: [data/world_cities_1m_2025.csv](data/world_cities_1m_2025.csv). Provenance/counts: [data/world_cities_1m_2025.manifest.json](data/world_cities_1m_2025.manifest.json). Official source: [UN WUP 2025 File F21](https://population.un.org/wup/downloads?tab=Cities).
 
-## Local use (Python 3.10+; standard library only)
+## Components
 
-From the repository root:
+- `scope.py`: single-source-of-truth owner exclusion policy and strictly >1,000,000 threshold.
+- `global_cities.py`: Python standard-library parser for the downloaded UN WUP 2025 XLSX, with country selection, source provenance, JSONL and Excel-compatible CSV.
+- `crawler.py`: read-only property-page discovery, domain allowlist, robots.txt fail-closed checks, public-address DNS checks, redirects disabled, minimum 2s delay, page limits, approximate property extraction, candidate scoring and errors.
+- `campaign.py`: resumable, single-command crawl runner; tracks per-source city offsets and preserves existing leads between batches. Stops on access failures/uncertain completeness rather than falsely advancing progress.
+- `sources.json`: early property directory candidates; **all DISABLED** until site-specific terms, robots and real search URL formats are verified. No live property scraping or outreach has yet happened.
+- `cities.py`: retained *legacy* GeoNames 9-country/low-population tool; **not used in the worldwide 1m+ campaign**.
+- `test_*.py`: offline tests. 
 
-```sh
-python tools/cabins-crawler/crawler.py
-python -m unittest discover -s tools/cabins-crawler -p 'test_*.py' -v
+## Recreate the worldwide city list
+
+On the authorised Windows computer, from its `H:\ASI-Cabins-Crawler\app` working directory:
+
+```powershell
+C:\Python314\python.exe H:\ASI-Cabins-Crawler\app\global_cities.py --input H:\ASI-Cabins-Crawler\WUP2025-F21-DEGURBA-Cities_Pop.xlsx --output H:\ASI-Cabins-Crawler\world_cities_1m_2025.jsonl
 ```
 
-The first command only validates the configuration and shows source counts. **It does not access the network.**
-
-After reviewing the target website's terms, robots.txt, public listing URL format and selectors, change its `enabled` flag to `true` in `sources.json` and run:
-
-```sh
-python tools/cabins-crawler/crawler.py --execute --output cabins-crawler-output
+The UN data file was obtained from:
+```
+https://population.un.org/wup/assets/Download/Cities/WUP2025-F21-DEGURBA-Cities_Pop.xlsx
 ```
 
-**Important:** The source URLs in `sources.json` are public listing directories verified by a search, not approved scraping targets or tested extraction adapters. Every source is disabled until robots/terms and matching listing URLs are individually reviewed. Some sources render content with JavaScript, in which case this intentionally simple version may find no listings; do not bypass their access controls.
-
-Output fields: `id`, `market`, `city`, `source`, `url`, `title`, `description`, `area_m2`, `monthly_rent`, `currency`, `floor`, `score`, `signals`, `cautions`, `legal_use`, `found_at`.
-
-## Human review before a pilot
-
-For a property marked promising: verify the owner/operator contact, lawful overnight accommodation use, zoning/change-of-use permission, egress/fire rules, ventilation, plumbing, acoustic separation, loading/access, all-in rent and usable area. Any property can fail this review even with a score of 100.
-
-
-## Southeast Asia: every recorded settlement with at least 2 residents
-
-The regional catalog covers **the selected 9 SEA countries**: Brunei (BN), Cambodia (KH), Indonesia (ID), Laos (LA), Malaysia (MY), Philippines (PH), Singapore (SG), Thailand (TH), and Vietnam (VN). **Myanmar and Timor-Leste are explicitly excluded by the owner.** Japan and Taiwan remain separate East Asian pilot markets.
-
-Instead of an arbitrary population floor such as 50,000, import **all GeoNames populated places with recorded population >= 2**, including villages and towns. For broader coverage, use `--include-unknown` to include places with **unrecorded population**, marked as `population_status=unknown`. Those records are leads for verification, **not confirmed to have 2+ inhabitants**. This is as complete as the available GeoNames data, not a guarantee every real settlement appears. The source data is updated independently by GeoNames and is distributed under CC BY 4.0 (attribution: [GeoNames](https://www.geonames.org/)). Do not use GeoNames city population as an exact current census.
-
-Create a fresh city catalog (Python 3.10+; **downloads the 9 selected public GeoNames country ZIPs**, but does not access any property website):
-
-```sh
-python tools/cabins-crawler/cities.py --download --include-unknown --cache-dir H:/ASI-Cabins-Crawler/geonames --output H:/ASI-Cabins-Crawler/cities.jsonl
+Expected local outputs:
+```
+H:\ASI-Cabins-Crawler\world_cities_1m_2025.jsonl
+H:\ASI-Cabins-Crawler\world_cities_1m_2025.csv
+H:\ASI-Cabins-Crawler\world_cities_1m_2025.manifest.json
 ```
 
-This creates `H:/ASI-Cabins-Crawler/cities.manifest.json` with per-country counts, unknown-population counts, archive hashes and attribution. The example uses the owner's existing H: drive. To use cached archives again, omit `--download` and add `--cache-dir H:/ASI-Cabins-Crawler/geonames`. No arbitrary city-size cap or fixed shortlist applies.
+**Important:** Rebuilding the UN geographic catalog does *not* access any real estate portal or assert that a place is safe, tourist-popular or suitable for a cabin hotel. No credential or API key is required for this import.
 
-When *real property listing sources have been approved, their per-city search URL templates configured, and the appropriate sources explicitly enabled*, launch one resumable batch:
+## How to engage the crawler after provider approval
 
-```sh
-python tools/cabins-crawler/campaign.py --execute --city-catalog H:/ASI-Cabins-Crawler/cities.jsonl --output H:/ASI-Cabins-Crawler/results --batch 3
+First, configure *verified, permitted property listing sources* in `sources.json`. A public source serving several countries can use `"country_codes": ["*"]` with a **fixed HTTPS allowlisted domain** and an approved `search_url_template`, such as a search query containing `{city}` and `{country_code}`. The crawler will **always skip MM, BD, KP, TL**, even if a custom catalog accidentally contains them. The same policy prevents explicitly enabling excluded countries.
+
+Once a source has passed the access review, enable it and run:
+
+```powershell
+C:\Python314\python.exe H:\ASI-Cabins-Crawler\app\campaign.py --execute --city-catalog H:\ASI-Cabins-Crawler\world_cities_1m_2025.jsonl --output H:\ASI-Cabins-Crawler\results --batch 3
 ```
 
-Repeat **that same command** to resume automatically. The runner saves `results/campaign-state.json` with each source's city offset and **merges** earlier leads into the results instead of overwriting them. It stops advancing a source whenever robots permissions, HTTP errors or a page limit block complete collection. After the source is repaired, repeat the same command. To inspect readiness without network requests, omit `--execute`. A separate scheduler can call the identical command at an owner-approved cadence; none is installed yet.
+Repeat **the identical command** to resume. It writes `results\leads.csv`, `results\leads.json`, `results\crawl-errors.json` and `results\campaign-state.json`; the cursor advances only after a source run without errors. To check readiness without any network requests, omit `--execute`. There is **no** automatic scheduler or 24/7 deployment: once provider-specific live acceptance has been completed, a separately approved server job could repeat this command.
 
-The lower-level `crawler.py --execute --city-catalog ... --city-offset N --city-batch 10` interface remains available for manual targeted batches, but **its export writes a fresh output** and must not replace the resumable runner's output directory.
+**No live sources are currently enabled.** The source-specific work is not complete, so `--execute` is intentionally blocked until an actual site has been configured and reviewed.
 
-Sources for an all-city search require `country_codes` (e.g. `["ID", "MY"]`) and an approved `search_url_template` with a fixed HTTPS domain. Variables supported in its path/query are `{city}`, `{country}`, `{country_code}`, `{admin1}` and `{geonames_id}`. City names are URL-escaped and resulting URLs must remain within `allowed_domains`. Example for a **hypothetical, explicitly approved** property portal only:
+## Property assessment / legal limits
 
-```json
-{
-  "name": "EXAMPLE ONLY — NOT AN APPROVED SOURCE",
-  "market": "Southeast Asia",
-  "city": "Regional",
-  "enabled": false,
-  "country_codes": ["ID", "MY", "SG"],
-  "allowed_domains": ["example.com"],
-  "search_url_template": "https://example.com/for-lease?location={city}&cc={country_code}",
-  "listing_link_pattern": "/listings/[0-9]+"
-}
-```
+The purpose is to discover commercial premises suited for potential conversion into ASI private two-person indoor micro-cabins—not to find sellers of standalone cabins. Prioritise transport access, usable interior area, flexible commercial floors, former hotels/hostels, local demand and achievable rent. Extracted listing details are only research clues.
 
-Do **not** enable this placeholder. No SEA property portal is currently vetted for live crawling. Building the city catalog does not constitute scraping, verifying, or contacting listings. Site robots/terms, local legality, per-city URL coverage, data quality and rate restrictions all need source-specific verification.
+Every shortlisted property requires human validation of lawful overnight accommodation, fire protection/egress, accessible circulation, plumbing, sanitation, ventilation, acoustics, rent, actual site availability and the local landlord's consent. A high automatically computed suitability score is **not** permission to operate.
 
-## Launch and ownership
+## Boundaries
 
-When the source adapters pass live acceptance checks, **run the `campaign.py --execute` command above**. The runner handles the cursor; a separate job scheduler could invoke the identical command repeatedly. There is currently no active scheduler, unattended deployment, automatic owner outreach, or ASI Engine integration. Such activation requires a separate, owner-controlled release decision.
-
-## Deployment boundary
-
-This is independent research tooling, not an ASI Engine lane. It has no scheduler, database writes, live deployment, auto-email outreach, or production service credentials. Do not deploy or merge into `main` before owner review and a verified source-specific pilot.
+All repository changes stay inside `tools/cabins-crawler/`, including research data. Nothing has been merged to `main`, deployed, scheduled or connected to the existing Universal Engine. Do not enable production or send commercial outreach without approved real-source evidence and owner decision.
