@@ -15,7 +15,7 @@ const SHA = v => createHash('sha256').update(v).digest('hex');
 const WIRE_ROUTE=/^[A-Za-z0-9_/?=&:%.-]{1,512}$/;
 const WRITE_ROUTES=Object.freeze({'create-tree':'git/trees','create-commit':'git/commits',
   'create-branch':'git/refs','create-draft-pr':'pulls'});
-const YEAR_MS=365*86400000, CHILD_MS=14*86400000;
+const YEAR_MS=365*86400000, CHILD_MS=365*86400000;
 const HEX64=/^[a-f0-9]{64}$/;
 const HEX40=/^[a-f0-9]{40}$/;
 const ID=/^[a-z0-9][a-z0-9-]{0,95}$/;
