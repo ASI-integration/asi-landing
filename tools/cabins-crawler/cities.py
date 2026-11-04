@@ -12,7 +12,6 @@ from hashlib import sha256
 import io
 import json
 from pathlib import Path
-import shutil
 import tempfile
 from urllib.request import Request, urlopen
 import zipfile
@@ -77,7 +76,8 @@ def download_archive(country: str, cache_dir: Path, replace: bool = False) -> Pa
     # Only a fixed, owned destination and an explicitly designated public dataset.
     with tempfile.NamedTemporaryFile(dir=cache_dir, suffix=".tmp", delete=False) as temp:
         temp_name = Path(temp.name)
-        try:
+    try:
+        with temp_name.open("wb") as temp:
             with urlopen(Request(url, headers={"User-Agent": "ASI-Cabins-Research/0.1"}), timeout=45) as response:
                 # Fail if redirected away from GeoNames HTTPS.
                 if response.geturl() != url:
@@ -91,15 +91,15 @@ def download_archive(country: str, cache_dir: Path, replace: bool = False) -> Pa
                     if count > MAX_COMPRESSED_BYTES:
                         raise ValueError("GeoNames archive exceeds size limit")
                     temp.write(chunk)
-            with zipfile.ZipFile(temp_name) as archive:
-                expected = f"{country}.txt"
-                info = archive.getinfo(expected)
-                if info.file_size > MAX_UNCOMPRESSED_BYTES:
-                    raise ValueError("GeoNames archive member exceeds size limit")
-            temp_name.replace(target)
-        finally:
-            if temp_name.exists():
-                temp_name.unlink()
+        with zipfile.ZipFile(temp_name) as archive:
+            expected = f"{country}.txt"
+            info = archive.getinfo(expected)
+            if info.file_size > MAX_UNCOMPRESSED_BYTES:
+                raise ValueError("GeoNames archive member exceeds size limit")
+        temp_name.replace(target)
+    finally:
+        if temp_name.exists():
+            temp_name.unlink()
     return target
 
 
@@ -143,7 +143,8 @@ def build_catalog(
         prefix=".cities-", suffix=".tmp", delete=False,
     ) as stream:
         temporary = Path(stream.name)
-        try:
+    try:
+        with temporary.open("w", encoding="utf-8") as stream:
             for code in selected:
                 archive_path = cache_dir / f"{code}.zip"
                 txt_path = cache_dir / f"{code}.txt"
@@ -168,10 +169,10 @@ def build_catalog(
                     stats[code] += 1
                     count += 1
             stream.flush()
-            temporary.replace(output)
-        finally:
-            if temporary.exists():
-                temporary.unlink()
+        temporary.replace(output)
+    finally:
+        if temporary.exists():
+            temporary.unlink()
     manifest = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "dataset": "GeoNames country gazetteer",
