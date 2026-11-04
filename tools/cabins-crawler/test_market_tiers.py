@@ -40,6 +40,16 @@ class TierRulesTests(unittest.TestCase):
         self.assertEqual(t["research_tier"], "II-MEDIUM")
         self.assertEqual(t["demand_band"], "MEDIUM")
 
+    def test_mecca_high_demand_requires_special_foreign_market_access_review(self):
+        mecca = city(name="Mecca", code="SA", score="69",
+                     city_arrivals="18700000",city_evidence="5",
+                     demand="34",homicide="0.7",gpi="2.5")
+        category = market_tiers.bands(mecca)
+        self.assertEqual(category["research_tier"], "II-MEDIUM")
+        self.assertEqual(category["market_access_gate"], "SPECIAL_EXTERNAL_INVESTOR_RULES_VERIFY")
+        self.assertEqual(category["next_gate"], "LOCAL_FOREIGN_OWNERSHIP_AND_HOTEL_OPERATOR_ELIGIBILITY")
+        self.assertEqual(category["financing_research_priority"], "CHECK_FOREIGN_INVESTOR_ELIGIBILITY_FIRST")
+
     def test_moscow_local_demand_enters_conditional_second_group_not_first(self):
         c=city(name="Moskva (Moscow)",code="RU",score="20.99",city_arrivals="",
                risk="ELEVATED_COUNTRY_RISK_REVIEW",gpi="2.876",
