@@ -21,6 +21,8 @@ def source_key(source: dict) -> str:
         "name": source["name"],
         "country_codes": source.get("country_codes", []),
         "search_url_template": source.get("search_url_template"),
+        "allowed_domains": source.get("allowed_domains", []),
+        "listing_link_pattern": source.get("listing_link_pattern"),
     }
     return sha256(json.dumps(stable, sort_keys=True).encode("utf-8")).hexdigest()[:16]
 
@@ -133,7 +135,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--execute", action="store_true", help="Activate approved public property site fetching")
     args = parser.parse_args(argv)
     config = crawler.load_config(args.config)
-    result = run_once(config, args.city_catalog, args.output, args.batch, args.execute)
+    try:
+        result = run_once(config, args.city_catalog, args.output, args.batch, args.execute)
+    except (ValueError, FileNotFoundError) as exc:
+        parser.error(str(exc))
     print(json.dumps(result, indent=2, ensure_ascii=False))
     if result["mode"] == "executed" and result["blocked"]:
         return 3
