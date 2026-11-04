@@ -19,7 +19,7 @@ import socket
 import sys
 import time
 from urllib.error import HTTPError, URLError
-from urllib.parse import urljoin, urlsplit, urlunsplit
+from urllib.parse import quote, urljoin, urlsplit, urlunsplit
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 from urllib.robotparser import RobotFileParser
 
@@ -291,9 +291,52 @@ def discover_links(base_url: str, html: str, source: dict) -> list[str]:
     return found
 
 
-def crawl_source(source: dict, agent: str, limit: int, delay: float, now: str) -> tuple[list[dict], list[str]]:
+def city_seed_urls(
+    source: dict, catalog: Path, offset: int = 0, batch: int = 10
+) -> tuple[list[str], int]:
+    """Return an explicit, bounded batch of search URLs for a verified source.
+
+    Each subsequent run advances --city-offset; no city-size ceiling is imposed.
+    Sources must define an approved URL template and country codes.
+    """
+    template = source.get("search_url_template")
+    codes = set(source.get("country_codes", []))
+    if not template or not codes:
+        return [], 0
+    if offset < 0 or batch < 1 or batch > 50:
+        raise ValueError("city offset must be >=0 and batch must be 1..50")
+    seeds: list[str] = []
+    matched = 0
+    with catalog.open(encoding="utf-8") as records:
+        for line in records:
+            if not line.strip():
+                continue
+            place = json.loads(line)
+            if place.get("country_code") not in codes:
+                continue
+            if matched < offset:
+                matched += 1
+                continue
+            if len(seeds) >= batch:
+                break
+            matched += 1
+            substitutions = {
+                "city": quote(str(place["name"]), safe=""),
+                "country": quote(str(place["country"]), safe=""),
+                "country_code": quote(str(place["country_code"]), safe=""),
+                "admin1": quote(str(place.get("admin1", "")), safe=""),
+                "geonames_id": quote(str(place["id"]), safe=""),
+            }
+            seed = canonical_url(template.format(**substitutions))
+            if not allowed_url(seed, source["allowed_domains"]):
+                raise ValueError("City search template expands outside allowlist")
+            seeds.append(seed)
+    return list(dict.fromkeys(seeds)), matched
+
+
+def crawl_source(source: dict, agent: str, limit: int, delay: float, now: str, seed_urls: list[str] | None = None) -> tuple[list[dict], list[str]]:
     domains = source["allowed_domains"]
-    queue = [canonical_url(x) for x in source["start_urls"]]
+    queue = [canonical_url(x) for x in (seed_urls if seed_urls is not None else source.get("start_urls", []))]
     seen: set[str] = set()
     leads: dict[str, dict] = {}
     errors: list[str] = []
@@ -335,11 +378,27 @@ def load_config(path: Path) -> dict:
     for source in config["sources"]:
         if not source.get("enabled", False):
             continue
-        for field in ("name", "market", "city", "start_urls", "allowed_domains", "listing_link_pattern"):
+        for field in ("name", "market", "city", "allowed_domains", "listing_link_pattern"):
             if not source.get(field):
                 raise ValueError("Missing required source field: " + field)
-        if not all(allowed_url(u, source["allowed_domains"]) for u in source["start_urls"]):
+        if not source.get("start_urls") and not source.get("search_url_template"):
+            raise ValueError("Source requires start_urls or search_url_template")
+        if not all(allowed_url(u, source["allowed_domains"]) for u in source.get("start_urls", [])):
             raise ValueError("Start URLs must be HTTPS and within allowed_domains")
+        if source.get("search_url_template"):
+            template = source["search_url_template"]
+            if not source.get("country_codes"):
+                raise ValueError("City search source requires country_codes")
+            # Prevent template-controlled host or scheme substitutions.
+            parsed_template = urlsplit(template)
+            if parsed_template.scheme != "https" or "{" in (parsed_template.netloc or ""):
+                raise ValueError("City search template must have fixed HTTPS domain")
+            sample = template.format(
+                city="test", country="test", country_code="XX",
+                admin1="test", geonames_id="geonames%3A1"
+            )
+            if not allowed_url(sample, source["allowed_domains"]):
+                raise ValueError("City template must be within allowed domains")
         re.compile(source["listing_link_pattern"])
     return config
 
@@ -361,6 +420,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
     parser.add_argument("--output", type=Path, default=Path("cabins-crawler-output"))
     parser.add_argument("--execute", action="store_true", help="Perform public HTTPS GETs; default only validates config")
+    parser.add_argument("--city-catalog", type=Path, help="GeoNames JSONL catalog; use verified per-city source templates")
+    parser.add_argument("--city-offset", type=int, default=0, help="Per-source starting city index (for batch continuation)")
+    parser.add_argument("--city-batch", type=int, default=10, help="Number of cities per source this run, max 50")
     args = parser.parse_args(argv)
     config = load_config(args.config)
     enabled = [source for source in config["sources"] if source.get("enabled", False)]
@@ -375,12 +437,23 @@ def main(argv: list[str] | None = None) -> int:
     now = datetime.now(timezone.utc).isoformat()
     all_leads: dict[str, dict] = {}
     all_errors: list[str] = []
+    if args.city_catalog and not args.city_catalog.is_file():
+        parser.error("City catalog not found; build it with cities.py --download")
+    if args.city_batch < 1 or args.city_batch > 50 or args.city_offset < 0:
+        parser.error("city-batch must be 1..50 and city-offset >= 0")
     for source in enabled:
+        seeds = None
+        if args.city_catalog:
+            seeds, cursor = city_seed_urls(source, args.city_catalog, args.city_offset, args.city_batch)
+            if not seeds:
+                all_errors.append("NO APPROVED CITY TEMPLATE OR NO REMAINING CITIES: " + source["name"])
+                continue
+            print(f"{source['name']}: city offset {args.city_offset}, batch {len(seeds)}, next offset {cursor}")
         leads, errors = crawl_source(
             source, agent,
             max(1, min(int(config.get("max_pages_per_source", 15)), 50)),
             max(2.0, float(config.get("delay_seconds", 3))),
-            now,
+            now, seed_urls=seeds,
         )
         all_leads.update({lead["id"]: lead for lead in leads})
         all_errors.extend(errors)
