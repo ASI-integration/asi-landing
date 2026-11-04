@@ -83,7 +83,20 @@ def stability_snapshot(benchmark: dict) -> dict:
     }
 
 
-def build_overlay(priority_csv: Path, city_benchmarks_json: Path) -> tuple[list[dict], dict]:
+def build_overlay(
+    priority_csv: Path, city_benchmarks_json: Path, wup_catalog: Path
+) -> tuple[list[dict], dict]:
+    # Match the EXACT UN WUP city code, not fuzzy place-name substrings.
+    ids_by_country_and_name = {}
+    with wup_catalog.open(encoding="utf-8") as stream:
+        for line in stream:
+            if not line.strip():
+                continue
+            city = json.loads(line)
+            index = (str(city["country_code"]), str(city["city"]))
+            if index in ids_by_country_and_name:
+                raise ValueError("Ambiguous WUP city name in source catalog")
+            ids_by_country_and_name[index] = str(city["city_code"])
     benchmarks_document = json.loads(city_benchmarks_json.read_text(encoding="utf-8"))
     city_evidence: dict[tuple[str, str], dict] = {}
     for entry in benchmarks_document["cities"]:
@@ -98,23 +111,11 @@ def build_overlay(priority_csv: Path, city_benchmarks_json: Path) -> tuple[list[
     with priority_csv.open(encoding="utf-8-sig", newline="") as stream:
         for ranked in csv.DictReader(stream):
             code = ranked["country_code"]
-            # Global rank CSV has city name; join to exact WUP code below using
-            # the ISO2 + normalized city name from the source catalog only when
-            # the benchmark supplies a city_code in the research CSV. If the
-            # ranking has no city_code, populate from canonical city name.
-            name = ranked["city"].lower()
-            selected = [
-                (key, obj) for key, obj in city_evidence.items()
-                if key[0] == code and (
-                    ("moscow" in name and obj["display_name"] == "Moscow")
-                    or ("new york city" in name and obj["display_name"] == "New York City")
-                )
-            ]
-            if len(selected) > 1:
-                raise ValueError("Ambiguous city match")
-            benchmark = selected[0][1] if selected else None
-            if selected:
-                seen_benchmarks.add(selected[0][0])
+            wup_id = ids_by_country_and_name.get((code, ranked["city"]))
+            key = (code, wup_id)
+            benchmark = city_evidence.get(key)
+            if benchmark:
+                seen_benchmarks.add(key)
             stability = stability_snapshot(benchmark) if benchmark else {
                 "city_visitors_2025": None, "city_visitors_change_pct": None,
                 "domestic_share_2025_pct": None,
@@ -182,9 +183,10 @@ def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(description="Optional 2025 city demand resilience overlay")
     p.add_argument("--ranking", type=Path, required=True)
     p.add_argument("--benchmarks", type=Path, required=True)
+    p.add_argument("--city-catalog", type=Path, required=True)
     p.add_argument("--output", type=Path, required=True)
     args = p.parse_args(argv)
-    rows, manifest = build_overlay(args.ranking, args.benchmarks)
+    rows, manifest = build_overlay(args.ranking, args.benchmarks, args.city_catalog)
     export(rows, manifest, args.output)
     print("Worldwide markets", manifest["all_markets"])
     print("Verified (two-year only) city snapshots", manifest["city_stability_observed"])
