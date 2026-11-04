@@ -30,7 +30,7 @@ MAX_COMPRESSED_BYTES = 160_000_000
 MAX_UNCOMPRESSED_BYTES = 1_000_000_000
 
 
-def parse_geonames_line(line: str, country: str, population_min: int = 2) -> dict | None:
+def parse_geonames_line(line: str, country: str, population_min: int = 2, include_unknown: bool = False) -> dict | None:
     fields = line.rstrip("\r\n").split("\t")
     if len(fields) < 19 or fields[6] != "P" or fields[7] in EXCLUDE_FEATURE_CODES:
         return None
@@ -38,7 +38,10 @@ def parse_geonames_line(line: str, country: str, population_min: int = 2) -> dic
         return None
     try:
         population = int(fields[14] or "0")
-        if population < population_min:
+        unknown = population == 0
+        if unknown and not include_unknown:
+            return None
+        if not unknown and population < population_min:
             return None
         latitude = float(fields[4])
         longitude = float(fields[5])
@@ -59,7 +62,8 @@ def parse_geonames_line(line: str, country: str, population_min: int = 2) -> dic
         "admin2": fields[11],
         "latitude": latitude,
         "longitude": longitude,
-        "population": population,
+        "population": None if unknown else population,
+        "population_status": "unknown" if unknown else "reported",
         "feature_code": fields[7],
         "source": "GeoNames (CC BY 4.0)",
     }
@@ -103,7 +107,7 @@ def download_archive(country: str, cache_dir: Path, replace: bool = False) -> Pa
     return target
 
 
-def iter_country(path: Path, country: str, population_min: int = 2):
+def iter_country(path: Path, country: str, population_min: int = 2, include_unknown: bool = False):
     if path.suffix == ".zip":
         with zipfile.ZipFile(path) as archive:
             info = archive.getinfo(f"{country}.txt")
@@ -111,13 +115,13 @@ def iter_country(path: Path, country: str, population_min: int = 2):
                 raise ValueError(f"{country}: uncompressed archive exceeds size limit")
             with archive.open(info) as source:
                 for line in io.TextIOWrapper(source, encoding="utf-8", errors="replace"):
-                    record = parse_geonames_line(line, country, population_min)
+                    record = parse_geonames_line(line, country, population_min, include_unknown)
                     if record:
                         yield record
     else:
         with path.open(encoding="utf-8", errors="replace") as source:
             for line in source:
-                record = parse_geonames_line(line, country, population_min)
+                record = parse_geonames_line(line, country, population_min, include_unknown)
                 if record:
                     yield record
 
@@ -125,7 +129,7 @@ def iter_country(path: Path, country: str, population_min: int = 2):
 def build_catalog(
     cache_dir: Path, output: Path, selected: list[str],
     population_min: int = 2, download: bool = False,
-    refresh: bool = False,
+    refresh: bool = False, include_unknown: bool = False,
 ) -> dict:
     if population_min < 2:
         raise ValueError("Population minimum must be at least two")
@@ -135,6 +139,7 @@ def build_catalog(
         raise ValueError("Unknown countries: " + ", ".join(invalid))
     output.parent.mkdir(parents=True, exist_ok=True)
     stats = {code: 0 for code in selected}
+    unknown_stats = {code: 0 for code in selected}
     hashes: dict[str, str] = {}
     seen: set[str] = set()
     count = 0
@@ -161,12 +166,14 @@ def build_catalog(
                     for chunk in iter(lambda: raw.read(1024 * 1024), b""):
                         checksum.update(chunk)
                 hashes[code] = checksum.hexdigest()
-                for place in iter_country(archive_path, code, population_min):
+                for place in iter_country(archive_path, code, population_min, include_unknown):
                     if place["id"] in seen:
                         continue
                     seen.add(place["id"])
                     stream.write(json.dumps(place, ensure_ascii=False) + "\n")
                     stats[code] += 1
+                    if place["population_status"] == "unknown":
+                        unknown_stats[code] += 1
                     count += 1
             stream.flush()
         temporary.replace(output)
@@ -179,11 +186,13 @@ def build_catalog(
         "attribution": "GeoNames: https://www.geonames.org/",
         "license": "CC BY 4.0",
         "population_min": population_min,
+        "include_unknown": include_unknown,
+        "unverified_population_by_country": unknown_stats,
         "countries": selected,
         "places_by_country": stats,
         "places_total": count,
         "input_sha256": hashes,
-        "caveat": "GeoNames coverage and reported population are incomplete; zero/unknown populations excluded.",
+        "caveat": "GeoNames coverage and population are incomplete; missing/zero population is unknown, not proof of >=2 residents.",
     }
     output.with_suffix(".manifest.json").write_text(
         json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
@@ -197,6 +206,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--output", type=Path, default=Path("cabins-city-catalog.jsonl"))
     parser.add_argument("--countries", default=",".join(COUNTRIES), help="ISO country codes, comma separated")
     parser.add_argument("--population-min", type=int, default=2)
+    parser.add_argument("--include-unknown", action="store_true", help="Include unverified zero/unknown-population settlements as candidates")
     parser.add_argument("--download", action="store_true", help="Explicitly download 11 public country data archives")
     parser.add_argument("--refresh", action="store_true", help="Replace cached country archives (with --download)")
     args = parser.parse_args(argv)
@@ -205,11 +215,13 @@ def main(argv: list[str] | None = None) -> int:
     manifest = build_catalog(
         args.cache_dir, args.output,
         [x.strip().upper() for x in args.countries.split(",") if x.strip()],
-        args.population_min, args.download, args.refresh
+        args.population_min, args.download, args.refresh, args.include_unknown
     )
     for country, count in manifest["places_by_country"].items():
         print(f"{country} {COUNTRIES[country]}: {count:,} populated places")
-    print(f"TOTAL: {manifest['places_total']:,} populated places -> {args.output}")
+    print(f"TOTAL: {manifest['places_total']:,} candidate settlements -> {args.output}")
+    if args.include_unknown:
+        print(f"Population unverified: {sum(manifest['unverified_population_by_country'].values()):,} settlements")
     print("GeoNames CC BY 4.0: https://www.geonames.org/")
     return 0
 
