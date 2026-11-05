@@ -109,6 +109,6 @@ export async function handoffToSingleNativePublisher({
     results.push(summary(task,'VERIFIED','NATIVE_PUBLISHER_RECEIPT_CONFIRMED',published));
   }
   const receiptCount=results.filter(x=>x.status==='VERIFIED').length;
-  return wrap({status:receiptCount===prepared.length?'VERIFIED':'PARTIAL',
+  return wrap({status:prepared.length===0?'IDLE':receiptCount===prepared.length?'VERIFIED':'PARTIAL',
     authorized:false,receiptCount,results:wrap(results)});
 }
