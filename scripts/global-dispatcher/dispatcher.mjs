@@ -140,7 +140,7 @@ export function createGlobalDispatcher({stateDir, adapters} = {}) {
                 typeof c.tool === 'string' && Number.isSafeInteger(c.priority) &&
                 Array.isArray(c.paths) && c.paths.length >= 1 && c.paths.length <= 20 &&
                 c.paths.every(p => typeof p === 'string' && p.length > 0 && p.length <= 256 &&
-                  !p.startsWith('/') && !p.includes('\\\\') &&
+                  !p.startsWith('/') && !p.includes(String.fromCharCode(92)) &&
                   p.split('/').every(segment => segment && segment !== '.' && segment !== '..')) &&
                 new Set(c.paths).size === c.paths.length))), 'ADAPTER_RESULT_INVALID');
           result.terminal = result.terminal.map(({id, status}) => ({id, status}));
