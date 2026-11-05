@@ -138,7 +138,11 @@ export function createGlobalDispatcher({stateDir, adapters} = {}) {
               typeof result.head === 'string' && /^[a-f0-9]{40}$/.test(result.head) &&
               result.candidates.every(c => validId(c?.id) && typeof c.operation === 'string' &&
                 typeof c.tool === 'string' && Number.isSafeInteger(c.priority) &&
-                Array.isArray(c.paths) && c.paths.every(p => typeof p === 'string')))), 'ADAPTER_RESULT_INVALID');
+                Array.isArray(c.paths) && c.paths.length >= 1 && c.paths.length <= 20 &&
+                c.paths.every(p => typeof p === 'string' && p.length > 0 && p.length <= 256 &&
+                  !p.startsWith('/') && !p.includes('\\\\') &&
+                  p.split('/').every(segment => segment && segment !== '.' && segment !== '..')) &&
+                new Set(c.paths).size === c.paths.length))), 'ADAPTER_RESULT_INVALID');
           result.terminal = result.terminal.map(({id, status}) => ({id, status}));
           if (adapter.goalPlanning || product.goalGraph !== undefined || result.goalGraph !== undefined) {
             must(adapter.goalPlanning, 'GOAL_ADAPTER_REQUIRED');
