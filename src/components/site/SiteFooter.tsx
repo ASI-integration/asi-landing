@@ -20,7 +20,9 @@ export function SiteFooter() {
           <nav aria-label="Footer" className="grid grid-cols-2 sm:grid-cols-3 gap-8 text-sm">
             <div className="flex flex-col gap-2.5">
               <span className="text-xs font-semibold uppercase tracking-[0.18em] text-asi-gold-text mb-1">Explore</span>
-              <Link href="/#cabins" className="hover:text-asi-gold-text transition-colors">ASI Cabins</Link>
+              <Link href="/#cabin-types" className="hover:text-asi-gold-text transition-colors">ASI Workforce</Link>
+              <Link href="/#cabin-types" className="hover:text-asi-gold-text transition-colors">ASI Cabins Urban</Link>
+              <Link href="/#cabin-types" className="hover:text-asi-gold-text transition-colors">ASI Transit</Link>
               <Link href="/#platform" className="hover:text-asi-gold-text transition-colors">ASI Intelligence</Link>
             </div>
             <div className="flex flex-col gap-2.5">
