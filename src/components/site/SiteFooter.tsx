@@ -21,14 +21,13 @@ export function SiteFooter() {
             <div className="flex flex-col gap-2.5">
               <span className="text-xs font-semibold uppercase tracking-[0.18em] text-asi-gold-soft mb-1">ASI Global</span>
               <Link href="/#intelligence" className="hover:text-asi-ivory transition-colors">Autonomous Operations</Link>
-              <Link href="/#micro-hotels" className="hover:text-asi-ivory transition-colors">Micro Hotels</Link>
+              <Link href="/#cabins" className="hover:text-asi-ivory transition-colors">ASI Cabins</Link>
             </div>
             <div className="flex flex-col gap-2.5">
               <span className="text-xs font-semibold uppercase tracking-[0.18em] text-asi-gold-soft mb-1">Explore</span>
-              <Link href="/markets" className="hover:text-asi-ivory transition-colors">Markets</Link>
-              <Link href="/media" className="hover:text-asi-ivory transition-colors">Media</Link>
-              <Link href="/markets/japan" className="hover:text-asi-ivory transition-colors">Japan</Link>
-              <Link href="/markets/netherlands" className="hover:text-asi-ivory transition-colors">Netherlands / Europe</Link>
+              <Link href="/#global" className="hover:text-asi-ivory transition-colors">Worldwide model</Link>
+              <Link href="/#cabins" className="hover:text-asi-ivory transition-colors">Cabin concept</Link>
+              <Link href="/strategic-partnerships" className="hover:text-asi-ivory transition-colors">Strategic partners</Link>
             </div>
             <div className="flex flex-col gap-2.5">
               <span className="text-xs font-semibold uppercase tracking-[0.18em] text-asi-gold-soft mb-1">Company</span>
@@ -42,8 +41,7 @@ export function SiteFooter() {
         <div className="mt-12 pt-8 border-t border-asi-ivory/15 flex flex-col sm:flex-row sm:items-center gap-5">
           <Shiro size={40} signature dark />
           <p className="text-xs text-asi-ivory/50 leading-relaxed max-w-2xl">
-            Shiro is the official recurring brand signature of ASI Global. Local market
-            adaptations represent the same core identity with subtle regional attributes.
+            ASI Global · One modular hospitality concept designed for suitable locations around the world.
           </p>
         </div>
       </div>
