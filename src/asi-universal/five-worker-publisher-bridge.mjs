@@ -109,6 +109,9 @@ export async function handoffToSingleNativePublisher({
     results.push(summary(task,'VERIFIED','NATIVE_PUBLISHER_RECEIPT_CONFIRMED',published));
   }
   const receiptCount=results.filter(x=>x.status==='VERIFIED').length;
-  return wrap({status:prepared.length===0?'IDLE':receiptCount===prepared.length?'VERIFIED':'PARTIAL',
-    authorized:false,receiptCount,results:wrap(results)});
+  return wrap({status:prepared.length===0?'IDLE':
+      receiptCount===prepared.length&&preparation.results.length===prepared.length?
+        'VERIFIED':'PARTIAL',
+    authorized:false,receiptCount,skippedCount:preparation.results.length-prepared.length,
+    results:wrap(results)});
 }
