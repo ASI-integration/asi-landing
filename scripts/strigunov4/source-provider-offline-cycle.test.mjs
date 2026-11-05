@@ -64,7 +64,7 @@ test('offline full candidate -> actual existing Git preparer and syntax check; n
        return new Response(JSON.stringify({
          status:'completed',model:'gpt-6-astra',output:[{type:'message',role:'assistant',status:'completed',
            content:[{type:'output_text',text:JSON.stringify({status:'PROPOSED',
-             changes:[{path:SOURCE,content:NEW}]})}]}]
+             changes:[{path:SOURCE,hunks:[{find:'',replace:NEW}]}]})}]}]
        }),{status:200,headers:{'content-type':'application/json'}});
      }
    });
