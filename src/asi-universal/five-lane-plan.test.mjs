@@ -82,3 +82,14 @@ test('native verifier must approve the exact task and evidence inventory',()=>{
  assert.throws(()=>planUniversalFiveLanes({workOrders:[a],claims:[claim(a)],
    verifyNativeEvidence:()=>{throw Error('private path');}}),/NATIVE_LEDGER_EVIDENCE_UNVERIFIED/);
 });
+
+
+test('missing and coercible task identities are rejected before sorting or receipts',()=>{
+ for(const invalid of [undefined,null,['cabins'],true]){
+   assert.throws(()=>planUniversalFiveLanes({workOrders:[
+     task('job-a','planner','cabins',{product:invalid}),
+     task('job-b','builder','booking')]}),/UNIVERSAL_WORK_ORDER_INVALID/);
+   assert.throws(()=>planUniversalFiveLanes({workOrders:[
+     task('job-a','planner','cabins',{id:invalid})]}),/UNIVERSAL_WORK_ORDER_INVALID/);
+ }
+});
