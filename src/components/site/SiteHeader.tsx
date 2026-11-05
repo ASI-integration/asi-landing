@@ -6,9 +6,9 @@ import { LogoMark } from './LogoMark';
 
 const NAV = [
   { href: '/', label: 'Home' },
-  { href: '/#intelligence', label: 'Platform' },
-  { href: '/#cabins', label: 'ASI Cabins' },
-  { href: '/#global', label: 'Global Scale' },
+  { href: '/#cabin-types', label: 'Cabin Types' },
+  { href: '/#cabins', label: 'The Cabin' },
+  { href: '/#global', label: 'Worldwide' },
   { href: '/#about', label: 'About' },
 ];
 
