@@ -46,6 +46,17 @@ C:\Python314\python.exe H:\ASI-Cabins-Crawler\app\municipal_campaign.py --config
 **Scope boundary:** The broad 11-city Tier I private-property portal campaign still has 0 individually verified/enabled providers in `sources.json`. `municipal_campaign.py` is a separate source-specific adapter for the first *real*, open-licence public commercial-property inventory, and does not imply that global sites permit automated collection. Add other municipal providers only after source-specific accessibility and reuse reviews. Current 45 offline tests include the actual adapter's extraction, annual-vs-monthly rent, under-offer exclusion, change history and fail-closed behavior.
 
 
+## FIRST: modular-cabin manufacturing brokerage and engineering
+
+**Owner priority update (2026-11-05):** Before prospecting financial brokers or committing to commercial leases, qualify a **buyer-side manufacturing broker/sourcing agent and competent prime integrator** able to produce **ASI's own modular indoor cabins**, not default outdoor Apple Cabins.
+
+- [Manufacturing broker shortlist and supplier qualification mandate](manufacturing-broker-pipeline-2026.md): Asiaction, Dragon Sourcing, Sofeast, C2W, Zhengzhou Vision, SourcingYuan; source URLs, fees/conflicts and which technical abilities remain unverified.
+- [Draft nonconfidential first-contact message](manufacturing-broker-first-contact.md): asks whether a broker can source and audit ≥3 real factories, design an 12.8m² private acoustic 2-person wet-room module assembled inside existing buildings, arrange a 3–5 unit pilot, and quote 20/50/100 only after feasibility.
+- September historical supplier: **PrimeHome**, Steven Ma, a stock 5.8×2.2×2.45m 20ft Apple Cabin proposal at **$6,640 EXW + $760 to Qingdao, 2 units per 40HQ**. This is *not* a modern, accepted full ASI quote or a verified factory solution. The owner reports no reply to follow-up design brief.
+- **Status:** 6 broker organisations researched, **0 contacted**; 0 approved manufacturers; 0 verified price for a fully built ASI cabin; no broker mandates/fees; original code, Engine, live commercial inventory and cash flows unchanged.
+- Phase order: nonconfidential broker capability → independent OEM factory list/engineering feasibility → comparably priced BOM/prototype/actual acoustics and local compliance → credible cabin CAPEX → appropriate financial intermediary/landlord JV → suitable lawful site.
+- Keep the existing [finance broker research](finance_broker_pipeline.md), but subordinate project underwriting to manufacturing feasibility. Prototype/scale figures are conditional, not orders.
+
 ## Components
 
 - `scope.py`: single-source-of-truth owner exclusion policy and strictly >1,000,000 threshold.
