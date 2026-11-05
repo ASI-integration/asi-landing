@@ -15,14 +15,14 @@ const must=(condition,code)=>{if(!condition)throw Error(code);};
 
 export function createUniversalProductRoute({id,repository,head,contractHash,
   stage,workOrders,maxPlansPerStage=5}={}){
-  must(ID.test(id||'')&&REPO.test(repository||'')&&SHA40.test(head||'')&&
+  must(typeof id==='string'&&ID.test(id)&&REPO.test(repository||'')&&SHA40.test(head||'')&&
     SHA64.test(contractHash||'')&&typeof stage==='string'&&stage.length>0&&stage.length<=80&&
     Number.isSafeInteger(maxPlansPerStage)&&maxPlansPerStage>=1&&maxPlansPerStage<=10&&
     Array.isArray(workOrders)&&workOrders.length>=1&&workOrders.length<=10,
     'PRODUCT_ROUTE_CONTRACT_INVALID');
   const seen=new Set();
   const approved=workOrders.map(w=>{
-    must(w&&ID.test(w.id||'')&&!seen.has(w.id)&&
+    must(w&&typeof w.id==='string'&&ID.test(w.id)&&!seen.has(w.id)&&
       w.operation==='prepare-source'&&w.tool==='existing-runner-bridge'&&
       Number.isSafeInteger(w.priority)&&w.priority>=0&&w.priority<=100&&
       Array.isArray(w.paths)&&w.paths.length>=1&&w.paths.length<=3&&
