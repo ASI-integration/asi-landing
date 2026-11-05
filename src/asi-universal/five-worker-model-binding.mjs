@@ -34,7 +34,7 @@ function boundTask(slot,catalog,supportedRepositories){
     t.baseSha===slot.head&&t.stage===slot.task.stage);
   if(matches.length!==1)return null;
   const t=matches[0];
-  if(typeof t.branch!=='string'||!/^asi\/[a-z0-9/_-]{1,140}$/.test(t.branch)||
+  if(typeof t.branch!=='string'||!/^[A-Za-z0-9][A-Za-z0-9/_-]{0,149}$/.test(t.branch)||
      typeof t.laneId!=='string'||!ID.test(t.laneId)||
      typeof t.objective!=='string'||t.objective.length<1||t.objective.length>2400||
      !Array.isArray(t.files)||t.files.length!==slot.task.paths.length||
@@ -64,6 +64,10 @@ export async function prepareFiveWorkerModelArtifact({
   if(!task)return deny('SIGNED_MODEL_TASK_SCOPE_INVALID');
   const pin=freeze({taskId:task.id,product:slot.product,
     repository:task.repository,baseSha:task.baseSha,workspaceKey});
+  const signedTask=signedCatalog.find(t=>t.id===task.id&&t.product===slot.product);
+  const pinnedFiles=freeze(signedTask.files.map(f=>freeze({
+    path:f.path,beforeSha256:f.beforeSha256
+  })));
   let admitted=false;
   try{admitted=await verifySignedCatalog(freeze({pin,task}))===true;}catch{}
   if(!admitted)return deny('SIGNED_NATIVE_MODEL_CATALOG_UNVERIFIED');
@@ -73,10 +77,16 @@ export async function prepareFiveWorkerModelArtifact({
   if(!proposal||proposal.status!=='PROPOSED'||!Array.isArray(proposal.changes)||
      proposal.changes.length!==task.paths.length)
     return deny('MODEL_PROPOSAL_UNVERIFIED_NO_REPLAY');
-  const source=signedCatalog.find(t=>t.id===task.id&&t.product===slot.product);
+  // After a possibly paid model call, source scope must remain unchanged.
+  const current=signedCatalog.find(t=>t.id===task.id&&t.product===slot.product);
+  if(!current||JSON.stringify(current.files)!==JSON.stringify(pinnedFiles))
+    return deny('SIGNED_CATALOG_CHANGED_AFTER_MODEL_NO_REPLAY');
+  let stillSigned=false;
+  try{stillSigned=await verifySignedCatalog(freeze({pin,task}))===true;}catch{}
+  if(!stillSigned)return deny('SIGNED_CATALOG_CHANGED_AFTER_MODEL_NO_REPLAY');
   const changes=[];
   for(let i=0;i<proposal.changes.length;i++){
-    const c=proposal.changes[i],expected=source.files[i];
+    const c=proposal.changes[i],expected=pinnedFiles[i];
     if(!own(c)||c.path!==expected.path||
        c.beforeSha256!==expected.beforeSha256||
        typeof c.content!=='string'||c.content.length<1||
