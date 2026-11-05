@@ -159,3 +159,19 @@ test('two different tasks cannot reuse the same durable claim ID',async()=>{
  assert.equal(called,1);
  assert.equal(r.results[1].reason,'NATIVE_CLAIM_ID_UNVERIFIED');
 });
+
+
+test('object workspace IDs cannot bypass uniqueness in signed admission',async()=>{
+ let calls=0;
+ const r=await prepareAdmittedFiveWorkerWave({wave:wave(2),
+   admit:async id=>({...await admit(id),workspaceKey:['shared-workspace']}),
+   verifyAdmission,prepare:async()=>{calls++;return null;}});
+ assert.equal(calls,0);
+ assert.equal(r.results[0].reason,'TASK_EXACT_NATIVE_ADMISSION_MISSING');
+});
+test('array-valued artifact hash cannot be treated as verified proof',async()=>{
+ const r=await prepareAdmittedFiveWorkerWave({wave:wave(1),admit,verifyAdmission,
+   prepare:async(id,a)=>({...prepared(id,a),artifactSha256:[D]})});
+ assert.equal(r.results[0].status,'UNKNOWN');
+ assert.equal(r.results[0].reason,'PREPARATION_PROOF_UNVERIFIED_NO_REPLAY');
+});
