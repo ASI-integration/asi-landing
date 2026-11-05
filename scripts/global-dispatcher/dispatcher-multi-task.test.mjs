@@ -62,3 +62,26 @@ test('a per-product plan limit is still enforced after multi-task fix',
       assert.equal(third.status,'BLOCKED');
     }finally{await fs.rm(dir,{recursive:true,force:true});}
 });
+
+test('invalid source path is rejected before the dispatcher persists any reservation',
+  {skip:process.platform!=='linux'},async()=>{
+  for(const invalid of [[],[''],['../escape.mjs'],['src/..\\escape.mjs'],['src/a.mjs','src/a.mjs']]){
+    const dir=await fs.mkdtemp(path.join(os.tmpdir(),'asi-route-invalid-'));
+    await fs.chmod(dir,0o700);
+    try{
+      await initializeRoutingState(dir);
+      const adapter=make(),original=adapter.evaluate;
+      adapter.evaluate=(snapshot)=>{
+        const result=original(snapshot);
+        result.candidates[0].paths=invalid;
+        return result;
+      };
+      const result=await createGlobalDispatcher({stateDir:dir,adapters:[adapter]}).plan({cabins:{}});
+      assert.equal(result.selected,null);
+      assert.equal(result.status,'BLOCKED');
+      const stored=JSON.parse(await fs.readFile(path.join(dir,'routing.json'),'utf8'));
+      assert.equal(stored.state.tick,0);
+      assert.equal(stored.state.products[0].planned.length,0);
+    }finally{await fs.rm(dir,{recursive:true,force:true});}
+  }
+});
