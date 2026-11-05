@@ -33,6 +33,17 @@ export function planUniversalFiveLanes({workOrders,receipts=[],claims=[],maxPara
     must(t.dependsOn.every(id=>orders.has(id)&&
       orders.get(id).product===t.product),'UNIVERSAL_DEPENDENCY_OUTSIDE_PRODUCT');
   }
+  // A cyclic dependency would remain WAITING forever; reject it at admission.
+  const visiting=new Set(),visited=new Set();
+  const check=id=>{
+    if(visited.has(id))return;
+    must(!visiting.has(id),'UNIVERSAL_DEPENDENCY_CYCLE');
+    visiting.add(id);
+    for(const dep of orders.get(id).dependsOn)check(dep);
+    visiting.delete(id);
+    visited.add(id);
+  };
+  for(const id of orders.keys())check(id);
   const verified=new Set();
   for(const r of receipts){
     must(record(r)&&ID.test(r.taskId)&&ID.test(r.product)&&
