@@ -37,9 +37,9 @@ export async function generateMetadata(): Promise<Metadata> {
       },
     };
   }
-  const title = 'ASI Global — Operations on autopilot. Humans on exceptions.';
+  const title = 'ASI Global | Private Cabins for Every Kind of Stay — Worldwide';
   const description =
-    'ASI Cabins combines private modular rooms inside existing commercial buildings with an automation-first operating system, designed for international deployment.';
+    'One simple cabin idea, many uses worldwide: affordable worker housing, private city rooms and short stays in airports and train stations. Designed for suitable existing buildings.';
   const url = GUEST_AUTOPILOT_ORIGIN;
   return {
     title,
@@ -88,20 +88,21 @@ export default async function Home() {
                 <span className="font-serif text-2xl text-asi-navy">ASI Global</span>
               </div>
               <p className="mt-2 text-xs font-sans uppercase tracking-[0.22em] text-asi-navy/65">
-                Micro Hotels · Automation-first Operations
+                ASI CABINS · BUILT FOR THE WORLD
               </p>
               <Headline as="h1" className="mt-8 text-4xl sm:text-6xl lg:text-[4rem]">
-                Operations on autopilot.
+                One simple idea.
                 <br />
-                <span className="text-asi-gold">Humans on exceptions.</span>
+                <span className="text-asi-gold">Many ways to stay.</span>
               </Headline>
               <GoldRule className="mt-6 mb-6" />
               <p className="text-lg text-asi-navy/70 max-w-lg leading-relaxed">
-                ASI Cabins: private two-person modular rooms installed inside existing commercial
-                buildings, supported by one automation-first operating system. Designed to scale worldwide.
+                Private, comfortable cabins designed for two people. Install them inside suitable
+                existing buildings — in cities, near workplaces or at transport hubs.
+                One idea that can grow around the world.
               </p>
               <div className="mt-9 flex flex-wrap gap-4">
-                <PrimaryCta href="#cabins">Explore ASI Cabins</PrimaryCta>
+                <PrimaryCta href="#cabin-types">See our cabin family</PrimaryCta>
                 <SecondaryCta href="#partner">Partner with ASI</SecondaryCta>
               </div>
             </div>
@@ -122,6 +123,99 @@ export default async function Home() {
             </div>
           </div>
         </section>
+
+        {/* Product family is intentionally visible immediately below the hero. */}
+        <Section id="cabin-types" variant="paper">
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <Eyebrow>ASI product family</Eyebrow>
+            <span className="border border-asi-gold/60 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-asi-gold-text">
+              Designed for the world
+            </span>
+          </div>
+          <Headline className="text-3xl sm:text-5xl max-w-4xl">
+            One family. Different needs.
+          </Headline>
+          <p className="mt-5 max-w-3xl text-lg text-asi-navy/70 leading-relaxed">
+            We are developing private cabins for all kinds of stays. The same idea can help
+            people who work away from home, visit a city or need a break during a journey.
+          </p>
+
+          <div className="mt-12 grid gap-6 lg:grid-cols-3">
+            <article className="flex flex-col border border-asi-border bg-asi-ivory p-7 sm:p-8">
+              <div className="flex h-28 items-center justify-center bg-asi-paper border border-asi-border" aria-hidden="true">
+                <svg width="112" height="74" viewBox="0 0 112 74" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-asi-gold-text">
+                  <path d="M13 62V32l22 10V32l22 10V24h40v38H13Z" strokeLinejoin="round" />
+                  <path d="M65 24V10h14v14M20 50h9m12 0h9m12 0h9m12 0h8M20 56h9m12 0h9m12 0h9m12 0h8" />
+                  <path d="M9 62h94" strokeWidth="2" />
+                </svg>
+              </div>
+              <p className="mt-7 text-xs uppercase tracking-[0.2em] text-asi-gold-text">Live and work</p>
+              <h3 className="mt-2 font-serif text-3xl">ASI Workforce</h3>
+              <p className="mt-4 text-lg font-medium leading-snug">
+                A better place to live while working away from home.
+              </p>
+              <p className="mt-4 text-sm text-asi-navy/65 leading-relaxed">
+                Affordable longer stays for factory workers, construction teams and other employees.
+                Employers could help cover the cost.
+              </p>
+            </article>
+
+            <article className="flex flex-col border border-asi-border bg-asi-ivory p-7 sm:p-8">
+              <div className="flex h-28 items-center justify-center bg-asi-paper border border-asi-border" aria-hidden="true">
+                <svg width="112" height="74" viewBox="0 0 112 74" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-asi-gold-text">
+                  <path d="M12 62V28h27v34M39 62V14h33v48M72 62V35h28v27M8 62h96" strokeLinejoin="round" />
+                  <path d="M20 37h11M20 45h11M20 53h11M48 24h8M62 24h5M48 35h8M62 35h5M48 46h8M62 46h5M80 45h12M80 53h12" />
+                </svg>
+              </div>
+              <p className="mt-7 text-xs uppercase tracking-[0.2em] text-asi-gold-text">Stay in the city</p>
+              <h3 className="mt-2 font-serif text-3xl">ASI Cabins Urban</h3>
+              <p className="mt-4 text-lg font-medium leading-snug">
+                Your own private space in the city.
+              </p>
+              <p className="mt-4 text-sm text-asi-navy/65 leading-relaxed">
+                Comfortable, affordable rooms inside suitable city buildings.
+                A real bed, a private shower and a toilet of your own.
+              </p>
+            </article>
+
+            <article className="flex flex-col border border-asi-border bg-asi-ivory p-7 sm:p-8">
+              <div className="flex h-28 items-center justify-center bg-asi-paper border border-asi-border" aria-hidden="true">
+                <svg width="112" height="74" viewBox="0 0 112 74" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-asi-gold-text">
+                  <path d="M56 8 62 32l33 11-1 8-34-6-7 19-7-19-29 6-2-8 33-11 8-24Z" strokeLinejoin="round" />
+                  <path d="M17 66h78" strokeDasharray="5 5" />
+                </svg>
+              </div>
+              <p className="mt-7 text-xs uppercase tracking-[0.2em] text-asi-gold-text">Rest between journeys</p>
+              <h3 className="mt-2 font-serif text-3xl">ASI Transit</h3>
+              <p className="mt-4 text-lg font-medium leading-snug">
+                A place to rest between journeys.
+              </p>
+              <p className="mt-4 text-sm text-asi-navy/65 leading-relaxed">
+                Private cabins inside airports, train stations and other transport hubs.
+                Sleep, shower, recharge and travel on.
+              </p>
+            </article>
+          </div>
+
+          <div className="mt-10 border-t border-asi-border pt-8 grid gap-6 md:grid-cols-[1.3fr,1fr] md:items-center">
+            <div>
+              <h3 className="font-serif text-2xl sm:text-3xl">And this is just the beginning.</h3>
+              <p className="mt-3 text-asi-navy/70 leading-relaxed">
+                The same idea could also help students, hospitals and people attending large events.
+                We plan to develop new cabin options as we learn what people need.
+              </p>
+            </div>
+            <div className="border-l-2 border-asi-gold pl-6">
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-asi-gold-text">Worldwide</p>
+              <p className="mt-2 font-serif text-2xl leading-snug">
+                Different countries. Same simple idea.
+              </p>
+            </div>
+          </div>
+          <p className="mt-8 text-xs text-asi-navy/55">
+            These are planned product options. Cabin engineering, locations, local approvals and pilot costs are still being developed.
+          </p>
+        </Section>
 
         <Section id="intelligence" variant="paper">
           <Eyebrow>One system. Two layers.</Eyebrow>
