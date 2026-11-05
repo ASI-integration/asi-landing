@@ -20,7 +20,9 @@ export function planUniversalFiveLanes({workOrders,receipts=[],claims=[],maxPara
     'UNIVERSAL_PLAN_INPUT_INVALID');
   const orders=new Map();
   for(const t of workOrders){
-    must(record(t)&&ID.test(t.id)&&ID.test(t.product)&&SHA.test(t.baseSha)&&
+    must(record(t)&&typeof t.id==='string'&&ID.test(t.id)&&
+      typeof t.product==='string'&&ID.test(t.product)&&
+      typeof t.baseSha==='string'&&SHA.test(t.baseSha)&&
       UNIVERSAL_LANES.includes(t.lane)&&['READY','BLOCKED'].includes(t.status)&&
       Array.isArray(t.dependsOn)&&t.dependsOn.length<=20&&
       t.dependsOn.every(x=>typeof x==='string'&&ID.test(x))&&
