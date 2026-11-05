@@ -24,6 +24,8 @@ test('five cross-product assignments, one journal interface, no implicit authori
     ['asi-cabins','strigunov','guest-comms','dynamic-pricing','marketing']);
   assert(result.slots.every(x=>x.executable===false&&x.authority===null));
   assert.equal(result.publisherConcurrency,1);
+  assert(Object.isFrozen(result.slots[0].task));
+  assert(Object.isFrozen(result.slots[0].task.paths));
 });
 test('shortage of independent work does not invent extra jobs',async()=>{
   const dispatcher=planner([task('asi-cabins','cabin-a'),{status:'WAITING',selected:null}]);
