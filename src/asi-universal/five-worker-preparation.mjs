@@ -33,7 +33,7 @@ function identity(slot){
     paths:freeze([...slot.task.paths])});
 }
 const result=(id,status,reason)=>freeze({slot:id.slot,product:id.product,
-  taskId:id.taskId,status,reason});
+  repository:id.repository,baseSha:id.head,taskId:id.taskId,status,reason});
 
 // Fail closed on a stalled external port. Aborting is advisory: a timeout is
 // UNKNOWN, not proof that the native host stopped an in-flight side effect.
