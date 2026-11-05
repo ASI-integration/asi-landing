@@ -18,10 +18,12 @@ const output=(changes,extra={})=>({
   output:[{type:'message',role:'assistant',status:'completed',
     content:[{type:'output_text',text:JSON.stringify({status:'PROPOSED',changes})}]}]
 });
-function setup({file=ORIGINAL,sourceIsNew=false,body,code=200,contentType='application/json'}={}){
+function setup({file=ORIGINAL,sourceIsNew=false,body,code=200,contentType='application/json',
+  repoOption='ASI-integration/asi-landing'}={}){
   const seen={calls:0,admitted:0,wire:null};
   const produce=createResponsesCodeProducer({
     model:MODEL,apiKey:'sk-fixture-never-real',maxOutputTokens:1024,
+    allowedRepository:repoOption,
     getContext:async()=>[{path:PATH,beforeSha256:sourceIsNew?null:sha(file),content:file}],
     admitRequest:async r=>{
       seen.admitted++;return {authorized:true,taskId:r.taskId,baseSha:r.baseSha,
@@ -87,4 +89,29 @@ test('a substituted model remains blocked',async()=>{
     {model:'gpt-4.1'})});
   assert.equal((await fixture.produce(makeTask())).reason,'PROVIDER_MODEL_CHANGED_AFTER_RESERVATION');
   assert.equal(fixture.seen.calls,1);
+});
+
+test('provider rejects unrelated product repository before paid reservation by default',async()=>{
+ const other={...makeTask(),repository:'ASI-integration/asi-booking'};
+ const fx=setup({body:output([{path:PATH,hunks:[{find:'return 1;',replace:'return 2;'}]}])});
+ const result=await fx.produce(other);
+ assert.equal(result.reason,'SIGNED_TASK_OBJECTIVE_OR_SOURCE_REQUIRED');
+ assert.equal(fx.seen.admitted,0);assert.equal(fx.seen.calls,0);
+});
+test('signed host can pin a different repository without changing wire/budget protocol',async()=>{
+ const other={...makeTask(),repository:'ASI-integration/asi-booking'};
+ const fx=setup({repoOption:'ASI-integration/asi-booking',
+   body:output([{path:PATH,hunks:[{find:'return 1;',replace:'return 2;'}]}])});
+ const result=await fx.produce(other);
+ assert.equal(result.status,'PROPOSED');
+ assert.equal(fx.seen.admitted,1);assert.equal(fx.seen.calls,1);
+ const input=JSON.parse(fx.seen.wire.input[0].content[0].text);
+ assert.equal(input.repo,'ASI-integration/asi-booking');
+ assert.equal(fx.seen.wire.max_output_tokens,1024);
+});
+test('invalid repository configuration never reserves a model request',async()=>{
+ const fx=setup({repoOption:['ASI-integration/asi-landing'],
+   body:output([{path:PATH,hunks:[{find:'return 1;',replace:'return 2;'}]}])});
+ assert.equal((await fx.produce(makeTask())).reason,'SIGNED_TASK_OBJECTIVE_OR_SOURCE_REQUIRED');
+ assert.equal(fx.seen.admitted,0);assert.equal(fx.seen.calls,0);
 });
