@@ -5,22 +5,20 @@ import path from 'node:path';
 import os from 'node:os';
 import {createGlobalDispatcher,initializeRoutingState} from '../../scripts/global-dispatcher/dispatcher.mjs';
 import {planFiveWorkerWave} from './five-worker-wave.mjs';
+import {createUniversalProductRoute} from './product-route-adapter.mjs';
 
 const HEAD='a'.repeat(40);
 const PRODUCTS=['asi-cabins','strigunov','guest-comms','dynamic-pricing','asi-learning'];
-const adapter=product=>({
-  id:product,contractHash:'b'.repeat(64),
-  contract:{execution:'disabled',maxAttemptsPerTask:1,maxPlansPerStage:1},
-  evaluate:()=>({
-    status:'READY',nextAction:'Source only',stage:'S4-G2',
-    head:HEAD,repository:'ASI-integration/asi-landing',
-    acceptedStages:[],terminal:[],
-    candidates:[{id:product+'-task',operation:'prepare-source',
-      tool:'existing-runner-bridge',priority:10,
-      paths:['src/asi-universal/five-worker-wave.mjs']}]
-  })
+const adapter=product=>createUniversalProductRoute({
+  id:product,repository:'ASI-integration/asi-landing',head:HEAD,
+  contractHash:'b'.repeat(64),stage:'S4-G2',maxPlansPerStage:1,
+  workOrders:[{id:product+'-task',operation:'prepare-source',
+    tool:'existing-runner-bridge',priority:10,
+    paths:['src/asi-universal/five-worker-wave.mjs']}]
 });
-const snapshots=()=>Object.fromEntries(PRODUCTS.map(x=>[x,{}]));
+const snapshots=()=>Object.fromEntries(PRODUCTS.map(x=>[x,{
+  repository:'ASI-integration/asi-landing',head:HEAD,status:'READY'
+}]));
 test('existing durable dispatcher reserves five product tasks once, even after restart',
   {skip:process.platform!=='linux'},async()=>{
   const dir=await fs.mkdtemp(path.join(os.tmpdir(),'asi-five-worker-routing-'));
