@@ -34,8 +34,10 @@ export async function planFiveWorkerWave({dispatcher,snapshots,maxWorkers=5}={})
     }
     const s=result.selected;
     if(result.status!=='READY'||s?.executable!==false||s?.authority!==null||
-       !id.test(s.product||'')||!id.test(s.task?.id||'')||
-       typeof s.repository!=='string'||!sha.test(s.head||'')||
+       typeof s.product!=='string'||!id.test(s.product)||
+       typeof s.task?.id!=='string'||!id.test(s.task.id)||
+       typeof s.repository!=='string'||typeof s.head!=='string'||
+       !sha.test(s.head)||
        !Array.isArray(s.task?.paths))
       return blocked('FAILED_LOCKED',slots,'ROUTING_SELECTION_UNVERIFIED');
     const key=s.product+':'+s.task.id;
