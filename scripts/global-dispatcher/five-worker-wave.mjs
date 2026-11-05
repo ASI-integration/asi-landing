@@ -44,7 +44,10 @@ export async function planFiveWorkerWave({dispatcher,snapshots,maxWorkers=5}={})
     seen.add(key);
     slots.push(Object.freeze({slot:index+1,product:s.product,
       repository:s.repository,head:s.head,
-      task:structuredClone(s.task),executable:false,authority:null}));
+      task:Object.freeze({id:s.task.id,stage:s.task.stage,
+        operation:s.task.operation,tool:s.task.tool,
+        paths:Object.freeze([...s.task.paths])}),
+      executable:false,authority:null}));
   }
   return blocked('PLANNED',slots,'AWAIT_INDEPENDENT_TASK_EXACT_EXECUTION_ADMISSION');
 }
