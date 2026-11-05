@@ -17,6 +17,7 @@ const adapter=product=>createUniversalProductRoute({
     paths:['src/asi-universal/five-worker-wave.mjs']}]
 });
 const snapshots=()=>Object.fromEntries(PRODUCTS.map(x=>[x,{
+  product:x,contractHash:adapter(x).contractHash,
   repository:'ASI-integration/asi-landing',head:HEAD,status:'READY'
 }]));
 test('existing durable dispatcher reserves five product tasks once, even after restart',
