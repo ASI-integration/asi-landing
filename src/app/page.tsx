@@ -133,88 +133,108 @@ export default async function Home() {
             </span>
           </div>
           <Headline className="text-3xl sm:text-5xl max-w-4xl">
-            One family. Different needs.
+            One idea. Many ways to stay. Worldwide.
           </Headline>
-          <p className="mt-5 max-w-3xl text-lg text-asi-navy/70 leading-relaxed">
-            We are developing private cabins for all kinds of stays. The same idea can help
-            people who work away from home, visit a city or need a break during a journey.
+          <p className="mt-5 max-w-4xl text-lg text-asi-navy/70 leading-relaxed">
+            We are developing private cabins for people who need a place to stay —
+            near work, in a city, at an airport, between trains or close to university.
+            The same basic idea, adapted to different needs.
           </p>
-
-          <div className="mt-12 grid gap-6 lg:grid-cols-3">
-            <article className="flex flex-col border border-asi-border bg-asi-ivory p-7 sm:p-8">
-              <div className="flex h-28 items-center justify-center bg-asi-paper border border-asi-border" aria-hidden="true">
-                <svg width="112" height="74" viewBox="0 0 112 74" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-asi-gold-text">
-                  <path d="M13 62V32l22 10V32l22 10V24h40v38H13Z" strokeLinejoin="round" />
-                  <path d="M65 24V10h14v14M20 50h9m12 0h9m12 0h9m12 0h8M20 56h9m12 0h9m12 0h9m12 0h8" />
-                  <path d="M9 62h94" strokeWidth="2" />
-                </svg>
+          <div className="mt-10 grid gap-5 sm:grid-cols-2 xl:grid-cols-5">
+            <article id="product-workforce" key="workforce" className="flex flex-col overflow-hidden border border-asi-border bg-asi-ivory">
+              <div className="relative aspect-[8/5] w-full overflow-hidden bg-asi-paper">
+                <Image src="/images/cabins/workforce-shenzhen.svg" alt="Concept illustration of ASI private modular cabins within dedicated worker housing beside an industrial campus in Shenzhen, China. Not an operating site." fill unoptimized sizes="(min-width: 1280px) 18vw, (min-width: 640px) 46vw, 90vw" className="object-cover" />
               </div>
-              <p className="mt-7 text-xs uppercase tracking-[0.2em] text-asi-gold-text">Live and work</p>
-              <h3 className="mt-2 font-serif text-3xl">ASI Workforce</h3>
-              <p className="mt-4 text-lg font-medium leading-snug">
-                A better place to live while working away from home.
-              </p>
-              <p className="mt-4 text-sm text-asi-navy/65 leading-relaxed">
-                Affordable longer stays for factory workers, construction teams and other employees.
-                Employers could help cover the cost.
-              </p>
+              <div className="flex flex-1 flex-col p-5 sm:p-6">
+                <p className="text-[11px] uppercase tracking-[0.18em] text-asi-gold-text">Live near work</p>
+                <h3 className="mt-3 font-serif text-2xl leading-tight">ASI Workforce</h3>
+                <p className="mt-4 font-medium leading-snug text-asi-navy">A better place to live while working away from home.</p>
+                <p className="mt-3 flex-1 text-sm leading-relaxed text-asi-navy/65">Affordable longer stays for people working at factories, building sites and large workplaces. Employers may help pay.</p>
+                <div className="mt-5 border-t border-asi-border pt-3 flex items-center justify-between gap-2">
+                  <span className="text-xs text-asi-navy/55">Shenzhen, China</span>
+                  <a href="#cabins" className="text-xs font-semibold text-asi-gold-text underline underline-offset-4 hover:text-asi-navy">How it works</a>
+                </div>
+              </div>
             </article>
-
-            <article className="flex flex-col border border-asi-border bg-asi-ivory p-7 sm:p-8">
-              <div className="flex h-28 items-center justify-center bg-asi-paper border border-asi-border" aria-hidden="true">
-                <svg width="112" height="74" viewBox="0 0 112 74" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-asi-gold-text">
-                  <path d="M12 62V28h27v34M39 62V14h33v48M72 62V35h28v27M8 62h96" strokeLinejoin="round" />
-                  <path d="M20 37h11M20 45h11M20 53h11M48 24h8M62 24h5M48 35h8M62 35h5M48 46h8M62 46h5M80 45h12M80 53h12" />
-                </svg>
+            <article id="product-urban" key="urban" className="flex flex-col overflow-hidden border border-asi-border bg-asi-ivory">
+              <div className="relative aspect-[8/5] w-full overflow-hidden bg-asi-paper">
+                <Image src="/images/cabins/urban-singapore.svg" alt="Concept illustration of an ASI modular cabin in a dedicated indoor city accommodation space in Singapore. Not an operating site." fill unoptimized sizes="(min-width: 1280px) 18vw, (min-width: 640px) 46vw, 90vw" className="object-cover" />
               </div>
-              <p className="mt-7 text-xs uppercase tracking-[0.2em] text-asi-gold-text">Stay in the city</p>
-              <h3 className="mt-2 font-serif text-3xl">ASI Cabins Urban</h3>
-              <p className="mt-4 text-lg font-medium leading-snug">
-                Your own private space in the city.
-              </p>
-              <p className="mt-4 text-sm text-asi-navy/65 leading-relaxed">
-                Comfortable, affordable rooms inside suitable city buildings.
-                A real bed, a private shower and a toilet of your own.
-              </p>
+              <div className="flex flex-1 flex-col p-5 sm:p-6">
+                <p className="text-[11px] uppercase tracking-[0.18em] text-asi-gold-text">Stay in the city</p>
+                <h3 className="mt-3 font-serif text-2xl leading-tight">ASI Cabins Urban</h3>
+                <p className="mt-4 font-medium leading-snug text-asi-navy">Your own private space in the city.</p>
+                <p className="mt-3 flex-1 text-sm leading-relaxed text-asi-navy/65">A comfortable room for two, with a bed, shower and toilet, inside a suitable city building.</p>
+                <div className="mt-5 border-t border-asi-border pt-3 flex items-center justify-between gap-2">
+                  <span className="text-xs text-asi-navy/55">Singapore</span>
+                  <a href="#cabins" className="text-xs font-semibold text-asi-gold-text underline underline-offset-4 hover:text-asi-navy">How it works</a>
+                </div>
+              </div>
             </article>
-
-            <article className="flex flex-col border border-asi-border bg-asi-ivory p-7 sm:p-8">
-              <div className="flex h-28 items-center justify-center bg-asi-paper border border-asi-border" aria-hidden="true">
-                <svg width="112" height="74" viewBox="0 0 112 74" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-asi-gold-text">
-                  <path d="M56 8 62 32l33 11-1 8-34-6-7 19-7-19-29 6-2-8 33-11 8-24Z" strokeLinejoin="round" />
-                  <path d="M17 66h78" strokeDasharray="5 5" />
-                </svg>
+            <article id="product-airport" key="airport" className="flex flex-col overflow-hidden border border-asi-border bg-asi-ivory">
+              <div className="relative aspect-[8/5] w-full overflow-hidden bg-asi-paper">
+                <Image src="/images/cabins/airport-taipei.svg" alt="Concept illustration of an ASI private cabin inside a designated airport rest lounge in Taipei, Taiwan. Not an operating site." fill unoptimized sizes="(min-width: 1280px) 18vw, (min-width: 640px) 46vw, 90vw" className="object-cover" />
               </div>
-              <p className="mt-7 text-xs uppercase tracking-[0.2em] text-asi-gold-text">Rest between journeys</p>
-              <h3 className="mt-2 font-serif text-3xl">ASI Transit</h3>
-              <p className="mt-4 text-lg font-medium leading-snug">
-                A place to rest between journeys.
-              </p>
-              <p className="mt-4 text-sm text-asi-navy/65 leading-relaxed">
-                Private cabins inside airports, train stations and other transport hubs.
-                Sleep, shower, recharge and travel on.
-              </p>
+              <div className="flex flex-1 flex-col p-5 sm:p-6">
+                <p className="text-[11px] uppercase tracking-[0.18em] text-asi-gold-text">Rest between flights</p>
+                <h3 className="mt-3 font-serif text-2xl leading-tight">ASI Transit · Airports</h3>
+                <p className="mt-4 font-medium leading-snug text-asi-navy">Sleep, shower and recharge before your next flight.</p>
+                <p className="mt-3 flex-1 text-sm leading-relaxed text-asi-navy/65">Private cabins in a quiet rest area inside an airport, away from the busy main hall.</p>
+                <div className="mt-5 border-t border-asi-border pt-3 flex items-center justify-between gap-2">
+                  <span className="text-xs text-asi-navy/55">Taipei, Taiwan</span>
+                  <a href="#cabins" className="text-xs font-semibold text-asi-gold-text underline underline-offset-4 hover:text-asi-navy">How it works</a>
+                </div>
+              </div>
+            </article>
+            <article id="product-rail" key="rail" className="flex flex-col overflow-hidden border border-asi-border bg-asi-ivory">
+              <div className="relative aspect-[8/5] w-full overflow-hidden bg-asi-paper">
+                <Image src="/images/cabins/rail-tokyo.svg" alt="Concept illustration of an ASI private modular cabin in a dedicated rest area of a Tokyo railway station. Not an operating site." fill unoptimized sizes="(min-width: 1280px) 18vw, (min-width: 640px) 46vw, 90vw" className="object-cover" />
+              </div>
+              <div className="flex flex-1 flex-col p-5 sm:p-6">
+                <p className="text-[11px] uppercase tracking-[0.18em] text-asi-gold-text">Rest between trains</p>
+                <h3 className="mt-3 font-serif text-2xl leading-tight">ASI Transit · Rail</h3>
+                <p className="mt-4 font-medium leading-snug text-asi-navy">A private place to rest during a long journey.</p>
+                <p className="mt-3 flex-1 text-sm leading-relaxed text-asi-navy/65">Cabins in a quiet station rest area for a nap, a shower or an overnight connection.</p>
+                <div className="mt-5 border-t border-asi-border pt-3 flex items-center justify-between gap-2">
+                  <span className="text-xs text-asi-navy/55">Tokyo, Japan</span>
+                  <a href="#cabins" className="text-xs font-semibold text-asi-gold-text underline underline-offset-4 hover:text-asi-navy">How it works</a>
+                </div>
+              </div>
+            </article>
+            <article id="product-student" key="student" className="flex flex-col overflow-hidden border border-asi-border bg-asi-ivory">
+              <div className="relative aspect-[8/5] w-full overflow-hidden bg-asi-paper">
+                <Image src="/images/cabins/student-seoul.svg" alt="Concept illustration of ASI private modular student rooms in a university residential common area in Seoul. Not an operating site." fill unoptimized sizes="(min-width: 1280px) 18vw, (min-width: 640px) 46vw, 90vw" className="object-cover" />
+              </div>
+              <div className="flex flex-1 flex-col p-5 sm:p-6">
+                <p className="text-[11px] uppercase tracking-[0.18em] text-asi-gold-text">Stay near campus</p>
+                <h3 className="mt-3 font-serif text-2xl leading-tight">ASI Student</h3>
+                <p className="mt-4 font-medium leading-snug text-asi-navy">Affordable private space for student life.</p>
+                <p className="mt-3 flex-1 text-sm leading-relaxed text-asi-navy/65">A comfortable place to sleep, study and recharge near universities and student housing.</p>
+                <div className="mt-5 border-t border-asi-border pt-3 flex items-center justify-between gap-2">
+                  <span className="text-xs text-asi-navy/55">Seoul, South Korea</span>
+                  <a href="#cabins" className="text-xs font-semibold text-asi-gold-text underline underline-offset-4 hover:text-asi-navy">How it works</a>
+                </div>
+              </div>
             </article>
           </div>
-
-          <div className="mt-10 border-t border-asi-border pt-8 grid gap-6 md:grid-cols-[1.3fr,1fr] md:items-center">
+          <p className="mt-5 text-xs text-asi-navy/55 leading-relaxed">
+            All images are concept illustrations, not photos of completed locations.
+            City names show possible applications, not confirmed projects or business partnerships.
+          </p>
+          <div className="mt-12 border-y border-asi-border py-9 grid gap-7 lg:grid-cols-[1.1fr,1fr] lg:items-center">
             <div>
-              <h3 className="font-serif text-2xl sm:text-3xl">And this is just the beginning.</h3>
-              <p className="mt-3 text-asi-navy/70 leading-relaxed">
-                The same idea could also help students, hospitals and people attending large events.
-                We plan to develop new cabin options as we learn what people need.
+              <Eyebrow>And this is just the beginning</Eyebrow>
+              <Headline className="text-3xl sm:text-4xl">Different countries. Same simple idea.</Headline>
+              <p className="mt-4 text-asi-navy/70 leading-relaxed">
+                Start with one site. Make it work well. Then bring the cabins to more cities,
+                workplaces, transport hubs and campuses around the world.
               </p>
             </div>
-            <div className="border-l-2 border-asi-gold pl-6">
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-asi-gold-text">Worldwide</p>
-              <p className="mt-2 font-serif text-2xl leading-snug">
-                Different countries. Same simple idea.
-              </p>
+            <div className="flex flex-wrap gap-4 lg:justify-end">
+              <PrimaryCta href="#cabins">See the cabin</PrimaryCta>
+              <SecondaryCta href="#partner">Build it with ASI</SecondaryCta>
             </div>
           </div>
-          <p className="mt-8 text-xs text-asi-navy/55">
-            These are planned product options. Cabin engineering, locations, local approvals and pilot costs are still being developed.
-          </p>
         </Section>
 
         <Section id="intelligence" variant="paper">
