@@ -65,6 +65,7 @@ export async function prepareFiveWorkerModelArtifact({
   const pin=freeze({taskId:task.id,product:slot.product,
     repository:task.repository,baseSha:task.baseSha,workspaceKey});
   const signedTask=signedCatalog.find(t=>t.id===task.id&&t.product===slot.product);
+  const signedFingerprint=h(JSON.stringify(signedTask));
   const pinnedFiles=freeze(signedTask.files.map(f=>freeze({
     path:f.path,beforeSha256:f.beforeSha256
   })));
@@ -79,7 +80,7 @@ export async function prepareFiveWorkerModelArtifact({
     return deny('MODEL_PROPOSAL_UNVERIFIED_NO_REPLAY');
   // After a possibly paid model call, source scope must remain unchanged.
   const current=signedCatalog.find(t=>t.id===task.id&&t.product===slot.product);
-  if(!current||JSON.stringify(current.files)!==JSON.stringify(pinnedFiles))
+  if(!current||h(JSON.stringify(current))!==signedFingerprint)
     return deny('SIGNED_CATALOG_CHANGED_AFTER_MODEL_NO_REPLAY');
   let stillSigned=false;
   try{stillSigned=await verifySignedCatalog(freeze({pin,task}))===true;}catch{}
