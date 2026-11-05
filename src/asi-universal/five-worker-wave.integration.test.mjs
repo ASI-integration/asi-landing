@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
-import {createGlobalDispatcher,initializeRoutingState} from './dispatcher.mjs';
+import {createGlobalDispatcher,initializeRoutingState} from '../../scripts/global-dispatcher/dispatcher.mjs';
 import {planFiveWorkerWave} from './five-worker-wave.mjs';
 
 const HEAD='a'.repeat(40);
@@ -17,7 +17,7 @@ const adapter=product=>({
     acceptedStages:[],terminal:[],
     candidates:[{id:product+'-task',operation:'prepare-source',
       tool:'existing-runner-bridge',priority:10,
-      paths:['scripts/global-dispatcher/five-worker-wave.mjs']}]
+      paths:['src/asi-universal/five-worker-wave.mjs']}]
   })
 });
 const snapshots=()=>Object.fromEntries(PRODUCTS.map(x=>[x,{}]));
