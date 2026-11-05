@@ -35,13 +35,34 @@ function identity(slot){
 const result=(id,status,reason)=>freeze({slot:id.slot,product:id.product,
   taskId:id.taskId,status,reason});
 
+// Fail closed on a stalled external port. Aborting is advisory: a timeout is
+// UNKNOWN, not proof that the native host stopped an in-flight side effect.
+async function boundedPort(run,timeoutMs){
+  const controller=new AbortController();
+  let timer;
+  try{
+    return await Promise.race([
+      Promise.resolve().then(()=>run(controller.signal)),
+      new Promise((_,reject)=>{timer=setTimeout(()=>{
+        controller.abort();reject(Error('FIVE_WORKER_PORT_DEADLINE'));
+      },timeoutMs);})
+    ]);
+  }finally{clearTimeout(timer);}
+}
+const deadline=e=>e?.message==='FIVE_WORKER_PORT_DEADLINE';
+
 /** Phase-1 admission is serial; no callback from a planner is itself authority. */
-export async function prepareAdmittedFiveWorkerWave({wave,admit,prepare}={}){
+export async function prepareAdmittedFiveWorkerWave({wave,admit,prepare,
+  admissionTimeoutMs=15000,preparationTimeoutMs=60000}={}){
   must(wave&&['PLANNED','PARTIAL'].includes(wave.status)&&
     wave.executable===false&&wave.authority===null&&
     wave.publisherConcurrency===1&&Array.isArray(wave.slots)&&
     wave.slots.length>=1&&wave.slots.length<=5,
     'FIVE_WORKER_WAVE_INVALID');
+  must(Number.isSafeInteger(admissionTimeoutMs)&&admissionTimeoutMs>=1&&
+    admissionTimeoutMs<=60000&&Number.isSafeInteger(preparationTimeoutMs)&&
+    preparationTimeoutMs>=1&&preparationTimeoutMs<=180000,
+    'FIVE_WORKER_DEADLINE_INVALID');
   const ids=wave.slots.map(identity);
   must(ids.every((x,i)=>x.slot===i+1)&&
     new Set(ids.map(x=>x.product+':'+x.taskId)).size===ids.length,
@@ -53,8 +74,9 @@ export async function prepareAdmittedFiveWorkerWave({wave,admit,prepare}={}){
   // Native admission must persist each claim under the one existing ledger.
   for(const id of ids){
     let a;
-    try{a=await admit(id);}
-    catch{blocked.push(result(id,'UNKNOWN','ADMISSION_OUTCOME_UNKNOWN_NO_REPLAY'));continue;}
+    try{a=await boundedPort(signal=>admit(id,freeze({signal})),admissionTimeoutMs);}
+    catch(error){blocked.push(result(id,'UNKNOWN',deadline(error)?
+      'ADMISSION_DEADLINE_UNKNOWN_NO_REPLAY':'ADMISSION_OUTCOME_UNKNOWN_NO_REPLAY'));continue;}
     if(a?.verified!==true||a.taskId!==id.taskId||a.product!==id.product||
        a.head!==id.head||!ID.test(a.workspaceKey||'')||
        workspaceKeys.has(a.workspaceKey)){
@@ -67,14 +89,16 @@ export async function prepareAdmittedFiveWorkerWave({wave,admit,prepare}={}){
   // host still has to enforce sandbox isolation and paid provider budgets.
   const prepared=await Promise.all(admitted.map(async ({id,workspaceKey,token})=>{
     try{
-      const proof=await prepare(id,freeze({workspaceKey,token}));
+      const proof=await boundedPort(signal=>prepare(id,freeze({workspaceKey,token,signal})),
+        preparationTimeoutMs);
       if(proof?.status!=='PREPARED'||proof.taskId!==id.taskId||
          proof.product!==id.product||proof.head!==id.head||
          proof.workspaceKey!==workspaceKey||!H64.test(proof.artifactSha256||''))
         return result(id,'UNKNOWN','PREPARATION_PROOF_UNVERIFIED_NO_REPLAY');
       return freeze({...result(id,'PREPARED','ISOLATED_SOURCE_CANDIDATE'),
         artifactSha256:proof.artifactSha256});
-    }catch{return result(id,'UNKNOWN','PREPARATION_OUTCOME_UNKNOWN_NO_REPLAY');}
+    }catch(error){return result(id,'UNKNOWN',deadline(error)?
+      'PREPARATION_DEADLINE_UNKNOWN_NO_REPLAY':'PREPARATION_OUTCOME_UNKNOWN_NO_REPLAY');}
   }));
   const results=freeze([...blocked,...prepared].sort((a,b)=>a.slot-b.slot));
   return freeze({status:results.every(x=>x.status==='PREPARED')?'PREPARED':'PARTIAL',
