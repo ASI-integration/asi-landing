@@ -47,7 +47,7 @@ export function serializeNativeModelReservations(nativeReserve){
         poisoned=true;
         throw fail('NATIVE_MODEL_RESERVATION_READBACK_UNVERIFIED');
       }
-      return Object.freeze({...result});
+      return Object.freeze({authorized:true,...pinned,operationId:result.operationId});
     });
     tail=job.then(()=>{},()=>{});
     return job;
