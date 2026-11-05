@@ -90,3 +90,12 @@ test('timeout after entering a publisher call remains UNKNOWN, not retryable',as
  assert.equal(r.status,'PARTIAL');assert.equal(r.receiptCount,0);
  assert.equal(r.results[0].reason,'NATIVE_PUBLICATION_TIMEOUT_NO_REPLAY');
 });
+
+test('verified subset of a five-worker wave is PARTIAL, not five completed',async()=>{
+ const r=await handoffToSingleNativePublisher({preparation:{
+   status:'PARTIAL',publisherReady:false,results:[item(1),
+     {status:'UNKNOWN',taskId:'job-2',product:'product-2'}
+   ]},verifyPrepared:async()=>true,publishOne:publish,verifyReceipt:receipt});
+ assert.equal(r.status,'PARTIAL');assert.equal(r.receiptCount,1);
+ assert.equal(r.skippedCount,1);
+});
