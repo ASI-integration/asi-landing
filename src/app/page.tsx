@@ -1,4 +1,3 @@
-import Link from 'next/link';
 import Image from 'next/image';
 import { headers } from 'next/headers';
 import type { Metadata } from 'next';
@@ -12,7 +11,6 @@ import { SiteHeader } from '@/components/site/SiteHeader';
 import { SiteFooter } from '@/components/site/SiteFooter';
 import { Section, Eyebrow, Headline, GoldRule, PrimaryCta, SecondaryCta } from '@/components/site/primitives';
 import { LogoMark } from '@/components/site/LogoMark';
-import { Shiro } from '@/components/site/Shiro';
 import { CircleFeature } from '@/components/site/CircleFeature';
 import { OperationalFlow } from '@/components/site/OperationalFlow';
 
