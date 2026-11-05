@@ -16,10 +16,11 @@ const must=(b,s)=>{if(!b)throw Error(s);};
 const freeze=x=>Object.freeze(x);
 function identity(slot){
   must(slot && Number.isSafeInteger(slot.slot)&&slot.slot>=1&&slot.slot<=5&&
-    ID.test(slot.product||'')&&H40.test(slot.head||'')&&
+    typeof slot.product==='string'&&ID.test(slot.product)&&
+    typeof slot.head==='string'&&H40.test(slot.head)&&
     typeof slot.repository==='string'&&/^[\w.-]+\/[\w.-]+$/.test(slot.repository)&&
     slot.executable===false&&slot.authority===null&&
-    slot.task&&ID.test(slot.task.id||'')&&
+    slot.task&&typeof slot.task.id==='string'&&ID.test(slot.task.id)&&
     typeof slot.task.stage==='string'&&typeof slot.task.operation==='string'&&
     typeof slot.task.tool==='string'&&Array.isArray(slot.task.paths)&&
     slot.task.paths.length>=1&&slot.task.paths.length<=3&&
@@ -79,7 +80,7 @@ export async function prepareAdmittedFiveWorkerWave({wave,admit,verifyAdmission,
     catch(error){blocked.push(result(id,'UNKNOWN',deadline(error)?
       'ADMISSION_DEADLINE_UNKNOWN_NO_REPLAY':'ADMISSION_OUTCOME_UNKNOWN_NO_REPLAY'));continue;}
     if(a?.verified!==true||a.taskId!==id.taskId||a.product!==id.product||
-       a.head!==id.head||!ID.test(a.workspaceKey||'')||
+       a.head!==id.head||(typeof a.workspaceKey!=='string'||!ID.test(a.workspaceKey))||
        workspaceKeys.has(a.workspaceKey)){
       blocked.push(result(id,'BLOCKED','TASK_EXACT_NATIVE_ADMISSION_MISSING'));continue;
     }
@@ -114,7 +115,7 @@ export async function prepareAdmittedFiveWorkerWave({wave,admit,verifyAdmission,
         preparationTimeoutMs);
       if(proof?.status!=='PREPARED'||proof.taskId!==id.taskId||
          proof.product!==id.product||proof.head!==id.head||
-         proof.workspaceKey!==workspaceKey||!H64.test(proof.artifactSha256||''))
+         proof.workspaceKey!==workspaceKey||(typeof proof.artifactSha256!=='string'||!H64.test(proof.artifactSha256)))
         return result(id,'UNKNOWN','PREPARATION_PROOF_UNVERIFIED_NO_REPLAY');
       return freeze({...result(id,'PREPARED','ISOLATED_SOURCE_CANDIDATE'),
         artifactSha256:proof.artifactSha256});
