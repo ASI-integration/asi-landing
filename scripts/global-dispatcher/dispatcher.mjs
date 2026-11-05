@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import {atomicWriteJson} from '../strigunov4/ASI-STRIGUNOV4-ORCHESTRATOR-CANDIDATE-20261020.mjs';
-import {must, hash} from './product-adapters.mjs';
+import {atomicWriteJson} from './atomic-json.mjs';
+import {must, hash} from './core.mjs';
 
 const schema = 'asi.global-routing.v1';
 const own = (object, key) => Object.hasOwn(object, key);
