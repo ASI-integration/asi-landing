@@ -45,3 +45,18 @@ test('duplicate ID and over-budget registration fail, no execution port',()=>{
     /PRODUCT_ROUTE_CONTRACT_INVALID/);
   const a=createUniversalProductRoute(c);assert.equal(a.execute,undefined);
 });
+
+
+test('non-string route and work-order IDs are never persisted',()=>{
+ const baseline={id:'cabins',repository:'ASI-integration/asi-landing',
+   head:'a'.repeat(40),contractHash:'b'.repeat(64),stage:'s4-g2',
+   workOrders:[{id:'task-a',operation:'prepare-source',
+     tool:'existing-runner-bridge',priority:1,paths:['src/example.mjs']}]};
+ for(const invalid of [['cabins'],true,undefined]){
+   assert.throws(()=>createUniversalProductRoute({...baseline,id:invalid}),
+     /PRODUCT_ROUTE_CONTRACT_INVALID/);
+   assert.throws(()=>createUniversalProductRoute({...baseline,
+     workOrders:[{...baseline.workOrders[0],id:invalid}]}),
+     /PRODUCT_ROUTE_WORK_ORDER_INVALID/);
+ }
+});
