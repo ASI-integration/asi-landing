@@ -89,3 +89,37 @@ test('false model proof is never marked PREPARED',async()=>{
  assert.equal(r.status,'PARTIAL');
  assert.equal(r.results[0].reason,'PREPARATION_PROOF_UNVERIFIED_NO_REPLAY');
 });
+
+test('hung admission becomes UNKNOWN and does not hold four independent admissions',async()=>{
+ let admissions=0,preparedCount=0,signaled=false;
+ const r=await prepareAdmittedFiveWorkerWave({wave:wave(5),admissionTimeoutMs:25,
+   admit:async (id,{signal})=>{
+     admissions++;if(id.slot===2)return new Promise(()=>{signal.addEventListener('abort',()=>{signaled=true;},{once:true});});
+     return admit(id);
+   },
+   prepare:async(id,a)=>{preparedCount++;return prepared(id,a);}
+ });
+ assert.equal(admissions,5);assert.equal(preparedCount,4);assert.equal(signaled,true);
+ assert.equal(r.status,'PARTIAL');
+ assert.equal(r.results[1].reason,'ADMISSION_DEADLINE_UNKNOWN_NO_REPLAY');
+});
+test('hung source preparation becomes UNKNOWN without blocking other four outputs',async()=>{
+ let started=0,signaled=false;
+ const r=await prepareAdmittedFiveWorkerWave({wave:wave(5),admit,preparationTimeoutMs:25,
+   prepare:async(id,a)=>{
+     started++;if(id.slot===4)return new Promise(()=>{a.signal.addEventListener('abort',()=>{signaled=true;},{once:true});});
+     return prepared(id,a);
+   }
+ });
+ assert.equal(started,5);assert.equal(signaled,true);
+ assert.equal(r.status,'PARTIAL');assert.equal(r.results[3].status,'UNKNOWN');
+ assert.equal(r.results[3].reason,'PREPARATION_DEADLINE_UNKNOWN_NO_REPLAY');
+ assert.equal(r.results.filter(x=>x.status==='PREPARED').length,4);
+});
+test('invalid external deadlines reject before any host port call',async()=>{
+ let calls=0;
+ await assert.rejects(prepareAdmittedFiveWorkerWave({wave:wave(1),
+   admissionTimeoutMs:0,admit:async()=>{calls++;},prepare:prepared}),
+   /FIVE_WORKER_DEADLINE_INVALID/);
+ assert.equal(calls,0);
+});
