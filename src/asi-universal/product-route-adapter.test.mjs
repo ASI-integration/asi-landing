@@ -5,11 +5,12 @@ const SHA='a'.repeat(40),H64='b'.repeat(64);
 const config=(id='asi-cabins')=>({id,repository:'ASI-integration/asi-landing',head:SHA,
   contractHash:H64,stage:'S4-G2',workOrders:[{id:id+'-job',operation:'prepare-source',
     tool:'existing-runner-bridge',priority:7,paths:['src/cabins/fix.mjs']}]});
-const snapshot={repository:'ASI-integration/asi-landing',head:SHA,status:'READY'};
+const snapshotFor=a=>({product:a.id,contractHash:a.contractHash,
+  repository:'ASI-integration/asi-landing',head:SHA,status:'READY'});
 test('same adapter covers independent products, returning immutable source-only work',()=>{
   for(const id of ['asi-cabins','guest-comms','dynamic-pricing','marketing','strigunov']){
     const a=createUniversalProductRoute(config(id));
-    const r=a.evaluate(snapshot);
+    const r=a.evaluate(snapshotFor(a));
     assert.equal(a.id,id);assert.equal(a.contract.execution,'disabled');
     assert.equal(r.status,'READY');assert.equal(r.candidates[0].id,id+'-job');
     assert(Object.isFrozen(r.candidates[0].paths));
@@ -17,8 +18,8 @@ test('same adapter covers independent products, returning immutable source-only 
 });
 test('wrong repository, main sha and missing READY cannot prepare work',()=>{
   const a=createUniversalProductRoute(config());
-  for(const bad of [null,{}, {...snapshot,repository:'other/repo'},
-    {...snapshot,head:'c'.repeat(40)}, {...snapshot,status:'BLOCKED'}]){
+  for(const bad of [null,{}, {...snapshotFor(a),repository:'other/repo'},
+    {...snapshotFor(a),head:'c'.repeat(40)}, {...snapshotFor(a),status:'BLOCKED'}]){
     const r=a.evaluate(bad);
     assert.equal(r.status,'BLOCKED');assert.equal(r.candidates.length,0);
   }
@@ -34,8 +35,8 @@ test('source workspace path escapes and invented tools are rejected at registrat
 test('mutation of caller work order cannot change registered work or scope',()=>{
   const c=config(),a=createUniversalProductRoute(c);
   c.workOrders[0].paths[0]='src/other.mjs';c.workOrders[0].priority=99;
-  assert.deepEqual(a.evaluate(snapshot).candidates[0].paths,['src/cabins/fix.mjs']);
-  assert.equal(a.evaluate(snapshot).candidates[0].priority,7);
+  assert.deepEqual(a.evaluate(snapshotFor(a)).candidates[0].paths,['src/cabins/fix.mjs']);
+  assert.equal(a.evaluate(snapshotFor(a)).candidates[0].priority,7);
 });
 test('duplicate ID and over-budget registration fail, no execution port',()=>{
   const c=config();
@@ -59,4 +60,25 @@ test('non-string route and work-order IDs are never persisted',()=>{
      workOrders:[{...baseline.workOrders[0],id:invalid}]}),
      /PRODUCT_ROUTE_WORK_ORDER_INVALID/);
  }
+});
+
+test('a foreign product or altered contract cannot unlock another product route',()=>{
+  const cabins=createUniversalProductRoute(config('asi-cabins'));
+  const pricing=createUniversalProductRoute(config('dynamic-pricing'));
+  assert.equal(cabins.evaluate(snapshotFor(pricing)).status,'BLOCKED');
+  assert.equal(cabins.evaluate({...snapshotFor(cabins),
+    contractHash:'c'.repeat(64)}).status,'BLOCKED');
+  assert.equal(cabins.evaluate({...snapshotFor(cabins),
+    product:'dynamic-pricing'}).status,'BLOCKED');
+  assert.equal(cabins.evaluate(snapshotFor(cabins)).status,'READY');
+});
+test('different catalog or plans change durable contractHash even with same owner pin',()=>{
+  const original=config(),first=createUniversalProductRoute(original);
+  const changed=config();
+  changed.workOrders[0].paths=['src/cabins/other.mjs'];
+  const second=createUniversalProductRoute(changed);
+  assert.notEqual(first.contractHash,second.contractHash);
+  const third=createUniversalProductRoute({...config(),maxPlansPerStage:2});
+  assert.notEqual(first.contractHash,third.contractHash);
+  assert.equal(first.evaluate(snapshotFor(second)).status,'BLOCKED');
 });
