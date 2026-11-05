@@ -142,9 +142,17 @@ export default async function Home() {
           </p>
           <div className="mt-10 grid gap-5 sm:grid-cols-2 xl:grid-cols-5">
             <article id="product-workforce" key="workforce" className="flex flex-col overflow-hidden border border-asi-border bg-asi-ivory">
-              <div className="relative aspect-[8/5] w-full overflow-hidden bg-asi-paper">
-                <Image src="/images/cabins/workforce-shenzhen.svg" alt="Concept illustration of ASI private modular cabins within dedicated worker housing beside an industrial campus in Shenzhen, China. Not an operating site." fill unoptimized sizes="(min-width: 1280px) 18vw, (min-width: 640px) 46vw, 90vw" className="object-cover" />
-              </div>
+              <div
+                role="img"
+                aria-label="Concept illustration of ASI private modular cabins within dedicated worker housing beside an industrial campus in Shenzhen, China. Not an operating site."
+                className="relative aspect-[15/14] w-full overflow-hidden bg-asi-paper"
+                style={{
+                  backgroundImage: "url('/images/cabins/ASI-Cabins-Five-Photo-Scenes.webp'), url('/images/cabins/workforce-shenzhen.svg')",
+                  backgroundSize: "500% 100%, cover",
+                  backgroundPosition: "0% center, center",
+                  backgroundRepeat: "no-repeat, no-repeat",
+                }}
+              ></div>
               <div className="flex flex-1 flex-col p-5 sm:p-6">
                 <p className="text-[11px] uppercase tracking-[0.18em] text-asi-gold-text">Live near work</p>
                 <h3 className="mt-3 font-serif text-2xl leading-tight">ASI Workforce</h3>
@@ -157,9 +165,17 @@ export default async function Home() {
               </div>
             </article>
             <article id="product-urban" key="urban" className="flex flex-col overflow-hidden border border-asi-border bg-asi-ivory">
-              <div className="relative aspect-[8/5] w-full overflow-hidden bg-asi-paper">
-                <Image src="/images/cabins/urban-singapore.svg" alt="Concept illustration of an ASI modular cabin in a dedicated indoor city accommodation space in Singapore. Not an operating site." fill unoptimized sizes="(min-width: 1280px) 18vw, (min-width: 640px) 46vw, 90vw" className="object-cover" />
-              </div>
+              <div
+                role="img"
+                aria-label="Concept illustration of an ASI modular cabin in a dedicated indoor city accommodation space in Singapore. Not an operating site."
+                className="relative aspect-[15/14] w-full overflow-hidden bg-asi-paper"
+                style={{
+                  backgroundImage: "url('/images/cabins/ASI-Cabins-Five-Photo-Scenes.webp'), url('/images/cabins/urban-singapore.svg')",
+                  backgroundSize: "500% 100%, cover",
+                  backgroundPosition: "25% center, center",
+                  backgroundRepeat: "no-repeat, no-repeat",
+                }}
+              ></div>
               <div className="flex flex-1 flex-col p-5 sm:p-6">
                 <p className="text-[11px] uppercase tracking-[0.18em] text-asi-gold-text">Stay in the city</p>
                 <h3 className="mt-3 font-serif text-2xl leading-tight">ASI Cabins Urban</h3>
@@ -172,9 +188,17 @@ export default async function Home() {
               </div>
             </article>
             <article id="product-airport" key="airport" className="flex flex-col overflow-hidden border border-asi-border bg-asi-ivory">
-              <div className="relative aspect-[8/5] w-full overflow-hidden bg-asi-paper">
-                <Image src="/images/cabins/airport-taipei.svg" alt="Concept illustration of an ASI private cabin inside a designated airport rest lounge in Taipei, Taiwan. Not an operating site." fill unoptimized sizes="(min-width: 1280px) 18vw, (min-width: 640px) 46vw, 90vw" className="object-cover" />
-              </div>
+              <div
+                role="img"
+                aria-label="Concept illustration of an ASI private cabin inside a designated airport rest lounge in Taipei, Taiwan. Not an operating site."
+                className="relative aspect-[15/14] w-full overflow-hidden bg-asi-paper"
+                style={{
+                  backgroundImage: "url('/images/cabins/ASI-Cabins-Five-Photo-Scenes.webp'), url('/images/cabins/airport-taipei.svg')",
+                  backgroundSize: "500% 100%, cover",
+                  backgroundPosition: "50% center, center",
+                  backgroundRepeat: "no-repeat, no-repeat",
+                }}
+              ></div>
               <div className="flex flex-1 flex-col p-5 sm:p-6">
                 <p className="text-[11px] uppercase tracking-[0.18em] text-asi-gold-text">Rest between flights</p>
                 <h3 className="mt-3 font-serif text-2xl leading-tight">ASI Transit · Airports</h3>
@@ -187,9 +211,17 @@ export default async function Home() {
               </div>
             </article>
             <article id="product-rail" key="rail" className="flex flex-col overflow-hidden border border-asi-border bg-asi-ivory">
-              <div className="relative aspect-[8/5] w-full overflow-hidden bg-asi-paper">
-                <Image src="/images/cabins/rail-tokyo.svg" alt="Concept illustration of an ASI private modular cabin in a dedicated rest area of a Tokyo railway station. Not an operating site." fill unoptimized sizes="(min-width: 1280px) 18vw, (min-width: 640px) 46vw, 90vw" className="object-cover" />
-              </div>
+              <div
+                role="img"
+                aria-label="Concept illustration of an ASI private modular cabin in a dedicated rest area of a Tokyo railway station. Not an operating site."
+                className="relative aspect-[15/14] w-full overflow-hidden bg-asi-paper"
+                style={{
+                  backgroundImage: "url('/images/cabins/ASI-Cabins-Five-Photo-Scenes.webp'), url('/images/cabins/rail-tokyo.svg')",
+                  backgroundSize: "500% 100%, cover",
+                  backgroundPosition: "75% center, center",
+                  backgroundRepeat: "no-repeat, no-repeat",
+                }}
+              ></div>
               <div className="flex flex-1 flex-col p-5 sm:p-6">
                 <p className="text-[11px] uppercase tracking-[0.18em] text-asi-gold-text">Rest between trains</p>
                 <h3 className="mt-3 font-serif text-2xl leading-tight">ASI Transit · Rail</h3>
@@ -202,9 +234,17 @@ export default async function Home() {
               </div>
             </article>
             <article id="product-student" key="student" className="flex flex-col overflow-hidden border border-asi-border bg-asi-ivory">
-              <div className="relative aspect-[8/5] w-full overflow-hidden bg-asi-paper">
-                <Image src="/images/cabins/student-seoul.svg" alt="Concept illustration of ASI private modular student rooms in a university residential common area in Seoul. Not an operating site." fill unoptimized sizes="(min-width: 1280px) 18vw, (min-width: 640px) 46vw, 90vw" className="object-cover" />
-              </div>
+              <div
+                role="img"
+                aria-label="Concept illustration of ASI private modular student rooms in a university residential common area in Seoul. Not an operating site."
+                className="relative aspect-[15/14] w-full overflow-hidden bg-asi-paper"
+                style={{
+                  backgroundImage: "url('/images/cabins/ASI-Cabins-Five-Photo-Scenes.webp'), url('/images/cabins/student-seoul.svg')",
+                  backgroundSize: "500% 100%, cover",
+                  backgroundPosition: "100% center, center",
+                  backgroundRepeat: "no-repeat, no-repeat",
+                }}
+              ></div>
               <div className="flex flex-1 flex-col p-5 sm:p-6">
                 <p className="text-[11px] uppercase tracking-[0.18em] text-asi-gold-text">Stay near campus</p>
                 <h3 className="mt-3 font-serif text-2xl leading-tight">ASI Student</h3>
@@ -219,7 +259,7 @@ export default async function Home() {
           </div>
           <p className="mt-5 text-xs text-asi-navy/55 leading-relaxed">
             All images are concept illustrations, not photos of completed locations.
-            City names show possible applications, not confirmed projects or business partnerships.
+            City names and any corporate signage are illustrative and do not indicate operating sites or partnerships.
           </p>
           <div className="mt-12 border-y border-asi-border py-9 grid gap-7 lg:grid-cols-[1.1fr,1fr] lg:items-center">
             <div>
