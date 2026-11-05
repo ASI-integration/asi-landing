@@ -1,0 +1,52 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="600" viewBox="0 0 960 600" role="img" aria-label="SINGAPORE · CITY CENTRE, a conceptual ASI private modular cabin inside an existing building">
+<defs>
+ <linearGradient id="sky" x2="0" y2="1"><stop stop-color="#e8e3d8"/><stop offset=".54" stop-color="#c7d8db"/><stop offset="1" stop-color="#efe9dc"/></linearGradient>
+ <linearGradient id="floor" x2=".2" y2="1"><stop stop-color="#ded8ce"/><stop offset="1" stop-color="#bfb9b0"/></linearGradient>
+ <linearGradient id="shell"><stop stop-color="#252525"/><stop offset=".45" stop-color="#4b4b49"/><stop offset="1" stop-color="#1c2021"/></linearGradient>
+ <linearGradient id="glass"><stop stop-color="#fff3d7" stop-opacity=".25"/><stop offset=".34" stop-color="#f8d49c" stop-opacity=".65"/><stop offset=".8" stop-color="#faf0dc" stop-opacity=".2"/><stop offset="1" stop-color="#fef4e3" stop-opacity=".45"/></linearGradient>
+ <linearGradient id="wood" x2="0" y2="1"><stop stop-color="#c3a074"/><stop offset=".8" stop-color="#e5cda4"/><stop offset="1" stop-color="#87663c"/></linearGradient>
+ <filter id="shadow" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="16"/></filter>
+ <pattern id="stripes" width="28" height="28" patternUnits="userSpaceOnUse"><path d="M0 0V28" stroke="#d5bd93" stroke-opacity=".2" stroke-width="2"/></pattern>
+</defs>
+<rect width="960" height="600" fill="url(#sky)"/>
+<path d="M0 0H960V70H0z" fill="#f4eee3" opacity=".9"/>
+<rect x="0" y="66" width="960" height="333" fill="none" stroke="#fff9eb" stroke-width="14"/>
+
+<g fill="#96a7a7" opacity=".67"><rect x="18" y="125" width="91" height="266"/><rect x="133" y="64" width="120" height="330"/><rect x="278" y="155" width="93" height="241"/><rect x="704" y="95" width="120" height="300"/><rect x="839" y="153" width="120" height="242"/></g>
+<g stroke="#e7f0e9" stroke-width="4" opacity=".7"><path d="M155 106H235M726 123H804"/><path d="M155 145H235M726 162H804"/><path d="M155 184H235M726 201H804"/><path d="M155 223H235M726 240H804"/><path d="M155 262H235M726 279H804"/><path d="M155 301H235M726 318H804"/></g>
+<rect x="739" y="58" width="186" height="57" fill="#343435" rx="4"/><text x="758" y="83" font-size="18" font-family="Arial" fill="#e3c28a">CITY STAYS</text><text x="758" y="104" font-size="12" font-family="Arial" fill="#fff">SINGAPORE</text>
+<path d="M0 391H960V600H0z" fill="url(#floor)"/>
+<path d="M0 391L960 391M0 525H960" stroke="#fff4e8" stroke-opacity=".55" stroke-width="5"/>
+<ellipse cx="505" cy="513" rx="356" ry="45" fill="#3a342a" opacity=".28" filter="url(#shadow)"/>
+<!-- Fully enclosed ASI apple-profile cabin, inside a clearly identified building -->
+<rect x="154" y="176" width="647" height="328" rx="146" fill="url(#shell)" stroke="#e8bf7d" stroke-width="13"/>
+<rect x="171" y="189" width="615" height="301" rx="131" fill="none" stroke="#fff0cc" stroke-opacity=".64" stroke-width="4"/>
+<path d="M187 226Q257 185 366 192L365 488Q253 492 190 450Z" fill="#1e2020" opacity=".88"/>
+<path d="M223 216L223 460M248 206L248 474M272 202L272 479M297 199L297 481" stroke="#afadab" stroke-opacity=".12" stroke-width="2"/>
+<rect x="445" y="204" width="319" height="264" rx="78" fill="url(#wood)" stroke="#d0a871" stroke-width="7"/>
+<rect x="455" y="217" width="302" height="238" rx="71" fill="#d5b184" stroke="#f2d1a7" stroke-width="3"/>
+<rect x="469" y="228" width="278" height="208" rx="55" fill="url(#glass)" />
+<path d="M483 316H748" stroke="#f8d7ab" stroke-width="9" opacity=".65"/>
+<path d="M481 421L516 366H646L687 423Z" fill="#b6a493"/>
+<rect x="519" y="363" width="137" height="39" rx="6" fill="#f5eee1"/>
+<rect x="531" y="349" width="55" height="28" rx="8" fill="#fcf9ed"/>
+<rect x="590" y="349" width="55" height="28" rx="8" fill="#fff5e2"/>
+<path d="M671 375h60" stroke="#705c46" stroke-width="9"/><path d="M704 358v70" stroke="#746049" stroke-width="8"/>
+<path d="M611 216V453" stroke="#3a3935" stroke-width="8"/>
+<rect x="614" y="336" width="7" height="37" rx="3" fill="#ddbb79"/>
+<path d="M463 243v171M750 243v171" stroke="#fff0c6" opacity=".58" stroke-width="4"/>
+<text x="280" y="335" font-size="31" font-family="Georgia,serif" fill="#f1e4c6" text-anchor="middle">ASI</text>
+<path d="M261 286a18 18 0 0 1 38 0l-18 18z" fill="#c8a76c"/><path d="M282 269l-1 36" stroke="#363637" stroke-width="4"/>
+<text x="280" y="361" font-size="18" font-family="Arial" letter-spacing="3" fill="#e4cd9e" text-anchor="middle">CABINS</text>
+<path d="M242 383H318" stroke="#d8ba7f" stroke-width="3"/>
+<path d="M158 483H803" stroke="#f5d58d" stroke-width="9" opacity=".9"/>
+<!-- plants and quiet lounge -->
+<path d="M95 504v-70" stroke="#777e58" stroke-width="8"/><path d="M93 460q-46 -20 -40 -66Q91 417 93 460M98 443q44 -34 50 -72Q97 375 98 443M94 474q-54 4 -58 -28Q82 440 94 474" fill="#6d7752"/>
+<path d="M63 490H119L109 527H73Z" fill="#c7b398"/>
+<g transform="translate(806,465)"><rect x="0" y="0" width="87" height="52" rx="18" fill="#c0b3a2"/><path d="M12 24H75" stroke="#fff4df" stroke-width="3"/></g>
+<!-- neutral brand cat -->
+<g transform="translate(370 489)" fill="#f2ede4" stroke="#a79276" stroke-width="2"><path d="M0 20L6 0L18 9L30 0L37 21Q36 42 18 42Q0 41 0 20Z"/><circle cx="13" cy="22" r="2" fill="#655344"/><circle cx="25" cy="22" r="2" fill="#655344"/><path d="M16 29L19 32L22 29" fill="none"/></g>
+<rect x="30" y="21" width="435" height="46" rx="6" fill="#faf5e9" fill-opacity=".92" stroke="#d2bd98" stroke-width="2"/>
+<text x="52" y="50" font-family="Arial" font-size="19" font-weight="bold" letter-spacing="1" fill="#5c503e">SINGAPORE · CITY CENTRE</text>
+<text x="928" y="575" font-family="Arial" font-size="15" fill="#5b5348" text-anchor="end">ASI GLOBAL · CONCEPT</text>
+</svg>

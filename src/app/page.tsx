@@ -1,4 +1,3 @@
-import Link from 'next/link';
 import Image from 'next/image';
 import { headers } from 'next/headers';
 import type { Metadata } from 'next';
@@ -12,11 +11,6 @@ import { SiteHeader } from '@/components/site/SiteHeader';
 import { SiteFooter } from '@/components/site/SiteFooter';
 import { Section, Eyebrow, Headline, GoldRule, PrimaryCta, SecondaryCta } from '@/components/site/primitives';
 import { LogoMark } from '@/components/site/LogoMark';
-import { Shiro } from '@/components/site/Shiro';
-import { CircleFeature } from '@/components/site/CircleFeature';
-import { MarketCard } from '@/components/site/MarketCard';
-import { MediaCard } from '@/components/site/MediaCard';
-import { OperationalFlow } from '@/components/site/OperationalFlow';
 
 /* ─── Host detection helper ─────────────────────────────────────────────────── */
 async function getIsRuHost(): Promise<boolean> {
@@ -43,9 +37,9 @@ export async function generateMetadata(): Promise<Metadata> {
       },
     };
   }
-  const title = 'ASI Global — Operations on autopilot. Humans on exceptions.';
+  const title = 'ASI Global | Private Cabins for Every Kind of Stay — Worldwide';
   const description =
-    'ASI coordinates routine operational workflows across physical businesses. Supported actions can move automatically when the required policy and integration are in place; people handle exceptions and unsupported external steps.';
+    'One simple cabin idea, many uses worldwide: affordable worker housing, private city rooms and short stays in airports and train stations. Designed for suitable existing buildings.';
   const url = GUEST_AUTOPILOT_ORIGIN;
   return {
     title,
@@ -60,272 +54,368 @@ export async function generateMetadata(): Promise<Metadata> {
       url,
       siteName: 'ASI Global',
       type: 'website',
-      images: [{ url: `${url}/images/japan/cityscape-wide.jpg` }],
+      images: [{ url: `${url}/images/asi-cabins-airport.webp` }],
     },
     twitter: {
       card: 'summary_large_image',
       title,
       description,
-      images: [`${url}/images/japan/cityscape-wide.jpg`],
+      images: [`${url}/images/asi-cabins-airport.webp`],
     },
   };
 }
 
-const CATEGORIES = [
-  { name: 'Hotels', items: ['Bookings', 'Guest communication', 'Access', 'Cleaning'] },
-  { name: 'Residential', items: ['Tenants', 'Payments', 'Maintenance', 'Access'] },
-  { name: 'Commercial Property', items: ['Tenants', 'Billing', 'Service requests', 'Operations'] },
-  { name: 'Service Business', items: ['Customers', 'Scheduling', 'Payments', 'Tasks'] },
+const CABIN_FEATURES = [
+  ['Privacy for two', 'Enclosed two-person room with a real bed and personal space.'],
+  ['Private shower & WC', 'Self-contained bathroom in the proposed cabin specification.'],
+  ['ASI Silent Shell', 'Acoustic shell and quiet ventilation being engineered for the prototype.'],
+  ['Automation-first', 'Booking, access, guest support, cleaning and maintenance workflows.'],
 ] as const;
 
-/* ─── Page ──────────────────────────────────────────────────────────────────── */
 export default async function Home() {
   if (await getIsRuHost()) return <HomeRu />;
 
   return (
     <div className="font-sans bg-asi-ivory text-asi-navy">
       <SiteHeader />
-
       <main>
-        {/* ── 1. Hero ── */}
-        <section className="relative bg-asi-ivory px-5 sm:px-8 pt-12 sm:pt-20 pb-16 sm:pb-24 overflow-hidden">
-          <div className="max-w-6xl mx-auto grid lg:grid-cols-[1.05fr,0.95fr] gap-12 lg:gap-16 items-center">
+        {/* The visual represents an INDOOR installation, not an outdoor dwelling. */}
+        <section className="bg-asi-ivory px-5 sm:px-8 pt-12 sm:pt-20 pb-16 sm:pb-24 overflow-hidden">
+          <div className="max-w-6xl mx-auto grid lg:grid-cols-[0.9fr,1.1fr] gap-10 lg:gap-12 items-center">
             <div>
               <div className="flex items-center gap-3">
                 <LogoMark size={34} />
                 <span className="font-serif text-2xl text-asi-navy">ASI Global</span>
               </div>
               <p className="mt-2 text-xs font-sans uppercase tracking-[0.22em] text-asi-navy/65">
-                Micro Hotels · Automation-first Operations
+                ASI CABINS · BUILT FOR THE WORLD
               </p>
               <Headline as="h1" className="mt-8 text-4xl sm:text-6xl lg:text-[4rem]">
-                Operations on autopilot.
+                One simple idea.
                 <br />
-                <span className="text-asi-gold">Humans on exceptions.</span>
+                <span className="text-asi-gold">Many ways to stay.</span>
               </Headline>
               <GoldRule className="mt-6 mb-6" />
               <p className="text-lg text-asi-navy/70 max-w-lg leading-relaxed">
-                ASI coordinates routine operations across physical businesses. Supported workflows can move
-                automatically; people handle exceptions, sensitive decisions, and unsupported external steps.
+                Private, comfortable cabins designed for two people. Install them inside suitable
+                existing buildings — in cities, near workplaces or at transport hubs.
+                One idea that can grow around the world.
               </p>
               <div className="mt-9 flex flex-wrap gap-4">
-                <PrimaryCta href="#intelligence">Explore ASI</PrimaryCta>
+                <PrimaryCta href="#cabin-types">See our cabin family</PrimaryCta>
                 <SecondaryCta href="#partner">Partner with ASI</SecondaryCta>
               </div>
             </div>
-            <div className="relative aspect-[4/5] w-full">
-              <Image
-                src="/images/japan/cityscape-wide.jpg"
-                alt="ASI Micro Hotel unit set against the Osaka skyline"
-                fill
-                sizes="(min-width: 1024px) 40vw, 90vw"
-                className="object-cover"
-                priority
-              />
-              <div className="absolute bottom-4 right-4">
-                <Shiro size={80} />
+            <div>
+              <div className="relative aspect-[16/10] w-full overflow-hidden bg-asi-paper">
+                <Image
+                  src="/images/asi-cabins-airport.webp"
+                  alt="ASI Cabins concept rendering: rounded modular private cabin with a neutral cat, installed inside an international airport terminal"
+                  fill
+                  sizes="(min-width: 1024px) 52vw, 90vw"
+                  className="object-cover"
+                  priority
+                />
               </div>
+              <p className="mt-2 text-xs text-asi-navy/50">
+                Concept visualization · Proposed indoor deployment · Subject to engineering and site approval
+              </p>
             </div>
           </div>
         </section>
 
-        {/* ── 2. Two layers ── */}
-        <Section id="intelligence" variant="paper">
-          <Eyebrow>One system. Two layers.</Eyebrow>
-          <Headline className="text-3xl sm:text-5xl max-w-3xl">One system. Two layers.</Headline>
-          <div className="mt-12 grid md:grid-cols-2 gap-px bg-asi-border border border-asi-border">
-            <div className="bg-asi-ivory p-8 sm:p-10">
-              <span className="text-xs font-sans font-semibold uppercase tracking-[0.18em] text-asi-gold-text">Layer 1</span>
-              <h3 className="mt-4 font-serif text-2xl sm:text-3xl">ASI Intelligence</h3>
-              <p className="mt-3 text-asi-navy/70 leading-relaxed">
-                The operating intelligence for automation-first physical businesses.
-              </p>
-              <p className="mt-4 text-sm text-asi-navy/60 leading-relaxed">
-                ASI coordinates workflows and decision support across bookings, payments,
-                communication, access, cleaning, maintenance, pricing and other operational
-                processes, with automation enabled where the required integration is available.
+        {/* Product family is intentionally visible immediately below the hero. */}
+        <Section id="cabin-types" variant="paper">
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <Eyebrow>ASI product family</Eyebrow>
+            <span className="border border-asi-gold/60 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-asi-gold-text">
+              Designed for the world
+            </span>
+          </div>
+          <Headline className="text-3xl sm:text-5xl max-w-4xl">
+            One idea. Many ways to stay. Worldwide.
+          </Headline>
+          <p className="mt-5 max-w-4xl text-lg text-asi-navy/70 leading-relaxed">
+            We are developing private cabins for people who need a place to stay —
+            near work, in a city, at an airport, between trains or close to university.
+            The same basic idea, adapted to different needs.
+          </p>
+          <div className="mt-10 grid gap-5 sm:grid-cols-2 xl:grid-cols-5">
+            <article id="product-workforce" key="workforce" className="flex flex-col overflow-hidden border border-asi-border bg-asi-ivory">
+              <div
+                role="img"
+                aria-label="Concept illustration of ASI private modular cabins within dedicated worker housing beside an industrial campus in Shenzhen, China. Not an operating site."
+                className="relative aspect-[15/14] w-full overflow-hidden bg-asi-paper"
+                style={{
+                  backgroundImage: "url('/images/cabins/ASI-Cabins-Five-Photo-Scenes.webp'), url('/images/cabins/workforce-shenzhen.svg')",
+                  backgroundSize: "500% 100%, cover",
+                  backgroundPosition: "0% center, center",
+                  backgroundRepeat: "no-repeat, no-repeat",
+                }}
+              ></div>
+              <div className="flex flex-1 flex-col p-5 sm:p-6">
+                <p className="text-[11px] uppercase tracking-[0.18em] text-asi-gold-text">Live near work</p>
+                <h3 className="mt-3 font-serif text-2xl leading-tight">ASI Workforce</h3>
+                <p className="mt-4 font-medium leading-snug text-asi-navy">A better place to live while working away from home.</p>
+                <p className="mt-3 flex-1 text-sm leading-relaxed text-asi-navy/65">Affordable longer stays for people working at factories, building sites and large workplaces. Employers may help pay.</p>
+                <div className="mt-5 border-t border-asi-border pt-3 flex items-center justify-between gap-2">
+                  <span className="text-xs text-asi-navy/55">Shenzhen, China</span>
+                  <a href="#cabins" className="text-xs font-semibold text-asi-gold-text underline underline-offset-4 hover:text-asi-navy">How it works</a>
+                </div>
+              </div>
+            </article>
+            <article id="product-urban" key="urban" className="flex flex-col overflow-hidden border border-asi-border bg-asi-ivory">
+              <div
+                role="img"
+                aria-label="Concept illustration of an ASI modular cabin in a dedicated indoor city accommodation space in Singapore. Not an operating site."
+                className="relative aspect-[15/14] w-full overflow-hidden bg-asi-paper"
+                style={{
+                  backgroundImage: "url('/images/cabins/ASI-Cabins-Five-Photo-Scenes.webp'), url('/images/cabins/urban-singapore.svg')",
+                  backgroundSize: "500% 100%, cover",
+                  backgroundPosition: "25% center, center",
+                  backgroundRepeat: "no-repeat, no-repeat",
+                }}
+              ></div>
+              <div className="flex flex-1 flex-col p-5 sm:p-6">
+                <p className="text-[11px] uppercase tracking-[0.18em] text-asi-gold-text">Stay in the city</p>
+                <h3 className="mt-3 font-serif text-2xl leading-tight">ASI Cabins Urban</h3>
+                <p className="mt-4 font-medium leading-snug text-asi-navy">Your own private space in the city.</p>
+                <p className="mt-3 flex-1 text-sm leading-relaxed text-asi-navy/65">A comfortable room for two, with a bed, shower and toilet, inside a suitable city building.</p>
+                <div className="mt-5 border-t border-asi-border pt-3 flex items-center justify-between gap-2">
+                  <span className="text-xs text-asi-navy/55">Singapore</span>
+                  <a href="#cabins" className="text-xs font-semibold text-asi-gold-text underline underline-offset-4 hover:text-asi-navy">How it works</a>
+                </div>
+              </div>
+            </article>
+            <article id="product-airport" key="airport" className="flex flex-col overflow-hidden border border-asi-border bg-asi-ivory">
+              <div
+                role="img"
+                aria-label="Concept illustration of an ASI private cabin inside a designated airport rest lounge in Taipei, Taiwan. Not an operating site."
+                className="relative aspect-[15/14] w-full overflow-hidden bg-asi-paper"
+                style={{
+                  backgroundImage: "url('/images/cabins/ASI-Cabins-Five-Photo-Scenes.webp'), url('/images/cabins/airport-taipei.svg')",
+                  backgroundSize: "500% 100%, cover",
+                  backgroundPosition: "50% center, center",
+                  backgroundRepeat: "no-repeat, no-repeat",
+                }}
+              ></div>
+              <div className="flex flex-1 flex-col p-5 sm:p-6">
+                <p className="text-[11px] uppercase tracking-[0.18em] text-asi-gold-text">Rest between flights</p>
+                <h3 className="mt-3 font-serif text-2xl leading-tight">ASI Transit · Airports</h3>
+                <p className="mt-4 font-medium leading-snug text-asi-navy">Sleep, shower and recharge before your next flight.</p>
+                <p className="mt-3 flex-1 text-sm leading-relaxed text-asi-navy/65">Private cabins in a quiet rest area inside an airport, away from the busy main hall.</p>
+                <div className="mt-5 border-t border-asi-border pt-3 flex items-center justify-between gap-2">
+                  <span className="text-xs text-asi-navy/55">Taipei, Taiwan</span>
+                  <a href="#cabins" className="text-xs font-semibold text-asi-gold-text underline underline-offset-4 hover:text-asi-navy">How it works</a>
+                </div>
+              </div>
+            </article>
+            <article id="product-rail" key="rail" className="flex flex-col overflow-hidden border border-asi-border bg-asi-ivory">
+              <div
+                role="img"
+                aria-label="Concept illustration of an ASI private modular cabin in a dedicated rest area of a Tokyo railway station. Not an operating site."
+                className="relative aspect-[15/14] w-full overflow-hidden bg-asi-paper"
+                style={{
+                  backgroundImage: "url('/images/cabins/ASI-Cabins-Five-Photo-Scenes.webp'), url('/images/cabins/rail-tokyo.svg')",
+                  backgroundSize: "500% 100%, cover",
+                  backgroundPosition: "75% center, center",
+                  backgroundRepeat: "no-repeat, no-repeat",
+                }}
+              ></div>
+              <div className="flex flex-1 flex-col p-5 sm:p-6">
+                <p className="text-[11px] uppercase tracking-[0.18em] text-asi-gold-text">Rest between trains</p>
+                <h3 className="mt-3 font-serif text-2xl leading-tight">ASI Transit · Rail</h3>
+                <p className="mt-4 font-medium leading-snug text-asi-navy">A private place to rest during a long journey.</p>
+                <p className="mt-3 flex-1 text-sm leading-relaxed text-asi-navy/65">Cabins in a quiet station rest area for a nap, a shower or an overnight connection.</p>
+                <div className="mt-5 border-t border-asi-border pt-3 flex items-center justify-between gap-2">
+                  <span className="text-xs text-asi-navy/55">Tokyo, Japan</span>
+                  <a href="#cabins" className="text-xs font-semibold text-asi-gold-text underline underline-offset-4 hover:text-asi-navy">How it works</a>
+                </div>
+              </div>
+            </article>
+            <article id="product-student" key="student" className="flex flex-col overflow-hidden border border-asi-border bg-asi-ivory">
+              <div
+                role="img"
+                aria-label="Concept illustration of ASI private modular student rooms in a university residential common area in Seoul. Not an operating site."
+                className="relative aspect-[15/14] w-full overflow-hidden bg-asi-paper"
+                style={{
+                  backgroundImage: "url('/images/cabins/ASI-Cabins-Five-Photo-Scenes.webp'), url('/images/cabins/student-seoul.svg')",
+                  backgroundSize: "500% 100%, cover",
+                  backgroundPosition: "100% center, center",
+                  backgroundRepeat: "no-repeat, no-repeat",
+                }}
+              ></div>
+              <div className="flex flex-1 flex-col p-5 sm:p-6">
+                <p className="text-[11px] uppercase tracking-[0.18em] text-asi-gold-text">Stay near campus</p>
+                <h3 className="mt-3 font-serif text-2xl leading-tight">ASI Student</h3>
+                <p className="mt-4 font-medium leading-snug text-asi-navy">Affordable private space for student life.</p>
+                <p className="mt-3 flex-1 text-sm leading-relaxed text-asi-navy/65">A comfortable place to sleep, study and recharge near universities and student housing.</p>
+                <div className="mt-5 border-t border-asi-border pt-3 flex items-center justify-between gap-2">
+                  <span className="text-xs text-asi-navy/55">Seoul, South Korea</span>
+                  <a href="#cabins" className="text-xs font-semibold text-asi-gold-text underline underline-offset-4 hover:text-asi-navy">How it works</a>
+                </div>
+              </div>
+            </article>
+          </div>
+          <p className="mt-5 text-xs text-asi-navy/55 leading-relaxed">
+            All images are concept illustrations, not photos of completed locations.
+            City names and any corporate signage are illustrative and do not indicate operating sites or partnerships.
+          </p>
+          <div className="mt-12 border-y border-asi-border py-9 grid gap-7 lg:grid-cols-[1.1fr,1fr] lg:items-center">
+            <div>
+              <Eyebrow>And this is just the beginning</Eyebrow>
+              <Headline className="text-3xl sm:text-4xl">Different countries. Same simple idea.</Headline>
+              <p className="mt-4 text-asi-navy/70 leading-relaxed">
+                Start with one site. Make it work well. Then bring the cabins to more cities,
+                workplaces, transport hubs and campuses around the world.
               </p>
             </div>
-            <div id="micro-hotels" className="bg-asi-ivory p-8 sm:p-10">
-              <span className="text-xs font-sans font-semibold uppercase tracking-[0.18em] text-asi-gold-text">Layer 2</span>
-              <h3 className="mt-4 font-serif text-2xl sm:text-3xl">ASI Physical</h3>
+            <div className="flex flex-wrap gap-4 lg:justify-end">
+              <PrimaryCta href="#cabins">See the cabin</PrimaryCta>
+              <SecondaryCta href="#partner">Build it with ASI</SecondaryCta>
+            </div>
+          </div>
+        </Section>
+
+        <Section id="intelligence" variant="paper">
+          <Eyebrow>One system. Two layers.</Eyebrow>
+          <Headline className="text-3xl sm:text-5xl max-w-3xl">
+            Modular accommodation. Intelligent operations.
+          </Headline>
+          <div className="mt-10 grid md:grid-cols-2 gap-px bg-asi-border border border-asi-border">
+            <div className="bg-asi-ivory p-8 sm:p-10">
+              <span className="text-xs uppercase tracking-[0.18em] text-asi-gold-text">Physical product</span>
+              <h3 className="mt-4 font-serif text-2xl sm:text-3xl">ASI Cabins</h3>
               <p className="mt-3 text-asi-navy/70 leading-relaxed">
-                Physical spaces designed to operate with minimal manual coordination.
+                Repeatable, fully enclosed private cabin modules placed inside suitable existing
+                commercial properties — not standalone outdoor houses.
               </p>
-              <p className="mt-4 text-sm text-asi-navy/60 leading-relaxed">
-                ASI Micro Hotels are the first physical implementation of the ASI operating model.
+            </div>
+            <div className="bg-asi-ivory p-8 sm:p-10">
+              <span className="text-xs uppercase tracking-[0.18em] text-asi-gold-text">Operating platform</span>
+              <h3 className="mt-4 font-serif text-2xl sm:text-3xl">ASI Intelligence</h3>
+              <p className="mt-3 text-asi-navy/70 leading-relaxed">
+                Coordinated guest communication, reservations, access, cleaning and support.
+                Real automation is enabled only where integrations and operating permissions are ready.
               </p>
             </div>
           </div>
         </Section>
 
-        {/* ── 3. Where ASI works ── */}
-        <Section variant="ivory">
-          <Eyebrow>Where ASI works</Eyebrow>
-          <Headline className="text-3xl sm:text-5xl max-w-3xl">Built for physical businesses.</Headline>
-          <div className="mt-12 grid sm:grid-cols-2 lg:grid-cols-4 gap-6">
-            {CATEGORIES.map((cat) => (
-              <div key={cat.name} className="border border-asi-border bg-asi-paper p-6">
-                <h3 className="font-serif text-lg">{cat.name}</h3>
-                <ul className="mt-4 space-y-2">
-                  {cat.items.map((item) => (
-                    <li key={item} className="text-sm text-asi-navy/65 border-t border-asi-border/70 pt-2 first:border-t-0 first:pt-0">
-                      {item}
-                    </li>
-                  ))}
-                </ul>
+        <Section id="cabins" variant="ivory">
+          <div className="grid lg:grid-cols-[1.1fr,0.9fr] gap-12 items-center">
+            <div className="relative aspect-[16/10] w-full overflow-hidden bg-asi-paper">
+              <Image
+                src="/images/asi-cabins-airport.webp"
+                alt="Illustrative ASI apple-profile modular cabin inside a transit building"
+                fill
+                sizes="(min-width: 1024px) 45vw, 90vw"
+                className="object-cover"
+              />
+            </div>
+            <div>
+              <Eyebrow>ASI Cabins</Eyebrow>
+              <Headline className="text-3xl sm:text-5xl">
+                A private room, not a sleeping pod.
+              </Headline>
+              <p className="mt-5 text-asi-navy/70 leading-relaxed">
+                Our proposed compact room is designed for two guests, with a full bed, private
+                shower and toilet, climate control and acoustic isolation. The distinctive rounded
+                apple-cabin profile is adapted for indoor modular construction.
+              </p>
+              <p className="mt-4 text-sm text-asi-navy/60 leading-relaxed">
+                The first prototype, assembly method, costs and performance specifications are
+                under development. Installation requires local fire, planning, accessibility and
+                building-services approval.
+              </p>
+            </div>
+          </div>
+          <div className="mt-12 grid sm:grid-cols-2 lg:grid-cols-4 gap-5">
+            {CABIN_FEATURES.map(([name, description]) => (
+              <div key={name} className="border border-asi-border bg-asi-paper p-6">
+                <h3 className="font-serif text-xl">{name}</h3>
+                <p className="mt-3 text-sm text-asi-navy/65 leading-relaxed">{description}</p>
               </div>
             ))}
           </div>
         </Section>
 
-        {/* ── 4. How ASI works ── */}
-        <Section variant="navy">
-          <Eyebrow dark>How ASI works</Eyebrow>
-          <Headline className="text-3xl sm:text-5xl max-w-3xl text-asi-ivory">
-            Supported routine work moves automatically.
-            <br />
-            People handle exceptions.
-          </Headline>
-          <div className="mt-12 overflow-x-auto pb-2">
-            <OperationalFlow dark />
-          </div>
-          <p className="mt-8 text-asi-ivory/60 max-w-xl leading-relaxed">
-            Within enabled workflows, routine steps can continue automatically. When policy, data, or an
-            integration cannot safely complete a step, ASI brings the right person in.
-          </p>
-        </Section>
-
-        {/* ── 5. Micro Hotels ── */}
-        <Section variant="paper">
-          <div className="grid lg:grid-cols-[0.9fr,1.1fr] gap-12 items-center">
-            <div className="order-2 lg:order-1 relative aspect-[4/3] w-full">
-              <Image
-                src="/images/japan/cabin-clean.jpg"
-                alt="ASI Micro Hotel cabin exterior and interior"
-                fill
-                sizes="(min-width: 1024px) 40vw, 90vw"
-                className="object-cover"
-              />
-            </div>
-            <div className="order-1 lg:order-2">
-              <Eyebrow>ASI Micro Hotels</Eyebrow>
-              <Headline className="text-3xl sm:text-5xl">A physical implementation of the ASI operating model.</Headline>
-              <p className="mt-5 text-asi-navy/70 leading-relaxed max-w-xl">
-                ASI Micro Hotels are designed to combine real private rooms with automation-first operations.
-              </p>
-              <p className="mt-4 text-sm text-asi-navy/60 leading-relaxed max-w-xl">
-                They are designed for underused urban spaces where conventional hospitality is
-                too expensive, too slow or too operationally heavy.
-              </p>
-              <div className="mt-8 grid sm:grid-cols-2 gap-6 max-w-xl">
-                <CircleFeature icon="bed" title="Private room for two" description="Real privacy, real comfort." />
-                <CircleFeature icon="gear" title="Automation-first operations" description="Designed around bookings, access, support, and cleaning workflows." />
-                <CircleFeature icon="chart" title="Underused space, reactivated" description="Compact urban footprint." />
-              </div>
-              <div className="mt-8">
-                <PrimaryCta href="/markets/japan">Explore Micro Hotels</PrimaryCta>
-              </div>
-            </div>
-          </div>
-        </Section>
-
-        {/* ── 6. Global expansion ── */}
-        <Section id="markets" variant="ivory">
-          <Eyebrow>Global expansion</Eyebrow>
+        <Section id="platform" variant="paper">
+          <Eyebrow>Operations on autopilot</Eyebrow>
           <Headline className="text-3xl sm:text-5xl max-w-3xl">
-            One engine. Different real-world operations.
+            One operating layer across the entire guest journey.
           </Headline>
-          <p className="mt-5 max-w-3xl text-asi-navy/70 leading-relaxed">
-            In Japan, ASI begins with autonomous hospitality. In Europe, the same operating
-            engine expands into industrial and field operations.
-          </p>
-          <p className="mt-3 max-w-3xl font-serif text-xl text-asi-navy/80">
-            Different markets. Same principle: operations on autopilot, humans on exceptions.
-          </p>
-
-          <div className="mt-12">
-            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-asi-gold-text">
-              Active tracks
-            </p>
-            <div className="mt-5 grid md:grid-cols-2 gap-6">
-              <MarketCard
-                country="jp"
-                name="Japan — Autonomous Hospitality"
-                line="ASI Micro Hotels + autonomous daily operations. Target program: Open Network Lab 32nd."
-                href="/markets/japan"
-                status="active"
-              />
-              <MarketCard
-                country="nl"
-                name="Netherlands / Europe — Industrial Operations"
-                line="Construction, field work, contractors and SLAs. Target program: LANDCROS Innovation Studios Europe Challenge 2026."
-                href="/markets/netherlands"
-                status="active"
-              />
-            </div>
+          <div className="mt-10 grid sm:grid-cols-2 lg:grid-cols-4 gap-5">
+            {[
+              ['01', 'Demand & booking', 'Coordinate inquiries, reservations and supported sales channels.'],
+              ['02', 'Arrival & access', 'Prepare and verify guest access using enabled integrations.'],
+              ['03', 'Turnover & upkeep', 'Dispatch cleaning and technical tasks, with human verification where needed.'],
+              ['04', 'Performance', 'Track utilization, costs and quality across a repeatable portfolio.'],
+            ].map(([num, title, detail]) => (
+              <div key={num} className="border-t border-asi-gold pt-5">
+                <span className="text-xs uppercase tracking-[0.18em] text-asi-gold-text">{num}</span>
+                <h3 className="mt-3 font-serif text-xl">{title}</h3>
+                <p className="mt-3 text-sm text-asi-navy/65 leading-relaxed">{detail}</p>
+              </div>
+            ))}
           </div>
+          <p className="mt-8 text-sm text-asi-navy/55">
+            Capabilities are phased; this is a product development plan, not a claim of completed autonomous deployment.
+          </p>
+        </Section>
 
-          <div className="mt-12 pt-10 border-t border-asi-border">
-            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-asi-navy/55">
-              Coming next
-            </p>
-            <div className="mt-5 grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
-              <MarketCard country="hk" name="Hong Kong" line="Dense urban cores, compact private stays." status="coming-next" />
-              <MarketCard country="tw" name="Taiwan" line="Urban infill hospitality for modern travelers." status="coming-next" />
-              <MarketCard country="sg" name="Singapore" line="Premium micro-stays for a global hub." status="coming-next" />
-              <MarketCard country="kr" name="Korea" line="Compact urban hospitality, autonomously run." status="coming-next" />
-              <MarketCard country="ae" name="UAE" line="Autonomous hospitality for a fast-growing market." status="coming-next" />
+        <Section id="global" variant="ivory">
+          <Eyebrow>Designed for worldwide scale</Eyebrow>
+          <Headline className="text-3xl sm:text-5xl max-w-4xl">
+            One cabin standard. Many buildings. Any viable market.
+          </Headline>
+          <p className="mt-6 max-w-3xl text-lg text-asi-navy/70 leading-relaxed">
+            ASI Cabins is not tied to a single city or country. The repeatable product is designed
+            for suitable indoor spaces in airports, railway stations, urban commercial properties
+            and other locations with verified guest demand.
+          </p>
+          <div className="mt-10 grid md:grid-cols-3 gap-6">
+            <div className="bg-asi-paper border border-asi-border p-7">
+              <h3 className="font-serif text-2xl">Manufacture</h3>
+              <p className="mt-3 text-sm text-asi-navy/65 leading-relaxed">
+                Engineer and source standardized modular cabin kits through qualified manufacturers.
+              </p>
             </div>
-          </div>
-
-          <div className="mt-8">
-            <SecondaryCta href="/markets">Explore all markets</SecondaryCta>
+            <div className="bg-asi-paper border border-asi-border p-7">
+              <h3 className="font-serif text-2xl">Install</h3>
+              <p className="mt-3 text-sm text-asi-navy/65 leading-relaxed">
+                Work with local property partners to validate spaces, permissions and infrastructure.
+              </p>
+            </div>
+            <div className="bg-asi-paper border border-asi-border p-7">
+              <h3 className="font-serif text-2xl">Operate</h3>
+              <p className="mt-3 text-sm text-asi-navy/65 leading-relaxed">
+                Connect each location to the same evolving ASI operational platform.
+              </p>
+            </div>
           </div>
         </Section>
 
-        {/* ── 7. Media ── */}
-        <Section variant="paper">
-          <Eyebrow>ASI Media</Eyebrow>
-          <Headline className="text-3xl sm:text-5xl max-w-2xl">ASI Media</Headline>
-          <div className="mt-12 grid sm:grid-cols-3 gap-6">
-            <MediaCard label="Deck" title="Japan Pitch Deck" action="coming-soon" />
-            <MediaCard label="Film" title="Japan Concept Film" action="coming-soon" />
-            <MediaCard label="Deck" title="Europe Industrial Deck" action="coming-soon" />
-          </div>
-          <div className="mt-10">
-            <SecondaryCta href="/media">View Media</SecondaryCta>
-          </div>
-        </Section>
-
-        {/* ── About / Partner CTA ── */}
-        <section id="about" className="bg-asi-navy text-asi-ivory px-5 sm:px-8 py-16 sm:py-24">
-          <div id="partner" className="max-w-3xl mx-auto text-center">
-            <Eyebrow dark>Partner with ASI</Eyebrow>
-            <Headline as="h2" className="text-3xl sm:text-5xl text-asi-ivory">
-              Bring ASI to your market.
+        <Section id="partner" variant="paper">
+          <div id="about" className="max-w-3xl mx-auto text-center">
+            <Eyebrow>Strategic partnerships</Eyebrow>
+            <Headline as="h2" className="text-3xl sm:text-5xl">
+              Build a new category of modular hospitality.
             </Headline>
-            <p className="mt-5 text-asi-ivory/65 leading-relaxed">
-              We work with operators and property owners to launch the ASI operating model in new
-              cities, starting with a small, provable pilot.
+            <p className="mt-5 text-asi-navy/70 leading-relaxed">
+              ASI Cabins is currently in product engineering and manufacturing sourcing.
+              We are exploring strategic partnerships for a prototype, a 3–5 cabin pilot,
+              commercial property access and repeatable international deployment.
             </p>
-            <div className="mt-9 flex flex-wrap gap-4 justify-center">
-              <PrimaryCta href="/markets/japan#pilot">Partner on the Japan Pilot</PrimaryCta>
-              <SecondaryCta href="#" disabledReason="International contact channel launching soon">Contact ASI Global</SecondaryCta>
+            <p className="mt-5 text-sm text-asi-navy/55">
+              Pilot economics, regulatory suitability and manufacturing quotes remain to be validated.
+            </p>
+            <div className="mt-9 flex justify-center">
+              <SecondaryCta href="#cabins">Review the cabin concept</SecondaryCta>
             </div>
-            <p className="mt-8 text-xs text-asi-ivory/60">
-              International contact channel launching soon.
-            </p>
-            <p className="mt-3 text-xs text-asi-ivory/60">
-              Looking for the short-term rental automation product?{' '}
-              <Link href="/rental-autopilot" className="underline hover:text-asi-ivory/70">
-                Rental Autopilot →
-              </Link>
-            </p>
           </div>
-        </section>
+        </Section>
       </main>
-
       <SiteFooter />
     </div>
   );
