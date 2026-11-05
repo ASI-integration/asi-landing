@@ -8,12 +8,10 @@ const slots=Array.from({length:5},(_,i)=>({slot:i+1,product:'product-'+(i+1),
   repository:'ASI-integration/asi-landing',head:SHA,executable:false,authority:null,
   task:{id:'task-'+(i+1),paths:['src/example.mjs']}}));
 const wave={status:'PLANNED',executable:false,authority:null,publisherConcurrency:1,slots};
-const preparation={status:'PREPARED',publisherReady:false,results:slots.map(s=>({
-  slot:s.slot,taskId:s.task.id,status:'PREPARED',artifactSha256:'b'.repeat(64)}))};
-const readPrepared=async p=>{
-  const content='export const x='+p.slot+';\n';
-  return {...p,changes:[{path:'src/example.mjs',content,beforeSha256:null,afterSha256:sha(content)}]};
-};
+const changesFor=p=>{const content='export const x='+p.slot+';\\n';return [{path:'src/example.mjs',beforeSha256:null,afterSha256:sha(content),content}]};
+const digestFor=s=>sha(JSON.stringify({taskId:s.task.id,product:s.product,repository:s.repository,baseSha:s.head,changes:changesFor(s)}));
+const preparation={status:'PREPARED',publisherReady:false,results:slots.map(s=>({slot:s.slot,taskId:s.task.id,product:s.product,repository:s.repository,baseSha:s.head,status:'PREPARED',artifactSha256:digestFor(s)}))};
+const readPrepared=async p=>({...p,changes:changesFor(p)});
 
 test('five independent candidates, one Publisher, zero execution authority',async()=>{
  const out=await compileFiveWorkerPublisherHandoff({wave,preparation,readPrepared});
@@ -54,4 +52,15 @@ test('forged task reference cannot borrow another task',async()=>{
 test('missing host reader fails closed',async()=>{
  const out=await compileFiveWorkerPublisherHandoff({wave,preparation});
  assert.equal(out.status,'BLOCKED');assert.equal(out.ready.length,0);
+});
+
+test('an artifact hash must cover exact source bytes and task identity',async()=>{
+ const forged={...preparation,results:preparation.results.map((r,i)=>i===2?{...r,artifactSha256:'b'.repeat(64)}:r)};
+ const out=await compileFiveWorkerPublisherHandoff({wave,preparation:forged,readPrepared});
+ assert.equal(out.ready.length,4);assert.equal(out.blocked[0].reason,'SOURCE_ARTIFACT_DIGEST_MISMATCH');
+});
+test('forged preparation product or base never reaches publisher candidate',async()=>{
+ const forged={...preparation,results:preparation.results.map((r,i)=>i===0?{...r,product:'other'}:r)};
+ const out=await compileFiveWorkerPublisherHandoff({wave,preparation:forged,readPrepared});
+ assert.equal(out.ready.length,4);assert.equal(out.blocked[0].reason,'PREPARATION_RESULT_SCOPE_CHANGED');
 });
