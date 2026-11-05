@@ -4,6 +4,8 @@
  * queues, models, publication ports, or authorization are created here.
  * The native host must attest the snapshot and individually admit each task.
  */
+import {createHash} from 'node:crypto';
+const SHA=x=>createHash('sha256').update(x).digest('hex');
 const ID=/^[a-z][a-z0-9-]{0,79}$/;
 const SHA40=/^[a-f0-9]{40}$/;
 const SHA64=/^[a-f0-9]{64}$/;
@@ -15,8 +17,9 @@ const must=(condition,code)=>{if(!condition)throw Error(code);};
 
 export function createUniversalProductRoute({id,repository,head,contractHash,
   stage,workOrders,maxPlansPerStage=5}={}){
-  must(typeof id==='string'&&ID.test(id)&&REPO.test(repository||'')&&SHA40.test(head||'')&&
-    SHA64.test(contractHash||'')&&typeof stage==='string'&&stage.length>0&&stage.length<=80&&
+  must(typeof id==='string'&&ID.test(id)&&typeof repository==='string'&&REPO.test(repository)&&
+    typeof head==='string'&&SHA40.test(head)&&
+    typeof contractHash==='string'&&SHA64.test(contractHash)&&typeof stage==='string'&&stage.length>0&&stage.length<=80&&
     Number.isSafeInteger(maxPlansPerStage)&&maxPlansPerStage>=1&&maxPlansPerStage<=10&&
     Array.isArray(workOrders)&&workOrders.length>=1&&workOrders.length<=10,
     'PRODUCT_ROUTE_CONTRACT_INVALID');
@@ -33,11 +36,18 @@ export function createUniversalProductRoute({id,repository,head,contractHash,
       priority:w.priority,paths:Object.freeze([...w.paths])});
   });
   Object.freeze(approved);
+  // Bind the owner's external contract pin to the EXACT product work catalog.
+  // A different catalog under the same external hash cannot be silently
+  // accepted by the existing durable Global Dispatcher after restart.
+  const pinnedContractHash=SHA(JSON.stringify({id,repository,head,stage,
+    externalContractHash:contractHash,maxPlansPerStage,workOrders:approved}));
   return Object.freeze({
-    id,contractHash,
+    id,contractHash:pinnedContractHash,
     contract:Object.freeze({execution:'disabled',maxAttemptsPerTask:1,maxPlansPerStage}),
     evaluate(snapshot){
-      const same=snapshot&&snapshot.repository===repository&&snapshot.head===head&&
+      const same=snapshot&&snapshot.product===id&&
+        snapshot.contractHash===pinnedContractHash&&
+        snapshot.repository===repository&&snapshot.head===head&&
         snapshot.status==='READY';
       return Object.freeze({
         status:same?'READY':'BLOCKED',nextAction:same?
