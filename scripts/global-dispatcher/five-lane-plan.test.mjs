@@ -54,3 +54,10 @@ test('not more than five lanes or changed input task state',()=>{
  const job=task('job-b','planner'),before=JSON.stringify(job);
  planUniversalFiveLanes({workOrders:[job]});assert.equal(JSON.stringify(job),before);
 });
+
+test('cyclic dependencies are rejected before assigning any worker',()=>{
+ const a=task('job-a','planner','cabins',{dependsOn:['job-b']});
+ const b=task('job-b','builder','cabins',{dependsOn:['job-a']});
+ assert.throws(()=>planUniversalFiveLanes({workOrders:[a,b]}),
+   /UNIVERSAL_DEPENDENCY_CYCLE/);
+});
