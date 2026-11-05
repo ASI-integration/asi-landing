@@ -52,7 +52,7 @@ async function boundedPort(run,timeoutMs){
 const deadline=e=>e?.message==='FIVE_WORKER_PORT_DEADLINE';
 
 /** Phase-1 admission is serial; no callback from a planner is itself authority. */
-export async function prepareAdmittedFiveWorkerWave({wave,admit,prepare,
+export async function prepareAdmittedFiveWorkerWave({wave,admit,verifyAdmission,prepare,
   admissionTimeoutMs=15000,preparationTimeoutMs=60000}={}){
   must(wave&&['PLANNED','PARTIAL'].includes(wave.status)&&
     wave.executable===false&&wave.authority===null&&
@@ -67,10 +67,11 @@ export async function prepareAdmittedFiveWorkerWave({wave,admit,prepare,
   must(ids.every((x,i)=>x.slot===i+1)&&
     new Set(ids.map(x=>x.product+':'+x.taskId)).size===ids.length,
     'FIVE_WORKER_SLOT_COLLISION');
-  if(typeof admit!=='function'||typeof prepare!=='function')
+  if(typeof admit!=='function'||typeof verifyAdmission!=='function'||
+     typeof prepare!=='function')
     return freeze({status:'BLOCKED',reason:'SIGNED_HOST_PORTS_REQUIRED',
       publisherReady:false,results:freeze([])});
-  const admitted=[],blocked=[],workspaceKeys=new Set();
+  const admitted=[],blocked=[],workspaceKeys=new Set(),claimIds=new Set();
   // Native admission must persist each claim under the one existing ledger.
   for(const id of ids){
     let a;
@@ -82,6 +83,26 @@ export async function prepareAdmittedFiveWorkerWave({wave,admit,prepare,
        workspaceKeys.has(a.workspaceKey)){
       blocked.push(result(id,'BLOCKED','TASK_EXACT_NATIVE_ADMISSION_MISSING'));continue;
     }
+    // A response claiming verified:true is not durable evidence. The signed
+    // host must read the exact claim back from the ORIGINAL native ledger,
+    // under its existing transaction lock, before any preparation is allowed.
+    if(typeof a.claimId!=='string'||!ID.test(a.claimId)||claimIds.has(a.claimId)){
+      blocked.push(result(id,'BLOCKED','NATIVE_CLAIM_ID_UNVERIFIED'));continue;
+    }
+    let verified=false;
+    try{
+      verified=await boundedPort(signal=>verifyAdmission(id,freeze({
+        claimId:a.claimId,workspaceKey:a.workspaceKey,signal
+      })),admissionTimeoutMs)===true;
+    }catch(error){
+      blocked.push(result(id,'UNKNOWN',deadline(error)?
+        'CLAIM_READBACK_DEADLINE_UNKNOWN_NO_REPLAY':'CLAIM_READBACK_UNKNOWN_NO_REPLAY'));
+      continue;
+    }
+    if(!verified){
+      blocked.push(result(id,'BLOCKED','NATIVE_CLAIM_READBACK_UNVERIFIED'));continue;
+    }
+    claimIds.add(a.claimId);
     workspaceKeys.add(a.workspaceKey);
     admitted.push(freeze({id,workspaceKey:a.workspaceKey,token:a.token}));
   }
