@@ -60,6 +60,10 @@ export async function compileFiveWorkerPublisherHandoff({wave,preparation,readPr
       blocked.push(item(s.slot,s.task.id,r.status,'PREPARATION_NOT_VERIFIED'));
       continue;
     }
+    if(r.product!==s.product||r.repository!==s.repository||r.baseSha!==s.head){
+      blocked.push(item(s.slot,s.task.id,'BLOCKED','PREPARATION_RESULT_SCOPE_CHANGED'));
+      continue;
+    }
     if(!SHA64.test(r.artifactSha256||'')){
       blocked.push(item(s.slot,s.task.id,'BLOCKED','SOURCE_ARTIFACT_DIGEST_UNVERIFIED'));
       continue;
@@ -95,6 +99,12 @@ export async function compileFiveWorkerPublisherHandoff({wave,preparation,readPr
     }
     if(changes.length!==s.task.paths.length){
       blocked.push(item(s.slot,s.task.id,'BLOCKED','SOURCE_BYTES_OR_SCOPE_UNVERIFIED'));
+      continue;
+    }
+    const computed=hash(JSON.stringify({taskId:s.task.id,product:s.product,
+      repository:s.repository,baseSha:s.head,changes}));
+    if(computed!==r.artifactSha256){
+      blocked.push(item(s.slot,s.task.id,'BLOCKED','SOURCE_ARTIFACT_DIGEST_MISMATCH'));
       continue;
     }
     // NOT a native publisher task: only the signed host may compile it
