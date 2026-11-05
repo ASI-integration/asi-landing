@@ -175,6 +175,10 @@ export function createGlobalDispatcher({stateDir, adapters} = {}) {
             result.candidates = [];
           }
           const eligible = result.candidates.filter(c => !product.terminal.some(t => t.id === c.id));
+          // Historical planned IDs remain quarantined by the filter below.
+          // Their presence must NOT block other, independent unplanned tasks
+          // of the same product. Previously a single planned ID stopped the
+          // entire product on its next poll.
           const repeated = eligible.some(c => product.planned.some(p => p.id === c.id));
           const exhausted = eligible.length > 0 && product.planned.filter(p => p.stage === result.stage).length >= adapter.maxPlansPerStage;
           const atCapacity = adapter.goalPlanning && product.planned.filter(p =>
@@ -182,8 +186,8 @@ export function createGlobalDispatcher({stateDir, adapters} = {}) {
           // The same job is never automatically reissued, even on a new SHA or
           // after a cosmetic change. Explicit evidence reconciliation is a later gate.
           result.candidates = eligible.filter(c => !product.planned.some(p => p.id === c.id));
-          if (result.status === 'READY' && ((!adapter.goalPlanning && repeated) || exhausted || atCapacity || !result.candidates.length)) {
-            result.status = repeated || exhausted || atCapacity ? 'BLOCKED' : 'WAITING';
+          if (result.status === 'READY' && (exhausted || atCapacity || !result.candidates.length)) {
+            result.status = exhausted || atCapacity ? 'BLOCKED' : 'WAITING';
             result.candidates = [];
             result.nextAction = atCapacity ? 'Await verified results for the bounded in-flight reservations; do not reissue them.' :
               'Reconcile the existing task reservation/publication or supply stage acceptance; automatic retry is disabled.';
