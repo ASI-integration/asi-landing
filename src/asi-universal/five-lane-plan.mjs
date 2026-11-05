@@ -12,7 +12,7 @@ const unique=a=>new Set(a).size===a.length;
  * A claim without a verified receipt remains UNKNOWN and is not replayed.
  * Native state.execute and the single Publisher serialize all external effects.
  */
-export function planUniversalFiveLanes({workOrders,receipts=[],claims=[],maxParallel=5}={}){
+export function planUniversalFiveLanes({workOrders,receipts=[],claims=[],maxParallel=5,verifyNativeEvidence}={}){
   must(Array.isArray(workOrders)&&workOrders.length<=100&&
     Array.isArray(receipts)&&receipts.length<=1000&&
     Array.isArray(claims)&&claims.length<=1000&&
@@ -44,6 +44,23 @@ export function planUniversalFiveLanes({workOrders,receipts=[],claims=[],maxPara
     visited.add(id);
   };
   for(const id of orders.keys())check(id);
+  // Native host, not an untrusted status string, must establish provenance.
+  // This verifier is a PORT supplied by the already-signed host, not a signature
+  // or permission minted by this read-only planner. The host must read within
+  // its existing ledger transaction and verify every record's exact identity.
+  if(receipts.length||claims.length){
+    must(typeof verifyNativeEvidence==='function','NATIVE_LEDGER_EVIDENCE_REQUIRED');
+    const pin=Object.freeze({
+      workOrders:Object.freeze([...orders.values()].map(t=>Object.freeze({
+        taskId:t.id,product:t.product,baseSha:t.baseSha
+      }))),
+      receipts:Object.freeze(receipts.map(r=>Object.freeze({...r}))),
+      claims:Object.freeze(claims.map(c=>Object.freeze({...c})))
+    });
+    let confirmed=false;
+    try{confirmed=verifyNativeEvidence(pin)===true;}catch{}
+    must(confirmed,'NATIVE_LEDGER_EVIDENCE_UNVERIFIED');
+  }
   const verified=new Set();
   for(const r of receipts){
     must(record(r)&&ID.test(r.taskId)&&ID.test(r.product)&&
