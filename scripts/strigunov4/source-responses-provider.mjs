@@ -15,6 +15,8 @@ const h64=/^[0-9a-f]{64}$/;
 const modelName=/^[A-Za-z0-9][A-Za-z0-9._:-]{0,100}$/;
 const identifier=/^[a-z0-9][a-z0-9-]{0,79}$/;
 const inputPath=/^[a-zA-Z0-9_.-]+(?:\/[a-zA-Z0-9_.-]+)*\.(?:mjs|js|json|py)$/;
+const DEFAULT_REPOSITORY='ASI-integration/asi-landing';
+const repositoryName=/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
 const reason=code=>Object.freeze({status:'BLOCKED',reason:code,changes:[]});
 const schema=Object.freeze({
   type:'object',
@@ -96,9 +98,13 @@ function extraction(json){
  * admitRequest must reserve a native paid-provider budget BEFORE the request.
  * Without it, no model call occurs. Supply a bound host callback in the
  * actual signed runtime; a test callback proves protocol, not live authority.
+ * allowedRepository defaults to the existing signed repo; cross-repository
+ * use requires a separate native host instance pinned to that product's
+ * independently signed repository, catalog, source checkout and budget.
  */
 export function createResponsesCodeProducer({model,apiKey,admitRequest,getContext,
-  transport=fetch,maxOutputTokens=4096,timeoutMs=45000}={}){
+  transport=fetch,maxOutputTokens=4096,timeoutMs=45000,
+  allowedRepository=DEFAULT_REPOSITORY}={}){
   return async function produce(task){
     if(!exact(task,task?.objective===undefined?
       ['id','laneId','baseSha','repository','branch','paths']:
@@ -109,7 +115,8 @@ export function createResponsesCodeProducer({model,apiKey,admitRequest,getContex
       new Set(task.paths).size!==task.paths.length||
       typeof task.objective!=='string'||task.objective.length<1||
       task.objective.length>2400||!/^[0-9a-f]{40}$/.test(task.baseSha)||
-      task.repository!=='ASI-integration/asi-landing')
+      typeof allowedRepository!=='string'||!repositoryName.test(allowedRepository)||
+      task.repository!==allowedRepository)
       return reason('SIGNED_TASK_OBJECTIVE_OR_SOURCE_REQUIRED');
     // Snapshot task identity before any source read or paid reservation.
     // Later caller mutation must not silently change model instructions.
