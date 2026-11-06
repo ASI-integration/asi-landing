@@ -4,6 +4,7 @@ import { headers } from 'next/headers';
 import type { Metadata } from 'next';
 
 import cabinsHero from '@/assets/cabins/cabins-hero.webp';
+import cabinsFormatStrip from '@/assets/cabins/asi-cabins-five-photo-scenes.webp';
 
 import { RU_PUBLIC_ORIGIN, EN_PUBLIC_ORIGIN, GUEST_AUTOPILOT_ORIGIN } from '@/config/publicOrigins';
 import { hostnameFromHostHeader, isRuRuntimeHost } from '@/lib/runtimeHost';
