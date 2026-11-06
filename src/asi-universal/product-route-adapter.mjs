@@ -12,7 +12,7 @@ const SHA64=/^[a-f0-9]{64}$/;
 const REPO=/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
 const allowedPath=x=>typeof x==='string'&&x.length<=256&&x.length>0&&
   !x.startsWith('/')&&!x.includes('\\')&&
-  x.split('/').every(s=>s&&s!=='.'&&s!=='..'&&s!=='.git');
+  x.split('/').every(s=>s&&s!=='.'&&s!=='..'&&s.toLowerCase()!=='.git');
 const must=(condition,code)=>{if(!condition)throw Error(code);};
 
 export function createUniversalProductRoute({id,repository,head,contractHash,
