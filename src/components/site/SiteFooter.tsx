@@ -13,28 +13,35 @@ export function SiteFooter() {
               <span className="font-serif text-lg">ASI Global</span>
             </div>
             <p className="mt-4 text-sm leading-relaxed text-asi-ivory/60">
-              Autonomous operations for physical businesses.
+              ASI Cabins: private modular rooms, five accommodation formats and one intelligent operating platform.
+              Development and first-pilot preparation are underway.
             </p>
           </div>
 
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-8 text-sm">
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-8 text-sm">
             <div className="flex flex-col gap-2.5">
-              <span className="text-xs font-semibold uppercase tracking-[0.18em] text-asi-gold-soft mb-1">ASI Global</span>
-              <Link href="/#intelligence" className="hover:text-asi-ivory transition-colors">Autonomous Operations</Link>
-              <Link href="/#micro-hotels" className="hover:text-asi-ivory transition-colors">Micro Hotels</Link>
+              <span className="text-xs font-semibold uppercase tracking-[0.18em] text-asi-gold-soft mb-1">Product</span>
+              <Link href="/cabins" className="hover:text-asi-ivory transition-colors">ASI Cabins</Link>
+              <Link href="/#concept" className="hover:text-asi-ivory transition-colors">The concept</Link>
+              <Link href="/#formats" className="hover:text-asi-ivory transition-colors">Five formats</Link>
             </div>
+
             <div className="flex flex-col gap-2.5">
-              <span className="text-xs font-semibold uppercase tracking-[0.18em] text-asi-gold-soft mb-1">Explore</span>
-              <Link href="/markets" className="hover:text-asi-ivory transition-colors">Markets</Link>
-              <Link href="/media" className="hover:text-asi-ivory transition-colors">Media</Link>
-              <Link href="/markets/japan" className="hover:text-asi-ivory transition-colors">Japan</Link>
-              <Link href="/markets/netherlands" className="hover:text-asi-ivory transition-colors">Netherlands / Europe</Link>
+              <span className="text-xs font-semibold uppercase tracking-[0.18em] text-asi-gold-soft mb-1">System</span>
+              <Link href="/#how-it-works" className="hover:text-asi-ivory transition-colors">How it works</Link>
+              <Link href="/#platform" className="hover:text-asi-ivory transition-colors">ASI platform</Link>
+              <Link href="/#pilot" className="hover:text-asi-ivory transition-colors">Current stage</Link>
             </div>
+
             <div className="flex flex-col gap-2.5">
-              <span className="text-xs font-semibold uppercase tracking-[0.18em] text-asi-gold-soft mb-1">Company</span>
-              <Link href="/#about" className="hover:text-asi-ivory transition-colors">About</Link>
-              <Link href="/#partner" className="hover:text-asi-ivory transition-colors">Partner with ASI</Link>
-              <Link href="/rental-autopilot" className="hover:text-asi-ivory transition-colors">Rental Autopilot product</Link>
+              <span className="text-xs font-semibold uppercase tracking-[0.18em] text-asi-gold-soft mb-1">Partnership</span>
+              <Link href="/#partners" className="hover:text-asi-ivory transition-colors">Partner with ASI</Link>
+              <a
+                href="mailto:project.ayfaar@gmail.com?subject=ASI%20Cabins%20partnership"
+                className="hover:text-asi-ivory transition-colors"
+              >
+                Contact ASI Global
+              </a>
             </div>
           </div>
         </div>
@@ -42,8 +49,8 @@ export function SiteFooter() {
         <div className="mt-12 pt-8 border-t border-asi-ivory/15 flex flex-col sm:flex-row sm:items-center gap-5">
           <Shiro size={40} signature dark />
           <p className="text-xs text-asi-ivory/50 leading-relaxed max-w-2xl">
-            Shiro is the official recurring brand signature of ASI Global. Local market
-            adaptations represent the same core identity with subtle regional attributes.
+            Shiro is the recurring brand signature of ASI Global. ASI Cabins remains a development-stage concept;
+            illustrations are not photographs of operating ASI locations.
           </p>
         </div>
       </div>

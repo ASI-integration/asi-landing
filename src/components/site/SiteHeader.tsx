@@ -6,11 +6,10 @@ import { LogoMark } from './LogoMark';
 
 const NAV = [
   { href: '/', label: 'Home' },
-  { href: '/#intelligence', label: 'Platform' },
-  { href: '/#micro-hotels', label: 'Micro Hotels' },
-  { href: '/markets', label: 'Markets' },
-  { href: '/media', label: 'Media' },
-  { href: '/#about', label: 'About' },
+  { href: '/cabins', label: 'ASI Cabins' },
+  { href: '/#formats', label: 'Formats' },
+  { href: '/#platform', label: 'Platform' },
+  { href: '/#partners', label: 'Partnership' },
 ];
 
 export function SiteHeader() {
@@ -19,7 +18,11 @@ export function SiteHeader() {
   return (
     <header className="sticky top-0 z-50 bg-asi-ivory/90 backdrop-blur-md border-b border-asi-border">
       <div className="max-w-6xl mx-auto px-5 sm:px-8 h-16 sm:h-20 flex items-center justify-between gap-6">
-        <Link href="/" className="flex items-center gap-3 shrink-0 text-asi-navy" onClick={() => setOpen(false)}>
+        <Link
+          href="/"
+          className="flex items-center gap-3 shrink-0 text-asi-navy"
+          onClick={() => setOpen(false)}
+        >
           <LogoMark size={28} />
           <span className="font-serif text-lg tracking-tight">ASI Global</span>
         </Link>
@@ -38,7 +41,7 @@ export function SiteHeader() {
 
         <div className="hidden lg:block shrink-0">
           <Link
-            href="/#partner"
+            href="/#partners"
             className="inline-flex items-center px-5 py-2.5 border border-asi-navy text-asi-navy text-sm font-sans font-semibold tracking-wide rounded-sm hover:bg-asi-navy hover:text-asi-ivory transition-colors"
           >
             Partner with ASI
@@ -79,7 +82,7 @@ export function SiteHeader() {
             </Link>
           ))}
           <Link
-            href="/#partner"
+            href="/#partners"
             onClick={() => setOpen(false)}
             className="mt-4 inline-flex items-center justify-center px-5 py-3 bg-asi-navy text-asi-ivory text-sm font-sans font-semibold tracking-wide rounded-sm"
           >

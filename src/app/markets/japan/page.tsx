@@ -10,9 +10,9 @@ import { MediaCard } from '@/components/site/MediaCard';
 import { OperationalFlow } from '@/components/site/OperationalFlow';
 import { GUEST_AUTOPILOT_ORIGIN } from '@/config/publicOrigins';
 
-const title = 'ASI Global Japan — Autonomous Hospitality & Micro Hotels';
+const title = 'ASI Global Japan — ASI Cabins concept and intelligent operations';
 const description =
-  'ASI Global combines private micro-hotel rooms with an autonomous operating platform for booking, access, guest communication, cleaning and daily operations.';
+  'ASI Cabins proposes comfortable private modular rooms inside suitable buildings, with integrated operational tools. A first 3–5 cabin pilot is in preparation, not operating.';
 const url = `${GUEST_AUTOPILOT_ORIGIN}/markets/japan`;
 
 export const metadata: Metadata = {
@@ -54,7 +54,7 @@ export default function JapanMarketPage() {
                 <span className="font-serif text-xl text-asi-navy">ASI Global</span>
               </div>
               <p className="mt-2 text-xs font-sans uppercase tracking-[0.22em] text-asi-navy/65">
-                Micro Hotels · Autonomous Operations
+                ASI Cabins · Planned Intelligent Operations
               </p>
               <Headline as="h1" className="mt-7 text-4xl sm:text-6xl">
                 From Osaka, 1979 —<br />
@@ -75,8 +75,8 @@ export default function JapanMarketPage() {
                 stays for modern travelers.
               </p>
               <div className="mt-9 flex flex-wrap gap-4">
-                <PrimaryCta href="#pilot">Partner on the Japan Pilot</PrimaryCta>
-                <SecondaryCta href="#media">Japan Pitch Deck</SecondaryCta>
+                <PrimaryCta href="/cabins#partners">Discuss a Japan pilot</PrimaryCta>
+                <SecondaryCta href="/cabins">View global ASI Cabins concept</SecondaryCta>
               </div>
               <div className="mt-12 flex items-center gap-3">
                 <GoldRule className="w-8" />
@@ -88,7 +88,7 @@ export default function JapanMarketPage() {
             <div className="relative aspect-[4/5] w-full">
               <Image
                 src="/images/japan/cabin-clean.jpg"
-                alt="ASI Micro Hotel cabin, Osaka"
+                alt="Illustration of a proposed ASI Cabins room, not an operating Osaka property"
                 fill
                 sizes="(min-width: 1024px) 40vw, 90vw"
                 className="object-cover"
@@ -137,22 +137,22 @@ export default function JapanMarketPage() {
             <div className="relative aspect-[4/3] w-full">
               <Image
                 src="/images/japan/cityscape-wide.jpg"
-                alt="ASI Micro Hotel unit against the Osaka skyline"
+                alt="Concept illustration of an ASI Cabins room in an urban setting"
                 fill
                 sizes="(min-width: 1024px) 40vw, 90vw"
                 className="object-cover"
               />
             </div>
             <div>
-              <Eyebrow>Micro Hotel</Eyebrow>
+              <Eyebrow>ASI Cabins Urban concept</Eyebrow>
               <Headline className="text-2xl sm:text-4xl">A real private room, built for the city.</Headline>
               <div className="mt-8 grid sm:grid-cols-2 gap-6 max-w-xl">
                 <CircleFeature icon="bed" title="Private room for two" description="Real privacy. Real comfort." />
-                <CircleFeature icon="gear" title="Autonomous operations" description="Bookings, access, support, cleaning, optimization." />
+                <CircleFeature icon="gear" title="Intelligent operations" description="Planned bookings, access, guest support, pricing and cleaning coordination." />
                 <CircleFeature icon="chart" title="Underused space, reactivated" description="Turning empty square meters into brighter city stays." />
               </div>
               <div className="mt-8 grid sm:grid-cols-2 gap-3 max-w-xl text-sm text-asi-navy/65">
-                <div className="border border-asi-border bg-asi-ivory p-4">Approx. 10–12 m²</div>
+                <div className="border border-asi-border bg-asi-ivory p-4">Size adapted to each site</div>
                 <div className="border border-asi-border bg-asi-ivory p-4">Designed for two</div>
                 <div className="border border-asi-border bg-asi-ivory p-4">Real bed · workspace · storage</div>
                 <div className="border border-asi-border bg-asi-ivory p-4">Private shower / WC concept</div>
@@ -171,8 +171,8 @@ export default function JapanMarketPage() {
             Operations on autopilot. Humans on exceptions.
           </Headline>
           <p className="mt-5 text-asi-ivory/65 max-w-2xl leading-relaxed">
-            Most routine operations are handled by ASI. Humans step in when something unusual
-            needs a decision.
+            ASI is designed to coordinate routine tasks where integrations and policy allow it.
+            People remain responsible for exceptions and decisions requiring human judgment.
           </p>
           <div className="mt-10 flex flex-wrap gap-3">
             {OPERATIONS.map((op) => (
@@ -200,28 +200,27 @@ export default function JapanMarketPage() {
                 demand, operations and economics.
               </p>
               <div className="mt-6">
-                <PrimaryCta href="#" disabledReason="International contact channel launching soon">Partner on the Japan Pilot</PrimaryCta>
+                <PrimaryCta href="/cabins#partners">Discuss a Japan pilot</PrimaryCta>
               </div>
-              <p className="mt-3 text-xs text-asi-navy/60">International contact channel launching soon.</p>
+              <p className="mt-3 text-xs text-asi-navy/60">Planning and partner discussions only; no pilot site has launched.</p>
             </div>
           </div>
         </Section>
 
-        {/* ── Onlab market-entry track ── */}
+        {/* ── Japan pilot research ── */}
         <Section variant="paper">
           <Eyebrow>Japan market entry</Eyebrow>
           <Headline className="text-2xl sm:text-4xl max-w-2xl">
-            Open Network Lab 32nd
+            Japan pilot partnerships
           </Headline>
           <div className="mt-8 grid md:grid-cols-[0.7fr,1.3fr] gap-8 items-start">
             <div className="border-l-2 border-asi-gold pl-5">
               <p className="text-xs uppercase tracking-[0.16em] text-asi-navy/55">Status</p>
-              <p className="mt-2 font-serif text-xl">Target program</p>
+              <p className="mt-2 font-serif text-xl">In preparation</p>
             </div>
             <p className="text-sm text-asi-navy/65 leading-relaxed max-w-2xl">
-              The Japan track combines ASI Micro Hotels with the ASI operating engine: compact
-              private rooms, localized guest operations and a small 3–5 cabin pilot. This page
-              does not imply selection, endorsement or partnership with Open Network Lab.
+              The Japan track combines ASI Cabins with the ASI operating engine: compact
+              private rooms, localized guest operations and a small 3–5 cabin pilot. No partner, site or operating approval is yet confirmed.
             </p>
           </div>
         </Section>
