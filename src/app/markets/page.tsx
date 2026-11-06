@@ -9,7 +9,7 @@ import { GUEST_AUTOPILOT_ORIGIN } from '@/config/publicOrigins';
 
 const title = 'ASI Global Markets — Autonomous Operations Around the World';
 const description =
-  'ASI Global adapts one autonomous operating engine to different markets and physical businesses, from hospitality in Japan to industrial operations in Europe.';
+  'ASI is developing ASI Cabins, a family of modular private rooms for different markets, alongside an operating platform that supports connected physical businesses.';
 const url = `${GUEST_AUTOPILOT_ORIGIN}/markets`;
 
 export const metadata: Metadata = {
@@ -79,7 +79,7 @@ export default function MarketsPage() {
             <MarketCard
               country="jp"
               name="Japan — Autonomous Hospitality"
-              line="ASI Micro Hotels + autonomous booking, access, guest communication, cleaning and daily operations. Target program: Open Network Lab 32nd."
+              line="ASI Cabins concept and a proposed small Japan pilot, with bookings, guest communication, access and operations coordinated through the ASI platform. No operating site is claimed."
               href="/markets/japan"
               status="active"
             />
