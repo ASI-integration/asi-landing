@@ -238,7 +238,7 @@ export default async function Home() {
                   aria-label={item.alt}
                   className="aspect-[4/3] w-full bg-asi-ivory bg-no-repeat"
                   style={{
-                    backgroundImage: "url('/images/asi-cabins-five-photo-scenes.webp')",
+                    backgroundImage: `url(${cabinsFormatStrip.src})`,
                     backgroundSize: '500% auto',
                     backgroundPosition: `${item.spritePosition}% top`,
                   }}
