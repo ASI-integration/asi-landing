@@ -238,7 +238,7 @@ export default async function Home() {
                 href="/cabins#formats"
                 className="group border border-asi-border bg-asi-paper overflow-hidden flex flex-col h-full hover:border-asi-gold transition-colors"
               >
-                <div className="relative aspect-[4/5] w-full overflow-hidden bg-asi-ivory">
+                <div className="relative aspect-[4/3] w-full overflow-hidden bg-asi-ivory">
                   <Image
                     src={item.image}
                     alt={item.alt}
@@ -247,14 +247,14 @@ export default async function Home() {
                     className="object-cover transition-transform duration-300 group-hover:scale-[1.01]"
                   />
                 </div>
-                <div className="p-7 sm:p-8 flex-1">
+                <div className="p-6 sm:p-7 flex-1">
                   <div className="flex justify-between gap-4 items-start">
                     <span className="font-serif text-4xl text-asi-gold-text">{item.number}</span>
                     <span className="text-[0.7rem] tracking-[0.14em] uppercase text-asi-navy/50">{item.label}</span>
                   </div>
-                  <h3 className="mt-6 font-serif text-2xl">{item.name}</h3>
+                  <h3 className="mt-5 font-serif text-2xl">{item.name}</h3>
                   <p className="mt-3 text-sm text-asi-navy/70 leading-relaxed">{item.body}</p>
-                  <p className="mt-5 text-sm font-semibold text-asi-navy">See the cabin →</p>
+                  <p className="mt-4 text-sm font-semibold text-asi-navy">See the cabin →</p>
                 </div>
               </Link>
             ))}

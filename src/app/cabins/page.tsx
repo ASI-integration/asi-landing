@@ -183,7 +183,7 @@ export default function CabinsPage() {
           <div className="mt-12 grid md:grid-cols-2 lg:grid-cols-3 gap-5">
             {FORMATS.map((item) => (
               <article key={item.number} className="border border-asi-border bg-asi-paper overflow-hidden flex flex-col h-full">
-                <div className="relative aspect-[4/5] w-full bg-asi-ivory overflow-hidden">
+                <div className="relative aspect-[4/3] w-full bg-asi-ivory overflow-hidden">
                   <Image
                     src={item.image}
                     alt={item.imageAlt}
@@ -192,14 +192,14 @@ export default function CabinsPage() {
                     className="object-cover"
                   />
                 </div>
-                <div className="p-7 sm:p-8 flex flex-col flex-1">
+                <div className="p-6 sm:p-7 flex flex-col flex-1">
                 <div className="flex justify-between items-start gap-3">
                   <span className="font-serif text-4xl text-asi-gold-text">{item.number}</span>
                   <span className="text-[0.7rem] tracking-[0.14em] uppercase text-asi-navy/50">{item.label}</span>
                 </div>
-                <h3 className="mt-7 font-serif text-2xl">{item.name}</h3>
+                <h3 className="mt-5 font-serif text-2xl">{item.name}</h3>
                 <p className="mt-3 text-asi-navy/80 leading-relaxed">{item.description}</p>
-                <p className="mt-4 text-sm text-asi-navy/60 leading-relaxed">{item.detail}</p>
+                <p className="mt-3 text-sm text-asi-navy/60 leading-relaxed">{item.detail}</p>
                 </div>
               </article>
             ))}
