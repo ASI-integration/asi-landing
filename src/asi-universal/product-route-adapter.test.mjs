@@ -25,7 +25,8 @@ test('wrong repository, main sha and missing READY cannot prepare work',()=>{
   }
 });
 test('source workspace path escapes and invented tools are rejected at registration',()=>{
-  for(const paths of [['../secret'],['/etc/keys'],['foo\\bar'],['src/a','src/a']]){
+  for(const paths of [['../secret'],['/etc/keys'],['foo\\bar'],['src/a','src/a'],
+    ['.GIT/config'],['src/.Git/config'],['src/.git'],['src/a/.GIT/file.mjs']]){
     assert.throws(()=>createUniversalProductRoute({...config(),workOrders:[{
       ...config().workOrders[0],paths}]}),/PRODUCT_ROUTE_WORK_ORDER_INVALID/);
   }
