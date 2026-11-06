@@ -100,6 +100,8 @@ export {createIsolatedAcceptanceLoop} from './execution-adapters/isolated-loop.m
 const SAFE_NATIVE_SOURCE_REASON_CODES=new Set([
   'MODEL_PROPOSAL_PROVIDER_REQUEST_UNKNOWN_NO_AUTOMATIC_RETRY',
   'MODEL_PROPOSAL_PROVIDER_RESPONSE_UNKNOWN_NO_AUTOMATIC_RETRY',
+  'MODEL_PROPOSAL_PROVIDER_CONTENT_TYPE_INVALID_NO_REPLAY',
+  'MODEL_PROPOSAL_PROVIDER_OUTPUT_INCOMPLETE_NO_REPLAY',
   'MODEL_PROPOSAL_PROVIDER_MODEL_CHANGED_AFTER_RESERVATION',
   'MODEL_PROPOSAL_PROVIDER_OUTPUT_INVALID',
   'MODEL_PROPOSAL_PROVIDER_OUTPUT_ESCAPED_SCOPE',
@@ -110,7 +112,9 @@ const SAFE_NATIVE_SOURCE_REASON_CODES=new Set([
   'MODEL_OUTCOME_UNKNOWN_BLOCKED_LANE_NO_REPLAY'
 ]);
 export function safeNativeSourceReason(reason){
-  return typeof reason==='string'&&SAFE_NATIVE_SOURCE_REASON_CODES.has(reason)
+  return typeof reason==='string'&&(
+    SAFE_NATIVE_SOURCE_REASON_CODES.has(reason)||
+    /^MODEL_PROPOSAL_PROVIDER_HTTP_(?:0|[45][0-9]{2})_NO_REPLAY$/.test(reason))
     ?reason:null;
 }
 
@@ -123,7 +127,8 @@ export async function runContinuousWorker({iteration,signal,wait,emit=()=>{}}){
     catch{r={mode:'BLOCKED',reason:'HOST_ADMISSION_OR_RESULT_UNVERIFIED'};}
     failures=['BLOCKED','FAILED_LOCKED'].includes(r.mode)?Math.min(6,failures+1):0;
     // Fixed metadata only: do not expose untrusted error/output or any secrets.
-    const reasonCode=r.mode==='WAITING'?safeNativeSourceReason(r.reason):null;
+    const reasonCode=['WAITING','BLOCKED','FAILED_LOCKED'].includes(r.mode)
+      ?safeNativeSourceReason(r.reason):null;
     emit({event:'engine_tick',at:new Date().toISOString(),mode:r.mode,
       outcome:r.mode==='REPORT_READY'?'VERIFIED_RECEIPT':r.mode==='WAITING'?'IDLE_OR_PENDING':'EXECUTION_BLOCKED',
       failures,...(reasonCode?{reasonCode}:{})});
