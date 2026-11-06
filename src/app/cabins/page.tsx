@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import Image from 'next/image';
+import Link from 'next/link';
 import cabinsHero from '@/assets/cabins/cabins-hero.webp';
 import cabinsFormatStrip from '@/assets/cabins/asi-cabins-five-photo-scenes.webp';
 import cabinsComfort from '@/assets/cabins/cabins-comfort.webp';
@@ -26,47 +27,52 @@ const FORMATS = [
   {
     number: '01',
     name: 'ASI Workforce',
+    slug: 'workforce',
     spritePosition: 0,
     imageAlt: 'ASI Workforce concept outside a manufacturing and logistics building',
     label: 'Workers',
-    description: 'Practical, private accommodation close to factories, logistics centers and construction projects.',
-    detail: 'Designed for longer stays, with potential employer contribution and location-specific pricing.',
+    description: 'Private rooms for workers on extended assignments near industrial, logistics and construction sites.',
+    detail: 'A real bed, private bathroom and quiet personal space close to the job site.',
   },
   {
     number: '02',
     name: 'ASI Cabins Urban',
+    slug: 'urban',
     spritePosition: 25,
     imageAlt: 'ASI Cabins Urban concept with private modular rooms in a city',
     label: 'City stays',
-    description: 'A private and comfortable room in a well-connected city location.',
-    detail: 'An alternative for people who value quiet, privacy and an accessible city address.',
+    description: 'Private short- and medium-stay rooms in well-connected city locations.',
+    detail: 'A compact alternative for guests who still want a real bed, bathroom and privacy.',
   },
   {
     number: '03',
     name: 'ASI Transit Air',
+    slug: 'transit-air',
     spritePosition: 50,
     imageAlt: 'ASI Transit Air concept cabins inside an airport terminal',
     label: 'Airports',
-    description: 'A quiet place to sleep and shower between flights.',
-    detail: 'For transit passengers who need genuine privacy rather than an open sleeping pod.',
+    description: 'Private sleep-and-shower cabins for passengers between flights.',
+    detail: 'For connections, delays and overnight transit when an open sleeping pod is not enough.',
   },
   {
     number: '04',
     name: 'ASI Transit Rail',
+    slug: 'transit-rail',
     spritePosition: 75,
     imageAlt: 'ASI Transit Rail concept cabins near railway platforms',
     label: 'Railway stations',
-    description: 'A peaceful private space between trains.',
-    detail: 'A proposed station-based format, subject to local permissions and facilities.',
+    description: 'Private rooms for passengers who need real rest between trains.',
+    detail: 'A proper bed and bathroom close to major stations and transport hubs.',
   },
   {
     number: '05',
-    name: 'ASI Student',
+    name: 'ASI Campus',
+    slug: 'campus',
     spritePosition: 100,
-    imageAlt: 'ASI Student concept with private rooms near campus',
+    imageAlt: 'ASI Campus concept with private rooms near campus',
     label: 'Students',
-    description: 'A calm personal space near campus for living, studying and resting.',
-    detail: 'A housing format adapted to student needs and local accommodation standards.',
+    description: 'Private rooms with a bed, desk and bathroom for students and academic visitors.',
+    detail: 'Designed for quiet study, personal privacy and short or extended stays near campus.',
   },
 ] as const;
 
@@ -178,7 +184,11 @@ export default function CabinsPage() {
           </p>
           <div className="mt-12 grid sm:grid-cols-2 lg:grid-cols-3 gap-6 justify-items-center">
             {FORMATS.map((item) => (
-              <article key={item.number} className="w-full max-w-[300px] border border-asi-border bg-asi-paper overflow-hidden flex flex-col h-full">
+              <Link
+                key={item.number}
+                href={`/cabins/${item.slug}`}
+                className="group w-full max-w-[300px] border border-asi-border bg-asi-paper overflow-hidden flex flex-col h-full hover:border-asi-gold transition-colors"
+              >
                 <div
                   role="img"
                   aria-label={item.imageAlt}
@@ -197,8 +207,9 @@ export default function CabinsPage() {
                 <h3 className="mt-5 font-serif text-2xl">{item.name}</h3>
                 <p className="mt-3 text-asi-navy/80 leading-relaxed">{item.description}</p>
                 <p className="mt-3 text-sm text-asi-navy/60 leading-relaxed">{item.detail}</p>
+                <p className="mt-5 text-sm font-semibold text-asi-navy">View full cabin details →</p>
                 </div>
-              </article>
+              </Link>
             ))}
             <div className="w-full max-w-[300px] bg-asi-paper border border-asi-border p-7 flex flex-col justify-center h-full">
               <p className="text-xs uppercase font-semibold tracking-[0.2em] text-asi-gold-text">The unifying idea</p>
