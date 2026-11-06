@@ -207,21 +207,20 @@ export default function JapanMarketPage() {
           </div>
         </Section>
 
-        {/* ── Onlab market-entry track ── */}
+        {/* ── Japan pilot research ── */}
         <Section variant="paper">
           <Eyebrow>Japan market entry</Eyebrow>
           <Headline className="text-2xl sm:text-4xl max-w-2xl">
-            Open Network Lab 32nd
+            Japan pilot partnerships
           </Headline>
           <div className="mt-8 grid md:grid-cols-[0.7fr,1.3fr] gap-8 items-start">
             <div className="border-l-2 border-asi-gold pl-5">
               <p className="text-xs uppercase tracking-[0.16em] text-asi-navy/55">Status</p>
-              <p className="mt-2 font-serif text-xl">Target program</p>
+              <p className="mt-2 font-serif text-xl">In preparation</p>
             </div>
             <p className="text-sm text-asi-navy/65 leading-relaxed max-w-2xl">
               The Japan track combines ASI Cabins with the ASI operating engine: compact
-              private rooms, localized guest operations and a small 3–5 cabin pilot. This page
-              does not imply selection, endorsement or partnership with Open Network Lab.
+              private rooms, localized guest operations and a small 3–5 cabin pilot. No partner, site or operating approval is yet confirmed.
             </p>
           </div>
         </Section>

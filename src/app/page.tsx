@@ -197,7 +197,7 @@ export default async function Home() {
           </p>
         </Section>
 
-        {/* ── 5. Micro Hotels ── */}
+        {/* ── 5. ASI Cabins ── */}
         <Section variant="paper">
           <div className="grid lg:grid-cols-[0.9fr,1.1fr] gap-12 items-center">
             <div className="order-2 lg:order-1 relative aspect-[4/3] w-full">
@@ -255,7 +255,7 @@ export default async function Home() {
               <MarketCard
                 country="jp"
                 name="Japan — Autonomous Hospitality"
-                line="ASI Micro Hotels + autonomous daily operations. Target program: Open Network Lab 32nd."
+                line="Proposed ASI Cabins and integrated guest operations. Exploring a small pilot and local partners; no operating site yet."
                 href="/markets/japan"
                 status="active"
               />

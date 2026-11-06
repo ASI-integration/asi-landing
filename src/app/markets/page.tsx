@@ -78,7 +78,7 @@ export default function MarketsPage() {
           <div className="mt-12 grid md:grid-cols-2 gap-6">
             <MarketCard
               country="jp"
-              name="Japan — Autonomous Hospitality"
+              name="Japan — ASI Cabins concept"
               line="ASI Cabins concept and a proposed small Japan pilot, with bookings, guest communication, access and operations coordinated through the ASI platform. No operating site is claimed."
               href="/markets/japan"
               status="active"
