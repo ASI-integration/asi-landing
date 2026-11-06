@@ -2,11 +2,6 @@ import type { Metadata } from 'next';
 import Image from 'next/image';
 import cabinsHero from '@/assets/cabins/cabins-hero.webp';
 import cabinsComfort from '@/assets/cabins/cabins-comfort.webp';
-import cabinsWorkforce from '@/assets/cabins/cabins-workforce.webp';
-import cabinsUrban from '@/assets/cabins/cabins-urban.webp';
-import cabinsStudent from '@/assets/cabins/cabins-student.webp';
-import cabinsAir from '@/assets/cabins/cabins-air.webp';
-import cabinsRail from '@/assets/cabins/cabins-rail.webp';
 
 import { SiteHeader } from '@/components/site/SiteHeader';
 import { SiteFooter } from '@/components/site/SiteFooter';
@@ -30,7 +25,7 @@ const FORMATS = [
   {
     number: '01',
     name: 'ASI Workforce',
-    image: cabinsWorkforce,
+    spritePosition: 0,
     imageAlt: 'ASI Workforce concept outside a manufacturing and logistics building',
     label: 'Workers',
     description: 'Practical, private accommodation close to factories, logistics centers and construction projects.',
@@ -39,7 +34,7 @@ const FORMATS = [
   {
     number: '02',
     name: 'ASI Cabins Urban',
-    image: cabinsUrban,
+    spritePosition: 25,
     imageAlt: 'ASI Cabins Urban concept with private modular rooms in a city',
     label: 'City stays',
     description: 'A private and comfortable room in a well-connected city location.',
@@ -48,7 +43,7 @@ const FORMATS = [
   {
     number: '03',
     name: 'ASI Transit Air',
-    image: cabinsAir,
+    spritePosition: 50,
     imageAlt: 'ASI Transit Air concept cabins inside an airport terminal',
     label: 'Airports',
     description: 'A quiet place to sleep and shower between flights.',
@@ -57,7 +52,7 @@ const FORMATS = [
   {
     number: '04',
     name: 'ASI Transit Rail',
-    image: cabinsRail,
+    spritePosition: 75,
     imageAlt: 'ASI Transit Rail concept cabins near railway platforms',
     label: 'Railway stations',
     description: 'A peaceful private space between trains.',
@@ -66,7 +61,7 @@ const FORMATS = [
   {
     number: '05',
     name: 'ASI Student',
-    image: cabinsStudent,
+    spritePosition: 100,
     imageAlt: 'ASI Student concept with private rooms near campus',
     label: 'Students',
     description: 'A calm personal space near campus for living, studying and resting.',
@@ -180,18 +175,19 @@ export default function CabinsPage() {
             One fundamental product, adapted for different people, locations and lengths of stay.
             The formats below are proposed concepts, not launched locations.
           </p>
-          <div className="mt-12 grid md:grid-cols-2 lg:grid-cols-3 gap-5">
+          <div className="mt-12 grid sm:grid-cols-2 lg:grid-cols-3 gap-6 justify-items-center">
             {FORMATS.map((item) => (
-              <article key={item.number} className="border border-asi-border bg-asi-paper overflow-hidden flex flex-col h-full">
-                <div className="relative aspect-[4/3] w-full bg-asi-ivory overflow-hidden">
-                  <Image
-                    src={item.image}
-                    alt={item.imageAlt}
-                    fill
-                    sizes="(min-width: 1024px) 33vw, (min-width: 768px) 50vw, 100vw"
-                    className="object-cover"
-                  />
-                </div>
+              <article key={item.number} className="w-full max-w-[300px] border border-asi-border bg-asi-paper overflow-hidden flex flex-col h-full">
+                <div
+                  role="img"
+                  aria-label={item.imageAlt}
+                  className="aspect-[4/3] w-full bg-asi-ivory bg-no-repeat"
+                  style={{
+                    backgroundImage: "url('/images/asi-cabins-five-photo-scenes.webp')",
+                    backgroundSize: '500% auto',
+                    backgroundPosition: `${item.spritePosition}% top`,
+                  }}
+                />
                 <div className="p-6 sm:p-7 flex flex-col flex-1">
                 <div className="flex justify-between items-start gap-3">
                   <span className="font-serif text-4xl text-asi-gold-text">{item.number}</span>
@@ -203,7 +199,7 @@ export default function CabinsPage() {
                 </div>
               </article>
             ))}
-            <div className="bg-asi-paper border border-asi-border p-8 flex flex-col justify-center">
+            <div className="w-full max-w-[300px] bg-asi-paper border border-asi-border p-7 flex flex-col justify-center h-full">
               <p className="text-xs uppercase font-semibold tracking-[0.2em] text-asi-gold-text">The unifying idea</p>
               <h3 className="font-serif text-3xl mt-4">Private space.<br />A consistent brand.<br />Intelligent operations.</h3>
               <p className="mt-4 text-sm text-asi-navy/65">Different formats, one ASI network.</p>
