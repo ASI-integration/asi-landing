@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import Image from 'next/image';
 import cabinsHero from '@/assets/cabins/cabins-hero.webp';
+import cabinsFormatStrip from '@/assets/cabins/asi-cabins-five-photo-scenes.webp';
 import cabinsComfort from '@/assets/cabins/cabins-comfort.webp';
 
 import { SiteHeader } from '@/components/site/SiteHeader';
