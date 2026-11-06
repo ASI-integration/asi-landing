@@ -171,7 +171,8 @@ export default function JapanMarketPage() {
             Operations on autopilot. Humans on exceptions.
           </Headline>
           <p className="mt-5 text-asi-ivory/65 max-w-2xl leading-relaxed">
-            ASI is designed to coordinate routine tasks where integrations and policy allow it.\n            People remain responsible for exceptions and decisions requiring human judgment.
+            ASI is designed to coordinate routine tasks where integrations and policy allow it.
+            People remain responsible for exceptions and decisions requiring human judgment.
           </p>
           <div className="mt-10 flex flex-wrap gap-3">
             {OPERATIONS.map((op) => (
