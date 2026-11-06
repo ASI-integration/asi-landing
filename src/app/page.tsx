@@ -4,11 +4,7 @@ import { headers } from 'next/headers';
 import type { Metadata } from 'next';
 
 import cabinsHero from '@/assets/cabins/cabins-hero.webp';
-import cabinsWorkforce from '@/assets/cabins/cabins-workforce.webp';
-import cabinsUrban from '@/assets/cabins/cabins-urban.webp';
-import cabinsStudent from '@/assets/cabins/cabins-student.webp';
-import cabinsAir from '@/assets/cabins/cabins-air.webp';
-import cabinsRail from '@/assets/cabins/cabins-rail.webp';
+import cabinsFormatStrip from '@/assets/cabins/asi-cabins-five-photo-scenes.webp';
 
 import { RU_PUBLIC_ORIGIN, EN_PUBLIC_ORIGIN, GUEST_AUTOPILOT_ORIGIN } from '@/config/publicOrigins';
 import { hostnameFromHostHeader, isRuRuntimeHost } from '@/lib/runtimeHost';
@@ -76,7 +72,7 @@ const FORMATS = [
     number: '01',
     name: 'ASI Workforce',
     label: 'Workers',
-    image: cabinsWorkforce,
+    spritePosition: 0,
     alt: 'ASI Workforce concept for workers near industrial and logistics sites',
     body: 'Private accommodation close to work for longer stays near factories, logistics centers and construction projects.',
   },
@@ -84,7 +80,7 @@ const FORMATS = [
     number: '02',
     name: 'ASI Cabins Urban',
     label: 'City stays',
-    image: cabinsUrban,
+    spritePosition: 25,
     alt: 'ASI Cabins Urban private modular room concept in a city setting',
     body: 'A private, comfortable room in a useful city location for short and medium stays.',
   },
@@ -92,7 +88,7 @@ const FORMATS = [
     number: '03',
     name: 'ASI Transit Air',
     label: 'Airports',
-    image: cabinsAir,
+    spritePosition: 50,
     alt: 'ASI Transit Air private cabin concept inside an airport environment',
     body: 'A quiet place to sleep, shower and reset between flights — private rather than an open sleeping pod.',
   },
@@ -100,7 +96,7 @@ const FORMATS = [
     number: '04',
     name: 'ASI Transit Rail',
     label: 'Rail',
-    image: cabinsRail,
+    spritePosition: 75,
     alt: 'ASI Transit Rail private cabin concept near railway platforms',
     body: 'A peaceful private room between trains, designed for suitable station and transport-hub spaces.',
   },
@@ -108,7 +104,7 @@ const FORMATS = [
     number: '05',
     name: 'ASI Student',
     label: 'Students',
-    image: cabinsStudent,
+    spritePosition: 100,
     alt: 'ASI Student private modular room concept near a campus',
     body: 'A calm personal space near study and campus life, designed for living, studying and resting.',
   },
@@ -231,22 +227,23 @@ export default async function Home() {
             The same basic private-room idea can serve different people and places without changing the core ASI brand.
           </p>
 
-          <div className="mt-12 grid md:grid-cols-2 lg:grid-cols-3 gap-5">
+          <div className="mt-12 grid sm:grid-cols-2 lg:grid-cols-3 gap-6 justify-items-center">
             {FORMATS.map((item) => (
               <Link
                 key={item.number}
                 href="/cabins#formats"
-                className="group border border-asi-border bg-asi-paper overflow-hidden flex flex-col h-full hover:border-asi-gold transition-colors"
+                className="group w-full max-w-[300px] border border-asi-border bg-asi-paper overflow-hidden flex flex-col h-full hover:border-asi-gold transition-colors"
               >
-                <div className="relative aspect-[4/3] w-full overflow-hidden bg-asi-ivory">
-                  <Image
-                    src={item.image}
-                    alt={item.alt}
-                    fill
-                    sizes="(min-width: 1024px) 33vw, (min-width: 768px) 50vw, 100vw"
-                    className="object-cover transition-transform duration-300 group-hover:scale-[1.01]"
-                  />
-                </div>
+                <div
+                  role="img"
+                  aria-label={item.alt}
+                  className="aspect-[4/3] w-full bg-asi-ivory bg-no-repeat"
+                  style={{
+                    backgroundImage: `url(${cabinsFormatStrip.src})`,
+                    backgroundSize: '500% auto',
+                    backgroundPosition: `${item.spritePosition}% top`,
+                  }}
+                />
                 <div className="p-6 sm:p-7 flex-1">
                   <div className="flex justify-between gap-4 items-start">
                     <span className="font-serif text-4xl text-asi-gold-text">{item.number}</span>
@@ -259,7 +256,7 @@ export default async function Home() {
               </Link>
             ))}
 
-            <div className="border border-asi-border bg-asi-paper p-8 flex flex-col justify-center">
+            <div className="w-full max-w-[300px] border border-asi-border bg-asi-paper p-7 flex flex-col justify-center h-full">
               <p className="text-xs uppercase font-semibold tracking-[0.18em] text-asi-gold-text">The common idea</p>
               <h3 className="mt-4 font-serif text-3xl">
                 Private space.
