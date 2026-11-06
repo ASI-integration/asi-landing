@@ -285,7 +285,7 @@ export default function CabinsPage() {
           <Headline className="text-3xl sm:text-5xl max-w-4xl">Developing the concept. Preparing the first pilot.</Headline>
           <p className="mt-5 max-w-3xl text-asi-navy/70">
             Product formats and privacy requirements have been outlined. We are researching appropriate properties,
-            engineering and production partners, particularly in Asia, and funding for a proposed 3–5 cabin pilot.
+            engineering and production partners worldwide, and funding for a proposed 3–5 cabin pilot.
             No operational site or financial performance is being claimed.
           </p>
         </Section>
