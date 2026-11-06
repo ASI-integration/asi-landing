@@ -1,5 +1,12 @@
 import type { Metadata } from 'next';
 import Image from 'next/image';
+import cabinsHero from '@/assets/cabins/cabins-hero.webp';
+import cabinsComfort from '@/assets/cabins/cabins-comfort.webp';
+import cabinsWorkforce from '@/assets/cabins/cabins-workforce.webp';
+import cabinsUrban from '@/assets/cabins/cabins-urban.webp';
+import cabinsStudent from '@/assets/cabins/cabins-student.webp';
+import cabinsAir from '@/assets/cabins/cabins-air.webp';
+import cabinsRail from '@/assets/cabins/cabins-rail.webp';
 
 import { SiteHeader } from '@/components/site/SiteHeader';
 import { SiteFooter } from '@/components/site/SiteFooter';
@@ -23,7 +30,7 @@ const FORMATS = [
   {
     number: '01',
     name: 'ASI Workforce',
-    image: '/images/cabins/cabins-workforce.webp',
+    image: cabinsWorkforce,
     imageAlt: 'ASI Workforce concept outside a manufacturing and logistics building',
     label: 'Workers',
     description: 'Practical, private accommodation close to factories, logistics centers and construction projects.',
@@ -32,7 +39,7 @@ const FORMATS = [
   {
     number: '02',
     name: 'ASI Cabins Urban',
-    image: '/images/cabins/cabins-urban.webp',
+    image: cabinsUrban,
     imageAlt: 'ASI Cabins Urban concept with private modular rooms in a city',
     label: 'City stays',
     description: 'A private and comfortable room in a well-connected city location.',
@@ -41,7 +48,7 @@ const FORMATS = [
   {
     number: '03',
     name: 'ASI Transit Air',
-    image: '/images/cabins/cabins-air.webp',
+    image: cabinsAir,
     imageAlt: 'ASI Transit Air concept cabins inside an airport terminal',
     label: 'Airports',
     description: 'A quiet place to sleep and shower between flights.',
@@ -50,7 +57,7 @@ const FORMATS = [
   {
     number: '04',
     name: 'ASI Transit Rail',
-    image: '/images/cabins/cabins-rail.webp',
+    image: cabinsRail,
     imageAlt: 'ASI Transit Rail concept cabins near railway platforms',
     label: 'Railway stations',
     description: 'A peaceful private space between trains.',
@@ -59,7 +66,7 @@ const FORMATS = [
   {
     number: '05',
     name: 'ASI Student',
-    image: '/images/cabins/cabins-student.webp',
+    image: cabinsStudent,
     imageAlt: 'ASI Student concept with private rooms near campus',
     label: 'Students',
     description: 'A calm personal space near campus for living, studying and resting.',
@@ -126,7 +133,7 @@ export default function CabinsPage() {
             </div>
             <div>
               <div className="relative aspect-[4/5] overflow-hidden border border-asi-border bg-asi-paper">
-                <Image src="/images/cabins/cabins-hero.webp" alt="ASI Cabins architectural concept illustration from the English presentation" fill priority sizes="(min-width:1024px) 40vw, 90vw" className="object-cover" />
+                <Image src={cabinsHero} alt="ASI Cabins architectural concept illustration from the English presentation" fill priority sizes="(min-width:1024px) 40vw, 90vw" className="object-cover" />
               </div>
               <p className="mt-3 text-xs text-asi-navy/50">Original presentation visual · Concept, not an operating ASI property</p>
             </div>
@@ -209,7 +216,7 @@ export default function CabinsPage() {
           <div className="grid lg:grid-cols-[1fr,1fr] gap-12 items-center">
             <div className="relative aspect-[5/3] lg:aspect-[4/3] border border-asi-border overflow-hidden bg-asi-ivory">
               <Image
-                src="/images/cabins/cabins-comfort.webp"
+                src={cabinsComfort}
                 alt="Private ASI Cabins room concept from the English presentation, with warm interior lighting"
                 fill
                 sizes="(min-width: 1024px) 42vw, 90vw"
