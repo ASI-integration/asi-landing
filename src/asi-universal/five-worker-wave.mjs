@@ -9,6 +9,11 @@
  */
 const id=/^[a-z][a-z0-9-]{0,79}$/;
 const sha=/^[a-f0-9]{40}$/;
+const validPath=p=>typeof p==='string'&&p.length>=1&&p.length<=256&&
+  !p.startsWith('/')&&!p.includes('\\')&&
+  p.split('/').every(x=>x&&x!=='.'&&x!=='..'&&x.toLowerCase()!=='.git');
+const validPaths=paths=>Array.isArray(paths)&&paths.length>=1&&paths.length<=3&&
+  paths.every(validPath)&&new Set(paths).size===paths.length;
 const blocked=(status,slots,reason)=>Object.freeze({
   status,slots:Object.freeze([...slots]),executable:false,authority:null,
   publisherConcurrency:1,reason
@@ -38,7 +43,7 @@ export async function planFiveWorkerWave({dispatcher,snapshots,maxWorkers=5}={})
        typeof s.task?.id!=='string'||!id.test(s.task.id)||
        typeof s.repository!=='string'||typeof s.head!=='string'||
        !sha.test(s.head)||
-       !Array.isArray(s.task?.paths))
+       !validPaths(s.task?.paths))
       return blocked('FAILED_LOCKED',slots,'ROUTING_SELECTION_UNVERIFIED');
     const key=s.product+':'+s.task.id;
     if(seen.has(key))return blocked('FAILED_LOCKED',slots,'DUPLICATE_DURABLE_RESERVATION');
