@@ -71,42 +71,47 @@ const FORMATS = [
   {
     number: '01',
     name: 'ASI Workforce',
+    slug: 'workforce',
     label: 'Workers',
     spritePosition: 0,
     alt: 'ASI Workforce concept for workers near industrial and logistics sites',
-    body: 'Private accommodation close to work for longer stays near factories, logistics centers and construction projects.',
+    body: 'Private rooms for workers on extended assignments near industrial, logistics and construction sites.',
   },
   {
     number: '02',
     name: 'ASI Cabins Urban',
+    slug: 'urban',
     label: 'City stays',
     spritePosition: 25,
     alt: 'ASI Cabins Urban private modular room concept in a city setting',
-    body: 'A private, comfortable room in a useful city location for short and medium stays.',
+    body: 'Private short- and medium-stay rooms in well-connected city locations.',
   },
   {
     number: '03',
     name: 'ASI Transit Air',
+    slug: 'transit-air',
     label: 'Airports',
     spritePosition: 50,
     alt: 'ASI Transit Air private cabin concept inside an airport environment',
-    body: 'A quiet place to sleep, shower and reset between flights — private rather than an open sleeping pod.',
+    body: 'Private sleep-and-shower cabins for passengers between flights.',
   },
   {
     number: '04',
     name: 'ASI Transit Rail',
+    slug: 'transit-rail',
     label: 'Rail',
     spritePosition: 75,
     alt: 'ASI Transit Rail private cabin concept near railway platforms',
-    body: 'A peaceful private room between trains, designed for suitable station and transport-hub spaces.',
+    body: 'Private rooms for passengers who need real rest between trains.',
   },
   {
     number: '05',
-    name: 'ASI Student',
+    name: 'ASI Campus',
+    slug: 'campus',
     label: 'Students',
     spritePosition: 100,
-    alt: 'ASI Student private modular room concept near a campus',
-    body: 'A calm personal space near study and campus life, designed for living, studying and resting.',
+    alt: 'ASI Campus private modular room concept near a campus',
+    body: 'Private rooms with a bed, desk and bathroom for students and academic visitors.',
   },
 ] as const;
 
@@ -231,7 +236,7 @@ export default async function Home() {
             {FORMATS.map((item) => (
               <Link
                 key={item.number}
-                href="/cabins#formats"
+                href={`/cabins/${item.slug}`}
                 className="group w-full max-w-[300px] border border-asi-border bg-asi-paper overflow-hidden flex flex-col h-full hover:border-asi-gold transition-colors"
               >
                 <div
@@ -251,7 +256,7 @@ export default async function Home() {
                   </div>
                   <h3 className="mt-5 font-serif text-2xl">{item.name}</h3>
                   <p className="mt-3 text-sm text-asi-navy/70 leading-relaxed">{item.body}</p>
-                  <p className="mt-4 text-sm font-semibold text-asi-navy">See the cabin →</p>
+                  <p className="mt-4 text-sm font-semibold text-asi-navy">View details →</p>
                 </div>
               </Link>
             ))}
