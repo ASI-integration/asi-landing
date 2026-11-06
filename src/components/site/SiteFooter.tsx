@@ -13,7 +13,7 @@ export function SiteFooter() {
               <span className="font-serif text-lg">ASI Global</span>
             </div>
             <p className="mt-4 text-sm leading-relaxed text-asi-ivory/60">
-              Autonomous operations for physical businesses.
+              ASI Cabins: private modular rooms and intelligent operations. Development and pilot preparation are underway.
             </p>
           </div>
 
@@ -21,7 +21,7 @@ export function SiteFooter() {
             <div className="flex flex-col gap-2.5">
               <span className="text-xs font-semibold uppercase tracking-[0.18em] text-asi-gold-soft mb-1">ASI Global</span>
               <Link href="/#intelligence" className="hover:text-asi-ivory transition-colors">Autonomous Operations</Link>
-              <Link href="/#micro-hotels" className="hover:text-asi-ivory transition-colors">Micro Hotels</Link>
+              <Link href="/cabins" className="hover:text-asi-ivory transition-colors">ASI Cabins</Link>
             </div>
             <div className="flex flex-col gap-2.5">
               <span className="text-xs font-semibold uppercase tracking-[0.18em] text-asi-gold-soft mb-1">Explore</span>
@@ -33,7 +33,7 @@ export function SiteFooter() {
             <div className="flex flex-col gap-2.5">
               <span className="text-xs font-semibold uppercase tracking-[0.18em] text-asi-gold-soft mb-1">Company</span>
               <Link href="/#about" className="hover:text-asi-ivory transition-colors">About</Link>
-              <Link href="/#partner" className="hover:text-asi-ivory transition-colors">Partner with ASI</Link>
+              <Link href="/cabins#partners" className="hover:text-asi-ivory transition-colors">Partner with ASI</Link>
               <Link href="/rental-autopilot" className="hover:text-asi-ivory transition-colors">Rental Autopilot product</Link>
             </div>
           </div>
