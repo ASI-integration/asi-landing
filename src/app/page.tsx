@@ -156,7 +156,7 @@ export default async function Home() {
               <GoldRule className="mt-6 mb-6" />
               <p className="text-lg text-asi-navy/70 max-w-xl leading-relaxed">
                 Comfortable private modular rooms designed for installation inside suitable existing buildings.
-                One repeatable concept, five accommodation formats and one ASI operating platform.
+                One repeatable concept, five accommodation formats, and one ASI operating platform.
               </p>
               <p className="mt-4 text-sm text-asi-navy/55 max-w-xl leading-relaxed">
                 ASI Cabins is in development and first-pilot preparation. Concept images show the intended product,
