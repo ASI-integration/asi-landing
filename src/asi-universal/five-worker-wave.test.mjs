@@ -52,3 +52,23 @@ test('invalid capacity fails without planning or paid call',async()=>{
   await assert.rejects(planFiveWorkerWave({dispatcher,snapshots:{},maxWorkers:6}),/FIVE_WORKER/);
   assert.equal(dispatcher.calls,0);
 });
+
+
+test('invalid source path inventory stops wave before exposing preparation slots',async()=>{
+  const invalid=[
+    [],['src/a.mjs','src/b.mjs','src/c.mjs','src/d.mjs'],
+    ['../secret.mjs'],['/etc/private'],['src\\\\escape.mjs'],
+    ['src/a.mjs','src/a.mjs'],['.GIT/config'],['src/./file.mjs'],
+    [null],['']
+  ];
+  for(const paths of invalid){
+    const broken=task('asi-cabins','cabin-a');
+    broken.selected.task.paths=paths;
+    const dispatcher=planner([broken,task('strigunov','auth-a')]);
+    const result=await planFiveWorkerWave({dispatcher,snapshots:{},maxWorkers:2});
+    assert.equal(result.status,'FAILED_LOCKED',JSON.stringify(paths));
+    assert.equal(result.reason,'ROUTING_SELECTION_UNVERIFIED',JSON.stringify(paths));
+    assert.equal(result.slots.length,0,JSON.stringify(paths));
+    assert.equal(dispatcher.calls,1,JSON.stringify(paths));
+  }
+});
