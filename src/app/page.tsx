@@ -60,12 +60,13 @@ export async function generateMetadata(): Promise<Metadata> {
       url,
       siteName: 'ASI Global',
       type: 'website',
-      images: [{ url: `${url}/cabins` }],
+      images: [{ url: `${url}${cabinsHero.src}` }],
     },
     twitter: {
       card: 'summary_large_image',
       title,
       description,
+      images: [`${url}${cabinsHero.src}`],
     },
   };
 }
