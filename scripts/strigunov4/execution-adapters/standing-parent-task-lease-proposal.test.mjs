@@ -214,3 +214,15 @@ test('post-await missing, backward, or noninteger clock denies without renewal',
   assert.equal(ok.status,'PARENT_TASK_SOURCE_ELIGIBLE');
   assert.equal(ok.authorized,false);
 });
+
+test('one 365-day V2 child can cover end of year without renewal, not increase privileges',()=>{
+ const f=fixture();
+ f.child.expiresAt=f.parent.expiresAt;
+ f.now=f.parent.notBefore+364*86400000;
+ assert.equal(check(f).status,'PARENT_TASK_SOURCE_ELIGIBLE');
+ f.child.maxWrites=f.parent.maxWrites+1;
+ assert.equal(check(f).reason,'PARENT_CHILD_STAGE_OR_CLASS_SCOPE');
+ const g=fixture();
+ g.child.expiresAt=g.parent.expiresAt+1;
+ assert.equal(check(g).reason,'PARENT_CHILD_STAGE_OR_CLASS_SCOPE');
+});

@@ -20,9 +20,10 @@ const HEX64 = /^[0-9a-f]{64}$/;
 const HEX40 = /^[0-9a-f]{40}$/;
 const ID = /^[a-z0-9][a-z0-9-]{0,95}$/;
 const REPO = 'ASI-integration/asi-landing';
-const TIME_LIMIT = 14 * 86400000;
-// Keep all historical child digests: 365 days needs at least 27 <=14-day renewals.
-// This expands retention, not authority; the native parent signer remains required.
+const LEGACY_TIME_LIMIT = 14 * 86400000;
+const NATIVE_V2_YEAR_LIMIT = 365 * 86400000;
+// This ledger is not an authority source. Legacy grant budget remains <=14 days.
+// Only the separately verified V2 native authority can select 365-day accounting.
 const MAX_ENVELOPES = 64;
 const MAX_CLAIMS = 256;
 // Fail-closed total across all retained child envelopes, including unknown effects.
@@ -81,14 +82,14 @@ function validWire(e) {
   }));
 }
 
-function validateEnvelope(e, at) {
+function validateEnvelope(e, at, timeLimit=LEGACY_TIME_LIMIT) {
   if (!e || e.schema !== 'asi.release-envelope.proposal.v1' || e.repo !== REPO ||
       e.environment !== 'beget-staging' || e.target !== 'pqukibofpo' ||
       e.action !== 'source' || !h64(e.envelopeDigest) ||
       !h64(e.securityDigest) || !h64(e.policyDigest) ||
       !Number.isSafeInteger(e.notBefore) || !Number.isSafeInteger(e.expiresAt) ||
       e.notBefore > at || at >= e.expiresAt || e.expiresAt <= e.notBefore ||
-      e.expiresAt - e.notBefore > TIME_LIMIT || e.paidApiUsd !== 0 ||
+      e.expiresAt - e.notBefore > timeLimit || e.paidApiUsd !== 0 ||
       !max(e.maxOperations, MAX_CLAIMS) || !max(e.maxRequests, MAX_CLAIMS) ||
       !max(e.maxWrites, 64) || e.maxWrites > e.maxRequests ||
       e.maxWrites > e.maxOperations) return 'BUDGET_ENVELOPE_SCOPE';
@@ -115,11 +116,11 @@ function exactScope(e) {
 }
 const same = (a,b) => JSON.stringify(a) === JSON.stringify(b);
 
-function soundJournalEntry(entry, key) {
+function soundJournalEntry(entry, key, timeLimit) {
   const scope=entry?.scope;
   if (!h64(key) || !scope || scope.digest !== key ||
       validateEnvelope({schema:'asi.release-envelope.proposal.v1',
-        ...scope,envelopeDigest:key,paidApiUsd:0},scope.notBefore) ||
+        ...scope,envelopeDigest:key,paidApiUsd:0},scope.notBefore,timeLimit) ||
       !same(scope,exactScope({envelopeDigest:key,...scope})) ||
       !Array.isArray(entry.claims) || entry.claims.length > MAX_CLAIMS ||
       !Number.isSafeInteger(entry.lastObservedAt) ||
@@ -146,7 +147,9 @@ function soundJournalEntry(entry, key) {
 
 /** One instance per existing store.execute transaction; no effects are run. */
 export function createStandingPublisherBudget({store, ledger, transaction, admissionBaseSha=null,
-  clock=Date.now}={}) {
+  nativeV2YearLease=false,clock=Date.now}={}) {
+  must(typeof nativeV2YearLease==='boolean','BUDGET_YEAR_MODE_SCOPE');
+  const timeLimit=nativeV2YearLease?NATIVE_V2_YEAR_LIMIT:LEGACY_TIME_LIMIT;
   must(typeof store?.file === 'function' && ledger && typeof ledger === 'object' &&
     !Array.isArray(ledger) && typeof clock === 'function', 'BUDGET_HOST_REQUIRED');
   // This is the host's private WeakMap-backed transaction lease, not a string
@@ -232,7 +235,7 @@ export function createStandingPublisherBudget({store, ledger, transaction, admis
       if (!leaseStillSame(capturedLease,effect)) return deny('BUDGET_NATIVE_LEASE_MISMATCH');
       const at = clock();
       if (!Number.isSafeInteger(at) || at < 0) return deny('BUDGET_CLOCK');
-      const eReason = validateEnvelope(envelope, at);
+      const eReason = validateEnvelope(envelope, at, timeLimit);
       if (eReason) return deny(eReason);
       const effectReason = validateEffect(envelope,effect);
       if (effectReason) return deny(effectReason);
@@ -249,7 +252,7 @@ export function createStandingPublisherBudget({store, ledger, transaction, admis
       // A slow lock read must not authorize an already-expired envelope.
       const lockedAt=clock();
       if (!Number.isSafeInteger(lockedAt) || lockedAt < at) return deny('BUDGET_CLOCK_REGRESSION');
-      if (validateEnvelope(envelope,lockedAt)) return deny('BUDGET_ENVELOPE_SCOPE');
+      if (validateEnvelope(envelope,lockedAt,timeLimit)) return deny('BUDGET_ENVELOPE_SCOPE');
       if (ledger.mode !== 'FAILED_LOCKED' || ledger.reason !== 'IN_FLIGHT_OR_CRASHED')
         return deny('BUDGET_NOT_IN_ACTIVE_TRANSACTION');
       must(ledger.schemaVersion === 'asi.execution-adapters.v1' && ledger.jobs &&
@@ -274,7 +277,7 @@ export function createStandingPublisherBudget({store, ledger, transaction, admis
       const usedIds=new Set(),usedPosts=new Set();
       let latestObserved=0, globalClaims=0, globalWrites=0;
       for (const [key,entry] of Object.entries(budget.envelopes)) {
-        must(soundJournalEntry(entry,key),'BUDGET_LEDGER_INVALID');
+        must(soundJournalEntry(entry,key,timeLimit),'BUDGET_LEDGER_INVALID');
         globalClaims+=entry.claims.length;
         globalWrites+=entry.writes;
         must(globalClaims<=MAX_GLOBAL_CLAIMS&&globalWrites<=MAX_GLOBAL_WRITES,
@@ -323,7 +326,7 @@ export function createStandingPublisherBudget({store, ledger, transaction, admis
       const commitAt=clock();
       if (!Number.isSafeInteger(commitAt) || commitAt<lockedAt)
         return deny('BUDGET_CLOCK_REGRESSION');
-      if (validateEnvelope(envelope,commitAt))return deny('BUDGET_ENVELOPE_SCOPE');
+      if (validateEnvelope(envelope,commitAt,timeLimit))return deny('BUDGET_ENVELOPE_SCOPE');
       if (!leaseStillSame(capturedLease,effect)) return deny('BUDGET_NATIVE_LEASE_MISMATCH');
       // Exactly one durable commit using the existing atomic file writer.
       // Do not mutate the shared in-memory ledger before fsync success.
@@ -333,7 +336,7 @@ export function createStandingPublisherBudget({store, ledger, transaction, admis
       // spent and must NOT return a usable receipt; force FAILED_LOCKED.
       const afterCommitAt=clock();
       must(Number.isSafeInteger(afterCommitAt) && afterCommitAt>=commitAt &&
-        !validateEnvelope(envelope,afterCommitAt) &&
+        !validateEnvelope(envelope,afterCommitAt,timeLimit) &&
         leaseStillSame(capturedLease,effect),'BUDGET_NATIVE_LEASE_CHANGED_AFTER_COMMIT');
       return Object.freeze({status:'RESERVED',reserved:true,envelopeDigest:scope.digest,
         effectId:claim.effectId,taskId:claim.taskId,taskSha:claim.taskSha,

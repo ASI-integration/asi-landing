@@ -1,5 +1,5 @@
 /**
- * Source-only 365-day parent/short-child cumulative budget contract for #551.
+ * Source-only 365-day parent/owner-year-child cumulative budget contract for #551.
  * NO permission, receipt, fsync, signature verification, journal write or dispatch.
  *
  * Integration prerequisite: independently authenticate the parent and *each*
@@ -17,7 +17,7 @@ const hex40 = s => typeof s === 'string' && /^[a-f0-9]{40}$/.test(s);
 const ident = s => typeof s === 'string' && /^[a-z0-9][a-z0-9-]{0,95}$/.test(s);
 const validCount = (x, max) => Number.isSafeInteger(x) && x > 0 && x <= max;
 const YEAR_MS = 365 * 86400000;
-const CHILD_MS = 14 * 86400000;
+const CHILD_MS = 365 * 86400000;
 // Explicitly allow >27 child renewals while retaining ALL historical claims.
 // Larger retention requires a separate review of the existing 4MB state bound.
 const MAX_CHILDREN = 64;

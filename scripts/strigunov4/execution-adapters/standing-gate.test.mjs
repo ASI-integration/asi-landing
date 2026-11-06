@@ -52,6 +52,8 @@ async function setup(t,{adoptionMode=null,wrongLocal=false,forgedLocal=false,lat
  const releaseReads=[];
  const adoptionSigned=signed(adoption,adoptionMode==='signer'?verifier:owner),admissions=[];
  let revoked=false,selected=0,newRevocation=false;const records=[],phases=[],previews=[],providerCalls=[],gateResults=[],gateCalls=[],gateClockCounts=[],gateEvents=[];let gateActive=false,gateClockCount=0;
+ let releaseTimedOutGate,settleTimedOutGate;
+ const timedOutGateSettled=new Promise(resolve=>{settleTimedOutGate=resolve;});
  let adoptionReads=0;
  const adoptionBytes=()=>{if(++adoptionReads===2&&adoptionMode==='late-expiry')now.value=envelope.expiresAt+1;return JSON.stringify(adoptionSigned);};
  const protectedReader=async p=>p.endsWith('standing-adoption.json')?adoptionBytes():p.endsWith('owner-public.pem')?owner.pem:p.endsWith('standing-verifier-public.pem')?verifier.pem:
@@ -63,7 +65,7 @@ async function setup(t,{adoptionMode=null,wrongLocal=false,forgedLocal=false,lat
   const diff=execFileSync('git',['diff','--no-ext-diff','--no-textconv','--',target],{cwd:comparison.repoRoot,encoding:'utf8'});
   deltas.push(hash(diff));await fs.writeFile(file,'VALUE = 1\n');
  }
- const loop=await makeLoop(f,{now,timeoutMs:gateMode==='timeout'?300:10000,transactionPorts:async({store,transaction})=>{
+ const loop=await makeLoop(f,{now,timeoutMs:gateMode==='timeout'?3000:10000,transactionPorts:async({store,transaction})=>{
   const task=f.catalog[resumeSame?0:selected],artifactDigest=deltas[resumeSame?0:selected++];
   const lease=inspectStandingTransaction(transaction);if(!lease.ledger.standingRevocationCheckpoint)lease.ledger.standingRevocationCheckpoint=prior;
   const request={action:'source',repo:envelope.repo,environment:envelope.environment,target:envelope.target,appId:envelope.appId,installationId:envelope.installationId,securityDigest:envelope.securityDigest,changedPaths:[target],headSha:null,baseSha:f.sha,artifactDigest,taskId:task.id,taskBinding:bindTask(task),branch:task.branch};
@@ -73,7 +75,15 @@ async function setup(t,{adoptionMode=null,wrongLocal=false,forgedLocal=false,lat
   // explicit synthetic v0 grant. Production preview.beforeRequest always refuses.
   const runGate=async event=>{
     gateEvents.push(event);
-    if(gateMode==='timeout'){await new Promise(r=>setTimeout(r,1500));assert.throws(()=>inspectPublisherLifecycleEvidence(event,transaction),/UNTRUSTED/);gateClockCounts.push(-1);return {status:'BLOCKED'};}
+    if(gateMode==='timeout'){
+      // Wait until the *outer* native deadline has expired; the test resumes
+      // this delayed observer explicitly, with no wall-clock sleep race.
+      await new Promise(resolve=>{releaseTimedOutGate=resolve;});
+      let revoked=false;
+      try{assert.throws(()=>inspectPublisherLifecycleEvidence(event,transaction),/UNTRUSTED/);revoked=true;}
+      finally{gateClockCounts.push(revoked?-1:0);settleTimedOutGate();}
+      return {status:'BLOCKED'};
+    }
     const expected={repository:envelope.repo,number:event.pr,baseSha:f.sha,headSha:event.headSha,independentReviewerId:wrongReviewer?1235:1234};
     const bound={number:event.pr,head:{sha:event.headSha},base:{sha:f.sha}};
     const snapshot={pr:{...f.pulls.get(event.pr),user:{id:4567}},runs:[{workflow_id:311380800,event:'pull_request',head_sha:event.headSha},{workflow_id:390653294,event:'pull_request_target',head_sha:f.sha}].map((r,i)=>({...r,id:100+i,run_attempt:1,repository:{full_name:envelope.repo},pull_requests:[bound],status:'completed',conclusion:'success',updated_at:new Date(now.value).toISOString()})),reviews:[{id:9,user:{id:1234},state:'APPROVED',commit_id:event.headSha,submitted_at:new Date(now.value).toISOString()}]};
@@ -191,7 +201,7 @@ async function setup(t,{adoptionMode=null,wrongLocal=false,forgedLocal=false,lat
    phases.push(result);if(rollbackRevocation)newRevocation=false;return result.status==='PROPOSAL_ELIGIBLE';
   }};
  }});
- return {f,loop,now,source,records,phases,previews,providerCalls,gateResults,gateCalls,gateClockCounts,gateEvents,signedEnvelope,envelopeDigest,admissions,releaseReads};
+ return {f,loop,now,source,records,phases,previews,providerCalls,gateResults,gateCalls,gateClockCounts,gateEvents,signedEnvelope,envelopeDigest,admissions,releaseReads,releaseTimedOutGate:()=>releaseTimedOutGate?.(),timedOutGateSettled};
 }
 
 // Synthetic provider and v0 fixture only; actual Publisher localPhase, native
@@ -298,7 +308,7 @@ test('authenticated pending source preserves WAITING and resumes with no write r
 });
 test('timed-out gate revokes its native event before late continuation',async t=>{
  const x=await setup(t,{gateMode:'timeout'});assert.equal((await x.loop.poll({execute:true})).mode,'FAILED_LOCKED');
- await new Promise(r=>setTimeout(r,1600));assert.equal(x.gateCalls.length,0);assert.equal(x.gateEvents.length,1);assert.deepEqual(x.gateClockCounts,[-1]);
+ assert.equal(x.gateEvents.length,1);x.releaseTimedOutGate();await x.timedOutGateSettled;assert.equal(x.gateCalls.length,0);assert.deepEqual(x.gateClockCounts,[-1]);
 });
 
 // Source-only signed adoption fixture. Production remains unconfigured/v0.

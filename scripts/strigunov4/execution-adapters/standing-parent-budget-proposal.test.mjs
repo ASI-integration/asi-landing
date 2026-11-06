@@ -109,7 +109,7 @@ test('exceeds bounded history without forgetting claims',()=>{
   f.child=c;f.childLinks[c.digest]=link(c,f.parent);f.now=c.notBefore+1000;
   assert.equal(assess(f).reason,'PARENT_HISTORY_FULL');
 });
-test('child cannot extend beyond parent or exceed 14 days',()=>{
+test('child cannot extend beyond 365-day parent',()=>{
   const f=fixture();f.child.expiresAt=f.parent.expiresAt+1;
   assert.equal(assess(f).reason,'PARENT_HISTORY_OR_LINK_INVALID');
 });

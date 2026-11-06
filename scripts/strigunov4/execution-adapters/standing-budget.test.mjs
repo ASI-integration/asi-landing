@@ -25,7 +25,7 @@ const effect = (id,kind='github-read',override={}) => {
     route,payloadSha256,requestSha256,envelopeDigest:hex64,repo:'ASI-integration/asi-landing',
     environment:'beget-staging',target:'pqukibofpo',action:'source',...override};
 };
-async function fixture(clock=()=>at){
+async function fixture(clock=()=>at,nativeV2YearLease=false){
   // Native state.execute owns the durable lock and mints the opaque transaction.
   // Reopening below starts a NEW genuine native transaction, never a mock token.
   const root=await fs.mkdtemp(path.join(os.tmpdir(),'asi-p0-budget-'));
@@ -48,7 +48,7 @@ async function fixture(clock=()=>at){
             ledger.standingDelegationBudget=structuredClone(override.standingDelegationBudget);
           else delete ledger.standingDelegationBudget;
         }
-        const budget=createStandingPublisherBudget({store,ledger,transaction,clock:activeClock});
+        const budget=createStandingPublisherBudget({store,ledger,transaction,clock:activeClock,nativeV2YearLease});
         readyResolve({budget,ledger,transaction});
         await hold;
         return {status:'WAITING'};
@@ -461,4 +461,27 @@ test('native reservation refuses explicit undefined or accessor budget root inst
     }finally{await f.close()}
   }
   assert.deepEqual(outcomes,['BUDGET_LEDGER_INVALID','BUDGET_LEDGER_INVALID']);
+});
+
+test('365-day V2 budget does not require new 14-day envelope or forget spent requests',async()=>{
+ const f=await fixture(()=>at,true);
+ try{
+   const day=86400000,issued=env({expiresAt:at-1000+365*day,
+     maxOperations:3,maxRequests:3,maxWrites:2});
+   assert.equal((await f.budget.reserve({
+     envelope:issued,effect:effect('year-first','create-tree')})).status,'RESERVED');
+   const persisted=await f.read();
+   const newBudget=await f.reopenBudget(persisted,()=>at+360*day);
+   assert.equal((await newBudget.reserve({
+     envelope:issued,effect:effect('year-second','create-branch')})).status,'RESERVED');
+   assert.equal((await newBudget.reserve({
+     envelope:issued,effect:effect('year-first','create-tree')})).reason,
+     'BUDGET_REPLAY_OR_UNKNOWN');
+   const recent=await f.read();
+   assert.equal(recent.standingDelegationBudget.envelopes[hex64].writes,2);
+   const overYear=env({expiresAt:at-1000+365*day+1});
+   assert.equal((await newBudget.reserve({
+     envelope:overYear,effect:effect('over-year','github-read')})).reason,
+     'BUDGET_ENVELOPE_SCOPE');
+ }finally{await f.close()}
 });

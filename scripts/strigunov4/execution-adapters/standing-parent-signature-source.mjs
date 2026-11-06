@@ -1,6 +1,6 @@
 /**
  * Non-authorizing cryptographic source proof for an owner-signed 365-day parent
- * and verifier-signed <=14-day child. No protected filesystem reads, private
+ * and verifier-signed <=365-day child. No protected filesystem reads, private
  * keys, state writes, external effects, admissions, or delegated capabilities.
  * Caller-supplied public keys/expected context are NOT independent trust roots:
  * protected-base native wiring must provide/authenticate them before any effect.
@@ -9,7 +9,7 @@ import {createHash,createPublicKey,verify} from 'node:crypto';
 
 const REPO='ASI-integration/asi-landing',TARGET='pqukibofpo';
 const SHA40=/^[a-f0-9]{40}$/,SHA64=/^[a-f0-9]{64}$/;
-const YEAR=365*86400000,CHILD=14*86400000;
+const YEAR=365*86400000,CHILD=365*86400000;
 const CLASSES=new Set(['stage4-source-maintenance','stage4-source-test']);
 const common=['schema','repo','environment','target','action','stage','baseSha',
   'approvedRoutineClasses','securityDigest','policyDigest','notBefore','expiresAt',
