@@ -15,7 +15,7 @@ const task=(override={})=>({
 const output=(changes=[{path:'docs/coding-work.py',content:'def ready():\n    return True\n'}])=>
   ({id:'resp-fixture',object:'response',created_at:1,status:'completed',
     model:MODEL,usage:{total_tokens:42},output:[{type:'message',role:'assistant',
-      status:'completed',content:[{type:'output_text',text:JSON.stringify({status:'PROPOSED',changes})}]}]});
+      status:'completed',content:[{type:'output_text',text:JSON.stringify({status:'PROPOSED',changes:changes.map(({path,content})=>({path,hunks:[{find:'',replace:content}]}))})}]}]});
 const transport=(res,record)=>async (url,init)=>{
   record.calls.push({url,method:init.method,headers:init.headers,body:JSON.parse(init.body)});
   return new Response(JSON.stringify(res),{status:200,headers:{'content-type':'application/json'}});
@@ -127,7 +127,7 @@ test('refusal, incomplete response or extra model message never publishes',async
       laneId:'engine',branch:'asi/beget-one-engine-20261028',objective:'Code',
       paths:['docs/coding-work.py']});
     assert.equal(r.status,'BLOCKED');
-    assert.equal(r.reason,'PROVIDER_OUTPUT_INVALID');
+    assert.equal(r.reason,altered.status==='incomplete'?'PROVIDER_OUTPUT_INCOMPLETE_NO_REPLAY':'PROVIDER_OUTPUT_INVALID');
   }
 });
 test('model cannot change path, file count or invent a second target',async()=>{
@@ -156,7 +156,7 @@ test('non-success provider HTTP is not retried or interpreted as code',async()=>
   const r=await model({id:'coding-work-1',baseSha:H40,repository:'ASI-integration/asi-landing',
     laneId:'engine',branch:'asi/beget-one-engine-20261028',objective:'Code',
     paths:['docs/coding-work.py']});
-  assert.equal(r.reason,'PROVIDER_RESPONSE_UNKNOWN_NO_AUTOMATIC_RETRY');
+  assert.equal(r.reason,'PROVIDER_HTTP_401_NO_REPLAY');
 });
 
 test('host budget token must bind the exact read-file inventory',async()=>{

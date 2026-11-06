@@ -4,6 +4,21 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import {createReadOnlyRunnerBridge,selectRoute} from './ASI-STRIGUNOV4-RUNNER-BRIDGE-20261020.mjs';
+
+// ASI Universal Engine source-only regression bridge for the existing CI workflow.
+// Offline unit/integration fixtures only: no runtime permissions, network, secrets or paid API.
+import '../../src/asi-universal/five-lane-plan.test.mjs';
+import '../../src/asi-universal/five-worker-end-to-end.test.mjs';
+import '../../src/asi-universal/five-worker-model-binding.test.mjs';
+import '../../src/asi-universal/five-worker-native-model.integration.test.mjs';
+import '../../src/asi-universal/five-worker-preparation.test.mjs';
+import '../../src/asi-universal/five-worker-publisher-bridge.test.mjs';
+import '../../src/asi-universal/five-worker-publisher-handoff.test.mjs';
+import '../../src/asi-universal/five-worker-wave.integration.test.mjs';
+import '../../src/asi-universal/five-worker-wave.test.mjs';
+import '../../src/asi-universal/product-route-adapter.test.mjs';
+import '../../src/asi-universal/publisher-artifact-bridge.test.mjs';
+import '../../src/asi-universal/serial-native-model-reservations.test.mjs';
 const SHA='a'.repeat(40);
 const X='b3c8ff2e4904b0b503197d29aa217773918831bc';
 const Y='8ac8e8ac11e39ac070ccc058218e3b73190cb43f';

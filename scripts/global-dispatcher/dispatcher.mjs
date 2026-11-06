@@ -138,7 +138,11 @@ export function createGlobalDispatcher({stateDir, adapters} = {}) {
               typeof result.head === 'string' && /^[a-f0-9]{40}$/.test(result.head) &&
               result.candidates.every(c => validId(c?.id) && typeof c.operation === 'string' &&
                 typeof c.tool === 'string' && Number.isSafeInteger(c.priority) &&
-                Array.isArray(c.paths) && c.paths.every(p => typeof p === 'string')))), 'ADAPTER_RESULT_INVALID');
+                Array.isArray(c.paths) && c.paths.length >= 1 && c.paths.length <= 20 &&
+                c.paths.every(p => typeof p === 'string' && p.length > 0 && p.length <= 256 &&
+                  !p.startsWith('/') && !p.includes(String.fromCharCode(92)) &&
+                  p.split('/').every(segment => segment && segment !== '.' && segment !== '..')) &&
+                new Set(c.paths).size === c.paths.length))), 'ADAPTER_RESULT_INVALID');
           result.terminal = result.terminal.map(({id, status}) => ({id, status}));
           if (adapter.goalPlanning || product.goalGraph !== undefined || result.goalGraph !== undefined) {
             must(adapter.goalPlanning, 'GOAL_ADAPTER_REQUIRED');
@@ -175,15 +179,16 @@ export function createGlobalDispatcher({stateDir, adapters} = {}) {
             result.candidates = [];
           }
           const eligible = result.candidates.filter(c => !product.terminal.some(t => t.id === c.id));
-          const repeated = eligible.some(c => product.planned.some(p => p.id === c.id));
+          // Historical planned IDs remain quarantined by the filter below.
+          // They must not block different unplanned tasks of the same product.
           const exhausted = eligible.length > 0 && product.planned.filter(p => p.stage === result.stage).length >= adapter.maxPlansPerStage;
           const atCapacity = adapter.goalPlanning && product.planned.filter(p =>
             !product.terminal.some(t => t.id === p.id)).length >= adapter.maxConcurrentPlans;
           // The same job is never automatically reissued, even on a new SHA or
           // after a cosmetic change. Explicit evidence reconciliation is a later gate.
           result.candidates = eligible.filter(c => !product.planned.some(p => p.id === c.id));
-          if (result.status === 'READY' && ((!adapter.goalPlanning && repeated) || exhausted || atCapacity || !result.candidates.length)) {
-            result.status = repeated || exhausted || atCapacity ? 'BLOCKED' : 'WAITING';
+          if (result.status === 'READY' && (exhausted || atCapacity || !result.candidates.length)) {
+            result.status = exhausted || atCapacity ? 'BLOCKED' : 'WAITING';
             result.candidates = [];
             result.nextAction = atCapacity ? 'Await verified results for the bounded in-flight reservations; do not reissue them.' :
               'Reconcile the existing task reservation/publication or supply stage acceptance; automatic retry is disabled.';
