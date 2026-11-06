@@ -1,10 +1,16 @@
 import type { Metadata } from 'next';
 import Image from 'next/image';
-import Link from 'next/link';
+import cabinsHero from '@/assets/cabins/cabins-hero.webp';
+import cabinsComfort from '@/assets/cabins/cabins-comfort.webp';
+import cabinsWorkforce from '@/assets/cabins/cabins-workforce.webp';
+import cabinsUrban from '@/assets/cabins/cabins-urban.webp';
+import cabinsStudent from '@/assets/cabins/cabins-student.webp';
+import cabinsAir from '@/assets/cabins/cabins-air.webp';
+import cabinsRail from '@/assets/cabins/cabins-rail.webp';
 
 import { SiteHeader } from '@/components/site/SiteHeader';
 import { SiteFooter } from '@/components/site/SiteFooter';
-import { Eyebrow, Headline, Section, PrimaryCta } from '@/components/site/primitives';
+import { Eyebrow, Headline, Section, PrimaryCta, SecondaryCta, GoldRule } from '@/components/site/primitives';
 
 export const metadata: Metadata = {
   title: 'ASI Cabins — Private modular rooms. Intelligent global operations.',
@@ -24,6 +30,8 @@ const FORMATS = [
   {
     number: '01',
     name: 'ASI Workforce',
+    image: cabinsWorkforce,
+    imageAlt: 'ASI Workforce concept outside a manufacturing and logistics building',
     label: 'Workers',
     description: 'Practical, private accommodation close to factories, logistics centers and construction projects.',
     detail: 'Designed for longer stays, with potential employer contribution and location-specific pricing.',
@@ -31,6 +39,8 @@ const FORMATS = [
   {
     number: '02',
     name: 'ASI Cabins Urban',
+    image: cabinsUrban,
+    imageAlt: 'ASI Cabins Urban concept with private modular rooms in a city',
     label: 'City stays',
     description: 'A private and comfortable room in a well-connected city location.',
     detail: 'An alternative for people who value quiet, privacy and an accessible city address.',
@@ -38,6 +48,8 @@ const FORMATS = [
   {
     number: '03',
     name: 'ASI Transit Air',
+    image: cabinsAir,
+    imageAlt: 'ASI Transit Air concept cabins inside an airport terminal',
     label: 'Airports',
     description: 'A quiet place to sleep and shower between flights.',
     detail: 'For transit passengers who need genuine privacy rather than an open sleeping pod.',
@@ -45,6 +57,8 @@ const FORMATS = [
   {
     number: '04',
     name: 'ASI Transit Rail',
+    image: cabinsRail,
+    imageAlt: 'ASI Transit Rail concept cabins near railway platforms',
     label: 'Railway stations',
     description: 'A peaceful private space between trains.',
     detail: 'A proposed station-based format, subject to local permissions and facilities.',
@@ -52,6 +66,8 @@ const FORMATS = [
   {
     number: '05',
     name: 'ASI Student',
+    image: cabinsStudent,
+    imageAlt: 'ASI Student concept with private rooms near campus',
     label: 'Students',
     description: 'A calm personal space near campus for living, studying and resting.',
     detail: 'A housing format adapted to student needs and local accommodation standards.',
@@ -93,36 +109,33 @@ export default function CabinsPage() {
     <div className="bg-asi-ivory text-asi-navy font-sans">
       <SiteHeader />
       <main>
-        <section className="bg-asi-navy text-asi-ivory px-5 sm:px-8 py-16 sm:py-24">
-          <div className="max-w-6xl mx-auto grid lg:grid-cols-[1fr,0.92fr] gap-12 items-center">
+        <section className="relative bg-asi-ivory text-asi-navy px-5 sm:px-8 pt-12 sm:pt-20 pb-16 sm:pb-24">
+          <div className="max-w-6xl mx-auto grid lg:grid-cols-[1.05fr,0.95fr] gap-12 lg:gap-16 items-center">
             <div>
-              <Eyebrow dark>Modular spaces · Smart operations</Eyebrow>
-              <p className="text-sm font-semibold tracking-[0.2em] uppercase text-asi-gold-soft">ASI Global presents</p>
-              <Headline as="h1" className="mt-5 text-5xl sm:text-6xl lg:text-7xl text-asi-ivory">
+              <Eyebrow>Modular spaces · Smart operations</Eyebrow>
+              <p className="text-sm font-semibold tracking-[0.2em] uppercase text-asi-gold-text">ASI Global presents</p>
+              <Headline as="h1" className="mt-6 text-4xl sm:text-6xl lg:text-[4rem] text-asi-navy">
                 ASI Cabins.
-                <span className="block text-asi-gold-soft mt-3">One idea.<br />Many formats.<br />Worldwide.</span>
+                <span className="block text-asi-gold mt-3">One idea. Many formats. Worldwide.</span>
               </Headline>
-              <p className="mt-7 text-lg leading-relaxed text-asi-ivory/80 max-w-xl">
+              <GoldRule className="mt-6 mb-6" />
+              <p className="mt-7 text-lg leading-relaxed text-asi-navy/75 max-w-xl">
                 Comfortable private modular rooms, designed for installation inside suitable existing buildings.
                 One international concept, operated through the ASI platform.
               </p>
-              <p className="mt-4 text-sm leading-relaxed text-asi-ivory/60 max-w-xl">
+              <p className="mt-4 text-sm leading-relaxed text-asi-navy/60 max-w-xl">
                 In development and first-pilot preparation. Images are concept illustrations, not operating ASI locations.
               </p>
               <div className="mt-9 flex flex-wrap gap-4">
-                <Link href="#formats" className="inline-flex items-center justify-center px-7 py-3.5 bg-asi-ivory text-asi-navy font-semibold text-sm rounded-sm">
-                  Explore all five formats
-                </Link>
-                <Link href="#partners" className="inline-flex items-center justify-center px-7 py-3.5 border border-asi-ivory/60 text-asi-ivory font-semibold text-sm rounded-sm">
-                  Become a partner
-                </Link>
+                <PrimaryCta href="#formats">Explore all five formats</PrimaryCta>
+                <SecondaryCta href="#partners">Become a partner</SecondaryCta>
               </div>
             </div>
             <div>
-              <div className="relative aspect-[4/5] overflow-hidden border border-asi-ivory/20">
-                <Image src="/images/japan/cabin-clean.jpg" alt="Illustrative private modular cabin design, not a completed ASI property" fill priority sizes="(min-width:1024px) 40vw, 90vw" className="object-cover" />
+              <div className="relative aspect-[4/5] overflow-hidden border border-asi-border bg-asi-paper">
+                <Image src={cabinsHero} alt="ASI Cabins architectural concept illustration from the English presentation" fill priority sizes="(min-width:1024px) 40vw, 90vw" className="object-cover" />
               </div>
-              <p className="mt-3 text-xs text-asi-ivory/55">Concept visual · Not a completed hotel</p>
+              <p className="mt-3 text-xs text-asi-navy/50">Original presentation visual · Concept, not an operating ASI property</p>
             </div>
           </div>
         </section>
@@ -169,7 +182,17 @@ export default function CabinsPage() {
           </p>
           <div className="mt-12 grid md:grid-cols-2 lg:grid-cols-3 gap-5">
             {FORMATS.map((item) => (
-              <article key={item.number} className="border border-asi-border bg-asi-paper p-7 sm:p-8 flex flex-col min-h-[290px]">
+              <article key={item.number} className="border border-asi-border bg-asi-paper overflow-hidden flex flex-col h-full">
+                <div className="relative aspect-[4/3] w-full bg-asi-ivory overflow-hidden">
+                  <Image
+                    src={item.image}
+                    alt={item.imageAlt}
+                    fill
+                    sizes="(min-width: 1024px) 33vw, (min-width: 768px) 50vw, 100vw"
+                    className="object-cover"
+                  />
+                </div>
+                <div className="p-7 sm:p-8 flex flex-col flex-1">
                 <div className="flex justify-between items-start gap-3">
                   <span className="font-serif text-4xl text-asi-gold-text">{item.number}</span>
                   <span className="text-[0.7rem] tracking-[0.14em] uppercase text-asi-navy/50">{item.label}</span>
@@ -177,19 +200,38 @@ export default function CabinsPage() {
                 <h3 className="mt-7 font-serif text-2xl">{item.name}</h3>
                 <p className="mt-3 text-asi-navy/80 leading-relaxed">{item.description}</p>
                 <p className="mt-4 text-sm text-asi-navy/60 leading-relaxed">{item.detail}</p>
+                </div>
               </article>
             ))}
-            <div className="bg-asi-navy text-asi-ivory p-8 flex flex-col justify-center">
-              <p className="text-xs uppercase font-semibold tracking-[0.2em] text-asi-gold-soft">The unifying idea</p>
+            <div className="bg-asi-paper border border-asi-border p-8 flex flex-col justify-center">
+              <p className="text-xs uppercase font-semibold tracking-[0.2em] text-asi-gold-text">The unifying idea</p>
               <h3 className="font-serif text-3xl mt-4">Private space.<br />A consistent brand.<br />Intelligent operations.</h3>
-              <p className="mt-4 text-sm text-asi-ivory/65">Different formats, one ASI network.</p>
+              <p className="mt-4 text-sm text-asi-navy/65">Different formats, one ASI network.</p>
             </div>
           </div>
         </Section>
 
         <Section variant="paper">
           <Eyebrow>Comfort by design</Eyebrow>
-          <Headline className="text-3xl sm:text-5xl max-w-3xl">Compact should still feel comfortable.</Headline>
+          <div className="grid lg:grid-cols-[1fr,1fr] gap-12 items-center">
+            <div className="relative aspect-[5/3] lg:aspect-[4/3] border border-asi-border overflow-hidden bg-asi-ivory">
+              <Image
+                src={cabinsComfort}
+                alt="Private ASI Cabins room concept from the English presentation, with warm interior lighting"
+                fill
+                sizes="(min-width: 1024px) 42vw, 90vw"
+                className="object-cover"
+              />
+            </div>
+            <div>
+              <Headline className="text-3xl sm:text-5xl max-w-3xl">Compact should still feel comfortable.</Headline>
+              <p className="mt-6 text-asi-navy/70 leading-relaxed">
+                The ASI Cabins design puts comfort and privacy first, with carefully planned
+                amenities rather than shared sleeping pods.
+              </p>
+              <p className="mt-3 text-xs text-asi-navy/50">Original illustration from the English presentation.</p>
+            </div>
+          </div>
           <div className="mt-12 grid sm:grid-cols-2 lg:grid-cols-3 gap-5">
             {FEATURES.map((f) => (
               <div key={f.name} className="border-t border-asi-border pt-6 pr-4">
@@ -200,19 +242,19 @@ export default function CabinsPage() {
           </div>
         </Section>
 
-        <Section id="platform" variant="navy">
-          <Eyebrow dark>ASI operating platform</Eyebrow>
-          <Headline className="text-3xl sm:text-5xl text-asi-ivory max-w-4xl">One intelligent system for the entire global network.</Headline>
-          <p className="mt-6 max-w-3xl text-asi-ivory/70 text-lg leading-relaxed">
+        <Section id="platform" variant="paper">
+          <Eyebrow>ASI operating platform</Eyebrow>
+          <Headline className="text-3xl sm:text-5xl max-w-4xl">One intelligent system for the entire global network.</Headline>
+          <p className="mt-6 max-w-3xl text-asi-navy/70 text-lg leading-relaxed">
             More than a booking calendar: ASI is designed to coordinate the guest journey and operating cycle across locations.
             Functions are introduced in stages and depend on local integrations, testing and operational policy.
           </p>
-          <div className="mt-12 grid md:grid-cols-2 lg:grid-cols-3 gap-px bg-asi-ivory/20 border border-asi-ivory/20">
+          <div className="mt-12 grid md:grid-cols-2 lg:grid-cols-3 gap-px bg-asi-border border border-asi-border">
             {SYSTEM.map((item) => (
-              <div key={item.number} className="bg-asi-navy p-7 sm:p-8">
-                <p className="font-serif text-3xl text-asi-gold-soft">{item.number}</p>
-                <h3 className="font-serif text-2xl text-asi-ivory mt-4">{item.name}</h3>
-                <p className="mt-3 leading-relaxed text-asi-ivory/65 text-sm">{item.body}</p>
+              <div key={item.number} className="bg-asi-ivory p-7 sm:p-8">
+                <p className="font-serif text-3xl text-asi-gold-text">{item.number}</p>
+                <h3 className="font-serif text-2xl text-asi-navy mt-4">{item.name}</h3>
+                <p className="mt-3 leading-relaxed text-asi-navy/65 text-sm">{item.body}</p>
               </div>
             ))}
           </div>
