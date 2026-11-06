@@ -183,7 +183,7 @@ export default function CabinsPage() {
           <div className="mt-12 grid md:grid-cols-2 lg:grid-cols-3 gap-5">
             {FORMATS.map((item) => (
               <article key={item.number} className="border border-asi-border bg-asi-paper overflow-hidden flex flex-col h-full">
-                <div className="relative aspect-[4/3] w-full bg-asi-ivory overflow-hidden">
+                <div className="relative aspect-[4/5] w-full bg-asi-ivory overflow-hidden">
                   <Image
                     src={item.image}
                     alt={item.imageAlt}
