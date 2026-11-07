@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {publishPreparedFiveWorkerWave,verifyFiveWorkerAfterRestart} from './native-five-worker-publisher.mjs';
+import {publishPreparedFiveWorkerWave,verifyFiveWorkerAfterRestart} from './native-five-worker-handoff.mjs';
 
 const SHA='a'.repeat(40),DIGEST='b'.repeat(64),HEAD='c'.repeat(40);
 const REPO='ASI-integration/asi-landing';
