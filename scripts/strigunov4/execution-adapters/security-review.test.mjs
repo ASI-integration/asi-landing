@@ -161,6 +161,12 @@ test('detached clone may retain safe branch metadata with only remote and merge 
     '[remote "origin"]\n\turl = https://example.invalid/repo.git\n\tfetch = +refs/heads/*:refs/remotes/origin/*\n' +
     '[branch "feature/source-v1"]\n\tremote = origin\n\tmerge = refs/heads/feature/source-v1\n';
   assert.doesNotThrow(()=>validateScratchGitConfig(config));
+  const noTags=config.replace('[branch "feature/source-v1"]',
+    '\\ttagOpt = --no-tags\\n[branch "feature/source-v1"]');
+  assert.doesNotThrow(()=>validateScratchGitConfig(noTags));
+  assert.throws(()=>validateScratchGitConfig(
+    noTags.replace('tagOpt = --no-tags','tagOpt = --tags')),
+    /UNTRUSTED_GIT_CONFIG/);
   for(const bad of [
     config+'[branch "bad..ref"]\nremote = origin\n',
     config+'[branch "feature/source-v1"]\nrebase = true\n',
