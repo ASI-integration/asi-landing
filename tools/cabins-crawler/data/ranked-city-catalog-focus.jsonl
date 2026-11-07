@@ -1,0 +1,48 @@
+{"city": "London", "country": "United Kingdom", "country_code": "GB", "city_code": 1, "population": 10416420, "priority_band": "A-PRIORITY", "screening_score_100": 80.75}
+{"city": "Tōkyō (Tokyo)", "country": "Japan", "country_code": "JP", "city_code": 2, "population": 33412512, "priority_band": "A-PRIORITY", "screening_score_100": 79.43}
+{"city": "Paris", "country": "France", "country_code": "FR", "city_code": 3, "population": 9381921, "priority_band": "A-PRIORITY", "screening_score_100": 78.93}
+{"city": "Kuala Lumpur", "country": "Malaysia", "country_code": "MY", "city_code": 4, "population": 8443731, "priority_band": "A-PRIORITY", "screening_score_100": 74.75}
+{"city": "Dubai", "country": "United Arab Emirates", "country_code": "AE", "city_code": 5, "population": 5283789, "priority_band": "A-PRIORITY", "screening_score_100": 74.22}
+{"city": "Madrid", "country": "Spain", "country_code": "ES", "city_code": 6, "population": 5583601, "priority_band": "A-PRIORITY", "screening_score_100": 70.65}
+{"city": "Osaka", "country": "Japan", "country_code": "JP", "city_code": 7, "population": 12964145, "priority_band": "B-SHORTLIST", "screening_score_100": 70.58}
+{"city": "Seoul", "country": "South Korea", "country_code": "KR", "city_code": 8, "population": 22490482, "priority_band": "B-SHORTLIST", "screening_score_100": 69.39}
+{"city": "Barcelona", "country": "Spain", "country_code": "ES", "city_code": 9, "population": 3982704, "priority_band": "B-SHORTLIST", "screening_score_100": 69.28}
+{"city": "Milan", "country": "Italy", "country_code": "IT", "city_code": 10, "population": 2599022, "priority_band": "B-SHORTLIST", "screening_score_100": 68.38}
+{"city": "Nagoya", "country": "Japan", "country_code": "JP", "city_code": 11, "population": 7146160, "priority_band": "B-SHORTLIST", "screening_score_100": 68.16}
+{"city": "Roma (Rome)", "country": "Italy", "country_code": "IT", "city_code": 12, "population": 2376474, "priority_band": "B-SHORTLIST", "screening_score_100": 68.02}
+{"city": "Istanbul", "country": "Türkiye", "country_code": "TR", "city_code": 13, "population": 15014763, "priority_band": "B-SHORTLIST", "screening_score_100": 66.55}
+{"city": "Singapore", "country": "Singapore", "country_code": "SG", "city_code": 14, "population": 4963998, "priority_band": "B-SHORTLIST", "screening_score_100": 64.44}
+{"city": "Naples", "country": "Italy", "country_code": "IT", "city_code": 15, "population": 2767923, "priority_band": "B-SHORTLIST", "screening_score_100": 63.64}
+{"city": "Fukuoka", "country": "Japan", "country_code": "JP", "city_code": 16, "population": 2225078, "priority_band": "B-SHORTLIST", "screening_score_100": 63.41}
+{"city": "Sapporo", "country": "Japan", "country_code": "JP", "city_code": 17, "population": 1964519, "priority_band": "B-SHORTLIST", "screening_score_100": 62.91}
+{"city": "Jakarta", "country": "Indonesia", "country_code": "ID", "city_code": 18, "population": 41913860, "priority_band": "B-SHORTLIST", "screening_score_100": 61.99}
+{"city": "Sendai", "country": "Japan", "country_code": "JP", "city_code": 19, "population": 1256440, "priority_band": "B-SHORTLIST", "screening_score_100": 61.09}
+{"city": "New York City", "country": "United States of America", "country_code": "US", "city_code": 20, "population": 13920148, "priority_band": "B-SHORTLIST", "screening_score_100": 61.0}
+{"city": "Kitakyushu", "country": "Japan", "country_code": "JP", "city_code": 21, "population": 1206731, "priority_band": "B-SHORTLIST", "screening_score_100": 60.92}
+{"city": "Hiroshima", "country": "Japan", "country_code": "JP", "city_code": 22, "population": 1185788, "priority_band": "B-SHORTLIST", "screening_score_100": 60.85}
+{"city": "Naha", "country": "Japan", "country_code": "JP", "city_code": 23, "population": 1060017, "priority_band": "B-SHORTLIST", "screening_score_100": 60.4}
+{"city": "Berlin", "country": "Germany", "country_code": "DE", "city_code": 24, "population": 3560908, "priority_band": "B-SHORTLIST", "screening_score_100": 60.19}
+{"city": "Birmingham", "country": "United Kingdom", "country_code": "GB", "city_code": 25, "population": 2631757, "priority_band": "B-SHORTLIST", "screening_score_100": 60.16}
+{"city": "Turin", "country": "Italy", "country_code": "IT", "city_code": 26, "population": 1150975, "priority_band": "B-SHORTLIST", "screening_score_100": 60.07}
+{"city": "Manchester", "country": "United Kingdom", "country_code": "GB", "city_code": 27, "population": 2535427, "priority_band": "B-SHORTLIST", "screening_score_100": 60.01}
+{"city": "Valencia", "country": "Spain", "country_code": "ES", "city_code": 28, "population": 1390045, "priority_band": "B-SHORTLIST", "screening_score_100": 60.0}
+{"city": "Essen", "country": "Germany", "country_code": "DE", "city_code": 29, "population": 2717087, "priority_band": "B-SHORTLIST", "screening_score_100": 59.09}
+{"city": "Amsterdam", "country": "Netherlands", "country_code": "NL", "city_code": 30, "population": 1235985, "priority_band": "B-SHORTLIST", "screening_score_100": 57.65}
+{"city": "Munich", "country": "Germany", "country_code": "DE", "city_code": 31, "population": 1815022, "priority_band": "B-SHORTLIST", "screening_score_100": 57.45}
+{"city": "Hamburg", "country": "Germany", "country_code": "DE", "city_code": 32, "population": 1759377, "priority_band": "B-SHORTLIST", "screening_score_100": 57.33}
+{"city": "Liverpool", "country": "United Kingdom", "country_code": "GB", "city_code": 33, "population": 1227470, "priority_band": "B-SHORTLIST", "screening_score_100": 57.06}
+{"city": "Toronto", "country": "Canada", "country_code": "CA", "city_code": 34, "population": 5494431, "priority_band": "B-SHORTLIST", "screening_score_100": 56.95}
+{"city": "Lisboa (Lisbon)", "country": "Portugal", "country_code": "PT", "city_code": 35, "population": 1913798, "priority_band": "B-SHORTLIST", "screening_score_100": 56.85}
+{"city": "Busan", "country": "South Korea", "country_code": "KR", "city_code": 36, "population": 3263221, "priority_band": "B-SHORTLIST", "screening_score_100": 56.54}
+{"city": "Leeds", "country": "United Kingdom", "country_code": "GB", "city_code": 37, "population": 1065607, "priority_band": "B-SHORTLIST", "screening_score_100": 56.49}
+{"city": "Wien (Vienna)", "country": "Austria", "country_code": "AT", "city_code": 38, "population": 2031326, "priority_band": "B-SHORTLIST", "screening_score_100": 56.44}
+{"city": "Athína (Athens)", "country": "Greece", "country_code": "GR", "city_code": 39, "population": 3101979, "priority_band": "B-SHORTLIST", "screening_score_100": 56.41}
+{"city": "Bandung", "country": "Indonesia", "country_code": "ID", "city_code": 40, "population": 8909104, "priority_band": "B-SHORTLIST", "screening_score_100": 55.88}
+{"city": "Antalya", "country": "Türkiye", "country_code": "TR", "city_code": 41, "population": 1273822, "priority_band": "B-SHORTLIST", "screening_score_100": 55.87}
+{"city": "Los Angeles", "country": "United States of America", "country_code": "US", "city_code": 42, "population": 12740420, "priority_band": "B-SHORTLIST", "screening_score_100": 55.64}
+{"city": "Cologne", "country": "Germany", "country_code": "DE", "city_code": 43, "population": 1125292, "priority_band": "B-SHORTLIST", "screening_score_100": 55.51}
+{"city": "Daegu", "country": "South Korea", "country_code": "KR", "city_code": 44, "population": 2334446, "priority_band": "B-SHORTLIST", "screening_score_100": 55.18}
+{"city": "Mecca", "country": "Saudi Arabia", "country_code": "SA", "city_code": 45, "population": 1692152, "priority_band": "B-SAFETY_VERIFY", "screening_score_100": 68.82}
+{"city": "Krung Thep Maha Nakhon (Bangkok)", "country": "Thailand", "country_code": "TH", "city_code": 46, "population": 18180280, "priority_band": "B-SAFETY_VERIFY", "screening_score_100": 67.3}
+{"city": "Tamar (Hong Kong)", "country": "China, Hong Kong SAR", "country_code": "HK", "city_code": 47, "population": 4749543, "priority_band": "B-SAFETY_VERIFY", "screening_score_100": 62.44}
+{"city": "Macau - Zhuhai", "country": "China, Macao SAR", "country_code": "MO", "city_code": 48, "population": 2203065, "priority_band": "B-SAFETY_VERIFY", "screening_score_100": 57.45}

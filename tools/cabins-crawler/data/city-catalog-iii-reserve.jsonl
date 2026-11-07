@@ -1,0 +1,399 @@
+{"city": "Shanghai", "country": "China", "country_code": "CN", "research_tier": "III-RESERVE", "global_score": 53.06, "population_2025": 29558908, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Guangzhou", "country": "China", "country_code": "CN", "research_tier": "III-RESERVE", "global_score": 52.78, "population_2025": 27563372, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "New Delhi", "country": "India", "country_code": "IN", "research_tier": "III-RESERVE", "global_score": 51.59, "population_2025": 30222405, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Beijing", "country": "China", "country_code": "CN", "research_tier": "III-RESERVE", "global_score": 50.81, "population_2025": 17013303, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Kolkata", "country": "India", "country_code": "IN", "research_tier": "III-RESERVE", "global_score": 50.4, "population_2025": 22549738, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Shenzhen", "country": "China", "country_code": "CN", "research_tier": "III-RESERVE", "global_score": 49.99, "population_2025": 13878396, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Mumbai", "country": "India", "country_code": "IN", "research_tier": "III-RESERVE", "global_score": 49.95, "population_2025": 20203056, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Bengaluru", "country": "India", "country_code": "IN", "research_tier": "III-RESERVE", "global_score": 48.22, "population_2025": 13187098, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Suzhou", "country": "China", "country_code": "CN", "research_tier": "III-RESERVE", "global_score": 47.61, "population_2025": 7731101, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Chennai", "country": "India", "country_code": "IN", "research_tier": "III-RESERVE", "global_score": 47.54, "population_2025": 11153205, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Hangzhou", "country": "China", "country_code": "CN", "research_tier": "III-RESERVE", "global_score": 47.48, "population_2025": 7500208, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Wuhan", "country": "China", "country_code": "CN", "research_tier": "III-RESERVE", "global_score": 47.41, "population_2025": 7363548, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Tianjin", "country": "China", "country_code": "CN", "research_tier": "III-RESERVE", "global_score": 47.37, "population_2025": 7285342, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Chongqing", "country": "China", "country_code": "CN", "research_tier": "III-RESERVE", "global_score": 47.24, "population_2025": 7071073, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Nanjing", "country": "China", "country_code": "CN", "research_tier": "III-RESERVE", "global_score": 47.09, "population_2025": 6800676, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Hajipur", "country": "India", "country_code": "IN", "research_tier": "III-RESERVE", "global_score": 47.07, "population_2025": 9941510, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Bruxelles (Brussels)", "country": "Belgium", "country_code": "BE", "research_tier": "III-RESERVE", "global_score": 47.04, "population_2025": 1406499, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Johor Bahru", "country": "Malaysia", "country_code": "MY", "research_tier": "III-RESERVE", "global_score": 47.0, "population_2025": 1695838, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Sacramento", "country": "United States of America", "country_code": "US", "research_tier": "III-RESERVE", "global_score": 46.98, "population_2025": 1514661, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Austin", "country": "United States of America", "country_code": "US", "research_tier": "III-RESERVE", "global_score": 46.97, "population_2025": 1513032, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Oakland", "country": "United States of America", "country_code": "US", "research_tier": "III-RESERVE", "global_score": 46.95, "population_2025": 1503319, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Chaozhou", "country": "China", "country_code": "CN", "research_tier": "III-RESERVE", "global_score": 46.84, "population_2025": 6407770, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Toshkent (Tashkent)", "country": "Uzbekistan", "country_code": "UZ", "research_tier": "III-RESERVE", "global_score": 46.83, "population_2025": 3935793, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Ammān (Amman)", "country": "Jordan", "country_code": "JO", "research_tier": "III-RESERVE", "global_score": 46.76, "population_2025": 6403666, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Hyderabad", "country": "India", "country_code": "IN", "research_tier": "III-RESERVE", "global_score": 46.75, "population_2025": 9190795, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Stockholm", "country": "Sweden", "country_code": "SE", "research_tier": "III-RESERVE", "global_score": 46.68, "population_2025": 1500093, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Chengdu", "country": "China", "country_code": "CN", "research_tier": "III-RESERVE", "global_score": 46.67, "population_2025": 6139874, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Seattle", "country": "United States of America", "country_code": "US", "research_tier": "III-RESERVE", "global_score": 46.67, "population_2025": 1403495, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Mesa", "country": "United States of America", "country_code": "US", "research_tier": "III-RESERVE", "global_score": 46.65, "population_2025": 1398369, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Portland", "country": "United States of America", "country_code": "US", "research_tier": "III-RESERVE", "global_score": 46.65, "population_2025": 1397788, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Fort Lauderdale", "country": "United States of America", "country_code": "US", "research_tier": "III-RESERVE", "global_score": 46.56, "population_2025": 1368027, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Shenyang", "country": "China", "country_code": "CN", "research_tier": "III-RESERVE", "global_score": 46.37, "population_2025": 5702638, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Gaziantep", "country": "Türkiye", "country_code": "TR", "research_tier": "III-RESERVE", "global_score": 46.03, "population_2025": 1613357, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Xi'an", "country": "China", "country_code": "CN", "research_tier": "III-RESERVE", "global_score": 46.02, "population_2025": 5231053, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Ahmedabad", "country": "India", "country_code": "IN", "research_tier": "III-RESERVE", "global_score": 45.99, "population_2025": 7632408, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Ad-Dawhah (Doha)", "country": "Qatar", "country_code": "QA", "research_tier": "III-RESERVE", "global_score": 45.88, "population_2025": 2193708, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Abū Ẓabī (Abu Dhabi)", "country": "United Arab Emirates", "country_code": "AE", "research_tier": "III-RESERVE", "global_score": 45.86, "population_2025": 1016460, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Baltimore", "country": "United States of America", "country_code": "US", "research_tier": "III-RESERVE", "global_score": 45.84, "population_2025": 1145219, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Rabat", "country": "Morocco", "country_code": "MA", "research_tier": "III-RESERVE", "global_score": 45.75, "population_2025": 2069287, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Zhengzhou", "country": "China", "country_code": "CN", "research_tier": "III-RESERVE", "global_score": 45.73, "population_2025": 4878035, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Hefei", "country": "China", "country_code": "CN", "research_tier": "III-RESERVE", "global_score": 45.72, "population_2025": 4867000, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Minneapolis [Saint Paul]", "country": "United States of America", "country_code": "US", "research_tier": "III-RESERVE", "global_score": 45.7, "population_2025": 1107243, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Surat", "country": "India", "country_code": "IN", "research_tier": "III-RESERVE", "global_score": 45.59, "population_2025": 6908925, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Ciudad de México (Mexico City)", "country": "Mexico", "country_code": "MX", "research_tier": "III-RESERVE", "global_score": 45.59, "population_2025": 17734212, "risk_gate": "COUNTRY_RISK_REVIEW"}
+{"city": "Pune", "country": "India", "country_code": "IN", "research_tier": "III-RESERVE", "global_score": 45.54, "population_2025": 6817951, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Harbin", "country": "China", "country_code": "CN", "research_tier": "III-RESERVE", "global_score": 45.29, "population_2025": 4376259, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Kozhikode", "country": "India", "country_code": "IN", "research_tier": "III-RESERVE", "global_score": 45.1, "population_2025": 6123872, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Wenzhou", "country": "China", "country_code": "CN", "research_tier": "III-RESERVE", "global_score": 45.08, "population_2025": 4158195, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Taiyuan", "country": "China", "country_code": "CN", "research_tier": "III-RESERVE", "global_score": 44.93, "population_2025": 4005816, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Puning", "country": "China", "country_code": "CN", "research_tier": "III-RESERVE", "global_score": 44.92, "population_2025": 3989322, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Ürümqi", "country": "China", "country_code": "CN", "research_tier": "III-RESERVE", "global_score": 44.67, "population_2025": 3755144, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Sincan", "country": "Türkiye", "country_code": "TR", "research_tier": "III-RESERVE", "global_score": 44.66, "population_2025": 1149921, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Qingdao", "country": "China", "country_code": "CN", "research_tier": "III-RESERVE", "global_score": 44.52, "population_2025": 3616657, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Helsinki (Helsingfors)", "country": "Finland", "country_code": "FI", "research_tier": "III-RESERVE", "global_score": 44.48, "population_2025": 1014317, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Jinan", "country": "China", "country_code": "CN", "research_tier": "III-RESERVE", "global_score": 44.35, "population_2025": 3472980, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Kochi", "country": "India", "country_code": "IN", "research_tier": "III-RESERVE", "global_score": 44.34, "population_2025": 5077670, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Changsha", "country": "China", "country_code": "CN", "research_tier": "III-RESERVE", "global_score": 44.33, "population_2025": 3457508, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Lucknow", "country": "India", "country_code": "IN", "research_tier": "III-RESERVE", "global_score": 44.32, "population_2025": 5052444, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Changchun", "country": "China", "country_code": "CN", "research_tier": "III-RESERVE", "global_score": 44.21, "population_2025": 3349934, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Nanchang", "country": "China", "country_code": "CN", "research_tier": "III-RESERVE", "global_score": 44.14, "population_2025": 3299773, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Nanning", "country": "China", "country_code": "CN", "research_tier": "III-RESERVE", "global_score": 44.13, "population_2025": 3288636, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Quanzhou", "country": "China", "country_code": "CN", "research_tier": "III-RESERVE", "global_score": 44.13, "population_2025": 3286129, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Kunming", "country": "China", "country_code": "CN", "research_tier": "III-RESERVE", "global_score": 44.06, "population_2025": 3228117, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Fez", "country": "Morocco", "country_code": "MA", "research_tier": "III-RESERVE", "global_score": 44.04, "population_2025": 1359989, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Ningbo", "country": "China", "country_code": "CN", "research_tier": "III-RESERVE", "global_score": 43.88, "population_2025": 3094833, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Shijiazhuang", "country": "China", "country_code": "CN", "research_tier": "III-RESERVE", "global_score": 43.74, "population_2025": 2990397, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Kanpur", "country": "India", "country_code": "IN", "research_tier": "III-RESERVE", "global_score": 43.69, "population_2025": 4329973, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Almaty", "country": "Kazakhstan", "country_code": "KZ", "research_tier": "III-RESERVE", "global_score": 43.66, "population_2025": 2367611, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Fuzhou", "country": "China", "country_code": "CN", "research_tier": "III-RESERVE", "global_score": 43.63, "population_2025": 2910985, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Tangier", "country": "Morocco", "country_code": "MA", "research_tier": "III-RESERVE", "global_score": 43.59, "population_2025": 1217976, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Dalian", "country": "China", "country_code": "CN", "research_tier": "III-RESERVE", "global_score": 43.47, "population_2025": 2796248, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Jaipur", "country": "India", "country_code": "IN", "research_tier": "III-RESERVE", "global_score": 43.44, "population_2025": 4071754, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Guiyang", "country": "China", "country_code": "CN", "research_tier": "III-RESERVE", "global_score": 43.31, "population_2025": 2686949, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Changzhou", "country": "China", "country_code": "CN", "research_tier": "III-RESERVE", "global_score": 43.25, "population_2025": 2649836, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Varanasi", "country": "India", "country_code": "IN", "research_tier": "III-RESERVE", "global_score": 43.22, "population_2025": 3858863, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Wuxi", "country": "China", "country_code": "CN", "research_tier": "III-RESERVE", "global_score": 43.2, "population_2025": 2613100, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Marrakesh", "country": "Morocco", "country_code": "MA", "research_tier": "III-RESERVE", "global_score": 42.88, "population_2025": 1021530, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Al-Manāmah (Manama)", "country": "Bahrain", "country_code": "BH", "research_tier": "III-RESERVE", "global_score": 42.86, "population_2025": 1538872, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Indore", "country": "India", "country_code": "IN", "research_tier": "III-RESERVE", "global_score": 42.8, "population_2025": 3476423, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Tangshan", "country": "China", "country_code": "CN", "research_tier": "III-RESERVE", "global_score": 42.65, "population_2025": 2286763, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Lanzhou", "country": "China", "country_code": "CN", "research_tier": "III-RESERVE", "global_score": 42.63, "population_2025": 2272104, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Patna", "country": "India", "country_code": "IN", "research_tier": "III-RESERVE", "global_score": 42.6, "population_2025": 3309383, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Nagpur", "country": "India", "country_code": "IN", "research_tier": "III-RESERVE", "global_score": 42.53, "population_2025": 3257841, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Cixi", "country": "China", "country_code": "CN", "research_tier": "III-RESERVE", "global_score": 42.45, "population_2025": 2177489, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Kalyan-Dombivli", "country": "India", "country_code": "IN", "research_tier": "III-RESERVE", "global_score": 42.41, "population_2025": 3163424, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Kollam", "country": "India", "country_code": "IN", "research_tier": "III-RESERVE", "global_score": 42.3, "population_2025": 3074562, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Thiruvananthapuram", "country": "India", "country_code": "IN", "research_tier": "III-RESERVE", "global_score": 42.12, "population_2025": 2946119, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Hohhot", "country": "China", "country_code": "CN", "research_tier": "III-RESERVE", "global_score": 42.09, "population_2025": 1993292, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Asansol", "country": "India", "country_code": "IN", "research_tier": "III-RESERVE", "global_score": 42.09, "population_2025": 2924741, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Tamluk", "country": "India", "country_code": "IN", "research_tier": "III-RESERVE", "global_score": 42.05, "population_2025": 2894484, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Sofia", "country": "Bulgaria", "country_code": "BG", "research_tier": "III-RESERVE", "global_score": 42.03, "population_2025": 1067136, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Agra", "country": "India", "country_code": "IN", "research_tier": "III-RESERVE", "global_score": 41.9, "population_2025": 2786762, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Buenos Aires", "country": "Argentina", "country_code": "AR", "research_tier": "III-RESERVE", "global_score": 41.88, "population_2025": 14017736, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Putian", "country": "China", "country_code": "CN", "research_tier": "III-RESERVE", "global_score": 41.84, "population_2025": 1871858, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Yinchuan", "country": "China", "country_code": "CN", "research_tier": "III-RESERVE", "global_score": 41.66, "population_2025": 1792788, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Xiamen City", "country": "China", "country_code": "CN", "research_tier": "III-RESERVE", "global_score": 41.65, "population_2025": 1788492, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Praha (Prague)", "country": "Czechia", "country_code": "CZ", "research_tier": "III-RESERVE", "global_score": 41.65, "population_2025": 1197765, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Handan", "country": "China", "country_code": "CN", "research_tier": "III-RESERVE", "global_score": 41.63, "population_2025": 1777172, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Luoyang", "country": "China", "country_code": "CN", "research_tier": "III-RESERVE", "global_score": 41.51, "population_2025": 1727744, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Bhopal", "country": "India", "country_code": "IN", "research_tier": "III-RESERVE", "global_score": 41.44, "population_2025": 2487205, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Nantong", "country": "China", "country_code": "CN", "research_tier": "III-RESERVE", "global_score": 41.41, "population_2025": 1684417, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Dighwara", "country": "India", "country_code": "IN", "research_tier": "III-RESERVE", "global_score": 41.41, "population_2025": 2469443, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Chandigarh", "country": "India", "country_code": "IN", "research_tier": "III-RESERVE", "global_score": 41.35, "population_2025": 2437733, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Ponnani", "country": "India", "country_code": "IN", "research_tier": "III-RESERVE", "global_score": 41.31, "population_2025": 2409567, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Wuhu", "country": "China", "country_code": "CN", "research_tier": "III-RESERVE", "global_score": 41.28, "population_2025": 1631043, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Coimbatore", "country": "India", "country_code": "IN", "research_tier": "III-RESERVE", "global_score": 41.26, "population_2025": 2382988, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Zibo", "country": "China", "country_code": "CN", "research_tier": "III-RESERVE", "global_score": 41.25, "population_2025": 1620676, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Prayagraj", "country": "India", "country_code": "IN", "research_tier": "III-RESERVE", "global_score": 41.2, "population_2025": 2347869, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Datong", "country": "China", "country_code": "CN", "research_tier": "III-RESERVE", "global_score": 41.13, "population_2025": 1573531, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Vadodara", "country": "India", "country_code": "IN", "research_tier": "III-RESERVE", "global_score": 41.06, "population_2025": 2270298, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Ludhiana", "country": "India", "country_code": "IN", "research_tier": "III-RESERVE", "global_score": 41.02, "population_2025": 2245106, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Taipei", "country": "Taiwan", "country_code": "TW", "research_tier": "III-RESERVE", "global_score": 40.99, "population_2025": 9136792, "risk_gate": "COUNTRY_SAFETY_EVIDENCE_REVIEW"}
+{"city": "Meerut", "country": "India", "country_code": "IN", "research_tier": "III-RESERVE", "global_score": 40.95, "population_2025": 2209886, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Baotou", "country": "China", "country_code": "CN", "research_tier": "III-RESERVE", "global_score": 40.92, "population_2025": 1491964, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Anyang", "country": "China", "country_code": "CN", "research_tier": "III-RESERVE", "global_score": 40.91, "population_2025": 1489112, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Taizhou", "country": "China", "country_code": "CN", "research_tier": "III-RESERVE", "global_score": 40.9, "population_2025": 1483994, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Al-Qahirah (Cairo)", "country": "Egypt", "country_code": "EG", "research_tier": "III-RESERVE", "global_score": 40.88, "population_2025": 25566102, "risk_gate": "COUNTRY_SAFETY_EVIDENCE_REVIEW"}
+{"city": "Shymkent", "country": "Kazakhstan", "country_code": "KZ", "research_tier": "III-RESERVE", "global_score": 40.85, "population_2025": 1184337, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Xiuying District", "country": "China", "country_code": "CN", "research_tier": "III-RESERVE", "global_score": 40.82, "population_2025": 1458377, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Madurai", "country": "India", "country_code": "IN", "research_tier": "III-RESERVE", "global_score": 40.82, "population_2025": 2138746, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Jilin City", "country": "China", "country_code": "CN", "research_tier": "III-RESERVE", "global_score": 40.8, "population_2025": 1448955, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Liuzhou", "country": "China", "country_code": "CN", "research_tier": "III-RESERVE", "global_score": 40.66, "population_2025": 1400880, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Xuzhou", "country": "China", "country_code": "CN", "research_tier": "III-RESERVE", "global_score": 40.66, "population_2025": 1402001, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Dhanbad", "country": "India", "country_code": "IN", "research_tier": "III-RESERVE", "global_score": 40.59, "population_2025": 2020181, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Mehsi", "country": "India", "country_code": "IN", "research_tier": "III-RESERVE", "global_score": 40.59, "population_2025": 2018610, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Xining", "country": "China", "country_code": "CN", "research_tier": "III-RESERVE", "global_score": 40.54, "population_2025": 1360245, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Nashik", "country": "India", "country_code": "IN", "research_tier": "III-RESERVE", "global_score": 40.54, "population_2025": 1996763, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Huaiyin District", "country": "China", "country_code": "CN", "research_tier": "III-RESERVE", "global_score": 40.51, "population_2025": 1349827, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Jamshedpur", "country": "India", "country_code": "IN", "research_tier": "III-RESERVE", "global_score": 40.46, "population_2025": 1956840, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Zhongshan", "country": "China", "country_code": "CN", "research_tier": "III-RESERVE", "global_score": 40.44, "population_2025": 1326078, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Anshan", "country": "China", "country_code": "CN", "research_tier": "III-RESERVE", "global_score": 40.43, "population_2025": 1322386, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Astana", "country": "Kazakhstan", "country_code": "KZ", "research_tier": "III-RESERVE", "global_score": 40.42, "population_2025": 1065387, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Yichang", "country": "China", "country_code": "CN", "research_tier": "III-RESERVE", "global_score": 40.4, "population_2025": 1314779, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Bibhutpur", "country": "India", "country_code": "IN", "research_tier": "III-RESERVE", "global_score": 40.35, "population_2025": 1904411, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Auckland", "country": "New Zealand", "country_code": "NZ", "research_tier": "III-RESERVE", "global_score": 40.18, "population_2025": 1123094, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Ranchi", "country": "India", "country_code": "IN", "research_tier": "III-RESERVE", "global_score": 40.16, "population_2025": 1819944, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Zhangzhou", "country": "China", "country_code": "CN", "research_tier": "III-RESERVE", "global_score": 40.14, "population_2025": 1232911, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Ganzhou", "country": "China", "country_code": "CN", "research_tier": "III-RESERVE", "global_score": 40.09, "population_2025": 1216248, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Manila", "country": "Philippines", "country_code": "PH", "research_tier": "III-RESERVE", "global_score": 39.97, "population_2025": 24735305, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Aligarh", "country": "India", "country_code": "IN", "research_tier": "III-RESERVE", "global_score": 39.96, "population_2025": 1729663, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Yueqing", "country": "China", "country_code": "CN", "research_tier": "III-RESERVE", "global_score": 39.89, "population_2025": 1160214, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Dhulian", "country": "India", "country_code": "IN", "research_tier": "III-RESERVE", "global_score": 39.89, "population_2025": 1699325, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Huizhou", "country": "China", "country_code": "CN", "research_tier": "III-RESERVE", "global_score": 39.81, "population_2025": 1137670, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Visakhapatnam", "country": "India", "country_code": "IN", "research_tier": "III-RESERVE", "global_score": 39.75, "population_2025": 1641957, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Bareilly", "country": "India", "country_code": "IN", "research_tier": "III-RESERVE", "global_score": 39.73, "population_2025": 1635214, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Tianjia‘an", "country": "China", "country_code": "CN", "research_tier": "III-RESERVE", "global_score": 39.68, "population_2025": 1100258, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Guadalajara", "country": "Mexico", "country_code": "MX", "research_tier": "III-RESERVE", "global_score": 39.67, "population_2025": 4135440, "risk_gate": "COUNTRY_RISK_REVIEW"}
+{"city": "Yancheng", "country": "China", "country_code": "CN", "research_tier": "III-RESERVE", "global_score": 39.65, "population_2025": 1093432, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Maharajganj", "country": "India", "country_code": "IN", "research_tier": "III-RESERVE", "global_score": 39.64, "population_2025": 1601258, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Kaifeng", "country": "China", "country_code": "CN", "research_tier": "III-RESERVE", "global_score": 39.63, "population_2025": 1087088, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Jabalpur", "country": "India", "country_code": "IN", "research_tier": "III-RESERVE", "global_score": 39.6, "population_2025": 1582131, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Rajkot", "country": "India", "country_code": "IN", "research_tier": "III-RESERVE", "global_score": 39.59, "population_2025": 1581235, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Zhangjiagang", "country": "China", "country_code": "CN", "research_tier": "III-RESERVE", "global_score": 39.56, "population_2025": 1068192, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Chhatrapati Sambhajinagar", "country": "India", "country_code": "IN", "research_tier": "III-RESERVE", "global_score": 39.56, "population_2025": 1567020, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Honghuagang", "country": "China", "country_code": "CN", "research_tier": "III-RESERVE", "global_score": 39.54, "population_2025": 1062992, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Gwalior", "country": "India", "country_code": "IN", "research_tier": "III-RESERVE", "global_score": 39.52, "population_2025": 1554246, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Vasai-Virar", "country": "India", "country_code": "IN", "research_tier": "III-RESERVE", "global_score": 39.49, "population_2025": 1542177, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Monterrey", "country": "Mexico", "country_code": "MX", "research_tier": "III-RESERVE", "global_score": 39.47, "population_2025": 3938015, "risk_gate": "COUNTRY_RISK_REVIEW"}
+{"city": "Gorakhpur", "country": "India", "country_code": "IN", "research_tier": "III-RESERVE", "global_score": 39.43, "population_2025": 1519206, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Jodhpur", "country": "India", "country_code": "IN", "research_tier": "III-RESERVE", "global_score": 39.42, "population_2025": 1515910, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Binhai New Area", "country": "China", "country_code": "CN", "research_tier": "III-RESERVE", "global_score": 39.36, "population_2025": 1017230, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Luohe", "country": "China", "country_code": "CN", "research_tier": "III-RESERVE", "global_score": 39.36, "population_2025": 1018295, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Moradabad", "country": "India", "country_code": "IN", "research_tier": "III-RESERVE", "global_score": 39.34, "population_2025": 1484611, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Raipur", "country": "India", "country_code": "IN", "research_tier": "III-RESERVE", "global_score": 39.32, "population_2025": 1478688, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Durg", "country": "India", "country_code": "IN", "research_tier": "III-RESERVE", "global_score": 39.08, "population_2025": 1393235, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Thrissur", "country": "India", "country_code": "IN", "research_tier": "III-RESERVE", "global_score": 39.02, "population_2025": 1371675, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Tiruchirappalli", "country": "India", "country_code": "IN", "research_tier": "III-RESERVE", "global_score": 38.95, "population_2025": 1349040, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Vijayawada", "country": "India", "country_code": "IN", "research_tier": "III-RESERVE", "global_score": 38.95, "population_2025": 1351098, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Mysuru", "country": "India", "country_code": "IN", "research_tier": "III-RESERVE", "global_score": 38.93, "population_2025": 1342126, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Salem", "country": "India", "country_code": "IN", "research_tier": "III-RESERVE", "global_score": 38.91, "population_2025": 1337000, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Guwahati", "country": "India", "country_code": "IN", "research_tier": "III-RESERVE", "global_score": 38.84, "population_2025": 1314019, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Amritsar", "country": "India", "country_code": "IN", "research_tier": "III-RESERVE", "global_score": 38.81, "population_2025": 1303330, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Saharanpur", "country": "India", "country_code": "IN", "research_tier": "III-RESERVE", "global_score": 38.72, "population_2025": 1275279, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Tiruppur", "country": "India", "country_code": "IN", "research_tier": "III-RESERVE", "global_score": 38.61, "population_2025": 1242837, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Gyanpur", "country": "India", "country_code": "IN", "research_tier": "III-RESERVE", "global_score": 38.6, "population_2025": 1237249, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Kota", "country": "India", "country_code": "IN", "research_tier": "III-RESERVE", "global_score": 38.58, "population_2025": 1232364, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Dehradun", "country": "India", "country_code": "IN", "research_tier": "III-RESERVE", "global_score": 38.54, "population_2025": 1219198, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Begusarai", "country": "India", "country_code": "IN", "research_tier": "III-RESERVE", "global_score": 38.51, "population_2025": 1210200, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Jalandhar", "country": "India", "country_code": "IN", "research_tier": "III-RESERVE", "global_score": 38.45, "population_2025": 1192763, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Jammu", "country": "India", "country_code": "IN", "research_tier": "III-RESERVE", "global_score": 38.31, "population_2025": 1154466, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Bhubaneshwar", "country": "India", "country_code": "IN", "research_tier": "III-RESERVE", "global_score": 38.29, "population_2025": 1146434, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Srinagar", "country": "India", "country_code": "IN", "research_tier": "III-RESERVE", "global_score": 38.21, "population_2025": 1126638, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Berhampore", "country": "India", "country_code": "IN", "research_tier": "III-RESERVE", "global_score": 38.15, "population_2025": 1109144, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Solapur", "country": "India", "country_code": "IN", "research_tier": "III-RESERVE", "global_score": 38.13, "population_2025": 1102702, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Kottayam", "country": "India", "country_code": "IN", "research_tier": "III-RESERVE", "global_score": 37.9, "population_2025": 1043314, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Barharia", "country": "India", "country_code": "IN", "research_tier": "III-RESERVE", "global_score": 37.89, "population_2025": 1038927, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Thalassery", "country": "India", "country_code": "IN", "research_tier": "III-RESERVE", "global_score": 37.88, "population_2025": 1038647, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Malda", "country": "India", "country_code": "IN", "research_tier": "III-RESERVE", "global_score": 37.74, "population_2025": 1001322, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Santiago", "country": "Chile", "country_code": "CL", "research_tier": "III-RESERVE", "global_score": 37.6, "population_2025": 6726045, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Tuen Mun", "country": "China, Hong Kong SAR", "country_code": "HK", "research_tier": "III-RESERVE", "global_score": 37.16, "population_2025": 1053083, "risk_gate": "COUNTRY_SAFETY_EVIDENCE_REVIEW"}
+{"city": "Al Kuwayt (Kuwait City)", "country": "Kuwait", "country_code": "KW", "research_tier": "III-RESERVE", "global_score": 37.02, "population_2025": 4265132, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Puebla", "country": "Mexico", "country_code": "MX", "research_tier": "III-RESERVE", "global_score": 36.61, "population_2025": 1947971, "risk_gate": "COUNTRY_RISK_REVIEW"}
+{"city": "Alexandria", "country": "Egypt", "country_code": "EG", "research_tier": "III-RESERVE", "global_score": 35.76, "population_2025": 7266957, "risk_gate": "COUNTRY_SAFETY_EVIDENCE_REVIEW"}
+{"city": "Accra", "country": "Ghana", "country_code": "GH", "research_tier": "III-RESERVE", "global_score": 35.74, "population_2025": 5592780, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Tijuana", "country": "Mexico", "country_code": "MX", "research_tier": "III-RESERVE", "global_score": 35.7, "population_2025": 1557695, "risk_gate": "COUNTRY_RISK_REVIEW"}
+{"city": "Toluca", "country": "Mexico", "country_code": "MX", "research_tier": "III-RESERVE", "global_score": 35.56, "population_2025": 1505035, "risk_gate": "COUNTRY_RISK_REVIEW"}
+{"city": "Taichung", "country": "Taiwan", "country_code": "TW", "research_tier": "III-RESERVE", "global_score": 35.32, "population_2025": 2268685, "risk_gate": "COUNTRY_SAFETY_EVIDENCE_REVIEW"}
+{"city": "Tunis", "country": "Tunisia", "country_code": "TN", "research_tier": "III-RESERVE", "global_score": 35.31, "population_2025": 2473428, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Dar es Salaam", "country": "United Republic of Tanzania", "country_code": "TZ", "research_tier": "III-RESERVE", "global_score": 35.25, "population_2025": 7795114, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "León", "country": "Mexico", "country_code": "MX", "research_tier": "III-RESERVE", "global_score": 35.17, "population_2025": 1367521, "risk_gate": "COUNTRY_RISK_REVIEW"}
+{"city": "Kaohsiung", "country": "Taiwan", "country_code": "TW", "research_tier": "III-RESERVE", "global_score": 35.17, "population_2025": 2187455, "risk_gate": "COUNTRY_SAFETY_EVIDENCE_REVIEW"}
+{"city": "Santo Domingo", "country": "Dominican Republic", "country_code": "DO", "research_tier": "III-RESERVE", "global_score": 34.99, "population_2025": 4600064, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Sydney", "country": "Australia", "country_code": "AU", "research_tier": "III-RESERVE", "global_score": 34.94, "population_2025": 4150917, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Torreón", "country": "Mexico", "country_code": "MX", "research_tier": "III-RESERVE", "global_score": 34.73, "population_2025": 1227850, "risk_gate": "COUNTRY_RISK_REVIEW"}
+{"city": "Ciudad Juárez", "country": "Mexico", "country_code": "MX", "research_tier": "III-RESERVE", "global_score": 34.68, "population_2025": 1212370, "risk_gate": "COUNTRY_RISK_REVIEW"}
+{"city": "Kumasi", "country": "Ghana", "country_code": "GH", "research_tier": "III-RESERVE", "global_score": 34.67, "population_2025": 4297984, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Beograd (Belgrade)", "country": "Serbia", "country_code": "RS", "research_tier": "III-RESERVE", "global_score": 34.61, "population_2025": 1121410, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Yerevan", "country": "Armenia", "country_code": "AM", "research_tier": "III-RESERVE", "global_score": 34.44, "population_2025": 1089209, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Melbourne", "country": "Australia", "country_code": "AU", "research_tier": "III-RESERVE", "global_score": 34.4, "population_2025": 3639893, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "São Paulo", "country": "Brazil", "country_code": "BR", "research_tier": "III-RESERVE", "global_score": 34.06, "population_2025": 18949790, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Luxor", "country": "Egypt", "country_code": "EG", "research_tier": "III-RESERVE", "global_score": 33.52, "population_2025": 4188023, "risk_gate": "COUNTRY_SAFETY_EVIDENCE_REVIEW"}
+{"city": "Cordoba", "country": "Argentina", "country_code": "AR", "research_tier": "III-RESERVE", "global_score": 32.68, "population_2025": 1460491, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Rosario", "country": "Argentina", "country_code": "AR", "research_tier": "III-RESERVE", "global_score": 31.71, "population_2025": 1151717, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Sri Jayawardenepura Kotte - Colombo", "country": "Sri Lanka", "country_code": "LK", "research_tier": "III-RESERVE", "global_score": 31.61, "population_2025": 5223838, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Cebu City", "country": "Philippines", "country_code": "PH", "research_tier": "III-RESERVE", "global_score": 31.45, "population_2025": 3044564, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Mendoza", "country": "Argentina", "country_code": "AR", "research_tier": "III-RESERVE", "global_score": 31.25, "population_2025": 1027849, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Rio de Janeiro", "country": "Brazil", "country_code": "BR", "research_tier": "III-RESERVE", "global_score": 31.25, "population_2025": 9500336, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Bakı (Baku)", "country": "Azerbaijan", "country_code": "AZ", "research_tier": "III-RESERVE", "global_score": 31.11, "population_2025": 1977897, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Banha", "country": "Egypt", "country_code": "EG", "research_tier": "III-RESERVE", "global_score": 30.69, "population_2025": 2088520, "risk_gate": "COUNTRY_SAFETY_EVIDENCE_REVIEW"}
+{"city": "Johannesburg", "country": "South Africa", "country_code": "ZA", "research_tier": "III-RESERVE", "global_score": 30.4, "population_2025": 7077175, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "El Mansura", "country": "Egypt", "country_code": "EG", "research_tier": "III-RESERVE", "global_score": 29.89, "population_2025": 1712781, "risk_gate": "COUNTRY_SAFETY_EVIDENCE_REVIEW"}
+{"city": "Lima", "country": "Peru", "country_code": "PE", "research_tier": "III-RESERVE", "global_score": 29.89, "population_2025": 10580241, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Perth", "country": "Australia", "country_code": "AU", "research_tier": "III-RESERVE", "global_score": 29.46, "population_2025": 1079374, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Brisbane", "country": "Australia", "country_code": "AU", "research_tier": "III-RESERVE", "global_score": 29.43, "population_2025": 1071628, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Tel Aviv", "country": "Israel", "country_code": "IL", "research_tier": "III-RESERVE", "global_score": 29.37, "population_2025": 2642872, "risk_gate": "COUNTRY_RISK_REVIEW"}
+{"city": "Minsk", "country": "Belarus", "country_code": "BY", "research_tier": "III-RESERVE", "global_score": 29.28, "population_2025": 1950680, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Sekondi-Takoradi", "country": "Ghana", "country_code": "GH", "research_tier": "III-RESERVE", "global_score": 29.23, "population_2025": 1127436, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "El Djazaïr (Algiers)", "country": "Algeria", "country_code": "DZ", "research_tier": "III-RESERVE", "global_score": 29.18, "population_2025": 3246400, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Al Zaqaziq", "country": "Egypt", "country_code": "EG", "research_tier": "III-RESERVE", "global_score": 29.12, "population_2025": 1416734, "risk_gate": "COUNTRY_SAFETY_EVIDENCE_REVIEW"}
+{"city": "Asyut", "country": "Egypt", "country_code": "EG", "research_tier": "III-RESERVE", "global_score": 29.09, "population_2025": 1406963, "risk_gate": "COUNTRY_SAFETY_EVIDENCE_REVIEW"}
+{"city": "Davao City", "country": "Philippines", "country_code": "PH", "research_tier": "III-RESERVE", "global_score": 28.69, "population_2025": 1546026, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Cape Town", "country": "South Africa", "country_code": "ZA", "research_tier": "III-RESERVE", "global_score": 28.56, "population_2025": 4508921, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Kathmandu", "country": "Nepal", "country_code": "NP", "research_tier": "III-RESERVE", "global_score": 28.42, "population_2025": 3231516, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Angeles", "country": "Philippines", "country_code": "PH", "research_tier": "III-RESERVE", "global_score": 28.42, "population_2025": 1445721, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "El Mahalla El Kubra", "country": "Egypt", "country_code": "EG", "research_tier": "III-RESERVE", "global_score": 28.29, "population_2025": 1156501, "risk_gate": "COUNTRY_SAFETY_EVIDENCE_REVIEW"}
+{"city": "Suhaj", "country": "Egypt", "country_code": "EG", "research_tier": "III-RESERVE", "global_score": 28.17, "population_2025": 1123349, "risk_gate": "COUNTRY_SAFETY_EVIDENCE_REVIEW"}
+{"city": "Kyiv (Kiev)", "country": "Ukraine", "country_code": "UA", "research_tier": "III-RESERVE", "global_score": 28.14, "population_2025": 2614581, "risk_gate": "COUNTRY_RISK_REVIEW"}
+{"city": "Dushanbe", "country": "Tajikistan", "country_code": "TJ", "research_tier": "III-RESERVE", "global_score": 27.94, "population_2025": 1440787, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Belo Horizonte", "country": "Brazil", "country_code": "BR", "research_tier": "III-RESERVE", "global_score": 27.9, "population_2025": 4162814, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Bayrūt (Beirut)", "country": "Lebanon", "country_code": "LB", "research_tier": "III-RESERVE", "global_score": 27.87, "population_2025": 1794019, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Tanta", "country": "Egypt", "country_code": "EG", "research_tier": "III-RESERVE", "global_score": 27.77, "population_2025": 1018577, "risk_gate": "COUNTRY_SAFETY_EVIDENCE_REVIEW"}
+{"city": "Recife", "country": "Brazil", "country_code": "BR", "research_tier": "III-RESERVE", "global_score": 27.41, "population_2025": 3691196, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Durban", "country": "South Africa", "country_code": "ZA", "research_tier": "III-RESERVE", "global_score": 27.14, "population_2025": 3177927, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Fortaleza", "country": "Brazil", "country_code": "BR", "research_tier": "III-RESERVE", "global_score": 26.89, "population_2025": 3244260, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Salvador", "country": "Brazil", "country_code": "BR", "research_tier": "III-RESERVE", "global_score": 26.75, "population_2025": 3135157, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Karachi", "country": "Pakistan", "country_code": "PK", "research_tier": "III-RESERVE", "global_score": 26.43, "population_2025": 21422590, "risk_gate": "COUNTRY_RISK_REVIEW"}
+{"city": "San José", "country": "Costa Rica", "country_code": "CR", "research_tier": "III-RESERVE", "global_score": 26.27, "population_2025": 2171213, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Curitiba", "country": "Brazil", "country_code": "BR", "research_tier": "III-RESERVE", "global_score": 25.79, "population_2025": 2475352, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Goiânia", "country": "Brazil", "country_code": "BR", "research_tier": "III-RESERVE", "global_score": 25.52, "population_2025": 2320596, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Manaus", "country": "Brazil", "country_code": "BR", "research_tier": "III-RESERVE", "global_score": 25.45, "population_2025": 2277352, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Kharkiv", "country": "Ukraine", "country_code": "UA", "research_tier": "III-RESERVE", "global_score": 25.32, "population_2025": 1308892, "risk_gate": "COUNTRY_RISK_REVIEW"}
+{"city": "Belém", "country": "Brazil", "country_code": "BR", "research_tier": "III-RESERVE", "global_score": 25.27, "population_2025": 2180454, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Oran", "country": "Algeria", "country_code": "DZ", "research_tier": "III-RESERVE", "global_score": 25.11, "population_2025": 1192410, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Lahore", "country": "Pakistan", "country_code": "PK", "research_tier": "III-RESERVE", "global_score": 25.02, "population_2025": 15156430, "risk_gate": "COUNTRY_RISK_REVIEW"}
+{"city": "Pretoria", "country": "South Africa", "country_code": "ZA", "research_tier": "III-RESERVE", "global_score": 24.91, "population_2025": 1836166, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Ho Chi Minh City", "country": "Viet Nam", "country_code": "VN", "research_tier": "III-RESERVE", "global_score": 24.85, "population_2025": 14052713, "risk_gate": "COUNTRY_SAFETY_EVIDENCE_REVIEW"}
+{"city": "San Salvador", "country": "El Salvador", "country_code": "SV", "research_tier": "III-RESERVE", "global_score": 24.84, "population_2025": 1615178, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Bogotá", "country": "Colombia", "country_code": "CO", "research_tier": "III-RESERVE", "global_score": 24.67, "population_2025": 10624315, "risk_gate": "COUNTRY_RISK_REVIEW"}
+{"city": "Porto Alegre", "country": "Brazil", "country_code": "BR", "research_tier": "III-RESERVE", "global_score": 24.39, "population_2025": 1755917, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "La Paz", "country": "Bolivia (Plurinational State of)", "country_code": "BO", "research_tier": "III-RESERVE", "global_score": 24.31, "population_2025": 2024413, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Phnum Pénh (Phnom Penh)", "country": "Cambodia", "country_code": "KH", "research_tier": "III-RESERVE", "global_score": 24.23, "population_2025": 2261055, "risk_gate": "COUNTRY_SAFETY_EVIDENCE_REVIEW"}
+{"city": "Santa Cruz de la Sierra", "country": "Bolivia (Plurinational State of)", "country_code": "BO", "research_tier": "III-RESERVE", "global_score": 24.22, "population_2025": 1980432, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Sao Goncalo", "country": "Brazil", "country_code": "BR", "research_tier": "III-RESERVE", "global_score": 24.21, "population_2025": 1679246, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Campinas", "country": "Brazil", "country_code": "BR", "research_tier": "III-RESERVE", "global_score": 24.09, "population_2025": 1631432, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "La Habana (Havana)", "country": "Cuba", "country_code": "CU", "research_tier": "III-RESERVE", "global_score": 24.0, "population_2025": 1593580, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Ulaanbaatar", "country": "Mongolia", "country_code": "MN", "research_tier": "III-RESERVE", "global_score": 23.85, "population_2025": 1596556, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Brasília", "country": "Brazil", "country_code": "BR", "research_tier": "III-RESERVE", "global_score": 23.81, "population_2025": 1521148, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Klipgat", "country": "South Africa", "country_code": "ZA", "research_tier": "III-RESERVE", "global_score": 23.51, "population_2025": 1300816, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Tembisa", "country": "South Africa", "country_code": "ZA", "research_tier": "III-RESERVE", "global_score": 23.5, "population_2025": 1298512, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Montevideo", "country": "Uruguay", "country_code": "UY", "research_tier": "III-RESERVE", "global_score": 23.31, "population_2025": 1240244, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "São Luís", "country": "Brazil", "country_code": "BR", "research_tier": "III-RESERVE", "global_score": 23.05, "population_2025": 1264379, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Nouakchott", "country": "Mauritania", "country_code": "MR", "research_tier": "III-RESERVE", "global_score": 22.99, "population_2025": 1561617, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Vitória", "country": "Brazil", "country_code": "BR", "research_tier": "III-RESERVE", "global_score": 22.93, "population_2025": 1226500, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Freetown", "country": "Sierra Leone", "country_code": "SL", "research_tier": "III-RESERVE", "global_score": 22.79, "population_2025": 1935761, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Cochabamba", "country": "Bolivia (Plurinational State of)", "country_code": "BO", "research_tier": "III-RESERVE", "global_score": 22.65, "population_2025": 1346672, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Asunción", "country": "Paraguay", "country_code": "PY", "research_tier": "III-RESERVE", "global_score": 22.64, "population_2025": 1314663, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Natal", "country": "Brazil", "country_code": "BR", "research_tier": "III-RESERVE", "global_score": 22.45, "population_2025": 1089473, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "João Pessoa", "country": "Brazil", "country_code": "BR", "research_tier": "III-RESERVE", "global_score": 22.35, "population_2025": 1064481, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Santos", "country": "Brazil", "country_code": "BR", "research_tier": "III-RESERVE", "global_score": 22.21, "population_2025": 1027752, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Maceió", "country": "Brazil", "country_code": "BR", "research_tier": "III-RESERVE", "global_score": 22.2, "population_2025": 1023645, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Kigali", "country": "Rwanda", "country_code": "RW", "research_tier": "III-RESERVE", "global_score": 22.15, "population_2025": 1483711, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Al-Quds (East Jerusalem)", "country": "State of Palestine", "country_code": "PS", "research_tier": "III-RESERVE", "global_score": 22.14, "population_2025": 1105567, "risk_gate": "COUNTRY_RISK_REVIEW"}
+{"city": "Luanda", "country": "Angola", "country_code": "AO", "research_tier": "III-RESERVE", "global_score": 21.92, "population_2025": 11370127, "risk_gate": "COUNTRY_SAFETY_EVIDENCE_REVIEW"}
+{"city": "Gaza", "country": "State of Palestine", "country_code": "PS", "research_tier": "III-RESERVE", "global_score": 21.88, "population_2025": 1038285, "risk_gate": "COUNTRY_RISK_REVIEW"}
+{"city": "Faisalabad", "country": "Pakistan", "country_code": "PK", "research_tier": "III-RESERVE", "global_score": 20.95, "population_2025": 5566382, "risk_gate": "COUNTRY_RISK_REVIEW"}
+{"city": "Ciudad de Guatemala (Guatemala City)", "country": "Guatemala", "country_code": "GT", "research_tier": "III-RESERVE", "global_score": 20.93, "population_2025": 2837708, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Hà Nội (Hanoi)", "country": "Viet Nam", "country_code": "VN", "research_tier": "III-RESERVE", "global_score": 20.7, "population_2025": 5068414, "risk_gate": "COUNTRY_SAFETY_EVIDENCE_REVIEW"}
+{"city": "Islāmābād", "country": "Pakistan", "country_code": "PK", "research_tier": "III-RESERVE", "global_score": 20.4, "population_2025": 4860084, "risk_gate": "COUNTRY_RISK_REVIEW"}
+{"city": "Lagos", "country": "Nigeria", "country_code": "NG", "research_tier": "III-RESERVE", "global_score": 20.01, "population_2025": 12791699, "risk_gate": "COUNTRY_RISK_REVIEW"}
+{"city": "Medellín", "country": "Colombia", "country_code": "CO", "research_tier": "III-RESERVE", "global_score": 19.98, "population_2025": 3350384, "risk_gate": "COUNTRY_RISK_REVIEW"}
+{"city": "Nairobi", "country": "Kenya", "country_code": "KE", "research_tier": "III-RESERVE", "global_score": 19.65, "population_2025": 6134334, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Ciudad de Panamá (Panama City)", "country": "Panama", "country_code": "PA", "research_tier": "III-RESERVE", "global_score": 19.26, "population_2025": 1527393, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Peshawar", "country": "Pakistan", "country_code": "PK", "research_tier": "III-RESERVE", "global_score": 19.13, "population_2025": 3554423, "risk_gate": "COUNTRY_RISK_REVIEW"}
+{"city": "Cali", "country": "Colombia", "country_code": "CO", "research_tier": "III-RESERVE", "global_score": 19.1, "population_2025": 2700232, "risk_gate": "COUNTRY_RISK_REVIEW"}
+{"city": "Tehrān (Tehran)", "country": "Iran (Islamic Republic of)", "country_code": "IR", "research_tier": "III-RESERVE", "global_score": 19.09, "population_2025": 9174964, "risk_gate": "COUNTRY_RISK_REVIEW"}
+{"city": "Gujranwala", "country": "Pakistan", "country_code": "PK", "research_tier": "III-RESERVE", "global_score": 18.6, "population_2025": 3121271, "risk_gate": "COUNTRY_RISK_REVIEW"}
+{"city": "Multan", "country": "Pakistan", "country_code": "PK", "research_tier": "III-RESERVE", "global_score": 18.38, "population_2025": 2956642, "risk_gate": "COUNTRY_RISK_REVIEW"}
+{"city": "Barranquilla", "country": "Colombia", "country_code": "CO", "research_tier": "III-RESERVE", "global_score": 18.28, "population_2025": 2208021, "risk_gate": "COUNTRY_RISK_REVIEW"}
+{"city": "Hyderabad", "country": "Pakistan", "country_code": "PK", "research_tier": "III-RESERVE", "global_score": 18.25, "population_2025": 2863633, "risk_gate": "COUNTRY_RISK_REVIEW"}
+{"city": "Ādīs Ᾱbeba (Addis Ababa)", "country": "Ethiopia", "country_code": "ET", "research_tier": "III-RESERVE", "global_score": 17.96, "population_2025": 6705705, "risk_gate": "COUNTRY_RISK_REVIEW"}
+{"city": "Kampala", "country": "Uganda", "country_code": "UG", "research_tier": "III-RESERVE", "global_score": 17.84, "population_2025": 4880943, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Abidjan", "country": "Côte d'Ivoire", "country_code": "CI", "research_tier": "III-RESERVE", "global_score": 17.8, "population_2025": 6621711, "risk_gate": "COUNTRY_SAFETY_EVIDENCE_REVIEW"}
+{"city": "Lusaka", "country": "Zambia", "country_code": "ZM", "research_tier": "III-RESERVE", "global_score": 17.56, "population_2025": 3510723, "risk_gate": "COUNTRY_SAFETY_EVIDENCE_REVIEW"}
+{"city": "Antananarivo", "country": "Madagascar", "country_code": "MG", "research_tier": "III-RESERVE", "global_score": 17.41, "population_2025": 3916219, "risk_gate": "COUNTRY_SAFETY_EVIDENCE_REVIEW"}
+{"city": "Yaoundé", "country": "Cameroon", "country_code": "CM", "research_tier": "III-RESERVE", "global_score": 17.22, "population_2025": 5106087, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Harare", "country": "Zimbabwe", "country_code": "ZW", "research_tier": "III-RESERVE", "global_score": 17.17, "population_2025": 2117195, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Mashhad", "country": "Iran (Islamic Republic of)", "country_code": "IR", "research_tier": "III-RESERVE", "global_score": 16.94, "population_2025": 5398248, "risk_gate": "COUNTRY_RISK_REVIEW"}
+{"city": "Onitsha", "country": "Nigeria", "country_code": "NG", "research_tier": "III-RESERVE", "global_score": 16.68, "population_2025": 5627706, "risk_gate": "COUNTRY_RISK_REVIEW"}
+{"city": "Sialkot", "country": "Pakistan", "country_code": "PK", "research_tier": "III-RESERVE", "global_score": 16.6, "population_2025": 1907978, "risk_gate": "COUNTRY_RISK_REVIEW"}
+{"city": "Saint Petersburg", "country": "Russia", "country_code": "RU", "research_tier": "III-RESERVE", "global_score": 16.43, "population_2025": 4736499, "risk_gate": "COUNTRY_RISK_REVIEW"}
+{"city": "Douala", "country": "Cameroon", "country_code": "CM", "research_tier": "III-RESERVE", "global_score": 16.33, "population_2025": 4104516, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Bishkek", "country": "Kyrgyzstan", "country_code": "KG", "research_tier": "III-RESERVE", "global_score": 16.31, "population_2025": 1343048, "risk_gate": "COUNTRY_SAFETY_EVIDENCE_REVIEW"}
+{"city": "Kano", "country": "Nigeria", "country_code": "NG", "research_tier": "III-RESERVE", "global_score": 16.06, "population_2025": 4840280, "risk_gate": "COUNTRY_RISK_REVIEW"}
+{"city": "Managua", "country": "Nicaragua", "country_code": "NI", "research_tier": "III-RESERVE", "global_score": 15.88, "population_2025": 1315865, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Dakar", "country": "Senegal", "country_code": "SN", "research_tier": "III-RESERVE", "global_score": 15.87, "population_2025": 3852475, "risk_gate": "COUNTRY_SAFETY_EVIDENCE_REVIEW"}
+{"city": "Lomé", "country": "Togo", "country_code": "TG", "research_tier": "III-RESERVE", "global_score": 15.56, "population_2025": 2415011, "risk_gate": "COUNTRY_SAFETY_EVIDENCE_REVIEW"}
+{"city": "Karaj", "country": "Iran (Islamic Republic of)", "country_code": "IR", "research_tier": "III-RESERVE", "global_score": 15.29, "population_2025": 3598661, "risk_gate": "COUNTRY_RISK_REVIEW"}
+{"city": "Cần Thơ", "country": "Viet Nam", "country_code": "VN", "research_tier": "III-RESERVE", "global_score": 15.25, "population_2025": 1327741, "risk_gate": "COUNTRY_SAFETY_EVIDENCE_REVIEW"}
+{"city": "Serrekunda", "country": "Gambia", "country_code": "GM", "research_tier": "III-RESERVE", "global_score": 15.15, "population_2025": 1156903, "risk_gate": "COUNTRY_SAFETY_EVIDENCE_REVIEW"}
+{"city": "Mardan", "country": "Pakistan", "country_code": "PK", "research_tier": "III-RESERVE", "global_score": 15.13, "population_2025": 1330031, "risk_gate": "COUNTRY_RISK_REVIEW"}
+{"city": "Owerri", "country": "Nigeria", "country_code": "NG", "research_tier": "III-RESERVE", "global_score": 15.11, "population_2025": 3833343, "risk_gate": "COUNTRY_RISK_REVIEW"}
+{"city": "Cartagena", "country": "Colombia", "country_code": "CO", "research_tier": "III-RESERVE", "global_score": 15.09, "population_2025": 1008584, "risk_gate": "COUNTRY_RISK_REVIEW"}
+{"city": "Kābul (Kabul)", "country": "Afghanistan", "country_code": "AF", "research_tier": "III-RESERVE", "global_score": 15.06, "population_2025": 5635737, "risk_gate": "COUNTRY_RISK_REVIEW"}
+{"city": "Ibadan", "country": "Nigeria", "country_code": "NG", "research_tier": "III-RESERVE", "global_score": 14.99, "population_2025": 3720721, "risk_gate": "COUNTRY_RISK_REVIEW"}
+{"city": "Đà Nẵng", "country": "Viet Nam", "country_code": "VN", "research_tier": "III-RESERVE", "global_score": 14.64, "population_2025": 1142621, "risk_gate": "COUNTRY_SAFETY_EVIDENCE_REVIEW"}
+{"city": "Sargodha", "country": "Pakistan", "country_code": "PK", "research_tier": "III-RESERVE", "global_score": 14.51, "population_2025": 1142723, "risk_gate": "COUNTRY_RISK_REVIEW"}
+{"city": "Tegucigalpa", "country": "Honduras", "country_code": "HN", "research_tier": "III-RESERVE", "global_score": 14.5, "population_2025": 1607033, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Maputo", "country": "Mozambique", "country_code": "MZ", "research_tier": "III-RESERVE", "global_score": 14.49, "population_2025": 3166328, "risk_gate": "COUNTRY_SAFETY_EVIDENCE_REVIEW"}
+{"city": "Hải Phòng", "country": "Viet Nam", "country_code": "VN", "research_tier": "III-RESERVE", "global_score": 14.16, "population_2025": 1015494, "risk_gate": "COUNTRY_SAFETY_EVIDENCE_REVIEW"}
+{"city": "Mingora", "country": "Pakistan", "country_code": "PK", "research_tier": "III-RESERVE", "global_score": 14.07, "population_2025": 1024813, "risk_gate": "COUNTRY_RISK_REVIEW"}
+{"city": "Quetta", "country": "Pakistan", "country_code": "PK", "research_tier": "III-RESERVE", "global_score": 14.07, "population_2025": 1025211, "risk_gate": "COUNTRY_RISK_REVIEW"}
+{"city": "Mombasa", "country": "Kenya", "country_code": "KE", "research_tier": "III-RESERVE", "global_score": 13.8, "population_2025": 1456207, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "San Pedro Sula", "country": "Honduras", "country_code": "HN", "research_tier": "III-RESERVE", "global_score": 13.64, "population_2025": 1299457, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Port Harcourt", "country": "Nigeria", "country_code": "NG", "research_tier": "III-RESERVE", "global_score": 13.11, "population_2025": 2341445, "risk_gate": "COUNTRY_RISK_REVIEW"}
+{"city": "Coyah (Conacry)", "country": "Guinea", "country_code": "GN", "research_tier": "III-RESERVE", "global_score": 13.05, "population_2025": 2727684, "risk_gate": "COUNTRY_SAFETY_EVIDENCE_REVIEW"}
+{"city": "Lubango", "country": "Angola", "country_code": "AO", "research_tier": "III-RESERVE", "global_score": 13.04, "population_2025": 1280986, "risk_gate": "COUNTRY_SAFETY_EVIDENCE_REVIEW"}
+{"city": "Cotonou", "country": "Benin", "country_code": "BJ", "research_tier": "III-RESERVE", "global_score": 13.01, "population_2025": 2506489, "risk_gate": "COUNTRY_SAFETY_EVIDENCE_REVIEW"}
+{"city": "Aşgabat (Ashgabat)", "country": "Turkmenistan", "country_code": "TM", "research_tier": "III-RESERVE", "global_score": 12.7, "population_2025": 1218323, "risk_gate": "COUNTRY_SAFETY_EVIDENCE_REVIEW"}
+{"city": "Cabinda", "country": "Angola", "country_code": "AO", "research_tier": "III-RESERVE", "global_score": 12.62, "population_2025": 1157345, "risk_gate": "COUNTRY_SAFETY_EVIDENCE_REVIEW"}
+{"city": "Isfahan", "country": "Iran (Islamic Republic of)", "country_code": "IR", "research_tier": "III-RESERVE", "global_score": 12.57, "population_2025": 1844409, "risk_gate": "COUNTRY_RISK_REVIEW"}
+{"city": "Kinshasa", "country": "Democratic Republic of the Congo", "country_code": "CD", "research_tier": "III-RESERVE", "global_score": 12.33, "population_2025": 10943641, "risk_gate": "COUNTRY_RISK_REVIEW"}
+{"city": "Kaduna", "country": "Nigeria", "country_code": "NG", "research_tier": "III-RESERVE", "global_score": 12.24, "population_2025": 1890448, "risk_gate": "COUNTRY_RISK_REVIEW"}
+{"city": "Benin City", "country": "Nigeria", "country_code": "NG", "research_tier": "III-RESERVE", "global_score": 12.14, "population_2025": 1845432, "risk_gate": "COUNTRY_RISK_REVIEW"}
+{"city": "Ahwaz", "country": "Iran (Islamic Republic of)", "country_code": "IR", "research_tier": "III-RESERVE", "global_score": 12.09, "population_2025": 1639321, "risk_gate": "COUNTRY_RISK_REVIEW"}
+{"city": "Baghdād (Baghdad)", "country": "Iraq", "country_code": "IQ", "research_tier": "III-RESERVE", "global_score": 11.89, "population_2025": 6390735, "risk_gate": "COUNTRY_SAFETY_EVIDENCE_REVIEW"}
+{"city": "Warri", "country": "Nigeria", "country_code": "NG", "research_tier": "III-RESERVE", "global_score": 11.58, "population_2025": 1607702, "risk_gate": "COUNTRY_RISK_REVIEW"}
+{"city": "Uyo", "country": "Nigeria", "country_code": "NG", "research_tier": "III-RESERVE", "global_score": 11.48, "population_2025": 1567115, "risk_gate": "COUNTRY_RISK_REVIEW"}
+{"city": "Caracas", "country": "Venezuela (Bolivarian Republic of)", "country_code": "VE", "research_tier": "III-RESERVE", "global_score": 11.34, "population_2025": 2576666, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Novosibirsk", "country": "Russia", "country_code": "RU", "research_tier": "III-RESERVE", "global_score": 11.27, "population_2025": 1331432, "risk_gate": "COUNTRY_RISK_REVIEW"}
+{"city": "Tabriz", "country": "Iran (Islamic Republic of)", "country_code": "IR", "research_tier": "III-RESERVE", "global_score": 11.17, "population_2025": 1309004, "risk_gate": "COUNTRY_RISK_REVIEW"}
+{"city": "Aba", "country": "Nigeria", "country_code": "NG", "research_tier": "III-RESERVE", "global_score": 11.1, "population_2025": 1428069, "risk_gate": "COUNTRY_RISK_REVIEW"}
+{"city": "Touba", "country": "Senegal", "country_code": "SN", "research_tier": "III-RESERVE", "global_score": 10.96, "population_2025": 1151552, "risk_gate": "COUNTRY_SAFETY_EVIDENCE_REVIEW"}
+{"city": "Brazzaville", "country": "Congo", "country_code": "CG", "research_tier": "III-RESERVE", "global_score": 10.95, "population_2025": 3656322, "risk_gate": "COUNTRY_SAFETY_EVIDENCE_REVIEW"}
+{"city": "Aboh", "country": "Nigeria", "country_code": "NG", "research_tier": "III-RESERVE", "global_score": 10.94, "population_2025": 1374320, "risk_gate": "COUNTRY_RISK_REVIEW"}
+{"city": "Abuja", "country": "Nigeria", "country_code": "NG", "research_tier": "III-RESERVE", "global_score": 10.94, "population_2025": 1373722, "risk_gate": "COUNTRY_RISK_REVIEW"}
+{"city": "Nizhny Novgorod", "country": "Russia", "country_code": "RU", "research_tier": "III-RESERVE", "global_score": 10.84, "population_2025": 1196944, "risk_gate": "COUNTRY_RISK_REVIEW"}
+{"city": "Yekaterinburg", "country": "Russia", "country_code": "RU", "research_tier": "III-RESERVE", "global_score": 10.67, "population_2025": 1148237, "risk_gate": "COUNTRY_RISK_REVIEW"}
+{"city": "Ilorin", "country": "Nigeria", "country_code": "NG", "research_tier": "III-RESERVE", "global_score": 10.66, "population_2025": 1282219, "risk_gate": "COUNTRY_RISK_REVIEW"}
+{"city": "Ouagadougou", "country": "Burkina Faso", "country_code": "BF", "research_tier": "III-RESERVE", "global_score": 10.63, "population_2025": 3206222, "risk_gate": "COUNTRY_RISK_REVIEW"}
+{"city": "Kazan", "country": "Russia", "country_code": "RU", "research_tier": "III-RESERVE", "global_score": 10.62, "population_2025": 1132941, "risk_gate": "COUNTRY_RISK_REVIEW"}
+{"city": "Maiduguri", "country": "Nigeria", "country_code": "NG", "research_tier": "III-RESERVE", "global_score": 10.48, "population_2025": 1225505, "risk_gate": "COUNTRY_RISK_REVIEW"}
+{"city": "Monrovia", "country": "Liberia", "country_code": "LR", "research_tier": "III-RESERVE", "global_score": 10.46, "population_2025": 1879092, "risk_gate": "COUNTRY_SAFETY_EVIDENCE_REVIEW"}
+{"city": "Guayaquil", "country": "Ecuador", "country_code": "EC", "research_tier": "III-RESERVE", "global_score": 10.4, "population_2025": 3157825, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Rostov-on-Don", "country": "Russia", "country_code": "RU", "research_tier": "III-RESERVE", "global_score": 10.37, "population_2025": 1065880, "risk_gate": "COUNTRY_RISK_REVIEW"}
+{"city": "Maracaibo", "country": "Venezuela (Bolivarian Republic of)", "country_code": "VE", "research_tier": "III-RESERVE", "global_score": 10.37, "population_2025": 2030633, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Sarvestan", "country": "Iran (Islamic Republic of)", "country_code": "IR", "research_tier": "III-RESERVE", "global_score": 10.24, "population_2025": 1039168, "risk_gate": "COUNTRY_RISK_REVIEW"}
+{"city": "Enugu", "country": "Nigeria", "country_code": "NG", "research_tier": "III-RESERVE", "global_score": 10.09, "population_2025": 1115303, "risk_gate": "COUNTRY_RISK_REVIEW"}
+{"city": "Al-Kharṭūm (Khartoum)", "country": "Sudan", "country_code": "SD", "research_tier": "III-RESERVE", "global_score": 9.98, "population_2025": 6809355, "risk_gate": "COUNTRY_RISK_REVIEW"}
+{"city": "Bamako", "country": "Mali", "country_code": "ML", "research_tier": "III-RESERVE", "global_score": 9.78, "population_2025": 4244881, "risk_gate": "COUNTRY_RISK_REVIEW"}
+{"city": "Otite", "country": "Nigeria", "country_code": "NG", "research_tier": "III-RESERVE", "global_score": 9.73, "population_2025": 1020218, "risk_gate": "COUNTRY_RISK_REVIEW"}
+{"city": "Quito", "country": "Ecuador", "country_code": "EC", "research_tier": "III-RESERVE", "global_score": 9.5, "population_2025": 2534914, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Dimashq (Damascus)", "country": "Syrian Arab Republic", "country_code": "SY", "research_tier": "III-RESERVE", "global_score": 8.99, "population_2025": 4287746, "risk_gate": "COUNTRY_RISK_REVIEW"}
+{"city": "Herat", "country": "Afghanistan", "country_code": "AF", "research_tier": "III-RESERVE", "global_score": 8.97, "population_2025": 1259425, "risk_gate": "COUNTRY_RISK_REVIEW"}
+{"city": "Valencia", "country": "Venezuela (Bolivarian Republic of)", "country_code": "VE", "research_tier": "III-RESERVE", "global_score": 8.96, "population_2025": 1435894, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Ţarābulus (Tripoli)", "country": "Libya", "country_code": "LY", "research_tier": "III-RESERVE", "global_score": 8.75, "population_2025": 1239823, "risk_gate": "COUNTRY_SAFETY_EVIDENCE_REVIEW"}
+{"city": "Bujumbura", "country": "Burundi", "country_code": "BI", "research_tier": "III-RESERVE", "global_score": 8.52, "population_2025": 1246960, "risk_gate": "COUNTRY_SAFETY_EVIDENCE_REVIEW"}
+{"city": "Niamey", "country": "Niger", "country_code": "NE", "research_tier": "III-RESERVE", "global_score": 8.12, "population_2025": 1401149, "risk_gate": "COUNTRY_RISK_REVIEW"}
+{"city": "Kasaï-Oriental", "country": "Democratic Republic of the Congo", "country_code": "CD", "research_tier": "III-RESERVE", "global_score": 7.82, "population_2025": 3605738, "risk_gate": "COUNTRY_RISK_REVIEW"}
+{"city": "Pointe-Noire", "country": "Congo", "country_code": "CG", "research_tier": "III-RESERVE", "global_score": 7.75, "population_2025": 1662537, "risk_gate": "COUNTRY_SAFETY_EVIDENCE_REVIEW"}
+{"city": "Aleppo", "country": "Syrian Arab Republic", "country_code": "SY", "research_tier": "III-RESERVE", "global_score": 7.43, "population_2025": 2922277, "risk_gate": "COUNTRY_RISK_REVIEW"}
+{"city": "Basra", "country": "Iraq", "country_code": "IQ", "research_tier": "III-RESERVE", "global_score": 7.24, "population_2025": 2033553, "risk_gate": "COUNTRY_SAFETY_EVIDENCE_REVIEW"}
+{"city": "Şan'ā' (Sana'a)", "country": "Yemen", "country_code": "YE", "research_tier": "III-RESERVE", "global_score": 7.05, "population_2025": 4018856, "risk_gate": "COUNTRY_RISK_REVIEW"}
+{"city": "Lubumbashi", "country": "Democratic Republic of the Congo", "country_code": "CD", "research_tier": "III-RESERVE", "global_score": 6.83, "population_2025": 2832853, "risk_gate": "COUNTRY_RISK_REVIEW"}
+{"city": "Muqdisho (Mogadishu)", "country": "Somalia", "country_code": "SO", "research_tier": "III-RESERVE", "global_score": 6.83, "population_2025": 4399430, "risk_gate": "COUNTRY_RISK_REVIEW"}
+{"city": "Mosul", "country": "Iraq", "country_code": "IQ", "research_tier": "III-RESERVE", "global_score": 6.42, "population_2025": 1665214, "risk_gate": "COUNTRY_SAFETY_EVIDENCE_REVIEW"}
+{"city": "Bobo-Dioulasso", "country": "Burkina Faso", "country_code": "BF", "research_tier": "III-RESERVE", "global_score": 6.37, "population_2025": 1125023, "risk_gate": "COUNTRY_RISK_REVIEW"}
+{"city": "Erbil", "country": "Iraq", "country_code": "IQ", "research_tier": "III-RESERVE", "global_score": 6.22, "population_2025": 1582829, "risk_gate": "COUNTRY_SAFETY_EVIDENCE_REVIEW"}
+{"city": "N'Djaména", "country": "Chad", "country_code": "TD", "research_tier": "III-RESERVE", "global_score": 5.88, "population_2025": 1934909, "risk_gate": "COUNTRY_RISK_REVIEW"}
+{"city": "Port-au-Prince", "country": "Haiti", "country_code": "HT", "research_tier": "III-RESERVE", "global_score": 5.62, "population_2025": 1868268, "risk_gate": "COUNTRY_RISK_REVIEW"}
+{"city": "Al-Najaf", "country": "Iraq", "country_code": "IQ", "research_tier": "III-RESERVE", "global_score": 5.33, "population_2025": 1273450, "risk_gate": "COUNTRY_SAFETY_EVIDENCE_REVIEW"}
+{"city": "Beni", "country": "Democratic Republic of the Congo", "country_code": "CD", "research_tier": "III-RESERVE", "global_score": 5.26, "population_2025": 1923700, "risk_gate": "COUNTRY_RISK_REVIEW"}
+{"city": "Kirkuk", "country": "Iraq", "country_code": "IQ", "research_tier": "III-RESERVE", "global_score": 4.93, "population_2025": 1153160, "risk_gate": "COUNTRY_SAFETY_EVIDENCE_REVIEW"}
+{"city": "Al Hillah", "country": "Iraq", "country_code": "IQ", "research_tier": "III-RESERVE", "global_score": 4.57, "population_2025": 1055267, "risk_gate": "COUNTRY_SAFETY_EVIDENCE_REVIEW"}
+{"city": "Karbala", "country": "Iraq", "country_code": "IQ", "research_tier": "III-RESERVE", "global_score": 4.44, "population_2025": 1022893, "risk_gate": "COUNTRY_SAFETY_EVIDENCE_REVIEW"}
+{"city": "Kananga", "country": "Democratic Republic of the Congo", "country_code": "CD", "research_tier": "III-RESERVE", "global_score": 4.26, "population_2025": 1504370, "risk_gate": "COUNTRY_RISK_REVIEW"}
+{"city": "Ta'izz", "country": "Yemen", "country_code": "YE", "research_tier": "III-RESERVE", "global_score": 3.27, "population_2025": 1586739, "risk_gate": "COUNTRY_RISK_REVIEW"}
+{"city": "Tshikapa", "country": "Democratic Republic of the Congo", "country_code": "CD", "research_tier": "III-RESERVE", "global_score": 2.82, "population_2025": 1054686, "risk_gate": "COUNTRY_RISK_REVIEW"}
+{"city": "Hargeisa", "country": "Somalia", "country_code": "SO", "research_tier": "III-RESERVE", "global_score": 2.7, "population_2025": 1593542, "risk_gate": "COUNTRY_RISK_REVIEW"}
+{"city": "Bangui", "country": "Central African Republic", "country_code": "CF", "research_tier": "III-RESERVE", "global_score": 0.82, "population_2025": 1056949, "risk_gate": "COUNTRY_RISK_REVIEW"}

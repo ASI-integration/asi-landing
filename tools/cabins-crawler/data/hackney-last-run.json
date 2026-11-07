@@ -1,0 +1,21 @@
+{
+  "mode": "LIVE",
+  "saved": true,
+  "checked_at": "2026-11-04T18:24:57.503008+00:00",
+  "sources": [
+    {
+      "source": "Hackney Council commercial properties to let",
+      "url": "https://www.hackney.gov.uk/business-and-licensing/commercial-property/let-or-buy-commercial-properties",
+      "count": 14,
+      "terms": "https://www.hackney.gov.uk/more-us/terms-use"
+    }
+  ],
+  "total_records": 14,
+  "advertised": 10,
+  "under_offer": 4,
+  "new": 14,
+  "updated": 0,
+  "not_listed": 0,
+  "legal_lodging_verified": false,
+  "agents_contacted": false
+}
