@@ -6,7 +6,7 @@
  */
 import {planFiveWorkerWave} from './five-worker-wave.mjs';
 import {prepareAdmittedFiveWorkerWave} from './five-worker-preparation.mjs';
-import {publishPreparedFiveWorkerWave} from './native-five-worker-publisher.mjs';
+import {publishPreparedFiveWorkerWave} from './native-five-worker-handoff.mjs';
 
 const freeze=Object.freeze;
 export async function runNativeFiveWorkerCycle({dispatcher,snapshots,hostPorts,
