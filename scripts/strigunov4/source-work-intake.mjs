@@ -152,7 +152,8 @@ export async function proposeSourceWork({task,admittedTasks,produce}={}){
     'PROVIDER_OUTPUT_INVALID',
     'PROVIDER_OUTPUT_ESCAPED_SCOPE'
   ]);
-  if(data(output,['status','reason','changes'])&&output.status==='BLOCKED'&&
+  if(data(output,['status','reason','changes'])&&
+    Reflect.ownKeys(output).length===3&&output.status==='BLOCKED'&&
     Array.isArray(output.changes)&&output.changes.length===0&&
     typeof output.reason==='string'&&
     (safeFailureCodes.has(output.reason)||
