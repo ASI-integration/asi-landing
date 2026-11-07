@@ -50,3 +50,18 @@ test('failed planning never reaches native host ports',async()=>{
   assert.equal(r.status,'WAITING');assert.equal(r.verifiedReceipts,0);
   assert.equal(f.stats.preps,0);
 });
+
+test('one unknown model preparation keeps four independent workers eligible',async()=>{
+  const f=fixture();const original=f.hostPorts.prepare;
+  f.hostPorts.prepare=async (x,a)=>{
+    if(x.slot===2)throw Error('UNVERIFIED_MODEL_OUTCOME');
+    return original(x,a);
+  };
+  const result=await runNativeFiveWorkerCycle({dispatcher:f.dispatcher,
+    snapshots:{},hostPorts:f.hostPorts});
+  assert.equal(result.status,'PARTIAL');
+  assert.equal(result.verifiedReceipts,4);
+  assert.equal(f.recorded.has('task-2'),false);
+  assert.equal(result.published.results[1].status,'BLOCKED');
+  assert.equal(f.recorded.size,4);
+});
