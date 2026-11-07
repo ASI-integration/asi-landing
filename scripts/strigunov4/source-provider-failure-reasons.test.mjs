@@ -64,3 +64,12 @@ test('malformed failure shapes and fake proposals do not pass',async()=>{
     assert.equal(result.candidate,null);
   }
 });
+
+test('failure envelopes with extra fields remain opaque, not accepted as provider reasons',async()=>{
+  const result=await run({status:'BLOCKED',reason:'PROVIDER_HTTP_401_NO_REPLAY',
+    changes:[],secret:'untrusted-field'});
+  assert.equal(result.status,'BLOCKED');
+  assert.equal(result.reason,'PRODUCER_OUTPUT_NOT_VERIFIED');
+  assert.equal(result.authorized,false);
+  assert.equal(result.candidate,null);
+});
