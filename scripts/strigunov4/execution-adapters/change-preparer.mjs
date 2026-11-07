@@ -124,9 +124,14 @@ export function validateScratchGitConfig(config) {
     const value=line.slice(separator+1).trim();
     const allowed=section==='[core]'?
       ['repositoryformatversion','filemode','bare','logallrefupdates','ignorecase','precomposeunicode'].includes(key):
-      section==='[remote "origin"]'?['url','fetch'].includes(key):
+      section==='[remote "origin"]'?['url','fetch','tagopt'].includes(key):
       section==='branch'?['remote','merge'].includes(key):false;
     must(allowed,'UNTRUSTED_GIT_CONFIG');
+    // git clone --no-tags records tagOpt = --no-tags in origin's local config.
+    // This disables tag fetching; admit ONLY that inert exact value, not
+    // arbitrary Git command options or extra remote configuration.
+    if (section==='[remote "origin"]' && key==='tagopt')
+      must(value==='--no-tags','UNTRUSTED_GIT_CONFIG');
     if (section==='branch') {
       must(key==='remote'?value==='origin':
         value.startsWith('refs/heads/') && safeBranchName(value.slice('refs/heads/'.length)),
