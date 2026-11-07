@@ -128,6 +128,36 @@ export async function proposeSourceWork({task,admittedTasks,produce}={}){
   // task identity or catalog is an uncertain result, not a usable proposal.
   if(inspectSourceIntake({task,admittedTasks}).taskBinding!==admission.taskBinding)
     return refuse('TASK_OR_CATALOG_CHANGED_DURING_PRODUCTION');
+  // Preserve only known, non-sensitive provider status codes. A blocked
+  // producer result is NEVER a source candidate; do not turn arbitrary model
+  // text or attacker-supplied errors into authority or log content.
+  // The native publisher must still quarantine any durably reserved request.
+  const safeFailureCodes=new Set([
+    'SIGNED_TASK_OBJECTIVE_OR_SOURCE_REQUIRED',
+    'PROVIDER_MODEL_OR_BUDGET_UNCONFIGURED',
+    'PROVIDER_AUTHORITY_NOT_CONFIGURED',
+    'APPROVED_SOURCE_READ_FAILED',
+    'TASK_CHANGED_DURING_CONTEXT_READ',
+    'APPROVED_SOURCE_SCOPE_CHANGED',
+    'SOURCE_IDENTITY_UNVERIFIED',
+    'SOURCE_BYTES_OR_HASH_UNVERIFIED',
+    'TASK_CHANGED_BEFORE_PAID_RESERVATION',
+    'SIGNED_PROVIDER_BUDGET_DENIED',
+    'TASK_CHANGED_AFTER_PAID_RESERVATION',
+    'PROVIDER_REQUEST_UNKNOWN_NO_AUTOMATIC_RETRY',
+    'PROVIDER_RESPONSE_UNKNOWN_NO_AUTOMATIC_RETRY',
+    'PROVIDER_CONTENT_TYPE_INVALID_NO_REPLAY',
+    'PROVIDER_MODEL_CHANGED_AFTER_RESERVATION',
+    'PROVIDER_OUTPUT_INCOMPLETE_NO_REPLAY',
+    'PROVIDER_OUTPUT_INVALID',
+    'PROVIDER_OUTPUT_ESCAPED_SCOPE'
+  ]);
+  if(data(output,['status','reason','changes'])&&output.status==='BLOCKED'&&
+    Array.isArray(output.changes)&&output.changes.length===0&&
+    typeof output.reason==='string'&&
+    (safeFailureCodes.has(output.reason)||
+      /^PROVIDER_HTTP_(?:0|[45][0-9]{2})_NO_REPLAY$/.test(output.reason)))
+    return refuse(output.reason);
   if(!data(output,['status','changes'])||output.status!=='PROPOSED'||
     !dense(output.changes,pinned.files.length,pinned.files.length))
     return refuse('PRODUCER_OUTPUT_NOT_VERIFIED');
