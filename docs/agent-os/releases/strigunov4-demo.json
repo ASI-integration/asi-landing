@@ -230,6 +230,11 @@
         "scripts/strigunov4/test_asi_v9_g2_lock_records.py",
         "scripts/strigunov4/test_asi_v9_g2_host_errors.py",
         "scripts/strigunov4/test_asi_v9_g2_repair_admission.py",
+        "scripts/strigunov4/test_asi_v10_g2_patch_bytes.py",
+        "scripts/strigunov4/test_asi_v10_g2_patch_safety.py",
+        "scripts/strigunov4/test_asi_v10_g2_json_unicode.py",
+        "scripts/strigunov4/test_asi_v10_g2_json_duplicate_keys.py",
+        "scripts/strigunov4/test_asi_v10_g2_json_markers.py",
         "scripts/strigunov4/execution-adapters/host-checks.mjs"
       ]
     },
