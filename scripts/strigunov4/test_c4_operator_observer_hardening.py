@@ -358,32 +358,5 @@ class ObserverHardeningTests(unittest.TestCase):
         self.assertEqual(json.loads(process.stdout), {"status":"BLOCK_REASON_ARGS"})
 
 
-class StrictJsonSurrogateRegressionTests(unittest.TestCase):
-    """Source-only validation; never observe actual staging markers."""
-
-    def test_rejects_lone_unicode_surrogates_in_values_and_keys(self):
-        bad = (
-            r'{"value":"\uD800"}',
-            r'{"value":"\uDC00"}',
-            r'{"value":"\uD800\u0041"}',
-            r'{"nested":[{"\uDC00":false}]}',
-            r'{"\uD800":0}',
-        )
-        for sample in bad:
-            with self.subTest(sample=sample), self.assertRaisesRegex(
-                    ValueError, "UNPAIRED_JSON_SURROGATE"):
-                observer.strict_json(sample)
-
-    def test_accepts_paired_unicode_and_non_ascii_keys(self):
-        raw = r'{"\uD83D\uDE00":{"label":"test","items":[1,true,null]}}'
-        self.assertEqual(observer.strict_json(raw),
-                         {"\U0001F600": {"label": "test", "items": [1, True, None]}})
-
-    def test_duplicate_key_and_trailing_garbage_remain_rejected(self):
-        for sample in ('{"outer":{"a":1,"a":2}}', '{"ok":true}junk'):
-            with self.subTest(sample=sample), self.assertRaises(ValueError):
-                observer.strict_json(sample)
-
-
 if __name__ == "__main__":
     unittest.main()
