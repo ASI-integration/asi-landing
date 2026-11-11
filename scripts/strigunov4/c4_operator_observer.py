@@ -37,7 +37,25 @@ def strict_json(raw):
                 raise ValueError("DUPLICATE_JSON_KEY")
             out[key] = value
         return out
-    return json.loads(raw, object_pairs_hook=unique)
+    result = json.loads(raw, object_pairs_hook=unique)
+
+    # Python's JSON decoder accepts lone escaped UTF-16 surrogate codepoints.
+    # Marker data must not contain these non-scalar Unicode values, including
+    # in nested keys. Valid paired escapes are already combined by json.loads.
+    def reject_unpaired(value):
+        if isinstance(value, str):
+            if any(0xD800 <= ord(char) <= 0xDFFF for char in value):
+                raise ValueError("UNPAIRED_JSON_SURROGATE")
+        elif isinstance(value, dict):
+            for key, item in value.items():
+                reject_unpaired(key)
+                reject_unpaired(item)
+        elif isinstance(value, list):
+            for item in value:
+                reject_unpaired(item)
+
+    reject_unpaired(result)
+    return result
 
 
 def safe_directory(path=None, *, name=None, parent=None):
