@@ -377,7 +377,7 @@ class StrictJsonSurrogateRegressionTests(unittest.TestCase):
     def test_accepts_paired_unicode_and_non_ascii_keys(self):
         raw = r'{"\uD83D\uDE00":{"label":"test","items":[1,true,null]}}'
         self.assertEqual(observer.strict_json(raw),
-                         {"\\U0001F600": {"label": "test", "items": [1, True, None]}})
+                         {"\U0001F600": {"label": "test", "items": [1, True, None]}})
 
     def test_duplicate_key_and_trailing_garbage_remain_rejected(self):
         for sample in ('{"outer":{"a":1,"a":2}}', '{"ok":true}junk'):
