@@ -6,11 +6,11 @@ import type { EngineLiveStatus, EnginePrStatus } from '@/lib/engine-progress/liv
 
 type ResponsePayload = { ok: boolean; live?: EngineLiveStatus };
 const names: Record<string,string> = {
-  'asi-v13-g2-patch-integrity': 'Patch integrity',
-  'asi-v13-g2-observer-identity': 'Observer identity',
-  'asi-v13-g2-host-recovery': 'Host recovery',
-  'asi-v13-g2-repair-admission': 'Repair admission',
-  'asi-v13-g2-witness-race': 'Witness races',
+  'asi-v14-g2-host-error-recovery': 'Host error recovery',
+  'asi-v14-g2-json-boundary': 'JSON boundaries',
+  'asi-v14-g2-unicode-normalization': 'Unicode validation',
+  'asi-v14-g2-patch-safety': 'Patch safety',
+  'asi-v14-g2-marker-classification': 'Marker classification',
 };
 function friendly(state: string): string {
   return ({ RUNNING:'Processing', PENDING:'Queued', CI_PENDING:'CI running',
@@ -89,7 +89,7 @@ export default function EngineLiveClient() {
           <p className="text-xs font-bold uppercase tracking-[.23em] text-cyan-300">ASI / Engineering operations</p>
           <h1 className="mt-3 text-3xl font-bold tracking-tight md:text-4xl">Engine live monitor</h1>
           <p className="mt-3 max-w-xl text-sm leading-6 text-slate-300">
-            Strigunov G2 · Five autonomous workers · one.com VPS
+            Strigunov G2 · Five V14 workers · one.com VPS
           </p>
           <div className="mt-5 flex flex-wrap items-center gap-3">
             <span className={'rounded-full border px-3 py-1.5 text-xs font-semibold ' +
@@ -169,7 +169,7 @@ export default function EngineLiveClient() {
     <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm md:p-7">
       <h2 className="text-xl font-bold">Draft PRs & CI results</h2>
       <p className="mt-2 text-sm text-slate-500">All checks refer to the current PR head; missing or failed CI never counts as success.</p>
-      {totalPR===0?<div className="mt-6 rounded-2xl border border-dashed border-slate-300 px-5 py-10 text-center text-sm text-slate-500">No V13 Draft PR has been reported yet.</div>:
+      {totalPR===0?<div className="mt-6 rounded-2xl border border-dashed border-slate-300 px-5 py-10 text-center text-sm text-slate-500">No V14 Draft PR has been reported yet.</div>:
         <div className="mt-5 overflow-x-auto"><table className="min-w-[580px] w-full text-left text-sm">
           <thead><tr className="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-500">
             <th className="p-3">Pull request</th><th className="p-3">Release gate</th><th className="p-3">Source validation</th><th className="p-3">CI</th>
