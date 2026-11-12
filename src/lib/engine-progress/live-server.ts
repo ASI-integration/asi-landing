@@ -6,7 +6,7 @@ import {
 
 const PRIVATE_REPO = 'ASI-integration/asi-os-runtime';
 const APP_REPO = 'ASI-integration/asi-landing';
-const REPORT_ISSUE = 199;
+const REPORT_ISSUES = [204, 199] as const; // Prefer V15; retain last V14 recovery snapshot until first V15 receipt.
 const API = 'https://api.github.com/repos/';
 const RECHECK_MS = 20_000;
 const STALE_REPORT_MS = 12 * 60_000;
@@ -17,7 +17,7 @@ type IssueComment = {
   id: number; body: string; created_at: string;
   user?: { login?: string };
 };
-type Pull = { number: number; state: string; draft: boolean; head?: { sha?: string } };
+type Pull = { number: number; state: string; draft: boolean; merged?: boolean; head?: { sha?: string } };
 type Check = { name: string; status: string; conclusion: string | null };
 
 let cached: { at: number; value: EngineLiveStatus } | null = null;
@@ -27,7 +27,7 @@ function empty(reason: string): EngineLiveStatus {
     available: false, reason, fetchedAt: new Date().toISOString(), lastReportAt: null,
     reportUrl: null, stale: true, workers: [], modelReservations: null,
     modelLimit: null, githubReservations: null, githubLimit: null,
-    prs: [], source: 'private-github-report',
+    prs: [], source: 'private-github-report', campaign: null, wave: null,
   };
 }
 
@@ -55,12 +55,12 @@ async function prStatus(
   token: string,
 ): Promise<EnginePrStatus> {
   const fallback: EnginePrStatus = {
-    ...input, head: null, isDraft: null, ci: 'unknown',
+    ...input, head: null, isDraft: null, isMerged: false, ci: 'unknown',
     releaseGovernance: 'unknown', sourceValidation: 'unknown',
   };
   try {
     const pr = await github<Pull>(APP_REPO + '/pulls/' + input.number, token);
-    if (pr.number !== input.number || pr.state !== 'open' ||
+    if (pr.number !== input.number || (pr.state !== 'open' && pr.merged !== true) ||
         typeof pr.head?.sha !== 'string' || !/^[0-9a-f]{40}$/.test(pr.head.sha)) return fallback;
 
     const sha = pr.head.sha;
@@ -85,7 +85,7 @@ async function prStatus(
         allCompleteAndNonBlocking ? 'passed'
       : values.includes('pending') ? 'pending' : 'unknown';
     return {
-      ...input, head: sha, isDraft: pr.draft,
+      ...input, head: sha, isDraft: pr.draft, isMerged: pr.merged === true,
       ci, releaseGovernance, sourceValidation,
     };
   } catch {
@@ -103,23 +103,36 @@ export async function getAsiEngineLiveStatus(): Promise<EngineLiveStatus> {
   if (!token) return empty('GitHub read-only token is not configured on the website server.');
 
   try {
-    const issue = await github<Issue>(PRIVATE_REPO + '/issues/' + REPORT_ISSUE, token);
-    if (issue.number !== REPORT_ISSUE || !Number.isInteger(issue.comments) || issue.comments < 1) {
-      return empty('No verified Engine reports yet.');
-    }
-    const page = Math.max(1, Math.ceil(issue.comments / 100));
-    const comments = await github<IssueComment[]>(
-      PRIVATE_REPO + '/issues/' + REPORT_ISSUE + '/comments?per_page=100&page=' + page,
-      token,
-    );
-    if (!Array.isArray(comments)) throw new Error('Invalid report response');
+    let latest: {
+      item: IssueComment;
+      parsed: NonNullable<ReturnType<typeof parseAsIStatusReport>>;
+      issueNumber: number;
+    } | null = null;
 
-    const candidates = [...comments].sort((a, b) => b.id - a.id);
-    const latest = candidates.map(item => ({
-      item, parsed: item.user?.login === 'ASI-integration'
-        ? parseAsIStatusReport(item.body) : null,
-    })).find(x => x.parsed !== null);
-    if (!latest?.parsed) return empty('No recognized five-worker status report in the latest page.');
+    for (const issueNumber of REPORT_ISSUES) {
+      const issue = await github<Issue>(PRIVATE_REPO + '/issues/' + issueNumber, token);
+      if (issue.number !== issueNumber || !Number.isInteger(issue.comments) || issue.comments < 1) {
+        continue;
+      }
+      const page = Math.max(1, Math.ceil(issue.comments / 100));
+      const comments = await github<IssueComment[]>(
+        PRIVATE_REPO + '/issues/' + issueNumber + '/comments?per_page=100&page=' + page,
+        token,
+      );
+      if (!Array.isArray(comments)) throw new Error('Invalid report response');
+      const desired = issueNumber === 204 ? 'ASI_V15_20261112' :
+        'ASI_V14_CODEX_SALVAGE_20261112';
+      for (const item of [...comments].sort((a, b) => b.id - a.id)) {
+        if (item.user?.login !== 'ASI-integration') continue;
+        const parsed = parseAsIStatusReport(item.body);
+        if (parsed && parsed.version === desired) {
+          latest = {item, parsed, issueNumber};
+          break;
+        }
+      }
+      if (latest) break;
+    }
+    if (!latest) return empty('No valid V15 or V14 recovery report found in the private GitHub issues.');
 
     const reportTime = Date.parse(latest.item.created_at);
     if (!Number.isFinite(reportTime)) return empty('Engine report has no trustworthy timestamp.');
@@ -131,13 +144,14 @@ export async function getAsiEngineLiveStatus(): Promise<EngineLiveStatus> {
       fetchedAt: new Date().toISOString(),
       lastReportAt: latest.item.created_at,
       reportUrl: 'https://github.com/' + PRIVATE_REPO + '/issues/' +
-        REPORT_ISSUE + '#issuecomment-' + latest.item.id,
+        latest.issueNumber + '#issuecomment-' + latest.item.id,
       stale, workers: latest.parsed.workers,
       modelReservations: latest.parsed.modelReservations,
       modelLimit: latest.parsed.modelLimit,
       githubReservations: latest.parsed.githubReservations,
       githubLimit: latest.parsed.githubLimit,
       prs, source: 'private-github-report',
+      campaign: latest.parsed.version, wave: latest.parsed.wave,
     };
     cached = { at: Date.now(), value: result };
     return result;
