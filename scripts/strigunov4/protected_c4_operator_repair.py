@@ -46,8 +46,16 @@ def decode_remote_result(raw, returncode):
     """Never treat a nonzero remote worker as success or echo its raw stdout."""
     if type(raw) is not bytes or len(raw) > 4096:
         raise RemoteOutcome("BLOCK_MANUAL_RECOVERY_REQUIRED")
+    def unique_fields(pairs):
+        result = {}
+        for key, value in pairs:
+            if key in result:
+                raise ValueError("duplicate receipt field")
+            result[key] = value
+        return result
+
     try:
-        receipt = json.loads(raw)
+        receipt = json.loads(raw, object_pairs_hook=unique_fields)
     except (ValueError, UnicodeError):
         raise RemoteOutcome("BLOCK_MANUAL_RECOVERY_REQUIRED") from None
     if type(receipt) is not dict:
@@ -55,7 +63,9 @@ def decode_remote_result(raw, returncode):
     from c4_operator_host import SUCCESS, BLOCKS
     expected_success = SUCCESS
     if returncode == 0:
-        if receipt != expected_success:
+        if (receipt != expected_success
+                or any(type(receipt[key]) is not type(value)
+                       for key, value in expected_success.items())):
             raise RemoteOutcome("BLOCK_MANUAL_RECOVERY_REQUIRED")
         return receipt
     status = receipt.get("status")
