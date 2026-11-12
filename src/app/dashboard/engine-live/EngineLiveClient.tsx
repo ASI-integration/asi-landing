@@ -89,7 +89,7 @@ export default function EngineLiveClient() {
           <p className="text-xs font-bold uppercase tracking-[.23em] text-cyan-300">ASI / Engineering operations</p>
           <h1 className="mt-3 text-3xl font-bold tracking-tight md:text-4xl">Engine live monitor</h1>
           <p className="mt-3 max-w-xl text-sm leading-6 text-slate-300">
-            ASI V14 · Strigunov G2 · Five workers · one.com VPS
+            ASI V14 recovery · Saved Codex edits → Grok review → Draft PR → CI · one.com VPS
           </p>
           <div className="mt-5 flex flex-wrap items-center gap-3">
             <span className={'rounded-full border px-3 py-1.5 text-xs font-semibold ' +
@@ -123,7 +123,7 @@ export default function EngineLiveClient() {
 
     <section aria-label="Fleet summary" className="grid grid-cols-2 gap-3 lg:grid-cols-4">
       <Stat title="Workers" value={data?.available?workers.length+'/5':'—'} note={progress+' processing · '+failures+' need attention'}/>
-      <Stat title="Model calls" value={data?.modelReservations!=null?data.modelReservations+'/'+data.modelLimit:'—'} note="Reservations, not billed totals"/>
+      <Stat title="Grok reviews" value={data?.modelReservations!=null?data.modelReservations+'/'+data.modelLimit:'—'} note="New review reservations; zero Codex replays"/>
       <Stat title="GitHub effects" value={data?.githubReservations!=null?data.githubReservations+'/'+data.githubLimit:'—'} note="Push and PR reservations"/>
       <Stat title="Draft PRs" value={data?.available?String(totalPR):'—'} note="Verified against PR head checks"/>
     </section>
