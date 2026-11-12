@@ -118,18 +118,28 @@ class FileRecoveryTests(unittest.TestCase):
     def test_observer_claim_markers_are_read_only_and_private(self):
         # File ownership alone is simulated for the non-root CI user; real
         # Linux paths, symlinks, modes, bounded reads and open flags are exercised.
-        native_fstat, native_open = os.fstat, os.open
-        def root_owned(fd):
-            st = native_fstat(fd)
+        native_fstat, native_open, native_stat = os.fstat, os.open, os.stat
+        identity_fields = ("st_dev", "st_ino", "st_mode", "st_uid", "st_gid", "st_nlink",
+                           "st_size", "st_mtime_ns", "st_ctime_ns")
+        def simulated_root_stat(st):
             return SimpleNamespace(**{name: (0 if name == "st_uid" else getattr(st, name))
-                for name in ("st_dev", "st_ino", "st_mode", "st_uid", "st_gid", "st_nlink",
-                             "st_size", "st_mtime_ns", "st_ctime_ns")})
+                                      for name in identity_fields})
+        def root_owned(fd):
+            return simulated_root_stat(native_fstat(fd))
+        def root_named(path, *args, **kwargs):
+            st = native_stat(path, *args, **kwargs)
+            # The fixture's existing private JSON marker files are root-owned
+            # on a real target. Simulate only ownership, not inode identity.
+            if path in ("prepared.json", "success.json", "recovery.json") and "dir_fd" in kwargs:
+                return simulated_root_stat(st)
+            return st
         def readonly_open(path, flags, *args, **kwargs):
             self.assertFalse(flags & (os.O_CREAT | os.O_TRUNC | os.O_WRONLY | os.O_RDWR))
             return native_open(path, flags, *args, **kwargs)
         def snapshot():
             with patch.object(os, "fstat", side_effect=root_owned), \
-                    patch.object(os, "open", side_effect=readonly_open):
+                    patch.object(os, "open", side_effect=readonly_open), \
+                    patch.object(os, "stat", side_effect=root_named):
                 return observer.claim_snapshot()
         self.assertEqual(snapshot()["claim"], "ABSENT")
         record = self.evidence / h.CLAIM
