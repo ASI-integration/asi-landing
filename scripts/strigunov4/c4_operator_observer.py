@@ -89,7 +89,12 @@ def marker(fd, name, kind):
             return "INVALID"
         raw = os.read(child, 4097)
         after = os.fstat(child)
-        if len(raw) != before.st_size or (before.st_size, before.st_mtime_ns, before.st_ctime_ns) != (after.st_size, after.st_mtime_ns, after.st_ctime_ns):
+        named = os.stat(name, dir_fd=fd, follow_symlinks=False)
+        # An unchanged open descriptor can still refer to a replaced, stale
+        # marker. Bind the receipt to the fixed name as well as its read inode.
+        if (len(raw) != before.st_size
+                or lock_identity(before) != lock_identity(after)
+                or lock_identity(before) != lock_identity(named)):
             return "INVALID"
         data = strict_json(raw)
         if type(data) is not dict:
