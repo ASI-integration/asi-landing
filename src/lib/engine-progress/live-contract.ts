@@ -7,7 +7,7 @@ export type AsIWorker = {
 };
 
 export type AsIStatusReport = {
-  version: 'ASI_V14_20261112';
+  version: 'ASI_V14_CODEX_SALVAGE_20261112';
   workers: AsIWorker[];
   modelReservations: number;
   modelLimit: number;
@@ -16,21 +16,21 @@ export type AsIStatusReport = {
   prLinks: { taskId: string; number: number; url: string }[];
 };
 
-const REPORT_TITLE = '## ASI V14 — Strigunov G2 source campaign';
+const REPORT_TITLE = '## ASI V14 recovered Codex results — Grok/PR campaign';
 const PR_BASE = 'https://github.com/ASI-integration/asi-landing/pull/';
 
 /** Return null rather than produce misleading status from malformed or foreign comments. */
 export function parseAsIStatusReport(body: unknown): AsIStatusReport | null {
   if (typeof body !== 'string' || body.length > 60_000 || !body.includes(REPORT_TITLE)) return null;
-  if (!/^Version:\s*ASI_V14_20261112\s*$/m.test(body)) return null;
+  if (!/^Version:\s*ASI_V14_CODEX_SALVAGE_20261112\s*$/m.test(body)) return null;
 
   const workers = [...body.matchAll(/^\|\s*([1-5])\s*\|\s*(asi-v14-[a-z0-9-]+)\s*\|\s*([A-Z][A-Z0-9_]*)\s*\|$/gm)]
     .map(m => ({ slot: Number(m[1]), taskId: m[2], state: m[3] }));
   if (workers.length !== 5 || new Set(workers.map(w => w.slot)).size !== 5 ||
       new Set(workers.map(w => w.taskId)).size !== 5) return null;
 
-  const models = /^Model reservations:\s*([0-9]+)\/([0-9]+)\s*$/m.exec(body);
-  const github = /^GitHub reservations:\s*([0-9]+)\/([0-9]+)\s*$/m.exec(body);
+  const models = /^New Grok reservations:\s*([0-9]+)\/([0-9]+)\s*$/m.exec(body);
+  const github = /^New GitHub effects:\s*([0-9]+)\/([0-9]+)\s*$/m.exec(body);
   if (!models || !github) return null;
   const [modelReservations, modelLimit, githubReservations, githubLimit] =
     [models[1], models[2], github[1], github[2]].map(Number);
@@ -38,13 +38,13 @@ export function parseAsIStatusReport(body: unknown): AsIStatusReport | null {
       modelReservations > modelLimit || githubReservations > githubLimit) return null;
 
   const prLinks: AsIStatusReport['prLinks'] = [];
-  const linkLines = body.split('Published PRs:')[1] ?? '';
+  const linkLines = body.split('Draft PR receipts:')[1] ?? '';
   for (const match of linkLines.matchAll(/^-\s*(asi-v14-[a-z0-9-]+):\s*(https:\/\/github\.com\/ASI-integration\/asi-landing\/pull\/([1-9][0-9]*))\s*$/gm)) {
     if (workers.some(w => w.taskId === match[1]) && !prLinks.some(p => p.number === Number(match[3]))) {
       prLinks.push({ taskId: match[1], number: Number(match[3]), url: PR_BASE + match[3] });
     }
   }
-  return { version: 'ASI_V14_20261112', workers: workers.sort((a, b) => a.slot - b.slot),
+  return { version: 'ASI_V14_CODEX_SALVAGE_20261112', workers: workers.sort((a, b) => a.slot - b.slot),
     modelReservations, modelLimit, githubReservations, githubLimit, prLinks };
 }
 
