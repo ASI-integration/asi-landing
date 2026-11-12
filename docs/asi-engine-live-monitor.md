@@ -4,12 +4,12 @@ Route: `/dashboard/engine-live` (visible in the dashboard sidebar only to the de
 
 ## What it monitors
 
-- The five independent V14 Strigunov G2 agent slots
-- Current task states, model and GitHub effect reservations
+- The five independent V14 Strigunov G2 recovered Codex tasks
+- Current recovered task states, new Grok-review reservations and GitHub effect reservations
 - Draft PRs and GitHub checks read for their **exact current HEAD**
 - Freshness of the most recent source report, with stale/unavailable warnings
 
-The website polls its existing authenticated `/api/dashboard/engine-progress` every 15 seconds. The source is the private `ASI-integration/asi-os-runtime` issue #188, which V14 updates on state changes and approximately every ten minutes while idle. **This is near-live monitoring, not a direct high-frequency VPS heartbeat**.
+The website polls its existing authenticated `/api/dashboard/engine-progress` every 15 seconds. The active source is the private `ASI-integration/asi-os-runtime` recovery issue #199, which reports review outcomes, Draft PR receipts and the separate five-review quota; the exhausted original V14 issue #188 is historical only. **This is near-live monitoring, not a direct high-frequency VPS heartbeat**.
 
 A task marked `RUNNING` does not prove a model call succeeded. Reserved calls are not confirmed charges. `CI_PASS` requires independently read GitHub evidence. No button can invoke models or change production state.
 
@@ -19,7 +19,7 @@ These values must be set in the **production environment** of the Vercel project
 
 1. `ASI_DEVELOPMENT_OWNER_EMAILS`: the exact email of the account authorized to use the existing development console. No implicit CRM-operator-to-owner elevation.
 2. `ASI_ENGINE_GITHUB_READ_TOKEN`: a **read-only** GitHub credential stored as an encrypted environment variable. Give it access to only:
-   - `ASI-integration/asi-os-runtime`: Issues / metadata read, for issue #188
+   - `ASI-integration/asi-os-runtime`: Issues / metadata read, for issue #199
    - `ASI-integration/asi-landing`: Pull requests, Contents/metadata and Checks read, for exact-head CI receipts
 
 The existing `GITHUB_TOKEN` variable also works if a properly scoped token is already configured. Do not paste tokens into a chat, client component, URL, Git commit or public environment variable. The token is read strictly on the server after `requireDevelopmentOwnerSession()`.
@@ -43,6 +43,6 @@ After changing Vercel environment variables, redeploy the tested commit to apply
 
 ## Data provenance
 
-- Protected source issue: `https://github.com/ASI-integration/asi-os-runtime/issues/183`
-- V14 tasks and status reporting: `ASI-integration/asi-os-runtime/ops/v14`
-- Previous V12 results are not silently mixed into the active V14 report.
+- Protected source issue: `https://github.com/ASI-integration/asi-os-runtime/issues/199`
+- V14 recovery tasks and status reporting: `ASI-integration/asi-os-runtime/ops/v14`
+- Historical V12, V13 and exhausted original V14 results are not silently mixed into the recovered campaign.
