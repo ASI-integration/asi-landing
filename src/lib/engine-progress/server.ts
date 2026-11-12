@@ -128,7 +128,7 @@ export function liveOverrides(ci: EngineCi): Record<string, EngineProgressStatus
 
 export async function getEngineProgressSnapshot() {
   const [ci, statuses, live] = await Promise.all([
-    getEngineCi(), getMissionControlDashboard(), getAsiEngineLiveStatus(),
+    getEngineCi(), getMissionControlDashboard().catch(() => []), getAsiEngineLiveStatus(),
   ]);
   const overrides = liveOverrides(ci);
   const steps = ENGINE_STEPS.map((step) => ({
