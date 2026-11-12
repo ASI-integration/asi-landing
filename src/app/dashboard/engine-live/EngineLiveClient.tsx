@@ -14,11 +14,13 @@ const names: Record<string,string> = {
 };
 function friendly(state: string): string {
   return ({ RUNNING:'Processing', PENDING:'Queued', CI_PENDING:'CI running',
-    CI_PASS:'CI passed', CI_FAILED:'CI failed', UNKNOWN_NO_REPLAY:'Needs investigation',
+    CI_PASS:'CI passed', CI_FAILED:'CI failed', MERGED:'Merged to main',
+    READY_FOR_MERGE:'Ready to merge', BRANCH_REFRESH_PENDING:'Refreshing branch',
+    UNKNOWN_NO_REPLAY:'Needs investigation',
   } as Record<string,string>)[state] ?? state.replace(/_/g,' ').toLowerCase();
 }
 function stateStyle(state: string) {
-  if (state === 'CI_PASS') return 'bg-emerald-50 text-emerald-800 border-emerald-200';
+  if (state === 'CI_PASS' || state === 'MERGED') return 'bg-emerald-50 text-emerald-800 border-emerald-200';
   if (state === 'RUNNING' || state === 'CI_PENDING') return 'bg-sky-50 text-sky-800 border-sky-200';
   if (state === 'PENDING') return 'bg-slate-100 text-slate-600 border-slate-200';
   return 'bg-amber-50 text-amber-800 border-amber-200';
@@ -89,7 +91,9 @@ export default function EngineLiveClient() {
           <p className="text-xs font-bold uppercase tracking-[.23em] text-cyan-300">ASI / Engineering operations</p>
           <h1 className="mt-3 text-3xl font-bold tracking-tight md:text-4xl">Engine live monitor</h1>
           <p className="mt-3 max-w-xl text-sm leading-6 text-slate-300">
-            ASI V14 recovery · Saved Codex edits → Grok review → Draft PR → CI · one.com VPS
+            {data?.campaign === 'ASI_V15_20261112'
+              ? 'ASI V15 · Continuous five-agent queue · Wave ' + (data.wave ?? '?') + '/3 · one.com VPS'
+              : 'ASI V14 recovery · Saved Codex edits → Grok review → Draft PR → CI · one.com VPS'}
           </p>
           <div className="mt-5 flex flex-wrap items-center gap-3">
             <span className={'rounded-full border px-3 py-1.5 text-xs font-semibold ' +
@@ -123,7 +127,7 @@ export default function EngineLiveClient() {
 
     <section aria-label="Fleet summary" className="grid grid-cols-2 gap-3 lg:grid-cols-4">
       <Stat title="Workers" value={data?.available?workers.length+'/5':'—'} note={progress+' processing · '+failures+' need attention'}/>
-      <Stat title="Grok reviews" value={data?.modelReservations!=null?data.modelReservations+'/'+data.modelLimit:'—'} note="New review reservations; zero Codex replays"/>
+      <Stat title={data?.campaign === "ASI_V15_20261112" ? "Model calls" : "Grok reviews"} value={data?.modelReservations!=null?data.modelReservations+'/'+data.modelLimit:'—'} note={data?.campaign === "ASI_V15_20261112" ? "Capped Codex + Grok reservations; not billed totals" : "New Grok reservations; zero Codex replays"}/>
       <Stat title="GitHub effects" value={data?.githubReservations!=null?data.githubReservations+'/'+data.githubLimit:'—'} note="Push and PR reservations"/>
       <Stat title="Draft PRs" value={data?.available?String(totalPR):'—'} note="Verified against PR head checks"/>
     </section>
@@ -139,7 +143,7 @@ export default function EngineLiveClient() {
               {String(w.slot).padStart(2,'0')}
             </div>
             <div className="min-w-0 flex-1">
-              <h3 className="text-sm font-bold">{names[w.taskId]??w.taskId}</h3>
+              <h3 className="text-sm font-bold">{names[w.taskId]??(w.taskId.startsWith('asi-v15-w') ? w.taskId.replace(/^asi-v15-w\\d{2}-/, '').replace(/-/g, ' ') : w.taskId)}</h3>
               <p className="mt-1 break-all font-mono text-[11px] text-slate-500">{w.taskId}</p>
             </div>
             <span className={'rounded-full border px-3 py-1.5 text-xs font-semibold '+stateStyle(w.state)}>{friendly(w.state)}</span>
@@ -181,7 +185,7 @@ export default function EngineLiveClient() {
           </tr></thead>
           <tbody>{(data?.prs??[]).map((pr:EnginePrStatus)=><tr key={pr.number} className="border-b border-slate-100 last:border-0">
             <td className="p-3"><a href={pr.url} target="_blank" rel="noopener noreferrer" className="font-bold text-blue-700 underline">#{pr.number}</a>
-              <div className="mt-1 text-xs text-slate-500">{pr.isDraft?'Draft':'Draft not verified'}</div>
+              <div className="mt-1 text-xs text-slate-500">{pr.isMerged?'Merged into main':pr.isDraft?'Draft':'Open (not draft)'}</div>
             </td>
             <td className={'p-3 font-semibold capitalize '+ciStyle(pr.releaseGovernance)}>{pr.releaseGovernance}</td>
             <td className={'p-3 font-semibold capitalize '+ciStyle(pr.sourceValidation)}>{pr.sourceValidation}</td>
