@@ -89,7 +89,7 @@ export default function EngineLiveClient() {
           <p className="text-xs font-bold uppercase tracking-[.23em] text-cyan-300">ASI / Engineering operations</p>
           <h1 className="mt-3 text-3xl font-bold tracking-tight md:text-4xl">Engine live monitor</h1>
           <p className="mt-3 max-w-xl text-sm leading-6 text-slate-300">
-            Strigunov G2 · Five V14 workers · one.com VPS
+            ASI V14 · Strigunov G2 · Five workers · one.com VPS
           </p>
           <div className="mt-5 flex flex-wrap items-center gap-3">
             <span className={'rounded-full border px-3 py-1.5 text-xs font-semibold ' +
