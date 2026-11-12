@@ -18,7 +18,7 @@ type IssueComment = {
   user?: { login?: string };
 };
 type Pull = { number: number; state: string; draft: boolean; merged?: boolean; head?: { sha?: string } };
-type Check = { name: string; status: string; conclusion: string | null };
+type Check = { name: string; status: string; conclusion: string | null; id?: number; started_at?: string };
 
 let cached: { at: number; value: EngineLiveStatus } | null = null;
 
@@ -68,21 +68,29 @@ async function prStatus(
       APP_REPO + '/commits/' + sha + '/check-runs?per_page=100', token,
     );
     if (!Array.isArray(checks.check_runs)) return fallback;
-    const statuses = new Map<string, EnginePrStatus['ci']>();
-    for (const check of checks.check_runs) {
+    // Multiple runs can have the same check name. Use the latest run on the
+    // exact HEAD, not historical cancelled runs from earlier PR events.
+    const latest = new Map<string, Check>();
+    for (const check of [...checks.check_runs].sort((a, b) =>
+      (a.started_at ?? '').localeCompare(b.started_at ?? '') || (a.id ?? 0) - (b.id ?? 0))) {
       if (!check || typeof check.name !== 'string') continue;
-      statuses.set(check.name, checkConclusion(check.conclusion, check.status));
+      latest.set(check.name, check);
+    }
+    const statuses = new Map<string, EnginePrStatus['ci']>();
+    for (const [name, check] of latest.entries()) {
+      statuses.set(name, checkConclusion(check.conclusion, check.status));
     }
     const releaseGovernance = statuses.get(REQUIRED[0]) ?? 'unknown';
     const sourceValidation = statuses.get(REQUIRED[1]) ?? 'unknown';
     const values = Array.from(statuses.values());
-    const allCompleteAndNonBlocking = checks.check_runs.length > 0 &&
-      checks.check_runs.every(check => check.status === 'completed' &&
+    const allCompleteAndNonBlocking = latest.size > 0 &&
+      [...latest.values()].every(check => check.status === 'completed' &&
         ['success', 'neutral', 'skipped'].includes(check.conclusion ?? ''));
+    const mandatoryPassed = ['validate','source_validation','release_governance','offline']
+      .every(name => statuses.get(name) === 'passed');
     const ci = releaseGovernance === 'failed' || sourceValidation === 'failed' ||
         values.includes('failed') ? 'failed'
-      : releaseGovernance === 'passed' && sourceValidation === 'passed' &&
-        allCompleteAndNonBlocking ? 'passed'
+      : mandatoryPassed && allCompleteAndNonBlocking ? 'passed'
       : values.includes('pending') ? 'pending' : 'unknown';
     return {
       ...input, head: sha, isDraft: pr.draft, isMerged: pr.merged === true,
@@ -137,7 +145,7 @@ export async function getAsiEngineLiveStatus(): Promise<EngineLiveStatus> {
     const reportTime = Date.parse(latest.item.created_at);
     if (!Number.isFinite(reportTime)) return empty('Engine report has no trustworthy timestamp.');
     const stale = Date.now() - reportTime > STALE_REPORT_MS || Date.now() - reportTime < -60_000;
-    const prs = await Promise.all(latest.parsed.prLinks.slice(0, 10).map(p => prStatus(p, token)));
+    const prs = await Promise.all(latest.parsed.prLinks.slice(0, 15).map(p => prStatus(p, token)));
     const result: EngineLiveStatus = {
       available: true,
       reason: stale ? 'The last Engine report is old. Current worker liveness is unverified.' : null,
