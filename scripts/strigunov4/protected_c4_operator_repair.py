@@ -10,6 +10,7 @@ import json
 import os
 from pathlib import Path
 import re
+import stat
 import subprocess
 import sys
 import tempfile
@@ -47,7 +48,14 @@ def decode_remote_result(raw, returncode):
     if type(raw) is not bytes or len(raw) > 4096:
         raise RemoteOutcome("BLOCK_MANUAL_RECOVERY_REQUIRED")
     try:
-        receipt = json.loads(raw)
+        def unique(pairs):
+            result = {}
+            for key, value in pairs:
+                if key in result:
+                    raise ValueError("duplicate receipt claim")
+                result[key] = value
+            return result
+        receipt = json.loads(raw, object_pairs_hook=unique)
     except (ValueError, UnicodeError):
         raise RemoteOutcome("BLOCK_MANUAL_RECOVERY_REQUIRED") from None
     if type(receipt) is not dict:
@@ -55,13 +63,15 @@ def decode_remote_result(raw, returncode):
     from c4_operator_host import SUCCESS, BLOCKS
     expected_success = SUCCESS
     if returncode == 0:
-        if receipt != expected_success:
+        if (receipt != expected_success or any(
+                type(receipt.get(k)) is not type(v)
+                for k, v in expected_success.items())):
             raise RemoteOutcome("BLOCK_MANUAL_RECOVERY_REQUIRED")
         return receipt
     status = receipt.get("status")
     # Ignore all remote-provided fields except a fixed status label. Unknown
     # statuses and receipt structures are never elevated to an approval.
-    if type(status) is str and status in BLOCKS:
+    if type(status) is str and status in BLOCKS and receipt == {"status": status}:
         raise RemoteOutcome(status)
     raise RemoteOutcome("BLOCK_MANUAL_RECOVERY_REQUIRED")
 
@@ -119,17 +129,46 @@ def checked(argv, *, input_bytes=None, env=None, timeout=35):
     return result.stdout
 
 
+def source_bytes(root, name):
+    """Read a fixed module without following any input path symlinks."""
+    require(name in {"staging_no_send_patch", "staging_no_send_host",
+                     "c4_operator_patch", "c4_operator_host"}, "SOURCE_PATH")
+    root = Path(root)
+    require(root.is_absolute() and ".." not in root.parts, "SOURCE_PATH")
+    fd = os.open(root.anchor, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    try:
+        for part in (*root.parts[1:], "scripts", "strigunov4"):
+            next_fd = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
+                              dir_fd=fd)
+            os.close(fd)
+            fd = next_fd
+        source_fd = os.open(name + ".py", os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK,
+                            dir_fd=fd)
+        try:
+            info = os.fstat(source_fd)
+            require(stat.S_ISREG(info.st_mode) and info.st_nlink == 1
+                    and 0 < info.st_size < 40000, "SOURCE_SIZE")
+            with os.fdopen(source_fd, "rb", closefd=False) as stream:
+                data = stream.read(40000)
+            require(0 < len(data) < 40000, "SOURCE_SIZE")
+            return data.decode("utf-8", "strict")
+        finally:
+            os.close(source_fd)
+    finally:
+        os.close(fd)
+
+
 def payload(root=SOURCE):
     """Send only exact main-checked source bytes through protected SSH stdin."""
     modules = ("staging_no_send_patch", "staging_no_send_host", "c4_operator_patch")
     parts = ["import sys,types\n"]
     for name in modules:
-        source = (Path(root) / ("scripts/strigunov4/" + name + ".py")).read_text("utf-8")
+        source = source_bytes(root, name)
         require(0 < len(source) < 40000, "SOURCE_SIZE")
         parts.append("m=types.ModuleType(" + repr(name) + ")\n")
         parts.append("exec(compile(" + repr(source) + "," + repr(name) + ",'exec'),m.__dict__)\n")
         parts.append("sys.modules[" + repr(name) + "]=m\n")
-    worker = (Path(root) / "scripts/strigunov4/c4_operator_host.py").read_text("utf-8")
+    worker = source_bytes(root, "c4_operator_host")
     require(0 < len(worker) < 40000, "SOURCE_SIZE")
     return ("".join(parts) + worker).encode("utf-8")
 
