@@ -46,7 +46,9 @@ def decode(raw):
     lines = text.splitlines(keepends=True)
     require(len(lines) <= 2500, "ENV_LINES")
     for index, line in enumerate(lines):
-        stripped = line.strip()
+        # EnvironmentFile syntax uses ASCII whitespace. Unicode strip() can
+        # turn an unrelated/malformed key into an active target or safety flag.
+        stripped = line.strip(" \t\n")
         if not stripped:
             continue
         if stripped.startswith(("#", ";")):
@@ -95,6 +97,9 @@ def plan(raw):
             lines.append(canonical)
             changed += 1
     output = "".join(lines).encode("utf-8")
+    # Appending missing lists or expanding a target must not produce a file
+    # that the same planner would reject on the next invocation/restoration.
+    decode(output)
     require(all(after[k] == before[k] | {OPERATOR} for k in KEYS), "MEMBERSHIP_DELTA")
     return {"output": output, "changed": output != raw,
             "changedLists": changed, "before": before, "after": after}
