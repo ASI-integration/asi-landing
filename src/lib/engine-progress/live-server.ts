@@ -6,7 +6,7 @@ import {
 
 const PRIVATE_REPO = 'ASI-integration/asi-os-runtime';
 const APP_REPO = 'ASI-integration/asi-landing';
-const REPORT_ISSUE = 183;
+const REPORT_ISSUE = 188;
 const API = 'https://api.github.com/repos/';
 const RECHECK_MS = 20_000;
 const STALE_REPORT_MS = 12 * 60_000;
