@@ -13,6 +13,7 @@ SAFETY = {
 }
 EMAIL = re.compile(r"[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9.-]+\Z")
 ASSIGNMENT = re.compile(r"([A-Za-z_][A-Za-z0-9_]*)=(.*)\Z")
+MEMBER_SEPARATOR = re.compile(r"[,; \t]+")
 
 
 def require(ok, code):
@@ -23,7 +24,7 @@ def require(ok, code):
 def members(value):
     """Normalize membership without accepting quoting, escapes or wildcards."""
     require(type(value) is str and len(value) <= 16384, "ALLOWLIST_SIZE")
-    tokens = [x for x in re.split(r"[,;\s]+", value) if x]
+    tokens = [x for x in MEMBER_SEPARATOR.split(value) if x]
     require(all(EMAIL.fullmatch(x) and "*" not in x for x in tokens), "ALLOWLIST_FORMAT")
     result = []
     for token in tokens:
@@ -46,7 +47,9 @@ def decode(raw):
     lines = text.splitlines(keepends=True)
     require(len(lines) <= 2500, "ENV_LINES")
     for index, line in enumerate(lines):
-        stripped = line.strip()
+        # EnvironmentFile syntax uses ASCII padding. Unicode strip() could
+        # disguise a distinct key or silently remove bytes from a member.
+        stripped = line.removesuffix("\n").strip(" \t")
         if not stripped:
             continue
         if stripped.startswith(("#", ";")):
@@ -86,7 +89,7 @@ def plan(raw):
         if key in positions:
             old = lines[positions[key]]
             # Avoid rewriting already valid, unique, unchanged lists.
-            raw_tokens = [x for x in re.split(r"[,;\s]+", values[key]) if x]
+            raw_tokens = [x for x in MEMBER_SEPARATOR.split(values[key]) if x]
             if before[key] == after[key] and len(raw_tokens) == len(tokens):
                 continue
             lines[positions[key]] = canonical
