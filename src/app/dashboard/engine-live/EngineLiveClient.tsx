@@ -143,7 +143,7 @@ export default function EngineLiveClient() {
               {String(w.slot).padStart(2,'0')}
             </div>
             <div className="min-w-0 flex-1">
-              <h3 className="text-sm font-bold">{names[w.taskId]??(w.taskId.startsWith('asi-v15-w') ? w.taskId.replace(/^asi-v15-w\\d{2}-/, '').replace(/-/g, ' ') : w.taskId)}</h3>
+              <h3 className="text-sm font-bold">{names[w.taskId]??(w.taskId.startsWith('asi-v15-w') ? w.taskId.replace(/^asi-v15-w\d{2}-/, '').replace(/-/g, ' ') : w.taskId)}</h3>
               <p className="mt-1 break-all font-mono text-[11px] text-slate-500">{w.taskId}</p>
             </div>
             <span className={'rounded-full border px-3 py-1.5 text-xs font-semibold '+stateStyle(w.state)}>{friendly(w.state)}</span>
