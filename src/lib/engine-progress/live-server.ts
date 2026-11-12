@@ -76,10 +76,13 @@ async function prStatus(
     const releaseGovernance = statuses.get(REQUIRED[0]) ?? 'unknown';
     const sourceValidation = statuses.get(REQUIRED[1]) ?? 'unknown';
     const values = Array.from(statuses.values());
+    const allCompleteAndNonBlocking = checks.check_runs.length > 0 &&
+      checks.check_runs.every(check => check.status === 'completed' &&
+        ['success', 'neutral', 'skipped'].includes(check.conclusion ?? ''));
     const ci = releaseGovernance === 'failed' || sourceValidation === 'failed' ||
         values.includes('failed') ? 'failed'
       : releaseGovernance === 'passed' && sourceValidation === 'passed' &&
-        values.length > 0 && values.every(v => v === 'passed') ? 'passed'
+        allCompleteAndNonBlocking ? 'passed'
       : values.includes('pending') ? 'pending' : 'unknown';
     return {
       ...input, head: sha, isDraft: pr.draft,
