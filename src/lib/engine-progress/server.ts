@@ -1,4 +1,5 @@
 import 'server-only';
+import { getAsiEngineLiveStatus } from './live-server';
 
 import { getMissionControlDashboard } from '@/lib/mission-control/store';
 import { ENGINE_MILESTONES, ENGINE_STEPS, ENGINE_ROADMAP_SNAPSHOT, type EngineProgressStatus } from './roadmap';
@@ -126,7 +127,9 @@ export function liveOverrides(ci: EngineCi): Record<string, EngineProgressStatus
 }
 
 export async function getEngineProgressSnapshot() {
-  const [ci, statuses] = await Promise.all([getEngineCi(), getMissionControlDashboard()]);
+  const [ci, statuses, live] = await Promise.all([
+    getEngineCi(), getMissionControlDashboard(), getAsiEngineLiveStatus(),
+  ]);
   const overrides = liveOverrides(ci);
   const steps = ENGINE_STEPS.map((step) => ({
     ...step,
@@ -147,7 +150,7 @@ export async function getEngineProgressSnapshot() {
     schemaVersion: 'asi.owner.engine-progress.v1',
     snapshotDate: ENGINE_ROADMAP_SNAPSHOT,
     fetchedAt: new Date().toISOString(),
-    milestones, steps, ci,
+    milestones, steps, ci, live,
     activity: statuses.find(x => x.projectId === 'asi') ?? null,
   };
 }
