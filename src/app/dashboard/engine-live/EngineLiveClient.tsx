@@ -115,6 +115,11 @@ export default function EngineLiveClient() {
     {data?.available&&data.stale&&<div role="status" className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
       The last VPS report is older than the reporting interval. The states below are historical, not proof of current worker liveness.
     </div>}
+    {data?.available&&failures>0&&<div role="alert" className="rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm leading-6 text-rose-900">
+      <strong>{failures} of 5 agent tasks need attention.</strong> Their latest reported state is blocked,
+      failed or uncertain. A healthy connection to GitHub does not mean these agents are producing code.
+      Unknown model outcomes must not be replayed automatically.
+    </div>}
 
     <section aria-label="Fleet summary" className="grid grid-cols-2 gap-3 lg:grid-cols-4">
       <Stat title="Workers" value={data?.available?workers.length+'/5':'—'} note={progress+' processing · '+failures+' need attention'}/>
