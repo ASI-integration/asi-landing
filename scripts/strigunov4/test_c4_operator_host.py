@@ -122,7 +122,8 @@ class FileRecoveryTests(unittest.TestCase):
         def root_owned(fd):
             st = native_fstat(fd)
             return SimpleNamespace(**{name: (0 if name == "st_uid" else getattr(st, name))
-                for name in ("st_uid", "st_mode", "st_size", "st_nlink", "st_mtime_ns", "st_ctime_ns")})
+                for name in ("st_dev", "st_ino", "st_mode", "st_uid", "st_gid", "st_nlink",
+                             "st_size", "st_mtime_ns", "st_ctime_ns")})
         def readonly_open(path, flags, *args, **kwargs):
             self.assertFalse(flags & (os.O_CREAT | os.O_TRUNC | os.O_WRONLY | os.O_RDWR))
             return native_open(path, flags, *args, **kwargs)
