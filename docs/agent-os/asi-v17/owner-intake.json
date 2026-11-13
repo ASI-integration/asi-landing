@@ -1,0 +1,122 @@
+{
+  "schema": "asi.v17.work-intake.v1",
+  "repository": "ASI-integration/asi-landing",
+  "dispatch_enabled": false,
+  "preparation": {
+    "state": "PREPARED_NOT_EXECUTABLE",
+    "source_commit": "6453c3a7f6a66ee50b7523218a9849096c3f9994",
+    "release_manifest_blob": "01714234bb535f83df1030e5b24b1888fb0d15ab",
+    "runtime_pr": "https://github.com/ASI-integration/asi-os-runtime/pull/220",
+    "current_stage": "S4-G2",
+    "cost_unit": "potential model CLI call reservations, not API requests or USD",
+    "batch_potential_reservations": 10,
+    "blockers": [
+      "Separate paid-provider limits/model entitlement/quota verification and activation authorization are absent.",
+      "V15/V16 host watchdog/process handoff and offline sandbox are not attested.",
+      "Existing open PR path overlaps must be reconciled; no automatic takeover or merge is authorized.",
+      "The intake path requires an existing exact-head owner RELEASE-EXCEPTION attestation; no governance change is proposed.",
+      "G2 physical allowlist/seven no-send/human-login acceptance remains under issue 631."
+    ]
+  },
+  "historical_quarantine": [
+    "scripts/strigunov4/c4_operator_host.py",
+    "scripts/strigunov4/test_asi_v9_g2_host_errors.py",
+    "scripts/strigunov4/c4_operator_observer.py",
+    "scripts/strigunov4/test_beget_g2_witness_identity_v1.py"
+  ],
+  "tasks": [
+    {
+      "id": "asi-v17-g2-r1-source-descriptor-bounds",
+      "branch": "asi/v17-g2-r1-source-descriptor-bounds",
+      "slot": 1,
+      "stage": "S4-G2",
+      "paths": [
+        "scripts/strigunov4/test_asi_v9_g2_repair_admission.py"
+      ],
+      "objective": "Extend real protected_c4_operator_repair.source_bytes coverage using disposable synthetic directories: accepted 39999-byte UTF-8 module, rejected empty/40000-byte modules, hardlinked leaf, nonblocking FIFO and parent symlink cases. Assert valid source is returned unchanged, forbidden source is rejected without evaluating it, descriptors close, and SSH/subprocess/network seams are never invoked. Change only the listed test file; do not edit quarantined host/observer source or weaken admission."
+    },
+    {
+      "id": "asi-v17-g2-r1-planner-output-bounds",
+      "branch": "asi/v17-g2-r1-planner-output-bounds",
+      "slot": 2,
+      "stage": "S4-G2",
+      "paths": [
+        "scripts/strigunov4/test_asi_v10_g2_patch_safety.py"
+      ],
+      "objective": "Add focused synthetic regressions of actual c4_operator_patch.plan/decode around the 2500-line and 131072-byte limits, including output growth when missing allowlists are appended. Pair each rejection with a nearby accepted input, assert exact output bytes/membership union for the accepted case, and prove an already configured input remains byte-identical. Do not alter production limits or host code; do not invoke host.perform, restart, services or external systems."
+    },
+    {
+      "id": "asi-v17-g2-r1-environment-utf8-boundaries",
+      "branch": "asi/v17-g2-r1-environment-utf8-boundaries",
+      "slot": 3,
+      "stage": "S4-G2",
+      "paths": [
+        "scripts/strigunov4/test_asi_v10_g2_json_unicode.py"
+      ],
+      "objective": "Extend actual c4_operator_patch.decode tests for truncated 2/3/4-byte UTF-8 sequences, isolated continuation bytes, overlong encodings and a BOM before an assignment key. Pair them with accepted scalar Unicode bytes in an unrelated NOTE value and assert unchanged byte round-trip and unchanged safety values. Keep all fixtures synthetic and in memory; no real EnvironmentFiles, services or new Unicode normalization policy. Edit only the listed test file."
+    },
+    {
+      "id": "asi-v17-g2-r1-decoded-key-order",
+      "branch": "asi/v17-g2-r1-decoded-key-order",
+      "slot": 4,
+      "stage": "S4-G2",
+      "paths": [
+        "scripts/strigunov4/test_asi_v10_g2_json_duplicate_keys.py"
+      ],
+      "objective": "Add raw-byte JSON regressions of actual observer.strict_json for literal-versus-escaped duplicate keys at mixed array/object depth and in both key orders. Include positive controls where a literal backslash-u sequence is a distinct key and repeated identifiers in independent sibling containers remain valid. Assert duplicate rejection comes from the real parser, not Python dict construction or mocked parser returns. Do not edit observer source or read host evidence."
+    },
+    {
+      "id": "asi-v17-g2-r1-marker-descriptor-failures",
+      "branch": "asi/v17-g2-r1-marker-descriptor-failures",
+      "slot": 5,
+      "stage": "S4-G2",
+      "paths": [
+        "scripts/strigunov4/test_asi_v10_g2_json_markers.py"
+      ],
+      "objective": "Add synthetic descriptor-level regressions of real observer.marker for PermissionError/OSError at open, first fstat, read and second fstat, proving no successful receipt classification and close exactly once for each opened descriptor. Cover a valid receipt padded to exactly 4096 bytes versus 4097 rejection before reading, and prove backup classification never reads private bytes. Use mocked descriptor seams and accepted controls only; do not edit observer source or touch live evidence."
+    }
+  ],
+  "evidence": [
+    {
+      "task_id": "asi-v17-g2-r1-source-descriptor-bounds",
+      "inspected_blob": "6ef8c21a1f8756f5e7d54d2d2117af89352b18fe",
+      "coverage_gap": "Current AdmissionTests covers a regular payload and symlink/traversal rejection, but not the explicit size, hardlink, FIFO/nonblocking and UTF-8 boundaries enforced by source_bytes.",
+      "known_open_pr_conflicts": [
+        "https://github.com/ASI-integration/asi-landing/pull/615"
+      ],
+      "acceptance": "Focused test file passes with accepted and rejected controls; assertions exercise actual source seams. No live staging or release acceptance is claimed."
+    },
+    {
+      "task_id": "asi-v17-g2-r1-planner-output-bounds",
+      "inspected_blob": "8b940d316ac77c5829f80e1a5bcf3b2e0df0bb9e",
+      "coverage_gap": "PatchSafetyTests covers operator syntax, no-send and no-op ordering, but not input/output line-count and byte-cap expansion boundaries.",
+      "known_open_pr_conflicts": [],
+      "acceptance": "Focused test file passes with accepted and rejected controls; assertions exercise actual source seams. No live staging or release acceptance is claimed."
+    },
+    {
+      "task_id": "asi-v17-g2-r1-environment-utf8-boundaries",
+      "inspected_blob": "b8ad8b44e1021ccecdc969351d99da67be1b4729",
+      "coverage_gap": "V10HostEnvironmentUnicodeTests covers encoded surrogates, out-of-range scalars and line separators, but lacks truncation/continuation/overlong/BOM assignment-boundary controls.",
+      "known_open_pr_conflicts": [],
+      "acceptance": "Focused test file passes with accepted and rejected controls; assertions exercise actual source seams. No live staging or release acceptance is claimed."
+    },
+    {
+      "task_id": "asi-v17-g2-r1-decoded-key-order",
+      "inspected_blob": "57b4c52795c87a22a607cd1877d74749534024d7",
+      "coverage_gap": "JsonDuplicateKeyTests covers plain duplicates and selected escaped identifiers, but not the distinct literal-backslash key control paired with order/depth permutations.",
+      "known_open_pr_conflicts": [
+        "https://github.com/ASI-integration/asi-landing/pull/606"
+      ],
+      "acceptance": "Focused test file passes with accepted and rejected controls; assertions exercise actual source seams. No live staging or release acceptance is claimed."
+    },
+    {
+      "task_id": "asi-v17-g2-r1-marker-descriptor-failures",
+      "inspected_blob": "ba0f4cacbcbb3464d6bb1d44a56f89b44551b523",
+      "coverage_gap": "MarkerTests covers malformed JSON, size/metadata drift and absent files, but not descriptor I/O failure injection or a successful exact-4096-byte padded receipt.",
+      "known_open_pr_conflicts": [
+        "https://github.com/ASI-integration/asi-landing/pull/607"
+      ],
+      "acceptance": "Focused test file passes with accepted and rejected controls; assertions exercise actual source seams. No live staging or release acceptance is claimed."
+    }
+  ]
+}
