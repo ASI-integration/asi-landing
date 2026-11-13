@@ -1,20 +1,19 @@
 {
   "schema": "asi.v17.work-intake.v1",
   "repository": "ASI-integration/asi-landing",
-  "dispatch_enabled": false,
+  "dispatch_enabled": true,
   "preparation": {
-    "state": "FIVE_FRESH_PATHS_PENDING_PROTECTED_ADMISSION",
-    "source_commit": "4a67af31656be6db5801990f6419f1f563b17e05",
+    "state": "ADMITTED_PENDING_VERIFIED_SUBSCRIPTION_HOST_HANDOFF",
+    "source_commit": "9ac1005e0ae4f2282fcf9e27d4736228d1de4d6a",
     "release_manifest_blob": "01714234bb535f83df1030e5b24b1888fb0d15ab",
-    "runtime_pr": "https://github.com/ASI-integration/asi-os-runtime/pull/220",
+    "runtime_pr": "https://github.com/ASI-integration/asi-os-runtime/pull/228",
     "current_stage": "S4-G2",
     "cost_unit": "potential model CLI call reservations, not API requests or USD",
     "batch_potential_reservations": 10,
     "blockers": [
-      "Protected exact-head contract-change admission and independent review required.",
-      "Historical claims require evidence-only reconciliation; never replay UNKNOWN.",
-      "Subscription-only provider routing and finite caps must be verified before execution.",
-      "Exact legacy writer/watchdog handoff required before activation."
+      "Runtime #228 must pass protected exact-head CI/review and merge before installation.",
+      "Exact legacy PID/start_ticks, descendants, cron/ledger bytes and effects must be reverified before cutover.",
+      "Only verified included ChatGPT quota with zero extra credits; no paid API/Grok fallback."
     ],
     "desired_worker_slots": 5,
     "supersedes_unadmitted_proposal_commit": "4476a20783a1e8dbe1254b24699d5e49ae7ff1c4",
@@ -25,7 +24,13 @@
       "scripts/strigunov4/test_asi_v17_g2_failure_label_secrecy.py",
       "scripts/strigunov4/test_asi_v17_g2_remote_receipt_binding.py"
     ],
-    "owner_authorization": "https://github.com/ASI-integration/asi-os-runtime/issues/219#issuecomment-6861221993"
+    "owner_authorization": "https://github.com/ASI-integration/asi-os-runtime/issues/219#issuecomment-6861221993",
+    "execution_mode": "subscription-only",
+    "initial_active_slots": 1,
+    "max_active_slots_after_verified_pilot": 5,
+    "max_simultaneous_model_calls": 2,
+    "campaign_lifetime_cli_reservations": 10,
+    "owner_order": "https://github.com/ASI-integration/asi-os-runtime/issues/219#issuecomment-6862065714"
   },
   "historical_quarantine": [
     "scripts/strigunov4/c4_operator_host.py",
