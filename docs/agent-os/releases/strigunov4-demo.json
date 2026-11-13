@@ -235,7 +235,12 @@
         "scripts/strigunov4/test_asi_v10_g2_json_unicode.py",
         "scripts/strigunov4/test_asi_v10_g2_json_duplicate_keys.py",
         "scripts/strigunov4/test_asi_v10_g2_json_markers.py",
-        "scripts/strigunov4/execution-adapters/host-checks.mjs"
+        "scripts/strigunov4/execution-adapters/host-checks.mjs",
+        "scripts/strigunov4/test_asi_v17_g2_marker_backup_noread.py",
+        "scripts/strigunov4/test_asi_v17_g2_lock_path_identity.py",
+        "scripts/strigunov4/test_asi_v17_g2_observer_json_scalars.py",
+        "scripts/strigunov4/test_asi_v17_g2_failure_label_secrecy.py",
+        "scripts/strigunov4/test_asi_v17_g2_remote_receipt_binding.py"
       ]
     },
     {
