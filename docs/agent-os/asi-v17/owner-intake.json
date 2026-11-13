@@ -3,30 +3,29 @@
   "repository": "ASI-integration/asi-landing",
   "dispatch_enabled": false,
   "preparation": {
-    "state": "PREPARED_NOT_EXECUTABLE_FOUR_SCOPED_ONE_DEFERRED",
-    "source_commit": "6453c3a7f6a66ee50b7523218a9849096c3f9994",
+    "state": "FIVE_FRESH_PATHS_PENDING_PROTECTED_ADMISSION",
+    "source_commit": "4a67af31656be6db5801990f6419f1f563b17e05",
     "release_manifest_blob": "01714234bb535f83df1030e5b24b1888fb0d15ab",
     "runtime_pr": "https://github.com/ASI-integration/asi-os-runtime/pull/220",
     "current_stage": "S4-G2",
     "cost_unit": "potential model CLI call reservations, not API requests or USD",
-    "batch_potential_reservations": 8,
+    "batch_potential_reservations": 10,
     "blockers": [
-      "Broader V14 history quarantines six additional test paths. Only four legal non-quarantined targeted Python tests remain; five disjoint executable tasks are impossible without separate scope/quarantine authority.",
-      "V13 has 3 CI_PASS and V14 recovery has 4 CI_PASS records requiring read-only handoff reconciliation; do not edit historical ledgers.",
-      "Separate paid-provider limits/model entitlement/quota verification and activation authorization are absent.",
-      "V15/V16 host watchdog/process handoff and offline sandbox are not attested.",
-      "Existing open PR path overlaps must be reconciled; no automatic takeover or merge is authorized.",
-      "The intake path requires an existing exact-head owner RELEASE-EXCEPTION attestation; no governance change is proposed.",
-      "G2 physical allowlist/seven no-send/human-login acceptance remains under issue 631."
+      "Protected exact-head contract-change admission and independent review required.",
+      "Historical claims require evidence-only reconciliation; never replay UNKNOWN.",
+      "Subscription-only provider routing and finite caps must be verified before execution.",
+      "Exact legacy writer/watchdog handoff required before activation."
     ],
     "desired_worker_slots": 5,
     "supersedes_unadmitted_proposal_commit": "4476a20783a1e8dbe1254b24699d5e49ae7ff1c4",
     "current_scope_safe_python_test_files": [
-      "scripts/strigunov4/test_asi_v9_g2_repair_admission.py",
-      "scripts/strigunov4/test_asi_v10_g2_patch_bytes.py",
-      "scripts/strigunov4/test_beget_g2_witness_races_v1.py",
-      "scripts/strigunov4/test_asi_v9_g2_lock_records.py"
-    ]
+      "scripts/strigunov4/test_asi_v17_g2_marker_backup_noread.py",
+      "scripts/strigunov4/test_asi_v17_g2_lock_path_identity.py",
+      "scripts/strigunov4/test_asi_v17_g2_observer_json_scalars.py",
+      "scripts/strigunov4/test_asi_v17_g2_failure_label_secrecy.py",
+      "scripts/strigunov4/test_asi_v17_g2_remote_receipt_binding.py"
+    ],
+    "owner_authorization": "https://github.com/ASI-integration/asi-os-runtime/issues/219#issuecomment-6861221993"
   },
   "historical_quarantine": [
     "scripts/strigunov4/c4_operator_host.py",
@@ -42,44 +41,54 @@
   ],
   "tasks": [
     {
-      "id": "asi-v17-g2-r1-source-descriptor-bounds",
-      "branch": "asi/v17-g2-r1-source-descriptor-bounds",
+      "id": "asi-v17-g2-new-marker-backup-noread",
+      "branch": "asi/v17-g2-new-marker-backup-noread",
       "slot": 1,
       "stage": "S4-G2",
       "paths": [
-        "scripts/strigunov4/test_asi_v9_g2_repair_admission.py"
+        "scripts/strigunov4/test_asi_v17_g2_marker_backup_noread.py"
       ],
-      "objective": "Extend real protected_c4_operator_repair.source_bytes coverage using disposable synthetic directories: accepted 39999-byte UTF-8 module, rejected empty/40000-byte modules, hardlinked leaf, nonblocking FIFO and parent symlink cases. Assert valid source is returned unchanged, forbidden source is rejected without evaluating it, descriptors close, and SSH/subprocess/network seams are never invoked. Change only the listed test file; do not edit quarantined host/observer source or weaken admission."
+      "objective": "Add deterministic mocked descriptor regressions proving backup-kind markers never read private bytes, enforce exact owner/mode/link/size checks, and close descriptors exactly once on errors. Modify only the new test file; no real host, environment backup, service, network or physical action."
     },
     {
-      "id": "asi-v17-g2-r2-casefold-byte-union",
-      "branch": "asi/v17-g2-r2-casefold-byte-union",
+      "id": "asi-v17-g2-new-lock-path-identity",
+      "branch": "asi/v17-g2-new-lock-path-identity",
       "slot": 2,
       "stage": "S4-G2",
       "paths": [
-        "scripts/strigunov4/test_asi_v10_g2_patch_bytes.py"
+        "scripts/strigunov4/test_asi_v17_g2_lock_path_identity.py"
       ],
-      "objective": "Add actual c4_operator_patch.plan byte-level tests for repeated case variants of the same members in both allowlists with mixed comma/semicolon/tab separators. Assert stable first-member spelling, exact deduplicated output bytes, exact before/after union, unchanged unrelated UTF-8/comment bytes and byte-identical second application. Change only the listed test file; do not execute host.perform or alter any source/limits, host files, services or history."
+      "objective": "Add mocked regressions for opened descriptor versus final pathname dev/inode/link/mtime/ctime changes, asserting UNKNOWN rather than a false HELD or free-lock claim, plus close-error handling without retries. Modify only the new test file and never acquire a real lock or inspect host state."
     },
     {
-      "id": "asi-v17-g2-r2-witness-io-errors",
-      "branch": "asi/v17-g2-r2-witness-io-errors",
+      "id": "asi-v17-g2-new-observer-json-scalars",
+      "branch": "asi/v17-g2-new-observer-json-scalars",
       "slot": 3,
       "stage": "S4-G2",
       "paths": [
-        "scripts/strigunov4/test_beget_g2_witness_races_v1.py"
+        "scripts/strigunov4/test_asi_v17_g2_observer_json_scalars.py"
       ],
-      "objective": "Add deterministic error-path tests of the actual beget_g2_operator_witness.observe acquisition flow. Inject failed first/second policy reads, snapshot failures and read/pread errors using synthetic policy/identity/environment fixtures. Assert no successful witness receipt, no later acquisition stage after failure, and exactly one close for each opened environment descriptor. Pair accepted stable acquisition controls; no real procfs, host reads, services, credentials, writes or source edits."
+      "objective": "Add deterministic nested-key and nested-list Unicode scalar regressions, duplicate-key rejection and valid surrogate-pair acceptance for observer marker JSON. Use only synthetic byte strings and modify only this new test file, preserving existing source and acceptance records."
     },
     {
-      "id": "asi-v17-g2-r2-lock-parser-bounds",
-      "branch": "asi/v17-g2-r2-lock-parser-bounds",
+      "id": "asi-v17-g2-new-failure-label-secrecy",
+      "branch": "asi/v17-g2-new-failure-label-secrecy",
       "slot": 4,
       "stage": "S4-G2",
       "paths": [
-        "scripts/strigunov4/test_asi_v9_g2_lock_records.py"
+        "scripts/strigunov4/test_asi_v17_g2_failure_label_secrecy.py"
       ],
-      "objective": "Extend actual observer.lock_records/lock_snapshot tests for LOCKS_LIMIT and 512-character record boundaries, non-newline truncation and non-ASCII snapshot data. Include a matching accepted FLOCK control and prove malformed/oversized snapshots never authorize or infer an available lock; wrapper errors yield UNKNOWN and close descriptors once. Use in-memory fake lock bytes and mocked read-only descriptor seams only. Never acquire locks, read real procfs/evidence, edit quarantined source, invoke host.perform or touch services."
+      "objective": "Add synthetic regressions ensuring only exact Block exception types with one allowlisted string emit bounded labels; subclasses, hostile exception messages, multiple args and unknown labels must not escape. Modify only the new test file, with no physical, subprocess or provider operations."
+    },
+    {
+      "id": "asi-v17-g2-new-remote-receipt-binding",
+      "branch": "asi/v17-g2-new-remote-receipt-binding",
+      "slot": 5,
+      "stage": "S4-G2",
+      "paths": [
+        "scripts/strigunov4/test_asi_v17_g2_remote_receipt_binding.py"
+      ],
+      "objective": "Add synthetic receipt regressions ensuring nonzero remote exit never becomes success, extra fields and duplicate keys cannot manufacture acceptance, and exact value types remain bound to known success or block envelopes. Modify only the new test file; do not run SSH, services, database or remote commands."
     }
   ],
   "evidence": [
@@ -137,6 +146,48 @@
       ],
       "potential_reservations_if_authorized": 2,
       "dispatchable": false
+    }
+  ],
+  "superseded_disabled_proposals": [
+    {
+      "id": "asi-v17-g2-r1-source-descriptor-bounds",
+      "branch": "asi/v17-g2-r1-source-descriptor-bounds",
+      "slot": 1,
+      "stage": "S4-G2",
+      "paths": [
+        "scripts/strigunov4/test_asi_v9_g2_repair_admission.py"
+      ],
+      "objective": "Extend real protected_c4_operator_repair.source_bytes coverage using disposable synthetic directories: accepted 39999-byte UTF-8 module, rejected empty/40000-byte modules, hardlinked leaf, nonblocking FIFO and parent symlink cases. Assert valid source is returned unchanged, forbidden source is rejected without evaluating it, descriptors close, and SSH/subprocess/network seams are never invoked. Change only the listed test file; do not edit quarantined host/observer source or weaken admission."
+    },
+    {
+      "id": "asi-v17-g2-r2-casefold-byte-union",
+      "branch": "asi/v17-g2-r2-casefold-byte-union",
+      "slot": 2,
+      "stage": "S4-G2",
+      "paths": [
+        "scripts/strigunov4/test_asi_v10_g2_patch_bytes.py"
+      ],
+      "objective": "Add actual c4_operator_patch.plan byte-level tests for repeated case variants of the same members in both allowlists with mixed comma/semicolon/tab separators. Assert stable first-member spelling, exact deduplicated output bytes, exact before/after union, unchanged unrelated UTF-8/comment bytes and byte-identical second application. Change only the listed test file; do not execute host.perform or alter any source/limits, host files, services or history."
+    },
+    {
+      "id": "asi-v17-g2-r2-witness-io-errors",
+      "branch": "asi/v17-g2-r2-witness-io-errors",
+      "slot": 3,
+      "stage": "S4-G2",
+      "paths": [
+        "scripts/strigunov4/test_beget_g2_witness_races_v1.py"
+      ],
+      "objective": "Add deterministic error-path tests of the actual beget_g2_operator_witness.observe acquisition flow. Inject failed first/second policy reads, snapshot failures and read/pread errors using synthetic policy/identity/environment fixtures. Assert no successful witness receipt, no later acquisition stage after failure, and exactly one close for each opened environment descriptor. Pair accepted stable acquisition controls; no real procfs, host reads, services, credentials, writes or source edits."
+    },
+    {
+      "id": "asi-v17-g2-r2-lock-parser-bounds",
+      "branch": "asi/v17-g2-r2-lock-parser-bounds",
+      "slot": 4,
+      "stage": "S4-G2",
+      "paths": [
+        "scripts/strigunov4/test_asi_v9_g2_lock_records.py"
+      ],
+      "objective": "Extend actual observer.lock_records/lock_snapshot tests for LOCKS_LIMIT and 512-character record boundaries, non-newline truncation and non-ASCII snapshot data. Include a matching accepted FLOCK control and prove malformed/oversized snapshots never authorize or infer an available lock; wrapper errors yield UNKNOWN and close descriptors once. Use in-memory fake lock bytes and mocked read-only descriptor seams only. Never acquire locks, read real procfs/evidence, edit quarantined source, invoke host.perform or touch services."
     }
   ]
 }
