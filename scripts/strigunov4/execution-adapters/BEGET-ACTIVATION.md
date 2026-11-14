@@ -217,14 +217,19 @@ Pre-claim requirements: authority directories must be root-owned, non-writable b
 
 ## Five owner workstreams — source boundary, not installed runtime
 
-The owner named five **logical** lanes on 2026-10-29: Engine #549
-(`asi/beget-one-engine-20261028`), RU Auth #554
-(`feat/ru-unified-auth-20261029`), P0 integration #552
-(`asi/standing-delegation-551`), trusted evidence
-(`asi/p0-trusted-evidence-worker-20261029`) and atomic budget
-(`asi/p0-atomic-budget-worker-20261029`). All target
-`ASI-integration/asi-landing`. Five ChatGPT scheduled sessions are **not**
-five systemd processes, verified server workers or durable heartbeats.
+The owner named five **logical** lanes on 2026-10-29. Historical source
+PRs remain Engine #549, RU Auth #554 and P0 integration #552; those PR numbers
+are lineage only, not active PRs on the replacement refs. The replacement branch
+targets, checked absent on 2026-11-01 and **not yet created**, are:
+
+- Engine: `asi/groundzero-engine-20261101-r2` (historical source #549)
+- RU Auth: `asi/groundzero-ru-auth-20261101-r2` (historical source #554)
+- P0 integration: `asi/groundzero-p0-integration-20261101-r2` (historical source #552)
+- Trusted evidence: `asi/groundzero-p0-trust-20261101-r2`
+- Atomic budget: `asi/groundzero-p0-atomic-budget-20261101-r2`
+
+All target `ASI-integration/asi-landing`. Five ChatGPT scheduled sessions are
+**not** five systemd processes, verified server workers or durable heartbeats.
 
 The **current signed Beget activation schema still admits exactly two G2
 witness tasks**, not any of these five lanes. The read-only

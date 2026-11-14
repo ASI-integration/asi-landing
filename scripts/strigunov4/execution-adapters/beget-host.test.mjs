@@ -206,9 +206,17 @@ test('package builder rejects dirty source before creating output',async t=>{
  }
 });
 
-test('five owner lanes preserve literal repository and branch identity without running a new dispatcher',()=>{
+test('five owner lanes bind the replacement branch targets while preserving historical PR lineage',()=>{
  assert.deepEqual(OWNER_LANES.map(x=>x.id),['engine','ru-auth','p0-integration','p0-trust','p0-atomic-budget']);
- assert.deepEqual(OWNER_LANES.map(x=>x.pr),[549,554,552,null,null]);
+ assert.deepEqual(OWNER_LANES.map(x=>x.branch),[
+  'asi/groundzero-engine-20261101-r2',
+  'asi/groundzero-ru-auth-20261101-r2',
+  'asi/groundzero-p0-integration-20261101-r2',
+  'asi/groundzero-p0-trust-20261101-r2',
+  'asi/groundzero-p0-atomic-budget-20261101-r2'
+ ]);
+ assert.deepEqual(OWNER_LANES.map(x=>x.historicalPr),[549,554,552,null,null]);
+ assert.ok(OWNER_LANES.every(x=>x.pr===null));
  assert.equal(new Set(OWNER_LANES.map(x=>x.branch)).size,5);
  assert.ok(OWNER_LANES.every(x=>x.repository==='ASI-integration/asi-landing'&&Object.isFrozen(x)));
  assert.ok(Object.isFrozen(OWNER_LANES));
