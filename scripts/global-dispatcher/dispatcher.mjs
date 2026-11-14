@@ -93,7 +93,7 @@ export function createGlobalDispatcher({stateDir, adapters} = {}) {
     a.contract.maxPlansPerStage >= 1 && a.contract.maxPlansPerStage <= 10 && typeof a.evaluate === 'function') &&
     new Set(adapters.map(a => a.id)).size === adapters.length, 'UNIQUE_DISABLED_ADAPTERS_REQUIRED');
   must(adapters.every(a => a.goalPlanning !== true || Number.isSafeInteger(a.maxConcurrentPlans) &&
-    a.maxConcurrentPlans >= 1 && a.maxConcurrentPlans <= 4), 'GOAL_CONCURRENCY_LIMIT');
+    a.maxConcurrentPlans >= 1 && a.maxConcurrentPlans <= 5), 'GOAL_CONCURRENCY_LIMIT');
   // Capture admission limits; callers cannot expand them by later mutating a
   // contract object that was already registered against a persistent hash.
   const routes = adapters.map(a => ({id: a.id, contractHash: a.contractHash,
