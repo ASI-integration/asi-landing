@@ -98,3 +98,13 @@ test('unapproved local Git filter config blocks source context before git invoca
       paths:['docs/existing.py']}),/UNTRUSTED_GIT_CONFIG/);
   }finally{await f.close()}
 });
+
+test('executable core fsmonitor config blocks source context before git invocation',async()=>{
+  const f=await fixture();try{
+    await fs.appendFile(path.join(f.root,'.git','config'),
+      '\n[core]\n  fsmonitor = /bin/false\n');
+    const read=createPinnedSourceReader({checkout:f.root,admittedTasks:[f.task]});
+    await assert.rejects(read({id:f.task.id,baseSha:f.baseSha,
+      paths:['docs/existing.py']}),/UNTRUSTED_GIT_CONFIG/);
+  }finally{await f.close()}
+});
